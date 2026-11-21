@@ -10,6 +10,9 @@
 // The requests are the radio core's own (radio_req_zone, radio_req_zone_pos, radio_req_channel_step), so the UI's
 // refusals apply. Idle, it costs the radio nothing: the radio's view is read only for a request, a pending step or a
 // subscriber. Replies and notices are written straight into the IP gateway's frame buffer: no buffer of its own.
+//
+// With CONFIG_GPS, "gps" also sends the subscriber the board GPS's fix, once per GPS second (tcp-services.md 8.4): its
+// state fits in the subscriber's padding, so it adds no RAM.
 #include "config.h"
 #if CONFIG_NET_RADIO_UDP	// the whole file
 #include <string.h>
@@ -18,6 +21,10 @@
 #include "dmr/ipGateway.h"
 #include "input/input.h"
 #include "hal_time.h"
+#if CONFIG_GPS
+#include "position/position.h"
+#include "board.h"
+#endif
 
 #define REQ_MAX		40	// the longest request ("select?zone=65535&pos=65535" and room)
 #define STEP_MAX	100	// one request's step, either way
@@ -53,6 +60,8 @@ typedef struct {
 static struct {
 	uint32_t ip;
 	uint16_t port;		// 0: none
+	bool gps;		// it asked for fixes ("gps")
+	uint8_t gps_sec;	// the GPS second (utc_hms % 100) of the last fix sent, 0xFF none
 	uint32_t lease_ms, check_ms, sent_ms;
 	notice_key_t key;	// what the last reply or notice said
 	bool sent;
@@ -136,8 +145,9 @@ static void where(dl_text_t *t, const radio_view_t *v, bool channel)
 #endif
 }
 
-// Where the radio is, into the gateway's frame buffer: a reply (lease >= 0) with its lease and error, or a notice
-static int put_where(char *buf, const radio_view_t *v, int32_t lease, int err)
+// Where the radio is, into the gateway's frame buffer: a reply (lease >= 0) with its lease and error, or a notice.
+// gps >= 0: the answer to "gps", whether fixes can come (the radio has a GPS)
+static int put_where(char *buf, const radio_view_t *v, int32_t lease, int err, int gps)
 {
 	dl_text_t t;
 	for (int pass = 0; pass < 2; pass++) {
@@ -148,6 +158,9 @@ static int put_where(char *buf, const radio_view_t *v, int32_t lease, int err)
 		}
 		if (err != 0) {
 			dl_text(&t, ",\"err\":%d", err);
+		}
+		if (gps >= 0) {
+			dl_text(&t, ",\"gps\":%d", gps);
 		}
 		dl_text(&t, "}\n");
 		if (!t.full) {
@@ -299,6 +312,51 @@ static void notice_key(const radio_view_t *v, notice_key_t *k)
 #endif
 }
 
+#if CONFIG_GPS
+// A degree value from 1e-7 degree: ,"key":-12.3456789
+static void put_deg(dl_text_t *t, const char *key, int32_t v)
+{
+	uint32_t a = (v < 0) ? 0u - (uint32_t)v : (uint32_t)v;
+	dl_text(t, ",\"%s\":%s%u.%07u", key, (v < 0) ? "-" : "", (unsigned)(a / 10000000u), (unsigned)(a % 10000000u));
+}
+
+// The board GPS's fix to a subscriber that asked for it, once per GPS second. Never a host-fed or fixed position
+// (position_gps is the board GPS alone), and exact: the ambiguity setting is for reports on the air
+static void fix_poll(uint32_t now)
+{
+	position_gps_t g;
+	if (!sub.gps || !position_gps(&g, now) || !g.fix || g.utc_hms == 0xFFFFFFFFu ||
+	    (uint8_t)(g.utc_hms % 100u) == sub.gps_sec) {
+		return;
+	}
+	char *buf = (char *)ipGatewayUdpPayload();
+	dl_text_t t;
+	dl_text_init(&t, buf, IPGW_UDP_PAYLOAD_MAX);
+	dl_text(&t, "{\"gps\":1");
+	put_deg(&t, "lat", g.lat);
+	put_deg(&t, "lon", g.lon);
+	if (g.alt_m != POSITION_ALT_NONE) {
+		dl_text(&t, ",\"alt_m\":%d", (int)g.alt_m);
+	}
+	if (g.speed_kmh != 0xFFFFu) {
+		dl_text(&t, ",\"kmh\":%u", g.speed_kmh);
+	}
+	if (g.course != 0xFFFFu) {
+		dl_text(&t, ",\"course\":%u", g.course);
+	}
+	dl_text(&t, ",\"sats\":%u", g.sats);
+	if (g.hdop10 != 0xFFFFu) {
+		dl_text(&t, ",\"hdop\":%u.%u", g.hdop10 / 10u, g.hdop10 % 10u);
+	}
+	dl_text(&t, ",\"utc\":%u}\n", (unsigned)g.utc_hms);
+	if (!ipGatewayUdpSend(sub.ip, NET_RADIO_UDP_PORT, sub.port, (const uint8_t *)buf, (int)t.len)) {
+		st.busy++;	// the link was busy: again at the next check, while this second lasts
+		return;
+	}
+	sub.gps_sec = (uint8_t)(g.utc_hms % 100u);
+}
+#endif
+
 static void notify_poll(uint32_t now)
 {
 	if (sub.port == 0) {
@@ -306,6 +364,7 @@ static void notify_poll(uint32_t now)
 	}
 	if ((int32_t)(now - sub.lease_ms) >= 0) {
 		sub.port = 0;	// not renewed
+		sub.gps = false;
 		return;
 	}
 	if ((now - sub.check_ms) < CHECK_MS) {
@@ -315,6 +374,9 @@ static void notify_poll(uint32_t now)
 	if (ipGatewayHostIP() == 0) {
 		return;	// the link is down
 	}
+#if CONFIG_GPS
+	fix_poll(now);
+#endif
 	const radio_view_t *v = net_radio_view();
 	notice_key_t k;
 	notice_key(v, &k);
@@ -323,7 +385,7 @@ static void notify_poll(uint32_t now)
 	}
 	char *buf = (char *)ipGatewayUdpPayload();
 	seq++;
-	int len = put_where(buf, v, -1, 0);
+	int len = put_where(buf, v, -1, 0, -1);
 	if (!ipGatewayUdpSend(sub.ip, NET_RADIO_UDP_PORT, sub.port, (const uint8_t *)buf, len)) {
 		seq--;
 		st.busy++;	// the link was busy: again at the next check
@@ -352,20 +414,35 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 	uint32_t now = hal_millis();
 	const radio_view_t *v = net_radio_view();
 	st.requests++;
-	int err = (n == 0) ? 400 : request(r, now, v);
+	// "gps" and "gps?off" are select's, turning the fixes on or off
+	bool ask_gps = strcmp(r, "gps") == 0;
+	bool gps_off = strcmp(r, "gps?off") == 0;
+	int err = (n == 0) ? 400 : (ask_gps || gps_off) ? 0 : request(r, now, v);
 	st.bad += err == 400;
-	// The sender subscribes (a new one gets a notice at once), or cancels
+	// The sender subscribes (a new one gets a notice at once), or cancels. Fixes: on with "gps", the first at the
+	// next check; off with "gps?off", notify=0, a new subscriber or the lease ending; any other request renews them
 	uint32_t lease = (strcmp(r, "select?notify=0") == 0) ? 0 : LEASE_S;
-	if (src != sub.ip || sport != sub.port) {
+	if (src != sub.ip || sport != sub.port || sub.port == 0) {
 		sub.sent = false;
+		sub.gps = false;
 	}
+	int gps = ask_gps ? 0 : -1;	// the reply's "gps": 0 no GPS
+#if CONFIG_GPS
+	if (ask_gps) {
+		gps = board_has_gps();
+		sub.gps = gps != 0;
+		sub.gps_sec = 0xFFu;
+	} else if (gps_off || lease == 0) {
+		sub.gps = false;
+	}
+#endif
 	sub.ip = src;
 	sub.port = lease ? sport : 0;
 	sub.lease_ms = now + LEASE_S * 1000u;
 	// The reply goes to the sender's address and port, and is where the radio is now: a step shows in the notice
 	// that follows
 	char *buf = (char *)ipGatewayUdpPayload();
-	int len = put_where(buf, v, (int32_t)lease, err);
+	int len = put_where(buf, v, (int32_t)lease, err, gps);
 	bool sent = ipGatewayUdpSend(src, NET_RADIO_UDP_PORT, sport, (const uint8_t *)buf, len);
 	st.busy += !sent;
 	// A reply that went counts as a notice, so none repeats it; a lost one (the link was busy) brings a notice instead
@@ -390,9 +467,9 @@ void radio_udp_poll(uint32_t now)
 void radio_udp_view(dl_text_t *t)
 {
 	dl_text(t, "radio_udp.requests=%u\nradio_udp.bad=%u\nradio_udp.refused=%u\nradio_udp.selects=%u\n"
-		"radio_udp.steps=%u\nradio_udp.notify=%u\nradio_udp.notices=%u\nradio_udp.busy=%u\n", (unsigned)st.requests,
-		(unsigned)st.bad, (unsigned)st.refused, (unsigned)st.selects, (unsigned)st.steps, (unsigned)sub.port,
-		(unsigned)st.notices, (unsigned)st.busy);
+		"radio_udp.steps=%u\nradio_udp.notify=%u\nradio_udp.notices=%u\nradio_udp.busy=%u\nradio_udp.gps=%u\n",
+		(unsigned)st.requests, (unsigned)st.bad, (unsigned)st.refused, (unsigned)st.selects, (unsigned)st.steps,
+		(unsigned)sub.port, (unsigned)st.notices, (unsigned)st.busy, (unsigned)sub.gps);
 }
 
 #endif	// CONFIG_NET_RADIO_UDP

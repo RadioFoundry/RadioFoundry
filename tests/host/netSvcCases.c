@@ -23,6 +23,7 @@
 #include "net/webctl.h"
 #include "aprs/aprs.h"
 #include "net/aprsis.h"
+#include "position/position.h"
 #include "net/http_assets.h"
 #include "http_assets_gen.h"	// generated here by the Makefile (gzip, as the firmware's default)
 
@@ -1468,6 +1469,120 @@ static void test_radio_udp(void)
 	fake_view.dmr.target_id = 0;
 }
 
+// ---- the board GPS's fixes over the UDP control (radio_udp.c) ----
+static position_gps_t fake_gps;
+static bool fake_gps_heard;
+bool position_gps(position_gps_t *out, uint32_t now)
+{
+	(void)now;
+	if (fake_gps_heard) {
+		*out = fake_gps;
+	}
+	return fake_gps_heard;
+}
+
+// The next GPS second, then the checks' wait
+static void next_fix(void)
+{
+	fake_gps.utc_hms++;
+	run_for(150);
+}
+
+static void test_radio_udp_gps(void)
+{
+	const char *last = udp_catch.last;
+	memset(&fake_gps, 0, sizeof(fake_gps));
+	fake_gps.fix = true;
+	fake_gps.lat = 337490000;
+	fake_gps.lon = -843880000;
+	fake_gps.alt_m = 320;
+	fake_gps.speed_kmh = 4;
+	fake_gps.course = 271;
+	fake_gps.sats = 9;
+	fake_gps.hdop10 = 9;
+	fake_gps.utc_hms = 123519;
+	fake_gps_heard = true;
+	udp_catch.port = 50602;
+
+	// A subscriber gets no fixes until it asks
+	ctl(50602, "select");
+	int c = udp_catch.count;
+	run_for(2000);
+	CHECK(udp_catch.count == c);
+	// "gps": where the radio is, as select, with "gps":1 (it has one); the first fix at once
+	CHECK(strstr(ctl(50602, "gps"), "\"zone\":") && strstr(last, ",\"lease\":120,\"gps\":1}\n"));
+	c = udp_catch.count;
+	run_for(150);
+	CHECK(udp_catch.count == c + 1 && udp_catch.from_port == NET_RADIO_UDP_PORT);
+	CHECK(strcmp(last, "{\"gps\":1,\"lat\":33.7490000,\"lon\":-84.3880000,\"alt_m\":320,\"kmh\":4,\"course\":271,"
+		     "\"sats\":9,\"hdop\":0.9,\"utc\":123519}\n") == 0);
+	// one per GPS second: the same fix isn't sent again
+	run_for(1500);
+	CHECK(udp_catch.count == c + 1);
+	next_fix();
+	CHECK(udp_catch.count == c + 2 && strstr(last, ",\"utc\":123520}\n"));
+	// unknown fields left out; south and west negative
+	fake_gps.alt_m = POSITION_ALT_NONE;
+	fake_gps.speed_kmh = fake_gps.course = fake_gps.hdop10 = 0xFFFF;
+	fake_gps.lat = -1;
+	fake_gps.lon = -1800000000;
+	next_fix();
+	CHECK(strcmp(last, "{\"gps\":1,\"lat\":-0.0000001,\"lon\":-180.0000000,\"sats\":9,\"utc\":123521}\n") == 0);
+	c = udp_catch.count;
+	// no fix, the GPS not heard (off, or silent for a minute), or the link down: nothing
+	fake_gps.fix = false;
+	next_fix();
+	fake_gps.fix = true;
+	fake_gps_heard = false;
+	next_fix();
+	uint32_t id = net_test_radio_id;
+	fake_gps_heard = true;
+	net_test_radio_id = 0;
+	next_fix();
+	CHECK(udp_catch.count == c);
+	net_test_radio_id = id;
+	run_for(150);
+	CHECK(udp_catch.count == c + 1 && strstr(last, "{\"gps\":1,"));
+	// any other request renews them: one client sends "gps" once
+	c = udp_catch.count;
+	ctl(50602, "select");
+	next_fix();
+	CHECK(udp_catch.count == c + 2 && strstr(last, "{\"gps\":1,"));
+	// off: "gps?off" (a reply without "gps"), notify=0, a new subscriber, the lease ending
+	c = udp_catch.count;
+	CHECK(strstr(ctl(50602, "gps?off"), ",\"lease\":120}\n"));
+	next_fix();
+	CHECK(udp_catch.count == c + 1);
+	ctl(50602, "gps");
+	ctl(50602, "select?notify=0");
+	c = udp_catch.count;
+	next_fix();
+	ctl(50602, "select");	// subscribed again: still off
+	next_fix();
+	CHECK(udp_catch.count == c + 1);
+	ctl(50602, "gps");
+	ctl(50603, "select");	// another program takes the subscription over
+	ctl(50602, "select");	// and the first one back
+	c = udp_catch.count;
+	next_fix();
+	CHECK(udp_catch.count == c);
+	ctl(50602, "gps");
+	run_for(121000);
+	c = udp_catch.count;
+	next_fix();
+	next_fix();
+	CHECK(udp_catch.count == c);
+	// a radio without a GPS answers "gps":0, and sends none
+	fake_gps_fitted = false;
+	CHECK(strstr(ctl(50602, "gps"), ",\"lease\":120,\"gps\":0}\n"));
+	c = udp_catch.count;
+	next_fix();
+	CHECK(udp_catch.count == c);
+	fake_gps_fitted = true;
+	ctl(50602, "select?notify=0");
+	udp_catch.port = 0;
+}
+
 void tests_run(void)
 {
 	test_kiss();
@@ -1479,4 +1594,5 @@ void tests_run(void)
 	test_aprsis();
 	test_fuzz();
 	test_radio_udp();	// last: its waits move the clock the others' checks expect
+	test_radio_udp_gps();
 }

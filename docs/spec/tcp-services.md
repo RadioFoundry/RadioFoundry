@@ -322,6 +322,7 @@ controlled. Each request is one datagram to the radio's port 4191, and each is a
 | `step?channel=N` | N channels on, negative back (-100 to 100, not 0), wrapping in the zone. From the VFO: back to the channel the VFO came from is the first step (VFO from position 5: +1 lands on 5, +3 on 7) |
 | `step?zone=N` | N zones on, wrapping at the ends, to the zone's first channel |
 | `select?notify=0` | no more notices |
+| `gps` / `gps?off` | as `select`, and the board GPS's fixes on or off (8.4) |
 
 - Zones and positions are 0-based indexes, the same in every request and reply.
 - ASCII, at most 40 bytes; a trailing newline is ignored (`echo select | nc -u -w1 <radio> 4191`).
@@ -397,6 +398,50 @@ Notices:
   into the IP gateway's frame buffer. Static state is the subscriber, the pending requests and the counters.
 - Debug link view keys (`net_svc`): `radio_udp.requests bad refused selects steps`, `radio_udp.notify` (the subscriber's
   port, 0 none), `radio_udp.notices`, `radio_udp.busy` (sends the link refused).
+
+### 8.4 GPS fixes
+
+With `CONFIG_GPS`, a subscriber can also have the board GPS's fix, for takRF (ATAK's location source), a host script
+or gpsd through `tools/rfoundry_gps.py`. No new socket, buffer or setting: the fix goes from port 4191 to the
+subscriber, written into the gateway's frame buffer as the notices are.
+
+| Request | |
+|---|---|
+| `gps` | as `select` (where the radio is, and subscribes the sender), with `"gps":1` in the reply when the radio has a GPS, `"gps":0` when not; then fixes to the subscriber |
+| `gps?off` | as `select`, without fixes |
+
+- **On** with `gps`. The first fix goes at the next check (100 ms), then one per GPS second.
+- **Off** with `gps?off`, `select?notify=0`, a new subscriber, or the lease ending. Any other request from the
+  subscriber renews the lease and keeps the fixes, so a client sends `gps` once and renews with `select` (or `gps`).
+- Without `CONFIG_GPS`, or on a radio without a GPS module, `gps` is answered with `"gps":0` and no fix is sent.
+
+A fix, one datagram:
+
+```
+{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"sats":9,"hdop":0.9,"utc":123519}
+```
+
+| Field | |
+|---|---|
+| `gps` | always 1, first: a client tells a fix from a reply or notice by it (a reply to `gps` has `zone` too) |
+| `lat lon` | degrees, 7 decimals, south and west negative |
+| `alt_m` | meters above mean sea level (GGA) |
+| `kmh course` | speed over ground, km/h, and course, degrees true (RMC) |
+| `sats` | satellites used |
+| `hdop` | horizontal dilution of precision |
+| `utc` | the fix's UTC time, hhmmss as a number (`5` is 00:00:05). The date isn't sent |
+
+- A field the module didn't send is left out (`alt_m kmh course hdop`).
+- Sent while all of these hold, checked every 100 ms: the subscriber asked for fixes and its lease is live, the link
+  is up, the board GPS has a fix under a minute old (`position_gps`), and the fix's second differs from the last sent.
+  A send the link refuses is tried again at the next check while that second lasts.
+- **Board GPS only.** Never a position the host fed the radio (`POSITION_SRC_HOST`) or the fixed position, so a phone
+  that feeds the radio NMEA never gets its own position back as a fix.
+- **Exact.** The ambiguity setting is for reports on the air; the link belongs to the operator.
+- The GPS keeps its own rules ([position.md](position.md)): Settings > Location > GPS off means no fix and nothing sent.
+- RAM: none. The on flag and the last second sent fit in the subscriber's padding; the fix is copied to the stack only
+  for the send.
+- Debug link view key (`net_svc`): `radio_udp.gps` (1 while the subscriber has fixes on).
 
 ## 9. Changes in the IP gateway
 
