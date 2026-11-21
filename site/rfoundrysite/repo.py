@@ -132,7 +132,7 @@ def dependencies(text):
 	"""{feature: {"all": [...], "any": [...]}} from the "$(error CONFIG_X=y needs ...)" checks in features.mk."""
 	deps = {}
 	for line in text.splitlines():
-		for m in re.finditer(r"\$\(error CONFIG_(\$\(f\)|\w+)=y needs ([^)]*)\)", line):
+		for m in re.finditer(r"\$\(error CONFIG_(\$\(f\)|\w+)=y needs ((?:[^()]|\([^()]*\))*)\)", line):
 			subject, need = m.group(1), m.group(2)
 			if subject == "$(f)":
 				fm = re.search(r"\$\(foreach f,([\w ]+),", line)

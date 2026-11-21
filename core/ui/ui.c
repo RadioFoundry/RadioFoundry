@@ -27,13 +27,13 @@
 
 #define UI_TASK_PRIORITY	(tskIDLE_PRIORITY + 1)	// below the radio and input tasks
 // List screens and Find: about 1.2 KB measured on the host, plus the driver. The static stack check's deepest chain
-// (ui_task > ui_home_draw > draw_dmr_call > ui_draw_hint > gfx_text, on a 4 bpp panel's palette lookup) needs 1760 bytes
-// at worst, the same on macOS and in CI now that the link order is sorted (gotchas 13.10); the quick screen's tiles and
+// needs up to 1720 bytes on the STM32
+// radios, the same on macOS and in CI now that the link order is sorted (gotchas 13.10); the quick screen's tiles and
 // the dual Home's layout table (dual_choose) live in frames of their own to stay below it, as a 4 bpp panel's palette
-// lookup adds 48 bytes under every fill. 526 words leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
+// lookup adds 48 bytes under every fill. 516 words (2064 bytes) leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
 // Every word here is RAM on all radios: raise it only by what the check shows
 #ifndef UI_TASK_STACK_WORDS		// a board may set more (board.mk) for a deeper chain on its platform
-#define UI_TASK_STACK_WORDS	526
+#define UI_TASK_STACK_WORDS	516
 #endif
 
 #define SPLASH_MS		1000
@@ -165,7 +165,7 @@ static void ui_task(void *arg)
 			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests
 #endif
 			set_backlight(ui_app_brightness());
-			if (!was_off || ev.action == ACT_PTT || ev.action == ACT_MONITOR)
+			if (!was_off || ui_app_key_while_dark(&ev))
 				ui_app_key(&ev);
 			dirty = true;
 		}

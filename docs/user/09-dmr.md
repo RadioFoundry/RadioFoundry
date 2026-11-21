@@ -276,6 +276,10 @@ is on, the reply window lets you answer any call you heard with **PTT**. **PTT**
 timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
 the other timeslot, the channel counts as busy.
 
+On a [Tier III trunked channel](#setting-one-up) digital monitor follows calls on every talkgroup of the system, not
+only the channel's RX group list. It still plays only the system's calls, on their own timeslot. While it plays one,
+**PTT** talks on that call, as on any call the radio follows (not on a broadcast or an all-call someone else made).
+
 ## Privacy
 
 RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
@@ -394,9 +398,17 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 
 1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
    code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
-2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Its contact is who you talk to; its
-   RX group list is the talkgroups you hear.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Set **TX Contact** to the default
+   call destination and **RX Group List** to the talkgroups you want to follow.
 3. Put the channel in a zone, with any other channels.
+
+When a Tier III private call rings, you can release **PTT** while the other person answers. If the system grants
+the call while **PTT** is released, press it again to speak. The screen shows **Calling** while the
+other radio rings. Press **Back** to cancel the pending call.
+
+For an incoming private call, the radio beeps every two seconds and shows who is calling. Press **Back** to
+reject or **PTT** to answer. Release it, then
+press again to speak once the system grants the call.
 
 | Setting | Does |
 |---|---|
@@ -404,6 +416,8 @@ In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-system
 | Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
 | Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
 | Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
+| Follow every talkgroup | Plays calls on all the system's talkgroups, not only the channel's RX group list. Digital monitor does the same while it is on. Off by default |
+| Learn the system from the air | For listening to a system whose model and NET you don't know: the radio takes the first control channel it hears as the system. Only while it listens (Transmit off, or a receive-only channel). Off by default |
 
 A channel that is receive only in the editor stays receive only on the system: the radio listens and refuses PTT.
 
@@ -414,15 +428,23 @@ Select the channel. Home shows the system's name and what the radio is doing the
 | Home shows | Meaning |
 |---|---|
 | Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare that with the system's network model and network number in the editor. "Incompatible system" means the channel carries another kind of trunking system, which this radio cannot join. No setting changes that |
 | Registering | Found; registering with the system |
+| Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
 | Ready | On the control channel. Hold **PTT** to call |
 | In call | On a channel the system granted, in a call |
 | Refused | The system refused the registration. PTT is refused |
 | Fallback | No control channel found: on the fallback channel |
 | System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
 
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
 Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
-doesn't answer, PTT is refused. The talk target is the channel's contact, or one you pick as on any DMR channel
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
 ([Choosing a talk target](#choosing-a-talk-target)).
 
 Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set
@@ -446,3 +468,16 @@ stun**, **Accept a kill**).
 
 On a system without a key a stun is taken as sent, from any transmitter that sends one: leave **Accept a stun** off
 there.
+
+## Accept invalid CRC
+
+Some systems send their control messages and call headers with a checksum (CRC) the standard doesn't accept. The radio
+drops those: a trunked channel stays on **Searching**, and calls on a DMR channel may not be heard. To listen to such
+a system, turn on **Accept Invalid CRC** for its channels in the Codeplug Editor's channel settings. It works on DMR,
+DMR trunked and P25 trunked channels, and is off on a new channel.
+
+- The radio takes a message that fails its checksum only when the same message failed shortly before. These systems
+  repeat their messages; a message damaged on the air rarely comes out the same twice.
+- On a trunked channel the radio doesn't register, answer or call while the last control message it took failed its
+  checksum. On a system whose messages all fail, it only listens, and PTT is refused.
+- Leave it off on systems the radio hears normally.

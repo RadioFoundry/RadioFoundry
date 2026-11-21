@@ -173,7 +173,7 @@ test("a channel's tone burst byte filled with 0xFF is not set, and is never writ
 	r[0x2A] = 0xFF;
 	const c = decodeChannel(r);
 	assert.equal(c.toneBurst, false);
-	assert.equal(encodeChannel(c, r.slice())[0x2A], 0xBF);
+	assert.equal(encodeChannel(c, r.slice())[0x2A], 0x8F);
 	c.toneBurst = true;
 	const on = encodeChannel(c, r.slice());
 	assert.equal(on[0x2A], 0xCF);
@@ -181,6 +181,26 @@ test("a channel's tone burst byte filled with 0xFF is not set, and is never writ
 	// a byte with other bits clear is as before
 	r[0x2A] = 0x40;
 	assert.equal(decodeChannel(r).toneBurst, true);
+});
+
+test("a channel's Accept invalid CRC is bits 5-4 of byte 0x2A = 2; 0xFF and 0xBF read as off", () => {
+	// open-firmware-cps.md 7.3.3: 0xBF is what earlier writers left with the tone burst off
+	const m = empty();
+	m.channels.push(newChannel({ name: "Site", rxHz: 461462500, txHz: 461462500, mode: "dmr" }));
+	const r = encodeChannel(m.channels[0], blankChannel());
+	for (const b of [0xFF, 0xBF, 0x30, 0x10, 0x00]) {
+		r[0x2A] = b;
+		assert.equal(decodeChannel(r).acceptBadCrc, false, b.toString(16));
+	}
+	r[0x2A] = 0xBF;
+	const c = decodeChannel(r);
+	c.acceptBadCrc = true;
+	const on = encodeChannel(c, r.slice());
+	assert.equal(on[0x2A], 0xAF);
+	assert.equal(decodeChannel(on).acceptBadCrc, true);
+	assert.equal(decodeChannel(on).toneBurst, false);
+	c.acceptBadCrc = false;
+	assert.equal(encodeChannel(c, on.slice())[0x2A], 0x8F);
 });
 
 test("an edit rewrites only what changed", () => {

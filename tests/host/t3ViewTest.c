@@ -60,7 +60,7 @@ int main(void)
 	wide.call_group = wide.call_ours = wide.ptt_wait = wide.can_talk = wide.vote_on = wide.hunt_strict = true;
 	wide.call_data = wide.pd_wait = wide.stunned = wide.auth_key = wide.asleep = wide.csc_valid = true;
 	wide.rx_off = wide.divert_group = wide.call_als = wide.killed = wide.st_group = wide.sd_group = true;
-	wide.cli_group = wide.call_cli = wide.supl_group = true;
+	wide.cli_group = wide.call_cli = wide.supl_group = wide.refused = wide.unverified = true;
 	wide.nra = sizeof wide.ra / sizeof wide.ra[0];
 	wide.ndgna = RADIO_T3_DGNA;
 	wide.sd_len = sizeof wide.sd_data;
@@ -71,9 +71,10 @@ int main(void)
 	section(debuglink_view_t3, text, &full);
 	CHECK(!full && has(text, "t3.lent=") && has(text, "t3.lent_calls="));
 	section(debuglink_view_t3_roam, text, &full);
-	CHECK(!full);
+	CHECK(!full && has(text, "t3.unverified="));
 	section(debuglink_view_t3_ra, text, &full);
-	CHECK(!full && has(text, "t3.ra3=") && has(text, "t3.turn_slow="));
+	CHECK(!full && has(text, "t3.ra3=") && has(text, "t3.turn_slow=") && has(text, "t3.send_held=") &&
+	      has(text, "t3.send_err="));
 	section(debuglink_view_t3_svc, text, &full);
 	CHECK(!full && has(text, "t3.ip_advised="));
 	section(debuglink_view_t3_msg, text, &full);

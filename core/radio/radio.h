@@ -26,8 +26,8 @@ typedef enum {
 // settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
 // only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
-// otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked P25
-// channel gave no voice channel (radio_p25_view_t.twhy says why). AIR_NO_TX: the board's air interface receives this
+// otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked
+// channel gave no voice channel (RADIO_TRUNK_WHY_* in radio_p25_view_t.twhy or radio_t3_brief_t.why says why). AIR_NO_TX: the board's air interface receives this
 // mode's profile but can't transmit it (NXDN at a rate the provider only receives)
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
@@ -253,6 +253,14 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
+	bool ringing;		// an incoming private call awaits PTT to answer
+	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
+	uint8_t other_fid;	// searching: the FID of a non-ETSI trunking system heard (t3_ms_other_fid), 0 none
+	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
+	bool alerting;		// the called radio is ringing
+	bool refused;		// the system refused the registration (t3_ms_reg_refused)
+	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
+	uint32_t ring_src;	// caller ID while an incoming private call awaits PTT, or zero
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
@@ -266,6 +274,10 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
+	uint16_t other;		// as radio_t3_brief_t's
+	uint8_t other_fid;	// as radio_t3_brief_t's
+	uint8_t why;		// as radio_t3_brief_t's
+	bool refused;		// as radio_t3_brief_t's
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
 	bool ip_advised;	// the system took the radio's IP address at registration (6.4.11)
 	bool confirmed;
@@ -280,15 +292,17 @@ typedef struct {
 	uint8_t ax_svc, ax_result, ax_reason, ax_state;
 	bool ptt_wait;		// PTT held, waiting for the grant
 	bool can_talk;
+	bool unverified;	// the last PDU taken failed its CRC (the channel's Accept invalid CRC): listen-only
 	uint8_t last_rx_op, last_rx_slot;	// the last CSBK heard: opcode, slot
 	uint8_t last_tx_op;	// the last CSBK sent (0xFF none)
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
-	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t csbk, crc_bad, crc_taken, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	uint32_t lent;		// short LCs saying the TSCC's slot is lent to a call (composite TSCC)
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	uint32_t weak_hold_ms;		// the hold on leaving a weak TSCC last set (0: none)
 	uint32_t adj_refused;	// adjacent sites announced but not authorized
 	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
 	int16_t leave_dbm;	// the threshold in force
@@ -303,7 +317,12 @@ typedef struct {
 		int16_t dbm;	// when last sampled, 0: never
 		uint32_t sampled_ms;
 	} adj[4];		// T3_ADJ_MAX
-	uint32_t send_fail;	// sends the stack refused (busy) and dropped
+	uint32_t send_fail;	// sends refused or failed and dropped (the engine retries what needs it)
+	// Each reason (8 bits, saturating): a retune held, not on the slot asked for, PTT talking or transmitting, the TX
+	// limit, TX inhibit (or a critical battery, a hardware option pending), the radio refused to key, the stack
+	// refused the list (send_data_busy: of those, busy with another data list), the stack took the list but did not
+	// send it
+	uint8_t send_held, send_slot, send_talk, send_limit, send_inhibit, send_key, send_stack, send_data_busy, send_err;
 	// TX→RX turnaround: from the end of a transmission on the system to the first burst heard after it (the
 	// site's answer to a random access comes 4 slots, 120 ms, after the access began)
 	uint32_t turns;
@@ -712,6 +731,14 @@ uint8_t radio_volume_stored(uint8_t step);
 // reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
 // beep_level setting (cap). volume_percent < 0 (none given yet): the cap
 uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
+// The volume step above which beeps stop getting louder on a radio whose volume scales the PCM path (volume_pcm with
+// hal_radio_t.volume_db10): higher steps make the voice louder, not the beeps. The speaker's volume itself never
+// changes for a beep
+#define RADIO_BEEP_VOLUME_STEP	7
+// A beep's level on such a radio: level softened by the gain the volume gives over the cap step's (db10_now - db10_cap,
+// in tenths of a dB), so the beep sounds as loud as at the cap step. At or below the cap: level. At least 1 while level
+// isn't 0
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
 // with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets

@@ -61,10 +61,18 @@ static int nframes;
 
 static void r_init(void) {}
 static void r_set_mode(radio_mode_t m) { (void)m; }
+// Tunes off the APRS frequency with APRS receive still holding the FM audio: on the HR_C7000 a P25, NXDN or YSF
+// engine can't start then (dmr_glue.c air_take), so this must stay 0
+static int retune_while_aprs;
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
 	(void)bw;
 	(void)t;
+#if CONFIG_APRS_RX
+	if (hz != APRS_HZ && aprs_rx_listening()) {
+		retune_while_aprs++;
+	}
+#endif
 	hw.rx_hz = hz;
 	return true;
 }
@@ -1725,6 +1733,40 @@ static void feed(const int16_t *s)
 	run(RADIO_POLL_MS);
 }
 
+// From a channel on the APRS frequency to another, and dual watch hopping off it: the receive path lets go of the FM
+// audio before the board is tuned (a P25, NXDN or YSF engine needs it to start), not later in the same poll
+static void test_rx_release_on_retune(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	retune_while_aprs = 0;
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	run(200);
+	CHECK(aprs_rx_listening() && hw.rx_hz == APRS_HZ);
+	req(RREQ_CH_STEP, 1);
+	CHECK(hw.rx_hz == CH2_HZ && !aprs_rx_listening() && retune_while_aprs == 0);
+	run(200);
+	CHECK(!aprs_rx_listening());
+	req(RREQ_CH_STEP, -1);	// back: it listens again
+	run(200);
+	CHECK(hw.rx_hz == APRS_HZ && aprs_rx_listening());
+#if CONFIG_DUAL_WATCH
+	// dual watch, one side on the APRS frequency: every hop off it is a retune
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	int starts = pcm.starts;
+	run(3000);
+	CHECK(sm.scan.kind == SCAN_DUAL && pcm.starts > starts + 3 && retune_while_aprs == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+#endif
+	fake_tap.caps = 0;
+}
+
 // FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving
 // held off while it listens (docs/spec/aprs.md 5.3)
 static void test_rx_stream(void)
@@ -1954,6 +1996,7 @@ int main(void)
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 	test_rx_stream();
+	test_rx_release_on_retune();
 	test_rx_board_only();
 	test_station_lookup();
 	test_station_range();

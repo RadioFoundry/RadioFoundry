@@ -123,13 +123,16 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 
 Three formats. Which one a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_ETSI_IP / _ETSI / _TMS)`,
 `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used by
-the UI, Settings > Connections > Message format). A reply uses the received message's format
-(`dmrDataMessage_t.format`). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+the UI, Settings > Connections > Message format). Automatic selects UTF-16BE Tier III control-channel short data
+for up to 23 characters on a clear trunked channel when the UDT sender is available. It uses ETSI IP text otherwise.
+Canned replies use the received message's format (`dmrDataMessage_t.format`) where available; a UDT reply that exceeds
+the short-data limit or is sent on a conventional channel uses ETSI IP text. The message composer uses the selected
+format setting. A per-contact format is not stored yet (the codeplug's contact has no field for it).
 All three are read whatever the setting.
 
 | Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
 |---|---|---|---|
-| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
+| ETSI IP text (5.3) | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
 | ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
 | Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
 
@@ -297,7 +300,8 @@ with N(S) 0 within 20 s.
   first).
 - DD formats read (`dmrData.h`): 0x02 7-bit (ISO/IEC 646, packed, the bit padding gives the length), 0x03-0x11 ISO
   8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
-  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
+  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?', and control characters (C0, DEL and C1,
+  0x00-0x1F and 0x7F-0x9F) are dropped: the UI's text takes 0x80-0x86 as its own glyphs (`core/ui/font.h`). Binary and BCD are not text: counted, not shown.
   The codes are TS 102 361-1 V2.7.1 Table 9.50 (9.3.38); the bit padding is 9.3.44. A host test holds one message
   computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
@@ -373,7 +377,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 ## 7. LRRP
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
-  most, reports at most every 5 s) with a start response, then reports.
+  most, reports 30 s to 1 day apart, whatever the requester asks) with a start response, then reports.
 - The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
   core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
   APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.

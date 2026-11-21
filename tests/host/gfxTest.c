@@ -352,6 +352,56 @@ static void test_hc_strip_white(void)
 	CHECK(ui_col.strip_bg == RGB565(216, 216, 216));
 }
 
+// Night: every color red only, whatever the highlight color or strip; the highlight is its brightest red with black
+// text; what must be read sits brightest on black or black on brightest; the darkest red is never text
+static void test_night_palette(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	for (uint8_t a = 0; a < UI_ACCENT_COUNT; a++) {
+		for (int strip = 0; strip < 2; strip++) {
+			ui_accent_set(a);
+			ui_strip_set(strip != 0);
+			ui_theme_set(UI_THEME_NIGHT);
+			const color_t *c = (const color_t *)&ui_col;
+			bool red = true;
+			for (size_t i = 0; i < sizeof ui_col / sizeof(color_t); i++)
+				red = red && (c[i] & 0x07FFu) == 0;
+			CHECK(red);
+			CHECK(ui_col.focus == RGB565(255, 0, 0) && ui_col.strip_bg == ui_col.focus);
+			CHECK(ui_col.focus_fg == 0 && ui_col.strip_warn == 0 && ui_col.chnum == ui_col.fg);
+		}
+	}
+	CHECK(ui_theme_get() == UI_THEME_NIGHT);
+	CHECK(ui_col.bg == 0 && ui_col.fg == RGB565(255, 0, 0) && ui_col.tx == ui_col.fg && ui_col.pill_fg == 0);
+	CHECK(ui_col.idle_fg == ui_col.fg && ui_col.idle != ui_col.fg && ui_col.rx != ui_col.tx);
+	CHECK(ui_col.line != ui_col.idle && ui_col.hint_bg == ui_col.idle);	// the darkest: backgrounds only
+	// The idle pill's word in the bright red on its dark one (TX's black word would vanish there)
+	radio_view_t v;
+	ui_state_t st;
+	memset(&st, 0, sizeof st);
+	st.battery_pct = 84;
+	base_view(&v);
+	ui_strip_set(false);
+	gfx_clear(ui_col.bg);
+	ui_draw_top(&v, &st, NULL, NULL);
+	int bright = 0;
+	for (int y = 0; y < ui_layout.small->h; y++)
+		for (int x = 2; x < 4 * ui_layout.small->w; x++)
+			bright += gfx_get_pixel(x, y) == ui_col.idle_fg;
+	CHECK(gfx_get_pixel(1, 1) == ui_col.idle && bright > 10);
+	// Out of range: dark
+	ui_theme_set(UI_THEME_COUNT);
+	CHECK(ui_theme_get() == UI_THEME_DARK && ui_col.idle_fg == RGB565(255, 255, 255));
+	ui_accent_set(UI_ACCENT_DEFAULT);
+	ui_strip_set(true);
+	ui_theme_set(UI_THEME_DARK);
+	gfx_init(&disp);
+}
+
 static void test_big_text(void)
 {
 	hal_display_t d = disp;
@@ -653,6 +703,7 @@ int main(void)
 	test_idle_pill_contrast();
 	test_big_text();
 	test_hc_strip_white();
+	test_night_palette();
 
 	printf(fails ? "# FAILED gfxTest: %d\n" : "# PASSED gfxTest\n", fails);
 	return fails != 0;

@@ -8,6 +8,7 @@
 #define RFOUNDRY_DMRDATA_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "config.h"
 
@@ -369,6 +370,8 @@ bool dmrDataDecodeUdtText(uint8_t format, const uint8_t *d, int bits, char *text
 // The same text as the UDP datagram (header, checksum left 0 for the IPv4 layer, then the payload) into l4: its
 // length, 0 if the text is empty. The data service sends an individual one as confirmed data with it
 #define DMR_ETSI_TEXT_UDP_MAX			(8 + (2 * DMR_ETSI_TEXT_MAX))
+// Convert up to maxChars Latin-1 bytes to UTF-16BE, without a terminator. Returns the characters written.
+size_t dmrDataLatin1ToUtf16BE(const char *text, uint8_t *out, size_t maxChars);
 int dmrDataIPTextUDP(const char *text, uint8_t l4[DMR_ETSI_TEXT_UDP_MAX]);
 int dmrDataBuildIPText(bool group, uint32_t dst, uint32_t src, const char *text, uint8_t blockType, int preambles,
 						dmrBurst_t *out, int maxBursts);

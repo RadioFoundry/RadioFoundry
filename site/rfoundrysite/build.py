@@ -266,7 +266,7 @@ class Site:
 	def nav(self, lang, home, current):
 		items = [("radios", "radios/index.html"), ("features", "features/index.html"),
 			 ("flash", "flash/index.html"), ("codeplug", "codeplug/index.html"), ("docs", "docs/index.html"),
-			 ("screenshots", "screenshots/index.html"), ("tools", "tools/index.html")]
+			 ("screenshots", "screenshots/index.html"), ("tools", "tools/index.html"), ("support", "support/index.html")]
 		return "".join('<a href="%s%s"%s>%s</a>' % (home, href, ' aria-current="page"' if key == current else "",
 							    html.escape(self.i18n.t(lang, "nav." + key)))
 			       for key, href in items)
@@ -289,7 +289,7 @@ class Site:
 	def screen_caption(self, lang, name):
 		page, _, color = name.partition("__")
 		cap = self.t(lang, "screen." + page)
-		if color in ("light", "high_contrast"):	# a theme page in another theme (uiSim G_THEMES)
+		if color in ("light", "high_contrast", "night"):	# a theme page in another theme (uiSim G_THEMES)
 			return self.t(lang, "screen.in_theme", screen=cap, theme=self.t(lang, "theme." + color))
 		return self.t(lang, "screen.in_color", screen=cap, color=self.t(lang, "color." + color)) if color else cap
 
@@ -378,6 +378,7 @@ class Site:
 			self.features_page(lang)
 			self.flash_page(lang)
 			self.tools_page(lang)
+			self.support_pages(lang)
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
 			self.not_found(lang)
@@ -764,6 +765,50 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/tools.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/index.html", self.t(lang, "tools.title"), self.tpl.render("tools", {}, lang),
 			  "tools", scripts=scripts, nav="tools")
+
+	def support_pages(self, lang):
+		"""Support: the FAQ, the reminder to update, and the support download (static/js/supportpage.js) with the About
+		page as the way without a computer (docs/spec/support-info.md)."""
+		strings = json.dumps(self.i18n.subset(lang, ("support.dl.", "flash.err.", "flash.net.")),
+				     ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/supportpage.js?v=%s"></script>' % (strings, self.asset_version))
+		self.page(lang, "support/index.html", self.t(lang, "support.title"),
+			  self.tpl.render("support", {"issues": self.repo_url + "/issues/new/choose"}, lang), "support",
+			  description=self.t(lang, "support.lead"), scripts=scripts, nav="support")
+		items = self.faq_items(lang)
+		self.page(lang, "support/faq.html", self.t(lang, "faq.title"), self.tpl.render("faq", {"items": items}, lang),
+			  "support", description=self.t(lang, "faq.lead"), nav="support")
+
+	def faq_items(self, lang):
+		"""The FAQ (site/faq/<lang>.md, English where the language has no file): each "## " line a question, the lines
+		under it its answer, as Markdown. Links to the docs are repository links (faq_link); another site's open in a new
+		tab."""
+		path = repo.path("site", "faq", lang + ".md")
+		if not os.path.isfile(path):
+			path = repo.path("site", "faq", "en.md")
+		with open(path, encoding="utf-8") as f:
+			text = re.sub(r"<!--.*?-->", "", f.read(), flags=re.S)
+		items = []
+		for part in re.split(r"^## ", text, flags=re.M)[1:]:
+			question, _, answer = part.partition("\n")
+			body = self.docs.md.render(answer.strip())
+			body = re.sub(r'href="(?!https?://|#|/|\{\{)([^"]*)"', lambda m: 'href="{{home}}%s"' % self.faq_link(m.group(1)), body)
+			body = re.sub(r'href="(https?://[^"]*)"', r'href="\1" target="_blank" rel="noopener"', body)
+			items.append('<details class="faq-item"><summary>%s</summary>%s</details>' % (html.escape(question.strip()), body))
+		if not items:
+			raise repo.SourceError("%s: no FAQ items (\"## \" lines)" % path)
+		return "".join(items)
+
+	@staticmethod
+	def faq_link(href):
+		"""A link in site/faq/*.md to a docs page, written as a repository link (../../docs/user/x.md#a) so
+		tools/check_doc_links.py checks it, as that page's place in the site (docs/user/x.html#a)."""
+		target, sep, anchor = href.partition("#")
+		resolved = posixpath.normpath(posixpath.join("site/faq", target))
+		if resolved.startswith("docs/") and resolved.endswith(".md"):
+			return docsmod.site_path(resolved) + sep + anchor
+		return href
 
 	def codeplug_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.")), ensure_ascii=False).replace("</", "<\\/")

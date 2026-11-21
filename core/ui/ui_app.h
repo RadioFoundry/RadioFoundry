@@ -17,6 +17,8 @@ void ui_app_init(void);
 void ui_app_key(const input_event_t *ev);
 // The view the next key acts on (ui_app_tick sets it too): for a key that comes before the tick
 void ui_app_set_view(const radio_view_t *v);
+// A key pressed with the backlight off only wakes the light, except these: they act at once (ui.c)
+bool ui_app_key_while_dark(const input_event_t *ev);
 // Time passes and the radio view may have changed: timeouts, banners, Recent. True if the screen should be redrawn
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms);
 // Draw the current screen into the frame buffer (no flush)
@@ -41,6 +43,7 @@ typedef struct {
 	uint16_t focus;		// focused row / tile
 	uint16_t count;		// rows on a list screen
 	bool locked;
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	const char *unlock_key;	// the key held to unlock: "quick", "back", or "none" (auto lock never locks then)
 	bool field_use;		// the screen is tagged "field use" (depth rule, usability-tests.md 2)
 	const char *banner;	// banner title, "" = none

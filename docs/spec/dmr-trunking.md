@@ -57,7 +57,7 @@ the fields, most significant bit first, octets 10-11 the CRC-CCITT.
 |---|---|
 | CSBK | 0xA5A5 |
 | MBC header | 0xAAAA |
-| MBC continuation (last block) | none; the CRC covers the continuation only |
+| MBC continuation (last block) | none. The CRC covers all continuation blocks. |
 
 Decoded opcodes (`t3_csbk_parse`): C_ALOHA, C_BCAST, C_AHOY, C_ACKVIT, C_MOVE, C_RAND, C_ACKD, C_ACKU, P_ACKD, P_ACKU,
 P_CLEAR, P_PROTECT, P_MAINT and the grants PV, TV, BTV, PD, TD (and the duplex and multi-item variants). `t3_csbk_parse`
@@ -115,8 +115,16 @@ A grant names a logical physical channel number (LPCN, 1-4094). `t3_plan_lookup`
    the duplex split, or plus it when the plan says the MS transmits low. Separation codes 0-7: 5, 6.25, 10, 12.5, 15,
    20, 25, 30 kHz.
 
+Then the programmed control channels (`chan_lookup`): a one-carrier site grants its own carrier's other slot.
+
+Site tools and scanners often count each timeslot as a channel: (LPCN << 1 | slot bit) + 1, so LPCN 311 is their 623
+(slot 1) and 624 (slot 2). A codeplug row typed with such a number would never match. When no source knows the LPCN,
+the programmed rows (table, then control channels) are tried as 2 x LPCN + 1 and 2 x LPCN + 2, either slot since both
+share the carrier. A match is used under the LPCN the grant named, so calls and TSCCs compare by it.
+
 A grant whose channel nothing resolves is not followed. The engine counts it (`unmapped`) and keeps the last such
-LPCN, so the user can see which channel is missing from the plan.
+LPCN, so the user can see which channel is missing from the plan. When it is the radio's own call
+(`T3_RES_UNMAPPED`), the request ends at once, not at TP_Timer, and PTT says which channel.
 
 ## 6. The receive engine
 
@@ -136,6 +144,14 @@ calls the HAL.
 Actions wait in a queue of three, oldest first. A SEND goes out before a retune queued after it; a new retune drops a
 retune not yet taken and what was queued after it.
 
+**A bad CRC.** A CSBK or MBC block whose CRC fails the standard check (TS 102 361-1 B.3.12) is dropped and counted.
+With the channel's Accept invalid CRC (`channel_t.accept_bad_crc`, [open-firmware-cps.md](open-firmware-cps.md)
+7.3.3; the radio core sets `T3_OPT_ACCEPT_BAD_CRC`) it is taken when the same 12 octets failed among the last four
+failures (`core/fec/rx_seen.h`): a system whose control channel fails the check on every PDU repeats its PDUs, and one
+damaged on the air rarely decodes the same twice. An MBC counts as failed when its header or its continuation failed.
+While the last PDU taken failed its check, the engine is listen-only (`t3_ms_t.unverified`, `may_send`): it doesn't
+register, answer, ask or send anything, and a call it follows is heard only. The next PDU that passes ends that.
+
 ### 6.1 States
 
 | State | The radio |
@@ -152,6 +168,14 @@ LCs). After a loss, the lost TSCC is tried first.
 - An Aloha of another system moves the hunt to the next candidate at once.
 - Two C_SYS_Parms of another system in a row do the same. One alone is not trusted: the short LC CRC is 8 bits, and
   corrupt words pass now and then.
+- Either keeps the other system's code for `T3_OTHER_MS` (10 s; `t3_ms_other`; PAR 0 from a short LC, which doesn't
+  carry it), until the radio camps. A system set up with the wrong model or network is heard this way, and the screen
+  names what it heard (12.4).
+- CSBKs with a manufacturer's own FID (not 0) and a good CRC, `T3_OTHER_FID_N` (2) in a row with one FID and no
+  authorized Aloha: a trunking system of another kind uses the channel, one that sends no ETSI TSCC PDUs this radio
+  could camp on. The FID is kept for `T3_OTHER_MS` (`t3_ms_other_fid`, view key `t3.other_fid`), until the radio
+  camps. Only CSBKs that pass the CRC count: one taken by the accept invalid CRC rule names nothing. A TSCC that sends
+  manufacturer CSBKs between its Alohas camps first and is never named this way.
 
 **Camped.** Every valid PDU from the TSCC (CRC good, our color code; Alohas and broadcasts also with our system code)
 restarts T_Nosig. When it runs out, the engine hunts again. Short LCs don't restart it: every channel of the site
@@ -186,7 +210,7 @@ the TSCC. A radio switched on meanwhile camps only at the Aloha: a grant doesn't
 
 | Grant | Followed when |
 |---|---|
-| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on |
+| TV, BTV | the radio is the source (its own call); otherwise, unless it is a late-entry grant for a talkgroup call the user left: the talkgroup is in the system's list with the listen flag, or it is an all-call (ALLMSID, ALLMSIDL, ALLMSIDZ) and all-calls are on, or the grant is an emergency and emergencies on any talkgroup are on, or monitor is on (the system's "follow every talkgroup", or digital monitor while it is on: the radio core sets the option from the hear-all latch at every tick, so it applies from the next grant) |
 | PV | the radio is the source; or the destination is the radio's ID and private calls are on |
 | PD, TD (and the multi-item 55, 56) | as data calls: PD with the radio as source or target; TD with the radio as source, or to a talkgroup it listens to (section 7.7) |
 
@@ -216,7 +240,7 @@ answer with valid PDUs.
 
 ### 6.2 Counters
 
-`t3_ms_t.st`: CSBKs with a good CRC, CRC failures, grants heard while camped, calls followed, grants to unmapped
+`t3_ms_t.st`: CSBKs with a good CRC, CRC failures dropped, CRC failures taken (Accept invalid CRC), grants heard while camped, calls followed, grants to unmapped
 channels (and the last such LPCN), returns, hunts, foreign Alohas and broadcasts, foreign short LCs, learned channels,
 CSBKs sent and random access tries.
 
@@ -228,7 +252,7 @@ every burst; the radio core only sends it in the slot it is told.
 | Call | When |
 |---|---|
 | `t3_ms_request` | PTT while camped: a voice call to a talkgroup or an individual. False (`ax.result` says why) when not allowed now |
-| `t3_ms_cancel` | PTT released before the grant |
+| `t3_ms_cancel` | PTT released before a grant or private-call alerting |
 | `t3_ms_end_call` | the user ends the call being followed |
 | `t3_ms_deregister` | the debug link's DEREG. Leaving a system or switching off sends nothing (section 12.4) |
 | `t3_ms_can_talk` | may the user talk on the payload channel now |
@@ -324,13 +348,16 @@ without sending, and the call's late-entry grants don't bring it back.
 A C_AHOY or P_AHOY to the radio's ID (or to the followed talkgroup, on the payload channel; or a radio check of a
 talkgroup the radio follows, on the TSCC) is answered with C_ACKU or P_ACKU on the inbound slot after the next CACH of
 the slot it came on, without random access. The answer's target is the AHOY's source, its additional address the
-radio's ID, also when a talkgroup was addressed (table 6.28).
+radio's ID, also when a talkgroup was addressed (table 6.28). Its Response_Info (table 7.41) is G/I 0 (the target is
+an individual or gateway ID) and the 6-bit Response_Check of the TSCC's C_SYScode (section 4), except for a status
+poll, whose Response_Info is the radio's status.
 
 | AHOY | Answer |
 |---|---|
 | radio check (kind registration, from TSI; 6.4.12) | MS_Accepted |
 | voice radio check (P_AHOY kind individual or talkgroup voice, from TSI; tables 6.42, 6.43) | P_ACKU MS_Accepted (6.6.2.3.2.1) |
 | availability check (kind individual voice): OACSU | MS_Accepted |
+| private voice page with Service_Kind_Flag set: FOACSU | MS_Alerting with the system response check. A repeated page from the same caller restarts T_AnswerCall (20 s). An outgoing access or a different caller gets EquipBusy; disabled private calls get MS_Not_Supported. The incoming call screen shows the caller ID and the contact name when saved. PTT sends C_RAND Answer (ACCEPT = 0) and Back rejects (ACCEPT = 1). Press PTT again after the grant to speak. |
 | availability check (kind individual packet data) | Message_Accepted (section 7.7); EquipBusy_Refused (0x13) while the data service sends; not supported in a build without it |
 | availability check (kind duplex voice or duplex packet data) | MS_Duplex_Not_Supported (0x16): the radio is simplex (6.6.9.2.5, 6.6.10.2.5). It never follows a duplex grant (53, 54), whose bit 15 is Call Direction; their payload channel always uses offset timing (tables 7.10, 7.14) |
 | packet data radio check (P_AHOY kind packet data, from TSI) | P_ACKU Message_Accepted (6.6.3.3.2.1) |
@@ -371,6 +398,10 @@ and one to the radio again when the answer was lost: the same status from the sa
 (4 s) of the last is answered again but not counted as another.
 
 ### 7.6 UDT short data (6.5, 6.6.4)
+
+Default SMS on a trunked channel carries UTF-16BE text via UDT and waits for the Tier III short-data result.
+One message holds up to 23 characters from the Latin-1 editor. Inbox replies reuse the received message transport.
+A reply to IP text uses a packet data channel.
 
 A message is 1-46 octets in a UDT: a header (data type data header, CRC mask 0xCCCC) and 1-4 rate 1/2 blocks of 12
 octets in consecutive frames of one slot. The blocks hold the data, pad octets, and a CRC-CCITT over all the octets
@@ -467,6 +498,11 @@ The number belongs to a call when the grant from that gateway to the same destin
 (10 s) of it (`t3_call_t.cli`): the TSCC downloads it in the call set-up (figure 6.45).
 
 ### 7.7 Packet data (6.6.3)
+
+Some Tier III systems send individual packet data grants with FID `0x08` and absolute channel
+number `0xFFF`. The first continuation gives the channel definition. The radio waits for the last
+continuation and verifies the CRC across both continuations before following the grant. The grant was observed on air.
+End-to-end IP SMS delivery remains unverified.
 
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
 each transmission. Single slot, single item only.
@@ -729,6 +765,14 @@ A site sampled isn't sampled again for 30 s unless ours is weak. `T3_OPT_NO_ROAM
 the adjacent sites, and for one pass confirms only a TSCC at or above the threshold (the hunting threshold of
 6.3.2.3). After a pass it takes any. With nowhere else to look it stays.
 
+A pass that found nothing at or above the threshold ends with a hold on the next TSCC confirmed: no leaving for weakness
+for 30 s, then 60 s after the next such pass, doubling up to 5 min. A later pass that hears no TSCC at all keeps the
+hold due. A TSCC confirmed at or above the threshold ends the hold, but the next hold still doubles: a level that only
+touched the threshold soon fails again. A level above the threshold by the voting margin ends the hold and starts the
+doubling over. A move to another TSCC (a vote or C_MOVE) or a new search (the TSCC lost) ends the hold. Without the
+hold, a radio camped at the edge of its only system's coverage would hunt every 5 s and miss its grants and pages while
+away. The level average reaches a steady level to the dB, so a steady level 1 dB below the threshold counts as below.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |
@@ -750,6 +794,7 @@ the adjacent sites, and for one pass confirms only a TSCC at or above the thresh
 | Vote margin | 6 dB | |
 | Sample again | 30 s | |
 | Weak before leaving | 5 s | |
+| Weak hold, after a pass found nothing better | 30 s, doubled each pass, 5 min at most | |
 
 These values are fixed, but for four the debug link may set (section 11; 0 keeps the default): T_Awake (power
 save), T_ALS, T_ALS_E and the Vote Now sample time.
@@ -817,7 +862,7 @@ field at its widest. `radioCoreTest` runs the radio core with the engine: start,
 | Slots | Each slot tick from the modem goes to `t3_ms_slot` with its slot number and its CACH AT bit (`DMR_TICK_AT_KNOWN`, `DMR_TICK_AT_BUSY`). A modem that doesn't number slots gets them alternating; one that doesn't read AT gets every slot free. The HR_C6000 and HR_C7000 drivers number them and read AT once locked to the CACH's TC ([modem-hrc7000.md](modem-hrc7000.md) 2.5). |
 | Receive | The stack's receive tap hands CSBKs and MBC blocks to `t3_ms_rx`. Any other burst on a known slot, idle ones excepted, is activity on that slot (`t3_ms_activity`). |
 | Send | A `T3_ACT_SEND` keys one CSBK as a data list, on the action's slot only, and not while the radio is talking. A `T3_ACT_TUNE` that comes while the list is still with the stack waits until it has gone out (at most 500 ms): a new slot or channel would drop it, and an answer before leaving a payload channel (a selective clear's P_ACKU) would never be sent. |
-| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Released before the grant, the request is canceled. |
+| PTT | Camped, PTT asks for a call to the system's talk target (the first talkgroup with `T3_TG_TALK` when none is set) and waits with PTT held. The grant puts the radio on the payload slot and keys it. A refusal, no answer or timeout denies TX (`TXDENY_NO_DMR`). Releasing PTT before a grant cancels the request unless the called user is already ringing. Once ringing, the request stays pending and a grant with PTT released leaves the mic closed until the next press. The state word shows Calling and Back sends C_RAND Cancel before the grant. |
 | Following | The stack takes the system's ID as its own, hears every call on the slot, and talks to the call's group or to the other party. The radio's own transmission counts as the call's activity: it never hears its own slot, so TV_Inactive would otherwise end the call while it talks. |
 | Status | `RADIO_T3_STATUS` sends the staged status (section 7.5). The last status heard is in the view. |
 | Short data poll | `RADIO_T3_SDPOLL` polls the staged MS (section 7.6). The reply to a poll is staged with the system (`DL_T3_POLL_REPLY`). |
@@ -913,10 +958,38 @@ channel for `T3_REG_TG_DELAY_MS` (1 s), so turning the knob through channels reg
 **On screen.** A zone or channel list names a trunked channel's system after its name, in place of the frequency.
 An unavailable one is dimmed: OK on it says "System not set up" and stays, and channel stepping passes it. On a
 trunked channel Home's chips row shows the system's name and its state in place of slot and color code: Ready,
-Registering, Searching, In call, Refused, Fallback (12.5) or System not set up, then the power.
+Registering, Searching, Other system, Reg. refused, Calling, In call, Refused, Fallback (12.5) or System not set up, then the power.
+
+**Other system.** Searching while the hunt hears only another system's control channel (`t3_ms_other`, 6.1). Home's
+activity area names it in place of the last call: "Heard: Huge, net 0" and "site 83", with ", category A only" or
+", category B only" when its PAR allows one category; the first line alone where the area has room for one. The user compares it with the system's model and network
+(12.1). A wrong color code shows as Searching: the radio decodes nothing on the channel. A system of another kind
+(`t3_ms_other_fid`, 6.1) also shows as Other system; the activity area says "Incompatible system" and "Cannot
+join". No setting fixes that system.
+
+**Reg. refused.** The system answered the registration with Reg_Refused (6.4.4.1): it doesn't accept this radio, most
+often because its ID isn't in the system's records. The radio hunts and asks again when it comes back to the same
+TSCC (`t3_ms_reg_refused`). The state shows while hunting and while registering again there, and clears once a
+registration is accepted. Refused is Reg_Denied: barred from the area, never asked again.
+
+**PTT refused** on a trunked channel says why (`TXDENY_TRUNK`, the reasons P25 trunking shares):
+
+| State | Shown |
+|---|---|
+| searching, another system heard | Another system heard / Check system settings |
+| searching, a system of another kind heard | Incompatible system / Pick another channel |
+| registration refused (Reg_Refused) | Registration refused / Ask to add your ID |
+| searching | No control channel |
+| not registered: registering, or the registration denied | Not registered yet |
+| the system listen only here, or no talk target | This channel is RX only |
+| the system refused the call, or the radio is stunned | System denied the call |
+| no answer, a timeout | No answer from system |
+| the control channel lost during the request | No control channel |
+| the radio's call granted on a channel the codeplug doesn't list | Unknown channel N / Check system settings |
 
 At power-on the radio restores the channel it was on, so a trunked channel starts its system. Keys written while a
-system runs are taken at the next selection of a channel.
+system runs are taken at the next selection of a channel. A channel shown as not set up is selected again whenever a key is
+written, so a system written after its channel (an editor writing channels first) is used at once.
 
 ### 12.5 Fallback
 

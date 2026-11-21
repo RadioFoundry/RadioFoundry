@@ -64,6 +64,14 @@ enum {
 	CAP_LED_SCAN_FLASH = 1u << 11,
 };
 
+// What a hardware identity line names (board_t.hw_line; docs/spec/support-info.md 2)
+enum {
+	BOARD_HW_DMR,		// the DMR modem chip
+	BOARD_HW_RF,		// an RF chip (one line each where there are several)
+	BOARD_HW_BOARD,		// the board's revision or production batch, where a model has several
+	BOARD_HW_COUNT
+};
+
 // One band's power level names, where a board's levels give different powers per band (board_t.power_bands)
 typedef struct {
 	uint32_t lo_hz, hi_hz;		// the transmit frequencies it covers
@@ -138,6 +146,11 @@ typedef struct {
 	// Optional: line i of the board's own debug link view keys as "key=value" (the debug link's `board` section adds
 	// the "board." prefix; the keys are listed in the radio's hardware spec); false past the last line
 	bool (*view_line)(uint8_t i, char *buf, uint8_t len);
+	// Optional: line i of the radio's hardware identity for About and the support info (docs/spec/support-info.md 2):
+	// *role a BOARD_HW_*, the part and what the board knows of its version or variant in buf ("FD6818 set-up B").
+	// Only what the board already holds (read at start-up, detected, stored): never a bus transfer, since the UI task
+	// calls it when About opens. False past the last line
+	bool (*hw_line)(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 	// Optional: chip identity, raw memory reads, reboot modes (hal_system.h)
 	const hal_system_t *system;
 	// Battery warnings (the radio core's battery monitor): below battery_low_mv the radio warns, below

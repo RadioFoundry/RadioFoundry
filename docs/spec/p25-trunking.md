@@ -105,11 +105,13 @@ MFID `0x00`, LB set.
 | Opcode | Request | Fields sent (bit offsets in the arguments) |
 |---|---|---|
 | `0x2C` | unit registration request | reserved 8, WACN 20 @8, system 12 @28, unit ID 24 @40 |
-| `0x28` | group affiliation request | emergency 1 @0, reserved 3, system 12 @4, group 16 @16, unit ID 24 @32, reserved 8 |
+| `0x28` | group affiliation request | reserved 12, system 12 @12, group 16 @24, unit ID 24 @40 |
 | `0x00` | group voice service request | service options 8 @0, reserved 16, group 16 @24, unit ID 24 @40 |
 
 The registration request carries the WACN and system ID the control channel names (or the configured ones). Service
-options are 0 (no emergency, clear, half duplex, priority 0).
+options are 0 (no emergency, clear, half duplex, priority 0). The affiliation request's reserved bits are 0; it
+carries no emergency flag. Its group and unit ID places were confirmed on a live control channel, which read them
+one octet early when they were packed at bits 16 and 32.
 
 ## 3. Channels to frequencies
 
@@ -188,9 +190,16 @@ encrypted voice in any case.
 Timers (`p25_follow.h`): dwell 600 ms, identity 4 s, control channel lost 1 s, backoff 2 s to 30 s, rejoin 1.5 s,
 voice lost 1 s (`cfg.voice_lost_ms`), longest call 120 s (`cfg.call_max_ms`).
 
+**A bad CRC.** A TSDU block whose CRC fails is dropped and counted. With `P25_FOLLOW_BAD_CRC` (the channel's Accept
+invalid CRC) it is taken when the same 12 octets failed among the last four failures (`core/fec/rx_seen.h`): a system
+whose control channel fails the check repeats its blocks, and a block damaged on the air rarely decodes the same twice.
+While the last block taken failed (`view.unverified`) the transmit side waits: nothing is sent, and
+`p25_follow_can_talk` says `P25_TALK_OFF`. The next block that passes ends that. A packet header is not taken that way.
+
 The view (`p25_follow_view`, a consistent copy for another task): state, the control channel tried or held, its NAC,
 WACN, system, RFSS, site, the call followed (group, source, target, encrypted), identifiers known, control channels
-learned, the last grant refused and why, and counters: blocks, CRC failures, manufacturer's blocks, packets, grants,
+learned, the last grant refused and why, whether the last block taken failed its CRC, and counters: blocks, CRC
+failures, blocks taken with a failed CRC, manufacturer's blocks, packets, grants,
 follows, refusals by reason, wrong system, hunts, control channel losses, voice losses, and blocks by opcode.
 
 ## 5. The transmit side
@@ -251,6 +260,7 @@ caller refused, and waits on a busy inbound channel.
 | `wacn`, `sysid`, `nac` | `sys.wacn`, `sys.sysid`, `sys.cc_nac` (their "any" values are any here too) |
 | `flags`: `SKIP_ENC`, `PLAN_ONLY`, `ALL_GROUPS`, `NO_REG` | `sys.options` (bits 0, 1, 2), `follow_all` |
 | `flags`: `TX` | the tag allows transmit, not `listen_only`, `unit_id` and `talk_group` set |
+| `flags`: `BAD_CRC` | the channel record's Accept invalid CRC ([open-firmware-cps.md](open-firmware-cps.md) 7.3.3) |
 | `unit_id`, `talk_group` | `unit_id` (the P25 settings' `unit_id` first, as on a conventional channel), `talk_group` |
 | `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` |
 | `iden_set`, `iden[]`: base, spacing, slots, TDMA, transmit offset | `iden_set`, `iden[]` (bandwidth is not used) |

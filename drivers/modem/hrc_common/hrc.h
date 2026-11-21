@@ -43,6 +43,9 @@ typedef struct {
 	// receives (hrc6000_air_fit_tap; modem-hrc6000.md 10.7)
 	bool air_tx_only;
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
+	// Page 2 address of the receive tap's soft values for the burst just deframed (modem-hrc6000.md 5.8): the middle
+	// 68 values, then the 196 info bits; 0: none known (no soft combining, dmr-modem.md 2.2.1)
+	uint16_t soft_tap;
 	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
 	// receive: the repeater slot lock keeps both slots open
 	bool tc_last_rx;
@@ -107,6 +110,17 @@ bool hrc_set_mic_gain(hrc_t *dev, uint8_t gain);
 bool hrc_mic(hrc_t *dev, bool on);
 // The vocoder buffer flush (modem-hrc6000.md 3, step 5): 128 bytes of 0x7F to page 3
 bool hrc_flush_vocoder(hrc_t *dev);
+// The prompt tone FIFO (modem-hrc6000.md 8.1): 16-bit samples at 8 kHz to the codec's DAC, 64 deep, drained by the
+// chip's own clock. In FM mode (4:0x10 bit 7) it reaches the line out where I2S PCM doesn't (8). Checked on the
+// HR_C6000; the HR_C5000's is not known
+#define HRC_PROMPT_CHUNK	32	// samples a write
+#define HRC_PROMPT_DEPTH	64	// samples the FIFO holds
+// On or off (4:0x06 bit 1)
+bool hrc_prompt_on(hrc_t *dev, bool on);
+// Room for HRC_PROMPT_CHUNK more samples (4:0x88 bit 0 clear). False when the read fails
+bool hrc_prompt_room(hrc_t *dev);
+// HRC_PROMPT_CHUNK samples, big endian, to page 3 address 0x00
+bool hrc_prompt_write(hrc_t *dev, const int16_t *s);
 // The MS-sourced data sync pattern for page 1 0x04 (ETSI TS 102 361-1; the chip sends the voice sync as its inverse)
 extern const uint8_t hrc_ms_data_sync[6];
 

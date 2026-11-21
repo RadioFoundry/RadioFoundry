@@ -41,7 +41,8 @@ bool radio_nxdn_fits(void);
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* a DMR Tier III system */ \
-	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */
+	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */ \
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN) /* NXDN conventional identity and traffic keys */
 
 // A test (or a build that adds a mode out of tree) may append rows of its own, defined before this header
 #ifndef CODEPLUG_KINDS_EXTRA
@@ -75,6 +76,12 @@ static inline bool codeplug_kind_built(uint8_t kind)
 	CODEPLUG_KINDS_EXTRA(CODEPLUG_REG_BUILT)
 	default: return false;
 	}
+}
+
+// A kind whose channel follows its system (a control channel, the grants): never a scan stop or a dual watch channel
+static inline bool codeplug_kind_trunked(uint8_t kind)
+{
+	return kind == CODEPLUG_KIND_DMR_TRUNK || kind == CODEPLUG_KIND_P25_TRUNK;
 }
 
 static inline bool codeplug_systype_built(uint8_t type)

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dmr/trunk/t3_ms.h"
+#include "dmr/call/dmr_lc.h"
 
 static int failures;
 static int checks;
@@ -211,6 +212,49 @@ static void camp_registered(t3_ms_t *ms)
 	rx(ms, 1, &a);
 	CHECK(ms->reg == T3_REG_OK && ms->ax.result == T3_RES_DONE, "registered, reg %s", t3_reg_name(ms->reg));
 	nsent = 0;
+}
+
+static void test_foacsu_pages(void)
+{
+	t3_ms_t ms;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	h.u.ahoy.kind_flag = true;
+
+	setup(0, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      ms.ring_src == 0, "private calls disabled: refuse the page");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "start an outgoing access");
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	bool busy = false;
+	for (int i = 0; i < nsent; i++)
+		busy |= sent[i].op == T3_OP_C_ACKU && sent[i].u.ack.reason == T3_RC_EQUIP_BUSY;
+	CHECK(busy && ms.ring_src == 0, "outgoing access: answer busy");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ALERTING &&
+	      sent[0].u.ack.info == t3_response_check(ms.syscode) && ms.ring_src == CALLER,
+	      "the page rings with the system response check");
+	uint32_t expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	CHECK(ms.ring_until == T + T3_ANSWER_CALL_MS && ms.ring_until > expiry, "repeated page restarts T_AnswerCall");
+	frames(&ms, 1);
+	h.u.ahoy.src = CALLER + 1u;
+	expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].op == T3_OP_C_ACKU && sent[2].u.ack.reason == T3_RC_EQUIP_BUSY &&
+	      sent[2].u.ack.dst == CALLER + 1u && ms.ring_src == CALLER && ms.ring_until == expiry,
+	      "a different caller gets busy without changing the first ring");
 }
 
 static void test_register(void)
@@ -563,8 +607,19 @@ static void test_refused_denied(void)
 	n = ack(T3_OP_C_ACKD, T3_RC_REG_REFUSED, OWN, T3_ID_REGI);
 	rx(&ms, 1, &n);
 	CHECK(ms.reg == T3_REG_NEEDED && ms.state == T3_HUNT && ms.ax.result == T3_RES_REFUSED, "refused: hunt");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while hunting");
 	frames(&ms, 600);
 	CHECK(ms.state == T3_CAMPED && ms.reg == T3_REG_NEEDED, "refused: back, still needed");
+	CHECK(t3_ms_reg_refused(&ms), "refused: shown while registering again");
+	nsent = 0;
+	for (int i = 0; i < 2000 && nsent == 0; i++) {
+		frame(&ms);
+	}
+	CHECK(nsent > 0 && sent[nsent - 1].op == T3_OP_C_RAND && sent[nsent - 1].u.rand.kind == T3_SK_REGISTRATION,
+	      "refused: asks again");
+	n = ack(T3_OP_C_ACKD, T3_RC_REG_ACCEPTED, OWN, T3_ID_REGI);
+	rx(&ms, 1, &n);
+	CHECK(ms.reg == T3_REG_OK && !t3_ms_reg_refused(&ms), "accepted: no longer shown, reg %s", t3_reg_name(ms.reg));
 }
 
 static void test_permission(void)
@@ -729,6 +784,8 @@ static void test_group_heard(void)
 	CHECK(nsent == 1 && sent[0].op == T3_OP_P_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
 	      sent[0].u.ack.dst == T3_ID_TSI && sent[0].u.ack.src == OWN && sent_act[0].payload &&
 	      sent_act[0].slot == 1, "P_ACKU to a talkgroup radio check");
+	CHECK(sent[0].u.ack.info == t3_response_check(ours), "P_ACKU Response_Info: G/I 0 (the target is TSI) + "
+	      "Response_Check, got 0x%02x", sent[0].u.ack.info);
 	h = ahoy(T3_SK_REGISTRATION, true, TG_OTHER, T3_ID_TSI);
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
@@ -857,6 +914,25 @@ static void test_private_call(void)
 	rx(&ms, 1, &a);
 	CHECK(ms.ax.result == T3_RES_DONE, "call back: done");
 
+	// Message_Accepted to a group call request: not an answer that ends it; the grant still comes
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call");
+	frames(&ms, 2);
+	a = ack(T3_OP_C_ACKD, T3_RC_MESSAGE_ACCEPTED, OWN, TG_A);
+	rx(&ms, 1, &a);
+	CHECK(ms.ax.state == T3_AX_ACKED && ms.state == T3_CAMPED, "message accepted: still waiting for the grant");
+	g = grant(T3_OP_TV_GRANT, 999, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED, "then granted: follows");
+	t3_ms_end_call(&ms, T);
+	frames(&ms, 6);
+	// ... and with no grant, TP_Timer ends it as unanswered
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call again");
+	frames(&ms, 2);
+	rx(&ms, 1, &a);
+	frames(&ms, (int)(T3_TP_MS / 60u) + 20);
+	CHECK(ms.ax.state == T3_AX_IDLE && ms.ax.result != T3_RES_DONE && ms.ax.result != T3_RES_GRANTED,
+	      "message accepted, no grant: not done, result %s", t3_res_name(ms.ax.result));
+
 	// TP_Timer after a wait
 	CHECK(t3_ms_request(&ms, T, CALLER, false, false), "again");
 	frames(&ms, 2);
@@ -906,6 +982,9 @@ static void test_ahoy(void)
 	frames(&ms, 1);
 	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ACCEPTED &&
 	      sent[0].u.ack.dst == T3_ID_TSI && sent[0].u.ack.src == OWN, "radio check answered");
+	// Table 7.41: G/I 0 (an individual target), then Response_Check, the low NET + SITE bits of the TSCC's C_SYScode
+	CHECK(t3_response_check(ours) != 0 && sent[0].u.ack.info == t3_response_check(ours),
+	      "Response_Info: G/I 0 + Response_Check 0x%02x, got 0x%02x", t3_response_check(ours), sent[0].u.ack.info);
 	h = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_AUTHI);
 	rx(&ms, 1, &h);
 	frames(&ms, 1);
@@ -992,6 +1071,46 @@ static void test_receive_rules(void)
 	b.u.bcast.backoff = 11;
 	rx(&ms, 1, &b);
 	CHECK(ms.aloha.backoff == 11, "C_BCAST backoff kept");
+}
+
+// A one-carrier site whose control channel row was typed with a site tool's number: tools that count each timeslot as
+// a channel call LPCN 311 "623" (slot 1) and "624" (slot 2). The grant names 311; the row is found under that
+// numbering, either slot. A row that matches neither way: the radio's own call ends at once as unmapped, not at
+// TP_Timer, and says which channel the grant named
+static void test_per_slot_lcn(void)
+{
+	static const uint16_t rows[] = { 624, 623 };
+	for (unsigned i = 0; i < sizeof rows / sizeof rows[0]; i++) {
+		t3_ms_t ms;
+		setup(T3_OPT_PRIVATE, true);
+		cfg.plan.fixed.base_hz = 0;
+		cfg.ctrl[0].lcn = rows[i];
+		camp_registered(&ms);
+		CHECK(t3_ms_request(&ms, T, TG_A, true, false), "row %u: group call request", rows[i]);
+		frames(&ms, 2);
+		t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+		rx(&ms, 1, &g);
+		CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.ax.result == T3_RES_GRANTED && ms.st.unmapped == 0,
+		      "row %u: grant to LPCN 311 followed", rows[i]);
+		CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.rx_hz == RX(TSCC_LCN) && tuned.chan.lcn == 311,
+		      "row %u: the control channel's carrier, named 311", rows[i]);
+	}
+
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	cfg.plan.fixed.base_hz = 0;
+	cfg.ctrl[0].lcn = 600;
+	camp_registered(&ms);
+	// Someone else's call on an unknown channel: counted, nothing else
+	t3_csbk_t g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, CALLER);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.st.unmapped == 1 && ms.st.last_unmapped == 311, "unmapped: counted");
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "group call request");
+	frames(&ms, 2);
+	g = grant(T3_OP_TV_GRANT, 311, 2, TG_A, OWN);
+	rx(&ms, 1, &g);
+	CHECK(ms.state == T3_CAMPED && ms.ax.state == T3_AX_IDLE && ms.ax.result == T3_RES_UNMAPPED &&
+	      ms.st.last_unmapped == 311, "our grant unmapped: ends now, result %s", t3_res_name(ms.ax.result));
 }
 
 // The gateway's one-carrier site: the TSCC on TS1, its payload channel on TS2 of the same carrier. The radio knows
@@ -2247,6 +2366,54 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 	poll_all(ms);
 }
 
+// FID 0x08 packet grant: the capture has a channel definition and a second continuation.
+// The backhaul carries ten bytes per block. Rebuild the air CRCs for the simulated bursts.
+static void test_fid08_pdata_grant(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	CHECK(t3_ms_pdata(&ms, T, CALLER, false) && sent_rand(&ms), "packet data request");
+
+	t3_csbk_t g = grant(T3_OP_PD_GRANT, T3_LPCN_ABSOLUTE, 2, CALLER, OWN);
+	g.lb = false;
+	uint8_t hdr[T3_CSBK_BYTES];
+	CHECK(t3_csbk_build(&g, T3_CRC_MASK_MBC_HDR, hdr), "build grant header");
+	hdr[1] = T3_FID_08;
+	t3_crc_append(hdr, T3_CRC_MASK_MBC_HDR);
+	const uint8_t first[T3_CSBK_BYTES] = { 0x33, 0, 0, 0xC0, 0x49, 0x10, 0, 0x12, 0x32, 0xC0 };
+	uint8_t last[T3_CSBK_BYTES] = { 0xB3, 0, 0x20, 0, 0x7F, 0xF8 };
+	uint8_t crc_data[2 * T3_CSBK_BYTES - 2];
+	memcpy(crc_data, first, sizeof first);
+	memcpy(crc_data + sizeof first, last, sizeof last - 2);
+	uint16_t crc = dmr_crc_ccitt(crc_data, sizeof crc_data);
+	last[10] = (uint8_t)(crc >> 8);
+	last[11] = (uint8_t)crc;
+
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, hdr);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, first);
+	CHECK(ms.state == T3_CAMPED, "do not follow before the final block");
+	last[11] ^= 1u;
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
+	CHECK(ms.state == T3_CAMPED, "reject an invalid continuation CRC");
+	last[11] ^= 1u;
+
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, hdr);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, first);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && ms.ax.result == T3_RES_GRANTED,
+	      "follow the validated FID 0x08 grant");
+	poll_all(&ms);
+	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.tx_hz == 145000000u &&
+	      tuned.chan.rx_hz == 145600000u, "tune to the captured absolute channel");
+	frames(&ms, 3);
+	CHECK(t3_ms_data_ready(&ms, T), "ready to transmit packet data on the granted slot");
+}
+
 // Packet data (6.6.3): the radio asks for a data channel and follows PD_GRANT / TD_GRANT; to it, the TSCC checks it is
 // there first. The data service sends on the call (the radio side), PTT doesn't
 static void test_pdata(void)
@@ -3041,9 +3208,61 @@ static void test_other_slot(void)
 	CHECK(nsent == 2 && sent_act[1].slot == 2, "a control slot after its Aloha");
 }
 
+// Accept invalid CRC: an Aloha taken with a failed CRC keeps a registration in force (no second registration once a
+// good one comes), and an MBC whose header failed stays unverified when a good PDU on the other slot comes between
+// its header and its continuation
+static void test_bad_crc_registered(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_ACCEPT_BAD_CRC, true);
+	camp_registered(&ms);
+	aloha_on = false;
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_ALOHA };
+	p.u.aloha = al;
+	uint8_t d[T3_CSBK_BYTES];
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, d);
+		poll_all(&ms);
+	}
+	CHECK(ms.unverified && ms.reg == T3_REG_OK && ms.st.crc_taken == 1, "unverified Aloha: still registered, reg %s",
+	      t3_reg_name(ms.reg));
+	aloha_on = true;
+	frames(&ms, 50);
+	CHECK(!ms.unverified && ms.reg == T3_REG_OK && nsent == 0, "verified again: no new registration, sent %d", nsent);
+
+	t3_csbk_t h = { .lb = false, .op = T3_OP_C_BCAST };
+	h.u.bcast.type = T3_ANN_CHAN_FREQ;
+	h.u.bcast.syscode = ours;
+	h.u.bcast.parms2 = 2000;
+	t3_cdef_t c = { 0, 0, 2000, 465000000u, 460000000u };
+	t3_csbk_build(&h, T3_CRC_MASK_MBC_HDR, d);
+	d[11] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, d);
+	}
+	// A good PDU on the other slot, then the continuation, whose own CRC passes
+	T += 30;
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+	a.u.aloha = al;
+	uint8_t g[T3_CSBK_BYTES];
+	t3_csbk_build(&a, T3_CRC_MASK_CSBK, g);
+	t3_ms_rx(&ms, T, 2, T3_DT_CSBK, CC, g);
+	T += 30;
+	uint8_t cd[T3_CSBK_BYTES];
+	t3_cdef_build(&c, h.op, cd);
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, cd);
+	CHECK(ms.unverified, "the MBC's header failed: unverified");
+}
+
 int main(void)
 {
 	test_register();
+	test_bad_crc_registered();
+	test_foacsu_pages();
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();
@@ -3081,11 +3300,13 @@ int main(void)
 	test_dial();
 	test_cli_call();
 	test_pdata();
+	test_fid08_pdata_grant();
 	test_pdata_ip();
 	test_ip_advice();
 	test_deregister();
 	test_receive_rules();
 	test_one_carrier_site();
+	test_per_slot_lcn();
 	printf("t3AccessTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

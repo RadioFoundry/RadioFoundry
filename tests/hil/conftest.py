@@ -66,6 +66,9 @@ def pytest_addoption(parser):
     g.addoption("--iddb-whole-room", action="store_true",
                 help="run test_iddb_whole_room: the ID database's whole room written and read back (long: about 40 "
                      "minutes on a radio with a NAND range); with --allow-codeplug-write")
+    g.addoption("--firmware-image", default=os.environ.get("RFOUNDRY_HIL_FIRMWARE_IMAGE"),
+                help="the .bin the radio was flashed with (env RFOUNDRY_HIL_FIRMWARE_IMAGE; _install.bin for a board with a "
+                     "first stage): test_support_info checks the radio's image hash against its SHA-256")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--mic-inject", action="store_true",
