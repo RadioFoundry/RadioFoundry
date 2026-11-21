@@ -62,7 +62,10 @@ static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
 #if CONFIG_SATELLITE_TLE
 static radio_satellite_view_t shared_satellite_view;
-static satellite_service_t *satellite_service;
+// A static for now, not pvPortMalloc: the RTOS heap holds every task stack and, where it is only the CPU RAM the statics
+// leave, has no room for this. Zeroed at start-up like any .bss
+static satellite_service_t satellite_service_state;
+static satellite_service_t *const satellite_service = &satellite_service_state;
 static SemaphoreHandle_t satellite_lock;
 #endif
 #if CONFIG_P25
@@ -377,9 +380,6 @@ void radio_core_start(void)
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
 #if CONFIG_SATELLITE_TLE
-	satellite_service = pvPortMalloc(sizeof(*satellite_service));
-	configASSERT(satellite_service != NULL);
-	memset(satellite_service, 0, sizeof(*satellite_service));
 	satellite_lock = xSemaphoreCreateMutex();
 	configASSERT(satellite_lock != NULL);
 	satellite_service_set_lock(satellite_set_locked);
