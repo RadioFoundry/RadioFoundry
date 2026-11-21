@@ -345,8 +345,7 @@ static void act_select(uint16_t i, bool hold)
 #if CONFIG_DMR_TRUNK_TX
 	case A_POLL:
 		ui_svc_t3_poll(ui_target.id);	// the answer arrives as a message; ui_app says when none comes
-		sb_str(&b, TR(TRUNK_TOAST_POLLING, "Polling "));
-		sb_str(&b, name);
+		TRF(&b, TRUNK_TOAST_POLLING, "Polling %s", name);
 		ui_go_home();
 		ui_toast(msg);
 		break;
@@ -1905,11 +1904,12 @@ static const char *offer_body(void)
 	}
 	if (offer.unavailable != 0) {
 		// Trunked channels whose system neither this radio nor the share has (zone-share.md 5.2)
-		sb_str(&b, ". ");
-		sb_u32(&b, offer.unavailable, 1);
-		sb_str(&b, offer.unavailable == 1 ?
-			   TR(SHARE_BODY_CHANNEL_NO_SYSTEM, " trunked channel unavailable: system not set up") :
-			   TR(SHARE_BODY_CHANNELS_NO_SYSTEM, " trunked channels unavailable: system not set up"));
+		if (offer.unavailable == 1)
+			TRF(&b, SHARE_BODY_CHANNEL_NO_SYSTEM, ". %u trunked channel unavailable: system not set up",
+				(unsigned)offer.unavailable);
+		else
+			TRF(&b, SHARE_BODY_CHANNELS_NO_SYSTEM, ". %u trunked channels unavailable: system not set up",
+				(unsigned)offer.unavailable);
 	}
 	return body;
 }
@@ -3806,8 +3806,7 @@ static const char *discard_body(void)
 		static char ask[40];	// a kind's short name and the longest translation (27 bytes); cut to fit
 		sbuf_t b;
 		sb_init(&b, ask, sizeof ask);
-		sb_str(&b, codeplug_kind_name(ced_orig.kind));
-		sb_str(&b, TR(DISCARD_ASK_KIND, " settings will be removed"));
+		TRF(&b, DISCARD_ASK_KIND, "%K settings will be removed", codeplug_kind_name(ced_orig.kind));
 		return ask;
 	}
 	return discard_contact ? TR(DISCARD_ASK_NEW_CONTACT, "Discard this new contact?") :
@@ -7142,13 +7141,10 @@ static const char *sc_body(void)
 	for (uint8_t k = 0; k < SIG_STEPS && sc_get(ev, k, true) != 0; k++)
 		total += sc_get(ev, k, true);
 	sb_init(&b, sc_text, sizeof sc_text);
-	sb_str(&b, total == 0 ? TR(SIG_VALUE_STANDARD_SOUND, "Standard sound") : TR(SIG_LABEL_LENGTH, "Length: "));
-	if (total != 0) {
-		sb_i32(&b, total);
-		sb_str(&b, " / ");
-		sb_u32(&b, SIG_MAX_MS, 1);
-		sb_str(&b, " ms");
-	}
+	if (total == 0)
+		sb_str(&b, TR(SIG_VALUE_STANDARD_SOUND, "Standard sound"));
+	else
+		TRF(&b, SIG_LABEL_LENGTH, "Length: %d / %u ms", (int)total, (unsigned)SIG_MAX_MS);
 	return sc_text;
 }
 
@@ -7260,8 +7256,10 @@ static void sc_summary(char *out, size_t len, uint8_t ev)
 		sb_str(&b, TR(SIG_VALUE_STANDARD, "Standard"));
 		return;
 	}
-	sb_u32(&b, n, 1);
-	sb_str(&b, n == 1 ? TR(SIG_UNIT_STEP, " step") : TR(SIG_UNIT_STEPS, " steps"));
+	if (n == 1)
+		TRF(&b, SIG_UNIT_STEP, "%u step", (unsigned)n);
+	else
+		TRF(&b, SIG_UNIT_STEPS, "%u steps", (unsigned)n);
 }
 #endif
 

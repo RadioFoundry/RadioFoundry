@@ -726,8 +726,8 @@ msgstr "电池 %u%%：请尽快充电"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"
-msgid "Back on "
-msgstr "已回到 "
+msgid "Back on %s"
+msgstr "已回到 %s"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_POLL_NO_DATA"
@@ -1371,8 +1371,8 @@ msgstr "新建联系人 %u"
 
 #: core/ui/ui_find.c
 msgctxt "TRUNK_ROW_PHONE_CALL"
-msgid "Phone call "
-msgstr "电话 "
+msgid "Phone call %s"
+msgstr "电话 %s"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_CHIP_MENU"
@@ -1636,8 +1636,8 @@ msgstr "在 qdmr 中添加联系人"
 
 #: core/ui/ui_menus.c
 msgctxt "TRUNK_TOAST_POLLING"
-msgid "Polling "
-msgstr "正在请求 "
+msgid "Polling %s"
+msgstr "正在请求 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_HINT"
@@ -2016,13 +2016,13 @@ msgstr ". %u 不在频段"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
-msgid " trunked channel unavailable: system not set up"
-msgstr " 个集群信道不可用：系统未设置"
+msgid ". %u trunked channel unavailable: system not set up"
+msgstr ". %u 个集群信道不可用：系统未设置"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_CHANNELS_NO_SYSTEM"
-msgid " trunked channels unavailable: system not set up"
-msgstr " 个集群信道不可用：系统未设置"
+msgid ". %u trunked channels unavailable: system not set up"
+msgstr ". %u 个集群信道不可用：系统未设置"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_CHANNEL_RECEIVED"
@@ -2471,8 +2471,8 @@ msgstr "是，放弃"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_KIND"
-msgid " settings will be removed"
-msgstr " 设置会删除"
+msgid "%K settings will be removed"
+msgstr "%K 设置会删除"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"
@@ -4226,8 +4226,8 @@ msgstr "标准音"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_LABEL_LENGTH"
-msgid "Length: "
-msgstr "长度: "
+msgid "Length: %d / %u ms"
+msgstr "长度: %1$d / %2$u ms"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_TITLE_START_TONE"
@@ -4261,13 +4261,13 @@ msgstr "标准"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_UNIT_STEP"
-msgid " step"
-msgstr " 步"
+msgid "%u step"
+msgstr "%u 步"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_UNIT_STEPS"
-msgid " steps"
-msgstr " 步"
+msgid "%u steps"
+msgstr "%u 步"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
@@ -4906,8 +4906,8 @@ msgstr "注册已拒绝"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_UNMAPPED"
-msgid "Unknown channel "
-msgstr "无此信道 "
+msgid "Unknown channel %u"
+msgstr "无此信道 %u"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
@@ -5136,18 +5136,13 @@ msgstr "巨型"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_HEARD"
-msgid "Heard: "
-msgstr "收到： "
-
-#: core/ui/ui_screens.c
-msgctxt "TRUNK_OTHER_NET"
-msgid ", net "
-msgstr "，网络 "
+msgid "Heard: %K, net %u"
+msgstr "收到： %1$K，网络 %2$u"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_SITE"
-msgid "site "
-msgstr "站点 "
+msgid "site %u"
+msgstr "站点 %u"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_CAT_A"

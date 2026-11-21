@@ -1407,8 +1407,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 #if CONFIG_DMR_TRUNK
 		case RADIO_TRUNK_WHY_UNMAPPED:
 			// The channel number the grant named, as the codeplug's System channels table needs it
-			sb_str(&b, TR(DENY_WHY_TRUNK_UNMAPPED, "Unknown channel "));
-			sb_u32(&b, v->t3.unmapped, 1);
+			TRF(&b, DENY_WHY_TRUNK_UNMAPPED, "Unknown channel %u", (unsigned)v->t3.unmapped);
 			break;
 #endif
 		default: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
@@ -1888,13 +1887,9 @@ static void draw_t3_other(const radio_view_t *v, int y)
 		TRN(TRUNK_MODEL_HUGE, "Huge"),
 	};
 	sb_init(&b, a, sizeof a);
-	sb_str(&b, TR(TRUNK_OTHER_HEARD, "Heard: "));
-	sb_str(&b, tr(model[sc.model & 3u]));
-	sb_str(&b, TR(TRUNK_OTHER_NET, ", net "));
-	sb_u32(&b, sc.net, 1);
+	TRF(&b, TRUNK_OTHER_HEARD, "Heard: %K, net %u", tr(model[sc.model & 3u]), (unsigned)sc.net);
 	sb_init(&b, c, sizeof c);
-	sb_str(&b, TR(TRUNK_OTHER_SITE, "site "));
-	sb_u32(&b, sc.site, 1);
+	TRF(&b, TRUNK_OTHER_SITE, "site %u", (unsigned)sc.site);
 	if (sc.par == T3_PAR_A)
 		sb_str(&b, TR(TRUNK_OTHER_CAT_A, ", category A only"));
 	else if (sc.par == T3_PAR_B)

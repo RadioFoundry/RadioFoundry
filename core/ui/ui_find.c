@@ -392,8 +392,7 @@ static void find_item(uint16_t i, ui_item_t *it)
 		TRF(&b, FIND_ROW_CREATE_CONTACT, "Create contact %u", r->ref);
 		break;
 	case FR_PHONE:
-		sb_str(&b, TR(TRUNK_ROW_PHONE_CALL, "Phone call "));
-		sb_str(&b, query);
+		TRF(&b, TRUNK_ROW_PHONE_CALL, "Phone call %s", query);
 		break;
 	case FR_SETTING: {
 		const char *syn;

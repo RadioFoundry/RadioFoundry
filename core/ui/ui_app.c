@@ -2472,8 +2472,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 			static char msg[CODEPLUG_NAME_LEN + 32];	// the toast keeps the pointer
 			sbuf_t b;
 			sb_init(&b, msg, sizeof msg);
-			sb_str(&b, TR(TRUNK_TOAST_BACK_ON, "Back on "));
-			sb_str(&b, name);
+			TRF(&b, TRUNK_TOAST_BACK_ON, "Back on %s", name);
 			ui_toast(msg);
 		}
 	}
