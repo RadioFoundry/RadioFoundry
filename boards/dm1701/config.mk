@@ -13,8 +13,9 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 0
 CONFIG_APRS_IGATE ?= n
 MAXIMAL_VARS := LTO=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
-# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above)
-MAXIMAL_SKIP := NET_PPP APRS_IGATE
+# (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above); French, off by
+# default, so that the maximal build keeps satellite tracking and still fits the app region
+MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off
 BOARD_UNSUPPORTED += FONT_XL	# the 160x120 panel is too small for the large font (it is for 240 px and wider)

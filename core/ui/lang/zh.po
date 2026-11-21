@@ -14,6 +14,11 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "X-Glyphs: utf8\n"
 
+#: core/satellite/ui.c
+msgctxt "SATELLITE_ERR_TLE_SAVE"
+msgid "Couldn't save satellite TLE"
+msgstr "无法保存卫星 TLE"
+
 #: core/stubentry/stub_entry.h
 msgctxt "STUB_TITLE_PC_LOADER"
 msgid "PC Loader Connected"
@@ -89,7 +94,7 @@ msgctxt "ABOUT_VALUE_HWOPT_UNSET"
 msgid "not set"
 msgstr "未设置"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "关"
@@ -719,7 +724,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "电池 "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%：请尽快充电"
@@ -2109,6 +2114,41 @@ msgctxt "LABEL_NAME"
 msgid "Name"
 msgstr "名称"
 
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgctxt "SATELLITE_2"
+msgid "Satellite"
+msgstr "卫星"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr "1 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr "1 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr "1 abc"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr "2 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr "2 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr "2 abc"
+
 #: core/ui/ui_menus.c
 msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
@@ -2725,11 +2765,6 @@ msgid "Hotspot"
 msgstr "热点"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "电池"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "关于"
@@ -2768,11 +2803,6 @@ msgstr "中继台"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "中继台（ERDM 式）"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "供电"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -4020,6 +4050,11 @@ msgid "Send in DMR calls"
 msgstr "DMR 通话带位置"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_GPS_POSITION"
+msgid "Save GPS position"
+msgstr "保存 GPS 位置"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_HOTSPOT_ALLOWED"
 msgid "Hotspot allowed"
 msgstr "允许热点"
@@ -4350,6 +4385,16 @@ msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "GPS_POSITION_SAVED"
+msgid "GPS position saved"
+msgstr "GPS 位置已保存"
+
+#: core/ui/ui_menus.c
+msgctxt "NO_CURRENT_GPS_FIX"
+msgid "No current GPS fix"
+msgstr "当前无 GPS 定位"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
@@ -4518,6 +4563,151 @@ msgstr "经度"
 msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE已超过14天；请从网站更新"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_FAILED_2"
+msgid "TLE update failed"
+msgstr "TLE 更新失败"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_QUEUED"
+msgid "TLE update queued"
+msgstr "TLE 更新已排队"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_UNAVAILABLE_4"
+msgid "Satellite unavailable"
+msgstr "卫星不可用"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ 后"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ 后"
+
+#: core/ui/ui_satellite.c
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "其他卫星"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_2"
+msgid "Visible"
+msgstr "可见"
+
+#: core/ui/ui_satellite.c
+msgctxt "BELOW_HORIZON_2"
+msgid "Below horizon"
+msgstr "地平线下"
+
+#: core/ui/ui_satellite.c
+msgctxt "WAITING_FOR_POSITION_TIME_2"
+msgid "Waiting for position/time"
+msgstr "等待位置/时间"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "当前"
+
+#: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "正在预测过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "无TLE：请从网站加载"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "TLE天数"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/时间不可用"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "未来 24 小时无过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "后续过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "返回 上下选择"
+
+#: core/ui/ui_satellite.c
+msgctxt "CATALOG"
+msgid "Catalog"
+msgstr "编号"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "跟踪中"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASS"
+msgid "Next pass"
+msgstr "下次过境"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_NOW"
+msgid "Visible now"
+msgstr "当前可见"
+
+#: core/ui/ui_satellite.c
+msgctxt "CALCULATING"
+msgid "Calculating"
+msgstr "计算中"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "超出预报"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK"
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "上下选择卫星  OK track  长按 OK 启动  # TLE  返回"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK_2"
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "返回 上下选择卫星  OK track  # TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "SO_50_ARM_REQUESTED"
+msgid "SO-50 arm requested"
+msgstr "已请求启动 SO-50 定时器"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "跟踪未停止"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOPPED"
+msgid "Tracking stopped"
+msgstr "跟踪已停止"
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
@@ -5408,6 +5598,11 @@ msgstr "1-9 更改  长按 OK 保存"
 msgctxt "QUICK_HINT_ALL_SETTINGS"
 msgid "0 All settings  Hold OK save"
 msgstr "0 所有设置  长按 OK 保存"
+
+#: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "此固件可能用于本电台的其他版本"
 
 #: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"

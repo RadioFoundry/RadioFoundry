@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""DMR audio smoke: real audio both ways, on every radio with DMR, every bench pass (opt-in RF: --allow-rf, --ambe FILE /
-$RFOUNDRY_HIL_AMBE; README.md "Default bench pass").
+"""DMR audio smoke: real audio both ways, on every radio with DMR, every bench pass (opt-in RF: --allow-rf; README.md "Default
+bench pass"). The speech is tests/data/voice/test_transmission.ambe, or the --ambe FILE / $RFOUNDRY_HIL_AMBE given.
 
 Frame counters can't see audio. A modem that hands over the same stale voice bytes every burst (the HR_C7000
 voice-access flag on the wrong slot: the DM-1801 Pro played every call silent, 2026-10-22) or a stuck encoder passes
@@ -11,11 +11,12 @@ Skips and failures. Only a missing radio or SDR bench, or a run without --allow-
 "DMR AUDIO NOT CHECKED"), and so do a firmware built without DMR and a modem that plays the voice itself
 (dmr.modem_voice=1: no frame reaches the voice layer; test_dmr_voice counts its bursts), except the deviation, wide
 offset and strong signal tests, which judge such a radio by its voice bursts (below). Once the radio, its DMR and
-the bench are there, anything else that keeps the check from running fails: no speech recording, no vocoder merged
-(dmr.codec=0), no channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide
-offset tests also skip on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
-bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID privately when the
-target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't filter the call out.
+the bench are there, anything else that keeps the check from running fails: a speech file that isn't 9-byte frames,
+no vocoder merged (dmr.codec=0), no channel on --dmr-freq, firmware without the view keys or the test signal. The
+deviation and wide offset tests also skip on a bench board that can't do what they need (below). The talkgroup comes
+from the radio: the bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID
+privately when the target is a private ID, on the channel's own color code, so a wrong --dmr-tg / --dmr-cc can't
+filter the call out.
 
 test_dmr_audio_rx: the bench sends the speech recording as one call. Pass: the call is played (call.rx_calls_played
 +1), at least 90 % of the frames sent reach the voice layer (voice.rx_in; the recording padded to whole superframes;
@@ -67,7 +68,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import counter_deltas, skip
+from rfoundry_hil import counter_deltas, skip, speech_file
 from hil_config import rig
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
@@ -224,10 +225,8 @@ def padded(frames):
 
 
 def speech(pytestconfig, sdr_bench):
-    """The --ambe speech recording on the bench: (frames sent, repeats allowed, the bench's path). Fails without one."""
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe or not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
+    """The speech file on the bench: (frames sent, repeats allowed, the bench's path)."""
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     frames = read_frames(ambe)
     sent = padded(len(frames))
     allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
@@ -238,11 +237,7 @@ def speech(pytestconfig, sdr_bench):
 @pytest.mark.bench_service
 def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
     freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
-    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     frames = read_frames(ambe)
     sent = padded(len(frames))
     allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50

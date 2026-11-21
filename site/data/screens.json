@@ -747,6 +747,30 @@
     "APRS_RX"
    ]
   },
+    "satellite": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_passes": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_passes_predicting": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_tle_text": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
   "gps_sky": {
    "group": "tools",
    "needs": [

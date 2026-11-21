@@ -8,7 +8,7 @@
 import { formDialog, fallbackOptions } from "./views.js";
 import { specField, parseSpec, formatSpec, label } from "./modefields.js";
 import { SYSTEM_TYPES, typeRow, typeName, offeredTypes, offeredKinds } from "../codeplug/modes.js";
-import { newSystem, syncModes, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
+import { newSystem, newHamSystem, syncModes, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
 import { remove, assignNumbers } from "../codeplug/model.js";
 
 const SHARE_LEVELS = [SHARE.off, SHARE.identity, SHARE.whole];
@@ -23,13 +23,18 @@ export function systemsTab(api, features) {
 	const types = offeredTypes(m, features);
 	const pick = h("select", { "aria-label": t("editor.modes.type") }, ...types.map((x) => h("option", { value: String(x.id) }, t(x.module.label ?? `editor.mode_name.${x.token}`))));
 	const full = systems.length >= MODE_LIMITS.systems;
+	// the type's recommended ham setup, when it has one (docs/spec/ham-trunking.md)
+	const picked = () => Number(pick.value || types[0]?.id);
+	const hamOf = () => typeRow(picked())?.module.ham ?? null;
+	const ham = types.length ? button(t("editor.modes.add_ham"), () => hamDialog(api, picked()), { disabled: full || !hamOf() }) : null;
+	pick.addEventListener?.("change", () => (ham.disabled = full || !hamOf()));
 	const parts = [
 		h("p", { class: "small muted" }, t("editor.modes.intro")),
 		types.length ? h("div", { class: "ed-bar" }, h("div", { class: "ed-actions" }, pick,
 			button(t("editor.modes.add"), () => {
 				const s = newSystem(m, Number(pick.value), newName(m, t));
 				systemDialog(api, s, true);
-			}, { disabled: full }))) : null,
+			}, { disabled: full }), ham)) : null,
 	];
 	if (!systems.length) parts.push(h("p", { class: "grid-empty muted" }, t("editor.empty.systems")));
 	else {
@@ -74,6 +79,32 @@ function deleteSystem(api, s) {
 	api.confirmDialog(t("editor.modes.delete_confirm", { name: s.name, n: used }), t("editor.delete"),
 		() => api.change(t("editor.undo.delete"), () => remove(m, "systems", [s])));
 }
+
+// The recommended ham system of a type: its name, its control channel and what else the setup asks, then the system
+// form, filled in, to check and save
+function hamDialog(api, type) {
+	const { model: m, t } = api;
+	const row = typeRow(type), ham = row.module.ham;
+	const freq = (key, zero) => ({ key, type: "freq", zero });
+	const fields = [
+		{ type: "note", key: "ham.intro", text: () => t("editor.modes.ham_intro") },
+		{ key: "name", label: t("editor.col.name"), type: "text", parse: (r, k, v) => {
+			v = String(v ?? "").trim();
+			if (!v) return t("editor.err.no_name");
+			if (v.length > MODE_LIMITS.name) return t("editor.err.too_long", { max: MODE_LIMITS.name });
+			r.name = v;
+		} },
+		specField({ ...freq("rxHz", false), label: "editor.modes.ham_rx", help: "editor.modes.ham_rx_help" }, t, HOLD, "ham"),
+		specField({ ...freq("txHz", true), label: "editor.modes.ham_tx", help: "editor.modes.ham_tx_help" }, t, HOLD, "ham"),
+		...ham.asks.map((x) => specField(x, t, HOLD, "ham")),
+	];
+	const start = { name: ham.name, rxHz: 0, txHz: 0, ...Object.fromEntries(ham.asks.map((x) => [x.key, x.min ?? 0])) };
+	formDialog(t("editor.modes.ham_title", { type: t(row.module.label ?? `editor.mode_name.${row.token}`) }), fields, start, t,
+		// the system form opens once this one has closed
+		(work) => setTimeout(() => systemDialog(api, newHamSystem(m, type, work), true)));
+}
+// The recommended setup's answers sit on the form's record itself
+const HOLD = { get: (r) => r, put: (r, k, v) => (r[k] = v) };
 
 // --- A system's header and its type's fields ---
 

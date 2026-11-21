@@ -38,6 +38,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
+#include "hostlink/build_info.h"
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
 #if CONFIG_DMR_TRUNK_TX
@@ -948,6 +949,161 @@ static void test_startup(void)
 	CHECK(sm.view.state == RS_IDLE);
 	CHECK(!hw.audio && !hw.led[LED_GREEN] && !hw.led[LED_RED]);
 }
+
+#if CONFIG_SATELLITE_TLE
+static void test_satellite_override(void)
+{
+	setup_codeplug();
+	start();
+	uint32_t restore_rx = sm.view.ch.rx_hz;
+	uint32_t restore_tx = sm.view.ch.tx_hz;
+	uint32_t nominal_rx = 437800000u;
+	uint32_t nominal_tx = 145990000u;
+	sm.view.ch.bw = RADIO_BW_25K;
+	sm.view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 123u };
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u,
+				 10, 10, now);
+	CHECK(sm.satellite_view.tracking);
+	CHECK(sm.satellite_view.nominal_rx_hz == nominal_rx && sm.satellite_view.nominal_tx_hz == nominal_tx);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.bw == RADIO_BW_12K5);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	int rx_calls = hw.rx_calls;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(hw.rx_calls == rx_calls);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	sm.view.state = RS_IDLE;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 15u, nominal_tx + 15u,
+				 15, 15, now);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	sm.view.state = RS_TX;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u,
+				 20, 20, now);
+	CHECK(hw.rx_calls == rx_calls);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 20u && sm.view.ch.tx_hz == nominal_tx + 20u);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, 100000000u, 100000000u, 0, 0, now + 30u);
+	CHECK(sm.satellite_view.status == 1u);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 40u);
+	CHECK(!sm.satellite_view.tracking);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 41u);
+	CHECK(sm.satellite_pending && sm.satellite_restore_config_pending);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 123u);
+
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	uint8_t restore_mode = sm.view.ch.mode;
+	uint8_t restore_bw = sm.view.ch.bw;
+	subtone_t restore_rx_tone = sm.view.ch.rx_tone;
+	subtone_t restore_tx_tone = sm.view.ch.tx_tone;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_tone.type == restore_rx_tone.type && sm.view.ch.rx_tone.value == restore_rx_tone.value);
+	CHECK(sm.view.ch.tx_tone.type == restore_tx_tone.type && sm.view.ch.tx_tone.value == restore_tx_tone.value);
+
+	setup_codeplug();
+	zones[0].channels[0] = 4;
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_bw = sm.view.ch.bw;
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx && hw.rx_hz == restore_rx);
+
+	setup_codeplug();
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_mode = sm.view.ch.mode;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	req(RREQ_PTT, 1);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u, 20, 20, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode);
+}
+
+#if CONFIG_FM_TX_TONES
+static void test_so50_arm(void)
+{
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 2u, 3u, 436795000u, 145850000u, 670u,
+				 true, 436795000u, 145850000u, 0, 0, now);
+	CHECK(sm.satellite_view.tracking);
+	int tx_calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 670u);
+	req(RREQ_PTT, 0);
+	CHECK(!sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_hz == 145850000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	uint32_t tx_off_calls = (uint32_t)hw.tx_off_calls;
+	now += 1990u;
+	radio_sm_poll(&sm, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	now += 10u;
+	radio_sm_poll(&sm, now);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK((uint32_t)hw.tx_off_calls == tx_off_calls + 1u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 1u, 3u, 435000000u, 145990000u, 885u,
+				 true, 435000000u, 145990000u, 0, 0, now);
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+	CHECK(hw.tx_hz == 145990000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+
+	setup_codeplug();
+	start();
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls);
+}
+#endif
+#endif
 
 // The VFO's step: auto (0, the default) follows the width; a step set stays whatever the width; kept in the settings
 static void test_vfo_step_auto(void)
@@ -2526,25 +2682,47 @@ static void test_hotspot(void)
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
-	// TX inhibit drops the armed keying at once and holds it off; cleared, the keying is armed again
+	// The same level again (a split TX half re-sends its cap): the keying stays as it is
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
+	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
+	// outbound stopped for good), so the level waits for its end
+	sim.tx_active = true;
+	req(RREQ_HS_POWER, 128);
+	poll_for(RADIO_POLL_MS * 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.tx_power == 2 && hw.keyed);
+	sim.tx_active = false;
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1 && hw.tx_power == 1 && hw.keyed);
+	CHECK(rekeys == rk && !sm.hs_power_due);
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3);	// once
+	off0 = hw.tx_off_calls;
+	// TX inhibit drops the armed keying at once, mid-transmission too, and holds it off; cleared, the keying is armed
+	// again
 	radio_settings_t set = sm.set;
 	set.tx_inhibit = true;
+	sim.tx_active = true;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
+	CHECK(!sm.hs_power_due);
+	sim.tx_active = false;
 	req(RREQ_HS_POWER, 255);
 	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
 	radio_sm_request(&sm, &f, now);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
 	set.tx_inhibit = false;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 3);
-	// Nor armed on a critical battery
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	// Nor armed on a critical battery, dropped mid-transmission too
 	sm.batt.level = BATT_CRITICAL;
+	sim.tx_active = true;
 	req(RREQ_HS_POWER, 255);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3 && hw.rx_hz == 438800000);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
+	sim.tx_active = false;
 	sm.batt.level = BATT_OK;
 	req(RREQ_HS_POWER, 255);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
 	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
@@ -3946,6 +4124,7 @@ static void test_position(void)
 {
 	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
 	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	static const char rmc_void[] = "$GPRMC,123519,V,,,,,,,230394,,,N*51";
 	lrrpPosition_t lp;
 	ui_position_t up;
 	int32_t lat, lon;
@@ -3960,10 +4139,83 @@ static void test_position(void)
 	gps_here = true;
 	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
 	CHECK(!ui_svc_position(&up));		// nothing heard yet
+#if CONFIG_SATELLITE_TLE
+	CHECK(!position_save_gps(now));
+#endif
+	position_nmea(rmc_void, strlen(rmc_void), true, now);
 	position_nmea(gga, strlen(gga), true, now);
+	position_fix_t merged_fix;
+#if CONFIG_SATELLITE_TLE
+	uint32_t gps_date, gps_utc;
+#endif
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(merged_fix.date == 230394u && merged_fix.utc_hms == 123519u);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+	CHECK(gps_date == 230394u && gps_utc == 123519u);
+#endif
 	position_nmea(rmc, strlen(rmc), true, now);
 	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
 	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	position_cfg_t original_cfg;
+	position_get_cfg(&original_cfg);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_save_gps(now));
+#else
+	position_cfg_t gps_cfg = original_cfg;
+	gps_cfg.fix_lat = up.lat_e7;
+	gps_cfg.fix_lon = up.lon_e7;
+	gps_cfg.fix_alt_m = up.alt_m;
+	position_set_cfg(&gps_cfg, now);
+#endif
+	position_cfg_t saved_cfg;
+	position_get_cfg(&saved_cfg);
+	CHECK(saved_cfg.fix_lat == up.lat_e7 && saved_cfg.fix_lon == up.lon_e7 && saved_cfg.fix_alt_m == up.alt_m);
+	uint32_t auto_fallback_now = now + POSITION_STALE_MS;
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, auto_fallback_now);
+#endif
+	saved_cfg.pref = POSITION_AUTO;
+	position_set_cfg(&saved_cfg, now);
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_HOST);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_fix_for_satellite(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
+#else
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
+	saved_cfg.pref = POSITION_GPS;
+	position_set_cfg(&saved_cfg, now);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_fix_for_satellite(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(position_fix_for_satellite(&merged_fix, now + POSITION_STALE_MS) == POSITION_SRC_FIXED);
+	CHECK(merged_fix.lat == up.lat_e7 && merged_fix.lon == up.lon_e7 && merged_fix.alt_m == up.alt_m);
+#endif
+	saved_cfg.pref = POSITION_FIXED;
+	position_set_cfg(&saved_cfg, now);
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_FIXED && merged_fix.lat == up.lat_e7);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+#endif
+	saved_cfg.pref = original_cfg.pref;
+	position_set_cfg(&saved_cfg, now);
+	settings_t saved_settings;
+	settings_read(&saved_settings);
+	position_load(&saved_settings);
+	position_fix_t saved_fix;
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_HOST);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == POSITION_ALT_NONE);
+#else
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == up.alt_m);
+#endif
+	position_get_cfg(&saved_cfg);
+	saved_cfg.fix_lat = original_cfg.fix_lat;
+	saved_cfg.fix_lon = original_cfg.fix_lon;
+	saved_cfg.fix_alt_m = original_cfg.fix_alt_m;
+	position_set_cfg(&saved_cfg, now);
 	run(10);
 	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
 	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
@@ -4081,6 +4333,18 @@ static void test_position(void)
 	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
 	settings_init();
 	boot();
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, now);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545);
+	boot();
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_NONE);
+	position_nmea(rmc, strlen(rmc), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == POSITION_ALT_NONE);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545 &&
+	      saved_fix.date == 230394u && saved_fix.utc_hms == 123519u);
+#endif
 }
 
 static void test_ui_glue(void)
@@ -7262,6 +7526,9 @@ static void test_p25_stored(void)
 	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
 	req(RREQ_PTT, 0);
 	CHECK(strstr(build_modes_now(), "P25,") == NULL && build_features_now()[0] != '\0');
+#if CONFIG_P25 && CONFIG_SATELLITE_TLE
+	CHECK(strstr(build_features_now(), "SATELLITE_TLE,") != NULL);
+#endif
 	air_nofit = false;
 
 	// The VFO takes the radio-wide unit ID, then the DMR ID
@@ -11026,6 +11293,12 @@ int main(void)
 #endif
 	test_tx_limit_op();
 	test_startup();
+#if CONFIG_SATELLITE_TLE
+	test_satellite_override();
+#if CONFIG_FM_TX_TONES
+	test_so50_arm();
+#endif
+#endif
 	test_persist();
 	test_channel_step();
 	test_vfo_step_auto();

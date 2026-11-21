@@ -10,6 +10,7 @@
 ROOT    := ../..
 CORE    := $(ROOT)/core
 CC      ?= cc
+PYTHON  ?= python3
 # COVERAGE=1: gcov instrumentation (GCC and clang both take --coverage); each test writes its .gcda files here
 COVFLAGS := $(if $(filter 1,$(COVERAGE)),--coverage -O0)
 # SANITIZE=1: ASan + UBSan (Apple clang and GCC); UBSan stops at the first report instead of printing and going on.
@@ -149,6 +150,18 @@ mbeTest: mbeTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 TESTS   += imbeEncTest
 imbeEncTest: imbeEncTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ imbeEncTest.c $(MBE) -lm
+
+# The test voice set's full-rate frames (tests/data/voice): the speech through the encoder above. The run checks the
+# committed .imbe still matches; make voice-data writes it again, and the decoded WAV beside it
+VOICE   := $(ROOT)/tests/data/voice
+VOICE_SETS := test_transmission ten_second_countdown
+TESTS   += imbeVoiceGen
+imbeVoiceGen: imbeVoiceGen.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ imbeVoiceGen.c $(MBE) -lm
+
+voice-data: imbeVoiceGen
+	for v in $(VOICE_SETS); do ./imbeVoiceGen $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe $(VOICE)/$${v}_imbe_decoded.wav || exit 1; done
+.PHONY: voice-data
 # The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
 TESTS   += p25TrunkTest
 P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
@@ -242,6 +255,7 @@ run: $(TESTS)
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1
+	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
 	./p25EngineTest
 	./nxdnTest | tail -1
@@ -260,6 +274,7 @@ run: $(TESTS)
 	./ipGatewayTestAir440
 	./sfrTest
 	./aprsTest
+	$(PYTHON) satelliteTleTest.py
 ifneq ($(TSHARK),)
 	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
 	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
@@ -307,7 +322,8 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 -o $@ $(RCORE) -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_SATELLITE_TLE=1 -o $@ $(RCORE) -lm
 
 # The same with the DMR VFO off (CONFIG_VFO_DMR=0): the VFO stays analog and nothing about it changes
 TESTS   += radioCoreTestNoVfoDmr
@@ -329,7 +345,7 @@ RCP25   := $(RCORE) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(CORE)/a
 radioCoreTestP25: $(RCP25) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_P25=1 -DCONFIG_AIR_RAW=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25) -lm
+		-DCONFIG_P25=1 -DCONFIG_AIR_RAW=1 -DCONFIG_SATELLITE_TLE=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25) -lm
 
 # The same with P25 trunking (CONFIG_P25_TRUNK): a trunked site on the fake air, the follower in the radio core
 TESTS   += radioCoreTestP25T
@@ -716,7 +732,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
@@ -727,6 +743,7 @@ UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS
            '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
+TESTS   += uiFlowTestSatellite
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
@@ -738,11 +755,14 @@ uiFlowTest: uiFlowTest.c $(UIDEPS)
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
+uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+
 # UI_LANG=<code> also builds that language in (CONFIG_LANG_<CODE>=1), so a gallery can render in a language that is
 # off by default: make -B uiSim UI_LANG=fr (docs/dev/translating.md). The CJK face compiles to nothing without Chinese
 UI_LANG_FLAG := $(if $(UI_LANG),-DCONFIG_LANG_$(shell echo '$(UI_LANG)' | tr a-z A-Z)=1)
 uiSim: uiSim.c $(UIDEPS) $(CJK)
-	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
 
 # The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
 # commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
@@ -778,7 +798,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiSim beepReel
+run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
 	./i18nTest
@@ -786,6 +806,7 @@ run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiF
 	./i18nTestDefault
 	./uiFlowTest
 	./uiFlowTestNoColor
+	./uiFlowTestSatellite
 	./uiSim --layout
 	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
@@ -1513,6 +1534,39 @@ run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest nandBlocksTest
 	./nandSectorsTest
 	./nandBlocksTest
 .PHONY: run-settings
+
+TESTS   += satelliteStoreTest
+SAT_STORE := $(CORE)/debuglink/debuglink_satellite.c $(CORE)/satellite/store.c $(CORE)/satellite/orbit.c \
+	$(CORE)/satellite/frequency.c $(CORE)/storage/storage.c sim/sim_flash.c
+TESTS   += satelliteChannelsTest
+TESTS   += satelliteOrbitTest
+TESTS   += satelliteServiceTest
+SAT_ORBIT := $(CORE)/satellite/orbit.c $(CORE)/satellite/pass.c $(CORE)/satellite/doppler.c \
+	$(CORE)/satellite/tracking.c
+SAT_SERVICE := $(CORE)/satellite/service.c $(SAT_ORBIT)
+
+satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
+		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
+
+run: run-satellite
+run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest
+	./satelliteStoreTest
+	./satelliteChannelsTest
+	./satelliteOrbitTest
+	./satelliteServiceTest
+.PHONY: run-satellite
+
+satelliteChannelsTest: satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c \
+		$(wildcard $(CORE)/satellite/*.h $(CORE)/codeplug/*.h $(CORE)/radio/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c
+
+satelliteOrbitTest: satelliteOrbitTest.c $(SAT_ORBIT) $(wildcard $(CORE)/satellite/*.h)
+	$(CC) $(CFLAGS) -DCONFIG_POSITION=0 -I$(ROOT)/hal -I. -Wshadow -o $@ satelliteOrbitTest.c $(SAT_ORBIT) -lm
+
+satelliteServiceTest: satelliteServiceTest.c $(SAT_SERVICE) $(wildcard $(CORE)/satellite/*.h $(ROOT)/core/position/*.h)
+	$(CC) $(CFLAGS) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_POSITION=1 -I$(ROOT)/hal -I. -Wshadow \
+		-o $@ satelliteServiceTest.c $(SAT_SERVICE)
 
 # The SPI NOR driver against a model of the chip at the bus, and the journal and settings store on it (16 MB and
 # 1 MB parts, power cuts tearing page programs and erases)

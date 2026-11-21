@@ -17,6 +17,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [position.md](position.md) | The radio's position: sources, settings, who reads it |
+| [satellite.md](satellite.md) | PC-managed orbital data, satellite passes and Doppler frequency compensation |
 | [ui.md](ui.md) | The user interface as built: screens, keys, the drawing layer ([docs/ux](../ux/) has the design) |
 
 ## DMR
@@ -71,6 +72,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [channel-modes.md](channel-modes.md) | Channel modes: how a channel, system, target or key of any digital mode is stored beside the open-firmware record |
 | [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) | DMR Tier III systems and trunked channels in the codeplug |
 | [p25-codeplug.md](p25-codeplug.md) | P25 conventional and trunked channels and systems in the codeplug |
+| [ham-trunking.md](ham-trunking.md) | The recommended ham Tier III and P25 trunked systems, and their templates |
 | [nxdn-codeplug.md](nxdn-codeplug.md) | NXDN conventional channels in the codeplug |
 | [settings-store.md](settings-store.md) | Settings store and safe flash writes |
 | [nand-sectors.md](nand-sectors.md) | NOR-like 4 KB sectors over NAND, for the settings store on NAND radios |

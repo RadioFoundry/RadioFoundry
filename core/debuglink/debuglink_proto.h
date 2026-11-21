@@ -39,6 +39,7 @@ enum {
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
 	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
+	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -89,6 +90,24 @@ enum {
 	DL_AIR_OP_TX_KEY	= 9,	// max_ms u16 -> none
 	DL_AIR_OP_TX_END	= 10,	// none -> none
 	DL_AIR_OP_TX_ABORT	= 11,	// none -> none
+};
+
+// DL_CMD_SATELLITE operations (first payload byte; docs/spec/satellite.md 6)
+enum {
+	DL_SAT_OP_INFO = 0,	// -> version u8, capacity u16, installed count u16
+	DL_SAT_OP_LIST,		// start u16 -> count u8, then (catalog ID u32, epoch Unix seconds u32) entries
+	DL_SAT_OP_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16
+	DL_SAT_OP_DATA,		// transaction ID u16, offset u16, up to 59 data bytes -> next offset u16
+	DL_SAT_OP_COMMIT,	// transaction ID u16, CRC-32 u32 -> none
+	DL_SAT_OP_ABORT,	// transaction ID u16 -> none
+	DL_SAT_OP_SYNC_CHANNELS,	// none -> ensure installed satellites have channels in the Satellites zone
+	DL_SAT_OP_PROFILE_GET,	// -> count u8, then selected frequency-profile catalog IDs u32
+	DL_SAT_OP_PROFILE_SET,	// count u8, then up to 10 selected frequency-profile catalog IDs u32
+	DL_SAT_OP_REPLACE_BEGIN,	// count u16, bytes u16, CRC-32 u32 -> transaction ID u16; replace full TLE inventory
+	DL_SAT_OP_PROFILE_STAGE,	// transaction ID u16, count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16); replacement only
+	DL_SAT_OP_PROFILE_VALUES_GET,	// -> count u8, then (ID, RX Hz, TX Hz u32, tone tenths u16) records
+	DL_SAT_OP_PROFILE_STAGE_CHUNK,	// transaction ID u16, total u8, offset u8, count u8, then profile records
+	DL_SAT_OP_SYNC_CHANNELS_STATUS	// -> satellite_channels_sync_status_t
 };
 
 // DL_CMD_HWOPT operations (first payload byte; docs/spec/debuglink.md 3.25)

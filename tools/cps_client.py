@@ -426,6 +426,17 @@ def set_channel_rx(img, number, hz):
     img[a + 0x10:a + 0x14] = _bcd_freq(hz)
 
 
+CH_MODE = 0x18                  # 0 FM, 1 DMR (open-firmware-cps.md 7.3.3)
+CH_RX_TONE = 0x20               # LE; CTCSS as BCD tenths of Hz (0x2336 = 233.6 Hz), DCS with bit 15 set
+
+
+def set_channel_fm(img, number, rx_tone=0):
+    """Make the channel an FM channel receiving with rx_tone (the 7.3.3 word, 0 = none)."""
+    _, a = channel_addr(number)
+    img[a + CH_MODE] = 0
+    img[a + CH_RX_TONE:a + CH_RX_TONE + 2] = rx_tone.to_bytes(2, "little")
+
+
 CH_POWER = 0x19                 # 0: the radio's master power, else the 10-step scale (open-firmware-cps.md 7.3.3)
 
 

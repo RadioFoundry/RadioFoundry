@@ -777,7 +777,9 @@ Receive sequences, in the radio's own order. CTCSS: 0x07 = the tone word, 0x07 =
 The C7000 does the FM modulation (two-point, `modem-hrc7000.md`) and makes the TX sub-audio. Receive tones come from
 the FD6818: the speaker switch (PTB15) takes the FD6818's audio away from the C7000's ADC in FM receive, so the C7000's
 detector hears nothing. The FD6818 detects on its own demodulated audio. RadioFoundry turns the FD6818's sub-audio off before
-FM TX because 0x51 b15 also enables its transmitter.
+FM TX because 0x51 b15 also enables its transmitter. Entering DMR turns the sub-audio off too (`fd6818_set_mode`), and
+on set-up B puts 0x2E / 0x2F back to the no-tone pair: an FM channel's receive tone left in 0x51 (0x9045) put the tone
+on the 4FSK, and the SDR bench decoded none of the DMR bursts the radio sent and counted (gotchas 3.19).
 
 ### 8.5 TX/RX switching, PA and LNA
 
@@ -1518,7 +1520,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), satellite snapshots 0x71B000 (3 sectors, when `CONFIG_SATELLITE_TLE=y`), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area. The last two gap sectors, 0x71E000-0x71FFFF, are the stub's 8 KB data-flash write-test range | `flash_dm32.c` |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |

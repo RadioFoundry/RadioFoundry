@@ -42,6 +42,8 @@ MACROS = {
     "GLYPH_DEGREE": (0x83, "\u00b0"),
     "GLYPH_SHARE": (0x84, "\u2912"),
     "GLYPH_DOWNLOAD": (0x85, "\u2913"),
+    "GLYPH_UP": (0x87, "\u2191"),
+    "GLYPH_DOWN": (0x88, "\u2193"),
     "TEXT_ALT_OPEN": (0x1D, "{"),
     "TEXT_ALT_NEXT": (0x1F, "|"),
     "TEXT_ALT_CLOSE": (0x1E, "}"),

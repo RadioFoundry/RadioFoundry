@@ -230,13 +230,15 @@ void board_early_init(void)
 
 // Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
 // "EEPROM" image at 0x700000, a decoded calibration copy from other firmware left alone at 0x710000, the settings ring
-// and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID
-// database, the native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets
-// no calibration window
+// and the sector journal after it, optional satellite snapshots at 0x71B000..0x71DFFF, the stub write-test sectors at
+// 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID database, the
+// native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x719000u,	// 2 sectors
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0x71B000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,	// 3 sectors; 8 KB remains for the stub write test
 	.openfw_eeprom = 0x700000u,
 	.openfw_flash = 0x720000u,
 	.openfw_end = 0xF00000u,
