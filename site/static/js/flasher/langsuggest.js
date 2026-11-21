@@ -52,6 +52,9 @@ export const START_SINCE = {
 	LANG_DEFAULT_ES: 1793469559, LANG_DEFAULT_IT: 1793469559,	// #290
 	LANG_DEFAULT_ZH: 1794446428,	// #365
 	LANG_DEFAULT_FR: 1794881988,	// #346
+	// #754: use the merge time once these switches reach main.
+	LANG_DEFAULT_TR: Number.POSITIVE_INFINITY,
+	LANG_DEFAULT_RU: Number.POSITIVE_INFINITY,
 };
 
 // Whether a build made at gitTime (VERSION git_time, Unix seconds) could have had this start switch
