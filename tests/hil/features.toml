@@ -224,6 +224,15 @@ hardware = "a GPS receiver"
 spec = "docs/spec/position.md"
 source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
 
+[feature.satellite_tle]
+switch = "SATELLITE_TLE"
+spec = "docs/spec/satellite.md"
+source = ["core/debuglink/debuglink_satellite.c", "core/debuglink/debuglink_view.c", "core/radio/radio_task.c",
+          "core/satellite", "core/ui/ui_satellite.c", "core/position/position.c",
+          "hal/hal_flash.h", "boards/db25d/flash_db25d.c", "boards/dm32/board.c",
+          "boards/dm1801pro/board.c", "boards/md380/flash_md380.c",
+          "boards/md9600/store_md9600.c", "boards/uv380_family/flash_uvf.c"]
+
 # The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
 [feature.gps_icon]
 requires = "GPS"

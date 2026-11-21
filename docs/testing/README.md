@@ -147,7 +147,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 | `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
-python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
+python3 -m pytest tests/hil -v -rs -s --allow-rf --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services

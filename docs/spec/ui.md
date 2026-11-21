@@ -456,8 +456,8 @@ stored value stays, as the module is detected after start-up and its driver foll
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
 idle, the bars, the GPS icon and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
-a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
-out of their lists, so the other Tools rows move up), and only the name part of the title is
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Settings > Power saving > Battery saver and Low battery
+warning are left out of their lists. The Battery tool is not present; tools retain their assigned numbers. Only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
 ### 3.1 Key assignment

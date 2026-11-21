@@ -343,7 +343,7 @@ Follow [Installing](02-installing.md) with these values.
 |---|---|
 | Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
-| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
+| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart reliably, so a wrong image isn't caught. Tools > Diagnostics may show "This firmware may be for another version of this radio" when a byte in the radio's flash suggests the other version. That byte is wrong on some 5 W radios, so the radio still transmits: check the label |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
 | Board name | `mduv380` |
 
@@ -550,7 +550,7 @@ haven't been measured. A channel without a power in the codeplug uses L. The rad
 RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
-no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
+Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
 voltage, so nothing warns about it.
 
 ### DB25-D PRO display

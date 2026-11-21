@@ -22,7 +22,9 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    datasheets, public standards (ETSI TS 102 361-1..4, the MMDVM protocol) and permissively licensed code. The full
    rules are in [docs/CLEANROOM.md](docs/CLEANROOM.md). If a task seems to need foreign code, stop and ask.
 2. **Never commit** the AMBE codec, stock firmware images, bootloader keys, memory or flash dumps, or audio recordings.
-   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules.
+   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules. The one exception is the
+   synthesized test speech in `tests/data/voice`, tracked by name with `git add -f`
+   ([its README](tests/data/voice/README.md)).
 3. **SPDX header on every new file**, in the style of its neighbors:
    `// SPDX-License-Identifier: MIT` and `// Copyright (c) 2026 The RadioFoundry Authors` (`#` for scripts and
    makefiles, `<!-- -->` for Markdown).

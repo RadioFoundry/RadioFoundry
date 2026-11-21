@@ -66,6 +66,8 @@ SECTIONS
 		__data_end = .;
 	} >RAM AT>FLASH
 	__data_load = LOADADDR(.data);
+	/* the end of the .bin (the last section copied into it): the support info's image hash runs __app_base .. here */
+	__image_end = __data_load + SIZEOF(.data);
 
 	.bss (NOLOAD) :
 	{

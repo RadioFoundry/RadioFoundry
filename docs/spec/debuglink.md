@@ -117,7 +117,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
-| `0x26` | LINK_HOLD | on u8, optional watch seconds u16 (3.30) | none |
+| `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
+| `0x27` | LINK_HOLD | on u8, optional watch seconds u16 (3.31) | none |
 
 ### 3.1 VERSION
 
@@ -169,6 +170,9 @@ neither list, and an update keeps it; builds before it don't send it. `preset=` 
 too long for the reply drops only itself. Older builds send neither. All three come from `core/hostlink/build_info.c`, as
 does `features=`, and a build without the debug link sends them too, from the stub entry's listener
 ([stub-entry.md](stub-entry.md) 2).
+
+When enabled, `SATELLITE_TLE` is included in `features=`. The web flasher also probes the satellite `INFO` operation
+so it can recognize older builds that do not report this feature.
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
@@ -360,7 +364,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 25 | `net_svc` | the radio's UDP services on the USB network link: with mDNS `mdns.state mdns.name mdns.queries mdns.answered mdns.sent mdns.busy mdns.conflicts mdns.bad` (`mdns.md` 5), with TFTP `tftp.state tftp.reads tftp.writes tftp.errors tftp.timeouts tftp.retransmits tftp.last_size tftp.blksize tftp.write_allowed` (`tftp.md` 6), with UDP zone and channel control `radio_udp.requests radio_udp.bad radio_udp.refused radio_udp.selects radio_udp.steps radio_udp.notify radio_udp.notices radio_udp.busy` (`tcp-services.md` 8); `net_svc.built=0` without any |
 | 26 | `net_link` | the host link's MTUs ([usb-network.md](usb-network.md) 3.2), with the IP gateway: `net.mtu` (the link's, DHCP option 26) `net.air_mtu` (one transmission's) and the drops `net.air_too_big net.frag_needed net.up_too_big`; `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors ppp.mru ppp.peer_mru` ([ppp.md](ppp.md)); `net_link.built=0` without either |
 | 27 | `cps` | open-firmware CPS (`cps.built openfw_eeprom requests reads commits refused overflows last session pending junk reboots_ignored`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)), with `CONFIG_CPS_FAST` the fast codeplug protocol (`cpsf.state read written commits refused`; [cps-fast.md](cps-fast.md)), with the DMR data core the codeplug settings area (`cpkv.state` valid / empty / bad / newer, `cpkv.length` its data bytes, `cpkv.keys` its entries; [codeplug-settings.md](codeplug-settings.md) 5) |
-| 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
+| 28 | `board` | `board.name`, `board.variant_mismatch` (1: a marker the board reads suggests another hardware version than the image's build option, `board_t.variant_mismatch`; a warning only, 0 on a board without the check), then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
 | 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that) `beep.hang_s` (the board's `speaker_hang_s`; 0: no hang, `beep.warm` stays 0) `beep.tones_off` (the Settings > Sound tones that are off, bit n for row n of `radio_tone_rows` in `core/radio/radio_keys.h`: 0 call end, 1 time-out warning, 2 battery, 3 TX denied), these six only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late); on a board with a second path to the speaker (the prompt tone FIFO, [modem-hrc6000.md](modem-hrc6000.md) 8.1), once that path has been used: `audio.fifo_chunks` (32-sample chunks written) `audio.fifo_gaps` (chunks written as silence because the ring was empty) `audio.fifo_full` (blocks refused for want of room in the ring) `audio.fifo_fm` (1: in the mode the radio is in now, a beep goes through that path: FM receive on a chip whose line out plays no I2S PCM in FM); and `set.brightness` (Settings > Display > Brightness as stored, 10-100 %: the backlight's level while lit, which a board may drive differently while transmitting or receiving a signal; `ui.backlight` in `link` is the level now) |
 | 30 | `t3` | a Tier III trunked system: the engine's state, call, access and counters (3.26) |
 | 31 | `t3_svc` | its services: a poll's answer, the radio's status, stun, power save, DGNA (3.26) |
@@ -1097,7 +1101,14 @@ requests answer at once. Bad argument (2) for any other operation or a longer pa
 
 `rfoundry_debug.py support` prints both.
 
-### 3.30 LINK_HOLD
+### 3.30 SATELLITE
+
+`DL_CMD_SATELLITE` (`0x26`) stores explicitly selected TLE records when `CONFIG_SATELLITE_TLE` is enabled and the
+board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
+capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
+`DL_ST_UNAVAILABLE` when the feature or usable area is absent.
+
+### 3.31 LINK_HOLD
 
 Holds the host port for this client (on = 1), or lets go (on = 0). While held, an idle port stays idle: bytes that
 would open CPS, hotspot, TNC or PPP are dropped and counted in `hostlink.noise_bytes`, and a valid debug frame ends a

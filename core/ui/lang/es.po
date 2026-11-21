@@ -12,6 +12,11 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
+#: core/satellite/ui.c
+msgctxt "SATELLITE_ERR_TLE_SAVE"
+msgid "Couldn't save satellite TLE"
+msgstr "No se pudo guardar el TLE satelital"
+
 #: core/stubentry/stub_entry.h
 msgctxt "STUB_TITLE_PC_LOADER"
 msgid "PC Loader Connected"
@@ -87,7 +92,7 @@ msgctxt "ABOUT_VALUE_HWOPT_UNSET"
 msgid "not set"
 msgstr "sin definir"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "No"
@@ -717,7 +722,7 @@ msgctxt "BATT_BANNER_BATTERY"
 msgid "Battery "
 msgstr "Batería "
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c
 msgctxt "BATT_PART_CHARGE_SOON"
 msgid "%: charge soon"
 msgstr "%: cargar pronto"
@@ -2107,6 +2112,41 @@ msgctxt "LABEL_NAME"
 msgid "Name"
 msgstr "Nombre"
 
+#: core/ui/ui_menus.c core/ui/ui_satellite.c
+msgctxt "SATELLITE_2"
+msgid "Satellite"
+msgstr "Satélite"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_UPPER"
+msgid "1 ABC"
+msgstr "1 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_NUMERIC"
+msgid "1 123"
+msgstr "1 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE1_LOWER"
+msgid "1 abc"
+msgstr "1 abc"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_UPPER"
+msgid "2 ABC"
+msgstr "2 ABC"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_NUMERIC"
+msgid "2 123"
+msgstr "2 123"
+
+#: core/ui/ui_menus.c
+msgctxt "SATELLITE_TLE_TITLE_LINE2_LOWER"
+msgid "2 abc"
+msgstr "2 abc"
+
 #: core/ui/ui_menus.c
 msgctxt "TEXT_HINT_KEEP"
 msgid "{Back delete  # ABC/123/abc  OK keep|Back del  # mode  OK}"
@@ -2723,11 +2763,6 @@ msgid "Hotspot"
 msgstr "Hotspot"
 
 #: core/ui/ui_menus.c
-msgctxt "TITLE_BATTERY"
-msgid "Battery"
-msgstr "Batería"
-
-#: core/ui/ui_menus.c
 msgctxt "TITLE_ABOUT"
 msgid "About"
 msgstr "Acerca de"
@@ -2766,11 +2801,6 @@ msgstr "Repetidor"
 msgctxt "SFR_VALUE_REPEATER_ERDM"
 msgid "Repeater (ERDM style)"
 msgstr "Repetidor (estilo ERDM)"
-
-#: core/ui/ui_menus.c
-msgctxt "TITLE_SUPPLY"
-msgid "Supply"
-msgstr "Fuente"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_NO_GPS_OR_OFF"
@@ -4018,6 +4048,11 @@ msgid "Send in DMR calls"
 msgstr "Enviar en llam. DMR"
 
 #: core/ui/ui_menus.c
+msgctxt "SAVE_GPS_POSITION"
+msgid "Save GPS position"
+msgstr "Guardar posición GPS"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_HOTSPOT_ALLOWED"
 msgid "Hotspot allowed"
 msgstr "Hotspot permitido"
@@ -4348,6 +4383,16 @@ msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
 
 #: core/ui/ui_menus.c
+msgctxt "GPS_POSITION_SAVED"
+msgid "GPS position saved"
+msgstr "Posición GPS guardada"
+
+#: core/ui/ui_menus.c
+msgctxt "NO_CURRENT_GPS_FIX"
+msgid "No current GPS fix"
+msgstr "Sin posición GPS actual"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "Los ajustes se guardan al cambiarlos"
@@ -4516,6 +4561,151 @@ msgstr "Longitud"
 msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "Hasta 90 N/S, 180 E/W"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_STALE"
+msgid "TLE is 14+ days old; refresh from site"
+msgstr "TLE de más de 14 días; actualízalo desde el sitio"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_FAILED_2"
+msgid "TLE update failed"
+msgstr "No se pudo guardar el TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "TLE_UPDATE_QUEUED"
+msgid "TLE update queued"
+msgstr "Actualización TLE en cola"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_UNAVAILABLE_4"
+msgid "Satellite unavailable"
+msgstr "Satélite no disponible"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_RISE"
+msgid "↑ in"
+msgstr "↑ en"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_LABEL_SET"
+msgid "↓ in"
+msgstr "↓ en"
+
+#: core/ui/ui_satellite.c
+msgctxt "OTHER_SATELLITE_2"
+msgid "Other satellite"
+msgstr "Otro satélite"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_2"
+msgid "Visible"
+msgstr "Visible"
+
+#: core/ui/ui_satellite.c
+msgctxt "BELOW_HORIZON_2"
+msgid "Below horizon"
+msgstr "Bajo el horizonte"
+
+#: core/ui/ui_satellite.c
+msgctxt "WAITING_FOR_POSITION_TIME_2"
+msgid "Waiting for position/time"
+msgstr "Esperando posición/hora"
+
+#: core/ui/ui_satellite.c
+msgctxt "NOW"
+msgid "Now"
+msgstr "Ahora"
+
+#: core/ui/ui_satellite.c
+msgctxt "PREDICTING_PASSES_2"
+msgid "Predicting passes"
+msgstr "Calculando pasos"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_NO_TLE_LOAD_SITE"
+msgid "No TLEs: load from site"
+msgstr "Sin TLE: cargar desde el sitio"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TLE_AGE"
+msgid "TLE age"
+msgstr "Edad del TLE"
+
+#: core/ui/ui_satellite.c
+msgctxt "GPS_TIME_UNAVAILABLE"
+msgid "GPS/time unavailable"
+msgstr "GPS/hora no disponible"
+
+#: core/ui/ui_satellite.c
+msgctxt "NO_PASSES_IN_NEXT_24H"
+msgid "No passes in next 24h"
+msgstr "Sin pasos en las próximas 24 h"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASSES"
+msgid "Next passes"
+msgstr "Próximos pasos"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_PICK_BACK"
+msgid "Up Down pick  Back"
+msgstr "Arriba Abajo elegir  Atrás"
+
+#: core/ui/ui_satellite.c
+msgctxt "CATALOG"
+msgid "Catalog"
+msgstr "Catálogo"
+
+#: core/ui/ui_satellite.c
+msgctxt "TRACKING_4"
+msgid "Tracking"
+msgstr "Seguimiento"
+
+#: core/ui/ui_satellite.c
+msgctxt "NEXT_PASS"
+msgid "Next pass"
+msgstr "Próximo paso"
+
+#: core/ui/ui_satellite.c
+msgctxt "VISIBLE_NOW"
+msgid "Visible now"
+msgstr "Visible ahora"
+
+#: core/ui/ui_satellite.c
+msgctxt "CALCULATING"
+msgid "Calculating"
+msgstr "Calculando"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_STATE_BEYOND_FORECAST"
+msgid "Beyond forecast"
+msgstr "Fuera del pronóstico"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK"
+msgid "Up Down satellite  OK track  Hold OK arm  # TLE  Back"
+msgstr "Arriba Abajo satélite  OK seguir  Mantener OK armar  # TLE  Atrás"
+
+#: core/ui/ui_satellite.c
+msgctxt "UP_DOWN_SATELLITE_OK_TRACK_2"
+msgid "Up Down satellite  OK track  # TLE  Back"
+msgstr "Arriba Abajo satélite  OK seguir  # TLE  Atrás"
+
+#: core/ui/ui_satellite.c
+msgctxt "SO_50_ARM_REQUESTED"
+msgid "SO-50 arm requested"
+msgstr "Armado de SO-50 solicitado"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOP_FAILED"
+msgid "Tracking not stopped"
+msgstr "Seguimiento no detenido"
+
+#: core/ui/ui_satellite.c
+msgctxt "SATELLITE_TOAST_STOPPED"
+msgid "Tracking stopped"
+msgstr "Seguimiento detenido"
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
@@ -5406,6 +5596,11 @@ msgstr "1-9 cambiar  Mant OK guardar"
 msgctxt "QUICK_HINT_ALL_SETTINGS"
 msgid "0 All settings  Hold OK save"
 msgstr "0 Ajustes  Mant OK guardar"
+
+#: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "Este firmware puede ser para otra versión de esta radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"

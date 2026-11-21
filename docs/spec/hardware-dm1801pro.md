@@ -383,9 +383,11 @@ What follows for this radio:
 | 0x201000-0x264FFF | voice prompts, RIFF/WAVE 8 kHz 16-bit mono |
 | 0x635000-0xFFFFFF | call recordings (unverified) |
 
-RadioFoundry writes only at 0x700000 and above (inside the recordings area, empty on a radio that hasn't recorded). The settings
-ring, journal and codeplug images sit where the DM-32UV has them ([hardware-dm32.md](hardware-dm32.md) 10.1), without a
-calibration copy.
+RadioFoundry writes only at 0x700000 and above (inside the recordings area, empty on a radio that hasn't recorded). The
+settings ring and journal are followed by three 4 KB satellite snapshot sectors at 0x71B000-0x71DFFF when satellite
+support is enabled. The last two sectors at 0x71E000-0x71FFFF are the stub's 8 KB data-flash write-test range. The
+1 MB open-firmware flash image starts at 0x720000. The settings ring, journal and codeplug images otherwise sit where
+the DM-32UV has them ([hardware-dm32.md](hardware-dm32.md) 10.1), without a calibration copy.
 
 ### 6.2 Program flash (1 MB, execute in place)
 

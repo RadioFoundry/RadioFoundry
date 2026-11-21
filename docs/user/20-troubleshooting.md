@@ -75,6 +75,11 @@ Some settings are "not kept" by design today: see the Status column in [Settings
 **OK**, **6**, **7** (Tools > Diagnostics) shows raw readings for bench checks: keys, receiver levels, the DMR
 modem's state and counters, battery, the board's own lines. **\*** pages through them. **Back** leaves.
 
+On some radios the firmware reads a marker that tells hardware versions apart. When the marker suggests another
+version than the installed firmware is for, the page shows "This firmware may be for another version of this radio"
+under the title. The radio still transmits, because such a marker can be wrong. Check the label on the radio against
+the firmware version chosen at install ([Radios](23-radios.md)).
+
 <img src="../ux/screens/160x120i5/diagnostics.png" width="200" alt="The diagnostics page">
 
 Developers get the same and more over USB with `tools/rfoundry_debug.py diag` and `tools/rfoundry_debug.py view`.

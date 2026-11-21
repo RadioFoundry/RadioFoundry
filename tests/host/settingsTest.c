@@ -135,6 +135,7 @@ static void test_settings_basic(void)
 	CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 0);
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
+	CHECK(s.satellite_index == SETTINGS_UNSET8);
 	CHECK((s.accent & SETTINGS_AUDIO_MASK) == 0);	// noise reduction on, AGC off (a record from before them: also 0)
 	// Zone shares accepted by default, and by a record that stored the old Off (0) or Ask (1); only 2 turns them off
 	CHECK(s.zs_offers == 0 && settings_zs_accept(&s));
@@ -668,6 +669,10 @@ static void test_map_end(void)
 	m.staging_addr = 0xF40000u;
 	m.staging_size = 0x40000u;
 	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
+	m.staging_size = 0x3D000u;
+	m.satellite_addr = 0xF7D000u;
+	m.satellite_size = 0x3000u;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
 	hal_flash_map_t low = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
 				.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x10000u };
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);		// the journal's 2 erase units end it
@@ -917,7 +922,15 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, zone_jrn_index), 272 },
 		{ offsetof(settings_t, zone_jrn_count), 274 },
 		{ offsetof(settings_t, zone_jrn_kind), 276 },
+		{ offsetof(settings_t, t3_stun), 396 },
+		{ offsetof(settings_t, t3_kill), 397 },
+		{ offsetof(settings_t, satellite_index), 398 },
+		{ offsetof(settings_t, reserved10), 399 },
+		{ offsetof(settings_t, sig_dmr), 400 },
+		{ offsetof(settings_t, sig_fm), 403 },
+		{ offsetof(settings_t, reserved11), 406 },
 	};
+	CHECK(sizeof(settings_t) == 408);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);

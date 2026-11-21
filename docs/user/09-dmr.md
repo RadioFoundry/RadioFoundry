@@ -416,6 +416,20 @@ press again to speak once the system grants the call.
 
 A channel that is receive only in the editor stays receive only on the system: the radio listens and refuses PTT.
 
+### A ham system
+
+For a ham Tier III system, RadioFoundry recommends one setup, so that a radio set up once works on every ham site
+that follows the recommendation. Your DMR ID is the radio's ID and the talkgroups are BrandMeister's. The values and
+the reasons for each are in [Recommended ham trunked systems](../spec/ham-trunking.md).
+
+- On the **Systems** tab pick DMR Tier III Trunking and press **Add Recommended Ham System**. Enter a name, the
+  control channel's frequencies and the site's number from the site's operator. The system form opens with the rest
+  filled in: network model Huge, NET 1, category A, color code 1, registration on.
+- Or open the template
+  [ham-tier3.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-tier3.yaml) with **Open
+  File** in the Codeplug Editor, change the radio ID, name and frequencies, and write the codeplug. The template holds
+  the system, the BrandMeister talkgroups 91, 93, 3100 and 9 and one channel.
+
 ### On the air
 
 Select the channel. Home shows the system's name and what the radio is doing there, in place of slot and color code:
