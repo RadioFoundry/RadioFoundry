@@ -14,7 +14,7 @@
 #define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
 #define LCDC_CFG_VALUE		0x303u
 #define LCDC_READY_SPINS	100000u
-// Cycles to let the last byte's strobe finish before a board gives the pins back to another user (the DM-32UV keypad)
+// Cycles to let the last byte's strobe finish before a board gives the pins back to another user (a keypad on the same pins)
 #define LCDC_DRAIN_SPINS	4u
 
 // One byte to the panel (the host test, tests/host/hrc7000LcdcTest.c, records them instead)
