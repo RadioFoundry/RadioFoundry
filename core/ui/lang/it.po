@@ -1178,6 +1178,11 @@ msgid "NXDN call"
 msgstr "Chiamata NXDN"
 
 #: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_DPMR_CALL"
+msgid "dPMR call"
+msgstr "Chiamata dPMR"
+
+#: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
 msgid "AM signal"
 msgstr "Segnale AM"

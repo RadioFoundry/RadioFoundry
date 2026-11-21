@@ -27,7 +27,7 @@
 #define BEAT_MS		30000u	// a notice this often, changed or not
 #define CHECK_MS	100u	// the radio's view is read for a change this often while subscribed
 
-static const char *const mode_names[] = { "fm", "dmr", "p25", "nxdn" };
+static const char *const mode_names[] = { "fm", "dmr", "p25", "nxdn", "dpmr" };
 
 static struct {
 	int32_t channel_steps;	// channel steps asked for and not yet passed on (a knob's turns add up)
@@ -123,7 +123,8 @@ static void where(dl_text_t *t, const radio_view_t *v, bool channel)
 	}
 	dl_text(t, ",\"name\":");
 	json_str(t, v->ch.name);
-	dl_text(t, ",\"mode\":\"%s\",\"rx_hz\":%u", (v->ch.mode < 4u) ? mode_names[v->ch.mode] : "?",
+	dl_text(t, ",\"mode\":\"%s\",\"rx_hz\":%u",
+		v->ch.mode < sizeof(mode_names) / sizeof(mode_names[0]) ? mode_names[v->ch.mode] : "?",
 		(unsigned)v->ch.rx_hz);
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {

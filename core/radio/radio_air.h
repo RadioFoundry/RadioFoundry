@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The transmit side of an air-framed digital mode's radio core (P25, NXDN: radio_p25.h, radio_nxdn.h), as radio_sm.c
-// drives it: one way to key, time, end and refuse a transmission for every such mode (docs/spec/air-interface.md 6).
+// The transmit side of an air-framed digital mode's radio core (P25, NXDN, dPMR: radio_p25.h, radio_nxdn.h,
+// radio_dpmr.h), as radio_sm.c drives it: one way to key, time, end and refuse a transmission for every such mode
+// (docs/spec/air-interface.md 6).
 // Each mode's module fills one table; radio_sm.c picks the table of the mode that runs.
 #ifndef RADIO_AIR_H
 #define RADIO_AIR_H

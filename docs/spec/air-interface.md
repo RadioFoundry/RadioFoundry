@@ -198,7 +198,7 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
 | NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
-| dPMR Mode 1 voice (dPMR446) | written, host tested, checked against a real radio's recording through the soft modem ([dpmr.md](dpmr.md)) |
+| dPMR Mode 1 voice (dPMR446) | written, host tested, checked against a real radio's recording through the soft modem, in the radio core ([dpmr.md](dpmr.md) 7) |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |

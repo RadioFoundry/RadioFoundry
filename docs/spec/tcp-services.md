@@ -354,7 +354,7 @@ Where the radio is, from the radio's view alone (no flash read), so a client can
 | `vfo` | `true` while the VFO is on |
 | `codeplug` | the codeplug's change count (`codeplug_serial`: the radio's menus, a CPS or TFTP write) |
 | `seq` | notices sent (u32, wrapping; 0 before any); a client lines replies and notices up by it |
-| `number name mode rx_hz` | the channel (`number` its codeplug number, `mode` `fm` `dmr` `p25` `nxdn`); in the VFO the VFO's settings, `number` 0 |
+| `number name mode rx_hz` | the channel (`number` its codeplug number, `mode` `fm` `dmr` `p25` `nxdn` `dpmr`); in the VFO the VFO's settings, `number` 0 |
 | `cc ts` | DMR: color code, timeslot |
 | `tg call` | DMR with a talk target: the radio's own, a manual change included (`group` / `private`) |
 | `lease` | replies only: seconds the sender stays subscribed (120; 0 after `notify=0`) |

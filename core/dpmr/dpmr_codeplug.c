@@ -53,13 +53,6 @@ uint32_t dpmr_own_decode(const uint8_t *b, int len)
 	return id == 0 || id == 0xFFFFFFu ? DPMR_CP_ID_NONE : id;
 }
 
-uint16_t dpmr_chan_cc(const dpmr_chan_t *c, uint32_t tx_hz)
-{
-	if (c->cc == DPMR_CP_CC_AUTO || c->cc > DPMR_CP_CC_MAX)
-		return dpmr_cc_for_hz(tx_hz);
-	return dpmr_cc_group(c->cc > 16u, (uint8_t)((c->cc - 1u) & 15u));
-}
-
 bool dpmr_chan_load(uint16_t number, const channel_t *ch, dpmr_chan_t *out)
 {
 	uint8_t b[DPMR_CP_CHAN_LEN + CODEPLUG_TAG_HEAD_MAX];

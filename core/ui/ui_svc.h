@@ -82,7 +82,8 @@ bool ui_svc_mode(uint8_t mode);			// radio_mode_t: the VFO's mode (a channel's g
 // A channel mode's name as the screens show it (radio_mode_t). A name, never translated
 static inline const char *ui_mode_name(uint8_t mode)
 {
-	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" : "FM";
+	return mode == RADIO_MODE_DMR ? "DMR" : mode == RADIO_MODE_P25 ? "P25" : mode == RADIO_MODE_NXDN ? "NXDN" :
+	       mode == RADIO_MODE_DPMR ? "dPMR" : "FM";
 }
 // Copy to VFO: the channel on view into the VFO, which opens (CONFIG_VFO). Returns a radio_vfo_copy_t: VFO_COPY_OK
 // when the request went to the radio core, else why nothing changed

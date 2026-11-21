@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
+#include "dpmr/dpmr.h"
 
 // The channel block (6.1): called ID (3 bytes), channel code (1), flags (1)
 #define DPMR_CP_CHAN_LEN	5u
@@ -41,8 +42,14 @@ void dpmr_chan_encode(const dpmr_chan_t *c, uint8_t out[DPMR_CP_CHAN_LEN]);
 // The radio-wide record's own ID (len bytes, -1 = none): DPMR_CP_ID_NONE when absent, 0 or 0xFFFFFF
 uint32_t dpmr_own_decode(const uint8_t *b, int len);
 
-// The channel code (12 bits) a channel sends on tx_hz: its own, or the one table 6.1 ties to the frequency
-uint16_t dpmr_chan_cc(const dpmr_chan_t *c, uint32_t tx_hz);
+// The channel code (12 bits) a channel sends on tx_hz: its own, or the one table 6.1 ties to the frequency. Inline: the
+// radio core's tests stand in for the codeplug reads, not for this
+static inline uint16_t dpmr_chan_cc(const dpmr_chan_t *c, uint32_t tx_hz)
+{
+	if (c->cc == DPMR_CP_CC_AUTO || c->cc > DPMR_CP_CC_MAX)
+		return dpmr_cc_for_hz(tx_hz);
+	return dpmr_cc_group(c->cc > 16u, (uint8_t)((c->cc - 1u) & 15u));
+}
 
 // Channel number's block from its live tag (ch read by codeplug_channel); false when it isn't a live dPMR channel
 bool dpmr_chan_load(uint16_t number, const channel_t *ch, dpmr_chan_t *out);

@@ -134,6 +134,57 @@ The Codeplug Editor's module is `site/static/js/codeplug/mode_dpmr.js`: it shows
 full address as a second field. The shared vectors (`dpmrchan`, `dpmrenc`, `dpmrown` in
 `tests/vectors/channel-modes.txt`) are read by both its tests and the firmware's.
 
+## 7. The radio core (`core/radio/radio_dpmr.c`)
+
+`RADIO_MODE_DPMR` runs the engine on the board's air interface with the board in its digital mode and the DMR stack
+stopped, as NXDN does ([nxdn.md](nxdn.md) 6), through the same table of transmit operations (`radio_air.h`): PTT, the
+time-out and the release are the radio core's one air path. The engine's memory is its own, or with P25 built and no
+lending vocoder the memory P25 keeps for itself (one engine runs at a time). The voice is the DMR side's vocoder path.
+
+| State | Engine | PTT |
+|---|---|---|
+| dPMR, the provider's fit has TX | running | keys: two headers (an extended wake-up header, then the header), voice in whole superframes, the end frame |
+| dPMR, the fit has TX only | running, nothing is received | keys |
+| dPMR, the fit has RX only | running, receive only | refused, `TXDENY_AIR_NO_TX` |
+| dPMR, the fit has neither | not started (`begin_fails`) | refused, `TXDENY_REFUSED` |
+| No codec on a board that needs one | running | refused, `TXDENY_NO_CODEC` |
+| Leaving dPMR, a retune | stopped, started again on the new frequency (an automatic channel code follows it) | |
+
+Whether the radio may transmit is the radio core's usual checks, the same for every mode: the inhibit, the channel's
+receive only, the band plan (`board_in_band`), the hardware options and the battery. Nothing here adds to them or
+takes from them. Two headers go first because dPMR446 radios send a run of them (the one recorded off air sent nine,
+10): a receiver that was asleep or scanning gets a second chance at one for 80 ms of key-up.
+
+### 7.1 Selecting it
+
+| Where | How |
+|---|---|
+| A channel | a channel of kind 7 (6), where the board carries dPMR (`radio_dpmr_fits`); else it is parked |
+| VFO, or a channel for now | a mode change (`radio_req_mode`, debug link op 31, mode 4); saved with the VFO, and Save to channel stores a channel of kind 7 from the settings below |
+
+Refused in the listen-only bands, and where the board's air interface carries no dPMR.
+
+### 7.2 Settings
+
+RAM only, one set for the VFO and for channels in dPMR for now (`radio_req_dpmr_settings`). A stored dPMR channel runs
+on its own block; the own ID comes from the radio-wide record (6.2).
+
+| Setting | Values | Default | Notes |
+|---|---|---|---|
+| Called ID | 24 bits | the all call (common ID 255) | who PTT calls |
+| Own ID | 24 bits, 0 none | none | none: the called ID is sent as ours, as an initial-services radio sends |
+| Channel code | 0 automatic, 1-16 group A, 17-32 group B | automatic | automatic: table 6.1's code for the transmit frequency |
+| Filter | every call, or only calls to the called ID, to all and to us | every call | |
+| Bandwidth | 12.5 kHz | | the radios' narrowest |
+
+### 7.3 Scan and dual watch
+
+A scan stops on a stored dPMR channel as on an NXDN one: a carrier probes up to 700 ms for a call; a call that plays
+holds, one the filter turns down moves on. On a channel that plays only its own calls, a late entry whose called ID is
+not in yet (it comes in the CCH, a superframe of 320 ms) probes up to 1.5 s: the engine already plays it, but a stop
+must not hold on a call that may be someone else's. With the filter off every call plays and holds at once. A provider that only transmits dPMR makes its channels no stop (`radio_dpmr_receives`). The second
+receiver of a two-receiver radio takes FM and DMR only: dual watch alternates the main one onto a dPMR channel.
+
 ## 8. Tests
 
 | Test | Covers |

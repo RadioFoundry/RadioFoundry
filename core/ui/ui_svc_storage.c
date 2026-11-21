@@ -53,6 +53,10 @@
 #include "nxdn/nxdn_codeplug.h"
 #include "radio/radio_nxdn.h"
 #endif
+#if CONFIG_DPMR
+#include "dpmr/dpmr_codeplug.h"
+#include "radio/radio_dpmr.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -1130,6 +1134,22 @@ static bool nxdn_save_now(uint16_t number, const channel_t *ch, const nxdn_conv_
 }
 #endif
 
+#if CONFIG_DPMR
+// A plain channel in dPMR (the VFO, a mode changed for now) made a stored dPMR channel from the radio's dPMR settings
+// (dpmr.md 6): who it calls, its channel code and filter. The settings' own ID is radio-wide and stays out of it: a
+// channel record has no place for one. Never written as a plain record: its mode means nothing to a reader of those
+static bool dpmr_save_now(uint16_t number, const channel_t *ch)
+{
+	radio_dpmr_settings_t s;
+	radio_dpmr_settings(&s);
+	dpmr_chan_t c = { .called = s.called, .cc = s.cc, .flags = s.rx_mine ? DPMR_CP_RX_MINE : 0u };
+	if (ch != &job_ch)
+		job_ch = *ch;
+	job_ch.kind = CODEPLUG_KIND_DPMR;
+	return dpmr_chan_save(number, &job_ch, &c);
+}
+#endif
+
 // A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
 // *ok's place when it isn't one: the caller writes it as a plain channel
 static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
@@ -1145,6 +1165,12 @@ static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
 #if CONFIG_NXDN
 	if (ch->mode == RADIO_MODE_NXDN) {
 		*ok = nxdn_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+#if CONFIG_DPMR
+	if (ch->mode == RADIO_MODE_DPMR) {
+		*ok = dpmr_save_now(number, ch);
 		return true;
 	}
 #endif

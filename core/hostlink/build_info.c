@@ -10,6 +10,9 @@
 #if CONFIG_NXDN
 #include "radio/radio_nxdn.h"
 #endif
+#if CONFIG_DPMR
+#include "radio/radio_dpmr.h"
+#endif
 
 #ifndef RFOUNDRY_PRESET
 #define RFOUNDRY_PRESET "unknown"
@@ -24,14 +27,21 @@ const char build_off[] = RFOUNDRY_FEATURES_OFF;
 // The language an empty setting means, as the UI picks it (i18n.c lang_find)
 const char *build_start_now(void) { return lang_code(lang_find(0)); }
 
-// The air-framed modes, each only where the board runs it (build_modes_now)
+// The air-framed modes, each only where the board runs it (build_modes_now): every combination, indexed by bit 0 P25,
+// bit 1 NXDN, bit 2 dPMR. A table of constant strings rather than one built at run time: two tasks ask for it (the
+// debug link and the stub entry), and a shared buffer would be written by both
 #if CONFIG_P25_TRUNK
 #define P25_FEATURES	"P25,P25_TRUNK,"
 #elif CONFIG_P25
 #define P25_FEATURES	"P25,"
+#else
+#define P25_FEATURES	""
 #endif
-#if CONFIG_P25 && CONFIG_NXDN
-static const char modes_both[] = P25_FEATURES "NXDN,";
+#if CONFIG_AIR
+static const char *const modes[8] = {
+	"", P25_FEATURES, "NXDN,", P25_FEATURES "NXDN,",
+	"DPMR,", P25_FEATURES "DPMR,", "NXDN,DPMR,", P25_FEATURES "NXDN,DPMR,",
+};
 #endif
 
 static const char features[] =
@@ -220,17 +230,22 @@ static const char features[] =
 #endif
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
 
-// P25 and NXDN run where the board's air interface carries them: the Codeplug Editor offers their channels only there
+// P25, NXDN and dPMR run where the board's air interface carries them: the Codeplug Editor offers their channels only
+// there
 const char *build_modes_now(void)
 {
-#if CONFIG_P25 && CONFIG_NXDN
-	bool p25 = radio_p25_fits(), nxdn = radio_nxdn_fits();
-
-	return p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
-#elif CONFIG_P25
-	return radio_p25_fits() ? P25_FEATURES : "";
-#elif CONFIG_NXDN
-	return radio_nxdn_fits() ? "NXDN," : "";
+#if CONFIG_AIR
+	unsigned m = 0;
+#if CONFIG_P25
+	m |= radio_p25_fits() ? 1u : 0u;
+#endif
+#if CONFIG_NXDN
+	m |= radio_nxdn_fits() ? 2u : 0u;
+#endif
+#if CONFIG_DPMR
+	m |= radio_dpmr_fits() ? 4u : 0u;
+#endif
+	return modes[m];
 #else
 	return "";
 #endif

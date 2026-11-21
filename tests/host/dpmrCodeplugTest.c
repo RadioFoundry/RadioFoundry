@@ -27,6 +27,12 @@ static int failures;
 void storage_lock(void) {}
 void storage_unlock(void) {}
 
+#if CONFIG_DPMR
+// The board's air interface (core/radio/radio_dpmr.c in the firmware): whether the radio runs kind 7 here
+static bool fits;
+bool radio_dpmr_fits(void) { return fits; }
+#endif
+
 #define FLASH_SIZE	0x200000u
 
 static const hal_flash_map_t map = {
@@ -63,7 +69,7 @@ static channel_t make(const char *name, uint32_t rx, uint32_t tx)
 	return c;
 }
 
-// The id is the registry's, whatever the build; not run until the radio core takes the kind
+// The id is the registry's, whatever the build; built only with the switch and a board that carries the profile
 static void test_registry(void)
 {
 	codeplug_tag_t t = { .kind = 7, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
@@ -71,7 +77,14 @@ static void test_registry(void)
 
 	CHECK(CODEPLUG_KIND_DPMR == 7);
 	CHECK(strcmp(codeplug_kind_name(CODEPLUG_KIND_DPMR), "dPMR") == 0);
+#if CONFIG_DPMR
+	fits = false;
 	CHECK(!codeplug_kind_built(CODEPLUG_KIND_DPMR));
+	fits = true;
+	CHECK(codeplug_kind_built(CODEPLUG_KIND_DPMR));
+#else
+	CHECK(!codeplug_kind_built(CODEPLUG_KIND_DPMR));
+#endif
 	// A dPMR channel is one whatever the build: a build without it parks it, never takes it as the DMR stand-in
 	fresh();
 	c = make("PMR Park", 446109375, 446109375);

@@ -31,9 +31,13 @@ bool radio_nxdn_fits(void);
 #define CODEPLUG_RUNS_NXDN	0
 #endif
 
-// What runs dPMR: nothing yet. The codec is here, the radio core that runs a channel of the kind comes next; until then
-// a dPMR channel is parked, as in a build without CONFIG_DPMR
+// What runs dPMR: the build (CONFIG_DPMR) and a board whose air interface carries its profile (core/radio/radio_dpmr.c)
+#if CONFIG_DPMR
+bool radio_dpmr_fits(void);
+#define CODEPLUG_RUNS_DPMR	radio_dpmr_fits()
+#else
 #define CODEPLUG_RUNS_DPMR	0
+#endif
 
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
