@@ -258,6 +258,31 @@ static void test_rows_pixels4(void)
 	CHECK(rows4 == 0 && log_e[find(0x2C)].n_px == 240u * 4u);
 }
 
+// A rectangle through the row hook sends what the line buffer sends, from even and odd columns, odd widths included
+static void test_rect_pixels4(void)
+{
+	static uint8_t fb[120 * 320];
+	uint16_t pal[16];
+	for (int i = 0; i < 16; i++)
+		pal[i] = (uint16_t)(0x0F01u * (unsigned)i);
+	for (size_t i = 0; i < sizeof fb; i++)
+		fb[i] = (uint8_t)(i * 13u + 5u);
+	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 }, p4 = { &bus4, 240, 320, 0xC0, true, 1 };
+	static const uint16_t cols[][2] = { { 0, 1 }, { 1, 2 }, { 1, 4 }, { 30, 60 }, { 31, 60 }, { 31, 61 }, { 239, 240 } };
+	static uint16_t want[1024];
+	for (size_t k = 0; k < sizeof cols / sizeof cols[0]; k++) {
+		clear_log();
+		st7789_write_rect_indexed(&p, fb, pal, cols[k][0], 7, cols[k][1], 10);
+		uint32_t n_want = n_px_log;
+		memcpy(want, px_log, sizeof want);
+		clear_log();
+		rows4 = 0;
+		st7789_write_rect_indexed(&p4, fb, pal, cols[k][0], 7, cols[k][1], 10);
+		CHECK(rows4 == 3 && depth == 0 && n_want == 3u * (cols[k][1] - cols[k][0]));
+		CHECK(n_px_log == n_want && memcmp(px_log, want, n_want * sizeof want[0]) == 0);
+	}
+}
+
 static void test_misc(void)
 {
 	const st7789_t p = { &bus, 240, 320, 0xC0, true, 2 };
@@ -277,6 +302,7 @@ int main(void)
 	test_rows();
 	test_rows_indexed();
 	test_rows_pixels4();
+	test_rect_pixels4();
 	test_misc();
 	if (failures) {
 		printf("st7789Test: %d failures\n", failures);

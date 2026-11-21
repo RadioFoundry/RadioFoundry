@@ -102,6 +102,14 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	ili9341_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+static void flush_rect(const void *fb, const uint16_t *palette, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	if (!ready || fb == NULL) {
+		return;
+	}
+	ili9341_write_rect_indexed(&panel, (const uint8_t *)fb, palette, x0, y0, x1, y1);
+}
+
 static void set_backlight(uint8_t percent)
 {
 	hrc_backlight(percent);
@@ -120,6 +128,7 @@ const hal_display_t gd88_display = {
 	.bpp = 4,
 	.init = init,
 	.flush_indexed = flush,
+	.flush_rect = flush_rect,
 	.set_backlight = set_backlight,
 	.set_key_light = set_key_light,
 };
