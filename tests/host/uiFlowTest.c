@@ -1818,6 +1818,34 @@ static void call_screen_checks(void)
 	}
 }
 
+// While transmitting the screen redraws when the TX timer's second changes, not four times a second: the vocoder leaves
+// the UI little CPU then, and a frame of a large panel is costly. The timer still counts every second
+static void tx_redraw_checks(void)
+{
+	static const struct { const char *name, *setup; } cases[] = {
+		{ "DMR", "" },
+		{ "FM", "down" },
+	};
+	char err[300], buf[64];
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		sim_reset(sim_geom_find("240x320i10x5"), SIM_MAP_K);
+		snprintf(buf, sizeof buf, "%s pttdown", cases[i].setup);	// 1.5 s keyed
+		bool ok = sim_run(buf, err, sizeof err);
+		ui_app_status_t st;
+		ui_app_status(&st);
+		uint32_t before = st.draws;
+		snprintf(buf, sizeof buf, "wait:5000 expect:shows=0:06");
+		if (ok)
+			ok = sim_run(buf, err, sizeof err);
+		ui_app_status(&st);
+		uint32_t draws = st.draws - before;
+		if (!ok || draws > 6) {	// five seconds change, plus one spare
+			printf("FAIL TX redraws %s: %s, %u frames in 5 s\n", cases[i].name, ok ? "ok" : err, (unsigned)draws);
+			fails++;
+		}
+	}
+}
+
 #if CONFIG_DMR_TRUNK
 // Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
 // a Home with an activity area names what was heard, or that it is of another kind (dmr-trunking.md 12.4)
@@ -2348,6 +2376,7 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+	tx_redraw_checks();
 #if CONFIG_DMR_TRUNK
 	t3_other_checks();
 #endif

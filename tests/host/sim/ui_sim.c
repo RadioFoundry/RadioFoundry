@@ -2550,8 +2550,11 @@ void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
 static void step(void)
 {
 	now_ms += TICK_MS;
-	if (view.state == RS_TX)
+	if (view.state == RS_TX) {
 		view.tx_elapsed_ms += TICK_MS;
+		if (view.tx_elapsed_ms % 1000u < TICK_MS)
+			changed();	// as the radio core's TX timer: the view is published when its second changes
+	}
 	if (ptt_up_at && now_ms >= ptt_up_at) {
 		ptt_up_at = 0;
 		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
