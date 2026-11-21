@@ -2771,6 +2771,7 @@ static void test_beep_volume_cap(void)
 	CHECK(radio_beep_pcm_level(100, -35, -40) == 94);	// 0.5 dB down
 	CHECK(radio_beep_pcm_level(60, 310, -40) == 1);		// 35 dB
 	CHECK(radio_beep_pcm_level(0, 310, -40) == 0);
+	CHECK(radio_beep_pcm_level(255, 0, -40) == 161);	// the top of uint8_t: no overflow on the way
 
 	hal_radio_t pcm_radio = fake_radio;
 	hal_power_t soft_power = fake_power;

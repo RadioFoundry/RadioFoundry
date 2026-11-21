@@ -1360,7 +1360,8 @@ rises about 0.77 dB a step over the whole range (not the manual's 1.5 dB). Per v
 | 15 | 94 % | +27 | +23.9 dB | 4 |
 | 16 | 100 % | +31 | +26.9 dB | 3 |
 
-The beep level is a whole number, so at the top steps a beep can sound up to about 1 dB louder than at step 7. The
+The beep level is a whole number of at least 1, so at the top steps a beep can sound louder than at step 7: up to about
+1 dB at `beep_level` 60, and about 7 dB at `beep_level` 10 (step 16 plays level 1 for 0.45). The
 other UV380 family radios have the same chip and knob mapping and use the same curve.
 
 ### 11.3 Mic level

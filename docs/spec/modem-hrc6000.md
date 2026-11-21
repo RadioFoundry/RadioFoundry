@@ -698,11 +698,11 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 bit 1 switches it on (the manual: in FM mode, receive opens the voice channel's codec switch). I2S PCM (beeps, prompts)
 doesn't reach the line out then, with the bit set or clear. A board whose FM audio comes from elsewhere puts 0x10 back
 to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR. Where the
-chip must stay in FM, the prompt tone FIFO (8.1) carries the speaker's PCM instead: it reaches the line out in FM mode
+chip must stay in FM, the prompt tone FIFO (8.1) carries the speaker's PCM instead: the FIFO reaches the line out in FM mode
 ([gotchas.md](gotchas.md) 1.14). That is the FM copy (10.6), which plays every block there, and FM receive on a board
 whose FM audio comes through the chip, which plays a beep there only while the PCM route is on. The FM feed-through
 (0x36) is off for that time, so the beep and the FM audio take turns on the line out. The board reports its chip in
-FM receive (`stm32_i2s_pcm_fm_chip`), and clears it before a DMR set-up or a transmission: a beep while keyed stays
+FM receive (`stm32_i2s_pcm_fm_chip`), and clears that report before a DMR set-up or a transmission: a beep while keyed stays
 off the speaker, and the FIFO doesn't reach the modulator (8.1).
 
 **Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:

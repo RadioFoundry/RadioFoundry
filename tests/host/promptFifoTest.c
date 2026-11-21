@@ -172,7 +172,7 @@ int main(void)
 
 	// --- a beep in FM receive ---
 	CHECK(beep_through_fifo(2, 4) == 2 * BLOCK);	// a key beep (two blocks): whole within beep.c's 4-block hold
-	CHECK(beep_through_fifo(20, 4) == 20 * BLOCK);	// the error beep (400 ms)
+	CHECK(beep_through_fifo(20, 4) == 20 * BLOCK);	// a 400 ms beep (TX denied; the error beep is 150 ms)
 	CHECK(beep_through_fifo(20, 0) < 20 * BLOCK);	// no hold: the tail is lost (the model can fail)
 
 	// --- the chip's FIFO ---

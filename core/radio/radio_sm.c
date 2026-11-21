@@ -8853,13 +8853,15 @@ uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap)
 		return level;
 	}
 	unsigned d = (unsigned)(db10_now - db10_cap);
-	uint32_t milli = (uint32_t)level * 1000u;	// the level in thousandths: 20 dB at a time is a tenth
+	// The level in hundredths: 20 dB at a time is a tenth. 255 x 100 x 32768 still fits 32 bits (thousandths didn't
+	// above level 131)
+	uint32_t centi = (uint32_t)level * 100u;
 	for (; d >= 200u; d -= 200u) {
-		milli /= 10u;
+		centi /= 10u;
 	}
-	milli = (milli * db_down_q15[d / 10u] + 16384u) >> 15;
-	milli = (milli * db10_down_q15[d % 10u] + 16384u) >> 15;
-	uint32_t out = (milli + 500u) / 1000u;
+	centi = (centi * db_down_q15[d / 10u] + 16384u) >> 15;
+	centi = (centi * db10_down_q15[d % 10u] + 16384u) >> 15;
+	uint32_t out = (centi + 50u) / 100u;
 	return (uint8_t)(out == 0 ? 1 : out);
 }
 

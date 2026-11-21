@@ -1097,7 +1097,7 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
-	fifo_fm(r.mode == RADIO_MODE_FM);
+	fifo_fm(true);	// the chip is in FM receive now, whatever r.mode says, until rx() sets it up
 	uvf_backlight_tx(false);
 }
 

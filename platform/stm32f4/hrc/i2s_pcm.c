@@ -373,7 +373,6 @@ static void fifo_follow(void)
 		fifo_chip = chip;
 		xTaskNotifyGive(feeder);
 	}
-	dlog("i2s: prompt FIFO %s", chip != NULL ? "on" : "off");
 }
 
 void stm32_i2s_pcm_speaker(bool on)
