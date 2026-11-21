@@ -274,10 +274,7 @@ typedef struct {
 	uint8_t board_mode;		// radio_mode_t the board was last put in
 	uint8_t vol_step;		// the volume step of a radio without a knob
 	int8_t vol_override;		// the debug link's step over the knob, -1 = none
-	int16_t volume_sent;		// the volume level in force (knob, step, override), -1 = none yet
-	int16_t volume_out;		// last level given to board.radio->volume (volume_apply), -1 = none yet
-	uint32_t beep_hold_ms;		// when a beep was last seen sounding: the volume stays capped a while after
-	bool beep_hold;
+	int16_t volume_sent;		// last level given to board.radio->volume, -1 = none yet
 	int16_t knob_seen;		// the knob's position last put in view.volume_knob, -1 = none yet
 	bool vol_hold;			// RREQ_VOLUME_HOLD: the level stays, the knob is ignored
 

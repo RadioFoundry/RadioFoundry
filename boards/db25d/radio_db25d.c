@@ -748,6 +748,13 @@ static int8_t volume_db(uint8_t percent)
 	return (int8_t)hrc7000_volume_db(volume_step(percent), RADIO_VOLUME_DEFAULT, RADIO_VOLUME_MAX, DB25D_PCM_VOL_TOP_DB);
 }
 
+// The same gain for the core's beep level (hal_radio_t.volume_db10): the register's own dB (hrc7000.h), not measured at
+// the speaker
+static int16_t volume_db10(uint8_t percent)
+{
+	return (int16_t)(volume_db(percent) * 10);
+}
+
 static void volume(uint8_t percent)
 {
 	unsigned step = volume_step(percent);
@@ -790,6 +797,7 @@ const hal_radio_t db25d_radio = {
 	.audio = audio,
 	.volume = volume,
 	.volume_pcm = true,	// the modem's line out gain scales DMR voice and beeps (vol_dac)
+	.volume_db10 = volume_db10,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
