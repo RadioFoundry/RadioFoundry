@@ -26,7 +26,7 @@ quick changes therefore never reads back a value from before its own last change
 | `tot_s` | 180 | the radio's TX time-out, for channels whose own (codeplug) value is 0; 0 = none |
 | `tot_warn_s` | 10 | warning beep this long before the time-out; 0 = none |
 | `bcl` | off | busy channel lockout on FM: off, carrier (anything heard), wrong tone (a carrier without our RX tone) |
-| `roger_beep` | off | FM: a 1200 Hz + 900 Hz tone pair (100 ms each) at the end of each transmission |
+| `roger_beep` | off | FM: a 1200 Hz + 900 Hz tone pair (100 ms each) at the end of each transmission (the default of the end tone, 4.3) |
 | `tx_inhibit` | off | refuse every transmission (`tx_deny=inhibit`) |
 | `scan_resume` | carrier | time (move on after `scan_hold_s` on a signal, or when it ends), carrier (move on `scan_delay_ms` after it ends), stop (the scan ends on the first signal) |
 | `scan_hold_s` | 5 | time mode's hold |
@@ -38,6 +38,8 @@ quick changes therefore never reads back a value from before its own last change
 | `beep_level` | 50 | 0 (silent) to 100: the loudest a beep gets (section 4) |
 | `key_beep` | on | `radio_req_beep(BEEP_KEY)` sounds |
 | `talk_permit` | on | DMR: the talk permit tone when the voice goes on air, or just before on boards with `CAP_BEEP_NOT_ON_AIR` (4) (stored as `SETTINGS_RS_NO_TALK_PERMIT` in `rs_flags`, 0 = on) |
+| `sig_dmr[3]`, `sig_fm[3]` | default | signaling tones (4.3): where the start of transmission, end of transmission and reception end tones sound, in DMR and in FM: default, off, speaker, on air, speaker + air |
+| `sig_hz[3][10]`, `sig_ms[3][10]` | none | signaling tones: each event's chain of ten steps, a frequency in Hz (a multiple of 10) and a length in 10 ms (a step of length 0 ends the chain; no step = the event's standard sound) |
 | `vox` | off | off, on channels whose codeplug entry allows it, on every FM channel (CONFIG_VOX) |
 | `vox_level` | 5 | sensitivity 1 (loud voice needed) to 10 |
 | `vox_tail_ms` | 1500 | stays keyed this long after the voice stops |
@@ -147,8 +149,9 @@ A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side
 is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
 starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
 at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
-refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
-start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+refuses a trunked channel (P25 or Tier III) at once; a mode the board can't receive is refused by the radio core, and
+the watch doesn't start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a
+P25 or NXDN call.
 
 ### 2.2 A second receiver
 
@@ -180,6 +183,11 @@ tone is not decoded). The deny beep sounds, except for `busy`; the state is `tx_
 busy refusal is quiet so the call being received is heard in full: no deny beep (FM and DMR), and on FM a reception
 that was playing plays on while PTT is held (`deny_rx`), until the squelch would have closed. After the release it is
 an ordinary reception again, its RX tone still counted as heard.
+
+TX inhibit, a critical battery and a hardware option still to be set or applied hold for every transmission, not only
+PTT: `key_tx`, which every keying goes through (the list below), refuses them too. What the radio sends by itself
+(DMR replies, trunking signaling, hotspot bursts, the CW ID, APRS beacons) is then not sent. The hotspot's keying,
+armed between bursts, is dropped when TX inhibit is set and armed again when it is cleared.
 
 The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
 debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
@@ -389,6 +397,7 @@ None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) 
 | TOT warning | 1000 Hz 100 ms twice | 3.2, unless Settings > Sound > TOT warning tone is off (settings area key 0x0004) |
 | battery low | 800 Hz, 600 Hz | entering low, then every 2 min, unless Settings > Sound > Battery tone is off (settings area key 0x0005) |
 | battery critical | 600 Hz three times | entering critical, then every 30 s; the same setting as battery low |
+| custom | up to 10 steps, 900 ms | a signaling tone on the speaker (4.3); not a fixed pattern: it has no entry in the pattern table or the beep reel |
 | scan hold | 1400 Hz 40 ms | the scan stops on a signal, if `scan_beep` (Settings > Sound > Scan stop tone, off by default) |
 | emergency | 1500 / 900 Hz warble, 6 x 160 ms | someone's emergency heard (alarm or emergency call), if the emergency setting's tone is on (Settings > Sound > Emergency tone, `dmr-emergency.md`) |
 | message | 1000, 1300, 1700 Hz rising, 60-90 ms each | a text message arrived: the UI asks for it (`radio_req_beep(BEEP_MESSAGE)`) when Settings > Sound > Message tone is on |
@@ -406,7 +415,14 @@ Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no click
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
 knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: an HR_C6000
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
-speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
+speaker path. Beeps stop getting louder above volume step 7 (`RADIO_BEEP_VOLUME_STEP`) on a `volume_pcm` board that
+gives the gain its volume adds to the PCM path at the speaker (`hal_radio_t.volume_db10`, tenths of a dB): above that
+step, each beep's samples are played softer by the gain over step 7's (`radio_beep_pcm_level`, rounded to a whole
+level, never below 1), so the beep sounds as at step 7. The speaker volume itself never changes for a beep, so voice
+playing at the same time (a DMR call with a beep mixed in) keeps its level. Steps 1-7 play `beep_level` unchanged. The
+curve comes from the board: on an HR_C6000 board the curve is measured at the speaker (about 0.77 dB per RX gain step, 26.9 dB
+from step 7 to the top). A `volume_pcm` board without the hook has beeps follow the volume to the top. This holds for
+FM and DMR beeps alike. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
 leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
 amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
@@ -421,7 +437,8 @@ block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stre
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
-mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
+mode this counts instead; on an HR_C6000 board whose FM audio comes through the chip, the stream runs and the beep
+plays through the chip's prompt FIFO, [modem-hrc6000.md](modem-hrc6000.md) 8), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
 played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
 
@@ -505,6 +522,62 @@ the radio. No new view field: `follow_volume` already filters the knob (2 %, the
 (`volume_bar_checks`, every display class, a seeded property run), `radioCoreTest` (`test_volume_step_of`), gallery
 `volume_bar`, `volume_bar_call`.
 
+### 4.3 Signaling tones (CONFIG_SIG_TONES)
+
+Short tone sequences at three events, on the speaker, on air or both, set separately for DMR and for FM
+(`core/radio/sigtone.h`, Settings > Sound). Each sequence is up to 10 steps of `{Hz, ms}` (`SIG_STEPS`), at most 900 ms in
+all (`SIG_MAX_MS`), a pause being a step of 0 Hz: the shape of the rows of a CPS alert tone page.
+
+| Event | Where it fires | Default (the output setting 0) |
+|---|---|---|
+| start (`SIG_EV_BEGIN`) | DMR: the talk permit's place. FM: when the transmitter keys | DMR: the talk permit (`talk_permit`). FM: none |
+| end (`SIG_EV_END`) | DMR: our transmission is over. FM: PTT released | DMR: none. FM: the roger beep, if `roger_beep` is on |
+| idle (`SIG_EV_IDLE`) | DMR: a call heard ended. FM: the squelch closed after a reception | DMR: the call end beep. FM: none |
+
+Output (`sig_out_t`): *default* leaves the row above as it was and an older settings record reads it, *off* silences
+the event (the talk permit, the call end beep and the roger beep included), *speaker*, *on air* and *speaker + air*
+replace it with the sequence. The idle event has no on air copy: `clamp_settings` maps it to what the speaker can do. The FM start tone
+on air plays right after the transmitter keys (`fm_lead_start`, on the `roger_seg` chain through `tx_tone`) and the
+microphone goes live when it ends; releasing the PTT during it cancels it. A board without `tx_tone` sends none. A channel with "no beep" has none of
+the speaker or on air copies. The tones on the speaker are the `BEEP_CUSTOM` pattern of `beep.c` (`beep_play_custom`:
+two copies of the steps alternate, so a pattern still playing is not rewritten), and a *default* output keeps the fixed
+beeps and their Settings > Sound switches (the FM roger beep has none: `roger_beep` is set over the debug link). The sound is the event's chain (`sig_chain`): up to `SIG_STEPS` (10) steps, each a frequency (0 = a pause, up to
+`SIG_HZ_MAX`, 3400 Hz, a multiple of `SIG_HZ_UNIT`, 10 Hz) and a length (multiples of 10 ms), the same shape as the Frequency / Period rows of a CPS alert
+tone page. A step of length 0 ends the chain, and the whole chain is cut to `SIG_MAX_MS` (900 ms: on air the call stack holds the over open for three superframes, about 1.08 s). A chain with no step
+is the event's standard sound (the permit beep at the start, the call end beep otherwise). Settings > Signaling tones
+edits the three chains in `settings_t` (the `sig-chain` screen, [ui.md](ui.md) 2): nothing is built in beyond that standard
+sound.
+
+The three events are also keys of the codeplug's settings area (0x0007-0x0009, [codeplug-settings.md](codeplug-settings.md)
+3.3): the outputs and the chain of an event, as one record. A key that is present holds over the radio's own copy, and a
+change from the menu writes the event's record (one write for a step's frequency and length) as every keyed setting
+does (5.2). A record with a value the setting can't take reads as absent. Without `CONFIG_SIG_TONES` the keys are kept
+and carried but do nothing.
+
+| On air | How |
+|---|---|
+| DMR start | `ambeVoiceTxTone` is asked for as PTT goes down; the encoder sends the sequence in place of the microphone from the transmission's first block, after the headers. The encoder waits for room in its queue (`AMBE_VOICE_QUEUE`, 8 frames) before each block of the tone, so none of it is lost to an overflow |
+| DMR end | asked for as PTT is let go while on air, with the microphone muted after it (`final`). The call stack holds the over open while the source is busy (`dmr_voice_source_t.busy`: the tone not yet pulled), one superframe at a time, at most `DMR_CALL_TX_TAIL_HOLDS` (3, about 1.1 s). A time-out ends the over at once |
+| FM end | `roger_poll` steps through the sequence with `hal_radio_t.tx_tone`, from each step's own start (a step begins at the first poll, `RADIO_POLL_MS`, after its time), then unkeys. The default is the two step roger beep. A board with no `tx_tone` sends none |
+
+The tone is encoded as a tone frame (`VOCODER_OPT_TONE_FRAMES`) with the noise reduction off while it plays, and the
+options are put back after it. AMBE is a speech codec: a steady tone passes, a sequence of steps shorter than about
+60 ms is two or three frames each and may sound rough, and what another make's radio does with a tone frame is not
+specified here. A start tone is sent with the host's audio (USRP) never, and a start tone longer than the encoder queue
+can hold waits for the call stack, which delays the voice that much. The tone counts in the TX time-out.
+
+The DMR on air copy carries `SIG_AIR_GUARD_MS` (60 ms) of silence on its outer side before a start tone and `SIG_AIR_END_GUARD_MS` (100 ms) after an end tone, which a receiver slow to close its audio cut now and then at 60. A
+link that drops the first or last frames of a transmission (a hotspot, a repeater that opens late) then loses the
+silence and not the tone. The guard counts in the tone's length for the tail hold: 900 ms and the longer guard (1000 ms) are inside the
+three superframes (1080 ms) the over is held for.
+
+On the speaker the start tone follows the board: a board with `CAP_BEEP_NOT_ON_AIR` plays a DMR start tone before keying,
+in the talk permit's hold (`permit_before_key`), and plays the FM start tone on the speaker as it keys (only the DMR engine closes the audio path). A board with `hal_radio_t.tx_tone_side` (the modem's sidetone) hears an FM start tone set to speaker + air from the tone sent on air: the core turns the sidetone on with the tone and off when it ends, and plays no separate beep. The end
+tone plays once the transmitter is off, and on a board whose audio path is closed while the DMR engine sends its last burst
+(`hal_audio_t.speaker_blocked`) a little after that: audio queued while the path is closed is dropped when it opens, so the
+core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.
+
+
 ## 5. Power
 
 ### 5.1 Battery
@@ -517,8 +590,8 @@ below a threshold lower the level; it goes back up 200 mV above it.
 
 A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
-for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
-warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
+for the battery. The UI shows no battery icon, percentage, Battery saver setting or Low battery warning setting. The
+debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
 `battery_pct` and `battery_mv` out, and SNMP reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and rfoundryBatteryState
 ok(1) without ever sending rfoundryLowBattery.
 
@@ -548,7 +621,9 @@ dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, S
 Dim/Off) carries both in one value: a time T > 0 dims after T and goes off after 4T, 0 is always on, and -T dims after
 T and never goes off (the "T/dim" choices).
 
-Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
+Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see. With the
+backlight off, a key only wakes it, except the ones `ui_app_key_while_dark` lets through (PTT, Monitor, Emergency).
+Emergency sends only its long press, so it must act on the first event.
 
 | State | Wakes | Why |
 |---|---|---|
@@ -616,6 +691,11 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
+
+The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
+receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with
+a carrier present uses this state: backlight PWM that reaches the synthesizer, for one.
+A beep or other local PCM alone never sets `rx_open`.
 
 ## 6. TX power, calibration, band limits
 

@@ -14,6 +14,7 @@
 // J0 programmed is the commit point. Then for each sector: J1 = the sector merged with the data, "staged", the
 // sector erased and programmed from J1, "done". Replay: a sector not staged is still intact, so it is merged again.
 #include <string.h>
+#include "config.h"
 #include "storage/storage.h"
 
 #define J_MAGIC		0x4C4E4A4Fu	// "OJNL"
@@ -29,7 +30,7 @@
 static bool ready;			// usable flash (the region may still be foreign)
 static storage_region_t region;
 static bool claim_pending;
-static uint8_t buffer[STORAGE_SECTOR];
+static uint8_t buffer[STORAGE_SECTOR] RFOUNDRY_COLD_RAM;	// task-side only (storage_buffer_acquire)
 static bool buffer_taken;
 static storage_stats_t stats;
 
@@ -590,7 +591,11 @@ bool storage_write(uint32_t addr, const void *buf, uint32_t len)
 storage_native_t storage_native_erase(void)
 {
 	const hal_flash_map_t *m = storage_map();
-	if (!storage_ready() || m == NULL || m->native_size == 0 || (m->native_addr % STORAGE_SECTOR) != 0 ||
+	// a map without a native area (a small chip's): nothing there to empty, so a factory reset goes on
+	if (storage_ready() && m != NULL && m->native_size == 0) {
+		return STORAGE_NATIVE_BLANK;
+	}
+	if (!storage_ready() || m == NULL || (m->native_addr % STORAGE_SECTOR) != 0 ||
 	    (m->native_size % STORAGE_SECTOR) != 0 || m->native_addr + m->native_size > board.flash->size) {
 		return STORAGE_NATIVE_FAILED;
 	}

@@ -35,6 +35,9 @@ static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
 
 static const char features[] =
+#if CONFIG_NXDN_SCRAMBLER
+	"NXDN_SCRAMBLER,"
+#endif
 #if CONFIG_FM
 	"FM,"
 #endif
@@ -55,6 +58,9 @@ static const char features[] =
 #endif
 #if CONFIG_GPS
 	"GPS,"
+#endif
+#if CONFIG_SATELLITE_TLE
+	"SATELLITE_TLE,"
 #endif
 #if CONFIG_APRS
 	"APRS,"
@@ -128,6 +134,9 @@ static const char features[] =
 #if CONFIG_NET_HTTP_GZIP
 	"NET_HTTP_GZIP,"
 #endif
+#if CONFIG_NET_RADIO_UDP
+	"NET_RADIO_UDP,"
+#endif
 #if CONFIG_NET_RIGCTL
 	"NET_RIGCTL,"
 #endif
@@ -181,6 +190,9 @@ static const char features[] =
 #endif
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"
+#endif
+#if CONFIG_SUPPORT_INFO
+	"SUPPORT_INFO,"
 #endif
 #if CONFIG_SCAN
 	"SCAN,"

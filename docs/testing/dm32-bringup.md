@@ -87,7 +87,8 @@ python3 -m pytest tests/hil -v -rs --radio-port /dev/cu.usbserial-XXXX -k "healt
 
 ## 4. Data flash and calibration
 
-`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios), `txc` not 128, `pa` values not 1408.
+`diag`: `flash C84018 cal factory` (or `852018` on Puya-flash radios, `EF4018` on Winbond-flash radios, `684018` on
+Boya-flash radios), `txc` not 128, `pa` values not 1408.
 
 | If | Then |
 |---|---|
@@ -177,6 +178,8 @@ No fix needed: the module talks from about 1 s after power-up, indoors too.
 |---|---|---|
 | The diagnostics line `gps ...` (Settings > Diagnostics, or the debug link's diag lines) 10 s after start-up | `gps yes`, the good count rising by a few a second, bad near 0, `b` rising by about 300-600 a second | `gps no` with `b0`: no bytes on UART1: PTA9's mux (IO_DIPLEX0 bit 9 = 0), the power pin (0x2C low), the module. `gps no` with bytes but no good sentences: the baud rate (try 115200; stock may have reconfigured the module) |
 | Outdoors, a few minutes | Info > Position shows a fix and the satellite count | the NMEA talker or sentence set (`position_nmea`) |
+| Outdoors: restart, or GPS off then on in Settings > Location | a fix (`pos.gps_fix=1` in the debug link's `view`) in under 1 minute (17 to 51 s measured, one run each; 45 s after 5 minutes powered off) | a view of the sky; if the satellite count stays 0 with NMEA clean, the antenna |
+| Indoors | a fix is possible but not reliable: one run had a fix within about 1 minute, another none for more than 5 minutes | move outdoors before suspecting the firmware |
 | Bad count rising steadily | near 0 | UART errors: the divisor (547 at 84 MHz APB) or noise on the line |
 
 ## 13. APRS
@@ -191,6 +194,11 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 | An FM signal on 144.390 with the squelch open | heard on the speaker, through the C7000's FM playback | AUDIO_CONTROL bit 6, the codec line out |
 | A packet sent at level 50, recorded by the SDR bench (`aprs.md` 13) | decodes with a valid FCS, about 3 kHz peak deviation, twist within 2 dB | no tones: AUDIO_CONTROL bit 7 during the transmission, Timer 4 (vector 36) not firing. Deviation: `amp_per_level` in `radio_dm32.c` |
 
+## NXDN Scrambler interoperability
+
+Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
+between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).
@@ -203,7 +211,13 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 - UART divisor 46 (0.9 % slow) or 45 (1.3 % fast).
 - RSSI dBm offset and the noise scale for the squelch.
 - GPS: NMEA arrives on UART1 at 9600 (section 12): `gps yes`, 291 good sentences and 0 bad 26 s after start-up (on the
-  radio, indoors, no fix). A fix outdoors is still to check.
+  radio, indoors, no fix). Later (2026-11-18, a local build): outdoors, a 3D fix with 6 to 13 satellites, and NMEA
+  stayed clean (about 200,000 sentences, 1 bad). Time to the first fix outdoors, one run each: 17 s after a software
+  restart, 51 s after Settings > Location > GPS off for 30 s and on, 45 s after the radio first answered following
+  5 minutes powered off. Indoors the result varied: a fix within about 1 minute of a restart in one run, and no fix for
+  more than 5 minutes after the HIL `test_gps_power_switch` cycled the module in another; the fix came back once the
+  radio was outdoors. HIL `test_gps_nmea`, `test_position_view`, `test_position_fixed_settings` and
+  `test_gps_power_switch` pass; `test_gps_fix` (needs a person) and the restart test were not run.
 - APRS receive (section 13): decodes off air, 12 of 12 frames from another radio at lowest power a few feet away
   (2026-10-16). The receive audio had peaks about 19000 of 32767 and dropped no halves. Its space tone was 6-8 dB
   under the mark tone (the FD6818's de-emphasis; the sender was flat within 1.3 dB on the SDR bench), and it carried

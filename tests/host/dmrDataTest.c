@@ -1116,6 +1116,163 @@ static void testFuzz(void)
 	printf("# dmr data fuzz: %ld packets reassembled from mutated bursts\n", packets);
 }
 
+
+// Data privacy (dmr-data.md 13): a two-octet repeating keystream as the static schemes use, so the layer is tested
+// without a scheme's code
+static int cryptCalls;
+
+static bool testCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	uint16_t k = *(const uint16_t *)ctx;
+
+	cryptCalls++;
+	if ((alg != DMR_DATA_ALG_BASIC) || (mi != 0))
+	{
+		return false;
+	}
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (i & 1) ? (k & 0xFF) : (k >> 8);
+	}
+	return true;
+}
+
+static void testPrivacy(void)
+{
+	static const uint16_t key = 0x2503, otherKey = 0x1F00;
+	dmrDataPrivacy_t on = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &key };
+	dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	dmrDataPrivacy_t other = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &otherKey };
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS], plain[DMR_DATA_MAX_BURSTS];
+	uint8_t pdu[40], want[12];
+
+	for (int i = 0; i < (int)sizeof(pdu); i++) pdu[i] = (uint8_t)(0x45 + i * 7);
+
+	// Unconfirmed: the privacy header after the first, counted in its blocks to follow; the blocks encrypted
+	dmrDataSetPrivacy(NULL);
+	int np = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+								plain, DMR_DATA_MAX_BURSTS);
+	CHECK(dmrDataPrivacyBursts() == 0 && dmrDataPacketBursts(sizeof(pdu), DMR_TYPE_RATE_1_2) == np - 1);
+	dmrDataSetPrivacy(&on);
+	CHECK(dmrDataPrivacyBursts() == 1 && dmrDataPacketBursts(sizeof(pdu), DMR_TYPE_RATE_1_2) == np);
+	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+								b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == np + 1);
+	CHECK(b[0].dataType == DMR_TYPE_CSBK && b[0].payload[3] == n - 1);
+	CHECK(b[1].dataType == DMR_TYPE_DATA_HEADER && (b[1].payload[8] & 0x7F) == (plain[1].payload[8] & 0x7F) + 1);
+	CHECK((b[1].payload[1] >> 4) == DMR_SAP_IP);// the first header keeps the user data's SAP
+	// SAP 4 | DPF 15, MFID 0x10, algorithm 0 encrypted, key ID 0, no message indicator
+	hex("4f1001000000000000000000", want);
+	addHeaderCRC(want);
+	want[10] ^= 0xCC;
+	want[11] ^= 0xCC;
+	CHECK(b[2].dataType == DMR_TYPE_DATA_HEADER && memcmp(b[2].payload, want, 12) == 0);
+	CHECK(dmrDataCheckCRC16(b[2].payload, 0xCC));
+	// The user data XORed from its first octet (0x45 ^ 0x25, 0x4C ^ 0x03), the pad octets clear, the CRC-32 over the
+	// encrypted octets
+	CHECK(b[3].payload[0] == (0x45 ^ 0x25) && b[3].payload[1] == (0x4C ^ 0x03));
+	uint8_t all[DMR_DATA_MAX_PACKET];
+	int len = 0;
+	for (int i = 3; i < n; i++) { memcpy(&all[len], b[i].payload, 12); len += 12; }
+	CHECK(len == 48 && all[40] == 0 && all[41] == 0 && all[42] == 0 && all[43] == 0);// 4 pad octets
+	uint32_t crc = dmrDataCRC32(all, 44);
+	CHECK(all[44] == (crc & 0xFF) && all[47] == (crc >> 24));
+	dumpBursts("privacy-unconfirmed", b, n);
+	CHECK(dmrDataPrivacyAllows(b, n));
+	CHECK(!dmrDataPrivacyAllows(plain, np));// the same packet without the header is held back
+	CHECK(dmrDataPrivacyEncrypted(b, n) && !dmrDataPrivacyEncrypted(plain, np));
+
+	// Received with the key: decrypted, the SAP the first header's
+	cryptCalls = 0;
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.privacy.present && dmrDataRxPacket.privacy.encrypted && dmrDataRxPacket.privacy.alg == 0 &&
+	      dmrDataRxPacket.privacy.sap == DMR_SAP_IP && dmrDataRxPacket.decrypted && cryptCalls == 1);
+	CHECK(dmrDataRxPacket.sap == DMR_SAP_IP && dmrDataRxPacket.length == sizeof(pdu) &&
+	      memcmp(dmrDataRxPacket.data, pdu, sizeof(pdu)) == 0);
+	// Without a key, or with no privacy: the CRC-32 still passes, the data stays encrypted
+	dmrDataSetPrivacy(NULL);
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.privacy.encrypted && !dmrDataRxPacket.decrypted && dmrDataRxPacket.data[0] == (0x45 ^ 0x25));
+	// A clear packet after it carries no privacy
+	CHECK(feed(plain, np) == DMR_DATA_RX_PACKET);
+	CHECK(!dmrDataRxPacket.privacy.present && !dmrDataRxPacket.decrypted && memcmp(dmrDataRxPacket.data, pdu, 40) == 0);
+	// Another key of the same scheme decrypts to the wrong octets (the receiver's IP checks drop it)
+	dmrDataSetPrivacy(&other);
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.decrypted && memcmp(dmrDataRxPacket.data, pdu, 40) != 0);
+
+	// SAP 9 in the first header: the user data's SAP is the second header's
+	dmrDataSetPrivacy(&on);
+	dmrBurst_t s9[DMR_DATA_MAX_BURSTS];
+	memcpy(s9, b, sizeof(dmrBurst_t) * n);
+	s9[1].payload[1] = (uint8_t)((DMR_SAP_PROPRIETARY << 4) | (s9[1].payload[1] & 0x0F));
+	memcpy(want, s9[1].payload, 10);
+	addHeaderCRC(want);
+	s9[1].payload[10] = want[10] ^ 0xCC;
+	s9[1].payload[11] = want[11] ^ 0xCC;
+	CHECK(feed(s9, n) == DMR_DATA_RX_PACKET && dmrDataRxPacket.sap == DMR_SAP_IP && dmrDataRxPacket.decrypted &&
+	      memcmp(dmrDataRxPacket.data, pdu, sizeof(pdu)) == 0);
+	// A second header with a bad CRC ends the packet
+	memcpy(s9, b, sizeof(dmrBurst_t) * n);
+	s9[2].payload[5] ^= 1;
+	CHECK(feed(s9, 3) == DMR_DATA_RX_ERROR);
+	// An MFID 0x10 second header with SAP 1 is not a privacy header
+	memcpy(s9, b, sizeof(dmrBurst_t) * n);
+	hex("1f1002000000000000000000", want);
+	addHeaderCRC(want);
+	want[10] ^= 0xCC;
+	want[11] ^= 0xCC;
+	memcpy(s9[2].payload, want, 12);
+	CHECK(feed(s9, n) == DMR_DATA_RX_PACKET && !dmrDataRxPacket.privacy.present && !dmrDataRxPacket.decrypted);
+
+	// Confirmed, with a selective retry: the privacy header in every transmission, blocks to follow count it
+	uint8_t big[100], flags[8];
+	for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 13 + 1);
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 2, true, 0, 0, b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == 1 + 1 + 7 && (b[0].payload[8] & 0x7F) == 8);
+	CHECK(b[1].dataType == DMR_TYPE_DATA_HEADER && b[1].payload[0] == 0x4F && b[1].payload[2] == 0x01);
+	CHECK(memcmp(&b[2].payload[2], big, 16) != 0);
+	CHECK(dmrDataPrivacyAllows(b, n));
+	b[4].payload[9] ^= 0x10;// block 2
+	CHECK(feed(b, n) == DMR_DATA_RX_RETRY);
+	dmrDataRxRetryFlags(flags);
+	CHECK(flags[0] == 0xFB);
+	dmrBurst_t retry[3];
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 2, false, 1ULL << 2, 0, retry,
+								3);
+	CHECK(n == 3 && (retry[0].payload[8] & 0x7F) == 2 && retry[1].payload[0] == 0x4F && ((retry[2].payload[0] >> 1) == 2));
+	dmrDataRxReset();
+	CHECK(dmrDataRxBurst(&retry[0]) == DMR_DATA_RX_NONE && dmrDataRxBurst(&retry[1]) == DMR_DATA_RX_NONE);
+	CHECK(dmrDataRxBurst(&retry[2]) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.length == sizeof(big) && dmrDataRxPacket.decrypted &&
+	      memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0);
+	// A retry's second header with a bad CRC: the blocks held from the first try are kept, the packet completes
+	CHECK(feed(b, 9) == DMR_DATA_RX_RETRY);
+	retry[1].payload[5] ^= 1;
+	dmrDataRxReset();
+	CHECK(dmrDataRxBurst(&retry[0]) == DMR_DATA_RX_NONE && dmrDataRxBurst(&retry[1]) == DMR_DATA_RX_NONE);
+	CHECK(dmrDataRxBurst(&retry[2]) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.decrypted && memcmp(dmrDataRxPacket.data, big, sizeof(big)) == 0);
+
+	// What may go out: responses and CSBKs always; UDT can't carry the header; nothing with data under a blocking scheme
+	dmrBurst_t r[2], u[8];
+	CHECK(dmrDataBuildResponse(DMR_SAP_IP, 10005, 100, DMR_RESPONSE_ACK(2), NULL, r) >= 1);
+	CHECK(!dmrDataPrivacyEncrypted(r, 1));
+	dmrDataLocation_t loc;
+	memset(&loc, 0, sizeof(loc));
+	int nu = dmrDataBuildUDTLocation(false, 100, 10005, &loc, 1, u, 8);
+	CHECK(nu > 0 && !dmrDataPrivacyAllows(u, nu));
+	CHECK(dmrDataPrivacyAllows(r, 1) && dmrDataPrivacyAllows(u, 1));// the preamble CSBK alone
+	dmrDataSetPrivacy(&block);
+	CHECK(dmrDataPrivacyBursts() == 0);
+	n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+							b, DMR_DATA_MAX_BURSTS);
+	CHECK(n == np && memcmp(b[2].payload, plain[2].payload, 12) == 0);// built clear: the service holds it back
+	CHECK(!dmrDataPrivacyAllows(b, n) && !dmrDataPrivacyAllows(u, nu));
+	CHECK(dmrDataPrivacyAllows(r, 1) && dmrDataPrivacyAllows(u, 1));
+	dmrDataSetPrivacy(NULL);
+	CHECK(dmrDataPrivacyAllows(b, n) && dmrDataPrivacyAllows(u, nu));
+}
+
 int main(void)
 {
 	testCRC32();
@@ -1142,6 +1299,7 @@ int main(void)
 	testFrames();
 	testCodedFrames();
 	testShortPayloads();
+	testPrivacy();
 	testFuzz();
 
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

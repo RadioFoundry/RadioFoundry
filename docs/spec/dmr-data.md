@@ -123,13 +123,16 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 
 Three formats. Which one a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_ETSI_IP / _ETSI / _TMS)`,
 `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used by
-the UI, Settings > Connections > Message format). A reply uses the received message's format
-(`dmrDataMessage_t.format`). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+the UI, Settings > Connections > Message format). Automatic selects UTF-16BE Tier III control-channel short data
+for up to 23 characters on a clear trunked channel when the UDT sender is available. It uses ETSI IP text otherwise.
+Canned replies use the received message's format (`dmrDataMessage_t.format`) where available; a UDT reply that exceeds
+the short-data limit or is sent on a conventional channel uses ETSI IP text. The message composer uses the selected
+format setting. A per-contact format is not stored yet (the codeplug's contact has no field for it).
 All three are read whatever the setting.
 
 | Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
 |---|---|---|---|
-| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
+| ETSI IP text (5.3) | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
 | ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
 | Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
 
@@ -297,7 +300,8 @@ with N(S) 0 within 20 s.
   first).
 - DD formats read (`dmrData.h`): 0x02 7-bit (ISO/IEC 646, packed, the bit padding gives the length), 0x03-0x11 ISO
   8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
-  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
+  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?', and control characters (C0, DEL and C1,
+  0x00-0x1F and 0x7F-0x9F) are dropped: the UI's text takes 0x80-0x86 as its own glyphs (`core/ui/font.h`). Binary and BCD are not text: counted, not shown.
   The codes are TS 102 361-1 V2.7.1 Table 9.50 (9.3.38); the bit padding is 9.3.44. A host test holds one message
   computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
@@ -365,7 +369,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 ## 7. LRRP
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
-  most, reports at most every 5 s) with a start response, then reports.
+  most, reports 30 s to 1 day apart, whatever the requester asks) with a start response, then reports.
 - The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
   core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
   APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.
@@ -802,7 +806,65 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   ACK a second time 2.5 s later on most sends (9 of 10): it missed our link ACK to the first. With both, one of the
   two got a single TMS ACK on 8 sends of 8, and a third radio listening decoded our link ACK every time.
 
-## 13. Tests
+## 13. Privacy
+
+The channel's privacy key (`CONFIG_DMR_PRIVACY`, [dmr-voice.md](dmr-voice.md) 5) covers packet data too. Each scheme
+in `core/dmr/dmrPrivacy.c` says what it does with data; the data layer (`dmrData.c`, `dmrDataService.c`) gets a
+descriptor (`dmrDataPrivacy_t`: mode, algorithm ID, crypt callback) and never tests a scheme. A new scheme is a table
+entry.
+
+| Scheme | Data |
+|---|---|
+| Off, or no valid key | clear |
+| Motorola BP | encrypted: privacy header, algorithm 0 |
+| Anytone BP | no data form: every data list is refused |
+
+### 13.1 Privacy header
+
+A data header with DPF 15 right after the first data header (`dmrDataBuild*` add it; it counts in the first header's
+blocks to follow):
+
+| Octet | Content |
+|---|---|
+| 0 | SAP << 4 \| 0xF |
+| 1 | MFID 0x10 |
+| 2 | algorithm (bits 6-4: 0 BP, 1 RC4, 2 DES, 4 AES-128, 5 AES-256), encrypted 1 (bits 3-0) |
+| 3 | key ID (0 for BP) |
+| 4-5 | 0 |
+| 6-9 | MI, big-endian (0 for BP) |
+| 10-11 | CRC-CCITT, mask 0xCC |
+
+We send the real SAP in the first header. On RX a first header with SAP 9 takes the user data's SAP from the privacy
+header. A header with MFID 0x10 and SAP 1 is not a privacy header.
+
+### 13.2 BP keystream
+
+The key (1-255) selects a 16-bit word from the BP key table. The word repeats over the user data octets, high octet
+first, from octet 0 of the packet's user data (the IP datagram or the compressed header and payload). There is no MI
+and no restart per block. Pad octets and the CRC-32 stay clear. The CRC-32, and the CRC-9 of each confirmed block, are
+computed over the ciphertext, so a receiver without the key still checks and acknowledges the packet.
+
+### 13.3 What is refused, what is dropped
+
+- TX: `queueTx` is the one place every list passes (`dmrDataPrivacyAllows`). With an encrypting scheme every data
+  header except responses and proprietary headers must be followed by a privacy header. With a blocking scheme any
+  data header is refused. ETSI defined short data (5.2) has no privacy header, so it is refused under an encrypting
+  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
+  fails at once; other requests fail or time out as when the channel is busy.
+- Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
+- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
+  MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives
+  garbage that the IP checks drop.
+- Counters (debug link section 8): `data.privacy_rx` (decrypted), `data.privacy_rx_dropped`, `data.privacy_tx` (lists
+  sent encrypted), `data.privacy_blocked` (lists refused).
+
+### 13.4 Open
+
+- Not yet checked against a commercial portable on air: whether its first header carries SAP 9 or the real SAP, and
+  octets 4-5.
+- Talker alias and the embedded LC are still sent in the clear.
+
+## 14. Tests
 
 - `tests/host/dmrDataServiceTest.c`: the service on a fake host: replies and duplicates, confirmed data, queue
   overflow and aging, CSBK both ways, our SMS and its ACK, ARS, LRRP with and without a position, the block window,
@@ -828,6 +890,11 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).
+- Privacy (13): `tests/host/dmrDataTest.c` (testPrivacy: the privacy header octet for octet, the keystream and clear
+  pad, the CRC over the ciphertext, RX with the right, wrong and no key, SAP 9, a bad header CRC, a network header (MFID 0x10, SAP 1),
+  confirmed with a retry, what `dmrDataPrivacyAllows` lets through), `tests/host/dmrPrivacyTest.c` (testData: the
+  modes per scheme, the BP key words), `tests/host/dmrDataServiceTest.c` (testPrivacy: a refused SMS fails with
+  nothing on air, an encrypted SMS out and in, an encrypted packet without the key dropped).
 - `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
 - `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
   (12.8): the largest datagram each way, the receiver's limit and one block more; one octet more to the air and the

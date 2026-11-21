@@ -93,6 +93,11 @@ spec = "docs/spec/nxdn.md"
 source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
           "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
 
+[feature.nxdn_scrambler]
+switch = "NXDN_SCRAMBLER"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -101,6 +106,12 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 [feature.dmr_privacy]
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_data_privacy]
+requires = "DMR_PRIVACY"
+# Packet data under a privacy key: the privacy header, the user data encrypted, or held back
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmrPrivacy.c"]
 
 [feature.dmr_talker_alias]
 switch = "DMR_TALKER_ALIAS"
@@ -197,6 +208,11 @@ spec = "docs/spec/radio-features.md"
 switch = "BEEP"
 spec = "docs/spec/radio-features.md"
 
+[feature.signaling_tones]
+switch = "SIG_TONES"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio/sigtone.c", "core/radio/sigtone.h", "core/radio/beep.c", "core/radio/radio_sm.c"]
+
 [feature.vibrate]
 switch = "VIBRATE"
 hardware = "a vibration motor"
@@ -207,6 +223,21 @@ switch = "GPS"
 hardware = "a GPS receiver"
 spec = "docs/spec/position.md"
 source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
+[feature.satellite_tle]
+switch = "SATELLITE_TLE"
+spec = "docs/spec/satellite.md"
+source = ["core/debuglink/debuglink_satellite.c", "core/debuglink/debuglink_view.c", "core/radio/radio_task.c",
+          "core/satellite", "core/ui/ui_satellite.c", "core/position/position.c",
+          "hal/hal_flash.h", "boards/db25d/flash_db25d.c", "boards/dm32/board.c",
+          "boards/dm1801pro/board.c", "boards/md380/flash_md380.c",
+          "boards/md9600/store_md9600.c", "boards/uv380_family/flash_uvf.c"]
+
+# The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
+[feature.gps_icon]
+requires = "GPS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/ui_screens.c", "core/ui/ui_app.c"]
 
 # The position service: built for GPS, APRS, DMR_LRRP or DMR_GPS, so it has no switch of its own
 [feature.position]
@@ -346,6 +377,10 @@ spec = "docs/spec/crash-log.md"
 switch = "WATCHDOG"
 spec = "docs/spec/watchdog.md"
 
+[feature.support_info]
+switch = "SUPPORT_INFO"
+spec = "docs/spec/support-info.md"
+
 [feature.fault_trace]
 switch = "FAULT_TRACE"
 spec = "docs/spec/crash-log.md"
@@ -397,6 +432,10 @@ spec = "docs/spec/tcp-services.md"
 switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
+
+[feature.net_radio_udp]
+switch = "NET_RADIO_UDP"
+spec = "docs/spec/tcp-services.md"
 
 [feature.net_rigctl]
 switch = "NET_RIGCTL"

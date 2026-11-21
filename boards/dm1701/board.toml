@@ -11,6 +11,8 @@ also = ["Retevis RT84"]
 kind = "handheld"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 2
+# the sixth character of the APRS tocall, APRDF7 (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "7"
 
 [docs]
 hardware = "docs/spec/hardware-dm1701.md"

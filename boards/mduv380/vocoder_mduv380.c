@@ -169,6 +169,14 @@ static const stm32_codec_profile_t p1933 = {
 	.at = CODEC_ENTRIES,
 };
 
+// D19.62 REC
+static const codec_desc_window_t d1962_tables[] = { { 0x080DCFF0u, 0x126E6u, 0x78609264u } };
+static const stm32_codec_profile_t d1962 = {
+	.tag = 0x00441962u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080EF6D8u, .code_len = 0xF496u, .code_crc = 0xC84F626Au, .tables = d1962_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
 // V19.74 CSV
 static const codec_desc_window_t v1974_tables[] = { { 0x080DA36Cu, 0x1272Eu, 0x605799E9u } };
 static const stm32_codec_profile_t v1974 = {
@@ -233,6 +241,22 @@ static const stm32_codec_profile_t w10_s1974 = {
 	.at = CODEC_ENTRIES,
 };
 
+// V119.33 CSV AES 256
+static const codec_desc_window_t v11933_tables[] = { { 0x080E2814u, 0x126B2u, 0xD846D18Du } };
+static const stm32_codec_profile_t v11933 = {
+	.tag = 0x20561933u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C0000u, .code_len = 0xF3BEu, .code_crc = 0xDF78448Fu, .tables = v11933_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// 10 W D219.43 REC AES 255
+static const codec_desc_window_t w10_d21943_tables[] = { { 0x080E5CE8u, 0x126DAu, 0xE58708BBu } };
+static const stm32_codec_profile_t w10_d21943 = {
+	.tag = 0xC0441943u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C0000u, .code_len = 0xF38Eu, .code_crc = 0xDBEFEBD5u, .tables = w10_d21943_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
 // V219.60 CSV AES 255
 static const codec_desc_window_t v21960_tables[] = { { 0x080E322Cu, 0x1272Au, 0xE880FF1Bu } };
 static const stm32_codec_profile_t v21960 = {
@@ -246,6 +270,30 @@ static const codec_desc_window_t p21960_tables[] = { { 0x080E57ACu, 0x127CAu, 0x
 static const stm32_codec_profile_t p21960 = {
 	.tag = 0x80501960u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
 	.code = 0x080C0000u, .code_len = 0xF39Au, .code_crc = 0x307BE6B5u, .tables = p21960_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// 10 W S219.43 GPS-REC AES 255
+static const codec_desc_window_t w10_s21943_tables[] = { { 0x080E82A8u, 0x1277Au, 0xE49417ACu } };
+static const stm32_codec_profile_t w10_s21943 = {
+	.tag = 0xC0531943u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C0000u, .code_len = 0xF3A6u, .code_crc = 0x92171707u, .tables = w10_s21943_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// S219.62 GPS-REC AES 255
+static const codec_desc_window_t s21962_tables[] = { { 0x080E8A74u, 0x127E2u, 0x890727F1u } };
+static const stm32_codec_profile_t s21962 = {
+	.tag = 0x80531962u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080C0000u, .code_len = 0xF38Eu, .code_crc = 0x5914E57Bu, .tables = s21962_tables, .windows = 1,
+	.at = CODEC_ENTRIES,
+};
+
+// 10 W D219.71 REC AES 255
+static const codec_desc_window_t w10_d21971_tables[] = { { 0x080D9BDCu, 0x10DC4u, 0x4E11B6BDu } };
+static const stm32_codec_profile_t w10_d21971 = {
+	.tag = 0xC0441971u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO,
+	.code = 0x080EA9A0u, .code_len = 0xF3BAu, .code_crc = 0xBA95EC5Fu, .tables = w10_d21971_tables, .windows = 1,
 	.at = CODEC_ENTRIES,
 };
 
@@ -315,9 +363,10 @@ static const stm32_codec_profile_t w10_s21974 = {
 
 // 19.26 first: the builds most radios carry
 static const stm32_codec_profile_t *const profiles[] = {
-	&v1926, &d1926, &p1926, &s1926, &v1811, &d1811, &p1811, &s1811, &v1803, &d1803, &p1803, &s1803, &p1816, &s1816, &v1906, &p1906, &p1933, &v1974,
-	&d1974, &p1974, &s1974, &w10_v1974, &w10_d1974, &w10_p1974, &w10_s1974, &v21960, &p21960, &v21974, &d21974,
-	&p21974, &s21974, &w10_v21974, &w10_d21974, &w10_p21974, &w10_s21974
+	&v1926, &d1926, &p1926, &s1926, &v1811, &d1811, &p1811, &s1811, &v1803, &d1803, &p1803, &s1803, &p1816, &s1816,
+	&v1906, &p1906, &p1933, &d1962, &v1974, &d1974, &p1974, &s1974, &w10_v1974, &w10_d1974, &w10_p1974, &w10_s1974,
+	&v11933, &w10_d21943, &v21960, &p21960, &w10_s21943, &s21962, &w10_d21971, &v21974, &d21974, &p21974, &s21974,
+	&w10_v21974, &w10_d21974, &w10_p21974, &w10_s21974
 };
 const stm32_codec_profiles_t stm32_codec_profiles = { profiles, (uint8_t)(sizeof profiles / sizeof profiles[0]) };
 

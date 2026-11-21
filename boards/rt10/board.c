@@ -6,6 +6,7 @@
 #include "rt10.h"
 #include "pins.h"
 #include "platform.h"
+#include "ui/fmt.h"
 #if CONFIG_DMR
 #include "dmr_glue.h"
 #include "audio_pcm.h"
@@ -14,7 +15,7 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "hrc_afsk.h"
 #endif
 
@@ -34,6 +35,24 @@ static const keymap_entry_t keymap[] = {
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
+
+// The support info (docs/spec/support-info.md 2): the RF chip's ID register as start-up read it (hardware-rt10.md);
+// the HR_C7000 is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	uint16_t id;
+	uint32_t nacks;
+	rt10_rf_info(&id, &nacks);
+	*role = BOARD_HW_RF;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, "FD6818 id ");
+	sb_hex(&b, id, 4);
+	return true;
+}
 
 const board_t board = {
 	.name = "RT10",
@@ -65,7 +84,7 @@ const board_t board = {
 	.baseband = &hrc_baseband,
 #endif
 #endif
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,	// through the HR_C7000 (hardware-rt10.md 7.2)
 #endif
 #if CONFIG_HOSTLINK
@@ -76,6 +95,7 @@ const board_t board = {
 #endif
 	.system = &hrc_system,
 	.chip_reg = rt10_chip_reg,
+	.hw_line = hw_line,
 };
 
 // hardware-rt10.md 3: the boot ROM's reset-default IO mux is kept (UART0, JTAG); SPI0 to the data flash. The power

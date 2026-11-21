@@ -12,6 +12,8 @@
 #include "radio/battery.h"
 #include "radio/morse.h"
 #include "radio/radio_cwid.h"
+#include "radio/beep.h"	// beep_seg_t
+#include "radio/sigtone.h"	// SIG_STEPS
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -174,6 +176,11 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_SATELLITE_TRACK,	// satellite mode: arg = enabled, arg2 = installed TLE record index
+	RREQ_SATELLITE_SCAN,	// satellite pass picker: arg = start/cancel
+#if CONFIG_SATELLITE_TLE
+	RREQ_SATELLITE_ARM,	// SO-50: explicitly transmit the two-second timer-arm tone
+#endif
 	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
 	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
 	RREQ_T3_DIAL,		// the digits a call through a gateway sends (CONFIG_DMR_TRUNK_GW): radio_req_t3_dial()
@@ -306,6 +313,7 @@ typedef struct {
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
 	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
+	int8_t rx_open_out;		// last board.radio->rx_open(), -1 = not yet (here: fills the padding before wake_led_ms)
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
@@ -372,7 +380,12 @@ typedef struct {
 	uint32_t burst_ms;		// start of the side-key burst
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
-	uint32_t roger_ms;		// roger beep start, 0 = none
+	uint32_t roger_ms;		// start of the roger beep's current step (the end tone's, sigtone.h), 0 = none
+#if CONFIG_SIG_TONES
+	uint8_t roger_n, roger_i;	// its steps and the one sounding
+	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
+	beep_seg_t roger_seg[SIG_STEPS];
+#endif
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
@@ -405,6 +418,10 @@ typedef struct {
 	uint8_t dmr_wake_admits;	// the stack's wake_admits at the last tick (the permit tone for a short press)
 	uint8_t dmr_permit_seq;		// the stack's permit_seq at the last tick (the permit tone before keying)
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
+#if CONFIG_SIG_TONES
+	bool dmr_end_wait;		// our end tone waits for the audio path to open after the transmission
+	uint32_t dmr_end_ms;		// when it started waiting
+#endif
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
 	bool dmr_killed;		// settings t3_kill: no DMR at all (dmr-trunking.md 7.9)
@@ -452,6 +469,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
 	uint8_t cw_phase;		// a CW ID: CW_* in radio_sm.c, 0 = not keying
@@ -472,6 +490,7 @@ typedef struct {
 	bool t3_pending;		// a trunked channel was selected: start its system (t3s) at the next t3_tick
 	bool t3_tagged;			// the channel is a trunked one (channel_t.kind)
 	bool t3_ch_rx;			// and receive only (its tag): the system runs listen only from it
+	bool t3_monitor_set;		// the loaded system's own T3_OPT_MONITOR; digital monitor adds it while on (t3_monitor)
 	uint8_t t3_kv;			// codeplug_kv_serial() when t3s was loaded from the codeplug
 	uint8_t t3_fb;			// fallback (dmr-trunking.md 12): 0 off, 1 on the fallback channel, 2 probing
 	uint16_t t3_fb_number;		// the fallback channel, 0: none
@@ -479,7 +498,7 @@ typedef struct {
 	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when
 	channel_t t3_fb_ch;
 	bool t3_both;			// on a control channel: both slots
-	bool t3_ptt_wait;		// PTT held on the TSCC: waiting for our grant
+	bool t3_ptt_wait;		// waiting for our grant after a PTT-initiated call request
 	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
 	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
 	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
@@ -536,6 +555,26 @@ typedef struct {
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
+#if CONFIG_SATELLITE_TLE
+	bool satellite_session;
+	bool satellite_pending;
+	bool satellite_config_pending;
+	bool satellite_restore_config_pending;
+	bool satellite_saved_vfo;
+	uint8_t satellite_saved_vfo_index;
+	uint16_t satellite_saved_zone, satellite_saved_pos, satellite_saved_channel;
+	uint8_t satellite_saved_mode, satellite_saved_bw;
+	subtone_t satellite_saved_rx_tone, satellite_saved_tx_tone;
+	uint16_t satellite_profile_tx_tone_tenths;
+	uint32_t satellite_restore_rx_hz, satellite_restore_tx_hz;
+	radio_satellite_tracking_view_t satellite_view;
+	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
+	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
+#if CONFIG_FM_TX_TONES
+	bool satellite_arm_active;
+	uint32_t satellite_arm_end_ms;
+#endif
+#endif
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
@@ -562,6 +601,12 @@ uint8_t radio_sm_hotspot_power(uint8_t rf_level);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
+#if CONFIG_SATELLITE_TLE
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms);
+#endif
 
 // The view as the screens and the debug link get it: during a roaming survey visit (a few hundred ms on another
 // site, docs/spec/dmr-roaming.md 4.9) it still shows the site the radio returns to. radio_task.c applies it when it

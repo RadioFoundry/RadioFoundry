@@ -91,6 +91,7 @@ static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_rout
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
 
 static void speaker_source(void);
+static void tx_tone_side(bool on);
 static volatile bool dmr_keyed;		// DMR transmission on: the burst sequence may key the drive
 static pa_keyup_t ku;			// the transmission's DMR key-up, set before the RF task is armed
 static pa_keyup_point_t key_pt[PA_KEYUP_POINTS];
@@ -501,6 +502,7 @@ static void tx_end(bool keep)
 	if (!transmitting) {
 		return;
 	}
+	tx_tone_side(false);
 	dmr_disarm();
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {
@@ -570,6 +572,24 @@ static bool tx_tone(uint16_t hz)
 	}
 	hrc7000_tx_tone(&modem, hz, hrc7000_dtmf_dev(tx_hz, tx_wide));
 	return true;
+}
+
+// The sidetone (modem-hrc7000.md 8.3): the codec plays the tone the modem sends and the speaker listens to the codec
+// (speaker_source, not receiving). Untested on this radio
+static void tx_tone_side(bool on)
+{
+	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return;
+	}
+	uint32_t s = hrc_irq_save();
+	if (on) {
+		hrc7000_tx_tone_side(&modem, true);
+		dm1801pro_amp(DM1801PRO_AMP_SIDE, true);
+	} else {
+		dm1801pro_amp(DM1801PRO_AMP_SIDE, false);
+		hrc7000_tx_tone_side(&modem, false);
+	}
+	hrc_irq_restore(s);
 }
 
 static bool tx_tone_key(bool down)
@@ -773,6 +793,7 @@ const hal_radio_t dm1801pro_radio = {
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
+	.tx_tone_side = tx_tone_side,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif

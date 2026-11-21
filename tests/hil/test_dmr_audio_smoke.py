@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""DMR audio smoke: real audio both ways, on every radio with DMR, every bench pass (opt-in RF: --allow-rf, --ambe FILE /
-$RFOUNDRY_HIL_AMBE; README.md "Default bench pass").
+"""DMR audio smoke: real audio both ways, on every radio with DMR, every bench pass (opt-in RF: --allow-rf; README.md "Default
+bench pass"). The speech is tests/data/voice/test_transmission.ambe, or the --ambe FILE / $RFOUNDRY_HIL_AMBE given.
 
 Frame counters can't see audio. A modem that hands over the same stale voice bytes every burst (the HR_C7000
 voice-access flag on the wrong slot: the DM-1801 Pro played every call silent, 2026-10-22) or a stuck encoder passes
@@ -9,7 +9,7 @@ every frame, lost and duplicate count. These tests look at the audio itself.
 
 Skips and failures. Only a missing radio or SDR bench, or a run without --allow-rf, skips (with a reason that starts
 "DMR AUDIO NOT CHECKED"), and so does a firmware built without DMR. Once the radio, its DMR and the bench are there,
-anything else that keeps the check from running fails: no speech recording, no vocoder merged (dmr.codec=0), no
+anything else that keeps the check from running fails: a speech file that isn't 9-byte frames, no vocoder merged (dmr.codec=0), no
 channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide offset tests also skip
 on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
 bench calls the channel's talk target (dmr.target_id, always listened to), or the radio's own ID privately when the
@@ -33,6 +33,13 @@ audio gain 1 dB high corrects a bit or more a frame from a transmitter that over
 that under-deviates (docs/spec/dmr-voice.md, "Receive level"). Skips when the bench can't scale its deviation (info
 feature dev_scale) or bring its level near RSSI_DBM at the radio.
 
+test_dmr_audio_rx_strong: the same call with the bench level set so the radio reads about each of STRONG_DBM, as
+from a nearby simplex radio. A simplex transmitter keys one 30 ms burst every 60 ms, and the receiver's AGC sees the
+carrier come and go with each: an AGC that settles too slowly overloads the first symbols of every burst and costs a
+bit or more a frame however strong the signal (a repeater's continuous carrier hides it). Pass: at least 95 % of the
+frames and at most BITS_STRONG corrected a frame at every level. A level the bench can't bring the radio near is left
+out, and the test skips when none is reached (a bench coupled too loosely for strong signals).
+
 test_dmr_audio_rx_offset_wide: the same call with the bench carrier OFFSET_WIDE_HZ below and above the channel at
 RSSI_DBM, as from a handheld or repeater that far off frequency, and the pass criteria of test_dmr_audio_rx. They are
 loose on purpose: a receiver whose window is centered on its channel has room to spare there, and one tuned off center
@@ -53,7 +60,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import counter_deltas, skip
+from rfoundry_hil import counter_deltas, skip, speech_file
 from hil_config import rig
 
 PRIME = 3                   # AMBE_VOICE_PRIME in core/dmr/ambe/ambeVoice.h
@@ -70,6 +77,8 @@ OFFSET_WIDE_HZ = 2500       # a transmitter well off frequency (the bench's limi
 DEV_LOW, DEV_HIGH = 0.85, 1.15  # transmitters 15 % under and over the standard's deviation
 RSSI_DBM = -100             # the level the deviation and wide offset tests run at: some 20 dB over the sensitivity of a DMR radio
 BITS_DEV = 0.8              # FEC corrections a frame near sensitivity: 0.6 or less inside the window, 1-1.5 past its edge
+STRONG_DBM = (-75, -55)     # strong simplex signals at the radio
+BITS_STRONG = 0.2           # a settled AGC: 0.01 or less a frame; a slow one 1-1.5 (DM-1701)
 ALL_CALL = 0xFFFFFF
 STATS_KEYS = ("voice.rx_peak", "voice.rx_repeats", "voice.tx_repeats", "voice.tx_mic_peak", "voice.tx_test")
 
@@ -181,10 +190,8 @@ def padded(frames):
 
 
 def speech(pytestconfig, sdr_bench):
-    """The --ambe speech recording on the bench: (frames sent, repeats allowed, the bench's path). Fails without one."""
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe or not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
+    """The speech file on the bench: (frames sent, repeats allowed, the bench's path)."""
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     frames = read_frames(ambe)
     sent = padded(len(frames))
     allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
@@ -195,11 +202,7 @@ def speech(pytestconfig, sdr_bench):
 @pytest.mark.bench_service
 def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
     freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe:
-        pytest.fail("the DMR audio smoke needs a speech recording: --ambe FILE or $RFOUNDRY_HIL_AMBE (9-byte frames)")
-    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     frames = read_frames(ambe)
     sent = padded(len(frames))
     allowed = frame_repeats(frames) + (sent - len(frames)) + 2 + len(frames) // 50
@@ -257,17 +260,17 @@ def rssi_in_call(radio, sdr_bench, freq, cc, dst, private, remote):
     return rssi
 
 
-_near_level = {}                    # (radio, freq): the bench level near_sensitivity found, for the next test
+_near_level = {}                    # (radio, freq, RSSI): the bench level near_level found, for the next test
 
 
-def near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, what):
-    """Sets the bench level so the radio reads about RSSI_DBM: one call to read the radio's RSSI, then the level moved
-    by the difference, checked once more. A level found for this radio and frequency earlier in the run is used
-    again. Skips when it can't (a board without power_dbm)."""
-    key = (radio.uid or radio.port, freq)
+def near_level(radio, sdr_bench, freq, cc, dst, private, remote, target):
+    """Sets the bench level so the radio reads about target dBm: one call to read the radio's RSSI, then the level
+    moved by the difference, checked once more. A level found for this radio, frequency and target earlier in the run
+    is used again. False when it can't (a board without power_dbm, or one that can't reach the level)."""
+    key = (radio.uid or radio.port, freq, target)
     if key in _near_level:
         sdr_bench.power_dbm = _near_level[key]
-        return
+        return True
     level = -40.0
     for _ in range(3):
         sdr_bench.power_dbm = level
@@ -276,12 +279,18 @@ def near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, what):
             level += 20                     # nothing heard: too weak to start a call
             continue
         print(f"bench {level:+.0f} dBm: radio RSSI {rssi} dBm")
-        if abs(rssi - RSSI_DBM) <= 4:
+        if abs(rssi - target) <= 4:
             _near_level[key] = level
-            return
-        level += RSSI_DBM - rssi
-    skip("bench", f"{what} NOT CHECKED: the bench level doesn't bring the radio near {RSSI_DBM} dBm "
-                  "(a board without power_dbm?)")
+            return True
+        level += target - rssi
+    return False
+
+
+def near_sensitivity(radio, sdr_bench, freq, cc, dst, private, remote, what):
+    """near_level at RSSI_DBM; skips when the bench can't get there"""
+    if not near_level(radio, sdr_bench, freq, cc, dst, private, remote, RSSI_DBM):
+        skip("bench", f"{what} NOT CHECKED: the bench level doesn't bring the radio near {RSSI_DBM} dBm "
+                      "(a board without power_dbm?)")
 
 
 @pytest.mark.rf
@@ -301,6 +310,38 @@ def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
             per = d["voice.rx_bit_errors"] / good
             print(f"carrier {off:+d} Hz: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
             bad += check_played(d, stats, sent, allowed, f"carrier {off:+d} Hz at {RSSI_DBM} dBm")
+        assert not bad, "; ".join(bad)
+    finally:
+        sdr_bench.power_dbm = saved
+
+
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.feature("dmr_voice")
+def test_dmr_audio_rx_strong(radio, sdr_bench, pytestconfig):
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    sent, allowed, remote = speech(pytestconfig, sdr_bench)
+    saved = sdr_bench.power_dbm
+    try:
+        bad, done = [], []
+        for target in STRONG_DBM:
+            if not near_level(radio, sdr_bench, freq, cc, dst, private, remote, target):
+                print(f"{target} dBm: the bench level doesn't bring the radio there, left out")
+                continue
+            quiet(radio)
+            d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote)
+            good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
+            per = d["voice.rx_bit_errors"] / good
+            print(f"{target} dBm: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
+            what = f"simplex speech at {target} dBm"
+            if per > BITS_STRONG:
+                bad.append(f"{what}: {per:.2f} bits corrected a frame (at most {BITS_STRONG:g}): the receiver's AGC "
+                           "doesn't settle on each burst?")
+            bad += check_played(d, stats, sent, allowed, what, bit_errors=False, min_in=0.95)
+            done.append(target)
+        if not done:
+            skip("bench", f"DMR RX STRONG NOT CHECKED: the bench level doesn't bring the radio near {STRONG_DBM} dBm "
+                          "(coupled too loosely, or a board without power_dbm)")
         assert not bad, "; ".join(bad)
     finally:
         sdr_bench.power_dbm = saved

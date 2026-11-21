@@ -16,7 +16,7 @@ import {
 } from "./records.js";
 import { parseTone } from "./fields.js";
 import { readHeader } from "./iddb.js";
-import { decodeArea, keyValid, KEYS } from "./kv.js";
+import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
 import { decodeModes, encodeModes, syncModes, removeModes, validateModes, MODE_LIMITS } from "./channelmodes.js";
 
 const REFS = ["contact", "rxList", "aprs"];
@@ -139,6 +139,7 @@ const CHANNEL_KEYS = [
 	"name", "rxHz", "txHz", "mode", "power", "tot", "rxTone", "txTone", "bw", "rxOnly", "allSkip", "zoneSkip", "vox",
 	"squelch", "colorCode", "timeslot", "contact", "rxList", "aprs", "dmrId", "noBeep", "noEco", "dmo", "roam",
 	"aliasTs1", "aliasTs2", "useLocation", "lat", "lon", "sfr", "sfrA", "sfrB", "toneBurst",
+	"acceptBadCrc",
 ];
 
 function flatChannel(c) {
@@ -257,7 +258,7 @@ export function newChannel(fields = {}) {
 		txTone: "", bw: 12.5, rxOnly: false, allSkip: false, zoneSkip: false, vox: false, squelch: 0, colorCode: 1,
 		timeslot: 1, contact: null, rxList: null, aprs: null, dmrId: 0, noBeep: false, noEco: false, dmo: false,
 		roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
-		toneBurst: false, kind: 0, ...fields,
+		toneBurst: false, acceptBadCrc: false, kind: 0, ...fields,
 	};
 }
 
@@ -310,8 +311,12 @@ export function validate(m, { bands = null, features = null } = {}) {
 	for (const row of areaKeys) {
 		if (!keyValid(row, g[row.name])) err("general", null, row.name, "range", { min: row.min, max: row.max });
 	}
+	const recKeys = RECORD_KEYS.filter((row) => g[row.name] != null);
+	for (const row of recKeys) {
+		if (!recordValid(row, g[row.name])) err("general", null, row.name, "sig_range", { hz: 3400, ms: 900 });
+	}
 	// an area of a version the editor doesn't know reads as empty and is never written: a value set here is lost
-	if (areaKeys.length && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, areaKeys[0].name, "settings_area_newer");
+	if ((areaKeys.length || recKeys.length) && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, (areaKeys[0] || recKeys[0]).name, "settings_area_newer");
 
 	const counts = [["channels", LIMITS.channels], ["contacts", LIMITS.contacts], ["rxLists", LIMITS.rxLists],
 		["zones", LIMITS.zones], ["dtmfContacts", LIMITS.dtmfContacts], ["aprs", LIMITS.aprs]];

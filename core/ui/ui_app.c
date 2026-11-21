@@ -147,7 +147,7 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
-#if CONFIG_BACKLIGHT_TEST
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 // Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
 // the light back)
 static void left(uint8_t from)
@@ -157,9 +157,12 @@ static void left(uint8_t from)
 			ui_scr[stack[i].scr]->leave();
 	}
 }
-#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
 #else
 #define left(from)	((void)0)
+#endif
+#if CONFIG_BACKLIGHT_TEST
+#define ON_BL_TEST()	(stack[sp].scr == SCR_BL_TEST)
+#else
 #define ON_BL_TEST()	false
 #endif
 
@@ -887,6 +890,8 @@ static void entry_commit(void)
 // --- input helpers ---
 
 #if CONFIG_DMR
+static bool dmon_at_press;	// the hear all latch when the monitor key went down (ui_app_key)
+
 // Digital monitor (the DMR hear all latch: every talkgroup on the slot and color code)
 static inline const char *dmon_text(bool on)
 {
@@ -1677,6 +1682,22 @@ bool ui_volume_key(const input_event_t *ev)
 	return false;
 }
 
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void)
+{
+	static char name[CODEPLUG_NAME_LEN + 1];
+	(void)ui_contact_name(view->t3.ring_src, false, name);
+	ui_draw_incoming_call(view, &ui_st, name);
+}
+
+bool ui_incoming_call_key(const input_event_t *ev)
+{
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
+		ui_svc_t3_reject();
+	return true;
+}
+#endif
+
 void ui_emergency_draw(void)
 {
 	ui_draw_emergency(view, &ui_st, emerg_id, emerg_name);
@@ -2020,6 +2041,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	dirty = true;
 }
 
+bool ui_app_key_while_dark(const input_event_t *ev)
+{
+	// PTT and Monitor are live keys; Emergency sends only its long press, so a dark screen must not eat it
+	return ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_EMERGENCY;
+}
+
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
@@ -2086,11 +2113,14 @@ void ui_app_key(const input_event_t *ev)
 	}
 	// The monitor key on DMR: a short press toggles digital monitor (the radio core does it on the release; the
 	// view follows). Its hold function (value 1 on the long press) runs on DMR only: on FM holding the key is the
-	// squelch break (#19)
+	// squelch break (#19). The radio task outranks this one and gets the edge first, so the view at the release
+	// may already be toggled: the toast inverts the latch as it was at the press, when the core leaves it alone
 #if CONFIG_DMR
+	if (ev->action == ACT_MONITOR && ev->gesture == GESTURE_DOWN)
+		dmon_at_press = view->dmr.hear_all_latch;
 	if (ev->action == ACT_MONITOR && ev->gesture == GESTURE_UP && ev->value == 0 &&
 	    view->ch.mode == RADIO_MODE_DMR && !view->monitor)
-		ui_toast(dmon_text(!view->dmr.hear_all_latch));
+		ui_toast(dmon_text(!dmon_at_press));
 #endif
 	if (ev->gesture == GESTURE_LONG && ev->value != 0 && view->ch.mode != RADIO_MODE_DMR)
 		return;
@@ -2135,6 +2165,12 @@ void ui_app_key(const input_event_t *ev)
 #if CONFIG_HOTSPOT
 	if (in_hotspot()) {
 		hotspot_key(ev);
+		return;
+	}
+#endif
+#if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		(void)ui_scr[SCR_INCOMING_CALL]->key(ev);
 		return;
 	}
 #endif
@@ -2241,6 +2277,12 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (!typing && view->t3.alerting && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		ui_svc_t3_cancel();
+		return;
+	}
+#endif
 	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
 	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
 			ev->gesture == GESTURE_PRESS) {
@@ -2406,10 +2448,21 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_ZONE_EDIT
 	ui_svc_zone_poll();
 #endif
+#if CONFIG_SATELLITE_TLE
+	ui_svc_satellite_poll();
+	ui_satellite_passes_tick();
+#endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		if (v->t3.ring_src == 0)
+			ui_pop();
+	} else if (v->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY) {
+		ui_push(SCR_INCOMING_CALL, 0);
+		wake_req = true;
+	}
 	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
 	static uint32_t backs_seen;
 	if (v->t3.backs != backs_seen) {
@@ -2542,6 +2595,22 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ui_st.unread = unread;
 		dirty = true;
 	}
+#if CONFIG_GPS
+	// The GPS icon, once a second: fitted (a module is detected after start-up), off or on as the position service
+	// was last told (the menu, the debug link), then a fix or not (a fix counts for a minute: position.md)
+	static uint32_t gps_checked;
+	if (now - gps_checked >= 1000u) {
+		gps_checked = now;
+		ui_position_t p;
+		uint8_t pw = ui_svc_gps_power();
+		uint8_t gps = pw == UI_GPS_POWER_NONE ? UI_GPS_NONE : pw == UI_GPS_POWER_OFF ? UI_GPS_OFF :
+			      ui_svc_position(&p) && p.fix ? UI_GPS_FIX : UI_GPS_SEARCH;
+		if (gps != ui_st.gps) {
+			ui_st.gps = gps;
+			dirty = true;
+		}
+	}
+#endif
 	bool scanning = v->scan != 0 && v->scan != 3;	// 3: dual watch, which Home shows on its own (ui_dual.c)
 #if CONFIG_DUAL_WATCH
 	if (ui_dual_tick(v, now_ms))
@@ -2624,6 +2693,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	battery_tick(v);
 	// A banner's countdown ticks; one that waits for the user has none
 	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
+#if CONFIG_SUPPORT_INFO
+	fast = fast || (stack[sp].scr == SCR_ABOUT && ui_about_busy());	// each redraw hashes a step of the image
+#endif
 #if CONFIG_HOTSPOT
 	fast = fast || in_hotspot();
 	if (!in_hotspot())
@@ -2705,6 +2777,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->focus = stack[sp].scr == SCR_QUICK ? ui_st.quick_focus : stack[sp].focus;
 	s->count = (d->flags & SF_LIST) && d->count != NULL ? d->count() : 0;
 	s->locked = ui_st.locked;
+	s->gps = ui_st.gps;
 	s->unlock_key = has_quick_key ? "quick" : has_unlock_key ? "back" : "none";
 	s->field_use = (d->flags & SF_FIELD) != 0;
 	s->banner = ui_st.banner.kind != UI_BANNER_NONE ? ui_st.banner.title : "";

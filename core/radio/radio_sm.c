@@ -30,6 +30,7 @@
 #include "dmr/dmrPrivacy.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#include "radio/sigtone.h"
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #include "radio/tx_limit.h"	// the test TX limit (radio-features.md 3.1)
 #if CONFIG_P25 || CONFIG_NXDN
@@ -88,6 +89,8 @@ static void cw_cancel(radio_sm_t *sm);
 #include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 
+static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
+
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
 #define RADIO_DMR_ID_DEFAULT	0
@@ -141,6 +144,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
 #if CONFIG_DMR_TRUNK
 // The engine and the system it runs, in plain RAM (radio_sm_t sits in the CPU-only RAM, which is full on some radios)
 static t3_ms_t t3m;
+#if CONFIG_DMR_TRUNK_TX
+static uint32_t t3_ring_next;
+#endif
 static radio_t3_setup_t t3s;	// the system, copied from the staged one at RADIO_T3_START
 radio_t3_view_t radio_t3v;	// the whole trunking view (view.t3 is its brief: radio_sm_t3_brief); in RAM, not the
 				// CPU-only RAM radio_sm_t may be in
@@ -224,22 +230,80 @@ static inline bool voice_streaming(void)
 	return on;
 }
 
+#if CONFIG_BEEP
+// The level a beep plays at, and whether it is mixed into the voice stream (running) or has its own stream
+static uint8_t beep_level_now(const radio_sm_t *sm)
+{
+	uint8_t level = sm->set.beep_level;
+	const hal_radio_t *r = board.radio;
+	if (r == NULL || r->volume == NULL) {
+		return level;
+	}
+	if (!r->volume_pcm) {
+		return radio_beep_level(level, sm->volume_sent);
+	}
+	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
+	}
+	return level;
+}
+
+static bool beep_shared_now(void)
+{
+	return voice_streaming();
+}
+#endif
+
 // A beep at the settings' level: mixed into the voice stream when one runs, else on its own stream
 static void beep(radio_sm_t *sm, uint8_t b)
 {
 #if CONFIG_BEEP
-	bool shared = voice_streaming();
 	if (radio_tone_off(sm->set.tones_off, b)) {
 		return;		// Settings > Sound turned it off (the codeplug's settings area)
 	}
-	uint8_t level = sm->set.beep_level;
-	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		level = radio_beep_level(level, sm->volume_sent);
-	}
-	beep_play((beep_t)b, level, shared);
+	beep_play((beep_t)b, beep_level_now(sm), beep_shared_now());
 #else
 	(void)sm;
 	(void)b;
+#endif
+}
+
+// --- Signaling tones (sigtone.h, docs/spec/radio-features.md 4.3) ---
+
+_Static_assert(SIG_EV_COUNT == 3, "radio_settings_t.sig_* hold three events");
+_Static_assert(SIG_STEPS == 10, "radio_settings_t.sig_hz / sig_ms hold ten steps");
+
+// Where the event's tone goes on this channel's mode (sig_out_t)
+static uint8_t sig_out(const radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_SIG_TONES
+	return sm->view.ch.mode == RADIO_MODE_DMR ? sm->set.sig_dmr[ev] : sm->set.sig_fm[ev];
+#else
+	(void)sm;
+	(void)ev;
+	return SIG_OUT_DEFAULT;	// built without the chains: the radio's own sounds
+#endif
+}
+
+// Whether the event's tone sounds on the speaker instead of the radio's own: the setting says so, on a channel that
+// allows beeps
+static bool sig_local_on(const radio_sm_t *sm, sig_event_t ev)
+{
+	return CONFIG_BEEP && !sm->view.ch.no_beep && sig_out_local(sig_out(sm, ev));
+}
+
+// The event's tone on the speaker
+static void sig_local(radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_BEEP && CONFIG_SIG_TONES
+	beep_seg_t seg[SIG_STEPS];
+	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
+	beep_play_custom(seg, n, beep_level_now(sm), beep_shared_now());
+#else
+	(void)sm;
+	(void)ev;
 #endif
 }
 
@@ -266,12 +330,45 @@ static bool tones_apply(radio_settings_t *s)
 	return true;
 }
 
+#if CONFIG_SIG_TONES
+// The signaling tones' records over s->sig_*, the radio's own copy: one walk over their keys. A record the setting can't
+// take reads as absent (sig_rec_decode). True if one changed
+static bool sig_apply(radio_settings_t *s)
+{
+	bool changed = false;
+	codeplug_kv_cursor_t c;
+	uint16_t key;
+	uint8_t v[SIG_REC_LEN];
+	int len;
+	codeplug_kv_begin(&c, CODEPLUG_KEY_SIG_BEGIN, CODEPLUG_KEY_SIG_BEGIN + SIG_EV_COUNT - 1);
+	while ((len = codeplug_kv_next(&c, &key, v, sizeof(v))) >= 0) {
+		sig_event_t ev = (sig_event_t)(key - CODEPLUG_KEY_SIG_BEGIN);
+		sig_rec_t r, now;
+		uint8_t a[SIG_REC_LEN], b[SIG_REC_LEN];
+		radio_sig_get(s, ev, &now);
+		if (sig_rec_decode(v, len, ev, &r)) {
+			sig_rec_encode(&r, a);	// compared as stored: the struct has padding
+			sig_rec_encode(&now, b);
+			if (memcmp(a, b, sizeof a) != 0) {
+				radio_sig_put(s, ev, &r);
+				changed = true;
+			}
+		}
+	}
+	return changed;
+}
+#endif
+
 static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms);
 
 static void kv_load(radio_sm_t *sm, uint32_t now_ms)
 {
 	kv_seen = codeplug_kv_serial();
-	if (tones_apply(&sm->set)) {
+	bool sig = false;
+#if CONFIG_SIG_TONES
+	sig = sig_apply(&sm->set);
+#endif
+	if (tones_apply(&sm->set) || sig) {
 		changed(sm);	// published with the settings (radio_get_settings): the menu shows it
 		radio_to_settings(&sm->set, now_ms);	// the radio's own copy follows the key
 	}
@@ -597,6 +694,14 @@ static void outputs(radio_sm_t *sm)
 		tx = true;	// a CW ID
 	}
 #endif
+	// Receive audio from a signal, for a board whose own noise reaches the audio only with a carrier present: on
+	// before the speaker opens, off after it closes. The green LED's state before any LED pattern; a beep alone never
+	// sets it
+	bool rx_open_change = board.radio->rx_open != NULL && sm->rx_open_out != (int8_t)green;
+	if (rx_open_change && green) {
+		sm->rx_open_out = 1;
+		board.radio->rx_open(true);
+	}
 
 	// The broadcast receiver plays instead of the channel receiver while the channel is a broadcast one
 	bool bcast = false;
@@ -611,6 +716,10 @@ static void outputs(radio_sm_t *sm)
 	if (sm->audio_out != (int8_t)(open && !bcast)) {
 		sm->audio_out = (int8_t)(open && !bcast);
 		board.radio->audio(open && !bcast);
+	}
+	if (rx_open_change && !green) {
+		sm->rx_open_out = 0;
+		board.radio->rx_open(false);
 	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
@@ -711,13 +820,55 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
+#if CONFIG_SATELLITE_TLE
+#define RADIO_SATELLITE_DEADBAND_HZ 10u
+
+static bool satellite_same_channel(const radio_sm_t *sm)
+{
+	return sm->view.vfo == sm->satellite_saved_vfo && sm->view.vfo_index == sm->satellite_saved_vfo_index &&
+	       sm->view.zone_index == sm->satellite_saved_zone && sm->view.zone_pos == sm->satellite_saved_pos &&
+	       sm->view.channel_number == sm->satellite_saved_channel;
+}
+
+static bool satellite_tx_active(const radio_sm_t *sm)
+{
+	if (sm->ptt || sm->view.state == RS_TX || sm->tx_no_ptt)
+		return true;
+#if CONFIG_DMR
+	if (sm->dmr_keyed)
+		return true;
+#endif
+	return false;
+}
+
+static void satellite_apply_pending(radio_sm_t *sm, uint32_t now_ms);
+#endif
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
+	#if CONFIG_SATELLITE_TLE
+	if ((sm->satellite_session || (sm->satellite_pending && sm->satellite_restore_config_pending)) &&
+	    !satellite_same_channel(sm)) {
+		sm->satellite_session = false;
+		sm->satellite_pending = false;
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+	}
+	#endif
 	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
 #if CONFIG_SFR_CWID
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+#if CONFIG_APRS_RX
+	// Off the APRS frequency (or out of FM): APRS lets go of the FM receive audio before the board changes mode. A
+	// P25, NXDN or YSF engine can't start while it holds it (HR_C7000: air_take), and nothing retries the start until
+	// the next tune: the channel was left with no engine, and PTT refused ("NO TX") until a retune or power cycle
+	if (aprs_rx_listening() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
+		aprs_rx_release();
+	}
+#endif
 	if (radio_listen_band(sm->view.ch.rx_hz)) {
 		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
 		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
@@ -780,6 +931,139 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 	changed(sm);
 }
+
+#if CONFIG_SATELLITE_TLE
+static void satellite_apply_pending(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->satellite_pending || satellite_tx_active(sm))
+		return;
+	sm->satellite_pending = false;
+	uint32_t rx_hz = sm->satellite_pending_rx_hz;
+	uint32_t tx_hz = sm->satellite_pending_tx_hz;
+	bool changed_config = sm->satellite_config_pending;
+	if (changed_config) {
+		if (sm->satellite_restore_config_pending) {
+			sm->view.ch.mode = sm->satellite_saved_mode;
+			sm->view.ch.bw = sm->satellite_saved_bw;
+			sm->view.ch.rx_tone = sm->satellite_saved_rx_tone;
+			sm->view.ch.tx_tone = sm->satellite_saved_tx_tone;
+		} else {
+			sm->view.ch.mode = RADIO_MODE_FM;
+			sm->view.ch.bw = RADIO_BW_12K5;
+			sm->view.ch.rx_tone = (subtone_t){ TONE_NONE, 0u };
+			sm->view.ch.tx_tone = sm->satellite_profile_tx_tone_tenths != 0u ?
+				(subtone_t){ TONE_CTCSS, sm->satellite_profile_tx_tone_tenths } :
+				(subtone_t){ TONE_NONE, 0u };
+		}
+		set_temporary(sm);
+		sm->satellite_config_pending = false;
+		sm->satellite_restore_config_pending = false;
+	}
+	bool changed_freq = sm->view.ch.rx_hz != rx_hz || sm->view.ch.tx_hz != tx_hz;
+	sm->view.ch.rx_hz = rx_hz;
+	sm->view.ch.tx_hz = tx_hz;
+	sm->satellite_applied_rx_hz = rx_hz;
+	sm->satellite_applied_tx_hz = tx_hz;
+	if (changed_freq || changed_config)
+		tune(sm, now_ms);
+	else
+		changed(sm);
+}
+
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms)
+{
+	if (!enabled) {
+		if (sm->satellite_session && satellite_same_channel(sm)) {
+			sm->satellite_session = false;
+			sm->satellite_pending = true;
+			sm->satellite_pending_rx_hz = sm->satellite_restore_rx_hz;
+			sm->satellite_pending_tx_hz = sm->satellite_restore_tx_hz;
+			sm->satellite_config_pending = true;
+			sm->satellite_restore_config_pending = true;
+		} else if (!sm->satellite_pending || !sm->satellite_restore_config_pending ||
+			   !satellite_same_channel(sm)) {
+			sm->satellite_session = false;
+			sm->satellite_pending = false;
+		}
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+		satellite_apply_pending(sm, now_ms);
+		return;
+	}
+	if (sm->satellite_session && (!satellite_same_channel(sm) ||
+	    sm->view.ch.rx_hz != sm->satellite_applied_rx_hz || sm->view.ch.tx_hz != sm->satellite_applied_tx_hz)) {
+		sm->satellite_session = false;
+		sm->satellite_pending = false;
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+		changed(sm);
+		return;
+	}
+	if (!sm->satellite_session) {
+		bool restoring = sm->satellite_pending && sm->satellite_restore_config_pending &&
+				 satellite_same_channel(sm);
+		sm->satellite_session = true;
+		if (!restoring) {
+			sm->satellite_saved_vfo = sm->view.vfo;
+			sm->satellite_saved_vfo_index = sm->view.vfo_index;
+			sm->satellite_saved_zone = sm->view.zone_index;
+			sm->satellite_saved_pos = sm->view.zone_pos;
+			sm->satellite_saved_channel = sm->view.channel_number;
+			sm->satellite_saved_mode = sm->view.ch.mode;
+			sm->satellite_saved_bw = sm->view.ch.bw;
+			sm->satellite_saved_rx_tone = sm->view.ch.rx_tone;
+			sm->satellite_saved_tx_tone = sm->view.ch.tx_tone;
+			sm->satellite_restore_rx_hz = sm->view.ch.rx_hz;
+			sm->satellite_restore_tx_hz = sm->view.ch.tx_hz;
+		}
+		sm->satellite_view.nominal_rx_hz = nominal_rx_hz;
+		sm->satellite_view.nominal_tx_hz = nominal_tx_hz;
+		sm->satellite_profile_tx_tone_tenths = tx_tone_tenths;
+		sm->satellite_applied_rx_hz = sm->view.ch.rx_hz;
+		sm->satellite_applied_tx_hz = sm->view.ch.tx_hz;
+		sm->satellite_config_pending = true;
+		sm->satellite_restore_config_pending = false;
+	}
+	sm->satellite_view.tracking = true;
+	sm->satellite_view.index = record_index;
+	sm->satellite_view.status = status;
+	if (targets_valid &&
+	    ((sm->satellite_view.nominal_rx_hz != 0u && (rx_hz == 0u || !board_in_band(rx_hz, false))) ||
+	     (sm->satellite_view.nominal_tx_hz != 0u &&
+	      (tx_hz == 0u || !board_in_band(tx_hz, true) || !tx_limit_allows(tx_hz))))) {
+		targets_valid = false;
+		sm->satellite_view.status = 1u;
+	}
+	if (targets_valid) {
+		if (sm->satellite_view.nominal_rx_hz == 0u)
+			rx_hz = 0u;
+		else if (rx_hz > sm->view.ch.rx_hz ? rx_hz - sm->view.ch.rx_hz < RADIO_SATELLITE_DEADBAND_HZ :
+			 sm->view.ch.rx_hz - rx_hz < RADIO_SATELLITE_DEADBAND_HZ)
+			rx_hz = sm->view.ch.rx_hz;
+		if (sm->satellite_view.nominal_tx_hz == 0u)
+			tx_hz = 0u;
+		else if (tx_hz > sm->view.ch.tx_hz ? tx_hz - sm->view.ch.tx_hz < RADIO_SATELLITE_DEADBAND_HZ :
+			 sm->view.ch.tx_hz - tx_hz < RADIO_SATELLITE_DEADBAND_HZ)
+			tx_hz = sm->view.ch.tx_hz;
+		sm->satellite_view.rx_offset_hz = rx_offset_hz;
+		sm->satellite_view.tx_offset_hz = tx_offset_hz;
+	} else {
+		rx_hz = sm->satellite_view.nominal_rx_hz;
+		tx_hz = sm->satellite_view.nominal_tx_hz;
+		sm->satellite_view.rx_offset_hz = 0;
+		sm->satellite_view.tx_offset_hz = 0;
+	}
+	sm->satellite_pending = true;
+	sm->satellite_pending_rx_hz = rx_hz;
+	sm->satellite_pending_tx_hz = tx_hz;
+	satellite_apply_pending(sm, now_ms);
+}
+#endif
 
 // From position start in z, the first readable channel going in dir (wraps once round the zone)
 static bool find_channel(const zone_t *z, int start, int dir, uint16_t *pos, channel_t *ch)
@@ -1120,10 +1404,40 @@ static bool bcl_busy(const radio_sm_t *sm)
 	return carrier && tone_needed(sm) && !sm->view.tone_ok;
 }
 
-// Every keying of the transmitter goes through here: the test TX limit (tx_limit.h) refuses what it doesn't allow, as
-// a board that can't key there would
-static bool key_tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
+#if CONFIG_SFR
+// Asked by the board as it keys each DMR burst, from the RF TX interrupt (hal_radio_t.dmr_direct_query): an SFR repeats
+// right now, our repeater role or the hotspot's SFR mode (not a split role: hotspot_sfr_repeating). It reads the state
+// itself, single flags, so the answer is never a stale copy
+static radio_sm_t *direct_sm;
+
+static bool sfr_repeats_now(void)
 {
+	const volatile radio_sm_t *sm = direct_sm;
+	if (sm == NULL) {
+		return false;
+	}
+	bool on = sm->sfr_rpt;
+#if CONFIG_HOTSPOT
+	on = on || (sm->hotspot && hotspot_sfr_repeating());
+#endif
+	return on;
+}
+#endif
+
+// Every keying of the transmitter goes through here. What holds for the whole radio, whatever keys it (PTT, a reply,
+// trunking, the hotspot, a CW ID, a beacon), is checked here and not only by each path: TX inhibit, a hardware option
+// still pending, a critical battery. The test TX limit (tx_limit.h) refuses what it doesn't allow, as a board that
+// can't key there would
+static bool tx_held(const radio_sm_t *sm)
+{
+	return sm->set.tx_inhibit || (board_hwopt_pending() != NULL) || (sm->batt.level == BATT_CRITICAL);
+}
+
+static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
+{
+	if (tx_held(sm)) {
+		return false;
+	}
 	if (!tx_limit_allows(hz)) {
 		tx_limit_refused(hz);
 		return false;
@@ -1351,6 +1665,8 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 // from beep_play on); the hold lasts while the beep plays or its audio is still in the board's buffers, so none of it
 // is left to reach the modulator
 #define PERMIT_HOLD_MIN_MS	40u
+// Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
+#define DMR_END_WAIT_MS		400u
 
 static bool permit_busy(void)
 {
@@ -1362,10 +1678,29 @@ static bool permit_busy(void)
 #endif
 }
 
+// Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
+// talk permit is on), else the start of transmission tone's sequence when it is set to sound there
+static bool permit_local(const radio_sm_t *sm)
+{
+	return sig_out(sm, SIG_EV_BEGIN) == SIG_OUT_DEFAULT ? sm->set.talk_permit : sig_local_on(sm, SIG_EV_BEGIN);
+}
+
+static void permit_play(radio_sm_t *sm, uint8_t b)
+{
+	if (sm->view.ch.no_beep || !permit_local(sm)) {
+		return;
+	}
+	if (sig_out(sm, SIG_EV_BEGIN) == SIG_OUT_DEFAULT) {
+		beep(sm, b);
+	} else {
+		sig_local(sm, SIG_EV_BEGIN);
+	}
+}
+
 // Whether the talk permit sounds before keying on this channel: the board can't play it on air, and it is on
 static bool permit_before_key(const radio_sm_t *sm)
 {
-	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && sm->set.talk_permit && !sm->view.ch.no_beep;
+	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
 
 // Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
@@ -1414,6 +1749,7 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.listen.any_cc = cfg.listen.both_ts = cfg.listen.hear_all;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
+	cfg.listen.accept_bad_crc = ch->accept_bad_crc;
 	// The channel's TX time-out when it has one, else the radio's
 	cfg.tot_s = sm->view.tot_s;	// apply_tot: the channel's, else the radio's
 	if (sm->set.reply_s <= 30u) {
@@ -1477,6 +1813,9 @@ static void dmr_configure(radio_sm_t *sm)
 	if (sm->t3_on) {
 		cfg.own_id = t3s.cfg.own_id;	// the system's ID: calls to it, and the source of ours
 		cfg.both_slots = sm->t3_both;
+		// Digital monitor follows every grant (t3_monitor), not every burst: the call plays on its own slot and the
+		// system's color code, while the other slot carries another call
+		cfg.listen.any_cc = cfg.listen.both_ts = false;
 		if (t3m.state == T3_FOLLOW) {
 			const t3_call_t *c = &t3m.call;
 			cfg.listen.hear_all = true;
@@ -1492,6 +1831,9 @@ static void dmr_configure(radio_sm_t *sm)
 	}
 #endif
 	dmr_call_configure(&cfg);
+#if CONFIG_SIG_TONES
+	sm->dmr_end_wait = false;	// a pending end tone belongs to the channel it was sent on
+#endif
 	sm->view.dmr.own_id = cfg.own_id;
 	// The channel's color code, timeslot and repeater mode in the same update as the channel: dmr_publish copies the
 	// stack's own only at the next tick, and a reader between the two (dual watch's snapshot at each hop) would take
@@ -1621,6 +1963,7 @@ static void dmr_set_timeslot(radio_sm_t *sm, int32_t ts, bool busy)
 }
 
 #if CONFIG_SFR
+
 // The repeater role lets go of the modem and the keying
 static void sfr_rpt_end(radio_sm_t *sm)
 {
@@ -1686,7 +2029,7 @@ static bool sfr_rpt_begin(radio_sm_t *sm)
 			     SFR_RPT_RESUMING(sm), 0)) {	// the beacon schedule starts at the first poll
 		return false;
 	}
-	sm->dmr_keyed = key_tx(ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
+	sm->dmr_keyed = key_tx(sm, ch->tx_hz, RADIO_BW_12K5, sm->view.power, &none);
 	if (!sm->dmr_keyed) {
 		radio_sfr_stop();	// the board refused the keying: no repeater that can't send
 		return false;
@@ -2034,28 +2377,54 @@ static void dmr_follow(radio_sm_t *sm, uint32_t now_ms)
 	uint8_t permit = early ? BEEP_TX_PERMIT_SHORT : BEEP_TX_PERMIT;
 	if (cv->wake_admits != sm->dmr_wake_admits) {
 		sm->dmr_wake_admits = cv->wake_admits;
-		if (!sm->view.ch.no_beep && sm->set.talk_permit) {
-			beep(sm, permit);	// a short press: the repeater woke after PTT was let go
-		}
+		permit_play(sm, permit);	// a short press: the repeater woke after PTT was let go
 	}
 	if (cv->permit_seq != sm->dmr_permit_seq) {
 		sm->dmr_permit_seq = cv->permit_seq;
 		if (permit_before_key(sm)) {
-			beep(sm, BEEP_TX_PERMIT_SHORT);	// the stack holds the key-up until it has played
+			permit_play(sm, BEEP_TX_PERMIT_SHORT);	// the stack holds the key-up until it has played
 		}
 	}
 	uint8_t st = sm->view.dmr.state;
 	if (st != sm->dmr_prev_state) {
 		if (!sm->view.ch.no_beep) {
-			if (st == RDMR_TX && sm->set.talk_permit && !early) {
-				beep(sm, BEEP_TX_PERMIT);
+			if (st == RDMR_TX && !early) {
+				permit_play(sm, BEEP_TX_PERMIT);
 			} else if (sm->dmr_prev_state == RDMR_RX && (st == RDMR_IDLE || st == RDMR_RX_OTHER) &&
 				   sm->view.state != RS_TX_DENIED) {	// a refusal's idle: the call plays on
-				beep(sm, BEEP_CALL_END);
+				// The call heard ended: the radio's call end tone, unless the channel free tone is set
+				if (sig_out(sm, SIG_EV_IDLE) == SIG_OUT_DEFAULT) {
+					beep(sm, BEEP_CALL_END);
+				} else if (sig_local_on(sm, SIG_EV_IDLE)) {
+					sig_local(sm, SIG_EV_IDLE);
+				}
+#if CONFIG_SIG_TONES
+			} else if (sm->dmr_prev_state == RDMR_TX && st != RDMR_TX && !sm->ptt &&
+				   sig_local_on(sm, SIG_EV_END)) {
+				// Our transmission is over (PTT let go: not a time-out or a denial, as in FM), but the engine may still be sending its last burst: a board whose
+				// audio path is gated drops what is queued meanwhile, and the tone was heard half. Wait for it
+				sm->dmr_end_wait = true;
+				sm->dmr_end_ms = now_ms;
+#endif
 			}
 		}
 		sm->dmr_prev_state = st;
 	}
+#if CONFIG_SIG_TONES
+	if (sm->dmr_end_wait && sm->view.ch.mode != RADIO_MODE_DMR) {
+		sm->dmr_end_wait = false;	// the channel is not DMR any more
+	}
+	if (sm->dmr_end_wait) {
+		const hal_audio_t *a = board.audio;
+		bool blocked = a != NULL && a->speaker_blocked != NULL && a->speaker_blocked();
+		if (st == RDMR_TX || (!blocked && !sm->dmr_keyed) || now_ms - sm->dmr_end_ms >= DMR_END_WAIT_MS) {
+			sm->dmr_end_wait = false;
+			if (st != RDMR_TX) {
+				sig_local(sm, SIG_EV_END);
+			}
+		}
+	}
+#endif
 }
 
 // --- One-shot talk target: PTT while a list row is focused talks to that row's target once, and keeps it as the
@@ -2147,6 +2516,34 @@ static void one_shot_follow(radio_sm_t *sm, uint32_t now_ms)
 
 // PTT on a DMR channel (band, RX-only and frequency checks passed): arm the board's per-burst keying, then the stack
 // decides when the bursts go out
+// The event's tone on air in DMR (sigtone.h): sent as voice in place of the mic, from the first voice of the
+// transmission (start) or after the last of it (end, which holds the over open for it). Not on a no-beep channel, and
+// not while the host sends its own audio
+static void sig_air_dmr(radio_sm_t *sm, sig_event_t ev)
+{
+#if CONFIG_SIG_TONES
+	if (sm->host_audio || sm->view.ch.no_beep || !sig_out_air(sig_out(sm, ev), ev)) {
+		return;
+	}
+	beep_seg_t seg[SIG_AIR_STEPS];
+	uint8_t n = sig_chain(sm->set.sig_hz[ev], sm->set.sig_ms[ev], ev, seg);
+	// A guard of silence on the outer side: before a start tone (the transmission's first frames), after an end tone
+	// (its last), where a lossy link such as a hotspot has been seen to clip
+	const beep_seg_t guard = { 0, ev == SIG_EV_END ? SIG_AIR_END_GUARD_MS : SIG_AIR_GUARD_MS };
+	if (ev == SIG_EV_END) {
+		seg[n++] = guard;
+	} else {
+		memmove(&seg[1], &seg[0], n * sizeof seg[0]);
+		seg[0] = guard;
+		n++;
+	}
+	ambeVoiceTxTone(seg, n, ev == SIG_EV_END);
+#else
+	(void)sm;
+	(void)ev;
+#endif
+}
+
 static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
 	const channel_t *ch = &sm->view.ch;
@@ -2164,7 +2561,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			deny(sm, board_refusal());
 			return;
 		}
@@ -2181,6 +2578,7 @@ static void dmr_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_GPS
 	dmr_gps_tx(sm, now_ms);
 #endif
+	sig_air_dmr(sm, SIG_EV_BEGIN);
 	dmr_call_ptt(true);
 	dmr_call_poll(now_ms);
 	dmr_follow(sm, now_ms);
@@ -2209,6 +2607,7 @@ static struct {
 #if CONFIG_DMR_TRUNK_TX
 	// A Tier III system: list waits while the engine gets a packet data channel for it (data_t3_tick)
 	bool t3_wait;
+	bool t3_sms;		// waiting for a short data result
 	bool t3_asked;
 	bool t3_group;
 	uint32_t t3_dst;
@@ -2290,7 +2689,7 @@ static bool data_send(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
 		const channel_t *ch = &sm->view.ch;
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			return false;
 		}
 		sm->dmr_keyed = true;
@@ -2404,6 +2803,23 @@ static void data_t3_fail(uint8_t err)
 	dmrDataServiceTxDone(err);
 }
 
+// Tier III UDT uses UTF-16BE without a BOM or terminator. The editor supplies Latin-1.
+static bool data_t3_sms(uint32_t dst, bool group, const char *text, uint32_t now_ms, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	uint8_t utf16[T3_UDT_MAX];
+	size_t len = strlen(text);
+	if (!sm->t3_on || sm->ptt || t3m.state != T3_CAMPED || len > sizeof utf16 / 2u) {
+		return false;
+	}
+	(void)dmrDataLatin1ToUtf16BE(text, utf16, len);
+	if (!t3_ms_sdata(&t3m, now_ms, dst, group, T3_UDTF_UTF16, utf16, (uint8_t)(2 * len))) {
+		return false;
+	}
+	data_tx.t3_sms = true;
+	return true;
+}
+
 // From t3_tick: ask for the channel, send once on it, or give the list back failed
 static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -2411,6 +2827,11 @@ static void data_t3_tick(radio_sm_t *sm, uint32_t now_ms)
 		// The single item (and any confirmed retries) is over: so is the radio's data call (dmr-trunking.md 7.7)
 		data_tx.t3_sent = false;
 		t3_ms_data_done(&t3m, now_ms, dmrDataServiceIpFailures() == data_tx.t3_failures);
+	}
+	if (data_tx.t3_sms && (t3m.ax.svc != T3_SVC_SDATA || t3m.ax.state == T3_AX_IDLE)) {
+		bool ok = t3m.ax.svc == T3_SVC_SDATA && t3m.ax.result == T3_RES_DONE;
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(ok ? DMR_TX_OK : DMR_TX_ERR_NO_REPEATER);
 	}
 	if (!data_tx.t3_wait) {
 		return;
@@ -2579,8 +3000,8 @@ static void data_save_settings(uint32_t now_ms)
 	st->ds_flags = (uint8_t)((cur.radioCheckReply ? SETTINGS_DS_RADIO_CHECK_REPLY : 0) |
 				 (cur.callAlertAck ? SETTINGS_DS_CALL_ALERT_ACK : 0) |
 				 (cur.lrrpReply ? SETTINGS_DS_LRRP_REPLY : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI ? SETTINGS_DS_SMS_ETSI : 0) |
-				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP ? SETTINGS_DS_SMS_ETSI_IP : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI : 0) |
+				 (cur.smsFormat == DMR_SMS_FORMAT_ETSI_IP || cur.smsFormat == DMR_SMS_FORMAT_DEFAULT ? SETTINGS_DS_SMS_ETSI_IP : 0) |
 				 (cur.radioCheckEtsi ? SETTINGS_DS_RADIO_CHECK_ETSI : 0) |
 				 (cur.udpCompress == DMR_UDPC_OFF ? SETTINGS_DS_UDPC_OFF : 0) |
 				 (cur.udpCompress == DMR_UDPC_ALL ? SETTINGS_DS_UDPC_ALL : 0));
@@ -2599,6 +3020,7 @@ static void data_save_settings(uint32_t now_ms)
 // the alert tone and keeps the settings in the store (settings_t em_*) ---
 
 static uint32_t em_saved_serial;
+static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
 
 static void emergency_init(const settings_t *st)
 {
@@ -2696,6 +3118,9 @@ static void data_init(radio_sm_t *sm)
 	dmrDataEnv_t env = { .txStart = data_tx_start, .channelClear = data_channel_clear,
 			     .inRxGroup = data_in_rx_group, .ctx = sm,
 			     .noRate34 = board.dmr != NULL && board.dmr->tx_rate34_bad };
+#if CONFIG_DMR_TRUNK_TX
+	env.txSmsUdt = data_t3_sms;
+#endif
 #if CONFIG_DMR_AIR_QUEUE
 	airqInit();
 #endif
@@ -2714,7 +3139,7 @@ static void data_init(radio_sm_t *sm)
 	// source
 	// IP packets: compressed headers where the ports allow, confirmed only for the rules the user sets
 	dmrDataSettings_t set = { .arsServer = 0, .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+				  .hasGps = false, .smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 				  .ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 #if CONFIG_DMR_LRRP
 	// The position service answers (data_own_position). A source can come later (a GPS found after start-up, a fixed
@@ -2730,10 +3155,11 @@ static void data_init(radio_sm_t *sm)
 				      (st->ds_flags & SETTINGS_DS_RADIO_CHECK_REPLY) != 0;
 		set.callAlertAck = (st->ds_flags & SETTINGS_DS_CALL_ALERT_ACK) != 0;
 		set.lrrpReply = (st->ds_flags & SETTINGS_DS_LRRP_REPLY) != 0;
-		// A record from before ETSI IP text has neither format bit: TMS, as that firmware sent (only the default
-		// changed, docs/spec/dmr-data.md 8)
-		set.smsFormat = (st->ds_flags & SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_ETSI_IP :
-				(st->ds_flags & SETTINGS_DS_SMS_ETSI) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		// Both format bits indicate Automatic. Earlier records have at most one bit set; neither means TMS.
+		uint8_t fmt = st->ds_flags & (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP);
+		set.smsFormat = fmt == (SETTINGS_DS_SMS_ETSI | SETTINGS_DS_SMS_ETSI_IP) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == SETTINGS_DS_SMS_ETSI_IP ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == SETTINGS_DS_SMS_ETSI ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (st->ds_flags & SETTINGS_DS_RADIO_CHECK_ETSI) != 0;
 		set.udpCompress = (st->ds_flags & SETTINGS_DS_UDPC_OFF) ? DMR_UDPC_OFF :
 				  (st->ds_flags & SETTINGS_DS_UDPC_ALL) ? DMR_UDPC_ALL : DMR_UDPC_AUTO;
@@ -2777,6 +3203,7 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_TRUNK
 	if (sm->t3_on) {
 		// A trunked system: the call's talkgroup; one registration for the system, whichever channel it is on
+		c.trunked = true;
 		c.talkGroup = t3m.state == T3_FOLLOW && t3m.call.group ? t3m.call.dst : 0;
 		vals[0] = t3s.cfg.own_id;
 		vals[1] = vals[2] = vals[3] = 0;
@@ -2786,6 +3213,13 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 		h = (h ^ vals[i]) * 16777619u;
 	}
 	c.channelKey = h;
+#if CONFIG_DMR_PRIVACY
+	// The voice key is the data key: data is encrypted or held back as the scheme says
+	static dmrPrivacyKey_t data_key;	// the data layer's crypt context points here (radio task only)
+	data_key.type = (dmrPrivacyType_t)sm->privacy_type;
+	data_key.key = sm->privacy_key;
+	dmrPrivacyDataConfig(&data_key, &c.privacy);
+#endif
 #if CONFIG_DMR_IP_GATEWAY
 	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
@@ -2840,12 +3274,20 @@ static bool t3_send_next(dmr_tx_burst_t *out, void *ctx)
 	return true;
 }
 
+static void t3_count8(uint8_t *n)
+{
+	if (*n != UINT8_MAX) {
+		(*n)++;
+	}
+}
+
 static void t3_send_done(uint8_t err, void *ctx)
 {
 	radio_sm_t *sm = ctx;
 	sm->t3_sending = false;
 	if (err != DMR_TX_OK) {
 		radio_t3v.send_fail++;
+		t3_count8(&radio_t3v.send_err);
 	}
 	sm->t3_sent_report = err == DMR_TX_OK ? 1u : 2u;	// to the engine at the next step (t3_ms_sent)
 }
@@ -2921,21 +3363,35 @@ static void t3_tune(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 	t3_retune(sm, &a->chan, a->slot, now_ms);
 }
 
+// A send refused: counted under its reason and told to the engine, which retries what needs it
+static void t3_send_refused(uint8_t *reason, uint32_t now_ms)
+{
+	radio_t3v.send_fail++;
+	t3_count8(reason);
+	t3_ms_sent(&t3m, now_ms, false);
+}
+
 static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 {
-	// PTT held while waiting for our grant is the request itself, not talking. A held retune: the engine is
-	// elsewhere already
-	if (sm->t3_tune_held || sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1) || (sm->ptt && !sm->t3_ptt_wait) ||
-	    sm->view.state == RS_TX) {
-		radio_t3v.send_fail++;	// not on the slot asked for, or talking: the engine retries what needs it
-		t3_ms_sent(&t3m, now_ms, false);
+	// A held retune: the engine is elsewhere already
+	if (sm->t3_tune_held) {
+		t3_send_refused(&radio_t3v.send_held, now_ms);
+		return;
+	}
+	if (sm->view.ch.timeslot != (a->slot == 2 ? 2 : 1)) {
+		t3_send_refused(&radio_t3v.send_slot, now_ms);
+		return;
+	}
+	// PTT held while waiting for our grant is the request itself, not talking
+	if ((sm->ptt && !sm->t3_ptt_wait) || sm->view.state == RS_TX) {
+		t3_send_refused(&radio_t3v.send_talk, now_ms);
 		return;
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
-			radio_t3v.send_fail++;
-			t3_ms_sent(&t3m, now_ms, false);
+		if (!key_tx(sm, sm->view.ch.tx_hz, (radio_bw_t)sm->view.ch.bw, sm->view.power, &none)) {
+			t3_send_refused(tx_held(sm) ? &radio_t3v.send_inhibit
+				      : tx_limit_allows(sm->view.ch.tx_hz) ? &radio_t3v.send_key : &radio_t3v.send_limit, now_ms);
 			return;
 		}
 		sm->dmr_keyed = true;
@@ -2952,8 +3408,10 @@ static void t3_send(radio_sm_t *sm, const t3_act_t *a, uint32_t now_ms)
 				  .tag = "t3" };
 	if (!dmr_call_data_tx(&src)) {
 		sm->t3_send_left = 0;
-		radio_t3v.send_fail++;	// the keying is released by dmr_follow
-		t3_ms_sent(&t3m, now_ms, false);
+		if (dmr_call_data_busy()) {
+			t3_count8(&radio_t3v.send_data_busy);
+		}
+		t3_send_refused(&radio_t3v.send_stack, now_ms);	// the keying is released by dmr_follow
 		return;
 	}
 	sm->t3_sending = true;
@@ -3180,9 +3638,11 @@ static void t3_publish(radio_sm_t *sm)
 #endif
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
+	v->unverified = m->unverified;
 	v->ticks = sm->t3_ticks;
 	v->csbk = m->st.csbk;
 	v->crc_bad = m->st.crc_bad;
+	v->crc_taken = m->st.crc_taken;
 	v->grants = m->st.grants;
 	v->followed = m->st.followed;
 	v->unmapped = m->st.unmapped;
@@ -3198,6 +3658,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->votes = m->st.votes;
 	v->vote_moves = m->st.vote_moves;
 	v->weak_leaves = m->st.weak_leaves;
+	v->weak_hold_ms = m->weak_hold_ms;
 	v->adj_refused = m->st.adj_refused;
 	v->level_dbm = m->level_dbm;
 	v->leave_dbm = t3s.cfg.leave_dbm;
@@ -3336,6 +3797,19 @@ static void t3_keep_kill(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+// Digital monitor on a trunked channel follows every talkgroup's grant (T3_OPT_MONITOR), as it hears every talkgroup
+// on a conventional one; off, the system's own setting again (t3_monitor_set, taken where t3s is loaded: t3s keeps
+// monitor's bit while the engine stops for the fallback and starts again). The engine reads the option at each grant:
+// a call already followed plays to its end
+static void t3_monitor(radio_sm_t *sm)
+{
+	if (sm->t3_monitor_set || hear_all_on(sm)) {
+		t3s.cfg.opts |= T3_OPT_MONITOR;
+	} else {
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_MONITOR;
+	}
+}
+
 // Start the engine on t3s
 static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3386,6 +3860,7 @@ static void t3_begin(radio_sm_t *sm, uint32_t now_ms)
 	sm->t3_hunt_ms = now_ms | 1u;	// hunting from now (the fallback's clock)
 	memset(sm->t3_at, 0, sizeof(sm->t3_at));
 	sm->t3_cc = t3s.cc;
+	t3_monitor(sm);
 	dmr_call_set_rx_tap(t3_tap, sm);
 	// A stun outlasts leaving the system and coming back (6.4.9): it is the network's, so another network's
 	// doesn't carry over
@@ -3416,6 +3891,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	const radio_t3_view_t *x = &radio_t3v;
 	radio_t3_brief_t *b = &sm->view.t3;
 	b->on = x->on;
+	b->ring_src = x->on ? t3m.ring_src : 0;
 	b->sys = x->sys;
 	b->unavail = x->unavail;
 	b->fallback = x->fallback;
@@ -3425,6 +3901,12 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->reg = x->reg;
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
+	b->other = x->other;
+	b->other_fid = x->other_fid;
+	b->refused = x->refused;
+	b->alerting = t3m.ax.alerting;
+	b->unmapped = x->last_unmapped;
+	b->why = x->why;
 }
 
 // RADIO_T3_START: the debug link's staged system, on whatever channel the radio is on
@@ -3433,6 +3915,7 @@ static void t3_start(radio_sm_t *sm, uint32_t now_ms)
 	t3_off(sm);
 	t3s = *radio_t3_staged();
 	radio_t3_fix(&t3s);
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
 	t3_begin(sm, now_ms);
 }
 
@@ -3447,6 +3930,10 @@ static void t3_leave(radio_sm_t *sm)
 #if CONFIG_DMR_DATA_CORE && CONFIG_DMR_TRUNK_TX
 	if (data_tx.t3_wait) {
 		data_t3_fail(DMR_TX_ERR_REJECTED);	// the system went before its channel came
+	}
+	if (data_tx.t3_sms) {
+		data_tx.t3_sms = false;
+		dmrDataServiceTxDone(DMR_TX_ERR_REJECTED);
 	}
 	data_tx.t3_sent = false;	// its data call went with the engine: not the next engine's to end
 #endif
@@ -3517,6 +4004,15 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 	if (ch->rx_only) {
 		// A receive-only channel never transmits (channel-modes.md 2.1): no registration from it either
 		t3s.cfg.opts |= T3_OPT_LISTEN_ONLY;
+	}
+	if (!(t3s.cfg.opts & T3_OPT_LISTEN_ONLY)) {
+		// The system code learned from the air (dmr-trunking-codeplug.md 1) only for listening: a radio that
+		// transmits registers on the system its codeplug names, never on whichever it heard first
+		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
+	}
+	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
+	if (ch->accept_bad_crc) {
+		t3s.cfg.opts |= T3_OPT_ACCEPT_BAD_CRC;	// for this channel only: the system record's opts don't carry it
 	}
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
@@ -3592,6 +4088,15 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 			(void)t3_ms_deregister(&t3m, now_ms);
 		}
 		break;
+	case RADIO_T3_REJECT:
+		(void)t3_ms_reject_call(&t3m, now_ms);
+		break;
+	case RADIO_T3_CANCEL:
+		if (t3m.ax.alerting) {
+			sm->t3_ptt_wait = false;
+			t3_ms_cancel(&t3m, now_ms);
+		}
+		break;
 	case RADIO_T3_END:
 		if (sm->t3_on) {
 			t3_ms_end_call(&t3m, now_ms);
@@ -3643,6 +4148,45 @@ static void t3_request(radio_sm_t *sm, uint8_t cmd, uint32_t now_ms)
 	}
 }
 
+// PTT refused on a trunked system: TXDENY_TRUNK, and why for the screen
+static void t3_deny(radio_sm_t *sm, uint8_t why)
+{
+	radio_t3v.why = why;
+	sm->view.t3.why = why;	// the brief is made before the view goes out, but not before deny publishes it
+	deny(sm, TXDENY_TRUNK);
+}
+
+#if CONFIG_DMR_TRUNK_TX
+// Why the engine can't ask for a channel now (PTT pressed, or a request that ended without one)
+static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
+{
+	uint16_t code;
+	if (t3m.state == T3_HUNT) {
+		uint8_t fid;
+		if (t3_ms_other(&t3m, now_ms, &code)) {
+			return RADIO_TRUNK_WHY_OTHER_SYS;
+		}
+		if (t3_ms_other_fid(&t3m, now_ms, &fid)) {
+			return RADIO_TRUNK_WHY_OTHER_KIND;
+		}
+		return t3_ms_reg_refused(&t3m) ? RADIO_TRUNK_WHY_REG_REFUSED : RADIO_TRUNK_WHY_NO_CC;
+	}
+	if (t3_ms_reg_refused(&t3m)) {
+		return RADIO_TRUNK_WHY_REG_REFUSED;
+	}
+	if (t3m.reg != T3_REG_OK && t3m.reg != T3_REG_NOT_NEEDED) {
+		return t3m.reg == T3_REG_LISTEN ? RADIO_TRUNK_WHY_OFF : RADIO_TRUNK_WHY_NOT_REG;
+	}
+	switch (result) {
+	case T3_RES_REFUSED:
+	case T3_RES_NOT_ALLOWED: return RADIO_TRUNK_WHY_DENIED;
+	case T3_RES_LOST: return RADIO_TRUNK_WHY_NO_CC;
+	case T3_RES_UNMAPPED: return RADIO_TRUNK_WHY_UNMAPPED;
+	default: return RADIO_TRUNK_WHY_NO_ANSWER;
+	}
+}
+#endif
+
 // PTT on a trunked system. True: handled here (a request on the control channel; PTT stays held while it runs)
 static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 {
@@ -3654,6 +4198,16 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return false;	// on the payload channel: the stack sends the voice
 	}
 #if CONFIG_DMR_TRUNK_TX
+	if (t3m.ring_src != 0) {
+		(void)t3_ms_answer_call(&t3m, now_ms);
+		sm->ptt = true;	// consume this press to answer; the mic needs a new press
+		changed(sm);
+		return true;
+	}
+	if (sm->t3_ptt_wait) {
+		sm->ptt = true;	// PTT pressed again while the called user is ringing
+		return true;
+	}
 	bool group;
 	uint32_t dst = t3_talk_id(sm, &group);
 	bool emergency = false;
@@ -3666,8 +4220,14 @@ static bool t3_ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return true;
 	}
+	// Only a result this refusal set: an earlier request's (granted, unmapped, lost) says nothing of this PTT.
+	// Following a call the radio may not talk on (a broadcast, P_PROTECT): the system's rule
+	uint8_t res = t3m.state != T3_CAMPED ? T3_RES_NOT_ALLOWED
+					      : t3m.ax.state == T3_AX_IDLE ? t3m.ax.result : T3_RES_PENDING;
+	t3_deny(sm, dst == 0 && t3m.state == T3_CAMPED ? RADIO_TRUNK_WHY_OFF : t3_why_now(now_ms, res));
+#else
+	t3_deny(sm, RADIO_TRUNK_WHY_OFF);	// a build that never transmits on a trunked system
 #endif
-	deny(sm, TXDENY_NO_DMR);
 	return true;
 }
 
@@ -3677,7 +4237,8 @@ static void t3_ptt_up(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #if CONFIG_DMR_TRUNK_TX
-	if (sm->t3_ptt_wait) {
+	// Once a private call is ringing, releasing PTT only releases the mic.
+	if (sm->t3_ptt_wait && !t3m.ax.alerting) {
 		sm->t3_ptt_wait = false;
 		if (t3m.ax.state != T3_AX_IDLE) {
 			t3_ms_cancel(&t3m, now_ms);
@@ -3744,6 +4305,7 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (!sm->t3_on) {
 		return;
 	}
+	t3_monitor(sm);
 	uint32_t tc = dmr_call_ticks(NULL);
 	uint32_t n = tc - sm->t3_ticks;
 	if (n > 8u) {
@@ -3843,17 +4405,24 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	}
 #if CONFIG_DMR_TRUNK_TX
 	t3_als_tick(sm, now_ms);
+	if (t3m.ring_src == 0) {
+		t3_ring_next = 0;
+	} else if (t3_ring_next == 0 || (int32_t)(now_ms - t3_ring_next) >= 0) {
+		beep(sm, BEEP_MESSAGE);
+		t3_ring_next = now_ms + 2000u;
+	}
 	// Our grant came while PTT is held: talk now
 	if (sm->t3_ptt_wait) {
 		if (t3_ms_can_talk(&t3m) && t3m.state == T3_FOLLOW) {
 			sm->t3_ptt_wait = false;
-			sm->t3_talking = true;
-			sm->ptt = false;	// ptt_down runs again on the payload channel
-			ptt_down(sm, now_ms);
+			if (sm->ptt) {
+				sm->ptt = false;	// ptt_down runs again on the payload channel
+				ptt_down(sm, now_ms);
+			}
 		} else if (t3m.ax.state == T3_AX_IDLE && t3m.ax.result != T3_RES_PENDING &&
 			   t3m.ax.result != T3_RES_GRANTED) {
 			sm->t3_ptt_wait = false;	// refused, no answer, timed out
-			deny(sm, TXDENY_NO_DMR);
+			t3_deny(sm, t3_why_now(now_ms, t3m.ax.result));
 		}
 	}
 #endif
@@ -3861,6 +4430,11 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_keep_kill(sm, now_ms);
 	t3_sd_inbox(sm);
 	t3_poll_tick(sm);
+	uint16_t other;
+	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
+	uint8_t fid;
+	radio_t3v.other_fid = t3_ms_other_fid(&t3m, now_ms, &fid) ? fid : 0u;
+	radio_t3v.refused = t3_ms_reg_refused(&t3m);
 	t3_publish(sm);
 }
 #endif
@@ -3882,7 +4456,7 @@ static void dmr_end(radio_sm_t *sm) { (void)sm; }
 static bool scan_listens(const channel_t *ch, uint16_t number)
 {
 	(void)number;
-	if (parked(ch) || ch->kind == CODEPLUG_KIND_P25_TRUNK || ch->kind == CODEPLUG_KIND_DMR_TRUNK) {
+	if (parked(ch) || codeplug_kind_trunked(ch->kind)) {
 		return false;
 	}
 #if CONFIG_NXDN
@@ -5096,7 +5670,7 @@ static bool roam_probe(radio_sm_t *sm)
 	}
 	if (!sm->dmr_keyed) {
 		static const subtone_t none = { TONE_NONE, 0 };
-		if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
+		if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &none)) {
 			return false;
 		}
 		sm->dmr_keyed = true;
@@ -5428,7 +6002,7 @@ static void aprs_rf_service(radio_sm_t *sm, const radio_status_t *st, uint32_t n
 		changed(sm);
 		// APRS's own power level when it has one, else the radio's current one (a temporary change included), as for
 		// PTT. The settings' default (the board's default power) ignored a lowered level
-		if (!key_tx(sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
+		if (!key_tx(sm, sm->aprs_job.hz, sm->aprs_job.narrow ? RADIO_BW_12K5 : RADIO_BW_25K,
 				     aprs_tx_power(sm->view.power), &none)) {
 			aprs_rf_end(sm, APRS_RF_NO_KEY, now_ms);
 		}
@@ -5634,6 +6208,7 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 	sm->tail_ms = 0;
 #endif
 	if (sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
+		bool sent = sm->view.state == RS_TX && sm->view.tx_deny == TXDENY_NONE;
 		// A busy refusal's reception goes on as it was, its tone already heard; anything else starts from idle
 		bool rx_on = sm->view.state == RS_TX_DENIED && sm->deny_rx;
 		sm->deny_rx = false;
@@ -5648,6 +6223,11 @@ static void fm_tx_end(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 		}
 		outputs(sm);
 		changed(sm);
+		// The end of transmission tone on the speaker, once the transmitter is off (so a board that can't beep on
+		// air plays it too). Not after a time-out or a denial: they have their own beeps
+		if (sent && sm->view.ch.mode == RADIO_MODE_FM && sig_local_on(sm, SIG_EV_END)) {
+			sig_local(sm, SIG_EV_END);
+		}
 	}
 	sm->tx_end_ms = now_ms;
 	if (sm->retune_pending) {
@@ -5698,9 +6278,120 @@ static void fm_unkey(radio_sm_t *sm, bool keyed, uint32_t now_ms)
 }
 
 #if CONFIG_FM_TX_TONES
+#if CONFIG_SIG_TONES
+// The start tone's sidetone stays on through the silent steps of the chain; it ends with the chain
+static void tone_side_off(void)
+{
+	if (board.radio->tx_tone_side != NULL) {
+		board.radio->tx_tone_side(false);
+	}
+}
+#endif
+
 static bool tx_tone(uint16_t hz)
 {
 	return board.radio->tx_tone != NULL && board.radio->tx_tone(hz);
+}
+
+#if CONFIG_SIG_TONES
+
+// Step i of an on-air FM chain. A pause is a silent carrier (tx_tone_key), not tx_tone(0): that gives the microphone
+// back on some chips (HR_C7000), so every gap would send live audio. A chain that opens with a pause first starts its
+// first tone, then keys it off. A board without tx_tone_key can't key a silent carrier: the old behavior (tx_tone(0)
+// between steps, the microphone live before a leading pause)
+static bool chain_tone(const beep_seg_t *g, uint8_t n, uint8_t i)
+{
+	if (g[i].hz != 0) {
+		return board.radio->tx_tone(g[i].hz);
+	}
+	if (board.radio->tx_tone_key == NULL) {
+		return i == 0 || board.radio->tx_tone(0);
+	}
+	if (i == 0) {
+		uint8_t k = 0;
+		while (k < n && g[k].hz == 0) {
+			k++;
+		}
+		if (k == n || !board.radio->tx_tone(g[k].hz)) {
+			return false;
+		}
+	}
+	return board.radio->tx_tone_key(false) || board.radio->tx_tone(0);
+}
+
+// The tone sent before unkeying on an FM channel when PTT is let go: the roger beep (the end tone's default, if it is
+// on) or the end tone's sequence when it is set to go on air. Starts its first step; true when it runs (roger_poll
+// goes through the rest and unkeys)
+static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint8_t out = sig_out(sm, SIG_EV_END);
+	beep_seg_t *g = sm->roger_seg;
+	uint8_t n;
+	if (out == SIG_OUT_DEFAULT) {
+		if (!sm->set.roger_beep) {
+			return false;
+		}
+		g[0] = (beep_seg_t){ RADIO_ROGER_HZ1, RADIO_ROGER_STEP_MS };
+		g[1] = (beep_seg_t){ RADIO_ROGER_HZ2, RADIO_ROGER_STEP_MS };
+		n = 2;
+#if CONFIG_SIG_TONES
+	} else if (sig_out_air(out, SIG_EV_END)) {
+		n = sig_chain(sm->set.sig_hz[SIG_EV_END], sm->set.sig_ms[SIG_EV_END], SIG_EV_END, g);
+#endif
+	} else {
+		return false;
+	}
+	if (board.radio->tx_tone == NULL || !chain_tone(g, n, 0)) {
+		return false;
+	}
+	sm->roger_n = n;
+	sm->roger_i = 0;
+	sm->roger_lead = false;
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	return true;
+}
+
+// The next step of the tone, then its end (every poll while it runs)
+static void roger_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	while (sm->roger_ms != 0 && now_ms - sm->roger_ms >= sm->roger_seg[sm->roger_i].ms) {
+		sm->roger_ms += sm->roger_seg[sm->roger_i].ms;	// from the step's own start: no drift over the steps
+		if (++sm->roger_i >= sm->roger_n) {
+			tx_tone(0);
+			tone_side_off();
+			sm->roger_ms = 0;
+			if (sm->roger_lead) {
+				sm->roger_lead = false;	// the start tone is over: the transmission goes on, the microphone live
+				return;
+			}
+			sm->view.roger = false;
+			fm_unkey(sm, false, now_ms);
+			return;
+		}
+		chain_tone(sm->roger_seg, sm->roger_n, sm->roger_i);
+	}
+}
+
+static void roger_cancel(radio_sm_t *sm)
+{
+	if (sm->roger_ms != 0) {
+		tx_tone(0);
+		tone_side_off();
+		sm->roger_ms = 0;
+		sm->roger_lead = false;
+		sm->view.roger = false;
+		changed(sm);
+	}
+}
+#else
+// Without the chains: the roger beep alone, two fixed steps timed from roger_ms (no steps to keep in RAM)
+static bool roger_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->set.roger_beep || !tx_tone(RADIO_ROGER_HZ1)) {
+		return false;
+	}
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	return true;
 }
 
 // The roger beep's second tone, then its end (every poll while it runs)
@@ -5724,6 +6415,40 @@ static void roger_cancel(radio_sm_t *sm)
 		sm->roger_ms = 0;
 		sm->view.roger = false;
 		changed(sm);
+	}
+}
+#endif
+#endif
+
+#if CONFIG_SIG_TONES && CONFIG_FM_TX_TONES
+// The start tone goes to the speaker with the board's sidetone, on air too
+static bool lead_side(const radio_sm_t *sm)
+{
+	return board.radio->tx_tone_side != NULL && sig_local_on(sm, SIG_EV_BEGIN) &&
+	       sig_out_air(sig_out(sm, SIG_EV_BEGIN), SIG_EV_BEGIN);
+}
+
+// The start tone on air in FM (sigtone.h): right after keying, the chain goes out as tone on the carrier with
+// hal_radio_t.tx_tone, step by step as the roger beep does (roger_poll), and the microphone opens when it ends. Not on
+// a no-beep channel, with the host's audio, or on a board with no tx_tone
+static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->host_audio || sm->view.ch.no_beep || board.radio->tx_tone == NULL ||
+	    !sig_out_air(sig_out(sm, SIG_EV_BEGIN), SIG_EV_BEGIN)) {
+		return;
+	}
+	beep_seg_t *g = sm->roger_seg;
+	uint8_t n = sig_chain(sm->set.sig_hz[SIG_EV_BEGIN], sm->set.sig_ms[SIG_EV_BEGIN], SIG_EV_BEGIN, g);
+	if (!chain_tone(g, n, 0)) {
+		return;
+	}
+	sm->roger_n = n;
+	sm->roger_i = 0;
+	sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	sm->roger_lead = true;
+	// On the speaker too: the modem's sidetone plays what goes on air (the speaker copy of sig_local isn't played then)
+	if (lead_side(sm)) {
+		board.radio->tx_tone_side(true);
 	}
 }
 #endif
@@ -5925,7 +6650,7 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 	sm->view.tx_elapsed_ms = 0;
 	sm->tx_start_ms = now_ms;
 	outputs(sm);
-	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, sm->view.power, &none)) {
 		o->tx_abort();
 		deny(sm, board_refusal());
 		return;
@@ -5963,7 +6688,7 @@ static void air_apply(radio_sm_t *sm)
 static void p25t_ptt(radio_sm_t *sm)
 {
 	uint8_t why = radio_p25_trunk_ptt(true);
-	if (why != RADIO_P25T_WHY_NONE) {
+	if (why != RADIO_TRUNK_WHY_NONE) {
 		sm->view.p25.twhy = why;	// (the next poll keeps it)
 		deny(sm, TXDENY_TRUNK);
 		return;
@@ -5995,7 +6720,7 @@ static void p25t_burst(radio_sm_t *sm, uint32_t hz)
 		return;
 	}
 	sm->air_tx = true;
-	if (!key_tx(hz, RADIO_BW_12K5, sm->view.power, &none)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, sm->view.power, &none)) {
 		radio_p25_tx_abort();		// AIR_TX_DONE follows: air_tick clears it
 		return;
 	}
@@ -6234,7 +6959,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	sm->tx_start_ms = now_ms;
 	outputs(sm);
 	const channel_t *ch = &sm->view.ch;
-	if (!key_tx(ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
+	if (!key_tx(sm, ch->tx_hz, (radio_bw_t)ch->bw, sm->view.power, &ch->tx_tone)) {
 		deny(sm, board_refusal());
 		return;
 	}
@@ -6246,8 +6971,43 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+	// The start of transmission tone on the speaker. CAP_BEEP_NOT_ON_AIR is about the DMR engine closing the audio path
+	// while it transmits; the FM transmitter doesn't, so the speaker copy plays on every board
+	bool side = false;
+#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
+	side = !sm->host_audio && board.radio->tx_tone != NULL && lead_side(sm);	// the sidetone plays it
+#endif
+	if (!side && sig_local_on(sm, SIG_EV_BEGIN)) {
+		sig_local(sm, SIG_EV_BEGIN);
+	}
+#if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
+	fm_lead_start(sm, now_ms);	// and on air
+#endif
 	changed(sm);
 }
+
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+static void satellite_arm(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->satellite_session || !sm->satellite_view.tracking ||
+	    sm->view.ch.mode != RADIO_MODE_FM ||
+	    sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->ptt || sm->hotspot || sm->host_audio ||
+	    sm->view.scan != 0u || board.radio->tx_tone == NULL) {
+		beep(sm, BEEP_ERROR);
+		return;
+	}
+	subtone_t normal_tone = sm->view.ch.tx_tone;
+	sm->view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 744u };
+	ptt_down(sm, now_ms);
+	sm->view.ch.tx_tone = normal_tone;
+	if (sm->view.state != RS_TX || !sm->ptt) {
+		ptt_release(sm, false, now_ms);
+		return;
+	}
+	sm->satellite_arm_active = true;
+	sm->satellite_arm_end_ms = now_ms + 2000u;
+}
+#endif
 
 // roger: send the roger beep (if set) before unkeying
 static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
@@ -6255,6 +7015,10 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	if (!sm->ptt) {
 		return;
 	}
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	sm->satellite_arm_active = false;
+	sm->satellite_arm_end_ms = 0u;
+#endif
 	sm->ptt = false;
 	activity(sm, now_ms);
 	if (sm->host_audio) {
@@ -6275,6 +7039,13 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 #if CONFIG_DMR
 	if (sm->dmr_running) {
+		if (sm->view.dmr.state == RDMR_TX) {
+			sig_air_dmr(sm, SIG_EV_END);	// before the stack hears PTT is up: it holds the over open for it
+		} else {
+#if CONFIG_SIG_TONES
+			ambeVoiceTxToneCancel();	// a start tone for a transmission that never went on air
+#endif
+		}
 		dmr_call_ptt(false);
 		dmr_call_poll(now_ms);
 		if (sm->view.state == RS_TX) {
@@ -6288,6 +7059,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	dtmf_cancel(sm, now_ms);	// before the roger beep: the board never mixes the two
 #if CONFIG_FM_TX_TONES
+	roger_cancel(sm);	// let go during the start tone on air: it ends here (the end tone is next)
 	sm->burst_timed = sm->burst_held = sm->burst_key_owned = false;
 	sm->burst_ms = sm->burst_end_ms = 0;
 	if (sm->view.tone_burst) {
@@ -6296,9 +7068,7 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 		sm->view.tone_burst = false;
 	}
 	sm->burst_keyed = false;
-	if (roger && !keyed && sm->set.roger_beep && sm->view.state == RS_TX && sm->view.ch.mode == RADIO_MODE_FM &&
-			tx_tone(RADIO_ROGER_HZ1)) {
-		sm->roger_ms = now_ms != 0 ? now_ms : 1;
+	if (roger && !keyed && sm->view.state == RS_TX && sm->view.ch.mode == RADIO_MODE_FM && roger_start(sm, now_ms)) {
 		sm->view.roger = true;
 		changed(sm);
 		return;		// roger_poll unkeys
@@ -6307,6 +7077,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	(void)roger;
 #endif
 	fm_unkey(sm, keyed, now_ms);
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 }
 
 static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
@@ -6355,7 +7128,26 @@ static void hotspot_arm(radio_sm_t *sm)
 		return;		// armed again when the CW ID ends
 	}
 #endif
-	sm->dmr_keyed = key_tx(sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
+	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
+	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
+	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
+	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
+	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
+	bool was = sm->dmr_keyed;
+	if (was) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
+			sm->hs_power_due = true;
+			return;
+		}
+		sm->dmr_keyed = false;
+		board.radio->tx_off();
+	}
+	sm->hs_power_due = false;
+	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
+	if (was && !sm->dmr_keyed) {
+		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
+	}
 }
 
 #if RADIO_SM_CW
@@ -6447,7 +7239,7 @@ static uint8_t cw_begin(radio_sm_t *sm, uint32_t hz, uint8_t power, const char *
 	sm->board_mode = RADIO_MODE_FM;
 	board.radio->set_mode(RADIO_MODE_FM);
 	sm->cw_phase = CW_KEYING;	// before tx(): cw_restore and outputs see it
-	if (!key_tx(hz, RADIO_BW_12K5, power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
+	if (!key_tx(sm, hz, RADIO_BW_12K5, power, &none) || !board.radio->tx_tone(sm->cw_tone_hz)) {
 		cw_restore(sm);
 		cw_ended(sm, false, 0);
 		return 0;
@@ -6622,6 +7414,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
+	sm->hs_power_due = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -6697,7 +7490,7 @@ static void bench_key(radio_sm_t *sm, uint16_t max_ms, uint32_t now_ms)
 	if (!sm->air_bench || sm->bench_keyed || board.air == NULL || max_ms == 0 || tx_check(sm) != TXDENY_NONE) {
 		return;
 	}
-	if (!key_tx(sm->view.ch.tx_hz, RADIO_BW_12K5, 0, &none)) {	// level 0: the board's lowest (bench signals)
+	if (!key_tx(sm, sm->view.ch.tx_hz, RADIO_BW_12K5, 0, &none)) {	// level 0: the board's lowest (bench signals)
 		return;
 	}
 	if (!board.air->tx_begin()) {
@@ -6733,7 +7526,23 @@ static void bench_tick(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
+// The radio's own DMR ID, the codeplug's (set on the radio in Settings > My radio, which writes the codeplug). Taken
+// before a channel is selected: a trunked channel's system needs an ID to start, and one selected without would stay
+// unavailable
+static void load_own_id(radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	sm->own_id = codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->view.dmr.own_id = sm->own_id;
+#else
+	(void)sm;
+#endif
+}
+
+// The preferences the radio core uses: base squelch, master power, VFO step
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -6750,11 +7559,6 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
-	if (sm->own_id == 0) {
-		sm->own_id = RADIO_DMR_ID_DEFAULT;
-	}
-	sm->view.dmr.own_id = sm->own_id;
 	// The radio name (talker alias text): the settings' override, else the codeplug's; hang times from the codeplug
 	codeplug_dmr_settings_t gs;
 	codeplug_dmr_settings(&gs);
@@ -7011,6 +7815,21 @@ static void persist(radio_sm_t *sm, uint32_t now_ms)
 
 static void clamp_settings(radio_settings_t *s)
 {
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		s->sig_dmr[i] = sig_out_clean(s->sig_dmr[i], (sig_event_t)i);
+		s->sig_fm[i] = sig_out_clean(s->sig_fm[i], (sig_event_t)i);
+		for (unsigned k = 0; k < SIG_STEPS; k++) {
+			if (s->sig_hz[i][k] > SIG_HZ_MAX) {
+				s->sig_hz[i][k] = SIG_HZ_MAX;
+			}
+			s->sig_hz[i][k] = (uint16_t)(s->sig_hz[i][k] / SIG_HZ_UNIT * SIG_HZ_UNIT);
+			if (s->sig_ms[i][k] > SIG_MAX_MS / SIG_MS_UNIT) {
+				s->sig_ms[i][k] = SIG_MAX_MS / SIG_MS_UNIT;
+			}
+		}
+	}
+#endif
 	if (s->beep_level > 100) {
 		s->beep_level = 100;
 	}
@@ -7098,6 +7917,12 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		clamp_settings(s);
 	}
 	s->tones_off = settings_tones_off(st) & RADIO_TONES_MASK;	// 0, all on, in a record from before it
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		s->sig_dmr[i] = st->sig_dmr[i];	// 0 = default, in a record from before them; clamp_settings checks
+		s->sig_fm[i] = st->sig_fm[i];
+	}
+#endif
 	if (st->rs_stored != 1) {
 		return;
 	}
@@ -7154,6 +7979,12 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
 	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
 	settings_set_tones_off(st, s->tones_off);
+#if CONFIG_SIG_TONES
+	for (int i = 0; i < SIG_EV_COUNT; i++) {
+		st->sig_dmr[i] = s->sig_dmr[i];
+		st->sig_fm[i] = s->sig_fm[i];
+	}
+#endif
 	st->rs_stored = 1;
 	st->roam_rssi_dbm = s->roam_rssi_dbm;
 	st->roam_hyst_db = s->roam_hyst_db;
@@ -7172,8 +8003,13 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms)
 {
 #if CONFIG_DMR
+	bool inhibit_changed = s->tx_inhibit != sm->set.tx_inhibit;
 	bool reply_changed = s->reply_s != sm->set.reply_s || s->sfr_rx != sm->set.sfr_rx ||
-		s->talk_permit != sm->set.talk_permit;	// the permit hold (permit_before_key)
+		s->talk_permit != sm->set.talk_permit	// the permit hold (permit_before_key)
+#if CONFIG_SIG_TONES
+		|| s->sig_dmr[SIG_EV_BEGIN] != sm->set.sig_dmr[SIG_EV_BEGIN]
+#endif
+		;
 #endif
 	sm->set = *s;
 	clamp_settings(&sm->set);
@@ -7185,6 +8021,9 @@ static void use_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now
 #endif
 	activity(sm, now_ms);
 #if CONFIG_DMR
+	if (inhibit_changed) {
+		hotspot_arm(sm);	// the hotspot's keying stays armed between bursts: dropped or armed again
+	}
 	if (reply_changed && sm->dmr_running) {
 		dmr_configure(sm);	// the reply window, an SFR user's copies, the talk permit
 	}
@@ -7288,6 +8127,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->view.zone_index = zi;
 #endif
+	load_own_id(sm);
 	select_position(sm, zi, number, pos);
 #if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
@@ -7362,7 +8202,14 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	memset(sm, 0, sizeof(*sm));
+#if CONFIG_SFR
+	direct_sm = sm;
+	if (board.radio->dmr_direct_query != NULL) {
+		board.radio->dmr_direct_query(sfr_repeats_now);
+	}
+#endif
 	sm->audio_out = -1;
+	sm->rx_open_out = -1;
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
@@ -7455,6 +8302,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	kv_load(sm, now_ms);
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
+	load_own_id(sm);
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
 	apply_prefs(sm, &st);
 #if CONFIG_DMR
@@ -7704,6 +8552,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_PTT:
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active) {
+			break;	// Keep the operator-requested arm burst at its full duration
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_keyed) {
 			sm->burst_keyed = req->arg == 0;	// PTT pressed during a burst takes the transmission over
@@ -8003,10 +8856,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_FREQ:
 		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
 		break;
-	case RREQ_HS_POWER:
-		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
-		hotspot_arm(sm);
+	case RREQ_HS_POWER: {
+		uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+		bool same = level == sm->hs_power;
+		sm->hs_power = level;
+		// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
+		// held now (a critical battery), which drops it
+		if (!same || !sm->dmr_keyed || tx_held(sm)) {
+			hotspot_arm(sm);
+		}
 		break;
+	}
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
@@ -8125,6 +8985,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
 #endif
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	case RREQ_SATELLITE_ARM:
+		satellite_arm(sm, now_ms);
+		break;
+#endif
 #if CONFIG_DTMF
 	case RREQ_DTMF:
 		dtmf_key(sm, (char)(req->arg & 0xFF), (req->arg & 0x100) != 0, now_ms);
@@ -8223,6 +9088,33 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 		return cap;
 	}
 	return (uint8_t)volume_percent;
+}
+
+// 10^(-d/20) for d = 0..19 dB, and for d = 0.0..0.9 dB, Q15
+static const uint16_t db_down_q15[20] = {
+	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
+	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
+};
+static const uint16_t db10_down_q15[10] = {
+	32768, 32393, 32022, 31656, 31293, 30935, 30581, 30231, 29885, 29543,
+};
+
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap)
+{
+	if (level == 0 || db10_now <= db10_cap) {
+		return level;
+	}
+	unsigned d = (unsigned)(db10_now - db10_cap);
+	// The level in hundredths: 20 dB at a time is a tenth. 255 x 100 x 32768 still fits 32 bits (thousandths didn't
+	// above level 131)
+	uint32_t centi = (uint32_t)level * 100u;
+	for (; d >= 200u; d -= 200u) {
+		centi /= 10u;
+	}
+	centi = (centi * db_down_q15[d / 10u] + 16384u) >> 15;
+	centi = (centi * db10_down_q15[d % 10u] + 16384u) >> 15;
+	uint32_t out = (centi + 50u) / 100u;
+	return (uint8_t)(out == 0 ? 1 : out);
 }
 
 uint8_t radio_volume_stored(uint8_t step)
@@ -8630,6 +9522,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
 		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
 		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		if (sm->hs_power_due && !board.dmr->is_transmitting()) {
+			hotspot_arm(sm);	// a level that came during a transmission (hotspot_arm)
+		}
 		outputs(sm);
 		return;
 	}
@@ -8654,6 +9549,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	if (sm->view.state == RS_TX) {
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active && (int32_t)(now_ms - sm->satellite_arm_end_ms) >= 0) {
+			sm->satellite_arm_active = false;
+			ptt_release(sm, false, now_ms);
+			return;
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_end_ms != 0 && sm->view.tone_burst && (int32_t)(now_ms - sm->burst_end_ms) >= 0) {
 			tone_burst(sm, false, 0, now_ms);	// its "off" never came: unkey as the off would
@@ -8689,6 +9591,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			if (sm->roger_ms != 0 || sm->view.tone_burst) {
 				tx_tone(0);
 				sm->roger_ms = 0;
+#if CONFIG_SIG_TONES
+				sm->roger_lead = false;
+#endif
 				sm->view.roger = false;
 				sm->view.tone_burst = false;
 			}
@@ -8728,6 +9633,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		sm->close_count = 0;
 	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
 			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+		bool was_rx = sm->view.state == RS_RX;
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
 			// stays until PTT is released
@@ -8737,7 +9643,16 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			end_reception(sm, now_ms);
 		}
 		changed(sm);
+		// The channel is free again: the idle tone (a scan landing or a broadcast listen has none)
+		// (not within a second of our own transmission: the end tone just played and the squelch tail is not a call)
+		if (was_rx && !listening && sm->view.ch.mode == RADIO_MODE_FM && now_ms - sm->tx_end_ms > 1000u &&
+		    sig_local_on(sm, SIG_EV_IDLE)) {
+			sig_local(sm, SIG_EV_IDLE);
+		}
 	}
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 	outputs(sm);
 }
 
@@ -8781,11 +9696,27 @@ static void sfr_rpt_tick(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_DMR_TRUNK
+// A key written while the channel is a trunked one whose system couldn't be used: select it again. Systems are keys,
+// written apart from the channels; one that lands after the channel was selected (an editor writing the channel
+// first) would otherwise stay "not set up" until another channel is selected, which a zone of one never allows.
+// Through the reload a codeplug write takes (radio_sm_poll): it waits out a transmission, the hotspot or a zone write
+static void t3_kv_retry(radio_sm_t *sm)
+{
+	if (sm->t3_tagged && radio_t3v.unavail && !sm->view.vfo && sm->have_channels) {
+		sm->reload_pending = true;
+	}
+}
+#endif
+
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
+#if CONFIG_DMR_TRUNK
+		t3_kv_retry(sm);
+#endif
 	}
 #if CONFIG_FM_TX_TONES
 	if (sm->burst_timed && !sm->burst_held && now_ms - sm->burst_ms >= RADIO_BURST_MIN_MS) {
@@ -8833,4 +9764,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 }

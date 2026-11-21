@@ -84,6 +84,8 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   "Private to Joe Smith" while receiving. The TX screen's target line follows the short form rule above, and its
   detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
   "Priv" in blue, and a private call is not encrypted.
+- NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
+  the radio receives an encrypted call and holds its audio.
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
@@ -149,6 +151,7 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | Freq Trim | `freq-trim` | Settings > Advanced > Freq trim (radio-features.md 6.1): the trim in ppm (-10.0..+10.0) in large type, a slider under it from -10 to +10 (filled from 0 to the value; the -10 / 0 / +10 scale where there's room), then what it moves a carrier by at 440 MHz and at 144 MHz, in Hz ("At 440 MHz" where it fits beside -4400 Hz, else "@ 440 MHz"), and "+ to increase frequency" ("+ to increase freq" where the full line doesn't fit) above the hint where there's room. Up / Right / Down / Left (or the knob, one step a detent) step 0.1 ppm, 0.5 ppm a repeat while held, and are saved at once. A board that applies the trim when it tunes retunes once the value has held still for 400 ms
 (radio-features.md 6.1), so a counter or a hotspot shows each step without a reception dropped at every press. # flips the sign; on 0 it starts a negative entry (a radio without CONTEXT gets a minus by stepping below 0, and typed digits keep it). Digits type the size in tenths as a calculator does (4 5 = 4.5 ppm), keeping the sign; a digit past 10.0 is refused ("Up to 10.0 ppm"); BACK takes the last digit back and with none left drops the entry; OK sets it. OK with nothing typed leaves the page |
 | My Radio | `dmr-id` | Settings > My radio > DMR ID and name: the radio model above the rows DMR ID (`CONFIG_DMR`), Radio name, Boot 1 and Boot 2, from the codeplug. On DMR ID, digits type an ID as the channel editor's Own ID (2.1): the first digit replaces the shown one, a digit that would take it past `CODEPLUG_DMR_ID_MAX` (16776415) is refused, BACK takes the last digit back and with none typed leaves the ID as it was, OK writes it into the codeplug (with nothing typed, leaves it; 0 is refused: "IDs start at 1"). OK on a name row opens Text entry (2.1, `CONFIG_CHANNEL_EDIT`; without it "Typing: not in this build"); OK there writes the radio name (`codeplug_set_radio_name`) or the boot line (`codeplug_set_boot_text`) as a storage job (`ui_svc_name_set`), "Saved" |
+| Signaling Tone Steps | `sig-chain` | Settings > Signaling tones > Start / End / Idle steps (the title is Start Tone, End Tone or Idle Tone): the event's ten steps, a row each ("Step 1", value "1570 Hz  40 ms", or "-" when its length is 0), above them "Length: n / 900 ms" or "Standard sound" with no step. OK on a step opens its frequency (digits type it, Up / Down / the knob step it by 10, 0 to 3400), OK takes it and opens the length (0 to 900 ms in steps of 10), OK saves both; a value off the steps or out of the range is refused with what fits, BACK leaves the step as it was. A step that was off starts at 40 ms. A length of 0 ends the chain ([radio-features.md](radio-features.md) 4.3) |
 | Data Services | `data-services` | Settings > Connections > Data services (`CONFIG_DMR_ARS` or `CONFIG_DMR_IP_GATEWAY`): the rows ARS server and IP gateway, each a DMR ID or Off, and above them "Saved in the codeplug" and the ARS state (Off, Registering, Registered, Refused, No answer). Digits type an ID as My Radio's DMR ID; 0 is Off. OK sets it as a storage job, "Saved": the key goes into the codeplug's settings area when the area can be written, and the setting is saved as the radio's own ([codeplug-settings.md](codeplug-settings.md) 5.2). It isn't a codeplug write that asks about another firmware's codeplug. Only a key that is present and can't be updated refuses it: "Couldn't write the codeplug: not saved" |
 | Language | `language` | Settings > Display > Language (the last row; its value is the language in use): every language the firmware has a catalog for, each in its own name ("English", "Español"), the one in use marked "In use". OK switches at once and goes back; a language this image was built without is dimmed and OK says "Not in this build" (2.5) |
 | About | `about` | Settings > My radio > About, and Settings > Advanced > About: a text page (`ui_draw_text_page`) in the smallest font, word-wrapped and never shortened, Up / Down / the knob scroll a line. `SF_NO_STRIP`: no status strip while the radio is idle (the owner's request); RX or TX draws it again, so the TX / RX pill still shows (P2) |
@@ -229,7 +232,9 @@ Text entry supports both keypad conventions radios use: more presses of the same
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their
 letters, the digit, then the letters in the other case; 1 cycles `. - / , ' & ( ) @ _ ! ? 1`, 0 a space, 0, `+ # *`.
 The same key again within 1 s takes the next character; another key or the pause moves on. The title shows the mode
-("Name ABC"). In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
+("Name ABC"). The text wraps over the lines above the hint, with the count of characters typed and the field's
+limit ("12/16") at the bottom right on a line of its own. Once the text fills those lines, it scrolls so the cursor
+stays on the last one. In 123 a digit types itself, and a held digit types itself in any mode (principles 3).
 CONTEXT (`#`) cycles ABC → 123 → abc (ABC first). BACK deletes the last character and, on an empty field, leaves
 without changing the name (the phone convention, the one exception to P4); QUICK (`*`) and Left delete too, and in
 text entry QUICK doesn't open quick settings. OK keeps the name. Without a keypad (class F): Up / Down step the last character (down past the space deletes it), OK adds the next
@@ -319,7 +324,8 @@ With `CONFIG_GPS_SKY`, Tools > Position (`gps`, `ui_gps.c`) has four pages, thre
 | Signal | satellites in the fix of those seen, then one bar per satellite with a signal (SNR above 0), its height the SNR (50 dB-Hz full), filled when used. The satellite numbers under the bars: one row where two digits fit a bar, else two rows taking turns |
 | Grid | the Maidenhead locator (6 characters) large, then the position in degrees, minutes, seconds and in decimal degrees (6 decimals). "No fix yet" without a fix. Not on a tall panel |
 
-Colors name the system (GPS blue, GLONASS red, Galileo yellow, BeiDou green, QZSS purple; darker on the light theme),
+Colors name the system (GPS blue, GLONASS red, Galileo yellow, BeiDou green, QZSS purple; darker on the light theme;
+all the text color in the night theme),
 and the legend says them in words (P5). A monochrome panel draws everything in ink. Without a GPS, or with it off, the
 screen says so and points to Settings > Location. Without `CONFIG_GPS_SKY` the same Tools row opens a page of text
 (fix, satellites, position, altitude).
@@ -405,7 +411,9 @@ selects that position in the zone (`radio_req_zone_pos`), at power-on too, so th
 points at, and again after a zone change (a new zone starts on its first channel). It asks again until the radio is
 on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
 position past the end of the zone changes nothing. Once on it, the knob is left alone until it moves or the zone
-changes, so a scan stands. Its position is `input.switch_pos` in the debug link view
+changes, so a scan stands. A host's zone and channel request ([tcp-services.md](tcp-services.md) 8) holds too: the
+radio stays on the host's choice, in that zone, until the knob moves. Its position is `input.switch_pos` in the debug
+link view
 (-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
 
 VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
@@ -435,11 +443,21 @@ A"). The pill shows RX while data or CSBK bursts arrive on our slot and color co
 (`DMR_CALL_FADE_MS`) after the last one, even with no call running (`dmr_call.c` `data_receiving`). The green LED
 stays for a call being played.
 
+The status strip's GPS icon, left of the signal bars: a satellite dish, rim up and to the right, as tall as the bars.
+Hollow while Settings > Location > GPS is off; solid while it is on without a fix (silent included); with a fix (one
+under a minute old, position.md) its feed arm and two waves join it. The shape, not a color, tells them apart. None
+on a radio without a GPS (`board_has_gps`: a module detected after start-up gets it then). The dish is drawn by hand
+at 6, 8, 11 and 13 pixels, the tallest no taller than the bars, so it keeps the strip's top margin, and always takes
+the waves' width, so the strip doesn't move when a fix comes. On is what the position service was last told
+(`position_gps_enabled`), so a change from the debug link counts as one from the menu. The UI checks once a second
+(`ui_state_t.gps`, debug link view key `ui.gps`). On a radio without a GPS, Settings > Location > GPS reads Off whatever is stored: the
+stored value stays, as the module is detected after start-up and its driver follows the setting once heard.
+
 Small displays (under 200 px tall) merge a screen's title into the status strip: the state pill shows only when not
-idle, the bars and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
+idle, the bars, the GPS icon and the battery (icon and percent) give way, so the title is centered across the whole row; the lock
 and the unread count stay. Home shows the battery, and the low battery banner warns on any screen. On a radio without
-a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Tools > Battery, Settings > Power saving > Battery saver and Low battery warning are left
-out of their lists, so the other Tools rows move up), and only the name part of the title is
+a battery, `CAP_NO_BATTERY`, the battery is drawn nowhere, and Settings > Power saving > Battery saver and Low battery
+warning are left out of their lists. The Battery tool is not present; tools retain their assigned numbers. Only the name part of the title is
 shortened with a middle ellipsis (the prefix stays whole: "Quick COUNTY DMR", not "Quick ..tions").
 
 ### 3.1 Key assignment
@@ -615,8 +633,8 @@ The gallery draws a color page (Home with its filled status bar, the Channels li
 `UI_GALLERY_COLORS` names, as `<screen>__<color>.png` right after the page, on color displays only; screens that only
 differ in color (`home_plain`) are left out at 128x64. The list is set in
 `.github/workflows/ui-gallery.yml` (`docs/dev/ci.md`), and `make ui-gallery` reads it from there. Home (filled and plain
-status bar), RX, TX, the Channels list and Settings > Display are also drawn in the light and high-contrast themes, as
-`<screen>__light.png` and `<screen>__high_contrast.png` (color displays).
+status bar), RX, TX, the Channels list and Settings > Display are also drawn in the light, high-contrast and night
+themes, as `<screen>__light.png`, `<screen>__high_contrast.png` and `<screen>__night.png` (color displays).
 
 
 Geometries: `160x120i5` (160x120 visible, 5 px inset left and right), `160x128` (both 160 px classes render through the 4 bpp frame buffer, as the boards do),
@@ -685,13 +703,20 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
 - Voice prompts are dimmed ("Voice prompts aren't built yet: no recorded speech").
-- Theme switches the color palette (dark, light, high contrast). Highlight color (Default, Red, Orange, Yellow, Teal,
-  Light blue, Purple, Pink) and Filled status bar (Settings > Display, `settings_t.accent`) are for color displays
+- Theme switches the color palette (dark, light, high contrast, night). Night is four shades of pure red on black
+  (red 255, 176, 112, 56; green and blue 0), for eyes adapted to the dark: the meanings other themes give hues take
+  brightness and their word instead (P5). Text, TX, warnings, the focus and the filled strip are the brightest red,
+  with black text on them; RX, privacy and secondary text the next; separators and dimmed rows the third; the darkest
+  is only a background (the IDLE pill, whose word is the brightest red, and the hint row). Night ignores Highlight
+  color, whose row is dimmed ("Night theme: red only"), and draws the GPS systems in the text color, as a monochrome
+  panel does. The boot splash is drawn before the settings are read and keeps its colors in every theme. Highlight
+  color (Default, Red, Orange, Yellow, Teal, Light blue, Purple, Pink) and Filled status bar
+  (Settings > Display, `settings_t.accent`) are for color displays
   too. On a 1 bpp display the three rows are dimmed ("Colors are for color screens"); a build without
   `CONFIG_UI_COLOR` (section 5) has no such rows. A color other than
   Default is the list and tile focus (with black text) and Home's channel number (on the light theme the number stays
   the text color: the light shades don't read on white). The filled bar (on by default) is reverse video: the status
-  strip's background in the color (light gray with Default, white in the high-contrast theme), its text and icons
+  strip's background in the color (light gray with Default, white in the high-contrast theme, red in night), its text and icons
   black, the IDLE pill inverse on it; RX, TX and NO TX keep their own pill colors and words (P5). On it the pill is the strip's full height (a one-cell
   pill left a line of the strip's color under it) against the bezel, its corners rounded by two pixels. Left of the
   pill's middle the strip is the screen's background, so no strip color shows beside its left end. On the right a

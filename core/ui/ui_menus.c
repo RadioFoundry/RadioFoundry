@@ -22,6 +22,7 @@
 #include "config.h"
 #include "hal_time.h"
 #include "radio/tones.h"
+#include "radio/sigtone.h"
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
 #include "radio/radio_am.h"
@@ -31,6 +32,10 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "rfoundry_about.h"
+#if CONFIG_SUPPORT_INFO
+#include "support/image_hash.h"
+#include "support/support_info.h"
+#endif
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -54,6 +59,10 @@ extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
 extern const ui_scr_def_t ui_gps_screen;	// ui_gps.c
+#if CONFIG_SATELLITE_TLE
+extern const ui_scr_def_t ui_satellite_screen;	// ui_satellite.c
+extern const ui_scr_def_t ui_satellite_passes_screen;	// ui_satellite.c
+#endif
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
@@ -424,7 +433,7 @@ static void compose_item(uint16_t i, ui_item_t *it)
 	}
 }
 
-static void send_text(const char *text, bool aprs)
+static void send_text(const char *text, bool aprs, int reply_index)
 {
 	static char msg[40];
 	char name[24];
@@ -442,8 +451,10 @@ static void send_text(const char *text, bool aprs)
 	} else {
 		ui_sb_target(name, sizeof name, &ui_target);
 	}
-	if (aprs ? !ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
-	    !ui_svc_msg_send(ui_target.id, ui_target.group, text)) {
+	bool sent = aprs ? ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
+		reply_index >= 0 ? ui_svc_msg_reply((uint16_t)reply_index, text) :
+		ui_svc_msg_send(ui_target.id, ui_target.group, text);
+	if (!sent) {
 		ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));
 		return;
 	}
@@ -469,7 +480,7 @@ static void compose_select(uint16_t i, bool hold)
 	}
 	if (i < CANNED_N) {
 		bool aprs = compose_aprs();
-		send_text(tr(canned[i]), aprs);
+		send_text(tr(canned[i]), aprs, -1);
 	}
 	else if (i == CANNED_N) {
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
@@ -928,10 +939,10 @@ static void msg_select(uint16_t i, bool hold)
 			if (ui_svc_aprs_msg(message_aprs_index(), &m, false)) {
 				str_copy(aprs_to, sizeof aprs_to, m.from);
 				aprs_message_flags = APRS_MSG_ACK;
-				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true);
+				send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), true, -1);
 			}
 		} else {
-			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false);
+			send_text(tr(i == MV_REPLY_OK ? canned[0] : canned[1]), false, message_index());
 		}
 		break;
 	case MV_CALL:
@@ -2083,7 +2094,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_SATELLITE_TLE
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -2105,14 +2116,36 @@ static uint8_t text_idx;
 static uint32_t text_ms;
 enum { TEXT_UPPER, TEXT_DIGITS, TEXT_LOWER, TEXT_MODES };	// the order # cycles through
 static uint8_t text_mode;
+#if CONFIG_SATELLITE_TLE
+static uint8_t satellite_text_line;
+#endif
+enum { TEXT_NAME, TEXT_MESSAGE, TEXT_CALLSIGN,
+#if CONFIG_SATELLITE_TLE
+	TEXT_SATELLITE,
+#endif
+	TEXT_PREFIXES };
+static uint8_t text_prefix;
 
 static void text_open(char *target, uint8_t max, uint8_t screen)
 {
 	text_target = target;
 	text_done = NULL;
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
+#if CONFIG_SATELLITE_TLE
+	if (screen == SCR_SATELLITE_TEXT)
+		text_buf = target;
+	text_max = screen == SCR_SATELLITE_TEXT ? max :
+		(screen == SCR_MESSAGE_TEXT ? max : (max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN));
+#else
 	text_max = screen == SCR_MESSAGE_TEXT ? max :
 		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
+#endif
+	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE :
+		screen == SCR_APRS_TO ? TEXT_CALLSIGN : TEXT_NAME;
+#if CONFIG_SATELLITE_TLE
+	if (screen == SCR_SATELLITE_TEXT)
+		text_prefix = TEXT_SATELLITE;
+#endif
 	ui_push(screen, 0);
 }
 
@@ -2120,7 +2153,7 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 static void message_text_kept(void)
 {
 	if (message_buffer[0] != '\0')
-		send_text(message_buffer, compose_aprs());
+		send_text(message_buffer, compose_aprs(), -1);
 }
 
 static void ui_text_open_message(bool aprs)
@@ -2134,6 +2167,14 @@ static void ui_text_open_message(bool aprs)
 #if CONFIG_CHANNEL_EDIT
 static void ui_text_open(char *target, uint8_t max) { text_open(target, max, SCR_TEXT); }
 #endif
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void))
+{
+	satellite_text_line = line;
+	text_open(target, SATELLITE_TLE_LINE_LENGTH, SCR_SATELLITE_TEXT);
+	text_done = done;
+}
+#endif
 #if CONFIG_APRS_AFSK
 static void ui_text_open_to(char *target, uint8_t max) { text_open(target, max, SCR_APRS_TO); }
 #endif
@@ -2146,17 +2187,6 @@ static void text_enter(void)
 	text_len = (uint8_t)strlen(text_buf);
 	text_key = -1;
 	text_mode = TEXT_UPPER;
-}
-
-static uint16_t text_count(void) { return 1; }
-
-static void text_item(uint16_t i, ui_item_t *it)
-{
-	(void)i;
-	sbuf_t b;
-	sb_init(&b, it->label, sizeof it->label);
-	sb_str(&b, text_len >= sizeof it->label ? text_buf + text_len - sizeof it->label + 2u : text_buf);
-	sb_chr(&b, '_');	// the cursor; the mode is in the title
 }
 
 static char text_case(char c)
@@ -2190,6 +2220,79 @@ static void text_append(char c)
 	}
 	text_buf[text_len++] = c;
 	text_buf[text_len] = 0;
+}
+
+static void text_draw(void)
+{
+	static const tr_id_t prefixes[TEXT_PREFIXES] = { TRN(LABEL_NAME, "Name"), TRN(WORD_MESSAGE, "Message"),
+#if CONFIG_SATELLITE_TLE
+		TRN(TEXT_TITLE_CALLSIGN, "Callsign"), TRN(SATELLITE_2, "Satellite") };
+#else
+		TRN(TEXT_TITLE_CALLSIGN, "Callsign") };
+#endif
+	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
+#if CONFIG_SATELLITE_TLE
+	static const tr_id_t satellite_titles[2][TEXT_MODES] = {
+		{ TRN(SATELLITE_TLE_TITLE_LINE1_UPPER, "1 ABC"), TRN(SATELLITE_TLE_TITLE_LINE1_NUMERIC, "1 123"),
+		  TRN(SATELLITE_TLE_TITLE_LINE1_LOWER, "1 abc") },
+		{ TRN(SATELLITE_TLE_TITLE_LINE2_UPPER, "2 ABC"), TRN(SATELLITE_TLE_TITLE_LINE2_NUMERIC, "2 123"),
+		  TRN(SATELLITE_TLE_TITLE_LINE2_LOWER, "2 abc") },
+	};
+#endif
+	const ui_layout_t *L = &ui_layout;
+	char linebuf[32];
+	sbuf_t b;
+	uint8_t text_linewidth = gfx_width() / L->small->w;
+	uint8_t line_len;
+	const char *title = modes[text_mode];
+
+#if CONFIG_SATELLITE_TLE
+	if (text_prefix == TEXT_SATELLITE)
+		title = tr(satellite_titles[(satellite_text_line == 2u) ? 1u : 0u][text_mode]);
+#endif
+
+	gfx_clear(ui_col.bg);
+
+	int y = ui_draw_top(ui_view(), &ui_st, tr(prefixes[text_prefix]), title) + 2;
+	// The count sits bottom right of the entry area, on a line of its own so the text never runs under it
+	int bottom = L->hint_y - L->small->h;
+	sb_init(&b, linebuf, sizeof linebuf);
+	sb_u32(&b, text_len, 1);
+	sb_chr(&b, '/');
+	sb_u32(&b, text_max, 1);
+	gfx_text(L->small, gfx_width() - gfx_text_width(L->small, linebuf) - 1, bottom, linebuf, ui_col.dim);
+	uint8_t roomy = (bottom - y) / L->small->h;	// number of lines of text we can show
+	uint16_t max_chars = roomy * text_linewidth;
+	uint16_t start_char;
+	if (max_chars >= text_len) {
+		start_char = 0;
+	} else {
+		// Ensure there is room for the "_" at the end of the message being entered
+		start_char = 1 + text_len - max_chars;
+	}
+
+	const font_t *small = L->small;
+	do {
+		line_len = 0;
+		sb_init(&b, linebuf, sizeof linebuf);
+		while (start_char < text_len && line_len < text_linewidth) {
+			sb_chr(&b, text_buf[start_char++]);
+			line_len++;
+		}
+		// Make sure the "_" is displayed, even if it wraps to the next line.
+		if (line_len < text_linewidth && start_char >= text_len) {
+			sb_chr(&b, '_');
+			start_char++;
+		}
+		gfx_text(small, 0, y, linebuf, ui_col.fg);
+		y += L->small->h;
+	} while (start_char < text_len + 1);
+
+	// TRN only marks the text for the catalog: tr() translates it where it is shown (list_draw did this before)
+	if (text_prefix != TEXT_MESSAGE)
+		ui_draw_hint(tr(TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
+	else
+		ui_draw_hint(tr(TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send" TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE)), false);
 }
 
 static bool text_key_fn(const input_event_t *ev)
@@ -2267,37 +2370,26 @@ static bool text_key_fn(const input_event_t *ev)
 	return false;
 }
 
-// The title carries the mode, so it shows however long the name is: "Name Â· ABC"
-static const char *text_title(void)
-{
-	static const char *const modes[TEXT_MODES] = { "ABC", "123", "abc" };
-	return modes[text_mode];
-}
-
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
-	.name = "text", .flags = SF_LIST, .prefix = TRN(LABEL_NAME, "Name"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+};
+#endif
+#if CONFIG_SATELLITE_TLE
+static const ui_scr_def_t satellite_text_screen = {
+	.name = "satellite-tle-text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_APRS_AFSK
 static const ui_scr_def_t aprs_to_screen = {
-	.name = "aprs-to", .flags = SF_LIST, .prefix = TRN(TEXT_TITLE_CALLSIGN, "Callsign"), .title = text_title,
-	.hint = TRN(TEXT_HINT_KEEP, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK keep"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "aprs-to", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static const ui_scr_def_t message_text_screen = {
-	.name = "message-text", .flags = SF_LIST, .prefix = TRN(WORD_MESSAGE, "Message"), .title = text_title,
-	.hint = TRN(TEXT_HINT_SEND, TEXT_ALT_OPEN "Back delete  # ABC/123/abc  OK send"
-		TEXT_ALT_NEXT "Back del  # mode  OK" TEXT_ALT_CLOSE),
-	.count = text_count, .item = text_item, .key = text_key_fn, .enter = text_enter,
+	.name = "message-text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
 };
 #endif
 
@@ -4497,12 +4589,11 @@ static const ui_scr_def_t chpick_screen = {
 
 // ======================= Info pages =======================
 
-enum { INFO_POSITION, INFO_HOTSPOT, INFO_BATTERY, INFO_FIRMWARE, INFO_CODEPLUG, INFO_USB_NET,
-       INFO_SFR };
+enum { INFO_POSITION, INFO_HOTSPOT, INFO_FIRMWARE, INFO_CODEPLUG, INFO_USB_NET, INFO_SFR };
 
 static const tr_id_t info_titles[] = { TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
-	TRN(TITLE_BATTERY, "Battery"), TRN(TITLE_ABOUT, "About"), TRN(TITLE_CODEPLUG, "Codeplug"),
-	TRN(USBNET_TITLE, "USB Network"), TRN(SFR_TITLE, "Single-Freq Repeater") };
+	TRN(TITLE_ABOUT, "About"), TRN(TITLE_CODEPLUG, "Codeplug"), TRN(USBNET_TITLE, "USB Network"),
+	TRN(SFR_TITLE, "Single-Freq Repeater") };
 
 // The USB personality can be switched here (the host link's network adapter, CONFIG_USB_NETWORK)
 #define USB_NET_UI	(CONFIG_USB_NETWORK && CONFIG_HOSTLINK)
@@ -4525,19 +4616,7 @@ static uint8_t sfr_vfo_a(void)
 
 static const char *info_title(void)
 {
-	uint16_t a = ui_frame()->arg;
-	return a == INFO_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ? TR(TITLE_SUPPLY, "Supply") :
-		tr(info_titles[a]);
-}
-
-// mV as volts with one decimal: 13.8 V
-static void sb_volts(sbuf_t *b, uint16_t mv)
-{
-	uint32_t dv = (mv + 50u) / 100u;
-	sb_u32(b, dv / 10u, 1);
-	sb_chr(b, '.');
-	sb_u32(b, dv % 10u, 1);
-	sb_str(b, " V");
+	return tr(info_titles[ui_frame()->arg]);
 }
 
 static const char *info_body(void)
@@ -4578,15 +4657,6 @@ static const char *info_body(void)
 #else
 		sb_str(&b, TR(WHY_HOTSPOT_NOT_IN_BUILD, "Hotspot: not in this build"));
 #endif
-		break;
-	case INFO_BATTERY:
-		if (board_volts() == BOARD_VOLTS_SUPPLY) {	// a reading only: no charge level or warning
-			sb_volts(&b, ui_view()->supply_mv);
-			break;
-		}
-		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_str(&b, ui_st.battery_pct <= (ui_st.low_batt_pct ? ui_st.low_batt_pct : 15) ?
-			TR(BATT_PART_CHARGE_SOON, "%: charge soon") : "%");
 		break;
 	case INFO_CODEPLUG: {
 		static const tr_id_t src[] = { TRN(CPLUG_VALUE_NONE_BUILT_IN, "None: built-in channels"),
@@ -5364,8 +5434,58 @@ static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
 // The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
-// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
-#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long.
+// The support info: the source and image lines and six hardware lines of a label and up to 30 characters
+// (a board with more loses the last license lines, not the support info)
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u) + \
+	(CONFIG_SUPPORT_INFO ? 352u : 0u))
+
+#if CONFIG_SUPPORT_INFO
+static bool about_hashing;		// the image hash (image_hash.h) has a step still to come: the UI redraws About at its fast rate
+
+bool ui_about_busy(void)
+{
+	return about_hashing;
+}
+
+// What a support request needs (docs/spec/support-info.md): where the build came from (ours or not; the repository
+// is left to the debug link), the image's hash (the first 8 digits of its SHA-256, enough to match a release, worked
+// out while the page is open), then the hardware identity. Values the board already holds: nothing here waits for a
+// chip
+static void about_support(sbuf_t *b)
+{
+	sb_str(b, TR(ABOUT_LABEL_SOURCE, "Source: "));
+	sb_str(b, tr(support_source_text(support_source())));
+	sb_chr(b, '\n');
+	uint8_t d[SHA256_LEN];
+	uint32_t addr, len;
+	about_hashing = false;
+	if (image_hash_span(&addr, &len)) {
+		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
+		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
+			for (uint8_t i = 0; i < 4; i++) {
+				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
+				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);
+			}
+		} else {
+			sb_str(b, TR(ABOUT_VALUE_IMAGE_CHECKING, "checking"));
+			about_hashing = true;
+		}
+		sb_chr(b, '\n');
+	}
+	support_line_t l;
+	for (uint8_t i = 0; support_hw_line(i, &l); i++) {
+		if (l.label != TR_NONE) {
+			sb_str(b, tr(l.label));
+		} else {
+			sb_str(b, l.label_text);
+			sb_str(b, ": ");
+		}
+		sb_str(b, l.value);
+		sb_chr(b, '\n');
+	}
+}
+#endif
 
 static const char *about_text(void)
 {
@@ -5395,6 +5515,9 @@ static const char *about_text(void)
 	sb_str(&b, TR(BODY_RADIO, "Radio: "));
 	sb_str(&b, board.name);
 	sb_chr(&b, '\n');
+#if CONFIG_SUPPORT_INFO
+	about_support(&b);
+#endif
 	sb_str(&b, TR(ABOUT_BODY_LICENSE, "License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
 	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page
@@ -6218,20 +6341,17 @@ void ui_crash_tick(uint32_t now_ms)
 // ======================= Tools =======================
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. The one a radio may not have (Battery) is last, so no radio has a gap; a build
-// without diagnostics skips 7
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_BATTERY, T_ZONE_OFFER, T_COUNT };
+// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
 
-// A tool this build or radio doesn't have is left out of the list (Battery, Supply on a radio that measures its DC
-// input instead, is left out where the radio measures neither)
+// A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
 {
 #if CONFIG_ZONE_SHARE
 	if (i == T_ZONE_OFFER)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && (i != T_BATTERY || board_volts() != BOARD_VOLTS_NONE) &&
-	       i != T_ZONE_OFFER;
+	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6274,17 +6394,14 @@ static uint16_t tools_row(uint16_t row)
 
 static void tools_item(uint16_t row, ui_item_t *it)
 {
-	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"),
-		TRN(TITLE_HOTSPOT, "Hotspot"), TRN(TOOLS_ROW_USB_NETWORK, "USB network"),
-		TRN(TOOLS_ROW_SFR, "Single-freq repeater"), TRN(TITLE_ROAMING, "Roaming"),
-		TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"), TRN(TITLE_BATTERY, "Battery"),
-		TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
+	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
+					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
+					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
+					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
-	str_copy(it->label, sizeof it->label, i == T_BATTERY && board_volts() == BOARD_VOLTS_SUPPLY ?
-		TR(TITLE_SUPPLY, "Supply") :
-		 tr(names[i]));
+	str_copy(it->label, sizeof it->label, tr(names[i]));
 	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
@@ -6322,14 +6439,6 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	case T_SFR:
 		if (!CONFIG_SFR)
 			it->flags |= UI_ITEM_DIM;
-		break;
-	case T_BATTERY:
-		if (board_volts() == BOARD_VOLTS_SUPPLY) {
-			sb_volts(&b, ui_view()->supply_mv);
-			break;
-		}
-		sb_u32(&b, ui_st.battery_pct, 1);
-		sb_chr(&b, '%');
 		break;
 	case T_ROAM:
 #if CONFIG_DMR_ROAMING
@@ -6374,11 +6483,11 @@ static void tools_select(uint16_t row, bool hold)
 	case T_HOTSPOT: ui_push(SCR_INFO, INFO_HOTSPOT); break;
 	case T_USB_NET: ui_push(SCR_INFO, INFO_USB_NET); break;
 	case T_SFR: ui_push(SCR_INFO, INFO_SFR); break;
-	case T_BATTERY: ui_push(SCR_INFO, INFO_BATTERY); break;
 	case T_DIAG: ui_push(SCR_DIAG, 0); break;
 	case T_ROAM: ui_push(SCR_ROAM, 0); break;
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
+	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
 	default: break;
 	}
 }
@@ -6394,8 +6503,8 @@ static const ui_scr_def_t tools_screen = {
 #if CONFIG_UI_SETTINGS
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
-enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS, SA_DATA_SERVICES,
-       SA_BL_TEST };
+enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6433,9 +6542,9 @@ static const tr_id_t n_backlight[] = { TRX(SET_VALUE_BACKLIGHT_5S_20S, "5s/20s")
 	TRN(SET_VALUE_BACKLIGHT_1M_DIM, "1m/dim"), TRN(SET_VALUE_BACKLIGHT_2M_DIM, "2m/dim"), TRN(VALUE_NEVER, "Never")
 };
 #if CONFIG_UI_COLOR
-static const int16_t v_theme[] = { 0, 1, 2 };
+static const int16_t v_theme[] = { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT };
 static const tr_id_t n_theme[] = { TRN(SET_VALUE_THEME_DARK, "Dark"), TRN(SET_VALUE_THEME_LIGHT, "Light"),
-	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast") };
+	TRN(SET_VALUE_THEME_HIGH_CONTRAST, "High contrast"), TRN(SET_VALUE_THEME_NIGHT, "Night (red)") };
 static const int16_t v_accent[] = { UI_ACCENT_DEFAULT, UI_ACCENT_RED, UI_ACCENT_ORANGE, UI_ACCENT_YELLOW, UI_ACCENT_TEAL,
 				     UI_ACCENT_BLUE, UI_ACCENT_PURPLE, UI_ACCENT_PINK };
 static const tr_id_t n_accent[] = { TRN(VALUE_DEFAULT, "Default"), TRN(SET_VALUE_ACCENT_RED, "Red"),
@@ -6567,13 +6676,14 @@ static const tr_id_t n_autooff[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_30_MIN, "3
 	TRX(VALUE_2_H, "2 h") };
 #if CONFIG_DMR_SMS
 static const int16_t v_msgfmt[] = {
-	2, 1,	// dmr_sms_format_t: ETSI IP text, ETSI short data, Motorola TMS
+	255, 2, 1,	// dmr_sms_format_t: Automatic, ETSI IP text, ETSI short data, Motorola TMS
 #if CONFIG_DMR_TMS
 	0,
 #endif
 };
 static const tr_id_t n_msgfmt[] = {
-	TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"), TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
+	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
+	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
 	TRX(VALUE_MOTOROLA, "Motorola"),
 #endif
@@ -6602,6 +6712,15 @@ static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "Motorola"),
 	TRX(SET_VALUE_KEY_TYPE_ANYTONE, "Anytone") };
 
+#if CONFIG_SIG_TONES
+// Signaling tones (core/radio/sigtone.h): where each sounds (sig_out_t). The reception's end and FM's start have no on
+// air copy: nothing is sent then
+static const int16_t v_sigout[] = { 0, 1, 2, 3, 4 };
+static const tr_id_t n_sigout[] = { TRN(VALUE_DEFAULT, "Default"), TRN(VALUE_OFF, "Off"), TRN(SIG_VALUE_SPEAKER, "Speaker"), TRN(SIG_VALUE_ON_AIR, "On air"), TRN(SIG_VALUE_SPEAKER_AIR, "Speaker + air") };
+static const int16_t v_sigout_local[] = { 0, 1, 2 };
+static const tr_id_t n_sigout_local[] = { TRN(VALUE_DEFAULT, "Default"), TRN(VALUE_OFF, "Off"), TRN(SIG_VALUE_SPEAKER, "Speaker") };
+#endif
+
 #define TOGGLE(nm, syn_, sid) { nm, syn_, ST_TOGGLE, sid, 0, { { 0, 1, 1, NULL } } }
 #define NUMBER(nm, syn_, sid, lo, hi, st, u) { nm, syn_, ST_NUMBER, sid, 0, { { lo, hi, st, u } } }
 #define LIST(nm, syn_, sid, v, nms) { nm, syn_, ST_LIST, sid, sizeof v / sizeof v[0], { .values = v, .names = nms } }
@@ -6624,6 +6743,31 @@ static const set_item_t s_sound[] = {
 	TOGGLE(TRN(SET_LABEL_VIBRATE, "Vibrate"), "vibration motor silent", UI_SET_VIBRATE),
 #endif
 };
+#if CONFIG_SIG_TONES
+// Settings > Signaling tones: where each event sounds, then a row per event that opens its chain's steps (SCR_SIG_CHAIN:
+// a step is a frequency and a length; a step of 0 ms ends the chain and no step is the event's standard sound)
+static const set_item_t s_sigtones[] = {
+#if CONFIG_DMR
+	LIST(TRN(SIG_ROW_DMR_START_TONE, "DMR start tone"), "talk permit roger signaling", UI_SET_SIG_DMR + SIG_EV_BEGIN, v_sigout, n_sigout),
+	LIST(TRN(SIG_ROW_DMR_END_TONE, "DMR end tone"), "roger signaling", UI_SET_SIG_DMR + SIG_EV_END, v_sigout, n_sigout),
+	LIST(TRN(SIG_ROW_DMR_IDLE_TONE, "DMR idle tone"), "channel free signaling", UI_SET_SIG_DMR + SIG_EV_IDLE, v_sigout_local, n_sigout_local),
+#endif
+#if CONFIG_FM_TX_TONES
+	LIST(TRN(SIG_ROW_FM_START_TONE, "FM start tone"), "signaling", UI_SET_SIG_FM + SIG_EV_BEGIN, v_sigout, n_sigout),
+#else
+	LIST(TRN(SIG_ROW_FM_START_TONE, "FM start tone"), "signaling", UI_SET_SIG_FM + SIG_EV_BEGIN, v_sigout_local, n_sigout_local),
+#endif
+#if CONFIG_FM_TX_TONES
+	LIST(TRN(SIG_ROW_FM_END_TONE, "FM end tone"), "roger signaling", UI_SET_SIG_FM + SIG_EV_END, v_sigout, n_sigout),
+#else
+	LIST(TRN(SIG_ROW_FM_END_TONE, "FM end tone"), "roger signaling", UI_SET_SIG_FM + SIG_EV_END, v_sigout_local, n_sigout_local),
+#endif
+	LIST(TRN(SIG_ROW_FM_IDLE_TONE, "FM idle tone"), "channel free signaling", UI_SET_SIG_FM + SIG_EV_IDLE, v_sigout_local, n_sigout_local),
+	ACTION(TRN(SIG_ROW_START_STEPS, "Start steps"), "signaling chain frequency length pitch", SA_SIG_BEGIN),
+	ACTION(TRN(SIG_ROW_END_STEPS, "End steps"), "signaling chain frequency length pitch roger", SA_SIG_END),
+	ACTION(TRN(SIG_ROW_IDLE_STEPS, "Idle steps"), "signaling chain frequency length pitch channel free", SA_SIG_IDLE),
+};
+#endif
 static const set_item_t s_display[] = {
 	NUMBER(TRN(SET_LABEL_BRIGHTNESS, "Brightness"), "backlight", UI_SET_BRIGHTNESS, 10, 100, 10, "%"),
 	LIST(TRN(SET_LABEL_BACKLIGHT_DIM_OFF, "Backlight Dim/Off"), "timeout", UI_SET_BACKLIGHT_S, v_backlight,
@@ -6699,6 +6843,9 @@ static const set_item_t s_location[] = {
 	ACTION(TRN(SET_LABEL_FIXED_POSITION, "Fixed position"), "latitude longitude coordinates", SA_FIXED_POS),
 	TOGGLE(TRN(SET_LABEL_SEND_IN_DMR_CALLS, "Send in DMR calls"), "GPS info position location talker",
 		UI_SET_POS_DMR_CALLS),
+#if CONFIG_GPS && CONFIG_SATELLITE_TLE
+	ACTION(TRN(SAVE_GPS_POSITION, "Save GPS position"), "save current GPS fix as fixed fallback", SA_SAVE_GPS_POS),
+#endif
 #endif
 };
 static const set_item_t s_connections[] = {
@@ -6824,7 +6971,11 @@ static const set_group_t groups[] = {
 	GROUP_T(TRN(SET_ROW_POWER_SAVING, "Power saving"), TRN(SET_TITLE_POWER_SAVING, "Power Saving"), s_power),
 	GROUP(TRN(SET_ROW_KEYS, "Keys"), s_keys), GROUP(TRN(WORD_KEY_LOCK, "Key lock"), s_lock),
 	GROUP_T(TRN(SET_ROW_MY_RADIO, "My radio"), TRN(SET_TITLE_MY_RADIO, "My Radio"), s_my_radio),
-		GROUP(TRN(SET_ROW_ADVANCED, "Advanced"), s_advanced),
+#if CONFIG_SIG_TONES
+	GROUP_T(TRN(SET_ROW_SIGNALING_TONES, "Signaling tones"), TRN(SET_TITLE_SIGNALING_TONES, "Signaling Tones"),
+		s_sigtones),
+#endif
+	GROUP(TRN(SET_ROW_ADVANCED, "Advanced"), s_advanced),
 };
 #define GROUPS	(sizeof groups / sizeof groups[0])
 
@@ -6944,6 +7095,207 @@ static const ui_scr_def_t settings_screen = {
 	.count = settings_count, .item = settings_item, .select = settings_select,
 };
 
+#if CONFIG_SIG_TONES
+// ======================= Signaling tone steps (Settings > Signaling tones) =======================
+// One event's five steps (the frame's arg is the sig_event_t). OK on a step opens its frequency: digits type it, Up /
+// Down / the knob step it by 10, OK takes it and opens the length, OK again saves both. BACK leaves the step as it was.
+// A step of length 0 ends the chain (the ones after it are not played), and a chain with no step is the event's
+// standard sound. A step that was off starts at 40 ms
+
+static uint8_t sc_row = SIG_STEPS;	// the step being edited (SIG_STEPS: none)
+static uint8_t sc_phase;		// 0: its frequency, 1: its length
+static int32_t sc_hz;			// the frequency taken, while the length is edited
+static int32_t sc_val;			// the value being edited
+static bool sc_typed;			// digits were typed: the next one appends
+static char sc_text[32];
+
+static uint8_t sc_event(void)
+{
+	return ui_frame()->arg < SIG_EV_COUNT ? (uint8_t)ui_frame()->arg : 0;
+}
+
+static int32_t sc_get(uint8_t ev, uint8_t k, bool ms)
+{
+	return ui_svc_setting_get((uint8_t)((ms ? UI_SET_SIG_MS : UI_SET_SIG_HZ) + SIG_STEPS * ev + k));
+}
+
+// How many steps the event's chain has (0: the standard sound)
+static uint8_t sc_steps(uint8_t ev)
+{
+	uint8_t n = 0;
+	while (n < SIG_STEPS && sc_get(ev, n, true) != 0)
+		n++;
+	return n;
+}
+
+static uint16_t sc_count(void) { return SIG_STEPS; }
+
+static void sc_item(uint16_t i, ui_item_t *it)
+{
+	sbuf_t b;
+	uint8_t ev = sc_event();
+	sb_init(&b, it->label, sizeof it->label);
+	sb_str(&b, TR(HOME_LABEL_STEP, "Step "));
+	sb_u32(&b, i + 1u, 1);
+	sb_init(&b, it->value, sizeof it->value);
+	int32_t hz = sc_get(ev, (uint8_t)i, false), ms = sc_get(ev, (uint8_t)i, true);
+	if (sc_row == i) {
+		it->flags |= UI_ITEM_EDIT;
+		sb_i32(&b, sc_phase == 0 ? sc_val : hz);
+		sb_str(&b, " Hz");
+		if (sc_phase != 0) {
+			sb_str(&b, "  ");
+			sb_i32(&b, sc_val);
+			sb_str(&b, " ms");
+		}
+		return;
+	}
+	if (ms == 0) {
+		sb_chr(&b, '-');
+		return;
+	}
+	sb_i32(&b, hz);
+	sb_str(&b, " Hz  ");
+	sb_i32(&b, ms);
+	sb_str(&b, " ms");
+}
+
+static const char *sc_body(void)
+{
+	sbuf_t b;
+	uint8_t ev = sc_event();
+	int32_t total = 0;
+	for (uint8_t k = 0; k < SIG_STEPS && sc_get(ev, k, true) != 0; k++)
+		total += sc_get(ev, k, true);
+	sb_init(&b, sc_text, sizeof sc_text);
+	sb_str(&b, total == 0 ? TR(SIG_VALUE_STANDARD_SOUND, "Standard sound") : TR(SIG_LABEL_LENGTH, "Length: "));
+	if (total != 0) {
+		sb_i32(&b, total);
+		sb_str(&b, " / ");
+		sb_u32(&b, SIG_MAX_MS, 1);
+		sb_str(&b, " ms");
+	}
+	return sc_text;
+}
+
+static const char *sc_title(void)
+{
+	static const tr_id_t names[SIG_EV_COUNT] = { TRN(SIG_TITLE_START_TONE, "Start Tone"), TRN(SIG_TITLE_END_TONE, "End Tone"), TRN(SIG_TITLE_IDLE_TONE, "Idle Tone") };
+	return tr(names[sc_event()]);
+}
+
+static void sc_begin(uint16_t row)
+{
+	sc_row = (uint8_t)row;
+	sc_phase = 0;
+	sc_typed = false;
+	sc_val = sc_get(sc_event(), (uint8_t)row, false);
+}
+
+static void sc_store(uint8_t id, int32_t v)
+{
+	if (ui_svc_setting_set(id, v))
+		ui_svc_apply(id, v);
+	else
+		ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+}
+
+static void sc_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	if (i >= SIG_STEPS)
+		return;
+	if (sc_row != i) {
+		sc_begin(i);
+		return;
+	}
+	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)SIG_MAX_MS;
+	if (sc_val < 0 || sc_val > hi || sc_val % (int32_t)SIG_MS_UNIT != 0) {
+		// A value off the steps or out of the range: say what fits instead of guessing
+		static char msg[40];
+		sbuf_t b;
+		sb_init(&b, msg, sizeof msg);
+		sb_str(&b, TR(SET_TOAST_NOT_CHANGED, "Not changed: "));
+		sb_i32(&b, 0);
+		sb_str(&b, TR(SET_TOAST_RANGE_TO, " to "));
+		sb_i32(&b, hi);
+		sb_str(&b, TR(SET_TOAST_STEPS_OF, ", steps of "));
+		sb_u32(&b, SIG_MS_UNIT, 1);
+		ui_toast(msg);
+		sc_row = SIG_STEPS;
+		return;
+	}
+	uint8_t ev = sc_event();
+	if (sc_phase == 0) {
+		sc_hz = sc_val;
+		sc_phase = 1;
+		sc_typed = false;
+		sc_val = sc_get(ev, (uint8_t)i, true);
+		if (sc_val == 0)
+			sc_val = 40;
+		return;
+	}
+	sc_store(UI_SET_SIG_STEP, UI_SIG_STEP(ev, i, (uint32_t)sc_hz, (uint32_t)sc_val));	// one write of the record
+	sc_row = SIG_STEPS;
+}
+
+static bool sc_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	uint16_t focus = ui_frame()->focus;
+	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)SIG_MAX_MS;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && focus < SIG_STEPS) {
+		if (sc_row != focus)
+			sc_begin(focus);
+		int32_t d = ev->action - ACT_DIGIT_0;
+		int32_t v = sc_typed ? sc_val * 10 + d : d;
+		sc_val = v > hi ? d : v;	// too big: starts over with this digit, as the other number editors
+		sc_typed = true;
+		ui_dirty();
+		return true;
+	}
+	if (sc_row == SIG_STEPS)
+		return false;
+	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
+		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
+	if (dir != 0 && ev->gesture != GESTURE_UP) {
+		int32_t v = sc_val + dir * (int32_t)SIG_MS_UNIT;
+		sc_val = v < 0 ? 0 : v > hi ? hi : v;
+		sc_typed = false;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		sc_row = SIG_STEPS;
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void sc_enter(void) { sc_row = SIG_STEPS; }
+
+static const ui_scr_def_t sc_screen = {
+	.name = "sig-chain", .flags = SF_LIST, .hint = TRN(SIG_HINT_TYPE_OK_NEXT_BACK, "0-9 type  OK next  Back"),
+	.count = sc_count, .item = sc_item, .select = sc_select, .key = sc_key, .enter = sc_enter, .body = sc_body,
+	.title = sc_title,
+};
+
+// The row in Settings > Signaling tones: how many steps the event's chain has
+static void sc_summary(char *out, size_t len, uint8_t ev)
+{
+	sbuf_t b;
+	uint8_t n = sc_steps(ev);
+	sb_init(&b, out, len);
+	if (n == 0) {
+		sb_str(&b, TR(SIG_VALUE_STANDARD, "Standard"));
+		return;
+	}
+	sb_u32(&b, n, 1);
+	sb_str(&b, n == 1 ? TR(SIG_UNIT_STEP, " step") : TR(SIG_UNIT_STEPS, " steps"));
+}
+#endif
+
 // A group: each row shows its value; toggles and lists change on OK, numbers open an inline editor
 
 static bool set_editing;
@@ -6985,6 +7337,10 @@ static void set_value_text(const set_item_t *s, int32_t v, char *out, size_t len
 	sb_init(&b, out, len);
 	switch (s->type) {
 	case ST_TOGGLE:
+		// GPS reads Off on a radio without one (#349). Only shown so: the stored value stays, as the module is
+		// detected after start-up and the driver follows the setting once it is heard (position.md 2)
+		if (s->id == UI_SET_GPS && !board_has_gps())
+			v = 0;
 		sb_str(&b, v ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 		break;
 	case ST_LIST:
@@ -7040,7 +7396,8 @@ static bool mic_agc_on(void)
 static const char *set_why_not(const set_item_t *s)
 {
 	if (s->type == ST_ACTION)
-		return NULL;
+		return s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE && !(CONFIG_BEEP && CONFIG_SIG_TONES) ?
+			TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build") : NULL;
 	switch (s->id) {
 	case UI_SET_VOICE_PROMPTS:
 		return TR(WHY_VOICE_PROMPTS_NOT_IN_BUILD, "Voice prompts: not in this build");
@@ -7054,6 +7411,11 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_TOT_WARN_TONE:
 	case UI_SET_BATTERY_TONE:
 	case UI_SET_TX_DENY_TONE:
+		return CONFIG_BEEP ? NULL : TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build");
+	case UI_SET_SIG_DMR ... UI_SET_SIG_DMR_LAST:
+		return CONFIG_DMR && CONFIG_BEEP ? NULL : CONFIG_BEEP ? TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build") :
+			TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build");
+	case UI_SET_SIG_FM ... UI_SET_SIG_FM_LAST:
 		return CONFIG_BEEP ? NULL : TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build");
 	case UI_SET_SCAN_TONE:
 		return !CONFIG_BEEP ? TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build") : feats() & UI_FEAT_SCAN ?
@@ -7071,8 +7433,11 @@ static const char *set_why_not(const set_item_t *s)
 	case UI_SET_THEME:
 	case UI_SET_ACCENT:
 	case UI_SET_STRIP:
-		return board.display != NULL && board.display->bpp == 1 ?
-			TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens") : NULL;
+		if (board.display != NULL && board.display->bpp == 1)
+			return TR(SET_WHY_COLOR_SCREENS_ONLY, "Colors are for color screens");
+		// Night shows red only: its highlight is always its own red (ui_screens.c accent_apply)
+		return s->id == UI_SET_ACCENT && ui_svc_setting_get(UI_SET_THEME) == UI_THEME_NIGHT ?
+			TR(SET_WHY_NIGHT_RED_ONLY, "Night theme: red only") : NULL;
 	case UI_SET_MIC_GAIN:
 		if (!mic_gain_available())
 			return TR(WHY_MIC_GAIN_NOT_IN_BUILD, "Mic gain: not in this build");
@@ -7131,9 +7496,13 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	else if (s->id == SA_LANGUAGE)
 		str_copy(it->value, sizeof it->value, lang_name(lang_current()));
+#if CONFIG_SIG_TONES
+	else if (s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE)
+		sc_summary(it->value, sizeof it->value, (uint8_t)(s->id - SA_SIG_BEGIN));
+#endif
 	if (s->id == UI_SET_PRIVACY_KEY && s->type == ST_NUMBER && !edit && ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0)
 		strcpy(it->value, "-");
-	if (s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
+	if (s->type == ST_NUMBER && s->id == UI_SET_MIC_GAIN && !edit && mic_agc_on())
 		strcpy(it->value, "AGC");
 	if (edit)
 		it->flags |= UI_ITEM_EDIT;
@@ -7211,6 +7580,9 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if CONFIG_SIG_TONES
+		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;
+#endif
 #if DATA_IDS
 		case SA_DATA_SERVICES: ui_push(SCR_DATA_SERVICES, 0); break;
 #if CONFIG_BACKLIGHT_TEST
@@ -7225,6 +7597,11 @@ static void group_select(uint16_t i, bool hold)
 #endif
 #if CONFIG_POSITION
 		case SA_FIXED_POS: ui_push(SCR_FIXED_POS, 0); break;
+#endif
+#if CONFIG_POSITION && CONFIG_GPS && CONFIG_SATELLITE_TLE
+		case SA_SAVE_GPS_POS:
+			ui_toast(ui_svc_position_save_gps() ? TR(GPS_POSITION_SAVED, "GPS position saved") : TR(NO_CURRENT_GPS_FIX, "No current GPS fix"));
+			break;
 #endif
 		default: break;
 		}
@@ -7661,6 +8038,11 @@ static const ui_scr_def_t diag_screen = {
 static const ui_scr_def_t volume_screen = {
 	.name = "volume", .flags = SF_FIELD, .key = ui_volume_key, .draw = ui_volume_draw,
 };
+#if CONFIG_DMR_TRUNK
+static const ui_scr_def_t incoming_call_screen = {
+	.name = "incoming-call", .flags = SF_FIELD, .key = ui_incoming_call_key, .draw = ui_incoming_call_draw,
+};
+#endif
 static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
@@ -7754,6 +8136,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_RECENT] = &recent_screen, [SCR_ZONES] = &channels_screen, [SCR_ZONE] = &zone_screen,
 	[SCR_TOOLS] = &tools_screen, [SCR_SETTINGS] = &settings_screen, [SCR_GROUP] = &group_screen,
 	[SCR_PICKER] = &picker_screen, [SCR_INFO] = &info_screen, [SCR_CONFIRM] = &confirm_screen,
+#if CONFIG_DMR_TRUNK
+	[SCR_INCOMING_CALL] = &incoming_call_screen,
+#endif
 	[SCR_DIAG] = &diag_screen, [SCR_EMERGENCY] = &emergency_screen, [SCR_SCAN] = &scan_screen,
 	[SCR_ROAM] = &roam_screen, [SCR_APRS] = &ui_aprs_screen, [SCR_APRS_HEARD] = &ui_aprs_heard_screen,
 	[SCR_APRS_STATION] = &ui_aprs_station_screen,
@@ -7772,6 +8157,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_REF_TRIM
 	[SCR_REF_TRIM] = &trim_screen,
+#endif
+#if CONFIG_UI_SETTINGS && CONFIG_SIG_TONES
+	[SCR_SIG_CHAIN] = &sc_screen,
 #endif
 #if CONFIG_APRS_AFSK
 	[SCR_APRS_TO] = &aprs_to_screen,
@@ -7797,6 +8185,11 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_GPS_SKY
 	[SCR_GPS] = &ui_gps_screen,
+#endif
+#if CONFIG_SATELLITE_TLE
+	[SCR_SATELLITE_PASSES] = &ui_satellite_passes_screen,
+	[SCR_SATELLITE] = &ui_satellite_screen,
+	[SCR_SATELLITE_TEXT] = &satellite_text_screen,
 #endif
 #if CONFIG_CRASH_SCREEN
 	[SCR_CRASH] = &crash_screen,

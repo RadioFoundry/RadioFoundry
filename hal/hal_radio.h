@@ -14,6 +14,12 @@ typedef enum { RADIO_MODE_FM, RADIO_MODE_DMR, RADIO_MODE_P25, RADIO_MODE_NXDN } 
 typedef enum { RADIO_BW_12K5, RADIO_BW_25K } radio_bw_t;
 
 typedef enum { TONE_NONE, TONE_CTCSS, TONE_DCS, TONE_DCS_INV } tone_type_t;
+// hal_radio_t.dmr_keying
+typedef struct {
+	bool last_direct;	// the last DMR burst was keyed straight from RX
+	uint32_t direct, idle;	// bursts keyed straight from RX and through idle since boot
+} hal_dmr_keying_t;
+
 typedef struct {
 	uint8_t type;		// tone_type_t
 	uint16_t value;		// CTCSS: Hz x 10 (1000 = 100.0 Hz). DCS: the code as written, octal digits (023 -> 0x13 = 19 = 023 octal)
@@ -43,11 +49,20 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: receive audio from a signal is open: FM squelch open or monitor, or a DMR, P25 or NXDN call playing
+	// (the green LED's state). Local beeps don't set it. For a board whose own noise reaches the audio only with a
+	// carrier present, such as backlight PWM through the synthesizer
+	void (*rx_open)(bool on);
 	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
 	void (*volume)(uint8_t percent);
 	// With volume: true when that level also scales the PCM speaker path (beeps, DMR voice). False: beeps on the PCM
 	// path would ignore it, so the core caps each beep at the volume percent (radio_beep_level)
 	bool volume_pcm;
+	// Optional, with volume_pcm: the gain volume(percent) gives the PCM path at the speaker, in tenths of a dB from
+	// any fixed point (percent 1..100). The core plays a beep softer above volume step RADIO_BEEP_VOLUME_STEP by the
+	// gain added over that step's, so beeps stop getting louder there while voice still does (radio_beep_pcm_level).
+	// NULL: beeps follow the volume to the top
+	int16_t (*volume_db10)(uint8_t percent);
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)
 	bool (*tx_tone)(uint16_t hz);
@@ -55,6 +70,10 @@ typedef struct {
 	// CW ID): false = a silent carrier, true = the tone again. Only while a tone set with tx_tone runs. Without it the
 	// core keys with tx_tone(hz) / tx_tone(0), which lets the microphone through in the gaps
 	bool (*tx_tone_key)(bool down);
+	// Optional, with tx_tone: the tone being sent is also heard on the speaker (the modem's sidetone) while on is true.
+	// The core turns it on with the FM start tone on air, off when that tone ends or the transmission does. A board
+	// without it plays the start tone's speaker copy with the beep engine
+	void (*tx_tone_side)(bool on);
 	// Optional (CONFIG_DTMF): during FM TX, send the DTMF pair of digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h)
 	// instead of the microphone until called again; 0 = the microphone again. A new digit replaces the one sounding.
 	// False when the board can't (not in FM TX, not a digit). The core never mixes it with tx_tone
@@ -93,6 +112,16 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
+	// Optional: the radio core gives the board, once at start, a question to ask as it keys each DMR burst: does an SFR
+	// repeat right now (a channel's or the VFO's repeater role, or the hotspot's SFR mode)? While it does, the board may
+	// key straight from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it
+	// corrects only roughly; otherwise it keys every burst its normal way. The answer is read from the state itself at
+	// that moment, nothing is copied to the board, so it can't go stale. The question is a few reads of single flags,
+	// safe from an interrupt. NULL = no such mode
+	void (*dmr_direct_query)(bool (*sfr_repeats)(void));
+	// Optional: how the board keyed DMR bursts, for the debug link's view and HIL tests: the last one straight from RX
+	// (dmr_direct_query), and the bursts keyed each way since boot
+	void (*dmr_keying)(hal_dmr_keying_t *k);
 	// Optional, for the PA drive sweep (radio/pa_sweep.h; needs tx_drive_level). tx_drive_top: during an FM
 	// transmission, the drive of the board's highest power level at its frequency (the sweep's ceiling counts from it);
 	// 0 otherwise, which refuses the sweep. tx_drive_now: during an FM transmission, the PA drive at once (0: the PA

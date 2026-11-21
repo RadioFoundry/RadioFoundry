@@ -229,6 +229,11 @@ tr:last-child > td, tr:last-child > th { border-bottom: 0; }
 .kv th { width: 35%; color: var(--muted); }
 details summary { cursor: pointer; }
 details p { margin: var(--space-2) 0 0; font-weight: 400; }
+/* the Support tab's FAQ (support/faq.html): one question a row, the answer under it */
+.faq-item { border-bottom: 1px solid var(--border); padding: var(--space-3) 0; }
+.faq-item > summary { font-weight: 600; }
+.faq-item > :not(summary) { max-width: 70ch; }
+.faq-item ul { padding-left: var(--space-5); }
 .toc-inline { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-4); }
 .filter-bar input { font: inherit; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: min(100%, 360px); margin-bottom: var(--space-3); }
 
@@ -306,6 +311,23 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* tools */
 .drop { display: block; border: 2px dashed var(--border); border-radius: var(--radius); padding: var(--space-5); text-align: center; cursor: pointer; color: var(--muted); }
 .drop input { display: block; margin: 0 auto var(--space-2); }
+.tle-selection { border: 0; margin: var(--space-4) 0; padding: 0; }
+.tle-selection legend { font-weight: 600; margin-bottom: var(--space-2); }
+.tle-search { display: grid; gap: var(--space-1); max-width: 42rem; margin: var(--space-3) 0; }
+.tle-search input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+.tle-profile-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 0 var(--space-4); }
+.tle-profile { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.tle-profile input { flex: none; margin: 0.2em 0 0; accent-color: var(--accent); }
+.tle-profile-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.tle-profile-detail { display: block; grid-column: 2; color: var(--muted); font-size: 0.88em; }
+.tle-submit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.satellite-tle #satellite-tle-status { margin-top: var(--space-3); }
+.tle-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.tle-browse { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; }
+.tle-browse input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tle-browse:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.tle-provider { display: grid; gap: var(--space-1); max-width: 42rem; margin-top: var(--space-3); }
+.tle-provider input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
 
 /* flasher */
 .flasher { display: grid; gap: var(--space-3); }
@@ -640,6 +662,40 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .form-table .ed-actions .btn { padding: 0 0.45em; min-width: 1.9rem; }
 .form-table > .btn { margin-top: 2px; padding-left: 0; }
 .ed-radio-form { max-width: 60rem; }
+/* Signaling tones in the Radio tab: a card per event with its outputs and a table of steps */
+.ed-radio-form + h3 { margin-top: var(--space-6); }
+.sig-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); margin: var(--space-3) 0 var(--space-5); align-items: start; }
+.sig-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-4); display: grid; gap: var(--space-3); align-content: start; box-shadow: var(--shadow); }
+.sig-card.sig-off { background: var(--surface-2); box-shadow: none; }
+.sig-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.sig-title { margin: 0; font-size: var(--h3); flex: 1 1 auto; }
+.sig-state { flex: 1 0 100%; order: 3; }
+.sig-outs { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+.sig-outs > *, .sig-card { min-width: 0; }
+.sig-outs select { width: 100%; min-width: 0; box-sizing: border-box; }
+.sig-steps { width: 100%; table-layout: fixed; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.sig-steps th, .sig-steps td { padding: var(--space-1) var(--space-2); text-align: left; border-bottom: 1px solid var(--border); font-size: var(--text-sm); }
+.sig-steps thead th { color: var(--muted); font-weight: 600; }
+.sig-steps tbody th, .sig-steps thead th:first-child { color: var(--muted); font-weight: 400; width: 3.2rem; }
+.sig-steps input { width: 100%; min-width: 0; box-sizing: border-box; font: inherit; padding: var(--space-1) var(--space-2); }
+.sig-steps input.sig-bad { border-color: var(--bad); background: var(--bad-soft); }
+.sig-steps tr.sig-dim { opacity: 0.45; }
+.sig-total { margin: 0; }
+.sig-head > :nth-child(2) { margin-left: auto; }
+.sig-body { display: grid; grid-template-columns: minmax(15rem, 2fr) minmax(0, 3fr); gap: var(--space-5); align-items: start; }
+.sig-side { display: grid; gap: var(--space-3); min-width: 0; }
+.sig-tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: var(--space-4); min-width: 0; }
+.sig-outs { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 52rem) { .sig-body { grid-template-columns: minmax(0, 1fr); } }
+.sig-roll { line-height: 0; }
+.sig-roll svg { width: 100%; height: 4.5rem; display: block; }
+.sig-r-bg { fill: var(--surface-2); }
+.sig-r-grid { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; stroke-dasharray: 3 4; }
+.sig-r-bar { fill: var(--accent); }
+.sig-r-over { fill: var(--bad); opacity: 0.7; }
+.sig-r-pause { fill: var(--muted); opacity: 0.6; }
+.sig-steps tbody tr:last-child th, .sig-steps tbody tr:last-child td { border-bottom: 0; }
+
 .members { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--space-3); align-items: start; }
 .members h3 { font-size: var(--text-sm); margin-bottom: var(--space-1); }
 .members input[type="search"] { width: 100%; margin-bottom: var(--space-1); }

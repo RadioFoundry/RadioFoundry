@@ -100,6 +100,9 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0004 | TOT warning tone | bool | Off silences the tone before the transmit time-out | `sound_flags` bit 5 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0005 | Battery tone | bool | Off silences the low and critical battery tones | `sound_flags` bit 6 | Tones in the build (`CONFIG_BEEP`) |
 | 0x0006 | TX denied tone | bool | Off silences the tone when PTT is refused or the time-out cuts a transmission | `sound_flags` bit 7 | Tones in the build (`CONFIG_BEEP`) |
+| 0x0007 | Start tone | record | The signaling tone of a transmission's start: outputs and chain (3.3) | `sig_dmr[0]`, `sig_fm[0]`, `sig_hz[0]`, `sig_ms[0]` | Signaling tones in the build (`CONFIG_SIG_TONES`) |
+| 0x0008 | End tone | record | The same for a transmission's end | `sig_dmr[1]`, `sig_fm[1]`, `sig_hz[1]`, `sig_ms[1]` | `CONFIG_SIG_TONES` |
+| 0x0009 | Idle tone | record | The same for a reception's end (no on-air output) | `sig_dmr[2]`, `sig_fm[2]`, `sig_hz[2]`, `sig_ms[2]` | `CONFIG_SIG_TONES` |
 | 0x0100 | Systems | record list | 0x0100-0x01FF: system n's record ([channel-modes.md](channel-modes.md) 7.1) | none (codeplug data) | the system's type built |
 | 0x0200 | System entries | record list | 0x0200-0x02FF: a system's sites, channels and plan rows ([channel-modes.md](channel-modes.md) 7.2) | none | the system's type built |
 | 0x0300 | System secrets | record list | 0x0300-0x03FF: system n's own secret ([channel-modes.md](channel-modes.md) 7.4) | none | the system's type built |
@@ -175,6 +178,29 @@ A list that belongs to a radio's controls is a family too: the keypad buttons, o
 button's action. Ranges are assigned in blocks of 256 from 0x0100 up (0x0100-0x01FF the first), so a family can grow
 to its block and no further without a new row. A list that may outgrow a block is split into two families by the
 change that needs it, never by moving the first.
+
+### 3.3 The signaling tone records
+
+One record per event, because a chain's steps are only valid together and the outputs go with the event they sound
+for. 32 bytes, little endian (the first version's record had five steps and 17 bytes: the first five steps are laid out as
+it had them, and the other five follow):
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | Output in DMR: 0 the radio's own sound, 1 off, 2 speaker, 3 on air, 4 speaker and on air |
+| 1 | 1 | Output in FM, the same values |
+| 2 | 10 | Frequencies of steps 1 to 5 in Hz, u16 each; 0 is a pause. Multiples of 10, at most 3400 |
+| 12 | 5 | Lengths of steps 1 to 5 in units of 10 ms. A step of length 0 ends the chain, and a chain with no step is the event's own sound. At most 90 (900 ms) |
+| 17 | 10 | Frequencies of steps 6 to 10, as above |
+| 27 | 5 | Lengths of steps 6 to 10, as above |
+
+- A record shorter than 32 bytes (the first version's 17, say) reads with the missing fields zero. A longer one (a later version) is read from the
+  front.
+- The record is absent for the reader when a field is outside what the setting takes: an output of 3 or 4 for the end
+  of a reception, a frequency over 3400 Hz or not a multiple of 10, or a length over 900 ms. Nothing is
+  clamped (3.1).
+- A record whose key is present holds over the radio's own copy (5.2). The radio writes the whole record when one of
+  its fields changes from the menu, and keeps the bytes after the 32nd (4).
 
 ## 4. Rules for readers and writers
 
@@ -333,5 +359,5 @@ conversion copies the entries as they are. There is one key space for both forma
   radio accepts) is not built.
 - The header is outside the CRC. A damaged version byte reads as an invalid area (version 0) or as a newer one.
 - Per-channel settings: a key whose value starts with a channel number, or a table key. Not needed yet.
-- No key is a record yet. The firmware's set from the front (`CODEPLUG_KV_HEAD`) is built and tested; the Codeplug
-  Editor's comes with the first record key.
+- The signaling tone records (3.3) are the first record keys: the firmware sets them from the front
+  (`CODEPLUG_KV_HEAD`, `codeplug_keys_store_record`) and so does the Codeplug Editor (`putKeys`).

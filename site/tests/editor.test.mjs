@@ -61,6 +61,30 @@ test("the channel table shows the mode the radio uses in a receive-only band", (
 		["editor.mode.air", "editor.mode.bcast", "FM", "DMR"]);
 });
 
+test("Tier III channels expose the talk target and RX group list in the grid and form", () => {
+	const model = empty();
+	const contact = { number: 1, name: "TestGroup", id: 147862, type: "group" };
+	const rxList = { number: 1, name: "Test groups", contacts: [contact] };
+	model.contacts.push(contact);
+	model.rxLists.push(rxList);
+	const channel = { kind: 1, mode: "dmr" };
+	const grid = columns("channels", model, t);
+	const form = channelForm(model, t);
+	for (const [key, entry] of [["contact", contact], ["rxList", rxList]]) {
+		const column = grid.find((c) => c.key === key);
+		const selector = form.find((f) => f.key === key);
+		assert.equal(column.readOnly(channel), false);
+		assert.equal(selector.show(channel), true);
+		column.set(channel, entry);
+		assert.equal(channel[key], entry);
+		assert.equal(column.format(entry, channel), entry.name);
+	}
+	for (const key of ["colorCode", "timeslot"]) {
+		assert.equal(grid.find((c) => c.key === key).readOnly(channel), true);
+		assert.equal(form.find((f) => f.key === key).show(channel), false);
+	}
+});
+
 test("Bulk Edit sets no names or numbers, and has nothing to set on zones and RX lists", () => {
 	const keys = (table) => bulkColumns(table, empty(), t).map((c) => c.key);
 	assert.deepEqual([keys("zones"), keys("rxLists")], [[], []]);

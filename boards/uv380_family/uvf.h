@@ -45,9 +45,8 @@ typedef struct {
 	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks
 	void (*init)(void);
-	// Why the transmitter must stay off on this radio, or NULL to allow it (asked on every tx()): a build for the
-	// wrong hardware version
-	const char *(*tx_block)(void);
+	// The radio's own hardware identity lines after the family's (board_t.hw_line), or NULL: cached values only
+	bool (*hw_line)(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 } uvf_variant_t;
 extern const uvf_variant_t uvf_variant;
 // The key matrix, [row PA6, PD2, PD3][column D0..D7], with the key bits below (input_uvf.c)
@@ -84,6 +83,10 @@ extern const hal_audio_tap_t uvf_audio_tap;
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
 void uvf_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
 #endif
+// The backlight pin is held steady while either is on (backlight_uvf.h): transmitting, or receive audio from a signal
+// open (hal_radio_t.rx_open, the radio's own). Then the set brightness again.
+void uvf_backlight_tx(bool tx);
+void uvf_backlight_rx(bool open);
 // The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000 (hardware-dm1701.md 5.12)
 bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_AUDIO_PROBE
@@ -104,6 +107,9 @@ enum {
 // SPI flash (flash_uvf.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2 and
 // the panel type and model flags in 3
 bool uvf_flash_init(void);
+
+// The hardware identity (board_t.hw_line, docs/spec/support-info.md 2): the family's chips, then the variant's lines
+bool uvf_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 
 #if CONFIG_GPS
 // The GPS module on USART1 / PA9, detected at run time (gps_uvf.c): from the variant's init. board_t.gps is
@@ -126,7 +132,7 @@ uint8_t uvf_display_panel_type(void);
 enum { UVF_HSE_NONE, UVF_HSE_BYPASS, UVF_HSE_CRYSTAL };
 uint8_t uvf_hse_mode(void);
 uint16_t uvf_adc_raw(uint8_t ch);	// 0 volume, 1 battery, 2 mic, 3 temperature
-const char *uvf_cal_source(void);	// "working", "factory" or "none"
+const char *uvf_cal_source(void);	// "working", "factory", "mixed" (one band each) or "none"
 void uvf_cal_why(char *out, uint8_t len, uint8_t marker[8]);
 uint8_t uvf_cal_byte(uint16_t offset);
 bool uvf_diag_line(uint8_t i, char *buf, uint8_t len);

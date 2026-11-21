@@ -21,7 +21,12 @@
 #include "aprs/ax25.h"
 #include "position/position.h"
 
-#define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
+// Destination: our registered tocall APRDF?, the sixth character the board's (board.toml aprs_tocall, passed in by the
+// build; docs/spec/aprs.md 4.2). "0" is no radio: the host tests
+#ifndef APRS_TOCALL_ID
+#define APRS_TOCALL_ID		"0"
+#endif
+#define APRS_TOCALL		"APRDF" APRS_TOCALL_ID
 #define APRS_SSID_DEFAULT	7		// handheld
 #define APRS_DMR_DST_DEFAULT	310999u		// BrandMeister's APRS gateway, <master MCC>999 (310999 for US masters); 5057 retired 2019-03-01
 #define APRS_LEVEL_DEFAULT	50
@@ -241,6 +246,10 @@ bool aprs_rf_pending(void);
 bool aprs_can_receive(void);
 // The receive path is running (the receiver must stay awake: no battery saving)
 bool aprs_rx_listening(void);
+// The frequency the receive path decodes on, 0 when receiving is off or the radio can't (radio task)
+uint32_t aprs_rx_freq(void);
+// Stop the receive path at once (radio task): before tuning away from the APRS frequency (aprs_ax25.c)
+void aprs_rx_release(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
@@ -270,6 +279,8 @@ static inline uint8_t aprs_tx_power(uint8_t current) { return current; }
 static inline bool aprs_rf_pending(void) { return false; }
 static inline bool aprs_can_receive(void) { return false; }
 static inline bool aprs_rx_listening(void) { return false; }
+static inline uint32_t aprs_rx_freq(void) { return 0u; }
+static inline void aprs_rx_release(void) {}
 static inline bool aprs_send_status(const char *text) { (void)text; return false; }
 static inline bool aprs_send_message(const char *to, const char *text) { (void)to; (void)text; return false; }
 static inline bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)

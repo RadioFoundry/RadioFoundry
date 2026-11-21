@@ -11,17 +11,19 @@ import { readFileSync } from "node:fs";
 import { CodeplugImage } from "../static/js/codeplug/image.js";
 import { decodeArea, getValue, setValue, putArea, KV_ADDR, KV_SIZE } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, newChannel, newContact, remove, validate, numberAll } from "../static/js/codeplug/model.js";
-import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey } from "../static/js/codeplug/channelmodes.js";
+import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey, countSecrets, withoutSecrets } from "../static/js/codeplug/channelmodes.js";
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
+import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
 const hexOf = (b) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
-const vectors = (kind) => readFileSync(VECTORS, "utf8").split("\n").filter((l) => l.startsWith(kind + " ")).map((l) => l.slice(kind.length + 1));
+const vectors = (kind) => readFileSync(VECTORS, "utf8").split(/\r?\n/).filter((l) => l.startsWith(kind + " ")).map((l) => l.slice(kind.length + 1));
 const area = (img) => decodeArea(img.bytes).entries;
 const round = (m) => decode(encode(m));
+const has = (p, code, c) => p.some((x) => x.code === code && (!c || x.item === c));
 
 test("vectors: name check", () => {
 	const v = vectors("check");
@@ -409,6 +411,42 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
+import { systemOwnIdField, systemsTab } from "../static/js/editor/modesview.js";
+
+test("Systems table leaves control channels and authentication key cells blank for NXDN", () => {
+	const m = empty();
+	const n = newSystem(m, 4, "Conventional");
+	const t3 = newSystem(m, 1, "Trunked");
+	n.number = 1;
+	t3.number = 2;
+	t3.entries.push({ control: true });
+	t3.secret = { key: "00000000000000000000000000000000" };
+	m.systems.push(n, t3);
+	const h = (tag, attrs, ...children) => ({ tag, children });
+	const page = systemsTab({ model: m, t: (key) => key, h, button: () => h("button") }, null);
+	const rows = page.children.find((part) => part?.children[0]?.tag === "table").children[0].children[1].children;
+	const cells = (row) => row.children.slice(6, 8).map((cell) => cell.children[0]);
+	assert.deepEqual(cells(rows[0]), ["", ""]);
+	assert.deepEqual(cells(rows[1]), ["1", "editor.modes.secret_set"]);
+});
+
+test("NXDN system Radio ID accepts blank or a whole number from 1 to 65519", () => {
+	const m = empty();
+	const system = newSystem(m, 4, "Operations");
+	m.systems.push(system);
+	const field = systemOwnIdField(nxdn.nxdnSystem, (key, { min, max } = {}) =>
+		key === "editor.err.range" ? `${min}–${max}` : key);
+	for (const [input, value] of [["", 0], ["  ", 0], ["1", 1], ["65519", 65519]]) {
+		assert.equal(field.parse(system, "ownId", input), undefined);
+		assert.equal(system.ownId, value);
+	}
+	for (const input of ["0", "-1", "1.5", "65520", "abc"]) {
+		assert.equal(field.parse(system, "ownId", input), "1–65519");
+		assert.equal(system.ownId, 65519);
+	}
+	system.ownId = 65520;
+	assert.ok(has(validate(m), "range", system));
+});
 
 test("vectors: NXDN conventional block, unit ID record", () => {
 	const conv = (rate, rx, tx, sq) => ({ rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16) });
@@ -481,7 +519,6 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	assert.equal(kindName(4), "NXDN");
 	const { m, a, b } = nxdnSample();
 	assert.deepEqual(offeredKinds(m, "FM,DMR").map((k) => k.id), [4], "the codeplug holds it");
-	const has = (p, code, c) => p.some((x) => x.code === code && (!c || x.item === c));
 	let p = validate(m, { features: "FM,DMR,NXDN" });
 	assert.ok(!has(p, "mode_not_in_radio", a));
 	assert.ok(!has(p, "nxdn_group_range") && !has(p, "nxdn_unit_range"));
@@ -495,4 +532,108 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	a.contact.id = 7;
 	a.dmrId = 3101276;
 	assert.ok(has(validate(m, { features: "FM,DMR,NXDN" }), "nxdn_unit_range", a));
+});
+
+test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque records", () => {
+	const { m, a, b } = nxdnSample();
+	const system = newSystem(m, 4, "Operations");
+	system.trafficKeys = [{ id: 0, seed: 32767 }, { id: 63, seed: 1 }];
+	m.systems.push(system);
+	numberAll(m);
+	a.system = system;
+	a.params.txKeyId = 0;
+	const form = channelForm(m, (key) => key);
+	assert.deepEqual(form.find((field) => field.key === "k4.system").options(a).map(([value]) => value), [null, system]);
+	const txKey = form.find((field) => field.key === "k4.txKeyId");
+	assert.deepEqual(txKey.options(a).map(([value]) => value), [null, 0, 63]);
+	assert.deepEqual(txKey.options(b).map(([value]) => value), [null]);
+	assert.ok(!has(validate(m), "nxdn_missing_tx_key", a));
+	const img = encode(m);
+	assert.equal(hexOf(getValue(area(img), MODE_KEY.traffic)), "0001000000FF7F");
+	const opaqueSlot = MODE_KEY.traffic + 9;
+	const opaque = Uint8Array.of(0, 2, 0, 0, 0, 42);
+	putArea(img.bytes, setValue(area(img), opaqueSlot, opaque));
+	const decoded = decode(img);
+	const [first, second] = decoded.channels;
+	assert.equal(first.system, decoded.systems[0]);
+	assert.equal(first.params.txKeyId, 0);
+	assert.equal(second.name, b.name);
+	assert.equal(second.system, null);
+	assert.deepEqual(encode(decoded).bytes, img.bytes);
+
+	decoded.systems[0].trafficKeys = decoded.systems[0].trafficKeys.filter((key) => key.id !== 0);
+	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
+	first.params.txKeyId = 63;
+	const saved = area(encode(decoded));
+	assert.equal(getValue(saved, MODE_KEY.traffic), null);
+	assert.equal(hexOf(getValue(saved, MODE_KEY.traffic + 1)), "00013F00000100");
+	assert.deepEqual(getValue(saved, opaqueSlot), opaque);
+
+	const redacted = encode(decoded);
+	assert.equal(countSecrets(redacted.bytes), 2);
+	withoutSecrets(redacted.bytes);
+	assert.equal(countSecrets(redacted.bytes), 0);
+
+	remove(decoded, "systems", [decoded.systems[0]]);
+	assert.equal(first.kind, 4);
+	assert.equal(first.system, null);
+	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
+	assert.equal(countSecrets(encode(decoded).bytes), 0);
+});
+
+test("Tier III: follow every talk group and learning the system are option bits 0x0008 and 0x0010; others kept", () => {
+	assert.equal(T3_OPTS.followAll, 0x0008);
+	assert.equal(T3_OPTS.learnSystem, 0x0010);
+	const prev = new Uint8Array(39);
+	prev[6] = 0x08;		// 0x0800, reserved: kept as stored
+	const s = { ...t3System.newFields(), followAll: true, learnSystem: true };
+	const v = t3System.encode(s, prev);
+	assert.equal(v[5] | (v[6] << 8), 0x0800 | 0x0008 | 0x0010 | 0x0020);
+	const d = t3System.decode(v);
+	assert.ok(d.followAll && d.learnSystem && d.privateCalls && !d.allCalls);
+	const off = t3System.encode({ ...d, followAll: false, learnSystem: false }, v);
+	assert.equal(off[5] | (off[6] << 8), 0x0800 | 0x0020);
+	const fields = t3System.fields().map((f) => [f.key, f.section]);
+	assert.ok(fields.some(([k, sec]) => k === "followAll" && sec === "calls"));
+	assert.ok(fields.some(([k, sec]) => k === "learnSystem" && sec === "identity"));
+});
+
+// --- The recommended ham systems (docs/spec/ham-trunking.md) ---
+
+import { newHamSystem } from "../static/js/codeplug/channelmodes.js";
+import { HAM_T3 } from "../static/js/codeplug/mode_t3.js";
+import { HAM_P25 } from "../static/js/codeplug/mode_p25.js";
+
+test("recommended ham systems: Tier III Huge NET 1 and P25 WACN 32350, transmit on, no key, one control channel", () => {
+	const m = empty();
+	const t3 = newHamSystem(m, 1, { name: "", rxHz: 442012500, txHz: 447012500, site: 5 });
+	assert.equal(t3.name, "Ham Tier III");
+	assert.deepEqual([t3.tx, t3.needsKey, t3.secret, t3.ownId], [true, false, null, 0]);
+	assert.deepEqual([t3.fields.model, t3.fields.net, t3.fields.category, t3.fields.colorCode, t3.fields.registerTalkgroups, t3.fields.learnSystem, t3.fields.sites],
+		[3, 1, "a", 1, true, false, []]);
+	assert.deepEqual(t3.entries.map((e) => [e.cls, e.control, e.chan, e.rxHz, e.txHz, e.cc]), [[0, true, 21, 442012500, 447012500, null]]);
+	// four carriers a site, every site's numbers its own, all within the LCN range
+	assert.equal(HAM_T3.lcn(HAM_T3.siteMax, 4), 4092);
+	const p25 = newHamSystem(m, 3, { name: "Club P25", rxHz: 442037500, txHz: 0 });
+	assert.equal(p25.name, "Club P25");
+	assert.deepEqual([p25.tx, p25.fields.wacn, p25.fields.sysid, p25.fields.ccNac, p25.fields.skipEnc], [true, HAM_P25.wacn, null, 0x293, true]);
+	assert.notEqual(p25.fields.wacn, 0xBEE00, "never the common commercial default");
+	assert.deepEqual(p25.entries.map((e) => [e.cls, e.group, e.control, e.rxHz, e.txHz]), [[0, 0, true, 442037500, 442037500]]);
+	assert.equal(newHamSystem(m, 4, { rxHz: 1 }), null, "NXDN has none");
+	// added and written: both validate without errors and read back the same
+	for (const s of [t3, p25]) m.systems.push(s);
+	numberAll(m);
+	assert.deepEqual(validate(m).filter((p) => p.level === "error" && p.table === "systems"), []);
+	const d = decode(encode(m));
+	assert.deepEqual(d.systems.map((s) => s.fields), [t3.fields, p25.fields]);
+});
+
+test("Systems tab: the recommended ham system's button is there for a type that has one", () => {
+	const m = empty();
+	const h = (tag, attrs, ...children) => ({ tag, attrs, children });
+	const labels = [];
+	const page = systemsTab({ model: m, t: (key) => key, h, button: (text, fn, opts) => (labels.push([text, !!opts?.disabled]), h("button")) }, null);
+	assert.ok(page);
+	// the type list starts on Tier III, which has one
+	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
 });

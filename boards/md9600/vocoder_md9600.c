@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // MD-9600 vocoder: the radio's own stock AMBE+2 codec, run from flash (docs/spec/codec-md9600.md). Every TYT and Retevis
 // build of the codec that has a map is accepted (the profiles below, one per original firmware file: 03.28, 03.29,
-// 04.03, 06.03, 06.09, 06.24, 16.24, 16.45, 26.38, 26.41, 26.42, 26.45 and 26.57, each in the CSV, CSV-GPS, REC and
+// 04.03, 06.03, 06.09, 06.24, 16.24, 16.45, 26.38, 26.41, 26.42, 26.45, 26.57 and 126.61, each in the CSV, CSV-GPS, REC and
 // GPS-REC variants it exists in); the codec is board-independent, so any of them serves every revision. The calls are
 // the other STM32F4 hosts', at the same entry offsets (platform/stm32f4/hrc/vocoder.c).
 //
@@ -33,7 +33,8 @@
 
 // Each build as the merge places it (tools/rfoundry/rfoundry/stockfw.py, "placed"): CRC-32 (IEEE 802.3) of the code and
 // of the table window after the rewrites, and the code window's length. The descriptor must carry exactly these. The tag
-// is the variant in bits 16-17 (0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC) and the version in BCD below (0x1645: 16.45 CSV)
+// is the variant in bits 16-17 (0 CSV, 1 CSV-GPS, 2 REC, 3 GPS-REC) and the version in BCD below (0x1645: 16.45 CSV);
+// bit 20 marks the AES line (0x132661: 126.61 GPS-REC)
 //
 // The two builds first accepted: 06.09 CSV (V1-V3 boards) and 16.45 CSV (V4)
 static const codec_desc_window_t tables_v0609[1] = { { 0x080C000Cu, 0x10FE6u, 0x4C84A4F5u } };
@@ -260,6 +261,12 @@ static const stm32_codec_profile_t m2642s = {
 	.code_crc = 0x16CE0290u, .tables = m2642s_tables, .windows = 1, .at = ENTRIES,
 };
 
+// MD9600-AES-GPS-REC(2571V5)-S126.61.bin (S126.61 GPS-REC AES)
+static const codec_desc_window_t m12661s_tables[1] = { { 0x080C000Cu, 0x110C2u, 0x4AA80D99u } };
+static const stm32_codec_profile_t m12661s = {
+	.tag = 0x132661u, .id = CODEC_ID, .flash_lo = CODEC_FLASH_LO, .code = CODEC_CODE, .code_len = 0xF21Eu,
+	.code_crc = 0x2FC4B765u, .tables = m12661s_tables, .windows = 1, .at = ENTRIES,
+};
 
 static const stm32_codec_profile_t *const profiles[] = {
 	&v0609, &v1645, &m0609p, &m0609d, &m0609s, &m0624v,
@@ -267,7 +274,8 @@ static const stm32_codec_profile_t *const profiles[] = {
 	&m1624v, &m1624p, &m1624d, &m1624s, &m2645v, &m2645p,
 	&m2645d, &m2645s, &m2657d, &m0603v, &m0603p, &m0603d,
 	&m0603s, &m0328d, &m0329d, &m0403d, &m2641v, &m2641p, &m2638d, &m2642s,
+	&m12661s,
 };
-const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 32 };
+const stm32_codec_profiles_t stm32_codec_profiles = { profiles, 33 };
 
 #endif	// CONFIG_DMR

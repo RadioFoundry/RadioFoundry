@@ -580,6 +580,32 @@ static void testLrrp(void)
 	CHECK(countLrrp(0x0D) == 0);
 	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
 
+	// A period under 30 s (1 s asked): reports 30 s apart, the first after 5 s
+	sentCount = 0;
+	receiveLrrp("0909220411223344343101");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(25000);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(5000);
+	CHECK(countLrrp(0x0D) == 2);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
+	// A period past what milliseconds hold in 32 bits (4294968 s): capped at a day, not a period of a few hundred ms
+	sentCount = 0;
+	receiveLrrp("090c220411223344343182869238");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(120000);
+	CHECK(countLrrp(0x0D) == 1);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
 	// Distance 500 m checked every 30 s: the first report, then only once it has moved 500 m
 	sentCount = 0;
 	receiveLrrp("090922015534311e788374");
@@ -1613,7 +1639,7 @@ static void testIpText(void)
 	dmrDataUDP_t udp;
 
 	// The default (docs/spec/dmr-data.md 8)
-	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(settings.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
 	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
@@ -1639,6 +1665,40 @@ static void testIpText(void)
 	CHECK(dmrDataDecodeIPText(bomLe, sizeof(bomLe), text, sizeof(text)) && (strcmp(text, "le") == 0));
 	CHECK(dmrDataDecodeIPText(bomBe, sizeof(bomBe), text, sizeof(text)) && (strcmp(text, "b?") == 0));
 	CHECK(!dmrDataDecodeIPText(be, 1, text, sizeof(text)));
+	// Control characters are dropped, the C1 ones and DEL too: the UI's text takes 0x80-0x86 as its own glyphs and
+	// icons (core/ui/font.h), so a sender's U+0082 would have drawn an arrow. Latin-1 letters stay
+	static const uint8_t c1[] = { 0x00, 'a', 0x00, 0x82, 0x00, 0x85, 0x00, 0x7F, 0x00, 0x9F, 0x00, 0x0A, 0x00, 0xE9, 0x00, 0xA0 };
+	CHECK(dmrDataDecodeIPText(c1, sizeof(c1), text, sizeof(text)) && (strcmp(text, "a\xE9\xA0") == 0));
+	// The same in ISO 8859-1 defined short data, where the bytes are the characters
+	count = dmrDataBuildEtsiText(false, OUR_ID, RADIO_A, "x\x82y\x9Fz\xF1", false, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text)) && (strcmp(text, "xyz\xF1") == 0));
+	dmrDataRxReset();
+
+#if CONFIG_DMR_TMS
+	// The same in a Motorola-format TMS message (UTF-16), decoded by dmrDataDecodeTMS: the controls drop, the
+	// Latin-1 letters stay. The string literals are kept separate so a \xNN escape never swallows the next letter.
+	// TMS-only: dmrDataBuildTMS/dmrDataDecodeTMS are compiled out of a CONFIG_DMR_TMS=0 firmware (dmrDataServiceTestNoTms).
+	dmrDataTMS_t tms;
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "a" "\x82" "\x85" "\x7F" "\x9F" "\xE9" "z", 1, false,
+						   DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && dmrDataDecodeTMS(udp.payload, udp.length, &tms) &&
+		  (strcmp(tms.text, "a\xE9z") == 0));
+	dmrDataRxReset();
+#endif	// CONFIG_DMR_TMS
 
 	// Ours, individual, in the default format: confirmed data (no ACK of its own), done when the ETSI response ACKs it
 	reset();
@@ -2476,6 +2536,82 @@ static void testNoRate34(void)
 	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
 }
 
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+// A 16-bit XOR keystream over the user data, as a static key scheme gives (core/dmr/dmrPrivacy.c has the real ones)
+static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	uint16_t k = *(const uint16_t *)ctx;
+
+	if (alg != DMR_DATA_ALG_BASIC)
+	{
+		return false;
+	}
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (i & 1) ? (k & 0xFF) : (k >> 8);
+	}
+	return true;
+}
+
+// The channel's privacy reaches every data list (docs/spec/dmr-data.md 13)
+static void testPrivacy(void)
+{
+	static const uint16_t key = 0x2503;
+	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL };
+	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key };
+	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int count, heard;
+
+	// A scheme with no data form: the text never goes out, and fails
+	reset();
+	ch.privacy = block;
+	CHECK(sms_send(RADIO_A, false, "secret", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SMS_TRIES * SMS_ACK_MS + 1000);
+	CHECK(sentCount == 0);
+	CHECK(stats.txPrivacyBlocked >= 1);
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+
+	// Encrypted: the privacy header follows the data header, and the receiver with the key reads the text
+	reset();
+	ch.privacy = encrypt;
+	uint32_t before = stats.txPrivacy;
+	CHECK(sms_send(RADIO_A, false, "secret", false, DMR_SMS_FORMAT_TMS));
+	runMainTask(200);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
+	CHECK(stats.txPrivacy == before + 1);
+	const dmrBurst_t *h = txHeader();
+	CHECK((h != NULL) && (h < &lastTx[lastTxCount - 1]) && (h[1].dataType == DMR_TYPE_DATA_HEADER) &&
+		  ((h[1].payload[0] & 0x0F) == 15) && (h[1].payload[1] == DMR_DATA_PRIVACY_MFID));
+	CHECK(dmrDataPrivacyAllows(lastTx, lastTxCount));
+
+	// Received encrypted, with the key: passed on
+	heard = packetsHeard;
+	before = stats.rxPrivacy;
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "for us", 1, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard + 1);
+	CHECK(stats.rxPrivacy == before + 1);
+
+	// Received encrypted, without a key: dropped, nothing of it passed on
+	heard = packetsHeard;
+	uint32_t dropped = stats.rxPrivacyDropped;
+	ch.privacy = clear;
+	runMainTask(100);
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "not for you", 2, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	dmrDataSetPrivacy(&clear);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard);
+	CHECK(stats.rxPrivacyDropped == dropped + 1);
+
+	ch.privacy = clear;
+	reset();
+}
+#endif
+
 int main(void)
 {
 	testNoRate34();
@@ -2516,6 +2652,11 @@ int main(void)
 #endif
 #if DMR_DATA_UDP_API
 	testUdpSend();
+#endif
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);
+	testPrivacy();
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 #endif
 #if !CONFIG_DMR_TMS
 	testTmsOff();

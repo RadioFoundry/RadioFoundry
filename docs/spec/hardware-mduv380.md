@@ -136,11 +136,13 @@ Same bus, controller family, init tables and backlight as [hardware-dm1701.md](h
   vendor values and how that relates to the port's RGB setting; the DM-1701 bench found type 2 with MADCTL 0xE0
   mirrored top to bottom ([hardware-dm1701.md](hardware-dm1701.md) 20), and whether MD-UV380 type 2 panels need it is
   unverified (?).
-- **10 W identification.** Security register 3 byte 0x1C = 0xF4 was reported as the Plus 10 W marker (unverified). The
-  TYT 19.26 images **never read byte 0x1C**, so nothing in them confirms it. The port reads it at start-up: a 5 W image
-  refuses to transmit when the marker is present (it would drive the PA band select through the backlight pin), and a
-  10 W image does not require it, or a Plus without the marker could never transmit. A wrong guess swaps the backlight
-  and the PA band select, so confirm on both kinds of radio before relying on it.
+- **10 W identification.** Security register 3 byte 0x1C = 0xF4 was reported as the Plus 10 W marker (unverified):
+  nothing confirms the marker, and at least one 5 W radio carries 0xF4 (#773). The port reads the byte at start-up, and
+  a 5 W image warns when the byte is 0xF4. A 10 W image never warns, because the absence of an unconfirmed marker says
+  nothing. Both images transmit either way. The warning is the line "This firmware may be for another version of this
+  radio" at the top of the diagnostics page and `board.variant_mismatch=1` in the debug link's `board` section; an unreadable byte gives no warning. The
+  label on the radio decides which image to install. A wrong image swaps the backlight and the PA band select, so a
+  second marker is still needed before the firmware can refuse one.
 - Backlight: PD8 (5 W) or PC6 (10 W), active high.
 
 [radios.md](radios.md) lists HX8302A (unverified).
@@ -267,8 +269,8 @@ drives PA9 low, on drives it high and restarts USART1 at the rate found. `boards
 ## 10. USB and model reporting
 
 Same OTG_FS core and descriptors as the DM-1701. The open-firmware CPS radio type is 6 (the DM-1701 reports 8 or 10 by panel color order). RadioFoundry's `tools/cps_client.py` already maps type 6 to "MD-UV380". A single RadioFoundry
-image can tell a Plus 10 W radio by section 4's security register byte; it cannot tell an MD-UV380 from an RT3S or
-UV390 (no known model byte) (?).
+image cannot reliably tell a Plus 10 W radio from a 5 W one: section 4's security register byte gives only a warning.
+Nor can an image tell an MD-UV380 from an RT3S or UV390 (no known model byte) (?).
 
 ---
 
@@ -338,7 +340,7 @@ Addresses, tags and checksums, and the extraction recipe: [codec-mduv380.md](cod
 | MD-UV390 | the same radio in an IP67 case |
 | Retevis RT3S | rebadged MD-UV380; its own volume pot curve (section 6) |
 | G models | JS-H210 GPS on USART1 / PA9 |
-| MD-UV390 Plus 10 W | PC6 / PD8 swapped, 10 W power tables, security register 3 byte 0x1C = 0xF4 reported but never read by the TYT images, board layout differs somewhat (unverified) |
+| MD-UV390 Plus 10 W | PC6 / PD8 swapped, 10 W power tables, security register 3 byte 0x1C = 0xF4 reported (unconfirmed) and also found on a 5 W radio, board layout differs somewhat (unverified) |
 | MD-2017 | trackball, two AT1846S; not covered here |
 
 ---
@@ -352,13 +354,13 @@ there.
 |---|---|---|---|
 | 1 | HSE crystal or bypass | images: crystal, bypass off; the port tries crystal first | USB enumerates on HSE; read which mode started |
 | 2 | Panel types 0-3: MADCTL, RGB / BGR | images: init table and MADCTL per type (section 4); the BGR bit and type 2 orientation open | the boot screen is upright, not mirrored and the right colors; read sec. reg 3 byte 0x1D |
-| 3 | 10 W detection by sec. reg 3 byte 0x1C | open: the images never read the byte, so 0xF4 is unconfirmed | read it on a 5 W and a 10 W radio before trusting it for the pin swap |
+| 3 | 10 W detection by sec. reg 3 byte 0x1C | open: the marker is unconfirmed, and one 5 W radio reads 0xF4 (#773), so the byte only warns a 5 W image | find a second marker that differs between 5 W and 10 W radios; read sec. reg 3 on both kinds |
 | 4 | Key matrix and side key order | images: matrix as section 5; red / green and the side key order inferred from the DM-1701 image | press each key, compare with section 5 |
 | 5 | Encoder direction | images: same direction as the DM-1701; clockwise and edges per detent open | clockwise = next channel |
 | 6 | Battery divider (40.3) | open: no scale in the images; thresholds are raw counts | compare against a meter |
 | 7 | Volume pot ranges per model | open | read the raw value at both ends |
 | 8 | GPS on PA10 / PA9, 9600 baud; PA9 on non-GPS radios | images: 9600 on the wire, PA9 driven only in the GPS images | G model: sentences arrive; non-G: nothing breaks |
-| 9 | AT1846S DMR AF gain and receive offset | open: 0x07EF and UHF offset 0, the DM-1701's values | `test_dmr_audio_rx_deviation`, `test_dmr_audio_rx_offset_wide`; `tools/dmr_rx_sweep.py --reg 0:0x44` (`--detune` for offsets) for the window |
+| 9 | AT1846S DMR AF gain, receive offset and AGC | open: 0x07EF, UHF offset 0 and 0x32 = 0x4490, the DM-1701's values | `test_dmr_audio_rx_deviation`, `test_dmr_audio_rx_offset_wide`, `test_dmr_audio_rx_strong`; `tools/dmr_rx_sweep.py --reg 0:0x44` (`--detune` for offsets) for the window, `--reg 0:0x32 --field 2:0` at -75 to -45 dBm for the AGC |
 | 10 | Power fractions and k factors | open; the images' power rows are averaged between points (section 8) | power meter at each level, band edges |
 | 11 | Bootloader entry check and stack rule | open; the application has no entry code | dump the loader (RDP 1 allows the application to read it) |
 | 12 | Codec voice on air | open: bit-identical in the emulator for every build ([codec-mduv380.md](codec-mduv380.md)) | DMR TX and RX through the placed codec |

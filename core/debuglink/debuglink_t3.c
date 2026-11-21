@@ -291,7 +291,7 @@ static const char *const t3_regs[] = { "unknown", "not_needed", "listen", "neede
 static const char *const t3_svcs[] = { "none", "register", "deregister", "group", "individual", "cancel",
 				       "status", "sdata", "pdata", "divert", "sdpoll" };
 static const char *const t3_results[] = { "none", "pending", "granted", "done", "refused", "no_answer", "timeout",
-					  "not_allowed", "lost", "canceled", "diverted" };
+					  "not_allowed", "lost", "canceled", "diverted", "unmapped" };
 static const char *const t3_axs[] = { "idle", "wait_slot", "wait_resp", "acked" };
 
 static const char *word(uint8_t v, const char *const *names, uint8_t count)
@@ -360,11 +360,18 @@ static void t3_roam(const radio_t3_view_t *x, void *ctx)
 	uint32_t now = hal_millis();
 	dl_text(t, "t3.level_dbm=%d\nt3.leave_dbm=%d\nt3.dmrla=%u\nt3.reg_area=0x%04x\nt3.vote_on=%u\nt3.hunt_strict=%u\n",
 		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
-	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
-		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->adj_refused, x->nadj);
+	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.weak_hold_ms=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
+		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->weak_hold_ms,
+		(unsigned)x->adj_refused, x->nadj);
 	// The codeplug system the channel belongs to (n+1, 0: none) and its fallback (12.5): 1 on the channel, 2 looking
 	dl_text(t, "t3.sys=%u\nt3.unavail=%u\nt3.fallback=%u\nt3.fallbacks=%u\nt3.backs=%u\n", x->sys, x->unavail,
 		x->fallback, (unsigned)x->fallbacks, (unsigned)x->backs);
+	// Searching and hearing only another system: its C_SYScode (0: none), the FID of one of another kind (0: none); the
+	// last refused PTT's RADIO_TRUNK_WHY_*.
+	// Accept invalid CRC: PDUs taken with a failed CRC, and 1 while the last one taken failed (listen-only)
+	dl_text(t, "t3.other_fid=0x%02x\n", x->other_fid);
+	dl_text(t, "t3.other=0x%04x\nt3.why=%u\nt3.refused=%u\nt3.crc_taken=%u\nt3.unverified=%u\n", x->other, x->why,
+		(unsigned)x->refused, (unsigned)x->crc_taken, x->unverified);
 	// Each: RX Hz, the 14 system code bits, confirmed and adjacent priority, the level and age of its last sample
 	for (uint8_t i = 0; i < x->nadj && i < sizeof x->adj / sizeof x->adj[0]; i++) {
 		dl_text(t, "t3.adj%u=%u,0x%04x,%u,%u,%d,%d\n", i, (unsigned)x->adj[i].rx_hz, x->adj[i].sys14,
@@ -448,6 +455,10 @@ static void t3_ra(const radio_t3_view_t *x, void *ctx)
 	// The TX to RX turnaround
 	dl_text(t, "t3.turns=%u\nt3.turn_ms=%u\nt3.turn_max_ms=%u\nt3.turn_slow=%u\n", (unsigned)x->turns, x->turn_ms,
 		x->turn_max_ms, (unsigned)x->turn_slow);
+	// Why sends were refused or failed (t3.send_fail in the t3 section counts them all; no room there)
+	dl_text(t, "t3.send_held=%u\nt3.send_slot=%u\nt3.send_talk=%u\nt3.send_limit=%u\nt3.send_inhibit=%u\n"
+		"t3.send_key=%u\nt3.send_stack=%u\nt3.send_data_busy=%u\nt3.send_err=%u\n", x->send_held, x->send_slot,
+		x->send_talk, x->send_limit, x->send_inhibit, x->send_key, x->send_stack, x->send_data_busy, x->send_err);
 }
 
 // The messages heard, a section of their own: in t3_svc they outgrew a reply (truncated=1 before t3.supl_*)

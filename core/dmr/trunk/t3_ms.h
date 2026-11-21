@@ -27,6 +27,7 @@
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
 #include "dmr/trunk/t3_plan.h"
+#include "fec/rx_seen.h"
 
 // Data types of the slot type (TS 102 361-1 9.3.6) the engine looks at
 #define T3_DT_CSBK		3
@@ -51,20 +52,26 @@
 #define T3_OPT_LISTEN_ONLY	0x0001	// never transmit (and so never register)
 #define T3_OPT_ALLCALL		0x0002	// follow all-calls (ALLMSID, ALLMSIDL, ALLMSIDZ)
 #define T3_OPT_EMERGENCY_ANY	0x0004	// follow emergency grants on any talkgroup
-#define T3_OPT_MONITOR		0x0008	// follow every talkgroup grant (a scanner's view; listen-only)
-#define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours (model/net unset)
+#define T3_OPT_MONITOR		0x0008	// follow every talkgroup grant (a scanner's view; the radio core's digital monitor)
+#define T3_OPT_LEARN_SYSCODE	0x0010	// take the first system heard as ours: its model and net replace cfg->auth's
 #define T3_OPT_PRIVATE		0x0020	// follow private calls to the radio's ID (on by default)
 #define T3_OPT_REG_TG		0x0040	// register with the talk group (subscription) rather than the system code
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
 #define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio core keeps it in the settings (t3_kill)
 #define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
 #define T3_OPT_STUN		0x0400	// accept a stun or revive (6.4.9): authenticated first with K, else as sent
+// The channel's Accept invalid CRC (channel_t.accept_bad_crc): a CSBK or MBC block that fails its CRC is taken when the
+// same block failed recently (fec/rx_seen.h), so a system whose PDUs all fail the standard check can be listened to. While the
+// last PDU taken failed it the radio is listen-only (may_send): it never answers or asks on the strength of one
+#define T3_OPT_ACCEPT_BAD_CRC	0x0800
 
 // Timers and limits (TS 102 361-4 Annex A ranges in the comments). Fixed, but for the few t3_cfg_t overrides
 // (T_Awake, T_ALS, T_ALS_E, the Vote Now sample)
 #define T3_AWAKE_MS		2000	// T_Awake, 0.1-60 s: power save, awake this long after traffic for the radio
 #define T3_NOSIG_MS		5000	// T_Nosig, 1-15 s: no valid TSCC PDU this long, hunt again
 #define T3_DWELL_MS		700	// hunting: time on a candidate (12 TSCC slots and two short LCs)
+#define T3_OTHER_MS		10000	// hunting: another system heard this recently is shown (t3_ms_other)
+#define T3_OTHER_FID_N		2	// hunting: CSBKs with a good CRC and the same nonzero FID that name a non-ETSI system
 #define T3_SETTLE_MS		60	// after a retune: what is heard before this belongs to the old channel
 #define T3_INACTIVE_MS		2500	// TV_Inactive, 0-20 s: nothing on the followed slot this long, return
 #define T3_CALL_MAX_MS		300000	// a followed call ends by this at the latest
@@ -73,6 +80,7 @@
 #define T3_PROTECT_ONE_MS	1000	// EN_PTT_ONE_MS for another radio holds PTT off this long after the last one
 #define T3_TRAND_TC_MS		10000	// TRand_TC, 2-60 s: the longest a random access may take
 #define T3_TP_MS		20000	// TP_Timer: after a progress acknowledgement to a call request
+#define T3_ANSWER_CALL_MS	20000	// T_AnswerCall: restarted by each page from the caller
 #define T3_TNP_MS		10000	// TNP_Timer: after one to a request without a payload channel
 #define T3_ALS_S		30	// T_ALS (A.1: 10-300 s)
 #define T3_ALS_E_S		60	// T_ALS_E (10-14 400 s)
@@ -92,6 +100,8 @@
 #define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
 #define T3_VOTE_MARGIN_DB	6	// an adjacent TSCC this much stronger is better (no radiated preference)
 #define T3_WEAK_MS		5000	// camped with the level below leave_dbm this long: hunt (6.3.3.1 a)
+#define T3_WEAK_HOLD_MS		30000	// a weak-TSCC hunt that found nothing better: no other for this long, doubled each time
+#define T3_WEAK_HOLD_MAX_MS	300000	// ... up to this
 #define T3_VOTE_AGAIN_MS	30000	// an adjacent TSCC sampled isn't sampled again this soon, unless ours is weak
 
 typedef struct {
@@ -211,6 +221,7 @@ typedef enum {
 	T3_RES_LOST,		// the TSCC was lost meanwhile
 	T3_RES_CANCELED,	// withdrawn before anything was sent
 	T3_RES_DIVERTED,	// the called party's calls are diverted: divert_to (6.6.1.3 a 2)
+	T3_RES_UNMAPPED,	// granted on a channel no plan or row knows (st.last_unmapped)
 } t3_res_t;
 
 typedef enum { T3_AX_IDLE, T3_AX_WAIT_SLOT, T3_AX_WAIT_RESP, T3_AX_ACKED } t3_ax_state_t;
@@ -237,7 +248,8 @@ typedef struct {
 #define T3_RA_NONE	0xFFu
 typedef struct {
 	uint32_t csbk;		// CSBKs with a good CRC
-	uint32_t crc_bad;	// CSBKs / MBC headers with a bad CRC
+	uint32_t crc_bad;	// CSBKs / MBC headers with a bad CRC, dropped
+	uint32_t crc_taken;	// ... taken anyway, seen before (T3_OPT_ACCEPT_BAD_CRC)
 	uint32_t grants;	// grants heard while camped
 	uint32_t followed;
 	uint32_t unmapped;	// grants to a channel no plan knows
@@ -297,6 +309,12 @@ typedef struct {
 
 	// hunting
 	uint32_t slc_foreign;	// the last foreign C_SYS_Parms code + 1 (0: none): two alike leave a candidate
+	uint16_t other_code;	// C_SYScode of the last other system heard while hunting (PAR 0: from a short LC)
+	uint32_t other_ms;	// when (0: none since the hunt began): the screen names it (t3_ms_other)
+	uint8_t other_fid;	// the FID of the last manufacturer CSBKs heard while hunting (t3_ms_other_fid)
+	uint8_t other_fid_n;	// how many in a row with that FID, up to T3_OTHER_FID_N
+	uint32_t other_fid_ms;	// when the last one came (0: none since the hunt began)
+	uint16_t refused_area;	// reg_area + 1 of the last Reg_Refused, 0 none: until a registration is accepted
 	bool retry_tscc;	// the lost TSCC is tried before the list
 	uint8_t hunt_idx;	// next candidate: the adjacent sites' TSCCs, then ctrl[]
 	uint32_t hunt_deadline;
@@ -310,9 +328,14 @@ typedef struct {
 	// MBC assembly, per slot
 	struct {
 		bool open;
+		bool bad;	// the header was taken with a failed CRC (T3_OPT_ACCEPT_BAD_CRC)
+		bool has_intermediate;
+		uint8_t intermediate[T3_CSBK_BYTES];
 		t3_csbk_t hdr;
 		uint32_t ms;
 	} mbc[2];
+	bool unverified;	// the last PDU taken failed its CRC (T3_OPT_ACCEPT_BAD_CRC): listen-only until a good one
+	rx_seen_t seen;		// the PDUs that failed it lately
 
 	t3_call_t call;
 	bool protect_dis;	// P_PROTECT DIS_PTT in force on the payload channel
@@ -360,6 +383,8 @@ typedef struct {
 	t3_call_t cleared;
 
 	// Access (CONFIG_DMR_TRUNK_TX)
+	uint32_t ring_src;		// caller of an incoming FOACSU page, or zero
+	uint32_t ring_until;
 	struct {
 		t3_ax_state_t state;
 		t3_svc_t svc;
@@ -384,6 +409,9 @@ typedef struct {
 		bool ip_inform;		// T3_SVC_REGISTER: IP_Inform set, the address goes up when IPI asks (6.4.11)
 		uint32_t divert_to;	// T3_RES_DIVERTED: the address the TSCC gave
 		bool divert_group;
+		bool rejecting;		// C_RAND Answer Call with ACCEPT = 1
+		bool answering;		// FOACSU answer awaiting the caller's private voice grant
+		bool alerting;		// the called user is ringing during individual voice setup
 		bool als;		// T3_SVC_IND_VOICE: Ambient Listening asked for
 		bool supl;		// supplementary user data offered (SUPED_SV), uploaded when SUPLI asks
 		bool resume;		// T3_SVC_STATUS: back to the call left for it once answered (a payload interrupt)
@@ -473,6 +501,9 @@ typedef struct {
 	int16_t level_dbm;		// the tuned channel's averaged signal level (t3_ms_level), 0 = none yet
 	uint32_t weak_since;		// camped and below leave_dbm since (0: not)
 	bool hunt_strict;		// hunting after a weak TSCC: confirm only one above leave_dbm, for one pass
+	bool weak_failed;		// that pass ended with nothing better: the TSCC taken next starts a hold
+	uint32_t weak_hold_until;	// no leaving a weak TSCC before this (0: none)
+	uint32_t weak_hold_ms;		// the hold last set: doubles after each pass that found nothing (0: none)
 	struct {
 		bool on;		// sampling adj[idx] until `until`
 		uint8_t idx;
@@ -562,6 +593,8 @@ bool t3_ms_data_ready(const t3_ms_t *ms, uint32_t now);
 void t3_ms_data_done(t3_ms_t *ms, uint32_t now, bool ok);
 void t3_ms_data_heard(t3_ms_t *ms, uint32_t now);
 // PTT released before the grant: withdraw the request, or cancel it at the TSCC once sent
+bool t3_ms_answer_call(t3_ms_t *ms, uint32_t now);
+bool t3_ms_reject_call(t3_ms_t *ms, uint32_t now);
 void t3_ms_cancel(t3_ms_t *ms, uint32_t now);
 // The user ends the call being followed: P_MAINT when the radio started it or it is individual, then back
 void t3_ms_end_call(t3_ms_t *ms, uint32_t now);
@@ -573,6 +606,15 @@ void t3_ms_groups_changed(t3_ms_t *ms, uint32_t now);
 // May the user talk on the payload channel now: a voice call, not a broadcast or all-call another radio made, PTT not
 // disabled by P_PROTECT
 bool t3_ms_can_talk(const t3_ms_t *ms);
+// Hunting, and another system's control channel heard in the last T3_OTHER_MS: *code is its C_SYScode (PAR 0 when only
+// its short LC was heard). The usual cause is the system's model, network or color code set wrong in the codeplug
+bool t3_ms_other(const t3_ms_t *ms, uint32_t now, uint16_t *code);
+// Hunting, and in the last T3_OTHER_MS only CSBKs of one manufacturer's own FID (not 0) heard with a good CRC, no ETSI
+// TSCC: *fid is that FID. A trunking system of another kind uses the channel, one this radio can't join
+bool t3_ms_other_fid(const t3_ms_t *ms, uint32_t now, uint8_t *fid);
+// The system refused this radio's registration (Reg_Refused, 6.4.4.1) and none has been accepted since: hunting, or
+// back on that area and not registered. The usual cause is the radio's ID missing from the system's records
+bool t3_ms_reg_refused(const t3_ms_t *ms);
 // A talkgroup DGNA assigned (6.6.8)
 bool t3_ms_is_dgna(const t3_ms_t *ms, uint32_t tg);
 // Power save: the receiver may sleep now (t3_ms_poll decides; the radio wakes it the moment this goes false)

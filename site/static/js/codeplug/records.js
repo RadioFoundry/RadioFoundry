@@ -9,7 +9,7 @@ import { EE, FL } from "./image.js";
 import {
 	getFreq, putFreq, getBcdId, putBcdId, getTone, putTone, getName, putName, getCoord, coordBytes, u16, put16,
 } from "./fields.js";
-import { decodeArea, getKey, putKeys, keyValid, KEYS } from "./kv.js";
+import { decodeArea, getKey, getRecord, sameRecord, recordValid, putKeys, keyValid, KEYS, RECORD_KEYS } from "./kv.js";
 
 export const LIMITS = {
 	channels: 1024, zones: 68, zoneChannels: 80, contacts: 1024, rxLists: 76, rxListContacts: 32,
@@ -95,8 +95,9 @@ export function decodeChannel(r) {
 		lon: getCoord(r[0x24], r[0x1F], r[0x1E]),
 		sfr: (l1 & 0x02) !== 0,
 		sfrA: r[0x25],
-		sfrB: r[0x2A] & ~0x40,
+		sfrB: r[0x2A] & ~0x70,
 		toneBurst: r[0x2A] !== 0xFF && (r[0x2A] & 0x40) !== 0,	// FM: SFR byte B bit 6, read without the SFR flag (7.3.3); 0xFF = not set
+		acceptBadCrc: (r[0x2A] & 0x30) === 0x20,	// SFR byte B bits 5-4 = 2 (7.3.3); 0xFF and 0xBF read as off
 	};
 }
 
@@ -140,8 +141,7 @@ export function encodeChannel(c, r) {
 		r[0x24] = oh; r[0x1F] = om; r[0x1E] = ol;
 	}
 	r[0x25] = c.sfrA & 0xFF;
-	r[0x2A] = (c.sfrB & 0xBF) | (c.toneBurst ? 0x40 : 0);
-	if (r[0x2A] === 0xFF) r[0x2A] = 0xCF;	// 0xFF reads as not set: the unused bits 5-4 cleared (as the firmware)
+	r[0x2A] = (c.sfrB & 0x8F) | (c.toneBurst ? 0x40 : 0) | (c.acceptBadCrc ? 0x20 : 0);	// bits 5-4 always written: never 0xFF
 	return r;
 }
 
@@ -325,6 +325,7 @@ export function decodeGeneral(b) {
 		bootLine1: getName(b, BOOT_TEXT, 16),
 		bootLine2: getName(b, BOOT_TEXT + 16, 16),
 		...Object.fromEntries(KEYS.map((row) => [row.name, getKey(kv, row)])),
+		...Object.fromEntries(RECORD_KEYS.map((row) => [row.name, getRecord(kv, row)])),
 	};
 }
 
@@ -346,6 +347,10 @@ export function encodeGeneral(s, b) {
 	for (const row of KEYS) {
 		const v = s[row.name] ?? null;
 		if (was[row.name] !== v && (v === null || keyValid(row, v))) vals[row.name] = v;
+	}
+	for (const row of RECORD_KEYS) {
+		const v = s[row.name] ?? null;
+		if (!sameRecord(was[row.name], v) && (v === null || recordValid(row, v))) vals[row.name] = v;
 	}
 	if (Object.keys(vals).length) putKeys(b, vals);
 }

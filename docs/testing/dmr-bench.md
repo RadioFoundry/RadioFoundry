@@ -82,13 +82,25 @@ that scales its deviation (info feature `dev_scale`) and sets its level in dBm (
 tune a board's receive level, `tools/dmr_rx_sweep.py` (its help has the options), for example:
 
 ```
-tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe SPEECH.ambe \
+tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe tests/data/voice/ten_second_countdown.ambe \
     --reg 0:0x44 --values 0x07FF,0x07EF,0x07DF,0x07CF --dbm=-30,-50 --devs 0.85,1.15 --offsets=-1000,0,1000
 ```
 
 For a carrier offset window, `--detune --offsets=-4000:4000:500` tunes the radio away from the bench's carrier instead
 of moving the carrier: any bench board can do it, and it reaches past the bench's own offset limit (2.5 kHz).
 `test_dmr_audio_rx_offset_wide` checks the window from the other side, with the bench's carrier offset.
+
+`test_dmr_audio_rx_strong` checks the receiver's AGC with strong simplex speech (-75 and -55 dBm at the radio), where a
+clean receiver corrects almost nothing. A bit or more a frame there, and none from a repeater's continuous carrier,
+is an AGC that overloads the start of every burst (`docs/spec/dmr-voice.md` 7.1). Sweep the AGC's settings at those
+levels, and one undocumented bit field at a time with `--field`, for example:
+
+```
+tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --ambe tests/data/voice/ten_second_countdown.ambe \
+    --reg 0:0x32 --field 2:0 --values 0:7 --dbm=-60,-40,-20
+```
+
+Then check the value that wins near sensitivity as well (levels some 120 dB down at the radio, `--devs 0.85,1,1.15`).
 
 Decoding AMBE to audio on the test host needs an AMBE+2 vocoder, and this project ships none (README,
 `docs/CLEANROOM.md`). Options: a DVSI hardware vocoder on USB (ThumbDV / DV3000 class, AMBE-3000 chip), or an open

@@ -379,6 +379,7 @@ static struct {
 	uint32_t start_ms;
 	unsigned produced, taken, begins, ends;
 	bool starve;
+	bool busy;		// the source still has a tail to send (dmr_voice_source_t.busy)
 } src;
 
 static void src_begin(void *ctx) { (void)ctx; src.on = true; src.start_ms = now; src.produced = src.taken = 0; src.begins++; }
@@ -398,7 +399,9 @@ static bool src_next(uint8_t f[9], void *ctx)
 	return true;
 }
 
-static const dmr_voice_source_t source = { .begin = src_begin, .next = src_next, .end = src_end };
+static bool src_busy(void *ctx) { (void)ctx; return src.busy; }
+
+static const dmr_voice_source_t source = { .begin = src_begin, .next = src_next, .end = src_end, .busy = src_busy };
 
 // 10 ms steps; a slot boundary every 30 ms; the stack polled every step
 static void run_ms(unsigned ms)
@@ -601,6 +604,43 @@ static void test_tx_call(void)
 	printf("# TX: %u headers, %u voice bursts, %u silence frames, 1 terminator\n", DMR_CALL_TX_HEADERS, v, silent);
 	// The talk target was the channel's: no reply countdown
 	CHECK(!V()->reply_active && V()->tx_target.id == TG_TALK);
+}
+
+// A source with a tail (an end of transmission tone): the over goes on past PTT's release, superframe by superframe,
+// while the source is busy, and ends at the next boundary once it is not; a tail that never ends is cut after
+// DMR_CALL_TX_TAIL_HOLDS superframes
+static void test_tx_tail_hold(void)
+{
+	dmr_call_config_t c = base_cfg();
+	setup(&c);
+	src.busy = false;
+	dmr_call_ptt(true);
+	run_ms(1000);
+	src.busy = true;
+	dmr_call_ptt(false);
+	run_ms(1000);		// more than the superframe the over would have ended in
+	CHECK(V()->state == DMR_CALL_STATE_TX && V()->phase == DMR_CALL_PHASE_TX_VOICE && sim.tx_ends == 0);
+	src.busy = false;
+	run_ms(1000);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 1 && src.ends == 1);
+
+	// no tail: it ends in the first superframe, as before
+	dmr_call_ptt(true);
+	run_ms(1000);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 2);
+
+	// a tail that never ends is cut
+	src.busy = true;
+	dmr_call_ptt(true);
+	run_ms(1000);
+	dmr_call_ptt(false);
+	run_ms(400);
+	CHECK(V()->state == DMR_CALL_STATE_TX);
+	run_ms((DMR_CALL_TX_TAIL_HOLDS + 1) * 360 + 400);
+	CHECK(V()->state == DMR_CALL_STATE_IDLE && sim.tx_ends == 3);
+	src.busy = false;
 }
 
 static void test_tx_timeout_and_starve(void)
@@ -3138,6 +3178,44 @@ static void test_sfr_user(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
 }
 
+// The channel's Accept invalid CRC: a voice LC header whose RS fails (the parity masked with neither the header's
+// mask nor none) starts a call only when the same LC failed lately; off, never
+static void rx_bad_header(const uint8_t lc[9])
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE_LC_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = 1;
+	b.in_step = true;
+	b.len = 12;
+	dmr_lc_encode_full(lc, 0x5A, b.payload);
+	memcpy(b.lc, lc, 9);
+	sim_rx(&b);
+}
+
+static void test_accept_bad_lc(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9];
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
+	for (int on = 0; on < 2; on++) {
+		c.listen.accept_bad_crc = on != 0;
+		setup(&c);
+		rx_bad_header(lc);
+		run_ms(60);
+		CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 0);
+		rx_bad_header(lc);
+		run_ms(20);
+		dmr_call_get_stats(&st);
+		CHECK(sink_log.begins == (unsigned)on && st.rx_lc_taken == (uint32_t)on);
+		CHECK(!on || (V()->state == DMR_CALL_STATE_RX && sink_log.caller.src == 9997030));
+	}
+}
+
 #if CONFIG_SFR_DUALPATH_RX
 // Dual-path RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
 // it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
@@ -3291,8 +3369,10 @@ int main(void)
 	test_rs129();
 	test_csbk();
 	test_embedded();
+	test_accept_bad_lc();
 	test_alias();
 	test_tx_call();
+	test_tx_tail_hold();
 	test_tx_permit_hold();
 	test_tx_timeout_and_starve();
 	test_tx_rc_cease();

@@ -121,8 +121,9 @@ Per system:
 
 When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
 they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
-CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
-DMR channel, and comes back from one as that. Keep a codeplug file for them.
+A qdmr file holds systems and channel modes in a block of its own that qdmr ignores (below), but never keys. CSV files
+hold neither: a channel of another mode goes into one as a receive-only DMR channel, and comes back from one as that.
+Keep a codeplug file for them.
 
 ### P25 and NXDN
 
@@ -155,6 +156,31 @@ channel.
 | P25 unit ID | Your P25 ID. Blank: the DMR ID |
 | NXDN unit ID | Your NXDN ID, 1-65519. Blank: the DMR ID if it is 65519 or less, else 1 |
 
+#### NXDN Scrambler
+
+The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN standard defines it for voice and
+data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
+but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
+only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
+radio messages. The Amateur firmware variant disables the NXDN Scrambler.
+
+To use the NXDN scrambler:
+
+1. In **Systems**, choose **Add System** and set the type to **NXDN Conventional**. Leave **Radio ID on this system**
+   blank to use the **NXDN unit ID** from the **Radio** tab on channels without their own **Own ID**.
+2. Under **Traffic keys**, select **Add key**. Enter a **Key ID** from 0 to 63 and a **Scrambler seed** from
+   1 to 32767. Use each key ID once per system. Radios exchanging scrambled calls need the same key ID and seed.
+3. Edit an NXDN channel, select the **System**, and choose a **Transmit key**. Choose **Clear** to transmit without
+   scrambling while still receiving scrambled calls with matching system keys. Save the channel and write the
+   codeplug to the radio.
+
+The radio shows **ENC** when it plays scrambled voice. If a scrambled call has no matching receive key, the radio
+shows **Encrypted: not played**. If a channel's selected transmit key is missing, pressing PTT on that channel
+does not transmit.
+
+**Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
+as well.
+
 **P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
 transmit.
 
@@ -182,6 +208,7 @@ doesn't use it yet and keeps hunting for a control channel. A trunked channel ha
 - a codeplug file (`.bin`) saved by the editor, `tools/cps_client.py read` or a TFTP read;
 - a backup from the web installer (`.zip`);
 - a qdmr codeplug (`.yaml`);
+- a channel list saved by CHIRP (`.csv`), or a CHIRP image (`.img`) of a radio the editor can read;
 - CSV files, one table each, or a `.zip` of them;
 - the original firmware's codeplug, where the editor reads that radio's format: in an installer backup, a dump of the
   radio's data flash, or the manufacturer's CPS file. The [Radio reference](23-radios.md#codeplug-files-from-the-original-firmware)
@@ -194,7 +221,7 @@ scan lists and names that were shortened. A zone with an A and a B list becomes 
 Check the result before writing it to the radio. The radio's codeplug stays as it is until you write it. A CPS file
 the editor can't open yet can be converted with qdmr first (`dmrconf decode`), then opened as YAML.
 
-**Save** writes a codeplug file, a qdmr codeplug (`.yaml`), the open table as CSV, every table as a `.zip` of CSV files,
+**Save** writes a codeplug file, a qdmr codeplug (`.yaml`), a CHIRP channel list (`.csv`), the open table as CSV, every table as a `.zip` of CSV files,
 or `codeplug.bin` for USB network mode. Every save but `codeplug.bin` is named after the codeplug with the date and time
 added, such as `codeplug-2026-11-10-2215.yaml`, so saves never overwrite each other. Opening a dated file and
 saving it again replaces the date and time.
@@ -210,6 +237,13 @@ Afterwards the editor lists what it changed or left out, such as scan lists, enc
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
 and codeplug files too, and converts an original firmware codeplug to either.
+
+Systems, channel modes (Tier III, P25, NXDN) and **Accept Invalid CRC** go into the qdmr file in a `radioFoundry`
+block. qdmr opens the file and ignores the block, and never writes one: save from the Codeplug Editor to keep the block.
+Opening a file with the block replaces the codeplug's systems too. Opening a file without one, such as any file qdmr
+wrote, keeps the systems. Keys are never saved in the file: when the file is opened again in a codeplug that has the
+same system, the system keeps its key; anywhere else, enter the key again on the **Systems** tab. The block's keys are
+in the [qdmr YAML spec](../spec/qdmr-yaml.md#37-the-radiofoundry-block).
 
 ### DMR ID database and contacts from RadioID.net
 
@@ -310,3 +344,15 @@ To carry a stock codeplug over while you install, see [Moving from the stock fir
 - Writes are refused while the radio's settings area holds another firmware's data. See "Settings are not kept" in
   [Troubleshooting](20-troubleshooting.md#settings-are-not-kept).
 - The calibration area accepts writes only to its own bytes. Don't edit calibration with a CPS.
+
+A CHIRP CSV file replaces the channels and zones in one change, so one **Undo** reverses it; contacts, settings and the
+DMR ID database stay as they were. The channels are the file's FM and NFM rows, numbered in file order and put in zones
+named after the file, 80 channels to a zone. Offsets (`+`, `-`, split), CTCSS and DCS tones (including cross modes),
+bandwidth, skip and power are carried over. The editor lists what it left out: rows in other modes (AM, DV, SSB),
+rows without a usable frequency, tones the radio can't hold, and names it shortened. Saving as CHIRP CSV writes the FM
+channels only, since CHIRP has no DMR.
+
+A CHIRP image is one radio's memory, so each radio model needs its own reader and the editor reads only the models it
+lists ([CHIRP images the editor reads](../spec/hardware-uv5r-chirp-image.md)). It imports those channels the same
+way as a CSV file. For any other radio the editor names the model it found
+and says to export the channels from CHIRP with File > Export to CSV.

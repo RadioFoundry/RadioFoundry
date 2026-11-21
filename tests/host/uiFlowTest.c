@@ -13,7 +13,9 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/gfx.h"
 #include "ui/i18n.h"
+#include "ui/gfx.h"
 #include "config.h"
 
 // Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
@@ -56,10 +58,79 @@ typedef struct {
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
+#if CONFIG_SATELLITE_TLE
+	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
+	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
+	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating hides=Below_horizon", 13, false },
+	{ "Pass list shows the oldest TLE age", "", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=1d", 13, false },
+	{ "Pass list warns once for stale TLEs", "satagestale", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
+	{ "Pass list updates the age without a new inventory", "satagestale satagefresh ok 6 9", "satageadvance wait:1100",
+	  "screen=satellite-passes shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 0, false },
+	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "Arm capability, not catalog number, enables long OK", "satagestale", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "A satellite without an arm capability does not arm", "", "ok 6 9 ok long:ok",
+	  "screen=satellite shows=ISS toast=none", 13, false },
+	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
+	  "ok 6 9 ok",
+	  "screen=satellite hides=Below_horizon", 13, false },
+	{ "Satellite detail returns to pass list", "", "ok 6 9 ok back",
+	  "screen=satellite-passes sattracking=0 toast=Tracking_stopped shows=Next_passes hides=Predicting_passes", 14, false },
+	{ "Satellite tracking stops on Home", "ok 6 9 ok", "long:back",
+	  "screen=home sattracking=0 toast=Tracking_stopped", 1, false },
+	{ "Satellite tracking survives the TLE editor", "ok 6 9 ok", "ctx back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops on Home from the TLE editor", "ok 6 9 ok ctx", "long:back",
+	  "screen=home sattracking=0", 1, false },
+	{ "Satellite tracking survives quick settings", "ok 6 9 ok", "quick back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops after it was already stopped", "ok 6 9 ok ok", "back",
+	  "screen=satellite-passes sattracking=0 toast=none", 1, false },
+	{ "Satellite stop failure is reported", "ok 6 9 ok satstopfail", "back",
+	  "screen=satellite-passes sattracking=1 toast=Tracking_not_stopped", 1, false },
+	{ "Satellite pass list shows prediction progress", "satpredict",
+	  "ok 6 9",
+	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
+	{ "Completed prediction focuses the first pass", "satpredict ok 6 9", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "OK opens the first pass after prediction", "satpredict ok 6 9 satdone", "ok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "OK opens the first pass before the next UI tick", "satpredict ok 6 9", "satdoneok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "Down selects the second pass after prediction", "satpredict ok 6 9 satdone", "down ok",
+	  "screen=satellite shows=NOAA_19", 2, false },
+	{ "Returning to passes preserves the selection", "satpredict ok 6 9 satdone down ok", "back",
+	  "screen=satellite-passes focus=NOAA_19", 1, false },
+	{ "A new prediction focuses the first pass", "ok 6 9 down satpredict wait:200", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "Completed prediction with no passes stays on the list", "satpredict satnopasses ok 6 9", "satdone ok",
+	  "screen=satellite-passes shows=No_passes_in_next_24h", 1, false },
+	{ "Satellite pass list opens from Tools", "", "ok 6 9",
+	  "screen=satellite-passes shows=Next_passes shows=NOAA_19 shows=0:14", 13, false },
+	{ "Satellite TLE editor opens line 1", "", "ok 6 9 ok ctx",
+	  "screen=satellite-tle-text shows=1_ABC", 14, false },
+	{ "Satellite TLE editor cancels an empty line", "", "ok 6 9 ok ctx back",
+	  "screen=satellite shows=ISS", 15, false },
+	{ "Canceled satellite TLE entry reopens empty", "", "ok 6 9 ok ctx 2 back back ctx",
+	  "screen=satellite-tle-text hides=A_", 19, false },
+#endif
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
+	// The status strip's GPS icon (ui.md 3), a dish: none without a GPS, hollow with the setting off, solid while
+	// searching, with waves on a fix; the setting off hollows it within a second. Without a GPS the setting reads
+	// Off, whatever is stored (#349)
+	{ "GPS icon: none without a GPS", "", "", "gps=0", 0, false },
+	{ "GPS setting reads Off without a GPS", "gps:none", "ok 7 5", "screen=group hides=On", 3, false },
+	{ "GPS icon: off", "gps:off", "", "gps=1 screen=home", 0, false },
+	{ "GPS icon: searching", "gps:search", "", "gps=2 screen=home", 0, false },
+	{ "GPS icon: fix", "gps:fix", "", "gps=3 screen=home", 0, false },
+	{ "GPS icon: setting off hollows it", "gps:fix ok 7 5", "ok wait:1100", "gps=1 focus=GPS", 1, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
@@ -67,6 +138,11 @@ static const flow_t flows[] = {
 #if CONFIG_NXDN
 	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
 	{ "NXDN channel shows its mode", "dlmode:nxdn", "", "mode=nxdn screen=home shows=NXDN shows=RAN_1_9600 shows=TG_1 hides=No_tone hides=SQ5", 0, false },
+	{ "NXDN home: scrambled call on a stored channel",
+	  "chkind:3,nxdn,COUNTY_NXDN dlpos:3 dlmode:nxdn", "nxdnrx:1234,7,p",
+	  "screen=home shows=COUNTY_NXDN shows=ENC shows=ID_1234 shows=TG_7 hides=Encrypted:_not_played", 0, false },
+	{ "NXDN home: scrambled call without a matching key", "dlmode:nxdn", "nxdnrx:1234,7,e",
+	  "screen=home shows=Encrypted:_not_played hides=ID_1234", 0, false },
 	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
 #endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
@@ -208,6 +284,8 @@ static const flow_t flows[] = {
 #if CONFIG_LANG_ES
 	{ "6 preset sends in selected language", "ok 7 2 up ok down ok long:back", "5 6 3 ctx 3 down ok",
 	  "sent=1 text=En_camino", 7, false },
+	{ "21 text entry in the selected language", "ok 7 2 up ok down ok long:back", "ok 5 ok ok",
+	  "screen=text shows=Nombre", 4, false },
 #endif
 	{ "7 read message, banner up", "msg:9991234,Meet_at_the_north_lot", "ctx", "screen=message", 1, false },
 	{ "7 read message later", "msg:9991234,Meet_at_the_north_lot wait:9000", "ok 2 ok", "screen=message", 3, false },
@@ -493,19 +571,23 @@ static const flow_t flows[] = {
 	{ "21 keep editing", "ok 5 ok down down down down down down down down ok back", "ok", "screen=channel", 1, false },
 	{ "21 discard goes back to Channels", "ok 5 ok down down down down down down down down ok back", "down ok", "screen=channels", 2, false },
 	{ "21 the name opens text entry", "ok 5 ok", "ok", "screen=text", 1, false },
+	{ "21 text entry counts the characters", "ok 5 ok", "ok", "screen=text shows=10/16 hides=010", 1, false },
+	{ "21 a long message wraps", "5 6 3 ctx 3 down down down down ok ctx",
+	  "1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1",
+	  "screen=message-text shows=31/143 hides=1234567890123456789012345678901", 31, false },
 	// Back deletes in text entry, and leaves once the field is empty (principles 4's one exception)
-	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text focus=COUNTY_DMRG", 1, false },
+	{ "21 Back deletes in text entry", "ok 5 ok ok 4 6", "back", "screen=text shows=COUNTY_DMRG", 1, false },
 	{ "21 Back on an empty name leaves", "ok 5 ok ok", "back back back back back back back back back back back",
 	  "screen=channel", 11, false },
 	// Text entry (ui.md 2.1): * deletes, multi-tap letters move on with another key, # cycles ABC -> 123 -> abc
-	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "focus=7 screen=text", 11, false },
-	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "focus=WCRA", 8, false },
-	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "focus=313", 4, false },
-	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "focus=i", 5, false },
-	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "focus=a", 5, false },
-	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "focus=,", 4, false },
-	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "focus=COUNTY_DMRG locked=0", 1, false },
-	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "focus=7", 1, false },
+	{ "21 * deletes the name", "ok 5 ok ok", "quick quick quick quick quick quick quick quick quick quick long:7", "showsraw=7_ screen=text", 11, false },
+	{ "21 a name by multi-tap", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "9 2 2 2 7 7 7 2", "showsraw=WCRA_", 8, false },
+	{ "21 # to digits", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx 3 1 3", "showsraw=313_", 4, false },
+	{ "21 # twice to lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "ctx ctx 4 4 4", "showsraw=i_", 5, false },
+	{ "21 more presses: digit, then lower case", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "2 2 2 2 2", "showsraw=a_", 5, false },
+	{ "21 1 cycles punctuation", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "1 1 1 1", "showsraw=,_", 4, false },
+	{ "21 a slow * deletes, no key lock", "ok 5 ok ok 4 6", "long:quick", "shows=COUNTY_DMRG locked=0", 1, false },
+	{ "21 a held digit types itself", "ok 5 ok ok quick quick quick quick quick quick quick quick quick quick", "long:7", "showsraw=7_", 1, false },
 	{ "22 new from current settings, saved", "", "ok 5 up up up ok long:ok",
 	  "writes=1 toast=Saved_as_channel_41", 7, true },
 	// The channel editor's rules (ui.md 2.1). Channel 1 is an FM repeater (146.940, TX 600 kHz below), channel 3 DMR
@@ -718,6 +800,28 @@ static const flow_t flows[] = {
 	{ "S mic AGC on", "", "ok 7 3 down down down down down ok", "set71=1 shows=AGC", 9, false },
 	{ "S mic gain while AGC is on", "ok 7 3 down down down down down ok", "up ok", "toast=Mic_AGC_sets set13=5", 2, false },
 	{ "S message tone", "", "msg:9991234,Hi", "beep=2", 0, false },
+	// Settings > Signaling tones (the group before Advanced): six outputs, then a row per event that opens its steps
+	// (screen sig-chain). Start 1 is set100 (Hz) and set130 (ms), step 2 set101 and set131. A step: OK, the frequency,
+	// OK, the length, OK; a value off the 10 steps or past the range is refused with what fits
+	{ "S signaling tones group opens", "", "ok 7 up up ok down down down down down down",
+	  "screen=group shows=Start_steps", 11, false },
+	// An action row's id is a number of its own: with Mic AGC on, "Idle steps" (id 13) must not show Mic gain's "AGC"
+	{ "S signaling tones with Mic AGC on: no AGC on the steps rows", "ok 7 3 down down down down down ok back back back back",
+	  "ok 7 up up ok down down down down down down down down", "screen=group shows=Idle_steps hides=AGC", 14, false },
+	{ "S signaling tones: a chain's steps open", "ok 7 up up ok down down down down down down", "ok",
+	  "screen=sig-chain shows=Step_1", 1, false },
+	{ "S signaling tones: a step typed and saved", "ok 7 up up ok down down down down down down ok down",
+	  "ok 1 5 7 0 ok 4 0 ok", "set101=1570 set131=40 shows=1570_Hz__40_ms", 9, false },
+	{ "S signaling tones: BACK from the steps goes to the group", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok back", "set100=1570 set130=40 screen=group", 10, false },
+	{ "S signaling tones: a new step starts at 40 ms", "ok 7 up up ok down down down down down down ok down down",
+	  "ok 0 ok 0 ok ok 9 5 0 ok ok", "set102=950 set132=40", 12, false },
+	{ "S signaling tones: BACK leaves the step as it was", "ok 7 up up ok down down down down down down ok",
+	  "ok 1 5 7 0 ok 4 0 ok ok 1 2 3 back", "set100=1570 screen=sig-chain", 15, false },
+	{ "S signaling tones: a value off the steps is refused", "ok 7 up up ok down down down down down down ok down down down",
+	  "ok 4 5 ok", "set103=0 toast=Not_changed screen=sig-chain", 4, false },
+	{ "S signaling tones: Up and Down step the value", "ok 7 up up ok down down down down down down ok down down down down",
+	  "ok 5 0 0 up up ok 6 0 down ok", "set104=520 set134=50", 12, false },
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
@@ -825,7 +929,27 @@ static const flow_t flows[] = {
 	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
+	{ "T incoming private call shows caller and answer prompt", "t3 dlpos:3", "t3ring:101125",
+	  "screen=incoming-call shows=101125 shows=Press_PTT", 0, false },
+	{ "T a cleared incoming call restores the menu", "t3 dlpos:3 ok t3ring:101125", "down t3ring:0",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T Back rejects an incoming private call", "t3 dlpos:3 ok t3ring:101125", "back",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T a known incoming caller is identified by name", "t3 dlpos:3", "t3ring:9991234",
+	  "screen=incoming-call shows=9991234 shows=Joe", 0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
+	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
+	  "screen=home shows=Other_system hides=Searching", 0, false },
+	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
+	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T PTT refused for a system of another kind says so", "t3 dlpos:3 t3state:denyotherkind", "",
+	  "shows=Incompatible_system shows=Pick_another_channel", 0, false },
+	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
+	  "screen=home shows=Reg._refused hides=Searching", 0, false },
+	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
+	  "shows=Registration_refused shows=Ask_to_add_your_ID", 0, false },
+	{ "T PTT refused for a grant on an unlisted channel names it", "t3 dlpos:3 t3state:denyunmapped", "",
+	  "shows=Unknown_channel_311 shows=Check_system_settings", 0, false },
 	{ "T Home on the fallback channel", "t3 dlpos:3 t3state:fallback", "", "screen=home shows=Fallback", 0, false },
 	{ "T back on the system", "t3 dlpos:3 t3state:fallback", "t3state:back", "screen=home toast=Back_on_County", 0, false },
 	{ "T Home on a channel without its system", "t3 dlpos:5", "", "screen=home shows=System_not_set_up", 0, false },
@@ -876,6 +1000,9 @@ static const flow_t flows[] = {
 	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
 	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
 	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+#if CONFIG_SATELLITE_TLE
+	{ "L save GPS without a fix", "ok 7 5 down down down down", "ok", "toast=No_current_GPS_fix focus=Save_GPS_position", 1, false },
+#endif
 	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
 	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
 	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
@@ -1096,6 +1223,23 @@ static const flow_t flows[] = {
 #endif
 };
 
+#if CONFIG_SATELLITE_TLE
+static const flow_t satellite_detail_flows[] = {
+	{ "Satellite detail rounds AOS and LOS timers up", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87_in shows=0:02 shows=\x88_in shows=0:03", 13, false },
+	{ "Satellite detail shows LOS as calculating until known", "satlospending",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=Calculating", 13, false },
+};
+
+static const flow_t satellite_small_detail_flows[] = {
+	{ "128x64 satellite detail shows AOS and LOS instead of the path", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87 shows=0:02 shows=\x88 shows=0:03", 13, false },
+};
+#endif
+
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
 	LONG_MESSAGE_FLOWS
@@ -1138,6 +1282,10 @@ static const flow_t flows_k[] = {
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
 	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
 	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set62=0", 8, false },
+	{ "S theme night, the last", "", "ok 7 2 down down ok ok ok", "set7=3", 8, false },
+	// Night shows red only: its highlight is its own red, so the row is dimmed and says why
+	{ "S night: the highlight color is red only", "theme:night ok 7 2 down down down", "ok",
+	  "toast=Night_theme set61=0", 1, false },
 #else
 	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
@@ -1151,6 +1299,8 @@ static const flow_t flows_k[] = {
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
+	{ "K key rows retain their press and hold labels", "", "ok 7 8",
+	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
 	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
@@ -1307,7 +1457,7 @@ static const flow_t flows_f[] = {
 	  "writes=1 toast=Saved_channel_3", 1, true },
 #endif
 	// No programmable keys: the Keys group ends at its three general rows (ui.md 3.1)
-	{ "F no key rows without keys", "ok up ok up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
+	{ "F no key rows without keys", "ok up ok up up up up up ok", "down down down", "focus=Long hides=Key_1", 3, false },
 #if CONFIG_ZONE_EDIT
 	// No CONTEXT: long OK opens a zone's list in Zones and Channel actions in the list (information-architecture 7.5)
 	{ "F 23 move the channel in use down", "", "ok down down down down ok long:ok long:ok down ok",
@@ -1566,6 +1716,24 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// The support info (docs/spec/support-info.md): the source, the image hash (done after a few redraws: the
+		// sim's image is one step), the MCU and the board's chips
+		bool src = false, mcu = false, dmr = false, checking = false;
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		if (sim_run("ok 7 up ok ok wait:1000", err, sizeof err)) {
+			for (int i = 0; i < 40; i++) {
+				src = src || sim_run("expect:shows=Source:", err, sizeof err);
+				mcu = mcu || sim_run("expect:shows=STM32F4", err, sizeof err);
+				dmr = dmr || sim_run("expect:showsraw=HR_C6000", err, sizeof err);
+				checking = checking || sim_run("expect:shows=checking", err, sizeof err);
+				sim_run("down", err, sizeof err);
+			}
+		}
+		if (!src || !mcu || !dmr || checking) {
+			printf("FAIL about [%s]: support info: source %d, MCU %d, DMR chip %d, still checking %d\n", gn, src, mcu,
+				dmr, checking);
+			fails++;
+		}
 		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
 		// contributors are listed and ends on the last line (the codec's)
 		for (uint8_t l = 0; l < lang_count(); l++) {
@@ -1628,6 +1796,46 @@ static void call_screen_checks(void)
 		}
 	}
 }
+
+#if CONFIG_DMR_TRUNK
+// Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
+// a Home with an activity area names what was heard, or that it is of another kind (dmr-trunking.md 12.4)
+static void t3_other_checks(void)
+{
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		snprintf(buf, sizeof buf, "t3 dlpos:3 t3state:other");
+		bool ok = sim_run(buf, err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0 expect:shows=site_83" :
+				 "expect:shows=Other_system expect:shows=Heard:_Huge,_net_0");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+		// A trunking system of another kind: no settings to compare, the radio can't join it
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		ok = sim_run("t3 dlpos:3 t3state:otherkind", err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Incompatible_system expect:shows=Cannot_join "
+				 "expect:hides=Heard:" :
+				 "expect:shows=Other_system expect:shows=Incompatible_system");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL a system of another kind heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+#endif
 
 // Tools > APRS > Stations heard, at every display class: a station with a position shows how far and which way it is
 // from ours, beside the longest call there is, kept whole. No position of ours, or none of the station's: the row is
@@ -1715,8 +1923,7 @@ static void station_checks(void)
 }
 
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
-// warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
-// is the last one; in Settings the other rows move up). With a
+// warning, and no Battery saver or Low battery warning in the lists. With a
 // battery they are all there
 // A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
 // the chips where there is no top row; never shortened (the step gives way first)
@@ -1742,16 +1949,13 @@ static void no_battery_checks(void)
 		{ "strip with a battery", "", "shows=84%" },
 		{ "strip", "nobattery", "hides=%" },
 		{ "no warning", "nobattery battery:14", "banner=none" },
-		{ "Tools with a battery", "ok 6 9", "screen=info shows=Battery" },
-		{ "Tools", "nobattery ok 6", "hides=Battery" },
 		{ "Tools keep their numbers", "nobattery ok 6 7", "screen=diag" },
+		// The board's hardware version warning: shown on the diagnostics page, and only when the board raises it
+		{ "Diagnostics: no version warning", "ok 6 7", "screen=diag hides=This_firmware" },
+		{ "Diagnostics: version warning", "variant ok 6 7", "screen=diag shows=This_firmware" },
 		{ "Tools: Roaming is 6", "nobattery ok 6 6", "screen=roaming" },
-		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
 		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
-		// a radio that measures its DC input: the last tool is Supply with the reading, nothing battery-only
-		{ "Tools: Supply", "supply:13800 ok 6 up", "shows=Supply shows=13.8_V hides=Battery" },
-		{ "Supply page", "supply:13800 ok 6 9", "screen=info shows=13.8_V hides=%" },
 		{ "Supply: no warning", "supply:9000 battery:14", "banner=none hides=%" },
 		{ "Supply: no battery settings", "supply:13800 ok 7 7", "hides=Battery_saver hides=Low_battery" },
 	};
@@ -1778,6 +1982,27 @@ static void no_battery_checks(void)
 				printf("FAIL no battery %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
 				fails++;
 			}
+		}
+	}
+}
+
+// A key with the backlight off only wakes it, except PTT, Monitor and Emergency, which act at once: Emergency sends
+// only its long press, so waking on it alone would lose the alarm
+static void dark_key_checks(void)
+{
+	static const struct { uint8_t action, gesture; bool acts; } cases[] = {
+		{ ACT_EMERGENCY, GESTURE_LONG, true },
+		{ ACT_PTT, GESTURE_DOWN, true },
+		{ ACT_MONITOR, GESTURE_DOWN, true },
+		{ ACT_SELECT, GESTURE_PRESS, false },
+		{ ACT_BACK, GESTURE_LONG, false },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		input_event_t ev = { .action = cases[i].action, .gesture = cases[i].gesture };
+		if (ui_app_key_while_dark(&ev) != cases[i].acts) {
+			printf("FAIL dark key %zu: action %u acts %d, want %d\n", i, cases[i].action, !cases[i].acts,
+			    cases[i].acts);
+			fails++;
 		}
 	}
 }
@@ -1898,6 +2123,48 @@ static void title_row_checks(void)
 	}
 }
 
+#if CONFIG_UI_COLOR
+// The night theme lets nothing but red reach the eye: every pixel of these screens, on every color display class and
+// whatever the highlight color, has no green or blue (GPS systems and the emergency screen included)
+static void night_checks(void)
+{
+	static const char *const scripts[] = {
+		"", "strip:off", "rx:9991234,91,g,Q1ABC_Joe", "pttdown", "quick", "long:quick 5", "ok 5", "ok 7 2",
+		"ok 6 2 2", "ok 6 2 3", "emergency:9991234", "msg:9991234,Meet_at_the_north_lot", "ok 7 2 down down down ok",
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		if (sim_geoms[g].bpp == 1)
+			continue;
+		for (size_t i = 0; i < sizeof scripts / sizeof scripts[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "color:teal theme:night %s", scripts[i]);
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL night [%s] \"%s\": %s\n", sim_geoms[g].name, scripts[i], err);
+				fails++;
+				continue;
+			}
+			int lit = 0, bad = 0, bx = 0, by = 0;
+			for (int y = 0; y < gfx_height(); y++)
+				for (int x = 0; x < gfx_width(); x++) {
+					color_t c = gfx_get_pixel(x, y);
+					lit += c != 0;
+					if ((c & 0x07FFu) != 0 && bad++ == 0) {
+						bx = x;
+						by = y;
+					}
+				}
+			if (bad > 0 || lit == 0) {
+				printf("FAIL night [%s] \"%s\": %d pixels not red (first %d,%d: %04x), %d lit\n", sim_geoms[g].name,
+				       scripts[i], bad, bx, by, bad ? gfx_get_pixel(bx, by) : 0, lit);
+				fails++;
+			}
+		}
+	}
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+}
+#endif
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -1917,10 +2184,115 @@ static int check_name_is_id(void)
 	return bad;
 }
 
+#if CONFIG_SATELLITE_TLE
+static int check_satellite_countdowns(void)
+{
+	static const char *const geoms[] = { "128x64", "160x120i5", "160x128", "240x320", "240x320i10x5" };
+	char err[160] = "";
+	for (unsigned i = 0; i < sizeof geoms / sizeof geoms[0]; i++) {
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		int up_x, up_y, up_w, up_h, now_x, now_y, now_w, now_h;
+		int down_x, down_y, down_w, down_h, los_x, los_y, los_w, los_h;
+		const char *down = gfx_bpp() == 1 ? GLYPH_DOWN : GLYPH_DOWN " in";
+		if (!sim_run("ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(GLYPH_UP, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("Now", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("1:32", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    !sim_text_has_color(GLYPH_UP, ui_col.dim) || !sim_text_has_color("Now", ui_col.fg)) {
+			printf("FAIL satellite countdown alignment/colors [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() == 1) {
+			int top, rows;
+			const uint8_t *glyph = font_glyph(ui_layout.small, 'N', &top, &rows);
+			bool thickened = false, checked = false;
+			for (int r = 0; r < rows; r++) {
+				for (int col = 0; col + 1 < ui_layout.small->w; col++) {
+					if ((glyph[r] & (0x80u >> col)) && !(glyph[r] & (0x80u >> (col + 1)))) {
+						checked = true;
+						if (gfx_get_pixel(now_x + col + 1, now_y + top + r) != 0)
+							thickened = true;
+					}
+				}
+			}
+			if (!checked || thickened) {
+				printf("FAIL satellite visible-now normal weight [%s]\n", geoms[i]);
+				return 1;
+			}
+		} else if (sim_text_has_color(GLYPH_UP, ui_col.rx)) {
+			printf("FAIL satellite rise arrow is green [%s]\n", geoms[i]);
+			return 1;
+		}
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		const char *future_up = gfx_bpp() == 1 ? GLYPH_UP : GLYPH_UP " in";
+		if (!sim_run("satfuturepass ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(future_up, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("0:02", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("0:03", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    (gfx_bpp() != 1 && sim_text_has_color("0:02", ui_col.rx))) {
+			printf("FAIL satellite future countdowns [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() != 1) {
+			sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+			if (!sim_run("satlospending ok 6 9 ok", err, sizeof err) ||
+			    !sim_text_bounds("Calculating", &los_x, &los_y, &los_w, &los_h) ||
+			    los_x + los_w != gfx_width()) {
+				printf("FAIL satellite pending LOS [%s]: %s\n", geoms[i], err);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int check_satellite_path_endpoint_colors(void)
+{
+	char err[160];
+	const sim_geom_t *geom = sim_geom_find("240x320");
+	sim_reset(geom, SIM_MAP_K);
+	if (!sim_run("ok 6 9 ok", err, sizeof err)) {
+		printf("FAIL satellite path endpoint colors: %s\n", err);
+		return 1;
+	}
+	int center_x = gfx_width() / 2;
+	bool green_horizon = false, red_horizon = false, green_sky = false;
+	for (int y = 0; y < gfx_height(); y++) {
+		color_t pixel = gfx_get_pixel(center_x, y);
+		green_horizon |= y > gfx_height() * 3 / 4 && pixel == ui_col.rx;
+		red_horizon |= y < gfx_height() * 3 / 4 && pixel == ui_col.tx;
+		if (y > gfx_height() / 2) {
+			for (int x = center_x + 5; x < gfx_width() - 10; x++)
+				green_sky |= gfx_get_pixel(x, y) == ui_col.rx;
+		}
+	}
+	if (!green_horizon || !red_horizon || !green_sky) {
+		printf("FAIL satellite path colors: horizon start=%d end=%d sky=%d\n",
+		       green_horizon, red_horizon, green_sky);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SATELLITE_TLE
+	if (check_satellite_countdowns() != 0)
+		return 1;
+	if (check_satellite_path_endpoint_colors() != 0)
+		return 1;
+#endif
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
@@ -1932,6 +2304,14 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+#if CONFIG_SATELLITE_TLE
+	const sim_geom_t *satellite_geom = sim_geom_find("240x320");
+	for (size_t i = 0; i < sizeof satellite_detail_flows / sizeof satellite_detail_flows[0]; i++)
+		run_flow(&satellite_detail_flows[i], satellite_geom, SIM_MAP_K, "K 240x320");
+	const sim_geom_t *satellite_small_geom = sim_geom_find("128x64");
+	for (size_t i = 0; i < sizeof satellite_small_detail_flows / sizeof satellite_small_detail_flows[0]; i++)
+		run_flow(&satellite_small_detail_flows[i], satellite_small_geom, SIM_MAP_M, "M GD-77 satellite");
+#endif
 	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
@@ -1946,14 +2326,21 @@ int main(void)
 	printf("# %d flows run\n", flows_run);
 	about_checks();
 	call_screen_checks();
+#if CONFIG_DMR_TRUNK
+	t3_other_checks();
+#endif
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+	dark_key_checks();
 #if CONFIG_VOLUME_BAR
 	volume_bar_checks();
 #endif
 	title_row_checks();
+#if CONFIG_UI_COLOR
+	night_checks();
+#endif
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

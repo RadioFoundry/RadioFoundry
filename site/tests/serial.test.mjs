@@ -8,7 +8,7 @@ import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, noDeviceChosen, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { Stub, limits as stubLimits } from "../static/js/flasher/stub.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
@@ -260,7 +260,7 @@ test("a cable picked before that sends nothing is reported, not passed over as a
 	const was = { ...limits };
 	Object.assign(limits, { sendCheck: 50 });
 	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-	t.after(() => { Object.assign(limits, was); Object.defineProperty(globalThis, "navigator", nav); });
+	t.after(() => { Object.assign(limits, was); nav ? Object.defineProperty(globalThis, "navigator", nav) : delete globalThis.navigator; });
 	const dead = new FakeCable(3);
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead] } }, configurable: true });
 	await assert.rejects(knownRadioPort([{ usbVendorId: 0x067B }]), (e) => e instanceof CableError && e.code === "stalled");
@@ -316,10 +316,11 @@ class GrantedPort extends FakePort {
 
 test("the ports granted before are tried as the chooser would list them; a silent one is closed and passed over", async (t) => {
 	const cable = new GrantedPort(0x0403, 0x6001), other = new GrantedPort(0x05AC, 0x1234);
-	// Node's navigator is a getter without a setter: replaced for this test and put back
+	// Node 21+ has a navigator getter without a setter: replaced for this test and put back. Node 20 has none, so
+	// there is nothing to put back and the stand-in is removed instead (defineProperty with undefined throws)
 	const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [other, cable] } }, configurable: true });
-	t.after(() => Object.defineProperty(globalThis, "navigator", was));
+	t.after(() => (was ? Object.defineProperty(globalThis, "navigator", was) : delete globalThis.navigator));
 	const filters = [{ usbVendorId: 0x0403 }];
 	assert.deepEqual(await grantedPorts(filters), [cable]);
 	assert.equal(await knownRadioPort(filters), null, "nothing answered: the chooser opens");
@@ -510,6 +511,11 @@ test("the browser's own serial and USB errors get what to do", () => {
 	assert.equal(browserErrorKey(err("NotFoundError", "The device has been disconnected.")), "flash.err.disconnected");
 	assert.equal(browserErrorKey(err("BreakError", "Break received")), "flash.err.connection_lost");
 	assert.equal(browserErrorKey(new Error("anything else")), null);
+	// the chooser closed with nothing picked: the after-install check records no failure for it (most of its recorded
+	// failures were this)
+	assert.ok(noDeviceChosen(err("NotFoundError", "Failed to execute 'requestPort' on 'Serial': No port selected by the user.")));
+	assert.ok(!noDeviceChosen(err("NotFoundError", "The device has been disconnected.")));
+	assert.ok(!noDeviceChosen(new Error("No port selected by the user.")));
 });
 
 test("an unknown file is reported by its type, size and first 8 bytes, never its name", async () => {

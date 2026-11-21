@@ -325,9 +325,8 @@ A 160 x 128 color screen, every row visible. The controller type is unconfirmed.
   it hears nothing. Once heard, the module is powered only while **Settings > Location > GPS** is on, which takes
   effect at once.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
-- Some early VHF radios may have a 1 MB memory chip instead of 16 MB (not yet confirmed on a radio). RadioFoundry
-  can't store a codeplug on it: settings are lost when the radio is turned off, and the Codeplug Editor and the
-  web installer say so. A backup still saves the whole chip.
+- Some early VHF radios have a 1 MB memory chip instead of 16 MB. RadioFoundry keeps settings and the codeplug on it
+  as on other radios; the DMR ID database is limited to what fits.
 
 ## TYT MD-UV380
 
@@ -343,7 +342,7 @@ Follow [Installing](02-installing.md) with these values.
 |---|---|
 | Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
-| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
+| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart reliably, so a wrong image isn't caught. Tools > Diagnostics may show "This firmware may be for another version of this radio" when a byte in the radio's flash suggests the other version. That byte is wrong on some 5 W radios, so the radio still transmits: check the label |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
 | Board name | `mduv380` |
 
@@ -550,7 +549,7 @@ haven't been measured. A channel without a power in the codeplug uses L. The rad
 RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
-no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
+Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
 voltage, so nothing warns about it.
 
 ### DB25-D PRO display
@@ -739,7 +738,7 @@ accepted:
 |---|---|
 | MD-9600 V1-V3 boards | TYT `MD9600-CSV-V06.09.bin` and the rest of the 06.09, 06.24 and 06.03 files; the older `MD9600-REC-D03.28.bin`, `-D03.29.bin` and `-D04.03.bin` |
 | MD-9600 V4 | TYT `MD9600-CSV(V4)-V16.45.bin` and the 16.24 and 16.45 files |
-| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin` |
+| MD-9600 V5 and Retevis RT90 | the file the radio came with: TYT `MD9600-CSV(2571V5)-V26.45.bin` and the other 26.45 files, `MD9600-REC(2571V4)-D26.57.bin`, or Retevis `RT90-CSV(2571V5)-V26.41.bin`, `RT90-REC(2571V5)-D26.38.bin`, `RT90-CSV-GPS(2571V5)-P26.41.bin` and `RT90-GPS-REC(2571V5)-S26.42.bin`, or TYT `MD9600-AES-GPS-REC(2571V5)-S126.61.bin` |
 
 The CSV, CSV-GPS, REC and GPS-REC variants of one version all work. The full list with hashes is in
 [codec-md9600.md](../spec/codec-md9600.md#stock-files). No V5 radio has run these files yet: the checks so far ran their

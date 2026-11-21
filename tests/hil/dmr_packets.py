@@ -31,7 +31,9 @@ def crc32_dmr(data):
 
 
 def data_packets(lines):
-    """Data headers heard (dt 6) with the rate 1/2 blocks (dt 7) that follow: dicts with the header fields."""
+    """Data headers heard (dt 6) with the rate 1/2 blocks (dt 7) that follow: dicts with the header fields, and
+    "privacy" (sap, alg, encrypted, key_id, mi, crc_ok) when a privacy header followed the first one
+    (docs/spec/dmr-data.md 13.1)."""
     out, cur = [], None
     for r in lines:
         dt, info = r.get("dt"), r.get("info")
@@ -40,6 +42,14 @@ def data_packets(lines):
         b = bytes.fromhex(info)
         if dt == 6:
             dpf = b[0] & 0x0F
+            # The privacy header (DPF 15, MFID 0x10, not SAP 1) right after a first header: one of its blocks
+            if dpf == 15 and b[1] == 0x10 and b[0] >> 4 != 1 and cur is not None and not cur["blocks"] and \
+                    "privacy" not in cur and cur["need"] > 0:
+                cur["privacy"] = {"sap": b[0] >> 4, "alg": (b[2] >> 4) & 7, "encrypted": bool(b[2] & 1),
+                                  "key_id": b[3], "mi": int.from_bytes(b[6:10], "big"),
+                                  "crc_ok": crc16_ccitt(b, 0xCC) == int.from_bytes(b[10:12], "big")}
+                cur["need"] -= 1
+                continue
             n = (b[8] & 0x7F) if dpf == 2 else (b[8] & 0x03) + 1 if dpf == 0 else 0
             cur = {"dpf": dpf, "sap": b[1] >> 4, "dst": int.from_bytes(b[2:5], "big"),
                    "src": int.from_bytes(b[5:8], "big"), "pad": (b[0] & 0x10) | (b[1] & 0x0F), "fmt": b[1] & 0x0F,

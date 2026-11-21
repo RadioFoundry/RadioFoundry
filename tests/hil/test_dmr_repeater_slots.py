@@ -35,6 +35,17 @@ error. With the repeater up all along, the SDR bench decodes both sides of an 8 
 correlation, one sample clock): the median of each inbound burst's offset from the nearest outbound burst plus 30 ms
 must be within OFFSET_MAX_MS, over at least 50 bursts. The HR_C7000 radios set it with tx_pre_on
 (docs/spec/modem-hrc7000.md 2.1).
+
+test_dmr_repeater_inbound_fec (the same options and bench as the burst offset): the radio's voice through a repeater
+must be as clean as on a simplex channel. A radio that listens to the outbound between its own bursts (the modem's
+tx_listen_split) retunes its synthesizer twice a burst, and a burst keyed before the carrier settled carries bit errors
+a repeater or hotspot passes on (issue 609: 4-5 % BER on a duplex hotspot against 0.2 % before). With the board's
+idle outbound up all along, a 6 s call: the receive board decodes the radio's inbound bursts, and the AMBE bits its FEC
+corrected must be at most INBOUND_FEC_MAX of those sent, with no frame past correction. A radio that doesn't retune
+reads 0 here; a radio that listens read 0.13-0.24 % (worse with a wider split; the board's receiver forgives more than
+a hotspot's).
+Use a split like a real repeater's (several MHz) when the receive board can be tuned there: the synthesizer's step is
+part of what is tested.
 """
 import bisect
 import collections
@@ -51,6 +62,9 @@ from hil_config import rig
 
 VOICE_PER_S = 1 / 0.060         # one voice burst per 60 ms frame on our slot
 OFFSET_MAX_MS = 0.25            # the inbound burst against the outbound + 30 ms (test_dmr_repeater_burst_offset)
+AMBE_BITS_PER_BURST = 3 * 72   # three AMBE+2 frames in a voice burst
+INBOUND_FEC_MAX = 0.0005       # AMBE bits corrected in the radio's inbound voice (test_dmr_repeater_inbound_fec),
+                               # of all bits sent: only the protected ones show a correction, so the true BER is higher
 
 
 def _voice_by_slot(rpt, t0, t1):
@@ -304,7 +318,7 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
                 skip("bench", f"the bench board can't decode bursts on {f} MHz (outside its window)")
         # The board's idle outbound is the reference (a half-duplex board runs no repeater), and the radio's bursts
         # are judged by the SDR alone
-        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 40), True
+        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
         s.wait_up()
         ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
         outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
@@ -328,3 +342,54 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
         print(f"inbound vs outbound + 30 ms: median {med:+.3f} ms, min {min(offs):+.3f}, max {max(offs):+.3f}")
         assert abs(med) <= OFFSET_MAX_MS, f"the inbound bursts are {med:+.3f} ms off the outbound's (+-{OFFSET_MAX_MS} ms)"
     _session(radio, sdr_bench, pytestconfig, backup_dir, body)
+
+
+def _ambe_errors(b):
+    """(AMBE data bits the bench corrected, frames past correction) in one voice burst's fec record."""
+    f = b.get("fec") or {}
+    c, bad = f.get("ambe_corrected") or 0, f.get("ambe_bad") or 0
+    return (sum(c) if isinstance(c, list) else c), (sum(bad) if isinstance(bad, list) else bad)
+
+
+@pytest.mark.feature("dmr_voice")
+@pytest.mark.radio_tx
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.sdr_rx
+@pytest.mark.codeplug_write
+def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
+    def body(s, rnd):
+        if not s.bench.can_watch(s.split):
+            skip("bench", f"the bench board can't decode bursts on {s.split} MHz (outside its window)")
+        # The outbound is up all along, so a radio that listens between its bursts (tx_listen_split) does so for the
+        # whole call: what it sends must be as clean as on a simplex channel
+        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
+        s.wait_up()
+        _, before = radio.counters()
+        ins = s.bench.bursts_start(s.split, 12, cc=s.cc)
+        s.call(6.0, "inbound FEC")
+        inbound, done = s.bench.bursts_result(ins)
+        _, after = radio.counters()
+        if done.get("complete") is False:
+            skip("bench", f"the bench board lost bursts: {done.get('lost')}")
+        voice = [b for b in inbound if str(b.get("kind", "")).startswith("VOICE_")]
+        errs = [_ambe_errors(b) for b in voice]
+        bits = AMBE_BITS_PER_BURST * len(voice)
+        corrected, bad = sum(e[0] for e in errs), sum(e[1] for e in errs)
+        rate = corrected / bits if bits else 0.0
+        by_kind = collections.defaultdict(int)
+        for b, e in zip(voice, errs):
+            by_kind[b["kind"][-1]] += e[0]
+        cfo = sorted(b["cfo_hz"] for b in voice if "cfo_hz" in b)
+        listened = after.get("call.rx_in_tx", 0) - before.get("call.rx_in_tx", 0)
+        print(f"{len(voice)} voice bursts on {s.split} MHz: {corrected} AMBE bits corrected ({rate:.2%}), {bad} frames "
+              f"past correction; by burst A-F {dict(sorted(by_kind.items()))}; carrier offset median "
+              f"{statistics.median(cfo) if cfo else 0:+.0f} Hz, {cfo[0] if cfo else 0:+.0f} to "
+              f"{cfo[-1] if cfo else 0:+.0f}; call.rx_in_tx +{listened} (bursts heard while sending)")
+        print(f"per burst: {[e[0] for e in errs]}")
+        assert len(voice) >= 60, f"only {len(voice)} voice bursts from us on {s.split} MHz (6 s is about 100)"
+        assert rate <= INBOUND_FEC_MAX and bad == 0, \
+            f"{rate:.2%} of the AMBE bits corrected and {bad} frames past correction through the repeater (at most " \
+            f"{INBOUND_FEC_MAX:.2%}, none past correction)"
+    _session(radio, sdr_bench, pytestconfig, backup_dir, body)
+

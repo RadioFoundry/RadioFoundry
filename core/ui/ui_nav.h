@@ -17,7 +17,7 @@
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
+	SCR_DIAG, SCR_EMERGENCY, SCR_INCOMING_CALL, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
@@ -42,6 +42,10 @@ typedef enum {
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
+	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
+	SCR_SATELLITE_TEXT,		// one 69-character TLE line
+	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -71,6 +75,11 @@ typedef struct {
 	bool saved;		// in the contacts
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
+
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void));
+void ui_satellite_passes_tick(void);
+#endif
 
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
@@ -108,7 +117,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-#if CONFIG_BACKLIGHT_TEST
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
 #endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
@@ -132,6 +141,7 @@ void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start
 bool ui_try_save_channel(void);
 void ui_dirty(void);
+bool ui_about_busy(void);	// About is still working out the image hash: redraw it at the fast rate (CONFIG_SUPPORT_INFO)
 // The focused row changed: tell the radio what PTT would talk to now
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
@@ -218,6 +228,10 @@ void ui_recent_target(const ui_recent_t *r, ui_target_t *t);
 bool ui_contact_name(uint32_t id, bool group, char *out);
 
 // Diagnostics, emergency, banners (ui_app.c)
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void);
+bool ui_incoming_call_key(const input_event_t *ev);
+#endif
 void ui_emergency_draw(void);
 bool ui_emergency_key(const input_event_t *ev);
 void ui_diag_draw(void);

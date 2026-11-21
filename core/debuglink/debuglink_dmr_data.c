@@ -120,6 +120,9 @@ void debuglink_view_dmr_data(uint8_t part, dl_text_t *t)
 	dl_text(t, "data.ars_server=%u\ndata.radio_check_reply=%u\ndata.call_alert_ack=%u\ndata.lrrp_reply=%u\n",
 		(unsigned)set.arsServer, set.radioCheckReply, set.callAlertAck, set.lrrpReply);
 	dl_text(t, "data.has_gps=%u\ndata.lrrp_triggers=%u\n", set.hasGps, (unsigned)dmrDataServiceLrrpTriggerCount());
+	// Data privacy (dmr-data.md 13): packets decrypted, encrypted ones dropped, lists sent encrypted, lists held back
+	dl_text(t, "data.privacy_rx=%u\ndata.privacy_rx_dropped=%u\ndata.privacy_tx=%u\ndata.privacy_blocked=%u\n",
+		(unsigned)s.rxPrivacy, (unsigned)s.rxPrivacyDropped, (unsigned)s.txPrivacy, (unsigned)s.txPrivacyBlocked);
 	return;
 counters:
 	dl_text(t, "data.rx_bursts=%u\ndata.rx_csbk=%u\ndata.rx_headers=%u\ndata.rx_blocks=%u\n", (unsigned)s.rxBursts,
@@ -214,7 +217,10 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		set.radioCheckReply = (a[4] & 1u) != 0;
 		set.callAlertAck = (a[4] & 2u) != 0;
 		set.lrrpReply = (a[4] & 4u) != 0;
-		set.smsFormat = (a[4] & 32u) ? DMR_SMS_FORMAT_ETSI_IP : (a[4] & 8u) ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
+		uint8_t fmt = a[4] & (32u | 8u);
+		set.smsFormat = fmt == (32u | 8u) ? DMR_SMS_FORMAT_DEFAULT :
+				fmt == 32u ? DMR_SMS_FORMAT_ETSI_IP :
+				fmt == 8u ? DMR_SMS_FORMAT_ETSI : DMR_SMS_FORMAT_TMS;
 		set.radioCheckEtsi = (a[4] & 16u) != 0;
 		if (!codeplug_keys_store(radio_keys, RADIO_KEYS_N, &was, &set)) {
 			st = DL_ST_BUSY;
@@ -243,7 +249,8 @@ size_t debuglink_cmd_dmr_data(const uint8_t *req, uint16_t len, uint8_t *out, si
 		put32(out + 5, m.dst);
 		out[9] = m.group;
 		out[10] = (uint8_t)((m.unread ? 1u : 0u) | (m.format == DMR_SMS_FORMAT_ETSI ? 2u : 0u) |
-				    (m.format == DMR_SMS_FORMAT_ETSI_IP ? 4u : 0u));
+				    (m.format == DMR_SMS_FORMAT_ETSI_IP ? 4u : 0u) |
+				    (m.format == DMR_SMS_FORMAT_T3_UDT ? 8u : 0u));
 		memcpy(out + 11, m.text, tl);
 		return 11u + tl;
 	}

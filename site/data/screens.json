@@ -40,6 +40,24 @@
     "FM"
    ]
   },
+  "home_gps_off": {
+   "group": "home",
+   "needs": [
+    "GPS"
+   ]
+  },
+  "home_gps_search": {
+   "group": "home",
+   "needs": [
+    "GPS"
+   ]
+  },
+  "home_gps_fix": {
+   "group": "home",
+   "needs": [
+    "GPS"
+   ]
+  },
   "home_dmr": {
    "group": "home",
    "needs": [
@@ -212,6 +230,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "incoming-call": {
+   "group": "calls",
+   "needs": [
+    "DMR_TRUNK_TX"
    ]
   },
   "caller_actions": {
@@ -723,6 +747,30 @@
     "APRS_RX"
    ]
   },
+    "satellite": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_passes": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_passes_predicting": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
+    "satellite_tle_text": {
+     "group": "tools",
+     "needs": [
+        "SATELLITE_TLE"
+     ]
+    },
   "gps_sky": {
    "group": "tools",
    "needs": [
@@ -866,6 +914,24 @@
   "about": {
    "group": "settings",
    "needs": []
+  },
+  "settings_signaling": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "signaling_steps": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
+  },
+  "signaling_step_edit": {
+   "group": "settings",
+   "needs": [
+    "UI_SETTINGS"
+   ]
   }
  }
 }

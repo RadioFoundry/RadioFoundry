@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // Time base (docs/spec/hardware-dm32.md 3.4): timer 2 runs free at APB 84 MHz with its interrupt masked and is read as
 // a cycle counter, so the millisecond clock works before the scheduler and inside critical sections. Its 32-bit count
 // wraps every 51 s; every read folds the cycles since the last one into microsecond and millisecond counts (32 bits,
 // the remainders carried: no 64-bit division) and the RTOS tick hook reads it every millisecond.
-// Timer 1 is the RTOS tick, timer 3 the DMR PA one-shot (hrc_timer_oneshot), timer 4 the AFSK FIFO top-up.
+// Timer 1 is the RTOS tick, timer 3 the DMR PA one-shot (hrc_timer_oneshot), timer 4 the AFSK FIFO top-up,
+// timer 5 a board's burst waits and timer 6 the PCM FIFO's space checks / deferred writes.
 #include "config.h"
 #include "platform.h"
 #include "hal_time.h"

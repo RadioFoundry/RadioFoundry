@@ -20,8 +20,8 @@ import { getName, putName } from "./fields.js";
 import { KINDS, kindRow, typeRow, radioRuns } from "./modes.js";
 import { u16, u32, put16, put32, sameBytes, sameValue, nameCheck } from "./modebytes.js";
 
-export const MODE_KEY = { system: 0x0100, entry: 0x0200, secret: 0x0300, tag: 0x0400, setting: 0x0A00 };
-export const MODE_LIMITS = { systems: 255, entries: 256, tags: 1024, name: 16 };
+export const MODE_KEY = { system: 0x0100, entry: 0x0200, secret: 0x0300, tag: 0x0400, setting: 0x0A00, traffic: 0x1900 };
+export const MODE_LIMITS = { systems: 255, entries: 256, tags: 1024, traffic: 1024, name: 16 };
 export const TAG = { tx: 0x01, baseOwn: 0x02, fallback: 0x04, reserved: 0x08 };
 export const SYS = { needsKey: 0x01, tx: 0x02 };
 export const SHARE = { off: 0, identity: 1, whole: 2 };
@@ -74,7 +74,7 @@ export function decodeEntryRecord(v) {
 // the same system
 export function identityKey(s) {
 	const row = typeRow(s.type);
-	if (!row) return null;
+	if (!row?.module.idLen) return null;
 	const b = row.module.encode(s.fields, null).subarray(0, row.module.idLen);
 	return `${s.type}:${[...b].join(",")}`;
 }
@@ -118,7 +118,7 @@ export function decodeModes(m, b) {
 			number: n + 1, type: h.type, name: h.name, sharing: h.sharing, ownId: h.ownId,
 			tx: (h.flags & SYS.tx) !== 0, needsKey: (h.flags & SYS.needsKey) !== 0, flagsRaw: h.flags,
 			fallback: null, fbChan: h.fbChan, fbCheck: h.fbCheck,
-			fields: mod ? mod.decode(h.block) : null, entries: [],
+			fields: mod ? mod.decode(h.block) : null, entries: [], trafficKeys: [],
 			secret: sec ? (mod?.secret?.decode(sec) ?? { raw: sec }) : null, raw,
 		});
 	}
@@ -128,6 +128,12 @@ export function decodeModes(m, b) {
 		const s = e && m.systems.find((x) => x.number === e.system + 1);
 		if (s) s.entries.push(decodeEntry(s, e, value));
 		else m.orphanEntries.push(value);
+	}
+	for (const { key, value } of entries) {
+		if (!inFamily(key, MODE_KEY.traffic, MODE_LIMITS.traffic)) continue;
+		const s = m.systems.find((x) => x.number === value[0] + 1);
+		const traffic = typeRow(s?.type)?.module.traffic?.decode(value);
+		if (traffic) s.trafficKeys.push({ ...traffic, slot: key });
 	}
 	for (const c of m.channels) {
 		c.kind = 0;
@@ -196,13 +202,23 @@ export function setKind(m, c, kind, mode = "dmr") {
 	setKind(m, c, 0);
 	Object.assign(c, { kind, system: null, tagTx: mod.defaultTx && tx, baseOwn: false, fallback: null, params: mod.newParams(), tagRaw: null });
 	for (const k of Object.keys(mod.flags ?? {})) c[k] = false;
-	if (mod.systemType) c.system = m.systems.find((s) => s.type === mod.systemType) ?? null;
+	if (mod.systemType && !mod.optionalSystem) c.system = m.systems.find((s) => s.type === mod.systemType) ?? null;
 	Object.assign(c, standIn(m, c));
 }
 
 export function newSystem(m, type, name) {
 	const mod = typeRow(type).module;
-	return { number: null, type, name, sharing: SHARE.identity, ownId: 0, tx: mod.defaultTx, needsKey: false, flagsRaw: 0, fallback: null, fields: mod.newFields(), entries: [], secret: null, raw: null };
+	return { number: null, type, name, sharing: SHARE.identity, ownId: 0, tx: mod.defaultTx, needsKey: false, flagsRaw: 0, fallback: null, fields: mod.newFields(), entries: [], trafficKeys: [], secret: null, raw: null };
+}
+
+// A system of the type's recommended ham setup (the module's ham: docs/spec/ham-trunking.md), with what the user gave:
+// {name, rxHz, txHz (0: as RX), and the setup's asks}. Null when the type has none
+export function newHamSystem(m, type, given) {
+	const ham = typeRow(type)?.module.ham;
+	if (!ham) return null;
+	const s = newSystem(m, type, given.name || ham.name);
+	const a = { ...given, txHz: given.txHz || given.rxHz };
+	return Object.assign(s, { tx: ham.tx, needsKey: false, fields: ham.fields(), entries: ham.entries(a) });
 }
 
 // --- Writing ---
@@ -267,7 +283,7 @@ function encodeEntry(s, e) {
 
 // The settings area's entries with the model's modes in place of those stored. baseNames: a function that gives the
 // names of the channels the image the model came from stores, by number (model.js knows the record layout)
-export function modeEntries(m, entries, baseNames = () => new Map()) {
+export function modeEntries(m, entries, baseNames = () => new Map(), sizing = false) {
 	let out = entries;
 	const set = (key, v) => {
 		if (!sameBytes(getValue(out, key), v)) out = setValue(out, key, v);
@@ -296,6 +312,34 @@ export function modeEntries(m, entries, baseNames = () => new Map()) {
 		if (s.secret == null) del(skey);
 		else if (s.secret.raw) set(skey, s.secret.raw);
 		else if (!(sp && sameValue(sec.decode(sp), s.secret))) set(skey, sec.encode(s.secret, sp));
+	}
+
+	// Keep opaque traffic records and preserve the slots of keys the editor can read.
+	const pending = [], overflow = [];
+	for (const s of systems) {
+		const codec = typeRow(s.type)?.module.traffic;
+		if (!codec) continue;
+		for (const k of s.trafficKeys ?? []) {
+			const value = codec.encode(s.number - 1, k);
+			if (k.slot != null) set(k.slot, value);
+			else pending.push(value);
+		}
+	}
+	for (const e of entries) {
+		if (!inFamily(e.key, MODE_KEY.traffic, MODE_LIMITS.traffic)) continue;
+		const owner = decodeSystemRecord(getValue(entries, MODE_KEY.system + e.value[0]));
+		const codec = typeRow(owner?.type)?.module.traffic;
+		if (!codec) continue;
+		const s = systems.find((x) => x.number === e.value[0] + 1);
+		if (!s?.raw || (codec.decode(e.value) && !s.trafficKeys?.some((k) => k.slot === e.key))) del(e.key);
+	}
+	const occupied = new Set(out.map((e) => e.key));
+	let slot = MODE_KEY.traffic;
+	for (const value of pending) {
+		while (occupied.has(slot)) slot++;
+		if (inFamily(slot, MODE_KEY.traffic, MODE_LIMITS.traffic)) set(slot++, value);
+		else if (sizing) overflow.push({ value });
+		else throw new Error("Traffic-key record limit exceeded");
 	}
 
 	// Entries: the family rewritten from 0x0200 up, in system order, when any record changed
@@ -347,7 +391,7 @@ export function modeEntries(m, entries, baseNames = () => new Map()) {
 		if (v) set(key, v);
 		else del(key);
 	}
-	return out;
+	return overflow.length ? [...out, ...overflow] : out;
 }
 
 // The model's modes written into the image's settings area, only when they change it. An area of a newer version is
@@ -365,7 +409,7 @@ export function encodeModes(m, b, baseNames) {
 export function modeAreaUse(m, b, baseNames) {
 	const area = decodeArea(b);
 	const entries = area.state === "valid" ? dedupe(area.entries) : [];
-	let out = modeEntries(m, entries, baseNames);
+	let out = modeEntries(m, entries, baseNames, true);
 	for (const row of KEYS) if (m.general?.[row.name] != null && !getValue(out, row.key)) out = [...out, { key: row.key, value: new Uint8Array(row.size) }];
 	const hdr = area.state === "valid" ? b[KV_ADDR + 5] : KV_HDR;
 	return { used: out.reduce((n, e) => n + 4 + e.value.length, 0), max: KV_SIZE - hdr };
@@ -381,6 +425,10 @@ export function removeModes(m, table, gone) {
 	} else if (table === "systems") {
 		for (const c of m.channels) {
 			if (!c.kind || !gone.has(c.system)) continue;
+			if (kindRow(c.kind)?.module.optionalSystem) {
+				c.system = null;
+				continue;
+			}
 			setKind(m, c, 0, "dmr");
 			c.rxOnly = true;
 		}
@@ -406,7 +454,9 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		const mod = row.module;
 		if (!s.name) err(S, s, "name", "no_name");
 		if (s.name.length > MODE_LIMITS.name) err(S, s, "name", "too_long", { max: MODE_LIMITS.name });
-		if (!(Number.isInteger(s.ownId) && s.ownId >= 0 && s.ownId <= 0xFFFFFFFF)) err(S, s, "ownId", "range", { min: 0, max: 0xFFFFFFFF });
+		const ownIdMax = mod.ownIdMax ?? 0xFFFFFFFF;
+		if (!(Number.isInteger(s.ownId) && s.ownId >= 0 && s.ownId <= ownIdMax))
+			err(S, s, "ownId", "range", { min: mod.ownIdMax == null ? 0 : 1, max: ownIdMax });
 		const problem = { err: (f, code, p = {}) => err(S, s, f, code, p), warn: (f, code, p = {}) => warn(S, s, f, code, p) };
 		mod.validate(s, s.fields, s.entries, problem);
 		if (mod.classes.some((c) => c.control) && !s.entries.some((e) => e.cls === 0 && e.control)) warn(S, s, "entries", "mode_no_control");
@@ -415,6 +465,7 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		if (typeof s.fallback === "number") warn(S, s, "fallback", "mode_fallback_stale", { number: s.fallback });
 		else if (s.fallback?.kind) warn(S, s, "fallback", "mode_fallback_kind");
 		const id = identityKey(s);
+		if (id == null) continue;
 		if (ids.has(id)) warn(S, s, "fields", "mode_same_identity", { other: ids.get(id).name });
 		else ids.set(id, s);
 	}
@@ -428,9 +479,9 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		if (features != null && !radioRuns(features, c.kind)) warn("channels", c, "mode", "mode_not_in_radio", { mode: row.short });
 		const mod = row.module;
 		if (mod.systemType) {
-			if (!c.system) err("channels", c, "system", "mode_no_system");
+			if (!c.system && !mod.optionalSystem) err("channels", c, "system", "mode_no_system");
 			else if (typeof c.system === "number") warn("channels", c, "system", "mode_system_missing", { number: c.system });
-			else if (c.system.type !== mod.systemType) err("channels", c, "system", "mode_system_type");
+			else if (c.system && c.system.type !== mod.systemType) err("channels", c, "system", "mode_system_type");
 		}
 		if (typeof c.fallback === "number") warn("channels", c, "fallback", "mode_fallback_stale", { number: c.fallback });
 		else if (c.fallback?.kind) warn("channels", c, "fallback", "mode_fallback_kind");
@@ -455,7 +506,7 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 // --- Secrets (8) ---
 
 // The families that hold secrets: system secrets and traffic keys
-const SECRET_FAMILIES = [[MODE_KEY.secret, 0x100], [0x1900, 0x400]];
+const SECRET_FAMILIES = [[MODE_KEY.secret, 0x100], [MODE_KEY.traffic, MODE_LIMITS.traffic]];
 const isSecret = (key) => SECRET_FAMILIES.some(([b, n]) => inFamily(key, b, n));
 
 // How many secrets an image's settings area holds

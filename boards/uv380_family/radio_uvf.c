@@ -24,6 +24,7 @@
 #include "radio/pa_keyup.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
+#include "hrc/i2s_pcm.h"
 #include "dmr_uvf.h"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -95,6 +96,9 @@ static struct {
 	volatile uint8_t rf_page;	// AT1846S page last written to reg 0x7F, 0xFF unknown
 	volatile int8_t rf_ref;		// calibrated HR_C6000 MOD1 offset (4:0x04) for the RX frequency
 	volatile bool rf_direct;	// this burst was keyed without the idle step: 4:0x04 raised, the receiver not retuned
+	bool (*sfr_repeats)(void);	// asked at each burst: an SFR repeats now, direct keying allowed (dmr_direct_query)
+	volatile bool keyed_direct;	// the last burst went straight from RX (hal_radio_t.dmr_keying)
+	volatile uint32_t keyed_n[2];	// bursts keyed through idle [0] and straight from RX [1] since boot
 	volatile bool rf_key_pending;	// TIM7 runs this burst's key-up points
 	pa_keyup_point_t key_pt[PA_KEYUP_POINTS];	// the transmission's, earliest first, set before it is armed
 	pa_keyup_step_t key_st[PA_KEYUP_POINTS_MAX];	// and as TIM7's steps (pa_keyup_steps)
@@ -444,7 +448,9 @@ static bool rf_key(void)
 	uint32_t hz = r.dmr_tx_hz;
 	r.rf_isr_dirty = true;
 	int8_t ref;
-	if (!r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
+	// Direct only for an SFR role: its fixed MOD1 correction left the carrier 178-554 Hz low on two DM-1701s at 433.45
+	// MHz (measured on an SDR), enough for a hotspot to reject the call; through idle the carrier is right
+	if ((r.sfr_repeats != NULL) && r.sfr_repeats() && !r.rf_rx_pending && hz == r.rx_hz && r.rf_tuned_hz == r.rx_tune_hz &&
 	    uvf_direct_tx_ref(hz, r.rf_ref, (int32_t)(r.rx_tune_hz - hz), &ref)) {	// the DMR receive offset
 		// Direct (SFR, simplex): the receiver on the TX frequency goes straight to DMR TX, which puts the carrier
 		// about 3.07 kHz low; the raised MOD1 offset puts it back (uvf_direct_tx_ref)
@@ -454,12 +460,16 @@ static bool rf_key(void)
 		}
 		(void)hrc_write(&r.modem, 4, 0x04, (uint8_t)ref);
 		r.rf_direct = true;
+		r.keyed_direct = true;
+		r.keyed_n[1]++;
 		goto pa;
 	}
 	// Otherwise tune with the receiver off, then straight to TX (gotchas 3.5): a frequency write applies only coming
 	// out of idle. The extra writes cost about 0.25 ms per burst
 	uint32_t word = at1846s_freq_word(hz);
 	r.rf_tuned_hz = 0;
+	r.keyed_direct = false;
+	r.keyed_n[0]++;
 	bool ok = rf_isr_write(0x30, at1846s_state_value(rf_bw(r.rx_bw), AT1846S_STATE_IDLE))
 		&& rf_isr_write(0x29, (uint16_t)((word >> 16) & 0x3FFFu))
 		&& rf_isr_write(0x2A, (uint16_t)(word & 0xFFFFu));
@@ -663,6 +673,13 @@ static void rf_resync(void)
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
 }
 
+// The chip in FM receive: its line out plays its own FM audio and no I2S PCM, so a beep goes through its prompt FIFO
+// (i2s_pcm.c, modem-hrc6000.md 8). Off before a DMR set-up or a transmission, on after the FM receive rows
+static void fifo_fm(bool on)
+{
+	stm32_i2s_pcm_fm_chip(on ? &r.modem : NULL);
+}
+
 // HR_C6000 into DMR (modem-hrc6000.md 3.1) with the DMR modulation pair for the frequency, then the slot engine
 static void dmr_enter(void)
 {
@@ -778,6 +795,7 @@ static void init(void)
 	r.mode = RADIO_MODE_FM;
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
+	fifo_fm(true);
 	audio(false);
 	r.diag.c6000_ok = hrc_read(&r.modem, 4, 0x10, &r.diag.c6000_r10);
 	stm32_hrc_dmr_init(&r.modem, &dmr_board);
@@ -807,6 +825,7 @@ static void set_mode(radio_mode_t mode)
 {
 	radio_mode_t prev = r.mode;
 	r.mode = mode;
+	fifo_fm(false);
 	if (r.rx_valid) {
 		r.rx_tune_hz = rx_tune(r.rx_hz);	// the receive offset follows the mode, not only the next rx()
 	}
@@ -822,11 +841,13 @@ static void set_mode(radio_mode_t mode)
 			stm32_hrc_dmr_leave();
 			rf_resync();	// retunes only after DMR bursts; rx_retune below otherwise
 			r.tx_on = false;
+			uvf_backlight_tx(false);
 		}
 		count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 		rx_retune();
 		if (!r.tx_on) {
 			count(hrc6000_set_mode_fm_rx(&r.modem));
+			fifo_fm(true);
 		}
 	}
 	apply_rx_tone();	// the mode table rewrote reg 0x3A
@@ -954,6 +975,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	r.rf_direct = false;
 	if (r.mode == RADIO_MODE_FM) {
 		count(hrc6000_set_mode_fm_rx(&r.modem));
+		fifo_fm(true);
 	} else if (!same) {
 		// New channel: the DMR modulation pair for it, and the receiver searches again (5.1). Back from our own
 		// transmission on the same channel the engine has already restarted it, or kept a repeater's timing
@@ -961,6 +983,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 		stm32_hrc_dmr_rx_restart();
 	}
 	r.tx_on = false;
+	uvf_backlight_tx(false);
 	return true;
 }
 
@@ -977,10 +1000,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	if (band == NULL || !band->tx) {
 		return false;
 	}
-	if (uvf_variant.tx_block != NULL && uvf_variant.tx_block() != NULL) {
-		return false;	// an image for another hardware version: its PA band select may be this radio's backlight
-	}
 	bool uhf = hz >= UHF_MIN_HZ;
+	fifo_fm(false);		// keyed: no beep from the speaker into the microphone
 	if (board.power_count > 0 && power >= board.power_count) {
 		power = (uint8_t)(board.power_count - 1);
 	}
@@ -1016,6 +1037,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		__DMB();
 		r.dmr_armed = true;
 		r.tx_on = true;
+		uvf_backlight_tx(true);
 		return true;
 	}
 
@@ -1043,6 +1065,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
+	uvf_backlight_tx(true);	// the TX rate before the PA comes on
 	apc_set(drive);
 	PIN_WRITE(PIN_PA_EN1, true);
 	PIN_WRITE(PIN_PA_BAND, uhf);
@@ -1070,6 +1093,8 @@ static void tx_end(bool keep)
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_IDLE));
 	count(hrc6000_set_mode_fm_rx(&r.modem));
 	r.tx_on = false;
+	fifo_fm(true);	// the chip is in FM receive now, whatever r.mode says, until rx() sets it up
+	uvf_backlight_tx(false);
 }
 
 static void tx_off(void)
@@ -1126,12 +1151,35 @@ static void status(radio_status_t *st)
 	r.last_status = *st;
 }
 
-// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 dB of HR_C6000 RX gain
+// Soft volume (hardware-dm1701.md 11.2, 17): the knob's 0..100 % maps linearly to -31..+31 HR_C6000 RX gain steps,
+// which scale the PCM path (beeps, DMR voice) too
+static int volume_gain_step(uint8_t percent)
+{
+	return (int)percent * 62 / 100 - 31;
+}
+
+// The level at the speaker of a fixed PCM tone at each of those gain steps, -31..+31, in tenths of a dB from step 0
+// (measured, hardware-dm1701.md 11.2): about 0.77 dB a step over the whole range
+static const int16_t rx_gain_db10[63] = {
+	-243, -235, -227, -219, -211, -203, -195, -188, -180,
+	-172, -164, -156, -148, -141, -133, -125, -117, -109,
+	-101, -93, -86, -78, -70, -62, -54, -47, -39,
+	-31, -23, -16, -8, 0, 9, 16, 24, 32,
+	40, 48, 55, 62, 70, 78, 86, 93, 101,
+	108, 116, 123, 131, 139, 146, 154, 162, 169,
+	179, 186, 193, 201, 208, 216, 223, 231, 238,
+};
+
+static int16_t volume_db10(uint8_t percent)
+{
+	return rx_gain_db10[volume_gain_step(percent > 100 ? 100 : percent) + 31];
+}
+
 static void volume(uint8_t percent)
 {
 	// At the bottom the amp is off (speaker_apply), so the gain stays at unity: the I2S copy of the FM audio that
 	// APRS receive reads is scaled by it too
-	int db = percent == 0 ? 0 : (int)percent * 62 / 100 - 31;
+	int db = percent == 0 ? 0 : volume_gain_step(percent);
 	count(hrc6000_set_rx_gain(&r.modem, (int8_t)db));
 	if ((percent == 0) != volume_zero) {
 		volume_zero = percent == 0;
@@ -1281,6 +1329,19 @@ static void rx_sleep(bool sleep)
 	}
 }
 
+// SFR only (hal_radio_t.dmr_direct_query): rf_key asks at each burst whether it may key straight from RX
+static void dmr_direct_query(bool (*sfr_repeats)(void))
+{
+	r.sfr_repeats = sfr_repeats;
+}
+
+static void dmr_keying(hal_dmr_keying_t *k)
+{
+	k->last_direct = r.keyed_direct;
+	k->direct = r.keyed_n[1];
+	k->idle = r.keyed_n[0];
+}
+
 const hal_radio_t uvf_radio = {
 	.init = init,
 	.set_mode = set_mode,
@@ -1290,8 +1351,10 @@ const hal_radio_t uvf_radio = {
 	.dmr_tx_end = stm32_hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,
+	.rx_open = uvf_backlight_rx,	// the backlight's PWM reaches received audio only with a carrier (#544)
 	.volume = volume,
 	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
+	.volume_db10 = volume_db10,
 	.tx_tone = tx_tone,
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
@@ -1303,6 +1366,8 @@ const hal_radio_t uvf_radio = {
 #if CONFIG_REF_TRIM
 	.ref_trim = ref_trim,
 #endif
+	.dmr_direct_query = dmr_direct_query,
+	.dmr_keying = dmr_keying,
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
 };

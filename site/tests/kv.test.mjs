@@ -391,3 +391,59 @@ test("settings area: an edit sends only the keys it changed, onto the radio's ar
 	const full = withArea([e(0x7003, ...new Uint8Array(KV_SIZE - 16 - 4 - 8))]);
 	assert.throws(() => areaForWrite(added.bytes, full.bytes, none.bytes), RangeError);
 });
+
+// The signaling tone records (codeplug-settings.md 3.3): 32 bytes (the first version's 17 are the front), the first record keys
+import { RECORD_KEYS, SIG_REC_LEN, getRecord, recordValue, recordValid } from "../static/js/codeplug/kv.js";
+const [SIG_BEGIN, SIG_END, SIG_IDLE] = RECORD_KEYS;
+const pad = (a) => [...a, ...Array(10 - a.length).fill(0)];
+const rec = (over = {}) => ({ dmr: 4, fm: 2, hz: [1600, 0, 800, 3400, 10, 1060, 0, 0, 0, 2200], ms: [50, 0, 70, 600, 10, 70, 0, 0, 0, 90], ...over });
+
+test("signaling tone record: bytes, order and limits", () => {
+	assert.equal(SIG_REC_LEN, 32);
+	assert.deepEqual([...RECORD_KEYS.map((r) => r.key)], [7, 8, 9]);
+	const v = recordValue(rec());
+	assert.deepEqual([...v.subarray(0, 4)], [4, 2, 1600 & 0xFF, 1600 >> 8]);
+	assert.deepEqual([...v.subarray(12, 17)], [5, 0, 7, 60, 1], "lengths in units of 10 ms");
+	assert.deepEqual([...v.subarray(27)], [7, 0, 0, 0, 9], "steps 6 to 10 follow the first version's 17 bytes");
+	assert.deepEqual(getRecord([{ key: SIG_END.key, value: v.subarray(0, 17) }], SIG_END), rec({ hz: pad([1600, 0, 800, 3400, 10]), ms: pad([50, 0, 70, 600, 10]) }), "a first version record");
+	const entries = [{ key: SIG_END.key, value: v }];
+	assert.deepEqual(getRecord(entries, SIG_END), rec());
+	assert.equal(getRecord(entries, SIG_BEGIN), null, "absent");
+	// a short value reads with the missing fields zero; a longer one from the front
+	assert.deepEqual(getRecord([{ key: SIG_END.key, value: Uint8Array.of(3, 1) }], SIG_END), { dmr: 3, fm: 1, hz: pad([]), ms: pad([]) });
+	assert.deepEqual(getRecord([{ key: SIG_END.key, value: Uint8Array.from([...v, 9, 9]) }], SIG_END), rec());
+	// what the setting can't take reads as absent: no air copy of a reception's end, limits
+	assert.ok(recordValid(SIG_END, rec()) && !recordValid(SIG_IDLE, rec()) && recordValid(SIG_BEGIN, rec({ dmr: 4, fm: 4 })));
+	assert.ok(!recordValid(SIG_END, rec({ hz: pad([3401]) })) && !recordValid(SIG_END, rec({ ms: pad([910]) })) &&
+		!recordValid(SIG_END, rec({ ms: pad([15]) })) &&
+		!recordValid(SIG_END, rec({ hz: pad([1573]) })) && !recordValid(SIG_END, rec({ dmr: 5 })));
+	assert.equal(getRecord([{ key: SIG_END.key, value: recordValue(rec({ hz: pad([9000]) })) }], SIG_END), null);
+});
+
+test("signaling tone record: set from the front, kept bytes, other keys untouched", () => {
+	const longer = Uint8Array.from([...recordValue(rec()), 0xAB, 0xCD]);
+	const img = withArea([e(0x7001, 1), { key: SIG_END.key, value: longer }]);
+	assert.equal(putKeys(img.bytes, { sigEnd: rec({ dmr: 1 }) }), true);
+	const entries = decodeArea(img.bytes).entries;
+	assert.deepEqual([...getValue(entries, SIG_END.key).subarray(0, 2)], [1, 2]);
+	assert.deepEqual([...getValue(entries, SIG_END.key).subarray(32)], [0xAB, 0xCD], "a later version's fields stay");
+	assert.deepEqual(getValue(entries, 0x7001), Uint8Array.of(1));
+	assert.equal(putKeys(img.bytes, { sigEnd: null }), true);
+	assert.equal(getValue(decodeArea(img.bytes).entries, SIG_END.key), null);
+	assert.equal(getValue(decodeArea(img.bytes).entries, 0x7001) !== null, true);
+});
+
+test("general settings: the signaling tone records, absent until set", () => {
+	const m = empty();
+	assert.equal(m.general.sigBegin, null);
+	assert.ok(area(encode(m)).every((x) => x === 0xFF), "an untouched codeplug stays without an area");
+	m.general = { ...m.general, sigIdle: rec({ dmr: 2, fm: 1 }) };
+	assert.deepEqual(validate(m).filter((p) => p.code === "sig_range"), []);
+	const back = decode(encode(m)).general;
+	assert.deepEqual(back.sigIdle, rec({ dmr: 2, fm: 1 }));
+	assert.equal(back.sigBegin, null);
+	m.general = { ...m.general, sigEnd: rec({ hz: pad([5000]) }) };
+	assert.equal(validate(m).filter((p) => p.code === "sig_range" && p.field === "sigEnd").length, 1);
+	const bad = decode(encode(m)).general;
+	assert.equal(bad.sigEnd, null, "a value out of range is not written");
+});

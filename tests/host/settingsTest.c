@@ -135,6 +135,7 @@ static void test_settings_basic(void)
 	CHECK(st.load == SETTINGS_DEFAULTS && st.seq == 0);
 	settings_read(&s);
 	CHECK(s.brightness == 100 && s.squelch == SETTINGS_UNSET8 && s.beeps == 1);
+	CHECK(s.satellite_index == SETTINGS_UNSET8);
 	CHECK((s.accent & SETTINGS_AUDIO_MASK) == 0);	// noise reduction on, AGC off (a record from before them: also 0)
 	// Zone shares accepted by default, and by a record that stored the old Off (0) or Ask (1); only 2 turns them off
 	CHECK(s.zs_offers == 0 && settings_zs_accept(&s));
@@ -530,10 +531,11 @@ static void test_native_and_jobs(void)
 	sim_flash_power_on();
 	CHECK(memcmp(&sim_flash_data[na], magic, 4) == 0 && sim_flash_data[na + 0x6000u] == 0xFF);
 	CHECK(storage_native_erase() == STORAGE_NATIVE_ERASED && sim_flash_data[na + 0x1000u] == 0xFF);
-	// No native area in the map: refused
+	// No native area in the map (a small chip's): nothing to empty, so a factory reset doesn't stop on it
 	sim_flash_create(FLASH_SIZE, &map);
 	boot();
-	CHECK(storage_native_erase() == STORAGE_NATIVE_FAILED);
+	e0 = sim_flash_units();
+	CHECK(storage_native_erase() == STORAGE_NATIVE_BLANK && sim_flash_units() == e0);
 
 	// Jobs: one at a time, run by the poll, then the next may come
 	int one = 1;
@@ -667,6 +669,10 @@ static void test_map_end(void)
 	m.staging_addr = 0xF40000u;
 	m.staging_size = 0x40000u;
 	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
+	m.staging_size = 0x3D000u;
+	m.satellite_addr = 0xF7D000u;
+	m.satellite_size = 0x3000u;
+	CHECK(hal_flash_map_end(&m, 4096) == 0xF80000u);
 	hal_flash_map_t low = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
 				.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x10000u };
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);		// the journal's 2 erase units end it
@@ -677,6 +683,25 @@ static void test_map_end(void)
 	low.calibration_size = 0;			// an area of size 0 is none, wherever its address points
 	low.staging_addr = 0x80000u;
 	CHECK(hal_flash_map_end(&low, 4096) == 0x1B000u);
+}
+
+// hal_flash_map_for: a board with two chip sizes (a 16 MB map and a 1 MB one) gets the map its chip holds, and a chip
+// smaller than both gets none. Before the small map, a 1 MB part stored nothing and lost its settings at every restart
+static void test_map_for(void)
+{
+	const hal_flash_map_t big = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+				      .openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0xE00000u,
+				      .native_addr = 0xE00000u, .native_size = 0x100000u,
+				      .staging_addr = 0xF00000u, .staging_size = 0x40000u };
+	const hal_flash_map_t small = { .settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+					.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x100000u };
+	CHECK(hal_flash_map_for(&big, &small, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(&big, &small, 0x800000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x100000u, 4096) == &small);
+	CHECK(hal_flash_map_for(&big, &small, 0x80000u, 4096) == NULL);
+	CHECK(hal_flash_map_for(&big, NULL, 0x100000u, 4096) == NULL);		// a board with one map: as before
+	CHECK(hal_flash_map_for(&big, NULL, 0x1000000u, 4096) == &big);
+	CHECK(hal_flash_map_for(NULL, NULL, 0x1000000u, 4096) == NULL);
 }
 
 // The crash report's mode and target live in spare bits of accent, theme and updown_home (settings.h): each field
@@ -706,8 +731,8 @@ static void test_crash_bits(void)
 	settings_set_crash_mode(&s, 1);
 	CHECK(settings_crash_mode(&s) == 1 && (s.accent & 0x0F) == (5 | SETTINGS_ACCENT_PLAIN) && !(s.accent & 0xC0));
 	CHECK(!(s.updown_home & 0x80));		// bit 7 stays free
-	s.theme = 3;				// out of range in bits 0-1: the default
-	CHECK(settings_theme(&s) == 0);
+	s.theme = 0xFF;				// bits 0-1 have no out-of-range value: 3 is the night theme
+	CHECK(settings_theme(&s) == 3);
 }
 
 // The Settings > Sound tones share sound_flags with the knob lock: each keeps its bits, and firmware from before the
@@ -897,7 +922,15 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, zone_jrn_index), 272 },
 		{ offsetof(settings_t, zone_jrn_count), 274 },
 		{ offsetof(settings_t, zone_jrn_kind), 276 },
+		{ offsetof(settings_t, t3_stun), 396 },
+		{ offsetof(settings_t, t3_kill), 397 },
+		{ offsetof(settings_t, satellite_index), 398 },
+		{ offsetof(settings_t, reserved10), 399 },
+		{ offsetof(settings_t, sig_dmr), 400 },
+		{ offsetof(settings_t, sig_fm), 403 },
+		{ offsetof(settings_t, reserved11), 406 },
 	};
+	CHECK(sizeof(settings_t) == 408);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
@@ -1193,6 +1226,7 @@ int main(void)
 	test_crash_bits();
 	test_sound_flags();
 	test_map_end();
+	test_map_for();
 	test_settings_pages();
 	test_settings_gateway_upgrade();
 	test_settings_power_levels();

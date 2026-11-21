@@ -8,6 +8,7 @@
 #include "config.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/fec/dmrFec.h"
+#include "fec/rx_seen.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -140,6 +141,7 @@ static struct {
 	uint8_t queue_cap;	// the modem's free queue space right after tx_begin
 	bool stop_req;
 	bool tot_hit;
+	uint8_t tail_holds;		// superframe boundaries passed with the source's tail still to send (voice_source_t.busy)
 	bool ceased;		// the reverse channel stopped this over (rc_heard)
 	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
@@ -183,6 +185,7 @@ static struct {
 	void *data_rx_ctx;
 	dmr_rx_tap_fn rx_tap;
 	void *rx_tap_ctx;
+	rx_seen_t lc_seen;	// listen.accept_bad_crc: LCs that failed their check lately
 } s;
 #if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
@@ -999,13 +1002,23 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_BYTES])
 {
 	// The LC from the burst's own info bits (the modem's LC buffer may still hold the previous call, gotcha 1.4)
-	if (b->len >= DMR_LC_FULL_BYTES)
-		return dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0;
-	if (b->lc_valid && b->crc_ok) {
-		memcpy(lc, b->lc, DMR_LC_BYTES);
+	bool full = b->len >= DMR_LC_FULL_BYTES;
+	if (full ? dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0 :
+		   b->lc_valid && b->crc_ok) {
+		if (!full) {
+			memcpy(lc, b->lc, DMR_LC_BYTES);
+		}
 		return true;
 	}
-	return false;
+	// The channel's Accept invalid CRC: an LC that fails its check is taken when the same LC failed lately (a system
+	// that sends every LC that way repeats it; noise rarely does). The RS code is systematic: the LC is the first 9
+	const uint8_t *raw = full ? b->payload : b->lc;
+	if (!s.cfg.listen.accept_bad_crc || !rx_seen(&s.lc_seen, raw, DMR_LC_BYTES)) {
+		return false;
+	}
+	memcpy(lc, raw, DMR_LC_BYTES);
+	stats.rx_lc_taken++;
+	return true;
 }
 
 // A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A is
@@ -1285,6 +1298,14 @@ static void tx_superframe_lc(void)
 		stats.tx_alias_lcs++;
 }
 
+// At a superframe boundary after PTT was let go: whether the source has a tail (an end tone) to send first. A
+// time-out ends the over at once, and a tail that doesn't end is cut after DMR_CALL_TX_TAIL_HOLDS boundaries
+static bool tx_tail_hold(void)
+{
+	return !s.tot_hit && s.tail_holds < DMR_CALL_TX_TAIL_HOLDS && s.source && s.source->busy &&
+	       s.source->busy(s.source->ctx);
+}
+
 static void tx_fill(uint32_t now)
 {
 	while (s.tx == TX_ON) {
@@ -1301,7 +1322,7 @@ static void tx_fill(uint32_t now)
 			s.headers_left--;
 			continue;
 		}
-		if (s.stop_req && s.voice_index == 0) {
+		if (s.stop_req && s.voice_index == 0 && !tx_tail_hold()) {
 			tx_terminate(now, inflight);	// superframe boundary
 			return;
 		}
@@ -1328,6 +1349,8 @@ static void tx_fill(uint32_t now)
 		s.stage_n = 0;
 		if (s.voice_index == 0 && s.tx_sf < 255)
 			s.tx_sf++;
+		if (s.voice_index == 0 && s.stop_req)
+			s.tail_holds++;		// a superframe sent for the source's tail (tx_tail_hold)
 		s.voice_index = (uint8_t)((s.voice_index + 1) % 6);
 	}
 }
@@ -1385,6 +1408,7 @@ static void tx_start_voice(uint32_t now)
 	s.queued = s.started = 0;
 	s.stop_req = false;
 	s.tot_hit = false;
+	s.tail_holds = 0;
 	s.ceased = false;
 	s.rc_cease_ms = 0;
 	s.stage_n = 0;

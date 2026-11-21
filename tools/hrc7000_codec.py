@@ -128,6 +128,15 @@ PROFILES = {
         "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
         "entries": ENTRIES_049,
     },
+    # 01.01.047 as a second build (the file is dated 20250425): 15 words in the code window that aren't codec differ from 049's
+    "3e612db62507fc2901777ccc315fcbc4a0b9ca0a953c8f0cd34c39af4a39b4e4": {
+        "name": "DM32_047_20250425.bin", "board": "dm32", "tag": 47, "size": 869368,
+        "code": (0x030C673C, 0x14600, 0x00016CDC),
+        "tables": (0x030724E8, 0x2F78, 0x18000EA8),
+        "code_sha256": "cd44ff0ac0bb817b7fa1942021963697cba0d10266e6f17cf036dae16a23dbd8",
+        "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
+        "entries": ENTRIES_049,
+    },
     "fda860febfcf1a234eed7fa73272112891074aac83746e4f8dfe224a2a700f8f": {
         "name": "DM32.01.L01.048.bin", "board": "dm32", "tag": 48, "size": 860416,
         "code": (0x030C4444, 0x14600, 0x00016CDC),

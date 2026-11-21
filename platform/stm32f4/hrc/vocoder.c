@@ -20,12 +20,16 @@
 #define DEC_STATE_BYTES		0x7ECu
 #define ENC_STATE_BYTES		0x16E0u
 #define FEC_STATE_BYTES		0x44u
+#define STATE_BYTES		(ENC_STATE_BYTES > DEC_STATE_BYTES ? ENC_STATE_BYTES : DEC_STATE_BYTES)
 
 #define HALF			(VOCODER_FRAME_SAMPLES / 2)
 
-// CCM: CPU only, which is all the codec needs; not zeroed by the start-up code (reset() clears it)
-static uint32_t dec_state[DEC_STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
-static uint32_t enc_state[ENC_STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
+// CCM: CPU only, which is all the codec needs; not zeroed by the start-up code (enc_start() and dec_start() clear it).
+// One block holds the encoder's state or the decoder's, never both: DMR and NXDN voice are simplex, so a call only
+// encodes or only decodes (core/dmr/ambe/ambeVoice.c decodes nothing while a transmission runs). Each init touches only
+// its own block (codec-dm1701.md, "State sizes"), so the first encode after decoding, or the first decode after
+// encoding, builds its half fresh, as reset() did at the start of every call. Saves the 2 KB a second block took
+static uint32_t state[STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
 static uint32_t fec_state[FEC_STATE_BYTES / 4] __attribute__((section(".ccmram"), aligned(8)));
 static int16_t bitbuf[72] __attribute__((section(".ccmram"), aligned(4)));	// one bit per halfword
 static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((section(".ccmram"), aligned(4)));
@@ -33,7 +37,8 @@ static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((section(".ccmram"), 
 static int8_t presence = -1;			// -1 not checked yet
 static const stm32_codec_profile_t *prof;	// the build found
 static uint32_t base;				// the code's start, from the descriptor
-static bool ready;				// states initialized
+enum { HELD_NONE, HELD_ENC, HELD_DEC };
+static uint8_t held = HELD_NONE;		// what the state block holds now; NONE after reset()
 static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
 static uint32_t call(uint16_t off, uint32_t nargs, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t s0,
@@ -78,22 +83,17 @@ static bool present(void)
 	return presence == 1;
 }
 
-// The stock firmware's own init sequence, on our state blocks
-static void reset(void)
+// The init sequence (codec-dm1701.md, "Init") in its two halves, each on the shared block: the encoder's steps, or the
+// decoder's (with its first decode). The codec touches no fixed RAM address, so the halves don't depend on each other
+static void enc_start(void)
 {
-	if (!present()) {
-		return;
-	}
 	const stm32_codec_entries_t *at = &prof->at;
-	const uint32_t D = (uint32_t)dec_state, E = (uint32_t)enc_state;
-	memset(dec_state, 0, sizeof dec_state);	// stock keeps these in .bss: zero before init
-	memset(enc_state, 0, sizeof enc_state);
+	const uint32_t E = (uint32_t)state;
+	memset(state, 0, sizeof state);		// the codec expects a zeroed block
 	memset(fec_state, 0, sizeof fec_state);
 	memset(bitbuf, 0, sizeof bitbuf);
-
 	call(at->enc_init, 3, E, 1, 1, 0, 0, 0, 0, 0);
-	call(at->fec_init, 2, (uint32_t)fec_state, 1, 0, 0, 0, 0, 0, 0);	// stock: the encoder side's FEC state
-	call(at->dec_init, 2, D, 1, 0, 0, 0, 0, 0, 0);
+	call(at->fec_init, 2, (uint32_t)fec_state, 1, 0, 0, 0, 0, 0, 0);	// the encoder side's FEC state
 	{
 		const uint32_t args[CODEC_CALL_MAX_ARGS] = {
 			E, (uint32_t)-22, 20, (uint32_t)-10, (uint32_t)-40, 0x4000, 3276, 3276, 1310, 10, 20,
@@ -101,10 +101,26 @@ static void reset(void)
 		stm32_codec_call(base + at->enc_params, args, 11);
 	}
 	call(at->enc_set, 3, E, 128, (uint32_t)-20, 0, 0, 0, 0, 0);
+	held = HELD_ENC;
+}
+
+static void dec_start(void)
+{
+	const stm32_codec_entries_t *at = &prof->at;
+	const uint32_t D = (uint32_t)state;
+	memset(state, 0, sizeof state);
+	memset(bitbuf, 0, sizeof bitbuf);
+	call(at->dec_init, 2, D, 1, 0, 0, 0, 0, 0, 0);
 	call(at->dec_set, 3, D, 128, (uint32_t)-20, 0, 0, 0, 0, 0);
-	// Last, as stock: one decode of an all-zero frame with flags 8
+	// Last: one decode of an all-zero frame with flags 8
 	call(at->decode, 7, (uint32_t)pcmbuf, HALF, (uint32_t)bitbuf, 0, 8, 0, D, 0);
-	ready = true;
+	held = HELD_DEC;
+}
+
+// A fresh state for the next call: the next encode or decode builds its half (enc_start, dec_start)
+static void reset(void)
+{
+	held = HELD_NONE;
 }
 
 // Two calls per 20 ms frame, 80 samples each, half index 0 then 1. Both calls pass the same flags word, read once
@@ -116,14 +132,14 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 		memset(bits, 0, VOCODER_BITS);
 		return;
 	}
-	if (!ready) {
-		reset();
+	if (held != HELD_ENC) {
+		enc_start();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
 	const uint32_t flags = enc_flags;
 	for (uint32_t h = 0; h < 2; h++) {
 		call(prof->at.encode, 8, (uint32_t)bitbuf, 0, (uint32_t)&pcmbuf[h * HALF], HALF, flags, h, 0x2000,
-		     (uint32_t)enc_state);
+		     (uint32_t)state);
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bits[i] = (uint8_t)(bitbuf[i] & 1);
@@ -140,15 +156,15 @@ static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_S
 		memset(pcm, 0, VOCODER_FRAME_SAMPLES * sizeof(int16_t));
 		return;
 	}
-	if (!ready) {
-		reset();
+	if (held != HELD_DEC) {
+		dec_start();
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bitbuf[i] = bits[i] & 1;
 	}
 	for (uint32_t h = 0; h < 2; h++) {
 		call(prof->at.decode, 7, (uint32_t)&pcmbuf[h * HALF], HALF, (uint32_t)bitbuf, 0, 0, h,
-		     (uint32_t)dec_state, 0);
+		     (uint32_t)state, 0);
 	}
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }

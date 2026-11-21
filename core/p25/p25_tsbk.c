@@ -396,7 +396,6 @@ void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
 		arg_put(blk, 40, 24, m->src);
 		break;
 	case P25_ISP_GRP_AFF_REQ:
-		arg_put(blk, 0, 1, m->emergency);
 		arg_put(blk, 12, 12, m->sysid);
 		arg_put(blk, 24, 16, m->tg);
 		arg_put(blk, 40, 24, m->src);
@@ -426,7 +425,6 @@ bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m)
 		m->src = arg(blk, 40, 24);
 		break;
 	case P25_ISP_GRP_AFF_REQ:
-		m->emergency = arg(blk, 0, 1) != 0;
 		m->sysid = (uint16_t)arg(blk, 12, 12);
 		m->tg = (uint16_t)arg(blk, 24, 16);
 		m->src = arg(blk, 40, 24);

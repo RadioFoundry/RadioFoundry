@@ -66,6 +66,8 @@ SECTIONS
 		__data_end = .;
 	} >RAM AT>FLASH
 	__data_load = LOADADDR(.data);
+	/* the end of the .bin (the last section copied into it): the support info's image hash runs __app_base .. here */
+	__image_end = __data_load + SIZEOF(.data);
 
 	.bss (NOLOAD) :
 	{
@@ -73,9 +75,12 @@ SECTIONS
 		__bss_start = .;
 		*(.bss .bss.* .sbss .sbss.* COMMON)
 		*(.ram_lo .ram_lo.*)
+		*(.modem_bss .modem_bss.*)	/* the cold state (RFOUNDRY_COLD_RAM): ordinary bss here */
 		. = ALIGN(4);
 		__bss_end = .;
 	} >RAM
+	__modem_bss_start = __bss_end;	/* crt0's zeroing of it: empty, bss covers it */
+	__modem_bss_end = __bss_end;
 
 	/* crt0 zeroes this range too; here it only holds the interrupt stack */
 	.irqstack (NOLOAD) :

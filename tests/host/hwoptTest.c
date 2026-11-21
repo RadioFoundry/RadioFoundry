@@ -16,10 +16,9 @@ static int failures;
 
 static uint8_t radio_state = RS_IDLE;
 
-void radio_get_view(radio_view_t *v)
+radio_state_t radio_get_state(void)
 {
-	memset(v, 0, sizeof *v);
-	v->state = radio_state;
+	return (radio_state_t)radio_state;
 }
 
 static int8_t rev = HWOPT_NONE;

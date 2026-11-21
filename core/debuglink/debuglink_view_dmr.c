@@ -91,11 +91,17 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
 		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
-		radio_settings_t rs;
-		radio_get_settings(&rs);
-		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, rs.sfr_rx);
-		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", rs.sfr_cwid, d->sfr_cw,
+		uint8_t sfr_rx, sfr_cwid;
+		radio_get_sfr_settings(&sfr_rx, &sfr_cwid);
+		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, sfr_rx);
+		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", sfr_cwid, d->sfr_cw,
 			d->sfr_cwid_sent, d->sfr_cwid_cut);
+		if (board.radio->dmr_keying != NULL) {	// how the board keyed DMR bursts (hal_radio_t)
+			hal_dmr_keying_t k;
+			board.radio->dmr_keying(&k);
+			dl_text(t, "dmr.keyed_direct=%u\ndmr.keyed_direct_n=%u\ndmr.keyed_idle_n=%u\n", k.last_direct ? 1u : 0u,
+				(unsigned)k.direct, (unsigned)k.idle);
+		}
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);
@@ -140,8 +146,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			dmr_call_get_stats(&c);
 			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
 				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
-			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
-				(unsigned)c.rx_cc_dropped);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
+				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
 			// The reverse channel heard while sending: here, as dmr_stats fills a reply
 			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
 				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);

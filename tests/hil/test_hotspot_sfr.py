@@ -121,6 +121,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     radio.ptt_for(1.0)
     radio.wait_for(lambda x: x.get("state") != "tx", timeout=5, what="TX ended")
     v0 = radio.view(["hotspot", "sfr"])
+    k0 = radio.view(["dmr"])
     with sdr_bench.lease():
         watch = sdr_bench.dmr_watch_start(None, freq, 12, cc)
         with radio.released() as port:
@@ -137,6 +138,7 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
                 t.close()
         sdr = sdr_bench.dmr_watch_result(watch)
     v1 = radio.view(["hotspot", "sfr"])
+    k1 = radio.view(["dmr"])
     diag = [x for x in radio.link.diag()[1] if x.startswith(("txb ", "txh "))]
     up = [d for _, cmd, d in frames if cmd == M.DMR_DATA1]
     ctl = [d[3] for d in up if len(d) > 3]
@@ -174,6 +176,12 @@ def test_sfr_repeats_bench_call(radio, sdr_bench, pytestconfig):
     assert any(x["src"] == src and x["dst"] == tg for x in ts2_lc), f"no repeat of the bench call's LC on TS2: {ts2_lc}"
     # the sfr.* counters start from 0 with each SFR session and stay readable after it: this session's
     assert int(v1.get("sfr.repeated", 0)) >= 1 and int(v1.get("sfr.tx_starts", 0)) >= 1, v1
+    # How the repeat was keyed (hal_radio_t.dmr_keying): the link can't be read during the session, so the board's
+    # counters since boot are compared before and after it. The SFR mode keys straight from RX at UHF
+    if "dmr.keyed_direct_n" in k1 and hz > 300_000_000:
+        direct = int(k1["dmr.keyed_direct_n"]) - int(k0["dmr.keyed_direct_n"])
+        idle = int(k1["dmr.keyed_idle_n"]) - int(k0["dmr.keyed_idle_n"])
+        assert direct >= 1 and direct >= idle, f"the SFR mode keyed {direct} bursts straight from RX, {idle} through idle"
     # The whole call, heard while keyed (sfr.md 3 item 1): sent up and repeated. Voice B-F carry an EMB, not a sync, so
     # the repeat's voice is counted by the SDR's slot letter of our TS2-synced bursts
     out_slot = {b.get("slot") for b in ts2}

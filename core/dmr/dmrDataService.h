@@ -54,7 +54,9 @@ typedef struct
 	uint32_t talkGroup;						// the channel's talkgroup (group data to it is ours); 0: none
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
+	bool     trunked;						// default SMS uses the trunked short data service
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
+	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;
 
 // The service's user settings. Only committed settings, never an edit in progress (gotcha 3.7)
@@ -117,6 +119,8 @@ typedef struct
 	// done its listen before talk. An accepted start may call dmrDataServiceTxDone synchronously; a start that
 	// returns false must not call it (the service would count the list twice).
 	bool (*txStart)(const dmrBurst_t *bursts, int count, void *ctx);
+	// Start a Tier III short-data SMS. An accepted start completes via dmrDataServiceTxDone.
+	bool (*txSmsUdt)(uint32_t dst, bool group, const char *text, uint32_t nowMs, void *ctx);
 	// Listen before talk for machine traffic (gotcha 3.6; dmr_call_channel_clear in the firmware)
 	bool (*channelClear)(uint32_t nowMs, void *ctx);
 	// Group calls of the channel's listen list count as ours (may be NULL)
@@ -150,6 +154,10 @@ typedef struct
 	uint32_t rxPackets;						// complete packets
 	uint32_t rxForUs;						// ... addressed to us (or a group we listen to)
 	uint32_t rxConfirmed;					// ... confirmed data to us
+	uint32_t rxPrivacy;						// packets decrypted with the channel's privacy key
+	uint32_t rxPrivacyDropped;				// encrypted packets dropped: another scheme, or no key
+	uint32_t txPrivacy;						// lists sent with the privacy header (encrypted data)
+	uint32_t txPrivacyBlocked;				// lists not sent: data the channel's privacy can't protect
 	uint32_t smsReceived;					// text messages kept
 	uint32_t smsDuplicates;					// a sender's retry: ACKed, not kept
 	uint32_t smsSent;						// SMS lists sent
