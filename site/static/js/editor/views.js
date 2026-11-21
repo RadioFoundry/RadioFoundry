@@ -359,6 +359,7 @@ export function channelForm(m, t, { features = null } = {}) {
 		dmr(sel("rxList", "editor.col.rx_list", () => refOptions(m.rxLists, t))),
 		dmr(txt("dmrId", "editor.col.channel_id", dmrId(t), (v) => (v ? String(v) : ""))),
 		dmr(chk("dmo", "editor.col.dmo")),
+		dmr(chk("acceptBadCrc", "editor.col.accept_bad_crc")),
 		dmr(sel("aliasTs1", "editor.col.alias_ts1", () => aliasOptions(t))),
 		dmr(sel("aliasTs2", "editor.col.alias_ts2", () => aliasOptions(t))),
 		dmr(chk("noBeep", "editor.col.no_beep")),

@@ -32,7 +32,8 @@ $(if $(APP_BASE),,$(error boards/$(BOARD)/board.mk: APP_BASE, the image address,
 # CMSIS device header's; - binds tighter than |). No parentheses or spaces: the flags file is written by a shell echo
 MCU_DEFS += -DHSE_VALUE=$(HSE_VALUE) -DUSER_VECT_TAB_ADDRESS -DVECT_TAB_OFFSET=$(APP_BASE)u-FLASH_BASE
 # common.ld's CPU-only RAM (CCM: no DMA): zeroed at start-up for RFOUNDRY_CPU_RAM, left alone for _NOINIT
-MCU_DEFS += -DRFOUNDRY_CPU_RAM_SECTION='".ccmbss"' -DRFOUNDRY_CPU_RAM_NOINIT_SECTION='".ccmram"'
+MCU_DEFS += -DRFOUNDRY_CPU_RAM_SECTION='".ccmbss"' -DRFOUNDRY_CPU_RAM_NOINIT_SECTION='".ccmram"' \
+	-DRFOUNDRY_CPU_DATA_SECTION='".ccmdata"'
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
 
 # The USB device stack, built only with CONFIG_USB
@@ -59,5 +60,5 @@ PLATFORM_3P_SRC := $(MCU_STARTUP) \
 	$(CMSIS_DEV)/Source/Templates/system_stm32f4xx.c \
 	$(foreach m,$(HAL_MODULES),$(HALDIR)/Src/stm32f4xx_$(m).c) \
 	$(RTOS)/tasks.c $(RTOS)/queue.c $(RTOS)/list.c $(RTOS)/timers.c $(RTOS)/event_groups.c \
-	$(RTOS)/portable/GCC/ARM_CM4F/port.c $(RTOS)/portable/MemMang/heap_4.c \
+	$(RTOS)/portable/GCC/ARM_CM4F/port.c $(RTOS)/portable/MemMang/heap_5.c \
 	$(if $(filter y,$(CONFIG_USB)),$(TUSB_SRC))

@@ -144,6 +144,11 @@ APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
 endif
+# Accept invalid CRC's repeat check, shared by the DMR call, Tier III and P25 trunking: core/fec is globbed with the air
+# interface only
+ifeq ($(CONFIG_DMR)$(CONFIG_AIR),yn)
+APP_SRC += core/fec/rx_seen.c
+endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
 APP_SRC := $(filter-out core/cps/cps_fast.c core/cps/cps_lz4.c,$(APP_SRC))
@@ -211,6 +216,7 @@ endif
 NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
 	core/net/aprsis.c
 NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c core/net/webctl.c
+NET_SRC-$(CONFIG_NET_RADIO_UDP) += core/net/net.c core/net/radio_udp.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
 NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
@@ -302,7 +308,7 @@ CFLAGS_3P += -flto=auto
 endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
-BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
+BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data .ccmdata
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -400,6 +406,12 @@ $(TARGET).bin: $(TARGET).elf
 ifneq ($(BOOT_STAGE),)
 include boot/boot.mk
 endif
+
+# Hot code builds $(OPT_HOT) where the rest is $(OPT): DSP and FEC kernels that run per sample or per burst, where
+# unrolling and scheduling pay for their flash. LTO keeps each function's level
+OPT_HOT ?= -O2
+HOT_SRC := core/dmr/fec/dmrFec.c core/dmr/fec/dmrSoftBptc.c
+$(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)

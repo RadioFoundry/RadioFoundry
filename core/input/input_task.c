@@ -48,6 +48,7 @@ static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug lin
 static volatile bool dtmf_blocked;	// input_set_dtmf_block
 static switch_follow_t sw_follow;	// the channel switch (hal_input_t.position), input task only
 static volatile int8_t switch_pos = -1;	// its settled position, for the debug link
+static volatile int32_t switch_hold = -1;	// input_switch_hold's zone, taken by the input task
 
 static void emit(const input_event_t *ev, void *ctx)
 {
@@ -111,6 +112,14 @@ static void switch_poll(uint32_t now)
 {
 	int8_t pos = board.input->position();
 	switch_pos = pos;
+	int32_t hold;
+	taskENTER_CRITICAL();
+	hold = switch_hold;
+	switch_hold = -1;
+	taskEXIT_CRITICAL();
+	if (hold >= 0) {
+		switch_follow_hold(&sw_follow, (uint16_t)hold, now);
+	}
 	switch_step_t st = switch_follow_step(&sw_follow, pos, now);
 	if (st == SWITCH_CHECK) {
 		uint16_t zone, at, size;
@@ -254,6 +263,11 @@ uint32_t input_ptt_downs(void)
 int32_t input_encoder_total(void)
 {
 	return enc_total;
+}
+
+void input_switch_hold(uint16_t zone)
+{
+	switch_hold = zone;
 }
 
 int8_t input_switch_pos(void)

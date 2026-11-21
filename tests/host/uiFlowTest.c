@@ -60,6 +60,15 @@ static const flow_t flows[] = {
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
+	// The status strip's GPS icon (ui.md 3), a dish: none without a GPS, hollow with the setting off, solid while
+	// searching, with waves on a fix; the setting off hollows it within a second. Without a GPS the setting reads
+	// Off, whatever is stored (#349)
+	{ "GPS icon: none without a GPS", "", "", "gps=0", 0, false },
+	{ "GPS setting reads Off without a GPS", "gps:none", "ok 7 5", "screen=group hides=On", 3, false },
+	{ "GPS icon: off", "gps:off", "", "gps=1 screen=home", 0, false },
+	{ "GPS icon: searching", "gps:search", "", "gps=2 screen=home", 0, false },
+	{ "GPS icon: fix", "gps:fix", "", "gps=3 screen=home", 0, false },
+	{ "GPS icon: setting off hollows it", "gps:fix ok 7 5", "ok wait:1100", "gps=1 focus=GPS", 1, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
@@ -858,11 +867,21 @@ static const flow_t flows[] = {
 	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
+	{ "T incoming private call shows caller and answer prompt", "t3 dlpos:3", "t3ring:101125",
+	  "screen=incoming-call shows=101125 shows=Press_PTT", 0, false },
+	{ "T a cleared incoming call restores the menu", "t3 dlpos:3 ok t3ring:101125", "down t3ring:0",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T Back rejects an incoming private call", "t3 dlpos:3 ok t3ring:101125", "back",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T a known incoming caller is identified by name", "t3 dlpos:3", "t3ring:9991234",
+	  "screen=incoming-call shows=9991234 shows=Joe", 0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
 	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
 	  "screen=home shows=Other_system hides=Searching", 0, false },
 	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
 	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T PTT refused for a system of another kind says so", "t3 dlpos:3 t3state:denyotherkind", "",
+	  "shows=Incompatible_system shows=Pick_another_channel", 0, false },
 	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
 	  "screen=home shows=Reg._refused hides=Searching", 0, false },
 	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
@@ -1674,7 +1693,7 @@ static void call_screen_checks(void)
 
 #if CONFIG_DMR_TRUNK
 // Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
-// a Home with an activity area names what was heard (dmr-trunking.md 12.4)
+// a Home with an activity area names what was heard, or that it is of another kind (dmr-trunking.md 12.4)
 static void t3_other_checks(void)
 {
 	char err[300], buf[200];
@@ -1691,6 +1710,21 @@ static void t3_other_checks(void)
 		}
 		if (!ok) {
 			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+		// A trunking system of another kind: no settings to compare, the radio can't join it
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		ok = sim_run("t3 dlpos:3 t3state:otherkind", err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Incompatible_system expect:shows=Cannot_join "
+				 "expect:hides=Heard:" :
+				 "expect:shows=Other_system expect:shows=Incompatible_system");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL a system of another kind heard [%s]: %s\n", sim_geoms[g].name, err);
 			fails++;
 		}
 	}
@@ -1846,6 +1880,27 @@ static void no_battery_checks(void)
 				printf("FAIL no battery %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
 				fails++;
 			}
+		}
+	}
+}
+
+// A key with the backlight off only wakes it, except PTT, Monitor and Emergency, which act at once: Emergency sends
+// only its long press, so waking on it alone would lose the alarm
+static void dark_key_checks(void)
+{
+	static const struct { uint8_t action, gesture; bool acts; } cases[] = {
+		{ ACT_EMERGENCY, GESTURE_LONG, true },
+		{ ACT_PTT, GESTURE_DOWN, true },
+		{ ACT_MONITOR, GESTURE_DOWN, true },
+		{ ACT_SELECT, GESTURE_PRESS, false },
+		{ ACT_BACK, GESTURE_LONG, false },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		input_event_t ev = { .action = cases[i].action, .gesture = cases[i].gesture };
+		if (ui_app_key_while_dark(&ev) != cases[i].acts) {
+			printf("FAIL dark key %zu: action %u acts %d, want %d\n", i, cases[i].action, !cases[i].acts,
+			    cases[i].acts);
+			fails++;
 		}
 	}
 }
@@ -2021,6 +2076,7 @@ int main(void)
 	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+	dark_key_checks();
 #if CONFIG_VOLUME_BAR
 	volume_bar_checks();
 #endif
