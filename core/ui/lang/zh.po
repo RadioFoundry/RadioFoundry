@@ -4640,6 +4640,11 @@ msgid "Another system heard"
 msgstr "只收到其他系统"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
 msgid "Registration refused"
 msgstr "注册已拒绝"
@@ -4843,6 +4848,16 @@ msgstr "数听"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "加密"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "不支持的系统"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "无法加入"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"

@@ -282,6 +282,72 @@ static const char *dual_mode_word(const ui_dual_pane_t *p)
 uint32_t ui_strip_draws;
 uint32_t ui_hint_draws;
 
+// The GPS icon: a satellite dish, its rim up and to the right. Hollow while the GPS is off, solid while it searches;
+// with a fix the feed arm and two waves join it. The shape, not a color, tells them apart on every panel. Drawn by
+// hand at the heights of the strip's signal bars, since a dish drawn from lines muddies below 13 pixels. The width
+// keeps the waves' room, so the strip doesn't move when a fix comes
+#if CONFIG_GPS
+// The rows, bit x of a row is pixel x: each dish's bowl (h rows), then its feed arm and waves from the top row down,
+// only as many rows as they reach
+static const uint32_t gps_rows[] = {
+	// 6 px: bowl, feed, waves
+	0x0, 0x1, 0x3, 0x7, 0xf, 0x1e,
+	0x20, 0x10, 0x8,
+	0x280, 0x500, 0x500, 0x280,
+	// 8 px: bowl, feed, waves
+	0x0, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7e, 0x3c,
+	0xc0, 0x20, 0x10,
+	0xa00, 0x500, 0xa00, 0xa00, 0x500,
+	// 11 px: bowl, feed, waves
+	0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xfe, 0xfc, 0x30,
+	0x600, 0x300, 0x80, 0x40, 0x20,
+	0x9000, 0x12000, 0x12000, 0x12000, 0x9000,
+	// 13 px: bowl, feed, waves
+	0x0, 0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3fe, 0x1fc,
+	0x0, 0xc00, 0xe00, 0x300, 0x80, 0x40, 0x20,
+	0x0, 0x12000, 0x24000, 0x24000, 0x48000, 0x24000, 0x24000, 0x12000,
+};
+typedef struct {
+	uint8_t h, w;		// height; width, the waves' room kept
+	uint8_t feed, waves;	// rows of each in gps_rows after the bowl
+	uint8_t at;		// the bowl's first row in gps_rows
+} gps_glyph_t;
+static const gps_glyph_t gps_glyphs[] = {
+	{ 6, 11, 3, 4, 0 },
+	{ 8, 12, 3, 5, 13 },
+	{ 11, 17, 5, 5, 29 },
+	{ 13, 19, 7, 8, 50 },
+};
+
+// The tallest dish no taller than h, the bars' height, so it keeps the strip's top margin (the smallest below that)
+static const gps_glyph_t *gps_glyph(int h)
+{
+	const gps_glyph_t *g = &gps_glyphs[0];
+	for (size_t i = 1; i < sizeof gps_glyphs / sizeof gps_glyphs[0]; i++)
+		if (gps_glyphs[i].h <= h)
+			g = &gps_glyphs[i];
+	return g;
+}
+
+// Hollow: only the bowl's edge, the pixels with a side open
+static void gps_icon(int x, int y, const gps_glyph_t *g, uint8_t state, color_t fg)
+{
+	const uint32_t *bowl = &gps_rows[g->at], *feed = bowl + g->h, *waves = feed + g->feed;
+	for (int r = 0; r < g->h; r++) {
+		uint32_t row = bowl[r];
+		if (state == UI_GPS_OFF) {
+			uint32_t up = r > 0 ? bowl[r - 1] : 0, down = r + 1 < g->h ? bowl[r + 1] : 0;
+			row &= ~(up & down & (row << 1) & (row >> 1));
+		}
+		if (state == UI_GPS_FIX)
+			row |= (r < g->feed ? feed[r] : 0) | (r < g->waves ? waves[r] : 0);
+		for (int c = 0; c < g->w; c++)
+			if (row & (1u << c))
+				gfx_pixel(x + c, y + r, fg);
+	}
+}
+#endif
+
 // A word after the mode, with a space either side, where the strip has room for it: measured, since a translation may
 // be longer than the English
 static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
@@ -382,6 +448,13 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 		int sw = bh + 4;
 		rx -= sw + f->w / 2;
 		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
+#if CONFIG_GPS
+		if (s->gps != UI_GPS_NONE) {
+			const gps_glyph_t *g = gps_glyph(bh + 1);
+			rx -= g->w + f->w / 2;
+			gps_icon(rx, ty + f->ascent - g->h, g, s->gps, sfg);
+		}
+#endif
 	}
 	// Icons one cell high, drawn from lines: an envelope with the unread count, a padlock while the keys are locked
 	int ih = f->ascent - 2 < 5 ? 5 : f->ascent - 2, iy = ty + f->ascent - ih;
@@ -1288,6 +1361,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
+		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
 #if CONFIG_DMR_TRUNK
 		case RADIO_TRUNK_WHY_UNMAPPED:
@@ -1332,6 +1406,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
@@ -1644,7 +1720,7 @@ static const char *t3_state_word(const radio_view_t *v, bool *warn)
 		return TR(TRUNK_WHY_SYSTEM_NOT_SET_UP, "System not set up");
 	if (v->t3.fallback != 0)	// on the system's fallback channel, or looking for the system from it
 		return TR(TRUNK_STATE_FALLBACK, "Fallback");
-	if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0)
+	if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0))
 		return TR(TRUNK_STATE_OTHER_SYSTEM, "Other system");	// Home's activity says which (draw_t3_other)
 	if (v->t3.on && v->t3.refused)	// hunting for another TSCC, or registering again where it was refused
 		return TR(TRUNK_STATE_REG_REFUSED, "Reg. refused");
@@ -1748,7 +1824,8 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_DMR_TRUNK
 // Activity on Home while the radio searches a trunked system and hears only another one: what it heard, to compare
 // with the system's settings (dmr-trunking.md 12.4): "Heard: Huge, net 0" / "site 83" (and the category when the
-// site takes one only), or the first line alone where there is room for one
+// site takes one only), or the first line alone where there is room for one. A system of another kind (no C_SYScode):
+// "Incompatible system" / "Cannot join"
 static void draw_t3_other(const radio_view_t *v, int y)
 {
 	const font_t *sm = ui_layout.small;
@@ -1756,6 +1833,18 @@ static void draw_t3_other(const radio_view_t *v, int y)
 	char a[48], c[40], fit[48];
 	sbuf_t b;
 	t3_syscode_t sc;
+	if (v->t3.other == 0) {
+		// Only a trunking system of another kind heard (its own FID, no ETSI Aloha): no setting helps
+		gfx_text_fit(sm, TR(TRUNK_OTHER_KIND, "Incompatible system"), w, fit, sizeof fit);
+		if (ui_layout.activity_h >= 2 * sm->h) {
+			gfx_text(sm, 0, y, fit, ui_col.warn);
+			gfx_text_fit(sm, TR(TRUNK_OTHER_KIND_NOTE, "Cannot join"), w, fit, sizeof fit);
+			gfx_text(sm, 0, y + sm->h, fit, ui_col.fg);
+		} else {
+			gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, fit, ui_col.warn);
+		}
+		return;
+	}
 	t3_syscode_split(v->t3.other, &sc);
 	static const tr_id_t model[4] = {	// the editor's network model names
 		TRN(TRUNK_MODEL_TINY, "Tiny"), TRN(TRUNK_MODEL_SMALL, "Small"), TRN(TRUNK_MODEL_LARGE, "Large"),
@@ -2161,7 +2250,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #if CONFIG_DMR_TRUNK
-		if (v->t3.on && v->t3.state == T3_HUNT && v->t3.other != 0) {
+		if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0)) {
 			draw_t3_other(v, y);
 			break;
 		}

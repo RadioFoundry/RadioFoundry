@@ -312,8 +312,9 @@ Voice: 27 bytes from page 3 on V_SPI (three 72-bit AMBE+2 frames with their FEC,
   no frame missed. Within a superframe in progress on the slot, with the timeslot interrupts running, the driver
   numbers each voice burst from the last one taken plus the frames counted since (two ticks a frame) and counts a
   disagreeing report (`sx` in the `v0` diagnostics line). A report with the last burst's number and the same voice is
-  stale and dropped; with new voice it is the next burst. Burst A keeps its voice sync. Without the timing, or where
-  the count would land on A, the chip's number is used.
+  stale and dropped. If the chip misses voice sync at A, a class 0 report exactly two slot ticks after F counts as A
+  when its voice payload checksum differs from F's. With no timing, or when a longer gap crosses into A, the driver
+  uses the chip's number.
 - **The LC registers are sticky.** Page 2 keeps the previous call's LC until the new one is decoded. On a new
   reception, the first LC read may be the last call's. Either wait for two superframes (burst A seen twice after the
   slot lock) before trusting it, or capture page 2 when the reception starts and accept an LC only when it differs
@@ -500,6 +501,23 @@ than 3 free 20 ms buffers), skip decoding the next 6 frames. After a voice-abnor
 silence for the next frame. AMBE silence frame (9 bytes, repeated three times per burst): B9 E8 81 52 61 73 00 2A 6B.
 
 ---
+
+### 5.8 Soft values of the received burst
+
+Not documented (measured). Page 2 from 0xA8 holds the burst just deframed as soft values, one byte per bit, 264 bytes:
+the 68 bits of the middle field first (slot type and sync), then the 196 info bits in burst order (bits 0-97, then
+166-263). The area holds the burst of the report being read, on either slot, and the engine reads the area at the
+report, like the payload.
+
+| Byte | Meaning |
+|---|---|
+| bits 5-0 | the bit's level, two's complement: negative for a 1. The hard bit is 1 when the byte is 32 or more |
+| bits 7-6 | not used |
+
+Value of a bit, positive for a 1: `v = b & 0x3F; v >= 32 ? 64 - v : -v` (`hrc_soft_value`). A clean bit reads about
+24. The HR_C7000 gives the same format ([modem-hrc7000.md](modem-hrc7000.md) 5.4). The engine uses them for soft
+combining ([dmr-modem.md](dmr-modem.md) 2.2.1): `hrc_chip_t.soft_tap` names the address, 0 on a chip without a known
+address (the HR_C5000).
 
 ## 6. Transmit
 

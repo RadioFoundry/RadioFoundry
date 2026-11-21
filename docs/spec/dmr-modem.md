@@ -177,7 +177,31 @@ This is a behavioral diagram, not a structure to copy. The states and what they 
   must not end its next reception on them; use the timeout), or no valid burst on the slot for about 390 ms (13 slot
   ticks), or loss of slot timing.
 - **Data**: CSBK, MBC, data headers and blocks on our slot are passed to the data service. Blocks are taken even with
-  a CRC error (the packet CRC-32 decides); headers and CSBKs with a bad CRC are dropped.
+  a CRC error (the packet CRC-32 decides). Headers and CSBKs with a bad CRC go up flagged too (`crc_ok` false; for a
+  voice LC header or terminator `lc_valid` false, and no call state changes): the receivers drop them, unless the
+  channel is set to accept an invalid CRC ([dmr-trunking.md](dmr-trunking.md) 6, [dmr-voice.md](dmr-voice.md)).
+
+#### 2.2.1 Soft combining
+
+A control channel sends the same few CSBKs over and over. A CSBK, MBC or data header whose CRC failed is decoded
+again from the modem's soft values, summed with the earlier copies (`core/dmr/fec/dmrSoftComb.c`, built with
+DMR). Modems that give soft values per info bit take part; the others pass bursts up as before.
+
+| Step | What |
+|---|---|
+| Stage | On reception, the driver copies the burst's 196 soft values (int8, positive for a 1) to a staging buffer. Only for the burst types above with a failed CRC |
+| Join | At task level the burst joins the set of its slot whose hard bits are within 50 of its own; else the burst replaces the empty or longest unused set. 4 sets per slot. A set halves after 6 bursts, so a message that changes is followed |
+| Decode | BPTC on the joined set. A burst that joined no set keeps the chip's payload |
+| Choose | The chip's payload and the set's decode are re-encoded (with the reserved bits R(3)-R(0) the decode found) and scored against the set's sums. The set's decode replaces the chip's payload only on a higher score |
+
+The burst's own BPTC decode is not a candidate: through heavy noise BPTC miscorrects to a codeword that fits one
+burst's soft values better than the chip's right decode (the chip decodes with soft values of its own).
+
+`crc_ok` stays false: the receivers check the CRC of what they take, and a channel set to accept an invalid CRC takes
+a payload only on a repeat. A wrong decode doesn't repeat, since the sets keep changing.
+
+The sums live in about 2 KB that the modem glue allocates when DMR starts and frees when DMR stops.
+Counters: `soft` in the modem's diag line (taken, combined, changed, stale).
 
 ### 2.3 Repeater mode vs direct mode timing
 

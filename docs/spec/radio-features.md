@@ -184,6 +184,11 @@ busy refusal is quiet so the call being received is heard in full: no deny beep 
 that was playing plays on while PTT is held (`deny_rx`), until the squelch would have closed. After the release it is
 an ordinary reception again, its RX tone still counted as heard.
 
+TX inhibit, a critical battery and a hardware option still to be set or applied hold for every transmission, not only
+PTT: `key_tx`, which every keying goes through (the list below), refuses them too. What the radio sends by itself
+(DMR replies, trunking signaling, hotspot bursts, the CW ID, APRS beacons) is then not sent. The hotspot's keying,
+armed between bursts, is dropped when TX inhibit is set and armed again when it is cleared.
+
 The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
 debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
 frequencies. It lives in RAM and is never saved, so a restart clears it; the TX inhibit setting is saved and is left
@@ -613,7 +618,9 @@ dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, S
 Dim/Off) carries both in one value: a time T > 0 dims after T and goes off after 4T, 0 is always on, and -T dims after
 T and never goes off (the "T/dim" choices).
 
-Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
+Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see. With the
+backlight off, a key only wakes it, except the ones `ui_app_key_while_dark` lets through (PTT, Monitor, Emergency).
+Emergency sends only its long press, so it must act on the first event.
 
 | State | Wakes | Why |
 |---|---|---|

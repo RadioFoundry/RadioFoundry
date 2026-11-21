@@ -43,6 +43,9 @@ typedef struct {
 	// receives (hrc6000_air_fit_tap; modem-hrc6000.md 10.7)
 	bool air_tx_only;
 	uint8_t (*dmr_mode)(bool repeater);		// 4:0x10 for DMR
+	// Page 2 address of the receive tap's soft values for the burst just deframed (modem-hrc6000.md 5.8): the middle
+	// 68 values, then the 196 info bits; 0: none known (no soft combining, dmr-modem.md 2.2.1)
+	uint16_t soft_tap;
 	// 4:0x52 bit 2 is the TC of the last burst received, 1 = TS2 starting, and changes only in slots opened for
 	// receive: the repeater slot lock keeps both slots open
 	bool tc_last_rx;
