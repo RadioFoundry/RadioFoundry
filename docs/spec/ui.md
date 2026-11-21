@@ -199,9 +199,10 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
-- OK on Mode steps FM, DMR, P25, NXDN, then the channel's own kind, and round to FM. A step is offered where it can
-  run: DMR with `CONFIG_DMR`; P25 and NXDN where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`, as the VFO's
-  mode tile), and not in a copy made by Copy here, which takes its source's tag and has no block of its own; a kind
+- OK on Mode steps FM, AM, DMR, P25, NXDN, then the channel's own kind, and round to FM. A step is offered where it can
+  run: AM where the radio receives AM past the air band (`UI_FEAT_AM`) and its receiver demodulates AM at the RX
+  frequency (`radio_am_rx_at`), never in a listen band; DMR with `CONFIG_DMR`; P25 and NXDN where the radio runs them
+  (`UI_FEAT_P25`, `UI_FEAT_NXDN`, as the VFO's mode tile), and not in a copy made by Copy here, which takes its source's tag and has no block of its own; a kind
   of its own (a trunked channel, [channel-modes.md](channel-modes.md)) only on the channel opened as one, since its
   system can't be picked here. In a listen band only FM. The step back to the mode the channel was opened with
   restores it as it was, with its system and its NAC or RAN: a slip on the row is taken back by pressing on. A
@@ -218,6 +219,10 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
+- An AM channel ([airband-and-broadcast.md](airband-and-broadcast.md) 3.4) shows Mode as "AM" and only Name, Number,
+  Mode, RX, Scan, Battery saver and the actions: no TX, Power, RX only, Bandwidth, tones, VOX or TX time-out, since it
+  never transmits. Save writes it with `radio_am_save` (its tag over the stand-in record). A typed RX where AM can't be
+  received makes it a plain FM channel.
 - NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
   it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
@@ -726,7 +731,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   least 5:1 on its strip after RGB565 rounding. The shades are light so black
   text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
   no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
-- The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
+- The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), FM / AM / DMR where `UI_FEAT_AM` and the receiver demodulates AM at the VFO's frequency outside the air band ("VFO: AM"; [airband-and-broadcast.md](airband-and-broadcast.md) 3.4), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
 - The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
   between steps is refused with the range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.

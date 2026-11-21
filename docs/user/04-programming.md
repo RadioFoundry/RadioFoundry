@@ -104,7 +104,9 @@ Besides FM and DMR, a channel can be of another digital mode, such as a trunked 
 lists the modes the connected radio's firmware reports, and any mode the codeplug already holds. A channel of such a
 mode shows that mode's fields under **Mode settings**; a trunked channel takes its frequencies from its system. A radio
 whose firmware doesn't run a channel's mode shows the mode's short name, receives nothing on it and doesn't transmit.
-The [feature matrix](../feature-matrix.md) lists which builds run which mode.
+The [feature matrix](../feature-matrix.md) lists which builds run which mode. **AM (receive only)** is one of them on a
+radio that receives AM outside the air band: such a channel never transmits ([AM on any
+channel](07-channels-zones-vfo.md#am-on-any-channel)).
 
 The **Systems** tab adds a system of a type. One form holds all of it, in sections: the system's identity, its
 control channels (a row per frequency, **+** to add one, **−** to remove it, tried top to bottom), this radio

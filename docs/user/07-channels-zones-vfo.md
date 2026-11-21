@@ -289,7 +289,8 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), to AM after FM on a radio
+that receives AM there ([AM on any channel](#am-on-any-channel)), and to P25 and NXDN after DMR on a
 radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
@@ -441,6 +442,24 @@ In the broadcast band the knob and **Up** / **Down** step 200 kHz, landing on th
 where stations are in the Americas. For 100 kHz steps set **Settings > Talk & listen > FM broadcast step** to 100 kHz.
 Either way you can type any frequency, 90.2 for example. In the air band **Auto** steps 25 kHz; set the VFO step to
 8.33 kHz for the narrow channels.
+
+## AM on any channel
+
+On a radio whose receiver demodulates AM beyond the air band ([Radio reference](23-radios.md)), a channel or the VFO
+can be set to AM anywhere it receives, 2 m and 70 cm included. AM is **receive only**: the radio never transmits on an
+AM channel, whatever the codeplug says.
+
+- **A channel:** in the channel editor, press **OK** on **Mode** until it reads **AM** (FM, AM, DMR ...). The transmit,
+  power, tone and width rows go away. Save keeps it as an AM channel.
+- **The VFO:** **\***, **4** steps FM, AM, DMR ("VFO: AM"). The VFO stays AM until you pick another mode, and comes back
+  AM after a restart. Tuned into the broadcast band it becomes FM.
+- **On Home:** the mode reads AM and the chip says "AM receive" with the squelch level. PTT shows "AM: receive only".
+- **In the Codeplug Editor:** pick **AM (receive only)** as the channel's Mode. It is offered when the connected radio
+  can receive AM this way (or with no radio connected); Receive only stays ticked.
+
+AM isn't offered in the air band, where an FM channel is already AM, or in the broadcast band, where the broadcast
+receiver only does FM. An AM channel copied from another radio onto one that can't receive AM there shows "No AM here"
+and stays silent. Other firmware and CPS tools see an AM channel as a receive-only DMR channel.
 
 ## Channels the radio can't use
 
