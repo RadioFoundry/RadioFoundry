@@ -38,9 +38,17 @@ static const fd6818_regval_t dmr_table[] = {
 };
 
 // The second variant's DMR words (hardware-dm32.md 8.10): on an RF section where the table above gave the modem no DMR
-// signal (no sync ticks), 0x47 = 6943 and 0x48 = B2FD sync
+// signal (no sync ticks), 0x47 = 6943 and 0x48 = B2FD sync.
+// 0x48 bits 3:0 are the AF output level into the modem (the air band sets its volume there, hardware-dm32.md 8.7), and
+// 0xD left it at the edge of the HR_C7000's sync detection: a repeater was taken, but an MMDVM hotspot a little lower
+// in deviation (0.92 of nominal against the repeater's 0.95) at -101 dBm gave not one sync in minutes (0 system
+// interrupts), on the radio measured on the bench, 21 Nov 2026; neither a +-2 kHz retune nor the fixed or dynamic sync
+// threshold helped. Its MS bursts are the hard case: the discriminator is noise between them and the sync must be found
+// inside one 27.5 ms burst. 0xE took the hotspot's calls, 0xF took them with the fewest unusable bursts and restarts
+// (0x48 bits 11:4 raised as well gave no fewer bit errors); the classic section's DMR word, 0xBBBF, also ends in 0xF.
+// So 0xF, the most the field holds
 static const fd6818_regval_t dmr_table_6943[] = {
-	{ 0x47, 0x6943 }, { 0x48, 0xB2FD }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
+	{ 0x47, 0x6943 }, { 0x48, 0xB2FF }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
 // 5.4: 0x37 first, the other HR_C7000 boards' 0x30 steps with a 0x0200 between idle and the final word

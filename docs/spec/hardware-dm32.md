@@ -1162,7 +1162,7 @@ and 0x0C read back by hand, and air band AM (which set-up B doesn't have yet, be
 | 0x37 | 0x1D0F / 0x1D1F / 0x1F0F / 0x1F1F | 0x9D1F (bit 15 set) |
 | 0x30 into RX / TX | idle, then 0xBFF1 / 0xC1FE | idle, 0x0200, then 0xBFF1 / 0xC1FE |
 | 0x1A, 0x40 | band words (8.3) | 0x1A not written; 0x40 = 0x34F0, on FM transmit 0x3480 + the calibration byte |
-| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
+| DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FF; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) on a repeater, but gave no sync at all from an MMDVM hotspot's MS bursts at -101 dBm; 0x48 bits 3:0 (the AF level into the modem) at 0xF took its calls (bench, 21 Nov 2026) |
 | 0x50 around each switch to TX | not written | FM: 0xBB20 before, 0x3B20 after (user: after only); DMR burst: 0x3B18 after (user: 0x3B20) |
 | 0x2E / 0x2F at each receive tune | not written | 0x8608 / 0x1890 with CTCSS, 0x9608 / 0x9890 with DCS or none |
 | HR_C7000 RF_MODE bit 15 (RX IQ invert) | set | clear (user; set: DMR syncs but decodes nothing usable). Clear: DMR decodes (user, 2) |
