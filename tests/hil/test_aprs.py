@@ -661,21 +661,23 @@ def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
-    own = _aprs(radio).get("aprs.call")
-    if not own:
-        skip("state", "the radio has no APRS callsign")
-    inner = f"{call.upper()}-12"
-    if inner == own:
-        skip("state", f"the radio's own call is {own}, the test's inner sender")
-    gate = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
-    text = f"RadioFoundry HIL third party {int(time.time()) % 100000}"     # new each run: not the inbox's last one
-    info = f"}}{inner}>APZTST,TCPIP,{gate}*::{own:<9}:{text}"
-    src, program = bench_frame(call, own, info)
     L = radio.link
     with radio.vfo_session(), aprs_session(radio) as s:
         L.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
         s.rx_setup(hz)
+        # the addressee: --callsign as the radio's RAM-only test call (the session clears it at both ends), so the
+        # test needs no callsign saved on the radio; the radio doesn't transmit, so the call is never keyed
+        L.aprs_test_call(call)
+        own = radio.wait_for(lambda v: v.get("aprs.call", "").startswith(call.upper()), sections=("aprs",),
+                             what="the test call")["aprs.call"]
+        inner = f"{call.upper()}-12"
+        if inner == own:
+            skip("state", f"the radio's own call is {own}, the test's inner sender")
+        gate = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
+        text = f"RadioFoundry HIL third party {int(time.time()) % 100000}"     # new each run: not the inbox's last one
+        info = f"}}{inner}>APZTST,TCPIP,{gate}*::{own:<9}:{text}"
+        src, program = bench_frame(call, own, info)
         radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
         v0 = _aprs(radio)
         with sdr_bench.lease():
