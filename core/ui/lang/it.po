@@ -148,11 +148,6 @@ msgid "No calls heard yet"
 msgstr "Nessuna chiamata ancora"
 
 #: core/ui/ui_app.c
-msgctxt "APRS_BANNER_MSG_FROM"
-msgid "APRS message from "
-msgstr "Messaggio APRS da "
-
-#: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
 msgid "Message from "
 msgstr "Messaggio da "
@@ -211,6 +206,11 @@ msgstr "Hotspot avviato dal PC"
 msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK lo ferma"
+
+#: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "Messaggio APRS da "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
