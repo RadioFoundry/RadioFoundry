@@ -673,6 +673,17 @@ BRIDGE_QUIET = 0.02                     # quiet on the cable before and after it
 OP_PASS = 0x0F                          # protocol 8: the stub passes the cable through to another UART
 PASS_IDLE_MS = 0                        # no time-out: only the exit sequence ends PASS
 PASS_GUARD_MS = 10                      # quiet around the exit sequence the stub looks for (BRIDGE_QUIET is more)
+PASS_RATE_SLACK = 0.005                 # a whole-divisor rate this close to the cable's is left alone
+
+
+def whole_rate(hz, nominal):
+    """The rate an HR_C7000 UART really runs at for a nominal one: its clock over 16 times the nearest whole divisor (no
+    fractional divider). The stub's PASS forwards byte by byte through 16-byte FIFOs, so the host must send at this rate:
+    at 36 MHz 115200 is 112500, and a 4 KB frame sent 2.3 % fast overflows the main SoC's FIFO (rx2-link.md 4.2).
+    None when the clock can't be right."""
+    if not hz or not 1e6 < hz < 4e8:
+        return None
+    return int(hz / (16 * max(1, round(hz / (16 * nominal)))))
 RX2_STUB = 0x05                         # the rx2 link's STUB frame (docs/spec/rx2-link.md 2): B enters its first stage
 RX2_STUB_MAGIC = 0x53545542
 
@@ -758,6 +769,13 @@ ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
 ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
 
 
+def rom_acked(b):
+    """b (4 bytes) is the boot ROM's ack, also with bit 7 set in any byte: a sender 5 % fast against its receiver (the
+    GD-88's second SoC under a first stage from before divisor 20, docs/spec/rx2-link.md 4.2) has its last data bit read
+    in the stop bit. The NAK (02 0a 00 03) and the ROM's other frames differ in the low 7 bits."""
+    return len(b) == 4 and all(x & 0x7F == y for x, y in zip(b, ROM_ACK))
+
+
 def rom_sign_off(b):
     """b (4 bytes) is the boot ROM saying it stopped waiting. What it sends then is the address it starts, little
     endian: 00 10 00 03 (0x03001000) on a radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on
@@ -799,6 +817,7 @@ class Radio:
         self.log = log
         self.cable = cable              # the programming cable's chip, named in a boot ROM error
         self.echo = False               # the cable sends back what the host sends (seen in the boot ROM load)
+        self.acks_high = 0              # boot ROM acks that came with bit 7 set (rom_acked)
         self.retries = retries
         self.retried = 0
         self.ecc = []                   # the last NAND dump's sectors whose ECC fails (read raw)
@@ -844,7 +863,8 @@ class Radio:
         end = time.monotonic() + timeout
         buf = b""
         while True:
-            if buf[:4] == ROM_ACK:
+            if rom_acked(buf[:4]):
+                self.ack_high(buf[:4])
                 return True, b""
             n = min(len(buf), len(sent))
             echo = n > 0 and buf[:n] == sent[:n]
@@ -854,8 +874,9 @@ class Radio:
                     self.log("the cable echoes what the host sends; the echo is ignored")
                 self.echo = True
                 continue
-            if not echo and buf[-4:] == ROM_ACK:
+            if not echo and rom_acked(buf[-4:]):
                 self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
+                self.ack_high(buf[-4:])
                 return True, b""
             if not echo and (buf[-4:] == ROM_NAK or rom_gave_up(buf, sent)):
                 return False, buf[:16]
@@ -863,6 +884,11 @@ class Radio:
                 return False, buf[:16]
             want = len(sent) - len(buf) if echo else 4 - len(buf)
             buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
+
+    def ack_high(self, ack):
+        if ack != ROM_ACK and not self.acks_high:
+            self.log("the acknowledgement came as %s: the other side's UART runs fast; taken as the ack" % ack.hex(" "))
+        self.acks_high += ack != ROM_ACK
 
     def rom_error(self, what, got):
         if unsent_bytes(self.port):         # the frames never left the computer: not the radio, not the plug
@@ -1289,7 +1315,7 @@ class Radio:
                 heard = self.port.read(4)       # one greeting at most: start() takes the next
             if not heard:
                 try:
-                    self.hello()
+                    self.hello(retries=2)       # a lost reply would leave start() waiting for a greeting that never comes
                     self.log("the second receiver's stub from an earlier run answers: using it")
                     return True
                 except DumpError:
@@ -1312,6 +1338,8 @@ class Radio:
         as it is. Returns True when it attached. pass_exit() gives the cable back to the main SoC's stub."""
         via = C7_BOARDS[board]["bridge"]
         self.main_state = (self.profile, self.configured)   # the main SoC's stub keeps its CONFIG through PASS
+        hz = self.uart_hz or int(round(self.timer_hz(0.3) / 1e6) * 1e6)
+        rate = whole_rate(hz, self.port.baudrate)
         addr, bits = via["mux"]
         v = int.from_bytes(self.peek(addr, 4), "little")
         if v & bits != bits:
@@ -1326,6 +1354,11 @@ class Radio:
             raise DumpError("the main SoC's stub refused PASS (status 0x%02X): it needs stub protocol 8, at its home rate"
                             % e.status)
         self.log("the main SoC's stub passes the cable to the second SoC")
+        self.pass_home = None
+        if rate and abs(rate - self.port.baudrate) > self.port.baudrate * PASS_RATE_SLACK:
+            self.pass_home = self.port.baudrate
+            self.port.baudrate = rate
+            self.log("the cable runs at %d baud while it passes (the UARTs' rate at %.1f MHz)" % (rate, hz / 1e6))
         self.port.write(rx2_frame(RX2_STUB, 0, RX2_STUB_MAGIC.to_bytes(4, "little")))
         self.set_timeout(0.05)
         heard, t0 = b"", time.monotonic()
@@ -1333,7 +1366,7 @@ class Radio:
             heard = self.port.read(4)           # one greeting at most: start() takes the next
         if not heard:
             try:
-                self.hello()
+                self.hello(retries=2)           # a lost reply would leave start() waiting for a greeting that never comes
                 self.log("the second SoC's stub from an earlier run answers: using it")
                 return True
             except DumpError:
@@ -1347,6 +1380,8 @@ class Radio:
         talks to it: its HELLO, and the profile it had before PASS. True when it answered."""
         self.passing = False
         self.exit_burst()
+        if getattr(self, "pass_home", None):    # A's stub at home takes the cable's nominal rate as before
+            self.port.baudrate, self.pass_home = self.pass_home, None
         want = bytes([0x02, OK, 0x00, 0x01, 0x01, 0x03, 0x01])     # 05, why 1: the exit sequence
         buf, end = b"", time.monotonic() + 1.5
         while want not in buf and time.monotonic() < end:
@@ -2153,7 +2188,7 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP):
+                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP, rom_ack_high=False):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
         self.id_reads = 0                   # JEDEC ID requests answered
@@ -2162,6 +2197,7 @@ class FakeRadio:
         self.ecc_reads = 0                  # sector reads (op 09) that ended in status ECC
         self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
         self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
+        self.rom_ack_high = rom_ack_high    # its acks arrive with bit 7 set in bytes 0 and 2 (a UART 5 % fast)
         self.rom_late = rom_late            # the answer to the greeting comes too late: the ROM stops waiting
         self.rom_taken = False              # the ROM took the answer to its greeting (a second one is NAKed)
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
@@ -2277,7 +2313,7 @@ class FakeRadio:
                 if int.from_bytes(payload, "big") != self.load or len(self.loaded) != self.stub_len:
                     self.errors.append("start command")
                 self.running = True
-            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else ROM_ACK
+            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else b"\x82\x05\x80\x03" if self.rom_ack_high else ROM_ACK
             return True
         if len(ib) < 6:
             return False
@@ -2752,6 +2788,15 @@ def self_test():
     r.start(wait=2, stub=stub)
     check(radio.running and r.echo and not radio.errors, "the boot ROM load works through an echoing cable")
     check(sum("echoes what" in l for l in lines) == 1, "the echo is logged once")
+    # acks with bit 7 set (a first stage whose UART runs 5 % fast): taken, logged once
+    radio = FakeRadio(images, stub_len=len(stub), rom_ack_high=True)
+    lines = []
+    r = Radio(radio, log=lines.append)
+    r.start(wait=2, stub=stub)
+    check(radio.running and not radio.errors and r.acks_high == len(stub) // BLOCK + 1,
+          "the boot ROM load takes acks with bit 7 set (%d)" % r.acks_high)
+    check(sum("runs fast" in l for l in lines) == 1, "acks with bit 7 set are logged once")
+    check(not rom_acked(ROM_NAK) and not rom_acked(ROM_HELLO) and rom_acked(b"\x82\x85\x80\x83"), "rom_acked")
     # the ROM answers with something else: the error names the bytes, the cable and the way out
     radio = FakeRadio(images, stub_len=len(stub), rom_nak=True)
     r = Radio(radio, log=quiet, cable="CH340")
@@ -3282,10 +3327,28 @@ def self_test():
     check(t_exit - t_last >= 0.005, "quiet before the exit sequence (%.1f ms)" % ((t_exit - t_last) * 1e3))
     r.reset_chip()
     check(fp.resets == 1, "A reset after PASS")
+    # The cable at the UARTs' whole-divisor rate while it passes, its own again after (a 36 MHz clock: 112500)
+    check(whole_rate(36e6, 115200) == 112500 and whole_rate(24e6, 115200) == 115384 and whole_rate(0, 115200) is None,
+          "whole_rate: 36 MHz 112500, 24 MHz 115384, no clock none")
+    for hz, during in ((36000000, 112500), (24000000, 115200)):
+        b = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+        b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+        fp = FakePass(b)
+        r = Radio(fp, log=quiet)
+        r.uart_hz = hz
+        r.pass_start("gd88b", 2, None, LOAD_ADDR)
+        check(fp.baudrate == during, "PASS at %d MHz: the cable at %d baud (%d)" % (hz // 10**6, during, fp.baudrate))
+        r.pass_exit()
+        check(fp.baudrate == 115200, "after PASS at %d MHz: 115200 again (%d)" % (hz // 10**6, fp.baudrate))
     fp = FakePass(FakeRadio(images), b_in_stub=True)
     fp.b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
     r = Radio(fp, log=quiet)
     check(r.pass_start("gd88b", 2, None, LOAD_ADDR) is True and not fp.b.loaded, "PASS: B's stub from an earlier run is used")
+    fp = FakePass(FakeRadio(images, silent={1}), b_in_stub=True)    # the first HELLO's reply lost on the way
+    fp.b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(fp, log=quiet)
+    check(r.pass_start("gd88b", 2, None, LOAD_ADDR) is True and not fp.b.loaded,
+          "PASS: B's stub from an earlier run is used when its first HELLO reply is lost")
     fp = FakePass(FakeRadio(images), has_pass=False)
     r = Radio(fp, log=quiet)
     try:

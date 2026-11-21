@@ -53,10 +53,11 @@ class FakePort {
 		this.opens = 0;
 	}
 
-	async open() {
+	async open(opts = {}) {
 		if (this.isOpen) throw Object.assign(new Error("Failed to execute 'open' on 'SerialPort': The port is already open."), { name: "InvalidStateError" });
 		this.isOpen = true;
 		this.opens++;
+		this.baudRate = opts.baudRate;
 		this.readable = new FakeReadable();
 	}
 
@@ -77,6 +78,24 @@ test("a stream closes its port only after the pump lets go of the reader, so the
 	assert.equal(s.lost, false, "closed by the page, not lost");
 	await SerialStream.open(port);
 	assert.equal(port.opens, 2);
+});
+
+test("another line rate opens the same port again at that rate: what was read stays and reading goes on", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	port.readable.push(new Uint8Array([1, 2]));
+	await new Promise((r) => setTimeout(r, 10));
+	await s.setBaud(112500);
+	assert.equal(port.isOpen, true);
+	assert.equal(port.opens, 2);
+	assert.equal(port.baudRate, 112500);
+	assert.equal(s.baud, 112500);
+	assert.equal(s.lost, false, "a new rate is not a lost device");
+	port.readable.push(new Uint8Array([3]));
+	await new Promise((r) => setTimeout(r, 10));
+	assert.deepEqual([...s.take(3)], [1, 2, 3]);
+	await s.close();
+	assert.equal(port.isOpen, false);
 });
 
 // Web Serial on a framing error or a break: the pending read rejects and the port has a new readable

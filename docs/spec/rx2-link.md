@@ -163,8 +163,8 @@ one of two routes. Both send B to its first stage with `STUB` and end with the s
 The bridge:
 
 1. The host asks A's debug link for the bridge (`DL_CMD_RX2` BRIDGE, [debuglink.md](debuglink.md) 3.22).
-2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8, puts UART3 back to unconfigured and
-   jumps to its first stage at 0x0300C000 ([boot/README.md](../../boot/README.md)). A sends `RESET` instead when B's
+2. After the reply, A sends `STUB`. B writes `STAY` (0x53544159) at 0x0004FFF8, goes back to the loader's clock, sets
+   UART3 to the first stage's divisor (20, 4.2 step 3) and jumps to its first stage at 0x0300C000 ([boot/README.md](../../boot/README.md)). A sends `RESET` instead when B's
    `HELLO` lacks flag bit 1: a B application from before the flag kept its own UART divisor, wrong at the loader's
    clock. B then restarts, and its first stage makes its ten start-up offers.
 3. A copies bytes between the PC cable (UART1) and the link (UART3) both ways. Its transmitter stays off, and it feeds
@@ -176,7 +176,8 @@ The bridge:
    host's last byte, or after 90 s if the host never sends one. It finds B again with `HELLO_REQ`. Bytes from B don't
    count: its handshake offers go on until the host answers.
 
-The link stays at 115200 baud on both routes: the host does not switch speed.
+The link runs at 115200 baud on the bridge. On the pass-through the host moves the cable to the UARTs' real rate
+while A's stub passes (4.2, step 3).
 
 ### 4.1 The exit sequence
 
@@ -199,7 +200,15 @@ RadioFoundry plays no part, so this route works whatever runs on A, as long as t
 2. It gives UART3 its pins: bits 13 and 14 of IO_DIPLEX0 (0x11000034) set, by a read and a write of the word.
 3. It sends PASS with UART3's base (0x14090000), no time-out and its guard (10 ms). A's stub replies `05` and from
    then on copies bytes both ways. It has no buffer of its own: a byte from B goes to the cable when the cable can take
-   it, and a byte from the host waits until UART3 can send it.
+   it, and a byte from the host waits until UART3 can send it. Each side's UART FIFO (16 bytes) takes the slack, so the
+   host must send no faster than UART3 sends. The UARTs have whole divisors only: at the stub's 36 MHz clock the
+   nearest to 115200 is 112500 (36 MHz / (16 x 20)), and a 4 KB write request sent at 115200 overflows A's FIFO part way.
+   So after the `05` the host sets the cable to the clock over 16 times the nearest whole divisor (the clock measured
+   when it configured the stub), when that differs from 115200 by more than 0.5 %, and back to 115200 after the exit
+   sequence (step 6). B's application (before its jump) and its first stage set UART3 to the same divisor, 20, and B's stub keeps it: at 19 (118421
+   baud) B would send 5.3 % fast and A's stub would read bit 7 of B's bytes wrong. A B application from before this change
+   still sets 19: its first stage's acks arrive as `82 05 80 03`, which the host takes as the ack, and its stub's
+   replies are asked for again until the new image is in.
 4. The host sends `STUB` through it. B goes to its first stage as in step 2 of the bridge. A B still in a stub from an
    earlier run says nothing; the host then sends `HELLO`, and uses that stub if it answers.
 5. The host loads B's stub, writes B's image and restarts B (`--boot reset`), as in steps 4 and 5 of the bridge.

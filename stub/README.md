@@ -129,7 +129,9 @@ The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88`
 routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
 tool reaches it through A's stub ([rx2-link.md](../docs/spec/rx2-link.md) 4.2): with `--rfoundry-enter` it loads and
 configures the stub on A, gives A's UART3 its pins, and sends PASS (protocol 8). A's stub then passes the cable through
-to B, the tool sends B to its first stage and loads the stub into B. When it is done with B, after `--boot reset` or on
+to B, and the tool moves the cable to the UARTs' real rate (112500 baud at the stub's 36 MHz clock, so the 4 KB write
+requests don't overflow A's FIFO), sends B to its first stage and loads the stub into B. B's first stage and stub use
+the same rate; a B image from before that sends 5 % fast, and the tool takes its acks with bit 7 set. When it is done with B, after `--boot reset` or on
 an error, it sends the exit sequence `7E E7 81 18` alone with quiet before and after
 ([rx2-link.md](../docs/spec/rx2-link.md) 4.1). A's stub then answers again, and the tool restarts A. `--attach` takes a
 B still in a stub from an earlier run.

@@ -294,6 +294,22 @@ export class SerialStream {
 		await Promise.race([this.pumping, sleep(2000)]);
 		try { await this.port.close(); } catch (e) { note("serial port did not close", String(e?.message || e)); }
 	}
+
+	// Another line rate on the same port (a stub's pass-through, stub.js passTo): Web Serial sets the rate only when a
+	// port opens, so what was written leaves first, the pump lets go, and the port opens again at the new rate with
+	// what was already read kept
+	async setBaud(baudRate) {
+		const wait = Math.min(this.outUntil + OUT_SETTLE - Date.now(), OUT_WAIT_MAX);
+		if (wait > 0) await sleep(wait);
+		this.closed = true;
+		try { await this.reader?.cancel(); } catch (e) { /* gone */ }
+		await Promise.race([this.pumping, sleep(2000)]);
+		await this.port.close();
+		await this.port.open({ baudRate, bufferSize: 65536 });
+		this.closed = false;
+		this.baud = baudRate;
+		this.pumping = this.pump();
+	}
 }
 
 // The send check on a port just opened with a SEND_CHECK_CHUNK buffer: {ok, bytes taken, ms}. Never closes or drains

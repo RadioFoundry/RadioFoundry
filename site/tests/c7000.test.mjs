@@ -154,8 +154,10 @@ test("GD-88 receiver B: the first SoC's stub passes the cable to B, whose first 
 	t.after(() => r.stop());
 	const main = await mainStub(r);
 	const bridge = C.boards.gd88b.stub_board.bridge;
+	main.uartHz = 36e6;	// the loader's APB clock: the UARTs make 112500, not 115200
 	await main.passTo(bridge);
 	assert.equal(r.ram.get(bridge.mux[0]) & bridge.mux[1], bridge.mux[1], "the UART's pins routed first");
+	assert.equal(r.stream.baud, 112500, "the cable at the UARTs' rate while it passes");
 	const s = new Stub(r.stream, { log: quiet });
 	await s.waitForRom(3000);
 	const image = stubFor(C, "gd88b", stubs.image);
@@ -167,6 +169,7 @@ test("GD-88 receiver B: the first SoC's stub passes the cable to B, whose first 
 	// B's stub restarts B only; the exit sequence gives the cable back to A's stub, configured as it was
 	await s.resetChip();
 	assert.ok(await main.passExit(), "A's stub answers 05 1, then HELLO");
+	assert.equal(r.stream.baud, 115200, "the cable's own rate again after PASS");
 	assert.ok(!r.passUp && r.state === "stub" && r.stubCfg.board === C.boards.gd88.stub_board.id);
 	await main.resetChip();
 	await sleep(800);
@@ -259,6 +262,19 @@ test("boot ROM load through a cable that echoes what it sends: the echo is dropp
 	assert.ok(s.echo, "the echo was seen");
 	assert.ok(lines.some((l) => /echoes/.test(l)), "and logged once");
 	assert.equal(lines.filter((l) => /echoes what/.test(l)).length, 1);
+});
+
+test("boot ROM acks with bit 7 set (a UART 5 % fast) are taken, and logged once", async (t) => {
+	const { r } = await radio("stock", { faults: { romAckHigh: true } });
+	t.after(() => r.stop());
+	const lines = [];
+	const s = new Stub(r.stream, { log: (l) => lines.push(l) });
+	setTimeout(() => r.powerOn(), 50);
+	await s.waitForRom(5000);
+	await s.loadThroughRom(stubs.image, stubs.load);
+	assert.equal(r.state, "stub");
+	assert.ok(s.acksHigh > 1);
+	assert.equal(lines.filter((l) => /runs fast/.test(l)).length, 1);
 });
 
 test("boot ROM load answered with something else: the error has the bytes, the cable and the way out", async (t) => {

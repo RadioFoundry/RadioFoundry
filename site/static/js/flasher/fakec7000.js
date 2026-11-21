@@ -349,12 +349,13 @@ export class FakeC7000 {
 		// sector's data (as a record left over from an earlier request would); silentAfterReset: after the stub's soft
 		// reset RadioFoundry runs but its host link stays silent until a power cycle, as on the real radios (dm32-bringup.md);
 		// romEcho: the cable sends every byte the host writes to the boot ROM back to it, ahead of the ROM's answer;
-		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; slowCable: ms the
+		// romNak: the boot ROM answers the load's frames with something other than its acknowledgement; romAckHigh: its acks
+		// arrive with bit 7 set in bytes 0 and 2 (a UART 5 % fast); slowCable: ms the
 		// cable takes to carry what the host writes (longer than romWindow: the answer to the greeting comes too late);
 		// deafCable: nothing the host writes reaches the radio, while the radio is heard (a cable that holds the line);
 		// badWrite: how many of the next WRITEs (op 0x0E) leave a bit wrong in their sector; writeStatus: the status every
 		// WRITE answers instead (0x0F write protected, 0x0C flash busy too long), 0 = none
-		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, slowCable: 0, deafCable: false, badWrite: 0,
+		this.faults = { flip: 0, misplace: [], silentAfterReset: false, romEcho: false, romNak: false, romAckHigh: false, slowCable: 0, deafCable: false, badWrite: 0,
 			writeStatus: 0, nandEcc: [], iapBlankCal: false, ...faults };
 		this.rand = rng(11);
 		this.state = "off";		// off | rom | booting | firmware | stub | bfloader
@@ -389,7 +390,9 @@ export class FakeC7000 {
 	makeStream() {
 		const radio = this;
 		const s = {
-			buf: new Uint8Array(0), closed: false,
+			buf: new Uint8Array(0), closed: false, baud: 115200,
+			// the radio's UARTs don't follow: the rate is recorded for the tests (the PASS rate, stub.js passTo)
+			async setBaud(b) { s.baud = b; radio.events.push(`baud ${b}`); },
 			clear() { s.buf = new Uint8Array(0); },
 			take(n) { const o = s.buf.slice(0, n); s.buf = s.buf.slice(n); return o; },
 			async write(data) {
@@ -555,7 +558,8 @@ export class FakeC7000 {
 		if (sum8(payload) !== ib[2]) return 1;
 		if (op === 0x18) this.loaded = concat(this.loaded, payload.subarray(8));
 		else this.startStub("stub (boot ROM)");
-		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03] : [0x02, 0x05, 0x00, 0x03]));
+		this.send(new Uint8Array(this.faults.romNak ? [0x02, 0x0A, 0x00, 0x03]
+			: this.faults.romAckHigh ? [0x82, 0x05, 0x80, 0x03] : [0x02, 0x05, 0x00, 0x03]));
 		return 1;
 	}
 
