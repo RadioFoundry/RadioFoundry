@@ -5238,6 +5238,17 @@ static void test_soft_volume(void)
 	CHECK(vol_last == 0);
 	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1);
 	run(100);
+	// The override goes out as set even 1 % from the knob's level (knob 20 %, step 3 = 19 %), and the knob's level comes
+	// back exactly when the override is given back
+	vol_knob = 20;
+	run(100);
+	CHECK(vol_last == 20);
+	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 3 }, 1);
+	run(100);
+	CHECK(vol_last == 19 && sm.view.volume_src == RVOL_OVERRIDE);
+	debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ RADIO_VOLUME_KNOB }, 1);
+	run(100);
+	CHECK(vol_last == 20 && sm.view.volume_src == RVOL_KNOB);
 	// No knob: the op stores the step like a UI change; 0xFF gives the default back
 	vol_knob = -1;
 	boot();

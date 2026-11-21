@@ -9084,6 +9084,9 @@ static void follow_volume(radio_sm_t *sm)
 		v = sm->volume_sent;
 		src = RVOL_HOLD;
 	}
+	// The 2 % filter is for the knob's reading only: a level set by number (the override, a soft step) or a change of
+	// source goes out exactly, even 1 % from the level in force
+	bool exact = src != RVOL_KNOB || src != sm->view.volume_src;
 	if (src != sm->view.volume_src || sm->vol_step != sm->view.volume_step ||
 	    sm->vol_override != sm->view.volume_override) {
 		sm->view.volume_src = src;
@@ -9092,7 +9095,8 @@ static void follow_volume(radio_sm_t *sm)
 		changed(sm);
 	}
 	int d = v - sm->volume_sent;
-	if (sm->volume_sent < 0 || d >= 2 || d <= -2 || ((v == 0 || v == 100) && v != sm->volume_sent)) {
+	if (sm->volume_sent < 0 || (exact && d != 0) || d >= 2 || d <= -2 ||
+	    ((v == 0 || v == 100) && v != sm->volume_sent)) {
 		sm->volume_sent = (int16_t)v;
 		sm->view.volume = (int8_t)v;
 		changed(sm);
