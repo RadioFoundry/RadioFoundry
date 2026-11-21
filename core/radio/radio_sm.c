@@ -7297,7 +7297,23 @@ static void bench_tick(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
+// The radio's own DMR ID, the codeplug's (set on the radio in Settings > My radio, which writes the codeplug). Taken
+// before a channel is selected: a trunked channel's system needs an ID to start, and one selected without would stay
+// unavailable
+static void load_own_id(radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	sm->own_id = codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->view.dmr.own_id = sm->own_id;
+#else
+	(void)sm;
+#endif
+}
+
+// The preferences the radio core uses: base squelch, master power, VFO step
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -7314,11 +7330,6 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
-	if (sm->own_id == 0) {
-		sm->own_id = RADIO_DMR_ID_DEFAULT;
-	}
-	sm->view.dmr.own_id = sm->own_id;
 	// The radio name (talker alias text): the settings' override, else the codeplug's; hang times from the codeplug
 	codeplug_dmr_settings_t gs;
 	codeplug_dmr_settings(&gs);
@@ -7887,6 +7898,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->view.zone_index = zi;
 #endif
+	load_own_id(sm);
 	select_position(sm, zi, number, pos);
 #if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
@@ -8060,6 +8072,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	kv_load(sm, now_ms);
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
+	load_own_id(sm);
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
 	apply_prefs(sm, &st);
 #if CONFIG_DMR
