@@ -467,6 +467,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "Solo FM: questo è NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_DPMR_CHANNEL"
+msgid "FM only: this is dPMR"
+msgstr "Solo FM: questo è dPMR"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -4523,6 +4528,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "Fino a 90 N/S, 180 E/O"
 
 #: core/ui/ui_screens.c
+msgctxt "DPMR_VALUE_ALL"
+msgid "All"
+msgstr "Tutti"
+
+#: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"
 msgstr "IDLE"
@@ -4596,6 +4606,11 @@ msgstr "Nessuna frequenza TX"
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM broadcast"
+
+#: core/ui/ui_screens.c
+msgctxt "DPMR_CHIP_OWN_CALLS"
+msgid "Own calls"
+msgstr "Solo mie"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_RESTART_TO_APPLY"
@@ -5073,14 +5088,19 @@ msgid "MON: digital monitor"
 msgstr "MON: monitor digitale"
 
 #: core/ui/ui_screens.c
-msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
-msgid "Squelch open"
-msgstr "Squelch aperto"
+msgctxt "CALL_WHY_OTHER_ID"
+msgid "Other ID: not played"
+msgstr "Altro ID: non riprodotto"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_RECEIVING"
 msgid "Receiving"
 msgstr "Ricezione"
+
+#: core/ui/ui_screens.c
+msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
+msgid "Squelch open"
+msgstr "Squelch aperto"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_SENDING"

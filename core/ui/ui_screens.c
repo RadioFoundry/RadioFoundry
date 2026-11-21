@@ -11,6 +11,9 @@
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
+#if CONFIG_DPMR
+#include "dpmr/dpmr.h"			// dpmr_id_text, dpmr_cc_text, DPMR_HAVE_*
+#endif
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
 #endif
@@ -264,6 +267,26 @@ static uint8_t channel_power(const radio_view_t *v)
 {
 	return v->ch.power == CODEPLUG_POWER_DEFAULT ? board.power_default : v->ch.power;
 }
+
+#if CONFIG_DPMR
+void ui_sb_dpmr_id(sbuf_t *b, uint32_t id)
+{
+	char t[16];
+	if (id == DPMR_ID_ALL) {
+		sb_str(b, TR(DPMR_VALUE_ALL, "All"));
+		return;
+	}
+	dpmr_id_text(id, t, sizeof t);
+	sb_str(b, t);
+}
+
+void ui_sb_dpmr_cc(sbuf_t *b, const radio_view_t *v)
+{
+	char t[8];
+	dpmr_cc_text(v->dpmr.tx_cc != 0 ? v->dpmr.tx_cc : dpmr_cc_for_hz(v->ch.tx_hz), t, sizeof t);
+	sb_str(b, t);
+}
+#endif
 
 void ui_bands_text(char *out, size_t len, bool tx)
 {
@@ -1175,6 +1198,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, "TG ");
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
+#if CONFIG_DPMR
+	} else if (v->ch.mode == RADIO_MODE_DPMR) {
+		// The same for dPMR: the ID PTT calls ("CID 87", "All", an address); the code is in the chips
+		ui_sb_dpmr_id(&b, v->dpmr.talk);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1256,6 +1284,25 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		sb_str(&b, (v->nxdn.flags & RADIO_NXDN_9600) != 0 ? " 9600" : " 4800");
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_DPMR) {
+		// The same for dPMR: the power, the channel code sent ("CC A2"), and where only calls to us and to the ID
+		// called play, that filter: it is why a call heard may stay silent
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_DPMR
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "CC ");
+		ui_sb_dpmr_cc(&b, v);
+		if (x + gfx_text_width(f, buf) > w)
+			return;
+		x = gfx_text(f, x, y, buf, ui_col.fg) + f->w;
+		const char *mine = TR(DPMR_CHIP_OWN_CALLS, "Own calls");
+		if ((v->dpmr.flags & RADIO_DPMR_MINE) != 0 && x + gfx_text_width(f, mine) <= w)
+			gfx_text(f, x, y, mine, ui_col.fg);
 #endif
 		return;
 	}
@@ -2111,14 +2158,17 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 #endif
 
 #if CONFIG_AIR
-// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+// A P25, NXDN or dPMR call coming in (air_call): whether one is heard now, and its fields
 typedef struct {
 	bool played, enc, unit;
+	bool dpmr;		// dPMR's IDs: written as its radios show them, and only once the call has brought them
+	bool has_src, has_dst;	// dPMR: which of the IDs are in (a late entry's come in the CCH)
 	uint32_t src, dst;
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	memset(c, 0, sizeof *c);
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2141,6 +2191,18 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		return true;
 	}
 #endif
+#if CONFIG_DPMR
+	if (v->ch.mode == RADIO_MODE_DPMR && (v->dpmr.flags & RADIO_DPMR_RX) != 0) {
+		const radio_dpmr_view_t *d = &v->dpmr;
+		c->dpmr = true;
+		c->played = (d->flags & RADIO_DPMR_PLAYED) != 0;
+		c->has_src = (d->have & DPMR_HAVE_OWN) != 0;
+		c->has_dst = (d->have & DPMR_HAVE_CALLED) != 0;
+		c->src = d->own;
+		c->dst = d->called;
+		return true;
+	}
+#endif
 	(void)v;
 	(void)c;
 	return false;
@@ -2155,10 +2217,36 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 
 	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			c->dpmr ? TR(CALL_WHY_OTHER_ID, "Other ID: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
+#if CONFIG_DPMR
+	if (c->dpmr) {
+		// Who calls and whom ("CID 87 > All", "703710 > CID 87"), as much as the call has brought so far: a late
+		// entry reads its IDs from the CCH over a few frames. Too wide, the caller gives way, as above; the arrow
+		// stays, so the ID left reads as the one called
+		for (int with_id = c->has_src; with_id >= 0; with_id--) {
+			sb_init(&b, buf, sizeof buf);
+			if (!c->has_src && !c->has_dst) {
+				sb_str(&b, TR(STATE_RECEIVING, "Receiving"));
+				break;
+			}
+			if (with_id)
+				ui_sb_dpmr_id(&b, c->src);
+			if (!c->has_dst)
+				break;
+			sb_str(&b, with_id ? " " GLYPH_ARROW " " : GLYPH_ARROW " ");
+			ui_sb_dpmr_id(&b, c->dst);
+			if (gfx_text_width(f, buf) <= gfx_width())
+				break;
+		}
+		gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.rx);
+		return;
+	}
+#endif
 	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);

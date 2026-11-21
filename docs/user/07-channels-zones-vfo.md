@@ -289,8 +289,9 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
-radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25, NXDN and dPMR after DMR
+on a radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo),
+[dPMR in the VFO](#dpmr-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -406,6 +407,20 @@ squelch and the group (when a contact has that group; else group 1).
   your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
   takes one as A or B.
+
+### dPMR in the VFO
+
+On a radio that runs dPMR, dPMR is one of the VFO's modes, after NXDN ("VFO: dPMR"). It is dPMR Mode 1 voice (the
+licence-free dPMR446 radios' mode), through the radio's DMR voice codec.
+
+- It hears every call on every channel code. PTT sends an all call on the channel code that goes with the frequency.
+- Home shows "dPMR", what PTT calls on the talk line ("All", a common ID as "CID 87", or a full ID as its number),
+  and the channel code sent ("CC A2"). "Own calls" means only calls to you and to the ID you call are played.
+- During a call Home shows who calls and whom ("703710 > CID 87"). A radio that joins a call late reads the IDs over
+  the next frames, and says "Receiving" until then. A call the channel doesn't play says "Other ID: not played".
+- FM's tone and width tiles say "FM only: this is dPMR".
+- The IDs, the channel code and which calls play can be changed only from a computer for now
+  (`rfoundry_debug.py radio dpmr`), and the change lasts until the radio is switched off.
 
 ### Leaving the VFO
 

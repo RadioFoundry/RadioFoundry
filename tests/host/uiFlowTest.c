@@ -84,6 +84,28 @@ static const flow_t flows[] = {
 	  "screen=home shows=Encrypted:_not_played hides=ID_1234", 0, false },
 	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
 #endif
+#if CONFIG_DPMR
+	// dPMR the same way: the power and the channel code sent in the chips (the frequency's when automatic), the ID PTT
+	// calls on the talk line, and where only calls to us and to that ID play, that filter: it is why a call stays silent
+	{ "dPMR channel shows its mode", "dlmode:dpmr", "",
+	  "mode=dpmr screen=home shows=dPMR shows=All shows=CC_ hides=No_tone hides=SQ5 hides=Own_calls", 0, false },
+	{ "dPMR home: a common ID on its own code", "dlmode:dpmr dpmrtalk:87,2,m", "",
+	  "screen=home shows=CID_87 shows=CC_A2 shows=Own_calls", 0, false },
+	// A call names its caller and whom it calls, as far as it has brought them: a late entry reads the IDs from the
+	// CCH over a few frames, the called ID first or the caller's
+	{ "dPMR home: a call heard", "dlmode:dpmr", "dpmrrx:0ABCDE,57FFFF", "screen=home shows=703710 shows=CID_87", 0,
+	  false },
+	{ "dPMR home: a call to all", "dlmode:dpmr", "dpmrrx:57FFFF,FFFFFF", "screen=home shows=CID_87_" GLYPH_ARROW "_All", 0,
+	  false },
+	{ "dPMR home: a call to another ID", "dlmode:dpmr dpmrtalk:87,0,m", "dpmrrx:0ABCDE,0CFFFF,o",
+	  "screen=home shows=Other_ID:_not_played hides=703710", 0, false },
+	{ "dPMR home: joined late", "dlmode:dpmr", "dpmrrx:-,-", "screen=home shows=Receiving", 0, false },
+	{ "dPMR home: joined late, the called ID in", "dlmode:dpmr", "dpmrrx:-,57FFFF",
+	  "screen=home shows=" GLYPH_ARROW "_CID_87 hides=Receiving", 0, false },
+	{ "dPMR home: stored channel", "dpmr chkind:3,dpmr,PMR_CH_3 dlpos:3 dlmode:dpmr", "dpmrrx:0ABCDE,57FFFF",
+	  "screen=home shows=PMR_CH_3 shows=703710", 0, false },
+	{ "dPMR channel: bandwidth is FM only", "dlmode:dpmr", "quick 8", "mode=dpmr toast=FM_only:_this_is_dPMR", 2, false },
+#endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
 	  2, false },
 #if CONFIG_P25
@@ -322,6 +344,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
 	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
 	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
+#if CONFIG_DPMR
+	{ "11 dual watch modes: dPMR channel", "dpmr chkind:3,dpmr up down quick 7", "", "dual=1 sel=A shows=dPMR hides=FM",
+	  0, false },
+	{ "11 dual watch modes: dPMR call", "dpmr chkind:3,dpmr up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=dPMR_call hides=FM_signal hides=DMR_call", 0, false },
 #endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
@@ -846,6 +874,17 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
 	  false },
+#if CONFIG_DPMR
+	// dPMR: after the other air modes the radio runs; then FM
+	{ "S VFO mode: DMR to dPMR", "dpmr ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_dPMR mode=dpmr temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: NXDN to dPMR", "nxdn dpmr ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_dPMR mode=dpmr", 2, false },
+	{ "S VFO mode: dPMR back to FM", "dpmr ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: no dPMR where the radio doesn't run it", "ok 4 up ok quick 4 back quick 4 back", "",
+	  "mode=fm", 0, false },
+#endif
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },

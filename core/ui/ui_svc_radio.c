@@ -224,6 +224,9 @@ uint32_t ui_svc_feat_radio(void)
 #if CONFIG_NXDN
 	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
 #endif
+#if CONFIG_DPMR
+	       (radio_dpmr_fits() ? UI_FEAT_DPMR : 0) |
+#endif
 	       0;
 }
 

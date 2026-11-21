@@ -469,6 +469,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "仅 FM：这是 NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_DPMR_CHANNEL"
+msgid "FM only: this is dPMR"
+msgstr "仅 FM：这是 dPMR"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -4525,6 +4530,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
 
 #: core/ui/ui_screens.c
+msgctxt "DPMR_VALUE_ALL"
+msgid "All"
+msgstr "全部"
+
+#: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"
 msgstr "空闲"
@@ -4598,6 +4608,11 @@ msgstr "无发射频率"
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
+
+#: core/ui/ui_screens.c
+msgctxt "DPMR_CHIP_OWN_CALLS"
+msgid "Own calls"
+msgstr "仅本机"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_RESTART_TO_APPLY"
@@ -5075,14 +5090,19 @@ msgid "MON: digital monitor"
 msgstr "MON：数字监听"
 
 #: core/ui/ui_screens.c
-msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
-msgid "Squelch open"
-msgstr "静噪打开"
+msgctxt "CALL_WHY_OTHER_ID"
+msgid "Other ID: not played"
+msgstr "其他 ID：不播放"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_RECEIVING"
 msgid "Receiving"
 msgstr "接收中"
+
+#: core/ui/ui_screens.c
+msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
+msgid "Squelch open"
+msgstr "静噪打开"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_SENDING"
