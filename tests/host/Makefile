@@ -1763,12 +1763,16 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 
 # core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
 # host builds it and as that core does (-DFXP_SPLIT16); and the full-rate codec's output the same either way
+# -O1 because its 137 million checks take minutes at -O0. Optimizing turns on _FORTIFY_SOURCE where the compiler
+# defaults it (Ubuntu's GCC: the CI runners), and its printf wrappers rely on always_inline, which CFLAGS'
+# -D__attribute__(x)= removes, so they fail to compile: these are the only tests built optimized, hence no fortify
+FXPOPT  := -O1 -U_FORTIFY_SOURCE
 TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
 fxpHalvesTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
-	$(CC) $(CFLAGS) -Wshadow -O1 -o $@ fxpHalvesTest.c
+	$(CC) $(CFLAGS) -Wshadow $(FXPOPT) -o $@ fxpHalvesTest.c
 
 fxpHalvesSplitTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
-	$(CC) $(CFLAGS) -Wshadow -O1 -DFXP_SPLIT16 -o $@ fxpHalvesTest.c
+	$(CC) $(CFLAGS) -Wshadow $(FXPOPT) -DFXP_SPLIT16 -o $@ fxpHalvesTest.c
 
 mbeExactTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ mbeExactTest.c $(MBE) -lm
