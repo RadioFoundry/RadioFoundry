@@ -358,11 +358,17 @@ static bool sig_apply(radio_settings_t *s)
 #endif
 
 static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms);
+#if CONFIG_DMR
+static void dmr_configure(radio_sm_t *sm);
+#endif
 
 static void kv_load(radio_sm_t *sm, uint32_t now_ms)
 {
 	kv_seen = codeplug_kv_serial();
 	bool sig = false;
+#if CONFIG_DMR && CONFIG_SIG_TONES
+	uint8_t begin_dmr = sm->set.sig_dmr[SIG_EV_BEGIN];
+#endif
 #if CONFIG_SIG_TONES
 	sig = sig_apply(&sm->set);
 #endif
@@ -370,6 +376,15 @@ static void kv_load(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);	// published with the settings (radio_get_settings): the menu shows it
 		radio_to_settings(&sm->set, now_ms);	// the radio's own copy follows the key
 	}
+#if CONFIG_DMR && CONFIG_SIG_TONES
+	// The DMR start tone's output decides whether the stack holds the key-up for it (permit_before_key), and the stack
+	// takes that at dmr_configure. use_settings reconfigures when the menu's settings change it, but a record changes it
+	// here (a CPS write, the menu's own record job): without this, a board whose beeps can't sound on air kept keying at
+	// once, with no start tone on the speaker, until the next channel change (issue 839, talk permit off)
+	if (sm->set.sig_dmr[SIG_EV_BEGIN] != begin_dmr && sm->dmr_running) {
+		dmr_configure(sm);
+	}
+#endif
 #if CONFIG_DMR_DATA_CORE
 	data_kv_load();
 #endif

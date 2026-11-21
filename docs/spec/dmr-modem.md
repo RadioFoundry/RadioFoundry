@@ -351,9 +351,9 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - Talk permit before keying (`dmr_call_config_t.permit_hold_ms`): on a radio whose beeps can't sound on air, an
   admitted voice call (the channel free, the repeater up) waits in `TX_PERMIT`, still receiving, while the radio plays
   its talk permit tone. It keys after at least `permit_hold_ms` and once `permit_busy()` is false, at most
-  `DMR_CALL_PERMIT_MAX_MS` (400 ms) after the hold began. The call view counts each hold in `permit_seq` and shows
-  it as its own phase (`DMR_CALL_PHASE_TX_PERMIT`; the screen says ADMITTED). Releasing PTT in the hold ends the
-  call, as in TX access. A call heard in the hold sends it back to TX access, as if it had been there at PTT: it is
+  `DMR_CALL_PERMIT_MAX_MS` (1200 ms: the longest start tone, 900 ms, and an amplifier's lead) after the hold began.
+  The call view counts each hold in `permit_seq` and shows it as its own phase (`DMR_CALL_PHASE_TX_PERMIT`; the
+  screen says ADMITTED). Releasing PTT in the hold ends the call, as in TX access. A call heard in the hold sends it back to TX access, as if it had been there at PTT: it is
   refused, or waits out `access_wait_ms` and holds again with a new permit. Through a repeater the key-up is
   impolite, so without this it would go over the call.
 - After our own transmission, the receiver keeps the slot lock and the call's destination for the capture timeout.
