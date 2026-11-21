@@ -269,6 +269,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `RADIO_TUNE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VIBRATE` | ? | ✕ | ● | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `GPS` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
@@ -290,7 +291,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `APRS_IGATE` | ● | ○ | ● | … | … | ○ | ● | ● |
 | `GPS_SKY` | ● | ● | ✕ | ● | ● | ● | ● | ✕ |
 | `SATELLITE_TLE` | ● | ● | ● | ● | ● | ● | ● | ● |
-| `POWER_TUNE` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `KEY_ASSIGN` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CHANNEL_LIST` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -421,7 +421,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
 | Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
-| Power tuning: the owner's drive adjustments and level names, kept outside the codeplug | `POWER_TUNE` | 3,344 | 3,736 | Needs `DEBUGLINK`. RAM: 172 B on the DM-1701 and 160 B on the DM-32UV (4,040 B flash). The web tool keys the radio through the debug link ([power-tune.md](spec/power-tune.md)). Untested on a radio |
+| Radio tuning: the owner's trims of each power level's drive, each mode's deviation and carrier frequency, and level names, kept outside the codeplug | `RADIO_TUNE` | 1,092 | 960 | Needs `DEBUGLINK`. RAM: 156 B on the DM-1701, 136 B on the MD-380; 1,664 B flash and 128 B RAM on the DM-32UV. Deviation trims on radios that mark the mode in `board_t.tune` (the core view's `tune`): FM on the HR_C6000 radios. The site's Radio Tuning page works through the debug link ([radio-tune.md](spec/radio-tune.md)). Untested on a radio |
 | Satellite TLE catalog, pass prediction and Doppler compensation | `SATELLITE_TLE` | 26,332 | 26,620 | Needs `DEBUGLINK`. RAM: 1,280 B on DM-1701 (656 B linked, 624 B from the existing heap), 1,272 B on MD-380 (648 B linked, 624 B heap), and 1,264 B on DM-32UV (656 B linked, 608 B heap). Heap figures include allocation overhead and are already reserved in linked RAM. The DM-1701 and MD-UV380 maximal builds keep it on; the MD-9600 maximal build leaves it off to fit app flash. Default builds keep it on ([satellite.md](spec/satellite.md)). |
 | Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 2,496 | 3,016 | About 515 bytes of RAM, most of it About's longer text. Read only when About opens or a host asks ([support-info.md](spec/support-info.md)) |
 | Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |

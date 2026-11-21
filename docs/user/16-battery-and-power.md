@@ -45,22 +45,41 @@ Both changes are temporary. Hold **OK** to save the level to the channel.
 
 Power levels use the radio's factory calibration. Use the lowest power that reaches the other station.
 
-### Power tuning
+### Radio tuning
 
-Open **Tools > Power tuning** on the RadioFoundry site to adjust each power level to your radio. You need a dummy
-load and a wattmeter. The page reads the radio's bands and levels, keys the radio for 3 seconds at a time, and takes
-your wattmeter reading. Then the page suggests an adjustment and stores the result in the radio.
+Open **Tools > Radio tuning** on the RadioFoundry site to fine-tune your radio. Connect the radio with its programming
+cable. The page reads the radio's bands, power levels and modes, and shows what this radio can tune.
 
-- Each band has its own tuning. Tune one frequency per band, or up to three to follow power across a wide band.
-  Between two tuned frequencies, the radio blends the adjustments.
-- Rename any level, for example **4W** instead of **5W**. The name can be up to 6 characters, and the status line
+| Section | What it tunes | You need |
+|---|---|---|
+| Power | Each power level's output, per band | A dummy load and a wattmeter |
+| Oscillator | The reference frequency of every mode at once | A frequency counter or a receiver you trust |
+| Frequency per mode | A carrier offset seen in one mode only, such as FM but not DMR | A frequency counter or a receiver you trust |
+| Deviation | FM deviation, on radios that support the trim | A deviation meter or a service monitor |
+
+- Changes take effect right away. During a test transmission, some radios change the power at once; on the others,
+  the page restarts the transmission with the new value. Press **Save to radio** to keep the changes. Unsaved changes last until the radio restarts or you press **Discard changes**. The oscillator
+  trim is saved as soon as you change the trim.
+- Each band has its own tuning. Tune one frequency per band, or up to three to follow the radio across a wide band.
+  Between two tuned frequencies, the radio blends the trims.
+- Rename any power level, for example **4W** instead of **5W**. A name can be up to 6 characters, and the status line
   shows the new name.
 - The highest level can only go down, so the radio never transmits above its rating. The lowest level can only go up.
-- **Restore factory power** removes every adjustment and name.
+- **Restore factory values** removes every trim and name, and sets the oscillator trim back to 0. The oscillator trim
+  is the **Freq trim** setting, so the page and the menu change the same value.
 
-The adjustments are stored in the radio, outside the codeplug. A codeplug read, write or share never carries them to
-another radio. A firmware update keeps them. If an update changes a level's factory setting, the page marks that
-level's adjustment as out of date, and the radio stops using it until you tune that level again.
+The trims are stored in the radio, outside the codeplug. A codeplug read, write or share never carries them to another
+radio. A firmware update keeps them. If an update changes a level's factory setting, the page marks that level's trim
+as out of date, and the radio stops using the trim until you tune that level again.
+
+On some radios, the radio's own signal can disturb the USB cable while transmitting, and the page loses the
+connection. The page shows **Connection lost**, keeps looking for the radio, and puts the unsaved changes back when
+the radio answers again. A transmission that the page started ends by itself after a few seconds. To keep the
+connection:
+
+- Use the lowest power level that the test needs, into a dummy load, away from the cable.
+- Put a ferrite choke on the cable near the radio, and use a short, good-quality cable.
+- Plug the cable straight into the computer, not into a hub.
 
 ## Backlight
 

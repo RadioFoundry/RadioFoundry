@@ -2127,8 +2127,8 @@ is well above the "mic muted, no tone" row.
 
 - Settings and storage: the core's map for the 16 MB SPI flash is settings 0x011000 (32 KB, 8 sectors), journal
   0x019000, open-firmware EEPROM 0x000000, open-firmware flash 0x020000 up to 0xE00000, native area 0xE00000 (1 MB),
-  TFTP staging 0xF00000 (256 KB), calibration window 0x010000 (512 B), power tuning 0x01C000 (2 sectors,
-  [power-tune.md](power-tune.md)). The range 0x011000-0x01AFFF has never been
+  TFTP staging 0xF00000 (256 KB), calibration window 0x010000 (512 B), radio tuning 0x01C000 (2 sectors,
+  [radio-tune.md](radio-tune.md)). The range 0x011000-0x01AFFF has never been
   checked on a used radio, for the foreign-region guard of [settings-store.md](settings-store.md) 5.
 - The board's `hal_radio` has `tx_tone`, so the MMDVM task keys the 1750 Hz burst ([mmdvm-protocol.md](mmdvm-protocol.md)).
 - USB: the STM32F405 OTG_FS has three IN endpoints besides EP0, so serial and network are alternatives, not a composite

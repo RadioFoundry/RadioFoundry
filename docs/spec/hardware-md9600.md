@@ -972,7 +972,7 @@ board.
 | Free | 0x010000-0x010FFF | kept free (no calibration copy: the calibration stays in the security registers) |
 | Settings ring | 0x011000-0x018FFF | 8 sectors ([settings-store.md](settings-store.md)) |
 | Sector journal | 0x019000-0x01AFFF | 2 sectors |
-| Power tuning | 0x01C000-0x01DFFF | 2 sectors ([power-tune.md](power-tune.md)) |
+| Radio tuning | 0x01C000-0x01DFFF | 2 sectors ([radio-tune.md](radio-tune.md)) |
 | Board record | 0x01F000-0x01FFFF | the stored board revision (19.3) |
 | Open-firmware flash image | 0x020000-0xDFFFFF | codeplug part 2; the CPS may write up to 0xE00000 |
 | Native codeplug | 0xE00000-0xEFFFFF | reserved |

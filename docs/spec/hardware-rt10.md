@@ -133,7 +133,7 @@ SPI0, mode 0, chip select PTA18 by GPIO. Read 0x03, page program 0x02, 4 KB eras
 | Range | Content |
 | --- | --- |
 | 0x001300-0x031FFF | the original firmware's settings and channels (kept, never written by RadioFoundry) |
-| 0x100000-0x1FDFFF | RadioFoundry: settings, journal, open-firmware codeplug images, native codeplug, power tuning at 0x10C000 (`boards/rt10/board.c`) |
+| 0x100000-0x1FDFFF | RadioFoundry: settings, journal, open-firmware codeplug images, native codeplug, radio tuning at 0x10C000 (`boards/rt10/board.c`) |
 | 0x1FE000-0x1FEFFF | activation block tied to the SoC's eFuse ID: never written |
 | 0x1FF000-0x1FFFFF | factory calibration (section 4.1): never written |
 

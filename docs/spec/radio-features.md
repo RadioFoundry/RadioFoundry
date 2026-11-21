@@ -723,7 +723,7 @@ one value holds on every band; the Hz it comes to grows with the frequency.
 The value is held in parts per billion (ppb, 100 a step), an int16: `hal_radio_t.ref_trim`, `settings_t.ref_trim_ppb`,
 the debug link. The UI stores it and applies it at start-up and on each change with `radio_set_ref_trim()`, which
 clamps, rounds to the step and calls `hal_radio_t.ref_trim` when the value differs from the one the board has (the
-board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets it in RAM only.
+board starts at 0, so a start-up with no trim calls nothing). The debug link's SETTING op 35 sets and stores it as the menu does (the site's Radio Tuning page uses this op).
 
 | Board | Trim |
 |---|---|
