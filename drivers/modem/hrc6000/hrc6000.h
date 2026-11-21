@@ -27,6 +27,7 @@ typedef struct {
 	uint8_t mod1;		// 4:0x46 (calibration "Q", FM pair)
 	int8_t ref_offset;	// reference oscillator tune - 128 for the TX band
 	uint8_t mic_gain;	// 0..31
+	int16_t dev_pm;		// the voice deviation's trim, permille (radio tuning; 0 none)
 } hrc6000_fm_tx_t;
 
 // The FM TX signaling generator used for single tones and DTMF (hrc6000_tx_pair): the registers it borrows, kept

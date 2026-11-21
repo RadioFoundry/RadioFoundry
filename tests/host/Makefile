@@ -23,6 +23,8 @@ export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_s
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
 CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only;
 # out/gen: the language tables and the text keys i18n.h includes (below)
+# Radio tuning off but in radioTuneTest: the rest see the factory values through radio_tune.h's stubs
+CFLAGS  += -DCONFIG_RADIO_TUNE=0
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
@@ -658,7 +660,7 @@ $(error tools/i18n.py --gen failed (above))
 endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
-           $(CORE)/dmr/trunk/t3_sys.c $(CORE)/radio/power_tune.c
+           $(CORE)/dmr/trunk/t3_sys.c
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
@@ -696,7 +698,7 @@ UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c 
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
 UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/hal -I. -Iout/gen \
-           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE
+           '-DGFX_FB_BYTES=(320u*320u*2u)' -DGFX_MAX_ROWS=320 -DCONFIG_FONT_XL=1 -DFONT_BOTH -DGFX_INDEXED=1 -DGFX_FIT_TRACE -DCONFIG_RADIO_TUNE=0
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
@@ -1434,17 +1436,17 @@ satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
 
-# Power tuning (core/radio/power_tune.c, core/debuglink/debuglink_tune.c, docs/spec/power-tune.md)
-TESTS   += powerTuneTest
-POWER_TUNE_SRC := $(CORE)/radio/power_tune.c $(CORE)/radio/power_tune_store.c $(CORE)/debuglink/debuglink_tune.c $(CORE)/storage/storage.c sim/sim_flash.c
-powerTuneTest: powerTuneTest.c $(POWER_TUNE_SRC) $(CORE)/radio/power_tune.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
-		$(wildcard $(CORE)/debuglink/*.h $(CORE)/storage/*.h) sim/sim_flash.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_POWER_TUNE=1 -o $@ powerTuneTest.c $(POWER_TUNE_SRC)
+# Radio tuning (core/radio/radio_tune.c, docs/spec/radio-tune.md)
+TESTS   += radioTuneTest
+RADIO_TUNE_SRC := $(CORE)/radio/radio_tune.c $(CORE)/storage/storage.c sim/sim_flash.c
+radioTuneTest: radioTuneTest.c $(RADIO_TUNE_SRC) $(CORE)/radio/radio_tune.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
+		$(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_RADIO_TUNE=1 -o $@ radioTuneTest.c $(RADIO_TUNE_SRC)
 
-run: run-power-tune
-run-power-tune: powerTuneTest
-	./powerTuneTest
-.PHONY: run-power-tune
+run: run-radio-tune
+run-radio-tune: radioTuneTest
+	./radioTuneTest
+.PHONY: run-radio-tune
 
 run: run-satellite
 run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest
@@ -1746,7 +1748,7 @@ endif
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
            $(CORE)/net/http.c $(CORE)/net/radio_udp.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
-           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(CORE)/radio/power_tune.c $(DATA)
+           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
@@ -1787,9 +1789,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(CORE)/radio/power_tune.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(CORE)/radio/power_tune.c $(SNMPLIB) $(DATA)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest

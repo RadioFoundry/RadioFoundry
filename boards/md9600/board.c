@@ -124,6 +124,7 @@ const board_t board = {
 	.power_bands = power_bands,
 	.power_band_count = sizeof(power_bands) / sizeof(power_bands[0]),
 	.power_default = 2,	// 5 W
+	.tune = 1u << RADIO_MODE_FM,	// HR_C6000 FM voice deviation (core/radio/radio_tune.h)
 	.display = &md9600_display,
 	.input = &md9600_input,
 	.keymap = keymap,

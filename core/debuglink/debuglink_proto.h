@@ -40,22 +40,8 @@ enum {
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
 	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
-	DL_CMD_TUNE		= 0x27,	// power tuning: info, record, limits, preview, edits (debuglink_tune.c; CONFIG_POWER_TUNE, 3.31)
 };
 
-// DL_CMD_TUNE operations (first payload byte; docs/spec/debuglink.md 3.31). Little endian
-#define DL_TUNE_VERSION	1u
-enum {
-	DL_TUNE_OP_INFO = 0,		// -> version, flags, copies, seq u32, max points, max names, name length, levels, bands,
-					//    bands x (lo kHz u32, hi kHz u32), bands x levels x factory name (length u8 + text)
-	DL_TUNE_OP_READ = 1,		// -> the record in force with each entry's state (power-tune.md 3), or nothing
-	DL_TUNE_OP_LIMITS = 2,		// kHz u32 -> levels, levels x (factory, tuned, lo, hi u16), levels x name shown
-	DL_TUNE_OP_PREVIEW = 3,		// level u8 (0xFF: off), offset s16 -> none; RAM only, lapses after 2 minutes
-	DL_TUNE_OP_PUT_POINT = 4,	// kHz u32, level u8, offset s16, reading mW u32 -> none
-	DL_TUNE_OP_DEL_POINT = 5,	// kHz u32, level u8 -> none
-	DL_TUNE_OP_PUT_LABEL = 6,	// kHz u32, level u8, target mW u32, name (0-6 bytes) -> none
-	DL_TUNE_OP_CLEAR = 7,		// -> none: every point and name removed
-};
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
 enum {
@@ -213,6 +199,9 @@ enum {
 					// inside the three ranges
 	DL_STORAGE_OP_CLAIM,		// token u32 (the chip UID's low word) -> reason u8 (as REBOOT's); the erase follows in
 					// the housekeeping task: poll the view's storage.region
+	// Radio tuning's area (CONFIG_RADIO_TUNE, docs/spec/radio-tune.md 4); UNAVAILABLE in a build or board without one
+	DL_STORAGE_OP_TUNE_WRITE,	// copy u8 (0, 1), offset u16, bytes -> none. Offset 0 erases the copy first
+	DL_STORAGE_OP_TUNE_LOAD,	// -> copies valid u8 (bit 0 A, bit 1 B): the record in force loaded again
 };
 
 // DL_CMD_APRS operations (first payload byte; docs/spec/debuglink.md 3.16)

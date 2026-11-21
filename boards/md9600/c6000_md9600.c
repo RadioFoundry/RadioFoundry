@@ -28,6 +28,7 @@
 #include "pins.h"
 #include "hal_time.h"
 #include "modem/hrc6000/hrc6000.h"
+#include "radio/radio_tune.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
 #include "hrc/dmr_glue.h"
@@ -209,6 +210,7 @@ void md9600_c6000_fm_tx(uint32_t hz, bool wide)
 		.mod1 = cal_gain(CAL_FM_Q_UHF, CAL_FM_Q_VHF, hz),
 		.ref_offset = off,
 		.mic_gain = FM_MIC_GAIN,
+		.dev_pm = radio_tune_dev(RADIO_MODE_FM, hz),
 	};
 	fm_tx = true;
 #if MD9600_TX_SIG

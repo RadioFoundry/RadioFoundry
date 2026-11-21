@@ -36,7 +36,7 @@ typedef struct {
 	// Satellite TLE data (docs/spec/satellite.md): separate from update staging so TFTP and CPS-fast never share it
 	uint32_t satellite_addr;
 	uint32_t satellite_size;
-	// Power tuning (core/radio/power_tune.h, docs/spec/power-tune.md): two erase units from here, one copy of the
+	// Radio tuning (core/radio/radio_tune.h, docs/spec/radio-tune.md): two erase units from here, one copy of the
 	// record each, outside every area above; never written by a CPS, never part of a codeplug. 0: none
 	uint32_t tune_addr;
 } hal_flash_map_t;

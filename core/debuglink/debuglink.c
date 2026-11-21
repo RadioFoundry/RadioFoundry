@@ -7,7 +7,7 @@
 #include "config.h"
 #include "radio/beep.h"
 #include "board.h"
-#include "radio/power_tune.h"
+#include "radio/radio_tune.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -131,7 +131,7 @@ static const char *state_name(uint8_t s)
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
 	const radio_view_t *v = &hostlink_view;
-	const char *pw = power_tune_name(v->power, v->ch.tx_hz);
+	const char *pw = radio_tune_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
@@ -755,7 +755,9 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		put32(out + 15, 2u * STORAGE_SECTOR);
 		put32(out + 19, m->calibration_addr);
 		put32(out + 23, m->calibration_size);
-		return 27;
+		put32(out + 27, CONFIG_RADIO_TUNE ? m->tune_addr : 0u);	// radio tuning's two copies, one erase unit each
+		put32(out + 31, CONFIG_RADIO_TUNE && m->tune_addr != 0u ? board.flash->erase_size : 0u);
+		return 35;
 	}
 	case DL_STORAGE_OP_READ: {
 		if (len != 7) {
@@ -799,6 +801,30 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		out[1] = DL_REBOOT_OK;
 		return 2;
 	}
+#if CONFIG_RADIO_TUNE
+	case DL_STORAGE_OP_TUNE_WRITE: {
+		// The page writes the copy not in force, reads it back, then the other one (radio-tune.md 4)
+		uint32_t off = len >= 4 ? get16(req + 2) : 0u, n = len >= 4 ? len - 4u : 0u;
+		if (n == 0u || req[1] > 1u || off + n > board.flash->erase_size) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		if (m->tune_addr == 0u) {
+			return status_only(out, DL_ST_UNAVAILABLE);
+		}
+		if (radio_get_state() == RS_TX) {
+			return status_only(out, DL_ST_REFUSED);		// no flash erase under a transmission
+		}
+		uint32_t a = m->tune_addr + req[1] * board.flash->erase_size;
+		storage_lock();
+		bool ok = (off != 0u || board.flash->erase(a)) && board.flash->write(a + off, req + 4, n);
+		storage_unlock();
+		return status_only(out, ok ? DL_ST_OK : DL_ST_BUSY);
+	}
+	case DL_STORAGE_OP_TUNE_LOAD:
+		out[0] = DL_ST_OK;
+		out[1] = radio_tune_load();
+		return 2;
+#endif
 	default:
 		return status_only(out, DL_ST_BAD_ARG);
 	}
@@ -874,12 +900,6 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_SATELLITE:
 		return debuglink_cmd_satellite(req, len, out, cap);
-	case DL_CMD_TUNE:
-#if CONFIG_POWER_TUNE
-		return debuglink_cmd_tune(req, len, out, cap);
-#else
-		return status_only(out, DL_ST_UNAVAILABLE);
-#endif
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);

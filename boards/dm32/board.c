@@ -232,7 +232,7 @@ void board_early_init(void)
 // "EEPROM" image at 0x700000, a decoded calibration copy from other firmware left alone at 0x710000, the settings ring
 // and the sector journal after it, optional satellite snapshots at 0x71B000..0x71DFFF, the stub write-test sectors at
 // 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID database, the
-// native codeplug in the last 1 MB less its last 2 sectors, which hold power tuning. The factory calibration is read
+// native codeplug in the last 1 MB less its last 2 sectors, which hold radio tuning. The factory calibration is read
 // only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
@@ -246,8 +246,8 @@ static const hal_flash_map_t flash_map = {
 	.calibration_addr = 0,
 	.calibration_size = 0,
 	.native_addr = 0xF00000u,
-	.native_size = 0x0FE000u,	// the last 2 sectors: power tuning
-	.tune_addr = 0xFFE000u,		// docs/spec/power-tune.md
+	.native_size = 0x0FE000u,	// the last 2 sectors: radio tuning
+	.tune_addr = 0xFFE000u,		// docs/spec/radio-tune.md
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,

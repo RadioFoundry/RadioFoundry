@@ -15,7 +15,7 @@
 #include "md9600.h"
 #include "rfseq_md9600.h"
 #include "radio/pa_keyup.h"
-#include "radio/power_tune.h"
+#include "radio/radio_tune.h"
 #include "config.h"
 #include "pins.h"
 #include "periph_md9600.h"
@@ -164,7 +164,7 @@ static bool op_apc(void *ctx, uint32_t hz, uint8_t power, uint16_t *dac)
 	if (!md9600_cal_apc(hz, power, dac)) {
 		return false;
 	}
-	*dac = power_tune_drive(hz, power, *dac);	// the owner's tuning (docs/spec/power-tune.md)
+	*dac = radio_tune_drive(hz, power, *dac);	// the owner's tuning (docs/spec/radio-tune.md)
 	return true;
 }
 

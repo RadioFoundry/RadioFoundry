@@ -183,8 +183,8 @@ static const hal_flash_map_t flash_map = {
 	.calibration_addr = 0,
 	.calibration_size = 0,
 	.native_addr = 0xF00000u,
-	.native_size = 0x0FE000u,	// the last 2 sectors: power tuning
-	.tune_addr = 0xFFE000u,		// docs/spec/power-tune.md
+	.native_size = 0x0FE000u,	// the last 2 sectors: radio tuning
+	.tune_addr = 0xFFE000u,		// docs/spec/radio-tune.md
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,

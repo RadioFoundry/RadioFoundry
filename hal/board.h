@@ -86,6 +86,9 @@ typedef struct {
 	const board_power_band_t *power_bands;
 	uint8_t power_band_count;
 	uint8_t power_default;
+	// Radio tuning (core/radio/radio_tune.h): the modes whose transmit deviation the board scales by radio_tune_dev,
+	// bit 1 << mode each; 0 none
+	uint8_t tune;
 	const hal_display_t *display;
 	const hal_input_t *input;
 	const keymap_entry_t *keymap;

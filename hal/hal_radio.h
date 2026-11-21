@@ -112,10 +112,6 @@ typedef struct {
 	// level's again. False: over the board's hardware limit. Any task may call it
 	uint16_t (*tx_drive_level)(uint32_t hz, uint8_t level);
 	bool (*tx_drive)(uint16_t drive);
-	// Optional (needs tx_drive_level): the lowest drive the PA stays under control at for a transmit frequency, with the
-	// margin of docs/testing/power-calibration.md 3.7 included. Power tuning (core/radio/power_tune.h) lets a level go
-	// down to it; without it the lowest level can only be tuned up
-	uint16_t (*tx_drive_floor)(uint32_t hz);
 	// Optional: the radio core gives the board, once at start, a question to ask as it keys each DMR burst: does an SFR
 	// repeat right now (a channel's or the VFO's repeater role, or the hotspot's SFR mode)? While it does, the board may
 	// key straight from RX, keeping the synthesizer locked for the inbound slot, at the cost of a carrier error it

@@ -86,6 +86,7 @@ static void cw_cancel(radio_sm_t *sm);
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
 #endif
 #if CONFIG_POSITION
+#include "radio/radio_tune.h"
 #include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 
@@ -1442,7 +1443,9 @@ static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t pow
 		tx_limit_refused(hz);
 		return false;
 	}
-	return board.radio->tx(hz, bw, power, tone);
+	// The owner's carrier trim of the mode (radio tuning, radio_tune.h): the synthesizer is set that many Hz off, the
+	// way the reference trim moves it, so DMR bursts keyed later from this tx() get it too
+	return board.radio->tx(hz + (uint32_t)(int32_t)radio_tune_freq(sm->board_mode, hz), bw, power, tone);
 }
 
 static uint8_t tx_check(const radio_sm_t *sm)

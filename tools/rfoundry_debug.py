@@ -100,10 +100,6 @@ AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, 
     AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
 SUPPORT = 0x25                      # the support info (CONFIG_SUPPORT_INFO; docs/spec/debuglink.md 3.29)
 SUPPORT_OP_INFO, SUPPORT_OP_HASH = range(2)
-TUNE = 0x27                         # power tuning (CONFIG_POWER_TUNE; docs/spec/debuglink.md 3.31, power-tune.md)
-TUNE_OP_INFO, TUNE_OP_READ, TUNE_OP_LIMITS, TUNE_OP_PREVIEW, TUNE_OP_PUT_POINT, TUNE_OP_DEL_POINT, TUNE_OP_PUT_LABEL, \
-    TUNE_OP_CLEAR = range(8)
-TUNE_STATES = ("applied", "stale", "gone")
 AIR_OPEN_SOFT = 0x01
 AIR_TX_LAST = 0x01
 AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
@@ -162,7 +158,8 @@ APRS_FIELDS = {name: i for i, name in enumerate(
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
-STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM = range(3)
+STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM, STORAGE_OP_TUNE_WRITE, STORAGE_OP_TUNE_LOAD = range(5)
+TUNE_CHUNK = 60                     # TUNE_WRITE data bytes per request (the request limit less op, copy, offset)
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
  PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN, PROBE_PIN_PWM) = range(15)
@@ -232,6 +229,7 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
+OP_TUNE_SET = 44                    # radio tuning RAM table (docs/spec/radio-tune.md)
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
 CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
@@ -740,83 +738,33 @@ class DebugLink:
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
-    # ── power tuning (CONFIG_POWER_TUNE, docs/spec/debuglink.md 3.31) ──
-    @staticmethod
-    def _names(r, off, count):
-        out = []
-        for _ in range(count):
-            n = r[off]
-            out.append(r[off + 1:off + 1 + n].decode("utf-8", "replace"))
-            off += 1 + n
-        return out, off
-
-    def tune_info(self):
-        """{version, store, floor, preview, copies, seq, max_points, max_labels, name_len, levels,
-        bands: [{lo_khz, hi_khz, names}]}"""
-        r = self.request(TUNE, bytes([TUNE_OP_INFO]))[1]
-        ver, flags, copies, seq, mp, ml, nl, levels, nb = struct.unpack_from("<BBBIBBBBB", r)
-        off, bands = 13, []
-        for _ in range(nb):
-            lo, hi = struct.unpack_from("<II", r, off)
-            bands.append({"lo_khz": lo, "hi_khz": hi})
-            off += 8
-        for b in bands:
-            b["names"], off = self._names(r, off, levels)
-        return {"version": ver, "store": bool(flags & 1), "floor": bool(flags & 2), "preview": bool(flags & 4),
-                "copies": copies, "seq": seq, "max_points": mp, "max_labels": ml, "name_len": nl, "levels": levels,
-                "bands": bands}
-
-    def tune_limits(self, khz):
-        """Each level at khz: [{factory, tuned, lo, hi, name}] in drive units (all 0: no transmission there)"""
-        r = self.request(TUNE, struct.pack("<BI", TUNE_OP_LIMITS, khz))[1]
-        levels = r[0]
-        out = [dict(zip(("factory", "tuned", "lo", "hi"), struct.unpack_from("<4H", r, 1 + 8 * i)))
-               for i in range(levels)]
-        names, _ = self._names(r, 1 + 8 * levels, levels)
-        for d, n in zip(out, names):
-            d["name"] = n
-        return out
-
-    def tune_read(self):
-        """The record in force: {seq, points: [{khz, level, state, factory, delta, mw}],
-        labels: [{khz, level, state, factory, mw, name}]}, or None"""
-        r = self.request(TUNE, bytes([TUNE_OP_READ]))[1]
-        if len(r) < 20:
+    # ── radio tuning (CONFIG_RADIO_TUNE; docs/spec/radio-tune.md) ──
+    def tune_area(self):
+        """(address, erase unit) of the tune area's two copies (STORAGE INFO), or None in a build without one"""
+        _, r = self.request(STORAGE, bytes([STORAGE_OP_INFO]))
+        if len(r) < 34:
             return None
-        seq, np_, nl = struct.unpack_from("<4xIxBB", r)
-        off, points, labels = 20, [], []
-        for _ in range(np_):
-            khz, level, st, fac, delta, mw = struct.unpack_from("<IBBHh2xI", r, off)
-            points.append({"khz": khz, "level": level, "state": TUNE_STATES[min(st, 2)], "factory": fac,
-                           "delta": delta, "mw": mw})
-            off += 16
-        for _ in range(nl):
-            khz, level, st, fac, mw = struct.unpack_from("<IBBHI", r, off)
-            name = r[off + 12:off + 20].split(b"\0")[0].decode("utf-8", "replace")
-            labels.append({"khz": khz, "level": level, "state": TUNE_STATES[min(st, 2)], "factory": fac, "mw": mw,
-                           "name": name})
-            off += 20
-        return {"seq": seq, "points": points, "labels": labels}
+        addr, unit = struct.unpack_from("<II", r, 26)
+        return (addr, unit) if addr else None
 
-    def tune_preview(self, level, delta):
-        """A try-out offset for one level, RAM only, lapses after 2 minutes; level None ends it"""
-        self.request(TUNE, struct.pack("<BBh", TUNE_OP_PREVIEW, 0xFF if level is None else level,
-                                       0 if level is None else delta))
+    def tune_write(self, copy, record):
+        """Write one copy (0 A, 1 B) of a whole record, commit word included (STORAGE TUNE_WRITE): the first chunk erases
+        the copy; the commit word goes last, so a copy cut short is never valid. REFUSED while the radio transmits"""
+        record = bytes(record)
+        body, commit = record[:-4], record[-4:]
+        for off in range(0, len(body), TUNE_CHUNK):
+            self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, off) + body[off:off + TUNE_CHUNK])
+        self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, len(body)) + commit)
 
-    def tune_put_point(self, khz, level, delta, mw=0):
-        """Store a point (replaces the one of this level at khz); REFUSED when full or transmitting"""
-        self.request(TUNE, struct.pack("<BIBhI", TUNE_OP_PUT_POINT, khz, level, delta, mw))
+    def tune_load(self):
+        """Load the record in force into the radio's RAM table (STORAGE TUNE_LOAD): the copies found valid, bit 0 A, bit 1 B"""
+        return self.request(STORAGE, bytes([STORAGE_OP_TUNE_LOAD]))[1][0]
 
-    def tune_del_point(self, khz, level):
-        self.request(TUNE, struct.pack("<BIB", TUNE_OP_DEL_POINT, khz, level))
-
-    def tune_put_label(self, khz, level, name="", mw=0):
-        """Name a level in the band of khz ("" and 0: the factory name again)"""
-        self.request(TUNE, struct.pack("<BIBI", TUNE_OP_PUT_LABEL, khz, level, mw) + name.encode("utf-8"))
-
-    def tune_clear(self):
-        """Remove every point and name: the factory power again"""
-        self.request(TUNE, bytes([TUNE_OP_CLEAR]))
+    def tune_set(self, words, first=0, total=None):
+        """RADIO TUNE_SET: words (u32 each, radio-tune.md 4) at first.. of a RAM table of total; [] empties the table.
+        Live from the next use; the stored record comes back with tune_load or a restart"""
+        total = len(words) + first if total is None else total
+        self.radio(OP_TUNE_SET, struct.pack(f"<BB{len(words)}I", first, total, *words))
 
     # ── the air interface (CONFIG_AIR_RAW, docs/spec/debuglink.md 3.28) ──
     def air_status(self):

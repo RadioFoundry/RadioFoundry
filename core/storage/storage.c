@@ -458,7 +458,9 @@ bool storage_debug_read_allowed(uint32_t addr, uint32_t len)
 	}
 	return inside(addr, len, m->settings_addr, m->settings_size) ||
 	       inside(addr, len, m->journal_addr, 2u * STORAGE_SECTOR) ||
-	       inside(addr, len, m->calibration_addr, m->calibration_size);
+	       inside(addr, len, m->calibration_addr, m->calibration_size) ||
+	       (CONFIG_RADIO_TUNE && m->tune_addr != 0u &&
+		inside(addr, len, m->tune_addr, HAL_FLASH_TUNE_UNITS * board.flash->erase_size));
 }
 
 // A write refused because the region is foreign (counted), or because there is no flash

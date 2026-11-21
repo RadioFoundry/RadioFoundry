@@ -6,7 +6,7 @@
 #include <string.h>
 #include "snmp/snmp_agent.h"
 #include "board.h"
-#include "radio/power_tune.h"
+#include "radio/radio_tune.h"
 #include "hal_time.h"
 #include "radio/radio.h"
 #include "settings/settings.h"
@@ -112,7 +112,7 @@ static void fill(uint32_t now)
 	data.rxHz = v->ch.rx_hz;
 	data.txHz = v->ch.tx_hz;
 	data.power = v->power;
-	data.powerName = v->power < board.power_count ? power_tune_name(v->power, v->ch.tx_hz) : "";
+	data.powerName = v->power < board.power_count ? radio_tune_name(v->power, v->ch.tx_hz) : "";
 	data.cc = v->dmr.cc;
 	data.ts = v->dmr.ts;
 	data.talkTarget = v->dmr.target_id;

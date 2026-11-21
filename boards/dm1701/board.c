@@ -154,6 +154,7 @@ const board_t board = {
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_default = 2,	// 1 W
+	.tune = 1u << RADIO_MODE_FM,	// HR_C6000 FM voice deviation (core/radio/radio_tune.h)
 	.display = &uvf_display,
 	.input = &uvf_input,
 	.keymap = keymap,
