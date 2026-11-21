@@ -1866,6 +1866,57 @@ static void test_scan_dmr_digital_monitor(void)
 	CHECK(!sm.hear_all_latch && !sm.view.dmr.hear_all_latch);
 }
 
+// HIL (test_scan_digital_monitor_any_talkgroup[key_mid_scan]): the monitor key went down on a DMR stop and came up
+// on the next stop, an FM one (a stop is shorter than a press), and digital monitor stayed off for the scan. A press
+// that starts on DMR toggles digital monitor on its release, wherever the scan is by then. Off a scan, a release on
+// an FM channel doesn't
+static void test_scan_monitor_press_across_stops(void)
+{
+	start();	// one DMR channel (position 5), FM around it
+	req(RREQ_SCAN, RSCAN_ZONE);
+	int i;
+	for (i = 0; i < 400 && sm.view.ch.mode != RADIO_MODE_DMR; i++) {
+		run(5);
+	}
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.scan == SCAN_ZONE);
+	req(RREQ_MONITOR, 1);
+	for (i = 0; i < 400 && sm.view.ch.mode == RADIO_MODE_DMR; i++) {
+		run(5);
+	}
+	CHECK(sm.view.ch.mode != RADIO_MODE_DMR && sm.view.scan == SCAN_ZONE);
+	req(RREQ_MONITOR, 0);
+	CHECK(!sm.view.monitor);
+	for (i = 0; i < 400 && sm.view.ch.mode != RADIO_MODE_DMR; i++) {
+		run(5);
+	}
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.hear_all_latch && sm.view.dmr.hear_all);
+	// A second press across stops turns it off again
+	req(RREQ_MONITOR, 1);
+	for (i = 0; i < 400 && sm.view.ch.mode == RADIO_MODE_DMR; i++) {
+		run(5);
+	}
+	req(RREQ_MONITOR, 0);
+	for (i = 0; i < 400 && sm.view.ch.mode != RADIO_MODE_DMR; i++) {
+		run(5);
+	}
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !sm.view.dmr.hear_all_latch && !sm.view.dmr.hear_all);
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(25);
+
+	// No scan: down on a DMR channel, up after a change to an FM one: nothing latched there
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_ZONE_POS, 0);
+	run(25);
+	CHECK(sm.view.ch.mode != RADIO_MODE_DMR);
+	req(RREQ_MONITOR, 0);
+	run(25);
+	CHECK(!sm.hear_all_latch && !sm.view.dmr.hear_all_latch && !sm.view.monitor);
+}
+
 // HIL (test_scan_digital_monitor_any_talkgroup): a zone with an FM channel and a DMR channel on the call's frequency.
 // The DMR bursts opened the FM squelch, so the scan held the FM stop for the whole call, hold and resume with the
 // bursts, and never reached the DMR channel. Now an FM stop about to hold first checks the zone's DMR channel of that
@@ -5130,6 +5181,7 @@ int main(void)
 	test_scan_dmr_mid_call();
 	test_scan_led();
 	test_scan_dmr_digital_monitor();
+	test_scan_monitor_press_across_stops();
 	test_scan_mixed_frequency();
 	test_scan_dmr_kept_timing();
 	test_scan_dmr_noise_deaf();

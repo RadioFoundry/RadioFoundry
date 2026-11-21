@@ -1564,15 +1564,24 @@ static bool permit_before_key(const radio_sm_t *sm)
 	return CONFIG_BEEP && (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 && permit_local(sm) && !sm->view.ch.no_beep;
 }
 
+// A scan that carries digital monitor from stop to stop (any but dual watch)
+static bool scan_carries_hear_all(const radio_sm_t *sm)
+{
+#if CONFIG_SCAN
+	return scan_on(&sm->scan) && sm->scan.kind != SCAN_DUAL;
+#else
+	(void)sm;
+	return false;
+#endif
+}
+
 // Digital monitor on now: latched on this channel, or carried by a zone or VFO scan started with it on, so every
 // stop hears every talkgroup and a call on any of them holds the scan (#595)
 static bool hear_all_on(const radio_sm_t *sm)
 {
-#if CONFIG_SCAN
-	if (sm->scan_hear_all && scan_on(&sm->scan) && sm->scan.kind != SCAN_DUAL) {
+	if (sm->scan_hear_all && scan_carries_hear_all(sm)) {
 		return true;
 	}
-#endif
 	return sm->hear_all_latch;
 }
 
@@ -8537,6 +8546,20 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		// arg 1 down, 0 up, 2 up after the key's hold function ran. DMR: a short press toggles digital monitor (the
 		// hear all latch) on its release, so a hold can do something else (#19); FM: the squelch is open while
 		// the key is held. A key held across a change to DMR is still released here
+		if (req->arg == 1) {
+			sm->dmon_press = sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor;
+		}
+		if (sm->dmon_press) {
+			// A press that starts on DMR is a digital monitor press, released wherever: a scan's stop is shorter
+			// than a press, so the release often comes on the next stop, which may be FM. Off a scan, only on DMR
+			if (req->arg != 1) {
+				sm->dmon_press = false;
+				if (req->arg == 0 && (sm->view.ch.mode == RADIO_MODE_DMR || scan_carries_hear_all(sm))) {
+					set_hear_all_latch(sm, !hear_all_on(sm));
+				}
+			}
+			break;
+		}
 		if (sm->view.ch.mode == RADIO_MODE_DMR && !sm->view.monitor) {
 			if (req->arg == 0) {
 				set_hear_all_latch(sm, !hear_all_on(sm));
