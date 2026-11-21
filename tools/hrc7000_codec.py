@@ -181,6 +181,17 @@ PROFILES = {
         "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
         "entries": ENTRIES_049,
     },
+    # DM-36 DM36.NRFB.01.020, known from a program flash read (hardware-dm36.md 2.1): the 049 codec code with the table
+    # pointers 0x54 above the 049 build's; the tables are the 049 ones and end at 0x18003E74
+    "fcf8d88bf29aab8f6b5404ae47ca75738eaa91483f218c40402054616f8fd834": {
+        "name": "DM-36 program flash (DM36.NRFB.01.020)", "board": "dm36", "kind": "progmem", "tag": 20,
+        "size": 0x100000,
+        "code": (0x030C55A0, 0x14600, 0x00016CDC),
+        "tables": (0x03070D9C, 0x2F78, 0x18000EFC),
+        "code_sha256": "fcf8d88bf29aab8f6b5404ae47ca75738eaa91483f218c40402054616f8fd834",
+        "tables_sha256": "10684c33e3cc8238376e455fd96b1c15a863a864420dbbaa4589803c4eb0b0e1",
+        "entries": ENTRIES_049,
+    },
     # A whole program flash dump (1 MB from 0x03000000, e.g. stub/stubtool.py --progmem) holds the radio's own data
     # besides the firmware, so it's known by the SHA-256 of the code window (the key) and of the table window
     # (docs/spec/codec-dm1801pro.md 1)

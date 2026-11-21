@@ -24,12 +24,12 @@ static const fd6818_regval_t init_table[] = {
 	{ 0x21, 0x06D8 }, { 0x24, 0x8C7E },
 };
 
-// Analog FM, then the 0x2B mode word. 0x48 is its power-on value again, since the DMR set changes it. 0x47 = 0x0140
-// puts the demodulated audio on the chip's output (checked on the radio: the 0x6042 the radio's FM sequence writes left
-// the speaker silent on a strong station)
-static const fd6818_regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x0140 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
-};
+// The gated FM output begins muted. The other set-ups enter FM with the output open.
+#define FM_TABLE(af) { \
+	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, (af) }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 }, \
+}
+static const fd6818_regval_t fm_table[] = FM_TABLE(FD6818_AF_FM);
+static const fd6818_regval_t fm_gated[] = FM_TABLE(0x6042);
 
 // 5.3: DMR is these five registers (0x28 is its power-on value, written again), then 0x3F = 0: the radio writes it
 // in every DMR receive set-up and at every burst end (5.4), so in DMR it never has the power-on 07FE
@@ -43,6 +43,14 @@ static const fd6818_regval_t dmr_table_6943[] = {
 	{ 0x47, 0x6943 }, { 0x48, 0xB2FD }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
 };
 
+// 0x48 = B2F8: a lower DMR level into the HR_C7000, for a board where B2FD (the table above) overdrives its AF input. On
+// such a board (its hardware page) B2FD decoded about 70% of the voice bursts and no header; B2F6-B2F8 decoded every
+// burst and the headers (B2F9 every burst, headers on some calls); B2F5 and below lost sync. B2F8 keeps two steps from
+// that edge
+static const fd6818_regval_t dmr_table_b2f8[] = {
+	{ 0x47, 0x6943 }, { 0x48, 0xB2F8 }, { 0x7E, 0xB03F }, { 0x2B, 0x0700 }, { 0x28, 0x0A40 }, { 0x3F, 0x0000 },
+};
+
 // 5.4: 0x37 first, the other HR_C7000 boards' 0x30 steps with a 0x0200 between idle and the final word
 static const fd6818_regval_t rx_seq[] = { { 0x37, 0x9D1F }, { 0x30, 0x0200 }, { 0x30, 0xBFF1 } };
 static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 0x30, 0x0200 }, { 0x30, 0xC1FE } };
@@ -53,6 +61,13 @@ static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 
 static const fd6818_regval_t burst_rx[] = { { 0x30, 0xBFF1 } };
 static const fd6818_regval_t burst_tx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
 
+// Air band entry of the radio whose stock firmware this set-up with B2F8 comes from (its hardware page, 108-136 MHz
+// receive): after 0x43 = 0x0048 (the caller's FD6818_BW_AM), the same three AM words as the default's, 0x4A before 0x13.
+// No 0x48 write
+static const fd6818_regval_t am_b2f8[] = {
+	{ FD6818_REG_AF, FD6818_AF_AM }, { FD6818_REG_AM_4A, FD6818_AM_4A }, { FD6818_REG_GAIN, FD6818_GAIN_AM_FULL },
+};
+
 // 5.2: no 0x1A word; 0x40 is 0x3480 plus a calibration byte (the power-on value, 0x70, until the calibration is read)
 static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 {
@@ -62,9 +77,9 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	return true;
 }
 
-#define SETUP_B(dmr_tbl) \
+#define SETUP_B(fm_tbl, dmr_tbl) \
 	.init = init_table, .init_n = TBL_N(init_table), \
-	.fm = fm_table, .fm_n = TBL_N(fm_table), \
+	.fm = fm_tbl, .fm_n = TBL_N(fm_tbl), \
 	.dmr = dmr_tbl, .dmr_n = TBL_N(dmr_tbl), \
 	.rx = rx_seq, .rx_n = TBL_N(rx_seq), \
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq), \
@@ -76,5 +91,8 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
 	.band_words = band_words
 
-const fd6818_variant_t fd6818_variant_b = { SETUP_B(dmr_table) };
-const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(dmr_table_6943) };
+const fd6818_variant_t fd6818_variant_b = { SETUP_B(fm_table, dmr_table) };
+const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(fm_table, dmr_table_6943) };
+const fd6818_variant_t fd6818_variant_b_dmr_b2f8 = {
+	SETUP_B(fm_gated, dmr_table_b2f8), .am = am_b2f8, .am_n = TBL_N(am_b2f8)
+};
