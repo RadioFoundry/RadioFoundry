@@ -51,10 +51,10 @@
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
 #if CONFIG_DEBUGLINK
 // words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
-// on air > the radio view copied, with the trunked system's view in it) reads 2608 bytes with the macOS toolchain on
-// the deepest board; the CI's reads up to 16 deeper, and stack-check.md's overhead and margin come on top. Four words
-// more than it was: radio_settings_t holds the signaling tones' two outputs and steps, and the chain copies it
-#define HOSTLINK_TASK_STACK	745
+// on air > the radio view copied, with the trunked system's view in it, or a debug link view into a crash capture)
+// reads 2632 bytes with the macOS toolchain on the deepest board; the CI's reads up to 16 deeper, and stack-check.md's
+// overhead and margin come on top. Link-time inlining moves the frames by a word or two from build to build
+#define HOSTLINK_TASK_STACK	748
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
