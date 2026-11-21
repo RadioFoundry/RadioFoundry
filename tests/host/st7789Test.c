@@ -188,6 +188,35 @@ static void test_rows_indexed(void)
 	clear_log();
 	st7789_write_rows_indexed(&p, fb, pal, 7, 7);
 	CHECK(n_e == 0 && begins == 0);
+
+	// A rectangle: columns 30..59 of rows 3..4, the column window set to match
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 30, 3, 60, 5);
+	int ca = find(0x2A);
+	ra = find(0x2B);
+	wr = find(0x2C);
+	CHECK(depth == 0 && begins == 1);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 30 && log_e[ca].data[3] == 59);
+	CHECK(ra >= 0 && log_e[ra].data[1] == 3 && log_e[ra].data[3] == 4);
+	CHECK(wr >= 0 && log_e[wr].n_px == 30u * 2u);
+	// Pixel 30 is byte 15's high nibble (row 3: index 3), pixel 31 its low one (15); row 4 starts at px_log[30]
+	CHECK(px_log[0] == pal[3] && px_log[1] == pal[15] && px_log[29] == pal[29 & 15] && px_log[30] == pal[4]);
+	// Clipped to the frame; an empty one sends nothing
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 200, 0, 300, 1);
+	ca = find(0x2A);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 200 && log_e[ca].data[3] == 239 && log_e[find(0x2C)].n_px == 40u);
+	clear_log();
+	st7789_write_rect_indexed(&p, fb, pal, 50, 0, 50, 10);
+	CHECK(n_e == 0 && begins == 0);
+	// At 2x scale both the window and each pixel double
+	const st7789_t q = { &bus, 240, 320, 0xC0, true, 2 };
+	clear_log();
+	st7789_write_rect_indexed(&q, fb, pal, 10, 1, 20, 2);
+	ca = find(0x2A);
+	ra = find(0x2B);
+	CHECK(ca >= 0 && log_e[ca].data[1] == 20 && log_e[ca].data[3] == 39);
+	CHECK(ra >= 0 && log_e[ra].data[1] == 2 && log_e[ra].data[3] == 3 && log_e[find(0x2C)].n_px == 20u * 2u);
 }
 
 // A bus with the 16-color row hook: rows at scale 1 go through it, expanded here as a board would, and send what the

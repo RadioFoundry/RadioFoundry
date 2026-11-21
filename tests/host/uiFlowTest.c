@@ -1846,6 +1846,80 @@ static void tx_redraw_checks(void)
 	}
 }
 
+// gfx_flush against a copy of the panel: after every flush the copy is the frame buffer, with whole rows and with
+// rectangles (flush_rect). With rectangles a TX second sends a small part of what whole rows send
+static uint8_t panel[320 * 320 * 2];
+static int panel_stride, panel_bpp, panel_w;
+static unsigned long panel_px;
+static bool panel_bad;
+
+static void panel_rows(uint16_t y0, uint16_t y1)
+{
+	memcpy(panel + y0 * panel_stride, (const uint8_t *)gfx_framebuffer() + y0 * panel_stride,
+	       (size_t)(y1 - y0) * (size_t)panel_stride);
+	panel_px += (unsigned long)(y1 - y0) * (unsigned long)panel_w;
+}
+
+static void panel_rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	int b0 = x0 * panel_bpp / 8, b1 = x1 * panel_bpp / 8;
+	for (int y = y0; y < y1; y++)
+		memcpy(panel + y * panel_stride + b0, (const uint8_t *)gfx_framebuffer() + y * panel_stride + b0,
+		       (size_t)(b1 - b0));
+	panel_px += (unsigned long)(y1 - y0) * (unsigned long)(x1 - x0);
+}
+
+static void panel_tick(uint32_t now_ms)
+{
+	(void)now_ms;
+	gfx_flush();
+	if (memcmp(panel, gfx_framebuffer(), (size_t)panel_stride * (size_t)gfx_height()) != 0)
+		panel_bad = true;
+}
+
+static void flush_checks(void)
+{
+	static const sim_geom_t gd = { "320x240", 320, 240, 4, 0, 0, true, true };	// the 320x240 class in 16 colors
+	const sim_geom_t *geoms[] = { sim_geom_find("240x320i10x5"), &gd, sim_geom_find("160x120i5"),
+				      sim_geom_find("128x64"), sim_geom_find("240x320") };
+	static const char *const busy = "ok down down ok back back pttdown wait:3000 pttup rx:9991234,91,g wait:2000 "
+		"rxend 9 9 9 1 2 3 4 ok wait:5000 down down up";
+	char err[300], buf[300];
+	for (size_t g = 0; g < sizeof geoms / sizeof geoms[0]; g++) {
+		unsigned long tx_px[2];
+		for (int rect = 0; rect < 2; rect++) {
+			sim_set_flush_hooks(panel_rows, rect ? panel_rect : NULL);
+			sim_reset(geoms[g], SIM_MAP_K);
+			panel_bpp = geoms[g]->bpp;
+			panel_w = geoms[g]->w;
+			panel_stride = panel_bpp == 16 ? panel_w * 2 : panel_bpp == 4 ? panel_w / 2 : panel_w / 8;
+			memset(panel, 0xA5, sizeof panel);
+			gfx_invalidate();
+			panel_bad = false;
+			sim_set_tick_hook(panel_tick);
+			snprintf(buf, sizeof buf, "%s pttdown", busy);
+			bool ok = sim_run(buf, err, sizeof err);
+			panel_px = 0;
+			if (ok)
+				ok = sim_run("wait:5000", err, sizeof err);
+			tx_px[rect] = panel_px;
+			sim_set_tick_hook(NULL);
+			if (!ok || panel_bad) {
+				printf("FAIL flush [%s]%s: %s\n", geoms[g]->name, rect ? " rectangles" : "",
+				       ok ? "the panel differs from the frame buffer" : err);
+				fails++;
+			}
+		}
+		printf("# flush [%s]: 5 s of TX, %lu px in rows, %lu in rectangles\n", geoms[g]->name, tx_px[0], tx_px[1]);
+		// The timer's digits fill a few tiles: under a third of the pixels whole rows take
+		if (tx_px[0] == 0 || tx_px[1] * 3 > tx_px[0]) {
+			printf("FAIL flush [%s]: TX timer %lu px in rectangles, %lu in rows\n", geoms[g]->name, tx_px[1], tx_px[0]);
+			fails++;
+		}
+	}
+	sim_set_flush_hooks(NULL, NULL);
+}
+
 #if CONFIG_DMR_TRUNK
 // Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
 // a Home with an activity area names what was heard, or that it is of another kind (dmr-trunking.md 12.4)
@@ -2377,6 +2451,7 @@ int main(void)
 	about_checks();
 	call_screen_checks();
 	tx_redraw_checks();
+	flush_checks();
 #if CONFIG_DMR_TRUNK
 	t3_other_checks();
 #endif

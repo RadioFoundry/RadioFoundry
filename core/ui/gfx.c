@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Frame buffer drawing: primitives, text, icons, and a flush that sends only the rows whose content changed
+// Frame buffer drawing: primitives, text, icons, and a flush that sends only the rows (or parts of rows) whose content
+// changed
 #include <string.h>
 #include "gfx.h"
 #include "cjk_font.h"
@@ -11,7 +12,13 @@ static int width, height, bpp, stride;	// stride in bytes
 static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 exclusive
 // The viewport (the board's safe area): every drawing call takes coordinates relative to it
 static int ox, oy, vw, vh;
-static uint32_t row_hash[GFX_MAX_ROWS];
+// What the panel shows, as hashes: one per row, or, when the display can take a rectangle (flush_rect), one per tile
+// of GFX_TILE_ROWS rows by a GFX_TILE_COLS-th of the width. The tiles fit the same table, so a column-limited flush
+// costs no RAM; a 32-bit hash per tile misses a change as rarely as one per row
+#define GFX_TILE_ROWS	8
+#define GFX_TILE_COLS	8
+static uint32_t frame_hash[(GFX_MAX_ROWS + GFX_TILE_ROWS - 1u) / GFX_TILE_ROWS * GFX_TILE_ROWS];
+static bool tiled;	// hashes per tile, not per row
 static bool all_dirty;
 static volatile uint32_t frames_begun, frames_done;
 #if CONFIG_NET_WEBCTL
@@ -126,6 +133,13 @@ static color_t blend(color_t fg, color_t bg, unsigned a)
 }
 #endif
 
+// A tile's width in pixels, so that each tile starts on a byte; the last tile across takes the rest
+static int tile_width(void)
+{
+	int align = bpp == 1 ? 8 : bpp == 4 ? 2 : 1;
+	return width / GFX_TILE_COLS / align * align;
+}
+
 bool gfx_init(const hal_display_t *disp)
 {
 	display = disp;
@@ -139,6 +153,7 @@ bool gfx_init(const hal_display_t *disp)
 		display = NULL;
 		return false;
 	}
+	tiled = disp->flush_rect != NULL && tile_width() > 0;
 	ox = disp->inset_left;
 	oy = disp->inset_top;
 	vw = width - disp->inset_left - disp->inset_right;
@@ -885,15 +900,6 @@ int gfx_pill(const font_t *f, int x, int y, int h, const char *s, color_t fg, co
 	return w;
 }
 
-static uint32_t hash_row(int y)
-{
-	const uint8_t *p = (const uint8_t *)fb_words + y * stride;
-	uint32_t h = 2166136261u;	// FNV-1a
-	for (int i = 0; i < stride; i++)
-		h = (h ^ p[i]) * 16777619u;
-	return h;
-}
-
 static void (*rest_hook)(void);
 
 void gfx_set_rest(void (*rest)(void))
@@ -927,6 +933,18 @@ static void send(int y0, int y1)
 	}
 }
 
+static void send_rect(int x0, int x1, int y0, int y1)
+{
+	const uint16_t *palette = NULL;
+#if GFX_INDEXED
+	if (bpp == 4)
+		palette = pal_sent;
+#endif
+	display->flush_rect(fb_words, palette, (uint16_t)x0, (uint16_t)y0, (uint16_t)x1, (uint16_t)y1);
+	if (rest_hook != NULL)
+		rest_hook();
+}
+
 void gfx_flush(void)
 {
 	if (display == NULL)
@@ -940,20 +958,56 @@ void gfx_flush(void)
 		pal_n_sent = pal_n;
 	}
 #endif
+	// Rows that changed across the whole width gather into one band; a tile row that changed in part goes out as a
+	// rectangle per run of changed tiles
+	int tile_rows = tiled ? GFX_TILE_ROWS : 1, tile_cols = tiled ? GFX_TILE_COLS : 1;
+	int tile_px = tiled ? tile_width() : width;
+	int seg = tile_px * bpp / 8;	// a tile's bytes in a row
+	unsigned all = (1u << tile_cols) - 1u;
 	int band = -1;
-	for (int y = 0; y < height; y++) {
-		uint32_t h = hash_row(y);
-		bool changed = all_dirty || h != row_hash[y];
-		row_hash[y] = h;
+	for (int y0 = 0; y0 < height; y0 += tile_rows) {
+		int y1 = y0 + tile_rows < height ? y0 + tile_rows : height;
+		uint32_t h[GFX_TILE_COLS];
+		for (int c = 0; c < tile_cols; c++)
+			h[c] = 2166136261u;	// FNV-1a
+		for (int y = y0; y < y1; y++) {
+			const uint8_t *p = (const uint8_t *)fb_words + y * stride, *end = p + stride;
+			for (int c = 0; c < tile_cols; c++) {
+				const uint8_t *e = c == tile_cols - 1 ? end : p + seg;
+				uint32_t v = h[c];
+				while (p < e)
+					v = (v ^ *p++) * 16777619u;
+				h[c] = v;
+			}
+		}
+		uint32_t *t = &frame_hash[y0 / tile_rows * tile_cols];
+		unsigned changed = 0;
+		for (int c = 0; c < tile_cols; c++) {
+			if (all_dirty || h[c] != t[c])
+				changed |= 1u << c;
+			t[c] = h[c];
+		}
 #if CONFIG_NET_WEBCTL
-		if (changed)
+		for (int y = y0; changed && y < y1; y++)
 			row_new[y >> 3] |= (uint8_t)(1u << (y & 7));
 #endif
-		if (changed && band < 0)
-			band = y;
-		if (!changed && band >= 0) {
-			send(band, y);
+		if (changed == all) {
+			if (band < 0)
+				band = y0;
+			continue;
+		}
+		if (band >= 0) {
+			send(band, y0);
 			band = -1;
+		}
+		for (int c = 0; c < tile_cols; c++) {
+			if (!((changed >> c) & 1u))
+				continue;
+			int c1 = c + 1;
+			while (c1 < tile_cols && ((changed >> c1) & 1u))
+				c1++;
+			send_rect(c * tile_px, c1 == tile_cols ? width : c1 * tile_px, y0, y1);
+			c = c1;
 		}
 	}
 	if (band >= 0)

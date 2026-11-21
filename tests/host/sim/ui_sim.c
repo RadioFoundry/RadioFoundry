@@ -416,11 +416,24 @@ static const struct {
 	{ map_s, sizeof map_s / sizeof map_s[0], 0, side_m, 2, side_names },
 };
 
+static void (*flush_rows_hook)(uint16_t y0, uint16_t y1);
+static void (*flush_rect_hook)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 static void d_init(void) {}
-static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; (void)y0; (void)y1; }
+static void d_flush(const void *fb, uint16_t y0, uint16_t y1)
+{
+	(void)fb;
+	if (flush_rows_hook != NULL)
+		flush_rows_hook(y0, y1);
+}
 static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
 {
-	(void)fb; (void)pal; (void)y0; (void)y1;
+	(void)pal;
+	d_flush(fb, y0, y1);
+}
+static void d_flush_rect(const void *fb, const uint16_t *pal, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+{
+	(void)fb; (void)pal;
+	flush_rect_hook(x0, y0, x1, y1);
 }
 static void d_backlight(uint8_t p) { (void)p; }
 // The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
@@ -2546,6 +2559,13 @@ void sim_count_reset(void) { presses = 0; }
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
+void sim_set_flush_hooks(void (*rows)(uint16_t y0, uint16_t y1),
+			 void (*rect)(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1))
+{
+	flush_rows_hook = rows;
+	flush_rect_hook = rect;
+	disp.flush_rect = rect != NULL ? d_flush_rect : NULL;
+}
 
 static void step(void)
 {

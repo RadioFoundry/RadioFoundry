@@ -31,6 +31,11 @@ typedef struct {
 	void (*flush)(const void *fb, uint16_t y0, uint16_t y1);
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
+	// Optional, for a panel that takes a column window too: show columns x0 .. x1-1 of rows y0 .. y1-1 of the same
+	// frame buffer (palette as flush_indexed's at bpp 4, else NULL). With it the core sends the changed parts of rows
+	// instead of whole rows, which matters where the CPU drives the panel's bus. x0 and x1 start a byte of the frame
+	// buffer (even at bpp 4) or x1 is the width
+	void (*flush_rect)(const void *fb, const uint16_t *palette, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 	void (*set_backlight)(uint8_t percent);
 	// Optional: the keypad's backlight, switched with the display's (on only while it is at the set brightness)
 	void (*set_key_light)(bool on);

@@ -599,8 +599,20 @@ left out or dimmed with the feature. Some radios' default images have only a few
 only once nothing drawn since the last clear uses it; anti-aliased edges never take the last 4 free entries and
 otherwise get the nearest color already there. The debug link's screen captures read it as RGB565; `/api/screen.bmp` sends the indexes with the palette.
 
+The UI task draws a frame at most every 50 ms, and only when something changed: a key, a new radio view, or the
+refresh. The radio core publishes a new view when the TX timer's second changes, so TX screens redraw once a second.
+The refresh redraws ages and clocks once a second after the last frame. Banner countdowns, the diagnostics screen and
+the hotspot screen refresh every 250 ms.
+
+Every frame is drawn whole, and `gfx_flush` sends the panel only what changed. It keeps a 32-bit hash per row and
+sends changed rows in bands. A display that can also set a column window gives `flush_rect` (`hal_display_t`). The
+same table then holds a hash per tile of 8 rows by an eighth of the width, so the change costs no RAM. A tile row that
+changed in part goes out as one rectangle per run of changed tiles. Rows changed across the whole width still go out
+as one band. A TX timer tick then sends about a fifth of the pixels that whole rows take. That matters on a panel
+whose bus the CPU drives a byte at a time.
+
 With `CONFIG_NET_WEBCTL` the web control page keeps a copy of the screen (`docs/spec/tcp-services.md` 5.1).
-`gfx_flush` marks each row it sends the panel, and `webctl.c` sends the marked rows and unmarks them. The UI task
+`gfx_flush` marks each row it sends the panel, whole or in part, and `webctl.c` sends the marked rows and unmarks them. The UI task
 calls `gfx_frame_begin` before it draws and `gfx_flush` ends the frame, so the host link task, which runs above the UI,
 reads rows only between frames (`gfx_frame_idle`).
 
