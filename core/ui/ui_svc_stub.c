@@ -4,7 +4,9 @@
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
 #include <stddef.h>
+#include <string.h>
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
@@ -76,6 +78,7 @@ WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
 WEAK void ui_svc_aprs_msg_poll(void) { }
+WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return false; }
 WEAK void ui_svc_poll(void)
 {
 #if CONFIG_APRS_RX

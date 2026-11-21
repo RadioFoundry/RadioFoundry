@@ -417,7 +417,7 @@ the last-seen serial in a static variable and fires only when it changes, so dup
 additional events. The engine sets `msg_serial`, `last_msg_ms` and `last_msg_from` in `message_in` when a non-duplicate
 message addressed to us is accepted (`CONFIG_APRS_RX`, guarded).
 
-**Home screen last-activity (`CONFIG_APRS_RX`).** `draw_home` reads `aprs_view_t.last_msg_ms` via
+**Home screen last-activity (`CONFIG_APRS_RX`).** `draw_activity` reads `aprs_view_t.last_msg_ms` via
 `ui_svc_aprs_view`. When `last_msg_ms` is non-zero and either `radio_view_t.last_rx_ms` is zero or
 `last_msg_ms + 2000 >= last_rx_ms` (the APRS reception caused the squelch to close, within the squelch tail), the
 activity line reads "APRS: <callsign> <age>" instead of the generic "Last activity Xm ago". The 2 s threshold
