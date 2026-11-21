@@ -232,7 +232,8 @@ static const band_t bands[] = {
 	{ 108000000, 135999999, false },	// receive only
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
-	{ 480000000, 520000000, false },	// the receive-only extension (test_rx_ext), off unless a test turns it on
+	{ 480000000, 520000000, false },	// receive only, always: the DM-32UV's shape (test_rx_only_band)
+	{ 520000000, 740000000, false },	// the receive-only extension (test_rx_ext), off unless a test turns it on
 };
 static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
@@ -485,7 +486,7 @@ const board_t board = {
 	.caps = CAP_GPS,
 	.gps = &fake_gps,
 	.bands = bands,
-	.band_count = 4,
+	.band_count = 5,
 	.rx_ext_count = 1,
 	.rx_ext_on = &rx_ext_on,
 	.power_count = 3,
@@ -1254,10 +1255,10 @@ static void test_vfo(void)
 	CHECK(sm.view.ch.rx_hz == 400000000);
 	req(RREQ_VFO_STEP, -1);
 	CHECK(sm.view.ch.rx_hz == 174000000);
-	req(RREQ_VFO_SET, 480000000);
+	req(RREQ_VFO_SET, 520000000);
 	req(RREQ_VFO_STEP, 1);			// past the top band: wraps to the bottom
 	CHECK(sm.view.ch.rx_hz == 108000000);
-	req(RREQ_VFO_SET, 520000000);		// out of every band: refused
+	req(RREQ_VFO_SET, 600000000);		// out of every band: refused
 	CHECK(sm.view.ch.rx_hz == 108000000);
 	req(RREQ_PTT, 1);			// receive-only band
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == 0);
@@ -2182,8 +2183,8 @@ static void test_vfo_copy(void)
 	req(RREQ_PTT, 0);
 	run(20);
 	// A frequency outside the board's bands: refused, nothing changes
-	chans[7].rx_hz = 520000000;
-	chans[7].tx_hz = 520000000;
+	chans[7].rx_hz = 600000000;
+	chans[7].tx_hz = 600000000;
 	req(RREQ_ZONE_POS, 1);
 	req(RREQ_ZONE_POS, 0);
 	run(20);
@@ -2191,7 +2192,7 @@ static void test_vfo_copy(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_VFO_COPY, NULL, 0) == DL_ST_REFUSED);
 	req(RREQ_VFO_COPY, 0);
 	run(20);
-	CHECK(!sm.view.vfo && sm.view.ch.rx_hz == 520000000 && sm.vfo_ch.rx_hz == 440000000);
+	CHECK(!sm.view.vfo && sm.view.ch.rx_hz == 600000000 && sm.vfo_ch.rx_hz == 440000000);
 	chans[7].rx_hz = 146940000;
 	chans[7].tx_hz = 146340000;
 	chans[7].tx_tone.type = TONE_NONE;
@@ -5633,23 +5634,82 @@ static void test_rx_ext(void)
 	start();
 	req(RREQ_VFO, 1);
 	run(20);
-	req(RREQ_VFO_SET, 500000000);
+	req(RREQ_VFO_SET, 600000000);
 	run(20);
-	CHECK(sm.view.ch.rx_hz != 500000000);	// off: refused like any frequency outside the table
+	CHECK(sm.view.ch.rx_hz != 600000000);	// off: refused like any frequency outside the table
 	board_rx_ext_set(true);
-	req(RREQ_VFO_SET, 500000000);
+	req(RREQ_VFO_SET, 600000000);
 	run(20);
-	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 500000000);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 600000000);
 	int tx0 = hw.tx_calls;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
 	req(RREQ_PTT, 0);
 	run(20);
 	board_rx_ext_set(false);
-	CHECK(!board_in_band(500000000, false));
+	CHECK(!board_in_band(600000000, false));
 	req(RREQ_RELOAD, 0);	// what turning it off in Settings does: a VFO left past the table returns to a band
 	run(20);
 	CHECK(sm.view.vfo && board_in_band(sm.view.ch.rx_hz, false));
+}
+
+// A receive-only band that is always in force, next to a transmit band (the DM-32UV's 480-520 MHz, #852): the VFO
+// tunes there, steps across the edge, never transmits there, and takes no split TX there; a stored channel there
+// receives in FM and DMR, refuses PTT for the band, and copies to the VFO
+static void test_rx_only_band(void)
+{
+	setup_codeplug();
+	start();
+	CHECK(!board_in_band(600000000, false));	// the extension stays off: this band is not it
+	req(RREQ_VFO, 1);
+	run(20);
+	req(RREQ_VFO_SET, 506937500);
+	run(20);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 506937500 && hw.rx_hz == 506937500);
+	int tx0 = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
+	req(RREQ_VFO_SET, 480000000);		// the transmit band's top: steps up into receive only and back
+	req(RREQ_VFO_STEP, 1);
+	CHECK(sm.view.ch.rx_hz == 480012500 && hw.rx_hz == 480012500);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
+	req(RREQ_VFO_STEP, -1);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 480000000);
+	req(RREQ_PTT, 0);
+	run(20);
+	tx0 = hw.tx_calls;
+	req(RREQ_VFO_SET, 446000000);
+	req(RREQ_VFO_TX, 500000000);		// split TX into the receive-only band: refused
+	CHECK(sm.view.ch.tx_hz == 446000000);
+	req(RREQ_VFO, 0);
+	run(20);
+
+	// A stored FM channel there, not marked RX only (as a codeplug from another radio may have it)
+	chans[1].rx_hz = chans[1].tx_hz = 506937500;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(!sm.view.vfo && sm.view.channel_number == 1 && hw.rx_hz == 506937500 && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) == VFO_COPY_OK);
+	// A DMR one: receives in DMR (the band is not a listen band, which would make it FM)
+	chans[4].rx_hz = chans[4].tx_hz = 500000000;
+	reload_channel();
+	CHECK(sm.view.channel_number == 4 && hw.rx_hz == 500000000 && hw_mode == RADIO_MODE_DMR);
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state != RS_TX && hw.tx_calls == tx0);
+	req(RREQ_PTT, 0);
+	run(20);
 }
 
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
@@ -11056,6 +11116,7 @@ int main(void)
 	test_soft_volume();
 	test_side_keys();
 	test_rx_ext();
+	test_rx_only_band();
 	test_error_paths();
 	test_ptt_line_stuck();
 	test_hotspot();

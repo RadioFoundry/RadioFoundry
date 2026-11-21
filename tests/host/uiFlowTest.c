@@ -591,6 +591,9 @@ static const flow_t flows[] = {
 	  "toast=Saved_channel_3 writes=1", 8, true },
 	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
 	// band. Channel 3 is DMR on 453.625, its RX only row is 6
+	// The DM-32UV's 480-520 MHz receives and never transmits: an RX typed there makes the channel RX only, and it saves
+	{ "E DM-32UV: RX at 500.000 saves RX only", "dm32bands ok 5 ok down down down", "ok 5 0 0 0 0 0 ok long:ok",
+	  "toast=Saved_channel_3 writes=1 shows=500.000", 9, true },
 	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
 	  "toast=TX_can't_transmit writes=0 focus=RX_only", 7, false },
 	{ "E no transmit band: DMR RX only, saved", "rxonly ok 5 ok down down down down down down", "ok long:ok",
@@ -620,6 +623,9 @@ static const flow_t flows[] = {
 #endif
 	{ "12 into the VFO", "", "ok 4 up ok", "vfo=1 screen=home", 4, false },
 	{ "12 446.000 in the VFO", "ok 4 up ok", "4 4 6 0 0 0 ok", "freq=446000000", 7, false },
+	// The DM-32UV receives to 520 MHz past its 480 MHz transmit edge (#852): the VFO takes 500.000, and stops at 520
+	{ "12 DM-32UV: 500.000 in the VFO", "dm32bands ok 4 up ok", "5 0 0 0 0 0 ok", "freq=500000000", 7, false },
+	{ "12 DM-32UV: past 520 is refused", "dm32bands ok 4 up ok", "5 2 1", "toast=Bands", 3, false },
 	{ "13 lock", "", "long:quick", "locked=1", 1, false },
 	{ "13 unlock", "long:quick", "long:quick", "locked=0", 1, false },
 	{ "14 GPS details", "", "ok 6 2", "screen=gps", 3, false },
