@@ -1,0 +1,34 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<section class="wrap section page-head">
+	<p class="eyebrow"><a href="{{home}}tools/index.html">{{t tools.title}}</a></p>
+	<h1>{{t tools.satellite.title}}</h1>
+	<p class="lead">{{t tools.satellite.text}}</p>
+</section>
+<section class="wrap section satellite-tle" id="satellite-tle">
+	<div class="tle-source-actions">
+		<button class="btn" type="button" id="tle-amsat">{{t tools.satellite.amsat}}</button>
+		<label class="btn tle-browse">
+			{{t tools.satellite.browse}}
+			<input type="file" id="satellite-tle-file" accept=".txt,.tle,.3le,text/plain">
+		</label>
+	</div>
+	<label class="tle-provider">
+		<span>{{t tools.satellite.provider}}</span>
+		<input id="tle-provider" type="url" value="https://www.amsat.org/tle/daily-bulletin.txt" required>
+	</label>
+	<fieldset class="tle-selection">
+		<legend>{{t tools.satellite.selection}}</legend>
+		<p class="small muted">{{t tools.satellite.capacity}}</p>
+		<label class="tle-search">
+			<span>{{t tools.satellite.search}}</span>
+			<input id="satellite-tle-search" type="search" autocomplete="off">
+		</label>
+		<div id="satellite-tle-options" class="tle-profile-list"></div>
+	</fieldset>
+	<div class="tle-submit-actions">
+		<button class="btn" type="button" id="satellite-tle-push" disabled>{{t tools.satellite.push}}</button>
+		<button class="btn btn-secondary" type="button" id="satellite-tle-build" disabled>{{t tools.satellite.build}}</button>
+	</div>
+	<p id="satellite-tle-status" class="small muted" role="status" aria-live="polite">{{t tools.satellite.status.pick}}</p>
+</section>

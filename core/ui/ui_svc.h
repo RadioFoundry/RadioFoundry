@@ -15,6 +15,9 @@
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/store.h"
+#endif
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #endif
@@ -232,6 +235,30 @@ typedef struct {
 	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+#if CONFIG_GPS && CONFIG_POSITION && CONFIG_SATELLITE_TLE
+bool ui_svc_position_save_gps(void);	// save the current fresh board fix as the fixed-position fallback
+#endif
+#if CONFIG_SATELLITE_TLE
+uint8_t ui_svc_satellite_count(void);
+bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record);
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary);
+uint32_t ui_svc_satellite_generation(void);
+bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days);
+uint8_t ui_svc_satellite_selected(void);
+bool ui_svc_satellite_select(uint8_t index);
+bool ui_svc_satellite_track(bool enabled, uint8_t index);
+void ui_svc_satellite_arm(void);
+bool ui_svc_satellite_scan(bool enabled);
+void ui_svc_satellite_poll(void);
+void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
+bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch);
+bool ui_svc_satellite_view(radio_satellite_view_t *view);
+bool ui_svc_satellite_path(satellite_path_view_t *path);
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines);
+bool ui_svc_satellite_update_busy(void);
+#endif
 // The radio's GPS for the status strip: none, or one with Settings > Location > GPS off or on, however it was set
 enum { UI_GPS_POWER_NONE, UI_GPS_POWER_OFF, UI_GPS_POWER_ON };
 uint8_t ui_svc_gps_power(void);

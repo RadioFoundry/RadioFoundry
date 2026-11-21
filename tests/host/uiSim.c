@@ -144,6 +144,12 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 #endif
 	{ "tools", "ok 6" },
+#if CONFIG_SATELLITE_TLE
+	{ "satellite_passes", "ok 6 9" },
+	{ "satellite", "ok 6 9 ok" },
+	{ "satellite_passes_predicting", "satpredict ok 6 9" },
+	{ "satellite_tle_text", "ok 6 9 ok ctx" },
+#endif
 	{ "home_gps_off", "gps:off" },		// the status strip's GPS dish: off (hollow)
 	{ "home_gps_search", "gps:search" },	// on, no fix (solid)
 	{ "home_gps_fix", "gps:fix" },		// with a fix (waves)
@@ -311,7 +317,7 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_aprs_station_evicted", "ok 6 8 up ok ok aprs:evict down" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
-	{ "w_battery", "battery:5 ok 6 9" },
+	{ "w_satellite", "ok 6 9" },
 	{ "w_my_radio", "ok 7 0 ok" },
 	{ "w_codeplug", "ok 7 up ok down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
@@ -420,9 +426,14 @@ static void audit_text(const char *s, char *o, size_t len, bool key)
 	size_t n = 0;
 	for (; *s && n + 4 < len; s++) {
 		unsigned char c = (unsigned char)*s;
-		if (c == 0x80 || c == 0x81) {	// GLYPH_ELLIPSIS, GLYPH_DOT
-			memcpy(o + n, c == 0x80 ? "\xe2\x80\xa6" : "\xc2\xb7", c == 0x80 ? 3 : 2);
-			n += c == 0x80 ? 3 : 2;
+		if (c >= 0x80 && c <= 0x88) {
+			const char *glyph = c == 0x80 ? "\xe2\x80\xa6" : c == 0x81 ? "\xc2\xb7" :
+				c == 0x82 ? "\xe2\x86\x92" : c == 0x83 ? "\xc2\xb0" :
+				c == 0x84 ? "\xe2\xa4\x92" : c == 0x85 ? "\xe2\xa4\x93" :
+				c == 0x86 ? "\xe2\x86\xb5" : c == 0x87 ? "\xe2\x86\x91" : "\xe2\x86\x93";
+			size_t bytes = c == 0x81 || c == 0x83 ? 2u : 3u;
+			memcpy(o + n, glyph, bytes);
+			n += bytes;
 		} else {
 			o[n++] = key && c >= '0' && c <= '9' ? '#' : (char)c;
 		}

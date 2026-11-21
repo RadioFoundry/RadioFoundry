@@ -22,7 +22,7 @@ export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ u
 // it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25 };
+export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
@@ -355,7 +355,13 @@ export class Link {
 		this.s.take(reply.end);
 		wire(`cmd 0x${cmd.toString(16)} seq ${seq} len ${payload.length}: status ${reply.payload[0]} len ${reply.payload.length}`);
 		if (!reply.payload.length || reply.payload[0] !== 0) {
-			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}: status ${reply.payload[0]}`), { status: reply.payload[0] });
+			const satelliteOperation = cmd === CMD.SATELLITE && payload.length ? payload[0] : undefined;
+			const operation = satelliteOperation === undefined ? "" :
+				` operation 0x${satelliteOperation.toString(16).padStart(2, "0")}` +
+				(satelliteOperation === 12 && payload.length >= 6 ?
+					` profiles ${payload[4] + 1}-${payload[4] + payload[5]} of ${payload[3]}` : "");
+			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}${operation}: status ${reply.payload[0]}`),
+				{ status: reply.payload[0], operation: cmd === CMD.SATELLITE ? payload[0] : undefined });
 		}
 		return reply.payload.subarray(1);
 	}

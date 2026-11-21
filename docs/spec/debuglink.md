@@ -117,6 +117,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
+| `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
 
 ### 3.1 VERSION
 
@@ -168,6 +169,9 @@ neither list, and an update keeps it; builds before it don't send it. `preset=` 
 too long for the reply drops only itself. Older builds send neither. All three come from `core/hostlink/build_info.c`, as
 does `features=`, and a build without the debug link sends them too, from the stub entry's listener
 ([stub-entry.md](stub-entry.md) 2).
+
+When enabled, `SATELLITE_TLE` is included in `features=`. The web flasher also probes the satellite `INFO` operation
+so it can recognize older builds that do not report this feature.
 
 `codec=` is the board's own check of the codec in flash, the same one that decides whether DMR voice runs: a
 profile id (`<profile>-s11` on an STM32F4 radio: the descriptor is valid and the signature word and the CRC-32 of
@@ -1061,6 +1065,13 @@ is running. A host repeats it until `image.state=done` and shows `image.done` as
 requests answer at once. Bad argument (2) for any other operation or a longer payload.
 
 `rfoundry_debug.py support` prints both.
+
+### 3.30 SATELLITE
+
+`DL_CMD_SATELLITE` (`0x26`) stores explicitly selected TLE records when `CONFIG_SATELLITE_TLE` is enabled and the
+board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
+capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
+`DL_ST_UNAVAILABLE` when the feature or usable area is absent.
 
 ## 4. Safety
 

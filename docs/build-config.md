@@ -71,7 +71,7 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 |---|---|
 | (none: full) | nothing |
 | `amateur` | basic privacy, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
-| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS) |
+| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS), satellite tracking |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.
@@ -102,6 +102,7 @@ below are for an STM32F4 radio.
 | `CONFIG_APRS_DMR` | = APRS and DMR | APRS over DMR: positions as LRRP or UDT reports to a gateway ID. It builds the DMR data core. Off, APRS is FM only |
 | `CONFIG_APRS_RX` | = APRS_AFSK (n where no receive audio is written) | APRS receive: the AFSK demodulator on the board's received audio, station list, messages to us with acks, the digipeater. Useful only where the board can sample received audio: its own AFSK receive path, or FM receive audio on the PCM stream (`docs/spec/aprs.md` 5.3). About 6 KB RAM more |
 | `CONFIG_GPS_SKY` | = GPS | the GPS screen under Tools > Position: satellites on a sky plot and signal bars, fix quality, grid locator (`core/position/nmea_sky.c`, `core/ui/ui_gps.c`; `docs/spec/ui.md` 2.3). Off, that page is text |
+| `CONFIG_SATELLITE_TLE` | y when `DEBUGLINK=y` (full and amateur; n in commercial or when `DEBUGLINK=n`; a board may default it off for flash limits) | satellite TLE inventory transfer and tracking support (`docs/spec/satellite.md`); radios with a dedicated data-flash range store up to 10 records, using 12 KB from update staging. The board must also have enough program flash for the feature |
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
@@ -188,7 +189,7 @@ below are for an STM32F4 radio.
 | `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |
 | `CONFIG_LANG_IT` | n | Italian on the radio (`core/ui/lang/it.po`), as `CONFIG_LANG_ES`. Off: Italian is listed but dimmed |
 | `CONFIG_LANG_FR` | n | French on the radio (`core/ui/lang/fr.po`), as `CONFIG_LANG_ES`. Off: French is listed but dimmed |
-| `CONFIG_LANG_ZH` | n | Chinese on the radio (`core/ui/lang/zh.po`), as `CONFIG_LANG_ES`, plus what Chinese needs and the Latin-1 languages do not: a 16x16 glyph for every character its catalog uses (`core/ui/cjk_font_data.c`, built by `tools/cjkfont.py`; 480 characters, 15.4 KB) and UTF-8 text the text layer decodes (`core/ui/gfx.c`). 32,856 bytes with Spanish on (measured 2026-11-04). **A line must be at least 16 px high**: the glyph is the height of the 8x16 font. A 240 px color radio draws its words in 8x16 (and its text pages move up to it in a CJK build), so Chinese shows on every screen; a layout that draws its words in the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so Chinese must stay off there. Off: Chinese is listed but dimmed |
+| `CONFIG_LANG_ZH` | n | Chinese on the radio (`core/ui/lang/zh.po`), as `CONFIG_LANG_ES`, plus what Chinese needs and the Latin-1 languages do not: a 16x16 glyph for every character its catalog uses (`core/ui/cjk_font_data.c`, built by `tools/cjkfont.py`; 505 characters, 16,160 B) and UTF-8 text the text layer decodes (`core/ui/gfx.c`). 32,856 bytes with Spanish on (measured 2026-11-04 with the prior 480-glyph catalog; remeasure this merged catalog). **A line must be at least 16 px high**: the glyph is the height of the 8x16 font. A 240 px color radio draws its words in 8x16 (and its text pages move up to it in a CJK build), so Chinese shows on every screen; a layout that draws its words in the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so Chinese must stay off there. Off: Chinese is listed but dimmed |
 | `CONFIG_LANG_DEFAULT_ES` | n | The radio starts in Spanish until the user picks a language (an empty language setting means the build's default). Needs `CONFIG_LANG_ES`. Off, for every `CONFIG_LANG_DEFAULT_*`: English. With more than one on, the first in `config/features.mk` wins. No flash cost |
 | `CONFIG_LANG_DEFAULT_IT` | n | The radio starts in Italian, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_IT` |
 | `CONFIG_LANG_DEFAULT_FR` | n | The radio starts in French, as `CONFIG_LANG_DEFAULT_ES`. Needs `CONFIG_LANG_FR` |
