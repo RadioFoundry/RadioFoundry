@@ -125,7 +125,10 @@ ID-51 and the 9700's speaker; the next makes it 12 dB. The 9700's LAN-audio ceil
 what a handheld user hears, and loud talkers are expected to reach it. The gain's top moves from +20 to +30 dB so the
 quiet talkers the leveler brought up before still reach the higher target.
 `off` in the leveler's state passes frames unchanged, for the quality tests (7), whose figures were measured without
-it. An ID-51 has yet to hear the leveled encoder.
+it. On air on 21 Nov 2026 (one of our own radios on a build with this codec, an IC-9700 decoding over its LAN
+audio, an ID-51 beside it): the speech band came up 12.3 dB (-45.2 to -32.9 dBFS; the whole band -30.4 to -20.5),
+above an ID-51 over's -40.0 in the same session, and the operator heard it louder on the ID-51. The peak, 26,409, sits
+just under the 9700's ceiling, so the second step is not taken.
 
 Delay: the parameters belong to the frame centered 480 samples (60 ms) before the end of the newest input.
 
