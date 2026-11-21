@@ -775,6 +775,9 @@ static void aprs_listen_route(bool on)
 	if (rx_audio) {
 		amp(AMP_RADIO, false);	// the source changes under an open squelch: no click
 	}
+#ifdef BOARD_VOLUME_HEADER
+	vol_apply();
+#endif
 	speaker_source();
 	if (rx_audio) {
 		amp(AMP_RADIO, true);
@@ -802,7 +805,7 @@ static void vol_apply(void)
 	if (mode != RADIO_MODE_FM) {
 		return;		// DMR: 0x48 is the level into the HR_C7000's demodulator, the mode table's (DMR voice uses the line out)
 	}
-	fd6818_write(&fd, 0x48, board_volume_fm(vol_step));
+	fd6818_write(&fd, 0x48, board_volume_fm(vol_step, aprs_listen));
 }
 
 static void volume(uint8_t percent)

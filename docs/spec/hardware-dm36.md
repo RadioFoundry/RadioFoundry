@@ -55,7 +55,7 @@ The measured UHF receive setting on the owner's handset is FD6818 register 0x48 
 
 ### 9.1 Speaker route
 
-PTB15 selects the audio source and PTB14 follows the radio mode. The FD6818 AF output is gated during FM receive. FM volume uses register 0x48 bits 3–0. DMR listening volume uses the HR_C7000 line-out gain and preserves the modem input level.
+PTB15 selects the audio source and PTB14 follows the radio mode. The FD6818 AF output is gated during FM receive. For direct analog speaker audio, FD6818 register 0x48 keeps its low nibble at 1 and advances bits 9–4 from 3 to 63 in increments of 4. All 16 settings produced increasing levels at the modem input in a receive-only bench sweep. When APRS takes that input, the firmware restores the APRS gain map. Step 0 gates the speaker amplifier. DMR listening volume uses the HR_C7000 line-out gain and preserves the modem input level.
 
 ### 9.3 ADC connections
 

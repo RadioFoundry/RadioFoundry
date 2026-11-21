@@ -24,12 +24,12 @@ static const fd6818_regval_t init_table[] = {
 	{ 0x21, 0x06D8 }, { 0x24, 0x8C7E },
 };
 
-// Analog FM, then the 0x2B mode word. 0x48 is its power-on value again, since the DMR set changes it. 0x47 = 0x0140
-// puts the demodulated audio on the chip's output (checked on the radio: the 0x6042 the radio's FM sequence writes left
-// the speaker silent on a strong station)
-static const fd6818_regval_t fm_table[] = {
-	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, 0x0140 }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 },
-};
+// The gated FM output begins muted. The other set-ups enter FM with the output open.
+#define FM_TABLE(af) { \
+	{ 0x30, 0x0000 }, { 0x32, 0x0244 }, { 0x47, (af) }, { 0x48, 0xB386 }, { 0x7E, 0x302E }, { 0x2B, 0xC000 }, \
+}
+static const fd6818_regval_t fm_table[] = FM_TABLE(FD6818_AF_FM);
+static const fd6818_regval_t fm_gated[] = FM_TABLE(0x6042);
 
 // 5.3: DMR is these five registers (0x28 is its power-on value, written again), then 0x3F = 0: the radio writes it
 // in every DMR receive set-up and at every burst end (5.4), so in DMR it never has the power-on 07FE
@@ -77,9 +77,9 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	return true;
 }
 
-#define SETUP_B(dmr_tbl) \
+#define SETUP_B(fm_tbl, dmr_tbl) \
 	.init = init_table, .init_n = TBL_N(init_table), \
-	.fm = fm_table, .fm_n = TBL_N(fm_table), \
+	.fm = fm_tbl, .fm_n = TBL_N(fm_tbl), \
 	.dmr = dmr_tbl, .dmr_n = TBL_N(dmr_tbl), \
 	.rx = rx_seq, .rx_n = TBL_N(rx_seq), \
 	.tx = tx_seq, .tx_n = TBL_N(tx_seq), \
@@ -91,6 +91,8 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
 	.band_words = band_words
 
-const fd6818_variant_t fd6818_variant_b = { SETUP_B(dmr_table) };
-const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(dmr_table_6943) };
-const fd6818_variant_t fd6818_variant_b_dmr_b2f8 = { SETUP_B(dmr_table_b2f8), .am = am_b2f8, .am_n = TBL_N(am_b2f8) };
+const fd6818_variant_t fd6818_variant_b = { SETUP_B(fm_table, dmr_table) };
+const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(fm_table, dmr_table_6943) };
+const fd6818_variant_t fd6818_variant_b_dmr_b2f8 = {
+	SETUP_B(fm_gated, dmr_table_b2f8), .am = am_b2f8, .am_n = TBL_N(am_b2f8)
+};

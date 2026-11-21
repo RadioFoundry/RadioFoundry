@@ -50,11 +50,15 @@ int main(void)
 		assert((levels[2] & outs[2]) == 0);
 		assert(ins[0] == 0 && ins[1] == 0x00400220u && ins[2] == 0);
 	}
-	assert(board_volume_fm(0) == 0xB281 && board_volume_fm(1) == 0xB281);
-	assert(board_volume_fm(RADIO_VOLUME_MAX) == 0xB28F && board_volume_fm(255) == 0xB28F);
-	for (unsigned step = 2; step <= RADIO_VOLUME_MAX; step++) {
-		assert(board_volume_fm(step) >= board_volume_fm(step - 1));	// every step up is at least as loud
+	assert(board_volume_fm(0, false) == board_volume_fm(1, false));	// the amplifier gate mutes step 0
+	for (unsigned step = 1; step <= RADIO_VOLUME_MAX; step++) {
+		assert(board_volume_fm(step, false) == 0xB031u + 0x40u * (step - 1u));
 	}
+	assert(board_volume_fm(255, false) == 0xB3F1);
+	assert(board_volume_fm(0, true) == 0xB281);
+	assert(board_volume_fm(1, true) == 0xB281);
+	assert(board_volume_fm(8, true) == 0xB287);
+	assert(board_volume_fm(255, true) == 0xB28F);
 	quad_dec_t q;
 	quad_init(&q, 2, QUAD_REST_EQUAL, QUAD_AB(0, 0));
 	assert(quad_sample(&q, QUAD_AB(0, 1)) == 0); // B leads A

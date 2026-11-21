@@ -4,14 +4,15 @@
 #define BOARD_VOLUME_H
 #include "radio/radio.h"	// RADIO_VOLUME_MAX
 
-// The volume/power knob is read on ADC0 and is not in the audio path (hardware-dm36.md 9.3): the firmware sets the gain
-
-// FM: the FD6818 AF gain field (register 0x48 bits 3:0, the upper bits as stock, hardware-dm36.md 9.1) spread evenly
-// over the core's steps, 1 at the lowest audible step to 15 at the top; step 0 is muted by the amplifier gate. DMR keeps
-// the shared HR_C7000 line-out curve
-static uint16_t board_volume_fm(unsigned step)
+// PTB15 routes the RF chip to either the speaker or the APRS decoder.
+static uint16_t board_volume_fm(unsigned step, bool aprs)
 {
 	unsigned s = step > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : step;
-	return (uint16_t)(0xB280u | (s == 0 ? 1u : 1u + (s - 1u) * 14u / (RADIO_VOLUME_MAX - 1u)));
+	unsigned index = s == 0 ? 0 : s - 1u;	// the amplifier gate mutes step 0
+	if (aprs) {
+		return (uint16_t)(0xB281u + index * 14u / (RADIO_VOLUME_MAX - 1u));
+	}
+	// Hold the DAC at 1 and advance the measured AF fine gain (bits 9:4) from 3 to 63.
+	return (uint16_t)(0xB001u | ((3u + 4u * index) << 4));
 }
 #endif

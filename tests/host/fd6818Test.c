@@ -409,7 +409,7 @@ static void test_am_setup_b(void)
 	i = find_last(FD6818_REG_AM_4A);
 	CHECK(i >= 0 && chip.log[i].val == 0x5430);
 	i = find_last(FD6818_REG_AF);
-	CHECK(i >= 0 && chip.log[i].val == FD6818_AF_FM);
+	CHECK(i >= 0 && chip.log[i].val == 0x6142);
 	CHECK(fd6818_variant_b.am == NULL && fd6818_variant_b_dmr6943.am == NULL && fd6818_variant_default.am == NULL);
 	CHECK(chip.protocol_errors == 0);
 }
@@ -420,10 +420,13 @@ static void test_af_mute(void)
 	fd6818_t dev;
 	reset_chip();
 	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b_dmr_b2f8);
+	fd6818_set_mode(&dev, FD6818_MODE_FM);
+	CHECK(chip.regs[FD6818_REG_AF] == 0x6042);
+	chip.n = 0;
 	fd6818_af_mute(&dev, true);
 	fd6818_af_mute(&dev, false);
-	CHECK(chip.n == 2 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x0040);
-	CHECK(chip.log[1].reg == FD6818_REG_AF && chip.log[1].val == 0x0140);
+	CHECK(chip.n == 2 && chip.log[0].reg == FD6818_REG_AF && chip.log[0].val == 0x6042);
+	CHECK(chip.log[1].reg == FD6818_REG_AF && chip.log[1].val == 0x6142);
 #if CONFIG_AM_RX
 	fd6818_set_am(&dev, true);
 	chip.n = 0;
@@ -707,8 +710,8 @@ static void test_setup_b(void)
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2F8);	// the lower DMR level
 	{
-		const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr_b2f8;	// only the DMR words differ
-		CHECK(a->init == b->init && a->fm == b->fm && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
+		const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr_b2f8;
+		CHECK(a->init == b->init && a->rx == b->rx && a->tx == b->tx && a->burst_rx == b->burst_rx &&
 		      a->burst_tx == b->burst_tx && a->bw_dmr == b->bw_dmr && a->dmr_n == b->dmr_n && a->dmr != b->dmr);
 	}
 	const fd6818_variant_t *a = &fd6818_variant_b, *b = &fd6818_variant_b_dmr6943;
