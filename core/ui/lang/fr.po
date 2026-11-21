@@ -4648,6 +4648,11 @@ msgid "AES key or TX disabled"
 msgstr "Clé AES ou TX désactivé"
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES : attente, réessayez"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "Mode non supporté"

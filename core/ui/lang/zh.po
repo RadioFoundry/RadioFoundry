@@ -4650,6 +4650,11 @@ msgid "AES key or TX disabled"
 msgstr "无 AES 密钥或已禁用发射"
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES：正在保存，请重试"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "模式：本版本无"

@@ -106,6 +106,21 @@ static const flow_t flows[] = {
 	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
 	  false },
 #endif
+#if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
+	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
+	// them (system / key ID) and None, Save keeps the choice
+	{ "AES key row: hidden without keys", "", "ok 5 ok", "screen=channel hides=AES_key", 3, false },
+	{ "AES key row: none set", "aeskeys", "ok 5 ok down down down down down down down",
+	  "screen=channel focus=AES_key shows=None", 10, false },
+	{ "AES key row: steps the keys", "aeskeys ok 5 ok down down down down down down down", "ok",
+	  "focus=AES_key shows=3/0", 1, false },
+	{ "AES key row: the next key", "aeskeys ok 5 ok down down down down down down down", "ok ok",
+	  "focus=AES_key shows=3/7", 2, false },
+	{ "AES key row: back to none", "aeskeys ok 5 ok down down down down down down down", "ok ok ok",
+	  "focus=AES_key shows=None", 3, false },
+	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
+#endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
 	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok down down down",
