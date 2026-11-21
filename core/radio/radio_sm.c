@@ -6931,12 +6931,19 @@ static void hotspot_arm(radio_sm_t *sm)
 	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
 	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
 	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
-	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
+	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
 	bool was = sm->dmr_keyed;
 	if (was) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
+			sm->hs_power_due = true;
+			return;
+		}
 		sm->dmr_keyed = false;
 		board.radio->tx_off();
 	}
+	sm->hs_power_due = false;
 	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 	if (was && !sm->dmr_keyed) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
@@ -7207,6 +7214,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
+	sm->hs_power_due = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -8643,10 +8651,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_FREQ:
 		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
 		break;
-	case RREQ_HS_POWER:
-		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
-		hotspot_arm(sm);
+	case RREQ_HS_POWER: {
+		uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+		bool same = level == sm->hs_power;
+		sm->hs_power = level;
+		// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
+		// held now (a critical battery), which drops it
+		if (!same || !sm->dmr_keyed || tx_held(sm)) {
+			hotspot_arm(sm);
+		}
 		break;
+	}
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
@@ -9297,6 +9312,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
 		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
 		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		if (sm->hs_power_due && !board.dmr->is_transmitting()) {
+			hotspot_arm(sm);	// a level that came during a transmission (hotspot_arm)
+		}
 		outputs(sm);
 		return;
 	}
