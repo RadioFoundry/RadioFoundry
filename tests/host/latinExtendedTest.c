@@ -35,8 +35,16 @@ static void check_pair(const font_t *font, char byte, char plain, bool want_diff
 
 static void check_face(const font_t *font)
 {
-	for (unsigned i = 0; i < FONT_LATIN_EXTENDED_COUNT; ++i)
-		check_pair(font, (char)(FONT_LATIN_EXTENDED_FIRST + i), "GgIiSs"[i], CONFIG_FONT_LATIN_EXTENDED);
+	for (unsigned i = 0; i < FONT_LATIN_EXTENDED_COUNT; ++i) {
+		char byte = (char)(FONT_LATIN_EXTENDED_FIRST + i);
+#if CONFIG_FONT_LATIN_EXTENDED
+		check_pair(font, byte, "GgIiSs"[i], true);
+#else
+		int top, rows;
+		assert(font_fold(byte) == byte);
+		assert(font_glyph(font, (uint8_t)byte, &top, &rows) == NULL);
+#endif
+	}
 }
 
 int main(void)

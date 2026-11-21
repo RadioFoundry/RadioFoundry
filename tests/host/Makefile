@@ -655,9 +655,9 @@ latinExtendedTest latinExtendedTestOff: latinExtendedTest.c $(LATINGFX) $(wildca
 		-DCONFIG_FONT_LATIN_EXTENDED=$(if $(findstring Off,$@),0,1) -o $@ $< $(LATINGFX)
 
 TESTS += menuLocalesTest
-menuLocalesTest: menuLocalesTest.c $(LATINGFX) $(CORE)/ui/i18n.c $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+menuLocalesTest: menuLocalesTest.c $(LATINGFX) $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DGFX_MAX_ROWS=320 -DFONT_BOTH \
-		-DCONFIG_LANG_TR=1 -DCONFIG_LANG_RU=1 -o $@ $< $(LATINGFX) $(CORE)/ui/i18n.c
+		-DCONFIG_LANG_TR=1 -DCONFIG_LANG_RU=1 -o $@ $< $(LATINGFX) $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c
 
 # The same with a CJK catalog (CONFIG_LANG_ZH): text is UTF-8, a character of it is a 16 px glyph of the CJK face, widths
 # add up in pixels, and a cut keeps whole characters (core/ui/cjk_font.h, docs/spec/ui.md 2.5)

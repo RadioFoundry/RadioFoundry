@@ -8,6 +8,7 @@ msgstr ""
 "Project-Id-Version: RadioFoundry\n"
 "Language: ru\n"
 "X-Language-Name: Русский\n"
+"X-Language-Name-Latin: Russian\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -5406,6 +5407,11 @@ msgstr "1-9 change  Удерж. OK сохранить"
 msgctxt "QUICK_HINT_ALL_SETTINGS"
 msgid "0 All settings  Hold OK save"
 msgstr "0 All settings  Удерж. OK сохранить"
+
+#: core/ui/ui_screens.c
+msgctxt "DIAG_VARIANT_MISMATCH"
+msgid "This firmware may be for another version of this radio"
+msgstr "Эта прошивка может быть для другой версии этой рации"
 
 #: core/ui/ui_screens.c
 msgctxt "DIAG_HINT"

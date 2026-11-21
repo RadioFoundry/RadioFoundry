@@ -91,8 +91,10 @@ static const char fold[] = " !cLoY|S ca<--r-o+23'uP.,1o>///?"
 char font_fold(char c)
 {
 	uint8_t byte = (uint8_t)c;
+#if CONFIG_FONT_LATIN_EXTENDED
 	if (byte >= FONT_LATIN_EXTENDED_FIRST && byte < FONT_LATIN_EXTENDED_FIRST + FONT_LATIN_EXTENDED_COUNT)
 		return "GgIiSs"[byte - FONT_LATIN_EXTENDED_FIRST];
+#endif
 	return byte >= FONT_LATIN1_FIRST ? fold[byte - FONT_LATIN1_FIRST] : c;
 }
 
@@ -109,17 +111,13 @@ const uint8_t *font_glyph(const font_t *f, uint8_t c, int *top, int *rows)
 			}
 		}
 	}
-#endif
 	if (c >= FONT_LATIN_EXTENDED_FIRST && c < FONT_LATIN_EXTENDED_FIRST + FONT_LATIN_EXTENDED_COUNT) {
-#if CONFIG_FONT_LATIN_EXTENDED
 		unsigned stride = (f->w * f->bpp + 7u) / 8u;
 		*top = 0;
 		*rows = f->h;
 		return f->latin_extended + (c - FONT_LATIN_EXTENDED_FIRST) * stride * f->h;
-#else
-		c = (uint8_t)font_fold((char)c);
-#endif
 	}
+#endif
 	unsigned slot;
 	if (c >= 0x20 && c < 0x7F) {
 		slot = c - 0x20u;

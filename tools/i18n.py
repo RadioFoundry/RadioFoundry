@@ -766,11 +766,11 @@ def tables(found=None):
         name = headers.get("X-Language-Name", code)
         wide = headers.get(WIDE_HEADER) == "utf8"
         wide_name = text_to_bytes_wide(name, code) if wide else text_to_bytes(name, code)
-        if wide:
-            latin_name = headers.get(LATIN_NAME_HEADER, "")
-            if not latin_name:
-                raise I18nError("%s: a UTF-8 catalog needs a \"%s\" header (the name a build without the CJK face "
-                                "lists, docs/dev/translating.md)" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+        latin_name = headers.get(LATIN_NAME_HEADER)
+        if wide and not latin_name:
+            raise I18nError("%s: a UTF-8 catalog needs a \"%s\" header (the name a build without the CJK face "
+                            "lists, docs/dev/translating.md)" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+        if latin_name:
             text_to_bytes(latin_name, "%s: %s" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
         else:
             latin_name = name
@@ -879,13 +879,10 @@ def generate(out_path, found=None):
         lines.append("#define LANG_%s_TABLE\tNULL" % code.upper())
         lines.append("#endif")
         lines.append("")
-    # A CJK language names itself in its own script; a build without the CJK face would draw those bytes as boxes in
-    # Settings > Display > Language, so it lists the Latin name instead
+    # A build without the language's glyphs lists the Latin name in Settings > Display > Language.
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
-        if not wide and code != "ru":
+        if name == latin_name:
             continue
-        if code == "ru":
-            latin_name = "Russian"
         lines.append("#if %s" % sw)
         lines.append("#define LANG_%s_NAME\t%s" % (code.upper(), c_bytes(wide_name)))
         lines.append("#else")
@@ -897,7 +894,7 @@ def generate(out_path, found=None):
     lines.append("\t{ \"en\", \"English\", true, false, NULL }, \\")
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
         lines.append("\t{ \"%s\", %s, %s, %s, LANG_%s_TABLE }, \\" % (
-            code, "LANG_%s_NAME" % code.upper() if wide or code == "ru" else c_bytes(wide_name), sw,
+            code, "LANG_%s_NAME" % code.upper() if name != latin_name else c_bytes(wide_name), sw,
             "true" if wide else "false", code.upper()))
     lines.append("}")
     lines.append("// The language an empty setting means: the first CONFIG_LANG_DEFAULT_<CODE> on, else English")

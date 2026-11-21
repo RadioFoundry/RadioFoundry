@@ -166,6 +166,18 @@ class Generate(unittest.TestCase):
         self.assertIn("#if CONFIG_LANG_DEFAULT_XX\n#define LANG_DEFAULT\t1\n#else\n#define LANG_DEFAULT\tLANG_ENGLISH\n#endif",
                       self.h)
 
+    def test_latin_name_used_without_the_language_pack(self):
+        with open(os.path.join(self.dir.name, "xx.po"), "w", encoding="utf-8") as f:
+            f.write(PO.replace('"X-Language-Name: Test\\n"',
+                               '"X-Language-Name: Test\\n"\n"X-Language-Name-Latin: Latin\\n"'))
+        out = os.path.join(self.dir.name, "tables.h")
+        i18n.generate(out, self.found)
+        with open(out, encoding="utf-8") as f:
+            generated = f.read()
+        self.assertIn('#if CONFIG_LANG_XX\n#define LANG_XX_NAME\t"Test"\n#else\n#define LANG_XX_NAME\t"Latin"',
+                      generated)
+        self.assertIn('{ "xx", LANG_XX_NAME, CONFIG_LANG_XX', generated)
+
     def test_bad_translations_found(self):
         _, body = i18n.read_po(os.path.join(self.dir.name, "xx.po"))
         for key, msgid, msgstr, _ in body:

@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include "ui/fmt.h"
 #include "ui/gfx.h"
 #include "ui/i18n.h"
 
@@ -43,6 +44,12 @@ int main(void)
 	assert(lang_set(ru_id));
 	const char *russian = TR(TITLE_SETTINGS, "Settings");
 	assert(strcmp(russian, "Settings") != 0 && (uint8_t)russian[0] == CYRILLIC_PREFIX);
+	const char *aprs_label = TR(APRS_ROW_SEND_NOW, "Send position now");
+	char label[36];
+	assert(strlen(aprs_label) >= sizeof(label));
+	assert((uint8_t)aprs_label[34] == CYRILLIC_PREFIX);
+	str_copy(label, sizeof(label), aprs_label);
+	assert(strlen(label) == 34 && strncmp(label, aprs_label, 34) == 0);
 	assert(lang_set(LANG_ENGLISH) && strcmp(TR(TITLE_SETTINGS, "Settings"), "Settings") == 0);
 
 	assert(gfx_init(&mono));
