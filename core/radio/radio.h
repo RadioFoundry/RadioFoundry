@@ -254,6 +254,7 @@ typedef struct {
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
 	bool ringing;		// an incoming private call awaits PTT to answer
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
+	uint8_t other_fid;	// searching: the FID of a non-ETSI trunking system heard (t3_ms_other_fid), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
 	bool alerting;		// the called radio is ringing
 	bool refused;		// the system refused the registration (t3_ms_reg_refused)
@@ -273,6 +274,7 @@ typedef struct {
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
 	uint16_t other;		// as radio_t3_brief_t's
+	uint8_t other_fid;	// as radio_t3_brief_t's
 	uint8_t why;		// as radio_t3_brief_t's
 	bool refused;		// as radio_t3_brief_t's
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
@@ -289,11 +291,12 @@ typedef struct {
 	uint8_t ax_svc, ax_result, ax_reason, ax_state;
 	bool ptt_wait;		// PTT held, waiting for the grant
 	bool can_talk;
+	bool unverified;	// the last PDU taken failed its CRC (the channel's Accept invalid CRC): listen-only
 	uint8_t last_rx_op, last_rx_slot;	// the last CSBK heard: opcode, slot
 	uint8_t last_tx_op;	// the last CSBK sent (0xFF none)
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
-	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t csbk, crc_bad, crc_taken, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	uint32_t lent;		// short LCs saying the TSCC's slot is lent to a call (composite TSCC)
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)

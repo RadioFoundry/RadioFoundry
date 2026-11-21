@@ -10011,6 +10011,51 @@ static void test_t3_other_system(void)
 	sim.repeater = false;
 }
 
+// The control channel carries a trunking system of another kind: CSBKs of its own FID with a good CRC, no ETSI Aloha.
+// The view names it (other_fid, no C_SYScode) and PTT is refused saying so, with nothing sent
+static void test_t3_other_kind(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	for (int i = 0; i < 25; i++) {
+		uint8_t d[T3_CSBK_BYTES] = { 0x81, 0x06, 0x12, 0x13, 0x17, 0x18, 0x1b, 0x00, 0x00, 0x07 };
+		t3_crc_append(d, T3_CRC_MASK_CSBK);
+		t3_data_rx(DMR_BURST_CSBK, d, 1);
+		run(60);
+	}
+	radio_sm_t3_brief(&sm);	// as the radio task does before it publishes the view
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0 && radio_t3v.other_fid == 0x06 &&
+	      sm.view.t3.other_fid == 0x06);
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_OTHER_KIND);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.other_fid == 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
 // The channel selected before its system's record was written (an editor writing channels first): unavailable, then
 // usable once the record lands, with no other channel selected meanwhile (a zone of one channel has none to select)
 static void test_t3_system_late(void)
@@ -10936,6 +10981,7 @@ int main(void)
 	test_t3_no_id();
 	test_t3_system_late();
 	test_t3_other_system();
+	test_t3_other_kind();
 	test_t3_fallback();
 	test_t3_follow_all();
 	test_t3_learn_syscode();

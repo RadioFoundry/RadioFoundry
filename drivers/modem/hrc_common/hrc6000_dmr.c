@@ -7,6 +7,7 @@
 #include "hrc6000_dmr.h"
 #include "config.h"
 #include "dmr/fec/dmrFec.h"
+#include "hrc_soft.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc6000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_HOOK(call)	do { if (e->bs != NULL) { call; return; } } while (0)
@@ -1413,6 +1414,11 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
 	slot->ev.burst = NULL;
 	slot->dms = dms;
+	slot->soft_tag = 0;
+#if CONFIG_DMR
+	slot->soft_tag = voice ? 0u : e->soft_pending;
+	e->soft_pending = 0;
+#endif
 	ev_commit(e);
 }
 
@@ -1448,8 +1454,36 @@ static void rc_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, uint8_t r5
 	}
 }
 
+#if CONFIG_DMR
+// The soft values of a control burst whose CRC failed, for hrc6000_dmr_pop to combine (dmr-modem.md 2.2.1): read over
+// the bus into the staging buffer and converted in place. Not while we send (the tap then holds what the chip heard
+// between our bursts, if anything)
+static void soft_stage(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, bool tx)
+{
+	dmrSoftComb_t *c = e->soft;
+	uint16_t at = e->dev->chip->soft_tap;
+	bool control = s->kind == DMR_BURST_CSBK || s->kind == DMR_BURST_MBC_HEADER || s->kind == DMR_BURST_MBC_CONT ||
+		       s->kind == DMR_BURST_DATA_HEADER;
+	if (c == NULL || at == 0u || s->crc_ok || !control || tx) {
+		return;
+	}
+	uint8_t tag;
+	int8_t *v = dmrSoftCombStage(c, &tag);
+	if (!hrc_ram(e->dev, HRC_PAGE_DATA, (uint16_t)(at + HRC_SOFT_INFO_OFS), (uint8_t *)v, DMR_SOFT_BITS, false)) {
+		return;
+	}
+	for (uint16_t i = 0; i < DMR_SOFT_BITS; i++) {
+		v[i] = hrc_soft_value((uint8_t)v[i]);
+	}
+	e->soft_pending = tag;
+}
+#endif
+
 static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
+#if CONFIG_DMR
+	e->soft_pending = 0;	// staged for this report's burst only
+#endif
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
 	// The HR_C5000 has no sync type register: the family the channel expects (direct MS, repeater BS)
 	uint8_t r5f = e->dev->chip->sync_reg ? r(e->dev, R_SYNC_TYPE) : (e->cfg.repeater ? 1u : 0u);
@@ -1516,6 +1550,9 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 		hrc6000_dmr_voice(e->dev, false, nb.payload);
 	} else {
 		hrc_read_burst(e->dev, HRC_PAGE_DATA, 0x00, nb.payload, nb.len);
+#if CONFIG_DMR
+		soft_stage(e, &s, tx);
+#endif
 	}
 
 	// The same burst reported again at the next timeslot interrupt (bench 2026-10-09: every voice burst came twice,
@@ -2145,6 +2182,12 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 		*burst = s->burst;
 		ev->burst = burst;
 		e->pop_dms = s->dms;
+#if CONFIG_DMR
+		dmrSoftComb_t *c = e->soft;
+		if (s->soft_tag != 0 && c != NULL) {
+			(void)dmrSoftCombTake(c, s->soft_tag, burst->ts == 2 ? 1u : 0u, burst->payload);
+		}
+#endif
 	}
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	e->evq_tail = (uint8_t)((e->evq_tail + 1u) % EV_N);

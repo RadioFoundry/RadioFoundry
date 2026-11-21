@@ -1551,6 +1551,7 @@ static void dmr_configure(radio_sm_t *sm)
 	cfg.listen.any_cc = cfg.listen.both_ts = cfg.listen.hear_all;
 	cfg.listen.groups = sm->listen;
 	cfg.listen.group_count = sm->listen_count;
+	cfg.listen.accept_bad_crc = ch->accept_bad_crc;
 	// The channel's TX time-out when it has one, else the radio's
 	cfg.tot_s = sm->view.tot_s;	// apply_tot: the channel's, else the radio's
 	if (sm->set.reply_s <= 30u) {
@@ -3438,9 +3439,11 @@ static void t3_publish(radio_sm_t *sm)
 #endif
 	v->ptt_wait = sm->t3_ptt_wait;
 	v->can_talk = t3_ms_can_talk(m);
+	v->unverified = m->unverified;
 	v->ticks = sm->t3_ticks;
 	v->csbk = m->st.csbk;
 	v->crc_bad = m->st.crc_bad;
+	v->crc_taken = m->st.crc_taken;
 	v->grants = m->st.grants;
 	v->followed = m->st.followed;
 	v->unmapped = m->st.unmapped;
@@ -3699,6 +3702,7 @@ void radio_sm_t3_brief(radio_sm_t *sm)
 	b->polls = x->polls;
 	b->poll_fails = x->poll_fails;
 	b->other = x->other;
+	b->other_fid = x->other_fid;
 	b->refused = x->refused;
 	b->alerting = t3m.ax.alerting;
 	b->unmapped = x->last_unmapped;
@@ -3807,6 +3811,9 @@ static bool t3_channel(radio_sm_t *sm, uint16_t number, const channel_t *ch)
 		t3s.cfg.opts &= (uint16_t)~T3_OPT_LEARN_SYSCODE;
 	}
 	sm->t3_monitor_set = (t3s.cfg.opts & T3_OPT_MONITOR) != 0;
+	if (ch->accept_bad_crc) {
+		t3s.cfg.opts |= T3_OPT_ACCEPT_BAD_CRC;	// for this channel only: the system record's opts don't carry it
+	}
 	radio_t3_talk(ch, &t3s);
 	sm->t3_fb_number = radio_t3_fallback(number, &t3s, &sm->t3_fb_ch);
 	sm->t3_pending = true;		// started by t3_tick, which has the clock
@@ -3955,8 +3962,12 @@ static uint8_t t3_why_now(uint32_t now_ms, uint8_t result)
 {
 	uint16_t code;
 	if (t3m.state == T3_HUNT) {
+		uint8_t fid;
 		if (t3_ms_other(&t3m, now_ms, &code)) {
 			return RADIO_TRUNK_WHY_OTHER_SYS;
+		}
+		if (t3_ms_other_fid(&t3m, now_ms, &fid)) {
+			return RADIO_TRUNK_WHY_OTHER_KIND;
 		}
 		return t3_ms_reg_refused(&t3m) ? RADIO_TRUNK_WHY_REG_REFUSED : RADIO_TRUNK_WHY_NO_CC;
 	}
@@ -4221,6 +4232,8 @@ static void t3_tick(radio_sm_t *sm, uint32_t now_ms)
 	t3_poll_tick(sm);
 	uint16_t other;
 	radio_t3v.other = t3_ms_other(&t3m, now_ms, &other) ? other : 0u;
+	uint8_t fid;
+	radio_t3v.other_fid = t3_ms_other_fid(&t3m, now_ms, &fid) ? fid : 0u;
 	radio_t3v.refused = t3_ms_reg_refused(&t3m);
 	t3_publish(sm);
 }
