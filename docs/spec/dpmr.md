@@ -177,7 +177,14 @@ on its own block; the own ID comes from the radio-wide record (6.2).
 | Filter | every call, or only calls to the called ID, to all and to us | every call | |
 | Bandwidth | 12.5 kHz | | the radios' narrowest |
 
-### 7.3 Scan and dual watch
+### 7.3 What it shows
+
+| Where | What |
+|---|---|
+| Home screen | the mode name; the screens' dPMR rows are not written yet |
+| Debug link | the `dpmr` view section ([debuglink.md](debuglink.md) 3.7): the call, what PTT sends, the settings, the provider's fit, counters; op 44 sets the settings |
+
+### 7.4 Scan and dual watch
 
 A scan stops on a stored dPMR channel as on an NXDN one: a carrier probes up to 700 ms for a call; a call that plays
 holds, one the filter turns down moves on. On a channel that plays only its own calls, a late entry whose called ID is
@@ -193,6 +200,7 @@ receiver of a two-receiver radio takes FM and DMR only: dual watch alternates th
 | `tests/host/dpmrEngineTest.c` | two engines on made-up providers: a call with its IDs and voice in order and whole superframes, an encoder that stalls, PTT let go at once, late entry, the filter changed mid-call, an abort, refusals; a call through a modeled discriminator tap and the soft modem, with noise, to where it breaks |
 | `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's transmission through the soft modem, the framer and the call layer, when a recording is given (10); skipped without |
 | `tests/host/dpmrCodeplugTest.c` | the codeplug (6): the shared vectors, the channel code a channel sends, a channel's block from its tag, the own ID record, a save from the radio that keeps a later firmware's flags, fallback and bytes; built with `CONFIG_DPMR` off too, where the kind is parked |
+| `tests/host/radioCoreTest.c` (`radioCoreTestDpmr`, `radioCoreTestAirAll`) | the radio core (7) on a fake board whose far end is a second dPMR engine: a call received and played in order through the vocoder path, the filter, PTT through the air operations heard with the right IDs and code in whole superframes, settings taken after a transmission, a provider that only receives, only transmits or gives nothing, the time-out, no codec, the band plan and the inhibit refusing as for any mode, the VFO saved and restored, mode changes to and from NXDN and P25 in one engine memory, a stored channel and its save path, a zone scan, the debug link section and op 44 |
 
 ## 9. Not written
 

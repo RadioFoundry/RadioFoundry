@@ -9379,7 +9379,7 @@ static void test_dpmr_stored(void)
 }
 
 #if CONFIG_SCAN
-// A zone scan over a stored dPMR channel (docs/spec/dpmr.md 7.3): it stops there, holds on a call that plays and moves
+// A zone scan over a stored dPMR channel (docs/spec/dpmr.md 7.4): it stops there, holds on a call that plays and moves
 // on from one its filter turns down; a provider that only transmits dPMR makes it no stop
 static void test_dpmr_scan(void)
 {
