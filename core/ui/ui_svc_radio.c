@@ -157,7 +157,7 @@ bool ui_svc_vfo_sfr(uint8_t a)
 bool ui_svc_mode(uint8_t mode)
 {
 	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
-	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN) && !(mode == RADIO_MODE_DPMR && CONFIG_DPMR)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -223,6 +223,9 @@ uint32_t ui_svc_feat_radio(void)
 #endif
 #if CONFIG_NXDN
 	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
+#endif
+#if CONFIG_DPMR
+	       (radio_dpmr_fits() ? UI_FEAT_DPMR : 0) |
 #endif
 	       0;
 }

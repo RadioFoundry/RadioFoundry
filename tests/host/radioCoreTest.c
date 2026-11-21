@@ -1020,9 +1020,9 @@ static void test_parked_kind(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
-	// P25 trunked and NXDN the same where the board can't carry them (with their switches on or off), unknown ids too.
-	// A board that carries the mode runs it: test_p25_stored, test_nxdn_stored
-	static const uint8_t kinds[] = { CODEPLUG_KIND_P25_TRUNK, CODEPLUG_KIND_NXDN };
+	// P25 trunked, NXDN and dPMR the same where the board can't carry them (with their switches on or off), unknown
+	// ids too. A board that carries the mode runs it: test_p25_stored, test_nxdn_stored, test_dpmr_stored
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25_TRUNK, CODEPLUG_KIND_NXDN, CODEPLUG_KIND_DPMR };
 	for (unsigned i = 0; i < sizeof kinds; i++) {
 		chans[6].kind = kinds[i];
 		req(RREQ_ZONE, 0);
@@ -2038,7 +2038,15 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
 #endif
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	// dPMR (4) the same; past dPMR: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) ==
+	      (CONFIG_DPMR ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_DPMR
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && !sim.started);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_dpmr_running());
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 5, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -3685,6 +3693,13 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 {
 	radio_nxdn_set_settings(s);
 	req(RREQ_NXDN_SET, 0);
+}
+#endif
+#if CONFIG_DPMR
+void radio_req_dpmr_settings(const radio_dpmr_settings_t *s)
+{
+	radio_dpmr_set_settings(s);
+	req(RREQ_DPMR_SET, 0);
 }
 #endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
@@ -7799,12 +7814,45 @@ static void test_p25(void)
 }
 #endif
 
+#if CONFIG_NXDN || CONFIG_DPMR
+// ---- What NXDN's and dPMR's tests share: both carry the DMR side's 72-bit voice frame, so a far radio sends made-up
+// frames through the fake vocoder and the tests look for them in order. Nothing here encodes or decodes speech ----
+#include "dmr/ambe/ambeFec.h"
+
+static uint8_t zero_frame[DMR_AMBE_FRAME_BYTES];	// the fake encoder's frame with its FEC
+
+// Frame k of a made-up sequence: 49 bits from k (not speech), and with the voice frame's FEC
+static void made_up_bits(uint8_t k, uint8_t bits[VOCODER_BITS])
+{
+	for (uint8_t i = 0; i < VOCODER_BITS; i++) {
+		bits[i] = (uint8_t)((((uint32_t)k * 2654435761u) >> (i % 29)) & 1u);
+	}
+	bits[0] = (uint8_t)(k & 1u);
+}
+
+// The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
+static uint8_t dec_next;
+static uint32_t dec_in_order;
+static void dec_hook(const uint8_t *bits)
+{
+	uint8_t want[VOCODER_BITS];
+
+	for (uint8_t k = 0; k < 8; k++) {
+		made_up_bits((uint8_t)(dec_next + k), want);
+		if (!memcmp(bits, want, VOCODER_BITS)) {
+			dec_in_order += k == 0;
+			dec_next = (uint8_t)(dec_next + k + 1);
+			return;
+		}
+	}
+}
+#endif
+
 #if CONFIG_NXDN
 // ---- NXDN conventional in the radio core (docs/spec/nxdn.md 6): the far radio is an NXDN engine on the other fake
 // provider. Voice is made-up 72-bit frames through the fake vocoder: nothing here encodes or decodes speech ----
 #include "nxdn/nxdn_engine.h"
 #include "nxdn/nxdn_codeplug.h"
-#include "dmr/ambe/ambeFec.h"
 
 static nxdn_engine_t nfar;
 static bool nfar_running, nfar_tx;
@@ -7815,16 +7863,6 @@ static struct {
 	uint16_t enc;		// ... that are what the radio's encoder made (the fake encoder's all-zero bits)
 } nfar_heard;
 static uint8_t nfar_next;	// the far radio's next made-up frame
-static uint8_t zero_frame[NXDN_EHR_BYTES];	// the fake encoder's frame with its FEC
-
-// Frame k of a made-up sequence: 49 bits from k (not speech), and with the voice frame's FEC
-static void made_up_bits(uint8_t k, uint8_t bits[VOCODER_BITS])
-{
-	for (uint8_t i = 0; i < VOCODER_BITS; i++) {
-		bits[i] = (uint8_t)((((uint32_t)k * 2654435761u) >> (i % 29)) & 1u);
-	}
-	bits[0] = (uint8_t)(k & 1u);
-}
 
 static void nf_start(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.starts++; nfar_heard.call = *c; }
 static void nf_update(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.call = *c; }
@@ -7859,23 +7897,6 @@ static const nxdn_engine_hooks_t nfar_hooks = { .rx_start = nf_start, .rx_update
 	.traffic_key = nf_key,
 #endif
 };
-
-// The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
-static uint8_t dec_next;
-static uint32_t dec_in_order;
-static void dec_hook(const uint8_t *bits)
-{
-	uint8_t want[VOCODER_BITS];
-
-	for (uint8_t k = 0; k < 8; k++) {
-		made_up_bits((uint8_t)(dec_next + k), want);
-		if (!memcmp(bits, want, VOCODER_BITS)) {
-			dec_in_order += k == 0;
-			dec_next = (uint8_t)(dec_next + k + 1);
-			return;
-		}
-	}
-}
 
 static void nfar_step(void)
 {
@@ -8767,6 +8788,669 @@ static void test_nxdn(void)
 }
 #endif
 
+#if CONFIG_DPMR
+// ---- dPMR in the radio core (docs/spec/dpmr.md 7): the far radio is a dPMR engine on the other fake provider, as
+// NXDN's tests have an NXDN engine there ----
+#include "dpmr/dpmr_engine.h"
+#include "dpmr/dpmr_codeplug.h"
+
+#define DPMR_HZ		446109375u	// the second dPMR446 channel: table 6.1's A2 is its automatic code
+
+static dpmr_engine_t dfar;
+static bool dfar_running, dfar_tx;
+static struct {
+	uint8_t starts, ends;
+	dpmr_call_t call;
+	uint16_t voice;		// voice frames heard
+	uint16_t enc;		// ... that are what the radio's encoder made (the fake encoder's all-zero bits)
+} dfar_heard;
+static uint8_t dfar_next;	// the far radio's next made-up frame
+
+static void df_start(const dpmr_call_t *c, void *ctx) { (void)ctx; dfar_heard.starts++; dfar_heard.call = *c; }
+static void df_update(const dpmr_call_t *c, void *ctx) { (void)ctx; dfar_heard.call = *c; }
+static void df_voice(const uint8_t ambe[DPMR_AMBE_BYTES], void *ctx)
+{
+	(void)ctx;
+	dfar_heard.voice++;
+	if (!memcmp(ambe, zero_frame, DPMR_AMBE_BYTES)) {
+		dfar_heard.enc++;
+	}
+}
+static void df_end(void *ctx) { (void)ctx; dfar_heard.ends++; }
+// The far radio's encoder: a frame whenever asked, until its operator lets go (the engine sends what the encoder still
+// holds after the release, so an encoder that never ran dry would never let the call end)
+static bool df_tx(uint8_t ambe[DPMR_AMBE_BYTES], void *ctx)
+{
+	uint8_t bits[VOCODER_BITS];
+
+	(void)ctx;
+	if (dfar.tx_stop) {
+		return false;
+	}
+	made_up_bits(dfar_next++, bits);
+	ambeFecEncode(bits, ambe);
+	return true;
+}
+static const dpmr_engine_hooks_t dfar_hooks = { .rx_start = df_start, .rx_update = df_update, .rx_voice = df_voice,
+	.rx_end = df_end, .tx_voice = df_tx };
+
+static void dfar_step(void)
+{
+	if (dfar_tx && dpmr_engine_tx_state(&dfar) == AIR_TX_DONE) {
+		dpmr_engine_tx_clear(&dfar);
+		dfar_tx = false;
+	}
+}
+
+// The far radio on the channel: it calls `called` as `own` with channel code cc, and hears every call
+static void dfar_begin(uint32_t called, uint32_t own, uint16_t cc)
+{
+	dpmr_engine_cfg_t c = { .called = called, .own = own, .cc = cc, .silence = dmr_ambe_silence };
+	uint8_t zero[VOCODER_BITS] = { 0 };
+
+	ambeFecEncode(zero, zero_frame);
+	if (dfar_running) {
+		dpmr_engine_end(&dfar);
+	}
+	memset(&dfar_heard, 0, sizeof(dfar_heard));
+	dfar_tx = false;
+	dfar_running = dpmr_engine_begin(&dfar, &fake_air1, &c, &dfar_hooks, NULL);
+	CHECK(dfar_running);
+}
+
+static void dfar_stop(void)
+{
+	if (dfar_running) {
+		dpmr_engine_end(&dfar);
+		dfar_running = dfar_tx = false;
+	}
+}
+
+static void dfar_key(void)
+{
+	CHECK(dpmr_engine_tx_prepare(&dfar) && dpmr_engine_tx_go(&dfar));
+	dfar_tx = true;
+}
+
+// The far radio keys, holds for ms, lets go and runs until its end frame is out
+static void dfar_call(uint32_t ms)
+{
+	dfar_key();
+	run(ms);
+	dpmr_engine_tx_stop(&dfar);
+	for (int i = 0; i < 100 && dfar_tx; i++) {
+		run(10);
+	}
+	CHECK(!dfar_tx);
+}
+
+// The codec's side (core/dpmr/dpmr_codeplug.c, tested in dpmrCodeplugTest): a stored channel's block by number, the
+// radio-wide own ID, and what a save from the radio wrote
+static dpmr_chan_t stored_dpmr[NCH + 1];
+static uint32_t stored_dpmr_own = DPMR_CP_ID_NONE;
+bool dpmr_chan_load(uint16_t number, const channel_t *ch, dpmr_chan_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_DPMR || number < 1 || number > NCH)
+		return false;
+	*out = stored_dpmr[number];
+	return true;
+}
+uint32_t dpmr_own_load(void) { return stored_dpmr_own; }
+static struct { uint16_t number; channel_t ch; dpmr_chan_t c; } dpmr_saved;
+bool dpmr_chan_save(uint16_t number, const channel_t *ch, const dpmr_chan_t *c)
+{
+	dpmr_saved.number = number;
+	dpmr_saved.ch = *ch;
+	dpmr_saved.c = *c;
+	return codeplug_set_channel(number, ch);
+}
+
+static void dpmr_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_dpmr(&sm.view, &t);
+}
+
+static void setup_codeplug_dpmr(void)
+{
+	setup_codeplug();
+	add(3, "dPMR", DPMR_HZ, RADIO_MODE_DPMR, false, 2);	// zone Local, position 2
+	radio_dpmr_reset_stats();
+	air_nofit = false;
+	air_fit2400[0] = air_fit2400[1] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	memset(fair, 0, sizeof(fair));
+	v_decode_hook = NULL;
+	codec_present = true;
+	stored_dpmr_own = DPMR_CP_ID_NONE;
+}
+
+static const radio_dpmr_settings_t dpmr_default_set = { .called = DPMR_ID_ALL, .own = 0, .cc = 0, .rx_mine = false };
+static void dpmr_defaults(void)
+{
+	radio_req_dpmr_settings(&dpmr_default_set);
+}
+
+static void test_dpmr_rx(void)
+{
+	radio_dpmr_stats_t st;
+	const radio_dpmr_view_t *v = &sm.view.dpmr;
+	radio_dpmr_settings_t s = dpmr_default_set;
+	const uint16_t a2 = dpmr_cc_for_hz(DPMR_HZ);
+
+	setup_codeplug_dpmr();
+	start();
+	dpmr_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && sm.view.channel_number == 3);
+	// The board in its digital mode at 12.5 kHz without a tone, the DMR stack stopped, the engine on board.air, the
+	// DMR side's audio stream running for its voice
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == DPMR_HZ && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	CHECK(!sm.dmr_running && !sim.started && aud.started);
+	CHECK(radio_dpmr_running() && fair[0].open);
+	CHECK(v->flags == RADIO_DPMR_ON && v->tx == AIR_TX_IDLE && v->fit == (AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT));
+	// What PTT sends with no settings: the all call as our own ID too, the frequency's channel code
+	CHECK(v->talk == DPMR_ID_ALL && v->tx_own == DPMR_ID_ALL && v->tx_cc == a2 && dpmr_cc_index(a2) == 2);
+	radio_dpmr_stats(&st);
+	CHECK(st.begins == 1 && st.begin_fails == 0);
+	static char buf[4096];
+	dpmr_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "dpmr.built=1\ndpmr.on=1\ndpmr.rx=0\n") != NULL && strstr(buf, "dpmr.talk=FFFFFF\n") != NULL);
+	CHECK(strstr(buf, "dpmr.fit=7\n") != NULL && strstr(buf, "dpmr.run.cc=2\n") != NULL);
+	run(300);				// noise: no call
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
+
+	// A dPMR446 radio as it comes: common ID 87 to common ID 87. Received and played (the filter is off); its voice
+	// frames reach the decoder in order through the DMR side's voice path
+	dec_next = 0;
+	dec_in_order = 0;
+	v_decode_hook = dec_hook;
+	dfar_next = 0;
+	dfar_begin(DPMR_ID_COMMON(87), DPMR_ID_COMMON(87), a2);
+	dfar_key();
+	run(1000);
+	CHECK(sm.view.state == RS_RX && hw.led[LED_GREEN]);
+	CHECK((v->flags & (RADIO_DPMR_RX | RADIO_DPMR_PLAYED)) == (RADIO_DPMR_RX | RADIO_DPMR_PLAYED));
+	CHECK(!(v->flags & RADIO_DPMR_LATE) && (v->flags & RADIO_DPMR_KNOWN) && v->called == DPMR_ID_COMMON(87) &&
+	      v->own == DPMR_ID_COMMON(87) && v->cc == a2);
+	CHECK(v->have == (DPMR_HAVE_CALLED | DPMR_HAVE_OWN | DPMR_HAVE_CC | DPMR_HAVE_HEADER));
+	CHECK(dec_in_order >= 30);
+	dpmr_engine_tx_stop(&dfar);
+	for (int i = 0; i < 100 && (sm.view.state != RS_IDLE || (v->flags & RADIO_DPMR_RX)); i++) {
+		run(5);
+	}
+	// Ended by its end frame; the last call heard stays
+	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_DPMR_RX) && (v->flags & RADIO_DPMR_ENDED) &&
+	      v->called == DPMR_ID_COMMON(87) && !hw.led[LED_GREEN]);
+	radio_dpmr_stats(&st);
+	CHECK(st.rx_calls == 1 && st.headers >= 1 && st.ends >= 1 && st.voice >= 40 && st.hi_fail == 0 &&
+	      st.cch_fail == 0);
+	dpmr_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "dpmr.ended=1\n") != NULL && strstr(buf, "dpmr.called=57FFFF\ndpmr.own=57FFFF\n") != NULL &&
+	      strstr(buf, "dpmr.rx_calls=1\n") != NULL);
+	// RESET_COUNTERS' part
+	debuglink_dpmr_reset();
+	radio_dpmr_stats(&st);
+	CHECK(st.rx_calls == 0 && st.voice == 0);
+	run(500);
+	v_decode_hook = NULL;
+
+	// Only calls to us: a call to another ID shows (RS_RX) and its voice does not play
+	s.called = DPMR_ID_COMMON(5);
+	s.own = 0x123456u;
+	s.rx_mine = true;
+	radio_req_dpmr_settings(&s);
+	CHECK((v->flags & RADIO_DPMR_MINE) && v->talk == DPMR_ID_COMMON(5) && v->tx_own == 0x123456u);
+	dfar_key();
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_DPMR_RX) && !(v->flags & RADIO_DPMR_PLAYED) &&
+	      !hw.led[LED_GREEN]);
+	dpmr_engine_tx_stop(&dfar);
+	run(600);
+	// ... and calls to the called ID, to all and to our own ID play
+	static const uint32_t to[] = { DPMR_ID_COMMON(5), DPMR_ID_ALL, 0x123456u };
+	for (unsigned i = 0; i < sizeof to / sizeof to[0]; i++) {
+		dfar_begin(to[i], DPMR_ID_COMMON(87), a2);
+		dfar_key();
+		run(600);
+		CHECK((v->flags & RADIO_DPMR_PLAYED) && v->called == to[i] && hw.led[LED_GREEN]);
+		dpmr_engine_tx_stop(&dfar);
+		run(600);
+		CHECK(sm.view.state == RS_IDLE);
+	}
+	dfar_stop();
+	dpmr_defaults();
+}
+
+static void test_dpmr_tx(void)
+{
+	radio_dpmr_stats_t st;
+	dpmr_engine_view_t fv;
+	const radio_dpmr_view_t *v = &sm.view.dpmr;
+	radio_dpmr_settings_t s = dpmr_default_set;
+	const uint16_t a2 = dpmr_cc_for_hz(DPMR_HZ);
+
+	setup_codeplug_dpmr();
+	start();
+	dpmr_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	dfar_begin(DPMR_ID_ALL, DPMR_ID_COMMON(87), a2);
+	run(100);
+
+	// PTT through the air ops: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider
+	// starts inside the key
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.keyed && fair[0].on && fair[0].begins == 1);
+	CHECK(hw.tx_hz == DPMR_HZ && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE && hw.tx_power == 2);
+	CHECK(hw.led[LED_RED] && v->tx != AIR_TX_IDLE);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && fair[0].underruns == 0);
+	// The far radio hears it: the all call, sent as our own ID too, on the frequency's code; its voice is the
+	// encoder's frames
+	CHECK(dfar_heard.starts == 1 && dfar_heard.ends == 0 && (dfar_heard.call.have & DPMR_HAVE_HEADER));
+	CHECK(dfar_heard.call.called == DPMR_ID_ALL && dfar_heard.call.own == DPMR_ID_ALL && dfar_heard.call.cc == a2);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// the superframe on air is finished first
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	dpmr_engine_view(&dfar, &fv);
+	CHECK(v->tx == AIR_TX_IDLE && dfar_heard.ends == 1 && fv.rx.ended && dfar_heard.voice >= 40 &&
+	      dfar_heard.enc >= 30 && dfar_heard.voice % 16 == 0);	// whole superframes
+	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
+	radio_dpmr_stats(&st);
+	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+
+	// Settings sent while transmitting: in force for the next transmission
+	req(RREQ_PTT, 1);
+	run(100);
+	s.called = DPMR_ID_COMMON(9);
+	s.own = 0x0ABCDEu;
+	s.cc = 17;
+	radio_req_dpmr_settings(&s);
+	run(300);
+	CHECK(dfar_heard.call.called == DPMR_ID_ALL);	// this one goes on as it began
+	req(RREQ_PTT, 0);
+	run(600);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(dfar_heard.call.called == DPMR_ID_COMMON(9) && dfar_heard.call.own == 0x0ABCDEu &&
+	      dfar_heard.call.cc == dpmr_cc_group(true, 0));
+	CHECK(v->talk == DPMR_ID_COMMON(9) && v->tx_own == 0x0ABCDEu && v->tx_cc == dpmr_cc_group(true, 0));
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	dpmr_defaults();
+
+	// On an amateur frequency the band plan allows: keyed as any digital mode, the automatic code group A's first
+	chans[3].tx_hz = 433450000;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(v->tx_cc == dpmr_cc_group(false, 0));
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == 433450000 && hw.tx_calls == keyed + 1);
+	run(400);
+	CHECK(dfar_heard.call.cc == dpmr_cc_group(false, 0));
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// Where the band plan refuses transmit (the board's receive-only band): refused as any mode, nothing keyed
+	chans[3].tx_hz = 500000000;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BAND && !hw.keyed && hw.tx_calls == keyed &&
+	      fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	// ... and so does the inhibit
+	chans[3].tx_hz = DPMR_HZ;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	radio_settings_t rs = sm.set;
+	rs.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &rs, now);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	rs.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &rs, now);
+	run(50);
+
+	// A provider that transmits dPMR only (no receive): the engine runs, PTT keys, the far radio hears it
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_dpmr_running() && v->fit == AIR_FIT_TX);
+	dfar_heard.starts = dfar_heard.ends = 0;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(800);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && dfar_heard.starts == 1 && dfar_heard.ends == 1);
+	// One that receives it only: PTT refused before anything is queued
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed &&
+	      hw.tx_calls == keyed && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	// ... and one that gives dPMR nothing: no engine, refused
+	air_fit2400[0] = 0;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!radio_dpmr_running() && v->fit == 0);
+	radio_dpmr_stats(&st);
+	CHECK(st.begin_fails >= 1);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	run(50);
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_dpmr_running());
+
+	// The time-out: cut at once, the transmitter off, denied until PTT is released
+	uint32_t offs = (uint32_t)hw.tx_off_calls;
+	req(RREQ_PTT, 1);
+	run(181000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT && !hw.keyed &&
+	      hw.tx_off_calls == (int)offs + 1);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
+
+	// No vocoder: receive only, as NXDN (its voice is the DMR vocoder's)
+	codec_present = false;
+	start();
+	dpmr_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_dpmr_running());
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_CODEC && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	codec_present = true;
+	dfar_stop();
+}
+
+static void test_dpmr_mode(void)
+{
+	settings_t set;
+
+	setup_codeplug_dpmr();
+	start();
+	dpmr_defaults();
+	// The VFO in dPMR through the mode request: its own mode, the engine running
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, DPMR_HZ);
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && hw_mode == RADIO_MODE_DMR);
+	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));
+	// The settings from the debug link: own calls only, code B1, common ID 9 called, address 0x123456 ours
+	static const uint8_t op[] = { 0x01, 17, 0xFF, 0xFF, 0x09, 0x56, 0x34, 0x12 };
+	radio_dpmr_settings_t s;
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, op, sizeof op) == DL_ST_OK);
+	radio_dpmr_settings(&s);
+	CHECK(s.rx_mine && s.cc == 17 && s.called == DPMR_ID_COMMON(9) && s.own == 0x123456u);
+	CHECK(sm.view.dpmr.talk == DPMR_ID_COMMON(9) && sm.view.dpmr.tx_cc == dpmr_cc_group(true, 0));
+	static const uint8_t bad_cc[] = { 0x00, 33, 0, 0, 0, 0, 0, 0 }, bad_flag[] = { 0x02, 0, 0, 0, 0, 0, 0, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, bad_cc, sizeof bad_cc) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, bad_flag, sizeof bad_flag) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_DPMR, op, 7) == DL_ST_BAD_ARG);
+	CHECK(debuglink_is_feature_op(DL_OP_DPMR));
+	dpmr_defaults();
+	// Saved with the VFO, back after a restart
+	run(5000);
+	settings_read(&set);
+	CHECK(settings_vfo_mode(&set) == RADIO_MODE_DPMR);
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && sm.view.vfo_drop == 0);
+#if CONFIG_NXDN
+	// To NXDN and back: one engine at a time
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !radio_dpmr_running());
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && !radio_nxdn_running());
+#endif
+#if CONFIG_P25
+	// To P25 and back: in the same memory where P25 has its own
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && !radio_dpmr_running());
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && !radio_p25_running());
+#endif
+	// To FM: the engine closes, the audio stream stops
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_dpmr_running() && hw_mode == RADIO_MODE_FM && !aud.started);
+	CHECK(!(sm.view.dpmr.flags & RADIO_DPMR_ON));
+	// A board whose air interface carries no dPMR: the mode is refused, and a VFO saved in dPMR comes back in its
+	// default
+	air_nofit = true;
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_dpmr_running());
+	air_nofit = false;
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	run(5000);
+	air_nofit = true;
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode != RADIO_MODE_DPMR && sm.view.vfo_drop == RADIO_MODE_DPMR + 1u);
+	air_nofit = false;
+	// On a channel: a temporary change
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(!sm.view.vfo && sm.view.ch.mode == RADIO_MODE_DPMR && (sm.view.temp & RADIO_TEMP_MODE) && radio_dpmr_running());
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_dpmr_running());
+}
+
+// A dPMR channel in the codeplug (kind 7, docs/spec/dpmr.md 6): the radio runs it on its own block and the radio-wide
+// own ID, not the settings; saved from the VFO it becomes one; parked where the board can't carry dPMR
+static void test_dpmr_stored(void)
+{
+	const radio_dpmr_view_t *v = &sm.view.dpmr;
+	radio_dpmr_settings_t s = dpmr_default_set, in;
+
+	setup_codeplug_dpmr();
+	// The safe stand-in as the codeplug reads it: DMR, the tag's kind and transmit allowed
+	add(3, "dPMR B1", DPMR_HZ, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_DPMR;
+	chans[3].system = 0xFF;
+	stored_dpmr[3] = (dpmr_chan_t){ .called = DPMR_ID_COMMON(42), .cc = 17, .flags = DPMR_CP_RX_MINE };
+	stored_dpmr_own = 0x0ABCDEu;
+	start();
+	dpmr_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_DPMR && sm.view.ch.kind == CODEPLUG_KIND_DPMR);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5 && radio_dpmr_running() && !sm.dmr_running);
+	CHECK(v->talk == DPMR_ID_COMMON(42) && v->tx_own == 0x0ABCDEu && v->tx_cc == dpmr_cc_group(true, 0) &&
+	      (v->flags & RADIO_DPMR_MINE));
+	CHECK(radio_dpmr_in_force(&in) && in.called == DPMR_ID_COMMON(42) && in.own == 0x0ABCDEu && in.cc == 17 &&
+	      in.rx_mine);
+
+	// Its filter: another ID shows and does not play, its own called ID plays
+	dfar_begin(DPMR_ID_COMMON(43), DPMR_ID_COMMON(87), dpmr_cc_group(true, 0));
+	dfar_key();
+	run(800);
+	CHECK((v->flags & RADIO_DPMR_RX) && !(v->flags & RADIO_DPMR_PLAYED) && !hw.led[LED_GREEN]);
+	dpmr_engine_tx_stop(&dfar);
+	run(600);
+	dfar_begin(DPMR_ID_COMMON(42), DPMR_ID_COMMON(87), dpmr_cc_group(true, 0));
+	dfar_call(800);
+	CHECK(v->called == DPMR_ID_COMMON(42) && (v->flags & RADIO_DPMR_ENDED));
+
+	// PTT: the channel's called ID, the radio-wide own ID and the channel's code
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == DPMR_HZ && hw.tx_bw == RADIO_BW_12K5);
+	run(1000);
+	CHECK(dfar_heard.starts == 1 && dfar_heard.call.called == DPMR_ID_COMMON(42) &&
+	      dfar_heard.call.own == 0x0ABCDEu && dfar_heard.call.cc == dpmr_cc_group(true, 0));
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// No own ID in the codeplug: the called ID is sent as ours, as a dPMR446 radio sends it
+	stored_dpmr_own = DPMR_CP_ID_NONE;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(v->tx_own == DPMR_ID_COMMON(42));
+
+	// The settings don't reach a stored channel
+	s.called = DPMR_ID_COMMON(77);
+	s.cc = 3;
+	radio_req_dpmr_settings(&s);
+	CHECK(radio_dpmr_in_force(&in) && in.called == DPMR_ID_COMMON(42) && in.cc == 17);
+	dpmr_defaults();
+	// No mode change for now on a channel of a kind: its mode is the kind's
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && radio_dpmr_running() && !(sm.view.temp & RADIO_TEMP_MODE));
+	// Receive only from the tag: PTT refused as on any channel
+	chans[3].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+	// The editor's feature list says DPMR here
+	CHECK(strstr(build_modes_now(), "DPMR,") != NULL);
+
+	// A board that can't carry dPMR: parked (DMR modem off, never keyed), and no DPMR in the feature list
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_dpmr_running() && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	CHECK(strstr(build_modes_now(), "DPMR,") == NULL);
+	air_nofit = false;
+
+	// Saved as a channel from the VFO in dPMR: a stored dPMR channel from the settings, never a plain record in a
+	// mode other readers don't know
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, DPMR_HZ);
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	s = dpmr_default_set;
+	s.called = DPMR_ID_COMMON(12);
+	s.cc = 20;
+	s.rx_mine = true;
+	radio_req_dpmr_settings(&s);
+	run(20);
+	memset(&dpmr_saved, 0, sizeof dpmr_saved);
+	channel_t ed = sm.view.ch;
+	CHECK(ed.mode == RADIO_MODE_DPMR && ed.kind == CODEPLUG_KIND_NONE);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(dpmr_saved.number == 6 && dpmr_saved.ch.kind == CODEPLUG_KIND_DPMR &&
+	      dpmr_saved.c.called == DPMR_ID_COMMON(12) && dpmr_saved.c.cc == 20 && dpmr_saved.c.flags == DPMR_CP_RX_MINE);
+	dpmr_defaults();
+	// A channel in dPMR for now, saved: a stored dPMR channel too
+	req(RREQ_MODE, RADIO_MODE_FM);
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	CHECK(sm.view.ch.kind == CODEPLUG_KIND_NONE && sm.view.channel_number != 0);
+	uint16_t plain = sm.view.channel_number;
+	req(RREQ_MODE, RADIO_MODE_DPMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DPMR && (sm.view.temp & RADIO_TEMP_MODE));
+	dpmr_saved.number = 0;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(dpmr_saved.number == plain && dpmr_saved.c.called == DPMR_ID_ALL);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	dfar_stop();
+	memset(stored_dpmr, 0, sizeof(stored_dpmr));
+	stored_dpmr_own = DPMR_CP_ID_NONE;
+}
+
+#if CONFIG_SCAN
+// A zone scan over a stored dPMR channel (docs/spec/dpmr.md 7.4): it stops there, holds on a call that plays and moves
+// on from one its filter turns down; a provider that only transmits dPMR makes it no stop
+static void test_dpmr_scan(void)
+{
+	const radio_dpmr_view_t *v = &sm.view.dpmr;
+	uint16_t visits;
+
+	setup_codeplug_dpmr();
+	add(3, "dPMR B1", DPMR_HZ, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_DPMR;
+	chans[3].system = 0xFF;
+	stored_dpmr[3] = (dpmr_chan_t){ .called = DPMR_ID_COMMON(42), .cc = 0, .flags = DPMR_CP_RX_MINE };
+	start();
+	dpmr_defaults();
+	far_hz = DPMR_HZ;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	// Nothing on the air: a stop on the dPMR channel (the engine runs there), then on
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_ZONE);
+	// A call to the channel's ID, already on: held, playing, while it lasts
+	dfar_begin(DPMR_ID_COMMON(42), DPMR_ID_COMMON(87), dpmr_cc_for_hz(DPMR_HZ));
+	dfar_key();
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_dpmr_running() && (v->flags & (RADIO_DPMR_PLAYED | RADIO_DPMR_KNOWN | RADIO_DPMR_LATE)) ==
+	      (RADIO_DPMR_PLAYED | RADIO_DPMR_KNOWN | RADIO_DPMR_LATE) && v->called == DPMR_ID_COMMON(42));
+	run(1500);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	dpmr_engine_tx_stop(&dfar);
+	run(600);
+	CHECK(!dfar_tx && sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_RESUME);
+	run(RADIO_SCAN_DELAY_MS + 600);
+	CHECK(sm.view.channel_number != 3 && sm.view.scan == SCAN_ZONE);
+	// A call to another ID: not held
+	dfar_begin(DPMR_ID_COMMON(43), DPMR_ID_COMMON(87), dpmr_cc_for_hz(DPMR_HZ));
+	dfar_key();
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	dpmr_engine_tx_stop(&dfar);
+	run(600);
+	req(RREQ_SCAN, RSCAN_STOP);
+	// A board that only transmits dPMR: never a stop
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	far_hz = 0;
+	dfar_stop();
+	memset(stored_dpmr, 0, sizeof(stored_dpmr));
+	dpmr_defaults();
+}
+#endif
+
+static void test_dpmr(void)
+{
+	test_dpmr_rx();
+	test_dpmr_tx();
+	test_dpmr_mode();
+	test_dpmr_stored();
+#if CONFIG_SCAN
+	test_dpmr_scan();
+#endif
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+	if (radio_dpmr_running()) {
+		radio_dpmr_end();
+	}
+}
+#endif
+
 #if CONFIG_AIR
 static void air_step(void)
 {
@@ -8777,6 +9461,9 @@ static void air_step(void)
 #endif
 #if CONFIG_NXDN
 	nfar_step();
+#endif
+#if CONFIG_DPMR
+	dfar_step();
 #endif
 }
 #endif
@@ -11086,6 +11773,9 @@ int main(void)
 #endif
 #if CONFIG_NXDN
 	test_nxdn();
+#endif
+#if CONFIG_DPMR
+	test_dpmr();
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();

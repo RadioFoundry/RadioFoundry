@@ -30,7 +30,11 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
-//   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
+//   dpmrrx:<own>,<called>[,o]   a dPMR call (CONFIG_DPMR builds), the IDs in hex: o to another ID on a channel that
+//                       plays its own calls only (not played); either ID - for one not in yet (a late entry)
+//   dpmrtalk:<id>[,<cc>[,m]]    the dPMR settings call common ID id (1-255), on channel code cc (1-32; 0: automatic);
+//                       m: they play only calls to us and to that ID
+//   chkind:<n>,p25|nxdn|dpmr[,<name>]  a stored P25, NXDN or dPMR channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -86,6 +90,9 @@
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
+#endif
+#if CONFIG_DPMR
+#include "dpmr/dpmr.h"
 #endif
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"
@@ -734,7 +741,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 static struct {
 	uint16_t number;
 	channel_t ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	bool air_set;		// saved with a block (ui_svc_write_channel_air)
 	ui_air_conv_t air;
 #endif
@@ -760,7 +767,7 @@ static int sim_write(uint16_t number, const channel_t *ch)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	sim_edits[i].air_set = false;
 #endif
 	sim_rec.codeplug_writes++;
@@ -775,8 +782,8 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	return sim_write(number, ch) >= 0;
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
-// The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
+#if CONFIG_AIR
+// The block goes with the channel: a plain channel in an air mode becomes one of the kind, as the storage job makes it
 bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
 {
 	(void)from;
@@ -784,7 +791,8 @@ bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t fro
 		return sim_held;
 	channel_t c = *ch;
 	if (c.kind == CODEPLUG_KIND_NONE) {
-		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : c.mode == RADIO_MODE_DPMR ? CODEPLUG_KIND_DPMR :
+			 CODEPLUG_KIND_NXDN;
 		c.mode = RADIO_MODE_DMR;	// the stand-in record
 	}
 	int i = sim_write(number, &c);
@@ -890,6 +898,20 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 	return true;
 }
 bool radio_p25_fits(void) { return p25_radio; }
+#endif
+#if CONFIG_DPMR
+static bool dpmr_radio;		// below: the "dpmr" token
+bool radio_dpmr_fits(void) { return dpmr_radio; }
+// A stored dPMR channel's block (dpmr_codeplug.c): an all call on the frequency's code, unless the editor saved one
+bool dpmr_chan_load(uint16_t number, const channel_t *ch, dpmr_chan_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_DPMR)
+		return false;
+	*out = (dpmr_chan_t){ .called = DPMR_ID_ALL, .cc = DPMR_CP_CC_AUTO, .flags = 0 };
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->dpmr;
+	return true;
+}
 #endif
 #if CONFIG_NXDN
 static bool nxdn_radio;		// below: the "nxdn" token
@@ -1700,6 +1722,7 @@ static bool bcast_rx;
 // P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn"
 static bool p25_radio;
 static bool nxdn_radio;
+static bool dpmr_radio;		// dPMR with "dpmr"
 // Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
 // unset and a plain option
 static int8_t hwopt_val[2];
@@ -1724,7 +1747,7 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
 	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
-	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN) & ~(dpmr_radio ? 0 : UI_FEAT_DPMR);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -2464,6 +2487,12 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	bcast_rx = false;
 	p25_radio = false;
 	nxdn_radio = false;
+	dpmr_radio = false;
+#if CONFIG_DPMR
+	memset(&view.dpmr, 0, sizeof view.dpmr);
+	view.dpmr.talk = view.dpmr.tx_own = DPMR_ID_ALL;	// the dPMR settings' defaults (radio_dpmr.c): the all call,
+								// the frequency's channel code
+#endif
 #if CONFIG_NXDN
 	memset(&view.nxdn, 0, sizeof view.nxdn);
 	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
@@ -2672,7 +2701,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
 								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
-								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
+								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" :
+								     view.ch.mode == RADIO_MODE_DPMR ? "dpmr" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
@@ -3156,8 +3186,9 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
-	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25 or nxdn
+	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25, nxdn, dpmr
 		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
+			    strcmp(arg, "dpmr") == 0 ? RADIO_MODE_DPMR :
 			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);
 		advance(100);
 		return true;
@@ -3190,8 +3221,8 @@ static bool run_token(char *t, char *err, size_t len)
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
 		return true;
 	}
-#if CONFIG_P25 || CONFIG_NXDN
-	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
+#if CONFIG_AIR
+	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25, NXDN or dPMR channel: its tag, over a stand-in record
 		unsigned n = 0;
 		char k[8] = "";
 		channel_t c;
@@ -3207,7 +3238,8 @@ static bool run_token(char *t, char *err, size_t len)
 				if (*ch == '_')
 					*ch = ' ';
 		}
-		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : strcmp(k, "dpmr") == 0 ? CODEPLUG_KIND_DPMR :
+			CODEPLUG_KIND_P25;
 		c.mode = RADIO_MODE_DMR;
 		if (sim_write((uint16_t)n, &c) < 0) {
 			snprintf(err, len, "no room for %s", t);
@@ -3234,6 +3266,42 @@ static bool run_token(char *t, char *err, size_t len)
 		view.rssi_dbm = -84;
 		changed();
 		advance(300);
+		return true;
+	}
+#endif
+#if CONFIG_DPMR
+	if (strcmp(t, "dpmrrx") == 0) {		// a dPMR call: own,called[,o] in hex, - for an ID not in yet
+		char own[8] = "", called[8] = "";
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%7[^,],%7[^,],%c", own, called, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.dpmr.flags = (uint8_t)(RADIO_DPMR_ON | RADIO_DPMR_RX | (kind == 'o' ? 0 : RADIO_DPMR_PLAYED) |
+			(view.dpmr.flags & RADIO_DPMR_MINE));
+		view.dpmr.have = (uint8_t)((own[0] != '-' ? DPMR_HAVE_OWN : 0) | (called[0] != '-' ? DPMR_HAVE_CALLED : 0));
+		if (called[0] != '-')
+			view.dpmr.flags |= RADIO_DPMR_KNOWN;
+		view.dpmr.own = own[0] != '-' ? (uint32_t)strtoul(own, NULL, 16) : 0u;
+		view.dpmr.called = called[0] != '-' ? (uint32_t)strtoul(called, NULL, 16) : 0u;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+	if (strcmp(t, "dpmrtalk") == 0) {	// the dPMR settings: common ID n called, channel code cc, own calls only
+		unsigned n = 0, cc = 0;
+		char mine = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &n, &cc, &mine) < 1 || n == 0 || n > 255 || cc > 32) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.dpmr.talk = view.dpmr.tx_own = DPMR_ID_COMMON(n);
+		view.dpmr.tx_cc = cc == 0 ? 0 : dpmr_cc_group(cc > 16, (uint8_t)((cc - 1) & 15));
+		view.dpmr.flags = (uint8_t)((view.dpmr.flags & ~RADIO_DPMR_MINE) | (mine == 'm' ? RADIO_DPMR_MINE : 0));
+		changed();
+		advance(100);
 		return true;
 	}
 #endif
@@ -3535,6 +3603,10 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "nxdn") == 0) {		// this radio runs NXDN
 		nxdn_radio = true;
+		return true;
+	}
+	if (strcmp(t, "dpmr") == 0) {		// this radio runs dPMR
+		dpmr_radio = true;
 		return true;
 	}
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)

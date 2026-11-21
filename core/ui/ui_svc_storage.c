@@ -53,6 +53,10 @@
 #include "nxdn/nxdn_codeplug.h"
 #include "radio/radio_nxdn.h"
 #endif
+#if CONFIG_DPMR
+#include "dpmr/dpmr_codeplug.h"
+#include "radio/radio_dpmr.h"
+#endif
 #if CONFIG_KEY_ASSIGN
 #include "input/input.h"
 #include "input/input_engine.h"
@@ -791,7 +795,7 @@ static struct {
 	};
 	uint32_t id;		// the talk target's, or the radio's own DMR ID
 	bool private_call;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	bool air_set;		// write_channel_job: air is the channel's block
 	ui_air_conv_t air;
 #endif
@@ -1130,6 +1134,25 @@ static bool nxdn_save_now(uint16_t number, const channel_t *ch, const nxdn_conv_
 }
 #endif
 
+#if CONFIG_DPMR
+// A plain channel in dPMR (the VFO, a mode changed for now) made a stored dPMR channel from the radio's dPMR settings
+// (dpmr.md 6): who it calls, its channel code and filter; the block from given instead when there is one (the channel
+// editor's). The settings' own ID is radio-wide and stays out of it: a channel record has no place for one. Never
+// written as a plain record: its mode means nothing to a reader of those. Uses job_ch
+static bool dpmr_save_now(uint16_t number, const channel_t *ch, const dpmr_chan_t *given)
+{
+	radio_dpmr_settings_t s;
+	radio_dpmr_settings(&s);
+	dpmr_chan_t c = { .called = s.called, .cc = s.cc, .flags = s.rx_mine ? DPMR_CP_RX_MINE : 0u };
+	if (given != NULL)
+		c = *given;
+	if (ch != &job_ch)
+		job_ch = *ch;
+	job_ch.kind = CODEPLUG_KIND_DPMR;
+	return dpmr_chan_save(number, &job_ch, &c);
+}
+#endif
+
 // A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
 // *ok's place when it isn't one: the caller writes it as a plain channel
 static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
@@ -1145,6 +1168,12 @@ static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
 #if CONFIG_NXDN
 	if (ch->mode == RADIO_MODE_NXDN) {
 		*ok = nxdn_save_now(number, ch, NULL);
+		return true;
+	}
+#endif
+#if CONFIG_DPMR
+	if (ch->mode == RADIO_MODE_DPMR) {
+		*ok = dpmr_save_now(number, ch, NULL);
 		return true;
 	}
 #endif
@@ -1215,22 +1244,25 @@ bool ui_svc_save_channel(void)
 	return take_channel() && cp_post(save_channel_job);
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
-// The channel editor's P25 or NXDN channel with its block: a plain one in that mode becomes a stored one as in
+#if CONFIG_AIR
+// The channel editor's P25, NXDN or dPMR channel with its block: a plain one in that mode becomes a stored one as in
 // air_save_now; one of the kind is written with the block over its tag's, the rest of the tag kept. A copy (from: the
 // source, another number) takes the source's tag first, so it keeps the same; where that fails its tag is new. False
-// in *ok's place when ch is neither: the caller writes it as usual
+// in *ok's place when ch is none of them: the caller writes it as usual
 static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, const ui_air_conv_t *conv, bool *ok)
 {
 	bool plain = ch->kind == CODEPLUG_KIND_NONE;
-	bool p25 = false, nxdn = false;
+	bool p25 = false, nxdn = false, dpmr = false;
 #if CONFIG_P25
 	p25 = plain ? ch->mode == RADIO_MODE_P25 : ch->kind == CODEPLUG_KIND_P25;
 #endif
 #if CONFIG_NXDN
 	nxdn = plain ? ch->mode == RADIO_MODE_NXDN : ch->kind == CODEPLUG_KIND_NXDN;
 #endif
-	if (!p25 && !nxdn)
+#if CONFIG_DPMR
+	dpmr = plain ? ch->mode == RADIO_MODE_DPMR : ch->kind == CODEPLUG_KIND_DPMR;
+#endif
+	if (!p25 && !nxdn && !dpmr)
 		return false;
 	if (!plain && from != 0 && from != number && codeplug_set_channel(number, ch))
 		(void)codeplug_tag_copy(from, number, ch);
@@ -1242,6 +1274,10 @@ static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, c
 	if (nxdn)
 		*ok = plain ? nxdn_save_now(number, ch, &conv->nxdn) : nxdn_conv_save(number, ch, &conv->nxdn);
 #endif
+#if CONFIG_DPMR
+	if (dpmr)
+		*ok = plain ? dpmr_save_now(number, ch, &conv->dpmr) : dpmr_chan_save(number, ch, &conv->dpmr);
+#endif
 	return true;
 }
 #endif
@@ -1249,7 +1285,7 @@ static bool air_conv_save(uint16_t number, uint16_t from, const channel_t *ch, c
 // The channel editor's whole channel (ui.md 2.1). Writing the channel in use drops its temporary changes: the radio
 // core re-reads it (codeplug_serial), and the edited values are what the user wants now. Whether it is the channel in
 // use is decided here on the UI task: the job runs on the housekeeping task, which must not touch ui_svc_view. A copy
-// of a channel of a kind takes its source's tag (job.id: the source); a plain channel in P25 or NXDN becomes a stored
+// of a channel of a kind takes its source's tag (job.id: the source); a plain channel in an air mode becomes a stored
 // one of that kind
 static void write_channel_job(void *ctx)
 {
@@ -1257,7 +1293,7 @@ static void write_channel_job(void *ctx)
 	bool ok = false;
 	uint16_t from = (uint16_t)job.id;
 	bool done = false;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	done = job.air_set && air_conv_save(job.channel, from, &job.now, &job.air, &ok);
 #endif
 	if (!done && !air_save_now(job.channel, &job.now, &ok))
@@ -1273,7 +1309,7 @@ static void write_channel_job(void *ctx)
 	}
 }
 
-// conv: the block of a P25 or NXDN channel (the channel editor's), NULL: none given
+// conv: the block of a P25, NXDN or dPMR channel (the channel editor's), NULL: none given
 static bool write_channel_post(uint16_t number, const channel_t *ch, uint16_t from, const void *conv)
 {
 	if (number == 0 || number > CODEPLUG_CHANNELS_MAX || job_busy()) {
@@ -1284,7 +1320,7 @@ static bool write_channel_post(uint16_t number, const channel_t *ch, uint16_t fr
 	job.temp = !ui_svc_view.vfo && ui_svc_view.channel_number == number && ui_svc_view.temporary;	// here: drop the temporary changes after it
 	job.now = *ch;
 	job.id = from;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	job.air_set = conv != NULL;	// before the post: the job may run at once on its own task
 	if (conv != NULL)
 		job.air = *(const ui_air_conv_t *)conv;
@@ -1299,7 +1335,7 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	return write_channel_post(number, ch, from, NULL);
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
 {
 	return write_channel_post(number, ch, from, conv);

@@ -299,6 +299,14 @@ uint32_t ui_freq_parse(const char *digits, uint8_t len);
 void ui_bands_text(char *out, size_t len, bool tx);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
+#if CONFIG_DPMR
+// A dPMR ID as the screens show it: "All", a common ID as "CID 87", any other as its 24-bit number (dpmr_id_text,
+// with "All" translated: it is a word, the others are numbers)
+void ui_sb_dpmr_id(sbuf_t *b, uint32_t id);
+// The channel code a dPMR channel sends, as its group and number ("A2"), or the 12 bits in hex for any other code: the
+// view's, else the one table 6.1 ties to the transmit frequency (the view has none while the engine isn't running)
+void ui_sb_dpmr_cc(sbuf_t *b, const radio_view_t *v);
+#endif
 // A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave
 // (dmr-trunking.md 7.6), else "Phone line"; false (nothing written) for any other source
 bool ui_sb_gw_caller(sbuf_t *b, uint32_t src);

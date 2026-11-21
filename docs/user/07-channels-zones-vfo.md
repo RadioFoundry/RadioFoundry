@@ -2,7 +2,7 @@
 
 # Channels, Zones and the VFO
 
-A **channel** is a saved frequency with its mode (FM, DMR, or P25 and NXDN where the radio runs them) and settings. A **zone** is a named list of channels.
+A **channel** is a saved frequency with its mode (FM, DMR, or P25, NXDN and dPMR where the radio runs them) and settings. A **zone** is a named list of channels.
 The **VFO** tunes any frequency by hand. Channels and zones come from the codeplug ([Programming the radio](04-programming.md)).
 
 ## Changing the channel
@@ -139,7 +139,7 @@ Focus a row and press **OK**:
 
 | Row | What OK does |
 |---|---|
-| Mode | steps to the next mode: FM, DMR, then P25 and NXDN on a radio that runs them. Stepping on comes back to the mode the channel had, with its settings as they were |
+| Mode | steps to the next mode: FM, DMR, then P25, NXDN and dPMR on a radio that runs them. Stepping on comes back to the mode the channel had, with its settings as they were |
 | Two choices (timeslot, bandwidth, RX only, scan, VOX, tone burst, direct mode, beeps, talker alias, battery saver) | switches to the other one |
 | Power, RX CTCSS/DCS, TX CTCSS/DCS, color code, TX time-out | opens a picker: turn the knob (or Up / Down) to the value, **OK** keeps it, **Back** cancels. Color code and time-out also take digits |
 | RX CTCSS/DCS, TX CTCSS/DCS, typed | type a CTCSS tone with its tenths digit: **8 8 5** is 88.5, **1 3 1 8** is 131.8. Under 60 the digits are whole Hz: **6 7** is 67.0, **1 0 0** is 100.0. Start with **0** for a DCS code: **0 2 3** is D023N. **Back** takes the last digit back. For an inverted DCS code, turn the knob one step: each code's I follows its N (D023N, D023I, D025N) |
@@ -289,8 +289,9 @@ In the VFO, **\***, **5** (**\***, **6** in the DMR VFO) is **TX freq** (the spl
 
 ### DMR in the VFO
 
-**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25 and NXDN after DMR on a
-radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo)). In DMR the quick settings are the DMR ones:
+**\***, **4** in the VFO switches it between FM and DMR on the same frequency ("VFO: DMR"), and to P25, NXDN and dPMR after DMR
+on a radio that runs them ([P25 in the VFO](#p25-in-the-vfo), [NXDN in the VFO](#nxdn-in-the-vfo),
+[dPMR in the VFO](#dpmr-in-the-vfo)). In DMR the quick settings are the DMR ones:
 
 | Key | Tile | What it does in the DMR VFO |
 |---|---|---|
@@ -406,6 +407,38 @@ squelch and the group (when a contact has that group; else group 1).
   your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
   takes one as A or B.
+
+### dPMR in the VFO
+
+On a radio that runs dPMR, dPMR is one of the VFO's modes, after NXDN ("VFO: dPMR"). It is dPMR Mode 1 voice (the
+licence-free dPMR446 radios' mode), through the radio's DMR voice codec.
+
+- It hears every call on every channel code. PTT sends an all call on the channel code that goes with the frequency.
+- Home shows "dPMR", what PTT calls on the talk line ("All", a common ID as "CID 87", or a full ID as its number),
+  and the channel code sent ("CC A2"). "Own calls" means only calls to you and to the ID you call are played.
+- During a call Home shows who calls and whom ("703710 > CID 87"). A radio that joins a call late reads the IDs over
+  the next frames, and says "Receiving" until then. A call the channel doesn't play says "Other ID: not played".
+- FM's tone and width tiles say "FM only: this is dPMR".
+- In the VFO, the IDs, the channel code and which calls play can be changed only from a computer for now
+  (`rfoundry_debug.py radio dpmr`), and the change lasts until the radio is switched off. A channel keeps its own
+  ([dPMR channels](#dpmr-channels)).
+
+### dPMR channels
+
+A dPMR channel comes from a codeplug written on a computer, the VFO (in dPMR, open **Channels**, **New channel from
+current settings** and save it), or any channel: press **OK** on its Mode until it says dPMR, set its rows, and save.
+A channel made dPMR starts as an all call on the automatic channel code, playing every call.
+
+- Home shows it as in the VFO. The channel's settings show "dPMR" as the mode.
+- **Calls** is the ID PTT calls: a common ID from 1 to 255, 255 being "All". Type it or use **Up** and **Down**, then
+  **OK**. An ID set on a computer that is not a common ID shows as its number.
+- **Channel code** is Auto (the code that goes with the TX frequency, shown in brackets: "Auto (A1)"), or A1 to A16
+  and B1 to B16. Use **Up** and **Down**, then **OK**. Most dPMR radios play only calls on their own code; this one hears every code.
+- **Own calls only** plays only calls to you and to the ID the channel calls; other calls show "Other ID: not
+  played".
+- Your own ID is the radio's, set from a computer, not a channel's.
+- **OK** on Mode steps to FM, DMR, P25 and NXDN (on a radio that runs them), then back to dPMR with its settings as
+  they were. Saving the channel as another mode removes its dPMR settings: the radio asks first.
 
 ### Leaving the VFO
 

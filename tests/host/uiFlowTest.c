@@ -84,6 +84,28 @@ static const flow_t flows[] = {
 	  "screen=home shows=Encrypted:_not_played hides=ID_1234", 0, false },
 	{ "NXDN channel: bandwidth is FM only", "dlmode:nxdn", "quick 8", "mode=nxdn toast=FM_only:_this_is_NXDN", 2, false },
 #endif
+#if CONFIG_DPMR
+	// dPMR the same way: the power and the channel code sent in the chips (the frequency's when automatic), the ID PTT
+	// calls on the talk line, and where only calls to us and to that ID play, that filter: it is why a call stays silent
+	{ "dPMR channel shows its mode", "dlmode:dpmr", "",
+	  "mode=dpmr screen=home shows=dPMR shows=All shows=CC_ hides=No_tone hides=SQ5 hides=Own_calls", 0, false },
+	{ "dPMR home: a common ID on its own code", "dlmode:dpmr dpmrtalk:87,2,m", "",
+	  "screen=home shows=CID_87 shows=CC_A2 shows=Own_calls", 0, false },
+	// A call names its caller and whom it calls, as far as it has brought them: a late entry reads the IDs from the
+	// CCH over a few frames, the called ID first or the caller's
+	{ "dPMR home: a call heard", "dlmode:dpmr", "dpmrrx:0ABCDE,57FFFF", "screen=home shows=703710 shows=CID_87", 0,
+	  false },
+	{ "dPMR home: a call to all", "dlmode:dpmr", "dpmrrx:57FFFF,FFFFFF", "screen=home shows=CID_87_" GLYPH_ARROW "_All", 0,
+	  false },
+	{ "dPMR home: a call to another ID", "dlmode:dpmr dpmrtalk:87,0,m", "dpmrrx:0ABCDE,0CFFFF,o",
+	  "screen=home shows=Other_ID:_not_played hides=703710", 0, false },
+	{ "dPMR home: joined late", "dlmode:dpmr", "dpmrrx:-,-", "screen=home shows=Receiving", 0, false },
+	{ "dPMR home: joined late, the called ID in", "dlmode:dpmr", "dpmrrx:-,57FFFF",
+	  "screen=home shows=" GLYPH_ARROW "_CID_87 hides=Receiving", 0, false },
+	{ "dPMR home: stored channel", "dpmr chkind:3,dpmr,PMR_CH_3 dlpos:3 dlmode:dpmr", "dpmrrx:0ABCDE,57FFFF",
+	  "screen=home shows=PMR_CH_3 shows=703710", 0, false },
+	{ "dPMR channel: bandwidth is FM only", "dlmode:dpmr", "quick 8", "mode=dpmr toast=FM_only:_this_is_dPMR", 2, false },
+#endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
 	  2, false },
 #if CONFIG_P25
@@ -192,6 +214,45 @@ static const flow_t flows[] = {
 	// A stored P25 channel made NXDN loses its P25 tag: asked first
 	{ "stored P25 channel as NXDN: Save asks", "p25 nxdn chkind:3,p25 ok 5 ok down down ok", "long:ok",
 	  "screen=discard shows=Unsaved_Changes shows=P25_settings_will_be writes=0", 1, false },
+#endif
+#if CONFIG_DPMR
+	// dPMR comes after NXDN on a radio that runs every mode, as an all call on the frequency's channel code that plays
+	// every call. Its rows are its block's: the ID called, the code and the filter; no contact, own ID or tones
+	{ "E Mode: NXDN to dPMR", "p25 nxdn dpmr ok 5 ok down down", "ok ok ok",
+	  "focus=Mode shows=dPMR shows=Calls shows=All shows=Channel_code shows=Auto_(A1) hides=RAN "
+	  "hides=TX_contact hides=Own_ID hides=RX_CTCSS", 3, false },
+	{ "E Mode: dPMR to FM", "p25 nxdn dpmr ok 5 ok down down", "ok ok ok ok", "focus=Mode shows=FM hides=Calls", 4,
+	  false },
+	{ "E Mode: no dPMR where the radio doesn't run it", "nxdn ok 5 ok down down", "ok ok", "focus=Mode shows=FM", 2,
+	  false },
+	// The called ID is a common ID: typed, or on the knob from the all call (255) round to 1; 0 is reserved
+	{ "dPMR called ID: typed", "dpmr ok 5 ok down down ok down", "ok 8 7 ok", "focus=Calls shows=CID_87", 4, false },
+	{ "dPMR called ID: the knob past all", "dpmr ok 5 ok down down ok down", "ok up ok", "focus=Calls shows=CID_1", 3,
+	  false },
+	{ "dPMR called ID: 0 refused", "dpmr ok 5 ok down down ok down", "ok 0 ok",
+	  "toast=Common_IDs_go_1_to_255 focus=Calls", 3, false },
+	// The code by table 6.1's place, automatic first; the filter on OK
+	{ "dPMR channel code: A2", "dpmr ok 5 ok down down ok down down", "ok up up ok", "focus=Channel_code shows=A2",
+	  4, false },
+	{ "dPMR channel code: B16 below automatic", "dpmr ok 5 ok down down ok down down", "ok down ok",
+	  "focus=Channel_code shows=B16", 3, false },
+	{ "dPMR own calls only", "dpmr ok 5 ok down down ok down down down", "ok", "focus=Own_calls_only shows=On", 1,
+	  false },
+	// Saved as a stored dPMR channel with its block, and opened again with it read back
+	{ "E Mode: DMR channel saved as dPMR", "dpmr ok 5 ok down down ok down ok 8 7 ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=dPMR shows=CID_87", 1, true },
+	{ "E Mode: the saved dPMR channel opens as dPMR", "dpmr ok 5 ok down down ok down ok 8 7 ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=dPMR shows=CID_87 hides=Color_code", 3, false },
+	// A stored dPMR channel opens with its block; changed back to FM it loses it, asked first
+	{ "stored dPMR channel: its rows", "dpmr chkind:3,dpmr ok 5 ok", "", "screen=channel shows=dPMR shows=All "
+	  "shows=Auto hides=TX_contact", 0, false },
+	{ "stored dPMR channel as FM: Save asks", "dpmr chkind:3,dpmr ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=dPMR_settings_will_be writes=0", 1, false },
+	// In the VFO in dPMR, New from current takes the radio's dPMR settings
+	{ "dPMR new from current: the radio's settings", "dlmode:dpmr dpmrtalk:87,2,m", "ok 5 up up up ok",
+	  "screen=channel shows=dPMR shows=CID_87 shows=A2", 6, false },
+	{ "dPMR new from current: the radio's filter", "dlmode:dpmr dpmrtalk:87,2,m ok 5 up up up ok",
+	  "down down down down down", "focus=Own_calls_only shows=On", 5, false },
 #endif
 #endif
 #endif
@@ -322,6 +383,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch modes: NXDN channel", "nxdn chkind:3,nxdn up down quick 7", "", "dual=1 sel=A shows=NXDN hides=FM", 0, false },
 	{ "11 dual watch modes: NXDN call", "nxdn chkind:3,nxdn up down quick 7 tune:a", "fmrx",
 	  "dual=1 shows=NXDN_call hides=FM_signal hides=DMR_call", 0, false },
+#endif
+#if CONFIG_DPMR
+	{ "11 dual watch modes: dPMR channel", "dpmr chkind:3,dpmr up down quick 7", "", "dual=1 sel=A shows=dPMR hides=FM",
+	  0, false },
+	{ "11 dual watch modes: dPMR call", "dpmr chkind:3,dpmr up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=dPMR_call hides=FM_signal hides=DMR_call", 0, false },
 #endif
 	// Settings > Advanced > Hardware (last row): OK steps a choice without storing ("*"), holding OK stores it
 	{ "S hardware options open", "hwopt", "ok 7 up ok up ok", "screen=hwopt shows=Not_set", 6, false },
@@ -846,6 +913,17 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
 	  false },
+#if CONFIG_DPMR
+	// dPMR: after the other air modes the radio runs; then FM
+	{ "S VFO mode: DMR to dPMR", "dpmr ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_dPMR mode=dpmr temporary=0 vfo=1",
+	  2, false },
+	{ "S VFO mode: NXDN to dPMR", "nxdn dpmr ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_dPMR mode=dpmr", 2, false },
+	{ "S VFO mode: dPMR back to FM", "dpmr ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: no dPMR where the radio doesn't run it", "ok 4 up ok quick 4 back quick 4 back", "",
+	  "mode=fm", 0, false },
+#endif
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },

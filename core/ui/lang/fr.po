@@ -467,6 +467,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "FM seul: canal NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_DPMR_CHANNEL"
+msgid "FM only: this is dPMR"
+msgstr "FM seul: canal dPMR"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1176,6 +1181,11 @@ msgstr "Appel P25"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "Appel NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_DPMR_CALL"
+msgid "dPMR call"
+msgstr "Appel dPMR"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -2177,6 +2187,21 @@ msgctxt "CHAN_LABEL_RATE"
 msgid "Rate"
 msgstr "Débit"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_CALLED"
+msgid "Calls"
+msgstr "Appelle"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_CC"
+msgid "Channel code"
+msgstr "Code canal"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_MINE"
+msgid "Own calls only"
+msgstr "Mes appels seuls"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2361,6 +2386,11 @@ msgstr "Codes DCS: 0 à 7"
 msgctxt "CHAN_TOAST_NAC_REPEATER"
 msgid "F7F is for repeaters"
 msgstr "F7F: pour relais"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_DPMR_CID_RANGE"
+msgid "Common IDs go 1 to 255"
+msgstr "ID communs: 1 à 255"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"
@@ -4518,6 +4548,11 @@ msgid "Up to 90 N/S, 180 E/W"
 msgstr "Max 90 N/S, 180 E/O"
 
 #: core/ui/ui_screens.c
+msgctxt "DPMR_VALUE_ALL"
+msgid "All"
+msgstr "Tous"
+
+#: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"
 msgid "IDLE"
 msgstr "IDLE"
@@ -4591,6 +4626,11 @@ msgstr "Pas de fréq TX"
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM Commerciale"
+
+#: core/ui/ui_screens.c
+msgctxt "DPMR_CHIP_OWN_CALLS"
+msgid "Own calls"
+msgstr "Mes appels"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_RESTART_TO_APPLY"
@@ -5068,14 +5108,19 @@ msgid "MON: digital monitor"
 msgstr "MON: moniteur num."
 
 #: core/ui/ui_screens.c
-msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
-msgid "Squelch open"
-msgstr "Squelch ouvert"
+msgctxt "CALL_WHY_OTHER_ID"
+msgid "Other ID: not played"
+msgstr "Autre ID : non lu"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_RECEIVING"
 msgid "Receiving"
 msgstr "Réception"
+
+#: core/ui/ui_screens.c
+msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
+msgid "Squelch open"
+msgstr "Squelch ouvert"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_SENDING"

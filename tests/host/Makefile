@@ -139,6 +139,17 @@ nxdnTest: nxdnTest.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_framer
 nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
 	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
+# dPMR frames, their block codes and calls through the framer (core/dpmr); the engine on two made-up providers and
+# through the soft modem, and an off-air recording when one is given (skipped without)
+DPMR    := $(CORE)/dpmr/dpmr_fec.c $(CORE)/dpmr/dpmr_frame.c $(CORE)/dpmr/dpmr_rx.c $(CORE)/dpmr/dpmr_call.c
+TESTS   += dpmrTest dpmrEngineTest dpmrCaptureTest
+dpmrTest: dpmrTest.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_framer.c ../vectors/dpmr.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrTest.c $(DPMR) $(CORE)/air/air_framer.c
+dpmrEngineTest: dpmrEngineTest.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrEngineTest.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c -lm
+dpmrCaptureTest: dpmrCaptureTest.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrCaptureTest.c $(DPMR) $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c -lm
+
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
 MBE     := $(wildcard $(CORE)/mbe/*.c)
 TESTS   += mbeTest
@@ -246,6 +257,9 @@ run: $(TESTS)
 	./p25EngineTest
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1
+	./dpmrTest | tail -1
+	./dpmrEngineTest | tail -1
+	./dpmrCaptureTest | tail -1
 	./p25TrunkTest
 	./p25VoiceTest
 	./hrc6000AirTest
@@ -351,6 +365,25 @@ radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE
                       $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
+
+# The same with dPMR (CONFIG_DPMR): the far end is a dPMR engine on the fake board.air, the voice through the DMR side's
+# vocoder path, its own engine memory (no P25 to share)
+TESTS   += radioCoreTestDpmr radioCoreTestAirAll
+RCDPMR  := $(RCORE) $(CORE)/radio/radio_dpmr.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/air/air_session.c \
+           $(CORE)/air/air_framer.c $(CORE)/debuglink/debuglink_view_dpmr.c $(CORE)/hostlink/build_info.c
+radioCoreTestDpmr: $(RCDPMR) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                   $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/dpmr/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_DPMR=1 -o $@ $(RCDPMR) -lm
+
+# P25, NXDN and dPMR together, no lending vocoder: one engine at a time, NXDN and dPMR in the memory P25 keeps for
+# itself, a mode change between any two
+RCAIRALL := $(RCP25NX) $(CORE)/radio/radio_dpmr.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/debuglink/debuglink_view_dpmr.c
+radioCoreTestAirAll: $(RCAIRALL) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                     $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/dpmr/*.h) \
+                     $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_DPMR=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCAIRALL) -lm
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
@@ -474,7 +507,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestDpmr radioCoreTestAirAll radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -482,6 +515,8 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T
 	./radioCoreTestP25
 	./radioCoreTestNxdn
 	./radioCoreTestP25Nxdn
+	./radioCoreTestDpmr
+	./radioCoreTestAirAll
 	./radioCoreTestP25T
 	./radioCoreTestAprs
 	./radioCoreTestAprsDmr
@@ -684,13 +719,16 @@ UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 
-uiFlowTest: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+# dPMR's IDs and channel codes are written by its own text functions (core/dpmr/dpmr_frame.c), as on the radio
+UIDPMR  := $(CORE)/dpmr/dpmr_frame.c $(CORE)/dpmr/dpmr_fec.c
+uiFlowTest: uiFlowTest.c $(UIDEPS) $(UIDPMR)
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -DCONFIG_DPMR=1 -o $@ uiFlowTest.c $(UIAPP) $(UIDPMR) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
 # (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down.
-# uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
+# uiFlowTest has P25, NXDN and dPMR (CONFIG_P25, CONFIG_NXDN, CONFIG_DPMR) and this one not: their home screen flows
+# run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
@@ -1495,6 +1533,25 @@ run: run-nxdncp
 run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
+
+# dPMR in the codeplug (core/dpmr/dpmr_codeplug.c, docs/spec/dpmr.md 6): the shared vectors, the channel code sent, a
+# channel's block from its tag, the radio-wide record, a save that keeps what it doesn't know; with the switch off, the
+# kind parked
+TESTS   += dpmrCodeplugTest dpmrCodeplugOffTest
+DPMRCP  := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c \
+           $(CORE)/dpmr/dpmr_codeplug.c $(CORE)/dpmr/dpmr_frame.c $(CORE)/dpmr/dpmr_fec.c
+
+dpmrCodeplugTest: dpmrCodeplugTest.c $(DPMRCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dpmr/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_DPMR=1 -o $@ dpmrCodeplugTest.c $(DPMRCP)
+
+dpmrCodeplugOffTest: dpmrCodeplugTest.c $(DPMRCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dpmr/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DPMR=0 -o $@ dpmrCodeplugTest.c $(DPMRCP)
+
+run: run-dpmrcp
+run-dpmrcp: dpmrCodeplugTest dpmrCodeplugOffTest
+	./dpmrCodeplugTest
+	./dpmrCodeplugOffTest
+.PHONY: run-dpmrcp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
