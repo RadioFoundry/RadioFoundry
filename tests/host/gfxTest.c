@@ -266,6 +266,16 @@ static void test_indexed(void)
 	gfx_pixel(11, 20, blue);	// odd column: the low nibble
 	CHECK(gfx_get_pixel(0, 0) == red && gfx_get_pixel(12, 12) == green && gfx_get_pixel(11, 20) == blue);
 	CHECK(gfx_get_pixel(10, 20) == red && gfx_get_pixel(12, 20) == red);
+	// Fills are written a byte (two pixels) at a time: every start and end column, odd or even, keeps its neighbors
+	for (int x0 = 30; x0 < 34; x0++)
+		for (int w = 1; w < 6; w++) {
+			int y = 40 + (x0 - 30) * 6 + w;
+			gfx_fill(x0, y, w, 1, green);
+			bool ok = gfx_get_pixel(x0 - 1, y) == red && gfx_get_pixel(x0 + w, y) == red;
+			for (int x = x0; x < x0 + w; x++)
+				ok = ok && gfx_get_pixel(x, y) == green;
+			CHECK(ok);
+		}
 	// A capture reads RGB565, little endian
 	uint8_t px[4];
 	gfx_read_rgb565((20u * 160u + 10u) * 2u, px, 4);

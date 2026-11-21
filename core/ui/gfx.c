@@ -188,9 +188,14 @@ static void span(int x0, int x1, int y, color_t c)
 			*p++ = c;
 #if GFX_INDEXED
 	} else if (bpp == 4) {
+		// Whole bytes at once: fills (backgrounds, bars) are most of a frame's pixels
 		uint8_t i = pal_index(c);
-		for (int x = x0; x < x1; x++)
-			put4(row, x, i);
+		if (x0 < x1 && (x0 & 1))
+			put4(row, x0++, i);
+		if (x0 < x1 && (x1 & 1))
+			put4(row, --x1, i);
+		if (x0 < x1)
+			memset(row + (x0 >> 1), i * 0x11, (size_t)(x1 - x0) >> 1);
 #endif
 	} else {
 		for (int x = x0; x < x1; x++) {
