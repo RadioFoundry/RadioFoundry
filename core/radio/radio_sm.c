@@ -683,6 +683,14 @@ static void outputs(radio_sm_t *sm)
 		tx = true;	// a CW ID
 	}
 #endif
+	// Receive audio from a signal, for a board whose own noise reaches the audio only with a carrier present: on
+	// before the speaker opens, off after it closes. The green LED's state before any LED pattern; a beep alone never
+	// sets it
+	bool rx_open_change = board.radio->rx_open != NULL && sm->rx_open_out != (int8_t)green;
+	if (rx_open_change && green) {
+		sm->rx_open_out = 1;
+		board.radio->rx_open(true);
+	}
 
 	// The broadcast receiver plays instead of the channel receiver while the channel is a broadcast one
 	bool bcast = false;
@@ -697,6 +705,10 @@ static void outputs(radio_sm_t *sm)
 	if (sm->audio_out != (int8_t)(open && !bcast)) {
 		sm->audio_out = (int8_t)(open && !bcast);
 		board.radio->audio(open && !bcast);
+	}
+	if (rx_open_change && !green) {
+		sm->rx_open_out = 0;
+		board.radio->rx_open(false);
 	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
@@ -7980,6 +7992,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->audio_out = -1;
+	sm->rx_open_out = -1;
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;

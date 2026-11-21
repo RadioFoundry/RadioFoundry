@@ -73,7 +73,12 @@ void debuglink_view_audio(dl_text_t *t)
 				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full);
 		}
 	}
-	(void)t;
+	// Settings > Display > Brightness as stored (the UI saves each change), the backlight's level while lit: a board
+	// may drive the backlight differently while transmitting or receiving a signal. Here, as the features section is
+	// full
+	unsigned brightness = settings_begin()->brightness;
+	settings_end(hal_millis());	// nothing changed: nothing to save
+	dl_text(t, "set.brightness=%u\n", brightness);
 }
 
 // The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from

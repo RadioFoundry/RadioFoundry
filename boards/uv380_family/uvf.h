@@ -86,9 +86,10 @@ extern const hal_audio_tap_t uvf_audio_tap;
 bool uvf_fm_tx_inject(audio_tap_pull_t pull, audio_tap_mode_t mode);
 void uvf_pwm_audio(audio_tap_pull_t pull);	// PWM audio on PC8: start (pull) or stop (NULL)
 #endif
-// The fast PWM rate stays on while either path is active. The idle rate restores dimming.
+// The backlight pin is held steady while either is on (backlight_uvf.h): transmitting, or receive audio from a signal
+// open (hal_radio_t.rx_open, the radio's own). Then the set brightness again.
 void uvf_backlight_tx(bool tx);
-void uvf_backlight_rx(bool audio);
+void uvf_backlight_rx(bool open);
 // The debug link's CHIP_REG (board.chip_reg): chip 0 the AT1846S, chip 1 the HR_C6000 (hardware-dm1701.md 5.12)
 bool uvf_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if CONFIG_AUDIO_PROBE

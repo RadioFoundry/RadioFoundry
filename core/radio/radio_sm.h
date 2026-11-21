@@ -308,6 +308,7 @@ typedef struct {
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
 	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
+	int8_t rx_open_out;		// last board.radio->rx_open(), -1 = not yet (here: fills the padding before wake_led_ms)
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
