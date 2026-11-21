@@ -1,0 +1,304 @@
+{
+  "pr": 766,
+  "base_sha": "2cc5fcef864feb3a254700e7f31448bd1b00b9fd",
+  "head_sha": "99fee7be80208835e8825a5239dd28e3a6aaa058",
+  "generated": "2026-11-20T16:43:09Z",
+  "counts": {
+    "changed": 0,
+    "added": 32,
+    "removed": 0,
+    "unchanged": 817
+  },
+  "images": [
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-1.png",
+      "rows": 4,
+      "screens": [
+        "channels__night",
+        "home_dmr__night",
+        "home_dual_rx_b__night",
+        "home_dual_two_rx__night"
+      ]
+    },
+    {
+      "geometry": "160x128",
+      "color": "color",
+      "image": "compare/160x128-2.png",
+      "rows": 4,
+      "screens": [
+        "home_plain__night",
+        "rx_group__night",
+        "settings_display__night",
+        "tx__night"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-1.png",
+      "rows": 4,
+      "screens": [
+        "channels__night",
+        "home_dmr__night",
+        "home_dual_rx_b__night",
+        "home_dual_two_rx__night"
+      ]
+    },
+    {
+      "geometry": "160x120i5",
+      "color": "color",
+      "image": "compare/160x120i5-2.png",
+      "rows": 4,
+      "screens": [
+        "home_plain__night",
+        "rx_group__night",
+        "settings_display__night",
+        "tx__night"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-1.png",
+      "rows": 4,
+      "screens": [
+        "channels__night",
+        "home_dmr__night",
+        "home_dual_rx_b__night",
+        "home_dual_two_rx__night"
+      ]
+    },
+    {
+      "geometry": "240x320",
+      "color": "color",
+      "image": "compare/240x320-2.png",
+      "rows": 4,
+      "screens": [
+        "home_plain__night",
+        "rx_group__night",
+        "settings_display__night",
+        "tx__night"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-1.png",
+      "rows": 4,
+      "screens": [
+        "channels__night",
+        "home_dmr__night",
+        "home_dual_rx_b__night",
+        "home_dual_two_rx__night"
+      ]
+    },
+    {
+      "geometry": "240x320i10x5",
+      "color": "color",
+      "image": "compare/240x320i10x5-2.png",
+      "rows": 4,
+      "screens": [
+        "home_plain__night",
+        "rx_group__night",
+        "settings_display__night",
+        "tx__night"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "geometry": "160x128",
+      "screen": "channels__night",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dmr__night",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_rx_b__night",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_dual_two_rx__night",
+      "status": "added",
+      "image": "compare/160x128-1.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "home_plain__night",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "rx_group__night",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "settings_display__night",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x128",
+      "screen": "tx__night",
+      "status": "added",
+      "image": "compare/160x128-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "channels__night",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dmr__night",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_rx_b__night",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_dual_two_rx__night",
+      "status": "added",
+      "image": "compare/160x120i5-1.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "home_plain__night",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "rx_group__night",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "settings_display__night",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "160x120i5",
+      "screen": "tx__night",
+      "status": "added",
+      "image": "compare/160x120i5-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "channels__night",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dmr__night",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_rx_b__night",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_dual_two_rx__night",
+      "status": "added",
+      "image": "compare/240x320-1.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "home_plain__night",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "rx_group__night",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "settings_display__night",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320",
+      "screen": "tx__night",
+      "status": "added",
+      "image": "compare/240x320-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "channels__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dmr__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_rx_b__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_dual_two_rx__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-1.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "home_plain__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "rx_group__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "settings_display__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    },
+    {
+      "geometry": "240x320i10x5",
+      "screen": "tx__night",
+      "status": "added",
+      "image": "compare/240x320i10x5-2.png"
+    }
+  ]
+}
