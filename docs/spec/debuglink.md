@@ -1045,13 +1045,6 @@ the core for TX off; the core's own time-out and max_ms end it otherwise. Nothin
 `rfoundry_debug.py air status`, `air tap --seconds S --out F.raw [--bits 8]`, `air open --profile p25`,
 `air rx --seconds S --out F.jsonl`, `air tx --syms F`, `air close`.
 
-### 3.30 SATELLITE
-
-`DL_CMD_SATELLITE` (`0x26`) stores explicitly selected TLE records when `CONFIG_SATELLITE_TLE` is enabled and the
-board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
-capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
-`DL_ST_UNAVAILABLE` when the feature or usable area is absent.
-
 ### 3.29 SUPPORT
 
 The support info ([support-info.md](support-info.md)): what a support request needs to tell one radio's hardware and
@@ -1072,6 +1065,13 @@ is running. A host repeats it until `image.state=done` and shows `image.done` as
 requests answer at once. Bad argument (2) for any other operation or a longer payload.
 
 `rfoundry_debug.py support` prints both.
+
+### 3.30 SATELLITE
+
+`DL_CMD_SATELLITE` (`0x26`) stores explicitly selected TLE records when `CONFIG_SATELLITE_TLE` is enabled and the
+board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
+capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
+`DL_ST_UNAVAILABLE` when the feature or usable area is absent.
 
 ## 4. Safety
 
