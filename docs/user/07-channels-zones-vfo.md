@@ -104,8 +104,11 @@ say so. Set it to **Off** to ignore what others send.
 What an import does:
 
 - The zone is added after your zones. If you have a zone with that name, it gets " 2".
-- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
-  you know you may use it.
+- Only channels your radio can receive come in. A conventional channel comes in **receive only**: turn transmit on
+  per channel when you know you may use the channel.
+- A trunked channel keeps the sender's transmit setting when its system comes with the zone or your radio already
+  has that system. The system's listen-only setting then decides, so a shared trunked channel can transmit as soon as
+  the zone is imported. A trunked channel whose system doesn't come in arrives receive only.
 - Talkgroups and contacts you already have are used with your names. Missing ones are added.
 - The same zone sent again by the same radio updates your copy instead of adding another. It replaces only the
   channels from the earlier import that you left as they were. Channels you added to the zone or changed stay,
