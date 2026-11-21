@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Power tuning's arithmetic (docs/spec/power-tune.md): band names and default tuning frequencies, watts in level names,
-// the reading's error in dB and the next drive to try. No DOM, so the host tests run it.
+// Radio tuning's arithmetic (docs/spec/radio-tune.md): band names and default tuning frequencies, watts in level names,
+// the reading's error in dB, the next drive to try, the oscillator's ppm. No DOM, so the host tests run it.
 
-// Amateur bands a transmit band may hold, and the frequency a tuning starts at (the band's middle, on a channel step)
+// Amateur bands a transmit band may hold, and the frequency a tuning starts at (on the 100 kHz grid trims sit on)
 const HAM = [
 	{ lo: 28000, hi: 29700, name: "10 m", khz: 29000 },
 	{ lo: 50000, hi: 54000, name: "6 m", khz: 52000 },
@@ -31,9 +31,9 @@ export function bandInfo(loKhz, hiKhz) {
 	return { name: reg, ham: null, khz: snapKhz((loKhz + hiKhz) / 2) };
 }
 
-// A frequency on a 12.5 kHz step (every radio's FM steps include it)
+// A frequency on the 100 kHz grid radio tuning keeps trims on (radio-tune.md 5)
 export function snapKhz(khz) {
-	return Math.round(khz / 12.5) * 12.5;
+	return Math.round(khz / 100) * 100;
 }
 
 // kHz as MHz text: "146.000", "446.0125"
@@ -123,14 +123,10 @@ export function suggestDrive(readings, target, { lo, hi, slope = null }) {
 	return Math.max(lo, Math.min(hi, Math.round(d)));
 }
 
-// The offset at khz of one level from its points [{khz, delta}] in the band: linear between the two around khz, flat
-// past the outer ones, 0 with none (the radio's own rule, power-tune.md 2)
-export function offsetAt(points, khz) {
-	if (!points.length) return 0;
-	const ps = [...points].sort((a, b) => a.khz - b.khz);
-	if (khz <= ps[0].khz) return ps[0].delta;
-	if (khz >= ps[ps.length - 1].khz) return ps[ps.length - 1].delta;
-	const i = ps.findIndex((p) => p.khz >= khz);
-	const a = ps[i - 1], b = ps[i];
-	return Math.round(a.delta + (b.delta - a.delta) * (khz - a.khz) / (b.khz - a.khz));
+// The oscillator: ppb as ppm text ("+1.2", "-0.5", "0.0") and the carrier's move at khz, Hz
+export function ppmText(ppb) {
+	const v = (ppb / 1000).toFixed(1);
+	return ppb > 0 ? `+${v}` : v === "-0.0" ? "0.0" : v;
 }
+
+export const trimHz = (ppb, khz) => Math.round(ppb * khz / 1e6);
