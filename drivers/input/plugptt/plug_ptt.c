@@ -5,9 +5,16 @@
 
 bool plug_ptt_pressed(plug_ptt_t *p, bool pin_low, uint32_t now_ms)
 {
-	if (pin_low) {
-		p->high = false;
-		return p->armed;
+	if (!p->started) {
+		p->started = true;
+		p->start_ms = now_ms;
+	}
+	if (!p->settled && (uint32_t)(now_ms - p->start_ms) >= PLUG_PTT_SETTLE_MS) {
+		p->settled = true;
+	}
+	if (pin_low || !p->settled) {
+		p->high = false;	// a high while settling doesn't start the arm time
+		return pin_low && p->armed;
 	}
 	if (!p->high) {
 		p->high = true;

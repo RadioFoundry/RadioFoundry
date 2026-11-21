@@ -139,7 +139,7 @@ uint8_t db25d_mic_lines(uint16_t *a9_changes, uint16_t *c11_changes);
 void db25d_mic_lines_reset(void);
 uint32_t db25d_input_ptt_ignored(void);	// key scans with PTA9 low that the shared-line gate took for serial data
 bool db25d_radio_transmitting(void);	// the radio is keyed (the shared PTT line's gate)
-bool db25d_input_mic_armed(void);	// PTC11 has read high since power-on: a mic is in the front jack (3.3)
+uint8_t db25d_input_ptt_armed(void);	// bit 0: PTA9, bit 1: PTC11 has idled high since power-on, so a low on it is a press (3.3)
 // The hand mic's key held now (its key number, 0xFF for none; mic_db25d.c)
 uint8_t db25d_mic_key(void);
 // The hand mic's frames as the host UART receives them (miccap_db25d.c, CONFIG_DIAG builds)

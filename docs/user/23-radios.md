@@ -538,7 +538,8 @@ aren't decoded yet, so there are no number keys.
 | Power key | Press to switch on. Hold 2 s to switch off. Hold P1 while you press it to start the bootloader (the red LED lights and the screen stays blank) |
 
 The microphone's PTT counts once the radio has seen a microphone in the front jack. The radio can run without one and
-doesn't transmit, and a microphone plugged in later works from then on. Unplugging the microphone while the radio is
+doesn't transmit, and a microphone plugged in later works from then on. A PTT held while the radio switches on doesn't
+transmit: release PTT, then press it again. Unplugging the microphone while the radio is
 on reads as a held PTT: the radio transmits until the [transmit timeout](08-fm.md#transmit-timeout), or with TX
 timeout Off until it is switched off. Switch the radio off before unplugging the microphone.
 
