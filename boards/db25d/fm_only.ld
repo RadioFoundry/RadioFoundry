@@ -107,6 +107,8 @@ SECTIONS
 	ASSERT(Reset_Handler == ORIGIN(FLASH), "crt0 must be the first byte of the image (the loader jumps there)")
 	ASSERT(ADDR(.vectors) == 0x00010000, "the vector table must start RAM (1 KB aligned for VBR)")
 	ASSERT(. <= ORIGIN(RAM) + LENGTH(RAM), "RAM overflows")
-	ASSERT(__startup_stack_bottom >= __rtos_heap_start + 0x1000, "the RTOS heap is too small to hold the start-up stack")
+	/* 6 KB below the start-up stack for the tasks made before the scheduler (platform/hrc7000/common.ld says why) */
+	ASSERT(__startup_stack_bottom >= __rtos_heap_start + 0x1800,
+		"the RTOS heap is too small: 6 KB below the start-up stack for the tasks made before the scheduler runs")
 	ASSERT(. <= 0x00030000, "RAM reaches the stub's region (HRC_STUB_BASE in board.mk)")
 }

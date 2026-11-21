@@ -130,7 +130,11 @@ SECTIONS
 	ASSERT(Reset_Handler == ORIGIN(FLASH), "crt0 must be the first byte of the application (the loader jumps there)")
 	ASSERT(ADDR(.vectors) == ORIGIN(RAM) && (ORIGIN(RAM) & 0x3FF) == 0, "the vector table must start RAM (1 KB aligned for VBR)")
 	ASSERT(. <= ORIGIN(RAM) + LENGTH(RAM), "RAM overflows into the codec window")
-	ASSERT(__startup_stack_bottom >= __rtos_heap_start + 0x1000, "the RTOS heap is too small to hold the start-up stack")
+	/* Below the start-up stack the heap must hold what is made before the scheduler runs: the start, idle and timer
+	 * tasks' stacks (2,560 + 576 + 1,024 B), their TCBs and the timer queue, about 4.6 KB. 4 KB here let a heap of just
+	 * over 6 KB link and then fail xPortStartScheduler's check on the radio; 6 KB keeps that failure at link time */
+	ASSERT(__startup_stack_bottom >= __rtos_heap_start + 0x1800,
+		"the RTOS heap is too small: 6 KB below the start-up stack for the tasks made before the scheduler runs")
 	ASSERT(__data_load + SIZEOF(.data) <= __codec_slot, "the image runs into the codec slot")
 	/* A modem SRAM part stays clear of the codec's tables (and whatever the codec keeps just past them: the board
 	 * leaves a margin), the PCM buffers and the crash log's words */
