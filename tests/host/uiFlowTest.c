@@ -215,6 +215,45 @@ static const flow_t flows[] = {
 	{ "stored P25 channel as NXDN: Save asks", "p25 nxdn chkind:3,p25 ok 5 ok down down ok", "long:ok",
 	  "screen=discard shows=Unsaved_Changes shows=P25_settings_will_be writes=0", 1, false },
 #endif
+#if CONFIG_DPMR
+	// dPMR comes after NXDN on a radio that runs every mode, as an all call on the frequency's channel code that plays
+	// every call. Its rows are its block's: the ID called, the code and the filter; no contact, own ID or tones
+	{ "E Mode: NXDN to dPMR", "p25 nxdn dpmr ok 5 ok down down", "ok ok ok",
+	  "focus=Mode shows=dPMR shows=Calls shows=All shows=Channel_code shows=Auto_(A1) hides=RAN "
+	  "hides=TX_contact hides=Own_ID hides=RX_CTCSS", 3, false },
+	{ "E Mode: dPMR to FM", "p25 nxdn dpmr ok 5 ok down down", "ok ok ok ok", "focus=Mode shows=FM hides=Calls", 4,
+	  false },
+	{ "E Mode: no dPMR where the radio doesn't run it", "nxdn ok 5 ok down down", "ok ok", "focus=Mode shows=FM", 2,
+	  false },
+	// The called ID is a common ID: typed, or on the knob from the all call (255) round to 1; 0 is reserved
+	{ "dPMR called ID: typed", "dpmr ok 5 ok down down ok down", "ok 8 7 ok", "focus=Calls shows=CID_87", 4, false },
+	{ "dPMR called ID: the knob past all", "dpmr ok 5 ok down down ok down", "ok up ok", "focus=Calls shows=CID_1", 3,
+	  false },
+	{ "dPMR called ID: 0 refused", "dpmr ok 5 ok down down ok down", "ok 0 ok",
+	  "toast=Common_IDs_go_1_to_255 focus=Calls", 3, false },
+	// The code by table 6.1's place, automatic first; the filter on OK
+	{ "dPMR channel code: A2", "dpmr ok 5 ok down down ok down down", "ok up up ok", "focus=Channel_code shows=A2",
+	  4, false },
+	{ "dPMR channel code: B16 below automatic", "dpmr ok 5 ok down down ok down down", "ok down ok",
+	  "focus=Channel_code shows=B16", 3, false },
+	{ "dPMR own calls only", "dpmr ok 5 ok down down ok down down down", "ok", "focus=Own_calls_only shows=On", 1,
+	  false },
+	// Saved as a stored dPMR channel with its block, and opened again with it read back
+	{ "E Mode: DMR channel saved as dPMR", "dpmr ok 5 ok down down ok down ok 8 7 ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=dPMR shows=CID_87", 1, true },
+	{ "E Mode: the saved dPMR channel opens as dPMR", "dpmr ok 5 ok down down ok down ok 8 7 ok long:ok back back back",
+	  "ok 5 ok", "screen=channel shows=dPMR shows=CID_87 hides=Color_code", 3, false },
+	// A stored dPMR channel opens with its block; changed back to FM it loses it, asked first
+	{ "stored dPMR channel: its rows", "dpmr chkind:3,dpmr ok 5 ok", "", "screen=channel shows=dPMR shows=All "
+	  "shows=Auto hides=TX_contact", 0, false },
+	{ "stored dPMR channel as FM: Save asks", "dpmr chkind:3,dpmr ok 5 ok down down ok", "long:ok",
+	  "screen=discard shows=Save_as_FM? shows=dPMR_settings_will_be writes=0", 1, false },
+	// In the VFO in dPMR, New from current takes the radio's dPMR settings
+	{ "dPMR new from current: the radio's settings", "dlmode:dpmr dpmrtalk:87,2,m", "ok 5 up up up ok",
+	  "screen=channel shows=dPMR shows=CID_87 shows=A2", 6, false },
+	{ "dPMR new from current: the radio's filter", "dlmode:dpmr dpmrtalk:87,2,m ok 5 up up up ok",
+	  "down down down down down", "focus=Own_calls_only shows=On", 5, false },
+#endif
 #endif
 #endif
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,

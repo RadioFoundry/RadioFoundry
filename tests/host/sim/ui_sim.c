@@ -738,7 +738,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 static struct {
 	uint16_t number;
 	channel_t ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	bool air_set;		// saved with a block (ui_svc_write_channel_air)
 	ui_air_conv_t air;
 #endif
@@ -764,7 +764,7 @@ static int sim_write(uint16_t number, const channel_t *ch)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	sim_edits[i].air_set = false;
 #endif
 	sim_rec.codeplug_writes++;
@@ -779,8 +779,8 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
 	return sim_write(number, ch) >= 0;
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
-// The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
+#if CONFIG_AIR
+// The block goes with the channel: a plain channel in an air mode becomes one of the kind, as the storage job makes it
 bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
 {
 	(void)from;
@@ -788,7 +788,8 @@ bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t fro
 		return sim_held;
 	channel_t c = *ch;
 	if (c.kind == CODEPLUG_KIND_NONE) {
-		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : c.mode == RADIO_MODE_DPMR ? CODEPLUG_KIND_DPMR :
+			 CODEPLUG_KIND_NXDN;
 		c.mode = RADIO_MODE_DMR;	// the stand-in record
 	}
 	int i = sim_write(number, &c);
@@ -898,6 +899,16 @@ bool radio_p25_fits(void) { return p25_radio; }
 #if CONFIG_DPMR
 static bool dpmr_radio;		// below: the "dpmr" token
 bool radio_dpmr_fits(void) { return dpmr_radio; }
+// A stored dPMR channel's block (dpmr_codeplug.c): an all call on the frequency's code, unless the editor saved one
+bool dpmr_chan_load(uint16_t number, const channel_t *ch, dpmr_chan_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_DPMR)
+		return false;
+	*out = (dpmr_chan_t){ .called = DPMR_ID_ALL, .cc = DPMR_CP_CC_AUTO, .flags = 0 };
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->dpmr;
+	return true;
+}
 #endif
 #if CONFIG_NXDN
 static bool nxdn_radio;		// below: the "nxdn" token

@@ -183,6 +183,7 @@ on its own block; the own ID comes from the radio-wide record (6.2).
 |---|---|
 | Home screen | the mode name; on the talk line the ID PTT calls ("CID 87", "All", an address); in the chips the power, the channel code sent ("CC A2", the frequency's while automatic) and "Own calls" while the filter plays only calls to us and to the called ID |
 | Home, receiving | the caller and the ID called ("703710 > CID 87"), as far as the call has brought them (a late entry's come in the CCH; nothing yet: "Receiving"), or "Other ID: not played" |
+| Channel editor | Calls, Channel code and Own calls only in place of the DMR rows; Mode steps to dPMR after NXDN where the board fits it ([ui.md](ui.md) 2.1) |
 | Quick settings | the VFO's Mode tile steps to dPMR after the other air modes where the board fits it (`radio_dpmr_fits`); the tone and width tiles say "FM only: this is dPMR" |
 | Dual watch | the pane names dPMR; a call there reads "dPMR call" |
 | Debug link | the `dpmr` view section ([debuglink.md](debuglink.md) 3.7): the call, what PTT sends, the settings, the provider's fit, counters; op 44 sets the settings |

@@ -2187,6 +2187,21 @@ msgctxt "CHAN_LABEL_RATE"
 msgid "Rate"
 msgstr "Débit"
 
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_CALLED"
+msgid "Calls"
+msgstr "Appelle"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_CC"
+msgid "Channel code"
+msgstr "Code canal"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_LABEL_DPMR_MINE"
+msgid "Own calls only"
+msgstr "Mes appels seuls"
+
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "WORD_RX_ONLY"
 msgid "RX only"
@@ -2371,6 +2386,11 @@ msgstr "Codes DCS: 0 à 7"
 msgctxt "CHAN_TOAST_NAC_REPEATER"
 msgid "F7F is for repeaters"
 msgstr "F7F: pour relais"
+
+#: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_DPMR_CID_RANGE"
+msgid "Common IDs go 1 to 255"
+msgstr "ID communs: 1 à 255"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_TIMEOUT_RANGE"

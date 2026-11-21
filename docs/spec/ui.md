@@ -86,6 +86,9 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   "Priv" in blue, and a private call is not encrypted.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
+- dPMR Home shows the IDs as dPMR radios write them: "All", a common ID as "CID 87", any other as its 24-bit number. A
+  call reads "703710 > CID 87" with as much as it has brought (a late entry's IDs come in the CCH: "Receiving" until
+  either is in, "> CID 87" with the called one only), or "Other ID: not played" ([dpmr.md](dpmr.md) 7.3).
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
@@ -199,14 +202,16 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
-- OK on Mode steps FM, DMR, P25, NXDN, then the channel's own kind, and round to FM. A step is offered where it can
-  run: DMR with `CONFIG_DMR`; P25 and NXDN where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`, as the VFO's
+- OK on Mode steps FM, DMR, P25, NXDN, dPMR, then the channel's own kind, and round to FM. A step is offered where it
+  can run: DMR with `CONFIG_DMR`; P25, NXDN and dPMR where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`,
+  `UI_FEAT_DPMR`, as the VFO's
   mode tile), and not in a copy made by Copy here, which takes its source's tag and has no block of its own; a kind
   of its own (a trunked channel, [channel-modes.md](channel-modes.md)) only on the channel opened as one, since its
   system can't be picked here. In a listen band only FM. The step back to the mode the channel was opened with
   restores it as it was, with its system and its NAC or RAN: a slip on the row is taken back by pressing on. A
-  channel made P25 starts with NAC 293 both ways and squelch normal, one made NXDN with RAN 1 both ways at 9600 bit/s;
-  either keeps its talk target and own ID, and Save writes it as a stored channel of the kind with that block. The
+  channel made P25 starts with NAC 293 both ways and squelch normal, one made NXDN with RAN 1 both ways at 9600 bit/s,
+  one made dPMR as an all call on the automatic channel code that plays every call; P25 and NXDN keep the talk target
+  and own ID, and Save writes it as a stored channel of the kind with that block. The
   row's changed mark counts the kind. Saving a stored channel of a kind as a plain one or one of another kind
   replaces its tag, so Save asks first on the `discard` screen, titled "Save as FM?" (or "Save as DMR?"; "Unsaved
   Changes" when it becomes another kind): the kind's name and "settings will be removed", "No, keep editing" first (the default; BACK is the same), then "Yes,
@@ -227,6 +232,15 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   of the tag kept (`p25_conv_save`, `nxdn_conv_save`), or for a plain channel in that mode the block given with the
   talk target and talkaround from the radio's settings. Copy here shows no NAC, RAN or Rate row: the copy takes its
   source's tag, and they are changed on the copy afterwards.
+- A dPMR channel shows Mode "dPMR" and its block's rows ([dpmr.md](dpmr.md) 6.1) in place of the DMR ones: Calls (the
+  called ID), Channel code and Own calls only, then RX, TX, Power, RX only, the TX time-out, Scan, Battery saver. No
+  contact or Own ID: its own ID is radio-wide (6.2). Calls is a spinner over the common IDs 1-255 (255 "All") that also
+  takes digits, as Color code; 0 is refused ("Common IDs go 1 to 255"). An address stored from a computer shows as
+  its number and stays until a common ID replaces it. Channel code is a spinner: Auto, which names the code it gives
+  on the TX frequency ("Auto (A1)"), then A1-A16, B1-B16. Own calls only: OK toggles it. A changed row is saved with
+  the channel as above (`dpmr_chan_save`); a plain channel in dPMR saved unchanged takes the radio's dPMR settings. New
+  from current on the VFO in dPMR reads them from the view, the frequency's own code as Auto. Copy here shows none of
+  these rows.
 
 Text entry supports both keypad conventions radios use: more presses of the same key (2: A B C 2 a b c) and `#` for
 the input mode, with BACK to delete (and to leave once the field is empty). In ABC and abc, keys 2-9 cycle their

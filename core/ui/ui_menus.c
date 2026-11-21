@@ -1306,6 +1306,12 @@ static bool ced_is_nxdn(const channel_t *ch)
 {
 	return CONFIG_NXDN && (ch->kind == CODEPLUG_KIND_NXDN || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_NXDN));
 }
+
+// The same for dPMR
+static bool ced_is_dpmr(const channel_t *ch)
+{
+	return CONFIG_DPMR && (ch->kind == CODEPLUG_KIND_DPMR || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_DPMR));
+}
 #endif
 
 // A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
@@ -2530,7 +2536,8 @@ static const ui_scr_def_t chlist_screen = {
 // ======================= One channel's settings, edited in place (ui.md 2.1) =======================
 // Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
-enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RATE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
+enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RATE, CE_CALLED, CE_DCODE, CE_MINE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY,
+       CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
        CE_BURST, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
        CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
@@ -2539,13 +2546,14 @@ static uint16_t ced_num;		// its number, 0 = no such channel
 #if CONFIG_CHANNEL_EDIT
 static uint16_t ced_src;		// the stored channel it was read from (a copy's source), 0 = none (the VFO)
 #endif
-#if CONFIG_P25 || CONFIG_NXDN
-static ui_air_conv_t ced_air;		// a P25 or NXDN channel's own settings, read once on entry (the list redraws often)
+#if CONFIG_AIR
+static ui_air_conv_t ced_air;		// an air mode channel's own settings, read once on entry (the list redraws often)
 #if CONFIG_CHANNEL_EDIT
 static ui_air_conv_t ced_air_orig;	// as stored
 #endif
 
-// A P25 or NXDN channel's settings where none are stored: the default NAC both ways; NXDN at 9600 bit/s on RAN 1
+// An air mode channel's settings where none are stored: the default NAC both ways; NXDN at 9600 bit/s on RAN 1; dPMR
+// an all call on the frequency's channel code, every call played (what a zeroed block reads as, dpmr.md 6.1)
 static void ced_air_default(uint8_t mode)
 {
 	memset(&ced_air, 0, sizeof ced_air);
@@ -2561,6 +2569,10 @@ static void ced_air_default(uint8_t mode)
 		ced_air.nxdn.rx_ran = ced_air.nxdn.tx_ran = NXDN_CP_TX_RAN_DEFAULT;
 		ced_air.nxdn.squelch = NXDN_SQUELCH_RAN;
 	}
+#endif
+#if CONFIG_DPMR
+	if (mode == RADIO_MODE_DPMR)
+		ced_air.dpmr = (dpmr_chan_t){ .called = DPMR_ID_ALL, .cc = DPMR_CP_CC_AUTO, .flags = 0 };
 #endif
 	(void)mode;
 }
@@ -2615,7 +2627,7 @@ static const struct { uint8_t off, len, bit; } ced_fields[CE_ZONES] = {
 // The Mode row's steps, in the order OK goes through them (channel-modes.md 2.4): the plain modes, the air modes, then
 // a kind of its own (a trunked channel). Each is offered where it can run; the step back to the one the channel was
 // opened with restores it as stored (its system, its NAC or RAN), so a slip never costs a channel its mode
-enum { CED_FM, CED_DMR, CED_P25, CED_NXDN, CED_KIND, CED_STEPS };
+enum { CED_FM, CED_DMR, CED_P25, CED_NXDN, CED_DPMR, CED_KIND, CED_STEPS };
 
 static uint8_t ced_step_of(const channel_t *ch)
 {
@@ -2623,12 +2635,14 @@ static uint8_t ced_step_of(const channel_t *ch)
 		return CED_P25;
 	if (ced_is_nxdn(ch))
 		return CED_NXDN;
+	if (ced_is_dpmr(ch))
+		return CED_DPMR;
 	if (ch->kind != CODEPLUG_KIND_NONE)
 		return CED_KIND;
 	return CONFIG_DMR && ch->mode == RADIO_MODE_DMR ? CED_DMR : CED_FM;
 }
 
-// Whether OK may step to s. A listen band is FM (AM) only. P25 and NXDN where the board runs them, as the VFO's mode
+// Whether OK may step to s. A listen band is FM (AM) only. The air modes where the board runs them, as the VFO's mode
 // tile (ui_svc_features), and not for Copy here: it writes through the zone job, which takes the source's tag and has
 // no block of its own. A kind only back to the one it was opened with: its system can't be picked here
 static bool ced_step_ok(uint8_t s, bool listen)
@@ -2646,20 +2660,22 @@ static bool ced_step_ok(uint8_t s, bool listen)
 		return !listen && (orig || (!into && (feats() & UI_FEAT_P25) != 0));
 	case CED_NXDN:
 		return !listen && (orig || (!into && (feats() & UI_FEAT_NXDN) != 0));
+	case CED_DPMR:
+		return !listen && (orig || (!into && (feats() & UI_FEAT_DPMR) != 0));
 	default:
 		return !listen && orig;
 	}
 }
 
-// c in step s: as stored for the step it was opened with, else plain FM or DMR, or a new P25 or NXDN channel with the
-// default settings (Save writes its tag)
+// c in step s: as stored for the step it was opened with, else plain FM or DMR, or a new channel of an air mode with
+// the default settings (Save writes its tag)
 static void ced_step_set(channel_t *c, uint8_t s)
 {
 	if (s == ced_step_of(&ced_orig)) {
 		c->kind = ced_orig.kind;
 		c->system = ced_orig.system;
 		c->mode = ced_orig.mode;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 		ced_air = ced_air_orig;
 #endif
 		return;
@@ -2681,11 +2697,18 @@ static void ced_step_set(channel_t *c, uint8_t s)
 		ced_air_default(RADIO_MODE_NXDN);
 	}
 #endif
+#if CONFIG_DPMR
+	if (s == CED_DPMR) {
+		c->kind = CODEPLUG_KIND_DPMR;
+		c->mode = RADIO_MODE_DPMR;
+		ced_air_default(RADIO_MODE_DPMR);
+	}
+#endif
 }
 
-#if CONFIG_P25 || CONFIG_NXDN
-// The NAC or RAN row (CE_CODE) and the rate's: what the block holds for them; all of it in a mode the channel wasn't
-// stored in
+#if CONFIG_AIR
+// The rows the block holds: the NAC or RAN (CE_CODE) and the rate; dPMR's called ID, channel code and filter. Whether
+// row r differs from what is stored; all of them in a mode the channel wasn't stored in
 static bool ced_air_changed(uint8_t r)
 {
 	if (ced_step_of(&ced_ch) != ced_step_of(&ced_orig))
@@ -2698,11 +2721,26 @@ static bool ced_air_changed(uint8_t r)
 #if CONFIG_NXDN
 	if (ced_is_nxdn(&ced_ch))
 		return r == CE_CODE ? a->nxdn.rx_ran != b->nxdn.rx_ran || a->nxdn.tx_ran != b->nxdn.tx_ran :
-		       a->nxdn.rate9600 != b->nxdn.rate9600;
+		       r == CE_RATE && a->nxdn.rate9600 != b->nxdn.rate9600;
+#endif
+#if CONFIG_DPMR
+	if (ced_is_dpmr(&ced_ch))
+		return r == CE_CALLED ? a->dpmr.called != b->dpmr.called : r == CE_DCODE ? a->dpmr.cc != b->dpmr.cc :
+		       r == CE_MINE && ((a->dpmr.flags ^ b->dpmr.flags) & DPMR_CP_RX_MINE) != 0;
 #endif
 	(void)a;
 	(void)b;
 	(void)r;
+	return false;
+}
+
+// Whether any row the block holds changed: Save then writes the block with the channel
+static bool ced_block_changed(void)
+{
+	static const uint8_t rows[] = { CE_CODE, CE_RATE, CE_CALLED, CE_DCODE, CE_MINE };
+	for (uint8_t i = 0; i < sizeof rows; i++)
+		if (ced_air_changed(rows[i]))
+			return true;
 	return false;
 }
 #endif
@@ -2720,8 +2758,8 @@ static bool ced_changed(uint8_t r)
 	}
 	if (r >= CE_ZONES)
 		return false;
-#if CONFIG_P25 || CONFIG_NXDN
-	if (r == CE_CODE || r == CE_RATE)
+#if CONFIG_AIR
+	if (r == CE_CODE || r == CE_RATE || r == CE_CALLED || r == CE_DCODE || r == CE_MINE)
 		return ced_air_changed(r);
 #endif
 	const uint8_t *a = (const uint8_t *)&ced_ch + ced_fields[r].off, *b = (const uint8_t *)&ced_orig + ced_fields[r].off;
@@ -2738,7 +2776,7 @@ static bool ced_changed(uint8_t r)
 }
 
 // RX in a receive-only band (the air band, broadcast FM: docs/spec/airband-and-broadcast.md 2): the copy becomes RX
-// only, and FM (AM there) in a listen band, which is all the radio does there: a P25 or NXDN channel becomes a plain
+// only, and FM (AM there) in a listen band, which is all the radio does there: an air mode channel becomes a plain
 // one (the radio core refuses those modes there), and Save asks before a stored one loses its tag
 static void ced_rx_band(channel_t *c)
 {
@@ -2747,7 +2785,7 @@ static void ced_rx_band(channel_t *c)
 	c->rx_only = true;
 	c->tx_hz = c->rx_hz;
 	if (radio_listen_band(c->rx_hz)) {
-		if (ced_is_p25(c) || ced_is_nxdn(c)) {
+		if (ced_is_p25(c) || ced_is_nxdn(c) || ced_is_dpmr(c)) {
 			c->kind = CODEPLUG_KIND_NONE;
 			c->system = CODEPLUG_SYSTEM_NONE;
 		}
@@ -2777,10 +2815,10 @@ static void ced_from_view(void)
 #endif
 
 // ced_air for ch: a stored channel's block, read at number (before a copy's rename: the tag is the source's name's); a
-// plain channel in P25 or NXDN, the radio's settings from its view
+// plain channel in an air mode, the radio's settings from its view
 static void ced_air_read(uint16_t number, const channel_t *ch)
 {
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	const radio_view_t *v = ui_view();
 	bool here = ch->kind == CODEPLUG_KIND_NONE && (v->vfo ? number == 0 : v->channel_number == number);
 	memset(&ced_air, 0, sizeof ced_air);
@@ -2811,6 +2849,21 @@ static void ced_air_read(uint16_t number, const channel_t *ch)
 		}
 	}
 #endif
+#if CONFIG_DPMR
+	if (ced_is_dpmr(ch)) {
+		dpmr_chan_t *c = &ced_air.dpmr;
+		if (v->ch.mode == RADIO_MODE_DPMR && here) {
+			// The view has the code sent, not whether it is automatic: the frequency's own code reads as automatic,
+			// which sends the same here and follows the channel to another frequency
+			uint16_t cc = v->dpmr.tx_cc;
+			c->called = v->dpmr.talk;
+			c->cc = cc == 0 || cc == dpmr_cc_for_hz(v->ch.tx_hz) ? DPMR_CP_CC_AUTO : dpmr_cc_index(cc);
+			c->flags = (v->dpmr.flags & RADIO_DPMR_MINE) != 0 ? DPMR_CP_RX_MINE : 0u;
+		} else if (!dpmr_chan_load(number, ch, c)) {
+			ced_air_default(RADIO_MODE_DPMR);
+		}
+	}
+#endif
 #if CONFIG_CHANNEL_EDIT
 	ced_air_orig = ced_air;
 #endif
@@ -2823,7 +2876,7 @@ static void ced_air_read(uint16_t number, const channel_t *ch)
 static void ced_build(void)
 {
 	bool listen = radio_listen_band(ced_ch.rx_hz);
-	bool p25 = ced_is_p25(&ced_ch), nxdn = ced_is_nxdn(&ced_ch), air = p25 || nxdn;
+	bool p25 = ced_is_p25(&ced_ch), nxdn = ced_is_nxdn(&ced_ch), dpmr = ced_is_dpmr(&ced_ch), air = p25 || nxdn || dpmr;
 	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false, into = false;
@@ -2840,10 +2893,12 @@ static void ced_build(void)
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
 		// P25 and NXDN: no sub-audio tones or width; of the digital rows the talk target and unit ID, P25's
-		// talkaround; the NAC or RAN, NXDN's rate
-		bool air_row = air && ((r == CE_CONTACT && CONFIG_DMR) || r == CE_ID || (r == CE_DMO && p25) ||
-				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
-		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
+		// talkaround; the NAC or RAN, NXDN's rate. dPMR: its block's rows only (its own ID is radio-wide)
+		bool block_row = r == CE_CODE || r == CE_RATE || r == CE_CALLED || r == CE_DCODE || r == CE_MINE;
+		bool air_row = (p25 || nxdn) && ((r == CE_CONTACT && CONFIG_DMR) || r == CE_ID || (r == CE_DMO && p25) ||
+						 (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
+		air_row = air_row || (dpmr && !into && (r == CE_CALLED || r == CE_DCODE || r == CE_MINE));
+		if (block_row ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
 		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
@@ -3034,7 +3089,10 @@ static void sb_ced_code(sbuf_t *b, const channel_t *ch, bool editing)
 static void chinfo_item(uint16_t i, ui_item_t *it)
 {
 	static const tr_id_t labels[CE_COUNT] = { TRN(LABEL_NAME, "Name"), TRN(CHAN_LABEL_NUMBER, "Number"),
-		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRN(CHAN_LABEL_RATE, "Rate"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"), TRN(LABEL_POWER, "Power"),
+		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRN(CHAN_LABEL_RATE, "Rate"),
+		TRN(CHAN_LABEL_DPMR_CALLED, "Calls"), TRN(CHAN_LABEL_DPMR_CC, "Channel code"),
+		TRN(CHAN_LABEL_DPMR_MINE, "Own calls only"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"),
+		TRN(LABEL_POWER, "Power"),
 		TRN(WORD_RX_ONLY, "RX only"), TRN(CHAN_LABEL_BANDWIDTH, "Bandwidth"),
 		TRN(CHAN_LABEL_RX_TONE, "RX CTCSS/DCS"), TRN(CHAN_LABEL_TX_TONE, "TX CTCSS/DCS"), TRX(WORD_VOX, "VOX"),
 		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
@@ -3091,6 +3149,8 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 			sb_str(&b, "P25");
 		else if (ced_is_nxdn(ch))
 			sb_str(&b, "NXDN");
+		else if (ced_is_dpmr(ch))
+			sb_str(&b, "dPMR");
 		else if (ch->kind != CODEPLUG_KIND_NONE)
 			sb_str(&b, codeplug_kind_name(ch->kind));
 		else if (radio_am_tx_refused(ch->rx_hz))
@@ -3106,6 +3166,32 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 #if CONFIG_NXDN
 		sb_str(&b, ced_air.nxdn.rate9600 ? "9600 bit/s" : "4800 bit/s");
 #endif
+		break;
+#endif
+#if CONFIG_DPMR
+	case CE_CALLED:
+		// On the spinner a common ID, 1-255 (255: all), the setting a dPMR446 radio has; a full address stored from a
+		// computer is shown as its number and kept until a common ID replaces it
+		ui_sb_dpmr_id(&b, editing ? DPMR_ID_COMMON(ced_val_or(0)) : ced_air.dpmr.called);
+		break;
+	case CE_DCODE: {
+		// Table 6.1's place ("A2", "B16"); automatic says which code that is on this TX frequency: "Auto (A1)"
+		uint8_t n = (uint8_t)(editing ? ced_val_or(0) : ced_air.dpmr.cc);
+		char t[8];
+		if (n == DPMR_CP_CC_AUTO || n > DPMR_CP_CC_MAX) {
+			sb_str(&b, TR(VALUE_AUTO, "Auto"));
+			dpmr_cc_text(dpmr_cc_for_hz(ch->tx_hz), t, sizeof t);
+			sb_str(&b, " (");
+			sb_str(&b, t);
+			sb_chr(&b, ')');
+		} else {
+			dpmr_cc_text(dpmr_cc_group(n > 16u, (uint8_t)((n - 1u) & 15u)), t, sizeof t);
+			sb_str(&b, t);
+		}
+		break;
+	}
+	case CE_MINE:
+		sb_onoff(&b, (ced_air.dpmr.flags & DPMR_CP_RX_MINE) != 0);
 		break;
 #endif
 	case CE_RX:
@@ -3245,8 +3331,9 @@ static const char *ced_problem(void)
 	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && radio_listen_band(c->rx_hz))
 		return TR(CHAN_WHY_RX_ONLY_BAND_SET_FM, "Receive only band: set FM");
 	// The contact is whom PTT calls, so a channel that never transmits needs none
-	// (P25 and NXDN: none is talk group 1)
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c))
+	// (P25 and NXDN: none is talk group 1; dPMR calls its block's ID)
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c) &&
+	    !ced_is_dpmr(c))
 		return TR(CHAN_WHY_PICK_TX_CONTACT, "Pick a TX contact first");
 #if CONFIG_NXDN
 	// A DMR channel's own ID kept when the Mode row made it NXDN: past NXDN's range, as the ID row refuses it
@@ -3272,11 +3359,11 @@ static bool ced_write(uint16_t num, bool as_new)
 	}
 #endif
 	(void)as_new;
-#if CONFIG_P25 || CONFIG_NXDN
-	// A changed NAC, RAN or rate goes with the channel, as does the whole block of one the Mode row made P25 or
-	// NXDN; unchanged, the tag is written as without the editor (a plain channel in P25 or NXDN takes the radio's
+#if CONFIG_AIR
+	// A changed NAC, RAN, rate or dPMR row goes with the channel, as does the whole block of one the Mode row made an
+	// air mode; unchanged, the tag is written as without the editor (a plain channel in an air mode takes the radio's
 	// settings, a copy its source's tag)
-	if ((ced_is_p25(&ced_ch) || ced_is_nxdn(&ced_ch)) && (ced_air_changed(CE_CODE) || ced_air_changed(CE_RATE)))
+	if ((ced_is_p25(&ced_ch) || ced_is_nxdn(&ced_ch) || ced_is_dpmr(&ced_ch)) && ced_block_changed())
 		return ui_svc_write_channel_air(num, &ced_ch, ced_src, &ced_air);
 #endif
 	return ui_svc_write_channel(num, &ced_ch, ced_src);
@@ -3315,7 +3402,7 @@ static void ced_save(bool as_new)
 	ced_src = num;
 	ui_frame()->arg = num;
 	ced_orig = ced_ch;
-#if CONFIG_P25 || CONFIG_NXDN
+#if CONFIG_AIR
 	ced_air_orig = ced_air;
 #endif
 	sbuf_t b;
@@ -3369,6 +3456,14 @@ static void ced_spin(int dir)
 			ced_val = (ced_val + dir) & 0xFFF;
 		}
 		break;
+#if CONFIG_DPMR
+	case CE_CALLED:
+		ced_val = (ced_val - 1 + dir + 255) % 255 + 1;	// common IDs 1-255: 0 is reserved
+		break;
+	case CE_DCODE:
+		ced_val = (ced_val + dir + (int32_t)DPMR_CP_CC_MAX + 1) % ((int32_t)DPMR_CP_CC_MAX + 1);
+		break;
+#endif
 	case CE_TOT:
 		ced_val += dir * CE_TOT_STEP;
 		ced_val = ced_val < 0 ? 0 : ced_val > CE_TOT_MAX ? CE_TOT_MAX : ced_val;
@@ -3429,8 +3524,10 @@ static void ced_digit(char d)
 		// An NXDN RAN is typed as a color code
 		// fall through
 	case CE_CC:
+	case CE_CALLED:
 	case CE_TOT: {
-		int32_t hi = ced_edit == CE_CC ? 15 : ced_edit == CE_CODE ? CE_RAN_N - 1 : CE_TOT_MAX;
+		int32_t hi = ced_edit == CE_CC ? 15 : ced_edit == CE_CODE ? CE_RAN_N - 1 : ced_edit == CE_CALLED ? 255 :
+			CE_TOT_MAX;
 		v = ced_typed ? v : d - '0';
 		ced_val = v > hi ? d - '0' : v;
 		ced_typed = true;
@@ -3512,6 +3609,18 @@ static void ced_commit(void)
 	case CE_CODE:
 		if (!ced_commit_code())
 			return;
+		break;
+#endif
+#if CONFIG_DPMR
+	case CE_CALLED:
+		if (ced_val < 1 || ced_val > 255) {
+			ui_toast(TR(CHAN_TOAST_DPMR_CID_RANGE, "Common IDs go 1 to 255"));
+			return;
+		}
+		ced_air.dpmr.called = DPMR_ID_COMMON(ced_val);
+		break;
+	case CE_DCODE:
+		ced_air.dpmr.cc = (uint8_t)ced_val;
 		break;
 #endif
 	case CE_POWER:
@@ -3683,6 +3792,19 @@ static void chinfo_select(uint16_t i, bool hold)
 #if CONFIG_NXDN
 	case CE_RATE: ced_air.nxdn.rate9600 = !ced_air.nxdn.rate9600; break;
 #endif
+#endif
+#if CONFIG_DPMR
+	case CE_CALLED:
+	case CE_DCODE:
+		// The called ID as a common ID (an address stored from a computer starts from the all call), the code by
+		// table 6.1's place; both on the knob, the ID typed too
+		ced_edit = r;
+		ced_typed = false;
+		ced_val = r == CE_DCODE ? (ced_air.dpmr.cc > DPMR_CP_CC_MAX ? 0 : ced_air.dpmr.cc) :
+			dpmr_id_is_common(ced_air.dpmr.called) && (ced_air.dpmr.called >> 16) != 0 ?
+			(int32_t)(ced_air.dpmr.called >> 16) : (int32_t)DPMR_COMMON_ALL;
+		break;
+	case CE_MINE: ced_air.dpmr.flags ^= DPMR_CP_RX_MINE; break;
 #endif
 	case CE_TS: c->timeslot = c->timeslot == 2 ? 1 : 2; break;
 #if CONFIG_DMR
