@@ -5,7 +5,7 @@
 
 HERE := $(dir $(lastword $(MAKEFILE_LIST)))
 
-# The Plus 10 W marker against the image: a warning in both directions, never a refusal (#773)
+# The Plus 10 W marker against the image: a 5 W image warns on the marker, never refuses (#773)
 TESTS   += mduv380VariantTest
 mduv380VariantTest: $(HERE)variantTest.c $(HERE)../variant_mduv380.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
