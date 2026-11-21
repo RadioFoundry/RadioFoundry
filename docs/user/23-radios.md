@@ -811,7 +811,7 @@ first chip the installer pauses and asks you to hold **SK1** until the top line 
 | Green | **A/B** |
 | Red | **VFO** |
 | Up, Down | **Up**, **Down** |
-| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Hold it while turning the radio on to start update mode |
+| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Hold SK1 while turning the radio on to start update mode |
 | SK2 (the side key below **PTT**) | **Monitor** |
 | **#** | **#**. Hold it for the talk target picker |
 | SOS (the orange top key) | User key 3 |
