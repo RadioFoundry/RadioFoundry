@@ -32,7 +32,7 @@ The type's block:
 | 1 | 2 | NET |
 | 3 | 1 | Category: 1 A, 2 B |
 | 4 | 1 | Color code, 0-15 |
-| 5 | 2 | Options: 0x0002 follow all-calls, 0x0004 follow emergency calls on any talkgroup, 0x0020 follow private calls, 0x0040 register with the talkgroups, 0x0080 accept Ambient Listening, 0x0100 accept a kill, 0x0200 no roaming, 0x0400 accept a stun, 0x1000 off-net IP through the system's IP gateway. 0x0001 and 0x0800 are reserved (written 0, kept): listen only and authentication are the header's flags |
+| 5 | 2 | Options: 0x0002 follow all-calls, 0x0004 follow emergency calls on any talkgroup, 0x0008 follow every talkgroup's grant, 0x0010 learn the system code from the air (listen only, below), 0x0020 follow private calls, 0x0040 register with the talkgroups, 0x0080 accept Ambient Listening, 0x0100 accept a kill, 0x0200 no roaming, 0x0400 accept a stun, 0x1000 off-net IP through the system's IP gateway. 0x0001 and 0x0800 are reserved (written 0, kept): listen only and authentication are the header's flags |
 | 7 | 1 | Fallback hold time in seconds, 0 = 30 |
 | 8 | 4 | Fixed plan: MS transmit Hz of the first channel, 0 = no fixed plan |
 | 12 | 2 | Fixed plan: the first channel's LCN |
@@ -46,7 +46,12 @@ The type's block:
 
 A system is **usable** when its block holds at least the 23 octets up to the site count, it has a control channel
 and, if flag bit 0 is set, a key. A block that ends inside the site values names the sites it holds. Option bits a
-codeplug may not set (the debug link's, and the reserved ones) are read as 0.
+codeplug may not set (the reserved ones) are read as 0.
+
+**Learning the system code** (0x0010) takes the first TSCC whose Aloha the radio hears as the system's: its MODEL and
+NET replace the block's, the sites and category still apply. It applies only while the system runs listen only (no
+transmit side, a transmit flag clear in the tag, or a receive-only channel): a radio that can transmit registers on
+the identity its codeplug names, never on whichever system it heard first. With a transmit side the option is ignored.
 
 ## 2. System channels
 

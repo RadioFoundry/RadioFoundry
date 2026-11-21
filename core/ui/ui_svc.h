@@ -168,6 +168,8 @@ bool ui_svc_roam(uint8_t cmd);			// radio_roam_cmd_t: zone on / off, roam now, l
 // system is set up
 int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable);
 bool ui_svc_t3_name(uint8_t n, char *name);	// system n's name (CODEPLUG_NAME_LEN + 1); false: no such system
+void ui_svc_t3_cancel(void);
+void ui_svc_t3_reject(void);
 void ui_svc_t3_poll(uint32_t id);	// poll an MS for its short data (radio_req_t3_poll)
 // CONFIG_DMR_TRUNK_GW (else no-ops): the digits ("0-9*#", up to 16) the next call through a dialing gateway sends,
 // and whether src is a dialing gateway on the system in use (false: no, or not this build); out: the caller's number
@@ -210,6 +212,7 @@ void ui_svc_msg_read(uint16_t i);		// mark read
 bool ui_svc_msg_delete(uint16_t i);
 // Queue a text message; the result comes back as a ui_notify() event
 bool ui_svc_msg_send(uint32_t dst, bool group, const char *text);
+bool ui_svc_msg_reply(uint16_t i, const char *text);
 bool ui_svc_radio_check(uint32_t id);
 bool ui_svc_call_alert(uint32_t id);
 // ARS registration with the presence server (Settings > Connections > Data services), as dmrArsState_t
@@ -230,6 +233,9 @@ typedef struct {
 	uint32_t utc_hms;	// hhmmss, 0xFFFFFFFF unknown
 } ui_position_t;
 bool ui_svc_position(ui_position_t *out);	// false: no GPS on this radio (or off)
+// The radio's GPS for the status strip: none, or one with Settings > Location > GPS off or on, however it was set
+enum { UI_GPS_POWER_NONE, UI_GPS_POWER_OFF, UI_GPS_POWER_ON };
+uint8_t ui_svc_gps_power(void);
 // One satellite for the GPS screen's sky plot and signal bars
 enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
 typedef struct {

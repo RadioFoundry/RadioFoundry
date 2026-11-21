@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// The DMR AES-256 mode module of the Codeplug Editor (docs/spec/channel-modes.md): kind 5 and system type 5. The keys
+// are the system's traffic keys (algorithm 0x25), on the shared traffic-key model in channelmodes.js.
 import { grow, hex, unhex } from "./modebytes.js";
 
-export const AES_KIND = 5, AES_ALG = 0x25;
-export const trafficRecord = (v) => v?.length === 37 && v[0] !== 255 && v[1] === AES_ALG && v[3] === 0;
-export const readTraffic = (v) => ({ id: v[2], key: hex(v.subarray(5)) });
-export function writeTraffic(system, item, prev) {
-	const bytes = unhex(item.key);
-	if (bytes?.length !== 32 || !Number.isInteger(item.id) || item.id < 0 || item.id > 255)
-		throw new Error("Invalid AES traffic key");
-	const v = grow(prev, 37);
-	v.set([system, AES_ALG, item.id, 0]);
-	v.set(bytes, 5);
-	return v;
+export const AES_KIND = 5, AES_ALG = 0x25, AES_KEY_BYTES = 32;
+const RECORD_LEN = 5 + AES_KEY_BYTES;
+
+// A fresh key from the browser's CSPRNG: typed keys tend to be weak
+export function randomAesKey(rng = globalThis.crypto) {
+	return hex(rng.getRandomValues(new Uint8Array(AES_KEY_BYTES)));
 }
 
 export const aesKind = {
@@ -36,9 +33,33 @@ export const aesKind = {
 };
 
 export const aesSystem = {
-	id: AES_KIND, feature: "DMR_AES", idLen: 1, defaultTx: true,
+	id: AES_KIND, feature: "DMR_AES", idLen: 1, conventional: true, defaultTx: true,
+	sharingHelp: "editor.aes.sharing_help",
 	newFields: () => ({ network: 1 }), decode: (v) => ({ network: v?.[0] ?? 1 }),
 	encode: (p, prev) => { const v = grow(prev, 1); v[0] = p.network; return v; },
 	identity: (p) => String(p.network), classes: [], ownedKeys: () => [], validate() {},
 	fields: () => [{ key: "network", label: "editor.aes.network", type: "int", min: 0, max: 255 }],
+	// Record: system, algorithm, key ID (u16, the PI header's 8 bits), flags, the 32 key bytes
+	traffic: {
+		max: 256,
+		labels: { title: "editor.aes.keys", add: "editor.aes.add", show: "editor.aes.show_keys" },
+		columns: [
+			{ key: "id", label: "editor.aes.id", type: "int", min: 0, max: 255 },
+			{ key: "key", label: "editor.aes.key", type: "hexbytes", bytes: AES_KEY_BYTES, secret: true,
+				generate: () => randomAesKey() },
+		],
+		decode(v) {
+			if (v.length !== RECORD_LEN || v[1] !== AES_ALG || v[3] !== 0) return null;
+			return { id: v[2], key: hex(v.subarray(5)), flags: v[4] };
+		},
+		encode(system, { id, key, flags = 0 }) {
+			const bytes = unhex(key);
+			if (bytes?.length !== AES_KEY_BYTES || !Number.isInteger(id) || id < 0 || id > 255)
+				throw new Error("Invalid AES traffic key");
+			const v = new Uint8Array(RECORD_LEN);
+			v.set([system, AES_ALG, id, 0, flags]);
+			v.set(bytes, 5);
+			return v;
+		},
+	},
 };

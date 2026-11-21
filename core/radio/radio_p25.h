@@ -59,6 +59,7 @@ enum {
 	RADIO_TRUNK_WHY_OTHER_SYS,	// no control channel held; another system's heard (Tier III: model, network or CC)
 	RADIO_TRUNK_WHY_REG_REFUSED,	// the system refused the radio's registration (Tier III Reg_Refused: ID not known)
 	RADIO_TRUNK_WHY_UNMAPPED,	// granted on a channel the codeplug doesn't list (Tier III: radio_t3_brief_t.unmapped)
+	RADIO_TRUNK_WHY_OTHER_KIND,	// no control channel held; a trunking system of another kind heard (Tier III: its FID)
 };
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one

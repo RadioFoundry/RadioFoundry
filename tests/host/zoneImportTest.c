@@ -910,6 +910,42 @@ static void test_modes_nxdn_conv(void)
 	static const uint8_t blk[] = { 0x05, 0x09, 0x85 };
 	share_conv(CODEPLUG_KIND_NXDN, blk, (int)sizeof(blk));
 }
+
+#if CONFIG_NXDN
+static void test_identityless_nxdn_system(void)
+{
+	static const uint8_t block[] = { 0, 3, 0, 1, 7 };
+	static const uint8_t traffic[] = { 0, 1, 7, 0, 0, 0x34, 0x12 };
+	codeplug_tag_t tag = { .kind = CODEPLUG_KIND_NXDN, .system = 0, .flags = CODEPLUG_TAG_TX };
+	channel_t ch = make("NXDN sender", 451500000, 456500000, true);
+	ch.rx_only = true;	// the live tag requires the safe stand-in record
+	zone_t z = { .name = "NXDN", .count = 1, .channels = { 1 } };
+	uint8_t included = 0;
+	zsRecord_t rec;
+	zsSystem_t shared;
+	zone_import_result_t res;
+	static uint8_t sent[ZS_RECORD_MAX];
+
+	fresh();
+	put_system(0, CODEPLUG_SYSTYPE_NXDN, CODEPLUG_SYS_TX, CODEPLUG_SHARE_WHOLE, "Sender", block, 0, 0);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic));
+	CHECK(codeplug_set_channel(1, &ch) && codeplug_tag_write(1, ch.name, &tag, block, sizeof block));
+	CHECK(codeplug_set_zone(0, &z));
+	int len = zone_export_zone(0, sent, sizeof sent, &included);
+	CHECK(len > 0 && included == 1 && zsParse(sent, len, &rec));
+	CHECK(zsSystemAt(&rec, 0, &shared) && shared.idLen == 0 && shared.secretLen == 0);
+
+	fresh();
+	with_zones();
+	put_system(0, CODEPLUG_SYSTYPE_NXDN, CODEPLUG_SYS_TX, CODEPLUG_SHARE_WHOLE, "Local", block, 0, 0);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic));
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.systems_added == 1);
+	CHECK(codeplug_zone(res.zone, &z) && codeplug_channel(z.channels[0], &ch) && ch.system == 1);
+	uint8_t key[2];
+	CHECK(codeplug_traffic_key(0, 1, 7, key, sizeof key) == 2);
+	CHECK(codeplug_traffic_key(1, 1, 7, key, sizeof key) == -1);
+}
+#endif
 #endif
 
 int main(void)
@@ -928,6 +964,9 @@ int main(void)
 #if CONFIG_ZONE_SHARE_MODES
 	test_modes_p25_conv();
 	test_modes_nxdn_conv();
+#if CONFIG_NXDN
+	test_identityless_nxdn_system();
+#endif
 #endif
 	printf("zoneImportTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

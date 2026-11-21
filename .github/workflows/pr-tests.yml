@@ -87,6 +87,8 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace, which job containers may not allow
           SANITIZE: "1"
         run: tools/coverage.sh
+      - name: Bench tools, built from the core sources with zero warnings
+        run: tools/ci.sh --steps bench
       - name: UI screen gallery
         run: |
           set -eu

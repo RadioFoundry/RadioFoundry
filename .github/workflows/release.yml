@@ -119,7 +119,7 @@ jobs:
           TOOLCHAIN: ${{ matrix.toolchain }}
         run: |
           set -u
-          tools/ci.sh --quick --steps registry,host,python,licenses
+          tools/ci.sh --quick --steps registry,host,bench,python,licenses
           rc=0
           $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           [ "$rc" != 3 ] || echo "::error::no $TOOLCHAIN compiler: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"

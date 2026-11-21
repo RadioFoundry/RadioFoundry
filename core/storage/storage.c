@@ -14,6 +14,7 @@
 // J0 programmed is the commit point. Then for each sector: J1 = the sector merged with the data, "staged", the
 // sector erased and programmed from J1, "done". Replay: a sector not staged is still intact, so it is merged again.
 #include <string.h>
+#include "config.h"
 #include "storage/storage.h"
 
 #define J_MAGIC		0x4C4E4A4Fu	// "OJNL"
@@ -29,7 +30,7 @@
 static bool ready;			// usable flash (the region may still be foreign)
 static storage_region_t region;
 static bool claim_pending;
-static uint8_t buffer[STORAGE_SECTOR];
+static uint8_t buffer[STORAGE_SECTOR] RFOUNDRY_COLD_RAM;	// task-side only (storage_buffer_acquire)
 static bool buffer_taken;
 static storage_stats_t stats;
 

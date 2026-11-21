@@ -10,7 +10,7 @@
 import { t3Kind, t3System } from "./mode_t3.js";
 import { p25Kind, p25TrunkKind, p25System } from "./mode_p25.js";
 import { aesKind, aesSystem } from "./mode_aes.js";
-import { nxdnKind } from "./mode_nxdn.js";
+import { nxdnKind, nxdnSystem } from "./mode_nxdn.js";
 
 // id, the C token, the short name the radio shows, the feature that runs it, its module
 export const KINDS = [
@@ -24,6 +24,7 @@ export const KINDS = [
 export const SYSTEM_TYPES = [
 	{ id: 1, token: "DMR_TRUNK", short: "T3", feature: "DMR_TRUNK", module: t3System },
 	{ id: 3, token: "P25_TRUNK", short: "P25T", feature: "P25_TRUNK", module: p25System },
+	{ id: 4, token: "NXDN", short: "NXDN", feature: "NXDN", module: nxdnSystem },
 	{ id: 5, token: "DMR_AES", short: "AES", feature: "DMR_AES", module: aesSystem },
 ];
 
