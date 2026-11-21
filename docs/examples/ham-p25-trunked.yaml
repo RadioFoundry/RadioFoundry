@@ -5,7 +5,7 @@
 # opens (Open File). Before writing it to a radio, set:
 #   - radioIDs: your DMR ID from RadioID.net, which is also your P25 unit ID, and your call sign;
 #   - the control channel (the system's entries and the channel's frequencies): your site's, from its operator.
-# The talkgroups are Brandmeister's that fit P25's 16 bits (1-65534). qdmr opens this file too and ignores the
+# The talkgroups are BrandMeister's that fit P25's 16 bits (1-65534). qdmr opens this file too and ignores the
 # radioFoundry blocks.
 ---
 version: 0.15.1

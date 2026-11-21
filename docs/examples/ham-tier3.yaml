@@ -6,7 +6,7 @@
 #   - radioIDs: your DMR ID from RadioID.net and your call sign;
 #   - the control channel (the system's entries and the channel's frequencies): your site's, from its operator;
 #   - chan: 4 x the site's number + 1 (site 5: 21).
-# The talkgroups are Brandmeister's. qdmr opens this file too and ignores the radioFoundry blocks.
+# The talkgroups are BrandMeister's. qdmr opens this file too and ignores the radioFoundry blocks.
 ---
 version: 0.15.1
 settings: {defaultID: id1}

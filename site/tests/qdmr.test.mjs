@@ -611,7 +611,7 @@ for (const [file, type] of [["ham-tier3.yaml", 1], ["ham-p25-trunked.yaml", 3]])
 		assert.deepEqual([s.tx, s.needsKey], [true, false]);
 		const [c] = m.channels;
 		assert.deepEqual([c.kind, c.system, c.tagTx, c.rxHz, c.txHz], [type, s, true, ctl.rxHz, ctl.txHz]);
-		// every talkgroup is Brandmeister's, and fits P25's 16 bits
+		// every talkgroup is BrandMeister's, and fits P25's 16 bits
 		assert.ok(m.contacts.every((x) => x.id >= 1 && x.id <= 0xFFFF));
 		assert.deepEqual(validate(m).filter((p) => p.level === "error"), []);
 		const d = decode(encode(m));

@@ -419,7 +419,7 @@ A channel that is receive only in the editor stays receive only on the system: t
 ### A ham system
 
 For a ham Tier III system, RadioFoundry recommends one setup, so that a radio set up once works on every ham site
-that follows the recommendation. Your DMR ID is the radio's ID and the talkgroups are Brandmeister's. The values and
+that follows the recommendation. Your DMR ID is the radio's ID and the talkgroups are BrandMeister's. The values and
 the reasons for each are in [Recommended ham trunked systems](../spec/ham-trunking.md).
 
 - On the **Systems** tab pick DMR Tier III Trunking and press **Add Recommended Ham System**. Enter a name, the
@@ -428,7 +428,7 @@ the reasons for each are in [Recommended ham trunked systems](../spec/ham-trunki
 - Or open the template
   [ham-tier3.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-tier3.yaml) with **Open
   File** in the Codeplug Editor, change the radio ID, name and frequencies, and write the codeplug. The template holds
-  the system, the Brandmeister talkgroups 91, 93, 3100 and 9 and one channel.
+  the system, the BrandMeister talkgroups 91, 93, 3100 and 9 and one channel.
 
 ### On the air
 

@@ -306,10 +306,10 @@ DMR Tier III 集群系统为每次呼叫分配一个信道。电台停留在系�
 
 ### 业余无线电系统
 
-对于业余无线电 Tier III 系统，RadioFoundry 推荐一种统一的设置，这样设置一次的电台就能在所有遵循该推荐的业余站点上使用。电台的 ID 就是你的 DMR ID，通话组采用 Brandmeister 的编号。各项数值及其理由见[推荐的业余集群系统](../spec/ham-trunking.md)（英文）。
+对于业余无线电 Tier III 系统，RadioFoundry 推荐一种统一的设置，这样设置一次的电台就能在所有遵循该推荐的业余站点上使用。电台的 ID 就是你的 DMR ID，通话组采用 BrandMeister 的编号。各项数值及其理由见[推荐的业余集群系统](../spec/ham-trunking.md)（英文）。
 
 - 在**系统**选项卡上选择 T3，然后按**添加推荐的业余无线电系统**。输入名称、控制信道的频率，以及站点运营者提供的站点编号。随后打开的系统表单已填好其余设置：网络模型 Huge、NET 1、类别 A、色码 1、开启注册。
-- 或者在电台频率编辑器中用**打开文件**打开模板 [ham-tier3.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-tier3.yaml)，修改电台 ID、名称和频率后写入。模板包含该系统、Brandmeister 通话组 91、93、3100 和 9，以及一个信道。
+- 或者在电台频率编辑器中用**打开文件**打开模板 [ham-tier3.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-tier3.yaml)，修改电台 ID、名称和频率后写入。模板包含该系统、BrandMeister 通话组 91、93、3100 和 9，以及一个信道。
 
 ### 通联
 

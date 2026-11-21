@@ -5,8 +5,8 @@
 
 RadioFoundry recommends one DMR Tier III setup and one P25 trunked setup for hams in the US who start a trunked
 system. Every ham system that follows the recommendation looks the same to a radio, so a radio set up once works on
-any of those systems, and sites of different operators side by side never clash. The setups run on the Brandmeister
-numbering: a ham's RadioID DMR ID is the radio's ID, and the talkgroups are Brandmeister's.
+any of those systems, and sites of different operators side by side never clash. The setups run on the BrandMeister
+numbering: a ham's RadioID DMR ID is the radio's ID, and the talkgroups are BrandMeister's.
 
 The Codeplug Editor fills a recommended system in (4), and qdmr YAML templates hold each one. The records are in
 [dmr-trunking-codeplug.md](dmr-trunking-codeplug.md) and [p25-codeplug.md](p25-codeplug.md); what the radio does on
@@ -16,8 +16,8 @@ the systems is in [dmr-trunking.md](dmr-trunking.md) and [p25-trunking.md](p25-t
 
 | Item | Recommendation | Why |
 |---|---|---|
-| Radio ID | The ham's DMR ID from RadioID.net | One ID everywhere: Brandmeister, conventional DMR, both trunked systems |
-| Talkgroups | Brandmeister's numbers (91, 93, 3100, the state talkgroups 31xx, 9 for local) | A site linked to Brandmeister carries the same talkgroup on the same number |
+| Radio ID | The ham's DMR ID from RadioID.net | One ID everywhere: BrandMeister, conventional DMR, both trunked systems |
+| Talkgroups | BrandMeister's numbers (91, 93, 3100, the state talkgroups 31xx, 9 for local) | A site linked to BrandMeister carries the same talkgroup on the same number |
 | Registration | On: the radio registers, and registers its talkgroups | The site knows where each radio is and which talkgroups to carry |
 | Authentication | Off, no key | Every licensed ham can use any site. A key would have to be handed out, and keys aren't shared |
 | Encryption | None | Messages encoded to obscure their meaning are not allowed on the ham bands (47 CFR 97.113(a)(4)) |
@@ -57,7 +57,7 @@ or a repeater pair is.
 control channels by number. 4 × site + carrier gives every site its own four numbers (site 1022's fourth is 4092,
 within 1-4094), so announcements from sites of different operators never clash.
 
-**Addresses.** Tier III addresses are 24 bits. Every DMR ID and Brandmeister talkgroup is within the range for
+**Addresses.** Tier III addresses are 24 bits. Every DMR ID and BrandMeister talkgroup is within the range for
 individual and group addresses (up to 16776415), so both carry over as they are.
 
 ## 3. P25 trunked
@@ -72,7 +72,7 @@ recommendation keeps 0x293 on the control channel and takes a WACN of its own.
 | RFSS, site | The operator's | | For display and roaming |
 | Control channel NAC | 0x293 | 0x293 | The NAC ham P25 radios and hotspots already use |
 | Unit ID | | The DMR ID (the radio-wide unit ID left at 0) | Unit IDs are 24 bits, so every DMR ID fits |
-| Talkgroups | Brandmeister's numbers 1-65534 | | P25 talkgroups are 16 bits, and 65535 calls everyone. A Brandmeister talkgroup above 65535 has no P25 number: the system doesn't carry that talkgroup. A P25 channel with one calls talkgroup 1 instead, and the Codeplug Editor warns ([p25-codeplug.md](p25-codeplug.md)) |
+| Talkgroups | BrandMeister's numbers 1-65534 | | P25 talkgroups are 16 bits, and 65535 calls everyone. A BrandMeister talkgroup above 65535 has no P25 number: the system doesn't carry that talkgroup. A P25 channel with one calls talkgroup 1 instead, and the Codeplug Editor warns ([p25-codeplug.md](p25-codeplug.md)) |
 | Encrypted calls | None sent | Skipped | Section 1 |
 | Identifier plan | Sent on the control channel (below) | Learned | The radio needs no plan programmed |
 
@@ -97,7 +97,7 @@ check before the system is added. The values are the mode modules' (`ham` in `si
 `mode_p25.js`).
 
 The templates are qdmr YAML files with the `radioFoundry` block ([qdmr-yaml.md](qdmr-yaml.md) 3.7): a radio ID, the
-Brandmeister talkgroups, an RX group list, the system and one channel on the system.
+BrandMeister talkgroups, an RX group list, the system and one channel on the system.
 
 | Template | System |
 |---|---|
