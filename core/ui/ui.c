@@ -59,11 +59,14 @@ static uint8_t backlight_now = 0xFF;
 static uint32_t radio_active_ms;
 static ui_app_status_t status;
 static uint32_t rested;	// the last time this task waited (hal_millis)
+static TaskHandle_t ui_handle;
 
-// After BUSY_MAX_MS without a wait: sleep until the idle task has fed the watchdog (watchdog.md 4)
+// After BUSY_MAX_MS without a wait: sleep until the idle task has fed the watchdog (watchdog.md 4). Only this task
+// rests: another that flushes (the stub entry's banner, from the host link task) must not sleep mid-frame and let this
+// task draw over it
 static void ui_rest(void)
 {
-	if (hal_millis() - rested < BUSY_MAX_MS)
+	if (xTaskGetCurrentTaskHandle() != ui_handle || hal_millis() - rested < BUSY_MAX_MS)
 		return;
 #if CONFIG_WATCHDOG
 	uint32_t feeds = watchdog_state()->feeds;
@@ -222,5 +225,5 @@ static void ui_task(void *arg)
 
 void ui_start(void)
 {
-	xTaskCreate(ui_task, "ui", UI_TASK_STACK_WORDS, NULL, UI_TASK_PRIORITY, NULL);
+	xTaskCreate(ui_task, "ui", UI_TASK_STACK_WORDS, NULL, UI_TASK_PRIORITY, &ui_handle);
 }
