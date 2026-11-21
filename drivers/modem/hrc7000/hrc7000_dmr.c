@@ -4,6 +4,7 @@
 #include <string.h>
 #include "hrc7000_dmr.h"
 #include "dmr/fec/dmrFec.h"
+#include "modem/hrc_common/hrc_soft.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc7000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_ACTIVE(e)	((e)->bs != NULL)
@@ -736,6 +737,25 @@ static void rx_tick(hrc7000_dmr_t *e)
 	w(e, C7_LAYER2_TXRX_CTRL, (e->voice_slots & (1u << next)) ? TXRX_RX_VOICE : TXRX_RX);
 }
 
+#if CONFIG_DMR
+// The soft values of a control burst whose CRC failed, for hrc7000_dmr_pop to combine (dmr-modem.md 2.2.1). The tap
+// holds the burst just deframed at RX 0x48 (modem-hrc7000.md 5.4); while we send it reads another way, so not then
+#define TAP_SOFT_0	(C7_RX_RAM + 0x48u + HRC_SOFT_INFO_OFS)
+TAP_FLASHFUNC static void soft_stage(hrc7000_dmr_t *e, const dmr_burst_t *b, uint8_t *tag)
+{
+	dmrSoftComb_t *c = e->soft;
+	bool control = b->kind == DMR_BURST_CSBK || b->kind == DMR_BURST_MBC_HEADER || b->kind == DMR_BURST_MBC_CONT ||
+		       b->kind == DMR_BURST_DATA_HEADER;
+	if (c == NULL || b->crc_ok || !control || e->tx_state != TXS_IDLE) {
+		return;
+	}
+	int8_t *v = dmrSoftCombStage(c, tag);
+	for (uint32_t i = 0; i < DMR_SOFT_BITS; i++) {
+		v[i] = hrc_soft_value(e->dev->buf[TAP_SOFT_0 + i]);
+	}
+}
+#endif
+
 static void rx_burst(hrc7000_dmr_t *e)
 {
 	uint32_t rti = r(e, C7_RX_TYPE_INFO);
@@ -773,14 +793,13 @@ static void rx_burst(hrc7000_dmr_t *e)
 	if (header) {
 		emb_drop(e, s.chip_slot);	// no voice call in progress on this slot, even with a bad CRC
 	}
+	// Every burst goes up, a bad CRC flagged (dmr-modem.md 2.2): the receivers check what they take, and a channel set to
+	// accept an invalid CRC takes one that repeats. A bad LC changes no call state, except while we send: the chip's
+	// verdict is wrong at times then, and the caller checks the LC itself or rebuilds it from the call's (gotchas 14.1;
+	// an SFR lost every terminator heard while keyed to an RS flag)
+	bool trust = s.crc_ok || e->tx_state != TXS_IDLE;
 	if (!s.crc_ok) {
 		e->st.rx_crc_err++;
-		// Headers and CSBKs with a bad CRC are dropped (dmr-modem.md 2.2), except while we send: the chip's verdict
-		// is wrong at times then, and the caller checks them itself or rebuilds them from the call's LC (gotchas 14.1;
-		// an SFR lost every terminator heard while keyed to an RS flag)
-		if (header && e->tx_state == TXS_IDLE) {
-			return;
-		}
 	}
 	hrc7000_dmr_evslot_t *slot = ev_alloc(e);
 	if (slot == NULL) {
@@ -818,7 +837,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 		switch (s.kind) {
 		case DMR_BURST_VOICE_LC_HEADER:
 			memcpy(b->lc, b->payload, 9);
-			b->lc_valid = true;
+			b->lc_valid = trust;
+			if (!trust) {
+				break;
+			}
 			e->listen_voice = e->tx_state != TXS_IDLE;
 			// The call's voice follows on this slot: burst A gets the flag too (stock sets it from the call's start)
 			e->voice_slots |= (uint8_t)(1u << s.chip_slot);
@@ -827,7 +849,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 			break;
 		case DMR_BURST_TERMINATOR_LC:
 			memcpy(b->lc, b->payload, 9);
-			b->lc_valid = true;
+			b->lc_valid = trust;
+			if (!trust) {
+				break;
+			}
 			if (e->voice_chip_slot == (int8_t)s.chip_slot) {
 				e->voice_chip_slot = -1;
 			}
@@ -848,6 +873,10 @@ static void rx_burst(hrc7000_dmr_t *e)
 			break;
 		}
 	}
+	slot->soft_tag = 0;
+#if CONFIG_DMR
+	soft_stage(e, b, &slot->soft_tag);
+#endif
 	slot->ev.kind = DMR_EV_BURST_RX;
 	slot->ev.ts = ts;
 	slot->ev.flags = 0;
@@ -1063,6 +1092,12 @@ bool hrc7000_dmr_pop(hrc7000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 	if (ev->kind == DMR_EV_BURST_RX) {
 		*burst = s->burst;
 		ev->burst = burst;
+#if CONFIG_DMR
+		dmrSoftComb_t *c = e->soft;
+		if (s->soft_tag != 0 && c != NULL) {
+			(void)dmrSoftCombTake(c, s->soft_tag, burst->ts == 2 ? 1u : 0u, burst->payload);
+		}
+#endif
 	} else {
 		ev->burst = NULL;
 	}

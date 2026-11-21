@@ -55,7 +55,7 @@
 //   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   channels:full       every channel number past the 40 holds one ("Far 41" ...), but every third: a list past 128
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
-//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
+//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast, night)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
@@ -432,9 +432,33 @@ static const hal_vocoder_t vocoder = { .options = v_options };
 static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
 static const hal_radio_t am_radio = { .rx_am = r_rx_am };
 
+// The support info on About (docs/spec/support-info.md): an STM32F4, a small image to hash, a DMR and an RF chip
+static bool s_chip(hal_chip_t *c)
+{
+	c->idcode = 0x10076413u;
+	c->flash_kb = 1024;
+	c->family = HAL_CHIP_STM32F4;
+	return true;
+}
+static const uint8_t sim_image[4096] = { 0x52, 0x46 };
+static void s_read(uint32_t addr, void *dst, size_t n) { memcpy(dst, sim_image + (addr - 0x0800C000u), n); }
+static void s_image(uint32_t *addr, uint32_t *len) { *addr = 0x0800C000u; *len = sizeof sim_image; }
+static const hal_system_t sim_system = { .chip = s_chip, .read = s_read, .image = s_image };
+static bool s_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	static const char *const v[] = { "HR_C6000", "AT1846S" };
+	if (i >= 2) {
+		return false;
+	}
+	*role = i == 0 ? BOARD_HW_DMR : BOARD_HW_RF;
+	snprintf(buf, len, "%s", v[i]);
+	return true;
+}
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
+	.system = &sim_system, .hw_line = s_hw_line,
 };
 
 static uint32_t now_ms = 1000;
@@ -1288,6 +1312,12 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	(void)id;
@@ -2152,6 +2182,10 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	return i < n_inbox && ui_svc_msg_send(inbox[i].m.src, false, text);
+}
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
 {
 	if (to[0] == '\0')
@@ -2176,10 +2210,17 @@ static const ui_gps_sat_t sim_sats[] = {
 };
 #define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
 
+// "gps:none" / "gps:off" / "gps:search" / "gps:fix": the board has no GPS or one (CAP_GPS and its hooks), the GPS
+// setting off or on, so the status strip shows the GPS icon hollow, solid, or solid with a fix. Without the token the board has none and the strip
+// none, but the Position screens still read the fix below
+enum { SIM_GPS_NONE, SIM_GPS_SEARCH, SIM_GPS_FIX };
+static uint8_t sim_gps;
+static const hal_gps_t sim_gps_hal;	// every hook NULL: fitted, always on
+
 bool ui_svc_position(ui_position_t *out)
 {
 	memset(out, 0, sizeof(*out));
-	out->fix = true;
+	out->fix = sim_gps != SIM_GPS_SEARCH;
 	out->sats = 9;
 	out->lat_e7 = 423601000;
 	out->lon_e7 = -710589000;
@@ -2192,6 +2233,13 @@ bool ui_svc_position(ui_position_t *out)
 	out->course = 45;
 	out->utc_hms = 123519;
 	return true;
+}
+
+// The board's GPS and the setting, as stored (the menu's change counts at once)
+uint8_t ui_svc_gps_power(void)
+{
+	return sim_gps == SIM_GPS_NONE ? UI_GPS_POWER_NONE :
+	       ui_svc_setting_get(UI_SET_GPS) != 0 ? UI_GPS_POWER_ON : UI_GPS_POWER_OFF;
 }
 
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
@@ -2350,6 +2398,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.gps = NULL;
+	sim_gps = SIM_GPS_NONE;
 	board.bands = bands;
 	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
@@ -2463,7 +2513,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
-	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2625,6 +2675,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "gps") == 0) snprintf(got, sizeof got, "%u", s.gps);	// UI_GPS_*: the strip's icon
 	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -2985,11 +3036,18 @@ static bool run_token(char *t, char *err, size_t len)
 		serial++;
 		return true;
 	}
+	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
+		view.t3.ring_src = (uint32_t)atoi(arg);
+		serial++;
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
 		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
 		return true;
 	}
-	// hunt, other (hunting, another system heard), denyother (PTT refused for it), regrefused,
+	// hunt, other (hunting, another system heard), otherkind (one of another kind: FID 0x06), denyother /
+	// denyotherkind (PTT refused for either), regrefused,
 	// denyreg (PTT refused for it), denyunmapped (PTT: the grant named channel 311, which no row lists), follow,
 	// refused, fallback, back
 	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {
@@ -2998,9 +3056,18 @@ static bool run_token(char *t, char *err, size_t len)
 		view.t3.state = T3_CAMPED;
 		view.t3.reg = T3_REG_OK;
 		view.t3.other = 0;
+		view.t3.other_fid = 0;
 		view.t3.refused = false;
 		if (strcmp(arg, "hunt") == 0) {
 			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "otherkind") == 0 || strcmp(arg, "denyotherkind") == 0) {
+			view.t3.state = T3_HUNT;
+			view.t3.other_fid = 0x06;
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_OTHER_KIND;
+			}
 		} else if (strcmp(arg, "other") == 0 || strcmp(arg, "denyother") == 0) {
 			t3_syscode_t c = { T3_MODEL_HUGE, 0, 83, T3_PAR_AB };
 			view.t3.state = T3_HUNT;
@@ -3410,6 +3477,18 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
+	if (strcmp(t, "gps") == 0 && arg != NULL) {	// gps:none, gps:off, gps:search, gps:fix (above ui_svc_position)
+		// Settings > Location > GPS: flows share the store
+		ui_svc_setting_set(UI_SET_GPS, strcmp(arg, "off") != 0);
+		if (strcmp(arg, "none") != 0) {
+			sim_gps = strcmp(arg, "fix") == 0 ? SIM_GPS_FIX : SIM_GPS_SEARCH;
+			board.caps |= CAP_GPS;
+			board.gps = &sim_gps_hal;
+		}
+		for (int i = 0; i <= 1000 / TICK_MS; i++)	// the UI checks the GPS once a second
+			step();
+		return true;
+	}
 	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
 		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
 		// the debug link's override, or the stored step of a radio without a knob ("softvol"). "knob" also makes
@@ -3492,7 +3571,7 @@ static bool run_token(char *t, char *err, size_t len)
 	return press(t, false, err, len);
 }
 
-const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast" };	// ui_theme_set's order
+const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast", "night" };	// ui_theme_set's order
 
 int sim_theme_find(const char *name)
 {

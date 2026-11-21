@@ -55,13 +55,13 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
 # board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter
-MAXIMAL_SKIP := NET_PPP
-# The 720 KB application region cannot hold the maximal feature set and every language catalog.
-# The board's menu-locales CI build checks both opt-in catalogs with the normal feature set.
-MAXIMAL_SKIP += LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
+# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
+# radios (docs/spec/ppp.md), and this one has the adapter; the radio ships in English only (above), so the other
+# languages and their fonts (about 110 KB) stay out of its flash check
+MAXIMAL_SKIP := NET_PPP LANG_ES LANG_IT LANG_FR LANG_ZH
+# The board's menu-locales CI build checks both opt-in catalogs with the normal feature set.
+MAXIMAL_SKIP += LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

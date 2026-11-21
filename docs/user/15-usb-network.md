@@ -105,8 +105,8 @@ The radio answers at its own address on these TCP ports, over the USB cable only
 
 | Port | Service |
 |---|---|
-| 80 | The radio's front panel. Open `http://<radio address>/` in a browser. It shows the radio with its live screen and LEDs, and the channel, frequency, signal and battery. On a mobile radio its hand microphone is drawn too. Click a key or use the keyboard. Side and top keys also have a labeled button outside the radio's edge, and the arrows over the channel knob turn it one step per click (hold to keep turning). Keyboard keys: digits, `*` and `#`; the arrows; Enter for select (green key or MENU); Esc or Backspace for back (red key or BACK); `[` and `]` (or Page Up and Page Down) turn the channel knob; hold Space to talk. The page lists the keyboard keys your radio has beside the picture. **Listen** plays what the radio receives (on radios with network audio, [Linking audio](#linking-audio-allstarlink-and-dvswitch)); over the programming cable (PPP, below) the page has no Listen, since the cable is too slow for audio. Keys work only from the computer the radio is plugged into; one page at a time controls the radio, and others show the status only. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core` |
-| 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC). Set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign. On a radio that can't receive APRS ([Radio reference](23-radios.md)), programs see only what they send |
+| 80 | The radio's front panel. Open `http://<radio address>/` in a browser. It shows the radio with its live screen and LEDs, and the channel, frequency, signal and battery. On a mobile radio its hand microphone is drawn too. Click a key or use the keyboard. Side and top keys also have a labeled button outside the radio's edge, and the arrows over the channel knob turn it one step per click (hold to keep turning). Keyboard keys: digits, `*` and `#`; the arrows; Enter for select (green key or MENU); Esc or Backspace for back (red key or BACK); `[` and `]` (or Page Up and Page Down) turn the channel knob; hold Space to talk. The page lists the keyboard keys your radio has beside the picture. **Listen** plays what the radio receives (on radios with network audio, [Linking audio](#linking-audio-allstarlink-and-dvswitch)); over the programming cable (PPP, below) the page has no Listen, since the cable is too slow for audio. Keys work only from the computer the radio is plugged into; one page at a time controls the radio, and others show the status only. Programs can read `/status` (JSON) and the debug link's sections at `/api/view?section=core`. Open the page at the radio's address or its `.local` name: at a name of your own (a hosts file entry) the page loads but gets no data. Besides the radio's own page, only pages on radiofoundry.org and pages served on your own computer (`localhost`) can use the radio from a browser |
+| 8001 | KISS over TCP for APRS programs (APRSdroid, Xastir, YAAC). Set the program's TNC to "KISS over TCP", the radio's address, port 8001. Turn on **KISS on USB** in Tools > APRS first. The radio sends only packets from your own callsign, and takes them only from your computer. On a radio that can't receive APRS ([Radio reference](23-radios.md)), programs see only what they send |
 | 4532 | Hamlib rig control for loggers, SDR and satellite programs. Choose "Hamlib NET rigctl" with the radio's address and port 4532, or run `rigctl -m 2 -r <radio address>:4532 f`. Programs can read and set the frequency, read the mode and the S meter, and key the transmitter. Setting the frequency of a channel switches to the VFO. Transmit works only from your computer, at most 3 minutes per keying |
 
 ### APRS-IS from the radio
@@ -137,6 +137,35 @@ curl "http://12.152.116.67/api/aprsis?server=off"   # stop
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
 USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
+
+## Selecting zones and channels from a program
+
+A device or program on your computer, such as takRF, can choose the radio's zone and channel as a knob would. It
+sends short text messages over UDP to port 4191 at the radio's address. This works without the radio's web page, so
+it is also on firmware built without it. Zones and channels are counted from 0, in the order the radio shows them.
+
+| Message | Does |
+|---|---|
+| `select` | Says where the radio is and what it is on: zone, channel, name, frequency, and on DMR the color code, timeslot and talkgroup |
+| `select?zone=2&pos=5` | The third zone, its sixth channel (without `pos`, its first) |
+| `step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
+| `step?zone=1` | One zone on, to its first channel; `-1` one back |
+| `select?notify=0` | Stop the change messages (below) |
+
+The radio answers each message with where it is now. After any message it also sends a short update to the same
+program whenever the zone, channel or talkgroup changes, and every 30 seconds, for two minutes. Send `select` every
+minute to keep the updates coming. `codeplug` in the answer goes up whenever the channels or zones change (on the
+radio, or a codeplug written to it).
+
+Nothing changes while the radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 8.
+
+For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
+
+> **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
+> as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
+> radio transmit, and so does port 4191 on firmware without this feature (check its build options first,
+> [build options](../build-config.md)). Whenever the radio is in network mode, keep an antenna or a dummy load on it
+> and leave it on a channel you may transmit on.
 
 ## Linking audio: AllStarLink and DVSwitch
 

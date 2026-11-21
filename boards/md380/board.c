@@ -11,6 +11,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ui/fmt.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #include "usb/usb_ncm.h"
@@ -18,20 +19,6 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
-
-// The RTOS heap, and with it every task stack, in the CCM: zero wait states and off the bus the audio and ADC DMA
-// use. Nothing on a stack or from pvPortMalloc may be a DMA buffer (DMA can't reach the CCM): the DMA buffers are
-// statics in main RAM, checked where each stream is set up (md380.h DMA_RAM_OK)
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
-
-// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
-extern uint32_t _sccmbss[], _eccmbss[];
-static void ccm_zero(void)
-{
-	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
-		*p = 0;
-}
-__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
 // One band per radio (hardware-md380.md 5.1), chosen at build time (board.mk BAND)
 #if RFOUNDRY_BAND_VHF
@@ -92,6 +79,19 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// The support info (docs/spec/support-info.md 2): the parts this board's drivers run. The panel and the flash chip,
+// the parts that differ between units, are the core's own lines
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	static const char *const parts[] = { "HR_C5000", "SKY72310" };
+	if (i >= sizeof(parts) / sizeof(parts[0])) {
+		return false;
+	}
+	*role = i == 0 ? BOARD_HW_DMR : BOARD_HW_RF;
+	str_copy(buf, len, parts[i]);
+	return true;
+}
+
 const board_t board = {
 	.name = BOARD_NAME,
 	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-md380.md 13). No
@@ -112,6 +112,7 @@ const board_t board = {
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
 	.chip_reg = md380_chip_reg,
+	.hw_line = hw_line,
 	.power = &md380_power,
 	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG

@@ -52,12 +52,13 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 ## Backlight
 
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
-On radios that switch backlight speed to keep the audio quiet, a dimmed screen brightens while transmitting or
-receiving audio and returns to its set level when idle.
+On some radios a dimmed screen goes to full brightness while transmitting or receiving a signal, to keep the
+backlight out of the audio, and returns to its set level when idle. Key beeps leave the brightness as set.
 
 **Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
 when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. `30s/dim` dims after 30 s and stays on,
-readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back.
+readable at a glance (on a desk or a bench), at the cost of some battery. Any key brings it back; with the
+backlight off, that key only turns it on, except PTT, Monitor and Emergency, which act at once.
 
 The backlight also comes on for what needs you:
 

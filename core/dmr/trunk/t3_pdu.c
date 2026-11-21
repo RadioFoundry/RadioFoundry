@@ -98,7 +98,8 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 	out->op = (uint8_t)get(&r, 6);
 	out->fid = (uint8_t)get(&r, 8);
 	memcpy(out->raw, pdu + 2, sizeof(out->raw));
-	if (out->fid != 0) {
+	if (out->fid != 0 && !(out->fid == T3_FID_08 && out->op == T3_OP_PD_GRANT && !out->lb &&
+			      pdu[2] == 0xFFu && (pdu[3] >> 4) == 0xFu)) {
 		return false;
 	}
 	uint8_t op = out->op;
@@ -356,12 +357,12 @@ static void hz_split(uint32_t hz, uint16_t *mhz, uint16_t *k)
 	*k = (uint16_t)((hz % 1000000u) / 125u);
 }
 
-bool t3_cdef_parse(const uint8_t blk[T3_CSBK_BYTES], uint8_t op, t3_cdef_t *out)
+static bool cdef_parse(const uint8_t blk[T3_CSBK_BYTES], uint8_t op, bool last, t3_cdef_t *out)
 {
 	memset(out, 0, sizeof(*out));
 	br_t r = { blk, 0 };
-	if (!flag(&r)) {
-		return false;	// an intermediate block: this module knows only two-block MBCs
+	if (flag(&r) != last) {
+		return false;
 	}
 	get(&r, 1);
 	if (get(&r, 6) != op) {
@@ -386,6 +387,26 @@ bool t3_cdef_parse(const uint8_t blk[T3_CSBK_BYTES], uint8_t op, t3_cdef_t *out)
 	k = (uint16_t)get(&r, 13);
 	out->rx_hz = t3_cdef_hz(m, k);
 	return true;
+}
+
+bool t3_cdef_parse(const uint8_t blk[T3_CSBK_BYTES], uint8_t op, t3_cdef_t *out)
+{
+	return cdef_parse(blk, op, true, out);
+}
+
+bool t3_fid08_pd_cdef_parse(const uint8_t first[T3_CSBK_BYTES], const uint8_t last[T3_CSBK_BYTES],
+			     t3_cdef_t *out)
+{
+	if ((last[0] & 0xBFu) != (0x80u | T3_OP_PD_GRANT)) {
+		return false;
+	}
+	// ETSI TS 102 361-1 Â§7.4: the last block's CRC covers both continuations, excluding the header.
+	uint8_t data[2 * T3_CSBK_BYTES - 2];
+	memcpy(data, first, T3_CSBK_BYTES);
+	memcpy(data + T3_CSBK_BYTES, last, T3_CSBK_BYTES - 2);
+	uint16_t crc = dmr_crc_ccitt(data, sizeof data);
+	return last[10] == (uint8_t)(crc >> 8) && last[11] == (uint8_t)crc &&
+	       cdef_parse(first, T3_OP_PD_GRANT, false, out);
 }
 
 void t3_cdef_build(const t3_cdef_t *in, uint8_t op, uint8_t blk[T3_CSBK_BYTES])

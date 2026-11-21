@@ -22,6 +22,71 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "Для выхода перезапустите радио"
 
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "CI build"
+msgstr "Сборка CI"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "Build service"
+msgstr "Сервис сборки"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request"
+msgstr "Пул-реквест"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Local build"
+msgstr "Локальная сборка"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "Форк"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "Неизвестно"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "МК: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "Флеш: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "Экран: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "Чип DMR: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "Чип ВЧ: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "Аппаратура: "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "не задано"
+
 #: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
@@ -1482,7 +1547,7 @@ msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
 msgstr "Разговаривать "
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
 msgid "Private call"
 msgstr "Индивидуальный вызов"
@@ -3058,6 +3123,21 @@ msgid "Up to 10.0 ppm"
 msgstr "До 10.0 ppm"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "Источник: "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "Прошивка: "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "проверка"
+
+#: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
 msgid "Firmware: "
 msgstr "Прошивка: "
@@ -3488,6 +3568,11 @@ msgid "High contrast"
 msgstr "Высокий контраст"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "Ночь (красный)"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "По умолчанию"
@@ -3616,6 +3701,11 @@ msgstr "Тревога"
 msgctxt "SET_VALUE_UPDOWN_CHANNEL"
 msgid "Channel"
 msgstr "Канал"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
+msgid "Automatic"
+msgstr "Авто"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_ETSI_SHORT"
@@ -4198,6 +4288,11 @@ msgid "Colors are for color screens"
 msgstr "Цвета предназначены для цветных экранов"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "Ночная тема: только красный"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"
 msgid "Mic gain: not in this build"
 msgstr "Оригинальное название: Not in This Build"
@@ -4633,6 +4728,11 @@ msgid "Another system heard"
 msgstr "Другая система слышала"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Несовместимая система"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_REG_REFUSED"
 msgid "Registration refused"
 msgstr "Регистрация отказали"
@@ -4753,6 +4853,16 @@ msgid "DMR modem off"
 msgstr "Модем DMR выключен"
 
 #: core/ui/ui_screens.c
+msgctxt "TRUNK_TITLE_INCOMING_CALL"
+msgid "Incoming private call"
+msgstr "Входящий личный вызов"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_HINT_PTT_ANSWER"
+msgid "Press PTT to answer"
+msgstr "Нажмите PTT для ответа"
+
+#: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_FALLBACK"
 msgid "Fallback"
 msgstr "Резервный вариант"
@@ -4775,6 +4885,11 @@ msgstr "Поиск"
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_STATE_IN_CALL"
 msgid "In call"
+msgstr "Вызов"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_STATE_CALLING"
+msgid "Calling"
 msgstr "Вызов"
 
 #: core/ui/ui_screens.c
@@ -4821,6 +4936,16 @@ msgstr "Демон"
 msgctxt "HOME_CHIP_PRIVACY"
 msgid "Priv"
 msgstr "Частный"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND"
+msgid "Incompatible system"
+msgstr "Несовместимая система"
+
+#: core/ui/ui_screens.c
+msgctxt "TRUNK_OTHER_KIND_NOTE"
+msgid "Cannot join"
+msgstr "Не удаётся подключиться"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_MODEL_TINY"

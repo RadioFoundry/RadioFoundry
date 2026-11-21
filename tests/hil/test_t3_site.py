@@ -185,7 +185,8 @@ def num(v, key):
 
 
 def wait_t3(radio, pred, timeout, what):
-    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "t3_roam", "core"), what=what)
+    # t3_ra has the t3.send_* reasons, so a timed-out wait shows why sends were refused
+    return radio.wait_for(pred, timeout, interval=0.2, sections=(SECTION, "t3_roam", "t3_ra", "core"), what=what)
 
 
 @pytest.fixture

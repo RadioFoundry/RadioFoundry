@@ -66,7 +66,7 @@ typedef struct {
 } stm32_hrc_dmr_stats_t;
 
 // Lines stm32_hrc_dmr_stats_line formats (at most about 26 characters each, the diagnostics page)
-#define STM32_HRC_DMR_DIAG_LINES	23
+#define STM32_HRC_DMR_DIAG_LINES	24
 
 #if CONFIG_DMR
 // Once, from the radio init, after the chip is attached: interrupt lines (left off), task
@@ -100,6 +100,11 @@ extern const hal_dmr_modem_t stm32_hrc_dmr;
 extern const hal_air_t stm32_hrc_air;
 // The FM copy as a receive tap (hal_baseband.h): a board with air_tap points board.baseband at it
 extern const hal_baseband_t stm32_hrc_baseband;
+// The chip while the FM copy holds it (a session receiving through the copy, or the tap), else NULL. Its line out
+// carries no I2S PCM then (modem-hrc6000.md 8), so i2s_pcm.c sends the speaker's audio through the prompt FIFO
+hrc_t *stm32_hrc_copy_chip(void);
+#else
+static inline hrc_t *stm32_hrc_copy_chip(void) { return NULL; }
 #endif
 
 // Counters (no bus traffic). Usable without the DMR stack: entering DMR mode (radio set_mode + rx) starts the receiver
@@ -124,6 +129,7 @@ static inline bool stm32_hrc_dmr_tx_continuous(void) { return false; }
 static inline bool stm32_hrc_dmr_bs_boundary_us(uint32_t *us) { (void)us; return false; }
 static inline void stm32_hrc_dmr_tx_drop(void) {}
 static inline void stm32_hrc_dmr_tx_prepare(void) {}
+static inline hrc_t *stm32_hrc_copy_chip(void) { return NULL; }
 #endif
 
 #endif

@@ -33,6 +33,7 @@ static void probe_copy(const int16_t *lr)
 // Clock idle high (spec 4.4)
 static const stm32_i2s_pcm_cfg_t i2s_cfg = {
 	.ckpol = true,
+	.prompt_fifo = true,	// speaker PCM while the chip is in FM mode: beeps, and NXDN's FM copy
 #if CONFIG_AUDIO_PROBE
 	.raw_block = probe_copy,
 #endif
@@ -70,6 +71,7 @@ __attribute__((weak)) void uvf_speaker_pcm(bool on)
 
 static void speaker_pcm(bool on)
 {
+	stm32_i2s_pcm_speaker(on);
 	uvf_speaker_pcm(on);
 }
 

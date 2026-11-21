@@ -14,6 +14,8 @@ ENTRY(Reset_Handler)
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 _Min_Heap_Size = 0x1000;
 _Min_Stack_Size = 0x800;	/* main stack: start-up and interrupts (at least this much RAM stays free for it) */
+_Min_Task_Heap = 24K;		/* the RTOS heap: every task stack (about 20 KB with DMR), queues */
+_Ccm_Spare = 256;		/* CCM the heap leaves free, so the build's memory report shows what the statics use */
 
 SECTIONS
 {
@@ -58,11 +60,23 @@ SECTIONS
 		__bss_end__ = _ebss;
 	} >RAM
 
-	/* CCM: CPU only (no DMA can reach it). .ccmbss (RFOUNDRY_CPU_RAM) is zeroed before main by board.c's .preinit_array
-	 * entry, like .bss; .ccmram (RFOUNDRY_CPU_RAM_NOINIT: the RTOS heap with every task stack, the codec state) is left
-	 * as it is and must be written before it's read */
+	/* CCM: CPU only (no DMA can reach it); ccm.c sets it up before main. .ccmdata (RFOUNDRY_CPU_DATA) is copied from
+	 * flash like .data, .ccmbss (RFOUNDRY_CPU_RAM) zeroed like .bss; .ccmram (RFOUNDRY_CPU_RAM_NOINIT: the codec state)
+	 * is left as it is and must be written before it's read. The RTOS heap, with every task stack, is the rest */
+	_siccmdata = LOADADDR(.ccmdata);
+	.ccmdata : { . = ALIGN(4); _sccmdata = .; *(.ccmdata) *(.ccmdata*) . = ALIGN(4); _eccmdata = .; } >CCMRAM AT> FLASH
+	/* the end of the .bin (the last section copied into it): the support info's image hash runs __app_base .. here */
+	__image_end = LOADADDR(.ccmdata) + SIZEOF(.ccmdata);
 	.ccmbss (NOLOAD) : { . = ALIGN(4); _sccmbss = .; *(.ccmbss) *(.ccmbss*) . = ALIGN(4); _eccmbss = .; } >CCMRAM
 	.ccmram (NOLOAD) : { . = ALIGN(8); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM
+	.ccmheap (NOLOAD) :
+	{
+		. = ALIGN(8);
+		_sccmheap = .;
+		. = MAX(., ORIGIN(CCMRAM) + LENGTH(CCMRAM) - _Ccm_Spare);
+		_eccmheap = .;
+	} >CCMRAM
+	ASSERT(_eccmheap - _sccmheap >= _Min_Task_Heap, "CCM: less than _Min_Task_Heap left for the RTOS heap (task stacks)")
 
 	._user_heap_stack :
 	{

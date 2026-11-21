@@ -8,43 +8,37 @@
 #include <stdint.h>
 
 // The backlight pin has no timer channel. TIM1's update sets it and its CC1 match clears it, each through a one-word
-// DMA write to the port's BSRR: two writes per cycle at any duty. Two rates (hardware-dm1701.md 9.4):
-// - During TX or open receive audio, 40 kHz keeps the backlight ripple out of the signal. At
-//   101 Hz it was an audible buzz in FM transmit, at 10 kHz sidebands about 33 dB down in the adjacent channel (#330).
-// - Otherwise 2 kHz: the backlight driver doesn't follow 40 kHz, so the panel barely dimmed (Brightness 20 % looked
-//   close to full, and the idle dim step hardly showed); at 2 kHz it dims (the stage's tail is taken off below), with
-//   no visible flicker.
+// DMA write to the port's BSRR: two writes per cycle at any duty (hardware-dm1701.md 9.4).
+// - 2 kHz: a rate the backlight stage follows, so the panel dims as set (the stage's tail is taken off below), with no
+//   visible flicker.
+// - During TX or open receive audio from a signal the pin is held high instead. With a carrier, any rate the stage
+//   follows modulates the synthesizer: a tone in FM transmit and receive audio, weak-signal DMR errors, and from 5 to
+//   17 kHz sidebands in the adjacent channel. A beep alone has no carrier, so the PWM stays on for it. From about
+//   18 kHz up the stage never turns off, so a dimmed level is fully lit anyway, and the shortest pulse (one count at
+//   40 kHz) left the panel dark on some radios (#759). A steady pin is clean on every radio.
 #define UVF_BL_TIMER_HZ		72000000u
-#define UVF_BL_PWM_HZ		40000u		// during TX or open receive audio
-#define UVF_BL_PERIOD		(UVF_BL_TIMER_HZ / UVF_BL_PWM_HZ)	// timer counts per cycle (1800)
-#define UVF_BL_IDLE_HZ		2000u		// otherwise
-#define UVF_BL_IDLE_PERIOD	(UVF_BL_TIMER_HZ / UVF_BL_IDLE_HZ)	// (36000)
+#define UVF_BL_PWM_HZ		2000u
+#define UVF_BL_PERIOD		(UVF_BL_TIMER_HZ / UVF_BL_PWM_HZ)	// timer counts per cycle (36000)
 
 // The backlight stage keeps the LEDs lit after the pin falls: about 22 us at full current, then a fall of about 34 us,
 // 38 us of full light in all, at any rate (hardware-dm1701.md 9.4: RF harmonic nulls and the 3.3 V rail agree). That
-// tail is why 40 kHz can't dim (the period is 25 us) and why 2 kHz lit Brightness 10 % at about 18 %. The compare is
-// shortened by it.
+// tail lit Brightness 10 % at about 18 % before the compare was shortened by it.
 #define UVF_BL_TAIL_US		38u
 #define UVF_BL_TAIL		(UVF_BL_TIMER_HZ / 1000000u * UVF_BL_TAIL_US)	// timer counts (2736)
 
-static inline uint16_t uvf_bl_period(bool tx, bool rx_audio)
-{
-	return tx || rx_audio ? UVF_BL_PERIOD : UVF_BL_IDLE_PERIOD;
-}
-
-// CC1 value for a brightness at a period (UVF_BL_PERIOD or UVF_BL_IDLE_PERIOD): the count at which the pin clears, so
-// that the pulse plus the tail is the brightness's share of the period. A level too low for the tail keeps one count:
-// lit stays lit, at the least the period allows (about 8 % at 2 kHz; at 40 kHz every level is fully lit). 0 = off,
-// period = fully on (the caller drives the pin steady for both)
-static inline uint16_t uvf_bl_compare(uint8_t percent, uint16_t period)
+// CC1 value for a brightness: the count at which the pin clears, so that the pulse plus the tail is the brightness's
+// share of the period. A level too low for the tail keeps one count: lit stays lit, at the least the period allows
+// (about 8 %). quiet (transmitting, or receive audio open): any lit level is fully on. 0 = off, UVF_BL_PERIOD = fully
+// on (the caller drives the pin steady for both)
+static inline uint16_t uvf_bl_compare(uint8_t percent, bool quiet)
 {
 	if (percent == 0) {
 		return 0;
 	}
-	if (percent >= 100) {
-		return period;
+	if (percent >= 100 || quiet) {
+		return UVF_BL_PERIOD;
 	}
-	uint32_t lit = (uint32_t)percent * period / 100u;
+	uint32_t lit = (uint32_t)percent * UVF_BL_PERIOD / 100u;
 	return lit > UVF_BL_TAIL ? (uint16_t)(lit - UVF_BL_TAIL) : 1u;
 }
 
