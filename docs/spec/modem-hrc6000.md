@@ -143,7 +143,7 @@ Names are the manual's. Only the bits we rely on are listed.
 | 0xE0 | codec control (MCU control, line in, mic, line out, I2S slave) | **0xC9** in DMR and FM TX (mic on); 0x89 FM RX (mic off). bit 6 = mic input enable |
 | 0xE1, 0xE3, 0xE5 | codec defaults (unexplained) | 0x0F, 0x52, 0x1A |
 | 0xE2 | codec config; bit 1 = DAC to line-out | 0x06 at init; bit 1 cleared mutes the line out |
-| 0xE4 | line-out gain (7-6) / mic gain | 0x20 + mic gain (0..31) |
+| 0xE4 | line-out gain (7-6) / mic gain | 0x20 + mic gain (0..15, 3 dB a step: bits 3-0, the second stage, over the first stage's -12 dB). Above 15, bit 4 is set: the first stage stays at -12 dB and the steps start again, so the driver clamps to 15 |
 
 Page 1 0x04-0x09 holds the 6-byte **data** sync pattern the chip transmits. The chip sends the voice sync as its
 bitwise inverse. Write the MS-sourced data sync for normal operation. The values are the ETSI ones, and the voice syncs
