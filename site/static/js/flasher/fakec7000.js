@@ -390,7 +390,7 @@ export class FakeC7000 {
 	makeStream() {
 		const radio = this;
 		const s = {
-			buf: new Uint8Array(0), closed: false, baud: 115200,
+			buf: new Uint8Array(0), closed: false, baud: 115200, passHome: null,
 			// the radio's UARTs don't follow: the rate is recorded for the tests (the PASS rate, stub.js passTo)
 			async setBaud(b) { s.baud = b; radio.events.push(`baud ${b}`); },
 			clear() { s.buf = new Uint8Array(0); },

@@ -684,6 +684,8 @@ def whole_rate(hz, nominal):
     if not hz or not 1e6 < hz < 4e8:
         return None
     return int(hz / (16 * max(1, round(hz / (16 * nominal)))))
+
+
 RX2_STUB = 0x05                         # the rx2 link's STUB frame (docs/spec/rx2-link.md 2): B enters its first stage
 RX2_STUB_MAGIC = 0x53545542
 

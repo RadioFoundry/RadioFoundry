@@ -168,8 +168,10 @@ test("GD-88 receiver B: the first SoC's stub passes the cable to B, whose first 
 	assert.equal(r.stubCfg.board, C.boards.gd88b.stub_board.id, "the gd88b profile reached B's stub");
 	// B's stub restarts B only; the exit sequence gives the cable back to A's stub, configured as it was
 	await s.resetChip();
-	assert.ok(await main.passExit(), "A's stub answers 05 1, then HELLO");
+	// a Stub of its own ends the pass (the page's endPass after a reload of the session): the home rate is the stream's
+	assert.ok(await new Stub(r.stream, { log: quiet }).passExit(), "A's stub answers 05 1, then HELLO");
 	assert.equal(r.stream.baud, 115200, "the cable's own rate again after PASS");
+	assert.equal(r.stream.passHome, null);
 	assert.ok(!r.passUp && r.state === "stub" && r.stubCfg.board === C.boards.gd88.stub_board.id);
 	await main.resetChip();
 	await sleep(800);

@@ -205,10 +205,10 @@ RadioFoundry plays no part, so this route works whatever runs on A, as long as t
    nearest to 115200 is 112500 (36 MHz / (16 x 20)), and a 4 KB write request sent at 115200 overflows A's FIFO part way.
    So after the `05` the host sets the cable to the clock over 16 times the nearest whole divisor (the clock measured
    when it configured the stub), when that differs from 115200 by more than 0.5 %, and back to 115200 after the exit
-   sequence (step 6). B's application (before its jump) and its first stage set UART3 to the same divisor, 20, and B's stub keeps it: at 19 (118421
-   baud) B would send 5.3 % fast and A's stub would read bit 7 of B's bytes wrong. A B application from before this change
-   still sets 19: its first stage's acks arrive as `82 05 80 03`, which the host takes as the ack, and its stub's
-   replies are asked for again until the new image is in.
+   sequence (step 6). B's application (before its jump) and B's first stage set UART3 to the same divisor, 20, and
+   B's stub keeps that divisor. At 19 (118421 baud) B would send 5.3 % fast, and A's stub would read bit 7 of B's
+   bytes wrong. A B image from before divisor 20 still sets 19: its first stage's acks arrive as `82 05 80 03`, which
+   the host takes as the ack, and the host asks for its stub's damaged replies again until the new image is in.
 4. The host sends `STUB` through it. B goes to its first stage as in step 2 of the bridge. A B still in a stub from an
    earlier run says nothing; the host then sends `HELLO`, and uses that stub if it answers.
 5. The host loads B's stub, writes B's image and restarts B (`--boot reset`), as in steps 4 and 5 of the bridge.

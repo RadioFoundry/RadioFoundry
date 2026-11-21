@@ -461,8 +461,7 @@ export class Stub {
 	// second SoC still in a stub from an earlier run is silent instead. Throws when the stub has no PASS
 	async passTo(bridge) {
 		const [addr, bits] = bridge.mux;
-		const home = this.s.baud || 115200;
-		const rate = this.s.setBaud ? wholeRate(this.uartHz || Math.round((await this.timerHz(300)) / 1e6) * 1e6, home) : null;
+		const hz = this.s.setBaud ? this.uartHz || Math.round((await this.timerHz(300)) / 1e6) * 1e6 : 0;
 		const v = u32le(await this.peek(addr, 4), 0);
 		if (((v & bits) >>> 0) !== bits) await this.poke(addr, le32((v | bits) >>> 0));
 		this.passing = true;	// a lost reply may still have started it: passExit ends it
@@ -474,13 +473,22 @@ export class Stub {
 			throw e.status ? new StubError("the loader on the radio's main chip is older and cannot reach the second one: reload the page") : e;
 		}
 		this.log("the loader passes the cable to the second chip");
-		this.passHome = null;
+		await this.passRate(hz);
+		await this.s.write(rx2Frame(RX2_STUB, 0, le32(RX2_STUB_MAGIC)));
+	}
+
+	// The cable at the UARTs' rate while the first SoC's stub passes (docs/spec/rx2-link.md 4.2 step 3): hz, the stub's
+	// clock (0: measured here, through whichever stub answers). The home rate stays on the stream, so whichever Stub ends
+	// the pass (passExit) puts it back
+	async passRate(hz = 0) {
+		if (!this.s.setBaud || this.s.passHome) return;
+		const home = this.s.baud || 115200;
+		const rate = wholeRate(hz || Math.round((await this.timerHz(300)) / 1e6) * 1e6, home);
 		if (rate && Math.abs(rate - home) > home * PASS_RATE_SLACK) {
 			await this.s.setBaud(rate);
-			this.passHome = home;
+			this.s.passHome = home;
 			this.log(`the cable runs at ${rate} baud while it passes`);
 		}
-		await this.s.write(rx2Frame(RX2_STUB, 0, le32(RX2_STUB_MAGIC)));
 	}
 
 	// Give the cable back to the first SoC's stub (passTo): the exit sequence alone, then its 05 + 1 and a HELLO. The
@@ -488,9 +496,10 @@ export class Stub {
 	async passExit() {
 		this.passing = false;
 		await this.bridgeExit();
-		if (this.passHome) {	// the first SoC's stub at home takes the cable's own rate, as before PASS
-			await this.s.setBaud(this.passHome);
-			this.passHome = null;
+		if (this.s.passHome) {	// the first SoC's stub at home takes the cable's own rate, as before PASS
+			const home = this.s.passHome;
+			this.s.passHome = null;
+			await this.s.setBaud(home);
 		}
 		const want = [0x02, OK, 0x00, 0x01, 0x01, 0x03, 0x01];
 		const until = Date.now() + 1500;

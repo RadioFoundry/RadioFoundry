@@ -98,6 +98,15 @@ test("another line rate opens the same port again at that rate: what was read st
 	assert.equal(port.isOpen, false);
 });
 
+test("a port that doesn't open again at the new rate is a cable fault, not a silent radio", async () => {
+	const port = new FakePort();
+	const s = await SerialStream.open(port);
+	port.open = async () => { throw new Error("NetworkError: Failed to open serial port."); };
+	await assert.rejects(s.setBaud(112500), (e) => e.name === "CableError" && e.code === "dropped" && /112500/.test(e.message));
+	assert.equal(s.lost, true);
+	await assert.rejects(s.write(new Uint8Array([1])), (e) => e.name === "CableError");
+});
+
 // Web Serial on a framing error or a break: the pending read rejects and the port has a new readable
 function lineError(port, name) {
 	const old = port.readable;

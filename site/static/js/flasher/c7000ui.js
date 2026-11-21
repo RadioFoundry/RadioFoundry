@@ -463,7 +463,10 @@ function connectPanel(onReady, { onUpdateMode = null, restart = false } = {}) {
 				// a second chip's: the stub that answers is the first chip's (left by an earlier visit), unless it is the
 				// second chip's own, reached through a pass that is still on
 				if (bridged() && stub.v6?.board !== C().boards[boardId()].stub_board.id) return await passThrough(stub);
-				if (bridged()) c.passing = true;
+				if (bridged()) {
+					c.passing = true;
+					await stub.passRate();	// a fresh stream starts at 115200: back to the UARTs' rate
+				}
 				c.how = "attach";
 				return ready(t("flash.c7.connect.found_stub"), stub);
 			}

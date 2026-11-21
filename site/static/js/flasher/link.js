@@ -157,6 +157,7 @@ export class SerialStream {
 		this.closed = false;
 		this.lost = false;	// the pump ended without close(): the device is gone
 		this.fault = null;	// a CableError that ended the writing: every later write fails with it at once
+		this.passHome = null;	// the rate to go back to when a stub's pass-through ends (stub.js passRate)
 		this.lineErrors = 0;	// framing, parity and overrun errors and breaks since the port opened
 		// what came in since the port opened, for a report when nothing answered as expected (silence())
 		this.received = 0;
@@ -304,8 +305,15 @@ export class SerialStream {
 		this.closed = true;
 		try { await this.reader?.cancel(); } catch (e) { /* gone */ }
 		await Promise.race([this.pumping, sleep(2000)]);
-		await this.port.close();
-		await this.port.open({ baudRate, bufferSize: 65536 });
+		try {
+			await this.port.close();
+			await this.port.open({ baudRate, bufferSize: 65536 });
+		} catch (e) {
+			// no pump and no port: every later step fails with this at once, as a cable fault, not a silent radio
+			this.lost = true;
+			this.fault = new CableError("dropped", `the port did not open again at ${baudRate} baud (${e?.message || e})`);
+			throw this.fault;
+		}
 		this.closed = false;
 		this.baud = baudRate;
 		this.pumping = this.pump();
