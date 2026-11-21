@@ -1192,7 +1192,8 @@ status page.
 
 - Settings and storage: on a 16 MB part the core's map is settings 0x011000 (32 KB, 8 sectors), journal 0x019000,
   open-firmware EEPROM 0x000000, open-firmware flash 0x020000 up to 0xE00000, native area 0xE00000 (1 MB), TFTP staging
-  0xF00000 (256 KB). There is no calibration window.
+  0xF00000 (256 KB), power tuning 0x01C000 (2 sectors, [power-tune.md](power-tune.md)). There is no calibration
+  window.
 - Roaming reads the IF chain level on an ADC as the site signal ([dmr-roaming.md](dmr-roaming.md) 3).
 - USB: the STM32F405 OTG_FS has three IN endpoints besides EP0, so serial and network are alternatives, not a
   composite ([usb-network.md](usb-network.md)).

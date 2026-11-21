@@ -118,6 +118,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
+| `0x27` | TUNE | operation u8 + arguments (3.31); `CONFIG_POWER_TUNE` builds only | the power tuning info, record, limits or the edit's status (3.31) |
 
 ### 3.1 VERSION
 
@@ -1072,6 +1073,31 @@ requests answer at once. Bad argument (2) for any other operation or a longer pa
 board map has a dedicated satellite area. It has no raw-address access. The operation layouts, record encoding,
 capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
 `DL_ST_UNAVAILABLE` when the feature or usable area is absent.
+
+### 3.31 TUNE
+
+Power tuning ([power-tune.md](power-tune.md)). Binary, little endian. Unavailable (4) in a build without
+`CONFIG_POWER_TUNE`.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | INFO | none | version u8 (1), flags u8 (bit 0 the tune area can be written, bit 1 the board has a drive floor, bit 2 a preview is in force), copies u8 (bit 0 copy A valid, bit 1 copy B), seq u32, max points u8, max names u8, name length u8, levels u8, transmit bands u8; then each band's low and high edge in kHz (u32 each); then each band's factory level names, a length byte and the text each |
+| 1 | READ | none | the record in force ([power-tune.md](power-tune.md) 3) up to the CRC, each entry's state byte filled in; nothing after the status when there is none |
+| 2 | LIMITS | kHz u32 | levels u8; per level factory, tuned, lowest and highest drive (u16 each, all 0 where the level doesn't transmit); then each level's name as shown, a length byte and the text each |
+| 3 | PREVIEW | level u8 (0xFF: off), offset s16 | none. RAM only, lapses after 2 minutes |
+| 4 | PUT_POINT | kHz u32, level u8, offset s16, reading mW u32 (0: none) | none. Replaces the point of this level at this frequency |
+| 5 | DEL_POINT | kHz u32, level u8 | none |
+| 6 | PUT_LABEL | kHz u32, level u8, target mW u32, name (0-6 bytes, no NUL) | none. The name for this level in the band of kHz; an empty name and target 0 remove it |
+| 7 | CLEAR | none | none. Every point and name removed |
+
+Edits (4-7) save the record to both copies before the reply. Statuses: bad argument (2) for a wrong length, a level
+or frequency the radio has no transmission for, or an offset that takes the drive past the level's limits at that
+frequency (LIMITS lowest and highest); refused (7) while the radio transmits or
+when the table is full; unavailable (4) without a tune area or where the flash region isn't ours; busy (3) when the
+flash failed (the record that was in force still is). The limits are checked again at key-up, where an offset between
+two points is clamped too.
+
+`rfoundry_debug.py` has a `tune_*` method per operation.
 
 ## 4. Safety
 

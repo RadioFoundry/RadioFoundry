@@ -45,6 +45,23 @@ Both changes are temporary. Hold **OK** to save the level to the channel.
 
 Power levels use the radio's factory calibration. Use the lowest power that reaches the other station.
 
+### Power tuning
+
+Open **Tools > Power tuning** on the RadioFoundry site to adjust each power level to your radio. You need a dummy
+load and a wattmeter. The page reads the radio's bands and levels, keys the radio for 3 seconds at a time, and takes
+your wattmeter reading. Then the page suggests an adjustment and stores the result in the radio.
+
+- Each band has its own tuning. Tune one frequency per band, or up to three to follow power across a wide band.
+  Between two tuned frequencies, the radio blends the adjustments.
+- Rename any level, for example **4W** instead of **5W**. The name can be up to 6 characters, and the status line
+  shows the new name.
+- The highest level can only go down, so the radio never transmits above its rating. The lowest level can only go up.
+- **Restore factory power** removes every adjustment and name.
+
+The adjustments are stored in the radio, outside the codeplug. A codeplug read, write or share never carries them to
+another radio. A firmware update keeps them. If an update changes a level's factory setting, the page marks that
+level's adjustment as out of date, and the radio stops using it until you tune that level again.
+
 ## Backlight
 
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
