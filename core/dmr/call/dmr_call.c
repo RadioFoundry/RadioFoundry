@@ -166,7 +166,7 @@ static struct {
 	uint8_t tx_ta[DMR_TA_LC_MAX + 1][DMR_LC_BYTES];	// the alias LCs, then our GPS Info
 	uint8_t tx_ta_n;	// LCs in the rotation (alias and GPS)
 	uint8_t tx_gps_at;	// tx_ta index of the GPS Info, 0xFF none
-	uint8_t tx_sf;		// superframes started in this transmission
+	uint32_t tx_sf;		// superframes started in this transmission (never saturates: tx_superframe_lc)
 	uint8_t tx_emb_cur;	// what the modem spreads now: 0 the voice LC, 1 + n rotation LC n
 	bool tx_gps_set;	// dmr_call_set_tx_gps
 	dmr_gps_t tx_gps;
@@ -1279,15 +1279,23 @@ static bool tx_put(uint8_t kind, uint8_t index, bool host_crc, const uint8_t *pa
 }
 
 // What bursts B-E of the superframe about to start carry: the voice LC, or with a talker alias set, one alias LC in
-// every other superframe (LC, header, LC, block 1, ... from the second superframe on, docs/spec/dmr-modem.md 4).
-// Our GPS Info, when set, is one more LC at the end of that rotation (LC, GPS, LC, GPS ... without an alias).
+// every other superframe (LC, header, LC, block 1, ... docs/spec/dmr-modem.md 4). Our GPS Info, when set, is one more
+// LC at the end of that rotation (LC, GPS, LC, GPS ... without an alias).
+// The first DMR_CALL_TX_ALIAS_LEAD_SF superframes carry the voice LC alone (issue 898). A receiver that loses the
+// start of an over (headers and superframe 1 gone at key-up or in a fade) late-enters on the first embedded LC it
+// decodes. One network logged a call whose source and talkgroup were the bytes of our alias header: it had taken the
+// alias header of superframe 2 for the call's LC, ignoring its FLCO (its log had our GPS Info of superframe 4 before
+// the alias of superframe 6; a good call shows the alias first). We can't fix such a receiver, but we can make the LC
+// it lands on the voice LC unless it lost more than a second of the over.
+// tx_sf used to saturate at 255: from 92 s into an over every superframe then carried the same rotation LC and the
+// voice LC was never sent again, the same trap for anyone joining a long over. It counts on now (32 bits: 49 years).
 // Given to the modem before burst A is queued: it takes a new embedded LC at the next burst A it sets up
 static void tx_superframe_lc(void)
 {
 	uint8_t want = 0;
 
-	if (s.tx_ta_n && (s.tx_sf & 1))
-		want = (uint8_t)(1 + (s.tx_sf / 2) % s.tx_ta_n);
+	if (s.tx_ta_n && s.tx_sf >= DMR_CALL_TX_ALIAS_LEAD_SF && ((s.tx_sf - DMR_CALL_TX_ALIAS_LEAD_SF) & 1) == 0)
+		want = (uint8_t)(1 + ((s.tx_sf - DMR_CALL_TX_ALIAS_LEAD_SF) / 2) % s.tx_ta_n);
 	if (want == s.tx_emb_cur)
 		return;
 	s.modem->set_embedded_lc(want ? s.tx_ta[want - 1] : s.tx_lc);
@@ -1347,7 +1355,7 @@ static void tx_fill(uint32_t now)
 		if (!tx_put(DMR_BURST_VOICE, s.voice_index, false, v, DMR_VOICE_BYTES))
 			return;	// keep the staged frames for the next try
 		s.stage_n = 0;
-		if (s.voice_index == 0 && s.tx_sf < 255)
+		if (s.voice_index == 0)
 			s.tx_sf++;
 		if (s.voice_index == 0 && s.stop_req)
 			s.tail_holds++;		// a superframe sent for the source's tail (tx_tail_hold)

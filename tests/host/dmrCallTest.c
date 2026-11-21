@@ -2585,6 +2585,14 @@ static int air_superframe_lcs(uint8_t out[][9], int max)
 	return n;
 }
 
+// Superframe k of an over: -1 the voice LC, else the rotation LC it carries (talker alias LCs, then GPS Info)
+static int tx_rot_at(int k, int rot_n)
+{
+	int r = k - DMR_CALL_TX_ALIAS_LEAD_SF;
+
+	return r >= 0 && (r & 1) == 0 ? (r / 2) % rot_n : -1;
+}
+
 static void test_tx_alias(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2597,26 +2605,30 @@ static void test_tx_alias(void)
 	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, ta);
 	CHECK(n == 3);
 	dmr_call_ptt(true);
-	run_ms(360 * 9);
+	run_ms(360 * 12);
 	dmr_call_ptt(false);
 	run_ms(1200);
 	mk_lc(lc, 0, TG_TALK, OWN_ID);
 	int sfs = air_superframe_lcs(got, 16);
-	CHECK(sfs >= 9);
-	// LC, header, LC, block 1, LC, block 2, LC, header, LC ...
+	CHECK(sfs >= 12);
+	// The lead (LC, LC, LC), then header, LC, block 1, LC, block 2, LC, header ...
+	int alias_sfs = 0;
 	for (int k = 0; k < sfs; k++) {
-		const uint8_t *want = (k & 1) ? ta[(k / 2) % n] : lc;
+		int r = tx_rot_at(k, n);
+		const uint8_t *want = r >= 0 ? ta[r] : lc;
 
+		alias_sfs += want != lc;
 		CHECK(memcmp(got[k], want, 9) == 0);
 	}
 	// An independent receiver (the stack's own decoder) gets the text back
 	dmr_ta_t rx;
 	dmr_ta_reset(&rx);
-	for (int k = 1; k < sfs; k += 2)
-		dmr_ta_push(&rx, got[k]);
+	for (int k = 0; k < sfs; k++)
+		if ((got[k][0] & 0x3F) != DMR_FLCO_GROUP_VOICE)
+			dmr_ta_push(&rx, got[k]);
 	CHECK(rx.complete && strcmp(rx.text, "Q0TEST Charlie") == 0);
 	dmr_call_get_stats(&st);
-	CHECK(st.tx_alias_lcs == (uint32_t)(sfs / 2));
+	CHECK(st.tx_alias_lcs == (uint32_t)alias_sfs);
 
 	// 7-bit, the longest alias: header and three blocks
 	n = dmr_ta_encode("ABCDEFGHIJKLMNOPQRSTUVWXYZ01234567", DMR_TA_7BIT, ta);
@@ -2637,6 +2649,80 @@ static void test_tx_alias(void)
 	CHECK(sfs >= 4);
 	for (int k = 0; k < sfs; k++)
 		CHECK(memcmp(got[k], lc, 9) == 0);
+}
+
+// Issue 898: a network logged one of our calls under a source and talkgroup made of our alias header's text bytes,
+// its GPS Info before the alias: a receiver that lost the headers and the first superframe took superframe 2's alias
+// header for the call's LC. Every embedded LC we send is either the voice LC as configured or a rotation LC (FLCO 4-8),
+// the first superframes carry the voice LC alone, and a long over keeps sending it (the counter once stopped at 255)
+static void tx_embedded_check(const uint8_t lc[9], const uint8_t (*rot)[9], int rot_n, int from, int sfs,
+			      uint8_t got[][9])
+{
+	for (int k = 0; k < sfs; k++) {
+		uint8_t flco = got[k][0] & 0x3F;
+		bool in_rot = false;
+
+		for (int i = 0; i < rot_n; i++)
+			in_rot |= memcmp(got[k], rot[i], 9) == 0;
+		if (flco == DMR_FLCO_GROUP_VOICE)
+			CHECK(memcmp(got[k], lc, 9) == 0);	// our ID and the talkgroup, never alias bytes
+		else
+			CHECK(flco >= DMR_FLCO_TA_HEADER && flco <= DMR_FLCO_GPS && in_rot);
+		// Whoever joins at any superframe finds the voice LC in it or the next one
+		if (k + 1 < sfs)
+			CHECK(memcmp(got[k], lc, 9) == 0 || memcmp(got[k + 1], lc, 9) == 0);
+		if (from + k < DMR_CALL_TX_ALIAS_LEAD_SF)
+			CHECK(memcmp(got[k], lc, 9) == 0);
+	}
+}
+
+static void test_tx_alias_late_entry(void)
+{
+	dmr_call_config_t c = base_cfg();
+	uint8_t lc[9], rot[5][9], got[64][9];
+	const dmr_gps_t gps = { .err = 1, .lat = 491640000, .lon = -1231356000 };
+
+	strcpy(c.tx_alias, "Q0TEST");	// one alias LC: header only, as in the report
+	c.tx_alias_format = DMR_TA_ISO8;
+	setup(&c);
+	dmr_call_set_tx_gps(&gps);
+	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, rot);
+	CHECK(n == 1);
+	dmr_gps_encode(&gps, rot[n++]);
+	mk_lc(lc, 0, TG_TALK, OWN_ID);
+
+	// Every over length from one superframe to a dozen: the first superframes are the voice LC whatever the rotation
+	for (int len = 1; len <= 12; len++) {
+		sim.air_count = 0;
+		dmr_call_ptt(true);
+		run_ms(360u * (unsigned)len);
+		dmr_call_ptt(false);
+		run_ms(1200);
+		int sfs = air_superframe_lcs(got, 64);
+		CHECK(sfs >= len);
+		tx_embedded_check(lc, (const uint8_t (*)[9])rot, n, 0, sfs, got);
+		if (len >= 2)
+			CHECK(memcmp(got[0], lc, 9) == 0 && memcmp(got[1], lc, 9) == 0);
+	}
+
+	// A long over (TOT off): the air log is cleared past 255 superframes (92 s), and the rotation still alternates
+	// with the voice LC there
+	c.tot_s = 0;
+	setup(&c);
+	dmr_call_set_tx_gps(&gps);
+	dmr_call_ptt(true);
+	run_ms(100000);
+	sim.air_count = 0;
+	run_ms(360 * 12);
+	int sfs = air_superframe_lcs(got, 64);
+	dmr_call_ptt(false);
+	run_ms(1200);
+	CHECK(sfs >= 10);
+	tx_embedded_check(lc, (const uint8_t (*)[9])rot, n, 1000, sfs, got);
+	int voice_lcs = 0;
+	for (int k = 0; k < sfs; k++)
+		voice_lcs += memcmp(got[k], lc, 9) == 0;
+	CHECK(voice_lcs >= sfs / 2 && voice_lcs < sfs);	// alternating, the rotation still going
 }
 
 // Talker alias formats a receiver must take (TS 102 361-2 7.2.18)
@@ -3043,12 +3129,15 @@ static void test_gps_call(void)
 	mk_lc(lc, 0, TG_TALK, OWN_ID);
 	int sfs = air_superframe_lcs(got, 20);
 	CHECK(sfs >= 6);
-	for (int k = 0; k < sfs; k++)
-		CHECK(memcmp(got[k], (k & 1) ? gps : lc, 9) == 0);
+	int rot_sfs = 0;
+	for (int k = 0; k < sfs; k++) {
+		rot_sfs += tx_rot_at(k, 1) >= 0;
+		CHECK(memcmp(got[k], tx_rot_at(k, 1) >= 0 ? gps : lc, 9) == 0);
+	}
 	dmr_call_get_stats(&st);
-	CHECK(st.tx_gps_lcs == (uint32_t)(sfs / 2) && st.tx_alias_lcs == 0);
+	CHECK(st.tx_gps_lcs == (uint32_t)rot_sfs && st.tx_alias_lcs == 0);
 
-	// With a talker alias: header, block 1, block 2, GPS in the odd superframes
+	// With a talker alias: header, block 1, block 2, GPS in every other superframe after the lead
 	strcpy(c.tx_alias, "Q0TEST Charlie");
 	c.tx_alias_format = DMR_TA_ISO8;
 	setup(&c);
@@ -3056,13 +3145,13 @@ static void test_gps_call(void)
 	int n = dmr_ta_encode(c.tx_alias, DMR_TA_ISO8, ta);
 	memcpy(ta[n], gps, 9);
 	dmr_call_ptt(true);
-	run_ms(360 * 10);
+	run_ms(360 * 12);
 	dmr_call_ptt(false);
 	run_ms(1200);
 	sfs = air_superframe_lcs(got, 20);
-	CHECK(sfs >= 10);
+	CHECK(sfs >= 12);
 	for (int k = 0; k < sfs; k++)
-		CHECK(memcmp(got[k], (k & 1) ? ta[(k / 2) % (n + 1)] : lc, 9) == 0);
+		CHECK(memcmp(got[k], tx_rot_at(k, n + 1) >= 0 ? ta[tx_rot_at(k, n + 1)] : lc, 9) == 0);
 	dmr_call_get_stats(&st);
 	CHECK(st.tx_gps_lcs >= 1 && st.tx_alias_lcs >= 3);
 
@@ -3487,6 +3576,7 @@ int main(void)
 	test_reconfigure();
 	test_monitor_both_slots();
 	test_tx_alias();
+	test_tx_alias_late_entry();
 	test_alias_formats();
 	test_pi_header_and_emergency();
 	test_private_calls();
