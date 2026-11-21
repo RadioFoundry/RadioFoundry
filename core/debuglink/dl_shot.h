@@ -22,6 +22,9 @@ typedef struct {
 	uint8_t insets[4];	// top, bottom, left, right
 	uint32_t frame;		// frames begun (gfx_frame_idle)
 	bool drawing;		// a frame is being drawn
+	// The frame buffer holds the safe area only (hal_display_t fb_safe_area): rows of width - left - right pixels,
+	// height - top - bottom of them; the host fills the insets with palette entry 0
+	bool safe_area;
 	uint16_t palette[16];	// bpp 4: RGB565 per index
 } dl_shot_t;
 

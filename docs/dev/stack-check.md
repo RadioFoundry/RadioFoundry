@@ -104,7 +104,10 @@ stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
   time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two linker symbols at its ends so the
   size is the one linked) and the function that installs a handler: every function passed to it is a root, and the
   deepest plus the margin must fit (the `irq` line). A handler installed any other way is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
-* The code before the scheduler starts (`main`) runs on the main stack and isn't checked.
+* The code before the scheduler starts (`main`) runs on the main stack. Where that stack has a size of its own the
+  platform names its ends (`--startup-stack-symbols`) and `main` is checked against it like a task (the `start-up`
+  line): on HR_C7000 it is the top 2 KB of the RTOS heap, below which lie the first tasks' stacks
+  (`platform/hrc7000/common.ld`). Elsewhere it isn't checked.
 * A pointer call whose target is computed at run time (an address from a table the sources don't spell) needs a table
   line.
 * The disassembly walk adds every stack adjustment of a function, so a library function with several exit paths

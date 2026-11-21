@@ -1106,8 +1106,9 @@ class DebugLink:
             w, h, bpp, fmt, it, ib, il, ir, total, off, size, frame, drawing = struct.unpack_from("<HHBBBBBBIIIIB", r)
             if off != len(stream):
                 raise DebugLinkError(f"screenshot chunk at {off}, expected {len(stream)}")
+            # Byte 27: bit 0 a frame being drawn, bit 1 the frame buffer holds the safe area only (unpack_frame)
             last = {"width": w, "height": h, "bpp": bpp, "insets": (it, ib, il, ir), "size": size, "stream": total,
-                    "frame": frame, "drawing": bool(drawing)}
+                    "frame": frame, "drawing": bool(drawing & 1), "safe_area": bool(drawing & 2)}
             hdr = SHOT_HDR - 1 + (32 if bpp == 4 else 0)       # r: the payload after the status byte
             if first is None:
                 first = dict(last, palette=struct.unpack_from("<16H", r, SHOT_HDR - 1) if bpp == 4 else None)
@@ -1724,14 +1725,27 @@ def lz4_block(src, size):
 
 def unpack_frame(info, fb):
     """(info, bytes) in the RGB565 form's terms from a packed screenshot's frame buffer: a 16-color frame through its
-    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp."""
+    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp. A frame buffer of the safe
+    area only (a 16-color one) is placed inside the insets, which get palette entry 0, the background, as the radio
+    paints them: the whole panel either way."""
     w, h, bpp = info["width"], info["height"], info["bpp"]
     out = {"width": w, "height": h, "insets": info["insets"], "native_bpp": bpp, "packed": True}
     if bpp == 4:
         pal = [struct.pack("<H", c) for c in info["palette"]]
         pair = [pal[b >> 4] + pal[b & 15] for b in range(256)]
-        stride = (w + 1) // 2
-        data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
+        if info.get("safe_area"):
+            t, b, lft, rgt = info["insets"]
+            fw, fh = w - lft - rgt, h - t - b
+            stride = (fw + 1) // 2
+            edge = pal[0] * w
+            rows = [edge] * t
+            for y in range(fh):
+                inner = b"".join(pair[c] for c in fb[y * stride:(y + 1) * stride])[:fw * 2]
+                rows.append(pal[0] * lft + inner + pal[0] * rgt)
+            data = b"".join(rows + [edge] * b)
+        else:
+            stride = (w + 1) // 2
+            data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
         bpp = 16
     else:
         data = fb
@@ -2772,8 +2786,9 @@ def self_test():
         packed form (packed False, or the status it answers). redraw_at: the reply at which a new frame is drawn;
         shrink: that frame is blank, so its stream is shorter."""
 
-        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None):
+        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None, safe=False):
             self.packed_shots, self.packed, self.redraw_at, self.drawing = None, packed, redraw_at, drawing
+            self.safe = safe        # the frame buffer is the safe area of a panel with 1 px insets all round
             self.shrink, self.replies, self.frame = shrink, 0, 7
             self.fb = fb or bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00])
             self.w = len(self.fb) * 2 // 3
@@ -2794,8 +2809,13 @@ def self_test():
                 chunk = z[off:off + 4]          # small windows: several replies
                 drawing = self.drawing > 0
                 self.drawing -= 1
-                r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
-                                drawing) + struct.pack("<16H", *self.pal) + chunk
+                if self.safe:
+                    r = struct.pack("<HHBBBBBBIIIIB", self.w + 2, 5, 4, SHOT_LZ4, 1, 1, 1, 1, len(z), off, len(self.fb),
+                                    self.frame, drawing | 2)
+                else:
+                    r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb),
+                                    self.frame, drawing)
+                r += struct.pack("<16H", *self.pal) + chunk
                 return 0, r
             rgb = b"".join(struct.pack("<H", self.pal[(self.fb[i // 2] >> (0 if i & 1 else 4)) & 15])
                            for i in range(self.w * 3))
@@ -2807,6 +2827,16 @@ def self_test():
     check(stable and info["packed"] and data == want, "packed: 16 colors decode to RGB565 through the palette")
     check((info["bpp"], info["format"], info["total"], info["native_bpp"]) == (16, 1, 36, 4), "packed: info as RGB565")
     check(to_rgb(info, data)[:2] == (6, 3), "packed: to_rgb takes it")
+    # The safe area only: the insets come back in palette entry 0, the frame buffer's rows inside them
+    info, data, stable = FakeRadio(safe=True).screenshot()
+    edge = struct.pack("<H", 0x1000)
+    rows = [want[i * 12:(i + 1) * 12] for i in range(3)]
+    check(stable and (info["width"], info["height"], info["total"]) == (8, 5, 80) and
+          data == edge * 8 + b"".join(edge + r + edge for r in rows) + edge * 8,
+          "packed, safe area only: the insets rebuilt around it")
+    r = FakeRadio(safe=True, drawing=1)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots, "safe area only: the drawing bit read alone (a frame drawn, then a whole one)")
     r = FakeRadio(redraw_at=2)
     info, data, stable = r.screenshot()
     check(stable and r.replies > 2 and data != want, "a frame drawn during a pass: read again")
