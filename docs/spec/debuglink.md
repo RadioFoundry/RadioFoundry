@@ -938,6 +938,7 @@ access began, comes after the radio is back on receive only under that); last, w
 | `send_slot` | the radio is not tuned to the slot the engine asked for |
 | `send_talk` | PTT is held for talking (not waiting for a grant), or the radio transmits |
 | `send_limit` | the test TX limit refused the frequency |
+| `send_inhibit` | TX inhibit is on, the battery is critical, or a hardware option is pending |
 | `send_key` | the board refused to key the transmitter |
 | `send_stack` | the DMR stack refused the burst list (not running, transmitting, or busy) |
 | `send_data_busy` | of `send_stack`, those refused while another data list was with the stack |

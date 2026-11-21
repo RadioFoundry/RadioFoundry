@@ -1858,6 +1858,27 @@ static void no_battery_checks(void)
 	}
 }
 
+// A key with the backlight off only wakes it, except PTT, Monitor and Emergency, which act at once: Emergency sends
+// only its long press, so waking on it alone would lose the alarm
+static void dark_key_checks(void)
+{
+	static const struct { uint8_t action, gesture; bool acts; } cases[] = {
+		{ ACT_EMERGENCY, GESTURE_LONG, true },
+		{ ACT_PTT, GESTURE_DOWN, true },
+		{ ACT_MONITOR, GESTURE_DOWN, true },
+		{ ACT_SELECT, GESTURE_PRESS, false },
+		{ ACT_BACK, GESTURE_LONG, false },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		input_event_t ev = { .action = cases[i].action, .gesture = cases[i].gesture };
+		if (ui_app_key_while_dark(&ev) != cases[i].acts) {
+			printf("FAIL dark key %zu: action %u acts %d, want %d\n", i, cases[i].action, !cases[i].acts,
+			    cases[i].acts);
+			fails++;
+		}
+	}
+}
+
 // The volume bar when the knob turns (#354): over whatever screen is open, 3 s after the last change; never at
 // power-up, for an unchanged level, a radio without a knob or the debug link taking over. EP and BVA cases, then a
 // seeded property run: the bar shows exactly when the knob's level changed in the last 3 s, at that level
@@ -2029,6 +2050,7 @@ int main(void)
 	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+	dark_key_checks();
 #if CONFIG_VOLUME_BAR
 	volume_bar_checks();
 #endif
