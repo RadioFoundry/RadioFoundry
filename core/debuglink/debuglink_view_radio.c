@@ -79,7 +79,6 @@ void debuglink_view_audio(dl_text_t *t)
 	unsigned brightness = settings_begin()->brightness;
 	settings_end(hal_millis());	// nothing changed: nothing to save
 	dl_text(t, "set.brightness=%u\n", brightness);
-	(void)t;
 }
 
 // The last PA drive sweep (RADIO op 39): the points it ran and the top level's drive it counted from

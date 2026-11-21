@@ -2714,7 +2714,8 @@ static void test_beep_follows_volume(void)
 // carrier, never sets it; an open FM squelch and a DMR call do, and it clears when they end
 static int rx_open_calls;
 static bool rx_open_on;
-static void r_rx_open(bool on) { rx_open_on = on; rx_open_calls++; }
+static bool rx_open_audio_at;	// the FM speaker path when rx_open last changed: closed at both edges
+static void r_rx_open(bool on) { rx_open_on = on; rx_open_audio_at = hw.audio; rx_open_calls++; }
 
 static void test_rx_open(void)
 {
@@ -2737,12 +2738,14 @@ static void test_rx_open(void)
 	signal_on(0, 146520000, 30, no_tone);
 	run(100);
 	CHECK(sm.view.state == RS_RX && hw.audio && rx_open_on && rx_open_calls == 2);
+	CHECK(!rx_open_audio_at);	// on before the speaker opens
 	req(RREQ_BEEP, BEEP_KEY);
 	run(500);
 	CHECK(rx_open_on && rx_open_calls == 2);
 	hw.sig[0].hz = 0;
 	run(1000);
 	CHECK(sm.view.state != RS_RX && !hw.audio && !rx_open_on && rx_open_calls == 3);
+	CHECK(!rx_open_audio_at);	// off after the speaker closes
 	// The monitor: on, then off
 	req(RREQ_MONITOR, 1);
 	run(100);

@@ -1148,9 +1148,9 @@ feeds APRS, holds the pin too. A key beep or other local PCM alone keeps the PWM
 the synthesizer, only with a carrier present (below).
 
 An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
-stage's tail to fill the period. On a DM-1701 it did: the panel was fully lit. On other DM-1701 and MD-UV380 family
-radios the stage didn't respond to a pulse that short, and the screen went dark during transmit and receive audio
-(#759). A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
+stage's tail to fill the period. On one DM-1701 the tail did fill the period and the panel was fully lit. On other DM-1701 and MD-UV380 family
+radios the screen went dark during transmit and receive audio (#759). The likely cause is a stage that doesn't respond
+to a pulse that short; the bench DM-1701 doesn't show the fault, so this is not confirmed. A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
 
 A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
 5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier

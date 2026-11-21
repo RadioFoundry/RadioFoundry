@@ -679,8 +679,8 @@ calling `outputs()` while a signal runs, so it keeps time when nothing else chan
 
 The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
 receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with
-a carrier present uses it: backlight PWM that reaches the synthesizer, for one.
-A beep or other local PCM alone never sets it.
+a carrier present uses this state: backlight PWM that reaches the synthesizer, for one.
+A beep or other local PCM alone never sets `rx_open`.
 
 ## 6. TX power, calibration, band limits
 
