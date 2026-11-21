@@ -39,6 +39,7 @@ typedef struct {
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
 	bool dmo;		// direct mode even when RX and TX differ (open-firmware "force DMO")
+	bool accept_bad_crc;	// control messages and voice LC that fail their check, taken when they repeat (fec/rx_seen.h)
 	uint16_t tot_s;		// TX time-out, 0 = the radio's
 	uint8_t alias_tx;	// talker alias TX: CODEPLUG_ALIAS_TS1_* / _TS2_* bits
 	bool scan_skip;		// left out of zone scans

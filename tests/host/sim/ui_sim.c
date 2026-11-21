@@ -29,7 +29,8 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
-//   chkind:<n>,p25|nxdn stored channel n is a P25 or NXDN channel (CONFIG_P25 / CONFIG_NXDN builds)
+//   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
+//   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -1287,6 +1288,12 @@ bool ui_svc_t3_name(uint8_t n, char *name)
 	strcpy(name, names[n]);
 	return true;
 }
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
 void ui_svc_t3_poll(uint32_t id)
 {
 	(void)id;
@@ -2151,6 +2158,10 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	return i < n_inbox && ui_svc_msg_send(inbox[i].m.src, false, text);
+}
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
 {
 	if (to[0] == '\0')
@@ -2462,7 +2473,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
-	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2984,11 +2995,18 @@ static bool run_token(char *t, char *err, size_t len)
 		serial++;
 		return true;
 	}
+	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
+		view.t3.ring_src = (uint32_t)atoi(arg);
+		serial++;
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
 		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
 		return true;
 	}
-	// hunt, other (hunting, another system heard), denyother (PTT refused for it), regrefused,
+	// hunt, other (hunting, another system heard), otherkind (one of another kind: FID 0x06), denyother /
+	// denyotherkind (PTT refused for either), regrefused,
 	// denyreg (PTT refused for it), denyunmapped (PTT: the grant named channel 311, which no row lists), follow,
 	// refused, fallback, back
 	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {
@@ -2997,9 +3015,18 @@ static bool run_token(char *t, char *err, size_t len)
 		view.t3.state = T3_CAMPED;
 		view.t3.reg = T3_REG_OK;
 		view.t3.other = 0;
+		view.t3.other_fid = 0;
 		view.t3.refused = false;
 		if (strcmp(arg, "hunt") == 0) {
 			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "otherkind") == 0 || strcmp(arg, "denyotherkind") == 0) {
+			view.t3.state = T3_HUNT;
+			view.t3.other_fid = 0x06;
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_OTHER_KIND;
+			}
 		} else if (strcmp(arg, "other") == 0 || strcmp(arg, "denyother") == 0) {
 			t3_syscode_t c = { T3_MODEL_HUGE, 0, 83, T3_PAR_AB };
 			view.t3.state = T3_HUNT;
@@ -3123,9 +3150,17 @@ static bool run_token(char *t, char *err, size_t len)
 		unsigned n = 0;
 		char k[8] = "";
 		channel_t c;
-		if (arg == NULL || sscanf(arg, "%u,%7s", &n, k) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+		int end = 0;
+		if (arg == NULL || sscanf(arg, "%u,%7[^,]%n", &n, k, &end) != 2 ||
+		    !codeplug_channel((uint16_t)n, &c)) {
 			snprintf(err, len, "bad %s", t);
 			return false;
+		}
+		if (arg[end] == ',') {
+			snprintf(c.name, sizeof c.name, "%s", arg + end + 1);
+			for (char *ch = c.name; *ch; ch++)
+				if (*ch == '_')
+					*ch = ' ';
 		}
 		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
 		c.mode = RADIO_MODE_DMR;
@@ -3134,6 +3169,26 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (strcmp(t, "nxdnrx") == 0) {
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.nxdn.flags = (uint8_t)(RADIO_NXDN_ON | RADIO_NXDN_RX |
+			(kind == 'e' || kind == 'p' ? RADIO_NXDN_ENC : 0) |
+			(kind == 'e' ? 0 : RADIO_NXDN_PLAYED));
+		view.nxdn.src = (uint16_t)src;
+		view.nxdn.dst = (uint16_t)dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
 		return true;
 	}
 #endif

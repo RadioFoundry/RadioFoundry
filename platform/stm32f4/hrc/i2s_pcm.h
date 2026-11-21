@@ -22,6 +22,9 @@ typedef struct {
 	// Optional: every block as received, left and right interleaved (2 x AUDIO_BLOCK_SAMPLES), before the callback.
 	// Audio task context
 	void (*raw_block)(const int16_t *lr);
+	// The chip's prompt FIFO reaches this board's speaker: while the FM copy holds the chip (stm32_hrc_copy_chip), the
+	// speaker blocks go there too (i2s_pcm.c). CONFIG_AIR builds
+	bool prompt_fifo;
 } stm32_i2s_pcm_cfg_t;
 
 typedef struct {
@@ -41,6 +44,9 @@ void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out);
 void stm32_i2s_pcm_reset_stats(void);
 // hal_audio_t.stream_stats
 void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out);
+// The board's hal_audio_t.speaker_pcm passes its state here: the prompt FIFO (cfg->prompt_fifo) carries the speaker
+// blocks only while the PCM route is on, silence otherwise
+void stm32_i2s_pcm_speaker(bool on);
 #endif
 
 #endif

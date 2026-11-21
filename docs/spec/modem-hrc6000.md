@@ -501,6 +501,23 @@ silence for the next frame. AMBE silence frame (9 bytes, repeated three times pe
 
 ---
 
+### 5.8 Soft values of the received burst
+
+Not documented (measured). Page 2 from 0xA8 holds the burst just deframed as soft values, one byte per bit, 264 bytes:
+the 68 bits of the middle field first (slot type and sync), then the 196 info bits in burst order (bits 0-97, then
+166-263). The area holds the burst of the report being read, on either slot, and the engine reads the area at the
+report, like the payload.
+
+| Byte | Meaning |
+|---|---|
+| bits 5-0 | the bit's level, two's complement: negative for a 1. The hard bit is 1 when the byte is 32 or more |
+| bits 7-6 | not used |
+
+Value of a bit, positive for a 1: `v = b & 0x3F; v >= 32 ? 64 - v : -v` (`hrc_soft_value`). A clean bit reads about
+24. The HR_C7000 gives the same format ([modem-hrc7000.md](modem-hrc7000.md) 5.4). The engine uses them for soft
+combining ([dmr-modem.md](dmr-modem.md) 2.2.1): `hrc_chip_t.soft_tap` names the address, 0 on a chip without a known
+address (the HR_C5000).
+
 ## 6. Transmit
 
 ### 6.1 Burst set-up
@@ -679,7 +696,9 @@ deviation, 0xA0 = CTCSS or DCS deviation, 0x3F=0x04, 0x34=0x3C, 0x3E=0x08, page 
 **Codec in FM mode**: with 0x10 bit 7 set (FM) the codec's line out carries the chip's own FM receive audio, and 0x36
 bit 1 switches it on (the manual: in FM mode, receive opens the voice channel's codec switch). I2S PCM (beeps, prompts)
 doesn't reach the line out then, with the bit set or clear. A board whose FM audio comes from elsewhere puts 0x10 back
-to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR.
+to DMR after the FM receive rows (`hrc6000_fm_rx_pcm()`), so PCM plays in FM receive as it does in DMR. Where the
+chip must stay in FM (the FM copy, 10.6), the prompt tone FIFO (8.1) carries the speaker's PCM instead: it reaches the
+line out in FM mode ([gotchas.md](gotchas.md) 1.14).
 
 **Tones (0xA1 mode)**: 0x80 off, 0x88 CTCSS, 0x84 DCS, 0x82 DTMF, as traced. The manual's register table differs:
 0xA1 is `fm_mod`, bit 7 is reserved and must be 0, bit 6 MSK, and its appendix selects CTCSS with 0x08, CDCSS 0x04,
@@ -719,7 +738,7 @@ bit 5) puts a 2.5-2.6 kHz tone of its own on air when enabled during FM TX: keep
 | FM data RAM | TX RAM table (5.2): "FM data address 1 / 2", 0x030-0x22F and 0x230-0x42F, 512 bytes each, "can be written externally for FM send; voice data can also come internally from the codec". The RX RAM table has the same two buffers | a ping-pong buffer each way over U_SPI (page 2, 11-bit addresses). If the samples are 16-bit at 8 kHz, each half is 256 samples, 32 ms. Format, rate and the bit that picks the RAM over the codec are not stated |
 | 0x82 in FM mode | bit 7 "sending data request", bit 1 "receiving data", bit 2 "FM function detection" | the buffer handshake. FM RX sets 0x81 = 0x19, which masks bits 7 and 1 |
 | 0x06 bit 2 CodeCMode | 0 built-in codec, 1 external codec (appendix A2: chosen for the FM path) | external: the FM chain's audio goes through the external-codec I2S port (pins 17-20: LRCK, BCLK, ADCDAT, DACDAT, chip as master, 8 kHz from 0x30-0x33, BCLK and LRCK enabled by 0x36 bit 7 = 0). That is not the vocoder I2S port (pins 34-37) the MCU uses; pins 17-20 double as RF enable outputs, and their wiring on our radios is unknown |
-| 0x06 bit 1 OpenMusic | "prompt tone" path (appendix A1) | the MCU writes 16-bit DAC samples over U_SPI (command 0x03, address 0x00, 32 samples per write) into a 64-sample FIFO, polling 0x88 bit 0 every 1 ms. Speaker only |
+| 0x06 bit 1 OpenMusic | "prompt tone" path (appendix A1) | the MCU writes 16-bit big endian DAC samples over U_SPI (command 0x03, address 0x00, 32 samples per write) into a 64-sample FIFO, polling 0x88 bit 0 (1 = full) every 1 ms. Speaker only. Measured: reaches the line out in FM mode, where I2S PCM doesn't; drains at 8000 samples a second on the chip's clock. Used for the speaker in the FM copy (`hrc_prompt_*`, gotchas 1.14) |
 | 0xE3 bit 0 | "codec internal DAC and ADC pass-through" | loops the DAC into the ADC. With the I2S or prompt-tone path feeding the DAC, this may put MCU audio into the FM transmit chain |
 | 0x36 bit 7 | external codec BCLK / LRCK off | |
 | 0xD7 bit 1 | msk_voice_send_en: "send FM voice" (vs. MSK signaling), in the MSK controls (earlier notes said 0xDB, which the manual doesn't list) | bench 2026-10-12: no effect on the TX RAM |
@@ -992,8 +1011,8 @@ The codec's PCM stream to the MCU runs on in this set-up (a beep's blocks come a
 voice goes to the codec's DAC as in DMR. Checked on air: NXDN calls at 4800 and 9600 bit/s from a bench transmitter,
 every frame decoded and every voice frame of a speech recording decoded by the vocoder, none counted bad
 (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`); a DMR call received right after sessions of both kinds. Not
-checked: the level at the speaker by ear or by measurement (decoded voice is judged by its PCM peak), the
-sensitivity, the receive delay for t_us.
+checked: the sensitivity, the receive delay for t_us. Decoded voice reaches the speaker through the prompt tone FIFO
+(8.1; the chip's FM mode keeps I2S PCM off the line out): checked by ear and by microphone with NXDN 4800 speech.
 
 ### 10.7 The HR_C5000
 

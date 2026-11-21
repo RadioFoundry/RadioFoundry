@@ -1679,6 +1679,22 @@ bool ui_volume_key(const input_event_t *ev)
 	return false;
 }
 
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void)
+{
+	static char name[CODEPLUG_NAME_LEN + 1];
+	(void)ui_contact_name(view->t3.ring_src, false, name);
+	ui_draw_incoming_call(view, &ui_st, name);
+}
+
+bool ui_incoming_call_key(const input_event_t *ev)
+{
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS)
+		ui_svc_t3_reject();
+	return true;
+}
+#endif
+
 void ui_emergency_draw(void)
 {
 	ui_draw_emergency(view, &ui_st, emerg_id, emerg_name);
@@ -2022,6 +2038,12 @@ void ui_apply_setting(uint8_t id, int32_t v)
 	dirty = true;
 }
 
+bool ui_app_key_while_dark(const input_event_t *ev)
+{
+	// PTT and Monitor are live keys; Emergency sends only its long press, so a dark screen must not eat it
+	return ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_EMERGENCY;
+}
+
 static bool emergency_key(const input_event_t *ev)
 {
 	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
@@ -2143,6 +2165,12 @@ void ui_app_key(const input_event_t *ev)
 		return;
 	}
 #endif
+#if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		(void)ui_scr[SCR_INCOMING_CALL]->key(ev);
+		return;
+	}
+#endif
 	// Long BACK = Home from anywhere; long CONTEXT = the talk target picker (P3; as the keycap and the AnyTone radios)
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_LONG) {
 		ui_go_home();
@@ -2246,6 +2274,12 @@ void ui_app_key(const input_event_t *ev)
 		banner_open();
 		return;
 	}
+#if CONFIG_DMR_TRUNK
+	if (!typing && view->t3.alerting && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		ui_svc_t3_cancel();
+		return;
+	}
+#endif
 	// A banner that waits for the user is over every screen, not just Home: BACK hides it first, wherever it is
 	if (!typing && ui_st.banner.kind != UI_BANNER_NONE && ui_st.banner.hold && ev->action == ACT_BACK &&
 			ev->gesture == GESTURE_PRESS) {
@@ -2415,6 +2449,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	ui_crash_tick(now_ms);
 #endif
 #if CONFIG_DMR_TRUNK
+	if (stack[sp].scr == SCR_INCOMING_CALL) {
+		if (v->t3.ring_src == 0)
+			ui_pop();
+	} else if (v->t3.ring_src != 0 && stack[sp].scr != SCR_EMERGENCY) {
+		ui_push(SCR_INCOMING_CALL, 0);
+		wake_req = true;
+	}
 	// Back on the trunked system from its fallback channel (dmr-trunking.md 12.5): the radio beeped, the toast names it
 	static uint32_t backs_seen;
 	if (v->t3.backs != backs_seen) {

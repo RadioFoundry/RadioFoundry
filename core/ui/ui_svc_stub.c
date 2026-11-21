@@ -57,6 +57,8 @@ WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
 #if CONFIG_DMR_TRUNK
 WEAK int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable) { (void)num; (void)ch; (void)usable; return -1; }
 WEAK bool ui_svc_t3_name(uint8_t n, char *name) { (void)n; name[0] = '\0'; return false; }
+WEAK void ui_svc_t3_cancel(void) {}
+WEAK void ui_svc_t3_reject(void) {}
 WEAK void ui_svc_t3_poll(uint32_t id) { (void)id; }
 WEAK void ui_svc_t3_dial(const char *digits) { (void)digits; }
 WEAK bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len) { (void)gw; (void)out; (void)len; return false; }
@@ -85,6 +87,7 @@ WEAK bool ui_svc_msg_get(uint16_t i, ui_msg_t *out) { (void)i; (void)out; return
 WEAK void ui_svc_msg_read(uint16_t i) { (void)i; }
 WEAK bool ui_svc_msg_delete(uint16_t i) { (void)i; return false; }
 WEAK bool ui_svc_msg_send(uint32_t dst, bool group, const char *text) { (void)dst; (void)group; (void)text; return false; }
+WEAK bool ui_svc_msg_reply(uint16_t i, const char *text) { (void)i; (void)text; return false; }
 WEAK bool ui_svc_radio_check(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
 WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
@@ -123,7 +126,7 @@ static int32_t settings[UI_SET_RAM_COUNT] = {
 	[UI_SET_REPLY_S] = 10, [UI_SET_TOT_S] = 180, [UI_SET_SQUELCH] = 5, [UI_SET_MIC_GAIN] = 5, [UI_SET_ALIAS_SHOW] = 1,
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
-	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
+	[UI_SET_MSG_FORMAT] = 255,	// Automatic
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
 	[UI_SET_BCAST_STEP] = 200,
 	[UI_SET_NOISE_REDUCTION] = 1,
