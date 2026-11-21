@@ -2559,25 +2559,47 @@ static void test_hotspot(void)
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
-	// TX inhibit drops the armed keying at once and holds it off; cleared, the keying is armed again
+	// The same level again (a split TX half re-sends its cap): the keying stays as it is
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
+	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
+	// outbound stopped for good), so the level waits for its end
+	sim.tx_active = true;
+	req(RREQ_HS_POWER, 128);
+	poll_for(RADIO_POLL_MS * 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.tx_power == 2 && hw.keyed);
+	sim.tx_active = false;
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1 && hw.tx_power == 1 && hw.keyed);
+	CHECK(rekeys == rk && !sm.hs_power_due);
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3);	// once
+	off0 = hw.tx_off_calls;
+	// TX inhibit drops the armed keying at once, mid-transmission too, and holds it off; cleared, the keying is armed
+	// again
 	radio_settings_t set = sm.set;
 	set.tx_inhibit = true;
+	sim.tx_active = true;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
+	CHECK(!sm.hs_power_due);
+	sim.tx_active = false;
 	req(RREQ_HS_POWER, 255);
 	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
 	radio_sm_request(&sm, &f, now);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
 	set.tx_inhibit = false;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 3);
-	// Nor armed on a critical battery
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	// Nor armed on a critical battery, dropped mid-transmission too
 	sm.batt.level = BATT_CRITICAL;
+	sim.tx_active = true;
 	req(RREQ_HS_POWER, 255);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3 && hw.rx_hz == 438800000);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
+	sim.tx_active = false;
 	sm.batt.level = BATT_OK;
 	req(RREQ_HS_POWER, 255);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
 	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;

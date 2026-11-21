@@ -17,6 +17,10 @@ Pass criteria:
 - test_beep_counts: a BEEP error request counts in beep.played or beep.no_stream (one of them, by 1); when played,
   beep.blocks grows within 1 s (the audio stream ran: on FM this shows whether the I2S clock runs) and beep.busy
   falls back to 0 within 2 s.
+- test_beep_fm_fifo: on the FM VFO, a board whose chip plays no I2S PCM in FM receive (audio.fifo_fm=1, the prompt
+  FIFO, gotchas.md 1.14) gets a BEEP error (400 Hz for 150 ms: 38 chunks of 32 samples) through the FIFO:
+  audio.fifo_chunks grows by at least 38 (the whole tone) and at most 120 (tone, lead-in and hold) once the beep
+  finished, audio.fifo_gaps by at most 2 and audio.fifo_full not at all. Other boards skip.
 - test_vibrate_counts: (CONFIG_VIBRATE builds) a VIBRATE emergency request: on a radio with a motor (vibe.motor=1)
   vibe.played grows by 1 within 1 s and vibe.busy falls back to 0 within 3 s; without one vibe.played stays put.
 - test_volume_op: RADIO op 30 (the speaker volume). volume.src none (no software volume): the op answers
@@ -218,6 +222,36 @@ def test_beep_counts(radio):
                           "audio blocks (the stream runs)")
         wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
         print(f"blocks +{as_int(f['beep.blocks'], 0) - blocks0}")
+
+
+FIFO_BEEP_CHUNKS = (38, 120)    # the error beep's tone is 38 chunks of 32 samples; its lead-in and hold add silence
+FIFO_GAPS_MAX = 2
+
+
+@pytest.mark.feature("beep")
+def test_beep_fm_fifo(radio):
+    f0 = features(radio)
+    if f0.get("beep.built") != "1":
+        skip("not_built", "built without CONFIG_BEEP")
+    if as_int(f0.get("set.beep_level"), 0) == 0:
+        skip("state", "beep level 0")
+    if as_int(f0.get("volume.sent"), -1) == 0:
+        skip("state", "volume 0 (a knob turned down): the beep follows it and is dropped before it is counted")
+    with radio.vfo_session():
+        a0 = radio.view(["audio"])
+        if a0.get("audio.fifo_fm") != "1":
+            skip("other_board", "this radio plays beeps in FM receive without the prompt FIFO")
+        played0 = as_int(features(radio).get("beep.played"), 0)
+        radio.link.beep("error")
+        wait_features(radio, lambda v: as_int(v.get("beep.played"), 0) > played0, 1.0, "the beep counted")
+        wait_features(radio, lambda v: v.get("beep.busy") == "0", 2.0, "the beep finished")
+        time.sleep(0.3)                 # the route's hold, then the stream stops
+        a1 = radio.view(["audio"])
+    fifo = {k: as_int(a1.get(f"audio.fifo_{k}"), 0) - as_int(a0.get(f"audio.fifo_{k}"), 0)
+            for k in ("chunks", "gaps", "full")}
+    print(f"FM beep through the prompt FIFO: {fifo}")
+    assert FIFO_BEEP_CHUNKS[0] <= fifo["chunks"] <= FIFO_BEEP_CHUNKS[1], f"FIFO chunks for a 150 ms beep: {fifo}"
+    assert fifo["gaps"] <= FIFO_GAPS_MAX and fifo["full"] == 0, f"speaker FIFO: {fifo}"
 
 
 @pytest.mark.feature("vibrate")

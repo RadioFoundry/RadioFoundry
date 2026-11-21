@@ -251,7 +251,8 @@ Rules:
   startup can stop the host, which is the right outcome for a frequency the radio can't tune. Ignore the POCSAG
   frequency unless POCSAG TX is implemented (never NAK because of it).
 - RF level: map 0-255 onto the radio's power steps; FF (the user never touched it) keeps the radio's own power setting.
-  RadioFoundry retunes at once.
+  RadioFoundry retunes at once. A new power step that arrives while the radio transmits applies when that
+  transmission ends.
 - SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
   is closed. If an uplink call was open, send DMR_LOST2 before the ACK (a host may otherwise keep such a call open,
   3.7). After the ACK, every frame sent up must have been heard on the new frequency.

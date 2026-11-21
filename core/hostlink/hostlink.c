@@ -53,8 +53,9 @@
 // words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
 // on air > the radio view copied, with the trunked system's view in it, or an HTTP request > a debug link view) reads
 // up to 2648 bytes with the CI's toolchain on the deepest board, and stack-check.md's overhead and margin come on top.
-// Four words more than it was: the HTTP dispatch checks a request's Origin and Host
-#define HOSTLINK_TASK_STACK	749
+// The HTTP dispatch checks a request's Origin and Host (four words), and link-time inlining moves the frames by a word
+// or two from build to build (three words)
+#define HOSTLINK_TASK_STACK	752
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif

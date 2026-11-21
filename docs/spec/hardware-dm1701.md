@@ -1338,7 +1338,40 @@ RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 60
 Log-taper pot read on PA0. Raw ranges (measured): DM-1701 min about 29, max about 2075,
 breakpoint about 318; MD-UV380 22..2070, breakpoint 309; MD-UV390 Plus 10 W 19..2054, breakpoint 308; RT3S 23..2020,
 breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approximation around the breakpoint maps it to
--31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis).
+-31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis). RadioFoundry writes the knob's
+0..100 % linearly over -31..+31 steps of HR_C6000 4:0x37 ([modem-hrc6000.md](modem-hrc6000.md) 2). The same gain scales
+beeps. The board sets `volume_pcm` and gives the measured curve below (`volume_db10`, table `rx_gain_db10` in
+`radio_uvf.c`), so above volume step 7 the radio core plays each beep softer by the gain over step 7's and the beep
+sounds as at step 7 (`radio-features.md` 4). The speaker volume is not changed for a beep.
+
+The chip offers no electrical copy of its output (with the audio probe's tone on the DAC in DMR, the I2S input stays at
+its noise floor at every 0x37 setting), so the curve is measured at the speaker. A 1500 Hz tone at a fixed PCM level
+played on the prompt FIFO in FM at each of the 63 gain steps, with the programming cable out (the cable mutes the
+speaker), recorded by a microphone 3-5 cm from the grille. Two passes 12 dB apart agree within 0.5 dB, and the level
+rises about 0.77 dB a step over the whole range (not the manual's 1.5 dB). Per volume step:
+
+| Step | Knob | 0x37 step | Speaker level vs step 7 | Beep level at `beep_level` 60 |
+|---|---|---|---|---|
+| 1 | 6 % | -28 | -18.8 dB | 60 |
+| 2 | 13 % | -23 | -14.9 dB | 60 |
+| 3 | 19 % | -20 | -12.5 dB | 60 |
+| 4 | 25 % | -16 | -9.4 dB | 60 |
+| 5 | 31 % | -12 | -6.2 dB | 60 |
+| 6 | 38 % | -8 | -3.1 dB | 60 |
+| 7 | 44 % | -4 | 0 dB | 60 |
+| 8 | 50 % | 0 | +3.1 dB | 42 |
+| 9 | 56 % | +3 | +5.5 dB | 32 |
+| 10 | 63 % | +8 | +9.3 dB | 21 |
+| 11 | 69 % | +11 | +11.7 dB | 16 |
+| 12 | 75 % | +15 | +14.7 dB | 11 |
+| 13 | 81 % | +19 | +17.7 dB | 8 |
+| 14 | 88 % | +23 | +21.0 dB | 5 |
+| 15 | 94 % | +27 | +23.9 dB | 4 |
+| 16 | 100 % | +31 | +26.9 dB | 3 |
+
+The beep level is a whole number of at least 1, so at the top steps a beep can sound louder than at step 7: up to about
+1 dB at `beep_level` 60, and about 7 dB at `beep_level` 10 (step 16 plays level 1 for 0.45). The
+other UV380 family radios have the same chip and knob mapping and use the same curve.
 
 ### 11.3 Mic level
 

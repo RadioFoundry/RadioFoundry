@@ -233,13 +233,21 @@ static inline bool voice_streaming(void)
 static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
-	// A board with spk_beep plays beeps at their own gain: beep_level as it is, none at volume 0
-	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		if (board.audio == NULL || board.audio->spk_beep == NULL) {
-			level = radio_beep_level(level, sm->volume_sent);
-		} else if (sm->volume_sent == 0) {
-			level = 0;
+	const hal_radio_t *r = board.radio;
+	if (r == NULL || r->volume == NULL) {
+		return level;
+	}
+	if (!r->volume_pcm) {
+		// A board with spk_beep plays beeps at their own gain: beep_level as it is, none at volume 0
+		if (board.audio != NULL && board.audio->spk_beep != NULL) {
+			return sm->volume_sent == 0 ? 0 : level;
 		}
+		return radio_beep_level(level, sm->volume_sent);
+	}
+	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
 }
@@ -6921,12 +6929,19 @@ static void hotspot_arm(radio_sm_t *sm)
 	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
 	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
 	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
-	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
+	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
 	bool was = sm->dmr_keyed;
 	if (was) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
+			sm->hs_power_due = true;
+			return;
+		}
 		sm->dmr_keyed = false;
 		board.radio->tx_off();
 	}
+	sm->hs_power_due = false;
 	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 	if (was && !sm->dmr_keyed) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
@@ -7197,6 +7212,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
+	sm->hs_power_due = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -8633,10 +8649,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_FREQ:
 		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
 		break;
-	case RREQ_HS_POWER:
-		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
-		hotspot_arm(sm);
+	case RREQ_HS_POWER: {
+		uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+		bool same = level == sm->hs_power;
+		sm->hs_power = level;
+		// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
+		// held now (a critical battery), which drops it
+		if (!same || !sm->dmr_keyed || tx_held(sm)) {
+			hotspot_arm(sm);
+		}
 		break;
+	}
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
@@ -8853,6 +8876,33 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 		return cap;
 	}
 	return (uint8_t)volume_percent;
+}
+
+// 10^(-d/20) for d = 0..19 dB, and for d = 0.0..0.9 dB, Q15
+static const uint16_t db_down_q15[20] = {
+	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
+	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
+};
+static const uint16_t db10_down_q15[10] = {
+	32768, 32393, 32022, 31656, 31293, 30935, 30581, 30231, 29885, 29543,
+};
+
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap)
+{
+	if (level == 0 || db10_now <= db10_cap) {
+		return level;
+	}
+	unsigned d = (unsigned)(db10_now - db10_cap);
+	// The level in hundredths: 20 dB at a time is a tenth. 255 x 100 x 32768 still fits 32 bits (thousandths didn't
+	// above level 131)
+	uint32_t centi = (uint32_t)level * 100u;
+	for (; d >= 200u; d -= 200u) {
+		centi /= 10u;
+	}
+	centi = (centi * db_down_q15[d / 10u] + 16384u) >> 15;
+	centi = (centi * db10_down_q15[d % 10u] + 16384u) >> 15;
+	uint32_t out = (centi + 50u) / 100u;
+	return (uint8_t)(out == 0 ? 1 : out);
 }
 
 uint8_t radio_volume_stored(uint8_t step)
@@ -9262,6 +9312,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
 		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
 		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		if (sm->hs_power_due && !board.dmr->is_transmitting()) {
+			hotspot_arm(sm);	// a level that came during a transmission (hotspot_arm)
+		}
 		outputs(sm);
 		return;
 	}
