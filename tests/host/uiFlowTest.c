@@ -1844,6 +1844,14 @@ static void tx_redraw_checks(void)
 			fails++;
 		}
 	}
+	// The once-a-second refresh is only the fallback: a change of the call's state shows in the next pass (one tick),
+	// between the TX timer's seconds
+	sim_reset(sim_geom_find("240x320i10x5"), SIM_MAP_K);
+	if (!sim_run("pttdown dmrtx:wait expect:shows=WAITING dmrtx:permit expect:shows=ADMITTED "
+			"dmrtx:talk expect:shows=TALKING dmrtx:ending expect:shows=ENDING", err, sizeof err)) {
+		printf("FAIL TX state redraw: %s\n", err);
+		fails++;
+	}
 }
 
 // gfx_flush against a copy of the panel: after every flush the copy is the frame buffer, with whole rows and with

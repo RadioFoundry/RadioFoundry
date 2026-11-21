@@ -12,6 +12,7 @@
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
 //   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
+//   dmrtx:<state>       during DMR TX: the call's state becomes wait, permit, talk or ending; one tick passes
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
@@ -3115,6 +3116,23 @@ static bool run_token(char *t, char *err, size_t len)
 		view.tx_elapsed_ms = 0;
 		changed();
 		advance(1500);
+		return true;
+	}
+	if (strcmp(t, "dmrtx") == 0 && arg != NULL) {	// during DMR TX: the call's state changes; one tick passes
+		static const struct { const char *name; uint8_t state; } states[] = {
+			{ "wait", RDMR_TX_WAIT }, { "permit", RDMR_TX_PERMIT }, { "talk", RDMR_TX },
+			{ "ending", RDMR_TX_ENDING },
+		};
+		size_t i = 0;
+		while (i < sizeof states / sizeof states[0] && strcmp(arg, states[i].name) != 0)
+			i++;
+		if (i == sizeof states / sizeof states[0]) {
+			snprintf(err, len, "dmrtx: expected wait, permit, talk or ending, got %s", arg);
+			return false;
+		}
+		view.dmr.state = states[i].state;
+		changed();
+		advance(TICK_MS);
 		return true;
 	}
 	if (strcmp(t, "aprstx") == 0 || strcmp(t, "aprsend") == 0) {
