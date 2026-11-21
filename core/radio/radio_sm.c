@@ -716,17 +716,20 @@ static void outputs(radio_sm_t *sm)
 #if CONFIG_APRS_RX
 	// APRS > Mute APRS audio: on the APRS frequency the speaker stays silent, the LED and the decoder go on. Monitor
 	// (the squelch held open) still plays it, to listen on purpose. A board with speaker_mute keeps the receive audio
-	// path open for its decoder; otherwise the path closes
-	muted = spk && !sm->view.monitor && fm && sm->view.ch.rx_hz == aprs_mute_hz();
+	// path open for its decoder; otherwise the path closes. The board's mute follows the frequency, not the squelch, so
+	// the amplifier never opens for a moment when the squelch closes, before audio(false)
+	bool on_aprs = !sm->view.monitor && fm && sm->view.ch.rx_hz == aprs_mute_hz();
+	muted = spk && on_aprs;
 	if (board.radio->speaker_mute != NULL) {
-		if (sm->speaker_mute_out != (int8_t)muted) {
-			sm->speaker_mute_out = (int8_t)muted;
-			board.radio->speaker_mute(muted);
+		if (sm->speaker_mute_out != (int8_t)on_aprs) {
+			sm->speaker_mute_out = (int8_t)on_aprs;
+			board.radio->speaker_mute(on_aprs);
 		}
 	} else if (muted) {
 		spk = false;
 	}
 #endif
+	(void)muted;	// read only by APRS receive and dual watch
 	if (sm->audio_out != (int8_t)spk) {
 		sm->audio_out = (int8_t)spk;
 		board.radio->audio(spk);
@@ -8025,7 +8028,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->audio_out = -1;
+#if CONFIG_APRS_RX
 	sm->speaker_mute_out = -1;
+#endif
 	sm->rx_open_out = -1;
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM

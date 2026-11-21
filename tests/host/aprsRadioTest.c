@@ -102,9 +102,17 @@ static void r_status(radio_status_t *st)
 	st->tone_ok = true;
 }
 static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
-static void r_audio(bool on) { spk_on = on; }
 static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
-static void r_speaker_mute(bool mute) { spk_muted = mute; }
+static int spk_blips;	// the speaker audible on the APRS frequency while muted (on and unmuted at once)
+static bool blip_watch;	// count spk_blips
+static void blip_check(void)
+{
+	if (blip_watch && spk_on && !spk_muted && hw.rx_hz == APRS_HZ) {
+		spk_blips++;
+	}
+}
+static void r_audio(bool on) { spk_on = on; blip_check(); }
+static void r_speaker_mute(bool mute) { spk_muted = mute; blip_check(); }
 static bool r_tone(uint16_t hz)
 {
 	hw.tone_hz = hz;
@@ -1772,6 +1780,18 @@ static void mute_case(bool hook)
 	req(RREQ_MONITOR, 0);
 	run(100);
 	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	// the end of a packet: the squelch closes and the speaker never plays for a moment on the way (with the hook,
+	// speaker_mute(false) before audio(false) did), nor when the next carrier opens it
+	spk_blips = 0;
+	blip_watch = true;
+	hw.noise_on_aprs = 120;
+	run(300);
+	CHECK(!spk_on && (!hook || spk_muted));
+	hw.noise_on_aprs = 30;
+	run(300);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	blip_watch = false;
+	CHECK(spk_blips == 0);
 	aprs_init(now);	// as at power-up: the setting comes back
 	aprs_get_cfg(&c);
 	CHECK(c.mute);
