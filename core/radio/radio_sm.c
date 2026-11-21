@@ -6911,10 +6911,10 @@ static void hotspot_arm(radio_sm_t *sm)
 	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
 	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
 	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
-	// for its end (radio_sm_poll)
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
 	bool was = sm->dmr_keyed;
 	if (was) {
-		if (board.dmr != NULL && board.dmr->is_transmitting()) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
 			sm->hs_power_due = true;
 			return;
 		}
