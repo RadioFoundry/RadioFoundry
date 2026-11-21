@@ -31,6 +31,9 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
+//   p25slot:<n>,g|u,<id>,<name>  stored P25 channel n (chkind) has a P25 contact slot as its contact: that target
+//   p25name:g|u,<id>,<name>   an entry of the P25 contacts (the air mode contact table; _ = space), named on P25
+//                       screens only: the DMR contacts never name a P25 ID
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
@@ -927,6 +930,37 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 		*out = sim_air(number)->p25;	// as the editor saved it
 	return true;
 }
+// A stored P25 channel's talk target (p25_codeplug.c): its contact is a DMR one, except on the channel the "p25slot"
+// token names, whose contact is a P25 contact slot with the target given there
+static struct {
+	uint16_t number;	// 0 = none
+	bool unit;
+	uint32_t id;
+	char name[CODEPLUG_NAME_LEN + 1];
+} sim_slot;
+bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
+{
+	(void)rx_list;
+	if (ch->kind != CODEPLUG_KIND_P25 && ch->kind != CODEPLUG_KIND_P25_TRUNK)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->id = P25_CP_TG_DEFAULT;
+	if (sim_slot.number != 0 && sim_slot.number == number) {
+		out->air = out->set = true;
+		out->unit = sim_slot.unit;
+		out->id = sim_slot.id;
+		strcpy(out->name, sim_slot.name);
+		return true;
+	}
+	contact_t c;
+	if (ch->contact != 0 && codeplug_contact(ch->contact, &c)) {
+		out->set = true;
+		out->unit = c.type == CONTACT_PRIVATE;
+		out->id = c.type == CONTACT_ALL_CALL ? P25_CP_TG_ALL : c.id;
+		strcpy(out->name, c.name);
+	}
+	return true;
+}
 bool radio_p25_fits(void) { return p25_radio; }
 #endif
 #if CONFIG_NXDN
@@ -1308,8 +1342,46 @@ const radio_view_t *sim_view(void) { return &view; }
 void radio_get_view(radio_view_t *v) { *v = view; }
 uint32_t radio_view_serial(void) { return serial; }
 static int32_t sim_step;	// UI_SET_VFO_STEP: 0 auto (the width's), else 10 Hz units
+#if CONFIG_P25
+// The P25 names of the air mode contact table (docs/spec/air-contacts.md), as p25name: sets them. The radio core looks
+// them up, never in the DMR contacts (radio_sm.c air_names); the view carries them to the screens the same way here
+static struct {
+	uint32_t id;
+	bool group;
+	char name[CODEPLUG_NAME_LEN + 1];
+} p25_names[8];
+static unsigned p25_name_count;
+
+static void p25_name_fill(uint32_t id, bool group, uint32_t *have_id, bool *have_group, char *out)
+{
+	out[0] = '\0';
+	*have_id = id;
+	if (have_group != NULL)
+		*have_group = group;
+	for (unsigned i = 0; i < p25_name_count; i++) {
+		if (p25_names[i].id == id && p25_names[i].group == group) {
+			strcpy(out, p25_names[i].name);
+			return;
+		}
+	}
+}
+
+static void p25_names_fill(void)
+{
+	if (view.ch.mode != RADIO_MODE_P25)
+		return;
+	const radio_p25_view_t *p = &view.p25;
+	radio_air_names_t *a = &view.air_names;
+	p25_name_fill(p->src, false, &a->src_id, NULL, a->src);
+	p25_name_fill(p->dst, (p->flags & RADIO_P25_UNIT) == 0, &a->dst_id, &a->dst_group, a->dst);
+	p25_name_fill(p->talk, (p->flags & RADIO_P25_TALK_UNIT) == 0, &a->talk_id, &a->talk_group, a->talk);
+}
+#endif
 static void changed(void)
 {
+#if CONFIG_P25
+	p25_names_fill();
+#endif
 	view.vfo_step_hz = sim_step == 833 ? 8333u : sim_step > 0 ? (uint32_t)sim_step * 10u :
 			   view.ch.bw == RADIO_BW_25K ? 25000u : 12500u;
 	view.vfo_step_auto = sim_step == 0;
@@ -2638,6 +2710,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	gfx_invalidate();
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
+#if CONFIG_P25
+	p25_name_count = 0;
+	sim_slot.number = 0;
+#endif
 	memset(&sim_rec, 0, sizeof sim_rec);
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
@@ -3451,6 +3527,43 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_P25
+	if (strcmp(t, "p25slot") == 0) {	// stored channel n's contact is a P25 contact slot: n,g|u,<id>,<name>
+		unsigned n = 0, id = 0;
+		char k = 'g', name[CODEPLUG_NAME_LEN + 1] = "";
+		if (arg == NULL || sscanf(arg, "%u,%c,%u,%16s", &n, &k, &id, name) != 4 || (k != 'g' && k != 'u')) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		for (char *ch = name; *ch; ch++)
+			if (*ch == '_')
+				*ch = ' ';
+		sim_slot.number = (uint16_t)n;
+		sim_slot.unit = k == 'u';
+		sim_slot.id = id;
+		strcpy(sim_slot.name, name);
+		return true;
+	}
+	if (strcmp(t, "p25name") == 0) {	// an entry of the P25 contacts: g|u,<id>,<name>
+		unsigned id = 0;
+		char k = 'g', name[CODEPLUG_NAME_LEN + 1] = "";
+		if (arg == NULL || sscanf(arg, "%c,%u,%16s", &k, &id, name) != 3 || (k != 'g' && k != 'u') ||
+		    p25_name_count >= sizeof p25_names / sizeof p25_names[0]) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		for (char *ch = name; *ch; ch++)
+			if (*ch == '_')
+				*ch = ' ';
+		p25_names[p25_name_count].id = id;
+		p25_names[p25_name_count].group = k == 'g';
+		strcpy(p25_names[p25_name_count].name, name);
+		p25_name_count++;
+		changed();
+		advance(100);
 		return true;
 	}
 #endif

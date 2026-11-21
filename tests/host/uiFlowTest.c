@@ -153,6 +153,22 @@ static const flow_t flows[] = {
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
 	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
+	// The names come from the P25 contacts (p25name:, the air mode contact table) and nowhere else: TG 91 is a DMR
+	// contact ("World") and shows as a number here
+	{ "P25 home: a talk group named by the P25 contacts", "dlmode:p25 p25name:g,7,Ops", "p25rx:3101234,7",
+	  "screen=home shows=TG_7_Ops", 0, false },
+	{ "P25 home: a DMR contact does not name a talk group", "dlmode:p25", "p25rx:3101234,91",
+	  "screen=home shows=TG_91 hides=World", 0, false },
+	{ "P25 home: a unit entry is not a talk group's name", "dlmode:p25 p25name:u,7,Ops", "p25rx:3101234,7",
+	  "screen=home shows=TG_7 hides=Ops", 0, false },
+	{ "P25 home: the caller by name", "dlmode:p25 p25name:u,3101234,Joe", "p25rx:3101234,7",
+	  "screen=home shows=Joe shows=TG_7 hides=ID_3101234", 0, false },
+	{ "P25 home: a caller without an entry", "dlmode:p25 p25name:g,3101234,Ops", "p25rx:3101234,7",
+	  "screen=home shows=ID_3101234 hides=Ops", 0, false },
+	{ "P25 home: a unit called by name", "dlmode:p25 p25name:u,3105555,Sam", "p25rx:3101234,3105555,u",
+	  "screen=home shows=Private_to_Sam_3105555", 0, false },
+	{ "P25 home: the talk line names the talk group", "dlmode:p25 p25name:g,1,Calling", "",
+	  "screen=home shows=TG_1_Calling", 0, false },
 	{ "P25 home: encrypted", "dlmode:p25", "p25rx:3101234,7,e", "shows=Encrypted:_not_played hides=ID_3101234", 0,
 	  false },
 	{ "P25 home: another talk group", "dlmode:p25", "p25rx:3101234,7,o", "shows=Other_TG:_not_played", 0, false },
@@ -167,6 +183,8 @@ static const flow_t flows[] = {
 	  0, false },
 	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
 	  false },
+	{ "P25 trunked home: the followed group by name", "dlmode:p25 p25name:g,7,F", "p25t:3,7",
+	  "screen=home shows=Following_TG_7_F", 0, false },
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
@@ -207,6 +225,19 @@ static const flow_t flows[] = {
 	// Save as new channel takes nothing from the stored one: not asked
 	{ "stored P25 channel as FM: a new channel isn't asked", "chkind:3,p25 ok 5 ok down down ok", "up up up ok",
 	  "screen=channel writes=1 toast=Saved_as_channel_41", 4, true },
+	// A stored P25 channel whose contact is a P25 contact slot (p25-codeplug.md 2.4): the TX contact row shows the P25
+	// target, not the DMR contact with that number, and OK on it only says where to edit (no picker, nothing to save)
+	{ "P25 channel with a P25 contact: the row shows its target", "chkind:3,p25 p25slot:3,g,3100,1_SB_DPS ok 5 ok",
+	  "down down down down down down down down", "focus=TX_contact shows=1_SB_DPS", 8, false },
+	{ "P25 channel with a P25 contact: it can't be changed",
+	  "chkind:3,p25 p25slot:3,g,3100,1_SB_DPS ok 5 ok down down down down down down down down", "ok",
+	  "screen=channel toast=P25_contacts:_use_the_Codeplug_Editor focus=TX_contact", 1, false },
+	{ "P25 channel with a P25 contact: the mode steps leave no DMR contact",
+	  "chkind:3,p25 p25slot:3,g,3100,1_SB_DPS ok 5 ok down down ok ok", "down down down down down down down",
+	  "screen=channel focus=TX_contact shows=None hides=1_SB_DPS", 7, false },
+	// The same channel with a DMR contact opens the picker as before
+	{ "P25 channel with a DMR contact: the picker opens", "chkind:3,p25 ok 5 ok down down down down down down down down",
+	  "ok", "screen=chpick shows=TX_Contact", 1, false },
 #if CONFIG_NXDN
 	// The same from NXDN: its RAN and rate, no color code or timeslot; an ID past NXDN's range is refused
 	{ "NXDN new from current: RAN", "dlmode:nxdn", "ok 5 up up up ok down down down",

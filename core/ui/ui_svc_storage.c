@@ -1398,6 +1398,14 @@ static void save_target_job(void *ctx)
 		save_failed(TRN(STORE_ERR_TARGET_CHANNEL_READ, "Couldn't read the channel: for now only"));
 		return;
 	}
+#if CONFIG_P25
+	// A P25 channel whose contact is a P25 contact slot has no place for a DMR contact (p25-codeplug.md 2.4)
+	p25_talk_t air;
+	if (p25_channel_talk(job.channel, &job_ch, false, &air) && air.air) {
+		save_failed(TRN(STORE_ERR_TARGET_P25_SLOTS, "P25 contacts: for now only"));
+		return;
+	}
+#endif
 	// A contact record that couldn't be read counts as not stored: nothing is written then
 	uint16_t found = codeplug_contact_find_index(job.id, !job.private_call, &job.target);
 	if (found == 0) {

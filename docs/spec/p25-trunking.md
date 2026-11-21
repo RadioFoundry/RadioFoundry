@@ -306,7 +306,9 @@ registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits,
 refusal. The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
-Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
+Not used yet: the fallback channel, the system's `roam_dbm`. The RX group list (`groups`) is followed only on a channel
+whose contacts are P25 contacts ([p25-codeplug.md](p25-codeplug.md) 2.4, 4); the groups are in the follower's memory
+(`p25_trunk_t`, 64 bytes, lent with it).
 
 Memory: the transmit side adds 120 bytes to the follower (lent with it) and 28 bytes to the radio task's copy of the
 view, plus the radio core's request state (`p25_trunk_t`: the burst in hand, 12 bytes, and a few flags).

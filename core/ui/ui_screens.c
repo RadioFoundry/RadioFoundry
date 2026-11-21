@@ -1019,6 +1019,18 @@ static void home_entry_text(const ui_state_t *s, char *buf, size_t len)
 #if CONFIG_DMR
 static void draw_talk_dmr(const radio_view_t *v, bool label_first);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
+static void sb_target(sbuf_t *b, uint32_t id, bool private_call, const char *name);
+static void sb_talk_alts(sbuf_t *b, uint32_t id, bool private_call, const char *name, const char *tail, size_t room,
+			 bool label_first);
+#endif
+
+#if CONFIG_P25
+// A name of the view's P25 names (radio.h radio_air_names_t), only when it was looked up for the ID and the group or
+// unit shown: the names follow a view update by a moment, and a name against another ID would be wrong. "" without
+static const char *air_name_for(const char *name, uint32_t have_id, bool have_group, uint32_t id, bool group)
+{
+	return have_id == id && have_group == group ? name : "";
+}
 #endif
 
 static void draw_place(const radio_view_t *v, const ui_state_t *s)
@@ -1150,17 +1162,27 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, TR(HOME_STATE_P25T_REG, "Registering"));
 			c = ui_col.dim;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
-			sb_str(&b, "TG ");
-			sb_u32(&b, v->p25.talk, 1);
+			sb_target(&b, v->p25.talk, false, air_name_for(v->air_names.talk, v->air_names.talk_id,
+				  v->air_names.talk_group, v->p25.talk, true));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
 		} else if (v->p25.treq == P25_REQ_TALK) {
-			sb_str(&b, "TG ");
-			sb_u32(&b, v->p25.talk, 1);
+			sb_target(&b, v->p25.talk, false, air_name_for(v->air_names.talk, v->air_names.talk_id,
+				  v->air_names.talk_group, v->p25.talk, true));
 		} else {
+			// The group (or unit) the follower is on, named when the P25 contacts have it
+			bool unit = (v->p25.flags & RADIO_P25_UNIT) != 0;
+			const char *name = air_name_for(v->air_names.dst, v->air_names.dst_id, v->air_names.dst_group,
+							v->p25.dst, !unit);
 			sb_str(&b, TR(HOME_STATE_P25T_FOLLOW, "Following"));
-			sb_str(&b, (v->p25.flags & RADIO_P25_UNIT) != 0 ? " ID " : " TG ");
-			sb_u32(&b, v->p25.dst, 1);
+			// A name that only repeats the ID is no name: "Following ID 1004", not "Following 1004 1004"
+			if (unit && (name[0] == '\0' || ui_name_is_id(name, v->p25.dst, true))) {
+				sb_str(&b, " ID ");
+				sb_u32(&b, v->p25.dst, 1);
+			} else {
+				sb_chr(&b, ' ');
+				sb_target(&b, v->p25.dst, unit, name);
+			}
 		}
 #endif
 	} else if (v->ch.rx_only) {
@@ -1171,10 +1193,12 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		c = ui_col.warn;
 #if CONFIG_P25
 	} else if (v->ch.mode == RADIO_MODE_P25) {
-		// What PTT calls, as on DMR's talk line: "TG 1", or the unit's ID
-		if ((v->p25.flags & RADIO_P25_TALK_UNIT) == 0)
-			sb_str(&b, "TG ");
-		sb_u32(&b, v->p25.talk, 1);
+		// What PTT calls, as on DMR's talk line: "TG 1 Main Ops", or the unit's name and ID, the number alone
+		// without a name in the P25 contacts. Cut as the DMR line is, from the room the arrow leaves
+		bool unit = (v->p25.flags & RADIO_P25_TALK_UNIT) != 0;
+		size_t room = (size_t)((gfx_width() - gfx_text_width(f, GLYPH_ARROW)) / f->w);
+		sb_talk_alts(&b, v->p25.talk, unit, air_name_for(v->air_names.talk, v->air_names.talk_id,
+			     v->air_names.talk_group, v->p25.talk, !unit), "", room, label_first);
 #endif
 #if CONFIG_NXDN
 	} else if (v->ch.mode == RADIO_MODE_NXDN) {
@@ -2121,10 +2145,12 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 typedef struct {
 	bool played, enc, unit;
 	uint32_t src, dst;
+	const char *src_name, *dst_name;	// from the P25 contacts; "" for NXDN, and when there is none
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	c->src_name = c->dst_name = "";
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2133,6 +2159,13 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
 		c->src = p->src;
 		c->dst = p->dst;
+		const radio_air_names_t *a = &v->air_names;
+		c->src_name = air_name_for(a->src, a->src_id, false, p->src, false);
+		c->dst_name = air_name_for(a->dst, a->dst_id, a->dst_group, p->dst, !c->unit);
+		if (ui_name_is_id(c->src_name, p->src, true))	// a name that only repeats the ID says nothing
+			c->src_name = "";
+		if (c->unit && ui_name_is_id(c->dst_name, p->dst, true))
+			c->dst_name = "";
 		return true;
 	}
 #endif
@@ -2171,16 +2204,24 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		if (c->enc)
 			sb_str(&b, "ENC ");
 		if (with_id) {
-			sb_str(&b, "ID ");
-			sb_u32(&b, c->src, 1);
+			if (c->src_name[0] != '\0') {
+				sb_str(&b, c->src_name);
+			} else {
+				sb_str(&b, "ID ");
+				sb_u32(&b, c->src, 1);
+			}
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {
 			sb_str(&b, TR(CALL_VALUE_PRIVATE_TO, "Private to "));
+			if (c->dst_name[0] != '\0') {
+				sb_str(&b, c->dst_name);
+				sb_chr(&b, ' ');
+			}
+			sb_u32(&b, c->dst, 1);
 		} else {
-			sb_str(&b, "TG ");
+			sb_target(&b, c->dst, false, c->dst_name);
 		}
-		sb_u32(&b, c->dst, 1);
 		if (gfx_text_width(f, buf) <= gfx_width())
 			break;
 	}

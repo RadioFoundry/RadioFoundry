@@ -43,6 +43,7 @@
 #include "radio/radio_trunk.h"
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
+#include "codeplug/codeplug_air_contacts.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
@@ -764,6 +765,31 @@ uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
 }
 static uint32_t contact_finds, iddb_lookups;
 static contact_t added_contact;	// a contact written after the radio started (id 0 = none)
+static uint32_t fake_us;	// the microsecond clock: only the air table scans move it
+#if CONFIG_AIR
+// The air mode contact table (docs/spec/air-contacts.md): P25 names apart from the contacts above. TG 3100 is also
+// the DMR contact "TG USA", and 9991234 the private contact "Joe": a P25 lookup must never answer with those
+static const air_contact_t air_contacts[] = {
+	{ AIR_CONTACT_GROUP, 3100, "1 SB DPS" },
+	{ AIR_CONTACT_UNIT, 9991234, "Engine 7" },
+	{ AIR_CONTACT_GROUP, 77, "Seventy" },
+};
+static uint32_t air_finds;
+static uint32_t air_find_cost_us;	// what each scan costs on the fake microsecond clock
+bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contact_t *out)
+{
+	air_finds++;
+	fake_us += air_find_cost_us;
+	for (unsigned i = 0; i < sizeof(air_contacts) / sizeof(air_contacts[0]); i++) {
+		const air_contact_t *c = &air_contacts[i];
+		if (mode == CODEPLUG_KIND_P25 && c->id == id && (c->type != AIR_CONTACT_UNIT) == group) {
+			*out = *c;
+			return true;
+		}
+	}
+	return false;
+}
+#endif
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 {
 	contact_finds++;
@@ -3994,6 +4020,7 @@ static void test_ui_requests(void)
 // requests go straight into the state machine here instead of through radio_task.c's queue ----
 
 uint32_t hal_millis(void) { return now; }
+uint32_t hal_micros(void) { return fake_us; }
 void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
 uint32_t radio_view_serial(void) { return sm.serial; }
@@ -7014,6 +7041,83 @@ static void test_p25_rx(void)
 	aud.feed = false;
 }
 
+// The view's IDs named from the air mode contact table (radio_view_t.air_names, docs/spec/air-contacts.md), never
+// from the DMR contacts: the talk group PTT calls, the caller, the call's talk group or unit. A DMR contact with the
+// same number names nothing on P25, and the DMR ID database is never asked
+static void test_p25_names(void)
+{
+	const radio_air_names_t *a = &sm.view.air_names;
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	start();
+	radio_p25_settings_t s = { .rx_nac = P25_NAC_DEFAULT, .tx_nac = P25_NAC_DEFAULT, .talkaround = RADIO_P25_TA_AUTO,
+				   .tx_dst = 201 };
+	radio_req_p25_settings(&s);
+	req(RREQ_ZONE_POS, 2);
+	run(50);
+	// TG 201 is the DMR contact "Main Ops" and has no P25 entry: a number on P25
+	CHECK(v->talk == 201 && a->talk_id == 201 && a->talk_group && a->talk[0] == '\0');
+
+	// Engine 7 calls TG 3100: the P25 names, not the DMR contacts "Joe" and "TG USA" with the same numbers
+	uint32_t contacts0 = contact_finds, looks = iddb_lookups;
+	far_begin(P25_NAC_DEFAULT, 9991234, false, 3100);
+	far_call(600);
+	CHECK(v->src == 9991234 && v->dst == 3100);
+	CHECK(a->src_id == 9991234 && strcmp(a->src, "Engine 7") == 0);
+	CHECK(a->dst_id == 3100 && a->dst_group && strcmp(a->dst, "1 SB DPS") == 0);
+
+	// A unit only the DMR ID database knows: a number
+	far_begin(P25_NAC_DEFAULT, 9995555, false, 3100);
+	far_call(600);
+	CHECK(v->src == 9995555 && a->src_id == 9995555 && a->src[0] == '\0');
+	CHECK(contact_finds == contacts0 && iddb_lookups == looks);	// neither the contacts nor the database asked
+
+	// A unit call to 77: P25 talk group 77 has a name, unit 77 none
+	far_begin(P25_NAC_DEFAULT, 1004, true, 77);
+	far_call(600);
+	CHECK(v->dst == 77 && (v->flags & RADIO_P25_UNIT) && a->dst_id == 77 && !a->dst_group && a->dst[0] == '\0');
+
+	// PTT to TG 3100: its P25 name; the answer is cached, so the second time asks the table no more
+	s.tx_dst = 3100;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(v->talk == 3100 && a->talk_id == 3100 && strcmp(a->talk, "1 SB DPS") == 0);
+	uint32_t finds = air_finds;
+	s.tx_dst = 77;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(strcmp(a->talk, "Seventy") == 0);
+	s.tx_dst = 3100;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(strcmp(a->talk, "1 SB DPS") == 0 && air_finds == finds + 1);	// 77 looked up, 3100 from the cache
+
+	// What the scans cost is kept for the debug link: the last and the longest, a cached name no scan
+	const radio_air_scan_t *sc = &sm.view.air_scan;
+	char buf[2048];
+	uint32_t scans = sc->scans;
+	air_find_cost_us = 1500;
+	s.tx_dst = 555;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(sc->scans == scans + 1 && sc->last_us == 1500 && sc->max_us == 1500);
+	air_find_cost_us = 400;
+	s.tx_dst = 556;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(sc->scans == scans + 2 && sc->last_us == 400 && sc->max_us == 1500);
+	s.tx_dst = 555;
+	radio_req_p25_settings(&s);
+	run(50);
+	CHECK(sc->scans == scans + 2);			// from the cache
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.air_scan_last_us=400\np25.air_scan_max_us=1500\n") != NULL);
+	air_find_cost_us = 0;
+	far_stop();
+	p25_defaults();
+}
+
 static void test_p25_tx(void)
 {
 	radio_p25_stats_t st;
@@ -7387,6 +7491,17 @@ bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
 	return true;
 }
 uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
+// No stored channel here has P25 contact slots: the talk target reads as one without the flag
+bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
+{
+	(void)number;
+	(void)rx_list;
+	if (ch->kind != CODEPLUG_KIND_P25)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->id = P25_CP_TG_DEFAULT;
+	return true;
+}
 // A plain channel in P25 saved as a stored one: the record and block it was given
 static struct { uint16_t number; channel_t ch; p25_conv_t conv; } p25_saved;
 bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
@@ -7645,7 +7760,7 @@ static void test_p25_stored(void)
 	req(RREQ_PTT, 0);
 	chans[3].rx_only = false;
 	// The editor's feature list says P25 here
-	CHECK(strncmp(build_modes_now(), "P25,", 4) == 0);
+	CHECK(strncmp(build_modes_now(), "P25,", 4) == 0 && strstr(build_features_now(), "p25contacts,") != NULL);
 
 	// A board that can't carry P25: parked (DMR modem off, never keyed), and no P25 in the feature list
 	air_nofit = true;
@@ -8012,6 +8127,18 @@ static void test_p25_trunk(void)
 	CHECK(hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.follows=1\n") != NULL);
+	// The same grant with the RX list's groups followed (a channel naming P25 contacts, p25-codeplug.md 3): the
+	// codec hands them over and the follower follows talk group 300 now, a group it didn't follow above
+	stored_trunk.group_count = 2;
+	stored_trunk.groups[0] = 299;
+	stored_trunk.groups[1] = 300;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(1500);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.tg=300\n") != NULL && strstr(buf, "p25t.follows=0\n") == NULL &&
+	      strstr(buf, "p25t.voice_hz=451125000\n") != NULL);
+	stored_trunk.group_count = 0;
 	// An encrypted grant with the system's skip on: refused
 	site.grant_tg = 201;
 	site.grant_enc = true;
@@ -8230,6 +8357,7 @@ static void test_p25(void)
 	test_p25_trunk_tx();
 #endif
 	test_p25_rx();
+	test_p25_names();
 	test_p25_stored();
 #if CONFIG_SCAN
 	test_p25_scan();

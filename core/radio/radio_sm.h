@@ -235,6 +235,18 @@ typedef struct {
 } radio_name_t;
 #endif
 
+#if CONFIG_P25
+// IDs of a P25 call looked up in the air mode contact table, most recent kept: following a trunked system moves
+// between a few talk groups, and each new one is a scan of up to 8 KB
+#define RADIO_AIR_LOOKUPS	8
+
+typedef struct {
+	uint32_t id;
+	bool group;		// with id: 0 = an unused cache entry
+	char name[CODEPLUG_NAME_LEN + 1];
+} radio_air_name_t;
+#endif
+
 #if CONFIG_DUAL_WATCH
 // The VFO not in use: dual watch gives each channel its own (radio-features.md 2.1)
 typedef struct {
@@ -499,6 +511,10 @@ typedef struct {
 #if CONFIG_SFR_CWID
 	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
+#endif
+#if CONFIG_P25
+	radio_air_name_t air_lookups[RADIO_AIR_LOOKUPS];	// codeplug_air_contact_find answers ("" = none)
+	uint8_t air_lookup_next;
 #endif
 #if CONFIG_DMR_TRUNK
 	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on

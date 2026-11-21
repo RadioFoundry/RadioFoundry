@@ -2443,6 +2443,11 @@ msgid "Tones: not in this build"
 msgstr "Toni: non in questa build"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_P25_CONTACTS_USE_EDITOR"
+msgid "P25 contacts: use the Codeplug Editor"
+msgstr "Contatti P25: usa l'editor"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_NUMBER_IS_FIXED"
 msgid "Save as new channel to use another number"
 msgstr "Salva come nuovo canale per usare un altro numero"
@@ -5651,6 +5656,11 @@ msgstr "Quel canale non c'è più"
 msgctxt "STORE_ERR_TARGET_CHANNEL_READ"
 msgid "Couldn't read the channel: for now only"
 msgstr "Lettura canale non riuscita: solo per ora"
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TARGET_P25_SLOTS"
+msgid "P25 contacts: for now only"
+msgstr "Contatti P25: solo per ora"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_TARGET_NOT_STORED"

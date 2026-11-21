@@ -176,6 +176,9 @@ static const char features[] =
 #if CONFIG_AIR_RAW
 	"AIR_RAW,"
 #endif
+#if CONFIG_P25
+	"p25contacts,"		// a P25 channel can take its contacts from the P25 contacts (p25-codeplug.md 2)
+#endif
 #if CONFIG_BCAST_FM
 	"BCAST_FM,"
 #endif

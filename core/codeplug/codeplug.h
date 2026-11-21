@@ -35,7 +35,8 @@ typedef struct {
 	// DMR (unused by FM)
 	uint8_t color_code;
 	uint8_t timeslot;	// 1 or 2
-	uint16_t contact;	// talk target contact index, 0 = none
+	uint16_t contact;	// talk target contact index, 0 = none; on a P25 channel a P25 contact slot when its block says so:
+				// read it through p25_channel_talk (p25/p25_codeplug.h), not as a DMR index
 	uint16_t listen_list;	// RX group list index, 0 = none
 	uint32_t dmr_id;	// own DMR ID for this channel, 0 = the radio's
 	bool dmo;		// direct mode even when RX and TX differ (open-firmware "force DMO")

@@ -140,7 +140,7 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | Text entry | `text` | OK on a text row (a channel's name): keypad letters, 2.1 |
 | Unsaved Changes | `discard` | BACK in the channel editor with unsaved changes (2.1), or in the contact editor (2.4); titled "Save as FM?" or "Save as DMR?" before a save that would remove a channel's own mode (2.1) |
 | New Contact | `contactedit` | New contact in Contacts, Find's "Create contact 3100", or Save as contact in a station's or talkgroup's actions (`CONFIG_CONTACT_EDIT`): the contact editor (2.4) |
-| List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
+| List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered. Not on a P25 channel whose contacts are P25 contacts ([p25-codeplug.md](p25-codeplug.md) 2.4): those rows are dimmed and show the target |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8. Its last rows: "Type a number..." (Find) and "Select contact..." (Contacts, whose keys are the picker's) |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
 | Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |

@@ -430,6 +430,28 @@ typedef struct {
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
 
+#if CONFIG_P25
+// The names of a P25 view's IDs (radio_view_t.air_names) from the air mode contact table (docs/spec/air-contacts.md),
+// "" when it has no entry: never from the DMR contacts or the DMR ID database. Kept outside the engine views: their
+// poll compares the whole struct to tell a change. Each name says which ID it belongs to, so a screen never shows a
+// name against an ID it wasn't looked up for
+typedef struct {
+	uint32_t src_id, dst_id, talk_id;
+	bool dst_group, talk_group;
+	char src[CODEPLUG_NAME_LEN + 1];	// the caller
+	char dst[CODEPLUG_NAME_LEN + 1];	// the talk group or unit called
+	char talk[CODEPLUG_NAME_LEN + 1];	// what PTT calls
+} radio_air_names_t;
+
+// What the scans of the air mode contact table (codeplug_air_contact_find reads up to 8 KB on the radio task) have cost,
+// for measuring them on the radio (debug link p25.air_scan_*): a cache miss is one scan. Microseconds
+typedef struct {
+	uint32_t scans;
+	uint32_t last_us;
+	uint32_t max_us;
+} radio_air_scan_t;
+#endif
+
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
@@ -522,6 +544,10 @@ typedef struct {
 #endif
 #if CONFIG_NXDN
 	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
+#endif
+#if CONFIG_P25
+	radio_air_names_t air_names;	// the names of the P25 IDs in use
+	radio_air_scan_t air_scan;	// the cost of the table scans behind them
 #endif
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;

@@ -3,7 +3,8 @@
 // P25 in the codeplug (core/p25/p25_codeplug.c, docs/spec/p25-codeplug.md) on a simulated NOR flash: the shared vectors
 // (tests/vectors/channel-modes.txt, also read by the Codeplug Editor's tests), defaults, zeroed and short blocks, a
 // conventional channel's set-up from its tag, the radio-wide record and its record; with CONFIG_P25_TRUNK a trunked
-// system with several sites, its control channels in hunt order, the identifier plan and the fallback
+// system with several sites, its control channels in hunt order, the identifier plan and the fallback; a channel whose
+// contact and RX group list are P25 contact slots (the flag bits) against the air mode contact table
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,7 @@
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 #include "p25/p25_codeplug.h"
+#include "codeplug/codeplug_air_contacts.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
 
@@ -98,7 +100,7 @@ static void test_vectors(void)
 			p25_conv_decode(b, unhex(w[1], b, sizeof b), &c);
 			CHECK(c.rx_nac == h(w[2]) && c.tx_nac == h(w[3]) && c.squelch == h(w[4]));
 		} else if (strcmp(w[0], "p25enc") == 0) {
-			p25_conv_t c = { (uint16_t)h(w[1]), (uint16_t)h(w[2]), (uint8_t)h(w[3]) };
+			p25_conv_t c = { (uint16_t)h(w[1]), (uint16_t)h(w[2]), (uint8_t)h(w[3]), false };
 			uint8_t e[P25_CP_CONV_LEN];
 			p25_conv_encode(&c, e);
 			CHECK(unhex(w[4], b, sizeof b) == P25_CP_CONV_LEN && memcmp(e, b, P25_CP_CONV_LEN) == 0);
@@ -154,7 +156,7 @@ static void test_conv_load(void)
 	CHECK(codeplug_set_dmr_id(1234567));
 	channel_t c = make("P25 Ops", 453100000, 458100000);
 	CHECK(codeplug_set_channel(10, &c));
-	p25_conv_t pc = { 0x34, 0x293, P25_SQUELCH_SELECTIVE };
+	p25_conv_t pc = { 0x34, 0x293, P25_SQUELCH_SELECTIVE, false };
 	uint8_t blk[P25_CP_CONV_LEN];
 	p25_conv_encode(&pc, blk);
 	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
@@ -204,7 +206,7 @@ static void test_conv_save(void)
 	c.mode = RADIO_MODE_P25;	// as the radio core runs it
 	c.rx_only = false;
 	c.contact = 0;
-	p25_conv_t pc = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE };
+	p25_conv_t pc = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE, false };
 	// Over a plain channel with a stale tag of another kind at the number: the tag is replaced
 	channel_t old = make("Old", 453100000, 453100000);
 	CHECK(codeplug_set_channel(30, &old));
@@ -246,7 +248,7 @@ static void test_conv_save(void)
 	strcpy(r.name, "Kept");
 	r.rx_only = false;
 	r.mode = RADIO_MODE_P25;
-	p25_conv_t ed = { 0x123, 0x124, P25_SQUELCH_NORMAL };
+	p25_conv_t ed = { 0x123, 0x124, P25_SQUELCH_NORMAL, false };
 	CHECK(p25_conv_save(33, &r, &ed));
 	CHECK(codeplug_channel(33, &r) && r.kind == CODEPLUG_KIND_P25 && r.system == 2 && !r.rx_only &&
 	      r.mode == RADIO_MODE_DMR && strcmp(r.name, "Kept") == 0);
@@ -385,13 +387,241 @@ static void test_trunk_load(void)
 }
 #endif
 
+// Slot n of the air mode contact table as the Codeplug Editor writes it (air-contacts.md 3); mode 0xFF is an empty slot
+static void air_put(uint16_t n, uint8_t mode, uint8_t type, uint32_t id, const char *name)
+{
+	uint8_t *r = &sim_flash_data[CODEPLUG_AIR_CONTACTS_ADDR + (n - 1u) * CODEPLUG_AIR_CONTACT_SIZE];
+	memset(r, 0xFF, CODEPLUG_AIR_CONTACT_SIZE);
+	r[0] = mode;
+	r[1] = type;
+	r[2] = (uint8_t)id;
+	r[3] = (uint8_t)(id >> 8);
+	r[4] = (uint8_t)(id >> 16);
+	memcpy(&r[8], name, strlen(name));
+}
+
+// The DMR contacts and the P25 slots of the tests below: contact n and slot n are different things on purpose
+static void air_fill(void)
+{
+	contact_t c = { .id = 91, .type = CONTACT_GROUP };
+	strcpy(c.name, "DMR 91");
+	CHECK(codeplug_set_contact(1, &c));
+	c.id = 5000;
+	strcpy(c.name, "DMR 5000");
+	CHECK(codeplug_set_contact(2, &c));
+	c.id = 77;
+	c.type = CONTACT_PRIVATE;
+	strcpy(c.name, "DMR 77");
+	CHECK(codeplug_set_contact(3, &c));
+	air_put(1, CODEPLUG_KIND_P25, 1, 301, "G301");
+	air_put(2, CODEPLUG_KIND_P25, 0, 4242, "U4242");
+	air_put(3, CODEPLUG_KIND_P25, 2, 0, "All");
+	// slot 4 empty, slot 5 another mode, slot 6 a call type out of range, slot 7 a group out of range
+	air_put(4, 0xFF, 0xFF, 0xFFFFFF, "");
+	air_put(5, CODEPLUG_KIND_NXDN, 1, 302, "Nx");
+	air_put(6, CODEPLUG_KIND_P25, 3, 303, "Bad");
+	air_put(7, CODEPLUG_KIND_P25, 1, 0, "Zero");
+	air_put(8, CODEPLUG_KIND_P25, 1, 305, "G305");
+}
+
+static void air_list(uint16_t index, uint8_t count, const uint16_t *idx)
+{
+	listen_list_t l;
+	memset(&l, 0, sizeof l);
+	strcpy(l.name, "List");
+	l.count = count;
+	memcpy(l.contacts, idx, count * sizeof idx[0]);
+	CHECK(codeplug_set_listen_list(index, &l));
+}
+
+// A P25 channel's flag bit, with its block, written as the Codeplug Editor does
+static channel_t air_channel(uint16_t number, uint16_t contact, uint16_t list, bool flag, bool selective)
+{
+	channel_t c = make("Air", 453100000, 458100000);
+	c.contact = contact;
+	c.listen_list = list;
+	CHECK(codeplug_set_channel(number, &c));
+	uint8_t blk[P25_CP_CONV_LEN] = { (uint8_t)((flag ? P25_CONV_AIR_CONTACTS : 0u) | (selective ? 1u : 0u)), 0, 0, 0, 0 };
+	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
+	CHECK(codeplug_tag_write(number, "Air", &t, blk, sizeof blk));
+	CHECK(codeplug_channel(number, &c));
+	return c;
+}
+
+// The flag bit (2), the talk target from a P25 contact slot, and the same slot number read as a DMR contact without it
+static void test_conv_air(void)
+{
+	fresh();
+	fits = true;
+	CHECK(codeplug_set_dmr_id(1234567));
+	air_fill();
+
+	// The bit in the block: bit 2 of byte 0, beside the squelch; a short block and the others' bits read clear
+	uint8_t b[P25_CP_CONV_LEN] = { 0x04, 0, 0, 0, 0 };
+	p25_conv_t pc;
+	p25_conv_decode(b, sizeof b, &pc);
+	CHECK(pc.air_contacts && pc.squelch == P25_SQUELCH_NORMAL);
+	b[0] = 0x05;
+	p25_conv_decode(b, sizeof b, &pc);
+	CHECK(pc.air_contacts && pc.squelch == P25_SQUELCH_SELECTIVE);
+	b[0] = 0xFB;
+	p25_conv_decode(b, sizeof b, &pc);
+	CHECK(!pc.air_contacts);
+	p25_conv_decode(b, 0, &pc);
+	CHECK(!pc.air_contacts);
+	pc = (p25_conv_t){ 0x293, 0x293, P25_SQUELCH_SELECTIVE, true };
+	p25_conv_encode(&pc, b);
+	CHECK(b[0] == 0x05);
+	pc.air_contacts = false;
+	p25_conv_encode(&pc, b);
+	CHECK(b[0] == 0x01);
+
+	// Flag clear: contact 1 is the DMR contact 91, as ever
+	p25_conv_cfg_t cfg;
+	p25_talk_t tk;
+	channel_t c = air_channel(10, 1, 0, false, false);
+	CHECK(p25_conv_load(10, &c, &cfg) && !cfg.conv.air_contacts && cfg.target == 91 && !cfg.target_unit);
+	// p25_channel_talk: the DMR contact's target and name, the flag clear
+	CHECK(p25_channel_talk(10, &c, true, &tk) && !tk.air && tk.set && tk.id == 91 && !tk.unit &&
+	      strcmp(tk.name, "DMR 91") == 0);
+	CHECK(!p25_channel_talk(10, &(channel_t){ .kind = CODEPLUG_KIND_NONE }, true, &tk));	// not a P25 channel
+	// A DMR private contact and the DMR contact 2 (5000) without the flag
+	c = air_channel(10, 3, 0, false, false);
+	CHECK(p25_conv_load(10, &c, &cfg) && cfg.target == 77 && cfg.target_unit);
+	// Flag set: contact 1 is slot 1, the P25 group 301; the DMR contact 91 is not used
+	c = air_channel(11, 1, 0, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.conv.air_contacts && cfg.target == 301 && !cfg.target_unit);
+	CHECK(p25_channel_talk(11, &c, true, &tk) && tk.air && tk.set && tk.id == 301 && !tk.unit &&
+	      strcmp(tk.name, "G301") == 0);
+	// A unit slot calls a unit, the all call slot talk group 65535
+	c = air_channel(11, 2, 0, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 4242 && cfg.target_unit);
+	CHECK(p25_channel_talk(11, &c, false, &tk) && tk.air && tk.id == 4242 && tk.unit && strcmp(tk.name, "U4242") == 0);
+	c = air_channel(11, 3, 0, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_ALL && !cfg.target_unit);
+	CHECK(p25_channel_talk(11, &c, false, &tk) && tk.air && tk.id == P25_CP_TG_ALL && !tk.unit && strcmp(tk.name, "All") == 0);
+	// Empty, another mode's, invalid, out of range, past the table: talk group 1, whatever the DMR contact is
+	static const uint16_t none[] = { 4, 5, 6, 7, 9, 341, 342, 1000 };
+	for (unsigned i = 0; i < sizeof none / sizeof none[0]; i++) {
+		c = air_channel(11, none[i], 0, true, false);
+		CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_DEFAULT && !cfg.target_unit);
+		CHECK(p25_channel_talk(11, &c, true, &tk) && tk.air && !tk.set && tk.id == P25_CP_TG_DEFAULT && tk.name[0] == '\0');
+	}
+	// No contact: the RX list's first group slot, as a DMR channel's first talk group; its unit slots and empty
+	// slots are passed over. None there: talk group 1
+	static const uint16_t l1[] = { 4, 2, 5, 8, 1 };
+	air_list(1, 5, l1);
+	c = air_channel(11, 0, 1, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 305 && !cfg.target_unit);
+	CHECK(p25_channel_talk(11, &c, true, &tk) && tk.set && tk.id == 305 && strcmp(tk.name, "G305") == 0);
+	CHECK(p25_channel_talk(11, &c, false, &tk) && !tk.set && tk.id == P25_CP_TG_DEFAULT);	// a list row reads no list
+	static const uint16_t l2[] = { 4, 2, 6 };
+	air_list(2, 3, l2);
+	c = air_channel(11, 0, 2, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_DEFAULT);
+	// The contact wins over the list
+	c = air_channel(11, 1, 1, true, false);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 301);
+	// The same list on an unflagged channel is a DMR list: indices 4, 2, 5, 8, 1 are DMR contacts (none of 4, 5, 8
+	// stored, 2 is 5000)
+	c = air_channel(12, 0, 1, false, false);
+	CHECK(p25_conv_load(12, &c, &cfg) && cfg.target == 5000);
+	// Selective squelch on a flagged channel plays the slot's talk group
+	c = air_channel(13, 1, 0, true, true);
+	CHECK(p25_conv_load(13, &c, &cfg) && cfg.conv.squelch == P25_SQUELCH_SELECTIVE && cfg.target == 301);
+
+	// An edit from the radio keeps the flag: the block read, written back (2.3)
+	c = air_channel(14, 1, 0, true, false);
+	CHECK(p25_conv_params(14, &c, &pc) && pc.air_contacts);
+	pc.rx_nac = 0x123;
+	CHECK(p25_conv_save(14, &c, &pc));
+	CHECK(codeplug_channel(14, &c) && p25_conv_load(14, &c, &cfg) && cfg.conv.rx_nac == 0x123 &&
+	      cfg.conv.air_contacts && cfg.target == 301);
+	// A channel the radio makes P25 has no flag: contact 1 is the DMR contact
+	pc = (p25_conv_t){ 0x293, 0x293, P25_SQUELCH_NORMAL, false };
+	c = make("Made", 453100000, 458100000);
+	c.contact = 1;
+	CHECK(p25_conv_save(15, &c, &pc) && codeplug_channel(15, &c) && p25_conv_load(15, &c, &cfg) &&
+	      !cfg.conv.air_contacts && cfg.target == 91);
+}
+
+#if CONFIG_P25_TRUNK
+// The trunked flag bit (3, byte 0 bit 1): the talk group from a slot, the RX list's group slots followed
+static void test_trunk_air(void)
+{
+	fresh();
+	CHECK(codeplug_set_dmr_id(1234567));
+	air_fill();
+	uint8_t hd[CODEPLUG_SYS_HDR];
+	memset(hd, 0, sizeof hd);
+	hd[0] = CODEPLUG_SYSTYPE_P25_TRUNK;
+	hd[1] = CODEPLUG_SYS_TX;
+	hd[3] = 5;
+	memset(&hd[12], 0xFF, CODEPLUG_NAME_LEN);
+	memcpy(&hd[12], "County", 6);
+	uint8_t blk[P25_CP_TSYS_LEN] = { 0 };
+	put(CODEPLUG_KEY_SYSTEM + 2, hd, sizeof hd, blk, sizeof blk);
+
+	static const uint16_t l1[] = { 4, 2, 8, 1, 3, 5, 1, 6 };
+	air_list(1, 8, l1);
+	channel_t c = make("County TG", 851012500, 806012500);
+	c.contact = 1;
+	c.listen_list = 1;
+	CHECK(codeplug_set_channel(21, &c));
+	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25_TRUNK, .system = 2 };
+	uint8_t p = 0;
+	static p25_trunk_cfg_t cfg;
+	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
+	CHECK(codeplug_channel(21, &c));
+	// Flag clear: the DMR contact 1 (91), no list followed
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 91 && cfg.group_count == 0 && !cfg.follow_all);
+	// Flag set: slot 1 (301); the list's group slots 8, 1, 1 in order (a unit, an all call, an empty, another mode's
+	// and an invalid slot are skipped)
+	p = P25_TCH_AIR_CONTACTS;
+	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 301 && !cfg.follow_all);
+	p25_talk_t tk;
+	CHECK(p25_channel_talk(21, &c, true, &tk) && tk.air && tk.id == 301 && strcmp(tk.name, "G301") == 0);
+	CHECK(cfg.group_count == 3 && cfg.groups[0] == 305 && cfg.groups[1] == 301 && cfg.groups[2] == 301);
+	// With follow all besides; a unit slot as the talk target is no talk group: 1
+	p = P25_TCH_AIR_CONTACTS | P25_TCH_FOLLOW_ALL;
+	c.contact = 2;
+	CHECK(codeplug_set_channel(21, &c));
+	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT && cfg.follow_all && cfg.group_count == 3);
+	// All call slot: talk group 65535; an empty slot and no list: talk group 1, nothing followed
+	c.contact = 3;
+	c.listen_list = 0;
+	CHECK(codeplug_set_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_ALL && cfg.group_count == 0);
+	// No contact: the RX list's first group slot (305), read once; the contact wins when there is one
+	c.contact = 0;
+	c.listen_list = 1;
+	CHECK(codeplug_set_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 305 && cfg.group_count == 3);
+	c.contact = 4;
+	c.listen_list = 0;
+	CHECK(codeplug_set_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT && cfg.group_count == 0);
+	// The block's other bits stay: bit 0 alone is follow all on DMR contacts (index 2 = 5000)
+	p = P25_TCH_FOLLOW_ALL;
+	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
+	c.contact = 2;
+	CHECK(codeplug_set_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 5000 && cfg.follow_all && cfg.group_count == 0);
+	CHECK(p25_channel_talk(21, &c, false, &tk) && !tk.air && tk.id == 5000 && strcmp(tk.name, "DMR 5000") == 0);
+}
+#endif
+
 int main(void)
 {
 	test_vectors();
 	test_conv_load();
 	test_conv_save();
+	test_conv_air();
 #if CONFIG_P25_TRUNK
 	test_trunk_load();
+	test_trunk_air();
 #endif
 	sim_flash_free();
 	if (failures) {

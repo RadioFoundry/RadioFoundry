@@ -31,6 +31,7 @@ void p25_conv_decode(const uint8_t *b, int len, p25_conv_t *out)
 {
 	uint8_t sq = len >= 1 ? (uint8_t)(b[0] & 0x03u) : 0u;
 	out->squelch = sq == P25_SQUELCH_SELECTIVE ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL;
+	out->air_contacts = len >= 1 && (b[0] & P25_CONV_AIR_CONTACTS) != 0;
 	uint16_t rx = nac_field(rd16(b, len, 1), P25_NAC_DEFAULT);
 	if (rx == P25_NAC_REPEAT_ANY) {
 		rx = P25_NAC_DEFAULT;		// a repeater's value, never a radio's
@@ -46,7 +47,8 @@ void p25_conv_decode(const uint8_t *b, int len, p25_conv_t *out)
 
 void p25_conv_encode(const p25_conv_t *c, uint8_t out[P25_CP_CONV_LEN])
 {
-	out[0] = c->squelch == P25_SQUELCH_SELECTIVE ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL;
+	out[0] = (c->squelch == P25_SQUELCH_SELECTIVE ? P25_SQUELCH_SELECTIVE : P25_SQUELCH_NORMAL) |
+		 (c->air_contacts ? P25_CONV_AIR_CONTACTS : 0u);
 	uint16_t tx_dflt = c->rx_nac == P25_NAC_ANY ? P25_NAC_DEFAULT : c->rx_nac;
 	wr16(&out[1], c->rx_nac == P25_NAC_DEFAULT ? 0u : (uint16_t)(P25_CP_NAC_SET | (c->rx_nac & 0x0FFFu)));
 	wr16(&out[3], c->tx_nac == tx_dflt ? 0u : (uint16_t)(P25_CP_NAC_SET | (c->tx_nac & 0x0FFFu)));
@@ -77,28 +79,60 @@ static uint32_t unit_id(const channel_t *ch, uint32_t own)
 	return p25_radio_unit_id(codeplug_dmr_id());
 }
 
-// The talk target from the record's contact (2): a group, a unit, all call; none = talk group 1
-static void talk_target(const channel_t *ch, uint32_t *target, bool *unit)
+// The talk target from the record's contact (2): a group, a unit, all call; none = talk group 1. air: the contact is a
+// P25 contact slot (else a DMR contact: the one field means two things, so every reader goes through here). rx_list: with
+// no contact, the first group of the RX group list, as for a DMR channel
+static void talk_target(const channel_t *ch, bool air, bool rx_list, p25_talk_t *t)
 {
 	contact_t c;
+	t->id = P25_CP_TG_DEFAULT;
+	t->unit = false;
+	t->set = false;
+	t->air = air;
+	t->name[0] = '\0';
+	if (air) {
+		// A slot of the air mode contact table (air-contacts.md): a group, a unit, all call. One that is empty, invalid
+		// or of another mode is no target
+		air_contact_t a;
+		bool ok = false;
+		if (ch->contact != 0u) {
+			ok = codeplug_air_contact(ch->contact, CODEPLUG_KIND_P25, &a);
+		} else if (rx_list && ch->listen_list != 0u) {
+			listen_list_t list;	// on the stack: the radio and UI tasks both call this
+			if (codeplug_listen_list(ch->listen_list, &list)) {
+				for (uint8_t i = 0; i < list.count && !ok; i++) {
+					ok = codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, &a) && a.type == AIR_CONTACT_GROUP;
+				}
+			}
+		}
+		if (ok) {
+			t->unit = a.type == AIR_CONTACT_UNIT;
+			t->id = a.type == AIR_CONTACT_ALL ? P25_CP_TG_ALL : a.id;
+			t->set = true;
+			memcpy(t->name, a.name, sizeof t->name);
+		}
+		return;
+	}
 #if CONFIG_DMR
-	uint16_t idx = codeplug_channel_talk_contact(ch);	// the contact, else the RX group list's first group
+	uint16_t idx = rx_list ? codeplug_channel_talk_contact(ch) : ch->contact;	// the contact, else the RX list's first group
 #else
 	uint16_t idx = ch->contact;
 #endif
-	*target = P25_CP_TG_DEFAULT;
-	*unit = false;
 	if (idx == 0u || !codeplug_contact(idx, &c)) {
 		return;
 	}
 	if (c.type == CONTACT_ALL_CALL) {
-		*target = P25_CP_TG_ALL;
+		t->id = P25_CP_TG_ALL;
 	} else if (c.type == CONTACT_PRIVATE) {
-		*target = c.id;
-		*unit = true;
+		t->id = c.id;
+		t->unit = true;
 	} else if (c.id >= 1u && c.id <= 0xFFFFu) {
-		*target = c.id;
+		t->id = c.id;
+	} else {
+		return;
 	}
+	t->set = true;
+	memcpy(t->name, c.name, sizeof t->name);
 }
 
 bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
@@ -116,13 +150,37 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 	return true;
 }
 
+bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
+{
+	bool air = false;
+	if (ch->kind == CODEPLUG_KIND_P25) {
+		p25_conv_t conv;
+		if (!p25_conv_params(number, ch, &conv)) {
+			return false;
+		}
+		air = conv.air_contacts;
+#if CONFIG_P25_TRUNK
+	} else if (ch->kind == CODEPLUG_KIND_P25_TRUNK) {
+		uint8_t p[1 + CODEPLUG_TAG_HEAD_MAX];
+		air = codeplug_tag_params(number, ch, p, 1) >= 1 && (p[0] & P25_TCH_AIR_CONTACTS) != 0;
+#endif
+	} else {
+		return false;
+	}
+	talk_target(ch, air, rx_list, out);
+	return true;
+}
+
 bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
 {
 	if (!p25_conv_params(number, ch, &out->conv)) {
 		return false;
 	}
 	out->unit_id = unit_id(ch, 0u);
-	talk_target(ch, &out->target, &out->target_unit);
+	p25_talk_t t;
+	talk_target(ch, out->conv.air_contacts, true, &t);
+	out->target = t.id;
+	out->target_unit = t.unit;
 	// Talkaround (2): the record's direct mode turns it on; clear, it is on where RX and TX are one frequency
 	out->talkaround = ch->rx_hz == ch->tx_hz || ch->dmo;
 	return true;
@@ -243,13 +301,31 @@ bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
 		}
 	}
 
-	uint32_t tg;
-	bool unit;
-	talk_target(ch, &tg, &unit);
-	out->talk_group = unit ? (uint16_t)P25_CP_TG_DEFAULT : (uint16_t)tg;
 	uint8_t p[1 + CODEPLUG_TAG_HEAD_MAX];
 	int n = codeplug_tag_params(number, ch, p, 1);
 	out->follow_all = n >= 1 && (p[0] & P25_TCH_FOLLOW_ALL) != 0;
+	bool air = n >= 1 && (p[0] & P25_TCH_AIR_CONTACTS) != 0;
+	if (air && ch->listen_list != 0u) {
+		// The RX list's group slots are the groups followed too; an empty, invalid or not group one is skipped
+		listen_list_t list;
+		air_contact_t a;
+		if (codeplug_listen_list(ch->listen_list, &list)) {
+			for (uint8_t i = 0; i < list.count && out->group_count < CODEPLUG_LIST_LEN; i++) {
+				if (codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, &a) && a.type == AIR_CONTACT_GROUP) {
+					out->groups[out->group_count++] = (uint16_t)a.id;
+				}
+			}
+		}
+	}
+	// The talk group: the contact's, else (as for a DMR channel) the RX list's first group: for P25 contact slots the
+	// one read above
+	p25_talk_t tk;
+	talk_target(ch, air, !air, &tk);
+	if (!tk.set && ch->contact == 0u && out->group_count > 0) {
+		tk.id = out->groups[0];
+		tk.unit = false;
+	}
+	out->talk_group = tk.unit ? (uint16_t)P25_CP_TG_DEFAULT : (uint16_t)tk.id;
 	if ((t.flags & P25_TAG_NO_FALLBACK) == 0) {
 		bool own = (t.flags & CODEPLUG_TAG_FALLBACK) != 0;
 		uint16_t fb = own ? t.fb_chan : sy.fb_chan;

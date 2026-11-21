@@ -189,6 +189,13 @@ uses this family. A target that belongs to one channel only and is never picked 
 sign on that channel) lives in the channel's parameter block. A mode spec says which of the three each of its
 addresses uses.
 
+**Names.** A talk target in the contact list is not where a mode's IDs get their names. The contact record carries no
+mode, and DMR and P25 number their talk groups independently, so a DMR contact would name a P25 talk group with the
+same number. A mode beside DMR names its IDs from its own entries in the air mode contact table
+([air-contacts.md](air-contacts.md)), and shows the number where it has none. A P25 channel can also take its talk
+target and RX group list from that table, which a bit of its parameter block says ([p25-codeplug.md](p25-codeplug.md)
+2.4).
+
 **Editor.** The contact picker of a channel asks the kind's module which list it offers: contacts, its targets, or
 both. A target's address is edited by the kind's module; the name and call type are generic fields.
 
