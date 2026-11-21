@@ -24,6 +24,71 @@ msgctxt "STUB_HINT_POWER_CYCLE"
 msgid "Power-cycle to exit"
 msgstr "断电重启退出"
 
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_OFFICIAL"
+msgid "CI build"
+msgstr "CI 构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_SERVICE"
+msgid "Build service"
+msgstr "构建服务"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_PR"
+msgid "Pull request"
+msgstr "PR 构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_LOCAL"
+msgid "Local build"
+msgstr "本地构建"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_FORK"
+msgid "Fork"
+msgstr "分支版本"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_SOURCE_UNKNOWN"
+msgid "Unknown"
+msgstr "不详"
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_MCU"
+msgid "MCU: "
+msgstr "MCU： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_FLASH"
+msgid "Flash: "
+msgstr "存储器： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DISPLAY"
+msgid "Display: "
+msgstr "显示屏： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_DMR_CHIP"
+msgid "DMR chip: "
+msgstr "DMR 器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_RF_CHIP"
+msgid "RF chip: "
+msgstr "射频器件： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_LABEL_HARDWARE"
+msgid "Hardware: "
+msgstr "设备： "
+
+#: core/support/support_info.c
+msgctxt "ABOUT_VALUE_HWOPT_UNSET"
+msgid "not set"
+msgstr "未设置"
+
 #: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
@@ -3060,6 +3125,21 @@ msgid "Up to 10.0 ppm"
 msgstr "最大 10.0 ppm"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_SOURCE"
+msgid "Source: "
+msgstr "来源： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: "
+msgstr "固件标识： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
+msgid "checking"
+msgstr "检查中"
+
+#: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
 msgid "Firmware: "
 msgstr "固件： "
@@ -3488,6 +3568,11 @@ msgstr "浅色"
 msgctxt "SET_VALUE_THEME_HIGH_CONTRAST"
 msgid "High contrast"
 msgstr "高对比度"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "晚间（红色）"
 
 #: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
@@ -4203,6 +4288,11 @@ msgstr "本机无振动马达"
 msgctxt "SET_WHY_COLOR_SCREENS_ONLY"
 msgid "Colors are for color screens"
 msgstr "颜色仅用于彩屏"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "晚间主题：仅红色"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"

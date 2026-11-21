@@ -13,9 +13,10 @@
 // Channels: the microphone is taken from the left channel (unverified which one the chip fills); speaker samples are
 // written to both.
 //
-// The prompt FIFO (cfg->prompt_fifo, CONFIG_AIR): while the FM copy holds the chip (a profile the correlator can't
-// take, such as NXDN), I2S PCM doesn't reach its line out (modem-hrc6000.md 8), so every speaker block also goes into a
-// ring that a feeder task keeps the chip's 64-sample (8 ms) prompt FIFO topped up from. The I2S stream and the FIFO run
+// The prompt FIFO (cfg->prompt_fifo, CONFIG_AIR or CONFIG_BEEP): in FM mode I2S PCM doesn't reach the chip's line out
+// (modem-hrc6000.md 8). While the FM copy holds the chip (a profile the correlator can't take, such as NXDN), and in FM
+// receive while the PCM route is on (beeps; the board reports the chip, stm32_i2s_pcm_fm_chip), every speaker block
+// also goes into a ring that a feeder task keeps the chip's 64-sample (8 ms) prompt FIFO topped up from. The I2S stream and the FIFO run
 // on the chip's clock, so they never drift. The feeder runs at the top priority (with the RTOS timer task): the DMR
 // glue's copy interrupt reads 512 bytes with interrupts masked every 32 ms, and a feeder below the audio task missed
 // its turn there (8 ms gaps).
@@ -68,7 +69,10 @@ static volatile uint32_t blocks;	// blocks processed (one per 20 ms while stream
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
 static const stm32_i2s_pcm_cfg_t *cfg;
 
-#if CONFIG_AIR
+// The FIFO path: the FM copy (an air interface) and beeps in FM receive use it
+#define I2S_FIFO	(CONFIG_AIR || CONFIG_BEEP)
+
+#if I2S_FIFO
 #define FIFO_TASK_PRIORITY	(configMAX_PRIORITIES - 1)
 #define FIFO_TASK_STACK		176	// words: 704 B, the stack check's 336 deepest + 208 port + 128 margin, and a few
 _Static_assert(AUDIO_BLOCK_SAMPLES % PCM_RING_CHUNK == 0, "a block is whole chunks");
@@ -76,6 +80,7 @@ _Static_assert(PCM_RING_CHUNK == HRC_PROMPT_CHUNK, "a ring chunk is one FIFO wri
 static pcm_ring_t *ring;		// from the heap with the feeder, on the first FIFO use
 static TaskHandle_t feeder;
 static hrc_t *volatile fifo_chip;	// the chip whose FIFO the speaker blocks go to, NULL: none
+static hrc_t *volatile fm_chip;		// the board's chip in FM receive (stm32_i2s_pcm_fm_chip), NULL: not
 static volatile bool fifo_spk;		// the speaker's PCM route is on (stm32_i2s_pcm_speaker)
 #define FIFO_PRIME	(2u * AUDIO_BLOCK_SAMPLES)	// in the ring before the first write: 40 ms in hand
 _Static_assert(FIFO_PRIME + AUDIO_BLOCK_SAMPLES <= PCM_RING_SAMPLES, "a block fits on top of the priming");
@@ -272,7 +277,7 @@ static void process(uint8_t half)
 	} else {
 		memset(spk, 0, sizeof spk);
 	}
-#if CONFIG_AIR
+#if I2S_FIFO
 	// Silence while the PCM route is off: the FIFO goes past the switch that keeps the stream off the amplifier, which
 	// stays on for the hang after a call, so what the stream holds then (not a call) would play
 	if (fifo_chip != NULL && !pcm_ring_push(ring, fifo_spk ? spk : NULL, AUDIO_BLOCK_SAMPLES)) {
@@ -286,7 +291,15 @@ static void process(uint8_t half)
 	}
 }
 
-#if CONFIG_AIR
+#if I2S_FIFO
+// The chip in a mode whose line out the FIFO reaches: the FM copy's, else the board's in FM receive. The feeder writes
+// page 3 only while this is still its chip: back in DMR, page 3 is the vocoder's
+static hrc_t *fifo_mode_chip(void)
+{
+	hrc_t *copy = stm32_hrc_copy_chip();
+	return copy != NULL ? copy : fm_chip;
+}
+
 // Waits for FIFO_PRIME in the ring before the first write, so the FIFO starts with 40 ms in hand (20 ms left a few gaps a
 // call); after that a chunk the ring hasn't got is a gap (silence written)
 static void feeder_task(void *arg)
@@ -304,8 +317,8 @@ static void feeder_task(void *arg)
 		if (!primed) {
 			primed = pcm_ring_level(ring) >= FIFO_PRIME;
 		}
-		// Stops as soon as the copy ends too: the prompt bit stays on until the audio task's next block
-		for (uint32_t n = 0; n < FIFO_POLL_CHUNKS && primed && fifo_chip == chip && stm32_hrc_copy_chip() == chip
+		// Stops as soon as the chip leaves the mode too: the prompt bit stays on until the audio task's next block
+		for (uint32_t n = 0; n < FIFO_POLL_CHUNKS && primed && fifo_chip == chip && fifo_mode_chip() == chip
 				     && hrc_prompt_room(chip); n++) {
 			if (!pcm_ring_pop(ring, buf)) {
 				fifo_gaps++;
@@ -326,10 +339,12 @@ static void fifo_release(void)
 	(void)hrc_prompt_on(chip, false);
 }
 
-// Per block: the speaker to the prompt FIFO too while the FM copy holds the chip
+// Per block: the speaker to the prompt FIFO too while the FM copy holds the chip, or while a beep plays in FM receive
+// (pcm_fifo_chip). A beep's route stays on for its hold after the tone, so the ring has played the tone out by the
+// time the route's end turns the FIFO off
 static void fifo_follow(void)
 {
-	hrc_t *chip = cfg->prompt_fifo ? stm32_hrc_copy_chip() : NULL;
+	hrc_t *chip = cfg->prompt_fifo ? pcm_fifo_chip(stm32_hrc_copy_chip(), fm_chip, fifo_spk) : NULL;
 	if (chip == fifo_chip) {
 		return;
 	}
@@ -358,12 +373,16 @@ static void fifo_follow(void)
 		fifo_chip = chip;
 		xTaskNotifyGive(feeder);
 	}
-	dlog("i2s: prompt FIFO %s", chip != NULL ? "on" : "off");
 }
 
 void stm32_i2s_pcm_speaker(bool on)
 {
 	fifo_spk = on;
+}
+
+void stm32_i2s_pcm_fm_chip(hrc_t *chip)
+{
+	fm_chip = chip;
 }
 
 static void fifo_off(void)
@@ -377,6 +396,11 @@ static void fifo_off(void)
 void stm32_i2s_pcm_speaker(bool on)
 {
 	(void)on;
+}
+
+void stm32_i2s_pcm_fm_chip(hrc_t *chip)
+{
+	(void)chip;
 }
 
 static void fifo_follow(void) {}
@@ -481,12 +505,14 @@ void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out)
 	out->blocks = blocks;
 	out->late = overruns;
 	out->dropped = dropped;
-#if CONFIG_AIR
+#if I2S_FIFO
 	out->fifo_chunks = fifo_chunks;
 	out->fifo_gaps = fifo_gaps;
 	out->fifo_full = fifo_full;
+	out->fifo_fm = fm_chip != NULL && (cfg == NULL || cfg->prompt_fifo);	// before the first start: the board's word
 #else
 	out->fifo_chunks = out->fifo_gaps = out->fifo_full = 0;
+	out->fifo_fm = false;
 #endif
 }
 
@@ -496,7 +522,7 @@ void stm32_i2s_pcm_reset_stats(void)
 	blocks = 0;
 	overruns = 0;
 	dropped = 0;
-#if CONFIG_AIR
+#if I2S_FIFO
 	fifo_chunks = 0;
 	fifo_gaps = 0;
 	fifo_full = 0;

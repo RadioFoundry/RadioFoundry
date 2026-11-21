@@ -28,7 +28,8 @@ static uint8_t page_count(void)
 	return gfx_height() >= UI_TALL_PX ? PG_GRID : PG_COUNT;
 }
 
-// A system's color; every one is also named in the legend (P5). Ink on a monochrome panel
+// A system's color; every one is also named in the legend (P5). Ink on a monochrome panel, the text color in the
+// night theme (red only)
 static color_t sys_color(uint8_t sys)
 {
 	static const color_t dark[UI_GNSS_COUNT] = {
@@ -39,7 +40,7 @@ static color_t sys_color(uint8_t sys)
 		RGB565(0x00, 0x58, 0xC8), RGB565(0xC0, 0x18, 0x18), RGB565(0x98, 0x70, 0x00), RGB565(0x00, 0x80, 0x38),
 		RGB565(0x78, 0x30, 0xC0),
 	};
-	if (!CONFIG_UI_COLOR || gfx_bpp() == 1 || sys >= UI_GNSS_COUNT)
+	if (!CONFIG_UI_COLOR || gfx_bpp() == 1 || sys >= UI_GNSS_COUNT || ui_theme_get() == UI_THEME_NIGHT)
 		return ui_col.fg;
 	bool light_bg = ((ui_col.bg >> 5) & 0x3Fu) > 0x20u;
 	return light_bg ? light[sys] : dark[sys];

@@ -360,8 +360,9 @@ static void t3_roam(const radio_t3_view_t *x, void *ctx)
 	uint32_t now = hal_millis();
 	dl_text(t, "t3.level_dbm=%d\nt3.leave_dbm=%d\nt3.dmrla=%u\nt3.reg_area=0x%04x\nt3.vote_on=%u\nt3.hunt_strict=%u\n",
 		x->level_dbm, x->leave_dbm, x->dmrla, x->reg_area, x->vote_on, x->hunt_strict);
-	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
-		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->adj_refused, x->nadj);
+	dl_text(t, "t3.votes=%u\nt3.vote_moves=%u\nt3.weak_leaves=%u\nt3.weak_hold_ms=%u\nt3.adj_refused=%u\nt3.adjacent=%u\n",
+		(unsigned)x->votes, (unsigned)x->vote_moves, (unsigned)x->weak_leaves, (unsigned)x->weak_hold_ms,
+		(unsigned)x->adj_refused, x->nadj);
 	// The codeplug system the channel belongs to (n+1, 0: none) and its fallback (12.5): 1 on the channel, 2 looking
 	dl_text(t, "t3.sys=%u\nt3.unavail=%u\nt3.fallback=%u\nt3.fallbacks=%u\nt3.backs=%u\n", x->sys, x->unavail,
 		x->fallback, (unsigned)x->fallbacks, (unsigned)x->backs);

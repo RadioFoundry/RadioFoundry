@@ -11,6 +11,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ui/fmt.h"
 #if CONFIG_USB
 #include "usb/usb_device.h"
 #include "usb/usb_ncm.h"
@@ -78,6 +79,19 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// The support info (docs/spec/support-info.md 2): the parts this board's drivers run. The panel and the flash chip,
+// the parts that differ between units, are the core's own lines
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	static const char *const parts[] = { "HR_C5000", "SKY72310" };
+	if (i >= sizeof(parts) / sizeof(parts[0])) {
+		return false;
+	}
+	*role = i == 0 ? BOARD_HW_DMR : BOARD_HW_RF;
+	str_copy(buf, len, parts[i]);
+	return true;
+}
+
 const board_t board = {
 	.name = BOARD_NAME,
 	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-md380.md 13). No
@@ -98,6 +112,7 @@ const board_t board = {
 	.side_key_count = sizeof(side_keys),
 	.radio = &md380_radio,
 	.chip_reg = md380_chip_reg,
+	.hw_line = hw_line,
 	.power = &md380_power,
 	.flash = &stm32_spi_flash,
 #if CONFIG_DIAG

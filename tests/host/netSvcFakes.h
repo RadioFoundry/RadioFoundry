@@ -32,6 +32,16 @@ void peer_send(peer_t *p, const void *data, int len);
 void peer_close(peer_t *p);
 void peer_clear(peer_t *p);
 void pump(void);
+// UDP the radio sends to the host's port udp_catch.port (0: none caught): how many, the last one and its source port
+typedef struct {
+	uint16_t port;
+	int count;
+	uint16_t from_port;
+	char last[600];
+	int len;
+} udp_catch_t;
+extern udp_catch_t udp_catch;
+void udp_to_radio(uint32_t ip, uint16_t sport, uint16_t dport, const char *text);
 void run_for(uint32_t ms);
 uint32_t net_test_host_ip(void);
 extern uint32_t net_test_radio_ip;	// the address the peers speak to: the radio's own, or IPGW_ANY_RADIO_IP

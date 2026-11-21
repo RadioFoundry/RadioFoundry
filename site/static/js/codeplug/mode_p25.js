@@ -124,11 +124,22 @@ export function encodeTsys(s, prev = null) {
 const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => v.toString(16).toUpperCase().padStart(digits, "0") });
 const byteOrUnknown = (key, label) => ({ key, label, type: "int", min: 0, max: 254, any: true });
 
+// The recommended ham system (docs/spec/ham-trunking.md 3): WACN 0x32350 (HAM in the Radix-50 code, shifted as WACN
+// names are), any system ID, control channel NAC 0x293, encrypted calls skipped
+export const HAM_P25 = { wacn: 0x32350, ccNac: 0x293 };
+
 export const p25System = {
 	id: 3,
 	feature: "P25_TRUNK",
 	idLen: 5,
 	defaultTx: false,	// a new system is listen only until the user turns transmit on
+	ham: {
+		name: "Ham P25",
+		tx: true,
+		fields: () => ({ wacn: HAM_P25.wacn, sysid: null, ccNac: HAM_P25.ccNac, skipEnc: true, planOnly: false, noReg: false, holdS: 0, roamDbm: 0 }),
+		asks: [],
+		entries: (a) => [{ cls: 0, group: 0, flags: 0, control: true, iden: 0, chanNo: 0, rxHz: a.rxHz, txHz: a.txHz, raw: null }],
+	},
 	newFields: () => ({ wacn: null, sysid: null, ccNac: null, skipEnc: false, planOnly: false, noReg: false, holdS: 0, roamDbm: 0 }),
 	decode: decodeTsys,
 	encode: encodeTsys,

@@ -27,6 +27,8 @@ typedef struct {
 	uint32_t fifo_chunks;
 	uint32_t fifo_gaps;
 	uint32_t fifo_full;
+	// The second path carries the speaker's PCM in the mode the radio is in now (a beep in FM receive goes there)
+	bool fifo_fm;
 } audio_stream_stats_t;
 
 typedef struct {

@@ -506,7 +506,7 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	case UI_SET_AUTO_OFF_MIN:
 		st = settings_begin();
 		if (id == UI_SET_THEME) {
-			st->theme = (uint8_t)((st->theme & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 2));
+			st->theme = (uint8_t)((st->theme & ~SETTINGS_SMALL_MASK) | clamp16(value, 0, 3));
 		} else if (id == UI_SET_ACCENT) {
 			st->accent = (uint8_t)((st->accent & ~SETTINGS_ACCENT_COLOR) |
 					       clamp16(value, 0, SETTINGS_ACCENT_COLOR));

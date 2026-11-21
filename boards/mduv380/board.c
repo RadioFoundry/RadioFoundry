@@ -10,6 +10,7 @@
 #include "pins.h"
 #include "variant_mduv380.h"
 #include "fsmc_keypad/fsmc_keypad.h"
+#include "ui/fmt.h"
 #if CONFIG_GPS
 #include "gps_uart/gps_uart.h"
 #endif
@@ -38,6 +39,29 @@ static bool variant_mismatch(void)
 	return mduv380_variant_mismatch(mark_read, mark_10w, RFOUNDRY_POWER_10W != 0);
 }
 
+// The support info: the Plus 10 W marker as start-up read it (hardware-mduv380.md 4; "--" unreadable), and the power
+// this image drives
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	*role = BOARD_HW_BOARD;
+	sbuf_t b;
+	sb_init(&b, buf, len);
+#if RFOUNDRY_POWER_10W
+	sb_str(&b, "10 W image, mark ");
+#else
+	sb_str(&b, "5 W image, mark ");
+#endif
+	if (mark_read) {
+		sb_hex(&b, mark_10w, 2);
+	} else {
+		sb_str(&b, "--");	// unreadable
+	}
+	return true;
+}
+
 static void init(void)
 {
 	mark_read = stm32_spi_flash_read_security(3, 0x1C, &mark_10w, 1);
@@ -64,6 +88,7 @@ const uvf_variant_t uvf_variant = {
 	.cal_k = { { 630, 1000, 1000, 1100 }, { 720, 1000, 1050, 1250 } },
 #endif
 	.init = init,
+	.hw_line = hw_line,
 };
 
 #if CONFIG_RX_EXT
@@ -158,6 +183,7 @@ const board_t board = {
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
 	.chip_reg = uvf_chip_reg,
+	.hw_line = uvf_hw_line,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,

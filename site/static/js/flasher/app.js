@@ -28,7 +28,7 @@ import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
 import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
-import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
+import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, CABLES, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
 import { Selection } from "./select.js";
@@ -925,8 +925,8 @@ async function connectForUpdate(status) {
 		if (!serialSupported()) throw new Error(t("flash.err.no_serial"));
 		if (await networkModeSeen() && !(await leaveNetworkMode())) throw new NetworkModeError();
 		// a port granted before where RadioFoundry answers needs no chooser
-		const known = await knownRadioPort([RFOUNDRY_USB, ...c7ui.CABLES]);
-		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...c7ui.CABLES] }));
+		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
+		stream = known?.stream || await SerialStream.open(await serialApi().requestPort({ filters: [RFOUNDRY_USB, ...CABLES] }));
 		link = new Link(stream, { timeout: 1200 });
 	}
 	status.replaceChildren(h("p", { class: "muted" }, t("flash.now.connecting")));

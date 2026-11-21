@@ -93,6 +93,7 @@ WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
 WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
+WEAK uint8_t ui_svc_gps_power(void) { return UI_GPS_POWER_NONE; }
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }

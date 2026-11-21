@@ -138,6 +138,35 @@ curl "http://12.152.116.67/api/aprsis?server=off"   # stop
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
 USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
 
+## Selecting zones and channels from a program
+
+A device or program on your computer, such as takRF, can choose the radio's zone and channel as a knob would. It
+sends short text messages over UDP to port 4191 at the radio's address. This works without the radio's web page, so
+it is also on firmware built without it. Zones and channels are counted from 0, in the order the radio shows them.
+
+| Message | Does |
+|---|---|
+| `select` | Says where the radio is and what it is on: zone, channel, name, frequency, and on DMR the color code, timeslot and talkgroup |
+| `select?zone=2&pos=5` | The third zone, its sixth channel (without `pos`, its first) |
+| `step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
+| `step?zone=1` | One zone on, to its first channel; `-1` one back |
+| `select?notify=0` | Stop the change messages (below) |
+
+The radio answers each message with where it is now. After any message it also sends a short update to the same
+program whenever the zone, channel or talkgroup changes, and every 30 seconds, for two minutes. Send `select` every
+minute to keep the updates coming. `codeplug` in the answer goes up whenever the channels or zones change (on the
+radio, or a codeplug written to it).
+
+Nothing changes while the radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 8.
+
+For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
+
+> **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
+> as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
+> radio transmit, and so does port 4191 on firmware without this feature (check its build options first,
+> [build options](../build-config.md)). Whenever the radio is in network mode, keep an antenna or a dummy load on it
+> and leave it on a channel you may transmit on.
+
 ## Linking audio: AllStarLink and DVSwitch
 
 The radio speaks the USRP voice protocol on UDP port 34001, the protocol AllStarLink's USRP channel driver and DVSwitch
