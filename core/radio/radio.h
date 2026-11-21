@@ -709,6 +709,12 @@ uint8_t radio_volume_stored(uint8_t step);
 // reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
 // beep_level setting (cap). volume_percent < 0 (none given yet): the cap
 uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
+// The volume step above which beeps stop getting louder on a radio whose volume scales the PCM path (volume_pcm with
+// hal_radio_t.volume_db): higher steps make the voice louder, not the beeps
+#define RADIO_BEEP_VOLUME_STEP	7
+// A beep's level on such a radio: level softened by the gain the volume gives over the cap step's (db_now - db_cap,
+// in dB), so the beep sounds as loud as at the cap step. At or below the cap: level. At least 1 while level isn't 0
+uint8_t radio_beep_pcm_level(uint8_t level, int db_now, int db_cap);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
 // with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets

@@ -54,6 +54,10 @@ typedef struct {
 	// With volume: true when that level also scales the PCM speaker path (beeps, DMR voice). False: beeps on the PCM
 	// path would ignore it, so the core caps each beep at the volume percent (radio_beep_level)
 	bool volume_pcm;
+	// Optional, with volume_pcm: the gain in dB that volume(percent) gives the PCM path (percent 1..100). The core
+	// plays a beep softer above volume step RADIO_BEEP_VOLUME_STEP by that much, so beeps stop getting louder there
+	// (radio_beep_pcm_level). NULL: beeps follow the volume to the top
+	int8_t (*volume_db)(uint8_t percent);
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)
 	bool (*tx_tone)(uint16_t hz);

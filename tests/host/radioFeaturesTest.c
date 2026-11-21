@@ -2705,6 +2705,58 @@ static void test_beep_follows_volume(void)
 	run(100);
 	int pcm = beep_peak();
 	CHECK(pcm > 11500 && pcm <= 12900);
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX);
+	run(100);
+	pcm = beep_peak();
+	CHECK(pcm > 11500 && pcm <= 12900);	// no volume_db: the beep follows the volume to the top
+
+	board.radio = &fake_radio;
+	board.power = &fake_power;
+}
+
+// The HR_C6000 boards' curve: 0..100 % linear over -31..+31 dB
+static int8_t r_volume_db(uint8_t percent) { return (int8_t)((int)percent * 62 / 100 - 31); }
+
+// On a radio whose volume scales the PCM path, beeps stop getting louder above RADIO_BEEP_VOLUME_STEP: the beep is
+// played softer by the gain the volume adds over that step's, and steps up to it are as before
+static void test_beep_volume_cap(void)
+{
+	CHECK(radio_beep_pcm_level(60, -4, -4) == 60 && radio_beep_pcm_level(60, -10, -4) == 60);
+	CHECK(radio_beep_pcm_level(60, 0, -4) == 38);		// 4 dB down
+	CHECK(radio_beep_pcm_level(100, 16, -4) == 10);		// 20 dB down
+	CHECK(radio_beep_pcm_level(50, 2, -4) == 25);		// 6 dB down
+	CHECK(radio_beep_pcm_level(60, 31, -4) == 1);		// 35 dB: the top step against step 7
+	CHECK(radio_beep_pcm_level(20, 31, -4) == 1);		// never rounded to silence
+	CHECK(radio_beep_pcm_level(0, 31, -4) == 0);
+
+	hal_radio_t pcm_radio = fake_radio;
+	hal_power_t soft_power = fake_power;
+	pcm_radio.volume = r_volume;
+	pcm_radio.volume_pcm = true;
+	pcm_radio.volume_db = r_volume_db;
+	soft_power.volume = p_no_knob;
+	board.radio = &pcm_radio;
+	board.power = &soft_power;
+	audio_mux_reset();
+	start();
+	req(RREQ_ZONE_POS, 6);
+	settings(set_beep_80);
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX / 4);	// 25 %, under the cap: beep_level as it is
+	run(100);
+	int low = beep_peak();
+	CHECK(soft_vol == 25 && low > 11500 && low <= 12900);
+	req(RREQ_VOLUME, RADIO_BEEP_VOLUME_STEP);	// 44 %, the cap step itself
+	run(100);
+	int cap = beep_peak();
+	CHECK(cap > 11500 && cap <= 12900);
+	req(RREQ_VOLUME, RADIO_VOLUME_DEFAULT);	// 50 %: 4 dB more gain, level 80 -> 50
+	run(100);
+	int mid = beep_peak();
+	CHECK(soft_vol == 50 && mid > 7000 && mid <= 8100);
+	req(RREQ_VOLUME, RADIO_VOLUME_MAX);	// 100 %: 35 dB more gain, level 80 -> 1
+	run(100);
+	int top = beep_peak();
+	CHECK(soft_vol == 100 && top > 0 && top <= 200);
 
 	board.radio = &fake_radio;
 	board.power = &fake_power;
@@ -4623,6 +4675,7 @@ int main(void)
 #endif
 	test_tot_and_beeps();
 	test_beep_follows_volume();
+	test_beep_volume_cap();
 	test_bcl_inhibit();
 	test_dmr_busy_quiet();
 	test_tx_limit();

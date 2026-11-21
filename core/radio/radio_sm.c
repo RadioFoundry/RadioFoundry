@@ -233,8 +233,17 @@ static inline bool voice_streaming(void)
 static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
-	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		level = radio_beep_level(level, sm->volume_sent);
+	const hal_radio_t *r = board.radio;
+	if (r == NULL || r->volume == NULL) {
+		return level;
+	}
+	if (!r->volume_pcm) {
+		return radio_beep_level(level, sm->volume_sent);
+	}
+	if (r->volume_db != NULL && sm->volume_sent > 0) {
+		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
+		level = radio_beep_pcm_level(level, r->volume_db((uint8_t)sm->volume_sent),
+					     r->volume_db(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
 }
@@ -8788,6 +8797,27 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 		return cap;
 	}
 	return (uint8_t)volume_percent;
+}
+
+// 10^(-d/20) for d = 0..19 dB, Q15
+static const uint16_t db_down_q15[20] = {
+	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
+	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
+};
+
+uint8_t radio_beep_pcm_level(uint8_t level, int db_now, int db_cap)
+{
+	if (level == 0 || db_now <= db_cap) {
+		return level;
+	}
+	unsigned d = (unsigned)(db_now - db_cap);
+	uint32_t milli = (uint32_t)level * 1000u;	// the level in thousandths: 20 dB at a time is a tenth
+	for (; d >= 20; d -= 20) {
+		milli /= 10u;
+	}
+	milli = (milli * db_down_q15[d] + 16384u) >> 15;
+	uint32_t out = (milli + 500u) / 1000u;
+	return (uint8_t)(out == 0 ? 1 : out);
 }
 
 uint8_t radio_volume_stored(uint8_t step)

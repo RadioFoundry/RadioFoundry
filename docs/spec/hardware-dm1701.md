@@ -1329,7 +1329,9 @@ RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 60
 Log-taper pot read on PA0. Raw ranges (measured): DM-1701 min about 29, max about 2075,
 breakpoint about 318; MD-UV380 22..2070, breakpoint 309; MD-UV390 Plus 10 W 19..2054, breakpoint 308; RT3S 23..2020,
 breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approximation around the breakpoint maps it to
--31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis).
+-31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis). The same gain scales beeps, so
+the board gives the curve to the radio core (`hal_radio_t.volume_db`), which holds beeps at their step-7 loudness
+(44 %, -4 dB) above that step: at the top of the knob a beep is played 35 dB softer (`radio-features.md` 4).
 
 ### 11.3 Mic level
 
