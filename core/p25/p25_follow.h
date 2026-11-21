@@ -160,6 +160,7 @@ typedef struct {
 	uint32_t blocks, crc_fail;
 	uint16_t crc_taken;	// blocks taken with a failed CRC (P25_FOLLOW_BAD_CRC)
 	bool unverified;	// ... and the last block taken was one
+	bool net_confirmed;	// a CRC-valid NET confirmed this control-channel candidate since the last hunt
 	uint16_t mfr, mbt, pdu_other, grants, follows, enc_skip, tdma, no_iden, wrong_sys, hunts, cc_lost, voice_lost,
 		 wrong_call;
 	uint8_t op[P25_OPCODES];	// blocks of the standard's table by opcode (saturating at 255)

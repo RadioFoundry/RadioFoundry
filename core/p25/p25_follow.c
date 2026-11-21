@@ -177,6 +177,7 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	uint8_t n = cc_count(f);
 
 	f->have_id = false;
+	f->view.net_confirmed = false;
 	f->t_state = now;
 	while (f->tried < n) {
 		uint32_t hz = cc_hz(f, f->view.cc);
@@ -494,7 +495,7 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 
-	if (!tx_on(f))
+	if (!tx_on(f) || !f->view.net_confirmed)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
 		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
@@ -610,7 +611,8 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 	const p25_follow_cfg_t *c = f->cfg;
 	uint32_t rx, tx;
 
-	if ((f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
+	if (!tx_on(f) || !f->view.net_confirmed ||
+	    (f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
 	    g->src != c->unit_id || g->tg != c->talk_group || !acc_asked(f, P25_ISP_GRP_V_REQ))
 		return false;
 	acc_drop(f);
@@ -723,11 +725,21 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			hunt_start(f, now);
 			return;
 		}
+		if ((f->view.wacn <= 0xFFFFFu && f->view.wacn != m.u.net.wacn) ||
+		    (f->view.sysid <= 0xFFFu && f->view.sysid != m.u.net.sysid)) {
+			// A different network cannot reuse this registration, even if its site numbers match.
+			acc_lost(f);
+			if (f->view.reg != P25_REG_OFF && f->view.reg != P25_REG_NO_TX)
+				f->view.reg = P25_REG_IDLE;
+		}
+		f->view.net_confirmed = !f->view.unverified;
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
 		f->acc.cc_chan = m.u.net.ch;
 		break;
 	case P25_TSBK_RFSS:
+		if (m.u.site.sysid != f->view.sysid)
+			f->view.wacn = UINT32_MAX;
 		f->view.sysid = m.u.site.sysid;
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
@@ -998,7 +1010,7 @@ uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 {
 	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX || v->unverified)
 		return P25_TALK_OFF;
-	if (v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE)
+	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->net_confirmed)
 		return P25_TALK_NO_CC;
 	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
 		return P25_TALK_NOT_REG;

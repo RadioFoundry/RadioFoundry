@@ -186,6 +186,13 @@ In CONTROL, a conflicting RFSS system also invalidates prior learned identity pr
 Reacquisition needs fresh network identity, including when the configured identity is wildcard; a grant cannot reuse
 stale proof after the conflict.
 
+The follower owns a separate `view.net_confirmed` transmit gate. Every hunt candidate clears it; only a
+CRC-valid matching NET sets it. RFSS may settle a receive candidate but cannot confirm its WACN. A different RFSS
+system clears the retained WACN before updating the system ID. Remembered display identity, a configured identity,
+and an unrelated good block cannot authorize inbound requests or our voice grant without current NET confirmation.
+An accepted bad-CRC NET clears confirmation even when a later unrelated block passes its CRC. Normal returns from
+a voice channel retain confirmation; control-channel loss and a new hunt do not.
+
 Following a grant (group: `talk_group`, the `groups` list, or every group with `P25_FOLLOW_ALL_GROUPS`; unit to unit:
 to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
 
@@ -239,6 +246,9 @@ Registration (`view.reg`, `P25_REG_*`):
 | NO_TX | the control channel has no inbound frequency | |
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
+Transmission waits for a fresh matching NET even when the registration is retained. A changed WACN invalidates
+the old registration even if the system, RFSS and site numbers are the same. The existing registration model uses
+the observed local system identity; separate home-system identity and inter-system roaming are not implemented here.
 
 Sending (`acc_tick`): a block goes out only after a block of the control channel was heard since the tune, so its
 status symbols are known; while the last status symbol of the last unit said the inbound channel is busy, it waits

@@ -353,6 +353,10 @@ On a radio that runs P25 trunking, a channel can belong to a P25 trunked system 
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
 on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
 
+After losing a control channel, the radio can resume listening before it has confirmed the network's full identity.
+Registration and transmit requests wait for a valid Network Status Broadcast on the recovered channel, including
+when WACN or system ID is set to Any. This can briefly delay transmitting after reception returns.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
