@@ -834,6 +834,60 @@ static void testAccessEarlyAnswers(void)
 	p25_follow_end(&f);
 }
 
+// Accept invalid CRC (P25_FOLLOW_BAD_CRC): a block that fails its CRC is taken when the same block failed lately, and
+// the transmit side waits while the last block taken failed
+static void cc_unit_bad(p25_follow_t *f)
+{
+	static uint8_t air[P25_UNIT_BYTES_MAX];
+	uint8_t b[P25_TSBK_BYTES];
+	p25_rx_unit_t u = { .duid = P25_DUID_TSDU, .nac = NAC, .nsyms = 180, .air = air };
+
+	mk_net(b, WACN, SYSID);
+	b[11] ^= 0x01;	// the CRC itself: the content stays right
+	p25_unit_begin(air, 180, NAC, P25_DUID_TSDU, 0);
+	p25_block_put(air, 0, b);
+	p25_follow_unit(f, &u, now_ms);
+}
+
+static void testAcceptBadCrc(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX | P25_FOLLOW_BAD_CRC,
+				 .unit_id = OUR_UNIT, .talk_group = 100, .ncc = 1, .cc = cc, .iden_set = 1u << 1,
+				 .iden = iden };
+	p25_follow_view_t v;
+
+	for (int on = 1; on >= 0; on--) {
+		cfg.flags = (uint8_t)(P25_FOLLOW_TX | (on ? P25_FOLLOW_BAD_CRC : 0));
+		ntunes = nsends = 0;
+		now_ms = 7000;
+		cc_alive = false;
+		p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+		retune(&f);
+		cc_unit_bad(&f);
+		v = view(&f);
+		CHECK(v.crc_fail == 1 && v.crc_taken == 0 && v.blocks == 0, "the first one is dropped");
+		cc_unit_bad(&f);
+		v = view(&f);
+		CHECK(v.crc_fail == 2 - (unsigned)on && v.crc_taken == (unsigned)on && v.unverified == (on != 0),
+		      "the same block again: taken %d", on);
+		CHECK(!on || (v.state == P25_FOLLOW_CONTROL && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_OFF),
+		      "the control channel held on it, PTT off: %u", v.state);
+		if (on) {
+			run_ms(&f, 3000);
+			CHECK(nsends == 0, "unverified: nothing sent (%u)", nsends);
+			site_ident(&f, 3);
+			run_ms(&f, 300);
+			CHECK(!view(&f).unverified && nsends == 1 && last_isp().opcode == P25_ISP_U_REG_REQ,
+			      "a good block: registers (%u)", nsends);
+		}
+		p25_follow_end(&f);
+	}
+}
+
 static void testAccess(void)
 {
 	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .chan = 0x1004, .site = 3 } };
@@ -1771,6 +1825,7 @@ int main(void)
 	testFollowOptions();
 	testAccess();
 	testAccessEarlyAnswers();
+	testAcceptBadCrc();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();

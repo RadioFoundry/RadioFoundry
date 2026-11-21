@@ -39,6 +39,17 @@ int main(void)
 		for (unsigned i = 0; i < n; i++)
 			want += (int64_t)a[i] * b[i];
 		CHECK(fxp_dot16(a, b, n) == (int32_t)(uint32_t)want, "dot16 over %u", n);
+		if (n <= 8) {	// fir2ch4: n taps a channel, reads b[2n + 7]
+			static const int32_t y0[4] = { 5, -6, 7, -8 };
+			int32_t y[4] = { y0[0], y0[1], y0[2], y0[3] };
+			fxp_fir2ch4(a, b, n, y);
+			for (int k = 0; k < 4; k++) {
+				int64_t wk = y0[k];
+				for (unsigned i = 0; i < 2 * n; i++)
+					wk += (int64_t)a[i] * b[i + 2 * k];
+				CHECK(y[k] == (int32_t)(uint32_t)wk, "fir2ch4 output %d over %u", k, n);
+			}
+		}
 	}
 	for (int t = 0; t < 200000; t++) {
 		int32_t x = (int32_t)(rng() % (1u << 24)) - (1 << 23), y = (int32_t)rng(), s = (int)(rng() % 32);
@@ -50,9 +61,13 @@ int main(void)
 		CHECK(fxp_mul64(x, y) == (int64_t)x * y, "mul64");
 		CHECK(fxp_mulshr(x, y, s) == (int32_t)(uint32_t)((uint64_t)((int64_t)x * y) >> s), "mulshr %d", (int)s);
 		CHECK(fxp_mac64(p, x, y) == p + (int64_t)x * y, "mac64");
+		int32_t u = (int32_t)rng(), v = (int32_t)rng();
+		CHECK(fxp_mulhr(u, v) == (int32_t)(((int64_t)u * v + 0x80000000) >> 32), "mulhr %d %d", (int)u, (int)v);
 	}
 	// The soft modem's use: a sum of five 16-bit samples by a gain of up to 2^20
 	CHECK(fxp_scale16(-163840, 1u << 20) == -163840 * 16 && fxp_scale16(163839, 1u << 20) == 163839 * 16, "scale16 at the modem's ends");
+	CHECK(fxp_mulhr(INT32_MIN, INT32_MIN) == (1 << 30) && fxp_mulhr(INT32_MAX, -1) == 0 && fxp_mulhr(-1, 1 << 30) == 0,
+	      "mulhr ends");
 	CHECK(fxp_sat16(40000) == 32767 && fxp_sat16(-40000) == -32768 && fxp_sat16(-5) == -5, "sat16");
 	printf("fxpTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;

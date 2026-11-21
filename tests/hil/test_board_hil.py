@@ -95,6 +95,19 @@ def test_health_checks_read_the_expectations():
     assert outcome(h.test_receiver_alive, other) == "not_built"
 
 
+def test_data_flash_check_takes_every_listed_part():
+    """test_data_flash on every board with a flash_jedec list: each part the list names passes (one model of radio can
+    ship with parts from several vendors over its life, and any of them is sound), and an ID no list names fails."""
+    import test_health as h
+    boards = [b for b in sorted(rfoundry_hil.board_names()) if rfoundry_hil.board_hil(b).get("flash_jedec")]
+    assert boards, "no board lists its data flash parts: nothing to check the check against"
+    for b in boards:
+        name = sorted(rfoundry_hil.board_names()[b])[0]
+        for jedec in rfoundry_hil.board_hil(b)["flash_jedec"]:
+            assert outcome(h.test_data_flash, FakeRadio(name, [f"flash {jedec} cal factory"])) == "passed", (b, jedec)
+        assert outcome(h.test_data_flash, FakeRadio(name, ["flash 123456 cal factory"])) == "failed", b
+
+
 def test_voltage_check_battery_supply_none(monkeypatch):
     """test_voltage on a radio that measures its supply (supply_mv in the features section), one that measures
     neither (no_hw), and a supply reading on a board without a supply_mv expectation (other_board)."""

@@ -63,6 +63,7 @@ void settings_defaults(settings_t *s)
 	s->vfo2_power = SETTINGS_UNSET8;
 	s->vfo2_cc = 1;
 	s->vfo2_ts = 1;
+	s->satellite_index = SETTINGS_UNSET8;
 	s->power_levels = board.power_count;
 }
 

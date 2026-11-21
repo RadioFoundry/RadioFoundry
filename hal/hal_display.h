@@ -44,7 +44,8 @@ typedef struct {
 	uint8_t backlight_rates;
 	uint8_t backlight_rate_std;
 	uint32_t (*set_backlight_rate)(uint8_t i);
-	// Optional, for the debug link
+	// Optional, for the debug link and the support info. Fills only what the board knows: the caller clears the
+	// struct first (factory -1)
 	void (*panel)(hal_display_panel_t *p);
 } hal_display_t;
 

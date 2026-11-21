@@ -322,6 +322,7 @@ export const TABLES = {
 			c("No Beep", "noBeep", asBool, (r) => yesNo(r.noBeep)),
 			c("No Eco", "noEco", asBool, (r) => yesNo(r.noEco)),
 			c("DMO", "dmo", asBool, (r) => yesNo(r.dmo)),
+			c("Accept Invalid CRC", "acceptBadCrc", asBool, (r) => yesNo(r.acceptBadCrc)),
 			c("Roaming", "roam", asBool, (r) => yesNo(r.roam)),
 			c("Talker Alias TS1", "aliasTs1", asInt(0, 3, 0)),
 			c("Talker Alias TS2", "aliasTs2", asInt(0, 3, 0)),

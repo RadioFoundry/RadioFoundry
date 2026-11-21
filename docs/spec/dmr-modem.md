@@ -109,6 +109,28 @@ decoded activity on our slot. In direct mode, "busy" is decoded activity with ou
 A data or voice transmission that waits for the channel must time out (a few seconds, configurable) rather than wait
 forever.
 
+### 1.8 Soft decision decoding of BPTC(196,96) (`core/dmr/fec/dmrSoftBptc.h`)
+
+A receiver that has a reliability for each bit (a sample tap through the soft modem, or a modem's soft symbols) can
+decode bursts the hard decoder gives up on. The hard decoder (`dmrFecBptcDecode`) corrects one error per row and column, columns and rows at once on the packed matrix (one 16-bit word a row, the column syndromes as four XOR sums); the soft decoder
+weighs each bit by how sure the receiver is of it.
+
+| Item | Rule |
+|---|---|
+| Input | One LLR per info bit in burst order (bits 0-97, then 166-263), positive for a 1, in eighths of a natural log ratio, clamped to +-127 |
+| Scale | Exact only for true LLRs: the caller scales by its own noise estimate. For 4FSK sliced at +-2 with noise variance s2 (symbol levels +-1, +-3): the first bit of a symbol v has LLR -2v / s2, the second -2(2 - abs(v)) / s2 |
+| First step | The hard decisions go to the hard decoder. A burst that decodes and passes accept costs no soft work (returns 0) |
+| Iterations | Each one decodes every row (Hamming(15,11)) and then every column (Hamming(13,9), shortened), soft in and soft out, exactly over the 16 words of the code's dual (Hartmann-Rudolph). The extrinsic LLRs of one pass feed the other |
+| Stop | After each iteration the decisions go to the hard decoder; its payload ends the decoding once accept takes it. Default 4 iterations at most (`DMR_SOFT_BPTC_ITERS`: on Gaussian noise 98 % of what 20 decode) |
+| Accept | The payload's own check (CRC-CCITT with the data type's mask, or the LC's Reed-Solomon). Required: after the first iteration, a codeword the hard decoder reaches is often wrong |
+| R(3)-R(0) | R(3) is outside every codeword and comes from its own decision; R(2)-R(0) sit in row 0's codeword and are read from the final decisions |
+| Arithmetic | Fixed point, no divide: tanh(L / 2) from a table in Q31, products in Q31 through `fxp_mulhr` (`core/dsp/fxp.h`: one instruction on a core with a 32 x 32 multiply), sums in Q27, the log ratio from a log2 table. Q15 is not enough: for a row of sure bits that disagree, the two sums cancel to 1e-4 or less |
+| Cost | A row or column: the 15 dual-code words' products by groups of four columns (63 products, no branches), one 16-point Walsh-Hadamard transform for every bit's sums, then one product and two table logs a bit. On a 72 MHz Cortex-M4: about 1,900 cycles a row and 1,700 a column, 81,000 for a hard try, one iteration and a hard try; 282,000 for 4 iterations that fail. Work memory 588 bytes, owned by the caller |
+| Memory | The tables (about 0.6 KB) go to CPU-only RAM where the platform has some (`RFOUNDRY_CPU_DATA`, `core/config.h`); the work memory should too (`RFOUNDRY_CPU_RAM`). Built `-O2` (`HOT_SRC` in the Makefile) |
+
+Gain over the hard decoder on Gaussian noise (the host test, 1000 bursts at sigma 0.85 on +-1): hard decoding 3 %,
+soft decoding 75 % with 4 iterations at most, no wrong payload accepted.
+
 ---
 
 ## 2. Mobile station states
@@ -155,7 +177,31 @@ This is a behavioral diagram, not a structure to copy. The states and what they 
   must not end its next reception on them; use the timeout), or no valid burst on the slot for about 390 ms (13 slot
   ticks), or loss of slot timing.
 - **Data**: CSBK, MBC, data headers and blocks on our slot are passed to the data service. Blocks are taken even with
-  a CRC error (the packet CRC-32 decides); headers and CSBKs with a bad CRC are dropped.
+  a CRC error (the packet CRC-32 decides). Headers and CSBKs with a bad CRC go up flagged too (`crc_ok` false; for a
+  voice LC header or terminator `lc_valid` false, and no call state changes): the receivers drop them, unless the
+  channel is set to accept an invalid CRC ([dmr-trunking.md](dmr-trunking.md) 6, [dmr-voice.md](dmr-voice.md)).
+
+#### 2.2.1 Soft combining
+
+A control channel sends the same few CSBKs over and over. A CSBK, MBC or data header whose CRC failed is decoded
+again from the modem's soft values, summed with the earlier copies (`core/dmr/fec/dmrSoftComb.c`, built with
+DMR). Modems that give soft values per info bit take part; the others pass bursts up as before.
+
+| Step | What |
+|---|---|
+| Stage | On reception, the driver copies the burst's 196 soft values (int8, positive for a 1) to a staging buffer. Only for the burst types above with a failed CRC |
+| Join | At task level the burst joins the set of its slot whose hard bits are within 50 of its own; else the burst replaces the empty or longest unused set. 4 sets per slot. A set halves after 6 bursts, so a message that changes is followed |
+| Decode | BPTC on the joined set. A burst that joined no set keeps the chip's payload |
+| Choose | The chip's payload and the set's decode are re-encoded (with the reserved bits R(3)-R(0) the decode found) and scored against the set's sums. The set's decode replaces the chip's payload only on a higher score |
+
+The burst's own BPTC decode is not a candidate: through heavy noise BPTC miscorrects to a codeword that fits one
+burst's soft values better than the chip's right decode (the chip decodes with soft values of its own).
+
+`crc_ok` stays false: the receivers check the CRC of what they take, and a channel set to accept an invalid CRC takes
+a payload only on a repeat. A wrong decode doesn't repeat, since the sets keep changing.
+
+The sums live in about 2 KB that the modem glue allocates when DMR starts and frees when DMR stops.
+Counters: `soft` in the modem's diag line (taken, combined, changed, stale).
 
 ### 2.3 Repeater mode vs direct mode timing
 
@@ -231,8 +277,7 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 
 - Send a BS_Dwn_Act CSBK (CSBKO 0x38, LB=1, FID 0, BS address 0 = any, source = own ID). Octets: B8 00 00 00 00 00 00
   + source (3). HR_C7000 practice: in two consecutive slots with the PA keyed; HR_C6000 practice: one burst.
-- Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
-  in a row.
+- Then listen: the repeater is up when a burst of its outbound (BS sync, our color code) is heard after the CSBK went.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
 - The CSBK goes on our own timing (`DMR_TIMING_OWN`): no repeater is heard, so there is nothing to align to. On the
   timing the modem last had, from a repeater that had just dropped, the HR_C6000 sent nothing: its passive timing had
@@ -250,6 +295,11 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
   numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
   0.6 s later, and a second wake-up counted as answered by them.
+- Slot numbers never bring a repeater up on their own, on any channel: only its bursts (BS sync, our color code) do.
+  The slot numbers only hold a repeater its bursts showed up through our own over, when nothing is heard between our
+  bursts. The HR_C6000 labels slots from its CACH TC reads, which noise gives too: on a duplex channel with nothing
+  on its output, a repeater no burst had shown counted as up 7 to 19 s after the channel was selected, and a key-up
+  skipped its wake-up (issue 721). A neighbor's repeater of another color code doesn't count either.
 - Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
   wake-up starts it. It never makes the channel busy.
 - A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut

@@ -13,7 +13,9 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/gfx.h"
 #include "ui/i18n.h"
+#include "ui/gfx.h"
 #include "config.h"
 
 // Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
@@ -56,10 +58,79 @@ typedef struct {
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
+#if CONFIG_SATELLITE_TLE
+	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
+	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
+	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating hides=Below_horizon", 13, false },
+	{ "Pass list shows the oldest TLE age", "", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=1d", 13, false },
+	{ "Pass list warns once for stale TLEs", "satagestale", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
+	{ "Pass list updates the age without a new inventory", "satagestale satagefresh ok 6 9", "satageadvance wait:1100",
+	  "screen=satellite-passes shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 0, false },
+	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "Arm capability, not catalog number, enables long OK", "satagestale", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "A satellite without an arm capability does not arm", "", "ok 6 9 ok long:ok",
+	  "screen=satellite shows=ISS toast=none", 13, false },
+	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
+	  "ok 6 9 ok",
+	  "screen=satellite hides=Below_horizon", 13, false },
+	{ "Satellite detail returns to pass list", "", "ok 6 9 ok back",
+	  "screen=satellite-passes sattracking=0 toast=Tracking_stopped shows=Next_passes hides=Predicting_passes", 14, false },
+	{ "Satellite tracking stops on Home", "ok 6 9 ok", "long:back",
+	  "screen=home sattracking=0 toast=Tracking_stopped", 1, false },
+	{ "Satellite tracking survives the TLE editor", "ok 6 9 ok", "ctx back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops on Home from the TLE editor", "ok 6 9 ok ctx", "long:back",
+	  "screen=home sattracking=0", 1, false },
+	{ "Satellite tracking survives quick settings", "ok 6 9 ok", "quick back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops after it was already stopped", "ok 6 9 ok ok", "back",
+	  "screen=satellite-passes sattracking=0 toast=none", 1, false },
+	{ "Satellite stop failure is reported", "ok 6 9 ok satstopfail", "back",
+	  "screen=satellite-passes sattracking=1 toast=Tracking_not_stopped", 1, false },
+	{ "Satellite pass list shows prediction progress", "satpredict",
+	  "ok 6 9",
+	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
+	{ "Completed prediction focuses the first pass", "satpredict ok 6 9", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "OK opens the first pass after prediction", "satpredict ok 6 9 satdone", "ok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "OK opens the first pass before the next UI tick", "satpredict ok 6 9", "satdoneok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "Down selects the second pass after prediction", "satpredict ok 6 9 satdone", "down ok",
+	  "screen=satellite shows=NOAA_19", 2, false },
+	{ "Returning to passes preserves the selection", "satpredict ok 6 9 satdone down ok", "back",
+	  "screen=satellite-passes focus=NOAA_19", 1, false },
+	{ "A new prediction focuses the first pass", "ok 6 9 down satpredict wait:200", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "Completed prediction with no passes stays on the list", "satpredict satnopasses ok 6 9", "satdone ok",
+	  "screen=satellite-passes shows=No_passes_in_next_24h", 1, false },
+	{ "Satellite pass list opens from Tools", "", "ok 6 9",
+	  "screen=satellite-passes shows=Next_passes shows=NOAA_19 shows=0:14", 13, false },
+	{ "Satellite TLE editor opens line 1", "", "ok 6 9 ok ctx",
+	  "screen=satellite-tle-text shows=1_ABC", 14, false },
+	{ "Satellite TLE editor cancels an empty line", "", "ok 6 9 ok ctx back",
+	  "screen=satellite shows=ISS", 15, false },
+	{ "Canceled satellite TLE entry reopens empty", "", "ok 6 9 ok ctx 2 back back ctx",
+	  "screen=satellite-tle-text hides=A_", 19, false },
+#endif
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
+	// The status strip's GPS icon (ui.md 3), a dish: none without a GPS, hollow with the setting off, solid while
+	// searching, with waves on a fix; the setting off hollows it within a second. Without a GPS the setting reads
+	// Off, whatever is stored (#349)
+	{ "GPS icon: none without a GPS", "", "", "gps=0", 0, false },
+	{ "GPS setting reads Off without a GPS", "gps:none", "ok 7 5", "screen=group hides=On", 3, false },
+	{ "GPS icon: off", "gps:off", "", "gps=1 screen=home", 0, false },
+	{ "GPS icon: searching", "gps:search", "", "gps=2 screen=home", 0, false },
+	{ "GPS icon: fix", "gps:fix", "", "gps=3 screen=home", 0, false },
+	{ "GPS icon: setting off hollows it", "gps:fix ok 7 5", "ok wait:1100", "gps=1 focus=GPS", 1, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
@@ -858,11 +929,21 @@ static const flow_t flows[] = {
 	  "screen=zone focus=05_Metro_DMR toast=System_not_set_up", 3, false },
 	{ "T Home on a trunked channel: the system and Ready", "t3 dlpos:3", "", "screen=home shows=County shows=Ready hides=CC",
 	  0, false },
+	{ "T incoming private call shows caller and answer prompt", "t3 dlpos:3", "t3ring:101125",
+	  "screen=incoming-call shows=101125 shows=Press_PTT", 0, false },
+	{ "T a cleared incoming call restores the menu", "t3 dlpos:3 ok t3ring:101125", "down t3ring:0",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T Back rejects an incoming private call", "t3 dlpos:3 ok t3ring:101125", "back",
+	  "screen=hub hides=Press_PTT", 1, false },
+	{ "T a known incoming caller is identified by name", "t3 dlpos:3", "t3ring:9991234",
+	  "screen=incoming-call shows=9991234 shows=Joe", 0, false },
 	{ "T Home while hunting", "t3 dlpos:3 t3state:hunt", "", "screen=home shows=Searching", 0, false },
 	{ "T Home hearing another system says so", "t3 dlpos:3 t3state:other", "",
 	  "screen=home shows=Other_system hides=Searching", 0, false },
 	{ "T PTT refused for another system says so", "t3 dlpos:3 t3state:denyother", "",
 	  "shows=Another_system_heard shows=Check_system_settings", 0, false },
+	{ "T PTT refused for a system of another kind says so", "t3 dlpos:3 t3state:denyotherkind", "",
+	  "shows=Incompatible_system shows=Pick_another_channel", 0, false },
 	{ "T Home after a refused registration says so", "t3 dlpos:3 t3state:regrefused", "",
 	  "screen=home shows=Reg._refused hides=Searching", 0, false },
 	{ "T PTT refused for a refused registration says so", "t3 dlpos:3 t3state:denyreg", "",
@@ -919,6 +1000,9 @@ static const flow_t flows[] = {
 	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
 	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
 	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+#if CONFIG_SATELLITE_TLE
+	{ "L save GPS without a fix", "ok 7 5 down down down down", "ok", "toast=No_current_GPS_fix focus=Save_GPS_position", 1, false },
+#endif
 	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
 	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
 	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
@@ -1139,6 +1223,23 @@ static const flow_t flows[] = {
 #endif
 };
 
+#if CONFIG_SATELLITE_TLE
+static const flow_t satellite_detail_flows[] = {
+	{ "Satellite detail rounds AOS and LOS timers up", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87_in shows=0:02 shows=\x88_in shows=0:03", 13, false },
+	{ "Satellite detail shows LOS as calculating until known", "satlospending",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=Calculating", 13, false },
+};
+
+static const flow_t satellite_small_detail_flows[] = {
+	{ "128x64 satellite detail shows AOS and LOS instead of the path", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87 shows=0:02 shows=\x88 shows=0:03", 13, false },
+};
+#endif
+
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
 	LONG_MESSAGE_FLOWS
@@ -1181,6 +1282,10 @@ static const flow_t flows_k[] = {
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
 	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
 	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set62=0", 8, false },
+	{ "S theme night, the last", "", "ok 7 2 down down ok ok ok", "set7=3", 8, false },
+	// Night shows red only: its highlight is its own red, so the row is dimmed and says why
+	{ "S night: the highlight color is red only", "theme:night ok 7 2 down down down", "ok",
+	  "toast=Night_theme set61=0", 1, false },
 #else
 	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
@@ -1194,6 +1299,8 @@ static const flow_t flows_k[] = {
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
+	{ "K key rows retain their press and hold labels", "", "ok 7 8",
+	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
 	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
@@ -1609,6 +1716,24 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// The support info (docs/spec/support-info.md): the source, the image hash (done after a few redraws: the
+		// sim's image is one step), the MCU and the board's chips
+		bool src = false, mcu = false, dmr = false, checking = false;
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		if (sim_run("ok 7 up ok ok wait:1000", err, sizeof err)) {
+			for (int i = 0; i < 40; i++) {
+				src = src || sim_run("expect:shows=Source:", err, sizeof err);
+				mcu = mcu || sim_run("expect:shows=STM32F4", err, sizeof err);
+				dmr = dmr || sim_run("expect:showsraw=HR_C6000", err, sizeof err);
+				checking = checking || sim_run("expect:shows=checking", err, sizeof err);
+				sim_run("down", err, sizeof err);
+			}
+		}
+		if (!src || !mcu || !dmr || checking) {
+			printf("FAIL about [%s]: support info: source %d, MCU %d, DMR chip %d, still checking %d\n", gn, src, mcu,
+				dmr, checking);
+			fails++;
+		}
 		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
 		// contributors are listed and ends on the last line (the codec's)
 		for (uint8_t l = 0; l < lang_count(); l++) {
@@ -1674,7 +1799,7 @@ static void call_screen_checks(void)
 
 #if CONFIG_DMR_TRUNK
 // Searching a trunked system and hearing only another one, at every display class: the chips say Other system, and
-// a Home with an activity area names what was heard (dmr-trunking.md 12.4)
+// a Home with an activity area names what was heard, or that it is of another kind (dmr-trunking.md 12.4)
 static void t3_other_checks(void)
 {
 	char err[300], buf[200];
@@ -1691,6 +1816,21 @@ static void t3_other_checks(void)
 		}
 		if (!ok) {
 			printf("FAIL another system heard [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+		// A trunking system of another kind: no settings to compare, the radio can't join it
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		ok = sim_run("t3 dlpos:3 t3state:otherkind", err, sizeof err);
+		if (ok) {
+			bool two = ui_layout.activity_h >= 2 * ui_layout.small->h;
+			snprintf(buf, sizeof buf, ui_layout.activity_h < ui_layout.small->h ? "expect:shows=Other_system" : two ?
+				 "expect:shows=Other_system expect:shows=Incompatible_system expect:shows=Cannot_join "
+				 "expect:hides=Heard:" :
+				 "expect:shows=Other_system expect:shows=Incompatible_system");
+			ok = sim_run(buf, err, sizeof err);
+		}
+		if (!ok) {
+			printf("FAIL a system of another kind heard [%s]: %s\n", sim_geoms[g].name, err);
 			fails++;
 		}
 	}
@@ -1783,8 +1923,7 @@ static void station_checks(void)
 }
 
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
-// warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
-// is the last one; in Settings the other rows move up). With a
+// warning, and no Battery saver or Low battery warning in the lists. With a
 // battery they are all there
 // A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
 // the chips where there is no top row; never shortened (the step gives way first)
@@ -1810,16 +1949,13 @@ static void no_battery_checks(void)
 		{ "strip with a battery", "", "shows=84%" },
 		{ "strip", "nobattery", "hides=%" },
 		{ "no warning", "nobattery battery:14", "banner=none" },
-		{ "Tools with a battery", "ok 6 9", "screen=info shows=Battery" },
-		{ "Tools", "nobattery ok 6", "hides=Battery" },
 		{ "Tools keep their numbers", "nobattery ok 6 7", "screen=diag" },
+		// The board's hardware version warning: shown on the diagnostics page, and only when the board raises it
+		{ "Diagnostics: no version warning", "ok 6 7", "screen=diag hides=This_firmware" },
+		{ "Diagnostics: version warning", "variant ok 6 7", "screen=diag shows=This_firmware" },
 		{ "Tools: Roaming is 6", "nobattery ok 6 6", "screen=roaming" },
-		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
 		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
-		// a radio that measures its DC input: the last tool is Supply with the reading, nothing battery-only
-		{ "Tools: Supply", "supply:13800 ok 6 up", "shows=Supply shows=13.8_V hides=Battery" },
-		{ "Supply page", "supply:13800 ok 6 9", "screen=info shows=13.8_V hides=%" },
 		{ "Supply: no warning", "supply:9000 battery:14", "banner=none hides=%" },
 		{ "Supply: no battery settings", "supply:13800 ok 7 7", "hides=Battery_saver hides=Low_battery" },
 	};
@@ -1846,6 +1982,27 @@ static void no_battery_checks(void)
 				printf("FAIL no battery %s [%s]: %s\n", cases[i].name, sim_geoms[g].name, err);
 				fails++;
 			}
+		}
+	}
+}
+
+// A key with the backlight off only wakes it, except PTT, Monitor and Emergency, which act at once: Emergency sends
+// only its long press, so waking on it alone would lose the alarm
+static void dark_key_checks(void)
+{
+	static const struct { uint8_t action, gesture; bool acts; } cases[] = {
+		{ ACT_EMERGENCY, GESTURE_LONG, true },
+		{ ACT_PTT, GESTURE_DOWN, true },
+		{ ACT_MONITOR, GESTURE_DOWN, true },
+		{ ACT_SELECT, GESTURE_PRESS, false },
+		{ ACT_BACK, GESTURE_LONG, false },
+	};
+	for (size_t i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		input_event_t ev = { .action = cases[i].action, .gesture = cases[i].gesture };
+		if (ui_app_key_while_dark(&ev) != cases[i].acts) {
+			printf("FAIL dark key %zu: action %u acts %d, want %d\n", i, cases[i].action, !cases[i].acts,
+			    cases[i].acts);
+			fails++;
 		}
 	}
 }
@@ -1966,6 +2123,48 @@ static void title_row_checks(void)
 	}
 }
 
+#if CONFIG_UI_COLOR
+// The night theme lets nothing but red reach the eye: every pixel of these screens, on every color display class and
+// whatever the highlight color, has no green or blue (GPS systems and the emergency screen included)
+static void night_checks(void)
+{
+	static const char *const scripts[] = {
+		"", "strip:off", "rx:9991234,91,g,Q1ABC_Joe", "pttdown", "quick", "long:quick 5", "ok 5", "ok 7 2",
+		"ok 6 2 2", "ok 6 2 3", "emergency:9991234", "msg:9991234,Meet_at_the_north_lot", "ok 7 2 down down down ok",
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		if (sim_geoms[g].bpp == 1)
+			continue;
+		for (size_t i = 0; i < sizeof scripts / sizeof scripts[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "color:teal theme:night %s", scripts[i]);
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL night [%s] \"%s\": %s\n", sim_geoms[g].name, scripts[i], err);
+				fails++;
+				continue;
+			}
+			int lit = 0, bad = 0, bx = 0, by = 0;
+			for (int y = 0; y < gfx_height(); y++)
+				for (int x = 0; x < gfx_width(); x++) {
+					color_t c = gfx_get_pixel(x, y);
+					lit += c != 0;
+					if ((c & 0x07FFu) != 0 && bad++ == 0) {
+						bx = x;
+						by = y;
+					}
+				}
+			if (bad > 0 || lit == 0) {
+				printf("FAIL night [%s] \"%s\": %d pixels not red (first %d,%d: %04x), %d lit\n", sim_geoms[g].name,
+				       scripts[i], bad, bx, by, bad ? gfx_get_pixel(bx, by) : 0, lit);
+				fails++;
+			}
+		}
+	}
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+}
+#endif
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -1985,10 +2184,115 @@ static int check_name_is_id(void)
 	return bad;
 }
 
+#if CONFIG_SATELLITE_TLE
+static int check_satellite_countdowns(void)
+{
+	static const char *const geoms[] = { "128x64", "160x120i5", "160x128", "240x320", "240x320i10x5" };
+	char err[160] = "";
+	for (unsigned i = 0; i < sizeof geoms / sizeof geoms[0]; i++) {
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		int up_x, up_y, up_w, up_h, now_x, now_y, now_w, now_h;
+		int down_x, down_y, down_w, down_h, los_x, los_y, los_w, los_h;
+		const char *down = gfx_bpp() == 1 ? GLYPH_DOWN : GLYPH_DOWN " in";
+		if (!sim_run("ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(GLYPH_UP, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("Now", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("1:32", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    !sim_text_has_color(GLYPH_UP, ui_col.dim) || !sim_text_has_color("Now", ui_col.fg)) {
+			printf("FAIL satellite countdown alignment/colors [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() == 1) {
+			int top, rows;
+			const uint8_t *glyph = font_glyph(ui_layout.small, 'N', &top, &rows);
+			bool thickened = false, checked = false;
+			for (int r = 0; r < rows; r++) {
+				for (int col = 0; col + 1 < ui_layout.small->w; col++) {
+					if ((glyph[r] & (0x80u >> col)) && !(glyph[r] & (0x80u >> (col + 1)))) {
+						checked = true;
+						if (gfx_get_pixel(now_x + col + 1, now_y + top + r) != 0)
+							thickened = true;
+					}
+				}
+			}
+			if (!checked || thickened) {
+				printf("FAIL satellite visible-now normal weight [%s]\n", geoms[i]);
+				return 1;
+			}
+		} else if (sim_text_has_color(GLYPH_UP, ui_col.rx)) {
+			printf("FAIL satellite rise arrow is green [%s]\n", geoms[i]);
+			return 1;
+		}
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		const char *future_up = gfx_bpp() == 1 ? GLYPH_UP : GLYPH_UP " in";
+		if (!sim_run("satfuturepass ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(future_up, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("0:02", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("0:03", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    (gfx_bpp() != 1 && sim_text_has_color("0:02", ui_col.rx))) {
+			printf("FAIL satellite future countdowns [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() != 1) {
+			sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+			if (!sim_run("satlospending ok 6 9 ok", err, sizeof err) ||
+			    !sim_text_bounds("Calculating", &los_x, &los_y, &los_w, &los_h) ||
+			    los_x + los_w != gfx_width()) {
+				printf("FAIL satellite pending LOS [%s]: %s\n", geoms[i], err);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int check_satellite_path_endpoint_colors(void)
+{
+	char err[160];
+	const sim_geom_t *geom = sim_geom_find("240x320");
+	sim_reset(geom, SIM_MAP_K);
+	if (!sim_run("ok 6 9 ok", err, sizeof err)) {
+		printf("FAIL satellite path endpoint colors: %s\n", err);
+		return 1;
+	}
+	int center_x = gfx_width() / 2;
+	bool green_horizon = false, red_horizon = false, green_sky = false;
+	for (int y = 0; y < gfx_height(); y++) {
+		color_t pixel = gfx_get_pixel(center_x, y);
+		green_horizon |= y > gfx_height() * 3 / 4 && pixel == ui_col.rx;
+		red_horizon |= y < gfx_height() * 3 / 4 && pixel == ui_col.tx;
+		if (y > gfx_height() / 2) {
+			for (int x = center_x + 5; x < gfx_width() - 10; x++)
+				green_sky |= gfx_get_pixel(x, y) == ui_col.rx;
+		}
+	}
+	if (!green_horizon || !red_horizon || !green_sky) {
+		printf("FAIL satellite path colors: horizon start=%d end=%d sky=%d\n",
+		       green_horizon, red_horizon, green_sky);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SATELLITE_TLE
+	if (check_satellite_countdowns() != 0)
+		return 1;
+	if (check_satellite_path_endpoint_colors() != 0)
+		return 1;
+#endif
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
@@ -2000,6 +2304,14 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+#if CONFIG_SATELLITE_TLE
+	const sim_geom_t *satellite_geom = sim_geom_find("240x320");
+	for (size_t i = 0; i < sizeof satellite_detail_flows / sizeof satellite_detail_flows[0]; i++)
+		run_flow(&satellite_detail_flows[i], satellite_geom, SIM_MAP_K, "K 240x320");
+	const sim_geom_t *satellite_small_geom = sim_geom_find("128x64");
+	for (size_t i = 0; i < sizeof satellite_small_detail_flows / sizeof satellite_small_detail_flows[0]; i++)
+		run_flow(&satellite_small_detail_flows[i], satellite_small_geom, SIM_MAP_M, "M GD-77 satellite");
+#endif
 	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)
@@ -2021,10 +2333,14 @@ int main(void)
 	station_checks();
 	vfo_split_dmr_checks();
 	no_battery_checks();
+	dark_key_checks();
 #if CONFIG_VOLUME_BAR
 	volume_bar_checks();
 #endif
 	title_row_checks();
+#if CONFIG_UI_COLOR
+	night_checks();
+#endif
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

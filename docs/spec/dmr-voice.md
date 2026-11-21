@@ -27,6 +27,11 @@ PTT always uses.
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
 
+A voice LC header or terminator whose RS(12,9) check fails is not taken. With the channel's Accept invalid CRC
+(`dmr_listen_filter_t.accept_bad_crc`, [open-firmware-cps.md](open-firmware-cps.md) 7.3.3) it is taken when the same
+9 LC octets failed among the last four failures (`core/fec/rx_seen.h`): a system that sends every LC that way repeats
+it, and a burst damaged on the air rarely decodes the same twice. The call stack counts those (`rx_lc_taken`).
+
 The caller is shown by name when one is known: the channel's talk target and listen list contacts first, then every
 codeplug contact with that ID (group and private IDs are separate name spaces), then, for a private ID, the DMR ID
 database text (callsign and name, cut to the 16-character name field). The radio core keeps the last four answers

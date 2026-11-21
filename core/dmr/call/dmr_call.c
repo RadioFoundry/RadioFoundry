@@ -8,6 +8,7 @@
 #include "config.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/fec/dmrFec.h"
+#include "fec/rx_seen.h"
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -184,6 +185,7 @@ static struct {
 	void *data_rx_ctx;
 	dmr_rx_tap_fn rx_tap;
 	void *rx_tap_ctx;
+	rx_seen_t lc_seen;	// listen.accept_bad_crc: LCs that failed their check lately
 } s;
 #if CONFIG_SFR && CONFIG_SFR_DUALPATH_RX
 // SFR user, dual-path RX: voice bursts taken but not played yet, oldest first (play order; s.vq_n of them). A burst waits
@@ -1000,13 +1002,23 @@ static void rx_pi_header(const dmr_burst_t *b, uint32_t now)
 static bool rx_header_lc(const dmr_burst_t *b, uint8_t mask, uint8_t lc[DMR_LC_BYTES])
 {
 	// The LC from the burst's own info bits (the modem's LC buffer may still hold the previous call, gotcha 1.4)
-	if (b->len >= DMR_LC_FULL_BYTES)
-		return dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0;
-	if (b->lc_valid && b->crc_ok) {
-		memcpy(lc, b->lc, DMR_LC_BYTES);
+	bool full = b->len >= DMR_LC_FULL_BYTES;
+	if (full ? dmr_lc_decode_full(b->payload, mask, lc) >= 0 || dmr_lc_decode_full(b->payload, 0, lc) >= 0 :
+		   b->lc_valid && b->crc_ok) {
+		if (!full) {
+			memcpy(lc, b->lc, DMR_LC_BYTES);
+		}
 		return true;
 	}
-	return false;
+	// The channel's Accept invalid CRC: an LC that fails its check is taken when the same LC failed lately (a system
+	// that sends every LC that way repeats it; noise rarely does). The RS code is systematic: the LC is the first 9
+	const uint8_t *raw = full ? b->payload : b->lc;
+	if (!s.cfg.listen.accept_bad_crc || !rx_seen(&s.lc_seen, raw, DMR_LC_BYTES)) {
+		return false;
+	}
+	memcpy(lc, raw, DMR_LC_BYTES);
+	stats.rx_lc_taken++;
+	return true;
 }
 
 // A burst of another color code than ours (the modem doesn't filter with any_cc, polite to all or two CCs). Burst A is
@@ -2116,7 +2128,12 @@ void dmr_call_poll(uint32_t now_ms)
 			// Nor where the modem gives the repeater's bursts (receiving, or listening between ours): they say it is
 			// up, its slot numbers don't. The modem keeps those running on the timing it last had, and a repeater
 			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538)
-			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() && !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
+			// And never on their own: they only hold a repeater its bursts already showed up (through our over, when
+			// nothing between our bursts is heard). The HR_C6000 labels slots from its CACH TC reads, which noise
+			// gives too: on a duplex channel with nothing on its output, a repeater no burst had ever shown came up
+			// from them 7 to 19 s after the channel was selected, and a key-up then skipped its wake-up (issue 721)
+			if (s.cfg.rmo && tick_alt > 3 && repeater_up(now_ms) && !tx_waiting() &&
+			    !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}
