@@ -44,6 +44,8 @@ SECTIONS
 		. = ALIGN(4);
 		_edata = .;
 	} >RAM AT> FLASH
+	/* the end of the .bin (the last section copied into it): the support info's image hash runs __app_base .. here */
+	__image_end = _sidata + SIZEOF(.data);
 
 	.bss :
 	{

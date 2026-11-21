@@ -32,11 +32,17 @@ uint32_t hal_millis(void)
 	return now;
 }
 
+static uint8_t family = HAL_CHIP_STM32F4;	// the fake chip's (the MCU line's other forms)
+static uint16_t flash_kb = 1024;
+
 static bool chip(hal_chip_t *c)
 {
-	c->idcode = 0x10076413u;
-	c->flash_kb = 1024;
-	c->family = HAL_CHIP_STM32F4;
+	memset(c, 0, sizeof *c);
+	c->family = family;
+	c->flash_kb = flash_kb;
+	if (family == HAL_CHIP_STM32F4) {
+		c->idcode = 0x10076413u;
+	}
 	return true;
 }
 
@@ -190,6 +196,23 @@ static void line_tests(void)
 	rev = 1;
 	CHECK(support_hw_line(6, &l) && strcmp(l.value, "V4") == 0);
 	CHECK(support_hw_line(0, &l) && strcmp(tr(l.label), "MCU: ") == 0);
+	// The chips with no ID register: the family and, when the chip has it, the flash size
+	static const struct {
+		uint8_t family;
+		uint16_t flash_kb;
+		const char *value;
+	} mcus[] = {
+		{ HAL_CHIP_GD32F30X, 3072, "GD32F30x, 3072 KB" },
+		{ HAL_CHIP_AT32F43X, 4032, "AT32F43x, 4032 KB" },
+		{ HAL_CHIP_HRC7000, 0, "HR_C7000" },
+	};
+	for (unsigned i = 0; i < sizeof mcus / sizeof mcus[0]; i++) {
+		family = mcus[i].family;
+		flash_kb = mcus[i].flash_kb;
+		CHECK(support_hw_line(0, &l) && strcmp(l.key, "mcu") == 0 && strcmp(l.value, mcus[i].value) == 0);
+	}
+	family = HAL_CHIP_STM32F4;
+	flash_kb = 1024;
 	// A build without the Makefile's stamp: unknown, no repository
 	CHECK(support_source() == SUPPORT_SRC_UNKNOWN && strcmp(support_source_key(support_source()), "unknown") == 0);
 	CHECK(strcmp(support_repo(), "") == 0);

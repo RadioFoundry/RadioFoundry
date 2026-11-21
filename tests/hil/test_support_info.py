@@ -34,7 +34,7 @@ def test_version_says_where_the_build_came_from(radio):
 def test_support_info_lines(radio):
     kv = support(radio)
     assert kv.get("source") == radio.version(fresh=True).get("source")
-    assert kv.get("hw.mcu", "").startswith(("STM32F4", "HR_C7000")), kv
+    assert kv.get("hw.mcu", "").startswith(("STM32F4", "HR_C7000", "GD32F30x", "AT32F43x")), kv
     size = int(kv.get("image.size", "0"))
     assert 64 * 1024 < size < 4 * 1024 * 1024, kv
 

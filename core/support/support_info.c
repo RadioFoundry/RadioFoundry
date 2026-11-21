@@ -65,8 +65,15 @@ static bool mcu_line(support_line_t *l, sbuf_t *b)
 	}
 	l->key = "mcu";
 	l->label = TRN(ABOUT_LABEL_MCU, "MCU: ");
-	if (c.family == HAL_CHIP_HRC7000) {
-		sb_str(b, "HR_C7000");
+	if (c.family != HAL_CHIP_STM32F4) {
+		// The others have no ID register the line could show (hal_system.h): the family and the flash size
+		sb_str(b, c.family == HAL_CHIP_HRC7000 ? "HR_C7000" : c.family == HAL_CHIP_GD32F30X ? "GD32F30x" :
+		       c.family == HAL_CHIP_AT32F43X ? "AT32F43x" : "?");
+		if (c.flash_kb != 0u) {
+			sb_str(b, ", ");
+			sb_u32(b, c.flash_kb, 1);
+			sb_str(b, " KB");
+		}
 		return true;
 	}
 	// The STM32F4's DBGMCU IDCODE: device 11:0, silicon revision 31:16 (it may read 0 without a debugger)

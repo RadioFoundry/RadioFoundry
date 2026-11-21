@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 // Which chip the fields describe. Only the STM32F4 has the ID, flash size and option byte registers; the others fill in
-// the UID (and the GD32F30x its flash size) and leave the rest 0
+// the UID (and the GD32F30x and AT32F43x their flash size) and leave the rest 0
 enum { HAL_CHIP_STM32F4 = 0, HAL_CHIP_HRC7000 = 1, HAL_CHIP_GD32F30X = 2, HAL_CHIP_AT32F43X = 3 };
 
 typedef struct {

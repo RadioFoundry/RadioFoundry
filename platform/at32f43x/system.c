@@ -9,6 +9,9 @@
 #include "hal_system.h"
 #include "../cortexm/msp_stack.h"
 #include "../cortexm/sys_windows.h"
+#if CONFIG_SUPPORT_INFO
+#include "../cortexm/app_image.h"
+#endif
 #if CONFIG_CRASH_LOG
 #include "hal_crash.h"
 #endif
@@ -60,6 +63,9 @@ const hal_system_t at32_system = {
 	.mem_window = mem_window,
 	.irq_stack_free = irq_stack_free,
 	.reg = cortexm_reg,
+#if CONFIG_SUPPORT_INFO
+	.image = cortexm_image,
+#endif
 #if CONFIG_STUB_ENTRY
 	// stub_entry.c: no span of its own (stub_region, enter_stub NULL), staged in the frame buffer instead
 	.stub_run_addr = 0x20000000u,			// the SRAM base, AT32STUB_RUN_ADDR
