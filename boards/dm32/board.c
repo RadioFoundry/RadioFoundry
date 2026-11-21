@@ -39,6 +39,15 @@ static const band_t bands[] = {
 #endif
 };
 
+#if CONFIG_AM_RX
+// Where an AM channel receives AM (board_t.am_bands): the FD6818 demodulates AM after the same front end as FM, so
+// everywhere it receives but the broadcast band, which is the RDA5807M's. Past the air band this is untested on air
+static const band_t am_bands[] = {
+	{ 16000000, 65000000, false },
+	{ 108000000, 740000000, false },
+};
+#endif
+
 // Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
 // Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
 static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
@@ -97,6 +106,10 @@ const board_t board = {
 #if CONFIG_RX_EXT
 	.rx_ext_count = 3,
 	.rx_ext_on = &rx_ext_on,
+#endif
+#if CONFIG_AM_RX
+	.am_bands = am_bands,
+	.am_band_count = sizeof(am_bands) / sizeof(am_bands[0]),
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
