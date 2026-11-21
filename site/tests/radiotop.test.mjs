@@ -43,7 +43,9 @@ test("every update mode step list marks the keys to hold", () => {
 	const app = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
 	assert.match(app, /function withPicture\(steps\) \{\n\tconst pic = radioPicture\(S\.radio, \{ keys: holdKeys\(S\.radio\) \}\);/);
 	const iap = readFileSync(new URL("../static/js/flasher/iapui.js", import.meta.url), "utf8");
-	assert.match(iap, /radioPicture\(S\(\)\.radio, \{ keys: holdKeys\(S\(\)\.radio\) \}\)/);
+	assert.match(iap, /radioPicture\(S\(\)\.radio, \{ keys: keys \? holdKeys\(S\(\)\.radio\) : \[\], screen \}\)/);
+	// keys are left off only beside a write's progress bar, when nothing is held
+	assert.deepEqual([...iap.matchAll(/withPicture\([^\n]*, false\)/g)].map((m) => m[0]), ["withPicture(prog.el, p.screen, false)"]);
 	const lists = [...iap.matchAll(/\.\.\.steps\.map\(/g)].length;
 	assert.ok(lists >= 1);
 	assert.equal([...iap.matchAll(/withPicture\(h\("ol", \{ class: "steps[^"]*" \},[^\n]*\.\.\.steps\.map\(/g)].length, lists);
@@ -74,7 +76,7 @@ test("a radio without a display gets no screen line", async () => {
 	assert.match(ui, /const noScreen = \(\) => hasNoScreen\(S\(\)\.radio\);/);
 	const app = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
 	assert.match(app, /const noScreen = \(\) => hasNoScreen\(S\.radio\);/);
-	assert.match(ui, /noScreen\(\) \? "flash\.c7\.connect\.no_keys_dark" : "flash\.c7\.connect\.no_keys"/);
+	assert.match(ui, /noScreen\(\) \? "flash\.c7\.connect\.no_keys_dark" : hasLed\(\) \? "flash\.c7\.connect\.no_keys"/);
 	for (const [k, v] of Object.entries(en)) if (k.includes("_noscreen")) assert.ok(!/screen|display/i.test(v), `${k} names a screen`);
 	assert.ok(en["flash.c7.connect.no_keys_dark"] && !/screen/i.test(en["flash.c7.connect.no_keys_dark"]));
 });

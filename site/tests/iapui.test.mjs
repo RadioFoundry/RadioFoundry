@@ -74,7 +74,8 @@ function route(r = radio, host = {}) {
 		return l;
 	};
 	const ctx = { flashStarted: () => 0, flashFinished() {}, flashMark() {}, errorText: (e) => e.message, helpLink: () => null, next() {},
-		render() { state.rendered = (state.rendered || 0) + 1; } };
+		render() { state.rendered = (state.rendered || 0) + 1; },
+		back(n = 1) { state.step -= n; this.render(); } };	// as c7000ui.js gives it (chainBack, no second chip here)
 	const routes = makeStockRoutes({ S, ctx, C: () => C, boardId: () => r.flash.board, session: () => state.c7, busy: async () => {},
 		loader, fill: (el, ...p) => el.replaceChildren(...p.flat().filter(Boolean)), stubImage: async () => new Uint8Array(64), ...host });
 	return { state, forwards, calls, routes };
@@ -197,11 +198,12 @@ const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7
 const { BUILDS, FLASH_BASE } = await import("../static/js/flasher/usmart.js");
 const { stubImages } = await import("../static/js/flasher/stub.js");
 
-// The radio on its stock firmware with this variant code; what the route shows and offers
-async function stockRoute(t, { variant, radioData = stockRadio, faults = {} } = {}) {
-	const sim = await c7000Simulation(C, stockRadio.id, 7000, stockRadio);
+// The radio (sim: the radio simulated, the one with variants by default) on its stock firmware with this variant code;
+// what the route shows and offers
+async function stockRoute(t, { variant, sim: simRadio = stockRadio, radioData = simRadio, faults = {} } = {}) {
+	const sim = await c7000Simulation(C, simRadio.id, 7000, simRadio);
 	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50,
-		usmart: stockRadio.flash.stock_versions[0].slice(-3), variant, faults });
+		usmart: simRadio.flash.stock_versions[0].slice(-3), variant, faults });
 	t.after(() => r.stop());
 	r.powerOn();
 	await sleep(300);
@@ -276,7 +278,7 @@ test("stock console: a build without a proven stub load offers the try, then the
 	const { r, rt, seen, parts } = await stockRoute(t, { variant: "DBB" });
 	olderBuild(r);
 	await rt.routes.stockFound(parts);
-	assert.match(seen.shown.textContent, /has not made a backup through this version/);
+	assert.match(seen.shown.textContent, /has not backed up a radio running this version/);
 	assert.match(seen.shown.textContent, /Try the backup anyway/);
 	assert.match(seen.shown.textContent, /Update the original firmware first/);
 	assert.match(seen.shown.textContent, /Install without a backup/);
@@ -294,7 +296,7 @@ test("stock console: the try on an untried build loads the stub and marks the se
 	await rt.routes.stockFound(parts);
 	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
 	await sleep(50);
-	assert.match(seen.shown.textContent, /new to the radio programming utility/);
+	assert.match(seen.shown.textContent, /is new to this page/);
 	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
 	for (let i = 0; i < 400 && !loaded; i++) await sleep(50);
 	assert.equal(loaded, 1);
@@ -310,8 +312,8 @@ test("stock console: the try stops before any write when the command table isn't
 	seen.acts.find((b) => label(b) === "Try Backup Anyway").click();
 	await sleep(50);
 	seen.acts.find((b) => label(b) === "Switch to Update Mode").click();
-	for (let i = 0; i < 200 && !/which was expected/.test(seen.shown.textContent); i++) await sleep(50);
-	assert.match(seen.shown.textContent, /which was expected/);
+	for (let i = 0; i < 200 && !/as expected on this version/.test(seen.shown.textContent); i++) await sleep(50);
+	assert.match(seen.shown.textContent, /as expected on this version/);
 	assert.match(seen.shown.textContent, /command table/);
 	assert.ok(!seen.acts.map(label).includes("Try Backup Anyway"), "no second try offered");
 	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "nothing written, RAM included");
@@ -326,6 +328,22 @@ test("stock console: a build the page doesn't know still names its version, foun
 	assert.match(seen.shown.textContent, /in development/i);
 	assert.deepEqual(seen.acts.map(label), ["Try Backup Anyway", "Install Without Backup", "Search Again"]);
 	assert.ok(!r.events.includes("identify"), "the console was not silenced by an identify");
+});
+
+test("stock console: a build of a series whose console route is untraced offers no try, only update mode", { timeout: 30000 }, async (t) => {
+	const untraced = BUILDS.find((b) => b.traced === false);
+	const radioData = json("radios.json").radios.find((r) => r.flash.stock_console && r.flash.stock_versions.some((v) => v.endsWith(`.${untraced.name}`) && v.startsWith(untraced.series)));
+	assert.ok(radioData, "a radio whose stock build is untraced");
+	const { r, rt, seen, parts } = await stockRoute(t, { sim: radioData });
+	await rt.routes.stockFound(parts);
+	assert.match(seen.shown.textContent, new RegExp(`${untraced.series.replaceAll(".", "\\.")}\\.${untraced.name}`), "the build is named");
+	assert.doesNotMatch(seen.shown.textContent, /Try the backup anyway|Update the original firmware first/);
+	assert.deepEqual(seen.acts.map(label), ["Install Without Backup", "Search Again"]);
+	// a build it doesn't know, on the same radio: no guess either
+	for (const b of BUILDS) r.progmem.fill(0x20, b.at - FLASH_BASE - 16, b.at - FLASH_BASE + 32);
+	await rt.routes.stockFound(parts);
+	assert.deepEqual(seen.acts.map(label), ["Install Without Backup", "Search Again"]);
+	assert.ok(r.frames.every((f) => f.startsWith("read_addr(")), "nothing written, RAM included");
 });
 
 test("identify only: the console is silent but the identify names the variant; no backup, two ways on", async (t) => {
@@ -394,9 +412,9 @@ test("update mode: an install without a codec says why there is none and how to 
 	};
 	const none = text({ mode: "none" });
 	assert.match(none, /will not include the DMR voice codec/i);
-	assert.match(none, /no supported stock firmware file was selected/);
-	assert.match(none, /Analog FM will work/);
-	assert.match(none, /go back and select a supported manufacturer firmware file/);
+	assert.match(none, /no supported manufacturer.s firmware file was selected/);
+	assert.match(none, /FM will work, but DMR voice will not/);
+	assert.match(none, /go back and select a supported manufacturer.s firmware file/);
 	assert.doesNotMatch(none, /no way back/i, "a way back exists: it needs the stock file");
 	assert.doesNotMatch(text({ mode: "keep" }), /will not include the DMR voice codec/i);
 });

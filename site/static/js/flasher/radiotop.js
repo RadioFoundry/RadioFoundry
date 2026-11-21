@@ -47,14 +47,18 @@ export function keyMarks(radio, names) {
 // radio shows there is in its steps' words, not in the data), or null without one. keys: names of keys to mark on it
 // (holdKeys), each ringed where the picture shows it, and named in a caption. The marks are decoration: the caption
 // and the steps say the same in words.
-export function radioPicture(radio, { keys = [] } = {}) {
+// screen: a picture of what the screen shows meanwhile (radios.json flash.update_screen), laid over the picture's screen
+export function radioPicture(radio, { keys = [], screen = null } = {}) {
 	const src = pictureSrc(radio);
 	if (!src) return null;
+	const pct = radio?.frame_geometry?.screen_pct;
+	const shown = screen && pct && !hasNoScreen(radio) ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` },
+		h("img", { src: ROOT + screen, alt: "", class: "rt-shot" })) : null;
 	const marks = keyMarks(radio, keys).map((m) => h("span", { class: "rt-key", "aria-hidden": "true",
 		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
 	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
 	return h("figure", { class: "radio-top radio-pic" },
-		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
+		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), shown, ...marks), caption);
 }
 
 // What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
@@ -62,15 +66,21 @@ export function radioPicture(radio, { keys = [] } = {}) {
 // serves it: static/img/screens/, scaled up, site/rfoundrysite/shots.py), so the picture shows the radio's real boot
 // screen and the stub entry's splash, at any display size
 const SCREEN_SHOTS = { rfoundry: "boot", loader: "stub_entry" };
-const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png` : null);
+// Another firmware's screen, where the radio has a drawing of it: its original firmware (flash.stock_screen)
+const OTHER_SHOTS = { on: "stock_screen" };
+const screenShot = (radio, sc) => (sc === "update" ? (radio?.flash?.update_screen ? ROOT + radio.flash.update_screen : null)
+	: radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}static/img/screens/${radio.gallery}/${SCREEN_SHOTS[sc]}.png`
+	: radio?.flash?.[OTHER_SHOTS[sc]] ? ROOT + radio.flash[OTHER_SHOTS[sc]] : null);
 
 // led: off | wait (slow yellow) | busy (fast yellow) | done (three green flashes) | green (steady)
 // screen: off (dark: a power-on stub load or the factory loader) | loader (RadioFoundry handed over to the stub: its
 // "PC Loader Connected" splash) | rfoundry (RadioFoundry running: its boot screen) | on (another firmware running: lit,
-// no picture of its screens) | any (the state doesn't matter yet: no screen line in the caption)
+// no picture of its screens) | update (the factory update mode: flash.update_screen, where the radio has one) | any (the state doesn't matter yet: no screen line in the caption)
 // knob: null | "cycle" (off, then on) | "on"
 // note: a line for the caption in place of the LED's, while the LED says nothing
-export function radioTop(radio, initial = {}) {
+// hasLed false: the chip the cable reaches drives no LED (they are on another SoC): none is drawn and the caption names
+// no blink
+export function radioTop(radio, initial = {}, { hasLed = true } = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
 	// no screen line in the caption, no shot over the picture
@@ -84,17 +94,17 @@ export function radioTop(radio, initial = {}) {
 	const label = h("strong", {});
 	const lamp = h("div", { class: "rt-lamp" }, svg("svg", { viewBox: "0 0 24 24", width: 24, height: 24, "aria-hidden": "true" }, glow, led), label);
 	const caption = h("p", { class: "rt-caption" });
-	const el = h("figure", { class: "radio-top" }, pic, lamp, caption);
+	const el = h("figure", { class: "radio-top" }, pic, hasLed ? lamp : null, caption);
 	const set = ({ led: l = "off", screen: sc = "off", knob = null, note = null } = {}) => {
 		el.dataset.led = l;
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
-		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
+		label.textContent = l === "off" || !hasLed ? "" : t(`flash.c7.visual.tag_${l}`);
 		const url = noScreen ? null : screenShot(radio, sc);
 		shot.hidden = !url;
 		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
-			note || t(`flash.c7.visual.led_${l}`), sc === "any" || noScreen ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
+			note || (hasLed ? t(`flash.c7.visual.led_${l}`) : null), sc === "any" || noScreen ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
 		pic.setAttribute("aria-label", [radio?.name, ...words].filter(Boolean).join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start

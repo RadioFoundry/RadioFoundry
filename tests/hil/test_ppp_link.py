@@ -36,6 +36,8 @@ def ppp(radio):
     if own == 0:
         skip("state", "the radio has no DMR ID (dmr.own_id=0): IPCP has no address to give")
     board = radio.version().get("board")      # now: a debug link frame on the port would end PPP (ppp.md 4)
+    held = radio.link._held
+    radio.link.hold(False)                    # a held port stays the debug link's: PPP could not start
     port = radio.link.s
     port.reset_input_buffer()
     client = PppClient(port)
@@ -50,6 +52,8 @@ def ppp(radio):
         hung_up = client.close()
         time.sleep(4.0)           # the radio leaves PPP one restart time after the Terminate-Ack (ppp.md 4)
         port.reset_input_buffer()
+        if held:
+            radio.link.hold(True)
     assert hung_up, "no Terminate-Ack from the radio"
     radio.ping()
     assert radio.view(["net_link"]).get("ppp.running") == "0", "the radio still runs PPP after the hang-up"

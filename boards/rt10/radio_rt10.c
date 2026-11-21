@@ -440,8 +440,9 @@ void rt10_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // 100 us, the FD6818 back to the receive frequency, 100 us, the RX supply on. The key-down delay
 // counts from its RF RX interrupt; the hold to the burst's end takes its place. Returns how late the ramp down
 // started, in us
-void rt10_burst_off(void)
+void rt10_burst_off(hrc_rfburst_wait_fn wait)
 {
+	(void)wait;
 	apc_ramp(plan.dac, false);
 	DAC_DATA_B = 0;
 	hrc_pin_write(PIN_TX_SUPPLY, false);

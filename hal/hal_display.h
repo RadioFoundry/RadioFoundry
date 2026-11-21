@@ -32,6 +32,8 @@ typedef struct {
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
 	void (*set_backlight)(uint8_t percent);
+	// Optional: the keypad's backlight, switched with the display's (on only while it is at the set brightness)
+	void (*set_key_light)(bool on);
 	// Optional, for the backlight tests (Settings > Advanced > Backlight tests, CONFIG_BACKLIGHT_TEST): the PWM compare value straight, 0
 	// (off) .. backlight_raw_max (on through the whole period), and the one in force. A board without them has the
 	// brightness page alone

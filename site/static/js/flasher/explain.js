@@ -51,8 +51,11 @@ export function pickProblem(opened, boardId, { need = "codec" } = {}) {
 const FILE_NAME = /\.[A-Za-z0-9]{2,4}\)?$/;
 export function supportedFiles(fb, boardId) {
 	const sources = fb.boards?.[boardId]?.codec?.sources || [];
+	// a board that runs another board's codec (c7000 codec_boards, preferred first: a second SoC that runs the main SoC's codec) lists that
+	// board's files first
+	const ids = fb.c7000?.boards?.[boardId]?.codec_boards || [boardId];
 	const profiles = fb.c7000?.boards?.[boardId]
-		? (fb.c7000.profiles || []).filter((p) => p.board === boardId && p.stock_file).map((p) => p.name) : [];
+		? ids.flatMap((id) => (fb.c7000.profiles || []).filter((p) => p.board === id && p.stock_file).map((p) => p.name)) : [];
 	const files = [...profiles];
 	for (const n of sources) if (FILE_NAME.test(n) && !files.includes(n)) files.push(n);
 	return { files, also: sources.filter((n) => !FILE_NAME.test(n) && !files.includes(n)) };

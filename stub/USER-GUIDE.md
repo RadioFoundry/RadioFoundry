@@ -154,6 +154,9 @@ The radio restarts into its normal firmware. If neither works, remove and refit 
 Yellow is the red and the green LED both full on, so it looks the same on every model. The tool drives each radio's own LED pins (its `pins.h`); `--led-red` and
 `--led-green` override them. Without `--board` on the boot ROM route the radio is not known, so no LED blinks.
 
+On the GD-88 the LED isn't a guide yet: what it shows during an installation is still changing. Follow the tool's
+messages and the screen.
+
 ## Transfer speed
 
 With a current loader (protocol 7), writes and backups pick the fastest serial speed your cable and radio manage, by

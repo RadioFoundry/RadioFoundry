@@ -31,7 +31,7 @@ import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported
 import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, CABLES, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
 import { readRadio, makeBundle, openBundle, bundleFolder, notBundle, bundleName, describeFirmware, CODEPLUG_SPAN } from "./backup.js";
 import { targets, planInternal, planStock, codeplugSectors, writeCodeplug, codeplugLayout } from "./restore.js";
-import { Selection } from "./select.js";
+import { Selection, secondSelection } from "./select.js";
 import { codecPresent, decideCodec, DecisionError } from "./decide.js";
 import { tooBig } from "./buildfit.js";
 import { suggestPack, packCode, startCode, startLanguages, startLanguage, setStartLanguage } from "./langsuggest.js";
@@ -45,7 +45,7 @@ import { variantWarning, variantVerdict } from "./iapui.js";
 import { groups as variantGroups } from "./variant.js";
 import { FakeC7000, c7000Simulation, fakeC7000Options } from "./fakec7000.js";
 import { APP_ENTRY } from "./iap.js";
-import { slotBytes, locateCodec } from "./c7000.js";
+import { slotBytes, locateCodec, lowPart } from "./c7000.js";
 import { Stub, StubError } from "./stub.js";
 import { F4Stub, f4Image, registerShort, withCodec } from "./f4stub.js";
 import { f4LoaderReader } from "./readers.js";
@@ -272,7 +272,7 @@ function problemNotice(p, { offer = null, boardId = S.board?.id } = {}) {
 		files.length ? h("p", {}, t(dump ? "flash.problem.dump.instead" : "flash.problem.unmapped.instead", vars), download ? [" ", download] : null) : null,
 		!files.length ? null : dump || foldSupported(files)
 			? h("details", {}, h("summary", {}, t("flash.problem.unmapped.all", { n: files.length })), list) : list,
-		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join("; ") })) : null,
+		also.length && !dump ? h("p", {}, t(files.length ? "flash.problem.unmapped.also" : "flash.problem.unmapped.only", { what: also.join(" or ") })) : null,
 		reportLine());	// a file the page can't use may be the page's fault: the user can send it with the report
 }
 
@@ -780,7 +780,7 @@ async function getKey(board) {
 const NO_TRANSFER = new Set(["radio", "build", "bundle", "symptom", "recover", "done"]);
 const transferStep = () => !!S.task && !NO_TRANSFER.has(stepsFor()[S.step]);
 const trail = stepHistory(window, {
-	busy: () => barsRunning() && transferStep(),
+	busy: () => (barsRunning() || !!S.writing) && transferStep(),
 	show: (place) => {
 		if (!place) return reset();
 		const [task, step] = place.split("/");
@@ -803,7 +803,7 @@ function render() {
 	let shown = stepper();
 	app.append(shown);
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
-	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
+	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")), ...[simRadioPanel()].filter(Boolean));
 	if (VERSION_REF && S.task === "install") app.append(versionBanner());
 	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
@@ -828,11 +828,13 @@ function render() {
 	const missing = S.radio && !S.sim && missingApi(S.radio, S.task, step, { usb: usbSupported(), serial: serialSupported(), stub: stubRoute() });
 	const view = (missing && (() => kitView(missing))) || (step === "restore" && bundleBackend(S.bundle)?.views.restore) || (S.radio && backend().views[step])
 		|| { update: updateView, radio: radioView, build: buildView, bundle: bundleView, symptom: symptomView, recover: recoverView, restart: restartView }[step];
-	if (!missing && transferStep()) app.append(h("p", { class: "notice bad" }, h("strong", {}, t("flash.stay_on_page"))));
+	// no page-wide "stay on this page": each progress bar shows it while its transfer runs (dom.js progressBar), so it
+	// appears once, and only when a transfer is under way
 	app.append(view());
 	app.append(h("div", { class: "nav-bar" },
 		h("div", { class: "nav-back" },
-			S.step > 0 ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
+			// not out of a step the backend can't leave half way (a second chip's install after the first's)
+			S.step > 0 && !(S.radio && backend().noBack?.(step)) ? button("← " + t("flash.back"), () => { S.step--; render(); }) : null,
 			h("button", { class: "btn btn-quiet", type: "button", onclick: () => reset() }, t("flash.start_over")),
 			// on every step: a page stuck waiting on the radio shows no error, so no error's report button either
 			// (#446). The done step has its own; the stylesheet hides this one while the step shows another
@@ -1072,7 +1074,7 @@ function updateView() {
 					onchange: () => { S.decided[START_KEEP] = keep; draw(); } }),
 				" ", keep ? t("flash.update.start_keep", { language: askLang }) : t("flash.update.start_english"))))));
 		const building = S.build && S.build.selection === selectionKey(S.selection);
-		const image = S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
+		const image = S.firmware ? imageReady()
 			: building && S.build.error ? buildErrorNotice(S.build.error)
 			: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text) : null;
 		const backup = h("label", { class: "toggle" },
@@ -1139,6 +1141,31 @@ function radioView() {
 	S.forward(null);	// picking a radio is the step's action
 	return panel(t("flash.radio.title"), list,
 		S.task === "help" ? null : h("p", { class: "small muted detect" }, t("flash.radio.detect_hint"), " ", detect), status);
+}
+
+// A radio's second chip (radios.json flash.second, a board that is part_of this one): its own image, board and flash
+// entry, reached through RadioFoundry on the first chip (c7000ui.js), so it is installed as a radio of its own with the first
+// one's other data
+function secondRadio(r) {
+	const s = r?.flash.second;
+	return s ? { ...r, id: s.board, name: t("flash.second.name", { name: r.name }), second_of: r.id,
+		flash: { ...s, via: r.flash.board } } : null;
+}
+
+// The radio's second chip takes the radio's place on the page for its part of the install (c7000ui.js: the same step,
+// right after the first chip's part): its board and its image, with the radio's cable, task and step. The image came
+// with the radio's (S.firmware.second). false: there is none to install
+function toSecond() {
+	const r = secondRadio(S.radio);
+	const fw = S.firmware?.second;
+	if (!r || !fw) return false;
+	S.first = { radio: S.radio, firmware: S.firmware };
+	S.radio = r;
+	S.board = fb().boards[r.flash.board];
+	S.firmware = fw;
+	S.variant = null;	// the main chip's hardware variant says nothing about this one
+	S.stockRead = null;
+	return true;
 }
 
 // A radio card's hardware variants (board.toml [hardware] variants): which codes are supported, which in development,
@@ -1315,13 +1342,14 @@ function buildView() {
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
-			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
+			S.firmware ? imageReady()
 				: building && S.build.error ? buildErrorNotice(S.build.error)
 				: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text)
 				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
 				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand(S.buildOptions))),
 				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)),
+				S.radio.flash.second ? filePicker(t("flash.build.own_second"), ".bin", (f) => loadOwnSecond(f, draw)) : null,
 				filePicker(t("flash.build.own_manifest"), ".json", async (f) => { S.ownManifest = JSON.parse(new TextDecoder().decode(f.data)); })));
 		wrap.replaceChildren(
 			panel(t("flash.build.title"),
@@ -1418,7 +1446,34 @@ function nest(items) {
 
 const selectionKey = (sel) => `${VERSION_REF || ""}:${sel.radio.id}:${JSON.stringify(S.buildOptions || {})}:${[...sel.on].sort().join(",")}`;
 
-// Ask the build API for the current selection, wait for it, and take the image like a release's
+// One image from the build API: asked for, waited for (said(status) while it is queued or built; false ends the wait)
+// and checked against its manifest. {manifest, image, build}, or null when the wait ended
+async function buildImage({ board, flashBoard, ref, features, options, id }, said) {
+	let b = await api("POST", "builds", { board, ref, features, options, tool: "web", tool_version: S.data.site.version || "", task: "install", id,
+		...(id ? { languages: browserLanguages() } : {}) });
+	while (b.status === "queued" || b.status === "running") {
+		if (!said(b)) return null;
+		await new Promise((ok) => setTimeout(ok, 3000));
+		b = await api("GET", `builds/${b.id}`);
+	}
+	if (b.status !== "done") {
+		const why = b.error || b.status;
+		const fit = tooBig(why);
+		if (fit) throw new FitError(fit);
+		// a feature or option the built version doesn't have: explained by errorText, not as a failed compile
+		throw /^unknown (feature|option)/i.test(why) ? new ApiError(why) : new Error(t("flash.build.failed", { error: why }));
+	}
+	const [m, img] = await Promise.all([fetch(new URL(b.manifest, API)).then((r) => r.json()),
+		fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
+	await verify(m, img, fb(), flashBoard);
+	for (const [name, value] of Object.entries(options))
+		if (m.build_options?.[name] !== value) throw new Error(t("flash.build.wrong_options", { name, value }));
+	return { manifest: m, image: img, build: b.id };
+}
+
+// Ask the build API for the current selection, wait for it, and take the image like a release's. A radio with a second
+// chip (flash.second) gets both images from the one request: the second chip's is its own board's build of the same
+// version (select.js secondSelection), kept with the radio's as S.firmware.second
 async function requestBuild(redraw) {
 	const sel = S.selection, key = selectionKey(sel);
 	const current = () => S.build?.selection === key && selectionKey(S.selection) === key;
@@ -1427,38 +1482,45 @@ async function requestBuild(redraw) {
 	try {
 		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
 		if (VERSION_REF && !validRef(VERSION_REF)) throw new Error(t("flash.version.bad", { ref: VERSION_REF }));
-		const id = useId();
-		let b = await api("POST", "builds", { board: S.radio.id, ref: VERSION_REF || (rels.length ? rels[rels.length - 1].version : defaultRef(S.data.site.branch)), features: [...sel.on].sort(),
-			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id, ...(id ? { languages: browserLanguages() } : {}) });
-		while (b.status === "queued" || b.status === "running") {
-			if (!current()) return;
-			S.build.text = b.status === "queued" && b.position ? t("flash.build.queued", { n: b.position }) : t("flash.build.building");
+		const ref = VERSION_REF || (rels.length ? rels[rels.length - 1].version : defaultRef(S.data.site.branch));
+		const second = S.radio.flash.second;
+		// the build furthest from done speaks for both
+		const states = {};
+		const said = (who) => (b) => {
+			if (!current()) return false;
+			states[who] = b;
+			const all = Object.values(states), waiting = all.filter((x) => x.status === "queued" && x.position);
+			S.build.text = waiting.length === all.length ? t("flash.build.queued", { n: Math.max(...waiting.map((x) => x.position)) })
+				: t(second ? "flash.build.building_both" : "flash.build.building");
 			redraw();
-			await new Promise((ok) => setTimeout(ok, 3000));
-			b = await api("GET", `builds/${b.id}`);
-		}
-		if (b.status !== "done") {
-			const why = b.error || b.status;
-			const fit = tooBig(why);
-			if (fit) throw new FitError(fit);
-			// a feature or option the built version doesn't have: explained by errorText, not as a failed compile
-			throw /^unknown (feature|option)/i.test(why) ? new ApiError(why) : new Error(t("flash.build.failed", { error: why }));
-		}
-		const [m, img] = await Promise.all([fetch(new URL(b.manifest, API)).then((r) => r.json()),
-			fetch(new URL(b.image, API)).then((r) => r.arrayBuffer()).then((x) => new Uint8Array(x))]);
-		await verify(m, img, fb(), S.board.id);
-		for (const [name, value] of Object.entries(S.buildOptions || {}))
-			if (m.build_options?.[name] !== value) throw new Error(t("flash.build.wrong_options", { name, value }));
-		if (!current()) return;
+			return true;
+		};
+		// the flash log's row for this use is the radio's own build: the second chip's request names no use
+		const [first, other] = await Promise.all([
+			buildImage({ board: S.radio.id, flashBoard: S.board.id, ref, features: [...sel.on].sort(), options: S.buildOptions || {}, id: useId() }, said("first")),
+			second ? buildImage({ board: second.board, flashBoard: second.board, ref, features: [...secondSelection(sel, second).on].sort(), options: {} }, said("second")) : null]);
+		if (!first || (second && !other) || !current()) return;
+		// two images of one radio run together: both from the same commit (a branch that moved between the two requests)
+		if (other && other.manifest.git !== first.manifest.git) throw new Error(t("flash.build.second_differs"));
 		// variant: the prebuilt choice this is, for the flash log (the service names every image it builds "custom")
-		S.firmware = { manifest: m, image: img, source: t("flash.build.built", { version: m.version }), origin: "custom",
-			variant: sel.matches(startCode) || "custom", build: b.id, selection: key, pinned: !!VERSION_REF };
+		const variant = sel.matches(startCode) || "custom";
+		S.firmware = { ...first, source: t("flash.build.built", { version: first.manifest.version }), origin: "custom", variant, selection: key, pinned: !!VERSION_REF,
+			second: other ? { ...other, source: t("flash.build.built", { version: other.manifest.version }), origin: "custom", variant } : null };
 		S.build = null;
 	} catch (e) {
 		if (S.build?.selection === key) S.build.error = e instanceof FitError ? { text: fitText(e.fit), fit: e.fit }
 			: { text: t("flash.build.unavailable", { error: errorText(e) }), rec: diag.currentError() };
 	}
 	redraw();
+}
+
+// The image is here: a radio with a second chip says whether that chip's image came with it (an own image without
+// one installs the radio's chip only)
+function imageReady() {
+	const fw = S.firmware;
+	if (!S.radio.flash.second) return notice(t("flash.build.image_ready", { what: fw.source }), "ok");
+	return fw.second ? notice(t("flash.build.image_ready_both", { what: fw.source, second: fw.second.source }), "ok")
+		: notice(t("flash.build.image_ready_first_only", { what: fw.source }), "info");
 }
 
 // What to do about a build too big for the radio: turn things off, and a Radio language picked into the build is one
@@ -1494,6 +1556,20 @@ async function loadOwnImage(f, redraw) {
 	redraw();
 }
 
+// The user's own image for the radio's second chip (flash.second), beside their own image for the radio
+async function loadOwnSecond(f, redraw) {
+	const board = fb().boards[S.radio.flash.second.board];
+	try {
+		const m = await forDevBuild(board, f.data);
+		await verify(m, f.data, fb(), board.id);
+		if (S.firmware?.origin !== "own") throw new Error(t("flash.build.own_second_first"));
+		S.firmware = { ...S.firmware, second: { manifest: m, image: f.data, source: f.name, origin: "own" } };
+	} catch (e) {
+		alert(errorText(e));
+	}
+	redraw();
+}
+
 async function ensureFirmware() {
 	if (S.firmware) return S.firmware;
 	if (S.sim) {
@@ -1506,9 +1582,52 @@ async function ensureFirmware() {
 			img.set(APP_ENTRY, fs.size);
 			img.set(new TextEncoder().encode("RadioFoundry"), fs.size + 0x100);
 		}
-		return (S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name") });
+		S.firmware = { manifest: await forDevBuild(S.board, img), image: img, source: t("flash.sim.image_name"), second: null };
+		// a second chip (flash.second): its own made-up image, installed after the radio's
+		const second = S.radio?.flash.second && fb().boards[S.radio.flash.second.board];
+		if (second) {
+			const other = randomBytes(rng(97), 120 * 1024);
+			other.set(new TextEncoder().encode("RadioFoundry"), 0x1000);
+			const fs2 = S.radio.flash.second.first_stage;
+			if (fs2) {
+				other.set(fromHex(fs2.head), 0);
+				other.set(APP_ENTRY, fs2.size);
+			}
+			S.firmware.second = { manifest: await forDevBuild(second, other), image: other, source: t("flash.sim.image_name") };
+		}
+		return S.firmware;
 	}
 	throw new Error(t("flash.build.no_image"));
+}
+
+// Practice mode, a simulated radio with the serial IAP update mode (fakec7000.js): its screen, and the hands of the user
+// who switches it on and off, holds its keys and pulls the cable, at any step
+function simRadioPanel() {
+	const f = S.fakeC7;
+	if (!f?.iap) return null;
+	const screen = h("b", {});
+	const plugBtn = button("", () => (f.unplugged ? f.plug() : f.unplug()), { quiet: true });
+	const shown = () => {
+		const sc = f.screen();
+		screen.textContent = sc.startsWith("IAP_") ? sc : t(`flash.sim.screen_${sc === "original firmware" ? "normal" : sc === "RadioFoundry" ? "rfoundry" : sc === "blank" ? "blank" : "off"}`);
+		plugBtn.textContent = t(f.unplugged ? "flash.sim.plug" : "flash.sim.unplug");
+	};
+	const el = h("div", { class: "sim-radio" }, h("span", { class: "small" }, t("flash.sim.screen"), " ", screen),
+		button(t("flash.sim.off"), () => f.powerOff(), { quiet: true }),
+		button(t("flash.sim.on"), () => f.powerOn(), { quiet: true }),
+		button(t("flash.sim.on_sk1"), () => f.powerOn({ keys: true }), { quiet: true }),
+		f.rx2 ? button(t("flash.sim.hold_sk1"), () => f.holdSk1(), { quiet: true }) : null,
+		plugBtn);
+	shown();
+	// until the page draws another step (render() replaces it): not yet in the page on the first tick
+	let drawn = false;
+	const tick = setInterval(() => {
+		if (el.isConnected) {
+			drawn = true;
+			shown();
+		} else if (drawn) clearInterval(tick);
+	}, 300);
+	return el;
 }
 
 function slug(text) {
@@ -3085,10 +3204,16 @@ function answers(items, pick, chosen = null) {
 			h("strong", {}, title), text ? h("span", { class: "small muted" }, text) : null)));
 }
 
+// A symptom's title and text; the update-mode one describes the screen, in the radio's own form (recovery.iapSuffix)
+function symptomText(id) {
+	const k = id === "iap" ? `${id}${backend().recovery.iapSuffix?.(S.radio) || ""}` : symptomKey(id);
+	return [t(`flash.help.s.${k}`), t(`flash.help.s.${k}_text`)];
+}
+
 function symptomView() {
 	S.forward(null);
 	return h("div", { class: "flasher" }, reassure(),
-		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, t(`flash.help.s.${symptomKey(id)}`), t(`flash.help.s.${symptomKey(id)}_text`)]),
+		panel(t("flash.help.symptom_title"), answers(symptoms().map((id) => [id, ...symptomText(id)]),
 			(id) => { S.help = { symptom: id, stage: id === "dark" ? "battery" : id === "iap" ? "fix" : ["stuck", "stopped"].includes(id) ? backend().recovery.first : "fix" }; next(); })));
 }
 
@@ -3280,14 +3405,14 @@ async function main() {
 		return;
 	}
 	c7ui.init({ S, next, render, reset, helpLink, manualKitLine, fb, flashStarted, flashFinished, flashMark, noteReadout, errorText, analysisOffer, problemNotice, failureNotice, useAdapter,
-		stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
-	// #sim=<board>[-stock|-romfail|-slowcable|-deafcable|-openfw|-openfw-nocodec]: that board, running RadioFoundry, its stock firmware or another
+		toSecond, stepName: () => stepsFor()[S.step], stubJson: () => fetch(`${ROOT}data/c7000-stub.json`).then((r) => r.json()) });
+	// #sim=<board>[-stock|-romfail|-slowcable|-deafcable|-openfw|-openfw-nocodec][-bstock]: that board, running RadioFoundry, its stock firmware or another
 	// open firmware (a board the page backs up from one: openfw.js; -nocodec: one without the codec, for the stock-file
 	// fallback); -romfail: an HR_C7000 radio on stock firmware whose boot ROM refuses the load, for the factory update
 	// mode; -slowcable: one on a cable too slow for the boot ROM's answer window, which the answer sent ahead gets through;
 	// -deafcable: one on a cable that carries the radio's data but none of the page's; #sim: the first
-	// radio on stock firmware
-	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-deafcable|-openfw(?:-nocodec)?)?)?(?:&|$)/);
+	// radio on stock firmware. -bstock: a second receiver behind it (flash.second) still on its original firmware
+	const simAsk = location.hash.match(/(?:^#|&)sim(?:=(\w+?)(-stock|-romfail|-slowcable|-deafcable|-openfw(?:-nocodec)?)?(-bstock)?)?(?:&|$)/);
 	const simRadio = simAsk && (simAsk[1] ? S.data.radios.find((r) => r.id === simAsk[1]) : S.data.radios[0]);
 	const simOpen = !!simAsk?.[2]?.startsWith("-openfw") && openfw.supported(S.data.fb.boards[simRadio?.flash.board]);
 	const simStock = !!simAsk && (!simAsk[1] || (!!simAsk[2] && !simOpen));
@@ -3295,17 +3420,20 @@ async function main() {
 		// on its cable: stock firmware (a stock console answers if the board has one), or RadioFoundry with the stub hand-over
 		const board = simRadio.id;
 		const sim = await c7000Simulation(S.data.fb.c7000, board, 7000, simRadio);
-		S.sim = { fb: { ...S.data.fb, c7000: sim.c }, radio: simRadio.id };
+		// a second receiver behind RadioFoundry on it (flash.second): its own flash, with its own codec build
+		const second = simRadio.flash.second;
+		const simB = second ? await c7000Simulation(sim.c, second.board, 7001) : null;
+		S.sim = { fb: { ...S.data.fb, c7000: (simB || sim).c }, radio: simRadio.id };
 		// -slowcable: the radio's own 48 ms window, and a cable that takes 80 ms
 		const slow = simAsk[2] === "-slowcable";
 		S.fakeC7 = new FakeC7000({ progmem: sim.progmem, speed: 8, stubEntry: true, romWindow: slow ? 48 : 600,
 			faults: { silentAfterReset: true, romNak: simAsk[2] === "-romfail", slowCable: slow ? 80 : 0, deafCable: simAsk[2] === "-deafcable" },
-			...fakeC7000Options(simRadio, S.data.fb) });
+			...fakeC7000Options(simRadio, S.data.fb), ...(simB ? { rx2: { progmem: simB.progmem, stock: !!simAsk[3] || simStock } } : {}) });
 		if (!simStock) {
 			const img = randomBytes(rng(98), 180 * 1024);
 			img.set(new TextEncoder().encode("RadioFoundry"), 0x1000);
 			S.fakeC7.progmem.set(img, sim.c.app_start);
-			S.fakeC7.progmem.set(slotBytes(sim.c, board, await locateCodec(sim.progmem, sim.c, board)), sim.c.boards[board].slot[0]);
+			S.fakeC7.progmem.set(slotBytes(sim.c, board, await locateCodec(lowPart(sim.c, sim.progmem), sim.c, board)), sim.c.boards[board].slot[0]);
 		}
 		S.fakeC7.powerOn();
 	} else if (simRadio) {

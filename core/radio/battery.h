@@ -37,5 +37,8 @@ uint32_t batt_critical_for(const batt_t *b, uint32_t now_ms);
 // Backlight percent: brightness while active, a fifth of it (at least 5) after dim_s without activity, off after off_s
 // (0 = never dims / never goes off), capped at BATT_DIM_PCT when the battery is low or critical
 uint8_t batt_backlight_pct(uint8_t brightness, uint16_t dim_s, uint16_t off_s, uint32_t idle_ms, uint8_t level);
+// The keypad light (hal_display_t.set_key_light): on only while the backlight is at the set brightness, so off when it
+// dims, goes off or is capped on a low battery
+bool batt_key_light(uint8_t pct, uint8_t brightness);
 
 #endif

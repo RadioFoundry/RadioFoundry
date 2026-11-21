@@ -437,6 +437,10 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* flasher: the radio's own picture beside update mode steps, with its screen and LED (radiotop.js); the HR_C7000
    pages' program memory map and checklist (c7000ui.js) */
 .c7-grid, .radio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--space-5); align-items: start; }
+/* steps beside a picture: level with its top, with no list margin of their own (centered, a short list sat in a band
+   of empty space next to a tall radio), and room below the picture's caption before what follows */
+.radio-grid { align-items: start; margin: var(--space-3) 0 var(--space-4); }
+.radio-grid > ol { margin: 0; }
 @media (max-width: 760px) { .c7-grid, .radio-grid { grid-template-columns: 1fr; } .c7-grid .radio-top, .radio-grid .radio-top { order: -1; max-width: 240px; margin: 0 auto; } .rt-pic, .radio-pic .rt-img { max-width: 170px; } }
 .radio-top { margin: 0; text-align: center; }
 /* the picture is at most --rt-h high, so a tall portable leaves the step's buttons on the screen: its width follows
@@ -496,6 +500,9 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 .c7-map span.slot { box-shadow: inset 0 -3px 0 var(--link); }
 .c7-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: var(--text-sm); color: var(--muted); padding: 0; margin: 0; list-style: none; }
 .c7-legend li { display: flex; align-items: center; gap: var(--space-2); }
+/* a radio with a second chip: both chips' parts of the install in one card (c7000ui.js chainSlots) */
+.chain-parts .chain-head { font-size: 1rem; margin: var(--space-4) 0 var(--space-2); }
+.chain-parts .chain-head:first-child { margin-top: 0; }
 .c7-legend .c7-map { display: inline-grid; grid-template-columns: 1fr; width: 14px; margin: 0; }
 .c7-big { font-size: var(--text-lg); }
 .sim-line { margin: 0; }
@@ -710,3 +717,28 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 	background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);
 	box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); font-size: var(--text-sm); line-height: var(--line); }
 .gl-pop[hidden] { display: none; }
+/* an install of both SoCs through update mode (iapui.js iapBothView): two numbered steps, the current one marked */
+.both-step { border-left: 3px solid var(--border); padding: var(--space-2) 0 var(--space-2) var(--space-4); margin: var(--space-4) 0; }
+.both-step.active { border-color: var(--accent); }
+.both-step.done { border-color: var(--ok); }
+.both-step.waiting { opacity: 0.6; }
+.both-head { display: flex; align-items: baseline; gap: var(--space-2); font-size: 1.15rem; margin: 0 0 var(--space-2); }
+.both-n { display: inline-grid; place-items: center; flex: none; width: 1.7em; height: 1.7em; border-radius: 50%; background: var(--border); font-size: 0.9rem; }
+.both-step.active .both-n { background: var(--accent); color: #fff; }
+.both-step.done .both-n { position: relative; background: var(--ok); color: transparent; }
+.both-step.done .both-n::before { content: "\2713"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
+.both-body:empty { display: none; }
+/* a step with the radio's picture: the picture is level with the step's heading and smaller, so a step of one line
+   doesn't sit above a band of empty space next to a tall radio */
+.both-step .rt-pic { --rt-h: 200px; }
+@media (min-width: 761px) {
+	.both-step:has(.radio-grid) { display: grid; grid-template-columns: minmax(0, 1fr) 220px; grid-template-rows: auto 1fr; column-gap: var(--space-5); align-items: start; }
+	.both-step:has(.radio-grid) > .both-body, .both-step .radio-grid { display: contents; }
+	.both-step:has(.radio-grid) > .both-head { grid-column: 1; grid-row: 1; }
+	.both-step .radio-grid > :first-child { grid-column: 1; grid-row: 2; }
+	.both-step .radio-grid > .radio-top { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+/* Practice mode: the simulated radio's screen and the user's hands (app.js simRadioPanel) */
+.sim-radio { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; margin: 0 0 var(--space-3); }
+.sim-radio .btn { padding: 0.25em 0.75em; font-size: 0.9em; }

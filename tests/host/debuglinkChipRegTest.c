@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_CHIP_REG (core/debuglink/debuglink_chipreg.c, docs/spec/debuglink.md 3.24): an RF chip register through
 // board.chip_reg, a SoC register through board.system->reg, the request lengths, a SoC write refused on the air, and
-// boards without the hooks. The board, the transmit check and the log are faked
+// boards without the hooks; chip DL_CHIP_MEM handed to dl_mem with its writes and pin changes refused on the air and
+// logged. The board, the transmit check, the log and dl_mem are faked (dlMemTest has dl_mem itself)
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -76,6 +77,29 @@ static bool soc_reg(uint32_t addr, uint32_t *val, bool write)
 }
 
 static hal_system_t sys = { .reg = soc_reg };
+
+// dl_mem: what it was handed; a write or a bit op reads back 0x11223344, a pin read state 0x03
+static uint8_t mem_req[16];
+static uint16_t mem_len;
+static unsigned mem_calls;
+
+size_t debuglink_cmd_mem(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	(void)cap;
+	mem_calls++;
+	mem_len = len;
+	memcpy(mem_req, req, len < sizeof mem_req ? len : sizeof mem_req);
+	out[0] = DL_ST_OK;
+	if (len >= 1u && req[0] >= DL_MEM_OP_WRITE && req[0] <= DL_MEM_OP_CLEAR) {
+		out[1] = 0x44, out[2] = 0x33, out[3] = 0x22, out[4] = 0x11;
+		return 5;
+	}
+	if (len >= 1u && req[0] == DL_MEM_OP_PIN) {
+		out[1] = 0x03;
+		return 2;
+	}
+	return 1;
+}
 board_t board;
 
 // --- helpers ---
@@ -101,7 +125,7 @@ static void reset(void)
 	fake_tx = false;
 	memset(chip0, 0, sizeof chip0);
 	soc_word = 0;
-	soc_calls = logs = 0;
+	soc_calls = logs = mem_calls = 0;
 }
 
 static void test_chip(void)
@@ -164,6 +188,39 @@ static void test_soc(void)
 	CHECK(cmd(rd, 5) == 1 && out[0] == DL_ST_UNAVAILABLE);
 }
 
+static void test_mem(void)
+{
+	reset();
+	// The operation on is dl_mem's request
+	uint8_t wr[11] = { DL_CHIP_MEM, DL_MEM_OP_WRITE, 4, 0x00, 0x00, 0x00, 0x20, 0x01, 0x00, 0x00, 0x00 };
+	CHECK(cmd(wr, 11) == 5 && out[0] == DL_ST_OK && reply32() == 0x11223344u);
+	CHECK(mem_calls == 1 && mem_len == 10 && memcmp(mem_req, wr + 1, 10) == 0 && logs == 1);
+	uint8_t arm[6] = { DL_CHIP_MEM, DL_MEM_OP_ARM, 0x50, 0x4F, 0x4B, 0x45 };
+	CHECK(cmd(arm, 6) == 1 && out[0] == DL_ST_OK && mem_calls == 2 && logs == 1);
+	uint8_t pin[4] = { DL_CHIP_MEM, DL_MEM_OP_PIN, 7, DL_MEM_PIN_HIGH };
+	CHECK(cmd(pin, 4) == 2 && out[0] == DL_ST_OK && out[1] == 0x03 && logs == 2);
+	// On the air: writes, bit ops and pin changes refused before dl_mem; reads, a pin read and the key still go
+	fake_tx = true;
+	mem_calls = 0;
+	CHECK(cmd(wr, 11) == 1 && out[0] == DL_ST_REFUSED);
+	wr[1] = DL_MEM_OP_SET;
+	CHECK(cmd(wr, 11) == 1 && out[0] == DL_ST_REFUSED);
+	wr[1] = DL_MEM_OP_CLEAR;
+	CHECK(cmd(wr, 11) == 1 && out[0] == DL_ST_REFUSED);
+	CHECK(cmd(pin, 4) == 1 && out[0] == DL_ST_REFUSED && mem_calls == 0 && logs == 2);
+	pin[3] = DL_MEM_PIN_READ;
+	CHECK(cmd(pin, 4) == 2 && out[0] == DL_ST_OK && logs == 2);
+	uint8_t rd[8] = { DL_CHIP_MEM, DL_MEM_OP_READ, 4, 0x00, 0x00, 0x00, 0x20, 1 };
+	CHECK(cmd(rd, 8) == 1 && cmd(arm, 6) == 1 && mem_calls == 3 && logs == 2);
+	// No board hooks needed: dl_mem has its own
+	fake_tx = false;
+	board.chip_reg = NULL;
+	board.system = NULL;
+	CHECK(cmd(rd, 8) == 1 && mem_calls == 4);
+	// The operation byte missing: dl_mem's to refuse
+	CHECK(cmd(rd, 1) == 1 && mem_calls == 5 && mem_len == 0);
+}
+
 static void test_short_buffer(void)
 {
 	reset();
@@ -176,6 +233,7 @@ int main(void)
 {
 	test_chip();
 	test_soc();
+	test_mem();
 	test_short_buffer();
 	printf("debuglinkChipRegTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

@@ -238,10 +238,11 @@ def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
         radio.wait_for(lambda x: x.get("dmr.sfr_rpt") == "1", 5, sections=("dmr",), what="repeater role running")
         d0 = radio.view(["dmr"])
         _call(sdr_bench, radio, freq, cc, tg, _inbound_ts(radio, d), superframes=2)
-        # 2 s of quiet, then the ID keys for a few seconds
+        # 2 s of quiet, then the ID keys for a few seconds: a radio whose cable shares a line with the PTT may not
+        # answer for all of it (gotchas 2.13)
         d1 = radio.wait_for(lambda x: int(x["dmr.sfr_cwid_sent"]) + int(x["dmr.sfr_cwid_cut"]) >
                             int(d0["dmr.sfr_cwid_sent"]) + int(d0["dmr.sfr_cwid_cut"]) and x.get("dmr.sfr_cw") == "0",
-                            20, sections=("dmr",), what="the CW ID")
+                            20, sections=("dmr",), what="the CW ID", quiet_s=10)
         print(f"CW ID sent {d0['dmr.sfr_cwid_sent']} -> {d1['dmr.sfr_cwid_sent']}, "
               f"cut {d0['dmr.sfr_cwid_cut']} -> {d1['dmr.sfr_cwid_cut']}")
     finally:

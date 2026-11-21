@@ -1,0 +1,348 @@
+{
+ "board": "gd88",
+ "commit": "62dd5acde2cfeed06a418010da22042b5646d26d",
+ "date": "2026-11-17T08:35:22Z",
+ "dirty": false,
+ "features": [
+  "p25",
+  "nxdn",
+  "scan"
+ ],
+ "firmware": {
+  "board": "GD-88",
+  "codec": "gd88-2501",
+  "display": "320x240x4",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,GPS,APRS,APRS_AFSK,APRS_DMR,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,HOTSPOT,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_PPP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,KEY_ASSIGN,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "62dd5acd",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.1,
+  "dmr-tg": 202,
+  "fm-mhz": 446.075
+ },
+ "sources": {
+  "nxdn": {
+   "core/air": "69cc66acdae800238ca5e03e2424b0610c1d3c8e",
+   "core/debuglink/debuglink_view_nxdn.c": "d446ee9e4f9034802cd8c3fe36ec98ed2a8f92a7",
+   "core/fec": "2b55fdfc671feb97605601120fa6000e0da9df6b",
+   "core/nxdn": "b16b304182a77d405678e51fb3a7adfc995e24b5",
+   "core/radio/radio_air.h": "c3aa8ab2f2991f16a80894c46e6a106f983dfb4d",
+   "core/radio/radio_nxdn.c": "7a3d79fcf1c373dae79373e8f7b7da1d1c7783c6",
+   "core/radio/radio_nxdn.h": "b9e74018330ad60688f3a0eafcd179b167e149cb",
+   "docs/spec/nxdn.md": "be1bbe0c2208f67ce2be3768b0491e504b722b48"
+  },
+  "p25": {
+   "core/air": "69cc66acdae800238ca5e03e2424b0610c1d3c8e",
+   "core/fec": "2b55fdfc671feb97605601120fa6000e0da9df6b",
+   "core/mbe": "ef06976ac85c529a008f8ea0ffa787645b969c1e",
+   "core/p25": "ccd211d096774a913ab3647bdb1fec690beed0b4",
+   "core/radio/radio_p25.c": "2e5f94ac86094d3d756e5b035f61a921e77ed5b2",
+   "core/radio/radio_p25.h": "1abbfb3bf9cfee8bfcee94aaa714c542267ba7af",
+   "docs/spec/p25.md": "408a4c92ec950967c9cad3188e6d01a812b6be23",
+   "hal/hal_air.h": "7bcd520956bb22dd75360df0839c1b7acfd2ed9d",
+   "hal/hal_baseband.h": "c60a52fb437fee317f35fbcc6ab5573e4e2df3df"
+  },
+  "scan": {
+   "core/debuglink/debuglink_view_radio.c": "2e1548d6dfcd2984bc09e3e84df5a1d90ecf9f2b",
+   "core/hostlink/build_info.c": "aa1db0b554228b8d438a1181f9073f595872c2fa",
+   "core/radio/radio.h": "cd1a595bb214ff2eefd79541440b59bef9a008f5",
+   "core/radio/radio_sm.c": "63fa846eca22b76362166e63ca63cc7486a48cff",
+   "core/radio/radio_sm.h": "ba39eff2585f49d2ac004cc22f0b237b4f0acf21",
+   "core/radio/radio_task.c": "b921bd4e1d575900031f300425719804da6ff265",
+   "core/radio/scan.c": "28a27f9a56e6b4ff8d181c5c0b2441518f54f998",
+   "core/ui/ui_svc_radio.c": "56495336210847fa3743db0f0e3bfb1c61cd12a6",
+   "docs/spec/radio-features.md": "d58f796292f66925aa6c5b955115c4f3feadfb7b"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_mode_switch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_from_bench[4800]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_from_bench[9600]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_speech[4800]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_speech[9600]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn",
+    "scan"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_scan_from_bench[dual]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_nxdn.py:537: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn",
+    "scan"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_scan_from_bench[zone]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_stored_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_stored_channel_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board <host> has no 4FSK receive",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_tx_off_air[4800]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board <host> has no 4FSK receive",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_tx_off_air[9600]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board <host> has no 4FSK receive",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_channel_switch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_rx_from_bench",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25",
+    "scan"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[dual]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_p25.py:567: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "p25",
+    "scan"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[zone]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples (gap_samples 6369)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_tx_off_air",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_dual_watch_stops_on_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_scan_digital_monitor_any_talkgroup",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_radio_features.py:744: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_scan_stops_on_dmr_call",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_vfo_scan_stops_on_signal",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_cancel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "scan"
+   ],
+   "id": "tests/hil/test_radio_features.py::test_zone_scan_nuisance",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

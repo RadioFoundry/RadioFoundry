@@ -16,6 +16,7 @@ and what has been checked on it.
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
 | [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [Radioddity GD-88](#radioddity-gd-88) | Kydera DR-880UV | Analog FM, DMR voice and data, P25 and NXDN voice, dual watch on the second receiver, transmit, saved settings and the host link work on the radio. Open: a wattmeter check of the power levels. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -88,7 +89,7 @@ yet, and the core doesn't use them.
 | DB25-D PRO | Pseudo, one receiver. Not checked on air. Its second BK4819 chip is a local oscillator for the receive chain, not a second receiver | Hold the **TONE/T.SEL** key | A press of **TONE/T.SEL** |
 | DM-1801 Pro | Pseudo, one receiver. Not checked on air | Hold the **A/B** key, **\***, **7**, or hold **SK2** | The **A/B** key or **SK2** (a press), **Left** / **Right** |
 
-Holding **SK2** is dual watch on every radio that has an SK2, and on the DB25-D PRO holding the tone key is. A press of
+Holding **SK2** is dual watch on every radio in this table that has an SK2, and on the DB25-D PRO holding the tone key is. A press of
 **SK2** (the tone key on the DB25-D PRO) switches A / B, and with dual watch off says "Turn on dual watch first". The
 DM-1801 Pro's A/B key does both: a press switches A / B, a hold starts and stops dual watch. On it the zones are on **Left** / **Right**, or in the Zones menu.
 
@@ -782,6 +783,46 @@ A 128 x 64 monochrome screen.
 - No APRS: the radio doesn't pass its received audio to the decoder yet.
 - No air band or broadcast receiver, and no vibration motor.
 
+## Radioddity GD-88
+
+A dual band handheld (136-174 and 400-480 MHz) with a 320x240 color display. It has two HR_C7000 chips. The first
+runs the display, keys, PTT, transmitter, GPS and FM broadcast receiver. The second chip is a second receiver that
+listens at the same time as the first, so both VFOs can receive at once. **In development:** there is no release for
+this radio yet.
+
+Once there is a release, the web installer builds the firmware for both chips and installs it in one step over the
+programming cable, first chip then second. The first time, the second chip still runs its original firmware, so the
+installer installs both chips through the radio's update mode and tells you when to switch from `IAP_A` to `IAP_B`.
+Later updates reach the second chip through the first, without the switch.
+
+To start the radio's update mode, turn the radio off and connect the programming cable. Hold **SK1** (the side key
+above **PTT**) and turn the radio on with the volume knob. When the LED lights red and the top line shows `IAP_A` or
+`IAP_B`, release **SK1**. `IAP_A` updates the first chip and `IAP_B` the second. To switch between them, hold **SK1**
+until the top line changes. The radio doesn't respond to **SK1** while the installer is talking to it, so after the
+first chip the installer pauses and asks you to hold **SK1** until the top line shows `IAP_B`, then select
+**Continue**.
+
+### GD-88 keys
+
+| Key | Role |
+|---|---|
+| Left soft key (under the display) | **OK** |
+| Right soft key | **Back** |
+| Green | **A/B** |
+| Red | **VFO** |
+| Up, Down | **Up**, **Down** |
+| SK1 (the side key above **PTT**) | **A/B**: press to switch A / B in dual watch, hold for dual watch on or off. Hold SK1 while turning the radio on to start update mode |
+| SK2 (the side key below **PTT**) | **Monitor** |
+| **#** | **#**. Hold it for the talk target picker |
+| SOS (the orange top key) | User key 3 |
+| **PTT** | **PTT** |
+
+### GD-88 beeps
+
+Beeps don't follow the volume knob. They play at the level set in **Settings > Sound > Tone volume** at any knob
+position except all the way down, which silences them too. Tone volume 1 is quiet, about as loud as volume 6 of 16 on
+the knob, and tone volume 10 is about 20 dB louder. Tone volume 0 turns beeps off.
+
 ## Planned radios
 
 These radios aren't built in a release yet. An in-progress port is on its own branch. [The radio survey](../spec/radios.md) lists what is known about each and the rebadged
@@ -792,7 +833,6 @@ models it covers.
 |---|---|
 | Anytone AT-D868UV / AT-D878UV / AT-D878UVII Plus, BTECH DMR-6X2, Alinco DJ-MD5, Radioddity GD-AT10G | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). A new platform (GD32F30x) and a new DMR chip (SCT3258, which runs the vocoder itself), so it starts the Anytone family ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | In progress ([#111](https://github.com/radiofoundry/radiofoundry/pull/111)). A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated. |
-| Radioddity GD-88 | In progress ([#132](https://github.com/radiofoundry/radiofoundry/pull/132)). Dual receiver on the HR_C7000 platform (chip count not confirmed yet); should reuse much of the DM-32UV port. |
 | Baofeng DM-36 | In progress ([#607](https://github.com/radiofoundry/radiofoundry/pull/607)). Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open. |
 | Anytone AT-D578UV (mobile) | In progress ([#291](https://github.com/radiofoundry/radiofoundry/pull/291)). The 878's chips in a mobile, with a mid-run MCU change: two platforms ([hardware-anytone.md](../spec/hardware-anytone.md)). |
 | Radioddity DB40-D, Kydera CDR-700UV (mobile) | Planned. Hardware needed. Two HR_C7000-class processors (A and B), like the GD-88, so it follows the GD-88 port. |

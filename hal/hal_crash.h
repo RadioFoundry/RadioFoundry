@@ -24,6 +24,8 @@ enum {
 	CRASH_KIND_HEAP = 3,	// FreeRTOS ran out of heap
 	CRASH_KIND_ASSERT = 4,	// configASSERT failed: cause is the line, pc the caller
 	CRASH_KIND_HANG = 5,	// the watchdog's hang check: cause is the ms since the last feed, pc the interrupted task's
+	CRASH_KIND_LINK = 7,	// the link watch: a debug client that asked for it sent no valid frame in time; cause packs
+					// the port's state (crash-log.md 1.1.2), pc the interrupted task
 	CRASH_KIND_STALL = 6,	// the stall check: the host link's task stopped passing its loop; cause is the ms since its
 				// last pass, the task snapshot says where it waits
 };
@@ -114,7 +116,7 @@ uint32_t hal_crash_task_where(const void *task);
 void hal_crash_restart(void) __attribute__((noreturn));
 // The hang and stall checks (core/app/watchdog.c), from the RTOS tick interrupt: the transmitter off, the interrupted
 // task's registers into a record of kind (CRASH_KIND_HANG: cause the ms since the last feed; CRASH_KIND_STALL: since
-// the watched task's last pass), then crash_commit. Does not return
+// the watched task's last pass; CRASH_KIND_LINK: the port's state), then crash_commit. Does not return
 void hal_crash_hang(uint8_t kind, uint32_t ms) __attribute__((noreturn));
 // The restart cause's words, next to the record. The first call turns on its access, as hal_crash_store's does
 crash_boot_t *hal_crash_boot(void);

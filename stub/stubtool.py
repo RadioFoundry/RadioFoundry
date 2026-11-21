@@ -292,91 +292,94 @@ STUB_DB25D_DMR_B64 = (
 )
 # --- STUB DB25D_DMR end
 # --- STUB UNIV begin (stub/embed_stub.py rewrites everything up to the end marker)
-STUB_UNIV_SHA256 = "eae5b98615d67ba465061c84a5fb209a902333dc700671ce4ca69a05eb4aaee9"
+STUB_UNIV_SHA256 = "0dcc4615cccb3703891fa799cad053ab580bfebbecfe981b9458074d9e07a806"
 STUB_UNIV_B64 = (
-    "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"
+    "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"
 )
 # --- STUB UNIV end
 
@@ -436,7 +439,7 @@ PAGE = 256
 # bootloader below it (0..0xC000) is never written, so the radio can always be put in update mode by hand.
 APP_START, APP_END = 0xC000, 0x100000
 ROM_FLAG = b"thd\x0c"                    # the boot ROM's flag at flash 0, followed by the entry address (hardware-rt10.md 2)
-# The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D). Its
+# The first word of RadioFoundry's first stage (boot/README.md), at APP_START on a radio that has one (the DB25-D, the GD-88). Its
 # application is linked for 0x0300D000, so the image written at APP_START is the install image, which starts with it
 STAGE_MAGIC = bytes.fromhex("2c1101c0")
 
@@ -551,18 +554,25 @@ def univ_layout(image):
 
 
 UCFG_LED = 0xA8                         # the parameter block's led_red and led_green (u32 little endian each)
+UCFG_UART, UCFG_LATCH, UCFG_KEY = 0x8C, 0x9C, 0xA0   # its UART before CONFIG, power latch and key (u32 each)
 
 
 def univ_for_board(image, prof):
     """The universal stub with the board's LED pins in its parameter block (the host may patch it before the image is
     sent): the stub drives its LED pins from its first instruction, before CONFIG, so on a radio whose LEDs are elsewhere
-    the built-in ones (PTB1, PTB0) would be driven although they do something else there. No profile: the generic one,
-    no LEDs, since the radio is not known. A position-dependent stub: the image as it is."""
+    the built-in ones (PTB1, PTB0) would be driven although they do something else there. A SoC of a radio with two
+    (pair) also gets the UART it listens on, its power latch and key, for the part of the run before CONFIG. No profile:
+    the generic one, no LEDs, since the radio is not known. A position-dependent stub: the image as it is."""
     if univ_layout(image) is None:
         return image
-    led = (prof or GENERIC)["led"]
-    return (image[:UCFG_LED] + led["red"].to_bytes(4, "little") + led["green"].to_bytes(4, "little")
-            + image[UCFG_LED + 8:])
+    prof = prof or GENERIC
+    words = [(UCFG_LED, prof["led"]["red"]), (UCFG_LED + 4, prof["led"]["green"])]
+    if prof.get("pair"):
+        words += [(UCFG_UART, prof.get("uart", 0)), (UCFG_LATCH, prof["latch"]), (UCFG_KEY, prof["key"])]
+    b = bytearray(image)
+    for off, v in words:
+        b[off:off + 4] = v.to_bytes(4, "little")
+    return bytes(b)
 
 
 def check_univ_load(image, load, window=None):
@@ -589,12 +599,17 @@ def check_univ_load(image, load, window=None):
 
 # Board profiles for the universal stub (CONFIG, op 0x0D), from each board's [flash.stub] (boards/<id>/board.toml):
 # board id echoed by HELLO, power latch / power key pins (255 = none), whether the data memory is the SPI NAND, the
-# program flash size. VERSION's board= names them on the RadioFoundry route; --board at power-on. Unknown radio: GENERIC (no
-# pins, nothing echoed but 0).
-C7_BOARDS = {b.id: {"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
-                    "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"], "rom_entry": b.stub.get("rom_entry"),
-                    "led": b.stub.get("led") or {"red": LED_RED, "green": LED_GREEN}, "protect": b.protect,
-                    "write_test": b.stub.get("write_test")}
+# program flash size, the status LED pins; where the board gives them, the UART the stub answers on before CONFIG and,
+# for a second SoC (part_of), how the main SoC's stub reaches it (bridge: PASS's UART and pin mux); pair: a SoC of a
+# radio with two, whose UART, latch and key go into the image too. VERSION's board= names them on the RadioFoundry
+# route; --board at power-on. Unknown radio: GENERIC (no pins, nothing echoed but 0).
+_PAIRED = {getattr(b, "part_of", None) for b in rfoundryboards.BOARDS.values()} - {None}
+C7_BOARDS = {b.id: dict({"id": b.stub["id"], "name": b.model, "names": tuple(b.debuglink_names), "latch": b.stub["latch"],
+                         "key": b.stub["key"], "nand": b.stub["nand"], "progmem": b.stub["progmem"],
+                         "rom_entry": b.stub.get("rom_entry"), "led": b.stub.get("led") or {"red": LED_RED, "green": LED_GREEN},
+                         "protect": b.protect, "write_test": b.stub.get("write_test"), "part_of": getattr(b, "part_of", None),
+                         "pair": getattr(b, "part_of", None) is not None or b.id in _PAIRED},
+                        **{k: v for k, v in b.stub.items() if k in ("uart", "bridge")})
              for b in rfoundryboards.BOARDS.values() if b.stub and b.stub["tool"] == "stubtool"}
 GENERIC = {"id": 0, "name": "HR_C7000 radio", "names": (), "latch": 255, "key": 255, "nand": False, "progmem": 0x100000,
            "rom_entry": None, "led": {"red": 255, "green": 255}, "protect": [], "write_test": None}   # an unknown radio: no pin driven as an LED
@@ -650,6 +665,35 @@ def crc16_ccitt(data, crc=0xFFFF):
 
 STUB_MAGIC = 0x42533743                 # 'C7SB': the guard word of RadioFoundry's STUB command (docs/spec/debuglink.md 3.18)
 DL_STUB = 0x1A
+DL_RX2 = 0x1E                           # the second receiver's SoC (docs/spec/debuglink.md 3.22)
+RX2_TOKEN = 0x47445242                  # 'BRDG'
+BRIDGE_LISTEN = 0.5                   # s: B's first stage greets more often than this; a stub is silent
+BRIDGE_EXIT = bytes([0x7E, 0xE7, 0x81, 0x18])   # ends A's bridge, or A's stub's PASS: a burst of its own (rx2-link.md 4.1)
+BRIDGE_QUIET = 0.02                     # quiet on the cable before and after it (the spec asks for 2 ms or more)
+OP_PASS = 0x0F                          # protocol 8: the stub passes the cable through to another UART
+PASS_IDLE_MS = 0                        # no time-out: only the exit sequence ends PASS
+PASS_GUARD_MS = 10                      # quiet around the exit sequence the stub looks for (BRIDGE_QUIET is more)
+PASS_RATE_SLACK = 0.005                 # a whole-divisor rate this close to the cable's is left alone
+
+
+def whole_rate(hz, nominal):
+    """The rate an HR_C7000 UART really runs at for a nominal one: its clock over 16 times the nearest whole divisor (no
+    fractional divider). The stub's PASS forwards byte by byte through 16-byte FIFOs, so the host must send at this rate:
+    at 36 MHz 115200 is 112500, and a 4 KB frame sent 2.3 % fast overflows the main SoC's FIFO (rx2-link.md 4.2).
+    None when the clock can't be right."""
+    if not hz or not 1e6 < hz < 4e8:
+        return None
+    return int(hz / (16 * max(1, round(hz / (16 * nominal)))))
+
+
+RX2_STUB = 0x05                         # the rx2 link's STUB frame (docs/spec/rx2-link.md 2): B enters its first stage
+RX2_STUB_MAGIC = 0x53545542
+
+
+def rx2_frame(typ, seq, payload):
+    """One rx2 link frame (docs/spec/rx2-link.md 1): A5 5A len type seq payload crc16 (big endian)."""
+    body = bytes([len(payload), typ, seq]) + payload
+    return b"\xA5\x5A" + body + crc16_ccitt(body).to_bytes(2, "big")
 
 
 def lz4_block(src, size):
@@ -727,6 +771,13 @@ ROM_HELLO, ROM_REPLY = b"\x02\x24\x00\x03", b"\x02\x14\x00\x03"
 ROM_GAVE_UP, ROM_NAK = b"\x00\x10\x00\x03", b"\x02\x0a\x00\x03"
 
 
+def rom_acked(b):
+    """b (4 bytes) is the boot ROM's ack, also with bit 7 set in any byte: a sender 5 % fast against its receiver (the
+    GD-88's second SoC under a first stage from before divisor 20, docs/spec/rx2-link.md 4.2) has its last data bit read
+    in the stop bit. The NAK (02 0a 00 03) and the ROM's other frames differ in the low 7 bits."""
+    return len(b) == 4 and all(x & 0x7F == y for x, y in zip(b, ROM_ACK))
+
+
 def rom_sign_off(b):
     """b (4 bytes) is the boot ROM saying it stopped waiting. What it sends then is the address it starts, little
     endian: 00 10 00 03 (0x03001000) on a radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on
@@ -768,6 +819,7 @@ class Radio:
         self.log = log
         self.cable = cable              # the programming cable's chip, named in a boot ROM error
         self.echo = False               # the cable sends back what the host sends (seen in the boot ROM load)
+        self.acks_high = 0              # boot ROM acks that came with bit 7 set (rom_acked)
         self.retries = retries
         self.retried = 0
         self.ecc = []                   # the last NAND dump's sectors whose ECC fails (read raw)
@@ -784,6 +836,7 @@ class Radio:
         self.configured = None          # the board profile the stub confirmed after CONFIG
         self.profile = GENERIC
         self.slow = False               # --slow-cable: the boot ROM's greeting is answered ahead (wait_for_radio)
+        self.passing = False            # the main SoC's stub passes the cable to the second SoC (pass_start)
 
     def set_timeout(self, t):
         """Only when it changes: on macOS pyserial re-applies the terminal settings on every timeout assignment, which
@@ -812,7 +865,8 @@ class Radio:
         end = time.monotonic() + timeout
         buf = b""
         while True:
-            if buf[:4] == ROM_ACK:
+            if rom_acked(buf[:4]):
+                self.ack_high(buf[:4])
                 return True, b""
             n = min(len(buf), len(sent))
             echo = n > 0 and buf[:n] == sent[:n]
@@ -822,8 +876,9 @@ class Radio:
                     self.log("the cable echoes what the host sends; the echo is ignored")
                 self.echo = True
                 continue
-            if not echo and buf[-4:] == ROM_ACK:
+            if not echo and rom_acked(buf[-4:]):
                 self.log("before the boot ROM's acknowledgement: %s" % buf[:-4][:16].hex(" "))
+                self.ack_high(buf[-4:])
                 return True, b""
             if not echo and (buf[-4:] == ROM_NAK or rom_gave_up(buf, sent)):
                 return False, buf[:16]
@@ -831,6 +886,11 @@ class Radio:
                 return False, buf[:16]
             want = len(sent) - len(buf) if echo else 4 - len(buf)
             buf += self.read_exact(max(1, want), max(0.0, min(0.05, end - time.monotonic())))
+
+    def ack_high(self, ack):
+        if ack != ROM_ACK and not self.acks_high:
+            self.log("the acknowledgement came as %s: the other side's UART runs fast; taken as the ack" % ack.hex(" "))
+        self.acks_high += ack != ROM_ACK
 
     def rom_error(self, what, got):
         if unsent_bytes(self.port):         # the frames never left the computer: not the radio, not the plug
@@ -1222,8 +1282,138 @@ class Radio:
         self.attach()
         self.configure(board)
 
+    def rx2_bridge(self):
+        """GD-88 SoC B: ask RadioFoundry on A (on this port) to hand the cable to B (DL_CMD_RX2 BRIDGE). A sends B to its first
+        stage, which then offers the boot ROM's handshake through A for up to a minute: start() takes it from there. A
+        restarts 10 s after the last byte from here."""
+        r = self.dl_request(DL_RX2, b"\x00")
+        if r[0] != 0 or len(r) < 2:
+            raise DumpError("RadioFoundry's RX2 info refused (%s): not a radio with a second receiver, or older firmware" % r.hex())
+        if not r[1] & 0x01:
+            raise DumpError("this radio has no second receiver")
+        if not r[1] & 0x04:
+            raise DumpError("this firmware has no bridge to the second receiver")
+        answering = bool(r[1] & 0x02)
+        if not answering:
+            self.log("the second receiver does not answer A: trying anyway (its first stage may still start, or a stub "
+                     "from an earlier run may be running)")
+        r = self.dl_request(DL_RX2, b"\x01" + RX2_TOKEN.to_bytes(4, "little"))
+        if r[0] == 7:
+            raise DumpError("RadioFoundry refused the bridge: the radio is transmitting. Release PTT and run again")
+        if r[0] != 0:
+            raise DumpError("RadioFoundry refused the bridge (status %d)" % r[0])
+        self.log("A is bridging the cable to the second receiver")
+        return answering
+
+    def bridge_start(self, wait, stub, load, board):
+        """Open A's bridge and get a stub running on B. B normally goes to its first stage, which offers the boot ROM's
+        handshake again and again: start() loads the stub. A B that doesn't answer A may still be in the stub an earlier
+        run left (one that ended without --boot reset): that one is silent on the line and answers a HELLO, so it is
+        used as it is, and nobody has to pull the battery to get B back. Returns True when it attached."""
+        if not self.rx2_bridge():
+            self.set_timeout(0.05)
+            heard, t0 = b"", time.monotonic()
+            while time.monotonic() - t0 < BRIDGE_LISTEN and not heard:
+                heard = self.port.read(4)       # one greeting at most: start() takes the next
+            if not heard:
+                try:
+                    self.hello(retries=2)       # a lost reply would leave start() waiting for a greeting that never comes
+                    self.log("the second receiver's stub from an earlier run answers: using it")
+                    return True
+                except DumpError:
+                    pass
+        self.start(wait, stub, load, board=board)
+        return False
+
+    def bridge_exit(self):
+        """End A's bridge (docs/spec/rx2-link.md 4.1): the exit sequence alone, with quiet before and after, so A sees it
+        as a burst of its own. A restarts at once instead of 10 s after our last byte. Whatever B was doing stops
+        reaching the cable."""
+        self.exit_burst()
+        self.log("bridge ended: A restarts")
+
+    def pass_start(self, board, wait, stub=None, load=LOAD_ADDR):
+        """A second SoC (board: its id, a part_of board with [flash.stub] bridge) through the stub running on the main SoC
+        on this port (PASS, op 0F; docs/spec/rx2-link.md 4.2): the main SoC's UART to it gets its pins, the stub passes the
+        cable through, and the rx2 STUB frame sends the second SoC's RadioFoundry to its first stage, which takes a stub
+        as the boot ROM would. A second SoC still in a stub from an earlier run is silent and answers HELLO: it is used
+        as it is. Returns True when it attached. pass_exit() gives the cable back to the main SoC's stub."""
+        via = C7_BOARDS[board]["bridge"]
+        self.main_state = (self.profile, self.configured)   # the main SoC's stub keeps its CONFIG through PASS
+        hz = self.uart_hz or int(round(self.timer_hz(0.3) / 1e6) * 1e6)
+        rate = whole_rate(hz, self.port.baudrate)
+        addr, bits = via["mux"]
+        v = int.from_bytes(self.peek(addr, 4), "little")
+        if v & bits != bits:
+            self.poke(addr, (v | bits).to_bytes(4, "little"))
+        self.passing = True                     # a lost reply may still have started it: the exit sequence ends it
+        try:
+            # no retry: once the stub passes, a second request would go to the other SoC
+            self.request(OP_PASS, via["uart"].to_bytes(4, "big") + PASS_IDLE_MS.to_bytes(4, "big")
+                         + PASS_GUARD_MS.to_bytes(4, "big"), retries=0)
+        except StatusError as e:
+            self.passing = False
+            raise DumpError("the main SoC's stub refused PASS (status 0x%02X): it needs stub protocol 8, at its home rate"
+                            % e.status)
+        self.log("the main SoC's stub passes the cable to the second SoC")
+        self.pass_home = None
+        if rate and abs(rate - self.port.baudrate) > self.port.baudrate * PASS_RATE_SLACK:
+            self.pass_home = self.port.baudrate
+            self.port.baudrate = rate
+            self.log("the cable runs at %d baud while it passes (the UARTs' rate at %.1f MHz)" % (rate, hz / 1e6))
+        self.port.write(rx2_frame(RX2_STUB, 0, RX2_STUB_MAGIC.to_bytes(4, "little")))
+        self.set_timeout(0.05)
+        heard, t0 = b"", time.monotonic()
+        while time.monotonic() - t0 < BRIDGE_LISTEN and not heard:
+            heard = self.port.read(4)           # one greeting at most: start() takes the next
+        if not heard:
+            try:
+                self.hello(retries=2)           # a lost reply would leave start() waiting for a greeting that never comes
+                self.log("the second SoC's stub from an earlier run answers: using it")
+                return True
+            except DumpError:
+                pass
+        self.start(wait, stub, load, board=board)
+        return False
+
+    def pass_exit(self):
+        """Give the cable back to the main SoC's stub (stub/PROTOCOL.md, pass-through): the exit sequence alone, quiet
+        before and after. The stub sends what the second SoC still had, then 05 + why, and answers again. Then this side
+        talks to it: its HELLO, and the profile it had before PASS. True when it answered."""
+        self.passing = False
+        self.exit_burst()
+        if getattr(self, "pass_home", None):    # A's stub at home takes the cable's nominal rate as before
+            self.port.baudrate, self.pass_home = self.pass_home, None
+        want = bytes([0x02, OK, 0x00, 0x01, 0x01, 0x03, 0x01])     # 05, why 1: the exit sequence
+        buf, end = b"", time.monotonic() + 1.5
+        while want not in buf and time.monotonic() < end:
+            buf = (buf + self.read_exact(1, 0.05))[-256:]
+        if want not in buf:
+            self.log("the main SoC's stub did not confirm the end of PASS")
+            return False
+        self.hello(retries=2)
+        self.profile, self.configured = getattr(self, "main_state", (GENERIC, None))
+        self.log("the cable is back on the main SoC's stub")
+        return True
+
+    def exit_burst(self):
+        """The exit sequence as a burst of its own: what is still on its way goes first, then quiet, the 4 bytes, quiet."""
+        try:
+            self.port.flush()                   # what is still on its way to B goes first
+        except (OSError, AttributeError):
+            pass
+        time.sleep(BRIDGE_QUIET)
+        self.port.write(BRIDGE_EXIT)
+        try:
+            self.port.flush()
+        except (OSError, AttributeError):
+            pass
+        time.sleep(BRIDGE_QUIET)
+
     def send_noreply(self, op, payload=b""):
-        """A request the radio will not answer because it is about to reset or jump away."""
+        """A request the radio will not answer because it is about to reset or jump away. Waits until the bytes have
+        left: the caller often exits next, and closing the port drops what the USB-serial adapter still holds (a GD-88
+        never got `--boot reset`)."""
         self.port.reset_input_buffer()
         frame = bytes([0x02, op, len(payload) >> 8, len(payload) & 0xFF, sum8(payload), 0x03]) + payload
         self.port.write(frame)
@@ -2000,7 +2190,7 @@ def lz4_encode(src):
 
 class FakeRadio:
     def __init__(self, images, drop=None, flip=(), silent=(), swap=(), misplace=(), stub_len=1536, load=LOAD_ADDR,
-                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP):
+                 rom_echo=False, rom_nak=False, rom_late=False, ecc=(), sign_off=ROM_GAVE_UP, rom_ack_high=False):
         self.images = images                # {"progmem": bytes, "q128": bytes}
         self.data_code = 0x18               # the data flash's JEDEC capacity code: 16 MB
         self.id_reads = 0                   # JEDEC ID requests answered
@@ -2009,6 +2199,7 @@ class FakeRadio:
         self.ecc_reads = 0                  # sector reads (op 09) that ended in status ECC
         self.rom_echo = rom_echo            # the cable sends back every byte written while the boot ROM listens
         self.rom_nak = rom_nak              # the boot ROM answers the load with something other than its ack
+        self.rom_ack_high = rom_ack_high    # its acks arrive with bit 7 set in bytes 0 and 2 (a UART 5 % fast)
         self.rom_late = rom_late            # the answer to the greeting comes too late: the ROM stops waiting
         self.rom_taken = False              # the ROM took the answer to its greeting (a second one is NAKed)
         self.drop, self.flip, self.silent, self.swap = drop or {}, set(flip), set(silent), set(swap)
@@ -2124,7 +2315,7 @@ class FakeRadio:
                 if int.from_bytes(payload, "big") != self.load or len(self.loaded) != self.stub_len:
                     self.errors.append("start command")
                 self.running = True
-            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else ROM_ACK
+            self.out += b"\x02\x0a\x00\x03" if self.rom_nak else b"\x82\x05\x80\x03" if self.rom_ack_high else ROM_ACK
             return True
         if len(ib) < 6:
             return False
@@ -2377,6 +2568,119 @@ class FakeRFoundry:
         self.out = b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
 
 
+class FakeBridged(FakeRadio):
+    """GD-88 SoC B behind A's bridge for the self-tests: RadioFoundry on A answers DL_CMD_RX2 (flags), and once BRIDGE has been
+    answered the port carries B's first stage, as FakeRadio's boot ROM."""
+
+    def __init__(self, images, flags=0x07, in_stub=False, **kw):
+        super().__init__(images, **kw)
+        self.out = bytearray()
+        self.flags, self.bridged, self.armed = flags, False, False
+        self.running = in_stub              # B still runs a stub from an earlier run: no first stage, no greeting
+        self.wire = []                      # (time, bytes) of every write: the exit sequence's quiet is checked
+        self.exited = False                 # A took the exit sequence: it restarts, nothing reaches B any more
+
+    def read(self, n):
+        if self.armed and not self.out:
+            self.armed, self.bridged = False, True
+            if not self.running:
+                self.out += b"\x02\x24\x00\x03" * 2     # the first stage greets again and again
+        return super().read(n)
+
+    def write(self, b):
+        self.wire.append((time.monotonic(), bytes(b)))
+        if self.exited:
+            return
+        if self.bridged:
+            if bytes(b) == BRIDGE_EXIT:
+                self.exited = True
+                return
+            return super().write(b)
+        assert b[:2] == b"\xA5\x5A" and crc16_ccitt(b[2:-2]) == int.from_bytes(b[-2:], "little")
+        cmd, seq, p = b[2], b[3], b[6:-2]
+        assert cmd == DL_RX2
+        if p[0] == 0:
+            st, body = 0, bytes([self.flags])
+        else:
+            st, body = (0, b"") if p[1:5] == RX2_TOKEN.to_bytes(4, "little") else (7, b"")
+            self.armed = st == 0
+        rep = bytes([cmd | 0x80, seq]) + (1 + len(body)).to_bytes(2, "little") + bytes([st]) + body
+        self.out += b"\xA5\x5A" + rep + crc16_ccitt(rep).to_bytes(2, "little")
+
+
+class FakePass:
+    """GD-88 for the self-tests: the stub on A (PEEK, POKE, PASS, a soft reset) and, once PASS is answered, B behind it:
+    the rx2 STUB frame sends B's RadioFoundry to its first stage (FakeRadio's boot ROM). The exit sequence ends PASS:
+    A answers 05 + 1 and its own requests again. A has no version for older stubs to test: PASS refused is status 0B."""
+
+    def __init__(self, b, has_pass=True, b_in_stub=False):
+        self.b = b                          # SoC B: a FakeRadio, silent until it gets STUB
+        self.b.out.clear()
+        self.b.running = b_in_stub
+        self.has_pass = has_pass
+        self.timeout, self.baudrate = 0.02, 115200
+        self.out, self.inb = bytearray(), bytearray()
+        self.mem = {0x11000034: 0x10}       # IO_DIPLEX0, UART3's bits not set yet
+        self.pokes, self.pass_args, self.wire = [], None, []
+        self.passing = self.b_up = False    # A passes the cable; B's RadioFoundry took STUB
+        self.exits = self.resets = 0
+
+    def flush(self):
+        pass
+
+    def reset_input_buffer(self):
+        self.out.clear()
+        if self.passing:
+            self.b.reset_input_buffer()
+
+    def read(self, n):
+        if self.out or not self.passing:
+            r = bytes(self.out[:n])
+            del self.out[:n]
+            return r
+        return self.b.read(n)
+
+    def write(self, data):
+        data = bytes(data)
+        self.wire.append((time.monotonic(), data))
+        if self.passing:
+            if data == BRIDGE_EXIT:
+                self.passing, self.exits = False, self.exits + 1
+                self.out += FakeRadio.frame(self, OK, b"\x01")
+            elif not self.b_up and data[:2] == b"\xA5\x5A":
+                assert data == rx2_frame(RX2_STUB, data[4], RX2_STUB_MAGIC.to_bytes(4, "little")), data.hex()
+                self.b_up = True
+                if not self.b.running:
+                    self.b.out += b"\x02\x24\x00\x03" * 2       # the first stage greets again and again
+            else:
+                self.b.write(data)
+            return
+        self.inb += data
+        while len(self.inb) >= 6 and len(self.inb) >= 6 + ((self.inb[2] << 8) | self.inb[3]):
+            n = 6 + ((self.inb[2] << 8) | self.inb[3])
+            op, p = self.inb[1], bytes(self.inb[6:n])
+            del self.inb[:n]
+            st, body = OK, b""
+            if op == 0x01:
+                body = b"C7STUB" + bytes([8, 0x04, 0x08]) + bytes(34)
+            elif op == 0x02:
+                body = self.mem.get(int.from_bytes(p[:4], "big"), 0).to_bytes(4, "little")
+            elif op == 0x03:
+                addr = int.from_bytes(p[:4], "big")
+                if addr == SYS_SOFT_RSTN:
+                    self.resets += 1
+                    return
+                self.pokes.append((addr, p[4:]))
+                self.mem[addr] = int.from_bytes(p[4:8], "little")
+            elif op == OP_PASS and self.has_pass:
+                self.pass_args = p
+            else:
+                st = BADOP
+            self.out += FakeRadio.frame(self, st, body)
+            if op == OP_PASS and st == OK:
+                self.passing = True
+
+
 def rxn_big(payload):
     return int.from_bytes(payload[8:10], "big") >= 256
 
@@ -2486,6 +2790,15 @@ def self_test():
     r.start(wait=2, stub=stub)
     check(radio.running and r.echo and not radio.errors, "the boot ROM load works through an echoing cable")
     check(sum("echoes what" in l for l in lines) == 1, "the echo is logged once")
+    # acks with bit 7 set (a first stage whose UART runs 5 % fast): taken, logged once
+    radio = FakeRadio(images, stub_len=len(stub), rom_ack_high=True)
+    lines = []
+    r = Radio(radio, log=lines.append)
+    r.start(wait=2, stub=stub)
+    check(radio.running and not radio.errors and r.acks_high == len(stub) // BLOCK + 1,
+          "the boot ROM load takes acks with bit 7 set (%d)" % r.acks_high)
+    check(sum("runs fast" in l for l in lines) == 1, "acks with bit 7 set are logged once")
+    check(not rom_acked(ROM_NAK) and not rom_acked(ROM_HELLO) and rom_acked(b"\x82\x85\x80\x83"), "rom_acked")
     # the ROM answers with something else: the error names the bytes, the cable and the way out
     radio = FakeRadio(images, stub_len=len(stub), rom_nak=True)
     r = Radio(radio, log=quiet, cable="CH340")
@@ -2888,11 +3201,13 @@ def self_test():
         prof = C7_BOARDS[board] if board else GENERIC
         led = prof["led"]["red"].to_bytes(4, "little") + prof["led"]["green"].to_bytes(4, "little")
         got = bytes(radio.loaded[:len(univ)])
-        check(radio.running and not radio.errors and got[:UCFG_LED] == univ[:UCFG_LED] and got[UCFG_LED + 8:] == univ[UCFG_LED + 8:],
+        check(radio.running and not radio.errors and got == univ_for_board(univ, prof),
               "the universal stub is the default power-on image, at 0x10000 (%s)" % radio.errors)
         check(got[UCFG_LED:UCFG_LED + 8] == led,
               "the stub sent names the %s's LED pins %d / %d from its first instruction"
               % (prof["name"], prof["led"]["red"], prof["led"]["green"]))
+        check(prof.get("pair") or (got[:UCFG_LED] == univ[:UCFG_LED] and got[UCFG_LED + 8:] == univ[UCFG_LED + 8:]),
+              "only the LED pins differ in the %s's image" % prof["name"])
         check(r.v6 is not None and r.v6["run"] == 0x30000 and r.v6["load"] == 0x10000, "HELLO v6 parsed")
         try:
             r.write_image(images["progmem"][APP_START:APP_START + 4 * SECTOR])
@@ -2953,6 +3268,96 @@ def self_test():
                 check(False, "NAND refused on a radio without one")
             except DumpError:
                 pass
+    # GD-88 B: the image pinned to UART3 with no latch, key or LEDs; through A's bridge; refusals
+    pb = univ_for_board(univ, C7_BOARDS["gd88b"])
+    words = [int.from_bytes(pb[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
+    check(words == [0x14090000, 255, 255, 16, 49], "gd88b image: UART3, no latch or key, its LEDs (%s)" % words)
+    pa = univ_for_board(univ, C7_BOARDS["gd88"])
+    words = [int.from_bytes(pa[o:o + 4], "little") for o in (0x8C, 0x9C, 0xA0, 0xA8, 0xAC)]
+    check(words == [0, 45, 44, 255, 255], "gd88 image: both UARTs, latch and key, no LEDs (%s)" % words)
+    check(univ_layout(pb) == univ_layout(univ) and pb[:0x80] == univ[:0x80] and pb[0xC0:] == univ[0xC0:],
+          "the patch touches the parameter block only")
+    bridge = FakeBridged(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    bridge.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(bridge, log=quiet)
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is False, "B answering A: its first stage loads the stub")
+    r.configure("gd88b")
+    check(bridge.bridged and bridge.running and bytes(bridge.loaded[:len(pb)]) == pb, "gd88b stub loaded through the bridge")
+    check(r.configured is C7_BOARDS["gd88b"] and bridge.configs[-1][10:12] == bytes([16, 49]), "gd88b configured, its LEDs")
+    r.reset_chip()
+    t_last = bridge.wire[-1][0]
+    r.bridge_exit()
+    t_done = time.monotonic()
+    t_exit, sent = bridge.wire[-1]
+    check(bridge.exited and sent == bytes([0x7E, 0xE7, 0x81, 0x18]), "the bridge ends on exactly 7E E7 81 18 in one write")
+    check(t_exit - t_last >= 0.005 and t_done - t_exit >= 0.005,
+          "quiet around the exit sequence (%.1f ms before, %.1f ms after)" % ((t_exit - t_last) * 1e3, (t_done - t_exit) * 1e3))
+    # B left in a stub by an earlier run: it doesn't answer A and is silent on the line, and the stub answers HELLO
+    left = FakeBridged(images, flags=0x05, in_stub=True)
+    left.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(left, log=quiet)
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is True and not left.loaded, "B's stub from an earlier run is used")
+    # B not answering A but in its first stage (greeting): loaded as usual
+    late = FakeBridged(images, flags=0x05, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    late.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(late, log=quiet)
+    check(r.bridge_start(2, None, LOAD_ADDR, "gd88b") is False and late.running and bytes(late.loaded[:len(pb)]) == pb,
+          "B silent to A but in its first stage: the stub is loaded")
+    for flags, what in ((0x00, "no second receiver"), (0x03, "no bridge")):
+        try:
+            Radio(FakeBridged(images, flags=flags), log=quiet).rx2_bridge()
+            check(False, "a radio with %s is refused" % what)
+        except DumpError as e:
+            check(what in str(e), "refused: %s" % e)
+    # GD-88 B through the stub on A (PASS): UART3's pins, PASS, rx2 STUB, B's first stage loads the stub; the exit
+    # sequence gives the cable back to A's stub
+    b = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+    b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    fp = FakePass(b)
+    r = Radio(fp, log=quiet)
+    check(r.pass_start("gd88b", 2, None, LOAD_ADDR) is False, "PASS: B's first stage loads the stub")
+    check(fp.mem[0x11000034] == 0x6010, "PASS: UART3's pins set, the rest kept (0x%X)" % fp.mem[0x11000034])
+    check(fp.pass_args == bytes.fromhex("14090000") + PASS_IDLE_MS.to_bytes(4, "big") + PASS_GUARD_MS.to_bytes(4, "big"),
+          "PASS: UART3, the idle and guard times")
+    r.configure("gd88b")
+    check(b.running and bytes(b.loaded[:len(pb)]) == pb and r.configured is C7_BOARDS["gd88b"], "PASS: gd88b stub loaded and configured")
+    r.reset_chip()
+    t_last = fp.wire[-1][0]
+    ok = r.pass_exit()
+    t_exit = next(t for t, d in reversed(fp.wire) if d == BRIDGE_EXIT)
+    check(ok and fp.exits == 1 and not fp.passing, "PASS ends on the exit sequence, A's stub confirms")
+    check(t_exit - t_last >= 0.005, "quiet before the exit sequence (%.1f ms)" % ((t_exit - t_last) * 1e3))
+    r.reset_chip()
+    check(fp.resets == 1, "A reset after PASS")
+    # The cable at the UARTs' whole-divisor rate while it passes, its own again after (a 36 MHz clock: 112500)
+    check(whole_rate(36e6, 115200) == 112500 and whole_rate(24e6, 115200) == 115384 and whole_rate(0, 115200) is None,
+          "whole_rate: 36 MHz 112500, 24 MHz 115384, no clock none")
+    for hz, during in ((36000000, 112500), (24000000, 115200)):
+        b = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
+        b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+        fp = FakePass(b)
+        r = Radio(fp, log=quiet)
+        r.uart_hz = hz
+        r.pass_start("gd88b", 2, None, LOAD_ADDR)
+        check(fp.baudrate == during, "PASS at %d MHz: the cable at %d baud (%d)" % (hz // 10**6, during, fp.baudrate))
+        r.pass_exit()
+        check(fp.baudrate == 115200, "after PASS at %d MHz: 115200 again (%d)" % (hz // 10**6, fp.baudrate))
+    fp = FakePass(FakeRadio(images), b_in_stub=True)
+    fp.b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(fp, log=quiet)
+    check(r.pass_start("gd88b", 2, None, LOAD_ADDR) is True and not fp.b.loaded, "PASS: B's stub from an earlier run is used")
+    fp = FakePass(FakeRadio(images, silent={1}), b_in_stub=True)    # the first HELLO's reply lost on the way
+    fp.b.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": True}
+    r = Radio(fp, log=quiet)
+    check(r.pass_start("gd88b", 2, None, LOAD_ADDR) is True and not fp.b.loaded,
+          "PASS: B's stub from an earlier run is used when its first HELLO reply is lost")
+    fp = FakePass(FakeRadio(images), has_pass=False)
+    r = Radio(fp, log=quiet)
+    try:
+        r.pass_start("gd88b", 2, None, LOAD_ADDR)
+        check(False, "a stub without PASS is refused")
+    except DumpError as e:
+        check("protocol 8" in str(e) and not r.passing, "refused: %s" % e)
     radio = FakeRadio(images, stub_len=(len(univ) + BLOCK - 1) // BLOCK * BLOCK)
     radio.univ = {"run": 0x30000, "end": lay[1], "board": 0, "flags": 0, "honor": False}
     r = Radio(radio, log=quiet)
@@ -3271,10 +3676,14 @@ def main(argv=None, raise_errors=False):
     ap.add_argument("--write-app", metavar="IMAGE", help="program an RadioFoundry application image (raw .bin linked for 0x0300C000) into the "
                     "program flash at 0xC000: only changed 4 KB sectors are written, then verified; the bootloader is never touched. "
                     "Use with --rfoundry-enter (radio running RadioFoundry) or the boot-ROM load; finish with --boot reset. On a radio with "
-                    "RadioFoundry's first stage at 0xC000 (DB25-D) give the _install.bin, which starts with it")
+                    "RadioFoundry's first stage at 0xC000 (DB25-D, GD-88) give the _install.bin, which starts with it")
     ap.add_argument("--replace-stage", action="store_true", help="let --write-app put an image that does not start with "
                     "RadioFoundry's first stage over one (the radio then starts only what the image holds at 0xC000)")
-    ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot")
+    ap.add_argument("--attach", action="store_true", help="the stub from an earlier run is still up: skip the boot. For a "
+                    "second SoC (--board gd88b): the main SoC's stub")
+    ap.add_argument("--via-bridge", action="store_true", help="a second SoC (--board gd88b) through the bridge in RadioFoundry "
+                    "on the main SoC instead of the main SoC's stub: for trying second-SoC builds; the main SoC restarts "
+                    "when it ends")
     ap.add_argument("--stub", metavar="FILE", help="load this stub image instead of the embedded universal one (a universal "
                     "image, or a position-dependent one linked for the load address)")
     ap.add_argument("--legacy-stub", action="store_true", help="use the position-dependent stubs embedded before the universal "
@@ -3331,6 +3740,9 @@ def main(argv=None, raise_errors=False):
     except ImportError:
         print("pyserial is missing: pip install pyserial", file=sys.stderr)
         return 1
+    bridge_on = False                           # the cable goes through A's bridge: end it when done (or on an error)
+    pass_on = False                             # the cable goes through A's stub (PASS): end it when done
+    radio = None
     # A stand-in serial module (tests, wrappers) may lack it; an except clause that fails would hide the real error.
     write_stalled = getattr(serial, "SerialTimeoutException", ())
     port = None
@@ -3367,9 +3779,33 @@ def main(argv=None, raise_errors=False):
         if a.secreg or a.write_secreg:
             raise DumpError("--secreg and --write-secreg are for the STM32 radios (DM-1701, MD-380); the HR_C7000 stub has "
                             "no security register ops")
-        if a.rfoundry_enter:
-            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None),
-                                 board=a.board, force=a.force)
+        bridged = bool(C7_BOARDS.get(a.board, {}).get("bridge"))
+        if a.via_bridge and not bridged:
+            raise DumpError("--via-bridge is for a second SoC (--board %s)" % " or ".join(k for k, b in C7_BOARDS.items() if b.get("bridge")))
+        if bridged and a.baud not in (None, "off"):
+            raise DumpError("--board %s is reached through the other SoC: no --baud (the link to it runs at 115200)" % a.board)
+        if bridged and a.via_bridge:
+            if a.rfoundry_enter:
+                raise DumpError("--via-bridge goes through RadioFoundry on the other SoC: no --rfoundry-enter")
+            bridge_on = True                    # with --attach: the bridge from an earlier run, still up
+            if a.attach:
+                radio.attach()
+            else:
+                radio.bridge_start(min(a.wait, 70), stub, LOAD_ADDR if a.load_base is None else a.load_base, a.board)
+            radio.configure(a.board)
+        elif bridged:
+            # the main SoC's stub: still up (--attach), else from RadioFoundry there; then PASS to the second
+            main = C7_BOARDS[a.board]["part_of"]
+            if a.attach:
+                radio.attach()
+                radio.configure(main)
+            else:
+                radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else None, board=main, force=a.force)
+            pass_on = True
+            radio.pass_start(a.board, min(a.wait, 70), stub, LOAD_ADDR if a.load_base is None else a.load_base)
+            radio.configure(a.board)
+        elif a.rfoundry_enter:
+            radio.rfoundry_enter(open(a.rfoundry_stub, "rb").read() if a.rfoundry_stub else ("legacy" if a.legacy_stub else None), board=a.board, force=a.force)
         elif a.attach:
             radio.attach()
             radio.configure(a.board)
@@ -3386,7 +3822,7 @@ def main(argv=None, raise_errors=False):
             radio.start(a.wait, stub, load, slow=a.slow_cable, board=a.board)
             radio.configure(a.board)
         jobs = [(mem, f) + parse_range(rng, radio.mem_size(mem)) for mem, f, rng in jobs]
-        if a.baud == "off":
+        if a.baud == "off" or bridged:
             pass
         elif radio.sector_op and (a.baud == "auto" or (a.baud is None and (jobs or a.write_app))):
             b = radio.auto_baud()               # protocol 7: proven both ways, and it falls back by itself if it stops holding
@@ -3424,7 +3860,11 @@ def main(argv=None, raise_errors=False):
             nw, nk = radio.write_image(image, replace_stage=a.replace_stage, progress=lambda i, n: print("\rwriting sector %d of %d changed" % (i + 1, n), end="", flush=True))
             print("\n%s: %d bytes, %d sectors written, %d unchanged, verified by CRC, %.0f s" % (a.write_app, len(image), nw, nk, time.monotonic() - t0))
             print("sha256", fingerprint(a.write_app))
-            if not a.boot:
+            if not a.boot and bridge_on:
+                print("the bridge ends now: power-cycle the radio to start the new firmware (or give --boot reset)")
+            elif not a.boot and pass_on:
+                print("both SoCs stay in their stubs: power-cycle the radio to start the new firmware (or give --boot reset)")
+            elif not a.boot:
                 print(restart_hint(a.board))
         if a.write_test:
             regions = {}
@@ -3493,6 +3933,12 @@ def main(argv=None, raise_errors=False):
             if a.boot == "reset":
                 radio.reset_chip()
                 print("chip reset sent: the radio restarts into its firmware")
+                if pass_on:                     # then the main SoC, back from PASS
+                    pass_on = False
+                    if not radio.pass_exit():
+                        raise DumpError("the main SoC's stub did not come back after PASS: power-cycle the radio")
+                    radio.reset_chip()
+                    print("main SoC reset sent: it restarts and finds the second SoC")
             elif a.boot.startswith("jump:"):
                 radio.jump(int(a.boot[5:], 0))
                 print("jump sent")
@@ -3513,6 +3959,17 @@ def main(argv=None, raise_errors=False):
         print("\nstubtool: stopped", file=sys.stderr)
         return 1
     finally:
+        if pass_on and radio is not None:
+            try:
+                radio.pass_exit()
+                print("the cable is back on the main SoC's stub (--attach --board %s reaches it)" % C7_BOARDS[a.board]["part_of"])
+            except (OSError, DumpError) as e:
+                print("stubtool: could not end PASS (%s): power-cycle the radio" % e, file=sys.stderr)
+        if bridge_on and radio is not None:
+            try:
+                radio.bridge_exit()
+            except OSError as e:
+                print("stubtool: could not end the bridge (%s): A restarts 10 s after the last byte" % e, file=sys.stderr)
         settle(port)
 
 

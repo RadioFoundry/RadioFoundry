@@ -564,6 +564,27 @@ def cmd_run(args):
     return rc
 
 
+def reported_feature_errors():
+    """A HIL test that asks `"X" in radio.features()` needs X in the version reply's features= (build_info.c); a
+    switch missing there makes the test skip as not built on every radio"""
+    with open(os.path.join(ROOT, "core", "hostlink", "build_info.c")) as f:
+        # every name in a string of them: one a line ("DMR,"), or several in one ("P25,P25_TRUNK,")
+        reported = {n for lit in re.findall(r'"((?:[A-Z0-9_]+,)+)"', f.read()) for n in lit.split(",") if n}
+    errs = []
+    hil = os.path.join(ROOT, "tests", "hil")
+    for name in sorted(os.listdir(hil)):
+        if not name.endswith(".py"):
+            continue
+        with open(os.path.join(hil, name)) as f:
+            src = f.read()
+        asked = set(re.findall(r'"([A-Z][A-Z0-9_]+)"\s+(?:not\s+)?in\s+\w+\.features\(\)', src))
+        for group in re.findall(r'for\s+\w+\s+in\s+\(([^)]*)\):\s*\n\s*if\s+\w+\s+not\s+in\s+\w+\.features\(\)', src):
+            asked |= set(re.findall(r'"([A-Z0-9_]+)"', group))
+        for s in sorted(asked - reported):
+            errs.append(f"tests/hil/{name}: asks the radio for {s}, which core/hostlink/build_info.c doesn't report")
+    return errs
+
+
 def check(feats, boards, records, found, all_switches):
     """The consistency errors (strings), and notes. Missing or stale records are never errors: only a malformed
     checklist, marker, override or record is."""
@@ -659,8 +680,9 @@ def check(feats, boards, records, found, all_switches):
             for f in r.get("features", []):
                 if f not in by_id:
                     notes.append(f"{where}: feature {f} is no longer in the checklist")
-            if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
+            if re.search(r"/dev/|usbmodem|://|\bserial[=:]|\b\d{1,3}(?:\.\d{1,3}){3}\b", json.dumps(r)):
                 errs.append(f"{where}: names a port, host or serial number")
+    errs += reported_feature_errors()
     # TODO(commit 9): the claim blocks in the docs (feature matrix, README, 23-radios.md) are generated from the
     # records; until they exist there is nothing to compare, so claims against records is not checked yet
     notes.append("claims against records: not checked until the docs' claim blocks are generated")
@@ -697,7 +719,7 @@ def check_seed(r, b, by_id):
             continue
         if row.get("source") and not os.path.exists(os.path.join(ROOT, row["source"])):
             errs.append(f"{where}: {f}: source {row['source']} does not exist")
-    if re.search(r"/dev/|usbmodem|://|\bserial[=:]", json.dumps(r)):
+    if re.search(r"/dev/|usbmodem|://|\bserial[=:]|\b\d{1,3}(?:\.\d{1,3}){3}\b", json.dumps(r)):
         errs.append(f"{where}: names a port, host or serial number")
     return errs
 

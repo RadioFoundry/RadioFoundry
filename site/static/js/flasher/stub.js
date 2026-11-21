@@ -14,7 +14,7 @@
 
 import { be32, concat, crc32, equal, le32, sleep, u32le } from "./bytes.js";
 import { decodeBlock } from "./lz4.js";
-import { Link, LinkError } from "./link.js";
+import { Link, LinkError, crc16 } from "./link.js";
 import * as protect from "./protect.js";
 
 // USB-serial chips known to take the boot ROM load well (adapter.js names a cable by these)
@@ -47,10 +47,38 @@ export const WDT_LOCK = 0x14010000, WDT_EN = 0x14010010, WDT_KEY = 0x5ADA7200;
 // RadioFoundry's restart-cause mark (docs/spec/crash-log.md 1.3; stubtool.py CRASH_SOFT_MARK): the reset was asked for
 export const CRASH_SOFT_MARK = 0x18007EF4, CRASH_BOOT_SOFT = 0x54464F53;
 export const STUB_MAGIC = 0x42533743, DL_STUB = 0x1A;
+// DL_CMD_RX2: the second SoC of a radio with two (the GD-88), reached through the first (docs/spec/debuglink.md 3.22)
+export const DL_RX2 = 0x1E, RX2_F = { present: 1, up: 2, bridge: 4, restart: 8, forward: 16 };
+// The end of a pass-through: these 4 bytes alone, with quiet on the cable before and after (docs/spec/rx2-link.md 4.1;
+// the spec asks for 2 ms or more)
+export const BRIDGE_EXIT = [0x7E, 0xE7, 0x81, 0x18], BRIDGE_QUIET_MS = 20;
+// PASS (op 0x0F, stub protocol 8): the stub on the first SoC passes the cable through to its UART to the second, until
+// the same exit sequence (stub/README.md). PASS_IDLE_MS 0: nothing else ends it, however long the page waits
+export const OP_PASS = 0x0F, PASS_IDLE_MS = 0, PASS_GUARD_MS = 10;
+// The rate an HR_C7000 UART really runs at for a nominal one: its clock over 16 times the nearest whole divisor (no
+// fractional divider). PASS forwards byte by byte through 16-byte FIFOs, so the cable must run at this rate: at 36 MHz
+// 115200 is 112500, and a 4 KB frame sent 2.3 % fast overflows the first SoC's FIFO (docs/spec/rx2-link.md 4.2). A rate
+// within PASS_RATE_SLACK of the cable's is left alone. null when the clock can't be right
+export const PASS_RATE_SLACK = 0.005;
+export function wholeRate(hz, nominal) {
+	if (!(hz > 1e6 && hz < 4e8)) return null;
+	return Math.floor(hz / (16 * Math.max(1, Math.round(hz / (16 * nominal)))));
+}
+// The rx2 link's STUB frame (docs/spec/rx2-link.md 2): the second SoC's RadioFoundry starts its first stage
+export const RX2_STUB = 0x05, RX2_STUB_MAGIC = 0x53545542;
+export function rx2Frame(type, seq, payload) {
+	const body = concat(new Uint8Array([payload.length, type, seq]), payload);
+	const c = crc16(body);
+	return concat(new Uint8Array([0xA5, 0x5A]), body, new Uint8Array([c >> 8, c & 0xFF]));
+}
 const ROM_HELLO = [0x02, 0x24, 0x00, 0x03], ROM_ACK = [0x02, 0x05, 0x00, 0x03], ROM_REPLY = [0x02, 0x14, 0x00, 0x03];
 // The boot ROM's two other frames: it stops waiting (about 48 ms after its greeting when no answer came) and starts the
 // firmware; and its NAK (BADSUM), which is also how it answers a repeated greeting reply once it took the first one
 const ROM_NAK = [0x02, 0x0A, 0x00, 0x03];
+// The ack, also with bit 7 set in any byte: a sender 5 % fast against its receiver (the GD-88's second SoC under a first
+// stage from before divisor 20, docs/spec/rx2-link.md 4.2) has its last data bit read in the stop bit. The NAK and the
+// ROM's other frames differ in the low 7 bits
+const romAcked = (b, at) => b.length >= at + 4 && ROM_ACK.every((x, k) => (b[at + k] & 0x7F) === x);
 // What the ROM sends when it stops waiting is the address it starts, little endian: 00 10 00 03 (0x03001000) on a
 // radio with a loader at the start of its flash, 00 c0 00 03 (0x0300C000) on one whose flash names the application (a
 // board with rom_entry). So a sign-off is any address in the program flash (0x03......) on a 256-byte boundary past
@@ -144,15 +172,20 @@ export function romFlagSector(cur, entry) {
 // The universal stub's own LED pins until CONFIG (PTB1 red, PTB0 green), and where its parameter block holds them
 // (led_red, led_green: u32 little endian each)
 export const DEFAULT_LED = { red: 33, green: 32 }, UCFG_LED = 0xA8;
+// its UART before CONFIG, power latch and key (u32 each)
+export const UCFG_UART = 0x8C, UCFG_LATCH = 0x9C, UCFG_KEY = 0xA0;
 
 // The universal stub with the board's LED pins in its parameter block (stubtool.py univ_for_board): the stub drives its
-// LED pins from its first instruction, before CONFIG, and on some radios its own pins do something else. A copy; the
+// LED pins from its first instruction, before CONFIG, and on some radios its own pins do something else. A SoC of a
+// radio with two (board, its stub_board: pair) also gets the UART it listens on, its power latch and key. A copy; the
 // image as it is without led or a parameter block
-export function univForBoard(image, led) {
+export function univForBoard(image, led, board = null) {
 	if (!led || !univLayout(image)) return image;
 	const out = image.slice();
 	out.set(le32(led.red), UCFG_LED);
 	out.set(le32(led.green), UCFG_LED + 4);
+	if (board?.pair)
+		for (const [off, v] of [[UCFG_UART, board.uart || 0], [UCFG_LATCH, board.latch], [UCFG_KEY, board.key]]) out.set(le32(v), off);
 	return out;
 }
 
@@ -177,6 +210,7 @@ export class Stub {
 		this.log = log;
 		this.cable = cable;	// the programming cable's chip (adapter.js), named in a boot ROM error
 		this.echo = false;	// the cable sends back what the page sends (seen in the boot ROM load)
+		this.acksHigh = 0;	// boot ROM acks that came with bit 7 set (romAcked)
 		this.retries = retries;
 		this.retried = 0;
 		this.info = null;
@@ -294,15 +328,20 @@ export class Stub {
 			const n = Math.min(b.length, sent.length);
 			let echo = n > 0;
 			for (let k = 0; k < n && echo; k++) echo = b[k] === sent[k];
-			if (echo && b.length >= sent.length && !(b.length >= 4 && ROM_ACK.every((x, k) => b[k] === x))) {
+			if (echo && b.length >= sent.length && !romAcked(b, 0)) {
 				this.s.take(sent.length);
 				if (!this.echo) this.log("the cable echoes what the page sends; the echo is ignored");
 				this.echo = true;
 				continue;
 			}
 			const ends = (pat) => b.length >= 4 && pat.every((x, k) => b[b.length - 4 + k] === x);
-			if (ends(ROM_ACK) && !(echo && b.length < sent.length)) {
+			if (romAcked(b, b.length - 4) && !(echo && b.length < sent.length)) {
 				if (b.length > 4) this.log(`before the boot ROM's acknowledgement: ${hexBytes(b.subarray(0, Math.min(16, b.length - 4)))}`);
+				const ack = b.subarray(b.length - 4);
+				if (!ROM_ACK.every((x, k) => ack[k] === x)) {
+					if (!this.acksHigh) this.log(`the acknowledgement came as ${hexBytes(ack)}: the other side's UART runs fast; taken as the ack`);
+					this.acksHigh++;
+				}
 				this.s.take(b.length);
 				return { ok: true, got: null };
 			}
@@ -409,6 +448,83 @@ export class Stub {
 		return { load: u32le(r, 4), size: u32le(r, 8), chunk: Math.min(r[12] | (r[13] << 8), 59) };
 	}
 
+	// End the first SoC's pass-through (passTo): the exit sequence in a write of its own between two quiet spells
+	async bridgeExit() {
+		await sleep(BRIDGE_QUIET_MS);
+		await this.s.write(new Uint8Array(BRIDGE_EXIT));
+		await sleep(BRIDGE_QUIET_MS);
+	}
+
+	// The second SoC through this stub, running on the first (docs/spec/rx2-link.md 4.2): the first SoC's UART to it gets
+	// its pins (bridge.mux: address, bits to set), the stub passes the cable through (PASS), and the rx2 STUB frame sends
+	// the second SoC's RadioFoundry to its first stage, which then offers the boot ROM's handshake (waitForRom). A
+	// second SoC still in a stub from an earlier run is silent instead. Throws when the stub has no PASS
+	async passTo(bridge) {
+		const [addr, bits] = bridge.mux;
+		const hz = this.s.setBaud ? this.uartHz || Math.round((await this.timerHz(300)) / 1e6) * 1e6 : 0;
+		const v = u32le(await this.peek(addr, 4), 0);
+		if (((v & bits) >>> 0) !== bits) await this.poke(addr, le32((v | bits) >>> 0));
+		this.passing = true;	// a lost reply may still have started it: passExit ends it
+		try {
+			// no retry: once the stub passes, a second request would reach the other SoC
+			await this.request(OP_PASS, concat(be32(bridge.uart), be32(PASS_IDLE_MS), be32(PASS_GUARD_MS)), { retries: 0 });
+		} catch (e) {
+			if (e.status) this.passing = false;
+			throw e.status ? new StubError("the loader on the radio's main chip is older and cannot reach the second one: reload the page") : e;
+		}
+		this.log("the loader passes the cable to the second chip");
+		await this.passRate(hz);
+		await this.s.write(rx2Frame(RX2_STUB, 0, le32(RX2_STUB_MAGIC)));
+	}
+
+	// The cable at the UARTs' rate while the first SoC's stub passes (docs/spec/rx2-link.md 4.2 step 3): hz, the stub's
+	// clock (0: measured here, through whichever stub answers). The home rate stays on the stream, so whichever Stub ends
+	// the pass (passExit) puts it back
+	async passRate(hz = 0) {
+		if (!this.s.setBaud || this.s.passHome) return;
+		const home = this.s.baud || 115200;
+		const rate = wholeRate(hz || Math.round((await this.timerHz(300)) / 1e6) * 1e6, home);
+		if (rate && Math.abs(rate - home) > home * PASS_RATE_SLACK) {
+			await this.s.setBaud(rate);
+			this.s.passHome = home;
+			this.log(`the cable runs at ${rate} baud while it passes`);
+		}
+	}
+
+	// Give the cable back to the first SoC's stub (passTo): the exit sequence alone, then its 05 + 1 and a HELLO. The
+	// profile it was configured with stays (configured is the caller's to restore). True when it answered
+	async passExit() {
+		this.passing = false;
+		await this.bridgeExit();
+		if (this.s.passHome) {	// the first SoC's stub at home takes the cable's own rate, as before PASS
+			const home = this.s.passHome;
+			this.s.passHome = null;
+			await this.s.setBaud(home);
+		}
+		const want = [0x02, OK, 0x00, 0x01, 0x01, 0x03, 0x01];
+		const until = Date.now() + 1500;
+		let buf = [];
+		while (Date.now() < until) {
+			const b = await this.readExact(1, 50);
+			if (!b.length) continue;
+			buf = buf.concat([...b]).slice(-want.length);
+			if (buf.length === want.length && buf.every((x, i) => x === want[i])) {
+				await this.hello({ retries: 2 });
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// The second SoC's state, from RadioFoundry on the first: RX2_F flags, or null when it doesn't say
+	static async secondState(link) {
+		try {
+			return (await link.request(DL_RX2, new Uint8Array([0])))[0];
+		} catch (e) {
+			return null;
+		}
+	}
+
 	// entry: where RadioFoundry jumps (the offered load address unless the stub runs elsewhere, as the STM32F4 one does)
 	async enterFromRFoundry(image, progress = () => {}, { entry = null } = {}) {
 		const link = new Link(this.s);
@@ -510,6 +626,7 @@ export class Stub {
 		let hz = await this.timerHz(300);
 		if (!(hz > 1e6 && hz < 4e8)) throw new StubError("the radio's timer rate can't be right: not configuring the loader");
 		hz = Math.round(hz / 1e6) * 1e6;	// every APB clock here is whole MHz
+		this.uartHz = hz;
 		await this.request(0x0D, concat(be32(hz), be32(hz), new Uint8Array([profile.latch, profile.key, led.red, led.green, profile.id,
 			profile.nand ? 1 : 0, 3, 0])));
 		await this.hello({ retries: this.retries });	// a request like any other here: a damaged reply is asked for again

@@ -74,7 +74,7 @@ calibration = { data = 0x1FF000 }
 [codec]
 tool = "hrc7000_codec"
 profile = "rt10-112"
-sources = ["a program flash read of the radio"]
+sources = ["a program memory backup of this radio"]
 
 # Bring-up features without a switch that the hardware rules out (tools/bringup.py)
 [features]

@@ -43,6 +43,8 @@ void cps_init(const cps_io_t *io);
 // requests complete, the session times out)
 void cps_feed(const uint8_t *buf, size_t len, uint32_t now_ms);
 void cps_get_stats(cps_stats_t *s);
+// A request can start with this byte (any other is noise on the line)
+bool cps_request_start(uint8_t b);
 // Part of a request is held (waiting for the rest of it, or dropping an overlong one until the gap)
 bool cps_mid_request(void);
 

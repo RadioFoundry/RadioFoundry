@@ -249,7 +249,9 @@ def test_call_end_tone_setting(radio, sdr_bench, pytestconfig):
     f = _features(radio)
     if f.get("beep.built") != "1":
         skip("not_built", "built without the beeps")
-    tones = radio.view(["audio"]).get("beep.tones_off")
+    if f.get("volume.sent") == "0":
+        skip("state", "volume 0 (a knob turned down): the tone follows it and is dropped before it is counted")
+    tones =radio.view(["audio"]).get("beep.tones_off")
     if tones is None:
         skip("not_built", "firmware without the Settings > Sound tone settings (beep.tones_off)")
     was_off, was_level = int(tones), int(f["set.beep_level"])

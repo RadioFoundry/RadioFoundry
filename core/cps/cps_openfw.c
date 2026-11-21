@@ -601,11 +601,16 @@ static void handle(size_t n)
 	}
 }
 
+bool cps_request_start(uint8_t b)
+{
+	return b == 'R' || b == 'W' || b == 'X' || b == 'C' || b == 'D';
+}
+
 // A byte no request starts with. A programming cable on the microphone / speaker jack now and then delivers a
 // burst of noise bytes (0xFC, 0xFE) between requests; answered '-', it was read as the reply to the next request
 static bool junk(uint8_t b)
 {
-	return b != 'R' && b != 'W' && b != 'X' && b != 'C' && b != 'D';
+	return !cps_request_start(b);
 }
 
 // Take complete requests off the front of the buffer, dropping noise in front of one (counted, never answered). After

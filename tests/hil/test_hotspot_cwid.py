@@ -66,8 +66,8 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
     rf_level = radio.hotspot_rf_level()
     x0 = radio.view(["dmr_ext"])
     expect_ms = 150 + 60 * units + 150
+    job = None
     with sdr_bench.lease():
-        job = sdr_bench.fm_over_start(mhz, expect_ms / 1000 + 4, audio=True)
         with radio.released() as port:
             link = mmdvm_probe.Link(port, dtr=False)
             try:
@@ -75,6 +75,9 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
                 assert link.request(SET_CONFIG, config())[0] == "ack"
                 assert link.request(SET_FREQ, freq(hz, hz, rf_level))[0] == "ack"
                 assert link.request(SET_MODE, bytes([0]))[0] == "ack"
+                # the measurement from here: opening the port and the hotspot's set-up take seconds on some radios,
+                # and a window started before them missed the ID
+                job = sdr_bench.fm_over_start(mhz, expect_ms / 1000 + 4, audio=True)
                 kind, f = link.request(SEND_CWID, call.encode())
                 assert kind == "ack", f
                 time.sleep(0.5)
@@ -85,7 +88,7 @@ def test_hotspot_cwid(radio, sdr_bench, pytestconfig):
                 assert kind == "reply" and not st[5] & 0x01, f"TX flag still set: {st!r}"
             finally:
                 link.s.close()
-        r = sdr_bench.fm_over_result(job)
+        r = sdr_bench.fm_over_result(job) if job is not None else None
     x1 = radio.view(["dmr_ext"])
     radio.link.hotspot_exit()
     radio.wait_for(lambda v: v.get("hostlink") == "idle", 5, sections=("hotspot",), what="hotspot left")
