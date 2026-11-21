@@ -852,6 +852,11 @@ static bool rx_by_stream(void)
 // try routes the receiver and back
 #define RX_RETRY_MS	1000u
 
+uint32_t aprs_mute_hz(void)
+{
+	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+}
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
@@ -916,11 +921,6 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 	out->start_fails = aprs_s.rx_start_fails;
 }
 #endif
-
-uint32_t aprs_mute_hz(void)
-{
-	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
-}
 
 bool aprs_rx_listening(void)
 {

@@ -211,11 +211,17 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
-The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio") keeps the speaker off on the APRS
-frequency in FM: the radio core leaves the board's FM speaker path closed there while the squelch is open
-(`radio_sm.c` `outputs`, `aprs_mute_hz()`), unless Monitor holds the squelch open. The receive path and the green LED
-are unaffected: a board's own AFSK path takes the modem's audio before the speaker switch, and a PCM stream tap is
-not the speaker amplifier. Off by default.
+The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker
+silent on the APRS frequency in FM while the squelch is open, unless Monitor holds it open (`radio_sm.c` `outputs`,
+`aprs_mute_hz()`). The receive path must keep its audio, so it depends on where the board's decoder reads it:
+
+| Board | How the core mutes |
+|---|---|
+| `hal_radio_t.speaker_mute` set | `speaker_mute(true)`: the speaker silent, `audio()` left on. For a decoder whose FM audio passes the path `audio()` gates (an I2S tap behind the FM feed-through) |
+| no `speaker_mute` | `audio(false)`: for a decoder that takes the FM audio before the speaker path (the board's own AFSK input) |
+
+The green LED and Stations heard are unaffected, and a second receiver's speaker isn't held off by a muted carrier.
+Off by default.
 
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).

@@ -49,6 +49,10 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: keep the speaker silent while audio() stays on, for a mute that must not stop the FM receive audio
+	// reaching a decoder. A board whose decoder reads that audio through the path audio() gates (an I2S tap behind the
+	// FM feed-through) needs it; without it the core mutes with audio(false)
+	void (*speaker_mute)(bool mute);
 	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
 	void (*volume)(uint8_t percent);
 	// With volume: true when that level also scales the PCM speaker path (beeps, DMR voice). False: beeps on the PCM

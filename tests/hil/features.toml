@@ -289,6 +289,10 @@ switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_mute]
+requires = "APRS_RX"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_igate]
 switch = "APRS_IGATE"
 spec = "docs/spec/aprs.md"

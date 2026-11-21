@@ -297,10 +297,7 @@ static void aprs_select(uint16_t i, bool hold)
 	case AP_SMART: c.smart = !c.smart; break;
 	case AP_VIA: c.via = (uint8_t)((c.via + 1u) % APRS_VIA_COUNT); break;
 	case AP_KISS: c.kiss = !c.kiss; break;
-	case AP_MUTE:
-		c.mute = !c.mute;
-		ui_toast(c.mute ? TR(APRS_TOAST_MUTED, "APRS audio muted") : TR(APRS_TOAST_UNMUTED, "APRS audio on"));
-		break;
+	case AP_MUTE: c.mute = !c.mute; break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
 			ui_toast(TR(APRS_WHY_CANT_RECEIVE, "This radio can't receive APRS"));

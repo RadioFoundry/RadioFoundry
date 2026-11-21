@@ -295,6 +295,7 @@ typedef struct {
 	uint8_t rssi_ring_pos;
 #endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
+	int8_t speaker_mute_out;	// last speaker_mute sent to the board, -1 = not yet
 #if CONFIG_BCAST_FM
 	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
 	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet

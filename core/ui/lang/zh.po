@@ -915,16 +915,6 @@ msgid "Beacons off"
 msgstr "信标关"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_MUTED"
-msgid "APRS audio muted"
-msgstr "APRS音频已静音"
-
-#: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_UNMUTED"
-msgid "APRS audio on"
-msgstr "APRS音频开"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "本机无法接收 APRS"

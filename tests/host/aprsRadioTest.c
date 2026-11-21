@@ -95,12 +95,14 @@ static void r_status(radio_status_t *st)
 }
 static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
 static void r_audio(bool on) { spk_on = on; }
+static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
+static void r_speaker_mute(bool mute) { spk_muted = mute; }
 static bool r_tone(uint16_t hz)
 {
 	hw.tone_hz = hz;
 	return true;
 }
-static const hal_radio_t fake_radio = {
+static hal_radio_t fake_radio = {	// not const: test_mute gives it speaker_mute
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
 	.audio = r_audio, .tx_tone = r_tone,
 };
@@ -1698,10 +1700,13 @@ static void feed(const int16_t *s)
 	run(RADIO_POLL_MS);
 }
 
-// Mute APRS audio: a signal on the APRS frequency keeps the speaker off (the decoder still listens), Monitor plays it,
-// another channel isn't touched, and the setting is kept
-static void test_mute(void)
+// Mute APRS audio: a signal on the APRS frequency keeps the speaker silent (the decoder still listens), Monitor plays
+// it, another channel isn't touched, and the setting is kept. A board with speaker_mute keeps the receive audio path
+// open and silences the speaker; one without has the path closed
+static void mute_case(bool hook)
 {
+	fake_radio.speaker_mute = hook ? r_speaker_mute : NULL;
+	spk_muted = false;
 	fake_tap.caps = AUDIO_TAP_FM_RX;
 	memset(&pcm, 0, sizeof(pcm));
 	reset();
@@ -1712,29 +1717,37 @@ static void test_mute(void)
 	radio_sm_init(&sm, now);
 	hw.noise_on_aprs = 30;	// a carrier on 144.390
 	run(200);
-	CHECK(spk_on && aprs_rx_listening());	// off by default: plays as before
+	CHECK(spk_on && !spk_muted && aprs_rx_listening());	// off by default: plays as before
 	aprs_cfg_t c;
 	aprs_get_cfg(&c);
 	c.mute = true;
 	aprs_set_cfg(&c, now);
 	run(100);
-	CHECK(!spk_on && aprs_rx_listening());
+	CHECK(aprs_rx_listening());
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
 	req(RREQ_MONITOR, 1);
-	CHECK(spk_on);
+	CHECK(spk_on && !spk_muted);
 	req(RREQ_MONITOR, 0);
 	run(100);
-	CHECK(!spk_on);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
 	aprs_init(now);	// as at power-up: the setting comes back
 	aprs_get_cfg(&c);
 	CHECK(c.mute);
 	hw.noise_on_aprs = 120;
 	req(RREQ_CH_STEP, 1);	// another channel, the squelch held open: plays
 	req(RREQ_MONITOR, 1);
-	CHECK(hw.rx_hz == CH2_HZ && spk_on);
+	CHECK(hw.rx_hz == CH2_HZ && spk_on && !spk_muted);
 	req(RREQ_MONITOR, 0);
 	c.mute = false;
 	aprs_set_cfg(&c, now);
 	fake_tap.caps = 0;
+	fake_radio.speaker_mute = NULL;
+}
+
+static void test_mute(void)
+{
+	mute_case(false);
+	mute_case(true);
 }
 
 // FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving

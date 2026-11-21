@@ -913,16 +913,6 @@ msgid "Beacons off"
 msgstr "Balizas off"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_MUTED"
-msgid "APRS audio muted"
-msgstr "Audio APRS silenciado"
-
-#: core/ui/ui_aprs.c
-msgctxt "APRS_TOAST_UNMUTED"
-msgid "APRS audio on"
-msgstr "Audio APRS activo"
-
-#: core/ui/ui_aprs.c
 msgctxt "APRS_WHY_CANT_RECEIVE"
 msgid "This radio can't receive APRS"
 msgstr "Esta radio no recibe APRS"
