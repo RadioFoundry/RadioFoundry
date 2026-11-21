@@ -79,6 +79,7 @@ WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
 WEAK void ui_svc_aprs_msg_poll(void) { }
 WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return false; }
+WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return false; }
 WEAK void ui_svc_poll(void)
 {
 #if CONFIG_APRS_RX
