@@ -116,6 +116,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 #define AMP_PCM		0x02u	// speaker PCM
 #define AMP_SIDE	0x40u	// the transmitted tone's sidetone
 #define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
+static uint8_t amp_users;	// AMP_* bits (the debug link's board.amp_users)
 
 static void speaker_source(void);
 static void ring_play(void);
@@ -737,11 +738,15 @@ static void aprs_listen_route(bool on)
 
 static void amp(uint8_t who, bool on)
 {
-	static uint8_t users;
 	uint32_t s = hrc_irq_save();
-	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
-	hrc_pin_write(PIN_AMP_EN, users != 0);
+	amp_users = on ? (uint8_t)(amp_users | who) : (uint8_t)(amp_users & ~who);
+	hrc_pin_write(PIN_AMP_EN, amp_users != 0);
 	hrc_irq_restore(s);
+}
+
+uint8_t dm32_amp_users(void)
+{
+	return amp_users;
 }
 
 static void audio(bool on)
