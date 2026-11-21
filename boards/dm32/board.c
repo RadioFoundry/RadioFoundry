@@ -4,8 +4,11 @@
 #include "board.h"
 #include "config.h"
 #include "dm32.h"
-#include "pins.h"
+#include <pins.h>
 #include "platform.h"
+#ifdef BOARD_IO_HEADER
+#include BOARD_IO_HEADER
+#endif
 #include "hrc_afsk.h"
 #include "hrc_bcast.h"
 #include "ui/fmt.h"
@@ -18,6 +21,7 @@
 #include "hostlink/hostlink_ppp.h"
 #endif
 
+#ifndef BOARD_EXTERNAL_DESCRIPTOR
 #if CONFIG_RX_EXT
 static bool rx_ext_on;
 #endif
@@ -39,41 +43,7 @@ static const band_t bands[] = {
 #endif
 };
 
-// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
-// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
-
-// docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
-static const keymap_entry_t keymap[] = {
-	{ KEY_GREEN, ACT_SELECT, ACT_SELECT, false, false, 0 },
-	{ KEY_RED, ACT_BACK, ACT_BACK, false, false, 0 },
-	{ KEY_UP, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
-	{ KEY_DOWN, ACT_NAV_DOWN, ACT_NAV_DOWN, false, true, 0 },
-	{ KEY_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
-	{ KEY_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true, 0 },
-	{ KEY_STAR, ACT_QUICK, ACT_QUICK, false, false, '*' },
-	{ KEY_HASH, ACT_CONTEXT, ACT_CONTEXT, false, false, '#' },
-	{ KEY_0, ACT_DIGIT_0, ACT_DIGIT_0, false, false, 0 },
-	{ KEY_1, ACT_DIGIT_1, ACT_DIGIT_1, false, false, 0 },
-	{ KEY_2, ACT_DIGIT_2, ACT_DIGIT_2, false, false, 0 },
-	{ KEY_3, ACT_DIGIT_3, ACT_DIGIT_3, false, false, 0 },
-	{ KEY_4, ACT_DIGIT_4, ACT_DIGIT_4, false, false, 0 },
-	{ KEY_5, ACT_DIGIT_5, ACT_DIGIT_5, false, false, 0 },
-	{ KEY_6, ACT_DIGIT_6, ACT_DIGIT_6, false, false, 0 },
-	{ KEY_7, ACT_DIGIT_7, ACT_DIGIT_7, false, false, 0 },
-	{ KEY_8, ACT_DIGIT_8, ACT_DIGIT_8, false, false, 0 },
-	{ KEY_9, ACT_DIGIT_9, ACT_DIGIT_9, false, false, 0 },
-	{ KEY_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
-	{ KEY_SK2, ACT_AB, ACT_USER_2, false, false, 0 },
-	{ KEY_PTT, ACT_PTT, ACT_PTT, true, false, 0 },
-};
-
-// Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
-static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
-static const char *const side_key_names[] = { "SK1", "SK2" };
-// The arrows left and right of the 4-way key are printed P1 and P2: programmable on Home, arrows in the menus
-static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
-static const char *const home_key_names[] = { "P1", "P2" };
+#include "board_keys.h"
 
 // The support info (docs/spec/support-info.md 2): the FD6818 set-up start-up found (hardware-dm32.md 8.10: A the classic
 // RF section, B the newer one, "no lock" neither); the HR_C7000 is the MCU line
@@ -90,62 +60,11 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 
 const board_t board = {
 	.name = "DM-32UV",
-	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) |
-		(CONFIG_AM_RX ? CAP_AM_RX : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
-	.bands = bands,
-	.band_count = sizeof(bands) / sizeof(bands[0]),
-#if CONFIG_RX_EXT
-	.rx_ext_count = 3,
-	.rx_ext_on = &rx_ext_on,
-#endif
-	.power_count = sizeof(power_names) / sizeof(power_names[0]),
-	.power_names = power_names,
-	.power_default = 1,	// low
-	.display = &dm32_display,
-	.input = &dm32_input,
-	.keymap = keymap,
-	.keymap_len = sizeof(keymap) / sizeof(keymap[0]),
-	.side_keys = side_keys,
-	.side_key_names = side_key_names,
-	.side_key_count = sizeof(side_keys),
-	.home_keys = home_keys,
-	.home_key_names = home_key_names,
-	.home_key_count = sizeof(home_keys),
-	.radio = &dm32_radio,
-	.power = &dm32_power,
-	.flash = &hrc_flash_spi0,
-#if CONFIG_DIAG
-	.diag_line = dm32_diag_line,
-	.diag_reset = dm32_diag_reset,
-#endif
-#if CONFIG_DMR
-	.dmr = &hrc_dmr,
-	.audio = &hrc_audio_pcm,
-	.vocoder = &hrc_vocoder,
-#if CONFIG_AIR
-	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
-	.baseband = &hrc_baseband,
-#endif
-#endif
-#if CONFIG_APRS_AFSK
-	.afsk = &hrc_afsk,
-#endif
-#if CONFIG_HOSTLINK
-	.host_port = &hrc_host_uart_stream,
-#endif
-#if CONFIG_NET_PPP
-	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
-#endif
-#if CONFIG_GPS
-	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
-#endif
-	.system = &hrc_system,
-	.chip_reg = dm32_chip_reg,
 	.hw_line = hw_line,
-#if CONFIG_BCAST_FM
-	.bcast = &rda5807m_hal,
-#endif
+#include "board_fields.h"
 };
+
+#endif
 
 static SemaphoreHandle_t lcdbus;
 
@@ -185,13 +104,18 @@ static void io_init(void)
 	hrc_pin_out(PIN_UHF_LNA, false);
 	hrc_pin_out(PIN_VHF_LNA, false);
 	hrc_pin_out(PIN_MIC_PATH, true);
-	hrc_pin_out(PIN_SPK_SOURCE, false);	// the codec until FM receive opens the squelch
+	hrc_pin_out(PIN_SPK_SOURCE, !SPK_SOURCE_FD6818);	// the codec until FM receive opens the squelch
 	hrc_pin_out(PIN_AMP_EN, false);
 	hrc_pin_out(PIN_LED_RED, false);
 	hrc_pin_out(PIN_LED_GREEN, false);
 	hrc_pin_out(PIN_KEY_BACKLIGHT, false);
 	hrc_pin_out(PIN_LCD_BACKLIGHT, false);
+#ifdef PIN_GPS_POWER
 	hrc_pin_out(PIN_GPS_POWER, !GPS_POWER_ON_LEVEL);	// GPS off until something wants it
+#endif
+#ifdef PIN_BT_ENABLE
+	hrc_pin_out(PIN_BT_ENABLE, false);
+#endif
 	hrc_pin_out(PIN_LCD_RESET, true);
 	hrc_pin_out(PIN_LCD_RD, true);
 	for (uint8_t r = 0; r < KEY_ROWS; r++) {
@@ -210,6 +134,9 @@ static void io_init(void)
 	hrc_pin_in(PIN_FD_GPIO0);
 	hrc_pin_in(PIN_FD_GPIO1);
 	hrc_pin_in(PIN_FD_DATA);
+#ifdef BOARD_IO_HEADER
+	board_io_init();
+#endif
 }
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-dm32.md 5): both PA selects and the PA
@@ -233,7 +160,8 @@ void board_early_init(void)
 // and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID
 // database, the native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets
 // no calibration window
-static const hal_flash_map_t flash_map = {
+#ifndef BOARD_EXTERNAL_DESCRIPTOR
+const hal_flash_map_t board_flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x719000u,	// 2 sectors
@@ -245,10 +173,11 @@ static const hal_flash_map_t flash_map = {
 	.native_addr = 0xF00000u,
 	.native_size = 0x100000u,
 };
+#endif
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,
 	.write_floor = 0x700000u,	// hardware-dm32.md 10.1
-	.map = &flash_map,
+	.map = &board_flash_map,
 };
 
 #if CONFIG_GPS
@@ -262,11 +191,15 @@ static const hrc_gps_cfg_t gps_cfg = {
 #endif
 
 #if CONFIG_BCAST_FM
-// The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the
-// amplifier as on the other FD6818 radio (bring-up B4)
+// The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known unless the board's pins.h gives
+// PIN_BCAST_EN and BCAST_EN_ON_LEVEL; its audio is assumed to reach the amplifier as on the other FD6818 radio (bring-up B4)
 static const hrc_bcast_cfg_t bcast_cfg = {
 	.sda_pin = PIN_BCAST_SDA, .scl_pin = PIN_BCAST_SCL,
+#ifdef PIN_BCAST_EN
+	.enable_pin = PIN_BCAST_EN, .enable_level = BCAST_EN_ON_LEVEL,
+#else
 	.enable_pin = HRC_BCAST_NO_PIN,
+#endif
 	.audio_path = dm32_bcast_audio,
 };
 #endif

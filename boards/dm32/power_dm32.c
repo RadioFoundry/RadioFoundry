@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // DM-32UV power latch and switch, battery on ADC channel C, status LEDs (docs/spec/hardware-dm32.md 3.7, 6.4, 6.5).
-// The volume knob isn't read by any firmware seen (it is on the audio amplifier), so volume() is -1.
 #include "dm32.h"
-#include "pins.h"
+#include <pins.h>
 #include "platform.h"
 #include "hal_time.h"
 #include "power/battery/battery.h"
 
-// 2S Li-ion: raw / 8.32 = volts x 10. The port's raw / 8.2 read 8.21 V where a meter on the pack read 8.09 V (radio
-// on vs. off, about 30 mV of load), so 8.32 (hardware-dm32.md 3.7). 6.4 V is where the old port warned
-#define BAT_RAW_PER_10V		832u		// ADC counts per 10 V
 #define BAT_FULL_MV		8200u
 #define BAT_EMPTY_MV		6400u
 #define SWITCH_SAMPLES		3
+
+#define DIPLEX2_ADC0_GPIO	(1u << 19)	// IO_DIPLEX2: 1 = PTC15 a GPIO, 0 = ADC0_IN (hardware-dm32.md 3.7)
 
 static battery_avg_t bat;
 static uint8_t off_count;
@@ -21,6 +19,9 @@ static uint8_t off_count;
 static void init(void)
 {
 	hrc_adc_init();
+#ifdef KNOB_CURVE
+	IO_DIPLEX2 &= ~DIPLEX2_ADC0_GPIO;
+#endif
 	hrc_pin_out(PIN_POWER_LATCH, true);
 	hrc_pin_in(PIN_POWER_SWITCH);
 	bat.valid = false;
@@ -49,7 +50,24 @@ static uint8_t battery_pct(void)
 
 static int8_t volume(void)
 {
+#ifdef KNOB_CURVE
+	// The knob's raw reading at equal fractions of its travel (a tapered pot): interpolate back to travel, so equal
+	// turns give equal volume steps. The ADC's noise is about one count, under the core's 2 % filter everywhere
+	static const uint16_t curve[] = KNOB_CURVE;
+	enum { N = sizeof curve / sizeof curve[0] - 1 };
+	unsigned raw = hrc_adc_read(KNOB_ADC_CH);
+	int now = 100;
+	if (raw < curve[N]) {
+		unsigned i = 0;
+		while (raw >= curve[i + 1]) {
+			i++;
+		}
+		now = (int)((i * 100u + (raw - curve[i]) * 100u / (curve[i + 1] - curve[i])) / N);
+	}
+	return (int8_t)now;
+#else
 	return -1;
+#endif
 }
 
 // GPIO 0x10 reads 1 once the knob is turned off; three readings in a row before believing it

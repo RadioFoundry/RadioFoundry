@@ -18,6 +18,7 @@ extern hal_flash_t hrc_flash_spi0;
 #define dm32_flash hrc_flash_spi0
 
 // Ops each board file provides
+extern const hal_flash_map_t board_flash_map;
 extern const hal_display_t dm32_display;
 extern const hal_input_t dm32_input;
 // Key scans with the PTT pin low that were ignored as host serial data (hardware-dm32.md 6.2)

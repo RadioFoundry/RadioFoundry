@@ -24,15 +24,7 @@ HR_C7000 user guide (v2.7, 2016) alone, and "(unverified)" one not confirmed on 
 
 ## 1. SoC
 
-| Item | Value |
-|---|---|
-| SoC | Hongruan HR_C7000, sold by Dahua as DH4570 |
-| CPU | C-SKY CK803S (32-bit, little endian, 16/32-bit mixed instruction set); toolchain target `-mcpu=ck803s` |
-| ELF e_flags that make objdump decode CK803 32-bit opcodes | 0x21002009 |
-| Interrupt controller | Dahua PIC at 0x17000000, 64 sources, normal interrupts only (no fast interrupts on C7000) |
-| Crystal | 24 MHz system crystal; 32.768 kHz RTC crystal with coin cell backup |
-| DMR/FM baseband | on chip ("modem", registers at 0x11000000, buffers at 0x16000000) |
-| Audio codec | on chip (byte registers at 0x160009C0) |
+The [HR_C7000 platform](platform-hrc7000.md) describes the CPU, interrupt controller, modem and audio codec. This board has a 24 MHz system crystal and a 32.768 kHz RTC crystal with coin cell backup.
 
 ### 1.1 Clocks and PLL (at boot, before anything else)
 
@@ -267,6 +259,8 @@ CTRL_STOP 0x20, CH_VLD 0x24, PD_SEOC_TIME 0x28, P2S_EN 0x2C, DATA_AB 0x30 (A in 
 | Battery | Single scan, CH_VLD = 0x04 (channel C = ADC2_IN), INTR = 0x10004, PD_SEOC_TIME = 0xA20, wait INTR_STA bit 2, DATA_CD bits 9:0 | volts × 10 = raw / 8.2 (so raw 672 = 8.2 V). RadioFoundry uses raw / 8.32: at 8.21 V by raw / 8.2 a meter on the pack read 8.09 V (2026-10-16). Thresholds used: 8.2 V full, 6.4 / 6.2 V low-battery hysteresis, 5.5 V power-off |
 | Mic level (VOX) | CH_VLD = 0x05, INTR = 0x10005, reads DATA_CD bits 25:16 (channel D) | **Suspect**: single scan converts only channel A, and IO_DIPLEX2 leaves ADC0/ADC3 pins as GPIO, so this probably reads nothing useful |
 | Volume knob | **Not read at all** (the variable for it is never written) | — |
+
+RadioFoundry’s [microphone level meter](platform-hrc7000.md#microphone-level) uses codec PCM. This board has no VOX hook.
 
 IO_DIPLEX2 = 0x0FC80100 at boot leaves ADC1_IN and ADC2_IN analog (bits 20, 21 clear) and ADC0, ADC3..7 as GPIO (datasheet bit map). So the analog inputs available are channels B and C. Which one is the volume pot is unknown.
 
@@ -631,33 +625,7 @@ RadioFoundry drives the panel at full resolution in 16 colors: the core's frame 
 (37.5 KB; RGB565 would take 150 KB), and each changed row goes out as RGB565 through the palette (`gfx.c`,
 `st7789_write_rows_indexed`).
 
-Reset: NRESET high, wait 120 ms, low, 120 ms, high, 120 ms. Then:
-
-| # | Command | Parameters | Meaning |
-|---|---|---|---|
-| 1 | 0x11 | — | sleep out; then wait 120 ms |
-| 2 | 0xB2 | 0C 0C 00 33 33 | porch control |
-| 3 | 0x35 | 00 | tearing effect line on |
-| 4 | 0x36 | C0 | memory data access control (MY, MX: rotated 180°) |
-| 5 | 0x3A | 05 | 16 bits per pixel |
-| 6 | 0xB7 | 56 | gate control |
-| 7 | 0xBB | 17 | VCOM |
-| 8 | 0xC0 | 2C | LCM control |
-| 9 | 0xC2 | 01 | VDV/VRH from command |
-| 10 | 0xC3 | 0B | VRH |
-| 11 | 0xC6 | EF | frame rate control (normal mode) |
-| 12 | 0xD0 | A7 | power control 1 (first, short form) |
-| 13 | 0xD0 | A4 A1 | power control 1 |
-| 14 | 0xD6 | A1 | (undocumented) |
-| 15 | 0xE0 | 70 03 08 07 08 15 30 54 47 3A 15 14 2B 2E | positive gamma |
-| 16 | 0xE1 | 70 06 0A 09 06 03 2F 44 47 38 12 15 29 2F | negative gamma |
-| 17 | 0x2A | 00 00 00 EF | columns 0–239 |
-| 18 | 0x2B | 00 00 01 3F | rows 0–319 |
-| 19 | 0x21 | — | display inversion on (the panel needs inversion for normal colors) |
-| 20 | 0x2C | then 2 × 240 × 320 bytes | clear frame memory |
-| 21 | 0x29 | — | display on |
-
-Inverse video is done by toggling 0x21 / 0x20 with 10 ms around it.
+This board uses MADCTL 0xC0 (rotated 180°), inversion on and a 240 × 320 address window. The [panel reference](display-st7789.md#reset-and-initialization) gives the reset and initialization sequence. The original panel sequence allowed 10 ms around an inversion change.
 
 ---
 
@@ -670,14 +638,7 @@ addresses for frequency and band. **No FD6818 datasheet is available**; the valu
 
 Three-wire serial, bit-banged on GPIO: CS = 0x18 (active low), clock = 0x07, data = 0x08.
 
-| Item | Value |
-|---|---|
-| Frame | CS low, 8-bit address, 16-bit data MSB first, CS high |
-| Write | address with bit 7 = 0, then data high byte, low byte |
-| Read | address with bit 7 = 1, release data line to input, wait 2 us, clock in 16 bits |
-| Bit timing | data set while clock low; 1 us low, 1 us high |
-| Data sampled by the FD6818 on | the rising clock edge |
-| Read sampling | MCU reads data while clock is high |
+See the [FD6818 bus timing](rf-fd6818.md#bus-timing) for the register exchange.
 
 Registers 0x65 / 0x67 are not read by the radio's own firmware (unverified: its S-meter may be fake).
 
@@ -1369,19 +1330,7 @@ A vendor image unpacks and repacks byte for byte with only these rules.
 
 Enter by holding **PTT + SK1** while turning the radio on; the green LED lights (unverified). Protocol on the programming cable, 115200 8N1:
 
-| Step | Host sends | Radio answers |
-|---|---|---|
-| 1 | 0x52 | 0x06 |
-| 2 | 0x4D 00 00 00 01 | 0x4D 01 09 |
-| 3 | 0x06 | `BFUV32-V2` |
-| 4 | 0x45 00 00 00 00 | 0x06 |
-| 5 | 0x31 | 0x43 |
-| 6 | 0x01 | 0x43 |
-| 7 | 0x00 0xFF, then a 128-byte block: name, 0x00, decimal size as ASCII, zero padded; then CRC-16/XMODEM of the block, big endian. The radio erases the app area (up to about 15 s) | 0x06 0x43 |
-| 8 | per 1 KB block: 0x02, wait 0x43; block number n, 0xFF − n (n starts at 1, wraps 0xFF → 0x00); 1024 bytes (last block zero padded); CRC-16/XMODEM big endian | 0x06 |
-| 9 | 0x04 | (reboots) |
-
-The image sent is the raw application (the 256-byte header is stripped). The file name and size are not used. The vendor CPS also sends seven 130-byte zero blocks before rebooting; they are not needed (unverified).
+The [factory serial loader protocol](platform-hrc7000.md#factory-serial-loader) lists the exchanges below by step number. This radio answers step 3 with `BFUV32-V2`. The file name and size are not used. The vendor CPS also sends seven 130-byte zero blocks before rebooting; they are not needed (unverified).
 
 The loader answers steps 1-3 once per power-on. After step 3 it ignores a new step 1 (0x52), also from a new
 session on the cable, and waits for step 4 until the radio is switched off and put in update mode again (measured
@@ -1518,7 +1467,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 plus manual CS. The driver accepts any JEDEC ID with a known capacity, including GD25Q128, Puya and Boya. See the [16 MiB flash layout](platform-hrc7000.md#data-flash-layout). On this board the open-firmware region ends at 0xF00000. The map has no calibration window or TFTP staging area. | [SPI0 driver](../../platform/hrc7000/flash_spi0.c) |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |
