@@ -45,9 +45,6 @@ typedef struct {
 	bool enc_reverse;
 	// Board start-up after the shared one (board_init), or NULL: GPS and the radio's own checks
 	void (*init)(void);
-	// Why the transmitter must stay off on this radio, or NULL to allow it (asked on every tx()): a build for the
-	// wrong hardware version
-	const char *(*tx_block)(void);
 	// The radio's own hardware identity lines after the family's (board_t.hw_line), or NULL: cached values only
 	bool (*hw_line)(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 } uvf_variant_t;

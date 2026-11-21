@@ -75,6 +75,8 @@ export const nxdnKind = {
 	defaultTx: true,
 	recordFields: ["contact", "dmrId"],
 	flags: {},
+	// in the params only when set: the traffic key the channel transmits with
+	optionalParams: ["txKeyId"],
 	newParams: () => ({ rate9600: true, squelch: 0, rxRan: 0, txRan: TX_RAN_DEFAULT }),
 	decode: decodeConv,
 	encode: encodeConv,

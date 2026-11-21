@@ -3901,6 +3901,10 @@ void ui_draw_diag(const radio_view_t *v, uint32_t keys, int32_t enc_total, uint8
 	gfx_clear(ui_col.bg);
 	gfx_text(f, 0, y, TR(TITLE_DIAGNOSTICS, "Diagnostics"), ui_col.warn);
 	y += f->h;
+	// On every page, at most two lines: a translation may be longer than one
+	if (board_variant_mismatch())
+		y = wrap_text(f, TR(DIAG_VARIANT_MISMATCH, "This firmware may be for another version of this radio"), y,
+			y + 2 * f->h, true, ui_col.warn);
 
 	sb_init(&b, buf, sizeof buf);
 	sb_str(&b, "keys ");

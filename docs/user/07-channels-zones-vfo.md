@@ -104,8 +104,11 @@ say so. Set it to **Off** to ignore what others send.
 What an import does:
 
 - The zone is added after your zones. If you have a zone with that name, it gets " 2".
-- Only channels your radio can receive come in. Every one is **receive only**: turn transmit on per channel when
-  you know you may use it.
+- Only channels your radio can receive come in. A conventional channel comes in **receive only**: turn transmit on
+  per channel when you know you may use the channel.
+- A trunked channel keeps the sender's transmit setting when its system comes with the zone or your radio already
+  has that system. The system's listen-only setting then decides, so a shared trunked channel can transmit as soon as
+  the zone is imported. A trunked channel whose system doesn't come in arrives receive only.
 - Talkgroups and contacts you already have are used with your names. Missing ones are added.
 - The same zone sent again by the same radio updates your copy instead of adding another. It replaces only the
   channels from the earlier import that you left as they were. Channels you added to the zone or changed stay,
@@ -370,6 +373,12 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
+
+For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
+control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with
+those values and transmit on; the template [ham-p25-trunked.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-p25-trunked.yaml) holds the system, a channel
+and the BrandMeister talkgroups. P25 talkgroups go up to 65535, so a BrandMeister talkgroup above that has no P25
+number. The reasons are in [Recommended ham trunked systems](../spec/ham-trunking.md#3-p25-trunked).
 
 ### NXDN in the VFO
 

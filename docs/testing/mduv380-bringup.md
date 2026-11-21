@@ -61,7 +61,7 @@ should use a 19.26 file and one whose code goes to the start of sector 10 (RT3S 
 | Volume 0 at the stop, 100 at the top | `diag` "vol raw" at both ends | unknown 7: `vol_min`, `vol_break`, `vol_max` |
 | SPI flash JEDEC 0xEF4018 | `info` | `flash_uvf.c` (`device`) |
 | Calibration read | `diag` "cal" factory or working | the k factors `uvf_variant.cal_k`, the reader `calibration_uvf.c` |
-| 10 W marker | read security register 3 byte 0x1C on a 5 W and on a Plus 10 W radio (`rfoundry backup` keeps the security registers); `diag` "TX off: 10 W radio, 5 W image" means a 5 W image found the marker | unknown 3: the TYT images never read the byte, so the marker is unconfirmed; a 10 W image doesn't require it. `MDUV380_DEFS=-DMDUV380_10W_CHECK=0` skips it |
+| 10 W marker | read security register 3 byte 0x1C on a 5 W and on a Plus 10 W radio (`rfoundry backup` keeps the security registers); the diagnostics warning "This firmware may be for another version of this radio" and `board.variant_mismatch=1` mean a 5 W image read 0xF4 (a 10 W image never warns). The radio transmits either way | unknown 3: the marker is unconfirmed, and one 5 W radio reads 0xF4 (#773), so the byte only warns; a second marker is needed |
 
 ## 4. AT1846S, HR_C6000
 
