@@ -132,6 +132,32 @@ Pick **P25**, **P25 Trunking** or **NXDN** in the channel form's **Mode**. Using
 (a group contact) and the RX group list works as on DMR. **Own ID** on a channel overrides the radio's ID for that
 channel.
 
+**P25 contacts.** Each contact on the **Contacts** tab has a **Mode**, DMR or P25, which you must pick. DMR and P25
+contacts are kept in separate lists: a DMR contact never names a P25 talk group, even one with the same number.
+
+| Column | DMR | P25 |
+|---|---|---|
+| # | Slot in the DMR list (up to 1024) | Slot in the P25 list (up to 341) |
+| ID | 1-16777215 | Group 1-65535, unit 1-16777214; All call is talk group 65535 |
+| Call Type | Group, Private, All call | Group, Unit, All call |
+| Timeslot Override | As before | Doesn't apply: grayed out. A value kept from DMR returns if you switch back, and is removed when you save or write |
+
+- The funnel in the headers of Mode, Call Type and Timeslot Override filters the table. When a column is filtered to
+  one value, a new contact takes that value.
+- The radio shows a P25 contact's name after the number ("TG 1310 1 SB DPS") on the talk line, the trunk follow line
+  and incoming calls, and the number alone for an ID with no P25 contact. When two P25 contacts have the same call
+  type and ID, the radio uses the first and the editor warns.
+- A P25 channel's **TX contact** and RX group list take P25 contacts, a DMR channel's DMR contacts. An RX group list
+  can't mix modes, or serve both a DMR and a P25 channel. The radio shows them but doesn't change them: edit them here.
+  Sharing such a channel to another radio sends it as an ordinary channel whose contact is the talk group by value, so
+  the other radio makes it a DMR contact.
+- **Older codeplugs:** a P25 channel that calls a DMR contact still works and is marked with a warning. The editor
+  offers **Convert P25 channels to P25 contacts**: it makes P25 contacts from those talk groups (same ID, call type
+  and name), relinks the channels and gives them P25 RX group lists. Undo reverts it.
+- **Firmware:** P25 channels with P25 contacts need firmware that has this feature. **Write** warns when the radio's
+  firmware is older; an older radio would call the wrong talk group on those channels.
+- `contacts.csv` has a **Mode** column. A file without it imports as DMR contacts.
+
 **P25 channel:**
 
 | Field | Meaning |
@@ -292,6 +318,7 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
 | Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
 | RX group lists | The talkgroups each channel listens to |
+| P25 contacts (up to 341) | Names of P25 talk groups and units, and the talk groups of P25 channels that use them |
 | Trunked systems (up to 8) | Every field of the **Systems** tab, and which channels are trunked |
 | DMR ID database | Names for DMR IDs that aren't contacts, shown on the receive screen |
 | VFO A | Frequency and settings of the VFO, read after the next restart |
