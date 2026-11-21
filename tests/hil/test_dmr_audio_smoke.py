@@ -9,8 +9,8 @@ every frame, lost and duplicate count. These tests look at the audio itself.
 
 Skips and failures. Only a missing radio or SDR bench, or a run without --allow-rf, skips (with a reason that starts
 "DMR AUDIO NOT CHECKED"), and so do a firmware built without DMR and a modem that plays the voice itself
-(dmr.modem_voice=1: no frame reaches the voice layer; test_dmr_voice counts its bursts), except the deviation and wide
-offset tests, which judge such a radio by its voice bursts (below). Once the radio, its DMR and
+(dmr.modem_voice=1: no frame reaches the voice layer; test_dmr_voice counts its bursts), except the deviation, wide
+offset and strong signal tests, which judge such a radio by its voice bursts (below). Once the radio, its DMR and
 the bench are there, anything else that keeps the check from running fails: no speech recording, no vocoder merged
 (dmr.codec=0), no channel on --dmr-freq, firmware without the view keys or the test signal. The deviation and wide
 offset tests also skip on a bench board that can't do what they need (below). The talkgroup comes from the radio: the
@@ -48,8 +48,8 @@ loose on purpose: a receiver whose window is centered on its channel has room to
 by a fixed offset, or with a receive gain that clips, loses the call on one side (docs/spec/dmr-voice.md, "Receive
 level"). Skips when the bench can't bring its level near RSSI_DBM.
 
-On a radio whose modem plays the voice itself (dmr.modem_voice=1) the deviation and wide offset tests count the call's
-voice bursts instead (no frame, bit count or audio reaches the host side): the call heard, and at least the share of
+On a radio whose modem plays the voice itself (dmr.modem_voice=1) the deviation, wide offset and strong signal tests
+count the call's voice bursts instead (no frame, bit count or audio reaches the host side): the call heard, and at least the share of
 the frames sent above (95 % or 90 %) in bursts of three, at most EXTRA_BURSTS more than were sent (the driver paces
 the bursts by time to the terminator, which near sensitivity can come a burst or two late; a missed one adds dozens).
 
@@ -365,7 +365,8 @@ def test_dmr_audio_rx_offset_wide(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.feature("dmr_voice")
 def test_dmr_audio_rx_strong(radio, sdr_bench, pytestconfig):
-    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
+    freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig, modem_ok=True)
+    modem = radio.view(["dmr"]).get("dmr.modem_voice") == "1"
     sent, allowed, remote = speech(pytestconfig, sdr_bench)
     saved = sdr_bench.power_dbm
     try:
@@ -376,15 +377,20 @@ def test_dmr_audio_rx_strong(radio, sdr_bench, pytestconfig):
                 continue
             quiet(radio)
             d, stats = bench_call(radio, sdr_bench, freq, cc, dst, private, remote)
+            what = f"simplex speech at {target} dBm"
+            done.append(target)
+            if modem:
+                # an AGC that overloads on each burst loses frames here, and the bursts show it
+                print(f"{target} dBm: {d['call.rx_voice_bursts']} of {sent // 3} voice bursts, radio {d}")
+                bad += check_bursts(d, sent, what, 0.95)
+                continue
             good = max(1, d["voice.rx_in"] - d["voice.rx_bad"])
             per = d["voice.rx_bit_errors"] / good
             print(f"{target} dBm: {d['voice.rx_in']} of {sent} frames, {per:.2f} bits a frame, radio {d}")
-            what = f"simplex speech at {target} dBm"
             if per > BITS_STRONG:
                 bad.append(f"{what}: {per:.2f} bits corrected a frame (at most {BITS_STRONG:g}): the receiver's AGC "
                            "doesn't settle on each burst?")
             bad += check_played(d, stats, sent, allowed, what, bit_errors=False, min_in=0.95)
-            done.append(target)
         if not done:
             skip("bench", f"DMR RX STRONG NOT CHECKED: the bench level doesn't bring the radio near {STRONG_DBM} dBm "
                           "(coupled too loosely, or a board without power_dbm)")
