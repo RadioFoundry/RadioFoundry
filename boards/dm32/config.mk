@@ -22,6 +22,8 @@ CONFIG_DISPLAY_INSET_TOP ?= 5
 CONFIG_DISPLAY_INSET_BOTTOM ?= 5
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
 CONFIG_VOX ?= n
+# The maximal build cannot fit every language catalog. The menu-locales CI build checks both new catalogs together.
+MAXIMAL_SKIP += LANG_RU LANG_DEFAULT_RU
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
 # every switch but USB and USB_NETWORK (platform/hrc7000/config.mk), and NAND_STORAGE (below), and keeps about
 # 520 B free

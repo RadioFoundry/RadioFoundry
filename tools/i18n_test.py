@@ -66,6 +66,15 @@ class Marks(unittest.TestCase):
                      'TEXT_ALT_CLOSE);\n')
         self.assertEqual([m.text for m in found], ["More…", "{Power|Pwr}"])
 
+    def test_turkish_catalog_letters_use_single_bytes(self):
+        self.assertEqual(i18n.text_to_bytes("ĞğİıŞşÇçÖöÜü", "TEST"),
+                         bytes.fromhex("90 91 92 93 94 95 c7 e7 d6 f6 dc fc"))
+        self.assertEqual(i18n.text_to_bytes("Işık", "TEST"), b"I\x95\x93k")
+
+    def test_russian_catalog_letters_use_prefixed_cells(self):
+        self.assertEqual(i18n.text_to_bytes("АЯаяЁё", "TEST"),
+                         bytes.fromhex("9f a0 9f bf 9f c0 9f df 9f e0 9f e1"))
+
     def test_old_form_is_an_error(self):
         with self.assertRaisesRegex(i18n.I18nError, "takes a key"):
             scan('x = TR("Zone");\n')
@@ -156,6 +165,18 @@ class Generate(unittest.TestCase):
         # an empty language setting is the language whose CONFIG_LANG_DEFAULT_<CODE> is on, else English
         self.assertIn("#if CONFIG_LANG_DEFAULT_XX\n#define LANG_DEFAULT\t1\n#else\n#define LANG_DEFAULT\tLANG_ENGLISH\n#endif",
                       self.h)
+
+    def test_latin_name_used_without_the_language_pack(self):
+        with open(os.path.join(self.dir.name, "xx.po"), "w", encoding="utf-8") as f:
+            f.write(PO.replace('"X-Language-Name: Test\\n"',
+                               '"X-Language-Name: Test\\n"\n"X-Language-Name-Latin: Latin\\n"'))
+        out = os.path.join(self.dir.name, "tables.h")
+        i18n.generate(out, self.found)
+        with open(out, encoding="utf-8") as f:
+            generated = f.read()
+        self.assertIn('#if CONFIG_LANG_XX\n#define LANG_XX_NAME\t"Test"\n#else\n#define LANG_XX_NAME\t"Latin"',
+                      generated)
+        self.assertIn('{ "xx", LANG_XX_NAME, CONFIG_LANG_XX', generated)
 
     def test_bad_translations_found(self):
         _, body = i18n.read_po(os.path.join(self.dir.name, "xx.po"))

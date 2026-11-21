@@ -50,6 +50,10 @@ MACROS = {
 }
 BYTE_TO_TEXT = {b: t for b, t in MACROS.values()}
 TEXT_TO_BYTE = {t: b for b, t in MACROS.values()}
+# Catalog-only letters in the byte range reserved by FONT_LATIN_EXTENDED_FIRST in core/ui/font.h.
+EXTENDED_LATIN = {char: byte for byte, char in enumerate("ĞğİıŞş", 0x90)}
+CYRILLIC = {char: bytes((0x9F, slot)) for slot, char in enumerate(
+    "".join(chr(cp) for cp in range(0x410, 0x450)) + "Ёё", 0xA0)}
 MAX_BYTES = 255
 
 
@@ -114,11 +118,16 @@ def text_to_bytes(text, where):
     for ch in text:
         if ch in TEXT_TO_BYTE:
             out.append(TEXT_TO_BYTE[ch])
+        elif ch in EXTENDED_LATIN:
+            out.append(EXTENDED_LATIN[ch])
+        elif ch in CYRILLIC:
+            out += CYRILLIC[ch]
         elif 0x20 <= ord(ch) < 0x7F or 0xA0 <= ord(ch) <= 0xFF:
             out.append(ord(ch))
         else:
+            glyphs = " ".join([*TEXT_TO_BYTE, *EXTENDED_LATIN])
             raise I18nError("%s: %r (U+%04X) can't be drawn: use ASCII, Latin-1 (U+00A0-U+00FF) or one of %s"
-                    % (where, ch, ord(ch), " ".join(TEXT_TO_BYTE)))
+                    % (where, ch, ord(ch), glyphs))
     return bytes(out)
 
 
@@ -759,11 +768,11 @@ def tables(found=None):
         name = headers.get("X-Language-Name", code)
         wide = headers.get(WIDE_HEADER) == "utf8"
         wide_name = text_to_bytes_wide(name, code) if wide else text_to_bytes(name, code)
-        if wide:
-            latin_name = headers.get(LATIN_NAME_HEADER, "")
-            if not latin_name:
-                raise I18nError("%s: a UTF-8 catalog needs a \"%s\" header (the name a build without the CJK face "
-                                "lists, docs/dev/translating.md)" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+        latin_name = headers.get(LATIN_NAME_HEADER)
+        if wide and not latin_name:
+            raise I18nError("%s: a UTF-8 catalog needs a \"%s\" header (the name a build without the CJK face "
+                            "lists, docs/dev/translating.md)" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
+        if latin_name:
             text_to_bytes(latin_name, "%s: %s" % (os.path.relpath(path, ROOT), LATIN_NAME_HEADER))
         else:
             latin_name = name
@@ -872,10 +881,9 @@ def generate(out_path, found=None):
         lines.append("#define LANG_%s_TABLE\tNULL" % code.upper())
         lines.append("#endif")
         lines.append("")
-    # A CJK language names itself in its own script; a build without the CJK face would draw those bytes as boxes in
-    # Settings > Display > Language, so it lists the Latin name instead
+    # A build without the language's glyphs lists the Latin name in Settings > Display > Language.
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
-        if not wide:
+        if name == latin_name:
             continue
         lines.append("#if %s" % sw)
         lines.append("#define LANG_%s_NAME\t%s" % (code.upper(), c_bytes(wide_name)))
@@ -888,7 +896,7 @@ def generate(out_path, found=None):
     lines.append("\t{ \"en\", \"English\", true, false, NULL }, \\")
     for code, name, wide_name, latin_name, sw, pairs, blob, offs, wide in built:
         lines.append("\t{ \"%s\", %s, %s, %s, LANG_%s_TABLE }, \\" % (
-            code, "LANG_%s_NAME" % code.upper() if wide else c_bytes(wide_name), sw,
+            code, "LANG_%s_NAME" % code.upper() if name != latin_name else c_bytes(wide_name), sw,
             "true" if wide else "false", code.upper()))
     lines.append("}")
     lines.append("// The language an empty setting means: the first CONFIG_LANG_DEFAULT_<CODE> on, else English")
@@ -976,7 +984,8 @@ def main():
                     errs.append("%s: no %s header (the name a build without the CJK face lists, e.g. \"Chinese\")"
                                 % (rel, LATIN_NAME_HEADER))
                 if not wide:
-                    bad = [c for _, _, s, _ in entries for c in s if ord(c) > 0xFF and c not in TEXT_TO_BYTE]
+                    bad = [c for _, _, s, _ in entries for c in s if ord(c) > 0xFF and c not in TEXT_TO_BYTE
+                           and c not in EXTENDED_LATIN and c not in CYRILLIC]
                     if bad:
                         errs.append("%s: %r can't be drawn by the Latin fonts: give the catalog a \"%s: utf8\" "
                                     "header and build the CJK font with tools/cjkfont.py" % (rel, bad[0], WIDE_HEADER))

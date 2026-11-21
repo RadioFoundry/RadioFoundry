@@ -51,6 +51,9 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 ### Display (key 2)
 
+Custom firmware builds can include **Türkçe** and **Русский**. Use **Language**
+to switch between the installed menus.
+
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
 | Brightness | 10 to 100 %, steps of 10 | 100 % | Backlight brightness. Also in quick settings, tile 9 | Works |

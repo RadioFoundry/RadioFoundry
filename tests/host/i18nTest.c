@@ -107,7 +107,7 @@ int main(void)
 	// The glyph bytes below the Latin-1 range keep their meaning
 	int t, r;
 	CHECK(font_glyph(&font_8x16, 0x82, &t, &r) != NULL);
-	CHECK(font_glyph(&font_8x16, 0x90, &t, &r) == NULL);
+	CHECK(font_glyph(&font_8x16, 0x96, &t, &r) == NULL);
 
 	printf("%s i18nTest\n", fails ? "# FAILED" : "# PASSED");
 	return fails != 0;
