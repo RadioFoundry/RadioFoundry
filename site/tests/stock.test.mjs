@@ -47,8 +47,9 @@ test("classify: a stock MD-UV380 codeplug, an MD-380 image and .rdt, blank, unkn
 	let x = 12345;
 	const noise = new Uint8Array(0x1A0000).map(() => (x = (x * 1103515245 + 12345) >>> 0) >>> 24);
 	assert.equal(classify(noise).layout, "unknown");
-	// the radio applies the rule to its channels, zones and RX group lists at start-up: tests/host/codeplugTest.c
-	// counts 620 of these 624 in the same bytes (not the general settings or the contacts)
+	// the radio applies its rule to its channels, zones and RX group lists at start-up: tests/host/codeplugTest.c
+	// looks at 620 of these 624 (not the general settings or the contacts), of which 618 are bad; two random
+	// names hold only printable Latin-1 bytes, which the radio's mixed Latin-1 / UTF-8 rule now accepts
 	assert.deepEqual(openfwEvidence(noise), { good: 0, bad: 624 });
 });
 

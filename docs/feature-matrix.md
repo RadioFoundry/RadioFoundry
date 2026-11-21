@@ -9,7 +9,9 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   A parent switch's figure includes its children (turning `FM` off also drops VOX, APRS, ...).
 - Figures from tools/ci.sh at 3ec14e3 (2026-10-11).
   - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free). Since USRP (2026-10-13) the
-    default build uses link time optimization: 330,824 B (13,240 free). The per-feature figures stay the plain ones.
+    default build uses link time optimization: 330,824 B (13,240 free). Both figures are from the 336 KB app region
+    the radio had before the codec moved; its app region is now sectors 3-9, 720 KB. The per-feature figures stay the
+    plain ones.
   - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
     region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
     approximate. Since the codec moved the region is 464 KB, and since every codec window moved into sector 11
@@ -147,11 +149,12 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_es` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off | ✕ |
 | `lang_it` | off | off | off | off | off | off | off | ✕ |
 | `lang_fr` | off | off | off | off | off | off | off | off |
-| `lang_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off | ✕ |
+| `lang_zh` | off | off | ✕ | ✕ | ✕ | off | off | ✕ |
+| `cjk_glyphs` | off | off | off | off | off | off | off | off |
 | `lang_default_es` | off | off | off | off | off | off | off | ✕ |
 | `lang_default_it` | off | off | off | off | off | off | off | ✕ |
 | `lang_default_fr` | off | off | off | off | off | off | off | off |
-| `lang_default_zh` | off | ✕ | ✕ | ✕ | ✕ | ✕ | off | ✕ |
+| `lang_default_zh` | off | off | ✕ | ✕ | ✕ | off | off | ✕ |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
@@ -167,9 +170,9 @@ What the records don't hold yet: limits and known problems from the bring-up pag
 |---|---|---|
 | DM-1701 | Not yet checked: split duplex with a real pair of radios, standalone SFR, roaming to a repeater, IP over DMR end to end, VOX with a voice, privacy scrambling against another radio | [on-air-coverage](testing/on-air-coverage.md) |
 | DM-32UV | GPS data seen, no fix yet. The transmit half of a split duplex pair not checked. FM transmit deviation at 12.5 kHz, both slots through a duplex hotspot. A DMR receive fault after hours of uptime (2026-10-16, cause unknown). USB not available | [dm32-bringup](testing/dm32-bringup.md) |
-| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
+| DM-1801 Pro | The receive half of a split duplex pair, VHF transmit, VOX and APRS receive not checked. Chinese is unavailable: the 5x8 words leave no 16 px line for a CJK glyph, so a hand-tuned small-height CJK face and a layout to match are needed, not a switch ([UI spec](spec/ui.md) 2.5) | [hardware-dm1801pro](spec/hardware-dm1801pro.md) |
 | DB25-D PRO | The older FD6818 batches (D64, D66, D6T) are driven by the same image, untested on a radio. Split duplex not built. Standalone and MMDVM SFR checked on the SDR bench (experimental). DMR audio from the speaker, a GPS fix and settings kept across power off not confirmed | [hardware-db25d](spec/hardware-db25d.md) |
-| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000) | [md380-bringup](testing/md380-bringup.md) |
+| MD-380 | Fully operational (UHF)¹. DCS, the VHF image, tone deviation and data from a DMR VFO not checked. Split duplex and SFR not available (HR_C5000). The Chinese image builds in ci but is untested on a radio | [md380-bringup](testing/md380-bringup.md) |
 
 ¹ Frequency accuracy depends on each radio's factory calibration: confirm it against an external reference (frequency counter, service monitor, or a hotspot's MMDVMCal BER test). Two MD-380s measured 2-2.5 kHz high, outside an MMDVM hotspot's decode window; Settings > Advanced > Freq trim corrects receive and transmit together ([radio-features](spec/radio-features.md) 6.1, [hardware-md380](spec/hardware-md380.md)). The `ref_trim` row above lists the radios that have the trim.
 
@@ -248,11 +251,12 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `LANG_ES` | ● | ● | ● | ● | ● | ● | ○ | ✕ |
 | `LANG_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `LANG_FR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ | ✕ |
+| `LANG_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ○ | ○ | ✕ |
+| `CJK_GLYPHS` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `LANG_DEFAULT_ES` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `LANG_DEFAULT_IT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ✕ |
 | `LANG_DEFAULT_FR` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `LANG_DEFAULT_ZH` | ○ | ✕ | ✕ | ✕ | ✕ | ✕ | ○ | ✕ |
+| `LANG_DEFAULT_ZH` | ○ | ○ | ✕ | ✕ | ✕ | ○ | ○ | ✕ |
 | `UI_COLOR` | ● | ● | ✕ | ● | ● | ● | ✕ | ✕ |
 | `UI_SETTINGS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `SCAN` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -420,7 +424,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
 | Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
 | French on the radio | `LANG_FR` | 15,540 | 15,528 | Off by default; measured with Spanish on, as Italian |
-| Chinese on the radio | `LANG_ZH` | 32,856 | 32,856 | Off by default. Not the text alone: 15,360 B of 16x16 glyphs (480 characters, `core/ui/cjk_font_data.c`) and about 17 KB of UTF-8 text, with the text layer's decoder. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, while a layout whose words use the 5x8 or 6x12 font (128x64, 160x128) has no room for it and must not build it. Measured with Spanish on, 2026-11-04 |
+| Chinese on the radio | `LANG_ZH` | 44,052 | — | Off by default. Not the text alone: 25,376 B of 16x16 glyph bitmaps plus 1,586 B of code points (793 characters, `core/ui/cjk_font_data.c`: the catalog's characters plus a reviewed list of province/city names and repeater words in `tools/cjk_names_zh.txt`) and about 17 KB of UTF-8 text, with the text layer's decoder. Channel names that use a character outside the list draw a box. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, the 160 px class moves its words up to 8x16 while a wide language is in use (2 rows fewer on a 160x120 panel, Home without its zone line), and a 128x64 panel has no room for it and must not build it. A board without room leaves `LANG_ZH` off in its `config.mk`. Measured with Spanish on |
+| Chinese glyph table for channel names | `CJK_GLYPHS` | 26,962 | — | The 793 16x16 glyph bitmaps and code points (25,376 + 1,586 B) in `LANG_ZH`'s figure, split out so a board too small for Chinese keeps its translated menus without the table (Chinese then draws as boxes). Defaults to `LANG_ZH`, which it needs |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 | Start in French | `LANG_DEFAULT_FR` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_FR`) |

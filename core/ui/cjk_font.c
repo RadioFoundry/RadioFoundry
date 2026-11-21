@@ -6,14 +6,13 @@
 #include <stddef.h>
 #include "cjk_font.h"
 
-#if CONFIG_LANG_ZH
-
-extern const uint16_t cjk_font_cp[];	// core/ui/cjk_font_data.c, built by tools/cjkfont.py
-extern const uint8_t cjk_font_bits[];
-extern const uint16_t cjk_font_count;
-
 const uint8_t *cjk_font_glyph(uint32_t cp)
 {
+#if CONFIG_CJK_GLYPHS
+	// core/ui/cjk_font_data.c, built by tools/cjkfont.py
+	extern const uint16_t cjk_font_cp[];
+	extern const uint8_t cjk_font_bits[];
+	extern const uint16_t cjk_font_count;
 	if (cp > 0xFFFF)
 		return NULL;			// the table holds the BMP only: every CJK block is below it
 	uint16_t lo = 0, hi = cjk_font_count;
@@ -27,7 +26,6 @@ const uint8_t *cjk_font_glyph(uint32_t cp)
 		else
 			hi = mid;
 	}
-	return NULL;
-}
-
 #endif
+	return NULL;			// no table built (CONFIG_CJK_GLYPHS off): the text layer draws a box
+}
