@@ -301,6 +301,7 @@ typedef struct {
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	uint32_t weak_hold_ms;		// the hold on leaving a weak TSCC last set (0: none)
 	uint32_t adj_refused;	// adjacent sites announced but not authorized
 	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
 	int16_t leave_dbm;	// the threshold in force

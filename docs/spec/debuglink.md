@@ -116,6 +116,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x22` | T3 | operation u8 + arguments (3.26); `CONFIG_DMR_TRUNK` builds, else status 4 | none |
 | `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
+| `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 
 ### 3.1 VERSION
 
@@ -127,6 +128,8 @@ view=5                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
 git_time=1761840000     the commit's time (a dirty build's: the build's), Unix seconds; absent without git
 release=v26.11          release name; only in a build of a release tag
+source=official         where the build came from ([support-info.md](support-info.md) 1)
+repo=RadioFoundry/RadioFoundry  the repository it names; absent when unknown
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
 codec=<profile>-s11  the codec profile found in flash (below)
@@ -144,6 +147,9 @@ off=AUDIO_PROBE,FONT_AA  the switches the radio could have that this build left 
 
 `release=` is the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)), present only when
 the image was built from a release tag; `git=` is always the commit. A host shows the release name when there is one.
+`source=` is `official`, `service`, `pr`, `local`, `fork` or `unknown`, and `repo=` the repository the build names
+([support-info.md](support-info.md) 1). Both are what the build says of itself: a host proves an image is ours by its
+hash (3.29), not by these.
 `git_time=` is the commit's committer time (`RFOUNDRY_GIT_TIME`), so a clean build stays reproducible; a build with
 local changes (`-dirty`) carries its build time instead, since its code is newer than the commit. A host compares it with a release's `git_time` to tell whether a build that isn't a release is older than that release.
 
@@ -354,7 +360,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 26 | `net_link` | the host link's MTUs ([usb-network.md](usb-network.md) 3.2), with the IP gateway: `net.mtu` (the link's, DHCP option 26) `net.air_mtu` (one transmission's) and the drops `net.air_too_big net.frag_needed net.up_too_big`; `CONFIG_NET_PPP` builds `ppp.running ppp.ip_up ppp.lcp ppp.ipcp` (RFC 1661 state numbers, 9 = opened) `ppp.rx_frames ppp.tx_frames ppp.rx_errors ppp.mru ppp.peer_mru` ([ppp.md](ppp.md)); `net_link.built=0` without either |
 | 27 | `cps` | open-firmware CPS (`cps.built openfw_eeprom requests reads commits refused overflows last session pending junk reboots_ignored`; [settings-store.md](settings-store.md), [cps-protocol.md](cps-protocol.md)), with `CONFIG_CPS_FAST` the fast codeplug protocol (`cpsf.state read written commits refused`; [cps-fast.md](cps-fast.md)) |
 | 28 | `board` | `board.name`, then the board's own keys, each as `board.<key>` (`board.view_line`): bring-up readings such as pin levels, raw ADC values, the clock that started and the flash ID. The keys are listed in the radio's hardware spec; a board without its own keys sends only `board.name` |
-| 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that) `beep.tones_off` (the Settings > Sound tones that are off, bit n for row n of `radio_tone_rows` in `core/radio/radio_keys.h`: 0 call end, 1 time-out warning, 2 battery, 3 TX denied), these five only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late); on a board with a second path to the speaker (the prompt tone FIFO, [modem-hrc6000.md](modem-hrc6000.md) 8.1), once that path has been used: `audio.fifo_chunks` (32-sample chunks written) `audio.fifo_gaps` (chunks written as silence because the ring was empty) `audio.fifo_full` (blocks refused for want of room in the ring) `audio.fifo_fm` (1: in the mode the radio is in now, a beep goes through that path: FM receive on a chip whose line out plays no I2S PCM in FM) |
+| 29 | `audio` | the beeps' speaker route (`radio-features.md` 4): `beep.shared` (patterns mixed into the DMR voice stream) `beep.leads` (silent lead-in blocks played on a beep's own stream) `beep.warm` (1: the amplifier is held powered, `hal_audio_t.speaker_hang_s`) `beep.warms` (times it was powered up for that) `beep.tones_off` (the Settings > Sound tones that are off, bit n for row n of `radio_tone_rows` in `core/radio/radio_keys.h`: 0 call end, 1 time-out warning, 2 battery, 3 TX denied), these five only with CONFIG_BEEP; and on a board that counts them (`hal_audio_t.stream_stats`), the PCM stream's timing since boot: `audio.blocks` (blocks filled) `audio.late` (a block's turn came before it was filled: the speaker played its old contents, the sound before it, again) `audio.dropped` (blocks skipped, a whole block late); on a board with a second path to the speaker (the prompt tone FIFO, [modem-hrc6000.md](modem-hrc6000.md) 8.1), once that path has been used: `audio.fifo_chunks` (32-sample chunks written) `audio.fifo_gaps` (chunks written as silence because the ring was empty) `audio.fifo_full` (blocks refused for want of room in the ring) `audio.fifo_fm` (1: in the mode the radio is in now, a beep goes through that path: FM receive on a chip whose line out plays no I2S PCM in FM); and `set.brightness` (Settings > Display > Brightness as stored, 10-100 %: the backlight's level while lit, which a board may drive differently while transmitting or receiving a signal; `ui.backlight` in `link` is the level now) |
 | 30 | `t3` | a Tier III trunked system: the engine's state, call, access and counters (3.26) |
 | 31 | `t3_svc` | its services: a poll's answer, the radio's status, stun, power save, DGNA (3.26) |
 | 32 | `t3_roam` | its roaming: the level, the adjacent sites, Vote Now and the weak control channel leave (3.26) |
@@ -950,8 +956,9 @@ own (`tests/host/t3ViewTest.c`).
 The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered
 in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting away from a weak one), `votes`,
-`vote_moves`, `weak_leaves`, `adj_refused` (adjacent sites announced with a system code the radio may not use: its
-network, authorized sites or category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
+`vote_moves`, `weak_leaves`, `weak_hold_ms` (the hold on leaving a weak TSCC last set, 0: none; dmr-trunking.md 7.18),
+`adj_refused` (adjacent sites announced with a system code the radio may not use: its network, authorized sites or
+category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
 system isn't set up: the channel is locked out), `fallback` (0 on the system, 1 on its fallback channel, 2 looking for
 the system from it), `fallbacks`, `backs` (how often it went to the fallback channel and came back; dmr-trunking.md
 12.5), `other` (searching and hearing only another system: that system's C_SYScode in hex, PAR 0 when only its short
@@ -1034,6 +1041,27 @@ the core for TX off; the core's own time-out and max_ms end it otherwise. Nothin
 `rfoundry_debug.py air status`, `air tap --seconds S --out F.raw [--bits 8]`, `air open --profile p25`,
 `air rx --seconds S --out F.jsonl`, `air tx --syms F`, `air close`.
 
+### 3.29 SUPPORT
+
+The support info ([support-info.md](support-info.md)): what a support request needs to tell one radio's hardware and
+firmware from another's. Read only. Each request does a bounded piece of work and returns: the radio keeps
+receiving and the UI keeps running while a host reads it.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | INFO | none | key=value text: `source`, `repo`, `hw.<part>` per hardware line (`hw.<part>.2` for a second of the same part), `image.addr` and `image.size` when the platform reports the image span |
+| 1 | HASH | none | key=value text: `image.state` = `pending` (with `image.done`, `image.size`), `done` (with `image.sha256`, 64 hex digits) or `none` (no image span) |
+
+`hw.<part>` keys are `mcu`, `flash`, `display`, `dmr`, `rf` and `board`, with the values About shows
+([support-info.md](support-info.md) 2). The hardware options are in HWOPT LIST (3.25).
+
+HASH hashes the next 32 KB of the image per request, less when 5 ms runs out first, and nothing while About's step
+is running. A host repeats it until `image.state=done` and shows `image.done` as progress; a full image takes about
+20 requests or more. It is the same hash About steps, and its result is kept until the next start-up, so later
+requests answer at once. Bad argument (2) for any other operation or a longer payload.
+
+`rfoundry_debug.py support` prints both.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -1050,6 +1078,7 @@ the core for TX off; the core's own time-out and max_ms end it otherwise. Nothin
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
 - HWOPT SET is refused while transmitting (3.25).
+- SUPPORT only reads, and HASH reads at most 32 KB of program flash per request (3.29).
 - AIR (bench builds only) keys the transmitter only through the radio core, which applies its transmit checks and the
   lowest power level; without the core's hook TX_KEY is unavailable (3.28).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused

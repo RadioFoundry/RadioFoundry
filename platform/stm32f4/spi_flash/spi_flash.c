@@ -111,6 +111,11 @@ static bool er(uint32_t addr)
 	return ok;
 }
 
+static uint32_t jedec(void)
+{
+	return ready ? (uint32_t)nor.manufacturer << 16 | nor.device : 0u;
+}
+
 hal_flash_t stm32_spi_flash = {
 	.init = init,
 	.size = 0,
@@ -119,6 +124,7 @@ hal_flash_t stm32_spi_flash = {
 	.write = wr,
 	.erase = er,
 	.map = NULL,	// set by init
+	.jedec = jedec,
 };
 
 bool stm32_spi_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len)

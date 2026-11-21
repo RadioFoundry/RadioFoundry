@@ -727,7 +727,6 @@ static void speaker_apply(void)
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
 	bool on = (fm || pcm) && !volume_zero;
-	uvf_backlight_rx(fm || pcm);	// volume zero still feeds FM audio to APRS
 	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
 	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
@@ -1355,6 +1354,7 @@ const hal_radio_t uvf_radio = {
 	.dmr_tx_end = stm32_hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,
+	.rx_open = uvf_backlight_rx,	// the backlight's PWM reaches received audio only with a carrier (#544)
 	.volume = volume,
 	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
 	.volume_db10 = volume_db10,

@@ -55,7 +55,7 @@
 //   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   channels:full       every channel number past the 40 holds one ("Far 41" ...), but every third: a list past 128
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
-//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
+//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast, night)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
@@ -432,9 +432,33 @@ static const hal_vocoder_t vocoder = { .options = v_options };
 static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
 static const hal_radio_t am_radio = { .rx_am = r_rx_am };
 
+// The support info on About (docs/spec/support-info.md): an STM32F4, a small image to hash, a DMR and an RF chip
+static bool s_chip(hal_chip_t *c)
+{
+	c->idcode = 0x10076413u;
+	c->flash_kb = 1024;
+	c->family = HAL_CHIP_STM32F4;
+	return true;
+}
+static const uint8_t sim_image[4096] = { 0x52, 0x46 };
+static void s_read(uint32_t addr, void *dst, size_t n) { memcpy(dst, sim_image + (addr - 0x0800C000u), n); }
+static void s_image(uint32_t *addr, uint32_t *len) { *addr = 0x0800C000u; *len = sizeof sim_image; }
+static const hal_system_t sim_system = { .chip = s_chip, .read = s_read, .image = s_image };
+static bool s_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	static const char *const v[] = { "HR_C6000", "AT1846S" };
+	if (i >= 2) {
+		return false;
+	}
+	*role = i == 0 ? BOARD_HW_DMR : BOARD_HW_RF;
+	snprintf(buf, len, "%s", v[i]);
+	return true;
+}
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
+	.system = &sim_system, .hw_line = s_hw_line,
 };
 
 static uint32_t now_ms = 1000;
@@ -3547,7 +3571,7 @@ static bool run_token(char *t, char *err, size_t len)
 	return press(t, false, err, len);
 }
 
-const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast" };	// ui_theme_set's order
+const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast", "night" };	// ui_theme_set's order
 
 int sim_theme_find(const char *name)
 {

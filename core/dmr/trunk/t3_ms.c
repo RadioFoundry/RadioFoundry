@@ -219,8 +219,11 @@ static void hunt_next(t3_ms_t *ms, uint32_t now)
 		t3_chan_t c;
 		uint8_t i = ms->hunt_idx;
 		ms->hunt_idx = (uint8_t)((ms->hunt_idx + 1u) % n);
-		if (ms->hunt_idx == 0) {
-			ms->hunt_strict = false;	// a whole pass found nothing better: take any TSCC again
+		if (ms->hunt_idx == 0 && ms->hunt_strict) {
+			// A whole pass found nothing better: take any TSCC again, and hold on it. Set only here: a later pass
+			// that hears nothing (a fade at the edge of coverage) keeps the hold due
+			ms->weak_failed = true;
+			ms->hunt_strict = false;
 		}
 		if (hunt_candidate(ms, i, &c)) {
 			tune(ms, now, &c, 0, false);
@@ -273,6 +276,8 @@ static void enter_hunt(t3_ms_t *ms, uint32_t now, bool retry)
 	ms->csc_valid = false;
 	ms->retry_tscc = retry && ms->tscc.rx_hz != 0;
 	ms->hunt_strict = false;
+	ms->weak_failed = false;
+	ms->weak_hold_until = 0;	// the hold was on the TSCC left (lost, or let go once the hold was over); the backoff stays
 	ms->vote.on = false;
 	ms->st.hunts++;
 	hunt_next(ms, now);
@@ -1705,6 +1710,8 @@ static void heard_fid(t3_ms_t *ms, uint32_t now, uint8_t fid)
 	ms->other_fid_ms = now != 0 ? now : 1u;
 }
 
+static bool weak(const t3_ms_t *ms, int16_t dbm);
+
 static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t3_aloha_t *a)
 {
 	if (ms->state == T3_HUNT && ms->hunt_strict && ms->cfg->leave_dbm != 0 && ms->level_dbm != 0 &&
@@ -1714,6 +1721,20 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		return;
 	}
 	if (ms->state == T3_HUNT) {
+		if (ms->hunt_strict || (ms->level_dbm != 0 && !weak(ms, ms->level_dbm))) {
+			// A TSCC at or above the threshold: the next weak spell may be left at once. The backoff stays: a level
+			// that only touched the threshold (one sample, at the edge of coverage) soon fails again, and only a
+			// level clearly above it (the tick) starts the hold over
+			ms->weak_hold_until = 0;
+		} else if (ms->weak_failed) {
+			// Back on a TSCC no stronger than the one left: leaving again finds nothing either, and every
+			// hunt misses what the TSCC sends meanwhile (grants included). Hold, longer after each such pass
+			ms->weak_hold_ms = ms->weak_hold_ms == 0 ? T3_WEAK_HOLD_MS :
+					   ms->weak_hold_ms >= T3_WEAK_HOLD_MAX_MS / 2u ? T3_WEAK_HOLD_MAX_MS :
+					   ms->weak_hold_ms * 2u;
+			ms->weak_hold_until = (now + ms->weak_hold_ms) | 1u;
+		}
+		ms->weak_failed = false;
 		ms->state = T3_CAMPED;
 		ms->tscc = ms->tuned;
 		ms->tscc.cc = cc;
@@ -1776,6 +1797,7 @@ static void on_move(t3_ms_t *ms, uint32_t now, const t3_move_t *m, const t3_cdef
 	ms->massreg = false;
 	ms->tscc_slots = 0;
 	ms->csc_valid = false;
+	ms->weak_hold_until = 0;	// the hold was on the TSCC left
 	ms->moves++;
 	ms->last_valid_ms = now;
 	tune(ms, now, &ms->tscc, 0, false);
@@ -1873,6 +1895,7 @@ static void vote_end(t3_ms_t *ms, uint32_t now, bool moving)
 		ms->tscc = to;
 		ms->tuned.cc = to.cc;
 		ms->confirmed = false;
+		ms->weak_hold_until = 0;	// the hold was on the TSCC left
 		ms->massreg = false;
 		ms->tscc_slots = 0;
 		ms->csc_valid = false;
@@ -1932,7 +1955,14 @@ void t3_ms_level(t3_ms_t *ms, uint32_t now, int16_t dbm)
 	    ms->asleep || !since(now, ms->woke_ms, T3_SETTLE_MS)) {
 		return;
 	}
-	ms->level_dbm = ms->level_dbm == 0 ? dbm : (int16_t)((3 * (int32_t)ms->level_dbm + dbm) / 4);
+	// Rounded to the nearest dB: truncated toward 0, a falling level would stop up to 3 dB short (above the
+	// threshold it should cross)
+	int32_t sum = 3 * (int32_t)ms->level_dbm + dbm;
+	int16_t avg = ms->level_dbm == 0 ? dbm : (int16_t)((sum >= 0 ? sum + 2 : sum - 2) / 4);
+	if (avg == ms->level_dbm && dbm != avg) {
+		avg = (int16_t)(avg + (dbm < avg ? -1 : 1));	// rounded alone, a steady level stops 1 dB short
+	}
+	ms->level_dbm = avg;
 }
 
 // A complete PDU heard on the TSCC we are hunting or camped on. cdef: the appended block of an MBC, or NULL
@@ -2635,8 +2665,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			enter_hunt(ms, now, true);
 			break;
 		}
+		if (ms->weak_hold_until != 0 && !before(now, ms->weak_hold_until)) {
+			ms->weak_hold_until = 0;	// over: left set, it would read as ahead again 2^31 ms on
+		}
+		bool held = ms->weak_hold_until != 0;
 		if (!(ms->cfg->opts & T3_OPT_NO_ROAM) && weak(ms, ms->level_dbm) && ms->ax.state == T3_AX_IDLE &&
-		    hunt_count(ms) > 1) {
+		    hunt_count(ms) > 1 && !held) {
 			// Below the threshold (6.3.3.1 a) for T3_WEAK_MS, with somewhere else to look: hunt, and take only a
 			// stronger TSCC for one pass
 			if (ms->weak_since == 0) {
@@ -2650,6 +2684,12 @@ bool t3_ms_poll(t3_ms_t *ms, uint32_t now, t3_act_t *act)
 			}
 		} else {
 			ms->weak_since = 0;
+		}
+		if (ms->level_dbm != 0 && ms->cfg->leave_dbm != 0 &&
+		    ms->level_dbm >= ms->cfg->leave_dbm + T3_VOTE_MARGIN_DB) {
+			// Clearly above the threshold: a later weak spell (the radio moved) is left after T3_WEAK_MS again
+			ms->weak_hold_ms = 0;
+			ms->weak_hold_until = 0;
 		}
 		if (!may_send(ms)) {
 			break;
