@@ -150,11 +150,6 @@ msgid "No calls heard yet"
 msgstr "暂无通话记录"
 
 #: core/ui/ui_app.c
-msgctxt "APRS_BANNER_MSG_FROM"
-msgid "APRS message from "
-msgstr "APRS 信息来自 "
-
-#: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
 msgid "Message from "
 msgstr "消息来自 "
@@ -213,6 +208,11 @@ msgstr "主机已启动热点"
 msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK 停止"
+
+#: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "APRS 信息来自 "
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"

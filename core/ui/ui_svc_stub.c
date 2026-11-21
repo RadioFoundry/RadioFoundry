@@ -78,7 +78,7 @@ WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
 WEAK void ui_svc_aprs_msg_poll(void) { }
 WEAK void ui_svc_poll(void)
 {
-#if CONFIG_APRS
+#if CONFIG_APRS_RX
 	ui_svc_aprs_msg_poll();
 #endif
 }
