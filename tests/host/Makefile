@@ -1186,7 +1186,7 @@ hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/
 # flat route's bits (modem-hrc7000.md 8.6)
 TESTS   += hrc7000FmTxTest
 hrc7000FmTxTest: hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_FM_FLAT=1 -o $@ hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_FM_FLAT=1 -o $@ hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
 
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
