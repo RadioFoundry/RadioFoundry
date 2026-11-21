@@ -10078,6 +10078,22 @@ static void test_t3_system_late(void)
 	t3_cp_done();
 }
 
+// A trunked channel the radio was on when switched off: the system starts again at power-on (the radio's ID loaded
+// before the channel is selected, not after it, which left the channel unavailable)
+static void test_t3_boot(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	run(50);
+	boot();
+	t3_site_run(600);
+	CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7 && radio_t3v.sys == 1 && !radio_t3v.unavail &&
+	      radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
 static void test_t3_no_id(void)
 {
 	own_dmr_id = 0;
@@ -10982,6 +10998,7 @@ int main(void)
 	test_t3_power_save();
 	test_t3_channels();
 	test_t3_never_keys();
+	test_t3_boot();
 	test_t3_no_id();
 	test_t3_system_late();
 	test_t3_other_system();

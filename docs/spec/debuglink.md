@@ -956,8 +956,9 @@ own (`tests/host/t3ViewTest.c`).
 The `t3_roam` section, also `t3.`-prefixed ([dmr-trunking.md](dmr-trunking.md) 7.18): `level_dbm` (the tuned
 channel's averaged level, 0: none yet), `leave_dbm` (the threshold in force), `dmrla`, `reg_area` (the area registered
 in), `vote_on` (sampling an adjacent control channel), `hunt_strict` (hunting away from a weak one), `votes`,
-`vote_moves`, `weak_leaves`, `adj_refused` (adjacent sites announced with a system code the radio may not use: its
-network, authorized sites or category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
+`vote_moves`, `weak_leaves`, `weak_hold_ms` (the hold on leaving a weak TSCC last set, 0: none; dmr-trunking.md 7.18),
+`adj_refused` (adjacent sites announced with a system code the radio may not use: its network, authorized sites or
+category), `sys` (the codeplug system of the channel, n+1; 0: none), `unavail` (that
 system isn't set up: the channel is locked out), `fallback` (0 on the system, 1 on its fallback channel, 2 looking for
 the system from it), `fallbacks`, `backs` (how often it went to the fallback channel and came back; dmr-trunking.md
 12.5), `other` (searching and hearing only another system: that system's C_SYScode in hex, PAR 0 when only its short

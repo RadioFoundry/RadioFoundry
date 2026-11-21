@@ -100,6 +100,8 @@
 #define T3_VOTE_MS		360	// sampling an adjacent TSCC after a Vote Now (VOTE_BLK: 2-10 frames)
 #define T3_VOTE_MARGIN_DB	6	// an adjacent TSCC this much stronger is better (no radiated preference)
 #define T3_WEAK_MS		5000	// camped with the level below leave_dbm this long: hunt (6.3.3.1 a)
+#define T3_WEAK_HOLD_MS		30000	// a weak-TSCC hunt that found nothing better: no other for this long, doubled each time
+#define T3_WEAK_HOLD_MAX_MS	300000	// ... up to this
 #define T3_VOTE_AGAIN_MS	30000	// an adjacent TSCC sampled isn't sampled again this soon, unless ours is weak
 
 typedef struct {
@@ -499,6 +501,9 @@ typedef struct {
 	int16_t level_dbm;		// the tuned channel's averaged signal level (t3_ms_level), 0 = none yet
 	uint32_t weak_since;		// camped and below leave_dbm since (0: not)
 	bool hunt_strict;		// hunting after a weak TSCC: confirm only one above leave_dbm, for one pass
+	bool weak_failed;		// that pass ended with nothing better: the TSCC taken next starts a hold
+	uint32_t weak_hold_until;	// no leaving a weak TSCC before this (0: none)
+	uint32_t weak_hold_ms;		// the hold last set: doubles after each pass that found nothing (0: none)
 	struct {
 		bool on;		// sampling adj[idx] until `until`
 		uint8_t idx;
