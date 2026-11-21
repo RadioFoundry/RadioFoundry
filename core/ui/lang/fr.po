@@ -3488,6 +3488,11 @@ msgid "High contrast"
 msgstr "Contraste élevé"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_THEME_NIGHT"
+msgid "Night (red)"
+msgstr "Nuit (rouge)"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_DEFAULT"
 msgid "Default"
 msgstr "Par défaut"
@@ -4201,6 +4206,11 @@ msgstr "Pas de vibreur"
 msgctxt "SET_WHY_COLOR_SCREENS_ONLY"
 msgid "Colors are for color screens"
 msgstr "Écran couleur requis"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_WHY_NIGHT_RED_ONLY"
+msgid "Night theme: red only"
+msgstr "Thème nuit : rouge seul"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_MIC_GAIN_NOT_IN_BUILD"

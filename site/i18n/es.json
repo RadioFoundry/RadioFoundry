@@ -290,6 +290,7 @@
  "screen.in_theme": "{screen}, tema {theme}",
  "theme.light": "claro",
  "theme.high_contrast": "de alto contraste",
+ "theme.night": "nocturno (rojo)",
  "color.red": "rojo",
  "color.orange": "naranja",
  "color.yellow": "amarillo",
