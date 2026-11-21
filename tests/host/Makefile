@@ -1531,10 +1531,24 @@ run-cptag: codeplugTagTest
 	./codeplugTagTest
 .PHONY: run-cptag
 
+# The air mode contact table (core/codeplug/codeplug_air_contacts.c, docs/spec/air-contacts.md): P25 names by mode,
+# call type and ID, the entries skipped, a foreign codeplug, Start new
+TESTS   += codeplugAirContactsTest
+
+codeplugAirContactsTest: codeplugAirContactsTest.c $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_air_contacts.c \
+                         $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ codeplugAirContactsTest.c $(CPTAG) \
+		$(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_air_contacts.c
+
+run: run-cpair
+run-cpair: codeplugAirContactsTest
+	./codeplugAirContactsTest
+.PHONY: run-cpair
+
 # P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
 # trunked part off as well
 TESTS   += p25CodeplugTest p25CodeplugConvTest
-P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/p25/p25_codeplug.c
+P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c $(CORE)/p25/p25_codeplug.c
 
 p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25CodeplugTest.c $(P25CP)
