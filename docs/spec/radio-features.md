@@ -677,6 +677,11 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
 
+The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
+receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with
+a carrier present uses it: backlight PWM that reaches the synthesizer, for one.
+A beep or other local PCM alone never sets it.
+
 ## 6. TX power, calibration, band limits
 
 Checked, unchanged: the board clamps the power level, uses the calibration table's drive value for the band and level,

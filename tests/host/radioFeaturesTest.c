@@ -2710,6 +2710,68 @@ static void test_beep_follows_volume(void)
 	board.power = &fake_power;
 }
 
+// rx_open (hal_radio_t): receive audio from a signal, which a board's backlight follows (#544). A beep alone, with no
+// carrier, never sets it; an open FM squelch and a DMR call do, and it clears when they end
+static int rx_open_calls;
+static bool rx_open_on;
+static void r_rx_open(bool on) { rx_open_on = on; rx_open_calls++; }
+
+static void test_rx_open(void)
+{
+	hal_radio_t open_radio = fake_radio;
+	open_radio.rx_open = r_rx_open;
+	board.radio = &open_radio;
+	rx_open_calls = 0;
+	rx_open_on = true;
+	start();
+	CHECK(rx_open_calls == 1 && !rx_open_on);	// the first state goes to the board
+	// FM, squelch closed: a key beep plays PCM without opening receive audio
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_BEEP, BEEP_KEY);
+	bool during = rx_open_on;
+	run(500);
+	beep_get_stats(&b1);
+	CHECK(b1.played > b0.played && !during && !rx_open_on && rx_open_calls == 1);
+	// FM squelch opens: on, a beep over the open audio changes nothing, and it closes with the squelch
+	signal_on(0, 146520000, 30, no_tone);
+	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio && rx_open_on && rx_open_calls == 2);
+	req(RREQ_BEEP, BEEP_KEY);
+	run(500);
+	CHECK(rx_open_on && rx_open_calls == 2);
+	hw.sig[0].hz = 0;
+	run(1000);
+	CHECK(sm.view.state != RS_RX && !hw.audio && !rx_open_on && rx_open_calls == 3);
+	// The monitor: on, then off
+	req(RREQ_MONITOR, 1);
+	run(100);
+	CHECK(rx_open_on);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(!rx_open_on);
+	// Transmitting is the board's own (tx()), not receive audio
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX && !rx_open_on);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(!rx_open_on);
+	// DMR: a call plays, then ends
+	signal_on(0, 438500000, 30, no_tone);
+	req(RREQ_ZONE_POS, 5);
+	run(100);
+	CHECK(!rx_open_on);
+	hear_call(9, 1, 1, false);
+	CHECK(sm.view.dmr.state == RDMR_RX && rx_open_on);
+	hear_call(9, 1, 0, true);
+	run(1000);
+	CHECK(sm.view.dmr.state == RDMR_IDLE && !rx_open_on);
+	hw.sig[0].hz = 0;
+
+	board.radio = &fake_radio;
+}
+
 static void set_bcl_carrier(radio_settings_t *s) { s->bcl = RADIO_BCL_CARRIER; }
 static void set_bcl_tone(radio_settings_t *s) { s->bcl = RADIO_BCL_WRONG_TONE; }
 static void set_inhibit(radio_settings_t *s) { s->tx_inhibit = true; }
@@ -4625,6 +4687,7 @@ int main(void)
 	test_beep_follows_volume();
 	test_bcl_inhibit();
 	test_dmr_busy_quiet();
+	test_rx_open();
 	test_tx_limit();
 	test_roger_burst();
 	test_burst_key();

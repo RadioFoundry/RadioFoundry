@@ -11,11 +11,11 @@
 // DMA write to the port's BSRR: two writes per cycle at any duty (hardware-dm1701.md 9.4).
 // - 2 kHz: a rate the backlight stage follows, so the panel dims as set (the stage's tail is taken off below), with no
 //   visible flicker.
-// - During TX or open receive audio the pin is held high instead. Any rate the stage follows modulates the
-//   synthesizer: a tone in FM transmit and receive audio, weak-signal DMR errors, and from 5 to 17 kHz sidebands in
-//   the adjacent channel. From about 18 kHz up the stage never turns off, so a dimmed level is fully lit anyway, and
-//   the shortest pulse (one count at 40 kHz) left the panel dark on some radios (#759). A steady pin is clean on every
-//   radio.
+// - During TX or open receive audio from a signal the pin is held high instead. With a carrier, any rate the stage
+//   follows modulates the synthesizer: a tone in FM transmit and receive audio, weak-signal DMR errors, and from 5 to
+//   17 kHz sidebands in the adjacent channel. A beep alone has no carrier, so the PWM stays on for it. From about
+//   18 kHz up the stage never turns off, so a dimmed level is fully lit anyway, and the shortest pulse (one count at
+//   40 kHz) left the panel dark on some radios (#759). A steady pin is clean on every radio.
 #define UVF_BL_TIMER_HZ		72000000u
 #define UVF_BL_PWM_HZ		2000u
 #define UVF_BL_PERIOD		(UVF_BL_TIMER_HZ / UVF_BL_PWM_HZ)	// timer counts per cycle (36000)

@@ -1129,7 +1129,7 @@ request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the 
 RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
 TIM1's update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
 Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, two transfers per cycle. The rates below were tried; the PWM now runs at 2 kHz
-(36000 counts per cycle) and stops while transmitting or while receive audio is open. The ripple of the
+(36000 counts per cycle) and stops while transmitting or while receive audio from a signal is open. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
 
@@ -1140,9 +1140,12 @@ demodulated from a separate receiver, peak deviation:
 | 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
 
 The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
-fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting or while FM or DMR receive audio is
-open, the pin is held high at any brightness above 0 %. The receive selection follows the audio route even at zero
-volume, when FM still feeds APRS.
+fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting, or while
+receive audio from a signal is open, the pin is held high at any brightness above 0 %. Receive audio is open while the
+FM squelch is open or the monitor is on, and while a DMR, P25 or NXDN call plays: the green LED's state, which the
+radio core passes to the board (`hal_radio_t.rx_open`). The volume doesn't count, so FM at zero volume, which still
+feeds APRS, holds the pin too. A key beep or other local PCM alone keeps the PWM: the ripple reaches the audio through
+the synthesizer, only with a carrier present (below).
 
 An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
 stage's tail to fill the period. On a DM-1701 it did: the panel was fully lit. On other DM-1701 and MD-UV380 family

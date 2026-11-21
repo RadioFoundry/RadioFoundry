@@ -144,7 +144,7 @@ static bool ready;
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
-// period, two transfers per cycle at 2 kHz. 0 %, 100 % and any lit level during TX or receive audio stop both and
+// period, two transfers per cycle at 2 kHz. 0 %, 100 % and any lit level during TX or open receive audio stop both and
 // drive the pin steady.
 
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
@@ -153,7 +153,7 @@ static uint32_t bl_set = BL_MASK;			// main SRAM, reachable by DMA2
 static uint32_t bl_clear = (uint32_t)BL_MASK << 16;
 static bool bl_running;
 static uint8_t bl_percent;	// the brightness set last
-static bool bl_tx, bl_rx_audio;
+static bool bl_tx, bl_rx_open;
 
 static void bl_stream_stop(DMA_Stream_TypeDef *st)
 {
@@ -209,14 +209,14 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// The brightness, or fully on during TX or receive audio. Interrupts off: called from the backlight's task and from
-// the radio's tx/rx, where the pin is steady before the PA or receive audio comes on. The compare is preloaded, so a
-// new duty starts at the next cycle.
+// The brightness, or fully on during TX or open receive audio (uvf_backlight_rx). Interrupts off: called from the
+// backlight's task, the radio's tx and the radio task's rx_open, where the pin is steady before the PA or receive audio
+// comes on. The compare is preloaded, so a new duty starts at the next cycle.
 static void bl_apply(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
-	uint16_t cmp = uvf_bl_compare(bl_percent, bl_tx || bl_rx_audio);
+	uint16_t cmp = uvf_bl_compare(bl_percent, bl_tx || bl_rx_open);
 
 	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
 		if (bl_running) {
@@ -247,10 +247,10 @@ void uvf_backlight_tx(bool tx)
 	}
 }
 
-void uvf_backlight_rx(bool audio)
+void uvf_backlight_rx(bool open)
 {
-	if (audio != bl_rx_audio) {
-		bl_rx_audio = audio;
+	if (open != bl_rx_open) {
+		bl_rx_open = open;
 		bl_apply();
 	}
 }
