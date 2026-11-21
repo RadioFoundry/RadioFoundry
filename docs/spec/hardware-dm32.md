@@ -583,6 +583,36 @@ line. So, as `drivers/input/sharedptt` describes, no new press starts while the 
 at a flagged character after its own break and bounce (`SHARED_PTT_SETTLE_MS`). The diag line `ue N` counts the
 flagged characters.
 
+**A cable holding the line low (2026-11-21).** With our firmware on D-STAR at the lowest power, a tool on a Mac
+(PL2303 cable) answered the boot ROM's greeting every 30 ms from before power-on (13.3, `--slow-cable`). The radio
+started its own firmware and transmitted with nobody near the PTT until it was switched off. The ROM and the firmware
+both run the line at 115200, so the answers themselves are good bytes, which the quiet time gates. A line held low is
+not: a break, TXD idling low after a failed baud change or on close, or the cable at a much lower rate than it should
+be (a 0 byte at 1200 baud or less is a low longer than the hold). Any of those, 50 ms after the last good byte, was a
+press from the first key scan. Which one the Mac driver did is not known (no scope on it). The gate now also has to see
+the line released before it trusts it (`drivers/input/sharedptt`):
+
+| Rule | Value |
+|---|---|
+| Disarmed at power-on; armed once the line has read high with nothing received for | `SHARED_PTT_ARM_MS` 1000 ms |
+| Characters this close to the pin changing are the key's own (its bounce, its break); any other disarms the gate | `SHARED_PTT_BOUNCE_MS` 25 ms |
+| ... but only one edge with characters in this long: a second is traffic | `SHARED_PTT_STREAM_MS` 100 ms |
+| A held press that a character ends (RF or a cable's break, which look alike) | disarms the gate |
+| A low that starts while the radio transmits | never presses until the pin reads high |
+
+The latch check of `gotchas.md` 16.5 (no press unless the pin read high since the last good byte, nor right after the
+radio's own send) and its stuck diagnostic run in front of the gate as well as behind it: a line that latches while
+the gate is disarmed still flashes the stuck pattern after 2 s, and a good byte or the pin reading high clears it. A
+good byte that a key's bounce makes at its own edge counts as seen high; the first attempt at combining the two
+checks refused every such press for as long as it was held. The physical PTT key is this same line (it grounds it), so
+there is no separate key to fall back on. The cost: while a host talks on the cable, and for a second after, the PTT on
+the radio does nothing, and a stray character on an idle line costs the same second. A line left high and quiet for
+over a second and then pulled low is still a press: nothing on the line tells it from a finger. A tool that writes to
+the line should stop the moment the firmware is seen and leave the line idle high. `tests/host/sharedPttTest.c`
+replays the greeting at every rate from 300 to 921600 baud, a held break, and the greeting followed by a held low,
+bit by bit into a model of the UART (the gate before the arming keyed in 41 of those checks), and runs random worlds
+of key presses, cable traffic, breaks, latches, link PTT, RF, time-outs and resets against both rules.
+
 ### 6.3 Rotary encoder
 
 A = GPIO 0x27, B = 0x26, inputs with GPIO B interrupts (vector 46). On every change of B: direction = −1 if A == B

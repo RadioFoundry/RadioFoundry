@@ -842,7 +842,15 @@ picked up on a coiled cable, also reads as a press: the line goes low with flagg
 the press keeps the radio keyed, a latch (measured: a minute keyed, nothing touched). Rule: while the radio
 transmits, no new press starts on the shared line, and a held press ends at a flagged character after its own break,
 since a grounded line receives nothing. RF that holds a released line steadily low, with no character, still reads
-as held, and the transmit time-out ends it.
+as held, and the transmit time-out ends it. A cable can hold the line low by itself: a radio keyed on its own at
+power-on while a tool on a Mac answered the boot ROM's greeting (RadioFoundry, 2026-11-21); a break, TXD
+idling low, or a rate far too low all read as a held key once the good bytes stop. Rule: the gate starts disarmed and
+arms only after the line has read high and quiet for 1 s (`SHARED_PTT_ARM_MS`); any character that isn't a key's own
+(its bounce or break, within `SHARED_PTT_BOUNCE_MS` of the pin changing, one edge in `SHARED_PTT_STREAM_MS`) disarms
+it again, and so does a held press that a character ends. The latch check of 16.5 and its stuck diagnostic run whether
+the gate is armed or not, and a good byte from a key's bounce at its own edge counts as seen high: else the latch
+check refuses every press whose bounce makes one. Tools that write to the line should stop as soon as the radio's
+firmware is seen and leave it idle high.
 
 **16.3 PTT on an empty mic jack.**
 Symptom: a radio powered on without its hand mic transmitted at once (RadioFoundry, issue #230). Cause: the mic's PTT
