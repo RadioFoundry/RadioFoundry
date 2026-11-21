@@ -31,12 +31,17 @@ bool radio_nxdn_fits(void);
 #define CODEPLUG_RUNS_NXDN	0
 #endif
 
+// What runs dPMR: nothing yet. The codec is here, the radio core that runs a channel of the kind comes next; until then
+// a dPMR channel is parked, as in a build without CONFIG_DPMR
+#define CODEPLUG_RUNS_DPMR	0
+
 // Channel kinds: the first byte of a channel tag
 #define CODEPLUG_KINDS(X) \
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* DMR Tier III trunked (radio/radio_trunk.h) */ \
 	X(2, P25, "P25", CODEPLUG_RUNS_P25)	/* P25 conventional: the radio core runs it (core/radio/radio_p25.c) */ \
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
-	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */
+	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */ \
+	X(7, DPMR, "dPMR", CODEPLUG_RUNS_DPMR)	/* dPMR Mode 1 voice: the radio core runs it (core/radio/radio_dpmr.c) */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \
@@ -53,9 +58,9 @@ bool radio_nxdn_fits(void);
 #endif
 
 // Whether this build reads the mode-scoped record families (codeplug_records.h): the OR of the build conditions of the
-// modes that use them: P25 and NXDN read their radio-wide records, Tier III its systems. A test defines it 1
+// modes that use them: P25, NXDN and dPMR read their radio-wide records, Tier III its systems. A test defines it 1
 #ifndef CODEPLUG_MODE_RECORDS
-#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK)
+#define CODEPLUG_MODE_RECORDS	(CONFIG_P25 || CONFIG_NXDN || CONFIG_DPMR || CONFIG_DMR_TRUNK)
 #endif
 
 #define CODEPLUG_KIND_ENUM(id, token, name, built)	CODEPLUG_KIND_##token = id,

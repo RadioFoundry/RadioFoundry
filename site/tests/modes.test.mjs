@@ -637,3 +637,62 @@ test("Systems tab: the recommended ham system's button is there for a type that 
 	// the type list starts on Tier III, which has one
 	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
 });
+
+// --- dPMR (docs/spec/dpmr.md 6) ---
+
+import * as dpmr from "../static/js/codeplug/mode_dpmr.js";
+
+test("vectors: dPMR channel block, own ID record", () => {
+	const chan = vectors("dpmrchan"), enc = vectors("dpmrenc"), own = vectors("dpmrown");
+	assert.ok(chan.length >= 8 && enc.length >= 4 && own.length >= 6);
+	for (const l of chan) {
+		const [b, called, cc, mine] = l.split(" ");
+		const p = dpmr.decodeChan(bytes(b) ?? new Uint8Array(0));
+		assert.deepEqual([dpmr.joinId(p.common, p.address), p.cc, p.rxMine], [parseInt(called, 16), parseInt(cc, 16), mine === "1"], l);
+	}
+	for (const l of enc) {
+		const [called, cc, mine, b] = l.split(" ");
+		const id = dpmr.splitId(parseInt(called, 16));
+		assert.equal(hexOf(dpmr.encodeChan({ ...id, cc: parseInt(cc, 16), rxMine: mine === "1" })), b, l);
+	}
+	for (const l of own) {
+		const [b, id] = l.split(" ");
+		const s = dpmr.decodeStation(bytes(b));
+		assert.equal(dpmr.joinId(s.common, s.address), id === "-" ? 0 : parseInt(id, 16), l);
+	}
+});
+
+test("dPMR: a channel and the radio-wide record round-trip; IDs as common IDs or addresses; validation", () => {
+	const m = empty();
+	const c = newChannel({ name: "PMR 2", rxHz: 446109375, txHz: 446109375 });
+	m.channels.push(c);
+	numberAll(m);
+	setKind(m, c, 7);
+	assert.deepEqual(c.params, { common: 255, address: 0, cc: 0, rxMine: false }, "an all call, automatic code");
+	c.params = { common: 87, address: 0, cc: 2, rxMine: true };
+	m.modeSettings[7] = { common: 0, address: 0x123456 };
+	const img = encode(m);
+	const d = decode(img);
+	const back = d.channels.find((x) => x.name === "PMR 2");
+	assert.equal(back.kind, 7);
+	assert.deepEqual(back.params, { common: 87, address: 0, cc: 2, rxMine: true });
+	assert.deepEqual(d.modeSettings[7], { common: 0, address: 0x123456 });
+	assert.deepEqual(encode(d).bytes, img.bytes);
+	const tag = decodeTag(getValue(area(img), MODE_KEY.tag + back.number - 1));
+	assert.equal(hexOf(tag.params), "FFFF57" + "02" + "01", "common ID 87: 0x57FFFF little endian, A2, own calls only");
+	// A zeroed block is an all call; an erased code and flags byte are automatic and none
+	assert.deepEqual(dpmr.decodeChan(Uint8Array.from([0, 0, 0, 0xFF, 0xFF])), { common: 255, address: 0, cc: 0, rxMine: false });
+	// Reserved flag bits a later firmware set are kept; bit 7 is written 0
+	assert.equal(hexOf(dpmr.encodeChan({ common: 1, address: 0, cc: 0, rxMine: false }, Uint8Array.from([0, 0, 0, 0, 0xC1]))), "FFFF010040");
+	assert.equal(dpmr.encodeStation({ common: 0, address: 0 }), null, "no own ID: no record");
+	const problems = (fn) => {
+		const out = [];
+		fn({ err: (f, code, p) => out.push(["err", f, code, p?.max]), warn: (f, code) => out.push(["warn", f, code]) });
+		return out;
+	};
+	assert.deepEqual(problems((pr) => dpmr.dpmrKind.validate({}, { common: 1, address: 0 }, pr)), []);
+	assert.deepEqual(problems((pr) => dpmr.dpmrKind.validate({}, { common: 256, address: 0x1000000 }, pr)),
+		[["err", "common", "dpmr_common_range", undefined], ["err", "address", "dpmr_address_range", 0xFFFFFF]]);
+	assert.deepEqual(offeredKinds(empty(), "FM,DMR,DPMR").map((k) => k.id), [7]);
+	assert.equal(kindName(7), "dPMR");
+});

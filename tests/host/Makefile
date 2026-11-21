@@ -1510,6 +1510,25 @@ run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
 
+# dPMR in the codeplug (core/dpmr/dpmr_codeplug.c, docs/spec/dpmr.md 6): the shared vectors, the channel code sent, a
+# channel's block from its tag, the radio-wide record, a save that keeps what it doesn't know; with the switch off, the
+# kind parked
+TESTS   += dpmrCodeplugTest dpmrCodeplugOffTest
+DPMRCP  := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c \
+           $(CORE)/dpmr/dpmr_codeplug.c $(CORE)/dpmr/dpmr_frame.c $(CORE)/dpmr/dpmr_fec.c
+
+dpmrCodeplugTest: dpmrCodeplugTest.c $(DPMRCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dpmr/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_DPMR=1 -o $@ dpmrCodeplugTest.c $(DPMRCP)
+
+dpmrCodeplugOffTest: dpmrCodeplugTest.c $(DPMRCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dpmr/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DPMR=0 -o $@ dpmrCodeplugTest.c $(DPMRCP)
+
+run: run-dpmrcp
+run-dpmrcp: dpmrCodeplugTest dpmrCodeplugOffTest
+	./dpmrCodeplugTest
+	./dpmrCodeplugOffTest
+.PHONY: run-dpmrcp
+
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \

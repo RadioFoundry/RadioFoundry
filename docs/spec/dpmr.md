@@ -13,7 +13,7 @@ is the 72-bit AMBE+2 frame DMR carries, so it runs as a profile on the shared ai
 Section numbers below are TS 102 490 V1.7.1's.
 
 State: host tested, through the framer, the session and the soft modem, and against a real dPMR446 radio's
-transmission (8). Not yet run on a radio.
+transmission (10). Not yet run on a radio.
 
 ## 1. On air
 
@@ -108,22 +108,49 @@ to and from the caller's hooks, the transmitter fed from the provider's task. Wh
 | End of an over | voice the encoder made before PTT was let go still goes out; then silence to the superframe's end and the end frame |
 | Keying | none of its own: the radio core's band, inhibit and power checks come first ([air-interface.md](air-interface.md) 7) |
 
-## 6. Tests
+## 6. The codeplug (`core/dpmr/dpmr_codeplug.c`)
+
+A dPMR channel is a channel of kind 7 on the codeplug's channel-mode layer ([channel-modes.md](channel-modes.md)): the
+base record is the safe stand-in (DMR, receive only) and the tag carries the block below and whether the channel may
+transmit. No system type, no contacts. Multi-byte fields are little endian, as the layer's others.
+
+### 6.1 The channel block (5 bytes)
+
+| Byte | Field | Values |
+|---|---|---|
+| 0-2 | called ID | 24 bits: who PTT calls. A common ID `n` is `n << 16 \| 0xFFFF` (8.1.1); 0 (reserved) and `FFFFFF` call all |
+| 3 | channel code | 0 automatic: the code table 6.1 ties to the transmit frequency (`dpmr_cc_for_hz`, group A's first off the dPMR446 channels); 1-16 group A's codes, 17-32 group B's. Past 32: automatic |
+| 4 | flags | bit 0: play only calls to the called ID, to all and to our own ID (else every call); bits 1-6 reserved, kept as found; bit 7 written 0, so the byte is never the erased `FF`, which reads as none |
+
+A short block reads the missing bytes as 0: an all call, the automatic code, every call played.
+
+### 6.2 The radio-wide record (3 bytes)
+
+Our own ID, 24 bits (key `0x0A00` + 7). Absent, short, 0 or `FFFFFF`: none, and each channel's called ID is sent as
+our own too. A licence-free dPMR446 radio does just that (it addresses with one common ID, which names both ends), so a
+codeplug with no record talks to one as it comes.
+
+The Codeplug Editor's module is `site/static/js/codeplug/mode_dpmr.js`: it shows an ID as a common ID (1-255), with the
+full address as a second field. The shared vectors (`dpmrchan`, `dpmrenc`, `dpmrown` in
+`tests/vectors/channel-modes.txt`) are read by both its tests and the firmware's.
+
+## 8. Tests
 
 | Test | Covers |
 |---|---|
 | `tests/host/dpmrTest.c` | Hamming, scrambler, interleaver, channel codes and the text the screens show; every line of `tests/vectors/dpmr.txt` (`tools/dpmr_ref.py`, written from the standard alone): the block codes, whole frames, and seven blocks a real radio sent; whole calls through the framer: hard and soft symbols at other levels and offsets, ten wake-up headers, late entry next to a channel code two symbols from FS2, a lost FS2, a corrected CCH, a call cut off, noise, two calls back to back |
 | `tests/host/dpmrEngineTest.c` | two engines on made-up providers: a call with its IDs and voice in order and whole superframes, an encoder that stalls, PTT let go at once, late entry, the filter changed mid-call, an abort, refusals; a call through a modeled discriminator tap and the soft modem, with noise, to where it breaks |
-| `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's transmission through the soft modem, the framer and the call layer, when a recording is given (8); skipped without |
+| `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's transmission through the soft modem, the framer and the call layer, when a recording is given (10); skipped without |
+| `tests/host/dpmrCodeplugTest.c` | the codeplug (6): the shared vectors, the channel code a channel sends, a channel's block from its tag, the own ID record, a save from the radio that keeps a later firmware's flags, fallback and bytes; built with `CONFIG_DPMR` off too, where the kind is parked |
 
-## 7. Not written
+## 9. Not written
 
 Slow data and the data modes (mode 2-3, packet data, FS4), the configured-services call set-up (acknowledgements,
 status messages, OACSU), powersave, the channel code as a receive filter, and modes 2 and 3 (TS 102 658). No dPMR
 voice privacy: TS 102 490 defines none (what some radios call a dPMR scrambler is their maker's own). A header of a
 type other than a communication start is read and kept, and answers nothing.
 
-## 8. Checked against a real radio
+## 10. Checked against a real radio
 
 A public recording of a licence-free dPMR446 handheld (the Signal ID Wiki's dPMR example, an I/Q file) is the one
 check against a radio that is not ours. The tree keeps no audio: `dpmrCaptureTest` reads the recording from a path

@@ -220,4 +220,4 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 | `tests/host/p25EngineTest.c` | the session under two P25 engines on made-up providers |
 | `tests/host/nxdnEngineTest.c` | the session under two NXDN engines; an NXDN call through the soft modem at 2400 symbols/s |
 | `tests/host/dpmrEngineTest.c` | the session under two dPMR engines; a dPMR call through the soft modem at 2400 symbols/s |
-| `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's recording through the soft modem and the framer, when one is given ([dpmr.md](dpmr.md) 8) |
+| `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's recording through the soft modem and the framer, when one is given ([dpmr.md](dpmr.md) 10) |
