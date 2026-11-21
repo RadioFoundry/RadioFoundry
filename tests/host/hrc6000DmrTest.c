@@ -1527,6 +1527,19 @@ static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint
 	return feed_numbers_cc(r51s, same_voice, n, got, -1);
 }
 
+// The next A after a complete superframe can carry fresh voice with the preceding F's class-0 status.
+static void test_rx_a_after_f(void)
+{
+	static const uint8_t reports[] = { 0x91, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xE0, 0xA0 };
+	static const bool fresh[8] = { false };
+	static const bool stale[8] = { [6] = true };
+	uint8_t got[8];
+	int n = feed_numbers(reports, fresh, 8, got);
+	CHECK(n == 8 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5, 0, 1 }, 8) == 0);
+	n = feed_numbers(reports, stale, 8, got);
+	CHECK(n == 7 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5, 1 }, 7) == 0);
+}
+
 // A report with another burst's number, no frame missed (bench: A B F C E F and C D F A): numbered by the frames
 // counted, nothing lost, and a burst whose number repeats the last one's is taken when its voice is new
 static void test_rx_wrong_number(void)
@@ -1613,6 +1626,7 @@ int main(void)
 	test_rx_bench_call();
 	test_rx_missed_burst();
 	test_rx_wrong_number();
+	test_rx_a_after_f();
 	test_rx_late_entry_stale_number();
 	test_halt();
 	if (failures) {

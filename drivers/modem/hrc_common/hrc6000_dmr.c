@@ -941,9 +941,10 @@ static bool seq_by_count(hrc6000_dmr_t *e, const hrc6000_dmr_vstate_t *vs, hrc60
 		e->st.rx_stale++;
 		return false;
 	}
-	// No count: no timing, no burst taken yet (after a header), the other slot phase, or a count that lands on A (which
-	// comes with its voice sync, never as class 0)
-	if (!e->timing || vs->last == HRC6000_INDEX_UNKNOWN || gap < 2u || (gap & 1u) != 0u || want == 0u) {
+	// A fresh payload one frame after F can still carry F's status when the chip misses the A sync.
+	bool wrap = vs->last == 5u && gap == 2u && sum != vs->sum;
+	// Count across A only on that next frame, never extrapolate it across a gap.
+	if (!e->timing || vs->last == HRC6000_INDEX_UNKNOWN || gap < 2u || (gap & 1u) != 0u || (want == 0u && !wrap)) {
 		if (s->voice_index == HRC6000_INDEX_UNKNOWN) {
 			s->voice_index = vs->next;
 			e->st.rx_seq_fill++;
