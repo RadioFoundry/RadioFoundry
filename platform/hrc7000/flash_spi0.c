@@ -124,6 +124,7 @@ hal_flash_t hrc_flash_spi0 = {
 	.read = rd,
 	.write = wr,
 	.erase = er,
+	.jedec = hrc_flash_spi0_jedec,
 };
 
 void hrc_flash_spi0_configure(const hrc_flash_cfg_t *c)

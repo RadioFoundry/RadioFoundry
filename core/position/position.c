@@ -434,6 +434,11 @@ void position_gps_enable(bool on)
 	UNLOCK();
 }
 
+bool position_gps_enabled(void)
+{
+	return !p.gps_off;	// one byte, written whole: no lock
+}
+
 bool position_gps(position_gps_t *out, uint32_t now_ms)
 {
 	LOCK();

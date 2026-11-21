@@ -171,6 +171,7 @@ WEAK bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *l
 }
 WEAK bool ui_svc_satellite_update_busy(void) { return false; }
 #endif
+WEAK uint8_t ui_svc_gps_power(void) { return UI_GPS_POWER_NONE; }
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }

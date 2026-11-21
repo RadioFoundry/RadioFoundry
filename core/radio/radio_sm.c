@@ -235,8 +235,17 @@ static inline bool voice_streaming(void)
 static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
-	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		level = radio_beep_level(level, sm->volume_sent);
+	const hal_radio_t *r = board.radio;
+	if (r == NULL || r->volume == NULL) {
+		return level;
+	}
+	if (!r->volume_pcm) {
+		return radio_beep_level(level, sm->volume_sent);
+	}
+	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
 }
@@ -685,6 +694,14 @@ static void outputs(radio_sm_t *sm)
 		tx = true;	// a CW ID
 	}
 #endif
+	// Receive audio from a signal, for a board whose own noise reaches the audio only with a carrier present: on
+	// before the speaker opens, off after it closes. The green LED's state before any LED pattern; a beep alone never
+	// sets it
+	bool rx_open_change = board.radio->rx_open != NULL && sm->rx_open_out != (int8_t)green;
+	if (rx_open_change && green) {
+		sm->rx_open_out = 1;
+		board.radio->rx_open(true);
+	}
 
 	// The broadcast receiver plays instead of the channel receiver while the channel is a broadcast one
 	bool bcast = false;
@@ -699,6 +716,10 @@ static void outputs(radio_sm_t *sm)
 	if (sm->audio_out != (int8_t)(open && !bcast)) {
 		sm->audio_out = (int8_t)(open && !bcast);
 		board.radio->audio(open && !bcast);
+	}
+	if (rx_open_change && !green) {
+		sm->rx_open_out = 0;
+		board.radio->rx_open(false);
 	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
@@ -840,6 +861,14 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+#if CONFIG_APRS_RX
+	// Off the APRS frequency (or out of FM): APRS lets go of the FM receive audio before the board changes mode. A
+	// P25, NXDN or YSF engine can't start while it holds it (HR_C7000: air_take), and nothing retries the start until
+	// the next tune: the channel was left with no engine, and PTT refused ("NO TX") until a retune or power cycle
+	if (aprs_rx_listening() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
+		aprs_rx_release();
+	}
+#endif
 	if (radio_listen_band(sm->view.ch.rx_hz)) {
 		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
 		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
@@ -3629,6 +3658,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->votes = m->st.votes;
 	v->vote_moves = m->st.vote_moves;
 	v->weak_leaves = m->st.weak_leaves;
+	v->weak_hold_ms = m->weak_hold_ms;
 	v->adj_refused = m->st.adj_refused;
 	v->level_dbm = m->level_dbm;
 	v->leave_dbm = t3s.cfg.leave_dbm;
@@ -7101,12 +7131,19 @@ static void hotspot_arm(radio_sm_t *sm)
 	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
 	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
 	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
-	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
+	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
 	bool was = sm->dmr_keyed;
 	if (was) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
+			sm->hs_power_due = true;
+			return;
+		}
 		sm->dmr_keyed = false;
 		board.radio->tx_off();
 	}
+	sm->hs_power_due = false;
 	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 	if (was && !sm->dmr_keyed) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
@@ -7377,6 +7414,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
+	sm->hs_power_due = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -7488,7 +7526,23 @@ static void bench_tick(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
+// The radio's own DMR ID, the codeplug's (set on the radio in Settings > My radio, which writes the codeplug). Taken
+// before a channel is selected: a trunked channel's system needs an ID to start, and one selected without would stay
+// unavailable
+static void load_own_id(radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	sm->own_id = codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->view.dmr.own_id = sm->own_id;
+#else
+	(void)sm;
+#endif
+}
+
+// The preferences the radio core uses: base squelch, master power, VFO step
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -7505,11 +7559,6 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
-	if (sm->own_id == 0) {
-		sm->own_id = RADIO_DMR_ID_DEFAULT;
-	}
-	sm->view.dmr.own_id = sm->own_id;
 	// The radio name (talker alias text): the settings' override, else the codeplug's; hang times from the codeplug
 	codeplug_dmr_settings_t gs;
 	codeplug_dmr_settings(&gs);
@@ -8078,6 +8127,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->view.zone_index = zi;
 #endif
+	load_own_id(sm);
 	select_position(sm, zi, number, pos);
 #if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
@@ -8159,6 +8209,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->audio_out = -1;
+	sm->rx_open_out = -1;
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
@@ -8251,6 +8302,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	kv_load(sm, now_ms);
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
+	load_own_id(sm);
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
 	apply_prefs(sm, &st);
 #if CONFIG_DMR
@@ -8804,10 +8856,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_FREQ:
 		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
 		break;
-	case RREQ_HS_POWER:
-		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
-		hotspot_arm(sm);
+	case RREQ_HS_POWER: {
+		uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+		bool same = level == sm->hs_power;
+		sm->hs_power = level;
+		// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
+		// held now (a critical battery), which drops it
+		if (!same || !sm->dmr_keyed || tx_held(sm)) {
+			hotspot_arm(sm);
+		}
 		break;
+	}
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
@@ -9029,6 +9088,33 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 		return cap;
 	}
 	return (uint8_t)volume_percent;
+}
+
+// 10^(-d/20) for d = 0..19 dB, and for d = 0.0..0.9 dB, Q15
+static const uint16_t db_down_q15[20] = {
+	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
+	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
+};
+static const uint16_t db10_down_q15[10] = {
+	32768, 32393, 32022, 31656, 31293, 30935, 30581, 30231, 29885, 29543,
+};
+
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap)
+{
+	if (level == 0 || db10_now <= db10_cap) {
+		return level;
+	}
+	unsigned d = (unsigned)(db10_now - db10_cap);
+	// The level in hundredths: 20 dB at a time is a tenth. 255 x 100 x 32768 still fits 32 bits (thousandths didn't
+	// above level 131)
+	uint32_t centi = (uint32_t)level * 100u;
+	for (; d >= 200u; d -= 200u) {
+		centi /= 10u;
+	}
+	centi = (centi * db_down_q15[d / 10u] + 16384u) >> 15;
+	centi = (centi * db10_down_q15[d % 10u] + 16384u) >> 15;
+	uint32_t out = (centi + 50u) / 100u;
+	return (uint8_t)(out == 0 ? 1 : out);
 }
 
 uint8_t radio_volume_stored(uint8_t step)
@@ -9436,6 +9522,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
 		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
 		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		if (sm->hs_power_due && !board.dmr->is_transmitting()) {
+			hotspot_arm(sm);	// a level that came during a transmission (hotspot_arm)
+		}
 		outputs(sm);
 		return;
 	}

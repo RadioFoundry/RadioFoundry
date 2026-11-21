@@ -2674,25 +2674,47 @@ static void test_hotspot(void)
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
-	// TX inhibit drops the armed keying at once and holds it off; cleared, the keying is armed again
+	// The same level again (a split TX half re-sends its cap): the keying stays as it is
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
+	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
+	// outbound stopped for good), so the level waits for its end
+	sim.tx_active = true;
+	req(RREQ_HS_POWER, 128);
+	poll_for(RADIO_POLL_MS * 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.tx_power == 2 && hw.keyed);
+	sim.tx_active = false;
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1 && hw.tx_power == 1 && hw.keyed);
+	CHECK(rekeys == rk && !sm.hs_power_due);
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3);	// once
+	off0 = hw.tx_off_calls;
+	// TX inhibit drops the armed keying at once, mid-transmission too, and holds it off; cleared, the keying is armed
+	// again
 	radio_settings_t set = sm.set;
 	set.tx_inhibit = true;
+	sim.tx_active = true;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
+	CHECK(!sm.hs_power_due);
+	sim.tx_active = false;
 	req(RREQ_HS_POWER, 255);
 	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
 	radio_sm_request(&sm, &f, now);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 2);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
 	set.tx_inhibit = false;
 	radio_sm_set_settings(&sm, &set, now);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 3);
-	// Nor armed on a critical battery
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	// Nor armed on a critical battery, dropped mid-transmission too
 	sm.batt.level = BATT_CRITICAL;
+	sim.tx_active = true;
 	req(RREQ_HS_POWER, 255);
-	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3 && hw.rx_hz == 438800000);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
+	sim.tx_active = false;
 	sm.batt.level = BATT_OK;
 	req(RREQ_HS_POWER, 255);
-	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
 	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
@@ -4715,12 +4737,16 @@ static void test_ui_glue(void)
 	gps_here = true;
 	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 2, 0 }, 3) == DL_ST_BAD_ARG);
 	if (CONFIG_GPS) {
+		// and the status strip's GPS icon follows it too (ui_svc_gps_power: the position service, not a UI copy)
 		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) == DL_ST_OK);
-		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0);
+		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_OFF);
 		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 1, 0 }, 3) == DL_ST_OK);
-		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1);
+		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_ON);
 	}
 	gps_here = false;
+	CHECK(ui_svc_gps_power() == UI_GPS_POWER_NONE);	// no module: no icon, whatever the setting
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);
@@ -5109,6 +5135,8 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, -1) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 0) && ui_svc_setting_get(UI_SET_GPS) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 9) && ui_svc_setting_get(UI_SET_THEME) == 3);	// night, the last
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 0));
 	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
 	// or older records) is the defaults: the theme's highlight, the strip filled
 	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
@@ -5163,7 +5191,6 @@ static void test_ui_settings(void)
 	st->long_press_ms = 0;
 	st->repeat_ms = 0;
 	st->pos_format = 9;
-	st->theme = 7;		// bits 0-1 out of range (the bits above hold the crash report's target)
 	st->updown_home = 7;
 	st->privacy_type[0] = 99;
 	settings_end(now);
@@ -5173,8 +5200,7 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_SQUELCH) == 3 &&
 	      ui_svc_setting_get(UI_SET_MIC_GAIN) == 5);
 	CHECK(ui_svc_setting_get(UI_SET_LONG_PRESS_MS) == 777 && ui_svc_setting_get(UI_SET_REPEAT_MS) == 111);
-	CHECK(ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_THEME) == 0 &&
-	      ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
 	CHECK(ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == DMR_PRIVACY_OFF);
 	// Settings nobody stores: the RAM table
 	CHECK(ui_svc_setting_set(UI_SET_VOICE_PROMPTS, 1) && ram[UI_SET_VOICE_PROMPTS] == 1 &&
@@ -10319,6 +10345,22 @@ static void test_t3_system_late(void)
 	t3_cp_done();
 }
 
+// A trunked channel the radio was on when switched off: the system starts again at power-on (the radio's ID loaded
+// before the channel is selected, not after it, which left the channel unavailable)
+static void test_t3_boot(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	run(50);
+	boot();
+	t3_site_run(600);
+	CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7 && radio_t3v.sys == 1 && !radio_t3v.unavail &&
+	      radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
 static void test_t3_no_id(void)
 {
 	own_dmr_id = 0;
@@ -11229,6 +11271,7 @@ int main(void)
 	test_t3_power_save();
 	test_t3_channels();
 	test_t3_never_keys();
+	test_t3_boot();
 	test_t3_no_id();
 	test_t3_system_late();
 	test_t3_other_system();

@@ -3,7 +3,7 @@
 
 import { tleEpochMilliseconds } from "./satellite-tle.js";
 
-const COMMAND = 0x25;
+const COMMAND = 0x26;
 const OP = Object.freeze({ INFO: 0, LIST: 1, DATA: 3, COMMIT: 4, ABORT: 5,
 	REPLACE_BEGIN: 9, PROFILE_STAGE: 10, PROFILE_VALUES_GET: 11, PROFILE_STAGE_CHUNK: 12 });
 

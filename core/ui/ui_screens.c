@@ -31,13 +31,19 @@ static bool ui_strip_fill;
 // match; also Home's channel number. All are light shades: black on each is at least 7.5:1 after RGB565 rounding.
 // The red is lighter and pinker than TX's (the TX pill also says TX); there is no green, which would hide the RX
 // pill. Default keeps the theme's blue focus; its filled strip is light gray (white in high contrast). Built without CONFIG_UI_COLOR (radios
-// with only a monochrome screen) the theme's own colors stay
+// with only a monochrome screen) the theme's own colors stay. Night keeps its brightest red for all of them whatever the
+// highlight color, so nothing but red reaches the eye
 static void accent_apply(void)
 {
 	ui_col.focus_fg = ui_col.fg;
 	ui_col.chnum = ui_col.dim;
 	if (!CONFIG_UI_COLOR)
 		return;
+	if (ui_theme == UI_THEME_NIGHT) {
+		ui_col.strip_bg = ui_col.focus = ui_col.chnum = ui_col.fg;
+		ui_col.strip_warn = ui_col.focus_fg = ui_col.bg;
+		return;
+	}
 	static const color_t acc[UI_ACCENT_COUNT] = {
 		[UI_ACCENT_DEFAULT] = RGB565(216, 216, 216),
 		[UI_ACCENT_RED] = RGB565(240, 112, 112),
@@ -62,25 +68,49 @@ static void accent_apply(void)
 	};
 	uint8_t a = ui_accent < UI_ACCENT_COUNT ? ui_accent : UI_ACCENT_DEFAULT;
 	color_t c = acc[a];
-	if (a == UI_ACCENT_DEFAULT && ui_theme == 2)
+	if (a == UI_ACCENT_DEFAULT && ui_theme == UI_THEME_HIGH_CONTRAST)
 		c = RGB565(255, 255, 255);	// high contrast has no gray: its default strip is white
 	ui_col.strip_bg = c;
 	ui_col.strip_warn = warn[a];
 	if (a != UI_ACCENT_DEFAULT) {
 		ui_col.focus = c;
 		ui_col.focus_fg = RGB565(0, 0, 0);
-		ui_col.chnum = ui_theme == 1 ? ui_col.fg : c;	// light shades don't read as digits on white
+		ui_col.chnum = ui_theme == UI_THEME_LIGHT ? ui_col.fg : c;	// light shades don't read as digits on white
 	}
 }
 
+// Night's four reds, brightest first (red only: green and blue are 0, black is the background). Text is only ever the
+// two brightest; the darkest is a background under the brightest (the idle pill, the hint row), never a text color.
+// Pure red on black reaches 5.2:1 at most, so what must be read at a glance is the brightest on black or black on it
+#define NIGHT_R4	RGB565(255, 0, 0)
+#define NIGHT_R3	RGB565(176, 0, 0)
+#define NIGHT_R2	RGB565(112, 0, 0)
+#define NIGHT_R1	RGB565(56, 0, 0)
+
 void ui_theme_set(uint8_t theme)
 {
-	if (!CONFIG_UI_COLOR)
-		theme = 0;	// the dark theme only
+	if (!CONFIG_UI_COLOR || theme >= UI_THEME_COUNT)
+		theme = UI_THEME_DARK;	// without color settings: the dark theme only
 	ui_theme = theme;
 	if (gfx_bpp() == 1)
 		return;		// ink on paper whatever the theme
-	if (theme == 1) {
+	ui_col.pill_fg = RGB565(255, 255, 255);
+	ui_col.pill_dark_fg = RGB565(0, 0, 0);
+	if (theme == UI_THEME_NIGHT) {
+		// Night: the meanings that were hues become brightness and the word (P5): TX and warnings brightest, RX
+		// and privacy one step down, the idle pill dark with a bright word. The highlight is its brightest red too
+		// (accent_apply)
+		ui_col.bg = RGB565(0, 0, 0);
+		ui_col.fg = ui_col.tx = ui_col.warn = NIGHT_R4;
+		ui_col.dim = ui_col.rx = ui_col.priv = NIGHT_R3;
+		ui_col.line = NIGHT_R2;
+		ui_col.idle = ui_col.hint_bg = NIGHT_R1;
+		ui_col.pill_fg = RGB565(0, 0, 0);	// on the brightest red
+		ui_col.idle_fg = NIGHT_R4;
+		accent_apply();
+		return;
+	}
+	if (theme == UI_THEME_LIGHT) {
 		// Light: dark text on white; the meaning colors darker so they read on white
 		ui_col.bg = RGB565(255, 255, 255);
 		ui_col.fg = RGB565(0, 0, 0);
@@ -93,7 +123,7 @@ void ui_theme_set(uint8_t theme)
 		ui_col.focus = RGB565(64, 128, 232);
 		ui_col.hint_bg = RGB565(224, 224, 224);
 		ui_col.priv = RGB565(0, 72, 200);
-	} else if (theme == 2) {
+	} else if (theme == UI_THEME_HIGH_CONTRAST) {
 		// High contrast: pure black and white, saturated meaning colors, nothing gray
 		ui_col.bg = RGB565(0, 0, 0);
 		ui_col.fg = ui_col.dim = RGB565(255, 255, 255);
@@ -118,9 +148,13 @@ void ui_theme_set(uint8_t theme)
 		ui_col.hint_bg = RGB565(32, 32, 32);
 		ui_col.priv = RGB565(64, 140, 255);
 	}
-	ui_col.pill_fg = RGB565(255, 255, 255);
-	ui_col.pill_dark_fg = RGB565(0, 0, 0);
+	ui_col.idle_fg = ui_col.pill_fg;
 	accent_apply();
+}
+
+uint8_t ui_theme_get(void)
+{
+	return ui_theme;
 }
 
 void ui_accent_set(uint8_t accent)
@@ -142,7 +176,7 @@ void ui_layout_init(void)
 
 	if (gfx_bpp() == 1) {
 		ui_col.bg = 0; ui_col.fg = ui_col.dim = ui_col.line = ui_col.tx = ui_col.rx = ui_col.warn = ui_col.idle = ui_col.focus = ui_col.priv = 1;
-		ui_col.pill_fg = ui_col.pill_dark_fg = 0;
+		ui_col.pill_fg = ui_col.pill_dark_fg = ui_col.idle_fg = 0;
 		ui_col.hint_bg = 0;
 	}
 
@@ -282,6 +316,72 @@ static const char *dual_mode_word(const ui_dual_pane_t *p)
 uint32_t ui_strip_draws;
 uint32_t ui_hint_draws;
 
+// The GPS icon: a satellite dish, its rim up and to the right. Hollow while the GPS is off, solid while it searches;
+// with a fix the feed arm and two waves join it. The shape, not a color, tells them apart on every panel. Drawn by
+// hand at the heights of the strip's signal bars, since a dish drawn from lines muddies below 13 pixels. The width
+// keeps the waves' room, so the strip doesn't move when a fix comes
+#if CONFIG_GPS
+// The rows, bit x of a row is pixel x: each dish's bowl (h rows), then its feed arm and waves from the top row down,
+// only as many rows as they reach
+static const uint32_t gps_rows[] = {
+	// 6 px: bowl, feed, waves
+	0x0, 0x1, 0x3, 0x7, 0xf, 0x1e,
+	0x20, 0x10, 0x8,
+	0x280, 0x500, 0x500, 0x280,
+	// 8 px: bowl, feed, waves
+	0x0, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7e, 0x3c,
+	0xc0, 0x20, 0x10,
+	0xa00, 0x500, 0xa00, 0xa00, 0x500,
+	// 11 px: bowl, feed, waves
+	0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xfe, 0xfc, 0x30,
+	0x600, 0x300, 0x80, 0x40, 0x20,
+	0x9000, 0x12000, 0x12000, 0x12000, 0x9000,
+	// 13 px: bowl, feed, waves
+	0x0, 0x0, 0x0, 0x2, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3fe, 0x1fc,
+	0x0, 0xc00, 0xe00, 0x300, 0x80, 0x40, 0x20,
+	0x0, 0x12000, 0x24000, 0x24000, 0x48000, 0x24000, 0x24000, 0x12000,
+};
+typedef struct {
+	uint8_t h, w;		// height; width, the waves' room kept
+	uint8_t feed, waves;	// rows of each in gps_rows after the bowl
+	uint8_t at;		// the bowl's first row in gps_rows
+} gps_glyph_t;
+static const gps_glyph_t gps_glyphs[] = {
+	{ 6, 11, 3, 4, 0 },
+	{ 8, 12, 3, 5, 13 },
+	{ 11, 17, 5, 5, 29 },
+	{ 13, 19, 7, 8, 50 },
+};
+
+// The tallest dish no taller than h, the bars' height, so it keeps the strip's top margin (the smallest below that)
+static const gps_glyph_t *gps_glyph(int h)
+{
+	const gps_glyph_t *g = &gps_glyphs[0];
+	for (size_t i = 1; i < sizeof gps_glyphs / sizeof gps_glyphs[0]; i++)
+		if (gps_glyphs[i].h <= h)
+			g = &gps_glyphs[i];
+	return g;
+}
+
+// Hollow: only the bowl's edge, the pixels with a side open
+static void gps_icon(int x, int y, const gps_glyph_t *g, uint8_t state, color_t fg)
+{
+	const uint32_t *bowl = &gps_rows[g->at], *feed = bowl + g->h, *waves = feed + g->feed;
+	for (int r = 0; r < g->h; r++) {
+		uint32_t row = bowl[r];
+		if (state == UI_GPS_OFF) {
+			uint32_t up = r > 0 ? bowl[r - 1] : 0, down = r + 1 < g->h ? bowl[r + 1] : 0;
+			row &= ~(up & down & (row << 1) & (row >> 1));
+		}
+		if (state == UI_GPS_FIX)
+			row |= (r < g->feed ? feed[r] : 0) | (r < g->waves ? waves[r] : 0);
+		for (int c = 0; c < g->w; c++)
+			if (row & (1u << c))
+				gfx_pixel(x + c, y + r, fg);
+	}
+}
+#endif
+
 // A word after the mode, with a space either side, where the strip has room for it: measured, since a translation may
 // be longer than the English
 static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
@@ -301,7 +401,7 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 	bool titled = prefix != NULL || name != NULL;
 	bool merged = titled && gfx_height() < UI_TALL_PX;
 	const char *word = TR(TOP_STATE_IDLE, "IDLE");
-	color_t pbg = ui_col.idle, pfg = ui_col.pill_fg;
+	color_t pbg = ui_col.idle, pfg = ui_col.idle_fg;
 	// FM with the monitor holding the squelch open shows RX, as the green LED does (radio_sm.c outputs()); MON stays
 	// beside the mode
 	if (st == RS_IDLE && v->monitor && v->ch.mode != RADIO_MODE_DMR)
@@ -382,6 +482,13 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 		int sw = bh + 4;
 		rx -= sw + f->w / 2;
 		gfx_icon_bars(rx, ty + f->ascent - bh - 1, sw, bh + 1, 4, rssi_bars(v->rssi_dbm), sfg, filled ? ui_col.idle : ui_col.line);
+#if CONFIG_GPS
+		if (s->gps != UI_GPS_NONE) {
+			const gps_glyph_t *g = gps_glyph(bh + 1);
+			rx -= g->w + f->w / 2;
+			gps_icon(rx, ty + f->ascent - g->h, g, s->gps, sfg);
+		}
+#endif
 	}
 	// Icons one cell high, drawn from lines: an envelope with the unread count, a padlock while the keys are locked
 	int ih = f->ascent - 2 < 5 ? 5 : f->ascent - 2, iy = ty + f->ascent - ih;
@@ -3323,6 +3430,7 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 	char buf[32];
 	sbuf_t b;
 	gfx_clear(gfx_bpp() == 1 ? ui_col.bg : ui_col.tx);
+	color_t fg = gfx_bpp() == 1 ? ui_col.fg : ui_col.pill_fg;	// the words on the TX color, as on the TX pill
 	int y = ui_draw_top(v, s, TR(TITLE_EMERGENCY, "Emergency"), NULL) + 2;
 	const char *word = TR(EMERG_STATE_EMERGENCY, "EMERGENCY");
 	const font_t *big = gfx_text_width(L->large, word) <= w ? L->large : L->medium;
@@ -3330,7 +3438,7 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 		gfx_fill(0, y, w, big->h, ui_col.fg);
 		gfx_text(big, (w - gfx_text_width(big, word)) / 2, y, word, ui_col.bg);
 	} else {
-		gfx_text(big, (w - gfx_text_width(big, word)) / 2, y, word, ui_col.fg);
+		gfx_text(big, (w - gfx_text_width(big, word)) / 2, y, word, fg);
 	}
 	y += big->h + 2;
 	sb_init(&b, buf, sizeof buf);
@@ -3340,13 +3448,13 @@ void ui_draw_emergency(const radio_view_t *v, const ui_state_t *s, uint32_t id, 
 		sb_u32(&b, id, 1);
 	char fit[40];
 	gfx_text_fit(L->medium, buf, w, fit, sizeof fit);
-	gfx_text(L->medium, (w - gfx_text_width(L->medium, fit)) / 2, y, fit, ui_col.fg);
+	gfx_text(L->medium, (w - gfx_text_width(L->medium, fit)) / 2, y, fit, fg);
 	y += L->medium->h;
 	if (name != NULL && name[0] && y + L->small->h <= L->hint_y) {
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "ID ");
 		sb_u32(&b, id, 1);
-		gfx_text(L->small, (w - gfx_text_width(L->small, buf)) / 2, y, buf, ui_col.fg);
+		gfx_text(L->small, (w - gfx_text_width(L->small, buf)) / 2, y, buf, fg);
 	}
 	ui_draw_hint(s->toast != NULL ? s->toast : TR(EMERG_HINT, "OK acknowledge  Back hide"), s->toast != NULL);
 }

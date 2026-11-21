@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ui/fmt.h"
 #include "hrc/dmr_glue.h"
 #include "hrc/vocoder.h"
 #include "gps_uart/gps_uart.h"
@@ -92,6 +93,24 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// The support info (docs/spec/support-info.md 2): the modem, then the board revision driven and what chose it, and
+// the start-up's IF chip read test and receiver probe (hardware-md9600.md 16): the lines of the diagnostics page
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i == 0) {
+		*role = BOARD_HW_DMR;
+		str_copy(buf, len, "HR_C6000");
+		return true;
+	}
+	if (i > 2) {
+		return false;
+	}
+	md9600_radio_diag_t rd;
+	md9600_radio_diag(&rd);
+	*role = BOARD_HW_BOARD;
+	return md9600_rev_text(i == 1 ? 0 : 2, md9600_rev_state(), rd.probe, buf, len);
+}
+
 const board_t board = {
 	.name = "MD-9600",
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
@@ -136,6 +155,7 @@ const board_t board = {
 #endif
 	.power = &md9600_power,
 	.flash = &stm32_spi_flash,
+	.hw_line = hw_line,
 #if CONFIG_DIAG
 	.diag_line = md9600_diag_line,
 	.diag_reset = md9600_diag_reset,

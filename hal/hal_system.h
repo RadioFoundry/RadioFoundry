@@ -63,6 +63,10 @@ typedef struct {
 	// an aligned word inside the platform's register windows. Writes *val when write, then reads the register back into
 	// *val; the read has the register's side effects (a read-to-clear EOI acknowledges). False outside the windows
 	bool (*reg)(uint32_t addr, uint32_t *val, bool write);
+	// Optional (NULL: none): where the firmware image lies in program flash, as the release file has it (the
+	// application's base, a first stage included, to the end of the data's load copy). read() reads it: the support
+	// info's image hash (docs/spec/support-info.md 3)
+	void (*image)(uint32_t *addr, uint32_t *len);
 #if defined(CONFIG_STUB_ENTRY) && CONFIG_STUB_ENTRY
 	uint32_t stub_run_addr;		// last, so a file built without config.h sees the same layout before it
 	// Optional (NULL: any image): the loaded image may run here. The STM32 refuses one that doesn't feed the IWDG

@@ -13,6 +13,7 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/gfx.h"
 #include "ui/i18n.h"
 #include "ui/gfx.h"
 #include "config.h"
@@ -121,6 +122,15 @@ static const flow_t flows[] = {
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
 	{ "menu entry skips unavailable GPS", "", "ok 7 5", "screen=group focus=Answer_GPS_requests", 3, false },
+	// The status strip's GPS icon (ui.md 3), a dish: none without a GPS, hollow with the setting off, solid while
+	// searching, with waves on a fix; the setting off hollows it within a second. Without a GPS the setting reads
+	// Off, whatever is stored (#349)
+	{ "GPS icon: none without a GPS", "", "", "gps=0", 0, false },
+	{ "GPS setting reads Off without a GPS", "gps:none", "ok 7 5", "screen=group hides=On", 3, false },
+	{ "GPS icon: off", "gps:off", "", "gps=1 screen=home", 0, false },
+	{ "GPS icon: searching", "gps:search", "", "gps=2 screen=home", 0, false },
+	{ "GPS icon: fix", "gps:fix", "", "gps=3 screen=home", 0, false },
+	{ "GPS icon: setting off hollows it", "gps:fix ok 7 5", "ok wait:1100", "gps=1 focus=GPS", 1, false },
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
@@ -1272,6 +1282,10 @@ static const flow_t flows_k[] = {
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
 	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },
 	{ "S filled status bar off (on by default)", "", "ok 7 2 down down down down ok", "set62=0", 8, false },
+	{ "S theme night, the last", "", "ok 7 2 down down ok ok ok", "set7=3", 8, false },
+	// Night shows red only: its highlight is its own red, so the row is dimmed and says why
+	{ "S night: the highlight color is red only", "theme:night ok 7 2 down down down", "ok",
+	  "toast=Night_theme set61=0", 1, false },
 #else
 	// Built without CONFIG_UI_COLOR: Display has no color rows; the third row is Large text
 	{ "S no color rows in this build", "", "ok 7 2", "hides=Theme hides=Highlight hides=Filled", 3, false },
@@ -1702,6 +1716,24 @@ static void about_checks(void)
 			fails++;
 		}
 		sim_run("pttup", err, sizeof err);
+		// The support info (docs/spec/support-info.md): the source, the image hash (done after a few redraws: the
+		// sim's image is one step), the MCU and the board's chips
+		bool src = false, mcu = false, dmr = false, checking = false;
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		if (sim_run("ok 7 up ok ok wait:1000", err, sizeof err)) {
+			for (int i = 0; i < 40; i++) {
+				src = src || sim_run("expect:shows=Source:", err, sizeof err);
+				mcu = mcu || sim_run("expect:shows=STM32F4", err, sizeof err);
+				dmr = dmr || sim_run("expect:showsraw=HR_C6000", err, sizeof err);
+				checking = checking || sim_run("expect:shows=checking", err, sizeof err);
+				sim_run("down", err, sizeof err);
+			}
+		}
+		if (!src || !mcu || !dmr || checking) {
+			printf("FAIL about [%s]: support info: source %d, MCU %d, DMR chip %d, still checking %d\n", gn, src, mcu,
+				dmr, checking);
+			fails++;
+		}
 		// In every language built, the whole text fits its buffer: scrolling a line at a time passes where the
 		// contributors are listed and ends on the last line (the codec's)
 		for (uint8_t l = 0; l < lang_count(); l++) {
@@ -2088,6 +2120,48 @@ static void title_row_checks(void)
 	}
 }
 
+#if CONFIG_UI_COLOR
+// The night theme lets nothing but red reach the eye: every pixel of these screens, on every color display class and
+// whatever the highlight color, has no green or blue (GPS systems and the emergency screen included)
+static void night_checks(void)
+{
+	static const char *const scripts[] = {
+		"", "strip:off", "rx:9991234,91,g,Q1ABC_Joe", "pttdown", "quick", "long:quick 5", "ok 5", "ok 7 2",
+		"ok 6 2 2", "ok 6 2 3", "emergency:9991234", "msg:9991234,Meet_at_the_north_lot", "ok 7 2 down down down ok",
+	};
+	char err[300], buf[200];
+	for (int g = 0; g < sim_geom_count; g++) {
+		if (sim_geoms[g].bpp == 1)
+			continue;
+		for (size_t i = 0; i < sizeof scripts / sizeof scripts[0]; i++) {
+			sim_reset(&sim_geoms[g], SIM_MAP_K);
+			snprintf(buf, sizeof buf, "color:teal theme:night %s", scripts[i]);
+			if (!sim_run(buf, err, sizeof err)) {
+				printf("FAIL night [%s] \"%s\": %s\n", sim_geoms[g].name, scripts[i], err);
+				fails++;
+				continue;
+			}
+			int lit = 0, bad = 0, bx = 0, by = 0;
+			for (int y = 0; y < gfx_height(); y++)
+				for (int x = 0; x < gfx_width(); x++) {
+					color_t c = gfx_get_pixel(x, y);
+					lit += c != 0;
+					if ((c & 0x07FFu) != 0 && bad++ == 0) {
+						bx = x;
+						by = y;
+					}
+				}
+			if (bad > 0 || lit == 0) {
+				printf("FAIL night [%s] \"%s\": %d pixels not red (first %d,%d: %04x), %d lit\n", sim_geoms[g].name,
+				       scripts[i], bad, bx, by, bad ? gfx_get_pixel(bx, by) : 0, lit);
+				fails++;
+			}
+		}
+	}
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+}
+#endif
+
 // Home's talk target line drops a contact name that only repeats the ID ("TG 201 TG 201" on the DB25-D, 2026-10-17)
 static int check_name_is_id(void)
 {
@@ -2261,6 +2335,9 @@ int main(void)
 	volume_bar_checks();
 #endif
 	title_row_checks();
+#if CONFIG_UI_COLOR
+	night_checks();
+#endif
 
 	crawl(sim_geom_find("160x120i5"), SIM_MAP_K, "K DM-1701");
 	crawl(sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");

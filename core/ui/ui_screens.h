@@ -110,6 +110,7 @@ typedef struct {
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
 	uint8_t usb_net;	// UI_USB_NET_*: the status strip's USB network word and link arrows
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	bool hints;		// the hint row is shown (Settings > Display)
 	bool large_text;	// Home shows only the channel and the talk target (Settings > Display)
 	bool privacy;		// the next DMR transmission is encrypted
@@ -168,18 +169,28 @@ extern ui_layout_t ui_layout;
 // the computer has brought up, so IP over DMR can flow ("IP" and the up and down arrows, usb-network.md 1)
 enum { UI_USB_NET_OFF, UI_USB_NET_WAIT, UI_USB_NET_UP };
 
+// ui_state_t.gps: the status strip's GPS icon, a satellite dish. None on a radio without a GPS (board_has_gps: a module
+// detected after start-up gets it then); hollow while Settings > Location > GPS is off; solid while it is on without a
+// fix, silent included; with a fix, solid with its feed arm and two waves
+enum { UI_GPS_NONE, UI_GPS_OFF, UI_GPS_SEARCH, UI_GPS_FIX };
+
 // Colors carry meaning only (P5); every color cue also has a word. On 1 bpp panels everything is ink on paper and
 // pills are inverse video
 typedef struct {
 	color_t bg, fg, dim, line, tx, rx, warn, idle, pill_fg, pill_dark_fg, focus, hint_bg, priv;
+	color_t idle_fg;		// the idle pill's word (pill_fg is the word on the TX color)
 	color_t focus_fg;		// text on the focus highlight
 	color_t chnum;			// Home's channel number
 	color_t strip_bg;		// the filled status strip's background (its text is pill_dark_fg)
 	color_t strip_warn;		// warnings on it
 } ui_colors_t;
 extern ui_colors_t ui_col;
-// Color theme on color displays (Settings > Display): 0 dark, 1 light, 2 high contrast. After ui_layout_init
+// Color theme on color displays (Settings > Display), the values of settings_t.theme. Night is shades of pure red
+// on black, for eyes adapted to the dark: it has no highlight color of its own choosing
+enum { UI_THEME_DARK, UI_THEME_LIGHT, UI_THEME_HIGH_CONTRAST, UI_THEME_NIGHT, UI_THEME_COUNT };
+// After ui_layout_init; a value out of range is the dark theme
 void ui_theme_set(uint8_t theme);
+uint8_t ui_theme_get(void);
 // Color displays (Settings > Display): the highlight color (UI_ACCENT_*, ui_svc.h) for list and tile focus and Home's
 // channel number, and whether the status strip is filled with it. Both re-apply the theme's colors
 void ui_accent_set(uint8_t accent);

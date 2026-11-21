@@ -194,7 +194,7 @@ catalog-ID columns, checksum column, epoch syntax and calendar day, and finite/r
 Every entry is validated before any install begins. Duplicate IDs, malformed entries, or a provider response that
 omits or adds an ID reject the complete batch.
 
-Install uses debug-link command `0x25` (`SATELLITE`) and is available only when capability operation `INFO` succeeds.
+Install uses debug-link command `0x26` (`SATELLITE`) and is available only when capability operation `INFO` succeeds.
 Protocol-v7 adds `SYNC_CHANNELS_STATUS=13` to the operations: `INFO=0`, `LIST=1`, `BEGIN=2`, `DATA=3`,
 `COMMIT=4`, `ABORT=5`, `SYNC_CHANNELS=6`, `PROFILE_GET=7`, `PROFILE_SET=8`, `REPLACE_BEGIN=9`,
 `PROFILE_STAGE=10`, `PROFILE_VALUES_GET=11`, `PROFILE_STAGE_CHUNK=12`, and `SYNC_CHANNELS_STATUS=13`. `INFO` reports

@@ -331,6 +331,7 @@ typedef struct {
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	uint32_t weak_hold_ms;		// the hold on leaving a weak TSCC last set (0: none)
 	uint32_t adj_refused;	// adjacent sites announced but not authorized
 	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
 	int16_t leave_dbm;	// the threshold in force
@@ -759,6 +760,14 @@ uint8_t radio_volume_stored(uint8_t step);
 // reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
 // beep_level setting (cap). volume_percent < 0 (none given yet): the cap
 uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
+// The volume step above which beeps stop getting louder on a radio whose volume scales the PCM path (volume_pcm with
+// hal_radio_t.volume_db10): higher steps make the voice louder, not the beeps. The speaker's volume itself never
+// changes for a beep
+#define RADIO_BEEP_VOLUME_STEP	7
+// A beep's level on such a radio: level softened by the gain the volume gives over the cap step's (db10_now - db10_cap,
+// in tenths of a dB), so the beep sounds as loud as at the cap step. At or below the cap: level. At least 1 while level
+// isn't 0
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
 // with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets

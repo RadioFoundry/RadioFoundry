@@ -91,6 +91,9 @@ typedef struct {
 	// journaled erase and program
 	bool (*replace)(uint32_t addr, const void *data);
 	const hal_flash_map_t *map;	// NULL: no areas for the core (nothing is stored)
+	// Optional (NULL: not known): the chip's ID as init read it, manufacturer << 16 | device (SPI NOR: memory type << 8
+	// | capacity code; SPI NAND: the device byte), 0 when nothing answered. No bus transfer: the support info reads it
+	uint32_t (*jedec)(void);
 } hal_flash_t;
 
 #endif

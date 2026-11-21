@@ -8,8 +8,8 @@
 //                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
 //                            names (space separated, sim_color_find: "red yellow light_blue"), as
 //                            <screen>__<color>.png right after it, on color displays only (none when it is unset).
-//                            The theme pages are drawn again in the light and high-contrast themes too, as
-//                            <screen>__light.png and <screen>__high_contrast.png
+//                            The theme pages are drawn again in the light, high-contrast and night themes too, as
+//                            <screen>__light.png, <screen>__high_contrast.png and <screen>__night.png
 //   uiSim --sheets DIR [GEOM] contact sheets only: DIR/<geom>.png, every gallery screen at 2x under its name in one
 //                            palette PNG, at one display class or all of them (a quick layout audit)
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
@@ -150,6 +150,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "satellite_passes_predicting", "satpredict ok 6 9" },
 	{ "satellite_tle_text", "ok 6 9 ok ctx" },
 #endif
+	{ "home_gps_off", "gps:off" },		// the status strip's GPS dish: off (hollow)
+	{ "home_gps_search", "gps:search" },	// on, no fix (solid)
+	{ "home_gps_fix", "gps:fix" },		// with a fix (waves)
 	{ "position", "ok 6 2" },
 	{ "gps_sky", "ok 6 2 2" },
 	{ "gps_signal", "ok 6 2 3" },
@@ -504,7 +507,7 @@ static int run_audit(const char *only)
 
 // Gallery screens drawn differently on color displays. G_COLOR: color displays only (on a monochrome one it would
 // repeat another screen); G_COLORS: also once in each UI_GALLERY_COLORS highlight color, on color displays;
-// G_THEMES: also in the light and high-contrast themes (Settings > Display), on color displays
+// G_THEMES: also in the light, high-contrast and night themes (Settings > Display), on color displays
 #define G_COLOR		1u
 #define G_COLORS	2u
 #define G_THEMES	4u

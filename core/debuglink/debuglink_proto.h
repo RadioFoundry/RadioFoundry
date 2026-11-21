@@ -38,7 +38,8 @@ enum {
 	DL_CMD_T3		= 0x22,	// a Tier III trunked system: stage, select, leave (debuglink_t3.c, 3.26)
 	DL_CMD_CPKV		= 0x23,	// a key of the codeplug settings area: read, write, remove (debuglink_cpkv.c, 3.27)
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
-	DL_CMD_SATELLITE	= 0x25,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE)
+	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
+	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 };
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
@@ -113,6 +114,12 @@ enum {
 enum {
 	DL_HWOPT_OP_LIST	= 0,	// none -> key=value text: hwopt.count, hwopt.<i>.name / value / restart / choices
 	DL_HWOPT_OP_SET		= 1,	// option u8, choice u8 -> none (refused: the board didn't store it, or on air)
+};
+
+// DL_CMD_SUPPORT operations (the only payload byte; docs/spec/debuglink.md 3.29)
+enum {
+	DL_SUPPORT_OP_INFO	= 0,	// -> key=value text: source, repo, hw.<part>, image.addr / size
+	DL_SUPPORT_OP_HASH	= 1,	// -> image.state pending (image.done) or done (image.sha256), or none
 };
 
 // DL_CMD_CHIP_REG's chip number for the SoC's own registers (board.system->reg): an address u32 follows, not a page and

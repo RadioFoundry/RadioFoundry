@@ -259,6 +259,9 @@ bool ui_svc_satellite_path(satellite_path_view_t *path);
 bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines);
 bool ui_svc_satellite_update_busy(void);
 #endif
+// The radio's GPS for the status strip: none, or one with Settings > Location > GPS off or on, however it was set
+enum { UI_GPS_POWER_NONE, UI_GPS_POWER_OFF, UI_GPS_POWER_ON };
+uint8_t ui_svc_gps_power(void);
 // One satellite for the GPS screen's sky plot and signal bars
 enum { UI_GNSS_GPS, UI_GNSS_GLONASS, UI_GNSS_GALILEO, UI_GNSS_BEIDOU, UI_GNSS_QZSS, UI_GNSS_COUNT };
 typedef struct {

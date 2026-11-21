@@ -90,6 +90,8 @@ void position_gps_enable(bool on);
 // Copy the current fresh board GPS fix into the fixed-position settings for later Auto fallback
 bool position_save_gps(uint32_t now_ms);
 #endif
+// Settings > Location > GPS as last applied, by whichever path (the menu, the debug link, start-up)
+bool position_gps_enabled(void);
 // The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute
 typedef struct {
 	bool fix;		// a position under a minute old

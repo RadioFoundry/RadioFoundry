@@ -731,8 +731,8 @@ static void test_crash_bits(void)
 	settings_set_crash_mode(&s, 1);
 	CHECK(settings_crash_mode(&s) == 1 && (s.accent & 0x0F) == (5 | SETTINGS_ACCENT_PLAIN) && !(s.accent & 0xC0));
 	CHECK(!(s.updown_home & 0x80));		// bit 7 stays free
-	s.theme = 3;				// out of range in bits 0-1: the default
-	CHECK(settings_theme(&s) == 0);
+	s.theme = 0xFF;				// bits 0-1 have no out-of-range value: 3 is the night theme
+	CHECK(settings_theme(&s) == 3);
 }
 
 // The Settings > Sound tones share sound_flags with the knob lock: each keeps its bits, and firmware from before the

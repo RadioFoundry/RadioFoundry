@@ -154,8 +154,10 @@ alone plays nothing: the FIFO needs samples. The feeder runs at the top task pri
 missed its 8 ms turn whenever the copy interrupt read its 512 bytes with interrupts masked, which gave a gap every
 32 ms. The FIFO and the I2S stream share the chip's clock, so they never drift. Checked on the SDR bench by ear and by
 microphone: NXDN 4800 speech, every frame played, no gaps. The view keys `audio.fifo_chunks`, `audio.fifo_gaps` and
-`audio.fifo_full` count the path. Radios: HR_C6000; the HR_C5000's FIFO is not known, so a board turns the path on
-with `prompt_fifo`.
+`audio.fifo_full` count the path. The same cause made every beep silent in FM receive on a board whose FM audio comes
+through the chip: the board reports its chip in FM receive (`stm32_i2s_pcm_fm_chip`), and a beep goes through the
+FIFO while its PCM route is on (`audio.fifo_fm`, `test_beep_fm_fifo`). Radios: HR_C6000; the HR_C5000's FIFO is not
+known, so a board turns the path on with `prompt_fifo`.
 
 ## 2. DMR modem timing: HR_C7000
 

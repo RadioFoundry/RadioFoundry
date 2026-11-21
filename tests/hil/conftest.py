@@ -60,6 +60,9 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-image", default=os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"),
                 help="the radio's codeplug as a file (env RFOUNDRY_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
                      "as the backup instead of reading the radio, and restore and verify it afterwards")
+    g.addoption("--firmware-image", default=os.environ.get("RFOUNDRY_HIL_FIRMWARE_IMAGE"),
+                help="the .bin the radio was flashed with (env RFOUNDRY_HIL_FIRMWARE_IMAGE; _install.bin for a board with a "
+                     "first stage): test_support_info checks the radio's image hash against its SHA-256")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--mic-inject", action="store_true",

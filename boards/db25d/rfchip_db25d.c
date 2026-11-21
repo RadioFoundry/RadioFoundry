@@ -178,6 +178,17 @@ void db25d_rf_variant(char out[4])
 	out[3] = '\0';
 }
 
+const char *db25d_rf_chip_name(bool lo)
+{
+	switch (lo ? lo_chip : main_chip) {
+	case CHIP_BK4819: return "BK4819";
+	case CHIP_FD6818: return "FD6818";
+	case CHIP_7813: return "7813";
+	case CHIP_AT1141: return "AT1141";
+	default: return "none";
+	}
+}
+
 uint32_t db25d_rf_writes(void)
 {
 	return bus_main.bus.writes + bus_lo.bus.writes;

@@ -141,11 +141,12 @@ static st7735_t panel = {
 };
 
 static bool ready;
+static int16_t factory = -1;	// the factory panel byte (security register 3, 0x1D), -1: not read
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
-// period, two transfers per cycle, at 2 kHz idle or 40 kHz during TX or receive audio. 0 % and 100 % stop
-// both and drive the pin steady.
+// period, two transfers per cycle at 2 kHz. 0 %, 100 % and any lit level during TX or open receive audio stop both and
+// drive the pin steady.
 
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
 
@@ -153,7 +154,7 @@ static uint32_t bl_set = BL_MASK;			// main SRAM, reachable by DMA2
 static uint32_t bl_clear = (uint32_t)BL_MASK << 16;
 static bool bl_running;
 static uint8_t bl_percent;	// the brightness set last
-static bool bl_tx, bl_rx_audio;
+static bool bl_tx, bl_rx_open;
 
 static void bl_stream_stop(DMA_Stream_TypeDef *st)
 {
@@ -201,7 +202,7 @@ static void bl_init(void)
 
 	TIM1->CR1 = 0;
 	TIM1->PSC = 0;
-	TIM1->ARR = UVF_BL_IDLE_PERIOD - 1;
+	TIM1->ARR = UVF_BL_PERIOD - 1;
 	TIM1->CCR1 = 1;
 	TIM1->CCMR1 = TIM_CCMR1_OC1PE;	// CC1 output compare, frozen, preloaded: a new duty starts at the next cycle
 	TIM1->DIER = TIM_DIER_UDE | TIM_DIER_CC1DE;	// DMA requests on update (set) and CC1 match (clear)
@@ -209,30 +210,24 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// The brightness at the rate in use. Interrupts off: called from the backlight's task and from the radio's tx/rx. The
-// period and compare are preloaded, so they take effect at the next cycle; a rate change loads them at once
-// so the fast rate is in effect before the PA or receive audio comes on.
+// The brightness, or fully on during TX or open receive audio (uvf_backlight_rx). Interrupts off: called from the
+// backlight's task, the radio's tx and the radio task's rx_open, where the pin is steady before the PA or receive audio
+// comes on. The compare is preloaded, so a new duty starts at the next cycle.
 static void bl_apply(void)
 {
 	uint32_t primask = __get_PRIMASK();
 	__disable_irq();
-	uint16_t period = uvf_bl_period(bl_tx, bl_rx_audio);
-	uint16_t cmp = uvf_bl_compare(bl_percent, period);
+	uint16_t cmp = uvf_bl_compare(bl_percent, bl_tx || bl_rx_open);
 
-	if (!ready || cmp == 0 || cmp >= period) {
+	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
 		if (bl_running) {
 			bl_dma_stop();
 		}
 		PIN_WRITE(PIN_LCD_BACKLIGHT, cmp > 0);
 	} else {
-		bool rate_changed = TIM1->ARR != period - 1u;
-		TIM1->ARR = period - 1u;
 		TIM1->CCR1 = cmp;
 		if (!bl_running) {
 			bl_dma_start();
-		}
-		if (rate_changed) {
-			TIM1->EGR = TIM_EGR_UG;	// load both preloads before opening the RF or audio path
 		}
 	}
 	__set_PRIMASK(primask);
@@ -253,10 +248,10 @@ void uvf_backlight_tx(bool tx)
 	}
 }
 
-void uvf_backlight_rx(bool audio)
+void uvf_backlight_rx(bool open)
 {
-	if (audio != bl_rx_audio) {
-		bl_rx_audio = audio;
+	if (open != bl_rx_open) {
+		bl_rx_open = open;
 		bl_apply();
 	}
 }
@@ -276,6 +271,8 @@ static void init(void)
 
 	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
+	} else {
+		factory = type;
 	}
 	// hardware-dm1701.md 9.2: what each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
 	// order, the MD-UV380 keeps every type and is always RGB)
@@ -293,6 +290,14 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+// What init chose the panel's type from (the support info): the factory byte as read, nothing from the bus
+static void panel_info(hal_display_panel_t *p)
+{
+	p->factory = factory;
+	p->type = panel.type;
+	p->source = factory >= 0 ? "factory" : "default";
+}
+
 const hal_display_t uvf_display = {
 	// Safe area from the build (the board's config.mk)
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
@@ -303,6 +308,7 @@ const hal_display_t uvf_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.panel = panel_info,
 };
 
 uint8_t uvf_display_panel_type(void)
