@@ -4473,12 +4473,16 @@ static void test_ui_glue(void)
 	gps_here = true;
 	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 2, 0 }, 3) == DL_ST_BAD_ARG);
 	if (CONFIG_GPS) {
+		// and the status strip's GPS icon follows it too (ui_svc_gps_power: the position service, not a UI copy)
 		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) == DL_ST_OK);
-		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0);
+		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_OFF);
 		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 1, 0 }, 3) == DL_ST_OK);
-		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1);
+		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_ON);
 	}
 	gps_here = false;
+	CHECK(ui_svc_gps_power() == UI_GPS_POWER_NONE);	// no module: no icon, whatever the setting
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);

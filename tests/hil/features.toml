@@ -224,6 +224,12 @@ hardware = "a GPS receiver"
 spec = "docs/spec/position.md"
 source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
 
+# The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
+[feature.gps_icon]
+requires = "GPS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/ui_screens.c", "core/ui/ui_app.c"]
+
 # The position service: built for GPS, APRS, DMR_LRRP or DMR_GPS, so it has no switch of its own
 [feature.position]
 spec = "docs/spec/position.md"
