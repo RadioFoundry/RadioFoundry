@@ -165,12 +165,18 @@ typedef struct {
 	uint8_t (*tx_queue_space)(void);
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
+	// Optional. The call is ending but runs to its superframe boundary: a modem that takes the voice from the
+	// microphone itself sends silence from here on (the stack does that for the voice it gives the modem)
+	void (*tx_release)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
 	// writes it to the chip's one CC register leaves the TX code as configured). configure() keeps any-CC listening:
 	// callers set the filter after start() and configure()
 	void (*set_cc_filter)(int8_t cc);
 	bool (*is_transmitting)(void);	// slot state, never the PA
+	// Optional (NULL: at once). A repeater's outbound being received: true once the modem has settled which of its
+	// slots is which, so an aligned tx_begin lands on the slot asked and not the other one
+	bool (*slot_verified)(void);
 	// Optional (NULL: the driver can't). For the transmission begun last: receive in the slots between our bursts and
 	// report what is heard there, with the RF switched back to receive per burst (an SFR's inbound slot, sfr.md 3)
 	void (*tx_listen)(void);
@@ -186,6 +192,12 @@ typedef struct {
 	int8_t (*tx_fill)(const dmr_tx_burst_t *b);
 	// Optional (NULL: not kept): lost modem interrupts found and recovered from since start
 	void (*health)(dmr_modem_health_t *h);
+	// The modem clears octet 0 bit 0 and octet 1 of each block after a data header with A set (it takes them for a
+	// confirmed block's CRC-9): the data stack may then solve them from the CRC-32 (dmrDataSetClearedBitsRepair)
+	bool clears_crc9;
+	// Its DMR_EV_SLOT_TICKs are CACHs heard (a repeater's idle outbound gives it no frames), never slot numbers kept
+	// running on the timing it last had: they keep a repeater up even where its bursts are reported too
+	bool cach_ticks;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	// Split duplex (docs/spec/split-duplex.md), all optional (NULL: the driver can't; the role is not offered).
 	// The modem clock: free-running microseconds (wraps), the clock slot_clock is stamped in. RX half and TIME

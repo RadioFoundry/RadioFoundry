@@ -116,3 +116,160 @@ def test_iddb_lookup_format_c(radio, pytestconfig, backup_dir):
     if "IDDB_COMPACT" not in radio.features():
         skip("not_built", "built without CONFIG_IDDB_COMPACT")
     check_database(radio, "C", pytestconfig, backup_dir)
+
+
+def radioid_records(path):
+    """RadioID's user.csv as (id, text) records, each text as the web editor's default template: callsign, first name,
+    city and state"""
+    import csv
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+        return [(int(r["RADIO_ID"]), " ".join(r[k].strip() for k in ("CALLSIGN", "FIRST_NAME", "CITY", "STATE")
+                                             if (r.get(k) or "").strip()))
+                for r in csv.DictReader(f) if (r.get("RADIO_ID") or "").isdigit()]
+
+
+def room_blocks(link):
+    """cps_fast INFO, and the database's room as block addresses in order: area 1, then area 2 up to the image end"""
+    fi = link.info()
+    area1 = iddb_write.header_addr(fi["flash_start"])
+    area2 = fi["flash_start"] + iddb_read.AREA2_OFF
+    room = list(range(area1, area1 + iddb_read.AREA1_SIZE, cps_fast.BLOCK))
+    room += list(range(area2, fi["end"], cps_fast.BLOCK))
+    return fi, room
+
+
+def write_room(link, blocks, path, before, check=None):
+    """Back blocks' addresses up to path, write blocks, read them all back, run check(), and put the backup back (read
+    back byte for byte). Prints the times"""
+    import gc
+    import time
+    t = time.monotonic()
+    backup = iddb_write.save(link, blocks, path)
+    print(f"\n# {len(blocks)} blocks ({len(blocks) * cps_fast.BLOCK / 2**20:.1f} MB) backed up in "
+          f"{time.monotonic() - t:.0f} s to {path}; by hand: python3 tools/iddb_write.py restore {path}")
+    # A full collection walks every block here: on a small host with these swapped out, seconds with no request,
+    # past the radio's 10 s session time-out. They live to the end: out of the collector
+    gc.collect()
+    gc.freeze()
+    try:
+        t = time.monotonic()
+        written = iddb_write.put(link, blocks)
+        t_write = time.monotonic() - t
+        t = time.monotonic()
+        bad = iddb_write.differ(link, blocks)
+        print(f"# {written} blocks written in {t_write:.0f} s, all read back in {time.monotonic() - t:.0f} s")
+        assert not bad, f"{len(bad)} blocks read back differ, the first {[hex(a) for a in bad[:8]]}"
+        if check:
+            check()
+    finally:
+        t = time.monotonic()
+        try:
+            iddb_write.restore(link, backup)
+        finally:
+            gc.unfreeze()
+        after = link.iddb()
+        assert (after["format"], after["records"]) == (before["format"], before["records"]), \
+            f"restored (read back byte for byte), but the radio says {after}; before {before}"
+        print(f"# restored {len(backup)} blocks in {time.monotonic() - t:.0f} s, read back byte for byte")
+
+
+def room_edges(fi, room):
+    """The room's blocks a quick test writes: area 1's first (the header) and last, area 2's first, either side of
+    the image's first MB (where a board may map a NAND range in), a block inside a 128 KB NAND block in the room's
+    middle (its neighbors moved inside the chip), and the room's last two"""
+    edge = fi["flash_start"] + 0x100000
+    mid = room[len(room) // 2]
+    mid = (mid & ~0x1FFFF) + 0x10000
+    want = {room[0], room[iddb_read.AREA1_SIZE // cps_fast.BLOCK - 1], room[iddb_read.AREA1_SIZE // cps_fast.BLOCK],
+            edge - cps_fast.BLOCK, edge, mid, room[-2], room[-1]}
+    return sorted(a for a in want if a in set(room))
+
+
+@pytest.mark.feature("iddb_compact")
+def test_iddb_room_edges(radio, pytestconfig, backup_dir):
+    """The database room's edges written with pseudorandom bytes and read back (room_edges: 8 blocks, seconds),
+    then put back as they were. What the room's size rests on, quickly: its end (cps_fast INFO) is really
+    there, and a NAND range mapped in reads back what was written, a block written alone too. The whole room:
+    test_iddb_whole_room (--iddb-whole-room). Needs --allow-codeplug-write"""
+    if "IDDB_COMPACT" not in radio.features() or "CPS_FAST" not in radio.features():
+        skip("not_built", "built without CONFIG_IDDB_COMPACT or CONFIG_CPS_FAST")
+    if not pytestconfig.getoption("--allow-codeplug-write"):
+        skip("state", "writes the database room's edges: run with --allow-codeplug-write (the radio's put back after)")
+    import random
+    before = radio.link.iddb()
+    with radio.released() as port:
+        link = cps_fast.open_link(port=port, timeout=5.0)
+        try:
+            fi, room = room_blocks(link)
+            if not fi["writable"]:
+                skip("state", "the radio's flash can't be written now (cps_fast INFO)")
+            rnd = random.Random(578)
+            blocks = {a: rnd.randbytes(cps_fast.BLOCK) for a in room_edges(fi, room)}
+            print(f"\n# room {len(room) * cps_fast.BLOCK / 2**20:.1f} MB, end {fi['end']:#x}: blocks "
+                  f"{[hex(a) for a in blocks]}")
+            write_room(link, blocks, os.path.join(backup_dir, "iddb-edges.bak"), before)
+        finally:
+            link.close()
+
+
+@pytest.mark.feature("iddb_compact")
+def test_iddb_whole_room(radio, pytestconfig, backup_dir):
+    """The database's whole room, area 1 and area 2 up to the image end (cps_fast INFO), written and read back: a
+    synthetic format C database the size of RadioID's list (or the room), or RadioID's own list (--iddb-users), and
+    the blocks past its end with pseudorandom bytes. Then the lookups above (the database's start, middle and end),
+    and the room put back as it was (read back byte for byte). Long (a 24.5 MB room: about an hour), so only
+    with --iddb-whole-room, and --allow-codeplug-write; the backup is the whole room"""
+    if "IDDB_COMPACT" not in radio.features() or "CPS_FAST" not in radio.features():
+        skip("not_built", "built without CONFIG_IDDB_COMPACT or CONFIG_CPS_FAST")
+    if not pytestconfig.getoption("--iddb-whole-room"):
+        skip("state", "long: run with --iddb-whole-room (test_iddb_room_edges covers the room's edges quickly)")
+    if not pytestconfig.getoption("--allow-codeplug-write"):
+        skip("state", "writes the whole database room: run with --allow-codeplug-write (the radio's put back after)")
+    import random
+    before = radio.link.iddb()
+    with radio.released() as port:
+        link = cps_fast.open_link(port=port, timeout=5.0)
+        try:
+            fi, room = room_blocks(link)
+            if not fi["writable"]:
+                skip("state", "the radio's flash can't be written now (cps_fast INFO)")
+            # as many records as RadioID's whole list (about 2 MB in format C), fewer where the room is smaller. A
+            # database filling 16 MB would take the bench's small host most of an hour to encode; the pseudorandom
+            # blocks after it cover the rest of the room
+            users = pytestconfig.getoption("--iddb-users")
+            n = 300000
+            while users:
+                records = radioid_records(users)
+                db = iddb_write.encode_c(records, flash_start=fi["flash_start"])
+                if len(db) > len(room) - 2:
+                    skip("state", f"{users}: {len(records)} records take {len(db)} blocks, the room {len(room)}")
+                break
+            while not users:
+                records = iddb_write.synthetic_records(n, 1, 9)
+                db = iddb_write.encode_c(records, flash_start=fi["flash_start"])
+                if len(db) <= len(room) - 2:
+                    break
+                n = n * len(room) // len(db) * 9 // 10
+            outside = sorted(set(db) - set(room))
+            assert not outside, f"the database's blocks outside its room: {[hex(a) for a in outside[:8]]}"
+            rnd = random.Random(578)
+            blocks = dict(db)
+            pad = [a for a in room if a not in blocks]
+            for a in pad:
+                blocks[a] = rnd.randbytes(cps_fast.BLOCK)
+            print(f"\n# room {len(room) * cps_fast.BLOCK / 2**20:.1f} MB ({len(room)} blocks, end {fi['end']:#x}): "
+                  f"{len(records)} records in {len(db)} blocks, {len(pad)} blocks pseudorandom")
+
+            def check():
+                got = link.iddb()
+                kept = iddb_write.prepare(records, iddb_write.TEXT_MAX)     # as encode_c keeps them: sorted, cut
+                assert got["format"] == "C" and got["records"] == len(kept), \
+                    f"after writing {len(kept)} records in format C the radio says {got}"
+                lookups(link, "C", got)
+                last_id, last_text = kept[-1]
+                last = link.iddb(last_id)
+                assert last["found"] and last["text"] == last_text[:48], f"the last record {last_id}: {last}"
+
+            write_room(link, blocks, os.path.join(backup_dir, "iddb-room.bak"), before, check)
+        finally:
+            link.close()

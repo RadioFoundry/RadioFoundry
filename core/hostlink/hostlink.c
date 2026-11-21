@@ -49,7 +49,9 @@
 #include "task.h"
 
 #define HOSTLINK_TASK_PRIORITY	3	// with input and USB; above the UI (core/app/app.c task table)
-#if CONFIG_DEBUGLINK
+#ifdef HOSTLINK_TASK_STACK
+// the board's (board.mk), for a deeper chain on its platform
+#elif CONFIG_DEBUGLINK
 // words: MMDVM frames on the stack; debug link replies format diagnostics lines. The deepest chain (a hotspot frame
 // on air > the radio view copied, with the trunked system's view in it, or an HTTP request > a debug link view) reads
 // up to 2648 bytes with the CI's toolchain on the deepest board, and stack-check.md's overhead and margin come on top.

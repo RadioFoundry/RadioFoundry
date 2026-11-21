@@ -94,7 +94,7 @@ def _duplex_channel(radio, pytestconfig, backup_dir, freq):
 
 
 def _setup(radio, pytestconfig, freq):
-    """(cc, tg) of the selected duplex channel"""
+    """(cc, tg, listened) of the selected duplex channel: listened, tg is the channel's own group target"""
     cc = rig(pytestconfig, "dmr-cc")
     core = radio.core()
     if core.get("tx_hz") == core.get("rx_hz"):
@@ -104,7 +104,17 @@ def _setup(radio, pytestconfig, freq):
         skip("opt_in", f"the channel's color code is {d.get('dmr.cc')}, --dmr-cc says {cc}")
     group = d.get("dmr.target_private") == "0" and d.get("dmr.target_id") not in (None, "0")
     tg = int(d["dmr.target_id"]) if group else rig(pytestconfig, "dmr-tg")
-    return cc, tg
+    return cc, tg, group
+
+
+def _hear_all(radio, on):
+    """Set the DMR hear-all latch (a monitor key release toggles it); returns the state it was in."""
+    was = radio.view(["dmr"]).get("dmr.hear_all_latch") == "1"
+    if was != on:
+        radio.link.monitor(False)
+        radio.wait_for(lambda x: x.get("dmr.hear_all_latch") == ("1" if on else "0"), timeout=3, sections=("dmr",),
+                       what="the hear-all latch")
+    return was
 
 
 def _run(radio, bench, pytestconfig, backup_dir, calls, radio_ts, cc_offset=0, expect_up=True):
@@ -118,7 +128,7 @@ def _run(radio, bench, pytestconfig, backup_dir, calls, radio_ts, cc_offset=0, e
         return _run_on(radio, bench, freq, *_setup(radio, pytestconfig, freq), calls, radio_ts, cc_offset, expect_up)
 
 
-def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
+def _run_on(radio, bench, freq, cc, tg, listened, calls, radio_ts, cc_offset, expect_up):
     for c in calls:
         c["dst"] = tg
     if radio.view(["dmr"]).get("dmr.ts") != str(radio_ts):
@@ -127,6 +137,10 @@ def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
     seconds = round(max(_span_s(c) for c in calls) + 3.0, 1)
     voice = json.dumps(calls, separators=(",", ":"))
     try:
+        # A call to a group the channel doesn't list is shown, not played: the hear-all latch for that case only. It
+        # is digital monitor, which hears any color code and both slots, so the calls the radio must not hear (the
+        # other slot, another color code) would be heard with it on
+        latch = _hear_all(radio, not listened)
         with bench.lease():
             radio.reset_counters()
             _, before = radio.counters()
@@ -142,6 +156,7 @@ def _run_on(radio, bench, freq, cc, tg, calls, radio_ts, cc_offset, expect_up):
             _, after = radio.counters()
             view = radio.view(["dmr_call"])
     finally:
+        _hear_all(radio, latch)
         radio.link.clear_temporary()
     if job.returncode not in (0, None):
         text = "".join(job.lines)

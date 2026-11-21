@@ -561,6 +561,7 @@ SCAN_CALLS = 4          # calls the bench sends while the scan comes round to th
 
 @pytest.mark.feature("p25")
 @pytest.mark.feature("scan")
+@pytest.mark.needs_switch("P25")   # "scan" is required on a radio without P25: its skip there is excused
 @pytest.mark.rf
 @pytest.mark.codeplug_write
 @pytest.mark.bench_service

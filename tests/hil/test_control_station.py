@@ -19,6 +19,8 @@ import pytest
 from rfoundry_hil import DebugLink, DebugLinkError, need_radio_tx, skip
 from hil_config import rig
 
+pytestmark = [pytest.mark.needs_switch("DMR_IP_GATEWAY")]   # every test goes through _need
+
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 FIXED_RADIO = "192.168.10.1"     # IPGW_FIXED_LINK_DEFAULT
 FIXED_HOST = "192.168.10.2"

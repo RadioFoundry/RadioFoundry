@@ -285,6 +285,11 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
   no repeater left to follow. A CSBK whose transmission ends without going on air (`DMR_EV_TX_DONE` with no
   `DMR_EV_TX_SLOT_STARTED`, the modem no longer sending) is sent again at once, as the next attempt
   (`call.tx_wake_lost`).
+- A board whose transmit set-up leaves it deaf between bursts provides `hal_radio_t.dmr_wake_listen`: the stack has it
+  receive after each burst and go back to the transmit set-up before the next one.
+- A modem that must settle the outbound's slot numbering before an aligned start gives `slot_verified`. Through a
+  repeater the stack keys only once it returns true, with the receiver still on, and denies the call with
+  `DMR_TX_ERR_NO_REPEATER` if it hasn't after `DMR_CALL_SLOT_VERIFY_MS` (1 s).
 - While a key-up waits for its first slot (the wake-up queued, or the aligned voice start not yet on the air), the
   modem's slot numbers don't count as the repeater heard: the modem labels slots from the timing it last had, which
   kept a repeater that had dropped "up". A repeater that dropped as the hang ended then got no wake-up.
@@ -295,7 +300,9 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
   `DMR_EV_TX_SLOT_STARTED` before taking a `DMR_EV_TX_DONE` as its own.
 - Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
   numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
-  0.6 s later, and a second wake-up counted as answered by them.
+  0.6 s later, and a second wake-up counted as answered by them. Not on a modem whose slot ticks are CACHs it heard
+  (`cach_ticks`, the SCT): a repeater's idle outbound gives it no bursts, so its ticks are what keeps the repeater up
+  while a key-up waits for `slot_verified`, and what answers a wake-up to a repeater already up.
 - Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
   wake-up starts it. It never makes the channel busy.
 - A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut
@@ -450,6 +457,7 @@ interrupt.
 | `tx_queue_burst` | one burst: type (voice header, voice A-F with 27-byte AMBE, terminator, PI header, CSBK, data header / block, idle, raw DT), payload, "host supplied CRC" flag, embedded LC for B-E (voice), sync family override (SFR outbound) |
 | `tx_end` | no more bursts: finish the queued ones (a voice call ends at the superframe boundary with its terminator, which the stack has queued), then `tx_done` |
 | `tx_abort` | stop at the next slot (emergency, timeout) |
+| `tx_release` | optional: the call is ending and runs to its superframe boundary. A modem that takes the voice from the microphone itself sends silence from here on |
 | `set_embedded_lc` | the LC (or talker alias / GPS embedded LC) the modem spreads over B-E from the next superframe |
 | `set_cc_filter(cc or any)` | receive color code deframing; keeps the configured transmit color code |
 | `is_transmitting` | slot-state based (6.1 point 5) |

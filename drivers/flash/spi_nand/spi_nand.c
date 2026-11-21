@@ -68,6 +68,17 @@ static bool wait_ready(spi_nand_t *nand, uint32_t polls, uint8_t *status)
 	return false;
 }
 
+// The status register's ECC field as SPI_NAND_ECC_*. Most parts: 2 bits (bits 5-4). GigaDevice: 3 bits (6-4), 0 no
+// errors, 7 uncorrectable, anything else corrected
+static uint8_t ecc_of(const spi_nand_t *nand, uint8_t status)
+{
+	if (nand->manufacturer == SPI_NAND_MFR_GIGADEVICE) {
+		uint8_t e = (status >> SPI_NAND_STATUS_ECC_SHIFT) & 7u;
+		return e == 0 ? SPI_NAND_ECC_OK : e == 7 ? SPI_NAND_ECC_FAILED : SPI_NAND_ECC_CORRECTED;
+	}
+	return (status >> SPI_NAND_STATUS_ECC_SHIFT) & 3u;
+}
+
 bool spi_nand_probe(spi_nand_t *nand)
 {
 	static const uint8_t reset = CMD_RESET;
@@ -115,7 +126,7 @@ static bool load(spi_nand_t *nand, uint32_t page, bool any_ecc)
 	if (!command(nand, hdr, sizeof(hdr), NULL, 0) || !wait_ready(nand, PAGE_READ_POLLS, &status)) {
 		return false;
 	}
-	nand->ecc = (uint8_t)((status >> SPI_NAND_STATUS_ECC_SHIFT) & 3u);
+	nand->ecc = ecc_of(nand, status);
 	if (nand->ecc == SPI_NAND_ECC_FAILED) {
 		return any_ecc;	// left uncached, so a retry reads the array again
 	}
@@ -128,7 +139,13 @@ static bool load(spi_nand_t *nand, uint32_t page, bool any_ecc)
 
 static bool read_cache(const spi_nand_t *nand, uint16_t column, void *buf, uint32_t len)
 {
-	const uint8_t hdr[4] = { CMD_READ_CACHE, (uint8_t)(column >> 8), (uint8_t)column, 0x00 };	// dummy byte
+	// Most parts: the column, then a dummy byte. GigaDevice: a 3-byte address (the column in the low 16 bits), then the
+	// dummy byte
+	if (nand->manufacturer == SPI_NAND_MFR_GIGADEVICE) {
+		const uint8_t hdr[5] = { CMD_READ_CACHE, 0x00, (uint8_t)(column >> 8), (uint8_t)column, 0x00 };
+		return command(nand, hdr, sizeof(hdr), buf, len);
+	}
+	const uint8_t hdr[4] = { CMD_READ_CACHE, (uint8_t)(column >> 8), (uint8_t)column, 0x00 };
 	return command(nand, hdr, sizeof(hdr), buf, len);
 }
 
@@ -180,7 +197,7 @@ bool spi_nand_read_uid(spi_nand_t *nand, uint8_t id[SPI_NAND_UID_LEN])
 	return found && restored;
 }
 
-bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
+static bool read_range(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed)
 {
 	uint8_t *p = buf;
 	if (nand->page_size == 0 || addr > spi_nand_size(nand) || len > spi_nand_size(nand) - addr) {
@@ -193,14 +210,34 @@ bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
 		if (n > len) {
 			n = len;
 		}
-		if (!spi_nand_read_page(nand, page, column, p, n)) {
-			return false;
+		if (ecc_failed == NULL) {
+			if (!spi_nand_read_page(nand, page, column, p, n)) {
+				return false;
+			}
+		} else {
+			if (!load(nand, page, true) || !read_cache(nand, column, p, n)) {
+				return false;
+			}
+			if (nand->ecc == SPI_NAND_ECC_FAILED) {
+				(*ecc_failed)++;
+			}
 		}
 		addr += n;
 		p += n;
 		len -= n;
 	}
 	return true;
+}
+
+bool spi_nand_read(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len)
+{
+	return read_range(nand, addr, buf, len, NULL);
+}
+
+bool spi_nand_read_any(spi_nand_t *nand, uint32_t addr, void *buf, uint32_t len, uint32_t *ecc_failed)
+{
+	uint32_t none = 0;
+	return read_range(nand, addr, buf, len, ecc_failed != NULL ? ecc_failed : &none);
 }
 
 bool spi_nand_block_bad(spi_nand_t *nand, uint32_t block, bool *bad)
@@ -307,7 +344,7 @@ spi_nand_result_t spi_nand_program(spi_nand_t *nand, uint32_t page, uint32_t src
 		const uint8_t hdr[4] = { CMD_PAGE_READ, (uint8_t)(src >> 16), (uint8_t)(src >> 8), (uint8_t)src };
 		uint8_t status = 0;
 		ok = command(nand, hdr, sizeof(hdr), NULL, 0) && wait_ready(nand, PAGE_READ_POLLS, &status) &&
-		     ((status >> SPI_NAND_STATUS_ECC_SHIFT) & 3u) != SPI_NAND_ECC_FAILED;
+		     ecc_of(nand, status) != SPI_NAND_ECC_FAILED;
 		ok = ok && command(nand, &wren, 1, NULL, 0);
 	}
 	for (; ok && i < n; i++) {

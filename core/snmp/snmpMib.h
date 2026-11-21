@@ -22,6 +22,7 @@
 #define SNMP_NAME_MAX		16	// = SETTINGS_NAME_LEN, the radio name (sysName)
 #define SNMP_TEXT_MAX		64	// SMS text carried in a notification (longer is cut)
 #define SNMP_TRAP_COMMUNITY	"public"
+#define SNMP_TEMP_MAX		4	// rows of rfoundryTempTable (sensors past these are not reported)
 
 // What the MIB reads: a snapshot of the radio, filled by the glue before each request and each event check
 typedef struct {
@@ -69,6 +70,15 @@ typedef struct {
 	uint32_t netToAir, netPacketsUp;	// the gateway: packets to the air side, packets from the air to the host
 	// Last, past what the MIB reads (its fields must stay within 255 octets: snmpMib.c)
 	char smsText[SNMP_TEXT_MAX + 1];	// the newest message (filled when an SMS event is new)
+	// The temperature sensors (core/app/temp.h) and the fan: read by instance, not through the offset table
+	uint8_t tempCount;		// rows, at most SNMP_TEMP_MAX
+	struct {
+		uint8_t kind;		// temp_kind_t (1 PA, 2 board, 3 MCU, 4 battery), the MIB's numbering
+		bool hasMv, hasDc;
+		uint16_t mv;
+		int16_t dc;		// 0.1 degree C
+	} temp[SNMP_TEMP_MAX];
+	uint8_t fan;			// 0 no fan the firmware drives, 1 on, 2 off
 } snmpData_t;
 
 enum { SNMP_ROLE_RADIO, SNMP_ROLE_HOTSPOT, SNMP_ROLE_SFR, SNMP_ROLE_SPLIT_TX, SNMP_ROLE_SPLIT_RX };

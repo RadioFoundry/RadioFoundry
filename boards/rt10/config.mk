@@ -58,6 +58,7 @@ BOARD_UNSUPPORTED += LANG_DEFAULT_ES	# no display (above)
 BOARD_UNSUPPORTED += LANG_DEFAULT_IT	# no display (above)
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# no display (above)
 BOARD_UNSUPPORTED += BACKLIGHT_TEST	# no display: no backlight to measure
+BOARD_UNSUPPORTED += BT_PTT	# no Bluetooth module (hardware-rt10.md 1)
 BOARD_UNSUPPORTED += UI_SETTINGS	# no display: no Settings menu; the CPS and the debug link set the settings
 BOARD_UNSUPPORTED += CHANNEL_LIST	# no display: no Channels list
 BOARD_UNSUPPORTED += CHANNEL_EDIT	# no display: no channel editor or text entry

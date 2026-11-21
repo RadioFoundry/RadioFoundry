@@ -538,7 +538,19 @@ def test_theme_is_kept(home):
         r.wait_for(lambda x: x.get("settings.theme") == "1", sections=("storage",), what="theme Light stored")
         r.shot_until(lambda d: diff_fraction(before, d) > 0.2, what="Home in the light theme")
     finally:
-        settings_keys(r, "ok 7 2 down down ok ok")
+        # Each ok moves the row to the next theme and wraps (Dark, Light, ...): press until Dark comes round, without
+        # counting the themes, so a new one doesn't leave the radio in another theme
+        for k in "ok 7 2 down down".split():
+            r.press(k)
+        cur = storage(r).get("settings.theme")
+        for _ in range(8):
+            if cur == "0":
+                break
+            r.press("ok")
+            cur = r.wait_for(lambda x, c=cur: x.get("settings.theme") not in (None, c), sections=("storage",),
+                             what="the next theme stored").get("settings.theme")
+        r.press("back", LONG)
+        wait_screen(r, "home")
     r.wait_for(lambda x: x.get("settings.theme") == "0", sections=("storage",), what="theme Dark again")
 
 

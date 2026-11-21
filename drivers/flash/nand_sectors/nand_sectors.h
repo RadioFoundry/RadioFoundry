@@ -48,6 +48,10 @@ typedef struct {
 	// Optional (NULL: none): called once per block or sector in the long loops (the mount, garbage collection), so
 	// the board can feed its watchdog while the layer keeps the CPU (docs/spec/watchdog.md 4)
 	void (*busy)(void *ctx);
+	// Optional (NULL: none): a mark a factory block test leaves at the start of a page, the rest of the page and its
+	// spare area erased. Such a page counts as blank, so the block is the layer's to erase like an empty one
+	const uint8_t *factory_mark;
+	uint8_t factory_mark_len;
 } nand_dev_t;
 
 // What the last mount came to

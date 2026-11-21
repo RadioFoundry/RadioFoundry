@@ -40,7 +40,7 @@ One line per part the radio has, in this order. A part the board doesn't report 
 
 | Key | About label | Value | From |
 |---|---|---|---|
-| `mcu` | MCU | The SoC family; on the STM32F4, the DBGMCU device and revision (left out when IDCODE reads 0) and the flash size | `board.system->chip` |
+| `mcu` | MCU | The SoC family (`STM32F4`, `HR_C7000`, `GD32F30x`, `AT32F43x`) and the flash size where the chip reports it; on the STM32F4 also the DBGMCU device and revision (left out when IDCODE reads 0) | `board.system->chip` |
 | `flash` | Flash | The external flash's JEDEC ID, 6 hex digits; `-` when nothing answered at start-up | `board.flash->jedec` |
 | `display` | Display | `[controller] [ID] t<type> [f<factory byte>]`: the controller, its ID when read, the panel type the driver uses, and the factory byte that chose it | `board.display->panel` |
 | `dmr` | DMR chip | The DMR baseband chip | `board.hw_line`, `BOARD_HW_DMR` |

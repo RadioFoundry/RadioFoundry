@@ -69,6 +69,8 @@ bool storage_sector_write(uint32_t addr, const uint8_t *data);
 // Write any range: each sector it touches is read into the shared buffer, merged and rewritten as above. False if
 // the shared buffer is taken (a CPS write in progress) or the flash fails. buf NULL erases the range (all 0xFF)
 bool storage_write(uint32_t addr, const void *buf, uint32_t len);
+// Finish writes the flash keeps pending (hal_flash_t.sync); true when there was nothing to finish
+bool storage_sync(void);
 
 // The shared sector buffer (STORAGE_SECTOR bytes): NULL while someone else has it
 uint8_t *storage_buffer_acquire(void);

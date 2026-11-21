@@ -1,0 +1,95 @@
+{
+ "board": "d578uv",
+ "commit": "5ee6294dc1b7ba7b272df78331380aa0ed45544a",
+ "date": "2026-11-08T14:44:12Z",
+ "dirty": false,
+ "features": [
+  "watchdog"
+ ],
+ "firmware": {
+  "board": "AT-D578UV",
+  "codec": "d578uv-boot",
+  "display": "160x128x4",
+  "features": "FM,SUBTONE,DMR,DMR_TALKER_ALIAS,DMR_GPS,APRS,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_UDP_COMPRESS,IDDB_COMPACT,VFO,VFO_FM,VFO_DMR,AM_RX,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,USB,DEBUGLINK,HOSTLINK",
+  "git": "d9395a3d",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "radio",
+  "reboot"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-reboot": true,
+  "tx-power": 40
+ },
+ "sources": {
+  "watchdog": {
+   "core/app/watchdog.c": "8afad86ce936bcb659785cdedcdd8ab05c929c23",
+   "docs/spec/watchdog.md": "5c65f537210a784e8aac9874ef4954ebc1797fc2"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_reset_cause_reboot",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[irq-off]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[spin]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_resets[starve]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_running",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "watchdog"
+   ],
+   "id": "tests/hil/test_watchdog.py::test_watchdog_test_refused_without_token",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

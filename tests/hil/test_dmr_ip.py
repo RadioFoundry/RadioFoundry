@@ -30,6 +30,9 @@ from rfoundry_hil import skip, host_network
 import dmr_packet
 from hil_config import rig
 
+# Every test here goes through the IP gateway: a build without it skips not_built, which bring-up excuses
+pytestmark = [pytest.mark.needs_switch("DMR_IP_GATEWAY")]
+
 BENCH_ID = 9990301
 SRC_PORT, DST_PORT = 50000, 161            # an SNMP request: no port IDs, both ports in the extended headers
 PAYLOAD = bytes(range(0x30, 0x30 + 40))

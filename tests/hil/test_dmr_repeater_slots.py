@@ -26,6 +26,7 @@ between TS1 and TS2 (a temporary override, cleared afterwards) unless the scenar
 | long_call | up all along | a 25 s call on each slot |
 | boot | up all along | restarted, keys as soon as the link answers, then again once settled |
 | wake_ts | down at each key-up, answers 0.6 s after it | the timeslot changed 1 s before, 5 calls |
+| mixed_gaps | wakes and drops on the radio's own traffic | 36 calls: back to back, 0.1-4 s apart, and 5-9 s apart so it drops; both slots |
 
 test_dmr_repeater_burst_offset (the same options, and the SDR bench): where in the slot the radio's inbound bursts
 fall. On a bench board (--bench-api) the reference is the board's idle outbound with no repeater behind it, and the
@@ -230,7 +231,8 @@ def _channel_change(s, rnd):
         s.radio.wait_for(lambda c: c.get("channel_number") == number, timeout=5, what="back on the test channel")
         delay = rnd.uniform(0.0, 0.5)
         time.sleep(delay)
-        s.call(1.5, f"key-up {delay:.2f} s after coming back from the next channel")
+        # 2.5 s: right after a channel change a key-up can wait up to about 0.8 s for the slot (modem-sct.md 5)
+        s.call(2.5, f"key-up {delay:.2f} s after coming back from the next channel")
         time.sleep(1.0)
 
 
@@ -248,7 +250,7 @@ def _boot(s, rnd):
         s.radio.link.reboot(0, s.radio.link.chip()["token"])
         s.radio.link.close()
         time.sleep(2.0)
-        s.radio.reconnect()
+        s.radio.reconnect(20.0)
         s.radio.wait_for(lambda c: c.get("state") not in (None, "tx"), timeout=15, what="the radio after the restart")
         s.radio.lowest_power()
         s.ts = int(s.radio.view(["dmr"])["dmr.ts"])        # the override is gone with the restart
@@ -268,11 +270,26 @@ def _wake_ts(s, rnd):
         assert s.radio.view(["dmr"]).get("dmr.repeater_up") == "0", "the repeater is up before its answer"
         s.set_ts(3 - s.ts)
         time.sleep(max(0.0, due - time.monotonic()))
-        s.call(1.5, "woke the repeater, timeslot changed 1 s before")
+        # long enough that the wake-up's share of it (up to two attempts) leaves half the voice the check asks for
+        s.call(2.5, "woke the repeater, timeslot changed 1 s before")
+
+
+def _mixed_gaps(s, rnd):
+    # No beacon comes (its first is after the run): the repeater keys only on the radio's wake-up, and a beacon length
+    # is its hang time, so 3 s. Back-to-back calls, close ones at varied gaps and ones the repeater drops between, mixed
+    gaps = [0.0] * 12 + [rnd.uniform(0.1, 4.0) for _ in range(12)] + [rnd.uniform(5.0, 9.0) for _ in range(12)]
+    rnd.shuffle(gaps)
+    s.start(sum(gaps) + 36 * 4.0 + 20, beacon=9000, beacon_len=3.0, phase=9000)
+    for k, gap in enumerate(gaps):
+        time.sleep(gap)
+        s.call(2.5, f"{gap:.2f} s after the last call")
+        s.calls[-1]["what"] += f", tx_error {s.radio.view(['dmr']).get('dmr.tx_error')}"
+        if k % 3 == 2:
+            s.set_ts(3 - s.ts)
 
 
 SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": _rekey,
-             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts}
+             "channel_change": _channel_change, "long_call": _long_call, "boot": _boot, "wake_ts": _wake_ts, "mixed_gaps": _mixed_gaps}
 
 
 @pytest.mark.feature("dmr_voice")
@@ -280,9 +297,24 @@ SCENARIOS = {"up_ts_changes": _up_ts_changes, "long_idle": _long_idle, "rekey": 
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.codeplug_write
-@pytest.mark.parametrize("scenario", list(SCENARIOS))
+# The boot scenario restarts the radio, so it needs --allow-reboot (marker reboot) like the other restarts
+@pytest.mark.parametrize("scenario", [pytest.param(k, marks=pytest.mark.reboot) if k == "boot" else k for k in SCENARIOS])
 def test_dmr_repeater_slots(radio, sdr_bench, pytestconfig, backup_dir, scenario):
     _session(radio, sdr_bench, pytestconfig, backup_dir, SCENARIOS[scenario])
+
+
+def _outbound_call_s(s, call_s):
+    """Start the bench's idle outbound, as long as its board keys at once (20 s at most here; a board may allow
+    less: info.tx.max_key_s), and wait until the radio is up on it. Returns the call's length: call_s, or shorter so
+    the call ends a second before the outbound does. Skips (bench) when under 4 s would be left."""
+    out_s = min(20.0, s.bench.max_key_s(20.0))
+    t0 = time.monotonic()
+    s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, out_s), True
+    s.wait_up()
+    left = out_s - (time.monotonic() - t0) - 1.0
+    if left < 4.0:
+        skip("bench", f"the bench board keys {out_s:g} s at most, too short for the call after the radio is up")
+    return min(call_s, left)
 
 
 def burst_offsets_ms(inbound, outbound):
@@ -318,11 +350,10 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
                 skip("bench", f"the bench board can't decode bursts on {f} MHz (outside its window)")
         # The board's idle outbound is the reference (a half-duplex board runs no repeater), and the radio's bursts
         # are judged by the SDR alone
-        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
-        s.wait_up()
-        ins = s.bench.bursts_start(s.split, 14, cc=s.cc)
-        outs = s.bench.bursts_start(s.freq, 14, cc=s.cc)
-        s.call(8.0, "burst offset")
+        call_s = _outbound_call_s(s, 8.0)
+        ins = s.bench.bursts_start(s.split, call_s + 6, cc=s.cc)
+        outs = s.bench.bursts_start(s.freq, call_s + 6, cc=s.cc)
+        s.call(call_s, "burst offset")
         inbound, in_done = s.bench.bursts_result(ins)
         outbound, out_done = s.bench.bursts_result(outs)
         print(f"inbound {len(inbound)} bursts ({in_done}), outbound {len(outbound)} ({out_done})")
@@ -337,7 +368,9 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
             skip("bench", f"the SDR bench decoded none of the repeater's outbound on {s.freq} MHz")
         offs = burst_offsets_ms(inbound, outbound)
         print(f"matched {len(offs)}")
-        assert len(offs) >= 50, f"only {len(offs)} inbound bursts matched to the outbound (8 s is about 133)"
+        want = round(50 * call_s / 8.0)
+        assert len(offs) >= want, f"only {len(offs)} inbound bursts matched to the outbound ({call_s:.1f} s is " \
+                                  f"about {round(133 * call_s / 8.0)})"
         med = statistics.median(offs)
         print(f"inbound vs outbound + 30 ms: median {med:+.3f} ms, min {min(offs):+.3f}, max {max(offs):+.3f}")
         assert abs(med) <= OFFSET_MAX_MS, f"the inbound bursts are {med:+.3f} ms off the outbound's (+-{OFFSET_MAX_MS} ms)"
@@ -363,11 +396,10 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
             skip("bench", f"the bench board can't decode bursts on {s.split} MHz (outside its window)")
         # The outbound is up all along, so a radio that listens between its bursts (tx_listen_split) does so for the
         # whole call: what it sends must be as clean as on a simplex channel
-        s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, 20), True   # a bench keys 20 s at most
-        s.wait_up()
+        call_s = _outbound_call_s(s, 6.0)
         _, before = radio.counters()
-        ins = s.bench.bursts_start(s.split, 12, cc=s.cc)
-        s.call(6.0, "inbound FEC")
+        ins = s.bench.bursts_start(s.split, call_s + 6, cc=s.cc)
+        s.call(call_s, "inbound FEC")
         inbound, done = s.bench.bursts_result(ins)
         _, after = radio.counters()
         if done.get("complete") is False:
@@ -387,7 +419,8 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
               f"{statistics.median(cfo) if cfo else 0:+.0f} Hz, {cfo[0] if cfo else 0:+.0f} to "
               f"{cfo[-1] if cfo else 0:+.0f}; call.rx_in_tx +{listened} (bursts heard while sending)")
         print(f"per burst: {[e[0] for e in errs]}")
-        assert len(voice) >= 60, f"only {len(voice)} voice bursts from us on {s.split} MHz (6 s is about 100)"
+        assert len(voice) >= round(10 * call_s), f"only {len(voice)} voice bursts from us on {s.split} MHz " \
+                                                 f"({call_s:.1f} s is about {round(100 * call_s / 6.0)})"
         assert rate <= INBOUND_FEC_MAX and bad == 0, \
             f"{rate:.2%} of the AMBE bits corrected and {bad} frames past correction through the repeater (at most " \
             f"{INBOUND_FEC_MAX:.2%}, none past correction)"

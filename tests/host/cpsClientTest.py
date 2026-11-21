@@ -105,6 +105,40 @@ def test_channels(sim):
         check('zone 0 "Test zone" 2: 1 2' in out, f"zone: {out}")
         check('contact 1 "TG 91" id 91 type 0' in out, f"contact: {out}")
 
+        # --repeater: channel 3, duplex (RX the repeater's output, TX --rx), in the zone after the other two
+        path3 = os.path.join(d, "cp3.bin")
+        rc = cps_client.main(["test-channels", path3, "--rx", "433.45", "--tg", "91", "--cc", "1", "--repeater", "438.5"])
+        img3 = cps_client.load_image(path3)
+        check(rc == 0 and cps_client.decode_channel(img3, 3) ==
+              {"name": "DMR RPT 438.5000", "rx_hz": 438500000, "tx_hz": 433450000}, "repeater channel in the image")
+        zone = img3[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
+        check(zone == bytes([1, 0, 2, 0, 3, 0, 0, 0]), f"zone holds channels 1-3: {zone.hex()}")
+
+        # --watch: channel 4, FM receive only, last in the zone; --zone2: zone 2 holding channel 1
+        path4 = os.path.join(d, "cp4.bin")
+        rc = cps_client.main(["test-channels", path4, "--rx", "433.45", "--tg", "91", "--cc", "1", "--watch", "433.5",
+                              "--zone2"])
+        img4 = cps_client.load_image(path4)
+        check(rc == 0 and cps_client.decode_channel(img4, 4) ==
+              {"name": "Watch 433.5000", "rx_hz": 433500000, "tx_hz": 433500000}, "watch channel in the image")
+        _, a4 = cps_client.channel_addr(4)
+        check(img4[a4 + 0x33] & 0x04, "watch channel receive only")
+
+        # --repeater with two frequencies: channel 5, the second site, after channel 4
+        path5 = os.path.join(d, "cp5.bin")
+        rc = cps_client.main(["test-channels", path5, "--rx", "433.45", "--tg", "91", "--cc", "1", "--repeater", "438.5",
+                              "438.6", "--watch", "433.5"])
+        img5 = cps_client.load_image(path5)
+        check(rc == 0 and cps_client.decode_channel(img5, 5) ==
+              {"name": "DMR RPT 438.6000", "rx_hz": 438600000, "tx_hz": 433450000}, "second site in the image")
+        zone = img5[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 28]
+        check(zone == bytes([1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 0, 0]), f"zone holds channels 1-5: {zone.hex()}")
+        zone = img4[cps_client.ZONE_DATA + 16:cps_client.ZONE_DATA + 24]
+        check(zone == bytes([1, 0, 2, 0, 4, 0, 0, 0]), f"zone holds channels 1, 2, 4: {zone.hex()}")
+        z2 = img4[cps_client.ZONE_DATA + 176:cps_client.ZONE_DATA + 176 + 20]
+        check(z2[:11] == b"Test zone 2" and z2[16:20] == bytes([1, 0, 0, 0]) and
+              img4[cps_client.ZONE_BITMAP] & 3 == 3, f"zone 2: {z2.hex()}")
+
 
 def firmware_power(n, count):
     """The level the firmware reads from power byte n (core/codeplug power_from_byte)"""

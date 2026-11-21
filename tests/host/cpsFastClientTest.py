@@ -74,6 +74,51 @@ def main():
         check(cps_client.decode_channel(cps.read_image(regions), 3)["name"] == "Fast three", "the CPS sees the write")
         check(link.write_image(edit, regions) == (0, 0), "nothing to write the second time")
 
+        # DATA pipelined (cps-fast.md 3.6): a block that doesn't compress, its 68 pieces sent 8 at a time; a piece
+        # lost in a window sends the block again from BLOCK, one DATA at a time
+        import random
+        noise = bytearray(edit)
+        noise[0x30000:0x31000] = random.Random(7).randbytes(cps_fast.BLOCK)
+        write, sent_data = link.t.write, []
+
+        def lossy(f, drop=[3]):
+            if f[2] == cps_fast.CMD and f[6] == cps_fast.OP_DATA:
+                sent_data.append(f[3])
+                if len(sent_data) in drop:
+                    drop.clear()
+                    return              # lost on the way
+            write(f)
+        link.t.write = lossy
+        n, sent = link.write_image(noise, [(0x30000, 0x31000)])
+        link.t.write = write
+        pieces = -(-sent // link.info()["data_max"])
+        check(n == 1 and pieces >= 60 and len(sent_data) == cps_fast.WINDOW + pieces,
+              f"a lost piece: {len(sent_data)} DATA sent for {pieces} pieces (the window, then one at a time)")
+        check(link.read_block(0x30000) == bytes(noise[0x30000:0x31000]), "the block after a lost piece")
+
+        # Two tries lost, then the third's window fails: the block goes again one DATA at a time (the fallback costs
+        # no try) and is written, never reported written when it isn't
+        ok, data, calls = link.ok, link.data, {"block": 0, "data": 0}
+
+        def flaky_ok(op, *a, **kw):
+            if op == cps_fast.OP_BLOCK:
+                calls["block"] += 1
+                if calls["block"] <= 2:
+                    raise cps_fast.FastError("op 4: no answer")
+            return ok(op, *a, **kw)
+
+        def flaky_data(stream, window):
+            calls["data"] += 1
+            return False if calls["data"] == 1 else data(stream, window)
+        link.ok, link.data = flaky_ok, flaky_data
+        link.begin(cps_fast.MODE_DIRECT)
+        noise[0x30000:0x31000] = random.Random(8).randbytes(cps_fast.BLOCK)
+        got = link.write_block(0x30000, bytes(noise[0x30000:0x31000]))
+        link.ok, link.data = ok, data
+        link.commit()
+        check(got > 0 and calls == {"block": 4, "data": 2}, f"tries lost, then a window: returned {got}, {calls}")
+        check(link.read_block(0x30000) == bytes(noise[0x30000:0x31000]), "the block after tries lost and a window")
+
         # A block the regions cover only in part: the radio's bytes outside them stay
         edit2 = bytearray(edit)
         edit2[0x7400] = 0x00                                # outside the regions: not written
@@ -82,7 +127,39 @@ def main():
         back = link.read_image([(0x7000, 0x8000)])
         check(n == 1 and back[0x7400] == 0x5A and back[0x7540:0x7550] == b"Fast boot line 1", "partial block merged")
         check(not link.verify(edit2, regions), "verify")
+
+        # Patch blocks (3.7): with an image read earlier as the cache, a changed block goes as a patch of the radio's
+        check(link.info()["patch"], "INFO lists patch blocks")
+        edit3 = bytearray(edit2)
+        cps_client.set_channel_name(edit3, 3, "Plain three")
+        link.patched = 0
+        n, plain = link.write_image(edit3, regions)                 # no cache: the whole block
+        check(n == 1 and link.patched == 0, f"plain write {n} {link.patched}")
+        held = link.read_image(regions)
+        edit4 = bytearray(edit3)
+        cps_client.set_channel_name(edit4, 3, "Patch three")
+        n, patched = link.write_image(edit4, regions, cache=held)
+        print(f"# one channel renamed: {plain} stream bytes as a block, {patched} as a patch")
+        check(n == 1 and link.patched == 1 and patched * 5 < plain, f"patch write {n} {link.patched} {patched}")
+        check(not link.verify(edit4, regions), "verify after the patch")
+        # a cache that's stale for a block: that block goes whole (its CRC isn't the radio's)
+        edit5 = bytearray(edit4)
+        cps_client.set_channel_name(edit5, 3, "Stale three")
+        link.patched = 0
+        n, _ = link.write_image(edit5, regions, cache=held)
+        check(n == 1 and link.patched == 0 and not link.verify(edit5, regions), "stale cache: plain")
+        # a base the radio doesn't hold (a block changed behind the host's back): refused, sent whole
+        a = 0x7000
+        want = bytes(edit5[a:a + cps_fast.BLOCK])
+        wrong = bytearray(want)
+        wrong[100] ^= 1
+        link.begin(cps_fast.MODE_DIRECT)
+        link.patched = 0
+        sent = link.write_block(a, want, base=bytes(wrong))
+        link.commit()
+        check(link.patched == 0 and sent > 0 and not link.verify(edit5, regions), "wrong base: sent whole")
         link.close()
+        edit2 = edit5
 
         # The command line: verify, a write from a file, a read with a cache
         path = os.path.join(d, "img.bin")

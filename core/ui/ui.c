@@ -32,9 +32,12 @@
 // the dual Home's layout table (dual_choose) live in frames of their own to stay below it, as a 4 bpp panel's palette
 // lookup adds 48 bytes under every fill. 516 words (2064 bytes) leave the 208 byte port overhead, the 128 byte margin and 8 bytes.
 // Every word here is RAM on all radios: raise it only by what the check shows
+#ifndef UI_TASK_STACK_WORDS		// a board may set more (board.mk) for a deeper chain on its platform
 #define UI_TASK_STACK_WORDS	516
+#endif
 
 #define SPLASH_MS		1000
+#define SPLASH_POLL_MS		20
 #define FRAME_MIN_MS		50	// at most 20 redraws a second
 // Keys still waiting put a redraw off, so a burst of keys costs one: a changed list repaints most of a large panel
 // (a full frame of a 240x320 panel driven a byte at a time is near 0.2 s). Not longer than this, so the screen keeps
@@ -120,9 +123,12 @@ static void ui_task(void *arg)
 	ui_app_init();
 	set_backlight(ui_app_brightness());
 	vTaskDelay(pdMS_TO_TICKS(SPLASH_MS));
+	while (board.boot_busy != NULL && board.boot_busy())
+		vTaskDelay(pdMS_TO_TICKS(SPLASH_POLL_MS));
 	while (input_next(&ev, 0))
 		;	// keys pressed during the splash are dropped
 	radio_get_view(&view);
+	radio_view_for_screen(&view);
 	ui_app_status(&status);
 
 	uint32_t serial = radio_view_serial() - 1u;
@@ -143,12 +149,15 @@ static void ui_task(void *arg)
 		if (rests)
 			rested = hal_millis();
 		// The view before the key: the radio core may have changed while this task waited (the VFO turned off from
-		// the host link, a scan stopping), and a key read against the old view sends the wrong request (a VFO step
-		// the core drops on a channel)
+		// the host link, a scan stopping, a channel change from the debug link), and a key read against the old view
+		// sends the wrong request (a VFO step the core drops on a channel)
 		uint32_t s = radio_view_serial();
 		if (s != serial) {
 			serial = s;
 			radio_get_view(&view);
+			radio_view_for_screen(&view);
+			if (got)
+				ui_app_set_view(&view);	// the key acts on the view as it is now
 		}
 		if (got) {
 			bool was_off = backlight_now == 0;
@@ -165,6 +174,7 @@ static void ui_task(void *arg)
 		if (s != serial) {	// and after it: what the key changed shows in this pass
 			serial = s;
 			radio_get_view(&view);
+			radio_view_for_screen(&view);
 		}
 		if (radio_view_wakes(&view))
 			radio_active_ms = now;
@@ -186,6 +196,16 @@ static void ui_task(void *arg)
 		}
 		ui_app_status(&status);
 	}
+}
+
+void ui_boot_splash(void)
+{
+	if (!gfx_init(board.display))
+		return;
+	ui_layout_init();
+	gfx_frame_begin();
+	ui_draw_splash(board.name, RFOUNDRY_RELEASE[0] != '\0' ? RFOUNDRY_RELEASE : RFOUNDRY_GIT, "", "");
+	gfx_flush();
 }
 
 void ui_start(void)

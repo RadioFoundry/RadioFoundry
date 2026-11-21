@@ -237,7 +237,9 @@ static page_kind_t page_kind(nand_sectors_t *ns, uint32_t page)
 	if (st == META_VALID) {
 		return PAGE_OURS;
 	}
-	// The whole page, data and spare area, must be erased to count as blank
+	// The whole page, data and spare area, must be erased to count as blank, but for the device's factory mark
+	const uint8_t *mark = ns->dev->factory_mark;
+	uint32_t mark_len = mark != NULL ? ns->dev->factory_mark_len : 0u;
 	uint8_t c[CHUNK];
 	uint32_t end = P + ns->dev->spare_size;
 	for (uint32_t col = 0; col < end; col += CHUNK) {
@@ -246,7 +248,8 @@ static page_kind_t page_kind(nand_sectors_t *ns, uint32_t page)
 			return PAGE_UNREADABLE;
 		}
 		for (uint32_t i = 0; i < n; i++) {
-			if (c[i] != 0xFFu) {
+			uint32_t at = col + i;
+			if (c[i] != 0xFFu && !(at < mark_len && c[i] == mark[at])) {
 				return PAGE_OTHER;
 			}
 		}

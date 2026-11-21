@@ -308,6 +308,13 @@ static void inject_stop(void)
 }
 #endif
 
+void md9600_c6000_mic(bool on)
+{
+	if (fm_tx) {
+		count(hrc_mic(&modem, on));
+	}
+}
+
 void md9600_c6000_fm_tx_end(void)
 {
 	if (!fm_tx) {

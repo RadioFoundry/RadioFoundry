@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_CHIP_REG (core/debuglink/debuglink_chipreg.c, docs/spec/debuglink.md 3.24): an RF chip register through
 // board.chip_reg, a SoC register through board.system->reg, the request lengths, a SoC write refused on the air, and
-// boards without the hooks. The board, the transmit check and the log are faked
+// boards without the hooks. A read with a length through board.chip_reg_bytes. The board, the transmit check and the
+// log are faked
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -75,12 +76,26 @@ static bool soc_reg(uint32_t addr, uint32_t *val, bool write)
 	return true;
 }
 
+// Chip 0 page 3 register 0x32: a 10-byte text read with a length; register 0x40: no answer
+static uint8_t long_cap_seen;
+
+static int chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, uint8_t *o, uint8_t cap)
+{
+	long_cap_seen = cap;
+	if (chip != 0 || page != 3 || reg != 0x32) {
+		return -1;
+	}
+	uint8_t k = 10 < cap ? 10 : cap;
+	memcpy(o, "V2.01.01PF", k);
+	return k;
+}
+
 static hal_system_t sys = { .reg = soc_reg };
 board_t board;
 
 // --- helpers ---
 
-static uint8_t out[16];
+static uint8_t out[48];
 
 static size_t cmd(const uint8_t *req, uint16_t len)
 {
@@ -96,6 +111,7 @@ static uint32_t reply32(void)
 static void reset(void)
 {
 	board.chip_reg = chip_reg;
+	board.chip_reg_bytes = chip_reg_bytes;
 	board.system = &sys;
 	sys.reg = soc_reg;
 	fake_tx = false;
@@ -172,8 +188,37 @@ static void test_short_buffer(void)
 	CHECK(debuglink_cmd_chip_reg(rd, 3, small, sizeof small) == 1 && small[0] == DL_ST_BAD_ARG);
 }
 
+static void test_bytes(void)
+{
+	reset();
+	uint8_t rd[4] = { 0, 3, 0x32, 16 };
+	CHECK(cmd(rd, 4) == 11 && out[0] == DL_ST_OK && memcmp(out + 1, "V2.01.01PF", 10) == 0 && long_cap_seen == 16);
+	// Fewer bytes asked than the field holds: its first ones
+	rd[3] = 4;
+	CHECK(cmd(rd, 4) == 5 && out[0] == DL_ST_OK && memcmp(out + 1, "V2.0", 4) == 0 && long_cap_seen == 4);
+	// The longest; one past it; none; more than the reply buffer holds
+	rd[3] = DL_CHIP_REG_BYTES_MAX;
+	CHECK(cmd(rd, 4) == 11 && out[0] == DL_ST_OK);
+	rd[3] = DL_CHIP_REG_BYTES_MAX + 1;
+	CHECK(cmd(rd, 4) == 1 && out[0] == DL_ST_BAD_ARG);
+	rd[3] = 0;
+	CHECK(cmd(rd, 4) == 1 && out[0] == DL_ST_BAD_ARG);
+	rd[3] = 16;
+	uint8_t small[8];
+	CHECK(debuglink_cmd_chip_reg(rd, 4, small, sizeof small) == 1 && small[0] == DL_ST_BAD_ARG);
+	// A register the board doesn't offer or that never answers
+	uint8_t none[4] = { 0, 3, 0x40, 4 };
+	CHECK(cmd(none, 4) == 1 && out[0] == DL_ST_BAD_ARG);
+	// The u32 forms are unchanged by the hook; without it, the length form is unavailable and they still answer
+	board.chip_reg_bytes = NULL;
+	CHECK(cmd(rd, 4) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	uint8_t rd3[3] = { 0, 1, 0x12 };
+	CHECK(cmd(rd3, 3) == 5 && out[0] == DL_ST_OK);
+}
+
 int main(void)
 {
+	test_bytes();
 	test_chip();
 	test_soc();
 	test_short_buffer();

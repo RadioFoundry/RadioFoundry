@@ -62,6 +62,7 @@ static int8_t tick_ts;
 static uint8_t tick_ring[TICK_RING];
 static uint32_t slc_good, slc_bad, slc_last;	// CACH short LCs (DMR_EV_SHORT_LC): good and bad CRCs, the last good
 static void (*wake_fn)(void);	// dmr_call_set_wake; outlives dmr_call_init
+static void (*wake_listen_fn)(bool listen);	// dmr_call_set_wake_listen; the same
 
 // --- Stack state ---
 
@@ -142,14 +143,21 @@ static struct {
 	bool stop_req;
 	bool tot_hit;
 	uint8_t tail_holds;		// superframe boundaries passed with the source's tail still to send (voice_source_t.busy)
+	bool tail_read;		// the source had a tail after the release: read to the over's end (silence after a final tone)
 	bool ceased;		// the reverse channel stopped this over (rc_heard)
 	uint32_t rc_cease_ms;	// the last cease heard, | 1 (0: none)
 	uint8_t stage[DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
 	uint8_t stage_n;
+	// At the release, the frames the encoder already had (said before it), for what remains of the superframe
+	uint8_t tail[5 * DMR_AMBE_FRAMES_PER_BURST][DMR_AMBE_FRAME_BYTES];
+	uint8_t tail_n, tail_at;
 	uint32_t tx_since;	// PTT handling start (access wait)
 	uint32_t deadline;
 	uint32_t wake_sent_ms;
 	uint8_t wake_tries;
+	bool wake_listening;	// wake_listen_fn was last told true
+	bool slot_waiting;	// an aligned key-up is held for the modem's slot_verified, since slot_wait_ms
+	uint32_t slot_wait_ms;
 	bool rewoken;		// this key-up woke the repeater again after a voice start the modem gave up (tx_rewake)
 	bool tx_listening;	// this over hears the repeater between its bursts (the modem's tx_listen)
 	uint32_t tx_heard_ms;	// listening: the repeater's last burst heard during the over, or the over's first burst
@@ -1298,12 +1306,36 @@ static void tx_superframe_lc(void)
 		stats.tx_alias_lcs++;
 }
 
-// At a superframe boundary after PTT was let go: whether the source has a tail (an end tone) to send first. A
-// time-out ends the over at once, and a tail that doesn't end is cut after DMR_CALL_TX_TAIL_HOLDS boundaries
+// After PTT was let go: the source still has a tail (an end tone) to send. A time-out ends the over at once
+static bool tx_source_tail(void)
+{
+	return !s.tot_hit && s.source && s.source->busy && s.source->busy(s.source->ctx);
+}
+
+// At a superframe boundary after PTT was let go: whether the tail goes on first. A tail that doesn't end is cut after
+// DMR_CALL_TX_TAIL_HOLDS boundaries
 static bool tx_tail_hold(void)
 {
-	return !s.tot_hit && s.tail_holds < DMR_CALL_TX_TAIL_HOLDS && s.source && s.source->busy &&
-	       s.source->busy(s.source->ctx);
+	return s.tail_holds < DMR_CALL_TX_TAIL_HOLDS && tx_source_tail();
+}
+
+// PTT release or the time-out: the call ends at the next superframe boundary and carries silence until then
+static void tx_stop(void)
+{
+	if (s.stop_req)
+		return;
+	s.stop_req = true;
+	// What the encoder holds now was said before the release: it goes out in the rest of the superframe (none left
+	// at its boundary), and nothing taken later does
+	s.tail_n = s.tail_at = 0;
+	if (s.tx == TX_ON && s.headers_left == 0 && s.voice_index != 0 && s.source && s.source->next) {
+		unsigned room = (6u - s.voice_index) * DMR_AMBE_FRAMES_PER_BURST - s.stage_n;
+
+		while (s.tail_n < room && s.source->next(s.tail[s.tail_n], s.source->ctx))
+			s.tail_n++;
+	}
+	if (s.modem->tx_release != NULL)
+		s.modem->tx_release();
 }
 
 static void tx_fill(uint32_t now)
@@ -1311,7 +1343,7 @@ static void tx_fill(uint32_t now)
 	while (s.tx == TX_ON) {
 		uint32_t inflight = tx_inflight();
 
-		if (inflight >= DMR_CALL_TX_MAX_INFLIGHT || s.modem->tx_queue_space() == 0)
+		if (inflight >= (s.cfg.tx_ahead ? s.cfg.tx_ahead : DMR_CALL_TX_MAX_INFLIGHT) || s.modem->tx_queue_space() == 0)
 			return;
 		if (s.headers_left) {
 			uint8_t full[DMR_LC_FULL_BYTES];
@@ -1326,14 +1358,22 @@ static void tx_fill(uint32_t now)
 			tx_terminate(now, inflight);	// superframe boundary
 			return;
 		}
-		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
+		// Once the call is ending, what the encoder held at the release, then silence: nothing said after it goes out.
+		// A source with a tail to send (an end tone, tx_tail_hold) is read on to the end: it mutes the mic after it
+		while (s.stop_req && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.tail_at < s.tail_n)
+			memcpy(s.stage[s.stage_n++], s.tail[s.tail_at++], DMR_AMBE_FRAME_BYTES);
+		if (s.stop_req && !s.tail_read && tx_source_tail())
+			s.tail_read = true;
+		bool from_source = !s.stop_req || s.tail_read;
+		while (from_source && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && s.source && s.source->next &&
 		       s.source->next(s.stage[s.stage_n], s.source->ctx))
 			s.stage_n++;
-		if (s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
+		if (from_source && s.stage_n < DMR_AMBE_FRAMES_PER_BURST && inflight > 1)
 			return;	// not due yet: wait for the encoder
 		while (s.stage_n < DMR_AMBE_FRAMES_PER_BURST) {
 			memcpy(s.stage[s.stage_n++], dmr_ambe_silence, DMR_AMBE_FRAME_BYTES);
-			s.view.tx_underruns++;
+			if (!s.stop_req)
+				s.view.tx_underruns++;
 		}
 
 		if (s.voice_index == 0)
@@ -1407,8 +1447,11 @@ static void tx_start_voice(uint32_t now)
 	s.voice_index = 0;
 	s.queued = s.started = 0;
 	s.stop_req = false;
+	s.view.tx_released = false;
 	s.tot_hit = false;
 	s.tail_holds = 0;
+	s.tail_n = s.tail_at = 0;	// a cease (rc_cease) ends the over without tx_stop
+	s.tail_read = false;
 	s.ceased = false;
 	s.rc_cease_ms = 0;
 	s.stage_n = 0;
@@ -1436,8 +1479,19 @@ static void tx_start_voice(uint32_t now)
 	tx_fill(now);
 }
 
+static void wake_listen(bool listen)
+{
+	if (s.wake_listening != listen) {
+		s.wake_listening = listen;
+		if (wake_listen_fn != NULL)
+			wake_listen_fn(listen);
+	}
+}
+
 static void tx_wakeup(uint32_t now)
 {
+	wake_listen(false);
+	s.slot_waiting = false;
 	uint8_t csbk[12];
 
 	dmr_csbk_bs_activation(s.cfg.own_id, csbk);
@@ -1484,10 +1538,32 @@ static bool tx_rewake(uint32_t now)
 	return true;
 }
 
+// Through a repeater an aligned start before the modem has settled the outbound's slot numbering can go out on the
+// other slot, so it waits, and a modem that never settles it is denied rather than sent on a guess. True: hold (or
+// denied just now)
+static bool slot_unverified(uint32_t now)
+{
+	if (!s.cfg.rmo || s.modem->slot_verified == NULL || s.modem->slot_verified()) {
+		s.slot_waiting = false;
+		return false;
+	}
+	if (!s.slot_waiting) {
+		s.slot_waiting = true;
+		s.slot_wait_ms = now;
+	}
+	if (elapsed(now, s.slot_wait_ms, true, DMR_CALL_SLOT_VERIFY_MS)) {
+		s.slot_waiting = false;
+		s.wake_listening = false;
+		tx_deny(DMR_TX_ERR_NO_REPEATER);
+	}
+	return true;
+}
+
 static void tx_access(uint32_t now)
 {
 	if (s.data_active) {	// the repeater is up now (the list's owner did the listen before talk)
-		tx_start_data(now);
+		if (!slot_unverified(now))
+			tx_start_data(now);
 		return;
 	}
 	if (voice_channel_busy(now)) {
@@ -1496,7 +1572,10 @@ static void tx_access(uint32_t now)
 		return;
 	}
 	if (s.cfg.rmo && !repeater_up(now)) {
+		s.slot_waiting = false;
 		tx_wakeup(now);
+	} else if (slot_unverified(now)) {
+		return;
 	} else if (s.cfg.permit_hold_ms != 0 && !s.permit_done) {
 		s.tx = TX_PERMIT;	// admitted: the talk permit sounds now, while we still receive
 		s.permit_ms = now;
@@ -1565,6 +1644,7 @@ static void tx_start_data(uint32_t now)
 	}
 	s.queue_cap = s.modem->tx_queue_space();
 	s.queued = s.started = 0;
+	s.view.tx_released = false;
 	s.tx_listening = false;	// not the last voice over's: no repeater burst comes between ours, its slot numbers count
 	s.tx = TX_DATA;
 	s.deadline = now + DMR_CALL_DATA_TIMEOUT_MS + (uint32_t)s.data.count * VOICE_PERIOD_MS;
@@ -1576,6 +1656,7 @@ static void tx_ptt_pressed(uint32_t now)
 {
 	if (s.tx != TX_NONE)
 		return;		// a transmission is ending: tx_finished() restarts if PTT is still held
+	s.view.tx_released = false;	// a new transmission: access, a wake-up or a permit wait are not the last one's tail
 	if (!s.modem || !s.running || !s.configured) {
 		s.tx = TX_DENIED;
 		s.view.tx_error = DMR_TX_ERR_NO_MODEM;
@@ -1588,6 +1669,7 @@ static void tx_ptt_pressed(uint32_t now)
 	s.rewoken = false;
 	s.drop_wait = false;
 	s.permit_done = false;
+	s.slot_waiting = false;
 	s.tx = TX_ACCESS;
 	s.dirty = true;
 	tx_access(now);
@@ -1597,6 +1679,9 @@ static void tx_ptt_released(void)
 {
 	switch (s.tx) {
 	case TX_ACCESS:
+		if (s.data_active)
+			break;	// a burst list waiting for its slot, not PTT's: it goes on
+		/* fall through */
 	case TX_PERMIT:
 	case TX_DENIED:
 		s.tx = TX_NONE;
@@ -1605,7 +1690,8 @@ static void tx_ptt_released(void)
 	case TX_WAKE_LISTEN:
 		break;		// a short press still wakes the repeater, as other radios do; tx_poll ends it once up
 	case TX_ON:
-		s.stop_req = true;	// at the next superframe boundary
+		tx_stop();
+		s.view.tx_released = true;
 		break;
 	default:
 		break;
@@ -1638,6 +1724,7 @@ static void tx_poll(uint32_t now)
 		break;
 	case TX_WAKE:
 		if (!before(now, s.deadline)) {	// tx_done never came: listen anyway
+			wake_listen(true);
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
 		}
@@ -1648,8 +1735,13 @@ static void tx_poll(uint32_t now)
 			if (!s.ptt && !s.data_active) {
 				s.tx = TX_NONE;	// PTT let go during the wake-up: the repeater is up, nothing more to send
 				s.view.wake_admits++;	// but the user hears that it would have gone through
+				s.wake_listening = false;	// the transmitter comes off with the phase (radio_sm), not keyed again
 				break;
 			}
+			// Here, while the receiver is still on: the transmit set-up that wake_listen(false) restores can be deaf
+			if (slot_unverified(now))
+				break;
+			wake_listen(false);
 			s.tx = TX_ACCESS;
 			tx_access(now);
 		} else if (!before(now, s.deadline)) {
@@ -1657,8 +1749,10 @@ static void tx_poll(uint32_t now)
 
 			if (s.wake_tries < tries)
 				tx_wakeup(now);
-			else
+			else {
+				s.wake_listening = false;	// as when the repeater answers a short press
 				tx_deny(DMR_TX_ERR_NO_REPEATER);
+			}
 		}
 		break;
 	case TX_PERMIT: {
@@ -1724,7 +1818,7 @@ static void tx_poll(uint32_t now)
 			break;
 		}
 		if (s.cfg.tot_s && !s.stop_req && (uint32_t)(now - s.tx_start_ms) >= (uint32_t)s.cfg.tot_s * 1000u) {
-			s.stop_req = true;
+			tx_stop();
 			s.tot_hit = true;
 		}
 		tx_fill(now);
@@ -1835,6 +1929,7 @@ static void handle_event(const evq_item_t *it, uint32_t now)
 		} else if (s.tx == TX_WAKE && s.started != 0) {
 			// Only once our CSBK went: a refused voice start's DMR_EV_TX_DONE follows its DMR_EV_TX_REJECTED, after
 			// tx_rewake already sent us here
+			wake_listen(true);
 			s.tx = TX_WAKE_LISTEN;
 			s.deadline = now + DMR_CALL_WAKEUP_LISTEN_MS;
 		} else if (s.tx == TX_WAKE && !s.modem->is_transmitting()) {
@@ -2127,8 +2222,10 @@ void dmr_call_poll(uint32_t now_ms)
 			// "up", so the start was never woken (issue 524)
 			// Nor where the modem gives the repeater's bursts (receiving, or listening between ours): they say it is
 			// up, its slot numbers don't. The modem keeps those running on the timing it last had, and a repeater
-			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538)
-			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() && !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
+			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538). A modem
+			// whose ticks are CACHs heard (cach_ticks) reports no idle bursts: there they are the repeater's only sign
+			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() &&
+			    !(s.rpt_bursts && !s.modem->cach_ticks && (!transmitting() || s.tx_listening))) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}
@@ -2205,6 +2302,11 @@ void dmr_call_reset_stats(void)
 	evq_drops_base = evq_drops;
 }
 
+void dmr_call_set_wake_listen(void (*fn)(bool listen))
+{
+	wake_listen_fn = fn;
+}
+
 void dmr_call_set_wake(void (*fn)(void))
 {
 	wake_fn = fn;
@@ -2226,12 +2328,18 @@ bool dmr_call_data_tx(const dmr_data_source_t *src)
 	s.data_staged = false;
 	s.tx_since = s.now;
 	s.wake_tries = 0;
+	s.view.tx_released = false;	// a new transmission: a wake-up isn't the last call's tail
 	s.dirty = true;
 	TR_TX(src->tag, false, src->count, 0);
-	if (s.cfg.rmo && !repeater_up(s.now))
+	if (s.cfg.rmo && !repeater_up(s.now)) {
 		tx_wakeup(s.now);
-	else
+	} else if (s.cfg.rmo) {
+		s.slot_waiting = false;
+		s.tx = TX_ACCESS;	// through the repeater only once the modem has settled the slot numbering (slot_unverified)
+		tx_access(s.now);
+	} else {
 		tx_start_data(s.now);
+	}
 	return true;
 }
 

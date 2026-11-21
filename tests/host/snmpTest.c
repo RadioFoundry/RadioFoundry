@@ -291,6 +291,16 @@ static void setup(void)
 	data.cc = 1;
 	data.ts = 2;
 	data.talkTarget = 91;
+	// Two sensors: a PA thermistor with its curve, an MCU sensor that gives degrees only (below zero); the fan off
+	data.tempCount = 2;
+	data.temp[0].kind = 1;
+	data.temp[0].hasMv = data.temp[0].hasDc = true;
+	data.temp[0].mv = 549;
+	data.temp[0].dc = 423;
+	data.temp[1].kind = 3;
+	data.temp[1].hasDc = true;
+	data.temp[1].dc = -55;
+	data.fan = 2;
 	ctx.data = &data;
 	ctx.cfg = &cfg;
 	ctx.stats = &stats;
@@ -427,7 +437,9 @@ static void test_walk(void)
 		count++;
 	}
 	CHECK(ordered);
-	CHECK(count == mib.count - 1);	// every instance but rfoundryLastAge, which has no value until a call is heard
+	// Every instance but rfoundryLastAge, which has no value until a call is heard, the MCU sensor's mV and the two
+	// rows without a sensor (three cells each)
+	CHECK(count == mib.count - 1 - 1 - 2 * 3);
 	uint8_t a[SNMP_OID_MAX], b[SNMP_OID_MAX];
 	for (int i = 1; i < mib.count; i++) {
 		int an = snmpObjectOid(&mib, i - 1, a), bn = snmpObjectOid(&mib, i, b);
@@ -464,8 +476,10 @@ static void test_bulk(void)
 	CHECK(r.vb[5].oid[6] == 3 && r.vb[6].oid[6] == 4);		// round 3
 	CHECK(stats.getBulks == 1);
 
-	// Near the end: the column runs out (endOfMibView named as the last instance), the walk stops after a round
+	// Near the end (no sensors, no fan: the agent group ends the MIB): the column runs out (endOfMibView named as the last instance), the walk stops after a round
 	// with every column at the end
+	data.tempCount = 0;
+	data.fan = 0;
 	const uint8_t last[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 7, 7, 0 };
 	const uint8_t *o2[] = { last };
 	const int l2[] = { sizeof(last) };
@@ -1083,6 +1097,54 @@ static void test_fuzz(void)
 	printf("# snmp fuzz: %ld requests, %ld answered\n", iters, answered);
 }
 
+// rfoundryTempTable (rfoundrySensors.1): kind, mV and 0.1 degree C per row, a cell missing where the sensor has no such
+// reading, rows past the sensors missing; rfoundryFanState, missing without a fan
+static void test_temp(void)
+{
+	setup();
+	uint8_t q[300], out[512];
+	bool auth;
+	resp_t r;
+#define TCELL(col, row)	{ 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 9, 1, 1, col, row }
+	const uint8_t kind1[] = TCELL(2, 1), mv1[] = TCELL(3, 1), dc1[] = TCELL(4, 1), kind2[] = TCELL(2, 2),
+		      mv2[] = TCELL(3, 2), dc2[] = TCELL(4, 2), kind3[] = TCELL(2, 3), idx1[] = TCELL(1, 1);
+	const uint8_t fan[] = { 0x2B, 6, 1, 4, 1, 0x81, 0xFD, 0x59, 2, 1, 9, 2, 0 };
+	const uint8_t *oids[] = { kind1, mv1, dc1, kind2, mv2, dc2, kind3, idx1, fan };
+	const int lens[] = { sizeof(kind1), sizeof(mv1), sizeof(dc1), sizeof(kind2), sizeof(mv2), sizeof(dc2),
+			     sizeof(kind3), sizeof(idx1), sizeof(fan) };
+	int qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, oids, lens, 9);
+	int n = process(false, q, qn, out, sizeof(out), &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.status == 0 && r.count == 9);
+	CHECK(r.vb[0].tag == BER_INTEGER && valNum(&r, 0) == 1);		// pa(1)
+	CHECK(r.vb[1].tag == BER_INTEGER && valNum(&r, 1) == 549);
+	CHECK(r.vb[2].tag == BER_INTEGER && valNum(&r, 2) == 423);
+	CHECK(r.vb[3].tag == BER_INTEGER && valNum(&r, 3) == 3);		// mcu(3)
+	CHECK(r.vb[4].tag == BER_NO_SUCH_INSTANCE);				// no mV output
+	CHECK(r.vb[5].tag == BER_INTEGER && (int32_t)valNum(&r, 5) == -55);	// below zero, signed
+	CHECK(r.vb[6].tag == BER_NO_SUCH_INSTANCE);				// no third sensor
+	CHECK(r.vb[7].tag == BER_NO_SUCH_OBJECT);				// the index is not-accessible
+	CHECK(r.vb[8].tag == BER_INTEGER && valNum(&r, 8) == 2);		// off(2)
+
+	// GetNext down the kind column: row 1, row 2, then the mV column's row 1 (the column-major order of a table)
+	const uint8_t *o1[] = { kind2 };
+	const int l1[] = { sizeof(kind2) };
+	qn = request(q, 1, "public", SNMP_PDU_GETNEXT, 0, 0, o1, l1, 1);
+	n = process(false, q, qn, out, sizeof(out), &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.vb[0].oidLen == (int)sizeof(mv1) &&
+	      memcmp(r.vb[0].oid, mv1, sizeof(mv1)) == 0);
+
+	// No fan the firmware drives, no sensors: neither object has an instance
+	data.fan = 0;
+	data.tempCount = 0;
+	const uint8_t *o2[] = { fan, kind1 };
+	const int l2[] = { sizeof(fan), sizeof(kind1) };
+	qn = request(q, 1, "public", SNMP_PDU_GET, 0, 0, o2, l2, 2);
+	n = process(false, q, qn, out, sizeof(out), &auth);
+	CHECK(n > 0 && decode(out, n, &r, SNMP_PDU_RESPONSE) && r.vb[0].tag == BER_NO_SUCH_INSTANCE &&
+	      r.vb[1].tag == BER_NO_SUCH_INSTANCE);
+#undef TCELL
+}
+
 int main(void)
 {
 	test_ber();
@@ -1090,6 +1152,7 @@ int main(void)
 	test_drops();
 	test_walk();
 	test_bulk();
+	test_temp();
 	test_too_big();
 	test_set();
 	test_events();

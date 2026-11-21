@@ -50,13 +50,14 @@ void ui_crit_exit(void);
 ui_state_t ui_st;
 ui_target_t ui_target;
 static const radio_view_t *view;
-static const radio_view_t view_none;	// until the first tick (const: flash, not RAM)
+static const radio_view_t view_none;	// until the first tick (const: in flash, not RAM)
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
 #if CONFIG_VOLUME_BAR
 static uint32_t volbar_until;
 static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = none yet: no bar for the first
+static int8_t knob_b_seen;		// the same for a second knob (side B's, radio_view_t.volume_b)
 #endif
 static bool dirty = true;
 static uint32_t draws;
@@ -626,7 +627,9 @@ static void vibrate(uint8_t vibe)
 		ui_svc_vibrate(vibe);
 }
 
-static void handle_event(const ui_event_t *ev)
+// noinline: inlined, its banner text and buffers sit in ui_task's frame under every draw as well (the deepest path is a
+// draw, never an event), and LTO inlines it or not by how the build's partitions fall
+__attribute__((noinline)) static void handle_event(const ui_event_t *ev)
 {
 	char title[UI_BANNER_TEXT];
 	sbuf_t b;
@@ -1906,8 +1909,10 @@ void ui_app_init(void)
 	view = &view_none;
 	memset(&ui_st, 0, sizeof ui_st);
 	ui_st.volbar = -1;
+	ui_st.volbar_b = -1;
 #if CONFIG_VOLUME_BAR
 	knob_seen = -1;
+	knob_b_seen = -1;
 #endif
 	wake_req = false;
 #if CONFIG_DUAL_WATCH
@@ -2134,7 +2139,10 @@ void ui_app_key(const input_event_t *ev)
 	// may be typing a frequency or a filter
 	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
 		return;
-	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
+	// A/B in dual watch retunes both receivers: its beep goes after the switch (the radio task takes requests in
+	// order), as a retune inside a beep can let the receiver's noise through the speaker
+	bool ab = CONFIG_DUAL_WATCH && ev->action == ACT_AB && ev->gesture == GESTURE_PRESS && !ui_st.locked;
+	if ((ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG) && !ab)
 		ui_svc_beep(UI_BEEP_KEY);
 	if (emergency_key(ev))
 		return;
@@ -2164,6 +2172,8 @@ void ui_app_key(const input_event_t *ev)
 	}
 #if CONFIG_HOTSPOT
 	if (in_hotspot()) {
+		if (ab)
+			ui_svc_beep(UI_BEEP_KEY);	// no switch here: the beep held back above goes now
 		hotspot_key(ev);
 		return;
 	}
@@ -2212,6 +2222,8 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_AB:
 			ui_dual_ab_key();
+			if (ab)
+				ui_svc_beep(UI_BEEP_KEY);
 			return;
 #endif
 		case ACT_CALL_BACK:
@@ -2411,33 +2423,63 @@ static void knob_moved(const radio_view_t *v)
 // own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
 // over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
 // radio
+//
+// A radio with a second knob (side B's, view.volume_b >= 0) shows both bars stacked whichever knob turns; the side
+// whose knob moved is marked. Side A's row shows the level in force (the debug link's too). A radio with one knob
+// never gets there
 #if CONFIG_VOLUME_BAR
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
 	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
-	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
-		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
+	int8_t lb = v->volume_b;
+	bool moved_b = lb >= 0 && knob_b_seen >= 0 && lb != knob_b_seen;
+	if ((lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) || moved_b) {
+		if (lb >= 0) {
+			ui_st.volbar_b = (int8_t)radio_volume_step_of((uint8_t)lb);
+			ui_st.volbar_side = moved_b ? 1u : 0u;
+		}
+		ui_st.volbar = (int8_t)(lvl >= 0 ? radio_volume_step_of((uint8_t)lvl) :
+					v->volume >= 0 ? radio_volume_step_of((uint8_t)v->volume) : 0);
 		volbar_until = now + VOLUME_MS;
 		wake_req = true;
 		dirty = true;
 	}
-	if (lvl < 0 && ui_st.volbar >= 0) {	// the debug link took over (or the knob is gone): its old level is wrong
-		ui_st.volbar = -1;
-		dirty = true;
+	// The debug link took over (or the knob is gone): side A's old level is wrong. A two-knob radio keeps a bar side B
+	// moved, with the debug link's level for A, as a turn of B then shows it
+	if (lvl < 0 && ui_st.volbar >= 0) {
+		int8_t a = ui_st.volbar_b < 0 || ui_st.volbar_side == 0 ? -1 :
+			   (int8_t)(v->volume >= 0 ? radio_volume_step_of((uint8_t)v->volume) : 0);
+		if (a != ui_st.volbar) {
+			ui_st.volbar = a;
+			dirty = true;
+		}
 	}
 	knob_seen = lvl;
+	knob_b_seen = lb;
 }
 #endif
 
-bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
+// In a frame of its own: the APRS view is a large struct, and inlined it would sit under every event handler
+__attribute__((noinline)) static uint8_t aprs_unread(void)
 {
-	static uint32_t serial_seen;
-	static uint8_t battery_seen;
+	aprs_view_t av;
+	return ui_svc_aprs_view(&av) ? av.unread : 0;
+}
+
+void ui_app_set_view(const radio_view_t *v)
+{
 #if CONFIG_DUAL_WATCH
 	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
 #else
 	view = v;
 #endif
+}
+
+bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
+{
+	static uint32_t serial_seen;
+	static uint8_t battery_seen;
+	ui_app_set_view(v);
 	now = now_ms;
 	ui_st.now_ms = now_ms;
 #if CONFIG_VOLUME_BAR
@@ -2568,6 +2610,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_VOLUME_BAR
 	if (ui_st.volbar >= 0 && (int32_t)(now - volbar_until) >= 0) {
 		ui_st.volbar = -1;
+		ui_st.volbar_b = -1;
 		dirty = true;
 	}
 #endif
@@ -2588,9 +2631,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (ui_st.entry && (now - entry_last >= ENTRY_TIMEOUT_MS || !view->vfo))
 		entry_cancel();
 	uint16_t unread = ui_svc_msg_unread();
-	aprs_view_t aprs_view;
-	if (ui_svc_aprs_view(&aprs_view))
-		unread += aprs_view.unread;
+	unread += aprs_unread();
 	if (unread != ui_st.unread) {
 		ui_st.unread = unread;
 		dirty = true;
@@ -2798,5 +2839,7 @@ void ui_app_status(ui_app_status_t *s)
 	s->dual = false;
 #endif
 	s->volbar = ui_st.volbar;
+	s->volbar_b = ui_st.volbar_b;
+	s->volbar_side = ui_st.volbar_side;
 	s->volbar_top = volbar_top;
 }

@@ -36,6 +36,7 @@
 #define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
+#define RADIO_LED_SCAN_STEP_MS	250	// CAP_LED_SCAN_FLASH: green on, then off, this long each
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
 #define RADIO_SQUELCH_MAX	9
@@ -98,6 +99,9 @@
 #define RADIO_RX2_REFRESH_MS	2000
 #define RADIO_RX2_TUNE_MS	1500
 #define RADIO_RX2_RETRY_MS	10000
+// ... one that only senses a DMR channel (rx2_status_t.sense): after a look there found no call for us, the next look
+// waits for its carrier to drop or this long
+#define RADIO_RX2_RELOOK_MS	5000
 #define RADIO_SCAN_HOLD_S	5
 #define RADIO_SCAN_DELAY_MS	2000
 
@@ -120,8 +124,10 @@
 #define RADIO_VOX_RX_GUARD_MS	500
 
 // Receiver battery saving: awake RADIO_SAVE_WAKE_MS (the first RADIO_SAVE_SETTLE_MS of it ignored), asleep
-// RADIO_SAVE_SLEEP_MS x 1, 2 or 4
-#define RADIO_SAVE_WAKE_MS	100
+// RADIO_SAVE_SLEEP_MS x 1, 2 or 4. The wake gives three squelch polls 25 ms apart: 50 ms, more than the 30 ms gap
+// between a DMR portable's bursts, so a wake always reads its carrier once (two polls, at 100 ms, could both fall in
+// gaps, and with the cycle then a multiple of the 60 ms frame, every later wake too)
+#define RADIO_SAVE_WAKE_MS	125
 #define RADIO_SAVE_SETTLE_MS	50
 #define RADIO_SAVE_SLEEP_MS	200
 
@@ -307,6 +313,7 @@ typedef struct {
 #endif
 	int8_t green_out;
 	int8_t red_out;
+	int8_t blue_out;
 	// The LEDs' timed signals (outputs()): led_now is the time of the entry point that runs last (poll, tick,
 	// request), since outputs() is called from everywhere without one
 	uint32_t led_now;
@@ -360,6 +367,11 @@ typedef struct {
 	uint32_t rx2_try_ms;		// last time it was given the other channel, or found down
 	uint32_t rx2_refresh_ms;	// last time its settings went again
 	int8_t rx2_audio_out;		// last board.rx2->audio(), -1 = none yet
+	bool rx2_look;			// the second receiver only senses its channel: the main one went there to decode
+	bool rx2_relook;		// ... its carrier dropped since the last look ended, or that look played a call: the
+					// next one goes at once
+	bool rx2_look_call;		// ... this look played a call for us
+	uint32_t rx2_look_ms;		// ... when the last look ended
 	// One receiver, in the wait after a signal: on the other channel for a look (scan.tuned_ms its start), the wait's
 	// start to go back to, and whether this look heard a signal
 	bool dual_peek;
@@ -453,6 +465,7 @@ typedef struct {
 	uint16_t latch_ch;
 	bool latch_vfo;
 	bool scan_hear_all;	// ... and carried by a scan (not dual watch) started with it on: on at every stop
+	bool dmon_press;	// the monitor key went down on DMR: its release toggles digital monitor
 	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
 	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
 	uint32_t focus_id;

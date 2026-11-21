@@ -244,7 +244,7 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	}
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
-	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
+	dl_text_kv_str(&t, "codec", board_codec_id());
 	if (d != NULL) {
 		dl_text(&t, "display=%ux%ux%u\ninset=%u,%u,%u,%u\n", d->width, d->height, d->bpp, d->inset_top,
 			d->inset_bottom, d->inset_left, d->inset_right);

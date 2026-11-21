@@ -119,13 +119,14 @@ PORT_OPTIONS = ("--radio-port", "--split-rx-port", "--split-ms-port")
 
 
 def sanitize(text, secrets=()):
-    """A skip or failure reason fit for a committed record: no serial ports, device serials or host names."""
+    """A skip or failure reason fit for a committed record: no serial ports, device serials, host names or addresses."""
     for s in secrets:
         text = text.replace(s, "<port>")
     text = re.sub(r"\w+://\S+", "<url>", text)
     text = re.sub(r"/dev/\S+", "<port>", text)
     text = re.sub(r"(?i)\b(?:COM\d+|usbmodem\w*|serial[=: ]+\S+)", "<port>", text)
     text = re.sub(r"\b[\w-]+\.local\b", "<host>", text)
+    text = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b", "<host>", text)    # an IPv4 address (a bench board)
     return text[:400]
 
 

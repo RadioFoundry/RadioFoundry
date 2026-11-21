@@ -6,9 +6,9 @@ superframes each (8 voice LC headers, 60 voice bursts and 3 terminators per call
 counters must show exactly that.
 
 Tolerances (documented in README.md): voice bursts 120 - 0 / + 0, headers 14..16 (the first header of a call can
-fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack. A build without
-the board's diagnostics lines (CONFIG_DIAG off) has no modem counters: the call stack's voice bursts are counted
-instead, 120 with none lost."""
+fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack. Without modem.*
+counters (a baseband that plays the voice, or a build without the board's diagnostics lines, CONFIG_DIAG off), the call
+stack's voice bursts are counted instead, 120 with none lost."""
 import time
 
 import pytest
@@ -48,6 +48,6 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
         assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d
         assert CALLS * TERMINATORS - 1 <= d["modem.terminators"] <= CALLS * TERMINATORS, d
         assert d["modem.crc"] == 0, d
-    else:                                # no board diagnostics lines in this build: the call stack's count
+    else:   # no modem counters (a baseband that plays the voice, or no board diagnostics lines): the call stack's count
         assert d["call.rx_voice_bursts"] == CALLS * SUPERFRAMES * 6 and d["call.rx_lost_frames"] == 0, d
     assert d["call.rx_calls"] == CALLS, d
