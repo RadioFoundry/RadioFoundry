@@ -371,6 +371,12 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
 
+For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
+control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with
+those values and transmit on; the template [ham-p25-trunked.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-p25-trunked.yaml) holds the system, a channel
+and the BrandMeister talkgroups. P25 talkgroups go up to 65535, so a BrandMeister talkgroup above that has no P25
+number. The reasons are in [Recommended ham trunked systems](../spec/ham-trunking.md#3-p25-trunked).
+
 ### NXDN in the VFO
 
 On a radio that runs NXDN, NXDN is one of the VFO's modes, after P25 ("VFO: NXDN"). It

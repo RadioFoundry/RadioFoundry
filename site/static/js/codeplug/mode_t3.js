@@ -90,10 +90,22 @@ const OPT_HELP = new Set(["learnSystem", "allCalls", "followAll", "registerTalkg
 const optionFields = (section) => Object.keys(OPTS).filter((k) => OPT_SECTION[k] === section).map((k) =>
 	({ key: k, label: `editor.t3.opt.${k}`, type: "bool", section, help: OPT_HELP.has(k) ? `editor.t3.opt.${k}_help` : undefined }));
 
+// The recommended ham system (docs/spec/ham-trunking.md 2): one network for every ham site, Huge NET 1, category A,
+// color code 1, registration on, no key. A site's number makes its control channel's LCN, 4 × site + 1, so no two
+// sites' channel numbers clash (sites 0-1022: four carriers each fit under LCN 4094)
+export const HAM_T3 = { model: 3, net: 1, category: "a", colorCode: 1, siteMax: 1022, lcn: (site, carrier = 1) => 4 * site + carrier };
+
 export const t3System = {
 	id: 1,
 	idLen: 4,
 	defaultTx: true,
+	ham: {
+		name: "Ham Tier III",
+		tx: true,
+		fields: () => ({ ...newT3System(), model: HAM_T3.model, net: HAM_T3.net, category: HAM_T3.category, colorCode: HAM_T3.colorCode, registerTalkgroups: true }),
+		asks: [{ key: "site", label: "editor.t3.ham_site", type: "int", min: 0, max: HAM_T3.siteMax, help: "editor.t3.ham_site_help" }],
+		entries: (a) => [{ cls: 0, group: 0xFF, flags: 0, control: true, chan: HAM_T3.lcn(a.site), rxHz: a.rxHz, txHz: a.txHz, cc: null, raw: null }],
+	},
 	newFields: newT3System,
 	decode: decodeBlock,
 	encode: encodeBlock,
