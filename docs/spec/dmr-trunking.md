@@ -765,12 +765,13 @@ A site sampled isn't sampled again for 30 s unless ours is weak. `T3_OPT_NO_ROAM
 the adjacent sites, and for one pass confirms only a TSCC at or above the threshold (the hunting threshold of
 6.3.2.3). After a pass it takes any. With nowhere else to look it stays.
 
-A pass that found nothing at or above the threshold ends with a hold on the TSCC it took: no leaving for weakness for
-30 s, then 60 s after the next such pass, doubling up to 5 min. A TSCC confirmed at or above the threshold ends the
-hold, but the next hold still doubles: a level that only touched the threshold soon fails again. A level above the
-threshold by the voting margin ends the hold and starts the doubling over. Without the hold, a radio camped at the edge of its only system's coverage
-would hunt every 5 s and miss its grants and pages while away. The level averages to the nearest dB, so a steady level
-just below the threshold counts as below.
+A pass that found nothing at or above the threshold ends with a hold on the next TSCC confirmed: no leaving for weakness
+for 30 s, then 60 s after the next such pass, doubling up to 5 min. A later pass that hears no TSCC at all keeps the
+hold due. A TSCC confirmed at or above the threshold ends the hold, but the next hold still doubles: a level that only
+touched the threshold soon fails again. A level above the threshold by the voting margin ends the hold and starts the
+doubling over. A move to another TSCC (a vote or C_MOVE) or a new search (the TSCC lost) ends the hold. Without the
+hold, a radio camped at the edge of its only system's coverage would hunt every 5 s and miss its grants and pages while
+away. The level average reaches a steady level to the dB, so a steady level 1 dB below the threshold counts as below.
 
 ## 8. Timers and constants
 
