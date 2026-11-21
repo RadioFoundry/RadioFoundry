@@ -12,7 +12,8 @@
 #include "position/position.h"
 #endif
 
-#define GPS_TASK_STACK		352	// words: the APRS NMEA parser runs on it (make stack-check: about 0.9 KB deep)
+#define GPS_TASK_STACK		256	// words: the APRS NMEA parser runs on it (make stack-check: 464 bytes deep with the FPU,
+				// against about 1 KB on the GD32's soft float)
 #define GPS_TASK_PRIORITY	1
 #define GPS_POLL_MS		20
 #define GPS_IRQ_PRIORITY	7	// numerically >= 4: may call FreeRTOS, doesn't need to
