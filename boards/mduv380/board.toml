@@ -49,7 +49,7 @@ values = [
 
 [ci]
 extra = [
-	{ name = "menu-locales", make = ["CONFIG_LANG_TR=y", "CONFIG_LANG_RU=y"] },
+	{ name = "menu-locales", make = ["CONFIG_LANG_TR=y", "CONFIG_LANG_RU=y", "CONFIG_SATELLITE_TLE=n"] },
 ]
 
 [flash]

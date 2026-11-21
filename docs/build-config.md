@@ -188,7 +188,7 @@ below are for an STM32F4 radio.
 | `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash. Unsupported on a panel under 220 px wide (the board's `hardware.gallery`), and so off in its maximal build |
 | `CONFIG_FONT_LATIN_EXTENDED` | n | Turkish letterforms in the fixed-cell fonts for monochrome and color screens |
 | `CONFIG_LANG_TR` | n | Turkish menus. Enables the extended Latin font. |
-| `CONFIG_LANG_RU` | n | Russian menus and fixed-cell Cyrillic glyphs. |
+| `CONFIG_LANG_RU` | n | Russian menus and fixed-cell Cyrillic glyphs. If the two opt-in menus and satellite tracking exceed the app region together, use `CONFIG_SATELLITE_TLE=n` as in the flash-limited `menu-locales` CI builds. |
 | `CONFIG_LANG_DEFAULT_TR` | n | Starts in Turkish when the user has no saved language. Requires `CONFIG_LANG_TR`. |
 | `CONFIG_LANG_DEFAULT_RU` | n | Starts in Russian when the user has no saved language. Requires `CONFIG_LANG_RU`. |
 | `CONFIG_LANG_ES` | y | Spanish on the radio: Settings > Display > Language (`docs/spec/ui.md` 2.5, `core/ui/lang/es.po`). The first language also brings the accented letters of every font (`CONFIG_LANG_ANY`); each further language adds only its text. Off: Spanish is listed but dimmed. One switch per language, [translating.md](dev/translating.md) |

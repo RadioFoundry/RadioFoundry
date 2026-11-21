@@ -64,6 +64,6 @@ MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n
 CONFIG_LANG_ES ?= n
 # The maximal configuration leaves the other languages and their fonts (about 110 KB) out of its flash check.
 # The two opt-in catalogs are checked together in the menu-locales CI build.
-MAXIMAL_SKIP += LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
+MAXIMAL_SKIP += FONT_LATIN_EXTENDED LANG_TR LANG_RU LANG_DEFAULT_TR LANG_DEFAULT_RU
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
