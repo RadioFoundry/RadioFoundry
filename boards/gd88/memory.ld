@@ -30,4 +30,7 @@ MEMORY
 	RAM    (rwx) : ORIGIN = 0x00010000, LENGTH = __codec_run_lo - 0x00010000	/* up to the codec window */
 }
 
+/* No part of the modem SRAM for RadioFoundry: the cold state (common.ld .modem_bss) stays in RAM */
+REGION_ALIAS("MODEM_BSS", RAM);
+
 INCLUDE common.ld

@@ -20,7 +20,7 @@ CONFIG_DISPLAY_INSET_RIGHT ?= 10
 # With DMR: the platform's linker script with the codec window at the top of SRAM and the modem SRAM table window
 # (memory.ld), its codec host (profile ids gd88-<version>), the core's CPU state in .ram_lo and the runtime stub's load
 # span inside the codec window (0x45000..0x58000). Without DMR: no codec window, the CPU state in .bss and the stub in
-# the 128 KB above it (fm_only.ld). Bench knobs (dmr_gd88.c): GD88_DMR_RF_MODE, GD88_DMR_AF_GAIN
+# the same span, above RAM (fm_only.ld). Bench knobs (dmr_gd88.c): GD88_DMR_RF_MODE, GD88_DMR_AF_GAIN
 ifeq ($(CONFIG_DMR),y)
 MCU_DEFS += -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 ifneq ($(GD88_DMR_RF_MODE),)
@@ -36,7 +36,7 @@ MCU_DEFS += -DGD88_DMR_TX_INVERT=$(GD88_DMR_TX_INVERT)
 else
 LDSCRIPT := boards/gd88/fm_only.ld
 CPU_RAM_SECTION :=
-MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
+MCU_DEFS += -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 endif
 # Transmit (common/gd88_rf.h): A's chip, B's PA. GD88_TX=0 builds a receiver
 GD88_TX ?= 1

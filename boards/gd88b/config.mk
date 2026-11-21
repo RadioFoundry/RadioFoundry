@@ -91,7 +91,7 @@ MCU_DEFS += -DHRC7000_RX_NEXT_SLOT_XOR=0u
 else
 LDSCRIPT := boards/gd88/fm_only.ld
 CPU_RAM_SECTION :=
-MCU_DEFS += -DHRC_STUB_BASE=0x00030000u -DHRC_STUB_SIZE=0x00020000u
+MCU_DEFS += -DHRC_STUB_BASE=0x00045000u -DHRC_STUB_SIZE=0x00013000u
 endif
 # No transmitter of its own for the user: the shared radio code refuses tx() in FM. In DMR it keys its own chip per
 # burst as A's second transmitter (GD88B_DMR_TX, core/rx2/rx2_dmr.h: an SFR's repeat while A receives). 0: receive only

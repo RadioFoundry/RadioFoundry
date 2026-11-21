@@ -1051,7 +1051,9 @@ const hal_radio_t gd88_radio = {
 	.tx_drive_level = tx_drive_level,
 	.tx_drive = tx_drive,
 #endif
+#if CONFIG_DMR
 	.dmr_tx_end = hrc_dmr_tx_end,
+#endif
 	.status = status,
 	.audio = audio,
 	.volume = volume,
