@@ -809,6 +809,10 @@ static void banner_open(void)
 	else if (kind == UI_BANNER_ZONE_OFFER)
 		ui_push(SCR_OFFER, 0);
 #endif
+#if CONFIG_APRS_RX
+	else if (kind == UI_BANNER_APRS_MESSAGE)
+		ui_push(SCR_MESSAGES, 0);
+#endif
 	else
 		ui_open_actions(&t);
 }
