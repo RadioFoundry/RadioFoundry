@@ -115,7 +115,8 @@ Every step stops on failure. The work directory (`~/RadioFoundry-DM32-migration/
 - what RadioFoundry's limits leave out (1024 channels, 68 zones, 1024 contacts, 76 RX group lists), by name;
 - sections that shrink or vanish (scan lists, roaming, positioning, extra radio IDs, ...);
 - names longer than 16 characters, names outside ASCII, and names that differ after the round trip;
-- channels outside the DM-32's bands (136-174, 400-480 MHz, `boards/dm32/board.c`).
+- channels outside the DM-32's bands (136-174, 400-520 MHz, `boards/dm32/bands_dm32.h`), and those that transmit
+  above 480 MHz: kept, receive only.
 
 Never carried over: stock menu, key and display settings, encryption keys, the stock contact database.
 

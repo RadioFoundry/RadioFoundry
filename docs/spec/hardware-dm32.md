@@ -1615,6 +1615,24 @@ transmission). Checked on this radio against the SDR bench, at the lowest power,
 Not checked: a call with a radio of another make, a live trunked system, sensitivity, and the receive copy's
 calibration (modem-hrc7000.md 10.4).
 
+## Receive to 520 MHz
+
+480-520 MHz receives always and never transmits (#852; `boards/dm32/bands_dm32.h`). Transmit stays at 136-174 and
+400-480 MHz.
+
+| Evidence | Source |
+|---|---|
+| The stock CPS (v1.45) offers a UHF range of 400-520 MHz among its band choices, next to 136-174 MHz | the CPS executable's strings |
+| On the classic RF section the synthesizer reported lock (0x0C bit 9) at every frequency tried, 136-520 MHz | 8.10 |
+| The FD6818 band row from 370 MHz up has one pair of band words for 370-740 MHz: 480-520 writes the same 0x1A / 0x40 as 400-480. Set-up B writes a fixed 0x40 at every frequency | 8.3, 8.10 |
+| The UHF LNA is on from 280 MHz up; nothing else in receive depends on the frequency (the factory calibration is transmit only) | 8.5, 11.3 |
+| The stock 050 program flash holds 400 and 470 MHz limits (10 Hz units) beside its calibration ranges, and no 520 MHz constant | static look at a backup, no code reproduced |
+
+So no new register value is needed above 480 MHz, and none was added. Not verified: receive on air above 480 MHz on
+either RF section (set-up B's lock above 480 MHz has never been read), sensitivity there (the UHF front end's filters
+are not documented and may roll off), and whether the stock firmware itself tunes past 480 MHz on a radio. Transmit
+stays off: the PA calibration has points across 400-470 MHz only (11.3).
+
 ## Receive past the rated bands
 
-16-65, 174-400 and 480-740 MHz: the FD6818 band table (8.3). The chip documents give no other range. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.
+16-65, 174-400 and 520-740 MHz: the FD6818 band table (8.3). The chip documents give no other range. Receive only, FM, off by default ([radio-features.md](radio-features.md) 6.2). Not measured on the radio.

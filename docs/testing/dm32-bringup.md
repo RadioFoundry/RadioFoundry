@@ -106,6 +106,7 @@ Tune the FM VFO to a known signal (a NOAA weather station, a local repeater outp
 | RSSI in dBm roughly right against a signal generator | the offset in `status()` (raw - 135 now, a guess) |
 | CTCSS / DCS RX opens only on the right tone | With GPIO 0x2F high the C7000 gets no audio, so its sub-audio decoder can't work in FM receive. The FD6818's own detector does the job (0x07 / 0x08 / 0x51 / 0x52, result in 0x0C) |
 | Both bands: 145 MHz and 435 MHz | LNA selects 0x22 / 0x24, band words |
+| 480-520 MHz, receive only (#852): a known FM signal near 500 MHz (a generator into the antenna socket through an attenuator, or a local service), then PTT there | audio and `rssi` as at 435 MHz on both RF sections (`flash ... rf A` / `rf B`); PTT gives the band deny and nothing on an SDR. No audio: FD6818 0x0C bit 9 (lock) read back at 500 MHz; the UHF front end's filter roll-off |
 
 ## 6. Hotspot / CPS on the cable (optional)
 

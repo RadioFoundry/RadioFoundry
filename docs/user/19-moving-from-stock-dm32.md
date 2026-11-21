@@ -103,7 +103,7 @@ talkgroup a channel talks to), as do empty, duplicate and unused ones. Every cha
 `--no-cleanup` keeps the lists as they are.
 
 `conversion-report.txt` lists everything that changes: counts before and after, names that get shortened, channels
-outside 136-174 and 400-480 MHz, and the parts of the codeplug RadioFoundry doesn't use. These parts aren't carried over: the
+outside 136-174 and 400-520 MHz, channels that transmit above 480 MHz (RadioFoundry receives them and refuses PTT), and the parts of the codeplug RadioFoundry doesn't use. These parts aren't carried over: the
 stock menu, key and display settings, scan lists, roaming, GPS and APRS settings, encryption keys and the stock
 contact database. RadioFoundry
 uses the parts of the codeplug listed in [Programming the radio](04-programming.md).

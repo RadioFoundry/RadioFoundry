@@ -179,7 +179,8 @@ A forum thread reports a 2023+ HD1 v2 on the HR_C7000, but posters contradict ea
 
 ### Baofeng DM-32UV
 
-- TX 136–174 / 400–470 MHz. RX adds 400–480, AM air band 108–136 and FM broadcast 65–108 MHz. 10/4/1 W, 2.0" color
+- TX 136–174 / 400–470 MHz. RX adds 400–480, AM air band 108–136 and FM broadcast 65–108 MHz. The stock CPS (v1.45)
+  also offers a 400–520 MHz UHF range; RadioFoundry receives to 520 MHz and transmits to 480 ([hardware-dm32.md](hardware-dm32.md)). 10/4/1 W, 2.0" color
   screen, built-in GPS, USB-C charging (the socket is on the battery pack, no data). FCC ID 2AJGM-DM32UV
   ([baofengradio.com](https://www.baofengradio.com/products/dm-32uv)).
 - The radio receives air band AM. Which chip demodulates it (the FD6818's AF output is the
