@@ -1166,7 +1166,7 @@ static void test_rmo_up_from_bursts(void)
 }
 
 // Slot numbers alone never bring a repeater up (issue 721): on a duplex channel with nothing on its output the
-// HR_C6000 labelled slots from noise, the repeater counted as up 7 to 19 s after the channel was selected, and a
+// HR_C6000 labeled slots from noise, the repeater counted as up 7 to 19 s after the channel was selected, and a
 // key-up went out with no wake-up and was cut by the drop check
 static void test_rmo_ticks_alone(void)
 {
