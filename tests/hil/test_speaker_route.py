@@ -9,8 +9,9 @@ transmission starts. The voice stream must give the route back: a route left on 
 speaker hissed until the next key or PTT (issue 705). The amplifier's users are the board's debug link key
 `board.amp_users` (a bit per user, 0x00 while nothing plays); a board without the key skips.
 
-- test_amp_off_after_restart_keyup: a restart, the DMR test channel, one 1.5 s over: the state is tx mid-over, and
-  `board.amp_users` reads 0x00 on every sample from 1 s to 4 s after the over.
+- test_amp_off_after_restart_keyup: a restart, the DMR test channel, one 1.5 s over: the state is tx mid-over, the
+  talk permit beep started the stream itself (beep.played grew, beep.shared didn't), and `board.amp_users` reads 0x00
+  on every sample from 1 s to 4 s after the over.
 - test_amp_off_after_fm_keyup: the same after a visit to the FM VFO (no TX there) and back to the DMR test channel,
   three times.
 """
@@ -44,9 +45,16 @@ def _dmr_channel(radio, hz):
     time.sleep(2.0)       # the radio settles on the channel (the scan of a first entry, the receiver's set-up)
 
 
+def _beeps(radio):
+    """(beep.played, beep.shared): every beep played, and those played into a stream already running"""
+    return int(radio.view(None).get("beep.played", 0)), int(radio.view(["audio"]).get("beep.shared", 0))
+
+
 def _key_and_check(radio, hz, what):
-    """One 1.5 s over, then the amplifier's users sampled after it: every sample 0x00."""
+    """One 1.5 s over: the talk permit beep started the stream itself (beep.played grew, beep.shared didn't), so the
+    voice stream took it over; then the amplifier's users sampled after it: every sample 0x00."""
     v = radio.view(None)
+    played0, shared0 = _beeps(radio)
     assert v.get("tx_hz") == str(hz), f"tx_hz {v.get('tx_hz')} is not the test frequency {hz}"
     radio.link.ptt(True, 1800)
     time.sleep(0.8)
@@ -56,6 +64,10 @@ def _key_and_check(radio, hz, what):
     assert mid.get("state") == "tx", f"{what}: the radio did not transmit (state {mid.get('state')}, tx_deny " \
                                      f"{mid.get('tx_deny')}, txlim.refused {mid.get('txlim.refused')})"
     radio.wait_for(lambda s: s.get("state") != "tx", timeout=3, what="TX ended")
+    played, shared = _beeps(radio)
+    assert played > played0, f"{what}: no beep played for the over: are the key beep and Settings > Talk permit off?"
+    assert shared == shared0, f"{what}: the beep played into a stream already running (beep.shared " \
+                              f"{shared0} -> {shared}), so the voice stream never took a beep's stream over"
     t0 = time.monotonic()
     seen = []
     for t in SAMPLES_S:
