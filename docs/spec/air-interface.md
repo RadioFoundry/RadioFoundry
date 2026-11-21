@@ -5,8 +5,8 @@
 
 The air interface carries channel symbols with time stamps between a radio's modem hardware and the core. It knows
 no mode. A digital mode the core frames itself (P25, [p25.md](p25.md)) describes what it needs as a profile, and
-every layer below works from that profile. Built with the modes on it: `CONFIG_P25`, `CONFIG_NXDN` ([nxdn.md](nxdn.md),
-[build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). Which
+every layer below works from that profile. Built with the modes on it: `CONFIG_P25`, `CONFIG_NXDN` ([nxdn.md](nxdn.md)),
+`CONFIG_DPMR` ([dpmr.md](dpmr.md)) ([build-config.md](../build-config.md); `CONFIG_AIR` is derived from them). Which
 radios have a provider: [feature-matrix.md](../feature-matrix.md).
 
 State: host tested. The HR_C6000 provider is also checked on air both ways with C4FM
@@ -17,7 +17,7 @@ it has been checked.
 
 | Layer | File | What it does |
 |---|---|---|
-| Mode | `core/p25/`, `core/nxdn/` | units, FEC, calls; an `air_mode_t` (profile, frame geometry, hooks) |
+| Mode | `core/p25/`, `core/nxdn/`, `core/dpmr/` | units, FEC, calls; an `air_mode_t` (profile, frame geometry, hooks) |
 | Session | `core/air/air_session.c` | one mode on one provider: open, close, receive to the framer, a transmission from the first symbol to its end (section 7) |
 | Framer | `core/air/air_framer.c` | sync search, levels, frames cut from the symbol stream, coasting; symbols packed into transmit chunks (section 5) |
 | Provider | `board_t.air` (`hal/hal_air.h`) | symbols in air order with time stamps (section 3). A modem chip in its physical layer mode, or the soft modem on sample taps |
@@ -198,6 +198,7 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
 | NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
+| dPMR Mode 1 voice (dPMR446) | written, host tested, checked against a real radio's recording through the soft modem ([dpmr.md](dpmr.md)) |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |
@@ -218,3 +219,5 @@ before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 | `tests/host/fxpTest.c` | the shared fixed-point kernels against wide arithmetic |
 | `tests/host/p25EngineTest.c` | the session under two P25 engines on made-up providers |
 | `tests/host/nxdnEngineTest.c` | the session under two NXDN engines; an NXDN call through the soft modem at 2400 symbols/s |
+| `tests/host/dpmrEngineTest.c` | the session under two dPMR engines; a dPMR call through the soft modem at 2400 symbols/s |
+| `tests/host/dpmrCaptureTest.c` | a real dPMR446 radio's recording through the soft modem and the framer, when one is given ([dpmr.md](dpmr.md) 8) |

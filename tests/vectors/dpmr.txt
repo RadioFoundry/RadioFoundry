@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# dPMR vectors from tools/dpmr_ref.py (ETSI TS 102 490), read by tests/host/dpmrTest.c. Regenerate:
+# tools/dpmr_ref.py vectors > tests/vectors/dpmr.txt
+fs1 57ff5f75d577
+fs2 5ff77d
+fs3 7ddff5
+fs4 fd55f5df7fdd
+crc7 313233343536373839 75
+crc8 313233343536373839 f4
+ham 00 000
+ham 01 013
+ham 80 80e
+ham a5 a5b
+ham ff ff4
+hi 0 123456 0abcde 0 0 1 000 f1ce4aa3330507d5647df7c4da669d
+cch 0 123 0 0 1 00000 bf939f703209acc3bf
+cch 1 456 0 0 1 00000 fc93ef7732692ed3de
+cch 2 0ab 0 0 1 00000 3f979f763a08eac7bf
+cch 3 cde 0 0 1 00000 7c8faf733a696ecf9e
+end 0 0 0 0 ff83df1732094ed1e7
+cc 145 577577
+cc 1a4 57dd75
+cc 529 775dd7
+cc d11 f75757
+cc ee5 fdfd77
+frame hdr 392 5f5f5f5f5f5f5f5f5f57ff5f75d577f1ce4aa3330507d5647df7c4da669d5fd75df1ce4aa3330507d5647df7c4da669d
+frame pay0 392 5ff77dbf939f703209acc3bf0724415e7b98b5d2ef1734516e8ba8c5e2ff2744617e9bb8d5f20f3754718eabc8e5021f
+frame pay1 392 5fd75dfc93ef7732692ed3de4764819ebbd8f5122f577491aecbe805223f6784a1bedbf815324f7794b1ceeb0825425f
+frame pay2 392 5ff77d3f979f763a08eac7bf87a4c1defb1835526f97b4d1ee0b2845627fa7c4e1fe1b3855728fb7d4f10e2b4865829f
+frame pay3 392 5fd75d7c8faf733a696ecf9ec7e4011e3b587592afd7f4112e4b6885a2bfe704213e5b7895b2cff714314e6b88a5c2df
+frame end 392 7ddff5ff83df1732094ed1e7
+airhi c9dc48e6cb653197343a52b85a6f82 0 57ffff 57ffff 0 0 1 701
+airhi c9dc58e2cb6571c7243c53f85a6384 0 57ffff 57ffff 0 0 1 000
+aircch be87ee743268eedbff 0 57f 0 0 1 00000
+aircch bc9feff43a68eedbbf 1 fff 0 0 1 00000
+aircch 3e87af7032286cd3bf 2 57f 0 0 1 00000
+aircch 3c9faef03a286cd3ff 3 fff 0 0 1 00000
+airend feb3df01c21a4ed088 0 0 1 0

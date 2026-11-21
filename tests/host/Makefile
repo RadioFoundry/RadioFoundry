@@ -139,6 +139,17 @@ nxdnTest: nxdnTest.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_framer
 nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
 	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 
+# dPMR frames, their block codes and calls through the framer (core/dpmr); the engine on two made-up providers and
+# through the soft modem, and an off-air recording when one is given (skipped without)
+DPMR    := $(CORE)/dpmr/dpmr_fec.c $(CORE)/dpmr/dpmr_frame.c $(CORE)/dpmr/dpmr_rx.c $(CORE)/dpmr/dpmr_call.c
+TESTS   += dpmrTest dpmrEngineTest dpmrCaptureTest
+dpmrTest: dpmrTest.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_framer.c ../vectors/dpmr.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrTest.c $(DPMR) $(CORE)/air/air_framer.c
+dpmrEngineTest: dpmrEngineTest.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrEngineTest.c $(CORE)/dpmr/dpmr_engine.c $(DPMR) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c -lm
+dpmrCaptureTest: dpmrCaptureTest.c $(DPMR) $(wildcard $(CORE)/dpmr/*.h) $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dpmrCaptureTest.c $(DPMR) $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/dmr/ambe/ambeFec.c -lm
+
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
 MBE     := $(wildcard $(CORE)/mbe/*.c)
 TESTS   += mbeTest
@@ -246,6 +257,9 @@ run: $(TESTS)
 	./p25EngineTest
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1
+	./dpmrTest | tail -1
+	./dpmrEngineTest | tail -1
+	./dpmrCaptureTest | tail -1
 	./p25TrunkTest
 	./p25VoiceTest
 	./hrc6000AirTest
