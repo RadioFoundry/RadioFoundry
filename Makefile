@@ -132,6 +132,9 @@ endif
 ifeq ($(CONFIG_CRASH_LOG),y)
 CORE_DIRS += core/crash
 endif
+ifeq ($(CONFIG_SUPPORT_INFO),y)
+CORE_DIRS += core/support
+endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -273,6 +276,15 @@ else ifneq ($(RELEASE),)
 RFOUNDRY_RELEASE := $(shell python3 tools/release_version.py check '$(RELEASE)' && echo '$(RELEASE)')
 $(if $(RFOUNDRY_RELEASE),,$(error RELEASE=$(RELEASE) is not a release name: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)))
 endif
+# Where the build came from (tools/build_source.py; docs/spec/support-info.md 1): official (our CI: the images the web
+# site installs), service, pr, local, fork or unknown, and the repository it names. About and the debug link show them.
+# BUILD_SOURCE= and BUILD_SOURCE_REPO= set them (the build service passes BUILD_SOURCE=service)
+# (a partial copy of the tree without the tool, as the registry checks make: unknown)
+RFOUNDRY_SOURCE_INFO := $(if $(wildcard tools/build_source.py),$(shell python3 tools/build_source.py \
+	$(if $(BUILD_SOURCE),--source '$(BUILD_SOURCE)') $(if $(BUILD_SOURCE_REPO),--repo '$(BUILD_SOURCE_REPO)')),unknown)
+RFOUNDRY_GIT_SOURCE := $(word 1,$(RFOUNDRY_SOURCE_INFO))
+RFOUNDRY_GIT_REPO := $(word 2,$(RFOUNDRY_SOURCE_INFO))
+$(if $(RFOUNDRY_GIT_SOURCE),,$(error tools/build_source.py failed (above)))
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
@@ -348,7 +360,8 @@ ifeq ($(filter clean test print-config print-cc print-unsupported print-not-writ
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' > $(BUILD)/version; \
+VERSION_STAMP := $(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME) $(RFOUNDRY_GIT_SOURCE) $(RFOUNDRY_GIT_REPO)
+$(shell echo '$(VERSION_STAMP)' | cmp -s - $(BUILD)/version || { echo '$(VERSION_STAMP)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
 $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info || { echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' > $(BUILD)/build_info; \
 	rm -f $(BUILD)/core/hostlink/build_info.o; })
@@ -390,7 +403,8 @@ $(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(R
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
-	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\"
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
+	-DRFOUNDRY_GIT_REPO=\"$(RFOUNDRY_GIT_REPO)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif

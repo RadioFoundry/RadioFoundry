@@ -57,6 +57,7 @@ typedef struct {
 	char rf_setup;			// the RF section (hardware-dm32.md 8.10): A classic, B newer, - neither locked
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
+char dm32_rf_setup(void);	// the RF section start-up found, as rf_setup: no bus traffic
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm32_diag_reset(void);
 

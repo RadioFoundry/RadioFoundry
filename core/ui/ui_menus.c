@@ -32,6 +32,10 @@
 #include "hostlink/hostlink.h"
 #endif
 #include "rfoundry_about.h"
+#if CONFIG_SUPPORT_INFO
+#include "support/image_hash.h"
+#include "support/support_info.h"
+#endif
 #if CONFIG_SFR
 #include "dmr/sfr.h"
 #endif
@@ -5398,8 +5402,58 @@ static uint16_t about_first;	// first line shown
 static uint16_t about_max;	// the largest first line (from the last draw)
 
 // The text's bytes: the two lists make generated, this build's font lines, and 296 for the rest (the version lines,
-// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long
-#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u))
+// the labels, and 35 for a translation's longer ones). A fixed size cut the last lines off where the lists are long.
+// The support info: the source and image lines and six hardware lines of a label and up to 30 characters
+// (a board with more loses the last license lines, not the support info)
+#define ABOUT_TEXT_MAX (296u + RFOUNDRY_ABOUT_LIST_BYTES + (CONFIG_FONT_AA ? 32u : 0u) + (CONFIG_LANG_ZH ? 48u : 0u) + \
+	(CONFIG_SUPPORT_INFO ? 352u : 0u))
+
+#if CONFIG_SUPPORT_INFO
+static bool about_hashing;		// the image hash (image_hash.h) has a step still to come: the UI redraws About at its fast rate
+
+bool ui_about_busy(void)
+{
+	return about_hashing;
+}
+
+// What a support request needs (docs/spec/support-info.md): where the build came from (ours or not; the repository
+// is left to the debug link), the image's hash (the first 8 digits of its SHA-256, enough to match a release, worked
+// out while the page is open), then the hardware identity. Values the board already holds: nothing here waits for a
+// chip
+static void about_support(sbuf_t *b)
+{
+	sb_str(b, TR(ABOUT_LABEL_SOURCE, "Source: "));
+	sb_str(b, tr(support_source_text(support_source())));
+	sb_chr(b, '\n');
+	uint8_t d[SHA256_LEN];
+	uint32_t addr, len;
+	about_hashing = false;
+	if (image_hash_span(&addr, &len)) {
+		sb_str(b, TR(ABOUT_LABEL_IMAGE, "Image: "));
+		if (image_hash_step(IMAGE_HASH_UI, IMAGE_HASH_STEP_UI, d)) {
+			for (uint8_t i = 0; i < 4; i++) {
+				sb_chr(b, "0123456789abcdef"[d[i] >> 4]);
+				sb_chr(b, "0123456789abcdef"[d[i] & 15u]);
+			}
+		} else {
+			sb_str(b, TR(ABOUT_VALUE_IMAGE_CHECKING, "checking"));
+			about_hashing = true;
+		}
+		sb_chr(b, '\n');
+	}
+	support_line_t l;
+	for (uint8_t i = 0; support_hw_line(i, &l); i++) {
+		if (l.label != TR_NONE) {
+			sb_str(b, tr(l.label));
+		} else {
+			sb_str(b, l.label_text);
+			sb_str(b, ": ");
+		}
+		sb_str(b, l.value);
+		sb_chr(b, '\n');
+	}
+}
+#endif
 
 static const char *about_text(void)
 {
@@ -5429,6 +5483,9 @@ static const char *about_text(void)
 	sb_str(&b, TR(BODY_RADIO, "Radio: "));
 	sb_str(&b, board.name);
 	sb_chr(&b, '\n');
+#if CONFIG_SUPPORT_INFO
+	about_support(&b);
+#endif
 	sb_str(&b, TR(ABOUT_BODY_LICENSE, "License: "));
 	sb_str(&b, "MIT, (c) 2026 The RadioFoundry Authors\n");
 	// The authors (the copyright line above) are everyone who has contributed: too many to list here, so the page

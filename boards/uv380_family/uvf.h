@@ -48,6 +48,8 @@ typedef struct {
 	// Why the transmitter must stay off on this radio, or NULL to allow it (asked on every tx()): a build for the
 	// wrong hardware version
 	const char *(*tx_block)(void);
+	// The radio's own hardware identity lines after the family's (board_t.hw_line), or NULL: cached values only
+	bool (*hw_line)(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 } uvf_variant_t;
 extern const uvf_variant_t uvf_variant;
 // The key matrix, [row PA6, PD2, PD3][column D0..D7], with the key bits below (input_uvf.c)
@@ -107,6 +109,9 @@ enum {
 // SPI flash (flash_uvf.c, then stm32_spi_flash): its security registers hold the factory calibration in 1-2 and
 // the panel type and model flags in 3
 bool uvf_flash_init(void);
+
+// The hardware identity (board_t.hw_line, docs/spec/support-info.md 2): the family's chips, then the variant's lines
+bool uvf_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len);
 
 #if CONFIG_GPS
 // The GPS module on USART1 / PA9, detected at run time (gps_uvf.c): from the variant's init. board_t.gps is

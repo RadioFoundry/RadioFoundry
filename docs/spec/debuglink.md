@@ -116,6 +116,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x22` | T3 | operation u8 + arguments (3.26); `CONFIG_DMR_TRUNK` builds, else status 4 | none |
 | `0x23` | CPKV | operation u8, key u16 + arguments (3.27); builds with the DMR data core or Tier III trunking, else status 4 | GET: the value (3.27) |
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
+| `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 
 ### 3.1 VERSION
 
@@ -127,6 +128,8 @@ view=5                  GET_VIEW record version (3.7)
 git=5277f73a            firmware git hash
 git_time=1761840000     the commit's time (a dirty build's: the build's), Unix seconds; absent without git
 release=v26.11          release name; only in a build of a release tag
+source=official         where the build came from ([support-info.md](support-info.md) 1)
+repo=RadioFoundry/RadioFoundry  the repository it names; absent when unknown
 board=XR-100UV
 features=FM,SUBTONE,DMR,DMR_PRIVACY,...,USB,HOSTLINK,DEBUGLINK
 codec=<profile>-s11  the codec profile found in flash (below)
@@ -144,6 +147,9 @@ off=AUDIO_PROBE,FONT_AA  the switches the radio could have that this build left 
 
 `release=` is the release name (`RFOUNDRY_RELEASE`, [release.md](../dev/release.md#release-names)), present only when
 the image was built from a release tag; `git=` is always the commit. A host shows the release name when there is one.
+`source=` is `official`, `service`, `pr`, `local`, `fork` or `unknown`, and `repo=` the repository the build names
+([support-info.md](support-info.md) 1). Both are what the build says of itself: a host proves an image is ours by its
+hash (3.29), not by these.
 `git_time=` is the commit's committer time (`RFOUNDRY_GIT_TIME`), so a clean build stays reproducible; a build with
 local changes (`-dirty`) carries its build time instead, since its code is newer than the commit. A host compares it with a release's `git_time` to tell whether a build that isn't a release is older than that release.
 
@@ -1034,6 +1040,27 @@ the core for TX off; the core's own time-out and max_ms end it otherwise. Nothin
 `rfoundry_debug.py air status`, `air tap --seconds S --out F.raw [--bits 8]`, `air open --profile p25`,
 `air rx --seconds S --out F.jsonl`, `air tx --syms F`, `air close`.
 
+### 3.29 SUPPORT
+
+The support info ([support-info.md](support-info.md)): what a support request needs to tell one radio's hardware and
+firmware from another's. Read only. Each request does a bounded piece of work and returns: the radio keeps
+receiving and the UI keeps running while a host reads it.
+
+| Op | Name | Arguments | Reply after the status |
+|---|---|---|---|
+| 0 | INFO | none | key=value text: `source`, `repo`, `hw.<part>` per hardware line (`hw.<part>.2` for a second of the same part), `image.addr` and `image.size` when the platform reports the image span |
+| 1 | HASH | none | key=value text: `image.state` = `pending` (with `image.done`, `image.size`), `done` (with `image.sha256`, 64 hex digits) or `none` (no image span) |
+
+`hw.<part>` keys are `mcu`, `flash`, `display`, `dmr`, `rf` and `board`, with the values About shows
+([support-info.md](support-info.md) 2). The hardware options are in HWOPT LIST (3.25).
+
+HASH hashes the next 32 KB of the image per request, less when 5 ms runs out first, and nothing while About's step
+is running. A host repeats it until `image.state=done` and shows `image.done` as progress; a full image takes about
+20 requests or more. It is the same hash About steps, and its result is kept until the next start-up, so later
+requests answer at once. Bad argument (2) for any other operation or a longer payload.
+
+`rfoundry_debug.py support` prints both.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -1050,6 +1077,7 @@ the core for TX off; the core's own time-out and max_ms end it otherwise. Nothin
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
 - HWOPT SET is refused while transmitting (3.25).
+- SUPPORT only reads, and HASH reads at most 32 KB of program flash per request (3.29).
 - AIR (bench builds only) keys the transmitter only through the radio core, which applies its transmit checks and the
   lowest power level; without the core's hook TX_KEY is unavailable (3.28).
 - REBOOT needs the chip UID's low word as a token, is refused while transmitting, and the ROM DFU mode is refused

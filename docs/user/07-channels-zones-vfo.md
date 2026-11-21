@@ -365,7 +365,9 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
   ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).
-- Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
+- Calls to one unit and emergency are not there yet.
+- Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
+  can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
 
