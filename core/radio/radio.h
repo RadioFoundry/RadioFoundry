@@ -317,9 +317,10 @@ typedef struct {
 	} adj[4];		// T3_ADJ_MAX
 	uint32_t send_fail;	// sends refused or failed and dropped (the engine retries what needs it)
 	// Each reason (8 bits, saturating): a retune held, not on the slot asked for, PTT talking or transmitting, the TX
-	// limit, the radio refused to key, the stack refused the list (send_data_busy: of those, busy with another data
-	// list), the stack took the list but did not send it
-	uint8_t send_held, send_slot, send_talk, send_limit, send_key, send_stack, send_data_busy, send_err;
+	// limit, TX inhibit (or a critical battery, a hardware option pending), the radio refused to key, the stack
+	// refused the list (send_data_busy: of those, busy with another data list), the stack took the list but did not
+	// send it
+	uint8_t send_held, send_slot, send_talk, send_limit, send_inhibit, send_key, send_stack, send_data_busy, send_err;
 	// TX→RX turnaround: from the end of a transmission on the system to the first burst heard after it (the
 	// site's answer to a random access comes 4 slots, 120 ms, after the access began)
 	uint32_t turns;
