@@ -6,8 +6,8 @@
 #include "cjk_font.h"
 
 // Words for the alignment, but rounded up: gfx_init accepts a frame buffer of up to GFX_FB_BYTES, which need not be a
-// multiple of 4 (the DM-32UV's is its safe area's size, set by the insets: 111 B rows x 310 with
-// CONFIG_DISPLAY_INSET_RIGHT=9), and GFX_FB_BYTES / 4 would leave its last bytes past the array
+// multiple of 4 (a board that holds only its safe area sizes it from the insets: 111 B rows x 310 with
+// CONFIG_DISPLAY_INSET_RIGHT=9, say), and GFX_FB_BYTES / 4 would leave its last bytes past the array
 static uint32_t fb_words[(GFX_FB_BYTES + 3u) / 4u];
 static const hal_display_t *display;
 static int width, height, bpp, stride;	// the frame buffer's: the panel's, or its safe area's (fb_safe); stride in bytes

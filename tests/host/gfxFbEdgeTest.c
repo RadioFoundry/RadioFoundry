@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The frame buffer's last bytes, when GFX_FB_BYTES is not a multiple of 4: the DM-32UV sizes it from the insets
-// (boards/dm32/config.mk), so a safe area 221 px wide (CONFIG_DISPLAY_INSET_RIGHT=9) needs 111 B rows, 34,410 B in all.
-// gfx_init accepts a safe area of exactly GFX_FB_BYTES, so drawing its bottom right corner must stay inside the
-// buffer. Built with AddressSanitizer (tests/host/Makefile), which stops at a write past the array: a buffer of
-// GFX_FB_BYTES / 4 words (34,408 B) fails here, one rounded up passes
+// The frame buffer's last bytes, when GFX_FB_BYTES is not a multiple of 4: a board with a safe-area frame buffer sizes
+// it from the insets in its config.mk, so a safe area 221 px wide (CONFIG_DISPLAY_INSET_RIGHT=9) needs 111 B rows,
+// 34,410 B in all. gfx_init accepts a safe area of exactly GFX_FB_BYTES, so drawing its bottom right corner must stay
+// inside the buffer. Built with AddressSanitizer (tests/host/Makefile), which stops at a write past the array: a buffer
+// of GFX_FB_BYTES / 4 words (34,408 B) fails here, one rounded up passes
 #include <stdio.h>
 #include <string.h>
 #include "ui/gfx.h"
