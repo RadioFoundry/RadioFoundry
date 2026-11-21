@@ -54,7 +54,8 @@
 #if CONFIG_DMR
 #define RADIO_TASK_STACK	776	// words: the DMR call stack and the AMBE FEC run here (the deepest maximal build: 2744 B + margin)
 #else
-#define RADIO_TASK_STACK	512	// words
+#define RADIO_TASK_STACK	592	// words: a scan or dual watch step that reads a channel from the codeplug (the deepest
+				// board without DMR: 1960 B + margin)
 #endif
 #endif
 #define RADIO_QUEUE_LEN		16
