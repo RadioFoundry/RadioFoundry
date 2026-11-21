@@ -25,6 +25,7 @@
 #include "storage/storage.h"
 #include "settings/settings.h"
 #include "radio/radio.h"
+#include "radio/power_tune.h"
 #include "input/input.h"
 #include "ui/ui.h"
 #include "ui/ui_svc.h"
@@ -118,6 +119,7 @@ static void startup_task(void *arg)
 	settings_end(hal_millis());
 	codeplug_init();
 	board.radio->init();
+	power_tune_init();		// after the calibration, which the points are checked against
 	radio_core_start();
 	input_start();
 	ui_start();

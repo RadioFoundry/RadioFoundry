@@ -658,7 +658,7 @@ $(error tools/i18n.py --gen failed (above))
 endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
-           $(CORE)/dmr/trunk/t3_sys.c
+           $(CORE)/dmr/trunk/t3_sys.c $(CORE)/radio/power_tune.c
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
@@ -1434,6 +1434,18 @@ satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 		$(wildcard $(CORE)/debuglink/*.h $(CORE)/satellite/*.h $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
 
+# Power tuning (core/radio/power_tune.c, core/debuglink/debuglink_tune.c, docs/spec/power-tune.md)
+TESTS   += powerTuneTest
+POWER_TUNE_SRC := $(CORE)/radio/power_tune.c $(CORE)/radio/power_tune_store.c $(CORE)/debuglink/debuglink_tune.c $(CORE)/storage/storage.c sim/sim_flash.c
+powerTuneTest: powerTuneTest.c $(POWER_TUNE_SRC) $(CORE)/radio/power_tune.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
+		$(wildcard $(CORE)/debuglink/*.h $(CORE)/storage/*.h) sim/sim_flash.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_POWER_TUNE=1 -o $@ powerTuneTest.c $(POWER_TUNE_SRC)
+
+run: run-power-tune
+run-power-tune: powerTuneTest
+	./powerTuneTest
+.PHONY: run-power-tune
+
 run: run-satellite
 run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest
 	./satelliteStoreTest
@@ -1734,7 +1746,7 @@ endif
 # engine and the radio core; tshark checks netSvcTest.pcap
 NETSVC  := netSvcTest.c netSvcCases.c $(CORE)/net/net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/net/tcp.c $(CORE)/net/kiss_tcp.c $(CORE)/aprs/kiss.c \
            $(CORE)/net/http.c $(CORE)/net/radio_udp.c $(CORE)/net/rigctld.c $(CORE)/net/aprsis.c $(CORE)/net/webctl.c $(CORE)/net/ws.c \
-           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(DATA)
+           $(CORE)/dmr/ipGateway.c $(CORE)/debuglink/dl_fmt.c $(CORE)/radio/power_tune.c $(DATA)
 TESTS   += netSvcTest
 
 netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGateway.h gen/gz/http_assets_gen.h
@@ -1775,9 +1787,9 @@ snmpPeer: snmpPeer.c $(SNMPLIB) $(wildcard $(CORE)/snmp/*.h)
 # The agent's firmware glue (snmp_agent.c: the USB and RF request paths, the RF mailbox and limits, settings, traps)
 # on fakes of the radio, the settings and the gateway
 TESTS   += snmpAgentTest
-snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
+snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(CORE)/radio/power_tune.c $(SNMPLIB) $(DATA) $(wildcard $(CORE)/snmp/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_SNMP=1 -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_HOTSPOT=0 -o $@ \
-		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA)
+		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(CORE)/radio/power_tune.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
 run-snmp: snmpTest snmpPeer snmpAgentTest

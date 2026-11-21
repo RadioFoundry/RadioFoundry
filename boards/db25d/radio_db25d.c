@@ -22,6 +22,7 @@
 #include "radio/radio.h"
 #include "radio/ref_trim.h"
 #include "radio/pa_keyup.h"
+#include "radio/power_tune.h"
 #include "pins.h"
 #include "platform.h"
 #include "hal_time.h"
@@ -394,7 +395,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 		hrc_rfburst_disarm();
 	}
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = drive_override != 0u ? drive_override : plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : power_tune_drive(hz, power, plan.pa);
 	tx_on_us = plan.on_us;
 	// The key-up against the high level's drive here
 	db25d_tx_plan_t high;
@@ -500,7 +501,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	}
 	tx_stop();
 	tx_uhf = hz >= UHF_FROM_HZ;
-	tx_pa = drive_override != 0u ? drive_override : plan.pa;
+	tx_pa = drive_override != 0u ? drive_override : power_tune_drive(hz, power, plan.pa);
 	tx_off_us = plan.off_us;
 	// Deviation and sub-audio words go in while the chip is still receiving, as the stock firmware does
 	db25d_main_tx_prepare(tone.type, tone.value, hz, bw);

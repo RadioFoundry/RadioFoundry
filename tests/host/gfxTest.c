@@ -17,6 +17,8 @@ static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 
 static int flushes, flushed_rows;
+uint32_t hal_millis(void) { return 0; }	// power_tune.c (the status line's level name)
+
 static void d_init(void) {}
 static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; flushes++; flushed_rows += y1 - y0; }
 static uint16_t sent_pal[16];

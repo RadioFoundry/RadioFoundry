@@ -4,6 +4,7 @@
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
 #include "board.h"
+#include "radio/power_tune.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "hostlink/hostlink.h"
@@ -83,7 +84,7 @@ static void tone(dl_text_t *t, const char *key, const subtone_t *s)
 
 static void core_section(const radio_view_t *v, dl_text_t *t)
 {
-	const char *pw = board_power_name(v->power, v->ch.tx_hz);
+	const char *pw = power_tune_name(v->power, v->ch.tx_hz);
 	static const char *const sources[] = { "none", "builtin", "open-firmware" };
 
 	dl_text(t, "view=%u\n", DL_VIEW_VERSION);
@@ -118,7 +119,7 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	// Every level's name at the channel's transmit frequency (per band), so a host picks a level by its power
 	dl_text(t, "power_names=");
 	for (uint8_t l = 0; l < board.power_count; l++) {
-		dl_text(t, l ? "/%s" : "%s", board_power_name(l, v->ch.tx_hz));
+		dl_text(t, l ? "/%s" : "%s", power_tune_name(l, v->ch.tx_hz));
 	}
 	dl_text(t, "\n");
 	if (board.radio != NULL && board.radio->tx_drive_level != NULL) {

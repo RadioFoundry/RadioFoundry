@@ -36,7 +36,12 @@ typedef struct {
 	// Satellite TLE data (docs/spec/satellite.md): separate from update staging so TFTP and CPS-fast never share it
 	uint32_t satellite_addr;
 	uint32_t satellite_size;
+	// Power tuning (core/radio/power_tune.h, docs/spec/power-tune.md): two erase units from here, one copy of the
+	// record each, outside every area above; never written by a CPS, never part of a codeplug. 0: none
+	uint32_t tune_addr;
 } hal_flash_map_t;
+
+#define HAL_FLASH_TUNE_UNITS	2u	// the tune area's erase units
 
 // The end of the highest area of a map whose flash erases in units of erase_size (an area of size 0 is none): a chip
 // smaller than this can't hold the map, and a driver then offers none (an address past the chip fails, it never
@@ -55,6 +60,7 @@ static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t eras
 		m->native_size != 0u ? m->native_addr + m->native_size : 0u,
 		m->staging_size != 0u ? m->staging_addr + m->staging_size : 0u,
 		m->satellite_size != 0u ? m->satellite_addr + m->satellite_size : 0u,
+		m->tune_addr != 0u ? m->tune_addr + HAL_FLASH_TUNE_UNITS * erase_size : 0u,
 	};
 	uint32_t end = 0;
 	for (unsigned i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {

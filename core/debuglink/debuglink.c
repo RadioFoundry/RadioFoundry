@@ -7,6 +7,7 @@
 #include "config.h"
 #include "radio/beep.h"
 #include "board.h"
+#include "radio/power_tune.h"
 #include "hal_time.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -130,7 +131,7 @@ static const char *state_name(uint8_t s)
 static bool summary_line(uint8_t i, char *buf, uint8_t len)
 {
 	const radio_view_t *v = &hostlink_view;
-	const char *pw = board_power_name(v->power, v->ch.tx_hz);
+	const char *pw = power_tune_name(v->power, v->ch.tx_hz);
 	switch (i) {
 	case 0:
 		dl_fmt(buf, len, "radio %s %s ch %u '%s' %u.%05u %s%s",
@@ -873,6 +874,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_hwopt(req, len, out, cap);
 	case DL_CMD_SATELLITE:
 		return debuglink_cmd_satellite(req, len, out, cap);
+	case DL_CMD_TUNE:
+#if CONFIG_POWER_TUNE
+		return debuglink_cmd_tune(req, len, out, cap);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
+#endif
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);

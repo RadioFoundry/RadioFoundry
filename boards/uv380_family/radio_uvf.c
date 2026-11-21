@@ -22,6 +22,7 @@
 #include "modem/hrc6000/hrc6000.h"
 #include "radio/ref_trim.h"
 #include "radio/pa_keyup.h"
+#include "radio/power_tune.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "hrc/hrc_bus.h"
 #include "hrc/i2s_pcm.h"
@@ -1008,7 +1009,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 
 	uvf_cal_point_t cal;
 	bool calibrated = uvf_cal_at(hz, &cal) && cal.valid;
-	uint32_t drive = calibrated ? power_to_dac(&cal, power, uhf) : UVF_DAC_UNCALIBRATED;
+	uint32_t drive = calibrated ? power_tune_drive(hz, power, (uint16_t)power_to_dac(&cal, power, uhf)) : UVF_DAC_UNCALIBRATED;
 	if (drive_override != 0u) {
 		drive = drive_override;
 	}

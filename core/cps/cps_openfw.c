@@ -364,7 +364,8 @@ static bool writable(uint32_t addr, bool *cal)
 	}
 	if (overlaps(addr, STORAGE_SECTOR, m->settings_addr, m->settings_size) ||
 	    overlaps(addr, STORAGE_SECTOR, m->journal_addr, 2u * STORAGE_SECTOR) ||
-	    overlaps(addr, STORAGE_SECTOR, m->native_addr, m->native_size)) {
+	    overlaps(addr, STORAGE_SECTOR, m->native_addr, m->native_size) ||
+	    overlaps(addr, STORAGE_SECTOR, m->tune_addr, m->tune_addr != 0u ? HAL_FLASH_TUNE_UNITS * STORAGE_SECTOR : 0u)) {
 		return false;
 	}
 	if (m->calibration_size != 0 && overlaps(addr, STORAGE_SECTOR, m->calibration_addr, m->calibration_size)) {

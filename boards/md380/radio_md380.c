@@ -29,6 +29,7 @@
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr_md380.h"
 #include "radio/pa_keyup.h"
+#include "radio/power_tune.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "semphr.h"
@@ -940,7 +941,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	if (!md380_cal_at(hz, &cal) || !cal.valid) {
 		return false;
 	}
-	uint32_t drive = power_to_dac(&cal, power);
+	uint32_t drive = power_tune_drive(hz, power, (uint16_t)power_to_dac(&cal, power));
 	if (drive_override != 0u) {
 		drive = drive_override;
 	}

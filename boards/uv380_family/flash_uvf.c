@@ -14,6 +14,7 @@ static const hal_flash_map_t map = {
 	.settings_addr = 0x011000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x019000u,	// 2 sectors
+	.tune_addr = 0x01C000u,		// power tuning, 2 sectors (docs/spec/power-tune.md)
 	.openfw_eeprom = 0x000000u,
 	.openfw_flash = 0x020000u,
 	.openfw_end = 0xE00000u,
