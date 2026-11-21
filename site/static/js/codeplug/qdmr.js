@@ -7,6 +7,7 @@
 
 import { parse, stringify, flow, Tag } from "./yaml.js";
 import { LIMITS } from "./records.js";
+import { isDmr, isP25, DMR_ALL_CALL } from "./contactmode.js";
 import { parseTone } from "./fields.js";
 import { exportModes, importModes } from "./qdmrmodes.js";
 import { syncModes } from "./channelmodes.js";
@@ -25,7 +26,6 @@ export const QDMR_VERSION = "0.15.1";
 const POWER = { Min: 1, Low: 3, Mid: 6, High: 9, Max: 10 };
 const ALIAS = ["None", "APRS", "Text", "Both"];
 const CALL = { GroupCall: "group", PrivateCall: "private", AllCall: "all" };
-const ALL_CALL_ID = 0xFFFFFF;
 
 // qdmr's APRS icon names and the symbol each stands for in the primary table ('/'), as qdmr encodes them
 const ICONS = {
@@ -197,7 +197,7 @@ export function importQdmr(m, yamlText) {
 				continue;
 			}
 			const ov = text(e.v.openGD77?.timeSlotOverride);
-			const c = { number: null, name: shorten(e.v.name, LIMITS.name), id: type === "all" ? ALL_CALL_ID : Number(untag(e.v.number)) || 0, type, timeslot: ov === "TS1" ? 1 : ov === "TS2" ? 2 : 0 };
+			const c = { number: null, mode: "dmr", name: shorten(e.v.name, LIMITS.name), id: type === "all" ? DMR_ALL_CALL : Number(untag(e.v.number)) || 0, type, timeslot: ov === "TS1" ? 1 : ov === "TS2" ? 2 : 0 };
 			contacts.push(c);
 			contactById.set(text(e.v.id), c);
 		} else if (e.type === "dtmf") {
@@ -347,7 +347,10 @@ export function importQdmr(m, yamlText) {
 		if (rows.length > max[t]) note("too_many_" + t, rows.length - max[t]);
 		if (t !== "zones") rows.forEach((r, i) => (r.number = i < max[t] ? i + 1 : null));
 	}
+	// qdmr knows no P25 contacts: the air mode contact table's stay
+	const p25 = m.contacts.filter(isP25);
 	Object.assign(m, tables);
+	m.contacts.push(...p25);
 	// the radioFoundry block: systems and channel modes, once every channel has its number
 	if (importModes(m, doc.radioFoundry, chanBlocks, chById, note, { parseFrequency, untag })) syncModes(m);
 	// the VFOs keep their frequencies; references into the old tables can't stay
@@ -391,16 +394,18 @@ export function exportQdmr(m) {
 		radioIDs.push({ dmr: flow({ id, name: String(c.dmrId), number: c.dmrId }) });
 	}
 
-	const cn = num(m.contacts);
-	const contacts = m.contacts.map((c) => ({
+	// qdmr has DMR contacts only: the P25 contacts of the air mode table are not exported
+	const dmrContacts = m.contacts.filter(isDmr);
+	const cn = num(dmrContacts);
+	const contacts = dmrContacts.map((c) => ({
 		dmr: flow({
 			id: `cont${cn.get(c)}`, name: c.name, ring: false,
 			type: { group: "GroupCall", private: "PrivateCall", all: "AllCall" }[c.type],
-			number: c.type === "all" ? ALL_CALL_ID : c.id,
+			number: c.type === "all" ? DMR_ALL_CALL : c.id,
 			openGD77: flow({ timeSlotOverride: c.timeslot ? `TS${c.timeslot}` : "None" }),
 		}),
 	}));
-	m.dtmfContacts.forEach((d, i) => contacts.push({ dtmf: flow({ id: `cont${m.contacts.length + i + 1}`, name: d.name, number: d.code }) }));
+	m.dtmfContacts.forEach((d, i) => contacts.push({ dtmf: flow({ id: `cont${dmrContacts.length + i + 1}`, name: d.name, number: d.code }) }));
 	const cref = (c) => (c && typeof c === "object" && cn.has(c) ? `cont${cn.get(c)}` : undefined);
 
 	const ln = num(m.rxLists);

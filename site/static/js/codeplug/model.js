@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The editing model: a whole codeplug as plain objects. Records keep their number (channel 1..1024, contact
-// 1..1024, list 1..76, DTMF contact 1..63, APRS configuration 1..8) so an edit rewrites only what changed. References
+// 1..1024, list 1..76, DTMF contact 1..63, APRS configuration 1..8) so an edit rewrites only what changed. A contact
+// has a mode (contactmode.js): a DMR contact's number is its slot in the contact list, a P25 contact's a slot (1..341)
+// of the air mode contact table, whose entries of other modes or invalid ones stay in their slots, unseen. References
 // are the referenced objects themselves, so deleting or renumbering a record can't leave a reference pointing at the
 // wrong one; a reference to a record that isn't stored stays a plain number, as read. encode() writes the model onto
 // the image it came from and touches only records whose fields changed, so an unedited codeplug round-trips byte for
@@ -12,8 +14,10 @@ import {
 	LIMITS, CH_SIZE, bankBitmap, channelAddr, decodeChannel, encodeChannel, zoneLayout, decodeZone, encodeZone,
 	ZONE_BITMAP, ZONE_DATA, ZONE_RECORD, CONTACTS, CONTACT_SIZE, decodeContact, encodeContact, LIST_COUNTS, LISTS,
 	LIST_SIZE, decodeList, encodeList, DTMF_CONTACTS, decodeDtmf, encodeDtmf, validDtmf, APRS_BASE, APRS_SIZE,
-	decodeAprs, encodeAprs, decodeGeneral, encodeGeneral, VFO, LUCZ,
+	decodeAprs, encodeAprs, decodeGeneral, encodeGeneral, VFO, LUCZ, AIR_CONTACTS, AIR_CONTACT_SIZE, decodeAirContact,
+	encodeAirContact, airKept, P25_ALL_CALL,
 } from "./records.js";
+import { isDmr, isP25, contactModeOf, channelContactMode, syncContactFlags, validateContactLinks, typeFor, allCallId, contactIdMax } from "./contactmode.js";
 import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
@@ -31,13 +35,18 @@ export function decode(image) {
 	};
 	for (let n = 1; n <= LIMITS.contacts; n++) {
 		const c = decodeContact(b.subarray(CONTACTS + (n - 1) * CONTACT_SIZE, CONTACTS + n * CONTACT_SIZE));
-		if (c) m.contacts.push({ number: n, ...c });
+		if (c) m.contacts.push({ number: n, mode: "dmr", ...c });
+	}
+	for (let n = 1; n <= LIMITS.p25Contacts; n++) {
+		const c = decodeAirContact(b.subarray(AIR_CONTACTS + (n - 1) * AIR_CONTACT_SIZE, AIR_CONTACTS + n * AIR_CONTACT_SIZE));
+		if (c) m.contacts.push({ number: n, mode: "p25", timeslot: 0, ...c });
 	}
 	for (let n = 1; n <= LIMITS.rxLists; n++) {
 		const count = b[LIST_COUNTS + n - 1];
 		if (count === 0 || count === 0xFF) continue;
 		const l = decodeList(b.subarray(LISTS + (n - 1) * LIST_SIZE, LISTS + n * LIST_SIZE), count);
-		m.rxLists.push({ number: n, name: l.name, contacts: l.contacts.map((x) => find(m.contacts, x)) });
+		// the members stay numbers until the channels say which list they are slots of (linkContacts)
+		m.rxLists.push({ number: n, name: l.name, contacts: l.contacts });
 	}
 	for (let n = 1; n <= LIMITS.aprs; n++) {
 		const a = decodeAprs(b.subarray(APRS_BASE + (n - 1) * APRS_SIZE, APRS_BASE + n * APRS_SIZE));
@@ -53,6 +62,7 @@ export function decode(image) {
 		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
 	}
 	decodeModes(m, b);
+	linkContacts(m);
 	for (const a of VFO) {
 		const c = decodeChannel(b.subarray(a, a + CH_SIZE));
 		m.vfo.push(c ? linkRefs(m, c) : null);
@@ -93,11 +103,38 @@ function find(list, n) {
 	return list.find((x) => x.number === n) || n;
 }
 
+// The contact with a number in the list of a mode, or the number
+function findContact(m, n, mode) {
+	return m.contacts.find((x) => x.number === n && contactModeOf(x) === mode) || n;
+}
+
+// A channel's references to records that aren't contacts, and its contact as a DMR one (linkContacts says if it is
+// a P25 one)
 function linkRefs(m, c) {
-	c.contact = c.contact ? find(m.contacts, c.contact) : null;
+	c.contact = c.contact ? findContact(m, c.contact, "dmr") : null;
 	c.rxList = c.rxList ? find(m.rxLists, c.rxList) : null;
 	c.aprs = c.aprs ? find(m.aprs, c.aprs) : null;
 	return c;
+}
+
+// The contacts of channels and RX group lists, which name a slot of the contact list, or of the air mode contact table
+// when the channel's contact flag is set. A list is read as the mode of the channels that use it: P25 when only flagged
+// channels do, DMR otherwise (a list no channel uses, and one shared with a channel of the contact list, which an
+// older codeplug may do)
+function linkContacts(m) {
+	const flagged = (c) => c.kind && channelContactMode(c) === "p25" && c.params?.p25Contacts;
+	const p25Only = new Map(); // list -> whether every channel using it is flagged
+	for (const c of m.channels) {
+		if (!c.rxList || typeof c.rxList !== "object") continue;
+		p25Only.set(c.rxList, (p25Only.get(c.rxList) ?? true) && !!flagged(c));
+	}
+	for (const l of m.rxLists) {
+		const mode = p25Only.get(l) ? "p25" : "dmr";
+		l.contacts = l.contacts.map((x) => (typeof x === "number" ? findContact(m, x, mode) : x));
+	}
+	for (const c of m.channels) {
+		if (flagged(c) && c.contact) c.contact = findContact(m, refNumber(c.contact), "p25");
+	}
 }
 
 // The number a reference stands for: the object's, a dangling number as read, or 0
@@ -105,9 +142,26 @@ export function refNumber(x) {
 	return x == null ? 0 : typeof x === "number" ? x : x.number || 0;
 }
 
+// The slots of the air mode contact table that hold something else than a P25 entry or nothing (another mode's entry, an
+// invalid one): not shown, kept as found, and not free for a new entry
+export function airKeptSlots(b) {
+	const out = new Set();
+	for (let n = 1; n <= LIMITS.p25Contacts; n++) {
+		if (airKept(b.subarray(AIR_CONTACTS + (n - 1) * AIR_CONTACT_SIZE, AIR_CONTACTS + n * AIR_CONTACT_SIZE))) out.add(n);
+	}
+	return out;
+}
+
+// The slots of the air table that model m keeps unseen (none when it wasn't read from a radio or file)
+export const airKeptOf = (m) => (m.base ? airKeptSlots(m.base.bytes) : new Set());
+
+// How many P25 contacts model m can hold: the air table's slots, less those kept unseen
+export const p25Room = (m) => LIMITS.p25Contacts - airKeptOf(m).size;
+
 // Every record of a table without a number, or with one another record already has, gets the lowest free number
-export function assignNumbers(list, max) {
-	const taken = new Set();
+// (reserved: numbers no record takes)
+export function assignNumbers(list, max, reserved = new Set()) {
+	const taken = new Set(reserved);
 	const todo = [];
 	for (const x of list) {
 		if (Number.isInteger(x.number) && x.number >= 1 && x.number <= max && !taken.has(x.number)) taken.add(x.number);
@@ -121,13 +175,20 @@ export function assignNumbers(list, max) {
 	}
 }
 
+// Numbers for the records of a table that have none (zones have none). The contacts of each mode are numbered in their
+// own list; one with no mode yet is stored nowhere and has no number
+export function numberTable(m, table) {
+	m.systems ??= [];
+	if (table === "contacts") {
+		assignNumbers(m.contacts.filter(isDmr), LIMITS.contacts);
+		// the slots of the air table held by entries the editor doesn't show aren't free
+		assignNumbers(m.contacts.filter(isP25), LIMITS.p25Contacts, airKeptOf(m));
+		for (const c of m.contacts) if (!isDmr(c) && !isP25(c)) c.number = null;
+	} else if (table !== "zones") assignNumbers(m[table], table === "systems" ? MODE_LIMITS.systems : LIMITS[table]);
+}
+
 export function numberAll(m) {
-	assignNumbers(m.channels, LIMITS.channels);
-	assignNumbers(m.contacts, LIMITS.contacts);
-	assignNumbers(m.rxLists, LIMITS.rxLists);
-	assignNumbers(m.dtmfContacts, LIMITS.dtmfContacts);
-	assignNumbers(m.aprs, LIMITS.aprs);
-	assignNumbers(m.systems ??= [], MODE_LIMITS.systems);
+	for (const t of ["channels", "contacts", "rxLists", "dtmfContacts", "aprs", "systems"]) numberTable(m, t);
 }
 
 function same(a, b, keys) {
@@ -156,6 +217,8 @@ function putChannel(r, c) {
 // The model written onto a copy of the image it was decoded from: the new image
 export function encode(m) {
 	numberAll(m);
+	// channels of a kind that reads P25 contacts say so in their parameter block, before the modes are written
+	syncContactFlags(m);
 	const img = m.base.clone();
 	const b = img.bytes;
 
@@ -186,8 +249,8 @@ export function encode(m) {
 		b[a] = slot < zones.length ? b[a] | bit : b[a] & ~bit;
 	}
 
-	// Contacts: a number without a contact is erased, as the radio deletes one
-	const contacts = new Map(m.contacts.filter((c) => c.number).map((c) => [c.number, c]));
+	// Contacts: a number without a contact is erased, as the radio deletes one. The DMR contacts go to the contact list
+	const contacts = new Map(m.contacts.filter((c) => c.number && isDmr(c)).map((c) => [c.number, c]));
 	for (let n = 1; n <= LIMITS.contacts; n++) {
 		const r = b.subarray(CONTACTS + (n - 1) * CONTACT_SIZE, CONTACTS + n * CONTACT_SIZE);
 		const c = contacts.get(n), have = decodeContact(r);
@@ -210,6 +273,18 @@ export function encode(m) {
 			encodeList(want, r);
 			b[LIST_COUNTS + n - 1] = want.contacts.length + 1;
 		}
+	}
+
+	// P25 contacts go to the air mode contact table, without a timeslot override: a slot without one is erased when it
+	// held a P25 entry; the slots of anything else are left as found
+	const air = new Map(m.contacts.filter((c) => c.number && isP25(c)).map((c) => [c.number, c]));
+	const kept = airKeptSlots(b);
+	for (let n = 1; n <= LIMITS.p25Contacts; n++) {
+		if (kept.has(n)) continue;
+		const r = b.subarray(AIR_CONTACTS + (n - 1) * AIR_CONTACT_SIZE, AIR_CONTACTS + n * AIR_CONTACT_SIZE);
+		const c = air.get(n), have = decodeAirContact(r);
+		if (c && !same(have, c.type === "all" ? { ...c, id: P25_ALL_CALL } : c, ["name", "type", "id"])) encodeAirContact(c, r);
+		else if (!c && have) r.fill(0xFF);
 	}
 
 	const dtmf = new Map(m.dtmfContacts.filter((d) => d.number).map((d) => [d.number, d]));
@@ -262,8 +337,20 @@ export function newChannel(fields = {}) {
 	};
 }
 
+// A contact of the contact list; mode: null for one whose mode is still to be chosen
 export function newContact(fields = {}) {
-	return { number: null, name: "", id: 0, type: "group", timeslot: 0, ...fields };
+	return { number: null, mode: "dmr", name: "", id: 0, type: "group", timeslot: 0, ...fields };
+}
+
+// A new contact for a table whose column filters (editor/grid.js newRowDefaults) say what it is: with no mode filtered
+// to one value the mode stays null, which Problems asks to choose; the call type and the timeslot override follow the
+// mode. d: {mode, type, timeslot}
+export function contactFromFilters(fields, d = {}) {
+	const c = newContact({ ...fields, mode: d.mode ?? null });
+	if (d.type) c.type = typeFor(d.type, c.mode);
+	if (c.type === "all") c.id = allCallId(c.mode);
+	if (d.timeslot != null && !isP25(c)) c.timeslot = d.timeslot;
+	return c;
 }
 
 // Remove records and every reference to them
@@ -318,9 +405,15 @@ export function validate(m, { bands = null, features = null } = {}) {
 	// an area of a version the editor doesn't know reads as empty and is never written: a value set here is lost
 	if ((areaKeys.length || recKeys.length) && m.base && decodeArea(m.base.bytes).state === "newer") warn("general", null, (areaKeys[0] || recKeys[0]).name, "settings_area_newer");
 
-	const counts = [["channels", LIMITS.channels], ["contacts", LIMITS.contacts], ["rxLists", LIMITS.rxLists],
+	const counts = [["channels", LIMITS.channels], ["rxLists", LIMITS.rxLists],
 		["zones", LIMITS.zones], ["dtmfContacts", LIMITS.dtmfContacts], ["aprs", LIMITS.aprs]];
 	for (const [t, max] of counts) if (m[t].length > max) err(t, null, null, "too_many", { max, count: m[t].length });
+	// each mode's contacts have a list of their own; the air table's slots held by entries the editor keeps unseen
+	// aren't free
+	const dmr = m.contacts.filter(isDmr), air = m.contacts.filter(isP25);
+	const airMax = p25Room(m);
+	if (dmr.length > LIMITS.contacts) err("contacts", null, null, "too_many_mode", { max: LIMITS.contacts, count: dmr.length, mode: "DMR" });
+	if (air.length > airMax) err("contacts", null, null, "too_many_mode", { max: airMax, count: air.length, mode: "P25" });
 
 	for (const c of m.channels) {
 		if (!c.name) err("channels", c, "name", "no_name");
@@ -352,12 +445,27 @@ export function validate(m, { bands = null, features = null } = {}) {
 	for (const c of m.contacts) {
 		if (!c.name) err("contacts", c, "name", "no_name");
 		if (nameBytes(c.name) > LIMITS.name) err("contacts", c, "name", "too_long", { max: LIMITS.name });
-		if (c.type !== "all" && !(c.id >= 1 && c.id <= 0xFFFFFF)) err("contacts", c, "id", "id_range");
+		if (!isDmr(c) && !isP25(c)) err("contacts", c, "mode", "mode_required");
+		else if (isDmr(c) && c.type !== "all" && !(c.id >= 1 && c.id <= contactIdMax(c))) err("contacts", c, "id", "id_range");
+	}
+	// An ID is named by the first entry of its call type that has a name (air-contacts.md 3.2); an all call names the
+	// group 0xFFFF
+	const named = new Set();
+	for (const c of [...air].sort((x, y) => (x.number ?? Infinity) - (y.number ?? Infinity))) {
+		const max = contactIdMax(c);
+		if (c.type !== "all" && !(c.id >= 1 && c.id <= max)) {
+			err("contacts", c, "id", c.type === "unit" ? "p25_unit_range" : "p25_group_range", { max });
+		} else if (c.name) {
+			const key = `${c.type === "unit" ? "unit" : "group"}:${c.type === "all" ? P25_ALL_CALL : c.id}`;
+			if (named.has(key)) warn("contacts", c, "id", "p25_duplicate");
+			named.add(key);
+		}
 	}
 	for (const l of m.rxLists) {
 		if (!l.name) err("rxLists", l, "name", "no_name");
 		if (l.contacts.length > LIMITS.rxListContacts) err("rxLists", l, "contacts", "too_many", { max: LIMITS.rxListContacts, count: l.contacts.length });
 	}
+	validateContactLinks(m, err, warn);
 	for (const d of m.dtmfContacts) {
 		if (!d.name) err("dtmfContacts", d, "name", "no_name");
 		if (!validDtmf(d.code)) err("dtmfContacts", d, "code", "bad_dtmf");

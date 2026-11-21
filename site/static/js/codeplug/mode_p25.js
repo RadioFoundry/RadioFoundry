@@ -2,12 +2,17 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The P25 mode modules of the Codeplug Editor (docs/spec/p25-codeplug.md): kind 2 (conventional), kind 3 (trunked)
 // and system type 3 on the channel-mode layer (channelmodes.js). Bytes to fields and back, and the fields the pages
-// show, as data. Talk targets are the contact list's: a group contact is a talk group, a private one a unit.
+// show, as data. A talk target is a contact: a group contact is a talk group, a unit contact a unit. A channel names
+// P25 contacts (the air mode contact table, air-contacts.md) when its parameter block's contact flag is set, else the
+// DMR contact list's (an older codeplug's); the editor derives the flag from the contact the channel names.
 
 import { u8, u16, u24, u32, s8, put16, put24, put32, grow } from "./modebytes.js";
 
 export const NAC_DEFAULT = 0x293, NAC_ANY = 0xF7E, NAC_REPEAT_ANY = 0xF7F, NAC_SET = 0x8000;
 export const UNIT_MAX = 0xFFFFFE;
+// The contact flag: the contact and the RX group list entries are slots of the air mode contact table (p25-codeplug.md
+// 2 and 3). Bit 2 of the conventional block's first byte, bit 1 of the trunked block's
+export const CONV_P25_CONTACTS = 0x04, TRUNK_P25_CONTACTS = 0x02;
 // Above this the editor warns: unit IDs this long are unusual (the standard's range is not checked here)
 export const UNIT_WARN = 9999999;
 export const WACN_ANY = 0xFFFFFF, SYSID_ANY = 0xFFFF, P25_UNKNOWN = 0xFF;
@@ -31,12 +36,12 @@ export function decodeConv(b) {
 	const txDflt = rx === NAC_ANY ? NAC_DEFAULT : rx;
 	let tx = nacField(u16(b, 3), txDflt);
 	if (tx === NAC_ANY || tx === NAC_REPEAT_ANY) tx = txDflt;
-	return { squelch: sq === 1 ? 1 : 0, rxNac: rx, txNac: tx };
+	return { squelch: sq === 1 ? 1 : 0, rxNac: rx, txNac: tx, p25Contacts: (u8(b, 0) & CONV_P25_CONTACTS) !== 0 };
 }
 
 export function encodeConv(p, prev = null) {
 	const v = grow(prev, 5);
-	v[0] = (v[0] & ~3) | (p.squelch === 1 ? 1 : 0);
+	v[0] = (v[0] & ~(3 | CONV_P25_CONTACTS)) | (p.squelch === 1 ? 1 : 0) | (p.p25Contacts ? CONV_P25_CONTACTS : 0);
 	put16(v, 1, nacOut(p.rxNac, NAC_DEFAULT));
 	put16(v, 3, nacOut(p.txNac, p.rxNac === NAC_ANY ? NAC_DEFAULT : p.rxNac));
 	return v;
@@ -56,11 +61,12 @@ export const p25Kind = {
 	feature: "P25",
 	systemType: null,
 	contacts: true,
+	contactMode: "p25",
 	ownFreqs: true,
 	defaultTx: true,
 	recordFields: ["contact", "rxList", "dmrId", "dmo"],
 	flags: {},
-	newParams: () => ({ squelch: 0, rxNac: NAC_DEFAULT, txNac: NAC_DEFAULT }),
+	newParams: () => ({ squelch: 0, rxNac: NAC_DEFAULT, txNac: NAC_DEFAULT, p25Contacts: false }),
 	decode: decodeConv,
 	encode: encodeConv,
 	fields: () => [
@@ -240,16 +246,17 @@ export const p25TrunkKind = {
 	feature: "P25_TRUNK",
 	systemType: 3,
 	contacts: true,
+	contactMode: "p25",
 	ownFreqs: false,
 	defaultTx: false,
 	fallback: true,
 	recordFields: ["contact", "rxList", "acceptBadCrc"],
 	flags: { noFallback: 0x10 },
-	newParams: () => ({ followAll: false }),
-	decode: (b) => ({ followAll: (u8(b, 0) & 1) !== 0 }),
+	newParams: () => ({ followAll: false, p25Contacts: false }),
+	decode: (b) => ({ followAll: (u8(b, 0) & 1) !== 0, p25Contacts: (u8(b, 0) & TRUNK_P25_CONTACTS) !== 0 }),
 	encode: (p, prev) => {
 		const v = grow(prev, 1);
-		v[0] = (v[0] & ~1) | (p.followAll ? 1 : 0);
+		v[0] = (v[0] & ~(1 | TRUNK_P25_CONTACTS)) | (p.followAll ? 1 : 0) | (p.p25Contacts ? TRUNK_P25_CONTACTS : 0);
 		return v;
 	},
 	fields: () => [{ key: "followAll", label: "editor.p25.follow_all", type: "bool" }],

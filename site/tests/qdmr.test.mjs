@@ -440,8 +440,8 @@ test("radioFoundry block: every mode's systems and channels read, save and read 
 	assert.equal(s3.ownId, 1234);
 	// a channel of a kind without frequencies of its own holds its system's first control channel, receive only
 	assert.deepEqual([t3.kind, t3.system, t3.tagTx, t3.acceptBadCrc, t3.mode, t3.rxOnly, t3.rxHz], [1, s1, true, true, "dmr", true, 441100000]);
-	assert.deepEqual([p25t.kind, p25t.system, p25t.tagTx, p25t.fallback, p25t.params], [3, s2, false, conv, { followAll: true }]);
-	assert.deepEqual([conv.kind, conv.baseOwn, conv.params], [2, true, { squelch: 1, rxNac: 0x293, txNac: 0x34A }]);
+	assert.deepEqual([p25t.kind, p25t.system, p25t.tagTx, p25t.fallback, p25t.params], [3, s2, false, conv, { followAll: true, p25Contacts: false }]);
+	assert.deepEqual([conv.kind, conv.baseOwn, conv.params], [2, true, { squelch: 1, rxNac: 0x293, txNac: 0x34A, p25Contacts: false }]);
 	assert.deepEqual([nx.kind, nx.system, nx.params], [4, s3, { rate9600: false, squelch: 0, rxRan: 5, txRan: 5 }]);
 	// Accept Invalid CRC: a DMR channel's setting, none on FM
 	assert.deepEqual([rep.kind, rep.acceptBadCrc, fm.acceptBadCrc], [0, true, false]);
