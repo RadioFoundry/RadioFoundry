@@ -23,8 +23,8 @@ typedef enum {
 // DMR: NO_CODEC no vocoder merged (receive only), NO_DMR the modem didn't start, BUSY a call on our slot (polite
 // access), NO_REPEATER the repeater didn't wake, REJECTED the modem refused, HOTSPOT the radio is a hotspot now,
 // NO_ID no DMR ID in the codeplug (REFUSED on P25 also when its engine did not start on this board), SFR_RPT the radio is the channel's single frequency repeater. BUSY on FM: busy channel lockout. INHIBIT: transmit is switched off in the
-// settings. BATTERY: the battery is critical. AM: the channel is received in AM (the air band, CONFIG_AM_RX): receive
-// only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
+// settings. BATTERY: the battery is critical. AM: the channel is received in AM, or is an AM channel (CONFIG_AM_RX):
+// receive only, the radio never transmits there. BCAST: the same for the broadcast band (CONFIG_BCAST_FM). The board refused to
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
 // otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked
 // channel gave no voice channel (RADIO_TRUNK_WHY_* in radio_p25_view_t.twhy or radio_t3_brief_t.why says why). AIR_NO_TX: the board's air interface receives this
@@ -469,9 +469,9 @@ typedef struct {
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
 	int8_t volume_knob;	// the volume knob's position 0..100 % in force or not, -1 = none read
-	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
-	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
-	// squelch's value from the RSSI (radio/radio_am.h)
+	// AM (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or VFO
+	// frequency (an FM channel in 108-137 MHz, or an AM channel or the VFO in AM where board_t.am_bands allow, on a
+	// radio that can); receive only. noise then holds the AM squelch's value from the RSSI (radio/radio_am.h)
 	bool am;
 	// Broadcast FM (CONFIG_BCAST_FM; airband-and-broadcast.md 4): an FM channel or the VFO in the broadcast
 	// receiver's range plays on that receiver; receive only. noise and rssi_dbm then come from it (radio_bcast.h).
@@ -572,13 +572,18 @@ void radio_req_reload(void);			// the settings' preferences changed (squelch, ma
 // Refused on DMR channels, while transmitting, and for tones tones_valid() rejects
 void radio_req_bandwidth(radio_bw_t bw);
 void radio_req_tone(uint8_t which, subtone_t tone);	// which: RADIO_TONE_TX, RADIO_TONE_RX or RADIO_TONE_BOTH
-#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
-// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25) or NXDN (CONFIG_NXDN). On a
-// channel a temporary change; in the VFO its own, kept with it (a saved P25 or NXDN VFO comes back in its default
-// mode where the build or the board doesn't run that mode). Refused while transmitting, in hotspot mode, in a listen
-// band, and for a mode the build, the board or the VFO doesn't have
+#if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN || CONFIG_AM_RX
+// The current channel's or the VFO's mode (radio_mode_t): FM, DMR, P25 (CONFIG_P25) or NXDN (CONFIG_NXDN), or on the
+// VFO only RADIO_REQ_MODE_AM. On a channel a temporary change; in the VFO its own, kept with it (a saved P25, NXDN or
+// AM VFO comes back in its default mode where the build or the board doesn't run that mode). Refused while
+// transmitting, in hotspot mode, in a listen band (AM: where the receiver can't demodulate AM), and for a mode the
+// build, the board or the VFO doesn't have
 void radio_req_mode(uint8_t mode);
 #endif
+// radio_req_mode's AM, and the VFO's saved mode for it: FM with the AM demodulator, the AM kind on the VFO
+// (radio/radio_am.h). Not a radio_mode_t: channel_t.mode stays FM and the board never sees it. Past every
+// radio_mode_t and inside the 4 bits the VFO's saved mode has (settings_vfo_mode); 15 is erased flash
+#define RADIO_REQ_MODE_AM	8u
 #if CONFIG_P25
 // The P25 settings (RAM only, radio_p25.h): copied now, in force from the radio task's next turn
 void radio_req_p25_settings(const radio_p25_settings_t *s);

@@ -6,8 +6,9 @@
 #define BUILD_INFO_H
 
 // features=: a comma list of the switches the tools look for (not every switch), no newline: build_modes_now then
-// build_features_now. The modes (P25, P25_TRUNK, NXDN) only where the board runs them (radio_p25_fits,
-// radio_nxdn_fits), so the list can differ between boards of one build; each ends in a comma, and may be ""
+// build_features_now. The modes (P25, P25_TRUNK, NXDN, AM) only where the board runs them (radio_p25_fits,
+// radio_nxdn_fits, radio_am_anywhere), so the list can differ between boards of one build; each ends in a comma, and
+// may be ""
 const char *build_modes_now(void);
 const char *build_features_now(void);
 // preset=: the release variant (full, amateur, commercial), or custom; set by the Makefile

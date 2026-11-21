@@ -15,7 +15,7 @@
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
-    rfoundry_debug.py radio mode fm|dmr|p25|nxdn     the channel's mode for now (the VFO's own in the VFO)
+    rfoundry_debug.py radio mode fm|dmr|p25|nxdn|am  the channel's mode for now (the VFO's own in the VFO; am: VFO only)
     rfoundry_debug.py radio p25 [nac=N] [tg=N|unit=N] [rx_tgid=N] [talkaround=auto|on|off] [unit_id=N]
                                                 the P25 settings (CONFIG_P25; RAM only, view section p25)
     rfoundry_debug.py radio nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N]
@@ -229,7 +229,7 @@ OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
-CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
+CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3, "am": 8}  # am: the VFO only (RADIO_REQ_MODE_AM)
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 OP_PA_SWEEP = 39
@@ -1339,7 +1339,7 @@ class DebugLink:
         self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
 
     def dmr_fields(self, mode=None, cc=None, ts=None):
-        """Mode ("fm" / "dmr" / "p25" / "nxdn"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
+        """Mode ("fm" / "dmr" / "p25" / "nxdn", or "am" in the VFO), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
         are temporary changes, in the VFO the VFO's own settings (RADIO op 31). A mode the build lacks raises
         DebugLinkError "unavailable"."""
         m = 0xFF if mode is None else CHANNEL_MODES[mode]
@@ -1975,7 +1975,7 @@ def cmd_radio(link, a):
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
         link.vfo_copy()
-    elif op == "mode":                # mode fm|dmr|p25|nxdn (the VFO's own in the VFO, else temporary)
+    elif op == "mode":                # mode fm|dmr|p25|nxdn|am (the VFO's own in the VFO, else temporary; am: VFO only)
         if not args or args[0] not in CHANNEL_MODES:
             raise SystemExit("mode " + "|".join(CHANNEL_MODES))
         link.dmr_fields(mode=args[0])

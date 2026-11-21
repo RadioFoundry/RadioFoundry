@@ -4,7 +4,9 @@
 // broadcast FM (4, CONFIG_BCAST_FM). Which channels are received in AM or on the broadcast receiver, both are receive
 // only (PTT, split TX, DMR and the hotspot refused there), the squelch on the signal strength with no sub-audio, the
 // VFO steps and the board's RX-only bands; against a fake board with CAP_AM_RX and CAP_BCAST_FM whose receivers hear
-// signals per frequency
+// signals per frequency. Also the AM mode past the air band (3.4): AM channels and the VFO in AM at 2 m and 70 cm,
+// never transmitting. AM_BOARD picks the fake board: 2 (the default) receives AM anywhere it receives but the
+// broadcast band (board_t.am_bands), 1 in the air band only, 0 not at all; the last two run only the gating checks
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
@@ -15,6 +17,12 @@
 #include "sim/dmr_sim_modem.h"
 #include "settings/settings.h"
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
+#include "codeplug/codeplug_modes.h"	// the AM kind, as the codeplug's tag gives it
+#include "hostlink/build_info.h"	// the feature list the Codeplug Editor offers AM channels by
+
+#ifndef AM_BOARD
+#define AM_BOARD	2
+#endif
 
 static int failures;
 static int checks;
@@ -132,7 +140,7 @@ static void r_status(radio_status_t *st)
 static void r_audio(bool on) { hw.audio = on; }
 static const hal_radio_t fake_radio = {
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
-	.audio = r_audio, .rx_am = r_rx_am,
+	.audio = r_audio, .rx_am = AM_BOARD > 0 ? r_rx_am : NULL,
 };
 
 static void p_led(uint8_t which, bool on) { (void)which; (void)on; }
@@ -158,12 +166,18 @@ static const band_t bands[] = {
 	{ 65000000, 108000000, false },
 };
 static const char *const power_names[] = { "L", "M", "H" };
+// AM past the air band: everywhere but the broadcast band, as an FD6818 radio with a separate FM tuner
+static const band_t am_bands[] = {
+	{ 108000000, 480000000, false },
+};
 
 const board_t board = {
 	.name = "fake-am",
-	.caps = CAP_AM_RX | CAP_BCAST_FM | CAP_DMR,
+	.caps = (AM_BOARD > 0 ? CAP_AM_RX : 0) | CAP_BCAST_FM | CAP_DMR,
 	.bands = bands,
 	.band_count = 4,
+	.am_bands = AM_BOARD > 1 ? am_bands : NULL,
+	.am_band_count = AM_BOARD > 1 ? 1 : 0,
 	.bcast = &fake_bcast,
 	.power_count = 3,
 	.power_names = power_names,
@@ -176,7 +190,7 @@ const board_t board = {
 };
 
 // ---- fake codeplug ----
-#define NCH 8
+#define NCH 11
 static channel_t chans[NCH + 1];
 static zone_t zone;
 
@@ -238,9 +252,20 @@ static void add(uint16_t n, const char *name, uint32_t rx, uint32_t tx, uint8_t 
 	chans[n].timeslot = 1;
 }
 
+// A channel set to AM, as codeplug_channel gives one with its live tag: the stand-in record (DMR, receive only) with
+// the kind, and the tag's transmit allowed in rx_only
+static void add_am(uint16_t n, const char *name, uint32_t hz)
+{
+	add(n, name, hz, hz, RADIO_MODE_DMR);
+	chans[n].rx_only = true;
+	chans[n].kind = CODEPLUG_KIND_AM;
+	chans[n].system = 0xFF;
+}
+
 // Positions: 0 Tower 118.100 (an FM channel in the standard codeplug, TX allowed by the codeplug), 1 ATIS 127.850
 // with an RX tone set, 2 Simplex 146.520, 3 AirDMR 120.000 stored as DMR, 4 Split RX 146.520 TX 136.500, 5 Edge
-// 136.975, 6 WXYZ 101.100 (broadcast, with an RX tone), 7 BcDMR 99.900 stored as DMR
+// 136.975, 6 WXYZ 101.100 (broadcast, with an RX tone), 7 BcDMR 99.900 stored as DMR, then AM channels: 8 AM 2m
+// 145.000, 9 AM 70cm 433.000, 10 AM Bcast 100.000 (where this receiver can't do AM)
 static void setup_codeplug(void)
 {
 	add(1, "Tower", 118100000, 118100000, RADIO_MODE_FM);
@@ -253,6 +278,9 @@ static void setup_codeplug(void)
 	add(7, "WXYZ", 101100000, 101100000, RADIO_MODE_FM);	// a broadcast station, TX allowed by the codeplug
 	chans[7].rx_tone = (subtone_t){ TONE_CTCSS, 1000 };
 	add(8, "BcDMR", 99900000, 99900000, RADIO_MODE_DMR);
+	add_am(9, "AM 2m", 145000000);
+	add_am(10, "AM 70cm", 433000000);
+	add_am(11, "AM Bcast", 100000000);
 	memset(&zone, 0, sizeof(zone));
 	strcpy(zone.name, "Air");
 	zone.count = NCH;
@@ -304,6 +332,7 @@ static void ptt(bool down)
 	run(100);
 }
 
+#if AM_BOARD > 1
 // ---- the pure helpers ----
 
 static void test_helpers(void)
@@ -667,8 +696,187 @@ static void test_bcast_vfo(void)
 	CHECK(sm.view.am && sm.view.ch.mode == RADIO_MODE_FM);
 }
 
+// ---- AM past the air band: channels and the VFO set to AM (airband-and-broadcast.md 3.4) ----
+
+// An AM channel receives AM with the AM squelch, wherever the receiver demodulates it, and never transmits
+static void am_receives(uint16_t pos, uint32_t hz)
+{
+	req(RREQ_ZONE_POS, pos);
+	run(50);
+	CHECK(sm.view.am && hw.am && hw.rx_hz == hz);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && radio_am_kind(&sm.view.ch));	// FM under the stand-in record
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	hw.sig_hz = hz;
+	hw.sig_rssi = -50;
+	run(100);
+	CHECK(sm.view.state == RS_RX && hw.audio && sm.view.noise == 32);	// the board's AM squelch value
+	hw.sig_hz = 0;
+	run(100);
+	CHECK(sm.view.state == RS_IDLE);
+	int tx = hw.tx_calls;
+	ptt(true);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AM && hw.tx_calls == tx);
+	ptt(false);
+	CHECK(sm.view.state == RS_IDLE && !sm.view.bcast);
+}
+
+static void test_am_channels(void)
+{
+	start();
+	CHECK(radio_am_anywhere() && codeplug_kind_built(CODEPLUG_KIND_AM));
+	CHECK(strstr(build_modes_now(), "AM,") != NULL);	// the editor offers AM channels for this radio
+	CHECK(radio_am_rx_at(145000000) && radio_am_rx_at(433000000) && radio_am_rx_at(118100000));
+	CHECK(!radio_am_rx_at(100000000) && !radio_am_rx_at(500000000));	// the FM tuner's band; outside the table
+	am_receives(8, 145000000);
+	am_receives(9, 433000000);
+	// A tag that says transmit allowed (another tool's) is still never keyed: AM is receive only
+	chans[10].rx_only = false;
+	am_receives(9, 433000000);
+	// Back to an FM channel: rx() again, transmit as before
+	req(RREQ_ZONE_POS, 2);
+	run(50);
+	CHECK(!sm.view.am && !hw.am && hw.rx_hz == 146520000);
+	ptt(true);
+	CHECK(sm.view.state == RS_TX);
+	ptt(false);
+	// The air band's own AM is as it was: an FM channel there, AM, no kind
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	CHECK(sm.view.am && hw.am && sm.view.ch.kind == CODEPLUG_KIND_NONE);
+	// Not on a channel of the kind: no mode change for now
+	req(RREQ_ZONE_POS, 8);
+	run(50);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(30);
+	CHECK(sm.view.am && sm.view.ch.mode == RADIO_MODE_FM && !sm.view.temporary);
+}
+
+// Where this receiver can't demodulate AM (the broadcast band is the FM tuner's), an AM channel is parked: tuned,
+// silent, never keyed, and not played on the broadcast receiver either
+static void test_am_parked(void)
+{
+	start();
+	req(RREQ_ZONE_POS, 10);
+	run(50);
+	CHECK(!sm.view.am && !hw.am && !sm.view.bcast && !bc.on);
+	hw.sig_hz = 100000000;
+	hw.sig_rssi = -40;
+	run(150);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	ptt(true);
+	CHECK(sm.view.tx_deny == TXDENY_AM && hw.tx_calls == 0);
+	ptt(false);
+	// It can't be copied to the VFO
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) == VFO_COPY_NO_MODE);
+}
+
+static void test_am_vfo(void)
+{
+	start();
+	req(RREQ_VFO_SET, 145500000);
+	run(50);
+	CHECK(sm.view.vfo && !sm.view.am && sm.view.ch.mode == RADIO_MODE_FM);
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(50);
+	CHECK(sm.view.am && hw.am && hw.rx_hz == 145500000 && radio_am_kind(&sm.view.ch) && !sm.view.temporary);
+	ptt(true);
+	CHECK(sm.view.tx_deny == TXDENY_AM && hw.tx_calls == 0);
+	ptt(false);
+	// Kept with the VFO: saved, and back after a restart
+	settings_t st;
+	settings_read(&st);
+	CHECK(settings_vfo_mode(&st) == RADIO_REQ_MODE_AM && st.vfo_rx_hz == 145500000);
+	radio_sm_init(&sm, now);
+	run(100);
+	req(RREQ_VFO, 1);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.am && hw.am && radio_am_kind(&sm.view.ch));
+	// Steps stay in AM
+	req(RREQ_VFO_STEP, 1);
+	run(30);
+	CHECK(sm.view.am && hw.am && hw.rx_hz != 145500000);
+	// Into the broadcast band: no AM there, plain FM on the broadcast receiver, and FM after it
+	req(RREQ_VFO_SET, 99900000);
+	run(50);
+	CHECK(!sm.view.am && sm.view.bcast && !radio_am_kind(&sm.view.ch));
+	req(RREQ_VFO_SET, 145500000);
+	run(50);
+	CHECK(!sm.view.am && !sm.view.bcast && sm.view.ch.mode == RADIO_MODE_FM);
+	ptt(true);
+	CHECK(sm.view.state == RS_TX);	// FM again: transmit allowed
+	ptt(false);
+	// AM, then DMR: the mode takes the AM off; AM again from DMR
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(30);
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	run(50);
+	CHECK(!sm.view.am && sm.view.ch.mode == RADIO_MODE_DMR && !radio_am_kind(&sm.view.ch));
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(50);
+	CHECK(sm.view.am && sm.view.ch.mode == RADIO_MODE_FM && radio_am_kind(&sm.view.ch));
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(50);
+	CHECK(!sm.view.am && sm.view.ch.mode == RADIO_MODE_FM && !radio_am_kind(&sm.view.ch));
+	// In the air band AM either way; where the receiver can't, refused
+	req(RREQ_VFO_SET, 118100000);
+	run(50);
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(30);
+	CHECK(sm.view.am && hw.am);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	run(30);
+	req(RREQ_VFO_SET, 99900000);
+	run(50);
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(30);
+	CHECK(!sm.view.am && !radio_am_kind(&sm.view.ch) && sm.view.bcast);
+	// A channel set to AM copies into the VFO as AM
+	req(RREQ_VFO, 0);
+	run(50);
+	req(RREQ_ZONE_POS, 9);
+	run(50);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) == VFO_COPY_OK);
+	req(RREQ_VFO_COPY, 0);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.am && radio_am_kind(&sm.view.ch) && hw.rx_hz == 433000000);
+}
+#else
+
+// A board that receives AM in the air band only, or not at all: no AM mode is offered, an AM channel from another
+// radio's codeplug is parked and never keyed, and the VFO refuses AM
+static void test_am_gating(void)
+{
+	start();
+	CHECK(!radio_am_anywhere() && !radio_am_rx_at(145000000));
+	CHECK(strstr(build_modes_now(), "AM,") == NULL);	// nor does the editor offer them
+	CHECK(codeplug_kind_built(CODEPLUG_KIND_AM) == (AM_BOARD > 0));
+	req(RREQ_ZONE_POS, 8);
+	run(50);
+	CHECK(!sm.view.am && !hw.am);
+	hw.sig_hz = 145000000;
+	hw.sig_rssi = -40;
+	run(150);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	ptt(true);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.tx_calls == 0);
+	CHECK(sm.view.tx_deny == TXDENY_AM);	// set to AM: receive only, whether or not this radio has AM
+	ptt(false);
+	hw.sig_hz = 0;
+	req(RREQ_VFO_SET, 145500000);
+	run(50);
+	req(RREQ_MODE, RADIO_REQ_MODE_AM);
+	run(50);
+	CHECK(!sm.view.am && !radio_am_kind(&sm.view.ch));
+	// The air band's AM where the board has it
+	req(RREQ_VFO_SET, 118100000);
+	run(50);
+	CHECK(sm.view.am == (AM_BOARD > 0));
+}
+#endif
+
 int main(void)
 {
+#if AM_BOARD > 1
 	test_helpers();
 	test_am_channel();
 	test_tone_ignored();
@@ -679,6 +887,12 @@ int main(void)
 	test_bcast_dead();
 	test_bcast_step();
 	test_bcast_vfo();
+	test_am_channels();
+	test_am_parked();
+	test_am_vfo();
+#else
+	test_am_gating();
+#endif
 	printf("# radioListenBandsTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

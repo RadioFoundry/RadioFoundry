@@ -19,6 +19,7 @@
 #include "radio/radio.h"
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
+#include "radio/radio_am.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
@@ -1130,10 +1131,17 @@ static bool nxdn_save_now(uint16_t number, const channel_t *ch, const nxdn_conv_
 }
 #endif
 
-// A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now); false in
-// *ok's place when it isn't one: the caller writes it as a plain channel
+// A plain channel in an air mode written as a stored channel of its kind (the VFO, a mode changed for now), and a
+// channel set to AM with its tag (the channel editor's, the VFO's); false in *ok's place when it is neither: the
+// caller writes it as a plain channel
 static bool air_save_now(uint16_t number, const channel_t *ch, bool *ok)
 {
+#if CONFIG_AM_RX
+	if (radio_am_kind(ch)) {
+		*ok = radio_am_save(number, ch);
+		return true;
+	}
+#endif
 	if (ch->kind != CODEPLUG_KIND_NONE)
 		return false;
 #if CONFIG_P25
