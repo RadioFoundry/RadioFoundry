@@ -38,7 +38,7 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { t, tOr, num, LANG, ROOT, HOME, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
 import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
@@ -2541,7 +2541,7 @@ function stubPanel(fallback, onDone, what, stockPicked = () => {}) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// install: after the write
+// install or update: after the write
 
 function doneView() {
 	const box = h("div", { class: "flasher" });
@@ -2565,6 +2565,15 @@ function doneView() {
 				h("dt", {}, t("flash.now.firmware")), h("dd", {}, firmwareName(p)),
 				h("dt", {}, t("flash.now.codec")), h("dd", {}, codecText(p.codec))),
 			notice(good ? t("flash.done.ready") : t("flash.done.no_codec"), good ? "ok" : "bad"), ...(good ? [] : [helpLink(), reportLine()]));	// the DOM writes a null as "null"
+			if ((S.task === "install" || S.task === "update") && !S.sim) {
+				const features = new Set([...String(p.features || "").split(","), ...String(S.firmware?.manifest?.features || "").split(",")]);
+				if (features.has("SATELLITE_TLE"))
+					status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
+						h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
+							await dropSerial();
+							location.assign(`${HOME}tools/satellite/index.html`);
+						}, { primary: true }))));
+			}
 			const learnedNote = await storeLearned(link);
 			if (learnedNote) status.append(learnedNote);
 			// what the radio still needs from a person goes first, where the eye lands

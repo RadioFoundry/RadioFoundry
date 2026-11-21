@@ -59,6 +59,9 @@ static const char features[] =
 #if CONFIG_GPS
 	"GPS,"
 #endif
+#if CONFIG_SATELLITE_TLE
+	"SATELLITE_TLE,"
+#endif
 #if CONFIG_APRS
 	"APRS,"
 #endif

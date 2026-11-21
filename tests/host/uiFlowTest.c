@@ -15,6 +15,7 @@
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
 #include "ui/i18n.h"
+#include "ui/gfx.h"
 #include "config.h"
 
 // Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
@@ -57,6 +58,66 @@ typedef struct {
 #define TALK_BACK	"ok 7 3 down down down down down down down down down ok long:back quick 7 ctx 3 5 ok "	// on, and A 3 / B 5
 
 static const flow_t flows[] = {
+#if CONFIG_SATELLITE_TLE
+	{ "Satellite asks to load TLEs when the store is empty", "satempty", "ok 6 9",
+	  "screen=satellite-passes shows=No_TLEs:_load_from_site", 4, false },
+	{ "Satellite pass list selects tracking detail", "", "ok 6 9 ok",
+	  "screen=satellite shows=ISS shows=RX shows=TX shows=144.9988_MHz shows=435.0036_MHz hides=TLE_age hides=Path hides=Doppler hides=Predicting_passes hides=Calculating hides=Below_horizon", 13, false },
+	{ "Pass list shows the oldest TLE age", "", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=1d", 13, false },
+	{ "Pass list warns once for stale TLEs", "satagestale", "ok 6 9",
+	  "screen=satellite-passes shows=TLE_age shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 13, false },
+	{ "Pass list updates the age without a new inventory", "satagestale satagefresh ok 6 9", "satageadvance wait:1100",
+	  "screen=satellite-passes shows=14d toast=TLE_is_14+_days_old;_refresh_from_site", 0, false },
+	{ "SO-50 arm requires long OK while tracking", "", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "Arm capability, not catalog number, enables long OK", "satagestale", "ok 6 9 down down ok long:ok",
+	  "screen=satellite shows=SO-50 toast=SO-50_arm_requested", 16, false },
+	{ "A satellite without an arm capability does not arm", "", "ok 6 9 ok long:ok",
+	  "screen=satellite shows=ISS toast=none", 13, false },
+	{ "Satellite detail shows sky while pass prediction is pending", "satpathpending",
+	  "ok 6 9 ok",
+	  "screen=satellite hides=Below_horizon", 13, false },
+	{ "Satellite detail returns to pass list", "", "ok 6 9 ok back",
+	  "screen=satellite-passes sattracking=0 toast=Tracking_stopped shows=Next_passes hides=Predicting_passes", 14, false },
+	{ "Satellite tracking stops on Home", "ok 6 9 ok", "long:back",
+	  "screen=home sattracking=0 toast=Tracking_stopped", 1, false },
+	{ "Satellite tracking survives the TLE editor", "ok 6 9 ok", "ctx back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops on Home from the TLE editor", "ok 6 9 ok ctx", "long:back",
+	  "screen=home sattracking=0", 1, false },
+	{ "Satellite tracking survives quick settings", "ok 6 9 ok", "quick back",
+	  "screen=satellite sattracking=1", 2, false },
+	{ "Satellite tracking stops after it was already stopped", "ok 6 9 ok ok", "back",
+	  "screen=satellite-passes sattracking=0 toast=none", 1, false },
+	{ "Satellite stop failure is reported", "ok 6 9 ok satstopfail", "back",
+	  "screen=satellite-passes sattracking=1 toast=Tracking_not_stopped", 1, false },
+	{ "Satellite pass list shows prediction progress", "satpredict",
+	  "ok 6 9",
+	  "screen=satellite-passes shows=Predicting_passes shows=2/5", 13, false },
+	{ "Completed prediction focuses the first pass", "satpredict ok 6 9", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "OK opens the first pass after prediction", "satpredict ok 6 9 satdone", "ok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "OK opens the first pass before the next UI tick", "satpredict ok 6 9", "satdoneok",
+	  "screen=satellite shows=ISS", 1, false },
+	{ "Down selects the second pass after prediction", "satpredict ok 6 9 satdone", "down ok",
+	  "screen=satellite shows=NOAA_19", 2, false },
+	{ "Returning to passes preserves the selection", "satpredict ok 6 9 satdone down ok", "back",
+	  "screen=satellite-passes focus=NOAA_19", 1, false },
+	{ "A new prediction focuses the first pass", "ok 6 9 down satpredict wait:200", "satdone",
+	  "screen=satellite-passes focus=ISS", 0, false },
+	{ "Completed prediction with no passes stays on the list", "satpredict satnopasses ok 6 9", "satdone ok",
+	  "screen=satellite-passes shows=No_passes_in_next_24h", 1, false },
+	{ "Satellite pass list opens from Tools", "", "ok 6 9",
+	  "screen=satellite-passes shows=Next_passes shows=NOAA_19 shows=0:14", 13, false },
+	{ "Satellite TLE editor opens line 1", "", "ok 6 9 ok ctx",
+	  "screen=satellite-tle-text shows=1_ABC", 14, false },
+	{ "Satellite TLE editor cancels an empty line", "", "ok 6 9 ok ctx back",
+	  "screen=satellite shows=ISS", 15, false },
+	{ "Canceled satellite TLE entry reopens empty", "", "ok 6 9 ok ctx 2 back back ctx",
+	  "screen=satellite-tle-text hides=A_", 19, false },
+#endif
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },
@@ -939,6 +1000,9 @@ static const flow_t flows[] = {
 	{ "L position source", "ok 7 5 down", "ok", "pos_source=1 shows=GPS", 1, false },
 	{ "L position source wraps to auto", "ok 7 5 down ok ok ok", "ok", "pos_source=0 shows=Auto", 1, false },
 	{ "L position in DMR calls", "ok 7 5 down down down", "ok", "pos_dmrgps=1 focus=Send_in_DMR_calls", 1, false },
+#if CONFIG_SATELLITE_TLE
+	{ "L save GPS without a fix", "ok 7 5 down down down down", "ok", "toast=No_current_GPS_fix focus=Save_GPS_position", 1, false },
+#endif
 	{ "L fixed position page", "ok 7 5 down down", "ok", "screen=fixed-pos", 1, false },
 	{ "L no fixed position yet", "ok 7 5 down down", "ok", "shows=Not_set", 1, false },
 	{ "L fixed position found by latitude", "", "5 2 8 4 8 8 3 3", "shows=Fixed_position", 8, false },
@@ -1159,6 +1223,23 @@ static const flow_t flows[] = {
 #endif
 };
 
+#if CONFIG_SATELLITE_TLE
+static const flow_t satellite_detail_flows[] = {
+	{ "Satellite detail rounds AOS and LOS timers up", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87_in shows=0:02 shows=\x88_in shows=0:03", 13, false },
+	{ "Satellite detail shows LOS as calculating until known", "satlospending",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=Calculating", 13, false },
+};
+
+static const flow_t satellite_small_detail_flows[] = {
+	{ "128x64 satellite detail shows AOS and LOS instead of the path", "satfuturepass",
+	  "ok 6 9 ok",
+	  "screen=satellite shows=\x87 shows=0:02 shows=\x88 shows=0:03", 13, false },
+};
+#endif
+
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
 	LONG_MESSAGE_FLOWS
@@ -1218,6 +1299,8 @@ static const flow_t flows_k[] = {
 	{ "E emergency: hold again cancels", "long:emerg", "long:emerg", "toast=Emergency_canceled", 1, false },
 	{ "E top key short: power", "", "user3", "power=5", 1, false },
 	// Side keys (Settings > Keys rows 4-9, core/input/keyassign.h; set42 = side key 1 ... set47 = top key hold)
+	{ "K key rows retain their press and hold labels", "", "ok 7 8",
+	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
 	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
@@ -1840,8 +1923,7 @@ static void station_checks(void)
 }
 
 // A radio without a battery (CAP_NO_BATTERY), at every display class: no percentage in the status strip, no battery
-// warning, and no Battery page, Battery saver or Low battery warning in the lists (Tools keep their numbers, Battery
-// is the last one; in Settings the other rows move up). With a
+// warning, and no Battery saver or Low battery warning in the lists. With a
 // battery they are all there
 // A split DMR VFO on Home, at every display class: the whole TX frequency in the top row, or the whole offset among
 // the chips where there is no top row; never shortened (the step gives way first)
@@ -1867,19 +1949,13 @@ static void no_battery_checks(void)
 		{ "strip with a battery", "", "shows=84%" },
 		{ "strip", "nobattery", "hides=%" },
 		{ "no warning", "nobattery battery:14", "banner=none" },
-		{ "Tools with a battery", "ok 6 9", "screen=info shows=Battery" },
-		{ "Tools", "nobattery ok 6", "hides=Battery" },
 		{ "Tools keep their numbers", "nobattery ok 6 7", "screen=diag" },
 		// The board's hardware version warning: shown on the diagnostics page, and only when the board raises it
 		{ "Diagnostics: no version warning", "ok 6 7", "screen=diag hides=This_firmware" },
 		{ "Diagnostics: version warning", "variant ok 6 7", "screen=diag shows=This_firmware" },
 		{ "Tools: Roaming is 6", "nobattery ok 6 6", "screen=roaming" },
-		{ "Tools: no Battery to open", "nobattery ok 6 9", "toast=No_item" },
 		{ "Power settings with a battery", "ok 7 7", "shows=Battery_saver shows=Low_battery" },
 		{ "Power settings", "nobattery ok 7 7", "hides=Battery_saver hides=Low_battery shows=Auto_power_off" },
-		// a radio that measures its DC input: the last tool is Supply with the reading, nothing battery-only
-		{ "Tools: Supply", "supply:13800 ok 6 up", "shows=Supply shows=13.8_V hides=Battery" },
-		{ "Supply page", "supply:13800 ok 6 9", "screen=info shows=13.8_V hides=%" },
 		{ "Supply: no warning", "supply:9000 battery:14", "banner=none hides=%" },
 		{ "Supply: no battery settings", "supply:13800 ok 7 7", "hides=Battery_saver hides=Low_battery" },
 	};
@@ -2108,10 +2184,115 @@ static int check_name_is_id(void)
 	return bad;
 }
 
+#if CONFIG_SATELLITE_TLE
+static int check_satellite_countdowns(void)
+{
+	static const char *const geoms[] = { "128x64", "160x120i5", "160x128", "240x320", "240x320i10x5" };
+	char err[160] = "";
+	for (unsigned i = 0; i < sizeof geoms / sizeof geoms[0]; i++) {
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		int up_x, up_y, up_w, up_h, now_x, now_y, now_w, now_h;
+		int down_x, down_y, down_w, down_h, los_x, los_y, los_w, los_h;
+		const char *down = gfx_bpp() == 1 ? GLYPH_DOWN : GLYPH_DOWN " in";
+		if (!sim_run("ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(GLYPH_UP, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("Now", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("1:32", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    !sim_text_has_color(GLYPH_UP, ui_col.dim) || !sim_text_has_color("Now", ui_col.fg)) {
+			printf("FAIL satellite countdown alignment/colors [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() == 1) {
+			int top, rows;
+			const uint8_t *glyph = font_glyph(ui_layout.small, 'N', &top, &rows);
+			bool thickened = false, checked = false;
+			for (int r = 0; r < rows; r++) {
+				for (int col = 0; col + 1 < ui_layout.small->w; col++) {
+					if ((glyph[r] & (0x80u >> col)) && !(glyph[r] & (0x80u >> (col + 1)))) {
+						checked = true;
+						if (gfx_get_pixel(now_x + col + 1, now_y + top + r) != 0)
+							thickened = true;
+					}
+				}
+			}
+			if (!checked || thickened) {
+				printf("FAIL satellite visible-now normal weight [%s]\n", geoms[i]);
+				return 1;
+			}
+		} else if (sim_text_has_color(GLYPH_UP, ui_col.rx)) {
+			printf("FAIL satellite rise arrow is green [%s]\n", geoms[i]);
+			return 1;
+		}
+		sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+		const char *future_up = gfx_bpp() == 1 ? GLYPH_UP : GLYPH_UP " in";
+		if (!sim_run("satfuturepass ok 6 9 ok", err, sizeof err) ||
+		    !sim_text_bounds(future_up, &up_x, &up_y, &up_w, &up_h) ||
+		    !sim_text_bounds("0:02", &now_x, &now_y, &now_w, &now_h) ||
+		    !sim_text_bounds(down, &down_x, &down_y, &down_w, &down_h) ||
+		    !sim_text_bounds("0:03", &los_x, &los_y, &los_w, &los_h) ||
+		    up_x != 0 || up_y != now_y || now_y != down_y || down_y != los_y ||
+		    now_x <= up_x + up_w || down_x <= now_x + now_w ||
+		    los_x <= down_x + down_w || los_x + los_w != gfx_width() ||
+		    (gfx_bpp() != 1 && sim_text_has_color("0:02", ui_col.rx))) {
+			printf("FAIL satellite future countdowns [%s]: %s\n", geoms[i], err);
+			return 1;
+		}
+		if (gfx_bpp() != 1) {
+			sim_reset(sim_geom_find(geoms[i]), SIM_MAP_K);
+			if (!sim_run("satlospending ok 6 9 ok", err, sizeof err) ||
+			    !sim_text_bounds("Calculating", &los_x, &los_y, &los_w, &los_h) ||
+			    los_x + los_w != gfx_width()) {
+				printf("FAIL satellite pending LOS [%s]: %s\n", geoms[i], err);
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+static int check_satellite_path_endpoint_colors(void)
+{
+	char err[160];
+	const sim_geom_t *geom = sim_geom_find("240x320");
+	sim_reset(geom, SIM_MAP_K);
+	if (!sim_run("ok 6 9 ok", err, sizeof err)) {
+		printf("FAIL satellite path endpoint colors: %s\n", err);
+		return 1;
+	}
+	int center_x = gfx_width() / 2;
+	bool green_horizon = false, red_horizon = false, green_sky = false;
+	for (int y = 0; y < gfx_height(); y++) {
+		color_t pixel = gfx_get_pixel(center_x, y);
+		green_horizon |= y > gfx_height() * 3 / 4 && pixel == ui_col.rx;
+		red_horizon |= y < gfx_height() * 3 / 4 && pixel == ui_col.tx;
+		if (y > gfx_height() / 2) {
+			for (int x = center_x + 5; x < gfx_width() - 10; x++)
+				green_sky |= gfx_get_pixel(x, y) == ui_col.rx;
+		}
+	}
+	if (!green_horizon || !red_horizon || !green_sky) {
+		printf("FAIL satellite path colors: horizon start=%d end=%d sky=%d\n",
+		       green_horizon, red_horizon, green_sky);
+		return 1;
+	}
+	return 0;
+}
+#endif
+
 int main(void)
 {
 	if (check_name_is_id() != 0)
 		return 1;
+#if CONFIG_SATELLITE_TLE
+	if (check_satellite_countdowns() != 0)
+		return 1;
+	if (check_satellite_path_endpoint_colors() != 0)
+		return 1;
+#endif
 	static const struct { sim_map_t map; const char *name, *geom; } runs[] = {
 		{ SIM_MAP_K, "K DM-1701", "160x120i5" },
 		{ SIM_MAP_M, "M GD-77", "128x64" },
@@ -2123,6 +2304,14 @@ int main(void)
 		for (size_t i = 0; i < sizeof flows / sizeof flows[0]; i++)
 			run_flow(&flows[i], g, runs[r].map, runs[r].name);
 	}
+#if CONFIG_SATELLITE_TLE
+	const sim_geom_t *satellite_geom = sim_geom_find("240x320");
+	for (size_t i = 0; i < sizeof satellite_detail_flows / sizeof satellite_detail_flows[0]; i++)
+		run_flow(&satellite_detail_flows[i], satellite_geom, SIM_MAP_K, "K 240x320");
+	const sim_geom_t *satellite_small_geom = sim_geom_find("128x64");
+	for (size_t i = 0; i < sizeof satellite_small_detail_flows / sizeof satellite_small_detail_flows[0]; i++)
+		run_flow(&satellite_small_detail_flows[i], satellite_small_geom, SIM_MAP_M, "M GD-77 satellite");
+#endif
 	for (size_t i = 0; i < sizeof flows_mono / sizeof flows_mono[0]; i++)
 		run_flow(&flows_mono[i], sim_geom_find("128x64"), SIM_MAP_M, "M GD-77");
 	for (size_t i = 0; i < sizeof flows_k / sizeof flows_k[0]; i++)

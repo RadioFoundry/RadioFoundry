@@ -871,6 +871,8 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
+	case DL_CMD_SATELLITE:
+		return debuglink_cmd_satellite(req, len, out, cap);
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);
