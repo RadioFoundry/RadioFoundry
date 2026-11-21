@@ -1220,13 +1220,11 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
-APRS AFSK transmit (measured on the SDR bench, 2026-10-16, a UHF test frequency, 25 kHz, lowest power, a canned frame through
-`hal_afsk_t.tx_start`): a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase
-residual. That was with the microphone on the FM path (0x2E = 1), where the microphone rode on the tones (#828). The
-tones now go out with the microphone on the DMR path (0x2E = 0) and the codec's microphone muted, and the FD6818's
-audio input then takes them much hotter, with mark about 4 dB under space: PCM 435 gives 3.1 kHz peak, 725 4.7 kHz,
-1450 and up are limited near 5.2 kHz peak. Level 50 is PCM 450, about 3.2 kHz peak with 1.8 / 2.9 kHz mark / space
-deviation. Receive decodes off air. While AFSK receive runs, the
+APRS AFSK transmit (measured on the SDR bench, a UHF test frequency, 25 kHz, lowest power): the tones go out with
+the microphone on the DMR path (0x2E = 0) and the codec's microphone muted. On the FM path (0x2E = 1) the microphone
+rode on the tones (#828). The FD6818's audio input takes the tones hot, with mark about 4 dB under space: PCM 435
+gives 3.1 kHz peak, 725 gives 4.7 kHz, and 1450 and up limit near 5.2 kHz peak. Level 50 is PCM 450, about 3.2 kHz
+peak with 1.8 / 2.9 kHz mark / space deviation. Receive decodes off air. While AFSK receive runs, the
 speaker plays FM through the HR_C7000 instead of straight from the FD6818. A flat transmitter at a strong level shows
 320-400 Hz 1-10 dB under the tones: 50-80 % decode with one demodulator path, 12 of 12 with both. Both paths take about
 6 % of the CPU at 8 kHz.
