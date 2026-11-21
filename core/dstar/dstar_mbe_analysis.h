@@ -48,6 +48,9 @@ typedef struct {
 	uint32_t p8;				// the last frame's refined pitch, eighth samples (for tests)
 	uint8_t full_depth;			// 1: no DVSI match (dstar_mbe_analysis.c): the magnitudes as measured, for
 						// tests of the measurement. dstar_mbe_ana_init clears it
+	uint8_t flat;				// 1: the DVSI match without DVSI's band balance (dvsi_eq_q12), for tests of
+						// the codec as a transparent coder, as the research's MBE_DVSI_EQ=0 build.
+						// dstar_mbe_ana_init clears it
 } dstar_mbe_ana_t;
 
 typedef struct {

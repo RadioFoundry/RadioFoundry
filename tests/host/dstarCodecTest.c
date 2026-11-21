@@ -1361,9 +1361,12 @@ static void test_frame_whitening(void)
 	printf("  whitening: all 4096 seeds give the spec's 24-step sequence, 24th on W1's parity bit\n");
 }
 
-// The DVSI match (dstar_mbe_analysis.c), on by default: a harmonic signal's log magnitudes spread 0.6 times as much
-// about their mean as measured, at the same power; white noise (all unvoiced) is sent at b0 34; a 60 Hz buzz is not
-// coded above b0 119
+// The DVSI match (dstar_mbe_analysis.c), on by default: a harmonic signal's log magnitudes come out as 0.6 times their
+// spread about the mean as measured, plus DVSI's balance for the harmonic's 500 Hz band (on since 21 Nov: -5.2 +0.3
+// +1.8 +2.1 +1.4 +1.6 -1.7 -4.9 dB, the 9700's frames against ours on the same audio), plus one shift for the whole
+// frame, at the same power; white noise (all unvoiced) is sent at b0 34; a 60 Hz buzz is not coded above b0 119.
+// Before the balance this checked the spread ratio alone (0.6); with it the ratio is no longer 0.6 (0.673 on this
+// signal), so the check is the whole model's residual, as the research codec's test_dvsi has it
 static void dvsi_params(int full_depth, double f0, int noise, dstar_ambe_params_t *last)
 {
 	dstar_mbe_ana_init(&ana);
@@ -1385,25 +1388,37 @@ static void dvsi_params(int full_depth, double f0, int noise, dstar_ambe_params_
 
 static void test_dvsi(void)
 {
+	static const double eq_db[8] = { -5.2, 0.3, 1.8, 2.1, 1.4, 1.6, -1.7, -4.9 };
 	dstar_ambe_params_t a, b;
 	dvsi_params(1, 125, 0, &a);
 	dvsi_params(0, 125, 0, &b);
-	double ma = 0, mb = 0, sa = 0, sb = 0, pa = 0, pb = 0;
-	for (int l = 1; l <= a.L; ++l) {
+	double ma = 0, pa = 0, pb = 0, r[DSTAR_AMBE_MAX_L + 1], rm = 0, rs = 0, lo = 0, hi = 0;
+	int nlo = 0, nhi = 0;
+	for (int l = 1; l <= a.L; ++l)
 		ma += a.log2_amp[l] / 4096.0 / a.L;
-		mb += b.log2_amp[l] / 4096.0 / b.L;
-	}
 	for (int l = 1; l <= a.L; ++l) {
 		double x = a.log2_amp[l] / 4096.0, y = b.log2_amp[l] / 4096.0;
-		sa += (x - ma) * (x - ma);
-		sb += (y - mb) * (y - mb);
+		int k = (int)((l * a.f0_q24) >> 20);
+		k = k > 7 ? 7 : k;
+		r[l] = y - (0.6 * (x - ma) + eq_db[k] / 6.0206);
+		rm += r[l] / a.L;
 		pa += pow(2, 2 * x);
 		pb += pow(2, 2 * y);
+		// the balance's own effect, by band: matched minus 0.6 x measured, below 500 Hz and at 1-3 kHz
+		if (k == 0)
+			lo += 6.0206 * (y - 0.6 * (x - ma)), nlo++;
+		else if (k >= 2 && k <= 5)
+			hi += 6.0206 * (y - 0.6 * (x - ma)), nhi++;
 	}
-	double ratio = sqrt(sb / sa), dp = 10 * log10(pb / pa);
-	CHECK(a.L == b.L && fabs(ratio - 0.6) < 0.02 && fabs(dp) < 0.3,
-	      "DVSI shape: L %d/%d, spread ratio %.3f, power %+.2f dB", a.L, b.L, ratio, dp);
-	printf("  DVSI match: shape spread ratio %.3f, power %+.2f dB\n", ratio, dp);
+	for (int l = 1; l <= a.L; ++l)
+		rs += (r[l] - rm) * (r[l] - rm) / a.L;
+	double res = sqrt(rs), dp = 10 * log10(pb / pa), tilt = lo / nlo - hi / nhi;
+	CHECK(a.L == b.L && res < 0.01 && fabs(dp) < 0.3, "DVSI match: L %d/%d, residual %.4f log2, power %+.2f dB", a.L,
+	      b.L, res, dp);
+	// at least the 5 dB cut below 500 Hz against the speech band the measurement asked for
+	CHECK(tilt < -6.0, "DVSI balance: below 500 Hz only %+.2f dB against 1-3 kHz", tilt);
+	printf("  DVSI match: 0.6 x measured + band balance within %.4f log2, power %+.2f dB; below 500 Hz %+.1f dB "
+	       "against 1-3 kHz\n", res, dp, tilt);
 	dvsi_params(0, 0, 1, &b);
 	CHECK(b.f0_q24 == dstar_mbe_f0_q24[34], "DVSI: white noise at f0 %u, not b0 34's", b.f0_q24);
 	dvsi_params(0, 60, 0, &b);

@@ -55,8 +55,11 @@ static uint8_t *encode_all(const int16_t *in, long n, long *count)
 	dstar_codec_start(&codec, true);
 	// The codec as a coder: the leveler (dstar_mbe_level.c) changes the level on purpose, which the level checks here
 	// would read as an error, and the research's figures these margins sit over were measured without it.
-	// dstarCodecTest checks the leveler itself
+	// dstarCodecTest checks the leveler itself. Likewise DVSI's band balance (21 Nov, dstar_mbe_analysis.c), a deliberate
+	// colouring for DVSI decoders that ours does not undo: with it these figures move far past their limits (vowels'
+	// harmonic distance 6-8 dB, flite MCD 40.7 dB over 22.5), by design; dstarCodecTest checks the balance
 	codec.u.enc.level.off = 1;
+	codec.u.enc.ana.flat = 1;
 	for (long f = 0; f < frames; f++) {
 		int16_t pcm[160];
 		for (int i = 0; i < 160; i++) {
