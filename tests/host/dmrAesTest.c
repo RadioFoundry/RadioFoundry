@@ -41,7 +41,7 @@ static void test_fips197(void)
 	CHECK(memcmp(ct, want, 16) == 0, "FIPS-197 C.3");
 }
 
-// The MI words a reference decoder printed for the PI header MI CD6554E0 (bench 2026-11-18)
+// The MI words a reference decoder printed for the PI header MI CD6554E0, measured on air
 static void test_mi(void)
 {
 	static const uint32_t want[] = { 0xCD6554E0, 0x7B451C0A, 0x899C283D, 0x2190A622, 0x82D6E6E1, 0x170A8391,
@@ -60,10 +60,10 @@ static void test_mi(void)
 	CHECK(memcmp(iv, ivw, 16) == 0, "IV of superframe 2");
 }
 
-// A stock radio's AES-256 call (key ID 1, throwaway test key, MI CD6554E0), the talker silent: 28 voice bursts as
-// received after the PI header (A of superframe 0 first), from the burst capture. Every frame from burst C on decrypts
-// to a near-silence codeword (its first 5 bits set; about 1 in 32 by chance); the first two bursts are the stock
-// radio's key-up frames. FNV1A is over all 84 decrypted frames (7 bytes each, the 49 bits right-aligned, LSB first),
+// A captured AES-256 test call of our own (key ID 1, a throwaway test key we set, MI CD6554E0), the talker silent: 28
+// voice bursts as received after the PI header (A of superframe 0 first), as other radios send it. Every frame from
+// burst C on decrypts to a near-silence codeword (its first 5 bits set; about 1 in 32 by chance); the first two bursts
+// are the sender's key-up frames. FNV1A is over all 84 decrypted frames (7 bytes each, the 49 bits right-aligned, LSB first),
 // computed by an independent implementation whose output matched a reference decoder's bit for bit
 static const char *BCAP1[] = {
 	"9d1c20fffa9a8ab79ef8a066ac9a92cff7fc7fab6034708c9c9a16",
@@ -172,6 +172,17 @@ static void test_capture(void)
 	CHECK(dmrAesSetKey(&st, 0, 0, 0, NULL) && !dmrAesHasKeys(&st), "clear key");
 }
 
+// An over in progress on a sequence, for the hook's TX side: MI mi, every position up to DMR_AES_SF_MAX reserved
+static dmrAesSeq_t tx_seq;
+
+static void tx_over(dmrAesState_t *st, uint32_t mi)
+{
+	dmrAesSeqInit(&tx_seq);
+	tx_seq.tx_mi = mi;
+	tx_seq.left = DMR_AES_SF_MAX;
+	st->seq = &tx_seq;
+}
+
 // TX then RX: the keystream round-trips through the FEC encode
 static void test_roundtrip(void)
 {
@@ -181,6 +192,7 @@ static void test_roundtrip(void)
 	hex(KEY_A, key, 32);
 	dmrAesStateInit(&st);
 	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 1, key);
+	tx_over(&st, 0x12345678);
 	for (uint8_t i = 0; i < 6; i++) {
 		uint8_t clear[27], v[27];
 		struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 1, .mi = 0x12345678, .superframe = 3,
@@ -225,6 +237,7 @@ static void test_tx_late_entry(void)
 	for (unsigned c = 0; c < sizeof(captures) / sizeof(captures[0]); c++) {
 		struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 1, .mi = captures[c].mi,
 					     .superframe = captures[c].sf };
+		tx_over(&st, captures[c].mi);
 		for (uint8_t i = 0; i < 6; i++) {
 			pos.voice_index = i;
 			for (unsigned pattern = 0; pattern < 2; pattern++) {
@@ -244,9 +257,9 @@ static void test_tx_late_entry(void)
 	}
 }
 
-// Our TX against the stock radio's: the captured call decrypted, then encrypted again by our TX path with the same key
-// and MI, reproduces the capture except for three signaling bits in its first burst.
-static void test_tx_matches_stock(void)
+// Our TX against the captured call: decrypted, then encrypted again by our TX path with the same key and MI, it
+// reproduces the capture except for three signaling bits in its first burst (spec 5.1, open points)
+static void test_tx_matches_capture(void)
 {
 	dmrAesState_t st;
 	uint8_t key[32];
@@ -255,6 +268,7 @@ static void test_tx_matches_stock(void)
 	hex(KEY_A, key, 32);
 	dmrAesStateInit(&st);
 	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 1, key);
+	tx_over(&st, 0xCD6554E0);
 	for (unsigned n = 0; n < n_bursts; n++) {
 		uint8_t air[27], v[27];
 		struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 1, .mi = 0xCD6554E0,
@@ -272,15 +286,14 @@ static void test_tx_matches_stock(void)
 		}
 		same += memcmp(v, air, 27) == 0;
 	}
-	CHECK(same == n_bursts, "%u of %u bursts as the stock radio sent them", same, n_bursts);
+	CHECK(same == n_bursts, "%u of %u bursts as captured", same, n_bursts);
 }
 
-// The TX key and the MIs it makes
-static void test_tx_key_and_mi(void)
+// The TX key
+static void test_tx_key(void)
 {
 	dmrAesState_t st;
 	uint8_t key[32], alg = 0, key_id = 0;
-	static uint32_t seen[512];
 
 	hex(KEY_A, key, 32);
 	dmrAesStateInit(&st);
@@ -289,18 +302,196 @@ static void test_tx_key_and_mi(void)
 	CHECK(!dmrAesSetTx(&st, 1), "bad slot");
 	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 7, key);
 	CHECK(dmrAesSetTx(&st, 0) && dmrAesTxKey(&st, &alg, &key_id) && alg == 0x25 && key_id == 7, "TX key");
-	for (unsigned i = 0; i < 512; i++) {
-		seen[i] = dmrAesNewMi(1000, &st);	// the same time every call: the count still makes them differ
-		CHECK(seen[i] != 0, "MI 0");
-		for (unsigned j = 0; j < i; j++)
-			if (seen[j] == seen[i]) {
-				CHECK(0, "MI %u repeats %u", i, j);
-				break;
-			}
-	}
 	dmrAesSetKey(&st, 0, 0, 0, NULL);
 	CHECK(!dmrAesTxKey(&st, &alg, &key_id), "TX key cleared with its slot");
 	CHECK(dmrAesSetTx(&st, -1), "TX clear");
+}
+
+// One LFSR step, written out again: shift left, the new LSB the parity of state & 0x80200003
+static uint32_t lfsr_step(uint32_t s)
+{
+	uint32_t t = s & 0x80200003u;
+
+	t ^= t >> 16;
+	t ^= t >> 8;
+	t ^= t >> 4;
+	t ^= t >> 2;
+	t ^= t >> 1;
+	return (s << 1) | (t & 1u);
+}
+
+// 32x32 matrices over GF(2), by columns: m[j] = M e_j
+static uint32_t mat_vec(const uint32_t m[32], uint32_t v)
+{
+	uint32_t r = 0;
+
+	for (int j = 0; j < 32; j++)
+		if (v >> j & 1u)
+			r ^= m[j];
+	return r;
+}
+
+static void mat_mul(const uint32_t a[32], const uint32_t b[32], uint32_t out[32])
+{
+	uint32_t r[32];
+
+	for (int j = 0; j < 32; j++)
+		r[j] = mat_vec(a, b[j]);
+	memcpy(out, r, sizeof(r));
+}
+
+static bool mat_pow_is_identity(const uint32_t m[32], uint64_t e)
+{
+	uint32_t r[32], b[32];
+
+	for (int j = 0; j < 32; j++)
+		r[j] = 1u << j;
+	memcpy(b, m, sizeof(b));
+	for (; e != 0; e >>= 1) {
+		if (e & 1u)
+			mat_mul(r, b, r);
+		mat_mul(b, b, b);
+	}
+	for (int j = 0; j < 32; j++)
+		if (r[j] != 1u << j)
+			return false;
+	return true;
+}
+
+// The sequence: its period is 2^32 - 1 (a nonzero word comes back only after every other), words and IVs agree,
+// the seed is per radio, and positions are used only inside a saved reservation
+static void test_mi_sequence(void)
+{
+	// The LFSR's period, from its step matrix: M^(2^32-1) = I and no M^((2^32-1)/p) is, p each prime factor. A word
+	// is 32 steps, and gcd(32, 2^32-1) = 1, so the words have the same period
+	uint32_t m[32];
+	const uint64_t n = 0xFFFFFFFFull;
+	static const uint32_t primes[] = { 3, 5, 17, 257, 65537 };
+
+	for (int j = 0; j < 32; j++)
+		m[j] = lfsr_step(1u << j);
+	CHECK(mat_pow_is_identity(m, n), "period divides 2^32-1");
+	for (unsigned k = 0; k < sizeof(primes) / sizeof(primes[0]); k++)
+		CHECK(!mat_pow_is_identity(m, n / primes[k]), "period not (2^32-1)/%u", (unsigned)primes[k]);
+	uint32_t s = 0xCD6554E0;
+
+	for (int k = 0; k < 32; k++)
+		s = lfsr_step(s);
+	CHECK(s == dmrAesMiNext(0xCD6554E0), "a word is 32 steps");
+
+	// Superframe sf's IV starts at word sf
+	uint8_t iv[16];
+
+	dmrAesIv(0x12345678, 37, iv);
+	uint32_t w = ((uint32_t)iv[0] << 24) | ((uint32_t)iv[1] << 16) | ((uint32_t)iv[2] << 8) | iv[3];
+	CHECK(w == dmrAesSeqAdvance(0x12345678, 37), "IV word 0");
+
+	// Two radios, the same key, the same uptime at their first key-up: different starts (UID and own ID)
+	uint8_t key[32];
+	const uint32_t uid_a[3] = { 0x11111111, 0x22222222, 0x33333333 }, uid_b[3] = { 0x11111111, 0x22222222, 0x33333334 };
+
+	hex(KEY_A, key, 32);
+	uint32_t sa = dmrAesSeqSeed(key, uid_a, 2620001, 23456), sb = dmrAesSeqSeed(key, uid_b, 2620001, 23456);
+	uint32_t sc = dmrAesSeqSeed(key, uid_a, 2620002, 23456), sd = dmrAesSeqSeed(key, uid_a, 2620001, 23457);
+
+	CHECK(sa != 0 && sa != sb && sa != sc && sa != sd, "seeds %08X %08X %08X %08X", (unsigned)sa, (unsigned)sb,
+	      (unsigned)sc, (unsigned)sd);
+	CHECK(sa == dmrAesSeqSeed(key, uid_a, 2620001, 23456), "seed is a function of its inputs");
+
+	// No position, no reservation: no MI. A reservation asked for and saved: the overs walk the sequence
+	dmrAesState_t st;
+	dmrAesSeq_t q;
+
+	dmrAesStateInit(&st);
+	dmrAesSeqInit(&q);
+	st.seq = &q;
+	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 1, key);
+	dmrAesSetTx(&st, 0);
+	CHECK(dmrAesNewMi(1000, &st) == 0, "no position");
+	CHECK(dmrAesSeqReserve(&q) == 0, "nothing to reserve from");
+	q.next = sa;
+	CHECK(dmrAesNewMi(1000, &st) == 0, "no reservation");
+	dmrAesSeqSettle(&q);
+	uint32_t r = dmrAesSeqReserve(&q);
+
+	CHECK(r == dmrAesSeqAdvance(sa, DMR_AES_SEQ_RESERVE) && dmrAesSeqReserve(&q) == 0, "reservation");
+	CHECK(dmrAesNewMi(1000, &st) == 0, "reservation not saved yet");
+	dmrAesSeqSettle(&q);
+	dmrAesSeqReserved(&q, r + 1);
+	CHECK(q.left == 0, "another value saved: not this reservation");
+	dmrAesSeqReserved(&q, r);
+	CHECK(q.left == DMR_AES_SEQ_RESERVE, "reserved");
+
+	// Over 1: three superframes, the third cut short after burst B
+	uint32_t mi1 = dmrAesNewMi(1000, &st);
+	uint8_t v[27] = { 0 };
+	struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 1, .mi = mi1 };
+
+	CHECK(mi1 == sa, "the first over starts at the seed");
+	for (unsigned b = 0; b < 14; b++) {
+		pos.superframe = b / 6;
+		pos.voice_index = (uint8_t)(b % 6);
+		CHECK(dmrAesCallHook(v, &pos, true, &st), "TX burst %u", b);
+	}
+	// Another MI, or a superframe past the bound: refused, never encrypted under it
+	pos.mi = mi1 + 1;
+	CHECK(!dmrAesCallHook(v, &pos, true, &st), "TX under another MI");
+	pos.mi = mi1;
+	pos.superframe = DMR_AES_SF_MAX;
+	CHECK(!dmrAesCallHook(v, &pos, true, &st), "TX past DMR_AES_SF_MAX");
+	CHECK(!dmrAesCallHook(v, &pos, false, &st), "RX past DMR_AES_SF_MAX");
+	uint32_t mi2 = dmrAesNewMi(2000, &st);
+
+	CHECK(mi2 == dmrAesSeqAdvance(mi1, 3) && q.left == DMR_AES_SEQ_RESERVE - 3, "over 2 follows over 1");
+	// Over 2's first IV is none over 1 used
+	uint8_t iv2[16];
+
+	dmrAesIv(mi2, 0, iv2);
+	for (uint32_t sf = 0; sf < 3; sf++) {
+		dmrAesIv(mi1, sf, iv);
+		CHECK(memcmp(iv, iv2, 16) != 0, "over 2 reuses superframe %u's IV", (unsigned)sf);
+	}
+	// Over 2 is not sent (tx_begin refused): nothing used, over 3 has the same MI
+	CHECK(dmrAesNewMi(3000, &st) == mi2, "an over never sent uses nothing");
+
+	// A position past the reservation is refused mid-over; what was sent up to there counts
+	q.left = 2;
+	pos.mi = mi2;
+	pos.superframe = 1;
+	pos.voice_index = 0;
+	CHECK(dmrAesCallHook(v, &pos, true, &st), "TX inside the reservation");
+	pos.superframe = 2;
+	CHECK(!dmrAesCallHook(v, &pos, true, &st), "TX past the reservation");
+	CHECK(dmrAesNewMi(4000, &st) == 0 && q.left == 0 && q.next == dmrAesSeqAdvance(mi2, 2), "reservation used up");
+
+	// A renewal made during an over: the positions that over used come off it
+	dmrAesSeqInit(&q);
+	q.next = sa;
+	q.left = DMR_AES_SEQ_LOW - 1u;
+	r = dmrAesSeqReserve(&q);
+	CHECK(r == dmrAesSeqAdvance(sa, DMR_AES_SEQ_RESERVE), "renewal");
+	mi1 = dmrAesNewMi(5000, &st);
+	pos.mi = mi1;
+	pos.superframe = 9;
+	CHECK(dmrAesCallHook(v, &pos, true, &st), "TX while saving");
+	dmrAesSeqSettle(&q);
+	dmrAesSeqReserved(&q, r);
+	CHECK(q.next == dmrAesSeqAdvance(sa, 10) && q.left == DMR_AES_SEQ_RESERVE - 10u, "renewal less what was used");
+
+	// A restart: on from the saved reservation, nothing usable until the next one is saved
+	dmrAesSeqStart(&q, r);
+	CHECK(q.next == r && q.left == 0 && dmrAesNewMi(6000, &st) == 0, "restart");
+	CHECK(dmrAesSeqReserve(&q) == dmrAesSeqAdvance(r, DMR_AES_SEQ_RESERVE), "restart reserves past the saved one");
+
+	// The zero state never leaves zero: never a seed
+	CHECK(dmrAesMiNext(0) == 0, "zero is fixed");
+
+	// Clearing the keys wipes them and keeps the sequence
+	dmrAesClearKeys(&st);
+	CHECK(st.seq == &q && !dmrAesHasKeys(&st) && st.tx_slot == -1 && st.aes_slot == -1, "keys cleared");
+	static const uint8_t zero[DMR_AES_KEY_BYTES];
+
+	CHECK(memcmp(st.keys[0].key, zero, sizeof(zero)) == 0, "key wiped");
 }
 
 int main(void)
@@ -309,9 +500,10 @@ int main(void)
 	test_mi();
 	test_capture();
 	test_roundtrip();
-	test_tx_matches_stock();
+	test_tx_matches_capture();
 	test_tx_late_entry();
-	test_tx_key_and_mi();
+	test_tx_key();
+	test_mi_sequence();
 	if (failures)
 		printf("dmrAesTest: %d FAILED\n", failures);
 	else

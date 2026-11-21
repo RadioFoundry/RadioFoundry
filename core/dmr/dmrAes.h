@@ -48,6 +48,46 @@ void dmrAesBurstKeystream(const aes256_ctx_t *ctx, const uint8_t iv[16], uint8_t
 // (correctErrors), TX bursts are taken as encoded
 void dmrAesApplyBurst(const uint8_t ks[DMR_AES_BURST_KS_BYTES], uint8_t ambe27[27], bool correctErrors);
 
+// --- The MI sequence (docs/spec/dmr-voice.md 5.1) ---
+// OFB repeats its keystream whenever an IV comes back, and superframe s of an over uses words s..s+3, so overs with
+// different MIs still share keystream when their word ranges meet. A radio's overs therefore walk one sequence: the
+// next over's MI is the word after the last superframe sent, one sequence for every key. Positions are used only
+// inside a reservation saved before it is needed (dmrAesSeqReserve), so a restart starts past every position sent.
+#define DMR_AES_SEQ_RESERVE		16384u	// superframes a saved reservation covers (98 minutes of talk)
+#define DMR_AES_SEQ_LOW			(DMR_AES_SEQ_RESERVE / 2u)	// renew below this many left
+// Superframes into a call the hook handles: an over (or a heard call) longer than this is not encrypted or played.
+// Bounds the LFSR steps a bad position can ask for (32 a superframe)
+#define DMR_AES_SF_MAX			8192u
+
+typedef struct {
+	uint32_t next;		// the MI of the next over, 0 = no position yet (never seeded, or not loaded)
+	uint32_t left;		// superframes from next that are inside the saved reservation (0: TX refused)
+	uint32_t tx_mi;		// the over in progress (dmrAesNewMi), 0 = none
+	uint32_t tx_used;	// superframes of it the hook encrypted, a partly sent one included
+	uint32_t pending;	// a reservation the caller is saving (dmrAesSeqReserve), 0 = none
+	uint32_t pending_used;	// superframes used since it was made
+} dmrAesSeq_t;
+
+void dmrAesSeqInit(dmrAesSeq_t *q);
+// After a restart: the reservation saved last (0 = none). The sequence goes on from there once a new one is saved
+void dmrAesSeqStart(dmrAesSeq_t *q, uint32_t saved);
+// The word n steps of the sequence after w (32 LFSR steps each)
+uint32_t dmrAesSeqAdvance(uint32_t w, uint32_t n);
+// Fold a finished over into the position. Called between overs (and by dmrAesNewMi)
+void dmrAesSeqSettle(dmrAesSeq_t *q);
+// The first position of a radio that has none: the first 4 bytes of CBC-MAC under key over (uid, own ID, uptime),
+// so radios sharing a key start at unrelated places. Never 0
+uint32_t dmrAesSeqSeed(const uint8_t key[DMR_AES_KEY_BYTES], const uint32_t uid[3], uint32_t own_id, uint32_t now_ms);
+// The reservation to save now, 0 = none needed (enough left, an over in progress, or no position): the word
+// DMR_AES_SEQ_RESERVE past next. Once it is durably saved, dmrAesSeqReserved makes it usable
+uint32_t dmrAesSeqReserve(dmrAesSeq_t *q);
+void dmrAesSeqReserved(dmrAesSeq_t *q, uint32_t saved);
+// The saving failed or was abandoned: asked again by the next dmrAesSeqReserve
+void dmrAesSeqDropPending(dmrAesSeq_t *q);
+
+// Overwrite n bytes through a volatile pointer: a wipe the compiler can't drop as a dead store
+void dmrAesWipe(void *p, unsigned n);
+
 // --- Keys and the call stack's hook ---
 typedef struct {
 	uint8_t alg;		// DMR_AES_ALG_AES256, 0 = an empty slot
@@ -58,9 +98,8 @@ typedef struct {
 // The hook's context: the keys, the one in use expanded, and the IV of the superframe in use. Words first, then
 // bytes: no padding (a radio with little RAM holds two of these)
 typedef struct {
+	dmrAesSeq_t *seq;	// the radio's MI sequence (TX), NULL = our overs can't be encrypted
 	uint32_t iv_mi, iv_sf;
-	uint32_t mi_count;	// MIs made since the start
-	uint32_t mi_last;
 	uint8_t iv[16];
 	dmrAesKey_t keys[DMR_AES_KEY_SLOTS];
 	aes256_ctx_t aes;
@@ -79,13 +118,15 @@ int8_t dmrAesFindKey(const dmrAesState_t *st, uint8_t alg, uint8_t key_id);
 bool dmrAesSetTx(dmrAesState_t *st, int8_t slot);
 // The key our overs use, if any: its algorithm and key ID
 bool dmrAesTxKey(const dmrAesState_t *st, uint8_t *alg, uint8_t *key_id);
-// The call stack's MI source (dmr_crypt_mi_fn): ctx is a dmrAesState_t. The TX key encrypts the time, a count and
-// the previous MI, so MIs don't repeat for a key within a run, and after a restart only if a count and the
-// millisecond of a key-up both come back (no hardware RNG on these radios). Never 0
+// The call stack's MI source (dmr_crypt_mi_fn): ctx is a dmrAesState_t. The next position of its sequence (dmrAesSeq_t);
+// 0 = none usable (no sequence, no TX key, or no saved reservation left): the over must not be sent
 uint32_t dmrAesNewMi(uint32_t now_ms, void *ctx);
+// Clear the keys, the expanded key and the IV (wiped), keeping the sequence
+void dmrAesClearKeys(dmrAesState_t *st);
 
 // The call stack's crypt hook (dmr_crypt_fn, core/dmr/call/dmr_call.h): ctx is a dmrAesState_t. False: no key for the
-// call's algorithm and key ID (the burst is not played)
+// call's algorithm and key ID (the burst is not played), a superframe past DMR_AES_SF_MAX, or (TX) a burst of another
+// MI than the over's or past its reservation (the burst is not sent encrypted)
 struct dmr_crypt_pos;
 bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx, void *ctx);
 

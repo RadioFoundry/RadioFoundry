@@ -241,29 +241,116 @@ static void put32(uint8_t *p, uint32_t v)
 	p[3] = (uint8_t)v;
 }
 
+void dmrAesWipe(void *p, unsigned n)
+{
+	volatile uint8_t *v = (volatile uint8_t *)p;
+
+	while (n--)
+		*v++ = 0;
+}
+
+void dmrAesSeqInit(dmrAesSeq_t *q)
+{
+	memset(q, 0, sizeof(*q));
+}
+
+void dmrAesSeqStart(dmrAesSeq_t *q, uint32_t saved)
+{
+	dmrAesSeqInit(q);
+	q->next = saved;	// left stays 0: the positions from here on are reserved by the next save, not this one
+}
+
+uint32_t dmrAesSeqAdvance(uint32_t w, uint32_t n)
+{
+	while (n--)
+		w = dmrAesMiNext(w);
+	return w;
+}
+
+void dmrAesSeqSettle(dmrAesSeq_t *q)
+{
+	if (q->tx_mi == 0)
+		return;
+	uint32_t used = q->tx_used < q->left ? q->tx_used : q->left;
+
+	if (used != 0)
+		q->next = dmrAesSeqAdvance(q->tx_mi, used);
+	q->left -= used;
+	q->pending_used += used;
+	q->tx_mi = 0;
+	q->tx_used = 0;
+}
+
+uint32_t dmrAesSeqSeed(const uint8_t key[DMR_AES_KEY_BYTES], const uint32_t uid[3], uint32_t own_id, uint32_t now_ms)
+{
+	aes256_ctx_t aes;
+	uint8_t b[16] = { 0 };
+
+	// CBC-MAC over two fixed-length blocks: the chip's UID with a tag, then the own ID and the uptime
+	for (int k = 0; k < 3; k++)
+		put32(&b[4 * k], uid != NULL ? uid[k] : 0);
+	memcpy(&b[12], "MIS1", 4);
+	aes256Init(&aes, key);
+	aes256Encrypt(&aes, b, b);
+	uint8_t c[16] = { 0 };
+
+	put32(&c[0], own_id);
+	put32(&c[4], now_ms);
+	for (int k = 0; k < 16; k++)
+		b[k] ^= c[k];
+	aes256Encrypt(&aes, b, b);
+	dmrAesWipe(&aes, sizeof(aes));
+	uint32_t w = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
+
+	return w != 0 ? w : 1;	// the LFSR's zero state never leaves zero
+}
+
+uint32_t dmrAesSeqReserve(dmrAesSeq_t *q)
+{
+	if (q->next == 0 || q->tx_mi != 0 || q->pending != 0 || q->left >= DMR_AES_SEQ_LOW)
+		return 0;
+	q->pending = dmrAesSeqAdvance(q->next, DMR_AES_SEQ_RESERVE);
+	q->pending_used = 0;
+	return q->pending;
+}
+
+void dmrAesSeqReserved(dmrAesSeq_t *q, uint32_t saved)
+{
+	if (q->pending == 0 || saved != q->pending)
+		return;
+	// The reservation ends DMR_AES_SEQ_RESERVE past where next was when it was made
+	q->left = q->pending_used < DMR_AES_SEQ_RESERVE ? DMR_AES_SEQ_RESERVE - q->pending_used : 0;
+	q->pending = 0;
+}
+
+void dmrAesSeqDropPending(dmrAesSeq_t *q)
+{
+	q->pending = 0;
+}
+
 uint32_t dmrAesNewMi(uint32_t now_ms, void *ctx)
 {
 	dmrAesState_t *st = (dmrAesState_t *)ctx;
-	uint8_t b[16] = { 0 };
-	uint32_t mi;
+	dmrAesSeq_t *q = st != NULL ? st->seq : NULL;
 
-	st->mi_count++;
-	put32(&b[0], now_ms);
-	put32(&b[4], st->mi_count);
-	put32(&b[8], st->mi_last);
-	b[12] = 'M';
-	b[13] = 'I';
-	if (st->tx_slot >= 0 && st->keys[st->tx_slot].alg != 0) {
-		use_key(st, st->tx_slot);
-		aes256Encrypt(&st->aes, b, b);
-		mi = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
-	} else {
-		mi = (now_ms * 2654435761u) ^ (st->mi_count * 0x9E3779B9u) ^ st->mi_last;	// no key: never used
-	}
-	if (mi == 0)
-		mi = 1;
-	st->mi_last = mi;
-	return mi;
+	(void)now_ms;
+	if (q == NULL || st->tx_slot < 0 || st->keys[st->tx_slot].alg == 0)
+		return 0;
+	dmrAesSeqSettle(q);
+	if (q->next == 0 || q->left == 0)
+		return 0;
+	q->tx_mi = q->next;
+	q->tx_used = 0;
+	return q->tx_mi;
+}
+
+void dmrAesClearKeys(dmrAesState_t *st)
+{
+	dmrAesSeq_t *q = st->seq;
+
+	dmrAesWipe(st, sizeof(*st));
+	dmrAesStateInit(st);
+	st->seq = q;
 }
 
 bool dmrAesSetKey(dmrAesState_t *st, uint8_t slot, uint8_t alg, uint8_t key_id, const uint8_t key[DMR_AES_KEY_BYTES])
@@ -273,7 +360,7 @@ bool dmrAesSetKey(dmrAesState_t *st, uint8_t slot, uint8_t alg, uint8_t key_id, 
 
 	dmrAesKey_t *k = &st->keys[slot];
 
-	memset(k, 0, sizeof(*k));
+	dmrAesWipe(k, sizeof(*k));
 	if (alg != 0) {
 		k->alg = alg;
 		k->key_id = key_id;
@@ -281,7 +368,7 @@ bool dmrAesSetKey(dmrAesState_t *st, uint8_t slot, uint8_t alg, uint8_t key_id, 
 	}
 	if (st->aes_slot == (int8_t)slot) {
 		st->aes_slot = -1;
-		memset(&st->aes, 0, sizeof(st->aes));
+		dmrAesWipe(&st->aes, sizeof(st->aes));
 	}
 	if (st->tx_slot == (int8_t)slot && k->alg == 0)
 		st->tx_slot = -1;
@@ -308,13 +395,22 @@ bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx
 {
 	dmrAesState_t *st = (dmrAesState_t *)ctx;
 
-	if (st == NULL || pos == NULL || pos->voice_index >= 6)
+	if (st == NULL || pos == NULL || pos->voice_index >= 6 || pos->superframe >= DMR_AES_SF_MAX)
 		return false;
 
 	int8_t slot = dmrAesFindKey(st, pos->alg, pos->key_id);
 
 	if (slot < 0)
 		return false;
+	if (tx) {
+		// Only the over's own MI, and only positions inside the saved reservation (dmrAesSeq_t)
+		dmrAesSeq_t *q = st->seq;
+
+		if (q == NULL || q->tx_mi == 0 || pos->mi != q->tx_mi || pos->superframe >= q->left)
+			return false;
+		if (pos->superframe + 1u > q->tx_used)
+			q->tx_used = pos->superframe + 1u;	// used from its first burst: a cut-short one counts
+	}
 	use_key(st, slot);
 	if (!st->iv_valid || st->iv_mi != pos->mi || st->iv_sf != pos->superframe) {
 		// The next superframe's IV is this one's shifted by a word: only the LFSR steps since are run

@@ -140,6 +140,11 @@ void sim_rx(const dmr_burst_t *b)
 	emit(DMR_EV_BURST_RX, b->ts, 0, b);
 }
 
+void sim_rx_at(const dmr_burst_t *b, uint32_t slot)
+{
+	emit(DMR_EV_BURST_RX, b->ts, slot, b);
+}
+
 void sim_event(uint8_t kind, int8_t ts)
 {
 	emit(kind, ts, 0, NULL);

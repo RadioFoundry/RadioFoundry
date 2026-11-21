@@ -135,6 +135,9 @@ typedef struct {
 	uint8_t tx_crypt_alg;
 	uint8_t tx_crypt_key_id;
 	dmr_crypt_mi_fn crypt_mi;
+	// Our overs must be encrypted (an AES channel, whether its key loaded or not): an over that can't be is refused
+	// (DMR_TX_ERR_CRYPT), never sent in the clear
+	bool tx_crypt_required;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
 	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
 	// A user of a single frequency repeater (CONFIG_SFR, docs/spec/sfr.md 4; never with rmo): ts is the inbound slot.
@@ -223,6 +226,7 @@ typedef enum {
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
 	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
 	DMR_TX_ERR_CEASED,		// the system stopped the over with the reverse channel
+	DMR_TX_ERR_CRYPT,		// tx_crypt_required and the over can't be encrypted (no hook, key or MI)
 } dmr_tx_error_t;
 
 typedef struct {

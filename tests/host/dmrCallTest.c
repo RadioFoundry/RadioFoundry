@@ -2683,6 +2683,13 @@ static uint32_t crypt_mi(uint32_t now_ms, void *ctx)
 	return 0xCD6554E0;
 }
 
+static uint32_t crypt_mi_none(uint32_t now_ms, void *ctx)
+{
+	(void)now_ms;
+	(void)ctx;
+	return 0;	// no position usable
+}
+
 static void test_crypt_hook(void)
 {
 	dmr_call_config_t c = base_cfg();
@@ -2745,6 +2752,49 @@ static void test_crypt_hook(void)
 	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
 	run_ms(500);
 	crypt_key_id = 5;
+
+	// A stray PI header, then a clear call (service options 0) by late entry: played clear, never through the hook
+	setup(&c);
+	crypt_n = 0;
+	uint8_t clear[9];
+
+	mk_lc(clear, 0, TG_TALK, 9997030);
+	rx_pi_header_burst(info, 1, true);
+	run_ms(60);
+	rx_call(clear, 1, false, 0, 2, false, &frame);
+	CHECK(!V()->caller.pi_header && !V()->caller.encrypted && crypt_n == 0 && sink_log.frames > 0);
+	rx_header(clear, 1, 0, DMR_SYNC_MS, true);
+	run_ms(500);
+
+	// The modem's slot counter steps back mid-call (an engine restarted it): the time places the burst, not a
+	// difference of nearly 2^32 slots
+	setup(&c);
+	crypt_n = 0;
+	for (int h = 0; h < 3; h++) {
+		rx_header(lc, 1, 0, DMR_SYNC_MS, false);
+		run_ms(60);
+	}
+	rx_pi_header_burst(info, 1, true);
+	run_ms(60);
+	for (uint8_t i = 0; i < 7; i++) {
+		dmr_burst_t b;
+
+		memset(&b, 0, sizeof(b));
+		b.kind = DMR_BURST_VOICE;
+		b.voice_index = (uint8_t)(i % 6);
+		b.sync = b.voice_index == 0 ? DMR_SYNC_MS : DMR_SYNC_NONE;
+		b.cc = 1;
+		b.crc_ok = true;
+		b.in_step = true;
+		b.len = 27;
+		sim_rx_at(&b, i < 6 ? 5000u + 2u * i : 100u);
+		run_ms(60);
+	}
+	CHECK(crypt_n == 7);
+	if (crypt_n == 7)
+		CHECK(crypt_log[6].superframe == 1 && crypt_log[6].voice_index == 0);
+	rx_header(lc, 1, 0, DMR_SYNC_MS, true);
+	run_ms(500);
 }
 
 // An encrypted over: voice LC headers with FID 0x10 and the privacy option, our PI header with the new MI, then every
@@ -2819,6 +2869,43 @@ static void test_crypt_tx(void)
 			for (int f = 0; f < 3; f++)
 				CHECK(memcmp(&sim.air[k].payload[f * 9], dmr_ambe_silence, 9) == 0);
 	crypt_key_id = 5;
+
+	// A position set: no GPS Info LC on an encrypted over (the embedded LC is in the clear)
+	dmr_gps_t g = { .err = 1, .lat = 450000000, .lon = -900000000 };
+
+	setup(&c);
+	dmr_call_set_tx_gps(&g);
+	dmr_call_ptt(true);
+	run_ms(6000);
+	dmr_call_ptt(false);
+	run_ms(700);
+	dmr_call_get_stats(&st);
+	CHECK(st.tx_pi_headers == 1 && st.tx_gps_lcs == 0);
+	dmr_call_set_tx_gps(NULL);
+
+	// Encryption required and no hook (or no MI): the over is refused, nothing goes on air
+	dmr_call_config_t r = base_cfg();
+
+	r.tx_crypt_required = true;
+	setup(&r);
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CRYPT);
+	dmr_call_ptt(false);
+	run_ms(700);
+	for (unsigned k = 0; k < sim.air_count; k++)
+		CHECK(sim.air[k].kind != DMR_BURST_VOICE && sim.air[k].kind != DMR_BURST_VOICE_LC_HEADER);
+	r = c;
+	r.tx_crypt_required = true;
+	r.crypt_mi = crypt_mi_none;
+	setup(&r);
+	dmr_call_ptt(true);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_CRYPT);
+	dmr_call_ptt(false);
+	run_ms(700);
+	for (unsigned k = 0; k < sim.air_count; k++)
+		CHECK(sim.air[k].kind != DMR_BURST_VOICE && sim.air[k].kind != DMR_BURST_VOICE_LC_HEADER);
 }
 
 static void test_pi_header_and_emergency(void)
@@ -2848,9 +2935,10 @@ static void test_pi_header_and_emergency(void)
 	dmr_call_get_stats(&st);
 	CHECK(st.rx_pi_headers == 1 && st.rx_encrypted_calls == 1 && st.rx_calls == 1);
 
-	// PI header heard, voice LC header missed: the late entry takes it
+	// PI header heard, voice LC header missed: the late entry takes it (its LC has the privacy option)
 	run_ms(1000);
 	mk_lc(lc, 0, TG_TALK, 9997006);
+	lc[2] = DMR_SVC_PRIVACY;
 	rx_pi_header_burst(info, 1, true);
 	run_ms(60);
 	rx_call(lc, 1, false, 0, 1, false, &frame);

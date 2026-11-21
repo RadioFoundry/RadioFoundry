@@ -3186,15 +3186,80 @@ static void test_dmr_voice_features(void)
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
 	reload_channel();
 	CHECK(d->privacy);
+	// With the settings in RAM only, the MI reservation is never saved: PTT waits for it, nothing goes out clear
+	run(SETTINGS_SAVE_DELAY_MS + 100);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	// On a flash: the reservation is saved (as app.c's housekeeping would), then our overs go out
+	static const hal_flash_map_t aes_map = {
+		.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+		.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
+		.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+		.native_addr = 0x30000u, .native_size = 0x4000u,
+	};
+	settings_t sv;
+	sim_flash_create(0x40000u, &aes_map);
+	CHECK(storage_init());
+	settings_init();		// the reservation asked for in RAM is gone: asked again
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	uint32_t res0 = sv.aes_mi_res;
+	CHECK(res0 != 0);
 	first = sim.air_count;
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	uint32_t mi1 = 0, mi2 = 0, mi3 = 0;
 	pi = false;
 	for (unsigned i = first; i < sim.air_count; i++)
-		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0) {
 			pi = true;
-	CHECK(pi);
+			mi1 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+		}
+	CHECK(pi && mi1 != 0);
+	// The next over's MI is the word after the last superframe the first sent: its positions follow on
+	unsigned sfs = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_VOICE && sim.air[i].voice_index == 0)
+			sfs++;
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi2 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(sfs > 0 && mi2 == dmrAesSeqAdvance(mi1, sfs));
+	// A restart: TX waits for a new reservation, then starts at the saved one, past every position sent
+	dmr_start(true);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == res0);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == dmrAesSeqAdvance(res0, DMR_AES_SEQ_RESERVE));
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi3 == res0);
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
 	run(50);
 	first = sim.air_count;
@@ -3204,6 +3269,9 @@ static void test_dmr_voice_features(void)
 	kv_t3_clear();
 	chans[4].rx_only = false;
 	reload_channel();
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
 #endif
 }
 
@@ -5887,7 +5955,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(452);	// the settings records (page 1: 192 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
