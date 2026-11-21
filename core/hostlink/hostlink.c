@@ -54,8 +54,9 @@
 // on air > the radio view copied, with the trunked system's view in it, or an HTTP request > a debug link view) reads
 // up to 2648 bytes with the CI's toolchain on the deepest board, and stack-check.md's overhead and margin come on top.
 // The HTTP dispatch checks a request's Origin and Host (four words), and link-time inlining moves the frames by a word
-// or two from build to build (three words)
-#define HOSTLINK_TASK_STACK	752
+// or two from build to build (three words). The STM32F4 boards that carry the HTTP > debug link view path had 8 to 16
+// bytes free: 32 words more (128 bytes, from the CCM heap that holds every task stack) bring them to 128 or more
+#define HOSTLINK_TASK_STACK	784
 #else
 #define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
 #endif
