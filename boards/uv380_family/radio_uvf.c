@@ -700,6 +700,7 @@ static void dmr_enter(void)
 static bool audio_wanted;	// the core wants the FM speaker on
 static bool pcm_wanted;		// DMR voice PCM is playing
 static bool volume_zero = false;	// knob at the bottom: silent (the lowest gain, -31 dB, is still audible)
+static bool fm_muted;		// the core's speaker_mute: FM silent, its feed-through (and APRS's I2S copy) kept
 static SemaphoreHandle_t speaker_lock;
 
 // HR_C6000 codec set for PCM playback: DAC to the line out (4:0xE2 bit 1), and in DMR the codec under MCU control
@@ -726,9 +727,9 @@ static void speaker_apply(void)
 	}
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
-	bool on = (fm || pcm) && !volume_zero;
+	bool on = ((fm && !fm_muted) || pcm) && !volume_zero;
 	// The FM feed-through also gates the FM audio on the I2S stream that APRS receive reads (hardware-dm1701.md
-	// 21.3.1), so it follows the core's request, not the knob: at volume zero only the amp is off
+	// 21.3.1), so it follows the core's request, not the knob or the mute: at volume zero or muted only the amp is off
 	count(hrc6000_fm_audio(&r.modem, fm));	// FM feed-through only for FM; PCM comes from the codec DAC
 	if (on) {
 		if (pcm) {
@@ -749,6 +750,12 @@ static void speaker_apply(void)
 static void audio(bool on)
 {
 	audio_wanted = on;
+	speaker_apply();
+}
+
+static void speaker_mute(bool mute)
+{
+	fm_muted = mute;
 	speaker_apply();
 }
 
@@ -1351,6 +1358,7 @@ const hal_radio_t uvf_radio = {
 	.dmr_tx_end = stm32_hrc_dmr_tx_end,
 	.status = status,
 	.audio = audio,
+	.speaker_mute = speaker_mute,
 	.rx_open = uvf_backlight_rx,	// the backlight's PWM reaches received audio only with a carrier (#544)
 	.volume = volume,
 	.volume_pcm = true,	// HR_C6000 4:0x37 scales the codec DAC's PCM as well
