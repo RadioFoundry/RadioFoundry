@@ -164,7 +164,8 @@ A conventional AES channel uses the normal DMR frequencies, contact, color code 
 The type 5 system block starts with one identity byte. Provision each traffic key in the traffic-key family with its
 system index, algorithm 0x25, an eight-bit PI key ID in the low byte of the ID field, and exactly 32 key bytes.
 The channel tag parameter block starts with algorithm 0x25 and the PI key ID. Missing keys inhibit PTT. AES applies
-to voice. The editor omits traffic keys when saving an image without keys. On the radio the AES key row cycles
+to voice. The editor keeps them in the system's traffic key table (`aesSystem.traffic`, masked until shown, with
+**Generate** filling a key from `crypto.getRandomValues()`) and omits traffic keys when saving an image without keys. On the radio the AES key row cycles
 through provisioned system number/key ID pairs and None. Save applies the selection.
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's

@@ -178,7 +178,7 @@ static void txLateEntry(uint8_t *voice, const uint8_t *iv, uint8_t voice_index)
 	uint16_t data[3] = { (uint16_t)(mi >> 20), (uint16_t)((mi >> 8) & 0xfff),
 			     (uint16_t)(((mi & 0xff) << 4) | (crc ^ 15)) };
 	for (int f = 0; f < 3; f++) {
-		// Stock late-entry words differ from the AMBE Golay encoder in parity bits 9 and 0.
+		// Late-entry words measured on air differ from the AMBE Golay encoder in parity bits 9 and 0.
 		unsigned parity = data[f] & 0xdc;
 		parity ^= parity >> 4;
 		parity ^= parity >> 2;

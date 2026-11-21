@@ -2912,7 +2912,7 @@ static void test_pi_header_and_emergency(void)
 {
 	dmr_call_config_t c = base_cfg();
 	uint8_t lc[9];
-	// As a stock radio sent it (AES-256, FID 0x10, key ID 1, MI 0xCD6554E0): the key ID is octet 2, not octet 1
+	// As measured on air (AES-256, FID 0x10, key ID 1, MI 0xCD6554E0): the key ID is octet 2, not octet 1
 	static const uint8_t info[10] = { 0x25, 0x10, 0x01, 0xCD, 0x65, 0x54, 0xE0, 0x00, 0x00, 0x01 };
 	unsigned frame = 1;
 	dmr_call_stats_t st;

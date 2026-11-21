@@ -1209,7 +1209,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		w(e, C7_AUDIO_BUFFER_CLR, 0x03);
 		// Burst F's field for the whole over, set before key-up: our TX RAM 0x29-0x2C (an encrypted over's ALG / key
 		// ID) or the RC encoder's (2.8). Written at the first burst F instead, the chip dropped that burst and the over
-		// slipped 81.6 ms (SDR, 2026-11-19)
+		// slipped 81.6 ms (measured on the SDR bench)
 		if (e->burst_f_set) {
 			for (uint8_t i = 0; i < 4; i++)
 				e->dev->buf[C7_TX_RAM + 0x29u + i] = e->burst_f[i];

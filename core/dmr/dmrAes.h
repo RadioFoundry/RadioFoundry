@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * DMR voice encryption with AES-256 (CONFIG_DMR_AES): the DMRA scheme (algorithm ID 0x25) the stock firmware of
- * several radios sends, docs/spec/dmr-voice.md 5.1.
+ * DMR voice encryption with AES-256 (CONFIG_DMR_AES): the DMRA scheme (algorithm ID 0x25) as other radios send it,
+ * measured on air, docs/spec/dmr-voice.md 5.1.
  *
  * A call carries a PI header (algorithm, key ID, a 32-bit message indicator MI). The MI is expanded by a 32-bit LFSR
  * into a word sequence; superframe n of the call uses words n..n+3 as its 128-bit IV. AES-256 in OFB mode from that

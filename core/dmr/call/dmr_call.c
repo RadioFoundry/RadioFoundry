@@ -1400,8 +1400,8 @@ static bool tx_tail_hold(void)
 }
 
 #if CONFIG_DMR_AES
-// Our PI header (docs/spec/dmr-voice.md 5.1): algorithm, 0x10, key ID, MI, then the destination ID (the stock radios
-// sent 00 00 01 on a call to TG 1; unconfirmed whether it is the destination or a constant), the CRC masked 0x6969
+// Our PI header (docs/spec/dmr-voice.md 5.1): algorithm, 0x10, key ID, MI, then the destination ID (calls measured on
+// air carried 00 00 01 to TG 1; unconfirmed whether it is the destination or a constant), the CRC masked 0x6969
 static void tx_pi_header(uint8_t pi[12])
 {
 	uint32_t dst = s.tx_target_used.id & DMR_ID_MAX;

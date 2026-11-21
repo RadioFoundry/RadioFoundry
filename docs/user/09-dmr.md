@@ -293,14 +293,34 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
   off again.
 
 For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
-Add each traffic key with its on-air PI key ID (0–255) and its 64 hexadecimal digits. On the channel, choose
-**DMR AES-256**, select the system and PI key ID, then write the codeplug to the radio. Both radios must have
-the same key bytes and ID. The system and channel must both allow transmit.
+Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal
+digits from your browser; use it rather than typing a key, since typed keys tend to be weak. **Show AES keys**
+shows the digits. On the channel, choose **DMR AES-256**, select the system and PI key ID, then write the codeplug
+to the radio. Both radios must have the same key bytes and ID. The system and channel must both allow transmit.
 
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
-A protected channel without its key refuses PTT. Text and packet data transmission are disabled on these channels.
-The editor's image export omits key bytes by default. Including keys produces a file that contains the keys.
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are
+disabled on these channels, and your GPS position is not sent on them. The editor's image export omits key bytes by
+default. Including keys produces a file that contains the keys.
+
+For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
+where its encryption sequence stands, so it never reuses one after a restart. Press PTT again.
+
+Radios of other makes need a part of the signal that not every radio sends yet. Two radios running RadioFoundry always
+understand each other. Check [Feature matrix](../feature-matrix.md) (the `DMR_AES` row) for which radios can talk AES
+to radios of other makes; on the others another make plays the first moments and then noise.
+
+What AES does not do:
+
+- The radio IDs, the talkgroup and the talker alias stay readable to anyone listening.
+- A recorded over can be played back on air later, and nothing tells the listener it is a replay.
+- A clear call on an AES channel is still played.
+- Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
+  keys.
+- After a factory reset, or after restoring old settings, give the key a new value (or generate a new one): the radio
+  may reuse part of an encryption sequence it already sent under that key.
+- Change a key that has carried a lot of traffic, for example once a year on a busy channel.
 
 To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 

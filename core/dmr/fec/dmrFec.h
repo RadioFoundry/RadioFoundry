@@ -86,7 +86,7 @@ uint32_t dmrFecRcEncode(uint8_t command);
 // The nearest command to a received field (up to 3 bit errors corrected). Returns the number of bit errors, or -1 if
 // there were too many
 int dmrFecRcDecode(uint32_t field, uint8_t *command);
-// Voice burst F's late-entry privacy field (DMRA, measured on a stock radio's AES-256 calls): the 11 info bits are the
+// Voice burst F's late-entry privacy field (DMRA, measured on air on AES-256 calls): the 11 info bits are the
 // key ID in bits 10-3 and the algorithm's low 3 bits in 2-0 (0x25 -> 5), single burst BPTC as the RC's but with each
 // column's second bit a copy of the first (even parity). ALG 0x25, key ID 1 -> 0x44428881. TX(31) first in bit 31
 uint32_t dmrFecPrivacyField(uint8_t alg, uint8_t keyId);

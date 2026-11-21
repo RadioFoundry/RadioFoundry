@@ -234,45 +234,86 @@ static keystream can't undo an MI-based scheme, so such a call plays only throug
 
 ### 5.1 AES-256 with a message indicator
 
-The scheme behind PI headers with algorithm ID 0x25, as stock radios send it (`CONFIG_DMR_AES`, `core/dmr/dmrAes.c`). Measured on the SDR bench and checked against a reference decoder used as a black box;
-`tests/host/dmrAesTest.c` decrypts a captured call with it.
+The scheme behind PI headers with algorithm ID 0x25, as other radios send it (`CONFIG_DMR_AES`, `core/dmr/dmrAes.c`).
+Measured on air with the SDR bench and checked against a reference decoder used as a black box;
+`tests/host/dmrAesTest.c` decrypts a captured test call with it.
 
 | Part | Layout |
 |---|---|
 | Voice LC | FID 0x10, service options 0x40 (privacy) |
-| PI header | octet 0 algorithm ID (0x25), 1 not interpreted (0x10 sent), 2 key ID, 3-6 MI (most significant octet first), 7-9 not interpreted on RX (`00 00 01` seen on a call to TG 1; we send the destination ID there, which gives the same bytes for TG 1, unconfirmed for other targets), then the CRC. A new MI each over |
-| MI words | w0 = the PI header's MI; each next word is 32 steps of the LFSR x^32 + x^22 + x^2 + x + 1 (shift left, new bit 0 = bits 31, 21, 1 and 0 XORed) |
+| PI header | octet 0 algorithm ID (0x25), 1 not interpreted (0x10 sent), 2 key ID, 3-6 MI (most significant octet first), 7-9 not interpreted on RX (`00 00 01` seen on a call to TG 1; we send the destination ID there, which gives the same bytes for TG 1, unconfirmed for other targets), then the CRC. One per over |
+| MI words | w0 = the PI header's MI; each next word is 32 steps of the LFSR x^32 + x^22 + x^2 + x + 1 (shift left, new bit 0 = bits 31, 21, 1 and 0 XORed). Its period is 2^32 - 1 (`dmrAesTest` checks it from the step matrix) |
 | IV | superframe s (0 = the one after the PI header): w(s) w(s+1) w(s+2) w(s+3), 128 bits |
 | Keystream | AES-256 in OFB mode from the IV; the first 16 octets are not used |
 | Per frame | frame j of the superframe (burst A frames 0-2 ... burst F frames 15-17) takes the next 7 octets, 7j to 7j+6; their top 49 bits are XORed onto the 49 AMBE+2 parameter bits (after the FEC decode, parameter bit 0 = the most significant keystream bit) |
+| Burst F | the embedded field carries the algorithm's low 3 bits and the key ID (`dmrFecPrivacyField`) in every superframe, for late entry |
 
-The embedded LC and talker alias stay in the clear, and every superframe's embedded signaling repeats the algorithm
-and key ID for late entry. The radios measured encrypt whatever their vocoder held before the call in bursts A and
-B of the first superframe; that decrypts like any other frame.
+What stays readable: the voice LC (source and destination IDs, so the talkgroup), the embedded LC and the talker alias
+are in the clear, as the format has them. Our overs leave out the GPS Info LC on an encrypted over (the position would
+go out in the clear in the embedded LC). The radios measured encrypt whatever their vocoder held before the call in
+bursts A and B of the first superframe; that decrypts like any other frame.
 
 The call stack (`dmr_call.c`) counts bursts from burst A of superframe 0 and hands the hook the PI header's algorithm,
 key ID and MI with the burst's superframe. A burst index seen again without being a repeat is a superframe on; bursts
 lost in a row are counted from the modem's slot counter (2 slots a burst) or, without one, from the time (60 ms a
-burst). A late entry after the PI header is placed by the time since it, to the nearest burst with its index. A call
-whose PI header was missed has no MI and is not played until the next over.
+burst). A slot counter difference past the resume window (a counter that restarted) is not a gap in the call: the
+time decides. The hook refuses a superframe past `DMR_AES_SF_MAX` (8192, 49 minutes), so a bad position never turns
+into minutes of LFSR steps. A late entry after the PI header is placed by the time since it, to the nearest burst with
+its index; a PI header is attached to a late entry only when that call's LC has the privacy option. A call whose PI
+header was missed has no MI and is not played until the next over (reading the MI from the late-entry field is #863).
 
 A conventional AES channel selects its own persistent system and PI key ID
-([channel-modes.md](channel-modes.md) section 4). A missing or invalid traffic key inhibits transmit.
+([channel-modes.md](channel-modes.md) section 4). A missing or invalid traffic key inhibits transmit (`aes_key`).
 
-TX: on an AES channel whose key is present, our overs
-carry FID 0x10 and the privacy option in the voice LC, one PI header after the voice LC headers, and every voice burst
-encrypted from burst A of superframe 0 (`dmr_call_config_t.tx_crypt_alg`, `tx_crypt_key_id`, `crypt_mi`). The PI header
-goes to the modem with its CRC (masked 0x6969) as a host CRC burst; a modem that makes its own CRC must use the PI
-mask. Each over takes a new MI (`dmrAesNewMi`): the TX key encrypts the key-up time, a count and the previous MI, as
-there is no hardware RNG; a repeat needs the same count and the same millisecond after a restart. If the key goes away
-during an over, its voice goes out as silence, never in the clear. TX embeds the next superframe's MI after encrypting the voice. Append the four-bit CRC
-(polynomial 0x13, initial zero, final XOR 0xF, MSB first) to the 32-bit MI and split the result into three 12-bit
-words, most significant first. Each frame position carries one word across A-F. Start with the AMBE extended
-Golay codeword and toggle parity bits 9 and 0 (LSB numbered 0) when the data word masked by 0x0DC has odd parity,
-as measured on stock transmissions. Send the resulting 24 bits in six nibbles, most significant first. Each nibble
-replaces on-air bits 71, 67, 63, 59 of its 72-bit encrypted voice frame in that order (air index 0 first).
-These four speech bits cannot be recovered by decrypting the frame. Host tests check the transmitted nibbles
-against stock calls with different input speech.
+TX: on an AES channel whose key is present, our overs carry FID 0x10 and the privacy option in the voice LC, one PI
+header after the voice LC headers, and every voice burst encrypted from burst A of superframe 0
+(`dmr_call_config_t.tx_crypt_alg`, `tx_crypt_key_id`, `crypt_mi`). The PI header goes to the modem with its CRC
+(masked 0x6969) as a host CRC burst; a modem that makes its own CRC must use the PI mask. On an AES channel
+`tx_crypt_required` is set whether the key loaded or not: the call stack itself refuses an over it can't encrypt (no
+hook, no key, no MI) with `DMR_TX_ERR_CRYPT`, and never sends it in the clear. If the key goes away during an over,
+its voice goes out as silence.
+
+Burst F's field is written by the modem driver (`hal_dmr_modem_t.set_burst_f`, before `tx_begin`). TX to a receiver
+of another make needs it: without it such a receiver played the first superframe and then noise, and through a
+repeater the over played garbled. Between two radios running this firmware it isn't needed, since our RX counts from
+the PI header. Which modems have it: [feature-matrix.md](../feature-matrix.md) (the HR_C6000 is #864).
+
+TX embeds the next superframe's MI after encrypting the voice. Append the four-bit CRC (polynomial 0x13, initial zero,
+final XOR 0xF, MSB first) to the 32-bit MI and split the result into three 12-bit words, most significant first. Each
+frame position carries one word across A-F. Start with the AMBE extended Golay codeword and toggle parity bits 9 and 0
+(LSB numbered 0) when the data word masked by 0x0DC has odd parity, as measured on air. Send the resulting 24 bits in
+six nibbles, most significant first. Each nibble replaces on-air bits 71, 67, 63, 59 of its 72-bit encrypted voice
+frame in that order (air index 0 first). These four speech bits cannot be recovered by decrypting the frame. Host
+tests check the transmitted nibbles against captured calls with different input speech.
+
+#### 5.1.1 The MI sequence
+
+OFB gives the same keystream whenever an IV comes back, and two overs under one keystream give a listener the XOR of
+their voice (near-silence frames at the start and end of an over then decrypt the other outright). Superframe s of an
+over uses words s..s+3, so overs with different MIs still share keystream once their word ranges meet. OFB needs a
+position that never repeats, not one that can't be guessed (the late-entry field announces the next one anyway).
+
+| Rule | How (`dmrAesSeq_t`) |
+|---|---|
+| One sequence per radio, every key | the next over's MI is the word after the last superframe sent, w(S) after S superframes. A superframe counts from its first burst the hook encrypted, a cut-short one included |
+| First position | a radio with none: the first 4 bytes of a two-block CBC-MAC under the channel's key over (the chip UID with a tag; the own DMR ID and the uptime in ms), never 0 (`dmrAesSeqSeed`). Radios sharing a key start at unrelated places |
+| Reservation | positions are used only inside a reservation in the settings record (`settings_t.aes_mi_res`, the word 16,384 superframes past the position it was made from, about 98 minutes of talk). It is asked for on an AES channel when less than 8,192 are left, between overs (`aes_seq_poll`), and counts once the settings store holds it (no unsaved change left) |
+| After a restart | the sequence goes on from the saved reservation, and TX is refused (`aes_wait`) until the next one is saved, about 2 s (the settings save delay). A settings store in RAM only never saves one: AES TX stays refused |
+| Past the reservation | the hook refuses the burst (silence goes out); `dmrAesNewMi` returns 0 and the over is refused |
+
+Two radios with the same key meet only if their stretches of the sequence do. Limits: a factory reset, or a settings
+restore from before, brings back an older position (or none) and can repeat keystream under the same key; change
+the key after either. The period is 2^32 - 1 superframes; a key that has carried a lot of traffic should be changed
+(`docs/user/09-dmr.md`).
+
+#### 5.1.2 Open points
+
+- The first burst's late-entry nibbles of the captured call differ from what its PI header predicts in three bits
+  (the second and third frames' nibbles read 7 / 5, the MI gives 5 / 0); our TX sends what the MI gives
+  (`dmrAesTest`, `test_tx_matches_capture`).
+- A TX underrun makes the modem driver send a clear silence burst, as for clear calls. In an encrypted over the
+  receiver decrypts it to 60 ms of noise, and its late-entry bits are wrong.
+- The AES core's S-box lookups are table reads indexed by secret data: it is not hardened against timing.
 
 The HR_C6000 reports the EMB PI bit unreliably for voice, so its driver clears it (`modem-hrc6000.md`); on that modem
 privacy is recognized from the service options and PI headers only.

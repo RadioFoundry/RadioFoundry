@@ -762,7 +762,7 @@ ambeVoiceCaptureTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/a
 	$(CC) $(CFLAGS) -DCONFIG_VOICE_CAPTURE=1 -I$(ROOT)/hal -Wshadow -o $@ ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c \
 	      $(CORE)/radio/sigtone.c $(CORE)/radio/beep.c $(CORE)/dmr/ambe/ambeFec.c
 
-# DMR AES-256 voice decryption (core/dmr/dmrAes.c): FIPS-197, the MI words, a captured stock radio call, the hook
+# DMR AES-256 voice decryption (core/dmr/dmrAes.c): FIPS-197, the MI words, a captured test call, the hook
 TESTS   += dmrAesTest
 dmrAesTest: dmrAesTest.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrAes.h $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dmrAesTest.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c \
