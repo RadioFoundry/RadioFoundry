@@ -627,7 +627,7 @@ test("a radio with a second chip: one Install writes the radio's chip and goes o
 	state.chain.stage = "write2";
 	const shown = forwards.length;
 	const part = c7ui.writeView();
-	assert.match(part.textContent, new RegExp(`^Install${twoChip.name}.*Written. It restarts once receiver B is done.*Receiver B.*Installing`));
+	assert.match(part.textContent, new RegExp(`^Install${twoChip.name}.*Written. Receiver A restarts once receiver B is done.*Receiver B.*Installing`));
 	for (let i = 0; i < 200 && !calls.next; i++) await sleep(20);
 	assert.deepEqual(calls.writes, [twoChip.id, other.id], "written without a click");
 	assert.ok(forwards.slice(shown).every((b) => !b || !b.listeners || b.disabled !== undefined), "its Install button was never needed");
