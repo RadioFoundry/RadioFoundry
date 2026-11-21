@@ -165,6 +165,7 @@ const board_t board = {
 	.power = &uvf_power,
 	.flash = &stm32_spi_flash,
 	.chip_reg = uvf_chip_reg,
+	.hw_line = uvf_hw_line,
 #if CONFIG_DIAG
 	.diag_line = uvf_diag_line,
 	.diag_reset = uvf_diag_reset,

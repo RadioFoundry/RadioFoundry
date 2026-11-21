@@ -3178,6 +3178,44 @@ static void test_sfr_user(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
 }
 
+// The channel's Accept invalid CRC: a voice LC header whose RS fails (the parity masked with neither the header's
+// mask nor none) starts a call only when the same LC failed lately; off, never
+static void rx_bad_header(const uint8_t lc[9])
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE_LC_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = 1;
+	b.in_step = true;
+	b.len = 12;
+	dmr_lc_encode_full(lc, 0x5A, b.payload);
+	memcpy(b.lc, lc, 9);
+	sim_rx(&b);
+}
+
+static void test_accept_bad_lc(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9];
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
+	for (int on = 0; on < 2; on++) {
+		c.listen.accept_bad_crc = on != 0;
+		setup(&c);
+		rx_bad_header(lc);
+		run_ms(60);
+		CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 0);
+		rx_bad_header(lc);
+		run_ms(20);
+		dmr_call_get_stats(&st);
+		CHECK(sink_log.begins == (unsigned)on && st.rx_lc_taken == (uint32_t)on);
+		CHECK(!on || (V()->state == DMR_CALL_STATE_RX && sink_log.caller.src == 9997030));
+	}
+}
+
 #if CONFIG_SFR_DUALPATH_RX
 // Dual-path RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
 // it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
@@ -3331,6 +3369,7 @@ int main(void)
 	test_rs129();
 	test_csbk();
 	test_embedded();
+	test_accept_bad_lc();
 	test_alias();
 	test_tx_call();
 	test_tx_tail_hold();

@@ -361,8 +361,8 @@ static void link_section(dl_text_t *t)
 	dl_text(t, "ui.screen=%s\n", ui_screen_name());
 	ui_app_status_t u;
 	ui_get_status(&u);
-	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\nui.unlock_key=%s\n", (unsigned)u.depth,
-		(unsigned)u.focus, (unsigned)u.count, (unsigned)u.locked, u.unlock_key);
+	dl_text(t, "ui.depth=%u\nui.focus=%u\nui.count=%u\nui.locked=%u\nui.unlock_key=%s\nui.gps=%u\n", (unsigned)u.depth,
+		(unsigned)u.focus, (unsigned)u.count, (unsigned)u.locked, u.unlock_key, (unsigned)u.gps);
 	dl_text(t, "ui.banner=%s\nui.toast=%s\nui.query=%s\nui.draws=%u\nui.dual=%u\n", u.banner, u.toast, u.query,
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
@@ -548,6 +548,7 @@ static void board_section(dl_text_t *t)
 	char line[80];
 
 	dl_text_kv_str(t, "board.name", board.name);
+	dl_text(t, "board.variant_mismatch=%u\n", board_variant_mismatch() ? 1u : 0u);
 	for (uint8_t i = 0; board.view_line != NULL && i < 0xFFu && !t->full; i++) {
 		if (!board.view_line(i, line, sizeof(line))) {
 			break;

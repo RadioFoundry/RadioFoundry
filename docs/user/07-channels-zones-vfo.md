@@ -363,9 +363,19 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
-- Calls to one unit, emergency and Phase 2 (TDMA) voice channels are not there yet.
+- A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
+  ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).
+- Calls to one unit and emergency are not there yet.
+- Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
+  can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - This has run against a test control channel only, not yet on a working system.
+
+For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
+control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with
+those values and transmit on; the template [ham-p25-trunked.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-p25-trunked.yaml) holds the system, a channel
+and the BrandMeister talkgroups. P25 talkgroups go up to 65535, so a BrandMeister talkgroup above that has no P25
+number. The reasons are in [Recommended ham trunked systems](../spec/ham-trunking.md#3-p25-trunked).
 
 ### NXDN in the VFO
 

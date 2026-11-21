@@ -85,6 +85,7 @@ typedef struct {
 	bool hear_all;		// every talkgroup (and private calls between others) on our timeslot
 	bool any_cc;		// monitor: any color code too
 	bool both_ts;		// monitor: either timeslot, the first call heard until it ends
+	bool accept_bad_crc;	// the channel's Accept invalid CRC: a header / terminator LC that fails, taken when it repeats
 	const uint32_t *groups;	// the channel's listen list (RX group list), owned by the caller, may be NULL
 	uint16_t group_count;
 	bool (*group_ok)(uint32_t tg, void *ctx);	// optional lookup instead of / besides the table
@@ -280,6 +281,7 @@ typedef struct {
 	uint32_t tx_wake_lost;		// wake-up CSBKs whose transmission ended without going on air (tried again at once)
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
+	uint32_t rx_lc_taken;		// header / terminator LCs taken with a failed check (listen.accept_bad_crc)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's
 	uint32_t rx_term_dropped;	// late-entry starts refused: the call a terminator just ended (its late reports)
 	uint32_t rx_private_calls;	// rx_calls that were private (FLCO 3), to us or not

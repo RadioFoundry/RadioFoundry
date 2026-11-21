@@ -178,6 +178,9 @@ void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode)
 		if (v->dmr != NULL) {
 			write_table(dev, v->dmr, v->dmr_n);
 		}
+		// An FM channel's receive tone would stay in 0x51, and its bit 15 also turns the chip's sub-audio
+		// transmitter on: that tone on the 4FSK leaves every DMR burst undecodable (hardware-dm32.md 8.4)
+		fd6818_set_rx_tone(dev, FD6818_TONE_NONE, 0);
 	} else {
 		write_table(dev, v->fm, v->fm_n);
 	}

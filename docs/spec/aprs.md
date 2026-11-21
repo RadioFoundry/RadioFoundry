@@ -211,6 +211,10 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
+The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
+(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
+
 The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker
 silent on the APRS frequency in FM while the squelch is open, unless Monitor holds it open (`radio_sm.c` `outputs`,
 `aprs_mute_hz()`). The receive path must keep its audio, so it depends on where the board's decoder reads it:

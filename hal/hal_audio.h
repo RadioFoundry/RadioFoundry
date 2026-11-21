@@ -22,6 +22,13 @@ typedef struct {
 	uint32_t blocks;	// blocks the callback filled
 	uint32_t late;		// a block's turn came before the callback had filled it
 	uint32_t dropped;	// blocks skipped because the callback was a whole block late
+	// A second path to the speaker, for a mode where the stream's own output doesn't reach it (a baseband chip's
+	// FIFO): 32-sample chunks written, those written as silence because no block was ready, blocks with no room
+	uint32_t fifo_chunks;
+	uint32_t fifo_gaps;
+	uint32_t fifo_full;
+	// The second path carries the speaker's PCM in the mode the radio is in now (a beep in FM receive goes there)
+	bool fifo_fm;
 } audio_stream_stats_t;
 
 typedef struct {
