@@ -119,8 +119,6 @@ static void set_phases(mbe_frame_t *f, uint32_t seed)
 #define OSC_NARROW	65534
 static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const int32_t *k)
 {
-	const int16_t *ct = mbe_cos_tab;
-
 	ph += 0x200000u;
 	for (int j = 0; j < N / SEG; j++) {
 		int32_t a = k[j] * 256, da = fxp_mulshr((k[j + 1] - k[j]) * 256, 53687091, 31);	// / SEG
@@ -131,14 +129,14 @@ static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const in
 				a += da;
 				ph += inc;
 				inc += dinc;
-				*o += ((a >> 8) * ct[ph >> 22]) >> 15;
+				*o += ((a >> 8) * mbe_cos_idx(ph >> 22)) >> 15;
 			}
 		} else {
 			for (; o < e; o++) {
 				a += da;
 				ph += inc;
 				inc += dinc;
-				*o += fxp_mulshr16(a >> 8, ct[ph >> 22], 15);
+				*o += fxp_mulshr16(a >> 8, mbe_cos_idx(ph >> 22), 15);
 			}
 		}
 	}

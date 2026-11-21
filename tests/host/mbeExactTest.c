@@ -87,14 +87,15 @@ static void speech(int16_t *out, uint32_t n)
 	}
 }
 
-// The unfolded cosine table the oscillators and mbe_cos read: each entry the quarter wave's own value
+// The cosine the oscillators and mbe_cos read, from the unfolded table (built with -DFXP_SPLIT16) or folded: each
+// entry the quarter wave's own value
 static void test_cos_table(void)
 {
 	int same = 0;
 
 	for (uint32_t i = 0; i < 1024u; i++)
-		same += mbe_cos_tab[i] == mbe_sin_idx(i + 256u);
-	CHECK(same == 1024, "%d of 1024 cosine table entries as mbe_sin_idx gives them", same);
+		same += mbe_cos_idx(i) == mbe_sin_idx(i + 256u);
+	CHECK(same == 1024, "%d of 1024 cosine entries as mbe_sin_idx gives them", same);
 	same = 0;
 	for (uint32_t k = 0; k < 4096u; k++) {
 		uint32_t ph = k * 1048573u + (k << 20);

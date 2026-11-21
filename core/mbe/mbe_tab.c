@@ -31,7 +31,8 @@ const int16_t mbe_sin_tab[257] = {
 
 // cos(2 pi i / 1024), Q15: mbe_sin_idx(i + 256) for every i, the quarter wave above unfolded (mbeExactTest checks
 // each entry against it). The oscillators look up one per harmonic per sample; folding the quarter wave there cost two
-// branches and a third of that loop's instructions on the C-SKY build. 2 KB of flash
+// branches and a third of that loop's instructions on the C-SKY build. 2 KB of flash, so only where mbe_dsp.h uses it
+#if defined(MBE_COS_TAB)
 const int16_t mbe_cos_tab[1024] = {
 	32767, 32766, 32765, 32761, 32757, 32752, 32745, 32737, 32728, 32717, 32705, 32692,
 	32678, 32663, 32646, 32628, 32609, 32589, 32567, 32545, 32521, 32495, 32469, 32441,
@@ -120,6 +121,7 @@ const int16_t mbe_cos_tab[1024] = {
 	32609, 32628, 32646, 32663, 32678, 32692, 32705, 32717, 32728, 32737, 32745, 32752,
 	32757, 32761, 32765, 32766,
 };
+#endif
 
 const uint16_t mbe_exp2_tab[65] = {
 	16384, 16562, 16743, 16925, 17109, 17296, 17484, 17674, 17867, 18061, 18258, 18457,
