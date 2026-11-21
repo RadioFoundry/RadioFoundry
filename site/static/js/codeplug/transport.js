@@ -312,6 +312,7 @@ export class CpsSerial {
 	}
 
 	async cpsWrite(want, have, { iddb, progress, signal }) {
+		if (signal?.aborted) throw new TransportError("stopped");
 		const { plan, bytes: total } = this.cpsPlan(want, have, { iddb });
 		// the ID database's header erased before the rest of it and its sector written last (iddb-compact.md 4.3), so a
 		// write cut short leaves no database rather than a new header over old records
