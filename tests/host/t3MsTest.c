@@ -926,6 +926,21 @@ static void test_weak_hold(void)
 	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "held after one pass: %u", (unsigned)ms.weak_hold_ms);
 	camp_at(&ms, 600, ours, -104);
 	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "a level just above the threshold keeps the hold");
+	// A pass that confirms a TSCC just at the threshold ends the hold but keeps the backoff: weak again, the next pass
+	// that finds nothing holds twice as long
+	uint32_t spent = 0;
+	for (; spent < 10u * 60000u && ms.state != T3_HUNT; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.state == T3_HUNT && ms.hunt_strict, "left after the hold: %u ms", (unsigned)spent);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "confirmed at the threshold: no hold, the backoff kept (%u ms)", (unsigned)ms.weak_hold_ms);
+	for (spent = 0; spent < 60000u && ms.weak_hold_until == 0; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS && spent >= T3_WEAK_MS,
+	      "weak again, nothing better: the hold doubled (%u ms) after %u ms", (unsigned)ms.weak_hold_ms, (unsigned)spent);
 }
 
 static void test_stop(void)

@@ -1719,7 +1719,9 @@ static void confirm(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 	}
 	if (ms->state == T3_HUNT) {
 		if (ms->hunt_strict || (ms->level_dbm != 0 && !weak(ms, ms->level_dbm))) {
-			ms->weak_hold_ms = 0;	// a TSCC above the threshold: the next weak one may be left at once
+			// A TSCC at or above the threshold: the next weak spell may be left at once. The backoff stays: a level
+			// that only touched the threshold (one sample, at the edge of coverage) soon fails again, and only a
+			// level clearly above it (the tick) starts the hold over
 			ms->weak_hold_until = 0;
 		} else if (ms->weak_failed) {
 			// Back on a TSCC no stronger than the one left: leaving again finds nothing either, and every

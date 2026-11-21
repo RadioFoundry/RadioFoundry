@@ -766,8 +766,9 @@ the adjacent sites, and for one pass confirms only a TSCC at or above the thresh
 6.3.2.3). After a pass it takes any. With nowhere else to look it stays.
 
 A pass that found nothing at or above the threshold ends with a hold on the TSCC it took: no leaving for weakness for
-30 s, then 60 s after the next such pass, doubling up to 5 min. A TSCC above the threshold by the voting margin, or one
-confirmed at or above it, clears the hold. Without the hold, a radio camped at the edge of its only system's coverage
+30 s, then 60 s after the next such pass, doubling up to 5 min. A TSCC confirmed at or above the threshold ends the
+hold, but the next hold still doubles: a level that only touched the threshold soon fails again. A level above the
+threshold by the voting margin ends the hold and starts the doubling over. Without the hold, a radio camped at the edge of its only system's coverage
 would hunt every 5 s and miss its grants and pages while away. The level averages to the nearest dB, so a steady level
 just below the threshold counts as below.
 
