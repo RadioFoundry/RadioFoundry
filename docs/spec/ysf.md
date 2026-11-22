@@ -222,8 +222,17 @@ Home says "No callsign" and PTT is refused.
 The `ysf` view section (DL_VIEW_YSF, [debuglink.md](debuglink.md)): the call heard (`ysf.src`, `ysf.src_rid`,
 `ysf.dgid`, `ysf.played`, `ysf.late`, `ysf.not_dn`), who we are (`ysf.callsign`, `ysf.rid`, `ysf.rid_weak`), the
 DG-IDs set and in force, the provider's fit and the counters (`ysf.frames`, `ysf.fich_fail`, `ysf.dch_fail`,
-`ysf.csd_fail`, `ysf.voice`, `ysf.fec_bits`, `ysf.vch_fixed`, ...). RADIO op 44 sets the RAM DG-IDs: u8 transmit,
-u8 receive, 0-99 each. The callsign and the radio ID can't be set there.
+`ysf.csd_fail`, `ysf.voice`, `ysf.fec_bits`, `ysf.vch_fixed`, ...) and the receive options (5.4: `ysf.rx_eq`,
+`ysf.rx_tone_on`, `ysf.rx_tone` the tone notched, `ysf.rx_eq_center`). RADIO op 44 sets the RAM DG-IDs: u8 transmit,
+u8 receive, 0-99 each, and optionally u8 bench: bit 0 turns the equalizer off, bit 1 the tone notch, for an A/B. The
+callsign and the radio ID can't be set there.
+
+### 5.4 Receive through a repeater
+
+A repeater's chain cuts the upper band of the 4FSK (inter-symbol interference) and some repeaters send a CTCSS tone
+under C4FM, which other System Fusion radios ignore. YSF's profile asks a soft modem for its equalizer and tone notch
+(`AIR_RX_EQ | AIR_RX_TONE`, [air-interface.md](air-interface.md) 6.1), and the engine lends their memory for its
+session. A board whose provider receives with its own demodulator ignores them.
 
 ## 6. The radio ID (RID)
 

@@ -10,6 +10,9 @@
 #include "radio/radio_ysf.h"
 #include "codeplug/codeplug.h"
 #endif
+#if CONFIG_AIR_RX_ADAPT
+#include "air/air_softmodem.h"
+#endif
 
 void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 {
@@ -46,6 +49,18 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ysf.voice_held=%u\nysf.fec_bits=%u\nysf.vch_fixed=%u\nysf.rx_chunks=%u\n", (unsigned)c.voice_held,
 		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.rx_chunks);
 	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
+#if CONFIG_AIR_RX_ADAPT
+	// The soft modem's equalizer and tone notch (ysf.md 5.4): running now (rx_eq, rx_tone_on), the tone notched in
+	// Hz (0.0 none), the center tap, and what the bench turned off (op 44's third byte)
+	air_softmodem_adapt_view_t a;
+
+	air_softmodem_adapt_get(&a);
+	dl_text(t, "ysf.rx_eq=%u\nysf.rx_tone_on=%u\nysf.rx_tone=%u.%u\nysf.rx_eq_center=%d\nysf.rx_eq_resets=%u\n",
+		(a.opts & AIR_RX_EQ) != 0, (a.opts & AIR_RX_TONE) != 0, a.tone_dhz / 10u, a.tone_dhz % 10u, a.eq_center,
+		a.eq_resets);
+	dl_text(t, "ysf.rx_tone_blocks=%u\nysf.rx_tone_picks=%u\nysf.rx_bench_off=%u\n", a.tone_blocks, a.tone_picks,
+		air_softmodem_adapt_off);
+#endif
 #else
 	(void)v;
 	dl_text(t, "ysf.built=0\n");

@@ -9,6 +9,7 @@
 
 #include "ysf.h"
 #include "../air/air_session.h"
+#include "../air/air_softmodem.h"
 
 typedef struct {
 	// Receive, from the provider's task. start: a call we play began (its fields may still fill in: update). voice:
@@ -53,6 +54,9 @@ typedef struct {
 	ysf_engine_view_t view;
 	uint8_t frame[YSF_FRAME_BYTES];		// the framer's frame buffer ...
 	int8_t soft[YSF_FRAME_SYMS];		// ... and its soft values, for the decoders
+#if CONFIG_AIR_RX_ADAPT
+	air_softmodem_adapt_t adapt;		// lent to a soft modem receiving the session (ysf.md 5.4)
+#endif
 } ysf_engine_t;
 
 // What the board's provider gives YSF: AIR_FIT_xxx, 0 = this board can't

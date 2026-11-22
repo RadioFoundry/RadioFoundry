@@ -523,7 +523,7 @@
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"
 #endif
 #if CONFIG_AIR_RX_ADAPT && !CONFIG_AIR
-#error "CONFIG_AIR_RX_ADAPT needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
+#error "CONFIG_AIR_RX_ADAPT needs CONFIG_P25, CONFIG_NXDN or CONFIG_YSF (an air-framed mode)"
 #endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"

@@ -143,12 +143,23 @@ bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cf
 	e->hooks = *hooks;
 	e->ctx = ctx;
 	ysf_call_rx_init(&e->rx, &sink, e);
-	return air_session_open(&e->session, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &ops, e);
+#if CONFIG_AIR_RX_ADAPT
+	air_softmodem_lend(&e->adapt);	// before the open: a provider with a soft modem sets it up there
+#endif
+	if (air_session_open(&e->session, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &ops, e))
+		return true;
+#if CONFIG_AIR_RX_ADAPT
+	air_softmodem_lend(NULL);
+#endif
+	return false;
 }
 
 void ysf_engine_end(ysf_engine_t *e)
 {
 	air_session_close(&e->session);
+#if CONFIG_AIR_RX_ADAPT
+	air_softmodem_lend(NULL);
+#endif
 }
 
 void ysf_engine_retuned(ysf_engine_t *e)

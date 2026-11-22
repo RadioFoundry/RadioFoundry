@@ -341,9 +341,9 @@ CONFIG_MBE := $(CONFIG_IMBE)
 # air-framed mode such as P25, NXDN or YSF, and DEBUGLINK; docs/spec/debuglink.md)
 CONFIG_AIR_RAW ?= n
 # the soft modem's adaptive receive options (air_profile_t.rx_opts, docs/spec/air-interface.md 6.1): an equalizer and
-# a CTCSS / DCS remover a mode's profile may ask for, in memory the mode's engine lends. Off until a mode asks for them
-# (needs an air-framed mode)
-CONFIG_AIR_RX_ADAPT ?= n
+# a CTCSS / DCS remover a mode's profile may ask for, in memory the mode's engine lends. On with YSF, the mode that
+# asks for them (needs an air-framed mode)
+CONFIG_AIR_RX_ADAPT ?= $(CONFIG_YSF)
 # P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), a control channel decoded and voice
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
@@ -430,7 +430,7 @@ $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFI
 $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,YSF),$(if $(call feature_on,DMR),,x)),$(error CONFIG_YSF=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
-$(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
+$(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_P25=y, CONFIG_NXDN=y or CONFIG_YSF=y (an air-framed mode)))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)

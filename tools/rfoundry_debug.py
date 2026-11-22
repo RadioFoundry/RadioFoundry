@@ -21,7 +21,7 @@
     rfoundry_debug.py radio nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N]
                                  [unit_id=N] [emergency=0|1]
                                                 the NXDN settings (CONFIG_NXDN; RAM only, view section nxdn)
-    rfoundry_debug.py radio ysf [dgid=N] [tx_dgid=N] [rx_dgid=N]
+    rfoundry_debug.py radio ysf [dgid=N] [tx_dgid=N] [rx_dgid=N] [eq=on|off] [tone=on|off]
                                                 the YSF DG-IDs (CONFIG_YSF; RAM only, view section ysf)
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
@@ -1398,12 +1398,14 @@ class DebugLink:
         cur.update(kw)
         self.nxdn_settings(**cur)
 
-    def ysf_settings(self, tx_dgid=0, rx_dgid=0):
+    def ysf_settings(self, tx_dgid=0, rx_dgid=0, bench=None):
         """The YSF DG-IDs (RADIO op 44; debuglink.md 3.8; RAM only, the ysf view section shows them): sent and heard,
-        0..99 each, rx_dgid 0 hears every DG-ID. The callsign and the radio ID can't be set here (ysf.md 6)."""
-        if not (0 <= tx_dgid <= 99 and 0 <= rx_dgid <= 99):
-            raise ValueError("ysf_settings: DG-IDs 0..99")
-        self.radio(OP_YSF, struct.pack("<BB", tx_dgid, rx_dgid))
+        0..99 each, rx_dgid 0 hears every DG-ID. bench: the soft modem's options off for an A/B (bit 0 equalizer,
+        bit 1 tone notch), None to leave it. The callsign and the radio ID can't be set here (ysf.md 6)."""
+        if not (0 <= tx_dgid <= 99 and 0 <= rx_dgid <= 99) or (bench is not None and not 0 <= bench <= 3):
+            raise ValueError("ysf_settings: DG-IDs 0..99, bench 0..3")
+        args = struct.pack("<BB", tx_dgid, rx_dgid) + (b"" if bench is None else struct.pack("<B", bench))
+        self.radio(OP_YSF, args)
 
     def ysf_settings_update(self, **kw):
         """ysf_settings with the DG-IDs in force (the ysf view section) changed only where kw says."""
@@ -2057,8 +2059,12 @@ def cmd_radio(link, a):
                 kw["tx_dgid"] = kw["rx_dgid"] = int(val, 0)
             elif k in ("tx_dgid", "rx_dgid"):
                 kw[k] = int(val, 0)
+            elif k in ("eq", "tone") and val in ("on", "off"):
+                bit = 1 if k == "eq" else 2
+                kw.setdefault("bench", 0)
+                kw["bench"] = (kw["bench"] | bit) if val == "off" else (kw["bench"] & ~bit)
             else:
-                raise SystemExit("ysf [dgid=N] [tx_dgid=N] [rx_dgid=N]")
+                raise SystemExit("ysf [dgid=N] [tx_dgid=N] [rx_dgid=N] [eq=on|off] [tone=on|off]")
         link.ysf_settings_update(**kw)
     elif op == "cc":                  # cc 0..15
         link.dmr_fields(cc=num(0))
