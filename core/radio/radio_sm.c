@@ -2745,7 +2745,8 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	if (strcmp(dmrDataServiceTxStartingName(), "signal") == 0 && count >= 1 && bursts[0].length >= 10 &&
 	    (bursts[0].payload[0] & 0x3Fu) == DMR_CSBKO_RADIO_CHECK) {
 		const uint8_t *c = bursts[0].payload;
-		uint32_t id = ((uint32_t)c[4] << 16) | ((uint32_t)c[5] << 8) | c[6];
+		const uint8_t *to = (c[1] == DMR_FID_MOTOROLA) ? &c[7] : &c[4];	// the checked radio, by form (dmrData.h)
+		uint32_t id = ((uint32_t)to[0] << 16) | ((uint32_t)to[1] << 8) | to[2];
 		if (id == 0 || t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
 			return false;
 		}

@@ -28,6 +28,13 @@
 // Our own call alert / radio check: the answer is a CSBK in the next frames; tried this many times (docs/ux task flow 8)
 #define SIGNAL_TRIES			3
 #define SIGNAL_ANSWER_MS		1500	// after our CSBK has gone
+// A radio check answer from the radio we checked this soon after the check ended is a late one or a repeat (one per
+// try heard): dropped. In the Motorola form an answer also reads as a request (dmrDataRadioCheckKind), and answering
+// it would start a loop of answers
+#define SIGNAL_LATE_MS			REPLY_TIMEOUT_MS
+// A radio check from the radio we just answered is that radio taking our answer for a request (the two layouts under
+// FID 0x10), not a retry: retries come SIGNAL_ANSWER_MS or more apart. Not answered, so two radios never loop
+#define RADIO_CHECK_ECHO_MS		1000
 // Our SMS with an ACK requested: the TMS ACK comes as a data call of its own after the ETSI part
 #define SMS_TRIES				2
 #define SMS_ACK_MS				8000
@@ -155,6 +162,8 @@ static bool csbkAnswerPending = false;
 static dmrBurst_t csbkAnswer;
 static uint32_t lastCallAlertSrc = 0;
 static uint32_t lastCallAlertTime;
+static uint32_t lastCheckAnswered = 0;	// the radio whose radio check we answered last, and when
+static uint32_t lastCheckAnsweredTime;
 static uint32_t lastBlockWindow;		// last header / CSBK / block (gotcha 5.4)
 static bool blockWindowValid;
 
@@ -168,6 +177,7 @@ static struct
 	bool waiting;						// sent, waiting for the answer until due
 	uint32_t due;
 	uint32_t startedAt;
+	uint32_t doneAt;					// when it ended (OK or FAILED)
 } sig;
 
 // Our own SMS
@@ -1297,21 +1307,19 @@ static bool signalTransmit(void)
 	{
 		buf[0] = 0x80 | DMR_CSBKO_CALL_ALERT;// last block; ETSI call alert (TS 102 361-2), FID 0
 		buf[1] = DMR_FID_ETSI;
+		buf[4] = (sig.dst >> 16) & 0xFF;
+		buf[5] = (sig.dst >> 8) & 0xFF;
+		buf[6] = sig.dst & 0xFF;
+		buf[7] = (channel.ownId >> 16) & 0xFF;
+		buf[8] = (channel.ownId >> 8) & 0xFF;
+		buf[9] = channel.ownId & 0xFF;
 		stats.callAlertsSent++;
 	}
 	else
 	{
-		buf[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// radio check request: octet 3 0x80; FID per the setting (Motorola / ETSI)
-		buf[1] = settings.radioCheckEtsi ? DMR_FID_ETSI : DMR_FID_MOTOROLA;
-		buf[3] = 0x80;
+		dmrDataBuildRadioCheck(sig.dst, channel.ownId, settings.radioCheckEtsi, buf);// form per the setting
 		stats.radioChecksSent++;
 	}
-	buf[4] = (sig.dst >> 16) & 0xFF;
-	buf[5] = (sig.dst >> 8) & 0xFF;
-	buf[6] = sig.dst & 0xFF;
-	buf[7] = (channel.ownId >> 16) & 0xFF;
-	buf[8] = (channel.ownId >> 8) & 0xFF;
-	buf[9] = channel.ownId & 0xFF;
 	queueTx(dmrDataBuildCSBK(buf, txBursts), TXK_SIGNAL);
 	sig.tries++;
 	sig.state = DMR_REQ_SENDING;
@@ -1322,6 +1330,7 @@ static void signalFinish(bool ok)
 {
 	sig.state = ok ? DMR_REQ_OK : DMR_REQ_FAILED;
 	sig.waiting = false;
+	sig.doneAt = now;
 	if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
 	{
 		post(ok ? DMR_DATA_EV_CALL_ALERT_ACKED : DMR_DATA_EV_CALL_ALERT_FAILED, sig.dst);
@@ -2655,6 +2664,51 @@ static void handleEmergencyAlarm(const uint8_t *csbk)
 #endif
 }
 
+// A radio check to us: the answer to ours, or a request (answered when the setting allows). Under FID 0x10 a CSBK
+// can be either (dmrDataRadioCheckKind): from the radio we are checking it is the answer
+static void handleRadioCheck(const uint8_t *csbk)
+{
+	uint32_t peer = 0;
+	uint8_t kind = dmrDataRadioCheckKind(csbk, channel.ownId, &peer);
+	dmrBurst_t answer;
+
+	if ((kind & DMR_RC_ANSWER) && (sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
+	{
+		if (sig.state == DMR_REQ_SENDING)
+		{
+			stats.radioChecksAnswered++;
+			signalFinish(true);
+			return;
+		}
+		if (((sig.state == DMR_REQ_OK) || (sig.state == DMR_REQ_FAILED)) && (sig.tries > 0) &&
+				((now - sig.doneAt) < SIGNAL_LATE_MS))
+		{
+			return;
+		}
+	}
+	if (((kind & DMR_RC_REQUEST) == 0) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
+	{
+		return;
+	}
+	if ((peer == lastCheckAnswered) && ((now - lastCheckAnsweredTime) < RADIO_CHECK_ECHO_MS))
+	{
+		return;
+	}
+	stats.radioChecksReceived++;
+	if (!settings.radioCheckReply)
+	{
+		return;
+	}
+	post(DMR_DATA_EV_RADIO_CHECK_ANSWERED, peer);
+	if (!csbkAnswerPending)
+	{
+		csbkAnswer = answer;
+		csbkAnswerPending = true;
+		lastCheckAnswered = peer;
+		lastCheckAnsweredTime = now;
+	}
+}
+
 // Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings); emergency alarms
 static void handleCSBK(const uint8_t *csbk)
 {
@@ -2671,71 +2725,41 @@ static void handleCSBK(const uint8_t *csbk)
 	{
 		return;
 	}
-
-	if ((sig.state == DMR_REQ_SENDING) && (source == channel.ownId) && (target == sig.dst))
+	if (opcode == DMR_CSBKO_RADIO_CHECK)
 	{
-		if (((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK)) ||
-				((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80)))
-		{
-			if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
-			{
-				stats.callAlertsAcked++;
-			}
-			else
-			{
-				stats.radioChecksAnswered++;
-			}
-			signalFinish(true);
-			return;
-		}
+		handleRadioCheck(csbk);
+		return;
 	}
-	// The ack's IDs are the other way round: to the caller (us) from the alerted radio. A radio check answered in
-	// that order (the ETSI acknowledgment convention) counts too
-	if ((sig.state == DMR_REQ_SENDING) && (target == channel.ownId) && (source == sig.dst))
+
+	// The ack's IDs are the other way round from the alert: to the caller (us) from the alerted radio. One with the
+	// alert's order counts too
+	if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) &&
+			(opcode == DMR_CSBKO_CALL_ALERT_ACK) && (((source == channel.ownId) && (target == sig.dst)) ||
+			((target == channel.ownId) && (source == sig.dst))))
 	{
-		if ((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK))
-		{
-			stats.callAlertsAcked++;
-			signalFinish(true);
-			return;
-		}
-		if ((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80))
-		{
-			stats.radioChecksAnswered++;
-			signalFinish(true);
-			return;
-		}
+		stats.callAlertsAcked++;
+		signalFinish(true);
+		return;
 	}
 
 	dmrBurst_t answer;
 
-	if ((channel.ownId == 0) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
+	if ((opcode != DMR_CSBKO_CALL_ALERT) || (channel.ownId == 0) ||
+			(dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
 	{
 		return;
 	}
 
-	if (opcode == DMR_CSBKO_CALL_ALERT)
+	stats.callAlertsReceived++;
+	if ((source != lastCallAlertSrc) || ((now - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
 	{
-		stats.callAlertsReceived++;
-		if ((source != lastCallAlertSrc) || ((now - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
-		{
-			post(DMR_DATA_EV_CALL_ALERT, source);
-		}
-		lastCallAlertSrc = source;
-		lastCallAlertTime = now;
-		if (!settings.callAlertAck)
-		{
-			return;
-		}
+		post(DMR_DATA_EV_CALL_ALERT, source);
 	}
-	else
+	lastCallAlertSrc = source;
+	lastCallAlertTime = now;
+	if (!settings.callAlertAck)
 	{
-		stats.radioChecksReceived++;
-		if (!settings.radioCheckReply)
-		{
-			return;
-		}
-		post(DMR_DATA_EV_RADIO_CHECK_ANSWERED, source);
+		return;
 	}
 
 	if (!csbkAnswerPending)
