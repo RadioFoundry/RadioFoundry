@@ -8,7 +8,6 @@
 #include "board.h"
 #include "radio/radio_ysf.h"
 #include "radio/radio_bands.h"
-#include "radio/radio_cwid.h"
 #include "ysf/ysf_engine.h"
 #include "ysf/ysf_codeplug.h"
 #include "ysf/ysf_id.h"
@@ -118,9 +117,7 @@ void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1]
 		memcpy(out, r.callsign, sizeof r.callsign);
 		return;
 	}
-	out[0] = '\0';
-	if (radio_name)
-		radio_cwid_callsign(radio_name, out, RADIO_YSF_CALL_LEN + 1);
+	ysf_callsign_from_name(radio_name, out);
 }
 
 // The engine's configuration for channel ch at number (0: the VFO): a live stored YSF channel's tag gives the

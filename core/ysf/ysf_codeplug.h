@@ -33,6 +33,9 @@ void ysf_radio_decode(const uint8_t *b, int len, ysf_radio_t *out);
 void ysf_radio_encode(const ysf_radio_t *r, uint8_t out[YSF_CP_CALL_LEN]);
 // The stored record (an empty one when there is none)
 void ysf_radio_load(ysf_radio_t *out);
+// The callsign a radio name gives when the record has none (ysf.md 5.2): its first word up to a space, '-' or '/',
+// upper case, when it reads as a callsign: 3 to 10 letters and digits with at least one of each. "" otherwise
+void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]);
 
 // Channel number's block from its tag (ch read by codeplug_channel); false when it isn't a live YSF channel
 bool ysf_chan_load(uint16_t number, const channel_t *ch, ysf_chan_t *out);

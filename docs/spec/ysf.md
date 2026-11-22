@@ -214,7 +214,7 @@ PTT sends the transmit DG-ID. A channel stores both; the channel editor sets one
 ### 5.2 Callsign
 
 The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), else the radio name's first
-word when it reads as a callsign (4-7 letters and digits, at least one of each; the CW ID's rule). With neither,
+word when it reads as a callsign (3-10 letters and digits, at least one of each; `ysf_callsign_from_name`). With neither,
 Home says "No callsign" and PTT is refused.
 
 ### 5.3 Debug link

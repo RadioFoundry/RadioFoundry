@@ -70,6 +70,31 @@ void ysf_radio_load(ysf_radio_t *out)
 	ysf_radio_decode(b, codeplug_mode_settings(CODEPLUG_KIND_YSF, b, sizeof b), out);
 }
 
+void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1])
+{
+	uint8_t n = 0, letters = 0, digits = 0;
+
+	out[0] = '\0';
+	if (name == NULL)
+		return;
+	while (name[n] != '\0' && name[n] != ' ' && name[n] != '-' && name[n] != '/') {
+		char c = name[n];
+
+		if (c >= 'a' && c <= 'z')
+			c = (char)(c - 'a' + 'A');
+		if (n >= YSF_CP_CALL_LEN || !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+			out[0] = '\0';	// too long, or not a callsign's character: no callsign
+			return;
+		}
+		letters += c >= 'A';
+		digits += c <= '9';
+		out[n++] = c;
+	}
+	out[n] = '\0';
+	if (n < 3 || !letters || !digits)
+		out[0] = '\0';
+}
+
 bool ysf_chan_load(uint16_t number, const channel_t *ch, ysf_chan_t *out)
 {
 	uint8_t b[YSF_CP_CHAN_LEN + 8u + CODEPLUG_TAG_HEAD_MAX];

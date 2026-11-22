@@ -2,10 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The standalone SFR repeater's CW ID schedule (radio_cwid.h, docs/spec/sfr.md 4, CW ID)
 #include "config.h"
-#if CONFIG_SFR_CWID || CONFIG_YSF	// the whole file: the callsign rule is also YSF's (radio_ysf.c)
+#if CONFIG_SFR_CWID	// the whole file
 #include "radio/radio_cwid.h"
 
-#if CONFIG_SFR_CWID
 uint32_t radio_cwid_interval_ms(uint8_t code)
 {
 	static const uint8_t minutes[RADIO_CWID_CODES] = { 0, 5, 10, 15, 30 };
@@ -31,8 +30,6 @@ void radio_cwid_sent(radio_cwid_t *c, uint32_t now_ms)
 	c->ever = true;
 	c->last_id_ms = now_ms;
 }
-
-#endif
 
 // The end of the name's first word: a space, an SSID ('-') or a suffix ('/')
 static bool word_end(char ch)
@@ -76,4 +73,4 @@ uint8_t radio_cwid_callsign(const char *name, char *out, uint8_t cap)
 	return n;
 }
 
-#endif	// CONFIG_SFR_CWID || CONFIG_YSF
+#endif	// CONFIG_SFR_CWID
