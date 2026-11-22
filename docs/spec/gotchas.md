@@ -210,7 +210,8 @@ still listed) leaves its source silent for good. A dead timeslot interrupt means
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
 state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine and that check with it, so a lost
 FM copy request there would leave receive deaf until the session closes (suspected in #923): the session's poll sets
-the copy up again after 200 ms with no half (`airp.copy_restarts`). Radios: the HR_C7000 boards; one report.
+the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot

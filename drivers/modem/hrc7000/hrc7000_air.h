@@ -94,7 +94,7 @@ typedef struct hrc7000_air {
 	uint32_t t_half[2];	// the time of each ring half's first sample
 	bool gap;		// the next half taken does not follow the ring's last (lost or a new set-up)
 	bool gap_half[2];	// ... per ring half as taken: the session's receiver starts over there
-	uint32_t t_copy;	// the last copy request (or the set-up): the watchdog's start
+	uint32_t t_copy;	// the last half that came (taken or dropped for a full ring) or the set-up: the watchdog's start
 
 	// The session
 	bool open;

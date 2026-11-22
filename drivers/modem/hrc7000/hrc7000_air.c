@@ -178,11 +178,11 @@ static void copy_off(hrc7000_air_t *a)
 // A half is full (system interrupt bit 14): into the ring, or dropped when the task has not made room
 static AIR_ISR void take_half(hrc7000_air_t *a, uint32_t t)
 {
-	a->t_copy = t;		// the copy request came: the watchdog in hrc7000_air_poll stays off
 	uint32_t h = a->head;
 	if (h - a->tail > HRC7000_AIR_RING - HALF) {
 		a->st.overruns++;
 		a->gap = true;		// the samples after the ring's are not the next ones
+		a->t_copy = t;		// a half came: the reader, not the copy, is behind (a tap nobody reads for a while)
 		return;
 	}
 	if (hrc7000_fm_rx_audio(a->dev, &a->buf->ring[h % HRC7000_AIR_RING]) == 0) {
@@ -192,6 +192,7 @@ static AIR_ISR void take_half(hrc7000_air_t *a, uint32_t t)
 	a->t_half[(h / HALF) % 2u] = t - (HALF - 1u) * SAMPLE_US;
 	a->gap_half[(h / HALF) % 2u] = a->gap;	// the task's receiver starts over at this half
 	a->gap = false;
+	a->t_copy = t;		// a half taken holds the watchdog off; an interrupt with no half (no_half) does not
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	a->head = h + HALF;
 	a->st.halves++;

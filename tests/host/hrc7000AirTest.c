@@ -651,12 +651,35 @@ static void test_copy_watchdog(void)
 	CHECK(ngot == got_before + 10 * (int)HALF && nresets == resets + 1 && reset_at[resets] == got_before);
 	CHECK(A->st.copy_restarts == 1 && bad_times == 0);
 
-	// The task behind (ring full): the interrupt still comes, so no restart
+	// Copy interrupts that yield no half (FM_ADDR_SW naming neither): no proof of receive, so the watchdog still fires
+	uint32_t no_half = A->st.no_half, halves = A->st.halves;
+	for (int k = 0; k < 6; k++) {
+		now += 32000;
+		REG(C7_FM_ADDR_SW) = 0;
+		REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+		hrc7000_air_isr_sys(A);
+		REG(C7_SYS_INTERP_LIST) = 0;
+		hrc7000_air_poll(A);
+		CHECK(A->st.copy_restarts == 1);	// 192 ms since the last half
+	}
+	now += 32000;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	hrc7000_air_isr_sys(A);
+	REG(C7_SYS_INTERP_LIST) = 0;
+	hrc7000_air_poll(A);
+	CHECK(A->st.no_half == no_half + 7 && A->st.halves == halves && A->st.copy_restarts == 2 && copy_set_up());
+	got_before = ngot;
+	resets = nresets;
+	copy_half();
+	hrc7000_air_poll(A);
+	CHECK(ngot == got_before + (int)HALF && nresets == resets + 1 && A->st.copy_restarts == 2);
+
+	// The task behind (ring full): halves still come, only dropped, so no restart
 	for (int k = 0; k < 10; k++) {
 		copy_half();
 	}
 	hrc7000_air_poll(A);
-	CHECK(A->st.overruns > 0 && A->st.copy_restarts == 1);
+	CHECK(A->st.overruns > 0 && A->st.copy_restarts == 2);
 
 	// Transmitting: no copy, so nothing to watch, the slots keep the TX alive
 	air_tx_chunk_t c0 = chunk(0, 144, 0);
@@ -669,31 +692,31 @@ static void test_copy_watchdog(void)
 		}
 		hrc7000_air_poll(A);
 	}
-	CHECK(hrc7000_air_tx_active(A) && A->st.copy_restarts == 1 && A->st.stalls == 0);
+	CHECK(hrc7000_air_tx_active(A) && A->st.copy_restarts == 2 && A->st.stalls == 0);
 	hrc7000_air_tx_abort(A);
 	CHECK(copy_set_up());
 	hrc7000_air_poll(A);
-	CHECK(A->st.copy_restarts == 1);
+	CHECK(A->st.copy_restarts == 2);
 
 	// Suspended: the chip is not in the copy
 	hrc7000_air_suspend(A);
 	REG(C7_WORK_MODE) = 0x55;
 	now += 1000000;
 	hrc7000_air_poll(A);
-	CHECK(A->st.copy_restarts == 1 && REG(C7_WORK_MODE) == 0x55);
+	CHECK(A->st.copy_restarts == 2 && REG(C7_WORK_MODE) == 0x55);
 	hrc7000_air_resume(A);
 	now += 150000;
 	hrc7000_air_poll(A);
-	CHECK(A->st.copy_restarts == 1);
+	CHECK(A->st.copy_restarts == 2);
 	copy_half();
 	hrc7000_air_poll(A);
-	CHECK(A->st.copy_restarts == 1);
+	CHECK(A->st.copy_restarts == 2);
 
 	// Closed: nothing
 	hrc7000_air_close(A, true);
 	now += 1000000;
 	hrc7000_air_poll(A);
-	CHECK(dmr_set_up() && A->st.copy_restarts == 1);
+	CHECK(dmr_set_up() && A->st.copy_restarts == 2);
 
 	// The tap too (the glue polls it the same way)
 	CHECK(hrc7000_air_tap_start(A));

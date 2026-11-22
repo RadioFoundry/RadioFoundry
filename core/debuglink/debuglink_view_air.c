@@ -30,6 +30,11 @@ void debuglink_view_air(dl_text_t *t)
 			"airp.copy_restarts=%u\n",
 			(unsigned)rc.records, (unsigned)rc.synced, (unsigned)rc.halves, (unsigned)rc.overruns,
 			(unsigned)rc.chunks, (unsigned)rc.copy_restarts);
+		if (rc.lost_ms != 0) {
+			dl_text(t, "airp.copy_lost_ms=%u\nairp.copy_lost_regs=%x,%x,%x,%x\n", (unsigned)rc.lost_ms,
+				(unsigned)rc.lost_regs[0], (unsigned)rc.lost_regs[1], (unsigned)rc.lost_regs[2],
+				(unsigned)rc.lost_regs[3]);
+		}
 	} else {
 		dl_text(t, "airp.open=0\n");
 	}
