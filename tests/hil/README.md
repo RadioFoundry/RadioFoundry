@@ -47,6 +47,89 @@ deviation (info feature `dev_scale`) or bring the radio near -100 dBm (`power_db
 which skips when the bench can't bring the radio near -75 or -55 dBm (coupled too loosely). Run only the smoke with
 `-m audio_smoke`.
 
+### Tiers
+
+Each test is in one depth tier. `--tier` picks one:
+
+| Tier | Marker | Runs | Use |
+|---|---|---|---|
+| `smoke` | `smoke` | the smoke tests only: boot and debug link, `test_health.py`, version and codec, the image hash, task stacks, FM receive and transmit, a DMR call each way with audio, the bursts on air, the Hub and Quick settings, lost modem interrupts | a check of every radio in about 5 minutes each, and part of every `--affected` run |
+| `standard` | none | everything except the bring-up tier | the scheduled and nightly runs |
+| `bringup` | `bringup` | every test | bringing up a radio: calibration, sweeps and measurements (`test_audio_probe.py`, `test_mic_gain.py`, `test_dmr_repeater_keyup.py`, the power level and encode option sweeps, the reference trim on air, the roaming discovery visit) |
+
+Without `--tier`, a run of the whole directory (`pytest tests/hil`) is `standard`. A command that names its tests
+(a file, a node id, `-k`, `-m`) or runs bring-up mode (`--bringup`, which picks by feature) gets every test it names
+in any tier, as before the tiers. A new test needs no tier marker: it is `standard`. Mark it `smoke` only when it is
+quick (a few seconds, one over at most) and catches a broken radio, and `bringup` when it only matters at bring-up or
+another test covers the same path.
+
+### Impact selection
+
+`--affected BASE` runs the smoke tier plus the tests that the change since BASE (`git merge-base BASE HEAD` to the
+working tree) can break, in the standard tier unless `--tier` says otherwise:
+
+- a test marked `@pytest.mark.feature("<id>")`, required or optional, whose feature the change reaches: its `switch` in
+  the switches `tools/affected.py` finds (named in a changed line, a guard around one, the Makefile's switch for a
+  changed file), or a changed file under its `source` paths (without `source`: the files the Makefile builds for
+  the switch, else the changed files that name `CONFIG_<switch>` and at most two other switches)
+- every test in a changed test file
+
+A test without a feature marker runs only if it is smoke. `tools/affected.py features --base BASE` prints the
+features and why.
+
+```
+python3 -m pytest tests/hil -v -rs --allow-rf --affected origin/main
+```
+
+### Run records
+
+Every run that used the radio writes `build/hil/<board>-<firmware commit>.json`: the board, the firmware's VERSION
+keys, the tree's commit, the tier and `--affected` base, and each test's outcome (`passed`, `failed`, `skipped` with
+its skip kind), with its time over setup, call and teardown. `--hil-record FILE` writes it elsewhere, `none` not at
+all. Sort a record's tests by `duration_s` to find the slow ones. Bring-up records ([Results](#results)) are
+separate.
+
+### Flashing for a run
+
+The repository holds no site's flash path. `tools/hil_flash.sh BOARD BUILD_DIR [PORT]` runs the site's command,
+`$RFOUNDRY_HIL_FLASH_CMD` (a shell command), with `RFOUNDRY_FLASH_BOARD`, `RFOUNDRY_FLASH_IMAGE` (the codec-merged
+image when the build made one, else the first-stage install image, else the plain one) and `RFOUNDRY_FLASH_PORT`.
+The command returns non-zero on a failed write and returns once the radio has restarted. The script then reads the
+radio's VERSION and fails unless `git=` is the commit the build came from, and prints the image's path for
+`--firmware-image`. Hold the radio lock around the flash and the run.
+
+### Batch runs
+
+`tools/hil_batch.sh` tests several pull requests in one pass per radio:
+
+```
+tools/hil_batch.sh 812 815 820                       # dry run: merge, then print the commands
+tools/hil_batch.sh --run 812 815 820 -- --allow-rf   # build, flash and test; PYTEST_ARGS after --
+tools/hil_batch.sh --run --comment --radio BOARD=PORT 812 815             # one radio, results on the PRs
+```
+
+1. It merges the PRs in order onto main in a temporary worktree under `build/hil-batch/<run>/`. A PR that doesn't
+   merge stops the batch.
+2. It picks the bench radios (`--radio BOARD[=PORT]`, else `$RFOUNDRY_HIL_RADIOS` as `board=port` pairs, else
+   `$RFOUNDRY_HIL_BOARD` with `$RFOUNDRY_PORT`) that the change reaches (`tools/affected.py boards`).
+3. Per radio, it builds the combined tree, then under the radio's lock (the file `tools/bringup.py run` takes) flashes
+   it with `tools/hil_flash.sh` and runs `--hil-board BOARD --affected main`, recording to
+   `build/hil-batch/<run>/<board>.json`. The tests take the SDR bench's lease themselves.
+4. When tests fail and the batch has more than one PR, it builds main plus each PR alone, flashes it and runs the
+   failed tests again. A failure no single PR repeats is reported as an interaction.
+
+Without `--run` nothing is built, flashed or run. `--comment` posts each PR's results with `gh pr comment`. The
+worktrees are removed at the end (`--keep` leaves them). The radio is left on the last build flashed.
+
+### Nightly
+
+The HIL workflow's `nightly` job (`.github/workflows/hil.yml`, on when the repository variable `RFOUNDRY_HIL_NIGHTLY`
+is `true`) takes the commit tagged `nightly-ci`, which the CI nightly moves to each commit that passes it. It builds
+that commit for each bench radio, flashes it with `tools/hil_flash.sh` and runs `--tier standard` plus
+`RFOUNDRY_HIL_NIGHTLY_FLAGS`. When every radio passes, it moves the tag `nightly` to the commit; a commit already
+tagged `nightly` is not run again. Records and JUnit XML are the `hil-nightly` artifact. The runner's set-up is in
+[ci-runners.md](../../docs/dev/ci-runners.md#hil-runner).
+
 ### Opt-in flags
 
 | Flag | Allows |
@@ -600,3 +683,5 @@ checks reported as not judged when the receiver clips, and the bench modem's tri
 - Mark the test with its feature: `@pytest.mark.feature("<id>")`, `optional=True` when it shouldn't gate, `owner=`
   when it asks a person for something. `tools/bringup.py check` fails on a marker naming a feature `features.toml`
   doesn't have, a `manual` test without `owner=`, and a switch without an entry.
+  The feature marker is also what puts the test in an `--affected` run ([Impact selection](#impact-selection)).
+- Leave the tier to the default (`standard`) unless the test belongs in `smoke` or `bringup` ([Tiers](#tiers)).
