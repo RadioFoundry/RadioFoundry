@@ -436,7 +436,8 @@ In the Codeplug Editor, a channel whose RX frequency is in one of these bands is
 frequency on RX, and its mode shows as "AM (air band)" or "FM broadcast". The editor does this when you type the RX
 frequency, and also for every channel in a codeplug you open, read from the radio or import. A TX frequency typed in
 either band sets **RX Only** too, since no radio transmits there. While **RX Only** is set, the TX frequency, TX tone
-and power are grayed out in the channel list, and the channel form also grays out VOX and the tone burst. The Problems
+and power are grayed out and blank in the channel list, and the channel form also grays out the TX timeout, VOX and
+the tone burst. The Problems
 list warns about a DMR channel in either band.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a

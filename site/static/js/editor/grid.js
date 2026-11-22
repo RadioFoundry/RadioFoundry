@@ -4,6 +4,15 @@
 // typing on a focused cell), sorting by a column, a filter, row selection for bulk edits, and keyboard movement
 // between cells. Only the cell being edited holds an input, so a table of 1024 channels stays light.
 
+
+let suggestN = 0;
+// A <datalist> for input: the browser's own searchable list of these values
+export function suggestions(input, values) {
+	const id = `suggest-${++suggestN}`;
+	input.setAttribute("list", id);
+	input.autocomplete = "off";
+	return h("datalist", { id }, ...values.map((v) => h("option", { value: v })));
+}
 import { h } from "../flasher/dom.js";
 
 // The row's edit button icon: a pencil drawn in the text color, so it follows the theme.
@@ -221,6 +230,8 @@ export class Grid {
 			input = h("input", { type: "text", value: typed ?? (c.editValue ? c.editValue(c.get(r), r) : this.text(c, r)), spellcheck: "false" });
 		}
 		td.replaceChildren(input);
+		// a long list of usual values (tones): searchable as it is typed, any other valid value still taken
+		if (c.suggest) input.after(suggestions(input, c.suggest(r)));
 		td.classList.add("editing");
 		input.focus();
 		// a value from the attribute leaves the caret at 0 (Chromium), before the key that started the edit: the next

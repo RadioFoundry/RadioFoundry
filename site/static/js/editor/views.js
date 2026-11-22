@@ -5,13 +5,14 @@
 // nothing when the value was taken.
 
 import { h, button } from "../flasher/dom.js";
-import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
+import { parseFreq, parseTone, mhz, TONES } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
 import { refNumber, listenBand, followListen } from "../codeplug/model.js";
 import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
 import { specField } from "./modefields.js";
+import { suggestions } from "./grid.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -26,19 +27,6 @@ const int = (lo, hi) => (t) => (r, k, v) => {
 	const n = Number(String(v).trim());
 	if (!Number.isInteger(n) || n < lo || n > hi) return t("editor.err.range", { min: lo, max: hi });
 	r[k] = n;
-};
-
-// TX timeout in seconds: 0 (blank, or the default label) is the radio's own, the rest rounds up to the 15 s the
-// record stores, so the form shows what will be saved
-const tot = (t) => (r, k, v) => {
-	const s = String(v ?? "").trim();
-	if (!s || /^(0|default)$/i.test(s) || s.toLowerCase() === t("editor.tot.default").toLowerCase()) {
-		r[k] = 0;
-		return;
-	}
-	const n = Number(s);
-	if (!Number.isInteger(n) || n < 1 || n > 3825) return t("editor.err.tot");
-	r[k] = Math.ceil(n / 15) * 15;
 };
 
 const freq = (t) => (r, k, v) => {
@@ -92,6 +80,15 @@ const recordField = (r, key) => !r.kind || !!kindMod(r)?.recordFields?.includes(
 const ownFreqs = (r) => !r.kind || kindMod(r)?.ownFreqs !== false;
 // Receive only: for a channel of a kind, its tag's transmit allowed turned round (the record is receive only)
 const rxOnlyGet = (r) => (r.kind ? !r.tagTx : r.rxOnly);
+// The TX timeouts the record can hold: the radio's default, then 15 s steps to 3825 s; a value off the steps (an
+// import) is listed too, so opening the form doesn't change it
+export function totOptions(t, cur) {
+	const out = [[0, t("editor.tot.default")]];
+	for (let s = 15; s <= 3825; s += 15) out.push([s, s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} (${s} s)`]);
+	if (cur > 0 && cur < 3825 && cur % 15) out.splice(out.findIndex(([v]) => v > cur), 0, [cur, `${cur} s`]);
+	return out;
+}
+
 const rxOnlySet = (r, v) => (r.kind ? (r.tagTx = !v) : (r.rxOnly = !!v));
 
 const tone = (t) => (r, k, v) => {
@@ -165,10 +162,14 @@ export function columns(table, m, t, { features = null } = {}) {
 		return { ...c, readOnly: off, format: (v, r) => (off(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v) };
 	};
 	const own = (c) => ({ ...c, readOnly: (r) => !ownFreqs(r) });
-	// a transmit field on an RX only channel: grayed and locked like a field that doesn't apply (shown, kept)
+	// a transmit field on an RX only channel: blank, grayed and locked like a field that doesn't apply (the value is
+	// kept, and shows again when RX Only is cleared)
 	const tx = (c) => {
-		const ro = c.readOnly;
-		return { ...c, readOnly: (r) => !!rxOnlyGet(r) || (typeof ro === "function" ? ro(r) : !!ro) };
+		const ro = c.readOnly, format = c.format;
+		return {
+			...c, readOnly: (r) => !!rxOnlyGet(r) || (typeof ro === "function" ? ro(r) : !!ro),
+			format: (v, r) => (rxOnlyGet(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v),
+		};
 	};
 	const num = { key: "number", label: "#", type: "number", get: (r) => r.number, readOnly: true, width: "3.5rem", format: (v) => v ?? "–" };
 	switch (table) {
@@ -187,8 +188,8 @@ export function columns(table, m, t, { features = null } = {}) {
 			tx(own(col("txHz", "editor.col.tx", "text", freq(t), { format: mhz, numeric: true }))),
 			tx(col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) })),
 			only("fm", col("bw", "editor.col.bw", "select", pick, { options: () => [[12.5, "12.5"], [25, "25"]] })),
-			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
-			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v }))),
+			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, suggest: () => TONES })),
+			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, suggest: () => TONES }))),
 			only("dmr", col("colorCode", "editor.col.cc", "select", pick, { options: () => [...Array(16).keys()].map((n) => [n, String(n)]) })),
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
@@ -343,15 +344,15 @@ export function channelForm(m, t, { features = null } = {}) {
 			const band = listenBand(parseFreq(value("rxHz")));
 			return band ? t(`editor.band.${band}`) : "";
 		} },
-		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
+		sel("tot", "editor.col.tot", (w) => totOptions(t, w?.tot), { disabled: noTx }),
 		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
 		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening, get: rxOnlyGet, set: rxOnlySet },
 		{ group: t("editor.form.mode_params"), show: (r) => !!r.kind },
 		...kindFields,
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
-		fm(txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v)),
-		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), disabled: noTx }),
+		fm({ ...txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v), suggest: () => TONES }),
+		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), suggest: () => TONES, disabled: noTx }),
 		fm(sel("squelch", "editor.col.squelch", () => [[0, t("editor.squelch.default")], ...[...Array(21).keys()].map((n) => [n + 1, String(n + 1)])])),
 		fm({ ...chk("vox", "editor.col.vox"), disabled: noTx }),
 		fm({ ...chk("toneBurst", "editor.col.tone_burst"), disabled: noTx }),
@@ -420,8 +421,9 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			const v = get(work);
 			input = h("input", { type: "text", id, value: f.format ? f.format(v ?? "") : v ?? "", spellcheck: "false" });
 		}
+		const list = f.suggest && input.tagName === "INPUT" ? suggestions(input, f.suggest(work)) : null;
 		const label = h("label", { for: id }, typeof f.label === "function" ? f.label(work) : f.label);
-		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input, f.help ? h("span", { class: "small muted" }, f.help) : null);
+		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input, list, f.help ? h("span", { class: "small muted" }, f.help) : null);
 		rows.push({ f, input, row, label });
 		return row;
 	};
