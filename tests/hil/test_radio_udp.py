@@ -120,7 +120,7 @@ def test_radio_udp_gps(udp_ctl, radio):
     if "gps" not in r:
         skip("not_built", "firmware without the gps request")
     if r["gps"] == 0:
-        skip("hardware", "no GPS module")
+        skip("no_hw", "no GPS module")
     pos = radio.view(["aprs"])
     if pos.get("pos.gps_fix") != "1":
         c.ask("gps?off")
