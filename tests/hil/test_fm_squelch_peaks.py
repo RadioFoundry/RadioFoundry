@@ -8,7 +8,9 @@ test_fm_squelch_voice_peaks (rf, bench_service): the VFO on --fm-mhz at 12.5 kHz
 bench board sends ten speech-like syllables (1 kHz at 1.5 kHz deviation, 300 ms) with a 120 ms high burst after each
 (2 kHz or 3 kHz at full deviation, 2.5 kHz). The radio's state is read every 40 ms while the carrier is up. Pass: the
 squelch opens and doesn't close once between the first open and the end of the transmission; after the bench drops the
-carrier, the squelch closes within CLOSE_AFTER_S. The VFO's bandwidth and squelch level are put back."""
+carrier, the squelch closes in 1 or 2 polls (the core view's sql_close: a voice peak hold would read 16) and within
+CLOSE_AFTER_S of the bench's done record. The done record and the radio share no clock, so the time limit is loose;
+sql_close is what tells the fast close from the hold. The VFO's bandwidth and squelch level are put back."""
 import time
 
 import pytest
@@ -20,6 +22,8 @@ SYLLABLE = {"kind": "tone", "hz": 1000, "s": 0.3, "level": 0.6}    # 1.5 kHz at 
 BURSTS = {"2k": 2000, "3k": 3000}
 DEV_HZ = 2500
 CLOSE_AFTER_S = 0.5     # the bench's done record to the squelch shut (one poll, the link's reads, the record's lag)
+CLOSE_POLLS = 2         # RADIO_SQL_CLOSE_POLLS: the core view's sql_close for a carrier that goes (1 fast, 2 a poll
+                        # behind); a voice peak hold reads RADIO_SQL_PEAK_POLLS
 
 
 def _program(burst_hz):
@@ -82,6 +86,7 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
                 while radio.core().get("state") == "rx" and time.monotonic() - t_done < 3:
                     time.sleep(0.02)
                 close_s = time.monotonic() - t_done
+                sql_close = radio.core().get("sql_close")
         finally:
             if bw0 == "25k":
                 L.bandwidth(True)
@@ -95,9 +100,12 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
         drops = max(drops, len({s[4] for s in samples[first:last + 1]}) - 1)
     print(f"\n{mhz:.4f} MHz, {burst} bursts: {len(samples)} reads, open at "
           f"{samples[first][0] if first is not None else None} s, closed {drops} times while keyed, shut "
-          f"{close_s:.2f} s after the bench's done record; bench {done}")
+          f"{close_s:.2f} s after the bench's done record, in {sql_close} polls; bench {done}")
     print("  " + " ".join(f"{s[0]}:{(s[1] or '?')[:2]}/{s[2]}/{s[3]}" for s in samples))
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
     assert first is not None, f"the bench's carrier on {mhz:.4f} MHz never opened the squelch at level 1"
     assert drops == 0, f"the squelch closed {drops} times on {burst} voice peaks while the carrier was up"
+    assert sql_close is not None, "the core view has no sql_close: firmware older than the voice peak hold"
+    assert 1 <= int(sql_close) <= CLOSE_POLLS, (f"the squelch took {sql_close} polls to close after the carrier went "
+                                                f"(a voice peak hold), not the fast close's 1-{CLOSE_POLLS}")
     assert close_s < CLOSE_AFTER_S, f"the squelch closed {close_s:.2f} s after the carrier, over {CLOSE_AFTER_S} s"

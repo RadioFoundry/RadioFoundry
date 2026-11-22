@@ -8210,6 +8210,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 	sm->audio_out = -1;
 	sm->rx_open_out = -1;
+	sm->sql_floor = INT16_MAX;	// not known yet: no voice peak hold before an idle poll measured it
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
@@ -9306,14 +9307,32 @@ static int16_t held_rssi(const radio_status_t *st, uint8_t sq, uint8_t open_belo
 	return sq != 0 && st->noise < open_below + RADIO_SQL_HYST_DB ? st->rssi_dbm : INT16_MAX;
 }
 
+// The receiver's floor (sql_floor), from idle polls whose noise says no carrier at any level: down at once, up
+// 1 dB every RADIO_SQL_FLOOR_RISE_POLLS polls, so a carrier coming up in the poll before the squelch opens moves it
+// by a dB at most
+static void track_floor(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
+{
+	if (st->noise < RADIO_SQL_OPEN_L1 + RADIO_SQL_HYST_DB) {
+		return;
+	}
+	if (st->rssi_dbm < sm->sql_floor) {
+		sm->sql_floor = st->rssi_dbm;
+	} else if (st->rssi_dbm > sm->sql_floor && (now_ms / RADIO_POLL_MS) % RADIO_SQL_FLOOR_RISE_POLLS == 0) {
+		sm->sql_floor++;
+	}
+}
+
 // Polls of noise above the line before the squelch closes on this reading: close_polls(), or RADIO_SQL_PEAK_POLLS
-// for a voice peak (the RX tone still there and the signal strength where it was on the last poll the squelch held,
-// whatever the noise reads). An RX tone that goes and a carrier that fades or goes close as before
+// for a voice peak: a 12.5 kHz channel, the RX tone still there, the signal strength where it was on the last poll the
+// squelch held and that strength RADIO_SQL_PEAK_FLOOR_DB over the floor, whatever the noise reads. An RX tone that
+// goes and a carrier that fades or goes close as before; so does a carrier near the floor, whose strength may not
+// fall far enough when it goes
 static uint8_t close_need(const radio_sm_t *sm, const radio_status_t *st, uint8_t sq)
 {
 	uint8_t polls = close_polls();
-	if (polls == RADIO_SQL_CLOSE_POLLS && sq != 0 && sm->view.tone_ok &&
-	    st->rssi_dbm + RADIO_SQL_PEAK_RSSI_DB >= sm->sql_rssi) {
+	if (polls == RADIO_SQL_CLOSE_POLLS && sq != 0 && sm->view.tone_ok && sm->view.ch.bw == RADIO_BW_12K5 &&
+	    st->rssi_dbm + RADIO_SQL_PEAK_RSSI_DB >= sm->sql_rssi &&
+	    (int32_t)sm->sql_rssi >= (int32_t)sm->sql_floor + RADIO_SQL_PEAK_FLOOR_DB) {
 		return RADIO_SQL_PEAK_POLLS;
 	}
 	return polls;
@@ -9649,6 +9668,8 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			sm->close_count = 0;
 			sm->sql_rssi = held_rssi(&st, sq, open_below);
 			changed(sm);
+		} else {
+			track_floor(sm, &st, now_ms);
 		}
 	} else if (holds) {
 		activity(sm, now_ms);
@@ -9658,6 +9679,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		   (sq != 0 && need == RADIO_SQL_CLOSE_POLLS &&
 		    st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
 		bool was_rx = sm->view.state == RS_RX;
+		sm->view.sql_close = sm->close_count;
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
 			// stays until PTT is released
