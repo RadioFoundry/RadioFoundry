@@ -26,8 +26,16 @@ typedef struct {
 	uint8_t bpp;
 	// Safe area: pixels at each edge that are hard to see (bezel, lens). The UI draws inside them; they stay background
 	uint8_t inset_top, inset_bottom, inset_left, inset_right;
+	// The frame buffer holds the safe area only, not the whole panel (bpp 4 only): nothing is drawn in the insets, so a
+	// board whose RAM is short keeps (width x height - safe area) pixels fewer. flush_indexed then gets rows of a
+	// (width - inset_left - inset_right) x (height - inset_top - inset_bottom) buffer, its row 0 the safe area's top
+	// row, and shows them inside the insets; fill_insets(color) paints the four insets in the background color, which
+	// gfx asks for with the first frame and whenever the background changes. Screen captures rebuild the whole panel
+	// (gfx_read_rgb565, gfx_read_packed)
+	bool fb_safe_area;
+	void (*fill_insets)(uint16_t rgb565);
 	void (*init)(void);
-	// Show rows y0 .. y1-1 of a full width x height frame buffer
+	// Show rows y0 .. y1-1 of a full width x height frame buffer (with fb_safe_area: of the safe area's buffer)
 	void (*flush)(const void *fb, uint16_t y0, uint16_t y1);
 	// bpp 4 instead of flush: the same with the palette, 16 RGB565 colors the indexes stand for
 	void (*flush_indexed)(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);

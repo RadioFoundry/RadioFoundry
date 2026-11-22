@@ -131,9 +131,10 @@ static bool have_newest;		// stats.sector / stats.slot point at the newest valid
 static uint32_t valid_mask, save_mask;
 #define SECTORS_MAX	32u
 static uint32_t next_seq;		// the next record's sequence number: past every record in the ring
-// Slot buffers, used only under the storage lock (kept off the small housekeeping and start-up task stacks)
+// The slot buffer, used only under the storage lock (kept off the small housekeeping and start-up task stacks). One is
+// enough: next_slot's scan is over before put_record reads its record back, and settings_init calls neither. The
+// record put_record builds has its own
 static uint8_t slot_buf[SLOT_SIZE];
-static uint8_t slot_buf2[SLOT_SIZE];
 
 static uint16_t rec_page(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) >> SETTINGS_PAGE_SHIFT); }
 static uint16_t rec_layout(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) & 0x0FFFu); }
@@ -298,7 +299,7 @@ void settings_end(uint32_t now_ms)
 // that holds no page of the set in force or of this save (erased first). False when every sector does
 static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 {
-	uint8_t *r = slot_buf2;
+	uint8_t *r = slot_buf;
 	uint16_t sec = have_newest ? stats.sector : 0;
 	uint16_t sl = have_newest ? (uint16_t)(stats.slot + 1u) : 0;
 

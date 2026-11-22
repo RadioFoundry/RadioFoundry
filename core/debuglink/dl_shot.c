@@ -44,7 +44,7 @@ size_t dl_shot_reply(const dl_shot_t *s, uint32_t offset, uint8_t *out, size_t c
 	put32(out + 15, offset);
 	put32(out + 19, s->size);
 	put32(out + 23, s->frame);
-	out[27] = s->drawing ? 1u : 0u;
+	out[27] = (uint8_t)((s->drawing ? 1u : 0u) | (s->safe_area ? 2u : 0u));
 	if (s->bpp == 4) {
 		for (int i = 0; i < 16; i++) {
 			put16(out + DL_SHOT_HDR + 2 * i, s->palette[i]);

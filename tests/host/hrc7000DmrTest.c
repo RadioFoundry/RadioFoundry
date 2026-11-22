@@ -903,6 +903,74 @@ static void test_polite_after_restart(void)
 	}
 }
 
+// A call that ended with its terminator leaves the channel free: a reply keyed within the busy window, aligned to that
+// call (the call stack does so within DMR_CALL_ALIGN_MS, 300 ms), was refused as busy until 360 ms after the terminator
+static void polite_try(bool admit)
+{
+	count_kind(0xFF, NULL);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_POLITE_CC) == admit);
+	CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == (admit ? 0 : 1));
+	if (admit) {
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		CHECK(!hrc7000_dmr_is_transmitting(&eng));
+	}
+	count_kind(0xFF, NULL);
+}
+
+static void test_polite_after_terminator(void)
+{
+	for (int repeater = 0; repeater < 2; repeater++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = repeater };
+		hrc7000_dmr_configure(&eng, &cfg);
+		hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
+		tick(false);
+		deframe(rti(1, 0, 1, 2, 0, 0));	// voice, own color code
+		count_kind(0xFF, NULL);
+		polite_try(false);		// the call is on
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0) | (1u << 25));	// a bad CRC ends nothing
+		polite_try(false);
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));
+		now += 100000u;
+		// Direct mode: the call is over, the reply admitted. A repeater's terminator is its hang: still busy
+		polite_try(!repeater);
+		if (repeater) {
+			continue;
+		}
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));
+		tick(false);
+		deframe(rti(1, 0, 1, 2, 0, 0));	// a new call after the terminator: busy again
+		polite_try(false);
+		CHECK(eng.st.tx_rejected == 3);
+	}
+}
+
+// A terminator on one chip slot while the other slot's call runs leaves the channel busy
+static void test_polite_other_slot_terminator(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
+	tick(false);
+	deframe(rti(1, 0, 1, 2, 0, 0));	// call A: voice on chip slot 0
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 1, 0));	// call B ends on chip slot 1
+	now += 10000u;
+	count_kind(0xFF, NULL);
+	polite_try(false);		// call A is still on
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));	// then A ends too
+	now += 10000u;
+	polite_try(true);
+}
+
 static void test_event_overflow(void)
 {
 	setup();
@@ -1985,6 +2053,8 @@ int main(void)
 	test_resync_voice_lost();
 	test_polite_and_repeater();
 	test_polite_after_restart();
+	test_polite_after_terminator();
+	test_polite_other_slot_terminator();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();

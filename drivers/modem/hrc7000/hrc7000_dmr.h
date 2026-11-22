@@ -153,6 +153,7 @@ typedef struct {
 	uint32_t rx_tick;	// tick of the last burst taken
 	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
+	bool rx_call_end;	// the last burst taken was a call's terminator: polite access sees a free channel
 	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
 	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
