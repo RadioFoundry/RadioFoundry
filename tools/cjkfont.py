@@ -12,9 +12,12 @@ and writes the C tables the firmware links (core/ui/cjk_font_data.c) plus a PNG 
         --font-name "Noto Sans SC 2.004" \
         --copyright "2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'" \
         --license LICENSES/OFL-1.1.txt --spdx OFL-1.1 \
-        --po core/ui/lang/zh.po --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
+        --po core/ui/lang/zh.po --chars-file tools/cjk_names_zh.txt \
+        --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
     tools/cjkfont.py ... --text "确认 取消 信道" --out-c /tmp/cjk.c
 
+--chars-file adds characters from a UTF-8 file (one name per line, # comments ignored) to the catalog's characters.
+It is for user text the catalogs do not contain, such as Chinese channel names.
 The cell is 16x16 pixels because smaller is not readable: at 12x12 an outline font loses the strokes of all but the
 simplest characters (a hand-tuned 12x12 bitmap font would do it, but none with a license that suits this project).
 
@@ -35,8 +38,8 @@ import os
 import re
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
-
+# Pillow is only needed to render glyphs (main), not to read the tables the checks inspect. Import it where it is
+# used so this module imports without Pillow installed: CI's checks job and the rfoundry OS jobs don't install it.
 CELL = 16				# pixels square; the height of the 8x16 Latin font
 BITS_PER_ROW = CELL
 ROW_BYTES = (BITS_PER_ROW + 7) // 8
@@ -48,6 +51,7 @@ EM_REF = "\u56fd"			# 国
 
 # A variable font needs its weight picked: the default instance is too thin at 12-16 px, where a stroke is one pixel
 def load_font(path, size, weight, index):
+    from PIL import ImageFont
     f = ImageFont.truetype(path, size, index=index)
     if weight:
         try:
@@ -63,12 +67,40 @@ MACRO_CHARS = "\u2026\u00b7\u2192\u00b0\u2912\u2913"
 
 # From a catalog: every character a msgstr holds that is not ASCII, which is what the Latin fonts cannot draw
 def chars_from_po(path):
-    text = open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
     out = set()
     for m in re.finditer(r'^msgstr "((?:[^"\\]|\\.)*)"$', text, re.M):
         s = m.group(1).replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
         out.update(ch for ch in s if ord(ch) > 0x7E and ch not in MACRO_CHARS)
     return out
+
+
+# From a reviewed name list: every character outside ASCII and the Latin font's macro characters. Lines starting with
+# # are comments, so a list can explain where its names came from.
+def chars_from_file(path):
+    out = set()
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            out.update(ch for ch in line if ord(ch) > 0x7E and ch not in MACRO_CHARS)
+    return out
+
+
+def gb2312_level1():
+    """The 3755 common ideographs (GB2312 level 1, rows 16-55): what a user's Chinese channel names are drawn from."""
+    chars = set()
+    for hb in range(0xB0, 0xD8):
+        for lb in range(0xA1, 0xFF):
+            if hb == 0xD7 and lb > 0xF9:
+                break
+            try:
+                chars.add(bytes([hb, lb]).decode("gb2312"))
+            except UnicodeDecodeError:
+                pass
+    return chars
 
 
 def codepoint_ok(cp):
@@ -87,6 +119,7 @@ def em_box(font, size):
 
 def rasterize(font, ch, window, threshold):
     """One character as a CELL x CELL 1-bit image, drawn on the font's em square and shrunk to the cell."""
+    from PIL import Image, ImageDraw
     x0, y0, x1, y1 = window
     side = x1 - x0
     pad = side				# room around the square for an outline that reaches past it
@@ -114,6 +147,7 @@ def c_bytes(ch):
 
 
 def write_preview(glyphs, path, zoom=3, gap=3):
+    from PIL import Image, ImageDraw
     cols = 16
     step = CELL * zoom + gap
     nrows = (len(glyphs) + cols - 1) // cols
@@ -148,6 +182,9 @@ def main():
     ap.add_argument("--threshold", type=int, default=100, help="coverage that counts as ink, 0-255 (default 100)")
     ap.add_argument("--po", help="take the characters from a gettext catalog's msgstr lines")
     ap.add_argument("--text", help="take the characters from this text instead")
+    ap.add_argument("--chars-file", help="also take the characters from a UTF-8 name list (# comments ignored)")
+    ap.add_argument("--gb2312-level1", action="store_true",
+                    help="also the 3755 common ideographs (GB2312 level 1), so Chinese channel names draw")
     ap.add_argument("--font-name", default="", help="the font and its version, for the generated file's notice")
     ap.add_argument("--copyright", required=True, help="the font's copyright line (SPDX-FileCopyrightText)")
     ap.add_argument("--license", required=True, help="the font's license text, carried in the generated file")
@@ -159,6 +196,10 @@ def main():
     if not args.po and not args.text:
         ap.error("give --po or --text")
     chars = chars_from_po(args.po) if args.po else set(args.text)
+    if args.chars_file:
+        chars |= chars_from_file(args.chars_file)
+    if args.gb2312_level1:
+        chars |= gb2312_level1()
     chars = sorted(ch for ch in chars if codepoint_ok(ord(ch)) and not ch.isspace())
     if not chars:
         ap.error("no characters to build")

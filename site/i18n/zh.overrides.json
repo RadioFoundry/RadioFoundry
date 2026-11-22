@@ -120,7 +120,9 @@
  "feature.LANG_IT.title": "电台意大利语",
  "feature.LANG_IT.help": "电台上的意大利语（core/ui/lang/it.po）：默认关闭，列表中变暗显示；刷机页会向意大利语浏览器推荐。开启西班牙语时约 17 KB",
  "feature.LANG_ZH.title": "电台中文",
- "feature.LANG_ZH.help": "电台上的中文（core/ui/lang/zh.po）：拉丁字体没有对应字形，因此自带目录所用字符的 16x16 CJK 字模（core/ui/cjk_font_data.c，由 tools/cjkfont.py 生成）和文本层可解码的文本。默认关闭：约 16 KB 字模和 12 KB 文本。每种使用其他显示字体的电台都需要按该字体高度检查字形（docs/dev/translating.md）",
+ "feature.LANG_ZH.help": "电台上的中文（core/ui/lang/zh.po）：拉丁字体没有对应字形，因此自带目录字符和常用省市/中继名称字符的 16x16 CJK 字模（core/ui/cjk_font_data.c，由 tools/cjkfont.py 生成）和文本层可解码的文本。默认关闭：约 27 KB 字模和 17 KB 文本。每种使用其他显示字体的电台都需要按该字体高度检查字形（docs/dev/translating.md）",
+ "feature.CJK_GLYPHS.title": "中文字形表",
+ "feature.CJK_GLYPHS.help": "中文信道名和文本用的 16x16 字模表（core/ui/cjk_font_data.c，由 tools/cjkfont.py 生成），约 27 KB，随 LANG_ZH 一起构建。屏幕太小无法显示中文的电台可以关闭它，保留已翻译的菜单（中文字符显示为方框）；需要 LANG_ZH",
  "feature.LANG_DEFAULT_ES.title": "以西班牙语启动",
  "feature.LANG_DEFAULT_ES.help": "电台启动时使用的语言，直到用户在 Settings > Display > Language 中选择：每种语言一个开关，最多开启一个（多个时取列表中第一个），关闭 = 英语。需要该语言的开关。不占 flash",
  "feature.LANG_DEFAULT_IT.title": "以意大利语启动",
@@ -187,6 +189,10 @@
  "feature.ZONE_EDIT.help": "区域列表中的区域编辑器：添加、移动、复制到此处、移除信道；重命名、复制、删除区域（docs/spec/ui.md 2.2）：配合信道编辑器",
  "feature.CONTACT_EDIT.title": "联系人编辑器：从查找或呼叫操作新建联系人（名称、ID、类型、时隙）",
  "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR",
+ "flash.bootloader.Turn the radio off and connect the programming cable.": "关闭电台，连接编程线。",
+ "flash.bootloader.Hold PTT and SK1.": "按住 PTT 和 SK1。",
+ "flash.bootloader.Turn the radio on while you hold both keys. The green LED lights.": "保持按住两个键的同时开机。绿色 LED 亮起。",
+ "flash.bootloader.Release the keys.": "松开按键。",
  "feature.NET_RADIO_UDP.title": "通过 UDP 控制信道组与信道（端口 4191）",
  "feature.NET_RADIO_UDP.help": "通过 UDP（端口 4191，只接受电脑发来的：USB 网络或 PPP）控制信道组与信道，无需 TCP 或 HTTP：读取电台当前位置，像旋钮一样选择或步进信道组和信道，每个请求以一个数据报应答，并向发送方发送变化通知；takRF 的电台控制使用它（需要 DMR_IP_GATEWAY；core/net/radio_udp.c，docs/spec/tcp-services.md 8）"
 }

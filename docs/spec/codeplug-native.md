@@ -37,6 +37,10 @@ Rules:
   100 ms on the W25Q128). A new record also rewrites its bitmap's sector: the record goes first, then its in-use bit.
 - **Fields the model doesn't own are kept.** An edit reads the stored record, changes the bytes the model knows and
   writes it back. Vendor bytes and flags that no field covers survive a radio-side edit.
+- **Names.** A name field is the text and then 0xFF padding, one byte a character: ASCII, Latin-1 0xA0-0xFE and the
+  fonts' glyph bytes 0x80-0x85 as they are, Chinese as 3-byte UTF-8 ([codeplug-stock-tyt.md](codeplug-stock-tyt.md) 2).
+  A name reads back byte for byte, so one a CPS wrote is not rewritten. U+00FF is the byte 0xFF, which ends the field: a
+  save writes `?` for it, as the CPS does, and the rest of the name stays.
 - **`codeplug_serial()`** goes up on every change. That covers edits and `codeplug_reload()` after the CPS shim
   wrote the image underneath. The radio core polls it and re-reads its zone and channel (`RREQ_RELOAD`). It falls
   back to the saved zone position when the saved channel number is gone. It also forgets the contact names it looked
