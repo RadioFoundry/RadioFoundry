@@ -12,8 +12,11 @@ The status line shows the battery as an icon and a percentage. On a small screen
 status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
 
-The radio reads the battery once a second. It doesn't read it while transmitting or for 3 s after, because the
+The radio reads the battery once a second. It doesn't read the battery while transmitting or for 3 s after, because the
 voltage sags under transmit.
+
+If the percentage never reaches 100 % after a full charge, or the radio switches off while still showing charge,
+correct the battery reading with [Radio tuning](#radio-tuning).
 
 ## Low and critical battery
 
@@ -56,6 +59,7 @@ cable. The page reads the radio's bands, power levels and modes, and shows what 
 | Oscillator | The reference frequency of every mode at once | A frequency counter or a receiver you trust |
 | Frequency per mode | A carrier offset seen in one mode only, such as FM but not DMR | A frequency counter or a receiver you trust |
 | Deviation | FM deviation, on radios that support the trim | A deviation meter or a service monitor |
+| Battery | The battery voltage the radio reads, and the voltages shown as 0 % and 100 % | A multimeter |
 
 - Changes take effect right away. During a test transmission, some radios change the power at once; on the others,
   the page restarts the transmission with the new value. Press **Save to radio** to keep the changes. Unsaved changes last until the radio restarts or you press **Discard changes**. The oscillator
@@ -65,7 +69,12 @@ cable. The page reads the radio's bands, power levels and modes, and shows what 
 - Rename any power level, for example **4W** instead of **5W**. A name can be up to 6 characters, and the status line
   shows the new name.
 - The highest level can only go down, so the radio never transmits above its rating. The lowest level can only go up.
-- **Restore factory values** removes every trim and name, and sets the oscillator trim back to 0. The oscillator trim
+- The Battery section needs no transmission. First type the voltage a multimeter shows across the battery contacts,
+  with the radio on and off the charger: the page corrects the radio's reading to match. The corrected reading also
+  sets the low and critical battery warnings. If the percentage still looks wrong, set **Full (100 %)**: charge the
+  battery fully, take the radio off the charger, wait 10 minutes and press **Use the voltage now**. Raise
+  **Empty (0 %)** if the radio switches off while still showing charge.
+- **Restore factory values** removes every trim, name and battery setting, and sets the oscillator trim back to 0. The oscillator trim
   is the **Freq trim** setting, so the page and the menu change the same value.
 
 The trims are stored in the radio, outside the codeplug. A codeplug read, write or share never carries them to another

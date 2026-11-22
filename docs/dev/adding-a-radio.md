@@ -63,7 +63,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | Field | Fill with |
 |---|---|
 | `name` | The model as shown in About and the hotspot's description |
-| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` and `battery_pct` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
+| `caps` | `CAP_KEYPAD`, `CAP_ENCODER`, `CAP_GPS`, `CAP_DMR`, `CAP_VOLUME_POT`, `CAP_AM_RX`, `CAP_BCAST_FM`, `CAP_NO_BATTERY` (a mobile on a fixed supply: no battery UI, no battery monitor; leave `battery_mv` NULL, and set `hal_power_t.supply_mv` if the radio measures its DC input: [radio-features.md](../spec/radio-features.md), battery) |
 | `bands`, `band_count` | Receive ranges, each with `tx` true where transmit is allowed |
 | `power_count`, `power_names`, `power_default` | Power levels as short labels, lowest first, and the default index |
 | `power_bands`, `power_band_count` | Optional: the labels per band, where a level gives a different power on each band (a top level of 45 W on one band, 50 W on the other). Same `power_count` on every band; a frequency in no entry uses `power_names` |
@@ -74,6 +74,7 @@ Look at the boards on your platform for a model (`tools/boards.py list --platfor
 | `system`, `diag_line`, `diag_reset` | Optional: chip identity and reboot modes, a diagnostics page |
 | `variant_mismatch` | Optional: true when a marker the board reads suggests another hardware version than the image's build option. A warning only: the diagnostics page shows a line, the debug link `board.variant_mismatch=1`, and the radio still transmits. Use for a marker not yet confirmed on every radio |
 | `battery_low_mv`, `battery_critical_mv` | Battery warning levels; 0 for none |
+| `battery_empty_mv`, `battery_full_mv` | Resting voltages at 0 % and 100 %; 0 for 2S Li-ion (6.4 V, 8.2 V) |
 | `audio_tap`, `bcast`, `afsk` | Optional: audio path taps, a broadcast FM receiver, APRS AFSK transmit and receive audio |
 | `air`, `baseband` | Optional: the modem chip's air interface provider for the modes the core frames itself (P25, NXDN; [air-interface.md](../spec/air-interface.md) 3), and the sample taps the soft modem receives through (section 6). The platform's DMR glue exports both (`stm32_hrc_air` and `stm32_hrc_baseband`, `hrc_air` and `hrc_baseband`); point the board at them. Without `air`, list `P25`, `P25_TRUNK` and `NXDN` in `BOARD_NOT_WRITTEN` |
 | `gps` | With `CAP_GPS`: the GPS receiver ([hal_gps.h](../../hal/hal_gps.h)): whether the module was heard, and its power for Settings > Location > GPS. The platform drivers export one (`stm32_gps`, `hrc_gps`); the board gives them its UART and a power hook |

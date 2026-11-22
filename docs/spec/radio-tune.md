@@ -8,7 +8,8 @@ The owner's own trims on top of the factory calibration, which they never change
 - each power level's PA drive, measured with a wattmeter on a dummy load;
 - each mode's transmit deviation;
 - each mode's carrier frequency (a DC offset in one mode's modulator shows as a carrier offset in that mode only);
-- the power levels' names.
+- the power levels' names;
+- the battery reading's gain, and the voltages the charge percentage runs between.
 
 The reference oscillator trim is the existing Freq trim setting (`settings_t.ref_trim_ppb`,
 [radio-features.md](radio-features.md) 6.1). Radio tuning reuses that setting and adds nothing for the oscillator.
@@ -25,6 +26,7 @@ page at Tools > Radio tuning ([16-battery-and-power.md](../user/16-battery-and-p
 | Deviation | `board_t.tune` bit `1 << mode`, and the board scales that mode's deviation by `radio_tune_dev(mode, hz)` | no deviation trims for that mode |
 | Frequency | nothing: the radio core adds `radio_tune_freq(mode, hz)` to the transmit frequency at key-up | |
 | Names | nothing | |
+| Battery | a battery (`board_has_battery()`) and `hal_power_t.battery_mv`: the radio core applies the trims ([radio-features.md](radio-features.md) 5.1) | no battery trims |
 | Storage | `hal_flash_map_t.tune_addr`: two erase units (`HAL_FLASH_TUNE_UNITS`) | trims work live only, nothing is stored |
 
 The tune area is outside the codeplug, the CPS windows, the settings ring and the calibration. The open-firmware CPS
@@ -42,6 +44,8 @@ without a trim for a level or mode leaves it at the factory value.
 | Drive | offset in the board's drive units | between level 0's factory drive and the top level's at that frequency |
 | Deviation | permille of the board's deviation | ±250 (`RADIO_TUNE_DEV_MAX`) |
 | Frequency | Hz added to the transmit frequency | ±2000 Hz (`RADIO_TUNE_FREQ_MAX`) |
+| Battery gain | permille added to the battery reading | ±150 (`RADIO_TUNE_GAIN_MAX`) |
+| Battery empty, full | mV added to the board's empty or full voltage | ±1000 mV (`RADIO_TUNE_BATT_MAX`) |
 
 The drive clamp keeps the top level at or under the radio's rating and the lowest level where the PA keeps control.
 Every value is clamped where it is used, so neither a stored record nor a live word can take the radio past these
@@ -52,6 +56,11 @@ returns that drive. New drive tables, a new calibration, or levels added or remo
 trim is not loaded. A level name replaces the board's name for one level in one band in the status line, the menus,
 the debug link's `power_name` and the web and SNMP services (`radio_tune_name`). The view's `power_names` stays the
 board's names.
+
+Battery trims are one value each, at no frequency. The gain corrects the reading itself: `battery_mv`, the low and
+critical thresholds and the power-off all use the corrected value. Empty and full move only the charge percentage
+(and the Low battery warning, which follows the percentage). When the moved voltages are less than 400 mV apart
+(`BATT_SPAN_MV`), the radio keeps the board's own.
 
 The frequency trim applies to every transmission the radio core keys, including DMR bursts keyed later in a call. The
 deviation trim applies at key-up in the modes the board marks in `board_t.tune`.
@@ -80,16 +89,17 @@ An entry's first byte is the kind in the high nibble and the level or mode in th
 | 1 deviation | mode | reserved u8, frequency kHz/25 u16, permille s16, 0 u16 |
 | 2 frequency | mode | reserved u8, frequency kHz/25 u16, Hz s16, 0 u16 |
 | 3 name | level | `board.bands` index u8, name char[6] (NUL padded) |
+| 4 battery | 0 gain, 1 empty, 2 full | reserved u8, 0 u16, value s16 (permille or mV), 0 u16 |
 
 The CRC is the storage CRC-32 (`storage_crc32`, the reflected 0xEDB88320 polynomial, start and end inverted).
 
 A copy is valid when the magic, version, entry count, sequence, owner, CRC and commit word check. A flash image copied
 to another radio is ignored there. At start-up, after the radio's calibration is loaded, the newer valid copy (the
 sequence compared as a signed difference) fills the RAM table. Entries the radio can't use are left out: a stale drive
-trim, a value past ±4095, a level the board doesn't have, or a frequency or band with no transmission. With no valid
-copy the radio uses the factory values.
+trim, a value past ±4095, a level the board doesn't have, a frequency or band with no transmission, or a battery
+trim on a board without a battery. With no valid copy the radio uses the factory values.
 
-RAM: 20 words of 4 bytes for drive, deviation and frequency trims (`RADIO_TUNE_WORDS`), 6 names of 8 bytes
+RAM: 20 words of 4 bytes for drive, deviation, frequency and battery trims (`RADIO_TUNE_WORDS`), 6 names of 8 bytes
 (`RADIO_TUNE_NAMES`), 128 bytes of table. A load uses the shared storage buffer.
 
 ## 4. Saves
@@ -117,12 +127,16 @@ oscillator trim to 0.
 | Any trim | RADIO TUNE_SET (op 44) replaces the RAM table's words | from the next use of the trim (key-up, a burst, a name drawn) |
 | Drive during an FM transmission | RADIO TX_DRIVE (op 36) with the absolute drive | at once (`hal_radio_t.tx_drive_now`), and for that transmission |
 | Oscillator | SETTING 35 (`ref_trim`) | at once, and stored as the menu stores it |
+| Battery | RADIO TUNE_SET, word kind 3 | at the next battery reading: each second, outside transmissions and the 3 s after |
 
 A RAM word is the frequency in 100 kHz units (bits 0-13), the kind (bits 14-15), the level or mode (bits 16-18) and
-the value (bits 19-31, signed): `RADIO_TUNE_WORD(khz, kind, sel, value)`. Live words are not stored. TUNE_LOAD or a
+the value (bits 19-31, signed): `RADIO_TUNE_WORD(khz, kind, sel, value)`. A battery trim is word kind 3
+(`RADIO_TUNE_W_BATT`, never a name in RAM) at frequency 0. Live words are not stored. TUNE_LOAD or a
 restart brings back the stored record. Names are not set live: the host saves them.
 
-The view's `tune` key ends with `live`: 1 when the board has `tx_drive_now`. Without live drive, a drive change
+The view's `tune` key has `live`: 1 when the board has `tx_drive_now`. Then come the battery reading before the gain
+(`battery_raw_mv`) and the board's empty and full voltages, all 0 without a battery. The page works out the gain
+from that reading and a multimeter's, and reads the corrected voltage and charge from the `features` view. Without live drive, a drive change
 reaches the PA at the next key-up, so the page ends the test transmission and keys again with the new words. Frequency,
 deviation and oscillator changes also take effect at key-up, so the page re-keys for those on every board.
 
@@ -139,12 +153,15 @@ replaces, so a reader on another task sees a shorter table, never a torn word.
 | Live drive | RADIO TX_DRIVE (op 36) |
 | Oscillator | SETTING 35 |
 | Factory drives, names, bands | core view `tx_drive`, `power_names`, `bands` |
-| Table fill, deviation modes | core view `tune` |
+| Table fill, deviation modes, battery | core view `tune`; `features` view `battery_mv`, `battery_pct` |
 
 `tools/rfoundry_debug.py` has `tune_area`, `tune_write`, `tune_load` and `tune_set`.
 
 ## 7. Testing
 
 `tests/host/radioTuneTest.c` covers interpolation and the clamps, the copy choice (newest wins, a copy cut before the
-commit word, a flipped bit, sequence wrap), a record from another radio, stale drive trims, names and live words.
-`site/tests/tune.test.mjs` covers the page's record, CRC and payloads against the same layouts.
+commit word, a flipped bit, sequence wrap), a record from another radio, stale drive trims, names, live words and
+battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve, the moved empty and full and the gain.
+`site/tests/tune.test.mjs` covers the page's record, CRC, payloads and charge against the same layouts.
+`tests/hil/test_radio_tune.py` sets the battery trims live on a radio and checks the corrected reading and charge
+against the raw reading, with no transmission.
