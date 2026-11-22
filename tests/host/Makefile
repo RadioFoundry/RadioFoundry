@@ -318,7 +318,7 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
-           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c            $(CORE)/support/sha256.c $(CORE)/support/hkdf.c $(CORE)/support/kcv.c $(CORE)/codeplug/key_store.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -701,7 +701,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
-           $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
+           $(CORE)/support/support_info.c $(CORE)/support/hkdf.c $(CORE)/support/kcv.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
@@ -835,6 +835,15 @@ run: run-support
 run-support: supportInfoTest
 	./supportInfoTest
 .PHONY: run-support
+# The key primitives (core/support): HMAC and HKDF over SHA-256, key check values (docs/spec/key-check.md)
+TESTS   += keyCryptoTest
+KEYCRYPTO := $(CORE)/support/sha256.c $(CORE)/support/hkdf.c $(CORE)/support/kcv.c
+keyCryptoTest: keyCryptoTest.c $(KEYCRYPTO) $(wildcard $(CORE)/support/*.h) ../vectors/key-check.txt
+	$(CC) $(CFLAGS) -Wshadow -o $@ keyCryptoTest.c $(KEYCRYPTO)
+run: run-key-crypto
+run-key-crypto: keyCryptoTest
+	./keyCryptoTest
+.PHONY: run-key-crypto
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h

@@ -310,6 +310,18 @@ tools/rfoundry_debug.py radio privacy off
 Without a key, the Privacy tile shows "No privacy key: set one in Settings > Privacy". The keys are stored without
 protection in the radio's flash.
 
+### Checking that two radios have the same key
+
+Each key has a check value: six hex digits computed from the key, such as `9507A7`. Two radios with the same key show
+the same check value, so you can compare keys without reading them out. The Codeplug Editor shows the same value for
+a traffic key in the Key check column of the system's key table.
+
+- **Settings > Privacy > Key check**: the check value of the key you typed.
+- **Settings > Privacy > Stored keys**: every key the radio holds, each with its check value.
+
+A different check value means a different key. A basic privacy key has so few possible values that its check value
+doesn't hide it: treat it like the key. How the value is computed: [key-check.md](../spec/key-check.md).
+
 ## Position in calls
 
 Some DMR radios send their position inside a voice call (ETSI GPS Info). When a caller does, the receive screen shows

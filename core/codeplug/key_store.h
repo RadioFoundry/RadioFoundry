@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// The radio's stored keys as one list (docs/spec/key-check.md 4): the privacy key slots that hold a valid key
+// (settings-store.md 3.1), then the traffic key records whose system exists (channel-modes.md 5.4), each with its key
+// check value. A reader: Settings > Privacy > Stored keys shows the list. Built with CONFIG_KEY_CHECK when a privacy
+// scheme or a mode with traffic keys is (KEY_STORE)
+#ifndef RFOUNDRY_KEY_STORE_H
+#define RFOUNDRY_KEY_STORE_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "config.h"
+#include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
+#include "support/kcv.h"
+
+#define KEY_STORE	(CONFIG_KEY_CHECK && (CONFIG_DMR_PRIVACY || CODEPLUG_MODE_RECORDS))
+#define KEY_STORE_MAX_LEN	32u	// the longest key carried: AES-256. A longer traffic key is listed, not carried
+
+typedef struct key_entry_s {
+	uint8_t cls;		// KCV_CLASS_PRIVACY or KCV_CLASS_TRAFFIC
+	uint8_t slot;		// privacy: the slot, 1..SETTINGS_PRIVACY_KEYS
+	uint8_t type;		// privacy: dmrPrivacyType_t; traffic: the system's type
+	uint8_t system;		// traffic: the system's number
+	uint8_t alg;		// traffic: the algorithm id (the system type's numbering)
+	uint8_t flags;		// traffic: the record's flags octet
+	uint16_t key_id;	// traffic: the key ID
+	uint16_t record;	// traffic: the record's area key, CODEPLUG_KEY_TRAFFIC + n
+	uint16_t len;		// the key's octets (privacy: 4, its value big endian)
+	bool kcv_ok;		// kcv holds the check value (false: its method isn't in this build)
+	uint8_t kcv[KCV_LEN];
+	char name[CODEPLUG_NAME_LEN + 1];	// traffic: the system's name; privacy: empty
+} key_entry_t;
+
+#if KEY_STORE
+uint16_t key_store_count(void);
+// Entry i in *e; with key not NULL its octets too (at most KEY_STORE_MAX_LEN copied). False past the end, or when the
+// list changed under the walk
+bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key);
+#else
+static inline uint16_t key_store_count(void) { return 0; }
+static inline bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key) { (void)i; (void)e; (void)key; return false; }
+#endif
+
+#endif

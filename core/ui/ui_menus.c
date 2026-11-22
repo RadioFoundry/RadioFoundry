@@ -16,6 +16,7 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #endif
@@ -6512,7 +6513,8 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
-	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_KEY_CHECK, SA_KEYS,
+	SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6831,6 +6833,14 @@ static const set_item_t s_privacy[] = {
 	LIST(TRN(SET_LABEL_PRIVACY_KEY_TYPE, "Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	// the range follows the type (set_range)
 	NUMBER(TRN(SET_LABEL_PRIVACY_KEY, "Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),
+#if CONFIG_KEY_CHECK
+	// the key's check value (key-check.md): compared with another radio's, it says both hold the same key
+	ACTION(TRN(SET_LABEL_PRIVACY_KEY_CHECK, "Key check"), "privacy kcv check value compare", SA_KEY_CHECK),
+#endif
+#if KEY_STORE
+	// every stored key with its check value: the privacy slots and the systems' traffic keys
+	ACTION(TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"), "privacy encryption traffic keys kcv list", SA_KEYS),
+#endif
 };
 // The key lock's rules: when it locks by itself and what still works while locked
 static const set_item_t s_lock[] = {
@@ -7403,6 +7413,10 @@ static bool mic_agc_on(void)
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
+	if (s->type == ST_ACTION && s->id == SA_KEY_CHECK)
+		return !(feats() & UI_FEAT_PRIVACY) ? TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build") :
+			ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0 ? TR(SET_WHY_PICK_KEY_TYPE_FIRST, "Pick a key type first") :
+			NULL;
 	if (s->type == ST_ACTION)
 		return s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE && !(CONFIG_BEEP && CONFIG_SIG_TONES) ?
 			TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build") : NULL;
@@ -7504,6 +7518,10 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	else if (s->id == SA_LANGUAGE)
 		str_copy(it->value, sizeof it->value, lang_name(lang_current()));
+#if CONFIG_KEY_CHECK
+	else if (s->id == SA_KEY_CHECK && !ui_svc_privacy_kcv(it->value))
+		strcpy(it->value, "-");
+#endif
 #if CONFIG_SIG_TONES
 	else if (s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE)
 		sc_summary(it->value, sizeof it->value, (uint8_t)(s->id - SA_SIG_BEGIN));
@@ -7588,6 +7606,14 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if CONFIG_KEY_CHECK
+		case SA_KEY_CHECK:
+			ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+			break;
+#endif
+#if KEY_STORE
+		case SA_KEYS: ui_push(SCR_KEYS, 0); break;
+#endif
 #if CONFIG_SIG_TONES
 		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;
 #endif
@@ -8055,6 +8081,52 @@ static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
 
+#if KEY_STORE
+// ======================= Settings > Privacy > Keys =======================
+// Every stored key (codeplug/key_store.h): a privacy slot by its number and scheme, a traffic key by its system's name
+// and key ID; the value is the key check value (docs/spec/key-check.md), never the key
+
+static uint16_t keys_count(void) { return ui_svc_keys_count(); }
+
+static void keys_item(uint16_t i, ui_item_t *it)
+{
+	key_entry_t e;
+	if (!ui_svc_key(i, &e))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	if (e.cls == KCV_CLASS_PRIVACY) {
+		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
+		sb_chr(&b, ' ');
+		sb_u32(&b, e.slot, 1);
+		sb_chr(&b, ' ');
+		sb_str(&b, e.type == 1 ? "Moto" : e.type == 2 ? "Anytone" : "?");
+	} else {
+		sb_str(&b, e.name[0] ? e.name : codeplug_systype_name(e.type));
+		sb_str(&b, " #");
+		sb_u32(&b, e.key_id, 1);
+	}
+	if (e.kcv_ok)
+		kcv_text(e.kcv, it->value);
+	else
+		str_copy(it->value, sizeof it->value, "-");
+}
+
+static void keys_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+}
+
+static const ui_scr_def_t keys_screen = {
+	.name = "keys", .flags = SF_LIST, .prefix = TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"),
+	.hint = TRN(HINT_BACK, "Back"),
+	.empty = TRN(KEYS_EMPTY, "No keys stored"),
+	.count = keys_count, .item = keys_item, .select = keys_select,
+};
+#endif
+
 // ======================= Settings > Display > Language =======================
 // Every language a catalog exists for, each in its own name; one this image was built without is dimmed and says so
 // (the flasher builds it in, docs/user)
@@ -8155,6 +8227,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_FIXED_POS] = &ui_fixed_pos_screen,
 #endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
+#if KEY_STORE
+	[SCR_KEYS] = &keys_screen,
+#endif
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS

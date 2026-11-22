@@ -107,6 +107,11 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
 
+[feature.key_check]
+switch = "KEY_CHECK"
+spec = "docs/spec/key-check.md"
+source = ["core/support/kcv.c", "core/codeplug/key_store.c"]
+
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
 # Packet data under a privacy key: the privacy header, the user data encrypted, or held back

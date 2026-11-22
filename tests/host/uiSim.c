@@ -165,6 +165,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
+	{ "settings_privacy_check", "ok 7 4 ok down ok 1 ok down" },	// Key check (key-check.md 4)
+	{ "stored_keys", "ok 7 4 ok down ok 1 ok down down ok" },	// Stored keys: a slot and a traffic key
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
 	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
 	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },

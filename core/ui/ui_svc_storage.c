@@ -40,11 +40,14 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#include "support/hkdf.h"
+#include "support/kcv.h"
 #endif
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -117,6 +120,21 @@ static void privacy_store(uint8_t type, uint32_t key)
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
+
+#if CONFIG_KEY_CHECK
+bool ui_svc_privacy_kcv(char out[7])
+{
+	// the two fields alone (settings_read_field), not a whole settings_t on the UI task's stack
+	uint8_t type = SETTINGS_FIELD(privacy_type[0]), kcv[KCV_LEN];
+	uint32_t key = SETTINGS_FIELD(privacy_key[0]);
+	bool ok = type != DMR_PRIVACY_OFF && type < DMR_PRIVACY_NUM_TYPES && key <= 0xFFFFu &&
+		dmrPrivacyKeyIsValid((dmrPrivacyType_t)type, (uint16_t)key) && kcv_privacy(type, key, kcv);
+	if (ok)
+		kcv_text(kcv, out);
+	crypto_wipe(&key, sizeof key);	// the key was in this copy
+	return ok;
+}
+#endif
 #endif
 
 #if CONFIG_KEY_ASSIGN
@@ -1627,5 +1645,17 @@ static bool key_set(uint8_t id, int32_t value)
 	key_apply();
 	key_dirty = true;
 	return true;
+}
+#endif
+
+#if KEY_STORE
+uint16_t ui_svc_keys_count(void)
+{
+	return key_store_count();
+}
+
+bool ui_svc_key(uint16_t i, struct key_entry_s *e)
+{
+	return key_store_get(i, e, NULL);
 }
 #endif

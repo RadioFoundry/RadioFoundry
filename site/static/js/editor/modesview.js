@@ -10,6 +10,7 @@ import { specField, parseSpec, formatSpec, label } from "./modefields.js";
 import { SYSTEM_TYPES, typeRow, typeName, offeredTypes, offeredKinds } from "../codeplug/modes.js";
 import { newSystem, newHamSystem, syncModes, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
 import { remove, assignNumbers } from "../codeplug/model.js";
+import { kcvTrafficRecord } from "../codeplug/kcv.js";
 
 const SHARE_LEVELS = [SHARE.off, SHARE.identity, SHARE.whole];
 const shareLabel = (mod, level) => mod?.conventional && level === SHARE.whole
@@ -198,22 +199,50 @@ function trafficFields({ t, h, button }, system, traffic) {
 	const rows = (system.trafficKeys ?? []).map((key) => ({ ...key }));
 	let reveal = false;
 	const tbody = h("tbody", {});
+	// Each row's key check value (docs/spec/key-check.md), from what is typed now: the same six digits the radio shows
+	// for the key, so the two can be compared without showing the key. "-" while a field doesn't parse
+	const checks = [];
+	const kcvOf = async (row) => {
+		const key = {};
+		for (const col of traffic.columns) {
+			const raw = row._text?.[col.key] ?? formatSpec(col, row[col.key], t);
+			const result = raw.trim() ? parseSpec(col, raw, t) : { error: true };
+			if (result.error) return "-";
+			key[col.key] = result.value;
+		}
+		try {
+			return (await kcvTrafficRecord(system.type, traffic.encode(system.number ?? 0, key), traffic.kcv === "aes")) ?? "-";
+		} catch {
+			return "-";
+		}
+	};
+	// Each span keeps the latest request's answer only: an older digest finishing late doesn't overwrite it
+	const recheck = () => rows.forEach((row, i) => {
+		const span = checks[i];
+		if (!span) return;
+		const n = (span._n = (span._n ?? 0) + 1);
+		kcvOf(row).then((v) => span._n === n && (span.textContent = v));
+	});
+	tbody.addEventListener("input", recheck);
 	const add = button(`+ ${t("editor.nxdn.add_key")}`, () => {
 		rows.push({});
 		draw();
 	}, { quiet: true });
 	const draw = () => {
 		add.disabled = rows.length >= traffic.max;
+		checks.length = 0;
 		tbody.replaceChildren(...rows.map((row, i) => h("tr", {},
 			...traffic.columns.map((col) => {
 				const hiddenSeed = col.key === "seed" && !reveal;
 				return h("td", {}, hiddenSeed && row.seed != null
 					? t("editor.modes.secret_set") : cell(h, t, col, row, hiddenSeed));
 			}),
+			h("td", { class: "mono" }, (checks[i] = h("span", {}, "-"))),
 			h("td", {}, button(t("editor.modes.remove_row"), () => {
 				rows.splice(i, 1);
 				draw();
 			}, { quiet: true, danger: true })))));
+		recheck();
 	};
 	draw();
 	const show = h("input", { type: "checkbox", id: "show-traffic-seeds" });
@@ -224,7 +253,8 @@ function trafficFields({ t, h, button }, system, traffic) {
 	const table = h("div", { class: "form-table" },
 		h("div", { class: "form-row form-check" }, h("label", { for: show.id }, t("editor.nxdn.show_seeds")), show),
 		h("div", { class: "table-wrap" }, h("table", { class: "data" },
-			h("thead", {}, h("tr", {}, ...traffic.columns.map((col) => h("th", {}, label(t, col.label))), h("th", {}))), tbody)),
+			h("thead", {}, h("tr", {}, ...traffic.columns.map((col) => h("th", {}, label(t, col.label))),
+				h("th", { title: t("editor.modes.key_check_help") }, t("editor.modes.key_check")), h("th", {}))), tbody)),
 		add);
 	return [
 		{ group: t("editor.nxdn.traffic_keys") },
