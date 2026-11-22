@@ -358,13 +358,6 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 	case UI_SET_LANGUAGE:
 		settings_read(&st);
 		return (int32_t)((uint8_t)st.lang[0] << 8 | (uint8_t)st.lang[1]);
-#if CONFIG_DMR_EMERGENCY
-	case UI_SET_EM_HOT_MIC_S: {
-		dmr_emergency_settings_t es;
-		dmr_emergency_get_settings(&es);
-		return es.hot_mic_s;
-	}
-#endif
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:
 	case UI_SET_MESSAGE_TONE:
@@ -405,6 +398,13 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 		dmr_emergency_get_settings(&es);
 		return es.rx_tone;
 	}
+#if CONFIG_DMR_EMERGENCY
+	case UI_SET_EM_HOT_MIC_S: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.hot_mic_s;
+	}
+#endif
 	case UI_SET_TFTP_WRITE:
 		settings_read(&st);
 		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;

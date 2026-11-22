@@ -10,16 +10,15 @@
 // - the Transmitting screen names a private call's contact and tells it apart from a group call (P2).
 #include <stdio.h>
 #include <string.h>
+#include "fuzz.h"
+#include "input/input_engine.h"
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
-#include "ui/gfx.h"
 #include "ui/i18n.h"
 #include "ui/gfx.h"
 #include "ui/ui_nav.h"
 #include "config.h"
-#include "fuzz.h"
-#include "input/input_engine.h"
 
 // Settings > Advanced: Backlight tests (CONFIG_BACKLIGHT_TEST) sits under Diagnostics and moves the rows below it
 // (Factory reset, Crash log) down one, so the flows that reach them press Down once more. Not ideal: hardcoded row
