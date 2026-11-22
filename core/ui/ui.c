@@ -20,6 +20,9 @@
 #include "input/input.h"
 #include "radio/radio.h"
 #include "config.h"
+#if CONFIG_KEY_FILL
+#include "support/entropy.h"
+#endif
 
 #ifndef RFOUNDRY_RELEASE
 #define RFOUNDRY_RELEASE ""
@@ -151,6 +154,13 @@ static void ui_task(void *arg)
 			radio_get_view(&view);
 		}
 		if (got) {
+#if CONFIG_KEY_FILL
+			// Every key event is randomness for key fill (key-fill.md 6): its time (entropy_stir adds the
+			// microsecond clock) and the key. A press is credited, its edges and the knob's steps are not
+			bool press = ev.gesture == GESTURE_PRESS || ev.gesture == GESTURE_LONG ||
+				     (ev.gesture == GESTURE_DOWN && ev.action != ACT_ENC_STEP);
+			entropy_stir(&ev, sizeof ev, press ? ENTROPY_KEY_BITS : 0);
+#endif
 			bool was_off = backlight_now == 0;
 #if CONFIG_BACKLIGHT_TEST
 			was_off = was_off && ui_app_backlight_hold() < 0;	// a key wakes the light, but not in the tests

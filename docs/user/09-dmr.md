@@ -283,7 +283,7 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
-- Calls with stronger encryption (they send a PI header) are never played.
+- On builds with AES-256 enabled, the radio can play a call when it receives the opening privacy header and has the matching AES key. AES transmissions repeat the message indicator during the call for receivers joining late.
 - Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
   radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
   fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
@@ -292,14 +292,46 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
-To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
+For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
+Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal
+digits from your browser; use it rather than typing a key, since typed keys tend to be weak. **Show AES keys**
+shows the digits. On the channel, choose **DMR AES-256**, select the system and PI key ID, then write the codeplug
+to the radio. Both radios must have the same key bytes and ID. The system and channel must both allow transmit.
+
+On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
+system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text messages and other packet data on
+these channels go encrypted with the channel's key, and only then: without the key nothing is sent, never in the
+clear. Two radios running RadioFoundry read each other's; whether a radio of another make reads them is not known yet.
+Your GPS position is never put in an encrypted call's voice header. The editor's image export omits key bytes by
+default. Including keys produces a file that contains the keys.
+
+For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
+where its encryption sequence stands, so it never reuses one after a restart. Press PTT again.
+
+Radios of other makes need a part of the signal that not every radio sends yet. Two radios running RadioFoundry always
+understand each other. Check [Feature matrix](../feature-matrix.md) (the `DMR_AES` row) for which radios can talk AES
+to radios of other makes; on the others another make plays the first moments and then noise.
+
+What AES does not do:
+
+- The radio IDs, the talkgroup and the talker alias stay readable to anyone listening.
+- A recorded over can be played back on air later, and nothing tells the listener it is a replay.
+- A clear call on an AES channel is still played.
+- Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
+  keys.
+- After a factory reset, or after restoring old settings, give the key a new value (or generate a new one): the radio
+  may reuse part of an encryption sequence it already sent under that key.
+- Change a key that has carried a lot of traffic, for example once a year on a busy channel.
+
+To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
 1. On **Key type**, press **OK** until it shows Motorola or Anytone.
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
 The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
-can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
+doesn't store these basic privacy keys. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -309,6 +341,59 @@ tools/rfoundry_debug.py radio privacy off
 
 Without a key, the Privacy tile shows "No privacy key: set one in Settings > Privacy". The keys are stored without
 protection in the radio's flash.
+
+### Checking that two radios have the same key
+
+Each key has a check value: six hex digits computed from the key, such as `9507A7`. Two radios with the same key show
+the same check value, so you can compare keys without reading them out. The Codeplug Editor shows the same value for
+a traffic key in the Key check column of the system's key table.
+
+- **Settings > Privacy > Key check**: the check value of the key you typed.
+- **Settings > Privacy > Stored keys**: every key the radio holds, each with its check value.
+
+A different check value means a different key. A basic privacy key has so few possible values that its check value
+doesn't hide it: treat it like the key. How the value is computed: [key-check.md](../spec/key-check.md).
+
+### Loading a key from another radio
+
+One radio can send a stored key to another over DMR. The key goes encrypted, and both screens show a code so you can
+see that no third radio got in between. Status: untested on a radio.
+
+1. Put both radios on the same DMR channel: side by side on a direct mode channel, or through a repeater when they
+   are apart.
+2. On the radio that gets the key: **Tools > Key fill > Receive a key**. Key fill is the last tool: open Tools and
+   press **Up** once. It shows its DMR ID and waits.
+3. On the radio that has the key: **Tools > Key fill > Send a key**, pick the key, press **OK** (Send this key),
+   type the other radio's DMR ID and press **OK**.
+4. When a radio asks for random key presses, press keys at random until the count reaches zero. Both radios may ask.
+5. Both screens show a six-digit code, such as `482 913`, and the other radio's ID. Look at the other radio's screen.
+   If the codes are the same, press **OK** on both radios. If not, press **Back**: nothing is sent.
+6. The receiver shows "Key stored", the sender "Key sent", each with the key's check value. The two must match.
+
+On a direct mode channel both radios transmit at their lowest power level for the whole fill (the screen says "Low
+power") and go back to your level afterwards; through a repeater they use your normal level. Low power only makes
+fewer receivers hear the exchange: the matching codes are what keep the key safe. When the radios are apart, compare the
+codes on a phone call with someone whose voice you know, or meet; a code read out over a radio channel proves nothing. Leaving the screen cancels. Without that kind of key in its codeplug (a traffic key needs a
+system of the same type), the receiving radio refuses it and says why. How it works: [key-fill.md](../spec/key-fill.md).
+
+### Sending a key to a whole group
+
+One radio can broadcast a stored AES-256 key to every radio listening on the same AES channel at once, for example to
+change a group's key at an agreed time. The radios must already share that channel's key: the new key travels
+encrypted under it, so a radio without the channel key hears nothing it can use. To give a radio its very first key,
+use key fill above. Status: untested on a radio.
+
+1. Agree on a time and an AES channel whose contact is a talkgroup.
+2. On every radio that gets the key: **Tools > Key fill > Receive group key**. It listens for 30 minutes.
+3. On the radio that has the key: **Tools > Key fill > Send a key**, pick an AES-256 key, press **OK**, then pick
+   **Send to group**. It sends the key to the channel's talkgroup four times, three seconds apart. It doesn't take a
+   key itself.
+4. Each receiver shows the sender's ID, the key ID and the check value. Type another key ID to save it under, if you
+   want, then press **OK** to save it or **Back** to drop it.
+
+Anyone with the channel key can receive the new key, so confirm the check value on a voice call. Through a repeater,
+keep the radios apart (in another room), as for key fill. How it works:
+[group-key-fill.md](../spec/group-key-fill.md).
 
 ## Position in calls
 

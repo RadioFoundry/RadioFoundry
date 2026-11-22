@@ -237,22 +237,43 @@ bool dmrDataPrivacyAllows(const dmrBurst_t *bursts, int count)
 }
 
 // Adds the privacy header after a first header with this SAP (out points past it) and encrypts the user data when the
-// channel's privacy encrypts data; returns the bursts added. Static keystream schemes have no message indicator, and
-// their key is set on each radio, not named on air: both 0
-static int txPrivacy(uint8_t sap, dmrBurst_t *out, uint8_t *data, int length)
+// channel's privacy encrypts data; returns the bursts added, -1 when the packet can't go encrypted (no message
+// indicator usable, the key gone): the caller then builds nothing. Static keystream schemes have no message indicator,
+// and their key is set on each radio, not named on air: both 0. AES names its key and takes a new MI for every packet
+// (docs/spec/dmr-data.md 13.1, 13.4). *keep: the MI to use again (a confirmed packet's selective retry: the receiver
+// decrypts its blocks with the first try's header), 0 = a new one, which is stored there
+static int txPrivacy(uint8_t sap, dmrBurst_t *out, uint8_t *data, int length, uint32_t *keep)
 {
 #if CONFIG_DMR_PRIVACY
 	if (txEncrypts())
 	{
 		uint8_t buf[12];
+		uint32_t mi = *keep;
 
+		if ((mi == 0) && (privacy.newMi != NULL))
+		{
+			mi = privacy.newMi(privacy.ctx);
+			if (mi == 0)
+			{
+				return -1;
+			}
+			*keep = mi;
+		}
+		if (!privacy.crypt(privacy.ctx, privacy.alg, privacy.keyId, mi, data, length))
+		{
+			return -1;
+		}
 		memset(buf, 0, sizeof(buf));
 		buf[0] = (sap << 4) | DMR_DPF_PROPRIETARY;
 		buf[1] = DMR_DATA_PRIVACY_MFID;
 		buf[2] = ((privacy.alg & 0x07) << 4) | 0x01;// algorithm, encrypted
+		buf[3] = privacy.keyId;
+		buf[6] = (uint8_t)(mi >> 24);
+		buf[7] = (uint8_t)(mi >> 16);
+		buf[8] = (uint8_t)(mi >> 8);
+		buf[9] = (uint8_t)mi;
 		addCRC16(buf, 0xCC);
 		setBurst(out, DMR_TYPE_DATA_HEADER, buf, 12);
-		privacy.crypt(privacy.ctx, privacy.alg, 0, data, length);
 		return 1;
 	}
 #else
@@ -260,6 +281,7 @@ static int txPrivacy(uint8_t sap, dmrBurst_t *out, uint8_t *data, int length)
 	(void)out;
 	(void)data;
 	(void)length;
+	(void)keep;
 #endif
 	return 0;
 }
@@ -271,7 +293,7 @@ static void rxDecrypt(dmrDataPacket_t *p)
 #if CONFIG_DMR_PRIVACY
 	if (p->privacy.encrypted && (privacy.crypt != NULL))
 	{
-		p->decrypted = privacy.crypt(privacy.ctx, p->privacy.alg, p->privacy.mi, p->data, p->length);
+		p->decrypted = privacy.crypt(privacy.ctx, p->privacy.alg, p->privacy.keyId, p->privacy.mi, p->data, p->length);
 	}
 #endif
 }
@@ -468,7 +490,13 @@ int dmrDataBuildPacket(uint8_t dpf, uint8_t sap, bool group, uint32_t dst, uint3
 	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memcpy(txPacket, data, length);
-	out += txPrivacy(sap, out, txPacket, length);// the CRC-32 below is over the encrypted octets
+	uint32_t mi = 0;
+	int ph = txPrivacy(sap, out, txPacket, length, &mi);// the CRC-32 below is over the encrypted octets
+	if (ph < 0)
+	{
+		return 0;
+	}
+	out += ph;
 	memset(&txPacket[length], 0, padOctets);
 	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
 	uint8_t *crcPos = &txPacket[length + padOctets];
@@ -981,6 +1009,8 @@ uint16_t dmrDataCRC9(const uint8_t *data, int length, uint8_t serial)
 	return crc ^ 0x1FF;
 }
 
+static uint32_t cnfTxMi;		// the MI of the confirmed packet being sent (its retries use it again)
+
 int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t *pdu, int length, uint8_t blockType,
 						uint8_t ns, bool firstTry, uint64_t blocks, int preambles, dmrBurst_t *out, int maxBursts)
 {
@@ -1035,7 +1065,16 @@ int dmrDataBuildConfirmed(uint8_t sap, uint32_t dst, uint32_t src, const uint8_t
 	setBurst(out++, DMR_TYPE_DATA_HEADER, buf, 12);
 
 	memmove(txPacket, pdu, length);
-	out += txPrivacy(sap, out, txPacket, length);// the CRC-32 and CRC-9s below are over the encrypted octets
+	if (firstTry)
+	{
+		cnfTxMi = 0;		// a new packet: a new MI. A retry sends the first try's blocks again, under its MI
+	}
+	int ph = txPrivacy(sap, out, txPacket, length, &cnfTxMi);// the CRC-32 and CRC-9s below are over the encrypted octets
+	if (ph < 0)
+	{
+		return 0;
+	}
+	out += ph;
 	memset(&txPacket[length], 0, padOctets);
 	uint32_t crc = dmrDataCRC32(txPacket, length + padOctets);
 	uint8_t *crcPos = &txPacket[length + padOctets];

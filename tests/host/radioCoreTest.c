@@ -29,6 +29,7 @@
 #include "storage/storage.h"
 #include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrAes.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
 #include "sim/codeplug_copy_stub.h"
@@ -1518,6 +1519,27 @@ static void test_power(void)
 	req(RREQ_POWER, 1);
 	req(RREQ_CLEAR_TEMP, 0);
 	CHECK(sm.view.power == 1 && !sm.view.temporary);
+	// Key fill's low power (radio_req_tx_low): every transmission at level 0, the user's level kept and back after
+	req(RREQ_CH_STEP, -1);			// the channel that transmits
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power == 2);
+	req(RREQ_TX_LOW, 1);
+	CHECK(sm.view.tx_low && sm.view.power == 2);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 0);
+	req(RREQ_PTT, 0);
+	req(RREQ_TX_LOW, 0);
+	CHECK(!sm.view.tx_low && sm.view.power == 2);
+	poll_for(1000);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 2);
+	req(RREQ_PTT, 0);
+	// Never saved: a restart (a fresh radio core) is at the user's level
+	req(RREQ_TX_LOW, 1);
+	start();
+	CHECK(!sm.view.tx_low);
 }
 
 static void test_vfo(void)
@@ -3491,6 +3513,162 @@ static void test_dmr_voice_features(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0 && l.svc == 0);
+#if CONFIG_ZEROIZE
+	// The emergency wipe (docs/spec/zeroize.md 4.2): the radio core's key and its contexts zeroed, privacy off, the
+	// next call in the clear and the key no longer saved with the channel
+	req(RREQ_DMR_PRIVACY, (int32_t)((1u << 16) | 7u));
+	CHECK(d->privacy && sm.privacy_key == 7);
+	radio_req_zeroize();
+	CHECK(!d->privacy && sm.privacy_key == 0 && sm.privacy_type == DMR_PRIVACY_OFF);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0 && l.svc == 0);
+	settings_t zs;
+	settings_read(&zs);
+	CHECK(zs.privacy_active == 0);
+#endif
+
+#if CONFIG_DMR_AES
+	// AES: a codeplug channel bound to a system's traffic key. Without the key PTT is refused; with it our overs carry
+	// the privacy FID and option and a PI header with the channel's key ID; a short key record refuses PTT again
+	uint16_t check = codeplug_name_check(chans[4].name);
+	uint8_t tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 0 };
+	uint8_t sys[CODEPLUG_SYS_HDR + 1] = { CODEPLUG_SYSTYPE_DMR_AES, CODEPLUG_SYS_TX };
+	uint8_t traffic[CODEPLUG_TRAFFIC_HDR + 32] = { 2, 0x25, 0, 0, 0, 1, 2, 3 };
+	bool pi;
+
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(d->privacy);
+	// With the settings in RAM only, the MI reservation is never saved: PTT waits for it, nothing goes out clear
+	run(SETTINGS_SAVE_DELAY_MS + 100);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	// On a flash: the reservation is saved (as app.c's housekeeping would), then our overs go out
+	static const hal_flash_map_t aes_map = {
+		.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+		.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
+		.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+		.native_addr = 0x30000u, .native_size = 0x4000u,
+	};
+	settings_t sv;
+	sim_flash_create(0x40000u, &aes_map);
+	CHECK(storage_init());
+	settings_init();		// the reservation asked for in RAM is gone: asked again
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	uint32_t res0 = sv.aes_mi_res;
+	CHECK(res0 != 0);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	uint32_t mi1 = 0, mi2 = 0, mi3 = 0;
+	pi = false;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0) {
+			pi = true;
+			mi1 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+		}
+	CHECK(pi && mi1 != 0);
+	// The next over's MI is the word after the last superframe the first sent: its positions follow on
+	unsigned sfs = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_VOICE && sim.air[i].voice_index == 0)
+			sfs++;
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi2 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(sfs > 0 && mi2 == dmrAesSeqAdvance(mi1, sfs));
+	// A restart: TX waits for a new reservation, then starts at the saved one, past every position sent
+	dmr_start(true);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == res0);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == dmrAesSeqAdvance(res0, DMR_AES_SEQ_RESERVE));
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi3 == res0);
+	// Data on the AES channel goes encrypted with its key (docs/spec/dmr-data.md 13.4): every first data header is
+	// followed by a privacy header naming algorithm 5 and the key ID, with an MI of the radio's sequence
+	static const uint8_t l4a[12] = { 0x13, 0x88, 0x13, 0x88, 0, 12, 0, 0, 'd', 'a', 't', 'a' };
+	unsigned dh = 0, ph = 0;
+	uint32_t dmi = 0;
+	first = sim.air_count;
+	CHECK(dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP,
+				   l4a, sizeof(l4a)));
+	run(3000);
+	for (unsigned i = first; i < sim.air_count; i++) {
+		if (sim.air[i].kind != DMR_BURST_DATA_HEADER)
+			continue;
+		const uint8_t *h = sim.air[i].payload;
+		if ((h[0] & 0x0F) == 0x0F && h[1] == 0x10) {
+			ph++;
+			CHECK(h[2] == 0x51 && h[3] == 0);	// AES-256 encrypted, key ID 0
+			dmi = ((uint32_t)h[6] << 24) | ((uint32_t)h[7] << 16) | ((uint32_t)h[8] << 8) | h[9];
+		} else {
+			dh++;
+		}
+	}
+	CHECK(dh >= 1 && ph == dh && dmi != 0 && dmi != mi3);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
+	run(50);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	// Without the key no data goes at all, encrypted or clear
+	first = sim.air_count;
+	dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4a,
+			     sizeof(l4a));
+	run(3000);
+	dh = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		dh += sim.air[i].kind == DMR_BURST_DATA_HEADER;
+	CHECK(dh == 0);
+	run(30000);
+	kv_t3_clear();
+	chans[4].rx_only = false;
+	reload_channel();
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+#endif
 }
 
 // ---- DMR emergency in the radio core (docs/spec/dmr-emergency.md): the hot mic keys a call with the emergency service
@@ -3996,6 +4174,7 @@ static void test_ui_requests(void)
 uint32_t hal_millis(void) { return now; }
 void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
+bool radio_dmr_privacy_on(void) { return sm.view.dmr.privacy; }
 uint32_t radio_view_serial(void) { return sm.serial; }
 void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
 void radio_set_settings(const radio_settings_t *s) { radio_sm_set_settings(&sm, s, now); }
@@ -4087,6 +4266,13 @@ void radio_req_dmr_focus(uint32_t id, bool p)
 	req(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0)));
 }
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { req(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key)); }
+// The emergency wipe: its radio request goes to the state machine; its flash steps are zeroizeTest's
+void radio_req_zeroize(void) { req(RREQ_ZEROIZE, 0); }
+bool radio_zeroize_busy(void) { return false; }
+bool codeplug_wipe(void) { return true; }
+bool codeplug_wipe_keys(void) { return true; }
+bool codeplug_kv_remove_ranges(const uint16_t *lohi, uint8_t n) { (void)lohi; (void)n; return true; }
+void crash_clear(void) { }
 static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
 static bool ptt_blocked;
@@ -5243,6 +5429,26 @@ static void test_ui_settings(void)
 	radio_settings_t rs;
 
 	dmr_start(true);
+#if CONFIG_ZEROIZE
+	// The emergency wipe's rows (ui_svc_zeroize.c, docs/spec/zeroize.md 3.1): the defaults, a code set by its digits only
+	CHECK(ui_svc_setting_get(UI_SET_WIPE_CODE) == 0 && ui_svc_setting_get(UI_SET_WIPE_SCOPE) == 0 &&
+	      ui_svc_setting_get(UI_SET_WIPE_CONFIRM) == 1 && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 0);
+	CHECK(!ui_svc_wipe_code_check("1357"));
+	CHECK(ui_svc_wipe_code_set("1357") && ui_svc_setting_get(UI_SET_WIPE_CODE) == 1);
+	CHECK(ui_svc_wipe_code_check("1357") && !ui_svc_wipe_code_check("1358"));
+	CHECK(!ui_svc_setting_set(UI_SET_WIPE_CODE, 1));
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_TRIES, 5) && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 5);
+	CHECK(!ui_svc_setting_set(UI_SET_WIPE_TRIES, 16) && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 5);
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_SCOPE, 1) && ui_svc_setting_get(UI_SET_WIPE_SCOPE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 0) && ui_svc_setting_get(UI_SET_WIPE_CONFIRM) == 0);
+	settings_read(&sv);
+	CHECK(sv.zz_flags == (SETTINGS_ZZ_SET | SETTINGS_ZZ_KEYS_ONLY | SETTINGS_ZZ_NO_CONFIRM | 5u << SETTINGS_ZZ_TRIES_SHIFT));
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_CODE, 0) && ui_svc_setting_get(UI_SET_WIPE_CODE) == 0);
+	CHECK(!ui_svc_wipe_code_check("1357"));
+	ui_svc_setting_set(UI_SET_WIPE_SCOPE, 0);
+	ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 1);
+	ui_svc_setting_set(UI_SET_WIPE_TRIES, 0);
+#endif
 	// The radio core's own settings, read back through radio_get_settings
 	radio_get_settings(&rs);
 	rs.key_beep = true;
@@ -6296,7 +6502,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(476);	// the settings records (page 1: 216 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);

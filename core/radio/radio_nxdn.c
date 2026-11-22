@@ -41,6 +41,13 @@ static nxdn_call_stats_t call_base;	// the call layer's counters already counted
 static air_session_stats_t air_base;
 static uint32_t rx_calls_base, tx_calls_base, filler_base, rejects_base;
 
+void radio_nxdn_wipe(void)
+{
+	if (eng != NULL) {
+		nxdn_engine_wipe_keys(eng);
+	}
+}
+
 void radio_nxdn_init(void)
 {
 	set = defaults;

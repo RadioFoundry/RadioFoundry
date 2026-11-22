@@ -413,3 +413,57 @@ bool codeplug_kv_remove(uint16_t key)
 	codeplug_kv_op_t op = { key, CODEPLUG_KV_REMOVE, NULL };
 	return codeplug_kv_write(&op, 1);
 }
+
+#if CONFIG_ZEROIZE
+bool codeplug_kv_remove_ranges(const uint16_t *lohi, uint8_t n)
+{
+	uint32_t a;
+	if (!area_addr(&a)) {
+		return true;
+	}
+	storage_lock();
+	uint8_t *b = storage_buffer_acquire();
+	bool erase = true;	// unless the area was read and is empty, or rewritten without the keys
+	if (b != NULL && board.flash->read(a, b, STORAGE_SECTOR)) {
+		codeplug_kv_state_t st = codeplug_kv_check(b);
+		erase = st != CODEPLUG_KV_EMPTY;
+		if (st == CODEPLUG_KV_VALID) {
+			uint16_t hdr = 0, len = 0;
+			uint32_t crc;
+			header(b, &hdr, &len, &crc);
+			uint8_t *d = &b[hdr];
+			bool changed = false;
+			for (uint32_t at = 0; at < len; ) {
+				uint32_t next = at + ENTRY_HDR + get16(&d[at + 2]);
+				uint16_t k = get16(&d[at]);
+				bool drop = false;
+				for (uint8_t i = 0; i < n; i++) {
+					drop = drop || (k >= lohi[2u * i] && k <= lohi[2u * i + 1u]);
+				}
+				if (drop) {
+					len = (uint16_t)cut(d, len, at, next);
+					changed = true;
+				} else {
+					at = next;
+				}
+			}
+			if (changed) {
+				memset(&d[len], 0xFF, STORAGE_SECTOR - hdr - len);	// erased, as the sector after the data
+				put16(&b[6], len);
+				put32(&b[8], storage_crc32(0, d, len));
+			}
+			erase = changed && !storage_sector_write(a, b);
+		}
+	}
+	if (b != NULL) {
+		memset(b, 0, STORAGE_SECTOR);	// it held the keys
+		storage_buffer_release();
+	}
+	// Not readable as ours (a damaged area, a later version, the buffer taken by a CPS session) or not rewritten: it
+	// may hold keys all the same, and they go before the settings it held
+	bool ok = !erase || storage_erase(a, STORAGE_SECTOR);
+	kv_serial++;
+	storage_unlock();
+	return ok;
+}
+#endif

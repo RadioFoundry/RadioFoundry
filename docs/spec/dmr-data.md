@@ -602,7 +602,7 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 - N(S) per destination: the last 4 radios; a radio not in the table starts at a number from the clock, so a receiver
   still holding our number from before a restart doesn't take the first packet as a duplicate (a strict receiver's
   out of sequence NACK resynchronizes either way).
-- The gateway's packets and zone sharing's go through one TX queue (12.6). A confirmed packet is always alone in its
+- The gateway's packets, zone sharing's and key fill's go through one TX queue (12.6). A confirmed packet is always alone in its
   transmission and the next waits for its end; unconfirmed packets to the same destination share one (12.6.2).
 
 ### 12.3 Confirmed data to us
@@ -648,20 +648,20 @@ explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data 
 
 ### 12.6 Our transmissions: the TX queue, chaining and the guard
 
-`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway or zone sharing). It replaced the
+`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway, zone sharing or key fill). It replaced the
 gateway's one-packet mailbox (#154): a host that sent a second datagram while the first was on air had it refused.
 
 #### 12.6.1 The queue
 
 | Property | Value |
 |---|---|
-| Producers | the IP gateway (the host link task), zone sharing (any task); `airqPut`, `airqPutBatch` (all or none) |
+| Producers | the IP gateway (the host link task), zone sharing (any task, UDP port 4100), key fill (the UI task, UDP port 4101, [key-fill.md](key-fill.md) 3); `airqPut`, `airqPutBatch` (all or none) |
 | Buffer | a static byte ring of `CONFIG_DMR_AIR_QUEUE_BYTES` octets (default 2048); no allocation |
 | Record | a 36-octet header, then the packet, rounded up to 4 octets. Each packet takes its own length, not a fixed slot |
 | Count | no limit but the bytes: a put is refused only when the packet doesn't fit |
 | Layout | a record never wraps. When the end of the buffer has no room, the end is left unused and the record goes at the start, so the data service reads the oldest in place while others are added |
 | Order | first in, first out; the radio task's `airqTick` hands the oldest to the data service |
-| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's for 10 s; then dropped (`airq.gave_up`) |
+| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's and key fill's for 10 s; then dropped (`airq.gave_up`) |
 | Age | a gateway packet still queued after 10 s is dropped unsent (`airq.aged`): what it was for has likely moved on |
 | Visibility | depth in packets and octets, both high water marks, refusals and every way a packet ends: the `air` view section ([debuglink.md](debuglink.md) 3.7, section 24); drops are also logged on the debug link |
 
@@ -833,6 +833,7 @@ entry.
 | Off, or no valid key | clear |
 | Motorola BP | encrypted: privacy header, algorithm 0 |
 | Anytone BP | no data form: every data list is refused |
+| DMR AES-256 channel (`CONFIG_DMR_AES`) | encrypted with the channel's key: privacy header, algorithm 5, its key ID, a new MI (13.4). Without the key, refused |
 
 ### 13.1 Privacy header
 
@@ -844,9 +845,9 @@ blocks to follow):
 | 0 | SAP << 4 \| 0xF |
 | 1 | MFID 0x10 |
 | 2 | algorithm (bits 6-4: 0 BP, 1 RC4, 2 DES, 4 AES-128, 5 AES-256), encrypted 1 (bits 3-0) |
-| 3 | key ID (0 for BP) |
+| 3 | key ID (0 for BP; AES: the traffic key's ID, as in the voice PI header) |
 | 4-5 | 0 |
-| 6-9 | MI, big-endian (0 for BP) |
+| 6-9 | MI, big-endian (0 for BP; AES: 13.4) |
 | 10-11 | CRC-CCITT, mask 0xCC |
 
 We send the real SAP in the first header. On RX a first header with SAP 9 takes the user data's SAP from the privacy
@@ -867,13 +868,38 @@ computed over the ciphertext, so a receiver without the key still checks and ack
   scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
   fails at once; other requests fail or time out as when the channel is busy.
 - Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
-- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
-  MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives
-  garbage that the IP checks drop.
+- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm (and, for AES, holds its
+  key ID). Otherwise (no key, another algorithm) it is dropped and never shown; confirmed data is still acknowledged.
+  A wrong BP key gives garbage that the IP checks drop.
+- TX with AES: a packet that can't get an MI (no saved reservation yet) or whose key is gone is not built: nothing
+  goes, in the clear or otherwise. The radio core also refuses data there as it refuses PTT (`TXDENY_AES_KEY`,
+  `TXDENY_AES_WAIT`).
 - Counters (debug link section 8): `data.privacy_rx` (decrypted), `data.privacy_rx_dropped`, `data.privacy_tx` (lists
   sent encrypted), `data.privacy_blocked` (lists refused).
 
-### 13.4 Open
+### 13.4 AES data
+
+On a DMR AES-256 channel ([channel-modes.md](channel-modes.md), [dmr-voice.md](dmr-voice.md) 5.1) the channel's
+traffic key covers its packet data as it covers its voice: text messages, positions, key fill
+([key-fill.md](key-fill.md)) and every other packet the radio builds there.
+
+| Item | Value |
+|---|---|
+| Algorithm | AES-256, privacy header algorithm 5 (`DMR_DATA_ALG_AES256`) |
+| Key | The channel's traffic key; its ID in octet 3. A receiver decrypts with its key of that ID on the channel, else drops the packet |
+| Keystream | OFB: block 1 = AES(K, IV), block n = AES(K, block n-1), XORed over the user data from octet 0 (as BP, 13.2). IV = the 128-bit IV of the MI at superframe 0 (`dmrAesIv`: the MI and the next three words of the LFSR) |
+| MI | A new position of the radio's one MI sequence for every packet (`dmrAesDataMi`): used at once, so it is never the start of an over's superframe or another packet's. One position per packet, from the same saved reservation as voice |
+| Confirmed retries | A selective retry sends the first try's blocks again under the first try's MI and header (the receiver keeps that header, 12.3): the same ciphertext, no new keystream |
+| CRCs | As BP: the CRC-32 and CRC-9s over the ciphertext |
+
+A packet is built only when it can be encrypted: without an MI or the key, `dmrDataBuild*` builds nothing
+(`txPrivacy` returns -1), so a failure never sends the data in the clear.
+
+### 13.5 Open
+
+- AES data is checked only between our radios (host tests, and on air between two of our radios). Whether a commercial
+  radio's AES data uses this keystream (its IV from the MI, from octet 0) is not known: a capture of a stock radio's
+  encrypted text message would settle it.
 
 - Not yet checked against a commercial portable on air: whether its first header carries SAP 9 or the real SAP, and
   octets 4-5.

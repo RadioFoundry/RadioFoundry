@@ -2250,6 +2250,11 @@ msgid "Tone burst"
 msgstr "突发音"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "AES 密钥"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "色码"
@@ -3550,6 +3555,11 @@ msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "密钥注入"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "双守候"
@@ -3648,6 +3658,31 @@ msgstr "紫"
 msgctxt "SET_VALUE_ACCENT_PINK"
 msgid "Pink"
 msgstr "粉"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_CODEPLUG"
+msgid "Keys+codeplug"
+msgstr "密钥+codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_ONLY"
+msgid "Keys only"
+msgstr "仅密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_3_WRONG"
+msgid "3 wrong"
+msgstr "3次失败"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_5_WRONG"
+msgid "5 wrong"
+msgstr "5次失败"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_10_WRONG"
+msgid "10 wrong"
+msgstr "10次失败"
 
 #: core/ui/ui_menus.c
 msgctxt "VALUE_3_MIN"
@@ -4010,6 +4045,41 @@ msgid "Key"
 msgstr "按键"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "密钥检查"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "已存密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CODE"
+msgid "Wipe code"
+msgstr "清除码"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_WHAT"
+msgid "Wipe what"
+msgstr "清除内容"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CONFIRM"
+msgid "Wipe confirm"
+msgstr "清除确认"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_AFTER"
+msgid "Wipe after"
+msgstr "失败后清除"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_CLEAR_KEYS"
+msgid "Clear all keys"
+msgstr "清除所有密钥"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "自动锁键"
@@ -4310,6 +4380,16 @@ msgid " steps"
 msgstr " 步"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "请先选按键类型"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_NEEDS_NUMBER_KEYS"
+msgid "Needs number keys"
+msgstr "需数字键"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "通话许可音：本版本无"
@@ -4370,11 +4450,6 @@ msgid "Talker alias: not in this build"
 msgstr "主叫别名：本版本无"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "请先选按键类型"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "本机无 GPS"
@@ -4385,9 +4460,19 @@ msgid "DMR position: not in this build"
 msgstr "DMR 定位：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_SET"
+msgid "Set"
+msgstr "已设"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "The same check on both radios: the same key"
+msgstr "两台电台检查值同：密钥同"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4513,6 +4598,456 @@ msgstr "扫描停在此处"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "在 qdmr 中编辑扫描列表"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "加密"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_KEY_TOO_LONG"
+msgid "This key is too long to send"
+msgstr "此密钥过长，无法发送"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_SEND_BACK"
+msgid "OK send  Back"
+msgstr "OK 发送  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "无密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_LABEL_SEND_GROUP"
+msgid "Send to group"
+msgstr "发往群组"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_LABEL_TO_ID"
+msgid "To ID"
+msgstr "发往 ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CHECK"
+msgid "Check "
+msgstr "检查 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TOAST_TYPE_ID"
+msgid "Type the other radio's DMR ID"
+msgstr "请输入另一台电台的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE_SEND"
+msgid "Send this key"
+msgstr "发送此密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_ID_OK_SEND_BACK"
+msgid "0-9 ID  OK send  Back"
+msgstr "0-9 ID  OK 发送  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_RECEIVE"
+msgid "Receive a key"
+msgstr "接收密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_SEND"
+msgid "Send a key"
+msgstr "发送密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_ROW_RECEIVE"
+msgid "Receive group key"
+msgstr "接收群组密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_DMR_ONLY"
+msgid "Key fill: DMR channels only"
+msgstr "密钥注入：仅限 DMR 信道"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_NO_DMR_ID"
+msgid "Set this radio's DMR ID first"
+msgstr "请先设置本机的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BAD_PEER"
+msgid "Type another radio's DMR ID"
+msgstr "请输入其他电台的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BUSY"
+msgid "Key fill busy: try again"
+msgstr "密钥注入忙：请重试"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_NO_SYSTEM"
+msgid "No matching system on the receiver"
+msgstr "接收方无匹配系统"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_AMBIGUOUS"
+msgid "More than one system matches on the receiver"
+msgstr "接收方有多个系统匹配"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_UNSUPPORTED"
+msgid "The receiver can't store that kind of key"
+msgstr "接收方无法存储此类密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_BAD_PAYLOAD"
+msgid "The key didn't arrive whole"
+msgstr "密钥不全"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_WRITE_FAILED"
+msgid "The receiver couldn't save the key"
+msgstr "接收方无法保存密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_CANCELED"
+msgid "The other radio canceled"
+msgstr "对方电台已取消"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CANCELED"
+msgid "Canceled"
+msgstr "已取消"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_MISMATCH"
+msgid "The codes didn't match"
+msgstr "号码不一致"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_TIMEOUT"
+msgid "The other radio didn't answer"
+msgstr "对方电台未应答"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CHECK"
+msgid "A message failed its check"
+msgstr "消息检查失败"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_BUSY"
+msgid "The other radio is busy"
+msgstr "对方电台忙"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_SEND"
+msgid "Couldn't send: check the channel"
+msgstr "无法发送：请检查信道"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_FAILED"
+msgid "Key fill failed"
+msgstr "密钥注入失败"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_PRESS_KEYS"
+msgid "Press keys at random: "
+msgstr "请任意按键: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_READY"
+msgid "Ready. This radio: "
+msgstr "就绪。本机: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CODE"
+msgid "Code "
+msgstr "号码 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_OTHER_RADIO"
+msgid "Other radio "
+msgstr "对方电台 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SAME"
+msgid "Same on both? OK yes, Back no"
+msgstr "两台一致？OK 是，返回 否"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENDING"
+msgid "Sending the key"
+msgstr "正在发送密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORING"
+msgid "Storing the key"
+msgstr "正在存储密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORED"
+msgid "Key stored"
+msgstr "密钥已存储"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENT"
+msgid "Key sent"
+msgstr "密钥已发送"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_FAILED"
+msgid "Failed: "
+msgstr "失败: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT_OK"
+msgid "Waiting for the other radio's OK"
+msgstr "等待对方电台确认"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT"
+msgid "Waiting for the other radio"
+msgstr "等待对方电台"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_LOW_POWER"
+msgid "Low power"
+msgstr "低功率"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_YES_BACK_NO"
+msgid "OK yes  Back no"
+msgstr "OK 是  返回 否"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_BACK_CANCELS"
+msgid "Back cancels"
+msgstr "返回 取消"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_CHANNEL"
+msgid "Group key fill needs an AES channel with its key"
+msgstr "群组密钥注入只用于带密钥的 AES 信道"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_TARGET"
+msgid "Group key fill needs a talkgroup as the target"
+msgstr "群组密钥注入只能发往群组"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_KEY"
+msgid "Only AES-256 keys go to a group"
+msgstr "只有 AES-256 密钥可发往群组"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_TIMEOUT"
+msgid "No key came"
+msgstr "未收到密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SENDING"
+msgid "Sending to group "
+msgstr "正在发往群组 "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_TALKGROUP"
+msgid "Talkgroup "
+msgstr "群组 "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SENT"
+msgid "Sent to group"
+msgstr "已发往群组"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_LISTEN"
+msgid "Listening for a group key"
+msgstr "正在等待群组密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_LEFT"
+msgid " left"
+msgstr " 后关闭"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_FROM"
+msgid "Key from "
+msgstr "密钥来自 "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_KEY_ID"
+msgid "Key ID "
+msgstr "密钥 ID "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SAVE_AS"
+msgid "Save as key: "
+msgstr "存为密钥: "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SAVED"
+msgid "Saved as key "
+msgstr "已存为密钥 "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_HINT_SAVE"
+msgid "0-9 ID  OK save  Back drop"
+msgstr "0-9 ID  OK 保存  返回 删除"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_TITLE"
+msgid "Group key fill"
+msgstr "群组密钥注入"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR"
+msgid "Clear code"
+msgstr "删除清除码"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_NEW_CODE"
+msgid "New code"
+msgstr "新码"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_AGAIN"
+msgid "Again"
+msgstr "再输入"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_TYPE"
+msgid "Type 4 digits. Then on Home, or while locked, they and # wipe the radio"
+msgstr "输入4位数字。在主屏或按键锁定时，输入这4位数字和 # 即清除电台"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_AGAIN"
+msgid "Type the 4 digits again"
+msgstr "再输入一次4位数字"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_CLEARED"
+msgid "Wipe code cleared"
+msgstr "清除码已删除"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_DIFFER"
+msgid "Not the same: type the code again"
+msgstr "不一致：请重新输入"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_SET"
+msgid "Wipe code set"
+msgstr "清除码已设"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE_CODE"
+msgid "Wipe Code"
+msgstr "清除码"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CODE"
+msgid "0-9 type  Back"
+msgstr "0-9 输入  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_AGAIN"
+msgid "Try again"
+msgstr "重试"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR_KEYS"
+msgid "Clear keys"
+msgstr "清除密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_NOW"
+msgid "Wipe now"
+msgstr "立即清除"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_CLEAR_KEYS"
+msgid "Erase every key now? Channels stay"
+msgstr "清除所有密钥？信道保留"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_KEYS"
+msgid "Erase the keys now?"
+msgstr "立即清除密钥？"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_ALL"
+msgid "Erase the keys and the codeplug now?"
+msgstr "立即清除密钥和 codeplug？"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_KEYS"
+msgid "keys area"
+msgstr "密钥区"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_SETTINGS"
+msgid "settings"
+msgstr "设置"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_CODEPLUG"
+msgid "codeplug"
+msgstr "codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_NATIVE"
+msgid "native area"
+msgstr "本机区"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_PURGE"
+msgid "old copies"
+msgstr "旧副本"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_RADIO"
+msgid "radio RAM"
+msgstr "电台 RAM"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_INCOMPLETE"
+msgid "Wipe incomplete:"
+msgstr "清除未完成:"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_KEYS_DONE"
+msgid "Keys cleared. Restarting"
+msgstr "密钥已清除。重启中"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_DONE"
+msgid "Wiped. Restarting"
+msgstr "已清除。重启中"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_RUNNING"
+msgid "Wiping. Don't switch off"
+msgstr "清除中。请保持开机"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CLEAR"
+msgid "OK clears  Other keys cancel"
+msgstr "OK 清除  其他键取消"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CONFIRM"
+msgid "OK wipes  Other keys cancel"
+msgstr "OK 清除  其他键取消"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_FAILED"
+msgid "OK again  Back"
+msgstr "OK 重试  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE"
+msgid "Emergency Wipe"
+msgstr "紧急清除"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"
@@ -4833,6 +5368,16 @@ msgstr "系统已停止发射"
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "未设发射频率"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "无 AES 密钥或已禁用发射"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES：正在保存，请重试"
 
 #: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"

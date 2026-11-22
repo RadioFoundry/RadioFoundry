@@ -49,6 +49,9 @@
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
+//   wipecode:<dddd>     the emergency wipe's code is set to these four digits (CONFIG_ZEROIZE)
+//   wipefail:<bits>     the next emergency wipe fails with these UI_WIPE_FAIL_* bits (0: it works)
+//   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -86,6 +89,11 @@
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
+#include "support/kcv.h"
+#if CONFIG_KEY_FILL
+#include "keyfill/keyfill.h"
+#endif
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -1593,6 +1601,12 @@ void radio_req_power(int8_t dir)
 		set_temp(RADIO_TEMP_POWER);
 	changed();
 }
+// Key fill's low power (key-fill.md 2.1): RAM only, as the radio core
+void radio_req_tx_low(bool on)
+{
+	view.tx_low = on;
+	changed();
+}
 void radio_req_squelch(int8_t dir)
 {
 	to_selected();
@@ -1986,6 +2000,46 @@ bool ui_svc_privacy(bool on)
 	return view.dmr.privacy == on;
 }
 bool ui_svc_monitor(bool on) { view.monitor = on; changed(); return true; }
+
+// The stored keys (codeplug/key_store.h): key slot 1 from the settings, then an NXDN scrambler key on a system the
+// simulated codeplug doesn't otherwise have, so the Keys screen shows both kinds
+bool ui_svc_privacy_kcv(char out[7])
+{
+	int32_t type = ui_svc_setting_get(UI_SET_PRIVACY_TYPE), key = ui_svc_setting_get(UI_SET_PRIVACY_KEY);
+	uint8_t v[KCV_LEN];
+	if (type == 0 || (type == 1 && (key < 1 || key > 255)) || !kcv_privacy((uint8_t)type, (uint32_t)key, v))
+		return false;
+	kcv_text(v, out);
+	return true;
+}
+uint16_t ui_svc_keys_count(void)
+{
+	return ui_svc_setting_get(UI_SET_PRIVACY_TYPE) != 0 ? 2 : 1;
+}
+bool ui_svc_key(uint16_t i, struct key_entry_s *e)
+{
+	static const uint8_t seed[2] = { 0x34, 0x12 };
+	char t[KCV_TEXT];
+	memset(e, 0, sizeof *e);
+	if (i == 0 && ui_svc_privacy_kcv(t)) {
+		e->cls = KCV_CLASS_PRIVACY;
+		e->slot = 1;
+		e->type = (uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
+		e->len = 4;
+		e->kcv_ok = kcv_privacy(e->type, (uint32_t)ui_svc_setting_get(UI_SET_PRIVACY_KEY), e->kcv);
+		return true;
+	}
+	if (i != ui_svc_keys_count() - 1u)
+		return false;
+	e->cls = KCV_CLASS_TRAFFIC;
+	e->type = 4;
+	e->alg = 1;
+	e->key_id = 5;
+	e->len = sizeof seed;
+	strcpy(e->name, "NXDN Ops");
+	e->kcv_ok = kcv_traffic(4, 1, seed, sizeof seed, e->kcv);
+	return true;
+}
 bool ui_svc_vox(bool on)
 {
 	view.vox_on = on && view.ch.mode == RADIO_MODE_FM;
@@ -2482,6 +2536,40 @@ bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
+// The emergency wipe (ui_svc.h, docs/spec/zeroize.md): the code kept as typed (the firmware keeps a salted hash), a
+// wipe counted and done at once, or failed with the bits wipefail: set
+static char sim_wipe_code[4];
+static uint32_t sim_wipes;
+static uint8_t sim_wipe_state, sim_wipe_fail;
+bool ui_svc_wipe_code_set(const char code[4])
+{
+	memcpy(sim_wipe_code, code, sizeof sim_wipe_code);
+	sim_late[UI_SET_WIPE_CODE - UI_SET_RAM_COUNT] = 1;
+	return true;
+}
+bool ui_svc_wipe_code_check(const char code[4])
+{
+	return ui_svc_setting_get(UI_SET_WIPE_CODE) != 0 && memcmp(code, sim_wipe_code, sizeof sim_wipe_code) == 0;
+}
+static uint32_t sim_key_clears;
+bool ui_svc_clear_keys_start(void)
+{
+	sim_key_clears++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+bool ui_svc_wipe_start(void)
+{
+	sim_wipes++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+uint8_t ui_svc_wipe_state(uint8_t *failed)
+{
+	*failed = sim_wipe_state == UI_WIPE_FAILED ? sim_wipe_fail : 0;
+	return sim_wipe_state;
+}
+
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
 // the same with the report's mode and the first contact (USA, TG 3100) as its target. A report goes at once;
 // "crashtx:refuse" makes the next sends fail to start (one still going), "crashtx:fail" makes them end failed
@@ -2552,6 +2640,263 @@ static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
+
+#if CONFIG_KEY_FILL
+// ---------------- key fill (ui_svc_keyfill.c): a believable session ----------------
+// Random key presses until the pool is full (12 from the start, or the kf:full token), then the steps; the other
+// radio's side comes from tokens: kf:peer (its next step: COMMIT or RPUB, then READY / DONE), kf:abort (its ABORT),
+// kf:fail (no answer: a time-out), kf:rpt (this channel goes through a repeater)
+#define KF_SIM_PRESSES	12
+#define KF_SIM_CODE	482913u
+#define KF_SIM_PEER	9991234u
+static struct {
+	bool on, low;
+	ui_kf_view_t v;
+	int seen;		// presses counted so far
+} kf_sim;
+
+uint8_t ui_svc_kf_start(int32_t key, uint32_t own, uint32_t dst, bool low)
+{
+	if (own == 0)
+		return UI_KF_NO_ID;
+	if (key >= 0 && (dst == 0 || dst > CODEPLUG_DMR_ID_MAX || dst == own))
+		return UI_KF_BAD_PEER;
+	memset(&kf_sim, 0, sizeof kf_sim);
+	kf_sim.on = true;
+	kf_sim.low = low;
+	kf_sim.v.role = key < 0;
+	kf_sim.v.own_id = own;
+	kf_sim.v.peer_id = key < 0 ? 0 : dst;
+	kf_sim.v.presses = KF_SIM_PRESSES;
+	kf_sim.seen = presses;
+	if (low)
+		radio_req_tx_low(true);
+	return UI_KF_OK;
+}
+
+bool ui_svc_kf_view(ui_kf_view_t *out)
+{
+	memset(out, 0, sizeof *out);
+	if (!kf_sim.on)
+		return false;
+	*out = kf_sim.v;
+	return true;
+}
+
+static void kf_sim_over(void)
+{
+	if (kf_sim.low)
+		radio_req_tx_low(false);
+	kf_sim.low = false;
+}
+
+static void kf_sim_fail(uint8_t why, bool by_peer)
+{
+	kf_sim.v.state = KF_ST_FAILED;
+	kf_sim.v.why = why;
+	kf_sim.v.by_peer = by_peer;
+	kf_sim_over();
+}
+
+void ui_svc_kf_confirm(bool same)
+{
+	if (!kf_sim.on || kf_sim.v.state != KF_ST_COMPARE)
+		return;
+	if (!same)
+		kf_sim_fail(KF_WHY_MISMATCH, false);
+	else
+		kf_sim.v.state = kf_sim.v.role ? KF_ST_SENT_READY : KF_ST_WAIT_READY;
+}
+
+void ui_svc_kf_end(void)
+{
+	if (!kf_sim.on)
+		return;
+	kf_sim_over();
+	memset(&kf_sim, 0, sizeof kf_sim);
+}
+
+bool ui_svc_kf_tick(const radio_view_t *v, uint32_t now)
+{
+	(void)v;
+	(void)now;
+	if (!kf_sim.on)
+		return false;
+	uint8_t was = kf_sim.v.presses;
+	int n = presses >= kf_sim.seen ? presses - kf_sim.seen : presses;	// the flow's count may start over
+	kf_sim.seen = presses;
+	if (kf_sim.v.state == KF_ST_IDLE && kf_sim.v.presses > 0) {
+		kf_sim.v.presses = (uint8_t)(n >= kf_sim.v.presses ? 0 : kf_sim.v.presses - n);
+		if (kf_sim.v.presses == 0)
+			kf_sim.v.state = kf_sim.v.role ? KF_ST_LISTEN : KF_ST_SENT_COMMIT;
+		return true;
+	}
+	return was != kf_sim.v.presses;
+}
+
+static bool kf_sim_token(const char *arg)
+{
+	ui_kf_view_t *k = &kf_sim.v;
+	if (strcmp(arg, "rpt") == 0) {
+		view.ch.tx_hz = view.ch.rx_hz + 5000000u;
+		changed();
+		return true;
+	}
+	if (!kf_sim.on)
+		return false;
+	if (strcmp(arg, "full") == 0) {
+		k->presses = 0;
+		if (k->state == KF_ST_IDLE)
+			k->state = k->role ? KF_ST_LISTEN : KF_ST_SENT_COMMIT;
+	} else if (strcmp(arg, "abort") == 0) {
+		kf_sim_fail(KF_WHY_CANCELED, true);
+	} else if (strcmp(arg, "fail") == 0) {
+		kf_sim_fail(KF_WHY_TIMEOUT, false);
+	} else if (strcmp(arg, "peer") == 0) {
+		static const uint8_t kcv[3] = { 0x95, 0x07, 0xA7 };
+		switch (k->state) {
+		case KF_ST_LISTEN:
+			k->peer_id = KF_SIM_PEER;
+			/* fall through */
+		case KF_ST_SENT_COMMIT:
+			k->state = KF_ST_COMPARE;
+			k->code = KF_SIM_CODE;
+			break;
+		case KF_ST_SENT_READY:
+		case KF_ST_WAIT_READY:
+			k->state = KF_ST_DONE;
+			k->result = KF_STORED;
+			k->kcv_ok = true;
+			memcpy(k->kcv, kcv, sizeof k->kcv);
+			kf_sim_over();
+			break;
+		default:
+			return false;
+		}
+	} else {
+		return false;
+	}
+	changed();	// the screen draws the step
+	return true;
+}
+#endif
+#if CONFIG_GROUP_KEY_FILL
+// ---------------- group key fill (ui_svc_groupkey.c): a believable session ----------------
+// The channel is an AES one only after the gk:aes token. The other radios come from tokens: gk:got (a key from
+// 4670502, key ID 5, arrives while listening), gk:copy (the sender's next copy goes on air), gk:fail (a copy fails),
+// gk:timeout (the receive window runs out). gksaved = the key ID the last save stored under, 0 none
+static struct {
+	bool on;
+	ui_gk_view_t v;
+	uint32_t saved;		// the key ID saved + 1
+} gk_sim;
+
+uint8_t ui_svc_gk_start(int32_t key, const radio_view_t *v)
+{
+	if (v->ch.mode != RADIO_MODE_DMR || v->ch.kind != CODEPLUG_KIND_DMR_AES || v->ch.aes_ref == 0)
+		return UI_GK_WHY_CHANNEL;
+	if (key >= 0 && (v->dmr.target_private || v->dmr.target_id == 0))
+		return UI_GK_WHY_TARGET;
+	if (v->dmr.own_id == 0)
+		return UI_GK_WHY_NO_ID;
+	static const uint8_t kcv[3] = { 0x95, 0x07, 0xA7 };
+	memset(&gk_sim.v, 0, sizeof gk_sim.v);
+	gk_sim.on = true;
+	gk_sim.v.send = key >= 0;
+	if (key >= 0) {
+		gk_sim.v.state = UI_GK_SENDING;
+		gk_sim.v.tg = v->dmr.target_id;
+		gk_sim.v.key_id = 7;
+		gk_sim.v.kcv_ok = true;
+		memcpy(gk_sim.v.kcv, kcv, sizeof kcv);
+	} else {
+		gk_sim.v.state = UI_GK_LISTEN;
+		gk_sim.v.left_s = 30u * 60u;
+	}
+	return UI_GK_WHY_NONE;
+}
+
+bool ui_svc_gk_view(ui_gk_view_t *out)
+{
+	memset(out, 0, sizeof *out);
+	if (!gk_sim.on)
+		return false;
+	*out = gk_sim.v;
+	return true;
+}
+
+void ui_svc_gk_save_id(uint8_t id)
+{
+	if (gk_sim.on && gk_sim.v.state == UI_GK_GOT)
+		gk_sim.v.save_id = id;
+}
+
+void ui_svc_gk_save(void)
+{
+	if (!gk_sim.on || gk_sim.v.state != UI_GK_GOT)
+		return;
+	gk_sim.v.state = UI_GK_SAVED;
+	gk_sim.saved = gk_sim.v.save_id + 1u;
+}
+
+void ui_svc_gk_drop(void)
+{
+	if (!gk_sim.on || gk_sim.v.state != UI_GK_GOT)
+		return;
+	gk_sim.v.state = UI_GK_LISTEN;
+	gk_sim.v.kcv_ok = false;
+}
+
+void ui_svc_gk_end(void)
+{
+	memset(&gk_sim.v, 0, sizeof gk_sim.v);
+	gk_sim.on = false;
+}
+
+bool ui_svc_gk_tick(const radio_view_t *v, uint32_t now)
+{
+	(void)v;
+	(void)now;
+	return false;
+}
+
+void ui_svc_gk_zeroize(void) {}
+
+static bool gk_sim_token(const char *arg)
+{
+	ui_gk_view_t *g = &gk_sim.v;
+	if (strcmp(arg, "aes") == 0) {
+		view.ch.kind = CODEPLUG_KIND_DMR_AES;
+		view.ch.aes_ref = 2;
+		changed();
+		return true;
+	}
+	if (!gk_sim.on)
+		return false;
+	if (strcmp(arg, "got") == 0 && g->state == UI_GK_LISTEN) {
+		static const uint8_t kcv[3] = { 0x95, 0x07, 0xA7 };
+		g->state = UI_GK_GOT;
+		g->sender = 4670502u;
+		g->key_id = 5;
+		g->save_id = 5;
+		g->kcv_ok = true;
+		memcpy(g->kcv, kcv, sizeof kcv);
+	} else if (strcmp(arg, "copy") == 0 && g->state == UI_GK_SENDING) {
+		if (++g->copies >= 4)
+			g->state = UI_GK_SENT;
+	} else if (strcmp(arg, "fail") == 0 && g->state == UI_GK_SENDING) {
+		g->state = UI_GK_FAILED;
+		g->why = UI_GK_WHY_SEND;
+	} else if (strcmp(arg, "timeout") == 0 && g->state == UI_GK_LISTEN) {
+		g->state = UI_GK_FAILED;
+		g->why = UI_GK_WHY_TIMEOUT;
+	} else {
+		return false;
+	}
+	changed();
+	return true;
+}
+#endif
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
@@ -2605,9 +2950,41 @@ static void advance(uint32_t ms)
 		step();
 }
 
+#if CONFIG_DMR_AES
+static bool sim_aes_keys;	// aeskeys
+
+// The codeplug's AES keys as ui_svc_storage.c steps them: system 3 (index 2), PI key IDs 0 and 7, then none
+void ui_svc_next_aes_key(channel_t *c)
+{
+	static const uint16_t refs[] = { 1, 8 };	// key ID + 1
+	unsigned i = 0;
+
+	if (c->kind == CODEPLUG_KIND_DMR_AES)
+		while (i < 2 && refs[i] <= c->aes_ref)
+			i++;
+	if (!sim_aes_keys || i == 2) {
+		c->kind = CODEPLUG_KIND_NONE;
+		c->system = CODEPLUG_SYSTEM_NONE;
+		c->aes_ref = 0;
+		return;
+	}
+	c->kind = CODEPLUG_KIND_DMR_AES;
+	c->system = 2;
+	c->aes_ref = refs[i];
+}
+#endif
+
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	memset(sim_wipe_code, 0, sizeof sim_wipe_code);
+	sim_wipes = 0;
+	sim_key_clears = 0;
+#if CONFIG_GROUP_KEY_FILL
+	memset(&gk_sim, 0, sizeof gk_sim);
+#endif
+	sim_wipe_state = UI_WIPE_IDLE;
+	sim_wipe_fail = 0;
 	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
@@ -2643,6 +3020,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_DMR_AES
+	sim_aes_keys = false;
+#endif
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
 	sim_satellite_no_passes = false;
@@ -2738,6 +3118,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
 	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	ui_svc_setting_set(UI_SET_WIPE_CODE, 0);	// the emergency wipe as on a new radio: no code, keys and codeplug,
+	ui_svc_setting_set(UI_SET_WIPE_SCOPE, 0);	// the confirmation press on, no count of wrong codes
+	ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 1);
+	ui_svc_setting_set(UI_SET_WIPE_TRIES, 0);
 	for (uint8_t id = UI_SET_CALL_END_TONE; id <= UI_SET_EMERGENCY_TONE; id++)
 		ui_svc_setting_set(id, id != UI_SET_SCAN_TONE);	// as on a new radio: the scan stop tone off, the rest on
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
@@ -2777,6 +3161,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
 	memset(&zs_sim, 0, sizeof zs_sim);
+#if CONFIG_KEY_FILL
+	memset(&kf_sim, 0, sizeof kf_sim);
+#endif
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -2926,6 +3313,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
 	else if (strcmp(key, "toast") == 0) { snprintf(got, sizeof got, "%s", s.toast[0] ? s.toast : "none"); prefix = true; }
 	else if (strcmp(key, "power") == 0) snprintf(got, sizeof got, "%u", view.power);
+	else if (strcmp(key, "txlow") == 0) snprintf(got, sizeof got, "%u", view.tx_low);
 	else if (strcmp(key, "sq") == 0) snprintf(got, sizeof got, "%u", view.squelch);
 	else if (strcmp(key, "ts") == 0) snprintf(got, sizeof got, "%u", view.dmr.ts);
 	else if (strcmp(key, "cc") == 0) snprintf(got, sizeof got, "%u", view.dmr.cc);
@@ -3019,6 +3407,12 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
 	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
+	else if (strcmp(key, "wipes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wipes);	// emergency wipes started
+	else if (strcmp(key, "keyclears") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_key_clears);	// Clear all keys
+#if CONFIG_GROUP_KEY_FILL
+	else if (strcmp(key, "gksaved") == 0) snprintf(got, sizeof got, "%u", (unsigned)(gk_sim.saved ? gk_sim.saved - 1u : 0u));
+#endif
+	else if (strcmp(key, "wipecode") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_WIPE_CODE));
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
@@ -3587,6 +3981,26 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_KEY_FILL
+	if (strcmp(t, "kf") == 0 && arg != NULL) {	// kf:full, kf:peer, kf:abort, kf:fail, kf:rpt (kf_sim)
+		if (!kf_sim_token(arg)) {
+			snprintf(err, len, "kf:%s: not now", arg);
+			return false;
+		}
+		advance(200);
+		return true;
+	}
+#endif
+#if CONFIG_GROUP_KEY_FILL
+	if (strcmp(t, "gk") == 0 && arg != NULL) {	// gk:aes, gk:got, gk:copy, gk:fail, gk:timeout (gk_sim)
+		if (!gk_sim_token(arg)) {
+			snprintf(err, len, "gk:%s: not now", arg);
+			return false;
+		}
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "zoneexpire") == 0) {
 		zs_sim.pending = false;
 		advance(200);
@@ -3669,6 +4083,20 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+	if (strcmp(t, "wipecode") == 0 && arg != NULL && strlen(arg) == 4) {
+		ui_svc_wipe_code_set(arg);
+		return true;
+	}
+	if (strcmp(t, "wipefail") == 0 && arg != NULL) {
+		sim_wipe_fail = (uint8_t)atoi(arg);
+		return true;
+	}
+#if CONFIG_DMR_AES
+	if (strcmp(t, "aeskeys") == 0) {
+		sim_aes_keys = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;

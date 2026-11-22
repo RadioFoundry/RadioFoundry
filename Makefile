@@ -138,6 +138,9 @@ endif
 ifeq ($(CONFIG_SUPPORT_INFO),y)
 CORE_DIRS += core/support
 endif
+ifeq ($(CONFIG_ZEROIZE),y)
+CORE_DIRS += core/zeroize
+endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -177,6 +180,9 @@ endif
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
 endif
+ifeq ($(CONFIG_DMR_AES),y)
+APP_SRC += core/dmr/dmrAes.c
+endif
 # DMR data (SMS, ARS, LRRP, CSBK signaling)
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
 APP_SRC += core/dmr/dmrData.c core/dmr/dmrDataService.c core/dmr/dmrLrrp.c
@@ -201,12 +207,29 @@ APP_SRC := $(filter-out core/crash/crash_trace.c,$(APP_SRC))
 ifeq ($(CONFIG_FAULT_TRACE),y)
 APP_SRC += core/crash/crash_trace.c
 endif
+# Key check values (core/support is globbed with SUPPORT_INFO): their files with their own switch, once
+ifeq ($(CONFIG_KEY_CHECK),y)
+APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c core/support/hkdf.c core/support/kcv.c)
+endif
+# Key fill between radios: the protocol engine and its transport, the randomness pool and X25519
+ifeq ($(CONFIG_KEY_FILL),y)
+CORE_DIRS += core/keyfill
+APP_SRC += $(filter-out $(APP_SRC),core/keyfill/keyfill.c core/keyfill/keyfill_svc.c core/support/entropy.c core/support/x25519.c)
+endif
+# Group key fill: its message and transport (core/keyfill is in CORE_DIRS with key fill)
+ifeq ($(CONFIG_GROUP_KEY_FILL),y)
+APP_SRC += $(filter-out $(APP_SRC),core/keyfill/groupkey.c core/keyfill/groupkey_svc.c core/ui/ui_svc_groupkey.c)
+endif
+# The emergency wipe's code hash (core/support is globbed with SUPPORT_INFO): SHA-256 with its own switch, once
+ifeq ($(CONFIG_ZEROIZE),y)
+APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c)
+endif
 # Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
 ifeq ($(CONFIG_ZONE_SHARE),y)
 APP_SRC += core/dmr/zoneShare.c core/dmr/zoneShareSvc.c
 endif
-# The air queue: the packets the IP gateway and zone sharing hand to the air, in order, one at a time
-ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE)),)
+# The air queue: the packets the IP gateway, zone sharing and key fill hand to the air, in order, one at a time
+ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE) $(CONFIG_KEY_FILL)),)
 APP_SRC += core/dmr/dmrAirQueue.c
 endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)

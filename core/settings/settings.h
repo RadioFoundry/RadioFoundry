@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 
 #define SETTINGS_LAYOUT		1	// bumped only when a field changes meaning or moves (old records then reset)
 #define SETTINGS_SAVE_DELAY_MS	2000
@@ -254,6 +255,16 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
+	// record reads 0, no position yet). A restart starts here, past every position sent
+	uint32_t aes_mi_res;
+	// The emergency wipe (docs/spec/zeroize.md 5), appended: an older record reads no code and the defaults.
+	// zz_flags: SETTINGS_ZZ_*, bits 4-7 the wrong codes typed while locked before a wipe (0 off). The code itself is
+	// never stored: zz_hash is the first 16 octets of SHA-256("RFZZ1" | UID | zz_salt | code)
+	uint8_t zz_flags;
+	uint8_t zz_reserved[3];		// 0
+	uint32_t zz_salt;
+	uint8_t zz_hash[16];
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -269,6 +280,10 @@ typedef struct {
 #define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
 #define SETTINGS_T3_STUN		0x80u	// t3_stun: a stun is kept (bits 0-6 say on which system)
 #define SETTINGS_T3_KILLED		0x01u	// t3_kill: killed
+#define SETTINGS_ZZ_SET			0x01u	// zz_flags: a wipe code is set
+#define SETTINGS_ZZ_KEYS_ONLY		0x02u	// ... a wipe erases the keys only (clear: keys and codeplug)
+#define SETTINGS_ZZ_NO_CONFIRM		0x04u	// ... no confirmation press (clear: OK confirms)
+#define SETTINGS_ZZ_TRIES_SHIFT		4	// ... bits 4-7: wrong codes while locked before a wipe, 0 = off
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
@@ -514,5 +529,13 @@ void settings_poll(uint32_t now_ms);
 bool settings_flush(void);
 
 void settings_get_stats(settings_stats_t *s);
+
+#if CONFIG_ZEROIZE
+// The emergency wipe (docs/spec/zeroize.md 4.1): every old record holds the settings of its day, privacy keys
+// included. Erase the whole ring and the journal (storage_scrub), zero this module's copies and slot buffers, then save
+// the live settings (the caller changed them first) as the ring's first record. False when the region isn't ours, an
+// erase failed or the save did (the live settings are kept and saved later)
+bool settings_scrub(void);
+#endif
 
 #endif

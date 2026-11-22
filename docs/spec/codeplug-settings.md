@@ -26,7 +26,8 @@ Why there:
   left for that, so the area isn't the first thing a longer zone table meets. 0xF000-0xFFFF is left for the area's
   first continuation (2.4).
 - The settings store, the journal, the calibration and the native area are elsewhere on every board.
-- Factory reset doesn't touch the open-firmware image, so it keeps the area too.
+- Factory reset doesn't touch the open-firmware image, so it keeps the area too. The emergency wipe erases its
+  secrets, or the whole area with the codeplug ([zeroize.md](zeroize.md) 4.1).
 - One sector: an edit is one journaled sector rewrite ([settings-store.md](settings-store.md) 4). A power cut leaves
   the old area or the new one, never a mix.
 

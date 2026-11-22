@@ -38,13 +38,20 @@
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
 #endif
+#if CONFIG_DMR_AES
+#include "codeplug/codeplug_records.h"
+#include "dmr/dmrAes.h"
+#endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#include "support/hkdf.h"
+#include "support/kcv.h"
 #endif
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -117,6 +124,21 @@ static void privacy_store(uint8_t type, uint32_t key)
 		radio_req_dmr_privacy(type, (uint16_t)key);
 	}
 }
+
+#if CONFIG_KEY_CHECK
+bool ui_svc_privacy_kcv(char out[7])
+{
+	// the two fields alone (settings_read_field), not a whole settings_t on the UI task's stack
+	uint8_t type = SETTINGS_FIELD(privacy_type[0]), kcv[KCV_LEN];
+	uint32_t key = SETTINGS_FIELD(privacy_key[0]);
+	bool ok = type != DMR_PRIVACY_OFF && type < DMR_PRIVACY_NUM_TYPES && key <= 0xFFFFu &&
+		dmrPrivacyKeyIsValid((dmrPrivacyType_t)type, (uint16_t)key) && kcv_privacy(type, key, kcv);
+	if (ok)
+		kcv_text(kcv, out);
+	crypto_wipe(&key, sizeof key);	// the key was in this copy
+	return ok;
+}
+#endif
 #endif
 
 #if CONFIG_KEY_ASSIGN
@@ -410,6 +432,11 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_get(id);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's frame: key_apply is deep
 		return key_get(id);
@@ -422,6 +449,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_set(id, value);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_set(id, value);
@@ -787,6 +819,35 @@ static struct {
 // ui_svc_codeplug_answer). While one is held no other write starts (job_busy), so the job struct keeps what the held
 // write needs. An index into this table, not a pointer: no RAM of its own (some radios have none to spare)
 static void save_channel_job(void *ctx);
+#if CONFIG_DMR_AES && CONFIG_CHANNEL_EDIT
+void ui_svc_next_aes_key(channel_t *c)
+{
+	// Step through system/PI key ID in numeric order. Read only the public record headers.
+	uint32_t current = c->kind == CODEPLUG_KIND_DMR_AES ? (uint32_t)c->system * 256 + c->aes_ref : 0;
+	uint32_t best = 0x10000u;
+	codeplug_kv_cursor_t cursor;
+	uint8_t hdr[CODEPLUG_TRAFFIC_HDR];
+	uint16_t record;
+	int len;
+	codeplug_kv_begin(&cursor, CODEPLUG_KEY_TRAFFIC, CODEPLUG_KEY_TRAFFIC + 1023);
+	while ((len = codeplug_kv_next(&cursor, &record, hdr, sizeof hdr)) >= 0) {
+		if (len != CODEPLUG_TRAFFIC_HDR + DMR_AES_KEY_BYTES || hdr[0] == CODEPLUG_SYSTEM_NONE ||
+		    hdr[1] != DMR_AES_ALG_AES256 || hdr[3] != 0)
+			continue;
+		uint32_t rank = (uint32_t)hdr[0] * 256 + hdr[2] + 1;
+		if (rank > current && rank < best) {
+			codeplug_system_t sys;
+			uint8_t block[CODEPLUG_SYS_HDR];
+			if (codeplug_system(hdr[0], &sys, block, 0) >= 0 && sys.type == CODEPLUG_SYSTYPE_DMR_AES)
+				best = rank;
+		}
+	}
+	c->kind = best == 0x10000u ? CODEPLUG_KIND_NONE : CODEPLUG_KIND_DMR_AES;
+	c->system = best == 0x10000u ? CODEPLUG_SYSTEM_NONE : (uint8_t)((best - 1) >> 8);
+	c->aes_ref = best == 0x10000u ? 0 : (uint16_t)(1u + ((best - 1) & 255));
+}
+#endif
+
 static void write_channel_job(void *ctx);
 static void name_job(void *ctx);
 #if CONFIG_DMR
@@ -1247,7 +1308,11 @@ static void write_channel_job(void *ctx)
 #endif
 	if (!done && !air_save_now(job.channel, &job.now, &ok))
 		ok = codeplug_set_channel(job.channel, &job.now) &&
-		     (job.now.kind == CODEPLUG_KIND_NONE || from == 0 || from == job.channel ||
+		     (job.now.kind == CODEPLUG_KIND_NONE ||
+#if CONFIG_DMR_AES
+		      (job.now.kind == CODEPLUG_KIND_DMR_AES && job.now.aes_ref) ||
+#endif
+		      from == 0 || from == job.channel ||
 		      codeplug_tag_copy(from, job.channel, &job.now));
 	if (!ok) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
@@ -1627,5 +1692,17 @@ static bool key_set(uint8_t id, int32_t value)
 	key_apply();
 	key_dirty = true;
 	return true;
+}
+#endif
+
+#if KEY_STORE
+uint16_t ui_svc_keys_count(void)
+{
+	return key_store_count();
+}
+
+bool ui_svc_key(uint16_t i, struct key_entry_s *e)
+{
+	return key_store_get(i, e, NULL);
 }
 #endif

@@ -101,6 +101,20 @@ typedef enum {
 // erase per sector that isn't blank (a 1 MB area: up to 256)
 storage_native_t storage_native_erase(void);
 
+// --- The emergency wipe (docs/spec/zeroize.md 4): erases that leave no copy, for keys that must not survive ---
+// Erase every sector of [addr, addr + len) (whole sectors) that isn't blank and read it back blank. Only inside the
+// open-firmware images, the native area or the staging area, and never a range that touches the calibration window,
+// the settings ring or the journal (those are storage_scrub's). False when refused or a sector didn't erase (the other
+// sectors are still erased)
+bool storage_erase(uint32_t addr, uint32_t len);
+// Erase every sector of the settings ring, both journal sectors (J1 holds a copy of the last sector rewritten) and the
+// staging area's sectors that aren't blank, read each back blank, zero the shared sector buffer and the slot buffers,
+// then write the ownership mark (5). The caller saves the settings again (settings_scrub). False when the region isn't
+// ours or an erase failed (every sector is still tried)
+bool storage_scrub(void);
+// What a copy on write flash keeps of superseded sectors, erased (hal_flash_t.purge); true on a flash without one
+bool storage_purge(void);
+
 // --- Deferred flash work: a task that must not wait for the flash (the UI) hands a job to the housekeeping task,
 // which runs it from its loop (storage_job_poll, every 100 ms). One job at a time, posted from one task ---
 typedef void (*storage_job_fn)(void *ctx);

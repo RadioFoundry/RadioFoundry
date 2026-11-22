@@ -28,6 +28,10 @@
 #endif
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#if CONFIG_DMR_AES
+#include "dmr/dmrAes.h"
+#include "codeplug/codeplug_records.h"
+#endif
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 #include "radio/sigtone.h"
@@ -74,6 +78,12 @@ static void cw_cancel(radio_sm_t *sm);
 #endif
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
+#endif
+#if CONFIG_KEY_FILL
+#include "keyfill/keyfill_api.h"
+#if CONFIG_GROUP_KEY_FILL
+#include "keyfill/groupkey_api.h"
+#endif
 #endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
@@ -642,6 +652,8 @@ static bool parked(const channel_t *ch)
 	if (!codeplug_kind_built(ch->kind)) {
 		return true;
 	}
+	if (ch->kind == CODEPLUG_KIND_DMR_AES)
+		return ch->mode != RADIO_MODE_DMR;
 	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN;
 }
 
@@ -1461,8 +1473,19 @@ static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t pow
 		tx_limit_refused(hz);
 		return false;
 	}
+	if (sm->view.tx_low) {
+		power = 0;	// the board's lowest level (board_t power names: lowest first)
+	}
 	return board.radio->tx(hz, bw, power, tone);
 }
+
+#if CONFIG_DMR_AES
+static dmrAesState_t channel_keys;
+static uint16_t channel_key_ref;
+static uint8_t channel_key_system;
+static bool channel_tx_allowed;
+static dmrAesSeq_t aes_seq;		// the radio's MI sequence, every key (dmr-voice.md 5.1)
+#endif
 
 static uint8_t tx_check(const radio_sm_t *sm)
 {
@@ -1485,6 +1508,13 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (parked(ch)) {
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES &&
+	    (!ch->aes_ref || channel_key_ref != ch->aes_ref || channel_key_system != ch->system || !channel_tx_allowed))
+		return TXDENY_AES_KEY;
+	if (ch->kind == CODEPLUG_KIND_DMR_AES && aes_seq.left == 0)
+		return TXDENY_AES_WAIT;		// aes_seq_poll saves a reservation in a moment
+#endif
 	if (trunk) {
 		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 7)
 #if CONFIG_P25_TRUNK
@@ -1668,6 +1698,7 @@ static void dmr_load_channel(radio_sm_t *sm)
 
 #if CONFIG_DMR_PRIVACY
 static dmrPrivacyKey_t privacy_key;	// the call stack's privacy hook context (radio task only)
+static dmrPrivacyKey_t data_key;	// the data layer's crypt context: the voice key (radio task only)
 #endif
 
 // Hang time (ms) as the call stack's reply window (whole seconds, rounded up); 0 keeps the stack's default
@@ -1796,7 +1827,7 @@ static void dmr_configure(radio_sm_t *sm)
 #endif
 	bool privacy = false;
 #if CONFIG_DMR_PRIVACY
-	privacy = sm->privacy_type != DMR_PRIVACY_OFF;
+	privacy = ch->kind != CODEPLUG_KIND_DMR_AES && sm->privacy_type != DMR_PRIVACY_OFF;
 	if (privacy) {
 		privacy_key.type = (dmrPrivacyType_t)sm->privacy_type;
 		privacy_key.key = sm->privacy_key;
@@ -1804,6 +1835,47 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.privacy_ctx = &privacy_key;
 		cfg.tx_fid = dmrPrivacyFID(privacy_key.type, cfg.tx_fid);
 		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
+	}
+#endif
+#if CONFIG_DMR_AES
+	// An AES channel: calls with a PI header under its system's traffic key, and our overs (docs/spec/dmr-voice.md 5.1)
+	dmrAesState_t *keys = NULL;
+	if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+		codeplug_system_t sys;
+		uint8_t block[CODEPLUG_SYS_HDR], key[DMR_AES_KEY_BYTES];
+		uint8_t id = (uint8_t)(ch->aes_ref - 1);
+		channel_tx_allowed = false;
+		channel_key_ref = 0;
+		channel_key_system = ch->system;
+		dmrAesSetKey(&channel_keys, 0, 0, 0, NULL);
+		if (ch->aes_ref && ch->aes_ref <= 256 && codeplug_system(ch->system, &sys, block, 0) >= 0 &&
+		    sys.type == CODEPLUG_SYSTYPE_DMR_AES &&
+		    codeplug_traffic_key(ch->system, DMR_AES_ALG_AES256, id, key, sizeof key) == sizeof key) {
+			dmrAesSetKey(&channel_keys, 0, DMR_AES_ALG_AES256, id, key);
+			dmrAesSetTx(&channel_keys, 0);
+			channel_key_ref = ch->aes_ref;
+			channel_tx_allowed = (sys.flags & CODEPLUG_SYS_TX) != 0;
+			keys = &channel_keys;
+		}
+		dmrAesWipe(key, sizeof key);
+	} else if (channel_key_ref != 0 || dmrAesHasKeys(&channel_keys)) {
+		// Off an AES channel: its key and round keys don't stay in RAM
+		dmrAesClearKeys(&channel_keys);
+		channel_key_ref = 0;
+		channel_tx_allowed = false;
+	}
+	channel_keys.seq = &aes_seq;
+	// The call stack refuses an over it can't encrypt on an AES channel, whatever got it past tx_check
+	cfg.tx_crypt_required = ch->kind == CODEPLUG_KIND_DMR_AES;
+	if (keys && dmrAesHasKeys(keys)) {
+		cfg.crypt = dmrAesCallHook;
+		cfg.crypt_ctx = keys;
+		if (dmrAesTxKey(keys, &cfg.tx_crypt_alg, &cfg.tx_crypt_key_id)) {
+			cfg.crypt_mi = dmrAesNewMi;
+			cfg.tx_fid = DMR_PRIVACY_FID;
+			cfg.tx_svc |= DMR_PRIVACY_SERVICE_OPTION;
+			privacy = true;
+		}
 	}
 #endif
 #if CONFIG_DMR_EMERGENCY
@@ -2151,6 +2223,7 @@ static uint8_t dmr_deny_reason(uint8_t err)
 	case DMR_TX_ERR_STALLED: return TXDENY_REJECTED;	// stalled: the modem never sent a burst
 	case DMR_TX_ERR_TIMEOUT: return TXDENY_TIMEOUT;
 	case DMR_TX_ERR_CEASED: return TXDENY_CEASED;
+	case DMR_TX_ERR_CRYPT: return TXDENY_AES_KEY;
 	default: return TXDENY_NO_DMR;
 	}
 }
@@ -2161,6 +2234,51 @@ static bool dmr_tx_phase(uint8_t phase)
 		phase == DMR_CALL_PHASE_TX_VOICE || phase == DMR_CALL_PHASE_TX_ENDING || phase == DMR_CALL_PHASE_TX_DATA ||
 		phase == DMR_CALL_PHASE_TX_PERMIT;
 }
+
+#if CONFIG_DMR_AES
+// The MI sequence's reservation (dmr-voice.md 5.1), between overs only: an over's positions are folded in once it has
+// ended. A new one is asked for on an AES channel when less than DMR_AES_SEQ_LOW is left, and counts once the settings
+// store holds it (no unsaved change left). A radio with no position yet starts from its seed, under the channel's key
+static void aes_seq_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->ptt || sm->view.state == RS_TX || dmr_tx_phase(dmr_call_view()->phase)) {
+		return;
+	}
+	dmrAesSeqSettle(&aes_seq);
+	if (aes_seq.pending != 0) {
+		settings_t st;
+		settings_stats_t ss;
+		settings_read(&st);
+		settings_get_stats(&ss);
+		if (st.aes_mi_res != aes_seq.pending) {
+			dmrAesSeqDropPending(&aes_seq);		// overwritten (a settings restore): asked again
+		} else if (!ss.dirty) {
+			dmrAesSeqReserved(&aes_seq, st.aes_mi_res);
+		}
+		return;
+	}
+	if (sm->view.ch.kind != CODEPLUG_KIND_DMR_AES) {
+		return;
+	}
+	if (aes_seq.next == 0) {
+		if (channel_key_ref == 0) {
+			return;
+		}
+		hal_chip_t chip;
+		memset(&chip, 0, sizeof(chip));
+		if (board.system == NULL || board.system->chip == NULL || !board.system->chip(&chip)) {
+			memset(chip.uid, 0, sizeof(chip.uid));
+		}
+		aes_seq.next = dmrAesSeqSeed(channel_keys.keys[0].key, chip.uid, sm->own_id, now_ms);
+	}
+	uint32_t r = dmrAesSeqReserve(&aes_seq);
+	if (r != 0) {
+		settings_t *st = settings_begin();
+		st->aes_mi_res = r;
+		settings_end(now_ms);
+	}
+}
+#endif
 
 #if CONFIG_DMR_GPS
 // Our position for DMR GPS Info (docs/spec/dmr-voice.md): the position service's (GPS, host, fixed). send: the
@@ -2688,6 +2806,8 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 // frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
+	// An AES channel sends data encrypted with its key (data_tick), and only with it: tx_check refuses without the key
+	// or a saved MI reservation (dmr-data.md 13.4)
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
@@ -3201,6 +3321,12 @@ static void data_init(radio_sm_t *sm)
 	// On unless the user turned it off (docs/spec/zone-share.md 5)
 	zone_share_set_offers(settings_zs_accept(st) ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
 #endif
+#if CONFIG_KEY_FILL
+	key_fill_svc_init();
+#if CONFIG_GROUP_KEY_FILL
+	group_key_svc_init();
+#endif
+#endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
 	emergency_init(st);
@@ -3233,10 +3359,26 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	c.channelKey = h;
 #if CONFIG_DMR_PRIVACY
 	// The voice key is the data key: data is encrypted or held back as the scheme says
-	static dmrPrivacyKey_t data_key;	// the data layer's crypt context points here (radio task only)
 	data_key.type = (dmrPrivacyType_t)sm->privacy_type;
 	data_key.key = sm->privacy_key;
 	dmrPrivacyDataConfig(&data_key, &c.privacy);
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+		// The channel's AES key covers its data (docs/spec/dmr-data.md 13.4): AES-256 OFB, a new MI from the radio's
+		// sequence for every packet. Without the key no data packet goes, and none is sent in the clear
+		memset(&c.privacy, 0, sizeof c.privacy);
+		if (dmrAesHasKeys(&channel_keys)) {
+			c.privacy.mode = DMR_DATA_PRIVACY_ENCRYPT;
+			c.privacy.alg = DMR_AES_DATA_ALG;
+			c.privacy.keyId = channel_keys.keys[0].key_id;
+			c.privacy.crypt = dmrAesDataCrypt;
+			c.privacy.newMi = dmrAesDataMi;
+			c.privacy.ctx = &channel_keys;
+		} else {
+			c.privacy.mode = DMR_DATA_PRIVACY_BLOCK;
+		}
+	}
+#endif
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
@@ -8220,6 +8362,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	memset(sm, 0, sizeof(*sm));
+#if CONFIG_DMR_AES
+	dmrAesSeqStart(&aes_seq, st.aes_mi_res);	// TX waits for the next reservation: past this one (aes_seq_poll)
+#endif
 #if CONFIG_SFR
 	direct_sm = sm;
 	if (board.radio->dmr_direct_query != NULL) {
@@ -8423,6 +8568,28 @@ static bool retunes(uint8_t type)
 		return false;
 	}
 }
+
+#if CONFIG_ZEROIZE
+// The emergency wipe (docs/spec/zeroize.md 4.2): every key copy the radio core holds, zeroed, and privacy off. The
+// settings store's copy is the wipe's own (settings_scrub); persist() writes the zeros from now on
+static void zeroize_keys(radio_sm_t *sm)
+{
+#if CONFIG_DMR_PRIVACY
+	sm->privacy_type = DMR_PRIVACY_OFF;
+	sm->privacy_key = 0;
+	memset(&privacy_key, 0, sizeof(privacy_key));
+	memset(&data_key, 0, sizeof(data_key));
+	if (sm->dmr_running) {
+		dmr_configure(sm);	// the call stack's hook and service options without the key
+	}
+	changed(sm);
+#endif
+#if CONFIG_NXDN
+	radio_nxdn_wipe();
+#endif
+	(void)sm;
+}
+#endif
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
@@ -8651,6 +8818,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 			changed(sm);
 		}
 		break;
+	case RREQ_TX_LOW:
+		sm->view.tx_low = req->arg != 0;
+		changed(sm);
+		break;
 	case RREQ_POWER: {
 		int n = board.power_count;
 		if (n == 0 || steps == 0) {
@@ -8751,6 +8922,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		}
 		break;
 	}
+#if CONFIG_ZEROIZE
+	case RREQ_ZEROIZE:
+		zeroize_keys(sm);
+		break;
+#endif
 #if CONFIG_DMR
 	case RREQ_REPLY_CANCEL:
 		dmr_call_reply_cancel();
@@ -9464,6 +9640,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
+#if CONFIG_DMR_AES
+	aes_seq_poll(sm, now_ms);
+#endif
 #if CONFIG_BEEP
 	bool shared = voice_streaming();
 	if (sm->beep_due != BEEP_NONE && (int32_t)(now_ms - sm->beep_due_ms) >= 0) {
@@ -9780,6 +9959,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
+#if CONFIG_DMR_AES
+		if (sm->dmr_running && sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
+			dmr_configure(sm);
+#endif
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
 #if CONFIG_DMR_TRUNK
 		t3_kv_retry(sm);

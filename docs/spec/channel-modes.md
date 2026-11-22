@@ -150,6 +150,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 2 | P25 conventional | P25 | `CONFIG_P25` and a board whose air interface receives P25 (`radio_p25_fits`) | [p25-codeplug.md](p25-codeplug.md) |
 | 3 | P25 trunked | P25T | `CONFIG_P25_TRUNK` and a board whose air interface receives P25; receive, and transmit where the system allows it ([p25-trunking.md](p25-trunking.md) 5, 7) | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional | NXDN | `CONFIG_NXDN` and a board whose air interface carries NXDN (`radio_nxdn_fits`) | [nxdn-codeplug.md](nxdn-codeplug.md) |
+| 5 | Conventional DMR AES-256 | AES | `CONFIG_DMR_AES` | See below |
 
 | System type | Name | Short | Built when | Spec |
 |---|---|---|---|---|
@@ -157,6 +158,15 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 2 | Reserved: P25 conventional system (identity and keys) | | | |
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional system | NXDN | `CONFIG_NXDN` | [nxdn-codeplug.md](nxdn-codeplug.md) |
+| 5 | Conventional DMR AES-256 | AES | `CONFIG_DMR_AES` | See below |
+
+A conventional AES channel uses the normal DMR frequencies, contact, color code and timeslot. Its base record is receive-only.
+The type 5 system block starts with one identity byte. Provision each traffic key in the traffic-key family with its
+system index, algorithm 0x25, an eight-bit PI key ID in the low byte of the ID field, and exactly 32 key bytes.
+The channel tag parameter block starts with algorithm 0x25 and the PI key ID. Missing keys inhibit PTT and data. AES applies to
+voice and to packet data ([dmr-data.md](dmr-data.md) 13.4). The editor keeps them in the system's traffic key table (`aesSystem.traffic`, masked until shown, with
+**Generate** filling a key from `crypto.getRandomValues()`) and omits traffic keys when saving an image without keys. On the radio the AES key row cycles
+through provisioned system number/key ID pairs and None. Save applies the selection.
 
 A mode claims an id by adding a row to all three in one change, with its spec: the parameter block, the type's
 system block and channel tail, its targets' address format, its traffic keys' algorithm ids and its radio-wide
@@ -318,3 +328,6 @@ System secrets (7.4) and traffic keys (5.4) are **secrets**.
 - Zone and channel sharing carries a system's secrets only at the system's "whole system with key" level, and only
   when the sender turns keys on for that share ([zone-share.md](zone-share.md)).
 - A firmware reads them only for the mode module that uses them; the debug link never shows one.
+- The emergency wipe erases them from the radio's flash, every old copy included ([zeroize.md](zeroize.md) 4.1).
+- A traffic key's check value ([key-check.md](key-check.md)) may be shown wherever the key is listed, by the radio and the
+  Codeplug Editor; it isn't a secret.

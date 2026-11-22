@@ -28,7 +28,7 @@ _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pag
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
 _Static_assert(offsetof(settings_t, ref_trim_ppb) % 2 == 0, "ref_trim_ppb is aligned");
-_Static_assert(sizeof(settings_t) == 408, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
+_Static_assert(sizeof(settings_t) == 436, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
 
 static settings_t live;			// under the quick lock
 static settings_t saved;		// what the newest record holds (or the defaults)
@@ -323,13 +323,15 @@ static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 }
 
 // One record (page `page`, n bytes of payload) to the next free slot, retried past slots that don't read back
+static uint8_t put_buf[SLOT_SIZE];	// put_record's record, under the storage lock
+
 static bool put_record(uint16_t page, const uint8_t *payload, uint16_t n)
 {
-	static uint8_t r[SLOT_SIZE];
+	uint8_t *r = put_buf;
 	uint32_t seq = next_seq;
 	uint16_t layout = (uint16_t)(SETTINGS_LAYOUT | (page << SETTINGS_PAGE_SHIFT));
 
-	memset(r, 0xFF, sizeof(r));
+	memset(r, 0xFF, SLOT_SIZE);
 	put32(&r[0], MAGIC);
 	put32(&r[4], seq);
 	r[8] = (uint8_t)layout;
@@ -460,6 +462,24 @@ bool settings_flush(void)
 {
 	return save_now() && !dirty;
 }
+
+#if CONFIG_ZEROIZE
+bool settings_scrub(void)
+{
+	storage_lock();		// one sequence: nothing writes the ring between its erase and the new record
+	bool ok = storage_scrub();
+	memset(slot_buf, 0, sizeof(slot_buf));	// the slot read last held a record, keys in it
+	memset(put_buf, 0, sizeof(put_buf));
+	storage_quick_lock();
+	memset(&before, 0, sizeof(before));
+	memset(&saved, 0, sizeof(saved));
+	storage_quick_unlock();
+	attach(0);
+	ok = save_now() && ok;
+	storage_unlock();
+	return ok;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s)
 {

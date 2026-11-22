@@ -338,8 +338,9 @@ void dmrPrivacyCallHook(uint8_t *ambe27, uint8_t voiceIndex, bool tx, void *ctx)
 	}
 }
 
-static bool dataCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+static bool dataCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length)
 {
+	(void)keyId;	// basic privacy names no key on air
 	return dmrPrivacyDataCrypt((const dmrPrivacyKey_t *)ctx, alg, mi, data, length);
 }
 

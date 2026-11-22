@@ -58,6 +58,9 @@ typedef struct {
 	// parameter block, which its mode module fetches (codeplug_tag_params); none of them live here
 	uint8_t kind;
 	uint8_t system;
+#if CONFIG_DMR_AES
+	uint16_t aes_ref;  // 1 + the eight-bit PI key ID, zero for a missing or malformed reference
+#endif
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)
@@ -92,6 +95,14 @@ void codeplug_evidence(uint16_t *good, uint16_t *bad);
 // "Start new": clear what the radio reads of the other firmware's codeplug (general settings up to the hang times,
 // boot text, quick keys, contacts) and start a stored one from the built-in set. true when the codeplug is ours after
 bool codeplug_start_new(void);
+#if CONFIG_ZEROIZE
+// The emergency wipe (docs/spec/zeroize.md 4.1, 4.3), with real sector erases (storage_erase): the settings area's
+// sector and its reserved continuation; and the whole codeplug: that, the EEPROM image and the flash image's codeplug
+// (channels, zones, contacts, RX group lists), then indexed again (the built-in set). Never the DMR ID database, the
+// voice prompts, the custom data or the calibration. False when an erase failed or was refused (the rest still erased)
+bool codeplug_wipe_keys(void);
+bool codeplug_wipe(void);
+#endif
 // "Use anyway": the codeplug is the radio's own (on) or judged again (off), erasing nothing; codeplug_reload shows it.
 // The settings store keeps it (settings_t.cp_flags, app.c). codeplug_written drops it
 void codeplug_accept(bool on);
