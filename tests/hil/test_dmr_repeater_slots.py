@@ -38,13 +38,15 @@ must be within OFFSET_MAX_MS, over at least 50 bursts. The HR_C7000 radios set i
 
 test_dmr_repeater_inbound_fec (the same options and bench as the burst offset): the radio's voice through a repeater
 must be as clean as on a simplex channel. A radio that listens to the outbound between its own bursts (the modem's
-tx_listen_split) retunes its synthesizer twice a burst, and a burst keyed before the carrier settled carries bit errors
-a repeater or hotspot passes on (issue 609: 4-5 % BER on a duplex hotspot against 0.2 % before). With the board's
-idle outbound up all along, a call of up to 6 s: the receive board decodes the radio's inbound bursts, and the AMBE bits
-its FEC corrected must be at most INBOUND_FEC_MAX of those sent, with no frame past correction. A radio that doesn't
-retune reads 0 here; one whose carrier hadn't settled read 0.01-0.24 % on a 50 kHz split and 1.3 % on 18.5 MHz, the
-bursts with errors a few hundred Hz off the others (the board's receiver forgives more than a hotspot's). call.rx_in_tx shows whether the radio heard the outbound between
-its bursts.
+tx_listen_split) retunes its synthesizer twice a burst and receives there, and its bursts must still reach the
+repeater clean (issue 609: 4-5 % BER on a duplex hotspot against 0.2 % before). With the board's idle outbound up all
+along, a call of up to 6 s: the receive board decodes the radio's inbound bursts, and the AMBE bits its FEC corrected
+must be at most INBOUND_FEC_MAX of those sent, with no frame past correction. A radio that doesn't listen reads 0
+here. One whose modem followed the outbound's timing while it listened read 0.01-0.12 % on a 50 kHz split (1.3 % on
+18.5 MHz): its bursts stepped by half a symbol every few seconds, and the burst at a step carried the errors (the
+board's receiver forgives more than a hotspot's). With the timing held, a wide split can still leave single bits in a
+burst's first frame while the carrier settles after the retune (0.05 % on 15.4 MHz). call.rx_in_tx shows whether the
+radio heard the outbound between its bursts.
 Use a split like a real repeater's (several MHz) when the receive board can be tuned there: the synthesizer's step is
 part of what is tested.
 

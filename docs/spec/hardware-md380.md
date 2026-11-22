@@ -425,25 +425,9 @@ leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (u
 
 ### 4.9.1 Receiving between our bursts
 
-**Off** (`MD380_TX_LISTEN` 0 in `radio_md380.c`, issue 609): the MD-380 doesn't listen between its bursts, so it
-doesn't see a repeater drop under an over or hear a reverse channel while it sends ([dmr-modem.md 2.8](dmr-modem.md)).
-With the listen on, through a repeater, about one burst in a hundred went out on a carrier a few hundred Hz off and
-reached the repeater with bit errors. SDR bench, a 50 kHz split, 102 voice bursts a run, AMBE bits corrected:
-
-| Build | Runs | AMBE bits corrected | Carrier offset |
-|---|---|---|---|
-| Listen on, lead 25 as below | 3 | 0.03-0.09 % | median +50 Hz; the bursts with errors +105 to +318 Hz |
-| Listen on, lead 10, 40, 63 (100 us steps assumed) | 5 | 0.06 %, 0.29 %, 0.49-0.55 % | |
-| Listen on, lead in half symbols (below), lead 25 or 63, PA by a wait or TIM7 | 10 | 0.01-0.09 % | |
-| Listen on, receive tap read skipped or after the burst set-up | 4 | 0.05-0.07 % | |
-| Listen off | 3 | 0 | +24 to +65 Hz |
-
-On an 18.5 MHz split the listen gave 1.3-1.4 % and lost frames. Lock detect came about 60 us after each retune.
-Not found: what moves the carrier. Every build where the chip didn't receive the listen slot (its receiver input
-off, the slot closed, the synthesizer left on the carrier) had no errors, but those builds also listened only until
-the stack took the repeater as dropped, so they retuned about half as often.
-
-With `MD380_TX_LISTEN` 1, one synthesizer serves receive and transmit, so the board retunes per burst:
+Through a repeater, a voice over hears the repeater's outbound between its own bursts (the modem's
+`tx_listen_split`, [dmr-modem.md 2.8](dmr-modem.md)). One synthesizer serves receive and transmit, so the board
+retunes per burst (`radio_md380.c`):
 
 | When | What |
 |---|---|
@@ -457,6 +441,34 @@ burst.
 
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
+
+The modem holds its timing while the over listens (0x40 MasterMode, [gotchas.md](gotchas.md) 14.6.1, issue 609).
+Before, in passive timing, the HR_C5000 stepped its bursts by half a symbol every 3 s or so on the bench, and the burst
+at a step reached the repeater with bit errors; the SDR bench read those bursts as a carrier 100-320 Hz off. The
+retune itself was clean: lock detect about 60 us after the retune, the PA keyed 2447 us after the RF TX interrupt on
+every burst. SDR bench, idle outbound on 446.075 MHz, the inbound decoded on 446.125 MHz, 102 voice bursts a run,
+AMBE bits corrected:
+
+| Build | Runs | AMBE bits corrected | Carrier offset, worst |
+|---|---|---|---|
+| Listen on, passive timing | 9 | 0.01-0.12 %, 2 runs with a frame past correction | +28 to +264 Hz |
+| Listen on, timing held | 5 | 0 | +24 to +55 Hz |
+| Listen off | 3 | 0 | +24 to +65 Hz |
+
+A wide split leaves a smaller error with the timing held. The transmit VCO's supply is switched off for each listened
+slot (VCOVCC_SW), and the synthesizer steps between the two VCOs on each retune. On a 15.4 MHz split (outbound 446.075,
+inbound 461.4625 MHz) about one burst in ten carries a single corrected bit, always in the burst's first AMBE frame:
+the carrier is still settling at the burst's start. A longer lead makes the error smaller, never zero. Past about
+2.5 ms the lead also cuts the end of the listened burst. No frame was past correction in any run:
+
+| Build, 15.4 MHz split | Runs | AMBE bits corrected |
+|---|---|---|
+| Listen off | 3 | 0 |
+| Listen on, lead 25 (1.56 ms) | 2 | 0.05 % |
+| Listen on, lead 40 (3.1 ms) | 3 | 0.02-0.05 % |
+| Listen on, lead 63 (5.5 ms) | 3 | 0.01-0.02 % |
+
+The board keeps lead 25. The 50 kHz split reads 0 at every lead.
 
 The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
 burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
