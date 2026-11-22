@@ -127,7 +127,7 @@ def changed(root, base, head):
     rng = [f"{base}...{head}"] if head else [base]
     out = {}
     cur = None
-    for ln in git(root, "diff", "-U0", "--no-color", "--no-renames", *rng).splitlines():
+    for ln in git(root, "diff", "-U0", "--no-color", "--no-renames", "--ignore-submodules=all", *rng).splitlines():
         if ln.startswith("diff --git "):
             cur = None
         elif ln.startswith("+++ "):
@@ -149,7 +149,7 @@ def changed(root, base, head):
             cur["added"].append(ln[1:])
         elif cur is not None and ln[:1] == "-":
             cur["removed"].append(ln[1:])
-    for f in git(root, "diff", "--name-only", *rng).split("\n"):
+    for f in git(root, "diff", "--name-only", "--ignore-submodules=all", *rng).split("\n"):
         if f:
             out.setdefault(f, {"new": set(), "old": set(), "added": [], "removed": []})
     return out
@@ -340,7 +340,7 @@ def cmd_builds(a):
     for b, name, args, _ in rows:
         print(b, name, args)
     if a.limit and total > a.limit:
-        print(f"affected: {total - a.limit} more builds left to the nightly matrix (--limit {a.limit})", file=sys.stderr)
+        print(f"affected: {total - a.limit} more left to the nightly matrix (limit {a.limit})", file=sys.stderr)
 
 
 def cmd_summary(a):

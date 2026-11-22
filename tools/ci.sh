@@ -533,7 +533,7 @@ if [ -n "$AFFECTED" ]; then
 	if [ -n "$REG_PY" ] && $REG_PY tools/affected.py builds --base "$AFFECTED" ${ONLY:+--board "$ONLY"} \
 		--scope "${RFOUNDRY_AFFECTED_SCOPE:-precise}" --limit "${RFOUNDRY_AFFECTED_LIMIT:-0}" \
 		> "$OUT/affected.builds" 2> "$OUT/affected.log"; then
-		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(sed -n 's/^affected: / (/p' "$OUT/affected.log" | sed 's/$/)/')"
+		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(sed -n 's/^affected: /, /p' "$OUT/affected.log")"
 	else
 		cat "$OUT/affected.log"
 		bad "affected builds: tools/affected.py failed (see $OUT/affected.log)"
