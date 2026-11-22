@@ -8,6 +8,9 @@
         fm-minimal), most relevant first; --limit keeps the first N
     tools/affected.py summary --base REF [--head REF] [--board a,b]
         the boards and switches the diff reaches, and why
+    tools/affected.py features --base REF [--head REF]
+        the HIL checklist features (tests/hil/features.toml) the diff reaches, and why: what
+        pytest tests/hil --affected REF runs besides the smoke tier
     tools/affected.py --self-test
 
 The full matrix builds each of about a hundred switches off on every board. A pull request breaks only the switches
@@ -324,6 +327,62 @@ def plan(root, diff, only=None, config=board_config, scope="precise", base=None,
     return res
 
 
+# ── HIL features ──
+
+FEATURES_TOML = os.path.join("tests", "hil", "features.toml")
+# A file naming more switches than this is shared plumbing (core/config.h, the build info, the state machine), not a
+# feature's own code: its unguarded lines select no feature by name
+NAMED_MAX = 3
+
+
+def load_features(root):
+    """id -> entry of the HIL feature checklist (tests/hil/features.toml)."""
+    import tomllib      # Python 3.11+; only the HIL selection needs it
+    try:
+        with open(os.path.join(root, FEATURES_TOML), "rb") as f:
+            return tomllib.load(f).get("feature", {})
+    except FileNotFoundError:
+        return {}
+
+
+def affected_features(root, base, head=None, diff=None):
+    """{feature id: [why]} of the checklist features a diff reaches (tests/hil/README.md, "Impact selection"): the
+    feature's switch among the switches analyze() finds (named in a changed line, a guard around one, the Makefile's
+    switch for the file), or a changed file under its source paths. A feature without `source` takes tools/bringup.py's default: what the Makefile builds for
+    its switch, else the files that name CONFIG_<switch>. Unlike bringup.py, a file only counts for that when it names
+    at most NAMED_MAX switches: a change to the shared files that name dozens would select nearly every test."""
+    if diff is None:
+        diff = changed(root, base, head)
+    _, reach, shared, _ = analyze(root, diff, base=base, head=head)
+    sws = {s: list(w) for s, w in shared.items()}
+    for per in reach.values():
+        for s, w in per.items():
+            sws.setdefault(s, []).extend(w)
+    mk = makefile_switch_paths(root)
+    named = {}      # switch -> changed C files that name it, when they name at most NAMED_MAX switches
+    for f in diff:
+        if is_source(f) and f.endswith((".c", ".h", ".S", ".s")):
+            found = set(CONFIG_RE.findall(text_at(root, head, f) + text_at(root, base, f)))
+            if len(found) <= NAMED_MAX:
+                for s in found:
+                    named.setdefault(s, []).append(f)
+    out = {}
+    for fid, e in sorted(load_features(root).items()):
+        why = []
+        sw = e.get("switch")
+        if sw in sws:
+            why.append(f"CONFIG_{sw}: " + ", ".join(sorted(set(sws[sw]))[:3]))
+        paths = list(e.get("source", []))
+        if not paths and sw:
+            paths = [p for p, s in mk.items() if sw in s]
+            if not paths:
+                why += [f for f in named.get(sw, []) if f not in why]
+        why += [f for f in sorted(diff) if any(under(f, p) for p in paths) and f not in why]
+        if why:
+            out[fid] = why
+    return out
+
+
 # ── commands ──
 
 def resolve_base(a):
@@ -353,6 +412,12 @@ def cmd_summary(a):
         print(f"  {b:12} {name:28} {', '.join(why[:3])}{more}")
 
 
+def cmd_features(a):
+    for fid, why in affected_features(ROOT, a.base, a.head).items():
+        more = f" (+{len(why) - 3})" if len(why) > 3 else ""
+        print(f"{fid:24} {', '.join(why[:3])}{more}")
+
+
 def self_test():
     with tempfile.TemporaryDirectory() as t:
         def w(p, s):
@@ -377,6 +442,10 @@ def self_test():
         w("platform/p2/system.c", "int s;\n")
         w("boot/c/boot.c", "int s;\n")
         w("docs/x.md", "x\n")
+        w(FEATURES_TOML, '[feature.gps]\nswitch = "GPS"\nspec = "docs/x.md"\n'
+                         '[feature.ui]\nspec = "docs/x.md"\nsource = ["core/ui"]\n'
+                         '[feature.sms]\nswitch = "DMR_SMS"\nspec = "docs/x.md"\n'
+                         '[feature.edit]\nswitch = "CHANNEL_EDIT"\nspec = "docs/x.md"\n')
         sh("git", "init", "-q")
         sh("git", "add", "-A")
         sh("git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
@@ -390,6 +459,13 @@ def self_test():
                 w(path, text)
             try:
                 return {(b, n) for b, n, _, _ in plan(t, changed(t, "HEAD", None), only, config, scope, "HEAD")}
+            finally:
+                sh("git", "checkout", "-q", "--", ".")
+        def feats(edits):
+            for path, text in edits.items():
+                w(path, text)
+            try:
+                return set(affected_features(t, "HEAD", None))
             finally:
                 sh("git", "checkout", "-q", "--", ".")
         fm_ac = {("a", "fm-minimal"), ("c", "fm-minimal")}
@@ -419,6 +495,13 @@ def self_test():
             ("boot stage", names({"boot/c/boot.c": "int s2;\n"}), {("c", "fm-minimal")}),
             ("docs only", names({"docs/x.md": "y\n"}), set()),
             ("--board", names({"core/gps/gps.c": "int g2;\n"}, only={"b"}), set()),
+            # HIL features: the Makefile's file for GPS; a source path, and a file naming CHANNEL_EDIT (no Makefile
+            # path) though not GPS (it has one); a guard's switch; docs reach none
+            ("features: Makefile-built file", feats({"core/gps/gps.c": "int g2;\n"}), {"gps"}),
+            ("features: source path and named switch", feats({"core/ui/storage.c": storage.replace("int z;", "int z2;")}),
+             {"ui", "edit"}),
+            ("features: guard", feats({"drivers/rf/x/x.c": "#if CONFIG_DMR_SMS\nint s2;\n#endif\n"}), {"sms"}),
+            ("features: docs only", feats({"docs/x.md": "y\n"}), set()),
         ]
         bad = 0
         for what, got, exp in checks:
@@ -435,7 +518,7 @@ def main(argv=None):
         return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("builds", "summary"):
+    for name in ("builds", "summary", "features"):
         p = sub.add_parser(name)
         p.add_argument("--base", required=True, help="the commit to compare with (main, HEAD^1)")
         p.add_argument("--head", help="the commit with the change (default: the working tree)")
@@ -448,7 +531,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         resolve_base(a)
-        {"builds": cmd_builds, "summary": cmd_summary}[a.cmd](a)
+        {"builds": cmd_builds, "summary": cmd_summary, "features": cmd_features}[a.cmd](a)
     except subprocess.CalledProcessError as e:
         print(f"affected: {' '.join(e.cmd)}: {e.stderr.strip()}", file=sys.stderr)
         return 2
