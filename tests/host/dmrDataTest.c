@@ -393,7 +393,7 @@ static void testCSBKAnswers(void)
 {
 	dmrBurst_t burst;
 	const uint8_t alert[10] = { 0x9F, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
-	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };// Motorola form
+	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };// FID 0x10 form
 	const uint8_t ackExpected[10] = { 0xA0, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
 	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x80, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
 	uint8_t other[10];
@@ -422,7 +422,7 @@ static void testCSBKAnswers(void)
 }
 
 // Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 (0x314892) and 3229279 (0x31465F)
-// Motorola form, between two commercial portables: 3229842 checks 3229279, which answers
+// FID 0x10 form, between two commercial portables: 3229842 checks 3229279, which answers
 static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
 static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };
 #define RC_CHECKER	3229842
@@ -445,7 +445,7 @@ static void testRadioCheckForms(void)
 	CHECK(dmrDataBuildCSBK(rcMotoRequest, &burst) == 1 && memcmp(burst.payload, rcMotoRequest, 12) == 0);
 	CHECK(dmrDataBuildCSBK(rcMotoAnswer, &burst) == 1 && memcmp(burst.payload, rcMotoAnswer, 12) == 0);
 
-	// Our request in the Motorola form is the portable's
+	// Our request in the FID 0x10 form is the portable's
 	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
 	CHECK(memcmp(c, rcMotoRequest, 10) == 0);
 

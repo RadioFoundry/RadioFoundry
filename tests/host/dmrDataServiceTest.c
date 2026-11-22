@@ -693,7 +693,7 @@ static void testSignaling(void)
 	runMainTask(500);
 	CHECK(sentCount == 2);
 
-	// A radio check in the Motorola form (octet 3 0x00, the checker in octets 4-6, us in 7-9) with the reply off:
+	// A radio check in the FID 0x10 form (octet 3 0x00, the checker in octets 4-6, us in 7-9) with the reply off:
 	// counted, not answered; on: answered (the request echoed, octet 3 0x80)
 	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_B, OUR_ID);
 	runMainTask(500);
@@ -721,7 +721,7 @@ static void testSignaling(void)
 		CHECK(stats.rxCrcFlagMismatch >= 1);// the modem said it was fine
 	}
 
-	// Our radio check: one CSBK in the Motorola form (octet 3 0x00, us in octets 4-6, the radio checked in 7-9),
+	// Our radio check: one CSBK in the FID 0x10 form (octet 3 0x00, us in octets 4-6, the radio checked in 7-9),
 	// answered by the radio checked (octet 3 0x80, same IDs)
 	reset();
 	CHECK(dmr_signal_radio_check(RADIO_A));
@@ -760,7 +760,7 @@ static void testSignaling(void)
 	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
 }
 
-// Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 and 3229279. Motorola form,
+// Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 and 3229279. FID 0x10 form,
 // between two commercial portables: 3229842 checks 3229279, which answers
 static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
 static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };

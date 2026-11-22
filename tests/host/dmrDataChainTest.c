@@ -438,7 +438,7 @@ static void test_sms_in(uint8_t block_type, const char *text)
 	dmrDataRxReset();
 }
 
-// Our radio check: the request goes out in the Motorola form (octet 3 0x00, us in octets 4-6, the checked radio in
+// Our radio check: the request goes out in the FID 0x10 form (octet 3 0x00, us in octets 4-6, the checked radio in
 // 7-9), the answer heard (octet 3 0x80, same IDs) comes back as RADIO_CHECK_OK
 static void test_radio_check_out(void)
 {

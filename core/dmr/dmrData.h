@@ -159,7 +159,7 @@ uint32_t dmrDataCRC32(const uint8_t *data, int length);
 bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask);
 
 // What a radio check CSBK addressed to own can be (docs/spec/dmr-data.md 4). The ETSI form (FID 0x00): request octet
-// 3 0x80 with the checked radio in octets 4-6 and the checker in 7-9, answer octet 3 0x00. The Motorola form (FID 0x10)
+// 3 0x80 with the checked radio in octets 4-6 and the checker in 7-9, answer octet 3 0x00. The FID 0x10 form
 // as commercial portables send it: request octet 3 0x00, answer 0x80, both with the checker in octets 4-6 and the
 // checked radio in 7-9. Our own request or answer repeated back (a repeater) is addressed to the other radio: 0,
 // except an ETSI-form answer, which looks the same as the checked radio's answer with the IDs swapped
@@ -167,7 +167,7 @@ bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask);
 #define DMR_RC_ANSWER				0x02
 // DMR_RC_REQUEST or DMR_RC_ANSWER; 0 if the CSBK isn't a radio check to own. *peer: the other radio
 uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *peer);
-// The 10 octets of our radio check request to dst in the Motorola form (FID 0x10) or the ETSI form (FID 0x00)
+// The 10 octets of our radio check request to dst in the FID 0x10 form or the ETSI form (FID 0x00)
 void dmrDataBuildRadioCheck(uint32_t dst, uint32_t src, bool etsi, uint8_t out[10]);
 // The checked radio of a radio check request built by dmrDataBuildRadioCheck, in either form
 uint32_t dmrDataRadioCheckDst(const uint8_t csbk[10]);

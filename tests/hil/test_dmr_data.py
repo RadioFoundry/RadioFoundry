@@ -290,7 +290,7 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
-    """A radio check request in the Motorola form (opcode 0x24, FID 0x10, octet 3 0x00, octets 4-6 the checker,
+    """A radio check request in the FID 0x10 form (opcode 0x24, FID 0x10, octet 3 0x00, octets 4-6 the checker,
     7-9 us) as a commercial portable sends it: answered when the setting allows (the request echoed with octet 3
     0x80), counted but not answered when it doesn't (the default)."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
@@ -360,7 +360,7 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_radio_check_tx(radio, sdr_bench, pytestconfig):
-    """Our radio check of the bench: the request on air in the Motorola form (opcode 0x24, FID 0x10, octet 3 0x00,
+    """Our radio check of the bench: the request on air in the FID 0x10 form (opcode 0x24, FID 0x10, octet 3 0x00,
     octets 4-6 us, 7-9 the bench), three tries without an answer, then failed."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
     _need(feats, "DMR_SIGNALING")

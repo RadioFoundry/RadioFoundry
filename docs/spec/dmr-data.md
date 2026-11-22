@@ -103,7 +103,7 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 |---|---|---|---|---|---|
 | call alert | 0x80 \| 0x1F | 0x00 | 0 | the alerted radio | the caller |
 | call alert ack | 0x80 \| 0x20 | 0x00 | 0 | the caller | the alerted radio |
-| radio check request | 0x80 \| 0x24 | 0x10 (Motorola) | 0x00 | the checker | the checked radio |
+| radio check request | 0x80 \| 0x24 | 0x10 | 0x00 | the checker | the checked radio |
 | radio check answer | 0x80 \| 0x24 | 0x10 | 0x80 | the checker | the checked radio |
 | radio check request, ETSI form | 0x80 \| 0x24 | 0x00 | 0x80 | the checked radio | the checker |
 | radio check answer, ETSI form | 0x80 \| 0x24 | 0x00 | 0x00 | the checked radio (or the checker) | the checker (or the checked radio) |
@@ -114,9 +114,9 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 - Received radio check to us: counted; answered (event `RADIO_CHECK_ANSWERED`) only when the setting allows.
 - Both are answered for FID 0x00 and 0x10, with the request's FID. A radio check answer is the request echoed with
   octet 3 bit 7 flipped, in either form.
-- The Motorola form matches a commercial portable on air: the request and the answer both carry the checker in
+- The FID 0x10 form matches a commercial portable on air: the request and the answer both carry the checker in
   octets 4-6 and the checked radio in 7-9, and octet 3 is 0x00 in the request and 0x80 in the answer.
-- Our radio check goes in the Motorola form (FID 0x10), or in the ETSI form (FID 0x00) with the setting
+- Our radio check goes in the FID 0x10 form, or in the ETSI form (FID 0x00) with the setting
   `radioCheckEtsi`. The ETSI form keeps the layout of the call alert (the checked radio in octets 4-6), an
   assumption: no ETSI text we have names the form. An ETSI-form answer is taken with the IDs in either order.
 - Bit 7 of octet 3 tells a request from an answer, by FID. Any other bit of octet 3 set is another service on the
@@ -129,7 +129,7 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
   channel. A late answer, or a second one to an
   earlier try, is dropped and never answered.
 - RadioFoundry builds before this layout sent the ETSI layout with FID 0x10. They don't interoperate with newer builds
-  in the Motorola form until both radios are updated. The ETSI form is unaffected.
+  in the FID 0x10 form until both radios are updated. The ETSI form is unaffected.
 - Ours (`dmr_signal_call_alert`, `dmr_signal_radio_check`): up to 3 tries, each waiting 1.5 s after the CSBK has
   gone for the answer; events `CALL_ALERT_ACKED` / `RADIO_CHECK_OK` or `..._FAILED`. One call alert or radio check
   at a time.
@@ -409,7 +409,7 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `lrrpReply` | on | answers only a dispatcher's request; without a position (no fix, no fixed position) it says "no fix" |
 | `hasGps` | true with `CONFIG_DMR_LRRP` | the radio core sets it when the position service answers (`data_init` in `core/radio/radio_sm.c`, `ownPosition`); a source can come after start-up (7) |
 | `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
-| `radioCheckEtsi` | off | the Motorola form is what most radios answer |
+| `radioCheckEtsi` | off | the FID 0x10 form is what most radios answer |
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |
 | `ipConfirmed`, `ipConfirmedRule[2]` | rules, none | confirmed only where the user names a destination or UDP port: an unanswered confirmed packet costs every retry on air (12.4) |
 | `ipConfirmedTries` | 4 | the first transmission and 3 retries (N_RtryLmt at most 8) |
