@@ -4,8 +4,8 @@
 3.5). Speech above about 2 kHz (fricatives) raised some receivers' noise reading over the close line while the
 carrier stayed up, and the squelch closed on every one.
 
-test_fm_squelch_voice_peaks (rf, bench_service): the VFO on --fm-mhz at 12.5 kHz, no RX tone, at the loosest squelch
-level that is shut on the empty channel (level 1 is open on noise alone on some receivers). The bench board sends
+test_fm_squelch_voice_peaks (rf, bench_service): the VFO on --fm-mhz at 12.5 kHz, no RX tone, one squelch level over the
+loosest one that is shut on the empty channel (level 1 is open on noise alone on some receivers). The bench board sends
 ten speech-like syllables (1 kHz at 1.5 kHz deviation, 300 ms) with a 120 ms high burst after each (2 kHz or 3 kHz at
 full deviation, 2.5 kHz). The radio's state is read every 40 ms while the carrier is up. Pass: the
 squelch opens and doesn't close once between the first open and the end of the transmission; after the bench drops the
@@ -48,8 +48,9 @@ def _step_squelch(radio, target):
 
 
 def _shut_level(radio):
-    """The loosest squelch level that stays shut on the empty channel (five reads over half a second), set on the
-    radio; skips when every level opens on the channel's noise."""
+    """One level over the loosest squelch level that stays shut on the empty channel (five reads over half a second),
+    set on the radio: at the first shut level a noise dip still opened it now and then. Skips when every level opens
+    on the channel's noise."""
     for level in range(1, SQUELCH_MAX + 1):
         _step_squelch(radio, level)
         time.sleep(0.3)
@@ -58,6 +59,8 @@ def _shut_level(radio):
             reads.append(radio.core().get("state"))
             time.sleep(0.1)
         if all(r != "rx" for r in reads):
+            level = min(level + 1, SQUELCH_MAX)
+            _step_squelch(radio, level)
             return level
     skip("state", "the squelch is open on the empty channel at every level: noise or a signal on the frequency")
 
