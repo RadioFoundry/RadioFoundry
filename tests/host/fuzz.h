@@ -12,7 +12,8 @@
 //   }
 //
 // RFOUNDRY_FUZZ_ITERS=<n> in the environment replaces every default count (long runs by hand or nightly, e.g. under
-// make SANITIZE=1); RFOUNDRY_FUZZ_SEED=<n> changes the seed. Build with SANITIZE=1 for the memory checks to mean much.
+// make SANITIZE=1); RFOUNDRY_HOST_SHORT=1 (make HOST_SHORT=1) cuts each to a tenth, at least 100 (pull request CI);
+// RFOUNDRY_FUZZ_SEED=<n> changes the seed. Build with SANITIZE=1 for the memory checks to mean much.
 #ifndef RFOUNDRY_TEST_FUZZ_H
 #define RFOUNDRY_TEST_FUZZ_H
 
@@ -59,6 +60,10 @@ static inline long fuzz_iters(long dflt)
 		long n = strtol(e, NULL, 0);
 
 		return (n > 0) ? n : dflt;
+	}
+	e = getenv("RFOUNDRY_HOST_SHORT");
+	if ((e != NULL) && (strcmp(e, "1") == 0) && (dflt > 100)) {
+		return (dflt / 10 > 100) ? dflt / 10 : 100;
 	}
 	return dflt;
 }

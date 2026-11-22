@@ -7,6 +7,7 @@
 ##   make -C tests/host COVERAGE=1     instrumented for line coverage (tools/coverage.sh makes the report)
 ##   make -C tests/host SANITIZE=1     under AddressSanitizer and UndefinedBehaviorSanitizer (any report fails the test)
 ##   make -C tests/host -j8            the suites in parallel; each one's output in out/run/<suite>.log, a summary at the end
+##   make -C tests/host HOST_SHORT=1   fewer random cases (fuzz loops, random vectors), as pull requests run them
 ##   make -C tests/host times          the 15 slowest suites to build and to run
 
 ROOT    := ../..
@@ -35,9 +36,24 @@ override CC := $(PYTHON) hostcc.py $(HOSTCC)
 # the output in out/run/<name>.log (printed when it fails, HOST_VERBOSE=1: always). A group run-<area> lists its
 # suites with $(call suites,...), which also adds them to SUITES; run runs every group and prints the summary
 SUITE   := $(PYTHON) suite.py
+# HOST_SHORT=1: fuzz.h's fuzz_iters() and test_run.h's test_short() give their short counts
+ifeq ($(HOST_SHORT),1)
+export RFOUNDRY_HOST_SHORT := 1
+endif
 suites   = $(eval SUITES += $1)$(addprefix run/,$1)
 run/%: %
 	@$(SUITE) run $* ./$*
+# $(call parts,TEST,0 1 .. N-1[,ARGS]): a long test as N suites TEST-K side by side, each `./TEST ARGS K/N`
+# (test_run.h); TEST itself goes in SHARDED for check-run
+define parts_rule
+SHARDED += $1
+$(addprefix run/$1-,$2): run/$1-%: $1
+	@$$(SUITE) run $$(@F) './$1 $3$(if $3, )$$*/$(words $2)'
+endef
+parts = $(eval $(call parts_rule,$1,$2,$3))$(addprefix $1-,$2)
+PARTS5 := 0 1 2 3 4
+PARTS8 := $(PARTS5) 5 6 7
+PARTS10 := $(PARTS8) 8 9
 # A tshark check of a pcap a suite wrote, as one more command of that suite (none without tshark)
 PCAP_CHECK = $(if $(TSHARK),'sh pcap_check.sh "$(TSHARK)" $1 $2$(if $3, "$3")')
 
@@ -709,10 +725,10 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: $(call suites,gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor \
-	uiFlowTestSatellite uiSim beepReel)
-run/uiSim: uiSim
-	@$(SUITE) run $(@F) './uiSim --layout'
+# The flow tests and the layout check are the longest suites: each runs in parts
+run-ui: $(call suites,gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault $(call parts,uiFlowTest,$(PARTS10)) \
+	$(call parts,uiFlowTestNoColor,$(PARTS10)) $(call parts,uiFlowTestSatellite,$(PARTS10)) \
+	$(call parts,uiSim,$(PARTS8),--layout) beepReel)
 # checks every beep has a scene and the scenes still run
 run/beepReel: beepReel
 	@$(SUITE) run $(@F) './beepReel --out out/beep-reel --no-frames'
@@ -1295,7 +1311,7 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: $(call suites,settingsTest spiNorTest spiNandTest nandSectorsTest)
+run-settings: $(call suites,settingsTest spiNorTest spiNandTest $(call parts,nandSectorsTest,$(PARTS5)))
 .PHONY: run-settings
 
 TESTS   += satelliteStoreTest
@@ -1487,9 +1503,10 @@ cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
 
 run: run-cpsclient
-run-cpsclient: $(call suites,cpsClient)
-run/cpsClient: cpsSim
-	@$(SUITE) run $(@F) '$(PYTHON) -B cpsClientTest.py' '$(PYTHON) -B cpsFastClientTest.py' '$(PYTHON) -B iddbLookupClientTest.py'
+CPS_CLIENTS := cpsClient cpsFastClient iddbLookupClient
+run-cpsclient: $(call suites,$(CPS_CLIENTS))
+$(addprefix run/,$(CPS_CLIENTS)): run/%: cpsSim
+	@$(SUITE) run $* '$(PYTHON) -B $*Test.py'
 .PHONY: run-cpsclient
 
 # DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk): the shared vectors, then the rules
@@ -1672,11 +1689,11 @@ run-boards::
 .PHONY: run-boards
 -include $(wildcard $(ROOT)/boards/*/tests/host.mk)
 
-# Every test in TESTS must be a suite of a group, or run by a script (HELPERS, programs a test script drives), else
-# nothing runs it (two were, unnoticed)
+# Every test in TESTS must be a suite of a group, or run in parts by one (SHARDED) or by a script (HELPERS, programs a
+# test script drives), else nothing runs it (two were, unnoticed)
 HELPERS := pppPeer cpsSim snmpPeer splitSim f4stubSim
 check-run:
-	@missing='$(filter-out $(SUITES) $(HELPERS),$(TESTS))'; if [ -n "$$missing" ]; then \
+	@missing='$(filter-out $(SUITES) $(HELPERS) $(SHARDED),$(TESTS))'; if [ -n "$$missing" ]; then \
 		echo "tests/host: no run group runs $$missing (add it to one, or to HELPERS)"; exit 1; fi
 .PHONY: check-run
 
