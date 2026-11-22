@@ -12,6 +12,7 @@
 #ifndef RFOUNDRY_SETTINGS_H
 #define RFOUNDRY_SETTINGS_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -279,7 +280,8 @@ typedef struct {
 
 // Zone shares are accepted unless the user turned them off: 0 (a record from before, or never set) and the old Ask
 // (1) both accept
-static inline bool settings_zs_accept(const settings_t *s) { return s->zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept_of(uint8_t zs_offers) { return zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept(const settings_t *s) { return settings_zs_accept_of(s->zs_offers); }
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
@@ -340,21 +342,29 @@ static inline void settings_set_aprs_cp_ssid(settings_t *s, uint8_t ssid_plus_1)
 // talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
 #define SETTINGS_HOME_LABEL_FIRST	0x80u
-static inline uint8_t settings_theme(const settings_t *s) { return s->theme & SETTINGS_SMALL_MASK; }
-static inline uint8_t settings_updown_home(const settings_t *s)
+// Each reader has an _of form that takes the field's value, for a caller that read just that field (SETTINGS_FIELD)
+static inline uint8_t settings_theme_of(uint8_t theme) { return theme & SETTINGS_SMALL_MASK; }
+static inline uint8_t settings_theme(const settings_t *s) { return settings_theme_of(s->theme); }
+static inline uint8_t settings_updown_home_of(uint8_t updown_home)
 {
-	return (s->updown_home & 3u) <= 2u ? s->updown_home & 3u : 0;
+	return (updown_home & 3u) <= 2u ? updown_home & 3u : 0;
 }
+static inline uint8_t settings_updown_home(const settings_t *s) { return settings_updown_home_of(s->updown_home); }
 
 // The crash report (docs/spec/crash-log.md 5.2), packed into spare bits so the record stays 236 bytes and an older
 // record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in accent bits 4-5; the target's
 // codeplug contact number (0 none, else 1..CODEPLUG_CONTACTS_MAX, 11 bits) bits 0-5 in theme bits 2-7 and bits 6-10
 // in updown_home bits 2-6. Firmware from before reads theme and updown_home with these bits as out of range: dark
 // and Up/Down = channel
-static inline uint8_t settings_crash_mode(const settings_t *s) { return (s->accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode_of(uint8_t accent) { return (accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode(const settings_t *s) { return settings_crash_mode_of(s->accent); }
+static inline uint16_t settings_crash_contact_of(uint8_t theme, uint8_t updown_home)
+{
+	return (uint16_t)((theme >> 2) | (((updown_home >> 2) & 0x1Fu) << 6));
+}
 static inline uint16_t settings_crash_contact(const settings_t *s)
 {
-	return (uint16_t)((s->theme >> 2) | (((s->updown_home >> 2) & 0x1Fu) << 6));
+	return settings_crash_contact_of(s->theme, s->updown_home);
 }
 static inline void settings_set_crash_mode(settings_t *s, uint8_t mode)
 {
@@ -455,6 +465,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
+#define SETTINGS_APRS2_MUTE		0x40u	// the speaker stays off on the APRS frequency (decoding goes on)
 // aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
 // aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
 #define SETTINGS_APRS_MISC_POSITION	0x80u
@@ -486,6 +497,13 @@ settings_load_t settings_init(void);
 
 // A consistent copy
 void settings_read(settings_t *out);
+// One field of the settings in force, zero-extended: size bytes (1, 2 or 4) at byte offset of settings_t, copied under the
+// same lock as settings_read. For a caller deep in a task's stack, where a whole settings_t (a few hundred bytes) doesn't
+// fit; 0 for any other size or a range outside the struct. SETTINGS_FIELD(brightness) says it with the field's name and
+// type: a signed field comes back with its sign
+uint32_t settings_read_field(size_t offset, size_t size);
+#define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
+							      sizeof(((settings_t *)0)->f)))
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);

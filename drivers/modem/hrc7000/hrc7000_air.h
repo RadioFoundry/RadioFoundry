@@ -67,6 +67,7 @@ typedef struct {
 	uint32_t tx_underruns;	// ... of those, idle for want of a chunk mid-transmission
 	uint32_t tx_done;
 	uint32_t stalls;	// no slot boundary for 200 ms while transmitting: dropped
+	uint32_t copy_restarts;	// no copy half for 200 ms while receiving: the copy set up again
 	uint32_t modem_us;	// time in the soft modem ...
 	uint32_t modem_span_us;	// ... for this much signal
 } hrc7000_air_stats_t;
@@ -93,6 +94,7 @@ typedef struct hrc7000_air {
 	uint32_t t_half[2];	// the time of each ring half's first sample
 	bool gap;		// the next half taken does not follow the ring's last (lost or a new set-up)
 	bool gap_half[2];	// ... per ring half as taken: the session's receiver starts over there
+	uint32_t t_copy;	// the last half that came (taken or dropped for a full ring) or the set-up: the watchdog's start
 
 	// The session
 	bool open;

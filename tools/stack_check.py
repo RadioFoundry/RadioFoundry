@@ -12,7 +12,9 @@ and follows the deepest call chain from each task's entry function:
 
 It fails when the need exceeds the task's stack. A platform whose interrupts run one at a time on a stack of their
 own (--irq-stack, or --irq-stack-symbols for its ends in the ELF) names the function that installs a handler (--irq-register): every function passed to it is a root,
-and the deepest of them plus the margin must fit that stack. Calls through function pointers are resolved from the sources: a
+and the deepest of them plus the margin must fit that stack. A platform whose start-up code (main() until the scheduler
+runs) has a stack of a fixed size names its ends in the ELF (--startup-stack-symbols): main() is then a root too, with
+the port overhead (a fault's frame) and the margin. Calls through function pointers are resolved from the sources: a
 function stored into a struct field (a designated or positional initializer, an assignment) is a target of the calls
 through that field of that struct type; a function stored into a variable or passed as an argument is a target of
 the calls through that variable or parameter. What the sources can't show comes from tools/stack_check_edges.txt.
@@ -269,6 +271,48 @@ def strip_comments(src, keep_strings=False):
 
 
 PAIRS = {"(": ")", "[": "]", "{": "}"}
+
+
+def split_ternary(v):
+    """(then, else) of a conditional expression c ? a : b outside brackets, else None"""
+    depth, q, nested = 0, None, 0
+    for i, c in enumerate(v):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0 and c == "?":
+            if q is None:
+                q = i
+            else:
+                nested += 1
+        elif depth == 0 and c == ":" and q is not None:
+            if nested:
+                nested -= 1
+            else:
+                return v[q + 1:i], v[i + 1:]
+    return None
+
+
+def has_truth_operator(v):
+    """Whether v, outside brackets, compares or combines truth values (== != < > <= >= && || !): its value is 0 or 1"""
+    depth = 0
+    for i, c in enumerate(v):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0:
+            two = v[i:i + 2]
+            if two in ("==", "!=", "<=", ">=", "&&", "||"):
+                return True
+            if c == "<" and two != "<<" and v[i - 1:i] != "<":
+                return True
+            if c == ">" and two != ">>" and v[i - 1:i] not in (">", "-"):
+                return True
+            if c == "!" and (i == 0 or v[i - 1] in " (") and two != "!=":
+                return True
+    return False
 
 
 def match_close(t, i):
@@ -596,6 +640,13 @@ class CModel:
         v = v.lstrip("&").strip()
         while v.startswith("(") and match_close(v, 0) == len(v) - 1:
             v = v[1:-1].strip()
+        # c ? a : b holds a or b, never what c compares; a comparison or a logical operator yields a truth value, not
+        # a pointer (n = d->count != NULL ? d->count() : 0 stores a number)
+        branches = split_ternary(v)
+        if branches is not None:
+            return self.value_refs(ft, off, branches[0]) + self.value_refs(ft, off, branches[1])
+        if has_truth_operator(v):
+            return []
         if re.fullmatch(CHAIN, v):
             return [self.name_ref(ft, off, v)]
         refs = []
@@ -1307,6 +1358,15 @@ def run(args):
                   args.irq_stack_symbols, file=sys.stderr)
             return 2
         args.irq_stack = disasm.syms[names[1]] - disasm.syms[names[0]]
+    startup = 0
+    if args.startup_stack_symbols:
+        # The start-up stack as linked, like the interrupt stack's
+        names = args.startup_stack_symbols.split(",")
+        if disasm is None or len(names) != 2 or any(n not in disasm.syms for n in names):
+            print("stack_check: --startup-stack-symbols %s: not in the ELF (needs --objdump and --elf)" %
+                  args.startup_stack_symbols, file=sys.stderr)
+            return 2
+        startup = disasm.syms[names[1]] - disasm.syms[names[0]]
     an = Analysis(graph, model, table, args.lib_default, disasm)
     label = args.label or os.path.basename(os.path.normpath(args.build))
     fails = 0
@@ -1346,6 +1406,23 @@ def run(args):
         else:
             print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
                   (" > ..." if len(path) > args.path_len else ""))
+    if startup:
+        entry = [t for t in graph.lookup(args.startup_entry) if graph.defined(t)]
+        if len(entry) != 1:
+            print("  %-8s ?    no single definition of %s with a call graph" % ("start-up", args.startup_entry))
+            fails += 1
+        else:
+            worst, path = an.depth(entry[0])
+            reach |= an.reachable(entry[0])
+            free = startup - (worst + args.overhead + args.margin)
+            status = "ok" if free >= 0 else "OVER"
+            fails += free < 0
+            print("  %-8s %-4s stack %5d  deepest %5d  free %5d  (%s, before the scheduler)" %
+                  ("start-up", status, startup, worst, free, graph.display(entry[0])))
+            print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
+                  (" > ..." if len(path) > args.path_len else ""))
+            if least is None or free < least[0]:
+                least = (free, "start-up")
     if args.irq_stack:
         irqs = find_irqs(graph, root, files, args.irq_register)
         if not irqs:
@@ -1570,6 +1647,19 @@ def self_test():
         kx, ky = (model.chain_key(f, f.code.index("cb();"), "cb") for f in (fx, fy))
         check(kx == ("p", "x.c:start", 1) and ky == ("p", "start", 1),
               "two files' static functions of one name keep their parameters apart: %s %s" % (kx, ky))
+        # what an expression stores into a pointer: the branches of a conditional, never what it compares
+        fv = FileText("v.c", "void f(void)\n{\n}\n")
+
+        def stored(e):
+            return sorted(r[1][-1] for r in model.value_refs(fv, 0, e) if r[0] == "key")
+        check(stored("p != NULL ? a : b") == ["a", "b"], "a conditional stores its branches, not its test: %s" %
+              stored("p != NULL ? a : b"))
+        check(stored("p ? a : q ? b : c") == ["a", "b", "c"], "a nested conditional: %s" % stored("p ? a : q ? b : c"))
+        check(stored("d->count != NULL ? d->count() : 0") == ["d"],
+              "a called member is not stored: %s" % stored("d->count != NULL ? d->count() : 0"))
+        check(stored("a == b") == [] and stored("a->x < b->y") == [] and stored("a && b") == [] and stored("!a") == [],
+              "a comparison or a logical operator stores a number, not a pointer")
+        check(stored("a->go") == ["go"] and stored("(cb_t)a") == ["a"], "a plain chain or a cast is stored as before")
         t = Table()
         t.ptr["go"] = ["leaf"]
         an3 = Analysis(g, model, t, DEFAULT_LIB_BYTES)
@@ -1608,6 +1698,9 @@ def main():
                     help="that stack's size from two ELF symbols, its ends (instead of --irq-stack)")
     ap.add_argument("--irq-register", action="append",
                     help="function whose last argument is an interrupt handler (repeatable)")
+    ap.add_argument("--startup-stack-symbols", metavar="BOTTOM,TOP",
+                    help="the start-up stack's ends in the ELF: check --startup-entry against it (0: not checked)")
+    ap.add_argument("--startup-entry", default="main", help="the code that runs on the start-up stack (default main)")
     ap.add_argument("--label", help="name in the report (default: the build directory's)")
     ap.add_argument("--report-only", action="store_true", help="report tasks over their stack, exit 0")
     ap.add_argument("--path-len", type=int, default=40)

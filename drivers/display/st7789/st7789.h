@@ -35,6 +35,10 @@ void st7789_init(const st7789_t *p);
 void st7789_write_rows(const st7789_t *p, const uint16_t *fb, uint16_t y0, uint16_t y1);
 // The same from a 16-color frame buffer: two pixels a byte (high nibble left), palette of 16 RGB565 colors
 void st7789_write_rows_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);
+// Rows y0 .. y1-1 of a 16-color frame buffer of w pixels a row (stride (w + 1) / 2) that covers a part of the panel
+// from (x, y) (hal_display_t fb_safe_area: the safe area inside the insets), at scale 1. Clipped to the panel
+void st7789_write_window_indexed(const st7789_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t x, uint16_t y,
+				 uint16_t w, uint16_t y0, uint16_t y1);
 void st7789_fill(const st7789_t *p, uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color);
 void st7789_invert(const st7789_t *p, bool on);
 void st7789_display_on(const st7789_t *p, bool on);

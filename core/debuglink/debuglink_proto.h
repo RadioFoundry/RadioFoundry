@@ -238,6 +238,7 @@ enum {
 	DL_APRS_F_TO_IS,		// our own packets to APRS-IS (the host helper, or the radio's own client) 0/1
 	DL_APRS_F_POWER,		// RF power: 0 = the radio's current level, n = the board's level n - 1
 	DL_APRS_F_AMBIGUITY,		// position ambiguity 0-4 (APRS101 ch. 8), for APRS packets and DMR reports
+	DL_APRS_F_MUTE,			// the speaker silent on the APRS frequency 0/1
 };
 
 // DL_CMD_SNMP operations (first payload byte; docs/spec/debuglink.md 3.17)

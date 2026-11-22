@@ -713,9 +713,28 @@ static void outputs(radio_sm_t *sm)
 		board.bcast->audio((open || bcast_play) && bcast);
 	}
 #endif
-	if (sm->audio_out != (int8_t)(open && !bcast)) {
-		sm->audio_out = (int8_t)(open && !bcast);
-		board.radio->audio(open && !bcast);
+	bool spk = open && !bcast;
+	bool muted = false;
+#if CONFIG_APRS_RX
+	// APRS > Mute APRS audio: on the APRS frequency the speaker stays silent, the LED and the decoder go on. Monitor
+	// (the squelch held open) still plays it, to listen on purpose. A board with speaker_mute keeps the receive audio
+	// path open for its decoder; otherwise the path closes. The board's mute follows the frequency, not the squelch, so
+	// the amplifier never opens for a moment when the squelch closes, before audio(false)
+	bool on_aprs = !sm->view.monitor && fm && sm->view.ch.rx_hz == aprs_mute_hz();
+	muted = spk && on_aprs;
+	if (board.radio->speaker_mute != NULL) {
+		if (sm->speaker_mute_out != (int8_t)on_aprs) {
+			sm->speaker_mute_out = (int8_t)on_aprs;
+			board.radio->speaker_mute(on_aprs);
+		}
+	} else if (muted) {
+		spk = false;
+	}
+#endif
+	(void)muted;	// read only by APRS receive and dual watch
+	if (sm->audio_out != (int8_t)spk) {
+		sm->audio_out = (int8_t)spk;
+		board.radio->audio(spk);
 	}
 	if (rx_open_change && !green) {
 		sm->rx_open_out = 0;
@@ -724,7 +743,7 @@ static void outputs(radio_sm_t *sm)
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
 	if (board.rx2 != NULL) {
-		int8_t on = (int8_t)(sm->rx2_on && !tx && !green);
+		int8_t on = (int8_t)(sm->rx2_on && !tx && !(green && !muted));	// a muted APRS carrier doesn't hold it
 		if (sm->rx2_audio_out != on) {
 			sm->rx2_audio_out = on;
 			board.rx2->audio(on != 0);
@@ -2744,8 +2763,7 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	// status. Its answer finishes the check (dmrDataServiceSignalResult); there is no conventional answer CSBK
 	if (strcmp(dmrDataServiceTxStartingName(), "signal") == 0 && count >= 1 && bursts[0].length >= 10 &&
 	    (bursts[0].payload[0] & 0x3Fu) == DMR_CSBKO_RADIO_CHECK) {
-		const uint8_t *c = bursts[0].payload;
-		uint32_t id = ((uint32_t)c[4] << 16) | ((uint32_t)c[5] << 8) | c[6];
+		uint32_t id = dmrDataRadioCheckDst(bursts[0].payload);
 		if (id == 0 || t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
 			return false;
 		}
@@ -8209,7 +8227,11 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->audio_out = -1;
+#if CONFIG_APRS_RX
+	sm->speaker_mute_out = -1;
+#endif
 	sm->rx_open_out = -1;
+	sm->sql_floor = INT16_MAX;	// not known yet: no voice peak hold before an idle poll measured it
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
@@ -9299,6 +9321,44 @@ static uint8_t close_polls(void)
 	return RADIO_SQL_CLOSE_POLLS;
 }
 
+// sql_rssi on a poll the squelch holds: the strength when the noise held it, none (INT16_MAX) when level 0 or a
+// broadcast listen did, so a squelch raised over a noise-only channel closes as before
+static int16_t held_rssi(const radio_status_t *st, uint8_t sq, uint8_t open_below)
+{
+	return sq != 0 && st->noise < open_below + RADIO_SQL_HYST_DB ? st->rssi_dbm : INT16_MAX;
+}
+
+// The receiver's floor (sql_floor), from idle polls whose noise says no carrier at any level: down at once, up
+// 1 dB every RADIO_SQL_FLOOR_RISE_POLLS polls, so a carrier coming up in the poll before the squelch opens moves it
+// by a dB at most
+static void track_floor(radio_sm_t *sm, const radio_status_t *st, uint32_t now_ms)
+{
+	if (st->noise < RADIO_SQL_OPEN_L1 + RADIO_SQL_HYST_DB) {
+		return;
+	}
+	if (st->rssi_dbm < sm->sql_floor) {
+		sm->sql_floor = st->rssi_dbm;
+	} else if (st->rssi_dbm > sm->sql_floor && (now_ms / RADIO_POLL_MS) % RADIO_SQL_FLOOR_RISE_POLLS == 0) {
+		sm->sql_floor++;
+	}
+}
+
+// Polls of noise above the line before the squelch closes on this reading: close_polls(), or RADIO_SQL_PEAK_POLLS
+// for a voice peak: a 12.5 kHz channel, the RX tone still there, the signal strength where it was on the last poll the
+// squelch held and that strength RADIO_SQL_PEAK_FLOOR_DB over the floor, whatever the noise reads. An RX tone that
+// goes and a carrier that fades or goes close as before; so does a carrier near the floor, whose strength may not
+// fall far enough when it goes
+static uint8_t close_need(const radio_sm_t *sm, const radio_status_t *st, uint8_t sq)
+{
+	uint8_t polls = close_polls();
+	if (polls == RADIO_SQL_CLOSE_POLLS && sq != 0 && sm->view.tone_ok && sm->view.ch.bw == RADIO_BW_12K5 &&
+	    st->rssi_dbm + RADIO_SQL_PEAK_RSSI_DB >= sm->sql_rssi &&
+	    (int32_t)sm->sql_rssi >= (int32_t)sm->sql_floor + RADIO_SQL_PEAK_FLOOR_DB) {
+		return RADIO_SQL_PEAK_POLLS;
+	}
+	return polls;
+}
+
 #if CONFIG_VOX
 static bool vox_enabled(const radio_sm_t *sm)
 {
@@ -9621,19 +9681,26 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm) &&
 		     !parked(&sm->view.ch);
 	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
+	uint8_t need = close_need(sm, &st, sq);		// for the close below
 
 	if (sm->view.state == RS_IDLE) {
 		if (opens) {
 			sm->view.state = RS_RX;
 			sm->close_count = 0;
+			sm->sql_rssi = held_rssi(&st, sq, open_below);
 			changed(sm);
+		} else {
+			track_floor(sm, &st, now_ms);
 		}
 	} else if (holds) {
 		activity(sm, now_ms);
 		sm->close_count = 0;
-	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
-			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+		sm->sql_rssi = held_rssi(&st, sq, open_below);
+	} else if (++sm->close_count >= need ||
+		   (sq != 0 && need == RADIO_SQL_CLOSE_POLLS &&
+		    st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
 		bool was_rx = sm->view.state == RS_RX;
+		sm->view.sql_close = sm->close_count;
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal
 			// stays until PTT is released

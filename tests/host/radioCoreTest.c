@@ -22,6 +22,7 @@
 #include "hotspot/hotspot.h"
 #include "hotspot/mmdvm.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
@@ -1228,6 +1229,7 @@ static void test_squelch(void)
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
 	rx_signal(thr + RADIO_SQL_HYST_DB, true);
+	hw.st.rssi_dbm = -125 - RADIO_SQL_PEAK_RSSI_DB - 1;	// a fade: the strength falls too (a voice peak's doesn't)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
@@ -1281,6 +1283,131 @@ static void test_squelch(void)
 	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+}
+
+// Receive a carrier at rssi with the noise well under the line, after idle polls that teach the floor (-125)
+static void peak_open(uint8_t thr, int16_t rssi)
+{
+	hw.st.noise = 120;
+	hw.st.tone_ok = true;
+	hw.st.rssi_dbm = -125;
+	poll_for(10 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	hw.st.noise = (uint8_t)(thr - 10);
+	hw.st.rssi_dbm = rssi;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+}
+
+// A voice peak (#906): speech above about 2 kHz on a 12.5 kHz channel raises the noise reading over the close line for
+// a few polls, past the fast close line from a sender that deviates wide, while the carrier stays as strong. The
+// squelch holds through it, and still closes at once when the carrier goes (also when the strength reading lags the
+// noise by a poll), after two polls when the strength falls, after RADIO_SQL_PEAK_POLLS when the noise stays up, and
+// as before on a carrier near the floor or a 25 kHz channel
+static void test_squelch_voice_peak(void)
+{
+	setup_codeplug();
+	start();
+	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
+	uint8_t peak = (uint8_t)(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1);	// short of the fast close
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+
+	peak_open(thr, -70);
+	// A 120 ms fricative, the strength a dB lower: open the whole time, and again after the next one, which reads
+	// past the fast close line
+	for (int n = 0; n < 2; n++) {
+		hw.st.noise = (uint8_t)(peak + n * 10);
+		hw.st.rssi_dbm = -71;
+		for (int i = 0; i < 5; i++) {
+			poll_for(RADIO_POLL_MS);
+			CHECK(sm.view.state == RS_RX && hw.audio);
+		}
+		hw.st.noise = (uint8_t)(thr - 10);
+		hw.st.rssi_dbm = -70;
+		poll_for(2 * RADIO_POLL_MS);
+		CHECK(sm.view.state == RS_RX);
+	}
+	// The noise stays up with the strength: closes after RADIO_SQL_PEAK_POLLS
+	hw.st.noise = peak;
+	poll_for((RADIO_SQL_PEAK_POLLS - 1) * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && sm.view.sql_close == RADIO_SQL_PEAK_POLLS);
+	// The carrier goes: the noise past the fast close line and the strength at the floor, one poll
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(peak + 1);
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 1);
+	// ... with the strength a poll behind the noise: the poll after
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(peak + 30);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	// A fade: the noise over the line and the strength RADIO_SQL_PEAK_RSSI_DB + 1 lower closes after two polls
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(thr + RADIO_SQL_HYST_DB);
+	hw.st.rssi_dbm = -70 - RADIO_SQL_PEAK_RSSI_DB - 1;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	// The strength falls in the middle of a peak: the polls already counted close it on the next one
+	peak_open(thr, -70);
+	hw.st.noise = peak;
+	poll_for(3 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.rssi_dbm = -80;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	// A carrier just under RADIO_SQL_PEAK_FLOOR_DB over the floor: no hold, a peak closes it in two polls, and its
+	// end (the strength 2 dB down) in one
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB - 1);
+	hw.st.noise = peak;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB - 1);
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125 + RADIO_SQL_PEAK_FLOOR_DB - 3;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 1);
+	// ... and at RADIO_SQL_PEAK_FLOOR_DB the hold is back
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB);
+	hw.st.noise = peak;
+	poll_for(5 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	// The floor rises slowly: a carrier in the idle polls before it opens doesn't take the hold away
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	hw.st.rssi_dbm = -70;	// the carrier's strength comes up a poll before its noise reading falls
+	poll_for(RADIO_POLL_MS);
+	hw.st.noise = (uint8_t)(thr - 10);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = peak;
+	poll_for(5 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	// A 25 kHz channel: no hold, the closes as before
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	peak_open(thr, -70);
+	hw.st.noise = peak;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	req(RREQ_CLEAR_TEMP, 0);
 }
 
 static void test_tx(void)
@@ -5184,6 +5311,43 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, 9) && ui_svc_setting_get(UI_SET_THEME) == 3);	// night, the last
 	CHECK(ui_svc_setting_set(UI_SET_THEME, 0));
+	// Stored values the setters never write (an older or a damaged record) read back as each getter's fallback or
+	// clamp. Each getter reads its own field of the settings in force (SETTINGS_FIELD), so every width is covered:
+	// bytes, 16 and 32 bit values, a signed 16 bit one, the two language bytes
+	{
+		settings_t keep;
+		settings_read(&keep);
+		settings_t *raw = settings_begin();
+		raw->brightness = 3;
+		raw->mic_gain = 99;
+		raw->pos_format = 7;
+		raw->vfo_step_hz = 500;
+		raw->ref_trim_ppb = -250;
+		raw->lang[0] = 'e';
+		raw->lang[1] = 's';
+		raw->auto_off_min = 0x1234;
+		raw->theme = 0xFF;
+		raw->updown_home = 3;
+		raw->sound_flags = SETTINGS_KNOB_LOCK;
+		raw->accent = SETTINGS_ACCENT_PLAIN | 5;
+		raw->low_batt_pct = 17;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_MIC_GAIN) == 5 &&
+		      ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_VFO_STEP) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_REF_TRIM) == ref_trim_clamp(-250) && ui_svc_setting_get(UI_SET_REF_TRIM) < 0);
+		CHECK(ui_svc_setting_get(UI_SET_LANGUAGE) == ('e' << 8 | 's') && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 0x1234);
+		CHECK(ui_svc_setting_get(UI_SET_THEME) == 3 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 0 && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 17);
+		CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 5 && ui_svc_setting_get(UI_SET_STRIP) == 0);
+		raw = settings_begin();
+		raw->vfo_step_hz = 25000;
+		raw->sound_flags = 0;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_VFO_STEP) == 2500 && ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 1);
+		raw = settings_begin();
+		*raw = keep;
+		settings_end(0);
+	}
 	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
 	// or older records) is the defaults: the theme's highlight, the strip filled
 	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
@@ -11420,6 +11584,7 @@ int main(void)
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_squelch_voice_peak();
 	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();

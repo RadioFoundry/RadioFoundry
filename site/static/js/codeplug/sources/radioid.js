@@ -218,6 +218,23 @@ export function regionsOf(users) {
 
 const key = (s) => String(s || "").trim().toLowerCase();
 
+// Add a whole country or some of its states. A whole country already covers its states.
+export function addRegion(regions, country, states) {
+	const countryKey = key(country);
+	const sameCountry = (region) => key(region.country) === countryKey;
+	if (regions.some((region) => sameCountry(region) && !region.state)) return regions;
+	if (!states.length) return [...regions.filter((region) => !sameCountry(region)), { country }];
+	const next = [...regions];
+	const have = new Set(regions.filter(sameCountry).map((region) => key(region.state)));
+	for (const state of states) {
+		const stateKey = key(state);
+		if (have.has(stateKey)) continue;
+		next.push({ country, state });
+		have.add(stateKey);
+	}
+	return next;
+}
+
 // Users in the regions ([{country, state?}]; none = all), with call signs starting with one of the prefixes, in the ID
 // range
 export function select(users, { regions = [], prefixes = [], idMin = 0, idMax = 0xFFFFFF } = {}) {

@@ -938,6 +938,11 @@ msgid "Stations heard"
 msgstr "Stations reçues"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "Couper son APRS"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA sur USB"

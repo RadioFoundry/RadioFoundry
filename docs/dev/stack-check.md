@@ -44,7 +44,7 @@ what the pointer can hold:
 | Call | Targets |
 |---|---|
 | Through a struct field, `board.radio->tx(...)`, `s->cb(...)` | The struct's type is followed from the variable's declaration (a parameter, a local, a file-scope or `extern` variable) through the members. Every function stored into that field of that type: designated or positional initializers, assignments, compound literals |
-| Through a variable or parameter | What is assigned to the variable; for a parameter, what callers pass in that position. A call through a struct field passes to the functions stored in that field, and two files' static functions of one name keep their own parameters. Stores of one pointer into another are followed |
+| Through a variable or parameter | What is assigned to the variable; for a parameter, what callers pass in that position. A call through a struct field passes to the functions stored in that field, and two files' static functions of one name keep their own parameters. Stores of one pointer into another are followed. A conditional `c ? a : b` stores `a` and `b`, not what `c` tests; a comparison or `&&`, `||`, `!` stores a number, no pointer |
 | Inside a macro, `LOCK()` | The macro is expanded first |
 | In an argument, `f(x, p->g())` | GCC files it at the outer call's position; the tool looks inside the arguments |
 
@@ -104,7 +104,10 @@ stack check <b>: every task fits, the least free: prvIdleTask 176 bytes
   time (HR_C7000), the platform's `STACK_IRQ` names that stack (its size, or the two linker symbols at its ends so the
   size is the one linked) and the function that installs a handler: every function passed to it is a root, and the
   deepest plus the margin must fit (the `irq` line). A handler installed any other way is missed. The interrupt stack's canary and `tasks.irq_free` catch what the check misses on the radio.
-* The code before the scheduler starts (`main`) runs on the main stack and isn't checked.
+* The code before the scheduler starts (`main`) runs on the main stack. Where that stack has a size of its own the
+  platform names its ends (`--startup-stack-symbols`) and `main` is checked against it like a task (the `start-up`
+  line): on HR_C7000 it is the top 2 KB of the RTOS heap, below which lie the first tasks' stacks
+  (`platform/hrc7000/common.ld`). Elsewhere it isn't checked.
 * A pointer call whose target is computed at run time (an address from a table the sources don't spell) needs a table
   line.
 * The disassembly walk adds every stack adjustment of a function, so a library function with several exit paths

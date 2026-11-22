@@ -49,6 +49,10 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: keep the speaker silent while audio() stays on, for a mute that must not stop the FM receive audio
+	// reaching a decoder. A board whose decoder reads that audio through the path audio() gates (an I2S tap behind the
+	// FM feed-through) needs it; without it the core mutes with audio(false)
+	void (*speaker_mute)(bool mute);
 	// Optional: receive audio from a signal is open: FM squelch open or monitor, or a DMR, P25 or NXDN call playing
 	// (the green LED's state). Local beeps don't set it. For a board whose own noise reaches the audio only with a
 	// carrier present, such as backlight PWM through the synthesizer

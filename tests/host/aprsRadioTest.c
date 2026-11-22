@@ -97,17 +97,28 @@ static void r_tx_off(void)
 static void r_status(radio_status_t *st)
 {
 	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
-	st->rssi_dbm = -120;
+	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
 }
-static void r_audio(bool on) { (void)on; }
+static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
+static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
+static int spk_blips;	// the speaker audible on the APRS frequency while muted (on and unmuted at once)
+static bool blip_watch;	// count spk_blips
+static void blip_check(void)
+{
+	if (blip_watch && spk_on && !spk_muted && hw.rx_hz == APRS_HZ) {
+		spk_blips++;
+	}
+}
+static void r_audio(bool on) { spk_on = on; blip_check(); }
+static void r_speaker_mute(bool mute) { spk_muted = mute; blip_check(); }
 static bool r_tone(uint16_t hz)
 {
 	hw.tone_hz = hz;
 	return true;
 }
-static const hal_radio_t fake_radio = {
+static hal_radio_t fake_radio = {	// not const: test_mute gives it speaker_mute
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
 	.audio = r_audio, .tx_tone = r_tone,
 };
@@ -1739,6 +1750,68 @@ static void test_rx_release_on_retune(void)
 	fake_tap.caps = 0;
 }
 
+// Mute APRS audio: a signal on the APRS frequency keeps the speaker silent (the decoder still listens), Monitor plays
+// it, another channel isn't touched, and the setting is kept. A board with speaker_mute keeps the receive audio path
+// open and silences the speaker; one without has the path closed
+static void mute_case(bool hook)
+{
+	fake_radio.speaker_mute = hook ? r_speaker_mute : NULL;
+	spk_muted = false;
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	hw.noise_on_aprs = 30;	// a carrier on 144.390
+	run(200);
+	CHECK(spk_on && !spk_muted && aprs_rx_listening());	// off by default: plays as before
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.mute = true;
+	aprs_set_cfg(&c, now);
+	run(100);
+	CHECK(aprs_rx_listening());
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	req(RREQ_MONITOR, 1);
+	CHECK(spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	// the end of a packet: the squelch closes and the speaker never plays for a moment on the way (with the hook,
+	// speaker_mute(false) before audio(false) did), nor when the next carrier opens it
+	spk_blips = 0;
+	blip_watch = true;
+	hw.noise_on_aprs = 120;
+	run(300);
+	CHECK(!spk_on && (!hook || spk_muted));
+	hw.noise_on_aprs = 30;
+	run(300);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	blip_watch = false;
+	CHECK(spk_blips == 0);
+	aprs_init(now);	// as at power-up: the setting comes back
+	aprs_get_cfg(&c);
+	CHECK(c.mute);
+	hw.noise_on_aprs = 120;
+	req(RREQ_CH_STEP, 1);	// another channel, the squelch held open: plays
+	req(RREQ_MONITOR, 1);
+	CHECK(hw.rx_hz == CH2_HZ && spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	c.mute = false;
+	aprs_set_cfg(&c, now);
+	fake_tap.caps = 0;
+	fake_radio.speaker_mute = NULL;
+}
+
+static void test_mute(void)
+{
+	mute_case(false);
+	mute_case(true);
+}
+
 // FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving
 // held off while it listens (docs/spec/aprs.md 5.3)
 static void test_rx_stream(void)
@@ -1968,6 +2041,7 @@ int main(void)
 	test_stations_digi_igate();
 	test_rx_stream();
 	test_rx_release_on_retune();
+	test_mute();
 	test_rx_board_only();
 	test_station_lookup();
 	test_station_range();

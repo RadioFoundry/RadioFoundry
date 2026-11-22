@@ -526,6 +526,16 @@ TESTS   += codeplugTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
+# The text editor's Back: one character per press, a Chinese name by its three UTF-8 bytes (core/ui/text_edit.h)
+TESTS += textEditTest
+textEditTest: textEditTest.c $(CORE)/ui/text_edit.h
+	$(CC) $(CFLAGS) -o $@ textEditTest.c
+
+run: run-text
+run-text: textEditTest
+	./textEditTest
+.PHONY: run-text
+
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
@@ -671,6 +681,14 @@ TESTS   += gfxTestZh
 gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 -o $@ gfxTest.c $(UI) $(CJK)
 
+# The frame buffer's last bytes with a GFX_FB_BYTES that is not a multiple of 4 (the DM-32UV's, sized from its insets):
+# a safe area of exactly that size, drawn to its bottom right corner. Always under AddressSanitizer, which is what sees
+# a write past the buffer: without it the bytes land in the next variable and nothing fails
+TESTS   += gfxFbEdgeTest
+gfxFbEdgeTest: gfxFbEdgeTest.c $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -fsanitize=address -fno-omit-frame-pointer -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DGFX_FB_BYTES=34410u \
+	      -DGFX_MAX_ROWS=320u -o $@ gfxFbEdgeTest.c $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c
+
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
 TESTS   += i18nTest i18nTestNoLang i18nTestDefault
@@ -754,9 +772,10 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
+run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
+	./gfxFbEdgeTest
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
