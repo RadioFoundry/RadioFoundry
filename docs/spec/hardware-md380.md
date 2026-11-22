@@ -425,14 +425,35 @@ leaves it off), 0x37 (DAC gain), the I2S data line directions and sample rate (u
 
 ### 4.9.1 Receiving between our bursts
 
-Through a repeater, a voice over hears the repeater's outbound between its own bursts (the modem's
-`tx_listen_split`, [dmr-modem.md 2.8](dmr-modem.md)). One synthesizer serves receive and transmit, so the board
-retunes per burst (`radio_md380.c`):
+**Off** (`MD380_TX_LISTEN` 0 in `radio_md380.c`, issue 609): the MD-380 doesn't listen between its bursts, so it
+doesn't see a repeater drop under an over or hear a reverse channel while it sends ([dmr-modem.md 2.8](dmr-modem.md)).
+With the listen on, through a repeater, about one burst in a hundred went out on a carrier a few hundred Hz off and
+reached the repeater with bit errors. SDR bench, a 50 kHz split, 102 voice bursts a run, AMBE bits corrected:
+
+| Build | Runs | AMBE bits corrected | Carrier offset |
+|---|---|---|---|
+| Listen on, lead 25 as below | 3 | 0.03-0.09 % | median +50 Hz; the bursts with errors +105 to +318 Hz |
+| Listen on, lead 10, 40, 63 (100 us steps assumed) | 5 | 0.06 %, 0.29 %, 0.49-0.55 % | |
+| Listen on, lead in half symbols (below), lead 25 or 63, PA by a wait or TIM7 | 10 | 0.01-0.09 % | |
+| Listen on, receive tap read skipped or after the burst set-up | 4 | 0.05-0.07 % | |
+| Listen off | 3 | 0 | +24 to +65 Hz |
+
+On an 18.5 MHz split the listen gave 1.3-1.4 % and lost frames. Lock detect came about 60 us after each retune.
+Not found: what moves the carrier. Every build where the chip didn't receive the listen slot (its receiver input
+off, the slot closed, the synthesizer left on the carrier) had no errors, but those builds also listened only until
+the stack took the repeater as dropped, so they retuned about half as often.
+
+With `MD380_TX_LISTEN` 1, one synthesizer serves receive and transmit, so the board retunes per burst:
 
 | When | What |
 |---|---|
 | After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
-| RF_TX_INTER, 2.5 ms early | 4:0x12 bits 5-0 = 25 (100 us steps) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 = 25 while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+
+4:0x12 bits 5-0 count half symbols (104.17 us, `hrc5000_tx_lead_us`) over the value the chip runs with, 0x0A:
+measured from the RF TX interrupt to the next timeslot interrupt, 1121 us at 10, 2684 us at 25, about 6600 us at 63.
+Before the fix the board waited 25 x 100 us from the interrupt, so the PA keyed about 0.9 ms late on every listened
+burst.
 
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
