@@ -8,6 +8,8 @@
         fm-minimal), most relevant first; --limit keeps the first N
     tools/affected.py summary --base REF [--head REF] [--board a,b]
         the boards and switches the diff reaches, and why
+    tools/affected.py boards --base REF [--head REF]
+        the boards the diff reaches, one a line: the radios a HIL run of it needs (tools/hil_batch.sh)
     tools/affected.py features --base REF [--head REF]
         the HIL checklist features (tests/hil/features.toml) the diff reaches, and why: what
         pytest tests/hil --affected REF runs besides the smoke tier
@@ -327,6 +329,33 @@ def plan(root, diff, only=None, config=board_config, scope="precise", base=None,
     return res
 
 
+def reached_boards(root, diff):
+    """The boards a diff's firmware sources reach (analyze()'s rule: a board's own files that board, platform/<p>/
+    the platform's, shared code every board), plus every board when a shared HIL test changed and the board when its
+    own (boards/<b>/hil) did: the radios a HIL run of the change needs."""
+    boards = board_info(root)
+    out = set()
+    for f in diff:
+        top = f.split("/")[0]
+        if f.startswith("tests/hil/"):
+            out |= set(boards)
+            continue
+        parts = f.split("/")
+        if top == "boards" and len(parts) > 3 and parts[2] == "hil":
+            out |= {parts[1]} & set(boards)
+            continue
+        if not is_source(f):
+            continue
+        own = {b for b, v in boards.items() if any(under(f, x) for x in v["dirs"])}
+        if top == "boot":
+            own |= {b for b, v in boards.items() if v["boot"] and under(f, f"boot/{v['boot']}")}
+        if top == "platform" and not own:
+            plat = parts[1] if len(parts) > 1 else ""
+            own = {b for b, v in boards.items() if v["platform"] == plat}
+        out |= own or set(boards)
+    return sorted(out)
+
+
 # ── HIL features ──
 
 FEATURES_TOML = os.path.join("tests", "hil", "features.toml")
@@ -410,6 +439,11 @@ def cmd_summary(a):
     for b, name, _, why in rows:
         more = f" (+{len(why) - 3})" if len(why) > 3 else ""
         print(f"  {b:12} {name:28} {', '.join(why[:3])}{more}")
+
+
+def cmd_boards(a):
+    for b in reached_boards(ROOT, changed(ROOT, a.base, a.head)):
+        print(b)
 
 
 def cmd_features(a):
@@ -502,6 +536,10 @@ def self_test():
              {"ui", "edit"}),
             ("features: guard", feats({"drivers/rf/x/x.c": "#if CONFIG_DMR_SMS\nint s2;\n#endif\n"}), {"sms"}),
             ("features: docs only", feats({"docs/x.md": "y\n"}), set()),
+            ("boards: a family dir, a platform, shared code, docs",
+             [reached_boards(t, {p: {}}) for p in ("boards/fam/f.c", "platform/p2/system.c", "core/gps/gps.c",
+                                                    "docs/x.md")],
+             [["a", "b"], ["c"], ["a", "b", "c"], []]),
         ]
         bad = 0
         for what, got, exp in checks:
@@ -518,7 +556,7 @@ def main(argv=None):
         return self_test()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("builds", "summary", "features"):
+    for name in ("builds", "summary", "boards", "features"):
         p = sub.add_parser(name)
         p.add_argument("--base", required=True, help="the commit to compare with (main, HEAD^1)")
         p.add_argument("--head", help="the commit with the change (default: the working tree)")
@@ -531,7 +569,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         resolve_base(a)
-        {"builds": cmd_builds, "summary": cmd_summary, "features": cmd_features}[a.cmd](a)
+        {"builds": cmd_builds, "summary": cmd_summary, "boards": cmd_boards, "features": cmd_features}[a.cmd](a)
     except subprocess.CalledProcessError as e:
         print(f"affected: {' '.join(e.cmd)}: {e.stderr.strip()}", file=sys.stderr)
         return 2
