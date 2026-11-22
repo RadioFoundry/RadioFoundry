@@ -300,7 +300,6 @@ def p25_decode(job, *extra):
 
 
 @pytest.mark.feature("p25")
-@pytest.mark.feature("p25_talk_permit")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
