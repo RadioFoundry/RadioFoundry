@@ -418,6 +418,46 @@ squelch and the group (when a contact has that group; else group 1).
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
   takes one as A or B.
 
+### YSF in the VFO
+
+On a radio that runs System Fusion, YSF is one of the VFO's modes, after NXDN ("VFO: YSF"). It is System Fusion
+digital voice in DN mode (C4FM, 12.5 kHz), through the radio's DMR voice codec. Other System Fusion radios, repeaters
+and Wires-X nodes hear it as they hear a Yaesu handheld.
+
+- It hears DN voice calls with every DG-ID. A call in VW (full rate) or data mode shows on Home but stays silent
+  ("Not DN voice: not played").
+- PTT sends with DG-ID 0, your callsign and your radio ID. The callsign is the codeplug's YSF callsign, else the first
+  word of the radio name when it reads as a callsign. Without one, Home says "No callsign" and PTT is refused.
+- Home shows "YSF", the DG-ID PTT sends ("DG-ID 00"), the DG-ID heard and your radio ID ("RX 00 RID K7Q2Z"). During a
+  call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. FM's tone and width tiles
+  say "FM only: this is YSF".
+- The VFO's DG-IDs can be changed only from a computer for now (`rfoundry_debug.py radio ysf`), and the change lasts
+  until the radio is switched off.
+
+### YSF channels
+
+A YSF channel comes from a codeplug written on a computer ([YSF in the editor](04-programming.md#ysf)), a zone shared
+by another radio, the VFO (in YSF, open **Channels**, **New channel from current settings** and save it), or any
+channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A channel made YSF starts with DG-ID 00.
+
+- **DG-ID** (0-99) is in the channel's settings: the radio sends it and hears only calls with it. 00 sends 0 and hears
+  every DG-ID. (The codeplug can hold different DG-IDs for sending and hearing; the Codeplug Editor sets them apart.)
+- A YSF channel has no TX contact and no Own ID: System Fusion names you by your callsign and radio ID.
+- **OK** on Mode steps on to FM, then back round to YSF with its settings as they were. Saving the channel as another
+  mode removes its YSF settings: the radio asks first.
+- Scan stops on YSF channels and holds on a call you would hear there. Dual watch takes one as A or B.
+
+### Your radio ID
+
+Every System Fusion radio sends a radio ID: five letters and digits. Repeaters, Wires-X nodes and other radios use it
+to tell radios apart, so no two radios may share one. RadioFoundry makes yours from the radio's own chip, which is
+different in every radio: it is the same every time the radio starts, after every update and every codeplug write,
+and nothing can change it. It is never in the codeplug, so copying a codeplug to another radio never copies it.
+
+See it in **Settings > My radio > Radio ID**, and on Home on a YSF channel. If it shows a **?** after it, this radio
+has no chip ID to make it from and the radio ID comes from your DMR ID and radio name instead: two radios with the same
+codeplug would then share it. Details: [System Fusion, the radio ID](../spec/ysf.md#6-the-radio-id-rid).
+
 ### Leaving the VFO
 
 Press **OK**, **4**, then **OK** on the VFO row again ("Back to channels"). Or pick a zone or channel. A **VFO/MR** key

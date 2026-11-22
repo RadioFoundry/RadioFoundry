@@ -412,6 +412,7 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";
+import * as ysf from "../static/js/codeplug/mode_ysf.js";
 import { systemOwnIdField, systemsTab } from "../static/js/editor/modesview.js";
 
 test("Systems table leaves control channels and authentication key cells blank for NXDN", () => {
@@ -465,6 +466,37 @@ test("vectors: NXDN conventional block, unit ID record", () => {
 		const u = nxdn.decodeUnit(bytes(b)).unitId;
 		assert.equal(u || nxdn.unitFallback(parseInt(dmr, 16)), parseInt(unit, 16), l);
 	}
+});
+
+// --- System Fusion (docs/spec/ysf-codeplug.md) ---
+
+test("vectors: YSF channel block, callsign record", () => {
+	assert.ok(vectors("ysfchan").length >= 8);
+	for (const l of vectors("ysfchan")) {
+		const [b, tx, rx] = l.split(" ");
+		assert.deepEqual(ysf.decodeChan(bytes(b) ?? new Uint8Array(0)), { txDgid: parseInt(tx, 16), rxDgid: parseInt(rx, 16) }, l);
+	}
+	for (const l of vectors("ysfenc")) {
+		const [tx, rx, b] = l.split(" ");
+		assert.equal(hexOf(ysf.encodeChan({ txDgid: parseInt(tx, 16), rxDgid: parseInt(rx, 16) })), b, l);
+	}
+	for (const l of vectors("ysfcall")) {
+		const [b, call] = l.split(" ");
+		assert.equal(ysf.decodeRadio(bytes(b) ?? new Uint8Array(0)).callsign, call === "-" ? "" : call, l);
+	}
+});
+
+test("YSF: a channel round-trips, the callsign record too, and no field holds a radio ID", () => {
+	const v = ysf.encodeChan({ txDgid: 12, rxDgid: 0 }, Uint8Array.of(0, 0, 0xAA, 0xBB));
+	assert.equal(hexOf(v), "0C00AABB");	// bytes past the block kept
+	assert.deepEqual(ysf.decodeChan(v), { txDgid: 12, rxDgid: 0 });
+	assert.equal(ysf.encodeRadio({ callsign: "" }), null);	// none: the radio name's
+	assert.equal(hexOf(ysf.encodeRadio({ callsign: "sq5fox" })), "535135464F5800000000");
+	const keys = [...ysf.ysfKind.fields().map((f) => f.key), ...ysf.ysfKind.settings.fields.map((f) => f.key)];
+	assert.ok(!keys.some((k) => /rid|radio_?id/i.test(k)), keys.join());
+	const probs = [];
+	ysf.ysfKind.settings.validate({ callsign: "SQ5 FOX" }, { err: (f, code) => probs.push(code), warn: () => {} });
+	assert.deepEqual(probs, ["ysf_callsign"]);
 });
 
 // A codeplug with an NXDN channel on a group, one on a unit, and the radio-wide unit ID

@@ -15,12 +15,14 @@
     rfoundry_debug.py wake                           backlight on without a key event
     rfoundry_debug.py ptt --seconds S                key PTT for S seconds (at most 10; the firmware also times out)
     rfoundry_debug.py radio OP [ARG...]              channel +1, pos 3, zone 0, vfo on, freq MHZ, power lowest|LEVEL|+1, copy-vfo, ...
-    rfoundry_debug.py radio mode fm|dmr|p25|nxdn     the channel's mode for now (the VFO's own in the VFO)
+    rfoundry_debug.py radio mode fm|dmr|p25|nxdn|ysf the channel's mode for now (the VFO's own in the VFO)
     rfoundry_debug.py radio p25 [nac=N] [tg=N|unit=N] [rx_tgid=N] [talkaround=auto|on|off] [unit_id=N]
                                                 the P25 settings (CONFIG_P25; RAM only, view section p25)
     rfoundry_debug.py radio nxdn [rate=9600|4800] [ran=N] [rx_ran=N] [tx_ran=N] [rx_gid=N] [tg=N|unit=N]
                                  [unit_id=N] [emergency=0|1]
                                                 the NXDN settings (CONFIG_NXDN; RAM only, view section nxdn)
+    rfoundry_debug.py radio ysf [dgid=N] [tx_dgid=N] [rx_dgid=N]
+                                                the YSF DG-IDs (CONFIG_YSF; RAM only, view section ysf)
     rfoundry_debug.py volume [N|knob]                print the speaker volume; N (0 mutes, 0..16) sets it, knob gives the knob back
     rfoundry_debug.py log [--follow]                 the firmware's dlog() ring
     rfoundry_debug.py chip                           chip ID, flash size, UID, option bytes (RDP, write protection)
@@ -203,7 +205,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn", "ysf"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -228,8 +230,9 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
+OP_YSF = 44
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
-CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
+CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3, "ysf": 4}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
 SFR_ROLES = {"off": 0, "user": 1, "user-erdm": 2, "rpt": 3, "rpt-erdm": 4}
 OP_PA_SWEEP = 39
@@ -1340,7 +1343,7 @@ class DebugLink:
         self.radio(OP_VOLUME, bytes([VOLUME_KNOB if step == "knob" else int(step)]))
 
     def dmr_fields(self, mode=None, cc=None, ts=None):
-        """Mode ("fm" / "dmr" / "p25" / "nxdn"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
+        """Mode ("fm" / "dmr" / "p25" / "nxdn" / "ysf"), color code 0..15 and timeslot 1 / 2, each None to keep it. On a channel these
         are temporary changes, in the VFO the VFO's own settings (RADIO op 31). A mode the build lacks raises
         DebugLinkError "unavailable"."""
         m = 0xFF if mode is None else CHANNEL_MODES[mode]
@@ -1394,6 +1397,22 @@ class DebugLink:
                "emergency": v["nxdn.tx_emergency"] == "1"}
         cur.update(kw)
         self.nxdn_settings(**cur)
+
+    def ysf_settings(self, tx_dgid=0, rx_dgid=0):
+        """The YSF DG-IDs (RADIO op 44; debuglink.md 3.8; RAM only, the ysf view section shows them): sent and heard,
+        0..99 each, rx_dgid 0 hears every DG-ID. The callsign and the radio ID can't be set here (ysf.md 6)."""
+        if not (0 <= tx_dgid <= 99 and 0 <= rx_dgid <= 99):
+            raise ValueError("ysf_settings: DG-IDs 0..99")
+        self.radio(OP_YSF, struct.pack("<BB", tx_dgid, rx_dgid))
+
+    def ysf_settings_update(self, **kw):
+        """ysf_settings with the DG-IDs in force (the ysf view section) changed only where kw says."""
+        v = self.view(["ysf"])
+        if v.get("ysf.built") != "1":
+            raise DebugLinkError("unavailable")
+        cur = {"tx_dgid": int(v["ysf.tx_dgid"]), "rx_dgid": int(v["ysf.rx_dgid"])}
+        cur.update(kw)
+        self.ysf_settings(**cur)
 
     def vfo_sfr(self, role, inbound_ts=1, framing=0, hang=0):
         """The VFO's SFR role (RADIO op 38; sfr.md 4), saved with the VFO: role a SFR_ROLES name or 0..4, the inbound
@@ -1989,7 +2008,7 @@ def cmd_radio(link, a):
         link.vibrate(args[0] if args else "message")
     elif op == "copy-vfo":            # the channel's settings into the VFO, and open it
         link.vfo_copy()
-    elif op == "mode":                # mode fm|dmr|p25|nxdn (the VFO's own in the VFO, else temporary)
+    elif op == "mode":                # mode fm|dmr|p25|nxdn|ysf (the VFO's own in the VFO, else temporary)
         if not args or args[0] not in CHANNEL_MODES:
             raise SystemExit("mode " + "|".join(CHANNEL_MODES))
         link.dmr_fields(mode=args[0])
@@ -2030,6 +2049,17 @@ def cmd_radio(link, a):
             else:
                 raise SystemExit(usage)
         link.nxdn_settings_update(**kw)
+    elif op == "ysf":                 # ysf [dgid=N] [tx_dgid=N] [rx_dgid=N]
+        kw = {}
+        for a in args:
+            k, _, val = a.partition("=")
+            if k == "dgid":
+                kw["tx_dgid"] = kw["rx_dgid"] = int(val, 0)
+            elif k in ("tx_dgid", "rx_dgid"):
+                kw[k] = int(val, 0)
+            else:
+                raise SystemExit("ysf [dgid=N] [tx_dgid=N] [rx_dgid=N]")
+        link.ysf_settings_update(**kw)
     elif op == "cc":                  # cc 0..15
         link.dmr_fields(cc=num(0))
     elif op == "ts":                  # ts 1|2

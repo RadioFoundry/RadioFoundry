@@ -90,6 +90,10 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   "Priv" in blue, and a private call is not encrypted.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
+- YSF Home names the caller by callsign: "SP5WLF > DG-ID 12", the DG-ID going first when the line is short. A call of
+  another DG-ID shows "Other DG-ID: not played", one that isn't DN voice "Not DN voice: not played". The talk line
+  shows the DG-ID PTT sends ("DG-ID 00"), or "No callsign" in the warning color while PTT is refused for want of one;
+  the chips show the power, the DG-ID heard and the radio ID ("RX 00 RID K7Q2Z", [ysf.md](ysf.md) 6).
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
@@ -203,14 +207,14 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - New from current (the first row in Channels: New channel from current settings) fills a copy from what the radio uses now: the channel in use
   with its temporary changes, or the VFO. It opens as an unsaved channel at the lowest free number, named after the
   source with a number appended (or the frequency, from the VFO).
-- OK on Mode steps FM, DMR, P25, NXDN, then the channel's own kind, and round to FM. A step is offered where it can
-  run: DMR with `CONFIG_DMR`; P25 and NXDN where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`, as the VFO's
+- OK on Mode steps FM, DMR, P25, NXDN, YSF, then the channel's own kind, and round to FM. A step is offered where it can
+  run: DMR with `CONFIG_DMR`; P25, NXDN and YSF where the radio runs them (`UI_FEAT_P25`, `UI_FEAT_NXDN`, `UI_FEAT_YSF`, as the VFO's
   mode tile), and not in a copy made by Copy here, which takes its source's tag and has no block of its own; a kind
   of its own (a trunked channel, [channel-modes.md](channel-modes.md)) only on the channel opened as one, since its
   system can't be picked here. In a listen band only FM. The step back to the mode the channel was opened with
   restores it as it was, with its system and its NAC or RAN: a slip on the row is taken back by pressing on. A
-  channel made P25 starts with NAC 293 both ways and squelch normal, one made NXDN with RAN 1 both ways at 9600 bit/s;
-  either keeps its talk target and own ID, and Save writes it as a stored channel of the kind with that block. The
+  channel made P25 starts with NAC 293 both ways and squelch normal, one made NXDN with RAN 1 both ways at 9600 bit/s,
+  one made YSF with DG-ID 0 both ways; each keeps its talk target and own ID, and Save writes it as a stored channel of the kind with that block. The
   row's changed mark counts the kind. Saving a stored channel of a kind as a plain one or one of another kind
   replaces its tag, so Save asks first on the `discard` screen, titled "Save as FM?" (or "Save as DMR?"; "Unsaved
   Changes" when it becomes another kind): the kind's name and "settings will be removed", "No, keep editing" first (the default; BACK is the same), then "Yes,
@@ -222,6 +226,12 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
+- A YSF channel: Mode "YSF", then DG-ID in place of NAC; no TX contact, Own ID or Talkaround (System Fusion names the
+  radio by callsign and radio ID). DG-ID shows the sent DG-ID, then the heard one where they differ ("12/00"); OK opens
+  it, digits type 0-99, Up and Down step through 0-99, and OK sets both to the value (00 hears every DG-ID).
+- Settings > My radio adds, with `CONFIG_YSF`, two read-only rows: YSF callsign and Radio ID. OK on either only says
+  where it comes from: the radio ID is made from the MCU's unique ID and can't be edited ([ysf.md](ysf.md) 6); a radio
+  ID from the fallback ends in "?".
 - NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
   it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes

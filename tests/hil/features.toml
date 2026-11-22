@@ -98,6 +98,12 @@ switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"
 source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
 
+[feature.ysf]
+switch = "YSF"
+spec = "docs/spec/ysf.md"
+source = ["core/ysf", "core/air", "core/fec", "core/radio/radio_ysf.c", "core/radio/radio_ysf.h",
+          "core/radio/radio_air.h", "core/radio/radio_air_mem.c", "core/debuglink/debuglink_view_ysf.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"

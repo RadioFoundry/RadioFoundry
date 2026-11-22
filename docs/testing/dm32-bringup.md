@@ -199,6 +199,19 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
 between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
 
+## System Fusion (YSF)
+
+Written and host tested, untested on air with this code ([ysf.md](../spec/ysf.md)). The checks, in order, by a person
+with another System Fusion radio:
+
+| Check | Expected | If not |
+|---|---|---|
+| `rfoundry_debug.py view ysf` on a YSF channel | `ysf.built=1`, `ysf.on=1`, `ysf.fit` with receive and transmit, `ysf.rid` five characters and `ysf.rid_weak=0` (the HR_C7000's unique ID) | `on=0`: `ysf.begin_fails` (no memory: another air mode holds it; no fit: the provider's answer for 4800 symbols/s at 2700 Hz) |
+| A DN call from another radio, direct | heard; Home shows its callsign and DG-ID; `ysf.frames` rising, `ysf.fich_fail` near 0 | `fich_fail` high: the receive tap's level or polarity (`modem-hrc7000.md` 10) |
+| Our call heard by another radio, direct | its display shows our callsign and radio ID; clean speech | no lock: the deviation (`dev_outer_hz`, the provider's scaling against DMR's) |
+| Through a repeater that sends a tone under C4FM | heard | `fec_bits` and `vch_fixed` high: the tone and inter-symbol interference the soft modem doesn't remove yet |
+| Two DM-32UV radios side by side | different `ysf.rid` | the same: report it with both radios' `INFO_CHIP` UIDs |
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).

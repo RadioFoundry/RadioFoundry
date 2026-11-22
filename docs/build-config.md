@@ -143,6 +143,7 @@ below are for an STM32F4 radio.
 | `CONFIG_P25_TRUNK` | = P25 | P25 trunked: the codec of its systems and channels (`docs/spec/p25-codeplug.md` 3), the control channel's signaling decoded, its control channel hunted and held, voice channel grants for the chosen talk groups followed, and where the system allows transmit: registration, affiliation, voice requests and transmit on the granted channel (`docs/spec/p25-trunking.md`). The radio core runs it on a trunked channel. Host tested, and run on a radio against a control channel the SDR bench plays, not on a live system. Needs P25 |
 | `CONFIG_NXDN` | = DMR | NXDN conventional voice at 4800 and 9600 bit/s (`docs/spec/nxdn.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. The radio core's NXDN mode (the VFO's mode tile, a temporary mode change, the debug link), RAM settings, the home screen; NXDN conventional channels in the codeplug (`docs/spec/nxdn-codeplug.md`); voice through the DMR side's vocoder path. Needs `DMR`. With P25 on and no lending vocoder it shares P25's engine memory |
 | `CONFIG_NXDN_SCRAMBLER` | = NXDN | 15-bit NXDN Scrambler for conventional voice calls. Needs `NXDN`. |
+| `CONFIG_YSF` | = DMR | System Fusion (C4FM) DN voice (`docs/spec/ysf.md`): the frame codec, receive, the call layer and its engine, and the air interface under them. The radio core's YSF mode (the VFO's mode tile, a temporary mode change, the debug link), RAM DG-IDs, the home screen, the radio ID made from the MCU's unique ID; YSF channels in the codeplug (`docs/spec/ysf-codeplug.md`); voice through the DMR side's vocoder path. Needs `DMR`. Runs in P25's memory, or with no lending vocoder in a block it shares with NXDN |
 | `CONFIG_AIR_RAW` | n | diagnostics: debug link commands that open an air interface session and move raw symbols and tap samples, for bench tests (`docs/spec/debuglink.md`). Needs P25 or NXDN (an air-framed mode) and DEBUGLINK |
 | `CONFIG_AIR_RX_ADAPT` | n | the soft modem's adaptive receive options: an equalizer and a CTCSS / DCS remover that a mode's profile asks for in `rx_opts`, in memory its engine lends (`docs/spec/air-interface.md` 6.1). Off until a mode asks for them; P25 and NXDN don't. Needs P25 or NXDN (an air-framed mode) |
 | `CONFIG_SFR` | = DMR (n where the modem can't) | single frequency repeater: MMDVM SFR (the hotspot, duplex with RX = TX) and Standalone SFR (the repeater and user roles of a channel, `docs/spec/sfr.md`) |
@@ -203,9 +204,9 @@ below are for an STM32F4 radio.
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
+`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_YSF`; `CONFIG_IMBE` and `CONFIG_MBE`
 (the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
-(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
+(`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN`, `CONFIG_YSF` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
 (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
 
 ## Values

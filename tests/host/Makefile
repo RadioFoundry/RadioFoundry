@@ -1592,6 +1592,17 @@ run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
 
+TESTS   += ysfCodeplugTest
+YSFCP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/ysf/ysf_codeplug.c
+
+ysfCodeplugTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_YSF=1 -o $@ ysfCodeplugTest.c $(YSFCP)
+
+run: run-ysfcp
+run-ysfcp: ysfCodeplugTest
+	./ysfCodeplugTest
+.PHONY: run-ysfcp
+
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \
