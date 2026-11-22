@@ -185,7 +185,8 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   discard". Long BACK still goes Home (P3) and drops the copy without asking.
 - Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
   the transmit bands on a channel that isn't RX only, a DMR channel whose RX takes no DMR ("Receive only band: set
-  FM"), a DMR channel without a TX contact unless it is RX only (the contact is whom PTT calls).
+  FM"), a DMR channel without a TX contact unless it is RX only (the contact is whom PTT calls). A D-STAR or Fusion
+  channel is never asked for one: its record is the DMR stand-in, and it calls by its own destination.
 - DMR goes wherever FM goes: any band of the table, receive-only ones included, but never a listen band (the air band
   on a radio with AM receive, the broadcast receiver's range). `radio_listen_band()` (`core/radio/radio_bands.h`) is
   the rule, the same one the VFO's mode change follows. A typed RX in a receive-only band makes the copy RX only, and FM
@@ -219,6 +220,9 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
+- A D-STAR or Fusion channel (a kind that runs its own mode over the stand-in record, channel-modes.md 2.3) shows Mode
+  as the kind's name ("DV", "YSF") and none of the record's DMR or FM rows: Name, Number, Mode, RX, TX, Power, RX
+  only, the TX time-out, Scan, Battery saver. RX only is the tag's transmit allowed bit.
 - NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
   it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
