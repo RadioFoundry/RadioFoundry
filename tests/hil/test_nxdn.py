@@ -40,6 +40,14 @@ TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxd
 group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
 without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
 
+test_nxdn_rx_after_lost_copy (the same opt-ins; the bench transmits, the radio only receives): a provider that takes
+the receive copy by interrupt (`airp.halves`) must set the copy up again when no half comes, as after a request lost
+for good (modem-hrc7000.md 3.3). With NXDN at 4800 bit/s on the VFO, the copy's interrupt source is masked at the
+interrupt controller through CHIP_REG (debuglink.md 3.24) for HOLD_OFF_S, so no half reaches the provider. The
+provider must have set the copy up again (`airp.copy_restarts` one more or more), the halves must come again once
+the source is unmasked, and the bench's call must be received as in test_nxdn_rx_from_bench. Skipped on a chip family
+without a known source (LOST_COPY) and on a provider without the copy.
+
 test_nxdn_rx_speech[9600|4800] (the same opt-ins; the bench transmits, the radio only receives): the same call with
 speech as its voice frames, at most the first SPEECH_FRAMES frames of tests/data/voice/test_transmission.ambe (104
 frames: 64 of them at 9600 bit/s, all at 4800) or of the --ambe FILE given (9-byte frames), which the bench tool carries without looking inside. On the radio:
@@ -61,7 +69,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import as_int, counter_deltas, skip, speech_file
+from rfoundry_hil import DebugLinkError, as_int, counter_deltas, skip, speech_file
+from rfoundry_debug import CHIP_HRC7000
 from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
@@ -80,6 +89,9 @@ TEST_GROUP = 77
 NXDN_SYNC = "CDF59"     # the FSW, ten symbols (TS 1-A 4.3)
 SYNC_LEN = 10
 RATES = {"9600": (4800, 2400), "4800": (2400, 1050)}    # bit/s -> (symbols/s, outer deviation Hz, TS 1-A table 3.3-1)
+# Per chip family: the interrupt controller's mask register and the copy's source bit in it
+LOST_COPY = {CHIP_HRC7000: (0x17000008, 1 << 29)}      # PIC_MASK, the modem's system interrupt
+HOLD_OFF_S = 0.4        # past the provider's 200 ms without a half
 
 
 def nxdn_view(radio):
@@ -433,6 +445,54 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
     assert v1.get("nxdn.src") == str(TEST_UNIT) and v1.get("nxdn.dst") == str(TEST_GROUP), \
         f"the call {v1.get('nxdn.src')} -> {v1.get('nxdn.dst')}, sent {TEST_UNIT} -> {TEST_GROUP}"
     assert v1.get("nxdn.ran") == str(TEST_RAN), f"RAN {v1.get('nxdn.ran')}, sent {TEST_RAN}"
+
+
+@pytest.mark.feature("nxdn")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.needs_switch("VFO")
+def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
+    family = radio.link.chip()["family"]
+    if family not in LOST_COPY:
+        skip("no_hw", f"no known receive copy interrupt source on chip family {family}")
+    mask_reg, bit = LOST_COPY[family]
+    got = {}
+
+    def lose_request():
+        L = radio.link
+        a0 = radio.view(["air"])
+        if a0.get("airp.open") != "1" or a0.get("airp.copy_restarts") is None:
+            skip("not_built", "the air provider reports no receive copy watchdog (airp.copy_restarts)")
+        time.sleep(0.3)
+        if (as_int(radio.view(["air"]).get("airp.halves")) or 0) <= (as_int(a0.get("airp.halves")) or 0):
+            skip("no_hw", "the air provider takes no receive copy halves")
+        try:
+            L.soc_reg(mask_reg, L.soc_reg(mask_reg) | bit)
+        except DebugLinkError as e:
+            skip("not_built", f"CHIP_REG can't write the interrupt mask (status {e.status})")
+        try:
+            time.sleep(HOLD_OFF_S)
+        finally:
+            L.soc_reg(mask_reg, L.soc_reg(mask_reg) & ~bit)
+        r0 = as_int(a0.get("airp.copy_restarts")) or 0
+        a1 = radio.view(["air"])
+        assert (as_int(a1.get("airp.copy_restarts")) or 0) > r0, \
+            f"no half for {HOLD_OFF_S} s and the copy was not set up again (airp.copy_restarts {r0})"
+        time.sleep(0.5)
+        a2 = radio.view(["air"])
+        got.update(restarts=(r0, as_int(a2.get("airp.copy_restarts"))),
+                   halves=(as_int(a1.get("airp.halves")), as_int(a2.get("airp.halves"))))
+        # 500 ms holds about 15 halves (one every 32 ms)
+        assert got["halves"][1] >= got["halves"][0] + 10, f"the halves did not come again: {got['halves']}"
+
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, "4800", RX_VOICE_FRAMES, before=lose_request)
+    print(f"\nlost copy request: copy_restarts {got['restarts'][0]}->{got['restarts'][1]}, halves "
+          f"{got['halves'][0]}->{got['halves'][1]} in 500 ms; nxdn rx_calls {v0.get('nxdn.rx_calls')}->"
+          f"{v1.get('nxdn.rx_calls')}")
+    assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1, \
+        "no call received after the copy was set up again"
+    assert v1.get("nxdn.src") == str(TEST_UNIT) and v1.get("nxdn.dst") == str(TEST_GROUP)
 
 
 @pytest.mark.feature("nxdn")
