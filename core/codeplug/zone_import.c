@@ -914,13 +914,18 @@ static bool contact_on_air(const channel_t *ch, zsContact_t *c, uint16_t *index)
 }
 
 // What tells one contact in the record from another: a DMR contact's index, or for a P25 channel whose contact is a P25
-// contact slot its target's value
+// contact slot its target's value. Without P25 in zone sharing the index alone, and no wider key costs RAM
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
 #define CT_KEY_AIR	0x80000000u
+typedef uint32_t ct_key_t;
+#else
+typedef uint16_t ct_key_t;
+#endif
 
 // The talk contact of channel number (ch read by codeplug_channel) on air, with its key. A P25 channel whose contact is
 // a P25 contact slot goes as its target by value, a group, a unit or the all call, as a DMR contact: the receiver has
 // no table of P25 contacts to put a slot in, and the tag it gets has the flag clear (tag_on_air). False when it has none
-static bool talk_contact_on_air(uint16_t number, const channel_t *ch, zsContact_t *c, uint32_t *key)
+static bool talk_contact_on_air(uint16_t number, const channel_t *ch, zsContact_t *c, ct_key_t *key)
 {
 #if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
 	p25_talk_t t;
@@ -1122,8 +1127,10 @@ static void write_modes(zsWriter_t *w, const uint16_t *num, uint8_t channels, ui
 static int export_list(const char *name, uint8_t flags, const uint16_t *list, uint16_t n, uint8_t *out, int size,
 		       uint8_t *included)
 {
-	static uint32_t ct_src[ZS_CONTACTS_MAX];	// each record contact's key (talk_contact_on_air)
+	static ct_key_t ct_src[ZS_CONTACTS_MAX];	// each record contact's key (talk_contact_on_air)
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
 	static uint16_t ct_chan[ZS_CONTACTS_MAX];	// the channel whose contact it is, to read it again
+#endif
 	static uint8_t ch_ct[CODEPLUG_ZONE_MAX];	// each included channel's record contact (1-based), 0 none
 	static uint16_t ch_num[CODEPLUG_ZONE_MAX];
 	uint8_t contacts = 0, channels = 0;
@@ -1168,7 +1175,7 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		channel_on_air(&ch, &z);
 		uint8_t ref = 0;
-		uint32_t idx = 0;
+		ct_key_t idx = 0;
 
 		if (z.dmr && talk_contact_on_air(list[i], &ch, &c, &idx)) {
 			for (uint8_t k = 0; k < contacts; k++) {
@@ -1191,7 +1198,9 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		}
 		used += need;
 		if (ref == contacts + 1) {
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
 			ct_chan[contacts] = list[i];
+#endif
 			ct_src[contacts++] = idx;
 		}
 #if CONFIG_ZONE_SHARE_MODES
@@ -1218,11 +1227,24 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 
 	zsWriterBegin(&w, out, budget, zone_id_of(name, flags), flags, name);
 	for (uint8_t k = 0; k < contacts; k++) {
-		uint32_t key;
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
+		// a P25 contact slot's key is its target's value: read it again from the channel
+		ct_key_t key;
 
 		if (!codeplug_channel(ct_chan[k], &ch) || !talk_contact_on_air(ct_chan[k], &ch, &c, &key) || key != ct_src[k]) {
 			return 0;
 		}
+#else
+		channel_t probe;
+
+		memset(&probe, 0, sizeof(probe));
+		probe.contact = ct_src[k];
+		uint16_t idx;
+
+		if (!contact_on_air(&probe, &c, &idx)) {
+			return 0;
+		}
+#endif
 		zsWriterContact(&w, &c);
 	}
 	for (uint8_t i = 0; i < channels; i++) {
