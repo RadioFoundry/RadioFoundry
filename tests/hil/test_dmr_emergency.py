@@ -224,6 +224,8 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
         radio.link.key_hold("emergency", 600)
         time.sleep(1)
         assert _ext(radio)["em.state"] == "idle", "early release started emergency"
+        # The key's short action can step the power level when released early.
+        radio.lowest_power(absolute=True)
         hold_ms = hold_s * 1000 + 500
         radio.link.key_hold("emergency", hold_ms)
         radio.wait_for(lambda x: x.get("ui.screen") == "emergency-hold", timeout=2.0, sections=("link",),
