@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 # Test markers and fixtures -> the need they imply
-MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
+MARKER_NEEDS = {"rf": "rf", "rf_fallback": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
                 "second_radio": "second_radio", "radio_chain": "radio_chain", "factory_reset": "factory_reset"}
 FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "microphone": "microphone"}
