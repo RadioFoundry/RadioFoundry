@@ -167,6 +167,16 @@ static const flow_t flows[] = {
 	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
 	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
 	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=DG-ID shows=42", 4, false },
+	// Wires-X (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
+	{ "Q YSF: tile 3 is Wires-X", "dlmode:ysf", "quick 3", "screen=wiresx shows=Node shows=Room_ID", 2, false },
+	{ "W Wires-X: OK on Node asks the node", "dlmode:ysf quick 3", "ok", "screen=wiresx wxcmd=0 shows=Waiting...", 1, false },
+	{ "W Wires-X: the node's answer", "dlmode:ysf quick 3 ok", "wxdx", "screen=wiresx shows=WARSZAWA shows=POLAND", 0, false },
+	{ "W Wires-X: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
+	{ "W Wires-X: connect without a room ID", "dlmode:ysf quick 3", "2 back back down ok", "wxcmd=-1 toast=Type_a_room_ID_first", 5, false },
+	{ "W Wires-X: disconnect", "dlmode:ysf quick 3", "down down down down ok", "wxcmd=2", 5, false },
+	{ "W Wires-X: the room list", "dlmode:ysf quick 3", "down down down down down ok wxrooms:3", "screen=wiresx-rooms wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 6, false },
+	{ "W Wires-X: a room picked connects", "dlmode:ysf quick 3 down down down down down ok wxrooms:3", "down ok", "screen=wiresx wxcmd=1 wxarg=20001", 2, false },
+	{ "W Wires-X: the next page", "dlmode:ysf quick 3 down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
 	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
 	  "screen=channel writes=1 shows=42", 1, true },
 #endif
@@ -1385,8 +1395,16 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
+#if CONFIG_YSF
+	// (Wires-X is the last function in a build with YSF)
+	{ "K top key hold: Wires-X last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=22 shows=Wires-X",
+	  1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	  false },
+#else
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
+#endif
 	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },

@@ -976,6 +976,34 @@ void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
 	strcpy(out, "N0CALL");
 }
+static radio_view_t view;	// (defined again below: one object)
+// Wires-X: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
+// tokens
+static radio_ysf_wx_t sim_wx = { .asked_cmd = YSF_WX_NONE };
+static ysf_wx_room_t sim_wx_rooms[YSF_WX_ROOMS];
+static int sim_wx_cmd = -1;
+static uint32_t sim_wx_arg;
+bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
+{
+	(void)text;
+	if (view.ch.mode != RADIO_MODE_YSF)
+		return false;
+	sim_wx_cmd = cmd;
+	sim_wx_arg = arg;
+	sim_wx.asked++;
+	sim_wx.asked_cmd = cmd;
+	if (cmd == YSF_WX_ALL)
+		sim_wx.rooms_first = (uint16_t)arg;
+	return true;
+}
+void ui_svc_ysf_wx_state(radio_ysf_wx_t *out) { *out = sim_wx; }
+bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
+{
+	if (i >= sim_wx.rooms)
+		return false;
+	*out = sim_wx_rooms[i];
+	return true;
+}
 #endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
@@ -2762,6 +2790,12 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	p25_radio = false;
 	nxdn_radio = false;
 	ysf_radio = false;
+#if CONFIG_YSF
+	memset(&sim_wx, 0, sizeof sim_wx);
+	sim_wx.asked_cmd = YSF_WX_NONE;
+	sim_wx_cmd = -1;
+	sim_wx_arg = 0;
+#endif
 #if CONFIG_NXDN
 	memset(&view.nxdn, 0, sizeof view.nxdn);
 	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
@@ -2979,6 +3013,10 @@ static bool check(const char *kv, char *err, size_t len)
 								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" :
 								     view.ch.mode == RADIO_MODE_YSF ? "ysf" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
+#if CONFIG_YSF
+	else if (strcmp(key, "wxcmd") == 0) snprintf(got, sizeof got, "%d", sim_wx_cmd);
+	else if (strcmp(key, "wxarg") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wx_arg);
+#endif
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
@@ -3545,6 +3583,34 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #endif
 #if CONFIG_YSF
+	if (strcmp(t, "wxdx") == 0) {		// the node answers its status: in room 27299 POLAND
+		sim_wx.serial++;
+		sim_wx.kind = YSF_WX_DX;
+		sim_wx.connected = true;
+		strcpy(sim_wx.node_name, "WARSZAWA");
+		strcpy(sim_wx.node_call, "SR5WI");
+		strcpy(sim_wx.room_id, "27299");
+		strcpy(sim_wx.room_name, "POLAND");
+		changed();
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "wxrooms") == 0 && arg != NULL) {	// the node answers a list of N rooms (of 40)
+		unsigned n = (unsigned)atoi(arg);
+		sim_wx.serial++;
+		sim_wx.kind = YSF_WX_ALL;
+		sim_wx.search = false;
+		sim_wx.rooms = (uint8_t)(n > YSF_WX_ROOMS ? YSF_WX_ROOMS : n);
+		sim_wx.rooms_total = 40;
+		for (unsigned i = 0; i < sim_wx.rooms; i++) {
+			snprintf(sim_wx_rooms[i].id, sizeof sim_wx_rooms[i].id, "%05u", 20000 + i);
+			snprintf(sim_wx_rooms[i].name, sizeof sim_wx_rooms[i].name, "ROOM%u", i);
+			sim_wx_rooms[i].users = (uint8_t)i;
+		}
+		changed();
+		advance(100);
+		return true;
+	}
 	if (strcmp(t, "ysfrx") == 0) {
 		char call[RADIO_YSF_CALL_LEN + 1] = "";
 		unsigned dgid = 0;
@@ -3874,6 +3940,7 @@ static bool run_token(char *t, char *err, size_t len)
 		ysf_radio = true;
 		return true;
 	}
+
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
 		board.hwopts = sim_hwopts;
 		board.hwopt_count = 2;

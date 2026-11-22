@@ -49,6 +49,15 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ysf.voice_held=%u\nysf.fec_bits=%u\nysf.vch_fixed=%u\nysf.rx_chunks=%u\n", (unsigned)c.voice_held,
 		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.rx_chunks);
 	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
+	// Wires-X (ysf.md 9): what was asked (wx_asked counts commands sent), the node's last reply (wx_serial counts
+	// them), the page of rooms held
+	radio_ysf_wx_t w;
+
+	radio_ysf_wx(&w);
+	dl_text(t, "ysf.wx_asked=%u\nysf.wx_asked_cmd=%u\nysf.wx_serial=%u\nysf.wx_kind=%u\nysf.wx_connected=%u\n",
+		(unsigned)w.asked, w.asked_cmd, (unsigned)w.serial, w.kind, w.connected);
+	dl_text(t, "ysf.wx_node=%s\nysf.wx_node_call=%s\nysf.wx_room=%s %s\nysf.wx_rooms=%u\nysf.wx_rooms_total=%u\n",
+		w.node_name, w.node_call, w.room_id, w.room_name, w.rooms, w.rooms_total);
 #if CONFIG_AIR_RX_ADAPT
 	// The soft modem's equalizer and tone notch (ysf.md 5.4): running now (rx_eq, rx_tone_on), the tone notched in
 	// Hz (0.0 none), the center tap, and what the bench turned off (op 44's third byte)

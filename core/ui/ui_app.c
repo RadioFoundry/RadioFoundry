@@ -1470,6 +1470,11 @@ static void quick_activate(int tile)
 	case QT_TO_VFO:
 		copy_to_vfo();
 		break;
+#if CONFIG_YSF
+	case QT_WIRESX:
+		ui_wiresx_open();
+		break;
+#endif
 	case QT_SPLIT:
 		entry_cancel();
 		ui_st.quick_edit = true;	// the hint row says what Up / Down and the digits do
@@ -2272,6 +2277,11 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
+#if CONFIG_YSF
+		case ACT_WIRESX:
+			ui_wiresx_open();
+			return;
+#endif
 #if CONFIG_DMR
 		case ACT_TALK_LABEL:
 			// Saved like Settings > Display > Talkgroup name first, so the choice survives a power cycle

@@ -211,6 +211,8 @@ with another System Fusion radio:
 | Our call heard by another radio, direct | its display shows our callsign and radio ID; clean speech | no lock: the deviation (`dev_outer_hz`, the provider's scaling against DMR's) |
 | Through a repeater that sends a tone under C4FM | heard | `fec_bits` and `vch_fixed` high: the tone and inter-symbol interference the soft modem doesn't remove yet |
 | Two DM-32UV radios side by side | different `ysf.rid` | the same: report it with both radios' `INFO_CHIP` UIDs |
+| Wires-X on a node's channel: Tools > Wires-X, OK on Node | `ysf.wx_asked` +1, then `ysf.wx_serial` +1 and the node's name on the page | no answer: the node heard nothing (our signal) or answered what we didn't parse (`ysf.data_frames` / the call layer's `wx_replies`) |
+| Rooms, then a room | the page of rooms; the node connects | the list cut short: a lost frame drops the reply, ask again |
 
 ## Open items to settle on the bench
 

@@ -22,6 +22,7 @@ State:
 | The radio ID (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([ysf-codeplug.md](ysf-codeplug.md)) | written, host tested |
 | On air | not checked with this code; see the radio's bring-up record |
+| Wires-X: status, connect, disconnect, room list, search (9) | written, host tested |
 | VW (full rate voice), Group Monitor, positions, news, V/D mode 1 | not supported in this first version (8). A VW call shows on Home, not played |
 
 ## 1. On air
@@ -335,3 +336,57 @@ Planned next, once this is in the main line:
 2. Group Monitor.
 3. A repeater's or node's news: voice messages and pictures.
 4. VW, if its voice can be carried (above).
+
+## 9. Wires-X
+
+A radio controls the Wires-X node it hears (a repeater, or a gateway linked to the network) with short data
+transmissions, and the node answers with one. The layout is what nodes accept and send; RadioFoundry's proof of
+concept was checked against a hotspot gateway's node (status, connect and their replies). Not checked yet with this
+code: the radio's bring-up record lists the on-air checks.
+
+### 9.1 The transmission
+
+Data at full rate (FICH DT 1), the same both ways: a header (FI 0) and FN 0 carry CSD1 and CSD2 as a DN header does
+(destination with the radio ID, source, downlink, uplink); FN 1 carries the remarks in its first channel (spaces, our
+radio ID last) and data bytes 0-19 in its second; each later FN carries 40 bytes, 20 in each channel, space padded.
+The two channels of a frame are coded as CSD1 and CSD2 (3.2). FT is the last FN, at most 7; then the terminator
+(FI 2). A reply longer than a block (FN 1 to 7: 260 bytes) goes on in further blocks, each counted by BN (two bits,
+wrapping), each block's FN 1 starting with a 0x00 before its 19 bytes (259 a block).
+
+A command is a transmission the radio core keys like a short PTT (about 500 ms: preamble, header, FN 0, FN 1,
+terminator) and the engine ends by itself; it is refused as PTT would be.
+
+### 9.2 Commands
+
+A sequence byte (0x00), three bytes of command, 0x26, the parameters in ASCII, 0x03, then the byte sum of everything
+before the sum:
+
+| Command | Bytes 1-3 | Parameters |
+|---|---|---|
+| Status (DX) | `5D 71 5F` | none |
+| Connect | `5D 23 5F` | the room's 5 digits and a space |
+| Disconnect | `5D 2A 5F` | none |
+| Room list | `5D 66 5F` | `01` and the first entry in 3 digits |
+| Search | `5D 66 5F` | `11001` and the text in 16 characters, upper case, space padded |
+
+### 9.3 Replies
+
+The end is the last 0x03 followed by the byte sum of everything before that sum (the sum may itself be 0x03, and
+frames are padded past it). A reply with a frame lost is dropped whole. Parsed as its bytes come (`core/ysf/ysf_wx.c`),
+with no buffer for a whole list:
+
+| Reply | Bytes 1-4 | Fields |
+|---|---|---|
+| Status, connect, disconnect | `5D 51 5F 26` (status), `5D 41 5F 26` (connect and disconnect) | [5..9] the node's ID, [10..19] its callsign, [20..33] its name, [34..35] `15` in a room (`12` not), [36..40] the room's ID, [41..56] its name |
+| Room list, search | `5D 46 5F 26` | [5] `0` for a search's result; [7..11] the node's ID, [12..21] its callsign; a list: [22..24] rooms on the page, [25..27] in all; a search: [23..24] the matches; from [29], 50 bytes a room: [1..5] its ID, [6..21] its name, [22..24] its users |
+
+### 9.4 On the radio
+
+| Item | Rule |
+|---|---|
+| Where | Tools > Wires-X, quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Wires-X (`KEYFN_WIRESX`). Off a YSF channel: "Wires-X: on a YSF channel" |
+| The page | Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
+| Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
+| State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |
+| Memory | The reply's parser runs in the engine's memory (about 0.7 KB); the published state and page of rooms in the radio core (about 0.6 KB) |
+

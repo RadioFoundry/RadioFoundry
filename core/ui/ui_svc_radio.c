@@ -162,6 +162,25 @@ void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 	radio_ysf_rid(out, weak);
 }
 
+bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
+{
+	radio_get_view(&ui_svc_view);
+	if (ui_svc_view.ch.mode != RADIO_MODE_YSF)
+		return false;
+	radio_req_ysf_wx(cmd, arg, text);
+	return true;
+}
+
+void ui_svc_ysf_wx_state(radio_ysf_wx_t *out)
+{
+	radio_ysf_wx(out);
+}
+
+bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
+{
+	return radio_ysf_wx_room(i, out);
+}
+
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
 	char name[CODEPLUG_NAME_LEN + 1];

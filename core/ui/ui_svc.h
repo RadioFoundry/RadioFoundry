@@ -113,6 +113,11 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
 void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak);
 // The callsign YSF sends: the codeplug's YSF record, else the radio name's; "" = none (PTT refused)
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1]);
+// Wires-X (docs/spec/ysf.md 9): send a command (radio_req_ysf_wx; false: not on a YSF channel), the node's state, a
+// room of the page held
+bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text);
+void ui_svc_ysf_wx_state(radio_ysf_wx_t *out);
+bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out);
 #endif
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 // A P25, NXDN or YSF channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2,

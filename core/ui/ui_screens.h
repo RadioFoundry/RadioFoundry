@@ -145,6 +145,7 @@ enum {
 	QT_TIMESLOT, QT_CC, QT_HEAR_ALL, QT_PRIVACY, QT_TALK_TO,
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
 	QT_SPLIT,		// in the VFO, in place of QT_MONITOR (FM) / QT_PRIVACY (DMR): the TX frequency or offset
+	QT_WIRESX,		// YSF, in place of FM's Tone: the Wires-X page
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO

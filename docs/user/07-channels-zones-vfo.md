@@ -452,6 +452,26 @@ channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A 
   of any other mode as the other one (FM, DMR, P25, NXDN or another YSF channel): the radio listens to each in turn
   and stays on the one where a call you would hear comes in.
 
+### Wires-X
+
+On a YSF channel, the radio talks to the Wires-X node it hears (a repeater or a gateway linked to the Wires-X
+network): it asks the node where it is, connects it to a room, disconnects it, and lists the rooms. Open it from
+**Tools > Wires-X**, from quick settings tile **3** on a YSF channel, or from a key set to **Wires-X**
+(Settings > Keys).
+
+| Row | What it does |
+|---|---|
+| Node | The node's name. **OK** asks the node; until it answers the row says "Waiting...", and "No answer" after 8 s |
+| Room | The room the node is in, or None. **OK** asks again |
+| Room ID | Type a room's 5-digit number with the digit keys (anywhere on the page); **Back** takes a digit back |
+| Connect | Connects the node to the room ID typed |
+| Disconnect | Takes the node out of its room |
+| Rooms | The node's list of rooms, 20 a page: **OK** on a room connects to it, **Next page** asks for the next 20 |
+| Search | Type a name or its start: the rooms that match, as a list |
+
+Each command is a short transmission (about half a second) with your callsign and radio ID, refused where PTT would be
+(receive only, no callsign, outside the bands). The node answers on its own; the page shows the answer as it comes.
+
 ### Your radio ID
 
 Every System Fusion radio sends a radio ID: five letters and digits. Repeaters, Wires-X nodes and other radios use it
