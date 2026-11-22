@@ -1188,7 +1188,6 @@ Flash: the table in [feature-matrix.md](../feature-matrix.md#dm-1701-and-md-380)
 stored uncompressed, need more flash than the default image leaves free. With gzip off the radio serves the plain
 status page.
 
-
 ## 20. Facts moved from the shared specs
 
 - Settings and storage: on a 16 MB part the core's map is settings 0x011000 (32 KB, 8 sectors), journal 0x019000,

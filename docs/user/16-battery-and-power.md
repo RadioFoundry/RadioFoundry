@@ -4,17 +4,13 @@
 
 The battery, power level and power switch values depend on the radio. The [Radio reference](23-radios.md) has them
 for each radio. A radio without a battery (a mobile on a fixed supply) has none of the battery items in this chapter:
-no battery icon or percentage, no Tools > Battery page, no Battery saver or Low battery warning setting, and no
-battery warnings.
+no battery icon or percentage, no Battery saver or Low battery warning setting, and no battery warnings.
 
 ## Battery level
 
 The status line shows the battery as an icon and a percentage. On a small screen a page's title takes over the
 status line, so the battery shows on Home and on the larger screens' pages. The percentage turns to the warning color at the low
 battery warning level and below. The level is set in **Settings > Power saving > Low battery warning** (15 % by default).
-
-**OK**, **6**, **9** opens Tools > Battery, which shows the level. At the warning level and below it also shows "charge
-soon".
 
 The radio reads the battery once a second. It doesn't read it while transmitting or for 3 s after, because the
 voltage sags under transmit.
@@ -52,8 +48,8 @@ Power levels use the radio's factory calibration. Use the lowest power that reac
 ## Backlight
 
 **Settings > Display > Brightness** sets the backlight level. Quick settings has it too (**\***, **9**).
-On radios that switch backlight speed to keep the audio quiet, a dimmed screen brightens while transmitting or
-receiving audio and returns to its set level when idle.
+On some radios a dimmed screen goes to full brightness while transmitting or receiving a signal, to keep the
+backlight out of the audio, and returns to its set level when idle. Key beeps leave the brightness as set.
 
 **Settings > Display > Backlight Dim/Off** sets two times: when the backlight dims to a fifth of the brightness, and
 when it goes off. `30s/2m` dims after 30 s and goes off after 2 minutes. `30s/dim` dims after 30 s and stays on,

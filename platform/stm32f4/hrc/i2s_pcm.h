@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include "config.h"
 #include "hal_audio.h"
+#include "modem/hrc_common/hrc.h"
 
 typedef struct {
 	bool ckpol;		// clock idle high, else idle low: as the board's chip set-up leaves it
@@ -22,8 +23,9 @@ typedef struct {
 	// Optional: every block as received, left and right interleaved (2 x AUDIO_BLOCK_SAMPLES), before the callback.
 	// Audio task context
 	void (*raw_block)(const int16_t *lr);
-	// The chip's prompt FIFO reaches this board's speaker: while the FM copy holds the chip (stm32_hrc_copy_chip), the
-	// speaker blocks go there too (i2s_pcm.c). CONFIG_AIR builds
+	// The chip's prompt FIFO reaches this board's speaker: while the chip is in FM mode, where I2S doesn't reach its
+	// line out (the FM copy, stm32_hrc_copy_chip, or FM receive, stm32_i2s_pcm_fm_chip), the speaker blocks go there
+	// too (i2s_pcm.c). CONFIG_AIR or CONFIG_BEEP builds
 	bool prompt_fifo;
 } stm32_i2s_pcm_cfg_t;
 
@@ -47,6 +49,13 @@ void stm32_i2s_pcm_stream_stats(audio_stream_stats_t *out);
 // The board's hal_audio_t.speaker_pcm passes its state here: the prompt FIFO (cfg->prompt_fifo) carries the speaker
 // blocks only while the PCM route is on, silence otherwise
 void stm32_i2s_pcm_speaker(bool on);
+// The board's chip in FM receive (4:0x10 bit 7, its line out playing the chip's own FM audio), NULL otherwise: while
+// the PCM route is on (a beep), the speaker blocks go to that chip's prompt FIFO (cfg->prompt_fifo). NULL before the
+// chip leaves FM mode (a DMR set-up writes page 3 for the vocoder) and before a transmission, set after the FM receive
+// set-up. Any task
+void stm32_i2s_pcm_fm_chip(hrc_t *chip);
+#else
+static inline void stm32_i2s_pcm_fm_chip(hrc_t *chip) { (void)chip; }
 #endif
 
 #endif

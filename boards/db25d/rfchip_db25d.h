@@ -21,6 +21,8 @@ uint16_t db25d_rf_main_id(void);
 uint16_t db25d_rf_lo_id(void);
 // The batch code the stock firmware shows for this pair ("DBB", "D64", "D66", "D6T"; "D??" for another): out holds 4
 void db25d_rf_variant(char out[4]);
+// The part detection found on the main (lo false) or the LO chain: "BK4819", "FD6818", "7813", "AT1141", "none"
+const char *db25d_rf_chip_name(bool lo);
 uint32_t db25d_rf_writes(void);
 
 // ---- Main transceiver ----

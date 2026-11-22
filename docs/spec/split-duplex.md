@@ -415,6 +415,8 @@ the next gap between calls (a stream that ends drains, a new one prebuffers agai
   idle, DMR_ABORT of both slots while idle, the end of the role, or the guard.
 - **Power**: the RF level from SET_FREQ is capped by the role's power cap (default 64, about 25 %: the lowest step on
   most boards). A handheld's PA and battery aren't made for continuous transmission; use mains power and a low step.
+  A cap that changes the power step during a key-up takes effect when the key drops; the same step again changes
+  nothing.
 - **Duty**: one key-up lasts at most max_key (default 180 s), then the TX half unkeys for the cool-down (default 20 s),
   during which DMR_DATA is NAKed with 2, DMR_START 01 is ignored and the INFO / STATUS flag 04 is set. A host that keeps
   a repeater up for long hangs should drop the key between calls (MMDVMHost duplex does after its mode hang).

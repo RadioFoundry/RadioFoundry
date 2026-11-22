@@ -874,6 +874,113 @@ static void test_weak(void)
 	CHECK(ms.state == T3_CAMPED && ms.st.weak_leaves == 0, "nowhere else to look: stays");
 }
 
+// Two programmed TSCCs of ours, both heard below a -105 dBm threshold
+static void weak_hold_setup(t3_ms_t *ms)
+{
+	setup();
+	cfg.leave_dbm = -105;
+	cfg.opts |= T3_OPT_LISTEN_ONLY;	// as on a site of another service: no access to wait on
+	cfg.nctrl = 2;
+	cfg.ctrl[0] = (t3_chan_t){ .lcn = 154, .cc = T3_CC_ANY, .rx_hz = RX(154), .tx_hz = RX(154) + 5000000u };
+	cfg.ctrl[1] = (t3_chan_t){ .lcn = 155, .cc = T3_CC_ANY, .rx_hz = RX(155), .tx_hz = RX(155) + 5000000u };
+	t3_ms_start(ms, &cfg, T);
+	poll_all(ms);
+}
+
+// Every TSCC weak: a pass that finds nothing better holds the radio on the one it comes back to, longer each time,
+// instead of leaving every T3_WEAK_MS and missing the grants sent meanwhile
+static void test_weak_hold(void)
+{
+	t3_ms_t ms;
+	weak_hold_setup(&ms);
+	uint32_t camped_ms = 0;
+	for (uint32_t t = 0; t < 60000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+		camped_ms += ms.state == T3_CAMPED ? 60u : 0u;
+	}
+	CHECK(ms.st.weak_leaves == 2 && ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS,
+	      "two passes found nothing in a minute, the hold doubled: %u leaves, hold %u ms",
+	      (unsigned)ms.st.weak_leaves, (unsigned)ms.weak_hold_ms);
+	CHECK(camped_ms >= 50000u, "camped most of the minute: %u ms", (unsigned)camped_ms);
+	for (uint32_t t = 0; t < 30u * 60000u; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MAX_MS && ms.st.weak_leaves <= 12u,
+	      "the hold stops at its most: %u ms, %u leaves in 30 min", (unsigned)ms.weak_hold_ms,
+	      (unsigned)ms.st.weak_leaves);
+	// Clearly above the threshold ends the hold: the next weak spell is left after T3_WEAK_MS again
+	camp_at(&ms, 600, ours, -90);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_ms == 0 && ms.weak_hold_until == 0, "strong: the hold cleared");
+	uint32_t before = ms.st.weak_leaves;
+	uint32_t waited = 0;
+	for (; waited < 4u * T3_WEAK_MS && ms.st.weak_leaves == before; waited += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.st.weak_leaves == before + 1 && waited > T3_WEAK_MS,
+	      "weak again: left after T3_WEAK_MS (the level average falling first): %u ms", (unsigned)waited);
+	// Just at the threshold doesn't clear it
+	weak_hold_setup(&ms);
+	for (uint32_t t = 0; t < 20000; t += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "held after one pass: %u", (unsigned)ms.weak_hold_ms);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.weak_hold_ms == T3_WEAK_HOLD_MS, "a level just above the threshold keeps the hold");
+	// A pass that confirms a TSCC just at the threshold ends the hold but keeps the backoff: weak again, the next pass
+	// that finds nothing holds twice as long
+	uint32_t spent = 0;
+	for (; spent < 10u * 60000u && ms.state != T3_HUNT; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.state == T3_HUNT && ms.hunt_strict, "left after the hold: %u ms", (unsigned)spent);
+	camp_at(&ms, 600, ours, -104);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "confirmed at the threshold: no hold, the backoff kept (%u ms)", (unsigned)ms.weak_hold_ms);
+	for (spent = 0; spent < 60000u && ms.weak_hold_until == 0; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.weak_hold_ms == 2u * T3_WEAK_HOLD_MS && spent >= T3_WEAK_MS,
+	      "weak again, nothing better: the hold doubled (%u ms) after %u ms", (unsigned)ms.weak_hold_ms, (unsigned)spent);
+	// A pass after the one that found nothing better hears no TSCC at all (a fade): the hold is still due
+	weak_hold_setup(&ms);
+	for (spent = 0; spent < 60000u && !ms.hunt_strict; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	for (spent = 0; spent < 60000u && ms.hunt_strict; spent += 60) {
+		camp_at(&ms, 60, 0, -107);
+	}
+	camp_at(&ms, 3u * T3_DWELL_MS, 0, -107);	// past the end of the next pass too
+	CHECK(ms.state == T3_HUNT && !ms.hunt_strict && ms.weak_hold_ms == 0, "silent pass: hunting");
+	camp_at(&ms, 600, ours, -107);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_ms == T3_WEAK_HOLD_MS && ms.weak_hold_until != 0,
+	      "back on a weak TSCC after a silent pass: held (%u ms)", (unsigned)ms.weak_hold_ms);
+	// The hold over, the deadline is dropped: left set, it would read as ahead again 2^31 ms on
+	camp_at(&ms, T3_WEAK_HOLD_MS + 600, ours, -104);
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "hold over: deadline cleared, the backoff kept");
+	// The held TSCC lost (T_Nosig): the search ends the hold, the backoff stays
+	weak_hold_setup(&ms);
+	for (spent = 0; spent < 60000u && ms.weak_hold_until == 0; spent += 60) {
+		camp_at(&ms, 60, ours, -107);
+	}
+	CHECK(ms.state == T3_CAMPED && ms.weak_hold_until != 0, "held before the loss");
+	camp_at(&ms, T3_NOSIG_MS + 600, 0, -107);
+	CHECK(ms.state == T3_HUNT && ms.weak_hold_until == 0 && ms.weak_hold_ms == T3_WEAK_HOLD_MS,
+	      "TSCC lost: the hold ended, the backoff kept (%u ms)", (unsigned)ms.weak_hold_ms);
+}
+
+// The level average reaches a steady level to the dB: 1 dB below the threshold counts as weak
+static void test_level_average(void)
+{
+	t3_ms_t ms;
+	weak_hold_setup(&ms);
+	camp_at(&ms, 600, ours, -100);
+	camp_at(&ms, 3000, ours, -106);
+	CHECK(ms.level_dbm == -106, "falling to a steady -106: %d", ms.level_dbm);
+	camp_at(&ms, 3000, ours, -100);
+	CHECK(ms.level_dbm == -100, "rising to a steady -100: %d", ms.level_dbm);
+}
+
 static void test_stop(void)
 {
 	setup();
@@ -902,6 +1009,8 @@ int main(void)
 	test_adjacent();
 	test_vote();
 	test_weak();
+	test_weak_hold();
+	test_level_average();
 	test_stop();
 	printf("t3MsTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;

@@ -89,6 +89,8 @@ static void cw_cancel(radio_sm_t *sm);
 #include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 
+static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms);
+
 // The radio's own DMR ID when the codeplug's general settings hold none (build value; 0 = refuse DMR transmit)
 #ifndef RADIO_DMR_ID_DEFAULT
 #define RADIO_DMR_ID_DEFAULT	0
@@ -233,8 +235,17 @@ static inline bool voice_streaming(void)
 static uint8_t beep_level_now(const radio_sm_t *sm)
 {
 	uint8_t level = sm->set.beep_level;
-	if (board.radio != NULL && board.radio->volume != NULL && !board.radio->volume_pcm) {
-		level = radio_beep_level(level, sm->volume_sent);
+	const hal_radio_t *r = board.radio;
+	if (r == NULL || r->volume == NULL) {
+		return level;
+	}
+	if (!r->volume_pcm) {
+		return radio_beep_level(level, sm->volume_sent);
+	}
+	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
+		// The volume scales the beep in the speaker path: above the cap step, softer by the gain added there
+		level = radio_beep_pcm_level(level, r->volume_db10((uint8_t)sm->volume_sent),
+					     r->volume_db10(radio_volume_percent(RADIO_BEEP_VOLUME_STEP)));
 	}
 	return level;
 }
@@ -683,6 +694,14 @@ static void outputs(radio_sm_t *sm)
 		tx = true;	// a CW ID
 	}
 #endif
+	// Receive audio from a signal, for a board whose own noise reaches the audio only with a carrier present: on
+	// before the speaker opens, off after it closes. The green LED's state before any LED pattern; a beep alone never
+	// sets it
+	bool rx_open_change = board.radio->rx_open != NULL && sm->rx_open_out != (int8_t)green;
+	if (rx_open_change && green) {
+		sm->rx_open_out = 1;
+		board.radio->rx_open(true);
+	}
 
 	// The broadcast receiver plays instead of the channel receiver while the channel is a broadcast one
 	bool bcast = false;
@@ -697,6 +716,10 @@ static void outputs(radio_sm_t *sm)
 	if (sm->audio_out != (int8_t)(open && !bcast)) {
 		sm->audio_out = (int8_t)(open && !bcast);
 		board.radio->audio(open && !bcast);
+	}
+	if (rx_open_change && !green) {
+		sm->rx_open_out = 0;
+		board.radio->rx_open(false);
 	}
 #if CONFIG_DUAL_WATCH
 	// The second receiver has the speaker while the selected channel is quiet: that one's calls always win
@@ -797,13 +820,55 @@ static void bcast_status(radio_sm_t *sm, radio_status_t *st)
 }
 #endif
 
+#if CONFIG_SATELLITE_TLE
+#define RADIO_SATELLITE_DEADBAND_HZ 10u
+
+static bool satellite_same_channel(const radio_sm_t *sm)
+{
+	return sm->view.vfo == sm->satellite_saved_vfo && sm->view.vfo_index == sm->satellite_saved_vfo_index &&
+	       sm->view.zone_index == sm->satellite_saved_zone && sm->view.zone_pos == sm->satellite_saved_pos &&
+	       sm->view.channel_number == sm->satellite_saved_channel;
+}
+
+static bool satellite_tx_active(const radio_sm_t *sm)
+{
+	if (sm->ptt || sm->view.state == RS_TX || sm->tx_no_ptt)
+		return true;
+#if CONFIG_DMR
+	if (sm->dmr_keyed)
+		return true;
+#endif
+	return false;
+}
+
+static void satellite_apply_pending(radio_sm_t *sm, uint32_t now_ms);
+#endif
+
 static void tune(radio_sm_t *sm, uint32_t now_ms)
 {
+	#if CONFIG_SATELLITE_TLE
+	if ((sm->satellite_session || (sm->satellite_pending && sm->satellite_restore_config_pending)) &&
+	    !satellite_same_channel(sm)) {
+		sm->satellite_session = false;
+		sm->satellite_pending = false;
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+	}
+	#endif
 	sm->retune_pending = sm->retune_due = false;	// this tune is the one they wait for
 #if CONFIG_SFR_CWID
 	cw_cancel(sm);		// the repeater's ID: the board is set up for the channel below
 #endif
 	end_reception(sm, now_ms);
+#if CONFIG_APRS_RX
+	// Off the APRS frequency (or out of FM): APRS lets go of the FM receive audio before the board changes mode. A
+	// P25, NXDN or YSF engine can't start while it holds it (HR_C7000: air_take), and nothing retries the start until
+	// the next tune: the channel was left with no engine, and PTT refused ("NO TX") until a retune or power cycle
+	if (aprs_rx_listening() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
+		aprs_rx_release();
+	}
+#endif
 	if (radio_listen_band(sm->view.ch.rx_hz)) {
 		// AM or broadcast there, whatever the channel says; the VFO stays FM when it leaves the band. The channel's
 		// own mode follows, so FM there is not a temporary change (dual watch brings a pane back already FM)
@@ -866,6 +931,139 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	outputs(sm);
 	changed(sm);
 }
+
+#if CONFIG_SATELLITE_TLE
+static void satellite_apply_pending(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->satellite_pending || satellite_tx_active(sm))
+		return;
+	sm->satellite_pending = false;
+	uint32_t rx_hz = sm->satellite_pending_rx_hz;
+	uint32_t tx_hz = sm->satellite_pending_tx_hz;
+	bool changed_config = sm->satellite_config_pending;
+	if (changed_config) {
+		if (sm->satellite_restore_config_pending) {
+			sm->view.ch.mode = sm->satellite_saved_mode;
+			sm->view.ch.bw = sm->satellite_saved_bw;
+			sm->view.ch.rx_tone = sm->satellite_saved_rx_tone;
+			sm->view.ch.tx_tone = sm->satellite_saved_tx_tone;
+		} else {
+			sm->view.ch.mode = RADIO_MODE_FM;
+			sm->view.ch.bw = RADIO_BW_12K5;
+			sm->view.ch.rx_tone = (subtone_t){ TONE_NONE, 0u };
+			sm->view.ch.tx_tone = sm->satellite_profile_tx_tone_tenths != 0u ?
+				(subtone_t){ TONE_CTCSS, sm->satellite_profile_tx_tone_tenths } :
+				(subtone_t){ TONE_NONE, 0u };
+		}
+		set_temporary(sm);
+		sm->satellite_config_pending = false;
+		sm->satellite_restore_config_pending = false;
+	}
+	bool changed_freq = sm->view.ch.rx_hz != rx_hz || sm->view.ch.tx_hz != tx_hz;
+	sm->view.ch.rx_hz = rx_hz;
+	sm->view.ch.tx_hz = tx_hz;
+	sm->satellite_applied_rx_hz = rx_hz;
+	sm->satellite_applied_tx_hz = tx_hz;
+	if (changed_freq || changed_config)
+		tune(sm, now_ms);
+	else
+		changed(sm);
+}
+
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms)
+{
+	if (!enabled) {
+		if (sm->satellite_session && satellite_same_channel(sm)) {
+			sm->satellite_session = false;
+			sm->satellite_pending = true;
+			sm->satellite_pending_rx_hz = sm->satellite_restore_rx_hz;
+			sm->satellite_pending_tx_hz = sm->satellite_restore_tx_hz;
+			sm->satellite_config_pending = true;
+			sm->satellite_restore_config_pending = true;
+		} else if (!sm->satellite_pending || !sm->satellite_restore_config_pending ||
+			   !satellite_same_channel(sm)) {
+			sm->satellite_session = false;
+			sm->satellite_pending = false;
+		}
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+		satellite_apply_pending(sm, now_ms);
+		return;
+	}
+	if (sm->satellite_session && (!satellite_same_channel(sm) ||
+	    sm->view.ch.rx_hz != sm->satellite_applied_rx_hz || sm->view.ch.tx_hz != sm->satellite_applied_tx_hz)) {
+		sm->satellite_session = false;
+		sm->satellite_pending = false;
+		sm->satellite_view.tracking = false;
+		sm->satellite_view.status = 0;
+		sm->satellite_view.rx_offset_hz = sm->satellite_view.tx_offset_hz = 0;
+		changed(sm);
+		return;
+	}
+	if (!sm->satellite_session) {
+		bool restoring = sm->satellite_pending && sm->satellite_restore_config_pending &&
+				 satellite_same_channel(sm);
+		sm->satellite_session = true;
+		if (!restoring) {
+			sm->satellite_saved_vfo = sm->view.vfo;
+			sm->satellite_saved_vfo_index = sm->view.vfo_index;
+			sm->satellite_saved_zone = sm->view.zone_index;
+			sm->satellite_saved_pos = sm->view.zone_pos;
+			sm->satellite_saved_channel = sm->view.channel_number;
+			sm->satellite_saved_mode = sm->view.ch.mode;
+			sm->satellite_saved_bw = sm->view.ch.bw;
+			sm->satellite_saved_rx_tone = sm->view.ch.rx_tone;
+			sm->satellite_saved_tx_tone = sm->view.ch.tx_tone;
+			sm->satellite_restore_rx_hz = sm->view.ch.rx_hz;
+			sm->satellite_restore_tx_hz = sm->view.ch.tx_hz;
+		}
+		sm->satellite_view.nominal_rx_hz = nominal_rx_hz;
+		sm->satellite_view.nominal_tx_hz = nominal_tx_hz;
+		sm->satellite_profile_tx_tone_tenths = tx_tone_tenths;
+		sm->satellite_applied_rx_hz = sm->view.ch.rx_hz;
+		sm->satellite_applied_tx_hz = sm->view.ch.tx_hz;
+		sm->satellite_config_pending = true;
+		sm->satellite_restore_config_pending = false;
+	}
+	sm->satellite_view.tracking = true;
+	sm->satellite_view.index = record_index;
+	sm->satellite_view.status = status;
+	if (targets_valid &&
+	    ((sm->satellite_view.nominal_rx_hz != 0u && (rx_hz == 0u || !board_in_band(rx_hz, false))) ||
+	     (sm->satellite_view.nominal_tx_hz != 0u &&
+	      (tx_hz == 0u || !board_in_band(tx_hz, true) || !tx_limit_allows(tx_hz))))) {
+		targets_valid = false;
+		sm->satellite_view.status = 1u;
+	}
+	if (targets_valid) {
+		if (sm->satellite_view.nominal_rx_hz == 0u)
+			rx_hz = 0u;
+		else if (rx_hz > sm->view.ch.rx_hz ? rx_hz - sm->view.ch.rx_hz < RADIO_SATELLITE_DEADBAND_HZ :
+			 sm->view.ch.rx_hz - rx_hz < RADIO_SATELLITE_DEADBAND_HZ)
+			rx_hz = sm->view.ch.rx_hz;
+		if (sm->satellite_view.nominal_tx_hz == 0u)
+			tx_hz = 0u;
+		else if (tx_hz > sm->view.ch.tx_hz ? tx_hz - sm->view.ch.tx_hz < RADIO_SATELLITE_DEADBAND_HZ :
+			 sm->view.ch.tx_hz - tx_hz < RADIO_SATELLITE_DEADBAND_HZ)
+			tx_hz = sm->view.ch.tx_hz;
+		sm->satellite_view.rx_offset_hz = rx_offset_hz;
+		sm->satellite_view.tx_offset_hz = tx_offset_hz;
+	} else {
+		rx_hz = sm->satellite_view.nominal_rx_hz;
+		tx_hz = sm->satellite_view.nominal_tx_hz;
+		sm->satellite_view.rx_offset_hz = 0;
+		sm->satellite_view.tx_offset_hz = 0;
+	}
+	sm->satellite_pending = true;
+	sm->satellite_pending_rx_hz = rx_hz;
+	sm->satellite_pending_tx_hz = tx_hz;
+	satellite_apply_pending(sm, now_ms);
+}
+#endif
 
 // From position start in z, the first readable channel going in dir (wraps once round the zone)
 static bool find_channel(const zone_t *z, int start, int dir, uint16_t *pos, channel_t *ch)
@@ -2822,6 +3020,7 @@ static void data_save_settings(uint32_t now_ms)
 // the alert tone and keeps the settings in the store (settings_t em_*) ---
 
 static uint32_t em_saved_serial;
+static void ptt_down(radio_sm_t *sm, uint32_t now_ms);
 
 static void emergency_init(const settings_t *st)
 {
@@ -3459,6 +3658,7 @@ static void t3_publish(radio_sm_t *sm)
 	v->votes = m->st.votes;
 	v->vote_moves = m->st.vote_moves;
 	v->weak_leaves = m->st.weak_leaves;
+	v->weak_hold_ms = m->weak_hold_ms;
 	v->adj_refused = m->st.adj_refused;
 	v->level_dbm = m->level_dbm;
 	v->leave_dbm = t3s.cfg.leave_dbm;
@@ -6786,12 +6986,39 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 	changed(sm);
 }
 
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+static void satellite_arm(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->satellite_session || !sm->satellite_view.tracking ||
+	    sm->view.ch.mode != RADIO_MODE_FM ||
+	    sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->ptt || sm->hotspot || sm->host_audio ||
+	    sm->view.scan != 0u || board.radio->tx_tone == NULL) {
+		beep(sm, BEEP_ERROR);
+		return;
+	}
+	subtone_t normal_tone = sm->view.ch.tx_tone;
+	sm->view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 744u };
+	ptt_down(sm, now_ms);
+	sm->view.ch.tx_tone = normal_tone;
+	if (sm->view.state != RS_TX || !sm->ptt) {
+		ptt_release(sm, false, now_ms);
+		return;
+	}
+	sm->satellite_arm_active = true;
+	sm->satellite_arm_end_ms = now_ms + 2000u;
+}
+#endif
+
 // roger: send the roger beep (if set) before unkeying
 static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 {
 	if (!sm->ptt) {
 		return;
 	}
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	sm->satellite_arm_active = false;
+	sm->satellite_arm_end_ms = 0u;
+#endif
 	sm->ptt = false;
 	activity(sm, now_ms);
 	if (sm->host_audio) {
@@ -6850,6 +7077,9 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 	(void)roger;
 #endif
 	fm_unkey(sm, keyed, now_ms);
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 }
 
 static void ptt_up(radio_sm_t *sm, uint32_t now_ms)
@@ -6901,12 +7131,19 @@ static void hotspot_arm(radio_sm_t *sm)
 	// Already keyed (a new power level while armed): unkey first. A board's tx() starts a keying from receive; called
 	// again under one it reprograms the synthesizer and the RF switches while a burst may hold the PA on (where a
 	// board's RF task sleeps between a burst's PA-on and PA-off, a split frequency's RX word could land mid-burst).
-	// tx_off waits for the burst in flight and the hotspot listens through the gap
+	// tx_off waits for the burst in flight and the hotspot listens through the gap. Not while the modem transmits: a
+	// board's tx_off may end that transmission (the split TX half's outbound stops for good), so the new level waits
+	// for its end (radio_sm_poll). A hold (TX inhibit, a critical battery) drops the keying at once all the same
 	bool was = sm->dmr_keyed;
 	if (was) {
+		if (!tx_held(sm) && board.dmr != NULL && board.dmr->is_transmitting()) {
+			sm->hs_power_due = true;
+			return;
+		}
 		sm->dmr_keyed = false;
 		board.radio->tx_off();
 	}
+	sm->hs_power_due = false;
 	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 	if (was && !sm->dmr_keyed) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
@@ -7177,6 +7414,7 @@ static void hotspot_leave(radio_sm_t *sm, uint32_t now_ms)
 	sm->hotspot = false;
 	sm->view.hotspot = false;
 	sm->hs_carrier = false;
+	sm->hs_power_due = false;
 	tune(sm, now_ms);	// the channel again; on a DMR channel the call stack takes the modem back
 }
 #endif
@@ -7288,7 +7526,23 @@ static void bench_tick(radio_sm_t *sm, uint32_t now_ms)
 
 // --- Settings: what the radio was set to, back at power-on (core/settings), and saved when it changes ---
 
-// The preferences the radio core uses: base squelch, master power, VFO step. The own DMR ID is the codeplug's
+// The radio's own DMR ID, the codeplug's (set on the radio in Settings > My radio, which writes the codeplug). Taken
+// before a channel is selected: a trunked channel's system needs an ID to start, and one selected without would stay
+// unavailable
+static void load_own_id(radio_sm_t *sm)
+{
+#if CONFIG_DMR
+	sm->own_id = codeplug_dmr_id();
+	if (sm->own_id == 0) {
+		sm->own_id = RADIO_DMR_ID_DEFAULT;
+	}
+	sm->view.dmr.own_id = sm->own_id;
+#else
+	(void)sm;
+#endif
+}
+
+// The preferences the radio core uses: base squelch, master power, VFO step
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
 	master_power = st->master_power;
@@ -7305,11 +7559,6 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
 #if CONFIG_DMR
-	sm->own_id = codeplug_dmr_id();	// set on the radio in Settings > My radio, which writes the codeplug
-	if (sm->own_id == 0) {
-		sm->own_id = RADIO_DMR_ID_DEFAULT;
-	}
-	sm->view.dmr.own_id = sm->own_id;
 	// The radio name (talker alias text): the settings' override, else the codeplug's; hang times from the codeplug
 	codeplug_dmr_settings_t gs;
 	codeplug_dmr_settings(&gs);
@@ -7878,6 +8127,7 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->view.zone_index = zi;
 #endif
+	load_own_id(sm);
 	select_position(sm, zi, number, pos);
 #if CONFIG_ZONE_WRITE && CONFIG_SCAN
 	if (sm->scan.kind == SCAN_ZONE && zone_sum(sm) != sum) {
@@ -7959,6 +8209,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->audio_out = -1;
+	sm->rx_open_out = -1;
 	sm->green_out = -1;
 #if CONFIG_BCAST_FM
 	sm->bcast_audio_out = -1;
@@ -8051,6 +8302,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	kv_load(sm, now_ms);
 
 	// The saved zone and channel; else zone 0 and its first channel; if zone 0 has none, the first zone that has one
+	load_own_id(sm);
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
 	apply_prefs(sm, &st);
 #if CONFIG_DMR
@@ -8300,6 +8552,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		break;
 #endif
 	case RREQ_PTT:
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active) {
+			break;	// Keep the operator-requested arm burst at its full duration
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_keyed) {
 			sm->burst_keyed = req->arg == 0;	// PTT pressed during a burst takes the transmission over
@@ -8599,10 +8856,17 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_HS_FREQ:
 		hotspot_freq(sm, (uint32_t)req->arg, req->arg2);
 		break;
-	case RREQ_HS_POWER:
-		sm->hs_power = radio_sm_hotspot_power((uint8_t)req->arg);
-		hotspot_arm(sm);
+	case RREQ_HS_POWER: {
+		uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+		bool same = level == sm->hs_power;
+		sm->hs_power = level;
+		// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
+		// held now (a critical battery), which drops it
+		if (!same || !sm->dmr_keyed || tx_held(sm)) {
+			hotspot_arm(sm);
+		}
 		break;
+	}
 	case RREQ_HS_LEAVE:
 		hotspot_leave(sm, now_ms);
 		break;
@@ -8721,6 +8985,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		tone_burst(sm, req->arg != 0, req->arg2, now_ms);
 		break;
 #endif
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+	case RREQ_SATELLITE_ARM:
+		satellite_arm(sm, now_ms);
+		break;
+#endif
 #if CONFIG_DTMF
 	case RREQ_DTMF:
 		dtmf_key(sm, (char)(req->arg & 0xFF), (req->arg & 0x100) != 0, now_ms);
@@ -8819,6 +9088,33 @@ uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent)
 		return cap;
 	}
 	return (uint8_t)volume_percent;
+}
+
+// 10^(-d/20) for d = 0..19 dB, and for d = 0.0..0.9 dB, Q15
+static const uint16_t db_down_q15[20] = {
+	32768, 29205, 26029, 23198, 20675, 18427, 16423, 14637, 13045, 11627,
+	10362, 9235, 8231, 7336, 6538, 5827, 5193, 4629, 4125, 3677,
+};
+static const uint16_t db10_down_q15[10] = {
+	32768, 32393, 32022, 31656, 31293, 30935, 30581, 30231, 29885, 29543,
+};
+
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap)
+{
+	if (level == 0 || db10_now <= db10_cap) {
+		return level;
+	}
+	unsigned d = (unsigned)(db10_now - db10_cap);
+	// The level in hundredths: 20 dB at a time is a tenth. 255 x 100 x 32768 still fits 32 bits (thousandths didn't
+	// above level 131)
+	uint32_t centi = (uint32_t)level * 100u;
+	for (; d >= 200u; d -= 200u) {
+		centi /= 10u;
+	}
+	centi = (centi * db_down_q15[d / 10u] + 16384u) >> 15;
+	centi = (centi * db10_down_q15[d % 10u] + 16384u) >> 15;
+	uint32_t out = (centi + 50u) / 100u;
+	return (uint8_t)(out == 0 ? 1 : out);
 }
 
 uint8_t radio_volume_stored(uint8_t step)
@@ -9226,6 +9522,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		// Carrier for the host's listen before talk: the noise reading against the squelch level's threshold
 		uint8_t sq = sm->view.squelch != 0 ? sm->view.squelch : RADIO_SQUELCH_DEFAULT;
 		sm->hs_carrier = st.noise < radio_sm_squelch_open_below(sq);
+		if (sm->hs_power_due && !board.dmr->is_transmitting()) {
+			hotspot_arm(sm);	// a level that came during a transmission (hotspot_arm)
+		}
 		outputs(sm);
 		return;
 	}
@@ -9250,6 +9549,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	if (sm->view.state == RS_TX) {
+#if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
+		if (sm->satellite_arm_active && (int32_t)(now_ms - sm->satellite_arm_end_ms) >= 0) {
+			sm->satellite_arm_active = false;
+			ptt_release(sm, false, now_ms);
+			return;
+		}
+#endif
 #if CONFIG_FM_TX_TONES
 		if (sm->burst_end_ms != 0 && sm->view.tone_burst && (int32_t)(now_ms - sm->burst_end_ms) >= 0) {
 			tone_burst(sm, false, 0, now_ms);	// its "off" never came: unkey as the off would
@@ -9344,6 +9650,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 			sig_local(sm, SIG_EV_IDLE);
 		}
 	}
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 	outputs(sm);
 }
 
@@ -9455,4 +9764,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
+#if CONFIG_SATELLITE_TLE
+	satellite_apply_pending(sm, now_ms);
+#endif
 }

@@ -374,11 +374,7 @@ def send_and_capture(radio, sdr_bench, s, send):
     for k in ("rx_hz", "mode", "zone_pos", "vfo"):
         assert core.get(k) == core0.get(k), f"{k}: {core0.get(k)} -> {core.get(k)}"
     assert ch.get("ch.rx_hz") == ch0.get("ch.rx_hz"), (ch0, ch)
-    if "fcs_bad" in res:
-        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
-    for seg in res.get("segments", []):
-        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
-              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
+    print_capture(res)
     ours = [f for f in res["frames"] if f["src"] == f"{s.call}-{s.ssid}"]
     for f in res["frames"]:
         print_frame(f)
@@ -390,6 +386,15 @@ def send_and_capture(radio, sdr_bench, s, send):
     assert f["fcs_ok"] and f["dst"] == tocall and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
     return f
+
+
+def print_capture(res):
+    """The bench board's decode counts and the keyed segments it saw"""
+    if "fcs_bad" in res:
+        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
+    for seg in res.get("segments", []):
+        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
+              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
 
 
 def print_frame(f):

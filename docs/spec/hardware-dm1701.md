@@ -1127,8 +1127,9 @@ request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the 
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
 RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
-At 40 kHz TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
-Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+TIM1's update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, two transfers per cycle. The rates below were tried; the PWM now runs at 2 kHz
+(36000 counts per cycle) and stops while transmitting or while receive audio from a signal is open. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
 
@@ -1139,8 +1140,17 @@ demodulated from a separate receiver, peak deviation:
 | 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
 
 The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
-fifth) hardly showed. At 2 kHz it dims as set. The PWM uses 2 kHz while idle and 40 kHz while transmitting or while FM or DMR receive audio is open.
-The receive selection follows the audio route even at zero volume, when FM still feeds APRS.
+fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting, or while
+receive audio from a signal is open, the pin is held high at any brightness above 0 %. Receive audio is open while the
+FM squelch is open or the monitor is on, and while a DMR, P25 or NXDN call plays: the green LED's state, which the
+radio core passes to the board (`hal_radio_t.rx_open`). The volume doesn't count, so FM at zero volume, which still
+feeds APRS, holds the pin too. A key beep or other local PCM alone keeps the PWM: the ripple reaches the audio through
+the synthesizer, only with a carrier present (below).
+
+An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
+stage's tail to fill the period. On one DM-1701 the tail did fill the period and the panel was fully lit. On other DM-1701 and MD-UV380 family
+radios the screen went dark during transmit and receive audio (#759). The likely cause is a stage that doesn't respond
+to a pulse that short; the bench DM-1701 doesn't show the fault, so this is not confirmed. A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
 
 A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
 5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
@@ -1207,11 +1217,10 @@ DM-1701 A:
 
 That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
 and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
-less, so the rate switches. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+less. While transmitting or receiving, the pin is steady, the reference in every measurement above. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
 the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
 500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
-dim floor of 5 % lights at that). At 40 kHz every level below 100 % is the one count and the panel is fully lit, as
-before; transmit then measured 5.5, 2.5, 1.8 and 7.0 Hz at 2, 4, 6 and 8 kHz, the same as above.
+dim floor of 5 % lights at that).
 
 Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
 each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
@@ -1329,7 +1338,40 @@ RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 60
 Log-taper pot read on PA0. Raw ranges (measured): DM-1701 min about 29, max about 2075,
 breakpoint about 318; MD-UV380 22..2070, breakpoint 309; MD-UV390 Plus 10 W 19..2054, breakpoint 308; RT3S 23..2020,
 breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approximation around the breakpoint maps it to
--31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis).
+-31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis). RadioFoundry writes the knob's
+0..100 % linearly over -31..+31 steps of HR_C6000 4:0x37 ([modem-hrc6000.md](modem-hrc6000.md) 2). The same gain scales
+beeps. The board sets `volume_pcm` and gives the measured curve below (`volume_db10`, table `rx_gain_db10` in
+`radio_uvf.c`), so above volume step 7 the radio core plays each beep softer by the gain over step 7's and the beep
+sounds as at step 7 (`radio-features.md` 4). The speaker volume is not changed for a beep.
+
+The chip offers no electrical copy of its output (with the audio probe's tone on the DAC in DMR, the I2S input stays at
+its noise floor at every 0x37 setting), so the curve is measured at the speaker. A 1500 Hz tone at a fixed PCM level
+played on the prompt FIFO in FM at each of the 63 gain steps, with the programming cable out (the cable mutes the
+speaker), recorded by a microphone 3-5 cm from the grille. Two passes 12 dB apart agree within 0.5 dB, and the level
+rises about 0.77 dB a step over the whole range (not the manual's 1.5 dB). Per volume step:
+
+| Step | Knob | 0x37 step | Speaker level vs step 7 | Beep level at `beep_level` 60 |
+|---|---|---|---|---|
+| 1 | 6 % | -28 | -18.8 dB | 60 |
+| 2 | 13 % | -23 | -14.9 dB | 60 |
+| 3 | 19 % | -20 | -12.5 dB | 60 |
+| 4 | 25 % | -16 | -9.4 dB | 60 |
+| 5 | 31 % | -12 | -6.2 dB | 60 |
+| 6 | 38 % | -8 | -3.1 dB | 60 |
+| 7 | 44 % | -4 | 0 dB | 60 |
+| 8 | 50 % | 0 | +3.1 dB | 42 |
+| 9 | 56 % | +3 | +5.5 dB | 32 |
+| 10 | 63 % | +8 | +9.3 dB | 21 |
+| 11 | 69 % | +11 | +11.7 dB | 16 |
+| 12 | 75 % | +15 | +14.7 dB | 11 |
+| 13 | 81 % | +19 | +17.7 dB | 8 |
+| 14 | 88 % | +23 | +21.0 dB | 5 |
+| 15 | 94 % | +27 | +23.9 dB | 4 |
+| 16 | 100 % | +31 | +26.9 dB | 3 |
+
+The beep level is a whole number of at least 1, so at the top steps a beep can sound louder than at step 7: up to about
+1 dB at `beep_level` 60, and about 7 dB at `beep_level` 10 (step 16 plays level 1 for 0.45). The
+other UV380 family radios have the same chip and knob mapping and use the same curve.
 
 ### 11.3 Mic level
 

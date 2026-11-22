@@ -8,6 +8,8 @@
 import { parse, stringify, flow, Tag } from "./yaml.js";
 import { LIMITS } from "./records.js";
 import { parseTone } from "./fields.js";
+import { exportModes, importModes } from "./qdmrmodes.js";
+import { syncModes } from "./channelmodes.js";
 
 export class QdmrError extends Error {
 	constructor(code, params = {}) {
@@ -249,7 +251,7 @@ export function importQdmr(m, yamlText) {
 		v = untag(v);
 		return typeof v === "number" ? v > 0 : v === true;
 	};
-	const channels = [], chById = new Map();
+	const channels = [], chById = new Map(), chanBlocks = [];
 	for (const x of list("channels")) {
 		const e = element(x);
 		if (!e) continue;
@@ -306,6 +308,7 @@ export function importQdmr(m, yamlText) {
 		if (ap) c.aprs = ap;
 		channels.push(c);
 		chById.set(text(v.id), c);
+		chanBlocks.push([c, v.radioFoundry && typeof v.radioFoundry === "object" ? v.radioFoundry : null]);
 	}
 	for (const [a, ref] of reverts) {
 		const ch = chById.get(ref);
@@ -345,6 +348,8 @@ export function importQdmr(m, yamlText) {
 		if (t !== "zones") rows.forEach((r, i) => (r.number = i < max[t] ? i + 1 : null));
 	}
 	Object.assign(m, tables);
+	// the radioFoundry block: systems and channel modes, once every channel has its number
+	if (importModes(m, doc.radioFoundry, chanBlocks, chById, note, { parseFrequency, untag })) syncModes(m);
 	// the VFOs keep their frequencies; references into the old tables can't stay
 	for (const v of m.vfo) if (v) Object.assign(v, { contact: null, rxList: null, aprs: null });
 	const g = m.general;
@@ -405,6 +410,7 @@ export function exportQdmr(m) {
 	const chn = num(m.channels);
 	const chRef = (c) => `ch${chn.get(c)}`;
 
+	const modes = exportModes(m, (c) => (chn.has(c) ? chRef(c) : null), note, frequencyText);
 	const channels = m.channels.map((c) => {
 		const og = {
 			scanZoneSkip: c.zoneSkip, scanAllSkip: c.allSkip, beep: !c.noBeep, powerSave: !c.noEco,
@@ -414,7 +420,6 @@ export function exportQdmr(m) {
 		if (c.useLocation) note("location_rounded");
 		if (c.sfr || c.sfrA || c.sfrB) note("sfr");
 		if (c.toneBurst && c.mode !== "dmr") note("tone_burst");
-		if (c.acceptBadCrc) note("accept_bad_crc");
 		const powerName = Object.keys(POWER).find((k) => POWER[k] === c.power);
 		if (c.power && !powerName) note("power_level");
 		const common = {
@@ -430,7 +435,7 @@ export function exportQdmr(m) {
 					radioId: c.dmrId && idRef.has(c.dmrId) ? idRef.get(c.dmrId) : new Tag("!default", ""),
 					groupList: c.rxList && typeof c.rxList === "object" && ln.has(c.rxList) ? `grp${ln.get(c.rxList)}` : undefined,
 					contact: cref(c.contact), aprs: aprsRef, roaming: c.roam ? new Tag("!default", "") : undefined,
-					extended: { talkaround: c.dmo }, power,
+					extended: { talkaround: c.dmo }, power, radioFoundry: modes.channel(c),
 				},
 			};
 		}
@@ -438,7 +443,7 @@ export function exportQdmr(m) {
 			fm: {
 				...common, squelch: c.squelch ? Math.min(Math.max(Math.round(c.squelch / 2), 1), 10) : new Tag("!default", ""),
 				admit: "Always", rxTone: subTone(c.rxTone), txTone: subTone(c.txTone), bandwidth: c.bw === 25 ? "Wide" : "Narrow",
-				aprs: aprsRef, power,
+				aprs: aprsRef, power, radioFoundry: modes.channel(c),
 			},
 		};
 	});
@@ -473,6 +478,6 @@ export function exportQdmr(m) {
 	if (g.groupHang) dmrSet.groupCallHangTime = seconds(g.groupHang * 500);
 	if (Object.keys(dmrSet).length) settings.dmr = dmrSet;
 
-	const doc = { version: QDMR_VERSION, settings, radioIDs, contacts, groupLists, channels, zones, positioning };
+	const doc = { version: QDMR_VERSION, settings, radioIDs, contacts, groupLists, channels, zones, positioning, radioFoundry: modes.top };
 	return { text: "---\n" + stringify(doc) + "...\n", notes: [...notes].map(([code, n]) => ({ code, n })) };
 }

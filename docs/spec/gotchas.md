@@ -154,8 +154,10 @@ alone plays nothing: the FIFO needs samples. The feeder runs at the top task pri
 missed its 8 ms turn whenever the copy interrupt read its 512 bytes with interrupts masked, which gave a gap every
 32 ms. The FIFO and the I2S stream share the chip's clock, so they never drift. Checked on the SDR bench by ear and by
 microphone: NXDN 4800 speech, every frame played, no gaps. The view keys `audio.fifo_chunks`, `audio.fifo_gaps` and
-`audio.fifo_full` count the path. Radios: HR_C6000; the HR_C5000's FIFO is not known, so a board turns the path on
-with `prompt_fifo`.
+`audio.fifo_full` count the path. The same cause made every beep silent in FM receive on a board whose FM audio comes
+through the chip: the board reports its chip in FM receive (`stm32_i2s_pcm_fm_chip`), and a beep goes through the
+FIFO while its PCM route is on (`audio.fifo_fm`, `test_beep_fm_fifo`). Radios: HR_C6000; the HR_C5000's FIFO is not
+known, so a board turns the path on with `prompt_fifo`.
 
 ## 2. DMR modem timing: HR_C7000
 
@@ -344,6 +346,15 @@ every 30 ms; a repeater's continuous carrier showed nothing. Sweeps near sensiti
 usually tuned, never saw it. Rule: the AT1846S DMR mode table writes 0x32 bits 2:0 clear (`drivers/rf/at1846s`);
 judge a receiver setting at strong simplex levels as well (`dmr-voice.md` 7.1). Radios: AT1846S boards. Test:
 `test_dmr_audio_rx_strong` (tests/hil).
+
+**3.19 Leave no FM sub-audio on in DMR.** Symptom: after a visit to an FM channel with a receive CTCSS tone, every DMR
+over counted as sent (tx_voice reached, call.tx_calls + 1) and the SDR bench decoded none of the bursts. An FM channel
+without a tone left DMR working. Cause: the FD6818's sub-audio register 0x51 still held the FM channel's receive tone
+(0x9045), and its bit 15 also turns the chip's sub-audio transmitter on, so the tone rode on the 4FSK. Rule: the RF
+chip driver turns the sub-audio off when it enters DMR (`fd6818_set_mode`; `fd6818sh_dmr_mode` does the same), not
+each board's tune path; a radio's own counters can't show a transmission that doesn't decode, so a HIL check of a TX
+path asserts what the bench heard. Radios: boards with the FD6818 as the transceiver. Test: `fd6818Test`
+(`test_dmr_tone_off`, tests/host), `test_dmr_tx_after_toned_fm_channel` (tests/hil).
 
 ## 4. AMBE codec calling
 

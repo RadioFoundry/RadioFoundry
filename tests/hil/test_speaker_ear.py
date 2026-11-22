@@ -17,7 +17,8 @@ They also show that the speaker plays with the programming cable in, on a radio 
 
 - test_speaker_beep: a beep, repeated.
 - test_speaker_fm_noise: the FM VFO on --fm-mhz with the squelch held open (monitor): the receiver's noise.
-- test_speaker_dmr_voice (--allow-rf, the bench modem; --ambe for speech): a bench group call on the DMR test channel.
+- test_speaker_dmr_voice (--allow-rf, the bench modem): a bench group call on the DMR test channel, the countdown of
+  tests/data/voice (10.8 s of speech) or the --ambe FILE given.
 - test_speaker_second_receiver (the same): dual watch with the main receiver on another channel, so the call comes
   out of the second receiver (radio-features.md 2.2). On a radio with one receiver, dual watch alternates it and
   stops on the call: the call comes out of the one receiver after that stop."""
@@ -27,7 +28,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import as_int, skip
+from rfoundry_hil import as_int, skip, speech_file
 from hil_config import rig
 
 ANSWER_S = 12.0     # how long a sound plays and the person has to answer
@@ -176,11 +177,9 @@ def test_speaker_fm_noise(ready, ear, pytestconfig):
 
 
 def _call_heard(radio, ear, sdr_bench, pytestconfig, what):
-    """A 20 superframe bench call on the DMR test channel (about 7 s, speech with --ambe) while the person listens."""
+    """A bench call of speech on the DMR test channel (the countdown: 10.8 s) while the person listens."""
     freq, cc, tg = (rig(pytestconfig, o) for o in ("dmr-freq", "dmr-cc", "dmr-tg"))
-    ambe = pytestconfig.getoption("--ambe")
-    if ambe:
-        ambe = sdr_bench.upload(ambe, "hil_speech.ambe")
+    ambe = sdr_bench.upload(speech_file(pytestconfig, "--ambe", 9, long=True), "hil_speech.ambe")
     res = {}
 
     def call():
@@ -192,8 +191,7 @@ def _call_heard(radio, ear, sdr_bench, pytestconfig, what):
     t = threading.Thread(target=call, daemon=True)
     with sdr_bench.lease(), _loud(radio):
         try:
-            heard = _heard(radio, ear, what + (" (speech)" if ambe else " (the bench's test frames: a tone or silence)"),
-                           start=t.start)
+            heard = _heard(radio, ear, what + " (speech)", start=t.start)
         finally:
             if t.ident is not None:     # started: the person's or the microphone's wait began
                 t.join(60)

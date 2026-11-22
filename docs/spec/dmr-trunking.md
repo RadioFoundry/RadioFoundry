@@ -765,6 +765,14 @@ A site sampled isn't sampled again for 30 s unless ours is weak. `T3_OPT_NO_ROAM
 the adjacent sites, and for one pass confirms only a TSCC at or above the threshold (the hunting threshold of
 6.3.2.3). After a pass it takes any. With nowhere else to look it stays.
 
+A pass that found nothing at or above the threshold ends with a hold on the next TSCC confirmed: no leaving for weakness
+for 30 s, then 60 s after the next such pass, doubling up to 5 min. A later pass that hears no TSCC at all keeps the
+hold due. A TSCC confirmed at or above the threshold ends the hold, but the next hold still doubles: a level that only
+touched the threshold soon fails again. A level above the threshold by the voting margin ends the hold and starts the
+doubling over. A move to another TSCC (a vote or C_MOVE) or a new search (the TSCC lost) ends the hold. Without the
+hold, a radio camped at the edge of its only system's coverage would hunt every 5 s and miss its grants and pages while
+away. The level average reaches a steady level to the dB, so a steady level 1 dB below the threshold counts as below.
+
 ## 8. Timers and constants
 
 | Name | Value | Standard range (Annex A) |
@@ -786,6 +794,7 @@ the adjacent sites, and for one pass confirms only a TSCC at or above the thresh
 | Vote margin | 6 dB | |
 | Sample again | 30 s | |
 | Weak before leaving | 5 s | |
+| Weak hold, after a pass found nothing better | 30 s, doubled each pass, 5 min at most | |
 
 These values are fixed, but for four the debug link may set (section 11; 0 keeps the default): T_Awake (power
 save), T_ALS, T_ALS_E and the Vote Now sample time.

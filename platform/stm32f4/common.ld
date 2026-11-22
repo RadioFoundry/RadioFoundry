@@ -65,6 +65,8 @@ SECTIONS
 	 * is left as it is and must be written before it's read. The RTOS heap, with every task stack, is the rest */
 	_siccmdata = LOADADDR(.ccmdata);
 	.ccmdata : { . = ALIGN(4); _sccmdata = .; *(.ccmdata) *(.ccmdata*) . = ALIGN(4); _eccmdata = .; } >CCMRAM AT> FLASH
+	/* the end of the .bin (the last section copied into it): the support info's image hash runs __app_base .. here */
+	__image_end = LOADADDR(.ccmdata) + SIZEOF(.ccmdata);
 	.ccmbss (NOLOAD) : { . = ALIGN(4); _sccmbss = .; *(.ccmbss) *(.ccmbss*) . = ALIGN(4); _eccmbss = .; } >CCMRAM
 	.ccmram (NOLOAD) : { . = ALIGN(8); *(.ccmram) *(.ccmram*) . = ALIGN(4); } >CCMRAM
 	.ccmheap (NOLOAD) :

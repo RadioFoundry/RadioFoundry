@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // A single producer, single consumer ring of PCM samples between the audio task (whole blocks in) and the prompt FIFO
-// feeder (chunks out), for i2s_pcm.c. Pure, so the host tests run it (tests/host/promptFifoTest.c).
+// feeder (chunks out), for i2s_pcm.c, and the choice of chip it feeds. Pure, so the host tests run it
+// (tests/host/promptFifoTest.c).
 //
 // The indices run free and wrap at 2^32; the size is a power of two, so index & mask stays continuous across the wrap.
 // Each side writes only its own index, after the samples (producer) or after reading them (consumer). Both stay
@@ -77,6 +78,17 @@ static inline bool pcm_ring_pop(pcm_ring_t *r, int16_t out[PCM_RING_CHUNK])
 	__atomic_thread_fence(__ATOMIC_RELEASE);	// read before the producer may reuse the space
 	r->tail += PCM_RING_CHUNK;
 	return true;
+}
+
+// The chip whose prompt FIFO the speaker blocks go to, NULL: none. The FM copy's chip (copy) takes every block, as
+// a receive through the copy (NXDN) plays its voice there. A chip in FM receive (fm) takes them only while the speaker's
+// PCM route is on (spk, a beep): FM audio and PCM take turns on the line out, and the FM audio stays untouched
+static inline void *pcm_fifo_chip(void *copy, void *fm, bool spk)
+{
+	if (copy != NULL) {
+		return copy;
+	}
+	return spk ? fm : NULL;
 }
 
 #endif

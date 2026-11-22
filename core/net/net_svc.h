@@ -33,7 +33,7 @@ static inline bool net_http_request(const uint8_t *d, size_t n)
 	return false;
 }
 
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
 // The radio core's view, fetched now into the host link task's one copy (hostlink_view.h; the services all run in
 // that task)
 #include "radio/radio.h"
@@ -65,6 +65,14 @@ void http_view(dl_text_t *t);
 void http_status_json(dl_text_t *t);
 // The frame buffer can be sent as it is: /api/screen.bmp and the web control page's screen
 bool http_screen_ok(void);
+#endif
+
+#if CONFIG_NET_RADIO_UDP
+// Zone and channel control over UDP (radio_udp.c): binds its port; passes on held requests and sends the notices
+#define NET_RADIO_UDP_PORT	4191
+void radio_udp_start(void);
+void radio_udp_poll(uint32_t now);
+void radio_udp_view(dl_text_t *t);
 #endif
 
 #endif
