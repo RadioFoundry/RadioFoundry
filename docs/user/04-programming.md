@@ -229,7 +229,8 @@ saving it again replaces the date and time.
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by
 name. A file can hold only some columns; the others keep their values. Records missing from the file are removed.
-Values the editor can't take are listed by row and column after the import.
+Values the editor can't take are listed by row and column after the import. A channel's TX timeout rounds up to the
+next 15 s step, as the radio stores it (100 s becomes 105 s).
 
 A qdmr file replaces the channels, zones, contacts, DTMF contacts, RX group lists, APRS configurations and the Radio
 tab's settings other than the ARS server and IP gateway in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.

@@ -237,13 +237,13 @@ test("validation finds the problems the radio would refuse", () => {
 	assert.deepEqual(codes, ["bad_freq", "bad_tone", "id_range", "too_many"]);
 });
 
-test("the air band and broadcast FM are receive only: a TX frequency there without RX Only, or a DMR channel, is warned", () => {
+test("the air band and broadcast FM are receive only: a DMR channel there is warned", () => {
 	assert.deepEqual([64990000, 65000000, 107990000, 108000000, 136990000, 137000000].map(listenBand), [null, "bcast", "bcast", "air", "air", null]);
 	const m = empty();
 	const ch = (name, rxHz, mode, rxOnly) => newChannel({ name, rxHz, txHz: rxHz, mode, rxOnly });
 	m.channels.push(ch("c0", 118100000, "fm", true), ch("c1", 98500000, "fm", false), ch("c2", 121500000, "dmr", true), ch("c3", 146520000, "fm", false));
 	const warned = validate(m).filter((p) => p.code.startsWith("listen_")).map((p) => [p.item.name, p.code]);
-	assert.deepEqual(warned, [["c1", "listen_tx_bcast"], ["c2", "listen_dmr_air"]]);
+	assert.deepEqual(warned, [["c2", "listen_dmr_air"]]);
 });
 
 test("a channel read with RX in a listen band and another TX frequency gets RX Only and TX on RX (#924)", () => {

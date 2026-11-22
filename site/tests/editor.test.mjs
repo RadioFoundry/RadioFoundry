@@ -23,9 +23,8 @@ test("channel TX timeout: a list of the radio default and the 15 s steps the rec
 	assert.equal(opts.length, 1 + 255);
 	assert.deepEqual(opts.at(-1)[0], 3825);
 	assert.deepEqual(opts.find(([v]) => v === 90), [90, "1:30 (90 s)"]);
-	// a value off the steps (an import) is listed in its place, so opening the form keeps it
-	const odd = f.options({ tot: 100 }).map(([v]) => v);
-	assert.deepEqual(odd.slice(odd.indexOf(90), odd.indexOf(90) + 3), [90, 100, 105]);
+	// the steps only: every import rounds up to them
+	assert.ok(opts.every(([v]) => v % 15 === 0));
 });
 
 test("tone fields offer every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
@@ -87,6 +86,46 @@ test("the channel table grays and locks TX, TX tone and power on an RX Only chan
 	};
 	assert.deepEqual(["txHz", "power"].map((k) => shown(k, ch(true))), ["", ""]);
 	assert.deepEqual(shown("txHz", ch(false)), "146.520");
+});
+
+test("a TX frequency typed in the air or broadcast band is refused and the channel is left as it was (#924)", () => {
+	const say = (k, p) => (k === "editor.err.tx_listen" ? `${p.mhz} MHz is not a supported transmit frequency.` : k);
+	const ch = () => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly: false });
+	const col = (key) => columns("channels", empty(), say).find((c) => c.key === key);
+	const formTx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "txHz");
+	// the table and the form refuse it alike, with the same warning, and keep the old TX frequency and RX Only
+	for (const typeTx of [(r, v) => col("txHz").set(r, v), (r, v) => formTx.parse(r, "txHz", v)]) {
+		for (const [v, mhz] of [["121.5", "121.500"], ["98.1", "98.100"]]) {
+			const r = ch();
+			assert.equal(typeTx(r, v), `${mhz} MHz is not a supported transmit frequency.`);
+			assert.deepEqual([r.txHz, r.rxOnly], [146520000, false]);
+		}
+		// a transmit frequency is taken as before
+		const r = ch();
+		assert.equal(typeTx(r, "146.55"), undefined);
+		assert.deepEqual([r.txHz, r.rxOnly], [146550000, false]);
+		// a TX frequency already there (an import) is kept when it isn't changed, so the form still saves
+		const imported = { ...ch(), txHz: 121500000, rxOnly: true };
+		assert.equal(typeTx(imported, "121.5"), undefined);
+		assert.equal(imported.txHz, 121500000);
+	}
+	// an RX frequency in a listen band still makes the channel RX only with TX on RX
+	const r = ch();
+	assert.equal(col("rxHz").set(r, "121.5"), undefined);
+	assert.deepEqual([r.rxHz, r.txHz, r.rxOnly], [121500000, 121500000, true]);
+	// and the form's TX, following RX there, saves
+	const w = ch();
+	formTx.parse(w, "txHz", "121.5");
+	assert.equal(w.txHz, 146520000);
+	const rx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "rxHz");
+	rx.parse(w, "rxHz", "121.5");
+	assert.equal(formTx.parse(w, "txHz", "121.5"), undefined);
+	// an imported TX frequency in a listen band stays shown and open in the table, so it can be corrected there
+	const tx = col("txHz");
+	const imp = { ...ch(), txHz: 121500000, rxOnly: true };
+	assert.deepEqual([tx.readOnly(imp), tx.format(imp.txHz, imp)], [false, "121.500"]);
+	assert.equal(tx.set(imp, "146.55"), undefined);
+	assert.deepEqual([imp.txHz, tx.readOnly(imp), tx.format(imp.txHz, imp)], [146550000, true, ""]);
 });
 
 test("the channel table shows the mode the radio uses in a receive-only band", () => {

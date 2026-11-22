@@ -43,8 +43,10 @@ channel outside the air band has no use on these radios.
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
 65-108 MHz for broadcast): a channel with its RX frequency in either band is RX Only with TX on RX, whether RX was
 typed, read from the radio or imported (`followListen()`), so the channel list, the exports and the image written show no
-other TX frequency. A channel with only its TX frequency in either band is RX Only too: no radio transmits there. The
-channel list shows the mode the radio uses and grays and blanks the TX frequency, TX tone and power of an RX Only
+other TX frequency. No radio transmits there: a TX frequency typed in either band (channel list, Bulk Edit or channel
+form) is refused with `editor.err.tx_listen` and the old one kept. A channel read or imported with only its TX
+frequency in either band is RX Only, with that TX cell left shown and open so it can be corrected. The channel list
+shows the mode the radio uses and otherwise grays and blanks the TX frequency, TX tone and power of an RX Only
 channel; the channel form also grays the TX timeout, VOX and the tone burst. The Problems list warns about a DMR channel in either band.
 
 ### 3.2 Behavior

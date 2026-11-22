@@ -35,6 +35,15 @@ const freq = (t) => (r, k, v) => {
 	r[k] = hz;
 };
 
+// A TX frequency typed in a receive-only band is refused, and the channel keeps its TX frequency and RX Only. TX on an
+// RX in such a band (TX follows RX there) and a TX frequency left unchanged (an import) are taken
+const txFreq = (t) => (r, k, v) => {
+	const hz = parseFreq(v);
+	if (hz === null) return t("editor.err.bad_freq");
+	if (listenBand(hz) && !listenBand(r.rxHz) && hz !== r[k]) return t("editor.err.tx_listen", { mhz: mhz(hz) });
+	r[k] = hz;
+};
+
 // An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (followListen)
 const rxFreq = (t) => (r, k, v) => {
 	const err = freq(t)(r, k, v);
@@ -80,12 +89,10 @@ const recordField = (r, key) => !r.kind || !!kindMod(r)?.recordFields?.includes(
 const ownFreqs = (r) => !r.kind || kindMod(r)?.ownFreqs !== false;
 // Receive only: for a channel of a kind, its tag's transmit allowed turned round (the record is receive only)
 const rxOnlyGet = (r) => (r.kind ? !r.tagTx : r.rxOnly);
-// The TX timeouts the record can hold: the radio's default, then 15 s steps to 3825 s; a value off the steps (an
-// import) is listed too, so opening the form doesn't change it
-export function totOptions(t, cur) {
+// The TX timeouts the record can hold: the radio's default, then 15 s steps to 3825 s (the imports round up to them)
+export function totOptions(t) {
 	const out = [[0, t("editor.tot.default")]];
 	for (let s = 15; s <= 3825; s += 15) out.push([s, s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} (${s} s)`]);
-	if (cur > 0 && cur < 3825 && cur % 15) out.splice(out.findIndex(([v]) => v > cur), 0, [cur, `${cur} s`]);
 	return out;
 }
 
@@ -163,12 +170,14 @@ export function columns(table, m, t, { features = null } = {}) {
 	};
 	const own = (c) => ({ ...c, readOnly: (r) => !ownFreqs(r) });
 	// a transmit field on an RX only channel: blank, grayed and locked like a field that doesn't apply (the value is
-	// kept, and shows again when RX Only is cleared)
+	// kept, and shows again when RX Only is cleared). A TX frequency in a receive-only band (an import) is what made
+	// the channel RX only (followListen): that cell stays shown and open, so the frequency can be corrected
 	const tx = (c) => {
 		const ro = c.readOnly, format = c.format;
+		const off = (r) => !!rxOnlyGet(r) && !(c.key === "txHz" && !listenBand(r.rxHz) && listenBand(r.txHz));
 		return {
-			...c, readOnly: (r) => !!rxOnlyGet(r) || (typeof ro === "function" ? ro(r) : !!ro),
-			format: (v, r) => (rxOnlyGet(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v),
+			...c, readOnly: (r) => off(r) || (typeof ro === "function" ? ro(r) : !!ro),
+			format: (v, r) => (off(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v),
 		};
 	};
 	const num = { key: "number", label: "#", type: "number", get: (r) => r.number, readOnly: true, width: "3.5rem", format: (v) => v ?? "–" };
@@ -185,7 +194,7 @@ export function columns(table, m, t, { features = null } = {}) {
 				if (!err && r.txHz === was) r.txHz = r.rxHz;
 				return err;
 			}, { format: mhz, numeric: true })),
-			tx(own(col("txHz", "editor.col.tx", "text", freq(t), { format: mhz, numeric: true }))),
+			tx(own(col("txHz", "editor.col.tx", "text", txFreq(t), { format: mhz, numeric: true }))),
 			tx(col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) })),
 			only("fm", col("bw", "editor.col.bw", "select", pick, { options: () => [[12.5, "12.5"], [25, "25"]] })),
 			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, suggest: () => TONES })),
@@ -335,7 +344,7 @@ export function channelForm(m, t, { features = null } = {}) {
 		{ ...sel("power", "editor.col.power", () => powerOptions(t)), disabled: noTx },
 		// in a receive-only band TX follows RX, locked (rxFreq); RX Only locks TX where it is
 		{ type: "pair", key: "freqs", show: ownFreqs, disabled: noTx,
-			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", freq(t), mhz), disabled: noTx, follows: "rxHz", followsIf: listening }], buttons: [
+			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", txFreq(t), mhz), disabled: noTx, follows: "rxHz", followsIf: listening }], buttons: [
 			["→", t("editor.freq.rx_to_tx"), ([rx]) => [rx, rx]],
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
@@ -344,7 +353,7 @@ export function channelForm(m, t, { features = null } = {}) {
 			const band = listenBand(parseFreq(value("rxHz")));
 			return band ? t(`editor.band.${band}`) : "";
 		} },
-		sel("tot", "editor.col.tot", (w) => totOptions(t, w?.tot), { disabled: noTx }),
+		sel("tot", "editor.col.tot", () => totOptions(t), { disabled: noTx }),
 		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
 		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening, get: rxOnlyGet, set: rxOnlySet },
 		{ group: t("editor.form.mode_params"), show: (r) => !!r.kind },

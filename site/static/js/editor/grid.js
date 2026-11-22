@@ -4,6 +4,7 @@
 // typing on a focused cell), sorting by a column, a filter, row selection for bulk edits, and keyboard movement
 // between cells. Only the cell being edited holds an input, so a table of 1024 channels stays light.
 
+import { h } from "../flasher/dom.js";
 
 let suggestN = 0;
 // A <datalist> for input: the browser's own searchable list of these values
@@ -13,7 +14,6 @@ export function suggestions(input, values) {
 	input.autocomplete = "off";
 	return h("datalist", { id }, ...values.map((v) => h("option", { value: v })));
 }
-import { h } from "../flasher/dom.js";
 
 // The row's edit button icon: a pencil drawn in the text color, so it follows the theme.
 const SVG = "http://www.w3.org/2000/svg";
