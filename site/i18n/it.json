@@ -2386,5 +2386,16 @@
  "editor.sig.play": "Riproduci",
  "editor.sig.roll": "La catena come tono nel tempo, {ms} ms",
  "editor.sig.no_audio": "Nessun audio qui",
- "editor.sig.empty": "Nessun passo: il suono standard"
+ "editor.sig.empty": "Nessun passo: il suono standard",
+ "screen.emergency_hold": "Tasto di emergenza premuto: il conto alla rovescia",
+ "screen.emergency_sent": "Emergenza inviata",
+ "screen.emergency_mic": "Emergenza: microfono aperto, Indietro lo spegne",
+ "screen.emergency_on": "Ancora in emergenza: come terminarla",
+ "screen.settings_emergency": "Impostazioni del tasto di emergenza",
+ "editor.general.em_key": "Tasto di emergenza",
+ "editor.general.em_key_help": "0 = disattivato, 1 = attivato. Vuoto mantiene l’impostazione della radio.",
+ "editor.general.em_alert": "Avviso di emergenza",
+ "editor.general.em_alert_help": "0 = suono e vibrazione, 1 = silenzioso. Vuoto mantiene l’impostazione della radio.",
+ "editor.general.em_hold": "Pressione di emergenza (secondi)",
+ "editor.general.em_hold_help": "1–10 secondi. Vuoto mantiene l’impostazione della radio."
 }

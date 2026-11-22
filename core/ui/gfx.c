@@ -672,6 +672,61 @@ int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_
 	return text(f, x, y, s, fg, true, bg);
 }
 
+int __attribute__((noinline)) gfx_text_scaled(const font_t *f, int x, int y, const char *s, int scale, color_t fg)
+{
+#ifdef GFX_FIT_TRACE
+	const char *s0 = s;
+	int x0 = x;
+#endif
+	while (*s) {
+		int seq = 1, adv = f->w;
+		uint32_t cp = (uint8_t)*s;
+#if CONFIG_LANG_ZH
+		cp = gfx_utf8_next(s, &seq);
+		adv = char_w(f, cp);
+#endif
+		int top, rows, bytes = (f->w * f->bpp + 7) / 8;
+		const uint8_t *g;
+		bool aa = CONFIG_FONT_AA && f->bpp == 2;
+#if CONFIG_LANG_ZH
+		if (cp > 0xFF) {
+			g = cjk_font_glyph(cp);
+			top = f->h - CJK_FONT_H;
+			rows = CJK_FONT_H;
+			bytes = CJK_FONT_ROW_BYTES;
+			aa = false;
+			if (top < 0) {
+				rows += top;
+				if (g != NULL)
+					g += (size_t)(-top) * bytes;
+				top = 0;
+			}
+			if (g == NULL) {
+				gfx_fill(x + scale, y + scale, (adv - 2) * scale, scale, fg);
+				gfx_fill(x + scale, y + (f->h - 2) * scale, (adv - 2) * scale, scale, fg);
+				gfx_fill(x + scale, y + scale, scale, (f->h - 2) * scale, fg);
+				gfx_fill(x + (adv - 2) * scale, y + scale, scale, (f->h - 2) * scale, fg);
+			}
+		} else
+#endif
+			g = font_glyph(f, (uint8_t)cp, &top, &rows);
+		for (int r = 0; g != NULL && r < rows; r++, g += bytes) {
+			for (int col = 0; col < adv; col++) {
+				unsigned a = aa ? (g[col >> 2] >> (6 - 2 * (col & 3))) & 3u :
+					     (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+				if (a >= 2)
+					gfx_fill(x + col * scale, y + (top + r) * scale, scale, scale, fg);
+			}
+		}
+		s += seq;
+		x += adv * scale;
+	}
+#ifdef GFX_FIT_TRACE
+	trace(GFX_TRACE_TEXT, x0, y, x - x0, f->h * scale, s0);	// after the ink, as text() does
+#endif
+	return x;
+}
+
 int gfx_text_width(const font_t *f, const char *s)
 {
 #if CONFIG_LANG_ZH

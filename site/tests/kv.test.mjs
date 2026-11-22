@@ -391,12 +391,45 @@ test("settings area: an edit sends only the keys it changed, onto the radio's ar
 	const full = withArea([e(0x7003, ...new Uint8Array(KV_SIZE - 16 - 4 - 8))]);
 	assert.throws(() => areaForWrite(added.bytes, full.bytes, none.bytes), RangeError);
 });
+test("emergency keys: typed model round trip, ranges and removal", () => {
+	const img = CodeplugImage.blank();
+	const model = decode(img);
+	assert.equal(model.general.emKey, null);
+	assert.equal(model.general.emAlert, null);
+	assert.equal(model.general.emHold, null);
+	const tones = { callEndTone: true, totWarnTone: false, batteryTone: false };
+	assert.ok(putKeys(img.bytes, tones));
+	assert.ok(putKeys(img.bytes, { emKey: false, emAlert: 1, emHold: 10 }));
+	const g = decode(img).general;
+	assert.equal(g.emKey, false);
+	assert.equal(g.emAlert, 1);
+	assert.equal(g.emHold, 10);
+	for (const [key, value] of Object.entries(tones)) assert.equal(g[key], value);
+	for (const [name, invalid] of [["emKey", 1], ["emAlert", 2], ["emHold", 0], ["emHold", 11]])
+		assert.equal(keyValid(KEYS.find((r) => r.name === name), invalid), false);
+	assert.ok(putKeys(img.bytes, { emKey: null, emAlert: null, emHold: null }));
+	assert.equal(decode(img).general.emHold, null);
+});
 
 // The signaling tone records (codeplug-settings.md 3.3): 32 bytes (the first version's 17 are the front), the first record keys
 import { RECORD_KEYS, SIG_REC_LEN, getRecord, recordValue, recordValid } from "../static/js/codeplug/kv.js";
 const [SIG_BEGIN, SIG_END, SIG_IDLE] = RECORD_KEYS;
 const pad = (a) => [...a, ...Array(10 - a.length).fill(0)];
 const rec = (over = {}) => ({ dmr: 4, fm: 2, hz: [1600, 0, 800, 3400, 10, 1060, 0, 0, 0, 2200], ms: [50, 0, 70, 600, 10, 70, 0, 0, 0, 90], ...over });
+
+test("editing and clearing emergency settings preserves all three signaling records", () => {
+	const records = RECORD_KEYS.map(({ key }, i) => ({
+		key, value: Uint8Array.from([...recordValue(rec({ dmr: i + 1 })), 0xAB, i]),
+	}));
+	const img = withArea(records);
+	for (const edit of [{ emKey: false, emAlert: 1, emHold: 8 }, { emKey: null, emAlert: null, emHold: null }]) {
+		assert.ok(putKeys(img.bytes, edit));
+		const entries = decodeArea(img.bytes).entries;
+		for (const { key, value } of records) assert.deepEqual(entries.find((e) => e.key === key)?.value, value);
+		const general = decode(img).general;
+		for (const [key, value] of Object.entries(edit)) assert.equal(general[key], value);
+	}
+});
 
 test("signaling tone record: bytes, order and limits", () => {
 	assert.equal(SIG_REC_LEN, 32);

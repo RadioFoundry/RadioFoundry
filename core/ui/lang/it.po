@@ -637,25 +637,50 @@ msgctxt "SET_TOAST_RX_PAST_BANDS"
 msgid "Receive only. Sensitivity not rated"
 msgstr "Solo ricezione. Sensibilità non specificata"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
-msgctxt "WHY_EMERGENCY_NOT_IN_BUILD"
-msgid "Emergency: not in this build"
-msgstr "Emergenza: non in questa build"
-
 #: core/ui/ui_app.c
 msgctxt "EMERG_WHY_NEEDS_DMR_AND_ID"
 msgid "Emergency needs a DMR channel and ID"
 msgstr "Emergenza richiede canale DMR e ID"
 
 #: core/ui/ui_app.c
-msgctxt "EMERG_TOAST_SENT"
-msgid "EMERGENCY sent: hold again to cancel"
-msgstr "EMERGENZA inviata: tieni per annullare"
+msgctxt "EMERG_BAR_MIC"
+msgid "{EMERGENCY  Back: mic off|EMERG  Back mic off}"
+msgstr "{EMERGENZA  Indietro: micro off|EMERG  Indietro micro off}"
 
 #: core/ui/ui_app.c
-msgctxt "EMERG_TOAST_CANCELED"
-msgid "Emergency canceled"
-msgstr "Emergenza annullata"
+msgctxt "EMERG_BAR_HOLD"
+msgid "{EMERGENCY  Hold|EMERG  Hold}"
+msgstr "{EMERGENZA  Tieni|EMERG  Tieni}"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_TO_END"
+msgid "to end"
+msgstr "per terminare"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_BAR_BACK"
+msgid "{EMERGENCY  Back twice: end|EMERG  Back x2 end}"
+msgstr "{EMERGENZA  Indietro 2 volte: fine|EMERG  Indietro x2 fine}"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_MIC_OFF_STILL_IN_EMERGENCY"
+msgid "Mic off: still in emergency"
+msgstr "Micro spento: ancora in emergenza"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_BACK_AGAIN_TO_END_EMERGENCY"
+msgid "Back again to end emergency"
+msgstr "Indietro di nuovo per terminare l'emergenza"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_EMERGENCY_ENDED"
+msgid "Emergency ended"
+msgstr "Emergenza terminata"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "WHY_EMERGENCY_NOT_IN_BUILD"
+msgid "Emergency: not in this build"
+msgstr "Emergenza: non in questa build"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_WHY_CALL_BACK_DMR_ONLY"
@@ -4138,6 +4163,36 @@ msgid "Up/Down on Home"
 msgstr "Su/Giù in Home"
 
 #: core/ui/ui_menus.c
+msgctxt "EMERG_BEEP_VIBRATE"
+msgid "Beep+vibrate"
+msgstr "Tono+vibrazione"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_SILENT"
+msgid "Silent"
+msgstr "Silenzioso"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_HOLD"
+msgid "Hold"
+msgstr "Pressione"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_EMERGENCY_KEY"
+msgid "Emergency key"
+msgstr "Tasto emergenza"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_ALERT"
+msgid "Alert"
+msgstr "Avviso"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_OPEN_MIC"
+msgid "Open mic"
+msgstr "Microfono aperto"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_DMR_ID_AND_NAME"
 msgid "DMR ID and name"
 msgstr "ID DMR e nome"
@@ -4396,6 +4451,11 @@ msgstr "Nessun fix GPS attuale"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "Le impostazioni si salvano al cambio"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_SETTINGS_HINT"
+msgid "Hold 1-10 s, Emergency key On/Off, Alert Beep+vibrate/Silent"
+msgstr "Pressione 1-10 s, Tasto emergenza Sì/No, Avviso Tono+vibrazione/Silenzioso"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4718,6 +4778,11 @@ msgid "NO TX"
 msgstr "NO TX"
 
 #: core/ui/ui_screens.c
+msgctxt "EMERG_STATE_SHORT"
+msgid "EMERG"
+msgstr "EMERG"
+
+#: core/ui/ui_screens.c
 msgctxt "TOP_CHIP_DUAL"
 msgid "DUAL"
 msgstr "DUAL"
@@ -5021,6 +5086,11 @@ msgstr "Privata per te"
 msgctxt "CALL_VALUE_PRIVATE_TO"
 msgid "Private to "
 msgstr "Privata a "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_TALK_PREFIX"
+msgid "EMERG→ "
+msgstr "EMERG→ "
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_SFR_SENDING_ID"
@@ -5436,6 +5506,56 @@ msgstr "OK conferma  Indietro nascondi"
 msgctxt "VOL_LABEL_SHORT"
 msgid "Vol"
 msgstr "Vol"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_ALARM_TO"
+msgid "Alarm to "
+msgstr "Allarme a "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CALL_TO"
+msgid "Call to "
+msgstr "Chiamata a "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CUE_BEEP"
+msgid "((o)) beep"
+msgstr "((o)) bip"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CUE_VIBRATE"
+msgid "~~ vibrate"
+msgstr "~~ vibra"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_SENT"
+msgid "SENT"
+msgstr "INVIATA"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CANCELED"
+msgid "CANCELED"
+msgstr "ANNULLATA"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_TO_CANCEL"
+msgid "HOLD TO CANCEL"
+msgstr "TIENI: ANNULLA"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_FOR_EMERGENCY"
+msgid "HOLD FOR EMERGENCY"
+msgstr "TIENI: EMERGENZA"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_AGAIN_TO_CANCEL"
+msgid "Hold again to cancel"
+msgstr "Tieni per annullare"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_LET_GO_TO_STOP"
+msgid "Let go to stop"
+msgstr "Rilascia per fermare"
 
 #: core/ui/ui_screens.c
 msgctxt "VOL_VALUE_MUTED"

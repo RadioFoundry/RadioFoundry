@@ -2386,5 +2386,16 @@
  "editor.sig.play": "Play",
  "editor.sig.roll": "The chain as pitch over time, {ms} ms",
  "editor.sig.no_audio": "No audio here",
- "editor.sig.empty": "No steps: the standard sound"
+ "editor.sig.empty": "No steps: the standard sound",
+ "screen.emergency_hold": "Emergency key held: the countdown",
+ "screen.emergency_sent": "Emergency sent",
+ "screen.emergency_mic": "Emergency: the open mic, Back turns it off",
+ "screen.emergency_on": "Still in emergency: how to end it",
+ "screen.settings_emergency": "Emergency key settings",
+ "editor.general.em_key": "Emergency key",
+ "editor.general.em_key_help": "0 = off, 1 = on. Empty keeps the radio’s own setting.",
+ "editor.general.em_alert": "Emergency alert",
+ "editor.general.em_alert_help": "0 = beep and vibrate, 1 = silent. Empty keeps the radio’s own setting.",
+ "editor.general.em_hold": "Emergency hold (seconds)",
+ "editor.general.em_hold_help": "1–10 seconds. Empty keeps the radio’s own setting."
 }

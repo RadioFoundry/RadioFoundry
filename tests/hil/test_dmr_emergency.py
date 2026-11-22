@@ -10,6 +10,8 @@ debug link (DMR_DATA op 7) while the bench modem listens. Pass criteria are the 
 data.emergency_* keys; what the bench heard is checked where its listen output carries it (CSBK info octets, the
 LC's service options "so")."""
 import time
+import struct
+import zlib
 
 import pytest
 
@@ -164,18 +166,80 @@ def test_emergency_call_tx(radio, sdr_bench, pytestconfig, em_settings):
 
 @pytest.mark.feature("dmr_emergency")
 @pytest.mark.radio_tx
-def test_emergency_key_hold(radio, pytestconfig, em_settings):
-    """The EMERGENCY key action (the DM-1701's SK3 held 1.5 s; injected as the action, held for the
-    hold-to-activate time): alarm-only, one try; the UI says "EMERGENCY sent", em.state leaves idle; a second hold
-    cancels ("Emergency canceled", em.state idle). No bench: the alarm goes out at the lowest power."""
-    from rfoundry_hil import LONG
+@pytest.mark.codeplug_write
+def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
+    """A physical-key injection held through the 3 s countdown starts and cancels an alarm-only emergency.
+    Normalize Key/Alert/Hold in the codeplug, then restore their original values (including absent keys).
+    No bench: one alarm goes out at the lowest power; requires RF and codeplug-write opt-in."""
+    import cps_client
+    from test_cps import cps_session
+
     _emergency_setup(radio, pytestconfig, tx=True)
-    radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
-    radio.wait_for(lambda x: x.get("em.mode") == "alarm", sections=("dmr_ext",), what="alarm mode")
-    radio.press("emergency", LONG)
-    radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active") and "EMERGENCY sent" in x.get("ui.toast", ""),
-                   timeout=5.0, sections=("dmr_ext", "link"), what="emergency started by the key")
-    radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",), what="alarm sent")
-    radio.press("emergency", LONG)
-    radio.wait_for(lambda x: x.get("em.state") == "idle" and "canceled" in x.get("ui.toast", ""),
-                   sections=("dmr_ext", "link"), what="canceled by the key")
+    if radio.core().get("codeplug") != "open-firmware":
+        skip("state", "needs the radio's own codeplug for the emergency settings write")
+    region = cps_client.SETTINGS_AREA
+    lo, hi = region
+    original = cps_session(radio, lambda c: c.read_image([region]))
+    state = cps_client.area_state(original[lo:hi])
+    if state not in ("valid", "empty"):
+        skip("state", f"settings area is {state}: preserving it")
+    from pathlib import Path
+    backup_dir = Path(backup_dir)
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    (backup_dir / "emergency-settings.bin").write_bytes(original[lo:hi])
+    restored = bytearray(original)
+    if state == "empty":
+        # A valid empty area restores absent keys; CPS deliberately preserves an area when given erased bytes.
+        restored[lo:lo + 16] = b"RFKV" + bytes([1, 16]) + bytes(10)
+    edited = bytearray(restored)
+    hdr = edited[lo + 5]
+    end = lo + hdr + int.from_bytes(edited[lo + 6:lo + 8], "little")
+    hold_s = 3
+    emergency_controls = {0x000A: 1, 0x000B: 0, 0x000C: hold_s}  # key, alert, hold
+    entries = bytearray()
+    at = lo + hdr
+    while at < end:
+        key, size = struct.unpack_from("<HH", edited, at)
+        if key not in emergency_controls:
+            entries.extend(edited[at:at + 4 + size])
+        at += 4 + size
+    for key, value in emergency_controls.items():
+        entries.extend(struct.pack("<HHB", key, 1, value))
+    if hdr + len(entries) > hi - lo:
+        skip("state", "settings area has no room for the emergency controls")
+    edited[lo + 6:lo + 12] = struct.pack("<HI", len(entries), zlib.crc32(entries))
+    edited[lo + hdr:lo + hdr + len(entries)] = entries
+
+    def write_checked(image):
+        cps_session(radio, lambda c: c.write_image(image, [region], reboot=False))
+        got = cps_session(radio, lambda c: c.read_image([region]))
+        assert got[lo:hi] == image[lo:hi], "emergency settings write did not read back"
+
+    try:
+        write_checked(edited)
+        radio.link.emergency("cancel")
+        radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
+        radio.wait_for(lambda x: x.get("em.mode") == "alarm" and x.get("em.state") == "idle",
+                       sections=("dmr_ext",), what="alarm mode, idle")
+        radio.link.key_hold("emergency", 600)
+        time.sleep(1)
+        assert _ext(radio)["em.state"] == "idle", "early release started emergency"
+        hold_ms = hold_s * 1000 + 500
+        radio.link.key_hold("emergency", hold_ms)
+        radio.wait_for(lambda x: x.get("ui.screen") == "emergency-hold", timeout=2.0, sections=("link",),
+                       what="the countdown")
+        radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active"), timeout=hold_s + 5,
+                       sections=("dmr_ext",), what="emergency started at the end of the hold")
+        radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",),
+                       what="alarm sent")
+        radio.wait_for(lambda x: x.get("ui.screen") != "emergency-hold", timeout=5.0, sections=("link",),
+                       what="the outcome closed")
+        radio.link.key_hold("emergency", hold_ms)
+        radio.wait_for(lambda x: x.get("em.state") == "idle", timeout=hold_s + 5,
+                       sections=("dmr_ext", "link"), what="canceled by the key")
+    finally:
+        try:
+            radio.link.wait_keys_idle()
+            radio.link.emergency("cancel")
+        finally:
+            write_checked(restored)

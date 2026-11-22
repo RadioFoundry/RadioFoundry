@@ -209,6 +209,12 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "emergency", "emergency:9991234" },
 	{ "incoming-call", "t3 dlpos:3 t3ring:101125" },
+	// The emergency key held (dmr-emergency.md 5.1): the countdown, the outcome, Settings > Keys > Emergency
+	{ "emergency_hold", "hold:emerg,1500,held" },
+	{ "emergency_sent", "hold:emerg,3000" },
+	{ "emergency_mic", "hold:emerg,3000 wait:3000" },
+	{ "emergency_on", "hold:emerg,3000 wait:3000 emphase:on wait:2000" },
+	{ "settings_emergency", "ok 7 8 up ok" },
 	{ "volume", "softvol volkey up up" },
 #if CONFIG_VOLUME_BAR
 	// A knob radio: the knob turned, over Home and over a call (#354)

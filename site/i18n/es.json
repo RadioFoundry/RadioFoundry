@@ -2386,5 +2386,16 @@
  "editor.sig.play": "Reproducir",
  "editor.sig.roll": "La cadena como tono a lo largo del tiempo, {ms} ms",
  "editor.sig.no_audio": "Sin audio aquí",
- "editor.sig.empty": "Sin pasos: el sonido estándar"
+ "editor.sig.empty": "Sin pasos: el sonido estándar",
+ "screen.emergency_hold": "Tecla de emergencia pulsada: la cuenta atrás",
+ "screen.emergency_sent": "Emergencia enviada",
+ "screen.emergency_mic": "Emergencia: micro abierto, Atrás lo apaga",
+ "screen.emergency_on": "Sigue en emergencia: cómo terminarla",
+ "screen.settings_emergency": "Ajustes de la tecla de emergencia",
+ "editor.general.em_key": "Tecla de emergencia",
+ "editor.general.em_key_help": "0 = desactivada, 1 = activada. Vacío conserva el ajuste de la radio.",
+ "editor.general.em_alert": "Aviso de emergencia",
+ "editor.general.em_alert_help": "0 = sonido y vibración, 1 = silencioso. Vacío conserva el ajuste de la radio.",
+ "editor.general.em_hold": "Pulsación de emergencia (segundos)",
+ "editor.general.em_hold_help": "1–10 segundos. Vacío conserva el ajuste de la radio."
 }

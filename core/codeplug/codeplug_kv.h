@@ -21,6 +21,9 @@
 #define CODEPLUG_KEY_TOT_WARN_TONE	0x0004u	// bool: the tone before the TX time-out
 #define CODEPLUG_KEY_BATTERY_TONE	0x0005u	// bool: the low and critical battery tones
 #define CODEPLUG_KEY_TX_DENY_TONE	0x0006u	// bool: the tone when PTT is refused or a transmission cut
+#define CODEPLUG_KEY_EM_KEY	0x000Au		// bool: the emergency key's hold starts an emergency; absent = on
+#define CODEPLUG_KEY_EM_ALERT	0x000Bu		// enum: the hold's countdown 0 beeps and vibrates, 1 is silent; absent = 0
+#define CODEPLUG_KEY_EM_HOLD	0x000Cu		// uint: the emergency key's hold in s, 1-10; absent or outside = 3
 // Tier III systems' own records, key = base + system (docs/spec/dmr-trunking-codeplug.md 5)
 #define CODEPLUG_KEY_T3_POLL	0x0800u		// the short data poll setting and reply, 0x0800-0x08FF
 #define CODEPLUG_KEY_T3_SUPL	0x0900u		// the supplementary user data the radio offers, 0x0900-0x09FF

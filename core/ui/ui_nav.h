@@ -49,6 +49,7 @@ typedef enum {
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
+	SCR_EM_HOLD,			// the emergency key held: the countdown, then the outcome (ui_app.c)
 	SCR_COUNT
 } ui_scr_t;
 
@@ -60,6 +61,7 @@ typedef enum {
 #define SF_FIND		0x10u	// digits type the query (Find)
 #define SF_NO_STRIP	0x20u	// no status strip while the radio is idle (About: the owner's call); RX / TX bring it back
 #define SF_HINT_FN	0x40u	// the hint is built when drawn (hint_fn), not a marked text (hint)
+#define SF_BODY_FOOTER	0x80u	// body text below the rows, dim and word-wrapped
 
 typedef struct {
 	uint8_t scr;
@@ -113,7 +115,7 @@ typedef struct {
 	void (*context)(uint16_t i);			// CONTEXT (NULL: no actions here)
 	bool (*target)(uint16_t i, ui_target_t *t);	// what PTT talks to with this row focused (one-shot)
 	const char *(*title)(void);			// title name part (NULL: none)
-	const char *(*body)(void);			// text above the rows (NULL: none)
+	const char *(*body)(void);			// text above the rows, or below with SF_BODY_FOOTER (NULL: none)
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
@@ -243,6 +245,8 @@ bool ui_quick_key(const input_event_t *ev);
 void ui_quick_enter(void);
 void ui_volume_draw(void);
 bool ui_volume_key(const input_event_t *ev);
+void ui_em_hold_draw(void);
+bool ui_em_hold_key(const input_event_t *ev);
 
 // The crash log after the restart (ui_menus.c, CONFIG_CRASH_SCREEN): the prompt or the automatic report, and the
 // report's end as a toast. reset at ui_app_init, tick every UI tick

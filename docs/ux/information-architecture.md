@@ -51,7 +51,7 @@ Screens consume only these. Each board maps physical inputs to them (`boards/<ra
 | `PTT` | Transmit to the talk target (or the focused target, one-shot) | yes |
 | `MONITOR` | FM: squelch open while held. DMR: digital monitor (hear all) on / off on each press (#19) | recommended |
 | `TALK_TARGET` | Open the talk target picker | assignable |
-| `EMERGENCY` | Hold 1.5 s to start or cancel emergency (if enabled in codeplug) | optional |
+| `EMERGENCY` | Hold (a countdown, 3 s by default) to start or cancel emergency (if enabled in codeplug) | optional |
 | `CHANNEL_POS(n)` | Absolute channel selector position (1 to 16) | from knob |
 | `ENC_STEP(+/-)` | Encoder detent. Forward (+, clockwise): next channel on Home (as `NAV_UP`), value up in editors, focus **down** in lists and quick tiles (the next row, like a scroll wheel). Back (-): the opposite | from encoder |
 | `USER_1` to `USER_4` | Programmable keys; each has a short and a long function from the assignable list | optional |
@@ -191,7 +191,7 @@ Notation: `short / long`. "-" means none. All maps also follow the text-field ru
 | Channel encoder detent | `ENC_STEP` (Home: channel; editors: value; lists: focus, forward = down) |
 | SK1 (top side key, above PTT; row 2 D5, [hardware-dm1701.md](../spec/hardware-dm1701.md) 20) | `MONITOR` (while held) |
 | SK2 (below PTT) | `AB` (dual watch A / B) / Dual watch on/off |
-| SK3 (lowest side key) | Press: power cycle. Hold 1.5 s: `EMERGENCY` where it is built (hold again to cancel), else speak status |
+| SK3 (lowest side key) | Press: power cycle. Hold: `EMERGENCY` where it is built (a countdown from 0.3 s, 3 s by default) (hold again to cancel), else speak status |
 | P1, P2 | Previous zone, Next zone |
 | PTT | `PTT` |
 

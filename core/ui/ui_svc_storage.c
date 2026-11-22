@@ -24,6 +24,7 @@
 #include "codeplug/codeplug_kv.h"
 #include "radio/radio_keys.h"
 #include "dmr/dmr_emergency.h"	// the emergency tone (Settings > Sound); stubs without CONFIG_DMR_EMERGENCY
+#include "ui_em_keys.h"
 #include "hal_time.h"
 #include "config.h"
 #if CONFIG_HOSTLINK
@@ -145,10 +146,71 @@ static uint16_t data_row_key(uint8_t id)
 }
 static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's write is the housekeeping task's
 #endif
+#if CONFIG_DMR_EMERGENCY
+static ui_em_settings_t em_settings = { true, UI_EM_ALERT_BEEP, UI_EM_HOLD_DEFAULT_S };
+static bool em_post(uint8_t id, uint32_t value);
+
+static const codeplug_key_row_t *em_row(uint8_t id)
+{
+	return &ui_em_keys[id - UI_SET_EM_HOLD_S];
+}
+
+static void __attribute__((noinline)) em_read(ui_em_settings_t *set, uint8_t packed)
+{
+	*set = (ui_em_settings_t){ !(packed & 0x10u), (packed >> 5) & 1u, packed & 0x0Fu };
+	if (set->hold_s < 1 || set->hold_s > UI_EM_HOLD_MAX_S)
+		set->hold_s = UI_EM_HOLD_DEFAULT_S;
+}
+
+static uint8_t em_pack(const ui_em_settings_t *set)
+{
+	return set->hold_s | (!set->key ? 0x10u : 0) | (set->alert << 5);
+}
+
+static uint8_t em_save(const ui_em_settings_t *set)
+{
+	settings_t *st = settings_begin();
+	uint8_t packed = em_pack(set);
+	st->em_key_controls = packed;
+	settings_end(hal_millis());
+	return packed;
+}
+
+// Only the UI poll walks flash. A getter uses the last accepted controls, including radio-only edits.
+bool ui_svc_em_settings_poll(bool force)
+{
+	static uint8_t seen, saved;
+	static bool loaded;
+	settings_t st;
+	settings_read(&st);
+	uint8_t serial = codeplug_kv_serial();
+	if (!force && loaded && serial == seen && saved == st.em_key_controls)
+		return false;
+	seen = serial;
+	loaded = true;
+	em_read(&em_settings, st.em_key_controls);
+	saved = st.em_key_controls;
+	if (codeplug_keys_apply(ui_em_keys, UI_EM_KEYS_N, &em_settings))
+		saved = em_save(&em_settings);
+	return true;
+}
+#endif
+
+static __attribute__((noinline)) int32_t setting_get(uint8_t id);
 
 // The settings the radio core holds (radio_get_settings), apart from those read from flash below: two functions, so
 // the settings_t of the latter is not on the stack under ui_svc_reply_shown (the static stack check). INT32_MIN: not one of these
 static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
+{
+#if CONFIG_DMR_EMERGENCY
+	// The accepted controls are cached by the UI poll; this path never reads flash.
+	if (id >= UI_SET_EM_HOLD_S && id <= UI_SET_EM_ALERT)
+		return (int32_t)codeplug_keys_field(em_row(id), &em_settings);
+#endif
+	return setting_get(id);
+}
+
+static int32_t setting_get(uint8_t id)
 {
 	radio_settings_t rs;
 	switch (id) {
@@ -296,6 +358,13 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 	case UI_SET_LANGUAGE:
 		settings_read(&st);
 		return (int32_t)((uint8_t)st.lang[0] << 8 | (uint8_t)st.lang[1]);
+#if CONFIG_DMR_EMERGENCY
+	case UI_SET_EM_HOT_MIC_S: {
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		return es.hot_mic_s;
+	}
+#endif
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:
 	case UI_SET_MESSAGE_TONE:
@@ -571,6 +640,23 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 		}
 		settings_end(hal_millis());
 		return true;
+#if CONFIG_DMR_EMERGENCY
+	case UI_SET_EM_HOLD_S:
+	case UI_SET_EM_KEY:
+	case UI_SET_EM_ALERT:
+		// One byte: a bool 0 or 1, the alert, the hold in s
+		value = id == UI_SET_EM_HOLD_S ? clamp16(value, 1, UI_EM_HOLD_MAX_S) : id == UI_SET_EM_KEY ? value != 0 :
+			value == UI_EM_ALERT_SILENT;
+		return em_post(id, (uint32_t)value);
+	case UI_SET_EM_HOT_MIC_S: {
+		// The emergency module's setting: the radio core saves it (settings_t em_*) when it changes
+		dmr_emergency_settings_t es;
+		dmr_emergency_get_settings(&es);
+		es.hot_mic_s = (uint8_t)clamp16(value, 0, DMR_EMERGENCY_HOT_MIC_MAX_S);
+		dmr_emergency_set_settings(&es);
+		return true;
+	}
+#endif
 	case UI_SET_LANGUAGE:
 		if (value < 0 || value > 0xFFFF)
 			return false;
@@ -997,6 +1083,32 @@ static bool tone_post(uint16_t key, bool on)
 	job.temp = on ? 1u : 0u;
 	return storage_job_post(tone_job, NULL);
 }
+#if CONFIG_DMR_EMERGENCY
+static void em_job(void *ctx)
+{
+	(void)ctx;
+	settings_t st;
+	settings_read(&st);
+	ui_em_settings_t was, set;
+	em_read(&was, st.em_key_controls);
+	codeplug_keys_apply(ui_em_keys, UI_EM_KEYS_N, &was);
+	set = was;
+	codeplug_keys_set_field(em_row((uint8_t)job.channel), &set, job.id);
+	if (codeplug_keys_store(ui_em_keys, UI_EM_KEYS_N, &was, &set))
+		em_save(&set);
+	else
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+}
+
+static bool em_post(uint8_t id, uint32_t value)
+{
+	if (job_busy())
+		return false;
+	job.channel = id;
+	job.id = value;
+	return storage_job_post(em_job, NULL);
+}
+#endif
 
 #if CONFIG_SIG_TONES
 // A signaling tone setting (Settings > Signaling tones), set as every keyed setting is (docs/spec/codeplug-settings.md
@@ -1545,6 +1657,21 @@ static void key_apply(void)
 	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
 	keyassign_build_home(map, n, board.home_keys, board.home_key_count, board.side_key_count, key_slots);
 	input_set_keymap(map);
+}
+
+const char *ui_svc_key_name_long(uint8_t action)
+{
+	keymap_entry_t map[INPUT_KEYS_MAX];
+	uint8_t n = board.keymap_len > INPUT_KEYS_MAX ? INPUT_KEYS_MAX : board.keymap_len;
+	keyassign_build(board.keymap, n, board.side_keys, board.side_key_count, key_slots, map);
+	for (uint8_t i = 0; i < n; i++) {
+		if (map[i].long_action != action)
+			continue;
+		for (uint8_t r = 0; r < board.side_key_count && board.side_key_names != NULL; r++)
+			if (board.side_keys[r] == map[i].bit)
+				return board.side_key_names[r];
+	}
+	return NULL;
 }
 
 static void key_load(void)

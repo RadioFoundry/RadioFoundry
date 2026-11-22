@@ -129,6 +129,8 @@ uint32_t dmr_emergency_settings_serial(void);
 // The emergency key: start (false when one is running already); cancel ends it, whatever the state
 bool dmr_emergency_start(void);
 void dmr_emergency_cancel(void);
+// The hot mic ends (asked during the alarm: it doesn't start after it); the emergency goes on until canceled
+void dmr_emergency_mic_off(void);
 // The user has seen the alert(s): the banner goes
 void dmr_emergency_dismiss(void);
 dmr_emergency_state_t dmr_emergency_state(void);
@@ -145,6 +147,7 @@ void dmr_emergency_reset_stats(void);
 
 static inline bool dmr_emergency_start(void) { return false; }
 static inline void dmr_emergency_cancel(void) { }
+static inline void dmr_emergency_mic_off(void) { }
 static inline void dmr_emergency_dismiss(void) { }
 static inline dmr_emergency_state_t dmr_emergency_state(void) { return DMR_EMERGENCY_IDLE; }
 static inline bool dmr_emergency_alert(dmr_emergency_alert_t *out)

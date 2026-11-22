@@ -81,7 +81,8 @@ The top 20 tasks (`task-flows.md`) each show their first useful result within tw
 - Defaults are safe: low power on first boot, no auto-transmit features (VOX, GPS reports, ARS) enabled until the user enables them (the radio-check reply is on: it answers a check another station asked for), privacy off, promiscuous on for RX only.
 - Reversible actions don't ask; they offer **Undo** for 5 s (delete message, remove contact from a list, clear last heard).
 - Only destructive, irreversible actions ask for confirmation (factory reset, erase codeplug, delete a whole zone, overwrite calibration). The confirmation names the thing and the consequence ("Erase all 1,024 channels? This can't be undone.") and defaults to No.
-- Emergency is hold-to-activate (about 1.5 s) instead of a confirmation dialog, and cancel is the same hold.
+- Emergency is hold-to-activate (a countdown from 0.3 s, 3 s by default, with a beep and a pulse each second) instead
+  of a confirmation dialog, and cancel is the same hold.
 
 **Test:** count of confirmation dialogs in the firmware is reviewed per release; each must be on the destructive list. Codeplug write counter in the simulator must not change during the "operate only" test script.
 

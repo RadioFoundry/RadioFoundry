@@ -75,6 +75,7 @@ bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h);
 
 // State for checks
 typedef struct {
+	uint32_t em_starts, em_cancels;
 	uint32_t tx_count;		// transmissions started
 	uint32_t tx_id;			// the last transmission's target
 	bool tx_private;
@@ -95,5 +96,7 @@ typedef struct {
 extern sim_record_t sim_rec;
 const radio_view_t *sim_view(void);
 uint32_t sim_now(void);
+// Real input scans, with the release dispatched before the deadline UI tick.
+void sim_emergency_hold(unsigned ms);
 
 #endif
