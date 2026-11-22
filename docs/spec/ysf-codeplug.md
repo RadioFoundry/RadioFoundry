@@ -55,12 +55,12 @@ The base record carries:
 
 | On air ([ysf-modem.md](ysf-modem.md) 3) | From |
 |---|---|
-| CSD1 destination | The channel's destination; a call to `ALL` with a radio ID set: `*****` and the radio ID (radio ID mode, as Yaesu radios send it) |
+| CSD1 destination | The channel's destination; a call to `ALL`: `*****` and the radio ID, spaces when none is set (radio ID mode, as Yaesu radios send it) |
 | CSD1 source | The radio-wide callsign (3); blank = the radio name (the open-firmware callsign field) |
 | CSD2 downlink, uplink | Spaces: a radio sends direct, a repeater fills them (4.2.1 (1) of the standard) |
 | CSD3 Rem1-Rem3 | Spaces |
 | CSD3 Rem4 (our radio ID) | The radio-wide radio ID (3) |
-| FICH call mode | Radio ID mode for a call to `ALL` with a radio ID set; otherwise group / CQ |
+| FICH call mode | Radio ID mode for a call to `ALL`; otherwise group / CQ |
 | FICH Dev | The channel's narrow flag |
 | FICH DT, the voice | V/D mode 2 (DN), or Voice FR (VW) when the channel's VW flag is set: then CSD3 goes in the first communication frame ([ysf-modem.md](ysf-modem.md) 4.1) |
 | FICH SQL, SC | SQL type 0 and SC = the DG-ID sent (3.2 of the modem spec: where radios carry the DG-ID) |
@@ -76,6 +76,6 @@ Key 0x0A00 + 5 ([channel-modes.md](channel-modes.md) 5.5):
 | Offset | Size | Field |
 |---|---|---|
 | 0 | 10 | Callsign. Blank = the radio name, which the radio core supplies |
-| 10 | 5 | Radio ID: sent in CSD3 Rem4, and in a call to `ALL` in the destination field (radio ID mode). Blank = spaces, and calls to `ALL` go in group mode |
+| 10 | 5 | Radio ID: sent in CSD3 Rem4, and in a call to `ALL` in the destination field (radio ID mode). Blank = spaces in both, and calls to `ALL` still go in radio ID mode |
 
 Absent, zeroed or short: every field missing or zeroed reads blank. Fields are appended after offset 14.

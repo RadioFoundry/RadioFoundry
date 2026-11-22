@@ -506,7 +506,9 @@ static void test_transmit(void)
 	radio_ysf_stop();
 }
 
-// No radio ID: there is nothing for radio ID mode's second half, so a call to everyone stays a group call to ALL
+// No radio ID: a call to everyone still goes in radio ID mode, "*****" and our ID's five spaces. A Yaesu radio
+// (an FTM-510DE, PR #833) showed no caller for the group / CQ form we sent here before, which no Yaesu radio sends: its
+// own call to everyone is radio ID mode (ysf-modem.md 1.6). The source callsign is in the same place either way
 static void test_transmit_no_id(void)
 {
 	station_id = "";
@@ -524,10 +526,13 @@ static void test_transmit_no_id(void)
 		ysf_engine_rx(&far_rx, pcm, 160);
 		now_ms += 20;
 	}
-	char d[11];
+	char s[11], d[11];
+	ysf_callsign_get(far.call.csd.src, s);
 	ysf_callsign_get(far.call.csd.dest, d);
-	CHECK(far.firsts == 1 && far.cm == YSF_CM_GROUP && strcmp(d, "ALL") == 0, "no radio ID: %u overs, CM %u, dest '%s'",
-	      far.firsts, far.cm, d);
+	CHECK(far.firsts == 1 && far.cm == YSF_CM_RADIO_ID && strcmp(d, "*****") == 0 && strcmp(s, "G4XYZ") == 0,
+	      "no radio ID: %u overs, CM %u, '%s' -> '%s'", far.firsts, far.cm, s, d);
+	CHECK(memcmp(far.call.csd.dest + 5, "     ", 5) == 0 && memcmp(far.call.csd.rem[3], "     ", 5) == 0,
+	      "no radio ID: the source ID half '%.5s', Rem4 '%.5s'", far.call.csd.dest + 5, far.call.csd.rem[3]);
 	radio_ysf_tx_abort();
 	radio_ysf_rx_again(now_ms);
 	radio_ysf_stop();

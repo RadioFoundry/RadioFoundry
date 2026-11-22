@@ -196,14 +196,12 @@ static void station_load(void)
 	memcpy(csd_tx.dest, chan.dest, YSF_CALLSIGN_LEN);
 	memcpy(csd_tx.rem[3], st.radio_id, YSF_RADIO_ID_LEN);	// Rem4: the source station's radio ID (table 4-2)
 	// A call to everyone goes as a Yaesu radio sends it: radio ID mode, the destination field "*****" and our radio
-	// ID (an FT-5D's DN overs, every frame: ysf-modem.md 3.5). Without a radio ID there is nothing to put in that
-	// half, so the group call to ALL stays; a channel naming a station or group calls it by name as before
-	bool have_id = false;
-	for (unsigned i = 0; i < YSF_RADIO_ID_LEN; i++) {
-		have_id = have_id || st.radio_id[i] != ' ';
-	}
+	// ID (an FT-5D's DN overs, every frame: ysf-modem.md 1.6, 3.5), also with no radio ID set, when that half and
+	// Rem4 are spaces. Every Yaesu radio has a radio ID, so none sends the group / CQ form to ALL, and a Yaesu radio
+	// (an FTM-510DE) showed no caller for it although the source callsign was where it always is. A channel naming
+	// a station or group calls it by name in group mode as before
 	cm_tx = YSF_CM_GROUP;
-	if (have_id && memcmp(chan.dest, YSF_CP_DEST_ALL, YSF_CALLSIGN_LEN) == 0) {
+	if (memcmp(chan.dest, YSF_CP_DEST_ALL, YSF_CALLSIGN_LEN) == 0) {
 		ysf_csd_radio_id(&csd_tx, YSF_RADIO_ID_ALL);
 		cm_tx = YSF_CM_RADIO_ID;
 	}

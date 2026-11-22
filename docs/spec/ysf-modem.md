@@ -109,7 +109,7 @@ mode before starting one (`tune()`), which hands both loans over in order.
 | Whether radios carry the DG-ID in the FICH squelch code | A Yaesu radio set to DG-ID 20: `ysf.dgid` reads 20; ours set to 20 opens its DG-ID 20 squelch and not its 30 |
 | Whether a Yaesu radio decodes our levels (wide) and its own receiver's tolerance | The visiting radio shows our callsign and plays our voice |
 | The header's FN / FT (the standard doesn't define them for a header; we send FN 0, FT 5 with DN; a Yaesu radio sends FT 6, 1.6. With VW both send FN 0, FT 0) | The Yaesu radio's display of our header; a repeater passing us |
-| ~~The destination a Yaesu radio sends for a CQ call~~ | Answered (1.6): radio ID mode, `*****` and its radio ID. We send the same when a radio ID is set |
+| ~~The destination a Yaesu radio sends for a CQ call~~ | Answered (1.6): radio ID mode, `*****` and its radio ID. We send the same, with spaces for the ID when none is set (3.5) |
 | V/D mode 1's 72-bit frame: the DMR frame's bit order (3.4) | A Yaesu radio set to VD1 (if it can be: most send DN), the voice clear |
 | Turnaround times on the flat route | The preamble and the header's two copies cover key-up; the SDR shows how much of them is on air |
 | The receive path's low-frequency response | A Yaesu transmission's sync bit errors (`ysf.sync_errors` / `ysf.sync_bits`) at a strong signal: 0 on a flat path; a floor means a high-pass (set `rx_hpf_hz`, 2.4) |
@@ -132,7 +132,7 @@ committed; the layout they showed is in `tests/vectors/ysf.txt`'s `yaesu` line w
 | Levels | +-819 / +-2499 Hz: 0.91 of wide, ratio 3.05; FICH Dev 0 | +-900 / +-2700 Hz by the board's scale |
 | CS, BN, BT, MR, VoIP, reserved bit 15 | 2, 0, 0, direct, 0, 0 | the same |
 | SQL, SC | 0, 0 with its DG-ID 0 | 0, the DG-ID sent |
-| CM | 1, radio ID mode, in every frame of a call to everyone | the same when a radio ID is set (3.5) |
+| CM | 1, radio ID mode, in every frame of a call to everyone | the same (3.5) |
 | CSD1 destination | `*****` (the destination radio ID: everyone) and its own radio ID | the same when a radio ID is set |
 | CSD2, Rem1-Rem3 | spaces | spaces |
 | Rem4 | its radio ID (DN FN 5; VW CC0) | the radio-wide radio ID |
@@ -307,8 +307,10 @@ DMR's 72-bit frame (the same codec, AMBE+2 3600x2450) and decoded with the DMR F
 | Terminator | as the header with FI 2, after PTT is released and the queued voice has gone out (the frame it ends in is finished with the codec's silence) |
 
 Every frame: CS 2, MR direct, VoIP 0, Dev from the channel, SQL 0, SC = the channel's DG-ID. A call to everyone
-(destination `ALL`) with a radio ID set goes as a Yaesu radio's (1.6): CM radio ID, the destination field `*****` and
-our radio ID. Without a radio ID, or to a named station or group, CM group and the destination as set.
+(destination `ALL`) goes as a Yaesu radio's (1.6): CM radio ID, the destination field `*****` and our radio ID, five
+spaces when none is set (Rem4 too). To a named station or group, CM group and the destination as set. Until PR #833
+a call to everyone without a radio ID went as CM group to `ALL`: the standard allows it, but no Yaesu radio sends it
+(each has a radio ID), and a Yaesu FTM-510DE showed no caller for it, with the source callsign in its usual place.
 
 ### 3.6 Receive
 
@@ -483,7 +485,7 @@ debug link never reads the engine, whose RAM D-STAR may hold by then) and the vo
 | `ysfVwTest` | Voice FR (4.1): the frame against `tests/vectors/ysf-vw.txt` from `tools/ysf_vw_ref.py`, and a whole VW transmission bit for bit; the FEC over 4,000 frames with up to three errors in each Golay word and one in each Hamming word, the corrections reported; u7 bare; four errors in u0's word seen by the codec's rule; VW transmissions through the receiver: clean, inverted, late entry, each FICH position lost, errors on the air, DN and VW back to back; the codec over the air against the clean decode |
 | `ysfVwRadioTest` | VW in the radio core on ysfRadioTest's fake board: another station's VW played sample for sample as the codec makes it, with and without the board's codec; DN, VW and DN on one channel; our VW over heard by an independent receiver (DT 3, CSD3, the encoder's frames in order), PTT allowed without a codec on a VW channel and refused on a DN one |
 | `ysfCodeplugTest` | the codeplug records ([ysf-codeplug.md](ysf-codeplug.md)) |
-| `ysfRadioTest` | the radio core's module against a fake board: callsigns (a radio ID mode destination shown as `ALL`), the voice in order, the end, the DG-ID filter; our transmission decoded by an independent receiver (radio ID mode with a radio ID, group mode without); the first over's silence frame never sent half written; the counters read while the radio task switches to D-STAR; the refusals; DN's mic gain (a quiet mic lifted by the board's 12 dB and the step, a shout held under the limiter's ceiling, unity untouched) |
+| `ysfRadioTest` | the radio core's module against a fake board: callsigns (a radio ID mode destination shown as `ALL`), the voice in order, the end, the DG-ID filter; our transmission decoded by an independent receiver (radio ID mode to everyone, with a radio ID and without); the first over's silence frame never sent half written; the counters read while the radio task switches to D-STAR; the refusals; DN's mic gain (a quiet mic lifted by the board's 12 dB and the step, a shout held under the limiter's ceiling, unity untouched) |
 | `tools/ysf_ref.py --self-test` | the reference against itself and the CRC catalog; `run-ysf` fails when the vectors file differs from what it writes |
 | `tools/ysf_vw_ref.py --self-test` | the VW reference: the interleave covers every code bit once, the codes' distances, round trips with errors, CSD3's place; `run-ysfvw` fails when `ysf-vw.txt` differs |
 
