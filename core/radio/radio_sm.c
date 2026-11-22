@@ -2763,8 +2763,7 @@ static bool data_t3_start(radio_sm_t *sm, const dmrBurst_t *bursts, int count)
 	// status. Its answer finishes the check (dmrDataServiceSignalResult); there is no conventional answer CSBK
 	if (strcmp(dmrDataServiceTxStartingName(), "signal") == 0 && count >= 1 && bursts[0].length >= 10 &&
 	    (bursts[0].payload[0] & 0x3Fu) == DMR_CSBKO_RADIO_CHECK) {
-		const uint8_t *c = bursts[0].payload;
-		uint32_t id = ((uint32_t)c[4] << 16) | ((uint32_t)c[5] << 8) | c[6];
+		uint32_t id = dmrDataRadioCheckDst(bursts[0].payload);
 		if (id == 0 || t3m.state != T3_CAMPED || t3m.ax.state != T3_AX_IDLE) {
 			return false;
 		}
