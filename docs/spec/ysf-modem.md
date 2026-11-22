@@ -82,6 +82,10 @@ Voice FR (`CONFIG_YSF_VW`, on with Fusion) adds, measured the same way on the mu
 against on): 16,116 B of flash (552,224 to 568,340; 63.1 % of 880 KB) and 4,152 B of static RAM (182,528 to 186,680;
 24.8 KB still free). The RAM is the codec's 3,964 B (4.3) and the larger voice queue slots (13 bytes against 7, 16
 slots each way); the flash is `core/mbe` (decoder, encoder, synthesis, tables) and `ysf_vw.c`. CPU and stack: 4.3.
+Since PR #833 the codec's 3,964 B are the DMR vocoder's lent state block for the length of a VW over, not static RAM
+(4.3): the multimode build went from 184,816 to 183,736 B (the shared area is now D-STAR's size), and the same radio's
+image that keeps the IP gateway and adds Fusion (`CONFIG_YSF=y`) from 214,032 B, which no longer fit, to 210,072 B,
+then 206,416 B (5 KB free) with three cold task-side buffers moved to the board's cold RAM (`RFOUNDRY_COLD_RAM`).
 
 Both sets of figures were measured with 16 slots each way. The transmit queue now holds 32 (`RADIO_YSF_TX_Q`): from
 PTT to the first voice subframe go the preamble, both headers and, with VW, the CSD3 frame's three data subframes,
@@ -91,8 +95,8 @@ That is 16 more slots: 112 B of RAM with DN only, 208 B with VW.
 The default image (with the IP gateway) doesn't build Fusion and keeps its 0.5 KB of free RAM.
 
 **Sharing per-mode state.** Only one of DMR, D-STAR and Fusion runs at a time. D-STAR's codec borrows the DMR
-vocoder's state RAM while D-STAR runs (`hal_vocoder_t.lend`); Fusion uses the vocoder itself, so it borrows nothing and
-needs the vocoder not lent. Fusion's engine (`ysf_engine_t`, 952 B on the host) and D-STAR's engine and codec state share
+vocoder's state RAM while D-STAR runs (`hal_vocoder_t.lend`); Fusion runs DN on the vocoder itself, so it borrows the
+block only for a VW over (4.3). Fusion's engine (`ysf_engine_t`, 952 B on the host) and D-STAR's engine and codec state share
 one area, the size of the larger, that the radio core lends to the mode that runs (`core/radio/radio_mode_ram.c`): each
 module takes it when its channel is tuned and gives it back when it stops, and a take while the other mode holds it is
 refused rather than granted, since the holder's transmit interrupt may still pull from its engine. The core stops every
@@ -413,7 +417,7 @@ Yaesu radio's transmission (the tests in section 6 use synthetic frames only).
 | Item | VW |
 |---|---|
 | Flash | 16,116 B on the multimode build (1.4), and 3,316 B more since the decoder was made faster (568,708 to 572,024 B; the cosine table 2 KB) |
-| RAM, static | 4,152 B: the codec 3,964 B (the estimator's history 516, the decoder's state 132, a frame's parameters 176, the synthesis core's state 516, its last and current frame 288 each, its scratch 2,048), the larger queue slots 192 B. Its own, not lent: Fusion runs on the DMR vocoder, whose state RAM is in use whenever a DN over can arrive. The encoder works in the decoder's state and scratch (one direction at a time); only the estimator's history is its own |
+| RAM, static | 4,152 B: the codec 3,964 B (the estimator's history 516, the decoder's state 132, a frame's parameters 176, the synthesis core's state 516, its last and current frame 288 each, its scratch 2,048), the larger queue slots 192 B. Where the platform's vocoder lends its state block (`HAL_VOCODER_LEND_BYTES`, the HR_C7000's 7 KB) the codec is that block, taken per over, not per channel, since a DN over may follow at any moment: the audio callback takes it at a VW over's first frame (or a VW transmission's first block) and starts the codec there, and lets it go before its next call of the vocoder, which then rebuilds its own state as after any lend; the queue slots are then all the static RAM VW adds. Elsewhere the codec is in the mode area (`radio_ysf.h` `RADIO_YSF_VW_IN_AREA`). The encoder works in the decoder's state and scratch (one direction at a time); only the estimator's history is its own |
 | Stack | the audio task: 1.8 KB at the deepest through the encoder (with every 64-bit library call charged 256 B; the codec makes none now), under the stock codec's 4.1 KB that task already allows for |
 | CPU | measured in a model of the core, not on a radio: below |
 
