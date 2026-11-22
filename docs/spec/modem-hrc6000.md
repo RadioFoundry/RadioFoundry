@@ -565,8 +565,9 @@ Common: 0x21=0xA2 (polite to own CC, clear the encode buffer), 0x22=0x86 (start 
   0x21=0xA2, 0x22=0x86, 0x41=0x00, and start the sequence at the next timeslot interrupt. A transmission that
   listens between its bursts (`hrc6000_dmr_tx_listen`, RMO only) sets MasterMode with its first burst (0x40=0xE3)
   and keeps the timing the over was aligned with to its end, where passive timing comes back. In passive timing the
-  chip followed the outbound heard in the listen slots and stepped its own bursts half a symbol at a time, away from
-  the repeater's grid, and each step's burst reached the repeater with bit errors ([gotchas.md](gotchas.md) 14.6.1).
+  chip followed the outbound heard in the listen slots and stepped its own bursts (104 us on the HR_C5000, about
+  63 us on the HR_C6000), away from the repeater's grid, and each step's burst reached the repeater with bit errors
+  ([gotchas.md](gotchas.md) 14.6.1).
 - **Through a repeater, nothing heard**: wake it (section 6.5) first.
 - **Data**: as voice, but the sequence sends the queued bursts instead of headers and voice.
 

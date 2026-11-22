@@ -735,9 +735,10 @@ set only while the transmission listens (`tx_listen`) and cleared after. Too muc
 burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The board's hardware page has the values.
 
 **14.6.1 A transmission that listens holds its timing.** In passive timing (0x40 = 0xC3) the chip follows the
-outbound heard in the listen slots, and the HR_C5000 moved its own bursts by half a symbol (104 us) every few
-seconds, each step away from the repeater's slot grid, not toward the grid. The burst at a step, or one or two after
-the step, reached the repeater with bit errors: about one burst in a hundred, every bad burst at a step (issue 609).
+outbound heard in the listen slots, and moved its own bursts every few seconds (104 us, half a symbol, on the
+HR_C5000; about 63 us on the HR_C6000), each step away from the repeater's slot grid, not toward the grid. The burst
+at a step, or one or two after the step, reached the repeater with bit errors: about one burst in a hundred, every bad
+burst at a step (issue 609).
 The SDR bench took those bursts for a carrier a few hundred Hz off, so the retune looked like the cause. Rule: a
 transmission aligned to a repeater that listens sets MasterMode (0xE3) with its first burst and goes passive again at
 its end ([modem-hrc6000.md](modem-hrc6000.md) 6.2). Held, the bench's timing error stayed within 10 us over a 9 s
