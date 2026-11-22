@@ -90,10 +90,7 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 
 // Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer
 // goes to the receive LO and the receiver on; RF_TX_INTER comes earlier (4:0x12 = LISTEN_LEAD_STEPS), and there the
-// synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before.
-// Off (issue 609): with it, through a repeater, now and then a burst left on a carrier a few hundred Hz off and reached
-// the repeater with bit errors, at any lead, and far more of them on a wide split (hardware-md380.md 4.9.1)
-#define MD380_TX_LISTEN		0
+// synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
 #define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0: 15 half symbols over the chip's 10, about 1.56 ms
 #define LISTEN_LOCK_MAX_US	2000u
 
@@ -600,7 +597,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_wait_lock = rf_dmr_wait_lock,
 	.tx_done = rf_dmr_tx_done,
 	.tx_end = dmr_tx_end,
-	.listen_split = MD380_TX_LISTEN,
+	.listen_split = true,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
