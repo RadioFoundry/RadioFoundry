@@ -893,8 +893,9 @@ static void rx_burst(hrc7000_dmr_t *e)
 			e->listen_voice = false;
 			// Direct mode: the call is over and the channel free, as the call stack's own check has it. A reply keyed
 			// now is aligned to that call (DMR_CALL_ALIGN_MS, 300 ms) and was refused for the rest of the busy window.
-			// Through a repeater a terminator is its hang, and a call there is impolite anyway (gotchas 1.8)
-			e->rx_call_end = !e->cfg.repeater;
+			// Through a repeater a terminator is its hang, and a call there is impolite anyway (gotchas 1.8). Only a good
+			// CRC (trust also takes a bad one while transmitting) and no call left on the other slot frees the channel
+			e->rx_call_end = !e->cfg.repeater && e->voice_slots == 0 && s.crc_ok;
 			e->st.rx_terminator++;
 			break;
 		case DMR_BURST_CSBK:

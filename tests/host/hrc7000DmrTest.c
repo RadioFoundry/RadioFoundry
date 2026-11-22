@@ -950,6 +950,27 @@ static void test_polite_after_terminator(void)
 	}
 }
 
+// A terminator on one chip slot while the other slot's call runs leaves the channel busy
+static void test_polite_other_slot_terminator(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
+	tick(false);
+	deframe(rti(1, 0, 1, 2, 0, 0));	// call A: voice on chip slot 0
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 1, 0));	// call B ends on chip slot 1
+	now += 10000u;
+	count_kind(0xFF, NULL);
+	polite_try(false);		// call A is still on
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));	// then A ends too
+	now += 10000u;
+	polite_try(true);
+}
+
 static void test_event_overflow(void)
 {
 	setup();
@@ -2033,6 +2054,7 @@ int main(void)
 	test_polite_and_repeater();
 	test_polite_after_restart();
 	test_polite_after_terminator();
+	test_polite_other_slot_terminator();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();
