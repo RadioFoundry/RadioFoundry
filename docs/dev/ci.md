@@ -103,9 +103,10 @@ tool reads them from the diff:
 | Other firmware sources (`core/`, `hal/`, `config/`, a driver no board lists, the Makefile) | | One board per platform: the one with the most switches on |
 
 Only switches on by default and not required by the board are built off, as in the matrix. `RFOUNDRY_AFFECTED_LIMIT`
-caps the list (12 per firmware job on a pull request, about 6 minutes), most relevant first: a board's own switches, then shared ones
-by how many changed files name them, fm-minimal last. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed
-file or its includes name. The nightly matrix stays the backstop for what the selection misses.
+caps the list (12 per firmware job on a pull request, about 6 minutes), most relevant first: a board's own switches,
+fm-minimal for a platform, linker or boot change, shared switches by how many changed files name them, then
+fm-minimal for DMR. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed file or its includes name. The
+nightly matrix stays the backstop for what the selection misses.
 
 `tools/affected.py summary --base origin/main` prints the list with the files behind each build, so a local
 `tools/ci.sh --affected origin/main --board <b>` runs the same builds before a push.

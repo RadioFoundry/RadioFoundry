@@ -284,8 +284,8 @@ def board_config(root, b):
 
 
 def plan(root, diff, only=None, config=board_config, scope="precise", base=None, head=None):
-    """[(board, name, make args, why)] most relevant first: the board's own switches, then shared ones by how many
-    files name them, fm-minimal last."""
+    """[(board, name, make args, why)] most relevant first: the board's own switches, fm-minimal for a platform,
+    linker or boot change, shared switches by how many files name them, then fm-minimal for DMR."""
     boards, reach, shared, fm = analyze(root, diff, only, scope, base, head)
     cfg = {b: config(root, b) for b in boards}
     reps = {}
@@ -312,7 +312,9 @@ def plan(root, diff, only=None, config=board_config, scope="precise", base=None,
     for b in sorted(fm):
         if "DMR" in cfg[b][1]:      # a board that can't build without DMR has no fm-minimal
             continue
-        out.append((9, b, "fm-minimal", FM_MINIMAL, fm[b]))
+        # a platform, linker script or boot stage change: right after the board's own switches; DMR alone: last
+        direct = any(w != "DMR in shared code" for w in fm[b])
+        out.append((0.5 if direct else 9, b, "fm-minimal", FM_MINIMAL, fm[b]))
     seen = set()
     res = []
     for _, b, name, args, why in sorted(out, key=lambda r: r[0]):
