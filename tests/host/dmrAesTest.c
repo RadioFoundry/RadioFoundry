@@ -494,6 +494,72 @@ static void test_mi_sequence(void)
 	CHECK(memcmp(st.keys[0].key, zero, sizeof(zero)) == 0, "key wiped");
 }
 
+// Packet data on an AES channel (docs/spec/dmr-data.md 13.4): AES-256 OFB from the MI's IV, the key by its ID, one
+// sequence position per packet, never one an over or another packet had, none without a reservation
+static void test_data(void)
+{
+	dmrAesState_t st;
+	dmrAesSeq_t q;
+	uint8_t key[32], plain[100], data[100], zero[40], ks[40], iv[16], blk[16];
+	aes256_ctx_t aes;
+
+	hex(KEY_A, key, 32);
+	dmrAesStateInit(&st);
+	dmrAesSeqInit(&q);
+	st.seq = &q;
+	CHECK(dmrAesDataMi(&st) == 0, "no key: no MI");
+	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 7, key);
+	dmrAesSetTx(&st, 0);
+	CHECK(dmrAesDataMi(&st) == 0, "no position: no MI");
+	q.next = 0x1234567Bu;
+	q.left = 3;
+
+	// One position each, in sequence order; the next over starts past them
+	uint32_t m1 = dmrAesDataMi(&st), m2 = dmrAesDataMi(&st);
+	CHECK(m1 == 0x1234567Bu && m2 == dmrAesSeqAdvance(m1, 1), "data MIs walk the sequence: %08x %08x", m1, m2);
+	CHECK(q.left == 1 && q.tx_mi == 0, "each packet used one position at once, %u left", (unsigned)q.left);
+	uint32_t over = dmrAesNewMi(0, &st);
+	CHECK(over == dmrAesSeqAdvance(m1, 2), "an over after them starts past them");
+	q.tx_used = 1;
+	CHECK(dmrAesDataMi(&st) == 0, "the reservation used up: no MI, the packet isn't sent");
+
+	// The keystream: AES(K, IV(mi)), then AES of each block before (OFB)
+	memset(zero, 0, sizeof zero);
+	memcpy(ks, zero, sizeof ks);
+	CHECK(dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m1, ks, sizeof ks), "crypt");
+	aes256Init(&aes, key);
+	dmrAesIv(m1, 0, iv);
+	aes256Encrypt(&aes, iv, blk);
+	CHECK(memcmp(ks, blk, 16) == 0, "first block AES(K, IV)");
+	aes256Encrypt(&aes, blk, blk);
+	CHECK(memcmp(ks + 16, blk, 16) == 0, "second block AES(K, first)");
+	aes256Encrypt(&aes, blk, blk);
+	CHECK(memcmp(ks + 32, blk, 8) == 0, "a short last block");
+
+	// A round trip; another MI gives other ciphertext
+	for (int i = 0; i < (int)sizeof plain; i++)
+		plain[i] = (uint8_t)(i * 29 + 3);
+	memcpy(data, plain, sizeof data);
+	CHECK(dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m1, data, sizeof data) && memcmp(data, plain, sizeof data) != 0,
+	      "encrypted");
+	uint8_t other[100];
+	memcpy(other, plain, sizeof other);
+	dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m2, other, sizeof other);
+	CHECK(memcmp(other, data, sizeof data) != 0, "another MI, another keystream");
+	CHECK(dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m1, data, sizeof data) && memcmp(data, plain, sizeof data) == 0,
+	      "decrypted");
+
+	// Refused, the data left alone: another key ID, MI 0, another algorithm, no key at all
+	memcpy(data, plain, sizeof data);
+	CHECK(!dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 8, m1, data, sizeof data), "another key ID");
+	CHECK(!dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, 0, data, sizeof data), "MI 0");
+	CHECK(!dmrAesDataCrypt(&st, DMR_AES_ALG_AES256, 7, m1, data, sizeof data), "the voice algorithm ID isn't data's");
+	dmrAesClearKeys(&st);
+	CHECK(!dmrAesDataCrypt(&st, DMR_AES_DATA_ALG, 7, m1, data, sizeof data), "no key");
+	CHECK(memcmp(data, plain, sizeof data) == 0, "refused crypts leave the data as it was");
+	CHECK(!dmrAesDataCrypt(NULL, DMR_AES_DATA_ALG, 7, m1, data, sizeof data), "no state");
+}
+
 int main(void)
 {
 	test_fips197();
@@ -504,6 +570,7 @@ int main(void)
 	test_tx_late_entry();
 	test_tx_key();
 	test_mi_sequence();
+	test_data();
 	if (failures)
 		printf("dmrAesTest: %d FAILED\n", failures);
 	else

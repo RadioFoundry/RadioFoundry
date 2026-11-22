@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #define DMR_AES_ALG_AES256		0x25	// PI header algorithm ID
+#define DMR_AES_DATA_ALG		5	// its data privacy header algorithm (DMR_DATA_ALG_AES256, dmr-data.md 13.1)
 #define DMR_AES_KEY_BYTES		32
 #define DMR_AES_KEY_SLOTS		1	// a channel's key
 #define DMR_AES_SF_FRAMES		18	// vocoder frames in a superframe
@@ -123,6 +124,16 @@ bool dmrAesTxKey(const dmrAesState_t *st, uint8_t *alg, uint8_t *key_id);
 uint32_t dmrAesNewMi(uint32_t now_ms, void *ctx);
 // Clear the keys, the expanded key and the IV (wiped), keeping the sequence
 void dmrAesClearKeys(dmrAesState_t *st);
+
+// --- Packet data (docs/spec/dmr-data.md 13.4) ---
+// The data layer's MI source (dmrDataPrivacy_t.newMi): ctx is a dmrAesState_t. One position of the radio's sequence
+// for one packet, used up at once, so no keystream is shared with an over or another packet. 0 = none usable (as
+// dmrAesNewMi): the packet is not sent
+uint32_t dmrAesDataMi(const void *ctx);
+// The data layer's crypt (dmrDataPrivacy_t.crypt): ctx is a dmrAesState_t. AES-256 in OFB mode from the IV of mi
+// (dmrAesIv, superframe 0) over the packet's user data, with the key of this key ID. False: another algorithm, MI 0,
+// or no such key (the data left as it is)
+bool dmrAesDataCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length);
 
 // The call stack's crypt hook (dmr_crypt_fn, core/dmr/call/dmr_call.h): ctx is a dmrAesState_t. False: no key for the
 // call's algorithm and key ID (the burst is not played), a superframe past DMR_AES_SF_MAX, or (TX) a burst of another

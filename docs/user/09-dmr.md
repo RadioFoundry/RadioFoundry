@@ -300,8 +300,10 @@ to the radio. Both radios must have the same key bytes and ID. The system and ch
 
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
-A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are
-disabled on these channels, and your GPS position is not sent on them. The editor's image export omits key bytes by
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text messages and other packet data on
+these channels go encrypted with the channel's key, and only then: without the key nothing is sent, never in the
+clear. Two radios running RadioFoundry read each other's; whether a radio of another make reads them is not known yet.
+Your GPS position is never put in an encrypted call's voice header. The editor's image export omits key bytes by
 default. Including keys produces a file that contains the keys.
 
 For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves

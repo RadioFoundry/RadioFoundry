@@ -353,6 +353,42 @@ void dmrAesClearKeys(dmrAesState_t *st)
 	st->seq = q;
 }
 
+uint32_t dmrAesDataMi(const void *ctx)
+{
+	dmrAesState_t *st = (dmrAesState_t *)(uintptr_t)ctx;	// the sequence it points to moves on
+	uint32_t mi = dmrAesNewMi(0, st);
+
+	if (mi != 0) {
+		st->seq->tx_used = 1;		// the packet's one IV: words mi..mi+3
+		dmrAesSeqSettle(st->seq);
+	}
+	return mi;
+}
+
+bool dmrAesDataCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length)
+{
+	const dmrAesState_t *st = (const dmrAesState_t *)ctx;
+
+	if (st == NULL || alg != DMR_AES_DATA_ALG || mi == 0 || length < 0)
+		return false;
+	int8_t slot = dmrAesFindKey(st, DMR_AES_ALG_AES256, keyId);
+	if (slot < 0)
+		return false;
+	aes256_ctx_t aes;
+	uint8_t ks[16];
+
+	aes256Init(&aes, st->keys[slot].key);
+	dmrAesIv(mi, 0, ks);
+	for (int i = 0; i < length; i += 16) {
+		aes256Encrypt(&aes, ks, ks);	// OFB: each block of keystream is the cipher of the one before
+		for (int j = 0; j < 16 && i + j < length; j++)
+			data[i + j] ^= ks[j];
+	}
+	dmrAesWipe(&aes, sizeof(aes));
+	dmrAesWipe(ks, sizeof(ks));
+	return true;
+}
+
 bool dmrAesSetKey(dmrAesState_t *st, uint8_t slot, uint8_t alg, uint8_t key_id, const uint8_t key[DMR_AES_KEY_BYTES])
 {
 	if (slot >= DMR_AES_KEY_SLOTS || (alg != 0 && alg != DMR_AES_ALG_AES256) || (alg != 0 && key == NULL))

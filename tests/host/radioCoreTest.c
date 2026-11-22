@@ -3587,12 +3587,45 @@ static void test_dmr_voice_features(void)
 			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
 			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
 	CHECK(mi3 == res0);
+	// Data on the AES channel goes encrypted with its key (docs/spec/dmr-data.md 13.4): every first data header is
+	// followed by a privacy header naming algorithm 5 and the key ID, with an MI of the radio's sequence
+	static const uint8_t l4a[12] = { 0x13, 0x88, 0x13, 0x88, 0, 12, 0, 0, 'd', 'a', 't', 'a' };
+	unsigned dh = 0, ph = 0;
+	uint32_t dmi = 0;
+	first = sim.air_count;
+	CHECK(dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP,
+				   l4a, sizeof(l4a)));
+	run(3000);
+	for (unsigned i = first; i < sim.air_count; i++) {
+		if (sim.air[i].kind != DMR_BURST_DATA_HEADER)
+			continue;
+		const uint8_t *h = sim.air[i].payload;
+		if ((h[0] & 0x0F) == 0x0F && h[1] == 0x10) {
+			ph++;
+			CHECK(h[2] == 0x51 && h[3] == 0);	// AES-256 encrypted, key ID 0
+			dmi = ((uint32_t)h[6] << 24) | ((uint32_t)h[7] << 16) | ((uint32_t)h[8] << 8) | h[9];
+		} else {
+			dh++;
+		}
+	}
+	CHECK(dh >= 1 && ph == dh && dmi != 0 && dmi != mi3);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
 	run(50);
 	first = sim.air_count;
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
 	req(RREQ_PTT, 0);
+	// Without the key no data goes at all, encrypted or clear
+	first = sim.air_count;
+	dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4a,
+			     sizeof(l4a));
+	run(3000);
+	dh = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		dh += sim.air[i].kind == DMR_BURST_DATA_HEADER;
+	CHECK(dh == 0);
+	run(30000);
 	kv_t3_clear();
 	chans[4].rx_only = false;
 	reload_channel();

@@ -2796,8 +2796,8 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 // frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
-	if (sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
-		return false;
+	// An AES channel sends data encrypted with its key (data_tick), and only with it: tx_check refuses without the key
+	// or a saved MI reservation (dmr-data.md 13.4)
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
@@ -3347,6 +3347,23 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 	data_key.type = (dmrPrivacyType_t)sm->privacy_type;
 	data_key.key = sm->privacy_key;
 	dmrPrivacyDataConfig(&data_key, &c.privacy);
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+		// The channel's AES key covers its data (docs/spec/dmr-data.md 13.4): AES-256 OFB, a new MI from the radio's
+		// sequence for every packet. Without the key no data packet goes, and none is sent in the clear
+		memset(&c.privacy, 0, sizeof c.privacy);
+		if (dmrAesHasKeys(&channel_keys)) {
+			c.privacy.mode = DMR_DATA_PRIVACY_ENCRYPT;
+			c.privacy.alg = DMR_AES_DATA_ALG;
+			c.privacy.keyId = channel_keys.keys[0].key_id;
+			c.privacy.crypt = dmrAesDataCrypt;
+			c.privacy.newMi = dmrAesDataMi;
+			c.privacy.ctx = &channel_keys;
+		} else {
+			c.privacy.mode = DMR_DATA_PRIVACY_BLOCK;
+		}
+	}
+#endif
 #endif
 #if CONFIG_DMR_IP_GATEWAY
 	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
