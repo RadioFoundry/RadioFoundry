@@ -6471,6 +6471,47 @@ static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_SIG_TONES
+// The longest the keying waits for the FM start tone to play out: the longest chain (900 ms) and some margin
+#define FM_PREKEY_MAX_MS	1200u
+// ... and the shortest: the tone's first block is only queued by then (as PERMIT_HOLD_MIN_MS)
+#define FM_PREKEY_MIN_MS	40u
+
+// Whether the FM start tone's speaker copy plays before the transmitter keys. A board with CAP_BEEP_NOT_ON_AIR can't play
+// the speaker while it transmits FM: its modem mixes the speaker PCM into the modulator, so the codec doesn't play it
+// then, or its speaker amplifier is off. So the copy plays in a short receive-only hold, as the DMR talk permit does
+// (permit_before_key), and the carrier follows. Not when the modem's sidetone plays it with the
+// on-air copy (lead_side), nor with the host's audio, which has no start tone
+static bool fm_start_before_key(const radio_sm_t *sm)
+{
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0 || sm->host_audio || !sig_local_on(sm, SIG_EV_BEGIN)) {
+		return false;
+	}
+#if CONFIG_FM_TX_TONES
+	if (board.radio->tx_tone != NULL && lead_side(sm)) {
+		return false;
+	}
+#endif
+	return true;
+}
+
+// The hold's end: the tone has played out, and the keying goes on in ptt_down's second pass, which checks the channel again
+static void fm_prekey_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint32_t held = now_ms - sm->fm_pre_ms;
+	const hal_audio_t *a = board.audio;
+	bool playing = beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+	if (held < FM_PREKEY_MIN_MS || (held < FM_PREKEY_MAX_MS && playing)) {
+		return;
+	}
+	sm->fm_pre_ms = 0;
+	sm->ptt = false;
+	sm->fm_pre_go = 1;
+	ptt_down(sm, now_ms);
+	sm->fm_pre_go = 0;
+}
+#endif
+
 #if CONFIG_P25
 // --- P25 conventional: radio_p25.c runs the engine and the voice; the transmitter is the air modes' (below) ---
 
@@ -6969,6 +7010,17 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
+#if CONFIG_SIG_TONES
+	// The start tone on the speaker plays first on a board that can't play it while it transmits FM (fm_start_before_key)
+	uint8_t pre = sm->fm_pre_go;
+	sm->fm_pre_go = 0;
+	if (pre == 0 && fm_start_before_key(sm)) {
+		sm->fm_pre_ms = now_ms != 0 ? now_ms : 1;	// fm_prekey_poll keys once it has played
+		sig_local(sm, SIG_EV_BEGIN);
+		changed(sm);
+		return;
+	}
+#endif
 	sm->view.state = RS_TX;		// speaker off, red LED on, before keying
 	sm->view.tx_auto = false;
 	sm->view.last_tx_ms = now_ms != 0 ? now_ms : 1;
@@ -6989,11 +7041,16 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
-	// The start of transmission tone on the speaker. CAP_BEEP_NOT_ON_AIR is about the DMR engine closing the audio path
-	// while it transmits; the FM transmitter doesn't, so the speaker copy plays on every board
+	// The start of transmission tone on the speaker, now that it is keyed. On a board with CAP_BEEP_NOT_ON_AIR it already
+	// played before keying (above): none of them plays the speaker while it transmits FM
 	bool side = false;
 #if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
 	side = !sm->host_audio && board.radio->tx_tone != NULL && lead_side(sm);	// the sidetone plays it
+#endif
+#if CONFIG_SIG_TONES
+	if (pre == 1) {
+		side = true;	// played before keying
+	}
 #endif
 	if (!side && sig_local_on(sm, SIG_EV_BEGIN)) {
 		sig_local(sm, SIG_EV_BEGIN);
@@ -7016,7 +7073,13 @@ static void satellite_arm(radio_sm_t *sm, uint32_t now_ms)
 	}
 	subtone_t normal_tone = sm->view.ch.tx_tone;
 	sm->view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 744u };
+#if CONFIG_SIG_TONES
+	sm->fm_pre_go = 2;	// it needs the carrier at once
+#endif
 	ptt_down(sm, now_ms);
+#if CONFIG_SIG_TONES
+	sm->fm_pre_go = 0;
+#endif
 	sm->view.ch.tx_tone = normal_tone;
 	if (sm->view.state != RS_TX || !sm->ptt) {
 		ptt_release(sm, false, now_ms);
@@ -7039,6 +7102,13 @@ static void ptt_release(radio_sm_t *sm, bool roger, uint32_t now_ms)
 #endif
 	sm->ptt = false;
 	activity(sm, now_ms);
+#if CONFIG_SIG_TONES
+	if (sm->fm_pre_ms != 0) {
+		sm->fm_pre_ms = 0;	// let go before it keyed: nothing went on air, so no end tone
+		changed(sm);
+		return;
+	}
+#endif
 	if (sm->host_audio) {
 		roger = false;		// the host sends its own audio, tones included
 	}
@@ -9608,6 +9678,15 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 
+#if CONFIG_SIG_TONES
+	if (sm->fm_pre_ms != 0) {
+		fm_prekey_poll(sm, now_ms);
+		if (sm->fm_pre_ms != 0) {
+			outputs(sm);
+			return;		// still playing the start tone
+		}
+	}
+#endif
 	if (sm->view.state == RS_TX) {
 #if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
 		if (sm->satellite_arm_active && (int32_t)(now_ms - sm->satellite_arm_end_ms) >= 0) {
