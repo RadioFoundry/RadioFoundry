@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
-| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses inbound voice frames. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -717,8 +717,9 @@ A programming cable can hold the line low by itself. Then the flash starts whene
 ## TYT MD-9600
 
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
-(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
-V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
+(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx)
+boards have not. On one V4A/V5 (V26.xx) radio DMR transmit drops out ([#750](https://github.com/RadioFoundry/RadioFoundry/issues/750)),
+so receive or transmit may not work on these boards. SFR is not supported yet.
 
 The radio detects a V4A/V5 board by itself. It can't tell a V1-V3 board from a V4, so on those it asks once: the home
 screen says "Set: Board revision" and the radio won't transmit until you set it under Settings > Advanced > Hardware >
