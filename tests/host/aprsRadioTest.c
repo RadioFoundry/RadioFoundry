@@ -97,7 +97,7 @@ static void r_tx_off(void)
 static void r_status(radio_status_t *st)
 {
 	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
-	st->rssi_dbm = -120;
+	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
 }
