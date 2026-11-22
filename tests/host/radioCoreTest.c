@@ -1519,6 +1519,27 @@ static void test_power(void)
 	req(RREQ_POWER, 1);
 	req(RREQ_CLEAR_TEMP, 0);
 	CHECK(sm.view.power == 1 && !sm.view.temporary);
+	// Key fill's low power (radio_req_tx_low): every transmission at level 0, the user's level kept and back after
+	req(RREQ_CH_STEP, -1);			// the channel that transmits
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power == 2);
+	req(RREQ_TX_LOW, 1);
+	CHECK(sm.view.tx_low && sm.view.power == 2);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 0);
+	req(RREQ_PTT, 0);
+	req(RREQ_TX_LOW, 0);
+	CHECK(!sm.view.tx_low && sm.view.power == 2);
+	poll_for(1000);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 2);
+	req(RREQ_PTT, 0);
+	// Never saved: a restart (a fresh radio core) is at the user's level
+	req(RREQ_TX_LOW, 1);
+	start();
+	CHECK(!sm.view.tx_low);
 }
 
 static void test_vfo(void)
@@ -3492,6 +3513,21 @@ static void test_dmr_voice_features(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0 && l.svc == 0);
+#if CONFIG_ZEROIZE
+	// The emergency wipe (docs/spec/zeroize.md 4.2): the radio core's key and its contexts zeroed, privacy off, the
+	// next call in the clear and the key no longer saved with the channel
+	req(RREQ_DMR_PRIVACY, (int32_t)((1u << 16) | 7u));
+	CHECK(d->privacy && sm.privacy_key == 7);
+	radio_req_zeroize();
+	CHECK(!d->privacy && sm.privacy_key == 0 && sm.privacy_type == DMR_PRIVACY_OFF);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0 && l.svc == 0);
+	settings_t zs;
+	settings_read(&zs);
+	CHECK(zs.privacy_active == 0);
+#endif
 
 #if CONFIG_DMR_AES
 	// AES: a codeplug channel bound to a system's traffic key. Without the key PTT is refused; with it our overs carry
@@ -4138,6 +4174,7 @@ static void test_ui_requests(void)
 uint32_t hal_millis(void) { return now; }
 void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
+bool radio_dmr_privacy_on(void) { return sm.view.dmr.privacy; }
 uint32_t radio_view_serial(void) { return sm.serial; }
 void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
 void radio_set_settings(const radio_settings_t *s) { radio_sm_set_settings(&sm, s, now); }
@@ -4229,6 +4266,13 @@ void radio_req_dmr_focus(uint32_t id, bool p)
 	req(RREQ_DMR_FOCUS, (int32_t)((id & 0xFFFFFFu) | (p ? 1u << 24 : 0)));
 }
 void radio_req_dmr_privacy(uint8_t type, uint16_t key) { req(RREQ_DMR_PRIVACY, (int32_t)(((uint32_t)type << 16) | key)); }
+// The emergency wipe: its radio request goes to the state machine; its flash steps are zeroizeTest's
+void radio_req_zeroize(void) { req(RREQ_ZEROIZE, 0); }
+bool radio_zeroize_busy(void) { return false; }
+bool codeplug_wipe(void) { return true; }
+bool codeplug_wipe_keys(void) { return true; }
+bool codeplug_kv_remove_ranges(const uint16_t *lohi, uint8_t n) { (void)lohi; (void)n; return true; }
+void crash_clear(void) { }
 static uint16_t input_long, input_repeat;
 void input_set_timing(uint16_t l, uint16_t r) { input_long = l; input_repeat = r; }
 static bool ptt_blocked;
@@ -5385,6 +5429,26 @@ static void test_ui_settings(void)
 	radio_settings_t rs;
 
 	dmr_start(true);
+#if CONFIG_ZEROIZE
+	// The emergency wipe's rows (ui_svc_zeroize.c, docs/spec/zeroize.md 3.1): the defaults, a code set by its digits only
+	CHECK(ui_svc_setting_get(UI_SET_WIPE_CODE) == 0 && ui_svc_setting_get(UI_SET_WIPE_SCOPE) == 0 &&
+	      ui_svc_setting_get(UI_SET_WIPE_CONFIRM) == 1 && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 0);
+	CHECK(!ui_svc_wipe_code_check("1357"));
+	CHECK(ui_svc_wipe_code_set("1357") && ui_svc_setting_get(UI_SET_WIPE_CODE) == 1);
+	CHECK(ui_svc_wipe_code_check("1357") && !ui_svc_wipe_code_check("1358"));
+	CHECK(!ui_svc_setting_set(UI_SET_WIPE_CODE, 1));
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_TRIES, 5) && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 5);
+	CHECK(!ui_svc_setting_set(UI_SET_WIPE_TRIES, 16) && ui_svc_setting_get(UI_SET_WIPE_TRIES) == 5);
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_SCOPE, 1) && ui_svc_setting_get(UI_SET_WIPE_SCOPE) == 1);
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 0) && ui_svc_setting_get(UI_SET_WIPE_CONFIRM) == 0);
+	settings_read(&sv);
+	CHECK(sv.zz_flags == (SETTINGS_ZZ_SET | SETTINGS_ZZ_KEYS_ONLY | SETTINGS_ZZ_NO_CONFIRM | 5u << SETTINGS_ZZ_TRIES_SHIFT));
+	CHECK(ui_svc_setting_set(UI_SET_WIPE_CODE, 0) && ui_svc_setting_get(UI_SET_WIPE_CODE) == 0);
+	CHECK(!ui_svc_wipe_code_check("1357"));
+	ui_svc_setting_set(UI_SET_WIPE_SCOPE, 0);
+	ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 1);
+	ui_svc_setting_set(UI_SET_WIPE_TRIES, 0);
+#endif
 	// The radio core's own settings, read back through radio_get_settings
 	radio_get_settings(&rs);
 	rs.key_beep = true;
@@ -6438,7 +6502,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(452);	// the settings records (page 1: 192 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(476);	// the settings records (page 1: 216 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);

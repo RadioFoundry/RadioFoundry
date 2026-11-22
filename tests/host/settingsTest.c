@@ -929,9 +929,13 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
-		{ offsetof(settings_t, aes_mi_res), 408 },
+		{ offsetof(settings_t, aes_mi_res), 408 },	// DMR AES (dmr-voice.md 5.1), appended
+		{ offsetof(settings_t, zz_flags), 412 },	// the emergency wipe (zeroize.md 5), appended
+		{ offsetof(settings_t, zz_reserved), 413 },
+		{ offsetof(settings_t, zz_salt), 416 },
+		{ offsetof(settings_t, zz_hash), 420 },
 	};
-	CHECK(sizeof(settings_t) == 412);
+	CHECK(sizeof(settings_t) == 436);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);

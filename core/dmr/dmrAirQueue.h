@@ -36,7 +36,9 @@
 // Who it belongs to (its done function)
 #define AIRQ_OWNER_GATEWAY		0
 #define AIRQ_OWNER_ZONE_SHARE	1
-#define AIRQ_OWNERS				2
+#define AIRQ_OWNER_KEY_FILL		2
+#define AIRQ_OWNER_GROUP_KEY	3
+#define AIRQ_OWNERS				4
 
 // How a packet ended
 typedef enum

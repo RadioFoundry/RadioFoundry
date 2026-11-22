@@ -328,3 +328,6 @@ System secrets (7.4) and traffic keys (5.4) are **secrets**.
 - Zone and channel sharing carries a system's secrets only at the system's "whole system with key" level, and only
   when the sender turns keys on for that share ([zone-share.md](zone-share.md)).
 - A firmware reads them only for the mode module that uses them; the debug link never shows one.
+- The emergency wipe erases them from the radio's flash, every old copy included ([zeroize.md](zeroize.md) 4.1).
+- A traffic key's check value ([key-check.md](key-check.md)) may be shown wherever the key is listed, by the radio and the
+  Codeplug Editor; it isn't a secret.

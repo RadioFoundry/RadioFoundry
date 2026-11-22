@@ -57,6 +57,10 @@ is `tools/bringup.py list --radio <id>`.
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
+| `key_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `key_fill` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `group_key_fill` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `zeroize` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `dmr_aes` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
@@ -203,6 +207,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_AES` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `KEY_CHECK` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `KEY_FILL` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `GROUP_KEY_FILL` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `ZEROIZE` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -331,6 +339,10 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 27,300* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 and the DM-32UV transmit is checked off air at both rates and receive with a bench transmitter, speech frames through the vocoder included (DM-1701); on the HR_C6000 radios the speaker plays NXDN speech through the chip's prompt tone FIFO, checked by ear on the DM-1701 and the MD-9600 ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.6). RAM: 2,184 B on the DM-1701; with `P25` also on it shares P25's engine memory (9,464 B flash, 256 B RAM on top of P25) |
 | NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 468 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
+| Key check values: Settings > Privacy > Key check and Stored keys | `KEY_CHECK` | — | — | 1,676 B flash and no RAM on the DM-32UV default build (2026-11-20); the ARM figures are still to be measured. Untested on a radio |
+| Key fill between radios over DMR data: Tools > Key fill (Receive a key, Send a key) | `KEY_FILL` | — | — | 9,760 B flash and 160 B static RAM on the DM-32UV default build (2026-11-21, measured on and off), plus about 1.3 KB of RTOS heap while the key fill screen is open; the ARM figures are still to be measured. Needs `DMR` and `KEY_CHECK`; also builds the TX queue. Untested on a radio |
+| Group key fill: Tools > Key fill (Receive group key; Send a key > Send to group) | `GROUP_KEY_FILL` | — | — | 3,968 B flash and 112 B static RAM on the DM-32UV default build (2026-11-21, measured on and off), plus about 300 B of RTOS heap while its screen is open; the ARM figures are still to be measured. Needs `KEY_FILL` and `DMR_AES`. Untested on a radio |
+| Emergency wipe: a wipe code and `#` erase the keys (and the codeplug) from the flash and RAM | `ZEROIZE` | — | — | 4,480 B flash and 120 B RAM on the DM-32UV default build (2026-11-21, measured on and off); the ARM figures are still to be measured. Needs `UI_SETTINGS`. Untested on a radio |
 | AES-256 DMR voice, PI header and late-entry signaling | `DMR_AES` | 3,948 | 4,312 | Requires `DMR_PRIVACY`. Image bytes against the build with `DMR_AES` off (nightly matrix); the DM-32UV 4,460. RAM not measured again since review (then 496 B on the DM-1701, 512 B on the MD-380, plus 16 B of CCM). TX to a receiver of another make needs the modem driver's burst F field (`set_burst_f`, [dmr-voice.md](spec/dmr-voice.md) 5.1): only the HR_C7000 driver has it (DM-32UV); on the HR_C6000 and other radios our AES overs reach radios running RadioFoundry only (#864). |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |

@@ -107,6 +107,26 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
 
+[feature.key_check]
+switch = "KEY_CHECK"
+spec = "docs/spec/key-check.md"
+source = ["core/support/kcv.c", "core/codeplug/key_store.c"]
+
+[feature.key_fill]
+switch = "KEY_FILL"
+spec = "docs/spec/key-fill.md"
+source = ["core/keyfill", "core/support/entropy.c", "core/support/x25519.c"]
+
+[feature.group_key_fill]
+switch = "GROUP_KEY_FILL"
+spec = "docs/spec/group-key-fill.md"
+source = ["core/keyfill/groupkey.c", "core/keyfill/groupkey_svc.c", "core/ui/ui_svc_groupkey.c"]
+
+[feature.zeroize]
+switch = "ZEROIZE"
+spec = "docs/spec/zeroize.md"
+source = ["core/zeroize/zeroize.c", "core/ui/ui_svc_zeroize.c"]
+
 [feature.dmr_aes]
 switch = "DMR_AES"
 spec = "docs/spec/dmr-voice.md"

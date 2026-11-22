@@ -159,6 +159,13 @@ bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n);
 bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len);
 bool codeplug_kv_set_u32(uint16_t key, uint32_t value);
 bool codeplug_kv_remove(uint16_t key);
+#if CONFIG_ZEROIZE
+// The emergency wipe, keys only (docs/spec/zeroize.md 4.1): every entry whose key is in one of the n ranges
+// lohi[2i]..lohi[2i + 1] removed in one journaled rewrite, the rest kept. An area that can't be read as ours (damaged,
+// a later version, the shared buffer taken) or rewritten may hold them all the same: its sector is erased instead. True
+// with nothing to do (no area, or another firmware's codeplug: none of our keys). The shared sector buffer is zeroed
+bool codeplug_kv_remove_ranges(const uint16_t *lohi, uint8_t n);
+#endif
 // The state of an area held whole in RAM (a STORAGE_SECTOR), as a reader would find it in flash. No lock
 codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
 // A raw write of sector (STORAGE_SECTOR bytes) at flash address addr, for every path that commits the EEPROM image's

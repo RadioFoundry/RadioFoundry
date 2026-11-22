@@ -3553,6 +3553,11 @@ msgid "Zones/Chs Received"
 msgstr "Zone/Can. ricevuti"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "Carica chiave"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "Doppio ascolto"
@@ -3651,6 +3656,31 @@ msgstr "Viola"
 msgctxt "SET_VALUE_ACCENT_PINK"
 msgid "Pink"
 msgstr "Rosa"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_CODEPLUG"
+msgid "Keys+codeplug"
+msgstr "Chiavi+codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_ONLY"
+msgid "Keys only"
+msgstr "Solo chiavi"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_3_WRONG"
+msgid "3 wrong"
+msgstr "3 errati"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_5_WRONG"
+msgid "5 wrong"
+msgstr "5 errati"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_10_WRONG"
+msgid "10 wrong"
+msgstr "10 errati"
 
 #: core/ui/ui_menus.c
 msgctxt "VALUE_3_MIN"
@@ -4013,6 +4043,41 @@ msgid "Key"
 msgstr "Chiave"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "Verifica chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "Chiavi salvate"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CODE"
+msgid "Wipe code"
+msgstr "Codice cancella"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_WHAT"
+msgid "Wipe what"
+msgstr "Cosa cancellare"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CONFIRM"
+msgid "Wipe confirm"
+msgstr "Conferma cancella"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_AFTER"
+msgid "Wipe after"
+msgstr "Cancella dopo"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_CLEAR_KEYS"
+msgid "Clear all keys"
+msgstr "Cancella chiavi"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "Blocco auto"
@@ -4313,6 +4378,16 @@ msgid " steps"
 msgstr " passi"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "Scegli prima il tipo"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_NEEDS_NUMBER_KEYS"
+msgid "Needs number keys"
+msgstr "Servono i tasti numerici"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono via libera: non in questa build"
@@ -4373,11 +4448,6 @@ msgid "Talker alias: not in this build"
 msgstr "Alias parlante: non in questa build"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "Scegli prima il tipo"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "Niente GPS su questa radio"
@@ -4388,9 +4458,19 @@ msgid "DMR position: not in this build"
 msgstr "Posizione DMR: non in questa build"
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_SET"
+msgid "Set"
+msgstr "Impostato"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diagnostica: non in questa build"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "The same check on both radios: the same key"
+msgstr "Stessa verifica su entrambe le radio: stessa chiave"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4516,6 +4596,456 @@ msgstr "Scansione ferma qui"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "Modifica liste scan in qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "Privacy"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_KEY_TOO_LONG"
+msgid "This key is too long to send"
+msgstr "Questa chiave è troppo lunga da inviare"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_SEND_BACK"
+msgid "OK send  Back"
+msgstr "OK invia  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "Nessuna chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_LABEL_SEND_GROUP"
+msgid "Send to group"
+msgstr "Invia al gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_LABEL_TO_ID"
+msgid "To ID"
+msgstr "A ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CHECK"
+msgid "Check "
+msgstr "Controllo "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TOAST_TYPE_ID"
+msgid "Type the other radio's DMR ID"
+msgstr "Digita l'ID DMR dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE_SEND"
+msgid "Send this key"
+msgstr "Invia questa chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_ID_OK_SEND_BACK"
+msgid "0-9 ID  OK send  Back"
+msgstr "0-9 ID  OK invia  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_RECEIVE"
+msgid "Receive a key"
+msgstr "Ricevi una chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_SEND"
+msgid "Send a key"
+msgstr "Invia una chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_ROW_RECEIVE"
+msgid "Receive group key"
+msgstr "Ricevi chiave gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_DMR_ONLY"
+msgid "Key fill: DMR channels only"
+msgstr "Carica chiave: solo canali DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_NO_DMR_ID"
+msgid "Set this radio's DMR ID first"
+msgstr "Imposta prima l'ID DMR di questa radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BAD_PEER"
+msgid "Type another radio's DMR ID"
+msgstr "Digita l'ID DMR di un'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BUSY"
+msgid "Key fill busy: try again"
+msgstr "Carica chiave occupata: riprova"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_NO_SYSTEM"
+msgid "No matching system on the receiver"
+msgstr "Nessun sistema corrispondente sul ricevente"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_AMBIGUOUS"
+msgid "More than one system matches on the receiver"
+msgstr "Più di un sistema corrisponde sul ricevente"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_UNSUPPORTED"
+msgid "The receiver can't store that kind of key"
+msgstr "Il ricevente non può salvare quel tipo di chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_BAD_PAYLOAD"
+msgid "The key didn't arrive whole"
+msgstr "La chiave non è arrivata intera"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_WRITE_FAILED"
+msgid "The receiver couldn't save the key"
+msgstr "Il ricevente non ha potuto salvare la chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_CANCELED"
+msgid "The other radio canceled"
+msgstr "L'altra radio ha annullato"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CANCELED"
+msgid "Canceled"
+msgstr "Annullato"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_MISMATCH"
+msgid "The codes didn't match"
+msgstr "I codici non corrispondevano"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_TIMEOUT"
+msgid "The other radio didn't answer"
+msgstr "L'altra radio non ha risposto"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CHECK"
+msgid "A message failed its check"
+msgstr "Un messaggio non ha superato il controllo"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_BUSY"
+msgid "The other radio is busy"
+msgstr "L'altra radio è occupata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_SEND"
+msgid "Couldn't send: check the channel"
+msgstr "Invio non riuscito: controlla il canale"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_FAILED"
+msgid "Key fill failed"
+msgstr "Carica chiave non riuscita"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_PRESS_KEYS"
+msgid "Press keys at random: "
+msgstr "Premi tasti a caso: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_READY"
+msgid "Ready. This radio: "
+msgstr "Pronta. Questa radio: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CODE"
+msgid "Code "
+msgstr "Codice "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_OTHER_RADIO"
+msgid "Other radio "
+msgstr "Altra radio "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SAME"
+msgid "Same on both? OK yes, Back no"
+msgstr "Uguale su entrambe? OK sì, Indietro no"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENDING"
+msgid "Sending the key"
+msgstr "Invio della chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORING"
+msgid "Storing the key"
+msgstr "Salvataggio della chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORED"
+msgid "Key stored"
+msgstr "Chiave salvata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENT"
+msgid "Key sent"
+msgstr "Chiave inviata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_FAILED"
+msgid "Failed: "
+msgstr "Non riuscito: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT_OK"
+msgid "Waiting for the other radio's OK"
+msgstr "In attesa dell'OK dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT"
+msgid "Waiting for the other radio"
+msgstr "In attesa dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_LOW_POWER"
+msgid "Low power"
+msgstr "Bassa potenza"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_YES_BACK_NO"
+msgid "OK yes  Back no"
+msgstr "OK sì  Indietro no"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_BACK_CANCELS"
+msgid "Back cancels"
+msgstr "Indietro annulla"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_CHANNEL"
+msgid "Group key fill needs an AES channel with its key"
+msgstr "La carica di gruppo richiede un canale AES con la sua chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_TARGET"
+msgid "Group key fill needs a talkgroup as the target"
+msgstr "La carica di gruppo richiede un gruppo di conversazione come destinazione"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_KEY"
+msgid "Only AES-256 keys go to a group"
+msgstr "Solo le chiavi AES-256 vanno a un gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_WHY_TIMEOUT"
+msgid "No key came"
+msgstr "Nessuna chiave arrivata"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SENDING"
+msgid "Sending to group "
+msgstr "Invio al gruppo "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_TALKGROUP"
+msgid "Talkgroup "
+msgstr "Gruppo "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SENT"
+msgid "Sent to group"
+msgstr "Inviata al gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_LISTEN"
+msgid "Listening for a group key"
+msgstr "In attesa di una chiave di gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_LEFT"
+msgid " left"
+msgstr " rimanenti"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_FROM"
+msgid "Key from "
+msgstr "Chiave da "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_KEY_ID"
+msgid "Key ID "
+msgstr "ID chiave "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SAVE_AS"
+msgid "Save as key: "
+msgstr "Salva come chiave: "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_BODY_SAVED"
+msgid "Saved as key "
+msgstr "Salvata come chiave "
+
+#: core/ui/ui_menus.c
+msgctxt "GK_HINT_SAVE"
+msgid "0-9 ID  OK save  Back drop"
+msgstr "0-9 ID  OK salva  Indietro scarta"
+
+#: core/ui/ui_menus.c
+msgctxt "GK_TITLE"
+msgid "Group key fill"
+msgstr "Carica di gruppo"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR"
+msgid "Clear code"
+msgstr "Togli codice"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_NEW_CODE"
+msgid "New code"
+msgstr "Nuovo codice"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_AGAIN"
+msgid "Again"
+msgstr "Ancora"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_TYPE"
+msgid "Type 4 digits. Then on Home, or while locked, they and # wipe the radio"
+msgstr "Digita 4 cifre. Poi nella Home, o a tasti bloccati, esse e # cancellano la radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_AGAIN"
+msgid "Type the 4 digits again"
+msgstr "Digita di nuovo le 4 cifre"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_CLEARED"
+msgid "Wipe code cleared"
+msgstr "Codice di cancellazione tolto"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_DIFFER"
+msgid "Not the same: type the code again"
+msgstr "Diversi: digita di nuovo il codice"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_SET"
+msgid "Wipe code set"
+msgstr "Codice di cancellazione impostato"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE_CODE"
+msgid "Wipe Code"
+msgstr "Codice di Cancellazione"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CODE"
+msgid "0-9 type  Back"
+msgstr "0-9 digita  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_AGAIN"
+msgid "Try again"
+msgstr "Riprova"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR_KEYS"
+msgid "Clear keys"
+msgstr "Cancella chiavi"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_NOW"
+msgid "Wipe now"
+msgstr "Cancella ora"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_CLEAR_KEYS"
+msgid "Erase every key now? Channels stay"
+msgstr "Cancellare tutte le chiavi? I canali restano"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_KEYS"
+msgid "Erase the keys now?"
+msgstr "Cancellare le chiavi ora?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_ALL"
+msgid "Erase the keys and the codeplug now?"
+msgstr "Cancellare le chiavi e il codeplug ora?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_KEYS"
+msgid "keys area"
+msgstr "area chiavi"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_SETTINGS"
+msgid "settings"
+msgstr "impostazioni"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_CODEPLUG"
+msgid "codeplug"
+msgstr "codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_NATIVE"
+msgid "native area"
+msgstr "area nativa"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_PURGE"
+msgid "old copies"
+msgstr "copie vecchie"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_RADIO"
+msgid "radio RAM"
+msgstr "RAM della radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_INCOMPLETE"
+msgid "Wipe incomplete:"
+msgstr "Cancellazione incompleta:"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_KEYS_DONE"
+msgid "Keys cleared. Restarting"
+msgstr "Chiavi cancellate. Riavvio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_DONE"
+msgid "Wiped. Restarting"
+msgstr "Cancellata. Riavvio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_RUNNING"
+msgid "Wiping. Don't switch off"
+msgstr "Cancellazione. Non spegnere"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CLEAR"
+msgid "OK clears  Other keys cancel"
+msgstr "OK cancella  Altri tasti annullano"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CONFIRM"
+msgid "OK wipes  Other keys cancel"
+msgstr "OK cancella  Altri tasti annullano"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_FAILED"
+msgid "OK again  Back"
+msgstr "OK riprova  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE"
+msgid "Emergency Wipe"
+msgstr "Cancellazione di Emergenza"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

@@ -27,6 +27,9 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 | [dmr-voice.md](dmr-voice.md) | DMR voice calls |
 | [dmr-data.md](dmr-data.md) | DMR data services: text messages, ARS, LRRP, call alert, radio check |
 | [zone-share.md](zone-share.md) | Zone and channel sharing over DMR data: the record, fragments, offers, the import |
+| [key-check.md](key-check.md) | Key check values: six hex digits that say two radios hold the same key, and the list of stored keys |
+| [key-fill.md](key-fill.md) | Key fill: one radio sends a stored key to another over DMR data, with a code compared on both screens |
+| [zeroize.md](zeroize.md) | Emergency wipe: a 4-digit code and `#` erase the keys (and the codeplug) from the flash and RAM |
 | [dmr-emergency.md](dmr-emergency.md) | DMR emergency |
 | [dmr-roaming.md](dmr-roaming.md) | DMR repeater roaming |
 | [dmr-trunking.md](dmr-trunking.md) | DMR Tier III trunking, mobile station |

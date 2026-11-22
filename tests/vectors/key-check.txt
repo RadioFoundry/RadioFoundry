@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Test vectors of docs/spec/key-check.md, read by the host tests (C, keyCryptoTest) and the Codeplug Editor's tests (JS,
+# kcv.test.mjs). One vector a line, fields split on spaces; numbers are hex without 0x. The check values were computed
+# with Python's hashlib (hashed) and the cryptography package's AES (aes), apart from both implementations.
+#
+# privacy <type> <key value> <check>: a privacy key slot (key-check.md 2.1)
+privacy 1 1 9507A7
+privacy 1 FF E8273B
+privacy 2 1234 6DE8CA
+#
+# traffic <system type> <algorithm> <key octets> <check>: a traffic key, hashed (2.2)
+traffic 4 1 3412 51588D
+#
+# aes <key octets> <check>: a 32 octet AES key (3); only in a build with AES
+aes 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F F29000

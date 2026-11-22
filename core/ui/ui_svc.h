@@ -92,6 +92,71 @@ static inline const char *ui_mode_name(uint8_t mode)
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);
 bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
+// The key check value of privacy key slot 1 (docs/spec/key-check.md), six hex digits; false when the slot has no key
+bool ui_svc_privacy_kcv(char out[7]);
+// The stored keys (codeplug/key_store.h: privacy slots, then traffic keys) for Settings > Privacy > Keys: how many, and
+// entry i with its check value, never the key
+struct key_entry_s;
+uint16_t ui_svc_keys_count(void);
+bool ui_svc_key(uint16_t i, struct key_entry_s *e);
+#if CONFIG_KEY_FILL
+// Key fill between radios (ui_svc_keyfill.c, docs/spec/key-fill.md): one session while the Key fill screen is open.
+// What the screen shows
+typedef struct {
+	uint8_t state;		// kf_state_t (keyfill/keyfill.h); KF_ST_IDLE while the randomness pool fills
+	uint8_t role;		// 0 sender, 1 receiver
+	uint8_t why;		// KF_WHY_*: why it failed
+	uint8_t result;		// the DONE result (KF_STORED or a KF_RES_*)
+	bool by_peer;		// the failure came as the other radio's ABORT
+	bool kcv_ok;		// kcv holds the stored key's check value
+	uint8_t kcv[3];
+	uint8_t presses;	// random key presses the pool still wants (0: full)
+	uint32_t own_id, peer_id;
+	uint32_t code;		// the six-digit code, from Compare on
+} ui_kf_view_t;
+enum { UI_KF_OK, UI_KF_NO_ID, UI_KF_BAD_PEER, UI_KF_BUSY };
+// Start a session: receive (key < 0), or send stored key `key` (ui_svc_key's index) to dst. own: this radio's DMR ID
+// on the air; low: every transmission at the lowest power until the session ends (a direct mode channel, key-fill.md
+// 2.1). UI_KF_*
+uint8_t ui_svc_kf_start(int32_t key, uint32_t own, uint32_t dst, bool low);
+bool ui_svc_kf_view(ui_kf_view_t *out);		// false: no session
+void ui_svc_kf_confirm(bool same);		// the user's answer in Compare
+// The screen is left: ABORT to the other radio when there is one, then the session is wiped and freed
+void ui_svc_kf_end(void);
+// Every UI pass: runs the session (and the end of one left); true when what the screen shows may have changed
+bool ui_svc_kf_tick(const radio_view_t *v, uint32_t now);
+#endif
+#if CONFIG_GROUP_KEY_FILL
+// Group key fill (ui_svc_groupkey.c, docs/spec/group-key-fill.md): one session while the Group key screen is open.
+// What the screen shows
+typedef struct {
+	uint8_t state;		// UI_GK_*
+	uint8_t why;		// UI_GK_WHY_*: why it failed
+	bool send;		// the sender's session
+	uint8_t copies;		// sender: copies on air so far
+	uint8_t presses;	// sender: random key presses the pool still wants
+	uint32_t left_s;	// receiver: seconds the window stays open
+	uint32_t sender;	// receiver: who sent the key shown
+	uint32_t tg;		// sender: the talkgroup
+	uint8_t key_id;		// the key ID sent
+	uint8_t save_id;	// receiver: the key ID it will be saved as
+	bool kcv_ok;
+	uint8_t kcv[3];
+} ui_gk_view_t;
+enum { UI_GK_RANDOM, UI_GK_SENDING, UI_GK_SENT, UI_GK_LISTEN, UI_GK_GOT, UI_GK_SAVING, UI_GK_SAVED, UI_GK_FAILED };
+enum { UI_GK_WHY_NONE, UI_GK_WHY_CHANNEL, UI_GK_WHY_TARGET, UI_GK_WHY_NO_ID, UI_GK_WHY_KEY, UI_GK_WHY_BUSY,
+       UI_GK_WHY_SEND, UI_GK_WHY_TIMEOUT, UI_GK_WHY_STORE };
+// Start a session on the channel in v: receive (key < 0), or send stored key `key` (ui_svc_key's index, an AES-256
+// traffic key) to the channel's talkgroup. UI_GK_WHY_NONE, or why not
+uint8_t ui_svc_gk_start(int32_t key, const radio_view_t *v);
+bool ui_svc_gk_view(ui_gk_view_t *out);		// false: no session
+void ui_svc_gk_save_id(uint8_t id);		// the key ID the user typed for the key shown
+void ui_svc_gk_save(void);			// OK on the key shown: stored by a storage job
+void ui_svc_gk_drop(void);			// Back on the key shown: dropped, the window listens on
+void ui_svc_gk_end(void);			// the screen is left: wiped and freed by the next tick
+bool ui_svc_gk_tick(const radio_view_t *v, uint32_t now);
+void ui_svc_gk_zeroize(void);			// the emergency wipe's RAM step (zeroize_ram_hook)
+#endif
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable
@@ -297,6 +362,30 @@ bool ui_svc_factory_reset(void);
 enum { UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE };
 bool ui_svc_codeplug_answer(uint8_t answer);
 
+// --- The emergency wipe (CONFIG_ZEROIZE; ui_svc_zeroize.c, docs/spec/zeroize.md). Weak stubs: not in this build ---
+// Store a new wipe code (four digits, '0'..'9'), as a salted hash; false when not stored
+bool ui_svc_wipe_code_set(const char code[4]);
+// The digits typed are the wipe code (false with none set)
+bool ui_svc_wipe_code_check(const char code[4]);
+// Start the wipe (a storage job; posted as soon as the job slot is free, so a save going on delays it, never stops
+// it). False: not in this build
+bool ui_svc_wipe_start(void);
+// Start a wipe of the keys only, whatever Wipe what says (Settings > Privacy > Clear all keys, zeroize.md 3.2): the
+// same steps and restart as the emergency wipe's keys only scope. False: not in this build
+bool ui_svc_clear_keys_start(void);
+// Where it is, UI_WIPE_*; *failed the zeroize.h ZEROIZE_FAIL_* bits of a wipe that didn't finish
+enum { UI_WIPE_IDLE, UI_WIPE_RUNNING, UI_WIPE_DONE, UI_WIPE_FAILED };
+uint8_t ui_svc_wipe_state(uint8_t *failed);
+// The UI_SET_WIPE_* settings, for ui_svc_setting_get / _set in the firmware (ui_svc_zeroize.c)
+int32_t ui_svc_wipe_get(uint8_t id);
+bool ui_svc_wipe_set(uint8_t id, int32_t value);
+#define UI_WIPE_FAIL_KEYS	0x01u	// the zeroize.h bits, for the screen's text
+#define UI_WIPE_FAIL_SETTINGS	0x02u
+#define UI_WIPE_FAIL_CODEPLUG	0x04u
+#define UI_WIPE_FAIL_NATIVE	0x08u
+#define UI_WIPE_FAIL_PURGE	0x10u
+#define UI_WIPE_FAIL_RADIO	0x20u
+
 // --- The crash log (CONFIG_CRASH_LOG) and its report (CONFIG_CRASH_REPORT; ui_svc_crash.c, docs/spec/crash-log.md) ---
 typedef struct {
 	bool seen;		// shown or answered before (no prompt after the restart)
@@ -457,6 +546,10 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	// The emergency wipe (Settings > Privacy, CONFIG_ZEROIZE; docs/spec/zeroize.md 3.1, settings_t.zz_*): a wipe code
+	// is set (1; 0 clears it; ui_svc_wipe_code_set sets one), keys only (1) or keys and codeplug (0), the confirmation
+	// press (1 on), the wrong codes typed while locked before a wipe (0 off, else 3, 5 or 10)
+	UI_SET_WIPE_CODE, UI_SET_WIPE_SCOPE, UI_SET_WIPE_CONFIRM, UI_SET_WIPE_TRIES,
 	UI_SET_COUNT
 } ui_setting_t;
 
