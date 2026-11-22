@@ -14,17 +14,29 @@ import { Grid } from "../static/js/editor/grid.js";
 const t = (k) => (k === "editor.tot.default" ? "Radio Default" : k);
 const field = (key) => channelForm(empty(), t).find((f) => f.key === key);
 
-test("channel TX timeout: 0 shows as the radio default, the rest in the 15 s steps the record stores", () => {
+test("channel TX timeout: a list of the radio default and the 15 s steps the record stores", () => {
 	const f = field("tot");
-	assert.equal(f.format(0), "Radio Default");
-	assert.equal(f.format(180), "180");
-	const typed = (s) => {
-		const r = { tot: 99 };
-		return f.parse(r, "tot", s) ?? r.tot;
-	};
-	for (const s of ["", " ", "0", "Radio Default", "radio default", "default"]) assert.equal(typed(s), 0, JSON.stringify(s));
-	assert.deepEqual(["1", "15", "16", "180", "3825"].map(typed), [15, 15, 30, 180, 3825]);
-	for (const s of ["3826", "-5", "1.5", "3 min", "off"]) assert.equal(typed(s), "editor.err.tot", s);
+	assert.equal(f.type, "select");
+	const opts = f.options({ tot: 0 });
+	assert.deepEqual(opts[0], [0, "Radio Default"]);
+	assert.deepEqual(opts.slice(1, 5).map(([v]) => v), [15, 30, 45, 60]);
+	assert.equal(opts.length, 1 + 255);
+	assert.deepEqual(opts.at(-1)[0], 3825);
+	assert.deepEqual(opts.find(([v]) => v === 90), [90, "1:30 (90 s)"]);
+	// the steps only: every import rounds up to them
+	assert.ok(opts.every(([v]) => v % 15 === 0));
+});
+
+test("tone fields offer every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
+	const tones = field("txTone").suggest();
+	assert.equal(tones.length, 50 + 104 * 2);
+	assert.ok(tones.includes("88.5") && tones.includes("D023N") && tones.includes("D754I"));
+	assert.ok(field("rxTone").suggest().includes("254.1"));
+	const col = columns("channels", empty(), t).find((c) => c.key === "rxTone");
+	assert.equal(col.suggest().length, tones.length);
+	const r = {};
+	assert.equal(field("rxTone").parse(r, "rxTone", "69.4"), undefined);
+	assert.equal(r.rxTone, "69.4");
 });
 
 test("an RX frequency in the air band or the broadcast band makes the channel RX only and names the band", () => {
@@ -47,12 +59,73 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 	const txField = freqs.find((f) => f.key === "txHz");
 	const pair = channelForm(empty(), t).find((f) => f.key === "freqs");
 	assert.equal(txField.follows, "rxHz");
-	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v), pair.disabled(null, () => v)]), [[true, true], [false, false]]);
+	const off = () => false;
+	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v, off), pair.disabled(null, () => v, off)]), [[true, true], [false, false]]);
+	// RX Only ticked outside those bands locks TX too (and the TX tone and power), but TX doesn't follow RX there
+	const on = (k) => k === "rxOnly";
+	const form = channelForm(empty(), t);
+	assert.deepEqual(["power", "tot", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", on)), [true, true, true, true, true]);
+	assert.deepEqual(["power", "tot", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", off)), [false, false, false, false, false]);
+	assert.deepEqual([txField.disabled(null, () => "462.5625", on), txField.followsIf(() => "462.5625"), txField.followsIf(() => "121.5")], [true, false, true]);
 	const note = channelForm(empty(), t).find((f) => f.key === "band");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => note.text(() => v)), ["editor.band.air", "editor.band.bcast", "", ""]);
 	// the form's RX Only box follows the RX frequency as it is typed
 	const rxOnly = field("rxOnly");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => rxOnly.implied(() => v)), [true, true, false, false]);
+});
+
+test("the channel table grays and locks TX, TX tone and power on an RX Only channel (#924)", () => {
+	const cols = columns("channels", empty(), t);
+	const na = (key, r) => cols.find((c) => c.key === key).readOnly(r);
+	const ch = (rxOnly) => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly });
+	assert.deepEqual(["txHz", "power", "txTone"].map((k) => [na(k, ch(true)), na(k, ch(false))]), [[true, false], [true, false], [true, false]]);
+	// and blank there: no TX frequency, power or tone that the channel never uses
+	const shown = (key, r) => {
+		const c = cols.find((x) => x.key === key);
+		return c.format(r[key], r);
+	};
+	assert.deepEqual(["txHz", "power"].map((k) => shown(k, ch(true))), ["", ""]);
+	assert.deepEqual(shown("txHz", ch(false)), "146.520");
+});
+
+test("a TX frequency typed in the air or broadcast band is refused and the channel is left as it was (#924)", () => {
+	const say = (k, p) => (k === "editor.err.tx_listen" ? `${p.mhz} MHz is not a supported transmit frequency.` : k);
+	const ch = () => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly: false });
+	const col = (key) => columns("channels", empty(), say).find((c) => c.key === key);
+	const formTx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "txHz");
+	// the table and the form refuse it alike, with the same warning, and keep the old TX frequency and RX Only
+	for (const typeTx of [(r, v) => col("txHz").set(r, v), (r, v) => formTx.parse(r, "txHz", v)]) {
+		for (const [v, mhz] of [["121.5", "121.500"], ["98.1", "98.100"]]) {
+			const r = ch();
+			assert.equal(typeTx(r, v), `${mhz} MHz is not a supported transmit frequency.`);
+			assert.deepEqual([r.txHz, r.rxOnly], [146520000, false]);
+		}
+		// a transmit frequency is taken as before
+		const r = ch();
+		assert.equal(typeTx(r, "146.55"), undefined);
+		assert.deepEqual([r.txHz, r.rxOnly], [146550000, false]);
+		// a TX frequency already there (an import) is kept when it isn't changed, so the form still saves
+		const imported = { ...ch(), txHz: 121500000, rxOnly: true };
+		assert.equal(typeTx(imported, "121.5"), undefined);
+		assert.equal(imported.txHz, 121500000);
+	}
+	// an RX frequency in a listen band still makes the channel RX only with TX on RX
+	const r = ch();
+	assert.equal(col("rxHz").set(r, "121.5"), undefined);
+	assert.deepEqual([r.rxHz, r.txHz, r.rxOnly], [121500000, 121500000, true]);
+	// and the form's TX, following RX there, saves
+	const w = ch();
+	formTx.parse(w, "txHz", "121.5");
+	assert.equal(w.txHz, 146520000);
+	const rx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "rxHz");
+	rx.parse(w, "rxHz", "121.5");
+	assert.equal(formTx.parse(w, "txHz", "121.5"), undefined);
+	// an imported TX frequency in a listen band stays shown and open in the table, so it can be corrected there
+	const tx = col("txHz");
+	const imp = { ...ch(), txHz: 121500000, rxOnly: true };
+	assert.deepEqual([tx.readOnly(imp), tx.format(imp.txHz, imp)], [false, "121.500"]);
+	assert.equal(tx.set(imp, "146.55"), undefined);
+	assert.deepEqual([imp.txHz, tx.readOnly(imp), tx.format(imp.txHz, imp)], [146550000, true, ""]);
 });
 
 test("the channel table shows the mode the radio uses in a receive-only band", () => {
