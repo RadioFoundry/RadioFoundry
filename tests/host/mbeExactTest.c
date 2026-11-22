@@ -3,7 +3,7 @@
 // The full-rate codec (core/mbe) sample for sample and bit for bit as upstream RadioFoundry wrote it: a CRC of what the
 // encoder makes of 12 s of test speech and of what the decoder makes of those frames, of random frames (loud ones
 // among them, the oscillators' wide path) and of the same with channel errors (repeats, mutes, concealment), against
-// the CRCs upstream's core/mbe gave (48658c8d, imported unchanged in 6c8dd48f).
+// the CRCs upstream's core/mbe gave (48658c8d).
 //
 // The Makefile builds this twice: as the host runs core/dsp/fxp.h (64-bit products) and with -DFXP_SPLIT16, the
 // 16-bit halves a C-SKY build without HI/LO runs. Both must give the same CRCs, so neither the products from halves nor

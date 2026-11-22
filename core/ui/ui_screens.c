@@ -2772,13 +2772,7 @@ static void dual_pane(const radio_view_t *v, const ui_state_t *s, int i, int y, 
 			r3 -= sm->w / 2 + 1;
 		}
 		dual_row3(p, dual_r3, sizeof dual_r3);
-		bool more = true;
-		for (int level = 0; more; level++) {	// the longest form that fits, else the shortest, cut
-			gfx_text_alt(dual_r3, level, fit, sizeof fit, &more);
-			if (gfx_text_width(df, fit) <= r3 - x0)
-				break;
-		}
-		gfx_text_fit(df, fit, r3 - x0, buf, sizeof buf);
+		gfx_text_fit(df, dual_r3, r3 - x0, buf, sizeof buf);
 		int lx = gfx_text(df, x0, y3, buf, ui_col.dim);
 		if (ft->zone)
 			gfx_text(df, x0, y3 + df->h, p->zone, ui_col.dim);
