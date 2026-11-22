@@ -40,6 +40,7 @@
 #define L2_PASSIVE	0xC3	// TX + RX enabled, timing follows received bursts
 #define L2_ACTIVE	0xE3	// TX + RX enabled, own timing
 #define L2_MCU_CRC	0x08	// CRC_MCU_Control
+#define L2_MASTER	0x20	// MasterMode: own timing
 
 // 0x41
 #define CTL_TX		0x80	// send in the next slot
@@ -507,7 +508,13 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 
 	// CRC_MCU_Control only for bursts that carry their own CRC; voice and idle never (gotchas 5.1)
 	bool mcu_crc = !voice && kind != DMR_BURST_IDLE && b->host_crc && e->dev->chip->mcu_crc;
-	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u));
+	// A transmission aligned to a repeater that listens between its bursts (tx_listen) holds the timing it started
+	// with: in passive timing the chip followed the outbound it heard in the listened slots and stepped its own bursts
+	// half a symbol at a time, away from the repeater's grid, and the burst at each step reached the repeater with bit
+	// errors (issue 609). Without the listen the chip hears nothing while it sends, so its timing was held already.
+	// An SFR (DMO framing) stays passive: there the timing it follows is the inbound caller's
+	bool hold = e->tx_listen && e->tx_timing != DMR_TIMING_OWN && rmo(e);
+	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) | (hold ? L2_MASTER : 0u));
 	if (r40 != e->reg40) {
 		w(e->dev, R_L2_CTL, r40);
 		e->reg40 = r40;
