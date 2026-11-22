@@ -83,7 +83,9 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
-In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
+In a table, double-click a cell or type on it to edit it in place. The RX Tone and TX Tone fields list the CTCSS tones
+and DCS codes: typing narrows the list, the arrow keys and Enter pick a tone, and a tone missing from the list (69.4,
+D023N) is taken as typed. Click a column heading to sort, and type in the
 filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.

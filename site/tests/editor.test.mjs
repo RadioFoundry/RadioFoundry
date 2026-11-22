@@ -27,13 +27,23 @@ test("channel TX timeout: a list of the radio default and the 15 s steps the rec
 	assert.ok(opts.every(([v]) => v % 15 === 0));
 });
 
-test("tone fields offer every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
-	const tones = field("txTone").suggest();
+test("tone fields list every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
+	const spec = field("txTone").combo({});
+	const tones = spec.values;
 	assert.equal(tones.length, 50 + 104 * 2);
 	assert.ok(tones.includes("88.5") && tones.includes("D023N") && tones.includes("D754I"));
-	assert.ok(field("rxTone").suggest().includes("254.1"));
+	assert.ok(field("rxTone").combo({}).values.includes("254.1"));
 	const col = columns("channels", empty(), t).find((c) => c.key === "rxTone");
-	assert.equal(col.suggest().length, tones.length);
+	assert.equal(col.combo({}).values.length, tones.length);
+	// typed text: normalized when it is a tone (the list's "Use ..." row), refused otherwise ("Not a CTCSS tone ...")
+	assert.equal(spec.accept("69.4"), "69.4");
+	assert.equal(spec.accept("d23"), "D023N");
+	assert.equal(spec.accept("none"), "");
+	assert.equal(spec.accept("abc"), null);
+	assert.equal(spec.accept("400"), null);
+	assert.equal(spec.none, t("editor.none"));
+	assert.equal(spec.use("69.4"), "editor.tone.use");
+	assert.ok(spec.noMatch);
 	const r = {};
 	assert.equal(field("rxTone").parse(r, "rxTone", "69.4"), undefined);
 	assert.equal(r.rxTone, "69.4");

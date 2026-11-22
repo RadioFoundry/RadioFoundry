@@ -19,3 +19,8 @@ SPDX-License-Identifier = "MIT"
 path = ["stub/*.bin"]
 SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["site/static/vendor/tom-select/tom-select.complete.min.js", "site/static/vendor/tom-select/tom-select.default.css"]
+SPDX-FileCopyrightText = "2013-2026 Tom Select contributors"
+SPDX-License-Identifier = "Apache-2.0"
