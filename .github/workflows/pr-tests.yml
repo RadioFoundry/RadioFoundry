@@ -102,7 +102,7 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1   # LeakSanitizer needs ptrace, which job containers may not allow
           SANITIZE: "1"
-          HOST_SHORT: "1"   # fewer random cases; ci.yml runs them all on main
+          HOST_SHORT: ${{ github.event_name == 'merge_group' && '0' || '1' }}   # fewer random cases on a pull request; the merge queue, ci.yml and the nightly run them all
         run: tools/coverage.sh
       - name: Bench tools, built from the core sources with zero warnings
         run: tools/ci.sh --steps bench
