@@ -138,6 +138,16 @@ def pytest_addoption(parser):
                      "bandwidth, one over per step")
     g.addoption("--mic-gain-window", type=float, default=30.0,
                 help="test_mic_gain: seconds the SDR bench records per over (unplug, key, talk, release in it)")
+    g.addoption("--tier", choices=hil_plugin.TIERS, default=None,
+                help="smoke: only the smoke tests (about 5 minutes a radio); standard: all but the bring-up tier; "
+                     "bringup: every test. Default: standard for a run of the whole directory, no tier filter when "
+                     "the command names test files or nodes, or gives -k, -m or --bringup (README.md, \"Tiers\")")
+    g.addoption("--affected", default=None, metavar="BASE",
+                help="the smoke tests plus the tests of the features this checkout's change since BASE (a commit, "
+                     "e.g. origin/main) reaches, and the tests in changed test files (tools/affected.py features)")
+    g.addoption("--hil-record", default=None, metavar="FILE",
+                help="write the run's record (board, commits, each test's outcome and duration) here; default "
+                     "build/hil/<board>-<firmware commit>.json when the run used the radio; none: no record")
     hil_config.add_options(g)
     bringup_plugin.add_options(parser)
 
@@ -173,5 +183,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "manual: asks a person at the radio to do something (needs --manual and -s)")
     config.addinivalue_line("markers", "by_ear: a manual test that asks whether the speaker plays a sound; without "
                             "--manual the microphone (--microphone) listens instead")
+    config.addinivalue_line("markers", "smoke: the smoke tier (--tier smoke): boot, health, version and codec, FM and "
+                            "DMR each way, the UI; about 5 minutes a radio")
+    config.addinivalue_line("markers", "bringup: the bring-up tier (--tier bringup or --bringup only): calibration, "
+                            "sweeps and measurements that matter when a radio is brought up")
     config.addinivalue_line("markers", "audio_smoke: the DMR audio smoke tests (test_dmr_audio_smoke.py), part of every "
                             "bench pass")
