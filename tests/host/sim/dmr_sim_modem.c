@@ -236,8 +236,8 @@ void sim_slot(void)
 			return;
 		}
 	}
-	if (sim.listen_bursts && sim.repeater &&
-	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf))) {
+	if (sim.repeater && (!sim.tx_active ? !sim.ticks_only :
+	    sim.listen_bursts && (int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf)) {
 		dmr_burst_t b;
 
 		memset(&b, 0, sizeof(b));

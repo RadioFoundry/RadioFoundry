@@ -212,7 +212,8 @@ releases **both** slot syncs (TXRX b23 and b22) and is also the end of every tra
 the lock, then writes only TXRX (no LAYER2_CONTROL or SLOTON write at the key-up); the first TX tick sends in the next
 slot when the estimate is the other TS's TC. A first TX-vector interrupt less than half a slot after the last receive
 one is the same slot and does not toggle the estimate. Without the lock in 1 s the start is refused (TX_REJECTED,
-nothing sent).
+nothing sent). This path needs a CACH on air (5.3): after BS bursts with no CACH, an aligned start keys as without
+a CACH, in step with the bursts heard.
 
 The same lock numbers the slot ticks on a BS signal: once it holds, each `DMR_EV_SLOT_TICK` carries the TS that the
 estimate gives for the slot starting there, and the AT bit (RX_TYPE_INFO b23) of the last CACH that named that slot,
@@ -346,7 +347,7 @@ discard both. A failed late-entry checksum invalidates only the reporting slot's
 
 Nothing here confirms that b19 at a late-entry interrupt with no deframe names the burst that completed the LC rather
 than the last burst deframed; that needs on-air confirmation with calls on both slots. It does not infer a DMR
-timeslot from the chip slot: BS bursts retain their CACH TC labels.
+timeslot from the chip slot: BS bursts retain their CACH TC labels while a CACH is on air (5.3).
 
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
@@ -717,7 +718,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | Each TX/RX timeslot interrupt while following one slot | alternate: our slot → TXRX = 0x8040 (receive, voice-access flag) for the next; other slot → 0x00 |
 | RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
-| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
+| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this. BS sync alone doesn't prove a CACH: a direct mode sender may frame its bursts with BS sync (a simplex hotspot does), one burst every other slot, and the TC then is junk. On a channel that isn't a repeater channel, BS bursts go up with no slot number (`ts` 0) and the short LC isn't read until the first TC lock; an aligned reply keys as after MS sync. The slot numbers then hold while BS bursts come (390 ms), through a missed burst that breaks the lock, until the receiver restarts. Numbered from the junk TC, a TS1 call was labeled TS2 and dropped as the other slot's |
 | Any color code | no CC filter: LOCAL_CC cc_opt = 1 deframes every code, RX_TYPE_INFO b7:4 gives the code heard, and RF_MODE b12 is 0 (fixed sync threshold, as cc_opt 1 requires). The receiver restarts at the end of a reception as with a filter. A scan stepping LOCAL_CC through the codes heard nothing on the SDR bench: it stepped at timeslot interrupts, and they stop while the chip hears a code it doesn't deframe |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 |

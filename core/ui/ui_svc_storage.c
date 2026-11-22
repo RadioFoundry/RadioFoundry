@@ -151,7 +151,8 @@ static bool data_id_post(uint16_t key, uint32_t id);	// a job too: the key's wri
 #endif
 
 // The settings the radio core holds (radio_get_settings), apart from those read from flash below: two functions, so
-// the settings_t of the latter is not on the stack under ui_svc_reply_shown (the static stack check). INT32_MIN: not one of these
+// the radio_settings_t of this one is not on the stack under the latter's structs (the static stack check). INT32_MIN: not
+// one of these
 static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 {
 	radio_settings_t rs;
@@ -237,69 +238,69 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 	}
 }
 
+// A setting kept in settings_t. Each case reads just its field (SETTINGS_FIELD): a whole settings_t on this frame once
+// made it one of the deepest on the radio, UI and host tasks' paths (docs/dev/stack-check.md)
 static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 {
-	settings_t st;
 	switch (id) {
 	case UI_SET_VOLUME:
-		settings_read(&st);
-		return radio_volume_step(st.volume);
+		return radio_volume_step(SETTINGS_FIELD(volume));
 	case UI_SET_KNOB_WHEN_LOCKED:
-		settings_read(&st);
-		return (st.sound_flags & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
-	case UI_SET_BRIGHTNESS:
-		settings_read(&st);
-		return st.brightness >= 10 && st.brightness <= 100 ? st.brightness : 100;
-	case UI_SET_SQUELCH:
-		settings_read(&st);
-		return st.squelch <= 9 ? st.squelch : ui_svc_ram_get(id);
+		return (SETTINGS_FIELD(sound_flags) & SETTINGS_KNOB_LOCK) == 0;	// stored as the lock, shown as the knob working
+	case UI_SET_BRIGHTNESS: {
+		uint8_t brightness = SETTINGS_FIELD(brightness);
+		return brightness >= 10 && brightness <= 100 ? brightness : 100;
+	}
+	case UI_SET_SQUELCH: {
+		uint8_t squelch = SETTINGS_FIELD(squelch);
+		return squelch <= 9 ? squelch : ui_svc_ram_get(id);
+	}
 #if CONFIG_RX_EXT
 	case UI_SET_RX_EXT:
-		settings_read(&st);
-		return (st.cp_flags & SETTINGS_CP_RX_EXT) != 0;
+		return (SETTINGS_FIELD(cp_flags) & SETTINGS_CP_RX_EXT) != 0;
 #endif
 	case UI_SET_HOTSPOT_AUTO:
-		settings_read(&st);
-		return st.hotspot_allowed != 0;
-	case UI_SET_MIC_GAIN:
-		settings_read(&st);
-		return st.mic_gain <= 10 ? st.mic_gain : 5;
+		return SETTINGS_FIELD(hotspot_allowed) != 0;
+	case UI_SET_MIC_GAIN: {
+		uint8_t mic_gain = SETTINGS_FIELD(mic_gain);
+		return mic_gain <= 10 ? mic_gain : 5;
+	}
 	case UI_SET_REF_TRIM:
-		settings_read(&st);
-		return ref_trim_clamp(st.ref_trim_ppb);
-	case UI_SET_VFO_STEP:
-		settings_read(&st);
-		return st.vfo_step_hz >= 1000u && st.vfo_step_hz <= 1000000u ? (int32_t)(st.vfo_step_hz / 10u) : 0;
+		return ref_trim_clamp(SETTINGS_FIELD(ref_trim_ppb));
+	case UI_SET_VFO_STEP: {
+		uint32_t step = SETTINGS_FIELD(vfo_step_hz);
+		return step >= 1000u && step <= 1000000u ? (int32_t)(step / 10u) : 0;
+	}
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_B: {
-		settings_read(&st);
-		if (st.dual_b > UI_DUAL_B_VFO2)
+		uint16_t dual_b = SETTINGS_FIELD(dual_b);
+		uint8_t dual_state = SETTINGS_FIELD(dual_state);
+		if (dual_b > UI_DUAL_B_VFO2)
 			return 0;
-		return st.dual_b | ((st.dual_state & SETTINGS_DUAL_ON) ? UI_DUAL_ON : 0) |
-		       ((st.dual_state & SETTINGS_DUAL_B_SEL) ? UI_DUAL_B_SEL : 0);
+		return dual_b | ((dual_state & SETTINGS_DUAL_ON) ? UI_DUAL_ON : 0) |
+		       ((dual_state & SETTINGS_DUAL_B_SEL) ? UI_DUAL_B_SEL : 0);
 	}
 #endif
 	case UI_SET_AUTO_LOCK_S:
-		settings_read(&st);
-		return st.auto_lock_s;
-	case UI_SET_LONG_PRESS_MS:
-		settings_read(&st);
-		return st.long_press_ms != 0 ? st.long_press_ms : ui_svc_ram_get(id);
-	case UI_SET_REPEAT_MS:
-		settings_read(&st);
-		return st.repeat_ms != 0 ? st.repeat_ms : ui_svc_ram_get(id);
+		return SETTINGS_FIELD(auto_lock_s);
+	case UI_SET_LONG_PRESS_MS: {
+		uint16_t ms = SETTINGS_FIELD(long_press_ms);
+		return ms != 0 ? ms : ui_svc_ram_get(id);
+	}
+	case UI_SET_REPEAT_MS: {
+		uint16_t ms = SETTINGS_FIELD(repeat_ms);
+		return ms != 0 ? ms : ui_svc_ram_get(id);
+	}
 	case UI_SET_GPS:
-		settings_read(&st);
-		return st.gps != 0;
-	case UI_SET_POS_FORMAT:
-		settings_read(&st);
-		return st.pos_format <= 2 ? st.pos_format : 0;
+		return SETTINGS_FIELD(gps) != 0;
+	case UI_SET_POS_FORMAT: {
+		uint8_t format = SETTINGS_FIELD(pos_format);
+		return format <= 2 ? format : 0;
+	}
 	case UI_SET_POS_SEND_S:
-		settings_read(&st);
-		return st.pos_send_s;
+		return SETTINGS_FIELD(pos_send_s);
 	case UI_SET_LANGUAGE:
-		settings_read(&st);
-		return (int32_t)((uint8_t)st.lang[0] << 8 | (uint8_t)st.lang[1]);
+		return (int32_t)((uint8_t)SETTINGS_FIELD(lang[0]) << 8 | (uint8_t)SETTINGS_FIELD(lang[1]));
 	case UI_SET_LARGE_TEXT:
 	case UI_SET_HINTS:
 	case UI_SET_MESSAGE_TONE:
@@ -309,62 +310,49 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_TALK_BACK:
 #endif
-		settings_read(&st);
-		return (st.ui_flags & ui_flag(id)) != 0;
+		return (SETTINGS_FIELD(ui_flags) & ui_flag(id)) != 0;
 	case UI_SET_VIBRATE:
-		settings_read(&st);
-		return (st.ui_flags & SETTINGS_UI_NO_VIBRATE) == 0;
+		return (SETTINGS_FIELD(ui_flags) & SETTINGS_UI_NO_VIBRATE) == 0;
 	case UI_SET_THEME:
-		settings_read(&st);
-		return settings_theme(&st);
+		return settings_theme_of(SETTINGS_FIELD(theme));
 	case UI_SET_ACCENT:
-		settings_read(&st);
-		return st.accent & SETTINGS_ACCENT_COLOR;
+		return SETTINGS_FIELD(accent) & SETTINGS_ACCENT_COLOR;
 	case UI_SET_STRIP:
-		settings_read(&st);
-		return (st.accent & SETTINGS_ACCENT_PLAIN) == 0;
+		return (SETTINGS_FIELD(accent) & SETTINGS_ACCENT_PLAIN) == 0;
 	case UI_SET_UPDOWN_HOME:
-		settings_read(&st);
-		return settings_updown_home(&st);
+		return settings_updown_home_of(SETTINGS_FIELD(updown_home));
 	case UI_SET_LABEL_FIRST:
-		settings_read(&st);
-		return (st.updown_home & SETTINGS_HOME_LABEL_FIRST) != 0;
+		return (SETTINGS_FIELD(updown_home) & SETTINGS_HOME_LABEL_FIRST) != 0;
 	case UI_SET_LOW_BATTERY:
-		settings_read(&st);
-		return st.low_batt_pct;
+		return SETTINGS_FIELD(low_batt_pct);
 	case UI_SET_AUTO_OFF_MIN:
-		settings_read(&st);
-		return st.auto_off_min;
+		return SETTINGS_FIELD(auto_off_min);
 	case UI_SET_EMERGENCY_TONE: {
 		dmr_emergency_settings_t es;
 		dmr_emergency_get_settings(&es);
 		return es.rx_tone;
 	}
 	case UI_SET_TFTP_WRITE:
-		settings_read(&st);
-		return (st.net_flags & SETTINGS_NET_TFTP_NO_WRITE) == 0;
+		return (SETTINGS_FIELD(net_flags) & SETTINGS_NET_TFTP_NO_WRITE) == 0;
 #if CONFIG_ZONE_SHARE
 	case UI_SET_ZONE_OFFERS:
-		settings_read(&st);
-		return settings_zs_accept(&st);
+		return settings_zs_accept_of(SETTINGS_FIELD(zs_offers));
 #endif
 #if CONFIG_DMR
 	case UI_SET_DMR_ID:
 		return (int32_t)codeplug_dmr_id();
 #endif
 	case UI_SET_NOISE_REDUCTION:
-		settings_read(&st);
-		return (st.accent & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
+		return (SETTINGS_FIELD(accent) & SETTINGS_AUDIO_NO_NOISE_REDUCTION) == 0;
 	case UI_SET_MIC_AGC:
-		settings_read(&st);
-		return (st.accent & SETTINGS_AUDIO_AGC) != 0;
+		return (SETTINGS_FIELD(accent) & SETTINGS_AUDIO_AGC) != 0;
 #if CONFIG_DMR_PRIVACY
-	case UI_SET_PRIVACY_TYPE:
-		settings_read(&st);
-		return st.privacy_type[0] < DMR_PRIVACY_NUM_TYPES ? st.privacy_type[0] : DMR_PRIVACY_OFF;
+	case UI_SET_PRIVACY_TYPE: {
+		uint8_t type = SETTINGS_FIELD(privacy_type[0]);
+		return type < DMR_PRIVACY_NUM_TYPES ? type : DMR_PRIVACY_OFF;
+	}
 	case UI_SET_PRIVACY_KEY:
-		settings_read(&st);
-		return (int32_t)(st.privacy_key[0] & 0xFFFFu);
+		return (int32_t)(SETTINGS_FIELD(privacy_key[0]) & 0xFFFFu);
 #endif
 #if CONFIG_DMR_DATA_CORE
 	case UI_SET_CHECK_REPLY:
@@ -393,23 +381,20 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 		return 2;
 #endif
 #if CONFIG_CRASH_REPORT
-	case UI_SET_CRASH_MODE:
-		settings_read(&st);
-		return settings_crash_mode(&st) <= UI_CRASH_SEND_AUTO ? settings_crash_mode(&st) : UI_CRASH_SEND_OFF;
+	case UI_SET_CRASH_MODE: {
+		uint8_t mode = settings_crash_mode_of(SETTINGS_FIELD(accent));
+		return mode <= UI_CRASH_SEND_AUTO ? mode : UI_CRASH_SEND_OFF;
+	}
 	case UI_SET_CRASH_CONTACT:
-		settings_read(&st);
-		return settings_crash_contact(&st);
+		return settings_crash_contact_of(SETTINGS_FIELD(theme), SETTINGS_FIELD(updown_home));
 #endif
 #if CONFIG_USB_NETWORK && CONFIG_HOSTLINK
 	case UI_SET_USB_BOOT_NET:
-		settings_read(&st);
-		return st.usb_mode == 1;
+		return SETTINGS_FIELD(usb_mode) == 1;
 	case UI_SET_PC_ENDPOINT:
-		settings_read(&st);
-		return (st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0;
+		return (SETTINGS_FIELD(net_flags) & SETTINGS_NET_PASSTHROUGH) != 0;
 	case UI_SET_USB_FIXED_LINK:
-		settings_read(&st);
-		return (st.net_flags & SETTINGS_NET_FIXED_LINK) != 0;
+		return (SETTINGS_FIELD(net_flags) & SETTINGS_NET_FIXED_LINK) != 0;
 #endif
 #if CONFIG_POSITION
 	case UI_SET_POS_SOURCE:
@@ -430,7 +415,7 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 int32_t ui_svc_setting_get(uint8_t id)
 {
 #if CONFIG_KEY_ASSIGN
-	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's settings_t: key_apply is deep
+	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's frame: key_apply is deep
 		return key_get(id);
 	}
 #endif

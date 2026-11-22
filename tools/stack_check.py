@@ -271,6 +271,48 @@ def strip_comments(src, keep_strings=False):
 PAIRS = {"(": ")", "[": "]", "{": "}"}
 
 
+def split_ternary(v):
+    """(then, else) of a conditional expression c ? a : b outside brackets, else None"""
+    depth, q, nested = 0, None, 0
+    for i, c in enumerate(v):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0 and c == "?":
+            if q is None:
+                q = i
+            else:
+                nested += 1
+        elif depth == 0 and c == ":" and q is not None:
+            if nested:
+                nested -= 1
+            else:
+                return v[q + 1:i], v[i + 1:]
+    return None
+
+
+def has_truth_operator(v):
+    """Whether v, outside brackets, compares or combines truth values (== != < > <= >= && || !): its value is 0 or 1"""
+    depth = 0
+    for i, c in enumerate(v):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0:
+            two = v[i:i + 2]
+            if two in ("==", "!=", "<=", ">=", "&&", "||"):
+                return True
+            if c == "<" and two != "<<" and v[i - 1:i] != "<":
+                return True
+            if c == ">" and two != ">>" and v[i - 1:i] not in (">", "-"):
+                return True
+            if c == "!" and (i == 0 or v[i - 1] in " (") and two != "!=":
+                return True
+    return False
+
+
 def match_close(t, i):
     """Index of the bracket closing the one at t[i] (len(t) when unbalanced)"""
     depth = 0
@@ -596,6 +638,13 @@ class CModel:
         v = v.lstrip("&").strip()
         while v.startswith("(") and match_close(v, 0) == len(v) - 1:
             v = v[1:-1].strip()
+        # c ? a : b holds a or b, never what c compares; a comparison or a logical operator yields a truth value, not
+        # a pointer (n = d->count != NULL ? d->count() : 0 stores a number)
+        branches = split_ternary(v)
+        if branches is not None:
+            return self.value_refs(ft, off, branches[0]) + self.value_refs(ft, off, branches[1])
+        if has_truth_operator(v):
+            return []
         if re.fullmatch(CHAIN, v):
             return [self.name_ref(ft, off, v)]
         refs = []
@@ -1570,6 +1619,19 @@ def self_test():
         kx, ky = (model.chain_key(f, f.code.index("cb();"), "cb") for f in (fx, fy))
         check(kx == ("p", "x.c:start", 1) and ky == ("p", "start", 1),
               "two files' static functions of one name keep their parameters apart: %s %s" % (kx, ky))
+        # what an expression stores into a pointer: the branches of a conditional, never what it compares
+        fv = FileText("v.c", "void f(void)\n{\n}\n")
+
+        def stored(e):
+            return sorted(r[1][-1] for r in model.value_refs(fv, 0, e) if r[0] == "key")
+        check(stored("p != NULL ? a : b") == ["a", "b"], "a conditional stores its branches, not its test: %s" %
+              stored("p != NULL ? a : b"))
+        check(stored("p ? a : q ? b : c") == ["a", "b", "c"], "a nested conditional: %s" % stored("p ? a : q ? b : c"))
+        check(stored("d->count != NULL ? d->count() : 0") == ["d"],
+              "a called member is not stored: %s" % stored("d->count != NULL ? d->count() : 0"))
+        check(stored("a == b") == [] and stored("a->x < b->y") == [] and stored("a && b") == [] and stored("!a") == [],
+              "a comparison or a logical operator stores a number, not a pointer")
+        check(stored("a->go") == ["go"] and stored("(cb_t)a") == ["a"], "a plain chain or a cast is stored as before")
         t = Table()
         t.ptr["go"] = ["leaf"]
         an3 = Analysis(g, model, t, DEFAULT_LIB_BYTES)

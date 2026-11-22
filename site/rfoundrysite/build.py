@@ -377,6 +377,7 @@ class Site:
 			self.features_page(lang)
 			self.flash_page(lang)
 			self.tools_page(lang)
+			self.satellite_tle_page(lang)
 			self.support_pages(lang)
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
@@ -655,7 +656,7 @@ class Site:
 		       # the C7000 radios need no keys held: the page meets the chip's boot ROM when the radio is switched on
 		       "bootloader": "".join("<li>%s</li>" % html.escape(s) for s in (
 			       [self.t(lang, "radio.c7_step%d" % i) for i in (1, 2, 3)] if fl["backend"] == "c7000-stub"
-			       else fl.get("bootloader", [])))}
+			       else [self.i18n.opt(lang, "flash.bootloader." + s, s) for s in fl.get("bootloader", [])]))}
 		self.page(lang, "radios/%s.html" % b["id"], b["name"], self.tpl.render("radio", ctx, lang), "radio",
 			  description=self.t(lang, "radio.description", name=b["name"]), nav="radios")
 
@@ -765,6 +766,13 @@ class Site:
 			   '<script type="module" src="{{root}}static/js/tools.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/index.html", self.t(lang, "tools.title"), self.tpl.render("tools", {}, lang),
 			  "tools", scripts=scripts, nav="tools")
+
+	def satellite_tle_page(self, lang):
+		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.satellite.")), ensure_ascii=False).replace("</", "<\\/")
+		scripts = ('<script type="application/json" id="i18n">%s</script>'
+			   '<script type="module" src="{{root}}static/js/tletool.js?v=%s"></script>' % (strings, self.asset_version))
+		self.page(lang, "tools/satellite/index.html", self.t(lang, "tools.satellite.title"),
+			  self.tpl.render("satellite_tle", {}, lang), "tools", scripts=scripts, nav="tools")
 
 	def support_pages(self, lang):
 		"""Support: the FAQ, the reminder to update, and the support download (static/js/supportpage.js) with the About

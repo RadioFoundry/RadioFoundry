@@ -63,6 +63,7 @@ void settings_defaults(settings_t *s)
 	s->vfo2_power = SETTINGS_UNSET8;
 	s->vfo2_cc = 1;
 	s->vfo2_ts = 1;
+	s->satellite_index = SETTINGS_UNSET8;
 	s->power_levels = board.power_count;
 }
 
@@ -252,6 +253,28 @@ void settings_read(settings_t *out)
 	ensure();
 	*out = live;
 	storage_quick_unlock();
+}
+
+uint32_t settings_read_field(size_t offset, size_t size)
+{
+	uint32_t v = 0;
+	if ((size != 1 && size != 2 && size != 4) || offset > sizeof(live) || size > sizeof(live) - offset) {
+		return 0;
+	}
+	storage_quick_lock();
+	ensure();
+	const uint8_t *p = (const uint8_t *)&live + offset;
+	if (size == 1) {
+		v = *p;
+	} else if (size == 2) {
+		uint16_t h;
+		memcpy(&h, p, sizeof h);
+		v = h;
+	} else {
+		memcpy(&v, p, sizeof v);
+	}
+	storage_quick_unlock();
+	return v;
 }
 
 settings_t *settings_begin(void)

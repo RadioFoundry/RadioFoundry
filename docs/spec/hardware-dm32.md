@@ -486,7 +486,7 @@ ground. Whether F1/F2 are routed anywhere on the DM-32UV board is unknown (3.11)
 | 0x28 | PTB8 | Keypad backlight | out | high = on |
 | 0x2B | PTB11 | PTT | in | low = pressed |
 | 0x2C | PTB12 | GPS power | out | **low = GPS on**, high = off |
-| 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start |
+| 0x2E | PTB14 | Audio path select: mic to analog FM path vs to DMR codec | out | 1 = analog (FM TX), 0 = DMR; set at each TX start, and 0 while APRS tones play in FM TX (9.1) |
 | 0x2F | PTB15 | FD6818 audio switch | out | 1 = the FD6818's audio output to the speaker and away from the C7000's ADC; 0 = the audio into the C7000 (DMR receive needs this) and the speaker on the codec (measured) |
 | 0x31–0x34 | PTB17–20 | Keypad columns 1–4 | in | low = key closed |
 | 0x35 | PTB21 | Audio power amplifier enable | out | high = on |
@@ -1189,12 +1189,14 @@ With no receive tone RadioFoundry writes the DCS 0x2E / 0x2F pair, which is also
 |---|---|
 | Mic | into the C7000 codec ADC (MIC input 2: CR_MIC2 bit 6 = 1) |
 | Mic routing switch | GPIO 0x2E: 1 = analog FM path, 0 = DMR path |
+| Programming cable's host-to-radio line | Reaches the codec ADC on the DMR path: a 3 kHz square (0x55 at 6000 baud) reads 18 dB over a quiet over. FM transmit shows almost nothing: squares of 500 Hz to 3 kHz on the line add at most about 25 Hz of deviation with 0x2E = 1, and nothing with 0x2E = 0 during APRS tones, the codec's microphone muted or not. The line is the PTT line too: the 6000-baud square reads as framing errors only, and the 10 ms key scan, in step with the square, can see the pin low on every scan (a PTT press) |
 | Speaker | codec DAC line out 2 (LINEOUT_CTRL bit 0, `line2out_en`) → speaker source switch GPIO 0x2F → audio PA (enable GPIO 0x35) |
 | Speaker source | 0x2F = 1: the FD6818's AF output (and the C7000's AF input disconnected: PHASE_OUT goes flat); 0x2F = 0: the codec line out, AF into the C7000. 0x2E is driven as its complement outside TX. The amplifier (0x35) goes off before 0x2F changes (measured) |
 | FM RX audio while APRS listens | 0x2F stays 0, so the C7000 hears the FD6818 with the squelch open or shut and copies its FM audio to the CPU (`modem-hrc7000.md` 8.5). An open squelch plays FM through the C7000's FM playback (AUDIO_CONTROL bit 6) and the codec line out (`boards/dm32/radio_dm32.c`, `speaker_source`) (measured) |
 | FM RX audio | the FD6818's AF output (0x47 = 0x0140) through 0x2F = 1 while the squelch is open. The C7000's FM playback (AUDIO_CONTROL bit 6, `fm_play_ctrl`) stays off: with 0x2F = 1 its AF input is disconnected. The C7000's sub-audio decode loses its input while the squelch is open (open question) (measured) |
 | DMR RX audio | CPU writes 160 bytes of decoded 8 kHz PCM to 0x180000A0 per 10 ms and sets AUDIO_CONTROL bit 5; PCM_rd interrupt (vector 59) asks for the next block; clear with INTERP_CLEAR bit 5 |
 | Beeps / prompts | 64 bytes (32 samples, low byte first, 8 kHz) at a time to the prompt FIFO 0x16000980 while AUDIO_CONTROL bit 31 (`ring_full_two`) is 0; enable with AUDIO_CONTROL bit 7 (`ring_play_ctrl`). high byte first sounds distorted (`modem-hrc7000.md` 8.4); not yet heard on this radio |
+| Amplifier users | the amplifier (0x35) is on while any user wants it (`amp()` in `boards/dm32/radio_dm32.c`): 0x01 receive audio (an open squelch), 0x02 speaker PCM (a beep, DMR or P25 voice), 0x04 the broadcast receiver, 0x40 the FM TX tone's sidetone. The debug link's `board.amp_users` ([debuglink.md](debuglink.md) 3.7, the `board` section) shows the bits in hex: 0x00 while nothing plays |
 
 ### 9.1 Internal audio codec registers (byte registers at 0x160009C0 + offset)
 
@@ -1219,10 +1221,11 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
-APRS AFSK transmit (measured on the SDR bench, 2026-10-16, a UHF test frequency, 25 kHz, lowest power, a canned frame through
-`hal_afsk_t.tx_start`): a valid FCS at every level tried, 29 flags of TX delay, twist about -1.1 dB, 14-15 degrees phase
-residual. Level 50 (PCM amplitude 2750) gives 3.1 kHz peak with 2.2 / 2.5 kHz mark / space deviation; level 75 gives
-4.5 kHz peak; PCM 5850 and up is limited at 5.1 kHz peak. Receive decodes off air. While AFSK receive runs, the
+APRS AFSK transmit (measured on the SDR bench, a UHF test frequency, 25 kHz, lowest power): the tones go out with
+the microphone on the DMR path (0x2E = 0) and the codec's microphone muted. On the FM path (0x2E = 1) the microphone
+rode on the tones (#828). The FD6818's audio input takes the tones hot, with mark about 4 dB under space: PCM 435
+gives 3.1 kHz peak, 725 gives 4.7 kHz, and 1450 and up limit near 5.2 kHz peak. Level 50 is PCM 450, about 3.2 kHz
+peak with 1.8 / 2.9 kHz mark / space deviation. Receive decodes off air. While AFSK receive runs, the
 speaker plays FM through the HR_C7000 instead of straight from the FD6818. A flat transmitter at a strong level shows
 320-400 Hz 1-10 dB under the tones: 50-80 % decode with one demodulator path, 12 of 12 with both. Both paths take about
 6 % of the CPU at 8 kHz.
@@ -1520,7 +1523,7 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
 | Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
-| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area | `flash_dm32.c` |
+| Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), satellite snapshots 0x71B000 (3 sectors, when `CONFIG_SATELLITE_TLE=y`), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area. The last two gap sectors, 0x71E000-0x71FFFF, are the stub's 8 KB data-flash write-test range | `flash_dm32.c` |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
 | Radio | FD6818 bit-banged (each frame with interrupts off: the DMR interrupts switch it per burst); C7000 FM and TX sub-audio, FD6818 RX sub-audio; PA drive on DAC B from the calibration | `radio_dm32.c`, `drivers/rf/fd6818`, `drivers/modem/hrc7000` |
 | DMR | the HR_C7000 slot engine behind `hal_dmr_modem.h` (`modem-hrc7000.md` 3, 5, 6); FD6818 idle -> TX at the RF TX interrupt, PA keyed 28 ms after each burst is armed, off at the first tick 20 ms after the RF TX interrupt | `drivers/modem/hrc7000/hrc7000_dmr.c`, `platform/hrc7000/dmr_glue.c`, `boards/dm32/radio_dm32.c` (the RF and PA hooks) |

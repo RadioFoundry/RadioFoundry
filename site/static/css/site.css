@@ -311,6 +311,23 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* tools */
 .drop { display: block; border: 2px dashed var(--border); border-radius: var(--radius); padding: var(--space-5); text-align: center; cursor: pointer; color: var(--muted); }
 .drop input { display: block; margin: 0 auto var(--space-2); }
+.tle-selection { border: 0; margin: var(--space-4) 0; padding: 0; }
+.tle-selection legend { font-weight: 600; margin-bottom: var(--space-2); }
+.tle-search { display: grid; gap: var(--space-1); max-width: 42rem; margin: var(--space-3) 0; }
+.tle-search input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+.tle-profile-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 0 var(--space-4); }
+.tle-profile { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.tle-profile input { flex: none; margin: 0.2em 0 0; accent-color: var(--accent); }
+.tle-profile-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.tle-profile-detail { display: block; grid-column: 2; color: var(--muted); font-size: 0.88em; }
+.tle-submit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.satellite-tle #satellite-tle-status { margin-top: var(--space-3); }
+.tle-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.tle-browse { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; }
+.tle-browse input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tle-browse:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.tle-provider { display: grid; gap: var(--space-1); max-width: 42rem; margin-top: var(--space-3); }
+.tle-provider input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
 
 /* flasher */
 .flasher { display: grid; gap: var(--space-3); }

@@ -9,6 +9,36 @@
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
 #include "config.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/path.h"
+#include "satellite/store.h"
+typedef enum {
+	RADIO_SAT_SCAN_IDLE,
+	RADIO_SAT_SCAN_RUNNING,
+	RADIO_SAT_SCAN_COMPLETE,
+	RADIO_SAT_SCAN_UNAVAILABLE,
+} radio_satellite_scan_status_t;
+typedef struct {
+	uint8_t record_index;
+	uint16_t aos_minutes;
+	uint8_t maximum_elevation_deg;
+	bool visible_now;
+} radio_satellite_pass_t;
+typedef struct {
+	bool tracking;
+	uint8_t index;
+	uint8_t status;
+	uint32_t nominal_rx_hz, nominal_tx_hz;
+	int64_t rx_offset_hz, tx_offset_hz;
+} radio_satellite_tracking_view_t;
+typedef struct {
+	radio_satellite_tracking_view_t tracking;
+	bool valid, visible_now, los_known, horizon_clipped;
+	uint32_t aos_in_s, los_in_s;
+	uint16_t maximum_elevation_tenths;
+	int16_t elevation_tenths;
+} radio_satellite_view_t;
+#endif
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
 
@@ -421,6 +451,8 @@ typedef struct {
 	bool tone_ok;		// the RX tone or code is heard (debounced; true when the channel has no RX tone)
 	int16_t rssi_dbm;
 	uint8_t noise;
+	uint8_t sql_close;	// polls over the close line the squelch's last close took (1 or 2 as a carrier goes, more
+				// after a voice peak hold); 0 none yet
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
 				// APRS beacon. It doesn't light the screen (radio_view_wakes)
@@ -515,6 +547,18 @@ typedef struct {
 void radio_core_start(void);
 // A consistent copy of the current state
 void radio_get_view(radio_view_t *v);
+// The current channel settings, with nominal satellite frequencies when Doppler tracking is active
+void radio_get_channel_profile(channel_t *ch);
+#if CONFIG_SATELLITE_TLE
+bool radio_get_satellite_path(satellite_path_view_t *path);
+bool radio_get_satellite_view(radio_satellite_view_t *view);
+void radio_req_satellite_scan(bool enabled);
+void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
+bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
+bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch);
+uint32_t radio_get_satellite_generation(void);
+#endif
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
 // Just the view's zone index and position and the zone's size (0 while none is loaded), likewise. False while the
@@ -542,6 +586,10 @@ void radio_req_vfo_tx(uint32_t hz);		// the VFO's TX frequency (split), 0 = simp
 // Copy to VFO: what is in effect on the channel now (temporary changes too) becomes the VFO's own settings and the VFO
 // opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
 void radio_req_vfo_copy(void);
+#if CONFIG_SATELLITE_TLE
+bool radio_req_satellite_tracking(bool enabled, uint8_t record_index);
+void radio_req_satellite_arm(void);
+#endif
 typedef enum {
 	VFO_COPY_OK,
 	VFO_COPY_NO_VFO,	// the build has no VFO

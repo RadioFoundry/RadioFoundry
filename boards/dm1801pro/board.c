@@ -167,13 +167,16 @@ static void io_init(void)
 
 // Everything the core stores lives above the write floor (hardware-dm1801pro.md 6.1): the data flash holds the radio's
 // own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware codeplug's 64 KB
-// "EEPROM" image sits at 0x700000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash"
-// image at 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory
-// calibration is read only, so the open-firmware CPS gets no calibration window
+// "EEPROM" image sits at 0x700000, the settings ring and sector journal after it, optional satellite snapshots at
+// 0x71B000..0x71DFFF, the stub write-test sectors at 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at
+// 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory calibration is
+// read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x719000u,	// 2 sectors
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0x71B000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,	// 3 sectors; 8 KB remains for the stub write test
 	.openfw_eeprom = 0x700000u,
 	.openfw_flash = 0x720000u,
 	.openfw_end = 0xF00000u,

@@ -42,6 +42,9 @@ typedef enum {
 	SCR_MESSAGE_TEXT,		// message body editor
 	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
+	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
+	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
@@ -72,6 +75,11 @@ typedef struct {
 	bool saved;		// in the contacts
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
+
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void));
+void ui_satellite_passes_tick(void);
+#endif
 
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
@@ -109,7 +117,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-#if CONFIG_BACKLIGHT_TEST
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
 #endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
