@@ -1312,6 +1312,17 @@ static bool ced_is_nxdn(const channel_t *ch)
 {
 	return CONFIG_NXDN && (ch->kind == CODEPLUG_KIND_NXDN || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_NXDN));
 }
+
+// A channel of a kind that runs its own voice mode over the stand-in record (D-STAR, Fusion: channel-modes.md 2.3):
+// the record says DMR, receive only, but the radio core runs the kind's mode and takes transmit allowed from the tag.
+// None of the record's DMR fields (contact, color code, slot, group list, ID) or FM fields (width, tones, which the
+// mode sets itself) are its own, so the editor neither shows nor checks them. P25, NXDN and the trunked kinds use the
+// record's contact and ID, so they are not among these
+static bool ced_own_mode(const channel_t *ch)
+{
+	return ch->kind != CODEPLUG_KIND_NONE && ch->kind != CODEPLUG_KIND_P25 && ch->kind != CODEPLUG_KIND_NXDN &&
+	       !codeplug_kind_trunked(ch->kind);
+}
 #endif
 
 // A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
@@ -2902,7 +2913,8 @@ static void ced_build(void)
 {
 	bool listen = radio_listen_band(ced_ch.rx_hz);
 	bool p25 = ced_is_p25(&ced_ch), nxdn = ced_is_nxdn(&ced_ch), air = p25 || nxdn;
-	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air;
+	bool own = ced_own_mode(&ced_ch);
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air && !own;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false, into = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2923,7 +2935,7 @@ static void ced_build(void)
 				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
 		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
-		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
+		if (!air_row && ((fm_only && (dmr || own)) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -3324,7 +3336,8 @@ static const char *ced_problem(void)
 		return TR(CHAN_WHY_RX_ONLY_BAND_SET_FM, "Receive only band: set FM");
 	// The contact is whom PTT calls, so a channel that never transmits needs none
 	// (P25 and NXDN: none is talk group 1)
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c))
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c) &&
+	    !ced_own_mode(c))
 		return TR(CHAN_WHY_PICK_TX_CONTACT, "Pick a TX contact first");
 #if CONFIG_NXDN
 	// A DMR channel's own ID kept when the Mode row made it NXDN: past NXDN's range, as the ID row refuses it

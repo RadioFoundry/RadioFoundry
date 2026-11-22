@@ -30,7 +30,7 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
-//   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
+//   chkind:<n>,p25|nxdn|dstar|ysf[,<name>]  a stored channel of that kind, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   ysf                 the channel is a Fusion one (kind 6, DG-ID sent 0), our callsign G4XYZ; ysfnocall: none set
@@ -3602,8 +3602,10 @@ static bool run_token(char *t, char *err, size_t len)
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
 		return true;
 	}
-#if CONFIG_P25 || CONFIG_NXDN
-	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
+	// Stored channel n is a P25, NXDN, D-STAR or Fusion channel: what codeplug_channel reads for one, the kind from
+	// its tag over the stand-in record (DMR, no contact; channel-modes.md 2.3) and transmit allowed, as the Codeplug
+	// Editor makes a new D-STAR or Fusion channel. Built in every configuration: the kinds' ids are
+	if (strcmp(t, "chkind") == 0) {
 		unsigned n = 0;
 		char k[8] = "";
 		channel_t c;
@@ -3619,8 +3621,13 @@ static bool run_token(char *t, char *err, size_t len)
 				if (*ch == '_')
 					*ch = ' ';
 		}
-		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : strcmp(k, "ysf") == 0 ? CODEPLUG_KIND_YSF :
+			 strcmp(k, "dstar") == 0 ? CODEPLUG_KIND_DSTAR : CODEPLUG_KIND_P25;
 		c.mode = RADIO_MODE_DMR;
+		if (c.kind == CODEPLUG_KIND_YSF || c.kind == CODEPLUG_KIND_DSTAR) {
+			c.contact = 0;
+			c.rx_only = false;
+		}
 		if (sim_write((uint16_t)n, &c) < 0) {
 			snprintf(err, len, "no room for %s", t);
 			return false;
@@ -3628,7 +3635,6 @@ static bool run_token(char *t, char *err, size_t len)
 		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
 		return true;
 	}
-#endif
 #if CONFIG_NXDN
 	if (strcmp(t, "nxdnrx") == 0) {
 		unsigned src = 0, dst = 0;

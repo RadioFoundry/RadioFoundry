@@ -665,6 +665,13 @@ static const flow_t flows[] = {
 	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
 	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
 	  "toast=Saved_channel_3 writes=1", 8, true },
+	// D-STAR and Fusion channels call by the mode's own destination, never a DMR contact: their record is the
+	// receive-only DMR stand-in (channel-modes.md 2.3), and a refusal for its empty contact left Save only with RX only
+	// on, so such a channel could never be made to transmit again on the radio. RX only on, saved, then off, saved
+	{ "E Fusion channel saves TX without a contact", "chkind:3,ysf ok 5 ok down down down down down down",
+	  "ok long:ok ok long:ok", "toast=Saved_channel_3 writes=2 shows=YSF hides=TX_contact hides=Color_code", 4, true },
+	{ "E D-STAR channel saves TX without a contact", "chkind:3,dstar ok 5 ok down down down down down down",
+	  "ok long:ok ok long:ok", "toast=Saved_channel_3 writes=2 shows=DV hides=TX_contact hides=Timeslot", 4, true },
 	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
 	// band. Channel 3 is DMR on 453.625, its RX only row is 6
 	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
