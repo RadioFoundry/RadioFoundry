@@ -97,6 +97,11 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
 `settings_flush()` saves at once: at power-off, on the CPS's "save" (`C 6 0` and `C 6 2`), and before a debug link
 restart or boot stub entry (a change still in its save delay would otherwise be lost).
 
+**Reading**: `settings_read(&copy)` takes the whole record, a few hundred bytes. A caller deep in a task's stack (a menu's
+value getter, the debug link) reads one field instead: `SETTINGS_FIELD(brightness)` is `settings_read_field(offset, size)`
+with the field's own type, a 1, 2 or 4 byte value copied under the same lock. A rule or a mapping the record's readers
+share (`settings_theme`, `settings_crash_contact`) has an `_of` form that takes the field values.
+
 **Who writes what**:
 
 - The radio core (`radio_sm.c` `persist()`): VFO or channel mode, the zone, the channel number and its position,

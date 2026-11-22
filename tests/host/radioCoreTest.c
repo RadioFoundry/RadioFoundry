@@ -22,6 +22,7 @@
 #include "hotspot/hotspot.h"
 #include "hotspot/mmdvm.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
@@ -5181,6 +5182,43 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, 9) && ui_svc_setting_get(UI_SET_THEME) == 3);	// night, the last
 	CHECK(ui_svc_setting_set(UI_SET_THEME, 0));
+	// Stored values the setters never write (an older or a damaged record) read back as each getter's fallback or
+	// clamp. Each getter reads its own field of the settings in force (SETTINGS_FIELD), so every width is covered:
+	// bytes, 16 and 32 bit values, a signed 16 bit one, the two language bytes
+	{
+		settings_t keep;
+		settings_read(&keep);
+		settings_t *raw = settings_begin();
+		raw->brightness = 3;
+		raw->mic_gain = 99;
+		raw->pos_format = 7;
+		raw->vfo_step_hz = 500;
+		raw->ref_trim_ppb = -250;
+		raw->lang[0] = 'e';
+		raw->lang[1] = 's';
+		raw->auto_off_min = 0x1234;
+		raw->theme = 0xFF;
+		raw->updown_home = 3;
+		raw->sound_flags = SETTINGS_KNOB_LOCK;
+		raw->accent = SETTINGS_ACCENT_PLAIN | 5;
+		raw->low_batt_pct = 17;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_MIC_GAIN) == 5 &&
+		      ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_VFO_STEP) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_REF_TRIM) == ref_trim_clamp(-250) && ui_svc_setting_get(UI_SET_REF_TRIM) < 0);
+		CHECK(ui_svc_setting_get(UI_SET_LANGUAGE) == ('e' << 8 | 's') && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 0x1234);
+		CHECK(ui_svc_setting_get(UI_SET_THEME) == 3 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 0 && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 17);
+		CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 5 && ui_svc_setting_get(UI_SET_STRIP) == 0);
+		raw = settings_begin();
+		raw->vfo_step_hz = 25000;
+		raw->sound_flags = 0;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_VFO_STEP) == 2500 && ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 1);
+		raw = settings_begin();
+		*raw = keep;
+		settings_end(0);
+	}
 	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
 	// or older records) is the defaults: the theme's highlight, the strip filled
 	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
