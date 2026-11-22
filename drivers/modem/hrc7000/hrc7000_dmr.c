@@ -60,7 +60,7 @@
 #define VOICE_LOST_TICKS	13u	// about 390 ms without a voice burst on the call's slot
 #define LOCAL_CC_ANY		(1u << 8)	// cc_opt 1: deframe a burst of any color code
 #define RF_MODE_SYNC_AUTO	(1u << 12)	// adjustsyncmax: dynamic sync threshold; must be 0 with cc_opt 1
-#define BUSY_US			360000u	// polite access: activity in the last 360 ms
+#define BUSY_US			360000u	// polite access: activity in the last 360 ms, unless a call ended with it
 #define RX_LOST_TICKS		13u	// a reception is over (390 ms without a burst taken)
 #define RX_IDLE_TICKS		20u	// slot timing but nothing taken for 600 ms: the timing is stale
 #define POST_TX_HOLD_TICKS	5u	// after a direct transmission: an answer is awaited on our slot timing for 150 ms
@@ -809,6 +809,7 @@ static void rx_burst(hrc7000_dmr_t *e)
 	e->rx_tick = e->tick;
 	e->t_rx = now(e);
 	e->rx_any = true;
+	e->rx_call_end = false;
 	e->st.last_cc = s.cc;
 	e->st.last_ts = ts;
 	e->rx_chip_slot = s.chip_slot;
@@ -890,6 +891,11 @@ static void rx_burst(hrc7000_dmr_t *e)
 			}
 			e->voice_slots &= (uint8_t)~(1u << s.chip_slot);
 			e->listen_voice = false;
+			// Direct mode: the call is over and the channel free, as the call stack's own check has it. A reply keyed
+			// now is aligned to that call (DMR_CALL_ALIGN_MS, 300 ms) and was refused for the rest of the busy window.
+			// Through a repeater a terminator is its hang, and a call there is impolite anyway (gotchas 1.8). Only a good
+			// CRC (trust also takes a bad one while transmitting) and no call left on the other slot frees the channel
+			e->rx_call_end = !e->cfg.repeater && e->voice_slots == 0 && s.crc_ok;
 			e->st.rx_terminator++;
 			break;
 		case DMR_BURST_CSBK:
@@ -1217,7 +1223,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 {
 	lock(e);
 	bool ok = e->running && e->tx_state == TXS_IDLE && !BS_ACTIVE(e);
-	if (ok && access != DMR_ACCESS_IMPOLITE && e->rx_any && (uint32_t)(now(e) - e->t_rx) < BUSY_US &&
+	if (ok && access != DMR_ACCESS_IMPOLITE && e->rx_any && !e->rx_call_end && (uint32_t)(now(e) - e->t_rx) < BUSY_US &&
 	    (access == DMR_ACCESS_POLITE_ALL || (e->cfg.cc >= 0 && e->st.last_cc == (uint8_t)e->cfg.cc))) {
 		e->st.tx_rejected++;
 		ev_simple(e, DMR_EV_TX_REJECTED, ts, tick_arg(e));
