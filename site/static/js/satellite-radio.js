@@ -85,6 +85,7 @@ async function radioBands(link) {
 	const text = new TextDecoder().decode(reply.subarray(5));
 	const match = /^bands=([^\r\n]*)$/m.exec(text);
 	if (!match || !match[1]) throw new Error("Radio did not report its supported frequency bands");
+	// The view includes RX-only ranges; no catalog satellite uplink currently falls in one.
 	return match[1].split(",").map((range) => {
 		const parsed = /^(\d+)-(\d+)$/.exec(range);
 		if (!parsed || Number(parsed[1]) > Number(parsed[2]))

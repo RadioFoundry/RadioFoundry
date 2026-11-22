@@ -38,8 +38,18 @@ OP_PROFILE_GET, OP_PROFILE_SET = 7, 8
 OP_REPLACE_BEGIN = 9
 OP_PROFILE_STAGE, OP_PROFILE_VALUES_GET, OP_PROFILE_STAGE_CHUNK = 10, 11, 12
 DEFAULT_PROFILE_IDS = (25544, 27607, 43017)
-SUPPORTED_PROFILE_IDS = frozenset((25544, 27607, 40908, 40931, 43017, 43678, 61781,
-                                   63213, 63214, 63215, 63217, 63218, 63219, 63237, 63238, 63239, 67291))
+PROFILE_FREQUENCIES = {
+    25544: (437800000, 145990000), 27607: (436795000, 145850000),
+    40908: (437200000, 144350000), 40931: (435880000, 145880000),
+    43017: (145960000, 435250000), 43678: (145900000, 437500000),
+    61781: (435400000, 145850000), 63213: (436400000, 145970000),
+    63214: (436400000, 145970000), 63215: (436400000, 145970000),
+    63217: (436400000, 145970000), 63218: (436400000, 145970000),
+    63219: (436400000, 145970000), 63237: (436400000, 145970000),
+    63238: (436400000, 145970000), 63239: (436400000, 145970000),
+    67291: (436950000, 145920000),
+}
+SUPPORTED_PROFILE_IDS = frozenset(PROFILE_FREQUENCIES)
 MAX_PROFILES = 10
 MAX_NAME_BYTES = 48
 MAX_BUNDLE_BYTES = 1_000_000
@@ -461,6 +471,7 @@ def _check_radio_profile_bands(link, profiles):
     bands_text = core.get("bands")
     if not isinstance(bands_text, str) or not bands_text:
         raise SatelliteTleError("radio did not report its supported frequency bands")
+    # The view includes RX-only ranges; no catalog satellite uplink currently falls in one.
     bands = []
     for band in bands_text.split(","):
         match = re.fullmatch(r"([0-9]+)-([0-9]+)", band)
@@ -720,6 +731,12 @@ def install_records(link, records, profile_ids=None, profiles=None):
         raise SatelliteTleError("more than four frequency profiles require satellite protocol version 6")
     if full_profiles is not None:
         _check_radio_profile_bands(link, full_profiles)
+    elif selected_ids is not None:
+        _check_radio_profile_bands(link, [
+            {"catalog_id": catalog_id, "rx_hz": PROFILE_FREQUENCIES[catalog_id][0],
+             "tx_hz": PROFILE_FREQUENCIES[catalog_id][1]}
+            for catalog_id in selected_ids
+        ])
     if selected_ids is not None and {item["catalog_id"] for item in validated} != set(selected_ids):
         raise SatelliteTleError("replacement bundle TLE records must exactly match its selected profile IDs")
     before = list_installed(link, capacity, installed_count)
