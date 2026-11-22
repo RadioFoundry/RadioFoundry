@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "fuzz.h"
 #include "nxdn/nxdn.h"
 #include "air/air_syms.h"
 #include "dmr/ambe/ambeFec.h"
@@ -410,6 +411,39 @@ static void testCalls(void)
 }
 
 #if CONFIG_NXDN_OTA_ALIAS
+static void fuzz_alias(uint32_t first, uint32_t end)
+{
+	uint8_t frames[2][NXDN_FRAME_BYTES] = { { 0 } };
+	nxdn_fec_work_t alias_work;
+	fuzz_t f;
+
+	for (unsigned i = 0; i < 2; i++)
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			air_sym_put(frames[i], j, tx_air[first + i * NXDN_FRAME_SYMS + j]);
+	fuzz_init(&f, 0x4E58444E);
+	for (long trial = 0; trial < fuzz_iters(1000); trial++) {
+		uint8_t half = (uint8_t)fuzz_below(&f, 2);
+		unsigned i = fuzz_below(&f, 2);
+		uint8_t frame[NXDN_FRAME_BYTES], msg[NXDN_FACCH1_BYTES];
+
+		memcpy(frame, frames[i], sizeof frame);
+		CHECK(nxdn_facch1_get(frame, NULL, half, &alias_work, msg) == 0, "fuzz alias seed");
+		int n = fuzz_mutate(&f, msg, sizeof msg, sizeof msg);
+		memset(msg + n, 0, sizeof msg - (unsigned)n);
+		msg[0] = NXDN_MSG_PROP_FORM;	// exercise the alias parser, including its signature checks
+		nxdn_facch1_put(frame, half, msg);
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[first + i * NXDN_FRAME_SYMS + j] = air_sym_get(frame, j);
+		tx_n = end;
+		receive(&nxdn_air_mode_9600, 7, 0, false);
+		CHECK(got.starts == 1 && got.ends == 1 && got.call.alias[NXDN_ALIAS_LEN] == '\0', "fuzz alias call");
+		for (const unsigned char *ch = (const unsigned char *)got.call.alias; *ch; ch++)
+			CHECK(*ch >= 0x20 && *ch <= 0x7E, "fuzz alias text must be printable");
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[first + i * NXDN_FRAME_SYMS + j] = air_sym_get(frames[i], j);
+	}
+}
+
 static void testAlias(void)
 {
 	// Full-width synthetic alias, with an independent fixture for the observed layout and sum.
@@ -429,6 +463,8 @@ static void testAlias(void)
 		tx_n = 0;
 		make_call_with_alias(&v, 7, rate9600, 16, "ABCDEFGHIJKLMN");
 		uint32_t first_call_end = tx_n;
+		if (rate9600)
+			fuzz_alias(first, first_call_end);
 		for (uint8_t i = 0; i < 2; i++) {
 			uint8_t frame[NXDN_FRAME_BYTES] = { 0 };
 			nxdn_fec_work_t alias_work;
