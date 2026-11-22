@@ -75,7 +75,7 @@ typedef struct
 
 #define DMR_CSBKO_CALL_ALERT		0x1F
 #define DMR_CSBKO_CALL_ALERT_ACK	0x20
-#define DMR_CSBKO_RADIO_CHECK		0x24		// byte 3 0x80: request, else the answer
+#define DMR_CSBKO_RADIO_CHECK		0x24		// octet 3 bit 7 tells request from answer, by form (dmrDataRadioCheckKind)
 #define DMR_CSBKO_EMERGENCY_ALARM	0x27		// emergency alarm (docs/spec/dmr-emergency.md 2)
 #define DMR_CSBKO_PREAMBLE			0x3D
 
@@ -158,10 +158,25 @@ uint32_t dmrDataCRC32(const uint8_t *data, int length);
 // 0xCC, MBC 0xAA, as one octet repeated)
 bool dmrDataCheckCRC16(const uint8_t *burst12, uint8_t mask);
 
+// What a radio check CSBK addressed to own can be (docs/spec/dmr-data.md 4). The ETSI form (FID 0x00): request octet
+// 3 0x80 with the checked radio in octets 4-6 and the checker in 7-9, answer octet 3 0x00. The FID 0x10 form
+// as commercial portables send it: request octet 3 0x00, answer 0x80, both with the checker in octets 4-6 and the
+// checked radio in 7-9. Our own request or answer repeated back (a repeater) is addressed to the other radio: 0,
+// except an ETSI-form answer, which looks the same as the checked radio's answer with the IDs swapped
+#define DMR_RC_REQUEST				0x01
+#define DMR_RC_ANSWER				0x02
+// DMR_RC_REQUEST or DMR_RC_ANSWER; 0 if the CSBK isn't a radio check to own. *peer: the other radio
+uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *peer);
+// The 10 octets of our radio check request to dst in the FID 0x10 form or the ETSI form (FID 0x00)
+void dmrDataBuildRadioCheck(uint32_t dst, uint32_t src, bool etsi, uint8_t out[10]);
+// The checked radio of a radio check request built by dmrDataBuildRadioCheck, in either form
+uint32_t dmrDataRadioCheckDst(const uint8_t csbk[10]);
+
 // TX builders. Each returns the number of bursts written to out, or 0 if the data does not fit
 int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out);
 // The answer from us (ID src) to a received CSBK (its 10 bytes, CRC checked): the ack of a call alert, or the
-// answer to a radio check. 0 if the CSBK isn't one of those, or isn't addressed to us
+// answer to a radio check (the request echoed with octet 3 bit 7 flipped, either form). 0 if the CSBK isn't one of
+// those, or isn't addressed to us
 int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out);
 // blockType: DMR_TYPE_RATE_1_2, DMR_TYPE_RATE_3_4 or DMR_TYPE_RATE_1
 int dmrDataBlockLength(uint8_t blockType);
