@@ -5159,18 +5159,6 @@ static void dual_to_selected(radio_sm_t *sm, uint32_t now_ms)
 	scan_publish(sm);
 }
 
-// Requests that act on the channel the receiver is on: in dual watch that must be the selected one
-static bool for_selected(uint8_t type)
-{
-	switch (type) {
-	case RREQ_POWER: case RREQ_SQUELCH: case RREQ_CLEAR_TEMP: case RREQ_DMR_TARGET: case RREQ_DMR_CONTACT:
-	case RREQ_DMR_CALL_BACK: case RREQ_DMR_TARGET_CLEAR: case RREQ_DMR_HEAR_ALL:
-		return true;
-	default:
-		return false;
-	}
-}
-
 static radio_dual_ref_t dual_ref(uint32_t a)
 {
 	radio_dual_ref_t r = { false, 0, 0 };
@@ -8411,27 +8399,55 @@ static void channel_burst(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
-// A request that changes what the receiver is tuned to ends a scan first (it stays where it is)
-static bool retunes(uint8_t type)
-{
-	switch (type) {
-	case RREQ_CH_STEP: case RREQ_ZONE_POS: case RREQ_ZONE: case RREQ_VFO: case RREQ_VFO_STEP: case RREQ_VFO_SET:
-	case RREQ_VFO_TX: case RREQ_BANDWIDTH: case RREQ_TONE: case RREQ_MODE: case RREQ_DMR_TS: case RREQ_DMR_CC: case RREQ_VFO_COPY:
-	case RREQ_VFO_SFR:
-		return true;
-	default:
-		return false;
-	}
-}
+// What radio_sm_request does around a request's own work. A request is the user doing something unless it says
+// otherwise: it counts as activity, an APRS transmission gives way and a roaming search goes back where it started
+enum {
+	RQ_ALERT	= 1u << 0,	// not the user: no activity, nothing gives way (beeps, vibration, the volume)
+	RQ_KEEP_APRS	= 1u << 1,	// an APRS transmission carries on
+	RQ_KEEP_ROAM	= 1u << 2,	// a roaming search carries on
+	RQ_RETUNES	= 1u << 3,	// changes what the receiver is tuned to: a scan ends first (it stays where it is)
+	RQ_SELECTED	= 1u << 4,	// acts on the channel the receiver is on: in dual watch the selected one
+};
+
+static const uint8_t req_flags[RREQ_COUNT] = {
+	[RREQ_BEEP] = RQ_ALERT,
+	[RREQ_VIBRATE] = RQ_ALERT,
+	[RREQ_VOLUME] = RQ_ALERT,
+	[RREQ_VOLUME_OVERRIDE] = RQ_ALERT,
+	[RREQ_VOLUME_HOLD] = RQ_ALERT,
+	[RREQ_DMR_FOCUS] = RQ_KEEP_APRS | RQ_KEEP_ROAM,
+	[RREQ_SETTINGS] = RQ_KEEP_APRS | RQ_KEEP_ROAM,
+	[RREQ_RETUNE] = RQ_KEEP_APRS,
+	[RREQ_ROAM] = RQ_KEEP_ROAM,
+	[RREQ_CH_STEP] = RQ_RETUNES,
+	[RREQ_ZONE_POS] = RQ_RETUNES,
+	[RREQ_ZONE] = RQ_RETUNES,
+	[RREQ_VFO] = RQ_RETUNES,
+	[RREQ_VFO_STEP] = RQ_RETUNES,
+	[RREQ_VFO_SET] = RQ_RETUNES,
+	[RREQ_VFO_TX] = RQ_RETUNES,
+	[RREQ_VFO_COPY] = RQ_RETUNES,
+	[RREQ_VFO_SFR] = RQ_RETUNES,
+	[RREQ_BANDWIDTH] = RQ_RETUNES,
+	[RREQ_TONE] = RQ_RETUNES,
+	[RREQ_MODE] = RQ_RETUNES,
+	[RREQ_DMR_TS] = RQ_RETUNES,
+	[RREQ_DMR_CC] = RQ_RETUNES,
+	[RREQ_POWER] = RQ_SELECTED,
+	[RREQ_SQUELCH] = RQ_SELECTED,
+	[RREQ_CLEAR_TEMP] = RQ_SELECTED,
+	[RREQ_DMR_TARGET] = RQ_SELECTED,
+	[RREQ_DMR_CONTACT] = RQ_SELECTED,
+	[RREQ_DMR_CALL_BACK] = RQ_SELECTED,
+	[RREQ_DMR_TARGET_CLEAR] = RQ_SELECTED,
+	[RREQ_DMR_HEAR_ALL] = RQ_SELECTED,
+};
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
-	// A beep or a vibration is an alert, not the user doing something; the volume changes nothing on air or on the
-	// channel, so it neither gives way to nor cancels anything either
-	bool alert = req->type == RREQ_BEEP || req->type == RREQ_VIBRATE || req->type == RREQ_VOLUME ||
-		     req->type == RREQ_VOLUME_OVERRIDE || req->type == RREQ_VOLUME_HOLD;
-	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_RETUNE) {
+	uint8_t flags = req->type < RREQ_COUNT ? req_flags[req->type] : 0;
+	if ((flags & (RQ_ALERT | RQ_KEEP_APRS)) == 0) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
 	bool busy = sm->view.state == RS_TX || sm->hotspot;	// no retuning while transmitting or a hotspot
@@ -8442,10 +8458,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	// (RREQ_DUAL packs a channel into arg, RADIO_DUAL_VFO in bit 31: INT32_MIN can't be negated, and isn't a step)
 	int steps = req->arg > 0 ? req->arg : req->arg != INT32_MIN ? -req->arg : INT32_MAX;
 
-	if (!alert) {
+	if ((flags & RQ_ALERT) == 0) {
 		activity(sm, now_ms);
 	}
-	if (!alert && req->type != RREQ_DMR_FOCUS && req->type != RREQ_SETTINGS && req->type != RREQ_ROAM) {
+	if ((flags & (RQ_ALERT | RQ_KEEP_ROAM)) == 0) {
 		roam_cancel(sm, now_ms);	// the user does something: back to the site a roaming search started from
 	}
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
@@ -8458,16 +8474,14 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		vfo_pick = o->vfo && o->pos == sm->vfo_idx ? !sm->vfo_idx : sm->vfo_idx;
 	}
 #endif
-	if (retunes(req->type)) {
+	if ((flags & RQ_RETUNES) != 0) {
 		scan_stop(sm, dual_running(sm), now_ms);	// dual watch: the change starts from the selected one
 	}
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	if (vfo_pick >= 0) {
 		vfo_use(sm, (uint8_t)vfo_pick);
 	}
-#endif
-#if CONFIG_SCAN && CONFIG_DUAL_WATCH
-	if (for_selected(req->type) && dual_running(sm)) {
+	if ((flags & RQ_SELECTED) != 0 && dual_running(sm)) {
 		dual_to_selected(sm, now_ms);
 	}
 #endif
