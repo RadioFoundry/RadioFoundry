@@ -107,3 +107,15 @@ iPhone and iPad: no. iOS has no WebUSB or Web Serial.
 **Is basic privacy secure?**
 
 No. Basic privacy scrambles voice with a fixed key. It keeps casual listeners out, nothing more.
+
+**How do I type a dash (-) in a name or message?**
+
+Use key **1**. In ABC or abc mode, one press types a period and two presses type a dash. Keep pressing for the other
+punctuation (`/ , ' & ( ) @ _ ! ?`). In 123 mode, **1** types the digit. See [Text entry](07-channels-zones-vfo.md#text-entry).
+
+**Can a channel use its own DMR ID?**
+
+Yes. A channel's **Own ID** replaces the radio's DMR ID on that channel only. Open the channel, choose **Own ID**, type
+the digits and press **OK**. **Back** takes back the last digit. **0** means the radio's ID, which is the default. The
+highest ID is 16776415. The network must accept the ID, or the radio reports the registration as refused
+([Editing a channel](07-channels-zones-vfo.md#editing-a-channel), [DMR](09-dmr.md)).
