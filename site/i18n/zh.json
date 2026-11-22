@@ -1590,6 +1590,7 @@
  "editor.qdmr.note.location_rounded": "{n} 个信道位置被写成 6 字符网格定位符（约 5 公里）。",
  "editor.qdmr.note.sfr": "{n} 个信道的单频中继设置。",
  "editor.qdmr.note.tone_burst": "{n} 个信道的 1750 Hz 突发音设置。",
+ "editor.qdmr.note.p25_contacts": "{n} 个信道与 P25 联系人的关联（其联系人或接收组列表）：qdmr 没有 P25 联系人。",
  "editor.qdmr.note.mode_keys.one": "{n} 个系统的密钥。文件从不保存密钥：在含有同一系统的电台频率中打开文件时，系统保留其密钥；在其他电台频率中需要重新添加。",
  "editor.qdmr.note.mode_keys.other": "{n} 个系统的密钥。文件从不保存密钥：在含有同一系统的电台频率中打开文件时，系统保留其密钥；在其他电台频率中需要重新添加。",
  "editor.qdmr.note.mode_unknown.one": "{n} 个本编辑器不认识的信道模式或系统。",

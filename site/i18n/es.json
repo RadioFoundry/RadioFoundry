@@ -1590,6 +1590,7 @@
  "editor.qdmr.note.location_rounded": "{n} ubicaciones de canal se escribieron como localizadores de cuadrícula de 6 caracteres (unos 5 km).",
  "editor.qdmr.note.sfr": "Ajustes SFR de {n} canales.",
  "editor.qdmr.note.tone_burst": "Ráfaga de tono 1750 Hz de {n} canales.",
+ "editor.qdmr.note.p25_contacts": "Enlaces de {n} canales a contactos P25 (su contacto o lista de grupos RX): qdmr no tiene contactos P25.",
  "editor.qdmr.note.mode_keys.one": "Claves de {n} sistema. Un archivo nunca guarda claves: un sistema conserva sus claves cuando el archivo se abre en un codeplug que tiene el mismo sistema, y en cualquier otro hay que volver a añadirlas.",
  "editor.qdmr.note.mode_keys.other": "Claves de {n} sistemas. Un archivo nunca guarda claves: un sistema conserva sus claves cuando el archivo se abre en un codeplug que tiene el mismo sistema, y en cualquier otro hay que volver a añadirlas.",
  "editor.qdmr.note.mode_unknown.one": "{n} modo de canal o sistema de un tipo que este editor no conoce.",

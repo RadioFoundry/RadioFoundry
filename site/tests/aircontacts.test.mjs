@@ -18,6 +18,7 @@ import { p25Offered } from "../static/js/codeplug/modes.js";
 import { setKind, newSystem } from "../static/js/codeplug/channelmodes.js";
 import { decodeConv, encodeConv, p25TrunkKind } from "../static/js/codeplug/mode_p25.js";
 import { p25ChannelsToConvert, convertP25Channels, unreadFlagged } from "../static/js/codeplug/p25convert.js";
+import { exportQdmr } from "../static/js/codeplug/qdmr.js";
 import { writeRanges } from "../static/js/codeplug/transport.js";
 import { History } from "../static/js/editor/undo.js";
 import { Grid } from "../static/js/editor/grid.js";
@@ -865,4 +866,17 @@ test("CSV: a channel's talk target is looked up among the contacts of the mode i
 	assert.deepEqual(r.problems, []);
 	assert.equal(ch.contact, p);
 	assert.equal(dc.contact, d);
+});
+
+test("qdmr export: a note counts the channels whose link to a P25 contact is not saved", () => {
+	const m = empty();
+	const tg = p25Contact("P25 TG", 1310), dtg = dmrContact("DMR TG", 91);
+	m.contacts.push(dtg, tg);
+	channel(m, "P25 Ops", 2, { contact: tg });
+	const tr = channel(m, "P25 Trunk", 3);
+	m.rxLists.push({ number: null, name: "P25 Groups", contacts: [tg] });
+	tr.rxList = m.rxLists[0];
+	channel(m, "DMR Ch", 0, { contact: dtg });
+	const { notes } = exportQdmr(m);
+	assert.deepEqual(notes.filter((n) => n.code === "p25_contacts"), [{ code: "p25_contacts", n: 2 }]);
 });

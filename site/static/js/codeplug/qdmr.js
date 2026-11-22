@@ -406,6 +406,7 @@ export function exportQdmr(m) {
 		}),
 	}));
 	m.dtmfContacts.forEach((d, i) => contacts.push({ dtmf: flow({ id: `cont${dmrContacts.length + i + 1}`, name: d.name, number: d.code }) }));
+	const isP25Link = (x) => !!x && typeof x === "object" && isP25(x);
 	const cref = (c) => (c && typeof c === "object" && cn.has(c) ? `cont${cn.get(c)}` : undefined);
 
 	const ln = num(m.rxLists);
@@ -425,6 +426,8 @@ export function exportQdmr(m) {
 		if (c.useLocation) note("location_rounded");
 		if (c.sfr || c.sfrA || c.sfrB) note("sfr");
 		if (c.toneBurst && c.mode !== "dmr") note("tone_burst");
+		// qdmr has no P25 contacts: a channel's link to one, as its contact or in its RX group list, is not saved
+		if (isP25Link(c.contact) || (c.rxList && typeof c.rxList === "object" && c.rxList.contacts.some(isP25Link))) note("p25_contacts");
 		const powerName = Object.keys(POWER).find((k) => POWER[k] === c.power);
 		if (c.power && !powerName) note("power_level");
 		const common = {
