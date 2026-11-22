@@ -627,7 +627,8 @@ static bool air_rx_counts(air_rx_counts_t *c)
 	if (!air_on) {
 		return false;
 	}
-	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks };
+	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks,
+				.copy_restarts = AIR->st.copy_restarts };
 	return true;
 }
 
