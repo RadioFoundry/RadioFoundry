@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Labels by path (.github/workflows/labeler.yml; docs/dev/contributing.md "Maintainers"). risk:low = nothing that runs
+# on a radio changed (no HIL batch needed); needs-hil = firmware code changed.
+"risk:low":
+  - changed-files:
+      - all-globs-to-all-files: ["docs/**", "site/**", "tests/host/**", "tests/hil/**", "*.md", ".github/ISSUE_TEMPLATE/**", "tools/*.md"]
+"needs-hil":
+  - changed-files:
+      - any-glob-to-any-file: ["core/**", "drivers/**", "platform/**", "hal/**", "boards/**", "config/**", "Makefile", "stub/**"]
+"area:dmr":
+  - changed-files:
+      - any-glob-to-any-file: ["core/dmr/**", "core/air/**", "docs/spec/dmr*.md"]
+"area:ui":
+  - changed-files:
+      - any-glob-to-any-file: ["core/ui/**", "docs/ux/**"]
+"area:net":
+  - changed-files:
+      - any-glob-to-any-file: ["core/net/**", "core/hotspot/**", "core/snmp/**"]
+"area:platform":
+  - changed-files:
+      - any-glob-to-any-file: ["platform/**", "drivers/**", "hal/**", "boards/**"]
+"area:site":
+  - changed-files:
+      - any-glob-to-any-file: ["site/**"]
+"area:tools":
+  - changed-files:
+      - any-glob-to-any-file: ["tools/**", "stub/**"]
+"area:tests":
+  - changed-files:
+      - any-glob-to-any-file: ["tests/**"]
+"area:docs":
+  - changed-files:
+      - any-glob-to-any-file: ["docs/**", "*.md"]
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file: [".github/**", "tools/ci.sh", "tools/affected.py"]

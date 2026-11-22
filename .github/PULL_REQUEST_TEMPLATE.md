@@ -3,7 +3,12 @@
 
 ## What and why
 
-<!-- What changes, and the reason. Link the issue: "Fixes #123". -->
+<!-- What changes, and the reason. Link the issue: "Fixes #123". A fix for a regression names its cause:
+"Caused by #456". -->
+
+## For the release notes
+
+<!-- One line a user would understand, or "none" (internal change). The maintainer sets the changelog: label. -->
 
 ## Radios
 
@@ -17,9 +22,11 @@ end generated
 
 | Check | Result |
 |---|---|
-| `JOBS=8 tools/ci.sh` ends with "all checks passed" | <!-- yes; list any skips --> |
+| `tools/ci.sh --affected origin/main` ends with "all checks passed" | <!-- yes; list any skips --> |
+| Switches touched | <!-- CONFIG_ names, or none. tools/affected.py summary --base origin/main lists them --> |
 | Host unit tests added or changed (required for code changes) | <!-- test names; docs-only PRs: "docs only" --> |
-| HIL (`tests/hil`) | <!-- tests run and radio, or "not run" --> |
+| A bug fix: the new test fails without the fix | <!-- yes / not a fix --> |
+| HIL (`tests/hil`) | <!-- tests run and radio (for example `--affected origin/main` on one radio), or "not run" --> |
 | On the radio, on air | <!-- radio, firmware commit, what you tried; or "not tried" --> |
 
 <!-- A UI change: attach the gallery PNGs it changed (make -C tests/host ui-gallery), before and after. -->
@@ -42,3 +49,7 @@ end generated
 - [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
 - [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.
 - [ ] US English in code, comments, docs and commit messages.
+- [ ] New or changed text a user reads is translated into every catalog, or the missing languages are listed here as
+      open tasks (`- [ ] translations: es, it`).
+- [ ] A new switch saves at least 2 KB (or real RAM, or the hardware can lack the feature) and has a user reason
+      ([build-config.md](https://github.com/radiofoundry/radiofoundry/blob/main/docs/build-config.md)).

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Labels pull requests by the paths they change (.github/labeler.yml). pull_request_target so fork pull requests get
+# labels too: the action reads only the list of changed files through the API and never checks out or runs the pull
+# request's code. GitHub's runners only (docs/dev/ci-runners.md).
+name: Labeler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13   # v7.0.0
+        with:
+          sync-labels: false
