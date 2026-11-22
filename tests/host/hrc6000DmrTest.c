@@ -1408,6 +1408,31 @@ static void test_rx_bs_direct_call(void)
 	CHECK(voices == 96);
 	CHECK(numbered == 0);
 
+	// A reply in step with that sender (the call stack keys DMO aligned within DMR_CALL_ALIGN_MS, on the channel's
+	// slot 1): the slot heard is the one to key in, as for MS sync, not a wait for a TC that never comes (refused)
+	{
+		dmr_tx_burst_t h = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+		int r50, r41, sent = -1;
+		pending_burst = false;
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+		hrc6000_dmr_tx_queue(&eng, &h);
+		hrc6000_dmr_tx_end(&eng);
+		for (int k = 0; k < 60 && sent < 0; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			if (r41 == 0x80) {
+				sent = k;
+			}
+			drain();
+		}
+		CHECK(sent >= 0 && sent < 4);
+		CHECK(count_ev(DMR_EV_TX_REJECTED) == 0 && eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+		for (int k = 0; k < 6; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			drain();
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	}
+
 	// A simplex host's stream: idle bursts with BS data sync, then the call with MS sync, one burst every other slot.
 	// The idles must not let 0x52's junk number the call's bursts (a label change mid-call drops the rest of it)
 	fresh_engine();

@@ -393,7 +393,8 @@ static bool rmo(const hrc6000_dmr_t *e)
 
 // A CACH to read the TC and short LC from: a base station keys both slots, so its BS-sync bursts come in slots in a
 // row. A direct mode sender with BS sync (a simplex hotspot) keys every other slot with no CACH: 0x52 then holds junk,
-// and slot labels taken from it flipped mid-call (issue 910). The HR_C7000 driver locks its TC the same way
+// and slot labels taken from it flipped mid-call (issue 910). The HR_C7000 driver also locks its TC only on BS
+// bursts in a row
 static bool cach_on_air(const hrc6000_dmr_t *e)
 {
 	return e->cfg.repeater || (rmo(e) && e->cach_seen);
@@ -1292,15 +1293,23 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 
 	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
 	uint8_t ph = (uint8_t)((tick - 1u) & 1u);
-	if (s->sync == DMR_SYNC_BS) {
+	bool bs = s->sync == DMR_SYNC_BS;
+	if (bs) {
 		e->bs_tick = e->tick;
 		e->rmo_seen = true;
-		if (e->bs_slot_valid && tick - 1u - e->bs_slot == 1u) {
+		if (!e->cach_seen && e->bs_slot_valid && tick - 1u - e->bs_slot == 1u) {
 			e->cach_seen = true;
+			if (!e->cfg.repeater) {
+				e->phase_ts[0] = 0;	// direct mode guesses (below): the TC numbers the slots from now on
+				e->phase_ts[1] = 0;
+			}
 		}
 		e->bs_slot = tick - 1u;
 		e->bs_slot_valid = true;
-	} else if (on_time && !tx && !e->cfg.repeater) {
+	}
+	// Direct mode (BS sync too while no CACH is on air): number the slot heard, so an aligned reply keys in step with
+	// the sender instead of waiting for a TC that never comes (refused at ALIGN_TIMEOUT_TICKS)
+	if (on_time && !tx && !e->cfg.repeater && !(bs && cach_on_air(e))) {
 		int8_t want = s->sync == DMR_SYNC_TS2 ? 2 : 1;
 		bool tdma = s->sync == DMR_SYNC_TS1 || s->sync == DMR_SYNC_TS2;
 		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
@@ -1323,7 +1332,9 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->st.last_cc = s->cc;
 	e->st.last_sync = s->sync;
-	e->st.last_ts = e->phase_ts[ph];
+	// A BS-sync burst with no CACH on air has no slot number (dmr-modem.md 2.3: direct mode)
+	int8_t ts_out = bs && !cach_on_air(e) ? 0 : e->phase_ts[ph];
+	e->st.last_ts = ts_out;
 	if (!s->crc_ok) {
 		e->st.rx_crc_err++;
 	}
@@ -1346,8 +1357,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->voice_index = s->voice_index;
 	b->sync = s->sync;
 	b->cc = s->cc;
-	// A BS-sync burst with no CACH on air has no slot number (dmr-modem.md 2.3: direct mode)
-	b->ts = s->sync == DMR_SYNC_BS && !cach_on_air(e) ? 0 : e->phase_ts[ph];
+	b->ts = ts_out;
 	b->crc_ok = s->crc_ok;
 	b->pi = s->pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)

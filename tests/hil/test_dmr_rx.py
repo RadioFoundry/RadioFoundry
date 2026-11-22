@@ -78,3 +78,4 @@ def test_dmr_rx_bs_direct(radio, sdr_bench, pytestconfig):
     print("radio deltas:", d)
     assert d["call.rx_voice_bursts"] == CALLS * SUPERFRAMES * 6 and d["call.rx_lost_frames"] == 0, d
     assert d["call.rx_calls"] == CALLS and d["call.rx_late_entries"] == 0, d
+    assert d["call.rx_ts_dropped"] == 0, d

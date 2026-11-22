@@ -403,8 +403,10 @@ BS sync alone doesn't prove a CACH. A direct mode sender may frame its bursts wi
 one burst every other slot with nothing between them, so 0x52 holds junk at every interrupt. TC tracking and the
 short LC read therefore wait until BS-sync bursts came in two slots in a row (a base station keys both slots) since
 the timing was acquired, or the channel is a repeater channel. Until then a BS-sync burst goes up with no slot number
-(`ts` 0). Numbered from the junk, the labels flipped mid-call and the call stack dropped the rest of the call as the
-other slot's. The HR_C7000 driver locks its TC on the same condition ([modem-hrc7000.md](modem-hrc7000.md)).
+(`ts` 0), and its slot is the slot heard, as in MS sync direct mode, so an aligned reply keys in step with the sender.
+Numbered from the junk, the labels flipped mid-call and the call stack dropped the rest of the call as the other
+slot's. The HR_C7000 driver also locks its TC only on BS bursts in a row (4, TC alternating;
+[modem-hrc7000.md](modem-hrc7000.md)).
 
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
