@@ -9299,6 +9299,26 @@ static uint8_t close_polls(void)
 	return RADIO_SQL_CLOSE_POLLS;
 }
 
+// Polls of noise above the line before the squelch closes on this reading: close_polls(), or RADIO_SQL_PEAK_POLLS
+// for a voice peak (the RX tone still there and the signal strength where it was on the last poll the squelch held,
+// whatever the noise reads). An RX tone that goes and a carrier that fades or goes close as before
+// sql_rssi on a poll the squelch holds: the strength when the noise held it, none (INT16_MAX) when level 0 or a
+// broadcast listen did, so a squelch raised over a noise-only channel closes as before
+static int16_t held_rssi(const radio_status_t *st, uint8_t sq, uint8_t open_below)
+{
+	return sq != 0 && st->noise < open_below + RADIO_SQL_HYST_DB ? st->rssi_dbm : INT16_MAX;
+}
+
+static uint8_t close_need(const radio_sm_t *sm, const radio_status_t *st)
+{
+	uint8_t polls = close_polls();
+	if (polls == RADIO_SQL_CLOSE_POLLS && sm->view.squelch != 0 && sm->view.tone_ok &&
+	    st->rssi_dbm + RADIO_SQL_PEAK_RSSI_DB >= sm->sql_rssi) {
+		return RADIO_SQL_PEAK_POLLS;
+	}
+	return polls;
+}
+
 #if CONFIG_VOX
 static bool vox_enabled(const radio_sm_t *sm)
 {
@@ -9626,13 +9646,16 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		if (opens) {
 			sm->view.state = RS_RX;
 			sm->close_count = 0;
+			sm->sql_rssi = held_rssi(&st, sq, open_below);
 			changed(sm);
 		}
 	} else if (holds) {
 		activity(sm, now_ms);
 		sm->close_count = 0;
-	} else if (++sm->close_count >= close_polls() || (sq != 0 && close_polls() == RADIO_SQL_CLOSE_POLLS &&
-			   st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+		sm->sql_rssi = held_rssi(&st, sq, open_below);
+	} else if (++sm->close_count >= close_need(sm, &st) ||
+		   (sq != 0 && close_need(sm, &st) == RADIO_SQL_CLOSE_POLLS &&
+		    st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
 		bool was_rx = sm->view.state == RS_RX;
 		if (sm->view.state == RS_TX_DENIED) {
 			// A busy refusal over a reception (deny_rx): its audio stops where the squelch closes; the refusal

@@ -299,6 +299,15 @@ with the tone debounce (8 polls) that keeps fades from chopping audio.
 The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
 (open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
 or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+A voice peak doesn't close the squelch. On a 12.5 kHz channel, speech above about 2 kHz (fricatives such as S, SH
+and T) raises some receivers' noise reading over the close line for 100-300 ms, past the fast close line from a sender
+that deviates wide, while the carrier stays as strong as it was. Noise over the line with the RX tone still heard and
+the signal strength within `RADIO_SQL_PEAK_RSSI_DB` (3 dB) of the last poll that held the squelch open closes only
+after `RADIO_SQL_PEAK_POLLS` (12) polls, 300 ms. A carrier that goes takes the strength down with the noise up, since
+any signal that opens the squelch reads well above the receiver's floor: one poll past the fast close line, two
+otherwise. A lost RX tone closes as before. Widening the receive filter also lowered the reading on voice, but raised
+the reading on weak signals by up to 8 dB, so the squelch would open later on a weak station.
+
 Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
 (BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
 `test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.

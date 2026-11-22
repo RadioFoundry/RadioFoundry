@@ -1225,6 +1225,7 @@ static void test_squelch(void)
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
 	rx_signal(thr + RADIO_SQL_HYST_DB, true);
+	hw.st.rssi_dbm = -125 - RADIO_SQL_PEAK_RSSI_DB - 1;	// a fade: the strength falls too (a voice peak's doesn't)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
@@ -1278,6 +1279,74 @@ static void test_squelch(void)
 	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+}
+
+// A voice peak (#906): speech above about 2 kHz on a narrow channel raises the noise reading over the close line for a
+// few polls, past the fast close line from a sender that deviates wide, while the carrier stays as strong. The squelch
+// holds through it, and still closes at once when the carrier goes, after two polls when the strength falls, and after
+// RADIO_SQL_PEAK_POLLS when the noise stays up
+static void test_squelch_voice_peak(void)
+{
+	setup_codeplug();
+	start();
+	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
+	uint8_t peak = (uint8_t)(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1);	// short of the fast close
+
+	hw.st.noise = (uint8_t)(thr - 10);
+	hw.st.tone_ok = true;
+	hw.st.rssi_dbm = -70;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	// A 120 ms fricative, the strength a dB lower: open the whole time, and again after the next one, which reads
+	// past the fast close line
+	for (int n = 0; n < 2; n++) {
+		hw.st.noise = (uint8_t)(peak + n * 10);
+		hw.st.rssi_dbm = -71;
+		for (int i = 0; i < 5; i++) {
+			poll_for(RADIO_POLL_MS);
+			CHECK(sm.view.state == RS_RX && hw.audio);
+		}
+		hw.st.noise = (uint8_t)(thr - 10);
+		hw.st.rssi_dbm = -70;
+		poll_for(2 * RADIO_POLL_MS);
+		CHECK(sm.view.state == RS_RX);
+	}
+	// The noise stays up with the strength: closes after RADIO_SQL_PEAK_POLLS
+	hw.st.noise = peak;
+	poll_for((RADIO_SQL_PEAK_POLLS - 1) * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	// The carrier goes: the noise past the fast close line and the strength at the floor, one poll
+	hw.st.noise = (uint8_t)(thr - 10);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = (uint8_t)(peak + 1);
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	hw.st.rssi_dbm = -70;
+	// A fade: the noise over the line and the strength RADIO_SQL_PEAK_RSSI_DB + 1 lower closes after two polls
+	hw.st.noise = (uint8_t)(thr - 10);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = (uint8_t)(thr + RADIO_SQL_HYST_DB);
+	hw.st.rssi_dbm = -70 - RADIO_SQL_PEAK_RSSI_DB - 1;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	// The strength falls in the middle of a peak: the polls already counted close it on the next one
+	hw.st.noise = (uint8_t)(thr - 10);
+	hw.st.rssi_dbm = -70;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = peak;
+	poll_for(3 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.rssi_dbm = -80;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
 }
 
 static void test_tx(void)
@@ -11274,6 +11343,7 @@ int main(void)
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_squelch_voice_peak();
 	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();

@@ -52,6 +52,13 @@
 // far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
 // (radio-features.md 3.5)
 #define RADIO_SQL_FAST_CLOSE_DB	12
+// A voice peak: on a narrow channel, speech above about 2 kHz (fricatives) raises the noise reading over the close line
+// for 100-300 ms, past the fast close line when the sender deviates wide, while the carrier stays as strong as it was
+// (#906). Noise over the line with the signal strength within RADIO_SQL_PEAK_RSSI_DB of the last poll the squelch held
+// closes only after RADIO_SQL_PEAK_POLLS polls (radio-features.md 3.5). A carrier that goes or fades takes the strength
+// down with it: any signal that opens the squelch reads well above the receiver's floor
+#define RADIO_SQL_PEAK_RSSI_DB	3
+#define RADIO_SQL_PEAK_POLLS	12
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
@@ -294,6 +301,7 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
+	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (voice_peak)
 #if CONFIG_DMR
 	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
 	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)
