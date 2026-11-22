@@ -142,3 +142,10 @@ lens = [36, 30]
 # reports them: 8, or 10 when the factory panel type is RGB
 [cps]
 radio_types = [8, 10]
+
+# What the default build must leave free, in bytes (tools/size_budget.py, docs/dev/ci.md#budgets): floors well
+# under today's figures, so ordinary growth passes and a large jump fails
+[ci.budget]
+flash_free_min = 8192
+ram_free_min = 1024
+stack_free_min = 16

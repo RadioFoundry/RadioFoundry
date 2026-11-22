@@ -148,3 +148,10 @@ dmr_tx_ramp_ms = { value = 1.75, reason = "the PA's key-up ramp measures 1.31-1.
 # reports them (6, the shim's default)
 [cps]
 radio_types = [6]
+
+# What the default build must leave free, in bytes (tools/size_budget.py, docs/dev/ci.md#budgets): floors well
+# under today's figures, so ordinary growth passes and a large jump fails
+[ci.budget]
+flash_free_min = 8192
+ram_free_min = 16384
+stack_free_min = 16
