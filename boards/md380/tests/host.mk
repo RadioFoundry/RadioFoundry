@@ -23,7 +23,4 @@ TESTS   += md380CalTest
 md380CalTest: $(HERE)md380CalTest.c $(HERE)../calibration_md380.c $(HERE)../md380.h $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/stm32f4 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: md380RfbusTest md380PanelTest md380CalTest
-	./md380RfbusTest
-	./md380PanelTest
-	./md380CalTest
+run-boards:: $(call suites,md380RfbusTest md380PanelTest md380CalTest)

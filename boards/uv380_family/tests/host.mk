@@ -16,7 +16,4 @@ TESTS   += backlightTest
 backlightTest: $(HERE)backlightTest.c $(HERE)../backlight_uvf.h $(ROOT)/tests/host/fuzz.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -I$(ROOT)/tests/host -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: calibrationTest calibrationTestMduv380 backlightTest
-	./calibrationTest
-	./calibrationTestMduv380
-	./backlightTest
+run-boards:: $(call suites,calibrationTest calibrationTestMduv380 backlightTest)

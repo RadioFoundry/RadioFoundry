@@ -16,6 +16,4 @@ TESTS   += bootDb25dTest
 bootDb25dTest: $(HERE)bootDb25dTest.c $(ROOT)/boot/db25d/boot.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ $<
 
-run-boards:: db25dCalTest bootDb25dTest
-	./db25dCalTest
-	./bootDb25dTest
+run-boards:: $(call suites,db25dCalTest bootDb25dTest)

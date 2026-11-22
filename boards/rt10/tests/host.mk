@@ -9,5 +9,4 @@ TESTS   += rt10CalTest
 rt10CalTest: $(HERE)rt10CalTest.c $(HERE)../calibration_rt10.c $(HERE)../rt10.h $(ROOT)/platform/hrc7000/dmr_rfburst_timing.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I$(ROOT)/platform/hrc7000 -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: rt10CalTest
-	./rt10CalTest
+run-boards:: $(call suites,rt10CalTest)

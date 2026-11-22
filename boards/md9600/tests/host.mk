@@ -59,13 +59,5 @@ md9600StoreTest: $(MD9600_T)/md9600StoreTest.c spiNorTest.c $(ROOT)/drivers/flas
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -I$(MD9600) -Wshadow $(MD9600_ALL) -o $@ $(MD9600_T)/md9600StoreTest.c \
 		$(ROOT)/drivers/flash/spi_nor/spi_nor.c $(CORE)/storage/storage.c $(CORE)/settings/settings.c $(MD9600_STORE)
 
-run-boards:: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5 md9600CalTest \
-             md9600AudioTest md9600StoreTest
-	./md9600RfTest
-	./md9600RfTestV5
-	./md9600CalTest
-	./md9600RfSeqTest
-	./md9600RfSeqTestNoTx
-	./md9600RfSeqTestV5
-	./md9600AudioTest
-	./md9600StoreTest
+run-boards:: $(call suites,md9600RfTest md9600RfTestV5 md9600CalTest md9600RfSeqTest md9600RfSeqTestNoTx \
+	md9600RfSeqTestV5 md9600AudioTest md9600StoreTest)

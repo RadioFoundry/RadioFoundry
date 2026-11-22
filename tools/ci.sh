@@ -170,11 +170,13 @@ fi
 # ── 1. host tests ────────────────────────────────────────────────────────────
 if step host; then
 echo "== host tests"
-if make -C tests/host > "$OUT/host-tests.log" 2>&1; then
-	ok "host tests ($(grep -cE 'PASS|passed' "$OUT/host-tests.log") suites reported passing)"
+# The suites in parallel; a failed one's log is in host-tests.log, the summary line last (HOST_SHORT=1 in the
+# environment: fewer random cases, as pull request CI runs them)
+if make -C tests/host -j"$JOBS" > "$OUT/host-tests.log" 2>&1; then
+	ok "host tests ($(grep '^# host tests:' "$OUT/host-tests.log" | sed 's/^# host tests: //; s/ (.*//'))"
 else
-	tail -30 "$OUT/host-tests.log"
-	bad "host tests (see $OUT/host-tests.log)"
+	grep -A3 '^# host tests:' "$OUT/host-tests.log" || tail -30 "$OUT/host-tests.log"
+	bad "host tests (see $OUT/host-tests.log; each suite's log in tests/host/out/run)"
 fi
 if grep -q 'warning:' "$OUT/host-tests.log"; then
 	grep 'warning:' "$OUT/host-tests.log" | sort -u | head -20

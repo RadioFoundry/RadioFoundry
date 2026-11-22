@@ -18,6 +18,8 @@
 //                            the worst-case screens (longest names, IDs, aliases, messages, every status mark),
 //                            normal and worst-case content, every display class, every theme on color ones: exit
 //                            status 1 on any problem
+//   uiSim --layout K/N       the same on part K (0 to N-1): of the display classes and their themes in turn, every
+//                            Nth from the Kth, so make -j runs the parts side by side
 //
 // The script runs from Home after a reset (see tests/host/sim/ui_sim.c for the tokens); the screen at the end is
 // written to --out. Exit status 1 if a key isn't on the key map or an expect: fails.
@@ -347,21 +349,31 @@ static int run_layout(const char *only)
 	char err[256], found[SIM_LAYOUT_MAX][160];
 	int problems = 0, screens = 0;
 	const char *shots = getenv("RFOUNDRY_LAYOUT_SHOTS");
+	int part_k = 0, part_n = 0, unit = 0;
+	if (only != NULL && strchr(only, '/') != NULL &&
+	    (sscanf(only, "%d/%d", &part_k, &part_n) != 2 || part_n < 1 || part_k < 0 || part_k >= part_n)) {
+		fprintf(stderr, "uiSim --layout: bad part %s (K/N, 0 <= K < N)\n", only);
+		return 2;
+	}
 	for (int g = 0; g < sim_geom_count; g++) {
-		if (only != NULL && strcmp(only, sim_geoms[g].name) != 0)
+		if (part_n == 0 && only != NULL && strcmp(only, sim_geoms[g].name) != 0)
 			continue;
+		int themes = sim_geoms[g].bpp == 1 ? 1 : SIM_THEME_COUNT;
+		bool first_mine = part_n == 0 || unit % part_n == part_k;	// the checks below go with its first theme
 		// Readability (principles.md 5): list rows and the status strip keep a pixel between them and the next
 		// line on displays 100 px and higher, never squeezed to the font's bare cell to fit one more row
 		sim_reset(&sim_geoms[g], SIM_MAP_K);
 		const ui_layout_t *L = &ui_layout;
 		int pitch = L->small->h + (gfx_width() >= 220 ? 6 : gfx_height() >= UI_TALL_PX ? 3 : gfx_height() >= 100 ? 1 : 0);
-		if (L->row_h < pitch || (gfx_height() >= 100 && L->strip_h < L->small->h + 1)) {
+		if (first_mine && (L->row_h < pitch || (gfx_height() >= 100 && L->strip_h < L->small->h + 1))) {
 			printf("%-10s rows squeezed: row pitch %d, strip %d (small font %d px high)\n", sim_geoms[g].name,
 				L->row_h, L->strip_h, L->small->h);
 			problems++;
 		}
 		// Every theme on color displays (Settings > Display): a text in its background's color shows up only in one
-		for (int th = 0; th < (sim_geoms[g].bpp == 1 ? 1 : SIM_THEME_COUNT); th++)
+		for (int th = 0; th < themes; th++) {
+		if (part_n > 0 && unit++ % part_n != part_k)
+			continue;
 		for (int pass = 0; pass < 4; pass++) {
 			size_t n = pass < 2 ? sizeof gallery / sizeof gallery[0] : pass == 2 ?
 				sizeof audit_extra / sizeof audit_extra[0] : sizeof worst_screens / sizeof worst_screens[0];
@@ -407,6 +419,7 @@ static int run_layout(const char *only)
 					printf("%-10s %s%-20s %s\n", sim_geoms[g].name, pass == 1 ? "worst " : "", name, found[j]);
 				problems += k;
 			}
+		}
 		}
 	}
 	printf("# layout: %d screens checked, %d problems\n", screens, problems);
