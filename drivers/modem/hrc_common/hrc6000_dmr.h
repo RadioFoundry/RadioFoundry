@@ -255,6 +255,9 @@ typedef struct {
 	uint8_t slc_last[5];	// the short LC bytes last read (a new one is reported when they change)
 	uint32_t bs_tick;	// tick of the last BS-sync burst heard
 	bool rmo_seen;
+	uint32_t bs_slot;	// slot of the last BS-sync burst taken (bs_slot_valid)
+	bool bs_slot_valid;
+	bool cach_seen;		// BS-sync bursts in two slots in a row since the timing was acquired: a CACH is on air
 
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken

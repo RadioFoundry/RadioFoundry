@@ -399,6 +399,13 @@ used to resync a good lock. Once locked, the number is kept by the toggle alone 
 In direct mode there is no CACH: lock to the slot of the first good burst (its number is meaningless) and receive one
 slot in two from then on.
 
+BS sync alone doesn't prove a CACH. A direct mode sender may frame its bursts with BS sync (a simplex hotspot does),
+one burst every other slot with nothing between them, so 0x52 holds junk at every interrupt. TC tracking and the
+short LC read therefore wait until BS-sync bursts came in two slots in a row (a base station keys both slots) since
+the timing was acquired, or the channel is a repeater channel. Until then a BS-sync burst goes up with no slot number
+(`ts` 0). Numbered from the junk, the labels flipped mid-call and the call stack dropped the rest of the call as the
+other slot's. The HR_C7000 driver locks its TC on the same condition ([modem-hrc7000.md](modem-hrc7000.md)).
+
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
 Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
