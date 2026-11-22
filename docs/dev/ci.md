@@ -11,14 +11,16 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | Workflow | Runs on | When | What |
 |---|---|---|---|
 | `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
-| `pr-tests.yml` | `ubuntu-24.04` | every pull request; a fork's after a maintainer approves the run | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
-| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board, `reuse lint` |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request (drafts: `checks` only); a fork's after a maintainer approves the run; every merge queue group | `ci.yml`'s jobs, the affected builds and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
+| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board (a job each), the full host tests, `reuse lint`; the `nightly-ci` tag on a pass, a "Nightly failing" issue on a failure |
 | `site.yml` | `ubuntu-24.04` | a published release; by hand | asks Cloudflare Pages to build `main` again, for the new release's images. Pages itself builds every push ([website.md](website.md)); pull requests also build the site in the unit tests job |
 | `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `beep-reel.yml` | `ubuntu-24.04` | a pull request that changes the beeps (`core/radio/beep.c`, `beep.h`, the reel) | makes the beep reel with the base's beeps and with the pull request's, and uploads both videos and the changed beeps |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
+| `backport.yml` | `ubuntu-24.04` | a merged pull request labeled `backport` | the cherry-pick pull request to the newest `release/*` branch ([release.md](release.md#backports)) |
+| `labeler.yml` | `ubuntu-24.04` | every pull request | `area:*`, `risk:low` and `needs-hil` labels by path (`.github/labeler.yml`) |
 | `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change rfoundry or this workflow (no release gate; `pr-tests.yml` runs the firmware packaging) | release images and rfoundry ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true` (on a
@@ -85,6 +87,51 @@ would ([release.md](release.md)). `checks` runs on every pull request: the Pytho
 among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last
 job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
 requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
+
+**Drafts.** A draft pull request runs only `changes` and `checks`. The unit tests and firmware builds start when it
+is marked ready for review (`ready_for_review`) and on every push after that. A draft pushed often then doesn't
+hold the hosted-runner queue for everyone else.
+
+### Speed budgets
+
+A slow gate gets skipped by hand, and a skipped gate catches nothing. Each gate has a wall-time target; a test that
+pushes its gate over the target moves to a later gate (or gets a faster form), and a pull request that changes a
+gate reports its time before and after.
+
+| Gate | Target |
+|---|---|
+| Pull request checks | 10 min per job |
+| Merge queue | 20 min per group of up to 5 |
+| Host tests | 2 min on a developer machine, 4 min in CI |
+| HIL for a batch of pull requests | 15 min per radio (`tests/hil/README.md`) |
+| Nightly CI and nightly HIL | overnight |
+
+### Merge queue
+
+Pull requests merge through GitHub's merge queue on `main` (the ruleset: merge queue on, groups of up to 5, all
+entries must pass, `PR checks` required). **Merge when ready** adds an approved pull request to the queue. The queue
+makes a temporary branch with `main` plus every pull request ahead of it and runs `pr-tests.yml` on it
+(`merge_group`): the same jobs, with the affected builds taken against the group's base over the whole group's diff,
+broad scope, up to 30 per toolchain. When a group fails, the queue drops the failing entry and retests the rest. Two
+changes that each passed on their own (both appending to `settings_t`, a guard one removes and the other uses) are
+caught here instead of on `main`.
+
+### Budgets
+
+Each board's `board.toml` may set `[ci.budget]`: what its default build must leave free, in bytes.
+
+| Key | Build | Means |
+|---|---|---|
+| `flash_free_min` | default | the app region's free bytes |
+| `ram_free_min` | default | RAM the linker reports free (`.data` and `.bss`, the RTOS heap and task stacks among them) |
+| `stack_free_min` | default and maximal | the least stack any task has left (the stack check) |
+
+`tools/ci.sh` writes every build's sizes to `build/ci/sizes.tsv`, and `tools/size_budget.py check` fails the
+firmware step when a build is below its board's budget. In a pull request the firmware job also downloads `main`'s
+`sizes.tsv` from the newest passing `ci.yml` run (`RFOUNDRY_SIZE_BASE`) and appends a table of the change against it to
+the size report in the job summary; a RAM drop of more than 256 bytes is a warning on the pull request. Set a budget
+at the floor below which the radio stops working (a task stack, the heap a feature allocates at run time) or the
+headroom a release needs, not at today's figure, so ordinary growth doesn't fail unrelated pull requests.
 
 ### Affected builds
 
@@ -204,9 +251,11 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 
 | Job | Command |
 |---|---|
-| `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
-| `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
+| `matrix (<board>)` | one job per board in the registry: `tools/ci.sh --matrix --steps firmware --board <board>`: each switch off alone, fm-minimal, maximal. C-SKY boards in the csky-elf image unless the runner has csky-elf GCC |
+| `host` | `tools/ci.sh --steps host`: the host tests at full length (pull requests run the short form) |
 | `reuse` | `reuse lint`, a warning until it passes |
+| `mark` | after the matrix and the host tests passed: saves the `nightly-ok-*` entry (below) and moves the `nightly-ci` tag to the commit. The nightly HIL run takes that tag ([tests/hil/README.md](../../tests/hil/README.md)) |
+| `report` | a scheduled run that failed opens one "Nightly failing" issue (or comments on the open one) with the run and the commits since the last pass; the next pass closes the issue |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
 `BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
@@ -214,9 +263,9 @@ The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (
 they add code that doesn't run on the radio but still takes its flash and RAM, so a shared addition could push one
 radio over and fail CI on unrelated pull requests.
 
-One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would finish each board sooner, but it
-repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
-one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
+One job per board (artifacts `matrix-<board>`), side by side on the free hosted runners: the night's wall time is one
+board's matrix, about 5 minutes, not all boards in turn. Each job repeats the checkout and the toolchain set-up, a
+minute of the job's time, which the free runners' concurrency pays for.
 
 `--matrix` leaves out the default builds the per-push run already made. Each build tree is removed once its size is
 recorded and it built clean (the logs and images stay; a configuration that failed keeps its tree), so a run holds one

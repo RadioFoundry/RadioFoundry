@@ -15,8 +15,8 @@
 #
 # Works on a plain host (the tree is bind-mounted at its own path) and from inside a CI job container that reaches
 # the host's Docker socket (Gitea's act runner: the workspace is a Docker volume, so the new container takes the job
-# container's volumes with --volumes-from). JOBS, RFOUNDRY_CI_PRUNE and the RFOUNDRY_AFFECTED_* settings are passed
-# through, and GitHub Actions' GITHUB_ACTIONS, GITHUB_REPOSITORY and GITHUB_EVENT_NAME when set: the build's source
+# container's volumes with --volumes-from). JOBS, RFOUNDRY_CI_PRUNE, RFOUNDRY_SIZE_BASE and the RFOUNDRY_AFFECTED_*
+# settings are passed through, and GitHub Actions' GITHUB_ACTIONS, GITHUB_REPOSITORY and GITHUB_EVENT_NAME when set: the build's source
 # (tools/build_source.py).
 set -eu
 ROOT=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -55,5 +55,5 @@ exec docker run --rm $MOUNT $USER_OPT -w "$ROOT" -e HOME=/tmp \
 	-e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" -e RFOUNDRY_CI_PRUNE="${RFOUNDRY_CI_PRUNE:-1}" \
 	-e RFOUNDRY_AFFECTED_SCOPE="${RFOUNDRY_AFFECTED_SCOPE:-precise}" -e RFOUNDRY_AFFECTED_LIMIT="${RFOUNDRY_AFFECTED_LIMIT:-0}" \
 	-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
-	-e GITHUB_ACTIONS -e GITHUB_REPOSITORY -e GITHUB_EVENT_NAME \
+	-e RFOUNDRY_SIZE_BASE -e GITHUB_ACTIONS -e GITHUB_REPOSITORY -e GITHUB_EVENT_NAME \
 	"$IMG" "$@"

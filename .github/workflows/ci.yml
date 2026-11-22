@@ -182,6 +182,7 @@ jobs:
           name: firmware-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
+            build/ci/sizes.tsv
             build/ci/*.log
             build/ci/*/rfoundry_*.bin
           if-no-files-found: ignore

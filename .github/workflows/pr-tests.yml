@@ -13,17 +13,23 @@
 # under .github/ takes the owner's review (.github/CODEOWNERS). Never add secrets, a write permission, a self-hosted
 # runner, actions/cache or the pull request's text (title, body, branch name) in a run step to this file. Nothing here
 # reads a repository variable: a fork's run may not get them.
+#
+# Drafts run only `changes` and `checks`: the builds and unit tests wait for ready_for_review, so a draft pushed often
+# doesn't hold the hosted-runner queue. The merge queue (merge_group, docs/dev/ci.md "Merge queue") runs the same jobs
+# on the queue's commit, which holds main plus every pull request ahead in the group: its affected builds cover the
+# group's whole diff against main, broad scope, up to 30 per toolchain.
 name: PR tests
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-tests-${{ github.event.pull_request.number }}
+  group: pr-tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -38,17 +44,27 @@ jobs:
       src: ${{ steps.files.outputs.src }}
       docs: ${{ steps.files.outputs.docs }}
       release: ${{ steps.files.outputs.release }}
+      base: ${{ steps.files.outputs.base }}
+      # a draft pull request: builds and unit tests wait for ready_for_review
+      full: ${{ github.event_name == 'merge_group' || github.event.pull_request.draft != true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          fetch-depth: 2   # the merge commit (pull_request's default ref) and main, its first parent
+          # the merge commit (pull_request's default ref) and main, its first parent; the merge queue's commit and
+          # the group's base, at most a few commits back
+          fetch-depth: ${{ github.event_name == 'merge_group' && 20 || 2 }}
           persist-credentials: false
           submodules: false
       - name: What the pull request changes
         id: files
+        env:
+          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
         run: |
           set -eu
-          git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/files"
+          base=HEAD^1
+          [ -n "${QUEUE_BASE:-}" ] && base=$QUEUE_BASE
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$base" HEAD > "$RUNNER_TEMP/files"
           src=false; docs=false; release=false
           # ci.yml's paths
           grep -qE '^(Makefile|AUTHORS|\.gitmodules|REUSE\.toml|\.github/actions/|(boards|boot|config|core|drivers|hal|platform|tests|third_party|tools|LICENSES)/)' \
@@ -66,7 +82,7 @@ jobs:
   unit-tests:
     name: unit tests
     needs: changes
-    if: needs.changes.outputs.src == 'true'
+    if: needs.changes.outputs.src == 'true' && needs.changes.outputs.full == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -115,9 +131,14 @@ jobs:
     # (tools/ci.sh --toolchain takes them from the registry, so a new radio joins with no edit here); 4 cores each
     name: firmware (${{ matrix.name }})
     needs: changes
-    if: needs.changes.outputs.src == 'true' || needs.changes.outputs.release == 'true'   # the packaging step: this file too
+    if: >-
+      needs.changes.outputs.full == 'true' &&
+      (needs.changes.outputs.src == 'true' || needs.changes.outputs.release == 'true')
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read   # main's newest sizes.tsv from ci.yml's artifacts, to compare against
     strategy:
       fail-fast: false
       matrix:
@@ -129,7 +150,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
-          fetch-depth: 2   # the merge commit and main, its first parent: what --affected compares
+          # the merge commit and main, its first parent (the queue: the group's base too): what --affected compares
+          fetch-depth: ${{ github.event_name == 'merge_group' && 20 || 2 }}
           persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       # the csky-elf image is public (platform.toml [toolchain] image): pulled without logging in
@@ -140,17 +162,31 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Default, maximal and affected builds, warnings, size and app region fit
+      - name: Main's sizes (the newest passing ci.yml run), to compare against
+        continue-on-error: true   # no such run yet, or its artifact expired: the report just has no deltas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOLCHAIN: ${{ matrix.toolchain }}
+        run: |
+          set -eu
+          id=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --status success -L 1 --json databaseId -q '.[0].databaseId')
+          gh run download "$id" -R "$GITHUB_REPOSITORY" -n "firmware-$TOOLCHAIN" -D build/main-sizes
+          test -f build/main-sizes/sizes.tsv
+          echo "RFOUNDRY_SIZE_BASE=build/main-sizes/sizes.tsv" >> "$GITHUB_ENV"
+      - name: Default, maximal and affected builds, warnings, size, budgets and app region fit
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
+          BASE: ${{ needs.changes.outputs.base }}
           # the switch-off and fm-minimal builds the change reaches (tools/affected.py), most relevant first; the
-          # rest are left to the nightly matrix
-          RFOUNDRY_AFFECTED_LIMIT: "12"   # about 30 s each on a 4-core runner
+          # rest are left to the nightly matrix. About 30 s each on a 4-core runner. The merge queue: every switch in
+          # the files the group touched (broad scope), up to 30
+          RFOUNDRY_AFFECTED_LIMIT: ${{ github.event_name == 'merge_group' && '30' || '12' }}
+          RFOUNDRY_AFFECTED_SCOPE: ${{ github.event_name == 'merge_group' && 'broad' || 'precise' }}
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --affected HEAD^1 --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
+          $RUN tools/ci.sh --affected "$BASE" --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
             echo "::notice::$TOOLCHAIN builds skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
@@ -177,6 +213,7 @@ jobs:
           name: firmware-${{ matrix.toolchain }}
           path: |
             build/ci/size-report.md
+            build/ci/sizes.tsv
             build/ci/*.log
             build/ci/*/rfoundry_*.bin
           if-no-files-found: ignore

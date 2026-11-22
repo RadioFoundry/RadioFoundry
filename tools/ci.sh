@@ -492,6 +492,14 @@ build() {
 		# the app region's fit: the linker fails on an overflow; this catches a log it couldn't be read from
 		[ -n "$size" ] && [ -n "$used" ] && bad "$b $name: $used bytes used in a $size byte app region"
 	fi
+	# the RAM region the same way: what .data and .bss (the RTOS heap and task stacks among them) leave free
+	set -- $(grep -E '^ *RAM:' "$log" | head -1)
+	ram_used=$(tobytes "${2:-}" "${3:-}"); ram_size=$(tobytes "${4:-}" "${5:-}")
+	ram_free="?"
+	[ -n "$ram_size" ] && [ -n "$ram_used" ] && ram_free=$((ram_size - ram_used))
+	# the least stack any task has left (the stack check, default and maximal only)
+	stack_free=$(sed -n 's/.*the least free: [^ ]* \([0-9]*\) bytes.*/\1/p' "$dir.stack.log" 2>/dev/null | head -1)
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$b" "$name" "$bytes" "$free" "$ram_free" "${stack_free:-?}" >> "$OUT/sizes.tsv"
 	delta=""
 	if [ "$name" = default ]; then
 		default_bytes=$bytes
@@ -528,6 +536,8 @@ if step firmware; then
 	echo "| Board | Config | Image bytes | Delta | Free | Used |"
 	echo "|---|---|---|---|---|---|"
 } > "$REPORT"
+# one row per build for tools/size_budget.py: board, config, image bytes, app region free, RAM free, least stack free
+printf 'board\tconfig\tbytes\tflash_free\tram_free\tstack_free\n' > "$OUT/sizes.tsv"
 # --affected: the builds the change reaches, from the working tree against that commit, for the selected boards
 if [ -n "$AFFECTED" ]; then
 	if [ -n "$REG_PY" ] && $REG_PY tools/affected.py builds --base "$AFFECTED" ${ONLY:+--board "$ONLY"} \
@@ -627,6 +637,18 @@ for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
 		fi
 	done
 done
+# each board's [ci.budget] (board.toml): what the default and maximal builds must leave free. With
+# RFOUNDRY_SIZE_BASE (another run's sizes.tsv, main's in PR CI) the change against it goes in the report too
+if [ -n "$REG_PY" ]; then
+	if $REG_PY tools/size_budget.py check "$OUT/sizes.tsv" ${RFOUNDRY_SIZE_BASE:+--base "$RFOUNDRY_SIZE_BASE"} \
+		> "$OUT/budget.log" 2>&1; then
+		ok "budgets: $(tail -1 "$OUT/budget.log")"
+	else
+		grep -v '^|' "$OUT/budget.log" | head -20
+		bad "budgets (see $OUT/budget.log)"
+	fi
+	grep '^|' "$OUT/budget.log" > "$OUT/budget.md" && { echo; cat "$OUT/budget.md"; } >> "$REPORT"
+fi
 echo
 cat "$REPORT"
 echo
