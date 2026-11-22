@@ -630,8 +630,11 @@ The case's bezel hides the panel's edges: RadioFoundry's safe-area insets are 10
 was still clipped (measured in a half-resolution frame: 5 px left, 4 px right, 3 px top and 2 px bottom there).
 
 RadioFoundry drives the panel at full resolution in 16 colors: the core's frame buffer holds a 4-bit palette index per pixel
-(37.5 KB; RGB565 would take 150 KB), and each changed row goes out as RGB565 through the palette (`gfx.c`,
-`st7789_write_rows_indexed`).
+of the safe area inside the insets only (220 x 310, 34,100 B, where the whole panel would take 37.5 KB and RGB565 150 KB;
+`GFX_FB_SAFE_AREA` in `board.mk`, `hal_display_t.fb_safe_area`). Each changed row goes out as RGB565 through the
+palette into that window of the panel (`gfx.c`, `st7789_write_window_indexed`), and the insets are filled with the
+background color with the first frame and whenever the background changes (`st7789_fill`). Nothing is drawn in them.
+Screen captures (debug link, web page, screenshots) put them back in the background color.
 
 Reset: NRESET high, wait 120 ms, low, 120 ms, high, 120 ms. Then:
 
@@ -1516,14 +1519,14 @@ Runs on a radio: `docs/testing/dm32-bringup.md` is the bring-up checklist and li
 |---|---|---|
 | Image | linked at 0x0300C000, crt0 (`Reset_Handler`) is the first byte; wrapped with `tools/serial_loader.py --wrap` for the Baofeng updater | `boards/dm32/memory.ld`, `platform/hrc7000/crt0.S` |
 | Program flash | app 0x0300C000..0x030E8000 (880 KB); codec slot 0x030E8000..0x03100000, filled only on the user's machine by `tools/hrc7000_codec.py` | `boards/dm32/memory.ld` |
-| SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (RTOS heap inside, the network buffers) and the start-up stack. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
+| SRAM | one region, 0x10000..0x43A00 (211,456 B): vector table (VBR = 0x10000), RAM code (interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue), `.ram_lo` (the state the core marks `RFOUNDRY_CPU_RAM`, the zeroed state of the radio task, APRS, hotspot rings and DMR data buffers, and the interrupt stack), data, bss (the network buffers), and the RTOS heap last, whose top 2 KB is the start-up stack until the scheduler runs. 0x43A00..0x58000 (83,456 B) is the codec window and is not linked. See 17.1 | `boards/dm32/memory.ld`, `platform/hrc7000/common.ld` |
 | Modem SRAM | 0x18000000..0x1800013F PCM buffers; 0x18000E48..0x18003E38 the codec's tables (copied at first use); 0x18004F90..0x18007EF0 `.modem_bss`, the cold state the core marks `RFOUNDRY_COLD_RAM` (17.1); 0x18007EF0..0x18008000 the crash log | `platform/hrc7000/audio_pcm.c`, `platform/hrc7000/vocoder.c`, `boards/dm32/memory.ld`, `platform/hrc7000/crash_hrc.c` |
 | Clocks | XIP quad mode and divider (1.1 steps 2-3) always; the rest of 1.1 only when the bootloader left the system clock on the oscillator; watchdog off (then `main()` starts it, [watchdog.md](watchdog.md)); cache as 1.3 | `platform/hrc7000/clock.c` |
 | Interrupts | PIC sources 0-63 as vectors 32-95 (assumed vectored), level mode, one level, never nested; EOI by writing 0x04 to 0x17000010 in the common entry | `platform/hrc7000/irq.c`, `freertos/portasm.S` |
 | Timers | 1: RTOS tick (1 kHz); 2: free-running cycle clock (microseconds, `hal_millis`); 3: DMR PA one-shot; 4: APRS AFSK, tops up the prompt FIFO every 2 ms while sending | `platform/hrc7000/time.c`, `platform/hrc7000/dmr_glue.c`, `platform/hrc7000/hrc_afsk.c` |
 | RTOS | FreeRTOS, port from the T-HEAD CK802 one: 17-word frame (r0-r13, r15, PSR, PC), switch at interrupt exit or by `vPortYield` | `platform/hrc7000/freertos/` |
 | Host link | UART0 115200 (divisor 46): debug link, CPS, MMDVM hotspot, PPP. Receive by interrupt into a 1,024-byte ring, transmit by polling. No USB: the radio has no USB data port (the USB-C socket is on the battery pack and only charges it; 3.11), so `CONFIG_USB=n`, `CONFIG_HOSTLINK=y` | `platform/hrc7000/uart.c` |
-| Display | 240x320 in 16 colors (a 37.5 KB frame buffer of palette indexes); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
+| Display | 240x320 in 16 colors (a 33.3 KB frame buffer of palette indexes for the 220x310 safe area); MADCTL 0xC0, inversion on | `boards/dm32/display_dm32.c`, `drivers/display/st7789` |
 | Keys | matrix 5x4 on LCD DB0-DB4 / GPIO 0x31-0x34 under the LCD bus lock; SK1 / SK2 as column-to-ground keys; encoder on the GPIO B interrupt (B edges, acked); every other input without interrupts | `input_dm32.c`, `drivers/input/keymatrix` |
 | Data flash | SPI0 + manual CS; any JEDEC ID with a known capacity (GD25Q128, Puya, Boya); writes and erases below 0x700000 refused. The core's areas (`hal_flash_map_t`): open-firmware EEPROM image 0x700000, settings ring 0x711000 (8 sectors), journal 0x719000 (2 sectors), satellite snapshots 0x71B000 (3 sectors, when `CONFIG_SATELLITE_TLE=y`), open-firmware flash image 0x720000 to 0xF00000, native codeplug 0xF00000 (1 MB); no calibration window, no TFTP staging area. The last two gap sectors, 0x71E000-0x71FFFF, are the stub's 8 KB data-flash write-test range | `flash_dm32.c` |
 | Calibration | 11, read only; a decoded copy at 0x710000 as a fallback; UHF below 400 MHz clamps to the first point | `drivers/cal/baofeng/baofeng_cal.c` |
@@ -1543,7 +1546,7 @@ initializer (both are `NOLOAD`: an initial value would be dropped).
 |---|---|
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
-| `.data`, `.bss` | frame buffer 40 KB, RTOS heap 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
+| `.data`, `.bss`, `.rtos_heap` | frame buffer 33.3 KB, vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame); then the RTOS heap, 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), last, with the start-up stack in its top 2 KB until the scheduler runs (`platform/hrc7000/common.ld`) |
 | `.modem_bss` (modem SRAM 0x18004F90..0x18007EF0, 12,128 B) | the `RFOUNDRY_COLD_RAM` state: the storage sector buffer (4 KB) and the open-firmware CPS request (2 KB); 5,984 B left |
 
 `.modem_bss` is a separate region (`MODEM_BSS` in `boards/dm32/memory.ld`) in the SRAM shared with the modem. It holds
