@@ -959,8 +959,8 @@ static void test_tx_aligned_rmo(void)
 }
 
 // An aligned transmission that listens between its bursts (a repeater's, tx_listen): its bursts go out on the timing
-// it started with (0x40 MasterMode), so the outbound heard in the listened slots doesn't move them; passive timing again
-// at its end (issue 609)
+// it started with (0x40 MasterMode), so the outbound heard in the listened slots doesn't move them; passive timing
+// again at its end (issue 609)
 static void test_tx_aligned_listen_holds_timing(void)
 {
 	fresh_engine();

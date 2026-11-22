@@ -511,8 +511,9 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 	// A transmission aligned to a repeater that listens between its bursts (tx_listen) holds the timing it started
 	// with: in passive timing the chip followed the outbound it heard in the listened slots and stepped its own bursts
 	// every few seconds (104 us on the HR_C5000, about 63 us on the HR_C6000), away from the repeater's grid, and the
-	// burst at each step reached the repeater with bit errors (issue 609). Without the listen the chip hears nothing while it sends, so its timing was held already.
-	// An SFR (DMO framing) stays passive: there the timing it follows is the inbound caller's
+	// burst at each step reached the repeater with bit errors (issue 609). Without the listen the chip hears nothing
+	// while it sends, so its timing was held already. An SFR (DMO framing) stays passive: there the timing it follows
+	// is the inbound caller's
 	bool hold = e->tx_listen && e->tx_timing != DMR_TIMING_OWN && rmo(e);
 	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) | (hold ? L2_MASTER : 0u));
 	if (r40 != e->reg40) {
