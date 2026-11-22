@@ -304,11 +304,13 @@ static bool blank(uint32_t addr, uint32_t len)
 // defaults past it) in the first free slot of the ring. Written while the region holds no valid record of ours, so
 // from then on one always exists (saves never erase the sector holding the newest record) and a cut in the middle
 // of a journal rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot
-static uint8_t slot_r[STORAGE_SLOT_SIZE];	// mark() and scan_region(), under the storage lock (off the task stacks)
+// One slot's buffer for scan_region and the mark it may write after its scan, under the storage lock (off the start-up
+// task's stack)
+static uint8_t region_slot[STORAGE_SLOT_SIZE];
 
 static void mark(const hal_flash_map_t *m)
 {
-	uint8_t *r = slot_r;
+	uint8_t *r = region_slot;
 	for (uint32_t a = m->settings_addr; a + STORAGE_SLOT_SIZE <= m->settings_addr + m->settings_size;
 	     a += STORAGE_SLOT_SIZE) {
 		if (!rd(a, r, STORAGE_SLOT_SIZE) || storage_slot_check(r) != STORAGE_SLOT_FREE) {
@@ -331,7 +333,7 @@ static void mark(const hal_flash_map_t *m)
 // Classify the settings ring and the journal (storage.h "Foreign region guard")
 static storage_region_t scan_region(const hal_flash_map_t *m)
 {
-	uint8_t *r = slot_r;
+	uint8_t *r = region_slot;
 	bool ours = false;			// one valid record of ours somewhere
 	uint16_t other = 0;
 
@@ -700,7 +702,7 @@ bool storage_scrub(void)
 	ok = erase_all(m->staging_addr, storage_staging_size()) && ok;
 	// RAM: the shared buffer held the last sector merged (the settings area too), the slot buffer a settings record
 	memset(buffer, 0, sizeof(buffer));
-	memset(slot_r, 0, sizeof(slot_r));
+	memset(region_slot, 0, sizeof(region_slot));
 	mark(m);
 	storage_unlock();
 	return ok;

@@ -6,6 +6,15 @@
 
 import { h } from "../flasher/dom.js";
 
+let suggestN = 0;
+// A <datalist> for input: the browser's own searchable list of these values
+export function suggestions(input, values) {
+	const id = `suggest-${++suggestN}`;
+	input.setAttribute("list", id);
+	input.autocomplete = "off";
+	return h("datalist", { id }, ...values.map((v) => h("option", { value: v })));
+}
+
 // The row's edit button icon: a pencil drawn in the text color, so it follows the theme.
 const SVG = "http://www.w3.org/2000/svg";
 function pencil() {
@@ -221,6 +230,8 @@ export class Grid {
 			input = h("input", { type: "text", value: typed ?? (c.editValue ? c.editValue(c.get(r), r) : this.text(c, r)), spellcheck: "false" });
 		}
 		td.replaceChildren(input);
+		// a long list of usual values (tones): searchable as it is typed, any other valid value still taken
+		if (c.suggest) input.after(suggestions(input, c.suggest(r)));
 		td.classList.add("editing");
 		input.focus();
 		// a value from the attribute leaves the caret at 0 (Chromium), before the key that started the edit: the next
