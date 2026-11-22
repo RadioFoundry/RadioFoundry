@@ -1021,7 +1021,7 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
-			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked System"));
+			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
 			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
