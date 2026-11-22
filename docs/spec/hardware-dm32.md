@@ -1602,7 +1602,7 @@ initializer (both are `NOLOAD`: an initial value would be dropped).
 | `.vectors`, `.ramfunc` | the vector table (512 B) and the RAM code: interrupt entry, clock set-up, the DMR slot engine and the board's DMR glue |
 | `.ram_lo` | the `RFOUNDRY_CPU_RAM` state (radio task, APRS, hotspot rings, DMR data) and the 2 KB interrupt stack |
 | `.data`, `.bss` | frame buffer 40 KB, RTOS heap 33 KB (every task stack and queue; `boards/dm32/freertos_board.h`), vocoder states 13 KB, the network buffers (TCP connections, the network personality's packets and frame, the gateway's bursts and frame), 2 KB start-up stack |
-| `.modem_bss` (modem SRAM 0x18004F90..0x18007EF0, 12,128 B) | the `RFOUNDRY_COLD_RAM` state: the storage sector buffer (4 KB) and the open-firmware CPS request (2 KB); 5,984 B left |
+| `.modem_bss` (modem SRAM 0x18004F90..0x18007EF0, 12,128 B) | the `RFOUNDRY_COLD_RAM` state: the storage sector buffer (4 KB), the open-firmware CPS request (2 KB), the web server's connections and response buffer (2.6 KB) and the zone share being received (1 KB), where built; 2,328 B left in a build with all of them |
 
 `.modem_bss` is a separate region (`MODEM_BSS` in `boards/dm32/memory.ld`) in the SRAM shared with the modem. It holds
 only cold task-side buffers, never one an interrupt, the audio, the modem or the codec touches, and no stack. It starts

@@ -22,8 +22,9 @@ static volatile uint8_t offersMode = ZS_OFFERS_OFF;
 static zone_share_stats_t stats;
 
 // Receiving: one transfer at a time into asm; once whole and valid it is the offer, and nothing else is taken until
-// the user is done with it, so the record the UI and the import read stays as it is
-static zsAssembly_t assembly;
+// the user is done with it, so the record the UI and the import read stays as it is. Only tasks touch it, and only while
+// a share comes in or is imported: cold RAM where the platform has it (config.h RFOUNDRY_COLD_RAM), 1 KB of main RAM
+static zsAssembly_t assembly RFOUNDRY_COLD_RAM;
 static zone_share_offer_t offer;
 static uint32_t offerSerial;
 static uint32_t offerTimes[ZS_OFFERS_PER_HOUR];	// when the last offers were made, for the hourly limit

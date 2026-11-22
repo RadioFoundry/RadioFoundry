@@ -84,8 +84,11 @@ typedef struct {
 	uint32_t since;
 } hconn_t;
 
-static hconn_t hc[TCP_CONNS];
-static char buf[BUF_MAX];
+// The connections' state and the response buffer are the network task's alone, touched per request and never by an
+// interrupt (tcp_write copies out of buf): cold RAM where the platform has it (config.h RFOUNDRY_COLD_RAM), 2.6 KB
+// of main RAM on a radio whose Fusion build with the IP gateway kept had 624 B left (PR #833)
+static hconn_t hc[TCP_CONNS] RFOUNDRY_COLD_RAM;
+static char buf[BUF_MAX] RFOUNDRY_COLD_RAM;
 static int buf_owner = -1;
 static struct {
 	uint32_t requests, ok, not_found, bad, busy_waits;
