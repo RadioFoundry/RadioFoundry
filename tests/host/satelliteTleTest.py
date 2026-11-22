@@ -82,6 +82,11 @@ class FakeRadio:
         self.inject_after_commit = False
         self.replace_inventory = False
 
+    def view_section(self, section):
+        if section != "core":
+            raise AssertionError(f"unexpected view section {section}")
+        return 0, 1, {"bands": "136000000-174000000,400000000-480000000"}
+
     def request(self, command, payload):
         self.calls.append((command, bytes(payload)))
         if command != tle.SATELLITE_COMMAND:
