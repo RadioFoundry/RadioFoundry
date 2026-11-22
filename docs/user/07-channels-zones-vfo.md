@@ -434,6 +434,9 @@ and Wires-X nodes hear it as they hear a Yaesu handheld.
 - The VFO's DG-IDs can be changed only from a computer for now (`rfoundry_debug.py radio ysf`), and the change lasts
   until the radio is switched off.
 
+Not in this first version: VW (full-rate voice, which the radio's voice chip doesn't run), Group Monitor, sending
+your position, and a repeater's news (voice messages, pictures). They are planned for later.
+
 ### YSF channels
 
 A YSF channel comes from a codeplug written on a computer ([YSF in the editor](04-programming.md#ysf)), a zone shared
@@ -445,7 +448,9 @@ channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A 
 - A YSF channel has no TX contact and no Own ID: System Fusion names you by your callsign and radio ID.
 - **OK** on Mode steps on to FM, then back round to YSF with its settings as they were. Saving the channel as another
   mode removes its YSF settings: the radio asks first.
-- Scan stops on YSF channels and holds on a call you would hear there. Dual watch takes one as A or B.
+- Scan stops on YSF channels and holds on a call you would hear there. Dual watch takes one as A or B, with a channel
+  of any other mode as the other one (FM, DMR, P25, NXDN or another YSF channel): the radio listens to each in turn
+  and stays on the one where a call you would hear comes in.
 
 ### Your radio ID
 

@@ -22,7 +22,7 @@ State:
 | The radio ID (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([ysf-codeplug.md](ysf-codeplug.md)) | written, host tested |
 | On air | not checked with this code; see the radio's bring-up record |
-| VW (full rate voice), V/D mode 1, data mode, Wires-X, GPS | not written (8). Shown on Home, not played |
+| VW (full rate voice), Group Monitor, positions, news, V/D mode 1 | not supported in this first version (8). A VW call shows on Home, not played |
 
 ## 1. On air
 
@@ -200,7 +200,7 @@ remarks 3-4, whichever arrives first; five characters that aren't all 0-9 or A-Z
 | Channels | A stored channel of kind 103 runs in YSF with its own DG-IDs ([ysf-codeplug.md](ysf-codeplug.md)); the VFO and a channel in YSF for now take the RAM settings (DG-ID 0 both ways until the debug link sets others) |
 | Memory | The engine runs in P25's memory where P25's isn't lent to the vocoder, else in one block it shares with NXDN (`radio_air_mem.c`): one air mode runs at a time |
 | PTT | Refused without a callsign (`TXDENY_NO_ID`), without the vocoder (`TXDENY_NO_CODEC`), and where the provider can't transmit the profile |
-| Scan, dual watch | As NXDN: a stop holds on a call it would play |
+| Scan, dual watch | As NXDN: a stop holds on a call it would play. Dual watch pairs a YSF channel with any other mode's (FM, DMR, P25, NXDN, YSF): one receiver alternates, each look starts that channel's engine or the DMR stack and stops the other first, never two at once (`radioCoreTestAir`); a radio with a second receiver gives it the FM or DMR channel and alternates the main one only between two air channels |
 
 ### 5.1 The DG-ID squelch
 
@@ -233,6 +233,14 @@ A repeater's chain cuts the upper band of the 4FSK (inter-symbol interference) a
 under C4FM, which other System Fusion radios ignore. YSF's profile asks a soft modem for its equalizer and tone notch
 (`AIR_RX_EQ | AIR_RX_TONE`, [air-interface.md](air-interface.md) 6.1), and the engine lends their memory for its
 session. A board whose provider receives with its own demodulator ignores them.
+
+Measured on one maker's repeater (SR5WI, a Yaesu DR-3XUE as its operator gives it, 2026-11-14): it sends its CTCSS
+tone (127.3 Hz) under the C4FM it repeats, also while set to FM only, and the tone was in every capture through it
+and in none direct. The likely reason, not confirmed: the tone opens the tone squelch of radios listening in FM, and
+their automatic mode select (AMS) then finds the C4FM and switches to it. Whatever the reason, a receiver that slices
+the 4FSK from the discriminator sees the tone as a slow error on every symbol's level: the notch takes it out. With
+the equalizer and the notch the voice bit errors through that repeater fell from 5.6 % to about 1.7 % in the
+recordings of that day (measured with the proof of concept's receiver, the same two methods).
 
 ## 6. The radio ID (RID)
 
@@ -308,7 +316,22 @@ A caller's radio ID shows as `ysf.src_rid` on the debug link.
 | No transmit level, preamble or field-layout settings | The values here are the measured ones; a setting would only let a radio drift from them |
 | One DG-ID value for both ways in the channel editor | What a group on a repeater uses; the codeplug keeps both (the Codeplug Editor sets them apart) |
 
-## 8. Not written
+## 8. Scope: what this first version does and doesn't
 
-VW (voice at full rate), V/D mode 1, data at full rate and the Wires-X commands it carries, positions (GPS), the
-repeater side (MR other than direct on transmit). A call of another data type is shown, not played.
+This is a first version: it covers the basic use a handheld such as the one in 4.2 gives, DN voice direct and through
+repeaters with callsign, radio ID and DG-ID, and the Wires-X basics (9). Not supported yet:
+
+| Function | Why |
+|---|---|
+| VW (voice at full rate) | Its full-rate voice is not what the radios' vocoder chips run: they carry DMR's half-rate AMBE+2 only. Shown on Home as "Not DN voice", not played. (The software full-rate decoder P25 uses, `core/mbe`, is a possible way later, not checked against VW) |
+| Group Monitor (GM) | Not written |
+| Positions (GPS) in the frames | Our transmissions carry none |
+| News, voice messages and pictures from a repeater or node | Not written |
+| V/D mode 1, data at full rate other than the Wires-X commands | Not written |
+
+Planned next, once this is in the main line:
+
+1. Positions from the GPS in the frames sent to a repeater.
+2. Group Monitor.
+3. A repeater's or node's news: voice messages and pictures.
+4. VW, if its voice can be carried (above).

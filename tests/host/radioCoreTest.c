@@ -4182,6 +4182,13 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 	req(RREQ_NXDN_SET, 0);
 }
 #endif
+#if CONFIG_YSF
+void radio_req_ysf_settings(const radio_ysf_settings_t *s)
+{
+	radio_ysf_set_settings(s);
+	req(RREQ_YSF_SET, 0);
+}
+#endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
@@ -9549,6 +9556,226 @@ static void test_nxdn(void)
 		radio_nxdn_end();
 	}
 }
+
+#endif
+
+#if CONFIG_YSF
+// ---- System Fusion in the radio core (docs/spec/ysf.md 5): the far radio is a YSF engine on the other fake
+// provider. Dual watch between YSF and every other mode the build runs: each look starts its own engine (or the DMR
+// stack), never two at once, and a YSF call holds the watch ----
+#include "ysf/ysf_engine.h"
+#include "ysf/ysf_codeplug.h"
+#include "dmr/ambe/ambeFec.h"
+
+static ysf_engine_t yfar;
+static bool yfar_running, yfar_tx;
+static uint8_t yfar_next;
+
+static bool yf_tx(uint8_t v[YSF_VOICE_BYTES], void *ctx)
+{
+	uint8_t bits[VOCODER_BITS];
+
+	(void)ctx;
+	for (uint8_t i = 0; i < VOCODER_BITS; i++)
+		bits[i] = (uint8_t)((((uint32_t)yfar_next * 2654435761u) >> (i % 29)) & 1u);
+	yfar_next++;
+	ambeFecEncode(bits, v);
+	return true;
+}
+static const ysf_engine_hooks_t yfar_hooks = { .tx_voice = yf_tx };
+
+static void yfar_step(void)
+{
+	if (yfar_tx && ysf_engine_tx_state(&yfar) == AIR_TX_DONE) {
+		ysf_engine_tx_clear(&yfar);
+		yfar_tx = false;
+	}
+}
+
+static void yfar_begin(uint8_t dgid)
+{
+	ysf_engine_cfg_t c = { .rx_dgid = YSF_DGID_ALL, .silence = dmr_ambe_silence };
+
+	strcpy(c.tx.callsign, "SP5WLF");
+	strcpy(c.tx.radio_id, "AB123");
+	c.tx.dgid = dgid;
+	if (yfar_running)
+		ysf_engine_end(&yfar);
+	yfar_tx = false;
+	yfar_running = ysf_engine_begin(&yfar, &fake_air1, &c, &yfar_hooks, NULL);
+	CHECK(yfar_running);
+}
+
+static void yfar_stop(void)
+{
+	if (yfar_running) {
+		ysf_engine_end(&yfar);
+		yfar_running = yfar_tx = false;
+	}
+}
+
+// The codec's side (core/ysf/ysf_codeplug.c, tested in ysfCodeplugTest): a stored channel's DG-IDs, by number
+static ysf_chan_t stored_ysf[NCH + 1];
+bool ysf_chan_load(uint16_t number, const channel_t *ch, ysf_chan_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_YSF || number < 1 || number > NCH)
+		return false;
+	*out = stored_ysf[number];
+	return true;
+}
+bool ysf_chan_save(uint16_t number, const channel_t *ch, const ysf_chan_t *c)
+{
+	stored_ysf[number] = *c;
+	return codeplug_set_channel(number, ch);
+}
+void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "SQ5FOX"); }
+void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]) { (void)name; out[0] = '\0'; }
+
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
+// A watch of channels 3 (YSF) and other, nothing on the air, for ms: how many looks each got and that no two
+// engines (or an engine and the DMR stack) ever ran together
+static void dual_pair(uint16_t other_pos, bool (*other_running)(void), const char *what)
+{
+	const ui_dual_ref_t a = { false, 0, other_pos }, b = { false, 0, 2 }, pair[2] = { a, b };
+	radio_ysf_stats_t y0, y1;
+	bool other_seen = false, ysf_seen = false, overlap = false;
+
+	radio_ysf_stats(&y0);
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	for (int i = 0; i < 4000 / RADIO_POLL_MS; i++) {
+		run(RADIO_POLL_MS);
+		bool y = radio_ysf_running(), o = other_running ? other_running() : false;
+
+		overlap |= y && o;
+		ysf_seen |= sm.view.channel_number == 3 && y;
+		other_seen |= sm.view.channel_number != 3 && (other_running ? o : true);
+	}
+	radio_ysf_stats(&y1);
+	CHECK(!overlap && ysf_seen && other_seen && y1.begins >= y0.begins + 2);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+}
+
+#if CONFIG_DMR
+static bool dmr_stack_running(void) { return sim.started; }
+#endif
+
+static void test_ysf_dual(void)
+{
+	const radio_ysf_view_t *v = &sm.view.ysf;
+	uint16_t visits;
+
+	(void)v;
+
+	setup_codeplug();
+	add(3, "YSF rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_YSF;
+	chans[3].system = 0xFF;
+	stored_ysf[3] = (ysf_chan_t){ .tx_dgid = 12, .rx_dgid = 12 };
+	air_nofit = false;
+	memset(fair, 0, sizeof(fair));
+	start();
+	far_hz = 446100000;
+
+	// YSF + FM (A, Simplex): it goes back and forth; a call of our DG-ID holds the watch on B, another one doesn't
+	const ui_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_DUAL);
+	yfar_begin(12);
+	CHECK(ysf_engine_tx_prepare(&yfar) && ysf_engine_tx_go(&yfar));
+	yfar_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_ysf_running() && (v->flags & RADIO_YSF_PLAYED) && v->dgid == 12);
+	run(1500);
+	// Entered late (the watch looked in mid-call): the callsign came from the DCH meanwhile
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD && !strcmp(v->src, "SP5WLF") &&
+	      (v->flags & RADIO_YSF_LATE));
+	ysf_engine_tx_stop(&yfar);
+	run(600 + RADIO_DUAL_DELAY_MS + 600);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.channel_number == 1);
+	yfar_begin(44);
+	CHECK(ysf_engine_tx_prepare(&yfar) && ysf_engine_tx_go(&yfar));
+	yfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_DUAL);
+	ysf_engine_tx_stop(&yfar);
+	run(600);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	yfar_stop();
+	far_hz = 0;
+
+#if CONFIG_DMR
+	// YSF + DMR (position 3 of the zone: DMR rptr): the DMR stack and the YSF engine take turns
+	dual_pair(3, dmr_stack_running, "DMR");
+#endif
+#if CONFIG_NXDN
+	// YSF + NXDN on A
+	add(1, "NXDN simp", 446200000, RADIO_MODE_DMR, false, 2);
+	chans[1].kind = CODEPLUG_KIND_NXDN;
+	chans[1].system = 0xFF;
+	stored_nxdn[1] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 1, .tx_ran = 1 }, .unit_id = 1, .target = 1 };
+	start();
+	dual_pair(0, radio_nxdn_running, "NXDN");
+#endif
+#if CONFIG_P25
+	// YSF + P25 on A
+	add(1, "P25 simp", 446200000, RADIO_MODE_P25, false, 2);
+	chans[1].kind = CODEPLUG_KIND_NONE;
+	start();
+	dual_pair(0, radio_p25_running, "P25");
+#endif
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+}
+#endif
+#endif	// CONFIG_YSF
+
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH && CONFIG_DMR && (CONFIG_P25 || CONFIG_NXDN)
+// The air modes with DMR in a watch, without YSF in it: P25 + DMR and NXDN + DMR take turns the same way
+static void test_air_dmr_dual(void)
+{
+	const ui_dual_ref_t a = { false, 0, 3 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	bool overlap = false, dmr_seen = false, air_seen = false;
+
+	for (int mode = 0; mode < 2; mode++) {
+		setup_codeplug();
+		if (mode == 0) {
+			if (!CONFIG_P25)
+				continue;
+			add(3, "P25 simp", 446100000, RADIO_MODE_P25, false, 2);
+		} else {
+#if CONFIG_NXDN
+			add(3, "NXDN simp", 446100000, RADIO_MODE_DMR, false, 2);
+			chans[3].kind = CODEPLUG_KIND_NXDN;
+			chans[3].system = 0xFF;
+			stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 1, .tx_ran = 1 }, .unit_id = 1, .target = 1 };
+#else
+			continue;
+#endif
+		}
+		air_nofit = false;
+		start();
+		overlap = dmr_seen = air_seen = false;
+		CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+		for (int i = 0; i < 4000 / RADIO_POLL_MS; i++) {
+			run(RADIO_POLL_MS);
+			bool air = false;
+#if CONFIG_P25
+			air |= radio_p25_running();
+#endif
+#if CONFIG_NXDN
+			air |= radio_nxdn_running();
+#endif
+			overlap |= air && sim.started;
+			dmr_seen |= sm.view.channel_number == 4 && sim.started;
+			air_seen |= sm.view.channel_number == 3 && air;
+		}
+		CHECK(!overlap && dmr_seen && air_seen);
+		CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	}
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+}
 #endif
 
 #if CONFIG_AIR
@@ -9561,6 +9788,9 @@ static void air_step(void)
 #endif
 #if CONFIG_NXDN
 	nfar_step();
+#endif
+#if CONFIG_YSF
+	yfar_step();
 #endif
 }
 #endif
@@ -11888,6 +12118,12 @@ int main(void)
 #endif
 #if CONFIG_NXDN
 	test_nxdn();
+#endif
+#if CONFIG_YSF && CONFIG_SCAN && CONFIG_DUAL_WATCH
+	test_ysf_dual();
+#endif
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH && CONFIG_DMR && (CONFIG_P25 || CONFIG_NXDN)
+	test_air_dmr_dual();
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();

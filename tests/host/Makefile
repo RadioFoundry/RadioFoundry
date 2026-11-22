@@ -374,6 +374,17 @@ radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
 
+# Every air mode together (P25, NXDN, YSF), no lending vocoder: dual watch between YSF and each other mode, DMR
+# included, and the air modes with DMR
+TESTS   += radioCoreTestAir
+RCAIR   := $(RCP25NX) $(CORE)/radio/radio_ysf.c $(CORE)/ysf/ysf_engine.c $(YSF) $(CORE)/air/air_softmodem.c \
+           $(CORE)/debuglink/debuglink_view_ysf.c
+radioCoreTestAir: $(RCAIR) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
+                  $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/ysf/*.h) \
+                  $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_YSF=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCAIR) -lm
+
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
 RCAPRS  := $(RCORE) $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -508,6 +519,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T
 	./radioCoreTestP25
 	./radioCoreTestNxdn
 	./radioCoreTestP25Nxdn
+	./radioCoreTestAir
 	./radioCoreTestP25T
 	./radioCoreTestAprs
 	./radioCoreTestAprsDmr
