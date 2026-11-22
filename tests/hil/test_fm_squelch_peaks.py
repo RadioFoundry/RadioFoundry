@@ -61,7 +61,6 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
         except AssertionError:
             skip("other_board", f"the radio doesn't tune {mhz:.4f} MHz: not one of its bands")
         bw0 = radio.view(["channel"]).get("ch.bw")
-        sq0 = int(radio.core()["squelch"])
         try:
             if bw0 != "12k5":
                 L.bandwidth(False)
@@ -76,7 +75,7 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
                 while tx.poll() is None and time.monotonic() - t0 < 12:
                     v = radio.core()
                     samples.append((round(time.monotonic() - t0, 2), v.get("state"), v.get("noise"),
-                                    v.get("rssi_dbm")))
+                                    v.get("rssi_dbm"), v.get("last_rx_ms")))
                     time.sleep(0.04)
                 done = tx.wait(20)
                 t_done = time.monotonic()
@@ -84,7 +83,6 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
                     time.sleep(0.02)
                 close_s = time.monotonic() - t_done
         finally:
-            _step_squelch(radio, sq0)
             if bw0 == "25k":
                 L.bandwidth(True)
     states = [s[1] for s in samples]
@@ -93,6 +91,8 @@ def test_fm_squelch_voice_peaks(radio, sdr_bench, pytestconfig, burst):
     drops = 0
     if first is not None:
         drops = sum(1 for i in range(first + 1, last + 1) if states[i] != "rx" and states[i - 1] == "rx")
+        # Every close stamps last_rx_ms, so a close and reopen between two reads still shows
+        drops = max(drops, len({s[4] for s in samples[first:last + 1]}) - 1)
     print(f"\n{mhz:.4f} MHz, {burst} bursts: {len(samples)} reads, open at "
           f"{samples[first][0] if first is not None else None} s, closed {drops} times while keyed, shut "
           f"{close_s:.2f} s after the bench's done record; bench {done}")

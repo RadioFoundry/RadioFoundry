@@ -301,7 +301,7 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
-	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (voice_peak)
+	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (close_need)
 #if CONFIG_DMR
 	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
 	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)
