@@ -451,20 +451,23 @@ class Radio:
     def screen(self):
         return self.link.view(["link"]).get("ui.screen")
 
+    DMR_CALL_COUNTERS = ("call.rc_", "call.rx_end_", "call.rx_ts_dropped", "call.rx_cc_dropped", "call.rx_lc_taken")
+
     def counters(self):
         """(firmware ms, flat dict of every counter): the diagnostics lines (modem.*, call.*, voice.*, audio.*), the
-        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the reverse channel counters (call.rc_*)
-        and the hotspot counters (hs.*)"""
+        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the call filter and end counters and the
+        reverse channel counters (call.rx_ts_dropped, call.rx_end_*, call.rc_*, ...) and the hotspot counters (hs.*)"""
         ms, lines = self.link.diag()
         out = parse_counters(lines)
         for k, v in self.link.view(["dmr_stats", "hotspot"]).items():
             n = as_int(v)
             if n is not None and k != "ms":
                 out[k] = n
-        # The reverse channel counters sit in dmr_call (dmr_stats fills a reply)
+        # The filter, call end and reverse channel counters sit in dmr_call (dmr_stats fills a reply). Without them a
+        # delta of call.rx_ts_dropped read 0 whatever the radio dropped
         for k, v in self.link.view(["dmr_call"]).items():
             n = as_int(v)
-            if n is not None and k.startswith("call.rc_"):
+            if n is not None and k.startswith(self.DMR_CALL_COUNTERS):
                 out[k] = n
         return ms, out
 
@@ -784,22 +787,22 @@ class Radio:
         afterwards (restore() does the rest). The VFO's mode and tones are kept settings: a run cut short in a DMR VFO
         test leaves it DMR, and a tone left on it (a run cut short in a tone test, or set by hand) keeps the squelch
         shut on every untoned bench signal."""
-        L = self.link
         if "VFO" not in self.features():
             skip("not_built", "built without the VFO")     # a radio with no keypad or display (BOARD_UNSUPPORTED)
+        # self.link, not a copy: a test inside may reopen the port (PPP, a USB switch) and leave the old link closed
         if self.core().get("vfo") != "1":
-            self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
+            self._req_until(lambda: self.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
         hz = int(self.core()["rx_hz"])
         mode = self.core().get("mode")
         if mode != "fm":
-            self._req_until(lambda: L.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
+            self._req_until(lambda: self.link.dmr_fields(mode="fm"), lambda v: v.get("mode") == "fm", "FM VFO")
         ch = self.view(["channel"])
         tones = {1: ch.get("ch.tx_tone", "none:0"), 2: ch.get("ch.rx_tone", "none:0")}     # 1 TX, 2 RX
 
         def set_tones(want):
             for which, t in want.items():
                 kind, value = t.split(":")
-                L.tone(which, kind, int(value))
+                self.link.tone(which, kind, int(value))
             self.wait_for(lambda v: v.get("ch.tx_tone") == want[1] and v.get("ch.rx_tone") == want[2],
                           sections=("channel",), what=f"VFO tones TX {want[1]}, RX {want[2]}")
         none = {1: "none:0", 2: "none:0"}
@@ -810,13 +813,15 @@ class Radio:
         finally:
             # The tones, frequency and mode are the VFO's: back in it first, after a test that left it for a channel
             if self.core().get("vfo") != "1":
-                self._req_until(lambda: L.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
-            if tones != none:
+                self._req_until(lambda: self.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
+            current = self.view(["channel"])
+            if any(current.get(key, "none:0") != tones[which]
+                   for which, key in ((1, "ch.tx_tone"), (2, "ch.rx_tone"))):
                 set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
-                self._req_until(lambda: L.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
+                self._req_until(lambda: self.link.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
             if self.core().get("mode") != mode:
-                self._req_until(lambda: L.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
+                self._req_until(lambda: self.link.dmr_fields(mode=mode), lambda v: v.get("mode") == mode, "VFO mode back")
 
     def leave_vfo(self):
         """Put the radio on its stored channel when it is in the VFO, and return the core view. restore() puts back the
@@ -1539,13 +1544,14 @@ class SdrBench:
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
                    service_options=None, gps=None, offset_hz=0, offset_sweep=None, superframes_per_step=1,
-                   background=False):
+                   family=None, background=False):
         """One or more voice calls from the bench (a bench_tx voice job). late=K: no header, the first K bursts left out;
         talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC;
         gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes. offset_hz: the carrier that far
         from freq (+-2500 Hz; the lease stays on freq). offset_sweep=(from, to, step) Hz: one call stepping through
         the offsets, superframes_per_step superframes each (superframes ignored), with a "step" record a step.
-        background: the started job, as transmit()'s"""
+        family: the bursts' sync ("ms", the default, or "bs": base station sync, still one burst every 60 ms with no
+        CACH, as a simplex hotspot may send). background: the started job, as transmit()'s"""
         if offset_sweep:
             lo, hi, st = offset_sweep
             superframes = (int((hi - lo) / st + 1e-9) + 1) * superframes_per_step
@@ -1578,6 +1584,8 @@ class SdrBench:
             a += " --emergency"
         if service_options is not None:
             a += f" --service-options {service_options:02x}"
+        if family:
+            a += f" --family {family}"
         bursts = (0 if late is not None else headers) + 6 * superframes + terminators
         return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000,
                              background=background)
