@@ -104,7 +104,10 @@ changes in the UI. A new class needs a gallery entry and a key map pair in the U
 
 The frame buffer is sized to the panel in `board.mk` `MCU_DEFS`: `GFX_FB_BYTES` (width times height times bits per pixel,
 over 8), `GFX_MAX_ROWS` (the height) and `GFX_INDEXED=1` for a 16-color panel. Without them the build reserves the
-40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class.
+40 KB RGB565 default. `boards.py check` requires the buffer to hold the board's `hardware.gallery` class. A 16-color
+board short of RAM whose panel has insets may keep only the safe area: `GFX_FB_SAFE_AREA=1`, `GFX_FB_BYTES` for the
+safe area, and in its `hal_display_t` `fb_safe_area` and a `fill_insets` that paints the insets (the rows then go to
+that window of the panel); the check then sizes the buffer by the gallery class's insets.
 
 ## The drawing
 

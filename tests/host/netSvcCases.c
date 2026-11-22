@@ -170,6 +170,12 @@ void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 	for (size_t i = 0; i < n; i++, off++)
 		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
 }
+// The panel's rows at its own depth: here the frame buffer is the whole panel, as gfx's is without fb_safe_area
+void gfx_read_packed(uint32_t off, uint8_t *out, size_t n)
+{
+	for (size_t i = 0; i < n; i++, off++)
+		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
+}
 const char *debuglink_view_name(uint8_t s) { return s == 0 ? "core" : (s == 1 ? "net" : NULL); }
 void debuglink_view_section(uint8_t s, const radio_view_t *v, dl_text_t *t)
 {

@@ -227,7 +227,7 @@ Request: offset u32 into the stream, format u8 = 3. Reply after the status:
 | 15 | 4 | offset of this chunk in the stream |
 | 19 | 4 | frame buffer bytes the stream decodes to |
 | 23 | 4 | frame count: frames the UI has started drawing |
-| 27 | 1 | flags: bit 0, a frame is being drawn |
+| 27 | 1 | flags: bit 0, a frame is being drawn; bit 1, the frame buffer holds the safe area only (below) |
 | 28 | 32 | bpp 4 only: the palette, 16 RGB565 colors (0 for an entry not set) |
 | 28 or 60 | n | the chunk, at most 1000 bytes |
 
@@ -240,6 +240,11 @@ bytes, top row first:
 | 1 | (width + 7) / 8 | MSB left, 1 = ink |
 | 4 | (width + 1) / 2 | high nibble left, a palette index |
 | 16 | width x 2 | RGB565 little endian |
+
+With flag bit 1 (a board's `hal_display_t.fb_safe_area`, bpp 4 only) the frame buffer is the safe area alone: width −
+left − right pixels a row, height − top − bottom rows, the stride from that width. The insets are not in it; the panel
+shows them in palette entry 0, the background, and the host puts them back in that color around the frame buffer, so a
+capture is the whole panel either way. Firmware before the bit sends the whole panel and never sets it.
 
 The host asks for offset 0, then each next offset until it has the stream length. The chunks are one frame when the
 frame count is the same in the first and the last reply and neither says a frame is being drawn. Otherwise the host
