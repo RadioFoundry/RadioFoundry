@@ -37,7 +37,8 @@ Yes, including commercial and closed-source products. The license has one condit
 license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
 own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
 hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
-request. Details: [using RadioFoundry in your project](../../FORKING.md).
+request. Details: [using RadioFoundry in your project](../../FORKING.md). Branch and pull request steps:
+[contributing](../dev/contributing.md).
 
 **The web flasher or the Codeplug Editor failed. How do I report it?**
 
@@ -68,6 +69,13 @@ your own computer ([Installing](02-installing.md)).
 
 Yes. FM works and DMR calls show on the screen. DMR data (messages, call alert, radio check) and hotspot mode work.
 DMR voice is off.
+
+**Will installing RadioFoundry keep my original codeplug?**
+
+The installer keeps the original codeplug in the backup, and it converts the channels, zones and contacts to the
+RadioFoundry layout. Install with a backup. If you skip it, on some radios the converted codeplug replaces the
+original bytes. To get the original or RadioFoundry codeplug back out of a backup, use the web tools
+([Backing up and restoring](02-installing.md#backing-up-and-restoring)).
 
 **Will RadioFoundry damage my radio?**
 
