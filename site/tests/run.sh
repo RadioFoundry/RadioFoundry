@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # The web flasher's tests: fixtures from rfoundry (Python), every radio's picture (radio_images_test.py), the scaled screenshots (shots_test.py), the rfoundry
-# tool zip of the manual install kit (toolzip_test.py), the firmware download links (firmware_links_test.py; the network check only with RFOUNDRY_LINK_CHECK=1), then the
-# JavaScript modules against them (Node 20+).
+# tool zip of the manual install kit (toolzip_test.py), the firmware download links (firmware_links_test.py; the network check only with RFOUNDRY_LINK_CHECK=1), the channels
+# (channels_test.py), then the JavaScript modules against them (Node 20+).
 #   site/tests/run.sh
 set -eu
 cd "$(dirname "$0")/../.."
@@ -14,4 +14,5 @@ python3 site/tests/shots_test.py
 python3 site/tests/features_test.py
 python3 site/tests/toolzip_test.py
 python3 site/tests/firmware_links_test.py
+python3 site/tests/channels_test.py
 RFOUNDRY_SITE_FIXTURES="$OUT" node --test site/tests/*.test.mjs

@@ -7,8 +7,13 @@ The output mirrors the docs tree (docs/user/02-installing.md -> docs/user/02-ins
 working with only .md -> .html rewritten. A link that leaves docs/ goes to the file on the repository web site.
 Heading ids are GitHub's (tools/check_doc_links.py), so anchors that pass the link check work here too.
 
-Translations (later): docs/i18n/<lang>/<path under docs> replaces a page for that language; pages without one
-fall back to English with a notice.
+Translations: docs/i18n/<lang>/<path under docs> replaces a page for that language; pages without one fall back to
+English with a notice.
+
+Channels (docs/dev/website.md, Channels): with a Stable release the site holds more than one tree of the docs. Each
+Docs builds the sections it owns, from its own checkout (root), under its own prefix ("" or "nightly/"). A link to a
+section another tree builds goes to that tree (elsewhere); a link to one no tree builds from this checkout goes to
+the repository at this tree's ref, and a file it shows (a screenshot) is copied under files_prefix.
 """
 import html
 import importlib.util
@@ -51,6 +56,13 @@ def slug(text):
 	return text.replace(" ", "-")
 
 
+def section_of(rel):
+	"""The section of a path under docs/: its first directory, "general" for a top-level file or an unknown one."""
+	parts = rel.split("/")
+	sec = parts[1] if len(parts) > 2 else "general"
+	return sec if sec in SECTIONS else "general"
+
+
 def site_path(rel):
 	"""Where a docs/ Markdown file lands in the site: docs/x/README.md -> docs/x/index.html."""
 	head, base = posixpath.split(rel)
@@ -59,7 +71,8 @@ def site_path(rel):
 
 
 class Docs:
-	def __init__(self, repo_url, ref, langs, default_lang):
+	def __init__(self, repo_url, ref, langs, default_lang, root=None, sections=None, prefix="", elsewhere=None,
+		     files_prefix=""):
 		if MarkdownIt is None:
 			raise repo.SourceError("markdown-it-py is missing")
 		self.md = MarkdownIt("commonmark", {"html": True, "linkify": False}).enable(["table", "strikethrough"])
@@ -67,14 +80,27 @@ class Docs:
 		self.ref = ref
 		self.langs = langs
 		self.default_lang = default_lang
+		self.root = root or repo.ROOT		# the checkout the Markdown comes from
+		self.sections = sections		# the sections this tree builds; None: all
+		self.prefix = prefix			# where its pages go, under the language's tree
+		self.elsewhere = elsewhere or {}	# {section: prefix of the tree that builds it}
+		self.files_prefix = files_prefix	# where a file of a section no tree builds is copied
+		self.extra = set()			# those files, as the pages link them
 		self.pages = self._collect()
 		self.glossary = _load_glossary()
 		self.terms = self._terms()
 
+	def path(self, *parts):
+		return os.path.join(self.root, *parts)
+
+	def owns(self, section):
+		return self.sections is None or section in self.sections
+
 	def _terms(self):
 		"""[(compiled pattern, entry)], longest names first so "Tier III" wins over "Tier"."""
 		out = []
-		for e in self.glossary.load()["entries"]:
+		data = self.path("docs", "glossary.json")
+		for e in self.glossary.load(data if os.path.isfile(data) else self.glossary.DATA)["entries"]:
 			if e.get("preview", True):
 				out += [(self.glossary.pattern(n), n, e) for n in self.glossary.names(e)]
 		out.sort(key=lambda t: -len(t[1]))
@@ -82,21 +108,20 @@ class Docs:
 
 	def _collect(self):
 		pages = []
-		docs = repo.path("docs")
+		docs = self.path("docs")
 		for dirpath, dirs, files in os.walk(docs):
 			dirs[:] = sorted(d for d in dirs if d != "i18n")
 			for f in sorted(files):
 				if not f.endswith(".md"):
 					continue
-				rel = posixpath.relpath(os.path.join(dirpath, f), repo.ROOT).replace(os.sep, "/")
-				parts = rel.split("/")
-				section = parts[1] if len(parts) > 2 else "general"
-				if section not in SECTIONS:
-					section = "general"
+				rel = posixpath.relpath(os.path.join(dirpath, f), self.root).replace(os.sep, "/")
+				section = section_of(rel)
+				if not self.owns(section):
+					continue
 				with open(os.path.join(dirpath, f), encoding="utf-8") as fh:
 					text = fh.read()
 				m = re.search(r"^#\s+(.+)$", text, re.M)
-				pages.append({"src": rel, "out": site_path(rel), "section": section,
+				pages.append({"src": rel, "out": self.prefix + site_path(rel), "section": section,
 					      "title": m.group(1).strip() if m else f[:-3], "index": f == "README.md"})
 		# the user manual reads in chapter order (its files are numbered); every other section alphabetically
 		pages.sort(key=lambda p: (SECTIONS.index(p["section"]), not p["index"], p["src"]))
@@ -108,11 +133,11 @@ class Docs:
 	def source_for(self, page, lang):
 		"""(Markdown text, is a fallback to English) of a page in a language."""
 		if lang != self.default_lang:
-			tr = repo.path("docs", "i18n", lang, page["src"][len("docs/"):])
+			tr = self.path("docs", "i18n", lang, page["src"][len("docs/"):])
 			if os.path.isfile(tr):
 				with open(tr, encoding="utf-8") as f:
 					return f.read(), False
-		with open(repo.path(page["src"]), encoding="utf-8") as f:
+		with open(self.path(page["src"]), encoding="utf-8") as f:
 			return f.read(), lang != self.default_lang
 
 	def title_for(self, page, lang):
@@ -129,7 +154,7 @@ class Docs:
 		# language: docs/i18n/<lang> mirrors the English tree, chapter for chapter (docs/dev/website.md)
 		ids = None
 		if not fallback and lang != self.default_lang:
-			with open(repo.path(page["src"]), encoding="utf-8") as f:
+			with open(self.path(page["src"]), encoding="utf-8") as f:
 				ids = heading_ids(self.md.parse(f.read()))
 		seen, toc = {}, []
 		h = 0
@@ -248,34 +273,53 @@ class Docs:
 		target, _, anchor = href.partition("#")
 		anchor = "#" + anchor if anchor else ""
 		resolved = posixpath.normpath(posixpath.join(posixpath.dirname(src), target))
-		here = posixpath.dirname(site_path(src))
+		here = posixpath.dirname(self.prefix + site_path(src))
 		if resolved.startswith("docs/") and not resolved.startswith("docs/i18n/"):
-			full = repo.path(resolved)
+			full = self.path(resolved)
+			sec = section_of(resolved)
+			if self.owns(sec):
+				tree = self.prefix
+			elif sec in self.elsewhere:
+				tree = self.elsewhere[sec]
+			elif resolved.endswith(".md") or os.path.isdir(full):
+				return self.repo_link(resolved, os.path.isdir(full)) + anchor
+			else:	# a file a page shows, from this checkout: copied beside this tree (copy_assets)
+				self.extra.add(resolved)
+				return posixpath.relpath(self.files_prefix + resolved, here) + anchor
 			if resolved.endswith(".md"):
-				return posixpath.relpath(site_path(resolved), here) + anchor
+				return posixpath.relpath(tree + site_path(resolved), here) + anchor
 			if os.path.isdir(full):
 				if os.path.isfile(os.path.join(full, "README.md")):
-					return posixpath.relpath(posixpath.join(resolved, "index.html"), here) + anchor
+					return posixpath.relpath(tree + posixpath.join(resolved, "index.html"), here) + anchor
 				return self.repo_link(resolved, True) + anchor
-			return posixpath.relpath(resolved, here) + anchor
+			return posixpath.relpath(tree + resolved, here) + anchor
 		if resolved.startswith(".."):
 			return href
-		return self.repo_link(resolved, os.path.isdir(repo.path(resolved))) + anchor
+		return self.repo_link(resolved, os.path.isdir(self.path(resolved))) + anchor
 
 	def repo_link(self, rel, is_dir):
 		return "%s/%s/%s/%s" % (self.repo_url, "tree" if is_dir else "blob", self.ref, rel)
 
 	def copy_assets(self, out_dir):
-		"""Every non-Markdown file under docs/ (screenshots, the MIB) beside the rendered pages."""
+		"""Every non-Markdown file of the sections this tree builds (screenshots, the MIB) beside the rendered pages, and
+		the files its pages show from sections no tree builds from this checkout (self.extra, once rendered)."""
 		n = 0
-		docs = repo.path("docs")
+		docs = self.path("docs")
 		for dirpath, dirs, files in os.walk(docs):
 			dirs[:] = [d for d in dirs if d != "i18n"]
 			for f in files:
-				if f.endswith(".md"):
-					continue
 				src = os.path.join(dirpath, f)
-				dst = os.path.join(out_dir, os.path.relpath(src, repo.ROOT))
+				rel = os.path.relpath(src, self.root).replace(os.sep, "/")
+				if f.endswith(".md") or not self.owns(section_of(rel)):
+					continue
+				dst = os.path.join(out_dir, self.prefix + rel)
+				os.makedirs(os.path.dirname(dst), exist_ok=True)
+				shutil.copy2(src, dst)
+				n += 1
+		for rel in sorted(self.extra):
+			src = self.path(rel)
+			if os.path.isfile(src):
+				dst = os.path.join(out_dir, self.files_prefix + rel)
 				os.makedirs(os.path.dirname(dst), exist_ok=True)
 				shutil.copy2(src, dst)
 				n += 1

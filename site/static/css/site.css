@@ -514,6 +514,10 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* version link: the banner on every step and the question before the build */
 .version-banner p { margin: 0; }
 .version-banner p + p { margin-top: var(--space-1); }
+/* the channel choice (flasher) and the channel banner of a manual page (docs/dev/website.md, Channels) */
+.channel-choice p, .channel-bar p { margin: 0; }
+.channel-choice p + p, .channel-bar p + p { margin-top: var(--space-1); }
+.channel-bar { margin-bottom: var(--space-4); }
 dialog.confirm { max-width: 36rem; width: calc(100% - 2 * var(--space-4)); border: 1px solid var(--border); border-radius: var(--radius);
 	background: var(--surface); color: var(--text); padding: var(--space-5); }
 dialog.confirm::backdrop { background: rgb(0 0 0 / 0.45); }
