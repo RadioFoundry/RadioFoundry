@@ -166,9 +166,10 @@ typedef struct {
 	uint8_t voice_slots;
 	uint32_t voice_slot_tick[2];
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
-	bool rx_bs;		// the last burst taken was BS-sourced (a repeater)
+	bool rx_bs;		// the last burst taken was BS-sourced (a repeater, or a direct mode sender with BS sync)
 	uint8_t tc_agree;	// BS bursts in a row, one per slot, with TC alternating (the lock: TC_LOCK)
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
+	bool cach_seen;		// a TC lock since the receiver last synced: a CACH is on air (cach_on_air)
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	// Per TC: the tick the last CACH AT bit naming it was read at and DMR_TICK_AT_* (0 none since the restart)

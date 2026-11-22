@@ -1539,7 +1539,7 @@ static void test_rx_bs_direct_call(void)
 			tick(false);
 			deframe_at(rti(k == 0 ? 0 : (uint8_t)((k - 1) % 6 + 1), k == 0 ? DMR_BURST_VOICE_LC_HEADER : 0, 1, 1,
 				       1, (uint8_t)tc), 25000);
-			dmr_burst_t b;
+			dmr_burst_t b = { 0 };
 			bursts += count_kind(DMR_EV_BURST_RX, &b);
 			labeled += b.ts != 0;
 		}
@@ -1559,16 +1559,20 @@ static void test_rx_bs_direct_call(void)
 		tick(true);
 		count_kind(0xFF, NULL);
 	}
-	// A base station on a simplex channel: both slots, TC alternating. Numbered from the burst that locks
+	// A base station on a simplex channel: both slots, TC alternating. Numbered from the burst that locks, and on
+	// through a missed burst (k == 6): unnumbered there, the other slot's bursts would be taken as ours
 	for (int rpt = 0; rpt < 2; rpt++) {
 		setup();
 		hrc7000_dmr_run(&eng);
 		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = rpt != 0 };
 		hrc7000_dmr_configure(&eng, &cfg);
-		for (int k = 0; k < 6; k++) {
+		for (int k = 0; k < 10; k++) {
 			tick(false);
+			if (k == 6) {
+				continue;
+			}
 			deframe_at(rti(0, 9, 1, 1, (uint8_t)(k & 1), (uint8_t)(k & 1)), 25000);
-			dmr_burst_t b;
+			dmr_burst_t b = { 0 };
 			CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
 			CHECK(b.ts == (rpt || k >= 3 ? (k & 1) + 1 : 0));
 		}

@@ -275,6 +275,7 @@ static void chip_rx_restart(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
+	e->cach_seen = false;
 	e->at_flags[0] = e->at_flags[1] = 0;
 	e->emb_pending = 0;
 	// What was heard is gone with the slot timing. Kept, the polite check went on seeing a busy channel: an empty
@@ -301,6 +302,7 @@ static void rx_hold(hrc7000_dmr_t *e)
 	e->voice_slots = 0;
 	e->tc_slot[0] = e->tc_slot[1] = 0;
 	e->tc_agree = 0;
+	e->cach_seen = false;
 	e->emb_pending = 0;
 	e->rx_any = false;	// the polite check's busy window starts again, as after a restart
 	e->t_resync = now(e);
@@ -559,6 +561,9 @@ static void track_tc(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
 	e->tc_prev = s->tc;
 	e->tc_tick = slot;
 	e->tc_est = early ? (uint8_t)(s->tc ^ 1u) : s->tc;	// the slot started at the last interrupt
+	if (e->tc_agree >= TC_LOCK) {
+		e->cach_seen = true;
+	}
 	// The same CACH's AT bit, for the slot its TC names (DMR_TICK_AT_*): a BS signal's inbound busy state
 	e->at_tick[s->tc] = e->tick;
 	e->at_flags[s->tc] = (uint8_t)(DMR_TICK_AT_KNOWN | (s->at ? DMR_TICK_AT_BUSY : 0u));
@@ -695,12 +700,20 @@ static void tx_tick(hrc7000_dmr_t *e)
 
 static void emb_drop(hrc7000_dmr_t *e, uint8_t cs) { e->emb_pending &= (uint8_t)~(1u << cs); }
 
-// A CACH to number the slots from: a repeater channel, or the TC lock (BS bursts in slots in a row, TC alternating). A
-// direct mode sender with BS sync (a simplex hotspot) keys every other slot with no CACH, so its TC is junk: numbered
-// from it, its bursts landed on the other slot and the call was dropped (issue 928)
+// A CACH to number the slots from: a repeater channel, or a TC lock since the receiver synced (BS bursts in slots in a
+// row, TC alternating) while BS bursts still come. A direct mode sender with BS sync (a simplex hotspot) keys every
+// other slot with no CACH, so its TC is junk: numbered from it, its bursts landed on the other slot and the call was
+// dropped (issue 928). Held past the lock itself: one missed burst breaks the run, and the other slot's bursts then
+// went up unnumbered, taken as ours, until the lock came back
 static bool cach_on_air(const hrc7000_dmr_t *e)
 {
-	return e->cfg.repeater || tc_locked(e);
+	return e->cfg.repeater || (e->cach_seen && e->tick - e->tc_tick <= RX_LOST_TICKS);
+}
+
+// The TS a burst with no slot number of its own counts as: the chip slot's last one known, else by chip slot
+static int8_t chip_slot_ts(const hrc7000_dmr_t *e, uint8_t cs)
+{
+	return e->tc_slot[cs] != 0 ? e->tc_slot[cs] : (int8_t)(cs + 1);
 }
 
 // The slot number a burst goes up with (0: none). *dmo: the one an aligned start counts it as
@@ -710,7 +723,7 @@ static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s, int8_t *dm
 	case DMR_SYNC_BS:
 		if (!cach_on_air(e)) {
 			// No slot number (dmr-modem.md 2.3: direct mode). An aligned reply keys as after MS sync
-			*dmo = e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
+			*dmo = chip_slot_ts(e, s->chip_slot);
 			return 0;
 		}
 		e->tc_slot[s->chip_slot] = (int8_t)(s->tc + 1);
@@ -726,7 +739,7 @@ static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s, int8_t *dm
 		*dmo = e->tc_slot[s->chip_slot];
 		return *dmo;
 	default:
-		*dmo = e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
+		*dmo = chip_slot_ts(e, s->chip_slot);
 		return *dmo;
 	}
 }
@@ -1250,7 +1263,7 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->st.txb_rx_chip_slot = e->rx_chip_slot;
 		e->st.txb_rx_age = (uint8_t)(e->rx_any ? (age > 254u ? 254u : age) : 255u);
 		e->st.txb_ts = ts;
-		e->st.txb_last_ts = e->st.last_ts;
+		e->st.txb_last_ts = e->rx_ts;	// the TS the aligned pick went by
 		e->st.txb_rx_type_info = e->st.last_rx_type_info;
 		e->st.txb_rx_hist = e->st.rx_hist;
 	}
