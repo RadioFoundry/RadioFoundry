@@ -184,7 +184,10 @@ static void s_voice(const uint8_t v[YSF_VOICE_BYTES], void *ctx)
 	if (x->nvoice < VMAX)
 		memcpy(x->voice[x->nvoice++], v, YSF_VOICE_BYTES);
 }
-static const ysf_call_sink_t call_sink = { s_start, s_update, s_voice, s_end };
+static ysf_wx_t wx_got;
+static uint8_t wx_n;
+static void s_wx(const ysf_wx_t *w, void *ctx) { (void)ctx; wx_got = *w; wx_n++; }
+static const ysf_call_sink_t call_sink = { s_start, s_update, s_voice, s_end, s_wx };
 
 static void voice_frame(uint8_t v[YSF_VOICE_BYTES])
 {
@@ -398,7 +401,7 @@ static bool h_tx_voice(uint8_t v[YSF_VOICE_BYTES], void *ctx)
 	memcpy(v, x->enc[x->enc_taken++], YSF_VOICE_BYTES);
 	return true;
 }
-static const ysf_engine_hooks_t hooks = { h_start, h_update, h_voice, h_end, h_tx_voice };
+static const ysf_engine_hooks_t hooks = { h_start, h_update, h_voice, h_end, h_tx_voice, NULL };
 
 static ysf_engine_cfg_t cfg_for(uint8_t i, uint8_t rx_dgid, uint8_t tx_dgid)
 {
@@ -625,6 +628,168 @@ static void testRid(void)
 	CHECK(strlen(a) == YSF_RID_LEN && strcmp(a, b), "fallback: %s %s", a, b);
 }
 
+// ── Wires-X (ysf.md 9): commands as a node reads them, replies as a node sends them, through the framer ──
+static void put_text(uint8_t *d, const char *s, unsigned n)
+{
+	for (unsigned i = 0; i < n; i++)
+		d[i] = *s ? (uint8_t)*s++ : ' ';
+}
+
+static uint16_t reply_end(uint8_t *d, uint16_t n)
+{
+	uint8_t s = 0;
+
+	d[n++] = 0x03;
+	for (uint16_t i = 0; i < n; i++)
+		s = (uint8_t)(s + d[i]);
+	d[n++] = s;
+	return n;
+}
+
+// A node's data transmission of d through the framer into a call layer: header, blocks of FN 0..FT, terminator
+static void send_data(ysf_call_rx_t *rx, air_framer_t *fr, const uint8_t *d, uint16_t len, int lose_fn)
+{
+	static uint8_t frame[YSF_FRAME_BYTES];
+	ysf_fich_t f = { .cs = 2, .cm = 1, .dt = YSF_DT_DATA };
+	uint8_t c1[20], c2[20];
+	uint16_t at = 0;
+	(void)rx;
+
+	for (int part = 0; part < 3; part++) {
+		uint8_t blk = 0;
+
+		do {
+			uint8_t ft = 1;
+			unsigned room = part == 1 ? (blk == 0 ? 260u : 259u) : 0;
+
+			if (part == 1) {
+				unsigned left = len > at ? len - at : 0, first = blk == 0 ? 20u : 19u;
+
+				while (ft < 7 && first + (ft - 1u) * 40u < left)
+					ft++;
+				(void)room;
+			}
+			for (uint8_t fn = 0; fn <= (part == 1 ? ft : 0); fn++) {
+				memset(frame, 0, sizeof frame);
+				f.fi = part == 0 ? YSF_FI_HEADER : part == 1 ? YSF_FI_COMMS : YSF_FI_TERM;
+				f.fn = fn;
+				f.ft = part == 1 ? ft : 0;
+				f.bn = blk & 3;
+				f.bt = 0;
+				ysf_frame_begin(frame);
+				ysf_fich_put(frame, &f);
+				memset(c1, ' ', 20);
+				memset(c2, ' ', 20);
+				if (part == 1 && fn == 1) {
+					uint8_t k = 0;
+
+					if (blk)
+						c2[k++] = 0x00;
+					for (; k < 20 && at < len; k++)
+						c2[k] = d[at++];
+				} else if (part == 1 && fn >= 2) {
+					for (uint8_t k = 0; k < 20 && at < len; k++)
+						c1[k] = d[at++];
+					for (uint8_t k = 0; k < 20 && at < len; k++)
+						c2[k] = d[at++];
+				}
+				ysf_csd_put(frame, c1, c2);
+				if (part == 1 && fn == lose_fn && blk == 0)
+					memset(frame + 5, 0, 25);	// its FICH lost
+				for (uint16_t s0 = 0; s0 < YSF_FRAME_SYMS; s0 += 120) {
+					air_chunk_t c = { .sync_at = -1, .nsyms = 120 };
+					uint8_t chunk[30];
+
+					air_syms_copy(chunk, 0, frame, s0, 120);
+					c.hard = chunk;
+					air_framer_rx(fr, &c);
+				}
+			}
+			blk++;
+		} while (part == 1 && at < len);
+	}
+}
+
+static void testWiresX(void)
+{
+	static ysf_call_rx_t rx;
+	static sink_t s;
+	static air_framer_t fr;
+	static uint8_t fbuf[YSF_FRAME_BYTES], d[1100];
+	uint8_t cmd[YSF_WX_CMD_MAX];
+	uint8_t n;
+	uint16_t len;
+
+	// Commands, byte for byte
+	n = ysf_wx_command(YSF_WX_DX, 0, NULL, cmd);
+	CHECK(n == 7 && !memcmp(cmd, "\x00\x5D\x71\x5F\x26\x03", 6) && cmd[6] == (uint8_t)(0x5D + 0x71 + 0x5F + 0x26 + 0x03), "DX");
+	n = ysf_wx_command(YSF_WX_CONNECT, 12345, NULL, cmd);
+	CHECK(n == 13 && !memcmp(cmd + 1, "\x5D\x23\x5F\x26" "12345 \x03", 11), "CONNECT 12345");
+	n = ysf_wx_command(YSF_WX_ALL, 21, NULL, cmd);
+	CHECK(n == 12 && !memcmp(cmd + 4, "\x26" "01021\x03", 7), "ALL from 21");
+	n = ysf_wx_command(YSF_WX_SEARCH, 0, "poland", cmd);
+	CHECK(n == 28 && !memcmp(cmd + 5, "11001POLAND          \x03", 22), "SEARCH");
+	CHECK(ysf_wx_command(9, 0, NULL, cmd) == 0, "no such command");
+
+	memset(&s, 0, sizeof s);
+	ysf_call_rx_init(&rx, &call_sink, &s);
+	air_framer_init(&fr, &ysf_air_mode, &rx.rx, fbuf, NULL, YSF_FRAME_SYMS);
+
+	// The node's status: connected to a room
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x51\x5F\x26", 4);
+	put_text(d + 5, "54321", 5);
+	put_text(d + 10, "SR5WI", 10);
+	put_text(d + 20, "WARSZAWA-RPT", 14);
+	put_text(d + 34, "15", 2);
+	put_text(d + 36, "27299", 5);
+	put_text(d + 41, "POLAND-ROOM", 16);
+	len = reply_end(d, 57);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.node_name, "WARSZAWA-RPT") &&
+	      !strcmp(wx_got.room_id, "27299") && !strcmp(wx_got.room_name, "POLAND-ROOM") && !strcmp(wx_got.node_call, "SR5WI"),
+	      "DX reply: n %u kind %u '%s' '%s'", wx_n, wx_got.kind, wx_got.node_name, wx_got.room_name);
+	CHECK(s.starts == 0, "a data transmission starts no call");
+
+	// A room list of 20 rooms, in five blocks (BN counts on past its two bits)
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x46\x5F\x26", 4);
+	put_text(d + 5, "21", 2);	// a list ('0' at [5]: a search's result)
+	put_text(d + 7, "54321", 5);
+	put_text(d + 12, "SR5WI", 10);
+	put_text(d + 22, "020", 3);
+	put_text(d + 25, "137", 3);
+	d[28] = 0x0D;
+	for (unsigned j = 0; j < 20; j++) {
+		uint8_t *e = d + 29 + j * 50;
+		char id[6], name[17];
+
+		snprintf(id, sizeof id, "%05u", 10000 + j);
+		snprintf(name, sizeof name, "ROOM-%u", j);
+		e[0] = '5';
+		put_text(e + 1, id, 5);
+		put_text(e + 6, name, 16);
+		e[22] = '0';
+		e[23] = (uint8_t)('0' + j / 10);
+		e[24] = (uint8_t)('0' + j % 10);
+		e[49] = 0x0D;
+	}
+	len = reply_end(d, 29 + 20 * 50);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_ALL && !wx_got.search && wx_got.rooms == 20 && wx_got.rooms_total == 137,
+	      "list: n %u kind %u rooms %u total %u", wx_n, wx_got.kind, wx_got.rooms, wx_got.rooms_total);
+	CHECK(!strcmp(wx_got.room[0].id, "10000") && !strcmp(wx_got.room[19].name, "ROOM-19") && wx_got.room[19].users == 19,
+	      "list: rooms read");
+	// A frame lost: the reply is dropped, not taken half
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, 3);
+	CHECK(wx_n == 0, "a lost frame drops the reply");
+}
+
 int main(void)
 {
 	testRid();
@@ -632,6 +797,7 @@ int main(void)
 	testFec();
 	testCallThroughFramer();
 	testEngines();
+	testWiresX();
 	printf("# ysfTest %s (%d checks, %d failures)\n", failures ? "FAILED" : "PASSED", checks, failures);
 	return failures != 0;
 }

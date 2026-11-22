@@ -9334,6 +9334,34 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		radio_ysf_poll(&sm->view.ysf);
 		changed(sm);
 		break;
+	case RREQ_YSF_WX: {
+		// A Wires-X command (ysf.md 9.1): a short transmission the engine ends by itself, refused as PTT would be.
+		// A refusal says why in the view and beeps, without the refusal state PTT's release would clear
+		uint8_t reason = TXDENY_NONE;
+
+		if (sm->view.ch.mode != RADIO_MODE_YSF || sm->air_tx || sm->ptt || sm->view.state == RS_TX ||
+		    sm->hotspot || BENCH_HELD(sm)) {
+			radio_ysf_wx_disarm();
+			break;
+		}
+		end_reception(sm, now_ms);
+		reason = tx_check(sm);
+		if (reason == TXDENY_NONE && (sm->view.ysf.flags & RADIO_YSF_NO_CALL) != 0)
+			reason = TXDENY_NO_ID;
+		if (reason != TXDENY_NONE) {
+			radio_ysf_wx_disarm();
+			sm->view.tx_deny = reason;
+			beep(sm, BEEP_TX_DENY);
+			changed(sm);
+			break;
+		}
+		air_key(sm, now_ms, sm->view.ch.tx_hz);
+		if (sm->view.state == RS_TX_DENIED && !sm->ptt) {
+			sm->view.state = RS_IDLE;	// refused by the engine or the board: nothing to release
+			changed(sm);
+		}
+		break;
+	}
 #endif
 #if CONFIG_AIR_RAW
 	case RREQ_AIR_BENCH:

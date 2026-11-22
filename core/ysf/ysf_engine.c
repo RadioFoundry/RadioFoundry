@@ -83,7 +83,15 @@ static void on_end(void *ctx)
 	e->played = false;
 }
 
-static const ysf_call_sink_t sink = { on_start, on_update, on_voice, on_end };
+static void on_wx(const ysf_wx_t *w, void *ctx)
+{
+	ysf_engine_t *e = ctx;
+
+	if (e->hooks.rx_wx)
+		e->hooks.rx_wx(w, e->ctx);
+}
+
+static const ysf_call_sink_t sink = { on_start, on_update, on_voice, on_end, on_wx };
 
 // ── Transmit ──
 // Symbols to the session while its queue has room. A voice frame the encoder has not made yet is waited for as
@@ -182,6 +190,19 @@ bool ysf_engine_tx_prepare(ysf_engine_t *e)
 	if (air_session_tx_state(&e->session) == AIR_TX_IDLE) {
 		e->tx_stop = e->tx_ended = false;
 		ysf_call_tx_begin(&e->tx, &e->cfg.tx);
+	}
+	return air_session_tx_prime(&e->session);
+}
+
+bool ysf_engine_tx_prepare_data(ysf_engine_t *e, const uint8_t *data, uint8_t len)
+{
+	if (e->cfg.tx_inhibit || !len)
+		return false;
+	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX))
+		return false;
+	if (air_session_tx_state(&e->session) == AIR_TX_IDLE) {
+		e->tx_stop = e->tx_ended = false;
+		ysf_call_tx_begin_data(&e->tx, &e->cfg.tx, data, len);
 	}
 	return air_session_tx_prime(&e->session);
 }

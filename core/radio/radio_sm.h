@@ -200,6 +200,7 @@ typedef enum {
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
 	RREQ_YSF_SET,		// radio_task.c: the same for YSF (radio_ysf_set_settings)
+	RREQ_YSF_WX,		// radio_task.c: a Wires-X command was armed (radio_ysf_wx_arm): send it as a short transmission
 	// New request types go above
 
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)

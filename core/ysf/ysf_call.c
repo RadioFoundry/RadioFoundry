@@ -173,6 +173,39 @@ static void voice(ysf_call_rx_t *c, const ysf_rx_frame_t *f)
 	}
 }
 
+static void on_data(ysf_call_rx_t *c, const ysf_rx_frame_t *f)
+{
+	uint8_t c1[YSF_CSD_BYTES], c2[YSF_CSD_BYTES], ok = 0;
+	bool whole = false;
+
+	c->stats.data_frames++;
+	if (c->active)
+		call_end(c);		// a voice call's terminator was lost
+	switch (f->fich.fi) {
+	case YSF_FI_HEADER:
+		ysf_wx_rx_begin(&c->wx);
+		return;
+	case YSF_FI_COMMS:
+		if (!c->wx.on)
+			return;		// entered after the header: its first bytes are lost
+		ok = (uint8_t)((ysf_csd_get(f->hard, f->soft, 0, &c->rx.work, c1) >= 0) |
+			       (ysf_csd_get(f->hard, f->soft, 1, &c->rx.work, c2) >= 0) << 1);
+		whole = ysf_wx_rx_frame(&c->wx, f->fich.fn, f->fich.bn, f->fich.ft, c1, c2, ok);
+		if (!whole)
+			return;
+		break;
+	case YSF_FI_TERM:
+		break;
+	default:
+		return;
+	}
+	if (ysf_wx_rx_end(&c->wx)) {
+		c->stats.wx_replies++;
+		if (c->sink->wx)
+			c->sink->wx(&c->wx.out, c->ctx);
+	}
+}
+
 static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 {
 	ysf_call_rx_t *c = ctx;
@@ -184,8 +217,10 @@ static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 	if (f->rssi_dbm)
 		c->call.rssi_dbm = f->rssi_dbm;
 	if (f->fich_errs < 0) {
-		// A frame placed by the call's order: a communications frame, its FN the next
+		// A frame placed by the call's order: a communications frame, its FN the next (in a data transmission the
+		// reply lost a frame)
 		c->stats.fich_fail++;
+		c->wx.broken = true;
 		if (!c->active)
 			return;
 		errs = ysf_dch_get(f->hard, f->soft, w, buf);
@@ -196,6 +231,11 @@ static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 		return;
 	}
 	c->stats.fec_bits += (uint32_t)f->fich_errs;
+	// A data transmission (Wires-X, ysf.md 9.3): no call, its frames to the reply being parsed
+	if (f->fich.dt == YSF_DT_DATA) {
+		on_data(c, f);
+		return;
+	}
 	switch (f->fich.fi) {
 	case YSF_FI_HEADER:
 		// A header inside a call: the old one's terminator was lost
@@ -243,7 +283,10 @@ static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 
 static void on_lost(void *ctx)
 {
-	call_end(ctx);
+	ysf_call_rx_t *c = ctx;
+
+	c->wx.on = false;
+	call_end(c);
 }
 
 void ysf_call_rx_init(ysf_call_rx_t *c, const ysf_call_sink_t *sink, void *ctx)
@@ -267,8 +310,36 @@ static void fich_for(const ysf_call_tx_t *t, uint8_t fi, ysf_fich_t *f)
 	f->fn = fi == YSF_FI_COMMS ? t->fn : 0;
 	f->ft = YSF_FT_DN;
 	f->mr = t->id.mr;
-	f->dt = YSF_DT_VD2;
+	f->dt = t->data ? YSF_DT_DATA : YSF_DT_VD2;
 	f->dgid = t->id.dgid;
+	if (t->data)
+		f->ft = t->data_ft;
+}
+
+// A data frame's two 20-byte channels: header, FN 0 and terminator carry the callsigns as a DN header does; FN 1 the
+// remarks (our radio ID last) and data bytes 0-19; each later FN 40 bytes, space padded (ysf.md 9.1)
+static void data_csd(const ysf_call_tx_t *t, uint8_t fi, uint8_t fn, uint8_t c1[YSF_CSD_BYTES], uint8_t c2[YSF_CSD_BYTES])
+{
+	if (fi != YSF_FI_COMMS || fn == 0) {
+		ysf_head_csd(&t->id, c1, c2);
+		return;
+	}
+	memset(c1, ' ', YSF_CSD_BYTES);
+	memset(c2, ' ', YSF_CSD_BYTES);
+	if (fn == 1) {
+		dst_field(&t->id, c1 + YSF_CS_LEN);
+		memset(c1 + YSF_CS_LEN, ' ', 5);
+		memcpy(c2, t->data_buf, t->data_len < YSF_CSD_BYTES ? t->data_len : YSF_CSD_BYTES);
+		return;
+	}
+	for (uint8_t i = 0; i < YSF_CSD_BYTES; i++) {
+		unsigned at = 20u + (fn - 2u) * 40u + i;
+
+		if (at < t->data_len && at < YSF_WX_CMD_MAX)
+			c1[i] = t->data_buf[at];
+		if (at + YSF_CSD_BYTES < t->data_len && at + YSF_CSD_BYTES < YSF_WX_CMD_MAX)
+			c2[i] = t->data_buf[at + YSF_CSD_BYTES];
+	}
 }
 
 static void tx_frame(ysf_call_tx_t *t, uint8_t state)
@@ -290,11 +361,23 @@ static void tx_frame(ysf_call_tx_t *t, uint8_t state)
 		ysf_frame_begin(t->frame);
 		fich_for(t, state == TX_HEAD ? YSF_FI_HEADER : YSF_FI_TERM, &f);
 		ysf_fich_put(t->frame, &f);
-		ysf_head_csd(&t->id, a, b);
+		if (t->data)
+			data_csd(t, f.fi, 0, a, b);
+		else
+			ysf_head_csd(&t->id, a, b);
 		ysf_csd_put(t->frame, a, b);
 		t->ready = YSF_FRAME_SYMS;
 		break;
 	case TX_COMMS:
+		if (t->data) {
+			ysf_frame_begin(t->frame);
+			fich_for(t, YSF_FI_COMMS, &f);
+			ysf_fich_put(t->frame, &f);
+			data_csd(t, YSF_FI_COMMS, t->fn, a, b);
+			ysf_csd_put(t->frame, a, b);
+			t->ready = YSF_FRAME_SYMS;
+			break;
+		}
 		// The DCH spreads over all five blocks, so it is written first; each VCH releases its block. Nothing goes
 		// out before the first VCH: an end that comes first sends the terminator right after the frame before
 		ysf_frame_begin(t->frame);
@@ -342,6 +425,16 @@ void ysf_call_tx_sent(ysf_call_tx_t *t, uint16_t n)
 		tx_frame(t, t->ending ? TX_TERM : TX_COMMS);
 		break;
 	case TX_COMMS:
+		if (t->data) {
+			// The command's frames are FN 0 to its last, then the terminator
+			if (t->fn >= t->data_ft) {
+				tx_frame(t, TX_TERM);
+			} else {
+				t->fn++;
+				tx_frame(t, TX_COMMS);
+			}
+			break;
+		}
 		t->fn = (uint8_t)(t->fn >= YSF_FT_DN ? 0 : t->fn + 1);
 		tx_frame(t, t->ending ? TX_TERM : TX_COMMS);
 		break;
@@ -351,9 +444,23 @@ void ysf_call_tx_sent(ysf_call_tx_t *t, uint16_t n)
 	}
 }
 
+void ysf_call_tx_begin_data(ysf_call_tx_t *t, const ysf_tx_id_t *id, const uint8_t *data, uint8_t len)
+{
+	memset(t, 0, sizeof *t);
+	t->id = *id;
+	t->data = true;
+	t->data_len = len < YSF_WX_CMD_MAX ? len : YSF_WX_CMD_MAX;
+	memcpy(t->data_buf, data, t->data_len);
+	// FN 1 holds 20 bytes, each later FN 40
+	t->data_ft = 1;
+	while (20u + (t->data_ft - 1u) * 40u < t->data_len && t->data_ft < 7)
+		t->data_ft++;
+	tx_frame(t, TX_PRE);
+}
+
 bool ysf_call_tx_wants_voice(const ysf_call_tx_t *t)
 {
-	return t->state == TX_COMMS && t->nvoice < YSF_VCH_PER_FRAME;
+	return !t->data && t->state == TX_COMMS && t->nvoice < YSF_VCH_PER_FRAME;
 }
 
 bool ysf_call_tx_voice(ysf_call_tx_t *t, const uint8_t v[YSF_VOICE_BYTES])
@@ -372,6 +479,8 @@ bool ysf_call_tx_voice(ysf_call_tx_t *t, const uint8_t v[YSF_VOICE_BYTES])
 
 void ysf_call_tx_end(ysf_call_tx_t *t, const uint8_t silence[YSF_VOICE_BYTES])
 {
+	if (t->data)
+		return;		// a data transmission ends by itself
 	t->ending = true;
 	// A communications frame with nothing on air yet is not sent at all
 	if (t->state == TX_COMMS && t->nvoice == 0) {

@@ -644,6 +644,9 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s);
 #if CONFIG_YSF
 // The YSF settings (RAM only, radio_ysf.h): the same
 void radio_req_ysf_settings(const radio_ysf_settings_t *s);
+// A Wires-X command to the node (docs/spec/ysf.md 9; YSF_WX_*: arg the room ID for CONNECT, the first entry for ALL,
+// text for SEARCH). Sent as a short transmission on a YSF channel, refused as PTT would be (view.tx_deny says why)
+void radio_req_ysf_wx(uint8_t cmd, uint32_t arg, const char *text);
 #endif
 #if CONFIG_DMR
 void radio_req_reply_cancel(void);		// BACK on Home: end the DMR reply window

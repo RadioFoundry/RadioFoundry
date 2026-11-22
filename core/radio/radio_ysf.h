@@ -58,6 +58,27 @@ typedef struct {
 
 #if CONFIG_YSF
 #include "radio/radio_air.h"
+#include "ysf/ysf_wx.h"
+
+// Wires-X (docs/spec/ysf.md 9): what the node said last, and what was asked of it
+typedef struct {
+	uint32_t serial;		// moves at every reply (ysf_wx_t.serial)
+	uint32_t asked;			// moves at every command sent
+	uint8_t asked_cmd;		// YSF_WX_* of the last one, YSF_WX_NONE before any
+	uint8_t kind;			// YSF_WX_* of the last reply
+	bool connected;
+	char node_name[15], node_call[11], room_id[6], room_name[17];
+	bool search;			// the list is a search's result
+	uint8_t rooms;			// on the page held
+	uint16_t rooms_total, rooms_first;	// rooms the node knows; the page's first entry (1-based)
+} radio_ysf_wx_t;
+
+// Radio task: arm a Wires-X command for the next transmission (RREQ_YSF_WX keys for it); false: not one
+bool radio_ysf_wx_arm(uint8_t cmd, uint32_t arg, const char *text);
+void radio_ysf_wx_disarm(void);
+// Any task: the state, and room i of the page held (false past it)
+void radio_ysf_wx(radio_ysf_wx_t *out);
+bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out);
 
 extern const radio_air_ops_t radio_ysf_air;
 

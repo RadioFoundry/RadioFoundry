@@ -21,6 +21,8 @@ typedef struct {
 	// Transmit, from the provider's task: the next voice frame, false when none is ready. NULL: every frame is
 	// `silence`
 	bool (*tx_voice)(uint8_t v[YSF_VOICE_BYTES], void *ctx);
+	// A Wires-X reply heard, from the provider's task (ysf.md 9.3)
+	void (*rx_wx)(const ysf_wx_t *w, void *ctx);
 } ysf_engine_hooks_t;
 
 typedef struct {
@@ -72,6 +74,8 @@ void ysf_engine_set(ysf_engine_t *e, const ysf_engine_cfg_t *cfg);
 // Transmit (the radio core's task), as nxdn_engine.h: prepare, hal_radio_t.tx(), go; stop when the operator lets
 // go; AIR_TX_DONE = switch the transmitter off, then clear
 bool ysf_engine_tx_prepare(ysf_engine_t *e);
+// The same for a data transmission (a Wires-X command, ysf.md 9.1): the engine ends it by itself, no stop needed
+bool ysf_engine_tx_prepare_data(ysf_engine_t *e, const uint8_t *data, uint8_t len);
 bool ysf_engine_tx_go(ysf_engine_t *e);
 void ysf_engine_tx_stop(ysf_engine_t *e);
 void ysf_engine_tx_abort(ysf_engine_t *e);

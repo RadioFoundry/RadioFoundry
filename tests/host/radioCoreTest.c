@@ -4188,6 +4188,11 @@ void radio_req_ysf_settings(const radio_ysf_settings_t *s)
 	radio_ysf_set_settings(s);
 	req(RREQ_YSF_SET, 0);
 }
+void radio_req_ysf_wx(uint8_t cmd, uint32_t arg, const char *text)
+{
+	if (radio_ysf_wx_arm(cmd, arg, text))
+		req(RREQ_YSF_WX, 0);
+}
 #endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
@@ -9631,6 +9636,57 @@ bool ysf_chan_save(uint16_t number, const channel_t *ch, const ysf_chan_t *c)
 void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "SQ5FOX"); }
 void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]) { (void)name; out[0] = '\0'; }
 
+// Wires-X (ysf.md 9): a command keys the radio for a short data transmission the far radio hears as one, and the
+// radio unkeys by itself; refused as PTT is (RX only), without the refusal state PTT's release would clear
+static void test_ysf_wx(void)
+{
+	radio_ysf_wx_t w;
+	int keyed0 = hw.tx_calls;
+	uint32_t data0;
+
+	setup_codeplug();
+	add(3, "YSF rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_YSF;
+	chans[3].system = 0xFF;
+	stored_ysf[3] = (ysf_chan_t){ .tx_dgid = 0, .rx_dgid = 0 };
+	air_nofit = false;
+	memset(fair, 0, sizeof(fair));
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	CHECK(sm.view.ch.mode == RADIO_MODE_YSF && radio_ysf_running());
+	yfar_begin(0);
+	data0 = yfar.rx.stats.data_frames;
+	radio_req_ysf_wx(YSF_WX_CONNECT, 27299, NULL);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_calls == keyed0 + 1);
+	radio_ysf_wx(&w);
+	CHECK(w.asked == 1 && w.asked_cmd == YSF_WX_CONNECT);
+	for (int i = 0; i < 200 && sm.view.state == RS_TX; i++)
+		run(10);
+	CHECK(sm.view.state != RS_TX && !hw.keyed);
+	CHECK(yfar.rx.stats.data_frames >= data0 + 4);		// header, FN 0, FN 1, terminator
+	CHECK(yfar.rx.stats.calls == 0);				// heard as data, not as a call
+	// RX only: refused, a reason given, nothing left to release
+	chans[3].rx_only = true;
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	keyed0 = hw.tx_calls;
+	radio_req_ysf_wx(YSF_WX_DX, 0, NULL);
+	CHECK(hw.tx_calls == keyed0 && sm.view.tx_deny == TXDENY_RX_ONLY && sm.view.state != RS_TX_DENIED);
+	radio_ysf_wx(&w);
+	CHECK(w.asked == 1);
+	// Not on a YSF channel: nothing
+	req(RREQ_ZONE_POS, 0);
+	run(200);
+	radio_req_ysf_wx(YSF_WX_DX, 0, NULL);
+	CHECK(hw.tx_calls == keyed0);
+	yfar_stop();
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+}
+
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 // A watch of channels 3 (YSF) and other, nothing on the air, for ms: how many looks each got and that no two
 // engines (or an engine and the DMR stack) ever ran together
@@ -12119,8 +12175,11 @@ int main(void)
 #if CONFIG_NXDN
 	test_nxdn();
 #endif
-#if CONFIG_YSF && CONFIG_SCAN && CONFIG_DUAL_WATCH
+#if CONFIG_YSF
+	test_ysf_wx();
+#if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	test_ysf_dual();
+#endif
 #endif
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH && CONFIG_DMR && (CONFIG_P25 || CONFIG_NXDN)
 	test_air_dmr_dual();

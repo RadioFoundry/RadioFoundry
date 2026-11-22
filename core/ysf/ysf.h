@@ -16,6 +16,7 @@
 
 #include "../air/air_framer.h"
 #include "../dmr/ambe/ambeFec.h"
+#include "ysf_wx.h"
 
 // ── The frame ──
 #define YSF_FRAME_SYMS		480
@@ -138,6 +139,8 @@ typedef struct {
 	void (*update)(const ysf_call_t *c, void *ctx);		// a field changed
 	void (*voice)(const uint8_t v[YSF_VOICE_BYTES], void *ctx);
 	void (*end)(void *ctx);
+	// A Wires-X reply heard (a data transmission, ysf.md 9): valid during the call. NULL: data is ignored
+	void (*wx)(const ysf_wx_t *w, void *ctx);
 } ysf_call_sink_t;
 
 typedef struct {
@@ -146,6 +149,7 @@ typedef struct {
 	uint32_t voice_held;	// VCH of another data type
 	uint32_t fec_bits;	// bits the FICH, CSD and DCH decoders corrected
 	uint32_t vch_fixed;	// VCH bits the vote corrected
+	uint32_t data_frames, wx_replies;	// frames of data transmissions; Wires-X replies parsed from them
 } ysf_call_stats_t;
 
 typedef struct {
@@ -156,6 +160,7 @@ typedef struct {
 	ysf_call_t call;
 	uint8_t next_fn;		// the FN a frame placed without its FICH takes
 	ysf_call_stats_t stats;
+	ysf_wx_rx_t wx;			// a data transmission being received
 } ysf_call_rx_t;
 
 void ysf_call_rx_init(ysf_call_rx_t *c, const ysf_call_sink_t *sink, void *ctx);
@@ -177,10 +182,17 @@ typedef struct {
 	uint8_t nvoice;			// VCH filled in it
 	uint16_t nsyms, ready, sent, pre_left;
 	ysf_tx_id_t id;
+	// A data transmission (a Wires-X command) in place of voice: its bytes, their count, the last FN
+	bool data;
+	uint8_t data_len, data_ft;
+	uint8_t data_buf[YSF_WX_CMD_MAX];
 	uint8_t frame[YSF_FRAME_BYTES];
 } ysf_call_tx_t;
 
 void ysf_call_tx_begin(ysf_call_tx_t *t, const ysf_tx_id_t *id);
+// A data transmission instead (ysf.md 9.1): preamble, header, data frames FN 0 to the last, terminator; it ends by
+// itself, no voice asked for
+void ysf_call_tx_begin_data(ysf_call_tx_t *t, const ysf_tx_id_t *id, const uint8_t *data, uint8_t len);
 uint16_t ysf_call_tx_ready(const ysf_call_tx_t *t, uint16_t *first);
 const uint8_t *ysf_call_tx_syms(const ysf_call_tx_t *t);
 void ysf_call_tx_sent(ysf_call_tx_t *t, uint16_t n);

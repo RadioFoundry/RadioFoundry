@@ -21,6 +21,13 @@ _Static_assert(RADIO_YSF_RID_LEN == YSF_RID_LEN && RADIO_YSF_CALL_LEN == YSF_CS_
 
 
 static radio_ysf_settings_t set;
+// Wires-X: the command armed for the next transmission, and the node's last reply as published (the provider's task
+// writes it, any task reads it: wx_seq odd while it writes)
+static uint8_t wx_buf[YSF_WX_CMD_MAX], wx_len, wx_cmd = YSF_WX_NONE;
+static uint32_t wx_arg;
+static ysf_wx_t wx_pub;
+static radio_ysf_wx_t wx_state = { .asked_cmd = YSF_WX_NONE };
+static volatile uint8_t wx_seq;
 static char rid[RADIO_YSF_RID_LEN + 1];	// this radio's RID ("" until worked out) and where it came from
 static bool rid_weak;
 
@@ -176,7 +183,66 @@ static bool v_tx(uint8_t v[YSF_VOICE_BYTES], void *ctx)
 	return s->next(v, s->ctx);
 }
 
-static const ysf_engine_hooks_t voice_hooks = { v_start, NULL, v_voice, v_end, v_tx };
+// A node's reply: published for the screens. A list keeps the page asked for as its first entry
+static void v_wx(const ysf_wx_t *w, void *ctx)
+{
+	(void)ctx;
+	wx_seq++;
+	if (w->kind == YSF_WX_ALL) {
+		wx_pub = *w;
+		wx_state.search = w->search;
+		wx_state.rooms = w->rooms;
+		wx_state.rooms_total = w->rooms_total;
+	} else {
+		wx_state.connected = w->connected;
+		memcpy(wx_state.node_name, w->node_name, sizeof wx_state.node_name);
+		memcpy(wx_state.room_id, w->room_id, sizeof wx_state.room_id);
+		memcpy(wx_state.room_name, w->room_name, sizeof wx_state.room_name);
+	}
+	memcpy(wx_state.node_call, w->node_call, sizeof wx_state.node_call);
+	wx_state.kind = w->kind;
+	wx_state.serial++;
+	wx_seq++;
+}
+
+static const ysf_engine_hooks_t voice_hooks = { v_start, NULL, v_voice, v_end, v_tx, v_wx };
+
+bool radio_ysf_wx_arm(uint8_t cmd, uint32_t arg, const char *text)
+{
+	wx_len = ysf_wx_command(cmd, arg, text, wx_buf);
+	wx_cmd = wx_len ? cmd : YSF_WX_NONE;
+	wx_arg = arg;
+	return wx_len != 0;
+}
+
+void radio_ysf_wx_disarm(void)
+{
+	wx_cmd = YSF_WX_NONE;
+}
+
+void radio_ysf_wx(radio_ysf_wx_t *out)
+{
+	uint8_t s;
+
+	do {
+		s = wx_seq;
+		*out = wx_state;
+	} while ((s & 1) || s != wx_seq);
+}
+
+bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
+{
+	uint8_t s;
+	bool ok;
+
+	do {
+		s = wx_seq;
+		ok = i < wx_state.rooms;
+		if (ok)
+			*out = wx_pub.room[i];
+	} while ((s & 1) || s != wx_seq);
+	return ok;
+}
 
 static void voice_tx(bool on)
 {
@@ -334,7 +400,24 @@ static bool ysf_no_tx(void)
 
 static bool ysf_tx_prepare(void)
 {
-	if (eng == NULL || !ysf_engine_tx_prepare(eng))
+	if (eng == NULL)
+		return false;
+	if (wx_cmd != YSF_WX_NONE) {
+		// A Wires-X command armed: this transmission is it, and ends by itself
+		uint8_t cmd = wx_cmd;
+
+		wx_cmd = YSF_WX_NONE;
+		if (!ysf_engine_tx_prepare_data(eng, wx_buf, wx_len))
+			return false;
+		wx_seq++;
+		wx_state.asked++;
+		wx_state.asked_cmd = cmd;
+		if (cmd == YSF_WX_ALL || cmd == YSF_WX_SEARCH)
+			wx_state.rooms_first = (uint16_t)(cmd == YSF_WX_ALL && wx_arg >= 1 ? wx_arg : 1);
+		wx_seq++;
+		return true;
+	}
+	if (!ysf_engine_tx_prepare(eng))
 		return false;
 	voice_tx(true);
 	return true;
