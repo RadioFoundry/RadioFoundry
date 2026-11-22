@@ -136,8 +136,9 @@ def test_reconnect_waits_for_first_draw(bench, monkeypatch):
 
 @pytest.mark.parametrize("reopen,interrupted", [(False, False), (True, False), (True, True)],
                          ids=["same-link", "reopened-link", "interrupted-after-reopen"])
-def test_vfo_session_restores_the_frequency(bench, monkeypatch, reopen, interrupted):
-    saved = {"vfo": "1", "mode": "dmr", "rx_hz": "446500000", "ch.tx_tone": "ctcss:1000", "ch.rx_tone": "dcs:23"}
+@pytest.mark.parametrize("rx_tone,tx_tone", [("dcs:23", "ctcss:1000"), ("none:0", "none:0")])
+def test_vfo_session_restores_the_frequency(bench, monkeypatch, reopen, interrupted, rx_tone, tx_tone):
+    saved = {"vfo": "1", "mode": "dmr", "rx_hz": "446500000", "ch.tx_tone": tx_tone, "ch.rx_tone": rx_tone}
     state = saved.copy()
 
     class VfoLink(FakeLink):
@@ -170,6 +171,7 @@ def test_vfo_session_restores_the_frequency(bench, monkeypatch, reopen, interrup
         with r.vfo_session() as hz:
             assert state["mode"] == "fm" and state["ch.tx_tone"] == state["ch.rx_tone"] == "none:0"
             r.link.vfo_set(hz + 12500)
+            r.link.tone(2, "ctcss", 1000)
             r.link.vfo(False)
             if reopen:
                 r.reconnect(timeout=1)

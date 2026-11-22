@@ -811,7 +811,9 @@ class Radio:
             # The tones, frequency and mode are the VFO's: back in it first, after a test that left it for a channel
             if self.core().get("vfo") != "1":
                 self._req_until(lambda: self.link.vfo(True), lambda v: v.get("vfo") == "1", "VFO on")
-            if tones != none:
+            current = self.view(["channel"])
+            if any(current.get(key, "none:0") != tones[which]
+                   for which, key in ((1, "ch.tx_tone"), (2, "ch.rx_tone"))):
                 set_tones(tones)
             if self.core().get("rx_hz") != str(hz):
                 self._req_until(lambda: self.link.vfo_set(hz), lambda v: v.get("rx_hz") == str(hz), "VFO frequency back")
