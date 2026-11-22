@@ -185,7 +185,8 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   discard". Long BACK still goes Home (P3) and drops the copy without asking.
 - Save checks the copy first and names the first problem in a toast: an empty name, RX out of every band, TX out of
   the transmit bands on a channel that isn't RX only, a DMR channel whose RX takes no DMR ("Receive only band: set
-  FM"), a DMR channel without a TX contact unless it is RX only (the contact is whom PTT calls).
+  FM"), a DMR channel without a TX contact unless it is RX only (the contact is whom PTT calls). A D-STAR or Fusion
+  channel is never asked for one: its record is the DMR stand-in, and it calls by its own destination.
 - DMR goes wherever FM goes: any band of the table, receive-only ones included, but never a listen band (the air band
   on a radio with AM receive, the broadcast receiver's range). `radio_listen_band()` (`core/radio/radio_bands.h`) is
   the rule, the same one the VFO's mode change follows. A typed RX in a receive-only band makes the copy RX only, and FM
@@ -219,6 +220,9 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
   P25 writes a stored P25 channel from the radio's P25 settings ([p25-codeplug.md](p25-codeplug.md) 2.3).
 - An NXDN channel the same way: Mode "NXDN", then RAN and Rate in place of NAC, no Talkaround. Own ID over 65519 is
   refused ("NXDN IDs go up to 65519").
+- A D-STAR or Fusion channel (a kind that runs its own mode over the stand-in record, channel-modes.md 2.3) shows Mode
+  as the kind's name ("DV", "YSF") and none of the record's DMR or FM rows: Name, Number, Mode, RX, TX, Power, RX
+  only, the TX time-out, Scan, Battery saver. RX only is the tag's transmit allowed bit.
 - NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
   it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes
@@ -393,6 +397,27 @@ characters (`tools/cjkfont.py`). It needs an advance width and row pitch of its 
 screen that draws words needs checking at the new pitch. The generated 16x16 face is cropped there and cannot be
 reused, so a board with such a panel keeps `CONFIG_LANG_ZH` unsupported until a face with a suitable license exists.
 
+### 2.6 D-STAR
+
+On a channel of the D-STAR kind ([dstar-codeplug.md](dstar-codeplug.md); `CONFIG_DSTAR`), Home and the call screens
+follow the DMR ones, with D-STAR's own talk target, UR ([dstar-modem.md](dstar-modem.md) 3.1). Code: `ui_screens.c`
+(Home, the call screen), `ui_dstar.c` (the page), the radio core's `radio_dstar_view_t` in the view.
+
+| Where | What |
+|---|---|
+| Home, talk line | UR: the channel's (`CQCQCQ`), a choice for now (`M0XYZ for now`) or the next over's gateway command named (`Echo test next over`, `Link REF030 C`), the last two in the warn color; or why PTT can't send (`No callsign set`, `RX only`) |
+| Home, chips | `DV`, the route (`Direct`, or `via` RPT1), power |
+| Home, activity | The last caller with their suffix and when (`M0XYZ/5100 12s ago`), their message in quotes on the second line; `No calls heard yet`; why there is no voice (`No RAM for voice`) or no transmit (`TX not calibrated`) |
+| Call screen, receiving | The caller's callsign large, `/suffix UR ...` (and `late` for a header from the slow data), RPT1 > RPT2 when through a repeater, the message (two lines where they fit), the signal meter; hint `# D-STAR  PTT replies` |
+| Call screen, sending | `TALKING`, UR, the route, our MY/suffix, the time and the time-out |
+| The D-STAR page (`dstar`) | `CONTEXT` on Home and the talk target key (long `CONTEXT`) on a D-STAR channel; Find "D-STAR". Numbered rows: 1 Send to (UR now; `SELECT` back to the channel's), 2 Call CQ, 3 Call last caller (their callsign as UR, for now), 4 Echo test, 5 Link reflector (typed, `REF030C`: the name and the module letter), 6 Unlink, 7 Gateway info, 8 My call, 9 Suffix, 0 Message. Rows 1-7 act only on a D-STAR channel; each sends the user Home with a toast, so the talk line confirms what PTT does. Body: the last over heard and its message. Rows 8-0 open the text editor (`dstar_text`) and keep the value in the settings over the codeplug's record |
+| Lifetimes | As a DMR talk target's (P7): the channel's UR; for now (CQ, the caller) until the channel changes or `BACK` on Home; one over (link, unlink, echo, information), then back. Nothing writes the codeplug |
+| PTT refused | No callsign anywhere (`DENY_WHY_NO_CALLSIGN`, hint "Set it: # then My call"); no deviation scale (`Radio refused to send`) |
+
+Task flows: [task-flows.md](../ux/task-flows.md) 28. Flows in `uiFlowTest` ("D ..."), the gallery's `home_dstar*`,
+`rx_dstar`, `tx_dstar*`, `dstar`, `dstar_link_entry`; the simulator's `dstar`, `dstarrx:CALL,SUFFIX,UR,MESSAGE` and
+`dstarend` tokens.
+
 ## 3. Key meanings
 
 The same on every screen (information-architecture.md, key maps 7.1 to 7.5):
@@ -552,7 +577,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `hostlink_network_mode`, `board.netif->up`: the strip's USB word (`ui_state_t.usb_net`, polled in `ui_app_tick` so a change without a key press redraws): `IP` while USB is a network adapter, and right after it an up and a down arrow standing close (as U+21C5, a phone's data link mark) once the computer has brought the adapter up (the debug link's `usb.net_up`, [usb-network.md](usb-network.md) 1); after SCAN / ROAM / MON, which win while they last; not on screens that merge their title into the strip | host link and the board's netif (CONFIG_USB_NETWORK, CONFIG_HOSTLINK) | direct calls; Tools > USB network uses the first too |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR and Fusion DN scale the samples before the vocoder, with a peak limiter; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
 | `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
@@ -704,8 +729,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   vocoder lacks the option (`hal_vocoder_t.options`), and in a build without DMR. While Mic AGC is on, Mic gain shows
   "AGC", is dimmed, OK says "Mic AGC sets the level"
   and the gain is step 5, the board's levels (FM too on a radio whose board sets the gain).
-- Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
-  in software before the vocoder (radio-features.md 3.6). The
+- Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR and
+  Fusion DN, in software before the vocoder with a peak limiter (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).

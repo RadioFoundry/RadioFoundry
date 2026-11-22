@@ -56,9 +56,30 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
+	{ "home_ysf", "ysf" },					// a Fusion channel: the destination it calls
+	{ "home_ysf_rx", "ysf ysfrx:M0ABC" },			// receiving DN: the caller's callsign
+	{ "home_ysf_rx_vw", "ysf ysfrx:JA1YKX,vw,10" },	// VW heard: played
+	{ "home_ysf_rx_vw_late", "ysf ysfrx:-,vw" },			// VW joined after its header: no callsign yet
+	{ "home_ysf_tx", "ysf pttdown" },			// transmitting DN
+	{ "home_ysf_nocall", "ysfnocall" },			// no callsign: what to set
 	{ "tx_aprs", "aprstx" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
 	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
+#if CONFIG_DSTAR
+	// D-STAR (ui.md 2.6): Home on a D-STAR channel, an over heard and what it leaves, the page behind #, a one-over
+	// command waiting for PTT, sending, and PTT with no callsign
+	{ "home_dstar", "dstar" },
+	{ "home_dstar_repeater", "dstar:rpt" },
+	{ "rx_dstar", "dstar:rpt dstarrx:M0XYZ,5100,CQCQCQ,Hello_from_the_park" },
+	{ "home_dstar_lastheard", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello_from_the_park dstarend wait:12000" },
+	{ "dstar", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello_from_the_park dstarend ctx" },
+	{ "home_dstar_echo", "dstar ctx 4" },
+	{ "home_dstar_link", "dstar ctx 5 7 7 7 3 3 wait:1200 3 3 3 long:0 long:3 long:0 2 2 2 ok" },
+	{ "dstar_link_entry", "dstar ctx 5 7 7 7 3 3 wait:1200 3 3 3 long:0 long:3 long:0" },
+	{ "tx_dstar", "dstar:rpt pttdown" },
+	{ "tx_dstar_nocall", "dstar:nocall pttdown" },
+	{ "home_dstar_noram", "dstar:noram" },
+#endif
 	{ "banner_message", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
 	{ "banner_call_alert", "alert:9995678" },
 	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },

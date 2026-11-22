@@ -137,6 +137,11 @@ typedef struct {
 	// FM receive audio half ready (SYS_INTERP bit 14, modem-hrc7000.md 8.5): called from the system interrupt whether
 	// or not the engine runs, NULL for none. Set it after hrc7000_dmr_init
 	void (*fm_rx)(void);
+#if defined(CONFIG_FM_FLAT) && CONFIG_FM_FLAT
+	// FM transmit audio half wanted (SYS_INTERP bit 15, modem-hrc7000.md 8.6), the same way. Only in builds with a
+	// flat transmit path, so the others keep their RAM
+	void (*fm_tx)(void);
+#endif
 	bool lcss;		// LCSS on voice bursts B-E (user guide); false = 0 on every burst like the 2026 builds
 	dmr_config_t cfg;
 	int8_t cc_filter;	// -1 any (LOCAL_CC cc_opt 1)

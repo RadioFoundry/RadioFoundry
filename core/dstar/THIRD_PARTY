@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Third-party code in the D-STAR voice codec (dstar_ambe_quant.c, dstar_ambe_tables.inc, dstar_ambe_frame.c,
+# dstar_mbe_synth.c, dstar_mbe_tables.inc), shown on Settings > Advanced > About (tools/gen_about.py) in a build with
+# CONFIG_DSTAR. The notice itself: LICENSES/ISC.txt
+mbelib (D-STAR codec): ISC

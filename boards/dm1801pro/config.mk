@@ -24,6 +24,9 @@ BOARD_UNSUPPORTED += GPS_SKY	# needs the GPS receiver (above)
 # What the hardware can do but this radio's driver or glue doesn't yet, the same way: off by default, and off in ci's
 # maximal configuration too
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# the probe's audio tap (board.audio_tap) isn't written for this radio
+BOARD_NOT_WRITTEN += DSTAR	# no flat FM paths in board.audio_tap (docs/spec/dstar-modem.md 1.1)
+BOARD_NOT_WRITTEN += YSF	# the same flat FM paths Fusion runs on (docs/spec/ysf-modem.md 1.1)
+BOARD_NOT_WRITTEN += YSF_VW	# Voice FR rides on Fusion, not written here either
 
 # Chinese needs a hand-tuned CJK bitmap face shorter than 16 px and a layout that gives its lines that glyph's
 # height: the generated 16x16 face is clipped by the 5x8 words here (core/ui/gfx.c, docs/spec/ui.md 2.5,

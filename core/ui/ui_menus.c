@@ -56,6 +56,7 @@
 
 extern const ui_scr_def_t ui_find_screen;
 extern const ui_scr_def_t ui_aprs_screen, ui_aprs_heard_screen, ui_aprs_station_screen;	// ui_aprs.c
+extern const ui_scr_def_t ui_dstar_screen;	// ui_dstar.c
 #if CONFIG_POSITION
 extern const ui_scr_def_t ui_fixed_pos_screen;	// ui_position.c
 #endif
@@ -1311,6 +1312,17 @@ static bool ced_is_nxdn(const channel_t *ch)
 {
 	return CONFIG_NXDN && (ch->kind == CODEPLUG_KIND_NXDN || (ch->kind == CODEPLUG_KIND_NONE && ch->mode == RADIO_MODE_NXDN));
 }
+
+// A channel of a kind that runs its own voice mode over the stand-in record (D-STAR, Fusion: channel-modes.md 2.3):
+// the record says DMR, receive only, but the radio core runs the kind's mode and takes transmit allowed from the tag.
+// None of the record's DMR fields (contact, color code, slot, group list, ID) or FM fields (width, tones, which the
+// mode sets itself) are its own, so the editor neither shows nor checks them. P25, NXDN and the trunked kinds use the
+// record's contact and ID, so they are not among these
+static bool ced_own_mode(const channel_t *ch)
+{
+	return ch->kind != CODEPLUG_KIND_NONE && ch->kind != CODEPLUG_KIND_P25 && ch->kind != CODEPLUG_KIND_NXDN &&
+	       !codeplug_kind_trunked(ch->kind);
+}
 #endif
 
 // A trunked channel whose system isn't set up (dmr-trunking-codeplug.md 4) is locked out: selecting it says why
@@ -2095,7 +2107,7 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 }
 #endif
 
-#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_SATELLITE_TLE
+#if CONFIG_CHANNEL_EDIT || CONFIG_APRS_AFSK || CONFIG_DMR_SMS || CONFIG_DSTAR || CONFIG_SATELLITE_TLE
 // ======================= Text entry: keypad letters (ui.md 2.1) =======================
 // Phone keypad: in ABC / abc, 2-9 cycle their letters, the digit, then the letters in the other case (ABC: A B C 2 a b
 // c); 1 cycles punctuation and 0 a space, 0 and a few signs. The same key within 1 s takes the next one, another key
@@ -2109,7 +2121,9 @@ uint8_t ui_menus_zones_moved(ui_frame_t *stack, uint8_t sp, uint32_t from, uint3
 static char *text_target;
 static void (*text_done)(void);		// called once the text is kept (NULL: none)
 static uint8_t text_max;
-static char text_name_buf[CODEPLUG_NAME_LEN + 1];
+// A name, or a field of D-STAR's up to its 20-character message
+#define TEXT_FIELD_MAX	(CODEPLUG_NAME_LEN > 20 ? CODEPLUG_NAME_LEN : 20)
+static char text_name_buf[TEXT_FIELD_MAX + 1];
 static char *text_buf;
 static uint8_t text_len;
 static int8_t text_key = -1;		// the key that typed the last character, -1 = none to cycle
@@ -2132,23 +2146,29 @@ static void text_open(char *target, uint8_t max, uint8_t screen)
 	text_target = target;
 	text_done = NULL;
 	text_buf = screen == SCR_MESSAGE_TEXT ? message_buffer : text_name_buf;
+	// A D-STAR field (ui_text_field) may be longer than a name: the slow data message is 20 characters
+	uint8_t cap = screen == SCR_DSTAR_TEXT ? TEXT_FIELD_MAX : CODEPLUG_NAME_LEN;
+	text_max = screen == SCR_MESSAGE_TEXT ? max : (max < cap ? max : cap);
+	// D-STAR's fields are callsigns (a reflector, MY, the suffix) but for the message, the one longer than 8
+	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE : screen == SCR_APRS_TO ? TEXT_CALLSIGN :
+		screen == SCR_DSTAR_TEXT ? (max > 8 ? TEXT_MESSAGE : TEXT_CALLSIGN) : TEXT_NAME;
 #if CONFIG_SATELLITE_TLE
-	if (screen == SCR_SATELLITE_TEXT)
+	if (screen == SCR_SATELLITE_TEXT) {
 		text_buf = target;
-	text_max = screen == SCR_SATELLITE_TEXT ? max :
-		(screen == SCR_MESSAGE_TEXT ? max : (max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN));
-#else
-	text_max = screen == SCR_MESSAGE_TEXT ? max :
-		(max < CODEPLUG_NAME_LEN ? max : CODEPLUG_NAME_LEN);
-#endif
-	text_prefix = screen == SCR_MESSAGE_TEXT ? TEXT_MESSAGE :
-		screen == SCR_APRS_TO ? TEXT_CALLSIGN : TEXT_NAME;
-#if CONFIG_SATELLITE_TLE
-	if (screen == SCR_SATELLITE_TEXT)
+		text_max = max;
 		text_prefix = TEXT_SATELLITE;
+	}
 #endif
 	ui_push(screen, 0);
 }
+
+#if CONFIG_DSTAR
+void ui_text_field(char *target, uint8_t max, void (*done)(void))
+{
+	text_open(target, max, SCR_DSTAR_TEXT);
+	text_done = done;
+}
+#endif
 
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 static void message_text_kept(void)
@@ -2377,6 +2397,13 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	return false;
 }
+
+#if CONFIG_DSTAR
+// D-STAR's text fields (ui_text_field: a reflector to link, MY, the suffix, the message) on the shared editor
+static const ui_scr_def_t dstar_text_screen = {
+	.name = "dstar_text", .flags = 0, .key = text_key_fn, .enter = text_enter, .draw = text_draw,
+};
+#endif
 
 #if CONFIG_CHANNEL_EDIT
 static const ui_scr_def_t text_screen = {
@@ -2886,7 +2913,8 @@ static void ced_build(void)
 {
 	bool listen = radio_listen_band(ced_ch.rx_hz);
 	bool p25 = ced_is_p25(&ced_ch), nxdn = ced_is_nxdn(&ced_ch), air = p25 || nxdn;
-	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air;
+	bool own = ced_own_mode(&ced_ch);
+	bool dmr = CONFIG_DMR && ced_ch.mode == RADIO_MODE_DMR && !listen && !air && !own;
 	bool edit = CONFIG_CHANNEL_EDIT;
 	bool fresh = false, changed = false, into = false;
 #if CONFIG_CHANNEL_EDIT
@@ -2907,7 +2935,7 @@ static void ced_build(void)
 				       (r == CE_CODE && !into) || (r == CE_RATE && nxdn && !into));
 		if (r == CE_CODE || r == CE_RATE ? !air_row : air && (fm_only || (dmr_only && !air_row)))
 			continue;
-		if (!air_row && ((fm_only && dmr) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
+		if (!air_row && ((fm_only && (dmr || own)) || (tone && listen) || (dmr_only && !dmr) || (r == CE_MODE && !CONFIG_DMR)))
 			continue;
 		// The radio core skips the burst on a board with no TX tone, so no row for it there (a host board
 		// without a radio keeps the row)
@@ -3308,7 +3336,8 @@ static const char *ced_problem(void)
 		return TR(CHAN_WHY_RX_ONLY_BAND_SET_FM, "Receive only band: set FM");
 	// The contact is whom PTT calls, so a channel that never transmits needs none
 	// (P25 and NXDN: none is talk group 1)
-	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c))
+	if (CONFIG_DMR && c->mode == RADIO_MODE_DMR && !c->rx_only && c->contact == 0 && !ced_is_p25(c) && !ced_is_nxdn(c) &&
+	    !ced_own_mode(c))
 		return TR(CHAN_WHY_PICK_TX_CONTACT, "Pick a TX contact first");
 #if CONFIG_NXDN
 	// A DMR channel's own ID kept when the Mode row made it NXDN: past NXDN's range, as the ID row refuses it
@@ -8174,6 +8203,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_DMR_SMS || CONFIG_APRS_AFSK
 	[SCR_MESSAGE_TEXT] = &message_text_screen,
+#endif
+#if CONFIG_DSTAR
+	[SCR_DSTAR] = &ui_dstar_screen, [SCR_DSTAR_TEXT] = &dstar_text_screen,
 #endif
 #if CONFIG_CHANNEL_LIST
 	[SCR_CHANNELS] = &chlist_screen, [SCR_CHANNEL] = &chinfo_screen,

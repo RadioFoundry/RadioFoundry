@@ -70,6 +70,78 @@
     "DMR"
    ]
   },
+  "home_ysf": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_rx": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_rx_vw": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_rx_vw_late": {
+   "group": "home",
+   "needs": [
+    "YSF_VW"
+   ]
+  },
+  "home_ysf_tx": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_ysf_nocall": {
+   "group": "home",
+   "needs": [
+    "YSF"
+   ]
+  },
+  "home_dstar": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_repeater": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_lastheard": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_echo": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_link": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "home_dstar_noram": {
+   "group": "home",
+   "needs": [
+    "DSTAR"
+   ]
+  },
   "home_vfo": {
    "group": "home",
    "needs": [
@@ -220,6 +292,18 @@
     "DTMF"
    ]
   },
+  "tx_dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "tx_dstar_nocall": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
   "rx_group": {
    "group": "calls",
    "needs": [
@@ -230,6 +314,12 @@
    "group": "calls",
    "needs": [
     "DMR"
+   ]
+  },
+  "rx_dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
    ]
   },
   "incoming-call": {
@@ -254,6 +344,18 @@
    "group": "calls",
    "needs": [
     "VFO_DMR"
+   ]
+  },
+  "dstar": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
+   ]
+  },
+  "dstar_link_entry": {
+   "group": "calls",
+   "needs": [
+    "DSTAR"
    ]
   },
   "recent": {

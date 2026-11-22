@@ -260,6 +260,20 @@ static const flow_t flows[] = {
 	// The status strip's USB word (#58): IP as a network adapter, with the link arrows once the computer has it up,
 	// none on serial
 	{ "1 USB network: IP on the strip, no link arrows", "usbnet:on", "", "shows=IP nomarkafter=IP", 0, false },
+#if CONFIG_YSF
+	// Fusion (docs/spec/ysf-modem.md 5): Home names the destination; a transmission takes the screen with its caller;
+	// VW is shown and said not to play; PTT shows what goes out
+	{ "1 Fusion channel: the destination", "ysf", "", "screen=home shows=ALL", 0, false },
+	{ "1 Fusion caller", "ysf ysfrx:M0ABC", "", "screen=home shows=M0ABC shows=DN", 0, false },
+	{ "1 Fusion no callsign", "ysfnocall", "", "screen=home shows=No_callsign_set", 0, false },
+	{ "1 Fusion VW joined late", "ysf ysfrx:-,vw", "", "screen=home shows=Caller_unknown shows=to_unknown hides=to_?", 0, false },
+	{ "1 Fusion VW late, radio ID", "ysf ysfrx:-,vw,0,E0abc", "", "screen=home shows=ID_E0abc hides=Caller_unknown", 0, false },
+	{ "1 Fusion DN late, radio ID", "ysf ysfrx:-,dn,0,E0abc", "", "screen=home shows=ID_E0abc", 0, false },
+	{ "1 Fusion transmit", "ysf pttdown", "", "screen=home shows=G4XYZ_>_ALL shows=DN", 0, false },
+	{ "1 Fusion VW played", "ysf ysfrx:JA1YKX,vw,10", "", "screen=home shows=JA1YKX shows=VW hides=not_played", 0, false },
+	{ "1 Fusion transmit in VW", "ysf ysfvw pttdown", "", "screen=home shows=G4XYZ_>_ALL shows=VW", 0, false },
+	{ "1 Fusion VW channel's chip", "ysf ysfvw", "", "screen=home shows=VW", 0, false },
+#endif
 	{ "1 USB network brought up by the PC: the link arrows", "usbnet:up", "", "shows=IP markafter=IP", 0, false },
 	{ "1 USB serial again: no word", "usbnet:on", "usbnet:off", "hides=IP", 0, false },
 	{ "1 USB network: the PC brings the link up, the arrows appear", "usbnet:on", "usbnet:up", "markafter=IP", 0, false },
@@ -651,6 +665,13 @@ static const flow_t flows[] = {
 	// The contact is whom PTT calls: an RX only channel saves without one (row 6 is RX only, the contact row stays 9)
 	{ "E DMR RX only saves without a TX contact", "ok 5 ok down down down down down down", "ok down down down ok up ok long:ok",
 	  "toast=Saved_channel_3 writes=1", 8, true },
+	// D-STAR and Fusion channels call by the mode's own destination, never a DMR contact: their record is the
+	// receive-only DMR stand-in (channel-modes.md 2.3), and a refusal for its empty contact left Save only with RX only
+	// on, so such a channel could never be made to transmit again on the radio. RX only on, saved, then off, saved
+	{ "E Fusion channel saves TX without a contact", "chkind:3,ysf ok 5 ok down down down down down down",
+	  "ok long:ok ok long:ok", "toast=Saved_channel_3 writes=2 shows=YSF hides=TX_contact hides=Color_code", 4, true },
+	{ "E D-STAR channel saves TX without a contact", "chkind:3,dstar ok 5 ok down down down down down down",
+	  "ok long:ok ok long:ok", "toast=Saved_channel_3 writes=2 shows=DV hides=TX_contact hides=Timeslot", 4, true },
 	// A radio with no transmit band ("rxonly") keeps a DMR channel that is RX only, as any radio does in a receive-only
 	// band. Channel 3 is DMR on 453.625, its RX only row is 6
 	{ "E no transmit band: DMR needs RX only", "rxonly ok 5 ok", "long:ok down down down down down down",
@@ -922,6 +943,29 @@ static const flow_t flows[] = {
 	{ "S USB network off", "ok 6 4 ok", "ok 6 4 ok", "usbnet=0 toast=USB_is_a_serial", 4, false },
 	{ "S message failed text", "", "", "screen=home", 0, false },
 	// APRS (docs/spec/aprs.md 10): Tools 9, one row each
+#if CONFIG_DSTAR
+	// D-STAR (docs/spec/ui.md 2.6, task-flows.md 28): # on Home opens its page; the shortcuts only set UR and go Home,
+	// where the talk line says what the next over does
+	{ "D D-STAR page from Home", "dstar", "ctx", "screen=dstar focus=Send_to", 1, false },
+	{ "D talk target key opens it too", "dstar", "long:ctx", "screen=dstar", 1, false },
+	{ "D echo test in two presses", "dstar", "ctx 4", "screen=home shows=Echo_test toast=Echo:_talk", 2, false },
+	{ "D echo goes out once", "dstar ctx 4", "ptt", "shows=CQCQCQ hides=Echo_test", 1, false },
+	{ "D unlink in two presses", "dstar", "ctx 6", "screen=home shows=Unlink", 2, false },
+	{ "D link a reflector", "dstar", "ctx 5 7 7 7 3 3 wait:1200 3 3 3 long:0 long:3 long:0 2 2 2 ok",
+	  "screen=home shows=Link_REF030_C", 19, false },
+	{ "D Back on Home: the channel's UR again", "dstar ctx 4", "back", "shows=CQCQCQ toast=Back_to_the", 1, false },
+	{ "D caller and message shown while receiving", "dstar", "dstarrx:M0XYZ,5100,CQCQCQ,Hello_there",
+	  "shows=M0XYZ shows=Hello_there shows=/5100", 0, false },
+	{ "D last caller on Home after the over", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello_there", "dstarend",
+	  "screen=home shows=M0XYZ/5100", 0, false },
+	{ "D call the last caller", "dstar dstarrx:M0XYZ,5100,CQCQCQ,Hello dstarend", "ctx 3",
+	  "screen=home shows=M0XYZ_for_now", 2, false },
+	{ "D no callsign: PTT says what to do", "dstar:nocall", "pttdown", "shows=No_callsign_set", 1, false },
+	{ "D my call typed on the radio goes out", "dstar", "ctx 8 6 long:0 2 wait:1200 2 2 wait:1200 9 9 9 9 ok",
+	  "screen=dstar focus=My_call toast=Saved", 12, false },
+	{ "D the typed call is what PTT sends", "dstar ctx 8 6 long:0 2 wait:1200 2 2 wait:1200 9 9 9 9 ok long:back",
+	  "pttdown", "shows=M0ABZ", 1, false },
+#endif
 	{ "A APRS page", "", "ok 6 8", "screen=aprs", 3, false },
 #if CONFIG_DMR_TRUNK
 	// Trunked channels (dmr-trunking.md 12.4): "t3" makes channel 3 a channel of "County" and 5 one of "Metro", not set up

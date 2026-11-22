@@ -46,7 +46,8 @@
 // Task layout (see core/app/app.c for the whole picture)
 #define RADIO_TASK_PRIORITY	4
 #if CONFIG_DMR
-#define RADIO_TASK_STACK	776	// words: the DMR call stack and the AMBE FEC run here (the deepest maximal build: 2744 B + margin)
+#define RADIO_TASK_STACK	780	// words: the DMR call stack and the AMBE FEC run here (the deepest maximal build: 2784 B + margin;
+					// 4 more words since settings_t grew by D-STAR's 40 bytes)
 #else
 #define RADIO_TASK_STACK	512	// words
 #endif
@@ -756,6 +757,21 @@ static bool bench_tx(bool on, uint16_t max_ms)
 }
 
 static const debuglink_air_core_t bench_core = { bench_enter, bench_leave, bench_tx };
+#endif
+
+#if CONFIG_DSTAR
+// The reflector's seven characters ride in the request itself: three beside the mode, four in the second word
+void radio_req_dstar_ur(uint8_t mode, const char *ref)
+{
+	uint8_t r[7] = { 0 };
+	for (unsigned i = 0; ref != NULL && i < sizeof r && ref[i] != '\0'; i++) {
+		r[i] = (uint8_t)ref[i];
+	}
+	uint32_t a = mode | (uint32_t)r[0] << 8 | (uint32_t)r[1] << 16 | (uint32_t)r[2] << 24;
+	uint32_t b = r[3] | (uint32_t)r[4] << 8 | (uint32_t)r[5] << 16 | (uint32_t)r[6] << 24;
+	post_pair(RREQ_DSTAR_UR, (int32_t)a, b, pdMS_TO_TICKS(20));
+}
+void radio_req_dstar_reload(void) { post(RREQ_DSTAR_RELOAD, 0, pdMS_TO_TICKS(20)); }
 #endif
 
 void radio_req_scan(uint8_t cmd) { post(RREQ_SCAN, cmd, 0); }

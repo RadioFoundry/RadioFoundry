@@ -139,6 +139,22 @@
 #ifndef CONFIG_HOTSPOT_SPLIT
 #define CONFIG_HOTSPOT_SPLIT		0
 #endif
+// D-STAR DV (core/dstar, radio_dstar.c): on here like the rest; in firmware only where a board turns it on
+#ifndef CONFIG_DSTAR
+#define CONFIG_DSTAR			CONFIG_FM
+#endif
+// Yaesu System Fusion (core/ysf): on here like the rest; in firmware only where a board's glue runs it
+#ifndef CONFIG_YSF
+#define CONFIG_YSF			CONFIG_DMR
+#endif
+// Fusion's Voice FR (VW) with the full-rate codec (core/mbe, ysf_vw.c, radio_ysf_vw.c): with Fusion here too
+#ifndef CONFIG_YSF_VW
+#define CONFIG_YSF_VW			CONFIG_YSF
+#endif
+// The flat FM paths' board glue (hal_audio_tap.h), shared by the data modems with a waveform of their own
+#ifndef CONFIG_FM_FLAT
+#define CONFIG_FM_FLAT			(CONFIG_DSTAR || CONFIG_YSF)
+#endif
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
@@ -355,7 +371,7 @@
 #define CONFIG_AIR_RAW			0
 #endif
 #ifndef CONFIG_IMBE
-#define CONFIG_IMBE			CONFIG_P25
+#define CONFIG_IMBE			(CONFIG_P25 || CONFIG_YSF_VW)
 #endif
 #ifndef CONFIG_MBE
 #define CONFIG_MBE			CONFIG_IMBE
@@ -469,6 +485,15 @@
 #endif
 #if (CONFIG_SFR_DUALPATH_RX || CONFIG_SFR_CWID) && !CONFIG_SFR
 #error "CONFIG_SFR_DUALPATH_RX and CONFIG_SFR_CWID need CONFIG_SFR"
+#endif
+#if CONFIG_DSTAR && !CONFIG_FM
+#error "CONFIG_DSTAR needs CONFIG_FM"
+#endif
+#if CONFIG_YSF && !CONFIG_DMR
+#error "CONFIG_YSF needs CONFIG_DMR"
+#endif
+#if CONFIG_YSF_VW && !CONFIG_YSF
+#error "CONFIG_YSF_VW needs CONFIG_YSF"
 #endif
 #if CONFIG_HOTSPOT_SPLIT && !CONFIG_HOTSPOT
 #error "CONFIG_HOTSPOT_SPLIT needs CONFIG_HOTSPOT"

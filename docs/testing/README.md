@@ -14,6 +14,8 @@ repeatable and skips cleanly what it can't reach. What each level is for and whe
 | Hardware in the loop, on air | the radio and the SDR bench | the same with opt-in flags | `tests/hil/README.md`, section 3 here |
 | Manual bench cases | the bench board, a person at the radio | `tools/bench/bench_line.py HOST run bench_tx ARGS` | `docs/testing/dmr-bench.md` |
 | DM-32UV first hardware test | a DM-32UV on its programming cable, a dummy load | step by step | `docs/testing/dm32-bringup.md` |
+| D-STAR first radio session | a DM-32UV (multimode build), a dummy load, an RTL-SDR, Icom D-STAR radios | `tools/dstar_bench.py` | `docs/testing/dstar-bench.md` |
+| Fusion (YSF) first radio tests | a DM-32UV multimode build, an RTL-SDR, a transmitting SDR, then a visiting Yaesu radio | `tools/ysf_bench.py` | `docs/testing/ysf-bench.md` |
 | MD-380 first hardware test | an MD-380 / MD-390 / RT3 on USB, a dummy load, an SDR or signal generator | step by step | `docs/testing/md380-bringup.md` |
 | MD-9600 first hardware test | an MD-9600 / RT90 on USB, DC supply, a dummy load, a signal source | step by step | `docs/testing/md9600-bringup.md` |
 

@@ -3,6 +3,7 @@
 // DMR voice glue (core/dmr/ambe/ambeVoice.c) against a fake audio driver and a fake vocoder
 #include <stdio.h>
 #include <string.h>
+#include "audio/miclimit/miclimit.h"
 
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
@@ -32,8 +33,11 @@ static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .spea
 static int resets, decodes;
 static bool fake_present(void) { return true; }
 static void fake_reset(void) { resets++; }
+static int enc_peak;	// the largest sample the encoder was given (after the mic gain)
 static void fake_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
+	for (int i = 0; i < VOCODER_FRAME_SAMPLES; i++)
+		enc_peak = pcm[i] > enc_peak ? pcm[i] : -pcm[i] > enc_peak ? -pcm[i] : enc_peak;
 	for (int i = 0; i < VOCODER_BITS; i++)
 		bits[i] = (uint8_t)(pcm[i] & 1);
 }
@@ -704,6 +708,52 @@ static void testTxTone(void)
 	ambeVoiceInit(&audio, &vocoder);
 }
 
+// One transmission of `blocks` mic blocks, a square wave of +-amp: the largest sample the encoder got
+static int gainOver(int16_t amp, int blocks, ambe_voice_stats_t *st)
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t out[9];
+	src->begin(src->ctx);
+	enc_peak = 0;
+	for (int n = 0; n < blocks; n++) {
+		for (int i = 0; i < 160; i++)
+			mic[i] = (int16_t)((i / 10) & 1 ? amp : -amp);
+		block();
+		while (src->next(out, src->ctx))
+			;
+	}
+	ambeVoiceGetStats(st);
+	src->end(src->ctx);
+	block();
+	return enc_peak;
+}
+
+// The mic gain (radio/mic_gain.h pushes it as Q8): a quiet mic lifted 12 dB (one radio's DN and DMR came out 13 dB faint without it), a shout held under the
+// limiter's ceiling where the old scaling clipped at full scale, unity passing the samples as delivered
+static void testMicGain(void)
+{
+	ambe_voice_stats_t st;
+	int p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 && st.tx_enc_peak == 1000 && st.tx_mic_low_q8 == MICLIMIT_UNITY, "unity: %d %u %u", p,
+	      st.tx_enc_peak, st.tx_mic_low_q8);
+
+	ambeVoiceSetMicGainQ8(miclimit_db_q8(12));
+	p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 * 1019 / 256 && st.tx_enc_peak == (uint32_t)p && st.tx_mic_peak == 1000, "+12 dB: %d", p);
+	CHECK(st.tx_mic_low_q8 == miclimit_db_q8(12), "the limiter idle: lowest %u", st.tx_mic_low_q8);
+
+	p = gainOver(20000, 3, &st);
+	CHECK(p <= MICLIMIT_CEILING && p > MICLIMIT_CEILING - 300, "a shout under the ceiling: %d", p);
+	CHECK(st.tx_mic_peak == 20000 && miclimit_q8_db(st.tx_mic_low_q8) == 3, "cut to %d dB",
+	      miclimit_q8_db(st.tx_mic_low_q8));
+
+	// A change between transmissions is the next one's gain
+	ambeVoiceSetMicGainQ8(miclimit_db_q8(-6));
+	p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 * 128 / 256, "-6 dB: %d", p);
+	ambeVoiceSetMicGainQ8(MICLIMIT_UNITY);
+}
+
 // A beep's own stream left the speaker route on, and DMR voice took the running stream over (the first key-up after
 // power-on or an FM channel, #705): the voice stream's first block gives the route back, though its own state says off
 static void testRouteTakeover(void)
@@ -737,6 +787,7 @@ int main(void)
 	testEncodeOptions();
 	testTxTone();
 	testRepeats();
+	testMicGain();
 #if CONFIG_VOICE_CAPTURE
 	testCapture();
 #endif

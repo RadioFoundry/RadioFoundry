@@ -58,6 +58,8 @@ enum {
 	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
+	DL_VIEW_DSTAR,		// D-STAR: heard, PTT's header, voice path counters, calibration (debuglink_dstar.c)
+	DL_VIEW_YSF,		// Fusion: the channel, the transmission heard, the receiver's counters (debuglink_view_ysf.c)
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -137,6 +139,11 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 void debuglink_view_dmr_ext(dl_text_t *t);
 // The roam section (debuglink_view_roam.c); built without CONFIG_DMR_ROAMING it says "roam.built=0"
 void debuglink_view_roam(const radio_view_t *v, dl_text_t *t);
+// D-STAR (debuglink_dstar.c): the dstar section and the D-STAR command; without CONFIG_DSTAR "dstar.built=0" / unavailable
+void debuglink_view_dstar(const radio_view_t *v, dl_text_t *t);
+size_t debuglink_cmd_dstar(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// Fusion's section, "ysf" (debuglink_view_ysf.c); built without CONFIG_YSF it says "ysf.built=0"
+void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t);
 // APRS (debuglink_aprs.c): the aprs section and the APRS command; without CONFIG_APRS "aprs.built=0" / unavailable
 void debuglink_view_aprs(uint8_t part, dl_text_t *t);	// part 0: state and counters, 1: settings
 size_t debuglink_cmd_aprs(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);

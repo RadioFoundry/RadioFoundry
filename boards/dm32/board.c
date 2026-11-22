@@ -133,6 +133,9 @@ const board_t board = {
 #if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
+#if CONFIG_FM_FLAT
+	.audio_tap = &dm32_audio_tap,	// the flat paths for D-STAR and Fusion (flat_dm32.c); the default image has none
+#endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
 #endif

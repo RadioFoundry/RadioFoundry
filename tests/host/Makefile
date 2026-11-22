@@ -294,7 +294,9 @@ clean:
 .PHONY: all run clean
 
 # The radio core's state machine and the input gesture engine, against a fake board and codeplug (no RTOS)
-CORE_HAL := -I$(ROOT)/hal -Wshadow
+# D-STAR and Fusion channels (core/radio/radio_dstar.c, radio_ysf.c) are radioDstarTest's and ysfRadioTest's, each
+# against a board with flat paths: these build the radio core without them
+CORE_HAL := -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=0 -DCONFIG_YSF=0
 TESTS   += radioCoreTest inputTest switchFollowTest quadratureTest serialmicTest
 
 # A Tier III trunked system on the radio (radio_sm.c's trunk block): the engine and what it reads PDUs with
@@ -479,6 +481,10 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
+# The mic gain and peak limiter before a vocoder's encoder (drivers/audio/miclimit): DMR and Fusion DN
+TESTS   += miclimitTest
+miclimitTest: miclimitTest.c $(ROOT)/drivers/audio/miclimit/miclimit.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclimitTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -698,7 +704,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_dstar.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
@@ -795,7 +801,8 @@ ambeVoiceCaptureTest: ambeVoiceTest.c $(CORE)/dmr/ambe/ambeVoice.c $(CORE)/dmr/a
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest
-micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
+micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
+             $(ROOT)/drivers/audio/miclimit/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
@@ -880,12 +887,13 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
+run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest miclimitTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./ambeVoiceCaptureTest
 	./sigToneTest
 	./micGainTest
+	./miclimitTest
 	./refTrimTest
 	./paKeyupTest
 	./paSweepTest
@@ -1212,6 +1220,12 @@ hrc7000BsTest: hrc7000BsTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal
 hrc7000DmrTestSplit: hrc7000DmrTest.c $(HRC7BS) $(wildcard $(HRC7)/*.h) $(ROOT)/hal/hal_dmr_modem.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_HOTSPOT_SPLIT=1 -o $@ hrc7000DmrTest.c $(HRC7BS)
 
+# The HR_C7000 flat FM paths: the TX RAM half writer, the FM TX interrupt's dispatch (built with its hook) and the
+# flat route's bits (modem-hrc7000.md 8.6)
+TESTS   += hrc7000FmTxTest
+hrc7000FmTxTest: hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(HRC7)/hrc7000_dmr.h $(HRC7)/hrc7000.h $(ROOT)/hal/hal_dmr_modem.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DSTAR=1 -DCONFIG_FM_FLAT=1 -o $@ hrc7000FmTxTest.c $(HRC7)/hrc7000_dmr.c $(HRC7)/hrc7000_cach.c $(HRC7)/hrc7000.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
+
 # The RDA5807M broadcast receiver driver and the bit-banged I2C master, on a simulated chip (airband-and-broadcast.md 4)
 TESTS   += rda5807mTest
 RDA     := $(ROOT)/drivers/bcast/rda5807m
@@ -1231,9 +1245,10 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 
 run: run-drivers
 run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
+             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit hrc7000FmTxTest
 	./hrc7000BsTest
 	./hrc7000DmrTestSplit
+	./hrc7000FmTxTest
 	./lis3dhTest
 	./rda5807mTest
 	./fd6818Test
@@ -1559,8 +1574,65 @@ run: run-nxdncp
 run-nxdncp: nxdnCodeplugTest
 	./nxdnCodeplugTest
 .PHONY: run-nxdncp
+# D-STAR in the codeplug (core/dstar/dstar_codeplug.c): the shared vectors, the field filter, a channel's fields from
+# its tag, the radio-wide record, the editor's writer; built with CONFIG_DSTAR off as well, where only the registry and
+# the parked channel are checked
+TESTS   += dstarCodeplugTest dstarCodeplugOffTest
+DSTARCP := $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/dstar/dstar_codeplug.c
+
+dstarCodeplugTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+dstarCodeplugOffTest: dstarCodeplugTest.c $(DSTARCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/dstar/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=0 -o $@ dstarCodeplugTest.c $(DSTARCP)
+
+run: run-dstarcp
+run-dstarcp: dstarCodeplugTest dstarCodeplugOffTest
+	./dstarCodeplugTest
+	./dstarCodeplugOffTest
+.PHONY: run-dstarcp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
+# Yaesu System Fusion in the codeplug (core/ysf/ysf_codeplug.c, docs/spec/ysf-codeplug.md): the shared vectors, the
+# filter, a channel's fields from its tag, the radio-wide record, the writer; with the switch off, the kind parked
+TESTS   += ysfCodeplugTest ysfCodeplugOffTest
+YSFCP   := $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/ysf/ysf_codeplug.c
+
+ysfCodeplugTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfCodeplugTest.c $(YSFCP)
+
+ysfCodeplugOffTest: ysfCodeplugTest.c $(YSFCP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/ysf/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=0 -o $@ ysfCodeplugTest.c $(YSFCP)
+
+# Fusion in the radio core (core/radio/radio_ysf.c): a fake board's flat paths and vocoder, the real codeplug. The module
+# is built through ysfRadioSeam.c, which lets the test run the radio task in the middle of a debug link read
+TESTS   += ysfRadioTest
+YSFRT   := $(YSFCP) ysfRadioSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/ysf/ysf_fec.c \
+           $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c \
+           $(CORE)/dmr/ambe/ambeFec.c $(CORE)/radio/radio_ysf_vw.c $(CORE)/radio/mic_gain.c $(MBE)
+
+ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfRadioTest.c $(YSFRT) -lm
+
+# Fusion's Voice FR in the radio core (radio_ysf_vw.c): ysfRadioTest's fake board, VW received, mixed with DN, sent
+TESTS   += ysfVwRadioTest
+ysfVwRadioTest: ysfVwRadioTest.c ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -DHAL_VOCODER_LEND_BYTES=0x1C00 -o $@ ysfVwRadioTest.c $(YSFRT) -lm
+
+# The same on a platform whose vocoder lends nothing: VW's codec memory in the mode area (radio_ysf.h)
+TESTS   += ysfVwRadioAreaTest
+ysfVwRadioAreaTest: ysfVwRadioTest.c ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfVwRadioTest.c $(YSFRT) -lm
+
+run: run-ysfcp
+run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest ysfVwRadioTest ysfVwRadioAreaTest
+	./ysfCodeplugTest
+	./ysfCodeplugOffTest
+	./ysfRadioTest
+	./ysfVwRadioTest
+	./ysfVwRadioAreaTest
+.PHONY: run-ysfcp
+
 # rename, delete, a new channel added in one step, the limits
 ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c $(CPEDIT) \
            $(CORE)/settings/settings.c
@@ -1854,6 +1926,121 @@ run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest
+# D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the header coding against tools/dstar_ref.py's vectors, the soft
+# Viterbi decoder, slow data, whole transmissions through the deframer
+TESTS   += dstarTest
+DSTARFR := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c
+
+dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) ../vectors/dstar.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarTest.c $(DSTARFR)
+
+# The GMSK modem on a simulated radio link (noise, offset, clock error, high-passed paths) and the engine
+TESTS   += dstarModemTest
+DSTARMD := $(DSTARFR) $(CORE)/dstar/dstar_gmsk.c $(CORE)/dstar/dstar_engine.c
+
+dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarModemTest.c $(DSTARMD) -lm
+
+# The software voice codec (core/dstar/dstar_codec.c and its parts, docs/spec/dstar-codec.md): the quantizer against a
+# reference decoder, analysis and synthesis on synthetic signals, the frame FEC and the bit order, repeat and mute; then
+# the speech quality on generated signals and, when ffmpeg has flite, on its four voices (none written to disk)
+TESTS   += dstarCodecTest dstarCodecQualityTest
+DSTARCD := $(DSTARFR) $(CORE)/dstar/dstar_codec.c $(CORE)/dstar/dstar_ambe_frame.c $(CORE)/dstar/dstar_ambe_quant.c \
+	   $(CORE)/dstar/dstar_mbe_analysis.c $(CORE)/dstar/dstar_mbe_level.c $(CORE)/dstar/dstar_mbe_synth.c \
+	   $(CORE)/dstar/dstar_mbe_fixed.c $(CORE)/dmr/ambe/ambeFec.c
+
+dstarCodecTest: dstarCodecTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)/dstar/*.inc) $(CORE)/dmr/ambe/ambeFec.h
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarCodecTest.c $(DSTARCD) -lm
+
+dstarCodecQualityTest: dstarCodecQualityTest.c $(DSTARCD) $(wildcard $(CORE)/dstar/*.h $(CORE)/dstar/*.inc)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarCodecQualityTest.c $(DSTARCD) -lm
+
+# D-STAR in the radio core (core/radio/radio_dstar.c): whole overs through the engine and the codec on a fake board's flat
+# paths and audio stream, UR's choices, no codec RAM, the bench's calibration and test signals, the counters' reset. The
+# module is built through radioDstarSeam.c, which lets the test run the audio task in the middle of the reset
+TESTS   += radioDstarTest
+DSTARRC := $(DSTARCD) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
+	   $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c
+radioDstarTest: radioDstarTest.c $(DSTARRC) $(CORE)/radio/radio_dstar.c $(wildcard $(CORE)/dstar/*.h $(CORE)/radio/radio_dstar.h) \
+                $(ROOT)/hal/hal_audio_tap.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DSTAR=1 -o $@ radioDstarTest.c $(DSTARRC) -lm
+
+run: run-dstar
+run-dstar: dstarTest dstarModemTest dstarCodecTest dstarCodecQualityTest radioDstarTest
+	./dstarTest
+	./dstarModemTest
+	./dstarCodecTest
+	./dstarCodecQualityTest
+	./radioDstarTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/dstar_ref.py --self-test
+	$(PYTHON) -B $(ROOT)/tools/dstar_bench.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/dstar_ref.py vectors | cmp -s - ../vectors/dstar.txt || \
+		{ echo "tests/vectors/dstar.txt differs from tools/dstar_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-dstar
+
+# Yaesu System Fusion (core/ysf, docs/spec/ysf-modem.md): the coding against tools/ysf_ref.py's vectors, the
+# decoders against errors, whole transmissions through the receiver
+TESTS   += ysfTest
+YSFFR   := $(CORE)/ysf/ysf_fec.c $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_vw.c
+
+ysfTest: ysfTest.c $(YSFFR) $(wildcard $(CORE)/ysf/*.h) ../vectors/ysf.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfTest.c $(YSFFR)
+
+# The C4FM modem on a simulated radio link (noise, offset, drift, clock error, levels, high-pass) and the engine
+TESTS   += ysfModemTest
+YSFMD   := $(YSFFR) $(CORE)/ysf/ysf_c4fm.c $(CORE)/ysf/ysf_engine.c
+
+ysfModemTest: ysfModemTest.c $(YSFMD) $(wildcard $(CORE)/ysf/*.h)
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfModemTest.c $(YSFMD) -lm
+
+run: run-ysf
+run-ysf: ysfTest ysfModemTest
+	./ysfTest
+	./ysfModemTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/ysf_ref.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/ysf_ref.py vectors | cmp -s - ../vectors/ysf.txt || \
+		{ echo "tests/vectors/ysf.txt differs from tools/ysf_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-ysf
+
+# Fusion's Voice FR (core/ysf/ysf_vw.c, docs/spec/ysf-modem.md 4.1): the full-rate frame against tools/ysf_vw_ref.py's
+# vectors, its FEC, VW transmissions through the receiver, and the codec (core/mbe) over the air
+TESTS   += ysfVwTest
+ysfVwTest: ysfVwTest.c $(YSFFR) $(MBE) $(wildcard $(CORE)/ysf/*.h $(CORE)/mbe/*.h) ../vectors/ysf-vw.txt
+	$(CC) $(CFLAGS) -I. -Wshadow -o $@ ysfVwTest.c $(YSFFR) $(MBE) -lm
+
+run: run-ysfvw
+run-ysfvw: ysfVwTest
+	./ysfVwTest
+ifneq ($(PYTHON),)
+	$(PYTHON) -B $(ROOT)/tools/ysf_vw_ref.py --self-test
+	@$(PYTHON) -B $(ROOT)/tools/ysf_vw_ref.py vectors | cmp -s - ../vectors/ysf-vw.txt || \
+		{ echo "tests/vectors/ysf-vw.txt differs from tools/ysf_vw_ref.py vectors"; exit 1; }
+endif
+.PHONY: run-ysfvw
+
+# The radio core with D-STAR and Fusion built together, as the multimode firmware has them, and the vocoder lending its
+# 7 KB state block as the HR_C7000's does: radioCoreTest's own tests plus test_mode_switch, which goes back and forth
+# between DMR, D-STAR, Fusion and FM and checks who holds the modes' shared area (core/radio/radio_mode_ram.c) and the
+# vocoder's lent block, and that each mode still works after the others. Every other radio core build has the two
+# modes off (CORE_HAL)
+TESTS   += radioCoreTestModes
+RCMODES := $(sort $(RCORE) $(CORE)/radio/radio_dstar.c $(CORE)/radio/radio_ysf.c $(CORE)/radio/radio_ysf_vw.c $(MBE) \
+           $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(DSTARCD) $(CORE)/dstar/dstar_gmsk.c \
+           $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c $(YSFMD) $(CORE)/ysf/ysf_codeplug.c)
+radioCoreTestModes: $(RCMODES) $(wildcard $(CORE)/radio/*.h $(CORE)/dstar/*.h $(CORE)/ysf/*.h $(CORE)/dmr/call/*.h) \
+                    $(CORE)/dmr/dmrDataService.h $(CORE)/ui/ui_svc.h $(ROOT)/hal/hal_audio_tap.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_DSTAR=1 -DCONFIG_YSF=1 -DHAL_VOCODER_LEND_BYTES=0x1C00 -o $@ $(RCMODES) -lm
+run: run-modes
+run-modes: radioCoreTestModes
+	./radioCoreTestModes
+.PHONY: run-modes
+
+
 run: run-boards
 run-boards::
 .PHONY: run-boards
@@ -1882,6 +2069,7 @@ TESTS   += httpAssetsTestWebctl
 
 gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/boards/$(WEBCTL_BOARD)/$(WEBCTL_BOARD).h
 	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
+
 gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
 gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
 	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null

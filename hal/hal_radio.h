@@ -104,6 +104,12 @@ typedef struct {
 	// start, so any task may call it. NULL = no gain in the board's audio path: DMR then scales the samples before the
 	// vocoder and FM stays as it is
 	void (*mic_gain)(int8_t db);
+	// Optional: dB of gain on the mic PCM before a vocoder's encoder (DMR, Fusion DN), at the setting's middle step,
+	// for a board whose mic reaches the PCM quieter than other radios send it: one radio's Fusion DN speech decoded
+	// 13 dB under a Yaesu radio's (measured off air), so the far end heard it faint. The core applies it with a peak
+	// limiter (radio/mic_gain.h), so a shout isn't clipped by it. 0 = as the board gives it. Not D-STAR's: its encoder
+	// levels its own input. Not P25's yet: its voice path keeps the step alone
+	int8_t mic_pcm_db;
 	// Optional: the reference oscillator trim, parts per billion (the Freq trim setting, -10000..+10000 in steps of
 	// 100; core/radio/ref_trim.h). Positive raises the reference. It moves receive and transmit together, FM and DMR. Any task may call it. The board applies
 	// it now (false) or at the next tune (true: the caller asks the radio task for one, radio_req_retune). NULL = the

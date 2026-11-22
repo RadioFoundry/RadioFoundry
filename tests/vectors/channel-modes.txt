@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md and nxdn-codeplug.md, read by the host tests (C) and the Codeplug
-# Editor's tests (JS). One vector a line, fields split on spaces; "-" is no bytes; numbers are hex without 0x.
+# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md, nxdn-codeplug.md, dstar-codeplug.md and ysf-codeplug.md,
+# read by the host tests (C) and the Codeplug Editor's tests (JS). One vector a line, fields split on spaces; "-" is no
+# bytes; numbers are hex without 0x.
 #
 # check <name check> <name: the rest of the line>
 check 706C
@@ -96,3 +97,65 @@ nxdnunit 3930 3E8 3039
 nxdnunit EFFF 3E8 FFEF
 nxdnunit F0FF 3E8 3E8
 nxdnunit 30 3E8 3E8
+# dstarchan <block> <UR> <RPT1> <RPT2> <flags>: decoding a D-STAR channel's block. The text fields as read, at full
+# length, "_" for a space
+dstarchan - CQCQCQ__ ________ ________ 0
+dstarchan 00000000000000000000000000000000000000000000000000 CQCQCQ__ ________ ________ 0
+dstarchan FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF CQCQCQ__ ________ ________ 0
+dstarchan 43514351435120204E3043414C4C20424E3043414C4C204701 CQCQCQ__ N0CALL_B N0CALL_G 1
+dstarchan 6E3063616C6C20206162316364202062616231636420206700 N0CALL__ AB1CD__B AB1CD__G 0
+dstarchan 41422D432A442E450000000000000000FFFFFFFFFFFFFFFF03 AB_C_D_E ________ ________ 1
+dstarchan 4E30 N0______ ________ ________ 0
+dstarchan 524546303330434C20202020202020202020202020202020FE REF030CL ________ ________ 0
+dstarchan 202020202020205500000000000000000000000000000000 _______U ________ ________ 0
+dstarchan E92F507F41423132000000000000000000000000000000000001AABB _/P_AB12 ________ ________ 0
+#
+# dstarenc <UR> <RPT1> <RPT2> <flags> <block>: encoding fields given as typed ("-" empty, "_" a space; short, lower
+# case, foreign characters, too long)
+dstarenc CQCQCQ - - 0 43514351435120202020202020202020202020202020202000
+dstarenc n0call N0CALL_B N0CALL_G 1 4E3043414C4C20204E3043414C4C20424E3043414C4C204701
+dstarenc ab*c x.y / 3 414220432020202058205920202020202F2020202020202001
+dstarenc REF030CL - - 0 524546303330434C2020202020202020202020202020202000
+dstarenc _______U - - 0 20202020202020552020202020202020202020202020202000
+dstarenc TOOLONGCALL - - FE 544F4F4C4F4E47432020202020202020202020202020202000
+#
+# dstarstation <record> <MY> <suffix> <message>: decoding the radio-wide record, "_" for a space
+dstarstation - ________ ____ ____________________
+dstarstation 0000000000000000000000000000000000000000000000000000000000000000 ________ ____ ____________________
+dstarstation FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF ________ ____ ____________________
+dstarstation 4E3043414C4C20204D4F424C48656C6C6F2066726F6D207468652062656E6368 N0CALL__ MOBL Hello_from_the_bench
+dstarstation 6E3063616C6C2F7061622D314C696E650774776F0000FFFFFFFFFFFFFFFF N0CALL/P AB_1 Line_two____________
+dstarstation 4E30 N0______ ____ ____________________
+dstarstation 4E3043414C4C2020000000006D7367 N0CALL__ ____ msg_________________
+#
+# ysfchan <block> <destination> <TX DG-ID> <RX DG-ID> <flags>: decoding a Fusion channel's block (decimal
+# DG-IDs, the destination as read at full length, "_" for a space)
+ysfchan - ALL_______ 0 0 0
+ysfchan 00000000000000000000000000 ALL_______ 0 0 0
+ysfchan FFFFFFFFFFFFFFFFFFFFFFFFFF ALL_______ 0 0 0
+ysfchan 414C4C20202020202020000000 ALL_______ 0 0 0
+ysfchan 4733585958202020202005000001 G3XYX_____ 5 0 0
+ysfchan 6D30616263FFFFFFFFFF636301 M0ABC_____ 99 99 1
+ysfchan 4E30 N0________ 0 0 0
+ysfchan 2A2A2A2A2A2A2A2A2A2A0A14FE ALL_______ 10 20 2
+ysfchan 414C4C20202020202020000002 ALL_______ 0 0 2
+ysfchan 414C4C20202020202020000003 ALL_______ 0 0 3
+ysfchan 2F502D3000000000000063000301AABB /P-0______ 99 0 3
+#
+# ysfenc <destination> <TX DG-ID> <RX DG-ID> <flags> <block>: encoding fields as typed ("-" empty, "_" a space;
+# lower case, foreign characters, too long, DG-IDs out of range)
+ysfenc ALL 0 0 0 414C4C20202020202020000000
+ysfenc g4xyz 5 0 1 473458595A2020202020050001
+ysfenc a*b.c 99 100 FE 41204220432020202020630002
+ysfenc TOOLONGCALLSIGN 200 7 3 544F4F4C4F4E4743414C000703
+ysfenc ALL 0 0 2 414C4C20202020202020000002
+ysfenc - 0 0 0 20202020202020202020000000
+#
+# ysfstation <record> <callsign> <radio ID>: decoding the radio-wide record, "_" for a space
+ysfstation - __________ _____
+ysfstation 000000000000000000000000000000 __________ _____
+ysfstation FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF __________ _____
+ysfstation 473358595820202020204530313233 G3XYX_____ E0123
+ysfstation 4733585958 G3XYX_____ _____
+ysfstation 6D306162632F702D31206162637A7A M0ABC/P-1_ ABCZZ
+ysfstation 4E3043414C4C000000003132 N0CALL____ 12___

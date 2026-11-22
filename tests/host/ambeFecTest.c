@@ -142,6 +142,14 @@ static void testWhitening(void)
 	}
 	CHECK(ambeC1Mask(data) == want, "C1 mask 0x%06X, want 0x%06X", ambeC1Mask(data), want);
 	CHECK(ambeC1Mask(0) != 0, "mask for data 0 is not zero (13849 offset)");
+	// The 24-step form D-STAR uses: the same 23 bits, then one more step on the least significant bit
+	for (uint32_t d = 0; d < 4096u; d++) {
+		uint32_t w24 = ambeWhitening((uint16_t)d, 24);
+		CHECK(w24 >> 1 == ambeC1Mask((uint16_t)d), "24-step mask 0x%06X for data 0x%03X", w24, d);
+		CHECK(ambeWhitening((uint16_t)d, 23) == ambeC1Mask((uint16_t)d), "23-step mask for data 0x%03X", d);
+	}
+	x = (173u * x + 13849u) % 65536u;
+	CHECK((ambeWhitening(data, 24) & 1u) == (x >= 32768u), "24th whitening bit");
 }
 
 static void testRoundTrip(void)

@@ -13,6 +13,7 @@
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "fm_rx_audio.h"
+#include "fm_flat_tx.h"
 #include "hrc_afsk.h"
 #include "radio/ref_trim.h"
 #include "radio/pa_keyup.h"
@@ -85,6 +86,11 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 #define FD_REG_CSS_B		0x2Fu
 #define FD_REG40_BASE		0x3480u		// set-up B, FM transmit: 0x40 = this + the calibration byte
 #define C7_RF_MODE_RX_INVERT	(1u << 15)	// HR_C7000 RF_MODE: RX IQ invert, off on the newer section
+// FD6818 0x2B, the audio filter word (BK4819 layout: bits 2:0 the transmit filter bypasses, 10:8 the receive ones).
+// Both RF set-ups write this value in their FM table and nothing else touches it in FM, so the flat paths put it back
+// themselves (hardware-dm32.md 9.3)
+#define FD_REG_AF_FILTER	0x2Bu
+#define FD_AF_FILTER_FM		0xC000u
 
 static fd6818_t fd;
 static rfbus_3w_t fd_bus;
@@ -110,6 +116,14 @@ static bool rx_audio;		// the squelch is open (the radio's audio hook)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
+#if CONFIG_FM_FLAT
+static bool flat_tx;		// a data modem's samples are the FM modulation (dm32_flat_tx)
+static bool flat_rx;		// a data modem's flat receive: set up again at every FM receive tune (dm32_flat_rx_start)
+#define FLAT_FM_PLAY		dm32_flat_bench.fm_play
+#else
+#define flat_rx			false
+#define FLAT_FM_PLAY		false
+#endif
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -370,6 +384,7 @@ static void init(void)
 	hrc_dmr_board_init(&modem, &dmr_board);
 	hrc_audio_pcm_attach(&modem, dm32_speaker_pcm);
 	hrc_fm_rx_attach(&modem);
+	hrc_fm_flat_tx_attach(&modem);
 #if CONFIG_APRS_AFSK
 	hrc_afsk_attach(&modem, &afsk_board);
 #endif
@@ -384,6 +399,10 @@ static void wake(void)
 	}
 }
 
+#if CONFIG_FM_FLAT
+static void flat_tx_end(void);
+static void flat_rx_drop(void);
+#endif
 // Set-up B's two receive sub-audio words: CTCSS one pair, DCS and no tone the other
 static void css_words(bool ctcss)
 {
@@ -399,6 +418,10 @@ static void set_mode(radio_mode_t m)
 	if (m == mode) {
 		return;
 	}
+#if CONFIG_FM_FLAT
+	flat_tx_end();	// FM only: DMR's tables set the FD6818 up their own way
+	flat_rx_drop();
+#endif
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
 		fd6818_set_mode(&fd, FD6818_MODE_DMR);	// the FM channel's receive tone off (0x51 would key it on the 4FSK)
 		css_words(false);
@@ -425,6 +448,12 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		return false;
 	}
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
+#if CONFIG_FM_FLAT
+	flat_tx_end();
+	if (am) {
+		flat_rx_drop();	// AM's demodulator is not a discriminator
+	}
+#endif
 	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	wake();
 	pa_off();
@@ -453,6 +482,15 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		css_words(tone != NULL && tone->type == TONE_CTCSS);
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
+#endif
+#if CONFIG_FM_FLAT
+		if (flat_rx) {
+			// The FM set-up above put the voice filter back: the flat route again, and the samples of the
+			// transmission or the old channel out of the ring
+			fd6818_write(&fd, FD_REG_AF_FILTER, dm32_flat_bench.rf_rx_2b);
+			hrc7000_fm_flat_rx(&modem, dm32_flat_bench.rx_bw_clr, true);
+			hrc_fm_rx_flush();
+		}
 #endif
 	}
 	rx_hz = hz;
@@ -552,6 +590,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
+		if (flat_rx) {
+			fd6818_write(&fd, FD_REG_AF_FILTER, FD_AF_FILTER_FM);	// voice transmit until fm_tx_inject says otherwise
+		}
 		if (rf_b && bf_cal_valid()) {
 			// The band's calibration byte; without calibration the power-on word stays. The next rx() puts the
 			// band word back (fd6818_set_freq)
@@ -585,6 +626,9 @@ static void tx_end(bool keep)
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
+#endif
+#if CONFIG_FM_FLAT
+	flat_tx_end();
 #endif
 	if (mode == RADIO_MODE_FM) {
 		hrc7000_fm_idle(&modem);
@@ -702,18 +746,21 @@ static void status(radio_status_t *st)
 //
 // While APRS listens the HR_C7000 must hear the FD6818 all the time (its FM receive audio is what the demodulator
 // gets, squelch open or not), so PTB15 stays 0 and an open squelch plays FM through the HR_C7000's own FM playback
-// (AUDIO_CONTROL b6) and the codec instead
+// (AUDIO_CONTROL b6) and the codec instead. A data modem's flat receive keeps PTB15 at 0 for the same reason, and the
+// speaker then plays the CPU's PCM alone
 static void speaker_source(void)
 {
 	// The FD6818's output is squelched noise while the squelch is closed: the speaker listens to it only while it is open
 	bool fm_open = mode == RADIO_MODE_FM && !transmitting && !pcm_on && rx_audio;
-	bool analog = fm_open && !aprs_listen;
+	bool analog = fm_open && !aprs_listen && !flat_rx;
 	hrc_pin_write(PIN_SPK_SOURCE, analog);
 	if (!transmitting) {
 		hrc_pin_write(PIN_MIC_PATH, !analog);
 	}
 	if (mode == RADIO_MODE_FM && !transmitting) {
-		bool play = fm_open && aprs_listen;
+		// A data modem's flat receive: the speaker carries the CPU's PCM (the decoded voice) and the modem's own FM
+		// playback stays off unless the bench turns it on: whether the RX RAM copy needs it is unmeasured (9.3)
+		bool play = flat_rx ? FLAT_FM_PLAY : fm_open && aprs_listen;
 		uint32_t s = hrc_irq_save();	// the AUDIO_CONTROL shadow is shared with the audio task
 		hrc7000_audio_bits(&modem, play ? C7_AUDIO_FM_PLAY : 0, play ? 0 : C7_AUDIO_FM_PLAY);
 		hrc_irq_restore(s);
@@ -813,6 +860,114 @@ static bool afsk_tx_route(bool on)
 }
 #endif
 
+#if CONFIG_FM_FLAT
+// ---- Flat paths for a data modem (hal_audio_tap.h; hardware-dm32.md 9.3; the bench settings in flat_dm32.c) ----
+
+// The microphone back and the RF chip's FM filter word, and while still transmitting FM the deviation and the mic
+// route the transmission started with. The HR_C7000's part (the source, FM_BANDWIDTH) is fm_flat_tx.c's
+static void flat_tx_end(void)
+{
+	if (!flat_tx) {
+		return;
+	}
+	hrc_fm_flat_tx_stop();
+	flat_tx = false;
+	fd6818_write(&fd, FD_REG_AF_FILTER, FD_AF_FILTER_FM);
+	if (transmitting && mode == RADIO_MODE_FM) {
+		hrc7000_wr(&modem, C7_FM_DEV_COEF, hrc7000_fm_tx_dev_coef(&modem, tx_wide));
+		hrc_pin_write(PIN_MIC_PATH, true);
+	}
+}
+
+// hal_audio_tap_t.fm_tx_inject with AUDIO_TAP_FLAT (flat_dm32.c): during an FM transmission the modulator takes pull's
+// samples from the HR_C7000's TX RAM, with the FD6818's transmit audio filters bypassed. The microphone takes the DMR
+// route (PTB14 low), where it reaches the codec ADC's PCM for the CPU: a data modem's voice codec encodes it there.
+// NULL: the microphone is the modulation again. False outside an FM transmission, or while APRS tones or a TX tone
+// have the modulator
+bool dm32_flat_tx(audio_tap_pull_t pull)
+{
+	if (pull == NULL) {
+		flat_tx_end();
+		return true;
+	}
+	if (!transmitting || mode != RADIO_MODE_FM || flat_tx || afsk_tx || modem.tone_on) {
+		return false;
+	}
+	const dm32_flat_bench_t *b = &dm32_flat_bench;
+	fd6818_write(&fd, FD_REG_AF_FILTER, b->rf_tx_2b);
+	if (b->dev_coef != 0u) {
+		hrc7000_wr(&modem, C7_FM_DEV_COEF, b->dev_coef);
+	}
+	hrc_pin_write(PIN_MIC_PATH, false);
+	flat_tx = true;	// so flat_tx_end undoes the above if the start fails
+	if (!hrc_fm_flat_tx_start(pull, b->tx_bw_clr, b->tx_other_half)) {
+		flat_tx_end();
+		return false;
+	}
+	return true;
+}
+
+// Flat receive ends without a retune: the mode change or the AM tune that ends it sets the receiver up next
+static void flat_rx_drop(void)
+{
+	if (!flat_rx) {
+		return;
+	}
+	hrc_fm_rx_stop();
+	flat_rx = false;
+	fd6818_write(&fd, FD_REG_AF_FILTER, FD_AF_FILTER_FM);
+}
+
+// hal_audio_tap_t.fm_rx_flat_start: the HR_C7000 hears the FD6818 all the time (PTB15 low), the FD6818's receive
+// filters and de-emphasis bypassed, the HR_C7000's band-pass off, and its RX RAM copy into the ring the core reads
+// (fm_rx_audio.c, shared with APRS: one at a time). The retune sets the route up, as every later FM receive tune does.
+// False outside FM receive, in AM, or while APRS listens
+bool dm32_flat_rx_start(void)
+{
+	if (mode != RADIO_MODE_FM || transmitting || !have_rx || fd6818_am_on(&fd) || flat_rx || aprs_listen) {
+		return false;
+	}
+	if (!hrc_fm_rx_start()) {
+		return false;
+	}
+	flat_rx = true;
+	bool open = rx_audio;
+	if (open) {
+		amp(AMP_RADIO, false);	// the speaker's source changes under an open squelch: no click
+	}
+	retune(false);
+	if (open) {
+		amp(AMP_RADIO, true);
+	}
+	return true;
+}
+
+// hal_audio_tap_t.fm_rx_flat_stop: the ring freed and the FM receive set-up again (the voice filter, the speaker on
+// the FD6818 while the squelch is open). Asleep, the wake's retune does it
+void dm32_flat_rx_stop(void)
+{
+	if (!flat_rx) {
+		return;
+	}
+	flat_rx_drop();
+	if (mode == RADIO_MODE_FM && !transmitting && have_rx && !asleep) {
+		bool open = rx_audio;
+		if (open) {
+			amp(AMP_RADIO, false);
+		}
+		retune(false);
+		if (open) {
+			amp(AMP_RADIO, true);
+		}
+	}
+}
+
+bool dm32_flat_rx_on(void)
+{
+	return flat_rx;
+}
+#endif
+
 #if CONFIG_BCAST_FM
 // The broadcast receiver's audio (hrc_bcast.h audio_path) needs the amplifier. The core mutes the channel's audio
 // while it plays, so the speaker source stays on the codec, which is silent then
@@ -868,7 +1023,17 @@ bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool 
 	return true;
 }
 
+// Digital gain on the mic PCM before the AMBE+2 encoder, DMR and Fusion DN (hal_radio_t.mic_pcm_db, with the core's
+// limiter). Measured off air: Fusion DN speech from this radio decoded at -31 dBFS (rms of the loudest 30 % of 100 ms
+// blocks) against -18 dBFS for a Yaesu radio's DN decoded the same way, while the encoder itself reaches full scale (a
+// speech clip on DMR). 12 dB brings normal speech to about the Yaesu radio's level. Digital rather than the codec's
+// analogue gain (GCR_ADCL, 11 dB): that register also feeds D-STAR's encoder, which levels its own input and must not
+// change, and VOX's meter; and a 16-bit PCM at -31 dBFS still has 60 dB and more over its quantization, so the analogue
+// gain buys nothing audible. DMR uses the same codec ADC route and gain, so it takes the same lift
+#define MIC_PCM_DB		12
+
 const hal_radio_t dm32_radio = {
+	.mic_pcm_db = MIC_PCM_DB,
 	.init = init,
 	.set_mode = set_mode,
 	.rx = rx,

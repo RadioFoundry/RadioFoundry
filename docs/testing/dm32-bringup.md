@@ -199,6 +199,13 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
 between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
 
+## 14. D-STAR (multimode build)
+
+Only in `make BOARD=dm32 VARIANT=multimode`. Written, untested: the whole procedure, scripted, is
+[dstar-bench.md](dstar-bench.md); what it settles is the table in `hardware-dm32.md` 9.3. In brief: an Icom radio's
+over received first (`tools/dstar_bench.py watch`), the TX RAM route on the SDR into a dummy load (`txpath`), then our
+over on the SDR and an IC-9700 (`over`), then the echo reflector.
+
 ## Open items to settle on the bench
 
 - PIC: vectored (32 + source) works: the DMR slot, RF TX and PCM interrupts all arrive (settled on the radio).

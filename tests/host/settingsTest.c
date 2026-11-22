@@ -929,8 +929,16 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
+		{ offsetof(settings_t, dstar_my), 408 },
+		{ offsetof(settings_t, dstar_suffix), 416 },
+		{ offsetof(settings_t, dstar_msg), 420 },
+		{ offsetof(settings_t, flat_tx_hpf), 440 },
+		{ offsetof(settings_t, flat_rx_hpf), 442 },
+		{ offsetof(settings_t, flat_tx_1khz), 444 },
+		{ offsetof(settings_t, flat_flags), 446 },
+		{ offsetof(settings_t, reserved12), 447 },
 	};
-	CHECK(sizeof(settings_t) == 408);
+	CHECK(sizeof(settings_t) == 448);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
