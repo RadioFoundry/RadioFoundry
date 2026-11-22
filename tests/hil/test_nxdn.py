@@ -467,14 +467,25 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
         time.sleep(0.3)
         if (as_int(radio.view(["air"]).get("airp.halves")) or 0) <= (as_int(a0.get("airp.halves")) or 0):
             skip("no_hw", "the air provider takes no receive copy halves")
+        def set_mask(on):
+            # A read-modify-write racing the firmware's own masking (its lock saves and puts back these bits): check
+            # the bit held a moment later and write again if not, so the source is never left masked
+            for _ in range(5):
+                v = L.soc_reg(mask_reg)
+                L.soc_reg(mask_reg, v | bit if on else v & ~bit)
+                time.sleep(0.05)
+                if bool(L.soc_reg(mask_reg) & bit) == on:
+                    return
+            pytest.fail(f"the interrupt mask bit 0x{bit:08X} would not {'set' if on else 'clear'}")
+
         try:
-            L.soc_reg(mask_reg, L.soc_reg(mask_reg) | bit)
+            set_mask(True)
         except DebugLinkError as e:
             skip("not_built", f"CHIP_REG can't write the interrupt mask (status {e.status})")
         try:
             time.sleep(HOLD_OFF_S)
         finally:
-            L.soc_reg(mask_reg, L.soc_reg(mask_reg) & ~bit)
+            set_mask(False)
         r0 = as_int(a0.get("airp.copy_restarts")) or 0
         a1 = radio.view(["air"])
         assert (as_int(a1.get("airp.copy_restarts")) or 0) > r0, \
