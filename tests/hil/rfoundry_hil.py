@@ -451,20 +451,23 @@ class Radio:
     def screen(self):
         return self.link.view(["link"]).get("ui.screen")
 
+    DMR_CALL_COUNTERS = ("call.rc_", "call.rx_end_", "call.rx_ts_dropped", "call.rx_cc_dropped", "call.rx_lc_taken")
+
     def counters(self):
         """(firmware ms, flat dict of every counter): the diagnostics lines (modem.*, call.*, voice.*, audio.*), the
-        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the reverse channel counters (call.rc_*)
-        and the hotspot counters (hs.*)"""
+        dmr_stats view with full names (call.rx_calls, voice.rx_frames, ...), the call filter and end counters and the
+        reverse channel counters (call.rx_ts_dropped, call.rx_end_*, call.rc_*, ...) and the hotspot counters (hs.*)"""
         ms, lines = self.link.diag()
         out = parse_counters(lines)
         for k, v in self.link.view(["dmr_stats", "hotspot"]).items():
             n = as_int(v)
             if n is not None and k != "ms":
                 out[k] = n
-        # The reverse channel counters sit in dmr_call (dmr_stats fills a reply)
+        # The filter, call end and reverse channel counters sit in dmr_call (dmr_stats fills a reply). Without them a
+        # delta of call.rx_ts_dropped read 0 whatever the radio dropped
         for k, v in self.link.view(["dmr_call"]).items():
             n = as_int(v)
-            if n is not None and k.startswith("call.rc_"):
+            if n is not None and k.startswith(self.DMR_CALL_COUNTERS):
                 out[k] = n
         return ms, out
 

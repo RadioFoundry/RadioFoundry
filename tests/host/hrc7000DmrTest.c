@@ -223,9 +223,15 @@ static void test_rx(void)
 	deframe(rti(3, 0, 3, 0, 1, 0) | (1u << 28));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && !b.crc_ok && eng.st.rx_crc_err == crc_errs + 1);
 
+	// Simplex: a BS burst's TC is no slot number until the TC lock (no CACH on air, issue 928)
+	deframe(rti(0, DMR_BURST_IDLE, 3, 1, 0, 1));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 0 && b.sync == DMR_SYNC_BS);
+	CHECK(eng.tc_slot[0] == 0 && eng.tc_slot[1] == 0);
 	// Repeater: BS sync with TC teaches the chip slots their TS numbers
+	eng.cfg.repeater = true;
 	deframe(rti(0, DMR_BURST_IDLE, 3, 1, 0, 1));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_BS);
+	eng.cfg.repeater = false;
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// MS sync on the other chip slot: TS 1 learned
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
 	// TDMA direct mode sync names the slot too, and the voice after it on the same chip slot keeps that number (an SFR
@@ -1516,6 +1522,63 @@ static void test_tx_repeater_lock(void)
 	CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_rejected == 1 && rf_on_calls == 0 && rejected == 1);
 }
 
+// A direct mode station with BS sync (a simplex hotspot) keys every other slot with no CACH, so the TC the chip reports
+// is junk. Its bursts go up with no slot number (the call layer takes them on any TS) and an aligned reply keys in the
+// other chip slot than theirs, as after MS sync, with no wait for a TC lock that never comes (issue 928). A base
+// station on both slots with the TC alternating gets slot numbers once locked, and a repeater channel always does
+static void test_rx_bs_direct_call(void)
+{
+	for (int tc = 0; tc < 2; tc++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		int bursts = 0, labeled = 0;
+		for (int k = 0; k < 12; k++) {		// a header and voice A-F every other slot, chip slot 1, TC constant
+			tick(false);
+			tick(false);
+			deframe_at(rti(k == 0 ? 0 : (uint8_t)((k - 1) % 6 + 1), k == 0 ? DMR_BURST_VOICE_LC_HEADER : 0, 1, 1,
+				       1, (uint8_t)tc), 25000);
+			dmr_burst_t b = { 0 };
+			bursts += count_kind(DMR_EV_BURST_RX, &b);
+			labeled += b.ts != 0;
+		}
+		CHECK(bursts == 12 && labeled == 0 && eng.st.last_ts == 0);
+		CHECK(eng.tc_slot[0] == 0 && eng.tc_slot[1] == 0);
+		// An aligned reply on TS1 (the station's chip slot counts as TS2, as after MS sync): armed at once, no lock wait
+		REG(C7_LAYER2_SLOTON) = 0;
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+		CHECK(!eng.tx_bs && REG(C7_LAYER2_SLOTON) == 0x25 && eng.tx_chip_slot == 0);
+		dmr_tx_burst_t a = voice(0, 0x11);
+		CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+		for (int i = 0; i < 40; i++) {		// past TC_LOCK_WAIT_TICKS: still sending
+			tick(true);
+		}
+		CHECK(eng.st.tx_rejected == 0 && hrc7000_dmr_is_transmitting(&eng));
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		count_kind(0xFF, NULL);
+	}
+	// A base station on a simplex channel: both slots, TC alternating. Numbered from the burst that locks, and on
+	// through a missed burst (k == 6): unnumbered there, the other slot's bursts would be taken as ours
+	for (int rpt = 0; rpt < 2; rpt++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = rpt != 0 };
+		hrc7000_dmr_configure(&eng, &cfg);
+		for (int k = 0; k < 10; k++) {
+			tick(false);
+			if (k == 6) {
+				continue;
+			}
+			deframe_at(rti(0, 9, 1, 1, (uint8_t)(k & 1), (uint8_t)(k & 1)), 25000);
+			dmr_burst_t b = { 0 };
+			CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
+			CHECK(b.ts == (rpt || k >= 3 ? (k & 1) + 1 : 0));
+		}
+	}
+}
+
 // A BS signal on both slots, as a control channel sends. Once the TC lock holds, each slot tick
 // names the TS starting there and carries the AT bit of the last CACH naming it; the short LC is reported when it
 // changes, only from a BS signal, task-side; an MBC continuation is delivered whatever the chip's CRC flag, a CSBK with
@@ -1914,6 +1977,7 @@ int main(void)
 	test_tx_listen_rc();
 	test_tx_aligned();
 	test_tx_repeater_lock();
+	test_rx_bs_direct_call();
 	test_rx_control_channel();
 	test_tx_empty_and_fill();
 	test_polite_without_ticks();
