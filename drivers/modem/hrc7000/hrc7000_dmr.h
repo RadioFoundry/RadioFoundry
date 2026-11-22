@@ -157,6 +157,8 @@ typedef struct {
 	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
+	int8_t rx_ts;		// its TS as an aligned start counts it: the slot number given, or for a BS burst with no
+				// CACH (none given) the one MS sync would get
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
 	// Each chip slot with a voice call on it (bit n: chip slot n), and its last voice burst or header: each gets the

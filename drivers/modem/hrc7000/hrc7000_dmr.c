@@ -695,22 +695,39 @@ static void tx_tick(hrc7000_dmr_t *e)
 
 static void emb_drop(hrc7000_dmr_t *e, uint8_t cs) { e->emb_pending &= (uint8_t)~(1u << cs); }
 
-static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s)
+// A CACH to number the slots from: a repeater channel, or the TC lock (BS bursts in slots in a row, TC alternating). A
+// direct mode sender with BS sync (a simplex hotspot) keys every other slot with no CACH, so its TC is junk: numbered
+// from it, its bursts landed on the other slot and the call was dropped (issue 928)
+static bool cach_on_air(const hrc7000_dmr_t *e)
+{
+	return e->cfg.repeater || tc_locked(e);
+}
+
+// The slot number a burst goes up with (0: none). *dmo: the one an aligned start counts it as
+static int8_t slot_ts(hrc7000_dmr_t *e, const hrc7000_rx_status_t *s, int8_t *dmo)
 {
 	switch (s->sync) {
 	case DMR_SYNC_BS:
+		if (!cach_on_air(e)) {
+			// No slot number (dmr-modem.md 2.3: direct mode). An aligned reply keys as after MS sync
+			*dmo = e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
+			return 0;
+		}
 		e->tc_slot[s->chip_slot] = (int8_t)(s->tc + 1);
 		e->tc_slot[s->chip_slot ^ 1u] = (int8_t)(2 - s->tc);
-		return (int8_t)(s->tc + 1);
+		*dmo = (int8_t)(s->tc + 1);
+		return *dmo;
 	case DMR_SYNC_TS1:
 	case DMR_SYNC_TS2:
 		// TDMA direct mode sync names the slot too: kept for the voice bursts after it (no sync of their own), so
 		// an SFR user tells the talker's copy from the repeat on every burst
 		e->tc_slot[s->chip_slot] = s->sync == DMR_SYNC_TS1 ? 1 : 2;
 		e->tc_slot[s->chip_slot ^ 1u] = s->sync == DMR_SYNC_TS1 ? 2 : 1;
-		return e->tc_slot[s->chip_slot];
+		*dmo = e->tc_slot[s->chip_slot];
+		return *dmo;
 	default:
-		return e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
+		*dmo = e->tc_slot[s->chip_slot] != 0 ? e->tc_slot[s->chip_slot] : (int8_t)(s->chip_slot + 1);
+		return *dmo;
 	}
 }
 
@@ -772,14 +789,16 @@ static void rx_burst(hrc7000_dmr_t *e)
 		e->st.rx_unusable++;
 		return;
 	}
-	int8_t ts = slot_ts(e, &s);
+	track_tc(e, &s);	// first: the burst that completes the TC lock gets its slot number
+	int8_t dmo = 0;
+	int8_t ts = slot_ts(e, &s, &dmo);
+	e->rx_ts = dmo;
 	e->rx_tick = e->tick;
 	e->t_rx = now(e);
 	e->rx_any = true;
 	e->st.last_cc = s.cc;
 	e->st.last_ts = ts;
 	e->rx_chip_slot = s.chip_slot;
-	track_tc(e, &s);
 	e->st.rx_hist = (e->st.rx_hist << 4) | ((uint32_t)s.tc << 3) | ((uint32_t)s.chip_slot << 2) |
 			((r(e, C7_LAYER2_STATUS) >> 30) & 3u);
 	if (e->lock_ts != 0 && ts != e->lock_ts) {
@@ -952,9 +971,9 @@ void hrc7000_dmr_isr_sys(hrc7000_dmr_t *e)
 		if (list & SYS_DEFRAME) {
 			rx_burst(e);
 		}
-		// A new short LC in RX RAM, read task-side (hrc7000_dmr_short_lc). Only while receiving a BS signal: a
+		// A new short LC in RX RAM, read task-side (hrc7000_dmr_short_lc). Only while a CACH is on air: a
 		// direct or SFR signal has no CACH, and the RAM keeps the last one
-		if ((list & SYS_SHORT_LC) && e->rx_bs && !tx_ticking(e)) {
+		if ((list & SYS_SHORT_LC) && e->rx_bs && cach_on_air(e) && !tx_ticking(e)) {
 			e->slc_seq++;
 		}
 		if (list & SYS_ABNORMAL) {
@@ -1207,12 +1226,14 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->t_tick = now(e);	// the stall watchdog counts from here
 		// 6.1 step 1: codec buffers cleared, nothing in the next slot
 		w(e, C7_AUDIO_BUFFER_CLR, 0x03);
-		e->tx_bs = timing == DMR_TIMING_ALIGNED && e->rx_bs && ts > 0;
+		// Through a repeater (a CACH on air): the slot from the TC lock. Aligned to a direct mode station, BS sync
+		// too when no CACH came with it: the slot its bursts came in (issue 928: the lock never came, refused)
+		e->tx_bs = timing == DMR_TIMING_ALIGNED && e->rx_bs && ts > 0 && cach_on_air(e);
 		if (e->tx_bs) {
 			e->tx_state = TXS_LOCK;	// lock_tick arms with the lock
 		} else if (timing == DMR_TIMING_ALIGNED && e->rx_any) {
 			// Our chip slot (no CACH): the received one for the same TS, else the other
-			e->tx_chip_slot = ts == e->st.last_ts ? e->rx_chip_slot : (uint8_t)(e->rx_chip_slot ^ 1u);
+			e->tx_chip_slot = ts == e->rx_ts ? e->rx_chip_slot : (uint8_t)(e->rx_chip_slot ^ 1u);
 			aligned_arm(e);
 		} else {
 			e->tx_timing = (uint8_t)DMR_TIMING_OWN;
