@@ -258,7 +258,7 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 | Step | What it checks |
 |---|---|
 | `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/rfoundry/rfoundry/registry.json` is current; the loader's self-test (`tools/boards.py`) |
-| `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
+| `host` | `make -C tests/host -j"$JOBS"`, with each board's own tests (`boards/<b>/tests/host.mk`); `HOST_SHORT=1` in the environment runs fewer random cases ([Host tests](#host-tests)) |
 | `bench` | Each bench tool with a Makefile under `tools/bench/*/` (built from the `core/` sources, such as the P25 and NXDN tools), with zero warnings |
 | `python` | Every Python file parses, the HIL test collection, rfoundry's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
@@ -308,6 +308,25 @@ No workflow builds csky-elf GCC from source. The image is built by `tools/docker
 and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
 matrix.
 
+## Host tests
+
+`make -C tests/host -j<n>` runs the suites in parallel, each with its own log in `tests/host/out/run/`, and ends with a
+summary ([Testing, Host tests](testing.md#host-tests)). CI runs them through `tools/coverage.sh` with `JOBS` set to the
+runner's CPU count.
+
+| Where | Command | Random cases |
+|---|---|---|
+| Pull requests (`pr-tests.yml`, `unit tests`) | `SANITIZE=1 HOST_SHORT=1 tools/coverage.sh` | Short: fuzz loops cut to a tenth (at least 100), the `test_short()` loops to their short count |
+| `main` (`ci.yml`, `unit tests`) | `SANITIZE=1 tools/coverage.sh` | Full |
+| `tools/ci.sh` host step | `make -C tests/host -j"$JOBS"` | Full; `HOST_SHORT=1 tools/ci.sh` for short |
+
+`HOST_SHORT=1` changes only how many random inputs a loop tries. Every check and every exhaustive test still runs. A
+new long random loop takes its count from `test_short(full, short)` (`tests/host/test_run.h`) or, for a fuzz loop,
+`fuzz_iters()`.
+
+`make -C tests/host times` builds and runs from clean and prints the slowest suites. A test that dominates the wall
+time can run in parts ([Testing](testing.md#host-tests)).
+
 ## Coverage
 
 `tools/coverage.sh` rebuilds the host tests with `--coverage` (`make -C tests/host COVERAGE=1`), runs them and
@@ -341,5 +360,5 @@ switch on extern inline and fortified functions, which don't build with the host
 The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
 input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops (`tests/host/fuzz.h`)
 that feed exact-size heap buffers, so a read past the end is an ASan report; `RFOUNDRY_FUZZ_ITERS=<n>` replaces the small
-default counts and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
+default counts (`HOST_SHORT=1` cuts them to a tenth) and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
 for a long run by hand.
