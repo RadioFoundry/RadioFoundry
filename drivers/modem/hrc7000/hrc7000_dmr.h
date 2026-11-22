@@ -157,6 +157,8 @@ typedef struct {
 	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
 	uint8_t rx_chip_slot;	// chip slot of the last burst taken (an aligned start's reference)
+	int8_t rx_ts;		// its TS as an aligned start counts it: the slot number given, or for a BS burst with no
+				// CACH (none given) the one MS sync would get
 	int8_t voice_chip_slot;	// chip slot of the voice call being received, -1 none
 	uint32_t voice_tick;
 	// Each chip slot with a voice call on it (bit n: chip slot n), and its last voice burst or header: each gets the
@@ -164,9 +166,10 @@ typedef struct {
 	uint8_t voice_slots;
 	uint32_t voice_slot_tick[2];
 	int8_t tc_slot[2];	// TS (1/2) of each chip slot, learned from BS-sync bursts (TC), 0 unknown
-	bool rx_bs;		// the last burst taken was BS-sourced (a repeater)
+	bool rx_bs;		// the last burst taken was BS-sourced (a repeater, or a direct mode sender with BS sync)
 	uint8_t tc_agree;	// BS bursts in a row, one per slot, with TC alternating (the lock: TC_LOCK)
 	uint8_t tc_prev;	// TC of the last BS burst, and its tick
+	bool cach_seen;		// a TC lock since the receiver last synced: a CACH is on air (cach_on_air)
 	uint32_t tc_tick;
 	uint8_t tc_est;		// TC estimate of the slot now starting (toggled every tick)
 	// Per TC: the tick the last CACH AT bit naming it was read at and DMR_TICK_AT_* (0 none since the restart)

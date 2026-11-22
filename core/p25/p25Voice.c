@@ -43,6 +43,9 @@ static uint16_t mic_gain_q8 = 256;	// p25VoiceSetMicGain: the mic samples times 
 static uint8_t cb_tx_gen;		// the transmission the encoder runs for (even: none)
 static uint8_t cb_seq;
 static bool cb_live, cb_primed, cb_playing, cb_speaker, cb_mixing;
+// The stream just (re)started: the speaker route is what its last user left, which may be a beep's own stream that
+// had it on. The first block sends cb_speaker whatever it was, or the route (and the board's amplifier) stays on
+static bool cb_speaker_unsent;
 static uint8_t cb_lead;			// silent blocks left before the first frame plays
 static uint32_t cb_call_frames;
 
@@ -124,8 +127,9 @@ static const p25_engine_hooks_t hooks = { .rx_start = rx_start, .rx_update = rx_
 
 static void speaker(bool on)
 {
-	if (cb_speaker != on) {
+	if (cb_speaker != on || LOAD(cb_speaker_unsent)) {
 		cb_speaker = on;
+		STORE(cb_speaker_unsent, false);
 		if (aud != NULL && aud->speaker_pcm != NULL) {
 			aud->speaker_pcm(on);
 		}
@@ -285,9 +289,18 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 			speaker(false);
 		}
 	}
+	if (LOAD(cb_speaker_unsent)) {
+		speaker(cb_speaker);
+	}
 }
 
 // --- radio task ---
+
+static void stream_start(void)
+{
+	STORE(cb_speaker_unsent, true);	// before the callback can run
+	streaming = aud->start(p25VoiceAudioBlock, NULL);
+}
 
 void p25VoiceInit(const hal_audio_t *audio)
 {
@@ -320,7 +333,7 @@ void p25VoiceBegin(p25_voice_mem_t *m)
 void p25VoicePoll(void)
 {
 	if (!streaming && aud != NULL && LOAD(mem) != NULL && LOAD(rx_seq) != 0) {
-		streaming = aud->start(p25VoiceAudioBlock, NULL);
+		stream_start();
 	}
 }
 
@@ -331,7 +344,7 @@ void p25VoiceTx(bool on)
 	}
 	STORE(tx_gen, (uint8_t)(tx_gen + 1));
 	if (on && !streaming && aud != NULL) {
-		streaming = aud->start(p25VoiceAudioBlock, NULL);
+		stream_start();
 	}
 }
 

@@ -49,6 +49,9 @@ static uint8_t tx_seq, tx_end_seq;	// equal: no call (also at start-up)
 static uint8_t cb_rx_seq, cb_tx_seq;
 static bool cb_rx_playing, cb_rx_primed, cb_rx_live;
 static bool cb_speaker;
+// The stream just (re)started: the speaker route is what its last user left, which may be a beep's own stream that
+// had it on. The first block sends cb_speaker whatever it was, or the route (and the board's amplifier) stays on
+static bool cb_speaker_unsent;
 static uint8_t cb_bad_run;
 static uint32_t cb_call_frames;		// frames played in this call (rx_underrun_at)
 static uint8_t last_bits[VOCODER_BITS];
@@ -96,6 +99,9 @@ static bool cb_enc_opts_set;		// cb_enc_opts is valid
 static void ensure_streaming(void)
 {
 	if (!streaming && aud != NULL) {
+		// Our callback isn't installed yet: its state is the call task's until the start
+		cb_speaker = false;
+		STORE(cb_speaker_unsent, true);
 		streaming = aud->start(ambeVoiceAudioBlock, NULL);
 	}
 }
@@ -281,8 +287,9 @@ static bool source_busy(void *ctx)
 
 static void speaker(bool on)
 {
-	if (cb_speaker != on) {
+	if (cb_speaker != on || LOAD(cb_speaker_unsent)) {
 		cb_speaker = on;
+		STORE(cb_speaker_unsent, false);
 		if (aud != NULL && aud->speaker_pcm != NULL) {
 			aud->speaker_pcm(on);
 		}
@@ -626,6 +633,9 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		if (!cb_rx_playing) {
 			speaker(false);
 		}
+	}
+	if (LOAD(cb_speaker_unsent)) {
+		speaker(cb_speaker);
 	}
 }
 

@@ -38,7 +38,8 @@ WEAK bool ui_svc_aprs_station(uint8_t i, aprs_station_t *out) { (void)i; (void)o
 WEAK bool ui_svc_aprs_station_find(const char *call, aprs_station_t *out) { (void)call; (void)out; return false; }
 WEAK bool ui_svc_aprs_range(const aprs_station_t *s, uint32_t *m, uint16_t *deg) { (void)s; (void)m; (void)deg; return false; }
 
-enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_SSID, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_COUNT };
+enum { AP_SEND, AP_AUTO, AP_FREQ, AP_POWER, AP_PATH, AP_SSID, AP_INTERVAL, AP_SMART, AP_VIA, AP_KISS, AP_HEARD, AP_MUTE,
+       AP_COUNT };
 
 // The rows this build shows, in order: the packet rows (SSID too) only with the AX.25 backend (CONFIG_APRS_AFSK),
 // "Send via" only when there is a choice (both backends built)
@@ -53,7 +54,13 @@ static const uint8_t rows[] = {
 #endif
 	AP_KISS,
 #if CONFIG_APRS_AFSK
-	AP_HEARD, AP_SSID,	// set once: last, so the rows above keep their digits
+	AP_HEARD,
+#endif
+#if CONFIG_APRS_RX
+	AP_MUTE,	// after Stations heard: the rows above keep their digits
+#endif
+#if CONFIG_APRS_AFSK
+	AP_SSID,	// set once: last
 #endif
 };
 #define N_ROWS	((uint16_t)(sizeof(rows) / sizeof(rows[0])))
@@ -162,7 +169,8 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 		TRN(LABEL_POWER, "Power"), TRN(APRS_LABEL_PATH, "Path"), TRX(APRS_LABEL_SSID, "SSID"),
 		TRN(APRS_LABEL_INTERVAL, "Interval"),
 		TRN(APRS_LABEL_SMARTBEACONING, "SmartBeaconing"), TRN(APRS_LABEL_SEND_VIA, "Send via"),
-		TRN(APRS_LABEL_KISS_ON_USB, "KISS on USB"), TRN(APRS_ROW_STATIONS_HEARD, "Stations heard") };
+		TRN(APRS_LABEL_KISS_ON_USB, "KISS on USB"), TRN(APRS_ROW_STATIONS_HEARD, "Stations heard"),
+		TRN(APRS_LABEL_MUTE, "Mute APRS audio") };
 	aprs_view_t v;
 	aprs_cfg_t c;
 	bool built = ui_svc_aprs_view(&v);
@@ -223,6 +231,7 @@ static void aprs_item(uint16_t i, ui_item_t *it)
 	case AP_SMART: sb_str(&b, c.smart ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_VIA: sb_str(&b, tr(via_names[c.via < APRS_VIA_COUNT ? c.via : 0])); break;
 	case AP_KISS: sb_str(&b, c.kiss ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
+	case AP_MUTE: sb_str(&b, c.mute ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off")); break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
 			it->flags |= UI_ITEM_DIM;
@@ -288,6 +297,7 @@ static void aprs_select(uint16_t i, bool hold)
 	case AP_SMART: c.smart = !c.smart; break;
 	case AP_VIA: c.via = (uint8_t)((c.via + 1u) % APRS_VIA_COUNT); break;
 	case AP_KISS: c.kiss = !c.kiss; break;
+	case AP_MUTE: c.mute = !c.mute; break;
 	case AP_HEARD:
 		if (!CONFIG_APRS_RX) {
 			ui_toast(TR(APRS_WHY_CANT_RECEIVE, "This radio can't receive APRS"));

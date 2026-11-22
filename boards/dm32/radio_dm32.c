@@ -116,6 +116,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 #define AMP_PCM		0x02u	// speaker PCM
 #define AMP_SIDE	0x40u	// the transmitted tone's sidetone
 #define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
+static uint8_t amp_users;	// AMP_* bits (the debug link's board.amp_users)
 
 static void speaker_source(void);
 static void ring_play(void);
@@ -320,10 +321,11 @@ static void dmr_disarm(void)
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step: 50 (nominal) = 2750, about 3 kHz peak. Bench, 25 kHz: 2925 gave 3.3 kHz peak;
-// 5850 and up are limited at 5.1 kHz peak, 4.5 kHz on the tones
+// PCM amplitude per AFSK level step: 50 (nominal) = 450, about 3.2 kHz peak. The tones go out with the microphone on
+// the DMR path (afsk_tx_route), where they come out much hotter than with it on the FM path, with mark about 4 dB
+// under space. Bench, 25 kHz: 435 gave 3.1 kHz peak, 725 4.7 kHz; 1450 and up are limited near 5.2 kHz
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 9,
 };
 #endif
 
@@ -737,11 +739,15 @@ static void aprs_listen_route(bool on)
 
 static void amp(uint8_t who, bool on)
 {
-	static uint8_t users;
 	uint32_t s = hrc_irq_save();
-	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
-	hrc_pin_write(PIN_AMP_EN, users != 0);
+	amp_users = on ? (uint8_t)(amp_users | who) : (uint8_t)(amp_users & ~who);
+	hrc_pin_write(PIN_AMP_EN, amp_users != 0);
 	hrc_irq_restore(s);
+}
+
+uint8_t dm32_amp_users(void)
+{
+	return amp_users;
 }
 
 static void audio(bool on)
@@ -790,8 +796,10 @@ void dm32_speaker_pcm(bool on)
 
 #if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
-// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
-// isn't transmitting FM
+// beeps on DMR bursts, modem-hrc7000.md 8.4). In FM TX the microphone takes the analog FM path (0x2E = 1), which
+// muting the codec's microphone doesn't reach, so the voice rode on the tones (#828). While the tones play the
+// microphone goes to the DMR path (0x2E = 0) as well, where the codec mute holds it. The FD6818's own audio input
+// stays on: the tones reach the modulator through it. False when the radio isn't transmitting FM
 static bool afsk_tx_route(bool on)
 {
 	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
@@ -799,6 +807,7 @@ static bool afsk_tx_route(bool on)
 	}
 	afsk_tx = on;
 	hrc7000_codec_mute(&modem, on, false);
+	hrc_pin_write(PIN_MIC_PATH, !on);
 	ring_play();
 	return true;
 }
