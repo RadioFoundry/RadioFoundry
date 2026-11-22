@@ -7,7 +7,7 @@ built for the host from tools/bench/p25: `make -C tools/bench/p25`, done here wh
 than its sources).
 
     p25tool.py gen OUT.dibits --expect EXP.json [--nac 293] [--tg N | --dst N] [--src N] [--pairs N]
-               [--voice HEX22 | --random-voice SEED] [--ss unknown|talkaround|busy|idle] [--lead N] [--tail N]
+               [--voice HEX22 | --random-voice SEED | --voice-file FILE] [--ss unknown|talkaround|busy|idle] [--lead N] [--tail N]
                [--ber P --seed S] [--emergency] [--unpacked]
     p25tool.py decode IN.dibits [--expect EXP.json] [--unpacked | --air-jsonl] [--soft FILE] [--nac 293]
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
@@ -24,9 +24,11 @@ than its sources).
     p25tool.py selftest
 
 gen writes a transmission as the firmware's transmit path builds it (p25_call_tx): the profile's idle symbols as a
-lead, a header, N pairs of LDU1 and LDU2, a terminator, a tail. The dibit file is the air interface's packing (four
-a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11 -3), which the bench's fsk4 transmitter takes as it is. --ber
-flips bits after the expect file was written. The expect file (JSON) lists every unit with its symbols, position and
+lead, a header, N pairs of LDU1 and LDU2, a terminator, a tail. Voice frames are one made-up 88-bit pattern (--voice),
+random (--random-voice), or the 11-byte full-rate frames of a file in order (--voice-file, as
+tests/data/voice/test_transmission.imbe holds them; its last one repeats). The dibit file is the air interface's
+packing (four a byte, the first in bits 7-6; 01 +3, 00 +1, 10 -1, 11 -3), which the bench's fsk4 transmitter takes as
+it is. --ber flips bits after the expect file was written. The expect file (JSON) lists every unit with its symbols, position and
 voice frames, for decode and disc to compare against.
 
 decode reads symbols (a dibit file, one symbol a byte with --unpacked, or `rfoundry_debug.py air rx` records with
@@ -357,7 +359,7 @@ def pass_opts(a, names):
 
 
 def cmd_gen(a):
-    lines = run(["gen", a.out, a.expect] + pass_opts(a, ["nac", "tg", "dst", "src", "pairs", "voice", "random-voice",
+    lines = run(["gen", a.out, a.expect] + pass_opts(a, ["nac", "tg", "dst", "src", "pairs", "voice", "random-voice", "voice-file",
                                                          "ss", "lead", "tail", "ber", "seed", "emergency",
                                                          "unpacked"]))
     d = lines[-1]
@@ -589,6 +591,7 @@ def main(argv=None):
     g.add_argument("--pairs", type=int, default=None, help="LDU1 + LDU2 pairs (3)")
     g.add_argument("--voice", default=None, help="every voice frame: 11 bytes in hex")
     g.add_argument("--random-voice", type=int, default=None, metavar="SEED", help="random voice frames")
+    g.add_argument("--voice-file", default=None, help="voice frames from a file of 11-byte frames (the last repeats)")
     g.add_argument("--ss", choices=("unknown", "talkaround", "busy", "idle"), default=None,
                    help="the status symbols (unknown: a subscriber, direct or to a repeater)")
     g.add_argument("--lead", type=int, default=None, help="idle symbols before (0)")

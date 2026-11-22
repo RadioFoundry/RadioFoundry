@@ -336,7 +336,7 @@ static void leave(p25_follow_t *f, uint8_t why, uint32_t now)
 // ── The transmit side: registration, affiliation, voice requests (docs/spec/p25-trunking.md 5) ──
 static bool tx_on(const p25_follow_t *f)
 {
-	return (f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id;
+	return (f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id && !f->view.unverified;
 }
 
 static uint32_t acc_rand(p25_follow_t *f, uint32_t span)
@@ -368,7 +368,7 @@ static void acc_drop(p25_follow_t *f)
 // is heard or answered later
 static void sys_block(p25_follow_t *f)
 {
-	f->blocked = true;
+	f->acc.blocked = true;
 	f->view.sys_ok = false;
 	f->view.reg = P25_REG_BLOCKED;
 	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
@@ -432,7 +432,7 @@ static void acc_site(p25_follow_t *f)
 	uint8_t r = f->view.reg;
 
 	a->site_heard = true;
-	if (f->blocked || r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
+	if (f->acc.blocked || r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
 		return;
 	if (a->reg_site == 0xFF) {
 		// Registration began before the site was heard: it is this one
@@ -457,7 +457,7 @@ static void acc_send(p25_follow_t *f, uint32_t now)
 	p25_isp_t m;
 
 	// (acc_tick sends nothing in either case; this is the last door before the air)
-	if (f->blocked) {
+	if (f->acc.blocked) {
 		acc_drop(f);
 		return;
 	}
@@ -509,7 +509,7 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 
-	if (!tx_on(f) || f->blocked)
+	if (!tx_on(f) || f->acc.blocked)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
 		if (f->view.reg == P25_REG_IDLE && f->view.sys_ok && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
@@ -559,7 +559,7 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 	const p25_follow_cfg_t *c = f->cfg;
 	p25_follow_acc_t *a = &f->acc;
 
-	if (f->blocked)
+	if (f->acc.blocked)
 		return;
 	switch (m->kind) {
 	case P25_TSBK_REG_RSP:
@@ -719,7 +719,7 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
 			sys_block(f);
-		else if (!f->blocked)
+		else if (!f->acc.blocked)
 			f->view.sys_ok = true;
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
@@ -811,7 +811,7 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 		f->acc.rng = 1;
 	f->view.reg = !tx_on(f) || (cfg->flags & P25_FOLLOW_NO_REG) ? P25_REG_OFF : P25_REG_IDLE;
 	if (p25_wacn_no_tx(cfg->wacn) || p25_sysid_no_tx(cfg->sysid) || (cfg->flags & P25_FOLLOW_BLOCKED)) {
-		f->blocked = true;
+		f->acc.blocked = true;
 		f->view.reg = P25_REG_BLOCKED;
 	}
 	f->view.deny_svc = 0xFF;
@@ -846,6 +846,7 @@ void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		return;
 	view_begin(f);
 	f->view.blocks++;
+	f->view.unverified = false;	// a block that passed its CRC
 	on_block(f, blk, nac, now);
 	view_end(f);
 }
@@ -871,10 +872,13 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 			f->acc.busy = p25_status_get(u->air, (uint16_t)(nss - 1)) == P25_SS_BUSY;
 
 		for (uint8_t k = 0; k < n && !f->tuning; k++) {
-			if (p25_block_get(u->air, k, blk) < 0) {
+			bool good = p25_block_get(u->air, k, blk) >= 0;
+			if (!good && !((f->cfg->flags & P25_FOLLOW_BAD_CRC) && rx_seen(&f->seen, blk, P25_TSBK_BYTES))) {
 				f->view.crc_fail++;
 				continue;
 			}
+			f->view.crc_taken += !good;
+			f->view.unverified = !good;
 			f->view.blocks++;
 			on_block(f, blk, u->nac, now);
 		}
@@ -1010,7 +1014,7 @@ void p25_follow_view(const p25_follow_t *f, p25_follow_view_t *out)
 
 uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 {
-	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX)
+	if (!(flags & P25_FOLLOW_TX) || v->reg == P25_REG_NO_TX || v->unverified)
 		return P25_TALK_OFF;
 	if (v->reg == P25_REG_BLOCKED)
 		return P25_TALK_BLOCKED;

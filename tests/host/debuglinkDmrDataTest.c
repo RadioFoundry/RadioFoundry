@@ -46,7 +46,20 @@ bool dmr_signal_radio_check(uint32_t dst) { (void)dst; return false; }
 dmr_req_state_t dmr_signal_state(uint8_t *kind, uint32_t *dst) { *kind = 0; *dst = 0; return DMR_REQ_IDLE; }
 int sms_inbox_count(void) { return 0; }
 int sms_inbox_unread(void) { return 0; }
-bool sms_inbox_get(int i, dmrDataMessage_t *out) { (void)i; (void)out; return false; }
+static int inboxFormat = -1;		// the one inbox message's format, -1 none
+bool sms_inbox_get(int i, dmrDataMessage_t *out)
+{
+	if ((i != 0) || (inboxFormat < 0)) {
+		return false;
+	}
+	memset(out, 0, sizeof *out);
+	out->src = 1234;
+	out->dst = 5678;
+	out->unread = true;
+	out->format = (uint8_t)inboxFormat;
+	strcpy(out->text, "hi");
+	return true;
+}
 void sms_inbox_mark_read(int i) { (void)i; }
 bool sms_send(uint32_t dst, bool group, const char *text, bool ack, dmr_sms_format_t f)
 {
@@ -254,8 +267,26 @@ static void test_ip_confirmed_rate(void)
 	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_OK && cnfRate == DMR_TYPE_RATE_3_4);
 }
 
+// INBOX: the flags byte says which format the message came in, one bit each but TMS (none)
+static void test_inbox_format(void)
+{
+	static const struct { int format; uint8_t flags; } cases[] = {
+		{ DMR_SMS_FORMAT_TMS, 1 }, { DMR_SMS_FORMAT_ETSI, 3 }, { DMR_SMS_FORMAT_ETSI_IP, 5 }, { DMR_SMS_FORMAT_T3_UDT, 9 },
+	};
+	uint8_t r[2] = { DL_DATA_OP_INBOX, 0 };
+
+	inboxFormat = -1;
+	CHECK(cmd(r, 2) == 1 && out[0] == DL_ST_UNAVAILABLE);
+	for (unsigned i = 0; i < sizeof cases / sizeof cases[0]; i++) {
+		inboxFormat = cases[i].format;
+		CHECK(cmd(r, 2) == 13 && out[0] == DL_ST_OK && out[10] == cases[i].flags && memcmp(out + 11, "hi", 2) == 0);
+	}
+	inboxFormat = -1;
+}
+
 int main(void)
 {
+	test_inbox_format();
 	test_ip_confirmed_rate();
 	test_ip_settings();
 	test_ip_send();

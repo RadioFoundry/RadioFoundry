@@ -255,7 +255,7 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	uint8_t *syms = malloc(GEN_MAX_SYMS);
 	size_t n = 0;
 	long frames_left, frames_total, nflip = 0;
-	FILE *e = fopen(exp_path, "w");
+	FILE *e = fopen(exp_path, "w"), *vf = NULL;
 	// Voice frames go in ahead of their LDU's head (the transmit path asks for them early): they wait here and go
 	// in the expect file with the LDU that carries them, P25_VOICE_FRAMES each
 	static uint8_t vq[4 * P25_VOICE_FRAMES][P25_IMBE_BYTES];
@@ -292,6 +292,12 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 		parse_hex(opt(o, "--voice"), fixed, sizeof fixed, "--voice");
 	if (seed_voice >= 0)
 		rng_seed((uint64_t)seed_voice);
+	// --voice-file: full-rate frames, 11 bytes each, in order (tests/data/voice); the last one repeats
+	if (opt(o, "--voice-file")) {
+		vf = fopen(opt(o, "--voice-file"), "rb");
+		if (!vf)
+			die("can't read", opt(o, "--voice-file"));
+	}
 
 	fprintf(e, "{\"format\":\"p25-expect/1\",\"nac\":%u,\"ss\":%u,\"lc\":", nac, ss);
 	lc_json(e, &lc);
@@ -348,6 +354,8 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 			if (seed_voice >= 0)
 				for (int i = 0; i < P25_IMBE_BYTES; i++)
 					frame[i] = (uint8_t)rng();
+			else if (vf && fread(frame, 1, sizeof frame, vf) == sizeof frame)
+				memcpy(fixed, frame, sizeof fixed);
 			else
 				memcpy(frame, fixed, sizeof frame);
 			if (vq_n == sizeof vq / sizeof vq[0])
@@ -377,6 +385,8 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	fprintf(e, "],\"frames\":%ld,\"total_syms\":%zu,\"ber\":%g,\"bit_errors_applied\":%ld}\n", frames_total, n, ber,
 		nflip);
 	fclose(e);
+	if (vf)
+		fclose(vf);
 	write_syms(out_path, syms, n, flag(o, "--unpacked"), idle);
 	printf("{\"ev\":\"gen\",\"syms\":%zu,\"frames\":%ld,\"bit_errors_applied\":%ld}\n", n, frames_total, nflip);
 	free(syms);

@@ -231,6 +231,13 @@ HRC_FLASHFUNC static void health(dmr_modem_health_t *h)
 	memcpy(h->first_regs, lost_regs, sizeof h->first_regs);
 }
 
+#if CONFIG_DMR
+// The soft combiner (dmr-modem.md 2.2.1), about 2 KB of heap, held only while DMR runs: set and freed by this task,
+// the one that combines
+static const dmrSoftHoldOps_t soft_ops = { pvPortMalloc, vPortFree, lock, unlock };
+static dmrSoftHold_t soft_hold = { &eng.soft, &soft_ops, { 0 } };
+#endif
+
 // --- Deferred event task ---
 
 HRC_FLASHFUNC static void dmr_task(void *arg)
@@ -240,6 +247,9 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 	dmr_burst_t burst;
 	for (;;) {
 		ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(DMR_POLL_MS));
+#if CONFIG_DMR
+		dmrSoftHoldSet(&soft_hold, active && !AIR_ON());
+#endif
 		if (active) {
 			uint32_t pic[4];
 			pic_words(pic);
@@ -838,6 +848,20 @@ HRC_FLASHFUNC bool hrc_dmr_stats_line(uint8_t i, char *buf, uint8_t len)
 		put_kv(&o, " mg", bs.st.max_gap_us);
 		break;
 #endif
+	case HRC_DMR_DIAG_LINES - 2: {	// soft combining (dmr-modem.md 2.2.1): bursts taken, sets decoded, payloads
+					// replaced, stages overwritten before they were taken
+#if CONFIG_DMR
+		dmrSoftStats_t ss;
+		dmrSoftHoldStats(&soft_hold, &ss);
+		put_kv(&o, "soft t", ss.taken);
+		put_kv(&o, " c", ss.combined);
+		put_kv(&o, " x", ss.changed);
+		put_kv(&o, " s", ss.stale);
+#else
+		put(&o, "soft -");
+#endif
+		break;
+	}
 	case HRC_DMR_DIAG_LINES - 1: {	// the prompt FIFO's TX gate (audio_pcm.c): closings, late (a beep still
 					// sounding, its tail cut), ring play on while closed (never); the speaker queue's underruns (never)
 		uint32_t g, l, ra, b, ov, un;

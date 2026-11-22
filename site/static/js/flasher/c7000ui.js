@@ -15,9 +15,9 @@
 // it is written, and a second pass checks them all; a failed or interrupted install is resumed by running it again
 // (only what still differs is written).
 
-import { h, t, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
+import { h, t, HOME, notice, button, panel, progressBar, logBox, download, filePicker, localTime, partNames } from "./dom.js";
 import { hex, sha256, sleep } from "./bytes.js";
-import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts } from "./link.js";
+import { SerialStream, Link, CableError, probe, serialSupported, serialApi, knownRadioPort, grantedPorts, CABLES } from "./link.js";
 import { Stub, stubImages, univForBoard, StubError, DONE_LED, MEM, ROM_REPEAT, hasRomFlag } from "./stub.js";
 import * as c7 from "./c7000.js";
 import { openVendorFile, describe as describeVendorFile, analysisCandidate, whyNot } from "./vendorfile.js";
@@ -38,8 +38,6 @@ import * as diag from "../diag.js";
 import { fromSerialInfo, isCh340 } from "./adapter.js";
 import * as crumbs from "./trail.js";
 
-// USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser
-export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
 const CH340 = 0x1A86;
 const ROM_WAIT = 180000;		// how long the page listens for the boot ROM per try
 const BOOT_MS = 9000;			// a soft reset to RadioFoundry answering its debug link (bench 2026-10-15: 8-9 s)
@@ -1341,6 +1339,15 @@ export function doneView() {
 			c.backupSaved ? h("p", { class: "small muted" }, t(c.rfoundry ? "flash.c7.done.backup_kept_rfoundry" : "flash.c7.done.backup_kept")) : null,
 			// not asked of the radio: any STUB command parks RadioFoundry's codec until the next restart (platform stub_region, core/stubentry)
 			h("p", { class: "small muted" }, t(hasStubEntry() ? "flash.c7.done.next_time" : "flash.c7.done.next_time_power")));
+		if (["install", "update"].includes(S().task) && !S().fakeC7) {
+			const features = new Set([...String(p.features || "").split(","), ...String(S().firmware?.manifest?.features || "").split(",")]);
+			if (features.has("SATELLITE_TLE"))
+				status.append(h("div", { class: "notice info" }, h("p", {}, t("flash.done.satellite_tle_offer")),
+					h("div", { class: "actions" }, button(t("flash.done.satellite_tle_load"), async () => {
+						await dropC7();
+						location.assign(`${HOME}tools/satellite/index.html`);
+					}, { primary: true }))));
+		}
 		if (good) await bringChannels(c, status, left);
 		if (left()) return;
 		S().forward(button(t("flash.nav.finish"), () => ctx.reset(), { primary: true }));

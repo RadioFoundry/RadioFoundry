@@ -186,5 +186,7 @@
  "feature.ZONE_EDIT.title": "区域编辑器：在区域内移动、添加、复制和移除信道；重命名、复制和删除区域",
  "feature.ZONE_EDIT.help": "区域列表中的区域编辑器：添加、移动、复制到此处、移除信道；重命名、复制、删除区域（docs/spec/ui.md 2.2）：配合信道编辑器",
  "feature.CONTACT_EDIT.title": "联系人编辑器：从查找或呼叫操作新建联系人（名称、ID、类型、时隙）",
- "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR"
+ "feature.CONTACT_EDIT.help": "联系人编辑器：从查找、呼叫操作或手动输入的号码新建联系人，设置名称、ID、类型和时隙（docs/spec/ui.md 2.4）：配合信道编辑器（其文本输入）和 DMR",
+ "feature.NET_RADIO_UDP.title": "通过 UDP 控制信道组与信道（端口 4191）",
+ "feature.NET_RADIO_UDP.help": "通过 UDP（端口 4191，只接受电脑发来的：USB 网络或 PPP）控制信道组与信道，无需 TCP 或 HTTP：读取电台当前位置，像旋钮一样选择或步进信道组和信道，每个请求以一个数据报应答，并向发送方发送变化通知；takRF 的电台控制使用它（需要 DMR_IP_GATEWAY；core/net/radio_udp.c，docs/spec/tcp-services.md 8）"
 }

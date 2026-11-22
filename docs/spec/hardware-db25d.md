@@ -135,7 +135,11 @@ output is the modem's input (4.5): it gets the digital gain word 0xB174 (nibble 
 returns to FM. DMR voice and beeps leave the modem's codec line out instead (4.5), so the same step also sets the HR_C7000 line out
 gain (GCR_DACL, `hrc7000_volume_db`): 0 dB at the default step 8, 3 dB less a step below it (step 1 is -21 dB) and up to
 `DB25D_PCM_VOL_TOP_DB` (12 dB) at step 16; step 0 keeps the amplifier off. The radio sets `volume_pcm`, so beeps play at
-`beep_level` and the volume scales them on the way out. The dB at the speaker is not measured (unverified).
+`beep_level` and the volume scales them on the way out. The board also gives the radio core the line out gain as its curve
+(`volume_db10`), so above step 7 each beep is played softer by the gain added over step 7's (`radio-features.md` 4):
+at step 16 the beep is 15 dB below `beep_level`. The speaker volume itself never changes for a beep. The curve is the
+register's nominal dB, not measured at the speaker (unverified): if the line out gains less than that, beeps at the top
+steps sound softer than at step 7, never louder.
 
 Switching the amplifier on (PTA24 low) pops, whatever the order of the other speaker pins (measured). So the board
 gives the radio core an amplifier hang (`hal_audio_t.speaker_warm`, `speaker_hang_s` 5 s, `radio-features.md` 4):
@@ -1041,7 +1045,7 @@ State on a radio:
 | NAND | `drivers/flash/spi_nand` on SPI0 (6.5). Programs and erases only inside RadioFoundry's range (6.6). The diagnostics page shows its ID and the page reads ECC had to correct |
 | TX | Analog FM (4.4) and DMR (4.5), both measured on the SDR bench with the frequency trim of 4.6. Refused without a valid calibration page or outside the bands. The diagnostics page shows the PA drive for the tuned frequency, low / high |
 | Display | `st7735` on a 4-wire serial bus: SPI2 or bit-banged, chosen by the ADC 2 strap |
-| Power | No battery (`CAP_NO_BATTERY`): a mobile on a fixed 13.8 V supply with no supply reading (3.3). The core shows no battery icon, percentage, Tools > Battery page, Battery saver or Low battery warning setting, and has no battery monitor, so it never warns or refuses to transmit for the battery. `hal_power_t` has no `battery_mv` or `battery_pct`. The diagnostics page shows the raw ADC channels |
+| Power | No battery (`CAP_NO_BATTERY`): a mobile on a fixed 13.8 V supply with no supply reading (3.3). The core shows no battery icon, percentage, Battery saver or Low battery warning setting, and has no battery monitor, so it never warns or refuses to transmit for the battery. `hal_power_t` has no `battery_mv` or `battery_pct`. The diagnostics page shows the raw ADC channels |
 | Keys | Matrix and encoder positions checked on the radio. VOL/SQL is `ACT_VOLUME`: the volume screen, then the encoder (`radio-features.md` 4.2) |
 | Volume | No knob (`hal_power_t.volume()` is -1): the stored step (0..16) goes to `hal_radio_t.volume()` and sets the BK4819 AF DAC gain (3.3) for FM and the HR_C7000 line out gain for DMR voice and beeps; the debug link sets it too (op 30). Checked on the radio in FM: the steps change the level and step 0 is silent. DMR: not yet checked on the radio |
 | Storage | `CONFIG_NAND_STORAGE` (on): settings kept in NAND blocks 1920-1951 through `drivers/flash/nand_sectors` (6.6). On the owner's radio the region mounted clean (no foreign data, no bad blocks) and the VFO frequency survived a chip reset |

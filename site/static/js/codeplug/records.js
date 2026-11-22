@@ -95,8 +95,9 @@ export function decodeChannel(r) {
 		lon: getCoord(r[0x24], r[0x1F], r[0x1E]),
 		sfr: (l1 & 0x02) !== 0,
 		sfrA: r[0x25],
-		sfrB: r[0x2A] & ~0x40,
+		sfrB: r[0x2A] & ~0x70,
 		toneBurst: r[0x2A] !== 0xFF && (r[0x2A] & 0x40) !== 0,	// FM: SFR byte B bit 6, read without the SFR flag (7.3.3); 0xFF = not set
+		acceptBadCrc: (r[0x2A] & 0x30) === 0x20,	// SFR byte B bits 5-4 = 2 (7.3.3); 0xFF and 0xBF read as off
 	};
 }
 
@@ -140,8 +141,7 @@ export function encodeChannel(c, r) {
 		r[0x24] = oh; r[0x1F] = om; r[0x1E] = ol;
 	}
 	r[0x25] = c.sfrA & 0xFF;
-	r[0x2A] = (c.sfrB & 0xBF) | (c.toneBurst ? 0x40 : 0);
-	if (r[0x2A] === 0xFF) r[0x2A] = 0xCF;	// 0xFF reads as not set: the unused bits 5-4 cleared (as the firmware)
+	r[0x2A] = (c.sfrB & 0x8F) | (c.toneBurst ? 0x40 : 0) | (c.acceptBadCrc ? 0x20 : 0);	// bits 5-4 always written: never 0xFF
 	return r;
 }
 

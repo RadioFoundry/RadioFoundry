@@ -152,6 +152,33 @@ static void test_working(void)
 	CHECK(writes == 0);
 }
 
+// One band of the working copy broken, the other good: the broken band comes from the factory table, not refused. The
+// UHF high row here wrapped at 8 bits on its last point, as a converter without saturation leaves it (x 1.7: 156 ->
+// 265 -> 9), so the order check fails there (diagnostics "w:VokUO8"); VHF stays the working copy's (issues 508, 510)
+static void test_working_one_band_bad(void)
+{
+	uint8_t f[512], t[512];
+	build_factory(f);
+	memcpy(security[0], f, 256);
+	memcpy(security[1], f + 256, 256);
+	memcpy(t, f, 512);
+	fill(t, 0x1A0, 9, 30, 1);	// very low rows present
+	fill(t, 0x1A9, 5, 30, 1);
+	t[0x010 + 8] = 9;		// UHF high, point 8: below the low row's 72
+	static const uint8_t marker[8] = { 0x00, 0x25, 0x00, 0x40, 0x00, 0x45, 0x01, 0x40 };
+	memcpy(&t[0x1B0], marker, 8);
+	memcpy(working, t, 512);
+
+	CHECK(uvf_cal_load());
+	uvf_cal_point_t p;
+	CHECK(uvf_cal_at(145000000, &p) && p.valid);
+	CHECK(p.power_dac[0] == 31 * 16);	// VHF: the working copy's very low row, point 1
+	CHECK(uvf_cal_at(400000000, &p) && p.valid);
+	CHECK(p.power_dac[0] == UHF_VLOW * 16 && p.power_dac[3] == UHF_HIGH * 16);	// UHF: the factory table, converted
+	CHECK(uvf_cal_at(446000000, &p) && p.valid);
+	CHECK(writes == 0);
+}
+
 static void test_blank(void)
 {
 	memset(working, 0xFF, sizeof(working));
@@ -217,6 +244,7 @@ int main(void)
 {
 	test_factory();
 	test_working();
+	test_working_one_band_bad();
 	test_blank();
 	test_direct_tx_ref();
 	test_dmr_rx_offset();

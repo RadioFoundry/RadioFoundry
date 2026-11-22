@@ -1,0 +1,37 @@
+<section class="wrap section page-head">
+	<h1>{{t support.title}}</h1>
+	<p class="lead">{{t support.lead}}</p>
+</section>
+<section class="wrap section">
+	<div class="cards tools">
+		<article class="card tool">
+			<h2><a href="{{home}}support/faq.html">{{t support.faq_title}}</a></h2>
+			<p>{{t support.faq_text}}</p>
+			<p><a class="btn" href="{{home}}support/faq.html">{{t support.faq_go}}</a></p>
+		</article>
+		<article class="card tool">
+			<h2>{{t support.update_title}}</h2>
+			<p>{{t support.update_text}}</p>
+			<p><a class="btn" href="{{home}}flash/index.html">{{t support.update_go}}</a></p>
+		</article>
+	</div>
+</section>
+<section class="wrap section" id="report">
+	<h2>{{t support.bug_title}}</h2>
+	<p>{{t support.bug_text}}</p>
+	<div class="cards tools">
+		<article class="card tool" id="download">
+			<h3>{{t support.dl_title}}</h3>
+			<p>{{t support.dl_text}}</p>
+			<p><button class="btn" type="button" id="support-download">{{t support.dl_go}}</button></p>
+			<div id="support-result" aria-live="polite"></div>
+			<p class="small muted">{{t support.dl_privacy}}</p>
+		</article>
+		<article class="card tool" id="about">
+			<h3>{{t support.about_title}}</h3>
+			<p>{{t support.about_text}}</p>
+			<figure><img src="{{root}}static/img/screens/160x120i5/about.png" alt="{{t screen.about}}" width="200" height="150" loading="lazy"><figcaption class="small muted">{{t support.about_caption}}</figcaption></figure>
+		</article>
+	</div>
+	<p>{{t support.issue_text}} <a href="{{ issues }}">{{t support.issue_go}}</a></p>
+</section>

@@ -40,11 +40,11 @@ TEST_GROUP, RX_VOICE_FRAMES voice frames). On the radio: one reception more (nxd
 group (nxdn.src, nxdn.dst) with that RAN. Skipped where the radio's air interface can't receive the rate (the fit
 without RX: a provider whose receiver needs a 24-symbol sync has none for NXDN's 10-symbol FSW).
 
-test_nxdn_rx_speech[9600|4800] (the same opt-ins and --ambe FILE, a speech recording as 9-byte frames; the bench
-transmits, the radio only receives): the same call with the recording's first SPEECH_FRAMES frames as its voice
-frames, which the bench tool carries without looking inside. On the radio: one reception more; at least all but
-SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent, bad, lost or overflowed, and the
-decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
+test_nxdn_rx_speech[9600|4800] (the same opt-ins; the bench transmits, the radio only receives): the same call with
+speech as its voice frames, at most the first SPEECH_FRAMES frames of tests/data/voice/test_transmission.ambe (104
+frames: 64 of them at 9600 bit/s, all at 4800) or of the --ambe FILE given (9-byte frames), which the bench tool carries without looking inside. On the radio:
+one reception more; at least all but SPEECH_LATE of the frames into the voice path (voice.rx_in), none counted silent,
+bad, lost or overflowed, and the decoded PCM peaking at PEAK_MIN or more (voice.rx_peak): the radio's vocoder decoded speech, not noise. What the
 speaker plays is not measured. Skipped without a vocoder in the firmware (dmr.codec=0).
 
 test_nxdn_scan_from_bench[zone|dual] (opt-in: --allow-rf --allow-service-stop --allow-codeplug-write --nxdn-mhz MHz;
@@ -61,7 +61,7 @@ import time
 
 import pytest
 
-from rfoundry_hil import as_int, counter_deltas, skip
+from rfoundry_hil import as_int, counter_deltas, skip, speech_file
 from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
@@ -442,11 +442,7 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
 @pytest.mark.parametrize("rate", list(RATES))
 @pytest.mark.needs_switch("VFO")
 def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
-    ambe = pytestconfig.getoption("--ambe")
-    if not ambe:
-        skip("opt_in", "give --ambe FILE (or $RFOUNDRY_HIL_AMBE): a 9-byte-frame .ambe speech recording")
-    if not os.path.isfile(ambe) or os.path.getsize(ambe) % 9:
-        pytest.fail(f"{ambe}: not a 9-byte-frame .ambe file")
+    ambe = speech_file(pytestconfig, "--ambe", 9)
     if radio.view(["dmr"]).get("dmr.codec") != "1":
         skip("not_built", "no vocoder merged in this firmware (dmr.codec=0): voice can't play")
     frames = min(SPEECH_FRAMES[rate], os.path.getsize(ambe) // 9)
@@ -457,6 +453,7 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     def before():
         radio.reset_counters()
         got["before"] = radio.counters()[1]
+        got["audio"] = radio.view(["audio"])
 
     v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, frames, ["--voice-file", ambe], before)
     time.sleep(1.5)                     # playback drains
@@ -474,8 +471,18 @@ def test_nxdn_rx_speech(radio, sdr_bench, pytestconfig, rate):
     peak = stats.get("voice.rx_peak")
     assert peak is not None and int(peak) >= PEAK_MIN, \
         f"decoded speech peaks at {peak} (silent output: wrong bits into the decoder?): {d}"
+    # A board whose chip keeps I2S off the speaker in the FM copy plays through its prompt FIFO (gotchas.md 1.14): every
+    # block of the call goes there, with no gaps after the first block and none refused
+    a0, a1 = got["audio"], radio.view(["audio"])
+    fifo = {k: (as_int(a1.get(f"audio.fifo_{k}")) or 0) - (as_int(a0.get(f"audio.fifo_{k}")) or 0)
+            for k in ("chunks", "gaps", "full")}
+    print(f"speaker FIFO: {fifo}" if fifo["chunks"] else "speaker FIFO: not used on this radio")
+    if fifo["chunks"]:
+        assert fifo["chunks"] >= d["voice.rx_frames"] * 5 * 9 // 10, f"FIFO chunks for {d['voice.rx_frames']} frames: {fifo}"
+        assert fifo["gaps"] <= FIFO_GAPS_MAX and fifo["full"] == 0, f"speaker FIFO: {fifo}"
 
 
+FIFO_GAPS_MAX = 2      # silent chunks (4 ms each) the speaker FIFO may get in a call: none expected once primed
 SCAN_CALLS = 4          # calls the bench sends while the scan comes round to the NXDN channel
 SCAN_VOICE_FRAMES = 120 # 2.4 s a call: longer than a scan's round of a short zone
 

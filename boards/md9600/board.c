@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ui/fmt.h"
 #include "hrc/dmr_glue.h"
 #include "hrc/vocoder.h"
 #include "gps_uart/gps_uart.h"
@@ -19,19 +20,6 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
-
-// The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
-// pvPortMalloc may be a DMA buffer
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
-
-// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
-extern uint32_t _sccmbss[], _eccmbss[];
-static void ccm_zero(void)
-{
-	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
-		*p = 0;
-}
-__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
@@ -105,6 +93,24 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// The support info (docs/spec/support-info.md 2): the modem, then the board revision driven and what chose it, and
+// the start-up's IF chip read test and receiver probe (hardware-md9600.md 16): the lines of the diagnostics page
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i == 0) {
+		*role = BOARD_HW_DMR;
+		str_copy(buf, len, "HR_C6000");
+		return true;
+	}
+	if (i > 2) {
+		return false;
+	}
+	md9600_radio_diag_t rd;
+	md9600_radio_diag(&rd);
+	*role = BOARD_HW_BOARD;
+	return md9600_rev_text(i == 1 ? 0 : 2, md9600_rev_state(), rd.probe, buf, len);
+}
+
 const board_t board = {
 	.name = "MD-9600",
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
@@ -149,6 +155,7 @@ const board_t board = {
 #endif
 	.power = &md9600_power,
 	.flash = &stm32_spi_flash,
+	.hw_line = hw_line,
 #if CONFIG_DIAG
 	.diag_line = md9600_diag_line,
 	.diag_reset = md9600_diag_reset,
