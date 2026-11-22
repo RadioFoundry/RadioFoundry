@@ -413,7 +413,13 @@ bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps)
 		}
 		l->kept = true;
 	}
-	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (steps & 0x3Fu)));
+	uint8_t base = (uint8_t)(l->saved & 0x3Fu);
+	if (steps > 0x3Fu - base) {
+		steps = (uint8_t)(0x3Fu - base);
+	}
+	l->us = (uint16_t)(((uint32_t)steps * HRC5000_TX_LEAD_STEP_NUM + HRC5000_TX_LEAD_STEP_DEN / 2u) /
+			   HRC5000_TX_LEAD_STEP_DEN);
+	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (base + steps)));
 	return l->on;
 }
 
@@ -426,16 +432,6 @@ bool hrc5000_tx_lead_off(hrc5000_t *dev, hrc5000_lead_t *l)
 	// A failed write may still have gone in: put back what was read even then, and again next time when this fails
 	l->kept = !hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, l->saved);
 	return !l->kept;
-}
-
-uint32_t hrc5000_tx_lead_us(const hrc5000_lead_t *l, uint8_t steps)
-{
-	uint8_t base = (uint8_t)(l->saved & 0x3Fu);
-	steps &= 0x3Fu;
-	if (!l->kept || steps <= base) {
-		return 0;
-	}
-	return ((uint32_t)(steps - base) * HRC5000_TX_LEAD_STEP_NUM + HRC5000_TX_LEAD_STEP_DEN / 2u) / HRC5000_TX_LEAD_STEP_DEN;
 }
 
 // The codec set-up for a received call that plays (on) and back to the idle values (off). DMR only: the FM receiver's

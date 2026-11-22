@@ -432,7 +432,7 @@ retunes per burst (`radio_md380.c`):
 | When | What |
 |---|---|
 | After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
-| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 = 25 while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 set 15 half symbols over the value read (to 25 on the bench) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
 
 4:0x12 bits 5-0 count half symbols (104.17 us, `hrc5000_tx_lead_us`) over the value the chip runs with, 0x0A:
 measured from the RF TX interrupt to the next timeslot interrupt, 1121 us at 10, 2684 us at 25, about 6600 us at 63.
@@ -464,11 +464,11 @@ the carrier is still settling at the burst's start. A longer lead makes the erro
 | Build, 15.4 MHz split | Runs | AMBE bits corrected |
 |---|---|---|
 | Listen off | 3 | 0 |
-| Listen on, lead 25 (1.56 ms) | 2 | 0.05 % |
-| Listen on, lead 40 (3.1 ms) | 3 | 0.02-0.05 % |
-| Listen on, lead 63 (5.5 ms) | 3 | 0.01-0.02 % |
+| Listen on, lead 15 steps (1.56 ms) | 2 | 0.05 % |
+| Listen on, lead 30 steps (3.1 ms) | 3 | 0.02-0.05 % |
+| Listen on, lead 53 steps (5.5 ms) | 3 | 0.01-0.02 % |
 
-The board keeps lead 25. The 50 kHz split reads 0 at every lead.
+The board keeps 15 steps (`LISTEN_LEAD_STEPS`). The 50 kHz split reads 0 at every lead.
 
 The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
 burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,
