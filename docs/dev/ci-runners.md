@@ -110,18 +110,26 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 | `RFOUNDRY_PORT` | the radio's serial port when several are present |
 | `RFOUNDRY_HIL_AMBE` | optional: other AMBE+2 speech for the voice tests, in place of `tests/data/voice` (outside the repository) |
 | `RFOUNDRY_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.rfoundry-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.rfoundry-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
+| `RFOUNDRY_HIL_FLASH_CMD` | the nightly job only: the site's flash command (`tools/hil_flash.sh`: it gets `RFOUNDRY_FLASH_BOARD`, `RFOUNDRY_FLASH_IMAGE` and `RFOUNDRY_FLASH_PORT`, and returns once the radio has restarted) |
+| `RFOUNDRY_HIL_RADIOS` | the nightly job only: the bench radios, `board=port` separated by spaces (or `RFOUNDRY_HIL_BOARD` with `RFOUNDRY_PORT` for one) |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf
 --allow-service-stop`), `usb_switch`, `codeplug_write`, `reboot`, a `-k` selection and extra options. Without any
 it runs the radio-only tests, which never transmit. A full run with RF takes 30 to 40 minutes. The JUnit XML and
-the screenshots are the `hil-results` artifact. A scheduled nightly run happens only when the repository variable
-`RFOUNDRY_HIL_SCHEDULE` is `true`, with the flags in `RFOUNDRY_HIL_SCHEDULE_FLAGS`.
+the screenshots are the `hil-results` artifact. The `tier` input picks `--tier` (default `standard`). A scheduled run
+of the firmware already on the radio happens only when the repository variable `RFOUNDRY_HIL_SCHEDULE` is `true`,
+with the flags in `RFOUNDRY_HIL_SCHEDULE_FLAGS`.
+
+With the repository variable `RFOUNDRY_HIL_NIGHTLY` set to `true`, the schedule runs the `nightly` job instead: the
+commit tagged `nightly-ci` is built for each bench radio, flashed through `RFOUNDRY_HIL_FLASH_CMD` and tested with
+`--tier standard` plus `RFOUNDRY_HIL_NIGHTLY_FLAGS`; when every radio passes, the job moves the tag `nightly` to that
+commit (`contents: write`). A commit that already carries `nightly` is not run again. The runner needs the radios'
+toolchains for the build ([tests/hil/README.md](../../tests/hil/README.md#nightly)).
 
 Gotchas:
 
-- **The radio's firmware isn't flashed by the workflow.** Putting the radio in its bootloader takes a person
-  (`tools/rfoundry`); the job tests whatever is on the radio and prints its version first. Flash the commit to test
-  before starting the run.
+- **The `hil` job doesn't flash.** It tests whatever is on the radio and prints its version first: flash the commit
+  to test before starting the run. Only the `nightly` job flashes, through the site's `RFOUNDRY_HIL_FLASH_CMD`.
 - **USB personality tests can strand the radio.** `usb_switch` tests switch the radio to a CDC-NCM network adapter
   and back. When macOS misses the NCM carrier the radio can stay a network adapter, and only a power cycle brings the
   serial port back; later tests then skip with "no radio". Leave `usb_switch` off for unattended runs.

@@ -14,6 +14,7 @@ from rfoundry_hil import as_int, skip
 
 
 @pytest.mark.feature("dmr_voice")
+@pytest.mark.smoke
 def test_no_lost_modem_interrupts(radio):
     kv = radio.view(["dmr"])
     if kv.get("dmr.built") == "0":

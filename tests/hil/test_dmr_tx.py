@@ -125,6 +125,7 @@ def talker_alias_on_air(bursts):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
+@pytest.mark.smoke
 def test_dmr_tx_off_air(radio, sdr_bench, pytestconfig):
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
@@ -680,6 +681,9 @@ def ambe_param_stats(amb):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.parametrize("opts,word", ENC_CASES, ids=[f"{w:#x}" for _, w in ENC_CASES])
+# bring-up tier: four overs whose statistics are only printed; test_dmr_tx_off_air and test_vocoder_encode_options
+# cover the path
+@pytest.mark.bringup
 def test_dmr_tx_encode_options(radio, sdr_bench, pytestconfig, opts, word):
     """One 3 s over per encode option set, given over the debug link (SETTING 31, RAM only; dmr-voice.md 6): the
     options in force (voice.enc_options) are the ones set, the over passes test_dmr_tx_off_air's checks (valid call,

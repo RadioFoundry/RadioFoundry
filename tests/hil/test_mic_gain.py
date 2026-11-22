@@ -37,6 +37,8 @@ from rfoundry_debug import DebugLink, DebugLinkError, as_int
 from test_fm_tx import fm_vfo  # noqa: F401  (the fixture)
 from hil_config import rig
 
+pytestmark = pytest.mark.bringup   # a person keys each mic gain step: a calibration sweep
+
 LINK_BACK_S = 180.0
 MIN_SEGMENT_S = 1.0
 
