@@ -147,6 +147,17 @@ test("from a release without off lists, a switch on in no variant is asked about
 	assert.deepEqual(planUpdate(named, sel()).ask, ["NEW"]);
 });
 
+test("an off= name that is no longer a switch (folded in, always on now) is passed over, not asked or built", () => {
+	for (const preset of ["full", "custom"]) {
+		const cur = currentBuild(probe({ git: "aaaa111", preset, off: preset === "full" ? "D,GONE" : "C,GONE" }), RADIO, WITH_OFF, REPORTED);
+		const s = sel();
+		const plan = planUpdate(cur, s, { NEW: true });
+		assert.equal(plan.ready, true);
+		assert.ok(![...plan.ask, ...plan.added, ...plan.needed, ...plan.dropped].includes("GONE"));
+		assert.ok(!s.on.has("GONE"));
+	}
+});
+
 test("a build the service called custom that equals a variant is that variant", () => {
 	const cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "B,D" }), RADIO, RELEASES, REPORTED);
 	assert.deepEqual([cur.kind, cur.preset], ["preset", "amateur"]);

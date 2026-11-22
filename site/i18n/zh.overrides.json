@@ -52,8 +52,6 @@
  "feature.NET_KISS.help": "端口 8001 的 KISS over TCP，桥接到 APRS KISS TNC（需要 NET_TCP 和 APRS；core/net/kiss_tcp.c）",
  "feature.NET_HTTP.title": "HTTP 状态页与 JSON，端口 80",
  "feature.NET_HTTP.help": "端口 80 的 HTTP 状态服务器：页面、JSON 状态、视图区段和屏幕（需要 NET_TCP；core/net/http.c）",
- "feature.NET_HTTP_GZIP.title": "HTTP 静态文件以 gzip 存储并提供",
- "feature.NET_HTTP_GZIP.help": "状态服务器的静态文件（core/net/http_assets）在构建时以 gzip 压缩存储，并以 Content-Encoding: gzip 提供；关闭时按原样存储和提供（需要 NET_HTTP；tools/gen_http_assets.py）",
  "feature.NET_WEBCTL.title": "Web 控制：前面板页面、按键、状态和接收音频（/ws）",
  "feature.NET_WEBCTL.help": "状态服务器上的 Web 控制：/ws（WebSocket）提供电台前面板页面、按键、状态和接收音频（需要 NET_HTTP；core/net/ws.c，docs/spec/tcp-services.md 5）",
  "feature.NET_RIGCTL.title": "rigctld，端口 4532",
