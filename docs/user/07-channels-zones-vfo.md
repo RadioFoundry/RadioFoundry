@@ -437,8 +437,7 @@ frequency on RX, and its mode shows as "AM (air band)" or "FM broadcast". The ed
 frequency, and also for every channel in a codeplug you open, read from the radio or import. A TX frequency typed in
 either band sets **RX Only** too, since no radio transmits there. While **RX Only** is set, the TX frequency, TX tone
 and power are grayed out and blank in the channel list, and the channel form also grays out the TX timeout, VOX and
-the tone burst. The Problems
-list warns about a DMR channel in either band.
+the tone burst. The Problems list warns about a DMR channel in either band.
 
 In the air band the squelch works as on any FM channel. A broadcast station plays whatever the squelch level, so a
 fading station isn't cut, and the screen shows it is receiving. The LED stays off: a station isn't a call. The squelch only stops a scan on a station:
