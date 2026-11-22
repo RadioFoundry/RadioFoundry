@@ -113,7 +113,7 @@ Large-text mode (accessibility, or chosen by the user) shows only the status str
 | 3 | **Recent** | Everyone heard and every call made, newest first, filters: All / Calls to me / Missed / Talkgroups. Item actions are the same as Contacts, plus "Save as contact" and "Show position" |
 | 4 | **Zones** | Zone picker, current zone's channels, VFO, Scan lists. A zone's list is also its editor: "Add channel" first, "Zone options" (Rename, Copy as new zone, Share zone to..., Delete zone) last, and Channel actions on a channel (Move up, Move down, Copy here, Edit channel, Share channel to..., Remove from zone; the Share rows with zone sharing) |
 | 5 | **Channels** | Every channel by number; New channel from current settings (first row); a channel's settings, edited in place and saved (ui.md 2.1) |
-| 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery |
+| 6 | **Tools** | Scan, Position (GPS), Hotspot, USB network, Single frequency repeater, ID lookup, Signal meter, DTMF, APRS, Registration (ARS), Battery, Key fill (after the zone offer's 0, no digit; [key-fill.md](../spec/key-fill.md) 9) |
 | 7 | **Settings** | Grouped by intent (below), with search |
 
 Each Tools item keeps its number on every radio and build, so a key path such as `SELECT`, `6`, `7` (Diagnostics) is

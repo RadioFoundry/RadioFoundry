@@ -322,6 +322,28 @@ a traffic key in the Key check column of the system's key table.
 A different check value means a different key. A basic privacy key has so few possible values that its check value
 doesn't hide it: treat it like the key. How the value is computed: [key-check.md](../spec/key-check.md).
 
+### Loading a key from another radio
+
+One radio can send a stored key to another over DMR. The key goes encrypted, and both screens show a code so you can
+see that no third radio got in between. Status: untested on a radio.
+
+1. Put both radios on the same DMR channel: side by side on a direct mode channel, or through a repeater when they
+   are apart.
+2. On the radio that gets the key: **Tools > Key fill > Receive a key**. Key fill is the last tool: open Tools and
+   press **Up** once. It shows its DMR ID and waits.
+3. On the radio that has the key: **Tools > Key fill > Send a key**, pick the key, press **OK** (Send this key),
+   type the other radio's DMR ID and press **OK**.
+4. When a radio asks for random key presses, press keys at random until the count reaches zero. Both radios may ask.
+5. Both screens show a six-digit code, such as `482 913`, and the other radio's ID. Look at the other radio's screen.
+   If the codes are the same, press **OK** on both radios. If not, press **Back**: nothing is sent.
+6. The receiver shows "Key stored", the sender "Key sent", each with the key's check value. The two must match.
+
+On a direct mode channel both radios transmit at their lowest power level for the whole fill (the screen says "Low
+power") and go back to your level afterwards; through a repeater they use your normal level. Low power only makes
+fewer receivers hear the exchange: the matching codes are what keep the key safe. When the radios are apart, compare the
+codes on a phone call with someone whose voice you know, or meet; a code read out over a radio channel proves nothing. Leaving the screen cancels. Without that kind of key in its codeplug (a traffic key needs a
+system of the same type), the receiving radio refuses it and says why. How it works: [key-fill.md](../spec/key-fill.md).
+
 ## Position in calls
 
 Some DMR radios send their position inside a voice call (ETSI GPS Info). When a caller does, the receive screen shows

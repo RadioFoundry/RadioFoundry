@@ -3550,6 +3550,11 @@ msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "密钥注入"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "双守候"
@@ -4535,9 +4540,214 @@ msgid "Privacy"
 msgstr "加密"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_WHY_KEY_TOO_LONG"
+msgid "This key is too long to send"
+msgstr "此密钥过长，无法发送"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_SEND_BACK"
+msgid "OK send  Back"
+msgstr "OK 发送  返回"
+
+#: core/ui/ui_menus.c
 msgctxt "KEYS_EMPTY"
 msgid "No keys stored"
 msgstr "无密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_LABEL_TO_ID"
+msgid "To ID"
+msgstr "发往 ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CHECK"
+msgid "Check "
+msgstr "检查 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TOAST_TYPE_ID"
+msgid "Type the other radio's DMR ID"
+msgstr "请输入另一台电台的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE_SEND"
+msgid "Send this key"
+msgstr "发送此密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_ID_OK_SEND_BACK"
+msgid "0-9 ID  OK send  Back"
+msgstr "0-9 ID  OK 发送  返回"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_RECEIVE"
+msgid "Receive a key"
+msgstr "接收密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_SEND"
+msgid "Send a key"
+msgstr "发送密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_DMR_ONLY"
+msgid "Key fill: DMR channels only"
+msgstr "密钥注入：仅限 DMR 信道"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_NO_DMR_ID"
+msgid "Set this radio's DMR ID first"
+msgstr "请先设置本机的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BAD_PEER"
+msgid "Type another radio's DMR ID"
+msgstr "请输入其他电台的 DMR ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BUSY"
+msgid "Key fill busy: try again"
+msgstr "密钥注入忙：请重试"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_NO_SYSTEM"
+msgid "No matching system on the receiver"
+msgstr "接收方无匹配系统"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_AMBIGUOUS"
+msgid "More than one system matches on the receiver"
+msgstr "接收方有多个系统匹配"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_UNSUPPORTED"
+msgid "The receiver can't store that kind of key"
+msgstr "接收方无法存储此类密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_BAD_PAYLOAD"
+msgid "The key didn't arrive whole"
+msgstr "密钥不全"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_WRITE_FAILED"
+msgid "The receiver couldn't save the key"
+msgstr "接收方无法保存密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_CANCELED"
+msgid "The other radio canceled"
+msgstr "对方电台已取消"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CANCELED"
+msgid "Canceled"
+msgstr "已取消"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_MISMATCH"
+msgid "The codes didn't match"
+msgstr "号码不一致"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_TIMEOUT"
+msgid "The other radio didn't answer"
+msgstr "对方电台未应答"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CHECK"
+msgid "A message failed its check"
+msgstr "消息检查失败"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_BUSY"
+msgid "The other radio is busy"
+msgstr "对方电台忙"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_SEND"
+msgid "Couldn't send: check the channel"
+msgstr "无法发送：请检查信道"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_FAILED"
+msgid "Key fill failed"
+msgstr "密钥注入失败"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_PRESS_KEYS"
+msgid "Press keys at random: "
+msgstr "请任意按键: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_READY"
+msgid "Ready. This radio: "
+msgstr "就绪。本机: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CODE"
+msgid "Code "
+msgstr "号码 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_OTHER_RADIO"
+msgid "Other radio "
+msgstr "对方电台 "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SAME"
+msgid "Same on both? OK yes, Back no"
+msgstr "两台一致？OK 是，返回 否"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENDING"
+msgid "Sending the key"
+msgstr "正在发送密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORING"
+msgid "Storing the key"
+msgstr "正在存储密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORED"
+msgid "Key stored"
+msgstr "密钥已存储"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENT"
+msgid "Key sent"
+msgstr "密钥已发送"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_FAILED"
+msgid "Failed: "
+msgstr "失败: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT_OK"
+msgid "Waiting for the other radio's OK"
+msgstr "等待对方电台确认"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT"
+msgid "Waiting for the other radio"
+msgstr "等待对方电台"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_LOW_POWER"
+msgid "Low power"
+msgstr "低功率"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_YES_BACK_NO"
+msgid "OK yes  Back no"
+msgstr "OK 是  返回 否"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_BACK_CANCELS"
+msgid "Back cancels"
+msgstr "返回 取消"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

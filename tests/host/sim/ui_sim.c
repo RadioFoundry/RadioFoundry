@@ -88,6 +88,9 @@
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/key_store.h"
 #include "support/kcv.h"
+#if CONFIG_KEY_FILL
+#include "keyfill/keyfill.h"
+#endif
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #include "radio/radio_p25.h"
@@ -1593,6 +1596,12 @@ void radio_req_power(int8_t dir)
 		set_temp(RADIO_TEMP_POWER);
 	changed();
 }
+// Key fill's low power (key-fill.md 2.1): RAM only, as the radio core
+void radio_req_tx_low(bool on)
+{
+	view.tx_low = on;
+	changed();
+}
 void radio_req_squelch(int8_t dir)
 {
 	to_selected();
@@ -2592,6 +2601,146 @@ static sim_map_t cur_map;
 static const char *shot_dir, *shot_prefix;
 int sim_presses(void) { return presses; }
 void sim_count_reset(void) { presses = 0; }
+
+#if CONFIG_KEY_FILL
+// ---------------- key fill (ui_svc_keyfill.c): a believable session ----------------
+// Random key presses until the pool is full (12 from the start, or the kf:full token), then the steps; the other
+// radio's side comes from tokens: kf:peer (its next step: COMMIT or RPUB, then READY / DONE), kf:abort (its ABORT),
+// kf:fail (no answer: a time-out), kf:rpt (this channel goes through a repeater)
+#define KF_SIM_PRESSES	12
+#define KF_SIM_CODE	482913u
+#define KF_SIM_PEER	9991234u
+static struct {
+	bool on, low;
+	ui_kf_view_t v;
+	int seen;		// presses counted so far
+} kf_sim;
+
+uint8_t ui_svc_kf_start(int32_t key, uint32_t own, uint32_t dst, bool low)
+{
+	if (own == 0)
+		return UI_KF_NO_ID;
+	if (key >= 0 && (dst == 0 || dst > CODEPLUG_DMR_ID_MAX || dst == own))
+		return UI_KF_BAD_PEER;
+	memset(&kf_sim, 0, sizeof kf_sim);
+	kf_sim.on = true;
+	kf_sim.low = low;
+	kf_sim.v.role = key < 0;
+	kf_sim.v.own_id = own;
+	kf_sim.v.peer_id = key < 0 ? 0 : dst;
+	kf_sim.v.presses = KF_SIM_PRESSES;
+	kf_sim.seen = presses;
+	if (low)
+		radio_req_tx_low(true);
+	return UI_KF_OK;
+}
+
+bool ui_svc_kf_view(ui_kf_view_t *out)
+{
+	memset(out, 0, sizeof *out);
+	if (!kf_sim.on)
+		return false;
+	*out = kf_sim.v;
+	return true;
+}
+
+static void kf_sim_over(void)
+{
+	if (kf_sim.low)
+		radio_req_tx_low(false);
+	kf_sim.low = false;
+}
+
+static void kf_sim_fail(uint8_t why, bool by_peer)
+{
+	kf_sim.v.state = KF_ST_FAILED;
+	kf_sim.v.why = why;
+	kf_sim.v.by_peer = by_peer;
+	kf_sim_over();
+}
+
+void ui_svc_kf_confirm(bool same)
+{
+	if (!kf_sim.on || kf_sim.v.state != KF_ST_COMPARE)
+		return;
+	if (!same)
+		kf_sim_fail(KF_WHY_MISMATCH, false);
+	else
+		kf_sim.v.state = kf_sim.v.role ? KF_ST_SENT_READY : KF_ST_WAIT_READY;
+}
+
+void ui_svc_kf_end(void)
+{
+	if (!kf_sim.on)
+		return;
+	kf_sim_over();
+	memset(&kf_sim, 0, sizeof kf_sim);
+}
+
+bool ui_svc_kf_tick(const radio_view_t *v, uint32_t now)
+{
+	(void)v;
+	(void)now;
+	if (!kf_sim.on)
+		return false;
+	uint8_t was = kf_sim.v.presses;
+	int n = presses >= kf_sim.seen ? presses - kf_sim.seen : presses;	// the flow's count may start over
+	kf_sim.seen = presses;
+	if (kf_sim.v.state == KF_ST_IDLE && kf_sim.v.presses > 0) {
+		kf_sim.v.presses = (uint8_t)(n >= kf_sim.v.presses ? 0 : kf_sim.v.presses - n);
+		if (kf_sim.v.presses == 0)
+			kf_sim.v.state = kf_sim.v.role ? KF_ST_LISTEN : KF_ST_SENT_COMMIT;
+		return true;
+	}
+	return was != kf_sim.v.presses;
+}
+
+static bool kf_sim_token(const char *arg)
+{
+	ui_kf_view_t *k = &kf_sim.v;
+	if (strcmp(arg, "rpt") == 0) {
+		view.ch.tx_hz = view.ch.rx_hz + 5000000u;
+		changed();
+		return true;
+	}
+	if (!kf_sim.on)
+		return false;
+	if (strcmp(arg, "full") == 0) {
+		k->presses = 0;
+		if (k->state == KF_ST_IDLE)
+			k->state = k->role ? KF_ST_LISTEN : KF_ST_SENT_COMMIT;
+	} else if (strcmp(arg, "abort") == 0) {
+		kf_sim_fail(KF_WHY_CANCELED, true);
+	} else if (strcmp(arg, "fail") == 0) {
+		kf_sim_fail(KF_WHY_TIMEOUT, false);
+	} else if (strcmp(arg, "peer") == 0) {
+		static const uint8_t kcv[3] = { 0x95, 0x07, 0xA7 };
+		switch (k->state) {
+		case KF_ST_LISTEN:
+			k->peer_id = KF_SIM_PEER;
+			/* fall through */
+		case KF_ST_SENT_COMMIT:
+			k->state = KF_ST_COMPARE;
+			k->code = KF_SIM_CODE;
+			break;
+		case KF_ST_SENT_READY:
+		case KF_ST_WAIT_READY:
+			k->state = KF_ST_DONE;
+			k->result = KF_STORED;
+			k->kcv_ok = true;
+			memcpy(k->kcv, kcv, sizeof k->kcv);
+			kf_sim_over();
+			break;
+		default:
+			return false;
+		}
+	} else {
+		return false;
+	}
+	changed();	// the screen draws the step
+	return true;
+}
+#endif
 void sim_set_shot_dir(const char *dir, const char *prefix) { shot_dir = dir; shot_prefix = prefix; }
 static void (*tick_hook)(uint32_t now_ms);
 void sim_set_tick_hook(void (*hook)(uint32_t now_ms)) { tick_hook = hook; }
@@ -2815,6 +2964,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
 	memset(&zs_sim, 0, sizeof zs_sim);
+#if CONFIG_KEY_FILL
+	memset(&kf_sim, 0, sizeof kf_sim);
+#endif
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -2964,6 +3116,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
 	else if (strcmp(key, "toast") == 0) { snprintf(got, sizeof got, "%s", s.toast[0] ? s.toast : "none"); prefix = true; }
 	else if (strcmp(key, "power") == 0) snprintf(got, sizeof got, "%u", view.power);
+	else if (strcmp(key, "txlow") == 0) snprintf(got, sizeof got, "%u", view.tx_low);
 	else if (strcmp(key, "sq") == 0) snprintf(got, sizeof got, "%u", view.squelch);
 	else if (strcmp(key, "ts") == 0) snprintf(got, sizeof got, "%u", view.dmr.ts);
 	else if (strcmp(key, "cc") == 0) snprintf(got, sizeof got, "%u", view.dmr.cc);
@@ -3625,6 +3778,16 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_KEY_FILL
+	if (strcmp(t, "kf") == 0 && arg != NULL) {	// kf:full, kf:peer, kf:abort, kf:fail, kf:rpt (kf_sim)
+		if (!kf_sim_token(arg)) {
+			snprintf(err, len, "kf:%s: not now", arg);
+			return false;
+		}
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "zoneexpire") == 0) {
 		zs_sim.pending = false;
 		advance(200);

@@ -58,6 +58,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `key_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `key_fill` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_data_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -203,6 +204,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `KEY_CHECK` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `KEY_FILL` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -332,6 +334,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 468 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | Key check values: Settings > Privacy > Key check and Stored keys | `KEY_CHECK` | — | — | 1,676 B flash and no RAM on the DM-32UV default build (2026-11-20); the ARM figures are still to be measured. Untested on a radio |
+| Key fill between radios over DMR data: Tools > Key fill (Receive a key, Send a key) | `KEY_FILL` | — | — | 9,760 B flash and 160 B static RAM on the DM-32UV default build (2026-11-21, measured on and off), plus about 1.3 KB of RTOS heap while the key fill screen is open; the ARM figures are still to be measured. Needs `DMR` and `KEY_CHECK`; also builds the TX queue. Untested on a radio |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |

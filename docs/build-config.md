@@ -107,6 +107,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
 | `CONFIG_KEY_CHECK` | y | key check values: Settings > Privacy > Key check and Stored keys, every stored key with six hex digits two radios compare (`core/support/kcv.c`, `core/codeplug/key_store.c`; `docs/spec/key-check.md`). About 1.7 KB flash, no RAM. Off, neither row is there |
+| `CONFIG_KEY_FILL` | y where DMR and KEY_CHECK are | key fill: one radio sends a stored key to another over DMR data, X25519 with a six-digit code compared on both screens, the key's check value at the end (Tools > Key fill: Receive a key, Send a key; `core/keyfill`, `core/support/entropy.c`, `x25519.c`; `docs/spec/key-fill.md`). Needs DMR and `CONFIG_KEY_CHECK`; also builds the TX queue (`CONFIG_DMR_AIR_QUEUE`). Flash and RAM: see `docs/feature-matrix.md` |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
 | `CONFIG_DMR_GPS` | = DMR | ETSI GPS Info in the embedded LC (FLCO 8): the caller's position on the receive screen (with distance and bearing when ours is known), in Recent and on the debug link; ours sent in the alias superframes when Settings > Location > Send in DMR calls is on and there is a position (GPS, host, fixed: `docs/spec/position.md`; no APRS needed; `docs/spec/dmr-voice.md`) |
 | `CONFIG_DMR_SMS` | = DMR | text messages: ETSI IP text (the default format) and ETSI defined short data, received (inbox, ETSI response) and sent (docs/spec/dmr-data.md 5) |
@@ -201,8 +202,8 @@ below are for an STM32F4 radio.
 | `CONFIG_UI_SETTINGS` | y | the Settings menu on the radio; off: settings keep their stored values and are set with qdmr (`docs/spec/ui.md` 5) |
 
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
-`CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
-`CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
+`CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY`,
+`CONFIG_ZONE_SHARE` or `CONFIG_KEY_FILL`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
 (the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
 (`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
 (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.

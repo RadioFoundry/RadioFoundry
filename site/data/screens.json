@@ -521,6 +521,36 @@
     "ZONE_SHARE"
    ]
   },
+  "key_fill_menu": {
+   "group": "tools",
+   "needs": [
+    "KEY_FILL"
+   ]
+  },
+  "key_fill_ready": {
+   "group": "tools",
+   "needs": [
+    "KEY_FILL"
+   ]
+  },
+  "key_fill_compare": {
+   "group": "tools",
+   "needs": [
+    "KEY_FILL"
+   ]
+  },
+  "key_fill_done": {
+   "group": "tools",
+   "needs": [
+    "KEY_FILL"
+   ]
+  },
+  "key_send": {
+   "group": "tools",
+   "needs": [
+    "KEY_FILL"
+   ]
+  },
   "zone_imported": {
    "group": "channels",
    "needs": [

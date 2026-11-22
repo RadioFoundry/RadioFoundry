@@ -526,6 +526,9 @@ typedef struct {
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
+	// Every transmission at level 0, the board's lowest, whatever power says (radio_req_tx_low: key fill). RAM only:
+	// never saved, so a restart is back at the user's level
+	bool tx_low;
 } radio_view_t;
 
 // view.temp bits
@@ -612,6 +615,8 @@ void radio_req_monitor(bool down);
 // The monitor key released after its hold function ran (keyassign.h): FM closes the squelch, DMR doesn't toggle
 void radio_req_monitor_held_up(void);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
+// While on, every transmission goes at the board's lowest level (view.tx_low); off, at the user's again. Not saved
+void radio_req_tx_low(bool on);
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
 void radio_req_retune(void);			// tune again now, or after the transmission (the reference trim changed)
@@ -781,6 +786,8 @@ void radio_get_settings(radio_settings_t *s);
 void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid);
 // view.power_off without copying the view (the housekeeping task polls it)
 bool radio_power_off_wanted(void);
+// view.dmr.privacy without copying the view (a key stored on the housekeeping task, codeplug/key_store.c)
+bool radio_dmr_privacy_on(void);
 // Switching off: the radio core sends what has to go out first (the ARS deregistration). radio_power_off_busy() is
 // true until that is done; the caller gives up after a few seconds (gotcha 7.4)
 void radio_req_power_off(void);

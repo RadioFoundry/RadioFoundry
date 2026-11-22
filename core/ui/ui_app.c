@@ -147,14 +147,20 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
-#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE || CONFIG_KEY_FILL
 // Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
-// the light back)
+// the light back), and leaving the key fill screen ends its session (key-fill.md 9)
 static void left(uint8_t from)
 {
 	for (uint8_t i = sp; i >= from && i > 0; i--) {
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
 		if (ui_scr[stack[i].scr]->leave != NULL)
 			ui_scr[stack[i].scr]->leave();
+#endif
+#if CONFIG_KEY_FILL
+		if (stack[i].scr == SCR_KEY_FILL)
+			ui_svc_kf_end();
+#endif
 	}
 }
 #else
@@ -2294,7 +2300,8 @@ void ui_app_key(const input_event_t *ev)
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	if (ev->action == ACT_QUICK && ev->gesture == GESTURE_PRESS && stack[sp].scr != SCR_QUICK &&
 			stack[sp].scr != SCR_DIAG && stack[sp].scr != SCR_HOME && !typing &&
-			!ON_BL_TEST()) {	// * steps the rate in the backlight tests
+			!ON_BL_TEST() &&	// * steps the rate in the backlight tests
+			!(CONFIG_KEY_FILL && stack[sp].scr == SCR_KEY_FILL)) {	// a random key press there
 		ui_push(SCR_QUICK, 0);
 		return;
 	}
@@ -2454,6 +2461,13 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #endif
 #if CONFIG_CRASH_SCREEN
 	ui_crash_tick(now_ms);
+#endif
+#if CONFIG_KEY_FILL
+	// The key fill session runs here, and the screen keeps the backlight on (key-fill.md 9)
+	if (ui_svc_kf_tick(v, now_ms))
+		dirty = true;
+	if (stack[sp].scr == SCR_KEY_FILL)
+		wake_req = true;
 #endif
 #if CONFIG_DMR_TRUNK
 	if (stack[sp].scr == SCR_INCOMING_CALL) {

@@ -10,9 +10,13 @@
 #include "support/hkdf.h"
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
+#include "radio/radio.h"
+#include "hal_time.h"
 #endif
 
 #define TRAFFIC_RECORDS	0x0400u		// the family's keys, 0x1900-0x1CFF (channel-modes.md 3)
+#define SYSTEMS		0xFFu		// system records 0..254; 0xFF is CODEPLUG_SYSTEM_NONE
+#define IDENTITY_MAX	32u		// the longest identity key_store_identity reads (a payload carries 8)
 
 #if CONFIG_DMR_PRIVACY
 // Privacy slot entry n (0 = the first slot holding a valid key): true and *e filled, else how many there are in *count
@@ -121,6 +125,162 @@ uint16_t key_store_count(void)
 	(void)e;
 	(void)n;
 	return total;
+}
+
+int key_store_identity(uint8_t system, uint8_t *out, uint8_t cap)
+{
+#if CODEPLUG_MODE_RECORDS
+	codeplug_system_t s;
+	uint8_t block[CODEPLUG_SYS_HDR + IDENTITY_MAX];
+	int len = codeplug_system(system, &s, block, IDENTITY_MAX);
+	// An identity the block doesn't hold whole names nothing; one past what we read is past any payload's 8 too
+	if (len < 0 || s.id_len > cap || s.id_len > IDENTITY_MAX || (int)s.id_len > len)
+		return -1;
+	memcpy(out, block, s.id_len);
+	return s.id_len;
+#else
+	(void)system;
+	(void)out;
+	(void)cap;
+	return -1;
+#endif
+}
+
+#if CONFIG_DMR_PRIVACY
+static uint8_t put_privacy(const key_put_t *p, uint8_t kcv[KCV_LEN])
+{
+	if (p->slot < 1 || p->slot > SETTINGS_PRIVACY_KEYS || p->key_len != 4u || p->key == NULL)
+		return KEY_PUT_BAD;
+	uint32_t value = (uint32_t)p->key[0] << 24 | (uint32_t)p->key[1] << 16 | (uint32_t)p->key[2] << 8 | p->key[3];
+	// dmrPrivacyKeyIsValid sees 16 bits: a wider value would pass as its low half
+	if (p->type == DMR_PRIVACY_OFF || p->type >= DMR_PRIVACY_NUM_TYPES || value > 0xFFFFu ||
+	    !dmrPrivacyKeyIsValid((dmrPrivacyType_t)p->type, (uint16_t)value)) {
+		crypto_wipe(&value, sizeof value);
+		return KEY_PUT_BAD;
+	}
+	settings_t *st = settings_begin();
+	st->privacy_type[p->slot - 1u] = p->type;
+	st->privacy_key[p->slot - 1u] = value;
+	// The radio core keeps the key in use in slot 1 and sets privacy_active to 1 when it saves (radio_sm.c), so a
+	// record not yet saved since privacy went on (0) is using slot 1 as well
+	uint8_t active = st->privacy_active != 0 ? st->privacy_active : 1u;
+	settings_end(hal_millis());
+	if (p->slot == active) {
+		// Off stays off: the new key is loaded when privacy is turned on (ui_svc_privacy reads the slot)
+		if (radio_dmr_privacy_on())
+			radio_req_dmr_privacy(p->type, (uint16_t)value);
+	}
+	(void)kcv_privacy(p->type, value, kcv);
+	crypto_wipe(&value, sizeof value);
+	return KEY_PUT_STORED;
+}
+#endif
+
+#if CODEPLUG_MODE_RECORDS
+// The system p's key goes to (key-fill.md 8): its number, or -1 - KEY_PUT_NO_SYSTEM / KEY_PUT_AMBIGUOUS
+static int put_system(const key_put_t *p, uint8_t *sys_type)
+{
+	codeplug_kv_cursor_t c;
+	uint16_t k;
+	int found = -1;
+	// Keys only: codeplug_system reads the few systems present, not 255 checks of the whole area
+	codeplug_kv_begin(&c, CODEPLUG_KEY_SYSTEM, (uint16_t)(CODEPLUG_KEY_SYSTEM + SYSTEMS - 1u));
+	while (codeplug_kv_next(&c, &k, NULL, 0) >= 0) {
+		codeplug_system_t s;
+		uint8_t block[CODEPLUG_SYS_HDR + sizeof p->identity];
+		uint8_t n = (uint8_t)(k - CODEPLUG_KEY_SYSTEM);
+		int len = codeplug_system(n, &s, block, sizeof p->identity);
+		if (len < 0 || s.type != p->type)
+			continue;
+		if (p->id_len != 0) {
+			if (s.id_len != p->id_len || len < (int)p->id_len || memcmp(block, p->identity, p->id_len) != 0)
+				continue;
+		} else if (found >= 0) {
+			return -1 - KEY_PUT_AMBIGUOUS;	// an empty identity names a type with one system only
+		}
+		*sys_type = s.type;
+		found = n;
+		if (p->id_len != 0)
+			break;		// a system's identity is its own: the first match is the one
+	}
+	return found >= 0 ? found : -1 - KEY_PUT_NO_SYSTEM;
+}
+
+static uint8_t put_traffic(const key_put_t *p, uint8_t kcv[KCV_LEN])
+{
+	if (p->key_len < 1u || p->key_len > KEY_STORE_MAX_LEN || p->id_len > sizeof p->identity || p->key == NULL)
+		return KEY_PUT_BAD;
+	uint8_t sys_type = 0;
+	int system = put_system(p, &sys_type);
+	if (system < 0)
+		return (uint8_t)(-1 - system);
+	// Another firmware's codeplug is left as it is (codeplug-native.md 2)
+	if (codeplug_foreign())
+		return KEY_PUT_WRITE_FAILED;
+
+	// The record to write: one of this system with the same algorithm and key ID, else the first key not in use
+	uint8_t used[TRAFFIC_RECORDS / 8u];
+	uint8_t h[CODEPLUG_TRAFFIC_HDR];
+	codeplug_kv_cursor_t c;
+	uint16_t k, at = 0;
+	bool same = false;
+	int len;
+	memset(used, 0, sizeof used);
+	codeplug_kv_begin(&c, CODEPLUG_KEY_TRAFFIC, (uint16_t)(CODEPLUG_KEY_TRAFFIC + TRAFFIC_RECORDS - 1u));
+	while ((len = codeplug_kv_next(&c, &k, h, sizeof h)) >= 0) {
+		uint16_t n = (uint16_t)(k - CODEPLUG_KEY_TRAFFIC);
+		used[n / 8u] |= (uint8_t)(1u << (n % 8u));
+		if (len >= (int)CODEPLUG_TRAFFIC_HDR && h[0] == (uint8_t)system && h[1] == p->alg &&
+		    (uint16_t)(h[2] | h[3] << 8) == p->key_id) {
+			at = k;
+			same = true;
+			break;
+		}
+	}
+	if (!same) {
+		uint16_t n = 0;
+		while (n < TRAFFIC_RECORDS && (used[n / 8u] & (1u << (n % 8u))) != 0)
+			n++;
+		if (n == TRAFFIC_RECORDS)
+			return KEY_PUT_WRITE_FAILED;	// the family is full
+		at = (uint16_t)(CODEPLUG_KEY_TRAFFIC + n);
+	}
+
+	uint8_t v[CODEPLUG_TRAFFIC_HDR + KEY_STORE_MAX_LEN];
+	v[0] = (uint8_t)system;
+	v[1] = p->alg;
+	v[2] = (uint8_t)p->key_id;
+	v[3] = (uint8_t)(p->key_id >> 8);
+	v[4] = p->flags;
+	memcpy(&v[CODEPLUG_TRAFFIC_HDR], p->key, p->key_len);
+	bool ok = codeplug_kv_set(at, v, (uint16_t)(CODEPLUG_TRAFFIC_HDR + p->key_len));
+	// A check value this build can't compute (AES without AES) goes back as zeros: the key is stored all the same
+	if (ok && !kcv_traffic(sys_type, p->alg, &v[CODEPLUG_TRAFFIC_HDR], p->key_len, kcv))
+		memset(kcv, 0, KCV_LEN);
+	crypto_wipe(v, sizeof v);
+	return ok ? KEY_PUT_STORED : KEY_PUT_WRITE_FAILED;
+}
+#endif
+
+uint8_t key_store_put(const key_put_t *p, uint8_t kcv[KCV_LEN])
+{
+	memset(kcv, 0, KCV_LEN);	// DONE carries zeros when nothing was stored (key-fill.md 4.4)
+	switch (p->cls) {
+	case KCV_CLASS_PRIVACY:
+#if CONFIG_DMR_PRIVACY
+		return put_privacy(p, kcv);
+#else
+		return KEY_PUT_UNSUPPORTED;
+#endif
+	case KCV_CLASS_TRAFFIC:
+#if CODEPLUG_MODE_RECORDS
+		return put_traffic(p, kcv);
+#else
+		return KEY_PUT_UNSUPPORTED;
+#endif
+	default:
+		return KEY_PUT_UNSUPPORTED;
+	}
 }
 
 #endif	// KEY_STORE

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The key primitives (core/support): HMAC-SHA-256 on RFC 4231's cases, HKDF on RFC 5869's, and the key check values
+// The key primitives (core/support): HMAC-SHA-256 on RFC 4231's cases, HKDF on RFC 5869's, X25519 on RFC 7748's
+// vectors (5.2 one and a thousand iterations, the 6.1 exchange) with the low-order refusal, and the key check values
 // of docs/spec/key-check.md against values computed apart from this code (Python hashlib from the spec's text)
 #include <stdio.h>
 #include <string.h>
 #include "config.h"
 #include "support/hkdf.h"
 #include "support/kcv.h"
+#include "support/x25519.h"
 
 static int failures;
 
@@ -84,6 +86,66 @@ static void test_hkdf(void)
 	CHECK(crypto_equal(a, b, sizeof a));
 	b[15] ^= 0x80;
 	CHECK(!crypto_equal(a, b, sizeof a));
+}
+
+static void test_x25519(void)
+{
+	static x25519_ws_t ws;
+	uint8_t k[32], u[32], out[32];
+	// RFC 7748 5.2
+	unhex("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4", k, 32);
+	unhex("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c", u, 32);
+	CHECK(x25519(out, k, u, &ws));
+	CHECK(same(out, "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552", 32));
+	unhex("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d", k, 32);
+	unhex("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493", u, 32);
+	CHECK(x25519(out, k, u, &ws));
+	CHECK(same(out, "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957", 32));
+	// 5.2 iterated: k = u = 9, then k <- X25519(k, u), u <- old k
+	memset(k, 0, 32);
+	k[0] = 9;
+	memcpy(u, k, 32);
+	for (int i = 1; i <= 1000; i++) {
+		x25519(out, k, u, &ws);
+		memcpy(u, k, 32);
+		memcpy(k, out, 32);
+		if (i == 1)
+			CHECK(same(k, "422c8e7a6227d7bca1350b3e2bb7279f7897b87bb6854b783c60e80311ae3079", 32));
+	}
+	CHECK(same(k, "684cf59ba83309552800ef566f2f4d3c1c3887c49360e3875f2eb94d99532c51", 32));
+	// 6.1: both public keys and the shared secret
+	uint8_t a[32], b[32], pa[32], pb[32], s1[32], s2[32];
+	unhex("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a", a, 32);
+	unhex("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb", b, 32);
+	x25519_public(pa, a, &ws);
+	x25519_public(pb, b, &ws);
+	CHECK(same(pa, "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a", 32));
+	CHECK(same(pb, "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f", 32));
+	CHECK(x25519(s1, a, pb, &ws));
+	CHECK(x25519(s2, b, pa, &ws));
+	CHECK(same(s1, "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742", 32));
+	CHECK(memcmp(s1, s2, 32) == 0);
+	// Low order u (0, 1): the all-zero result is refused (6.1)
+	memset(u, 0, 32);
+	CHECK(!x25519(out, a, u, &ws));
+	u[0] = 1;
+	CHECK(!x25519(out, a, u, &ws));
+	// The workspace is wiped
+	static const x25519_ws_t zero;
+	CHECK(memcmp(&ws, &zero, sizeof ws) == 0);
+	// Agreement on many key pairs, made by a simple generator (not a source of keys: a test's)
+	uint32_t r = 0x12345678u;
+	for (int n = 0; n < 20; n++) {
+		for (int i = 0; i < 32; i++) {
+			r = r * 1103515245u + 12345u;
+			a[i] = (uint8_t)(r >> 16);
+			r = r * 1103515245u + 12345u;
+			b[i] = (uint8_t)(r >> 16);
+		}
+		x25519_public(pa, a, &ws);
+		x25519_public(pb, b, &ws);
+		CHECK(x25519(s1, a, pb, &ws) && x25519(s2, b, pa, &ws) && memcmp(s1, s2, 32) == 0);
+	}
 }
 
 static void test_kcv(void)
@@ -171,6 +233,7 @@ int main(void)
 {
 	test_hmac();
 	test_hkdf();
+	test_x25519();
 	test_kcv();
 	test_kcv_vectors();
 	printf(failures ? "# FAILED (%d failures)\n" : "# PASSED (0 failures)\n", failures);

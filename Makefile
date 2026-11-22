@@ -205,12 +205,17 @@ endif
 ifeq ($(CONFIG_KEY_CHECK),y)
 APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c core/support/hkdf.c core/support/kcv.c)
 endif
+# Key fill between radios: the protocol engine and its transport, the randomness pool and X25519
+ifeq ($(CONFIG_KEY_FILL),y)
+CORE_DIRS += core/keyfill
+APP_SRC += $(filter-out $(APP_SRC),core/keyfill/keyfill.c core/keyfill/keyfill_svc.c core/support/entropy.c core/support/x25519.c)
+endif
 # Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
 ifeq ($(CONFIG_ZONE_SHARE),y)
 APP_SRC += core/dmr/zoneShare.c core/dmr/zoneShareSvc.c
 endif
-# The air queue: the packets the IP gateway and zone sharing hand to the air, in order, one at a time
-ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE)),)
+# The air queue: the packets the IP gateway, zone sharing and key fill hand to the air, in order, one at a time
+ifneq ($(filter y,$(CONFIG_DMR_IP_GATEWAY) $(CONFIG_ZONE_SHARE) $(CONFIG_KEY_FILL)),)
 APP_SRC += core/dmr/dmrAirQueue.c
 endif
 # The IP gateway (the data service above carries its packets: CONFIG_DMR_DATA_CORE follows it)

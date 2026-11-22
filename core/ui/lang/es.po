@@ -3548,6 +3548,11 @@ msgid "Zones/Chs Received"
 msgstr "Zonas/Can recibidos"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "Carga de clave"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "Doble escucha"
@@ -4533,9 +4538,214 @@ msgid "Privacy"
 msgstr "Privacidad"
 
 #: core/ui/ui_menus.c
+msgctxt "KF_WHY_KEY_TOO_LONG"
+msgid "This key is too long to send"
+msgstr "Esta clave es demasiado larga para enviarla"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_SEND_BACK"
+msgid "OK send  Back"
+msgstr "OK enviar  Atrás"
+
+#: core/ui/ui_menus.c
 msgctxt "KEYS_EMPTY"
 msgid "No keys stored"
 msgstr "No hay claves"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_LABEL_TO_ID"
+msgid "To ID"
+msgstr "A ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CHECK"
+msgid "Check "
+msgstr "Control "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TOAST_TYPE_ID"
+msgid "Type the other radio's DMR ID"
+msgstr "Escriba el ID DMR de la otra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE_SEND"
+msgid "Send this key"
+msgstr "Enviar esta clave"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_ID_OK_SEND_BACK"
+msgid "0-9 ID  OK send  Back"
+msgstr "0-9 ID  OK enviar  Atrás"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_RECEIVE"
+msgid "Receive a key"
+msgstr "Recibir una clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_SEND"
+msgid "Send a key"
+msgstr "Enviar una clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_DMR_ONLY"
+msgid "Key fill: DMR channels only"
+msgstr "Carga de claves: solo canales DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_NO_DMR_ID"
+msgid "Set this radio's DMR ID first"
+msgstr "Configure antes el ID DMR de esta radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BAD_PEER"
+msgid "Type another radio's DMR ID"
+msgstr "Escriba el ID DMR de otra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BUSY"
+msgid "Key fill busy: try again"
+msgstr "Carga de claves ocupada: reintente"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_NO_SYSTEM"
+msgid "No matching system on the receiver"
+msgstr "Ningún sistema coincide en el receptor"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_AMBIGUOUS"
+msgid "More than one system matches on the receiver"
+msgstr "Más de un sistema coincide en el receptor"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_UNSUPPORTED"
+msgid "The receiver can't store that kind of key"
+msgstr "El receptor no puede guardar ese tipo de clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_BAD_PAYLOAD"
+msgid "The key didn't arrive whole"
+msgstr "La clave no llegó completa"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_WRITE_FAILED"
+msgid "The receiver couldn't save the key"
+msgstr "El receptor no pudo guardar la clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_CANCELED"
+msgid "The other radio canceled"
+msgstr "La otra radio canceló"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CANCELED"
+msgid "Canceled"
+msgstr "Cancelado"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_MISMATCH"
+msgid "The codes didn't match"
+msgstr "Los códigos no coincidían"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_TIMEOUT"
+msgid "The other radio didn't answer"
+msgstr "La otra radio no respondió"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CHECK"
+msgid "A message failed its check"
+msgstr "Un mensaje no pasó su control"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_BUSY"
+msgid "The other radio is busy"
+msgstr "La otra radio está ocupada"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_SEND"
+msgid "Couldn't send: check the channel"
+msgstr "No se pudo enviar: revise el canal"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_FAILED"
+msgid "Key fill failed"
+msgstr "La carga de clave falló"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_PRESS_KEYS"
+msgid "Press keys at random: "
+msgstr "Pulse teclas al azar: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_READY"
+msgid "Ready. This radio: "
+msgstr "Lista. Esta radio: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CODE"
+msgid "Code "
+msgstr "Código "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_OTHER_RADIO"
+msgid "Other radio "
+msgstr "Otra radio "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SAME"
+msgid "Same on both? OK yes, Back no"
+msgstr "¿Igual en ambas? OK sí, Atrás no"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENDING"
+msgid "Sending the key"
+msgstr "Enviando la clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORING"
+msgid "Storing the key"
+msgstr "Guardando la clave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORED"
+msgid "Key stored"
+msgstr "Clave guardada"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENT"
+msgid "Key sent"
+msgstr "Clave enviada"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_FAILED"
+msgid "Failed: "
+msgstr "Falló: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT_OK"
+msgid "Waiting for the other radio's OK"
+msgstr "Esperando el OK de la otra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT"
+msgid "Waiting for the other radio"
+msgstr "Esperando a la otra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_LOW_POWER"
+msgid "Low power"
+msgstr "Potencia baja"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_YES_BACK_NO"
+msgid "OK yes  Back no"
+msgstr "OK sí  Atrás no"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_BACK_CANCELS"
+msgid "Back cancels"
+msgstr "Atrás cancela"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

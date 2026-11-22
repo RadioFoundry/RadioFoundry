@@ -112,6 +112,11 @@ switch = "KEY_CHECK"
 spec = "docs/spec/key-check.md"
 source = ["core/support/kcv.c", "core/codeplug/key_store.c"]
 
+[feature.key_fill]
+switch = "KEY_FILL"
+spec = "docs/spec/key-fill.md"
+source = ["core/keyfill", "core/support/entropy.c", "core/support/x25519.c"]
+
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
 # Packet data under a privacy key: the privacy header, the user data encrypted, or held back

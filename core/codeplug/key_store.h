@@ -32,11 +32,35 @@ typedef struct key_entry_s {
 	char name[CODEPLUG_NAME_LEN + 1];	// traffic: the system's name; privacy: empty
 } key_entry_t;
 
+// A key to store (key fill, docs/spec/key-fill.md 8), as the payload carries it (4.3)
+typedef struct {
+	uint8_t cls;		// KCV_CLASS_PRIVACY or KCV_CLASS_TRAFFIC
+	uint8_t type;		// privacy type, or system type
+	uint8_t slot;		// privacy: 1..SETTINGS_PRIVACY_KEYS
+	uint8_t alg;		// traffic
+	uint16_t key_id;	// traffic
+	uint8_t flags;		// traffic: the record's flags octet
+	uint8_t id_len;		// traffic: the system's identity, 0..8 octets
+	uint8_t identity[8];
+	uint8_t key_len;	// privacy: 4 (the value, big endian); traffic: 1..KEY_STORE_MAX_LEN
+	const uint8_t *key;
+} key_put_t;
+// key_store_put's results: key-fill.md 4.4's DONE results, the same numbers
+enum { KEY_PUT_STORED = 0, KEY_PUT_NO_SYSTEM = 1, KEY_PUT_AMBIGUOUS = 2, KEY_PUT_UNSUPPORTED = 3, KEY_PUT_BAD = 4,
+       KEY_PUT_WRITE_FAILED = 5 };
+
 #if KEY_STORE
 uint16_t key_store_count(void);
 // Entry i in *e; with key not NULL its octets too (at most KEY_STORE_MAX_LEN copied). False past the end, or when the
 // list changed under the walk
 bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key);
+// Traffic entry e's system identity (channel-modes.md 7.1: the first id_len octets of its block) into out, at most cap
+// octets: its length, -1 when the system is gone or its identity is longer than cap
+int key_store_identity(uint8_t system, uint8_t *out, uint8_t cap);
+// Store p (key-fill.md 8): a privacy slot through the settings, a traffic key into the receiver's matching system
+// (replacing a record of that system, algorithm and key ID, else the first free one). Writes flash: the housekeeping
+// task's (a storage job). KEY_PUT_*; with KEY_PUT_STORED the stored key's check value in kcv
+uint8_t key_store_put(const key_put_t *p, uint8_t kcv[KCV_LEN]);
 #else
 static inline uint16_t key_store_count(void) { return 0; }
 static inline bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key) { (void)i; (void)e; (void)key; return false; }

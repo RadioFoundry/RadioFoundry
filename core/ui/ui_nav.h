@@ -47,6 +47,8 @@ typedef enum {
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
 	SCR_KEYS,			// Settings > Privacy > Keys: every stored key and its check value (codeplug/key_store.h)
+	SCR_KEY_SEND, SCR_KEY_FILL,	// key fill (CONFIG_KEY_FILL): a stored key's receiver; the session's steps
+	SCR_KEY_FILL_MENU,		// Tools > Key fill: receive, send (CONFIG_KEY_FILL)
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -189,6 +191,10 @@ const char *ui_filter_text(void);
 void ui_filter_reset(void);
 void ui_filter_rebuild(void);
 void ui_menus_save_failed(void);	// a codeplug write failed: what waited for it is dropped (ui_menus.c)
+#if CONFIG_KEY_FILL
+// Start key fill on this channel and open its screen: receive (key < 0) or send stored key `key` to dst (ui_menus.c)
+void ui_kf_open(int32_t key, uint32_t dst);
+#endif
 #if CONFIG_ZONE_EDIT
 // A list shows again, or the codeplug changed under it (ui_menus.c): the zone editor's focus follows its change
 void ui_menus_resume(void);
