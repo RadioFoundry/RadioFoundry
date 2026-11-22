@@ -283,6 +283,7 @@ def test_rx_tone_squelch(radio, pytestconfig, request):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.needs_switch("VFO_FM")
+@pytest.mark.smoke
 def test_fm_receive_bench(radio, sdr_bench, pytestconfig):
     _bench_receive(radio, sdr_bench, pytestconfig, "fm-mhz")
 

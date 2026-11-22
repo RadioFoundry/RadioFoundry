@@ -200,6 +200,7 @@ def speech(pytestconfig, sdr_bench):
 
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.smoke
 def test_dmr_audio_rx(radio, sdr_bench, pytestconfig):
     freq, cc, dst, private, _ = dmr_channel(radio, pytestconfig)
     ambe = speech_file(pytestconfig, "--ambe", 9)
@@ -377,6 +378,7 @@ def test_dmr_audio_rx_deviation(radio, sdr_bench, pytestconfig):
 
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
+@pytest.mark.smoke
 def test_dmr_audio_tx(radio, sdr_bench, pytestconfig, tmp_path):
     freq, cc, dst, private, own = dmr_channel(radio, pytestconfig)
     if own == 0:

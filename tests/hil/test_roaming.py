@@ -527,6 +527,7 @@ def _roam_beacon_home(roaming, sdr_bench, pytestconfig):
 @pytest.mark.rf
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
+@pytest.mark.bringup   # about 5 minutes; test_roam_beacon_home covers the beacon window
 def test_roam_beacon_other_site(roaming, sdr_bench, pytestconfig, backup_dir):
     rx, tx = pytestconfig.getoption("--roam-rx"), pytestconfig.getoption("--roam-tx")
     if not rx or not tx:

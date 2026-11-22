@@ -37,6 +37,7 @@ def tasks_section(radio):
 
 
 @pytest.mark.feature("task_stacks")
+@pytest.mark.smoke
 def test_every_task_has_stack_left(radio):
     radio.view()    # every section: the host task's deepest replies
     radio.screenshot()
