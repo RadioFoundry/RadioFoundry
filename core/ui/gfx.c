@@ -654,7 +654,10 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 	}
 #endif
 #ifdef GFX_FIT_TRACE
-	trace(GFX_TRACE_TEXT, x0, y, x - x0, f->h, s0);	// after the glyph cells gfx_text_bg fills
+	// The whole text's width, not the cells drawn: the loop stops at the clip's edge, so a glyph that starts past it
+	// is dropped without a pixel cut, and a trace of the drawn cells alone hid that from the layout check ("CC12"
+	// shown as "CC1" at the screen's edge, #837). After the glyph cells gfx_text_bg fills
+	trace(GFX_TRACE_TEXT, x0, y, gfx_text_width(f, s0), f->h, s0);
 #endif
 	return x;
 }

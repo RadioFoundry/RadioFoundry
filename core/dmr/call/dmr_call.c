@@ -2128,7 +2128,12 @@ void dmr_call_poll(uint32_t now_ms)
 			// Nor where the modem gives the repeater's bursts (receiving, or listening between ours): they say it is
 			// up, its slot numbers don't. The modem keeps those running on the timing it last had, and a repeater
 			// that had dropped counted as up for a key-up 0.6 s later, or as answering a wake-up (issue 538)
-			if (s.cfg.rmo && tick_alt > 3 && !tx_waiting() && !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
+			// And never on their own: they only hold a repeater its bursts already showed up (through our over, when
+			// nothing between our bursts is heard). The HR_C6000 labels slots from its CACH TC reads, which noise
+			// gives too: on a duplex channel with nothing on its output, a repeater no burst had ever shown came up
+			// from them 7 to 19 s after the channel was selected, and a key-up then skipped its wake-up (issue 721)
+			if (s.cfg.rmo && tick_alt > 3 && repeater_up(now_ms) && !tx_waiting() &&
+			    !(s.rpt_bursts && (!transmitting() || s.tx_listening))) {
 				s.rpt_last_ms = now_ms;
 				s.rpt_seen = true;
 			}
