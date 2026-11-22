@@ -526,6 +526,16 @@ TESTS   += codeplugTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
+# The text editor's Back: one character per press, a Chinese name by its three UTF-8 bytes (core/ui/text_edit.h)
+TESTS += textEditTest
+textEditTest: textEditTest.c $(CORE)/ui/text_edit.h
+	$(CC) $(CFLAGS) -o $@ textEditTest.c
+
+run: run-text
+run-text: textEditTest
+	./textEditTest
+.PHONY: run-text
+
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
@@ -1790,29 +1800,21 @@ else
 endif
 .PHONY: run-snmp
 
-# The HTTP status server's asset table (tools/gen_http_assets.py), gzip (CONFIG_NET_HTTP_GZIP) and plain, as the
-# firmware compiles it: every entry decompresses (or is) its file in core/net/http_assets, at its path, with its type
+# The HTTP status server's asset table (tools/gen_http_assets.py), as the firmware compiles it: every entry decompresses (or is) its file in core/net/http_assets, at its path, with its type
 HTTP_ASSETS := $(sort $(wildcard $(ROOT)/core/net/http_assets/*))
-TESTS   += httpAssetsTest httpAssetsTestPlain
+TESTS   += httpAssetsTest
 
 gen/gz/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
-	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(HTTP_ASSETS) > /dev/null
-	@touch $@
-gen/plain/http_assets_gen.h: $(HTTP_ASSETS) $(ROOT)/tools/gen_http_assets.py
 	@python3 -I $(ROOT)/tools/gen_http_assets.py $@ $(HTTP_ASSETS) > /dev/null
 	@touch $@
 httpAssetsTest: httpAssetsTest.c $(CORE)/net/http_assets.h gen/gz/http_assets_gen.h
 	$(CC) $(CFLAGS) -Igen/gz -o $@ httpAssetsTest.c
-httpAssetsTestPlain: httpAssetsTest.c $(CORE)/net/http_assets.h gen/plain/http_assets_gen.h
-	$(CC) $(CFLAGS) -Igen/plain -o $@ httpAssetsTest.c
 
 run: run-httpassets
-run-httpassets: httpAssetsTest httpAssetsTestPlain
-	@mkdir -p out/http_gz out/http_plain
+run-httpassets: httpAssetsTest
+	@mkdir -p out/http_gz
 	./httpAssetsTest out/http_gz
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_gz $(HTTP_ASSETS)
-	./httpAssetsTestPlain out/http_plain
-	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
 .PHONY: run-httpassets
 
 # core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
@@ -1874,7 +1876,7 @@ gen/webctl/keys.json: $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_SVGS) $(ROOT)/
 	@python3 -I $(ROOT)/tools/gen_webctl_assets.py $(WEBCTL_BOARD) gen/webctl > /dev/null
 gen/webctl/radio.svg gen/webctl/mic.svg: gen/webctl/keys.json
 gen/webctl/http_assets_gen.h: $(WEBCTL_ASSETS) $(ROOT)/tools/gen_http_assets.py
-	@python3 -I $(ROOT)/tools/gen_http_assets.py --gzip $@ $(WEBCTL_ASSETS) > /dev/null
+	@python3 -I $(ROOT)/tools/gen_http_assets.py $@ $(WEBCTL_ASSETS) > /dev/null
 	@touch $@
 httpAssetsTestWebctl: httpAssetsTest.c $(CORE)/net/http_assets.h gen/webctl/http_assets_gen.h
 	$(CC) $(CFLAGS) -Igen/webctl -o $@ httpAssetsTest.c

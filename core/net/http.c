@@ -491,7 +491,7 @@ static void dispatch(int c)
 	if (query != NULL) {
 		*query++ = '\0';
 	}
-	// The static files, gzip compressed with CONFIG_NET_HTTP_GZIP: sent so whatever the request's Accept-Encoding
+	// The static files, gzip compressed: sent so whatever the request's Accept-Encoding
 	// (without one any coding is acceptable, RFC 9110 12.5.3; every browser takes gzip; curl needs --compressed)
 	for (int i = 0; i < HTTP_ASSET_COUNT; i++) {
 		if (strcmp(path, http_assets[i].path) == 0) {

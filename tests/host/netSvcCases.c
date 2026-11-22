@@ -554,8 +554,16 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "\\get_info\n"), "RadioFoundry fake\n") == 0);
 	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
 	const char *ds = rig(&a, "\\dump_state\n");
-	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
+	CHECK(strncmp(ds, "0\n2\n2\n136000000 174000000 0x20 -1 -1", 35) == 0);
 	CHECK(strstr(ds, "0x40000000\n0x0\n0x0\n0x0\n") != NULL);
+	{	// every band listed, and the answer ends with its last line
+		static const char tail[] = "0x0\n0x0\n0x40000000\n0x0\n0x0\n0x0\n";
+		size_t n = strlen(ds), t = sizeof(tail) - 1u;
+		CHECK(n > t && strcmp(ds + n - t, tail) == 0);
+		CHECK(strstr(ds, "65000000 108000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "480000000 520000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "400000000 480000000 0x20 1000 5000") != NULL);	// the second TX range too
+	}
 	CHECK(strcmp(rig(&a, "xyz\n"), "RPRT -4\n") == 0);
 
 	// A line longer than the line buffer is refused whole, never run cut short: 4.4652 GHz cut by a digit would be

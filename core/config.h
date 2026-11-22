@@ -74,9 +74,6 @@
 #ifndef CONFIG_NET_HTTP
 #define CONFIG_NET_HTTP			CONFIG_NET_TCP
 #endif
-#ifndef CONFIG_NET_HTTP_GZIP
-#define CONFIG_NET_HTTP_GZIP		CONFIG_NET_HTTP
-#endif
 #ifndef CONFIG_NET_WEBCTL
 #define CONFIG_NET_WEBCTL		CONFIG_NET_HTTP
 #endif
@@ -192,6 +189,11 @@
 // Chinese brings its own 16x16 glyphs (core/ui/cjk_font_data.c) and UTF-8 text the text layer decodes (core/ui/gfx.c)
 #ifndef CONFIG_LANG_ZH
 #define CONFIG_LANG_ZH			0
+#endif
+// The CJK glyph table (cjk_font_data.c) is a ~120 KB rodata cost. It can stay off while CONFIG_LANG_ZH's translated
+// menus stay on, for a board too small to show Chinese (docs/build-config.md). Defaults to LANG_ZH; a board sets it 0
+#ifndef CONFIG_CJK_GLYPHS
+#define CONFIG_CJK_GLYPHS		CONFIG_LANG_ZH
 #endif
 #define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):

@@ -115,7 +115,8 @@ static void set_phases(mbe_frame_t *f, uint32_t seed)
 // them (da rounds toward minus infinity: never past the upper knot, at most one under the lower) and the product is
 // under 65535 * 32767 < 2^31, one 32-bit multiply; above, fxp_mulshr16's two. The phase carries mbe_cos's rounding
 // half step from the start, so the table index is its top 10 bits. Speech's harmonics are mostly under OSC_NARROW
-// (4,096 in PCM units).
+// (4,096 in PCM units). Only worth the extra branch and loop body where fxp_mulshr16 is the two-multiply halves
+// version (FXP_HALVES): on Arm it is already one SMMULR, so the split bought nothing and cost flash for no gain
 #define OSC_NARROW	65534
 static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const int32_t *k)
 {
@@ -124,6 +125,7 @@ static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const in
 		int32_t a = k[j] * 256, da = fxp_mulshr((k[j + 1] - k[j]) * 256, 53687091, 31);	// / SEG
 		int32_t *o = acc + j * SEG, *e = o + SEG;
 
+#if FXP_HALVES
 		if ((uint32_t)(k[j] + OSC_NARROW) <= 2u * OSC_NARROW && (uint32_t)(k[j + 1] + OSC_NARROW) <= 2u * OSC_NARROW) {
 			for (; o < e; o++) {
 				a += da;
@@ -131,7 +133,9 @@ static void osc(int32_t *acc, uint32_t ph, uint32_t inc, uint32_t dinc, const in
 				inc += dinc;
 				*o += ((a >> 8) * mbe_cos_idx(ph >> 22)) >> 15;
 			}
-		} else {
+		} else
+#endif
+		{
 			for (; o < e; o++) {
 				a += da;
 				ph += inc;
