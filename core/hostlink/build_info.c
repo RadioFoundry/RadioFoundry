@@ -98,6 +98,14 @@ static const char features[] =
 #if CONFIG_DMR_TRUNK
 	"DMR_TRUNK,"
 #endif
+	// The Codeplug Editor offers a channel kind only where the radio names its feature (modes.js offeredKinds): left
+	// out, a D-STAR or Fusion channel could be made only with no radio connected, and was flagged as not in the radio
+#if CONFIG_DSTAR
+	"DSTAR,"
+#endif
+#if CONFIG_YSF
+	"YSF,"
+#endif
 #if CONFIG_DMR_TRUNK_TX
 	"DMR_TRUNK_TX,"
 #endif

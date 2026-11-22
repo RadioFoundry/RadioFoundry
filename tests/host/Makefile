@@ -2030,7 +2030,7 @@ endif
 TESTS   += radioCoreTestModes
 RCMODES := $(sort $(RCORE) $(CORE)/radio/radio_dstar.c $(CORE)/radio/radio_ysf.c $(CORE)/radio/radio_ysf_vw.c $(MBE) \
            $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(DSTARCD) $(CORE)/dstar/dstar_gmsk.c \
-           $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c $(YSFMD) $(CORE)/ysf/ysf_codeplug.c)
+           $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c $(YSFMD) $(CORE)/ysf/ysf_codeplug.c $(CORE)/hostlink/build_info.c)
 radioCoreTestModes: $(RCMODES) $(wildcard $(CORE)/radio/*.h $(CORE)/dstar/*.h $(CORE)/ysf/*.h $(CORE)/dmr/call/*.h) \
                     $(CORE)/dmr/dmrDataService.h $(CORE)/ui/ui_svc.h $(ROOT)/hal/hal_audio_tap.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \

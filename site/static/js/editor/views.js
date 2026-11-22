@@ -514,7 +514,17 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				input.disabled = on;
 			}
 			if (f.type === "bool") (f.set ? f.set(work, input.checked) : (work[f.key] = input.checked));
-			if (f.show) row.hidden = !f.show(work);
+			if (f.show) {
+				const was = row.hidden;
+				row.hidden = !f.show(work);
+				// A box that comes into view shows what the record now holds. A mode's own fields were drawn when the
+				// form opened, empty on a channel of another mode: made D-STAR or Fusion here, the channel's new
+				// defaults (UR CQCQCQ, to ALL, DG-ID 0) stayed hidden behind blank boxes, and Save stored the blanks
+				if (was && !row.hidden && f.type !== "select" && f.type !== "bool") {
+					const v = (f.get || ((r) => r[f.key]))(work);
+					input.value = f.format ? f.format(v ?? "") : v ?? "";
+				}
+			}
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
 				input.disabled = f.disabled(work, value);

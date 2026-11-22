@@ -158,7 +158,8 @@ local changes (`-dirty`) carries its build time instead, since its code is newer
 `features=` names only some of the build's switches. `P25` is in it only where the board runs P25 (a build with
 `CONFIG_P25` on a board whose air interface receives it, [p25.md](p25.md) 7.1), so the Codeplug Editor offers P25
 channels only for such a radio. `NXDN` likewise: a build with `CONFIG_NXDN` on a board whose air interface carries
-it at either rate ([nxdn.md](nxdn.md) 6). `off=` lists every switch in `config/features.mk` `FEATURES`
+it at either rate ([nxdn.md](nxdn.md) 6). `DSTAR` and `YSF` are in it wherever the build has them
+(`CONFIG_DSTAR`, `CONFIG_YSF`), so the editor offers D-STAR and Fusion channels for that radio. `off=` lists every switch in `config/features.mk` `FEATURES`
 that the build left off, except those the board can't have or hasn't written (`BOARD_UNSUPPORTED`,
 `BOARD_NOT_WRITTEN`). With it a host knows the whole build: the web installer's update keeps a custom build's choices
 by it. `preset=` is the release variant the image was built as (`VARIANT`, `full` without one), or `custom` when a

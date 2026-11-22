@@ -1242,6 +1242,17 @@ static void test_channel_step(void)
 	CHECK(sm.view.zone_index == 1);
 }
 
+#if CONFIG_DSTAR && CONFIG_YSF && defined(HAL_VOCODER_LEND_BYTES)
+// The feature list names D-STAR and Fusion in a build with them (radioCoreTestModes, the one that links build_info.c
+// with both on): the Codeplug Editor offers those channel kinds for a connected radio only by these tokens
+// (channel-modes.md 4). Without them a stored channel could be made neither while the radio was on the cable
+static void test_kind_features(void)
+{
+	CHECK(strstr(build_features_now(), "DSTAR,") != NULL);
+	CHECK(strstr(build_features_now(), "YSF,") != NULL);
+}
+#endif
+
 // A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned in FM with the modem off, the squelch
 // never opens, PTT refused for the mode (before receive only), never a VFO copy, the next channel works as before
 static void test_parked_kind(void)
@@ -11772,6 +11783,9 @@ int main(void)
 	test_vfo_step_auto();
 	test_squelch();
 	test_squelch_voice_peak();
+#if CONFIG_DSTAR && CONFIG_YSF && defined(HAL_VOCODER_LEND_BYTES)
+	test_kind_features();
+#endif
 	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();
