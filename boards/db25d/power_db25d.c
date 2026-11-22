@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D power latch and power key, status LEDs (docs/spec/hardware-db25d.md 3.3).
 //
-// A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY), so battery_mv and battery_pct stay NULL and the core
+// A mobile on a fixed 13.8 V supply: no battery (CAP_NO_BATTERY), so battery_mv stays NULL and the core
 // shows no battery UI. Which ADC channel sees the supply, and at what scale, isn't known yet (10 #10), so there is
 // no supply reading either; the diagnostics page shows the raw channels. Volume is digital (VOL key and encoder),
 // so volume() is -1.

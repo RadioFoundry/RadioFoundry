@@ -137,8 +137,7 @@ static const hal_radio_t fake_radio = {
 
 static void p_led(uint8_t which, bool on) { (void)which; (void)on; }
 static uint16_t p_battery_mv(void) { return 8000; }
-static uint8_t p_battery_pct(void) { return 80; }
-static const hal_power_t fake_power = { .led = p_led, .battery_mv = p_battery_mv, .battery_pct = p_battery_pct };
+static const hal_power_t fake_power = { .led = p_led, .battery_mv = p_battery_mv };
 
 static bool a_start(audio_block_cb_t cb, void *ctx) { (void)cb; (void)ctx; return true; }
 static void a_stop(void) {}

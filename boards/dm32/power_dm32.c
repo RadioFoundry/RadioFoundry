@@ -11,8 +11,6 @@
 // 2S Li-ion: raw / 8.32 = volts x 10. The port's raw / 8.2 read 8.21 V where a meter on the pack read 8.09 V (radio
 // on vs. off, about 30 mV of load), so 8.32 (hardware-dm32.md 3.7). 6.4 V is where the old port warned
 #define BAT_RAW_PER_10V		832u		// ADC counts per 10 V
-#define BAT_FULL_MV		8200u
-#define BAT_EMPTY_MV		6400u
 #define SWITCH_SAMPLES		3
 
 static battery_avg_t bat;
@@ -42,11 +40,6 @@ static uint16_t battery_mv(void)
 	return battery_avg_mv(&bat, hal_millis(), battery_read_mv);
 }
 
-static uint8_t battery_pct(void)
-{
-	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
-}
-
 static int8_t volume(void)
 {
 	return -1;
@@ -74,7 +67,6 @@ const hal_power_t dm32_power = {
 	.init = init,
 	.latch = latch,
 	.battery_mv = battery_mv,
-	.battery_pct = battery_pct,
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,

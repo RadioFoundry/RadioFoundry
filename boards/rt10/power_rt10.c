@@ -11,8 +11,6 @@
 #include "power/battery/battery.h"
 
 #define BAT_MV_PER_COUNT	10u
-#define BAT_FULL_MV		8200u
-#define BAT_EMPTY_MV		6400u
 #define SWITCH_SAMPLES		5
 
 static battery_avg_t bat;
@@ -42,11 +40,6 @@ static uint16_t battery_mv(void)
 	return battery_avg_mv(&bat, hal_millis(), battery_read_mv);
 }
 
-static uint8_t battery_pct(void)
-{
-	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
-}
-
 static int8_t volume(void)
 {
 	return -1;
@@ -73,7 +66,6 @@ const hal_power_t rt10_power = {
 	.init = init,
 	.latch = latch,
 	.battery_mv = battery_mv,
-	.battery_pct = battery_pct,
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,

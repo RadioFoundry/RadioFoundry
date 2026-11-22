@@ -9197,8 +9197,11 @@ static void battery_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	sm->batt_ms = now_ms;
-	uint16_t mv = board.power->battery_mv();
-	uint8_t pct = board.power->battery_pct != NULL ? board.power->battery_pct() : 0;
+	// The owner's trims (radio-tune.md 2): the reading's gain, then where empty and full sit
+	uint16_t raw = board.power->battery_mv(), mv = batt_scale(raw, radio_tune_batt(RADIO_TUNE_BATT_GAIN));
+	uint8_t pct = raw != 0 ? batt_pct(mv, board_battery_empty_mv(), board_battery_full_mv(),
+					  radio_tune_batt(RADIO_TUNE_BATT_EMPTY), radio_tune_batt(RADIO_TUNE_BATT_FULL)) : 0;
+	sm->view.battery_raw_mv = raw;
 	batt_event_t ev = batt_update(&sm->batt, mv, board.battery_low_mv, board.battery_critical_mv, now_ms);
 	sm->view.battery_mv = mv;
 	if (sm->view.battery != sm->batt.level || sm->view.battery_pct != pct) {

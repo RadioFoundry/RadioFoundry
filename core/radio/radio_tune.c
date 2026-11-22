@@ -95,6 +95,18 @@ int16_t radio_tune_freq(uint8_t mode, uint32_t hz)
 	return clamp(value_at(RADIO_TUNE_FREQ, mode, hz), RADIO_TUNE_FREQ_MAX);
 }
 
+// A battery word is frequency 0, kind RADIO_TUNE_W_BATT and sel: its low 19 bits say all of that
+int16_t radio_tune_batt(uint8_t sel)
+{
+	int32_t v = 0;
+	for (uint8_t i = 0; i < n_words; i++) {
+		if ((words[i] & 0x7FFFFu) == RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, sel, 0u)) {
+			v = W_VAL(words[i]);
+		}
+	}
+	return clamp(v, sel == RADIO_TUNE_BATT_GAIN ? RADIO_TUNE_GAIN_MAX : RADIO_TUNE_BATT_MAX);
+}
+
 const char *radio_tune_name(uint8_t level, uint32_t tx_hz)
 {
 	int band = board_tx_band(tx_hz);
@@ -168,6 +180,12 @@ static void take(const uint8_t *r)
 				memcpy(names[nn].name, e + 2, RADIO_TUNE_NAME_LEN);
 				names[nn].name[RADIO_TUNE_NAME_LEN] = 0;
 				nn++;
+			}
+			continue;
+		}
+		if (kind == RADIO_TUNE_BATT) {
+			if (nw < RADIO_TUNE_WORDS && sel <= RADIO_TUNE_BATT_FULL && v <= 4095 && v >= -4095 && board_has_battery()) {
+				words[nw++] = RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, sel, v);
 			}
 			continue;
 		}

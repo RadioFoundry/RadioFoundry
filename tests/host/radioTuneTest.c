@@ -281,6 +281,28 @@ static void test_live(void)
 	CHECK(radio_tune_load() == 2 && tuned(446000, 2) == 7);
 }
 
+static void test_battery(void)
+{
+	fresh();
+	CHECK(radio_tune_batt(RADIO_TUNE_BATT_GAIN) == 0);
+	trim(RADIO_TUNE_BATT, RADIO_TUNE_BATT_GAIN, 0, 21);
+	trim(RADIO_TUNE_BATT, RADIO_TUNE_BATT_FULL, 0, -2500);	// past the clamp
+	trim(RADIO_TUNE_BATT, 5, 0, 10);				// no such battery trim
+	write_copy(0, 1, true);
+	uint8_t nw, nn;
+	CHECK(radio_tune_load() == 1);
+	radio_tune_counts(&nw, &nn);
+	CHECK(nw == 2);
+	CHECK(radio_tune_batt(RADIO_TUNE_BATT_GAIN) == 21 && radio_tune_batt(RADIO_TUNE_BATT_EMPTY) == 0);
+	CHECK(radio_tune_batt(RADIO_TUNE_BATT_FULL) == -RADIO_TUNE_BATT_MAX);
+	CHECK(tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 0);	// no other trim
+	// Live: the page's word
+	uint8_t w[4];
+	put32(w, RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_GAIN, (uint32_t)-400));
+	CHECK(radio_tune_set(0, 1, w, 1));
+	CHECK(radio_tune_batt(RADIO_TUNE_BATT_GAIN) == -RADIO_TUNE_GAIN_MAX);
+}
+
 int main(void)
 {
 	test_interpolation();
@@ -289,6 +311,7 @@ int main(void)
 	test_foreign_and_stale();
 	test_names();
 	test_live();
+	test_battery();
 	printf("radioTuneTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

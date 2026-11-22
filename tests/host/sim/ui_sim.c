@@ -433,10 +433,8 @@ static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_
 			      .backlight_raw_max = 4096, .set_backlight_raw = d_backlight_raw,
 			      .backlight_raw = d_backlight_raw_get, .backlight_rates = 3, .backlight_rate_std = 1,
 			      .set_backlight_rate = d_backlight_rate };
-static uint8_t battery = 84;
-static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
-static hal_power_t power = { .battery_pct = p_battery };
+static hal_power_t power;	// the sim's view carries the battery (battery:<pct>)
 
 // The air band receive only, as on radios that have it (docs/spec/airband-and-broadcast.md 3.2)
 static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000, true },
@@ -2681,7 +2679,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	focus_id = 0;
 	check_due = 0;
 	ptt_up_at = 0;
-	battery = 84;
+	view.battery_pct = 84;
 	now_ms = 1000;
 	load_channel();
 	soft_volume = false;
@@ -3697,7 +3695,7 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "battery") == 0 && arg != NULL) {
-		battery = (uint8_t)atoi(arg);
+		view.battery_pct = (uint8_t)atoi(arg);
 		advance(1100);
 		return true;
 	}

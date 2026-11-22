@@ -2683,7 +2683,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		dirty = true;
 	}
 	bool has_batt = board_has_battery();
-	uint8_t bat = has_batt && board.power != NULL && board.power->battery_pct != NULL ? board.power->battery_pct() : 0;
+	uint8_t bat = has_batt ? v->battery_pct : 0;
 	ui_st.no_battery = !has_batt;
 	if (bat != battery_seen) {
 		battery_seen = bat;

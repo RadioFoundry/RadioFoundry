@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Radio tuning (docs/spec/radio-tune.md): the owner's own trims on top of the factory calibration, which they never
-// change: each power level's PA drive, each mode's deviation and carrier frequency, and the power levels' names. They
+// change: each power level's PA drive, each mode's deviation and carrier frequency, the power levels' names, and the
+// battery reading's gain and the voltages the charge percentage runs between. They
 // sit in the board's tune area (hal_flash_map_t.tune_addr): two copies of one record, each with its own CRC and commit
 // word, bound to this radio's board and chip UID. Nothing here is in the codeplug, so a shared codeplug never carries
 // it to another radio.
@@ -31,6 +32,8 @@
 #define RADIO_TUNE_ENTRIES	32u	// entries a record holds
 #define RADIO_TUNE_DEV_MAX	250	// a deviation trim, permille either way
 #define RADIO_TUNE_FREQ_MAX	2000	// a frequency trim, Hz either way
+#define RADIO_TUNE_GAIN_MAX	150	// the battery reading's gain, permille either way
+#define RADIO_TUNE_BATT_MAX	1000	// the empty or full voltage, mV either way
 
 // The record (little endian): header, entries of 8 bytes, CRC-32 of both, commit word 0
 #define RADIO_TUNE_MAGIC	0x4E544652u	// "RFTN"
@@ -44,7 +47,12 @@ enum {
 	RADIO_TUNE_DEV = 1,	// kHz/25 u16, deviation permille s16, 0
 	RADIO_TUNE_FREQ = 2,	// kHz/25 u16, carrier offset Hz s16, 0
 	RADIO_TUNE_NAME = 3,	// board.bands index u8, name char[6] (NUL padded)
+	RADIO_TUNE_BATT = 4,	// 0 u16, value s16, 0; low nibble RADIO_TUNE_BATT_*
 };
+// A battery entry's low nibble: the reading's gain (permille), the empty and full voltages' offsets (mV)
+enum { RADIO_TUNE_BATT_GAIN, RADIO_TUNE_BATT_EMPTY, RADIO_TUNE_BATT_FULL };
+// A battery entry in the RAM table: word kind 3 (the name kind's number, names never being words), frequency 0
+#define RADIO_TUNE_W_BATT	3u
 
 // A RAM word (RADIO TUNE_SET): frequency in 100 kHz units (bits 0-13), kind (14-15), level or mode (16-18), value
 // (19-31, signed)
@@ -66,6 +74,8 @@ int16_t radio_tune_dev(uint8_t mode, uint32_t hz);
 int16_t radio_tune_freq(uint8_t mode, uint32_t hz);
 // The level's name at a transmit frequency: the owner's name, else the board's (board_power_name)
 const char *radio_tune_name(uint8_t level, uint32_t tx_hz);
+// A battery trim (RADIO_TUNE_BATT_*), clamped (0: none)
+int16_t radio_tune_batt(uint8_t sel);
 // The RAM table from the debug link: words first.. of a table of total (0: empty), live from the next use
 bool radio_tune_set(uint8_t first, uint8_t total, const uint8_t *words, uint8_t n);
 // The table's fill, for the debug link's view
@@ -88,6 +98,11 @@ static inline int16_t radio_tune_freq(uint8_t mode, uint32_t hz)
 {
 	(void)mode;
 	(void)hz;
+	return 0;
+}
+static inline int16_t radio_tune_batt(uint8_t sel)
+{
+	(void)sel;
 	return 0;
 }
 static inline const char *radio_tune_name(uint8_t level, uint32_t tx_hz)

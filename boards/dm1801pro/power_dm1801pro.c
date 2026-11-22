@@ -11,8 +11,6 @@
 #include "FreeRTOS.h"
 #include "timers.h"
 
-#define BAT_FULL_MV		8200u
-#define BAT_EMPTY_MV		6400u
 #define BAT_COUNTS_PER_V	103u	// ADC channel 2: 856 counts with 8.306 V across the pack, radio on (2026-10-16)
 #define SWITCH_SAMPLES		3
 
@@ -71,11 +69,6 @@ static uint16_t battery_mv(void)
 	return battery_avg_mv(&bat, hal_millis(), battery_read_mv);
 }
 
-static uint8_t battery_pct(void)
-{
-	return battery_linear_pct(battery_mv(), BAT_EMPTY_MV, BAT_FULL_MV);
-}
-
 static int8_t volume(void)
 {
 	return -1;
@@ -103,7 +96,6 @@ const hal_power_t dm1801pro_power = {
 	.init = init,
 	.latch = latch,
 	.battery_mv = battery_mv,
-	.battery_pct = battery_pct,
 	.volume = volume,
 	.switch_on = switch_on,
 	.led = led,

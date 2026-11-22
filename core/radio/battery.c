@@ -22,7 +22,6 @@ batt_event_t batt_update(batt_t *b, uint16_t mv, uint16_t low_mv, uint16_t crit_
 	if (mv == 0) {
 		return BATT_EV_NONE;
 	}
-	b->mv = mv;
 
 	// Recovery (a charger, a fresh battery): straight up once clear of the hysteresis
 	if (b->level == BATT_CRITICAL && (crit_mv == 0 || mv >= crit_mv + BATT_HYST_MV)) {
@@ -56,6 +55,27 @@ batt_event_t batt_update(batt_t *b, uint16_t mv, uint16_t low_mv, uint16_t crit_
 		return b->level == BATT_CRITICAL ? BATT_EV_CRITICAL : BATT_EV_LOW;
 	}
 	return BATT_EV_NONE;
+}
+
+// Charge at nine even steps from empty to full (2S Li-ion: 6.4 V to 8.2 V, 200 mV a step)
+static const uint8_t curve[] = { 0, 2, 4, 10, 22, 42, 60, 75, 88, 100 };
+
+uint8_t batt_pct(uint16_t mv, uint16_t empty_mv, uint16_t full_mv, int16_t d_empty, int16_t d_full)
+{
+	int32_t e = (int32_t)empty_mv + d_empty, f = (int32_t)full_mv + d_full;
+	if (e > 0 && f >= e + BATT_SPAN_MV) {
+		empty_mv = (uint16_t)e;
+		full_mv = (uint16_t)f;
+	}
+	if (mv >= full_mv) {
+		return 100;
+	}
+	if (mv <= empty_mv) {
+		return 0;
+	}
+	uint32_t span = (uint32_t)(full_mv - empty_mv), x = (uint32_t)(mv - empty_mv) * (sizeof(curve) - 1u);
+	uint32_t i = x / span;
+	return (uint8_t)(curve[i] + (uint32_t)(curve[i + 1] - curve[i]) * (x % span) / span);
 }
 
 uint32_t batt_critical_for(const batt_t *b, uint32_t now_ms)

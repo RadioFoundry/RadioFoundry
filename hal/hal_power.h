@@ -13,10 +13,9 @@ typedef struct {
 	void (*init)(void);
 	// Keep the radio powered (true) or let it turn off (false)
 	void (*latch)(bool on);
-	// battery_mv and battery_pct are read only when the board has a battery (board_has_battery(), CAP_NO_BATTERY unset)
+	// Read only when the board has a battery (board_has_battery(), CAP_NO_BATTERY unset). The radio core turns it into
+	// a charge percentage between board_battery_empty_mv() and board_battery_full_mv()
 	uint16_t (*battery_mv)(void);
-	// Battery percentage 0..100 from the board's own curve
-	uint8_t (*battery_pct)(void);
 	// Volume knob position 0..100, or -1 if volume is not a knob the MCU reads
 	int8_t (*volume)(void);
 	// False once the user has switched the radio off (the core then saves and calls latch(false))
