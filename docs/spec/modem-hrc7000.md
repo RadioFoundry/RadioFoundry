@@ -596,6 +596,7 @@ rising only (gotchas 2.9). TS and RF requests have no readable status, so the dr
 | Every receiver restart (5.2: DMR entry, a color code or framing change, a stale or lost reception, the end of every transmission) | writes INTERP_CLEAR b0-b2 and writes SYS_INTERP_LIST back to SYS_INTERP_CLEAR. Not b3 (RF RX) or the PCM pair: other drivers own them |
 | No timeslot interrupt for 200 ms while sending | the transmission ends (`dmr.tx_error=stalled`), and its receiver restart clears as above. Counted (`dmr.modem_stalls`) |
 | A SYS_INTERP_LIST cause enabled in SYS_INTERP_MASK, pending at the 10 ms polls for 50 ms with no system interrupt taken | written back to SYS_INTERP_CLEAR. Counted (`dmr.modem_stuck`) |
+| An air session or tap receiving (10.1) with no FM copy half for 200 ms (one comes every 32 ms; a copy interrupt with FM_ADDR_SW naming neither half doesn't count, one that finds the ring full does). The halted engine's check above does not run then | SYS_INTERP_LIST written back to SYS_INTERP_CLEAR, the copy set up again and the modem sources unmasked. Counted (`airp.copy_restarts`); the first one's PIC words kept apart from the engine's (`airp.copy_lost_ms`, `airp.copy_lost_regs`) |
 
 For the first stall or stuck request, the glue keeps PIC_MASK, PIC_MASK_1, PIC_INT_ST and PIC_INT_ST_1 as read before
 that poll (`dmr.modem_lost_ms`, `dmr.modem_lost_regs`, [debuglink.md](debuglink.md) 3.7). It then unmasks the modem
@@ -1078,7 +1079,7 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 | 15 | Timeslot handler | run it from RAM so flash busy time adds no jitter |
 | 16 | Calibration | SIG_CENTER and RF_MOD_BIAS_CTRL from factory data |
 | 17 | Interrupt masking | PIC_MASK bits 29-31 and PIC_MASK_1 bit 0 (3.2) |
-| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run (3.3) |
+| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run; in an air session, set the copy up again and unmask the modem sources after 200 ms with no half (3.3) |
 
 ---
 
@@ -1108,6 +1109,7 @@ output. Whether 4FSK reaches it whole (de-emphasis, the band's edges, the level)
 | Save | SYS_INTERP_MASK, FM_BANDWIDTH, FM_DEV_COEF |
 | Copy set-up | TXRX 0, SLOTON 0, LAYER2_CONTROL 0xC0, FM_PTT 0, AUDIO_CONTROL FM playback (b6) off, FM_BANDWIDTH 0x00 (band-pass off, 12.5 kHz), FM_DEV_COEF 0x40A25, WORK_MODE 0x80, SYS_INTERP_CLEAR and MASK = bit 14 + bit 12 |
 | Each half | Bit 14: the half FM_ADDR_SW names into a 512-sample ring (two halves), stamped with the interrupt's time less 255 samples. A half that finds the ring full is dropped and the next one is flagged as a gap |
+| Watchdog | No half for 200 ms while receiving, not suspended: SYS_INTERP_LIST to SYS_INTERP_CLEAR, the copy set-up again, the next half a gap; the glue unmasks the modem sources (3.3, `airp.copy_restarts`) |
 | Session | The modem task feeds each half to the soft modem (`core/air/air_softmodem.h`), resetting it at a flagged half; its chunks go out as `AIR_EV_RX` |
 | Undo | Mask, band and coefficient back; TXRX 0, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL 0xC0, TXRX 0xC00000 then 0. A mode change before the undo leaves the band and coefficient to the next FM entry and puts back only the mask (only power-on writes it otherwise) |
 

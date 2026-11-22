@@ -414,7 +414,9 @@ PIC_MASK_1 for v ≥ 64.
 Level mode still acts on the line rising (measured with timer 6, source 6, through the debug link's SoC register
 access, debuglink.md 3.24): a rise while the source is masked sets its INT_ST bit and is delivered when it is unmasked;
 after the request is taken, a line still high does not interrupt again, unmasked and with the INT_ST bit still set,
-until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9).
+until it falls and rises. A handler must clear its device's cause, or the source stays silent (gotchas 2.9). Clearing the
+INT_ST bit while the source is masked does not drop a held rise: the request is still delivered at the unmask
+(measured on the modem's system source, 29). A source left masked stays silent.
 
 Dispatch: all 64 user vectors (32–95) point at one common entry; it saves context, writes 0x04 to PIC_COW1, takes the
 vector number from PSR bits 23:16, subtracts 32 and calls through a 64-entry software table.
