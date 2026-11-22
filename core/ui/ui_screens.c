@@ -3034,7 +3034,8 @@ static void home_bottom(const ui_state_t *s, const char *hint)
 	char fit[64];
 	gfx_fill(0, y0, w, gfx_height() - y0, inv ? ui_col.fg : s->em_quiet ? ui_col.hint_bg : ui_col.tx);
 	gfx_text_fit(f, s->em_bar, w - 2, fit, sizeof fit);
-	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, inv ? ui_col.bg : ui_col.fg);
+	color_t ink = inv ? ui_col.bg : s->em_quiet ? ui_col.fg : ui_col.pill_fg;
+	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, L->hint_y, fit, ink);
 }
 
 void ui_draw_bottom(const ui_state_t *s, const char *hint)
@@ -3571,14 +3572,14 @@ static void __attribute__((noinline)) em_line(const font_t *f, int y, const char
 	gfx_text(f, (w - gfx_text_width(f, fit)) / 2, y, fit, col);
 }
 
-static void __attribute__((noinline)) em_target(const ui_em_hold_t *h, int y)
+static void __attribute__((noinline)) em_target(const ui_em_hold_t *h, int y, color_t ink)
 {
 	static char buf[48];
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	sb_str(&b, h->alarm ? TR(EMERG_ALARM_TO, "Alarm to ") : TR(EMERG_CALL_TO, "Call to "));
 	sb_target(&b, h->id, h->private_call, h->name);
-	em_line(ui_layout.small, y, buf, ui_col.fg);
+	em_line(ui_layout.small, y, buf, ink);
 }
 
 // "((o)) beep" and "~~ vibrate": two lines at x, or one centered line
@@ -3662,6 +3663,7 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 	int w = gfx_width();
 	bool mono = gfx_bpp() == 1;
 	bool red = h->done == DMR_EM_RESULT_SENT && !h->silent && !mono;
+	color_t ink = red ? ui_col.pill_fg : ui_col.fg;
 	gfx_clear(red ? ui_col.tx : ui_col.bg);
 	// The status strip; the hold's banner is its title, the outcome's is "Emergency" so SENT says what went out
 	int y = ui_draw_top(v, s, h->done != DMR_EM_RESULT_NONE ? TR(TITLE_EMERGENCY, "Emergency") : NULL, NULL);
@@ -3680,7 +3682,7 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 		bool inv = mono && h->done == DMR_EM_RESULT_SENT && !h->silent;	// 1 bpp: SENT inverted
 		if (inv)
 			gfx_fill(0, y + 2, w, bh, ui_col.fg);
-		em_big(word, y + 2, bh, w - 4, w / 2, inv ? ui_col.bg : ui_col.fg, &base);
+		em_big(word, y + 2, bh, w - 4, w / 2, inv ? ui_col.bg : ink, &base);
 
 	} else {
 		color_t amber = mono ? ui_col.fg : h->cancel ? ui_col.fg : ui_col.warn;
@@ -3732,7 +3734,7 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 			gfx_fill(4, by, fill, barh, amber);
 	}
 	if (h->id != 0 && h->done != DMR_EM_RESULT_CANCELED)
-		em_target(h, ty);
+		em_target(h, ty, ink);
 	const char *hint = (h->done == DMR_EM_RESULT_SENT || h->done == DMR_EM_RESULT_ON) ? TR(EMERG_HOLD_AGAIN_TO_CANCEL, "Hold again to cancel") : h->done != DMR_EM_RESULT_NONE ? "" :
 		TR(EMERG_LET_GO_TO_STOP, "Let go to stop");
 	ui_draw_hint(s->toast != NULL ? s->toast : hint, s->toast != NULL);

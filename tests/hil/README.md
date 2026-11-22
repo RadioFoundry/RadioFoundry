@@ -78,6 +78,7 @@ skips (kind `opt_in`) and names the three ways to give it. `tests/hil/hil_config
 | Option | Value |
 |---|---|
 | `--dmr-freq` / `--dmr-cc` / `--dmr-tg` | the DMR test channel: MHz (simplex, a channel in the radio's codeplug), color code, the talkgroup the bench calls |
+| `--emergency-peer-id` | optional private DMR ID for `test_emergency_key_hold` on the configured simplex channel. Omit to use its usual talk target. The key test transmits one alarm at the lowest power, with the hot mic off. |
 | `--fm-mhz` | the FM test frequency (the radio's VFO) |
 | `--p25-mhz` | the P25 test frequency (the radio's VFO; `test_p25_tx_off_air`, `test_p25_stored_channel_tx`, and `test_p25_rx_from_bench`, where the bench transmits) |
 | `--p25-trunk-channel` | the name of a stored P25 trunked channel whose system's control channel is heard at the rig (`test_p25_trunk_follow`, receive only) |

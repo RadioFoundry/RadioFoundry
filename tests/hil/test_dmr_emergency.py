@@ -178,7 +178,10 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
     import cps_client
     from test_cps import cps_session
 
-    _emergency_setup(radio, pytestconfig, tx=True)
+    freq, _, own, _, _ = _emergency_setup(radio, pytestconfig, tx=True)
+    peer = pytestconfig.getoption("--emergency-peer-id")
+    if peer is not None and (not 0 < peer <= 0xFFFFFF or peer == own):
+        skip("state", "the bench peer needs a distinct, valid DMR ID")
     if radio.core().get("codeplug") != "open-firmware":
         skip("state", "needs the radio's own codeplug for the emergency settings write")
     region = cps_client.SETTINGS_AREA
@@ -222,9 +225,14 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
     try:
         write_checked(edited)
         radio.link.emergency("cancel")
-        radio.link.emergency_settings("alarm", 0, tries=1, hot_mic_s=0)
-        radio.wait_for(lambda x: x.get("em.mode") == "alarm" and x.get("em.state") == "idle",
+        radio.find_channel(round(freq * 1e6), "dmr", simplex=True)
+        radio.lowest_power(absolute=True)
+        radio.link.emergency_settings("alarm", peer or 0, dst_private=peer is not None, tries=1, hot_mic_s=0)
+        radio.wait_for(lambda x: x.get("em.mode") == "alarm" and x.get("em.state") == "idle" and
+                       x.get("em.dst") == str(peer or 0) and x.get("em.dst_private") == str(int(peer is not None)),
                        sections=("dmr_ext",), what="alarm mode, idle")
+        channel = radio.view(["core", "dmr"])
+        assert channel["rx_hz"] == channel["tx_hz"] == str(round(freq * 1e6)) and channel["dmr.rmo"] == "0"
         radio.link.key_hold("emergency", 600)
         time.sleep(1)
         assert _ext(radio)["em.state"] == "idle", "early release started emergency"
