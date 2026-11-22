@@ -212,23 +212,26 @@ def home():
 ''')
     monkeypatch.delenv("RFOUNDRY_HIL_DELETE_MESSAGE", raising=False)
     out = tmp_path / "out.json"
-    for flags, kind in (([], "opt_in"), (["--allow-rf"], "bench")):
+    for isolated, flags, kind in ((False, ["--allow-rf"], "opt_in"), (True, [], "opt_in"), (True, ["--allow-rf"], "bench")):
+        monkeypatch.setenv("RFOUNDRY_HIL_DELETE_MESSAGE", "hil" if isolated else "")
         run = pytest_run(tmp_path, "test_inbox.py", "--bringup", "dmr_sms", "--bringup-out", str(out),
                          "--bench-api", "", *flags)
         assert run.returncode == 0, run.stdout + run.stderr
         result = outcomes(out)["test_delete_message"]
         assert result["outcome"] == "skipped" and result["excused"] and result["skip_kind"] == kind
-        if kind == "opt_in":
+        if not isolated:
+            assert "isolate the receiver" in result["reason"]
+        elif kind == "opt_in":
             assert "newest inbox message" in result["reason"]   # checked the inbox before requiring a transmitter
 
 
 def test_delete_message_checks_the_combined_inbox(monkeypatch):
-    from unittest.mock import Mock, call
+    from unittest.mock import Mock, call, patch
 
     import pytest
     from test_ui import test_delete_message as delete_message
 
-    monkeypatch.delenv("RFOUNDRY_HIL_DELETE_MESSAGE", raising=False)
+    monkeypatch.setenv("RFOUNDRY_HIL_DELETE_MESSAGE", "hil")
     test_sms = {"text": "RadioFoundry HIL test", "src": 9990301, "unread": True}
     for aprs_before, aprs_at_delete, last_sms, expected_keys in (
         (1, 1, test_sms, []),                            # the first row could be APRS
@@ -249,9 +252,10 @@ def test_delete_message_checks_the_combined_inbox(monkeypatch):
         if len(expected_keys) == 4:
             delete_message(radio, request, config)
         else:
-            with pytest.raises(pytest.skip.Exception) as skipped:
-                delete_message(radio, request, config)
-            assert skipped.value.kind == "state"
+            with patch("test_ui.skip", side_effect=RuntimeError("state skip")) as skipped:
+                with pytest.raises(RuntimeError, match="state skip"):
+                    delete_message(radio, request, config)
+            assert skipped.call_args.args[0] == "state"
         assert radio.press.call_args_list == [call(key) for key in expected_keys]
         request.getfixturevalue.assert_not_called()
 

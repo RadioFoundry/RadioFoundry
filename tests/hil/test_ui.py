@@ -722,16 +722,23 @@ def test_zone_editor_moves_a_channel(home):
 
 @pytest.mark.feature("dmr_sms")
 @pytest.mark.rf_fallback
+@pytest.mark.delete_message
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
     """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
-    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
-    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
-    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
+    from an isolated bench (RFOUNDRY_HIL_DELETE_MESSAGE=hil) or a disposable inbox
+    (RFOUNDRY_HIL_DELETE_MESSAGE=1) can be deleted. On the isolated bench the selected text must start with
+    HIL_SMS_PREFIX. With --allow-rf the bench can supply that message."""
     r = home
     if r.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
+    # The firmware deletes by row number: another SMS can take row zero even after the final read below.
+    permission = os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE")
+    if permission not in ("hil", "1"):
+        skip("opt_in", "isolate the receiver from other message sources and set RFOUNDRY_HIL_DELETE_MESSAGE=hil, "
+                       "or authorize deletion from a disposable inbox with RFOUNDRY_HIL_DELETE_MESSAGE=1")
+
     def require_dmr_rows():
         # The Messages screen merges DMR and APRS by age. inbox(0) identifies only the newest DMR message.
         aprs = r.view(["aprs"])
@@ -741,8 +748,7 @@ def test_delete_message(home, request, pytestconfig):
     require_dmr_rows()
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     newest = (r.link.inbox(0) or {}) if n else {}
-    allow_owner = os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") == "1"
-    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and not allow_owner:
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and permission != "1":
         if not pytestconfig.getoption("--allow-rf"):
             skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
                            "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
