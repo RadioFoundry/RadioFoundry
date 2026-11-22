@@ -250,11 +250,13 @@ test("a channel read with RX in a listen band and another TX frequency gets RX O
 	const m = empty();
 	// as a radio or an older editor stored it: RX in the air band, TX left on 446.00625, not RX only
 	m.channels.push(newChannel({ name: "Air", rxHz: 122950000, txHz: 446006250, rxOnly: false }),
-		newChannel({ name: "Split", rxHz: 146520000, txHz: 446006250, rxOnly: false }));
+		newChannel({ name: "Split", rxHz: 146520000, txHz: 446006250, rxOnly: false }),
+		newChannel({ name: "TxAir", rxHz: 146520000, txHz: 121500000, rxOnly: false }));
 	const back = decode(encode(m));
-	assert.deepEqual(back.channels.map((c) => [c.name, c.txHz, c.rxOnly]), [["Air", 122950000, true], ["Split", 446006250, false]]);
+	assert.deepEqual(back.channels.map((c) => [c.name, c.txHz, c.rxOnly]),
+		[["Air", 122950000, true], ["Split", 446006250, false], ["TxAir", 121500000, true]]);
 	// and the image saved or written from it says the same
-	assert.deepEqual(decode(encode(back)).channels.map((c) => c.txHz), [122950000, 446006250]);
+	assert.deepEqual(decode(encode(back)).channels.map((c) => c.txHz), [122950000, 446006250, 121500000]);
 });
 
 test("the DMR ID database is found by the radio across both areas", () => {

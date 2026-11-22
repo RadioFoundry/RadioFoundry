@@ -47,12 +47,26 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 	const txField = freqs.find((f) => f.key === "txHz");
 	const pair = channelForm(empty(), t).find((f) => f.key === "freqs");
 	assert.equal(txField.follows, "rxHz");
-	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v), pair.disabled(null, () => v)]), [[true, true], [false, false]]);
+	const off = () => false;
+	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v, off), pair.disabled(null, () => v, off)]), [[true, true], [false, false]]);
+	// RX Only ticked outside those bands locks TX too (and the TX tone and power), but TX doesn't follow RX there
+	const on = (k) => k === "rxOnly";
+	const form = channelForm(empty(), t);
+	assert.deepEqual(["power", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", on)), [true, true, true, true]);
+	assert.deepEqual(["power", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", off)), [false, false, false, false]);
+	assert.deepEqual([txField.disabled(null, () => "462.5625", on), txField.followsIf(() => "462.5625"), txField.followsIf(() => "121.5")], [true, false, true]);
 	const note = channelForm(empty(), t).find((f) => f.key === "band");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => note.text(() => v)), ["editor.band.air", "editor.band.bcast", "", ""]);
 	// the form's RX Only box follows the RX frequency as it is typed
 	const rxOnly = field("rxOnly");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => rxOnly.implied(() => v)), [true, true, false, false]);
+});
+
+test("the channel table grays and locks TX, TX tone and power on an RX Only channel (#924)", () => {
+	const cols = columns("channels", empty(), t);
+	const na = (key, r) => cols.find((c) => c.key === key).readOnly(r);
+	const ch = (rxOnly) => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly });
+	assert.deepEqual(["txHz", "power", "txTone"].map((k) => [na(k, ch(true)), na(k, ch(false))]), [[true, false], [true, false], [true, false]]);
 });
 
 test("the channel table shows the mode the radio uses in a receive-only band", () => {

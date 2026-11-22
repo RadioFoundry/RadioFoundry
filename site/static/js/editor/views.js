@@ -54,6 +54,8 @@ const rxFreq = (t) => (r, k, v) => {
 	return err;
 };
 const listening = (value) => !!listenBand(parseFreq(value("rxHz")));
+// The form's transmit fields (TX frequency, TX tone, power, VOX, tone burst) don't apply while RX Only is ticked, or implied by the band
+const noTx = (w, value, checked) => listening(value) || checked("rxOnly");
 
 // The mode as the radio shows it: an FM channel in the air band is received in AM
 // A channel of a kind (channel-modes.md): the kind's short name
@@ -163,6 +165,11 @@ export function columns(table, m, t, { features = null } = {}) {
 		return { ...c, readOnly: off, format: (v, r) => (off(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v) };
 	};
 	const own = (c) => ({ ...c, readOnly: (r) => !ownFreqs(r) });
+	// a transmit field on an RX only channel: grayed and locked like a field that doesn't apply (shown, kept)
+	const tx = (c) => {
+		const ro = c.readOnly;
+		return { ...c, readOnly: (r) => !!rxOnlyGet(r) || (typeof ro === "function" ? ro(r) : !!ro) };
+	};
 	const num = { key: "number", label: "#", type: "number", get: (r) => r.number, readOnly: true, width: "3.5rem", format: (v) => v ?? "–" };
 	switch (table) {
 	case "channels":
@@ -177,11 +184,11 @@ export function columns(table, m, t, { features = null } = {}) {
 				if (!err && r.txHz === was) r.txHz = r.rxHz;
 				return err;
 			}, { format: mhz, numeric: true })),
-			own(col("txHz", "editor.col.tx", "text", freq(t), { format: mhz, numeric: true })),
-			col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) }),
+			tx(own(col("txHz", "editor.col.tx", "text", freq(t), { format: mhz, numeric: true }))),
+			tx(col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) })),
 			only("fm", col("bw", "editor.col.bw", "select", pick, { options: () => [[12.5, "12.5"], [25, "25"]] })),
 			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
-			only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
+			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v }))),
 			only("dmr", col("colorCode", "editor.col.cc", "select", pick, { options: () => [...Array(16).keys()].map((n) => [n, String(n)]) })),
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
@@ -324,10 +331,10 @@ export function channelForm(m, t, { features = null } = {}) {
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
 		sel("mode", "editor.col.mode", mode.options, { get: mode.get, set: mode.set }),
 		{ type: "note", key: "kindNote", text: (value, w) => (w?.kind && !ownFreqs(w) ? t("editor.modes.freqs_system") : "") },
-		sel("power", "editor.col.power", () => powerOptions(t)),
-		// in a receive-only band TX follows RX, locked (rxFreq)
-		{ type: "pair", key: "freqs", show: ownFreqs, disabled: (w, value) => listening(value),
-			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", freq(t), mhz), disabled: (w, value) => listening(value), follows: "rxHz" }], buttons: [
+		{ ...sel("power", "editor.col.power", () => powerOptions(t)), disabled: noTx },
+		// in a receive-only band TX follows RX, locked (rxFreq); RX Only locks TX where it is
+		{ type: "pair", key: "freqs", show: ownFreqs, disabled: noTx,
+			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", freq(t), mhz), disabled: noTx, follows: "rxHz", followsIf: listening }], buttons: [
 			["→", t("editor.freq.rx_to_tx"), ([rx]) => [rx, rx]],
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
@@ -344,10 +351,10 @@ export function channelForm(m, t, { features = null } = {}) {
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
 		fm(txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v)),
-		fm(txt("txTone", "editor.col.tx_tone", tone(t), (v) => v)),
+		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), disabled: noTx }),
 		fm(sel("squelch", "editor.col.squelch", () => [[0, t("editor.squelch.default")], ...[...Array(21).keys()].map((n) => [n + 1, String(n + 1)])])),
-		fm(chk("vox", "editor.col.vox")),
-		fm(chk("toneBurst", "editor.col.tone_burst")),
+		fm({ ...chk("vox", "editor.col.vox"), disabled: noTx }),
+		fm({ ...chk("toneBurst", "editor.col.tone_burst"), disabled: noTx }),
 		dmr({ group: t("editor.form.digital") }),
 		dmr(sel("colorCode", "editor.col.cc", () => [...Array(16).keys()].map((n) => [n, String(n)]))),
 		dmr(sel("timeslot", "editor.col.ts", () => [[1, "1"], [2, "2"]])),
@@ -474,11 +481,12 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 	// a row inside a closed section is hidden whatever its own show says
 	const shut = (r) => r.section && !r.section.open;
 	const value = (k) => byKey(k).input.value;
+	const checked = (k) => !!byKey(k)?.input?.checked;
 	const sync = () => {
 		for (const r of rows) if (r.section) r.row.hidden = false;
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
-				for (const b of tools) b.disabled = !!f.disabled?.(work, value);
+				for (const b of tools) b.disabled = !!f.disabled?.(work, value, checked);
 				if (f.show && row) row.hidden = !f.show(work);
 				continue;
 			}
@@ -513,8 +521,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			if (f.show) row.hidden = !f.show(work);
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
-				input.disabled = f.disabled(work, value);
-				if (input.disabled && f.follows) input.value = byKey(f.follows).input.value;
+				input.disabled = f.disabled(work, value, checked);
+				if (input.disabled && f.follows && (!f.followsIf || f.followsIf(value))) input.value = byKey(f.follows).input.value;
 			}
 		}
 		for (const r of rows) if (shut(r)) r.row.hidden = true;

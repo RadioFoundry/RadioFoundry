@@ -296,12 +296,13 @@ export function listenBand(hz) {
 }
 
 // A channel whose RX is in a listen band is RX only with TX on RX, as the radio's channel editor saves it: no stray TX
-// frequency from before (a channel read, imported or edited elsewhere) is shown, exported or written. Returns c
+// frequency from before (a channel read, imported or edited elsewhere) is shown, exported or written. A TX frequency
+// in a listen band makes the channel RX only too. Returns c
 export function followListen(c) {
 	if (listenBand(c.rxHz)) {
 		c.rxOnly = true;
 		c.txHz = c.rxHz;
-	}
+	} else if (listenBand(c.txHz)) c.rxOnly = true;	// no radio transmits there: the channel is RX only
 	return c;
 }
 
