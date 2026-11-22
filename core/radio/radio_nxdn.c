@@ -14,21 +14,11 @@
 #include "codeplug/codeplug_tag.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/call/dmr_call.h"
-#if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
-#include "radio/radio_p25.h"
-#endif
 
 // The 72-bit voice frame NXDN carries is the one the DMR side's voice path takes and gives (nxdn.md 5): the
 // standard's second FEC test frame (7.2.1) is the DMR side's AMBE+2 silence frame
 _Static_assert(NXDN_EHR_BYTES == DMR_AMBE_FRAME_BYTES, "one voice frame size");
 
-#if CONFIG_P25 && !defined(HAL_VOCODER_LEND_BYTES)
-// P25's memory is idle while NXDN runs (one air mode at a time): no copy of our own
-#define NXDN_MEM_SHARED	1
-#else
-#define NXDN_MEM_SHARED	0
-static nxdn_engine_t own_mem;
-#endif
 
 static const radio_nxdn_settings_t defaults = {
 	.rate9600 = true, .rx_ran = NXDN_RAN_ANY, .tx_ran = 1, .rx_gid = 0, .unit_id = 1, .unit_call = false,
@@ -201,16 +191,12 @@ static void voice_tx(bool on)
 
 static nxdn_engine_t *mem_get(void)
 {
-#if NXDN_MEM_SHARED
 	size_t len = 0;
-	void *m = radio_p25_idle_mem(&len);
+	void *m = radio_air_engine_mem(&len);
 
 	if (m == NULL || len < sizeof(nxdn_engine_t) || ((uintptr_t)m & 7u) != 0)
 		return NULL;
 	return m;
-#else
-	return &own_mem;
-#endif
 }
 
 bool radio_nxdn_begin(const channel_t *ch, uint16_t number)

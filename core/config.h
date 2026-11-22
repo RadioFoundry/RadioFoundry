@@ -346,8 +346,12 @@
 #ifndef CONFIG_NXDN_SCRAMBLER
 #define CONFIG_NXDN_SCRAMBLER		0
 #endif
+// System Fusion (C4FM) DN voice (core/ysf, docs/spec/ysf.md)
+#ifndef CONFIG_YSF
+#define CONFIG_YSF			0
+#endif
 #ifndef CONFIG_AIR
-#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN)
+#define CONFIG_AIR			(CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF)
 #endif
 // P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), the control channel decoded, voice
 // channel grants followed and, where the system allows it, registration and transmit on a grant (core/p25/p25_follow.c)
@@ -370,7 +374,7 @@
 // Derived: zone sharing carries channels of a kind and their systems (docs/spec/zone-share.md 4.2) in a build with a
 // mode's codec. Without it a share leaves channels of a kind out and refuses a record that has them
 #ifndef CONFIG_ZONE_SHARE_MODES
-#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && (CONFIG_P25 || CONFIG_NXDN || CONFIG_DMR_TRUNK))
+#define CONFIG_ZONE_SHARE_MODES		(CONFIG_ZONE_SHARE && (CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF || CONFIG_DMR_TRUNK))
 #endif
 // The GPS status screen: the satellites (NMEA GSV / GSA) on a sky plot and signal bars, the fix's quality, the grid
 // locator (core/position/nmea_sky.c, core/ui/ui_gps.c). Needs GPS
@@ -513,7 +517,7 @@
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_AIR
-#error "CONFIG_AIR_RAW needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
+#error "CONFIG_AIR_RAW needs CONFIG_P25, CONFIG_NXDN or CONFIG_YSF (an air-framed mode)"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"
@@ -586,6 +590,9 @@
 #endif
 #if CONFIG_NXDN && !CONFIG_DMR
 #error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"
+#endif
+#if CONFIG_YSF && !CONFIG_DMR
+#error "CONFIG_YSF needs CONFIG_DMR (its voice is the DMR vocoder's)"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"

@@ -7,7 +7,9 @@
 #define RADIO_AIR_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+#include "config.h"
 
 typedef struct {
 	bool (*running)(void);		// the engine runs on this channel
@@ -21,5 +23,11 @@ typedef struct {
 	uint8_t (*tx_state)(void);	// air_tx_state_t
 	void (*tx_clear)(void);		// after AIR_TX_DONE and hal_radio_t.tx_off()
 } radio_air_ops_t;
+
+// Where the NXDN and YSF engines run: P25's memory while P25 idles, where the board's vocoder doesn't lend P25 its
+// own; else one block both share (radio_air_mem.c), as only one air mode runs at a time. *len: its size; NULL: none
+#if CONFIG_NXDN || CONFIG_YSF
+void *radio_air_engine_mem(size_t *len);
+#endif
 
 #endif

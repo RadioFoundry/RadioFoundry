@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "ysf/ysf_engine.h"
+#include "ysf/ysf_id.h"
 #include "dmr/ambe/ambeFec.h"
 #include "air/air_syms.h"
 
@@ -578,8 +579,55 @@ static void testEngines(void)
 	ysf_engine_end(&r[1].e);
 }
 
+// ── The radio ID: the same every start, different between radios, every value as likely ──
+static int cmp_rid(const void *a, const void *b)
+{
+	return memcmp(a, b, YSF_RID_LEN);
+}
+
+static void testRid(void)
+{
+	static char ids[100000][YSF_RID_LEN + 1];
+	uint32_t uid[3] = { 0x12345678, 0x9ABCDEF0, 0x0F1E2D3C }, near[3];
+	char a[YSF_RID_LEN + 1], b[YSF_RID_LEN + 1];
+	unsigned same = 0, bad_chars = 0, diff_bits = 0;
+
+	ysf_rid_from_uid(uid, a);
+	ysf_rid_from_uid(uid, b);
+	CHECK(!strcmp(a, b) && strlen(a) == YSF_RID_LEN, "the same ID gives the same RID: %s", a);
+	// One bit apart, anywhere in the 96: never the same RID
+	for (uint8_t bit = 0; bit < 96; bit++) {
+		memcpy(near, uid, sizeof near);
+		near[bit / 32] ^= 1u << (bit % 32);
+		ysf_rid_from_uid(near, b);
+		same += !strcmp(a, b);
+		for (uint8_t i = 0; i < YSF_RID_LEN; i++)
+			diff_bits += a[i] != b[i];
+	}
+	CHECK(same == 0 && diff_bits > 96 * 4, "one bit apart: %u alike, %u of %u characters differ", same, diff_bits, 96 * 5);
+	// 100000 radios: the pairs that share a RID are about n^2 / (2 x 36^5) = 83
+	for (uint32_t i = 0; i < 100000; i++) {
+		uint32_t u[3] = { rng(), rng(), rng() };
+
+		ysf_rid_from_uid(u, ids[i]);
+		for (uint8_t k = 0; k < YSF_RID_LEN; k++)
+			bad_chars += !((ids[i][k] >= '0' && ids[i][k] <= '9') || (ids[i][k] >= 'A' && ids[i][k] <= 'Z'));
+	}
+	qsort(ids, 100000, sizeof ids[0], cmp_rid);
+	same = 0;
+	for (uint32_t i = 1; i < 100000; i++)
+		same += !memcmp(ids[i - 1], ids[i], YSF_RID_LEN);
+	CHECK(bad_chars == 0 && same > 40 && same < 140, "100000 radios: %u shared RIDs (83 expected)", same);
+	uint32_t zero[3] = { 0, 0, 0 }, ones[3] = { ~0u, ~0u, ~0u };
+	CHECK(!ysf_uid_usable(zero) && !ysf_uid_usable(ones) && ysf_uid_usable(uid), "unusable IDs");
+	ysf_rid_fallback(2602100, "SQ5FOX", a);
+	ysf_rid_fallback(2602101, "SQ5FOX", b);
+	CHECK(strlen(a) == YSF_RID_LEN && strcmp(a, b), "fallback: %s %s", a, b);
+}
+
 int main(void)
 {
+	testRid();
 	testReference();
 	testFec();
 	testCallThroughFramer();
