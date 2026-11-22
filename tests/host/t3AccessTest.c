@@ -214,6 +214,49 @@ static void camp_registered(t3_ms_t *ms)
 	nsent = 0;
 }
 
+static void test_foacsu_pages(void)
+{
+	t3_ms_t ms;
+	t3_csbk_t h = ahoy(T3_SK_IND_VOICE, false, OWN, CALLER);
+	h.u.ahoy.kind_flag = true;
+
+	setup(0, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_NOT_SUPPORTED &&
+	      ms.ring_src == 0, "private calls disabled: refuse the page");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	CHECK(t3_ms_request(&ms, T, TG_A, true, false), "start an outgoing access");
+	rx(&ms, 1, &h);
+	frames(&ms, 2);
+	bool busy = false;
+	for (int i = 0; i < nsent; i++)
+		busy |= sent[i].op == T3_OP_C_ACKU && sent[i].u.ack.reason == T3_RC_EQUIP_BUSY;
+	CHECK(busy && ms.ring_src == 0, "outgoing access: answer busy");
+
+	setup(T3_OPT_PRIVATE, false);
+	camp(&ms);
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU && sent[0].u.ack.reason == T3_RC_MS_ALERTING &&
+	      sent[0].u.ack.info == t3_response_check(ms.syscode) && ms.ring_src == CALLER,
+	      "the page rings with the system response check");
+	uint32_t expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	CHECK(ms.ring_until == T + T3_ANSWER_CALL_MS && ms.ring_until > expiry, "repeated page restarts T_AnswerCall");
+	frames(&ms, 1);
+	h.u.ahoy.src = CALLER + 1u;
+	expiry = ms.ring_until;
+	rx(&ms, 1, &h);
+	frames(&ms, 1);
+	CHECK(nsent == 3 && sent[2].op == T3_OP_C_ACKU && sent[2].u.ack.reason == T3_RC_EQUIP_BUSY &&
+	      sent[2].u.ack.dst == CALLER + 1u && ms.ring_src == CALLER && ms.ring_until == expiry,
+	      "a different caller gets busy without changing the first ring");
+}
+
 static void test_register(void)
 {
 	t3_ms_t ms;
@@ -2323,12 +2366,12 @@ static void udt_down(t3_ms_t *ms, uint8_t slot, const t3_udt_t *h, const uint8_t
 	poll_all(ms);
 }
 
-// dedicated FID 0x08 packet grant: the capture has a channel definition and a second continuation.
+// FID 0x08 packet grant: the capture has a channel definition and a second continuation.
 // The backhaul carries ten bytes per block. Rebuild the air CRCs for the simulated bursts.
 static void test_fid08_pdata_grant(void)
 {
 	t3_ms_t ms;
-	setup(T3_OPT_PRIVATE | T3_OPT_DEDICATED_DATA, true);
+	setup(T3_OPT_PRIVATE, true);
 	camp_registered(&ms);
 	CHECK(t3_ms_pdata(&ms, T, CALLER, false) && sent_rand(&ms), "packet data request");
 
@@ -2363,7 +2406,7 @@ static void test_fid08_pdata_grant(void)
 	T += 60;
 	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, last);
 	CHECK(ms.state == T3_FOLLOW && ms.call.data && ms.call.ours && ms.ax.result == T3_RES_GRANTED,
-	      "follow the validated dedicated grant");
+	      "follow the validated FID 0x08 grant");
 	poll_all(&ms);
 	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.tx_hz == 145000000u &&
 	      tuned.chan.rx_hz == 145600000u, "tune to the captured absolute channel");
@@ -3275,9 +3318,61 @@ static void test_dedicated_terminal_check(void)
 	      "repeat dedicated readiness when the downlink gateway checks the recipient");
 }
 
+// Accept invalid CRC: an Aloha taken with a failed CRC keeps a registration in force (no second registration once a
+// good one comes), and an MBC whose header failed stays unverified when a good PDU on the other slot comes between
+// its header and its continuation
+static void test_bad_crc_registered(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_ACCEPT_BAD_CRC, true);
+	camp_registered(&ms);
+	aloha_on = false;
+	t3_csbk_t p = { .lb = true, .op = T3_OP_C_ALOHA };
+	p.u.aloha = al;
+	uint8_t d[T3_CSBK_BYTES];
+	t3_csbk_build(&p, T3_CRC_MASK_CSBK, d);
+	d[10] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, d);
+		poll_all(&ms);
+	}
+	CHECK(ms.unverified && ms.reg == T3_REG_OK && ms.st.crc_taken == 1, "unverified Aloha: still registered, reg %s",
+	      t3_reg_name(ms.reg));
+	aloha_on = true;
+	frames(&ms, 50);
+	CHECK(!ms.unverified && ms.reg == T3_REG_OK && nsent == 0, "verified again: no new registration, sent %d", nsent);
+
+	t3_csbk_t h = { .lb = false, .op = T3_OP_C_BCAST };
+	h.u.bcast.type = T3_ANN_CHAN_FREQ;
+	h.u.bcast.syscode = ours;
+	h.u.bcast.parms2 = 2000;
+	t3_cdef_t c = { 0, 0, 2000, 465000000u, 460000000u };
+	t3_csbk_build(&h, T3_CRC_MASK_MBC_HDR, d);
+	d[11] ^= 0x01;
+	for (int i = 0; i < 2; i++) {
+		T += 60;
+		t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, d);
+	}
+	// A good PDU on the other slot, then the continuation, whose own CRC passes
+	T += 30;
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+	a.u.aloha = al;
+	uint8_t g[T3_CSBK_BYTES];
+	t3_csbk_build(&a, T3_CRC_MASK_CSBK, g);
+	t3_ms_rx(&ms, T, 2, T3_DT_CSBK, CC, g);
+	T += 30;
+	uint8_t cd[T3_CSBK_BYTES];
+	t3_cdef_build(&c, h.op, cd);
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, cd);
+	CHECK(ms.unverified, "the MBC's header failed: unverified");
+}
+
 int main(void)
 {
 	test_register();
+	test_bad_crc_registered();
+	test_foacsu_pages();
 	test_reg_list();
 	test_no_answer();
 	test_ra_log();

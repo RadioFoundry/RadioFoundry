@@ -83,6 +83,9 @@
 #ifndef CONFIG_NET_WEBCTL
 #define CONFIG_NET_WEBCTL		CONFIG_NET_HTTP
 #endif
+#ifndef CONFIG_NET_RADIO_UDP
+#define CONFIG_NET_RADIO_UDP		CONFIG_DMR_IP_GATEWAY
+#endif
 #ifndef CONFIG_NET_RIGCTL
 #define CONFIG_NET_RIGCTL		CONFIG_NET_TCP
 #endif
@@ -142,6 +145,9 @@
 #ifndef CONFIG_DEBUGLINK
 #define CONFIG_DEBUGLINK		CONFIG_HOSTLINK
 #endif
+#ifndef CONFIG_SATELLITE_TLE
+#define CONFIG_SATELLITE_TLE		0
+#endif
 #ifndef CONFIG_TASK_STACKS
 #define CONFIG_TASK_STACKS		CONFIG_DEBUGLINK
 #endif
@@ -189,6 +195,11 @@
 // Chinese brings its own 16x16 glyphs (core/ui/cjk_font_data.c) and UTF-8 text the text layer decodes (core/ui/gfx.c)
 #ifndef CONFIG_LANG_ZH
 #define CONFIG_LANG_ZH			0
+#endif
+// The CJK glyph table (cjk_font_data.c) is a ~120 KB rodata cost. It can stay off while CONFIG_LANG_ZH's translated
+// menus stay on, for a board too small to show Chinese (docs/build-config.md). Defaults to LANG_ZH; a board sets it 0
+#ifndef CONFIG_CJK_GLYPHS
+#define CONFIG_CJK_GLYPHS		CONFIG_LANG_ZH
 #endif
 #define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
@@ -286,6 +297,9 @@
 #ifndef CONFIG_WATCHDOG
 #define CONFIG_WATCHDOG			1
 #endif
+#ifndef CONFIG_SUPPORT_INFO
+#define CONFIG_SUPPORT_INFO		1
+#endif
 #ifndef CONFIG_FAULT_TRACE
 #define CONFIG_FAULT_TRACE		1
 #endif
@@ -379,6 +393,13 @@
 #else
 #define RFOUNDRY_CPU_RAM_NOINIT
 #endif
+// Hot constant tables: copied to CPU-only RAM before main where the platform has one (RFOUNDRY_CPU_DATA_SECTION),
+// else left in flash. Only for tables a hot loop indexes at random; the copy costs RAM as well as flash
+#ifdef RFOUNDRY_CPU_DATA_SECTION
+#define RFOUNDRY_CPU_DATA		__attribute__((section(RFOUNDRY_CPU_DATA_SECTION)))
+#else
+#define RFOUNDRY_CPU_DATA
+#endif
 // Large, cold state can go in RAM the board sets apart that is slower or shared with another bus master, so it costs
 // no main RAM: zeroed at start-up like .bss. Only for buffers task code uses now and then (a flash sector, a request
 // being assembled): never one an interrupt, the audio or the modem touches, a stack, or one on a per-sample path.
@@ -391,7 +412,7 @@
 
 // Derived: the shared packet data / CSBK code
 // Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
-#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP)
+#define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP || CONFIG_NET_RADIO_UDP)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \
@@ -461,6 +482,9 @@
 #if CONFIG_DEBUGLINK && !CONFIG_HOSTLINK
 #error "CONFIG_DEBUGLINK needs CONFIG_HOSTLINK"
 #endif
+#if CONFIG_SATELLITE_TLE && !CONFIG_DEBUGLINK
+#error "CONFIG_SATELLITE_TLE needs CONFIG_DEBUGLINK"
+#endif
 #if CONFIG_TASK_STACKS && !CONFIG_DEBUGLINK
 #error "CONFIG_TASK_STACKS needs CONFIG_DEBUGLINK"
 #endif
@@ -494,8 +518,8 @@
 #if (CONFIG_NET_KISS || CONFIG_NET_APRSIS) && !(CONFIG_NET_TCP && CONFIG_APRS_AFSK)
 #error "CONFIG_NET_KISS and CONFIG_NET_APRSIS need CONFIG_NET_TCP and CONFIG_APRS_AFSK"
 #endif
-#if (CONFIG_MDNS || CONFIG_TFTP) && !CONFIG_DMR_IP_GATEWAY
-#error "CONFIG_MDNS and CONFIG_TFTP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
+#if (CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_RADIO_UDP) && !CONFIG_DMR_IP_GATEWAY
+#error "CONFIG_MDNS, CONFIG_TFTP and CONFIG_NET_RADIO_UDP need CONFIG_DMR_IP_GATEWAY (the IP stack they run on)"
 #endif
 #if CONFIG_IDDB_COMPACT && !CONFIG_DMR
 #error "CONFIG_IDDB_COMPACT needs CONFIG_DMR"

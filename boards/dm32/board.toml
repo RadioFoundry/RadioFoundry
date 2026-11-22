@@ -87,9 +87,9 @@ progmem = 0x100000
 tested = true
 # the factory calibration: the 4 KB page of the stock codeplug area whose last byte is 2 (hardware-dm32.md 11.1)
 calibration = { area = 0xC9000, page_id = 2 }
-# stubtool --write-test erases and programs these 16 KB: the gap between the sector journal and the open-firmware
-# flash image in board.c's flash map, which nothing stores in
-write_test = 0x71C000
+# The last two sectors before the open-firmware flash image; the first three are satellite inventory when enabled
+write_test = 0x71E000
+write_test_size = 0x2000
 
 # The codec slot and windows come from boards/dm32/memory.ld (__codec_*); profile is the id rfoundry gives a merged codec
 [codec]
@@ -113,7 +113,9 @@ lens = [24, 34]
 display = "240x320x4"
 features = ["HOSTLINK", "DEBUGLINK"]
 no_features = ["USB"]
-flash_jedec = ["C84018", "852018"]
+# GD25Q128, Puya PY25Q128HA, Winbond W25Q128 and Boya (68 40 18), which one radio carries (hardware-dm32.md 10): each
+# answers the same 16 MB command set, so none of them is a fault
+flash_jedec = ["C84018", "852018", "EF4018", "684018"]
 calibration = true
 battery_mv = [5500, 8800]
 codec = ["049", "046"]

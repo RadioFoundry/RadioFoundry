@@ -12,8 +12,8 @@
 #   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list); with --toolchain,
 #                               the boards both select
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
-#   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
-#                                     default all)
+#   tools/ci.sh --steps host,python   only these steps (registry, host, bench, python, firmware, licenses,
+#                                     similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
 #   RFOUNDRY_CI_PRUNE=0 tools/ci.sh  keep every build tree (about 65 MB per configuration). By default each tree is
@@ -21,15 +21,17 @@
 #                               a configuration that failed keeps its tree to debug)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
-# `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
+# `--steps bench`, `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
-# Every step but host needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
+# Every step but host and bench needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
 # reported as ok / FAIL / skip:
 #   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
 #      with board.mk, the linker scripts and board_t; tools/rfoundry/rfoundry/registry.json is current; the loader's
 #      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with RFOUNDRY_CI_SANITIZE=1 again
 #      under ASan and UBSan
+#   1b. bench: each bench tool under tools/bench/*/ (its Makefile builds it from core/ sources, e.g. the P25 and NXDN
+#      tools), with zero warnings, so a core change that breaks a bench tool fails here and not on the bench
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); rfoundry's tests
 #      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
@@ -75,7 +77,7 @@ MATRIX=0
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
-STEPS="registry,host,python,firmware,licenses,similarity"
+STEPS="registry,host,bench,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
@@ -84,13 +86,13 @@ while [ $# -gt 0 ]; do
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,62p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,69p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in registry|host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
@@ -186,6 +188,32 @@ if [ "${RFOUNDRY_CI_SANITIZE:-0}" = 1 ]; then
 	make -s -C tests/host clean > /dev/null
 fi
 
+fi
+
+# ── 1b. bench tools ──────────────────────────────────────────────────────────
+# Found by their Makefiles, so a new bench tool needs no change here. Each is built from scratch into build/ci/bench:
+# the warning check reads the compiler's output
+if step bench; then
+echo "== bench tools"
+for mk in tools/bench/*/Makefile; do
+	[ -f "$mk" ] || continue
+	d=$(dirname "$mk")
+	name=$(basename "$d")
+	log="$OUT/bench-$name.log"
+	rm -rf "$OUT/bench-$name"
+	if make -C "$d" OUT="$PWD/$OUT/bench-$name" > "$log" 2>&1; then
+		if grep -qi 'warning:' "$log"; then
+			grep -i 'warning:' "$log" | sort -u | head -10
+			bad "bench tool $name: warnings (see $log)"
+		else
+			ok "bench tool $name"
+		fi
+	else
+		grep -iE 'error|warning:' "$log" | sort -u | head -20
+		bad "bench tool $name (see $log)"
+	fi
+	rm -rf "$OUT/bench-$name"
+done
 fi
 
 # ── 2. Python ────────────────────────────────────────────────────────────────
@@ -542,7 +570,8 @@ for bm in boards/*/board.mk boards/*/; do
 	while err=$(make -s BOARD="$b" $all_on $maximal_vars print-config 2>&1 >/dev/null); [ -n "$err" ]; do
 		f=$(printf '%s\n' "$err" | sed -n 's/.*CONFIG_\([A-Z0-9_]*\)=y needs .*/\1/p' | head -1)
 		case "$all_on " in *" CONFIG_$f=y "*) ;; *) break ;; esac	# not a dependency: the build reports it
-		all_on=$(printf '%s ' $all_on | sed "s/CONFIG_$f=y //")
+		# the leading space stays, or the first switch could never match the test above once one was dropped
+		all_on=" $(printf '%s ' $all_on | sed "s/ CONFIG_$f=y / /;s/^CONFIG_$f=y //")"
 		dropped="$dropped $f"
 	done
 	[ -n "$dropped" ] && echo "ci: $b maximal: off, their parent left out:$dropped"

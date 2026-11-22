@@ -15,7 +15,7 @@ and what has been checked on it.
 | [Radioddity DB25-D PRO](#radioddity-db25-d-pro) | Kydera CDR-300UV | FM and DMR voice both ways, the hotspot, the DMR VFO, the PPP network services, cable programming and settings storage work on the radio. The older FD6818 batches run the same image, untested on a radio. Open: the Retevis RT73. |
 | [TYT MD-380](#tyt-md-380) | TYT MD-390, Retevis RT3 | FM with CTCSS both ways, DMR voice and SMS in simplex and through a repeater or hotspot on either slot, and codeplug and ID database programming work on a UHF radio. Open: DCS, the tone deviation and the untested VHF image. |
 | [TYT MD-UV380](#tyt-md-uv380) | TYT MD-UV390, Retevis RT3S, TYT MD-UV390 Plus 10 W | Built on the UV380 family code, with the MD-UV380's keys, display, power tables and GPS. Run on radios by community testers. |
-| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames. |
+| [TYT MD-9600](#tyt-md-9600) | Retevis RT90 | One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses inbound voice frames. |
 | [Retevis RT10](#retevis-rt10) |  | Boots from the boot ROM with the host link, stub entry, the watchdog and the crash log. FM receive with CTCSS/DCS decode, FM transmit, DMR transmit and receive with the radio's own codec, P25 (conventional, and trunked transmit) and NXDN at 4800 bit/s on stored channels, and APRS transmit work on the radio. |
 <!-- end generated -->
 
@@ -216,6 +216,21 @@ can't, the radio comes back after 2 s and shows "Couldn't switch off / Turn the 
 A 160 x 128 color screen with the top 8 rows hidden: 160 x 120 visible. The screenshots in this
 manual are this size.
 
+### DM-1701 languages
+
+The default image is English and Spanish. Chinese builds beside it: the app region is sectors 3-9, 720 KB, and the
+two languages leave room with the debug link on
+([the feature matrix](../feature-matrix.md#whole-images)). Pick Chinese as the Radio language when you install with the
+web flasher ([Installing](02-installing.md)), or build it:
+
+```
+make BOARD=dm1701 CONFIG_LANG_ZH=y CONFIG_LANG_DEFAULT_ZH=y
+```
+
+The CI build (`board.toml [ci] extra`) builds the same image. A Chinese line is 16 pixels high, so while the radio is
+in Chinese the screen shows 5 list rows instead of 7 and Home has no zone line; English and Spanish keep the tighter
+layout.
+
 ### What the DM-1701 lacks
 
 - No GPS from the factory. LRRP location requests get "no fix". APRS positions come from a computer or a fixed
@@ -223,7 +238,7 @@ manual are this size.
   has one, to PA9. The radio finds it at start-up ([hardware-dm1701.md 14.2](../spec/hardware-dm1701.md#142-gps-module))
   and powers it only while **Settings > Location > GPS** is on.
 - APRS receive needs the squelch open: the radio hears packets strong enough to open the squelch, not weaker ones.
-- No APRS iGate (passing heard packets to APRS-IS): it doesn't fit in the flash yet.
+- No APRS iGate (passing heard packets to APRS-IS) in the default image: `CONFIG_APRS_IGATE` is off by default.
 - No vibration motor: **Settings > Sound > Vibrate** isn't in the image.
 
 ### Verified on the DM-1701
@@ -342,7 +357,7 @@ Follow [Installing](02-installing.md) with these values.
 |---|---|
 | Stock firmware file | Any supported TYT or Retevis file: 18.11, 18.16, 19.06, 19.26, 19.74, 219.60 or 219.74 ([the list](../spec/codec-mduv380.md#stock-files)). It gives the bootloader key and the voice codec; the codec is the same in all of them, so any of them works on any of these radios |
 | Bootloader keys | Hold **PTT** and the side key just above it (SK1) while you turn the radio on |
-| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart, so a wrong image isn't caught |
+| Images | Two: 5 W (the MD-UV380, MD-UV390 and RT3S) and 10 W (the MD-UV390 Plus). rfoundry takes `--option POWER=10w`. **Pick by the label on the radio or its box**: the two versions swap the transmitter's band select and the backlight pins, and the radio can't yet tell them apart reliably, so a wrong image isn't caught. Tools > Diagnostics may show "This firmware may be for another version of this radio" when a byte in the radio's flash suggests the other version. That byte is wrong on some 5 W radios, so the radio still transmits: check the label |
 | Bootloader USB device (Zadig) | "Digital Radio in USB mode" (0483:DF11), [driver steps](02-installing.md#windows-the-bootloader-driver) (assumed the same as the DM-1701's) |
 | Board name | `mduv380` |
 
@@ -549,7 +564,7 @@ haven't been measured. A channel without a power in the codeplug uses L. The rad
 RadioFoundry can read its power calibration.
 
 The radio runs from a 13.8 V supply and has no battery. The status line shows no battery icon or percentage, Tools has
-no Battery page, and Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
+Settings > Power saving has no Battery saver or Low battery warning. RadioFoundry doesn't read the supply
 voltage, so nothing warns about it.
 
 ### DB25-D PRO display
@@ -717,8 +732,9 @@ A programming cable can hold the line low by itself. Then the flash starts whene
 ## TYT MD-9600
 
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
-(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx) and
-V4A/V5 (V26.xx) boards have not, so receive or transmit may not work on them. SFR is not supported yet.
+(original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx)
+boards have not. On one V4A/V5 (V26.xx) radio DMR transmit drops out ([#750](https://github.com/RadioFoundry/RadioFoundry/issues/750)),
+so receive or transmit may not work on these boards. SFR is not supported yet.
 
 The radio detects a V4A/V5 board by itself. It can't tell a V1-V3 board from a V4, so on those it asks once: the home
 screen says "Set: Board revision" and the radio won't transmit until you set it under Settings > Advanced > Hardware >

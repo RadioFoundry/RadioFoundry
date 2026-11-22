@@ -96,8 +96,9 @@ __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 		(unsigned)f->src, (unsigned)f->dst, f->unit_call, f->enc);
 	dl_text(t, "p25t.idens=%u\np25t.learned=%u\np25t.refused=%u\np25t.refused_tg=%u\np25t.fallback=%u\n",
 		f->idens, f->learned, f->refused, f->refused_tg, f->fallback);
-	dl_text(t, "p25t.blocks=%u\np25t.crc_fail=%u\np25t.mfr=%u\np25t.mbt=%u\np25t.mbt_op=%u\np25t.pdu_other=%u\n",
-		(unsigned)f->blocks, (unsigned)f->crc_fail, f->mfr, f->mbt, f->mbt_op, f->pdu_other);
+	dl_text(t, "p25t.blocks=%u\np25t.crc_fail=%u\np25t.crc_taken=%u\np25t.unverified=%u\np25t.mfr=%u\np25t.mbt=%u\n"
+		"p25t.mbt_op=%u\np25t.pdu_other=%u\n", (unsigned)f->blocks, (unsigned)f->crc_fail, f->crc_taken, f->unverified,
+		f->mfr, f->mbt, f->mbt_op, f->pdu_other);
 	dl_text(t, "p25t.grants=%u\np25t.follows=%u\np25t.enc_skip=%u\np25t.tdma=%u\np25t.no_iden=%u\n", f->grants,
 		f->follows, f->enc_skip, f->tdma, f->no_iden);
 	dl_text(t, "p25t.wrong_sys=%u\np25t.hunts=%u\np25t.cc_lost=%u\np25t.voice_lost=%u\np25t.wrong_call=%u\n",

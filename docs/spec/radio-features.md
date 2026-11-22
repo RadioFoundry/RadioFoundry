@@ -149,8 +149,9 @@ A P25 or NXDN channel (a stored one, or the VFO in that mode) can be either side
 is one only where the board receives that mode at the channel's rate, never as a trunked channel, and a look there
 starts its engine, probes a carrier for up to 700 ms and holds for a call that plays. The air interface runs one engine
 at a time, so with P25 on one side and NXDN on the other each hop stops one engine and starts the other. The UI
-refuses a trunked channel at once; a mode the board can't receive is refused by the radio core, and the watch doesn't
-start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a P25 or NXDN call.
+refuses a trunked channel (P25 or Tier III) at once; a mode the board can't receive is refused by the radio core, and
+the watch doesn't start. The panes name the mode and show no tone or bandwidth for it, and don't show the caller of a
+P25 or NXDN call.
 
 ### 2.2 A second receiver
 
@@ -182,6 +183,11 @@ tone is not decoded). The deny beep sounds, except for `busy`; the state is `tx_
 busy refusal is quiet so the call being received is heard in full: no deny beep (FM and DMR), and on FM a reception
 that was playing plays on while PTT is held (`deny_rx`), until the squelch would have closed. After the release it is
 an ordinary reception again, its RX tone still counted as heard.
+
+TX inhibit, a critical battery and a hardware option still to be set or applied hold for every transmission, not only
+PTT: `key_tx`, which every keying goes through (the list below), refuses them too. What the radio sends by itself
+(DMR replies, trunking signaling, hotspot bursts, the CW ID, APRS beacons) is then not sent. The hotspot's keying,
+armed between bursts, is dropped when TX inhibit is set and armed again when it is cleared.
 
 The test TX limit (`core/radio/tx_limit.h`, built with `CONFIG_DEBUGLINK`) is a limit a test harness sets over the
 debug link (RADIO op 35, [debuglink.md](debuglink.md) 3.8): block every transmission, or allow only a list of up to 10
@@ -293,6 +299,24 @@ with the tone debounce (8 polls) that keeps fades from chopping audio.
 The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
 (open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
 or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+A voice peak doesn't close the squelch. On a 12.5 kHz channel, speech above about 2 kHz (fricatives such as S, SH
+and T) raises some receivers' noise reading over the close line for 100-300 ms, past the fast close line from a sender
+that deviates wide, while the carrier stays as strong as it was. On a 12.5 kHz channel, noise over the line with the
+RX tone still heard and the signal strength within `RADIO_SQL_PEAK_RSSI_DB` (3 dB) of the last poll that held the
+squelch open closes only after `RADIO_SQL_PEAK_POLLS` (16) polls, 400 ms: the longest sibilant plus 100 ms. A carrier
+that goes takes the strength down with the noise up: one poll past the fast close line, two otherwise. If the strength
+reading lags the noise reading by a poll, the second poll sees the drop and closes on schedule. A lost RX tone closes
+as before. Wider channels never hold.
+
+The hold needs a carrier `RADIO_SQL_PEAK_FLOOR_DB` (10 dB) over the receiver's floor, so that a weak carrier's drop
+always moves the strength by more than 3 dB. The core learns the floor from idle polls with the noise over the level
+1 close line: the floor follows a lower reading at once and rises 1 dB every `RADIO_SQL_FLOOR_RISE_POLLS` (4) polls.
+Until the first idle poll there is no floor and no hold. A weaker carrier closes on voice peaks as before.
+
+The core view's `sql_close` gives the number of polls over the line at the last close: 1 or 2 for a carrier that went,
+16 for a hold that ran out. Widening the receive filter also lowered the reading on voice, but raised the reading on
+weak signals by up to 8 dB, so the squelch would open later on a weak station.
+
 Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
 (BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
 `test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
@@ -409,7 +433,14 @@ Synthesis: a 64-entry sine table with linear interpolation, 2 ms fades (no click
 scale so a beep mixed over voice doesn't clip. Beeps follow the radio's volume up to `beep_level`. A radio with an analog
 knob (no `hal_radio_t.volume`) and one whose volume hook also scales the PCM path (`volume_pcm`: an HR_C6000
 board's RX gain, an HR_C7000 board's line out gain) play the beep at `beep_level`, and the volume acts on it in the
-speaker path. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
+speaker path. Beeps stop getting louder above volume step 7 (`RADIO_BEEP_VOLUME_STEP`) on a `volume_pcm` board that
+gives the gain its volume adds to the PCM path at the speaker (`hal_radio_t.volume_db10`, tenths of a dB): above that
+step, each beep's samples are played softer by the gain over step 7's (`radio_beep_pcm_level`, rounded to a whole
+level, never below 1), so the beep sounds as at step 7. The speaker volume itself never changes for a beep, so voice
+playing at the same time (a DMR call with a beep mixed in) keeps its level. Steps 1-7 play `beep_level` unchanged. The
+curve comes from the board: on an HR_C6000 board the curve is measured at the speaker (about 0.77 dB per RX gain step, 26.9 dB
+from step 7 to the top). A `volume_pcm` board without the hook has beeps follow the volume to the top. This holds for
+FM and DMR beeps alike. On a radio where the MCU sets the volume somewhere the PCM path doesn't pass, the core plays each beep at the
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
 leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
 amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
@@ -417,14 +448,18 @@ routed; otherwise its tone starts in the first block. Without the voice stream t
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
 block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
 the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
-lead-in. A board with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
+lead-in. When the DMR or P25 voice stream starts while a beep's own stream runs (the first key-up after power-on or an
+FM channel), the voice stream takes the running stream over; its first block sets the speaker route to what the voice
+stream wants, so a route the beep had on doesn't stay on (and keep the amplifier on) after the beep. A board
+with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
 silent (`speaker_warm`) from any key, PTT, reception or beep until that many seconds after the last one, so a key click
 or the DMR talk permit tone plays at once: while it is warm, beeps take the one-block lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and
 drops the pattern, so a codec that goes quiet can't leave the analog receive audio muted. A start that fails (no codec
 clock) is stopped the same way, in case a block already ran. Counters in the view:
 `beep.played` (started), `beep.no_stream` (no audio stream could be started: on a board that can't stream PCM in FM
-mode this counts instead), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
+mode this counts instead; on an HR_C6000 board whose FM audio comes through the chip, the stream runs and the beep
+plays through the chip's prompt FIFO, [modem-hrc6000.md](modem-hrc6000.md) 8), `beep.blocks` (audio blocks with beep in them), `beep.stalls` (streams given up that way),
 `beep.busy`; in the `audio` section, `beep.shared` (patterns mixed into the voice stream), `beep.leads` (lead-in blocks
 played), `beep.warm` (1: the amplifier is held warm) and `beep.warms` (times it was powered up for that).
 
@@ -576,8 +611,8 @@ below a threshold lower the level; it goes back up 200 mV above it.
 
 A board with `CAP_NO_BATTERY` (a mobile on a fixed supply) has no battery monitor. The core never reads
 `battery_mv`, the level stays ok, `battery_pct` and `battery_mv` stay 0, and nothing warns or refuses a transmission
-for the battery. The UI shows no battery icon, percentage, Tools > Battery page, Battery saver setting or Low battery
-warning setting. The debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
+for the battery. The UI shows no battery icon, percentage, Battery saver setting or Low battery warning setting. The
+debug link reports `battery=none` (with `battery_pct=0` and `battery_mv=0`), `/status` leaves
 `battery_pct` and `battery_mv` out, and SNMP reports rfoundryBatteryVoltage 0, rfoundryBatteryPercent 0 and rfoundryBatteryState
 ok(1) without ever sending rfoundryLowBattery.
 
@@ -607,7 +642,9 @@ dim time with off 0 dims and stays on. The UI's setting (`UI_SET_BACKLIGHT_S`, S
 Dim/Off) carries both in one value: a time T > 0 dims after T and goes off after 4T, 0 is always on, and -T dims after
 T and never goes off (the "T/dim" choices).
 
-Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see.
+Idle time restarts on input and while `radio_view_wakes(view)` holds: something the user would want to see. With the
+backlight off, a key only wakes it, except the ones `ui_app_key_while_dark` lets through (PTT, Monitor, Emergency).
+Emergency sends only its long press, so it must act on the first event.
 
 | State | Wakes | Why |
 |---|---|---|
@@ -675,6 +712,11 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
+
+The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
+receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with
+a carrier present uses this state: backlight PWM that reaches the synthesizer, for one.
+A beep or other local PCM alone never sets `rx_open`.
 
 ## 6. TX power, calibration, band limits
 

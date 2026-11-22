@@ -108,7 +108,7 @@ The runner's environment (the LaunchAgent's, or a `.env` file next to `gitea-run
 |---|---|
 | `RFOUNDRY_BENCH_API` | the bench board, `HOST[:PORT]` |
 | `RFOUNDRY_PORT` | the radio's serial port when several are present |
-| `RFOUNDRY_HIL_AMBE` | the speech recording for `test_dmr_voice` (outside the repository) |
+| `RFOUNDRY_HIL_AMBE` | optional: other AMBE+2 speech for the voice tests, in place of `tests/data/voice` (outside the repository) |
 | `RFOUNDRY_RADIO_LOCK` | the lock file everyone at the bench takes before using the radio (default `~/.rfoundry-radio.lock`); the job holds it with `lockf` for the whole run. `tools/bringup.py run` takes the same file, with `{port}` in it replaced by the radio's port; without the variable it locks `~/.rfoundry-radio-<port>.lock`, so a bench with two radios runs a bring-up on each |
 
 Run it from Actions, HIL, Run workflow, with the inputs that map to the pytest flags: `rf` (`--allow-rf

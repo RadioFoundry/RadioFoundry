@@ -13,21 +13,29 @@
 #include "aprs/aprs.h"
 #include "aprs/aprs_host.h"
 #include "hal_time.h"
+#include "dmr/ipGateway.h"
 
 #define CHUNK	32	// encoded bytes per tcp_write
 
 static int client = -1;
+static bool fresh;	// nothing received from the client yet
 static kiss_dec_t in;
 static struct {
-	uint32_t conns, frames_in, frames_out, dropped;
+	uint32_t conns, frames_in, frames_out, dropped, refused;
 } st;
 
 static void k_opened(int c)
 {
+	if (tcp_remote_ip(c) != ipGatewayHostIP()) {
+		st.refused++;		// as rigctld's PTT: frames to RF only from the computer the radio is plugged into
+		tcp_abort(c);
+		return;
+	}
 	if (client >= 0) {
 		tcp_abort(client);
 	}
 	client = c;
+	fresh = true;
 	kiss_dec_init(&in);
 	st.conns++;
 }
@@ -36,6 +44,15 @@ static void k_recv(int c, const uint8_t *d, int n)
 {
 	if (c != client) {
 		return;
+	}
+	if (fresh && (n > 0)) {
+		fresh = false;
+		if (net_http_request(d, (size_t)n)) {
+			st.refused++;	// a web page's request: its body could hold frames
+			tcp_abort(c);
+			client = -1;
+			return;
+		}
 	}
 	for (int i = 0; i < n; i++) {
 		size_t m = kiss_dec_byte(&in, d[i]);
@@ -112,8 +129,9 @@ void kiss_tcp_frame(const uint8_t *f, size_t n)
 
 void kiss_tcp_view(dl_text_t *t)
 {
-	dl_text(t, "kiss.client=%u\nkiss.conns=%u\nkiss.frames_in=%u\nkiss.frames_out=%u\nkiss.dropped=%u\n",
-		client >= 0, (unsigned)st.conns, (unsigned)st.frames_in, (unsigned)st.frames_out, (unsigned)st.dropped);
+	dl_text(t, "kiss.client=%u\nkiss.conns=%u\nkiss.frames_in=%u\nkiss.frames_out=%u\nkiss.dropped=%u\nkiss.refused=%u\n",
+		client >= 0, (unsigned)st.conns, (unsigned)st.frames_in, (unsigned)st.frames_out, (unsigned)st.dropped,
+		(unsigned)st.refused);
 }
 
 #endif	// CONFIG_NET_KISS

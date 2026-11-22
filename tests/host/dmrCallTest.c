@@ -1163,15 +1163,95 @@ static void test_rmo_up_from_bursts(void)
 	dmr_call_ptt(false);
 	run_ms(600);
 
-	// A modem that gives no bursts: the slot numbers still count, as before
+}
+
+// Slot numbers alone never bring a repeater up (issue 721): on a duplex channel with nothing on its output the
+// HR_C6000 labeled slots from noise, the repeater counted as up 7 to 19 s after the channel was selected, and a
+// key-up went out with no wake-up and was cut by the drop check
+static void test_rmo_ticks_alone(void)
+{
+	dmr_call_config_t c = base_cfg();
+	c.rmo = true;
+	c.ts = 2;
+
+	// Nothing on the output but the modem's slot numbers: never up, and a key-up wakes it, every try, then refused
 	setup(&c);
 	sim.repeater = true;
-	run_ms(300);
-	sim.repeater = false;
-	sim.free_ticks = true;
+	sim.ticks_only = true;
+	run_ms(30000);
+	CHECK(!V()->repeater_up && dmr_call_ticks(NULL) > 900);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP);
+	run_ms(3000);
+	CHECK(csbks_on_air() == DMR_CALL_WAKEUP_ATTEMPTS && sim.air_count == csbks_on_air());
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_DENIED && V()->tx_error == DMR_TX_ERR_NO_REPEATER && !V()->repeater_up);
+	dmr_call_ptt(false);
+	run_ms(30);
+
+	// The same after an over: the slot numbers the modem keeps from it don't make the repeater up either
+	setup(&c);
+	sim.repeater = true;
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(800);
+	CHECK(csbks_on_air() == 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE);
+	dmr_call_ptt(false);
 	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+	sim.repeater = false;	// switched off: it answers no wake-up now
+	sim.wake_repeater_on_csbk = false;
+	sim.free_ticks = true;
+	run_ms(10000);
+	CHECK(!V()->repeater_up);
+	unsigned before = csbks_on_air();
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP);
+	run_ms(3000);
+	CHECK(csbks_on_air() == before + DMR_CALL_WAKEUP_ATTEMPTS && V()->tx_error == DMR_TX_ERR_NO_REPEATER);
+	dmr_call_ptt(false);
+	run_ms(30);
+
+	// A neighbor's repeater on the frequency, another color code: its slot numbers are real but it isn't ours
+	setup(&c);
+	sim.repeater = true;
+	sim.listen_other_cc = true;
+	run_ms(3000);
+	CHECK(!V()->repeater_up);
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP);
+	dmr_call_ptt(false);
+	run_ms(3000);
+
+	// Our repeater's bursts: up at once, and a key-up goes straight to voice, no wake-up
+	setup(&c);
+	sim.repeater = true;
+	run_ms(60);
 	CHECK(V()->repeater_up);
-	sim.free_ticks = false;
+	dmr_call_ptt(true);
+	run_ms(100);
+	CHECK(csbks_on_air() == 0 && sim.air_count > 0 && sim.air[0].kind == DMR_BURST_VOICE_LC_HEADER);
+	// Through the over nothing is heard between our bursts: the slot numbers hold it up, as before
+	run_ms(3000);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_VOICE && V()->repeater_up && csbks_on_air() == 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
+
+	// A quiet repeater: woken once, and its bursts answering admit the voice, no second wake-up
+	setup(&c);
+	sim.wake_repeater_on_csbk = true;
+	dmr_call_ptt(true);
+	run_ms(10);
+	CHECK(V()->phase == DMR_CALL_PHASE_TX_WAKEUP);
+	run_ms(1500);
+	CHECK(csbks_on_air() == 1 && V()->phase == DMR_CALL_PHASE_TX_VOICE && V()->repeater_up);
+	CHECK(air_of(DMR_BURST_VOICE) > 0);
+	dmr_call_ptt(false);
+	run_ms(600);
+	CHECK(V()->phase == DMR_CALL_PHASE_IDLE);
 }
 
 // A wake-up goes on our own timing: on the timing the modem last had (a repeater that just dropped) the HR_C6000 sent
@@ -1666,8 +1746,8 @@ static void test_rmo_hang_end(void)
 	dmr_call_ptt(true);
 	run_ms(1900);
 	CHECK(sim.align_rejects == 1 && csbks_on_air() == 1);
-	sim.repeater = true;	// answers the wake-up: up, so the voice starts aligned again ..
-	run_ms(150);
+	sim.repeater = true;	// answers the wake-up (one idle burst): up, so the voice starts aligned again ..
+	run_ms(30);
 	sim.repeater = false;	// .. and the timing is gone before the start found it
 	run_ms(2000);
 	CHECK(sim.align_rejects == 2 && csbks_on_air() == 1);
@@ -3178,6 +3258,44 @@ static void test_sfr_user(void)
 	CHECK(sink_log.begins == 1 && sink_log.frames == 18 && st.rx_cc_dropped == 1);
 }
 
+// The channel's Accept invalid CRC: a voice LC header whose RS fails (the parity masked with neither the header's
+// mask nor none) starts a call only when the same LC failed lately; off, never
+static void rx_bad_header(const uint8_t lc[9])
+{
+	dmr_burst_t b;
+
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_VOICE_LC_HEADER;
+	b.sync = DMR_SYNC_MS;
+	b.cc = 1;
+	b.in_step = true;
+	b.len = 12;
+	dmr_lc_encode_full(lc, 0x5A, b.payload);
+	memcpy(b.lc, lc, 9);
+	sim_rx(&b);
+}
+
+static void test_accept_bad_lc(void)
+{
+	dmr_call_config_t c = base_cfg();
+	dmr_call_stats_t st;
+	uint8_t lc[9];
+
+	mk_lc(lc, DMR_FLCO_GROUP_VOICE, TG_LIST, 9997030);
+	for (int on = 0; on < 2; on++) {
+		c.listen.accept_bad_crc = on != 0;
+		setup(&c);
+		rx_bad_header(lc);
+		run_ms(60);
+		CHECK(V()->state == DMR_CALL_STATE_IDLE && sink_log.begins == 0);
+		rx_bad_header(lc);
+		run_ms(20);
+		dmr_call_get_stats(&st);
+		CHECK(sink_log.begins == (unsigned)on && st.rx_lc_taken == (uint32_t)on);
+		CHECK(!on || (V()->state == DMR_CALL_STATE_RX && sink_log.caller.src == 9997030));
+	}
+}
+
 #if CONFIG_SFR_DUALPATH_RX
 // Dual-path RX needs real voice frames: frame n of the call is the FEC encoding of parameters made from n, and a bad copy of
 // it has four bits of its C0 word flipped (detected, not corrected: the vocoder would conceal it)
@@ -3331,6 +3449,7 @@ int main(void)
 	test_rs129();
 	test_csbk();
 	test_embedded();
+	test_accept_bad_lc();
 	test_alias();
 	test_tx_call();
 	test_tx_tail_hold();
@@ -3344,6 +3463,7 @@ int main(void)
 	test_rmo_air_slot_alignment();
 	test_rmo_hang_end();
 	test_rmo_up_from_bursts();
+	test_rmo_ticks_alone();
 	test_rmo_wake_lost();
 	test_rmo_drop_before_first_burst();
 	test_rmo_drop_under_over();

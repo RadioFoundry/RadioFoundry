@@ -211,6 +211,22 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
+The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
+(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
+
+The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker
+silent on the APRS frequency in FM while the squelch is open, unless Monitor holds it open (`radio_sm.c` `outputs`,
+`aprs_mute_hz()`). The receive path must keep its audio, so it depends on where the board's decoder reads it:
+
+| Board | How the core mutes |
+|---|---|
+| `hal_radio_t.speaker_mute` set | `speaker_mute(true)`: the speaker silent, `audio()` left on. For a decoder whose FM audio passes the path `audio()` gates (an I2S tap behind the FM feed-through) |
+| no `speaker_mute` | `audio(false)`: for a decoder that takes the FM audio before the speaker path (the board's own AFSK input) |
+
+The green LED and Stations heard are unaffected, and a second receiver's speaker isn't held off by a muted carrier.
+Off by default.
+
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
 
@@ -411,7 +427,7 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 
 `settings_t` (`core/settings/settings.h`), taken only when `aprs_stored` is 1, else the defaults: `aprs_flags`
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
-to APRS-IS), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
+to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
 `aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
 `aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
 `aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's

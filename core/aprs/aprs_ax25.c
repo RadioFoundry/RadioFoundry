@@ -852,6 +852,34 @@ static bool rx_by_stream(void)
 // try routes the receiver and back
 #define RX_RETRY_MS	1000u
 
+// Stop the receive path now (radio task). The radio core calls it before it tunes away from the APRS frequency: the
+// path holds the board's FM receive audio (on the HR_C7000 the copy interrupt, which air_take refuses to share), and
+// the service below would only let go of it later in the same poll, after a P25, NXDN or YSF engine's start had failed
+void aprs_rx_release(void)
+{
+	if (!aprs_s.rx_running) {
+		return;
+	}
+	if (rx_by_board()) {
+		if (board.afsk->rx_stop != NULL) {
+			board.afsk->rx_stop();
+		}
+	} else {
+		audio_mux_aprs_rx(false);
+	}
+	aprs_s.rx_running = false;
+}
+
+uint32_t aprs_rx_freq(void)
+{
+	return aprs_s.cfg.rx_on && aprs_can_receive() ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+}
+
+uint32_t aprs_mute_hz(void)
+{
+	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+}
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
@@ -874,14 +902,7 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 			audio_mux_aprs_rx(true);
 		}
 	} else if (!want && aprs_s.rx_running) {
-		if (own) {
-			if (h->rx_stop != NULL) {
-				h->rx_stop();
-			}
-		} else {
-			audio_mux_aprs_rx(false);
-		}
-		aprs_s.rx_running = false;
+		aprs_rx_release();
 	}
 	if (!want) {
 		aprs_s.rx_retry_wait = false;	// a refusal's wait is for the try it followed, not a later one

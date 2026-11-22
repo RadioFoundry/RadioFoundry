@@ -143,6 +143,22 @@ key-up's first voice. On the SDR bench, with the wake-up rules of [dmr-modem.md]
 key-ups that failed from 3-9 of 16-24 to 0 of 60. Radios: HR_C5000
 measured; the rule is in the shared engine, so the HR_C6000 has it too.
 
+**1.14 NXDN calls were decoded but the speaker stayed silent.**
+Symptom: every voice frame of a received NXDN call reached the vocoder, with a normal PCM peak, and nothing came out
+of the speaker. Cause: a receive through the FM copy ([modem-hrc6000.md](modem-hrc6000.md) 10.6) puts the chip in FM
+mode (4:0x10 = 0x80), where I2S PCM doesn't reach the codec's line out ([modem-hrc6000.md](modem-hrc6000.md) 8). The
+I2S stream itself keeps running. No codec or system register lets I2S through in FM mode. Fix: while the FM copy holds
+the chip, the I2S stream copies each speaker block into a ring, and a feeder task writes it to the chip's prompt tone
+FIFO, which does reach the line out in FM mode (`platform/stm32f4/hrc/i2s_pcm.c`, `hrc_prompt_*`). Setting 0x06 bit 1
+alone plays nothing: the FIFO needs samples. The feeder runs at the top task priority. At the audio task's priority it
+missed its 8 ms turn whenever the copy interrupt read its 512 bytes with interrupts masked, which gave a gap every
+32 ms. The FIFO and the I2S stream share the chip's clock, so they never drift. Checked on the SDR bench by ear and by
+microphone: NXDN 4800 speech, every frame played, no gaps. The view keys `audio.fifo_chunks`, `audio.fifo_gaps` and
+`audio.fifo_full` count the path. The same cause made every beep silent in FM receive on a board whose FM audio comes
+through the chip: the board reports its chip in FM receive (`stm32_i2s_pcm_fm_chip`), and a beep goes through the
+FIFO while its PCM route is on (`audio.fifo_fm`, `test_beep_fm_fifo`). Radios: HR_C6000; the HR_C5000's FIFO is not
+known, so a board turns the path on with `prompt_fifo`.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -192,7 +208,11 @@ is unmasked, but a line still high after its request was taken never interrupts 
 and rises. A modem request whose cause stays set (the system interrupt handler stops after four passes with causes
 still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
-state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine and that check with it, so a lost
+FM copy request there, or the modem's system source left masked at the PIC, leaves receive deaf until the session
+closes (suspected in #923; the masked source measured so, the lost request not reproduced): the session's poll sets
+the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
@@ -331,6 +351,15 @@ usually tuned, never saw it. Rule: the AT1846S DMR mode table writes 0x32 bits 2
 judge a receiver setting at strong simplex levels as well (`dmr-voice.md` 7.1). Radios: AT1846S boards. Test:
 `test_dmr_audio_rx_strong` (tests/hil).
 
+**3.19 Leave no FM sub-audio on in DMR.** Symptom: after a visit to an FM channel with a receive CTCSS tone, every DMR
+over counted as sent (tx_voice reached, call.tx_calls + 1) and the SDR bench decoded none of the bursts. An FM channel
+without a tone left DMR working. Cause: the FD6818's sub-audio register 0x51 still held the FM channel's receive tone
+(0x9045), and its bit 15 also turns the chip's sub-audio transmitter on, so the tone rode on the 4FSK. Rule: the RF
+chip driver turns the sub-audio off when it enters DMR (`fd6818_set_mode`; `fd6818sh_dmr_mode` does the same), not
+each board's tune path; a radio's own counters can't show a transmission that doesn't decode, so a HIL check of a TX
+path asserts what the bench heard. Radios: boards with the FD6818 as the transceiver. Test: `fd6818Test`
+(`test_dmr_tone_off`, tests/host), `test_dmr_tx_after_toned_fm_channel` (tests/hil).
+
 ## 4. AMBE codec calling
 
 **4.1 The STM32 codec glue must be built at -O0.** The codec entry calls were inline assembly that depended on the
@@ -443,7 +472,7 @@ instead of resetting.
 
 **7.6 UDT location and LRRP.** UDT NMEA: DPF 0, format 5, opcode 0x1A, one Rate 1/2 block, CRC-CCITT unmasked (an assumption;
 Motorola / Hytera receivers may differ). Positions older than 30 s go out without the fix flag. LRRP
-periodic interval minimum 5 s, distance checked every interval (30 s default), at most 2 triggers, emergency and one
+periodic interval 30 s to 1 day, distance checked every interval (30 s default), at most 2 triggers, emergency and one
 shot refused (0x0A).
 
 **7.7 TMS and compressed LRRP.** TMS (header, UDP port 4007) has its own switch, `CONFIG_DMR_TMS`
@@ -593,7 +622,11 @@ fallback to a local copy, then a fixed drive (1408).
 ## 12. Memory and RAM limits
 
 **12.1 CCM RAM isn't zeroed at startup.** Buffers placed in the STM32 CCM must be initialized explicitly. A linker script
-may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong.
+may not map CCM at all: placing data in an unmapped .ccmram section is silently wrong. RadioFoundry's start-up
+(`platform/stm32f4/ccm.c`) copies `.ccmdata` and zeroes `.ccmbss` before `main`; `.ccmram` keeps whatever was there. An
+initialized section must also be in the Makefile's `BIN_SECTIONS`: without it the image ends before the section's flash
+copy, the start-up copies erased flash, and every table reads 0xFF (a decoder benchmark then looks faster while its
+decodes fail).
 
 **12.2 Zero-initialized buffers in .data waste flash.** 25 MK22 buffers in a .data section stored 39.5 KB of zeros in
 flash; putting them in a .bss section of the same RAM bank saved 34.5 KB.

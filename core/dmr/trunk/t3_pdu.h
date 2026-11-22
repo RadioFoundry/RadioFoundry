@@ -51,7 +51,7 @@
 #define T3_FID_68	0x68u
 #define T3_ID_PDDI	0xFFFD01u
 #define T3_ID_PDUI	0xFFFD02u	// Dedicated packet-data uplink gateway
-#define T3_FID_08		0x08u	// feature ID seen on dedicated absolute packet data grants
+#define T3_FID_08		0x08u	// manufacturer FID used on some absolute packet data grants
 
 // Gateway and special addresses (A.4)
 #define T3_ID_PSTNI		0xFFFEC0u	// PSTN, PABX, line and dispatcher gateways (aligned timing): dialed digits

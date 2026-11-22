@@ -99,7 +99,7 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 	out->op = (uint8_t)get(&r, 6);
 	out->fid = (uint8_t)get(&r, 8);
 	memcpy(out->raw, pdu + 2, sizeof(out->raw));
-	bool fid08_grant = CONFIG_DMR_TRUNK_DEDICATED_DATA && out->fid == T3_FID_08 && out->op == T3_OP_PD_GRANT && !out->lb &&
+	bool fid08_grant = out->fid == T3_FID_08 && out->op == T3_OP_PD_GRANT && !out->lb &&
 		pdu[2] == 0xFFu && (pdu[3] >> 4) == 0xFu;
 	bool fid68_terminal = CONFIG_DMR_TRUNK_DEDICATED_DATA && out->fid == T3_FID_68 && out->op == T3_OP_C_AHOY &&
 		out->lb && !out->pf && pdu[2] == 0x0Eu && pdu[3] == 0x07u &&
@@ -407,7 +407,7 @@ bool t3_fid08_pd_cdef_parse(const uint8_t first[T3_CSBK_BYTES], const uint8_t la
 	if ((last[0] & 0xBFu) != (0x80u | T3_OP_PD_GRANT)) {
 		return false;
 	}
-	// ETSI TS 102 361-1 §7.4: the last block's CRC covers both continuations, excluding the header.
+	// ETSI TS 102 361-1 Â§7.4: the last block's CRC covers both continuations, excluding the header.
 	uint8_t data[2 * T3_CSBK_BYTES - 2];
 	memcpy(data, first, T3_CSBK_BYTES);
 	memcpy(data + T3_CSBK_BYTES, last, T3_CSBK_BYTES - 2);

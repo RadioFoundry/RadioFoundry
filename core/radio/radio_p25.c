@@ -289,8 +289,8 @@ static const p25_follow_hooks_t follow_hooks = { trunk_tune, NULL, trunk_send };
 
 // The follower's configuration from the codeplug's (p25-trunking.md 6), and the engine's: the system's NAC, our unit
 // ID, trunking signaling on, what PTT calls. tx: the channel allows transmitting (its tag); the system's listen only
-// and a missing unit ID or talk group keep the transmit side off
-static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, p25_engine_cfg_t *cfg)
+// and a missing unit ID or talk group keep the transmit side off. bad_crc: the channel's Accept invalid CRC
+static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool bad_crc, p25_engine_cfg_t *cfg)
 {
 	p25_follow_cfg_t *c = &t->cfg;
 
@@ -304,6 +304,8 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, p25_
 		c->flags |= P25_FOLLOW_PLAN_ONLY;
 	if (l->follow_all)
 		c->flags |= P25_FOLLOW_ALL_GROUPS;
+	if (bad_crc)
+		c->flags |= P25_FOLLOW_BAD_CRC;
 	c->unit_id = (set.unit_id != 0 ? set.unit_id : l->unit_id) & 0xFFFFFFu;
 	c->talk_group = l->talk_group;
 	if (tx && !l->listen_only && c->unit_id != 0 && c->talk_group != 0)
@@ -548,7 +550,7 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 			stats.begin_fails++;
 			return false;
 		}
-		trunk_params(&mem->trunk, &mem->load, !ch->rx_only, &cfg);
+		trunk_params(&mem->trunk, &mem->load, !ch->rx_only, ch->accept_bad_crc, &cfg);
 		ttx = (mem->trunk.cfg.flags & P25_FOLLOW_TX) != 0;
 	} else
 #endif

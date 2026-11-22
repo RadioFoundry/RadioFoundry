@@ -4,10 +4,10 @@
 # Tier III dedicated packet data
 
 The dedicated packet-data profile is selected per [codeplug system](dmr-trunking-codeplug.md).
-It adds the observed FID 0x08 and 0x68 procedures and the version 2 SMS envelope to the ETSI
-Tier III and confirmed packet-data transport. The standard profile continues to use FID 0
-procedures. The dedicated IP SMS path is for individual confirmed clear IP text. Existing SMS
-format and acknowledgment settings still choose the service.
+It adds the FID 0x68 terminal check, dedicated gateway signaling, and version 2 SMS envelope.
+Both profiles accept FID 0x08 absolute packet-data grants. The dedicated IP SMS path is for
+individual confirmed clear IP text. Existing SMS format and acknowledgment settings still choose
+the service.
 
 ## 1. Packet sequence
 

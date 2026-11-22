@@ -2,7 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // UV380 family factory calibration reader (docs/spec/hardware-dm1701.md section 12).
 // Read only: the working copy at 0x010000 is used when it carries the marker, otherwise the factory table in the
-// SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Nothing is ever written.
+// SPI flash security registers 1-2 is converted in RAM the way a working copy would be. Each band comes from the working
+// copy when it passes the checks there, else from the factory table. Nothing is ever written.
 #include <string.h>
 #include "uvf.h"
 #include "radio/cal_curve.h"
@@ -49,7 +50,7 @@ static const uint32_t GAIN_STEP[BAND_COUNT] = { 950000u, 1000000u };
 
 static const uint8_t MARKER[8] = { 0x00, 0x25, 0x00, 0x40, 0x00, 0x45, 0x01, 0x40 };
 
-typedef enum { CAL_NONE, CAL_WORKING, CAL_FACTORY } cal_source_t;
+typedef enum { CAL_NONE, CAL_WORKING, CAL_FACTORY, CAL_MIXED } cal_source_t;
 
 static uint8_t table[CAL_SIZE];
 static bool band_ok[BAND_COUNT];
@@ -194,12 +195,51 @@ static bool load_factory(void)
 	return check_bands();
 }
 
+// Every byte a band reads from the table: its eight rows and its reference tune byte
+static const row_t *const BAND_ROWS[] = {
+	&ROW_HIGH, &ROW_LOW, &ROW_MID, &ROW_VLOW, &ROW_DMR_I, &ROW_DMR_Q, &ROW_FM_I, &ROW_FM_Q,
+};
+#define BAND_BYTES	(sizeof(BAND_ROWS) / sizeof(BAND_ROWS[0]) * 9u + 1u)
+
+static void band_save(int band, uint8_t *out)
+{
+	for (unsigned r = 0; r < sizeof(BAND_ROWS) / sizeof(BAND_ROWS[0]); r++) {
+		memcpy(out, row(BAND_ROWS[r], band), POINTS[band]);
+		out += POINTS[band];
+	}
+	*out = table[REF_TUNE[band]];
+}
+
+static void band_restore(int band, const uint8_t *in)
+{
+	for (unsigned r = 0; r < sizeof(BAND_ROWS) / sizeof(BAND_ROWS[0]); r++) {
+		memcpy(&table[BAND_ROWS[r]->at[band]], in, POINTS[band]);
+		in += POINTS[band];
+	}
+	table[REF_TUNE[band]] = *in;
+}
+
 bool uvf_cal_load(void)
 {
 	source = CAL_NONE;
-	if (load_working()) {
+	bool working = load_working();
+	if (working && band_ok[BAND_VHF] && band_ok[BAND_UHF]) {
 		source = CAL_WORKING;
-	} else if (load_factory()) {
+		return true;
+	}
+	// One band of the working copy failed (a converter that wrapped a high row at 8 bits instead of saturating, issues
+	// 508/510): keep the good band, take the other from the factory table rather than refusing it
+	int keep = working ? (band_ok[BAND_VHF] ? BAND_VHF : BAND_UHF) : -1;
+	uint8_t saved[BAND_BYTES];
+	if (keep >= 0) {
+		band_save(keep, saved);
+	}
+	bool factory = load_factory();
+	if (keep >= 0) {
+		band_restore(keep, saved);
+		band_ok[keep] = true;
+		source = factory && band_ok[!keep] ? CAL_MIXED : CAL_WORKING;
+	} else if (factory) {
 		source = CAL_FACTORY;
 	} else {
 		band_ok[BAND_VHF] = band_ok[BAND_UHF] = false;
@@ -295,7 +335,7 @@ int8_t uvf_ref_trimmed(int8_t ref_offset, int32_t ppb)
 
 const char *uvf_cal_source(void)
 {
-	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : "none";
+	return source == CAL_WORKING ? "working" : source == CAL_FACTORY ? "factory" : source == CAL_MIXED ? "mixed" : "none";
 }
 
 // "w:mark f:UO3" plus the working copy's marker bytes, for the diagnostics page

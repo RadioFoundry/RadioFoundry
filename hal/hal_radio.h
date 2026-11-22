@@ -49,11 +49,24 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: keep the speaker silent while audio() stays on, for a mute that must not stop the FM receive audio
+	// reaching a decoder. A board whose decoder reads that audio through the path audio() gates (an I2S tap behind the
+	// FM feed-through) needs it; without it the core mutes with audio(false)
+	void (*speaker_mute)(bool mute);
+	// Optional: receive audio from a signal is open: FM squelch open or monitor, or a DMR, P25 or NXDN call playing
+	// (the green LED's state). Local beeps don't set it. For a board whose own noise reaches the audio only with a
+	// carrier present, such as backlight PWM through the synthesizer
+	void (*rx_open)(bool on);
 	// Optional: received audio level 0..100 % (radios whose volume knob is read by the MCU, not wired to the amp)
 	void (*volume)(uint8_t percent);
 	// With volume: true when that level also scales the PCM speaker path (beeps, DMR voice). False: beeps on the PCM
 	// path would ignore it, so the core caps each beep at the volume percent (radio_beep_level)
 	bool volume_pcm;
+	// Optional, with volume_pcm: the gain volume(percent) gives the PCM path at the speaker, in tenths of a dB from
+	// any fixed point (percent 1..100). The core plays a beep softer above volume step RADIO_BEEP_VOLUME_STEP by the
+	// gain added over that step's, so beeps stop getting louder there while voice still does (radio_beep_pcm_level).
+	// NULL: beeps follow the volume to the top
+	int16_t (*volume_db10)(uint8_t percent);
 	// Optional: during FM TX, send a single audio tone of hz instead of the microphone (1750 Hz burst, roger beep);
 	// 0 = the microphone again. False when the board can't (not in FM TX)
 	bool (*tx_tone)(uint16_t hz);
