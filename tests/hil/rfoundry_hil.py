@@ -1539,13 +1539,14 @@ class SdrBench:
     def voice_call(self, freq, cc, dst, superframes=3, calls=1, headers=8, terminators=3, gap_ms=500, ambe=None,
                    private=False, src=None, late=None, talker_alias=None, pi=False, emergency=False,
                    service_options=None, gps=None, offset_hz=0, offset_sweep=None, superframes_per_step=1,
-                   background=False):
+                   family=None, background=False):
         """One or more voice calls from the bench (a bench_tx voice job). late=K: no header, the first K bursts left out;
         talker_alias: text in odd superframes; pi: the EMB PI bit on B-F; service_options: hex byte in the LC;
         gps: (lat, lon[, error code]) as an ETSI GPS Info LC in the odd superframes. offset_hz: the carrier that far
         from freq (+-2500 Hz; the lease stays on freq). offset_sweep=(from, to, step) Hz: one call stepping through
         the offsets, superframes_per_step superframes each (superframes ignored), with a "step" record a step.
-        background: the started job, as transmit()'s"""
+        family: the bursts' sync ("ms", the default, or "bs": base station sync, still one burst every 60 ms with no
+        CACH, as a simplex hotspot may send). background: the started job, as transmit()'s"""
         if offset_sweep:
             lo, hi, st = offset_sweep
             superframes = (int((hi - lo) / st + 1e-9) + 1) * superframes_per_step
@@ -1578,6 +1579,8 @@ class SdrBench:
             a += " --emergency"
         if service_options is not None:
             a += f" --service-options {service_options:02x}"
+        if family:
+            a += f" --family {family}"
         bursts = (0 if late is not None else headers) + 6 * superframes + terminators
         return self.transmit(a, freq, cc, expect_s=calls * bursts * 0.06 + (calls - 1) * gap_ms / 1000,
                              background=background)
