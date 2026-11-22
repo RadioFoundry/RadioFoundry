@@ -7,6 +7,9 @@ tools/usrp_client.py from the host's side of the link, and switches it back to s
   test_usrp_fm_rx    the FM VFO on NOAA (--noaa-mhz) with the squelch open: keyup frames with audio reach the host,
                      and a keyup 0 frame follows when the squelch closes (a quiet frequency). Nothing transmitted.
                      Optional: it needs NOAA strong enough at the bench
+  test_usrp_linking_audio  Settings > Connections > Linking audio off and on (#703), the squelch open on noise:
+                     nothing to the host while off, audio while on, one keyup 0 frame when turned off. Nothing
+                     transmitted, no bench
   test_usrp_fm_rx_bench  the same with the bench board's FM transmitter (--allow-rf) on --fm-mhz, a 1 kHz tone: keyup
                      frames with audio while it sends, a keyup 0 frame when its carrier ends and the squelch closes
   test_usrp_dmr_rx   with the SDR bench (--allow-rf: the bench transmits): a bench voice call on the --dmr-freq
@@ -55,7 +58,7 @@ def usrp_session(radio):
             peer.close()
             radio.link = serial
             if was_off:
-                serial.setting("usrp", 0)
+                udp.setting("usrp", 0)     # over the network: the serial port is closed until network_mode ends
     # Back on serial: the receive tap is off and the audio stream stopped with it (nothing fills the ring)
     v = usrp_view(radio.link)
     time.sleep(1.0)
@@ -116,6 +119,46 @@ def test_usrp_fm_rx(radio, pytestconfig):
             link.vfo_set(hz + 25000)
             radio.wait_for(lambda x: x.get("state") == "idle", 5, what="squelch closed")
             check_closed(peer.receive(2))
+
+
+@pytest.mark.feature("net_usrp")
+@pytest.mark.usb_switch
+def test_usrp_linking_audio(radio, pytestconfig):
+    """Settings > Connections > Linking audio (#703), nothing transmitted: the FM VFO with its squelch at 0, open on
+    noise. Off, no frame reaches the host and a keyup 0 frame from it isn't taken; on, keyup frames reach it; off
+    again mid-signal, the closing keyup 0 frame, then nothing, and the peer forgotten"""
+    if not pytestconfig.getoption("--allow-usb-switch"):
+        skip("opt_in", "needs --allow-usb-switch")
+    if "VFO_FM" not in radio.features():
+        skip("not_built", "built without the FM VFO")
+    with usrp_session(radio) as (link, peer):
+        with radio.vfo_session():
+            link.setting("usrp", 0)     # usrp_session turned it on
+            level = int(radio.core().get("squelch", "0"))
+            link.squelch_step(-level)
+            try:
+                radio.wait_for(lambda v: v.get("state") == "rx", 5, interval=0.2, what="squelch 0 opens on noise")
+                peer.receive(0.5)       # anything sent before it went off
+                frames = int(usrp_view(link)["usrp.frames"])
+                peer.hello()
+                rows = peer.receive(3)
+                v = usrp_view(link)
+                assert not rows, f"{len(rows)} frames reached the host with Linking audio off"
+                assert v["usrp.on"] == "0" and v["usrp.peer"] == "0.0.0.0", v
+                assert int(v["usrp.frames"]) == frames, f"a frame was taken with Linking audio off: {v}"
+                link.setting("usrp", 1)
+                rows = peer.receive(3)
+                assert len(keyed(rows)) >= 100, f"expected about 150 keyup frames in 3 s, got {len(keyed(rows))}"
+                link.setting("usrp", 0)
+                # A frame or two sent while the request was on its way may come first
+                rows = peer.receive(2)
+                ends = [r for r in rows if not r[2]]
+                assert len(ends) == 1 and rows[-1] is ends[0] and len(rows) <= 4, \
+                    f"expected the closing keyup 0 frame, then nothing: {[(r[1], r[2]) for r in rows]}"
+                v = usrp_view(link)
+                assert v["usrp.cos"] == "0" and v["usrp.peer"] == "0.0.0.0" and v["usrp.tx"] == "0", v
+            finally:
+                link.squelch_step(level)
 
 
 BENCH_FM_S = 8.0        # the bench's 1 kHz tone: the 5 s window after the squelch opens, under the 10 s key limit
