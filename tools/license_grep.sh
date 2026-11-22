@@ -1,5 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
 # Fails if any source file outside docs/ and LICENSES/ carries a marker of
 # code that must not be in this repository (see docs/CLEANROOM.md). The README's
 # Acknowledgements section names people on purpose and is skipped. FORKING.md shows
