@@ -166,6 +166,26 @@ class SatelliteTleTest(unittest.TestCase):
         self.assertLess(commit, readback)
         self.assertNotIn(satellite_tle.OP_SYNC_CHANNELS, calls)
 
+    def test_install_reports_single_band_profile_error_before_replacing(self):
+        record = satellite_tle.validate_record(self.iss, now=self.now)
+        profile = {"catalog_id": 25544, "rx_hz": 437800000, "tx_hz": 145990000, "tx_tone_tenths": 670}
+        link = mock.Mock()
+        link.view_section.return_value = (0, 1, {"bands": "400000000-480000000"})
+        calls = []
+
+        def request(_link, operation, _payload=b""):
+            calls.append(operation)
+            if operation == satellite_tle.OP_INFO:
+                return struct.pack("<BHH", satellite_tle.SATELLITE_PROTOCOL_VERSION, 8, 0)
+            raise AssertionError(f"unexpected operation {operation}")
+
+        with mock.patch.object(satellite_tle, "_utc_now", return_value=self.now), \
+                mock.patch.object(satellite_tle, "_request", side_effect=request):
+            with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "single-band radio"):
+                satellite_tle.install_records(link, [record], profiles=[profile])
+        self.assertEqual(calls, [satellite_tle.OP_INFO])
+        link.view_section.assert_called_once_with("core")
+
 
 if __name__ == "__main__":
     unittest.main()
