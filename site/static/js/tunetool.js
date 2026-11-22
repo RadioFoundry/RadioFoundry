@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Tools > Radio tuning (docs/spec/radio-tune.md, docs/user/16-battery-and-power.md): the radio's transmit bands as tabs,
-// up to three tuning frequencies per band, a card per power level, the oscillator, each mode's carrier and deviation.
-// Every change runs on the radio at once (RADIO TUNE_SET, TX_DRIVE, SETTING 35); Save to radio stores the record.
+// up to three tuning frequencies per band, a card per power level, the oscillator, each mode's carrier and deviation,
+// and the battery reading with its empty and full voltages. Every change runs on the radio at once (RADIO TUNE_SET,
+// TX_DRIVE, SETTING 35); Save to radio stores the record.
 // Everything comes from the radio (bands, levels, names, drives, what the board trims), so a new radio, band, level or
 // mode needs no change here. The connection is watched all the time: a radio whose own transmission upsets the USB
 // link is found again by itself, and the unsaved changes go back on the radio.
@@ -10,8 +11,8 @@
 import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, CABLES, browserErrorKey, knownRadioPort, noDeviceChosen,
 	probe, serialApi, serialSupported } from "./flasher/link.js";
 import { page } from "./i18n.js";
-import { TuneRadio, KIND, MODE, ST, DEV_MAX, FREQ_MAX, MAX_ENTRIES, NAME_LEN, REF_TRIM_MAX, VALUE_MAX, cleanName,
-	encodeRecord, gridKhz, owner, toWords, valueAt } from "./tune-radio.js";
+import { TuneRadio, KIND, MODE, ST, BATT, BATT_MV_MAX, BATT_SPAN_MV, DEV_MAX, FREQ_MAX, GAIN_MAX, MAX_ENTRIES, NAME_LEN,
+	REF_TRIM_MAX, VALUE_MAX, battRange, cleanName, encodeRecord, gridKhz, owner, toWords, valueAt } from "./tune-radio.js";
 import { bandInfo, db, grade, mhzText, neighborSlope, parseMhz, parseReading, parseWatts, suggestDrive,
 	trimHz } from "./tune-math.js";
 
@@ -24,6 +25,7 @@ const BEAT_MS = 2000;		// how often an idle connection is checked
 const LIVE_MS = 150;		// a change goes to the radio this long after the last one
 const REKEY_MS = 700;		// a transmission restarts this long after the last change it must show
 const REF_MS = 400;		// the oscillator is stored this long after the last change
+const BATT_MS = 1500;		// the battery is read again this long after a change (the radio reads each second)
 const EXPORT_FORMAT = "rfoundry-radio-tune";
 const RADIO_NAMES = (() => {
 	try { return JSON.parse($("tune-radios")?.textContent || "{}"); } catch (e) { return {}; }
@@ -33,7 +35,7 @@ const el = Object.fromEntries(["bar", "conn", "conn-text", "radio-name", "dirty"
 	"status", "lost", "lost-text", "retry", "give-up", "confirm", "work", "bands", "band-range", "strip", "chips", "add",
 	"add-mhz", "add-err", "add-cancel", "levels", "levels-title", "hold", "advanced", "freq", "freq-rows", "dev",
 	"dev-rows", "saved", "saved-sum", "export", "import", "clear", "level-tpl", "row-tpl", "dialog", "dialog-title",
-	"dialog-text", "dialog-ok", "cap"].map((id) => [id.replace(/-(.)/g, (_, c) => c.toUpperCase()), $(`tune-${id}`)]));
+	"dialog-text", "dialog-ok", "cap", "batt", "batt-volts", "batt-raw"].map((id) => [id.replace(/-(.)/g, (_, c) => c.toUpperCase()), $(`tune-${id}`)]));
 el.savedBody = document.querySelector("#tune-saved-table tbody");
 
 const S = {
@@ -46,6 +48,7 @@ const S = {
 	factory: new Map(),	// kHz -> each level's factory drive there
 	names: new Map(),	// board band index -> each level's factory name
 	ref: null,		// the oscillator trim, ppb (null: the radio has none)
+	batt: null,		// the battery's last reading (TuneRadio.battery), null before one or without a battery
 	band: 0, active: new Map(), added: new Map(),
 	meter: new Map(),	// "khz:level" -> {readings: [{drive, watts}], lastDrive, reading}
 	targets: new Map(),	// "band:level" -> watts typed
@@ -196,6 +199,7 @@ async function start(stream, p) {
 	// The factory drives where drive trims are stored, so the page can tell the ones out of date
 	for (const khz of new Set(S.saved.filter((e) => e.kind === KIND.DRIVE && bandOf(e.khz) >= 0).map((e) => e.khz))) await visit(khz);
 	await visit(activeKhz());
+	if (S.core.battery) S.batt = await S.radio.battery();
 	beat();
 }
 
@@ -203,7 +207,7 @@ async function disconnect(restore = true) {
 	const radio = S.radio, stream = S.stream;
 	clearTimers();
 	S.conn = "idle";
-	S.radio = S.stream = S.core = S.probe = S.id = S.back = null;
+	S.radio = S.stream = S.core = S.probe = S.id = S.back = S.batt = null;
 	S.tx = null;
 	for (const m of [S.factory, S.names, S.active, S.added, S.meter, S.targets]) m.clear();
 	S.saved = S.work = [];
@@ -290,7 +294,8 @@ function beat() {
 					if (S.tx?.on) {
 						const c = await S.radio.core();
 						if (c.state !== "tx" && S.tx?.on) txEnded(c);
-					} else await S.radio.link.version();
+					} else if (S.core?.battery) await readBattery();
+					else await S.radio.link.version();
 				});
 			} catch (e) { /* lost() or shown */ }
 		}
@@ -419,6 +424,65 @@ function setRef(ppb) {
 	S.ref = Math.max(-REF_TRIM_MAX, Math.min(REF_TRIM_MAX, Math.round(ppb / 100) * 100));
 	setTimer("ref", REF_MS, () => quietly(op(async () => { S.ref = await S.radio.setRefTrim(S.ref); render(); })));
 	changed("osc", 0);
+}
+
+// ---- the battery: no transmission, the radio takes a change at its next reading
+
+const battEntry = (sel, es = S.work) => es.find((e) => e.kind === KIND.BATT && e.sel === sel);
+const battValue = (sel) => battEntry(sel)?.value || 0;
+const volts = (mv) => num(+(mv / 1000).toFixed(2));
+const parseVolts = (s) => {
+	const v = +String(s ?? "").trim().replace(",", ".");
+	return Number.isFinite(v) && v > 0 ? v : null;
+};
+const battNow = () => battRange(S.core.battery.empty, S.core.battery.full, battValue(BATT.EMPTY), battValue(BATT.FULL));
+const BATT_HINT = ["tools.tune.batt.reading_hint", "tools.tune.batt.empty_hint", "tools.tune.batt.full_hint"];
+const BATT_TITLE = ["tools.tune.batt.reading", "tools.tune.batt.empty", "tools.tune.batt.full"];
+
+async function readBattery() {
+	S.batt = await S.radio.battery();
+	renderBattery();
+}
+
+function setBatt(sel, value) {
+	if (value) setTrim(KIND.BATT, sel, 0, value);
+	else clearTrim(KIND.BATT, sel, 0);
+	setTimer("batt", BATT_MS, () => quietly(op(readBattery)));
+}
+
+function battHint(sel, text, kind = "") {
+	const h = el.batt.querySelector(`[data-batt="${sel}"] .tune-hint`);
+	h.textContent = text || t(BATT_HINT[sel]);
+	h.dataset.kind = kind;
+}
+
+// The voltage a meter shows across the battery: the gain that brings the radio's reading there
+function correctReading(v) {
+	const raw = S.batt?.raw;
+	if (!raw) return battHint(BATT.GAIN, t("tools.tune.batt.err_none"), "bad");
+	const gain = Math.round((v * 1000 / raw - 1) * 1000);
+	if (Math.abs(gain) > GAIN_MAX) return battHint(BATT.GAIN, t("tools.tune.batt.err_gain", { pct: GAIN_MAX / 10 }), "bad");
+	setBatt(BATT.GAIN, gain);
+	battHint(BATT.GAIN, t("tools.tune.batt.applied"), "ok");
+}
+
+// Where empty (0 %) or full (100 %) sits: an offset from the board's own voltage, kept BATT_SPAN_MV apart
+function setLimit(sel, v) {
+	const b = S.core.battery, base = sel === BATT.EMPTY ? b.empty : b.full;
+	const mv = Math.round(v * 1000), off = mv - base, now = battNow();
+	if (Math.abs(off) > BATT_MV_MAX) {
+		return battHint(sel, t("tools.tune.batt.err_range", { lo: volts(base - BATT_MV_MAX), hi: volts(base + BATT_MV_MAX) }), "bad");
+	}
+	if (sel === BATT.EMPTY ? now.full - mv < BATT_SPAN_MV : mv - now.empty < BATT_SPAN_MV) {
+		return battHint(sel, t("tools.tune.batt.err_span", { v: volts(BATT_SPAN_MV) }), "bad");
+	}
+	setBatt(sel, off);
+	battHint(sel, t("tools.tune.batt.applied"), "ok");
+}
+
+function battSubmit(sel, v) {
+	if (v === null) return battHint(sel, t("tools.tune.batt.err_number"), "bad");
+	return sel === BATT.GAIN ? correctReading(v) : setLimit(sel, v);
 }
 
 // ---- the test transmission
@@ -732,6 +796,7 @@ function render() {
 	renderFreqs();
 	renderLevels();
 	renderTrims();
+	renderBattery();
 	renderSaved();
 }
 
@@ -1053,6 +1118,31 @@ function renderTrims() {
 	}
 }
 
+function renderBattery() {
+	const b = S.core?.battery;
+	el.batt.hidden = !b;
+	if (!b) return;
+	const r = S.batt, range = battNow(), gain = battValue(BATT.GAIN);
+	el.battVolts.textContent = r?.mv ? t("tools.tune.batt.now", { v: volts(r.mv), pct: num(r.pct) }) : t("tools.tune.batt.waiting");
+	el.battRaw.textContent = r?.raw && gain ? t("tools.tune.batt.raw", { v: volts(r.raw) }) : "";
+	for (const row of el.batt.querySelectorAll("[data-batt]")) {
+		const sel = +row.dataset.batt, q = (c) => row.querySelector(c);
+		const input = q(".tune-batt-in");
+		badge(q(".tune-badge"), trimState(KIND.BATT, sel, 0));
+		q(".tune-reset").disabled = !battEntry(sel);
+		if (q(".tune-batt-now")) q(".tune-batt-now").disabled = !r?.mv;
+		if (sel === BATT.GAIN) {
+			q(".tune-row-sub").textContent = gain ? t("tools.tune.batt.gain_sub", { pct: signed(gain / 10, 1) }) : "";
+			input.placeholder = r?.mv ? volts(r.mv) : "";
+		} else {
+			q(".tune-row-sub").textContent = t("tools.tune.batt.factory_sub", { v: volts(sel === BATT.EMPTY ? b.empty : b.full) });
+			if (document.activeElement !== input) input.value = volts(sel === BATT.EMPTY ? range.empty : range.full);
+		}
+	}
+	// Values the radio sets aside (an imported file): full too close to empty
+	if (!range.ok) battHint(BATT.FULL, t("tools.tune.batt.err_span", { v: volts(BATT_SPAN_MV) }), "bad");
+}
+
 function renderTx() {
 	if (S.tx?.kind === "drive") renderLevel(S.tx.level);
 	else if (S.tx) renderTrims();
@@ -1080,22 +1170,26 @@ function renderSaved() {
 			const b = bandOf(e.khz);
 			return b < 0 ? t("tools.tune.level_n", { n: e.sel + 1 }) : shownName(b, e.sel).name;
 		}
+		if (e.kind === KIND.BATT) return t(BATT_TITLE[e.sel] || "tools.tune.batt.title");
 		return t(e.kind === KIND.DEV ? "tools.tune.dev.row" : "tools.tune.freq.row", { mode: modeName(e.sel) });
 	};
 	const value = (e) => (e.kind === KIND.NAME ? e.name : e.kind === KIND.DRIVE ? signed(e.value) :
-		e.kind === KIND.DEV ? t("tools.tune.pct", { v: signed(e.value / 10, 1) }) : t("tools.tune.hz", { v: signed(e.value) }));
+		e.kind === KIND.DEV || (e.kind === KIND.BATT && e.sel === BATT.GAIN) ? t("tools.tune.pct", { v: signed(e.value / 10, 1) }) :
+		e.kind === KIND.BATT ? t("tools.tune.batt.v", { v: signed(e.value / 1000, 2) }) : t("tools.tune.hz", { v: signed(e.value) }));
+	const group = (e) => (e.kind === KIND.NAME ? 2 : e.kind === KIND.BATT ? 1 : 0);
+	const noFreq = (e) => e.kind === KIND.NAME || e.kind === KIND.BATT;
 	const state = (e) => {
 		if (e.removed) return "removed";
 		if (stale(e)) return "stale";
 		const s = S.saved.find((x) => canon([x]) === canon([e]));
 		return s ? "saved" : "changed";
 	};
-	const rowsHtml = es.sort((a, b) => (a.kind === KIND.NAME) - (b.kind === KIND.NAME) || (a.khz || 0) - (b.khz || 0) || a.kind - b.kind || a.sel - b.sel)
+	const rowsHtml = es.sort((a, b) => group(a) - group(b) || (a.khz || 0) - (b.khz || 0) || a.kind - b.kind || a.sel - b.sel)
 		.map((e) => {
 			const tr = document.createElement("tr");
 			const st = state(e);
 			tr.className = `is-${st}`;
-			const cells = [e.kind === KIND.NAME ? "—" : bandName(e.khz), e.kind === KIND.NAME ? "—" : mhzText(e.khz), what(e),
+			const cells = [noFreq(e) ? "—" : bandName(e.khz), noFreq(e) ? "—" : mhzText(e.khz), what(e),
 				value(e), t(`tools.tune.entry.${st}`)];
 			for (const c of cells) {
 				const td = document.createElement("td");
@@ -1144,6 +1238,21 @@ el.import.addEventListener("change", () => {
 	if (f) importFile(f);
 });
 el.clear.addEventListener("click", clearAll);
+for (const row of el.batt.querySelectorAll("[data-batt]")) {
+	const sel = +row.dataset.batt, input = row.querySelector(".tune-batt-in");
+	row.querySelector("form").addEventListener("submit", (e) => {
+		e.preventDefault();
+		battSubmit(sel, parseVolts(input.value));
+		if (sel === BATT.GAIN) input.value = "";
+		else input.blur();
+	});
+	row.querySelector(".tune-batt-now")?.addEventListener("click", () => { if (S.batt?.mv) battSubmit(sel, S.batt.mv / 1000); });
+	row.querySelector(".tune-reset").addEventListener("click", () => {
+		setBatt(sel, 0);
+		battHint(sel, t("tools.tune.batt.applied"), "ok");
+	});
+	input.addEventListener("input", () => battHint(sel));
+}
 el.bands.addEventListener("keydown", (e) => {
 	const n = txBands().length;
 	if (!n || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;

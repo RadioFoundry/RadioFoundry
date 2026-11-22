@@ -8,8 +8,8 @@ import test from "node:test";
 
 import { bandInfo, db, grade, mhzText, neighborSlope, parseMhz, parseReading, parseWatts, snapKhz, suggestDrive,
 	trimHz, wattsName } from "../static/js/tune-math.js";
-import { KIND, MODE, RECORD_MAX, TuneRadio, cleanName, crc32, encodeRecord, gridKhz, inForce, owner, parseCore,
-	parseRecord, toWords, valueAt, word } from "../static/js/tune-radio.js";
+import { BATT, KIND, MODE, RECORD_MAX, TuneRadio, battPct, battRange, battScale, cleanName, crc32, encodeRecord, gridKhz,
+	inForce, owner, parseCore, parseRecord, toWords, valueAt, word } from "../static/js/tune-radio.js";
 
 const le32 = (n) => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
 const le16 = (n) => [n & 0xFF, (n >> 8) & 0xFF];
@@ -145,6 +145,29 @@ test("RAM words are RADIO_TUNE_WORD's; stale drive trims and names stay out", ()
 	assert.deepEqual(toWords(es, factory), [word(146000, 0, 0, 10), word(146000, 1, 0, 30)]);
 });
 
+test("battery trims: record entries with frequency 0, RAM words of kind 3", () => {
+	const es = [
+		{ kind: KIND.BATT, sel: BATT.GAIN, khz: 0, value: 21, factory: 0 },
+		{ kind: KIND.BATT, sel: BATT.FULL, khz: 0, value: -150, factory: 0 },
+		{ kind: KIND.BATT, sel: 5, khz: 0, value: 10, factory: 0 },		// no such battery trim
+	];
+	// RADIO_TUNE_WORD(0, RADIO_TUNE_W_BATT, RADIO_TUNE_BATT_GAIN, 21): 3 << 14 | 21 << 19
+	assert.deepEqual(toWords(es), [0x00A8C000, (3 << 14 | 2 << 16 | -150 << 19) >>> 0]);
+	const rec = encodeRecord(2, 0x1234, es.slice(0, 2));
+	assert.equal(hex(rec.subarray(16, 24)), "400000001500" + "0000");
+	assert.deepEqual(parseRecord(rec, 0x1234).entries, es.slice(0, 2));
+});
+
+test("the battery charge as the radio works it out (batt_pct, batt_scale)", () => {
+	// The same points as radioFeaturesTest.c's test_battery_module
+	assert.deepEqual([6300, 6400, 6700, 7400, 8100, 8200, 9000].map((mv) => battPct(mv, 6400, 8200)), [0, 0, 3, 42, 94, 100, 100]);
+	const r = battRange(6400, 8200, 400, 0);
+	assert.equal(battPct(7200, r.empty, r.full), 7);
+	assert.deepEqual(battRange(6400, 8200, 0, -200), { empty: 6400, full: 8000, ok: true });
+	assert.deepEqual(battRange(6400, 8200, 1000, -900), { empty: 6400, full: 8200, ok: false }, "too close: the board's own");
+	assert.deepEqual([battScale(8000, 25), battScale(8000, -50), battScale(7999, 1), battScale(7999, -1)], [8200, 7600, 8006, 7992]);
+});
+
 test("a trim across a band: linear between trims, flat past them, the band's own only", () => {
 	const es = [
 		{ kind: KIND.DRIVE, sel: 1, khz: 140000, value: -20 },
@@ -171,6 +194,18 @@ test("the core view's tuning facts", () => {
 	assert.deepEqual(c.drives, [400, 900, 2600]);
 	assert.equal(parseCore({}).built, false, "a firmware without tuning");
 	assert.equal(parseCore({ tune: "0/20/0/6/0/1" }).liveDrive, false, "no live field: re-key");
+	assert.deepEqual(parseCore({ tune: "0/20/0/6/0/1/0/7950/6400/8200" }).battery, { raw: 7950, empty: 6400, full: 8200 });
+	assert.equal(parseCore({ tune: "0/20/0/6/0/1/0/0/0/0" }).battery, null, "no battery");
+	assert.equal(c.battery, null, "a firmware without the battery fields");
+});
+
+test("the battery: the reading before the gain from the core view, the radio's voltage and charge", async () => {
+	const link = new FakeLink();
+	const radio = new TuneRadio(link);
+	assert.equal(await radio.battery(), null, "no battery fields");
+	link.v.tune = "0/20/0/6/1/3/0/7950/6400/8200";
+	assert.deepEqual(await radio.battery(), { raw: 7950, empty: 6400, full: 8200, mv: 8120, pct: 95, level: "ok" });
+	assert.ok(link.sent.some((s) => s[0] === 0x09 && s[1] === 7), "the features view");
 });
 
 // A radio on the debug link: the core and channel views, the RADIO ops, PTT, and STORAGE on a two-copy tune area
@@ -182,6 +217,7 @@ class FakeLink {
 			tx_deny: "none", tune: "0/20/0/6/1/3/0", power_count: "3", tx_drive: "400/900/2600" };
 		this.ch = { "ch.tx_tone": "ctcss:885", "ch.rx_tone": "none:0" };
 		this.s9 = { ref_trim: "-" };
+		this.f = { battery: "ok", battery_mv: "8120", battery_pct: "95" };
 		this.copies = [new Uint8Array(UNIT).fill(0xFF), new Uint8Array(UNIT).fill(0xFF)];
 		this.writes = [];
 		this.words = [];
@@ -191,7 +227,7 @@ class FakeLink {
 		this.sent.push([cmd, ...p]);
 		const kv = (o) => new Uint8Array([0, 0, 0, 0, 0, ...new TextEncoder().encode(Object.entries(o).map(([k, v]) => `${k}=${v}`).join("\n"))]);
 		const u32 = (o) => (p[o] | p[o + 1] << 8 | p[o + 2] << 16 | p[o + 3] << 24) >>> 0;
-		if (cmd === 0x09) return kv(p[0] === 1 ? this.ch : p[0] === 9 ? this.s9 : this.v);
+		if (cmd === 0x09) return kv(p[0] === 1 ? this.ch : p[0] === 9 ? this.s9 : p[0] === 7 ? this.f : this.v);
 		if (cmd === 0x0A) {
 			if (this.busyOnce) {
 				this.busyOnce = false;

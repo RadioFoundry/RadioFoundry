@@ -713,7 +713,7 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 
 /* Tools > Radio tuning (static/js/tunetool.js): the checklist, band tabs, the band strip, a card per level, the frequency and
    deviation rows, and the dock that always shows the connection (the lost card above the bar) */
-.tune { display: grid; gap: var(--space-4); }
+.tune { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 .tune h2 { font-size: var(--h3); margin: 0; display: flex; align-items: center; gap: var(--space-2); }
 .tune-q { display: inline-grid; place-items: center; width: 1.35rem; height: 1.35rem; padding: 0; border-radius: 50%; border: 1px solid var(--border);
 	background: var(--surface-2); color: var(--muted); font: 700 0.8rem/1 var(--font-sans); cursor: pointer; flex: none; }
@@ -765,7 +765,12 @@ abbr.gl:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; bo
 .tune-row-sub { flex-basis: 100%; font-variant-numeric: tabular-nums; }
 .tune-row .tune-adjust { grid-template-columns: auto minmax(8rem, 1fr) auto 8rem auto auto; }
 .tune-row .tune-unit input { text-align: end; }
-#tune-work { display: grid; gap: var(--space-4); }
+.tune-batt-live { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: 0 0 var(--space-3); font-size: var(--text-lg); font-variant-numeric: tabular-nums; }
+.tune-batt-form { display: flex; flex-wrap: wrap; align-items: end; gap: var(--space-2); }
+.tune-batt-form .tune-field { flex: 0 1 10rem; }
+.tune-hint[data-kind="bad"] { color: var(--bad); }
+.tune-hint[data-kind="ok"] { color: var(--ok); }
+#tune-work { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
 #tune-work[hidden] { display: none; }
 .tune-bands { display: flex; gap: var(--space-2); flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .tune-bands[hidden] { display: none; }

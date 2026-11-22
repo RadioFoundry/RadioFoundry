@@ -2,12 +2,14 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Radio tuning on the debug link (docs/spec/radio-tune.md): the record the radio checks and loads (built and checked
 // here, so the radio's side stays small), its save through STORAGE TUNE_WRITE, the live words of RADIO TUNE_SET, the
-// live drive of RADIO TX_DRIVE, the oscillator's SETTING 35, and the test transmission: the VFO on the tuning
-// frequency, a mode, no tone, the test TX limit on that frequency alone, a power level, PTT with a time-out. `link` is a
-// flasher Link (request(cmd, payload) -> the reply after the status; throws with .status).
+// live drive of RADIO TX_DRIVE, the oscillator's SETTING 35, the battery reading, and the test transmission: the VFO
+// on the tuning frequency, a mode, no tone, the test TX limit on that frequency alone, a power level, PTT with a
+// time-out. `link` is a flasher Link (request(cmd, payload) -> the reply after the status; throws with .status).
 
-export const KIND = Object.freeze({ DRIVE: 0, DEV: 1, FREQ: 2, NAME: 3 });
+export const KIND = Object.freeze({ DRIVE: 0, DEV: 1, FREQ: 2, NAME: 3, BATT: 4 });
 export const MODE = Object.freeze({ FM: 0, DMR: 1 });
+export const BATT = Object.freeze({ GAIN: 0, EMPTY: 1, FULL: 2 });	// a battery entry's sel
+const W_BATT = 3;			// a battery entry's kind in a RAM word (names are never words)
 export const MAGIC = 0x4E544652;	// "RFTN"
 export const VERSION = 1;
 export const HDR = 16, ENTRY = 8, MAX_ENTRIES = 32, NAME_LEN = 6;
@@ -16,6 +18,9 @@ export const DEV_MAX = 250;		// permille either way
 export const FREQ_MAX = 2000;		// Hz either way
 export const VALUE_MAX = 4095;		// what a RAM word holds
 export const REF_TRIM_MAX = 10000;	// ppb either way (SETTING 35)
+export const GAIN_MAX = 150;		// the battery reading's gain, permille either way
+export const BATT_MV_MAX = 1000;	// the empty or full voltage, mV either way
+export const BATT_SPAN_MV = 400;	// empty and full at least this far apart, else the radio keeps its own
 export const CHUNK = 60;		// TUNE_WRITE data bytes per request: the 64-byte request less op, copy, offset
 const WORDS_PER_SET = 15;		// TUNE_SET words per request: the 64-byte request less op, first, total
 export const ST = Object.freeze({ BAD_ARG: 2, BUSY: 3, UNAVAILABLE: 4, REFUSED: 7 });
@@ -61,7 +66,8 @@ export function owner(board, uidHex) {
 // A frequency as the record keeps it (25 kHz units) and as a RAM word does (100 kHz): trims sit on a 100 kHz grid
 export const gridKhz = (khz) => Math.round(khz / 100) * 100;
 
-// entries: [{kind, sel, khz, value, factory}] (drive, deviation, frequency) and [{kind: NAME, sel, band, name}]
+// entries: [{kind, sel, khz, value, factory}] (drive, deviation, frequency; battery with khz 0) and
+// [{kind: NAME, sel, band, name}]
 export function encodeRecord(seq, own, entries) {
 	const n = Math.min(entries.length, MAX_ENTRIES);
 	const b = new Uint8Array(HDR + n * ENTRY + 8);
@@ -105,7 +111,7 @@ export function parseRecord(b, own) {
 			const raw = b.subarray(o + 2, o + 2 + NAME_LEN);
 			const z = raw.indexOf(0);
 			entries.push({ kind, sel, band: b[o + 1], name: dec.decode(z < 0 ? raw : raw.subarray(0, z)) });
-		} else if (kind <= KIND.FREQ) {
+		} else if (kind <= KIND.BATT) {
 			entries.push({ kind, sel, khz: v.getUint16(o + 2, true) * 25, value: v.getInt16(o + 4, true),
 				factory: v.getUint16(o + 6, true) });
 		}
@@ -125,11 +131,34 @@ export function word(khz, kind, sel, value) {
 }
 
 // The words the radio would load from entries: names left out, drive trims only where the factory drive is still the
-// one they were tuned against (factoryAt(khz, level): the drive now, undefined when not known)
+// one they were tuned against (factoryAt(khz, level): the drive now, undefined when not known), battery trims as
+// word kind 3 at frequency 0
 export function toWords(entries, factoryAt = () => undefined) {
 	return entries.filter((e) => e.kind !== KIND.NAME && Math.abs(e.value) <= VALUE_MAX && e.sel < 8 &&
+		(e.kind !== KIND.BATT || e.sel <= BATT.FULL) &&
 		(e.kind !== KIND.DRIVE || (e.factory > 0 && (factoryAt(e.khz, e.sel) ?? e.factory) === e.factory)))
-		.map((e) => word(e.khz, e.kind, e.sel, e.value));
+		.map((e) => (e.kind === KIND.BATT ? word(0, W_BATT, e.sel, e.value) : word(e.khz, e.kind, e.sel, e.value)));
+}
+
+// ---- the battery, as the radio works it out (core/radio/battery.c)
+
+const CURVE = [0, 2, 4, 10, 22, 42, 60, 75, 88, 100];	// charge at nine even steps from empty to full
+
+// A reading with the gain trim (permille), truncated toward zero as the radio does
+export const battScale = (mv, gain) => mv + Math.trunc(mv * gain / 1000);
+
+// Empty and full with the owner's offsets, or the board's own when those bring them closer than BATT_SPAN_MV
+export function battRange(empty, full, dEmpty = 0, dFull = 0) {
+	const e = empty + dEmpty, f = full + dFull;
+	if (e > 0 && f >= e + BATT_SPAN_MV) return { empty: e, full: f, ok: true };
+	return { empty, full, ok: dEmpty === 0 && dFull === 0 };
+}
+
+export function battPct(mv, empty, full) {
+	if (mv >= full) return 100;
+	if (mv <= empty) return 0;
+	const span = full - empty, x = (mv - empty) * (CURVE.length - 1), i = Math.floor(x / span);
+	return CURVE[i] + Math.floor((CURVE[i + 1] - CURVE[i]) * (x % span) / span);
 }
 
 // The value of kind/sel at khz from its trims in the band [lo, hi]: linear between the two around khz, flat past the
@@ -178,6 +207,8 @@ export function parseCore(v) {
 		levelNames: list(v.power_names), drives: list(v.tx_drive).map((x) => +x || 0),
 		rxHz: +v.rx_hz || 0, txHz: +v.tx_hz || 0, mode: v.mode || "", vfo: v.vfo === "1", state: v.state || "",
 		deny: v.tx_deny || "",
+		// The battery as read before the gain trim, the board's empty and full voltages; null without a battery
+		battery: +tune[8] > 0 ? { raw: +tune[7] || 0, empty: +tune[8], full: +tune[9] || 0 } : null,
 	};
 }
 
@@ -194,6 +225,14 @@ export class TuneRadio {
 		return kv(dec.decode(r.subarray(5)));
 	}
 	async core() { return parseCore(await this.view(0)); }
+
+	// The battery now: the core view's reading before the gain trim, and the radio's own voltage and charge
+	async battery() {
+		const c = await this.core();
+		if (!c.battery) return null;
+		const f = await this.view(7);
+		return { ...c.battery, mv: +f.battery_mv || 0, pct: +f.battery_pct || 0, level: f.battery || "" };
+	}
 
 	// The trim in effect (ppb), or null on a radio without one (`ref_trim=-`) or a firmware without the key
 	async refTrim() {
