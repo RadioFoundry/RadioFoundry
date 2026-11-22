@@ -7020,17 +7020,21 @@ static void dv_drain_cut(radio_sm_t *sm, uint32_t now_ms)
 	if (sm->view.state != RS_TX) {
 		return;
 	}
+#if CONFIG_DSTAR
 	if (radio_dstar_running()) {
 		radio_dstar_tx_abort();		// the pull stopped before the board unkeys
 		fm_tx_end(sm, false, now_ms);
 		radio_dstar_rx_again(now_ms);
 		return;
 	}
+#endif
+#if CONFIG_YSF
 	if (radio_ysf_running()) {
 		radio_ysf_tx_abort();
 		fm_tx_end(sm, false, now_ms);
 		radio_ysf_rx_again(now_ms);
 	}
+#endif
 }
 #else
 static inline void dv_drain_cut(radio_sm_t *sm, uint32_t now_ms) { (void)sm; (void)now_ms; }
