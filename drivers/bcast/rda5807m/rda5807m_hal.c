@@ -51,6 +51,7 @@ static bool hal_power(bool on)
 	if (on) {
 		if (wiring->enable != NULL) {
 			wiring->enable(true);
+			reg_delay(10);	// the receiver's supply or enable settles before the first transfer
 		}
 		// A tuner left holding SDA by a reset in the middle of a transfer would never answer
 		i2c_gpio_recover(wiring->bus);
