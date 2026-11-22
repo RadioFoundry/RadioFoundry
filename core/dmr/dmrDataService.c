@@ -2653,6 +2653,13 @@ static void handleEmergencyAlarm(const uint8_t *csbk)
 #endif
 }
 
+// Our call alert or radio check of the kind is running: sent and waiting, or a retry held back by a busy channel (the
+// busy channel may be the answer to the try before)
+static bool signalRunning(uint8_t kind)
+{
+	return (sig.kind == kind) && ((sig.state == DMR_REQ_SENDING) || ((sig.state == DMR_REQ_QUEUED) && (sig.tries > 0)));
+}
+
 // A radio check to us (dmrDataRadioCheckKind): the answer to ours, or a request (answered when the setting allows). An
 // answer from anyone else, or after the check ended, is dropped
 static void handleRadioCheck(const uint8_t *csbk)
@@ -2663,7 +2670,7 @@ static void handleRadioCheck(const uint8_t *csbk)
 
 	if (kind == DMR_RC_ANSWER)
 	{
-		if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
+		if (signalRunning(DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
 		{
 			stats.radioChecksAnswered++;
 			signalFinish(true);
@@ -2711,9 +2718,8 @@ static void handleCSBK(const uint8_t *csbk)
 
 	// The ack's IDs are the other way round from the alert: to the caller (us) from the alerted radio. One with the
 	// alert's order counts too
-	if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) &&
-			(opcode == DMR_CSBKO_CALL_ALERT_ACK) && (((source == channel.ownId) && (target == sig.dst)) ||
-			((target == channel.ownId) && (source == sig.dst))))
+	if (signalRunning(DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK) &&
+			(((source == channel.ownId) && (target == sig.dst)) || ((target == channel.ownId) && (source == sig.dst))))
 	{
 		stats.callAlertsAcked++;
 		signalFinish(true);

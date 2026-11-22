@@ -119,10 +119,14 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 - Our radio check goes in the Motorola form (FID 0x10), or in the ETSI form (FID 0x00) with the setting
   `radioCheckEtsi`. The ETSI form keeps the layout of the call alert (the checked radio in octets 4-6), an
   assumption: no ETSI text we have names the form. An ETSI-form answer is taken with the IDs in either order.
-- Bit 7 of octet 3 alone tells a request from an answer, by FID. A radio check is addressed to us only in the octets
+- Bit 7 of octet 3 tells a request from an answer, by FID. Any other bit of octet 3 set is another service on the
+  opcode: neither counted nor answered. A radio check is addressed to us only in the octets
   the form gives the receiver: a FID 0x10 request when we are in octets 7-9, a FID 0x10 answer when we are in 4-6.
-  Our own request or answer repeated back by a repeater is addressed to the other radio and is ignored.
-- An answer is taken only from the radio we are checking while the check runs. A late answer, or a second one to an
+  Our own request or answer repeated back by a repeater is addressed to the other radio and is ignored. The one
+  exception is an ETSI-form answer: repeated back, it reads as the checked radio's answer with the IDs swapped, and
+  finishes a check of that radio running at the same time.
+- An answer is taken only from the radio we are checking while the check runs, also while a retry waits for a busy
+  channel. A late answer, or a second one to an
   earlier try, is dropped and never answered.
 - RadioFoundry builds before this layout sent the ETSI layout with FID 0x10. They don't interoperate with newer builds
   in the Motorola form until both radios are updated. The ETSI form is unaffected.

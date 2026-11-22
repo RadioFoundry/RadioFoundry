@@ -478,6 +478,18 @@ static void testRadioCheckForms(void)
 	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
 	c[1] = 0x68;
 	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == 0);// unknown feature set
+
+	// Another service on the opcode (octet 3 bits other than bit 7): neither a request nor answered
+	memcpy(c, rcMotoRequest, 10);
+	c[3] = 0x7E;
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == 0);
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
+
+	// The checked radio of our request, in either form
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, true, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
 }
 
 // Confirmed Rate 1/2 packet as another radio would send it: 10 data bytes per block after the DBSN / CRC-9

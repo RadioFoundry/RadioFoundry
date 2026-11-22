@@ -834,6 +834,19 @@ static void testRadioCheckForms(void)
 	CHECK(sentCount == 1 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 0);
 	CHECK(stats.radioChecksAnswered == answered + 1);
 
+	// The answer to the first try while the retry is held back: it still finishes the check, and the retry stays
+	reset();
+	CHECK(dmr_signal_radio_check(RC_CHECKED));
+	runMainTask(100);
+	CHECK(sentCount == 1);
+	ch.canTransmit = false;
+	runMainTask(2000);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_QUEUED);
+	receiveRaw(rcMotoAnswer);
+	ch.canTransmit = true;
+	runMainTask(2000);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1 && sentCount == 1);
+
 	// The ETSI form: our request (octet 3 0x80, the checked radio in octets 4-6), our own request repeated back, then
 	// the answer with the IDs swapped
 	settings.radioCheckEtsi = true;

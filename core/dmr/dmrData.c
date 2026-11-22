@@ -293,7 +293,8 @@ uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *pe
 	uint32_t second = getId(&csbk[7]);
 	bool bit7 = (csbk[3] & 0x80) != 0;
 
-	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || (own == 0) || (first == second))
+	// Octet 3 other than bit 7 set: another service on the opcode, not a radio check (never echoed as an answer)
+	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || ((csbk[3] & 0x7F) != 0) || (own == 0) || (first == second))
 	{
 		return 0;
 	}
@@ -335,6 +336,11 @@ void dmrDataBuildRadioCheck(uint32_t dst, uint32_t src, bool etsi, uint8_t out[1
 	out[3] = etsi ? 0x80 : 0x00;
 	putId(&out[4], etsi ? dst : src);
 	putId(&out[7], etsi ? src : dst);
+}
+
+uint32_t dmrDataRadioCheckDst(const uint8_t csbk[10])
+{
+	return getId((csbk[1] == DMR_FID_MOTOROLA) ? &csbk[7] : &csbk[4]);
 }
 
 // Call alert: target ID in octets 4-6, source in 7-9; the ack swaps them. A radio check answer is the request echoed
