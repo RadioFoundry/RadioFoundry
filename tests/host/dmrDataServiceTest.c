@@ -693,22 +693,22 @@ static void testSignaling(void)
 	runMainTask(500);
 	CHECK(sentCount == 2);
 
-	// A radio check in the older RadioFoundry layout with the reply off: counted, not answered; on: answered in that
-	// layout (the request echoed, octet 3 cleared)
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	// A radio check in the Motorola form (octet 3 0x00, the checker in octets 4-6, us in 7-9) with the reply off:
+	// counted, not answered; on: answered (the request echoed, octet 3 0x80)
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_B, OUR_ID);
 	runMainTask(500);
 	CHECK(sentCount == 2);
 	CHECK(stats.radioChecksReceived == 1);
 	settings.radioCheckReply = true;
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_B, OUR_ID);
 	runMainTask(500);
 	CHECK(sentCount == 3);
-	CHECK((sent[2].kind == 'C') && (sent[2].seq == DMR_CSBKO_RADIO_CHECK) && (sent[2].extra == 0x00) &&
-		  (sent[2].dst == OUR_ID));
+	CHECK((sent[2].kind == 'C') && (sent[2].seq == DMR_CSBKO_RADIO_CHECK) && (sent[2].extra == 0x80) &&
+		  (sent[2].dst == RADIO_B));
 	CHECK(events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1);
 	// A bad CRC: dropped
 	{
-		uint8_t c[10] = { 0x80 | DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, 0x80, 0, 0x03, 0xE8, 0, 0x07, 0xD2 };
+		uint8_t c[10] = { 0x80 | DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, 0x00, 0, 0x07, 0xD2, 0, 0x03, 0xE8 };
 		dmrBurst_t b;
 		uint32_t errors = stats.rxCrcErrors;
 
@@ -740,14 +740,6 @@ static void testSignaling(void)
 	CHECK(dmr_data_last_event().kind == DMR_DATA_EV_RADIO_CHECK_OK);
 	CHECK(sentCount == 1);// the answer isn't answered
 
-	// ... or answered in the older layout (the request echoed in that layout, octet 3 0x00)
-	reset();
-	CHECK(dmr_signal_radio_check(RADIO_A));
-	runMainTask(100);
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_A, OUR_ID);
-	runMainTask(100);
-	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1 && sentCount == 1);
-
 	// Our call alert with no answer: three tries, then failed
 	reset();
 	CHECK(dmr_signal_call_alert(RADIO_B));
@@ -772,9 +764,6 @@ static void testSignaling(void)
 // between two commercial portables: 3229842 checks 3229279, which answers
 static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
 static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };
-// The layout older RadioFoundry builds sent under FID 0x10, between two of them: 3229842 checks 3229279
-static const uint8_t rcOldRequest[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x46, 0x5F, 0x31, 0x48, 0x92, 0x10, 0x4E };
-static const uint8_t rcOldAnswer[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x46, 0x5F, 0x31, 0x48, 0x92, 0xBB, 0xB7 };
 #define RC_CHECKER	3229842
 #define RC_CHECKED	3229279
 
@@ -795,8 +784,8 @@ static bool sentExactly(const uint8_t csbk12[12])
 	return (sentCount == 1) && (lastTxCount == 1) && (memcmp(lastTx[0].payload, csbk12, 12) == 0);
 }
 
-// Radio check with a commercial portable and with older RadioFoundry builds, from the CSBKs heard on air: the check
-// and the answer both ways, late answers, and no loop of answers between the two layouts (docs/spec/dmr-data.md 4)
+// Radio check with a commercial portable, from the CSBKs heard on air: the check and the answer both ways, our own
+// CSBKs repeated back, and late answers (docs/spec/dmr-data.md 4)
 static void testRadioCheckForms(void)
 {
 	uint32_t answered;
@@ -805,24 +794,21 @@ static void testRadioCheckForms(void)
 	settings.radioCheckReply = true;
 	settings.radioCheckEtsi = false;
 
-	// The portable checks us: answered as the portable answers
+	// The portable checks us: answered as the portable answers, and its retry too
 	ch.ownId = RC_CHECKED;
 	reset();
 	receiveRaw(rcMotoRequest);
 	runMainTask(500);
 	CHECK(sentExactly(rcMotoAnswer));
 	CHECK(events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1 && dmr_data_last_event().id == RC_CHECKER);
-	// ... and its retry (seconds later) too
 	runMainTask(4000);
 	receiveRaw(rcMotoRequest);
 	runMainTask(500);
 	CHECK(sentCount == 2 && memcmp(lastTx[0].payload, rcMotoAnswer, 12) == 0);
-
-	// An older build checks us: answered in its layout
-	reset();
-	receiveRaw(rcOldRequest);
+	// Our answer repeated back (a repeater): nothing
+	receiveRaw(rcMotoAnswer);
 	runMainTask(500);
-	CHECK(sentExactly(rcOldAnswer));
+	CHECK(sentCount == 2 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 2);
 
 	// We check the portable: the portable's request on air; its answer finishes the check
 	ch.ownId = RC_CHECKER;
@@ -831,7 +817,7 @@ static void testRadioCheckForms(void)
 	CHECK(dmr_signal_radio_check(RC_CHECKED));
 	runMainTask(100);
 	CHECK(sentExactly(rcMotoRequest));
-	// Our own request repeated (a repeater): not an answer
+	// Our own request repeated back (a repeater): neither the answer nor a request to us
 	receiveRaw(rcMotoRequest);
 	runMainTask(100);
 	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING && sentCount == 1);
@@ -839,37 +825,30 @@ static void testRadioCheckForms(void)
 	runMainTask(100);
 	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
 	CHECK(stats.radioChecksAnswered == answered + 1);
-	// A second answer (to a try the first answer crossed): dropped, not answered as a request
+	// A second answer (to a try the first answer crossed), and one long after: dropped, never answered
 	runMainTask(1500);
+	receiveRaw(rcMotoAnswer);
+	runMainTask(10000);
 	receiveRaw(rcMotoAnswer);
 	runMainTask(500);
 	CHECK(sentCount == 1 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 0);
 	CHECK(stats.radioChecksAnswered == answered + 1);
 
-	// The same octets with no check of ours: an older build's request, answered in its layout. The same again within
-	// a second is the portable taking that answer for a request and answering it: not answered, no loop
-	runMainTask(SIGNAL_LATE_MS);
-	reset();
-	receiveRaw(rcMotoAnswer);// = an older build's check of us by RC_CHECKED
-	runMainTask(300);
-	CHECK(sentExactly(rcMotoRequest));// = the answer in the older layout
-	receiveRaw(rcMotoAnswer);
-	runMainTask(500);
-	CHECK(sentCount == 1 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1);
-	// ... while an older build's retry (SIGNAL_ANSWER_MS or more later) is answered
-	runMainTask(SIGNAL_ANSWER_MS);
-	receiveRaw(rcMotoAnswer);
-	runMainTask(500);
-	CHECK(sentCount == 2 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 2);
-
-	// We check an older build, which answers in its layout: taken too
-	ch.ownId = RC_CHECKER;
+	// The ETSI form: our request (octet 3 0x80, the checked radio in octets 4-6), our own request repeated back, then
+	// the answer with the IDs swapped
+	settings.radioCheckEtsi = true;
 	reset();
 	CHECK(dmr_signal_radio_check(RC_CHECKED));
 	runMainTask(100);
-	receiveRaw(rcOldAnswer);
+	CHECK(sentCount == 1 && lastTx[0].payload[1] == DMR_FID_ETSI && lastTx[0].payload[3] == 0x80 &&
+		  getId(&lastTx[0].payload[4]) == RC_CHECKED && getId(&lastTx[0].payload[7]) == RC_CHECKER);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0x80, RC_CHECKED, RC_CHECKER);
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING && sentCount == 1);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0x00, RC_CHECKER, RC_CHECKED);
 	runMainTask(100);
 	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1 && sentCount == 1);
+	settings.radioCheckEtsi = false;
 
 	ch.ownId = OUR_ID;
 	reset();

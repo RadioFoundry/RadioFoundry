@@ -117,20 +117,15 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 - The Motorola form matches a commercial portable on air: the request and the answer both carry the checker in
   octets 4-6 and the checked radio in 7-9, and octet 3 is 0x00 in the request and 0x80 in the answer.
 - Our radio check goes in the Motorola form (FID 0x10), or in the ETSI form (FID 0x00) with the setting
-  `radioCheckEtsi`. The ETSI form keeps the layout of the call alert (the checked radio in octets 4-6), an assumption: no ETSI
-  text we have names the form. An ETSI-form answer is taken with the IDs in either order.
-- Older RadioFoundry builds sent the ETSI layout with FID 0x10. Those octets equal the Motorola form with the roles
-  swapped, so a FID 0x10 radio check addressed to us has two readings, and the radio picks one by its own state:
-
-| FID 0x10 CSBK to us | Checking the sender | Otherwise |
-|---|---|---|
-| octet 3 0x00, us in 7-9 | answer (older layout) | request (Motorola form): answered with octet 3 0x80 |
-| octet 3 0x80, us in 4-6 | answer (Motorola form) | request (older layout): answered with octet 3 0x00 |
-
-- Older builds still get an answer in their layout, but they don't answer our Motorola-form check until updated.
-- Two guards stop a loop of answers between the two readings. An answer from the radio we checked up to 3 s after
-  our check ended is a late answer or a repeat and is dropped. A radio check from a radio we answered less than 1 s
-  ago is that radio taking our answer for a request, and gets no answer; a real retry comes at least 1.5 s later.
+  `radioCheckEtsi`. The ETSI form keeps the layout of the call alert (the checked radio in octets 4-6), an
+  assumption: no ETSI text we have names the form. An ETSI-form answer is taken with the IDs in either order.
+- Bit 7 of octet 3 alone tells a request from an answer, by FID. A radio check is addressed to us only in the octets
+  the form gives the receiver: a FID 0x10 request when we are in octets 7-9, a FID 0x10 answer when we are in 4-6.
+  Our own request or answer repeated back by a repeater is addressed to the other radio and is ignored.
+- An answer is taken only from the radio we are checking while the check runs. A late answer, or a second one to an
+  earlier try, is dropped and never answered.
+- RadioFoundry builds before this layout sent the ETSI layout with FID 0x10. They don't interoperate with newer builds
+  in the Motorola form until both radios are updated. The ETSI form is unaffected.
 - Ours (`dmr_signal_call_alert`, `dmr_signal_radio_check`): up to 3 tries, each waiting 1.5 s after the CSBK has
   gone for the answer; events `CALL_ALERT_ACKED` / `RADIO_CHECK_OK` or `..._FAILED`. One call alert or radio check
   at a time.

@@ -291,30 +291,38 @@ uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *pe
 {
 	uint32_t first = getId(&csbk[4]);
 	uint32_t second = getId(&csbk[7]);
-	bool motorola = (csbk[1] == DMR_FID_MOTOROLA);
 	bool bit7 = (csbk[3] & 0x80) != 0;
 
-	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || (own == 0) || (first == second) ||
-			(!motorola && (csbk[1] != DMR_FID_ETSI)))
+	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || (own == 0) || (first == second))
 	{
 		return 0;
 	}
-	if (bit7 && (first == own))
+	if (csbk[1] == DMR_FID_MOTOROLA)
 	{
-		// ETSI form request from the second radio; in the Motorola form also its answer to our check
-		*peer = second;
-		return motorola ? (DMR_RC_REQUEST | DMR_RC_ANSWER) : DMR_RC_REQUEST;
+		// Checker first in both: a request is to the second radio, an answer to the first
+		if (!bit7 && (second == own))
+		{
+			*peer = first;
+			return DMR_RC_REQUEST;
+		}
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_ANSWER;
+		}
 	}
-	if (!bit7 && (second == own))
+	else if (csbk[1] == DMR_FID_ETSI)
 	{
-		// ETSI form answer from the first radio (the request echoed); in the Motorola form also its request
-		*peer = first;
-		return motorola ? (DMR_RC_REQUEST | DMR_RC_ANSWER) : DMR_RC_ANSWER;
-	}
-	if (!motorola && !bit7 && (first == own))
-	{
-		*peer = second;// ETSI form answer with the IDs swapped (to us from the checked radio)
-		return DMR_RC_ANSWER;
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_REQUEST;
+		}
+		if (!bit7 && ((first == own) || (second == own)))
+		{
+			*peer = (first == own) ? second : first;// the request echoed, or the IDs swapped (to us from the checked radio)
+			return DMR_RC_ANSWER;
+		}
 	}
 	return 0;
 }
@@ -342,7 +350,7 @@ int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out)
 
 	if (opcode == DMR_CSBKO_RADIO_CHECK)
 	{
-		if ((dmrDataRadioCheckKind(csbk, src, &peer) & DMR_RC_REQUEST) == 0)
+		if (dmrDataRadioCheckKind(csbk, src, &peer) != DMR_RC_REQUEST)
 		{
 			return 0;
 		}

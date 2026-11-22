@@ -28,13 +28,6 @@
 // Our own call alert / radio check: the answer is a CSBK in the next frames; tried this many times (docs/ux task flow 8)
 #define SIGNAL_TRIES			3
 #define SIGNAL_ANSWER_MS		1500	// after our CSBK has gone
-// A radio check answer from the radio we checked this soon after the check ended is a late one or a repeat (one per
-// try heard): dropped. In the Motorola form an answer also reads as a request (dmrDataRadioCheckKind), and answering
-// it would start a loop of answers
-#define SIGNAL_LATE_MS			REPLY_TIMEOUT_MS
-// A radio check from the radio we just answered is that radio taking our answer for a request (the two layouts under
-// FID 0x10), not a retry: retries come SIGNAL_ANSWER_MS or more apart. Not answered, so two radios never loop
-#define RADIO_CHECK_ECHO_MS		1000
 // Our SMS with an ACK requested: the TMS ACK comes as a data call of its own after the ETSI part
 #define SMS_TRIES				2
 #define SMS_ACK_MS				8000
@@ -162,8 +155,6 @@ static bool csbkAnswerPending = false;
 static dmrBurst_t csbkAnswer;
 static uint32_t lastCallAlertSrc = 0;
 static uint32_t lastCallAlertTime;
-static uint32_t lastCheckAnswered = 0;	// the radio whose radio check we answered last, and when
-static uint32_t lastCheckAnsweredTime;
 static uint32_t lastBlockWindow;		// last header / CSBK / block (gotcha 5.4)
 static bool blockWindowValid;
 
@@ -177,7 +168,6 @@ static struct
 	bool waiting;						// sent, waiting for the answer until due
 	uint32_t due;
 	uint32_t startedAt;
-	uint32_t doneAt;					// when it ended (OK or FAILED)
 } sig;
 
 // Our own SMS
@@ -1330,7 +1320,6 @@ static void signalFinish(bool ok)
 {
 	sig.state = ok ? DMR_REQ_OK : DMR_REQ_FAILED;
 	sig.waiting = false;
-	sig.doneAt = now;
 	if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
 	{
 		post(ok ? DMR_DATA_EV_CALL_ALERT_ACKED : DMR_DATA_EV_CALL_ALERT_FAILED, sig.dst);
@@ -2664,33 +2653,24 @@ static void handleEmergencyAlarm(const uint8_t *csbk)
 #endif
 }
 
-// A radio check to us: the answer to ours, or a request (answered when the setting allows). Under FID 0x10 a CSBK
-// can be either (dmrDataRadioCheckKind): from the radio we are checking it is the answer
+// A radio check to us (dmrDataRadioCheckKind): the answer to ours, or a request (answered when the setting allows). An
+// answer from anyone else, or after the check ended, is dropped
 static void handleRadioCheck(const uint8_t *csbk)
 {
 	uint32_t peer = 0;
 	uint8_t kind = dmrDataRadioCheckKind(csbk, channel.ownId, &peer);
 	dmrBurst_t answer;
 
-	if ((kind & DMR_RC_ANSWER) && (sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
+	if (kind == DMR_RC_ANSWER)
 	{
-		if (sig.state == DMR_REQ_SENDING)
+		if ((sig.state == DMR_REQ_SENDING) && (sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
 		{
 			stats.radioChecksAnswered++;
 			signalFinish(true);
-			return;
 		}
-		if (((sig.state == DMR_REQ_OK) || (sig.state == DMR_REQ_FAILED)) && (sig.tries > 0) &&
-				((now - sig.doneAt) < SIGNAL_LATE_MS))
-		{
-			return;
-		}
-	}
-	if (((kind & DMR_RC_REQUEST) == 0) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
-	{
 		return;
 	}
-	if ((peer == lastCheckAnswered) && ((now - lastCheckAnsweredTime) < RADIO_CHECK_ECHO_MS))
+	if ((kind != DMR_RC_REQUEST) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
 	{
 		return;
 	}
@@ -2704,8 +2684,6 @@ static void handleRadioCheck(const uint8_t *csbk)
 	{
 		csbkAnswer = answer;
 		csbkAnswerPending = true;
-		lastCheckAnswered = peer;
-		lastCheckAnsweredTime = now;
 	}
 }
 
