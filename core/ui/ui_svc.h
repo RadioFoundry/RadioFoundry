@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "config.h"
+#include "dmr/dmr_emergency.h"
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
@@ -280,6 +281,7 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
 // then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
+dmr_emergency_result_t ui_svc_emergency_result(void);
 // Our own emergency is going (alarm, hot mic or in emergency until canceled): the key then cancels it
 bool ui_svc_emergency_active(void);
 // Our emergency's phase for Home's emergency bar: UI_EM_OFF, UI_EM_TX (the alarm or the hot mic), UI_EM_ON (in

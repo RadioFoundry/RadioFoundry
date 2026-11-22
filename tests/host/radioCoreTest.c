@@ -5811,8 +5811,10 @@ static void test_vfo_dmr_data(void)
 				    DMR_IP_PROTO_UDP, l4, sizeof(l4)));
 	run(3000);
 	dmr_emergency_start();		// queued, then refused by the tick
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_WAITING);
 	run(3000);
 	CHECK(dmr_emergency_state() == DMR_EMERGENCY_FAILED && !sm.em_keyed);
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_FAILED);
 	CHECK(sim.air_count == n0 && hw.tx_calls == tx0);
 	dmr_emergency_cancel();
 

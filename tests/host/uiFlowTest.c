@@ -1460,6 +1460,10 @@ static const flow_t flows_em[] = {
 	  "long:back hold:emerg,3000", "set163=1 emerg=1", 2, false },
 	// The emergency hold (dmr-emergency.md 5.1; set162 Hold, set163 Key, set164 Alert, set85 Open mic): the countdown from
 	// 0.3 s, sent at the end of the hold (3 s), nothing when let go before it
+	{ "E emergency: queued alarm refused", "emresult:waiting hold:emerg,3000 expect:shows=WAITING",
+	  "emresult:failed", "shows=FAILED hides=SENT", 0, false },
+	{ "E emergency: call armed without an alarm", "emresult:waiting hold:emerg,3000", "emresult:on",
+	  "shows=On hides=SENT", 0, false },
 	{ "E emergency: hold the top key", "", "hold:emerg,3000", "emerg=1 screen=emergency-hold shows=SENT", 1,
 	  false },
 	{ "E emergency: the outcome closes by itself", "", "hold:emerg,3000 wait:3000", "emerg=1 screen=home", 1, false },
@@ -2441,6 +2445,22 @@ static void em_hold_checks(void)
 		for (size_t i = 0; i < sizeof edge / sizeof edge[0]; i++, runs++)
 			if (!em_run(&sim_geoms[g], &edge[i], why, sizeof why))
 				em_fail(&sim_geoms[g], &edge[i], why);
+	}
+	// The UI task ticks immediately after the first Back, sometimes in the very same millisecond.
+	char why_back[128];
+	sim_reset(&sim_geoms[0], SIM_MAP_K);
+	if (sim_run("emstart emphase:on emkey:none wait:2000", why_back, sizeof why_back)) {
+		input_event_t back = { .action = ACT_BACK, .gesture = GESTURE_PRESS };
+		uint32_t at = sim_now() & ~1u;
+		ui_app_tick(sim_view(), at);
+		ui_app_key(&back);
+		ui_app_tick(sim_view(), at);
+		ui_app_tick(sim_view(), at + 150);
+		ui_app_key(&back);
+	}
+	if (sim_rec.em_cancels != 1) {
+		printf("FAIL second Back after a same-millisecond tick\n");
+		fails++;
 	}
 	// The 0.29 s press on the DM-1701 is the key's own (Power level), with no countdown drawn
 	char err[300];

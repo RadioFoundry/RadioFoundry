@@ -1909,9 +1909,9 @@ static struct {
 	uint16_t step;		// left_ms / REFRESH_FAST_MS last drawn
 	uint8_t hold_s;		// Settings > Keys > Emergency: Hold
 	uint8_t secs;		// the seconds left last signalled
-	uint8_t done;		// UI_EM_DONE_*
+	uint8_t done;		// DMR_EM_RESULT_*
 	bool key_off, silent;	// ... Key Off, Alert Silent
-	bool holding, cancel, alarm, private_call, drop_press;
+	bool holding, cancel, alarm, private_call, drop_press, back_armed;
 	bool timed;		// t0 set (at the first tick after the LONG: the key's time can be a wait old)
 	char name[CODEPLUG_NAME_LEN + 1];
 } em;
@@ -2088,7 +2088,7 @@ bool ui_app_key_while_dark(const input_event_t *ev)
 static void em_stop(void)
 {
 	em.holding = false;
-	em.done = UI_EM_DONE_NONE;
+	em.done = DMR_EM_RESULT_NONE;
 	if (stack[sp].scr == SCR_EM_HOLD)
 		ui_pop();
 	dirty = true;
@@ -2097,7 +2097,7 @@ static void em_stop(void)
 static void __attribute__((noinline)) em_start(void)
 {
 	em.holding = true;
-	em.done = UI_EM_DONE_NONE;
+	em.done = DMR_EM_RESULT_NONE;
 	em.timed = false;
 	em.cancel = ui_svc_emergency_active();	// the radio core's state: a start over the debug link counts too
 	em.alarm = ui_svc_emergency_target(&em.id, &em.private_call);
@@ -2119,7 +2119,23 @@ static void __attribute__((noinline)) em_start(void)
 		ui_push(SCR_EM_HOLD, 0);
 }
 
-// At the end of the hold: start (or cancel), and the outcome with its own tone
+static void em_show_result(dmr_emergency_result_t outcome)
+{
+	em.done = outcome;
+	em.done_at = now;
+	dirty = true;
+	if (em.silent || outcome == DMR_EM_RESULT_WAITING || outcome == DMR_EM_RESULT_NONE)
+		return;
+	if (outcome == DMR_EM_RESULT_FAILED) {
+		ui_svc_beep(UI_BEEP_ERROR);
+		return;
+	}
+	bool ended = outcome == DMR_EM_RESULT_CANCELED;
+	ui_svc_beep(ended ? UI_BEEP_EM_CANCELED : UI_BEEP_EM_SENT);
+	vibrate(ended ? UI_VIBE_MESSAGE : UI_VIBE_EMERGENCY);
+}
+
+// At the end of the hold: the request, then the radio task's outcome
 static void __attribute__((noinline)) em_fire(void)
 {
 	bool start = !em.cancel;
@@ -2131,28 +2147,26 @@ static void __attribute__((noinline)) em_fire(void)
 		ui_toast(TR(EMERG_WHY_NEEDS_DMR_AND_ID, "Emergency needs a DMR channel and ID"));
 		return;
 	}
-	em.done = start ? UI_EM_DONE_SENT : UI_EM_DONE_CANCELED;
-	em.done_at = now;
-	dirty = true;
-	if (!em.silent) {
-		ui_svc_beep(start ? UI_BEEP_EM_SENT : UI_BEEP_EM_CANCELED);
-		vibrate(start ? UI_VIBE_EMERGENCY : UI_VIBE_MESSAGE);
-	}
+	em_show_result(start ? ui_svc_emergency_result() : DMR_EM_RESULT_CANCELED);
 }
 
 static void __attribute__((noinline)) em_tick(void)
 {
 	if (!CONFIG_DMR_EMERGENCY)
 		return;		// the countdown code leaves the image with it
-	if (stack[sp].scr == SCR_EM_HOLD && !em.holding && em.done == UI_EM_DONE_NONE) {
+	if (stack[sp].scr == SCR_EM_HOLD && !em.holding && em.done == DMR_EM_RESULT_NONE) {
 		ui_pop();	// back on top after a screen that covered it (which stopped it): the previous screen
 		dirty = true;
 		return;
 	}
-	if (em.done != UI_EM_DONE_NONE) {
+	if (em.done != DMR_EM_RESULT_NONE) {
 		if (stack[sp].scr != SCR_EM_HOLD)
-			em.done = UI_EM_DONE_NONE;
-		else if (now - em.done_at >= EM_DONE_MS)
+			em.done = DMR_EM_RESULT_NONE;
+		else if (em.done == DMR_EM_RESULT_WAITING) {
+			dmr_emergency_result_t outcome = ui_svc_emergency_result();
+			if (outcome != em.done)
+				em_show_result(outcome);
+		} else if (now - em.done_at >= EM_DONE_MS)
 			em_stop();
 		return;
 	}
@@ -2212,7 +2226,7 @@ bool ui_em_hold_key(const input_event_t *ev)
 // Home's emergency bar (ui_state_t.em_bar): what ends the hot mic, or the emergency. The key named is the one whose
 // long press is Emergency now (Settings > Keys can move it); with none (Key off, or no key has it) BACK twice ends it
 static char em_bar_text[64];
-static uint32_t em_back_at;	// the first of the two BACK presses (0: none)
+static uint32_t em_back_at;	// the first of the two BACK presses (valid while em.back_armed)
 
 static const char *em_key_name(void)
 {
@@ -2237,8 +2251,8 @@ static void __attribute__((noinline)) em_bar_tick(void)
 	} else if (ph == UI_EM_ON) {
 		sb_str(&b, TR(EMERG_BAR_BACK, TEXT_ALT_OPEN "EMERGENCY  Back twice: end" TEXT_ALT_NEXT "EMERG  Back x2 end" TEXT_ALT_CLOSE));
 	}
-	if (em_back_at != 0 && (ph != UI_EM_ON || now - em_back_at >= TOAST_MS))
-		em_back_at = 0;
+	if (em.back_armed && (ph != UI_EM_ON || now - em_back_at >= TOAST_MS))
+		em.back_armed = false;
 	if (strcmp(t, em_bar_text) != 0) {
 		memcpy(em_bar_text, t, sizeof t);
 		dirty = true;
@@ -2258,12 +2272,13 @@ static bool __attribute__((noinline)) em_back(void)
 	}
 	if (ph != UI_EM_ON || em_key_name() != NULL)
 		return false;
-	if (em_back_at == 0) {
-		em_back_at = now | 1u;
+	if (!em.back_armed || now - em_back_at >= TOAST_MS) {
+		em.back_armed = true;
+		em_back_at = now;
 		ui_toast(TR(EMERG_BACK_AGAIN_TO_END_EMERGENCY, "Back again to end emergency"));
 		return true;
 	}
-	em_back_at = 0;
+	em.back_armed = false;
 	ui_svc_emergency(false);
 	if (!em.silent)
 		ui_svc_beep(UI_BEEP_EM_CANCELED);
@@ -2291,7 +2306,7 @@ static bool emergency_key(const input_event_t *ev)
 			else
 				em_stop();
 		}
-		em.drop_press = ev->value == 2 && em.done != UI_EM_DONE_NONE;
+		em.drop_press = ev->value == 2 && em.done != DMR_EM_RESULT_NONE;
 		return true;
 	}
 	if (ev->gesture != GESTURE_LONG)

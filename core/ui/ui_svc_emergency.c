@@ -31,6 +31,11 @@ bool ui_svc_emergency(bool on)
 	return st == DMR_EMERGENCY_ALARM || st == DMR_EMERGENCY_HOT_MIC || st == DMR_EMERGENCY_ACTIVE;
 }
 
+dmr_emergency_result_t ui_svc_emergency_result(void)
+{
+	return dmr_emergency_result();
+}
+
 bool ui_svc_emergency_active(void)
 {
 	dmr_emergency_state_t st = dmr_emergency_state();

@@ -2509,10 +2509,12 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
 // same. "emkey:<name>|none" names the key whose long press is Emergency (Settings > Keys), default the board's
 static bool emergency_on;
 static uint8_t em_phase;
+static dmr_emergency_result_t em_result;
 static unsigned em_mic_offs;
 static char em_key[8];
 static bool em_key_set;
 bool ui_svc_emergency(bool on) { if (on) sim_rec.em_starts++; else sim_rec.em_cancels++; emergency_on = on; em_phase = on ? UI_EM_TX : UI_EM_OFF; return true; }
+dmr_emergency_result_t ui_svc_emergency_result(void) { return em_result; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 uint8_t ui_svc_emergency_phase(void) { return emergency_on ? em_phase : UI_EM_OFF; }
 void ui_svc_emergency_mic_off(void)
@@ -2664,6 +2666,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
 	em_phase = UI_EM_OFF;
+	em_result = DMR_EM_RESULT_SENT;
 	em_mic_offs = 0;
 	em_key_set = false;
 	memset(&key_hold, 0, sizeof key_hold);
@@ -3347,6 +3350,14 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "emstart") == 0) {	// our emergency started without the key (the debug link)
 		ui_svc_emergency(true);
 		advance(200);
+		return true;
+	}
+	if (strcmp(t, "emresult") == 0 && arg != NULL) {
+		if (strcmp(arg, "waiting") == 0) em_result = DMR_EM_RESULT_WAITING;
+		else if (strcmp(arg, "failed") == 0) em_result = DMR_EM_RESULT_FAILED;
+		else if (strcmp(arg, "on") == 0) em_result = DMR_EM_RESULT_ON;
+		else return false;
+		advance(50);
 		return true;
 	}
 	if (strcmp(t, "emphase") == 0 && arg != NULL) {	// the alarm and hot mic are over: in emergency until canceled

@@ -176,6 +176,7 @@ WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; ret
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
+WEAK dmr_emergency_result_t ui_svc_emergency_result(void) { return DMR_EM_RESULT_FAILED; }
 WEAK uint8_t ui_svc_emergency_phase(void) { return UI_EM_OFF; }
 WEAK void ui_svc_emergency_mic_off(void) { }
 WEAK const char *ui_svc_key_name_long(uint8_t action) { (void)action; return NULL; }

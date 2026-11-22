@@ -32,8 +32,7 @@ during the hot mic takes over the transmission.
 Hold the **Power level** key (or a side key set to **Emergency** as its hold, [Settings](17-settings.md#keys-key-8)).
 After 0.3 s the screen counts down: an amber "HOLD FOR EMERGENCY" banner, the seconds left in large amber digits with
 a "beep" (and "vibrate") cue beside them, a bar that fills, where the alarm goes ("Alarm to TG 3100 USA") and "Let go to stop". Each second the radio beeps and, if it has a vibration
-motor, pulses. Keep holding to the end (3 s from the press by default) and the radio starts the emergency: "Emergency"
-over SENT on a red screen with its own two-tone sound, then hold again to cancel.
+motor, pulses. Keep holding to the end (3 s from the press by default) to request the emergency. The screen shows WAITING until the radio reports the result. SENT means the modem finished transmitting an alarm. In call-only mode, On means your next call carries the emergency flag. FAILED means the start was refused or no alarm transmission succeeded. Hold again to cancel an active emergency.
 
 | You | The radio |
 |---|---|
@@ -41,7 +40,7 @@ over SENT on a red screen with its own two-tone sound, then hold again to cancel
 | Let go before 1.5 s (or the configured long-press time, if longer), before the countdown completes | The countdown closes and the key's short action runs. A completed 1 s hold does not run the short action |
 | Hold longer, then let go before the end | Nothing is sent. The previous screen comes back |
 | Hold, then press **Back** | The same: nothing is sent |
-| Hold to the end | The emergency starts: SENT on a red screen |
+| Hold to the end | The radio reports SENT, On or FAILED |
 | Press **Back** on Home while the radio transmits for the emergency | The open mic stops. The radio stays in emergency |
 | Hold again, during an emergency | "HOLD TO CANCEL" counts down; at the end CANCELED. Let go early and it stays on |
 | Press **Back** twice on Home, when no key is set to Emergency | The emergency ends |

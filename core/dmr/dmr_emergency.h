@@ -45,6 +45,12 @@ typedef enum {
 	DMR_EMERGENCY_FAILED,		// couldn't start (not a DMR channel we may transmit on, no target); until the next start
 } dmr_emergency_state_t;
 
+// Result of the most recent local start. A sent alarm completed a modem transfer; no peer ACK is expected.
+typedef enum {
+	DMR_EM_RESULT_NONE, DMR_EM_RESULT_WAITING, DMR_EM_RESULT_SENT, DMR_EM_RESULT_ON,
+	DMR_EM_RESULT_FAILED, DMR_EM_RESULT_CANCELED
+} dmr_emergency_result_t;
+
 typedef enum {
 	DMR_EMERGENCY_ALERT_NONE = 0,
 	DMR_EMERGENCY_ALERT_ALARM,	// an emergency alarm CSBK
@@ -134,6 +140,7 @@ void dmr_emergency_mic_off(void);
 // The user has seen the alert(s): the banner goes
 void dmr_emergency_dismiss(void);
 dmr_emergency_state_t dmr_emergency_state(void);
+dmr_emergency_result_t dmr_emergency_result(void);
 // A copy of the newest alert; false when none is active (out filled either way)
 bool dmr_emergency_alert(dmr_emergency_alert_t *out);
 // Bumped on every state change and alert
@@ -149,6 +156,7 @@ static inline bool dmr_emergency_start(void) { return false; }
 static inline void dmr_emergency_cancel(void) { }
 static inline void dmr_emergency_mic_off(void) { }
 static inline void dmr_emergency_dismiss(void) { }
+static inline dmr_emergency_result_t dmr_emergency_result(void) { return DMR_EM_RESULT_NONE; }
 static inline dmr_emergency_state_t dmr_emergency_state(void) { return DMR_EMERGENCY_IDLE; }
 static inline bool dmr_emergency_alert(dmr_emergency_alert_t *out)
 { if (out) { *out = (dmr_emergency_alert_t){ 0 }; } return false; }

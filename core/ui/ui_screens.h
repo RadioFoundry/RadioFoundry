@@ -280,7 +280,7 @@ typedef struct {
 	uint16_t left_ms;	// to the end of the hold
 	uint16_t hold_ms;	// the whole hold
 	bool cancel;		// the hold cancels our emergency
-	uint8_t done;		// UI_EM_DONE_*: the confirmation
+	uint8_t done;		// dmr_emergency_result_t: the confirmation
 	bool alarm;		// an alarm goes first ("Alarm to"), else the emergency call ("Call to")
 	bool silent;		// Settings > Keys > Emergency > Alert: Silent (no red screen, no cue)
 	bool vibe;		// the countdown vibrates too (a motor, and Settings > Sound > Vibrate on)
@@ -288,9 +288,6 @@ typedef struct {
 	uint32_t id;		// the target, 0 = none known (no line)
 	const char *name;	// its contact name, "" none
 } ui_em_hold_t;
-#define UI_EM_DONE_NONE		0
-#define UI_EM_DONE_SENT		1
-#define UI_EM_DONE_CANCELED	2
 void ui_draw_em_hold(const radio_view_t *v, const ui_state_t *s, const ui_em_hold_t *h);
 // Volume (the VOL key, a radio without a knob): the step 0 (mute) .. RADIO_VOLUME_MAX as a bar and a number
 void ui_draw_volume(const radio_view_t *v, const ui_state_t *s);

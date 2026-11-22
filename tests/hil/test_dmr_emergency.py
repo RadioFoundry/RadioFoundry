@@ -46,10 +46,14 @@ def _emergency_setup(radio, pytestconfig, tx=False):
 def em_settings(radio):
     """Puts the emergency settings back (and the emergency off) after the test."""
     x = _ext(radio)
+    screen_before = radio.screen()
     yield
     if x.get("em.built") == 1:
         radio.link.emergency("cancel")
         radio.link.emergency("dismiss")
+        if screen_before != "emergency" and radio.screen() == "emergency":
+            radio.press("ok")
+            radio.wait_for(lambda v: v.get("ui.screen") != "emergency", sections=("link",), what="received alert closed")
         radio.link.emergency_settings(x["em.mode"], x["em.dst"], x["em.dst_private"] == 1, x["em.etsi_fid"] == 1,
                                       x["em.rx_tone"] == 1, x["em.tries"], x["em.hot_mic_s"])
 
@@ -226,6 +230,7 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
         assert _ext(radio)["em.state"] == "idle", "early release started emergency"
         # The key's short action can step the power level when released early.
         radio.lowest_power(absolute=True)
+        before_alarms = _ext(radio)["data.emergency_alarms_sent"]
         hold_ms = hold_s * 1000 + 500
         radio.link.key_hold("emergency", hold_ms)
         radio.wait_for(lambda x: x.get("ui.screen") == "emergency-hold", timeout=2.0, sections=("link",),
@@ -233,7 +238,9 @@ def test_emergency_key_hold(radio, pytestconfig, em_settings, backup_dir):
         radio.wait_for(lambda x: x.get("em.state") in ("alarm", "active"), timeout=hold_s + 5,
                        sections=("dmr_ext",), what="emergency started at the end of the hold")
         radio.wait_for(lambda x: x.get("em.state") == "active", timeout=8.0, sections=("dmr_ext",),
-                       what="alarm sent")
+                       what="alarm phase complete")
+        assert _ext(radio)["data.emergency_alarms_sent"] == before_alarms + 1
+        assert radio.data_view()["data.event"] == "emergency_sent"
         radio.wait_for(lambda x: x.get("ui.screen") != "emergency-hold", timeout=5.0, sections=("link",),
                        what="the outcome closed")
         radio.link.key_hold("emergency", hold_ms)

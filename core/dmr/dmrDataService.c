@@ -198,6 +198,7 @@ static uint8_t tmsAckL4[DMR_TMS_ACK_UDP_MAX];		// a confirmed TMS ACK's datagram
 static struct
 {
 	bool active;
+	bool sent;						// at least one alarm completed at the modem
 	uint32_t dst;
 	bool group;
 	uint8_t fid;
@@ -1443,6 +1444,7 @@ bool dmrDataServiceEmergencyAlarm(uint32_t dst, bool group, uint8_t fid, uint8_t
 	{
 		return false;
 	}
+	emg.sent = false;
 	emg.dst = dst;
 	emg.group = group;
 	emg.fid = fid;
@@ -1467,6 +1469,11 @@ void dmrDataServiceEmergencyAlarmCancel(void)
 bool dmrDataServiceEmergencyAlarmBusy(void)
 {
 	return emg.active;
+}
+
+bool dmrDataServiceEmergencyAlarmSent(void)
+{
+	return emg.sent;
 }
 
 static void emergencyTick(void)
@@ -1497,6 +1504,7 @@ static void emergencyTxDone(bool ok)
 		return;
 	}
 	emg.waiting = false;
+	emg.sent |= ok;
 	if (emg.tries > 0)
 	{
 		emg.tries--;

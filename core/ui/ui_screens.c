@@ -3661,16 +3661,23 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 	sbuf_t b;
 	int w = gfx_width();
 	bool mono = gfx_bpp() == 1;
-	bool red = h->done == UI_EM_DONE_SENT && !h->silent && !mono;
+	bool red = h->done == DMR_EM_RESULT_SENT && !h->silent && !mono;
 	gfx_clear(red ? ui_col.tx : ui_col.bg);
 	// The status strip; the hold's banner is its title, the outcome's is "Emergency" so SENT says what went out
-	int y = ui_draw_top(v, s, h->done != UI_EM_DONE_NONE ? TR(TITLE_EMERGENCY, "Emergency") : NULL, NULL);
+	int y = ui_draw_top(v, s, h->done != DMR_EM_RESULT_NONE ? TR(TITLE_EMERGENCY, "Emergency") : NULL, NULL);
 	int hint_y = L->hint_y;
 	int ty = h->id != 0 ? hint_y - L->small->h - 1 : hint_y;	// the target line, over the hint
-	if (h->done != UI_EM_DONE_NONE) {
-		const char *word = h->done == UI_EM_DONE_SENT ? TR(EMERG_SENT, "SENT") : TR(EMERG_CANCELED, "CANCELED");
+	if (h->done != DMR_EM_RESULT_NONE) {
+		const char *word;
+		switch (h->done) {
+		case DMR_EM_RESULT_SENT: word = TR(EMERG_SENT, "SENT"); break;
+		case DMR_EM_RESULT_ON: word = TR(VALUE_ON, "On"); break;
+		case DMR_EM_RESULT_WAITING: word = TR(CALL_STATE_WAITING, "WAITING"); break;
+		case DMR_EM_RESULT_FAILED: word = TR(EMERG_STATE_FAILED, "FAILED"); break;
+		default: word = TR(EMERG_CANCELED, "CANCELED"); break;
+		}
 		int bh = ty - y - 4, base;
-		bool inv = mono && h->done == UI_EM_DONE_SENT && !h->silent;	// 1 bpp: SENT inverted
+		bool inv = mono && h->done == DMR_EM_RESULT_SENT && !h->silent;	// 1 bpp: SENT inverted
 		if (inv)
 			gfx_fill(0, y + 2, w, bh, ui_col.fg);
 		em_big(word, y + 2, bh, w - 4, w / 2, inv ? ui_col.bg : ui_col.fg, &base);
@@ -3724,9 +3731,9 @@ void __attribute__((noinline)) ui_draw_em_hold(const radio_view_t *v, const ui_s
 		if (fill > 0)
 			gfx_fill(4, by, fill, barh, amber);
 	}
-	if (h->id != 0 && h->done != UI_EM_DONE_CANCELED)
+	if (h->id != 0 && h->done != DMR_EM_RESULT_CANCELED)
 		em_target(h, ty);
-	const char *hint = h->done == UI_EM_DONE_SENT ? TR(EMERG_HOLD_AGAIN_TO_CANCEL, "Hold again to cancel") : h->done != UI_EM_DONE_NONE ? "" :
+	const char *hint = (h->done == DMR_EM_RESULT_SENT || h->done == DMR_EM_RESULT_ON) ? TR(EMERG_HOLD_AGAIN_TO_CANCEL, "Hold again to cancel") : h->done != DMR_EM_RESULT_NONE ? "" :
 		TR(EMERG_LET_GO_TO_STOP, "Let go to stop");
 	ui_draw_hint(s->toast != NULL ? s->toast : hint, s->toast != NULL);
 }

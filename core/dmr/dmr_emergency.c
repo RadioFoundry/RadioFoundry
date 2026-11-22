@@ -44,6 +44,7 @@ static dmr_emergency_stats_t stats;
 static dmr_emergency_alert_t alert;
 static volatile uint32_t serial;
 static volatile uint8_t shown_state;
+static volatile uint8_t result;
 
 // Requests from other tasks
 static struct {
@@ -92,6 +93,7 @@ void dmr_emergency_init(const dmr_emergency_settings_t *s)
 	set_serial++;
 	state = DMR_EMERGENCY_IDLE;
 	shown_state = state;
+	result = DMR_EM_RESULT_NONE;
 	hot_mic = false;
 	tone_due = false;
 	cfg_serial++;
@@ -139,6 +141,7 @@ bool dmr_emergency_take_tone(void)
 static void stop(void)
 {
 	dmrDataServiceEmergencyAlarmCancel();
+	result = DMR_EM_RESULT_CANCELED;
 	hot_mic = false;
 	set_state(DMR_EMERGENCY_IDLE);
 }
@@ -169,6 +172,7 @@ static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 	bool priv = set.dst != 0 ? set.dst_private : ch->talk_private;
 	if (!ch->can_transmit || id == 0) {
 		stats.failed++;
+		result = DMR_EM_RESULT_FAILED;
 		set_state(DMR_EMERGENCY_FAILED);
 		return;
 	}
@@ -180,6 +184,7 @@ static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 	if (set.mode != DMR_EMERGENCY_MODE_CALL) {
 		if (!dmrDataServiceEmergencyAlarm(id, !priv, set.etsi_fid ? DMR_FID_ETSI : DMR_FID_MOTOROLA, set.alarm_tries)) {
 			stats.failed++;
+			result = DMR_EM_RESULT_FAILED;
 			set_state(DMR_EMERGENCY_FAILED);
 			return;
 		}
@@ -188,6 +193,7 @@ static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 		return;
 	}
 	begin_call(now_ms);
+	result = DMR_EM_RESULT_ON;
 }
 
 void dmr_emergency_tick(uint32_t now_ms, const dmr_emergency_channel_t *ch)
@@ -231,7 +237,11 @@ void dmr_emergency_tick(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 
 	switch (state) {
 	case DMR_EMERGENCY_ALARM:
+		if (dmrDataServiceEmergencyAlarmSent())
+			result = DMR_EM_RESULT_SENT;
 		if (!dmrDataServiceEmergencyAlarmBusy()) {
+			if (result != DMR_EM_RESULT_SENT)
+				result = DMR_EM_RESULT_FAILED;
 			begin_call(now_ms);	// all tries out (or the channel went: the call then fails like PTT would)
 		}
 		break;
@@ -320,6 +330,7 @@ bool dmr_emergency_start(void)
 	lock();
 	ok = !mbox.start && !dmr_emergency_in_progress();
 	if (ok) {
+		result = DMR_EM_RESULT_WAITING;
 		mbox.start = true;
 		mbox.cancel = false;
 	}
@@ -352,6 +363,11 @@ void dmr_emergency_dismiss(void)
 dmr_emergency_state_t dmr_emergency_state(void)
 {
 	return (dmr_emergency_state_t)shown_state;
+}
+
+dmr_emergency_result_t dmr_emergency_result(void)
+{
+	return (dmr_emergency_result_t)result;
 }
 
 bool dmr_emergency_alert(dmr_emergency_alert_t *out)

@@ -5533,6 +5533,11 @@ msgid "SENT"
 msgstr "ENVOYÉ"
 
 #: core/ui/ui_screens.c
+msgctxt "EMERG_STATE_FAILED"
+msgid "FAILED"
+msgstr "ÉCHEC"
+
+#: core/ui/ui_screens.c
 msgctxt "EMERG_CANCELED"
 msgid "CANCELED"
 msgstr "ANNULÉ"
