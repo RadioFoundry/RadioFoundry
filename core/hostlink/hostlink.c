@@ -57,7 +57,10 @@
 // or two from build to build (three words)
 #define HOSTLINK_TASK_STACK	752
 #else
-#define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
+// words: MMDVM frames are built on the stack. The deepest chain without the debug link is a CPS write through the stub
+// entry's listener into the VFO record, which copies the settings: 1768 bytes on the deepest board with the CI's
+// toolchain, and stack-check.md's overhead and margin come on top
+#define HOSTLINK_TASK_STACK	544
 #endif
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
