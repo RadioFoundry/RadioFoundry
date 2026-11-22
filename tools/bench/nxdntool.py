@@ -8,7 +8,7 @@ than its sources).
 
     nxdntool.py gen OUT.dibits --expect EXP.json [--9600] [--ran 1] [--group N | --unit N] [--src N]
                [--voice-frames 48] [--voice HEX18 | --random-voice SEED | --voice-file FILE] [--emergency]
-               [--lead N] [--tail N]
+               [--lead N] [--tail N] [--alias TEXT]
                [--ber P --seed S] [--unpacked]
     nxdntool.py decode IN.dibits [--9600] [--expect EXP.json] [--ran N] [--unpacked | --records | --air-jsonl]
     nxdntool.py disc IN.raw --rate HZ [--9600] [--full HZ | --counts-per-khz N] [--invert] [--expect EXP.json] [--ran N]
@@ -231,7 +231,7 @@ def pass_opts(a, names):
 
 GEN_OPTS = ["--9600", "--ran", "--group", "--unit", "--src", "--voice-frames", "--voice", "--random-voice",
             "--voice-file",
-            "--emergency", "--lead", "--tail", "--ber", "--seed", "--unpacked"]
+            "--emergency", "--lead", "--tail", "--ber", "--seed", "--unpacked", "--alias"]
 MOD_OPTS = ["--9600", "--rate", "--full", "--dev-scale", "--offset", "--noise", "--invert", "--carrier-gap", "--seed",
             "--unpacked"]
 
@@ -353,6 +353,7 @@ def main(argv=None):
         s.add_argument(n, type=int)
     s.add_argument("--voice")
     s.add_argument("--voice-file")
+    s.add_argument("--alias", help="NXDN Over-the-Air Alias, up to 14 ASCII characters")
     s.add_argument("--ber", type=float)
     s.add_argument("--emergency", action="store_true")
     s.add_argument("--unpacked", action="store_true")

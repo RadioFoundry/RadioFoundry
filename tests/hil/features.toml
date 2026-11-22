@@ -93,6 +93,12 @@ spec = "docs/spec/nxdn.md"
 source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
           "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
 
+[feature.nxdn_ota_alias]
+switch = "NXDN_OTA_ALIAS"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c", "core/radio/radio_nxdn.c",
+          "core/ui/ui_screens.c"]
+
 [feature.nxdn_scrambler]
 switch = "NXDN_SCRAMBLER"
 spec = "docs/spec/nxdn.md"

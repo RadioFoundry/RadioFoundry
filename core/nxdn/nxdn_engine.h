@@ -46,6 +46,9 @@ typedef struct {
 	uint8_t system;		// traffic-key system for this channel
 #endif
 	const uint8_t *silence;	// a voice frame of silence (NXDN_EHR_BYTES), from the vocoder
+#if CONFIG_NXDN_OTA_ALIAS
+	char tx_alias[NXDN_ALIAS_LEN + 1];
+#endif
 } nxdn_engine_cfg_t;
 
 typedef struct {

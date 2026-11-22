@@ -8437,12 +8437,18 @@ static void test_nxdn_rx(void)
 	v_decode_hook = dec_hook;
 	nfar_next = 0;
 	nfar_begin(true, 1, 2001, false, 20);
+#if CONFIG_NXDN_OTA_ALIAS
+	strcpy(nfar.cfg.tx_alias, "TEST UNIT");
+#endif
 	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
 	nfar_tx = true;
 	run(1000);
 	CHECK(sm.view.state == RS_RX && hw.led[LED_GREEN]);
 	CHECK((v->flags & (RADIO_NXDN_RX | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_RX | RADIO_NXDN_PLAYED));
 	CHECK(v->src == 2001 && v->dst == 20 && v->ran == 1 && !(v->flags & (RADIO_NXDN_UNIT | RADIO_NXDN_ENC)));
+#if CONFIG_NXDN_OTA_ALIAS
+	CHECK(strcmp(v->alias, "TEST UNIT") == 0);
+#endif
 	CHECK(dec_in_order >= 30);
 	nxdn_engine_tx_stop(&nfar);
 	// The call's counters are read when its release ends it: the framer stays locked a few frames after, and the
@@ -8451,6 +8457,9 @@ static void test_nxdn_rx(void)
 		run(5);
 	}
 	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX) && v->src == 2001);	// the last call stays
+#if CONFIG_NXDN_OTA_ALIAS
+	CHECK(strcmp(v->alias, "TEST UNIT") == 0);
+#endif
 	radio_nxdn_stats(&st);
 	CHECK(st.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
 	run(500);
@@ -8515,6 +8524,9 @@ static void test_nxdn_tx(void)
 	CHECK(nfar_heard.starts == 1 && nfar_heard.ends == 0 && nfar_heard.call.ran == 1);
 	CHECK(nfar_heard.call.vcall.src == 1 && nfar_heard.call.vcall.dst == 1 &&
 	      nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP && !(nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
+#if CONFIG_NXDN_OTA_ALIAS
+	CHECK(strcmp(nfar_heard.call.alias, "Q0TEST") == 0);
+#endif
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_TX && hw.keyed);	// the frame on air is finished first
 	run(500);
@@ -8524,6 +8536,11 @@ static void test_nxdn_tx(void)
 	radio_nxdn_stats(&st);
 	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
 
+#if CONFIG_NXDN_OTA_ALIAS
+	settings_t *st_edit = settings_begin();
+	st_edit->ui_flags &= (uint8_t)~SETTINGS_UI_ALIAS;
+	settings_end(now);
+#endif
 	// Settings sent while transmitting: in force for the next transmission
 	req(RREQ_PTT, 1);
 	run(100);
@@ -8535,6 +8552,12 @@ static void test_nxdn_tx(void)
 	radio_req_nxdn_settings(&s);
 	run(300);
 	CHECK(nfar_heard.call.vcall.src == 1);	// this one goes on as it began
+#if CONFIG_NXDN_OTA_ALIAS
+	CHECK(nfar_heard.call.alias[0] == '\0');
+	st_edit = settings_begin();
+	st_edit->ui_flags |= SETTINGS_UI_ALIAS;
+	settings_end(now);
+#endif
 	req(RREQ_PTT, 0);
 	run(500);
 	req(RREQ_PTT, 1);

@@ -340,6 +340,9 @@
 #ifndef CONFIG_NXDN
 #define CONFIG_NXDN			0
 #endif
+#ifndef CONFIG_NXDN_OTA_ALIAS
+#define CONFIG_NXDN_OTA_ALIAS		0
+#endif
 #ifndef CONFIG_NXDN_SCRAMBLER
 #define CONFIG_NXDN_SCRAMBLER		0
 #endif

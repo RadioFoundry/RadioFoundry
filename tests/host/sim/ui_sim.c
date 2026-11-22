@@ -29,7 +29,7 @@
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
-//   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
+//   nxdnrx:<src>,<dst>[,<kind>[,<alias>]]  an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
@@ -3471,6 +3471,12 @@ static bool run_token(char *t, char *err, size_t len)
 			(kind == 'e' ? 0 : RADIO_NXDN_PLAYED));
 		view.nxdn.src = (uint16_t)src;
 		view.nxdn.dst = (uint16_t)dst;
+#if CONFIG_NXDN_OTA_ALIAS
+		const char *alias = strchr(arg, ',');
+		alias = alias ? strchr(alias + 1, ',') : NULL;
+		alias = alias ? strchr(alias + 1, ',') : NULL;
+		snprintf(view.nxdn.alias, sizeof view.nxdn.alias, "%s", alias ? alias + 1 : "");
+#endif
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
 		changed();

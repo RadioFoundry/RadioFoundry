@@ -128,12 +128,28 @@ Receive:
 | Header (non-superframe, two FACCH1 VCALL) | a call starts with its fields |
 | A superframe frame without a call | a call starts as a late entry; its fields come once the four SACCH parts (structures 1/4 to 4/4) are in, in order (TS 1-B 4.1.6) |
 | VCALL_IV in either FACCH1 | the call is encrypted |
+| Supported OTA Alias fragments in superframe FACCH1 | a complete, checksum-verified alias updates the caller view |
 | Header VCALL with other fields during a call | the old call ended unseen: a new one starts |
 | TX_REL, or the signal lost | the call ends |
 
 Voice is handed on only once the VCALL is in, no VCALL_IV was seen, the voice option is half rate (4800 or 9600 EHR),
 and the cipher is clear or scramble with a configured key. Everything else is counted (`voice_held`), not played.
 Scrambled voice requires a valid SACCH to identify its superframe position; frames without it are held.
+
+With `CONFIG_NXDN_OTA_ALIAS`, the call layer receives the observed proprietary format on FACCH1 and SACCH.
+Each fragment starts with `3F 68 82 04`. Octet 4 is `14`, `24`, `34`, or `44` in order. The first three fragments each
+carry four text bytes in octets 5–8. The last carries two text bytes followed by the big-endian sum of all 14
+text bytes. Octet 9 is zero. Text is printable ASCII with zero padding. The receiver waits for the complete
+sequence and the caller identity before publishing. Partial text is cleared at a new call.
+
+Transmit takes the configured radio name at PTT when Show talker alias is on. An empty name skips the alias.
+The transmitter puts both pairs of fragments in the first two superframe frames after the VCALL header,
+using both FACCH1 halves in each frame. At both rates, SACCH alternates one VCALL superframe with one alias
+fragment, repeating the four fragments in order for longer calls. SACCH carries the same nine-byte fragment
+without the final FACCH1 zero byte. Its rotation uses no extra voice slots. Receive assembles the two carriers
+independently so a missed FACCH1 fragment cannot interrupt a SACCH alias. The opening two-frame FACCH1 burst
+is confirmed in the 9600 bit/s captures. The 4800 bit/s log confirms the second frame, while the first frame
+has CRC errors.
 
 Transmit (TS 1-B 4.1.3): preamble, a header frame (SACCH IDLE, VCALL in both FACCH1), superframe frames (SACCH VCALL
 part 1/4 to 4/4, four VCH), and a release frame (SACCH IDLE, TX_REL in both FACCH1). Frames go out symbol by symbol:

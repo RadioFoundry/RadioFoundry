@@ -231,6 +231,9 @@ bool nxdn_engine_tx_prepare(nxdn_engine_t *e)
 		e->tx_stop = e->tx_ended = false;
 		// A subscriber unit sends inbound, direct or through a repeater (table 5.2-2)
 		nxdn_call_tx_begin(&e->tx, &v, e->cfg.tx_ran, NXDN_DIR_INBOUND, e->cfg.rate9600);
+#if CONFIG_NXDN_OTA_ALIAS
+		nxdn_call_tx_alias(&e->tx, cfg->tx_alias);
+#endif
 		e->tx.scramble_key = key;
 	}
 	return air_session_tx_prime(&e->session);

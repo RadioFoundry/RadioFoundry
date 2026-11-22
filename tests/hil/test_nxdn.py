@@ -449,6 +449,22 @@ def test_nxdn_rx_from_bench(radio, sdr_bench, pytestconfig, rate):
     assert v1.get("nxdn.ran") == str(TEST_RAN), f"RAN {v1.get('nxdn.ran')}, sent {TEST_RAN}"
 
 
+@pytest.mark.feature("nxdn_ota_alias")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+@pytest.mark.parametrize("rate", list(RATES))
+@pytest.mark.needs_switch("VFO")
+def test_nxdn_rx_ota_alias(radio, sdr_bench, pytestconfig, rate):
+    if "NXDN_OTA_ALIAS" not in radio.features():
+        skip("not_built", "NXDN Over-the-Air Alias is not in the radio's feature list")
+    alias = rig(pytestconfig, "callsign")
+    v0, v1 = rx_call(radio, sdr_bench, pytestconfig, rate, RX_VOICE_FRAMES, extra=("--alias", alias))
+    assert (as_int(v1.get("nxdn.rx_calls")) or 0) == (as_int(v0.get("nxdn.rx_calls")) or 0) + 1
+    assert v1.get("nxdn.src") == str(TEST_UNIT)
+    assert v1.get("nxdn.alias") == alias
+
+
 @pytest.mark.feature("nxdn")
 @pytest.mark.rf
 @pytest.mark.bench_service

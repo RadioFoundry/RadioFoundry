@@ -7481,7 +7481,7 @@ static const char *set_why_not(const set_item_t *s)
 		return feats() & UI_FEAT_HEAR_ALL ? NULL :
 			TR(WHY_DMON_NOT_IN_BUILD, "Digital monitor: not in this build");
 	case UI_SET_ALIAS_SHOW:
-		return CONFIG_DMR_TALKER_ALIAS ? NULL :
+		return (CONFIG_DMR_TALKER_ALIAS || CONFIG_NXDN_OTA_ALIAS) ? NULL :
 			TR(WHY_TALKER_ALIAS_NOT_IN_BUILD, "Talker alias: not in this build");
 	case UI_SET_PRIVACY_TYPE:
 	case UI_SET_PRIVACY_KEY:

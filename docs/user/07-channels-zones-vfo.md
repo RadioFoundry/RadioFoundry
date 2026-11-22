@@ -389,6 +389,8 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
 - PTT sends a voice call to group 1 with RAN 1 at 9600 bit/s, as unit 1 until a computer sets another ID.
 - Home shows "NXDN", what PTT calls ("TG 1"), the RAN sent and the rate ("RAN 1 9600"). During a call it shows who
   calls and where, or why the call isn't played. FM's tone and width tiles say "FM only: this is NXDN".
+- With **Settings > Talk & listen > Show talker alias** on, NXDN sends the existing radio name with each call.
+  Home shows a received alias in quotes under the caller's ID when there is room.
 - The rate, the RANs, the unit ID and the group can be changed only from a computer for now
   (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
 - Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives

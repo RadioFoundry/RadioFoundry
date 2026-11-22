@@ -277,6 +277,12 @@ static int cmd_gen(const char *out_path, const char *exp_path, const opts_t *o)
 	for (long i = 0; i < lead; i++)
 		syms[n++] = (uint8_t)((idle >> (6 - 2 * (i & 3))) & 3);
 	nxdn_call_tx_begin(&t, &v, (uint8_t)ran, NXDN_DIR_INBOUND, r9600);
+	const char *alias = opt(o, "--alias");
+	if (alias) {
+		if (strlen(alias) > NXDN_ALIAS_LEN)
+			die("alias exceeds 14 bytes", alias);
+		nxdn_call_tx_alias(&t, alias);
+	}
 	while (!nxdn_call_tx_done(&t)) {
 		uint16_t first, k;
 

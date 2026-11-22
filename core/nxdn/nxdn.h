@@ -13,6 +13,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "config.h"
 #include "../air/air_framer.h"
 #include "../fec/conv.h"
 
@@ -70,6 +71,8 @@
 #define NXDN_MSG_VCALL_IV	0x03
 #define NXDN_MSG_TX_REL_EX	0x07
 #define NXDN_MSG_TX_REL		0x08
+#define NXDN_MSG_PROP_FORM	0x3F
+#define NXDN_ALIAS_LEN		14
 #define NXDN_MSG_IDLE		0x10
 // Call type (6.5.x)
 #define NXDN_CALL_BROADCAST	0
@@ -183,6 +186,9 @@ typedef struct {
 	bool iv;		// a VCALL_IV was seen (DES or AES)
 	nxdn_vcall_t vcall;
 	int16_t rssi_dbm;
+#if CONFIG_NXDN_OTA_ALIAS
+	char alias[NXDN_ALIAS_LEN + 1];
+#endif
 } nxdn_call_t;
 
 typedef struct {
@@ -199,12 +205,24 @@ typedef struct {
 	uint32_t fec_bits;	// bits the SACCH and FACCH1 decoders corrected
 } nxdn_call_stats_t;
 
+#if CONFIG_NXDN_OTA_ALIAS
+typedef struct {
+	uint8_t data[NXDN_ALIAS_LEN];
+	uint8_t next;
+	bool ready;
+} nxdn_alias_rx_t;
+#endif
+
 typedef struct {
 	nxdn_rx_t rx;			// first: the framer's context is the call's
 	const nxdn_call_sink_t *sink;
 	void *ctx;
 	bool active;
 	nxdn_call_t call;
+#if CONFIG_NXDN_OTA_ALIAS
+	nxdn_alias_rx_t facch_alias, sacch_alias;
+	bool seen_superframe;
+#endif
 	// The superframe's SACCH message as it comes in, one part a frame
 	uint8_t sf[NXDN_SACCH_MSG_BYTES];
 	uint8_t sf_parts;		// bit k: part k is in
@@ -228,10 +246,19 @@ typedef struct {
 	uint16_t nsyms, ready, sent;
 	uint8_t msg[NXDN_FACCH1_BYTES];	// VCALL, as FACCH1 and SACCH carry it
 	uint8_t rel[NXDN_FACCH1_BYTES];	// TX_REL
+#if CONFIG_NXDN_OTA_ALIAS
+	char alias[NXDN_ALIAS_LEN];
+	uint8_t alias_frames;	// the two FACCH1 frames immediately after the header
+	uint8_t alias_sf;	// 0 off; 1..8 alternate VCALL and the four SACCH alias messages
+#endif
 	uint8_t frame[NXDN_FRAME_BYTES];
 } nxdn_call_tx_t;
 
 void nxdn_call_tx_begin(nxdn_call_tx_t *t, const nxdn_vcall_t *v, uint8_t ran, uint8_t dir, bool rate9600);
+#if CONFIG_NXDN_OTA_ALIAS
+// Set after begin, before the preamble is queued. An empty alias leaves all voice slots available as usual.
+void nxdn_call_tx_alias(nxdn_call_tx_t *t, const char *alias);
+#endif
 uint16_t nxdn_call_tx_ready(const nxdn_call_tx_t *t, uint16_t *first);
 const uint8_t *nxdn_call_tx_syms(const nxdn_call_tx_t *t);
 void nxdn_call_tx_sent(nxdn_call_tx_t *t, uint16_t n);

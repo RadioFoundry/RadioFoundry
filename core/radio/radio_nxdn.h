@@ -14,6 +14,9 @@
 #include <stdint.h>
 #include "config.h"
 #include "codeplug/codeplug.h"
+#if CONFIG_NXDN_OTA_ALIAS
+#include "nxdn/nxdn.h"
+#endif
 
 // The NXDN settings (RAM only, reset at start-up; nxdn.md 6.2): the VFO's, and the shape of what is in force
 typedef struct {
@@ -52,6 +55,9 @@ typedef struct {
 	uint16_t src;		// the caller's unit ID, 0 not known yet
 	uint16_t dst;		// the group or unit called
 	uint16_t talk;		// what PTT calls (the settings' tx_dst): a group, or a unit with RADIO_NXDN_TALK_UNIT
+#if CONFIG_NXDN_OTA_ALIAS
+	char alias[NXDN_ALIAS_LEN + 1];
+#endif
 } radio_nxdn_view_t;
 
 // Counters for the debug link (any task reads them; the radio task writes them while NXDN runs)
@@ -97,6 +103,10 @@ void radio_nxdn_retuned(void);
 void radio_nxdn_apply(const channel_t *ch, uint16_t number);
 // Every tick: the view and the counters. True when the view changed
 bool radio_nxdn_poll(radio_nxdn_view_t *v);
+#if CONFIG_NXDN_OTA_ALIAS
+// Stage the name for the next PTT. An empty string disables transmit alias.
+void radio_nxdn_set_tx_alias(const char *alias);
+#endif
 
 void radio_nxdn_stats(radio_nxdn_stats_t *out);
 void radio_nxdn_reset_stats(void);

@@ -24,6 +24,90 @@ static void bit_put(uint8_t *p, uint16_t i, uint8_t b)
 	p[i >> 3] = (uint8_t)(b ? (p[i >> 3] | m) : (p[i >> 3] & ~m));
 }
 
+#if CONFIG_NXDN_OTA_ALIAS
+// Observed conventional PROP_FORM layout: index 1..4, four text bytes per part except the last,
+// which carries two text bytes and a big-endian sum. The 14-byte text is zero padded.
+static const uint8_t alias_signature[] = { NXDN_MSG_PROP_FORM, 0x68, 0x82, 0x04 };
+
+static uint16_t alias_sum(const uint8_t *data)
+{
+	uint16_t sum = 0;
+
+	for (unsigned i = 0; i < NXDN_ALIAS_LEN; i++)
+		sum += data[i];
+	return sum;
+}
+
+static bool alias_publish(nxdn_call_rx_t *c, nxdn_alias_rx_t *alias)
+{
+	if (!alias->ready || !c->call.have_vcall)
+		return false;
+	alias->ready = false;
+	if (memcmp(c->call.alias, alias->data, NXDN_ALIAS_LEN) == 0)
+		return false;
+	memcpy(c->call.alias, alias->data, NXDN_ALIAS_LEN);
+	return true;
+}
+
+static void alias_rx(nxdn_call_rx_t *c, nxdn_alias_rx_t *alias, const uint8_t *msg)
+{
+	if (!c->active || memcmp(msg, alias_signature, sizeof alias_signature) != 0)
+		return;
+
+	uint8_t index = msg[4] >> 4;
+	if ((msg[4] & 0x0F) != 4 || index == 0 || index > 4)
+		return;
+	if (index == 1) {
+		alias->next = 1;
+		alias->ready = false;
+	}
+	if (index != alias->next) {
+		alias->next = 0;
+		return;
+	}
+	memcpy(alias->data + 4 * (index - 1), msg + 5, index == 4 ? 2u : 4u);
+	alias->next = index == 4 ? 0 : (uint8_t)(index + 1);
+	if (index != 4 || alias_sum(alias->data) != ((uint16_t)msg[7] << 8 | msg[8]))
+		return;
+
+	bool padding = false;
+	for (unsigned i = 0; i < NXDN_ALIAS_LEN; i++) {
+		uint8_t ch = alias->data[i];
+		if (ch == 0)
+			padding = true;
+		else if (padding || ch < 0x20 || ch > 0x7E)
+			return;
+	}
+	if (alias->data[0] == 0)
+		return;
+	alias->ready = true;
+	if (alias_publish(c, alias) && c->sink->update)
+		c->sink->update(&c->call, c->ctx);
+}
+
+// The same nine-byte message fits in SACCH. FACCH1 adds one zero byte.
+static void alias_build(const nxdn_call_tx_t *t, uint8_t index, uint8_t *msg)
+{
+	memcpy(msg, alias_signature, sizeof alias_signature);
+	msg[4] = (uint8_t)((index << 4) | 4);
+	memcpy(msg + 5, t->alias + 4 * (index - 1), index == 4 ? 2u : 4u);
+	if (index == 4) {
+		uint16_t sum = alias_sum((const uint8_t *)t->alias);
+		msg[7] = (uint8_t)(sum >> 8);
+		msg[8] = (uint8_t)sum;
+	}
+}
+
+static void alias_tx_put(nxdn_call_tx_t *t, uint8_t half)
+{
+	uint8_t index = (uint8_t)(2 * (2 - t->alias_frames) + half + 1);
+	uint8_t msg[NXDN_FACCH1_BYTES] = { 0 };
+
+	alias_build(t, index, msg);
+	nxdn_facch1_put(t->frame, half, msg);
+}
+#endif
+
 // ── Receive ──
 static void call_start(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f, bool late)
 {
@@ -31,6 +115,11 @@ static void call_start(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f, bool late)
 	c->call.late = late;
 	c->call.ran = f->sacch_errs >= 0 ? NXDN_SR_RAN(f->sacch[0]) : c->rx.ran;
 	c->call.rssi_dbm = f->rssi_dbm;
+#if CONFIG_NXDN_OTA_ALIAS
+	c->facch_alias.next = c->sacch_alias.next = 0;
+	c->facch_alias.ready = c->sacch_alias.ready = false;
+	c->seen_superframe = false;
+#endif
 	c->active = true;
 	c->stats.calls++;
 	if (c->sink->start)
@@ -70,13 +159,29 @@ static void on_msg(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f, const uint8_t *m
 		if (!nxdn_vcall_parse(msg, &v))
 			return;
 		// A header after voice: a new call whose start the old one's release was lost before
-		if (c->active && head && c->call.have_vcall && memcmp(&v, &c->call.vcall, sizeof v))
+		bool new_call = c->call.have_vcall && memcmp(&v, &c->call.vcall, sizeof v) != 0;
+#if CONFIG_NXDN_OTA_ALIAS
+		new_call = new_call || c->seen_superframe;
+#endif
+		if (c->active && head && new_call)
 			call_end(c);
 		if (!c->active)
 			call_start(c, f, !head);
 		if (!c->call.have_vcall || memcmp(&v, &c->call.vcall, sizeof v)) {
+#if CONFIG_NXDN_OTA_ALIAS
+			if (c->call.have_vcall) {
+				// A new identity from SACCH or FACCH1 cannot inherit the previous caller's alias.
+				c->call.alias[0] = '\0';
+				c->facch_alias.next = c->sacch_alias.next = 0;
+				c->facch_alias.ready = c->sacch_alias.ready = false;
+			}
+#endif
 			c->call.vcall = v;
 			c->call.have_vcall = true;
+#if CONFIG_NXDN_OTA_ALIAS
+			alias_publish(c, &c->facch_alias);
+			alias_publish(c, &c->sacch_alias);
+#endif
 			if (c->sink->update)
 				c->sink->update(&c->call, c->ctx);
 		}
@@ -116,6 +221,12 @@ static void sf_part(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f)
 	c->sf_next = (int8_t)(part + 1);
 	if (part == 3 && c->sf_parts == 0x0F) {
 		c->sf_next = -1;
+#if CONFIG_NXDN_OTA_ALIAS
+		if (nxdn_msg_type(c->sf) == NXDN_MSG_PROP_FORM) {
+			alias_rx(c, &c->sacch_alias, c->sf);
+			return;
+		}
+#endif
 		on_msg(c, f, c->sf, false);
 	}
 }
@@ -149,6 +260,10 @@ static void on_frame(const nxdn_rx_frame_t *f, void *ctx)
 			c->sf_next = -1;
 		}
 	}
+#if CONFIG_NXDN_OTA_ALIAS
+	if (sf && c->active)
+		c->seen_superframe = true;
+#endif
 	// FACCH1 in the halves the LICH names; an idle FACCH1 frame carries nothing (TS 1-B 4.1.2.1)
 	for (uint8_t h = 0; h < 2; h++) {
 		int errs;
@@ -164,6 +279,13 @@ static void on_frame(const nxdn_rx_frame_t *f, void *ctx)
 		}
 		c->stats.fec_bits += (uint32_t)errs;
 		// (both halves are read: an encrypted call's header carries its VCALL_IV in the second, TS 1-B 4.1.5)
+#if CONFIG_NXDN_OTA_ALIAS
+		if (sf && nxdn_msg_type(msg) == NXDN_MSG_PROP_FORM) {
+			if (msg[9] == 0)
+				alias_rx(c, &c->facch_alias, msg);
+			continue;
+		}
+#endif
 		on_msg(c, f, msg, !sf);
 	}
 	// Voice in the halves not taken
@@ -211,6 +333,10 @@ enum { TX_PRE, TX_HEAD, TX_SF, TX_END, TX_DONE };
 // A FACCH1 frame of a superframe at 9600 bit/s: the second and fourth (TS 1-B 4.1.2.1)
 static bool facch_frame(const nxdn_call_tx_t *t)
 {
+#if CONFIG_NXDN_OTA_ALIAS
+	if (t->alias_frames)
+		return true;
+#endif
 	return t->rate9600 && (t->sf_frame & 1);
 }
 
@@ -227,6 +353,10 @@ static void sacch(nxdn_call_tx_t *t, uint8_t part, const uint8_t *msg, uint16_t 
 static void tx_frame(nxdn_call_tx_t *t, uint8_t state)
 {
 	static const uint8_t idle[3] = { NXDN_MSG_IDLE, 0, 0 };
+	const uint8_t *sf_msg = t->msg;
+#if CONFIG_NXDN_OTA_ALIAS
+	uint8_t alias_msg[NXDN_SACCH_MSG_BYTES];
+#endif
 
 	t->state = state;
 	t->sent = 0;
@@ -246,20 +376,34 @@ static void tx_frame(nxdn_call_tx_t *t, uint8_t state)
 		t->nsyms = t->ready = NXDN_FRAME_SYMS;
 		break;
 	case TX_SF:
-		// SACCH part k of the VCALL (structure 1/4 .. 4/4)
+		// SACCH carries one message per superframe (structure 1/4 .. 4/4).
+#if CONFIG_NXDN_OTA_ALIAS
+		if (t->alias_sf && !(t->alias_sf & 1)) {
+			alias_build(t, t->alias_sf / 2, alias_msg);
+			sf_msg = alias_msg;
+		}
+#endif
 		t->nsyms = NXDN_FRAME_SYMS;
 		if (facch_frame(t)) {
 			// (what a FACCH1 frame carries in a call is open: the VCALL again, nxdn.md 9)
 			nxdn_frame_begin(t->frame, NXDN_LICH(NXDN_RF_RDCH, NXDN_USC_SACCH_SF, NXDN_STEAL_BOTH, t->dir));
-			sacch(t, t->sf_frame, t->msg, (uint16_t)(18 * t->sf_frame));
-			nxdn_facch1_put(t->frame, 0, t->msg);
-			nxdn_facch1_put(t->frame, 1, t->msg);
+			sacch(t, t->sf_frame, sf_msg, (uint16_t)(18 * t->sf_frame));
+#if CONFIG_NXDN_OTA_ALIAS
+			if (t->alias_frames) {
+				alias_tx_put(t, 0);
+				alias_tx_put(t, 1);
+			} else
+#endif
+			{
+				nxdn_facch1_put(t->frame, 0, t->msg);
+				nxdn_facch1_put(t->frame, 1, t->msg);
+			}
 			t->ready = NXDN_FRAME_SYMS;
 		} else {
 			// Nothing of a voice frame goes out before its first VCH: an end that comes first sends the release
 			// frame right after the frame before
 			nxdn_frame_begin(t->frame, NXDN_LICH(NXDN_RF_RDCH, NXDN_USC_SACCH_SF, NXDN_STEAL_NONE, t->dir));
-			sacch(t, t->sf_frame, t->msg, (uint16_t)(18 * t->sf_frame));
+			sacch(t, t->sf_frame, sf_msg, (uint16_t)(18 * t->sf_frame));
 			t->ready = 0;
 		}
 		break;
@@ -282,6 +426,21 @@ void nxdn_call_tx_begin(nxdn_call_tx_t *t, const nxdn_vcall_t *v, uint8_t ran, u
 	nxdn_vcall_build(&rel, t->rel, sizeof t->rel);
 	tx_frame(t, TX_PRE);
 }
+
+#if CONFIG_NXDN_OTA_ALIAS
+void nxdn_call_tx_alias(nxdn_call_tx_t *t, const char *alias)
+{
+	unsigned i = 0;
+
+	for (; i < sizeof t->alias && alias[i]; i++) {
+		uint8_t ch = (uint8_t)alias[i];
+		t->alias[i] = ch >= 0x20 && ch <= 0x7E ? (char)ch : '?';
+	}
+	memset(t->alias + i, 0, sizeof t->alias - i);
+	t->alias_frames = i ? 2 : 0;
+	t->alias_sf = i ? 1 : 0;
+}
+#endif
 
 uint16_t nxdn_call_tx_ready(const nxdn_call_tx_t *t, uint16_t *first)
 {
@@ -308,8 +467,16 @@ void nxdn_call_tx_sent(nxdn_call_tx_t *t, uint16_t n)
 		tx_frame(t, t->ending ? TX_END : TX_SF);
 		break;
 	case TX_SF:
+#if CONFIG_NXDN_OTA_ALIAS
+		if (t->alias_frames)
+			t->alias_frames--;
+#endif
 		// A release may follow any frame of a superframe (TS 1-B 4.1.3)
 		t->sf_frame = (uint8_t)((t->sf_frame + 1) & 3);
+#if CONFIG_NXDN_OTA_ALIAS
+		if (t->alias_sf && t->sf_frame == 0)
+			t->alias_sf = t->alias_sf == 8 ? 1 : (uint8_t)(t->alias_sf + 1);
+#endif
 		tx_frame(t, t->ending ? TX_END : TX_SF);
 		break;
 	default:

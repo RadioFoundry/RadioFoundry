@@ -1256,6 +1256,10 @@ static const flow_t satellite_small_detail_flows[] = {
 
 // GD-77 key map on its 128x64 monochrome screen only (it has the Left / Right arrow keys)
 static const flow_t flows_mono[] = {
+#if CONFIG_NXDN_OTA_ALIAS
+	{ "NXDN home: compact screen keeps the caller and destination", "dlmode:nxdn", "nxdnrx:1234,7,g,TESTUNIT",
+	  "screen=home shows=ID_1234 shows=TG_7 hides=TESTUNIT", 0, false },
+#endif
 	LONG_MESSAGE_FLOWS
 	{ "2 Right steps to the next zone on Home", "", "right", "zone=1 screen=home", 1, false },
 	{ "2 Left steps back a zone", "right", "left", "zone=0 screen=home", 1, false },
@@ -1281,6 +1285,10 @@ static const flow_t flows_mono[] = {
 
 // DM-1701 key map only: the top side key, long waits
 static const flow_t flows_k[] = {
+#if CONFIG_NXDN_OTA_ALIAS
+	{ "NXDN home: received alias and caller ID", "dlmode:nxdn", "nxdnrx:1234,7,g,TESTUNIT",
+	  "screen=home shows=ID_1234 shows=TG_7 shows=TESTUNIT", 0, false },
+#endif
 	LONG_MESSAGE_FLOWS
 	// Dual watch on the side keys: SK2 is A/B pressed, Dual watch held; P1 / P2 (zones) and the knob act on the
 	// selected channel

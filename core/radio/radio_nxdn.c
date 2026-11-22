@@ -371,6 +371,9 @@ bool radio_nxdn_poll(radio_nxdn_view_t *v)
 		n.ran = ev.rx.ran;
 		n.src = ev.rx.have_vcall ? ev.rx.vcall.src : 0;
 		n.dst = ev.rx.have_vcall ? ev.rx.vcall.dst : 0;
+#if CONFIG_NXDN_OTA_ALIAS
+		memcpy(n.alias, ev.rx.alias, sizeof n.alias);
+#endif
 		n.emergency = ev.rx_active && ev.rx.have_vcall && (ev.rx.vcall.cc_opt & NXDN_CC_EMERGENCY) != 0;
 	}
 	settings_view(&n);
@@ -383,6 +386,16 @@ static bool nxdn_no_tx(void)
 {
 	return eng != NULL && (eng->session.fit & AIR_FIT_TX) == 0;
 }
+
+#if CONFIG_NXDN_OTA_ALIAS
+void radio_nxdn_set_tx_alias(const char *alias)
+{
+	if (eng != NULL) {
+		strncpy(eng->cfg.tx_alias, alias, NXDN_ALIAS_LEN);
+		eng->cfg.tx_alias[NXDN_ALIAS_LEN] = '\0';
+	}
+}
+#endif
 
 static bool nxdn_tx_prepare(void)
 {

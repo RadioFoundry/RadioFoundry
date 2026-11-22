@@ -6654,6 +6654,10 @@ static void air_key(radio_sm_t *sm, uint32_t now_ms, uint32_t hz)
 		deny(sm, TXDENY_AIR_NO_TX);	// the provider receives this profile only
 		return;
 	}
+#if CONFIG_NXDN_OTA_ALIAS
+	if (o == &radio_nxdn_air)
+		radio_nxdn_set_tx_alias((SETTINGS_FIELD(ui_flags) & SETTINGS_UI_ALIAS) != 0 ? sm->radio_name : "");
+#endif
 	bool primed = o->tx_prepare();
 	sm->air_tx = o->tx_state() != AIR_TX_IDLE;
 	if (!primed) {

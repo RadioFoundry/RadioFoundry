@@ -22,6 +22,9 @@ void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t)
 		(n->flags & RADIO_NXDN_ENC) != 0, (n->flags & RADIO_NXDN_UNIT) != 0, (n->flags & RADIO_NXDN_LATE) != 0);
 	dl_text(t, "nxdn.ran=%u\nnxdn.src=%u\nnxdn.dst=%u\nnxdn.emergency=%u\nnxdn.tx=%u\nnxdn.deny=%u\n", n->ran, n->src,
 		n->dst, n->emergency, n->tx, v->tx_deny);
+#if CONFIG_NXDN_OTA_ALIAS
+	dl_text(t, "nxdn.alias=%s\n", n->alias);
+#endif
 	// What the board's provider gives the rate in force (AIR_FIT_*: 1 receive, 2 transmit, 4 soft values, 32 rate
 	// doubled, 32768 untested), each rate's too
 	dl_text(t, "nxdn.fit=%u\nnxdn.fit4800=%u\nnxdn.fit9600=%u\n", n->fit, (unsigned)radio_nxdn_fit(false),

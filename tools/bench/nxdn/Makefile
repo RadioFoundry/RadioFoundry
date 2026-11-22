@@ -10,7 +10,7 @@ CC      ?= cc
 # Blanking __attribute__ also strips glibc's always_inline from its fortified printf wrappers, which then fail to
 # build where the compiler turns _FORTIFY_SOURCE on by default
 CFLAGS  := -std=gnu99 -O2 -Wall -Wextra -Wshadow -I$(CORE) -I$(ROOT)/hal '-D__attribute__(x)=' -U_FORTIFY_SOURCE \
-           -DCONFIG_AIR=1 -DCONFIG_NXDN=1
+           -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_OTA_ALIAS=1
 SRC     := $(HERE)/nxdntool.c $(CORE)/nxdn/nxdn_frame.c $(CORE)/nxdn/nxdn_rx.c $(CORE)/nxdn/nxdn_call.c \
            $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(CORE)/fec/conv.c
 HDRS    := $(wildcard $(CORE)/nxdn/*.h $(CORE)/air/*.h $(CORE)/fec/*.h) $(ROOT)/hal/hal_air.h $(ROOT)/hal/hal_baseband.h

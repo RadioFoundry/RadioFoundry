@@ -1967,6 +1967,22 @@ static int call_line(const font_t *f, int y, const char *text, color_t c)
 	return y + f->h;
 }
 
+// Quoted alias shared by the digital receive views. Callers reserve their other rows first.
+static int draw_call_alias(const font_t *f, int y, int rows, const char *alias)
+{
+	char buf[RADIO_ALIAS_MAX + 3], lines[2][64];
+	sbuf_t b;
+
+	sb_init(&b, buf, sizeof buf);
+	sb_chr(&b, '"');
+	sb_str(&b, alias);
+	sb_chr(&b, '"');
+	int n = wrap_lines(f, buf, gfx_width(), rows, lines, false);
+	for (int i = 0; i < n; i++)
+		y = call_line(f, y, lines[i], ui_col.fg);
+	return y;
+}
+
 // Receiving and Transmitting: the call takes the screen below the status strip
 static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 {
@@ -2068,16 +2084,8 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_str(&b, TR(CALL_CHIP_EMERGENCY, " EMERGENCY"));
 	y = call_line(L->small, y, buf, d->call.emergency ? ui_col.warn : ui_col.dim);
 	if (d->alias[0] != '\0' && s->alias_show) {
-		// The talker alias in quotes, on two lines when it needs them and they fit above the signal line
-		char lines[2][64];
-		sb_init(&b, buf, sizeof buf);
-		sb_chr(&b, '"');
-		sb_str(&b, d->alias);
-		sb_chr(&b, '"');
 		int room = (L->hint_y - y) / L->small->h - 2;	// the talkgroup and signal lines stay
-		int n = wrap_lines(L->small, buf, w, room >= 2 ? 2 : 1, lines, false);
-		for (int i = 0; i < n; i++)
-			y = call_line(L->small, y, lines[i], ui_col.fg);
+		y = draw_call_alias(L->small, y, room >= 2 ? 2 : 1, d->alias);
 	}
 	if (d->call.gps_valid) {	// the caller's ETSI GPS Info: how far and which way, else where
 		sb_init(&b, buf, sizeof buf);
@@ -2210,6 +2218,16 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_AIR
 		air_call_t ac;
 		bool air_rx = air_call(v, &ac);
+#if CONFIG_NXDN_OTA_ALIAS
+		bool show_alias = air_rx && ac.played && v->ch.mode == RADIO_MODE_NXDN &&
+			s->alias_show && v->nxdn.alias[0] && L->activity_h >= 2 * sm->h;
+		int alias_rows = (L->activity_y + L->activity_h - y2) / sm->h - 1;
+		if (show_alias && alias_rows < 1) {
+			air_call_line(&ac, sm, y);
+			draw_call_alias(sm, y + sm->h, 1, v->nxdn.alias);
+			break;
+		}
+#endif
 		if (!two && air_rx) {
 			air_call_line(&ac, sm, y);	// one line: who calls says more than the meter
 			break;
@@ -2225,6 +2243,10 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_AIR
 		if (air_rx) {
 			air_call_line(&ac, sm, y2);
+#if CONFIG_NXDN_OTA_ALIAS
+			if (show_alias)
+				draw_call_alias(sm, y2 + sm->h, alias_rows >= 2 ? 2 : 1, v->nxdn.alias);
+#endif
 			break;
 		}
 #endif
