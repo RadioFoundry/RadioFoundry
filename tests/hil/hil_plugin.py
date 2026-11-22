@@ -46,14 +46,15 @@ def whole_directory(config):
 
 def run_tier(config):
     """The tier the run selects, or None for no tier filter. A run of the whole directory defaults to standard, so the
-    bring-up tier is opt-in; a command that picks its tests (files, nodes, -k, -m) or bring-up mode (which picks by
-    feature) gets what it asked for, as before the tiers."""
+    bring-up tier is opt-in; a command that picks its tests (files, nodes, -k, -m), bring-up mode (which picks by
+    feature) and tools/bringup.py's collection (--bringup-collect) get what they asked for, as before the tiers."""
     t = config.getoption("--tier", default=None)
     if t:
         return t
     if config.getoption("--affected", default=None):
         return "standard"
-    if config.getoption("--bringup", default=None) or config.option.keyword or config.option.markexpr:
+    if (config.getoption("--bringup", default=None) or config.getoption("--bringup-collect", default=None)
+            or config.option.keyword or config.option.markexpr):
         return None
     return "standard" if whole_directory(config) else None
 
