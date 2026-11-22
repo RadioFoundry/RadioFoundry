@@ -6,15 +6,16 @@
 // A channel has one kind, and tune() stops every mode before it starts one, so at most one is ever live. What each
 // keeps here: D-STAR its engine (about 670 B) and its software codec's state from frame to frame (3.2 KB; the codec's
 // working memory is the DMR vocoder's, lent: hal_vocoder_t.lend, 7 KB on the HR_C7000, which the whole codec no
-// longer fits); Fusion its engine (about 970 B) and Voice FR's codec state (about 4 KB, where VW is built). The voice rings, views and statistics stay per mode, since the screens and the debug link read them
-// while the mode is off.
+// longer fits); Fusion its engine (about 970 B), and Voice FR's codec state (about 4 KB) only on a platform whose
+// vocoder lends nothing (radio_ysf.h). The voice rings, views and statistics stay per mode, since the screens and the
+// debug link read them while the mode is off.
 //
 // A take by a mode while the other holds the area is refused, never granted by stealing: the holder may be part way
 // through an over, and its transmit interrupt may still pull from the engine. So the order is always the holder's stop
 // (which aborts its transmission, stops the board's pull and gives the area back), then the next mode's start. The
 // voice codec's working memory is a separate loan (hal_vocoder_t.lend: D-STAR borrows the DMR vocoder's state while
 // DMR voice is off; the vocoder rebuilds its own state at its next call, so there is nothing to give back). Fusion
-// runs the vocoder itself and so never takes the loan.
+// runs DN on the vocoder itself, so it takes the loan only for the length of a VW over, in its audio callback.
 //
 // Threading: take and give in the radio task only. The owner may be read from any task (the debug link).
 #ifndef RADIO_MODE_RAM_H

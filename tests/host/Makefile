@@ -1617,14 +1617,20 @@ ysfRadioTest: ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(COR
 # Fusion's Voice FR in the radio core (radio_ysf_vw.c): ysfRadioTest's fake board, VW received, mixed with DN, sent
 TESTS   += ysfVwRadioTest
 ysfVwRadioTest: ysfVwRadioTest.c ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -DHAL_VOCODER_LEND_BYTES=0x1C00 -o $@ ysfVwRadioTest.c $(YSFRT) -lm
+
+# The same on a platform whose vocoder lends nothing: VW's codec memory in the mode area (radio_ysf.h)
+TESTS   += ysfVwRadioAreaTest
+ysfVwRadioAreaTest: ysfVwRadioTest.c ysfRadioTest.c $(YSFRT) $(CORE)/radio/radio_ysf.c $(wildcard $(CORE)/radio/radio_ysf*.h $(CORE)/ysf/*.h $(CORE)/mbe/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_YSF=1 -o $@ ysfVwRadioTest.c $(YSFRT) -lm
 
 run: run-ysfcp
-run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest ysfVwRadioTest
+run-ysfcp: ysfCodeplugTest ysfCodeplugOffTest ysfRadioTest ysfVwRadioTest ysfVwRadioAreaTest
 	./ysfCodeplugTest
 	./ysfCodeplugOffTest
 	./ysfRadioTest
 	./ysfVwRadioTest
+	./ysfVwRadioAreaTest
 .PHONY: run-ysfcp
 
 # rename, delete, a new channel added in one step, the limits

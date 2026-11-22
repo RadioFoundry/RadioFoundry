@@ -60,8 +60,21 @@ static bool voc_present = true;
 static uint32_t enc_n, dec_n, dec_match, dec_resets;
 static uint8_t dec_want_base;	// the n the next decoded frame should be
 
+// The state block a lending vocoder hands out (hal_vocoder_t.lend; HAL_VOCODER_LEND_BYTES builds). Every call of the
+// fake writes all over it, as the real one rebuilds and then works in its state: a borrower still using the block
+// after a vocoder call would read this pattern
+static uint32_t voc_state[0x1C00 / 4];
+static uint32_t voc_lends;
+static void voc_scribble(void) { memset(voc_state, 0xA5, sizeof voc_state); }
+static void *v_lend(size_t *len)
+{
+	voc_lends++;
+	*len = sizeof voc_state;
+	return voc_state;
+}
+
 static bool v_present(void) { return voc_present; }
-static void v_reset(void) { dec_resets++; }
+static void v_reset(void) { dec_resets++; voc_scribble(); }
 // Run once, halfway through writing the next silence frame: what preempts the audio task there on the radio (the
 // board's transmit interrupt)
 static void (*mid_silence)(void);
@@ -69,6 +82,7 @@ static void (*mid_silence)(void);
 static int32_t enc_peak;	// the largest sample the encoder was given (the mic gain's output)
 static void v_encode(const int16_t *pcm, uint8_t bits[49])
 {
+	voc_scribble();
 	for (int i = 0; i < 160; i++) {
 		enc_peak = abs(pcm[i]) > enc_peak ? abs(pcm[i]) : enc_peak;
 	}
@@ -88,6 +102,7 @@ static void v_encode(const int16_t *pcm, uint8_t bits[49])
 }
 static void v_decode(const uint8_t bits[49], int16_t *pcm)
 {
+	voc_scribble();
 	uint8_t want[49];
 	voice_pattern(dec_want_base + dec_n, want);
 	dec_match += memcmp(want, bits, 49) == 0;
@@ -97,7 +112,8 @@ static void v_decode(const uint8_t bits[49], int16_t *pcm)
 	}
 }
 
-static const hal_vocoder_t vocoder = { .present = v_present, .reset = v_reset, .encode = v_encode, .decode = v_decode };
+static const hal_vocoder_t vocoder = { .present = v_present, .reset = v_reset, .encode = v_encode, .decode = v_decode,
+					.lend = v_lend };
 
 // --- the fake audio stream: the test calls the block callback itself ---
 

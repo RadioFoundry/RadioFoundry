@@ -254,6 +254,51 @@ static void test_mixed(void)
 	radio_ysf_stop();
 }
 
+// VW's codec memory where the vocoder lends its state block (radio_ysf.h): the block, taken for the VW over alone, so
+// the mode area holds only the engine. A DN over first and after: the vocoder's calls write all over the block (the
+// fake's scribble, as the real one rebuilds its state there), and the VW over between still plays exactly what the
+// codec makes of its frames. Without a lend (RADIO_YSF_VW_IN_AREA) the area holds it and nothing is borrowed
+static void test_vw_memory(void)
+{
+	channel_vw(false);
+	radio_ysf_init(&audio);
+	CHECK(radio_ysf_start(5, &ch, 0), "start");
+	dec_n = dec_match = 0;
+	dec_want_base = 0;
+	uint32_t lends0 = voc_lends;
+	send_other("M0ABC", 0, 20);
+	quiet(400);
+	CHECK(voc_lends == lends0, "a DN over borrowed the vocoder's block %u times", voc_lends - lends0);
+	heard_n = 0;
+	send_vw("JA1YKX");
+	uint32_t first = 0;
+	while (first < NFR * 160u && ref_pcm[first] == 0) {
+		first++;
+	}
+	uint32_t same = 0;
+	for (uint32_t i = 0; first + i < NFR * 160u && i < heard_n; i++) {
+		same += heard[i] == ref_pcm[first + i];
+	}
+	CHECK(same == NFR * 160u - first, "VW after DN: %u of %u samples as the reference decoder's", same,
+	      NFR * 160u - first);
+#if RADIO_YSF_VW_IN_AREA
+	CHECK(voc_lends == lends0, "VW borrowed the vocoder's block with no lend built");
+	CHECK(radio_mode_ram_size() >= sizeof(radio_ysf_vw_mem_t), "the area (%zu B) lacks the codec", radio_mode_ram_size());
+#else
+	CHECK(voc_lends == lends0 + 1u, "the VW over took the vocoder's block %u times", voc_lends - lends0);
+	CHECK(radio_mode_ram_size() < sizeof(radio_ysf_vw_mem_t), "the area (%zu B) still holds the codec's %zu",
+	      radio_mode_ram_size(), sizeof(radio_ysf_vw_mem_t));
+#endif
+	uint32_t lends1 = voc_lends;
+	dec_want_base = 0;
+	dec_n = dec_match = 0;
+	send_other("M0ABC", 0, 20);
+	quiet(400);
+	CHECK(dec_match == 20 && voc_lends == lends1, "DN after VW: %u frames in order, %u lends", dec_match,
+	      voc_lends - lends1);
+	radio_ysf_stop();
+}
+
 // What the debug link reports of a VW over's receive timing (ysf-modem.md 4.3): every decode timed by the clock, the
 // over's longest and mean and its blocks, the longest since start; a block mid-over with nothing queued counted late
 static void test_vw_timing(void)
@@ -432,6 +477,7 @@ int main(void)
 	test_receive_vw(true);
 	test_receive_vw(false);
 	test_mixed();
+	test_vw_memory();
 	test_vw_timing();
 	test_vw_late_entry();
 	test_transmit_vw();

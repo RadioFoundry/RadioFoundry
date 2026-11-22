@@ -127,12 +127,25 @@ typedef struct {
 	bool rx_invert;		// the receiver found the levels inverted
 } radio_ysf_stats_t;
 
+// Where Voice FR's codec state (radio_ysf_vw_mem_t, about 4 KB) lives. On a platform whose DMR vocoder lends its
+// state block (HAL_VOCODER_LEND_BYTES), that block, for one VW over at a time: radio_ysf.c takes the lend at an over's
+// first VW frame and lets it go before the vocoder's next call, which rebuilds its own state then (hal_vocoder_t.lend).
+// A Fusion channel runs one over at a time, DN on the vocoder or VW on the CPU, never both, so the two take turns with
+// the bytes. Elsewhere it is in the mode area beside the engine. On the HR_C7000 this took 3.9 KB out of every build
+// with VW: one radio's image that kept the IP gateway and added Fusion had 624 B of RAM left (PR #833)
+#if CONFIG_YSF_VW && !defined(HAL_VOCODER_LEND_BYTES)
+#define RADIO_YSF_VW_IN_AREA	1
+#else
+#define RADIO_YSF_VW_IN_AREA	0
+#endif
+
 #if CONFIG_YSF
 // What Fusion keeps in the radio core's mode area while it runs (radio_mode_ram.h): its engine, and Voice FR's codec
-// state where the build has VW. D-STAR's engine and codec state use the same bytes while a D-STAR channel is tuned
+// state where the vocoder lends none (above). D-STAR's engine and codec state use the same bytes while a D-STAR channel
+// is tuned
 typedef struct {
 	ysf_engine_t eng;
-#if CONFIG_YSF_VW
+#if RADIO_YSF_VW_IN_AREA
 	radio_ysf_vw_mem_t vw;
 #endif
 } radio_ysf_area_t;

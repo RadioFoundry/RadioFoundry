@@ -372,6 +372,46 @@ static void speaker(bool on)
 	}
 }
 
+#if CONFIG_YSF_VW
+// Voice FR's codec memory (radio_ysf.h RADIO_YSF_VW_IN_AREA): with a lending vocoder, its state block for as long as
+// VW runs, else the mode area's, bound from the start. Audio callback only, as every codec call is; radio_ysf_stop
+// clears it once the stream has stopped
+static bool vw_lent;
+
+// The memory bound for a VW frame: true when it was taken just now, so the caller starts its encoder or decoder afresh
+// (whatever it held went with the vocoder's last call). False when it was bound already, or can't be: the calls then
+// play silence and send the silence frame, as with no memory
+static bool vw_take(void)
+{
+#if !RADIO_YSF_VW_IN_AREA
+	if (vw_lent) {
+		return false;
+	}
+	size_t n = 0;
+	void *m = board.vocoder != NULL && board.vocoder->lend != NULL ? board.vocoder->lend(&n) : NULL;
+	if (m == NULL || n < sizeof(radio_ysf_vw_mem_t)) {
+		return false;
+	}
+	radio_ysf_vw_bind((radio_ysf_vw_mem_t *)m);
+	vw_lent = true;
+	return true;
+#else
+	return false;
+#endif
+}
+
+// Before every call of the board's vocoder: a lent block goes back, and the vocoder rebuilds its state in it
+static void vw_give(void)
+{
+	if (vw_lent) {
+		radio_ysf_vw_bind(NULL);
+		vw_lent = false;
+	}
+}
+#else
+static inline void vw_give(void) {}
+#endif
+
 static void tx_block(const int16_t *mic)
 {
 	if (!LOAD(tx_on) || LOAD(tx_released)) {
@@ -383,7 +423,7 @@ static void tx_block(const int16_t *mic)
 #if CONFIG_YSF_VW
 	if (tx_vw()) {
 		// Voice FR: the full-rate encoder on the CPU, whatever the board's vocoder; its silence frame is a constant
-		if (first) {
+		if (vw_take() || first) {
 			cb_tx = true;
 			radio_ysf_vw_tx_start();
 		}
@@ -402,6 +442,7 @@ static void tx_block(const int16_t *mic)
 		return;
 	}
 #endif
+	vw_give();
 	if (!cb_tx) {
 		cb_tx = true;
 		miclimit_reset(&cb_limit, radio_mic_pcm_q8());
@@ -476,13 +517,9 @@ static void rx_block(int16_t *spk)
 		cb_primed = false;
 		cb_fr = false;
 		if (codec_ok() && !cb_tx) {
+			vw_give();
 			board.vocoder->reset();
 		}
-#if CONFIG_YSF_VW
-		if (!cb_tx) {
-			radio_ysf_vw_rx_start();	// a fresh decoder: also undoes what a transmission's encoder left in it
-		}
-#endif
 	}
 	uint8_t t = rx_tail, n = (uint8_t)(LOAD(rx_head) - t);
 	bool ended = LOAD(rx_end_seq) == seq;
@@ -517,10 +554,15 @@ static void rx_block(int16_t *spk)
 #if CONFIG_YSF_VW
 	const uint8_t *slot = rxq[t & QMASK];
 	if (slot[SLOT_KIND] == KIND_FR) {
+		bool fresh = vw_take();
 		if (!cb_fr) {
 			cb_fr = true;		// this over's first VW frame: its own decode times from here
 			cb_dec_us = 0;
 			stats.vw_dec_max_us = stats.vw_dec_avg_us = stats.vw_dec_blocks = 0;
+			fresh = true;
+		}
+		if (fresh) {
+			radio_ysf_vw_rx_start();	// a fresh decoder: also undoes what a transmission's encoder left in it
 		}
 		uint32_t t0 = hal_micros();
 		int bad = radio_ysf_vw_decode(slot, slot[SLOT_ERRS], spk);
@@ -537,6 +579,7 @@ static void rx_block(int16_t *spk)
 	uint8_t bits[YSF_VOICE_BITS];
 	unpack(rxq[t & QMASK], bits);
 	if (codec_ok()) {
+		vw_give();
 		board.vocoder->decode(bits, spk);
 		stats.rx_played++;
 	} else {
@@ -725,7 +768,7 @@ bool radio_ysf_start(uint16_t number, const channel_t *ch, uint32_t now_ms)
 	if (path.tx_amp == 0) {
 		view.fault = RYSF_NO_CAL;	// receive still runs: only transmit needs the scale
 	}
-#if CONFIG_YSF_VW
+#if RADIO_YSF_VW_IN_AREA
 	radio_ysf_vw_bind(&area->vw);	// before the stream starts: the audio callback runs the codec
 #endif
 	rx_queue_reset();
@@ -752,6 +795,7 @@ void radio_ysf_stop(void)
 	}
 #if CONFIG_YSF_VW
 	radio_ysf_vw_bind(NULL);	// the stream has stopped: no callback runs the codec now
+	vw_lent = false;		// a lent block is the vocoder's again (it rebuilds at its next call)
 #endif
 	radio_mode_ram_give(RADIO_MODE_RAM_YSF);	// after the engine is idle and the board's pull stopped (tx_abort)
 	eng = NULL;

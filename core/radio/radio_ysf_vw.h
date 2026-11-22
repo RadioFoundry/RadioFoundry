@@ -4,11 +4,12 @@
 // and encoder of core/mbe, the P25 Phase 1 vocoder, in integers on the CPU. radio_ysf.c runs them in its audio block
 // callback where a DN over runs the board's AMBE+2 vocoder, so VW needs no codec in flash.
 //
-// The memory, about 4 KB (radio_ysf_vw_mem_t), is the radio core's mode area while Fusion runs, beside its engine
-// (radio_mode_ram.h): only one of D-STAR and Fusion runs, so D-STAR's codec state and this share it. It can't be the
-// DMR vocoder's lent RAM: Fusion runs on that vocoder, and a channel may hear DN at any moment. A radio transmits or
-// receives, so the encoder works in the decoder's prediction state and scratch (as P25 voice does); only the
-// estimator's history is its own.
+// The memory, about 4 KB (radio_ysf_vw_mem_t), is the DMR vocoder's lent state block while a VW over runs, where the
+// platform lends one, else the radio core's mode area beside Fusion's engine (radio_ysf.h RADIO_YSF_VW_IN_AREA).
+// Fusion runs DN on that vocoder and a channel may hear DN at any moment, so the block is taken per over, not per
+// channel: radio_ysf.c binds it at a VW over's first frame and unbinds it before the vocoder's next call. A radio
+// transmits or receives, so the encoder works in the decoder's prediction state and scratch (as P25 voice does); only
+// the estimator's history is its own.
 //
 // Threading: everything here runs in the board's audio task (radio_ysf.c's audio block callback). No RTOS call.
 #ifndef RADIO_YSF_VW_H
