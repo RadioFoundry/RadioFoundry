@@ -893,6 +893,12 @@ static const flow_t flows[] = {
 	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
 	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
 	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
+	// With privacy compiled out, Settings > Privacy is dimmed and OK says why instead of opening it
+	{ "S Privacy opens with privacy", "ok 7", "4", "screen=group shows=Key_type", 1, false },
+	{ "S Privacy compiled out: dimmed", "noprivacy ok 7", "4",
+	  "screen=settings toast=Privacy:_not_in_this_build", 1, false },
+	{ "S Privacy compiled out: OK on the row", "noprivacy ok 7 4", "ok",
+	  "screen=settings toast=Privacy:_not_in_this_build", 1, false },
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },

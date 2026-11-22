@@ -1743,6 +1743,8 @@ static bool bcast_rx;
 // P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn"
 static bool p25_radio;
 static bool nxdn_radio;
+// The "noprivacy" token acts as if privacy were compiled out (UI_FEAT_PRIVACY off: Settings > Privacy dimmed)
+static bool no_privacy;
 // Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
 // unset and a plain option
 static int8_t hwopt_val[2];
@@ -1767,7 +1769,7 @@ uint32_t ui_svc_features(void)
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
 	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
-	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN) & ~(no_privacy ? UI_FEAT_PRIVACY : 0);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -2702,6 +2704,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	bcast_rx = false;
 	p25_radio = false;
 	nxdn_radio = false;
+	no_privacy = false;
 #if CONFIG_NXDN
 	memset(&view.nxdn, 0, sizeof view.nxdn);
 	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
@@ -3768,6 +3771,10 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "noprivacy") == 0) {	// privacy compiled out
+		no_privacy = true;
 		return true;
 	}
 	if (strcmp(t, "p25") == 0) {		// this radio runs P25

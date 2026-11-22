@@ -7085,15 +7085,24 @@ void ui_open_setting(uint8_t g, uint8_t i)
 
 static uint16_t settings_count(void) { return GROUPS; }
 
+// With privacy compiled out (CONFIG_DMR_PRIVACY=n), the Privacy row is dimmed and OK says why instead of opening it
+static bool group_no_privacy(uint16_t g) { return groups[g].items == s_privacy && !(feats() & UI_FEAT_PRIVACY); }
+
 static void settings_item(uint16_t i, ui_item_t *it)
 {
 	str_copy(it->label, sizeof it->label, tr(groups[i].name));
 	item_num(it, (uint16_t)(i + 1u));
+	if (group_no_privacy(i))
+		it->flags |= UI_ITEM_DIM;
 }
 
 static void settings_select(uint16_t i, bool hold)
 {
 	(void)hold;
+	if (group_no_privacy(i)) {
+		ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build"));
+		return;
+	}
 	ui_push(SCR_GROUP, i);
 }
 
