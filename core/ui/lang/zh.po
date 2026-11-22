@@ -494,6 +494,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "仅 FM：这是 NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_YSF_CHANNEL"
+msgid "FM only: this is YSF"
+msgstr "仅 FM：这是 YSF"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1208,6 +1213,11 @@ msgstr "P25 通话"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "NXDN 通话"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_YSF_CALL"
+msgid "YSF call"
+msgstr "YSF 通话"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -3050,6 +3060,16 @@ msgid "Not set"
 msgstr "未设置"
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_CALLSIGN"
+msgid "YSF callsign"
+msgstr "YSF 呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_RADIO_ID"
+msgid "Radio ID"
+msgstr "电台 ID"
+
+#: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
 msgid "Radio name"
 msgstr "电台名称"
@@ -3088,6 +3108,16 @@ msgstr "ID 从 1 开始"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "DMR ID 已保存"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALLSIGN_FROM"
+msgid "From the radio name, or the codeplug's YSF callsign"
+msgstr "来自电台名称，或码表中的 YSF 呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_RID_FROM_CHIP"
+msgid "Made from this radio's chip: unique, not editable"
+msgstr "来自本机：不会重复，不可编辑"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -4815,6 +4845,11 @@ msgid "No TX frequency"
 msgstr "无发射频率"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_NO_CALLSIGN"
+msgid "No callsign"
+msgstr "无呼号"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "调频广播"
@@ -5308,6 +5343,16 @@ msgstr "其他通话组：不播放"
 msgctxt "CALL_HINT_MON_DMON"
 msgid "MON: digital monitor"
 msgstr "MON：数字监听"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_NOT_DN"
+msgid "Not DN voice: not played"
+msgstr "非 DN 语音：不播放"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "其他 DG-ID：不播放"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"

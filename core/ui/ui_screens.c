@@ -1187,6 +1187,15 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 			sb_str(&b, "TG ");
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
+#if CONFIG_YSF
+	} else if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_NO_CALL) != 0) {
+		sb_str(&b, TR(HOME_STATE_NO_CALLSIGN, "No callsign"));	// PTT refused until the codeplug has one
+		c = ui_col.warn;
+	} else if (v->ch.mode == RADIO_MODE_YSF) {
+		// What PTT sends to: the DG-ID (YSF has no talk groups)
+		sb_str(&b, "DG-ID ");
+		sb_u32(&b, v->ysf.tx_dgid, 2);
+#endif
 	} else {
 		// " MHz" goes before the frequency is cut (font.h alternates)
 		sb_str(&b, TEXT_ALT_OPEN);
@@ -1251,6 +1260,25 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		sb_init(&b, buf, sizeof buf);
 		sb_str(&b, "NAC ");
 		sb_hex(&b, v->p25.rx_nac, 3);
+		if (x + gfx_text_width(f, buf) <= w)
+			gfx_text(f, x, y, buf, ui_col.fg);
+#endif
+		return;
+	}
+	if (v->ch.mode == RADIO_MODE_YSF) {
+		// The same for YSF: the power, the DG-ID heard (00: every one) and our radio ID
+		if (pw_temp)
+			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
+		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
+#if CONFIG_YSF
+		char rid[RADIO_YSF_RID_LEN + 1];
+
+		ui_svc_ysf_rid(rid, NULL);
+		sb_init(&b, buf, sizeof buf);
+		sb_str(&b, "RX ");
+		sb_u32(&b, v->ysf.rx_dgid, 2);
+		sb_str(&b, " RID ");
+		sb_str(&b, rid);
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif
@@ -2124,14 +2152,28 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 #endif
 
 #if CONFIG_AIR
-// A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
+// A P25, NXDN or YSF call coming in (air_call): whether one is heard now, and its fields. YSF names its caller by
+// callsign (call, "" until heard) and its target by DG-ID: dgid >= 0
 typedef struct {
-	bool played, enc, unit;
+	bool played, enc, unit, not_dn;
 	uint32_t src, dst;
+	const char *call;
+	int16_t dgid;
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
+	memset(c, 0, sizeof *c);
+	c->dgid = -1;
+#if CONFIG_YSF
+	if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_RX) != 0) {
+		c->played = (v->ysf.flags & RADIO_YSF_PLAYED) != 0;
+		c->not_dn = (v->ysf.flags & RADIO_YSF_NOT_DN) != 0;
+		c->call = v->ysf.src;
+		c->dgid = v->ysf.dgid;
+		return true;
+	}
+#endif
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
 		const radio_p25_view_t *p = &v->p25;
@@ -2168,8 +2210,26 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 
 	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			c->not_dn ? TR(CALL_WHY_NOT_DN, "Not DN voice: not played") :
+			c->dgid >= 0 ? TR(CALL_WHY_OTHER_DGID, "Other DG-ID: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
+		return;
+	}
+	if (c->call != NULL) {
+		// YSF: "SQ5FOX > DG-ID 12", the callsign kept longest
+		for (int with_dgid = 1; with_dgid >= 0; with_dgid--) {
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, c->call[0] ? c->call : "?");
+			if (with_dgid) {
+				sb_str(&b, " " GLYPH_ARROW " DG-ID ");
+				sb_u32(&b, (uint32_t)c->dgid, 2);
+			}
+			if (gfx_text_width(f, buf) <= gfx_width())
+				break;
+		}
+		gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.rx);
 		return;
 	}
 	// Too wide: keep the marker and destination, then cut the destination if needed

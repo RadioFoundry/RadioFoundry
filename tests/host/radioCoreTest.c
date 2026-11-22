@@ -2325,7 +2325,10 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
 #endif
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+#if !CONFIG_YSF
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_YSF, 0xFF, 0 }, 3) == DL_ST_UNAVAILABLE);
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_YSF + 1, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);

@@ -730,7 +730,7 @@ TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -DCONFIG_YSF=1 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests

@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// The ysf section: System Fusion DN on the channel (docs/spec/ysf.md 5, core/radio/radio_ysf.h): the call heard, who
+// we are on air (the callsign and the radio ID, with where the ID came from), the DG-IDs, what the board's provider
+// gives YSF, the engine's counters. The voice path's are the DMR side's (dmr_stats, ambe.*). "ysf.built=0" without
+// CONFIG_YSF
+#include "config.h"
+#include "debuglink/debuglink.h"
+#if CONFIG_YSF
+#include "radio/radio_ysf.h"
+#include "codeplug/codeplug.h"
+#endif
+
+void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
+{
+#if CONFIG_YSF
+	const radio_ysf_view_t *y = &v->ysf;
+	radio_ysf_settings_t s;
+	radio_ysf_stats_t c;
+	char rid[RADIO_YSF_RID_LEN + 1], call[RADIO_YSF_CALL_LEN + 1], name[CODEPLUG_NAME_LEN + 1];
+	bool weak;
+
+	// The call heard now, or the last one (on=0: the engine is not running on this channel)
+	dl_text(t, "ysf.built=1\nysf.on=%u\nysf.rx=%u\nysf.played=%u\nysf.late=%u\nysf.not_dn=%u\n",
+		(y->flags & RADIO_YSF_ON) != 0, (y->flags & RADIO_YSF_RX) != 0, (y->flags & RADIO_YSF_PLAYED) != 0,
+		(y->flags & RADIO_YSF_LATE) != 0, (y->flags & RADIO_YSF_NOT_DN) != 0);
+	dl_text(t, "ysf.src=%s\nysf.src_rid=%s\nysf.dgid=%u\nysf.tx=%u\nysf.deny=%u\n", y->src, y->src_rid, y->dgid, y->tx,
+		v->tx_deny);
+	// Who we are on air. rid_weak=1: no usable MCU unique ID, the RID is the fallback and may not be unique
+	radio_ysf_rid(rid, &weak);
+	codeplug_radio_name(name);
+	radio_ysf_callsign(name, call);
+	dl_text(t, "ysf.rid=%s\nysf.rid_weak=%u\nysf.callsign=%s\n", rid, weak, call);
+	// What the board's provider gives YSF (AIR_FIT_*: 1 receive, 2 transmit, 4 soft values, 32768 untested)
+	dl_text(t, "ysf.fit=%u\n", (unsigned)radio_ysf_fit());
+	radio_ysf_settings(&s);
+	dl_text(t, "ysf.tx_dgid=%u\nysf.rx_dgid=%u\nysf.run.tx_dgid=%u\nysf.run.rx_dgid=%u\n", s.tx_dgid, s.rx_dgid,
+		y->tx_dgid, y->rx_dgid);
+	radio_ysf_stats(&c);
+	dl_text(t, "ysf.begins=%u\nysf.begin_fails=%u\nysf.rx_calls=%u\nysf.tx_calls=%u\nysf.tx_filler=%u\n",
+		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.rx_calls, (unsigned)c.tx_calls,
+		(unsigned)c.tx_filler);
+	dl_text(t, "ysf.frames=%u\nysf.fich_fail=%u\nysf.csd_fail=%u\nysf.dch_fail=%u\nysf.voice=%u\n",
+		(unsigned)c.frames, (unsigned)c.fich_fail, (unsigned)c.csd_fail, (unsigned)c.dch_fail, (unsigned)c.voice);
+	// fec_bits: bits the FICH, CSD and DCH decoders corrected; vch_fixed: voice bits the three copies' vote fixed
+	dl_text(t, "ysf.voice_held=%u\nysf.fec_bits=%u\nysf.vch_fixed=%u\nysf.rx_chunks=%u\n", (unsigned)c.voice_held,
+		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.rx_chunks);
+	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
+#else
+	(void)v;
+	dl_text(t, "ysf.built=0\n");
+#endif
+}
+
+void debuglink_ysf_reset(void)
+{
+#if CONFIG_YSF
+	radio_ysf_reset_stats();
+#endif
+}

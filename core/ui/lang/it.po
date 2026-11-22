@@ -492,6 +492,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "Solo FM: questo è NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_YSF_CHANNEL"
+msgid "FM only: this is YSF"
+msgstr "Solo FM: questo è YSF"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1206,6 +1211,11 @@ msgstr "Chiamata P25"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "Chiamata NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_YSF_CALL"
+msgid "YSF call"
+msgstr "Chiamata YSF"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -3048,6 +3058,16 @@ msgid "Not set"
 msgstr "Non impostato"
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_CALLSIGN"
+msgid "YSF callsign"
+msgstr "Nominativo YSF"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_RADIO_ID"
+msgid "Radio ID"
+msgstr "ID radio"
+
+#: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
 msgid "Radio name"
 msgstr "Nome radio"
@@ -3086,6 +3106,16 @@ msgstr "Gli ID partono da 1"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "ID DMR salvato"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALLSIGN_FROM"
+msgid "From the radio name, or the codeplug's YSF callsign"
+msgstr "Dal nome radio, o dal nominativo YSF del codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_RID_FROM_CHIP"
+msgid "Made from this radio's chip: unique, not editable"
+msgstr "Ricavato dal chip di questa radio: unico, non modificabile"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -4813,6 +4843,11 @@ msgid "No TX frequency"
 msgstr "Nessuna frequenza TX"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_NO_CALLSIGN"
+msgid "No callsign"
+msgstr "Nessun nominativo"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM broadcast"
@@ -5306,6 +5341,16 @@ msgstr "Altro TG: non riprodotto"
 msgctxt "CALL_HINT_MON_DMON"
 msgid "MON: digital monitor"
 msgstr "MON: monitor digitale"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_NOT_DN"
+msgid "Not DN voice: not played"
+msgstr "Non è voce DN: non riprodotta"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "Altro DG-ID: non riprodotto"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"

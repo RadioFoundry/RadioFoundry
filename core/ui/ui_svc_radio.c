@@ -30,6 +30,9 @@
 #if CONFIG_NXDN
 #include "radio/radio_nxdn.h"
 #endif
+#if CONFIG_YSF
+#include "radio/radio_ysf.h"
+#endif
 #if CONFIG_P25
 #include "radio/radio_p25.h"
 #endif
@@ -153,11 +156,26 @@ bool ui_svc_vfo_sfr(uint8_t a)
 #endif
 }
 
+#if CONFIG_YSF
+void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
+{
+	radio_ysf_rid(out, weak);
+}
+
+void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+
+	ui_svc_name_get(UI_NAME_RADIO, name);
+	radio_ysf_callsign(name, out);
+}
+#endif
+
 #if CONFIG_FM
 bool ui_svc_mode(uint8_t mode)
 {
 	if (mode != RADIO_MODE_FM && mode != RADIO_MODE_DMR && !(mode == RADIO_MODE_P25 && CONFIG_P25) &&
-	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN)) {
+	    !(mode == RADIO_MODE_NXDN && CONFIG_NXDN) && !(mode == RADIO_MODE_YSF && CONFIG_YSF)) {
 		return false;
 	}
 	radio_req_mode(mode);
@@ -223,6 +241,9 @@ uint32_t ui_svc_feat_radio(void)
 #endif
 #if CONFIG_NXDN
 	       (radio_nxdn_fits() ? UI_FEAT_NXDN : 0) |
+#endif
+#if CONFIG_YSF
+	       (radio_ysf_fits() ? UI_FEAT_YSF : 0) |
 #endif
 	       0;
 }

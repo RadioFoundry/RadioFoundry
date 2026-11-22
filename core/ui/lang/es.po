@@ -492,6 +492,11 @@ msgctxt "QUICK_WHY_FM_ONLY_NXDN_CHANNEL"
 msgid "FM only: this is NXDN"
 msgstr "Solo FM: es NXDN"
 
+#: core/ui/ui_app.c
+msgctxt "QUICK_WHY_FM_ONLY_YSF_CHANNEL"
+msgid "FM only: this is YSF"
+msgstr "Solo FM: es YSF"
+
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "WHY_NOT_IN_BUILD"
 msgid "Not in this build"
@@ -1206,6 +1211,11 @@ msgstr "Llamada P25"
 msgctxt "DUAL_VALUE_NXDN_CALL"
 msgid "NXDN call"
 msgstr "Llamada NXDN"
+
+#: core/ui/ui_dual.c
+msgctxt "DUAL_VALUE_YSF_CALL"
+msgid "YSF call"
+msgstr "Llamada YSF"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_AM_SIGNAL"
@@ -3048,6 +3058,16 @@ msgid "Not set"
 msgstr "Sin definir"
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_YSF_CALLSIGN"
+msgid "YSF callsign"
+msgstr "Indicativo YSF"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_LABEL_RADIO_ID"
+msgid "Radio ID"
+msgstr "ID de radio"
+
+#: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
 msgid "Radio name"
 msgstr "Nombre de radio"
@@ -3086,6 +3106,16 @@ msgstr "ID desde 1"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "ID DMR guardado"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALLSIGN_FROM"
+msgid "From the radio name, or the codeplug's YSF callsign"
+msgstr "Del nombre de la radio, o del indicativo YSF del codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_RID_FROM_CHIP"
+msgid "Made from this radio's chip: unique, not editable"
+msgstr "Creado a partir del chip de esta radio: único, no editable"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -4813,6 +4843,11 @@ msgid "No TX frequency"
 msgstr "Sin frecuencia TX"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_NO_CALLSIGN"
+msgid "No callsign"
+msgstr "Sin indicativo"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_CHIP_BROADCAST_FM"
 msgid "Broadcast FM"
 msgstr "FM comercial"
@@ -5306,6 +5341,16 @@ msgstr "Otro TG: no se oye"
 msgctxt "CALL_HINT_MON_DMON"
 msgid "MON: digital monitor"
 msgstr "MON: monitor digital"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_NOT_DN"
+msgid "Not DN voice: not played"
+msgstr "No es voz DN: no se oye"
+
+#: core/ui/ui_screens.c
+msgctxt "CALL_WHY_OTHER_DGID"
+msgid "Other DG-ID: not played"
+msgstr "Otro DG-ID: no se oye"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"

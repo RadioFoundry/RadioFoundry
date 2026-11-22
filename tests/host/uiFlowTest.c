@@ -148,6 +148,28 @@ static const flow_t flows[] = {
 #endif
 	{ "P25 channel: bandwidth is FM only", "dlmode:p25", "quick 8", "mode=p25 toast=FM_only:_this_is_a_P25_channel",
 	  2, false },
+#if CONFIG_YSF
+	// YSF: the power, the DG-ID heard and our radio ID in the chips, the DG-ID PTT sends on the talk line; a call names
+	// its caller by callsign
+	{ "YSF channel shows its mode", "dlmode:ysf", "", "mode=ysf screen=home shows=YSF shows=DG-ID_00 shows=RID_K7Q2Z hides=No_tone hides=SQ5", 0, false },
+	{ "YSF home: a call", "dlmode:ysf", "ysfrx:SP5WLF,12", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
+	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:SP5WLF,12,o", "screen=home shows=Other_DG-ID:_not_played hides=SP5WLF", 0, false },
+	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:SP5WLF,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
+	{ "YSF channel: bandwidth is FM only", "dlmode:ysf", "quick 8", "mode=ysf toast=FM_only:_this_is_YSF", 2, false },
+	// The channel editor: Mode steps on from NXDN to YSF (DG-ID 00), then FM; a YSF channel has a DG-ID row and no
+	// contact or ID row (it names us by callsign)
+	{ "E Mode: NXDN to YSF", "p25 nxdn ysf ok 5 ok down down", "ok ok ok", "focus=Mode shows=YSF shows=DG-ID hides=RAN hides=Contact",
+	  3, false },
+	{ "E Mode: YSF to FM", "p25 nxdn ysf ok 5 ok down down", "ok ok ok ok", "focus=Mode shows=FM hides=DG-ID", 4, false },
+	{ "E Mode: DMR to YSF where the radio has no P25 or NXDN", "ysf ok 5 ok down down", "ok", "focus=Mode shows=YSF", 1, false },
+	{ "E Mode: DMR channel saved as YSF", "ysf ok 5 ok down down ok", "long:ok",
+	  "screen=channel writes=1 toast=Saved_channel_3 shows=YSF shows=DG-ID", 1, true },
+	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
+	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
+	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=DG-ID shows=42", 4, false },
+	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
+	  "screen=channel writes=1 shows=42", 1, true },
+#endif
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
@@ -843,6 +865,12 @@ static const flow_t flows[] = {
 	// The own DMR ID (Settings > My radio, set76, the codeplug's): digits type it, OK saves, BACK takes the last digit
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
+#if CONFIG_YSF
+	// The YSF callsign and radio ID: shown, never edited (the radio ID is the chip's, docs/spec/ysf.md 6)
+	{ "S My radio shows the YSF callsign", "ok 7 0 ok", "down down down down", "screen=dmr-id focus=YSF_callsign shows=N0CALL", 4, false },
+	{ "S My radio shows the YSF radio ID", "ok 7 0 ok", "down down down down down", "screen=dmr-id focus=Radio_ID shows=K7Q2Z", 5, false },
+	{ "S the radio ID is not editable", "ok 7 0 ok down down down down down", "ok", "screen=dmr-id toast=Made_from_this_radio's_chip", 1, false },
+#endif
 	{ "S About from My radio", "", "ok 7 0 down ok", "screen=about shows=Build:", 5, false },
 	{ "S DMR ID typed and saved", "ok 7 0 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },
 	{ "S DMR ID: BACK takes a digit back", "ok 7 0 ok", "3 1 back ok", "set76=3 toast=DMR_ID_saved", 4, false },
@@ -936,6 +964,16 @@ static const flow_t flows[] = {
 	  2, false },
 	{ "S VFO mode: NXDN back to FM", "nxdn ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
 	  false },
+#if CONFIG_YSF
+	// YSF after NXDN (or DMR where the radio has neither P25 nor NXDN); then FM
+	{ "S VFO mode: NXDN to YSF", "nxdn ysf ok 4 up ok quick 4 back quick 4 back", "quick 4",
+	  "toast=VFO:_YSF mode=ysf temporary=0 vfo=1", 2, false },
+	{ "S VFO mode: DMR to YSF", "ysf ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_YSF mode=ysf", 2, false },
+	{ "S VFO mode: YSF back to FM", "ysf ok 4 up ok quick 4 back quick 4 back", "quick 4", "toast=VFO:_FM mode=fm", 2,
+	  false },
+	{ "S VFO mode: YSF shows on the strip", "ysf ok 4 up ok quick 4 back quick 4 back", "", "mode=ysf screen=home shows=YSF",
+	  0, false },
+#endif
 	{ "S VFO mode: P25 shows on the strip", "p25 ok 4 up ok quick 4 back quick 4 back", "", "mode=p25 screen=home shows=P25",
 	  0, false },
 	{ "S VFO DMR: color code 7", "ok 4 up ok quick 4 back", "quick 3 7 ok", "cc=7 temporary=0", 4, false },
