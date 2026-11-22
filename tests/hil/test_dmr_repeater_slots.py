@@ -315,9 +315,9 @@ def burst_offsets_ms(inbound, outbound):
     return offs
 
 
-def _outbound_up(s, call_s, freqs):
-    """The board's idle outbound keyed once for the whole call, the radio locked to it: returns the call's length, up
-    to call_s and ending a second before the outbound does. Skips where the bench can't run it."""
+def _outbound_up(s, freqs):
+    """The board's idle outbound keyed once for the whole call, the radio locked to it: returns (time.monotonic())
+    a second before the outbound ends, for _call_len(). Skips where the bench can't run it."""
     for f in freqs:
         if not s.bench.can_watch(f):
             skip("bench", f"the bench board can't decode bursts on {f} MHz (outside its window)")
@@ -325,14 +325,22 @@ def _outbound_up(s, call_s, freqs):
         skip("bench", "the bench board can't decode the radio while it keys the outbound: give a second board "
                       "(--bench-api-rx) or a full duplex one")
     seconds = s.bench.max_key_s(OUTBOUND_S)
-    t0 = time.monotonic()
     s.rpt, s.outbound = s.bench.outbound_start(s.freq, s.cc, seconds), True
+    # From the start: outbound_start() returns once the board keyed, after any wait behind another session's job
+    end = time.monotonic() + seconds - 1.0
     s.wait_up()
-    left = seconds - (time.monotonic() - t0) - 1.0
+    _call_len(end, CALL_MIN_S)
+    return end
+
+
+def _call_len(end, want):
+    """The call's length, up to want s and ending by end (_outbound_up()); taken again right before the call, as the
+    set-up since then shortens it. Skips under CALL_MIN_S."""
+    left = end - time.monotonic()
     if left < CALL_MIN_S:
-        skip("bench", f"the outbound ({seconds:g} s, the board's longest key-up) has {left:.1f} s left after the radio "
-                      f"locked to it: under the {CALL_MIN_S:g} s call these tests need")
-    return min(call_s, left)
+        skip("bench", f"the outbound (the board's longest key-up) has {left:.1f} s left after the radio locked to it: "
+                      f"under the {CALL_MIN_S:g} s call these tests need")
+    return min(want, left)
 
 
 @pytest.mark.feature("dmr_voice")
@@ -345,9 +353,11 @@ def test_dmr_repeater_burst_offset(radio, sdr_bench, pytestconfig, backup_dir):
     def body(s, rnd):
         # The board's idle outbound is the reference (a half-duplex board runs no repeater), and the radio's bursts
         # are judged by the SDR alone
-        call_s = _outbound_up(s, 8.0, (s.split, s.freq))
-        ins = s.bench.bursts_start(s.split, call_s + 6, cc=s.cc)
-        outs = s.bench.bursts_start(s.freq, call_s + 6, cc=s.cc)
+        end = _outbound_up(s, (s.split, s.freq))
+        watch_s = _call_len(end, 8.0) + 6
+        ins = s.bench.bursts_start(s.split, watch_s, cc=s.cc)
+        outs = s.bench.bursts_start(s.freq, watch_s, cc=s.cc)
+        call_s = _call_len(end, 8.0)
         s.call(call_s, "burst offset")
         inbound, in_done = s.bench.bursts_result(ins)
         outbound, out_done = s.bench.bursts_result(outs)
@@ -389,9 +399,10 @@ def test_dmr_repeater_inbound_fec(radio, sdr_bench, pytestconfig, backup_dir):
     def body(s, rnd):
         # The outbound is up all along, so a radio that listens between its bursts (tx_listen_split) does so for the
         # whole call: what it sends must be as clean as on a simplex channel
-        call_s = _outbound_up(s, 6.0, (s.split,))
+        end = _outbound_up(s, (s.split,))
         _, before = radio.counters()
-        ins = s.bench.bursts_start(s.split, call_s + 6, cc=s.cc)
+        ins = s.bench.bursts_start(s.split, _call_len(end, 6.0) + 6, cc=s.cc)
+        call_s = _call_len(end, 6.0)
         s.call(call_s, "inbound FEC")
         inbound, done = s.bench.bursts_result(ins)
         _, after = radio.counters()

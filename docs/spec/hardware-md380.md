@@ -432,7 +432,7 @@ retunes per burst (`radio_md380.c`):
 | When | What |
 |---|---|
 | After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
-| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 set 15 half symbols over the value read (to 25 on the bench) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 set 15 half symbols over the value read (to 25 on the bench) while the transmission listens, restored at its end (only when 4:0x12 was read: a slot where 4:0x12 can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead. No lock in 2 ms: nothing sent for that burst, and the next burst retunes |
 
 4:0x12 bits 5-0 count half symbols (104.17 us, `hrc5000_tx_lead_us`) over the value the chip runs with, 0x0A:
 measured from the RF TX interrupt to the next timeslot interrupt, 1121 us at 10, 2684 us at 25, about 6600 us at 63.

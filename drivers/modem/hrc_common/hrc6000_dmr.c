@@ -515,8 +515,8 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 	// while it sends, so its timing was held already. An SFR (DMO framing) stays passive: there the timing it follows
 	// is the inbound caller's. Once held, held to the end: rmo() can lapse under the over (a BS heard too long ago)
 	e->tx_master = e->tx_master || (e->tx_listen && e->tx_timing != DMR_TIMING_OWN && rmo(e));
-	bool hold = e->tx_master;
-	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) | (hold ? L2_MASTER : 0u));
+	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) |
+				(e->tx_master ? L2_MASTER : 0u));
 	if (r40 != e->reg40) {
 		w(e->dev, R_L2_CTL, r40);
 		e->reg40 = r40;
@@ -2343,6 +2343,9 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_end_req = false;
 		e->tx_abort_req = false;
 		e->tx_any_setup = false;
+		// A halt under a transmission leaves both set (tx_finish never ran): this one listens only when asked
+		e->tx_listen = false;
+		e->tx_master = false;
 		e->tx_wait = 0;
 		e->tx_found = false;
 		e->last_kind = KIND_UNSET;

@@ -996,7 +996,8 @@ static void test_tx_aligned_listen_holds_timing(void)
 			r40[n40++] = v[i];
 		}
 		if (r41 == 0x80 && set_up++ == 0) {
-			before = first_write_at(4, 0x40) < first_write_at(4, 0x41);	// held before the first burst is sent
+			int at40 = first_write_at(4, 0x40);
+			before = at40 >= 0 && at40 < first_write_at(4, 0x41);	// held before the first burst is sent
 		}
 		drain();
 		t += 30000;
@@ -1005,6 +1006,27 @@ static void test_tx_aligned_listen_holds_timing(void)
 	CHECK(set_up == 4 && before == 1);
 	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
 	CHECK(n40 == 2 && r40[0] == 0xE3 && r40[1] == 0xC3);	// held once, passive again at the end
+
+	// A halt under a held, listening transmission: the next one neither listens nor holds unless asked
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_listen(&eng);
+	dmr_tx_burst_t hb = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+	CHECK(hrc6000_dmr_tx_queue(&eng, &hb));
+	for (int k = 0; k < 4 && !eng.tx_master; k++) {
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		drain();
+		t += 30000;
+	}
+	CHECK(eng.tx_master);
+	hrc6000_dmr_halt(&eng);
+	hrc6000_dmr_run(&eng);
+	drain();
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	CHECK(!eng.tx_listen && !eng.tx_master);
+	hrc6000_dmr_tx_abort(&eng);
 }
 
 // An aligned start whose receiver hears nothing (issue 524: after the restart that ends a wake-up, the receiver at
