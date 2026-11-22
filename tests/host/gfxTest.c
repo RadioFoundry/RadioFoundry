@@ -38,10 +38,15 @@ const board_t board = {
 	.power_default = 4, .display = &disp,
 };
 
+// Where the pictures go: gfxTestZh, built from this file too and run beside it, has a directory of its own
+#ifndef GFX_OUT_DIR
+#define GFX_OUT_DIR "out"
+#endif
+
 static void save(const char *name)
 {
 	char path[128];
-	snprintf(path, sizeof path, "out/%s.ppm", name);
+	snprintf(path, sizeof path, GFX_OUT_DIR "/%s.ppm", name);
 	FILE *f = fopen(path, "wb");
 	if (f == NULL)
 		return;
@@ -618,6 +623,7 @@ static void test_text_cut_round_trip(void)
 int main(void)
 {
 	mkdir("out", 0755);
+	mkdir(GFX_OUT_DIR, 0755);
 #if CONFIG_LANG_ZH
 	test_text_cells();
 #else

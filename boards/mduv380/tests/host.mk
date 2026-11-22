@@ -10,5 +10,4 @@ TESTS   += mduv380VariantTest
 mduv380VariantTest: $(HERE)variantTest.c $(HERE)../variant_mduv380.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $(filter %.c,$^)
 
-run-boards:: mduv380VariantTest
-	./mduv380VariantTest
+run-boards:: $(call suites,mduv380VariantTest)

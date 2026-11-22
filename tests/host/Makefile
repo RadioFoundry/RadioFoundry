@@ -6,6 +6,8 @@
 ##   make -C tests/host
 ##   make -C tests/host COVERAGE=1     instrumented for line coverage (tools/coverage.sh makes the report)
 ##   make -C tests/host SANITIZE=1     under AddressSanitizer and UndefinedBehaviorSanitizer (any report fails the test)
+##   make -C tests/host -j8            the suites in parallel; each one's output in out/run/<suite>.log, a summary at the end
+##   make -C tests/host times          the 15 slowest suites to build and to run
 
 ROOT    := ../..
 CORE    := $(ROOT)/core
@@ -23,6 +25,21 @@ export ASAN_OPTIONS ?= abort_on_error=0:detect_stack_use_after_return=1:strict_s
 export UBSAN_OPTIONS ?= print_stacktrace=1:halt_on_error=1
 CFLAGS  := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen '-D__attribute__(x)='  # the firmware's linker section attributes are ARM ELF only;
 # out/gen: the language tables and the text keys i18n.h includes (below)
+
+# Build once: hostcc.py compiles each source to out/obj/ and links the objects, so tests that build a core file share
+# its object where their flags give the same one (HOSTCC_DIRECT=1 in the environment: the plain compiler)
+HOSTCC  := $(CC)
+override CC := $(PYTHON) hostcc.py $(HOSTCC)
+
+# Each test runs as a suite: run/<name> runs ./<name>, or the commands of its own run/<name> rule, through suite.py with
+# the output in out/run/<name>.log (printed when it fails, HOST_VERBOSE=1: always). A group run-<area> lists its
+# suites with $(call suites,...), which also adds them to SUITES; run runs every group and prints the summary
+SUITE   := $(PYTHON) suite.py
+suites   = $(eval SUITES += $1)$(addprefix run/,$1)
+run/%: %
+	@$(SUITE) run $* ./$*
+# A tshark check of a pcap a suite wrote, as one more command of that suite (none without tshark)
+PCAP_CHECK = $(if $(TSHARK),'sh pcap_check.sh "$(TSHARK)" $1 $2$(if $3, "$3")')
 
 DATA    := $(CORE)/dmr/dmrData.c
 FRAME   := $(CORE)/hotspot/dmrDataFrame.c $(CORE)/dmr/fec/dmrFec.c $(CORE)/dmr/fec/dmrSoftComb.c
@@ -132,8 +149,7 @@ TESTS   += nxdnScrambleTest
 nxdnScrambleTest: nxdnScrambleTest.c $(CORE)/nxdn/nxdn_scramble.c $(CORE)/nxdn/nxdn_scramble.h $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -Wshadow -o $@ nxdnScrambleTest.c $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c
 run: run-nxdn-scramble
-run-nxdn-scramble: nxdnScrambleTest
-	./nxdnScrambleTest
+run-nxdn-scramble: $(call suites,nxdnScrambleTest)
 .PHONY: run-nxdn-scramble
 nxdnTest: nxdnTest.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nxdnTest.c $(NXDN) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
@@ -237,57 +253,28 @@ APRSLIB := $(CORE)/aprs/ax25.c $(CORE)/aprs/hdlc.c $(CORE)/aprs/afsk.c $(CORE)/a
 aprsTest: aprsTest.c $(APRSLIB) $(NMEALIB) $(wildcard $(CORE)/aprs/*.h)
 	$(CC) $(CFLAGS) -o $@ aprsTest.c $(APRSLIB) $(NMEALIB) -lm
 
-run: $(TESTS)
-	./dmrFecTest
-	./dmrSoftBptcTest
-	./dmrSoftCombTest
-	./dmrDataTest > dmrDataTest.out; status=$$?; grep -E "^(FAIL|# (PASSED|FAILED))" dmrDataTest.out; exit $$status
-	./dmrDataServiceTest
-	./dmrDataServiceTestNoTms
-	./hotspotDataTest
-	./hotspotUplinkTest
-	./dmrPrivacyTest
-	./lrrpTest
-	./airQueueTest
-	./fecTest | tail -1
-	./airFramerTest
-	./p25Test
-	./fxpTest
-	./mbeTest | tail -1
-	./imbeEncTest | tail -1
-	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
-	./airSoftmodemTest | tail -1
-	./p25EngineTest
-	./nxdnTest | tail -1
-	./nxdnEngineTest | tail -1
-	./p25TrunkTest
-	./p25VoiceTest
-	./hrc6000AirTest
-	./radioKeysTest
-	./zoneShareTest
-	./zoneShareModesTest
-	./zoneShareSvcTest
-	./ipGatewayTest
-	./ipGatewayTest16
-	./ipGatewayTest31
-	./ipGatewayTestShared
-	./ipGatewayTestAir440
-	./sfrTest
-	./aprsTest
-	$(PYTHON) satelliteTleTest.py
-ifneq ($(TSHARK),)
-	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
-	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
-	@# The fragmentation needed replies are ICMP errors by type (tshark's note "Type indicates an error"): expected
-	@if grep -v -E "ICMP +Type indicates an error" ipGatewayTest.expert | grep -q -i -E "malformed|bad|incorrect|error"; then echo "# tshark found problems"; cat ipGatewayTest.expert; exit 1; else echo "# tshark: no malformed packets or bad checksums"; fi
-endif
+run: run-main
+run-main: $(call suites,dmrFecTest dmrSoftBptcTest dmrSoftCombTest dmrDataTest dmrDataServiceTest dmrDataServiceTestNoTms \
+	hotspotDataTest hotspotUplinkTest dmrPrivacyTest lrrpTest airQueueTest fecTest airFramerTest p25Test fxpTest mbeTest \
+	imbeEncTest imbeVoiceGen airSoftmodemTest p25EngineTest nxdnTest nxdnEngineTest p25TrunkTest p25VoiceTest \
+	hrc6000AirTest radioKeysTest zoneShareTest zoneShareModesTest zoneShareSvcTest ipGatewayTest ipGatewayTest16 \
+	ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440 sfrTest aprsTest satelliteTle)
+.PHONY: run-main
+run/imbeVoiceGen: imbeVoiceGen
+	@$(SUITE) run $(@F) 'for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done'
+run/satelliteTle: satelliteTleTest.py
+	@$(SUITE) run $(@F) '$(PYTHON) satelliteTleTest.py'
+# Independent check of the frames the gateway sent. The fragmentation needed replies are ICMP errors by type (tshark's
+# note "Type indicates an error"): expected
+IPGW_RUNS := ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
+$(addprefix run/,$(IPGW_RUNS)): run/%: %
+	@$(SUITE) run $* ./$* $(call PCAP_CHECK,udp,$*.pcap,ICMP +Type indicates an error)
 
 clean:
-	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin \
-		codec_desc_md9600.bin codec_desc_md9600own.bin
+	rm -f *.pcap *.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin codec_desc_md9600.bin \
+		codec_desc_md9600own.bin
 	rm -rf gen
-	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
-		ipGatewayTest.expert
+	rm -f $(TESTS)
 	rm -rf *.dSYM out
 	rm -f *.gcda *.gcno
 
@@ -490,33 +477,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
-	./aprsRadioTest
-	./radioCoreTest
-	./radioCoreTestNoVfoDmr
-	./radioCoreTestP25
-	./radioCoreTestNxdn
-	./radioCoreTestP25Nxdn
-	./radioCoreTestP25T
-	./radioCoreTestAprs
-	./radioCoreTestAprsDmr
-	./radioFeaturesTest
-	./radioFeaturesTestNoDual
-	./roamTest
-	./radioListenBandsTest
-	./inputTest
-	./switchFollowTest
-	./quadratureTest
-	./serialmicTest
-	./miclevelTest
-	./resampleTest
-	./rx2LinkTest
-	./keyassignTest
-	./powerSwitchTest
-	./powerKeyTest
-	./boardBandTest
-	./batteryTest
+run-core: $(call suites,aprsRadioTest radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestP25T radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest quadratureTest serialmicTest miclevelTest resampleTest rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest)
 .PHONY: run-core
 
 # The read-only codeplug (open-firmware layout and built-in channels), on fake flash images
@@ -532,8 +493,7 @@ textEditTest: textEditTest.c $(CORE)/ui/text_edit.h
 	$(CC) $(CFLAGS) -o $@ textEditTest.c
 
 run: run-text
-run-text: textEditTest
-	./textEditTest
+run-text: $(call suites,textEditTest)
 .PHONY: run-text
 
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
@@ -555,13 +515,7 @@ calCurveTest: calCurveTest.c $(CORE)/radio/cal_curve.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ calCurveTest.c
 
 run: run-flash
-run-flash: codeplugTest codeplugNoCompactTest calCurveTest codeplugPower2Test codeplugPower3Test codeplugPower9Test
-	./codeplugPower2Test
-	./codeplugPower3Test
-	./codeplugPower9Test
-	./codeplugTest
-	./codeplugNoCompactTest
-	./calCurveTest
+run-flash: $(call suites,codeplugPower2Test codeplugPower3Test codeplugPower9Test codeplugTest codeplugNoCompactTest calCurveTest)
 .PHONY: run-flash
 
 # The AT1846S driver: frequency word, register cache and write sequences, on a fake bus
@@ -579,9 +533,7 @@ subaudioTest: subaudioTest.c $(SUBAUDIO) $(ROOT)/drivers/rf/subaudio/subaudio.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ subaudioTest.c $(SUBAUDIO)
 
 run: run-rf
-run-rf: at1846sTest subaudioTest
-	./at1846sTest
-	./subaudioTest
+run-rf: $(call suites,at1846sTest subaudioTest)
 .PHONY: run-rf
 
 # The SKY72310 synthesizer's divider words against the data sheet and a register model, the HR_C5000 variant of the
@@ -631,20 +583,14 @@ adckeysTest: adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c $(ROOT)/drive
 	$(CC) $(CFLAGS) -Wshadow -o $@ adckeysTest.c $(ROOT)/drivers/input/adckeys/adckeys.c
 
 run: run-chips
-run-chips: sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest gpsPowerTest adckeysTest codecDescTest
-	./sky72310Test
-	./hrc5000Test
-	./nmeaLineTest
-	./gpsRxTest
-	./gpsBaudTest
-	./gpsPowerTest
-	./adckeysTest
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 \
-		--test-profile de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532
-	python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600own.bin --board md9600
-	./codecDescTest codec_desc_test.bin codec_desc_md380.bin codec_desc_md9600.bin codec_desc_md9600own.bin
+run-chips: $(call suites,sky72310Test hrc5000Test nmeaLineTest gpsRxTest gpsBaudTest gpsPowerTest adckeysTest codecDescTest)
+run/codecDescTest: codecDescTest
+	@$(SUITE) run $(@F) \
+		'python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_test.bin --board dm1701' \
+		'python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md380.bin --board md380' \
+		'python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600.bin --board dm1701 --test-profile de368437de05307d3e217f049bb5e30b1a8ec201e50b8e81aa5c506089c53532' \
+		'python3 -I $(ROOT)/tools/codec_extract.py --test-desc codec_desc_md9600own.bin --board md9600' \
+		'./codecDescTest codec_desc_test.bin codec_desc_md380.bin codec_desc_md9600.bin codec_desc_md9600own.bin'
 .PHONY: run-chips
 
 # Sub-audio: the DCS Golay word, and the software CTCSS / DCS detector and tone generators for radios without a sub-audio chip
@@ -656,9 +602,7 @@ subaudioDspTest: subaudioDspTest.c $(SUBAUDIO_ALL) $(wildcard $(ROOT)/drivers/rf
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ subaudioDspTest.c $(SUBAUDIO_ALL) $(CORE)/radio/tones.c -lm
 
 run: run-subaudio
-run-subaudio: subaudioTest subaudioDspTest
-	./subaudioTest
-	./subaudioDspTest
+run-subaudio: $(call suites,subaudioTest subaudioDspTest)
 .PHONY: run-subaudio
 
 # The language tables and the text keys (tr_keys.h), as the firmware build makes them (tools/i18n.py)
@@ -679,7 +623,8 @@ gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.
 CJK     := $(CORE)/ui/cjk_font.c $(CORE)/ui/cjk_font_data.c
 TESTS   += gfxTestZh
 gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 -o $@ gfxTest.c $(UI) $(CJK)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 \
+		'-DGFX_OUT_DIR="out/zh"' -o $@ gfxTest.c $(UI) $(CJK)
 
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
@@ -764,17 +709,13 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
-	./gfxTest
-	./gfxTestZh
-	./i18nTest
-	./i18nTestNoLang
-	./i18nTestDefault
-	./uiFlowTest
-	./uiFlowTestNoColor
-	./uiFlowTestSatellite
-	./uiSim --layout
-	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
+run-ui: $(call suites,gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor \
+	uiFlowTestSatellite uiSim beepReel)
+run/uiSim: uiSim
+	@$(SUITE) run $(@F) './uiSim --layout'
+# checks every beep has a scene and the scenes still run
+run/beepReel: beepReel
+	@$(SUITE) run $(@F) './beepReel --out out/beep-reel --no-frames'
 .PHONY: run-ui ui-gallery ui-sheets
 
 # AMBE+2 3600x2450 air frame FEC and interleaving (core/dmr/ambe), with vectors from the stock DM-1701 codec's FEC
@@ -805,8 +746,7 @@ t3ViewTest: t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_f
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ t3ViewTest.c $(CORE)/debuglink/debuglink_t3.c $(CORE)/debuglink/dl_fmt.c
 
 run: run-t3view
-run-t3view: t3ViewTest
-	./t3ViewTest
+run-t3view: $(call suites,t3ViewTest)
 .PHONY: run-t3view
 
 # The debug link's hardware options command (core/debuglink/debuglink_hwopt.c), with options and without
@@ -819,9 +759,7 @@ hwoptTestNone: $(HWOPTT) $(HWOPTT_H)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DHWOPT_NONE_BOARD -o $@ $(HWOPTT)
 
 run: run-hwopt
-run-hwopt: hwoptTest hwoptTestNone
-	./hwoptTest
-	./hwoptTestNone
+run-hwopt: $(call suites,hwoptTest hwoptTestNone)
 .PHONY: run-hwopt
 # The support info (core/support, docs/spec/support-info.md): SHA-256, the image hash, the hardware lines and the debug
 # link's SUPPORT command, English only (no catalogs linked)
@@ -832,8 +770,7 @@ supportInfoTest: $(SUPPORTT) $(wildcard $(CORE)/support/*.h) $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_LANG_ES=0 -DCONFIG_LANG_IT=0 -DCONFIG_LANG_FR=0 -DCONFIG_LANG_ZH=0 \
 		-o $@ $(SUPPORTT)
 run: run-support
-run-support: supportInfoTest
-	./supportInfoTest
+run-support: $(call suites,supportInfoTest)
 .PHONY: run-support
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
@@ -857,11 +794,9 @@ crashCaptureTest: $(CRASHC) $(CORE)/crash/crash.h $(ROOT)/hal/hal_crash.h $(ROOT
 	$(CC) $(CFLAGS) -Istubs/crash_rtos -I$(ROOT)/hal -DCONFIG_TASK_STACKS=1 -Wshadow -o $@ $(CRASHC)
 
 run: run-crash
-run-crash: crashTest crashCaptureTest
-	./crashTest
-	./crashCaptureTest
-	@if command -v python3 > /dev/null; then python3 $(ROOT)/tools/rfoundry_fault_trace.py --selftest; \
-	else echo "# rfoundry_fault_trace selftest: skipped (no python3)"; fi
+run-crash: $(call suites,crashTest crashCaptureTest faultTrace)
+run/faultTrace:
+	@$(SUITE) run $(@F) 'python3 $(ROOT)/tools/rfoundry_fault_trace.py --selftest'
 .PHONY: run-crash
 
 # The DMR PA key-up (core/radio/pa_keyup.c): the boost and hold from the cal table's drives, the constants' checks
@@ -880,16 +815,7 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
-	./ambeFecTest
-	./ambeVoiceTest
-	./ambeVoiceCaptureTest
-	./sigToneTest
-	./micGainTest
-	./refTrimTest
-	./paKeyupTest
-	./paSweepTest
-	./paKeyrunTest
+run-ambe: $(call suites,ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest)
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -901,8 +827,7 @@ dmrCallTest: $(CALL) $(wildcard $(CORE)/dmr/call/*.h sim/*.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DHAS_SFR -DDMR_RX_TRACE=0 -o $@ $(CALL)
 
 run: run-call
-run-call: dmrCallTest
-	./dmrCallTest
+run-call: $(call suites,dmrCallTest)
 .PHONY: run-call
 
 # The HR_C6000 DMR modem: register sequences, burst status decode, RX de-duplication, TX queue and slot scheduling
@@ -926,10 +851,7 @@ promptFifoTest: promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(HRCDMR)/hr
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ promptFifoTest.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c
 
 run: run-modem
-run-modem: hrc6000DmrTest hrc6000ToneTest promptFifoTest
-	./hrc6000DmrTest
-	./hrc6000ToneTest
-	./promptFifoTest
+run-modem: $(call suites,hrc6000DmrTest hrc6000ToneTest promptFifoTest)
 .PHONY: run-modem
 
 # The DMR receive chain: a model of the HR_C6000's reports through the slot engine, a batching board task and the call
@@ -953,10 +875,7 @@ dmrDataChainTest: $(DCHAIN) $(HRCDMR)/hrc6000_dmr.h $(ROOT)/hal/hal_dmr_modem.h 
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDMR_RX_TRACE=0 -o $@ $(DCHAIN) -lm
 
 run: run-rxchain
-run-rxchain: dmrRxChainTest dmrDataChainTest hrc7000RxChainTest
-	./hrc7000RxChainTest
-	./dmrRxChainTest
-	./dmrDataChainTest
+run-rxchain: $(call suites,hrc7000RxChainTest dmrRxChainTest dmrDataChainTest)
 .PHONY: run-rxchain
 
 # The MMDVM protocol and the simplex hotspot engine (core/hotspot), against a fake DMR modem and radio core, and the
@@ -970,8 +889,7 @@ mmdvmTest: $(MMDVM) $(wildcard $(CORE)/hotspot/*.h $(CORE)/hostlink/*.h $(CORE)/
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ $(MMDVM)
 
 run: run-mmdvm
-run-mmdvm: mmdvmTest
-	./mmdvmTest
+run-mmdvm: $(call suites,mmdvmTest)
 
 # The hotspot's SFR mode (core/hotspot/hotspotSfr.c on core/dmr/sfrRunner.c and sfr.c) through mmdvm.c and hotspot.c,
 # against the simulated modem
@@ -984,8 +902,7 @@ hotspotSfrTest: $(HSFR) $(wildcard $(CORE)/hotspot/*.h $(CORE)/dmr/sfr*.h sim/*.
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SFR=1 -o $@ $(HSFR)
 
 run: run-hsfr
-run-hsfr: hotspotSfrTest
-	./hotspotSfrTest
+run-hsfr: $(call suites,hotspotSfrTest)
 .PHONY: run-mmdvm
 
 # The split duplex extension (CONFIG_HOTSPOT_SPLIT, docs/spec/split-duplex.md): the CACH / short LC coding against
@@ -1027,15 +944,9 @@ hrc6000DmrTestSplit: hrc6000DmrTest.c $(HRCBS) $(wildcard $(HRCDMR)/*.h) $(ROOT)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(SPLITF) -o $@ hrc6000DmrTest.c $(HRCBS)
 
 run: run-split
-run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit splitSim
-	./splitDuplexTest
-	./mmdvmTestSplit
-	./hotspotSfrTestSplit
-	./hrc6000BsTest
-	./hrc6000DmrTestSplit
-	@if command -v python3 > /dev/null; then python3 sim/splitPairTest.py ./splitSim && \
-		python3 $(ROOT)/tools/bench/dmr_cach.py selftest; \
-	else echo "# splitPairTest, dmr_cach selftest: skipped (no python3)"; fi
+run-split: $(call suites,splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6000DmrTestSplit splitPair)
+run/splitPair: splitSim
+	@$(SUITE) run $(@F) 'python3 sim/splitPairTest.py ./splitSim' 'python3 $(ROOT)/tools/bench/dmr_cach.py selftest'
 .PHONY: run-split
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
@@ -1049,8 +960,7 @@ debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
-run-debuglink: debuglinkTest
-	./debuglinkTest
+run-debuglink: $(call suites,debuglinkTest)
 .PHONY: run-debuglink
 
 # The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
@@ -1060,8 +970,7 @@ stubEntryTest: stubEntryTest.c $(CORE)/stubentry/stub_load.c $(CORE)/stubentry/s
 	$(CC) $(CFLAGS) -Wshadow -I$(ROOT)/stub/stm32f4 -o $@ stubEntryTest.c $(CORE)/stubentry/stub_load.c
 
 run: run-stubEntry
-run-stubEntry: stubEntryTest
-	./stubEntryTest
+run-stubEntry: $(call suites,stubEntryTest)
 .PHONY: run-stubEntry
 
 # The stub entry on the wire: golden replies through the debug link's dispatch and the stub entry's own listener
@@ -1072,8 +981,7 @@ stubLinkTest: $(SLINK) $(wildcard $(CORE)/stubentry/*.h) $(CORE)/debuglink/dl_fr
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(SLINK)
 
 run: run-stubLink
-run-stubLink: stubLinkTest
-	./stubLinkTest
+run-stubLink: $(call suites,stubLinkTest)
 .PHONY: run-stubLink
 
 # The debug link's tasks view section: each task's least free stack (core/debuglink/debuglink_view_tasks.c; the
@@ -1084,8 +992,7 @@ taskStackTest: $(TSTACK) $(CORE)/debuglink/debuglink.h $(CORE)/app/task_stack.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_TASK_STACKS=1 -o $@ $(TSTACK)
 
 run: run-taskStack
-run-taskStack: taskStackTest
-	./taskStackTest
+run-taskStack: $(call suites,taskStackTest)
 .PHONY: run-taskStack
 
 # The hardware watchdog's portable side: the idle task's feed, the longest idle gap, the bench starve (core/app/
@@ -1098,8 +1005,7 @@ watchdogTest: $(WDOG) $(CORE)/app/watchdog.h $(ROOT)/hal/hal_watchdog.h $(CORE)/
 	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -DCONFIG_WATCHDOG=1 -o $@ $(WDOG)
 
 run: run-watchdog
-run-watchdog: watchdogTest
-	./watchdogTest
+run-watchdog: $(call suites,watchdogTest)
 .PHONY: run-watchdog
 
 # DL_CMD_RX2, the second receiver's SoC on the debug link (core/debuglink/debuglink_rx2.c): the board, clock, radio
@@ -1110,8 +1016,7 @@ debuglinkRx2Test: $(RX2DL) $(ROOT)/hal/hal_rx2.h $(CORE)/debuglink/debuglink.h $
 	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(RX2DL)
 
 run: run-debuglinkRx2
-run-debuglinkRx2: debuglinkRx2Test
-	./debuglinkRx2Test
+run-debuglinkRx2: $(call suites,debuglinkRx2Test)
 .PHONY: run-debuglinkRx2
 
 # DL_CMD_CHIP_REG, RF chip and SoC registers on the debug link (core/debuglink/debuglink_chipreg.c): the board's hooks
@@ -1123,8 +1028,7 @@ debuglinkChipRegTest: $(CHIPREG) $(ROOT)/hal/board.h $(ROOT)/hal/hal_system.h $(
 	$(CC) $(CFLAGS) -Iwatchdog_stub -I$(ROOT)/hal -Wshadow -o $@ $(CHIPREG)
 
 run: run-debuglinkChipReg
-run-debuglinkChipReg: debuglinkChipRegTest
-	./debuglinkChipRegTest
+run-debuglinkChipReg: $(call suites,debuglinkChipRegTest)
 .PHONY: run-debuglinkChipReg
 
 # DL_CMD_DMR_DATA's IP operations (core/debuglink/debuglink_dmr_data.c): the settings' gateway ID and IP_SEND's parsing
@@ -1134,8 +1038,7 @@ debuglinkDmrDataTest: $(DLDATA) $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_DMR_IP_GATEWAY=1 -DCONFIG_DMR_EMERGENCY=0 -o $@ $(DLDATA)
 
 run: run-debuglinkDmrData
-run-debuglinkDmrData: debuglinkDmrDataTest
-	./debuglinkDmrDataTest
+run-debuglinkDmrData: $(call suites,debuglinkDmrDataTest)
 .PHONY: run-debuglinkDmrData
 
 # The flash stubs' shared protocol engine (stub/common/stubeng.c) with the STM32F4 target's board record check
@@ -1152,9 +1055,9 @@ f4stubSim: f4stubSim.c $(F4STUB_SRC) $(F4STUB_H)
 	$(CC) $(CFLAGS) -Wshadow $(F4STUB_INC) -o $@ f4stubSim.c $(F4STUB_SRC)
 
 run: run-f4stub
-run-f4stub: f4stubTest f4stubSim
-	./f4stubTest
-	python3 f4stub_wire_check.py ./f4stubSim
+run-f4stub: $(call suites,f4stubTest f4stubWire)
+run/f4stubWire: f4stubSim
+	@$(SUITE) run $(@F) 'python3 f4stub_wire_check.py ./f4stubSim'
 .PHONY: run-f4stub
 
 # FD6818 frames on a fake three-wire chip, ST7567 and ST7789 init streams and 2x scaling, key matrix decode with the
@@ -1230,24 +1133,10 @@ baofengCalTest: baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c $(ROO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ baofengCalTest.c $(ROOT)/drivers/cal/baofeng/baofeng_cal.c
 
 run: run-drivers
-run-drivers: fd6818Test st7567Test st7735Test st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest rda5807mTest \
-             lis3dhTest hrc7000BsTest hrc7000DmrTestSplit
-	./hrc7000BsTest
-	./hrc7000DmrTestSplit
-	./lis3dhTest
-	./rda5807mTest
-	./fd6818Test
-	./st7567Test
-	./st7735Test
-	./st7789Test
-	./keymatrixTest
-	./sharedPttTest
-	./chswitchTest
-	./plugPttTest
-	./hrc7000DmrTest
-	./hrc7000AirTest
-	./baofengCalTest
-	python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test
+run-drivers: $(call suites,hrc7000BsTest hrc7000DmrTestSplit lis3dhTest rda5807mTest fd6818Test st7567Test st7735Test \
+	st7789Test keymatrixTest sharedPttTest chswitchTest plugPttTest hrc7000DmrTest hrc7000AirTest baofengCalTest hrc7000Codec)
+run/hrc7000Codec:
+	@$(SUITE) run $(@F) 'python3 -I $(ROOT)/tools/hrc7000_codec.py --self-test'
 .PHONY: run-drivers
 
 # The BK4819 driver: main and LO chips on one shared three-wire bus (docs/spec/hardware-db25d.md 4)
@@ -1321,20 +1210,11 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
-		hrc7000IrqStallTest hrc7000UartIdleTest hrc7000RfburstTest
-	./bk4819Test
-	./at1141Test
-	./fd6818shTest
-	./superhetTest
-	./rfbusI2cTest
-	./hrc7000ClockTest
-	./hrc7000UartFormatTest
-	./hrc7000UartIdleTest
-	./hrc7000IrqStallTest
-	./hrc7000RfburstTest
-	python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin
-	./hrc7000CodecSlotTest hrc7000_test_slot.bin
+run-platform: $(call suites,bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc7000ClockTest \
+	hrc7000UartFormatTest hrc7000UartIdleTest hrc7000IrqStallTest hrc7000RfburstTest hrc7000CodecSlotTest)
+run/hrc7000CodecSlotTest: hrc7000CodecSlotTest
+	@$(SUITE) run $(@F) 'python3 -I $(ROOT)/tools/hrc7000_codec.py --test-slot hrc7000_test_slot.bin' \
+		'./hrc7000CodecSlotTest hrc7000_test_slot.bin'
 .PHONY: run-platform
 
 # The HR_C7000 interrupt stack's fill, canary and high-water count (platform/hrc7000/irq_stack.h)
@@ -1344,8 +1224,7 @@ hrc7000IrqStackTest: hrc7000IrqStackTest.c $(ROOT)/platform/hrc7000/irq_stack.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000IrqStackTest.c
 
 run: run-irqstack
-run-irqstack: hrc7000IrqStackTest
-	./hrc7000IrqStackTest
+run-irqstack: $(call suites,hrc7000IrqStackTest)
 .PHONY: run-irqstack
 
 # The host link's network personality: the IP gateway between a fake USB network interface and fake air ops (the
@@ -1361,9 +1240,9 @@ hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostl
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -o $@ $(HLNET)
 
 run: run-hlnet
-run-hlnet: hostlinkNetTest
-	./hostlinkNetTest
-	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
+run-hlnet: $(call suites,hostlinkNetTest dmrPacket)
+run/dmrPacket:
+	@$(SUITE) run $(@F) 'python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test'
 .PHONY: run-hlnet
 
 # PPP on the serial host link (core/net/ppp.c) and its glue to the real gateway (core/hostlink/hostlink_ppp.c), against
@@ -1383,8 +1262,7 @@ pppPeer: $(PPPPEER) $(CORE)/net/ppp.h $(CORE)/net/tcp.h $(CORE)/hostlink/hostlin
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_NET_PPP=1 -o $@ $(PPPPEER)
 
 run: run-ppp
-run-ppp: pppTest pppPeer
-	./pppTest
+run-ppp: $(call suites,pppTest)
 .PHONY: run-ppp
 
 # The radio's own services on the USB network link, behind the real gateway (core/net): the mDNS responder, and the
@@ -1403,16 +1281,10 @@ tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/net/tf
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_CPS_FAST=0 -o $@ $(TFTPT)
 
 run: run-net
-run-net: mdnsTest tftpTest
-	./mdnsTest
-	./tftpTest
-ifneq ($(TSHARK),)
-	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
-	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
-	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
-	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
-		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
-endif
+run-net: $(call suites,mdnsTest tftpTest)
+# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
+run/mdnsTest run/tftpTest: run/%: %
+	@$(SUITE) run $* ./$* $(call PCAP_CHECK,udp,$*.pcap,TFTP ERROR packet|^Errors)
 .PHONY: run-net
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write
@@ -1423,11 +1295,7 @@ settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/set
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
 
 run: run-settings
-run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
-	./settingsTest
-	./spiNorTest
-	./spiNandTest
-	./nandSectorsTest
+run-settings: $(call suites,settingsTest spiNorTest spiNandTest nandSectorsTest)
 .PHONY: run-settings
 
 TESTS   += satelliteStoreTest
@@ -1445,11 +1313,7 @@ satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_SATELLITE_TLE=1 -o $@ satelliteStoreTest.c $(SAT_STORE)
 
 run: run-satellite
-run-satellite: satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest
-	./satelliteStoreTest
-	./satelliteChannelsTest
-	./satelliteOrbitTest
-	./satelliteServiceTest
+run-satellite: $(call suites,satelliteStoreTest satelliteChannelsTest satelliteOrbitTest satelliteServiceTest)
 .PHONY: run-satellite
 
 satelliteChannelsTest: satelliteChannelsTest.c $(CORE)/satellite/channels.c $(CORE)/satellite/frequency.c \
@@ -1502,8 +1366,7 @@ codeplugEditTest: codeplugEditTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugEditTest.c $(CPEDIT)
 
 run: run-cpedit
-run-cpedit: codeplugEditTest
-	./codeplugEditTest
+run-cpedit: $(call suites,codeplugEditTest)
 .PHONY: run-cpedit
 
 # The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
@@ -1513,8 +1376,7 @@ codeplugKvTest: codeplugKvTest.c $(CPEDIT) $(wildcard $(CORE)/codeplug/*.h $(COR
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugKvTest.c $(CPEDIT)
 
 run: run-cpkv
-run-cpkv: codeplugKvTest
-	./codeplugKvTest
+run-cpkv: $(call suites,codeplugKvTest)
 .PHONY: run-cpkv
 
 # The generic channel-mode layer (core/codeplug/codeplug_tag.c, codeplug_records.c) with a synthetic kind: tags, the
@@ -1527,8 +1389,7 @@ codeplugTagTest: codeplugTagTest.c $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CO
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ codeplugTagTest.c $(CPTAG)
 
 run: run-cptag
-run-cptag: codeplugTagTest
-	./codeplugTagTest
+run-cptag: $(call suites,codeplugTagTest)
 .PHONY: run-cptag
 
 # P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
@@ -1543,9 +1404,7 @@ p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h 
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 run: run-p25cp
-run-p25cp: p25CodeplugTest p25CodeplugConvTest
-	./p25CodeplugTest
-	./p25CodeplugConvTest
+run-p25cp: $(call suites,p25CodeplugTest p25CodeplugConvTest)
 .PHONY: run-p25cp
 
 # NXDN in the codeplug (core/nxdn/nxdn_codeplug.c): the shared vectors, a channel's set-up, a channel saved from the radio
@@ -1556,8 +1415,7 @@ nxdnCodeplugTest: nxdnCodeplugTest.c $(NXDNCP) $(wildcard $(CORE)/codeplug/*.h $
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -o $@ nxdnCodeplugTest.c $(NXDNCP)
 
 run: run-nxdncp
-run-nxdncp: nxdnCodeplugTest
-	./nxdnCodeplugTest
+run-nxdncp: $(call suites,nxdnCodeplugTest)
 .PHONY: run-nxdncp
 
 # Zone editing (core/codeplug/zone_edit.c) on the real codeplug over a simulated flash: add, move, remove, copy,
@@ -1570,8 +1428,7 @@ zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/st
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
 
 run: run-zedit
-run-zedit: zoneEditTest
-	./zoneEditTest
+run-zedit: $(call suites,zoneEditTest)
 .PHONY: run-zedit
 
 # Zone sharing's codeplug side: import (band limits, receive only, contacts by ID, update, undo; new zones through the
@@ -1593,10 +1450,7 @@ zoneImportNxdnTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_record
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
-run-zimport: zoneImportTest zoneImportModesTest zoneImportNxdnTest
-	./zoneImportTest
-	./zoneImportModesTest
-	./zoneImportNxdnTest
+run-zimport: $(call suites,zoneImportTest zoneImportModesTest zoneImportNxdnTest)
 .PHONY: run-zimport
 
 # The open-firmware CPS shim against a simulated flash, driven like qdmr's UV380 driver (core/cps)
@@ -1608,8 +1462,7 @@ cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
 
 run: run-cps
-run-cps: cpsTest
-	./cpsTest
+run-cps: $(call suites,cpsTest)
 .PHONY: run-cps
 
 # The fast codeplug protocol (core/cps/cps_fast.c, docs/spec/cps-fast.md): LZ4 both ways, blank blocks, CRC compare,
@@ -1621,8 +1474,7 @@ cpsFastTest: cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c $(wildcard
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP_IDDB=0 -o $@ cpsFastTest.c $(CPS) $(CPSF) $(CORE)/net/tftp_codeplug.c
 
 run: run-cpsfast
-run-cpsfast: cpsFastTest
-	./cpsFastTest
+run-cpsfast: $(call suites,cpsFastTest)
 .PHONY: run-cpsfast
 
 # tools/cps_client.py against the shim on stdin / stdout (cpsSim), when python3 is there; the sim also answers the
@@ -1635,14 +1487,9 @@ cpsSim: cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c $(wildcard $(CORE)/
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_TFTP=0 -o $@ cpsSim.c $(CPS) $(SIMDL) $(CORE)/codeplug/dmr_iddb.c
 
 run: run-cpsclient
-run-cpsclient: cpsSim
-ifneq ($(PYTHON),)
-	$(PYTHON) -B cpsClientTest.py
-	$(PYTHON) -B cpsFastClientTest.py
-	$(PYTHON) -B iddbLookupClientTest.py
-else
-	@echo "# cpsClientTest, cpsFastClientTest, iddbLookupClientTest skipped (no python3)"
-endif
+run-cpsclient: $(call suites,cpsClient)
+run/cpsClient: cpsSim
+	@$(SUITE) run $(@F) '$(PYTHON) -B cpsClientTest.py' '$(PYTHON) -B cpsFastClientTest.py' '$(PYTHON) -B iddbLookupClientTest.py'
 .PHONY: run-cpsclient
 
 # DMR Tier III PDUs, system identity and channel plans (core/dmr/trunk): the shared vectors, then the rules
@@ -1654,8 +1501,7 @@ t3PduTest: t3PduTest.c $(T3PDU) $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_vector
 	$(CC) $(CFLAGS) -o $@ t3PduTest.c $(T3PDU)
 
 run: run-t3pdu
-run-t3pdu: t3PduTest
-	./t3PduTest
+run-t3pdu: $(call suites,t3PduTest)
 .PHONY: run-t3pdu
 TESTS   += t3MsTest
 # Tier III systems from the codeplug (core/radio/radio_trunk_cp.c) and DL_CMD_CPKV, on a simulated flash
@@ -1666,30 +1512,26 @@ TESTS   += t3CodeplugTest
 t3CodeplugTest: $(T3CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/radio/radio_trunk.h $(CORE)/debuglink/*.h sim/sim_flash.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ $(T3CP)
 run: run-t3cp
-run-t3cp: t3CodeplugTest
-	./t3CodeplugTest
+run-t3cp: $(call suites,t3CodeplugTest)
 .PHONY: run-t3cp
 
 t3MsTest: t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
 	$(CC) $(CFLAGS) -o $@ t3MsTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
 run: run-t3ms
-run-t3ms: t3MsTest
-	./t3MsTest
+run-t3ms: $(call suites,t3MsTest)
 .PHONY: run-t3ms
 TESTS   += t3AccessTest
 t3AccessTest: t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
 	$(CC) $(CFLAGS) -o $@ t3AccessTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
 run: run-t3access
-run-t3access: t3AccessTest
-	./t3AccessTest
+run-t3access: $(call suites,t3AccessTest)
 .PHONY: run-t3access
 # The engine with the radio's receive chain (CACH, short LC, slot type, BPTC) on raw control channel bursts
 TESTS   += t3SiteTest
 t3SiteTest: t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h) data/t3_site_tscc.jsonl
 	$(CC) $(CFLAGS) -o $@ t3SiteTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
 run: run-t3site
-run-t3site: t3SiteTest
-	./t3SiteTest
+run-t3site: $(call suites,t3SiteTest)
 .PHONY: run-t3site
 # The same engine on off-air recordings (not in the repository): skips unless RFOUNDRY_T3_RECORDINGS names a manifest,
 # so CI never runs it; the skip prints a "# t3ReplayTest skipped" line
@@ -1697,8 +1539,7 @@ TESTS   += t3ReplayTest
 t3ReplayTest: t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c $(wildcard $(CORE)/dmr/trunk/*.h)
 	$(CC) $(CFLAGS) -o $@ t3ReplayTest.c $(T3PDU) $(CORE)/dmr/trunk/t3_ms.c
 run: run-t3replay
-run-t3replay: t3ReplayTest
-	./t3ReplayTest
+run-t3replay: $(call suites,t3ReplayTest)
 .PHONY: run-t3replay
 
 # USB / network audio building blocks (docs/spec/usb-audio.md): USRP framing, G.711 mu-law, the link's PTT watchdogs,
@@ -1719,9 +1560,7 @@ usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
 
 run: run-usbaudio
-run-usbaudio: usrpTest usrpNetTest
-	./usrpTest
-	./usrpNetTest
+run-usbaudio: $(call suites,usrpTest usrpNetTest)
 .PHONY: run-usbaudio
 
 # The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap
@@ -1731,13 +1570,9 @@ tcpTest: tcpTest.c $(CORE)/net/tcp.c $(CORE)/net/tcp.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ tcpTest.c $(CORE)/net/tcp.c
 
 run: run-tcp
-run-tcp: tcpTest
-	./tcpTest
-ifneq ($(TSHARK),)
-	@"$(TSHARK)" -r tcpTest.pcap -o ip.check_checksum:TRUE -o tcp.check_checksum:TRUE -T fields -e _ws.malformed -e _ws.expert.message 2>&1 \
-		| grep -i -E "malformed|bad checksum|checksum.*incorrect" > tcpTest.expert || true
-	@if [ -s tcpTest.expert ]; then echo "# tshark found problems in tcpTest.pcap"; cat tcpTest.expert; exit 1; else echo "# tshark: tcpTest.pcap has no malformed segments or bad checksums"; fi
-endif
+run-tcp: $(call suites,tcpTest)
+run/tcpTest: tcpTest
+	@$(SUITE) run $(@F) ./tcpTest $(call PCAP_CHECK,tcp,tcpTest.pcap)
 .PHONY: run-tcp
 
 # The TCP services (core/net) through the real gateway and TCP, against a scripted TCP peer and fakes of the APRS
@@ -1751,13 +1586,9 @@ netSvcTest: $(NETSVC) netSvcFakes.h $(wildcard $(CORE)/net/*.h) $(CORE)/dmr/ipGa
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Igen/gz -Wshadow -DCONFIG_MDNS=0 -DCONFIG_TFTP=0 -DCONFIG_NET_USRP=1 -DCONFIG_NET_PPP=1 -DGFX_INDEXED=1 -o $@ $(NETSVC)
 
 run: run-netsvc
-run-netsvc: netSvcTest
-	./netSvcTest
-ifneq ($(TSHARK),)
-	@"$(TSHARK)" -r netSvcTest.pcap -o ip.check_checksum:TRUE -o tcp.check_checksum:TRUE -T fields -e _ws.malformed -e _ws.expert.message 2>&1 \
-		| grep -i -E "malformed|bad checksum|checksum.*incorrect" > netSvcTest.expert || true
-	@if [ -s netSvcTest.expert ]; then echo "# tshark found problems in netSvcTest.pcap"; cat netSvcTest.expert; exit 1; else echo "# tshark: netSvcTest.pcap has no malformed segments or bad checksums"; fi
-endif
+run-netsvc: $(call suites,netSvcTest)
+run/netSvcTest: netSvcTest
+	@$(SUITE) run $(@F) ./netSvcTest $(call PCAP_CHECK,tcp,netSvcTest.pcap)
 .PHONY: run-netsvc
 
 # WebSocket pieces for the HTTP server's /ws (core/net/ws.c): SHA-1, base64, the handshake, frame headers
@@ -1766,8 +1597,7 @@ wsTest: wsTest.c $(CORE)/net/ws.c $(CORE)/net/ws.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ wsTest.c $(CORE)/net/ws.c
 
 run: run-ws
-run-ws: wsTest
-	./wsTest
+run-ws: $(call suites,wsTest)
 .PHONY: run-ws
 
 # The SNMP agent (docs/spec/snmp.md): the BER codec against hand-worked X.690 encodings, SNMPv2c processing, the MIB and
@@ -1790,14 +1620,9 @@ snmpAgentTest: snmpAgentTest.c fuzz.h $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink
 		snmpAgentTest.c $(CORE)/snmp/snmp_agent.c $(CORE)/hostlink/hostlink_view.c $(SNMPLIB) $(DATA)
 
 run: run-snmp
-run-snmp: snmpTest snmpPeer snmpAgentTest
-	./snmpTest
-	./snmpAgentTest
-ifneq ($(PYTHON),)
-	./snmp_peer_check.sh
-else
-	@echo "# snmp_peer_check skipped (no python3)"
-endif
+run-snmp: $(call suites,snmpTest snmpAgentTest snmpPeerCheck)
+run/snmpPeerCheck: snmpPeer
+	@$(SUITE) run $(@F) ./snmp_peer_check.sh
 .PHONY: run-snmp
 
 # The HTTP status server's asset table (tools/gen_http_assets.py), as the firmware compiles it: every entry decompresses (or is) its file in core/net/http_assets, at its path, with its type
@@ -1811,10 +1636,10 @@ httpAssetsTest: httpAssetsTest.c $(CORE)/net/http_assets.h gen/gz/http_assets_ge
 	$(CC) $(CFLAGS) -Igen/gz -o $@ httpAssetsTest.c
 
 run: run-httpassets
-run-httpassets: httpAssetsTest
-	@mkdir -p out/http_gz
-	./httpAssetsTest out/http_gz
-	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_gz $(HTTP_ASSETS)
+run-httpassets: $(call suites,httpAssetsTest)
+run/httpAssetsTest: httpAssetsTest
+	@$(SUITE) run $(@F) 'mkdir -p out/http_gz' './httpAssetsTest out/http_gz' \
+		'python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_gz $(HTTP_ASSETS)'
 .PHONY: run-httpassets
 
 # core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
@@ -1837,29 +1662,22 @@ mbeExactSplitTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp
 	$(CC) $(CFLAGS) -Wshadow -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) -lm
 
 run: run-mbe-halves
-run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
-	./fxpHalvesTest | tail -1
-	./fxpHalvesSplitTest | tail -1
-	./mbeExactTest | tail -1
-	./mbeExactSplitTest | tail -1
+run-mbe-halves: $(call suites,fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest)
 .PHONY: run-mbe-halves
 
-# Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
-# that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest
+# Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and to the run-boards::
+# group (run-boards:: $(call suites,...)). Sources stay in the board directory; the binaries are built here like the rest
 run: run-boards
 run-boards::
 .PHONY: run-boards
 -include $(wildcard $(ROOT)/boards/*/tests/host.mk)
 
-# Every test in TESTS must be run by a group: run: $(TESTS) above expands before the later TESTS += lines, so a test
-# missing from its group's run lines is built by no rule and run by none (two were, unnoticed). HELPERS are programs
-# a test script drives, not tests of their own
-HELPERS := pppPeer cpsSim snmpPeer
-run: check-run
+# Every test in TESTS must be a suite of a group, or run by a script (HELPERS, programs a test script drives), else
+# nothing runs it (two were, unnoticed)
+HELPERS := pppPeer cpsSim snmpPeer splitSim f4stubSim
 check-run:
-	@for t in $(filter-out $(HELPERS),$(TESTS)); do \
-		grep -qE "(^|[[:space:];&|(])\./$$t([[:space:];>|)]|$$)" $(MAKEFILE_LIST) || \
-			{ echo "tests/host: no run group runs $$t (add it to one, or to HELPERS)"; exit 1; }; done
+	@missing='$(filter-out $(SUITES) $(HELPERS),$(TESTS))'; if [ -n "$$missing" ]; then \
+		echo "tests/host: no run group runs $$missing (add it to one, or to HELPERS)"; exit 1; fi
 .PHONY: check-run
 
 # The web control page's set (CONFIG_NET_WEBCTL) in its own table: its index.html replaces the plain one, so the two
@@ -1882,10 +1700,10 @@ httpAssetsTestWebctl: httpAssetsTest.c $(CORE)/net/http_assets.h gen/webctl/http
 	$(CC) $(CFLAGS) -Igen/webctl -o $@ httpAssetsTest.c
 
 run: run-webctlassets
-run-webctlassets: httpAssetsTestWebctl
-	@mkdir -p out/http_webctl
-	./httpAssetsTestWebctl out/http_webctl
-	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)
+run-webctlassets: $(call suites,httpAssetsTestWebctl)
+run/httpAssetsTestWebctl: httpAssetsTestWebctl
+	@$(SUITE) run $(@F) 'mkdir -p out/http_webctl' './httpAssetsTestWebctl out/http_webctl' \
+		'python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_webctl $(WEBCTL_ASSETS)'
 .PHONY: run-webctlassets
 
 TESTS += hrc7000PcmTest
@@ -1894,6 +1712,17 @@ hrc7000PcmTest: hrc7000PcmTest.c $(ROOT)/platform/hrc7000/audio_pcm.c $(ROOT)/pl
 	       $(ROOT)/platform/hrc7000/prompt_fifo.h $(ROOT)/drivers/modem/hrc7000/hrc7000.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iwatchdog_stub -Wshadow -DCONFIG_VOX=0 -o $@ $<
 run: run-hrc-pcm
-run-hrc-pcm: hrc7000PcmTest
-	./hrc7000PcmTest
+run-hrc-pcm: $(call suites,hrc7000PcmTest)
 .PHONY: run-hrc-pcm
+
+# Every program, run or not (the helpers too), then every suite, and the summary in the order of SUITES
+build: $(TESTS)
+run: build check-run
+	@$(SUITE) summary $(SUITES)
+
+# The slowest suites to build and to run: a clean build and run (at the -j given) with the times kept
+times:
+	@$(MAKE) -s clean
+	@mkdir -p out && $(MAKE) run > out/times.log 2>&1 || { tail -40 out/times.log; exit 1; }
+	@$(SUITE) times 15
+.PHONY: build times
