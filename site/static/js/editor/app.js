@@ -27,7 +27,7 @@ import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
-import { updateFor } from "../flasher/version.js";
+import { channelOffer, offerLink } from "../flasher/channel.js";
 
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
@@ -930,10 +930,11 @@ async function readRadio() {
 
 // Features a newer release may add that change what the editor can do with the radio, with what each gains
 const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT", "DMR_TRUNK", "P25", "P25_TRUNK", "NXDN"];
-let releaseList = null;
+let releaseList = null, siteInfo = null;
 
-// After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
-// build and release
+// After a read: a newer build for this radio on the channel its build came from (releases.json and site.json,
+// channelOffer): a release, a beta, or the nightly for a build that isn't a release. Offered once per tab for each
+// radio, running build and offer
 async function offerUpdate(c) {
 	const v = c.transport.probe?.version || {};
 	const gitTime = Number(v.git_time) || 0;
@@ -945,7 +946,14 @@ async function offerUpdate(c) {
 			return;
 		}
 	}
-	const rel = updateFor(releaseList, c.radio.id, v.release, gitTime);
+	if (!siteInfo) {
+		try {
+			siteInfo = await (await fetch(`${ROOT}data/site.json`)).json();
+		} catch {
+			siteInfo = {};	// no beta or nightly offer, releases still
+		}
+	}
+	const rel = channelOffer(siteInfo, releaseList, c.radio.id, v.release, gitTime);
 	if (!rel) return;
 	// a release by its name, any other build by its commit and that commit's date
 	const running = v.release || t("editor.update.build", { git: v.git, date: fmtDate(new Date(gitTime * 1000), { dateStyle: "medium" }) });
@@ -957,11 +965,13 @@ async function offerUpdate(c) {
 	const has = String(c.transport.probe.features || "").split(",");
 	const gains = UPDATE_GAINS.filter((f) => String(rel.features || "").split(",").includes(f) && !has.includes(f));
 	diag.note("update offered", { running: v.release || v.git, release: rel.version, gains });
-	const body = [h("p", {}, t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
+	const body = [h("p", {}, rel.channel === "nightly"
+		? t("editor.update.nightly_text", { radio: c.radio.name, date: fmtDate(new Date(rel.git_time * 1000), { dateStyle: "medium" }), running })
+		: t("editor.update.text", { radio: c.radio.name, version: rel.version, running }))];
 	if (gains.length) body.push(h("p", {}, t("editor.update.gains")), h("ul", {}, ...gains.map((f) => h("li", {}, t(`editor.update.gain.${f}`)))));
 	dialog(t("editor.update.title"), body, t("editor.update.go"), async (close) => {
 		// the flasher's tab needs the port: this one lets go of it (opened first, in the click, so no popup blocker stops it)
-		window.open(`${HOME}flash/index.html#update`, "_blank", "noopener");
+		window.open(offerLink(HOME, rel), "_blank", "noopener");
 		close();
 		if (S.conn === c) await dropConnection();
 	}, () => {}, { cancel: t("editor.update.later") });

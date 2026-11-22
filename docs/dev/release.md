@@ -33,10 +33,12 @@ the release name too.
 
 **Betas.** A tag ending `bN` becomes a GitHub pre-release. GitHub's latest release skips pre-releases, and so does
 the site: the flasher installs the newest release that is not a pre-release by default, and offers a newer beta only as
-an opt-in version link (`?version=<tag>`, [website.md](website.md#flasher-notices)). `?version=main` still builds main.
+an opt-in version link (`?version=<tag>`, [web-flasher.md](web-flasher.md#channels)). The Nightly channel
+(`?version=nightly`) is the commit of the `nightly` tag, and `?version=main` still builds main.
 
-**On the site.** The footer shows the firmware release the flasher installs, linked to its GitHub release, and a
-Changelog link to the GitHub releases. The release notes start from GitHub's generated notes (`--generate-notes`):
+**On the site.** The footer shows the firmware release the flasher installs, linked to its GitHub release, the
+Nightly date, and a Changelog link to the GitHub releases. The user manual at `/docs/` is the release's
+([website.md](website.md#channels)). The release notes start from GitHub's generated notes (`--generate-notes`):
 edit them into a short list of what changed for users.
 
 ## Schedule

@@ -1,9 +1,10 @@
 <div class="wrap doc-layout">
 	<aside class="doc-side" aria-label="{{ section }}">
-		<p class="eyebrow"><a href="{{ home }}docs/index.html">{{t docs.title}}</a> / {{ section }}</p>
+		<p class="eyebrow"><a href="{{ docs_index }}">{{t docs.title}}</a> / {{ section }}</p>
 		<ul>{{{ side }}}</ul>
 	</aside>
 	<article class="prose doc-body">
+		{{{ channel }}}
 		{{{ fallback }}}
 		{{{ body }}}
 		<nav class="prev-next">{{{ prev_next }}}</nav>

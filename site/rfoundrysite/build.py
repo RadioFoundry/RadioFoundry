@@ -5,6 +5,7 @@
 Layout of the output:
 
   index.html, radios/, features/, flash/, tools/, docs/   pages of the default language
+  nightly/docs/                                           main's user manual, when docs/ has the Stable release's
   <lang>/...                                              the same pages in another language
   data/*.json                                             what the pages and the flasher read (also a public API)
   static/                                                 CSS, scripts, images (shared by every language)
@@ -57,12 +58,15 @@ DOC_ORDER = ("hardware", "install", "codec", "bringup")
 
 
 class Site:
-	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta="", i18n_dir=None):
+	def __init__(self, out, repo_url, ref, firmware=None, strict=False, log=print, beta="", i18n_dir=None, nightly=None,
+		     docs_release=None):
 		self.out = out
 		self.repo_url = repo_url.rstrip("/")
 		self.ref = ref
 		self.firmware = firmware
 		self.beta = beta	# a pre-release newer than the release in firmware (site/cloudflare-build.sh), or ""
+		self.nightly = nightly	# {"sha", "date"} of the nightly tag (channels.py), or None
+		self.docs_release = docs_release	# a directory with the Stable release's docs/, or None
 		self.strict = strict
 		self.log = log
 		self.warnings = []
@@ -174,7 +178,7 @@ class Site:
 			    for f in self.features]
 		return {
 			"site.json": {"format": "rfoundry-site/1", "git": self.git, "version": self.version, "built": self.built,
-				      "release": self.release, "beta": self.beta,
+				      "release": self.release, "beta": self.beta, "nightly": self.nightly,
 				      "branch": self.branch, "repo": self.repo_url, "community": COMMUNITY_URL, "languages": self.i18n.languages, "default_language": self.i18n.default,
 				      "reports": {"sentry_dsn": self.sentry_dsn}, "tool": self.tool},
 			"radios.json": {"radios": radios, "planned": planned},
@@ -194,6 +198,9 @@ class Site:
 		rels = self.repo_url + "/releases"
 		log = rels if self.release else self.repo_url + "/commits/main"
 		line = '<a href="%s">%s</a>' % (html.escape(log), html.escape(self.i18n.t(lang, "footer.changelog")))
+		if self.nightly:
+			line = '<a href="%s/commit/%s">%s</a> · %s' % (html.escape(self.repo_url), html.escape(self.nightly["sha"]),
+				html.escape(self.i18n.t(lang, "footer.nightly", date=self.nightly["date"][:10] or self.nightly["sha"][:8])), line)
 		if self.release:
 			line = '<a href="%s/tag/%s">%s</a> · %s' % (html.escape(rels), html.escape(self.release),
 				html.escape(self.i18n.t(lang, "footer.firmware", version=self.release)), line)
@@ -350,7 +357,9 @@ class Site:
 		if os.path.isdir(self.out):
 			shutil.rmtree(self.out)
 		os.makedirs(self.out)
+		# main's docs, every section: the links of the other pages, and the docs themselves without a Stable tree
 		self.docs = docsmod.Docs(self.repo_url, self.ref, self.i18n.codes, self.i18n.default)
+		self.trees = self.doc_trees()
 		shutil.copytree(repo.path("site", "static"), os.path.join(self.out, "static"))
 		self.version_imports(os.path.join(self.out, "static", "js"))
 		shutil.rmtree(os.path.join(self.out, "static", "img", "radios", "src"), ignore_errors=True)
@@ -369,7 +378,6 @@ class Site:
 			self.write("data/" + name, json.dumps(obj, indent=1, ensure_ascii=False) + "\n")
 		self.copy_firmware()
 		for lang in self.i18n.codes:
-			self.docs_assets(lang)
 			self.home(lang)
 			self.radios_index(lang)
 			for b in self.boards:
@@ -382,6 +390,7 @@ class Site:
 			self.support_pages(lang)
 			self.codeplug_page(lang)
 			self.docs_pages(lang)
+			self.docs_assets(lang)	# after the pages: a Stable page names the files it shows while it renders
 			self.not_found(lang)
 		for b in self.boards:
 			# the drawing with the boot screen in its display; a radio without one: the bare frame
@@ -475,9 +484,10 @@ class Site:
 			self.log("firmware: %d image(s) from %s" % (len(self.releases), self.firmware))
 
 	def docs_assets(self, lang):
-		n = self.docs.copy_assets(os.path.join(self.out, self.i18n.prefix(lang)))
-		if lang == self.i18n.default:
-			self.log("docs: %d pages, %d other files" % (len(self.docs.pages), n))
+		for channel, tree in self.trees:
+			n = tree.copy_assets(os.path.join(self.out, self.i18n.prefix(lang)))
+			if lang == self.i18n.default:
+				self.log("docs%s: %d pages, %d other files" % (" (%s)" % channel if channel else "", len(tree.pages), n))
 
 	def bands(self, lang, b):
 		"""The board's transmit bands, then the receive-only ones its hardware can have: air band AM and broadcast FM
@@ -834,47 +844,140 @@ class Site:
 		"""The privacy note on automatic error reports, on the pages that send them: only when the build has an address."""
 		return self.tpl.partial("error_reports", {}, lang) if self.sentry_dsn else ""
 
+	# the user manual per channel (docs/dev/website.md, Channels): the Stable release's at docs/, main's at
+	# nightly/docs/; every other section is main's, at docs/
+	CHANNEL_SECTION = "user"
+	NIGHTLY = "nightly/"
+
+	def doc_trees(self):
+		"""[(channel, Docs)]: one tree of every section without a Stable release's docs, else Stable's manual, main's
+		other sections and main's manual under nightly/."""
+		if not self.docs_release:
+			return [("", self.docs)]
+		if not self.release:
+			self.warn("--docs-release without release images (--firmware): docs/ shows main's manual")
+			return [("", self.docs)]
+		if not os.path.isdir(os.path.join(self.docs_release, "docs", self.CHANNEL_SECTION)):
+			raise repo.SourceError("--docs-release %s has no docs/%s" % (self.docs_release, self.CHANNEL_SECTION))
+		user, others = [self.CHANNEL_SECTION], [s for s in docsmod.SECTIONS if s != self.CHANNEL_SECTION]
+		mk = lambda ref, **kw: docsmod.Docs(self.repo_url, ref, self.i18n.codes, self.i18n.default, **kw)
+		return [("stable", mk(self.release, root=os.path.abspath(self.docs_release), sections=user, files_prefix="stable/")),
+			("", mk(self.ref, sections=others, elsewhere={self.CHANNEL_SECTION: self.NIGHTLY})),
+			("nightly", mk(self.ref, sections=user, prefix=self.NIGHTLY, elsewhere={s: "" for s in others}))]
+
+	def channel_bar(self, lang, channel, here, other):
+		"""The banner of a channel's manual page: which channel it shows, and a link to the same page in the other one
+		(other: its path in the site, or that manual's index)."""
+		if not channel:
+			return ""
+		labels = {"stable": self.t(lang, "docs.channel.stable", version=self.release),
+			  "nightly": self.t(lang, "docs.channel.nightly")}
+		text = self.t(lang, "docs.channel.%s_text" % channel, version=self.release)
+		pick = []
+		for c in ("stable", "nightly"):
+			if c == channel:
+				pick.append('<strong aria-current="page">%s</strong>' % html.escape(labels[c]))
+			else:
+				pick.append('<a href="%s">%s</a>' % (html.escape(posixpath.relpath(other, here)), html.escape(labels[c])))
+		return ('<div class="notice info channel-bar" role="note"><p>%s</p><p class="channel-pick">%s: %s</p></div>'
+			% (html.escape(text), html.escape(self.t(lang, "docs.channel.label")), " · ".join(pick)))
+
 	def docs_pages(self, lang):
-		prefix = self.i18n.prefix(lang)
+		trees = self.trees
+		at_root = [(c, t) for c, t in trees if not t.prefix]
 		sections = []
 		for sec in docsmod.SECTIONS:
-			pages = self.docs.section_pages(sec)
-			if not pages:
-				continue
-			links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(self.docs.title_for(p, lang)))
-					for p in pages)
-			sections.append(self.tpl.partial("docs_section", {
-				"title": self.t(lang, "docs.section." + sec), "blurb": self.t(lang, "docs.blurb." + sec),
-				"links": links}, lang))
+			for channel, tree in at_root:
+				pages = tree.section_pages(sec)
+				if not pages:
+					continue
+				links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(tree.title_for(p, lang)))
+						for p in pages)
+				sections.append(self.tpl.partial("docs_section", {
+					"title": self.t(lang, "docs.section." + sec), "blurb": self.t(lang, "docs.blurb." + sec),
+					"links": links}, lang))
 		self.page(lang, "docs/index.html", self.t(lang, "docs.title"),
-			  self.tpl.render("docs_index", {"sections": "".join(sections)}, lang), "docs", nav="docs")
-		for sec in docsmod.SECTIONS:
-			pages = self.docs.section_pages(sec)
-			for i, p in enumerate(pages):
-				if p["out"] == "docs/index.html":
-					continue	# docs/README.md, if one appears, would shadow the docs home
-				body, toc, fallback = self.docs.render(p, lang)
-				here = posixpath.dirname(p["out"])
-				side = "".join('<li><a href="%s"%s>%s</a></li>' % (
-					posixpath.relpath(q["out"], here), ' aria-current="page"' if q is p else "",
-					html.escape(self.docs.title_for(q, lang))) for q in pages)
-				toc_html = "".join('<li class="l%d"><a href="#%s">%s</a></li>' % (lvl, hid, html.escape(text))
-						   for lvl, hid, text in toc)
-				prev_next = ""
-				if sec == "user":
-					prev = pages[i - 1] if i > 0 else None
-					nxt = pages[i + 1] if i + 1 < len(pages) else None
-					prev_next = "".join('<a class="%s" href="%s">%s</a>' % (cls, posixpath.relpath(q["out"], here),
-										 html.escape(self.docs.title_for(q, lang)))
-						    for cls, q in (("prev", prev), ("next", nxt)) if q)
-				ctx = {"body": body, "side": side, "toc": toc_html, "section": self.t(lang, "docs.section." + sec),
-				       "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]), "prev_next": prev_next,
-				       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
-				       if fallback else ""}
-				if fallback:	# the default language's text on another language's page: say so to browsers and readers
-					ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
-				self.page(lang, p["out"], self.docs.title_for(p, lang), self.tpl.render("doc", ctx, lang), "doc",
-					  nav="docs")
+			  self.tpl.render("docs_index", {"sections": "".join(sections),
+							 "channel": self.channel_bar(lang, "stable" if len(trees) > 1 else "", "docs",
+										 self.NIGHTLY + "docs/index.html")}, lang),
+			  "docs", nav="docs")
+		# a page of one channel's manual that the other lacks: the switch goes to its index
+		outs = {c: {p["out"] for p in t.pages} for c, t in trees}
+		def counterpart(channel, out):
+			if channel == "stable":
+				o = self.NIGHTLY + out
+				return o if o in outs["nightly"] else self.NIGHTLY + "docs/index.html"
+			if channel == "nightly":
+				o = out[len(self.NIGHTLY):]
+				return o if o in outs["stable"] else "docs/index.html"
+			return None
+		for channel, tree in trees:
+			if tree.prefix:
+				self.nightly_index(lang, tree)
+			for sec in docsmod.SECTIONS:
+				self.doc_section(lang, channel, tree, sec, counterpart)
+		if len(trees) > 1:
+			self.new_in_nightly(lang, outs)
+
+	def doc_section(self, lang, channel, tree, sec, counterpart):
+		pages = tree.section_pages(sec)
+		index = tree.prefix + "docs/index.html"
+		for i, p in enumerate(pages):
+			if p["out"] == index:
+				continue	# docs/README.md, if one appears, would shadow the docs home
+			body, toc, fallback = tree.render(p, lang)
+			here = posixpath.dirname(p["out"])
+			side = "".join('<li><a href="%s"%s>%s</a></li>' % (
+				posixpath.relpath(q["out"], here), ' aria-current="page"' if q is p else "",
+				html.escape(tree.title_for(q, lang))) for q in pages)
+			toc_html = "".join('<li class="l%d"><a href="#%s">%s</a></li>' % (lvl, hid, html.escape(text))
+					   for lvl, hid, text in toc)
+			prev_next = ""
+			if sec == "user":
+				prev = pages[i - 1] if i > 0 else None
+				nxt = pages[i + 1] if i + 1 < len(pages) else None
+				prev_next = "".join('<a class="%s" href="%s">%s</a>' % (cls, posixpath.relpath(q["out"], here),
+									 html.escape(tree.title_for(q, lang)))
+					    for cls, q in (("prev", prev), ("next", nxt)) if q)
+			ctx = {"body": body, "side": side, "toc": toc_html, "section": self.t(lang, "docs.section." + sec),
+			       "source": "%s/blob/%s/%s" % (self.repo_url, tree.ref, p["src"]), "prev_next": prev_next,
+			       "docs_index": posixpath.relpath(index, here),
+			       "channel": self.channel_bar(lang, channel, here, counterpart(channel, p["out"])),
+			       "fallback": ('<p class="notice">%s</p>' % html.escape(self.t(lang, "docs.fallback")))
+			       if fallback else ""}
+			if fallback:	# the default language's text on another language's page: say so to browsers and readers
+				ctx["body"] = '<div lang="%s">%s</div>' % (self.i18n.default, body)
+			self.page(lang, p["out"], tree.title_for(p, lang), self.tpl.render("doc", ctx, lang), "doc", nav="docs")
+
+	def nightly_index(self, lang, tree):
+		"""nightly/docs/index.html: main's user manual, and the way to the other sections."""
+		pages = tree.section_pages(self.CHANNEL_SECTION)
+		links = "".join('<li><a href="{{home}}%s">%s</a></li>' % (p["out"], html.escape(tree.title_for(p, lang)))
+				for p in pages)
+		card = self.tpl.partial("docs_section", {"title": self.t(lang, "docs.section." + self.CHANNEL_SECTION),
+							 "blurb": self.t(lang, "docs.blurb." + self.CHANNEL_SECTION), "links": links}, lang)
+		self.page(lang, self.NIGHTLY + "docs/index.html", self.t(lang, "docs.title"),
+			  self.tpl.render("docs_index", {"sections": card, "channel": self.channel_bar(
+				  lang, "nightly", self.NIGHTLY + "docs", "docs/index.html")}, lang), "docs", nav="docs")
+
+	def new_in_nightly(self, lang, outs):
+		"""A page main's manual has and the Stable release's lacks: a short page at its Stable address that points to
+		the Nightly one, so every link to docs/user/ (radio pages, the flasher, the other sections) finds a page."""
+		nightly = dict(self.trees)["nightly"]
+		for p in nightly.pages:
+			o = p["out"][len(self.NIGHTLY):]
+			if o in outs["stable"] or o == "docs/index.html":
+				continue
+			here = posixpath.dirname(o)
+			title = self.t(lang, "docs.channel.new_title")
+			body = '<h1>%s</h1><p>%s</p><p><a href="%s">%s</a></p>' % (
+				html.escape(title), html.escape(self.t(lang, "docs.channel.new_text", version=self.release)),
+				html.escape(posixpath.relpath(p["out"], here)), html.escape(self.t(lang, "docs.channel.new_link")))
+			ctx = {"body": body, "side": "", "toc": "", "section": self.t(lang, "docs.section." + p["section"]),
+			       "prev_next": "", "source": "%s/blob/%s/%s" % (self.repo_url, self.ref, p["src"]),
+			       "docs_index": posixpath.relpath("docs/index.html", here), "fallback": "",
+			       "channel": self.channel_bar(lang, "stable", here, p["out"])}
+			self.page(lang, o, title, self.tpl.render("doc", ctx, lang), "doc", nav="docs")
 
 	def not_found(self, lang):
 		"""404.html in each language's tree: Pages serves the one nearest the missing address (/es/x: es/404.html)."""
