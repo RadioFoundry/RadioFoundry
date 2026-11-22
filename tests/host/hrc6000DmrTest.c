@@ -1472,6 +1472,51 @@ static void test_rx_bs_direct_call(void)
 	}
 	CHECK(ms_voices == 96 && changes == 0);
 
+	// The same stream with each idle reported again in the next (empty) slot, as the chip repeats a status report: a
+	// repeated BS idle is delivered (dedup exempts them), so it comes in the slot after its own. Two BS bursts in a row
+	// with the same TC are one burst seen twice, not a CACH: the call's bursts must keep one label
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int i = 0; i < 6 + n; i++) {
+		uint8_t tc = 0;
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			if (half == 0) {
+				tc = (uint8_t)((junk >> 20) & 0x04);
+			}
+			if (i < 6) {
+				report_at(t + 3500, 0x92, (uint8_t)(0x20 | tc), 0xF1);	// idle, BS data sync; again in the next slot
+			} else if (half == 1) {
+				report_at(t + 3500, 0x00, (uint8_t)(0x20 | tc), 0xF0);
+			} else {
+				report_at(t + 3500, seq[i - 6], (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	ms_voices = 0;
+	changes = 0;
+	first_ts = -1;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (first_ts < 0) {
+				first_ts = bursts[i].ts;
+			}
+			changes += bursts[i].ts != first_ts;
+			ms_voices++;
+		}
+	}
+	if (!(ms_voices == 96 && changes == 0 && !eng.cach_seen)) {
+		printf("repeated bs idles then ms call: voices %d label changes %d cach %d\n", ms_voices, changes,
+		       eng.cach_seen);
+	}
+	CHECK(ms_voices == 96 && changes == 0 && !eng.cach_seen);
+
 	// The same simplex channel hearing a base station on both slots: its idles carry the CACH, so they are numbered
 	fresh_engine();
 	hrc6000_dmr_configure(&eng, &cfg);

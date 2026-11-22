@@ -93,6 +93,7 @@
 #define CC_TICK_QUIET		4u	// ... while no burst was taken for this many ticks
 #define TC_STABLE		4u	// more than this many agreements
 #define TC_RESYNC		3u	// more than this many disagreements
+#define CACH_RUN		4u	// BS-sync bursts in slots in a row with the TC alternating: a CACH on air (the HR_C7000's TC_LOCK)
 #define BS_RECENT_TICKS		40u
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
@@ -392,9 +393,10 @@ static bool rmo(const hrc6000_dmr_t *e)
 }
 
 // A CACH to read the TC and short LC from: a base station keys both slots, so its BS-sync bursts come in slots in a
-// row. A direct mode sender with BS sync (a simplex hotspot) keys every other slot with no CACH: 0x52 then holds junk,
-// and slot labels taken from it flipped mid-call (issue 910). The HR_C7000 driver also locks its TC only on BS
-// bursts in a row
+// row with the TC alternating. A direct mode sender with BS sync (a simplex hotspot) keys every other slot with no
+// CACH: 0x52 then holds junk, and slot labels taken from it flipped mid-call (issue 910). The chip also reports a
+// burst again in the next slot, and a repeated BS idle is delivered (dedup exempts them), so two slots in a row alone
+// prove nothing: the same TC twice is one burst seen twice. The HR_C7000 driver locks its TC the same way (TC_LOCK)
 static bool cach_on_air(const hrc6000_dmr_t *e)
 {
 	return e->cfg.repeater || (rmo(e) && e->cach_seen);
@@ -416,6 +418,7 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->at_tick[0] = 0;
 	e->at_tick[1] = 0;
 	e->bs_slot_valid = false;
+	e->bs_run = 0;
 	e->cach_seen = false;
 }
 
@@ -1297,7 +1300,13 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	if (bs) {
 		e->bs_tick = e->tick;
 		e->rmo_seen = true;
-		if (!e->cach_seen && e->bs_slot_valid && tick - 1u - e->bs_slot == 1u) {
+		uint32_t gap = tick - 1u - e->bs_slot;
+		if (!e->bs_slot_valid || gap != 0u) {	// a second report of the same slot changes nothing
+			bool next = e->bs_slot_valid && gap == 1u && s->tc != e->bs_tc;
+			e->bs_run = next ? (uint8_t)(e->bs_run < CACH_RUN ? e->bs_run + 1u : CACH_RUN) : 1u;
+		}
+		e->bs_tc = s->tc;
+		if (!e->cach_seen && e->bs_run >= CACH_RUN) {
 			e->cach_seen = true;
 			if (!e->cfg.repeater) {
 				e->phase_ts[0] = 0;	// direct mode guesses (below): the TC numbers the slots from now on
@@ -2147,6 +2156,7 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->pa_on = false;
 	e->rmo_seen = false;
 	e->bs_slot_valid = false;
+	e->bs_run = 0;
 	e->cach_seen = false;
 	e->reg40 = L2_PASSIVE;
 	e->sync_cur = DMR_SYNC_MS;

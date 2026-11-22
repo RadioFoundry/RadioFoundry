@@ -257,7 +257,9 @@ typedef struct {
 	bool rmo_seen;
 	uint32_t bs_slot;	// slot of the last BS-sync burst taken (bs_slot_valid)
 	bool bs_slot_valid;
-	bool cach_seen;		// BS-sync bursts in two slots in a row since the timing was acquired: a CACH is on air
+	uint8_t bs_tc;		// its CACH TC bit
+	uint8_t bs_run;		// BS-sync bursts in slots in a row with the TC alternating, up to CACH_RUN
+	bool cach_seen;		// a run of CACH_RUN since the timing was acquired: a CACH is on air
 
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
