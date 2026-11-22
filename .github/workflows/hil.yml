@@ -129,6 +129,7 @@ jobs:
     timeout-minutes: 480   # overnight: the standard tier on every bench radio, one after another
     permissions:
       contents: write   # moves the tag nightly
+      actions: write    # asks site.yml to rebuild the site for it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
@@ -196,10 +197,16 @@ jobs:
         if: steps.pick.outputs.run == 'true'
         env:
           SHA: ${{ steps.pick.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           git tag -f nightly "$SHA"
           git push -q --force origin refs/tags/nightly   # a tag that follows the last pass, as nightly-ci does
           echo "::notice::nightly -> ${SHA::8}"
+          # a tag pushed with this job's token starts no workflow, so site.yml's tag trigger won't fire: a
+          # workflow_dispatch is the one event the token may start
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/site.yml/dispatches" -d '{"ref":"main"}' ||
+            echo "::warning::could not ask site.yml to rebuild: the site shows the new nightly after its next build"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         if: always()
