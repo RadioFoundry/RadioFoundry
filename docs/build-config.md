@@ -250,6 +250,10 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
 
 ## Adding a feature
 
+A feature gets its own switch when it costs at least 2 KB of flash, real RAM, or hardware some radios lack, and a
+user could want it off. A sub-feature needs its own user reason. Otherwise its code is part of the parent feature
+and needs no switch: each switch is a build per board in CI and a question in web Update.
+
 1. Add the switch with a comment and its default to `config/features.mk`, to `FEATURES`, and to the dependency checks.
 2. Add the default and the checks to `core/config.h`.
 3. Guard the code, and leave a directory out in the Makefile when the whole directory belongs to the feature.
@@ -263,3 +267,18 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+## Removing or renaming a switch
+
+A radio's build names its switches (VERSION `off=` and `features=`, a release's manifest, the build service's record)
+long after a switch is gone. Every switch that leaves `FEATURES` gets an entry in `config/switch-history.toml`:
+
+| Entry | Means | Web Update |
+|---|---|---|
+| `renamed = "NEW"` | the switch goes on as `NEW` | a build that had it off has `NEW` off |
+| `into = "PARENT"` | part of `PARENT` now | on wherever `PARENT` is on: a build that had only this one off gets it back |
+| `always = true` | part of every build | nothing to ask |
+
+`tools/boards.py check` fails when a switch leaves `config/features.mk` (against the parent commit and `origin/main`)
+without an entry, or when an entry names a switch that is still there. The site carries the entries in
+`features.json` (`history`). Entries stay: a radio can run a build from before the removal for years.

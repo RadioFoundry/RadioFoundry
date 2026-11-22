@@ -420,6 +420,15 @@ def releases(dist):
 	return out
 
 
+def switch_history():
+	"""config/switch-history.toml's removed switches, {name: {renamed | into | always}}: what a name an older build
+	carries means now (web Update maps a radio's off= and features= through it)."""
+	import tomllib
+	with open(path("config", "switch-history.toml"), "rb") as f:
+		removed = tomllib.load(f).get("removed", {})
+	return {n: {k: v for k, v in e.items() if k in ("renamed", "into", "always")} for n, e in sorted(removed.items())}
+
+
 def reported_features():
 	"""The switches a radio running RadioFoundry names in its VERSION features= list (core/hostlink/build_info.c): an
 	installer matches that list against the releases to tell which build an older radio runs."""

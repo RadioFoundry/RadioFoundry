@@ -393,7 +393,7 @@ async function loadData() {
 	// repository texts in the page's language where the catalog overrides them (feature.<SWITCH>.*, variant.<id>.*)
 	const feats = features.features.map((f) => ({ ...f, title: tOr(`feature.${f.name}.title`, f.title), help: tOr(`feature.${f.name}.help`, f.help) }));
 	const vars = variants.variants.map((v) => ({ ...v, title: tOr(`variant.${v.id}.title`, v.title), summary: tOr(`variant.${v.id}.summary`, v.summary) }));
-	return { radios: radios.radios, features: feats, groups: features.groups, reported: features.reported || [],
+	return { radios: radios.radios, features: feats, groups: features.groups, reported: features.reported || [], history: features.history || {},
 		variants: vars, fb, releases: releases.releases, site };
 }
 
@@ -957,7 +957,7 @@ async function connectForUpdate(status) {
 		await codecFromRadio(S.link, p, status);
 	}
 	const record = await buildRecord(p, r);
-	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record);
+	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record, S.data.history);
 	S.decided = {};
 	planUpdate(S.current, S.selection, S.decided);
 	// a build the radio doesn't say: the build step, starting from the closest variant
