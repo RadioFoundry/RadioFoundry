@@ -1205,7 +1205,7 @@ Feature switches that differ from the platform's defaults (`config.mk`; the two 
 | Off by default | Why |
 |---|---|
 | `NET_PPP` (maximal build too: `MAXIMAL_SKIP`) | the radio has the USB network adapter; PPP is for radios with only a UART |
-| `LANG_ES` and what follows it | English only |
+| `LANG_ES` and what follows it (maximal build too, with `LANG_IT`, `LANG_FR`, `LANG_ZH`: `MAXIMAL_SKIP`) | English only |
 | `UI_COLOR`, `FONT_XL`, `FONT_AA`, `FONT_BIG`, `AM_RX`, `BCAST_FM`, `VIBRATE`, `NAND_STORAGE`, `FAULT_TRACE` (maximal build too: `BOARD_UNSUPPORTED`) | a 128x64 monochrome screen; no air band or broadcast receiver; no vibration motor; NOR data flash; no UART for a fault trace |
 
 ### 19.11 Air interface (`CONFIG_P25`, `CONFIG_NXDN`)

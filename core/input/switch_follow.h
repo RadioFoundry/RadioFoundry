@@ -8,7 +8,8 @@
 // keeps refusing while it could take one (a channel it can't read) is given up after SWITCH_FOLLOW_ASKS asks, since
 // every ask stops a scan and an APRS transmission and resets the battery saver. Then it leaves the radio alone until
 // the knob moves or the zone changes (another zone, or the same one with another size after a codeplug write), so a
-// scan stands. Pure, for the host test.
+// scan stands. A host that picks the zone and position (core/net/radio_udp.c) holds it: the radio is left on the
+// host's choice, in that zone too, until the knob moves (switch_follow_hold). Pure, for the host test.
 #ifndef INPUT_SWITCH_FOLLOW_H
 #define INPUT_SWITCH_FOLLOW_H
 
@@ -17,6 +18,7 @@
 
 #define SWITCH_FOLLOW_RETRY_MS	250u
 #define SWITCH_FOLLOW_ASKS	4u	// asks again while the radio could take the position
+#define SWITCH_HOLD_MS		2000u	// a hold waits this long for the radio to reach the host's zone
 
 typedef enum {
 	SWITCH_IDLE,	// nothing to do
@@ -32,6 +34,9 @@ typedef struct {
 	uint16_t zone;
 	uint16_t size;
 	uint32_t checked_ms;
+	bool hold;		// a host chose the zone and position: leave them until the knob moves
+	uint16_t hold_zone;
+	uint32_t hold_ms;
 } switch_follow_t;
 
 static inline void switch_follow_init(switch_follow_t *f)
@@ -43,6 +48,19 @@ static inline void switch_follow_init(switch_follow_t *f)
 	f->zone = 0;
 	f->size = 0;
 	f->checked_ms = 0;
+	f->hold = false;
+	f->hold_zone = 0;
+	f->hold_ms = 0;
+}
+
+// A host asked for a channel in zone (a select or a step): the knob's position isn't asked for there, and the zone
+// change it brings doesn't count as one, until the knob moves
+static inline void switch_follow_hold(switch_follow_t *f, uint16_t zone, uint32_t now_ms)
+{
+	f->hold = true;
+	f->hold_zone = zone;
+	f->hold_ms = now_ms;
+	f->pending = false;
 }
 
 // Each scan, with the switch's settled position (-1: none)
@@ -52,6 +70,7 @@ static inline switch_step_t switch_follow_step(switch_follow_t *f, int8_t pos, u
 		return SWITCH_IDLE;
 	}
 	if (pos != f->want) {
+		f->hold = false;	// the knob moved: it wins again
 		f->want = pos;
 		f->pending = true;
 		f->asks = 0;
@@ -72,6 +91,19 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 {
 	if (zone_size == 0) {
 		return false;	// nothing loaded yet: pending stays as it is
+	}
+	if (f->hold) {
+		if (zone != f->hold_zone && (f->checked_ms - f->hold_ms) < SWITCH_HOLD_MS) {
+			return false;	// the radio isn't in the host's zone yet
+		}
+		f->hold = false;
+		if (zone == f->hold_zone) {
+			f->zone = zone;	// the host's zone is the one the knob's choice was made for: no zone change
+			f->size = zone_size;
+			f->zone_known = true;
+			f->pending = false;
+			return false;
+		}
 	}
 	if (f->zone_known && (zone != f->zone || zone_size != f->size)) {
 		f->pending = true;	// a position given up as past the end may fit now

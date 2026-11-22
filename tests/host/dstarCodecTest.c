@@ -18,8 +18,9 @@
  *   silence, a tone's level, the concealment of bad frames (fading repeats, comfort noise, then mute), full-scale input
  * Frame FEC (dstar_ambe_frame.c): every field through a frame and back, Golay correction and detection in C0 and C1,
  *   C1's data when it failed, the unprotected bits, and the air bit order proved on the standard's lost-packet frame
- * Leveler (dstar_mbe_level.c): a 16 dB step at the input, up and down, comes out within 2 dB, and a loud onset after
- *   quiet speech is capped at once, through the encoder and the decoder
+ * Leveler (dstar_mbe_level.c): a 16 dB step at the input, up and down, comes out within 2 dB; extra bass doesn't turn
+ *   the speech band down; the decoded speech band sits at the pinned target; and a loud onset after quiet speech is
+ *   capped at once, through the encoder and the decoder
  * Codec (dstar_codec.c): the vocoder interface, the direction switch, the bad-frame rule (C0 failed, a doubtful frame
  *   after a loss) and the concealment on failed and lost frames, the error count, tone frames
  *
@@ -1361,9 +1362,12 @@ static void test_frame_whitening(void)
 	printf("  whitening: all 4096 seeds give the spec's 24-step sequence, 24th on W1's parity bit\n");
 }
 
-// The DVSI match (dstar_mbe_analysis.c), on by default: a harmonic signal's log magnitudes spread 0.6 times as much
-// about their mean as measured, at the same power; white noise (all unvoiced) is sent at b0 34; a 60 Hz buzz is not
-// coded above b0 119
+// The DVSI match (dstar_mbe_analysis.c), on by default: a harmonic signal's log magnitudes come out as 0.6 times their
+// spread about the mean as measured, plus DVSI's balance for the harmonic's 500 Hz band (on since 21 Nov: -5.2 +0.3
+// +1.8 +2.1 +1.4 +1.6 -1.7 -4.9 dB, the 9700's frames against ours on the same audio), plus one shift for the whole
+// frame, at the same power; white noise (all unvoiced) is sent at b0 34; a 60 Hz buzz is not coded above b0 119.
+// Before the balance this checked the spread ratio alone (0.6); with it the ratio is no longer 0.6 (0.673 on this
+// signal), so the check is the whole model's residual, as the research codec's test_dvsi has it
 static void dvsi_params(int full_depth, double f0, int noise, dstar_ambe_params_t *last)
 {
 	dstar_mbe_ana_init(&ana);
@@ -1385,25 +1389,37 @@ static void dvsi_params(int full_depth, double f0, int noise, dstar_ambe_params_
 
 static void test_dvsi(void)
 {
+	static const double eq_db[8] = { -5.2, 0.3, 1.8, 2.1, 1.4, 1.6, -1.7, -4.9 };
 	dstar_ambe_params_t a, b;
 	dvsi_params(1, 125, 0, &a);
 	dvsi_params(0, 125, 0, &b);
-	double ma = 0, mb = 0, sa = 0, sb = 0, pa = 0, pb = 0;
-	for (int l = 1; l <= a.L; ++l) {
+	double ma = 0, pa = 0, pb = 0, r[DSTAR_AMBE_MAX_L + 1], rm = 0, rs = 0, lo = 0, hi = 0;
+	int nlo = 0, nhi = 0;
+	for (int l = 1; l <= a.L; ++l)
 		ma += a.log2_amp[l] / 4096.0 / a.L;
-		mb += b.log2_amp[l] / 4096.0 / b.L;
-	}
 	for (int l = 1; l <= a.L; ++l) {
 		double x = a.log2_amp[l] / 4096.0, y = b.log2_amp[l] / 4096.0;
-		sa += (x - ma) * (x - ma);
-		sb += (y - mb) * (y - mb);
+		int k = (int)((l * a.f0_q24) >> 20);
+		k = k > 7 ? 7 : k;
+		r[l] = y - (0.6 * (x - ma) + eq_db[k] / 6.0206);
+		rm += r[l] / a.L;
 		pa += pow(2, 2 * x);
 		pb += pow(2, 2 * y);
+		// the balance's own effect, by band: matched minus 0.6 x measured, below 500 Hz and at 1-3 kHz
+		if (k == 0)
+			lo += 6.0206 * (y - 0.6 * (x - ma)), nlo++;
+		else if (k >= 2 && k <= 5)
+			hi += 6.0206 * (y - 0.6 * (x - ma)), nhi++;
 	}
-	double ratio = sqrt(sb / sa), dp = 10 * log10(pb / pa);
-	CHECK(a.L == b.L && fabs(ratio - 0.6) < 0.02 && fabs(dp) < 0.3,
-	      "DVSI shape: L %d/%d, spread ratio %.3f, power %+.2f dB", a.L, b.L, ratio, dp);
-	printf("  DVSI match: shape spread ratio %.3f, power %+.2f dB\n", ratio, dp);
+	for (int l = 1; l <= a.L; ++l)
+		rs += (r[l] - rm) * (r[l] - rm) / a.L;
+	double res = sqrt(rs), dp = 10 * log10(pb / pa), tilt = lo / nlo - hi / nhi;
+	CHECK(a.L == b.L && res < 0.01 && fabs(dp) < 0.3, "DVSI match: L %d/%d, residual %.4f log2, power %+.2f dB", a.L,
+	      b.L, res, dp);
+	// at least the 5 dB cut below 500 Hz against the speech band the measurement asked for
+	CHECK(tilt < -6.0, "DVSI balance: below 500 Hz only %+.2f dB against 1-3 kHz", tilt);
+	printf("  DVSI match: 0.6 x measured + band balance within %.4f log2, power %+.2f dB; below 500 Hz %+.1f dB "
+	       "against 1-3 kHz\n", res, dp, tilt);
 	dvsi_params(0, 0, 1, &b);
 	CHECK(b.f0_q24 == dstar_mbe_f0_q24[34], "DVSI: white noise at f0 %u, not b0 34's", b.f0_q24);
 	dvsi_params(0, 60, 0, &b);
@@ -1616,6 +1632,8 @@ static int16_t lv_in[LV_FRAMES * 160];
 static uint8_t lv_frames[LV_FRAMES][DSTAR_VOICE_BYTES];
 static int16_t lv_out[LV_FRAMES * 160];
 
+static double lv_bass_db;	// added to the voice's two lowest harmonics (120 and 240 Hz): a bass-heavy voice or mic
+
 static void lv_syllables(double db1, double db2, int step, double onset_db)
 {
 	double ph[32] = { 0 };
@@ -1630,7 +1648,7 @@ static void lv_syllables(double db1, double db2, int step, double onset_db)
 		double f0 = 120 * (1 + 0.03 * sin(2 * M_PI * 3 * i / 8000.0)), v = 0;
 		for (int h = 1; h < 32 && h * f0 < 3800; ++h) {
 			ph[h] += 2 * M_PI * h * f0 / 8000;
-			v += cos(ph[h]) / h;
+			v += cos(ph[h]) / h * (h <= 2 ? pow(10, lv_bass_db / 20) : 1);
 		}
 		v = 2000 * pow(10, db / 20) * env * v + 3 * gauss();
 		lv_in[i] = (int16_t)fmax(-32767, fmin(32767, v));
@@ -1655,6 +1673,26 @@ static double lv_db(const int16_t *x, int end, int cycles)
 	double e = 0;
 	for (long i = (long)(end - cycles * LV_CYCLE) * 160; i < end * 160L; ++i)
 		e += (double)x[i] * x[i];
+	return 10 * log10(e / (cycles * LV_CYCLE * 160.0) + 1e-9);
+}
+
+// Power of x between lo and hi Hz over n whole syllable cycles ending at frame end, dB: a Hann-windowed 160-point DFT a
+// frame (50 Hz bins, both band edges included), one-sided, scaled by the window's power so a band covering everything
+// gives about lv_db's figure. The window matters: unwindowed, a strong 240 Hz harmonic leaks into 1-3.4 kHz enough to
+// move that band 3.7 dB on its own
+static double lv_band_db(const int16_t *x, int end, int cycles, int lo, int hi)
+{
+	double e = 0;
+	for (long f = end - cycles * LV_CYCLE; f < end; ++f)
+		for (int k = lo / 50; k <= hi / 50; ++k) {
+			double re = 0, im = 0;
+			for (int n = 0; n < 160; ++n) {
+				double a = 2 * M_PI * k * n / 160, w = 0.5 - 0.5 * cos(2 * M_PI * n / 160);
+				re += w * x[f * 160 + n] * cos(a);
+				im -= w * x[f * 160 + n] * sin(a);
+			}
+			e += (k == 0 || k == 80 ? 1 : 2) * (re * re + im * im) / (160 * 0.375);	// 0.375: mean of w^2
+		}
 	return 10 * log10(e / (cycles * LV_CYCLE * 160.0) + 1e-9);
 }
 
@@ -1685,6 +1723,56 @@ static void test_level_step(void)
 	}
 	CHECK(fabs(first[0] - first[1]) <= 2.0, "leveler: inputs 16 dB apart come out %.2f dB apart",
 	      fabs(first[0] - first[1]));
+}
+
+// The leveler sets the gain from the speech band (21 Nov 2026, dstar_mbe_level.c): Icom handhelds played us quietly
+// because our level sat below 500 Hz, which their speakers don't reproduce, and a full-band measure let that bass turn
+// the speech down. The same voice twice, the second with its two lowest harmonics (120, 240 Hz) 12 dB louder: the
+// input's 1-3.4 kHz band is unchanged and its full band 11 dB up. The 19 Nov leveler cut the decoded 1-3.4 kHz band
+// 12.4 dB for it; now it moves under 3 dB. Not to 0: the weighting is a gentle (f / 500)^2, so the 240 Hz harmonic
+// still counts at -6.4 dB, and the DVSI match, with the frame's power kept, lifts the upper harmonics as the bass
+// rises (+6.4 dB in that band with the leveler off)
+static void test_level_speech_band(void)
+{
+	const int end = LV_FRAMES - 3;
+	double in_sb[2], in_fb[2], sb[2];
+	for (int bass = 0; bass < 2; ++bass) {
+		lv_bass_db = bass ? 12 : 0;
+		lv_syllables(0, 0, LV_FRAMES / 2, 0);
+		in_sb[bass] = lv_band_db(lv_in, LV_FRAMES, 6, 1000, 3400);
+		in_fb[bass] = lv_db(lv_in, LV_FRAMES, 6);
+		lv_round_trip(0);
+		sb[bass] = lv_band_db(lv_out, end, 6, 1000, 3400);
+	}
+	lv_bass_db = 0;
+	CHECK(fabs(in_sb[1] - in_sb[0]) < 0.5 && in_fb[1] - in_fb[0] > 6, "bass boost: the test's input is wrong (speech "
+	      "band %+.2f dB, full band %+.2f dB)", in_sb[1] - in_sb[0], in_fb[1] - in_fb[0]);
+	CHECK(fabs(sb[1] - sb[0]) <= 3.0, "leveler: 12 dB more bass moves the decoded 1-3.4 kHz band %+.2f dB",
+	      sb[1] - sb[0]);
+	printf("  leveler: 12 dB more bass (input full band %+.1f dB) moves the decoded 1-3.4 kHz band %+.2f dB\n",
+	       in_fb[1] - in_fb[0], sb[1] - sb[0]);
+}
+
+// Where the leveler puts speech, decoded by our decoder, in the 1-3.4 kHz band: pinned, so each step is made on
+// purpose. The 19 Nov target and full-band measure put the test's voice at LV_SB_19NOV. 21 Nov: the target 6 dB up
+// (LV_LOUDER), and the speech-band measure and the DVSI balance's 5 dB cut below 500 Hz stop this voice's bass (its
+// two lowest harmonics carry most of its power) holding it down, which on this bass-heavy synthetic voice is worth
+// another 6 dB: LV_SB_21NOV, 12 dB up. The next step of the target (DB(12)) moves this 6 dB more. Within 1 dB at the
+// three input levels the step test uses, so it is the leveler's level, not the input's
+#define LV_SB_19NOV	57.1	// dB, our decoder's int16 samples squared
+#define LV_SB_21NOV	69.1
+static void test_level_target(void)
+{
+	const int end = LV_FRAMES - 3;
+	for (int in = -8; in <= 8; in += 8) {
+		lv_syllables(in, in, LV_FRAMES / 2, 0);
+		lv_round_trip(0);
+		double sb = lv_band_db(lv_out, end, 6, 1000, 3400);
+		CHECK(fabs(sb - LV_SB_21NOV) <= 1.0, "leveler: input %+d dB, 1-3.4 kHz at %.2f dB, not %.1f", in, sb,
+		      LV_SB_21NOV);
+		printf("  leveler: input %+d dB, 1-3.4 kHz band out at %.2f dB (%+.1f dB over the 19 Nov target's)\n", in,
+		       sb, sb - LV_SB_19NOV);
+	}
 }
 
 // A loud onset is capped at once: after eight seconds of quiet speech (the leveler's gain raised for it), one syllable
@@ -1754,6 +1842,8 @@ int main(void)
 	test_frame_golay_patterns();
 	test_frame_whitening();
 	test_level_step();
+	test_level_speech_band();
+	test_level_target();
 	test_level_onset();
 	test_codec_interface();
 	test_codec_bad_frames();

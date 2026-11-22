@@ -79,8 +79,8 @@ plays silence and resets.
 | Refinement | a 256-point FFT of that frame (221-point Hamming window); the pitch refined to 1/8 sample by fitting harmonics |
 | Voicing | per 1 kHz pair of bands (the voicing field's resolution): the fit's residual against a measured white-noise baseline, scaled by the low band's periodicity and its loudness against the upper bands |
 | Magnitudes | f0 snapped to the D-STAR pitch grid, band energies measured at those harmonics, converted to mbelib's log2 magnitude scale (derived, not swept: `dstar_mbe_analysis.h`); unvoiced bands in DVSI's convention, a spectral density (4), 4.5 dB over it |
-| DVSI match | each frame's log magnitudes compressed to 0.6 about their mean, the frame's power kept; all-unvoiced frames sent at b0 34, voiced pitch never above b0 119 (below) |
-| Level | `dstar_mbe_level`: one gain added to every log magnitude, so speech goes out at one level whatever the microphone's, and no frame over a ceiling 10 dB above it (below) |
+| DVSI match | each frame's log magnitudes compressed to 0.6 about their mean plus DVSI's balance per 500 Hz band (-5.2 dB below 500 Hz, +1.4 to +2.1 dB at 1-3 kHz), the frame's power kept; all-unvoiced frames sent at b0 34, voiced pitch never above b0 119 (below) |
+| Level | `dstar_mbe_level`: one gain added to every log magnitude, so speech goes out at one level in the speech band (below 500 Hz weighted down) whatever the microphone's, and no frame over a ceiling 10 dB above it (below) |
 
 **Matching a DVSI encoder.** Our frames were coded correctly to the bit, yet an Icom ID-51 (a DVSI decoder) played them
 audibly but unintelligibly, while it plays an IC-9700's DVSI frames fine. Read with mbelib's tables, DVSI frames have a
@@ -90,8 +90,12 @@ ours. On the ID-51 (18 Nov 2026, real male speech, one listener): full depth 3-4
 voice); 0.5, 0.55 and 0.6 with power kept 4, a little better, and 5 out of 5, and the operator's own voice at 0.6
 "wasn't bad"; without the power kept, intelligible but quiet. The decoder puts depth back (4), by 1/0.73 rather than the
 exact inverse. The factor is one
-number for every band for now (`dvsi_shape_q12`, per 500 Hz band); comparing the same audio through an IC-9700 and
-through us frame by frame is to replace it with a measured curve. The pitch conventions are what every IC-9700 frame
+number for every band (`dvsi_shape_q12`, per 500 Hz band): comparing the same audio through an IC-9700 and through us
+frame by frame (18 Nov) found the compression the same in every band, and a balance across the bands on top of it
+(`dvsi_eq_q12`), left off at first. It is on since 21 Nov (below), re-measured that day against the current encoder:
+-5.2 +0.3 +1.8 +2.1 +1.4 +1.6 -1.7 -4.9 dB. Our decoder doesn't undo it, so on our own round trip it costs STOI
+0.866 -> 0.810 (the 500 Hz cut alone 0.820); an ID-51 and one of our own radios hearing the same over decide whether to keep all of
+it. `flat` in the analyzer's state leaves it out, for the quality tests (7). The pitch conventions are what every IC-9700 frame
 showed (347 of speech, 490 of whistle and hum): on their own they did not make our frames intelligible, but they keep
 us inside what DVSI decoders are known to receive. `full_depth` in the analyzer's state turns the match off, for tests
 of the measurement.
@@ -111,8 +115,20 @@ source came back within about 1.5 dB over that 16 dB range; a clean voice and a 
 ceiling, a voice recorded through a messaging app's compressed audio touched it on 10 to 17 samples a take. The target
 is 1 dB over that test's (the reader sat 2 dB under its best fixed level; +2 dB left the compressed voice's loudest
 frames no margin under the take that clipped, +1 dB 1.1-1.5 dB). The frames are the research encoder's bit for bit.
+
+**Leveling the speech band** (21 Nov 2026). Icom handhelds played us quietly. Offline, decoded through mbelib, in the
+1-3.4 kHz band a handheld's speaker reproduces our overs were no louder than an ID-51's own and about 15 dB under an
+IC-9700's; our extra level was all below 500 Hz, and the full-band measure let that bass set the gain. So the measure
+now weights each harmonic below 500 Hz by (f / 500)^2 (a second-order high-pass), the DVSI balance above cuts 5 dB
+below 500 Hz, and the target is 6 dB higher (`LV_LOUDER`), the first of two steps, each followed by a listen on an
+ID-51 and the 9700's speaker; the next makes it 12 dB. The 9700's LAN-audio ceiling that set the 19 Nov target is not
+what a handheld user hears, and loud talkers are expected to reach it. The gain's top moves from +20 to +30 dB so the
+quiet talkers the leveler brought up before still reach the higher target.
 `off` in the leveler's state passes frames unchanged, for the quality tests (7), whose figures were measured without
-it. An ID-51 has yet to hear the leveled encoder.
+it. On air on 21 Nov 2026 (one of our own radios on a build with this codec, an IC-9700 decoding over its LAN
+audio, an ID-51 beside it): the speech band came up 12.3 dB (-45.2 to -32.9 dBFS; the whole band -30.4 to -20.5),
+above an ID-51 over's -40.0 in the same session, and the operator heard it louder on the ID-51. The peak, 26,409, sits
+just under the 9700's ceiling, so the second step is not taken.
 
 Delay: the parameters belong to the frame centered 480 samples (60 ms) before the end of the newest input.
 

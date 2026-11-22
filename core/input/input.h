@@ -23,6 +23,8 @@ uint32_t input_raw_keys(void);
 int32_t input_encoder_total(void);
 // The channel switch's settled position (hal_input_t.position), -1: none or not settled
 int8_t input_switch_pos(void);
+// A host chose the zone and position (core/net/radio_udp.c): a channel switch leaves them, in that zone, until it moves
+void input_switch_hold(uint16_t zone);
 // PTT presses the key engine produced since start, the blocked ones included (each is also in the debug log)
 uint32_t input_ptt_downs(void);
 // The board's encoder decoder counts (false: none) and how often the UI's queue was full and detents waited for the

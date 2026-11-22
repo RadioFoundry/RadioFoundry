@@ -120,6 +120,7 @@ void dstar_mbe_ana_init(dstar_mbe_ana_t *s)
 		s->prev_v[k] = 0;
 	s->prev_p2 = 200;
 	s->full_depth = 0;
+	s->flat = 0;
 	s->prev_e1 = s->prev_e2 = E_ONE;
 	s->p8 = 800;
 	s->e_tracked = E_ONE;
@@ -558,8 +559,23 @@ static void dc_block(dstar_mbe_ana_t *s, const int16_t *pcm, int16_t *dst)
 // own voice at 60 % "wasn't bad"; without the power kept it was intelligible but quiet. So DVSI's analysis is flatter
 // than ours, and its decoders, which put the depth back, over-deepened ours. dstar_mbe_synth.c puts depth back (1/0.73).
 //
-// DVSI_SHAPE_Q12 is the compression per 500 Hz band (the voicing bands), 0.6 in all for now: a ground-truth comparison
-// (the same audio through an IC-9700 and through us, frame by frame) is to replace it with a measured curve.
+// DVSI_SHAPE_Q12 is the compression per 500 Hz band (the voicing bands), 0.6 in all: the ground-truth comparison of
+// 18 Nov (the same audio through an IC-9700 and through us, frame by frame over 21,000 harmonics) found the compression
+// the same in every band.
+//
+// DVSI_EQ_Q12 is DVSI's spectral balance on top of it, log2 Q12 per 500 Hz band, added before the power is kept. The
+// 18 Nov comparison measured it (-4.5 +2.2 +3.2 +2.9 +1.8 +3.0 -1.0 -8.0 dB) but it was left off: one radio couldn't
+// tell DVSI's analysis (which DVSI decoders would undo) from the 9700's audio path (which they would not). On since
+// 21 Nov (the research's LOUDNESS-21NOV.md), with the table re-measured that day from the same audio through this
+// encoder and the 9700's, each normalised to its own full-band level: -5.2 +0.3 +1.8 +2.1 +1.4 +1.6 -1.7 -4.9 dB. Icom
+// handhelds played us quietly because our level sat below 500 Hz, which a handheld's speaker does not reproduce; the
+// 9700's frames carry 5 dB less there and 1.5-2 dB more at 1-3 kHz. The two measurements agree in shape; the later is
+// the gentler and was taken against the encoder as it now is. With the power kept, the cut below 500 Hz moves level
+// into the speech band, and it takes bass peaks out of the decoder's headroom now the leveler aims 6 dB higher
+// (dstar_mbe_level.c). The cost, on our own round trip, where no decoder undoes it (the research's quality run, 12
+// inputs, leveler off): STOI 0.866 -> 0.810, MCD 20.4 -> 37.3 dB; the 18 Nov table 0.798, the 500 Hz cut alone 0.820.
+// An ID-51 and one of our own radios hearing the same over decide whether to keep all of it; the cut alone
+// ({ -3538, 0, ... }) is the fallback. The research codec carries the same table, so the frames stay its bit for bit.
 //
 // Pitch conventions seen in every IC-9700 frame (347 of speech, 490 of whistle and hum): all-unvoiced frames always at
 // b0 34, voiced frames never above b0 113. On their own they did not make our frames intelligible, but they cost
@@ -567,9 +583,10 @@ static void dc_block(dstar_mbe_ana_t *s, const int16_t *pcm, int16_t *dst)
 #define DVSI_B0_UNVOICED	34
 #define DVSI_B0_MAX		119
 static const int16_t dvsi_shape_q12[8] = { 2458, 2458, 2458, 2458, 2458, 2458, 2458, 2458 };
+static const int16_t dvsi_eq_q12[8] = { -3538, 204, 1225, 1429, 953, 1089, -1157, -3334 };
 
 // y: L + 1 words of working memory
-static void dvsi_shape(dstar_ambe_params_t *p, int32_t *y)
+static void dvsi_shape(dstar_ambe_params_t *p, int32_t *y, int flat)
 {
 	unsigned L = p->L;
 	if (L == 0)
@@ -583,7 +600,8 @@ static void dvsi_shape(dstar_ambe_params_t *p, int32_t *y)
 	int32_t m = sum / (int32_t)L;
 	for (unsigned l = 1; l <= L; ++l) {
 		unsigned k = (l * p->f0_q24) >> 20;
-		y[l] = m + (((p->log2_amp[l] - m) >> 4) * dvsi_shape_q12[k > 7 ? 7 : k] >> 8);
+		k = k > 7 ? 7 : k;
+		y[l] = m + (((p->log2_amp[l] - m) >> 4) * dvsi_shape_q12[k] >> 8) + (flat ? 0 : dvsi_eq_q12[k]);
 		if (y[l] > mx1)
 			mx1 = y[l];
 	}
@@ -750,5 +768,5 @@ void dstar_mbe_analyze(dstar_mbe_ana_t *s, dstar_mbe_ana_scratch_t *t, const int
 		out->log2_amp[l] = la + ((la * 55) >> 18);	// mbelib's exp(0.693 x)
 	}
 	if (dvsi)
-		dvsi_shape(out, t->g);	// t->g (the tracker's) is free by now
+		dvsi_shape(out, t->g, s->flat);	// t->g (the tracker's) is free by now
 }

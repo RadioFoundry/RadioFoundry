@@ -80,6 +80,8 @@ bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, ui
 #if CONFIG_GPS
 // Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
 void position_gps_enable(bool on);
+// Settings > Location > GPS as last applied, by whichever path (the menu, the debug link, start-up)
+bool position_gps_enabled(void);
 // The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute
 typedef struct {
 	bool fix;		// a position under a minute old

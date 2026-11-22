@@ -532,6 +532,30 @@ static void sweep(void)
 	}
 }
 
+// A demodulator whose init refused the rate is fed: nothing comes out, and nothing divides by its boxcar of 0 samples
+static unsigned guard_bits;
+static void guard_push(void *ctx, int16_t soft, int16_t unit)
+{
+	(void)ctx;
+	(void)soft;
+	(void)unit;
+	guard_bits++;
+}
+
+static void test_demod_guard(void)
+{
+	dstar_gmsk_demod_t d;
+	CHECK(!dstar_gmsk_demod_init(&d, DSTAR_RATE_MIN / 2u, guard_push, NULL), "4 kHz accepted");
+	d.push = guard_push;
+	int16_t s[256];
+	for (int i = 0; i < 256; i++) {
+		s[i] = (int16_t)((i * 7919) % 6001 - 3000);
+	}
+	guard_bits = 0;
+	dstar_gmsk_demod(&d, s, 256);
+	CHECK(guard_bits == 0, "%u bits from a demodulator never started", guard_bits);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc > 1 && strcmp(argv[1], "--sweep") == 0) {
@@ -542,6 +566,7 @@ int main(int argc, char **argv)
 	test_lfr();
 	test_link();
 	test_engine();
+	test_demod_guard();
 	printf("%s dstarModemTest: %d failure(s)\n", failures ? "FAIL" : "ok", failures);
 	return failures ? 1 : 0;
 }
