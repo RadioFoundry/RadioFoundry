@@ -43,8 +43,11 @@ bool hrc5000_set_mode_dmr(hrc5000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mi
 bool hrc5000_dmr_path(hrc5000_t *dev, bool tx, uint8_t mod2, uint8_t mod1, uint8_t mic_gain);
 bool hrc5000_dmr_rx_in(hrc5000_t *dev, bool on);
 
-// RF_TX_INTER early by some steps (4:0x12 bits 5-0, about 100 us each; bits 7-6 kept), for a transmission that listens
-// between its bursts: the time to retune for the next one
+// RF_TX_INTER early, for a transmission that listens between its bursts: the time to retune for the next one.
+// 4:0x12 bits 5-0 (bits 7-6 kept) count half symbols (HRC5000_TX_LEAD_STEP_US), from the value the chip runs with
+// (10 on the bench), not from 0 (hardware-md380.md 4.9.1)
+#define HRC5000_TX_LEAD_STEP_NUM	625u	// one step: 625 / 6 us (104.17 us, half a 4800 baud symbol)
+#define HRC5000_TX_LEAD_STEP_DEN	6u
 typedef struct {
 	uint8_t saved;		// 4:0x12 before the lead
 	bool kept;		// saved holds it: hrc5000_tx_lead_off puts it back
@@ -56,6 +59,9 @@ typedef struct {
 bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps);
 // 4:0x12 as it was before hrc5000_tx_lead_on, when that read it; true with nothing to put back
 bool hrc5000_tx_lead_off(hrc5000_t *dev, hrc5000_lead_t *l);
+// How much earlier RF_TX_INTER comes with the lead `steps` than with the value read (0 before a read, or for a value
+// at or under it), in us
+uint32_t hrc5000_tx_lead_us(const hrc5000_lead_t *l, uint8_t steps);
 
 // The chip's I2S clocks (BCLK, LRCK; the board's pins). The 0x11 block of every full set-up writes 0x36 = 0xF0, whose
 // bit 7 turns the clocks off; on clears it. The board switches them on for the length of a PCM audio stream

@@ -428,6 +428,16 @@ bool hrc5000_tx_lead_off(hrc5000_t *dev, hrc5000_lead_t *l)
 	return !l->kept;
 }
 
+uint32_t hrc5000_tx_lead_us(const hrc5000_lead_t *l, uint8_t steps)
+{
+	uint8_t base = (uint8_t)(l->saved & 0x3Fu);
+	steps &= 0x3Fu;
+	if (!l->kept || steps <= base) {
+		return 0;
+	}
+	return ((uint32_t)(steps - base) * HRC5000_TX_LEAD_STEP_NUM + HRC5000_TX_LEAD_STEP_DEN / 2u) / HRC5000_TX_LEAD_STEP_DEN;
+}
+
 // The codec set-up for a received call that plays (on) and back to the idle values (off). DMR only: the FM receiver's
 // audio doesn't pass the codec, and a beep in FM keeps the idle values
 bool hrc5000_speaker_voice(hrc5000_t *dev, bool on)

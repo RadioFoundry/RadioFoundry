@@ -177,7 +177,12 @@ static void test_tx_lead(void)
 	CHECK(hrc5000_tx_lead_on(&c5, &l, 25));
 	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 25));
 	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && nx == 2);	// already on: no traffic
+	// Half symbols over the value read (0x05 here), not 100 us from 0: 20 steps = 2083 us (issue 609)
+	CHECK(hrc5000_tx_lead_us(&l, 25) == 2083u);
+	CHECK(hrc5000_tx_lead_us(&l, 6) == 104u && hrc5000_tx_lead_us(&l, 5) == 0u && hrc5000_tx_lead_us(&l, 3) == 0u);
+	CHECK(hrc5000_tx_lead_us(&l, 0x45) == 0u);	// bits 5-0 only: 5, the value read
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5 && !l.on && !l.kept);
+	CHECK(hrc5000_tx_lead_us(&l, 25) == 0u);	// nothing read now
 	nx = 0;
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && nx == 0);	// nothing to put back
 

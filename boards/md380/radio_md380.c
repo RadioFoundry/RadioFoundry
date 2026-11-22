@@ -88,10 +88,13 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 0 };
 #endif
 
-// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer goes to the receive LO and the receiver on; RF_TX_INTER comes LISTEN_LEAD_STEPS earlier, and
-// there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
-#define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0, about 100 us steps: 2.5 ms
-#define LISTEN_LEAD_US		(LISTEN_LEAD_STEPS * 100u)
+// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer
+// goes to the receive LO and the receiver on; RF_TX_INTER comes earlier (4:0x12 = LISTEN_LEAD_STEPS), and there the
+// synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before.
+// Off (issue 609): with it, through a repeater, now and then a burst left on a carrier a few hundred Hz off and reached
+// the repeater with bit errors, at any lead, and far more of them on a wide split (hardware-md380.md 4.9.1)
+#define MD380_TX_LISTEN		0
+#define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0: 15 half symbols over the chip's 10, about 1.56 ms
 #define LISTEN_LOCK_MAX_US	2000u
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
@@ -517,8 +520,9 @@ bool md380_rf_dmr_switch(bool tx)
 		}
 	}
 	if (r.dmr_lead) {
-		// RF_TX_INTER came LISTEN_LEAD_US early: the PA at the slot, as without the lead
-		while (hal_micros() - t0 < LISTEN_LEAD_US) {
+		// RF_TX_INTER came the lead early: the PA at the slot, as without the lead
+		uint32_t lead_us = hrc5000_tx_lead_us(&r.lead, LISTEN_LEAD_STEPS);
+		while (hal_micros() - t0 < lead_us) {
 		}
 	}
 	pa_timer_start();	// the key-up points, then the PA drop
@@ -596,7 +600,7 @@ static const stm32_hrc_dmr_board_t dmr_board = {
 	.tx_wait_lock = rf_dmr_wait_lock,
 	.tx_done = rf_dmr_tx_done,
 	.tx_end = dmr_tx_end,
-	.listen_split = true,
+	.listen_split = MD380_TX_LISTEN,
 };
 
 // Stop per-burst keying (task level): disarm, drop a transmission still running, PA off
