@@ -146,7 +146,9 @@ static void apply_cfg(void)
 	b->min_s = AUTO_MIN_S;
 }
 
-static void reload_cfg(void)
+// noinline: inlined, its settings copy stays in reload_cfg's frame under aprs_ax25_identity's own copy and codeplug
+// read, the radio task's deepest path on an FM-only build (docs/dev/stack-check.md)
+static void __attribute__((noinline)) load_cfg(void)
 {
 	settings_t st;
 	aprs_cfg_t c;
@@ -156,6 +158,11 @@ static void reload_cfg(void)
 	aprs_s.cfg = c;
 	apply_cfg();
 	UNLOCK();
+}
+
+static void reload_cfg(void)
+{
+	load_cfg();
 	aprs_ax25_identity();
 }
 
