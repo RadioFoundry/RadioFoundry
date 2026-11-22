@@ -723,6 +723,10 @@ def test_zone_editor_moves_a_channel(home):
 @pytest.mark.feature("dmr_sms")
 @pytest.mark.rf_fallback
 @pytest.mark.delete_message
+# The firmware deletes by row number. An arrival after the final read can take row zero.
+@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") not in ("hil", "1"), "opt_in",
+         "isolate the receiver from other message sources and set RFOUNDRY_HIL_DELETE_MESSAGE=hil, "
+         "or authorize deletion from a disposable inbox with RFOUNDRY_HIL_DELETE_MESSAGE=1")
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
@@ -733,11 +737,6 @@ def test_delete_message(home, request, pytestconfig):
     r = home
     if r.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
-    # The firmware deletes by row number: another SMS can take row zero even after the final read below.
-    permission = os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE")
-    if permission not in ("hil", "1"):
-        skip("opt_in", "isolate the receiver from other message sources and set RFOUNDRY_HIL_DELETE_MESSAGE=hil, "
-                       "or authorize deletion from a disposable inbox with RFOUNDRY_HIL_DELETE_MESSAGE=1")
 
     def require_dmr_rows():
         # The Messages screen merges DMR and APRS by age. inbox(0) identifies only the newest DMR message.
@@ -748,7 +747,7 @@ def test_delete_message(home, request, pytestconfig):
     require_dmr_rows()
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     newest = (r.link.inbox(0) or {}) if n else {}
-    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and permission != "1":
+    if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
         if not pytestconfig.getoption("--allow-rf"):
             skip("opt_in", "the newest inbox message isn't a HIL test's: give --allow-rf (the bench sends one) or set "
                            "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
