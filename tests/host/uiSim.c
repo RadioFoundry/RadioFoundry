@@ -43,6 +43,11 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_dmr_lastheard", "call:9991234,91,g wait:11000" },
 	{ "home_reply", "call:9991234,91,g" },
 	{ "home_fm", "down" },
+#if CONFIG_DMR_AES
+	{ "home_encrypted", "aeschan" },	// an AES channel: its type in a badge on the name's line
+#endif
+	// Basic privacy on (Motorola key 123, the Quick tile): BP MOTO in the badge
+	{ "home_privacy", "ok 7 4 ok down ok 1 2 3 ok long:back quick 6 back" },
 	{ "home_temporary", "down quick 1 2 up back" },
 	{ "home_vfo", "ok 4 up ok" },
 	{ "home_vfo_entry", "ok 4 up ok 4 4 6" },

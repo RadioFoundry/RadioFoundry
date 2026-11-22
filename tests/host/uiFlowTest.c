@@ -870,6 +870,19 @@ static const flow_t flows[] = {
 	{ "S a private call lights the screen", "", "privcall:91", "wake=1", 0, false },
 	{ "S an emergency lights the screen", "", "emergency:91", "wake=1", 0, false },
 	{ "S nothing new, no wake", "", "wait:1000", "wake=0", 0, false },
+	// Home's encryption badge on the channel name's line: the scheme in force by name (BP MOTO, BP ANY; AES256 on an AES
+	// channel with its key), else nothing. The chips line leaves the type out when the badge names it
+	{ "S padlock: a clear channel has none", "", "", "padlock=0 encbadge=0", 0, false },
+	{ "S encryption type: none on a clear channel", "", "", "hides=AES256 hides=BP_MOTO hides=BP_Moto", 0, false },
+	// Basic privacy on (the Quick tile, Motorola key 123)
+	{ "S encryption type: BP Moto", "ok 7 4 ok down ok 1 2 3 ok long:back", "quick 6 back",
+	  "privacy=1 screen=home shows=BP_MOTO hides=BP_Moto encbadge=1 padlock=1", 3, false },
+#if CONFIG_DMR_AES
+	// An AES channel with its key; not one with no key (it won't transmit)
+	{ "S padlock: an AES channel with its key", "aeschan", "", "padlock=1 screen=home", 0, false },
+	{ "S padlock: an AES channel without a key", "aeschan0", "", "padlock=0", 0, false },
+	{ "S encryption type: AES256", "aeschan", "", "shows=AES256 encbadge=1", 0, false },
+#endif
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },

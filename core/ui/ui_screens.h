@@ -303,4 +303,11 @@ const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 // (dmr-trunking.md 7.6), else "Phone line"; false (nothing written) for any other source
 bool ui_sb_gw_caller(sbuf_t *b, uint32_t src);
 
+// The channel on Home transmits encrypted (AES with its key, or basic privacy on): Home draws a padlock after its
+// name
+bool ui_home_encrypted(const radio_view_t *v);
+
+// The last Home frame drew the encryption type badge after the channel's name (else the padlock, or nothing)
+bool ui_home_badge_drawn(void);
+
 #endif

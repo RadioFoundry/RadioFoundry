@@ -289,8 +289,9 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
   fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
   the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
   not shown.
-- **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
-  off again.
+- **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home names the scheme in a blue badge at the
+  right end of the channel's name: **BP MOTO** or **BP ANY** (on a long name, a padlock). Basic privacy is a fixed
+  keystream, not encryption: the badge says which so it is never mistaken for AES. **Back** on Home turns it off again.
 
 To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 

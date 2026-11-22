@@ -1021,6 +1021,130 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 #endif
 
+
+// The channel transmits encrypted (Home's badge or padlock): an AES channel with its key (CONFIG_DMR_AES), or
+// basic privacy on for DMR. The VFO counts the same way
+bool ui_home_encrypted(const radio_view_t *v)
+{
+	if (v->ch.mode != RADIO_MODE_DMR)
+		return false;
+#if CONFIG_DMR_AES
+	if (v->ch.kind == CODEPLUG_KIND_DMR_AES)
+		return v->ch.aes_ref != 0;	// no key bound: the radio refuses to transmit there, no lock to promise
+#endif
+	return v->dmr.privacy;
+}
+
+// The padlock, hand drawn at three sizes ('#' set): a round-topped shackle, a body with rounded corners and a keyhole
+// (a round hole over a slot). The largest that fits the height asked for is used
+static const char *const lock_s[] = {	// 7 x 8
+	"..###..",
+	".#...#.",
+	".#...#.",
+	"#######",
+	"###.###",
+	"###.###",
+	"#######",
+	".#####.",
+};
+static const char *const lock_m[] = {	// 9 x 12
+	"...###...",
+	"..#...#..",
+	".#.....#.",
+	".#.....#.",
+	".#.....#.",
+	"#########",
+	"#########",
+	"####.####",
+	"###...###",
+	"####.####",
+	"####.####",
+	".#######.",
+};
+static const char *const lock_l[] = {	// 12 x 16
+	"....####....",
+	"...######...",
+	"..##....##..",
+	"..##....##..",
+	"..##....##..",
+	"..##....##..",
+	".##########.",
+	"############",
+	"############",
+	"#####..#####",
+	"####....####",
+	"####....####",
+	"#####..#####",
+	"#####..#####",
+	"############",
+	".##########.",
+};
+
+// The padlock in a box h pixels high whose bottom is at top + h, at x. Returns its width
+static int draw_padlock(int x, int top, int h, color_t c)
+{
+	const char *const *rows = lock_s;
+	int n = (int)(sizeof lock_s / sizeof lock_s[0]);
+	if (h >= 16) {
+		rows = lock_l;
+		n = (int)(sizeof lock_l / sizeof lock_l[0]);
+	} else if (h >= 12) {
+		rows = lock_m;
+		n = (int)(sizeof lock_m / sizeof lock_m[0]);
+	}
+	int w = (int)strlen(rows[0]);
+	int y0 = top + h - n;			// on the text's baseline
+	for (int r = 0; r < n; r++)
+		for (int k = 0; k < w; k++)
+			if (rows[r][k] == '#')
+				gfx_pixel(x + k, y0 + r, c);
+	return w;
+}
+
+// Basic privacy's name by its scheme (dmrPrivacyType_t): long on the chips line, short in the badge
+static const char *bp_name(bool shrt)
+{
+	int32_t t = ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
+	if (t == 1)
+		return shrt ? "BP MOTO" : "BP Moto";
+	if (t == 2)
+		return shrt ? "BP ANY" : "BP Anytone";
+	return "BP";
+}
+
+// The encryption's short name for Home's badge: AES256, or BP MOTO / BP ANY for basic privacy (the scheme's own names,
+// not translated); NULL when the channel is clear
+static const char *enc_badge_text(const radio_view_t *v)
+{
+	if (!ui_home_encrypted(v))
+		return NULL;
+#if CONFIG_DMR_AES
+	if (v->ch.kind == CODEPLUG_KIND_DMR_AES)
+		return "AES256";
+#endif
+	return bp_name(true);
+}
+
+static bool home_badge_drawn;	// this frame's name line has the type badge (the chips line then leaves the type out)
+
+// The type badge: the text in the background color on a filled block of the privacy color, its bottom on the name's
+// baseline. Returns its width
+static int draw_enc_badge(const font_t *f, int x, int base, const char *text)
+{
+	int w = gfx_text_width(f, text) + 4, h = f->ascent + 3;
+	gfx_round_fill(x, base - h + 1, w, h, ui_col.priv);
+	gfx_text(f, x + 2, base - f->ascent - 1, text, ui_col.bg);
+	return w;
+}
+
+bool ui_home_badge_drawn(void) { return home_badge_drawn; }
+
+// The padlock's width for a height (draw_padlock's choice)
+static int padlock_width(int h)
+{
+	return h >= 16 ? 12 : h >= 12 ? 9 : 7;
+}
+
 static void draw_place(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1096,6 +1220,19 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
+	// An encrypted channel: its type in a reverse badge at the right end (AES256, BP MOTO, BP ANY), or a padlock where the
+	// badge would squeeze the name below the small font; the medium font's height either way
+	const char *badge = enc_badge_text(v);
+	bool lock = badge != NULL;
+	int lock_h = L->medium->ascent;
+	int badge_w = badge != NULL ? gfx_text_width(L->small, badge) + 4 : 0;
+	home_badge_drawn = false;
+	if (badge != NULL && gfx_text_width(L->small, v->ch.name) <= avail - badge_w - L->medium->w / 2) {
+		avail -= badge_w + L->medium->w / 2;
+		home_badge_drawn = true;
+	} else if (lock) {
+		avail -= padlock_width(lock_h) + L->medium->w / 2;
+	}
 	const font_t *nf = L->large;
 	if (gfx_text_width(nf, v->ch.name) > avail)
 		nf = L->medium;
@@ -1103,6 +1240,10 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		nf = L->small;
 	gfx_text_fit(nf, v->ch.name, avail, fit, sizeof fit);
 	x = gfx_text(nf, x, nf == L->large ? y : base - nf->ascent, fit, ui_col.fg);
+	if (home_badge_drawn)
+		draw_enc_badge(L->small, w - badge_w, base, badge);	// right aligned, the name keeps its place
+	else if (lock)
+		draw_padlock(w - padlock_width(lock_h), base - lock_h, lock_h, ui_col.priv);
 	if (v->temporary)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
 }
@@ -1857,8 +1998,20 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s)
 	const char *dmon = TR(HOME_CHIP_DMON, "DMon"), *priv = TR(HOME_CHIP_PRIVACY, "Priv");
 	if ((v->dmr.hear_all || s->hear_all) && x + gfx_text_width(f, dmon) <= gfx_width())
 		x = gfx_text(f, x, L->chips_y, dmon, ui_col.warn) + f->w;	// digital monitor (FM's is "Mon")
-	if ((s->privacy || v->dmr.privacy) && x + gfx_text_width(f, priv) <= gfx_width())
-		gfx_text(f, x, L->chips_y, priv, ui_col.priv);
+	// The encryption in force, by name, where the channel's name had no room for its badge (which names it already):
+	// AES256, BP Moto or BP Anytone (the scheme's own names, not translated)
+	const char *enc = NULL;
+#if CONFIG_DMR_AES
+	if (v->ch.kind == CODEPLUG_KIND_DMR_AES && v->ch.aes_ref != 0)
+		enc = home_badge_drawn ? NULL : "AES256";	// the name's badge says it already
+	else
+#endif
+	if (s->privacy || v->dmr.privacy) {
+		int32_t t = ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
+		enc = home_badge_drawn ? NULL : t == 1 || t == 2 ? bp_name(false) : priv;	// the badge names it already
+	}
+	if (enc != NULL && x + gfx_text_width(f, enc) <= gfx_width())
+		gfx_text(f, x, L->chips_y, enc, ui_col.priv);
 }
 
 #if CONFIG_DMR_TRUNK
