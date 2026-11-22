@@ -48,6 +48,24 @@ body:
     validations:
       required: true
   - type: dropdown
+    id: channel
+    attributes:
+      label: Channel
+      description: Which version the web flasher installed.
+      options:
+        - Stable (the default)
+        - Beta
+        - Nightly
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: worked-before
+    attributes:
+      label: Last version that worked
+      description: If this worked on an earlier version, which one. Leave empty if it never worked or you don't know.
+      placeholder: v26.11 (3029db9)
+  - type: dropdown
     id: area
     attributes:
       label: Area

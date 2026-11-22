@@ -2,7 +2,7 @@
 
 # Releases
 
-A release is a git tag on main named for its year and month (`v26.11`, below) and a GitHub release that carries,
+A release is a git tag on a release branch, named for its year and month (`v26.11`, below), and a GitHub release that carries,
 for each releasable radio, the firmware image **without the AMBE codec**, its manifest, `SHA256SUMS`, the `rfoundry`
 flashing tool as single-file executables for Linux, macOS and Windows, and the user manual as a PDF. Users never
 build firmware: `rfoundry` downloads the image, checks it, and either keeps the codec already in the radio or writes
@@ -39,9 +39,63 @@ an opt-in version link (`?version=<tag>`, [website.md](website.md#flasher-notice
 Changelog link to the GitHub releases. The release notes start from GitHub's generated notes (`--generate-notes`):
 edit them into a short list of what changed for users.
 
+## Schedule
+
+One release a month. Main never freezes: features keep merging while the release branch is tested.
+
+| When | What |
+|---|---|
+| The 1st to about the 20th | Main is open to everything |
+| About the 20th | The release manager cuts `release/vYY.M` from main and tags the first beta on the branch (`vYY.Mb1`). The branch is in **string freeze**, so translators get a week |
+| Beta week | Fixes merge to main first. A `backport` label on the merged pull request cherry-picks the fix to the branch (below). Another beta (`b2`) when the fixes matter |
+| About the 1st | The final `vYY.M` from the branch, after the checklist below |
+| Until the next final | `vYY.M.N` from the branch for S1 and S2 fixes only (basic use broken, a common case wrong) |
+
+The name is the month the release ships, so a cut on November 20 is `v26.12b1` and the final `v26.12`.
+`tools/release_version.py next beta [DATE]` prints the next tag for a cut, `next final NAME` and `next point NAME`
+the ones after it.
+
+## Branches
+
+| Branch | Lives | Takes |
+|---|---|---|
+| `main` | Always | Everything, through the merge queue ([ci.md](ci.md#merge-queue)) |
+| `release/vYY.M` | From the cut until the next month's final | Cherry-picked fixes only, never a feature |
+
+Only the newest release branch is maintained. When the next final ships, the older branch gets no more fixes: users
+update to the new release. Delete a branch only after its successor's final; its tags stay.
+
+## Backports
+
+A fix that users of the release need goes to main first, as every change does. Then:
+
+1. Label the merged pull request `backport` (a maintainer, during review or after the merge).
+2. The backport workflow (`.github/workflows/backport.yml`) cherry-picks the merge commit (`git cherry-pick -x`) onto
+   the newest `release/*` branch and opens a pull request against that branch. When the pick conflicts, the
+   workflow comments on the original pull request instead; resolve the conflict by hand in a pull request of its own
+   to the branch.
+3. The backport pull request runs the same checks and merges like any other.
+
+What qualifies: a fix for a crash, a regression, data loss (codeplug, settings), a wrong transmission, or a flasher
+or update failure. Translations of strings already on the branch qualify too. New features, new strings and
+refactors never do.
+
+## Release manager
+
+Each month one maintainer is the release manager. The release manager opens the month's tracking issue from the
+**Release** template (the checklist below as boxes, with the dates), cuts the branch, tags the betas and the final,
+and decides which backports go in. The role rotates; the tracking issue names who has the month.
+
+## Release notes
+
+Every merged pull request carries one `changelog:` label: `changelog:feature`, `changelog:fix`, `changelog:radio`
+(a new radio or a radio's support level) or `changelog:none` (internal). `.github/release.yml` groups GitHub's
+generated notes by these labels. The pull request template asks for a one-line note for users; the release manager
+edits the generated notes into a short list from those lines.
+
 ## Checklist
 
-1. Main is green: `JOBS=8 tools/ci.sh` ends with "all checks passed" ([ci.md](ci.md)), on a machine with both compilers and `reuse`.
+1. The release branch is green: `JOBS=8 tools/ci.sh` on the branch ends with "all checks passed" ([ci.md](ci.md)), on a machine with both compilers and `reuse`.
 2. The project lead runs the similarity scan against the reference trees and reviews every hit
    ([docs/testing/README.md](../testing/README.md) 1).
 3. A comprehensive legal scan of what the release ships, reviewed by the project lead: the license and notices of
@@ -58,16 +112,21 @@ edit them into a short list of what changed for users.
 9. Update the contributors list and commit it if it changed: `python3 tools/gen_contributors.py` writes
    `CONTRIBUTORS` from the git history. CI never checks that the file is current, so a new contributor's pull
    request can't fail over it.
-10. Tag and push the tag:
+10. Tag the branch and push the tag (`tools/release_version.py next ...` gives the name):
 
    ```
-   git tag -a v26.11 -m "RadioFoundry 26.11"
-   git push origin v26.11
+   git switch release/v26.12
+   git tag -a v26.12 -m "RadioFoundry 26.12"
+   git push origin v26.12
    ```
+
+   The cut itself, about the 20th: `git switch -c release/v26.12 origin/main`, push the branch, then tag
+   `v26.12b1` on it the same way.
 
 11. The release workflow builds the firmware and rfoundry and attaches them; the manual workflow attaches the PDF
     ([manual-pdf.md](manual-pdf.md)). Edit the release notes on GitHub (they are the changelog the site links).
 12. The next push to main redeploys the site, which then installs the new release (or offers the new beta).
+13. After the final: the previous month's release branch is no longer maintained. Close the tracking issue.
 
 ## Release artifacts
 

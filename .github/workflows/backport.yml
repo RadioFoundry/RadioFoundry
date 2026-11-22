@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# Backports (docs/dev/release.md "Backports"): when a merged pull request carries the backport label, cherry-pick its
+# merge commit (-x) onto the newest release/* branch and open a pull request against that branch; on a conflict,
+# comment on the original pull request instead. It runs on pull_request_target for the label and the merge, so it has
+# a write token: it never checks out or runs the pull request's code, only main's merge commit, which is already
+# reviewed and merged, and git itself. GitHub's runners only (docs/dev/ci-runners.md).
+#
+# A pull request opened with the workflow's token starts no checks: a maintainer closes and reopens the backport pull
+# request (or pushes to its branch) to run them.
+name: Backport
+
+on:
+  pull_request_target:
+    types: [closed, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: backport-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  backport:
+    if: >-
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'backport') &&
+      (github.event.action == 'closed' || github.event.label.name == 'backport')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: true
+      - name: Cherry-pick onto the newest release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -eu
+          # the newest release/vYY.M by its release name (tools/release_version.py sorts them)
+          newest=$(git branch -r --list 'origin/release/v*' | sed 's|.*origin/release/||' |
+            xargs python3 tools/release_version.py pick || true)
+          if [ -z "$newest" ]; then
+            gh pr comment "$PR" --body "Backport skipped: there is no release branch yet."
+            exit 0
+          fi
+          target="release/$newest"
+          branch="backport/$PR-to-$newest"
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            echo "$branch exists already"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch" "origin/$target"
+          # a squash merge has one parent; a merge commit takes its first parent as the mainline
+          parents=$(git rev-list --parents -n 1 "$SHA" | wc -w)
+          set --
+          [ "$parents" -gt 2 ] && set -- -m 1
+          if ! git cherry-pick -x "$@" "$SHA"; then
+            git cherry-pick --abort || true
+            gh pr comment "$PR" --body "Backport to \`$target\` failed: the cherry-pick of $SHA conflicts. Open a pull request against \`$target\` with the fix resolved by hand."
+            exit 0
+          fi
+          git push origin "$branch"
+          url=$(gh pr create --base "$target" --head "$branch" --title "[$newest] $TITLE" \
+            --label changelog:fix \
+            --body "Backport of #$PR to \`$target\` (cherry-pick of $SHA). Close and reopen this pull request to start its checks.")
+          gh pr comment "$PR" --body "Backported to \`$target\`: $url"
