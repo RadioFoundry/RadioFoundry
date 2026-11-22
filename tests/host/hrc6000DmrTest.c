@@ -1354,6 +1354,186 @@ static void test_rx_bs_idles(void)
 	CHECK(eng.st.rx_csbk == c0 + 1 && eng.st.rx_dup_repeat == d0 + 1);
 }
 
+// A direct mode call framed with BS sync (a simplex hotspot's, issue 910): one burst every other slot, no CACH, so
+// 0x52's TC bit at the interrupts is junk. The bursts carry no slot number: a TC label that flipped mid-call dropped
+// the rest of the call as the other slot's. A base station on both slots (consecutive BS bursts) still numbers them
+static void test_rx_bs_direct_call(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	uint32_t t = 14000000, junk = 4321;
+	uint8_t seq[3 + 96 + 3];
+	int n = 0;
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x12;
+	}
+	for (int sf = 0; sf < 16; sf++) {
+		seq[n++] = 0x91;
+		for (int k = 1; k < 6; k++) {
+			seq[n++] = (uint8_t)((((sf + k) & 1 ? 0x8 : 0x0) | (k + 1)) << 4);
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x22;
+	}
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	for (int i = 0; i < n; i++) {
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			if (half == 0) {
+				report_at(t + 3500, seq[i], (uint8_t)(0x20 | tc), 0xF1);
+			} else {
+				report_at(t + 3500, (uint8_t)(seq[i] & 0x70), (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	int voices = 0, numbered = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].sync == DMR_SYNC_BS) {
+			voices += bursts[i].kind == DMR_BURST_VOICE;
+			numbered += bursts[i].ts != 0;
+		}
+	}
+	if (!(voices == 96 && numbered == 0)) {
+		printf("bs direct: voices %d numbered %d\n", voices, numbered);
+	}
+	CHECK(voices == 96);
+	CHECK(numbered == 0);
+
+	// A reply in step with that sender (the call stack keys DMO aligned within DMR_CALL_ALIGN_MS, on the channel's
+	// slot 1): the slot heard is the one to key in, as for MS sync, not a wait for a TC that never comes (refused)
+	{
+		dmr_tx_burst_t h = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+		int r50, r41, sent = -1;
+		pending_burst = false;
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+		hrc6000_dmr_tx_queue(&eng, &h);
+		hrc6000_dmr_tx_end(&eng);
+		for (int k = 0; k < 60 && sent < 0; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			if (r41 == 0x80) {
+				sent = k;
+			}
+			drain();
+		}
+		CHECK(sent >= 0 && sent < 4);
+		CHECK(count_ev(DMR_EV_TX_REJECTED) == 0 && eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+		for (int k = 0; k < 6; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			drain();
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	}
+
+	// A simplex host's stream: idle bursts with BS data sync, then the call with MS sync, one burst every other slot.
+	// The idles must not let 0x52's junk number the call's bursts (a label change mid-call drops the rest of it)
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int i = 0; i < 6 + n; i++) {
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			if (half == 1) {
+				report_at(t + 3500, 0x00, (uint8_t)(0x20 | tc), 0xF0);
+			} else if (i < 6) {
+				report_at(t + 3500, 0x92, (uint8_t)(0x20 | tc), 0xF1);	// idle, BS data sync
+			} else {
+				report_at(t + 3500, seq[i - 6], (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	int ms_voices = 0, changes = 0;
+	int8_t first_ts = -1;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (first_ts < 0) {
+				first_ts = bursts[i].ts;
+			}
+			changes += bursts[i].ts != first_ts;
+			ms_voices++;
+		}
+	}
+	if (!(ms_voices == 96 && changes == 0)) {
+		printf("bs idles then ms call: voices %d label changes %d\n", ms_voices, changes);
+	}
+	CHECK(ms_voices == 96 && changes == 0);
+
+	// The same stream with each idle reported again in the next (empty) slot, as the chip repeats a status report: a
+	// repeated BS idle is delivered (dedup exempts them), so it comes in the slot after its own. Two BS bursts in a row
+	// with the same TC are one burst seen twice, not a CACH: the call's bursts must keep one label
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int i = 0; i < 6 + n; i++) {
+		uint8_t tc = 0;
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			if (half == 0) {
+				tc = (uint8_t)((junk >> 20) & 0x04);
+			}
+			if (i < 6) {
+				report_at(t + 3500, 0x92, (uint8_t)(0x20 | tc), 0xF1);	// idle, BS data sync; again in the next slot
+			} else if (half == 1) {
+				report_at(t + 3500, 0x00, (uint8_t)(0x20 | tc), 0xF0);
+			} else {
+				report_at(t + 3500, seq[i - 6], (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	ms_voices = 0;
+	changes = 0;
+	first_ts = -1;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (first_ts < 0) {
+				first_ts = bursts[i].ts;
+			}
+			changes += bursts[i].ts != first_ts;
+			ms_voices++;
+		}
+	}
+	if (!(ms_voices == 96 && changes == 0 && !eng.cach_seen)) {
+		printf("repeated bs idles then ms call: voices %d label changes %d cach %d\n", ms_voices, changes,
+		       eng.cach_seen);
+	}
+	CHECK(ms_voices == 96 && changes == 0 && !eng.cach_seen);
+
+	// The same simplex channel hearing a base station on both slots: its idles carry the CACH, so they are numbered
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int k = 0; k < 20; k++) {
+		uint8_t tc2 = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = (uint8_t)(0x20 | tc2);
+		ts_at(t);
+		report_at(t + 3000, 0x92, (uint8_t)(0x20 | tc2), 0x01);	// idle, CC 2, BS sync
+		t += 30000;
+		drain();
+	}
+	const dmr_burst_t *b = last_burst();
+	CHECK(b != NULL && b->sync == DMR_SYNC_BS && b->ts != 0);
+}
+
 // The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
 static void test_idle_restart_once(void)
 {
@@ -1615,6 +1795,7 @@ int main(void)
 	test_tx_aligned_rmo();
 	test_tx_aligned_deaf();
 	test_tc_locked_one_in_two();
+	test_rx_bs_direct_call();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
 	test_cc_any_rx();

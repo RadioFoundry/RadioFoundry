@@ -93,6 +93,7 @@
 #define CC_TICK_QUIET		4u	// ... while no burst was taken for this many ticks
 #define TC_STABLE		4u	// more than this many agreements
 #define TC_RESYNC		3u	// more than this many disagreements
+#define CACH_RUN		4u	// BS-sync bursts in slots in a row with the TC alternating: a CACH on air (the HR_C7000's TC_LOCK)
 #define BS_RECENT_TICKS		40u
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
@@ -391,6 +392,16 @@ static bool rmo(const hrc6000_dmr_t *e)
 	return e->cfg.repeater || (e->rmo_seen && (uint32_t)(e->tick - e->bs_tick) < BS_RECENT_TICKS);
 }
 
+// A CACH to read the TC and short LC from: a base station keys both slots, so its BS-sync bursts come in slots in a
+// row with the TC alternating. A direct mode sender with BS sync (a simplex hotspot) keys every other slot with no
+// CACH: 0x52 then holds junk, and slot labels taken from it flipped mid-call (issue 910). The chip also reports a
+// burst again in the next slot, and a repeated BS idle is delivered (dedup exempts them), so two slots in a row alone
+// prove nothing: the same TC twice is one burst seen twice. The HR_C7000 driver locks its TC the same way (TC_LOCK)
+static bool cach_on_air(const hrc6000_dmr_t *e)
+{
+	return e->cfg.repeater || (rmo(e) && e->cach_seen);
+}
+
 static void set_ctl(hrc6000_dmr_t *e, uint8_t ctl)
 {
 	w(e->dev, R_SLOT_CTL, ctl);
@@ -406,6 +417,9 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->tc_disagree = 0;
 	e->at_tick[0] = 0;
 	e->at_tick[1] = 0;
+	e->bs_slot_valid = false;
+	e->bs_run = 0;
+	e->cach_seen = false;
 }
 
 static void do_restart(hrc6000_dmr_t *e, uint8_t why)
@@ -1282,10 +1296,29 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 
 	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
 	uint8_t ph = (uint8_t)((tick - 1u) & 1u);
-	if (s->sync == DMR_SYNC_BS) {
+	bool bs = s->sync == DMR_SYNC_BS;
+	if (bs) {
 		e->bs_tick = e->tick;
 		e->rmo_seen = true;
-	} else if (on_time && !tx && !e->cfg.repeater) {
+		uint32_t gap = tick - 1u - e->bs_slot;
+		if (!e->bs_slot_valid || gap != 0u) {	// a second report of the same slot changes nothing
+			bool next = e->bs_slot_valid && gap == 1u && s->tc != e->bs_tc;
+			e->bs_run = next ? (uint8_t)(e->bs_run < CACH_RUN ? e->bs_run + 1u : CACH_RUN) : 1u;
+		}
+		e->bs_tc = s->tc;
+		if (!e->cach_seen && e->bs_run >= CACH_RUN) {
+			e->cach_seen = true;
+			if (!e->cfg.repeater) {
+				e->phase_ts[0] = 0;	// direct mode guesses (below): the TC numbers the slots from now on
+				e->phase_ts[1] = 0;
+			}
+		}
+		e->bs_slot = tick - 1u;
+		e->bs_slot_valid = true;
+	}
+	// Direct mode (BS sync too while no CACH is on air): number the slot heard, so an aligned reply keys in step with
+	// the sender instead of waiting for a TC that never comes (refused at ALIGN_TIMEOUT_TICKS)
+	if (on_time && !tx && !e->cfg.repeater && !(bs && cach_on_air(e))) {
 		int8_t want = s->sync == DMR_SYNC_TS2 ? 2 : 1;
 		bool tdma = s->sync == DMR_SYNC_TS1 || s->sync == DMR_SYNC_TS2;
 		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
@@ -1308,7 +1341,9 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->st.last_cc = s->cc;
 	e->st.last_sync = s->sync;
-	e->st.last_ts = e->phase_ts[ph];
+	// A BS-sync burst with no CACH on air has no slot number (dmr-modem.md 2.3: direct mode)
+	int8_t ts_out = bs && !cach_on_air(e) ? 0 : e->phase_ts[ph];
+	e->st.last_ts = ts_out;
 	if (!s->crc_ok) {
 		e->st.rx_crc_err++;
 	}
@@ -1331,7 +1366,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->voice_index = s->voice_index;
 	b->sync = s->sync;
 	b->cc = s->cc;
-	b->ts = e->phase_ts[ph];
+	b->ts = ts_out;
 	b->crc_ok = s->crc_ok;
 	b->pi = s->pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
@@ -1922,7 +1957,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	bool ended = e->dev->chip->tc_last_rx || !HRC6000_DMR_TC_IS_SLOT_NOW;
 	uint8_t tc_ctl = ended ? ctl_ended : e->ctl_now;
 	uint8_t tc_prev = ended ? ctl_before : ctl_ended;
-	if (idle && (tc_ctl & CTL_RX) != 0 && (tc_prev & CTL_RX) != 0 && rmo(e)) {
+	if (idle && (tc_ctl & CTL_RX) != 0 && (tc_prev & CTL_RX) != 0 && cach_on_air(e)) {
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
@@ -1930,7 +1965,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		cc_tick_follow(e, ph);
 	}
 	push_tick(e, e->phase_ts[ph]);
-	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
+	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && cach_on_air(e)) {
 		slc_read(e);
 	}
 	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
@@ -2120,6 +2155,9 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->timing = false;
 	e->pa_on = false;
 	e->rmo_seen = false;
+	e->bs_slot_valid = false;
+	e->bs_run = 0;
+	e->cach_seen = false;
 	e->reg40 = L2_PASSIVE;
 	e->sync_cur = DMR_SYNC_MS;
 	e->cc_held = false;

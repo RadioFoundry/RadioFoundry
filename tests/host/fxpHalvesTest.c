@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// core/dsp/fxp.h's kernels made from 16-bit halves (fxp_mul64_h, fxp_mulshr_h, fxp_mulshr16_h: what a C-SKY build
+// core/dsp/fxp.h's kernels made from 16-bit halves (fxp_mul64_h, fxp_mulshr_h, fxp_mulshr16_h, fxp_mulhr_h: what a C-SKY build
 // without HI/LO runs) against the plain 64-bit versions they must equal for every input: the corners of each operand's
 // range, every shift, and a few million random pairs, half of them with the low halves at their own edges (0, 1,
 // 0x7FFF, 0x8000, 0xFFFF), where a carry or a sign between the halves would go wrong.
@@ -53,6 +53,7 @@ static int32_t pick(void)
 static void one(int32_t a, int32_t b)
 {
 	CHECK(fxp_mul64_h(a, b) == fxp_mul64_c(a, b), "mul64 %d * %d", a, b);
+	CHECK(fxp_mulhr_h(a, b) == fxp_mulhr_c(a, b), "mulhr %d * %d", a, b);
 	for (int s = 0; s < 32; s++) {
 		int32_t h = fxp_mulshr_h(a, b, s), c = fxp_mulshr_c(a, b, s);
 
@@ -78,12 +79,12 @@ int main(void)
 	for (int i = 0; i < NEDGE; i++)
 		for (int j = 0; j < NEDGE; j++)
 			one(EDGE[i], EDGE[j]);
-	printf("fxp_mul64_h, fxp_mulshr_h: %d x %d corner pairs, shifts 0..31: %s\n", NEDGE, NEDGE,
+	printf("fxp_mul64_h, fxp_mulshr_h, fxp_mulhr_h: %d x %d corner pairs, shifts 0..31: %s\n", NEDGE, NEDGE,
 	       failures == f0 ? "equal" : "DIFFER");
 	f0 = failures;
 	for (int i = 0; i < 2000000; i++)
 		one(pick(), pick());
-	printf("fxp_mul64_h, fxp_mulshr_h: 2,000,000 random pairs: %s\n", failures == f0 ? "equal" : "DIFFER");
+	printf("fxp_mul64_h, fxp_mulshr_h, fxp_mulhr_h: 2,000,000 random pairs: %s\n", failures == f0 ? "equal" : "DIFFER");
 
 	// a 16-bit factor: every c from -32768 to 32768 against the corners of x, then random pairs
 	f0 = failures;
@@ -105,8 +106,9 @@ int main(void)
 		CHECK(fxp_mul64(a, b) == fxp_mul64_c(a, b), "fxp_mul64");
 		CHECK(fxp_mulshr(a, b, 15) == fxp_mulshr_c(a, b, 15), "fxp_mulshr");
 		CHECK(fxp_mulshr16(a, c, 15) == fxp_mulshr_c(a, c, 15), "fxp_mulshr16");
+		CHECK(fxp_mulhr(a, b) == fxp_mulhr_c(a, b), "fxp_mulhr");
 	}
-	printf("fxp_mul64, fxp_mulshr, fxp_mulshr16 as built (%s): %s\n", FXP_HALVES_BUILT ? "16-bit halves" : "plain",
+	printf("fxp_mul64, fxp_mulshr, fxp_mulshr16, fxp_mulhr as built (%s): %s\n", FXP_HALVES_BUILT ? "16-bit halves" : "plain",
 	       failures == f0 ? "equal" : "DIFFER");
 	printf("fxpHalvesTest: %d checks, %d failed\n", checks, failures);
 	return failures != 0;

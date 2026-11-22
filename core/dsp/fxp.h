@@ -105,8 +105,8 @@ FXP_INLINE int32_t fxp_mulhr_c(int32_t a, int32_t b)
 //
 // For a core whose 32 x 32 -> 64 multiply is a library call: the CK803S (an HR_C7000's core; the compiler's name for it
 // has no DSP extension, ck803se does) makes each with __muldi3, six multiplies, about 25 instructions and a call. On
-// the full-rate decoder's worst frames those calls were 41 % of all it ran (the bench's instruction model of the CK803S
-// build, ysf-modem.md 4.3). Each operand splits into its high half xh (signed) and low half xl (0..65535), so
+// the full-rate decoder's worst frames those calls were 41 % of all it ran (an instruction-level model of the CK803S
+// build). Each operand splits into its high half xh (signed) and low half xl (0..65535), so
 // x y = xh yh 2^32 + (xh yl + xl yh) 2^16 + xl yl; every product fits 32 bits (|xh yl| <= 32768 * 65535 < 2^31, xl yl
 // in uint32_t), and the sums carry in 64 or wrap in 32 bits as the wide product's words do.
 
@@ -139,6 +139,13 @@ FXP_INLINE int32_t fxp_mulshr_h(int32_t a, int32_t b, int s)
 FXP_INLINE int32_t fxp_mulshr16_h(int32_t x, int32_t c, int s)
 {
 	return (int32_t)(((uint32_t)((x >> 16) * c) << (16 - s)) + (uint32_t)(((int32_t)(x & 0xFFFF) * c) >> s));
+}
+
+// The rounded high word (fxp_mulhr_c) through the same four products: the 64-bit add and shift are inline on C-SKY,
+// only the multiply was a library call. The soft BPTC decoder's Q31 products (DMR) run this on a core without HI/LO
+FXP_INLINE int32_t fxp_mulhr_h(int32_t a, int32_t b)
+{
+	return (int32_t)((uint64_t)(fxp_mul64_h(a, b) + 0x80000000) >> 32);
 }
 
 // --- Per core ---
@@ -271,7 +278,7 @@ FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b)
 #elif FXP_HALVES
 FXP_INLINE int64_t fxp_mul64(int32_t a, int32_t b) { return fxp_mul64_h(a, b); }
 FXP_INLINE int32_t fxp_mulshr(int32_t a, int32_t b, int s) { return fxp_mulshr_h(a, b, s); }
-FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b) { return fxp_mulhr_c(a, b); }
+FXP_INLINE int32_t fxp_mulhr(int32_t a, int32_t b) { return fxp_mulhr_h(a, b); }
 #else
 FXP_INLINE int64_t fxp_mul64(int32_t a, int32_t b) { return fxp_mul64_c(a, b); }
 FXP_INLINE int32_t fxp_mulshr(int32_t a, int32_t b, int s) { return fxp_mulshr_c(a, b, s); }

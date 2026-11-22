@@ -13,7 +13,7 @@ Order matters: receive first (nothing of ours on air), then the transmit path in
 over decoded by another radio, then a gateway. A step that fails stops the ones after it: the fixes are in the step.
 
 Status words as in `docs/spec/gotchas.md`. Every command here is `tools/dstar_bench.py` (its `--help`) or
-`tools/rfoundry_debug.py dstar` ([debuglink.md](../spec/debuglink.md) 3.30); none of them keys without `--allow-rf`.
+`tools/rfoundry_debug.py dstar` ([debuglink.md](../spec/debuglink.md) 3.31); none of them keys without `--allow-rf`.
 
 ## 1. Kit and set-up
 

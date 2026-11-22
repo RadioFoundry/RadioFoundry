@@ -4,6 +4,7 @@
 // Pure: it works through the hal_flash_t operations, so tests/host/spiNorTest.c runs it on the SPI NOR model with
 // power cuts.
 #include <stddef.h>
+#include "config.h"
 #include "store_md9600.h"
 
 // The map of the other usb-dfu radios with this flash layout: the open-firmware codeplug where the CPS tools expect it; settings and journal at
@@ -21,7 +22,9 @@ const hal_flash_map_t md9600_flash_map = {
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
 	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
-	.staging_size = 0x040000u,
+	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };
 
 #define SLOTS		(MD9600_STORE_SECTOR_SIZE / MD9600_REV_RECORD_SIZE)

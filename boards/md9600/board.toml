@@ -33,7 +33,8 @@ summary = """\
 One image serves every board revision. On a V1-V3 radio, FM and DMR on both bands, DMR voice and data, text messages, \
 roaming, scan, dual watch, APRS, the hotspot, each split duplex half and the USB network services work on air, with every power \
 level checked on a wattmeter on both bands. V4A/V5 boards are detected; on older boards the radio asks for the revision \
-once. Open: V4 and V4A/V5 boards have not run on a radio, and SFR loses inbound voice frames."""
+once. Open: V4 boards have not run on a radio, one V4A/V5 report has DMR transmit dropping out (#750), and SFR loses \
+inbound voice frames."""
 release = "stable"
 
 # This board's own switches (config.mk, config_md9600.h) aren't feature switches, so ci's per-switch builds don't cover
@@ -47,7 +48,7 @@ extra = [
 [flash]
 family = "usb-dfu"
 keep_codec = true
-notice = "One image serves every MD-9600, but only V1-V3 boards (original firmware V06.xx) have run RadioFoundry so far. V4 (V16.xx) and V4A/V5 (V26.xx) boards have not been tried on a radio: receive or transmit may not work. Transmit stays off until you turn it on in Settings > Advanced > Hardware. Keep a backup so you can go back to the original firmware, and please report what you find."
+notice = "One image serves every MD-9600, but only V1-V3 boards (original firmware V06.xx) have been tested. V4 (V16.xx) boards have not been tried on a radio, and on one V4A/V5 (V26.xx) radio DMR transmit drops out (#750): receive or transmit may not work on these boards. Transmit stays off until you turn it on in Settings > Advanced > Hardware. Keep a backup so you can go back to the original firmware, and please report what you find."
 stock_versions = [
 	"03.28 to 06.24 (V1-V3 boards)", "16.24 and 16.45 (V4 boards)", "26.38 to 26.45 and 126.61 (V5 boards)", "26.57 (V4A boards)",
 ]

@@ -112,7 +112,7 @@ AIR_PROFILES = {
             "syncs": [{"id": 0, "nsyms": 24, "max_errs": 4, "flags": 0, "frame_at": 0,
                        "syms": bytes([0x55, 0x75, 0xF5, 0xFF, 0x77, 0xFF])}]},
 }
-DSTAR = 0x26                        # D-STAR: calibration, test signals, UR, station (docs/spec/debuglink.md 3.30)
+DSTAR = 0x27                        # D-STAR: calibration, test signals, UR, station (docs/spec/debuglink.md 3.31)
 DSTAR_OP_CAL, DSTAR_OP_TEST, DSTAR_OP_UR, DSTAR_OP_STATION, DSTAR_OP_KNOB, DSTAR_OP_RESET = range(6)
 DSTAR_CAL = {"tx_1khz": 0, "tx_invert": 1, "rx_invert": 2, "tx_hpf": 3, "rx_hpf": 4}
 DSTAR_TESTS = {"off": 0, "tone": 1, "sweep": 2, "square": 3, "dots": 4, "silent": 5}
@@ -160,7 +160,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is", "power", "ambiguity"])}
+     "dmr_gps", "to_is", "power", "ambiguity", "mute"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}

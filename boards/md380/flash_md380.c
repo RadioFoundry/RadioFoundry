@@ -6,6 +6,7 @@
 // and its first megabyte (small_map) on a 1 MB one.
 #include "md380.h"
 #include "pins.h"
+#include "config.h"
 #include "spi_flash/spi_flash_board.h"
 
 // The 16 MB STM32 layout (hardware-md380.md 12.2). The open-firmware codeplug stays where the CPS tools expect it; our
@@ -24,7 +25,9 @@ static const hal_flash_map_t map = {
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
 	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
-	.staging_size = 0x040000u,
+	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };
 
 // A 1 MB part (W25Q80, early VHF radios): the same addresses up to the chip's end, so settings, the journal and the

@@ -61,9 +61,10 @@ BOARD_NOT_WRITTEN += DSTAR	# no flat FM paths in board.audio_tap (docs/spec/dsta
 BOARD_NOT_WRITTEN += YSF	# the same flat FM paths Fusion runs on (docs/spec/ysf-modem.md 1.1)
 BOARD_NOT_WRITTEN += YSF_VW	# Voice FR rides on Fusion, not written here either
 
-# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 6x12 font:
-# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
-BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
+# Chinese needs a 16x16 glyph for every character it draws (core/ui/cjk_font_data.c): the translation face plus a
+# reviewed list of Chinese names and repeater words is about 27 KB, and this 464 KB region is already 99 % full
+# without it. Chinese must not build here (the 720 KB and 880 KB radios carry it)
+BOARD_UNSUPPORTED += LANG_ZH	# the CJK glyphs won't fit beside the default build in 464 KB
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
 # P25 and NXDN transmit on the HR_C5000's physical layer mode (board.air, hardware-md380.md 4.11), but receive isn't
 # written: the chip gives no physical layer records, and NXDN's receive needs a flat discriminator copy, which this

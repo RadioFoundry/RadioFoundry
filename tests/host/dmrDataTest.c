@@ -393,9 +393,9 @@ static void testCSBKAnswers(void)
 {
 	dmrBurst_t burst;
 	const uint8_t alert[10] = { 0x9F, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
-	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x80, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t check[10] = { 0xA4, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };// FID 0x10 form
 	const uint8_t ackExpected[10] = { 0xA0, 0x10, 0x00, 0x00, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
-	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x00, 0x00, 0x00, 0xEB, 0x98, 0x8A, 0xD0 };
+	const uint8_t checkExpected[10] = { 0xA4, 0x10, 0x00, 0x80, 0x98, 0x8A, 0xD0, 0x00, 0x00, 0xEB };
 	uint8_t other[10];
 
 	CHECK(dmrDataBuildCSBKAnswer(alert, 235, &burst) == 1);
@@ -410,7 +410,7 @@ static void testCSBKAnswers(void)
 	CHECK(dmrDataBuildCSBKAnswer(alert, 236, &burst) == 0);// someone else's
 	CHECK(dmrDataBuildCSBKAnswer(alert, 9997008, &burst) == 0);// our own, from the repeater
 	memcpy(other, check, 10);
-	other[3] = 0x00;
+	other[3] = 0x80;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// an answer isn't answered
 	other[0] = 0xA0;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// nor an ack
@@ -419,6 +419,77 @@ static void testCSBKAnswers(void)
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 0);// unknown feature set
 	other[1] = 0x00;
 	CHECK(dmrDataBuildCSBKAnswer(other, 235, &burst) == 1);// ETSI
+}
+
+// Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 (0x314892) and 3229279 (0x31465F)
+// FID 0x10 form, between two commercial portables: 3229842 checks 3229279, which answers
+static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
+static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };
+#define RC_CHECKER	3229842
+#define RC_CHECKED	3229279
+
+static uint32_t getId24(const uint8_t *p)
+{
+	return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+}
+
+// The radio check forms (docs/spec/dmr-data.md 4): ours built byte for byte as the commercial portable sends it, the
+// captured CSBKs classified and answered as the radio on the other end does
+static void testRadioCheckForms(void)
+{
+	dmrBurst_t burst;
+	uint8_t c[10];
+	uint32_t peer = 0;
+
+	// Our CRC on the captured octets is the one heard
+	CHECK(dmrDataBuildCSBK(rcMotoRequest, &burst) == 1 && memcmp(burst.payload, rcMotoRequest, 12) == 0);
+	CHECK(dmrDataBuildCSBK(rcMotoAnswer, &burst) == 1 && memcmp(burst.payload, rcMotoAnswer, 12) == 0);
+
+	// Our request in the FID 0x10 form is the portable's
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
+	CHECK(memcmp(c, rcMotoRequest, 10) == 0);
+
+	// The portable's request, to the checked radio, answered as the portable answers
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, RC_CHECKED, &peer) == DMR_RC_REQUEST && peer == RC_CHECKER);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoRequest, RC_CHECKED, &burst) == 1);
+	CHECK(memcmp(burst.payload, rcMotoAnswer, 12) == 0);
+	// ... not to the checker (our own request, repeated) nor anyone else
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, RC_CHECKER, &peer) == 0);
+	CHECK(dmrDataRadioCheckKind(rcMotoRequest, 235, &peer) == 0);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoRequest, RC_CHECKER, &burst) == 0);
+
+	// The portable's answer, to the checker: an answer only, never answered
+	peer = 0;
+	CHECK(dmrDataRadioCheckKind(rcMotoAnswer, RC_CHECKER, &peer) == DMR_RC_ANSWER && peer == RC_CHECKED);
+	CHECK(dmrDataBuildCSBKAnswer(rcMotoAnswer, RC_CHECKER, &burst) == 0);
+	CHECK(dmrDataRadioCheckKind(rcMotoAnswer, RC_CHECKED, &peer) == 0);// our own answer, repeated
+
+	// The ETSI form (FID 0x00): request octet 3 0x80, the checked radio in octets 4-6
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, true, c);
+	CHECK(c[0] == 0xA4 && c[1] == DMR_FID_ETSI && c[3] == 0x80 && getId24(&c[4]) == RC_CHECKED &&
+		  getId24(&c[7]) == RC_CHECKER);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == DMR_RC_REQUEST && peer == RC_CHECKER);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == 0);// our own request, repeated
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 1);
+	CHECK(burst.payload[1] == DMR_FID_ETSI && burst.payload[3] == 0x00 && memcmp(&burst.payload[4], &c[4], 6) == 0);
+	c[3] = 0x00;// the answer, echoed ...
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == DMR_RC_ANSWER && peer == RC_CHECKED);
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == DMR_RC_ANSWER && peer == RC_CHECKER);// ... or IDs swapped
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
+	c[1] = 0x68;
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKER, &peer) == 0);// unknown feature set
+
+	// Another service on the opcode (octet 3 bits other than bit 7): neither a request nor answered
+	memcpy(c, rcMotoRequest, 10);
+	c[3] = 0x7E;
+	CHECK(dmrDataRadioCheckKind(c, RC_CHECKED, &peer) == 0);
+	CHECK(dmrDataBuildCSBKAnswer(c, RC_CHECKED, &burst) == 0);
+
+	// The checked radio of our request, in either form
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, false, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
+	dmrDataBuildRadioCheck(RC_CHECKED, RC_CHECKER, true, c);
+	CHECK(dmrDataRadioCheckDst(c) == RC_CHECKED);
 }
 
 // Confirmed Rate 1/2 packet as another radio would send it: 10 data bytes per block after the DBSN / CRC-9
@@ -1290,6 +1361,7 @@ int main(void)
 	testCSBK();
 	testUDTLocation();
 	testCSBKAnswers();
+	testRadioCheckForms();
 	testConfirmedRx();
 	testSap3();
 	testIpAddresses();

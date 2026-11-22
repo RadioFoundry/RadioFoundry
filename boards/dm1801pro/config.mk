@@ -28,7 +28,9 @@ BOARD_NOT_WRITTEN += DSTAR	# no flat FM paths in board.audio_tap (docs/spec/dsta
 BOARD_NOT_WRITTEN += YSF	# the same flat FM paths Fusion runs on (docs/spec/ysf-modem.md 1.1)
 BOARD_NOT_WRITTEN += YSF_VW	# Voice FR rides on Fusion, not written here either
 
-# A Chinese character is 16 px tall (core/ui/cjk_font.h) and these layouts draw their words in the 5x8 font:
-# there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
+# Chinese needs a hand-tuned CJK bitmap face shorter than 16 px and a layout that gives its lines that glyph's
+# height: the generated 16x16 face is clipped by the 5x8 words here (core/ui/gfx.c, docs/spec/ui.md 2.5,
+# tools/cjkfont.py). Until one with a suitable license exists the switch stays unsupported. This is a font and layout
+# gap, not a build-switch or flash one
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
