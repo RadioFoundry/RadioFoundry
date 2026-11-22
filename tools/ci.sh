@@ -12,6 +12,9 @@
 #   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list); with --toolchain,
 #                               the boards both select
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
+#   tools/ci.sh --affected origin/main   --quick plus the switch-off and fm-minimal builds the change since that commit
+#                               reaches (tools/affected.py; what pull requests run). RFOUNDRY_AFFECTED_SCOPE=broad takes
+#                               every switch a changed file names (the merge queue), RFOUNDRY_AFFECTED_LIMIT=N at most N
 #   tools/ci.sh --steps host,python   only these steps (registry, host, bench, python, firmware, licenses,
 #                                     similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
@@ -74,6 +77,7 @@ cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
 MATRIX=0
+AFFECTED=""
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
@@ -82,11 +86,12 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
 	--matrix) MATRIX=1 ;;
+	--affected) AFFECTED="$2"; QUICK=1; shift ;;
 	--board) ONLY="$2"; shift ;;
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,69p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,72p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
@@ -94,7 +99,7 @@ done
 for s in $(echo "$STEPS" | tr ',' ' '); do
 	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
-[ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
+[ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick (or --affected) and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
 step() { case ",$STEPS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}
@@ -523,6 +528,18 @@ if step firmware; then
 	echo "| Board | Config | Image bytes | Delta | Free | Used |"
 	echo "|---|---|---|---|---|---|"
 } > "$REPORT"
+# --affected: the builds the change reaches, from the working tree against that commit, for the selected boards
+if [ -n "$AFFECTED" ]; then
+	if [ -n "$REG_PY" ] && $REG_PY tools/affected.py builds --base "$AFFECTED" ${ONLY:+--board "$ONLY"} \
+		--scope "${RFOUNDRY_AFFECTED_SCOPE:-precise}" --limit "${RFOUNDRY_AFFECTED_LIMIT:-0}" \
+		> "$OUT/affected.builds" 2> "$OUT/affected.log"; then
+		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(sed -n 's/^affected: / (/p' "$OUT/affected.log" | sed 's/$/)/')"
+	else
+		cat "$OUT/affected.log"
+		bad "affected builds: tools/affected.py failed (see $OUT/affected.log)"
+		: > "$OUT/affected.builds"
+	fi
+fi
 
 for bm in boards/*/board.mk boards/*/; do
 	case "$bm" in
@@ -578,6 +595,14 @@ for bm in boards/*/board.mk boards/*/; do
 	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $maximal_vars
+	if [ -n "$AFFECTED" ]; then
+		grep "^$b " "$OUT/affected.builds" | while read -r _ aname aargs; do echo "$aname $aargs"; done > "$OUT/$b.affected"
+		while read -r aname aargs <&3; do
+			# shellcheck disable=SC2086
+			build "$b" "$aname" $aargs
+		done 3< "$OUT/$b.affected"
+		rm -f "$OUT/$b.affected"
+	fi
 done
 # Each platform's flash stubs (platform.toml stubs), once, when any board on the platform was built: one image serves
 # every board on it. Built with that platform's compiler (the first board's print-cc), then the stub's own check target

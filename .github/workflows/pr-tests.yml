@@ -129,6 +129,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          fetch-depth: 2   # the merge commit and main, its first parent: what --affected compares
           persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       # the csky-elf image is public (platform.toml [toolchain] image): pulled without logging in
@@ -139,14 +140,17 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - name: third_party submodules
         run: tools/checkout-submodules.sh
-      - name: Default builds, warnings, size and app region fit
+      - name: Default, maximal and affected builds, warnings, size and app region fit
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
+          # the switch-off and fm-minimal builds the change reaches (tools/affected.py), most relevant first; the
+          # rest are left to the nightly matrix
+          RFOUNDRY_AFFECTED_LIMIT: "12"   # about 30 s each on a 4-core runner
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --quick --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
+          $RUN tools/ci.sh --affected HEAD^1 --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
           if [ "$rc" = 3 ]; then
             echo "::notice::$TOOLCHAIN builds skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0

@@ -86,6 +86,30 @@ among them) always, and the PDF manual build (as `manual.yml` does) when docs ch
 job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
 requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
 
+### Affected builds
+
+A pull request's firmware jobs build more than `ci.yml`'s: `tools/ci.sh --affected HEAD^1` is `--quick` (default and
+maximal) plus the switch-off and fm-minimal builds the change reaches, from `tools/affected.py`. The full matrix
+builds about a hundred switches off on every board; a change can only break the switches its code sits under, so the
+tool reads them from the diff:
+
+| From | Switches | Boards |
+|---|---|---|
+| A changed line | Every `CONFIG_<X>` it names (a guard added, moved or removed), and the `#if` guards around it, in the new and the old file | |
+| An added line | The switches of a quoted include's declarations it uses, where the header has them only under a guard (the unguarded `contact_t` that broke `CONFIG_DMR=n`) | |
+| The Makefile | The switch the Makefile builds the changed file for | |
+| A file under a directory a `board.mk` lists (`BOARD_DIRS`), `boards/<b>/`, `boot/<stage>/` | | Those boards |
+| `platform/<p>/`, a linker script, a `.mk`, a boot stage | fm-minimal | Every board on the platform, or the board |
+| Other firmware sources (`core/`, `hal/`, `config/`, a driver no board lists, the Makefile) | | One board per platform: the one with the most switches on |
+
+Only switches on by default and not required by the board are built off, as in the matrix. `RFOUNDRY_AFFECTED_LIMIT`
+caps the list (12 per firmware job on a pull request, about 6 minutes), most relevant first: a board's own switches, then shared ones
+by how many changed files name them, fm-minimal last. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed
+file or its includes name. The nightly matrix stays the backstop for what the selection misses.
+
+`tools/affected.py summary --base origin/main` prints the list with the files behind each build, so a local
+`tools/ci.sh --affected origin/main --board <b>` runs the same builds before a push.
+
 The workflow is a plain `pull_request` run: the pull request's own copy of it, on its merge commit, on GitHub's
 hosted runners, with a read-only token that isn't stored in the checkout and no secrets. A fork's run waits until a
 maintainer approves it (the repository's fork policy, Settings, Actions: approval for all external contributors).
