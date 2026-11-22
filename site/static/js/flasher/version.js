@@ -34,15 +34,6 @@ export function firmwareName(version) {
 	return version.release ? `${version.release} (${version.git})` : version.git;
 }
 
-// The link that opts in to a pre-release newer than the release (site.json beta): this page with ?version=<beta>, or
-// null when there is none or a version link is already in use
-export function betaLink(beta, href, versionRef) {
-	if (!beta || !validRef(beta) || versionRef) return null;
-	const u = new URL(href);
-	u.searchParams.set("version", beta);
-	return u.pathname + u.search + u.hash;
-}
-
 // A release name's sort key (newer is larger), or null when it isn't one: tools/release_version.py's parse(). vYY.M,
 // vYY.M.N, either with bN for a pre-release, which sorts before its final
 const RELEASE_RE = /^v(2[6-9]|[3-9][0-9])\.(1[0-2]|[1-9])(?:\.([1-9][0-9]{0,2}))?(?:b([1-9][0-9]{0,2}))?$/;
