@@ -7,7 +7,7 @@
 import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
-import { refNumber, listenBand } from "../codeplug/model.js";
+import { refNumber, listenBand, followListen } from "../codeplug/model.js";
 import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
@@ -47,14 +47,10 @@ const freq = (t) => (r, k, v) => {
 	r[k] = hz;
 };
 
-// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (no stray TX
-// frequency left from before)
+// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (followListen)
 const rxFreq = (t) => (r, k, v) => {
 	const err = freq(t)(r, k, v);
-	if (!err && listenBand(r.rxHz)) {
-		r.rxOnly = true;
-		r.txHz = r.rxHz;
-	}
+	if (!err) followListen(r);
 	return err;
 };
 const listening = (value) => !!listenBand(parseFreq(value("rxHz")));

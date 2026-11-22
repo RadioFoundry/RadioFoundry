@@ -41,8 +41,10 @@ received in AM too: `tune()` sets `view.ch.mode` to FM in the air band and the b
 channel outside the air band has no use on these radios.
 
 The Codeplug Editor follows the same rule (`listenBand()` in `site/static/js/codeplug/model.js`, with the air band and
-65-108 MHz for broadcast): an RX frequency typed in either band turns on RX Only, the channel list shows the mode the
-radio uses, and the Problems list warns about a DMR channel there or a TX frequency there without RX Only.
+65-108 MHz for broadcast): a channel with its RX frequency in either band is RX Only with TX on RX, whether RX was
+typed, read from the radio or imported (`followListen()`), so the channel list, the exports and the image written show no
+other TX frequency. The channel list shows the mode the radio uses, and the Problems list warns about a DMR channel
+there or a TX frequency there without RX Only.
 
 ### 3.2 Behavior
 

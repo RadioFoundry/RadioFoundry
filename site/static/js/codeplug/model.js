@@ -50,7 +50,7 @@ export function decode(image) {
 	for (let n = 1; n <= LIMITS.channels; n++) {
 		if (!channelUsed(b, n)) continue;
 		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
-		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
+		if (c) m.channels.push(followListen(linkRefs(m, { number: n, ...c })));
 	}
 	decodeModes(m, b);
 	for (const a of VFO) {
@@ -293,6 +293,16 @@ export function listenBand(hz) {
 	if (hz >= AIR_HZ[0] && hz < AIR_HZ[1]) return "air";
 	if (hz >= BCAST_HZ[0] && hz < BCAST_HZ[1]) return "bcast";
 	return null;
+}
+
+// A channel whose RX is in a listen band is RX only with TX on RX, as the radio's channel editor saves it: no stray TX
+// frequency from before (a channel read, imported or edited elsewhere) is shown, exported or written. Returns c
+export function followListen(c) {
+	if (listenBand(c.rxHz)) {
+		c.rxOnly = true;
+		c.txHz = c.rxHz;
+	}
+	return c;
 }
 
 // --- Validation ---
