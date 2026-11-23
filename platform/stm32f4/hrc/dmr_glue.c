@@ -1060,10 +1060,12 @@ static uint32_t air_now_us(void)
 // Only a session that receives through the FM copy costs the MCU a modem; the chip's correlator does the others'
 static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
+	lock(NULL);	// as air_rx_counts: a session closing now is not read
 	bool copy = air_on && AIR->rx_copy;
 
 	*work_us = copy ? AIR->st.modem_us : 0;
 	*span_us = copy ? AIR->st.modem_span_us : 0;
+	unlock(NULL);
 	return copy;
 }
 

@@ -639,8 +639,10 @@ static uint32_t air_now_us(void) { return hrc_micros(); }
 
 static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
+	uint32_t s = hrc_irq_save();	// as air_rx_counts: a session closing now is not read
 	*work_us = air_on ? AIR->st.modem_us : 0;
 	*span_us = air_on ? AIR->st.modem_span_us : 0;
+	hrc_irq_restore(s);
 	return true;
 }
 

@@ -520,6 +520,9 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
             if stays_off():
                 skip("no_hw", f"register 0x{reg_addr:X} bit 0x{bit:X} reads off while the copy runs: not the copy's "
                      "interrupt on this board")
+            # Just before the write: a restart before it is not the provider's answer to it (after it would race
+            # the 200 ms watchdog)
+            r0 = as_int(radio.view(["air"]).get("airp.copy_restarts")) or 0
             set_off(True)
         except DebugLinkError as e:
             try:  # a write that went through before the error: never leave the copy off
@@ -527,7 +530,6 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
             except DebugLinkError:
                 pass
             skip("not_built", f"CHIP_REG can't reach the copy's interrupt bit (status {e.status})")
-        r0 = as_int(a0.get("airp.copy_restarts")) or 0
         try:
             # Halves come every 32 ms: more than 2 in 100 ms with the bit off, and no watchdog restart in between
             # (one 200 ms after the last half brings them back), means the bit isn't what stops them
