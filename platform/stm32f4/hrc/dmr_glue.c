@@ -1069,10 +1069,11 @@ static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 
 static bool air_rx_counts(air_rx_counts_t *c)
 {
+	lock(NULL);	// air_close clears air_on under the lock: a session closing now is not read
 	if (!air_on) {
+		unlock(NULL);
 		return false;
 	}
-	lock(NULL);
 	*c = (air_rx_counts_t){ .records = AIR->st.records, .synced = AIR->st.synced, .halves = AIR->st.halves,
 				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks,
 				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost.ms };

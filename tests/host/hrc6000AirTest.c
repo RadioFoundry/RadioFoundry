@@ -38,6 +38,7 @@ static uint8_t record[HRC6000_AIR_RAW_BYTES];
 static uint8_t tx_ram[0x48];		// page 2 0x00-0x47: the two halves
 static uint8_t copy_ram[4 * HRC6000_AIR_COPY_HALF];	// page 2 from 0x30 in FM: the two receive halves
 static bool fm_ram;			// page 2 0x30 reads give the FM receive RAM, not a record
+static bool read_fail;			// reads of page 4 0x34 and 0x81 fail (a bus error during the copy set-up)
 static int half_writes[2];
 
 static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
@@ -60,6 +61,9 @@ static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const 
 		}
 	}
 	if (read) {
+		if (read_fail && page == 4 && (addr == 0x34 || addr == 0x81)) {
+			return false;
+		}
 		if (page == 2 && fm_ram) {
 			CHECK(addr >= 0x30 && addr - 0x30u + len <= sizeof(copy_ram));
 			memcpy(rx, &copy_ram[addr - 0x30u], len);
@@ -1195,6 +1199,33 @@ static void test_air_lost_note(void)
 	CHECK(air_lost_note(&r, 1, a, 600) && r.ms == 501 && r.regs[0] == 5);
 }
 
+// The registers before the copy are saved once: when the first read failed, the watchdog's set-up must not save the
+// copy's own values, which the close would then write back over DMR receive
+static void test_copy_saved_once(void)
+{
+	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
+	air_profile_t q = p25();
+	q.sync[1].flags = AIR_SYNC_START_ONLY;	// receive through the copy
+
+	fresh();
+	fm_ram = true;
+	copy_next = 0;
+	memset(&smg, 0, sizeof(smg));
+	hrc6000_air_init(AIR, &dev, &ops, BUF, &sm_mem, &tap);
+	read_fail = true;
+	CHECK(hrc6000_air_open(AIR, &q, on_event, NULL) && AIR->rx_copy && !AIR->copy_saved);
+	read_fail = false;
+	regs[4][0x34] = 0x00;	// the copy's own set-up reads back
+	regs[4][0x81] = 0x1B;
+	t_us += AIR_COPY_STALL_US + 1000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1 && !AIR->copy_saved);
+	nx = 0;
+	hrc6000_air_close(AIR, true);
+	CHECK(count_writes(4, 0x34, -1) == 0 && count_writes(4, 0x81, -1) == 0);	// nothing restored from the copy
+	fm_ram = false;
+}
+
 static void test_copy_watchdog(void)
 {
 	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
@@ -1383,6 +1414,7 @@ int main(void)
 	test_open_close();
 	test_copy();
 	test_air_lost_note();
+	test_copy_saved_once();
 	test_copy_watchdog();
 	test_chip_description();
 	test_fuzz();

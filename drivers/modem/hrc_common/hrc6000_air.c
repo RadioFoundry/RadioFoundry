@@ -339,7 +339,9 @@ static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
 // the line out, the FM receive RAM's interrupt on
 static void copy_on(hrc6000_air_t *a)
 {
-	if (!a->copy_saved) {
+	// The registers before the copy, once: a copy set up again (the watchdog) would read its own set-up, and
+	// copy_restore would leave those on DMR receive
+	if (!a->copy && !a->copy_saved) {
 		uint8_t f = 0, m = 0;
 		a->copy_saved = hrc_read(a->dev, HRC_PAGE_SYS, R_FM_FILT, &f) && hrc_read(a->dev, HRC_PAGE_SYS, R_INT_MASK, &m);
 		a->saved_34 = f;

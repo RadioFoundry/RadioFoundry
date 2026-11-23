@@ -646,12 +646,13 @@ static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 
 static bool air_rx_counts(air_rx_counts_t *c)
 {
+	uint32_t s = hrc_irq_save();	// air_give clears air_on first: a session closing now is not read
 	if (!air_on) {
+		hrc_irq_restore(s);
 		return false;
 	}
 	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks,
 				.copy_restarts = AIR->st.copy_restarts };
-	uint32_t s = hrc_irq_save();
 	c->lost_ms = air_lost.ms;
 	memcpy(c->lost_regs, air_lost.regs, sizeof c->lost_regs);
 	hrc_irq_restore(s);
