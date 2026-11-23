@@ -29,6 +29,9 @@ typedef struct {
 	bool (*tx_busy)(void);
 	// Stop (early or after the end) and give the transmitter its microphone back; the core unkeys after this
 	void (*tx_stop)(void);
+	// Optional: false when the radio can't send AFSK now (a part fitted without the tone path), checked before the
+	// core keys up, so a refusal never leaves a bare carrier. NULL: always ready
+	bool (*tx_ready)(void);
 
 	// Optional receive path (NULL / 0 when there is none)
 	uint32_t rx_rate_hz;

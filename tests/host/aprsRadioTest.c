@@ -556,6 +556,22 @@ static void test_tx_limit(void)
 #endif
 }
 
+// A board whose AFSK isn't ready (tx_ready false: a part fitted without the tone path) is never keyed for a beacon, so
+// no bare carrier; ready again, the beacon goes
+static bool afsk_not_ready(void) { return false; }
+static void test_afsk_not_ready(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	fake_afsk.tx_ready = afsk_not_ready;
+	configure(60, false);
+	run(70u * 1000u);
+	CHECK(hw.tx_calls == 0 && hw.starts == 0 && !hw.keyed && hw.rx_hz == CH_HZ && sm.view.state == RS_IDLE);
+	fake_afsk.tx_ready = NULL;
+	CHECK(wait_start(1, 70000) && hw.tx_hz == APRS_HZ);
+	wait_idle();
+}
+
 static void test_min_interval(void)
 {
 	reset();
@@ -2005,6 +2021,7 @@ int main(void)
 	test_defaults();
 	test_beacon_on_air();
 	test_tx_limit();
+	test_afsk_not_ready();
 	test_min_interval();
 	test_busy_channel();
 	test_bcast_channel();

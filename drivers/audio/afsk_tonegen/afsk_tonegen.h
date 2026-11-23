@@ -23,6 +23,8 @@ typedef struct {
 	// stop
 	void (*timer_start)(uint32_t period_us, void (*tick)(void));
 	void (*timer_stop)(void);
+	// Optional: false when begin would refuse whatever the radio's state (hal_afsk_t tx_ready). NULL: always ready
+	bool (*ready)(void);
 } afsk_tonegen_board_t;
 
 // Once, from the radio init; then board.afsk = &afsk_tonegen

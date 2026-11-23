@@ -72,8 +72,14 @@ static void tx_stop(void)
 	hw->end();
 }
 
+static bool tx_ready(void)
+{
+	return hw != NULL && (hw->ready == NULL || hw->ready());
+}
+
 const hal_afsk_t afsk_tonegen = {
 	.tx_start = tx_start,
 	.tx_busy = tx_busy,
 	.tx_stop = tx_stop,
+	.tx_ready = tx_ready,
 };

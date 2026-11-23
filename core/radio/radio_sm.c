@@ -5852,7 +5852,7 @@ static bool aprs_can_start(const radio_sm_t *sm)
 {
 	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || (sm->view.state != RS_IDLE && !(sm->view.state == RS_RX && bcast_listening(sm))) ||
 	    sm->view.monitor || sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
-	    board.afsk->tx_start == NULL) {
+	    board.afsk->tx_start == NULL || (board.afsk->tx_ready != NULL && !board.afsk->tx_ready())) {
 		return false;
 	}
 #if CONFIG_SCAN

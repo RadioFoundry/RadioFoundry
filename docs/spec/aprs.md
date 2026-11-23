@@ -174,7 +174,9 @@ on RF for the iGate rules (section 9.1).
 `hal/hal_afsk.h`: `tx_start(tones, nbits, baud, mark, space, level)` plays a symbol string (one bit per symbol,
 1 = mark), `tx_busy`, `tx_stop`; `rx_rate_hz`, `rx_start`, `rx_read`, `rx_stop` deliver received audio samples.
 `board.afsk` is NULL on boards without a tone path. A board that can only receive sets the `rx_*` members and leaves
-`tx_start` NULL. Without a transmit path the reason is "no AFSK" and only DMR positions go out.
+`tx_start` NULL. Without a transmit path the reason is "no AFSK" and only DMR positions go out. The optional
+`tx_ready` returns false while the board can't send AFSK, for example when a unit carries an RF part without the tone
+path. The core checks `tx_ready` before keying up, so a refusal never leaves a bare carrier on air.
 
 ### 5.2 Transmit
 
