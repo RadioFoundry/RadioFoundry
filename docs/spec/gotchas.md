@@ -159,6 +159,16 @@ through the chip: the board reports its chip in FM receive (`stm32_i2s_pcm_fm_ch
 FIFO while its PCM route is on (`audio.fifo_fm`, `test_beep_fm_fifo`). Radios: HR_C6000; the HR_C5000's FIFO is not
 known, so a board turns the path on with `prompt_fifo`.
 
+**1.15 The HR_C5000 hears BS sync only in repeater mode.**
+Symptom: on a direct channel, a call framed with BS sync, one burst every 60 ms and no CACH (as a simplex hotspot
+sends), was not heard at all: 0 of 8 calls, no timeslot interrupt, no report. MS sync calls on the same channel
+played. Cause: with 4:0x10 = 0x6B (ISRepeater clear) the chip finds MS and direct mode sync only; with 0x4F
+(ISRepeater set) it finds BS sync only. A test image with 0x4F on the direct channel heard the BS calls and none of
+the MS ones. Rule: on a direct channel the engine hunts both modes while nothing is taken
+([modem-hrc6000.md](modem-hrc6000.md) 5.3). A call can lose up to one dwell (120 ms) of its start. Test direct mode
+receive with both sync families. Radios: HR_C5000 (chip flag `bs_by_mode`); the HR_C6000 hears both families in
+either mode.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
