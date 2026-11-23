@@ -224,8 +224,9 @@ class Site:
 		with open(p, "w", encoding="utf-8") as f:
 			f.write(text)
 
-	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav="", footer=""):
-		"""A page of the site: rel is its path inside the language's tree; footer goes above the site footer's line."""
+	def page(self, lang, rel, title, content, page_class, description="", scripts="", nav="", footer="", styles=""):
+		"""A page of the site: rel is its path inside the language's tree; footer goes above the site footer's line.
+		styles: stylesheet links ahead of the site's own, so site.css overrides them"""
 		prefix = self.i18n.prefix(lang)
 		full = prefix + rel
 		depth = full.count("/")
@@ -251,7 +252,7 @@ class Site:
 			alternates += '<link rel="alternate" hreflang="x-default" href="%s">\n' % html.escape(page_url(self.i18n.default))
 		ctx = {"lang": lang, "dir": meta.get("dir", "ltr"), "title": title, "root": root,
 		       "home": root + prefix, "content": content, "page_class": page_class,
-		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "footer": footer,
+		       "description": description or self.i18n.t(lang, "site.tagline"), "scripts": scripts, "styles": styles, "footer": footer,
 		       "languages": langs, "alternates": alternates, "og_locale": meta.get("locale", lang).replace("-", "_"),
 		       "git": self.git, "assets": self.asset_version, "version": self.version, "built": self.built,
 		       "built_at": self.built_at, "built_iso": self.built_iso, "git_full": self.git_full,
@@ -821,9 +822,13 @@ class Site:
 	def codeplug_page(self, lang):
 		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.")), ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
-			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version))
+			   # the searchable lists (editor/combo.js): a classic script, ahead of the editor's module
+			   '<script src="{{root}}static/vendor/tom-select/tom-select.complete.min.js?v=%s"></script>'
+			   '<script type="module" src="{{root}}static/js/editor/app.js?v=%s"></script>' % (strings, self.asset_version, self.asset_version))
+		# ahead of site.css, whose rules give the lists the site's look
+		styles = '<link rel="stylesheet" href="{{root}}static/vendor/tom-select/tom-select.default.css?v=%s">\n' % self.asset_version
 		self.page(lang, "codeplug/index.html", self.t(lang, "editor.title"), self.tpl.render("codeplug", {}, lang),
-			  "codeplug", description=self.t(lang, "editor.lead"), scripts=scripts, nav="codeplug", footer=self.reports_footer(lang))
+			  "codeplug", description=self.t(lang, "editor.lead"), scripts=scripts, styles=styles, nav="codeplug", footer=self.reports_footer(lang))
 
 	def errors_paragraph(self, lang):
 		"""The error tracker's note, folded into the flasher's one privacy note: only when the build has an address."""
