@@ -218,6 +218,8 @@ uint8_t codeplug_kv_serial(void) { return 0; }
 bool codeplug_contact(uint16_t index, contact_t *out) { (void)index; (void)out; return false; }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out) { (void)index; (void)out; return false; }
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out) { (void)id; (void)group; (void)out; return false; }
+// The radio name (the fox's callsign): none
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = '\0'; }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
 	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };

@@ -776,6 +776,8 @@ bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)
 	}
 	return false;
 }
+// The radio name (the fox's callsign): none
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = '\0'; }
 bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 {
 	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
