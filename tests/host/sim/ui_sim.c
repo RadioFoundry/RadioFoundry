@@ -49,6 +49,7 @@
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
+//   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2605,6 +2606,30 @@ static void advance(uint32_t ms)
 		step();
 }
 
+#if CONFIG_DMR_AES
+static bool sim_aes_keys;	// aeskeys
+
+// The codeplug's AES keys as ui_svc_storage.c steps them: system 3 (index 2), PI key IDs 0 and 7, then none
+void ui_svc_next_aes_key(channel_t *c)
+{
+	static const uint16_t refs[] = { 1, 8 };	// key ID + 1
+	unsigned i = 0;
+
+	if (c->kind == CODEPLUG_KIND_DMR_AES)
+		while (i < 2 && refs[i] <= c->aes_ref)
+			i++;
+	if (!sim_aes_keys || i == 2) {
+		c->kind = CODEPLUG_KIND_NONE;
+		c->system = CODEPLUG_SYSTEM_NONE;
+		c->aes_ref = 0;
+		return;
+	}
+	c->kind = CODEPLUG_KIND_DMR_AES;
+	c->system = 2;
+	c->aes_ref = refs[i];
+}
+#endif
+
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
@@ -2643,6 +2668,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_DMR_AES
+	sim_aes_keys = false;
+#endif
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
 	sim_satellite_no_passes = false;
@@ -3669,6 +3697,12 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_DMR_AES
+	if (strcmp(t, "aeskeys") == 0) {
+		sim_aes_keys = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;

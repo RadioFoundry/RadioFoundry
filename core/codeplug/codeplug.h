@@ -58,6 +58,9 @@ typedef struct {
 	// parameter block, which its mode module fetches (codeplug_tag_params); none of them live here
 	uint8_t kind;
 	uint8_t system;
+#if CONFIG_DMR_AES
+	uint16_t aes_ref;  // 1 + the eight-bit PI key ID, zero for a missing or malformed reference
+#endif
 } channel_t;
 
 // channel_t.alias_tx: what the channel sends as talker alias on each timeslot (text = our radio name)

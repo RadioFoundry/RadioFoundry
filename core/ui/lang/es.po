@@ -2253,6 +2253,11 @@ msgid "Tone burst"
 msgstr "Ráfaga de tono"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Clave AES"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Código de color"
@@ -4836,6 +4841,16 @@ msgstr "El sistema detuvo la TX"
 msgctxt "DENY_WHY_NO_TX_FREQ"
 msgid "No TX frequency set"
 msgstr "Sin frecuencia TX fijada"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Sin clave AES o TX"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES: guardando, reintenta"
 
 #: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
