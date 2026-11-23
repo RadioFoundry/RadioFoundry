@@ -96,17 +96,10 @@ static void commit_hash(const uint8_t pub[X25519_LEN], uint8_t out[SHA256_LEN])
 	sha256_final(&h, out);
 }
 
-// 4.1: the shared secret, the transcript hash and the keys; the private key is wiped, used once. False: the shared
-// secret is all zeros
-static bool derive(kf_session_t *s)
+// 4.1: the transcript hash T into s->t. noinline: inlined, its SHA-256 context stays in derive's frame under the HKDF
+// below, the UI task's deepest path (stack-check.md)
+static void __attribute__((noinline)) transcript(kf_session_t *s)
 {
-	uint8_t shared[X25519_LEN], prk[SHA256_LEN], okm[2 * SHA256_LEN + 4];
-	bool ok = x25519(shared, s->priv, s->peer_pub, &s->ws);
-	crypto_wipe(s->priv, sizeof s->priv);
-	if (!ok) {
-		crypto_wipe(shared, sizeof shared);
-		return false;
-	}
 	bool sender = s->role == 0;
 	uint32_t id_s = sender ? s->own_id : s->peer_id, id_r = sender ? s->peer_id : s->own_id;
 	uint8_t ids[10];
@@ -124,6 +117,20 @@ static bool derive(kf_session_t *s)
 	sha256_update(&h, sender ? s->own_pub : s->peer_pub, X25519_LEN);
 	sha256_update(&h, sender ? s->peer_pub : s->own_pub, X25519_LEN);
 	sha256_final(&h, s->t);
+}
+
+// 4.1: the shared secret, the transcript hash and the keys; the private key is wiped, used once. False: the shared
+// secret is all zeros
+static bool derive(kf_session_t *s)
+{
+	uint8_t shared[X25519_LEN], prk[SHA256_LEN], okm[2 * SHA256_LEN + 4];
+	bool ok = x25519(shared, s->priv, s->peer_pub, &s->ws);
+	crypto_wipe(s->priv, sizeof s->priv);
+	if (!ok) {
+		crypto_wipe(shared, sizeof shared);
+		return false;
+	}
+	transcript(s);
 	hkdf_extract(s->t, sizeof s->t, shared, sizeof shared, prk);
 	(void)hkdf_expand(prk, LABEL(L_KEYS), okm, sizeof okm);
 	memcpy(s->k_mac, okm, SHA256_LEN);
