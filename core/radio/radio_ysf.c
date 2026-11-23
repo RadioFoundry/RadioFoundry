@@ -60,6 +60,8 @@ void radio_ysf_set_settings(const radio_ysf_settings_t *s)
 		set.tx_dgid = 0;
 	if (set.rx_dgid > RADIO_YSF_DGID_MAX)
 		set.rx_dgid = 0;
+	if (set.temp_dgid > RADIO_YSF_DGID_MAX)
+		set.temp_chan = 0;
 }
 
 uint32_t radio_ysf_fit(void)
@@ -128,7 +130,7 @@ void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1]
 }
 
 // The engine's configuration for channel ch at number (0: the VFO): a live stored YSF channel's tag gives the
-// DG-IDs, else the settings
+// DG-IDs (or the quick settings' DG-ID for it, for now), else the settings
 static void params(const channel_t *ch, uint16_t number, const char *radio_name, ysf_engine_cfg_t *c)
 {
 	ysf_chan_t yc;
@@ -136,7 +138,12 @@ static void params(const channel_t *ch, uint16_t number, const char *radio_name,
 
 	memset(c, 0, sizeof *c);
 	c->silence = dmr_ambe_silence;
-	if (number != 0 && ysf_chan_load(number, ch, &yc)) {
+	if (number != set.temp_chan)
+		set.temp_chan = 0;	// another channel (or the VFO): the quick DG-ID was for the one left
+	if (number != 0 && number == set.temp_chan) {
+		c->rx_dgid = set.temp_dgid;
+		c->tx.dgid = set.temp_dgid;
+	} else if (number != 0 && ysf_chan_load(number, ch, &yc)) {
 		c->rx_dgid = yc.rx_dgid;
 		c->tx.dgid = yc.tx_dgid;
 	} else {

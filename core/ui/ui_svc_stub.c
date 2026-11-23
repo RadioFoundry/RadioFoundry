@@ -49,6 +49,7 @@ WEAK void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 		*weak = true;
 }
 WEAK void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1]) { out[0] = '\0'; }
+WEAK bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan) { (void)dgid; (void)chan; return false; }
 #endif
 #if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
 WEAK bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)

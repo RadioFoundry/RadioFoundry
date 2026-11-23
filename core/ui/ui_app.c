@@ -354,6 +354,9 @@ static uint8_t recent_n;
 #if CONFIG_DMR
 static uint32_t recent_seen_ms;
 static bool recent_tx;
+#if CONFIG_YSF
+static bool recent_ysf_in;	// the YSF call heard now is in the list
+#endif
 #endif
 
 uint8_t ui_recent_count(void) { return recent_n; }
@@ -365,7 +368,8 @@ static void recent_add(const ui_recent_t *r)
 	// The same station and destination again: move it to the top instead of repeating it
 	uint8_t i;
 	for (i = 0; i < recent_n; i++)
-		if (recent[i].src == r->src && recent[i].dst == r->dst && recent[i].out == r->out)
+		if (recent[i].src == r->src && recent[i].dst == r->dst && recent[i].out == r->out &&
+		    recent[i].ysf == r->ysf && (!r->ysf || strcmp(recent[i].name, r->name) == 0))
 			break;
 	if (i == recent_n && recent_n < UI_RECENT_MAX)
 		recent_n++;
@@ -425,6 +429,26 @@ static void recent_update(const radio_view_t *v)
 			recent_gps(&recent[0], &d->last);
 		}
 	}
+#if CONFIG_YSF
+	// A YSF call: in once its callsign is known (from the header, or later from the DCH), then kept fresh
+	const radio_ysf_view_t *y = &v->ysf;
+	if ((y->flags & RADIO_YSF_RX) && y->src[0]) {
+		if (!recent_ysf_in) {
+			ui_recent_t r;
+			memset(&r, 0, sizeof r);
+			r.ysf = true;
+			r.dgid = y->dgid;
+			r.ms = now;
+			str_copy(r.name, sizeof r.name, y->src);
+			recent_add(&r);
+			recent_ysf_in = true;
+		} else if (recent_n && recent[0].ysf) {
+			recent[0].ms = now;
+		}
+	} else if (!(y->flags & RADIO_YSF_RX)) {
+		recent_ysf_in = false;
+	}
+#endif
 	bool tx = v->state == RS_TX && d->active;
 	if (tx && !recent_tx && d->target_id != 0) {
 		ui_recent_t r;
@@ -536,7 +560,7 @@ static bool caller_target(ui_target_t *t)
 	}
 #endif
 	for (uint8_t i = 0; i < recent_n; i++) {
-		if (!recent[i].out) {
+		if (!recent[i].out && !recent[i].ysf) {
 			ui_recent_target(&recent[i], t);
 			return true;
 		}
@@ -1375,6 +1399,11 @@ static void quick_change(uint8_t kind, int8_t dir)
 		ui_st.cc_edit = (uint8_t)(c < 0 ? 15 : c > 15 ? 0 : c);
 		break;
 	}
+	case QT_DGID: {
+		int g = ui_st.dgid_edit + dir;
+		ui_st.dgid_edit = (uint8_t)(g < 0 ? 99 : g > 99 ? 0 : g);
+		break;
+	}
 	case QT_BRIGHTNESS: {
 		int b = ui_st.brightness + dir * 10;
 		ui_st.brightness = (uint8_t)(b < 10 ? 10 : b > 100 ? 100 : b);
@@ -1395,6 +1424,10 @@ static void quick_close_editor(void)
 		ui_toast(TR(WHY_COLOR_CODE_NOT_IN_BUILD, "Color code: not in this build"));
 	if (kind == QT_BRIGHTNESS)
 		ui_svc_setting_set(UI_SET_BRIGHTNESS, ui_st.brightness);
+#if CONFIG_YSF
+	if (kind == QT_DGID && ui_st.quick_edit)
+		(void)ui_svc_ysf_dgid(ui_st.dgid_edit, view->vfo ? 0 : view->channel_number);
+#endif
 	ui_st.quick_edit = false;
 }
 
@@ -1544,6 +1577,12 @@ static void quick_activate(int tile)
 		ui_st.cc_edit = view->dmr.active ? view->dmr.cc : view->ch.color_code;
 		ui_st.quick_edit = true;
 		break;
+#if CONFIG_YSF
+	case QT_DGID:
+		ui_st.dgid_edit = view->ysf.tx_dgid;
+		ui_st.quick_edit = true;
+		break;
+#endif
 	case QT_HEAR_ALL:
 		quick_monitor(kind);
 		break;
@@ -1610,6 +1649,9 @@ bool ui_quick_key(const input_event_t *ev)
 		} else if (ui_st.quick_edit && kind == QT_CC) {
 			int c = ui_st.cc_edit * 10 + d;
 			ui_st.cc_edit = (uint8_t)(ui_st.cc_edit < 2 && c <= 15 && ui_st.cc_edit != 0 ? c : d);
+		} else if (ui_st.quick_edit && kind == QT_DGID) {
+			int g = ui_st.dgid_edit * 10 + d;	// two digits; a third starts again
+			ui_st.dgid_edit = (uint8_t)(ui_st.dgid_edit != 0 && ui_st.dgid_edit < 10 && g <= 99 ? g : d);
 		} else if (ui_st.quick_edit && kind == QT_BRIGHTNESS) {
 			ui_st.brightness = (uint8_t)(d == 0 ? 100 : d * 10);
 			quick_close_editor();
@@ -2127,7 +2169,7 @@ static void call_back_key(void)
 {
 	for (uint8_t i = 0; i < ui_recent_count(); i++) {
 		const ui_recent_t *r = ui_recent_get(i);
-		if (r->out)
+		if (r->out || r->ysf)
 			continue;
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR) {
 			ui_toast(TR(HOME_WHY_CALL_BACK_DMR_ONLY, "Call back: DMR only"));

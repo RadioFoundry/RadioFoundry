@@ -26,6 +26,10 @@
 typedef struct {
 	uint8_t tx_dgid;	// 0..99
 	uint8_t rx_dgid;	// 0..99; 0 hears every DG-ID
+	// A stored channel's DG-ID for now (quick settings): both ways on channel temp_chan while it is in use; another
+	// channel taken drops it. 0: none
+	uint16_t temp_chan;
+	uint8_t temp_dgid;
 } radio_ysf_settings_t;
 
 // view flags

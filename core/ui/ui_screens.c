@@ -3697,6 +3697,8 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 	uint8_t kind = v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_TONE)
 		kind = QT_WIRESX;	// no tones on YSF: tile 3 opens Wires-X
+	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_BANDWIDTH)
+		kind = QT_DGID;		// nor a width: tile 8 is the DG-ID
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
 		return QT_SPLIT;	// the VFO's TX frequency; Monitor stays on its key, privacy on channels
 	return kind;
@@ -3735,6 +3737,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 			TEXT_ALT_NEXT "To VFO" TEXT_ALT_CLOSE),
 		[QT_SPLIT] = TRN(QUICK_LABEL_TX_FREQ, TEXT_ALT_OPEN "TX freq" TEXT_ALT_NEXT "TXFreq" TEXT_ALT_CLOSE),
 		[QT_WIRESX] = TRX(QUICK_LABEL_WIRESX, TEXT_ALT_OPEN "Wires-X" TEXT_ALT_NEXT "Wires" TEXT_ALT_CLOSE),
+		[QT_DGID] = TRX(QUICK_LABEL_DGID, "DG-ID"),
 	};
 	uint8_t kind = ui_quick_kind(tile, v);
 	bool editing = s->quick_edit && s->quick_focus == tile;
@@ -3823,6 +3826,11 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 	case QT_WIRESX:
 		sb_str(&b, TR(QUICK_VALUE_OPEN, "Open"));
 		return CONFIG_YSF;
+#if CONFIG_YSF
+	case QT_DGID:
+		sb_u32(&b, editing ? s->dgid_edit : v->ysf.tx_dgid, 2);
+		return true;
+#endif
 #if CONFIG_DMR
 	case QT_TIMESLOT:
 		sb_str(&b, "TS");

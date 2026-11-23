@@ -229,6 +229,11 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - A YSF channel: Mode "YSF", then DG-ID in place of NAC; no TX contact, Own ID or Talkaround (System Fusion names the
   radio by callsign and radio ID). DG-ID shows the sent DG-ID, then the heard one where they differ ("12/00"); OK opens
   it, digits type 0-99, Up and Down step through 0-99, and OK sets both to the value (00 hears every DG-ID).
+- On a YSF channel quick settings tile 3 opens Wires-X (no tones) and tile 8 is the DG-ID (no width): Up/Down step
+  0-99, digits type two, OK sets it both ways (`ui_svc_ysf_dgid`). In the VFO it stays; on a stored channel it lasts
+  until another channel is taken (`radio_ysf_settings_t.temp_chan`). # on Home opens Wires-X (a YSF call has no
+  caller's actions). Recent lists a YSF call by callsign and DG-ID (`ui_recent_t.ysf`); Hub > last caller, call back
+  and # skip it, its actions toast "No actions here".
 - Settings > My radio adds, with `CONFIG_YSF`, two rows. YSF callsign: OK opens text entry (up to 10 characters); OK
   there writes the YSF record ([ysf-codeplug.md](ysf-codeplug.md) 1), refusing anything but letters, digits, `-` and
   `/` with a toast; saved empty, the radio name's callsign is used again. YSF RID: read only, OK says it is made from

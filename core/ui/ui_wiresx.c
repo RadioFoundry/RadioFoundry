@@ -3,7 +3,8 @@
 // Wires-X (docs/spec/ysf.md 9): the node this YSF channel hears, the room it is in, connect and disconnect,
 // the room list a page at a time, a search. Every command is a short transmission the radio core keys (refused as
 // PTT would be); the node's reply comes in its own time, so the screens show what was asked until it answers.
-// Opened from Tools > Wires-X, quick settings tile 3 on a YSF channel, or a key set to Wires-X
+// The first row is the DG-ID, both ways (as quick settings tile 8). Opened from Tools > Wires-X (key 0), # on Home or
+// quick settings tile 3 on a YSF channel, or a key set to Wires-X
 #include "config.h"
 #if CONFIG_YSF	// the whole file
 #include <string.h>
@@ -25,6 +26,8 @@ static uint32_t asked_serial;		// the reply serial then
 static uint32_t room_id;		// typed (0 none), kept while the radio runs
 static uint8_t id_len;			// digits typed in the current entry
 static bool id_editing;
+static uint8_t dg_edit;			// the DG-ID row's editor: the value typed
+static bool dg_editing;
 #if CONFIG_CHANNEL_EDIT
 static char search_text[YSF_WX_TEXT_LEN + 1];
 #endif
@@ -61,7 +64,7 @@ static bool send(uint8_t cmd, uint32_t arg, const char *text)
 }
 
 // ── The Wires-X page ──
-enum { WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
+enum { WX_DGID, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
 #if CONFIG_CHANNEL_EDIT
 	WX_SEARCH,
 #endif
@@ -75,7 +78,7 @@ static uint16_t wx_count(void)
 
 static void wx_item(uint16_t i, ui_item_t *it)
 {
-	static const tr_id_t labels[WX_COUNT] = { TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
+	static const tr_id_t labels[WX_COUNT] = { TRX(QUICK_LABEL_DGID, "DG-ID"), TRN(WX_LABEL_NODE, "Node"), TRN(WX_LABEL_ROOM, "Room"),
 		TRN(WX_LABEL_ROOM_ID, "Room ID"), TRN(WX_ROW_CONNECT, "Connect"), TRN(WX_ROW_DISCONNECT, "Disconnect"),
 		TRN(WX_ROW_ROOMS, "Rooms"),
 #if CONFIG_CHANNEL_EDIT
@@ -87,6 +90,13 @@ static void wx_item(uint16_t i, ui_item_t *it)
 	str_copy(it->label, sizeof it->label, tr(labels[i]));
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
+	case WX_DGID:
+		sb_u32(&b, dg_editing ? dg_edit : ui_view()->ysf.tx_dgid, 2);
+		if (dg_editing) {
+			sb_chr(&b, '_');
+			it->flags |= UI_ITEM_EDIT;
+		}
+		break;
 	case WX_NODE:
 		if (waiting() && (wx.asked_cmd == YSF_WX_DX || wx.asked_cmd == YSF_WX_CONNECT ||
 				  wx.asked_cmd == YSF_WX_DISCONNECT))
@@ -144,7 +154,21 @@ static void wx_select(uint16_t i, bool hold)
 	(void)hold;
 	if (id_editing && i != WX_ROOM_ID)
 		id_editing = false;
+	if (dg_editing && i != WX_DGID)
+		dg_editing = false;
 	switch (i) {
+	case WX_DGID:
+		// OK edits (digits, two at most), OK again sets it: in the VFO it stays, on a channel until another
+		if (dg_editing) {
+			const radio_view_t *v = ui_view();
+
+			(void)ui_svc_ysf_dgid(dg_edit, v->vfo ? 0 : v->channel_number);
+		} else {
+			dg_edit = ui_view()->ysf.tx_dgid;
+		}
+		dg_editing = !dg_editing;
+		ui_dirty();
+		break;
 	case WX_NODE:
 	case WX_ROOM:
 		send(YSF_WX_DX, 0, NULL);
@@ -186,6 +210,18 @@ static bool wx_key(const input_event_t *ev)
 {
 	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
 
+	if (dg_editing && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		int g = dg_edit * 10 + (ev->action - ACT_DIGIT_0);	// two digits; a third starts again
+
+		dg_edit = (uint8_t)(dg_edit != 0 && dg_edit < 10 && g <= 99 ? g : ev->action - ACT_DIGIT_0);
+		ui_dirty();
+		return true;
+	}
+	if (dg_editing && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
+		dg_editing = false;	// left as it was
+		ui_dirty();
+		return true;
+	}
 	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
 		if (!id_editing || id_len >= WX_ID_DIGITS) {
 			id_editing = true;
@@ -227,6 +263,7 @@ static const char *wx_body(void)
 static void wx_enter(void)
 {
 	id_editing = false;
+	dg_editing = false;
 	wx_read();
 }
 

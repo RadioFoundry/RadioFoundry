@@ -979,6 +979,18 @@ void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : "N0CALL");
 }
 static radio_view_t view;	// (defined again below: one object)
+// The DG-ID set (quick settings, the Wires-X page): the view shows it at once; dgid / dgchan in the results
+static int sim_dgid = -1, sim_dgchan = -1;
+bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan)
+{
+	if (dgid > RADIO_YSF_DGID_MAX)
+		return false;
+	sim_dgid = dgid;
+	sim_dgchan = chan;
+	view.ysf.tx_dgid = dgid;
+	view.ysf.rx_dgid = dgid;
+	return true;
+}
 // Wires-X: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
 // tokens
 static radio_ysf_wx_t sim_wx = { .asked_cmd = YSF_WX_NONE };
@@ -2797,6 +2809,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	memset(&sim_wx, 0, sizeof sim_wx);
 	sim_wx.asked_cmd = YSF_WX_NONE;
 	sim_wx_cmd = -1;
+	sim_dgid = sim_dgchan = -1;
 	sim_wx_arg = 0;
 #endif
 #if CONFIG_NXDN
@@ -3018,6 +3031,8 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 #if CONFIG_YSF
 	else if (strcmp(key, "wxcmd") == 0) snprintf(got, sizeof got, "%d", sim_wx_cmd);
+	else if (strcmp(key, "dgid") == 0) snprintf(got, sizeof got, "%d", sim_dgid);
+	else if (strcmp(key, "dgchan") == 0) snprintf(got, sizeof got, "%d", sim_dgchan);
 	else if (strcmp(key, "wxarg") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wx_arg);
 #endif
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);

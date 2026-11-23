@@ -612,7 +612,7 @@ msgctxt "QUICK_TOAST_TONE_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "Tono solo en RX"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TOAST_NO_ACTIONS_HERE"
 msgid "No actions here"
 msgstr "Sin acciones aquí"

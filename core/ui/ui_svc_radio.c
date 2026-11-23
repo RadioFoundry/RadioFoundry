@@ -181,6 +181,24 @@ bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
 	return radio_ysf_wx_room(i, out);
 }
 
+bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan)
+{
+	radio_ysf_settings_t s;
+
+	if (dgid > RADIO_YSF_DGID_MAX)
+		return false;
+	radio_ysf_settings(&s);
+	if (chan == 0) {
+		s.tx_dgid = dgid;
+		s.rx_dgid = dgid;
+	} else {
+		s.temp_chan = chan;
+		s.temp_dgid = dgid;
+	}
+	radio_req_ysf_settings(&s);
+	return true;
+}
+
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
 	char name[CODEPLUG_NAME_LEN + 1];

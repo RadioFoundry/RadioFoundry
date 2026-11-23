@@ -132,9 +132,7 @@ static void hub_select(uint16_t i, bool hold)
 			ui_toast(TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"));
 			return;
 		}
-		ui_target_t t;
-		ui_recent_target(ui_recent_get(0), &t);
-		ui_open_actions(&t);
+		ui_open_caller_actions();	// the last DMR caller (a YSF call has no actions)
 		return;
 	}
 	if (!CONFIG_CHANNEL_LIST && e == HUB_CHANNELS) {
@@ -1082,8 +1080,8 @@ static uint16_t recent_count(void) { return ui_recent_count(); }
 static bool recent_target(uint16_t i, ui_target_t *t)
 {
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
-	if (r == NULL)
-		return false;
+	if (r == NULL || r->ysf)
+		return false;	// YSF: nobody to call by ID (PTT on the channel calls everyone with its DG-ID)
 	ui_recent_target(r, t);
 	if (!t->group && t->heard_tg) {
 		// PTT on a station heard on a talkgroup: that talkgroup (the same as Talk to in its actions)
@@ -1103,7 +1101,12 @@ static void recent_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->label, sizeof it->label);
 	sbuf_t vb;
 	sb_init(&vb, it->value, sizeof it->value);
-	if (r->out) {
+	if (r->ysf) {
+		sb_str(&b, r->name);	// the callsign, then the DG-ID it came with
+		sb_str(&vb, "DG-ID ");
+		sb_u32(&vb, r->dgid, 2);
+		sb_chr(&vb, ' ');
+	} else if (r->out) {
 		sb_str(&b, GLYPH_ARROW);
 		sb_str(&b, r->group ? "TG " : "");
 		sb_u32(&b, r->dst, 1);
@@ -1144,7 +1147,9 @@ static void recent_context(uint16_t i)
 {
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
 	ui_target_t t;
-	if (r != NULL) {
+	if (r != NULL && r->ysf) {
+		ui_toast(TR(TOAST_NO_ACTIONS_HERE, "No actions here"));
+	} else if (r != NULL) {
 		ui_recent_target(r, &t);
 		ui_open_actions(&t);
 	}

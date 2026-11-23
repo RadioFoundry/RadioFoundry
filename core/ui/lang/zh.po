@@ -614,7 +614,7 @@ msgctxt "QUICK_TOAST_TONE_RX_ONLY"
 msgid "Tone for RX only"
 msgstr "仅接收亚音"
 
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "TOAST_NO_ACTIONS_HERE"
 msgid "No actions here"
 msgstr "此处无操作"

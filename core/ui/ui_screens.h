@@ -107,6 +107,7 @@ typedef struct {
 	uint8_t tone_target;		// Tone editor: RADIO_TONE_BOTH, RADIO_TONE_TX or RADIO_TONE_RX
 	subtone_t tone_edit;		// Tone editor: the value picked (shown at once, before the radio's view catches up)
 	uint8_t cc_edit;		// Color code editor: the value picked
+	uint8_t dgid_edit;		// DG-ID editor (YSF): the value picked
 	uint8_t diag_first;	// first board line on the diagnostics page
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;
@@ -146,6 +147,7 @@ enum {
 	QT_TO_VFO,		// on a channel, in place of QT_MODE: copy the channel to the VFO
 	QT_SPLIT,		// in the VFO, in place of QT_MONITOR (FM) / QT_PRIVACY (DMR): the TX frequency or offset
 	QT_WIRESX,		// YSF, in place of FM's Tone: the Wires-X page
+	QT_DGID,		// YSF, in place of FM's Width: the DG-ID, both ways
 
 };
 // The tile kind at position 0..8 (keys 1..9) for this channel or the VFO

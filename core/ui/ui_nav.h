@@ -230,6 +230,8 @@ typedef struct {
 	bool gps_range;		// the caller sent its position (ETSI GPS Info) and ours was known: how far, which way
 	uint16_t gps_bearing;
 	uint32_t gps_dist_m;
+	bool ysf;		// a YSF call heard: name is the caller's callsign, dgid its DG-ID; no IDs, no DMR actions
+	uint8_t dgid;
 } ui_recent_t;
 uint8_t ui_recent_count(void);
 const ui_recent_t *ui_recent_get(uint8_t i);

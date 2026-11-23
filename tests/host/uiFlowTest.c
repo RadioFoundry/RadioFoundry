@@ -155,7 +155,6 @@ static const flow_t flows[] = {
 	{ "YSF home: a call", "dlmode:ysf", "ysfrx:SP5WLF,12", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
 	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:SP5WLF,12,o", "screen=home shows=Other_DG-ID:_not_played hides=SP5WLF", 0, false },
 	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:SP5WLF,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
-	{ "YSF channel: bandwidth is FM only", "dlmode:ysf", "quick 8", "mode=ysf toast=FM_only:_this_is_YSF", 2, false },
 	// The channel editor: Mode steps on from NXDN to YSF (DG-ID 00), then FM; a YSF channel has a DG-ID row and no
 	// contact or ID row (it names us by callsign)
 	{ "E Mode: NXDN to YSF", "p25 nxdn ysf ok 5 ok down down", "ok ok ok", "focus=Mode shows=YSF shows=DG-ID hides=RAN hides=Contact",
@@ -171,14 +170,23 @@ static const flow_t flows[] = {
 	{ "Q YSF: tile 3 is Wires-X", "dlmode:ysf", "quick 3", "screen=wiresx shows=Node shows=Room_ID", 2, false },
 	{ "T YSF: 0 in Tools is Wires-X", "dlmode:ysf", "ok 6 0", "screen=wiresx shows=Node", 3, false },
 	{ "H YSF: # on Home is Wires-X", "dlmode:ysf", "ctx", "screen=wiresx shows=Node", 1, false },
-	{ "W Wires-X: OK on Node asks the node", "dlmode:ysf quick 3", "ok", "screen=wiresx wxcmd=0 shows=Waiting...", 1, false },
-	{ "W Wires-X: the node's answer", "dlmode:ysf quick 3 ok", "wxdx", "screen=wiresx shows=WARSZAWA shows=POLAND", 0, false },
+	// The DG-ID: quick settings tile 8 (Width's place) and the Wires-X page's first row; both ways, a channel's for now
+	{ "Q YSF: tile 8 is the DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=DG-ID", 2, false },
+	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 shows=25", 5, false },
+	{ "Q YSF: DG-ID stepped down from 00", "dlmode:ysf", "quick 8 down ok", "dgid=99", 4, false },
+	{ "W Wires-X: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=wiresx dgid=12 shows=12", 4, false },
+	{ "W Wires-X: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=wiresx dgid=-1", 4, false },
+	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
+	{ "R YSF call in Recent", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3", "screen=recent shows=SP5WLF shows=DG-ID_12", 2, false },
+	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },
+	{ "W Wires-X: OK on Node asks the node", "dlmode:ysf quick 3", "down ok", "screen=wiresx wxcmd=0 shows=Waiting...", 2, false },
+	{ "W Wires-X: the node's answer", "dlmode:ysf quick 3 down ok", "wxdx", "screen=wiresx shows=WARSZAWA shows=POLAND", 0, false },
 	{ "W Wires-X: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
 	{ "W Wires-X: connect without a room ID", "dlmode:ysf quick 3", "2 back back down ok", "wxcmd=-1 toast=Type_a_room_ID_first", 5, false },
-	{ "W Wires-X: disconnect", "dlmode:ysf quick 3", "down down down down ok", "wxcmd=2", 5, false },
-	{ "W Wires-X: the room list", "dlmode:ysf quick 3", "down down down down down ok wxrooms:3", "screen=wiresx-rooms wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 6, false },
-	{ "W Wires-X: a room picked connects", "dlmode:ysf quick 3 down down down down down ok wxrooms:3", "down ok", "screen=wiresx wxcmd=1 wxarg=20001", 2, false },
-	{ "W Wires-X: the next page", "dlmode:ysf quick 3 down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
+	{ "W Wires-X: disconnect", "dlmode:ysf quick 3", "down down down down down ok", "wxcmd=2", 6, false },
+	{ "W Wires-X: the room list", "dlmode:ysf quick 3", "down down down down down down ok wxrooms:3", "screen=wiresx-rooms wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 7, false },
+	{ "W Wires-X: a room picked connects", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down ok", "screen=wiresx wxcmd=1 wxarg=20001", 2, false },
+	{ "W Wires-X: the next page", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
 	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
 	  "screen=channel writes=1 shows=42", 1, true },
 #endif

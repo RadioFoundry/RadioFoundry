@@ -430,10 +430,12 @@ and Wires-X nodes hear it as they hear a Yaesu handheld.
   word of the radio name when it reads as a callsign. Set it in **Settings > My radio > YSF callsign**. Without one,
   Home says "No callsign" and PTT is refused.
 - Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
-  call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. FM's tone and width tiles
-  say "FM only: this is YSF".
-- The VFO's DG-IDs can be changed only from a computer for now (`rfoundry_debug.py radio ysf`), and the change lasts
-  until the radio is switched off.
+  call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. Calls heard go into
+  **Recent** with the callsign and DG-ID.
+- **DG-ID**: quick settings tile **8**, or the first row of the Wires-X page (# on Home). Type two digits or step with
+  Up/Down, **OK** sets it for receive and transmit (00 hears every DG-ID). In the VFO it stays until the radio is
+  switched off; on a stored channel it lasts until you change channel. To keep a channel's DG-ID, set it in the
+  channel editor.
 
 Not in this first version: VW (full-rate voice, which the radio's voice chip doesn't run), Group Monitor, sending
 your position, and a repeater's news (voice messages, pictures). They are planned for later.

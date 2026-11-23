@@ -113,6 +113,9 @@ bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
 void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak);
 // The callsign YSF sends: the codeplug's YSF record, else the radio name's; "" = none (PTT refused)
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1]);
+// Set the DG-ID both ways (0-99, 0 hears every one): in the VFO (chan 0) it stays; on stored channel chan it lasts
+// until another channel is taken (radio_ysf_settings_t.temp_chan). False: out of range
+bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan);
 // Wires-X (docs/spec/ysf.md 9): send a command (radio_req_ysf_wx; false: not on a YSF channel), the node's state, a
 // room of the page held
 bool ui_svc_ysf_wx(uint8_t cmd, uint32_t arg, const char *text);
