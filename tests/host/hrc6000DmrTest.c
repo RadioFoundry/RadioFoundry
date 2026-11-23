@@ -1188,6 +1188,51 @@ static int hunt_call(hrc_chip_t *c5, uint32_t lead_us, int headers, int *numbere
 	return voices;
 }
 
+// After a transmission (aborted, so no answer slot): the 0x10 of the first dwell, which must last a full HUNT_US
+static uint8_t after_tx_dwell(void)
+{
+	c5_mode_track();
+	uint32_t flips = eng.st.hunt_flips;
+	uint8_t first = 0;
+	for (int k = 0; k < 74; k++) {		// 370 ms: one switch at most, at the start
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+		if (k == 1) {
+			first = c5_mode;
+			flips = eng.st.hunt_flips;
+		}
+	}
+	return eng.st.hunt_flips == flips && c5_mode == first ? first : 0;
+}
+
+// n MS-sync voice headers on a direct channel, one every 60 ms, heard while 0x10 is the direct mode (the hunt
+// stays there once one is taken)
+static void ms_bursts(int n)
+{
+	uint32_t t = t_us + 5000u;
+	for (int slot = 0, got = 0; slot < 60 && got < n; slot++) {
+		for (int step = 0; step < 6; step++) {
+			t_us = t + (uint32_t)step * 5000u;
+			hrc6000_dmr_poll(&eng);
+			c5_mode_track();
+		}
+		if (c5_mode == 0x6B) {
+			ts_at(t);
+			c5_mode_track();
+			if ((slot & 1) == 0) {
+				report_at(t + 3500, 0x12, 0x20, 0xF0);
+				got++;
+			} else {
+				report_at(t + 3500, 0x10, 0x20, 0xF0);
+			}
+			c5_mode_track();
+		}
+		t += 30000;
+		drain();
+	}
+}
+
 static void test_rx_bs_direct_hunt(void)
 {
 	hrc_chip_t c5 = *dev.chip;
@@ -1238,12 +1283,8 @@ static void test_rx_bs_direct_hunt(void)
 		hrc6000_dmr_poll(&eng);
 	}
 	hrc6000_dmr_tx_abort(&eng);
-	for (int k = 0; k < 70; k++) {		// a full dwell in the channel's mode after it, for an answer
-		t_us += 5000u;
-		hrc6000_dmr_poll(&eng);
-	}
-	c5_mode_track();
-	CHECK(eng.st.hunt_flips == flips && c5_mode == 0x6B);
+	// The last burst taken was the BS call's: its sender answers in BS sync, so the first dwell is a full one in BS
+	CHECK(after_tx_dwell() == 0x4F);
 
 	// The color code filter set after start (as the call layer does) on a quiet channel: no timeslot interrupt
 	// comes to make the restart it asks for, and the hunt makes it
@@ -1254,6 +1295,23 @@ static void test_rx_bs_direct_hunt(void)
 		hrc6000_dmr_poll(&eng);
 	}
 	CHECK(eng.st.hunt_flips >= flips + 2 && !eng.restart_pending);
+
+	// Nothing received since the channel was set: the first dwell after a transmission is the channel's mode
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	t_us += 5000u;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_abort(&eng);
+	CHECK(after_tx_dwell() == 0x6B);
+
+	// An MS call heard last (after the BS one): the same, the answer comes in MS sync
+	hunt_call(&c5, 0, 3, &numbered);
+	CHECK(c5_mode == 0x4F && eng.bs_last);
+	ms_bursts(4);
+	CHECK(!eng.bs_last);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_abort(&eng);
+	CHECK(after_tx_dwell() == 0x6B);
 
 	// A repeater channel never hunts: its 0x10 is the repeater mode throughout
 	cfg.repeater = true;
