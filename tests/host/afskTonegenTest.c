@@ -30,7 +30,7 @@ static void end(void) { ended = true; }
 static void timer_start(uint32_t us, void (*fn)(void)) { period = us; tick = fn; running = true; }
 static void timer_stop(void) { running = false; }
 
-static const afsk_tonegen_board_t hw = { begin, tone, end, timer_start, timer_stop };
+static const afsk_tonegen_board_t hw = { begin, tone, end, timer_start, timer_stop, NULL };
 
 int main(void)
 {
