@@ -12,7 +12,7 @@ import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
 import { specField } from "./modefields.js";
-import { suggestions } from "./grid.js";
+import { combo, comboText } from "./combo.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -135,6 +135,12 @@ const bool = (r, k, v) => {
 
 export const toneText = (v, t) => v || t("editor.none");
 
+// The tone fields' searchable list (combo.js): every CTCSS tone and DCS code, and any other tone typed
+export const toneCombo = (t) => () => ({
+	values: TONES, accept: parseTone, none: t("editor.none"),
+	use: (v) => t("editor.tone.use", { tone: v || t("editor.none") }), noMatch: t("editor.tone.no_match"),
+});
+
 export function powerOptions(t) {
 	const opts = [[0, t("editor.power.default")]];
 	for (let n = 1; n <= 10; n++) opts.push([n, POWER_NAMES[n] ? t(`editor.power.${POWER_NAMES[n].toLowerCase()}`) : t("editor.power.level", { n: n - 1 })]);
@@ -197,8 +203,8 @@ export function columns(table, m, t, { features = null } = {}) {
 			tx(own(col("txHz", "editor.col.tx", "text", txFreq(t), { format: mhz, numeric: true }))),
 			tx(col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) })),
 			only("fm", col("bw", "editor.col.bw", "select", pick, { options: () => [[12.5, "12.5"], [25, "25"]] })),
-			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, suggest: () => TONES })),
-			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, suggest: () => TONES }))),
+			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, combo: toneCombo(t) })),
+			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, combo: toneCombo(t) }))),
 			only("dmr", col("colorCode", "editor.col.cc", "select", pick, { options: () => [...Array(16).keys()].map((n) => [n, String(n)]) })),
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
@@ -360,8 +366,8 @@ export function channelForm(m, t, { features = null } = {}) {
 		...kindFields,
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
-		fm({ ...txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v), suggest: () => TONES }),
-		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), suggest: () => TONES, disabled: noTx }),
+		fm({ ...txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v), combo: toneCombo(t) }),
+		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), combo: toneCombo(t), disabled: noTx }),
 		fm(sel("squelch", "editor.col.squelch", () => [[0, t("editor.squelch.default")], ...[...Array(21).keys()].map((n) => [n + 1, String(n + 1)])])),
 		fm({ ...chk("vox", "editor.col.vox"), disabled: noTx }),
 		fm({ ...chk("toneBurst", "editor.col.tone_burst"), disabled: noTx }),
@@ -430,9 +436,10 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			const v = get(work);
 			input = h("input", { type: "text", id, value: f.format ? f.format(v ?? "") : v ?? "", spellcheck: "false" });
 		}
-		const list = f.suggest && input.tagName === "INPUT" ? suggestions(input, f.suggest(work)) : null;
 		const label = h("label", { for: id }, typeof f.label === "function" ? f.label(work) : f.label);
-		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input, list, f.help ? h("span", { class: "small muted" }, f.help) : null);
+		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input, f.help ? h("span", { class: "small muted" }, f.help) : null);
+		// a long list of usual values (the tones): a searchable list over the input, which keeps the value
+		if (f.combo && input.tagName === "INPUT") combo(input, f.combo(work));
 		rows.push({ f, input, row, label });
 		return row;
 	};
@@ -533,6 +540,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
 				input.disabled = f.disabled(work, value, checked);
+				const ts = input.tomselect;
+				if (ts && ts.isDisabled !== input.disabled) input.disabled ? ts.disable() : ts.enable();
 				if (input.disabled && f.follows && (!f.followsIf || f.followsIf(value))) input.value = byKey(f.follows).input.value;
 			}
 		}
@@ -555,7 +564,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				f.set ? f.set(work, v) : (work[f.key] = v);
 				continue;
 			}
-			const err = f.parse ? f.parse(work, f.key, input.value) : ((work[f.key] = input.value), null);
+			const text = f.combo ? comboText(input) : input.value;
+			const err = f.parse ? f.parse(work, f.key, text) : ((work[f.key] = text), null);
 			if (err) bad.push(`${typeof f.label === "function" ? f.label(work) : f.label}: ${err}`);
 		}
 		if (bad.length) {

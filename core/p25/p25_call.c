@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // A conventional P25 voice call (p25.h): on receive, the units of p25_rx.c become a call with its fields and its
 // voice frames in order; on transmit, the units are built and released symbol by symbol. Clause numbers are
 // TIA-102.BAAA-A's.

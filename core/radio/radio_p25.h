@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // P25 conventional on a channel, the radio core's side (docs/spec/p25.md 7): the engine (core/p25/p25_engine.h) and
 // the voice path (core/p25/p25Voice.h) on the memory they run in, the channel's P25 parameters, and a compact view
 // for the radio view. radio_sm.c decides when P25 runs and keys the transmitter; nothing here keys it.

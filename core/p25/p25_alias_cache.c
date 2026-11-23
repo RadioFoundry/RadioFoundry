@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 #include "config.h"
 #if CONFIG_P25_ALIAS_CACHE
 #include <string.h>

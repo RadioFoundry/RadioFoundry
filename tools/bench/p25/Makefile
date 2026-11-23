@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 Alex Bloom
 # The P25 bench tool (p25tool.c) on the host, from the firmware's own sources. tools/bench/p25tool.py runs this.
 #   make -C tools/bench/p25            -> build/bench/p25tool
 HERE    := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))

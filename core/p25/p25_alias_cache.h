@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 #ifndef P25_ALIAS_CACHE_H
 #define P25_ALIAS_CACHE_H
 #include <stdbool.h>

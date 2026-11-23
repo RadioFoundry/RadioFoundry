@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // P25 Phase 1 (TIA-102.BAAA-A, the FDMA common air interface) at the frame level: the data units of a conventional
 // voice call as they are on air, their fields and their FEC. docs/spec/p25.md.
 //

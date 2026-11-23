@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 GopherTrunk contributors
-// Copyright (c) 2026 Alex Bloom
+// Copyright (c) 2026 The RadioFoundry Authors
 // Modified for RadioFoundry: bounded C receive-only assembly, strict CRC and
 // caller binding, ASCII display. Cipher table and wire-format reference:
 // GopherTrunk 8b9d9477e1365f801fca13ee7eb66c0107fc359e (Apache-2.0).

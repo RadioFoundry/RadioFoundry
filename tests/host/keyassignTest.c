@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // Side key assignment (core/input/keyassign.c, docs/spec/ui.md 3.1): the quick-key slots with and without our marker,
 // what each slot may hold, and the key map built from them, run through the gesture engine
 #include <stdio.h>

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // P25 conventional on a channel, the radio core's side (radio_p25.h)
 #include "config.h"
 #if CONFIG_P25	// the whole file
