@@ -370,7 +370,7 @@ bool hrc5000_set_mode_dmr(hrc5000_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mi
 	for (uint8_t reg = 0x24; reg <= 0x27; reg++) {
 		ok &= hrc_write(h, HRC_PAGE_AUX, reg, 0x00);	// no privacy key
 	}
-	ok &= hrc_write(h, HRC_PAGE_SYS, REG_INT_MASK, 0x19);	// system interrupt mask
+	ok &= hrc_write(h, HRC_PAGE_SYS, REG_INT_MASK, HRC_INT_MASK_DMR);
 	ok &= hrc_write(h, HRC_PAGE_SYS, 0x85, 0x00);
 	dev->mode = HRC5000_MODE_DMR;
 	return ok;

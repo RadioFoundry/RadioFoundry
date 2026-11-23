@@ -226,7 +226,9 @@ state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine
 FM copy request there, or the modem's system source left masked at the PIC, leaves receive deaf until the session
 closes (suspected in #923; the masked source measured so, the lost request not reproduced): the session's poll sets
 the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
-words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report. The HR_C6000 boards keep their check for a
+system line left low running under a session, and their copy has the same 200 ms watchdog
+(`modem-hrc6000.md` 10.6).
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
@@ -461,8 +463,11 @@ A; it is unverified on the HR_C5000 and HR_C7000.
 
 **6.3 ISR-safe contact lookup.** The privacy contact's ID must come from a cache that is safe to read in the modem ISR.
 
-**6.4 PI headers are dropped by the receive path.** MI-based schemes need the modem to send and receive a PI header
-(data type 0); late entry in burst F is an open risk. Research note, privacy feasibility.
+**6.4 PI headers carry the MI.** MI-based schemes need the modem to send and receive a PI header (data type 0). The
+call stack receives them and keeps the algorithm, key ID and MI; such a call plays only through the crypt hook with a
+key for them (dmr-voice.md 5, 5.1). On receive, a call joined late, PI header missed, is not played until the next
+PI header: reading the late-entry MI from the voice bursts is not implemented (#863). Our overs send both
+(dmr-voice.md 5.1); burst F's field needs the modem driver's `set_burst_f`.
 
 ## 7. ARS, TMS, LRRP, UDT
 
@@ -691,11 +696,12 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 
 **13.8 Canceled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 
-**13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks
-to another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
+**13.9 No git stash in a worktree with symlinked submodules.** In a worktree whose `third_party/*` are symlinks to
+another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
 duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
-path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
-directory with its own `third_party` symlinks instead, and delete it afterwards.
+path not to be a symbolic link"). Make worktrees with `tools/worktree.sh` and build with `RFOUNDRY_THIRD_PARTY`
+instead ([building.md](../dev/building.md#worktrees)), and build a baseline in `tools/worktree.sh add <dir> --detach` of the
+base commit.
 
 **13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
 (CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and
