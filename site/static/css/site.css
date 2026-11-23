@@ -590,7 +590,8 @@ th[aria-sort="ascending"] .grid-sort::after { content: " ▲"; }
 th[aria-sort="descending"] .grid-sort::after { content: " ▼"; }
 table.grid td[data-col] { cursor: cell; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
 table.grid td:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
-table.grid td.editing { padding: 0; }
+/* position: Tom Select's hidden original input stays in the cell instead of widening the page */
+table.grid td.editing { padding: 0; position: relative; }
 table.grid td.editing input, table.grid td.editing select { font: inherit; width: 100%; min-width: 7rem; padding: var(--space-1) var(--space-2);
 	border: 2px solid var(--focus); background: var(--surface); color: var(--text); }
 table.grid td.c-num { font-variant-numeric: tabular-nums; }
@@ -674,6 +675,9 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .ts-dropdown .option.selected { font-weight: 600; }
 /* in a table cell: the cell's own edit frame, the list over the page */
 table.grid td.editing .ts-control { border: 2px solid var(--focus); border-radius: 0; outline: none; min-width: 7rem; }
+/* Tom Select parks its input at left: -10000px while a value is shown; focusing it there scrolled the table back to
+   its first column */
+table.grid td.editing .input-hidden .ts-control > input { left: 0; }
 /* one line in a narrow cell: the text box's own 7rem minimum would wrap it under the value */
 table.grid td.editing .ts-control { flex-wrap: nowrap; }
 table.grid td.editing .ts-control > input { min-width: 1rem; }
