@@ -151,6 +151,11 @@ APP_DIRS := $(CORE_DIRS) $(PLATFORM_DIRS) $(BOARD_DIRS)
 # Sorted: the link order steers LTO's code, and $(wildcard)'s order depends on the make (gotchas 13.10)
 APP_SRC := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.c)))
 APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
+# D-STAR's radio header is coded by the shared convolutional code (core/fec/conv.c), which the core/fec glob brings in
+# only with the air interface
+ifeq ($(CONFIG_DSTAR)$(CONFIG_AIR),yn)
+APP_SRC += core/fec/conv.c
+endif
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c

@@ -3,6 +3,7 @@
 // D-STAR DV coding (dstar_fec.h)
 #include <string.h>
 #include "dstar/dstar_fec.h"
+#include "fec/conv.h"
 
 // Its own copy, not core/aprs's ax25_fcs (the same CRC): D-STAR builds without APRS, and ten lines aren't worth a
 // shared module between two protocol layers that are switched separately
@@ -56,109 +57,78 @@ bool dstar_pn_bit(uint32_t i)
 #define IL_ROWS		24u
 #define IL_LONG_ROWS	12u
 
+// The convolutional code (appendix 2.1, the older translation names the polynomials): G1 = 1 + D + D^2 first, then
+// G2 = 1 + D^2, from zeroed registers, the header least significant bit first, then two zero bits. Coded and decoded
+// by the code every mode shares (core/fec/conv.c), so a fix to the Viterbi decoder reaches D-STAR too; what is D-STAR's
+// own is the bit order around it, the interleaver and the scrambler
+static const fec_conv_code_t header_code = { 0x07u, 0x05u };
+#define CONV_BITS	(DSTAR_HEADER_BITS / 2u)	// 328 header bits and the two tail bits
+#define CONV_BYTES	((CONV_BITS + 7u) / 8u)
+
+// The shared code reads and writes its bits most significant first; D-STAR's air order is least significant first
+static uint8_t reverse8(uint8_t b)
+{
+	b = (uint8_t)((b & 0xF0u) >> 4 | (b & 0x0Fu) << 4);
+	b = (uint8_t)((b & 0xCCu) >> 2 | (b & 0x33u) << 2);
+	return (uint8_t)((b & 0xAAu) >> 1 | (b & 0x55u) << 1);
+}
+
+static bool msb_bit(const uint8_t *buf, uint32_t i)
+{
+	return ((buf[i >> 3] >> (7u - (i & 7u))) & 1u) != 0;
+}
+
 void dstar_header_encode(const uint8_t hdr[DSTAR_HEADER_BYTES], uint8_t air[DSTAR_HEADER_AIR_BYTES])
 {
-	// The convolutional code (appendix 2.1, the older translation names the polynomials): G1 = 1 + D + D^2 first,
-	// then G2 = 1 + D^2, from zeroed registers, the header least significant bit first, then two zero bits
-	uint8_t coded[DSTAR_HEADER_AIR_BYTES];
-	memset(coded, 0, sizeof(coded));
-	uint8_t x1 = 0, x2 = 0;
-	for (uint32_t k = 0; k < DSTAR_HEADER_BITS / 2u; k++) {
-		uint8_t u = k < DSTAR_HEADER_BYTES * 8u ? (uint8_t)dstar_bit(hdr, k) : 0u;
-		dstar_bit_put(coded, 2u * k, (u ^ x1 ^ x2) != 0);
-		dstar_bit_put(coded, 2u * k + 1u, (u ^ x2) != 0);
-		x2 = x1;
-		x1 = u;
+	uint8_t in[CONV_BYTES], coded[DSTAR_HEADER_AIR_BYTES];
+	for (uint32_t i = 0; i < DSTAR_HEADER_BYTES; i++) {
+		in[i] = reverse8(hdr[i]);
 	}
+	in[DSTAR_HEADER_BYTES] = 0;	// the tail bits
+	memset(coded, 0, sizeof(coded));
+	fec_conv_encode(&header_code, in, CONV_BITS, coded);
 	memset(air, 0, DSTAR_HEADER_AIR_BYTES);
 	uint8_t st = 0x7Fu;
 	uint32_t j = 0;
 	for (uint32_t r = 0; r < IL_ROWS; r++) {
 		uint32_t cols = r < IL_LONG_ROWS ? 28u : 27u;
 		for (uint32_t c = 0; c < cols; c++, j++) {
-			bool b = dstar_bit(coded, IL_ROWS * c + r) ^ (pn_next(&st) != 0);
+			bool b = msb_bit(coded, IL_ROWS * c + r) ^ (pn_next(&st) != 0);
 			dstar_bit_put(air, j, b);
 		}
 	}
 }
 
-// The soft value of coded bit c: its air position through the interleaver, descrambled
-static int32_t coded_soft(const uint8_t *soft, const uint8_t *pn, uint32_t c)
+// The decoder's view of the received header: coded bit c's soft value read through the interleaver and the
+// scrambler, straight out of the air-order buffer, with the scrambler's 127-bit period in a 16-byte table, so the
+// decoder needs no second 330-byte copy on the stack of whichever task runs it
+typedef struct {
+	const uint8_t *soft;
+	uint8_t pn[16];
+} header_rx_t;
+
+static int8_t coded_soft(const void *ctx, uint16_t c)
 {
+	const header_rx_t *h = ctx;
 	uint32_t col = c / IL_ROWS, r = c % IL_ROWS;
 	uint32_t j = r < IL_LONG_ROWS ? r * 28u + col : IL_LONG_ROWS * 28u + (r - IL_LONG_ROWS) * 27u + col;
-	int32_t s = dstar_soft_get(soft, j);
-	return dstar_bit(pn, j % 127u) ? -s : s;
+	int8_t s = dstar_soft_get(h->soft, j);
+	return dstar_bit(h->pn, j % 127u) ? (int8_t)-s : s;
 }
 
 dstar_header_result_t dstar_header_decode(const uint8_t soft[DSTAR_HEADER_SOFT_BYTES], uint8_t hdr[DSTAR_HEADER_BYTES])
 {
-	// The coded bits are read straight out of the air-order buffer through the interleaver and the scrambler, with
-	// the scrambler's 127-bit period in a 16-byte table, so the decoder needs no second 330-byte copy on the stack of
-	// whichever task runs it
-	uint8_t pn[16];
-	memset(pn, 0, sizeof(pn));
+	header_rx_t h = { .soft = soft };
 	uint8_t st = 0x7Fu;
 	for (uint32_t i = 0; i < 127u; i++) {
-		dstar_bit_put(pn, i, pn_next(&st) != 0);
+		dstar_bit_put(h.pn, i, pn_next(&st) != 0);
 	}
-	// Viterbi over the four states (x1 = the last input bit, x2 the one before: state = x1 | x2 << 1). Path metrics
-	// are correlations, larger is better; a step's four survivor choices (the x2 of the predecessor) take a nibble
-	enum { STEPS = DSTAR_HEADER_BITS / 2u };
-	uint8_t dec[(STEPS + 1u) / 2u];
-	int32_t pm[4] = { 0, -1000000, -1000000, -1000000 };	// the encoder starts in state 0
-	for (uint32_t k = 0; k < STEPS; k++) {
-		int32_t s1 = coded_soft(soft, pn, 2u * k), s2 = coded_soft(soft, pn, 2u * k + 1u);
-		int32_t npm[4];
-		uint8_t d = 0;
-		for (uint8_t ns = 0; ns < 4u; ns++) {
-			uint8_t u = ns & 1u, x1 = (uint8_t)(ns >> 1);
-			int32_t best = 0;
-			for (uint8_t x2 = 0; x2 < 2u; x2++) {
-				uint8_t p = (uint8_t)(x1 | (x2 << 1));
-				int32_t m = pm[p] + ((u ^ x1 ^ x2) ? s1 : -s1) + ((u ^ x2) ? s2 : -s2);
-				if (x2 == 0 || m > best) {
-					best = m;
-					if (x2) {
-						d |= (uint8_t)(1u << ns);
-					}
-				}
-			}
-			npm[ns] = best;
-		}
-		memcpy(pm, npm, sizeof(pm));
-		if (k & 1u) {
-			dec[k >> 1] = (uint8_t)((dec[k >> 1] & 0x0Fu) | (uint8_t)(d << 4));
-		} else {
-			dec[k >> 1] = d;
-		}
+	uint8_t dec[FEC_CONV_DEC_BYTES(3, CONV_BITS)], out[CONV_BYTES];
+	int corrected = fec_conv_decode_fn(&header_code, coded_soft, &h, CONV_BITS, dec, out);
+	for (uint32_t i = 0; i < DSTAR_HEADER_BYTES; i++) {
+		hdr[i] = reverse8(out[i]);
 	}
-	// The two tail bits bring the encoder back to state 0
-	memset(hdr, 0, DSTAR_HEADER_BYTES);
-	uint8_t s = 0;
-	for (uint32_t k = STEPS; k-- > 0;) {
-		if (k < DSTAR_HEADER_BYTES * 8u && (s & 1u)) {
-			hdr[k >> 3] |= (uint8_t)(1u << (k & 7u));
-		}
-		uint8_t d = (uint8_t)(((k & 1u) ? dec[k >> 1] >> 4 : dec[k >> 1]) & 0x0Fu);
-		s = (uint8_t)((s >> 1) | (((d >> s) & 1u) << 1));
-	}
-
-	// Count the coded bits the decision overrules: re-encode and compare signs
-	dstar_header_result_t res = { dstar_header_crc_ok(hdr), 0 };
-	uint8_t x1 = 0, x2 = 0;
-	for (uint32_t k = 0; k < STEPS; k++) {
-		uint8_t u = k < DSTAR_HEADER_BYTES * 8u ? (uint8_t)dstar_bit(hdr, k) : 0u;
-		int32_t s1 = coded_soft(soft, pn, 2u * k), s2 = coded_soft(soft, pn, 2u * k + 1u);
-		if ((s1 > 0) != ((u ^ x1 ^ x2) != 0)) {
-			res.corrected++;
-		}
-		if ((s2 > 0) != ((u ^ x2) != 0)) {
-			res.corrected++;
-		}
-		x2 = x1;
-		x1 = u;
-	}
+	dstar_header_result_t res = { dstar_header_crc_ok(hdr), (uint16_t)corrected };
 	return res;
 }
 

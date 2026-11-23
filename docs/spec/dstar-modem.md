@@ -273,7 +273,8 @@ their ISO 3309 CRC-32. A clean header from an Icom radio settles it (1.4).
 | Scrambler | S(x) = x^7 + x^4 + 1 from all ones, as the appendix 1.1 figure draws it: s[n] = s[n-4] XOR s[n-7], XORed into the 660 bits as sent. The sequence starts 0000111 0 1111001 0 (`70 4F 93` packed least significant first) |
 
 The receiver undoes the scrambler and interleaver and runs a soft-decision Viterbi decoder (four states) over 4-bit
-soft values; 12 random errors in 660 decode 95 % of the time or more, a 24-bit burst (5 ms) always, a random quarter of
+soft values: the shared one of `core/fec/conv.c`, which NXDN's K = 5 code uses too, reading each coded bit's soft value
+in place through the interleaver and the scrambler; 12 random errors in 660 decode 95 % of the time or more, a 24-bit burst (5 ms) always, a random quarter of
 the bits erased still decodes.
 
 ### 3.3 The transmission

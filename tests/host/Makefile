@@ -1962,9 +1962,9 @@ run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest 
 # D-STAR DV (core/dstar, docs/spec/dstar-modem.md): the header coding against tools/dstar_ref.py's vectors, the soft
 # Viterbi decoder, slow data, whole transmissions through the deframer
 TESTS   += dstarTest
-DSTARFR := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c
+DSTARFR := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c $(CORE)/fec/conv.c
 
-dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) ../vectors/dstar.txt
+dstarTest: dstarTest.c $(DSTARFR) $(wildcard $(CORE)/dstar/*.h) $(CORE)/fec/conv.h ../vectors/dstar.txt
 	$(CC) $(CFLAGS) -I. -Wshadow -o $@ dstarTest.c $(DSTARFR)
 
 # The GMSK modem on a simulated radio link (noise, offset, clock error, high-passed paths) and the engine
@@ -1979,7 +1979,7 @@ dstarModemTest: dstarModemTest.c $(DSTARMD) $(wildcard $(CORE)/dstar/*.h)
 # signals, the counters' reset. The module is built through radioDstarSeam.c, which lets the test run the audio task in
 # the middle of the reset
 TESTS   += radioDstarTest
-DSTARRC := $(DSTARFR) $(MBE) $(MBE2400) $(FEC) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
+DSTARRC := $(CORE)/dstar/dstar_fec.c $(CORE)/dstar/dstar_frame.c $(MBE) $(MBE2400) $(FEC) radioDstarSeam.c $(CORE)/radio/radio_mode_ram.c $(CORE)/radio/radio_flat.c $(CORE)/dstar/dstar_gmsk.c \
 	   $(CORE)/dstar/dstar_engine.c $(CORE)/dstar/dstar_codeplug.c
 radioDstarTest: radioDstarTest.c $(DSTARRC) $(CORE)/radio/radio_dstar.c $(wildcard $(CORE)/dstar/*.h $(CORE)/radio/radio_dstar.h) \
                 $(wildcard $(CORE)/mbe/*.h) $(ROOT)/hal/hal_audio_tap.h

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // D-STAR DV coding (docs/spec/dstar-modem.md 3, from the JARL D-STAR standard, appendices 1 and 2): the radio
-// header's CRC, its rate 1/2 K=3 convolutional code, the 24-row interleaver and the x^7 + x^4 + 1 scrambler, and the
-// scrambling of the 24-bit data frames. No RTOS, no board, integer only.
+// header's CRC, its rate 1/2 K=3 convolutional code (on core/fec/conv.c, the code every mode shares), the 24-row
+// interleaver and the x^7 + x^4 + 1 scrambler, and the scrambling of the 24-bit data frames. No RTOS, no board,
+// integer only.
 //
 // Bits travel in "air order": bit i of a buffer is byte i / 8, bit i % 8 (LSB first). The standard sends every
 // byte least significant bit first (appendix 1.4), so a header or data byte packed this way is already in the order
@@ -74,7 +75,8 @@ static inline int8_t dstar_soft_get(const uint8_t *packed, uint32_t i)
 
 typedef struct {
 	bool crc_ok;
-	uint16_t corrected;	// coded bits the decoder disagreed with (a quality figure: 0 on a clean signal)
+	uint16_t corrected;	// coded bits the decoder disagreed with, erased ones (soft 0) not counted (a quality figure: 0
+				// on a clean signal)
 } dstar_header_result_t;
 
 // Undo the scrambler and interleaver and run a soft Viterbi decoder over the 660 soft bits; hdr gets the 41 bytes
