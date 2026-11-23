@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# risk:low = nothing that runs on a radio changed and no HIL test changed (no HIL batch needed). Its own file, because
+# .github/workflows/labeler.yml syncs the labels of this file only: a push that adds a file outside the list removes
+# risk:low, while the labels of labeler.yml, which a maintainer may also set by hand, stay.
+"risk:low":
+  - changed-files:
+      - all-globs-to-all-files: ["docs/**", "site/**", "tests/host/**", "*.md", ".github/ISSUE_TEMPLATE/**", "tools/*.md"]

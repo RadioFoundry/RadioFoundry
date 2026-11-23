@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Labels by path (.github/workflows/labeler.yml; docs/dev/contributing.md "Maintainers"). risk:low = nothing that runs
-# on a radio changed (no HIL batch needed); needs-hil = firmware code changed.
-"risk:low":
-  - changed-files:
-      - all-globs-to-all-files: ["docs/**", "site/**", "tests/host/**", "tests/hil/**", "*.md", ".github/ISSUE_TEMPLATE/**", "tools/*.md"]
+# Labels by path (.github/workflows/labeler.yml; docs/dev/contributing.md "Maintainers"). needs-hil = firmware code or a
+# HIL test changed (a HIL test is checked by running it on a radio). risk:low lives in labeler-risk.yml: the workflow
+# removes it again when a later push adds a file outside its list.
 "needs-hil":
   - changed-files:
-      - any-glob-to-any-file: ["core/**", "drivers/**", "platform/**", "hal/**", "boards/**", "config/**", "Makefile", "stub/**"]
+      - any-glob-to-any-file: ["core/**", "drivers/**", "platform/**", "hal/**", "boards/**", "config/**", "Makefile", "stub/**", "tests/hil/**"]
 "area:dmr":
   - changed-files:
       - any-glob-to-any-file: ["core/dmr/**", "core/air/**", "docs/spec/dmr*.md"]
