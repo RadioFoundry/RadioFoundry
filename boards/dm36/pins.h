@@ -28,6 +28,7 @@
 #define BOARD_PATH_PIN_BY_MODE   1
 #define BOARD_AFSK_AMP_PER_LEVEL 55u // retain the DM-36 level with its mode-selected microphone path
 #define BOARD_FM_AF_GATED        1
+#define BOARD_DMR_AMP_GATE       1 // speaker amp off between words in DMR receive (radio_dm32.c)
 
 // DMR key-up: the PA comes up from its own drive without a boost, as stock writes one drive (hardware-dm36.md 8.3).
 // At the lowest UHF power setting the SDR measured 0.4 dB overshoot, up 0.86 ms before the first symbol, where the

@@ -12,6 +12,7 @@
 #include BOARD_VOLUME_HEADER
 #endif
 #include "platform.h"
+#include "hal_vocoder.h"
 #include "hal_time.h"
 #include "rf/fd6818/fd6818.h"
 #include "modem/hrc7000/hrc7000.h"
@@ -809,13 +810,56 @@ static void aprs_listen_route(bool on)
 }
 #endif
 
+#ifndef BOARD_DMR_AMP_GATE
+#define BOARD_DMR_AMP_GATE	0
+#endif
+
+// DMR receive between words (BOARD_DMR_AMP_GATE): the amp goes off after AMP_GATE_HOLD quiet decoded frames and on
+// at the first loud one, which is decoded ahead of its playback. Only while receive audio and its PCM alone hold it
+#define AMP_GATE_PEAK	400	// a frame peak above this is speech; the decoder's silence peaks at 10-72
+#define AMP_GATE_HOLD	15u	// quiet 20 ms frames before the amp goes off
+static bool amp_gated;
+static uint8_t amp_gate_quiet;
+
+static void amp_pin(void)
+{
+	bool gate = BOARD_DMR_AMP_GATE && amp_gated && (amp_users & (uint8_t)~(AMP_RADIO | AMP_PCM)) == 0;
+	hrc_pin_write(PIN_AMP_EN, amp_users != 0 && !gate);
+}
+
 static void amp(uint8_t who, bool on)
 {
 	uint32_t s = hrc_irq_save();
 	amp_users = on ? (uint8_t)(amp_users | who) : (uint8_t)(amp_users & ~who);
-	hrc_pin_write(PIN_AMP_EN, amp_users != 0);
+	if (BOARD_DMR_AMP_GATE && !(amp_users & AMP_PCM)) {
+		amp_gated = false;	// the call's PCM has ended: the next one starts with the amp on
+		amp_gate_quiet = 0;
+	}
+	amp_pin();
 	hrc_irq_restore(s);
 }
+
+#if BOARD_DMR_AMP_GATE
+// The FD6818's AF output, which the modem needs in DMR, reaches the speaker amp after the volume control and hisses
+// at -55 dBFS with no speech; amp off is the -97 dBFS floor (hardware-dm36.md 9.2)
+void hrc_vocoder_rx_frame(const int16_t *pcm)
+{
+	int peak = 0;
+	for (unsigned i = 0; i < VOCODER_FRAME_SAMPLES; i++) {
+		int v = pcm[i] < 0 ? -pcm[i] : pcm[i];
+		peak = v > peak ? v : peak;
+	}
+	uint32_t s = hrc_irq_save();
+	if (peak > AMP_GATE_PEAK) {
+		amp_gate_quiet = 0;
+		amp_gated = false;
+	} else if (amp_gate_quiet < AMP_GATE_HOLD && ++amp_gate_quiet == AMP_GATE_HOLD && (amp_users & AMP_PCM)) {
+		amp_gated = true;
+	}
+	amp_pin();
+	hrc_irq_restore(s);
+}
+#endif
 
 uint8_t dm32_amp_users(void)
 {

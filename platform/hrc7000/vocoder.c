@@ -211,12 +211,18 @@ static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODE
 	busy = false;
 }
 
+__attribute__((weak)) void hrc_vocoder_rx_frame(const int16_t *pcm)
+{
+	(void)pcm;
+}
+
 static void decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
 {
 	busy = true;
 	hrc_barrier();
 	decode_run(bits, pcm);
 	busy = false;
+	hrc_vocoder_rx_frame(pcm);
 }
 
 // The slot is checked first, before the stub upload overwrites the codec RAM: profile() and the tag then keep

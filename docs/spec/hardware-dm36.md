@@ -61,6 +61,10 @@ On set-up B, airband entry writes bandwidth register 0x43 = 0x0048, then 0x47 = 
 
 PTB15 selects the audio source and PTB14 follows the radio mode. The FD6818 AF output is gated during FM receive. For direct analog speaker audio, FD6818 register 0x48 keeps its low nibble at 1 and advances bits 9–4 from 3 to 63 in increments of 4. All 16 settings produced increasing levels at the modem input in a receive-only bench sweep. When APRS takes that input, the firmware restores the APRS gain map. At step 0 the receive path keeps the speaker amplifier off, including when the APRS listener starts or stops with squelch open. DMR listening volume uses the HR_C7000 line-out gain and preserves the modem input level.
 
+### 9.2 DMR receive hiss
+
+In DMR the FD6818 AF output stays on because the modem demodulates it, and it also reaches the speaker amplifier after the volume control. With the amplifier on and no speech, the speaker line measured -55 dBFS. Muting the FD6818 AF output, or turning the amplifier off, brought it to the -97 dBFS floor. Cutting the codec output mid-call removed the voice but not the hiss. The board turns the amplifier off after 15 decoded voice frames (300 ms) whose peaks stay at or below 400, and back on at the first louder frame. The decoder's silent frames peak at 10–72. The gate applies only while DMR receive audio alone holds the amplifier.
+
 ### 9.3 ADC connections
 
 ADC0 measures the volume knob and ADC2 measures the battery. This board does not supply a VOX hook. [Platform microphone level](platform-hrc7000.md#microphone-level)

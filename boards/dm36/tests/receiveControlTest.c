@@ -113,11 +113,56 @@ static void test_volume_knob(void)
 	}
 }
 
+static void frames(int16_t level, unsigned n)
+{
+	int16_t pcm[VOCODER_FRAME_SAMPLES] = { 0 };
+	pcm[7] = level;
+	while (n-- > 0) {
+		hrc_vocoder_rx_frame(pcm);
+	}
+}
+
+static void test_dmr_amp_gate(void)
+{
+	vol_muted = false;
+	audio(true);
+	speaker_pcm(true);
+	assert(amplifier);
+	frames(-900, 3);
+	frames(400, AMP_GATE_HOLD - 1u);
+	assert(amplifier);
+	frames(72, 1);
+	assert(!amplifier);	// 300 ms of quiet frames
+	frames(0, 50);
+	assert(!amplifier);
+	frames(-401, 1);
+	assert(amplifier);	// the first speech frame
+	frames(0, AMP_GATE_HOLD);
+	assert(!amplifier);
+	amp(AMP_SIDE, true);
+	assert(amplifier);	// any other user keeps it on
+	amp(AMP_SIDE, false);
+	assert(!amplifier);
+	speaker_pcm(false);
+	speaker_pcm(true);
+	assert(amplifier);	// the next call starts on
+	frames(0, AMP_GATE_HOLD);
+	assert(!amplifier);
+	speaker_pcm(false);
+	audio(false);
+	assert(!amplifier);
+	frames(0, AMP_GATE_HOLD);
+	amp(AMP_BCAST, true);
+	assert(amplifier);	// no call: the broadcast receiver is untouched
+	amp(AMP_BCAST, false);
+}
+
 int main(void)
 {
 	test_mode_change();
 	test_aprs_receive_mute();
 	test_volume_knob();
-	puts("receiveControlTest: mode change, APRS receive mute and volume knob passed");
+	test_dmr_amp_gate();
+	puts("receiveControlTest: mode change, APRS receive mute, volume knob and DMR amp gate passed");
 	return 0;
 }
