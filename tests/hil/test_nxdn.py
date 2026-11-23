@@ -495,13 +495,22 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                     return
             pytest.fail(f"the interrupt bit 0x{bit:08X} would not {'stop' if on else 'start'} the copy")
 
+        def stays_off():
+            # The firmware's own lock sets some of these bits for a moment (set_off's comment): off on every one of
+            # a few reads, not one
+            for _ in range(5):
+                if not stopped():
+                    return False
+                time.sleep(0.02)
+            return True
+
         try:
-            if stopped():
+            if stays_off():
                 skip("no_hw", f"register 0x{reg_addr:X} bit 0x{bit:X} reads off while the copy runs: not the copy's "
                      "interrupt on this board")
             set_off(True)
         except DebugLinkError as e:
-            try:	# a write that went through before the error: never leave the copy off
+            try:  # a write that went through before the error: never leave the copy off
                 if stopped():
                     set_off(False)
             except DebugLinkError:
@@ -533,8 +542,11 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                 set_off(False)
         time.sleep(0.5)
         a2 = radio.view(["air"])
-        # From the later view: the count rises in the provider's poll, the record a moment after it
+        # From the later view: the count rises in the provider's poll, the record a moment after it. The record is
+        # the first since start-up or a stats reset: new from this restart when the session began without one
         assert a2.get("airp.copy_lost_regs"), "the first loss's words are missing (airp.copy_lost_regs)"
+        if not as_int(a0.get("airp.copy_lost_ms")):
+            assert as_int(a2.get("airp.copy_lost_ms")), "this restart was not recorded (airp.copy_lost_ms 0)"
         got.update(restarts=(r0, as_int(a2.get("airp.copy_restarts"))), regs=a2.get("airp.copy_lost_regs"),
                    halves=(as_int(a1.get("airp.halves")), as_int(a2.get("airp.halves"))))
         # 500 ms holds about 15 halves (one every 32 ms)

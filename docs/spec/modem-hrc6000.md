@@ -1046,7 +1046,7 @@ back at close.
   the handler. A half dropped for a full ring holds the watchdog off (the copy runs; the task is behind).
 - The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`). The
   board's mode change suspends the tap the same way as a session, and the mode entry (`rx_restart`) sets the tap's
-  copy up again. A retune (`rx_restart` with the copy running) leaves the tap's copy as it is.
+  copy up again. A retune (`rx_restart` with the copy running) leaves a running tap copy unchanged.
 - `rx_load` counts the soft modem's time for a session that receives this way and reports false for one the
   correlator serves.
 

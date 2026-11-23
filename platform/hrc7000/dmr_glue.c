@@ -724,8 +724,11 @@ HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
 #if CONFIG_AIR
+	// lock() masks only the modem's sources, not the dmr task that notes a restart: as air_lost_check does
+	uint32_t s = hrc_irq_save();
 	air_lost.ms = 0;
 	memset(air_lost.regs, 0, sizeof air_lost.regs);
+	hrc_irq_restore(s);
 #endif
 	unlock(NULL);
 	hrc_audio_pcm_gate_reset();	// its line is one of ours
