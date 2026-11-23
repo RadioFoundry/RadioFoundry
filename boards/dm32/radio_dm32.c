@@ -110,6 +110,8 @@ static bool rx_audio;		// the squelch is open (the radio's audio hook)
 static bool asleep;		// the receiver is powered down between listen windows (rx_sleep)
 static bool aprs_listen;	// APRS takes the HR_C7000's FM audio (aprs_listen_route)
 static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modulator (afsk_tx_route)
+static bool mic_off;		// the microphone off the air for the radio's own tones (tx_mic)
+static bool tx_mic(bool on);
 
 // The speaker amplifier is on while any user wants it
 #define AMP_RADIO	0x01u	// receive audio
@@ -586,6 +588,9 @@ static void tx_end(bool keep)
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
 	}
 #endif
+	if (mic_off) {
+		tx_mic(true);	// the core gives it back first; this is the safety net
+	}
 	if (mode == RADIO_MODE_FM) {
 		hrc7000_fm_idle(&modem);
 	}
@@ -658,6 +663,26 @@ static void tx_tone_side(bool on)
 		hrc7000_tx_tone_side(&modem, false);
 	}
 	hrc_irq_restore(s);
+}
+
+// The microphone off the air (fox mode). In FM TX it takes the analog FM path (0x2E = 1) straight to the FD6818, which
+// the tone sender's voice mute (TONE_SEND_CTRL b6) doesn't reach: the voice rode on the tones and filled the gaps
+// between them. Off, it goes to the DMR path, where the codec mute holds it, as for APRS (afsk_tx_route); the tones
+// still reach the modulator through the FD6818's own audio input
+static bool tx_mic(bool on)
+{
+	if (!on && (!transmitting || mode != RADIO_MODE_FM)) {
+		return false;
+	}
+	if (on != mic_off) {
+		return true;
+	}
+	mic_off = !on;
+	hrc7000_codec_mute(&modem, !on, false);
+	if (transmitting) {
+		hrc_pin_write(PIN_MIC_PATH, on);
+	}
+	return true;
 }
 
 static bool tx_tone_key(bool down)
@@ -888,6 +913,7 @@ const hal_radio_t dm32_radio = {
 	.tx_tail = tx_tail,
 	.tx_tone_key = tx_tone_key,
 	.tx_tone_side = tx_tone_side,
+	.tx_mic = tx_mic,
 #if CONFIG_DTMF
 	.tx_dtmf = tx_dtmf,
 #endif

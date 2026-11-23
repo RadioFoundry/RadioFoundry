@@ -55,6 +55,7 @@ static struct {
 	uint16_t tone_hz;	// tx_tone
 	bool side;		// tx_tone_side
 	bool key_down;		// tx_tone_key: the tone is on (a tx_tone call turns it on), false = a silent carrier
+	bool mic_off;		// tx_mic(false) while transmitting, until tx_mic(true) (tx_off leaves it: the core must)
 	int key_calls;
 	unsigned side_calls;
 	int tone_calls;
@@ -162,6 +163,14 @@ static bool r_tx_tone_key(bool down)
 	hw.key_calls++;
 	hw.key_down = down;
 	return hw.tone_hz != 0;
+}
+static bool r_tx_mic(bool on)
+{
+	if (!on && hw.tx_calls <= hw.tx_off_calls) {	// not transmitting
+		return false;
+	}
+	hw.mic_off = !on;
+	return true;
 }
 static bool r_tx_dtmf(char digit)
 {
@@ -4808,6 +4817,7 @@ static void test_fox(void)
 {
 	hal_radio_t radio_key = fake_radio;
 	radio_key.tx_tone_key = r_tx_tone_key;
+	radio_key.tx_mic = r_tx_mic;
 	board.radio = &radio_key;
 	fox_kv_len = -1;
 	strcpy(cp_name, "Q0TEST");
@@ -4820,13 +4830,14 @@ static void test_fox(void)
 	run(10);
 	CHECK(sm.view.state == RS_TX && sm.view.tx_auto && hw.tx_calls == 1 && hw.tx_hz == 146520000);
 	CHECK(sm.view.fox_phase == FOX_LEAD && hw.tone_hz == MORSE_TONE_HZ_DEFAULT && !hw.key_down);
+	CHECK(hw.mic_off);	// the microphone off the air for the whole cycle, the gaps included
 	// The message: the tone keyed on and off, never stopped (no tx_tone(0): that would open the microphone)
 	CHECK(fox_until(FOX_MSG, 400));
 	int downs = 0;
 	bool was = false;
 	while (sm.view.fox_phase == FOX_MSG && downs < 100) {
 		run(5);
-		CHECK(hw.tone_hz == MORSE_TONE_HZ_DEFAULT);
+		CHECK(hw.tone_hz == MORSE_TONE_HZ_DEFAULT && hw.mic_off);
 		downs += hw.key_down && !was;
 		was = hw.key_down;
 	}
@@ -4841,9 +4852,10 @@ static void test_fox(void)
 	// The ID, the tail, then receive until the next cycle
 	CHECK(fox_until(FOX_ID, 2000));
 	CHECK(fox_until(FOX_TAIL, 8000));
-	CHECK(sm.view.state == RS_TX);
+	CHECK(sm.view.state == RS_TX && hw.mic_off);
 	CHECK(fox_until(FOX_WAIT, 400));
 	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && hw.tone_hz == 0 && sm.view.fox_cycles == 1);
+	CHECK(!hw.mic_off);
 	CHECK(sm.view.fox && sm.view.fox_next_s == 60 && hw.tx_calls == 1);
 	run(30000);
 	CHECK(sm.view.state == RS_IDLE && hw.tx_calls == 1 && sm.view.fox_next_s == 30);
@@ -4864,7 +4876,7 @@ static void test_fox(void)
 	CHECK(fox_until(FOX_MSG, 400));
 	req(RREQ_PTT, 1);
 	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_STOPPED && sm.view.state == RS_TX && !sm.view.tx_auto);
-	CHECK(hw.tone_hz == 0);
+	CHECK(hw.tone_hz == 0 && !hw.mic_off);	// the user's voice on air
 	run(500);
 	req(RREQ_PTT, 0);
 	run(50);
@@ -4932,7 +4944,7 @@ static void test_fox(void)
 	start();
 	board.radio = &radio_key;
 	memset(&r, 0, sizeof r);
-	r.interval = 0;
+	r.interval = 1;	// 30 s
 	r.flags = FOX_F_MSG | FOX_F_JINGLE;	// the message on but empty: nothing for it
 	r.hz[0] = 1000;
 	r.ms10[0] = 20;

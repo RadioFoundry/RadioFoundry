@@ -8486,6 +8486,9 @@ static void fox_unkey(radio_sm_t *sm, uint32_t now_ms)
 	}
 	sm->fox_keyed = false;
 	tx_tone(0);
+	if (board.radio->tx_mic != NULL) {
+		board.radio->tx_mic(true);
+	}
 	ptt_release(sm, false, now_ms);
 }
 
@@ -8645,6 +8648,9 @@ static void fox_key_up(radio_sm_t *sm, uint32_t now_ms)
 	if (!board.radio->tx_tone(sm->fox_tone_hz)) {
 		fox_end(sm, RFOX_WHY_NO_TONE, now_ms);
 		return;
+	}
+	if (board.radio->tx_mic != NULL) {
+		board.radio->tx_mic(false);	// nothing but the fox's tones on air, the gaps included
 	}
 	fox_key(sm, false);	// a silent carrier for the lead-in
 	radio_fox_keyed(&sm->fox, now_ms);

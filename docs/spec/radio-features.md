@@ -424,7 +424,9 @@ restart comes up with the fox off.
 
 **A cycle** is one key-up through every TX rule PTT has (`ptt_down`: band, TX inhibit, the test TX limit, busy channel
 lockout, the time-out). It is the radio's own transmission (`tx_auto`), so the screen doesn't light each cycle. All
-of it is on `hal_radio_t.tx_tone`; with `tx_tone_key` a silent carrier is the tone keyed off, else `tx_tone(0)`.
+of it is on `hal_radio_t.tx_tone`; with `tx_tone_key` a silent carrier is the tone keyed off, else `tx_tone(0)`. A board
+with `tx_mic` takes the microphone off the air from key-up to unkey, for one whose microphone reaches the modulator by a
+path the tone's own muting doesn't cover; without it a gap with `tx_tone(0)` carries the microphone.
 
 | Part | What | Length |
 |---|---|---|
@@ -437,7 +439,7 @@ of it is on `hal_radio_t.tx_tone`; with `tx_tone_key` a silent carrier is the to
 | Tail | silent carrier | `FOX_TAIL_MS` 300 ms |
 
 The message and the jingle can each be off; the ID can't. A message that is empty sends nothing. The next cycle keys
-the interval after this one unkeyed: 30 s, 1, 2, 5 or 10 min. The first keys at once.
+the interval after this one unkeyed: 15 s, 30 s, 1, 2, 5 or 10 min. The first keys at once.
 
 **The record** is the codeplug's (key 0x000A, [codeplug-settings.md](codeplug-settings.md) 3.4): the interval, the
 two parts' switches, the message and the jingle's 32 steps. Each step is a frequency (0 = a pause, up to 3400 Hz in
