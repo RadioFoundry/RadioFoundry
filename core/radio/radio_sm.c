@@ -663,10 +663,17 @@ static bool channel_read(uint16_t number, channel_t *ch)
 // Speaker and LEDs follow the state; only changes go to the board
 // FM: the board's speaker path follows the squelch (or the monitor). DMR voice goes out as PCM from the vocoder
 // (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
+static bool position_empty(const radio_sm_t *sm)
+{
+	return board.input != NULL && board.input->position_locked && !sm->view.vfo &&
+	       sm->have_channels && sm->view.channel_number == 0;
+}
+
 static void outputs(radio_sm_t *sm)
 {
 	bool tx = sm->view.state == RS_TX;
-	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot && !parked(&sm->view.ch);
+	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot &&
+		  !position_empty(sm) && !parked(&sm->view.ch);
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
 	bool green = open;
 #if CONFIG_P25
@@ -936,7 +943,7 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_BCAST_FM
 	bcast_tune(sm);		// the channel receiver keeps its last frequency, muted, while the broadcast one plays
 #endif
-	if (!sm->view.am && !sm->view.bcast)
+	if (!sm->view.am && !sm->view.bcast && !position_empty(sm))
 		board.radio->rx(sm->view.ch.rx_hz, air ? RADIO_BW_12K5 : (radio_bw_t)sm->view.ch.bw,
 				mode != RADIO_MODE_FM ? &no_tone : &sm->view.ch.rx_tone);
 	if (mode == RADIO_MODE_DMR) {
@@ -1160,6 +1167,38 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 						// record's frequencies
 	}
 #endif
+}
+
+static void follow_channel_switch(radio_sm_t *sm, uint32_t now_ms)
+{
+	const hal_input_t *input = board.input;
+	if (input == NULL || !input->position_locked || input->position == NULL || !sm->have_channels || sm->view.vfo ||
+	    sm->hotspot || sm->ptt || sm->view.state == RS_TX) {
+		return;
+	}
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		return;
+	}
+#endif
+	int8_t pos = input->position();
+	if (pos < 0 || (uint16_t)pos == sm->view.zone_pos) {
+		return;
+	}
+
+	channel_t ch;
+	if ((uint16_t)pos < sm->zone.count && channel_read(sm->zone.channels[pos], &ch)) {
+		set_channel(sm, (uint16_t)pos, &ch);
+	} else {
+		const channel_t empty = { .name = "Unprogrammed", .mode = RADIO_MODE_FM, .rx_only = true };
+#if CONFIG_DMR_TRUNK
+		t3_channel(sm, 0, &empty);
+#endif
+		sm->view.zone_pos = (uint16_t)pos;
+		sm->view.channel_number = 0;
+		load_channel(sm, &empty);
+	}
+	tune(sm, now_ms);
 }
 
 static bool read_zone(uint16_t index, zone_t *z)
@@ -1466,6 +1505,9 @@ static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t pow
 
 static uint8_t tx_check(const radio_sm_t *sm)
 {
+	if (position_empty(sm)) {
+		return TXDENY_NO_FREQ;
+	}
 	const channel_t *ch = &sm->view.ch;
 	// A trunked channel's frequencies are the system's: checked when it keys (p25t_tick, p25t_burst)
 	bool trunk = ch->kind == CODEPLUG_KIND_P25_TRUNK;
@@ -4858,7 +4900,7 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 				vfo_set_hz(sm, sc->origin_hz);
 				tune(sm, now_ms);
 			}
-		} else if (sm->view.zone_pos != sc->origin_pos) {
+		} else if (sc->origin_pos < sm->zone.count && sm->view.zone_pos != sc->origin_pos) {
 			channel_t ch;
 			if (channel_read(sm->zone.channels[sc->origin_pos], &ch)) {
 				set_channel(sm, sc->origin_pos, &ch);
@@ -5372,6 +5414,7 @@ static void scan_stop_asked(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 #endif
 	}
 	scan_stop(sm, cancel, now_ms);
+	follow_channel_switch(sm, now_ms);
 }
 
 static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
@@ -6899,6 +6942,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		scan_stop(sm, !on_signal, now_ms);
 	}
 #endif
+	follow_channel_switch(sm, now_ms);
 	sm->ptt = true;
 	sm->tot_warned = false;
 	sm->view.tot_warning = false;
@@ -9462,6 +9506,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}
+	follow_channel_switch(sm, now_ms);
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP
@@ -9679,7 +9724,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	uint8_t open_below = radio_sm_squelch_open_below(sq);
 	bool listening = bcast_listening(sm);
 	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm) &&
-		     !parked(&sm->view.ch);
+		     !position_empty(sm) && !parked(&sm->view.ch);
 	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
 	uint8_t need = close_need(sm, &st, sq);		// for the close below
 

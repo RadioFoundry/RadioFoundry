@@ -8,6 +8,7 @@
 #include "config.h"
 #if CONFIG_DUAL_WATCH
 #include <string.h>
+#include "board.h"
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "fmt.h"
@@ -208,6 +209,7 @@ static void pane_fill(uint8_t i)
 		if (!codeplug_zone(ref[i].zone, &z) || ref[i].pos >= z.count || !codeplug_channel(z.channels[ref[i].pos], &ch))
 			return;
 		p->number = z.channels[ref[i].pos];
+		p->zone_slot = ref[i].pos + 1u;
 		strcpy(p->zone, z.name);
 		strcpy(p->name, ch.name);
 	}
@@ -707,10 +709,12 @@ bool ui_dual_home_key(const input_event_t *ev)
 	case ACT_NAV_DOWN:
 		if (!nav || ui_st.entry)
 			return false;
-		if (ui_st.updown == 1)	// Settings > Keys > Up/Down: Zone
-			ui_dual_zone_step(ev->action == ACT_NAV_UP ? 1 : -1);
-		else
+		if (ui_st.updown == 1) {	// Settings > Keys > Up/Down: Zone
+			int dir = ev->action == ACT_NAV_UP ? 1 : -1;
+			ui_dual_zone_step(board.input != NULL && board.input->position_locked ? -dir : dir);
+		} else {
 			step_selected(ev->action == ACT_NAV_UP ? 1 : -1);
+		}
 		return true;
 	case ACT_ENC_STEP:
 		if (ui_st.entry)

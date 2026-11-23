@@ -112,6 +112,9 @@ static void switch_poll(uint32_t now)
 {
 	int8_t pos = board.input->position();
 	switch_pos = pos;
+	if (board.input->position_locked) {
+		return;	// the radio task follows this switch directly
+	}
 	int32_t hold;
 	taskENTER_CRITICAL();
 	hold = switch_hold;

@@ -171,7 +171,9 @@ static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
 
 static bool ptt_stuck;
 static bool p_ptt_stuck(void) { return ptt_stuck; }
-static const hal_input_t fake_input = { .ptt_line_stuck = p_ptt_stuck };
+static int8_t knob_pos = -1;
+static int8_t fake_position(void) { return knob_pos; }
+static hal_input_t fake_input = { .ptt_line_stuck = p_ptt_stuck, .position = fake_position };
 
 // ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
 static struct {
@@ -6104,6 +6106,34 @@ static void test_rx_ext(void)
 
 // ---- Error paths: the radio refuses to key, a channel without a TX frequency, retuning or scanning while
 // transmitting, the stack's own refusals, targets that end with their channel, stored emergency settings ----
+static void test_channel_selector(void)
+{
+	setup_codeplug();
+	start();
+	fake_input.position_locked = true;
+	knob_pos = 1;
+	radio_sm_poll(&sm, now);
+	CHECK(sm.view.zone_pos == 1 && sm.view.channel_number == 2);
+
+	knob_pos = (int8_t)zones[0].count;
+	radio_sm_poll(&sm, now);
+	CHECK(sm.view.zone_pos == (uint16_t)knob_pos && sm.view.channel_number == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_FREQ && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+
+	knob_pos = 0;
+	radio_sm_poll(&sm, now);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	knob_pos = 1;
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == 0 && sm.view.zone_pos == 1 && sm.view.channel_number == 2);
+
+	fake_input.position_locked = false;
+	knob_pos = -1;
+}
+
 static void test_error_paths(void)
 {
 	// The squelch threshold's ends
@@ -11527,6 +11557,7 @@ int main(void)
 	test_soft_volume();
 	test_side_keys();
 	test_rx_ext();
+	test_channel_selector();
 	test_error_paths();
 	test_ptt_line_stuck();
 	test_hotspot();
