@@ -221,17 +221,16 @@ static bool main_is_bk4819(void)
 
 #if !GD88_TX
 // B's main chip's GPIOs, by part: the path to the PA (its own transmitter's output instead of A's), the band (high:
-// VHF; A's transmission uses the same one, gd88_a_tx_band) and B's own TX. The FD6818's own-TX pin isn't known: B
-// doesn't transmit on one (dmr_tx)
-#define GPIO_NONE		0xFFu	// the drivers ignore a pin above their range
-static uint8_t gpio_path = GPIO_NONE, gpio_vhf = GPIO_NONE, gpio_tx = GPIO_NONE;
+// VHF; A's transmission uses the same one, gd88_a_tx_band) and B's own TX, GPIO3 on every part. An FD6818 family
+// part's GPIO0 carries the sub-audio compare result, so its path is GPIO5
+#define GPIO_TX			3u
+static uint8_t gpio_path, gpio_vhf;
 
 static void main_gpio_map(void)
 {
 	bool bk = main_is_bk4819();
 	gpio_path = bk ? 0u : 5u;
 	gpio_vhf = bk ? 1u : 4u;
-	gpio_tx = bk ? 3u : GPIO_NONE;
 }
 #endif
 
@@ -362,19 +361,21 @@ static void volume_apply(void);
 
 #if GD88_BAND_LO_GPIO
 #define LO_GPIO_UHF		4u
-#define LO_GPIO_VHF		5u
+#define LO_GPIO_VHF_BK		5u	// a BK4819 LO
+#define LO_GPIO_VHF		1u	// an FD6818 family or AT1141 LO
 // The LO chip's GPIO, through the superhet LO ops (both chips drive it)
 static void lo_gpio(uint8_t pin, bool high)
 {
 	superhet_lo_gpio(&rf.lo, pin, high);
 }
 
-// The band's path: VHF = GPIO5 high, GPIO4 low; UHF the reverse
+// The band's path: VHF = the VHF line high, GPIO4 low; UHF the reverse. The VHF line is GPIO5 on a BK4819 LO, GPIO1
+// on the other parts
 static void lo_band(uint32_t hz)
 {
 	bool uhf = hz >= UHF_FROM_HZ;
 	lo_gpio(LO_GPIO_UHF, uhf);
-	lo_gpio(LO_GPIO_VHF, !uhf);
+	lo_gpio(rf.lo_kind == SUPERHET_CHIP_BK4819 ? LO_GPIO_VHF_BK : LO_GPIO_VHF, !uhf);
 }
 #endif
 
@@ -493,7 +494,7 @@ static void audio(bool on);
 // on (A), B's transmitter is armed instead: it keys the bursts the modem's caller sends it (core/rx2/rx2_dmr.h)
 #if !GD88_TX
 // B's own transmitter (main_gpio_map): the path and TX pins high while it transmits, the band set first. On a BK4819
-// those are GPIO 0 (0x33 bit 6), GPIO 3 (bit 3) and GPIO 1 (bit 5). Per burst like the PA: held high, B's receiver
+// those are GPIO 0 (0x33 bit 6), GPIO 3 (bit 3) and GPIO 1 (bit 5); on an FD6818 family part GPIO 5, 3 and 4. Per burst like the PA: held high, B's receiver
 // hears nothing, and an SFR's repeat needs B's modem to keep the inbound slot timing between bursts. The band is left
 // after the burst, as A's transmission leaves it
 static uint16_t own_gpio_word;	// the GPIO word as the last burst keyed it (the dmrtx.gpio view key)
@@ -503,7 +504,7 @@ static void own_gpio(bool on, uint32_t hz)
 		superhet_main_gpio(rf_main, gpio_vhf, hz < UHF_FROM_HZ);
 	}
 	superhet_main_gpio(rf_main, gpio_path, on);
-	superhet_main_gpio(rf_main, gpio_tx, on);
+	superhet_main_gpio(rf_main, GPIO_TX, on);
 	if (on) {
 		own_gpio_word = superhet_chips_main_gpio_word(&rf);
 	}
@@ -529,12 +530,6 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power, &plan)) {
 		return false;
 	}
-#if !GD88_TX
-	// B's own transmitter needs its main chip's TX pin (main_gpio_map): refused on a part where it isn't known
-	if (gpio_tx == GPIO_NONE) {
-		return false;
-	}
-#endif
 	if (dmr_armed) {
 		hrc_rfburst_disarm();
 	}

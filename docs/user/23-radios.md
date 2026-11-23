@@ -808,9 +808,8 @@ this radio yet.
 
 GD-88 units differ in their RF chips: some have BK4819 chips, others FD6818 and WX4818N chips or an AT1141 synthesizer.
 RadioFoundry reads the chips at start-up and drives whichever the radio has. So far only a unit with a BK4819 and an
-AT1141 has been tested. On units with an FD6818 receiver chip, APRS transmit is not available yet, and single
-frequency repeating (SFR) cannot use the second receiver's transmitter. **Settings > About** lists the RF chips of the
-main receiver (RF chip lines); the second receiver's chips are not shown.
+AT1141 has been tested. On units with an FD6818 receiver chip, APRS transmit is not available yet. **Settings >
+About** lists the RF chips of the main receiver (RF chip lines); the second receiver's chips are not shown.
 
 Once there is a release, the web installer builds the firmware for both chips and installs it in one step over the
 programming cable, first chip then second. The first time, the second chip still runs its original firmware, so the
