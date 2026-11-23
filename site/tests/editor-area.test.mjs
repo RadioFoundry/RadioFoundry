@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // Exercise the editor's load/write preparation without a DOM or connected radio.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -68,4 +67,28 @@ test("a changed or unidentified radio clears the merge association", async () =>
 	const code = app.slice(app.indexOf("async function onLine("), app.indexOf("// The offer to convert a format N"));
 	await runInNewContext(code + "onLine(c)", { S, c, sizedRadio() {}, diag: { note() {} } });
 	assert.equal(S.areaSource, null);
+});
+
+test("multisite roaming survives file import and write preparation with receive-only permissions", () => {
+	for (const roamDbm of [-128, -100, 0]) {
+		const model = decode(fixture()), system = model.systems[0];
+		system.ownId = 0;
+		system.fields.roamDbm = roamDbm;
+		system.fields.planOnly = false;
+		system.entries = Array.from({ length: 6 }, (_, i) => ({ cls: 1, group: i, rfss: 1, site: i + 1 }));
+		for (let i = 0; i < 32; i++) system.entries.push({
+			cls: 0, group: i % 6, control: true, rxHz: 440000000 + i * 12500, txHz: 0, iden: 0, chanNo: 0,
+		});
+		const base = encode(model), expected = decode(base);
+		const actual = decode(send(base, CodeplugImage.blank(), false).file);
+		assert.deepEqual(actual.systems, expected.systems);
+		assert.equal(actual.systems[0].entries.length, 38);
+		assert.equal(actual.systems[0].fields.roamDbm, roamDbm);
+		assert.equal(actual.systems[0].fields.planOnly, false);
+		assert.equal(actual.systems[0].tx, false);
+		assert.equal(actual.systems[0].ownId, 0);
+		assert.equal(actual.systems[0].fields.noReg, true);
+		assert.equal(actual.channels[0].rxOnly, true);
+		assert.equal(actual.channels[0].tagTx, false);
+	}
 });

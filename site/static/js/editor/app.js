@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Copyright (c) 2026 Alex Bloom
 // The Codeplug Editor page: a codeplug from a file or a radio, edited in tables and forms, saved to a file or
 // written back to the radio. Everything runs in the page; the codeplug never leaves it unless the user puts it in a
 // bug report (report.js). The working codeplug is kept in this browser (IndexedDB) so a reload doesn't lose edits.
