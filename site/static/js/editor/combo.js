@@ -58,9 +58,14 @@ export function combo(input, spec, opts = {}) {
 	ts.on("type", typing);
 	ts.hook("after", "setTextboxValue", typing);
 	// leaving the field takes a valid value typed there, as a plain text box would; Tom Select alone keeps only a
-	// picked row and drops the text. Text that isn't a valid value leaves the field as it was
+	// picked row and drops the text. Text that isn't a valid value leaves the field as it was. Tom Select clears the
+	// text before "blur", so it is kept in ts.textOnBlur: the grid and the form's Save read it there. (Tom Select can
+	// call onBlur a second time with the text already gone, so only focus clears it)
+	ts.textOnBlur = "";
+	ts.on("focus", () => { ts.textOnBlur = ""; });
 	ts.hook("before", "onBlur", () => {
 		const text = ts.inputValue().trim();
+		if (text) ts.textOnBlur = text;
 		if (!document.hasFocus() || !ts.isFocused || !text) return;
 		const v = spec.accept(text);
 		if (v == null || v === ts.getValue()) return;
@@ -93,4 +98,13 @@ export function comboValue(ts, spec) {
 	const typed = ts.inputValue().trim();
 	if (typed) return spec.accept(typed);
 	return ts.getValue();
+}
+
+// The text a field gives its parser on Save: the text typed or left there when the field lost focus (Tom Select
+// drops text that isn't a valid value), else the selected value. Invalid text then gets its error instead of
+// leaving the old value without a word
+export function comboText(input) {
+	const ts = input.tomselect;
+	if (!ts) return input.value;
+	return ts.inputValue().trim() || ts.textOnBlur || input.value;
 }

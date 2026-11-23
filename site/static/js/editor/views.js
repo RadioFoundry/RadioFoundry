@@ -12,7 +12,7 @@ import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
 import { specField } from "./modefields.js";
-import { combo } from "./combo.js";
+import { combo, comboText } from "./combo.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -564,7 +564,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				f.set ? f.set(work, v) : (work[f.key] = v);
 				continue;
 			}
-			const err = f.parse ? f.parse(work, f.key, input.value) : ((work[f.key] = input.value), null);
+			const text = f.combo ? comboText(input) : input.value;
+			const err = f.parse ? f.parse(work, f.key, text) : ((work[f.key] = text), null);
 			if (err) bad.push(`${typeof f.label === "function" ? f.label(work) : f.label}: ${err}`);
 		}
 		if (bad.length) {

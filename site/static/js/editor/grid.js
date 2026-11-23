@@ -317,8 +317,15 @@ export class Grid {
 			}
 		}, true);
 		ts.on("item_add", () => finish(true, null, ts.getValue()));
-		// leaving the cell: combo() has already taken a valid typed value as the item
-		ts.on("blur", () => finish(true, null, ts.getValue()));
+		// leaving the cell: combo() has already taken a valid typed value as the item (that finished the edit). Text
+		// that isn't a valid value leaves the cell as it was: an edit started by typing has no item, so getValue()
+		// would be the empty value and clear the cell. A valid value not yet taken (the window lost focus) is saved
+		ts.on("blur", () => {
+			const text = ts.textOnBlur;
+			const v = text ? spec.accept(text) : ts.getValue();
+			if (v == null) finish(false);
+			else finish(true, null, v);
+		});
 		ts.focus();
 		ts.open();
 	}
