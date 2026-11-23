@@ -8978,6 +8978,8 @@ static bool mode_allowed(const radio_sm_t *sm, int32_t mode)
 		return p25_ok() && !radio_listen_band(sm->view.ch.rx_hz);
 	case RADIO_MODE_NXDN:
 		return nxdn_ok() && !radio_listen_band(sm->view.ch.rx_hz);
+	case RADIO_MODE_YSF:
+		return ysf_ok() && !radio_listen_band(sm->view.ch.rx_hz);
 	default:
 		return false;
 	}
@@ -9148,6 +9150,51 @@ static void nxdn_set_request(radio_sm_t *sm)
 	}
 	radio_nxdn_poll(&sm->view.nxdn);	// the settings in the view now, running or not
 	changed(sm);
+}
+#endif
+
+#if CONFIG_YSF
+// The same for YSF (the DG-IDs)
+static void ysf_set_request(radio_sm_t *sm)
+{
+	if (radio_ysf_running()) {
+		radio_ysf_apply(&sm->view.ch, air_number(sm), sm->radio_name);
+	} else if (sm->view.ch.mode == RADIO_MODE_YSF && sm->board_mode == RADIO_MODE_DMR && !BENCH_HELD(sm) &&
+		   radio_ysf_fits()) {
+		air_begin(sm);
+	}
+	radio_ysf_poll(&sm->view.ysf);
+	changed(sm);
+}
+
+// A Wires-X command (ysf.md 9.1): a short transmission the engine ends by itself, refused as PTT would be. A refusal
+// says why in the view and beeps, without the refusal state PTT's release would clear
+static void ysf_wx_request(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint8_t reason;
+
+	if (sm->view.ch.mode != RADIO_MODE_YSF || sm->air_tx || sm->ptt || sm->view.state == RS_TX ||
+	    sm->hotspot || BENCH_HELD(sm)) {
+		radio_ysf_wx_disarm();
+		return;
+	}
+	end_reception(sm, now_ms);
+	reason = tx_check(sm);
+	if (reason == TXDENY_NONE && (sm->view.ysf.flags & RADIO_YSF_NO_CALL) != 0)
+		reason = TXDENY_NO_ID;
+	if (reason != TXDENY_NONE) {
+		radio_ysf_wx_disarm();
+		sm->view.tx_deny = reason;
+		beep(sm, BEEP_TX_DENY);
+		changed(sm);
+		return;
+	}
+	air_key(sm, now_ms, sm->view.ch.tx_hz);
+	if (sm->view.state == RS_TX_DENIED && !sm->ptt) {
+		radio_ysf_wx_disarm();		// refused before the engine took it: not the next PTT's
+		sm->view.state = RS_IDLE;	// refused by the engine or the board: nothing to release
+		changed(sm);
+	}
 }
 #endif
 
@@ -9323,45 +9370,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_NXDN_SET: nxdn_set_request(sm); break;
 #endif
 #if CONFIG_YSF
-	case RREQ_YSF_SET:
-		// The same for YSF (the DG-IDs)
-		if (radio_ysf_running()) {
-			radio_ysf_apply(&sm->view.ch, air_number(sm), sm->radio_name);
-		} else if (sm->view.ch.mode == RADIO_MODE_YSF && sm->board_mode == RADIO_MODE_DMR && !BENCH_HELD(sm) &&
-			   radio_ysf_fits()) {
-			air_begin(sm);
-		}
-		radio_ysf_poll(&sm->view.ysf);
-		changed(sm);
-		break;
-	case RREQ_YSF_WX: {
-		// A Wires-X command (ysf.md 9.1): a short transmission the engine ends by itself, refused as PTT would be.
-		// A refusal says why in the view and beeps, without the refusal state PTT's release would clear
-		uint8_t reason = TXDENY_NONE;
-
-		if (sm->view.ch.mode != RADIO_MODE_YSF || sm->air_tx || sm->ptt || sm->view.state == RS_TX ||
-		    sm->hotspot || BENCH_HELD(sm)) {
-			radio_ysf_wx_disarm();
-			break;
-		}
-		end_reception(sm, now_ms);
-		reason = tx_check(sm);
-		if (reason == TXDENY_NONE && (sm->view.ysf.flags & RADIO_YSF_NO_CALL) != 0)
-			reason = TXDENY_NO_ID;
-		if (reason != TXDENY_NONE) {
-			radio_ysf_wx_disarm();
-			sm->view.tx_deny = reason;
-			beep(sm, BEEP_TX_DENY);
-			changed(sm);
-			break;
-		}
-		air_key(sm, now_ms, sm->view.ch.tx_hz);
-		if (sm->view.state == RS_TX_DENIED && !sm->ptt) {
-			sm->view.state = RS_IDLE;	// refused by the engine or the board: nothing to release
-			changed(sm);
-		}
-		break;
-	}
+	case RREQ_YSF_SET: ysf_set_request(sm); break;
+	case RREQ_YSF_WX: ysf_wx_request(sm, now_ms); break;
 #endif
 #if CONFIG_AIR_RAW
 	case RREQ_AIR_BENCH:

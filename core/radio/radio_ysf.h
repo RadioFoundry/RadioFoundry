@@ -96,7 +96,8 @@ uint32_t radio_ysf_fit(void);
 bool radio_ysf_take(channel_t *ch);
 void radio_ysf_settings(radio_ysf_settings_t *out);		// any task
 void radio_ysf_set_settings(const radio_ysf_settings_t *s);	// radio task (RREQ_YSF_SET)
-// This radio's RID (any task). weak: it comes from the fallback (no usable MCU unique ID); may be NULL
+// This radio's RID, a copy (any task; the radio task works it out at init). weak: it comes from the fallback (no
+// usable MCU unique ID); may be NULL
 void radio_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak);
 // The callsign we send: the codeplug's YSF record, else the radio name's callsign; "" = none (PTT refused)
 void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1]);

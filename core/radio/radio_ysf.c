@@ -28,24 +28,43 @@ static uint32_t wx_arg;
 static ysf_wx_t wx_pub;
 static radio_ysf_wx_t wx_state = { .asked_cmd = YSF_WX_NONE };
 static volatile uint8_t wx_seq;
-static char rid[RADIO_YSF_RID_LEN + 1];	// this radio's RID ("" until worked out) and where it came from
+// This radio's RID and where it came from: worked out on the radio task only (init, and again at each begin while
+// it is the fallback, which follows the codeplug); other tasks copy it under rid_seq (odd while it is written)
+static char rid[RADIO_YSF_RID_LEN + 1];
 static bool rid_weak;
-
-static void rid_reset(void)
-{
-	rid[0] = '\0';
-}
+static volatile uint8_t rid_seq;
 static ysf_engine_t *eng;		// while running
 static radio_ysf_stats_t stats;
 static ysf_call_stats_t call_base;
 static air_session_stats_t air_base;
 static uint32_t rx_calls_base, tx_calls_base, filler_base;
 
+static void rid_update(void)
+{
+	hal_chip_t chip;
+	char r[RADIO_YSF_RID_LEN + 1];
+	bool have = board.system != NULL && board.system->chip != NULL && board.system->chip(&chip) &&
+		    ysf_uid_usable(chip.uid);
+
+	if (have) {
+		ysf_rid_from_uid(chip.uid, r);
+	} else {
+		char name[CODEPLUG_NAME_LEN + 1];
+
+		codeplug_radio_name(name);
+		ysf_rid_fallback(codeplug_dmr_id(), name, r);
+	}
+	rid_seq++;
+	memcpy(rid, r, sizeof rid);
+	rid_weak = !have;
+	rid_seq++;
+}
+
 void radio_ysf_init(void)
 {
 	memset(&set, 0, sizeof set);
 	eng = NULL;
-	rid_reset();		// worked out at first use: the codeplug may not be read yet
+	rid_update();		// the chip's ID now; a fallback is worked out again at each begin, once the codeplug is read
 }
 
 void radio_ysf_settings(radio_ysf_settings_t *out)
@@ -89,32 +108,19 @@ bool radio_ysf_take(channel_t *ch)
 // (RADIO_YSF_RID_WEAK) and the screen that shows the RID marks it. Worked out at first use and, for the fallback, at
 // each engine start (it follows a codeplug change); read by any task
 
-static void rid_update(void)
-{
-	hal_chip_t chip;
-	char r[RADIO_YSF_RID_LEN + 1];
-	bool have = board.system != NULL && board.system->chip != NULL && board.system->chip(&chip) &&
-		    ysf_uid_usable(chip.uid);
-
-	if (have) {
-		ysf_rid_from_uid(chip.uid, r);
-	} else {
-		char name[CODEPLUG_NAME_LEN + 1];
-
-		codeplug_radio_name(name);
-		ysf_rid_fallback(codeplug_dmr_id(), name, r);
-	}
-	rid_weak = !have;
-	memcpy(rid, r, sizeof rid);
-}
 
 void radio_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 {
-	if (rid[0] == '\0')
-		rid_update();
-	memcpy(out, rid, sizeof rid);
+	uint8_t s;
+	bool w;
+
+	do {
+		s = rid_seq;
+		memcpy(out, rid, sizeof rid);
+		w = rid_weak;
+	} while ((s & 1) || s != rid_seq);
 	if (weak)
-		*weak = rid_weak;
+		*weak = w;
 }
 
 void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1])

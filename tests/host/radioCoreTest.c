@@ -430,10 +430,14 @@ static void air_step1(uint8_t i)
 // 4800 symbols/s (P25, NXDN at 9600 bit/s): everything. 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says
 // for each provider (a provider that transmits a profile only, or receives it only)
 static uint32_t air_fit2400[2] = { AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT, AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT };
+static bool air_rx_only4800;		// the provider receives 4800 symbols/s only (P25, NXDN 9600, YSF)
 static uint32_t air_fit(uint8_t i, const air_profile_t *pr)
 {
 	if (air_nofit) {
 		return 0;
+	}
+	if (air_rx_only4800 && pr->sym_rate == 4800) {
+		return AIR_FIT_RX | AIR_FIT_SOFT;
 	}
 	return pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
 }
@@ -9678,9 +9682,34 @@ static void test_ysf_wx(void)
 	CHECK(hw.tx_calls == keyed0 && sm.view.tx_deny == TXDENY_RX_ONLY && sm.view.state != RS_TX_DENIED);
 	radio_ysf_wx(&w);
 	CHECK(w.asked == 1);
+	// Refused before the engine took it (an engine that receives only): the command isn't left for the next PTT,
+	// which sends voice once the engine can transmit
+	chans[3].rx_only = false;
+	air_rx_only4800 = true;
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	CHECK(radio_ysf_running());
+	radio_req_ysf_wx(YSF_WX_DX, 0, NULL);
+	CHECK(sm.view.tx_deny == TXDENY_AIR_NO_TX && sm.view.state != RS_TX_DENIED);
+	run(50);
+	air_rx_only4800 = false;
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	CHECK(radio_ysf_running());
+	yfar_begin(0);
+	data0 = yfar.rx.stats.data_frames;
+	req(RREQ_PTT, 1);
+	run(400);
+	req(RREQ_PTT, 0);
+	for (int i = 0; i < 200 && sm.view.state == RS_TX; i++)
+		run(10);
+	CHECK(yfar.rx.stats.data_frames == data0 && yfar.rx.call.dt == YSF_DT_VD2 && yfar.rx.stats.voice > 0);
 	// Not on a YSF channel: nothing
 	req(RREQ_ZONE_POS, 0);
 	run(200);
+	keyed0 = hw.tx_calls;
 	radio_req_ysf_wx(YSF_WX_DX, 0, NULL);
 	CHECK(hw.tx_calls == keyed0);
 	yfar_stop();

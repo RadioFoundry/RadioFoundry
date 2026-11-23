@@ -192,7 +192,9 @@ static void on_data(ysf_call_rx_t *c, const ysf_rx_frame_t *f)
 				c->stats.csd_fail++;
 			} else {
 				c->stats.fec_bits += (uint32_t)errs;
-				if (take_dst(c, c1) | field_get(c->call.src, c1 + YSF_CS_LEN))
+				bool dst = take_dst(c, c1), src = field_get(c->call.src, c1 + YSF_CS_LEN);
+
+				if (dst || src)
 					changed(c);
 			}
 		}
@@ -266,7 +268,9 @@ static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 			break;
 		}
 		c->stats.fec_bits += (uint32_t)errs;
-		if (take_dst(c, buf) | field_get(c->call.src, buf + YSF_CS_LEN))
+		bool dst = take_dst(c, buf), src = field_get(c->call.src, buf + YSF_CS_LEN);
+
+		if (dst || src)
 			changed(c);
 		c->next_fn = 0;
 		break;
