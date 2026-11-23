@@ -932,6 +932,12 @@
    "needs": [
     "UI_SETTINGS"
    ]
+  },
+  "p25_recent": {
+   "group": "calls",
+   "needs": [
+    "P25"
+   ]
   }
  }
 }
