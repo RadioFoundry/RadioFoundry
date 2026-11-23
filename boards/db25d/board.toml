@@ -23,6 +23,7 @@ hardware = "docs/spec/hardware-db25d.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
+unconfirmed = { RX_TBAND = "Experimental receive extension has not been qualified for PLL lock or sensitivity" }
 bands = "136-174 / 400-480 MHz"
 power = "up to 25 W"
 display = "1.77\" color, 160 × 128"

@@ -53,6 +53,11 @@ is `tools/bringup.py list --radio <id>`.
 | `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written | not recorded |
 | `p25` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
+| `p25_roam` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `p25_zone_scan` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `p25_alias` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `p25_alias_trace` | off | off | off | off | off | off | off | off |
+| `p25_alias_cache` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
@@ -161,6 +166,7 @@ is `tools/bringup.py list --radio <id>`.
 | `lang_default_fr` | off | off | off | off | off | off | off | off |
 | `lang_default_zh` | off | off | ✕ | ✕ | ✕ | off | off | ✕ |
 | `radio_controls` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
+| `rx_tband` | off | off | off | off | off | off | off | off |
 | `settings_store` | not recorded | not recorded | not recorded | pass (seed) | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `codeplug_foreign` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
@@ -272,6 +278,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
+| `RX_TBAND` | ? | ? | ? | ? | ? | ? | ? | ? |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |
@@ -303,6 +310,11 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `P25` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_TRUNK` | ● | ● | ● | ● | … | ● | ● | ● |
+| `P25_ROAM` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `P25_ZONE_SCAN` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `P25_ALIAS` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `P25_ALIAS_TRACE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `P25_ALIAS_CACHE` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
