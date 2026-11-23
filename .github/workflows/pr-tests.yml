@@ -253,7 +253,9 @@ jobs:
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
           python3 -m venv zz && zz/bin/pip install -q "zizmor==${ZIZMOR_VERSION}"
-          { echo "$RUNNER_TEMP/lint"; echo "$RUNNER_TEMP/lint/zz/bin"; } >> "$GITHUB_PATH"
+          # only the zizmor entry point on PATH: the venv's python3 there would hide the site packages later steps need
+          ln -s "$PWD/zz/bin/zizmor" zizmor
+          echo "$RUNNER_TEMP/lint" >> "$GITHUB_PATH"
       - name: Python checks, license checks, workflow checks
         env:
           GH_TOKEN: ${{ github.token }}   # zizmor's online audits (impostor commits, known-vulnerable actions); read-only
