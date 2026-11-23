@@ -12,7 +12,9 @@ and follows the deepest call chain from each task's entry function:
 
 It fails when the need exceeds the task's stack. A platform whose interrupts run one at a time on a stack of their
 own (--irq-stack, or --irq-stack-symbols for its ends in the ELF) names the function that installs a handler (--irq-register): every function passed to it is a root,
-and the deepest of them plus the margin must fit that stack. Calls through function pointers are resolved from the sources: a
+and the deepest of them plus the margin must fit that stack. A platform whose start-up code (main() until the scheduler
+runs) has a stack of a fixed size names its ends in the ELF (--startup-stack-symbols): main() is then a root too, with
+the port overhead (a fault's frame) and the margin. Calls through function pointers are resolved from the sources: a
 function stored into a struct field (a designated or positional initializer, an assignment) is a target of the calls
 through that field of that struct type; a function stored into a variable or passed as an argument is a target of
 the calls through that variable or parameter. What the sources can't show comes from tools/stack_check_edges.txt.
@@ -1356,6 +1358,15 @@ def run(args):
                   args.irq_stack_symbols, file=sys.stderr)
             return 2
         args.irq_stack = disasm.syms[names[1]] - disasm.syms[names[0]]
+    startup = 0
+    if args.startup_stack_symbols:
+        # The start-up stack as linked, like the interrupt stack's
+        names = args.startup_stack_symbols.split(",")
+        if disasm is None or len(names) != 2 or any(n not in disasm.syms for n in names):
+            print("stack_check: --startup-stack-symbols %s: not in the ELF (needs --objdump and --elf)" %
+                  args.startup_stack_symbols, file=sys.stderr)
+            return 2
+        startup = disasm.syms[names[1]] - disasm.syms[names[0]]
     an = Analysis(graph, model, table, args.lib_default, disasm)
     label = args.label or os.path.basename(os.path.normpath(args.build))
     fails = 0
@@ -1395,6 +1406,23 @@ def run(args):
         else:
             print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
                   (" > ..." if len(path) > args.path_len else ""))
+    if startup:
+        entry = [t for t in graph.lookup(args.startup_entry) if graph.defined(t)]
+        if len(entry) != 1:
+            print("  %-8s ?    no single definition of %s with a call graph" % ("start-up", args.startup_entry))
+            fails += 1
+        else:
+            worst, path = an.depth(entry[0])
+            reach |= an.reachable(entry[0])
+            free = startup - (worst + args.overhead + args.margin)
+            status = "ok" if free >= 0 else "OVER"
+            fails += free < 0
+            print("  %-8s %-4s stack %5d  deepest %5d  free %5d  (%s, before the scheduler)" %
+                  ("start-up", status, startup, worst, free, graph.display(entry[0])))
+            print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
+                  (" > ..." if len(path) > args.path_len else ""))
+            if least is None or free < least[0]:
+                least = (free, "start-up")
     if args.irq_stack:
         irqs = find_irqs(graph, root, files, args.irq_register)
         if not irqs:
@@ -1670,6 +1698,9 @@ def main():
                     help="that stack's size from two ELF symbols, its ends (instead of --irq-stack)")
     ap.add_argument("--irq-register", action="append",
                     help="function whose last argument is an interrupt handler (repeatable)")
+    ap.add_argument("--startup-stack-symbols", metavar="BOTTOM,TOP",
+                    help="the start-up stack's ends in the ELF: check --startup-entry against it (0: not checked)")
+    ap.add_argument("--startup-entry", default="main", help="the code that runs on the start-up stack (default main)")
     ap.add_argument("--label", help="name in the report (default: the build directory's)")
     ap.add_argument("--report-only", action="store_true", help="report tasks over their stack, exit 0")
     ap.add_argument("--path-len", type=int, default=40)

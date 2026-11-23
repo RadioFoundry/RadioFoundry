@@ -3,6 +3,8 @@
 """Radio.reconnect and Radio.serial_back, which tests use after a restart or a USB personality switch. No radio: these run anywhere, and
 tools/ci.sh runs them. On a bench with several radios, a reconnect that took any port found by USB ID sent the rest of
 the run (watchdog resets, a reboot, crash tests) to another session's radio."""
+from contextlib import nullcontext
+
 import pytest
 
 import rfoundry_hil
@@ -130,6 +132,52 @@ def test_reconnect_waits_for_first_draw(bench, monkeypatch):
     monkeypatch.setattr(bench, "view", view)
     Radio("A").reconnect(timeout=1)
     assert next(draws, None) is None
+
+
+@pytest.mark.parametrize("reopen,interrupted", [(False, False), (True, False), (True, True)],
+                         ids=["same-link", "reopened-link", "interrupted-after-reopen"])
+@pytest.mark.parametrize("rx_tone,tx_tone", [("dcs:23", "ctcss:1000"), ("none:0", "none:0")])
+def test_vfo_session_restores_the_frequency(bench, monkeypatch, reopen, interrupted, rx_tone, tx_tone):
+    saved = {"vfo": "1", "mode": "dmr", "rx_hz": "446500000", "ch.tx_tone": tx_tone, "ch.rx_tone": rx_tone}
+    state = saved.copy()
+
+    class VfoLink(FakeLink):
+        def version(self):
+            return {"features": "VFO"}
+
+        def view(self, sections):
+            return super().view(sections) if sections == ["link"] else state
+
+        def write(self, key, value):
+            assert self not in bench.closed, f"{key} write on a closed link"
+            state[key] = value
+
+        def vfo_set(self, hz):
+            self.write("rx_hz", str(hz))
+
+        def dmr_fields(self, mode):
+            self.write("mode", mode)
+
+        def tone(self, which, kind, value):
+            key = {1: "ch.tx_tone", 2: "ch.rx_tone"}[which]
+            self.write(key, f"{kind}:{value}")
+
+        def vfo(self, on):
+            self.write("vfo", "1" if on else "0")
+
+    monkeypatch.setattr(rfoundry_hil, "DebugLink", VfoLink)
+    r = Radio("A")
+    with pytest.raises(RuntimeError, match="interrupted") if interrupted else nullcontext():
+        with r.vfo_session() as hz:
+            assert state["mode"] == "fm" and state["ch.tx_tone"] == state["ch.rx_tone"] == "none:0"
+            r.link.vfo_set(hz + 12500)
+            r.link.tone(2, "ctcss", 1000)
+            r.link.vfo(False)
+            if reopen:
+                r.reconnect(timeout=1)
+            if interrupted:
+                raise RuntimeError("interrupted")
+    assert state == saved
 
 
 def test_another_radio_is_asked_once(bench):

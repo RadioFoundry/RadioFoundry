@@ -128,6 +128,9 @@ typedef struct {
 	uint32_t halves;	// FM copy halves taken (a tap provider)
 	uint32_t overruns;	// ... dropped: the task was behind
 	uint32_t chunks;	// chunks handed to the framer (AIR_EV_RX)
+	uint32_t copy_restarts;	// the copy set up again after no half came for a while (a tap provider)
+	uint32_t lost_ms;	// ... the first since start-up: its uptime (0: none) and four words of the platform's interrupt
+	uint32_t lost_regs[4];	// controller just before the poll that found it, as the provider's source lists them
 } air_rx_counts_t;
 
 // A provider. One session at a time: open ... close. The core stops the board's DMR stack before open (the provider

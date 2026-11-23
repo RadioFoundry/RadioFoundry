@@ -16,6 +16,8 @@ import pytest
 from rfoundry_hil import counter_deltas, skip
 
 CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
+# Voice bursts test_dmr_rx_bs_direct lets the air lose (5 %); the slot bug it guards dropped about 90 %
+AIR_LOSS_MAX = 6
 
 
 @pytest.mark.feature("dmr_voice")
@@ -60,7 +62,8 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
 def test_dmr_rx_bs_direct(radio, sdr_bench, pytestconfig):
     """Direct mode calls framed with BS sync, one burst every 60 ms and no CACH between them, as a simplex hotspot may
     send (issue 910). The receiver must not number the bursts' slot from the missing CACH: a slot number that changed
-    mid-call dropped the rest of the call as the other slot's. Every voice burst plays, one call each."""
+    mid-call dropped the rest of the call as the other slot's. One call each, no burst dropped as the other slot's
+    and nearly every voice burst played: a few may be lost on the air (rx_lost_frames), as on any bench call."""
     if "DMR" not in radio.features():
         skip("not_built", "built without DMR")
     freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
@@ -76,6 +79,7 @@ def test_dmr_rx_bs_direct(radio, sdr_bench, pytestconfig):
     d = counter_deltas(before, after, ["call.rx_calls", "call.rx_voice_bursts", "call.rx_lost_frames",
                                        "call.rx_late_entries", "call.rx_ts_dropped"])
     print("radio deltas:", d)
-    assert d["call.rx_voice_bursts"] == CALLS * SUPERFRAMES * 6 and d["call.rx_lost_frames"] == 0, d
-    assert d["call.rx_calls"] == CALLS and d["call.rx_late_entries"] == 0, d
     assert d["call.rx_ts_dropped"] == 0, d
+    assert d["call.rx_calls"] == CALLS and d["call.rx_late_entries"] == 0, d
+    want = CALLS * SUPERFRAMES * 6
+    assert d["call.rx_voice_bursts"] >= want - AIR_LOSS_MAX, d

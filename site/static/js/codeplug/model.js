@@ -50,7 +50,7 @@ export function decode(image) {
 	for (let n = 1; n <= LIMITS.channels; n++) {
 		if (!channelUsed(b, n)) continue;
 		const c = decodeChannel(b.subarray(channelAddr(n), channelAddr(n) + CH_SIZE));
-		if (c) m.channels.push(linkRefs(m, { number: n, ...c }));
+		if (c) m.channels.push(followListen(linkRefs(m, { number: n, ...c })));
 	}
 	decodeModes(m, b);
 	for (const a of VFO) {
@@ -295,6 +295,17 @@ export function listenBand(hz) {
 	return null;
 }
 
+// A channel whose RX is in a listen band is RX only with TX on RX, as the radio's channel editor saves it: no stray TX
+// frequency from before (a channel read, imported or edited elsewhere) is shown, exported or written. A TX frequency
+// in a listen band makes the channel RX only too. Returns c
+export function followListen(c) {
+	if (listenBand(c.rxHz)) {
+		c.rxOnly = true;
+		c.txHz = c.rxHz;
+	} else if (listenBand(c.txHz)) c.rxOnly = true;	// no radio transmits there: the channel is RX only
+	return c;
+}
+
 // --- Validation ---
 
 // Problems as {level: "error" | "warning", table, item, field, code, params}; the page words them
@@ -334,8 +345,6 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (c.mode === "dmr" && !c.kind && !c.contact && !c.rxOnly) warn("channels", c, "contact", "no_contact");
 		const band = listenBand(c.rxHz);
 		if (band && c.mode === "dmr") warn("channels", c, "mode", `listen_dmr_${band}`);
-		const txBand = listenBand(c.txHz);
-		if (txBand && !c.rxOnly) warn("channels", c, "rxOnly", `listen_tx_${txBand}`);
 		for (const k of REFS) if (typeof c[k] === "number") warn("channels", c, k, "dangling", { number: c[k] });
 		if (c.dmrId > 0xFFFFFF) err("channels", c, "dmrId", "id_range");
 	}
