@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The debug link's command handlers (core/debuglink/debuglink.c), taken whole so its static handlers are reachable:
-// the RADIO dispatcher hands every radio feature operation to debuglink_radio_feature_op, and STORAGE TUNE_WRITE
-// never programs over data in the tune area it hasn't checked and erased. What these paths don't reach is in
+// the RADIO dispatcher hands every radio feature operation to debuglink_radio_feature_op, and STORAGE's radio tuning
+// operations put, read back, save, load and clear the trims in the settings ring. What these paths don't reach is in
 // sim/debuglink_unreached.c
 #include <stdio.h>
 #include <string.h>
@@ -47,16 +47,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t n)
 }
 
 #define FLASH_SIZE	0x20000u
-#define TUNE		0x1C000u
-// A tune area the board doesn't own: the backstop check runs before each erase
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
-	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u, .tune_addr = TUNE,
-};
-// The same area in the board's own flash, as every board with a tune area has it
-static const hal_flash_map_t owned_map = {
-	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
-	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u, .tune_addr = TUNE, .tune_owned = true,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u,
 };
 static const band_t bands[] = { { 400000000u, 480000000u, true } };
 static const char *const names[] = { "1W", "5W" };
@@ -103,127 +96,103 @@ static void test_feature_ops(void)
 	CHECK(radio_op(none, 1) == DL_ST_BAD_ARG && feature_calls == 0);
 }
 
-// --- STORAGE TUNE_WRITE ---
+// --- STORAGE radio tuning ---
 
-static size_t tune_write(uint8_t copy, uint16_t off, const uint8_t *data, uint16_t n)
+static size_t storage_op(const uint8_t *req, uint16_t len)
 {
-	uint8_t req[4 + 64];
-	req[0] = DL_STORAGE_OP_TUNE_WRITE;
-	req[1] = copy;
-	put16(req + 2, off);
-	memcpy(req + 4, data, n);
-	return cmd_storage(req, (uint16_t)(4u + n), out, sizeof(out));
+	return cmd_storage(req, len, out, sizeof(out));
 }
 
-static void tune_load(void)
+// op with no argument: OK and the entries in the table
+static bool tune_op(uint8_t op, uint8_t entries)
 {
-	uint8_t req[1] = { DL_STORAGE_OP_TUNE_LOAD };
-	CHECK(cmd_storage(req, 1, out, sizeof(out)) == 2u && out[0] == DL_ST_OK);
+	uint8_t req[1] = { op };
+	return storage_op(req, 1) == 2u && out[0] == DL_ST_OK && out[1] == entries;
 }
 
-static void fresh_with(const hal_flash_map_t *m)
+static void boot(void)
 {
-	sim_flash_free();
-	sim_flash_create(FLASH_SIZE, m);
+	sim_flash_power_on();
 	CHECK(storage_init());
-	tune_load();		// a new session: no copy erased yet
+	settings_init();
+	radio_tune_load();
 }
 
-static void fresh(void)
+// A frequency trim (needs no calibration): FM, khz, value
+static void freq_entry(uint8_t *e, uint32_t khz, int16_t v)
 {
-	fresh_with(&map);
+	memset(e, 0, RADIO_TUNE_ENTRY);
+	e[0] = (uint8_t)(RADIO_TUNE_FREQ << 4 | RADIO_MODE_FM);
+	put16(e + 2, (uint16_t)(khz / 25u));
+	put16(e + 4, (uint16_t)v);
 }
 
-static bool refused(size_t n, uint8_t reason)
+static void test_tune(void)
 {
-	return n == 2u && out[0] == DL_ST_REFUSED && out[1] == reason;
-}
+	uint8_t req[2 + 7u * RADIO_TUNE_ENTRY];
+	sim_flash_free();
+	sim_flash_create(FLASH_SIZE, &map);
+	boot();
+	CHECK(tune_op(DL_STORAGE_OP_TUNE_LOAD, 0));
 
-static void test_tune_write(void)
-{
-	uint8_t chunk[60], back[60];
-	memset(chunk, 0x5A, sizeof(chunk));
-	put32(chunk, RADIO_TUNE_MAGIC);		// a tune copy's start
-
-	// A save: offset 0 erases, the next chunks follow, into both copies
-	fresh();
-	for (uint8_t copy = 0; copy < 2u; copy++) {
-		uint32_t a = TUNE + copy * SIM_FLASH_SECTOR;
-		CHECK(tune_write(copy, 0, chunk, 60) == 1u && out[0] == DL_ST_OK);
-		CHECK(tune_write(copy, 60, chunk + 4, 40) == 1u && out[0] == DL_ST_OK);
-		CHECK(sim_flash.read(a + 60u, back, 40) && memcmp(back, chunk + 4, 40) == 0);
+	// 9 entries in two requests (the second without the start flag), live at once
+	req[0] = DL_STORAGE_OP_TUNE_PUT;
+	req[1] = 1;
+	for (uint8_t i = 0; i < 7u; i++) {
+		freq_entry(req + 2 + i * RADIO_TUNE_ENTRY, 401000u + i * 1000u, (int16_t)(10 + i));
 	}
+	CHECK(storage_op(req, sizeof(req)) == 2u && out[0] == DL_ST_OK && out[1] == 7u);
+	req[1] = 0;
+	freq_entry(req + 2, 430000u, 100);
+	freq_entry(req + 2 + RADIO_TUNE_ENTRY, 431000u, 101);
+	CHECK(storage_op(req, 2u + 2u * RADIO_TUNE_ENTRY) == 2u && out[1] == 9u);
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 430000000u) == 100);
+	CHECK(storage_op(req, 3) == 1u && out[0] == DL_ST_BAD_ARG);		// not whole entries
+	// Read back from entry 7: the last two, as put
+	uint8_t get[2] = { DL_STORAGE_OP_TUNE_GET, 7 };
+	CHECK(storage_op(get, 2) == 2u + 2u * RADIO_TUNE_ENTRY && out[0] == DL_ST_OK && out[1] == 9u &&
+	      memcmp(out + 2, req + 2, 2u * RADIO_TUNE_ENTRY) == 0);
+	get[1] = 0;
+	CHECK(storage_op(get, 2) == 2u + 7u * RADIO_TUNE_ENTRY);		// at most 7 a reply
+	get[1] = 9;
+	CHECK(storage_op(get, 2) == 2u && out[1] == 9u);
+
+	// Not saved: a restart has none; saved: a restart has all 9
+	boot();
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 430000000u) == 0);
+	req[1] = 1;
+	CHECK(storage_op(req, sizeof(req)) == 2u && out[1] == 7u);
+	req[1] = 0;
+	CHECK(storage_op(req, 2u + 2u * RADIO_TUNE_ENTRY) == 2u && out[1] == 9u);
+	CHECK(tune_op(DL_STORAGE_OP_TUNE_SAVE, 9));
+	boot();
+	get[1] = 9;
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 430000000u) == 100 && storage_op(get, 2) == 2u && out[1] == 9u);
+
+	// A live change undone by LOAD
+	req[1] = 1;
+	freq_entry(req + 2, 430000u, -5);
+	CHECK(storage_op(req, 2u + RADIO_TUNE_ENTRY) == 2u && out[1] == 1u && radio_tune_freq(RADIO_MODE_FM, 430000000u) == -5);
+	CHECK(tune_op(DL_STORAGE_OP_TUNE_LOAD, 9) && radio_tune_freq(RADIO_MODE_FM, 430000000u) == 100);
+
+	// CLEAR: none now, none after a restart
+	CHECK(tune_op(DL_STORAGE_OP_TUNE_CLEAR, 0) && radio_tune_freq(RADIO_MODE_FM, 430000000u) == 0);
+	boot();
+	CHECK(tune_op(DL_STORAGE_OP_TUNE_LOAD, 0));
 	CHECK(sim_flash_violations() == 0);
 
-	// Another firmware's data in the area: offset 0 is refused and erases nothing, and so is every later offset
-	fresh();
-	uint8_t other[4] = { 'C', 'P', 0x01, 0x00 };
-	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR + 100u, other, sizeof(other)));
-	CHECK(refused(tune_write(0, 0, chunk, 60), DL_TUNE_REFUSED_FOREIGN));
-	CHECK(refused(tune_write(1, 100, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	CHECK(refused(tune_write(0, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	CHECK(sim_flash.read(TUNE + SIM_FLASH_SECTOR + 100u, back, 4) && memcmp(back, other, 4) == 0);
-	CHECK(sim_flash_violations() == 0);
-
-	// A later offset without its own copy's offset-0 write: copy A erased does not open copy B
-	fresh();
-	CHECK(tune_write(0, 0, chunk, 60) == 1u && out[0] == DL_ST_OK);
-	CHECK(refused(tune_write(1, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	// TUNE_LOAD ends the save: a later chunk needs offset 0 again
-	tune_load();
-	CHECK(refused(tune_write(0, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	// Refused while the radio transmits, before anything else
-	state = RS_TX;
-	CHECK(refused(tune_write(0, 0, chunk, 60), DL_TUNE_REFUSED_TX));
-	state = RS_IDLE;
-	// A refused offset 0 closes the copy's later offsets too, though an earlier offset 0 erased it
-	fresh();
-	CHECK(tune_write(0, 0, chunk, 60) == 1u && out[0] == DL_ST_OK);
-	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR, other, sizeof(other)));
-	CHECK(refused(tune_write(0, 0, chunk, 60), DL_TUNE_REFUSED_FOREIGN));
-	CHECK(refused(tune_write(0, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	CHECK(sim_flash_violations() == 0);
-}
-
-// A tune area in the board's own flash: any bytes there are ours (a damaged copy, leftovers of what the flash held
-// before), so a save erases them and never refuses. Nothing outside the area changes
-static void test_tune_owned(void)
-{
-	static uint8_t before[FLASH_SIZE];
-	uint8_t chunk[60], back[60];
-	memset(chunk, 0x5A, sizeof(chunk));
-	put32(chunk, RADIO_TUNE_MAGIC);
-
-	fresh_with(&owned_map);
-	// Junk in both units: data at the start of one, a copy with a flipped magic in the other; and data on both sides
-	uint8_t other[4] = { 'C', 'P', 0x01, 0x00 }, bad[4] = { 0x52, 0x46, 0x54, 0x4F };
-	CHECK(sim_flash.write(TUNE, other, sizeof(other)));
-	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR, bad, sizeof(bad)));
-	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR + 2000u, other, sizeof(other)));
-	CHECK(sim_flash.write(TUNE - 4u, other, sizeof(other)));
-	CHECK(sim_flash.write(TUNE + 2u * SIM_FLASH_SECTOR, other, sizeof(other)));
-	memcpy(before, sim_flash_data, FLASH_SIZE);
-	for (uint8_t copy = 0; copy < 2u; copy++) {
-		uint32_t a = TUNE + copy * SIM_FLASH_SECTOR;
-		CHECK(tune_write(copy, 0, chunk, 60) == 1u && out[0] == DL_ST_OK);
-		CHECK(tune_write(copy, 60, chunk + 4, 40) == 1u && out[0] == DL_ST_OK);
-		CHECK(sim_flash.read(a, back, 60) && memcmp(back, chunk, 60) == 0);
-		CHECK(sim_flash.read(a + 2000u, back, 4) && back[0] == 0xFFu);	// the rest of the unit erased
-	}
-	tune_load();
-	CHECK(memcmp(sim_flash_data, before, TUNE) == 0);
-	CHECK(memcmp(sim_flash_data + TUNE + 2u * SIM_FLASH_SECTOR, before + TUNE + 2u * SIM_FLASH_SECTOR,
-		     FLASH_SIZE - TUNE - 2u * SIM_FLASH_SECTOR) == 0);
-	// The sequence rule still holds: a later offset needs its copy's offset-0 write first
-	CHECK(refused(tune_write(0, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
-	CHECK(sim_flash_violations() == 0);
+	// No settings ring: nothing to keep a record in
+	sim_flash.map = NULL;
+	CHECK(!storage_init());
+	settings_init();
+	CHECK(storage_op(get, 2) == 1u && out[0] == DL_ST_UNAVAILABLE);
+	sim_flash.map = &map;
 }
 
 int main(void)
 {
 	test_feature_ops();
-	test_tune_write();
-	test_tune_owned();
+	test_tune();
 	printf("debuglinkCmdTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

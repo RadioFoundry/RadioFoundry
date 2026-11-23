@@ -42,7 +42,6 @@ enum {
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
 };
 
-
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
 enum {
 	DL_T3_RESET = 1,	// the staged system back to empty
@@ -199,19 +198,16 @@ enum {
 					// inside the three ranges
 	DL_STORAGE_OP_CLAIM,		// token u32 (the chip UID's low word) -> reason u8 (as REBOOT's); the erase follows in
 					// the housekeeping task: poll the view's storage.region
-	// Radio tuning's area (CONFIG_RADIO_TUNE, docs/spec/radio-tune.md 4); UNAVAILABLE in a build or board without one
-	DL_STORAGE_OP_TUNE_WRITE,	// copy u8 (0, 1), offset u16, bytes -> none. Offset 0 erases the copy first, once
-					// both units are blank or tune copies; a later offset only into a copy erased so
-					// (else REFUSED, DL_TUNE_REFUSED_*)
-	DL_STORAGE_OP_TUNE_LOAD,	// -> copies valid u8 (bit 0 A, bit 1 B): the record in force loaded again
+	// Radio tuning (CONFIG_RADIO_TUNE, docs/spec/radio-tune.md 4): the RAM table and its record in the settings ring.
+	// Each answers entries u8 (in the table now), or UNAVAILABLE without a settings ring (and in a build without it)
+	DL_STORAGE_OP_TUNE_PUT,		// flags u8 (bit 0: empty the table first), entries 8 B x n (<= 7): into the table,
+					// live at once; entries the radio can't use are left out
+	DL_STORAGE_OP_TUNE_LOAD,	// the saved record into the table again (live tries undone)
+	DL_STORAGE_OP_TUNE_SAVE,	// the table as the record in force; BUSY when the write failed (the one before stays)
+	DL_STORAGE_OP_TUNE_CLEAR,	// no trims: the table emptied and an empty record saved
+	DL_STORAGE_OP_TUNE_GET,		// first u8 -> entries u8, then up to DL_TUNE_GET_MAX entries of the table from first
 };
-
-// Why TUNE_WRITE answered DL_ST_REFUSED (the reason byte after the status)
-enum {
-	DL_TUNE_REFUSED_TX = 1,		// the radio transmits: no flash erase under a transmission
-	DL_TUNE_REFUSED_FOREIGN = 2,	// the tune area holds data that isn't a tune copy: nothing erased
-	DL_TUNE_REFUSED_NOT_ERASED = 3,	// offset > 0 to a copy no offset-0 write erased since the last TUNE_LOAD
-};
+#define DL_TUNE_GET_MAX		7u
 
 // DL_CMD_APRS operations (first payload byte; docs/spec/debuglink.md 3.16)
 enum {

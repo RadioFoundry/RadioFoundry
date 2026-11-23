@@ -14,9 +14,11 @@ The owner's own trims on top of the factory calibration, which they never change
 The reference oscillator trim is the existing Freq trim setting (`settings_t.ref_trim_ppb`,
 [radio-features.md](radio-features.md) 6.1). Radio tuning reuses that setting and adds nothing for the oscillator.
 
-`CONFIG_RADIO_TUNE` builds the feature (on with the debug link). The radio's side is small: it checks, loads and
-applies one record (`core/radio/radio_tune.c`). The host builds the record. The host side is the site's Radio Tuning
-page at Tools > Radio tuning ([16-battery-and-power.md](../user/16-battery-and-power.md)).
+`CONFIG_RADIO_TUNE` builds the feature (on with the debug link). The radio keeps the trims in one RAM table and saves
+that table as one record in the settings ring (`core/radio/radio_tune.c`, [settings-store.md](settings-store.md) 2.2).
+The host side is the site's Radio Tuning page at Tools > Radio tuning
+([16-battery-and-power.md](../user/16-battery-and-power.md)). Settings > Advanced > Clear tuning on the radio removes
+the trims.
 
 ## 1. What a board provides
 
@@ -27,29 +29,10 @@ page at Tools > Radio tuning ([16-battery-and-power.md](../user/16-battery-and-p
 | Frequency | nothing: the radio core adds `radio_tune_freq(mode, hz)` to the transmit frequency at key-up | |
 | Names | nothing | |
 | Battery | a battery (`board_has_battery()`) and `hal_power_t.battery_mv`: the radio core applies the trims ([radio-features.md](radio-features.md) 5.1) | no battery trims |
-| Storage | `hal_flash_map_t.tune_addr`: two erase units (`HAL_FLASH_TUNE_UNITS`) in flash only RadioFoundry writes, and `tune_owned` (1.1) | trims work live only, nothing is stored |
+| Storage | a settings ring (`hal_flash_map_t.settings_addr`, [settings-store.md](settings-store.md) 1) | trims work live only, nothing is stored |
 
-The tune area is outside the codeplug, the CPS windows, the settings ring and the calibration. The open-firmware CPS
-shim, the fast CPS path and the staging area all refuse to write it. Codeplug reads, writes and shares never include
-it. Which radios have which trims is in [feature-matrix.md](../feature-matrix.md).
-
-### 1.1 Where the tune area goes
-
-The tune area sits in flash that only RadioFoundry writes. It never overlaps the factory calibration, any byte that
-the factory firmware or the bootloader keeps, or any of the core's other areas. A board sets `tune_owned` once its
-hardware page shows that the area meets this rule, with the evidence for the board.
-
-| Board's flash | Tune area |
-|---|---|
-| SPI NOR with a staging area | the last two sectors of the 256 KB staging span: `staging_size` is 236 KB (0x3B000) and `tune_addr` is `staging_addr` + 0x3B000, the same in every build. The satellite data keeps the span's last three sectors |
-| SPI NOR without a staging area | two sectors inside the board's own range, clear of every page the factory firmware writes |
-| A sector layer over the board's own NAND blocks | any two logical sectors: the whole logical device is RadioFoundry's |
-| No flash that meets the rule | none (`tune_addr` 0): trims work live only |
-
-A board's tune area never moves into a range that another firmware might use, so a firmware update does not move it
-again. The staging area is scratch: a staged image that a firmware with the longer area left there is finished at
-the next boot before anything else writes past the shorter area ([cps-fast.md](cps-fast.md) 7.2), and the bytes it
-leaves in the tune area are not a valid tune copy.
+The record is outside the codeplug and the calibration. Codeplug reads, writes and shares never include the record,
+and a factory reset keeps the record. Which radios have which trims is in [feature-matrix.md](../feature-matrix.md).
 
 ## 2. Trims
 
@@ -91,19 +74,13 @@ deviation trim applies at key-up in the modes the board marks in `board_t.tune`.
 
 ## 3. The record
 
-Each copy holds one record at the start of its own erase unit, little endian:
+The record is one slot of the settings ring: page field 15, layout 1 ([settings-store.md](settings-store.md) 2.2). Its
+payload, little endian:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `0x4E544652` ("RFTN") |
-| 4 | 4 | sequence number, never 0, one more with each save |
-| 8 | 1 | version (1) |
-| 9 | 1 | entries, at most 32 |
-| 10 | 2 | reserved, 0 |
-| 12 | 4 | owner: CRC-32 of `board.name`, continued over the chip's unique ID (the name alone on a board without one) |
-| 16 | 8 × entries | entries (below) |
-| … | 4 | CRC-32 of everything above |
-| … | 4 | commit word: 0 once the record is complete |
+| 0 | 4 | owner: CRC-32 of `board.name`, continued over the chip's unique ID (the name alone on a board without one) |
+| 4 | 8 × n | entries (below), at most 26 (`RADIO_TUNE_ENTRIES`, the RAM table's room); a slot holds 29 |
 
 An entry's first byte is the kind in the high nibble and the level or mode in the low nibble:
 
@@ -117,50 +94,34 @@ An entry's first byte is the kind in the high nibble and the level or mode in th
 
 The CRC is the storage CRC-32 (`storage_crc32`, the reflected 0xEDB88320 polynomial, start and end inverted).
 
-A copy is valid when the magic, version, entry count, sequence, owner, CRC and commit word check. A flash image copied
-to another radio is ignored there. At start-up, after the radio's calibration is loaded, the newer valid copy (the
-sequence compared as a signed difference) fills the RAM table. Entries the radio can't use are left out: a stale drive
-trim, a value past ±4095, a level the board doesn't have, a frequency or band with no transmission, or a battery
-trim on a board without a battery. With no valid copy the radio uses the factory values.
+The RAM table is the only copy in RAM. A save writes the record from the table (a drive entry gets the factory drive at
+the entry's frequency at that moment), and a load fills the table from the record. A record whose owner is another radio's loads no trim:
+a settings ring copied to another radio with a flash image brings its settings, never one radio's trims to another.
+At start-up, after the radio's calibration is loaded, the record in force fills the table. Entries the radio can't use
+are left out: a stale drive trim, a value past ±4095, a level the board doesn't have, a frequency or band with no
+transmission, a battery trim on a board without a battery, or an entry past the table's room. With no record the radio
+uses the factory values.
 
 RAM: 20 words of 4 bytes for drive, deviation, frequency and battery trims (`RADIO_TUNE_WORDS`), 6 names of 8 bytes
-(`RADIO_TUNE_NAMES`), 128 bytes of table. A load uses the shared storage buffer.
+(`RADIO_TUNE_NAMES`), 128 bytes of table. A load and a save use the settings ring's own slot buffers.
 
 ## 4. Saves
 
 The host saves through the debug link's STORAGE command ([debuglink.md](debuglink.md) 3.13):
 
-1. STORAGE INFO gives the tune area's address and erase unit. STORAGE READ reads both copies. The host picks the
-   copy in force by the same rule as the radio.
-2. The host writes the copy that is not in force with TUNE_WRITE: offset 0 erases the copy. The header, entries and
-   CRC go in chunks of up to 60 bytes, then the commit word last.
-3. The host reads the copy back with STORAGE READ and compares it.
-4. The host writes and checks the other copy the same way.
-5. TUNE_LOAD puts the new record in force. The reply gives the copies the radio found valid.
+1. TUNE_PUT puts the entries in the RAM table, up to 7 a request; the first request empties the table. The entries are
+   live at once.
+2. TUNE_SAVE writes the table as the new record. The settings ring writes, commits and reads back the record as for
+   a settings page: a power cut or a failed write leaves the record before in force.
+3. TUNE_GET reads the table back, 7 entries a request, and the host compares the table with the entries put.
 
-A power cut or a lost link during step 2 leaves the old record in force in the other copy. A cut during step 4 leaves
-the new record in the first copy. TUNE_WRITE runs under the storage lock and is refused while the radio transmits.
-TUNE_WRITE answers unavailable while the storage region still holds another firmware's data (the region not yet
-claimed, [settings-store.md](settings-store.md)).
+TUNE_LOAD fills the table from the record in force again, which undoes live tries. TUNE_CLEAR empties the table and
+saves an empty record: no trims, now and after a restart. Each answers the entries now in the table, or unavailable on
+a radio without a settings ring of its own (none, or one still holding another firmware's data,
+[settings-store.md](settings-store.md) 5).
 
-Only an offset-0 write erases a copy. A write at a later offset goes only into a copy that an offset-0 write erased
-since the last TUNE_LOAD. Otherwise the radio refuses with reason 3 and writes nothing.
-
-In a tune area the board owns (`tune_owned`, 1.1), every byte is RadioFoundry's: a damaged copy, a save cut short, or
-bytes the staging area left. An offset-0 write erases the copy whatever the copy holds, so no content of the area
-ever stops the next save.
-
-For a tune area the board doesn't own, a backstop applies. Before each erase, TUNE_WRITE checks both units. Each unit
-must be blank or hold a tune copy: the record's magic at its start, whole or cut short by a lost save, from this
-radio or another. Otherwise the radio refuses with reason 2 and erases nothing. The page and `rfoundry_debug.py` show
-that the area holds other data and nothing was saved. No board uses such an area: an area that could hold another
-firmware's data could block saves for good.
-
-A storage claim does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
-storage buffer, and the table stays as it was. The host tries again.
-
-To clear every trim, the host saves a record with no entries. The page's Restore factory values also sets the
-oscillator trim to 0.
+On the radio, Settings > Advanced > Clear tuning does what TUNE_CLEAR does, on a hold of OK. A factory reset keeps the
+trims. The page's Restore factory values also sets the oscillator trim to 0.
 
 ## 5. Live tuning
 
@@ -173,13 +134,13 @@ oscillator trim to 0.
 
 A RAM word is the frequency in 100 kHz units (bits 0-13), the kind (bits 14-15), the level or mode (bits 16-18) and
 the value (bits 19-31, signed): `RADIO_TUNE_WORD(khz, kind, sel, value)`. A battery trim is word kind 3
-(`RADIO_TUNE_W_BATT`, never a name in RAM) at frequency 0. Live words are not stored. TUNE_LOAD or a
-restart brings back the stored record. Names are not set live: the host saves them.
+(`RADIO_TUNE_W_BATT`, never a name in RAM) at frequency 0. Live words are saved only by a TUNE_SAVE. TUNE_LOAD or
+a restart brings back the stored record. Names are set with TUNE_PUT.
 
-A RAM word holds the frequency in 100 kHz units, the record in 25 kHz units. A load rounds each record frequency down
+A RAM word holds the frequency in 100 kHz units, an entry in 25 kHz units. A put rounds each entry's frequency down
 to 100 kHz, so two trims of one kind and level or mode less than 100 kHz apart become two words at the same frequency,
-and the first one found wins. The page puts every trim on a 100 kHz grid (`gridKhz`), so only a hand-made record
-has such a pair.
+and the first one found wins. The page puts every trim on a 100 kHz grid (`gridKhz`), so the table reads back as
+put.
 
 The view's `tune` key has `live`: 1 when the board has `tx_drive_now`. Then come the battery reading before the gain
 (`battery_raw_mv`) and the board's empty and full voltages, all 0 without a battery. The page works out the gain
@@ -191,32 +152,33 @@ The table changes one aligned word at a time, and the words and their count are 
 where the code puts it. TUNE_SET first shortens the table to the words before the first one it
 replaces, so a reader on another task sees a shorter table, never a torn word. The table then ends after the last word
 written: words past it from an earlier table never come back. A request that starts past the table's end is refused.
-A TUNE_LOAD empties the table before it fills it again.
+TUNE_PUT with its start flag and TUNE_LOAD empty the table, then add one entry at a time: a reader sees the table grow.
 
 ## 6. Debug link
 
 | Use | Command |
 |---|---|
-| Tune area, read back | STORAGE INFO, STORAGE READ |
-| Save, load | STORAGE TUNE_WRITE (op 3), TUNE_LOAD (op 4) |
+| Table in, read back | STORAGE TUNE_PUT (op 3), TUNE_GET (op 7) |
+| Save, load, clear | STORAGE TUNE_SAVE (op 5), TUNE_LOAD (op 4), TUNE_CLEAR (op 6) |
 | Live words | RADIO TUNE_SET (op 44) |
 | Live drive | RADIO TX_DRIVE (op 36) |
 | Oscillator | SETTING 35 |
 | Factory drives, names, bands | core view `tx_drive`, `power_names`, `bands` |
 | Table fill, deviation modes, battery | core view `tune`; `features` view `battery_mv`, `battery_pct` |
 
-`tools/rfoundry_debug.py` has `tune_area`, `tune_write`, `tune_load` and `tune_set`.
+`tools/rfoundry_debug.py` has `tune_put`, `tune_get`, `tune_save`, `tune_load`, `tune_clear` and `tune_set`.
 
 ## 7. Testing
 
-`tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, the backstop check before an erase
-(blank, a record, a cut save, other data, a failed read), the copy choice (newest wins, a copy cut before the
-commit word, a flipped bit, sequence wrap), a record from another radio, stale drive trims, names, live words and
-battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve, the moved empty and full and the gain.
-`tests/host/debuglinkCmdTest.c` covers TUNE_WRITE: the save order, the backstop's refusals, and an owned area with
-other bytes in both units, erased and saved with nothing outside the area changed. `tests/host/cpsFastTest.c` covers
-the update that made the staging area shorter: a staged commit cut off under the longer area is finished at the next
-boot, and the settings stay. A board's own store test checks its map: no area overlaps, and the tune area ends the
-staging span. `site/tests/tune.test.mjs` covers the page's record, CRC, payloads and charge against the same layouts.
-`tests/hil/test_radio_tune.py` sets the battery trims live on a radio and checks the corrected reading and charge
-against the raw reading, with no transmission.
+`tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, saves and restarts (the newest record,
+the table read back as put, its room, live words not saved until a save, clearing, chunked puts), a record from another
+radio, stale drive trims, names, live words and battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve,
+the moved empty and full and the gain. `tests/host/debuglinkCmdTest.c` covers the STORAGE operations: put in two
+requests, read back, save, restart, load, clear, and no ring. `tests/host/settingsTest.c` covers the record in the ring:
+a ring from a firmware without the record, 1000 settings saves round the ring (the record carried, wear even), a factory
+reset that keeps the record, an empty record, and a power cut at every unit of a tune save and of a settings save that
+carries the record. `tests/host/uiFlowTest.c` covers Clear tuning. `site/tests/tune.test.mjs` covers the page's entries,
+payloads, save and charge against the same layouts. `tests/hil/test_radio_tune.py` sets the battery trims live on a
+radio and checks the corrected reading and charge against the raw reading, with no transmission; with `--allow-reboot`
+the test saves a trim, restarts the radio, makes a settings save and restarts again, then clears the trims and restarts
+once more. `tests/hil/test_ui.py` `test_factory_reset` checks that a factory reset keeps a saved trim.

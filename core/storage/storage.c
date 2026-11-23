@@ -81,8 +81,7 @@ uint32_t storage_staging_size(void)
 	uint32_t a = m->staging_addr, n = m->staging_size;
 	bool clear = !overlaps(a, n, m->settings_addr, m->settings_size) && !overlaps(a, n, m->journal_addr, 2u * STORAGE_SECTOR) &&
 		     !overlaps(a, n, m->openfw_eeprom, 0x10000u) && !overlaps(a, n, m->openfw_flash, m->openfw_end - m->openfw_flash) &&
-		     !overlaps(a, n, m->native_addr, m->native_size) && !overlaps(a, n, m->calibration_addr, m->calibration_size) &&
-		     !overlaps(a, n, m->tune_addr, hal_flash_tune_size(m, board.flash->erase_size));
+		     !overlaps(a, n, m->native_addr, m->native_size) && !overlaps(a, n, m->calibration_addr, m->calibration_size);
 	return clear ? n - n % STORAGE_SECTOR : 0;
 }
 
@@ -462,9 +461,7 @@ bool storage_debug_read_allowed(uint32_t addr, uint32_t len)
 	}
 	return inside(addr, len, m->settings_addr, m->settings_size) ||
 	       inside(addr, len, m->journal_addr, 2u * STORAGE_SECTOR) ||
-	       inside(addr, len, m->calibration_addr, m->calibration_size) ||
-	       (CONFIG_RADIO_TUNE && m->tune_addr != 0u &&
-		inside(addr, len, m->tune_addr, hal_flash_tune_size(m, board.flash->erase_size)));
+	       inside(addr, len, m->calibration_addr, m->calibration_size);
 }
 
 // A write refused because the region is foreign (counted), or because there is no flash

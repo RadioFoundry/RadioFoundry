@@ -21,10 +21,8 @@ const hal_flash_map_t md9600_flash_map = {
 	.calibration_size = 0,
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
-	.staging_addr = 0xF00000u,	// the first 236 KB of a 256 KB span in the unused top megabyte (docs/spec/tftp.md 4)
-	.staging_size = 0x03B000u,
-	.tune_addr = 0xF3B000u,		// radio tuning, 2 sectors cut from the staging span (docs/spec/radio-tune.md 1)
-	.tune_owned = true,
+	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
+	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
 	.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,
 	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };

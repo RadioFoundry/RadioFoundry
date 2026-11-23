@@ -294,10 +294,8 @@ The record:
 
 At boot (`cps_fast_resume`, after `storage_init` and before the codeplug is read) a record whose magic, version,
 count, header CRC and data CRC all check, and whose blocks are all writable (section 2), is finished: every slot is
-copied in again (the journal skips those already in) and the record erased. The count may be larger than this
-firmware's stage_max, up to 64, when a firmware with a longer staging area wrote the record before an update: its
-slots are still where it put them, and the data CRC proves it. A record that doesn't check is erased: it was torn
-while being written, so the copy never started. The VFO settings are not touched at boot (the settings
+copied in again (the journal skips those already in) and the record erased. A record that doesn't check is erased:
+it was torn while being written, so the copy never started. The VFO settings are not touched at boot (the settings
 aren't up yet); the VFO A record is in the codeplug and takes effect as stored.
 
 | Power cut | After the next boot |

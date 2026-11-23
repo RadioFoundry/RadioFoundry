@@ -1572,7 +1572,6 @@ records are in `open-firmware-cps.md`.
 | 0x010000 | (local) | 512 B | calibration working copy (12.1). CPS reads/writes it through a 0x10000 window |
 | 0x011000 | (ours) | 32 KB | RadioFoundry settings ring (`settings-store.md` 2); no open-firmware tool uses it, the CPS shim refuses writes |
 | 0x019000 | (ours) | 8 KB | RadioFoundry sector journal (`settings-store.md` 4) |
-| 0x01B000 - 0x01EFFF | | 16 KB | data the factory firmware wrote (at 0x01C000, a 104-byte record repeated); never written |
 | 0x020000 | flash 0x00000 | 4 KB | custom data: boot image and boot melody, themes (one 4 KB sector; erased when the user clears custom data) |
 | 0x050000 | flash 0x30000 | 256 KB | DMR ID database part 1 (header "Id" + type byte + record length + entry count; see the CPS spec) |
 | 0x09B1B0 | flash 0x7B1B0 | | channels 129-1024 (bank headers 16 B before each bank, data from 0x9B1C0) |
@@ -1583,9 +1582,7 @@ records are in `open-firmware-cps.md`.
 | 0x100000 | flash 0xE0000 | | old voice prompt location (read for compatibility) |
 | 0x120000 - 0xDFFFFF | | about 12.9 MB | unused by the codeplug layout; GPS logs use the ID database areas when enabled |
 | 0xE00000 - 0xEFFFFF | (ours) | 1 MB | reserved for the native codeplug (`codeplug-native.md` 4); the CPS shim refuses writes from here up |
-| 0xF00000 - 0xF3AFFF | (ours) | 236 KB | staging area for a codeplug written over TFTP or the fast CPS path (`tftp.md` 4, `cps-fast.md` 7.2): the commit record, then the staged image |
-| 0xF3B000 - 0xF3CFFF | (ours) | 8 KB | radio tuning, 2 sectors ([radio-tune.md](radio-tune.md) 1.1) |
-| 0xF3D000 - 0xF3FFFF | (ours) | 12 KB | satellite data when built in ([satellite.md](satellite.md)) |
+| 0xF00000 - 0xF3FFFF | (ours) | 256 KB | staging area for a codeplug written over TFTP (`tftp.md` 4): the commit record, then the staged image |
 | 0xF40000 - 0xFFFFFF | | 768 KB | unused |
 | security register 1-2 | | 512 B | factory calibration (read only) |
 | security register 3 | | 256 B | factory flags: 0x1C (0xF4 = MD-UV390 Plus 10 W), 0x1D (LCD type) |
@@ -2130,13 +2127,8 @@ is well above the "mic muted, no tone" row.
 
 - Settings and storage: the core's map for the 16 MB SPI flash is settings 0x011000 (32 KB, 8 sectors), journal
   0x019000, open-firmware EEPROM 0x000000, open-firmware flash 0x020000 up to 0xE00000, native area 0xE00000 (1 MB),
-  TFTP staging 0xF00000 (236 KB), calibration window 0x010000 (512 B), radio tuning 0xF3B000 (2 sectors,
-  [radio-tune.md](radio-tune.md)). The range 0x011000-0x01AFFF has never been
+  TFTP staging 0xF00000 (256 KB), calibration window 0x010000 (512 B). The range 0x011000-0x01AFFF has never been
   checked on a used radio, for the foreign-region guard of [settings-store.md](settings-store.md) 5.
-- Radio tuning is in the staging span (13.2), which only RadioFoundry writes: the radio programming utility's staged
-  codeplug writes and TFTP fill it from 0xF01000 up. On radios read after the factory firmware, 0xF20000-0xFFFFFF was
-  blank. 0x01B000-0x01EFFF holds the factory firmware's data, so nothing of RadioFoundry goes there. The calibration
-  (security registers 1 and 2, the working copy at 0x010000) is outside every area of the map.
 - The board's `hal_radio` has `tx_tone`, so the MMDVM task keys the 1750 Hz burst ([mmdvm-protocol.md](mmdvm-protocol.md)).
 - USB: the STM32F405 OTG_FS has three IN endpoints besides EP0, so serial and network are alternatives, not a composite
   ([usb-network.md](usb-network.md)).

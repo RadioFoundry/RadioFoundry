@@ -23,7 +23,6 @@ static void test_md9600_map(void)
 		{ m->openfw_eeprom, openfw_eeprom_len }, { m->openfw_flash, m->openfw_end - m->openfw_flash },
 		{ m->native_addr, m->native_size }, { m->staging_addr, m->staging_size },
 		{ MD9600_STORE_REV_SECTOR, MD9600_STORE_SECTOR_SIZE },
-		{ m->tune_addr, hal_flash_tune_size(m, STORAGE_SECTOR) },
 	};
 	const unsigned n = sizeof(area) / sizeof(area[0]);
 	for (unsigned i = 0; i < n; i++) {
@@ -37,8 +36,6 @@ static void test_md9600_map(void)
 		}
 	}
 	CHECK(m->settings_size >= 2 * STORAGE_SECTOR && m->calibration_size == 0);
-	// Radio tuning in the staging span's last two sectors: flash the radio's own tools write (radio-tune.md 1)
-	CHECK(m->tune_owned && m->tune_addr == m->staging_addr + m->staging_size);
 }
 
 static void md9600_create(void)

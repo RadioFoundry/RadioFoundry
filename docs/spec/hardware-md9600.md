@@ -975,9 +975,7 @@ board.
 | Board record | 0x01F000-0x01FFFF | the stored board revision (19.3) |
 | Open-firmware flash image | 0x020000-0xDFFFFF | codeplug part 2; the CPS may write up to 0xE00000 |
 | Native codeplug | 0xE00000-0xEFFFFF | reserved |
-| Staging | 0xF00000-0xF3AFFF | TFTP and fast CPS writes ([tftp.md](tftp.md) 4) |
-| Radio tuning | 0xF3B000-0xF3CFFF | 2 sectors ([radio-tune.md](radio-tune.md) 1.1): the end of the staging span, which only RadioFoundry writes |
-| Satellite data | 0xF3D000-0xF3FFFF | when built in ([satellite.md](satellite.md)) |
+| Staging | 0xF00000-0xF3FFFF | TFTP and fast CPS writes ([tftp.md](tftp.md) 4) |
 
 This is the DM-1701's map; a part smaller than 16 MB gets no map and the radio runs from RAM. The settings ring and the
 journal sit under the foreign region guard ([settings-store.md](settings-store.md) 5), so stock data found there is

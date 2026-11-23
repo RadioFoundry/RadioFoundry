@@ -85,7 +85,7 @@ RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' vi
 # (docs/spec/cps-fast.md)
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
                     "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size",
-                    "satellite_addr", "satellite_size", "tune_addr")
+                    "satellite_addr", "satellite_size")
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
@@ -788,8 +788,7 @@ class Board:
                             ("calibration", m.get("calibration_addr", 0), m.get("calibration_size", 0)),
                             ("native codeplug", m.get("native_addr", 0), m.get("native_size", 0)),
                             ("staging", m.get("staging_addr", 0), m.get("staging_size", 0)),
-                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0)),
-                            ("radio tuning", m.get("tune_addr", 0), 2 * DATA_SECTOR if m.get("tune_addr") else 0)):
+                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0))):
             if n > 0:
                 out.append((lo, lo + n, name))
         return out

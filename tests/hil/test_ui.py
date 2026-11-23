@@ -14,7 +14,7 @@ import time
 import pytest
 
 from hil_config import rig
-from rfoundry_hil import HIL_SMS_PREFIX, LONG, as_int, bench_sms, skip, skip_if
+from rfoundry_hil import HIL_SMS_PREFIX, LONG, DebugLinkError, as_int, bench_sms, skip, skip_if
 from rfoundry_debug import DOWN, UP
 
 
@@ -787,10 +787,20 @@ def test_delete_message(home, request, pytestconfig):
          "erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):
     """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
-    (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default."""
+    (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default.
+    Radio tuning's trims stay (radio-tune.md 4): one saved before the reset is there after, then the trims as found go
+    back."""
     r = home
     r.version()     # known before the restart: reconnect() checks a radio on another port against it
     zones = r.core().get("zone_count")
+    tune = None     # (trims as found, the one saved for the test), on a radio with radio tuning and a settings ring
+    if r.core().get("tune") is not None:
+        try:
+            tune = (r.link.tune_get(), [bytes([0x30, 0]) + b"HILR\0\0"])     # level 0's name in band 0
+            r.link.tune_put(tune[1])
+            r.link.tune_save()
+        except DebugLinkError:
+            tune = None
     # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
     for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
         r.press(k)
@@ -810,3 +820,11 @@ def test_factory_reset(home):
     assert as_int(s.get("settings.failures"), 0) == 0, s
     # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
     assert r.core().get("zone_count") == zones, "the codeplug changed"
+    if tune is not None:
+        got = r.link.tune_get()
+        if tune[0]:
+            r.link.tune_put(tune[0])
+            r.link.tune_save()
+        else:
+            r.link.tune_clear()
+        assert got == tune[1], "a factory reset removed the radio tuning trims"

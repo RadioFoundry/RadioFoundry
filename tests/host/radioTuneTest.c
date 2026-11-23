@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Radio tuning (core/radio/radio_tune.c) on simulated NOR: records built as the Radio Tuning page builds them, both
-// copies, a write cut before its commit word, stale and foreign records, interpolation per band, the clamps, names and
-// the live RAM table
+// Radio tuning (core/radio/radio_tune.c) on simulated NOR: entries put as the Radio Tuning page puts them, saved to the
+// settings ring and loaded at the next boot, stale and foreign records, interpolation per band, the clamps, names, the
+// table read back and the live RAM table (the ring's own rules: settingsTest)
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
 #include "radio/radio_tune.h"
 #include "storage/storage.h"
+#include "settings/settings.h"
 #include "sim/sim_flash.h"
 
 static int failures, checks;
@@ -28,10 +29,9 @@ void storage_quick_unlock(void) { }
 uint32_t hal_millis(void) { return 1000; }
 
 #define FLASH_SIZE	0x20000u
-#define TUNE		0x1C000u
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
-	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u, .tune_addr = TUNE,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u,
 };
 
 // Two transmit bands; each level's drive rises 2 per MHz across a band, plus "scale" to fake a new calibration
@@ -67,9 +67,9 @@ const board_t board = {
 	.radio = &radio, .system = &sys, .flash = &sim_flash,
 };
 
-// --- a record, as the page builds it (docs/spec/radio-tune.md 3) ---
+// --- entries, as the page puts them (docs/spec/radio-tune.md 3) ---
 
-static uint8_t rec[RADIO_TUNE_HDR + RADIO_TUNE_ENTRIES * RADIO_TUNE_ENTRY + 8u];
+static uint8_t ent[RADIO_TUNE_ENTRIES + 8u][RADIO_TUNE_ENTRY];
 static uint8_t n_entries;
 
 static void put16(uint8_t *p, uint16_t v)
@@ -84,23 +84,15 @@ static void put32(uint8_t *p, uint32_t v)
 	put16(p + 2, (uint16_t)(v >> 16));
 }
 
-static uint32_t owner(void)
-{
-	hal_chip_t c;
-	memset(&c, 0, sizeof(c));
-	chip(&c);
-	return storage_crc32(storage_crc32(0, board.name, (uint32_t)strlen(board.name)), c.uid, sizeof(c.uid));
-}
-
 static void start(void)
 {
-	memset(rec, 0, sizeof(rec));
+	memset(ent, 0, sizeof(ent));
 	n_entries = 0;
 }
 
 static void trim(uint8_t kind, uint8_t sel, uint32_t khz, int16_t v)
 {
-	uint8_t *e = rec + RADIO_TUNE_HDR + n_entries++ * RADIO_TUNE_ENTRY;
+	uint8_t *e = ent[n_entries++];
 	e[0] = (uint8_t)(kind << 4 | sel);
 	e[1] = 0;
 	put16(e + 2, (uint16_t)(khz / 25u));
@@ -110,28 +102,37 @@ static void trim(uint8_t kind, uint8_t sel, uint32_t khz, int16_t v)
 
 static void name(uint8_t band, uint8_t level, const char *s)
 {
-	uint8_t *e = rec + RADIO_TUNE_HDR + n_entries++ * RADIO_TUNE_ENTRY;
+	uint8_t *e = ent[n_entries++];
 	memset(e, 0, RADIO_TUNE_ENTRY);
 	e[0] = (uint8_t)(RADIO_TUNE_NAME << 4 | level);
 	e[1] = band;
 	memcpy(e + 2, s, strlen(s));
 }
 
-// Copy (0 A, 1 B) with seq; commit false leaves the commit word erased, as a write cut before its end does
-static void write_copy(uint8_t copy, uint32_t seq, bool commit)
+// The entries into the table, saved, then a restart: what the radio loads
+static uint8_t store(void)
 {
-	uint32_t a = TUNE + copy * STORAGE_SECTOR, n = RADIO_TUNE_HDR + n_entries * RADIO_TUNE_ENTRY;
-	static const uint8_t zero[4] = { 0 };
-	put32(rec, RADIO_TUNE_MAGIC);
-	put32(rec + 4, seq);
-	rec[8] = RADIO_TUNE_VERSION;
-	rec[9] = n_entries;
-	put32(rec + 12, owner());
-	put32(rec + n, storage_crc32(0, rec, n));
-	CHECK(sim_flash.erase(a) && sim_flash.write(a, rec, n + 4u));
-	if (commit) {
-		CHECK(sim_flash.write(a + n + 4u, zero, 4u));
-	}
+	uint8_t nw, nn;
+	CHECK(radio_tune_put(true, ent[0], n_entries));
+	CHECK(radio_tune_save());
+	sim_flash_power_on();
+	CHECK(storage_init());
+	settings_init();
+	radio_tune_load();
+	radio_tune_counts(&nw, &nn);
+	return (uint8_t)(nw + nn);
+}
+
+// A restart: the record in force loaded again
+static uint8_t reboot(void)
+{
+	uint8_t nw, nn;
+	sim_flash_power_on();
+	CHECK(storage_init());
+	settings_init();
+	radio_tune_load();
+	radio_tune_counts(&nw, &nn);
+	return (uint8_t)(nw + nn);
 }
 
 static int tuned(uint32_t khz, uint8_t level)
@@ -143,10 +144,9 @@ static int tuned(uint32_t khz, uint8_t level)
 static void fresh(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
-	CHECK(storage_init());
 	scale = 0;
 	uid0 = 0x1234u;
-	CHECK(radio_tune_load() == 0);
+	CHECK(reboot() == 0);
 	start();
 }
 
@@ -156,8 +156,7 @@ static void test_interpolation(void)
 	CHECK(tuned(446000, 2) == 0);
 	trim(RADIO_TUNE_DRIVE, 2, 430000, 10);
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 30);
-	write_copy(0, 1, true);
-	CHECK(radio_tune_load() == 1);
+	CHECK(store() == 2);
 	CHECK(tuned(446000, 2) == 30);
 	CHECK(tuned(470000, 2) == 30);		// flat past the outer trim
 	CHECK(tuned(438000, 2) == 20);		// halfway
@@ -174,8 +173,7 @@ static void test_limits(void)
 	trim(RADIO_TUNE_DRIVE, 3, 446000, 4000);	// a middle level: up to the top level's drive
 	trim(RADIO_TUNE_DEV, RADIO_MODE_FM, 446000, 900);
 	trim(RADIO_TUNE_FREQ, RADIO_MODE_DMR, 446000, -3000);
-	write_copy(0, 1, true);
-	radio_tune_load();
+	CHECK(store() == 5);
 	CHECK(tuned(446000, 4) == 0);
 	CHECK(tuned(446000, 0) == 0);
 	CHECK(radio_tune_drive(446000000u, 3, level_drive(446000000u, 3)) == level_drive(446000000u, 4));
@@ -186,38 +184,53 @@ static void test_limits(void)
 	CHECK(radio_tune_drive(446000000u, 2, 0) == 0);	// a level that doesn't transmit there stays off
 }
 
-static void test_copies(void)
+// Saves: the newest record in force, the table read back as it was put, the table's room, clearing
+static void test_saves(void)
 {
 	fresh();
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 10);
-	write_copy(0, 5, true);
-	n_entries = 0;
+	CHECK(store() == 1 && tuned(446000, 2) == 10);
+	start();
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 20);
-	write_copy(1, 6, true);
-	CHECK(radio_tune_load() == 3);
-	CHECK(tuned(446000, 2) == 20);		// the newer copy
-	// A write of A with seq 7 cut before its commit word: B stays in force
-	n_entries = 0;
-	trim(RADIO_TUNE_DRIVE, 2, 446000, 40);
-	write_copy(0, 7, false);
-	CHECK(radio_tune_load() == 2);
-	CHECK(tuned(446000, 2) == 20);
-	// A flipped bit: the copy is ignored
-	write_copy(0, 7, true);
-	CHECK(radio_tune_load() == 3 && tuned(446000, 2) == 40);
-	uint8_t b;
-	CHECK(sim_flash.read(TUNE + RADIO_TUNE_HDR + 4u, &b, 1));
-	b = (uint8_t)(b & 0xF7u);		// 40 = 0x28: bit 3 cleared, as NOR can
-	CHECK(sim_flash.write(TUNE + RADIO_TUNE_HDR + 4u, &b, 1));
-	CHECK(radio_tune_load() == 2 && tuned(446000, 2) == 20);
-	// The sequence wraps
-	n_entries = 0;
-	trim(RADIO_TUNE_DRIVE, 2, 446000, 50);
-	write_copy(0, 0xFFFFFFFFu, true);
-	n_entries = 0;
-	trim(RADIO_TUNE_DRIVE, 2, 446000, 60);
-	write_copy(1, 1, true);
-	CHECK(radio_tune_load() == 3 && tuned(446000, 2) == 60);
+	trim(RADIO_TUNE_DEV, RADIO_MODE_FM, 146000, -30);
+	trim(RADIO_TUNE_BATT, RADIO_TUNE_BATT_FULL, 0, 120);
+	name(1, 4, "4.5W");
+	CHECK(store() == 4 && tuned(446000, 2) == 20);		// the newer record
+	// The table back as the page put it: words first, then names
+	uint8_t e[RADIO_TUNE_ENTRY];
+	static const uint8_t order[] = { 0, 1, 2, 3 };
+	for (uint8_t i = 0; i < sizeof(order); i++) {
+		CHECK(radio_tune_get(i, e) == 4 && memcmp(e, ent[order[i]], RADIO_TUNE_ENTRY) == 0);
+	}
+	CHECK(radio_tune_get(4, e) == 4 && e[0] == 0 && e[7] == 0);	// past the end: zeros
+	// Live tries are not saved: a restart brings the record back
+	uint8_t w[4];
+	put32(w, RADIO_TUNE_WORD(446000u, RADIO_TUNE_DRIVE, 2u, 50u));
+	CHECK(radio_tune_set(0, 1, w, 1) && tuned(446000, 2) == 50);
+	CHECK(reboot() == 4 && tuned(446000, 2) == 20);
+	// Until saved: the table as it is then
+	CHECK(radio_tune_set(0, 1, w, 1) && radio_tune_save());
+	CHECK(reboot() == 2 && tuned(446000, 2) == 50);	// TUNE_SET changes the words: the name stays
+	// The table's room: words past RADIO_TUNE_WORDS and names past RADIO_TUNE_NAMES are left out
+	start();
+	for (uint8_t i = 0; i < RADIO_TUNE_WORDS + 2u; i++) {
+		trim(RADIO_TUNE_DEV, RADIO_MODE_FM, 400000u + i * 100u, (int16_t)i);
+	}
+	for (uint8_t i = 0; i < RADIO_TUNE_NAMES + 1u; i++) {
+		name(1, (uint8_t)(i % 5u), "N");
+	}
+	CHECK(store() == RADIO_TUNE_ENTRIES);
+	// Cleared: nothing live, nothing after a restart
+	CHECK(radio_tune_clear());
+	CHECK(tuned(446000, 2) == 0 && reboot() == 0);
+	CHECK(strcmp(radio_tune_name(4, 446000000u), "5W") == 0);
+	// Put a chunk at a time, as the debug link does
+	start();
+	trim(RADIO_TUNE_DRIVE, 2, 446000, 5);
+	trim(RADIO_TUNE_DRIVE, 3, 446000, 6);
+	CHECK(radio_tune_put(true, ent[0], 1) && radio_tune_put(false, ent[1], 1));
+	CHECK(radio_tune_get(0, e) == 2 && tuned(446000, 3) == 6);
+	CHECK(radio_tune_put(true, ent[1], 1) && radio_tune_get(0, e) == 1 && tuned(446000, 2) == 0);
 }
 
 static void test_foreign_and_stale(void)
@@ -225,23 +238,20 @@ static void test_foreign_and_stale(void)
 	fresh();
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 10);
 	trim(RADIO_TUNE_DEV, RADIO_MODE_FM, 446000, 50);
-	write_copy(0, 1, true);
-	uid0 = 0x9999u;				// another radio's chip
-	CHECK(radio_tune_load() == 0 && tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 0);
+	CHECK(store() == 2);
+	uid0 = 0x9999u;				// another radio's chip (its ring copied here): none of the trims
+	CHECK(reboot() == 0 && tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 0);
 	uid0 = 0x1234u;
 	scale = 5;				// a new factory drive: the drive trim is stale, the rest still holds
-	CHECK(radio_tune_load() == 1 && tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 50);
+	CHECK(reboot() == 1 && tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 50);
 	scale = 0;
-	CHECK(radio_tune_load() == 1 && tuned(446000, 2) == 10);
-	// A trim in no transmit band, a level the radio doesn't have: left out
+	CHECK(reboot() == 2 && tuned(446000, 2) == 10);
+	// A trim in no transmit band, a level the radio doesn't have, a kind it doesn't know: left out
 	start();
 	trim(RADIO_TUNE_DRIVE, 6, 446000, 10);
 	trim(RADIO_TUNE_DEV, RADIO_MODE_FM, 120000, 10);
-	write_copy(0, 2, true);
-	uint8_t nw, nn;
-	radio_tune_load();
-	radio_tune_counts(&nw, &nn);
-	CHECK(nw == 0 && nn == 0);
+	trim(7, 0, 446000, 10);
+	CHECK(store() == 0);
 }
 
 static void test_names(void)
@@ -252,8 +262,7 @@ static void test_names(void)
 	name(1, 1, "LowLow");
 	name(2, 0, "RX");			// a receive-only band: left out
 	name(1, 7, "Bad");			// no such level
-	write_copy(0, 1, true);
-	radio_tune_load();
+	CHECK(store() == 2);
 	CHECK(strcmp(radio_tune_name(4, 446000000u), "4.5W") == 0);
 	CHECK(strcmp(radio_tune_name(1, 446000000u), "LowLow") == 0);
 	CHECK(strcmp(radio_tune_name(4, 146000000u), "5W") == 0);	// the other band
@@ -287,8 +296,10 @@ static void test_live(void)
 	CHECK(radio_tune_set(0, 0, w, 0));
 	// The stored record back
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 7);
-	write_copy(1, 1, true);
-	CHECK(radio_tune_load() == 2 && tuned(446000, 2) == 7);
+	CHECK(store() == 1 && tuned(446000, 2) == 7);
+	CHECK(radio_tune_set(0, 0, w, 0) && tuned(446000, 2) == 0);
+	radio_tune_load();
+	CHECK(tuned(446000, 2) == 7);
 }
 
 static void test_battery(void)
@@ -298,11 +309,7 @@ static void test_battery(void)
 	trim(RADIO_TUNE_BATT, RADIO_TUNE_BATT_GAIN, 0, 21);
 	trim(RADIO_TUNE_BATT, RADIO_TUNE_BATT_FULL, 0, -2500);	// past the clamp
 	trim(RADIO_TUNE_BATT, 5, 0, 10);				// no such battery trim
-	write_copy(0, 1, true);
-	uint8_t nw, nn;
-	CHECK(radio_tune_load() == 1);
-	radio_tune_counts(&nw, &nn);
-	CHECK(nw == 2);
+	CHECK(store() == 2);
 	CHECK(radio_tune_batt(RADIO_TUNE_BATT_GAIN) == 21 && radio_tune_batt(RADIO_TUNE_BATT_EMPTY) == 0);
 	CHECK(radio_tune_batt(RADIO_TUNE_BATT_FULL) == -RADIO_TUNE_BATT_MAX);
 	CHECK(tuned(446000, 2) == 0 && radio_tune_dev(RADIO_MODE_FM, 446000000u) == 0);	// no other trim
@@ -330,49 +337,16 @@ static void test_band_edge(void)
 	CHECK(radio_tune_set(0, 0, w, 0));
 }
 
-// The debug link erases the tune area only when both units are blank or tune copies, never another firmware's data
-static void test_area(void)
-{
-	uint8_t buf[16];			// a small scratch: the check reads a unit in pieces
-	uint8_t x = 0x00;
-	fresh();
-	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// blank
-	trim(RADIO_TUNE_DRIVE, 2, 446000, 10);
-	write_copy(0, 1, true);
-	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// a record and a blank unit
-	write_copy(1, 2, false);
-	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// a save cut short: still a tune copy
-	uid0 = 0x9999u;
-	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// another radio's record: tune data all the same
-	uid0 = 0x1234u;
-	CHECK(sim_flash.write(TUNE + 2u * STORAGE_SECTOR, &x, 1));
-	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// past the area: not the area's
-	// Other data at the end of a blank unit, at the start of one
-	fresh();
-	CHECK(sim_flash.write(TUNE + 2u * STORAGE_SECTOR - 1u, &x, 1));
-	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
-	fresh();
-	uint8_t cp[4] = { 'C', 'P', 0x01, 0x00 };
-	CHECK(sim_flash.write(TUNE, cp, sizeof(cp)));
-	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
-	// A failed read is no proof of a blank unit
-	fresh();
-	sim_flash_bad_read(TUNE + STORAGE_SECTOR + 100u, 1);
-	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
-	sim_flash_bad_read(0, 0);
-}
-
 int main(void)
 {
 	test_interpolation();
 	test_limits();
-	test_copies();
+	test_saves();
 	test_foreign_and_stale();
 	test_names();
 	test_live();
 	test_battery();
 	test_band_edge();
-	test_area();
 	printf("radioTuneTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

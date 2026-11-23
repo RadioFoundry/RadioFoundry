@@ -740,9 +740,50 @@ static void reboot_now(void)
 // --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
 
 #if CONFIG_RADIO_TUNE
-// TUNE_WRITE: the copies (bit 0 A, bit 1 B) an offset-0 write erased since the last TUNE_LOAD. Only the offset-0
-// write checks the area for other data, so a later chunk goes only into a copy erased that way
-static uint8_t tune_erased;
+// Radio tuning (radio-tune.md 4): the RAM table in and out, saved to and loaded from the settings ring
+static size_t cmd_tune(const uint8_t *req, uint16_t len, uint8_t *out)
+{
+	settings_stats_t st;
+	settings_get_stats(&st);
+	if (st.load == SETTINGS_RAM || st.load == SETTINGS_FOREIGN) {
+		return status_only(out, DL_ST_UNAVAILABLE);	// no ring of ours to keep a record in: live trims only
+	}
+	switch (req[0]) {
+	case DL_STORAGE_OP_TUNE_PUT:
+		if (len < 2u || (len - 2u) % RADIO_TUNE_ENTRY != 0u) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		radio_tune_put((req[1] & 1u) != 0u, req + 2, (uint8_t)((len - 2u) / RADIO_TUNE_ENTRY));
+		break;
+	case DL_STORAGE_OP_TUNE_GET: {
+		if (len != 2u) {
+			return status_only(out, DL_ST_BAD_ARG);
+		}
+		uint8_t e[RADIO_TUNE_ENTRY], n = radio_tune_get(0, e), k = 0;
+		for (uint8_t i = req[1]; i < n && k < DL_TUNE_GET_MAX; i++, k++) {
+			radio_tune_get(i, out + 2 + k * RADIO_TUNE_ENTRY);
+		}
+		out[0] = DL_ST_OK;
+		out[1] = n;
+		return 2u + k * RADIO_TUNE_ENTRY;
+	}
+	case DL_STORAGE_OP_TUNE_LOAD:
+		radio_tune_load();
+		break;
+	case DL_STORAGE_OP_TUNE_SAVE:
+	case DL_STORAGE_OP_TUNE_CLEAR:
+		if (!(req[0] == DL_STORAGE_OP_TUNE_SAVE ? radio_tune_save() : radio_tune_clear())) {
+			return status_only(out, DL_ST_BUSY);	// the write failed: the record before stays in force
+		}
+		break;
+	default:
+		return status_only(out, DL_ST_BAD_ARG);
+	}
+	uint8_t e[RADIO_TUNE_ENTRY];
+	out[0] = DL_ST_OK;
+	out[1] = radio_tune_get(0, e);	// the entries in the table now (e: scratch)
+	return 2;
+}
 #endif
 
 static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -766,9 +807,7 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		put32(out + 15, 2u * STORAGE_SECTOR);
 		put32(out + 19, m->calibration_addr);
 		put32(out + 23, m->calibration_size);
-		put32(out + 27, CONFIG_RADIO_TUNE ? m->tune_addr : 0u);	// radio tuning's two copies, one erase unit each
-		put32(out + 31, CONFIG_RADIO_TUNE && m->tune_addr != 0u ? board.flash->erase_size : 0u);
-		return 35;
+		return 27;
 	}
 	case DL_STORAGE_OP_READ: {
 		if (len != 7) {
@@ -812,58 +851,15 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		out[1] = DL_REBOOT_OK;
 		return 2;
 	}
+	case DL_STORAGE_OP_TUNE_PUT:
+	case DL_STORAGE_OP_TUNE_GET:
+	case DL_STORAGE_OP_TUNE_LOAD:
+	case DL_STORAGE_OP_TUNE_SAVE:
+	case DL_STORAGE_OP_TUNE_CLEAR:
 #if CONFIG_RADIO_TUNE
-	case DL_STORAGE_OP_TUNE_WRITE: {
-		// The page writes the copy not in force, reads it back, then the other one (radio-tune.md 4)
-		uint32_t off = len >= 4 ? get16(req + 2) : 0u, n = len >= 4 ? len - 4u : 0u;
-		if (n == 0u || req[1] > 1u || off + n > board.flash->erase_size) {
-			return status_only(out, DL_ST_BAD_ARG);
-		}
-		// A region still holding another firmware's data (not claimed) takes no write, the tune area's included
-		if (m->tune_addr == 0u || !storage_ready()) {
-			return status_only(out, DL_ST_UNAVAILABLE);
-		}
-		out[0] = DL_ST_REFUSED;
-		if (radio_get_state() == RS_TX) {
-			out[1] = DL_TUNE_REFUSED_TX;	// no flash erase under a transmission
-			return 2;
-		}
-		uint32_t a = m->tune_addr + req[1] * board.flash->erase_size;
-		uint8_t bit = (uint8_t)(1u << req[1]);
-		if (off != 0u && (tune_erased & bit) == 0u) {
-			out[1] = DL_TUNE_REFUSED_NOT_ERASED;	// never programmed over data the check didn't see
-			return 2;
-		}
-		storage_lock();
-		// The area is the board's own flash (tune_owned): whatever a copy holds is ours, a damaged copy included, and
-		// the erase goes ahead. Anywhere else both units must be blank or tune copies, so a save never erases another
-		// firmware's data (out is the check's scratch)
-		if (off == 0u) {
-			tune_erased = (uint8_t)(tune_erased & ~bit);
-			if (!m->tune_owned && !radio_tune_area_ours(out, (uint32_t)cap)) {
-				storage_unlock();
-				out[0] = DL_ST_REFUSED;
-				out[1] = DL_TUNE_REFUSED_FOREIGN;
-				return 2;
-			}
-			if (board.flash->erase(a)) {
-				tune_erased |= bit;
-			}
-		}
-		bool ok = (tune_erased & bit) != 0u && board.flash->write(a + off, req + 4, n);
-		storage_unlock();
-		return status_only(out, ok ? DL_ST_OK : DL_ST_BUSY);
-	}
-	case DL_STORAGE_OP_TUNE_LOAD: {
-		tune_erased = 0;	// the save is over: the next one starts at offset 0 again
-		uint8_t valid = radio_tune_load();
-		if (valid == RADIO_TUNE_LOAD_BUSY) {
-			return status_only(out, DL_ST_BUSY);
-		}
-		out[0] = DL_ST_OK;
-		out[1] = valid;
-		return 2;
-	}
+		return cmd_tune(req, len, out);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
 	default:
 		return status_only(out, DL_ST_BAD_ARG);

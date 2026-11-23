@@ -598,11 +598,17 @@ and the claim of a foreign region.
 
 | Op | Request | Reply after the status |
 |---|---|---|
-| 0 INFO | none | region u8 (0 none, 1 ours, 2 foreign), claim pending u8, then address u32 + size u32 for the settings ring, the journal, the calibration copy; then the tune area's address u32 and erase unit u32 (radio tuning's two copies, [radio-tune.md](radio-tune.md) 3; both 0 without `CONFIG_RADIO_TUNE` or a tune area) |
-| 1 READ | address u32, length u16 (1-1000) | address u32, the bytes. Only inside the ranges of INFO (the tune area: both erase units), else `DL_ST_REFUSED`. Taken under the storage lock |
+| 0 INFO | none | region u8 (0 none, 1 ours, 2 foreign), claim pending u8, then address u32 + size u32 for the settings ring, the journal, the calibration copy |
+| 1 READ | address u32, length u16 (1-1000) | address u32, the bytes. Only inside the three ranges of INFO, else `DL_ST_REFUSED`. Taken under the storage lock |
 | 2 CLAIM | token u32: the chip UID's low word (INFO_CHIP offset 7) | reason u8. `DL_ST_REFUSED` with reason 1 (bad token) or 4 (no chip info); `DL_ST_UNAVAILABLE` when the region isn't foreign. On OK the housekeeping task erases the region (10 sector erases, up to about 4 s, during which it does not watch the power knob); poll `storage.region` |
-| 3 TUNE_WRITE | copy u8 (0 A, 1 B), offset u16, bytes (1 or more, to the request limit) | none. Writes radio tuning's record into one copy ([radio-tune.md](radio-tune.md) 4); offset 0 erases the copy first. `DL_ST_BAD_ARG` for a copy past 1, no bytes or past the erase unit; `DL_ST_REFUSED` with reason u8 1 while the radio transmits, 2 when, before an erase (offset 0) in a tune area the board doesn't own (`tune_owned` false, [radio-tune.md](radio-tune.md) 1.1; no board today), either unit is neither blank nor a tune copy (another firmware's data: nothing erased), or 3 for an offset past 0 into a copy that no offset-0 write erased since the last TUNE_LOAD (nothing written); `DL_ST_UNAVAILABLE` without a tune area; `DL_ST_BUSY` when the flash failed. Taken under the storage lock. `CONFIG_RADIO_TUNE` builds only |
-| 4 TUNE_LOAD | none | copies u8 (bit 0 copy A valid, bit 1 copy B). Loads the record in force into the radio's RAM table, replacing live words. `CONFIG_RADIO_TUNE` builds only |
+| 3 TUNE_PUT | flags u8 (bit 0: empty the table first), up to 7 entries of 8 bytes | entries u8: in the table now. Puts radio tuning's entries ([radio-tune.md](radio-tune.md) 3) into the RAM table, live at once; entries the radio can't use, and entries past the table's room, are left out. `DL_ST_BAD_ARG` for a length that isn't whole entries |
+| 4 TUNE_LOAD | none | entries u8. Loads the saved record into the RAM table, replacing live words and puts |
+| 5 TUNE_SAVE | none | entries u8. Saves the RAM table as the tune record in the settings ring ([settings-store.md](settings-store.md) 2.2); `DL_ST_BUSY` when the write failed (the record before stays in force) |
+| 6 TUNE_CLEAR | none | entries u8 (0). Empties the RAM table and saves an empty record; `DL_ST_BUSY` as TUNE_SAVE |
+| 7 TUNE_GET | first u8 | entries u8, then up to 7 entries of the table from first, as a save writes them (a drive entry with the factory drive at its frequency now) |
+
+Ops 3-7 are in `CONFIG_RADIO_TUNE` builds only, and answer `DL_ST_UNAVAILABLE` on a radio without a settings ring of
+its own (none, or a foreign region not yet claimed). Saves and loads run under the storage lock.
 
 Every op answers `DL_ST_UNAVAILABLE` on a radio with no flash map: a memory chip smaller than the board's map needs
 (the driver drops a map its chip is too small for), where nothing is stored. The web tools read that INFO answer as region "nomap", apart from region 0 in an OK answer (a map whose flash didn't start). A build without the

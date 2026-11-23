@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Radio tuning on the debug link (docs/spec/radio-tune.md): the record the radio checks and loads (built and checked
-// here, so the radio's side stays small), its save through STORAGE TUNE_WRITE, the live words of RADIO TUNE_SET, the
+// Radio tuning on the debug link (docs/spec/radio-tune.md): the entries the radio keeps in its settings ring, put,
+// saved and read back through the STORAGE tuning operations, the live words of RADIO TUNE_SET, the
 // live drive of RADIO TX_DRIVE, the oscillator's SETTING 35, the battery reading, and the test transmission: the VFO
 // on the tuning frequency, a mode, no tone, the test TX limit on that frequency alone, a power level, PTT with a
 // time-out. `link` is a flasher Link (request(cmd, payload) -> the reply after the status; throws with .status).
@@ -10,10 +10,7 @@ export const KIND = Object.freeze({ DRIVE: 0, DEV: 1, FREQ: 2, NAME: 3, BATT: 4 
 export const MODE = Object.freeze({ FM: 0, DMR: 1 });
 export const BATT = Object.freeze({ GAIN: 0, EMPTY: 1, FULL: 2 });	// a battery entry's sel
 const W_BATT = 3;			// a battery entry's kind in a RAM word (names are never words)
-export const MAGIC = 0x4E544652;	// "RFTN"
-export const VERSION = 1;
-export const HDR = 16, ENTRY = 8, MAX_ENTRIES = 32, NAME_LEN = 6;
-export const RECORD_MAX = HDR + MAX_ENTRIES * ENTRY + 8;
+export const ENTRY = 8, MAX_ENTRIES = 26, NAME_LEN = 6;	// MAX_ENTRIES: the radio's table (RADIO_TUNE_ENTRIES)
 export const DEV_MAX = 250;		// permille either way
 export const FREQ_MAX = 2000;		// Hz either way
 export const VALUE_MAX = 4095;		// what a RAM word holds
@@ -21,13 +18,12 @@ export const REF_TRIM_MAX = 10000;	// ppb either way (SETTING 35)
 export const GAIN_MAX = 150;		// the battery reading's gain, permille either way
 export const BATT_MV_MAX = 1000;	// the empty or full voltage, mV either way
 export const BATT_SPAN_MV = 400;	// empty and full at least this far apart, else the radio keeps its own
-export const CHUNK = 60;		// TUNE_WRITE data bytes per request: the 64-byte request less op, copy, offset
+const PER_REQUEST = 7;			// entries a TUNE_PUT or TUNE_GET carries
 const WORDS_PER_SET = 15;		// TUNE_SET words per request: the 64-byte request less op, first, total
 export const ST = Object.freeze({ BAD_ARG: 2, BUSY: 3, UNAVAILABLE: 4, REFUSED: 7 });
-const REFUSED_FOREIGN = 2;		// TUNE_WRITE's reason: the tune area holds data that isn't a tune copy
 
 const PTT = 0x07, GET_VIEW = 0x09, RADIO = 0x0A, STORAGE = 0x0F;
-const S_OP = Object.freeze({ INFO: 0, READ: 1, TUNE_WRITE: 3, TUNE_LOAD: 4 });
+const S_OP = Object.freeze({ PUT: 3, LOAD: 4, SAVE: 5, CLEAR: 6, GET: 7 });
 const R = Object.freeze({ VFO: 4, VFO_SET: 5, POWER: 7, TONE: 10, SETTING: 24, MODE: 31, TX_LIMIT: 35, TX_DRIVE: 36,
 	TUNE_SET: 44 });
 const SETTING_REF_TRIM = 35;
@@ -40,90 +36,39 @@ const dv = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 const le32 = (n) => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
 const le16 = (n) => [n & 0xFF, (n >> 8) & 0xFF];
 
-// ---- the record
+// ---- the entries
 
-// The storage CRC-32 (storage_crc32): reflected 0xEDB88320, start and end inverted; crc32(b, crc32(a)) = crc32(a + b)
-export function crc32(bytes, crc = 0) {
-	let c = ~crc >>> 0;
-	for (const x of bytes) {
-		c ^= x;
-		for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
-	}
-	return ~c >>> 0;
-}
-
-export function hexBytes(hex) {
-	const s = String(hex || "").replace(/[^0-9a-f]/gi, "");
-	return Uint8Array.from(s.match(/../g) || [], (h) => parseInt(h, 16));
-}
-
-// Whose record: the board's name, then the chip's unique ID as INFO_CHIP gives it (a radio without one: the name alone)
-export function owner(board, uidHex) {
-	const crc = crc32(enc.encode(board || ""));
-	const uid = hexBytes(uidHex);
-	return uid.length ? crc32(uid, crc) : crc;
-}
-
-// A frequency as the record keeps it (25 kHz units) and as a RAM word does (100 kHz): trims sit on a 100 kHz grid
+// A frequency as an entry keeps it (25 kHz units) and as a RAM word does (100 kHz): trims sit on a 100 kHz grid
 export const gridKhz = (khz) => Math.round(khz / 100) * 100;
 
-// entries: [{kind, sel, khz, value, factory}] (drive, deviation, frequency; battery with khz 0) and
-// [{kind: NAME, sel, band, name}]
-export function encodeRecord(seq, own, entries) {
-	const n = Math.min(entries.length, MAX_ENTRIES);
-	const b = new Uint8Array(HDR + n * ENTRY + 8);
+// An entry (radio-tune.md 3), 8 bytes: {kind, sel, khz, value, factory} (drive, deviation, frequency; battery with
+// khz 0) or {kind: NAME, sel, band, name}
+export function encodeEntry(e) {
+	const b = new Uint8Array(ENTRY);
 	const v = dv(b);
-	v.setUint32(0, MAGIC, true);
-	v.setUint32(4, seq >>> 0, true);
-	b[8] = VERSION;
-	b[9] = n;
-	v.setUint32(12, own >>> 0, true);
-	entries.slice(0, n).forEach((e, i) => {
-		const o = HDR + i * ENTRY;
-		b[o] = (e.kind << 4) | (e.sel & 0xF);
-		if (e.kind === KIND.NAME) {
-			b[o + 1] = e.band;
-			b.set(enc.encode(cleanName(e.name)).subarray(0, NAME_LEN), o + 2);
-		} else {
-			v.setUint16(o + 2, Math.round(e.khz / 25), true);
-			v.setInt16(o + 4, e.value, true);
-			v.setUint16(o + 6, e.kind === KIND.DRIVE ? e.factory : 0, true);
-		}
-	});
-	const end = HDR + n * ENTRY;
-	v.setUint32(end, crc32(b.subarray(0, end)), true);
-	return b;	// the commit word (0) is the last 4 bytes
-}
-
-// A copy as the radio checks it: {seq, entries} when whole and this radio's, else null
-export function parseRecord(b, own) {
-	if (!b || b.length < HDR + 8) return null;
-	const v = dv(b);
-	const n = b[9];
-	if (v.getUint32(0, true) !== MAGIC || b[8] !== VERSION || n > MAX_ENTRIES || v.getUint32(4, true) === 0 ||
-	    v.getUint32(12, true) !== own >>> 0 || b.length < HDR + n * ENTRY + 8) return null;
-	const end = HDR + n * ENTRY;
-	if (crc32(b.subarray(0, end)) !== v.getUint32(end, true) || v.getUint32(end + 4, true) !== 0) return null;
-	const entries = [];
-	for (let i = 0; i < n; i++) {
-		const o = HDR + i * ENTRY;
-		const kind = b[o] >> 4, sel = b[o] & 0xF;
-		if (kind === KIND.NAME) {
-			const raw = b.subarray(o + 2, o + 2 + NAME_LEN);
-			const z = raw.indexOf(0);
-			entries.push({ kind, sel, band: b[o + 1], name: dec.decode(z < 0 ? raw : raw.subarray(0, z)) });
-		} else if (kind <= KIND.BATT) {
-			entries.push({ kind, sel, khz: v.getUint16(o + 2, true) * 25, value: v.getInt16(o + 4, true),
-				factory: v.getUint16(o + 6, true) });
-		}
+	b[0] = (e.kind << 4) | (e.sel & 0xF);
+	if (e.kind === KIND.NAME) {
+		b[1] = e.band;
+		b.set(enc.encode(cleanName(e.name)).subarray(0, NAME_LEN), 2);
+	} else {
+		v.setUint16(2, Math.round(e.khz / 25), true);
+		v.setInt16(4, e.value, true);
+		v.setUint16(6, e.kind === KIND.DRIVE ? e.factory : 0, true);
 	}
-	return { seq: v.getUint32(4, true), entries };
+	return b;
 }
 
-// Which copy is in force, as the radio picks it: the newer valid one (sequence as a signed difference); -1 none
-export function inForce(a, b) {
-	if (a && b) return ((b.seq - a.seq) | 0) > 0 ? 1 : 0;
-	return a ? 0 : b ? 1 : -1;
+// An entry back from its 8 bytes; null for a kind the page doesn't know
+export function parseEntry(b) {
+	const v = dv(b);
+	const kind = b[0] >> 4, sel = b[0] & 0xF;
+	if (kind === KIND.NAME) {
+		const raw = b.subarray(2, 2 + NAME_LEN);
+		const z = raw.indexOf(0);
+		return { kind, sel, band: b[1], name: dec.decode(z < 0 ? raw : raw.subarray(0, z)) };
+	}
+	if (kind > KIND.BATT) return null;
+	return { kind, sel, khz: v.getUint16(2, true) * 25, value: v.getInt16(4, true), factory: v.getUint16(6, true) };
 }
 
 // A RAM word (radio-tune.md 5): kHz/100 bits 0-13, kind 14-15, level or mode 16-18, value 19-31 (signed)
@@ -253,68 +198,68 @@ export class TuneRadio {
 		}
 	}
 
-	// ---- the record
+	// ---- the saved entries (radio-tune.md 4)
 
-	// The tune area {addr, unit}, or null in a build without one
-	async area() {
-		const r = await this.link.request(STORAGE, new Uint8Array([S_OP.INFO]));
-		if (r.length < 34) return null;
-		const v = dv(r);
-		const addr = v.getUint32(26, true), unit = v.getUint32(30, true);
-		return addr ? { addr, unit } : null;
-	}
-
-	async read(addr, n) {
-		const r = await this.link.request(STORAGE, new Uint8Array([S_OP.READ, ...le32(addr), ...le16(n)]));
-		return r.subarray(4);
-	}
-
-	// Both copies parsed (null where invalid), the one in force and the next sequence number
-	async copies(area, own) {
-		const raw = [await this.read(area.addr, RECORD_MAX), await this.read(area.addr + area.unit, RECORD_MAX)];
-		const recs = raw.map((b) => parseRecord(b, own));
-		const at = inForce(recs[0], recs[1]);
-		const seq = at < 0 ? 0 : recs[at].seq;
-		return { recs, at, record: at < 0 ? null : recs[at], next: ((seq + 1) >>> 0) || 1 };
-	}
-
-	// Throws with tuneStep "foreign" when the radio finds other data in the tune area: nothing is erased then
-	async writeCopy(copy, rec) {
-		const body = rec.subarray(0, rec.length - 4);
-		const put = (off, data) => this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_WRITE, copy, ...le16(off), ...data]))
-			.catch((e) => {
-				if (e?.status === ST.REFUSED && e.data?.[0] === REFUSED_FOREIGN)
-					throw Object.assign(new Error("foreign"), { tuneStep: "foreign", status: e.status });
-				throw e;
-			});
-		for (let off = 0; off < body.length; off += CHUNK) await put(off, body.subarray(off, off + CHUNK));
-		await put(body.length, rec.subarray(rec.length - 4));	// the commit word last: a copy cut short stays invalid
-	}
-
-	// Save (radio-tune.md 4): the copy not in force first, read back, then the other one, then load. Throws with
-	// tuneStep "verify" when a copy reads back wrong; the copy in force before is then still in force
-	async save(area, at, rec) {
-		const first = at === 0 ? 1 : 0;
-		for (const copy of [first, 1 - first]) {
-			await this.writeCopy(copy, rec);
-			const back = await this.read(area.addr + copy * area.unit, rec.length);
-			if (back.length !== rec.length || back.some((x, i) => x !== rec[i]))
-				throw Object.assign(new Error("verify"), { tuneStep: "verify" });
-		}
-		return this.load();
-	}
-
-	// The copies the radio found valid; busy while a save or a CPS write holds the radio's storage buffer
-	async load() {
+	// A STORAGE tuning operation: the entries in the radio's table after it. Busy while a save or a CPS write holds
+	// the radio's storage, so a busy is tried again; unavailable on a radio without a settings ring of its own
+	async tune(op, bytes = []) {
 		for (let i = 0; ; i++) {
 			try {
-				return (await this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_LOAD])))[0];
+				return (await this.link.request(STORAGE, new Uint8Array([op, ...bytes])))[0];
 			} catch (e) {
 				if (e?.status !== ST.BUSY || i >= 20) throw e;
 				await sleep(100);
 			}
 		}
 	}
+
+	// Whether the radio saves trims: false on a radio without a settings ring of its own (live trims only)
+	async canSave() {
+		try {
+			await this.link.request(STORAGE, new Uint8Array([S_OP.GET, 0]));
+			return true;
+		} catch (e) {
+			if (e?.status === ST.UNAVAILABLE) return false;
+			throw e;
+		}
+	}
+
+	// The radio's table as entries, drive entries with the factory drive at their frequency now
+	async entries() {
+		const out = [];
+		for (;;) {
+			const r = await this.link.request(STORAGE, new Uint8Array([S_OP.GET, out.length]));
+			const n = r[0], got = Math.floor((r.length - 1) / ENTRY);
+			for (let k = 0; k < got; k++) out.push(parseEntry(r.subarray(1 + k * ENTRY, 1 + (k + 1) * ENTRY)));
+			if (!got || out.length >= n) return out.filter(Boolean);
+		}
+	}
+
+	// The saved entries: the table loaded from the saved record (live words give way to it), then read
+	async stored() {
+		await this.load();
+		return this.entries();
+	}
+
+	// Save: the entries into the table in place of what it holds, the table saved as the record, then read back.
+	// Throws with tuneStep "verify" when the table reads back different (an entry the radio can't use left out). A
+	// save that fails leaves the record before in force
+	async save(entries, same = (a, b) => JSON.stringify(a) === JSON.stringify(b)) {
+		const bytes = entries.slice(0, MAX_ENTRIES).map(encodeEntry);
+		await this.tune(S_OP.PUT, [1]);
+		for (let i = 0; i < bytes.length; i += PER_REQUEST)
+			await this.tune(S_OP.PUT, [0, ...bytes.slice(i, i + PER_REQUEST).flatMap((b) => [...b])]);
+		await this.tune(S_OP.SAVE);
+		const back = await this.entries();
+		if (!same(back, entries)) throw Object.assign(new Error("verify"), { tuneStep: "verify" });
+		return back;
+	}
+
+	// The saved record into the table again: live tries undone
+	async load() { return this.tune(S_OP.LOAD); }
+
+	// No trims: the table emptied and an empty record saved
+	async clear() { return this.tune(S_OP.CLEAR); }
 
 	// The RAM table, live from the next use; each request's total is only what was written so far, so a reader on the
 	// radio never sees a word left from the table before

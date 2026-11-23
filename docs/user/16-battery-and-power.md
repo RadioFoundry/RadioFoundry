@@ -77,8 +77,10 @@ cable. The page reads the radio's bands, power levels and modes, and shows what 
 - **Restore factory values** removes every trim, name and battery setting, and sets the oscillator trim back to 0. The oscillator trim
   is the **Freq trim** setting, so the page and the menu change the same value.
 
-The trims are stored in the radio, outside the codeplug. A codeplug read, write or share never carries them to another
-radio. A firmware update keeps them. If an update changes a level's factory setting, the page marks that level's trim
+The trims are stored in the radio with its settings, outside the codeplug. A codeplug read, write or share never
+carries them to another radio. A firmware update and a factory reset keep them. To remove every trim on the radio
+itself, open **Settings > Advanced > Clear tuning** and hold **OK**. Clear tuning leaves the **Freq trim** setting
+unchanged. If an update changes a level's factory setting, the page marks that level's trim
 as out of date, and the radio stops using the trim until you tune that level again.
 
 On some radios, the radio's own signal can disturb the USB cable while transmitting, and the page loses the

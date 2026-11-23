@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""Radio tuning's battery trims (radio-tune.md 2, 5) set live over RADIO TUNE_SET, no transmission.
+"""Radio tuning (radio-tune.md), no transmission.
+
+test_saved_trims (--allow-reboot): trims saved in the settings ring (STORAGE TUNE_PUT, TUNE_SAVE) come back after a
+restart, a settings save afterwards keeps them, and TUNE_CLEAR removes them for good. The table as found is saved
+again at the end. Skipped on a radio without a settings ring or without radio tuning.
 
 test_battery_trims: a gain trim scales the reading (`battery_mv` = raw + raw x gain / 1000, truncated, against the
 core view's `tune` raw reading), a full voltage moved to the reading gives 100 %, and empty and full moved less than
@@ -11,7 +15,8 @@ import time
 
 import pytest
 
-from rfoundry_hil import skip
+from rfoundry_hil import DebugLinkError, as_int, skip
+from rfoundry_debug import ST_UNAVAILABLE
 
 W_BATT = 3
 GAIN, EMPTY, FULL = 0, 1, 2
@@ -98,3 +103,55 @@ def test_battery_trims(radio):
     finally:
         radio.link.tune_load()
     time.sleep(0.06)
+
+
+def name_entry(level, band, name):
+    """A level name entry (radio-tune.md 3): kind 3, the level, the band index, 6 characters"""
+    return bytes([3 << 4 | level, band]) + name.encode("ascii").ljust(6, b"\0")
+
+
+def restart(radio):
+    radio.wait_for(lambda s: s.get("settings.dirty") == "0", timeout=5.0, sections=("storage",),
+                   what="settings saved")
+    radio.version()     # known before the restart: reconnect() checks a radio on another port against it
+    radio.link.reboot(0, radio.link.chip()["token"])
+    radio.link.close()
+    time.sleep(2.0)
+    radio.reconnect(20.0)
+
+
+@pytest.mark.feature("radio_tune")
+@pytest.mark.reboot
+def test_saved_trims(radio):
+    if radio.link.view(["core"]).get("tune") is None:
+        skip("not_built", "the firmware has no radio tuning")
+    try:
+        found = radio.link.tune_get()
+        radio.link.tune_load()
+    except DebugLinkError as e:
+        if e.status == ST_UNAVAILABLE:
+            skip("no_hw", "the radio has no settings ring of its own: trims work live only")
+        raise
+    # Names load on every board with a level 0 and a band 0, transmit or not
+    want = [name_entry(0, 0, "HILT")]
+    try:
+        assert radio.link.tune_put(want) == 1
+        assert radio.link.tune_save() == 1
+        restart(radio)
+        assert radio.link.tune_get() == want, "the saved trims after a restart"
+        # A settings save afterwards (the same value again: nothing the owner set changes) keeps them
+        tot = as_int(radio.view(["features"]).get("set.tot_s"), None)
+        if tot is not None:
+            radio.link.setting("tot_s", tot - 1 if tot else 1)
+            radio.link.setting("tot_s", tot)
+            restart(radio)
+            assert radio.link.tune_get() == want, "the trims after a settings save and a restart"
+        assert radio.link.tune_clear() == 0
+        restart(radio)
+        assert radio.link.tune_get() == [], "cleared trims after a restart"
+    finally:
+        if found:
+            radio.link.tune_put(found)
+            radio.link.tune_save()
+        else:
+            radio.link.tune_clear()

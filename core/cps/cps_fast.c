@@ -144,8 +144,7 @@ static bool protected_area(const hal_flash_map_t *m, uint32_t a, uint32_t n)
 {
 	return overlaps(a, n, m->settings_addr, m->settings_size) || overlaps(a, n, m->journal_addr, 2u * STORAGE_SECTOR) ||
 	       overlaps(a, n, m->native_addr, m->native_size) || overlaps(a, n, m->staging_addr, m->staging_size) ||
-	       overlaps(a, n, m->calibration_addr, m->calibration_size) ||
-	       overlaps(a, n, m->tune_addr, hal_flash_tune_size(m, board.flash->erase_size));
+	       overlaps(a, n, m->calibration_addr, m->calibration_size);
 }
 
 // An image block the protocol may read and write: inside the EEPROM image or the flash image, on the flash, clear of
@@ -698,11 +697,7 @@ bool cps_fast_resume(void)
 	if (magic == 0xFFFFFFFFu || magic == STORAGE_STAGE_MAGIC_TFTP) {
 		return false;		// nothing, or the TFTP server's record (tftp_codeplug_resume)
 	}
-	// A record may hold more slots than this map's area: a firmware with a larger staging area wrote it before an
-	// update. Its slots are still where it put them (nothing writes past the area before this runs), and the CRCs below
-	// prove it, so the commit is finished rather than left half done
-	bool valid = magic == STORAGE_STAGE_MAGIC_CPSF && get32(&r[4]) == REC_VERSION && count != 0 &&
-		     count <= CPSF_STAGE_MAX && slot_addr(count - 1u) + CPSF_BLOCK <= board.flash->size &&
+	bool valid = magic == STORAGE_STAGE_MAGIC_CPSF && get32(&r[4]) == REC_VERSION && count != 0 && count <= cap &&
 		     get32(&r[REC_HDR + 2u * count]) == storage_crc32(0, r, REC_HDR + 2u * count) &&
 		     staged_crc(count, &crc) && crc == get32(&r[12]);
 	for (uint32_t k = 0; valid && k < count; k++) {

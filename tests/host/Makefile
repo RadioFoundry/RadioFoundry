@@ -1459,15 +1459,15 @@ satelliteStoreTest: satelliteStoreTest.c $(SAT_STORE) \
 
 # Radio tuning (core/radio/radio_tune.c, docs/spec/radio-tune.md)
 TESTS   += radioTuneTest
-RADIO_TUNE_SRC := $(CORE)/radio/radio_tune.c $(CORE)/storage/storage.c sim/sim_flash.c
-radioTuneTest: radioTuneTest.c $(RADIO_TUNE_SRC) $(CORE)/radio/radio_tune.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
+RADIO_TUNE_SRC := $(CORE)/radio/radio_tune.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c sim/sim_flash.c
+radioTuneTest: radioTuneTest.c $(RADIO_TUNE_SRC) $(CORE)/radio/radio_tune.h $(CORE)/settings/settings.h $(ROOT)/hal/hal_flash.h $(ROOT)/hal/hal_radio.h \
 		$(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_RADIO_TUNE=1 -o $@ radioTuneTest.c $(RADIO_TUNE_SRC)
 
 # The debug link's command handlers (core/debuglink/debuglink.c, whole): the RADIO dispatcher's feature operations and
-# STORAGE TUNE_WRITE on simulated NOR; what those paths don't reach links to sim/debuglink_unreached.c
+# STORAGE radio tuning operations on simulated NOR; what those paths don't reach links to sim/debuglink_unreached.c
 TESTS   += debuglinkCmdTest
-DLCMD_SRC := $(CORE)/radio/radio_tune.c $(CORE)/storage/storage.c sim/sim_flash.c sim/debuglink_unreached.c
+DLCMD_SRC := $(CORE)/radio/radio_tune.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c sim/sim_flash.c sim/debuglink_unreached.c
 debuglinkCmdTest: debuglinkCmdTest.c $(DLCMD_SRC) $(CORE)/debuglink/debuglink.c $(wildcard $(CORE)/debuglink/*.h) \
 		$(CORE)/radio/radio_tune.h $(wildcard $(CORE)/storage/*.h) sim/sim_flash.h
 	$(CC) $(filter-out -DCONFIG_RADIO_TUNE=0,$(CFLAGS)) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DEBUGLINK=1 -DCONFIG_RADIO_TUNE=1 -o $@ debuglinkCmdTest.c $(DLCMD_SRC)

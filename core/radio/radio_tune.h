@@ -2,14 +2,15 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Radio tuning (docs/spec/radio-tune.md): the owner's own trims on top of the factory calibration, which they never
 // change: each power level's PA drive, each mode's deviation and carrier frequency, the power levels' names, and the
-// battery reading's gain and the voltages the charge percentage runs between. They
-// sit in the board's tune area (hal_flash_map_t.tune_addr): two copies of one record, each with its own CRC and commit
-// word, bound to this radio's board and chip UID. Nothing here is in the codeplug, so a shared codeplug never carries
-// it to another radio.
+// battery reading's gain and the voltages the charge percentage runs between. The RAM table below is the only copy in
+// RAM; saved, it is one record of the settings ring (settings_tune_save, docs/spec/settings-store.md 2.2), bound to
+// this radio's board and chip UID, kept by a factory reset. Nothing here is in the codeplug, so a shared codeplug never
+// carries it to another radio.
 //
-// The radio only checks, loads and applies the record. The site's Radio Tuning page builds it and writes it through
-// the debug link's STORAGE command (TUNE_WRITE, TUNE_LOAD), and tries values out live through the RADIO command
-// (TUNE_SET puts words in the RAM table, TX_DRIVE moves the drive of a transmission in progress).
+// The site's Radio Tuning page puts entries in the table and saves it through the debug link's STORAGE command
+// (TUNE_PUT, TUNE_SAVE, TUNE_GET, TUNE_LOAD, TUNE_CLEAR), and tries values out live through the RADIO command (TUNE_SET
+// puts words in the RAM table, TX_DRIVE moves the drive of a transmission in progress). The menu's Clear tuning
+// removes the saved trims.
 //
 // A trim is a value at a frequency for one level or mode. The value at a transmit frequency is interpolated between
 // that level's or mode's trims in its band, and held flat past the outer ones. A drive trim keeps the factory drive it
@@ -17,7 +18,8 @@
 // removed) is stale and not loaded. Every value is clamped where it is used, so no word, stored or live, takes the
 // radio past its limits.
 //
-// Threading: the getters read a small RAM table that only the debug link's task changes, one aligned word per entry.
+// Threading: the getters read a small RAM table that the debug link's task (and the menu's Clear tuning, through the
+// storage job) changes, one aligned word per entry.
 #ifndef RADIO_RADIO_TUNE_H
 #define RADIO_RADIO_TUNE_H
 
@@ -29,17 +31,15 @@
 #define RADIO_TUNE_WORDS	20u	// trims the radio applies (RAM: 4 bytes each)
 #define RADIO_TUNE_NAMES	6u	// level names (RAM: 8 bytes each)
 #define RADIO_TUNE_NAME_LEN	6u	// characters in a level name (the status line's power field)
-#define RADIO_TUNE_ENTRIES	32u	// entries a record holds
+#define RADIO_TUNE_ENTRIES	(RADIO_TUNE_WORDS + RADIO_TUNE_NAMES)	// entries the table, so a record, holds (26)
 #define RADIO_TUNE_DEV_MAX	250	// a deviation trim, permille either way
 #define RADIO_TUNE_FREQ_MAX	2000	// a frequency trim, Hz either way
 #define RADIO_TUNE_GAIN_MAX	150	// the battery reading's gain, permille either way
 #define RADIO_TUNE_BATT_MAX	1000	// the empty or full voltage, mV either way
 
-// The record (little endian): header, entries of 8 bytes, CRC-32 of both, commit word 0
-#define RADIO_TUNE_MAGIC	0x4E544652u	// "RFTN"
-#define RADIO_TUNE_VERSION	1u
-#define RADIO_TUNE_HDR		16u	// magic u32, seq u32, version u8, entries u8, reserved u16, owner u32
+// The record's payload (little endian): owner u32, then entries of 8 bytes. One settings slot holds 29
 #define RADIO_TUNE_ENTRY	8u
+_Static_assert(4u + RADIO_TUNE_ENTRIES * RADIO_TUNE_ENTRY <= 236u, "a tune record is one settings slot's payload");
 
 // An entry's kind (high nibble of its first byte; the low nibble is the level or the radio_mode_t)
 enum {
@@ -63,14 +63,19 @@ enum { RADIO_TUNE_BATT_GAIN, RADIO_TUNE_BATT_EMPTY, RADIO_TUNE_BATT_FULL };
 // Drive trims need hal_radio_t.tx_drive_level; frequency trims are the radio core's own (key_tx) and need nothing
 
 #if CONFIG_RADIO_TUNE
-// Load the record in force into the RAM table (at start, after the calibration the drive trims are checked against;
-// and after the debug link wrote a new record). Returns the copies found valid, bit 0 copy A, bit 1 copy B, or
-// RADIO_TUNE_LOAD_BUSY when the shared storage buffer is taken (nothing loaded)
-#define RADIO_TUNE_LOAD_BUSY	0xFFu
-uint8_t radio_tune_load(void);
-// Whether the debug link may erase a tune area the board doesn't own (hal_flash_map_t.tune_owned false): both units
-// blank or holding a tune copy, never foreign data. The caller holds the storage lock; buf is cap bytes of scratch
-bool radio_tune_area_ours(uint8_t *buf, uint32_t cap);
+// The saved record into the RAM table, replacing it (at start, after the calibration the drive trims are checked
+// against; and when the debug link puts live tries back). A record of another radio, or none: an empty table
+void radio_tune_load(void);
+// The RAM table as a record into the settings ring. False without a ring or when the write failed (the record before
+// stays in force)
+bool radio_tune_save(void);
+// No trims: the table emptied and an empty record saved (false as radio_tune_save; the table stays empty)
+bool radio_tune_clear(void);
+// n entries (RADIO_TUNE_ENTRY bytes each, the record's) into the RAM table, live at once; start empties it first.
+// Entries the radio can't use are left out (radio-tune.md 3)
+bool radio_tune_put(bool start, const uint8_t *entries, uint8_t n);
+// Entry i of the RAM table as the record keeps it (zeros past the end); returns the entries in the table
+uint8_t radio_tune_get(uint8_t i, uint8_t *entry);
 // The drive for a transmission: the board's drive for level at hz with the trim applied, clamped. 0 stays 0
 uint16_t radio_tune_drive(uint32_t hz, uint8_t level, uint16_t drive);
 // The deviation trim of mode at hz, permille of the board's own (0: none)
@@ -86,7 +91,7 @@ bool radio_tune_set(uint8_t first, uint8_t total, const uint8_t *words, uint8_t 
 // The table's fill, for the debug link's view
 void radio_tune_counts(uint8_t *words, uint8_t *names);
 #else
-static inline uint8_t radio_tune_load(void) { return 0; }
+static inline void radio_tune_load(void) { }
 static inline uint16_t radio_tune_drive(uint32_t hz, uint8_t level, uint16_t drive)
 {
 	(void)hz;

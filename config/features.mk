@@ -238,7 +238,7 @@ CONFIG_VOX ?= $(CONFIG_FM)
 # hal_radio_t.ref_trim; docs/spec/radio-features.md 6.1)
 CONFIG_REF_TRIM ?= y
 # radio tuning: the owner's trims of each power level's PA drive, each mode's deviation and carrier, and the level
-# names, kept in the radio's tune area and written over the debug link (the site's Radio Tuning page;
+# names, kept as one record in the settings ring and set over the debug link (the site's Radio Tuning page;
 # docs/spec/radio-tune.md). Needs DEBUGLINK
 CONFIG_RADIO_TUNE ?= $(CONFIG_DEBUGLINK)
 # receiver battery saving: FM receiver duty cycling while idle (needs FM)

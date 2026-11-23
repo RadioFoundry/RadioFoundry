@@ -3,7 +3,7 @@
 // Tools > Radio tuning (docs/spec/radio-tune.md, docs/user/16-battery-and-power.md): the radio's transmit bands as tabs,
 // up to three tuning frequencies per band, a card per power level, the oscillator, each mode's carrier and deviation,
 // and the battery reading with its empty and full voltages. Every change runs on the radio at once (RADIO TUNE_SET,
-// TX_DRIVE, SETTING 35); Save to radio stores the record.
+// TX_DRIVE, SETTING 35); Save to radio stores the trims in the radio's settings ring.
 // Everything comes from the radio (bands, levels, names, drives, what the board trims), so a new radio, band, level or
 // mode needs no change here. The connection is watched all the time: a radio whose own transmission upsets the USB
 // link is found again by itself, and the unsaved changes go back on the radio.
@@ -12,7 +12,7 @@ import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, CABLES, browse
 	probe, serialApi, serialSupported } from "./flasher/link.js";
 import { page } from "./i18n.js";
 import { TuneRadio, KIND, MODE, ST, BATT, BATT_MV_MAX, BATT_SPAN_MV, DEV_MAX, FREQ_MAX, GAIN_MAX, MAX_ENTRIES, NAME_LEN,
-	REF_TRIM_MAX, VALUE_MAX, battRange, cleanName, encodeRecord, gridKhz, owner, toWords, valueAt } from "./tune-radio.js";
+	REF_TRIM_MAX, VALUE_MAX, battRange, cleanName, gridKhz, toWords, valueAt } from "./tune-radio.js";
 import { bandInfo, db, grade, mhzText, neighborSlope, parseMhz, parseReading, parseWatts, suggestDrive,
 	trimHz } from "./tune-math.js";
 
@@ -42,7 +42,7 @@ const S = {
 	conn: "idle",		// idle, connecting, on, lost
 	stream: null, radio: null, probe: null, id: null, own: 0, back: null,
 	core: null,		// the core view's facts (tune-radio.js parseCore)
-	area: null,		// the tune area, null where nothing can be stored
+	store: false,		// the radio saves trims (a settings ring of its own)
 	saved: [],		// the record in force on the radio
 	work: [],		// what the radio runs now: saved plus unsaved changes
 	factory: new Map(),	// kHz -> each level's factory drive there
@@ -102,7 +102,6 @@ function errorText(e) {
 		return t("tools.tune.err.no_tx", { why });
 	}
 	if (e?.tuneStep === "verify") return t("tools.tune.err.verify");
-	if (e?.tuneStep === "foreign") return t("tools.tune.err.foreign");
 	if (e?.tuneStep) return t("tools.tune.err.step", { step: t(`tools.tune.step.${e.tuneStep}`) });
 	switch (e?.status) {
 	case ST.REFUSED: return t("tools.tune.err.refused");
@@ -166,7 +165,7 @@ async function connect() {
 		const p = await probe(link);
 		if (!p) throw new Error(t("tools.tune.err.not_radio"));
 		await start(stream, p);
-		status(S.area ? t("tools.tune.status.connected") : t("tools.tune.err.no_store"), S.area ? "ok" : "bad");
+		status(S.store ? t("tools.tune.status.connected") : t("tools.tune.err.no_store"), S.store ? "ok" : "bad");
 	} catch (e) {
 		status(errorText(e), "bad");
 		await disconnect(false);
@@ -181,18 +180,13 @@ async function start(stream, p) {
 	S.stream = stream;
 	S.probe = p;
 	S.id = { board: p.board, uid: p.chip?.uid || "" };
-	S.own = owner(p.board, S.id.uid);
 	S.radio = new TuneRadio(new Link(stream));
 	S.core = await S.radio.core();
 	if (!S.core.built) throw new Error(t("tools.tune.err.no_feature"));
 	if (!txBands().length || !S.core.levels) throw new Error(t("tools.tune.err.no_bands"));
-	S.area = await S.radio.area();
-	S.saved = [];
-	if (S.area) {
-		const c = await S.radio.copies(S.area, S.own);
-		S.saved = c.record?.entries || [];
-		await S.radio.load();	// live words left from an earlier visit give way to what is stored
-	}
+	S.store = await S.radio.canSave();
+	// Live words left from an earlier visit give way to what is stored
+	S.saved = S.store ? await S.radio.stored() : [];
 	S.work = clone(S.saved);
 	S.ref = await S.radio.refTrim().catch(() => null);
 	S.conn = "on";
@@ -272,11 +266,8 @@ async function resume({ stream, probe: p }) {
 	try {
 		await op(async () => {
 			S.core = await S.radio.core();
-			if (S.area) {
-				const c = await S.radio.copies(S.area, S.own);
-				S.saved = c.record?.entries || [];
-			}
-			await S.radio.setWords(liveWords());
+			if (S.store) S.saved = await S.radio.stored();
+			await S.radio.setWords(liveWords());	// the unsaved changes back on the radio
 			await visit(activeKhz());
 		});
 		status(wasSaving ? t("tools.tune.status.back_saving") : t("tools.tune.status.back"), wasSaving ? "bad" : "ok");
@@ -638,7 +629,7 @@ function setDrive(level, delta) {
 // ---- save, discard, restore
 
 async function saveAll() {
-	if (!S.area || S.busy) return;
+	if (!S.store || S.busy) return;
 	if (S.tx) await stopTx();
 	const entries = clone(S.work);
 	S.busy = "save";
@@ -647,13 +638,9 @@ async function saveAll() {
 	render();
 	try {
 		await op(async () => {
-			const c = await S.radio.copies(S.area, S.own);
-			const copies = await S.radio.save(S.area, c.at, encodeRecord(c.next, S.own, entries));
-			const after = await S.radio.copies(S.area, S.own);
-			S.saved = after.record?.entries || [];
-			if (canon(S.saved) !== canon(entries)) throw Object.assign(new Error("verify"), { tuneStep: "verify" });
+			S.saved = await S.radio.save(entries, (a, b) => canon(a) === canon(b));
 			S.work = clone(S.saved);
-			status(copies === 3 ? t("tools.tune.status.saved") : t("tools.tune.err.one_copy"), copies === 3 ? "ok" : "bad");
+			status(t("tools.tune.status.saved"), "ok");
 		});
 	} catch (e) { /* shown, or lost: the record in force before still is */ }
 	S.saving = false;
@@ -666,7 +653,7 @@ async function discard() {
 	S.work = clone(S.saved);
 	S.targets.clear();
 	await quietly(op(async () => {
-		if (S.area) await S.radio.load();
+		if (S.store) await S.radio.load();
 		else await S.radio.setWords([]);
 		status(t("tools.tune.status.discarded"), "ok");
 	}));
@@ -785,7 +772,7 @@ function render() {
 	const d = known && dirty();
 	el.dirty.hidden = !d;
 	el.save.hidden = el.discard.hidden = !known || (!d && S.busy !== "save");
-	el.save.disabled = !on || !!S.busy || !S.area || !d;
+	el.save.disabled = !on || !!S.busy || !S.store || !d;
 	el.discard.disabled = !on || !!S.busy;
 	el.save.textContent = S.busy === "save" ? t("tools.tune.saving") : t("tools.tune.save");
 	el.lost.hidden = !lostNow;
@@ -1214,8 +1201,8 @@ function renderSaved() {
 		});
 	el.savedBody.replaceChildren(...rowsHtml);
 	el.export.disabled = !S.saved.length && !S.ref;
-	el.import.disabled = !S.area;
-	el.clear.disabled = !S.area || (!S.saved.length && !S.work.length && !S.ref);
+	el.import.disabled = !S.store;
+	el.clear.disabled = !S.store || (!S.saved.length && !S.work.length && !S.ref);
 }
 
 // ---- wiring

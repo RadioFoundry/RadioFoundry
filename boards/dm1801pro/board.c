@@ -169,9 +169,8 @@ static void io_init(void)
 // own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware codeplug's 64 KB
 // "EEPROM" image sits at 0x700000, the settings ring and sector journal after it, optional satellite snapshots at
 // 0x71B000..0x71DFFF, the stub write-test sectors at 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at
-// 0x720000 (where the DMR ID database is read too), the native codeplug in the last 1 MB, then radio tuning in
-// 0xFFC000..0xFFDFFF. The last 2 sectors are in no area (hardware-dm1801pro.md 6.1). The factory calibration is read
-// only, so the open-firmware CPS gets no calibration window
+// 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory calibration is
+// read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
@@ -184,9 +183,7 @@ static const hal_flash_map_t flash_map = {
 	.calibration_addr = 0,
 	.calibration_size = 0,
 	.native_addr = 0xF00000u,
-	.native_size = 0x0FC000u,	// then radio tuning; the last 2 sectors are in no area
-	.tune_addr = 0xFFC000u,		// docs/spec/radio-tune.md 1
-	.tune_owned = true,
+	.native_size = 0x100000u,
 };
 static const hrc_flash_cfg_t flash_cfg = {
 	.cs_pin = PIN_FLASH_CS,

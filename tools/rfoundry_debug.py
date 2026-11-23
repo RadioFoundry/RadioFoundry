@@ -158,9 +158,10 @@ APRS_FIELDS = {name: i for i, name in enumerate(
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
-STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM, STORAGE_OP_TUNE_WRITE, STORAGE_OP_TUNE_LOAD = range(5)
-TUNE_CHUNK = 60                     # TUNE_WRITE data bytes per request (the request limit less op, copy, offset)
-TUNE_REFUSED_TX, TUNE_REFUSED_FOREIGN = 1, 2    # TUNE_WRITE's reason after a REFUSED status
+(STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM, STORAGE_OP_TUNE_PUT, STORAGE_OP_TUNE_LOAD, STORAGE_OP_TUNE_SAVE,
+ STORAGE_OP_TUNE_CLEAR, STORAGE_OP_TUNE_GET) = range(8)
+TUNE_ENTRY = 8                      # bytes per radio tuning entry (docs/spec/radio-tune.md 3)
+TUNE_PER_REQUEST = 7                # entries a TUNE_PUT or TUNE_GET carries
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
  PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN, PROBE_PIN_PWM) = range(15)
@@ -740,36 +741,42 @@ class DebugLink:
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
 
     # ── radio tuning (CONFIG_RADIO_TUNE; docs/spec/radio-tune.md) ──
-    def tune_area(self):
-        """(address, erase unit) of the tune area's two copies (STORAGE INFO), or None in a build without one"""
-        _, r = self.request(STORAGE, bytes([STORAGE_OP_INFO]))
-        if len(r) < 34:
-            return None
-        addr, unit = struct.unpack_from("<II", r, 26)
-        return (addr, unit) if addr else None
+    def _tune(self, op, payload=b""):
+        """A STORAGE radio tuning operation: the entries in the RAM table after it. UNAVAILABLE without a settings ring;
+        BUSY when a save failed (the record before stays in force)"""
+        return self.request(STORAGE, bytes([op]) + payload)[1][0]
 
-    def tune_write(self, copy, record):
-        """Write one copy (0 A, 1 B) of a whole record, commit word included (STORAGE TUNE_WRITE): the first chunk erases
-        the copy; the commit word goes last, so a copy cut short is never valid. REFUSED while the radio transmits, and
-        when the tune area holds data that isn't a tune copy (nothing is erased then)"""
-        record = bytes(record)
-        body, commit = record[:-4], record[-4:]
-        try:
-            for off in range(0, len(body), TUNE_CHUNK):
-                self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, off) + body[off:off + TUNE_CHUNK])
-            self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, len(body)) + commit)
-        except DebugLinkError as e:
-            if e.status == ST_REFUSED and e.data[:1] == bytes([TUNE_REFUSED_FOREIGN]):
-                raise DebugLinkError("the tune area holds other data (another firmware's settings may be kept there): "
-                                     "nothing was written", e.status, e.data) from None
-            if e.status == ST_REFUSED and e.data[:1] == bytes([TUNE_REFUSED_TX]):
-                raise DebugLinkError("the radio is transmitting: try again after the transmission",
-                                     e.status, e.data) from None
-            raise
+    def tune_put(self, entries):
+        """Put the entries (8 bytes each, radio-tune.md 3) in the RAM table in place of what it holds (STORAGE
+        TUNE_PUT): live at once, saved only by tune_save. Returns the entries the table kept"""
+        entries = [bytes(e) for e in entries]
+        n = self._tune(STORAGE_OP_TUNE_PUT, b"\x01")
+        for i in range(0, len(entries), TUNE_PER_REQUEST):
+            n = self._tune(STORAGE_OP_TUNE_PUT, b"\x00" + b"".join(entries[i:i + TUNE_PER_REQUEST]))
+        return n
+
+    def tune_get(self):
+        """The RAM table as entries (STORAGE TUNE_GET), as a save writes them"""
+        out, n = [], None
+        while n is None or len(out) < n:
+            _, r = self.request(STORAGE, bytes([STORAGE_OP_TUNE_GET, len(out)]))
+            n, body = r[0], r[1:]
+            if not body:
+                break
+            out += [body[k:k + TUNE_ENTRY] for k in range(0, len(body), TUNE_ENTRY)]
+        return out
+
+    def tune_save(self):
+        """Save the RAM table as the record in the settings ring (STORAGE TUNE_SAVE)"""
+        return self._tune(STORAGE_OP_TUNE_SAVE)
 
     def tune_load(self):
-        """Load the record in force into the radio's RAM table (STORAGE TUNE_LOAD): the copies found valid, bit 0 A, bit 1 B"""
-        return self.request(STORAGE, bytes([STORAGE_OP_TUNE_LOAD]))[1][0]
+        """Load the saved record into the RAM table again, undoing live tries (STORAGE TUNE_LOAD)"""
+        return self._tune(STORAGE_OP_TUNE_LOAD)
+
+    def tune_clear(self):
+        """Clear every trim: the RAM table emptied and an empty record saved (STORAGE TUNE_CLEAR)"""
+        return self._tune(STORAGE_OP_TUNE_CLEAR)
 
     TUNE_SET_WORDS = 15     # words a request holds: the 64-byte request less op, first and total
 

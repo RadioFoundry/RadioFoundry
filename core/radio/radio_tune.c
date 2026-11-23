@@ -5,6 +5,7 @@
 #include "board.h"
 #include "radio/radio_tune.h"
 #include "storage/storage.h"
+#include "settings/settings.h"
 
 #if CONFIG_RADIO_TUNE
 
@@ -158,9 +159,16 @@ void radio_tune_counts(uint8_t *nw, uint8_t *nn)
 	*nn = n_names;
 }
 
-// --- the record ---
+// --- the record (radio-tune.md 3): owner u32, then the entries; one slot of the settings ring ---
 
-// Who a record belongs to: this board, then this chip's UID (a board that can't tell its UID: the board alone)
+static void put16(uint8_t *p, uint16_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+}
+
+// Who a record belongs to: this board, then this chip's UID (a board that can't tell its UID: the board alone). A ring
+// copied to another radio (a flash image restored onto it) brings its settings, never this radio's trims
 static uint32_t owner(void)
 {
 	hal_chip_t c;
@@ -172,111 +180,133 @@ static uint32_t owner(void)
 	return crc;
 }
 
-// The copy at addr into r: its seq when it is whole and ours, else 0 (a record never has seq 0)
-static uint32_t read_copy(uint32_t addr, uint8_t *r)
+// One entry into the table, live at once (a reader sees the table grow, never a torn word). An entry the radio can't
+// use is left out: a drive trim measured against another factory drive, a level or band the radio no longer has, a
+// full table
+static void add(const uint8_t *e)
 {
-	if (!board.flash->read(addr, r, RADIO_TUNE_HDR) || get32(r) != RADIO_TUNE_MAGIC || r[8] != RADIO_TUNE_VERSION ||
-	    r[9] > RADIO_TUNE_ENTRIES || get32(r + 4) == 0u || get32(r + 12) != owner()) {
-		return 0;
+	uint32_t kind = e[0] >> 4, sel = e[0] & 0xFu, khz = (uint32_t)(e[2] | e[3] << 8) * 25u;
+	int32_t v = (int16_t)(e[4] | e[5] << 8);
+	uint8_t nw = n_words, nn = n_names;
+	if (kind == RADIO_TUNE_NAME) {
+		if (nn < RADIO_TUNE_NAMES && e[1] < board_band_count() && e[1] < 16u && board.bands[e[1]].tx &&
+		    sel < board.power_count && e[2] != 0) {
+			names[nn].band_level = (uint8_t)(e[1] << 4 | sel);
+			memcpy(names[nn].name, e + 2, RADIO_TUNE_NAME_LEN);
+			names[nn].name[RADIO_TUNE_NAME_LEN] = 0;
+			__atomic_signal_fence(__ATOMIC_SEQ_CST);	// names are plain memory: filled before the count says so
+			n_names = (uint8_t)(nn + 1u);
+		}
+		return;
 	}
-	uint32_t n = RADIO_TUNE_HDR + r[9] * RADIO_TUNE_ENTRY;
-	if (!board.flash->read(addr + RADIO_TUNE_HDR, r + RADIO_TUNE_HDR, n + 8u - RADIO_TUNE_HDR) ||
-	    storage_crc32(0, r, n) != get32(r + n) || get32(r + n + 4u) != 0u) {
-		return 0;
+	if (nw == RADIO_TUNE_WORDS || v > 4095 || v < -4095) {
+		return;
 	}
-	return get32(r + 4);
+	if (kind == RADIO_TUNE_BATT) {
+		if (sel <= RADIO_TUNE_BATT_FULL && board_has_battery()) {
+			words[nw] = RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, sel, v);
+			n_words = (uint8_t)(nw + 1u);
+		}
+		return;
+	}
+	if (kind > RADIO_TUNE_FREQ || sel > 7u || board_tx_band(khz * 1000u) < 0 ||
+	    (kind == RADIO_TUNE_DRIVE && (level_drive(khz * 1000u, (uint8_t)sel) != (uint16_t)(e[6] | e[7] << 8) ||
+					  level_drive(khz * 1000u, (uint8_t)sel) == 0u))) {
+		return;
+	}
+	words[nw] = RADIO_TUNE_WORD(khz, kind, sel, v);
+	n_words = (uint8_t)(nw + 1u);
 }
 
-static void take(const uint8_t *r)
+static void empty(void)
 {
-	uint8_t nw = 0, nn = 0;
-	// Readers on other tasks see an empty table while it fills, never old and new words mixed
 	n_words = 0;
 	n_names = 0;
-	__atomic_signal_fence(__ATOMIC_SEQ_CST);	// names are plain memory: kept between the two counts' stores
-	for (uint8_t i = 0; r != NULL && i < r[9]; i++) {
-		const uint8_t *e = r + RADIO_TUNE_HDR + i * RADIO_TUNE_ENTRY;
-		uint32_t kind = e[0] >> 4, sel = e[0] & 0xFu, khz = (uint32_t)(e[2] | e[3] << 8) * 25u;
-		int32_t v = (int16_t)(e[4] | e[5] << 8);
-		if (kind == RADIO_TUNE_NAME) {
-			if (nn < RADIO_TUNE_NAMES && e[1] < board_band_count() && e[1] < 16u && board.bands[e[1]].tx &&
-			    sel < board.power_count && e[2] != 0) {
-				names[nn].band_level = (uint8_t)(e[1] << 4 | sel);
-				memcpy(names[nn].name, e + 2, RADIO_TUNE_NAME_LEN);
-				names[nn].name[RADIO_TUNE_NAME_LEN] = 0;
-				nn++;
-			}
-			continue;
-		}
-		if (kind == RADIO_TUNE_BATT) {
-			if (nw < RADIO_TUNE_WORDS && sel <= RADIO_TUNE_BATT_FULL && v <= 4095 && v >= -4095 && board_has_battery()) {
-				words[nw++] = RADIO_TUNE_WORD(0u, RADIO_TUNE_W_BATT, sel, v);
-			}
-			continue;
-		}
-		// A drive trim measured against another factory drive, or a level or band the radio no longer has, is left out
-		if (nw == RADIO_TUNE_WORDS || sel > 7u || v > 4095 || v < -4095 || board_tx_band(khz * 1000u) < 0 ||
-		    (kind == RADIO_TUNE_DRIVE && (level_drive(khz * 1000u, (uint8_t)sel) != (uint16_t)(e[6] | e[7] << 8) ||
-						  level_drive(khz * 1000u, (uint8_t)sel) == 0u))) {
-			continue;
-		}
-		words[nw++] = RADIO_TUNE_WORD(khz, kind, sel, v);
-	}
-	__atomic_signal_fence(__ATOMIC_SEQ_CST);
-	n_names = nn;
-	n_words = nw;
 }
 
-// Each unit blank, or a tune copy: a record's magic at its start, whole or cut short by a lost save, from this radio
-// or not. Anything else may be another firmware's data, and a save would erase it. Only for a tune area the board
-// doesn't own: in its own flash every byte is ours
-bool radio_tune_area_ours(uint8_t *buf, uint32_t cap)
+bool radio_tune_put(bool start, const uint8_t *e, uint8_t n)
 {
-	const hal_flash_map_t *m = storage_map();
-	if (m == NULL || m->tune_addr == 0u || board.flash == NULL || cap < 4u) {
-		return false;
+	if (start) {
+		empty();
 	}
-	for (uint32_t u = 0; u < HAL_FLASH_TUNE_UNITS; u++) {
-		uint32_t a = m->tune_addr + u * board.flash->erase_size;
-		if (!board.flash->read(a, buf, 4u)) {
-			return false;
-		}
-		if (get32(buf) == RADIO_TUNE_MAGIC) {
-			continue;
-		}
-		for (uint32_t off = 0; off < board.flash->erase_size; off += cap) {
-			uint32_t n = board.flash->erase_size - off < cap ? board.flash->erase_size - off : cap;
-			if (!board.flash->read(a + off, buf, n)) {
-				return false;
-			}
-			for (uint32_t i = 0; i < n; i++) {
-				if (buf[i] != 0xFFu) {
-					return false;
-				}
-			}
-		}
+	for (uint8_t i = 0; i < n; i++) {
+		add(e + i * RADIO_TUNE_ENTRY);
 	}
 	return true;
 }
 
-uint8_t radio_tune_load(void)
+uint8_t radio_tune_get(uint8_t i, uint8_t *e)
 {
-	const hal_flash_map_t *m = storage_map();
-	if (m == NULL || m->tune_addr == 0u || board.flash == NULL || board.radio == NULL) {
-		return 0;
+	uint8_t nw = n_words, nn = n_names;
+	memset(e, 0, RADIO_TUNE_ENTRY);
+	if (i < nw) {
+		uint32_t w = words[i];
+		uint32_t kind = W_KIND(w), sel = W_SEL(w);
+		if (kind == RADIO_TUNE_W_BATT) {
+			e[0] = (uint8_t)(RADIO_TUNE_BATT << 4 | sel);
+		} else {
+			uint32_t khz = (uint32_t)W_KHZ(w);
+			e[0] = (uint8_t)(kind << 4 | sel);
+			put16(e + 2, (uint16_t)(khz / 25u));
+			if (kind == RADIO_TUNE_DRIVE) {
+				put16(e + 6, level_drive(khz * 1000u, (uint8_t)sel));	// the factory drive it applies to now
+			}
+		}
+		put16(e + 4, (uint16_t)(int16_t)W_VAL(w));
+	} else if (i < nw + nn) {
+		const name_t *m = &names[i - nw];
+		e[0] = (uint8_t)(RADIO_TUNE_NAME << 4 | (m->band_level & 0xFu));
+		e[1] = (uint8_t)(m->band_level >> 4);
+		memcpy(e + 2, m->name, RADIO_TUNE_NAME_LEN);
 	}
-	uint8_t *r = storage_buffer_acquire();
-	if (r == NULL) {
-		return RADIO_TUNE_LOAD_BUSY;	// a save or a CPS write holds the buffer: the table stays, the host tries again
+	return (uint8_t)(nw + nn);
+}
+
+// The payload from the table: owner, then each entry (radio_tune_get's)
+static uint16_t fill(uint8_t *p, uint16_t cap)
+{
+	uint8_t n = (uint8_t)(n_words + n_names), max = (uint8_t)((cap - 4u) / RADIO_TUNE_ENTRY);
+	uint32_t own = owner();
+	memcpy(p, &own, 4);	// little endian, as the radio and the host are
+	n = n < max ? n : max;
+	for (uint8_t i = 0; i < n; i++) {
+		radio_tune_get(i, p + 4u + i * RADIO_TUNE_ENTRY);
 	}
-	// Copy A at the buffer's start, copy B after it (the shared buffer is a sector; a record is under 300 bytes)
-	uint8_t *rb = r + RADIO_TUNE_HDR + RADIO_TUNE_ENTRIES * RADIO_TUNE_ENTRY + 8u;
-	storage_lock();
-	uint32_t sa = read_copy(m->tune_addr, r), sb = read_copy(m->tune_addr + board.flash->erase_size, rb);
-	storage_unlock();
-	take(sb != 0u && (sa == 0u || (int32_t)(sb - sa) > 0) ? rb : sa != 0u ? r : NULL);
-	storage_buffer_release();
-	return (uint8_t)((sa != 0u ? 1u : 0u) | (sb != 0u ? 2u : 0u));
+	return (uint16_t)(4u + n * RADIO_TUNE_ENTRY);
+}
+
+static void take(const uint8_t *p, uint16_t n)
+{
+	uint32_t own;
+	if (n < 4u) {
+		return;
+	}
+	memcpy(&own, p, 4);
+	if (own != owner()) {
+		return;	// another radio's trims: none here
+	}
+	for (uint16_t off = 4u; off + RADIO_TUNE_ENTRY <= n; off += RADIO_TUNE_ENTRY) {
+		add(p + off);
+	}
+}
+
+void radio_tune_load(void)
+{
+	empty();
+	if (board.radio != NULL) {
+		(void)settings_tune_load(take);
+	}
+}
+
+bool radio_tune_save(void)
+{
+	return settings_tune_save(fill);
+}
+
+bool radio_tune_clear(void)
+{
+	empty();
+	return settings_tune_save(fill);
 }
 
 #endif
