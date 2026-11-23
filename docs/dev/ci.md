@@ -59,8 +59,9 @@ application region, also put in the job summary on GitHub) and fails when the ap
 images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`; it doesn't pass on
-the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`. The tree
+passes it; with the variable set, a pull request that adds a file without an SPDX header (or a `REUSE.toml` entry)
+fails the job. Without the variable the nightly reports it as a warning.
 
 ## Submodules
 
@@ -181,7 +182,7 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 |---|---|
 | `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
 | `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
-| `reuse` | `reuse lint`, a warning until it passes |
+| `reuse` | `reuse lint`, a warning (the `checks` job fails on it once `RFOUNDRY_CI_REUSE` is `true`) |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
 `BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`

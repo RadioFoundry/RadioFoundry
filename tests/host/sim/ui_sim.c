@@ -304,12 +304,13 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 4, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 4, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
-	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
-	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
-	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
-	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
+	{ "160x120i5", 160, 120, 4, 5, 0, false, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 4, 0, 0, false, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "128x64", 128, 64, 1, 0, 0, false, false, false },	// GD-77 class, mono
+	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG; a frame buffer of the
+	// safe area only (boards/dm32/board.mk GFX_FB_SAFE_AREA)
+	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true, true },
+	{ "240x320", 240, 320, 16, 0, 0, true, false, false },	// 240x320 class at full resolution, standard text size
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -422,6 +423,7 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	(void)fb; (void)pal; (void)y0; (void)y1;
 }
 static void d_backlight(uint8_t p) { (void)p; }
+static void d_fill_insets(uint16_t c) { (void)c; }
 // The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
 static uint16_t bl_raw;
 static void d_backlight_raw(uint16_t v) { bl_raw = v; }
@@ -2612,6 +2614,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.bpp = g->bpp;
 	disp.inset_left = disp.inset_right = g->inset;
 	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	disp.fb_safe_area = g->safe;
+	disp.fill_insets = d_fill_insets;
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;

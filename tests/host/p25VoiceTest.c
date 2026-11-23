@@ -329,6 +329,19 @@ static void testTransmit(void)
 	CHECK(!running, "a transmission started the stream with P25 off");
 }
 
+// A beep's own stream left the speaker route on and the transmission took the running stream over (#705): the
+// first block gives the route back
+static void testRouteTakeover(void)
+{
+	begin();
+	spk_on = true;		// the beep's callback routed the speaker
+	p25VoiceTx(true);
+	block();
+	CHECK(!spk_on, "the beep's route left on after the takeover");
+	p25VoiceTx(false);
+	p25VoiceEnd();
+}
+
 int main(void)
 {
 	p25VoiceInit(&audio);
@@ -338,6 +351,7 @@ int main(void)
 	testShortCallAndNewCall();
 	testMixerAndTx();
 	testTransmit();
+	testRouteTakeover();
 	printf("p25VoiceTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

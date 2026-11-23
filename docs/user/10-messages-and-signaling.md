@@ -134,6 +134,9 @@ range.
 Your radio answers radio checks from others while **Settings > Connections > Answer radio checks** is on, the default.
 An answer is a short transmission the radio makes without you pressing PTT; turn the setting off if you don't want that.
 
+Radio checks work both ways with commercial DMR portables. Radio checks between a newer and an older RadioFoundry
+build get no answer until both radios are updated.
+
 ## Registration (ARS) and location (LRRP)
 
 ARS registers the radio with a presence server at power-up and after a channel change. It is off until a server ID is

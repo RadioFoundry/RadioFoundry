@@ -287,27 +287,84 @@ int dmrDataBuildCSBK(const uint8_t csbk[10], dmrBurst_t *out)
 	return 1;
 }
 
-// Call alert and radio check: target ID in bytes 4-6, source in 7-9. The radio check
-// answer is the request echoed back with byte 3 cleared, so its first ID is the radio answering
+uint8_t dmrDataRadioCheckKind(const uint8_t csbk[10], uint32_t own, uint32_t *peer)
+{
+	uint32_t first = getId(&csbk[4]);
+	uint32_t second = getId(&csbk[7]);
+	bool bit7 = (csbk[3] & 0x80) != 0;
+
+	// Octet 3 other than bit 7 set: another service on the opcode, not a radio check (never echoed as an answer)
+	if (((csbk[0] & 0x3F) != DMR_CSBKO_RADIO_CHECK) || ((csbk[3] & 0x7F) != 0) || (own == 0) || (first == second))
+	{
+		return 0;
+	}
+	if (csbk[1] == DMR_FID_MOTOROLA)
+	{
+		// Checker first in both: a request is to the second radio, an answer to the first
+		if (!bit7 && (second == own))
+		{
+			*peer = first;
+			return DMR_RC_REQUEST;
+		}
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_ANSWER;
+		}
+	}
+	else if (csbk[1] == DMR_FID_ETSI)
+	{
+		if (bit7 && (first == own))
+		{
+			*peer = second;
+			return DMR_RC_REQUEST;
+		}
+		if (!bit7 && ((first == own) || (second == own)))
+		{
+			*peer = (first == own) ? second : first;// the request echoed, or the IDs swapped (to us from the checked radio)
+			return DMR_RC_ANSWER;
+		}
+	}
+	return 0;
+}
+
+void dmrDataBuildRadioCheck(uint32_t dst, uint32_t src, bool etsi, uint8_t out[10])
+{
+	memset(out, 0, 10);
+	out[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// last block
+	out[1] = etsi ? DMR_FID_ETSI : DMR_FID_MOTOROLA;
+	out[3] = etsi ? 0x80 : 0x00;
+	putId(&out[4], etsi ? dst : src);
+	putId(&out[7], etsi ? src : dst);
+}
+
+uint32_t dmrDataRadioCheckDst(const uint8_t csbk[10])
+{
+	return getId((csbk[1] == DMR_FID_MOTOROLA) ? &csbk[7] : &csbk[4]);
+}
+
+// Call alert: target ID in octets 4-6, source in 7-9; the ack swaps them. A radio check answer is the request echoed
+// with octet 3 bit 7 flipped, in both forms
 int dmrDataBuildCSBKAnswer(const uint8_t *csbk, uint32_t src, dmrBurst_t *out)
 {
 	uint8_t opcode = csbk[0] & 0x3F;
 	uint8_t buf[10];
-
-	if (((csbk[1] != DMR_FID_ETSI) && (csbk[1] != DMR_FID_MOTOROLA)) || (getId(&csbk[4]) != src) || (getId(&csbk[7]) == src))
-	{
-		return 0;
-	}
+	uint32_t peer;
 
 	memcpy(buf, csbk, 10);
 	buf[0] = 0x80;// Last Block, not protected
 
-	if ((opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] == 0x80))
+	if (opcode == DMR_CSBKO_RADIO_CHECK)
 	{
+		if (dmrDataRadioCheckKind(csbk, src, &peer) != DMR_RC_REQUEST)
+		{
+			return 0;
+		}
 		buf[0] |= DMR_CSBKO_RADIO_CHECK;
-		buf[3] = 0x00;
+		buf[3] ^= 0x80;
 	}
-	else if (opcode == DMR_CSBKO_CALL_ALERT)
+	else if ((opcode == DMR_CSBKO_CALL_ALERT) && ((csbk[1] == DMR_FID_ETSI) || (csbk[1] == DMR_FID_MOTOROLA)) &&
+			(getId(&csbk[4]) == src) && (getId(&csbk[7]) != src))
 	{
 		buf[0] |= DMR_CSBKO_CALL_ALERT_ACK;
 		memcpy(&buf[4], &csbk[7], 3);// to the caller

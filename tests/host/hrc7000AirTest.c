@@ -3,9 +3,10 @@
 // HR_C7000 air interface provider and receive tap (drivers/modem/hrc7000/hrc7000_air.c; docs/spec/modem-hrc7000.md 10)
 // on plain arrays standing in for the modem registers and buffers, with a stub soft modem that records what it is fed:
 // the copy set-up and its undoing, every sample once and in order from the interrupt to the tap and the soft modem,
-// time stamps, overrun and the receiver's restart at the gap, transmit halves per slot boundary with no stale half,
-// idle on underrun, last-chunk padding, the modulation bytes set and put back, abort, the watchdog, suspend / resume,
-// open / close / open, the DMR engine on the same memory after close, and a seeded fuzz of interrupt and task order.
+// time stamps, overrun and the receiver's restart at the gap, the copy set up again after a lost request, transmit
+// halves per slot boundary with no stale half, idle on underrun, last-chunk padding, the modulation bytes set and put
+// back, abort, the watchdog, suspend / resume, open / close / open, the DMR engine on the same memory after close, and
+// a seeded fuzz of interrupt and task order.
 #include <stdio.h>
 #include <string.h>
 #include "modem/hrc7000/hrc7000_air.h"
@@ -613,6 +614,122 @@ static void test_abort_watchdog_suspend(void)
 	CHECK(dmr_set_up() && lock_depth == 0);
 }
 
+// A copy request lost for good (modem-hrc7000.md 3.3): the line stays high and no half ever comes. After 200 ms with no
+// half the poll clears the request, sets the copy up again and counts it; receive goes on at a gap. Not while halves
+// come, while transmitting (no copy), suspended or closed
+static void test_copy_watchdog(void)
+{
+	setup();
+	CHECK(hrc7000_air_open(A, &prof, AIR_FIT_RX | AIR_FIT_TX, on_event, NULL));
+	for (int k = 0; k < 20; k++) {
+		copy_half();
+		now += 5000;
+		hrc7000_air_poll(A);
+	}
+	CHECK(A->st.copy_restarts == 0 && ngot == 20 * HALF && nresets == 1);
+
+	// The request taken but its line left high: no interrupt from here on
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	REG(C7_WORK_MODE) = 0x55;	// to see the set-up written again
+	now += 199000 - 5000;
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 0 && REG(C7_WORK_MODE) == 0x55);
+	now += 2000;
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 1 && copy_set_up() && REG(C7_SYS_INTERP_CLEAR) == (C7_SYS_FM_RX | PHY_RDY));
+	CHECK(lock_depth == 0 && lock_max == 1);
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 1);	// the timer starts over at the set-up
+	REG(C7_SYS_INTERP_LIST) = 0;
+
+	// Receive back: the next half starts the receiver over
+	int resets = nresets, got_before = ngot;
+	for (int k = 0; k < 10; k++) {
+		copy_half();
+		hrc7000_air_poll(A);
+	}
+	CHECK(ngot == got_before + 10 * (int)HALF && nresets == resets + 1 && reset_at[resets] == got_before);
+	CHECK(A->st.copy_restarts == 1 && bad_times == 0);
+
+	// Copy interrupts that yield no half (FM_ADDR_SW naming neither): no proof of receive, so the watchdog still fires
+	uint32_t no_half = A->st.no_half, halves = A->st.halves;
+	for (int k = 0; k < 6; k++) {
+		now += 32000;
+		REG(C7_FM_ADDR_SW) = 0;
+		REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+		hrc7000_air_isr_sys(A);
+		REG(C7_SYS_INTERP_LIST) = 0;
+		hrc7000_air_poll(A);
+		CHECK(A->st.copy_restarts == 1);	// 192 ms since the last half
+	}
+	now += 32000;
+	REG(C7_SYS_INTERP_LIST) = C7_SYS_FM_RX;
+	hrc7000_air_isr_sys(A);
+	REG(C7_SYS_INTERP_LIST) = 0;
+	hrc7000_air_poll(A);
+	CHECK(A->st.no_half == no_half + 7 && A->st.halves == halves && A->st.copy_restarts == 2 && copy_set_up());
+	got_before = ngot;
+	resets = nresets;
+	copy_half();
+	hrc7000_air_poll(A);
+	CHECK(ngot == got_before + (int)HALF && nresets == resets + 1 && A->st.copy_restarts == 2);
+
+	// The task behind (ring full): halves still come, only dropped, so no restart
+	for (int k = 0; k < 10; k++) {
+		copy_half();
+	}
+	hrc7000_air_poll(A);
+	CHECK(A->st.overruns > 0 && A->st.copy_restarts == 2);
+
+	// Transmitting: no copy, so nothing to watch, the slots keep the TX alive
+	air_tx_chunk_t c0 = chunk(0, 144, 0);
+	CHECK(hrc7000_air_tx_queue(A, &c0) && hrc7000_air_tx_begin(A));
+	hrc7000_air_isr_rftx(A);
+	for (int k = 0; k < 12; k++) {
+		slot();
+		if (hrc7000_air_tx_space(A) > 0) {
+			hrc7000_air_tx_queue(A, &c0);
+		}
+		hrc7000_air_poll(A);
+	}
+	CHECK(hrc7000_air_tx_active(A) && A->st.copy_restarts == 2 && A->st.stalls == 0);
+	hrc7000_air_tx_abort(A);
+	CHECK(copy_set_up());
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 2);
+
+	// Suspended: the chip is not in the copy
+	hrc7000_air_suspend(A);
+	REG(C7_WORK_MODE) = 0x55;
+	now += 1000000;
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 2 && REG(C7_WORK_MODE) == 0x55);
+	hrc7000_air_resume(A);
+	now += 150000;
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 2);
+	copy_half();
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 2);
+
+	// Closed: nothing
+	hrc7000_air_close(A, true);
+	now += 1000000;
+	hrc7000_air_poll(A);
+	CHECK(dmr_set_up() && A->st.copy_restarts == 2);
+
+	// The tap too (the glue polls it the same way)
+	CHECK(hrc7000_air_tap_start(A));
+	now += 201000;
+	hrc7000_air_poll(A);
+	CHECK(A->st.copy_restarts == 1 && copy_set_up());
+	copy_half();
+	int16_t tb[HALF];
+	CHECK(hrc7000_air_tap_read(A, tb, HALF) == HALF);
+	hrc7000_air_tap_stop(A);
+	CHECK(dmr_set_up() && lock_depth == 0);
+}
+
 // Close mid-transmission, open again, then the DMR engine on the same memory
 static void test_open_close_dmr(void)
 {
@@ -759,6 +876,7 @@ int main(void)
 	test_tx();
 	test_underrun_and_end();
 	test_abort_watchdog_suspend();
+	test_copy_watchdog();
 	test_open_close_dmr();
 	test_fuzz();
 	printf("hrc7000AirTest: %d checks, %d failures\n", checks, failures);
