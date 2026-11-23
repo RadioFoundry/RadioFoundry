@@ -313,6 +313,55 @@ static void test_battery(void)
 	CHECK(radio_tune_batt(RADIO_TUNE_BATT_GAIN) == -RADIO_TUNE_GAIN_MAX);
 }
 
+// A trim never takes a transmission past its band's edge: a channel at the edge keys at the edge
+static void test_band_edge(void)
+{
+	fresh();
+	uint8_t w[8];
+	put32(w, RADIO_TUNE_WORD(480000u, RADIO_TUNE_FREQ, RADIO_MODE_FM, 1500u));
+	put32(w + 4, RADIO_TUNE_WORD(400000u, RADIO_TUNE_FREQ, RADIO_MODE_FM, (uint32_t)-1500));
+	CHECK(radio_tune_set(0, 2, w, 2));
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 479000000u) > 0);			// inside the band: the trim
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 479999000u) == 1000);		// up to the edge
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 480000000u) == 0);			// on the edge: none up
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 400000500u) == -500);		// down to the lower edge
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 400000000u) == 0);
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 200000000u) == 0);			// in no band
+	CHECK(radio_tune_set(0, 0, w, 0));
+}
+
+// The debug link erases the tune area only when both units are blank or tune copies, never another firmware's data
+static void test_area(void)
+{
+	uint8_t buf[16];			// a small scratch: the check reads a unit in pieces
+	uint8_t x = 0x00;
+	fresh();
+	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// blank
+	trim(RADIO_TUNE_DRIVE, 2, 446000, 10);
+	write_copy(0, 1, true);
+	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// a record and a blank unit
+	write_copy(1, 2, false);
+	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// a save cut short: still a tune copy
+	uid0 = 0x9999u;
+	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// another radio's record: tune data all the same
+	uid0 = 0x1234u;
+	CHECK(sim_flash.write(TUNE + 2u * STORAGE_SECTOR, &x, 1));
+	CHECK(radio_tune_area_ours(buf, sizeof(buf)));		// past the area: not the area's
+	// Other data at the end of a blank unit, at the start of one
+	fresh();
+	CHECK(sim_flash.write(TUNE + 2u * STORAGE_SECTOR - 1u, &x, 1));
+	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
+	fresh();
+	uint8_t cp[4] = { 'C', 'P', 0x01, 0x00 };
+	CHECK(sim_flash.write(TUNE, cp, sizeof(cp)));
+	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
+	// A failed read is no proof of a blank unit
+	fresh();
+	sim_flash_bad_read(TUNE + STORAGE_SECTOR + 100u, 1);
+	CHECK(!radio_tune_area_ours(buf, sizeof(buf)));
+	sim_flash_bad_read(0, 0);
+}
+
 int main(void)
 {
 	test_interpolation();
@@ -322,6 +371,8 @@ int main(void)
 	test_names();
 	test_live();
 	test_battery();
+	test_band_edge();
+	test_area();
 	printf("radioTuneTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

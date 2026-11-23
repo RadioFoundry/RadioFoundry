@@ -160,6 +160,7 @@ APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
 STORAGE_OP_INFO, STORAGE_OP_READ, STORAGE_OP_CLAIM, STORAGE_OP_TUNE_WRITE, STORAGE_OP_TUNE_LOAD = range(5)
 TUNE_CHUNK = 60                     # TUNE_WRITE data bytes per request (the request limit less op, copy, offset)
+TUNE_REFUSED_TX, TUNE_REFUSED_FOREIGN = 1, 2    # TUNE_WRITE's reason after a REFUSED status
 AUDIO_PROBE = 0x10
 (PROBE_STATUS, PROBE_REG_READ, PROBE_REG_WRITE, PROBE_START, PROBE_STOP, PROBE_SAMPLES, PROBE_RAM_READ,
  PROBE_RAM_WRITE, PROBE_WATCH, PROBE_MUSIC, PROBE_MOD, PROBE_RAMFEED, PROBE_PIN_TONE, PROBE_PIN_SCAN, PROBE_PIN_PWM) = range(15)
@@ -749,12 +750,22 @@ class DebugLink:
 
     def tune_write(self, copy, record):
         """Write one copy (0 A, 1 B) of a whole record, commit word included (STORAGE TUNE_WRITE): the first chunk erases
-        the copy; the commit word goes last, so a copy cut short is never valid. REFUSED while the radio transmits"""
+        the copy; the commit word goes last, so a copy cut short is never valid. REFUSED while the radio transmits, and
+        when the tune area holds data that isn't a tune copy (nothing is erased then)"""
         record = bytes(record)
         body, commit = record[:-4], record[-4:]
-        for off in range(0, len(body), TUNE_CHUNK):
-            self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, off) + body[off:off + TUNE_CHUNK])
-        self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, len(body)) + commit)
+        try:
+            for off in range(0, len(body), TUNE_CHUNK):
+                self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, off) + body[off:off + TUNE_CHUNK])
+            self.request(STORAGE, struct.pack("<BBH", STORAGE_OP_TUNE_WRITE, copy, len(body)) + commit)
+        except DebugLinkError as e:
+            if e.status == ST_REFUSED and e.data[:1] == bytes([TUNE_REFUSED_FOREIGN]):
+                raise DebugLinkError("the tune area holds other data (another firmware's settings may be kept there): "
+                                     "nothing was written", e.status, e.data) from None
+            if e.status == ST_REFUSED and e.data[:1] == bytes([TUNE_REFUSED_TX]):
+                raise DebugLinkError("the radio is transmitting: try again after the transmission",
+                                     e.status, e.data) from None
+            raise
 
     def tune_load(self):
         """Load the record in force into the radio's RAM table (STORAGE TUNE_LOAD): the copies found valid, bit 0 A, bit 1 B"""

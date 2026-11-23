@@ -222,6 +222,7 @@ class FakeLink {
 		this.writes = [];
 		this.words = [];
 		this.busyOnce = false;
+		this.foreign = false;	// the radio's check (TUNE_WRITE at offset 0) finds other data in the tune area
 	}
 	async request(cmd, p) {
 		this.sent.push([cmd, ...p]);
@@ -262,6 +263,7 @@ class FakeLink {
 			}
 			if (p[0] === 3) {
 				const copy = p[1], off = p[2] | p[3] << 8, data = p.slice(4);
+				if (off === 0 && this.foreign) throw Object.assign(new Error("refused"), { status: 7, data: new Uint8Array([2]) });
 				this.writes.push([copy, off, data.length]);
 				if (off === 0) this.copies[copy].fill(0xFF);
 				this.copies[copy].set(data, off);
@@ -305,6 +307,13 @@ test("a save writes the copy not in force first, the commit word last, reads eac
 	};
 	await assert.rejects(new TuneRadio(bad).save(area, 0, rec), (e) => e.tuneStep === "verify");
 	assert.ok(bad.writes.every((w) => w[0] === 1), "copy A untouched");
+
+	// Other data in the tune area: the radio refuses the first write, nothing is written and nothing loads
+	const other = new FakeLink();
+	other.foreign = true;
+	await assert.rejects(new TuneRadio(other).save(area, -1, rec), (e) => e.tuneStep === "foreign");
+	assert.deepEqual(other.writes, []);
+	assert.ok(!other.sent.some((s) => s[0] === 0x0F && s[1] === 4), "no TUNE_LOAD");
 });
 
 test("live words go in chunks of 15; each request's total is what was written so far", async () => {

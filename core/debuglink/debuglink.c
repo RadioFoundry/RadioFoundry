@@ -817,11 +817,21 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		if (m->tune_addr == 0u || !storage_ready()) {
 			return status_only(out, DL_ST_UNAVAILABLE);
 		}
+		out[0] = DL_ST_REFUSED;
 		if (radio_get_state() == RS_TX) {
-			return status_only(out, DL_ST_REFUSED);		// no flash erase under a transmission
+			out[1] = DL_TUNE_REFUSED_TX;	// no flash erase under a transmission
+			return 2;
 		}
 		uint32_t a = m->tune_addr + req[1] * board.flash->erase_size;
 		storage_lock();
+		// Before an erase, both units must be blank or tune copies: on some boards the area sits where another
+		// firmware may keep its codeplug, and a save never erases that (out is the check's scratch)
+		if (off == 0u && !radio_tune_area_ours(out, (uint32_t)cap)) {
+			storage_unlock();
+			out[0] = DL_ST_REFUSED;
+			out[1] = DL_TUNE_REFUSED_FOREIGN;
+			return 2;
+		}
 		bool ok = (off != 0u || board.flash->erase(a)) && board.flash->write(a + off, req + 4, n);
 		storage_unlock();
 		return status_only(out, ok ? DL_ST_OK : DL_ST_BUSY);

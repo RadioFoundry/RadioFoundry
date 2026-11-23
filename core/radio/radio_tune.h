@@ -68,6 +68,9 @@ enum { RADIO_TUNE_BATT_GAIN, RADIO_TUNE_BATT_EMPTY, RADIO_TUNE_BATT_FULL };
 // RADIO_TUNE_LOAD_BUSY when the shared storage buffer is taken (nothing loaded)
 #define RADIO_TUNE_LOAD_BUSY	0xFFu
 uint8_t radio_tune_load(void);
+// Whether the debug link may erase the tune area: both units blank or holding a tune copy, never foreign data. The
+// caller holds the storage lock; buf is cap bytes of scratch
+bool radio_tune_area_ours(uint8_t *buf, uint32_t cap);
 // The drive for a transmission: the board's drive for level at hz with the trim applied, clamped. 0 stays 0
 uint16_t radio_tune_drive(uint32_t hz, uint8_t level, uint16_t drive);
 // The deviation trim of mode at hz, permille of the board's own (0: none)

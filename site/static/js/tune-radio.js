@@ -24,6 +24,7 @@ export const BATT_SPAN_MV = 400;	// empty and full at least this far apart, else
 export const CHUNK = 60;		// TUNE_WRITE data bytes per request: the 64-byte request less op, copy, offset
 const WORDS_PER_SET = 15;		// TUNE_SET words per request: the 64-byte request less op, first, total
 export const ST = Object.freeze({ BAD_ARG: 2, BUSY: 3, UNAVAILABLE: 4, REFUSED: 7 });
+const REFUSED_FOREIGN = 2;		// TUNE_WRITE's reason: the tune area holds data that isn't a tune copy
 
 const PTT = 0x07, GET_VIEW = 0x09, RADIO = 0x0A, STORAGE = 0x0F;
 const S_OP = Object.freeze({ INFO: 0, READ: 1, TUNE_WRITE: 3, TUNE_LOAD: 4 });
@@ -277,9 +278,15 @@ export class TuneRadio {
 		return { recs, at, record: at < 0 ? null : recs[at], next: ((seq + 1) >>> 0) || 1 };
 	}
 
+	// Throws with tuneStep "foreign" when the radio finds other data in the tune area: nothing is erased then
 	async writeCopy(copy, rec) {
 		const body = rec.subarray(0, rec.length - 4);
-		const put = (off, data) => this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_WRITE, copy, ...le16(off), ...data]));
+		const put = (off, data) => this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_WRITE, copy, ...le16(off), ...data]))
+			.catch((e) => {
+				if (e?.status === ST.REFUSED && e.data?.[0] === REFUSED_FOREIGN)
+					throw Object.assign(new Error("foreign"), { tuneStep: "foreign", status: e.status });
+				throw e;
+			});
 		for (let off = 0; off < body.length; off += CHUNK) await put(off, body.subarray(off, off + CHUNK));
 		await put(body.length, rec.subarray(rec.length - 4));	// the commit word last: a copy cut short stays invalid
 	}

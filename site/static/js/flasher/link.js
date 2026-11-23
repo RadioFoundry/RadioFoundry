@@ -361,7 +361,8 @@ export class Link {
 				(satelliteOperation === 12 && payload.length >= 6 ?
 					` profiles ${payload[4] + 1}-${payload[4] + payload[5]} of ${payload[3]}` : "");
 			throw Object.assign(new LinkError(`command 0x${cmd.toString(16)}${operation}: status ${reply.payload[0]}`),
-				{ status: reply.payload[0], operation: cmd === CMD.SATELLITE ? payload[0] : undefined });
+				{ status: reply.payload[0], operation: cmd === CMD.SATELLITE ? payload[0] : undefined,
+					data: reply.payload.subarray(1) });
 		}
 		return reply.payload.subarray(1);
 	}

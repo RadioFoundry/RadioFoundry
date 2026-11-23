@@ -102,6 +102,7 @@ function errorText(e) {
 		return t("tools.tune.err.no_tx", { why });
 	}
 	if (e?.tuneStep === "verify") return t("tools.tune.err.verify");
+	if (e?.tuneStep === "foreign") return t("tools.tune.err.foreign");
 	if (e?.tuneStep) return t("tools.tune.err.step", { step: t(`tools.tune.step.${e.tuneStep}`) });
 	switch (e?.status) {
 	case ST.REFUSED: return t("tools.tune.err.refused");

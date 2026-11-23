@@ -43,7 +43,7 @@ without a trim for a level or mode leaves it at the factory value.
 |---|---|---|
 | Drive | offset in the board's drive units | between level 0's factory drive and the top level's at that frequency |
 | Deviation | permille of the board's deviation | ±250 (`RADIO_TUNE_DEV_MAX`) |
-| Frequency | Hz added to the transmit frequency | ±2000 Hz (`RADIO_TUNE_FREQ_MAX`) |
+| Frequency | Hz added to the transmit frequency | ±2000 Hz (`RADIO_TUNE_FREQ_MAX`), and never past the edge of the channel's transmit band |
 | Battery gain | permille added to the battery reading | ±150 (`RADIO_TUNE_GAIN_MAX`) |
 | Battery empty, full | mV added to the board's empty or full voltage | ±1000 mV (`RADIO_TUNE_BATT_MAX`) |
 
@@ -62,6 +62,9 @@ critical thresholds, the transmit refusal and the power-off all use the correcte
 reading moves these protections too, so the clamp is ±15 %. Empty and full move only the charge percentage
 (and the Low battery warning, which follows the percentage). When the moved voltages are less than 400 mV apart
 (`BATT_SPAN_MV`), the radio keeps the board's own.
+
+A frequency trim stops at the edge of the transmit band. A channel 1 kHz inside the top edge with a +1500 Hz trim
+transmits on the edge, and a channel on the edge gets no upward trim.
 
 The frequency trim applies to every transmission the radio core keys, including DMR bursts keyed later in a call. The
 trim is the one of the mode the board transmits in: P25 and NXDN use the DMR trim, since the board keys them in its
@@ -120,7 +123,13 @@ The host saves through the debug link's STORAGE command ([debuglink.md](debuglin
 A power cut or a lost link during step 2 leaves the old record in force in the other copy. A cut during step 4 leaves
 the new record in the first copy. TUNE_WRITE runs under the storage lock and is refused while the radio transmits.
 TUNE_WRITE answers unavailable while the storage region still holds another firmware's data (the region not yet
-claimed, [settings-store.md](settings-store.md)). TUNE_LOAD answers busy while a save or a CPS write holds the shared
+claimed, [settings-store.md](settings-store.md)).
+
+On some boards the tune area sits where another firmware may keep its own data, such as the end of a codeplug. So
+before each erase (offset 0), TUNE_WRITE checks both units. Each unit must be blank or hold a tune copy: the record's
+magic at its start, whole or cut short by a lost save, from this radio or another. Otherwise the radio refuses with
+reason 2 and erases nothing. The page and `rfoundry_debug.py` show that the area holds other data and nothing was
+saved. A storage claim does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
 storage buffer, and the table stays as it was. The host tries again.
 
 To clear every trim, the host saves a record with no entries. The page's Restore factory values also sets the
@@ -140,13 +149,19 @@ the value (bits 19-31, signed): `RADIO_TUNE_WORD(khz, kind, sel, value)`. A batt
 (`RADIO_TUNE_W_BATT`, never a name in RAM) at frequency 0. Live words are not stored. TUNE_LOAD or a
 restart brings back the stored record. Names are not set live: the host saves them.
 
+A RAM word holds the frequency in 100 kHz units, the record in 25 kHz units. A load rounds each record frequency down
+to 100 kHz, so two trims of one kind and level or mode less than 100 kHz apart become two words at the same frequency,
+and the first one found wins. The page puts every trim on a 100 kHz grid (`gridKhz`), so only a hand-made record
+has such a pair.
+
 The view's `tune` key has `live`: 1 when the board has `tx_drive_now`. Then come the battery reading before the gain
 (`battery_raw_mv`) and the board's empty and full voltages, all 0 without a battery. The page works out the gain
 from that reading and a multimeter's, and reads the corrected voltage and charge from the `features` view. Without live drive, a drive change
 reaches the PA at the next key-up, so the page ends the test transmission and keys again with the new words. Frequency,
 deviation and oscillator changes also take effect at key-up, so the page re-keys for those on every board.
 
-The table changes one aligned word at a time. TUNE_SET first shortens the table to the words before the first one it
+The table changes one aligned word at a time, and the words and their count are `volatile`, so each store happens
+where the code puts it. TUNE_SET first shortens the table to the words before the first one it
 replaces, so a reader on another task sees a shorter table, never a torn word. The table then ends after the last word
 written: words past it from an earlier table never come back. A request that starts past the table's end is refused.
 A TUNE_LOAD empties the table before it fills it again.
@@ -167,7 +182,8 @@ A TUNE_LOAD empties the table before it fills it again.
 
 ## 7. Testing
 
-`tests/host/radioTuneTest.c` covers interpolation and the clamps, the copy choice (newest wins, a copy cut before the
+`tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, the tune area check before an erase
+(blank, a record, a cut save, other data, a failed read), the copy choice (newest wins, a copy cut before the
 commit word, a flipped bit, sequence wrap), a record from another radio, stale drive trims, names, live words and
 battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve, the moved empty and full and the gain.
 `site/tests/tune.test.mjs` covers the page's record, CRC, payloads and charge against the same layouts.
