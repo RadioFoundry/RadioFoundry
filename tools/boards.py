@@ -357,6 +357,66 @@ def make_vars(root, board, names, args=()):
     return out
 
 
+CONFIG_RE = re.compile(r"\bCONFIG_([A-Z0-9_]+)\b")
+FEATURE_SOURCE_TOPS = ("core", "drivers", "platform", "hal")
+_SOURCE_TEXTS = {}
+
+
+def makefile_switch_paths(root):
+    """path -> switches the Makefile builds it for: inside an ifeq / ifneq / ifdef on the switch, or on a -$(CONFIG_X)
+    line (continued lines joined). Only paths that exist. tools/affected.py and tools/bringup.py both read it."""
+    with open(os.path.join(root, "Makefile"), encoding="utf-8", errors="replace") as f:
+        text = f.read().replace("\\\n", " ")
+    out = {}
+    stack = []
+    for line in text.splitlines():
+        s = line.strip()
+        if re.match(r"if(n?eq|n?def)\b", s):
+            stack.append(CONFIG_RE.findall(s))
+            continue
+        if s == "endif" and stack:
+            stack.pop()
+            continue
+        sws = [x for frame in stack for x in frame] + re.findall(r"-\$\(CONFIG_([A-Z0-9_]+)\)", s)
+        if not sws:
+            continue
+        for tok in re.findall(r"[A-Za-z0-9_./-]+", s):
+            if "/" in tok and os.path.exists(os.path.join(root, tok)):
+                out.setdefault(tok.rstrip("/"), set()).update(sws)
+    return out
+
+
+def source_texts(root):
+    """path -> text of every C source, header and .mk under core/, drivers/, platform/ and hal/ (read once per root)."""
+    if root not in _SOURCE_TEXTS:
+        out = {}
+        for top in FEATURE_SOURCE_TOPS:
+            for dp, _, fns in os.walk(os.path.join(root, top)):
+                for fn in fns:
+                    if fn.endswith((".c", ".h", ".S", ".mk")):
+                        p = os.path.join(dp, fn)
+                        with open(p, encoding="utf-8", errors="replace") as f:
+                            out[os.path.relpath(p, root)] = f.read()
+        _SOURCE_TEXTS[root] = out
+    return _SOURCE_TEXTS[root]
+
+
+def default_source(root, switch):
+    """A checklist feature's source paths when tests/hil/features.toml gives none: what the Makefile builds for its
+    switch, else the files that name CONFIG_<switch> (core/config.h, which names them all, left out). One rule for
+    both readers: tools/bringup.py hashes these paths to tell when a record needs a re-run, and tools/affected.py
+    selects the feature's HIL tests when one of them changes, so a change that makes a record stale also selects the
+    tests that renew it."""
+    if not switch:
+        return []
+    found = [p for p, s in makefile_switch_paths(root).items() if switch in s]
+    if found:
+        return found
+    texts = source_texts(root)
+    pat = re.compile(r"\bCONFIG_%s\b" % re.escape(switch))
+    return sorted(p for p, t in texts.items() if p != os.path.join("core", "config.h") and pat.search(t))
+
+
 def ld_expr(text, names=None):
     """The value of a linker script constant expression: numbers (hex, decimal, K and M suffixes), + - * / ( ), and the
     symbols in names (the --defsym values and the script's own constants)."""
