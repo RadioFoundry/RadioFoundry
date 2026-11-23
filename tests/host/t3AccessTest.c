@@ -2420,7 +2420,7 @@ static void test_dedicated_uplink(void)
 	setup(T3_OPT_PRIVATE | T3_OPT_DEDICATED_DATA, true);
 	camp_registered(&ms);
 	CHECK(t3_ms_pdata(&ms, T, T3_ID_PDUI, false) && sent_rand(&ms), "request dedicated uplink");
-
+	// The site's grant, captured on air, with the subscriber ID adapted to this fixture.
 	// Captured BSCU-to-CHU grant with the subscriber ID adapted to this fixture.
 	uint8_t hdr[T3_CSBK_BYTES] = { 0x33, 0, 0xFF, 0xF8, OWN >> 16, (OWN >> 8) & 0xFF, OWN & 0xFF,
 				      0xFF, 0xFD, 0x02 };
