@@ -24,6 +24,12 @@
 /tools/release_build.sh @sfowlr
 /tools/build_manual.sh @sfowlr
 /tools/ui_gallery_compare.py @sfowlr
+# what picks a pull request's builds and HIL radios, and what flashes the bench radios and gates their flags
+/tools/affected.py @sfowlr
+/tools/hil_flash.sh @sfowlr
+/tools/hil_flags.py @sfowlr
+/tools/size_budget.py @sfowlr
+/tools/release_version.py @sfowlr
 
 # the toolchain pins (version and SHA-256) and the submodules' sources
 /platform/*/platform.toml @sfowlr
