@@ -1551,6 +1551,14 @@ void ui_svc_name_get(uint8_t which, char out[17])
 		codeplug_boot_text(out, other);
 	else if (which == UI_NAME_BOOT2)
 		codeplug_boot_text(other, out);
+#if CONFIG_YSF
+	else if (which == UI_NAME_YSF_CALL) {
+		ysf_radio_t r;
+
+		ysf_radio_load(&r);	// as stored; "" when the radio name gives it
+		memcpy(out, r.callsign, sizeof r.callsign);
+	}
+#endif
 	else
 		out[0] = '\0';
 }
@@ -1563,6 +1571,19 @@ static void name_job(void *ctx)
 	bool ok;
 	if (job.channel == UI_NAME_RADIO) {
 		ok = codeplug_set_radio_name(job.name);
+#if CONFIG_YSF
+	} else if (job.channel == UI_NAME_YSF_CALL) {
+		// The YSF record (ysf-codeplug.md 1): the callsign, upper case; empty removes it (the radio name gives one)
+		ysf_radio_t r;
+		uint8_t rec[YSF_CP_CALL_LEN];
+		uint16_t key = (uint16_t)(CODEPLUG_KEY_MODE_SET + CODEPLUG_KIND_YSF);
+
+		memset(&r, 0, sizeof r);
+		for (uint8_t i = 0; i < YSF_CP_CALL_LEN && job.name[i]; i++)
+			r.callsign[i] = (char)(job.name[i] >= 'a' && job.name[i] <= 'z' ? job.name[i] - 'a' + 'A' : job.name[i]);
+		ysf_radio_encode(&r, rec);
+		ok = r.callsign[0] ? codeplug_kv_set(key, rec, sizeof rec) : (codeplug_kv_remove(key), true);
+#endif
 	} else {
 		codeplug_boot_text(l1, l2);
 		ok = codeplug_set_boot_text(job.channel == UI_NAME_BOOT1 ? job.name : l1,

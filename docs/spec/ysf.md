@@ -216,7 +216,8 @@ PTT sends the transmit DG-ID. A channel stores both; the channel editor sets one
 
 The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), else the radio name's first
 word when it reads as a callsign (3-10 letters and digits, at least one of each; `ysf_callsign_from_name`). With neither,
-Home says "No callsign" and PTT is refused.
+Home says "No callsign" and PTT is refused. Settings > My radio > YSF callsign writes the record on the radio (text
+entry, letters, digits, `-` and `/`, folded to upper case); saved empty, it removes the record.
 
 ### 5.3 Debug link
 
@@ -303,11 +304,12 @@ debug link, `RADIO_YSF_RID_WEAK` in the radio view. Which boards have a unique I
 
 | Place | Shows |
 |---|---|
-| Settings > My radio > Radio ID | The radio ID; OK says it is made from the chip and can't be edited |
-| Home, on a YSF channel | `RID` and the radio ID in the chips |
+| Settings > My radio > YSF RID | The radio ID; OK says it is made from the chip and can't be edited |
+| Settings > About | `YSF RID:` and the radio ID |
 | Debug link | `ysf.rid`, `ysf.rid_weak` |
 
-A caller's radio ID shows as `ysf.src_rid` on the debug link.
+Home and the last-heard list don't show it: it identifies the radio, not the call, and the owner rarely needs it. A
+caller's radio ID shows as `ysf.src_rid` on the debug link.
 
 ## 7. Choices
 

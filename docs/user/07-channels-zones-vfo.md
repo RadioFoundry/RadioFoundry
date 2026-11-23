@@ -427,8 +427,9 @@ and Wires-X nodes hear it as they hear a Yaesu handheld.
 - It hears DN voice calls with every DG-ID. A call in VW (full rate) or data mode shows on Home but stays silent
   ("Not DN voice: not played").
 - PTT sends with DG-ID 0, your callsign and your radio ID. The callsign is the codeplug's YSF callsign, else the first
-  word of the radio name when it reads as a callsign. Without one, Home says "No callsign" and PTT is refused.
-- Home shows "YSF", the DG-ID PTT sends ("DG-ID 00"), the DG-ID heard and your radio ID ("RX 00 RID K7Q2Z"). During a
+  word of the radio name when it reads as a callsign. Set it in **Settings > My radio > YSF callsign**. Without one,
+  Home says "No callsign" and PTT is refused.
+- Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
   call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. FM's tone and width tiles
   say "FM only: this is YSF".
 - The VFO's DG-IDs can be changed only from a computer for now (`rfoundry_debug.py radio ysf`), and the change lasts
@@ -479,7 +480,7 @@ to tell radios apart, so no two radios may share one. RadioFoundry makes yours f
 different in every radio: it is the same every time the radio starts, after every update and every codeplug write,
 and nothing can change it. It is never in the codeplug, so copying a codeplug to another radio never copies it.
 
-See it in **Settings > My radio > Radio ID**, and on Home on a YSF channel. If it shows a **?** after it, this radio
+See it in **Settings > My radio > YSF RID** and in **Settings > About**. If it shows a **?** after it, this radio
 has no chip ID to make it from and the radio ID comes from your DMR ID and radio name instead: two radios with the same
 codeplug would then share it. Details: [System Fusion, the radio ID](../spec/ysf.md#6-the-radio-id-rid).
 

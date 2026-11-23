@@ -94,6 +94,7 @@
 #endif
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"
+static char sim_names[UI_NAME_COUNT][17];	// the codeplug's names (UI_NAME_*), below
 #endif
 
 #define TICK_MS		50
@@ -974,7 +975,8 @@ void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 }
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
-	strcpy(out, "N0CALL");
+	// The typed one (My radio), else the radio name's
+	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : "N0CALL");
 }
 static radio_view_t view;	// (defined again below: one object)
 // Wires-X: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
@@ -1835,6 +1837,7 @@ static void sim_names_reset(void)
 	strcpy(sim_names[UI_NAME_RADIO], "Q0TEST");
 	strcpy(sim_names[UI_NAME_BOOT1], "Q0TEST");
 	strcpy(sim_names[UI_NAME_BOOT2], "Jamie Thompson");
+	sim_names[UI_NAME_YSF_CALL][0] = '\0';
 }
 void ui_svc_name_get(uint8_t which, char out[17])
 {

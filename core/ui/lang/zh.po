@@ -3065,9 +3065,9 @@ msgid "YSF callsign"
 msgstr "YSF 呼号"
 
 #: core/ui/ui_menus.c
-msgctxt "MYID_LABEL_RADIO_ID"
-msgid "Radio ID"
-msgstr "电台 ID"
+msgctxt "MYID_LABEL_YSF_RID"
+msgid "YSF RID"
+msgstr "YSF RID"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
@@ -3095,6 +3095,11 @@ msgid "Radio: "
 msgstr "电台： "
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALL_CHARS"
+msgid "Letters, digits, - and / only"
+msgstr "仅限字母、数字、- 和 /"
+
+#: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
 msgid "Saved"
 msgstr "已保存"
@@ -3108,11 +3113,6 @@ msgstr "ID 从 1 开始"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "DMR ID 已保存"
-
-#: core/ui/ui_menus.c
-msgctxt "MYID_TOAST_YSF_CALLSIGN_FROM"
-msgid "From the radio name, or the codeplug's YSF callsign"
-msgstr "来自电台名称，或码表中的 YSF 呼号"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_RID_FROM_CHIP"
@@ -3248,6 +3248,11 @@ msgstr "构建： "
 msgctxt "ABOUT_BODY_DATE"
 msgid "Date: "
 msgstr "日期： "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_YSF_RID"
+msgid "YSF RID: "
+msgstr "YSF RID： "
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"

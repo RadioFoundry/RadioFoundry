@@ -151,7 +151,7 @@ static const flow_t flows[] = {
 #if CONFIG_YSF
 	// YSF: the power, the DG-ID heard and our radio ID in the chips, the DG-ID PTT sends on the talk line; a call names
 	// its caller by callsign
-	{ "YSF channel shows its mode", "dlmode:ysf", "", "mode=ysf screen=home shows=YSF shows=DG-ID_00 shows=RID_K7Q2Z hides=No_tone hides=SQ5", 0, false },
+	{ "YSF channel shows its mode", "dlmode:ysf", "", "mode=ysf screen=home shows=YSF shows=DG-ID_00 hides=K7Q2Z hides=No_tone hides=SQ5", 0, false },
 	{ "YSF home: a call", "dlmode:ysf", "ysfrx:SP5WLF,12", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
 	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:SP5WLF,12,o", "screen=home shows=Other_DG-ID:_not_played hides=SP5WLF", 0, false },
 	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:SP5WLF,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
@@ -876,9 +876,14 @@ static const flow_t flows[] = {
 	// back and with none typed leaves it; 0 is refused
 	{ "S DMR ID opens", "", "ok 7 0 ok", "screen=dmr-id shows=DMR_ID", 4, false },
 #if CONFIG_YSF
-	// The YSF callsign and radio ID: shown, never edited (the radio ID is the chip's, docs/spec/ysf.md 6)
+	// The YSF callsign: the radio name's until one is typed; the radio ID: shown, never edited (the chip's,
+	// docs/spec/ysf.md 6), and on About
 	{ "S My radio shows the YSF callsign", "ok 7 0 ok", "down down down down", "screen=dmr-id focus=YSF_callsign shows=N0CALL", 4, false },
-	{ "S My radio shows the YSF radio ID", "ok 7 0 ok", "down down down down down", "screen=dmr-id focus=Radio_ID shows=K7Q2Z", 5, false },
+	{ "S YSF callsign opens text entry", "ok 7 0 ok down down down down", "ok", "screen=text", 1, false },
+	{ "S YSF callsign typed and saved", "ok 7 0 ok down down down down ok", "2 ok",
+	  "screen=dmr-id toast=Saved writes=1 focus=YSF_callsign hides=N0CALL", 2, true },
+	{ "S My radio shows the YSF radio ID", "ok 7 0 ok", "down down down down down", "screen=dmr-id focus=YSF_RID shows=K7Q2Z", 5, false },
+	{ "S About shows the YSF radio ID", "ok 7 0 down ok", "down", "screen=about shows=K7Q2Z", 1, false },
 	{ "S the radio ID is not editable", "ok 7 0 ok down down down down down", "ok", "screen=dmr-id toast=Made_from_this_radio's_chip", 1, false },
 #endif
 	{ "S About from My radio", "", "ok 7 0 down ok", "screen=about shows=Build:", 5, false },

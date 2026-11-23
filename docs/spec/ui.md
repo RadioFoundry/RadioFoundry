@@ -93,7 +93,7 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 - YSF Home names the caller by callsign: "SP5WLF > DG-ID 12", the DG-ID going first when the line is short. A call of
   another DG-ID shows "Other DG-ID: not played", one that isn't DN voice "Not DN voice: not played". The talk line
   shows the DG-ID PTT sends ("DG-ID 00"), or "No callsign" in the warning color while PTT is refused for want of one;
-  the chips show the power, the DG-ID heard and the radio ID ("RX 00 RID K7Q2Z", [ysf.md](ysf.md) 6).
+  the chips show the power and the DG-ID heard ("RX DG-ID 00"). The radio ID is not on Home ([ysf.md](ysf.md) 6.5).
 
 `uiSim --ellipsis` (section 7) lists what is still shortened; `uiSim --layout` fails the build on a middle ellipsis
 with ordinary content.
@@ -229,9 +229,11 @@ instead of OK pressed once per step. The rows shown follow the copy's mode, so a
 - A YSF channel: Mode "YSF", then DG-ID in place of NAC; no TX contact, Own ID or Talkaround (System Fusion names the
   radio by callsign and radio ID). DG-ID shows the sent DG-ID, then the heard one where they differ ("12/00"); OK opens
   it, digits type 0-99, Up and Down step through 0-99, and OK sets both to the value (00 hears every DG-ID).
-- Settings > My radio adds, with `CONFIG_YSF`, two read-only rows: YSF callsign and Radio ID. OK on either only says
-  where it comes from: the radio ID is made from the MCU's unique ID and can't be edited ([ysf.md](ysf.md) 6); a radio
-  ID from the fallback ends in "?".
+- Settings > My radio adds, with `CONFIG_YSF`, two rows. YSF callsign: OK opens text entry (up to 10 characters); OK
+  there writes the YSF record ([ysf-codeplug.md](ysf-codeplug.md) 1), refusing anything but letters, digits, `-` and
+  `/` with a toast; saved empty, the radio name's callsign is used again. YSF RID: read only, OK says it is made from
+  the MCU's unique ID and can't be edited ([ysf.md](ysf.md) 6); a radio ID from the fallback ends in "?". About shows
+  it too ("YSF RID: ").
 - NAC shows the received NAC in hex, then the sent one where they differ ("F7E/293"); RAN the same in decimal. OK opens
   it. NAC: digits type hex digits (up to 3; a fourth starts over), Up and Down step the last one through 0-F (so A-F
   are reached), with none typed they step the whole NAC; BACK takes a digit back. RAN: a spinner 0-63 that also takes

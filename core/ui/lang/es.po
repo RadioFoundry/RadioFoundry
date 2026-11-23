@@ -3063,9 +3063,9 @@ msgid "YSF callsign"
 msgstr "Indicativo YSF"
 
 #: core/ui/ui_menus.c
-msgctxt "MYID_LABEL_RADIO_ID"
-msgid "Radio ID"
-msgstr "ID de radio"
+msgctxt "MYID_LABEL_YSF_RID"
+msgid "YSF RID"
+msgstr "RID YSF"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_LABEL_RADIO_NAME"
@@ -3093,6 +3093,11 @@ msgid "Radio: "
 msgstr "Radio: "
 
 #: core/ui/ui_menus.c
+msgctxt "MYID_TOAST_YSF_CALL_CHARS"
+msgid "Letters, digits, - and / only"
+msgstr "Solo letras, dígitos, - y /"
+
+#: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
 msgid "Saved"
 msgstr "Guardado"
@@ -3106,11 +3111,6 @@ msgstr "ID desde 1"
 msgctxt "MYID_TOAST_SAVED"
 msgid "DMR ID saved"
 msgstr "ID DMR guardado"
-
-#: core/ui/ui_menus.c
-msgctxt "MYID_TOAST_YSF_CALLSIGN_FROM"
-msgid "From the radio name, or the codeplug's YSF callsign"
-msgstr "Del nombre de la radio, o del indicativo YSF del codeplug"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_RID_FROM_CHIP"
@@ -3246,6 +3246,11 @@ msgstr "Compilación: "
 msgctxt "ABOUT_BODY_DATE"
 msgid "Date: "
 msgstr "Fecha: "
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_YSF_RID"
+msgid "YSF RID: "
+msgstr "RID YSF: "
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"

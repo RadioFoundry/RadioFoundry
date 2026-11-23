@@ -1266,19 +1266,14 @@ static void draw_chips(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 	if (v->ch.mode == RADIO_MODE_YSF) {
-		// The same for YSF: the power, the DG-ID heard (00: every one) and our radio ID
+		// The same for YSF: the power and the DG-ID heard (00: every one)
 		if (pw_temp)
 			x = gfx_text(f, x, y, GLYPH_DOT, ui_col.warn);
 		x = gfx_text(f, x, y, ui_power_name(v->power, v->ch.tx_hz), pw_temp ? ui_col.warn : ui_col.fg) + f->w;
 #if CONFIG_YSF
-		char rid[RADIO_YSF_RID_LEN + 1];
-
-		ui_svc_ysf_rid(rid, NULL);
 		sb_init(&b, buf, sizeof buf);
-		sb_str(&b, "RX ");
+		sb_str(&b, "RX DG-ID ");
 		sb_u32(&b, v->ysf.rx_dgid, 2);
-		sb_str(&b, " RID ");
-		sb_str(&b, rid);
 		if (x + gfx_text_width(f, buf) <= w)
 			gfx_text(f, x, y, buf, ui_col.fg);
 #endif

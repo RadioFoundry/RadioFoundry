@@ -21,16 +21,19 @@ void *radio_air_engine_mem(size_t *len)
 #include "ysf/ysf_engine.h"
 #endif
 
-// One block for whichever of them runs
-static union {
+// One block for whichever of them runs, 8-aligned as their users check (a uint64_t member is 4-aligned on some
+// cores: C-SKY's ABI, where the engines then refused the block)
+typedef union {
 #if CONFIG_NXDN
 	nxdn_engine_t nxdn;
 #endif
 #if CONFIG_YSF
 	ysf_engine_t ysf;
 #endif
-	uint64_t align;
-} mem;
+	uint64_t u64;
+} engine_mem_t;
+static engine_mem_t mem __attribute__((aligned(8)));
+_Static_assert(_Alignof(engine_mem_t) <= 8, "the block is aligned to 8 below its members' needs");
 
 void *radio_air_engine_mem(size_t *len)
 {

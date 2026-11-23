@@ -541,7 +541,7 @@ typedef struct {
 void ui_svc_boot_text(char line1[17], char line2[17]);
 // The codeplug's name fields (Settings > My radio): the radio name (8 characters; APRS takes its first word as the
 // callsign) and the two boot screen lines (16 each). Set is a storage job: false while another one is pending
-enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_COUNT };
+enum { UI_NAME_RADIO, UI_NAME_BOOT1, UI_NAME_BOOT2, UI_NAME_YSF_CALL, UI_NAME_COUNT };	// YSF_CALL: CONFIG_YSF
 void ui_svc_name_get(uint8_t which, char out[17]);
 bool ui_svc_name_set(uint8_t which, const char *text);
 

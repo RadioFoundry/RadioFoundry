@@ -4948,7 +4948,11 @@ enum {
 	MY_YSF_CALL, MY_RID,	// read only: what System Fusion sends about this radio (docs/spec/ysf.md 6)
 #endif
 	MY_COUNT };
-static const uint8_t my_names[] = { [MY_NAME] = UI_NAME_RADIO, [MY_BOOT1] = UI_NAME_BOOT1, [MY_BOOT2] = UI_NAME_BOOT2 };
+static const uint8_t my_names[] = { [MY_NAME] = UI_NAME_RADIO, [MY_BOOT1] = UI_NAME_BOOT1, [MY_BOOT2] = UI_NAME_BOOT2,
+#if CONFIG_YSF
+	[MY_YSF_CALL] = UI_NAME_YSF_CALL,
+#endif
+};
 static char my_text[CODEPLUG_NAME_LEN + 1];	// the name being typed, then shown until the codeplug's serial moves on
 static uint8_t my_text_row = MY_COUNT;		// the row my_text belongs to (MY_COUNT: none)
 static uint32_t my_text_serial;
@@ -5005,8 +5009,12 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 	if (i == MY_YSF_CALL) {
 		char call[RADIO_YSF_CALL_LEN + 1];
 
+		// What YSF sends: the one typed here, else the radio name's (shown until a typed one is in the codeplug)
 		str_copy(it->label, sizeof it->label, TR(MYID_LABEL_YSF_CALLSIGN, "YSF callsign"));
-		ui_svc_ysf_callsign(call);
+		if (my_text_row == i && codeplug_serial() == my_text_serial)
+			strcpy(call, my_text);
+		else
+			ui_svc_ysf_callsign(call);
 		sb_str(&b, call[0] != 0 ? call : TR(VALUE_NONE, "None"));
 		return;
 	}
@@ -5015,7 +5023,7 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 		bool weak;
 
 		// The radio ID, this radio's own: made from its chip, never typed (a weak one: no chip ID, may repeat)
-		str_copy(it->label, sizeof it->label, TR(MYID_LABEL_RADIO_ID, "Radio ID"));
+		str_copy(it->label, sizeof it->label, TR(MYID_LABEL_YSF_RID, "YSF RID"));
 		ui_svc_ysf_rid(rid, &weak);
 		sb_str(&b, rid);
 		if (weak)
@@ -5051,6 +5059,21 @@ static const char *dmr_id_body(void)
 #if CONFIG_CHANNEL_EDIT
 static void my_text_kept(void)
 {
+#if CONFIG_YSF
+	if (my_names[my_text_row] == UI_NAME_YSF_CALL) {
+		// A callsign: letters, digits, '-' and '/' (ysf-codeplug.md 1); empty: the radio name's again
+		for (char *p = my_text; *p; p++) {
+			char c = *p >= 'a' && *p <= 'z' ? (char)(*p - 'a' + 'A') : *p;
+
+			if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '/')) {
+				my_text_row = MY_COUNT;
+				ui_toast(TR(MYID_TOAST_YSF_CALL_CHARS, "Letters, digits, - and / only"));
+				return;
+			}
+			*p = c;
+		}
+	}
+#endif
 	my_text_serial = codeplug_serial();	// before the job: the storage task may finish it before we look again
 	if (!ui_svc_name_set(my_names[my_text_row], my_text)) {
 		my_text_row = MY_COUNT;
@@ -5107,10 +5130,6 @@ static void dmr_id_select(uint16_t i, bool hold)
 	if (i >= MY_COUNT)
 		return;
 #if CONFIG_YSF
-	if (i == MY_YSF_CALL) {
-		ui_toast(TR(MYID_TOAST_YSF_CALLSIGN_FROM, "From the radio name, or the codeplug's YSF callsign"));
-		return;
-	}
 	if (i == MY_RID) {
 		ui_toast(TR(MYID_TOAST_RID_FROM_CHIP, "Made from this radio's chip: unique, not editable"));
 		return;
@@ -5120,7 +5139,11 @@ static void dmr_id_select(uint16_t i, bool hold)
 	ui_svc_name_get(my_names[i], my_text);
 	my_text_row = (uint8_t)i;
 	my_text_serial = codeplug_serial() - 1u;	// shown from the codeplug until it is kept
-	ui_text_open(my_text, my_names[i] == UI_NAME_RADIO ? CODEPLUG_RADIO_NAME_LEN : CODEPLUG_NAME_LEN);
+	ui_text_open(my_text, my_names[i] == UI_NAME_RADIO ? CODEPLUG_RADIO_NAME_LEN :
+#if CONFIG_YSF
+		     my_names[i] == UI_NAME_YSF_CALL ? YSF_CP_CALL_LEN :
+#endif
+		     CODEPLUG_NAME_LEN);
 	text_done = my_text_kept;
 #else
 	ui_toast(TR(WHY_TYPING_NOT_IN_BUILD, "Typing: not in this build"));
@@ -5651,6 +5674,20 @@ static const char *about_text(void)
 	sb_str(&b, TR(BODY_RADIO, "Radio: "));
 	sb_str(&b, board.name);
 	sb_chr(&b, '\n');
+#if CONFIG_YSF
+	{
+		// The System Fusion radio ID: made from this radio's chip, never set (docs/spec/ysf.md 6)
+		char rid[RADIO_YSF_RID_LEN + 1];
+		bool weak;
+
+		ui_svc_ysf_rid(rid, &weak);
+		sb_str(&b, TR(ABOUT_BODY_YSF_RID, "YSF RID: "));
+		sb_str(&b, rid);
+		if (weak)
+			sb_chr(&b, '?');
+		sb_chr(&b, '\n');
+	}
+#endif
 #if CONFIG_SUPPORT_INFO
 	about_support(&b);
 #endif
