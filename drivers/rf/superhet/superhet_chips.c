@@ -29,8 +29,8 @@ uint16_t superhet_chip_identify(rfbus_t *bus, bool lo, superhet_chip_t *kind)
 	for (unsigned i = 0; i < ID_TRIES; i++) {
 		id = rfbus_read(bus, REG_ID);
 		*kind = superhet_chip_kind(id, lo);
-		if (*kind != SUPERHET_CHIP_NONE) {
-			break;
+		if (*kind != SUPERHET_CHIP_NONE || i + 1u == ID_TRIES) {
+			break;	// no reset after the last read: nothing reads after it
 		}
 		rfbus_write(bus, REG_PAGE, 0);
 		rfbus_write(bus, REG_ID, ID_RESET);
@@ -92,8 +92,14 @@ bool superhet_chips_init(superhet_chips_t *c, const superhet_chips_cfg_t *cfg)
 	c->main = (superhet_main_t){ 0 };
 	c->lo = (superhet_lo_t){ 0 };
 	c->main_id = superhet_chip_identify(cfg->bus_main, false, &c->main_kind);
+	if (c->main_kind == SUPERHET_CHIP_NONE) {
+		// Not driven whatever the LO is: its ID read once for the diagnostics, no resets
+		c->lo_id = rfbus_read(cfg->bus_lo, REG_ID);
+		c->lo_kind = superhet_chip_kind(c->lo_id, true);
+		return false;
+	}
 	c->lo_id = superhet_chip_identify(cfg->bus_lo, true, &c->lo_kind);
-	if (c->main_kind == SUPERHET_CHIP_NONE || c->lo_kind == SUPERHET_CHIP_NONE) {
+	if (c->lo_kind == SUPERHET_CHIP_NONE) {
 		return false;
 	}
 	init_main(c);
@@ -141,7 +147,9 @@ void superhet_chips_status(superhet_chips_t *c, uint16_t *r67, uint16_t *r65, ui
 {
 	*r67 = rfbus_read(c->cfg->bus_main, BK4819_REG_RSSI);
 	*r65 = rfbus_read(c->cfg->bus_main, BK4819_REG_NOISE);
-	*r0c = rfbus_read(c->cfg->bus_main, BK4819_REG_CSS_STATUS);
+	if (r0c != NULL) {
+		*r0c = rfbus_read(c->cfg->bus_main, BK4819_REG_CSS_STATUS);
+	}
 }
 
 static bk4819_tone_t bk_tone(superhet_tone_t t)

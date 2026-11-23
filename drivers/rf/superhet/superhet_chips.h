@@ -57,10 +57,11 @@ typedef struct {
 
 // The part an ID names in a role (lo: the LO chip), SUPERHET_CHIP_NONE for one not driven there
 superhet_chip_t superhet_chip_kind(uint16_t id, bool lo);
-// Register 0 until it names a part (kind), with a soft reset between tries. The ID last read
+// Register 0 until it names a part (kind), with a soft reset between tries (3 reads). The ID last read
 uint16_t superhet_chip_identify(rfbus_t *bus, bool lo, superhet_chip_t *kind);
 // Both chips identified and, when both are known, set up in the order these radios need: the main chip's init, the
-// LO's, then the main chip's analog mode; both end idle. False: a part not driven (nothing but the reset is written)
+// LO's, then the main chip's analog mode; both end idle. False: a part not driven (nothing but the reset is written;
+// an unknown main chip leaves the LO read once and untouched)
 bool superhet_chips_init(superhet_chips_t *c, const superhet_chips_cfg_t *cfg);
 // "BK4819", "FD6818", "7813", "AT1141", "none"; and the one-letter code ('B', '6', '4', 'T', '?')
 const char *superhet_chip_name(superhet_chip_t k);
@@ -68,7 +69,8 @@ char superhet_chip_letter(superhet_chip_t k);
 
 // An LO above the signal turns the IF spectrum over: DCS arrives inverted
 void superhet_chips_rx_inverted(superhet_chips_t *c, bool inverted);
-// The main chip's status: RSSI (0x67), noise (0x65), sub-audio flags (0x0C). The same registers on every main part
+// The main chip's status: RSSI (0x67), noise (0x65), sub-audio flags (0x0C; r0c NULL: not read). The same registers on
+// every main part
 void superhet_chips_status(superhet_chips_t *c, uint16_t *r67, uint16_t *r65, uint16_t *r0c);
 // The sub-audio set by rx_tone heard (always for none): r0c on a BK4819, the board's line on an FD6818
 bool superhet_chips_tone_heard(const superhet_chips_t *c, uint16_t r0c, superhet_tone_t type);

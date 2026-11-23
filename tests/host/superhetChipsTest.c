@@ -164,6 +164,9 @@ static void test_unsupported(void)
 		CHECK(main_chip.writes == main_chip.resets * 3u);
 		CHECK(lo_chip.writes == lo_chip.resets * 3u);
 		CHECK(c.main_kind == SUPERHET_CHIP_NONE || c.lo_kind == SUPERHET_CHIP_NONE);
+		// 3 reads, a reset between them; an unknown main chip leaves the LO read once, never reset
+		CHECK(main_chip.resets == (c.main_kind == SUPERHET_CHIP_NONE ? 2u : 0u));
+		CHECK(lo_chip.resets == (c.main_kind != SUPERHET_CHIP_NONE ? 2u : 0u));
 	}
 }
 
@@ -178,7 +181,7 @@ static void test_answers_after_reset(void)
 	reset(0x4819, 0x1100);
 	main_chip.resets_needed = 5;	// more than the tries
 	CHECK(!superhet_chips_init(&c, &cfg));
-	CHECK(c.main_id == 0 && main_chip.resets == 3);
+	CHECK(c.main_id == 0 && main_chip.resets == 2);	// no reset after the last read
 }
 
 // The sub-audio check: none is always heard; a BK4819 by its status bits (DCS turned over with an inverted IF), an
@@ -227,8 +230,14 @@ static void test_status_gpio(void)
 	uint16_t r67, r65, r0c;
 	superhet_chips_status(&c, &r67, &r65, &r0c);
 	CHECK(r67 == 0x0123 && r65 == 0x0045 && r0c == 0x4000);
+	r0c = 0xBEEF;
+	superhet_chips_status(&c, &r67, &r65, NULL);	// 0x0C not wanted: not read
+	CHECK(r67 == 0x0123 && r0c == 0xBEEF);
+	// A pin the init gave no function is made a plain output (its select nibble 0) on the first drive
+	main_chip.regs[0x27] = 0x00F0;
 	superhet_main_gpio(&c.main, 5, true);
 	CHECK(superhet_chips_main_gpio_word(&c) == c.m.fd.r25 && (c.m.fd.r25 & (1u << 5)) != 0);
+	CHECK((main_chip.regs[0x27] & 0x00F0u) == 0);
 	superhet_main_gpio(&c.main, 0xFF, true);	// a pin not wired: nothing
 	CHECK(superhet_chips_main_gpio_word(&c) == c.m.fd.r25);
 
