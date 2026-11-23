@@ -1232,7 +1232,28 @@ static void test_rx_bs_direct_hunt(void)
 	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
 	c5_mode_track();
 	CHECK(c5_mode == 0x6B);
+	flips = eng.st.hunt_flips;
+	for (int k = 0; k < 100; k++) {		// half a second keyed: no switch
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
 	hrc6000_dmr_tx_abort(&eng);
+	for (int k = 0; k < 70; k++) {		// a full dwell in the channel's mode after it, for an answer
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	c5_mode_track();
+	CHECK(eng.st.hunt_flips == flips && c5_mode == 0x6B);
+
+	// The color code filter set after start (as the call layer does) on a quiet channel: no timeslot interrupt
+	// comes to make the restart it asks for, and the hunt makes it
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	CHECK(eng.restart_pending);
+	for (int k = 0; k < 200; k++) {
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(eng.st.hunt_flips >= flips + 2 && !eng.restart_pending);
 
 	// A repeater channel never hunts: its 0x10 is the repeater mode throughout
 	cfg.repeater = true;

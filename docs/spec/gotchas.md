@@ -163,7 +163,7 @@ known, so a board turns the path on with `prompt_fifo`.
 Symptom: on a direct channel, a call framed with BS sync, one burst every 60 ms and no CACH (as a simplex hotspot
 sends), was not heard at all: 0 of 8 calls, no timeslot interrupt, no report. MS sync calls on the same channel
 played. Cause: with 4:0x10 = 0x6B (ISRepeater clear) the chip finds MS and direct mode sync only; with 0x4F
-(ISRepeater set) it finds BS sync only. A test image with 0x4F on the direct channel heard the BS calls and none of
+(ISRepeater set) the chip finds BS sync only. A test image with 0x4F on the direct channel heard the BS calls and none of
 the MS ones. Rule: on a direct channel the engine hunts both modes while nothing is taken
 ([modem-hrc6000.md](modem-hrc6000.md) 5.3). A dwell shorter than a superframe (120 ms) lost whole calls: voice A, the
 only sync after the headers, fell at a switch every time. A call can lose up to about 1 s of its start. Test direct mode
