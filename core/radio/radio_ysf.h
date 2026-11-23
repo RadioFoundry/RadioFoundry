@@ -40,6 +40,7 @@ typedef struct {
 #define RADIO_YSF_NOT_DN	0x10u	// ... is not DN voice (VW or data: shown, not played)
 #define RADIO_YSF_NO_CALL	0x20u	// we have no callsign: PTT refused
 #define RADIO_YSF_RID_WEAK	0x40u	// our RID comes from the fallback, not the MCU's unique ID
+#define RADIO_YSF_DATA		0x80u	// the call heard is a data transmission (Wires-X): no voice
 
 // The radio view's part (radio_view_t.ysf): the call heard now, or the last one
 typedef struct {

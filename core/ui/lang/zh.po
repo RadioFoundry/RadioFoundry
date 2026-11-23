@@ -5360,6 +5360,11 @@ msgid "Other DG-ID: not played"
 msgstr "其他 DG-ID：不播放"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_DATA"
+msgid "Data"
+msgstr "数据"
+
+#: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
 msgid "Squelch open"
 msgstr "静噪打开"

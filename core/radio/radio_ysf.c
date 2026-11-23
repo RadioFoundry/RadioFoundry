@@ -381,6 +381,8 @@ bool radio_ysf_poll(radio_ysf_view_t *v)
 				n.flags |= RADIO_YSF_LATE;
 			if (ev.rx.dt != YSF_DT_VD2)
 				n.flags |= RADIO_YSF_NOT_DN;
+			if (ev.rx.dt == YSF_DT_DATA)
+				n.flags |= RADIO_YSF_DATA;
 		}
 		if (eng->cfg.tx_inhibit)
 			n.flags |= RADIO_YSF_NO_CALL;

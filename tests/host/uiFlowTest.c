@@ -178,6 +178,8 @@ static const flow_t flows[] = {
 	{ "W Wires-X: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=wiresx dgid=-1", 4, false },
 	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
 	{ "R YSF call in Recent", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3", "screen=recent shows=SP5WLF shows=DG-ID_12", 2, false },
+	{ "YSF home: a Wires-X data transmission", "dlmode:ysf", "ysfrx:SR5WI,0,d", "screen=home shows=SR5WI shows=Data hides=Not_DN", 0, false },
+	{ "R YSF data transmission in Recent", "dlmode:ysf ysfrx:SR5WI,0,d ysfend", "ok 3", "screen=recent shows=SR5WI", 2, false },
 	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:SP5WLF,12 ysfend", "", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
 	{ "R YSF: our own call echoed stays out", "dlmode:ysf ysfrx:N0CALL,0", "ok 3", "screen=recent hides=N0CALL", 2, false },
 	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },

@@ -680,6 +680,8 @@ static void send_data(ysf_call_rx_t *rx, air_framer_t *fr, const uint8_t *d, uin
 				ysf_fich_put(frame, &f);
 				memset(c1, ' ', 20);
 				memset(c2, ' ', 20);
+				if (part == 0)
+					memcpy(c1, "ALL       SR5WI     ", 20);	// the header's CSD1: to all, from the node
 				if (part == 1 && fn == 1) {
 					uint8_t k = 0;
 
@@ -751,7 +753,9 @@ static void testWiresX(void)
 	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.node_name, "WARSZAWA-RPT") &&
 	      !strcmp(wx_got.room_id, "27299") && !strcmp(wx_got.room_name, "POLAND-ROOM") && !strcmp(wx_got.node_call, "SR5WI"),
 	      "DX reply: n %u kind %u '%s' '%s'", wx_n, wx_got.kind, wx_got.node_name, wx_got.room_name);
-	CHECK(s.starts == 0, "a data transmission starts no call");
+	// ... and shows as a call without voice, from the node's callsign, ended by its terminator
+	CHECK(s.starts == 1 && s.ends == 1 && s.call.dt == YSF_DT_DATA && !strcmp(s.call.src, "SR5WI") && s.nvoice == 0,
+	      "a data transmission as a call: starts %u ends %u dt %u src '%s'", s.starts, s.ends, s.call.dt, s.call.src);
 
 	// A room list of 20 rooms, in five blocks (BN counts on past its two bits)
 	memset(d, ' ', sizeof d);

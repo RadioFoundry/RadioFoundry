@@ -30,7 +30,8 @@
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
-//   ysfrx:<call>,<dgid>[,o|v]   a YSF call: o another DG-ID (not played), v not DN voice (not played)
+//   ysfrx:<call>,<dgid>[,o|v|d] a YSF call: o another DG-ID (not played), v not DN voice (not played), d a data
+//                               transmission (Wires-X: shown, no voice)
 //   ysfend                      the YSF call heard ends
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
@@ -3646,8 +3647,8 @@ static bool run_token(char *t, char *err, size_t len)
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
-		view.ysf.flags = (uint8_t)(RADIO_YSF_ON | RADIO_YSF_RX | (kind == 'v' ? RADIO_YSF_NOT_DN : 0) |
-			(kind == 'o' || kind == 'v' ? 0 : RADIO_YSF_PLAYED));
+		view.ysf.flags = (uint8_t)(RADIO_YSF_ON | RADIO_YSF_RX | (kind == 'v' || kind == 'd' ? RADIO_YSF_NOT_DN : 0) |
+			(kind == 'd' ? RADIO_YSF_DATA : 0) | (kind == 'o' || kind == 'v' || kind == 'd' ? 0 : RADIO_YSF_PLAYED));
 		strcpy(view.ysf.src, call);
 		view.ysf.dgid = (uint8_t)dgid;
 		view.state = RS_RX;

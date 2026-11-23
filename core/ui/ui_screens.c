@@ -2186,7 +2186,7 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 // A P25, NXDN or YSF call coming in (air_call): whether one is heard now, and its fields. YSF names its caller by
 // callsign (call, "" until heard) and its target by DG-ID: dgid >= 0
 typedef struct {
-	bool played, enc, unit, not_dn;
+	bool played, enc, unit, not_dn, data;
 	uint32_t src, dst;
 	const char *call;
 	int16_t dgid;
@@ -2200,6 +2200,7 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 	if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_RX) != 0) {
 		c->played = (v->ysf.flags & RADIO_YSF_PLAYED) != 0;
 		c->not_dn = (v->ysf.flags & RADIO_YSF_NOT_DN) != 0;
+		c->data = (v->ysf.flags & RADIO_YSF_DATA) != 0;
 		c->call = v->ysf.src;
 		c->dgid = v->ysf.dgid;
 		return true;
@@ -2239,7 +2240,7 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
-	if (!c->played) {
+	if (!c->played && !c->data) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			c->not_dn ? TR(CALL_WHY_NOT_DN, "Not DN voice: not played") :
 			c->dgid >= 0 ? TR(CALL_WHY_OTHER_DGID, "Other DG-ID: not played") :
@@ -2248,11 +2249,14 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		return;
 	}
 	if (c->call != NULL) {
-		// YSF: "SQ5FOX > DG-ID 12", the callsign kept longest
+		// YSF: "SQ5FOX > DG-ID 12", or "SR5WI > Data" for a data transmission (Wires-X); the callsign kept longest
 		for (int with_dgid = 1; with_dgid >= 0; with_dgid--) {
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, c->call[0] ? c->call : "?");
-			if (with_dgid) {
+			if (with_dgid && c->data) {
+				sb_str(&b, " " GLYPH_ARROW " ");
+				sb_str(&b, TR(CALL_VALUE_DATA, "Data"));
+			} else if (with_dgid) {
 				sb_str(&b, " " GLYPH_ARROW " DG-ID ");
 				sb_u32(&b, (uint32_t)c->dgid, 2);
 			}

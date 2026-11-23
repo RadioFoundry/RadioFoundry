@@ -5358,6 +5358,11 @@ msgid "Other DG-ID: not played"
 msgstr "Altro DG-ID: non riprodotto"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_DATA"
+msgid "Data"
+msgstr "Dati"
+
+#: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
 msgid "Squelch open"
 msgstr "Squelch aperto"

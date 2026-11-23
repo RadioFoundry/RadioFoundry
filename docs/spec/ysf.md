@@ -212,6 +212,14 @@ remarks 3-4, whichever arrives first; five characters that aren't all 0-9 or A-Z
 
 PTT sends the transmit DG-ID. A channel stores both; the channel editor sets one value for both.
 
+The FM squelch doesn't gate YSF. The soft modem demodulates all the time and a call starts on the frame sync and a good
+FICH, so a weak signal is decoded whatever the squelch level, and noise never plays (no sync, no call). The squelch
+level matters only where the radio has to judge a channel by its noise reading before a call is decoded: scan and dual
+watch stop on a carrier by that reading (or by signal strength), as on P25 and NXDN. The CTCSS a repeater sends under
+C4FM isn't a squelch here either: the receiver finds it and notches it out (5.4), and the channel's tone settings
+aren't used on YSF. What decides whether a call plays is the DG-ID above. A data transmission (Wires-X) shows as a call
+from its callsign ("SR5WI > Data") and goes into Recent, with nothing to play.
+
 ### 5.2 Callsign
 
 The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), else the radio name's first

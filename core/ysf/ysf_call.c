@@ -179,8 +179,24 @@ static void on_data(ysf_call_rx_t *c, const ysf_rx_frame_t *f)
 	bool whole = false;
 
 	c->stats.data_frames++;
-	if (c->active)
-		call_end(c);		// a voice call's terminator was lost
+	if (c->active && (c->call.dt != YSF_DT_DATA || f->fich.fi == YSF_FI_HEADER))
+		call_end(c);		// a voice call's terminator was lost, or a new transmission's header came
+	// A data transmission is a call without voice: the header's CSD1 names its source and destination as a voice
+	// call's does, so it shows (and goes into the list of calls heard) like one
+	if (!c->active && f->fich.fi != YSF_FI_TERM) {
+		call_start(c, f, f->fich.fi != YSF_FI_HEADER);
+		if (f->fich.fi == YSF_FI_HEADER) {
+			int errs = ysf_csd_get(f->hard, f->soft, 0, &c->rx.work, c1);
+
+			if (errs < 0) {
+				c->stats.csd_fail++;
+			} else {
+				c->stats.fec_bits += (uint32_t)errs;
+				if (take_dst(c, c1) | field_get(c->call.src, c1 + YSF_CS_LEN))
+					changed(c);
+			}
+		}
+	}
 	switch (f->fich.fi) {
 	case YSF_FI_HEADER:
 		ysf_wx_rx_begin(&c->wx);
@@ -204,6 +220,8 @@ static void on_data(ysf_call_rx_t *c, const ysf_rx_frame_t *f)
 		if (c->sink->wx)
 			c->sink->wx(&c->wx.out, c->ctx);
 	}
+	if (f->fich.fi == YSF_FI_TERM)
+		call_end(c);
 }
 
 static void on_frame(const ysf_rx_frame_t *f, void *ctx)
