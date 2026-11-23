@@ -190,6 +190,14 @@ static uint32_t nvic_lines(volatile uint32_t *reg)
 	return (reg[0] >> EXTI0_IRQn) & 7u;	// EXTI0-2 are IRQs 6-8: one word, adjacent bits
 }
 
+// The interrupt controller's words a lost interrupt's record keeps after the system flags (dmr.modem_lost_regs 1-3)
+static void lost_words(uint32_t w[3])
+{
+	w[0] = EXTI->PR;
+	w[1] = hooks->int_port->IDR;
+	w[2] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+}
+
 // From the timeslot ISR or under the lock (the modem ISRs kept out): a count rose since the last check
 static void lost_check(void)
 {
@@ -204,11 +212,26 @@ static void lost_check(void)
 	uint8_t flags = 0;
 	(void)hrc_read(eng.dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
 	lost_regs[0] = flags;
-	lost_regs[1] = EXTI->PR;
-	lost_regs[2] = hooks->int_port->IDR;
-	lost_regs[3] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+	lost_words(&lost_regs[1]);
 	lost_ms = hal_millis() | 1u;
 }
+
+#if CONFIG_AIR
+// The same record for an air session's or the tap's copy, kept apart from dmr.modem_*, which count the engine's
+// stalls and lost system edges (an edge lost under a session too). The air poll set the copy up again (no half for
+// 200 ms): keep the first restart's words, the system flags the poll found and the three lost_words takes
+static air_lost_rec_t air_lost;
+
+static void air_lost_check(const uint32_t before[3])
+{
+	lock(NULL);	// against a stats reset and the view, and a close: AIR is the engine's queue again after one
+	if (air_on) {
+		uint32_t w[4] = { AIR->copy_lost_flags, before[0], before[1], before[2] };
+		(void)air_lost_note(&air_lost, AIR->st.copy_restarts, w, hal_millis());
+	}
+	unlock(NULL);
+}
+#endif
 
 // The system line is low and no edge will run its handler: count it once for this low stretch
 static void sys_lost(void)
@@ -528,7 +551,12 @@ static void dmr_task(void *arg)
 		}
 #if CONFIG_AIR
 		if (air_on) {
+			uint32_t w[3];
+			lost_words(w);
 			hrc6000_air_poll(AIR);	// the engine is halted: nothing of its own to pop
+			if (AIR->st.copy_restarts != air_lost.seen) {
+				air_lost_check(w);
+			}
 			continue;
 		}
 #endif
@@ -927,6 +955,7 @@ static void air_take(void)
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped: its queue is the session's memory now
 	eng.txq_tail = eng.txq_head;
+	air_lost.seen = 0;	// the session's stats start at 0
 	hrc6000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM,
 			 air_tap());
 }
@@ -1033,20 +1062,27 @@ static uint32_t air_now_us(void)
 // Only a session that receives through the FM copy costs the MCU a modem; the chip's correlator does the others'
 static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
+	lock(NULL);	// as air_rx_counts: a session closing now is not read
 	bool copy = air_on && AIR->rx_copy;
 
 	*work_us = copy ? AIR->st.modem_us : 0;
 	*span_us = copy ? AIR->st.modem_span_us : 0;
+	unlock(NULL);
 	return copy;
 }
 
 static bool air_rx_counts(air_rx_counts_t *c)
 {
+	lock(NULL);	// air_close clears air_on under the lock: a session closing now is not read
 	if (!air_on) {
+		unlock(NULL);
 		return false;
 	}
 	*c = (air_rx_counts_t){ .records = AIR->st.records, .synced = AIR->st.synced, .halves = AIR->st.halves,
-				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks };
+				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks,
+				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost.ms };
+	memcpy(c->lost_regs, air_lost.regs, sizeof c->lost_regs);
+	unlock(NULL);
 	return true;
 }
 
@@ -1155,6 +1191,10 @@ void stm32_hrc_dmr_stats_reset(void)
 	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
+#if CONFIG_AIR
+	air_lost.ms = 0;
+	memset(air_lost.regs, 0, sizeof air_lost.regs);
+#endif
 	unlock(NULL);
 	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }

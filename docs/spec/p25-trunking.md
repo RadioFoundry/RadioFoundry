@@ -213,13 +213,14 @@ Registration (`view.reg`, `P25_REG_*`):
 | State | What it does | Leaves |
 |---|---|---|
 | OFF | the transmit side is off, or `P25_FOLLOW_NO_REG` | |
-| IDLE | waits for a control channel held and its RFSS status heard (or 2 s on it) | sends the registration request: WAIT |
+| IDLE | waits for a control channel held and verified by its network status broadcast, and its RFSS status heard (or 2 s after the verification) | sends the registration request: WAIT |
 | WAIT | registration sent | accepted: sends the affiliation request, AFF. Failed: RETRY. Denied or refused: DENIED. No answer after 3 sends: RETRY |
 | AFF | affiliation sent | accepted for our group: READY. Failed: RETRY. Denied or refused: DENIED |
 | READY | registered and affiliated | another site (system, RFSS or site differs from the one registered): IDLE |
 | RETRY | waits 10 s, doubled each round up to 60 s | registers again: WAIT |
 | DENIED | final: PTT says why | a channel restart or another site |
 | NO_TX | the control channel has no inbound frequency | |
+| BLOCKED | the system's WACN is in BEE00..BEEFF (`p25_wacn_no_tx`) or its system ID is 00A (`p25_sysid_no_tx`), named by the network status broadcast, the RFSS status broadcast of the control channel held, voice channel link control (LCO 35, 36, 41) or the programming; an adjacent site's status blocks nothing: nothing is sent, a request in hand is dropped, answers are ignored, PTT says why | a follower restart only; the radio core then starts that system blocked until power off (7) |
 
 Losing the control channel and finding the same site again keeps the registration. Hunting resets the site to unknown.
 
@@ -284,10 +285,11 @@ differences:
 | Timers | The radio task ticks the follower at its own tick (10 ms), so its timers run whether the provider delivers or not (a provider that receives only at a sync delivers nothing on a dead channel) |
 | Retune | The `tune` hook only records the request. The radio task carries it out at its next tick: the receiver to the frequency (12.5 kHz, no tone), the engine's selective squelch (`rx_tgid`) to the group for a group call and 0 otherwise (`p25_engine_set`), `p25_engine_retuned`, then `p25_follow_retuned`. A frequency outside the board's receive bands, or in a listen-only band, is not tuned (`p25t.untuned`): the follower hears nothing there and goes back |
 | PTT, transmit side off | Refused with "RX only" (`TXDENY_RX_ONLY`): the tag is receive only, the system listen only, or no unit ID or talk group |
-| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable |
+| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable, system blocked |
 | Release | the terminator goes out (`AIR_TX_DONE`), then `radio_p25_trunk_talk_end` sends the follower back. Released before the grant: the request is dropped |
 | Inbound bursts | between calls, a block the follower asked to send is keyed alone on the inbound frequency (`p25t_burst`): the same checks as PTT (inhibit, battery, the band), lowest of nothing, the channel's power; `p25_engine_tx_burst` sends the one TSDU and the transmitter drops at its end. The view stays idle (no red LED, no TX timer). A refused burst counts `p25t.burst_refused` and the follower's `send_fail` |
 | Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
+| Blocked system | when the follower blocks a system (5, BLOCKED), its programmed control channels and the one held go in a RAM table of 8 frequencies, kept until power off. A trunked channel with one of them starts blocked (`P25_FOLLOW_BLOCKED`). A conventional P25 channel whose link control names a blocked WACN or system ID puts its own frequency there, and PTT on it is refused (`TXDENY_AIR_NO_TX`). With the table full, every P25 channel refuses PTT. Only a restart clears it, so `test_p25_trunk_wacn_bee00` restarts the radio at the end |
 
 One task at a time runs the follower, without a lock: each task sets its own flag, then looks at the other's. The task
 that finds the other's flag set clears its own and leaves. On one core the task that runs second always sees the
@@ -303,7 +305,8 @@ What the user sees: `p25.trunk` in the radio view (`RADIO_P25_TRUNK_*`: finding 
 following a call). Home's talk line says "Finding system", "Control channel" or "Following TG 201" (the grant's group
 until the call's own fields are in) instead of what PTT calls. With the transmit side on it says "Registering" until
 registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or "Reg. denied" after a
-refusal. The debug link's `p25_trunk` section has the follower's
+refusal. On the control channel of a blocked system (5, BLOCKED) it says "Blocked system", with the transmit side on
+or off. The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
@@ -333,7 +336,7 @@ captures come from its FM discriminator (`fsk4_bench.py disc`).
 
 | Command | Does |
 |---|---|
-| `p25tool.py cc site.dibits --expect site.json --nac 293 --wacn BEE00 --sysid 2F3 --ch 1004 --base 851006250 --spacing 6250 --tx-offset -45000000 --units 27` | broadcasts only: network and RFSS status, the identifier with its inbound offset, an adjacent site, a secondary control channel |
+| `p25tool.py cc site.dibits --expect site.json --nac 293 --wacn A4C21 --sysid 2F3 --ch 1004 --base 851006250 --spacing 6250 --tx-offset -45000000 --units 27` | broadcasts only: network and RFSS status, the identifier with its inbound offset, an adjacent site, a secondary control channel |
 | `... --reg 1234567 --reg-at 0` | a registration response accepting unit 1234567 in every unit (`--reg 1234567:2`: denied) |
 | `... --aff 1234567:201 --aff-at 0` | an affiliation response for group 201 |
 | `... --grant 201:100a:1234567 --grant-at 0` | a group voice grant of channel `0x100A` to that unit and group |

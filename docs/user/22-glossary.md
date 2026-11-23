@@ -17,7 +17,7 @@ Terms the user guide uses. In the web version, hover over, focus or tap a dotted
 | <a id="t-confirmed-data"></a>Confirmed data | DMR packet data the receiving radio acknowledges. What didn't arrive is sent again. |
 | <a id="t-dmr"></a>DMR | Digital Mobile Radio, the ETSI digital radio standard (TS 102 361). |
 | <a id="t-hang-time"></a>Hang time | How long after a call a repeater or radio keeps the call's talkgroup ready for a reply. |
-| <a id="t-pi-header"></a>PI header (PI headers, PI) | A DMR header that announces encryption with a changing key. RadioFoundry never plays such calls. |
+| <a id="t-pi-header"></a>PI header (PI headers, PI) | A DMR privacy header that identifies the algorithm, key ID and message indicator for an encrypted call. |
 | <a id="t-private-call"></a>Private call | A DMR call to one radio. |
 | <a id="t-radio-check"></a>Radio check | A DMR request another radio answers automatically, to show it is on and in range. |
 | <a id="t-sms"></a>SMS | Short message service: text messages. On DMR, short data carries them. |
