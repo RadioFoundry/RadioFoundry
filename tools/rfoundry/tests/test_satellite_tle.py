@@ -5,6 +5,7 @@
 import datetime as dt
 import json
 import os
+import re
 import struct
 import sys
 import tempfile
@@ -30,6 +31,14 @@ class SatelliteTleTest(unittest.TestCase):
         self.line1 = tle_line("1 25544U 98067A   26315.50000000  .00001264  00000-0  29621-4 0  999")
         self.line2 = tle_line("2 25544  51.6442 211.1803 0001677  80.2346  29.8792 15.4936234825637")
         self.iss = {"catalog_id": 25544, "name": "ISS (ZARYA)", "line1": self.line1, "line2": self.line2}
+
+    def test_profile_frequency_catalog_matches_firmware(self):
+        source = os.path.join(TOOLS, "..", "core", "satellite", "frequency.c")
+        with open(source, "r", encoding="utf-8") as file:
+            firmware = {int(catalog_id): (int(rx_hz), int(tx_hz))
+                        for catalog_id, rx_hz, tx_hz in re.findall(
+                            r"\{\s*(\d+)u,\s*\"[^\"]+\",\s*(\d+)u,\s*(\d+)u,\s*\d+u\s*\}", file.read())}
+        self.assertEqual(satellite_tle.PROFILE_FREQUENCIES, firmware)
 
     def test_parses_amateur_bulletin_and_skips_prose(self):
         text = "AMSAT daily bulletin header\n\nISS\n%s\n%s\n/EX\n" % (self.line1, self.line2)
@@ -165,6 +174,33 @@ class SatelliteTleTest(unittest.TestCase):
         readback = calls.index(satellite_tle.OP_INFO, commit + 1)
         self.assertLess(commit, readback)
         self.assertNotIn(satellite_tle.OP_SYNC_CHANNELS, calls)
+
+    def test_install_reports_single_band_profile_error_before_replacing(self):
+        record = satellite_tle.validate_record(self.iss, now=self.now)
+        profile = {"catalog_id": 25544, "rx_hz": 437800000, "tx_hz": 145990000, "tx_tone_tenths": 670}
+        link = mock.Mock()
+        link.view_section.return_value = (0, 1, {"bands": "400000000-480000000"})
+        calls = []
+
+        def request(_link, operation, _payload=b""):
+            calls.append(operation)
+            if operation == satellite_tle.OP_INFO:
+                return struct.pack("<BHH", satellite_tle.SATELLITE_PROTOCOL_VERSION, 8, 0)
+            raise AssertionError(f"unexpected operation {operation}")
+
+        with mock.patch.object(satellite_tle, "_utc_now", return_value=self.now), \
+                mock.patch.object(satellite_tle, "_request", side_effect=request):
+            with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "single-band radio"):
+                satellite_tle.install_records(link, [record], profiles=[profile])
+        self.assertEqual(calls, [satellite_tle.OP_INFO])
+        link.view_section.assert_called_once_with("core")
+
+        link.view_section.return_value = (0, 1, {"bands": "400000000-480000000"})
+        with mock.patch.object(satellite_tle, "_utc_now", return_value=self.now), \
+                mock.patch.object(satellite_tle, "_request", side_effect=request):
+            with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "single-band radio"):
+                satellite_tle.install_records(link, [record], profile_ids=[25544])
+        self.assertEqual(calls, [satellite_tle.OP_INFO, satellite_tle.OP_INFO])
 
 
 if __name__ == "__main__":
