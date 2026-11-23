@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // MD-9600 RF sequencing (boards/md9600/rfseq_md9600.c) and calibration rows (cal_md9600.c) against a fake board: every
 // line change, bus word, DAC write and delay is logged, and the tests check the order of the receive, transmit and
 // return sequences per board revision, the transmit gates, the error paths and the receiver probe. Nothing here
@@ -355,7 +356,9 @@ static void check_rx_order(md9600_rev_t r, uint32_t hz, bool wide)
 		uint16_t w[MD9600_IF_WORDS];
 		uint8_t n = md9600_if_words(wide, w);
 		int i0 = find(0, EV_IF, p.band, w[0]);
-		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 0);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) > tune);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) < i0);
+		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 1);
 		CHECK(find(i0, EV_IF, p.band, w[1]) == i0 + 1);
 		CHECK(count(EV_LINE, MD9600_LN_V5_BW_V) == 0);
 	} else {
