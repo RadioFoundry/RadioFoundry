@@ -9672,6 +9672,7 @@ static void test_ysf_wx(void)
 	CHECK(yfar.rx.stats.data_frames >= data0 + 4);		// header, FN 0, FN 1, terminator
 	// heard as a data transmission: a call without voice, from our callsign
 	CHECK(yfar.rx.stats.calls == 1 && yfar.rx.call.dt == YSF_DT_DATA && !strcmp(yfar.rx.call.src, "N0CALL"));
+
 	// RX only: refused, a reason given, nothing left to release
 	chans[3].rx_only = true;
 	start();

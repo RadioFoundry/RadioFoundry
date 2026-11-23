@@ -176,12 +176,12 @@ static void v_wx(const ysf_wx_t *w, void *ctx)
 		wx_state.search = w->search;
 		wx_state.rooms = w->rooms;
 		wx_state.rooms_total = w->rooms_total;
-	} else {
-		wx_state.connected = w->connected;
-		memcpy(wx_state.node_name, w->node_name, sizeof wx_state.node_name);
-		memcpy(wx_state.room_id, w->room_id, sizeof wx_state.room_id);
-		memcpy(wx_state.room_name, w->room_name, sizeof wx_state.room_name);
 	}
+	// The parser keeps the node and room of the last replies, and drops them when another node answers
+	wx_state.connected = w->connected;
+	memcpy(wx_state.node_name, w->node_name, sizeof wx_state.node_name);
+	memcpy(wx_state.room_id, w->room_id, sizeof wx_state.room_id);
+	memcpy(wx_state.room_name, w->room_name, sizeof wx_state.room_name);
 	memcpy(wx_state.node_call, w->node_call, sizeof wx_state.node_call);
 	wx_state.kind = w->kind;
 	wx_state.serial++;

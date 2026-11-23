@@ -195,7 +195,14 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 		// The list: [7..11] the node's ID, [12..21] its callsign, [22..24] rooms on the page, [25..27] in all; a
 		// search's result has '0' at [5], '1' at [22] and its count at [23..24]
 		unsigned n, k = 0;
+		char call[sizeof w->node_call];
 
+		// A list names its node by callsign only: another node's name and room are not this one's
+		text_of(h + 12, 10, call);
+		if (strcmp(call, w->node_call) != 0) {
+			w->node_name[0] = w->room_id[0] = w->room_name[0] = '\0';
+			w->connected = false;
+		}
 		w->search = h[5] == '0';
 		n = w->search ? num_of(h + 23, 2) : num_of(h + 22, 3);
 		while (k < n && k < YSF_WX_ROOMS && ROOMS_AT + (k + 1u) * ROOM_LEN <= end)

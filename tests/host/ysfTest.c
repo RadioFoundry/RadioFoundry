@@ -807,6 +807,38 @@ static void testRooms(void)
 	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && !wx_got.connected && wx_got.room_name[0] == '\0' &&
 	      !strcmp(wx_got.room[0].id, "10000") && !strcmp(wx_got.room[19].name, "ROOM-19"),
 	      "status after a list: the rooms stay, no room now");
+	// A node's status with its name and room, then a list from another node: that name and room are not the new one's
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x51\x5F\x26", 4);
+	put_text(d + 5, "54321", 5);
+	put_text(d + 10, "N0RPT", 10);
+	put_text(d + 20, "NODE-RPT", 14);
+	put_text(d + 34, "15", 2);
+	put_text(d + 36, "27299", 5);
+	put_text(d + 41, "TEST-ROOM", 16);
+	len = reply_end(d, 57);
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_got.connected && !strcmp(wx_got.node_name, "NODE-RPT"), "status from N0RPT");
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x46\x5F\x26", 4);
+	d[5] = '1';
+	put_text(d + 7, "22222", 5);
+	put_text(d + 12, "N9XYZ", 10);
+	put_text(d + 22, "001", 3);
+	put_text(d + 25, "001", 3);
+	d[29] = '5';
+	put_text(d + 30, "30001", 5);
+	put_text(d + 35, "OTHER-ROOM", 16);
+	put_text(d + 51, "002", 3);
+	d[78] = '\r';
+	len = reply_end(d, 29 + 50);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && !strcmp(wx_got.node_call, "N9XYZ") && wx_got.node_name[0] == '\0' && !wx_got.connected &&
+	      wx_got.room_name[0] == '\0' && wx_got.rooms == 1 && !strcmp(wx_got.room[0].name, "OTHER-ROOM"),
+	      "a list from another node: '%s' name '%s' connected %d", wx_got.node_call, wx_got.node_name, wx_got.connected);
 }
 
 int main(void)
