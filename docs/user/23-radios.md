@@ -297,11 +297,13 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 | SK1 | **Monitor** |
 | SK2 | **A/B** |
 | **PTT** | **PTT** |
-| Channel switch | Channel knob. A 16-position switch, not an endless knob: RadioFoundry turns each change of position into steps |
+| Channel switch | In regular memory mode, the 16-position knob selects slots 1–16 in the current zone. |
 
-No **P1**, **P2** or **SK3**, so no **Power level** or zone keys and no emergency key. Change the zone with **OK**,
-**4**, the power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The
-bootloader starts when you hold **PTT** and the side key just above it at power-on.
+On the regular Home screen in memory mode, **Up** and **Down** do not step through channels independently of the knob. To use the arrows to change zones, set **Settings > Keys > Up/Down on Home** to **Zone**. You can also open Zones with **OK**, **4**.
+
+Keep zones at 16 channels or fewer if you want to reach every channel with the knob. Empty slots show **Unprogrammed** and block transmission. When a scan stops, the radio returns to the slot selected by the knob. Home and dual watch show the channel's position within its zone.
+
+There are no **P1**, **P2** or **SK3** keys, so there are no dedicated power level, zone, or emergency keys. Change power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The bootloader starts when you hold **PTT** and the side key just above it at power-on.
 
 ### MD-380 bands and power levels
 

@@ -916,17 +916,19 @@ The diagnostics page shows the raw row bits ("keys rr rr rr"), so one press of e
 
 ### 9.2 Channel switch
 
-A 16-position switch with four code lines ECN0-ECN3 on PE14, PE15, PB10, PB11 (unverified), not a quadrature encoder.
-`input_md380.c` reads the code at every 10 ms scan and reports position changes as encoder steps (the shorter way
-round across the stop). A code counts after three equal scans (30 ms): the contacts bounce. Pulled up, closed contacts
-reading low (`MD380_CH_ACTIVE_HIGH` flips it). The code is a Gray code in its own line order. Read on RadioFoundry's diagnostics
-page ("ch x", after the polarity), one detent at a time clockwise (bench, 2026-10-16):
+A 16-position switch with four code lines ECN0–ECN3 on PE14, PE15, PB10, PB11 (unverified). The inputs are pulled up, and closed contacts read low (`MD380_CH_ACTIVE_HIGH` reverses the polarity).
+
+`input_md380.c` samples the switch every 10 ms and accepts a position after three equal samples (30 ms) to debounce the contacts. The driver reports the settled position as an index from 0 to 15. In regular memory mode, the radio uses that index to select the corresponding slot in the current zone. Empty slots show **Unprogrammed** and inhibit transmission. On scan stop, the radio returns to the slot selected by the switch.
+
+The driver also reports the signed difference between successive positions for VFO tuning, dual watch, and menu navigation. The switch has physical end stops.
+
+The code is a Gray code in its own line order. Read on RadioFoundry's diagnostics page ("ch x", after the polarity), one detent at a time clockwise (bench, 2026-10-16):
 
 | Position | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Code | 0 | 8 | A | 2 | 3 | B | 9 | 1 | 5 | D | F | 7 | 6 | E | C | 4 |
 
-Each step changes one line, so a bouncing contact reads as the next or previous position, never a jump.
+Each adjacent detent changes one code line, so contact bounce during a single step can read as either of the two adjacent positions.
 
 ### 9.3 PTT
 
