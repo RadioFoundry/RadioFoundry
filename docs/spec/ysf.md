@@ -237,6 +237,10 @@ DG-IDs set and in force, the provider's fit and the counters (`ysf.frames`, `ysf
 u8 receive, 0-99 each, and optionally u8 bench: bit 0 turns the equalizer off, bit 1 the tone notch, for an A/B. The
 callsign and the radio ID can't be set there.
 
+The HIL tests (`tests/hil/test_ysf.py`, feature `ysf`) use them: the mode switch, the DG-IDs through op 44, a stored
+channel written over CPS (opt-in), and a transmission decoded off air by the bench's 4FSK receiver and
+`tools/bench/ysftool.py`, the firmware's own framer and call layer built for the host (opt-in, `--ysf-mhz`).
+
 ### 5.4 Receive through a repeater
 
 A repeater's chain cuts the upper band of the 4FSK (inter-symbol interference) and some repeaters send a CTCSS tone
