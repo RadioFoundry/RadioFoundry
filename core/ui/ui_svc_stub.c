@@ -6,10 +6,15 @@
 #include <stddef.h>
 #include <string.h>
 #include "ui_svc.h"
+#include "ui_nav.h"		// ui_recent_t
 #include "ui_svc_aprs.h"
 #include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
+
+// Recent (ui_app.c owns it): none heard, for a build with the screens and no ui_app.c (Home's list of calls heard)
+WEAK uint8_t ui_recent_count(void) { return 0; }
+WEAK const ui_recent_t *ui_recent_get(uint8_t i) { (void)i; return NULL; }
 
 // What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
 WEAK uint32_t ui_svc_feat_voice(void) { return 0; }
