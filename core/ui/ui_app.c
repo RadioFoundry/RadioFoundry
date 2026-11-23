@@ -704,6 +704,16 @@ static void handle_event(const ui_event_t *ev)
 		banner(UI_BANNER_INFO, false, 0, TR(HOTSPOT_BANNER_STARTED_BY_HOST, "Hotspot started by host"),
 			TR(HOTSPOT_BANNER_OK_STOPS, "OK stops it"));
 		break;
+#if CONFIG_APRS_RX
+	case UI_EV_APRS_MESSAGE:
+		sb_str(&b, TR(APRS_BANNER_MSG_FROM, "APRS message from "));
+		sb_str(&b, ev->name);
+		banner(UI_BANNER_APRS_MESSAGE, false, 0, title, ev->text);
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
+		break;
+#endif
 	case UI_EV_SAVE_FAILED: {
 		ui_toast(ev->why != TR_NONE ? tr(ev->why) : TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
 		ui_menus_save_failed();
@@ -798,6 +808,10 @@ static void banner_open(void)
 #if CONFIG_ZONE_SHARE
 	else if (kind == UI_BANNER_ZONE_OFFER)
 		ui_push(SCR_OFFER, 0);
+#endif
+#if CONFIG_APRS_RX
+	else if (kind == UI_BANNER_APRS_MESSAGE)
+		ui_push(SCR_MESSAGES, 0);
 #endif
 	else
 		ui_open_actions(&t);
