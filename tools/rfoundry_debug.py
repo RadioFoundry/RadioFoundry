@@ -231,7 +231,7 @@ OP_NXDN = 43
 OP_FOX = 44
 FOX_CMDS = {"stop": 0, "start": 1, "preview": 2}
 FOX_KEY = 0x000A                    # the fox record (docs/spec/codeplug-settings.md 3.4)
-FOX_INTERVALS = [30, 60, 120, 300, 600]  # seconds, the record's interval codes
+FOX_INTERVALS = [15, 30, 60, 120, 300, 600]  # seconds, the record's interval codes
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
 CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style

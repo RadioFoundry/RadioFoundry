@@ -7440,7 +7440,8 @@ static bool fox_write(const fox_rec_t *r)
 
 static const char *fox_interval_name(uint8_t code)
 {
-	static const tr_id_t names[FOX_INTERVALS] = { TRX(FOX_VALUE_30_S, "30 s"), TRX(FOX_VALUE_1_MIN, "1 min"),
+	static const tr_id_t names[FOX_INTERVALS] = { TRX(FOX_VALUE_15_S, "15 s"),
+						      TRX(FOX_VALUE_30_S, "30 s"), TRX(FOX_VALUE_1_MIN, "1 min"),
 						      TRX(FOX_VALUE_2_MIN, "2 min"), TRX(FOX_VALUE_5_MIN, "5 min"),
 						      TRX(FOX_VALUE_10_MIN, "10 min") };
 	return tr(names[code < FOX_INTERVALS ? code : FOX_INTERVAL_DEFAULT]);

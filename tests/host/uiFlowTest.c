@@ -850,7 +850,7 @@ static const flow_t flows[] = {
 	{ "6 Fox: OK stops it", "dlpos:1 ok 6 up ok ok", "ok", "fox=0 screen=fox", 1, false },
 	{ "6 Fox: Back stops it", "dlpos:1 ok 6 up ok ok", "back", "fox=0 screen=tools", 1, false },
 	{ "6 Fox: long Back stops it", "dlpos:1 ok 6 up ok ok", "long:back", "fox=0 screen=home", 1, false },
-	{ "6 Fox: the interval steps", "", "ok 6 up ok down ok", "foxint=2 shows=2_min", 6, true },
+	{ "6 Fox: the interval steps", "", "ok 6 up ok down ok", "foxint=3 shows=2_min", 6, true },
 	{ "6 Fox: the message off", "", "ok 6 up ok down down ok", "foxflags=2", 7, true },
 	{ "6 Fox: the jingle off", "", "ok 6 up ok down down down ok", "foxflags=1", 8, true },
 	{ "6 Fox: the jingle's steps open", "", "ok 6 up ok down down down down ok",

@@ -16,8 +16,8 @@
 #define FOX_STEPS		32u	// the jingle's steps: a short tune, or a long homing note as a few steps
 #define FOX_MAX_MS		10000u	// the jingle's total length is cut to this
 #define FOX_MSG_MAX		16u	// the message's characters (Morse letters, digits, punctuation and spaces)
-#define FOX_INTERVALS		5u	// interval codes 0..4 (fox_interval_ms)
-#define FOX_INTERVAL_DEFAULT	1u	// 1 min
+#define FOX_INTERVALS		6u	// interval codes 0..5 (fox_interval_ms)
+#define FOX_INTERVAL_DEFAULT	2u	// 1 min
 #define FOX_LEAD_MS		300u	// silent carrier before the first part: receivers' squelch opens
 #define FOX_GAP_MS		600u	// silent carrier between two parts
 #define FOX_TAIL_MS		300u	// and after the last
@@ -50,7 +50,7 @@ void fox_rec_default(fox_rec_t *r);
 bool fox_rec_decode(const uint8_t *v, int len, fox_rec_t *r);
 void fox_rec_encode(const fox_rec_t *r, uint8_t out[FOX_REC_LEN]);
 
-// The interval for a code: 30 s, 1, 2, 5 or 10 min (0 for an unknown code)
+// The interval for a code: 15 s, 30 s, 1, 2, 5 or 10 min (0 for an unknown code)
 uint32_t fox_interval_ms(uint8_t code);
 // The message's length (up to the first NUL)
 uint8_t fox_msg_len(const fox_rec_t *r);

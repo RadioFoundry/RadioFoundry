@@ -80,8 +80,8 @@ static void test_rec(void)
 
 static void test_interval(void)
 {
-	CHECK(fox_interval_ms(0) == 30000u && fox_interval_ms(1) == 60000u && fox_interval_ms(2) == 120000u);
-	CHECK(fox_interval_ms(3) == 300000u && fox_interval_ms(4) == 600000u);
+	CHECK(fox_interval_ms(0) == 15000u && fox_interval_ms(1) == 30000u && fox_interval_ms(2) == 60000u);
+	CHECK(fox_interval_ms(3) == 120000u && fox_interval_ms(4) == 300000u && fox_interval_ms(5) == 600000u);
 	CHECK(fox_interval_ms(FOX_INTERVALS) == 0 && fox_interval_ms(255) == 0);
 }
 

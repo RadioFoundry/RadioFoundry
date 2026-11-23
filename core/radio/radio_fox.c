@@ -88,7 +88,7 @@ void fox_rec_encode(const fox_rec_t *r, uint8_t out[FOX_REC_LEN])
 
 uint32_t fox_interval_ms(uint8_t code)
 {
-	static const uint16_t s[FOX_INTERVALS] = { 30, 60, 120, 300, 600 };
+	static const uint16_t s[FOX_INTERVALS] = { 15, 30, 60, 120, 300, 600 };
 	return code < FOX_INTERVALS ? s[code] * 1000u : 0;
 }
 

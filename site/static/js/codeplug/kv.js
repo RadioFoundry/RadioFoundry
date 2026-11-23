@@ -51,7 +51,7 @@ export const FOX_STEPS = 32;
 export const FOX_MSG_MAX = 16;
 export const FOX_MS_MAX = 2550;		// a step's length
 export const FOX_CHAIN_MAX = 10000;	// the jingle's: the radio cuts it to this
-export const FOX_INTERVALS = [30, 60, 120, 300, 600];	// seconds
+export const FOX_INTERVALS = [15, 30, 60, 120, 300, 600];	// seconds
 export const FOX_REC_LEN = 2 + FOX_MSG_MAX + 3 * FOX_STEPS;
 export const FOX_CHARS = /^[A-Z0-9 /\-=?.,]*$/;	// what the message may hold (morse.c)
 const FOX_F_MSG = 1, FOX_F_JINGLE = 2;
@@ -169,7 +169,7 @@ export const FOX_TUNE = [[520, 120], [660, 120], [780, 120], [0, 60], [1050, 240
 
 // The fox record the radio uses when the codeplug has none (radio_fox.c): "FOX", the tune, every minute
 export function foxDefault() {
-	return { interval: 1, msg: true, jingle: true, text: "FOX", hz: Array(FOX_STEPS).fill(0), ms: Array(FOX_STEPS).fill(0) };
+	return { interval: 2, msg: true, jingle: true, text: "FOX", hz: Array(FOX_STEPS).fill(0), ms: Array(FOX_STEPS).fill(0) };
 }
 
 function getFox(v) {

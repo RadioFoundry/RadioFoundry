@@ -481,7 +481,7 @@ test("fox record: bytes, order and limits", () => {
 		patch(b);
 		return getRecord([{ key: FOX.key, value: b }], FOX);
 	};
-	assert.equal(bad((b) => (b[0] = 5)), null, "an interval the radio doesn't have");
+	assert.equal(bad((b) => (b[0] = 6)), null, "an interval the radio doesn't have");
 	assert.equal(bad((b) => (b[1] = 4)), null, "an unknown flag");
 	assert.equal(bad((b) => (b[2] = 0x40)), null, "a character with no Morse");
 	assert.equal(bad((b) => (b[12] = 0x41)), null, "text after the padding");

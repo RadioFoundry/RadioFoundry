@@ -211,7 +211,7 @@ transmit time-out. 114 bytes, little endian:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | Interval code: 0 30 s, 1 1 min, 2 2 min, 3 5 min, 4 10 min, from the end of one transmission to the start of the next |
+| 0 | 1 | Interval code: 0 15 s, 1 30 s, 2 1 min, 3 2 min, 4 5 min, 5 10 min, from the end of one transmission to the start of the next |
 | 1 | 1 | Parts: bit 0 the message, bit 1 the jingle. The callsign ID is always sent |
 | 2 | 16 | The message, ASCII, padded with 0 (no terminator when 16 long). Letters, digits, the Morse punctuation and spaces |
 | 18 | 64 | Frequencies of the jingle's 32 steps in Hz, u16 each; 0 is a pause. Multiples of 10, at most 3400 |
@@ -219,7 +219,7 @@ transmit time-out. 114 bytes, little endian:
 
 - A record shorter than 114 bytes reads with the missing fields zero. A longer one (a later version) is read from the
   front.
-- The record is absent for the reader when a field is outside what the fox takes: an interval code over 4, a part bit
+- The record is absent for the reader when a field is outside what the fox takes: an interval code over 5, a part bit
   it doesn't know, a character with no Morse, text after the padding, or a frequency over 3400 Hz or not a multiple of
   10. Nothing is clamped (3.1). Absent, the fox sends "FOX" and its own tune every minute.
 - The record has no copy in the settings store, as the signaling tones' steps have none: the radio core holds it in
