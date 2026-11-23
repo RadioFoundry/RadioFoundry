@@ -339,10 +339,11 @@ static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
 // the line out, the FM receive RAM's interrupt on
 static void copy_on(hrc6000_air_t *a)
 {
-	// The registers before the copy, once: a copy set up again (the watchdog) would read its own set-up, and
-	// copy_restore would leave those on DMR receive
-	if (!a->copy && !a->copy_saved) {
+	// The registers before the copy, once per set-up: a copy set up again (the watchdog, the end of a transmission)
+	// would read its own set-up, and copy_restore would leave those on DMR receive
+	if (!a->copy_tried) {
 		uint8_t f = 0, m = 0;
+		a->copy_tried = true;
 		a->copy_saved = hrc_read(a->dev, HRC_PAGE_SYS, R_FM_FILT, &f) && hrc_read(a->dev, HRC_PAGE_SYS, R_INT_MASK, &m);
 		a->saved_34 = f;
 		a->saved_81 = m;
@@ -370,8 +371,13 @@ static void copy_restore(hrc6000_air_t *a, bool chip)
 		w(a, R_INT_MASK, a->saved_81);
 		w(a, R_FM_FILT, a->saved_34);
 		w(a, R_INT_CLEAR, 0xFF);
+	} else if (chip && a->copy_tried) {
+		// The save failed: copy_on's mask without the FM receive interrupt. 0x34 (FM audio filters only) waits for
+		// the board's next FM entry
+		w(a, R_INT_MASK, 0x19u);
+		w(a, R_INT_CLEAR, 0xFF);
 	}
-	a->copy_saved = false;
+	a->copy_saved = a->copy_tried = false;
 }
 
 // Back to the DMR receive set-up; the board restarts the slot engine (5.1) after
@@ -746,7 +752,7 @@ bool hrc6000_air_tap_start(hrc6000_air_t *a)
 	lock(a);
 	a->tap = true;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = false;
+	a->copy_saved = a->copy_tried = false;
 	memset(&a->st, 0, sizeof(a->st));
 	copy_on(a);
 	unlock(a);
@@ -838,7 +844,7 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 	lock(a);
 	a->rx_copy = copy;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = false;
+	a->copy_saved = a->copy_tried = false;
 	a->p = p;
 	a->cb = cb;
 	a->cb_ctx = ctx;
@@ -914,7 +920,7 @@ void hrc6000_air_suspend(hrc6000_air_t *a)
 			tx_stop(a, now(a), false);
 		}
 		a->copy = false;	// the board's mode entry rewrote what copy_on changed; rx_restart sets it up again
-		a->copy_saved = false;
+		a->copy_saved = a->copy_tried = false;
 		a->rx_paused = true;
 	}
 	unlock(a);

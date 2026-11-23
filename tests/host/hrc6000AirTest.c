@@ -1199,8 +1199,8 @@ static void test_air_lost_note(void)
 	CHECK(air_lost_note(&r, 1, a, 600) && r.ms == 501 && r.regs[0] == 5);
 }
 
-// The registers before the copy are saved once: when the first read failed, the watchdog's set-up must not save the
-// copy's own values, which the close would then write back over DMR receive
+// The registers before the copy are saved once: when the first read failed, neither the watchdog's set-up nor the one
+// after a transmission may save the copy's own values, which the close would write back over DMR receive
 static void test_copy_saved_once(void)
 {
 	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
@@ -1220,9 +1220,17 @@ static void test_copy_saved_once(void)
 	t_us += AIR_COPY_STALL_US + 1000;
 	hrc6000_air_poll(AIR);
 	CHECK(AIR->st.copy_restarts == 1 && !AIR->copy_saved);
+	air_tx_chunk_t c1 = chunk(0x11, 144, 0);
+	CHECK(hrc6000_air_tx_queue(AIR, &c1) && hrc6000_air_tx_begin(AIR) && !AIR->copy);
+	hrc6000_air_tx_abort(AIR);
+	for (int k = 0; k < 4 && hrc6000_air_tx_active(AIR); k++) {
+		tick();
+	}
+	CHECK(!hrc6000_air_tx_active(AIR) && AIR->copy && !AIR->copy_saved);
 	nx = 0;
 	hrc6000_air_close(AIR, true);
-	CHECK(count_writes(4, 0x34, -1) == 0 && count_writes(4, 0x81, -1) == 0);	// nothing restored from the copy
+	CHECK(count_writes(4, 0x34, -1) == 0);	// nothing restored from the copy
+	CHECK(count_writes(4, 0x81, -1) == 1 && last_write(4, 0x81) == 0x19);	// the mask without the FM receive interrupt
 	fm_ram = false;
 }
 

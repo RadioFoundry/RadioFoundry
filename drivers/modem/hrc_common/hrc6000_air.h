@@ -127,7 +127,8 @@ typedef struct hrc6000_air {
 	bool tap;		// the hal_baseband_t tap is open (no session)
 	bool rx_copy;		// the session receives through the copy
 	volatile bool copy;	// the chip is in the copy set-up and the system interrupt takes halves
-	bool copy_saved;
+	bool copy_saved;	// saved_34 and saved_81 hold the registers before the copy
+	bool copy_tried;	// copy_on read them once for this set-up (the board's mode entry or the close ends one)
 	uint8_t saved_34, saved_81;	// FM audio filters and the interrupt mask before the copy set-up
 	uint8_t ram_half;	// the RAM half the next copy interrupt completes
 	bool last_any;
