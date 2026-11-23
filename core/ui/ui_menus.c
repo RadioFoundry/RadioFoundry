@@ -6725,8 +6725,11 @@ static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "M
 #if CONFIG_SIG_TONES
 // Signaling tones (core/radio/sigtone.h): where each sounds (sig_out_t). The reception's end and FM's start have no on
 // air copy: nothing is sent then
+// The on-air choices are for rows that can transmit: DMR's, and FM's with FM transmit tones
+#if CONFIG_DMR || CONFIG_FM_TX_TONES
 static const int16_t v_sigout[] = { 0, 1, 2, 3, 4 };
 static const tr_id_t n_sigout[] = { TRN(VALUE_DEFAULT, "Default"), TRN(VALUE_OFF, "Off"), TRN(SIG_VALUE_SPEAKER, "Speaker"), TRN(SIG_VALUE_ON_AIR, "On air"), TRN(SIG_VALUE_SPEAKER_AIR, "Speaker + air") };
+#endif
 static const int16_t v_sigout_local[] = { 0, 1, 2 };
 static const tr_id_t n_sigout_local[] = { TRN(VALUE_DEFAULT, "Default"), TRN(VALUE_OFF, "Off"), TRN(SIG_VALUE_SPEAKER, "Speaker") };
 #endif

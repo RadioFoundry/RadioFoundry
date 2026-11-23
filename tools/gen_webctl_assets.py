@@ -39,10 +39,13 @@ def key_bits(header):
 
 def key_header(board):
     """The header with the board's key enum: boards/BOARD/BOARD.h, else the first header that has one in the board's
-    directory or in a boards/<family> directory its board.mk lists in BOARD_DIRS (boards/uv380_family/uvf.h)."""
+    directory (keys.h, when the board keeps its keys apart) or in a boards/<family> directory its board.mk lists in
+    BOARD_DIRS (boards/uv380_family/uvf.h)."""
     own = os.path.join(ROOT, "boards", board, board + ".h")
     if os.path.exists(own):
-        return own
+        with open(own, encoding="utf-8") as fh:
+            if ENUM.search(re.sub(r"//[^\n]*|/\*.*?\*/", "", fh.read(), flags=re.S)):
+                return own
     dirs = [os.path.join("boards", board)]
     try:
         with open(os.path.join(ROOT, "boards", board, "board.mk"), encoding="utf-8") as f:

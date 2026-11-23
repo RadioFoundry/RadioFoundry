@@ -67,13 +67,15 @@ FAMILIES = {
     # combination, speaking its own file format (tools/serial_loader.py)
     "serial-iap": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": "iap"},	# a vendor IAP
     # loader on the cable, through the RAM stub
+    "usb-hid-sgl": {"link": "usb", "needs": (), "web": "sgl-hid", "update_mode": None},	# a vendor loader's USB HID
+    # update mode, taking the image inside a stock update file (.sgl) as its envelope (rfoundry hidboot.py, updatefile.py)
     "boot-rom": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": None},	# no vendor loader:
     # the SoC's boot ROM serial window on the cable at every power-on, through the RAM stub
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
 STOCK_CONSOLES = ("usmart",)
-CODEC_TOOLS = ("codec_extract", "hrc7000_codec")
+CODEC_TOOLS = ("codec_extract", "hrc7000_codec", "k22f_codec")
 # [flash.original_version] read: how the installers read the original firmware's version (rfoundry/origversion.py,
 # site/static/js/flasher/origversion.js)
 ORIGINAL_VERSION_READS = ("dfu-info",)
@@ -109,6 +111,9 @@ GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED
 STUB_TEST_ID = 0xFE
 # The pins.h names the STM32F4 stub's board record reads: the SPI flash's clock, data and chip select (stub-stm32f4.md 5.2)
 F4_SPI_PINS = ("PIN_FLASH_SCK", "PIN_FLASH_MISO", "PIN_FLASH_MOSI", "PIN_FLASH_CS")
+# The pins.h names the K22F stub's board record reads: the bit-banged SPI NOR's clock, data and chip select
+# (stub-k22f.md)
+K22_SPI_PINS = ("PIN_NOR_SCK", "PIN_NOR_MOSI", "PIN_NOR_MISO", "PIN_NOR_CS")
 
 
 class RegistryError(Exception):
@@ -193,6 +198,9 @@ BOARD_SCHEMA = {
         "family": _req(tuple(FAMILIES)),
         "keep_codec": _req(bool),
         "sectors": _opt(str),
+        # address ranges above the image the board never writes (radio data the factory loader or the stock firmware
+        # keeps), [start, end) each: no sector that holds a byte of one is erased
+        "unwritten": _opt(("list", RANGE)),
         "stock_download": _opt(str),
         # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
         "notice": _opt(str),
@@ -246,7 +254,12 @@ BOARD_SCHEMA = {
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
-                      "idle_cs": _opt(STR_LIST)}),
+                      "idle_cs": _opt(STR_LIST),
+                      # the K22F stub: the SPI NOR on GPIO pins (K22_SPI_PINS in pins.h), whether the chip select is
+                      # released to its pull-up when idle, and the first address it may write (below: the radio's own
+                      # data); codec_image_end: where an image merged with the codec ends (after the descriptor)
+                      "spi_gpio": _opt({"cs_released": _req(bool), "floor": _req(int)}),
+                      "codec_image_end": _opt(int)}),
     }),
     # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
@@ -460,19 +473,31 @@ def board_t_names(board_dir):
 
 
 def flash_map(board_dir):
-    """The board's hal_flash_map_t fields as {field: address}, ignoring maps for smaller chips. For satellite
-    ternaries, reserve the feature-on satellite area and the smaller staging size."""
+    """The board's hal_flash_map_t fields as {field: address}, ignoring maps for smaller chips (.small_map). A value is a
+    number or a macro #defined to one in the board's headers. For satellite ternaries, reserve the feature-on satellite
+    area and the smaller staging size. A board without .small_map may have one map per data flash size (the part decides
+    at run time): those must agree, except that an area only the larger parts have (the staging area for a TFTP
+    codeplug, the native codeplug) is left out."""
+    dirs = [board_dir] if isinstance(board_dir, str) else board_dir
+    macros = {}
+    for d, f in [(d, f) for d in dirs for f in sorted(os.listdir(d))]:
+        if f.endswith(".h"):
+            with open(os.path.join(d, f), encoding="utf-8") as fh:
+                macros.update(re.findall(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*\)?",
+                                         _strip_c_comments(fh.read())))
+    num = r"0[xX][0-9A-Fa-f]+|\d+"
     sources = list(_c_sources(board_dir))
     small_maps = {name for _, text in sources
                   for name in re.findall(r"\.small_map\s*=\s*&\s*(\w+)", text)}
-    out, where = {}, None
+    maps = []
     for f, text in sources:
         for m in re.finditer(r"\bhal_flash_map_t\s+(\w+)\s*=\s*\{", text):
             if m.group(1) in small_maps:
                 continue
             body = _braced(text, m.end())
-            found = {k: int(v, 0) for k, v in re.findall(
-                r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body) if k in FLASH_MAP_FIELDS}
+            found = {k: int(macros.get(v, v), 0) for k, v in re.findall(
+                r"\.(\w+)\s*=\s*(%s|[A-Za-z_]\w*)[uUlL]*\s*[,}]" % num, body + "}")
+                     if k in FLASH_MAP_FIELDS and re.fullmatch(num, macros.get(v, v))}
             for k, _, a, b in re.findall(
                     r"\.(\w+)\s*=\s*([A-Za-z_]\w*)\s*\?\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*"
                     r"\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body):
@@ -480,10 +505,18 @@ def flash_map(board_dir):
                     continue
                 av, bv = int(a, 0), int(b, 0)
                 found[k] = min(av, bv) if k == "staging_size" else max(av, bv) if k == "satellite_size" else av or bv
-            if where is not None and found != out:
-                d = board_dir if isinstance(board_dir, str) else board_dir[0]
-                raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(d, ROOT), where, f))
-            out, where = found, f
+            maps.append((f, found))
+    if not maps:
+        return {}
+    out = dict(maps[0][1])
+    optional = ("staging_addr", "staging_size", "native_addr", "native_size")	# the areas only the larger parts may have
+    for f, found in maps[1:]:
+        if {k: v for k, v in found.items() if k not in optional} != {k: v for k, v in out.items() if k not in optional}:
+            raise RegistryError("%s: hal_flash_map_t in %s and %s differ" % (os.path.relpath(dirs[0], ROOT),
+                                                                             maps[0][0], f))
+        for k in optional:
+            if found.get(k) != out.get(k):
+                out.pop(k, None)
     return out
 
 
@@ -620,8 +653,8 @@ def default_off_problems(bid, b, built):
 
 
 def pin_defines(path):
-    """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), or "PB3" for the
-    STM32 form `GPIOB, GPIO_PIN_3`."""
+    """{NAME: value} of the pin #defines in a pins.h: an integer (the HR_C7000's port << 4 | pin), "PB3" for the
+    STM32 form `GPIOB, GPIO_PIN_3`, or "PTE5" for the K22F form `K22F_PIN(K22F_PORT_E, 5)`."""
     if not os.path.isfile(path):
         return {}
     with open(path, encoding="utf-8") as f:
@@ -635,6 +668,9 @@ def pin_defines(path):
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?((?:0[xX][0-9a-fA-F]+|\d+))[uU]?\)?\s*$", text)})
     out.update({m.group(1): "P%s%d" % (m.group(2), int(m.group(3)))
                 for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)\s*$", text)})
+    out.update({m.group(1): "PT%s%d" % (m.group(2), int(m.group(3)))
+                for m in re.finditer(r"(?m)^\s*#\s*define\s+(\w+)\s+K22F_PIN\(\s*K22F_PORT_([A-E])\s*,\s*(\d+)\s*\)\s*$",
+                                     text)})
     return out
 
 
@@ -699,8 +735,9 @@ class Board:
 
     @property
     def protected(self):
-        """The flash below the image, never written: the factory loader's (platform flash_base to app_base)."""
-        return [(self.platform.data["flash_base"], self.app_base)]
+        """The flash never written: below the image, the factory loader's (platform flash_base to app_base), and the
+        board's [flash] unwritten ranges (not [[flash.protect]]: those are factory data, in memories the registry names)."""
+        return [(self.platform.data["flash_base"], self.app_base)] + [tuple(r) for r in self.data["flash"].get("unwritten", [])]
 
     @property
     def nand(self):
@@ -746,8 +783,10 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none; the status LEDs from pins.h (PIN_LED_RED, PIN_LED_GREEN), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
-        from HSE_VALUE and the bootloader's end from APP_BASE. None without a profile."""
+        on (a soft power key), else none; the status LEDs from pins.h (PIN_LED_RED, PIN_LED_GREEN), else none. f4stub:
+        the board record's facts, the SPI flash pins from pins.h, the crystal from HSE_VALUE and the bootloader's end from
+        APP_BASE. k22stub: the application's base and the end of the flash it may write (the last sector not left
+        unwritten), the SPI NOR pins from pins.h, its write floor and where a merged image ends. None without a profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
         if s is None or bs is None:
@@ -760,6 +799,11 @@ class Board:
                        spi=dict(spi, af=af[spi["bus"] - 1] if 0 < spi["bus"] <= len(af) else None,
                                 sck=pin["PIN_FLASH_SCK"], miso=pin["PIN_FLASH_MISO"], mosi=pin["PIN_FLASH_MOSI"],
                                 cs=pin["PIN_FLASH_CS"], idle=[self.pins.get(n) for n in s.get("idle_cs", [])]))
+        if "spi_gpio" in s:
+            out.update(app_base=self.app_base, app_end=self.flash_end(), codec_image_end=s.get("codec_image_end"),
+                       spi=dict({k[len("PIN_NOR_"):].lower(): self.pins.get(k) for k in K22_SPI_PINS},
+                                cs_released=s["spi_gpio"]["cs_released"]),
+                       spi_floor=s["spi_gpio"]["floor"])
         if "hold_power" in s:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
@@ -832,7 +876,8 @@ class Board:
         if geo is None:
             raise RegistryError("%s: [flash] sectors = %r is neither %r nor a geometry of platform/%s/platform.toml"
                                 % (self.id, name, APP_SLOT, self.platform.id))
-        return [tuple(s) for s in geo if s[1] >= self.app_base]
+        keep = self.data["flash"].get("unwritten", [])
+        return [tuple(s) for s in geo if s[1] >= self.app_base and not any(s[1] < hi and s[1] + s[2] > lo for lo, hi in keep)]
 
     def flash_end(self):
         s = self.sectors()
@@ -1387,6 +1432,13 @@ def check(root=ROOT):
                     bad("flash.stub spi: the board record needs the crystal, HSE_VALUE in board.mk")
                 if stub["spi"]["mode"] not in range(4):
                     bad("flash.stub spi mode is 0 to 3")
+            if "spi_gpio" in stub:
+                for k in K22_SPI_PINS:
+                    if not isinstance(b.pins.get(k), str):
+                        bad("flash.stub spi_gpio needs %s in boards/%s/pins.h as K22F_PIN(K22F_PORT_x, n)" % (k, bid))
+                if codec is not None and not codec["windows"][0][0] < stub.get("codec_image_end", -1) \
+                        <= sum(codec["windows"][0]):
+                    bad("flash.stub codec_image_end must fall inside the codec window")
         if b.first_stage and len(b.first_stage[1]) != 4:
             bad("board.mk BOOT_SIGNATURE is the first stage's first word: 4 bytes")
         # board.mk declares the options and their values (the build checks a value against them); board.toml adds
@@ -2061,12 +2113,10 @@ def self_test():
     tmp = tempfile.mkdtemp(prefix="rfoundry-boards-")
     try:
         # boards and platforms with what make print-vars reads (the Makefile, config/, boot/boot.mk), pins.h and the
-        # boards' headers (their key enums)
+        # headers whose macros a flash map may use
         for top in ("boards", "platform", "config"):
             shutil.copytree(os.path.join(ROOT, top), os.path.join(tmp, top),
-                            ignore=lambda d, names: [n for n in names if not (n.endswith((".toml", ".mk", ".ld", ".c"))
-                                                                              or n == "pins.h"
-                                                                              or (top == "boards" and n.endswith(".h"))
+                            ignore=lambda d, names: [n for n in names if not (n.endswith((".toml", ".mk", ".ld", ".c", ".h"))
                                                                               or os.path.isdir(os.path.join(d, n)))])
         shutil.copy(os.path.join(ROOT, "Makefile"), tmp)
         os.makedirs(os.path.join(tmp, "boot"))

@@ -29,6 +29,17 @@ typedef struct {
 	uint8_t mic_gain;	// 0..31
 } hrc6000_fm_tx_t;
 
+// The PLL and clock dividers for the clock the board feeds XTALI (modem-hrc6000.md 1.2). Both presets are the
+// manual's table 4.1 rows: the PLL makes 49.152 MHz, then Sys_clk 9.8304 MHz, the codec 12.288 MHz, CLKOUT 24.576 MHz
+typedef struct {
+	uint8_t pll_m;		// 4:0x0B
+	uint8_t pll_n;		// 4:0x0C (PLLN and the output divider)
+	uint8_t sys_div;	// 4:0xB9
+	uint8_t codec_div;	// 4:0xBA
+	uint8_t clkout_div;	// 4:0xBB
+} hrc6000_clock_t;
+extern const hrc6000_clock_t hrc6000_clock_29m4912;	// a 29.4912 MHz reference (hardware-dm1701.md)
+extern const hrc6000_clock_t hrc6000_clock_12m288;	// a 12.288 MHz reference (hardware-gd77.md 5.2)
 // The FM TX signaling generator used for single tones and DTMF (hrc6000_tx_pair): the registers it borrows, kept
 // to give back when the tone ends
 typedef struct {
@@ -50,8 +61,10 @@ void hrc6000_attach(hrc_t *dev, const hrc_bus_t *bus);
 bool hrc6000_rx_iq_swap(hrc_t *dev, bool swap, bool dmr);
 
 // Power-on initialization, modem-hrc6000.md section 3 steps 1-14. The board has already taken PWD low and waited
-// 10 ms. Leaves the chip in its DMR layer 2 receive set-up; call a hrc6000_set_mode_*() next
+// 10 ms. Leaves the chip in its DMR layer 2 receive set-up; call a hrc6000_set_mode_*() next. The plain form uses the
+// 29.4912 MHz clock preset
 bool hrc6000_power_on_init(hrc_t *dev, uint8_t dmr_mic_gain);
+bool hrc6000_power_on_init_clock(hrc_t *dev, uint8_t dmr_mic_gain, const hrc6000_clock_t *clk);
 
 // FM receive (modem-hrc6000.md 8). The audio feed-through is left as it was: see hrc6000_fm_audio()
 bool hrc6000_set_mode_fm_rx(hrc_t *dev);
@@ -61,6 +74,10 @@ bool hrc6000_set_mode_fm_tx(hrc_t *dev, const hrc6000_fm_tx_t *cfg);
 bool hrc6000_fm_audio(hrc_t *dev, bool on);
 // Reference oscillator offset (hardware-dm1701.md 12.4). fm_tx: the FM TX form (0x48 = 0)
 bool hrc6000_set_ref_offset(hrc_t *dev, int8_t offset, bool fm_tx);
+// Two-point modulation bias and DC offset where a radio's calibration holds them as such: 4:0x47 = the
+// bias's low byte, 4:0x48 = the bits above it, 4:0x04 = the offset. The other form of the same registers is
+// hrc6000_set_ref_offset()
+bool hrc6000_set_mod_bias(hrc_t *dev, uint16_t bias, uint8_t offset);
 // 4:0xA1 = 0x00 (modem-hrc6000.md 8). The power-on init leaves 0x80, whose bit 7 the manual marks reserved, must be 0.
 // The other boards receive DMR with it; on a board that feeds the chip a 450 kHz IF it stops every DMR sync
 bool hrc6000_tones_off(hrc_t *dev);

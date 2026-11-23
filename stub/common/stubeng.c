@@ -201,9 +201,22 @@ static void op_config(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	// The application base: a sector start inside the flash, not below the target's floor, never sector 0
+	// The application base: a sector start inside the flash, not below the target's floor, never sector 0. Its end: a
+	// sector start above it, or the flash's end
 	int sec = stubeng_sector_of(geo(s), c.app_base);
 	if (sec <= 0 || stubeng_sector_addr(geo(s), (unsigned)sec) != c.app_base || c.app_base < geo(s)->min_app_base) {
+		status(s, STUB_ST_BADARG);
+		return;
+	}
+	if (c.app_end == 0) {
+		c.app_end = flash_end(s);
+	}
+	int end = stubeng_sector_of(geo(s), c.app_end);
+	if (c.app_end != flash_end(s) && (end < 0 || stubeng_sector_addr(geo(s), (unsigned)end) != c.app_end)) {
+		status(s, STUB_ST_BADARG);
+		return;
+	}
+	if (c.app_end <= c.app_base) {
 		status(s, STUB_ST_BADARG);
 		return;
 	}
@@ -270,6 +283,7 @@ static bool mem_read(stubeng_t *s, int mem, uint32_t addr, void *dst, uint32_t n
 	return true;
 }
 
+// The target's watchdog, where one runs (stubeng_port_t.feed)
 static void feed(stubeng_t *s)
 {
 	if (s->port->feed != NULL) {
@@ -374,6 +388,10 @@ static void op_xerase(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
+	if (addr < s->cfg.xfloor) {
+		status(s, STUB_ST_REFUSED);	// the radio's own data
+		return;
+	}
 	feed(s);
 	status(s, s->port->xerase(s->port->ctx, addr) ? STUB_ST_OK : STUB_ST_FLASHERR);
 }
@@ -389,6 +407,10 @@ static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 	uint32_t n = len - 4u;
 	if (!spi_present(s) || !in(addr, n, 0, s->cfg.xsize) || addr / STUBENG_BLOCK != (addr + n - 1u) / STUBENG_BLOCK) {
 		status(s, STUB_ST_BADARG);
+		return;
+	}
+	if (addr < s->cfg.xfloor) {
+		status(s, STUB_ST_REFUSED);	// the radio's own data
 		return;
 	}
 	uint8_t *buf = (uint8_t *)s->words;
@@ -414,6 +436,18 @@ static void op_xprogram(stubeng_t *s, const uint8_t *p, uint16_t len)
 // The SPI flash's security registers: SREAD answers status register 2, then for reg 1-3 the register and its CRC-32.
 // SWRITE refuses a register whose one-time lock bit (LB1-LB3) is set, then erases, programs and reads it back. Only
 // for the manufacturer whose commands the target uses: on another chip the same opcodes mean other things
+#ifdef STUBENG_NO_SREG
+// A target without the ops (STUBENG_NO_SREG, its Makefile) answers as one whose port has no xsreg, in less code: the
+// K22F stub is at its 8 KB limit
+static uint8_t op_sreg(stubeng_t *s, bool write, const uint8_t *p, uint16_t len)
+{
+	(void)s;
+	(void)write;
+	(void)p;
+	(void)len;
+	return STUB_ST_BADARG;
+}
+#else
 static uint8_t op_sreg(stubeng_t *s, bool write, const uint8_t *p, uint16_t len)
 {
 	uint8_t *o = s->out + STUBENG_FRAME_HDR;
@@ -447,6 +481,7 @@ static uint8_t op_sreg(stubeng_t *s, bool write, const uint8_t *p, uint16_t len)
 	reply(s, STUB_ST_OK, reg != 0 ? 5u + STUBENG_SREG_LEN : 1u);
 	return 0;
 }
+#endif
 
 static void op_erase(stubeng_t *s, const uint8_t *p, uint16_t len)
 {
@@ -463,15 +498,15 @@ static void op_erase(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (stubeng_sector_addr(geo(s), sector) < s->cfg.app_base) {
-		status(s, STUB_ST_REFUSED);	// the bootloader
+	if (stubeng_sector_addr(geo(s), sector) < s->cfg.app_base || stubeng_sector_addr(geo(s), sector) >= s->cfg.app_end) {
+		status(s, STUB_ST_REFUSED);	// the bootloader, or the radio's data above the application
 		return;
 	}
 	if ((int)sector != stubeng_sector_of(geo(s), s->cfg.app_base) && app_committed(s)) {
 		status(s, STUB_ST_REFUSED);	// the interlock: erase the commit sector first
 		return;
 	}
-	feed(s);	// a 128 KB sector takes up to 2 s: the target's wait loop feeds as well (f4stub_flash.c)
+	feed(s);	// a 128 KB STM32F4 sector takes up to 2 s: the target's busy wait feeds as well
 	status(s, s->port->erase(s->port->ctx, sector) ? STUB_ST_OK : STUB_ST_FLASHERR);
 }
 
@@ -488,8 +523,8 @@ static void op_program(stubeng_t *s, const uint8_t *p, uint16_t len)
 		status(s, STUB_ST_BADARG);
 		return;
 	}
-	if (addr < s->cfg.app_base) {
-		status(s, STUB_ST_REFUSED);	// the bootloader
+	if (addr < s->cfg.app_base || addr >= s->cfg.app_end || n * 4u > s->cfg.app_end - addr) {
+		status(s, STUB_ST_REFUSED);	// the bootloader, or the radio's data above the application
 		return;
 	}
 	unsigned commit = (unsigned)stubeng_sector_of(geo(s), s->cfg.app_base);

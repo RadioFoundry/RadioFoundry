@@ -111,3 +111,13 @@ void i2c_gpio_recover(const i2c_gpio_t *bus)
 	}
 	stop(bus);
 }
+
+bool i2c_gpio_bus_write(void *ctx, uint8_t addr7, const uint8_t *data, size_t n)
+{
+	return i2c_gpio_write((const i2c_gpio_t *)ctx, addr7, data, n);
+}
+
+bool i2c_gpio_bus_write_read(void *ctx, uint8_t addr7, const uint8_t *w, size_t wn, uint8_t *r, size_t rn)
+{
+	return i2c_gpio_write_read((const i2c_gpio_t *)ctx, addr7, w, wn, r, rn);
+}
