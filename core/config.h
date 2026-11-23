@@ -178,6 +178,9 @@
 #ifndef CONFIG_FONT_BIG
 #define CONFIG_FONT_BIG			CONFIG_FONT_AA
 #endif
+#ifndef CONFIG_FONT_LATIN_EXTENDED
+#define CONFIG_FONT_LATIN_EXTENDED	CONFIG_LANG_TR
+#endif
 // Languages the radio can show besides English (core/ui/lang/<code>.po, docs/dev/translating.md): one switch each.
 // CONFIG_LANG_ANY: at least one is built (the translation lookup, the Latin-1 glyphs); add each new switch to it
 #ifndef CONFIG_LANG_ES
@@ -193,12 +196,24 @@
 #ifndef CONFIG_LANG_ZH
 #define CONFIG_LANG_ZH			0
 #endif
+#ifndef CONFIG_LANG_TR
+#define CONFIG_LANG_TR 0
+#endif
+#ifndef CONFIG_LANG_RU
+#define CONFIG_LANG_RU 0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_TR
+#define CONFIG_LANG_DEFAULT_TR 0
+#endif
+#ifndef CONFIG_LANG_DEFAULT_RU
+#define CONFIG_LANG_DEFAULT_RU 0
+#endif
 // The CJK glyph table (cjk_font_data.c) is a ~120 KB rodata cost. It can stay off while CONFIG_LANG_ZH's translated
 // menus stay on, for a board too small to show Chinese (docs/build-config.md). Defaults to LANG_ZH; a board sets it 0
 #ifndef CONFIG_CJK_GLYPHS
 #define CONFIG_CJK_GLYPHS		CONFIG_LANG_ZH
 #endif
-#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH)
+#define CONFIG_LANG_ANY			(CONFIG_LANG_ES || CONFIG_LANG_IT || CONFIG_LANG_FR || CONFIG_LANG_ZH || CONFIG_LANG_TR || CONFIG_LANG_RU)
 // The language the radio starts in until the user picks one (CONFIG_LANG_DEFAULT_<CODE>, needs its CONFIG_LANG_<CODE>):
 // all 0 = English
 #ifndef CONFIG_LANG_DEFAULT_ES

@@ -31,12 +31,19 @@ void sb_chr(sbuf_t *b, char c)
 
 void sb_str(sbuf_t *b, const char *s)
 {
-#if CONFIG_LANG_ZH
-	// A CJK catalog's text is UTF-8 (tools/i18n.py): when the buffer has no room for a whole character, drop it whole
-	// rather than leave half of it for the text layer to draw as a box
+#if CONFIG_LANG_ZH || CONFIG_LANG_RU
+	// Keep UTF-8 CJK characters and two-byte Cyrillic glyphs whole when the buffer fills.
 	while (*s) {
 		const uint8_t *p = (const uint8_t *)s;
-		int seq = ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80) ? 3 : 1;
+		int seq = 1;
+#if CONFIG_LANG_ZH
+		if ((p[0] & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 && (p[2] & 0xC0) == 0x80)
+			seq = 3;
+#endif
+#if CONFIG_LANG_RU
+		if (p[0] == CYRILLIC_PREFIX && p[1] >= 0xA0 && p[1] < 0xA0 + CYRILLIC_COUNT)
+			seq = 2;
+#endif
 		if ((size_t)(b->end - b->p) < (size_t)seq)
 			return;
 		while (seq--)

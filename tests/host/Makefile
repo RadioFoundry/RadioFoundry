@@ -674,6 +674,17 @@ TESTS   += gfxTest
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -o $@ gfxTest.c $(UI)
 
+LATINGFX := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c
+TESTS += latinExtendedTest latinExtendedTestOff
+latinExtendedTest latinExtendedTestOff: latinExtendedTest.c $(LATINGFX) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DGFX_MAX_ROWS=320 -DFONT_BOTH -DCONFIG_FONT_XL=1 \
+		-DCONFIG_FONT_LATIN_EXTENDED=$(if $(findstring Off,$@),0,1) -o $@ $< $(LATINGFX)
+
+TESTS += menuLocalesTest
+menuLocalesTest: menuLocalesTest.c $(LATINGFX) $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DGFX_MAX_ROWS=320 -DFONT_BOTH \
+		-DCONFIG_LANG_TR=1 -DCONFIG_LANG_RU=1 -o $@ $< $(LATINGFX) $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c
+
 # The same with a CJK catalog (CONFIG_LANG_ZH): text is UTF-8, a character of it is a 16 px glyph of the CJK face, widths
 # add up in pixels, and a cut keeps whole characters (core/ui/cjk_font.h, docs/spec/ui.md 2.5)
 CJK     := $(CORE)/ui/cjk_font.c $(CORE)/ui/cjk_font_data.c
@@ -774,13 +785,17 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
+run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault latinExtendedTest latinExtendedTestOff \
+	menuLocalesTest uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
 	./gfxFbEdgeTest
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
+	./latinExtendedTest
+	./latinExtendedTestOff
+	./menuLocalesTest
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiFlowTestSatellite
