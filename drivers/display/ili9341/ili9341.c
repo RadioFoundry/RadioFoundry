@@ -7,6 +7,9 @@
 #include "ili9341.h"
 
 #define CMD_SLPOUT	0x11
+#define CMD_RDID4	0xD3
+#define RDID_BYTES	4u
+#define RDID_GAP_MS	1u
 #define CMD_DISPOFF	0x28
 #define CMD_DISPON	0x29
 #define CMD_CASET	0x2A
@@ -196,6 +199,24 @@ static void reset_pulse(const ili9341_bus_t *b)
 	b->delay_ms(RESET_LOW_MS);
 	b->reset(true);
 	b->delay_ms(RESET_HIGH_MS);
+}
+
+uint16_t ili9341_read_id(const ili9341_t *p)
+{
+	const ili9341_bus_t *b = p->bus;
+	if (b->read == NULL) {
+		return 0;
+	}
+	reset_pulse(b);
+	uint8_t r[RDID_BYTES];
+	b->begin();
+	b->cmd(CMD_RDID4);
+	for (unsigned i = 0; i < RDID_BYTES; i++) {
+		b->delay_ms(RDID_GAP_MS);
+		r[i] = b->read();
+	}
+	b->end();
+	return (uint16_t)((r[2] << 8) | r[3]);
 }
 
 void ili9341_init(const ili9341_t *p)

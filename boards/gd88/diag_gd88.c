@@ -215,10 +215,13 @@ bool gd88_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	}
 	case 14:
-		// The display: the panel variant in use (ili9341.h) and where it came from (the panel record or the default)
+		// The display: the panel variant in use (ili9341.h), what chose it and the panel's ID
 		put(&o, "lcd v");
 		put_u(&o, gd88_panel_variant());
-		put(&o, gd88_panel_from_record() ? " rec" : " dflt");
+		put(&o, " ");
+		put(&o, gd88_panel_source());
+		put(&o, " id ");
+		put_x(&o, gd88_panel_id(), 4);
 		break;
 #if CONFIG_NAND_STORAGE
 	case 15:

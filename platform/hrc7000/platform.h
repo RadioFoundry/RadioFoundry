@@ -282,6 +282,7 @@ void hrc_lcdc_start(void);
 void hrc_lcdc_drain(void);
 void hrc_lcdc_cmd(uint8_t c);
 void hrc_lcdc_data(const uint8_t *d, uint32_t n);
+uint8_t hrc_lcdc_read(void);	// one data byte from the panel (RS high)
 void hrc_lcdc_pixels(const uint16_t *px, uint32_t n);		// RGB565, high byte first
 // n pixels of a 16-color row (two a byte, high nibble left) through a palette of 16 RGB565 colors
 void hrc_lcdc_pixels4(const uint8_t *row, const uint16_t *palette, uint32_t n);

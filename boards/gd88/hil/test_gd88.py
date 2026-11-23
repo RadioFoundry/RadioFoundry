@@ -46,9 +46,11 @@ def forwarded(link):
 def test_panel_variant(radio):
     line = find(diag_lines(radio), "lcd ")
     assert line, "no lcd line"
-    m = re.match(r"lcd v(\d+) (rec|dflt)$", line)
+    m = re.match(r"lcd v(\d+) (id|rec|dflt) id ([0-9A-F]{4})$", line)
     assert m, line
     assert int(m.group(1)) in PANEL_VARIANTS, line
+    if m.group(2) == "id":
+        assert m.group(3) == "C505" and m.group(1) == "1", line
     if m.group(2) == "dflt":
         rfoundry_hil.skip("no_hw", f"no panel record in program flash, the default variant is in use ({line})")
 

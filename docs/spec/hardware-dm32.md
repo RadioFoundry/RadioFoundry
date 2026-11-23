@@ -301,11 +301,11 @@ Bank interrupt vectors: GPIO B = 46, GPIO A = 47, GPIO C = 49.
 | Offset | Use |
 |---|---|
 | 0x00 | write: command byte to the panel (RS low) |
-| 0x04 | write: data byte to the panel (RS high) |
-| 0x10 | configuration; RadioFoundry writes 0x303 |
+| 0x04 | write: data byte to the panel (RS high); read: one byte from the panel (RD strobed) |
+| 0x10 | write timing in controller clocks: bits 23:16 inactive after the strobe, 15:8 strobe low, 7:0 inactive before; reset value 0x010101. RadioFoundry writes 0x010303 |
 | 0x28 | bit 0 enable (set), bit 1 ready (poll until 1 after enabling) |
 
-The bus pins (CS, RS, WR, DB0–DB7) are handed to the controller by clearing IO_DIPLEX2 bits 3–7 and 9–18 (IO_DIPLEX2 &= 0xFFF80107). RD (PTC6) stays a GPIO held high; NRESET is GPIO 0x42. Bytes may follow each other with no delay: back-to-back writes from the CPU give a clean picture (`platform/hrc7000/lcdc.c`). The loop, not the timing word, sets most of the speed.
+The bus pins (CS, RS, WR, DB0–DB7) are handed to the controller by clearing IO_DIPLEX2 bits 3–7 and 9–18 (IO_DIPLEX2 &= 0xFFF80107). RD (PTC6) stays a GPIO held high; NRESET is GPIO 0x42. Bytes may follow each other with no delay: the controller paces back-to-back writes from the CPU (`platform/hrc7000/lcdc.c`). The cycle after the strobe holds the data past WR's rising edge (the panel's data hold time).
 
 ### 3.11 USB controller (present on the SoC, not usable on the DM-32UV)
 

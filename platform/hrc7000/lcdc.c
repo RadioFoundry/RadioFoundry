@@ -12,7 +12,9 @@
 #define LCDC_DATA		0x04u	// write: data byte (RS high)
 #define LCDC_CFG		REG32(LCDC_BASE + 0x10)
 #define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
-#define LCDC_CFG_VALUE		0x303u
+// Write timing in controller clocks: [23:16] inactive after the strobe, [15:8] strobe low, [7:0] inactive before it.
+// The cycle after the strobe holds the data past WR's rising edge, the panel's data hold time; 0x303 left none
+#define LCDC_CFG_VALUE		0x010303u
 #define LCDC_READY_SPINS	100000u
 // Cycles to let the last byte's strobe finish before a board gives the pins back to another user (a keypad on the same pins)
 #define LCDC_DRAIN_SPINS	4u
@@ -20,6 +22,10 @@
 // One byte to the panel (the host test, tests/host/hrc7000LcdcTest.c, records them instead)
 #ifndef LCDC_WRITE
 #define LCDC_WRITE(reg, v)	(REG32(LCDC_BASE + (reg)) = (v))
+#endif
+// One byte from the panel: a read of the data register strobes RD
+#ifndef LCDC_READ
+#define LCDC_READ(reg)		(REG32(LCDC_BASE + (reg)))
 #endif
 
 void hrc_lcdc_start(void)
@@ -39,6 +45,11 @@ void hrc_lcdc_drain(void)
 void hrc_lcdc_cmd(uint8_t c)
 {
 	LCDC_WRITE(LCDC_CMD, c);
+}
+
+uint8_t hrc_lcdc_read(void)
+{
+	return (uint8_t)LCDC_READ(LCDC_DATA);
 }
 
 void hrc_lcdc_data(const uint8_t *d, uint32_t n)

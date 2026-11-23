@@ -21,6 +21,7 @@ typedef struct {
 	// Optional (NULL: rows go through pixels): n pixels of a 16-color row (two a byte, high nibble left) through the
 	// palette, sent as pixels would. Spares the bus a line buffer pass where a pixel costs the CPU most
 	void (*pixels4)(const uint8_t *row, const uint16_t *palette, uint32_t n);
+	uint8_t (*read)(void);			// optional: one data byte from the panel (ili9341_read_id)
 } ili9341_bus_t;
 
 #define ILI9341_MAX_LINE	320u	// longest panel row in pixels
@@ -42,6 +43,10 @@ typedef struct {
 
 // Reset, the variant's init set, sleep out, the frame memory cleared to black, display on
 void ili9341_init(const ili9341_t *p);
+// The panel's ID (command 0xD3, the last two of four bytes read), after a reset pulse. 0 without a read on the bus.
+// ILI9341_ID_REG names the register-style panel
+#define ILI9341_ID_REG	0xC505u
+uint16_t ili9341_read_id(const ili9341_t *p);
 // Send rows y0 .. y1-1 of a width x height 16-color frame buffer: two pixels a byte (high nibble left), palette of
 // 16 RGB565 colors
 void ili9341_write_rows_indexed(const ili9341_t *p, const uint8_t *fb, const uint16_t *palette, uint16_t y0, uint16_t y1);

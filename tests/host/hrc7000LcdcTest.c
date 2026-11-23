@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The HR_C7000 LCD controller's byte loops (platform/hrc7000/lcdc.c): every byte in order, to the right register, a
-// 16-color row through the palette exactly as the RGB565 path sends it, odd widths included
+// 16-color row through the palette exactly as the RGB565 path sends it, odd widths included; a read from the data
+// register; the timing word with its hold cycle after the strobe
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -16,11 +17,14 @@ static struct { uint8_t reg, v; } out[4096];
 static uint32_t n_out;
 #define LCDC_WRITE(r_, v_)	do { if (n_out < 4096u) { out[n_out].reg = (uint8_t)(r_); out[n_out].v = (uint8_t)(v_); } \
 	n_out++; } while (0)
+static uint32_t read_reg = 0xFFu, read_val;
+#define LCDC_READ(r_)		(read_reg = (r_), read_val)
 
 void hrc_lcdc_start(void);
 void hrc_lcdc_drain(void);
 void hrc_lcdc_cmd(uint8_t c);
 void hrc_lcdc_data(const uint8_t *d, uint32_t n);
+uint8_t hrc_lcdc_read(void);
 void hrc_lcdc_pixels(const uint16_t *px, uint32_t n);
 void hrc_lcdc_pixels4(const uint8_t *row, const uint16_t *palette, uint32_t n);
 
@@ -40,6 +44,14 @@ static void test_cmd_data(void)
 	CHECK(out[1].reg == 0x04 && out[1].v == 0x12 && out[3].v == 0xFF);
 	hrc_lcdc_start();
 	CHECK(fake_cfg == LCDC_CFG_VALUE && (fake_en & 1u));
+	CHECK(((fake_cfg >> 16) & 0xFFu) >= 1u);	// a cycle after the strobe: the data held past WR's rising edge
+}
+
+static void test_read(void)
+{
+	read_val = 0x1C5u;
+	CHECK(hrc_lcdc_read() == 0xC5);
+	CHECK(read_reg == 0x04);
 }
 
 static void test_pixels4(void)
@@ -77,6 +89,7 @@ int main(void)
 {
 	test_cmd_data();
 	test_pixels4();
+	test_read();
 	if (failures) {
 		printf("hrc7000LcdcTest: %d failure(s)\n", failures);
 		return 1;

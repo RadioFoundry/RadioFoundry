@@ -50,7 +50,7 @@ Run the first boots with the antenna on and **no PTT**. Transmit only into a dum
 | Look for | Proves | If not |
 |---|---|---|
 | Radio stays on after you let go of the knob (power latch) | crt0 ran, clocks, `board_early_init` (latch first) | Nothing ran at all: check the image starts with `psrclr ie` at 0x0300C000 (`csky-elf-objdump -d build/dm32/rfoundry_dm32.elf | head`); re-enter update mode |
-| Backlight on, then the Home screen | RTOS tick (Timer 1), LCD controller, ST7789 init | Backlight but no picture: `display_dm32.c` (LCDC_CFG 0x303, IO_DIPLEX2 hand-over). Picture upside down or mirrored: MADCTL in `display_dm32.c` (0xC0 now; try 0x00, 0x40, 0x80) |
+| Backlight on, then the Home screen | RTOS tick (Timer 1), LCD controller, ST7789 init | Backlight but no picture: `display_dm32.c` (LCDC_CFG 0x010303, IO_DIPLEX2 hand-over). Picture upside down or mirrored: MADCTL in `display_dm32.c` (0xC0 now; try 0x00, 0x40, 0x80) |
 | Colors right (black background, not white) | inversion on | `st7789_t.invert` |
 | Picture fills the panel, no tearing seams | 2x scaling, window | `st7789_write_rows` |
 | Hangs before the screen | interrupts or the scheduler | `platform/hrc7000/irq.c`: the PIC may deliver all sources on autovector 10 instead of vectors 32+n (open item); the irq entry then reads the wrong source. `freertos/port.c` / `portasm.S` for a hang after the first task switch |

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // ILI9341-class driver (drivers/display/ili9341): each variant's init stream is well formed and goes out between bus
-// begin / end with the reset pulses first, the window commands of both styles, and a 16-color row through the palette
+// begin / end with the reset pulses first, the window commands of both styles, a 16-color row through the palette, and
+// the ID read
 #include <stdio.h>
 #include <string.h>
 #include "display/ili9341/ili9341.h"
@@ -181,12 +182,37 @@ static void test_rows_pixels4(void)
 	CHECK(last_px[0] == 0xFFFF && last_px[1] == 0x2222);
 }
 
+static const uint8_t id_bytes[4] = { 0xAA, 0x00, 0xC5, 0x05 };
+static unsigned id_reads;
+static uint8_t f_read(void)
+{
+	return id_reads < 4 ? id_bytes[id_reads++] : 0xFF;
+}
+
+static void test_read_id(void)
+{
+	ili9341_t p = { .bus = &bus, .width = 320, .height = 240, .variant = ILI9341_VARIANT_3 };
+	CHECK(ili9341_read_id(&p) == 0);	// no read on the bus
+	static const ili9341_bus_t bus_rd = {
+		.begin = f_begin, .end = f_end, .cmd = f_cmd, .data = f_data, .pixels = f_pixels, .reset = f_reset,
+		.delay_ms = f_delay, .read = f_read,
+	};
+	p.bus = &bus_rd;
+	clear();
+	id_reads = 0;
+	CHECK(ili9341_read_id(&p) == ILI9341_ID_REG);
+	CHECK(id_reads == 4);
+	CHECK(lows == 1 && depth == 0);		// a reset pulse first, the bus given back
+	CHECK(n_words == 1 && words[0] == 0x1D3u);
+}
+
 int main(void)
 {
 	test_command_variants();
 	test_register_variant();
 	test_rows();
 	test_rows_pixels4();
+	test_read_id();
 	if (failures) {
 		printf("ili9341Test: %d failure(s)\n", failures);
 		return 1;

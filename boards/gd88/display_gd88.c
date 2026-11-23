@@ -4,8 +4,8 @@
 //. Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
 // holds a palette index per pixel (37.5 KB) and each row goes out as RGB565.
 //
-// Which controller is fitted comes from the panel record in program flash at 0x031FD000: "lcd" and a type. Type 1 is
-// a register-style panel; the others are command-style init sets.
+// Which controller is fitted: a panel that answers ID 0xC505 to command 0xD3 is the register-style one (type 1); else
+// the panel record in program flash at 0x031FD000 gives the type ("lcd" and 0..3), else type 3.
 #include "gd88.h"
 #include "config.h"
 #include "pins.h"
@@ -19,9 +19,7 @@
 #define PANEL_W			320u
 #define PANEL_H			240u
 #define PANEL_RECORD		0x031FD000u
-// The record is four bytes, "lcd" and the type 0..3 (an ASCII digit is taken too); without one
-// variant 3. A panel that answers ID 0xC505 to command 0xD3 is variant 1, but RadioFoundry
-// doesn't read the panel's ID, so such a panel needs its record
+// The record is four bytes, "lcd" and the type 0..3 (an ASCII digit is taken too)
 #define PANEL_DEFAULT		ILI9341_VARIANT_3
 
 static bool ready;
@@ -45,12 +43,19 @@ static const ili9341_bus_t bus = {
 	.pixels4 = hrc_lcdc_pixels4,
 	.reset = bus_reset,
 	.delay_ms = hal_delay_ms,
+	.read = hrc_lcdc_read,
 };
 
-static bool from_record;
+static const char *source = "dflt";
+static uint16_t panel_id;
 
 static uint8_t panel_variant(void)
 {
+	panel_id = ili9341_read_id(&panel);
+	if (panel_id == ILI9341_ID_REG) {
+		source = "id";
+		return ILI9341_VARIANT_REG;
+	}
 	const volatile uint8_t *r = (const volatile uint8_t *)PANEL_RECORD;
 	if (r[0] != 'l' || r[1] != 'c' || r[2] != 'd') {
 		return PANEL_DEFAULT;
@@ -59,8 +64,11 @@ static uint8_t panel_variant(void)
 	if (t >= '0' && t <= '9') {
 		t = (uint8_t)(t - '0');
 	}
-	from_record = t < ILI9341_VARIANTS;
-	return from_record ? t : PANEL_DEFAULT;
+	if (t >= ILI9341_VARIANTS) {
+		return PANEL_DEFAULT;
+	}
+	source = "rec";
+	return t;
 }
 
 uint8_t gd88_panel_variant(void)
@@ -68,9 +76,14 @@ uint8_t gd88_panel_variant(void)
 	return panel.variant;
 }
 
-bool gd88_panel_from_record(void)
+const char *gd88_panel_source(void)
 {
-	return from_record;
+	return source;
+}
+
+uint16_t gd88_panel_id(void)
+{
+	return panel_id;
 }
 
 static void lcdc_init(void)
