@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Copyright (c) 2026 Alex Bloom
 """Passive check on an already selected experimental receive-only trunked channel."""
 import time
 import pytest
