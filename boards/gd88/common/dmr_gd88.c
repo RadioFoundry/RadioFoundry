@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main BK4819
+// GD-88 DMR, either SoC: the HR_C7000's modem on the shared glue (platform/hrc7000/dmr_glue.c) with the main RF chip
 // as the RF front end, the scheme of hardware-db25d.md 4.
 //
 // Transmit only with GD88_DMR_TX=1 (gd88_rf.h: A with GD88_TX, B as A's second transmitter); without it tx() refuses
@@ -24,14 +24,14 @@
 #ifndef GD88_DMR_RF_MODE
 #define GD88_DMR_RF_MODE	0x034C9860u
 #endif
-// The main chip's AF DAC gain in DMR (0x48 bits 3:0): the modem's input level, whatever the speaker volume. The digital
-// set's value is 4. make GD88_DMR_AF_GAIN=N replaces it
+// A BK4819 main chip's AF DAC gain in DMR (0x48 bits 3:0): the modem's input level, whatever the speaker volume. The
+// digital set's value is 4. make GD88_DMR_AF_GAIN=N replaces it. An FD6818 keeps its digital set's own gain
 #ifndef GD88_DMR_AF_GAIN
 #define GD88_DMR_AF_GAIN	4u
 #endif
 
 static hrc7000_t *modem;
-static bk4819_t *rf;
+static const superhet_main_t *rf;	// the main chip, bound by the radio init
 
 #if GD88_DMR_TX
 static const hrc_rfburst_board_t rf_board = {
@@ -66,7 +66,7 @@ static void speaker_pcm(bool on)
 	gd88_speaker_pcm(on);	// the amplifier and its source: the squelch path never opens for DMR voice
 }
 
-void gd88_dmr_init(bk4819_t *main_chip, hrc7000_t *m)
+void gd88_dmr_init(const superhet_main_t *main_chip, hrc7000_t *m)
 {
 	rf = main_chip;
 	modem = m;	// attached and powered on by the radio init (modem-hrc7000.md 4 steps 4-32)
@@ -76,9 +76,8 @@ void gd88_dmr_init(bk4819_t *main_chip, hrc7000_t *m)
 
 void gd88_dmr_enter(uint32_t rx_hz)
 {
-	bk4819_set_state(rf, BK4819_STATE_IDLE);
-	bk4819_dmr_rx_enter(rf);
-	bk4819_set_af_gain(rf, GD88_DMR_AF_GAIN);
+	rf->ops->idle(rf->chip);
+	rf->ops->dmr_enter(rf->chip, GD88_DMR_AF_GAIN);
 	hrc7000_dmr_enter(modem, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(rx_hz)), MIC_GAIN_DB);
 	hrc7000_wr(modem, C7_RF_MODE, GD88_DMR_RF_MODE);	// it only acts in DMR
 	hrc_dmr_enter();
@@ -98,8 +97,8 @@ void gd88_dmr_leave(void)
 {
 	hrc_dmr_leave();
 	hrc7000_fm_idle(modem);
-	bk4819_set_state(rf, BK4819_STATE_IDLE);
-	bk4819_dmr_rx_end(rf);
+	rf->ops->idle(rf->chip);
+	rf->ops->dmr_leave(rf->chip);
 }
 
 uint32_t gd88_dmr_phase(void)

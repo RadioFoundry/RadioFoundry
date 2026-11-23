@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// What both GD-88 SoCs share: each has its own BK4819 pair (receiver / transmitter and
-// the superhet LO) on the same pins, its own HR_C7000 modem and its own NAND. The radio, DMR and NAND code in
+// What both GD-88 SoCs share: each has its own pair of RF chips (receiver / transmitter and the superhet LO; BK4819,
+// FD6818, 0x7813 or AT1141, found at start-up) on the same pins, its own HR_C7000 modem and its own NAND. The radio, DMR and NAND code in
 // boards/gd88/common runs on both. What differs is how the RF and audio switches are reached: the TX / RX line PTB2,
 // the LO chip's GPIOs and the serial chain's audio routing on A (paths_gd88.c), direct GPIO pairs on B (paths_gd88b.c).
 #ifndef GD88_RF_H
@@ -37,22 +37,24 @@
 #define GD88_MIC_GAIN_DB	11u	// GCR_ADCL at init, as the other HR_C7000 radios
 
 // The RF chips' 3-wire bus, the same pins on both SoCs
-#define GD88_PIN_RF_SEN_LO	0x13	// PTA19, LO BK4819 enable, low = selected
+#define GD88_PIN_RF_SEN_LO	0x13	// PTA19, LO chip enable, low = selected
 #define GD88_PIN_RF_CLK		0x30	// PTB16
 #define GD88_PIN_RF_DATA	0x38	// PTB24, bidirectional
-#define GD88_PIN_RF_SEN_MAIN	0x39	// PTB25, main BK4819 enable, low = selected
+#define GD88_PIN_RF_SEN_MAIN	0x39	// PTB25, main chip enable, low = selected
+#define GD88_PIN_RF_CSS		0x3B	// PTB27, input: an FD6818 main chip's sub-audio compare result (GPIO0)
 #define GD88_PIN_NAND_CS	0x12	// PTA18, SPI NAND chip select, low = selected
 
 // --- Radio (radio_gd88.c) ---
 extern const hal_radio_t gd88_radio;
 typedef struct {
-	uint16_t main_id, lo_id;	// register 0 of each RF chip (0x4819 expected)
+	uint16_t main_id, lo_id;	// register 0 of each RF chip
+	const char *main_chip, *lo_chip;	// the part each ID names ("BK4819", "FD6818", "7813", "AT1141", "none")
 	uint16_t rssi_raw, noise_raw;	// main chip 0x67 / 0x65 from the last status poll
 	uint32_t rf_writes;
 	uint32_t hz;			// the tuned frequency
 	uint16_t pa_low, pa_high;	// the page's two PA rows there (0: none, TX refused)
 	bool transmitting;
-	bool supported;			// both chips answered as BK4819
+	bool supported;			// both chips answered as parts radio_gd88.c drives
 	bool audio_open, pcm_on;	// the speaker's requests: FM receive audio, the modem's PCM (speaker())
 } gd88_radio_diag_t;
 void gd88_radio_diag(gd88_radio_diag_t *d);
@@ -63,7 +65,7 @@ void gd88_radio_diag(gd88_radio_diag_t *d);
 radio_squelch_read_t gd88_radio_squelch_read(uint8_t level, uint8_t noise_none);
 // The core's last volume() in percent (A passes it on to B's audio)
 uint8_t gd88_radio_volume(void);
-// The debug link's CHIP_REG for the main chip and a BK4819 LO (board.chip_reg)
+// The debug link's CHIP_REG for the main chip (0) and the LO (1) (board.chip_reg)
 bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 #if !GD88_TX
 // B, as A's transmission keys its PA: its main chip's GPIO set for A's TX band (pa_gd88b.c)
@@ -108,10 +110,10 @@ void gd88_path_mute(bool muted);
 #include "dmr_glue.h"
 #include "audio_pcm.h"
 #include "vocoder.h"
-#include "rf/bk4819/bk4819.h"
+#include "rf/superhet/superhet.h"
 #include "modem/hrc7000/hrc7000.h"
 
-void gd88_dmr_init(bk4819_t *main_chip, hrc7000_t *modem);
+void gd88_dmr_init(const superhet_main_t *main_chip, hrc7000_t *modem);
 void gd88_dmr_enter(uint32_t rx_hz);
 void gd88_dmr_leave(void);
 // The LO's side for the modem's RX IQ inversion (RF_MODE bit 15: set with the LO above the signal, modem-hrc7000.md)

@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 radio, either SoC: a main BK4819 and an LO chip on one bit-banged 3-wire bus, the superhet's RX paths and
-// analog FM. The same scheme and chip set-up as hardware-db25d.md 4.
+// GD-88 radio, either SoC: a main transceiver chip and an LO chip on one bit-banged 3-wire bus, the superhet's RX
+// paths and analog FM. The same scheme and chip set-up as hardware-db25d.md 4.
+//
+// Units differ in their RF chips: the main chip is a BK4819, an FD6818 or the 0x7813 part, the LO any of those or an
+// AT1141 PLL. The shared superhet layer (rf/superhet/superhet_chips.h) reads each chip's ID and binds its driver; this
+// file drives the pair through the superhet ops and adds the wiring, which GPIO does what on each part.
 //
 // Receive on f: the LO chip synthesizes f + IF (GD88_IF_HZ: 45 MHz on A, 51.55 MHz on B), the main chip receives and
-// demodulates at the IF. The LO chip is a second BK4819 or an AT1141 (ID 0x1100), told apart by its ID; the AT1141 runs low-side, f - IF, from 400 to 440 MHz. On A the LO chip's GPIO4 / GPIO5 also select
-// the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
+// demodulates at the IF. An AT1141 LO runs low-side, f - IF, from 400 to 440 MHz. On A the LO chip's GPIO4 / GPIO5 also
+// select the band's path (GD88_BAND_LO_GPIO). DAC A isn't used.
 //
 // Analog FM transmit (GD88_TX=1, A only): the main chip is tuned to f and modulates the microphone, the LO chip is
 // off. The PA is B's: A sends B the drive from A's page and the page's delays (RX2_TX, before
@@ -23,11 +27,7 @@
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/rfbus/rfbus.h"
-#include "rf/bk4819/bk4819.h"
-#include "rf/at1141/at1141.h"
-#include "rf/superhet/superhet.h"
-#include "rf/bk4819/bk4819_superhet.h"
-#include "rf/at1141/at1141_superhet.h"
+#include "rf/superhet/superhet_chips.h"
 #include "modem/hrc7000/hrc7000.h"
 #include "audio_pcm.h"
 #include "audio/afsk_tonegen/afsk_tonegen.h"
@@ -52,10 +52,13 @@
 #ifndef GD88_TX_TONE_GAIN
 #define GD88_TX_TONE_GAIN	BK4819_TONE_GAIN_STOCK
 #endif
-// AFSK at level 50: about 3 kHz peak (aprs.md 5.2) through 0x40's deviation scale (bk4819_tone_deviation), not the
-// tone's gain (the voice word gave 4.8 kHz at any gain from 13 to 48). The deviation rises about 10 Hz per count from
-// GD88_AFSK_DEV_ZERO (SDR bench, 0x448 to 0x4D9); level 50 adds GD88_AFSK_DEV_SPAN (3.0 kHz measured; level 25 2.1 kHz).
-// Never above the voice word (4.8 kHz): level 100 would give 6.8 kHz
+// The main chip's PA gain (0..15) on a part that takes one per transmission (FD6818): the top, as a BK4819's fixed
+// level. The power is set by the PA after it (B's DAC B)
+#define MAIN_PA_GAIN		15u
+// AFSK at level 50 (BK4819 main only): about 3 kHz peak (aprs.md 5.2) through 0x40's deviation scale
+// (bk4819_tone_deviation), not the tone's gain (the voice word gave 4.8 kHz at any gain from 13 to 48). The deviation
+// rises about 10 Hz per count from GD88_AFSK_DEV_ZERO (SDR bench, 0x448 to 0x4D9); level 50 adds GD88_AFSK_DEV_SPAN
+// (3.0 kHz measured; level 25 2.1 kHz). Never above the voice word (4.8 kHz): level 100 would give 6.8 kHz
 #ifndef GD88_AFSK_DEV_SPAN
 #define GD88_AFSK_DEV_SPAN	0x129u
 #endif
@@ -98,13 +101,10 @@
 #define CTCSS_MAX_X10		2600u
 
 static rfbus_3w_t bus_main, bus_lo;
-static bk4819_t rf_main, rf_lo;
-static at1141_t lo_at;		// the LO when it answers as an AT1141
-static bool lo_is_at1141;
-static superhet_lo_t sh_lo;	// rf_lo or lo_at, bound at init
+static superhet_chips_t rf;	// both chips, found and bound at init
+static const superhet_main_t *const rf_main = &rf.main;
 static hrc7000_t modem;
-static bool supported;		// the main chip answered as a BK4819, the LO as a BK4819 or an AT1141
-static uint16_t main_id, lo_id;
+static bool supported;		// both chips answered as parts this drives
 static uint32_t rx_hz;
 static radio_bw_t rx_bw = RADIO_BW_12K5;
 static subtone_t rx_tone;
@@ -206,21 +206,49 @@ static const rfbus_3w_pins_t pins_lo = {
 	.delay_us = hal_delay_us, .crit_enter = hrc_irq_save, .crit_exit = hrc_irq_restore, .delay_ms = hal_delay_ms,
 };
 
-// ---- LO chip: a BK4819 or an AT1141 on the LO enable ----
+// An FD6818 main chip's sub-audio compare result (its GPIO0) on the RF status line PTB27
+static bool css_line(void) { return hrc_pin_read(GD88_PIN_RF_CSS); }
 
-static bk4819_tone_t bk_tone(uint8_t type)
+// The AT1141 LO goes off for a transmission and restarts after it
+static const superhet_chips_cfg_t rf_cfg = {
+	.bus_main = &bus_main.bus, .bus_lo = &bus_lo.bus, .css_line = css_line, .at1141_restart = true,
+};
+
+static bool main_is_bk4819(void)
+{
+	return rf.main_kind == SUPERHET_CHIP_BK4819;
+}
+
+#if !GD88_TX
+// B's main chip's GPIOs, by part: the path to the PA (its own transmitter's output instead of A's), the band (high:
+// VHF; A's transmission uses the same one, gd88_a_tx_band) and B's own TX. The FD6818's own-TX pin isn't known
+#define GPIO_NONE		0xFFu	// the drivers ignore a pin above their range
+static uint8_t gpio_path = GPIO_NONE, gpio_vhf = GPIO_NONE, gpio_tx = GPIO_NONE;
+
+static void main_gpio_map(void)
+{
+	bool bk = main_is_bk4819();
+	gpio_path = bk ? 0u : 5u;
+	gpio_vhf = bk ? 1u : 4u;
+	gpio_tx = bk ? 3u : GPIO_NONE;
+}
+#endif
+
+static superhet_tone_t sh_tone(uint8_t type)
 {
 	switch (type) {
-	case TONE_CTCSS: return BK4819_TONE_CTCSS;
-	case TONE_DCS: return BK4819_TONE_DCS;
-	case TONE_DCS_INV: return BK4819_TONE_DCS_INV;
-	default: return BK4819_TONE_NONE;
+	case TONE_CTCSS: return SUPERHET_TONE_CTCSS;
+	case TONE_DCS: return SUPERHET_TONE_DCS;
+	case TONE_DCS_INV: return SUPERHET_TONE_DCS_INV;
+	default: return SUPERHET_TONE_NONE;
 	}
 }
 
+// ---- LO chip ----
+
 static uint32_t lo_hz_for(uint32_t hz)
 {
-	if (lo_is_at1141 && hz >= LOW_SIDE_FROM_HZ && hz <= LOW_SIDE_TO_HZ) {
+	if (rf.lo_kind == SUPERHET_CHIP_AT1141 && hz >= LOW_SIDE_FROM_HZ && hz <= LOW_SIDE_TO_HZ) {
 		return hz - IF_HZ;
 	}
 	return hz + IF_HZ;
@@ -248,20 +276,20 @@ static bool ref_trim_set(int16_t ppb)
 
 static void lo_tune(uint32_t hz)
 {
-	sh_lo.ops->tune(sh_lo.chip, synth_hz(hz) + lo_hz_for(hz) - hz);
+	rf.lo.ops->tune(rf.lo.chip, synth_hz(hz) + lo_hz_for(hz) - hz);
 }
 
 #if GD88_TX || GD88_DMR_TX || CONFIG_BATTERY_SAVE
 static void lo_off(void)
 {
-	sh_lo.ops->off(sh_lo.chip);
+	rf.lo.ops->off(rf.lo.chip);
 }
 #endif
 
 #if CONFIG_DMR && GD88_DMR_TX
 static void lo_resume(void)
 {
-	sh_lo.ops->resume(sh_lo.chip);
+	rf.lo.ops->resume(rf.lo.chip);
 }
 #endif
 
@@ -276,7 +304,7 @@ static void tx_paths_off(void)
 
 // The C7000 modem's DC bias at every receive set-up, in FM too: the page's TX center in SIG_CENTER and the two-point
 // bias level with the modulation balance in RF_MOD_BIAS_CTRL. It is the voltage on the TCXO's control pin, so it sets
-// the frequency of both BK4819s
+// the frequency of both RF chips
 static void write_bias(uint32_t hz)
 {
 	uint8_t c = gd88_cal_tx_center();
@@ -309,36 +337,21 @@ static void init(void)
 
 	rfbus_3w_attach(&bus_main, &pins_main);
 	rfbus_3w_attach(&bus_lo, &pins_lo);
-	bk4819_attach(&rf_main, &bus_main.bus);
 #if CONFIG_DMR
 	// Before the chip check: the modem's PCM audio (beeps, DMR voice) needs it attached even on a radio whose RF chips
 	// aren't driven here. A beep on a NULL modem faulted the radio task at every PTT press (LO chip 0x1100).
 	// set_mode(), rx() and tx() still refuse to use DMR or RF on such a radio
-	gd88_dmr_init(&rf_main, &modem);
+	gd88_dmr_init(rf_main, &modem);
 #endif
-	main_id = rfbus_read(&bus_main.bus, BK4819_REG_ID);
-	lo_id = rfbus_read(&bus_lo.bus, BK4819_REG_ID);
-	// Only the main BK4819 with a BK4819 or an
-	// AT1141 LO is driven here (a GD-88 A on the bench has the AT1141), anything else leaves the radio
-	// receive-less
-	lo_is_at1141 = lo_id == AT1141_ID;
-	supported = main_id == BK4819_ID && (lo_id == BK4819_ID || lo_is_at1141);
+	// A pair with a part not driven here (an RDA1846 main chip, an unknown ID) leaves the radio receive-less
+	supported = superhet_chips_init(&rf, &rf_cfg);
 	if (!supported) {
 		return;
 	}
-	bk4819_init_main(&rf_main);
-	bk4819_write(&rf_main, BK4819_REG_PA, BK4819_PA_MAX);	// 0xBF once, never changed
-	// The AT1141 goes off for a transmission and restarts after it
-	if (lo_is_at1141) {
-		at1141_attach(&lo_at, &bus_lo.bus);
-		at1141_init(&lo_at);
-		sh_lo = (superhet_lo_t){ &at1141_superhet_lo_restart, &lo_at };
-	} else {
-		bk4819_attach(&rf_lo, &bus_lo.bus);
-		bk4819_init_lo(&rf_lo, BK4819_LO_PA_MAX);
-		sh_lo = (superhet_lo_t){ &bk4819_superhet_lo, &rf_lo };
-	}
-	bk4819_analog_mode(&rf_main);
+	hrc_pin_in(GD88_PIN_RF_CSS);
+#if !GD88_TX
+	main_gpio_map();
+#endif
 #if CONFIG_APRS && GD88_TX
 	afsk_tonegen_attach(&afsk_board);
 #endif
@@ -352,7 +365,7 @@ static void volume_apply(void);
 // The LO chip's GPIO, through the superhet LO ops (both chips drive it)
 static void lo_gpio(uint8_t pin, bool high)
 {
-	superhet_lo_gpio(&sh_lo, pin, high);
+	superhet_lo_gpio(&rf.lo, pin, high);
 }
 
 // The band's path: VHF = GPIO5 high, GPIO4 low; UHF the reverse
@@ -438,19 +451,18 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool
 	}
 	tuned_ppb = trim_ppb;
 	tx_paths_off();
-	bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
+	rf_main->ops->idle(rf_main->chip);
 	lo_tune(hz);
-	bk4819_set_freq(&rf_main, IF_HZ);
+	rf_main->ops->to_if(rf_main->chip, IF_HZ);
 #if CONFIG_DMR
 	if (mode == RADIO_MODE_DMR) {
 		gd88_dmr_lo_side(lo_hz_for(hz) > hz);
 	}
 #endif
 	if (mode != RADIO_MODE_DMR) {	// DMR: the bandwidth and sub-audio are the digital set's
-		bk4819_set_bandwidth(&rf_main, bw == RADIO_BW_25K ? BK4819_BW_25K : BK4819_BW_12K5);
-		// An LO above the signal inverts the IF: DCS arrives inverted
-		rf_main.rx_inverted = lo_hz_for(hz) > hz;
-		bk4819_set_rx_tone(&rf_main, bk_tone(rx_tone.type), rx_tone.value);
+		rf_main->ops->bandwidth(rf_main->chip, bw == RADIO_BW_25K);
+		superhet_chips_rx_inverted(&rf, lo_hz_for(hz) > hz);
+		rf_main->ops->rx_tone(rf_main->chip, sh_tone(rx_tone.type), rx_tone.value);
 	}
 #if GD88_BAND_LO_GPIO
 	lo_band(hz);
@@ -460,7 +472,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone_in, bool
 		hal_delay_us(TX_END_PATH_US);
 	}
 	gd88_path_rx(hz, true, mode == RADIO_MODE_DMR);
-	bk4819_set_state(&rf_main, BK4819_STATE_RX);
+	rf_main->ops->rx(rf_main->chip);
 	if (from_tx) {
 		hal_delay_us(TX_END_RX_US);
 	}
@@ -479,23 +491,20 @@ static void audio(bool on);
 // the modulation level for the TX frequency, the main chip the digital TX words (deviation off). With an SFR's split
 // on (A), B's transmitter is armed instead: it keys the bursts the modem's caller sends it (core/rx2/rx2_dmr.h)
 #if !GD88_TX
-// B's own transmitter: the main chip's GPIO 0 (0x33 bit 6) selects its output to the PA instead of A's, GPIO 1 (bit 5)
-// the band (high: VHF; the same bit A's transmission uses, gd88_a_tx_band) and GPIO 3 (bit 3) is high while it
-// transmits. Per burst like the PA: held high, B's receiver hears nothing, and an SFR's repeat needs B's modem to keep
-// the inbound slot timing between bursts. GPIO 1 is left at the band after the burst, as A's transmission leaves it
-#define OWN_GPIO_PATH		0u
-#define OWN_GPIO_VHF		1u
-#define OWN_GPIO_TX		3u
-static uint16_t own_gpio_word;	// 0x33 as the last burst keyed it (the dmrtx.gpio view key)
+// B's own transmitter (main_gpio_map): the path and TX pins high while it transmits, the band set first. On a BK4819
+// those are GPIO 0 (0x33 bit 6), GPIO 3 (bit 3) and GPIO 1 (bit 5). Per burst like the PA: held high, B's receiver
+// hears nothing, and an SFR's repeat needs B's modem to keep the inbound slot timing between bursts. The band is left
+// after the burst, as A's transmission leaves it
+static uint16_t own_gpio_word;	// the GPIO word as the last burst keyed it (the dmrtx.gpio view key)
 static void own_gpio(bool on, uint32_t hz)
 {
 	if (on) {
-		bk4819_gpio(&rf_main, OWN_GPIO_VHF, hz < UHF_FROM_HZ);
+		superhet_main_gpio(rf_main, gpio_vhf, hz < UHF_FROM_HZ);
 	}
-	bk4819_gpio(&rf_main, OWN_GPIO_PATH, on);
-	bk4819_gpio(&rf_main, OWN_GPIO_TX, on);
+	superhet_main_gpio(rf_main, gpio_path, on);
+	superhet_main_gpio(rf_main, gpio_tx, on);
 	if (on) {
-		own_gpio_word = rf_main.gpio;
+		own_gpio_word = superhet_chips_main_gpio_word(&rf);
 	}
 }
 
@@ -566,7 +575,7 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	tx_hz = hz;
 	hrc7000_wr(&modem, C7_RF_MOD_BIAS, hrc7000_mod_bias_dc(gd88_cal_tx_center(), gd88_cal_mod(hz)));
 	hrc7000_set_rf_tx_lead(&modem, tx_lead);
-	bk4819_dmr_tx_prepare(&rf_main);
+	rf_main->ops->dmr_tx_prepare(rf_main->chip, MAIN_PA_GAIN);
 	dmr_armed = true;
 	gd88_dmr_tx_arm();
 	return true;
@@ -615,7 +624,7 @@ void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	at(KEY_EDGE_AT_US);
 	gd88_path_rx_front_off();
 	wait(TX_RX_OFF_US);
-	bk4819_burst_tune(&rf_main, synth_hz(tx_hz), BK4819_STATE_TX_MAIN);
+	rf_main->ops->burst(rf_main->chip, synth_hz(tx_hz), true);
 	lo_off();
 	at(hrc_rfburst_pa_at_us(tx_lead, ku.boost != 0u ? ku.drive_us : ku.pa_us));
 }
@@ -628,7 +637,7 @@ void gd88_burst_off(hrc_rfburst_wait_fn wait)
 	tx_paths_off();
 	wait(tx_off_us + PA_RAMP_US + PA_SLACK_US);
 	wait(TX_END_PATH_US);
-	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
+	rf_main->ops->burst(rf_main->chip, IF_HZ, false);
 	lo_resume();
 	wait(TX_END_PATH_US);
 	gd88_path_rx(rx_hz, true, true);
@@ -643,7 +652,7 @@ void gd88_burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	gd88_path_own_tx(true, tx_hz);
 	own_gpio(true, tx_hz);
 	wait(TX_RX_OFF_US);
-	bk4819_burst_tune(&rf_main, synth_hz(tx_hz), BK4819_STATE_TX_MAIN);
+	rf_main->ops->burst(rf_main->chip, synth_hz(tx_hz), true);
 	lo_off();
 	wait(tx_on_us);
 	gd88_pa_own(true);
@@ -656,7 +665,7 @@ void gd88_burst_off(hrc_rfburst_wait_fn wait)
 	wait(tx_off_us);
 	gd88_pa_own(false);
 	wait(TX_END_PATH_US);
-	bk4819_burst_tune(&rf_main, IF_HZ, BK4819_STATE_RX);
+	rf_main->ops->burst(rf_main->chip, IF_HZ, false);
 	lo_resume();
 	wait(TX_END_PATH_US);
 	own_gpio(false, tx_hz);
@@ -699,15 +708,16 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 		return false;
 	}
 	tx_off_us = plan.off_us;
-	bk4819_tx_prepare(&rf_main, bk_tone(tone.type), tone.value);	// deviation and sub-audio words while the chip still receives
+	// Deviation and sub-audio words while the chip still receives
+	rf_main->ops->tx_prepare(rf_main->chip, sh_tone(tone.type), tone.value, hz, MAIN_PA_GAIN);
 
 	// Receive audio muted at the chip, then the speaker off
-	bk4819_set_af(&rf_main, BK4819_AF_MUTE);
+	rf_main->ops->af(rf_main->chip, SUPERHET_AF_MUTE);
 	transmitting = true;
 	speaker();
 	gd88_path_rx_front_off();
 	hal_delay_us(TX_RX_OFF_US);
-	bk4819_tx_tune(&rf_main, synth_hz(hz));
+	rf_main->ops->tx_tune(rf_main->chip, synth_hz(hz));
 	lo_off();
 	hal_delay_ms(TX_SETTLE_MS);
 	hal_delay_us(plan.on_us + TX_SUPPLY_US + PA_RAMP_US + PA_SLACK_US);	// B's PA sequence, begun at the edge
@@ -732,7 +742,7 @@ static bool tx_stop(void)
 #if GD88_TX
 	tx_paths_off();
 	hal_delay_us(tx_off_us + PA_RAMP_US + PA_SLACK_US);
-	bk4819_tx_end(&rf_main);
+	rf_main->ops->tx_end(rf_main->chip);
 	gd88_pa_disarm();
 #endif
 	transmitting = false;
@@ -791,34 +801,34 @@ static bool tx_tone(uint16_t hz)
 	if (!transmitting || mode != RADIO_MODE_FM) {
 		return false;
 	}
-	bk4819_tone_start(&rf_main, hz, GD88_TX_TONE_GAIN);
+	rf_main->ops->tone(rf_main->chip, hz, GD88_TX_TONE_GAIN);
 	return true;
 }
 
 #if CONFIG_APRS && GD88_TX
 // APRS AFSK (afsk_tonegen.h): the tone generator again, retuned at each symbol by timer 4. level 50 is the tone
-// burst's level
+// burst's level. A BK4819 main chip only: the deviation scale is that chip's (refused on another part)
 static bool afsk_begin(uint16_t hz, uint8_t level)
 {
-	if (!transmitting || mode != RADIO_MODE_FM) {
+	if (!transmitting || mode != RADIO_MODE_FM || !main_is_bk4819()) {
 		return false;
 	}
 	uint32_t scale = GD88_AFSK_DEV_ZERO + (uint32_t)GD88_AFSK_DEV_SPAN * level / 50u;
-	bk4819_tone_start(&rf_main, hz, GD88_TX_TONE_GAIN);
-	bk4819_tone_deviation(&rf_main, (uint16_t)(scale > GD88_AFSK_DEV_MAX ? GD88_AFSK_DEV_MAX : scale));
+	bk4819_tone_start(&rf.m.bk, hz, GD88_TX_TONE_GAIN);
+	bk4819_tone_deviation(&rf.m.bk, (uint16_t)(scale > GD88_AFSK_DEV_MAX ? GD88_AFSK_DEV_MAX : scale));
 	afsk_on = true;
 	return true;
 }
 
 static void afsk_tone(uint16_t hz)
 {
-	bk4819_tone_freq(&rf_main, hz);
+	bk4819_tone_freq(&rf.m.bk, hz);
 }
 
 static void afsk_end(void)
 {
 	afsk_on = false;
-	bk4819_tone_stop(&rf_main);
+	bk4819_tone_stop(&rf.m.bk);
 }
 
 static const afsk_tonegen_board_t afsk_board = {
@@ -835,7 +845,7 @@ static bool tx_dtmf(char digit)
 	if (!transmitting || mode != RADIO_MODE_FM || (digit != 0 && !dtmf_pair(digit, &low, &high))) {
 		return false;
 	}
-	bk4819_dtmf_start(&rf_main, low, high);
+	rf_main->ops->dtmf(rf_main->chip, low, high);
 	return true;
 }
 #endif
@@ -846,19 +856,15 @@ static bool tx_tail(bool on)
 	if (!transmitting || mode != RADIO_MODE_FM) {
 		return false;
 	}
-	if (on) {
-		return bk4819_tx_tail_start(&rf_main);
-	}
-	bk4819_tx_tail_end(&rf_main);
-	return true;
+	return rf_main->ops->tail(rf_main->chip, on);
 }
 
 static bool tx_tone_key(bool down)
 {
-	if (!transmitting || mode != RADIO_MODE_FM || rf_main.tone_hz == 0) {
+	if (!transmitting || mode != RADIO_MODE_FM || !rf_main->ops->tone_on(rf_main->chip)) {
 		return false;
 	}
-	bk4819_tone_key(&rf_main, down);
+	rf_main->ops->tone_key(rf_main->chip, down);
 	return true;
 }
 
@@ -881,14 +887,12 @@ static void status(radio_status_t *st)
 		return;
 	}
 #endif
-	uint16_t r67 = bk4819_read(&rf_main, BK4819_REG_RSSI);
-	uint16_t r65 = bk4819_read(&rf_main, BK4819_REG_NOISE);
-	last_rssi_raw = r67;
-	last_noise_raw = r65;
-	st->rssi_dbm = bk4819_rssi_dbm(r67);	// at the main chip's input, the front end's gain not taken out
-	st->noise = (uint8_t)(r65 & 0x7Fu);
+	uint16_t r0c;
+	superhet_chips_status(&rf, &last_rssi_raw, &last_noise_raw, &r0c);
+	st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);	// at the main chip's input, the front end's gain not taken out
+	st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
 	st->carrier = false;
-	st->tone_ok = bk4819_rx_tone_ok(&rf_main, bk_tone(rx_tone.type));
+	st->tone_ok = superhet_chips_tone_heard(&rf, r0c, sh_tone(rx_tone.type));
 }
 
 // The noise reading on a fully quieted channel, about the same on both SoCs' chips (**HW**: 9-18 on any bench carrier)
@@ -922,22 +926,27 @@ static void audio(bool on)
 	if (supported) {
 		// In DMR the modem samples the chip's audio whether or not the speaker is on, so the output stays on
 		if (mode == RADIO_MODE_DMR) {
-			bk4819_set_af(&rf_main, BK4819_AF_DMR);
+			rf_main->ops->af(rf_main->chip, SUPERHET_AF_DMR);
 		} else {
-			bk4819_set_af(&rf_main, on && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
+			rf_main->ops->af(rf_main->chip, on && !vol_muted ? SUPERHET_AF_FM : SUPERHET_AF_MUTE);
 		}
 	}
 	speaker();
 }
 
-// The speaker volume as the chip's AF DAC gain. DMR: the chip's output is the modem's input, so it keeps its gain
+// The speaker volume as the chip's AF level. DMR: the chip's output is the modem's input, so it keeps its gain.
+// A BK4819 takes the level in dB; another part its own 0..15 gain by step, not matched to the DMR level
 static void volume_apply(void)
 {
 	if (!supported || mode == RADIO_MODE_DMR || transmitting) {
 		return;
 	}
-	bk4819_set_af_level_db(&rf_main, GD88_FM_DAC, vol_db + GD88_FM_TOP_DB);
-	bk4819_set_af(&rf_main, audio_open && !vol_muted ? BK4819_AF_FM : BK4819_AF_MUTE);
+	if (main_is_bk4819()) {
+		bk4819_set_af_level_db(&rf.m.bk, GD88_FM_DAC, vol_db + GD88_FM_TOP_DB);
+	} else {
+		rf_main->ops->af_gain(rf_main->chip, (uint8_t)(vol_step(vol_pct) * 15u / RADIO_VOLUME_MAX));
+	}
+	rf_main->ops->af(rf_main->chip, audio_open && !vol_muted ? SUPERHET_AF_FM : SUPERHET_AF_MUTE);
 }
 
 uint8_t gd88_radio_volume(void)
@@ -988,7 +997,7 @@ static void rx_sleep(bool sleep)
 		return;
 	}
 	if (sleep) {
-		bk4819_set_state(&rf_main, BK4819_STATE_IDLE);
+		rf_main->ops->idle(rf_main->chip);
 		lo_off();
 		gd88_path_rx(rx_hz, false, false);
 		asleep = true;
@@ -1013,8 +1022,10 @@ bool gd88_radio_transmitting(void)
 
 void gd88_radio_diag(gd88_radio_diag_t *d)
 {
-	d->main_id = main_id;
-	d->lo_id = lo_id;
+	d->main_id = rf.main_id;
+	d->lo_id = rf.lo_id;
+	d->main_chip = superhet_chip_name(rf.main_kind);
+	d->lo_chip = superhet_chip_name(rf.lo_kind);
 	d->rssi_raw = last_rssi_raw;
 	d->noise_raw = last_noise_raw;
 	d->rf_writes = bus_main.bus.writes + bus_lo.bus.writes;
@@ -1028,30 +1039,35 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 }
 
 #if !GD88_TX
-// A transmits through B (pa_gd88b.c key_on): B's main chip's GPIO 1 (0x33 bit 5) passes A's VHF signal to the PA, low
-// on UHF; GPIO 0 (bit 6) stays low, A's chip and not B's. Written only when it changes, and left
-// after the transmission. Without it a VHF key had only a leak, some 70 dB down
-#define A_TX_GPIO_VHF		1u
+// A transmits through B (pa_gd88b.c key_on): B's main chip's band GPIO (main_gpio_map; a BK4819's GPIO 1, 0x33 bit 5)
+// passes A's VHF signal to the PA, low on UHF; the path GPIO stays low, A's chip and not B's. Written only when it
+// changes, and left after the transmission. Without it a VHF key had only a leak, some 70 dB down
 void gd88_a_tx_band(bool uhf)
 {
-	bk4819_gpio(&rf_main, A_TX_GPIO_VHF, !uhf);
+	if (supported) {
+		superhet_main_gpio(rf_main, gpio_vhf, !uhf);
+	}
 }
 #endif
 
-// The debug link's CHIP_REG (board.chip_reg): chip 0 is the main BK4819, chip 1 the LO when it
-// is a BK4819 (an AT1141 LO isn't offered), page 0 only, registers 0x00-0x7F. Through the driver, so its copies of the
-// enables, AF gain and GPIO words follow a write; its next set-up overwrites the register. A frame is atomic (rfbus.h),
-// so the radio task's frames and this one don't mix
+// The debug link's CHIP_REG (board.chip_reg): chip 0 is the main chip, chip 1 the LO, page 0 only, registers
+// 0x00-0x7F. A BK4819 through its driver, so its copies of the enables, AF gain and GPIO words follow a write; another
+// part on its bus, the driver's copies left as they are. The next set-up overwrites the register. A frame is atomic
+// (rfbus.h), so the radio task's frames and this one don't mix
 bool gd88_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write)
 {
-	bk4819_t *dev = chip == 0 ? &rf_main : chip == 1 && !lo_is_at1141 ? &rf_lo : NULL;
-	if (dev == NULL || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu) || !supported) {
+	if (chip > 1 || page != 0 || reg > 0x7Fu || (write && *val > 0xFFFFu) || !supported) {
 		return false;	// supported: both chips answered at the radio init
 	}
-	if (write) {
+	bool bk = chip == 0 ? main_is_bk4819() : rf.lo_kind == SUPERHET_CHIP_BK4819;
+	bk4819_t *dev = chip == 0 ? &rf.m.bk : &rf.lo_dev.bk;
+	rfbus_t *bus = chip == 0 ? &bus_main.bus : &bus_lo.bus;
+	if (write && bk) {
 		bk4819_write(dev, reg, (uint16_t)*val);
+	} else if (write) {
+		rfbus_write(bus, reg, (uint16_t)*val);
 	}
-	*val = bk4819_read(dev, reg);
+	*val = rfbus_read(bus, reg);
 	return true;
 }
 

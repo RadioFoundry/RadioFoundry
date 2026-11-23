@@ -8,6 +8,7 @@
 #include "gd88.h"
 #include "pins.h"
 #include "platform.h"
+#include "ui/fmt.h"
 #include "audio/afsk_tonegen/afsk_tonegen.h"
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
@@ -82,6 +83,25 @@ static const hal_cps_t cps = {
 static const hal_audio_t audio = { HRC_AUDIO_PCM_OPS, .spk_beep = gd88_spk_beep };
 #endif
 
+// The support info (docs/spec/support-info.md 2): SoC A's RF chips, the part and ID register each read at start-up.
+// Units differ in these parts
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i > 1) {
+		return false;
+	}
+	gd88_radio_diag_t d;
+	gd88_radio_diag(&d);
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	*role = BOARD_HW_RF;
+	sb_str(&b, i == 0 ? "main " : "LO ");
+	sb_str(&b, i == 0 ? d.main_chip : d.lo_chip);
+	sb_str(&b, " id ");
+	sb_hex(&b, i == 0 ? d.main_id : d.lo_id, 4);
+	return true;
+}
+
 const board_t board = {
 	.name = "GD-88",
 	.caps = CAP_KEYPAD | CAP_ENCODER | CAP_VOLUME_POT | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0),
@@ -110,6 +130,7 @@ const board_t board = {
 #if CONFIG_STUB_ENTRY
 	.stub_entering = gd88_rx2_stub_entering,
 #endif
+	.hw_line = hw_line,
 #if CONFIG_DIAG
 	.diag_line = gd88_diag_line,
 	.diag_reset = gd88_diag_reset,
@@ -195,7 +216,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8): the TX / RX line PTB2 low, every chain output
 // to 0 (its power-on state: no audio or TX route), the PA drive (DAC B to 0, powered down) and PTC20 low. RAM code,
-// register writes only. The main BK4819 may still be set to transmit: with PTB2 low the RF switch is on receive, and
+// register writes only. The main RF chip may still be set to transmit: with PTB2 low the RF switch is on receive, and
 // the next start sets it up again
 HRC_RAMFUNC void board_rf_safe(void)
 {

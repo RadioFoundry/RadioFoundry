@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Radioddity GD-88, SoC A: HR_C7000 SoC (C-SKY CK803S + DMR modem) + two BK4819 (receiver / transmitter and the
-# superhet LO) + a 320x240 ILI9341-class panel on the i8080 LCD controller. The PC link is
+# Radioddity GD-88, SoC A: HR_C7000 SoC (C-SKY CK803S + DMR modem) + two RF chips (receiver / transmitter and the
+# superhet LO; the parts vary by unit, found at start-up) + a 320x240 ILI9341-class panel on the i8080 LCD controller. The PC link is
 # UART1; SoC B, the second receiver, is on UART3 (boards/gd88b). Code both SoCs share is in boards/gd88/common
 PLATFORM   := hrc7000
 # The IAP loader leaves the PLL at 72 MHz; RadioFoundry re-programs it to 168 MHz CPU / 84 MHz APB at start-up and puts the
@@ -10,7 +10,7 @@ PLATFORM   := hrc7000
 MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u
 # 2 MB program flash: the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
 MCU_DEFS   += -DHRC_XIP_FLASH_SIZE=0x200000u
-BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/rfbus drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/display/ili9341 drivers/input/keymatrix \
+BOARD_DIRS := boards/gd88 boards/gd88/common drivers/rf/rfbus drivers/rf/superhet drivers/rf/bk4819 drivers/rf/fd6818 drivers/rf/at1141 drivers/rf/subaudio drivers/display/ili9341 drivers/input/keymatrix \
 	drivers/input/quadrature drivers/input/sharedptt drivers/flash/spi_nand drivers/audio/afsk_tonegen drivers/modem/hrc7000 \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
 # The link to SoC B (core/rx2): the main side runs here

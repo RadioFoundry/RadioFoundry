@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-# Radioddity GD-88, SoC B: the second receiver. The same HR_C7000 SoC and BK4819 pair as
+# Radioddity GD-88, SoC B: the second receiver. The same HR_C7000 SoC and RF chip pair as
 # SoC A, no display, keys or PC connector: it receives what A asks for over the link on UART3 (core/rx2) and plays it
 # into A's audio routing. It runs none of the radio core: its start-up is app_gd88b.c. Receive only. The radio, DMR and
 # calibration code is A's (boards/gd88/common)
@@ -10,7 +10,7 @@ MCU_DEFS   := -DHRC_HOST_UART=1 -DHRC_LOADER_CPU_HZ=72000000u -DHRC_CPU_HZ=72000
 # there. Less heat than A's 168 MHz
 # 2 MB program flash: the debug link's READ_MEM window over it (platform/hrc7000/mem_window.h)
 MCU_DEFS   += -DHRC_XIP_FLASH_SIZE=0x200000u
-BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/rfbus drivers/rf/bk4819 drivers/rf/at1141 drivers/rf/subaudio drivers/modem/hrc7000 drivers/flash/spi_nand
+BOARD_DIRS := boards/gd88b boards/gd88/common drivers/rf/rfbus drivers/rf/superhet drivers/rf/bk4819 drivers/rf/fd6818 drivers/rf/at1141 drivers/rf/subaudio drivers/modem/hrc7000 drivers/flash/spi_nand
 BOARD_INC  := boards/gd88/common
 CORE_BASE_DIRS :=
 BOARD_CORE_DIRS := core/rx2

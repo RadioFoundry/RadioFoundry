@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 # GD-88 SoC A feature defaults (config/features.mk lists them all). Bring-up state.
-# Analog FM and DMR on the BK4819 pair and the C7000 modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch), transmit on A's
+# Analog FM and DMR on the RF chip pair and the C7000 modem, the host link on UART1, settings on the SPI NAND, SoC B as the second receiver (dual watch), transmit on A's
 # chip through B's PA (GD88_TX). The switches that are off are listed below; USB, PPP and TCP_CONNS follow the platform
 # (platform/hrc7000/config.mk)
 CONFIG_NAND_STORAGE ?= y
