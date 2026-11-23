@@ -129,7 +129,9 @@ On some boards the tune area sits where another firmware may keep its own data, 
 before each erase (offset 0), TUNE_WRITE checks both units. Each unit must be blank or hold a tune copy: the record's
 magic at its start, whole or cut short by a lost save, from this radio or another. Otherwise the radio refuses with
 reason 2 and erases nothing. The page and `rfoundry_debug.py` show that the area holds other data and nothing was
-saved. A storage claim does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
+saved. Only an offset-0 write checks and erases, so a write at a later offset goes only into a copy that an offset-0
+write erased since the last TUNE_LOAD. Otherwise the radio refuses with reason 3 and writes nothing. A storage claim
+does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
 storage buffer, and the table stays as it was. The host tries again.
 
 To clear every trim, the host saves a record with no entries. The page's Restore factory values also sets the

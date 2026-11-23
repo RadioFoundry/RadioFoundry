@@ -201,7 +201,8 @@ enum {
 					// the housekeeping task: poll the view's storage.region
 	// Radio tuning's area (CONFIG_RADIO_TUNE, docs/spec/radio-tune.md 4); UNAVAILABLE in a build or board without one
 	DL_STORAGE_OP_TUNE_WRITE,	// copy u8 (0, 1), offset u16, bytes -> none. Offset 0 erases the copy first, once
-					// both units are blank or tune copies (else REFUSED, DL_TUNE_REFUSED_*)
+					// both units are blank or tune copies; a later offset only into a copy erased so
+					// (else REFUSED, DL_TUNE_REFUSED_*)
 	DL_STORAGE_OP_TUNE_LOAD,	// -> copies valid u8 (bit 0 A, bit 1 B): the record in force loaded again
 };
 
@@ -209,6 +210,7 @@ enum {
 enum {
 	DL_TUNE_REFUSED_TX = 1,		// the radio transmits: no flash erase under a transmission
 	DL_TUNE_REFUSED_FOREIGN = 2,	// the tune area holds data that isn't a tune copy: nothing erased
+	DL_TUNE_REFUSED_NOT_ERASED = 3,	// offset > 0 to a copy no offset-0 write erased since the last TUNE_LOAD
 };
 
 // DL_CMD_APRS operations (first payload byte; docs/spec/debuglink.md 3.16)

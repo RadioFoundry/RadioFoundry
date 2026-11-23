@@ -739,6 +739,12 @@ static void reboot_now(void)
 
 // --- the settings / journal region (docs/spec/debuglink.md 3.13) ---
 
+#if CONFIG_RADIO_TUNE
+// TUNE_WRITE: the copies (bit 0 A, bit 1 B) an offset-0 write erased since the last TUNE_LOAD. Only the offset-0
+// write checks the area for other data, so a later chunk goes only into a copy erased that way
+static uint8_t tune_erased;
+#endif
+
 static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	const hal_flash_map_t *m = storage_map();
@@ -823,20 +829,32 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 			return 2;
 		}
 		uint32_t a = m->tune_addr + req[1] * board.flash->erase_size;
+		uint8_t bit = (uint8_t)(1u << req[1]);
+		if (off != 0u && (tune_erased & bit) == 0u) {
+			out[1] = DL_TUNE_REFUSED_NOT_ERASED;	// never programmed over data the check didn't see
+			return 2;
+		}
 		storage_lock();
 		// Before an erase, both units must be blank or tune copies: on some boards the area sits where another
 		// firmware may keep its codeplug, and a save never erases that (out is the check's scratch)
-		if (off == 0u && !radio_tune_area_ours(out, (uint32_t)cap)) {
-			storage_unlock();
-			out[0] = DL_ST_REFUSED;
-			out[1] = DL_TUNE_REFUSED_FOREIGN;
-			return 2;
+		if (off == 0u) {
+			tune_erased = (uint8_t)(tune_erased & ~bit);
+			if (!radio_tune_area_ours(out, (uint32_t)cap)) {
+				storage_unlock();
+				out[0] = DL_ST_REFUSED;
+				out[1] = DL_TUNE_REFUSED_FOREIGN;
+				return 2;
+			}
+			if (board.flash->erase(a)) {
+				tune_erased |= bit;
+			}
 		}
-		bool ok = (off != 0u || board.flash->erase(a)) && board.flash->write(a + off, req + 4, n);
+		bool ok = (tune_erased & bit) != 0u && board.flash->write(a + off, req + 4, n);
 		storage_unlock();
 		return status_only(out, ok ? DL_ST_OK : DL_ST_BUSY);
 	}
 	case DL_STORAGE_OP_TUNE_LOAD: {
+		tune_erased = 0;	// the save is over: the next one starts at offset 0 again
 		uint8_t valid = radio_tune_load();
 		if (valid == RADIO_TUNE_LOAD_BUSY) {
 			return status_only(out, DL_ST_BUSY);
