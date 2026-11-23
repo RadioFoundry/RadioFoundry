@@ -1038,7 +1038,15 @@ back at close.
 - The band is 0 to 3400 Hz. The counts per kHz are not known (`rx_counts_per_khz` 0): the soft modem takes the level
   from each sync. Positive is above the carrier.
 - For a transmission the chip leaves FM for the set-up of 10.3, and `rx_setup` after it is `copy_on` again.
-- The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`).
+- No half for 200 ms (`AIR_COPY_STALL_US`) while a session or the tap receives this way, not transmitting and not
+  suspended: the poll reads 0x82, runs `copy_on` again (which clears 0x82), and the next half is a gap. Each one counts
+  in `copy_restarts` (`airp.copy_restarts`); the board keeps the first one's 0x82, EXTI_PR, the interrupt port's IDR
+  and the three lines' NVIC bits (`airp.copy_lost_regs`, laid out as `dmr.modem_lost_regs`). A lost edge on the
+  system line alone doesn't get here: the board's check for a line left low keeps running under a session and pends
+  the handler. A half dropped for a full ring holds the watchdog off (the copy runs; the task is behind).
+- The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`). The
+  board's mode change suspends the tap the same way as a session, and the mode entry (`rx_restart`) sets the tap's
+  copy up again. A retune (`rx_restart` with the copy running) leaves a running tap copy unchanged.
 - `rx_load` counts the soft modem's time for a session that receives this way and reports false for one the
   correlator serves.
 
