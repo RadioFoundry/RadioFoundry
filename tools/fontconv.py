@@ -181,7 +181,9 @@ def main():
             data.append([0] * (((cw * bpp + 7) // 8) * ch))
 
     w = sys.stdout.write
+    # REUSE-IgnoreStart: a header written into the generated file, not this file's
     w("// SPDX-License-Identifier: %s\n" % spdx)
+    # REUSE-IgnoreEnd
     if ttf:
         for l in license_text:
             m = re.match(r"Copyright (\d.*)", l)

@@ -36,6 +36,9 @@ typedef struct {
 	bool mcu_crc;			// CRC_MCU_Control: a burst's CRC can be sent as given (else the chip makes its own)
 	bool sync_reg;			// the sync type register 0x5F exists
 	bool mode_per_channel;		// 4:0x10 depends on the channel (repeater or not) and is rewritten when it changes
+	// The receiver finds BS sync only with 4:0x10 ISRepeater set, and MS or direct mode sync only with it clear: on a
+	// direct channel the engine hunts both while nothing is received (BS-framed direct senders, a simplex hotspot)
+	bool bs_by_mode;
 	// 0x41 bit 3 (CC_Match_Ctrl) deframes bursts of any color code: with the color code filter off the receiver
 	// takes every call as it comes, no 0x1F rewrites or restarts to follow a new code (modem-hrc6000.md 5.4)
 	bool cc_any_rx;

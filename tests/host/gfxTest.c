@@ -314,6 +314,146 @@ static void test_indexed(void)
 	gfx_init(&disp);
 }
 
+// A frame buffer of the safe area only (hal_display_t fb_safe_area): the same screens as with the whole panel's, to the
+// pixel, on the panel (what flush_indexed and fill_insets sent) and in the RGB565 and the packed captures, and a copy
+// elsewhere that takes only the rows marked for it (the web control's) stays whole; the insets are painted only when
+// the background changes. An odd left inset puts the
+// safe area's pixels in the other nibble of the panel's bytes
+#define SA_W	160
+#define SA_H	120
+static color_t panel_img[SA_H][SA_W];
+static const hal_display_t *panel_d;
+static int inset_fills;
+static void sa_flush(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
+{
+	const hal_display_t *d = panel_d;
+	int x0 = d->fb_safe_area ? d->inset_left : 0, yo = d->fb_safe_area ? d->inset_top : 0;
+	int w = d->fb_safe_area ? d->width - d->inset_left - d->inset_right : d->width, stride = (w + 1) / 2;
+	for (int y = y0; y < y1; y++)
+		for (int x = 0; x < w; x++)
+			panel_img[yo + y][x0 + x] = pal[(((const uint8_t *)fb)[y * stride + x / 2] >> ((x & 1) ? 0 : 4)) & 15];
+}
+static void sa_fill_insets(uint16_t c)
+{
+	const hal_display_t *d = panel_d;
+	inset_fills++;
+	for (int y = 0; y < SA_H; y++)
+		for (int x = 0; x < SA_W; x++)
+			if (x < d->inset_left || x >= SA_W - d->inset_right || y < d->inset_top || y >= SA_H - d->inset_bottom)
+				panel_img[y][x] = c;
+}
+
+#define SA_STEPS	4
+typedef struct {
+	color_t panel[SA_H][SA_W];
+	uint8_t rgb[SA_W * SA_H * 2];
+	uint8_t packed[SA_W / 2 * SA_H];
+	bool copy_whole;	// the copy, given the rows marked for it, equals the packed capture
+	int fills;
+} sa_shot_t;
+static sa_shot_t sa_shots[2][SA_STEPS];
+static uint8_t sa_copy[SA_W / 2 * SA_H];
+
+static void sa_take(sa_shot_t *t)
+{
+	memcpy(t->panel, panel_img, sizeof panel_img);
+	gfx_read_rgb565(0, t->rgb, sizeof t->rgb);
+	gfx_read_packed(0, t->packed, sizeof t->packed);
+	t->copy_whole = true;
+#if CONFIG_NET_WEBCTL
+	for (int y = gfx_row_next(0); y >= 0; y = gfx_row_next(y + 1))
+		gfx_read_packed((uint32_t)y * (SA_W / 2), sa_copy + y * (SA_W / 2), SA_W / 2);
+	gfx_rows_take(0, SA_H - 1);
+	t->copy_whole = memcmp(sa_copy, t->packed, sizeof sa_copy) == 0;
+#endif
+	t->fills = inset_fills;
+}
+
+static void test_safe_area(void)
+{
+	static hal_display_t sd;	// gfx keeps the pointer
+	for (int safe = 0; safe < 2; safe++) {
+		sd = disp;
+		sd.width = SA_W; sd.height = SA_H; sd.bpp = 4;
+		sd.inset_left = 5; sd.inset_right = 4; sd.inset_top = 3; sd.inset_bottom = 2;
+		sd.flush_indexed = sa_flush;
+		sd.fb_safe_area = safe;
+		sd.fill_insets = sa_fill_insets;
+		panel_d = &sd;
+		inset_fills = 0;
+		memset(panel_img, 0, sizeof panel_img);
+		memset(sa_copy, 0xEE, sizeof sa_copy);
+		CHECK(gfx_init(&sd) && gfx_width() == 151 && gfx_height() == 115);
+		gfx_fb_rect_t r;
+		gfx_fb_rect(&r);
+		CHECK(safe ? r.safe_area && r.x == 5 && r.y == 3 && r.w == 151 && r.h == 115 && r.stride == 76 :
+			     !r.safe_area && r.x == 0 && r.y == 0 && r.w == 160 && r.h == 120 && r.stride == 80);
+		ui_layout_init();
+		radio_view_t v;
+		ui_state_t st;
+		memset(&st, 0, sizeof st);
+		st.battery_pct = 84; st.brightness = 100; st.now_ms = 5000;
+		base_view(&v);
+		// 1: a whole screen, the first frame
+		ui_draw_home(&v, &st);
+		gfx_flush();
+		sa_take(&sa_shots[safe][0]);
+		// 2: a change to part of it
+		v.state = RS_TX; v.tx_elapsed_ms = 7400; v.power = 7;
+		ui_draw_home(&v, &st);
+		gfx_flush();
+		sa_take(&sa_shots[safe][1]);
+		// 3: another background, drawing reaching for the edges (clipped to the safe area)
+		gfx_clear(RGB565(0, 64, 128));
+		gfx_fill(-10, -10, 400, 4, RGB565(255, 255, 0));
+		gfx_text(&font_8x16, -3, 50, "EDGE TEXT WIDER THAN THE SCREEN", RGB565(255, 255, 255));
+		gfx_pixel(150, 114, RGB565(255, 0, 0));
+		gfx_pixel(151, 114, RGB565(0, 255, 0));	// outside: nothing
+		gfx_flush();
+		sa_take(&sa_shots[safe][2]);
+		// 4: a narrow band changed on the same background
+		gfx_fill(0, 90, 151, 1, RGB565(255, 0, 255));
+		gfx_fill(0, 95, 151, 2, RGB565(0, 255, 255));
+		gfx_flush();
+		sa_take(&sa_shots[safe][3]);
+	}
+	for (int k = 0; k < SA_STEPS; k++) {
+		const sa_shot_t *a = &sa_shots[0][k], *b = &sa_shots[1][k];
+		CHECK(memcmp(a->panel, b->panel, sizeof a->panel) == 0);
+		CHECK(memcmp(a->rgb, b->rgb, sizeof a->rgb) == 0);
+		CHECK(memcmp(a->packed, b->packed, sizeof a->packed) == 0);
+		CHECK(a->copy_whole && b->copy_whole);
+	}
+	CHECK(sa_shots[1][0].panel[0][0] == sa_shots[1][0].panel[3][5] && sa_shots[1][2].panel[119][159] == RGB565(0, 64, 128));
+	CHECK(sa_shots[1][2].panel[3 + 114][5 + 150] == RGB565(255, 0, 0) && sa_shots[1][2].panel[117][156] == RGB565(0, 64, 128));
+	// The insets painted with the first frame, then only when the background changed (the panel's corner tells)
+	CHECK(sa_shots[1][0].fills == 1 && sa_shots[1][3].fills == sa_shots[1][2].fills);
+	for (int k = 1; k < SA_STEPS; k++)
+		CHECK(sa_shots[1][k].fills - sa_shots[1][k - 1].fills ==
+		      (sa_shots[1][k].panel[0][0] != sa_shots[1][k - 1].panel[0][0]));
+	CHECK(sa_shots[0][3].fills == 0);
+	// gfx_invalidate (the panel may have lost its memory): the insets again with the next frame, once
+	gfx_invalidate();
+	gfx_flush();
+	CHECK(inset_fills == sa_shots[1][3].fills + 1);
+	gfx_flush();
+	CHECK(inset_fills == sa_shots[1][3].fills + 1);
+	// Not for a depth without a palette entry for the background, nor without the board's fill: the whole panel then
+	sd = disp;
+	sd.width = SA_W; sd.height = SA_H; sd.bpp = 16; sd.inset_left = 5; sd.fb_safe_area = true;
+	sd.fill_insets = sa_fill_insets;
+	gfx_fb_rect_t r;
+	CHECK(gfx_init(&sd));
+	gfx_fb_rect(&r);
+	CHECK(!r.safe_area && r.w == SA_W);
+	sd.bpp = 4; sd.flush_indexed = sa_flush; sd.fill_insets = NULL;
+	CHECK(gfx_init(&sd));
+	gfx_fb_rect(&r);
+	CHECK(!r.safe_area && r.w == SA_W);
+	gfx_init(&disp);
+	ui_layout_init();
+}
+
 // High contrast: the idle pill is white, so its word must be dark (white on white showed a blank pill on the radio)
 static void test_idle_pill_contrast(void)
 {
@@ -784,6 +924,7 @@ int main(void)
 	CHECK(gfx_init(&disp) == (GFX_MAX_ROWS >= 320));
 
 	test_indexed();
+	test_safe_area();
 	test_aa_text();
 	test_splash_footer();
 	test_pass_wait();
