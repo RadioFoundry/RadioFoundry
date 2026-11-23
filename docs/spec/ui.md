@@ -90,7 +90,7 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   "Priv" in blue, and a private call is not encrypted.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.
-- YSF Home names the caller by callsign: "SP5WLF > DG-ID 12", the DG-ID going first when the line is short. A call of
+- YSF Home names the caller by callsign: "SP5WLF > DG-ID 12", the DG-ID dropped first when the line is short (the callsign is kept longest). A call of
   another DG-ID shows "Other DG-ID: not played", one that isn't DN voice "Not DN voice: not played". The talk line
   shows the DG-ID PTT sends ("DG-ID 00"), or "No callsign" in the warning color while PTT is refused for want of one;
   the chips show the power and the DG-ID heard ("RX DG-ID 00"). The radio ID is not on Home ([ysf.md](ysf.md) 6.5).
