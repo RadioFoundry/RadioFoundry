@@ -1226,6 +1226,14 @@ Values written at init; field meanings from the datasheet:
 | 0x30 | DR_ADC_AGC | 0x34 | AGC data byte |
 | modem 0x088 | LINEOUT_CTRL | 0x01 | line out 2 enabled |
 
+Mic level at the vocoder (measured 2026-11-19, a person at the mic, an over through this radio's AMBE+2 encoder
+captured on an SDR and decoded in software): speech at -31 dBFS (rms of the loudest 30 % of 100 ms blocks), 13 dB
+under another maker's handheld's digital voice decoded the same way (-18 dBFS); clear, only quiet. The encoder reaches
+full scale (the bench's speech clip on DMR), so the level is lost in the mic path: GCR_ADCL's 11 dB, with no other
+gain. The board leaves the register as it is (it also feeds the VOX meter) and asks for 12 dB on the PCM before the
+AMBE+2 encoder, with the core's peak limiter (`hal_radio_t.mic_pcm_db`, [radio-features.md](radio-features.md) 3.6).
+Expected: about -19 dBFS; not yet measured on air.
+
 APRS AFSK transmit (measured on the SDR bench, a UHF test frequency, 25 kHz, lowest power): the tones go out with
 the microphone on the DMR path (0x2E = 0) and the codec's microphone muted. On the FM path (0x2E = 1) the microphone
 rode on the tones (#828). The FD6818's audio input takes the tones hot, with mark about 4 dB under space: PCM 435
