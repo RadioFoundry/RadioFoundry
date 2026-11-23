@@ -1292,6 +1292,8 @@ static const flow_t flows_k[] = {
 		{ "11 dual watch: P1 moves the selected", "quick 7 ctx 3 5 ok", "user1", "dual=1 azone=2", 1, false },
 		{ "11 dual watch: Up/Down on zone, the knob still steps", "ok 7 8 down down ok long:back quick 7 ctx 3 5 ok", "enc+",
 	  "dual=1 azone=0 apos=4", 1, false },
+	{ "11 dual watch: A/B recalls both panes after a physical knob turn", "quick 7 ctx 3 5 ok sk2 slot7 sk2",
+	  "slot6 sk2", "dual=1 sel=B apos=6 bpos=7", 2, false },
 #if CONFIG_UI_COLOR
 	{ "S theme light (color screens)", "", "ok 7 2 down down ok", "set7=1", 6, false },
 	{ "S highlight color red (the first after Default)", "", "ok 7 2 down down down ok", "set61=1", 7, false },

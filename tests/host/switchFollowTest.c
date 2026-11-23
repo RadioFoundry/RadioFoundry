@@ -47,13 +47,13 @@ int main(void)
 	CHECK(switch_follow_check(&f, 1, 0, 8, true));
 	CHECK(switch_follow_step(&f, 5, 6000 + R) == SWITCH_CHECK);
 	CHECK(!switch_follow_check(&f, 1, 5, 8, true));
-	// A position past the end of the zone: asked once, then given up
+	// An empty position can be selected and acknowledged like any other position.
 	CHECK(switch_follow_step(&f, 15, 9000) == SWITCH_ASK);
 	CHECK(switch_follow_step(&f, 15, 9000 + R) == SWITCH_CHECK);
-	CHECK(!switch_follow_check(&f, 1, 5, 8, true));
+	CHECK(switch_follow_check(&f, 1, 5, 8, true));
 	CHECK(switch_follow_step(&f, 15, 9000 + 2 * R) == SWITCH_CHECK);
-	CHECK(!switch_follow_check(&f, 1, 5, 8, true));
-	// A codeplug write makes the same zone longer: the position fits now and is asked for
+	CHECK(!switch_follow_check(&f, 1, 15, 8, true));
+	// A codeplug write changes the zone size, so revalidate the slot.
 	CHECK(switch_follow_step(&f, 15, 9000 + 3 * R) == SWITCH_CHECK);
 	CHECK(switch_follow_check(&f, 1, 5, 16, true));
 	CHECK(switch_follow_step(&f, 15, 9000 + 4 * R) == SWITCH_CHECK);

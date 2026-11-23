@@ -1087,24 +1087,27 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 
-	// On a position-locked selector, show the slot in this zone instead of the codeplug record number.
-	bool zone_slots = board.input != NULL && board.input->position_locked;
-	bool empty_slot = zone_slots && v->channel_number == 0 && v->ch.rx_hz == 0;
+	bool empty_slot = board.input != NULL && board.input->position != NULL &&
+			  v->channel_number == 0 && v->ch.rx_hz == 0;
 
-	// Number and name, baselines aligned. Use the largest font the name fits in.
-	sb_init(&b, buf, sizeof buf);
-	sb_u32(&b, zone_slots ? v->zone_pos + 1u : v->channel_number, 1);
-	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
-		L->medium->w / 2;
+	// Number and name, baselines aligned. An empty slot has no codeplug record number.
+	int x = 0;
+	if (!empty_slot) {
+		sb_init(&b, buf, sizeof buf);
+		sb_u32(&b, v->channel_number, 1);
+		x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
+		    L->medium->w / 2;
+	}
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
+	const char *name = empty_slot ? TR(CHANNEL_UNPROGRAMMED, "Unprogrammed") : v->ch.name;
 	const font_t *nf = L->large;
-	if (gfx_text_width(nf, v->ch.name) > avail)
+	if (gfx_text_width(nf, name) > avail)
 		nf = L->medium;
-	if (gfx_text_width(nf, v->ch.name) > avail)
+	if (gfx_text_width(nf, name) > avail)
 		nf = L->small;
-	gfx_text_fit(nf, v->ch.name, avail, fit, sizeof fit);
+	gfx_text_fit(nf, name, avail, fit, sizeof fit);
 	x = gfx_text(nf, x, nf == L->large ? y : base - nf->ascent, fit, empty_slot ? ui_col.warn : ui_col.fg);
 	if (v->temporary)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
@@ -1112,6 +1115,16 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 
 static void draw_talk(const radio_view_t *v, bool label_first)
 {
+	if (!v->vfo && v->channel_number == 0 && v->ch.rx_hz == 0 &&
+	    board.input != NULL && board.input->position != NULL) {
+		const ui_layout_t *L = &ui_layout;
+		const font_t *f = L->medium;
+		char fit[40];
+		int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);
+		gfx_text_fit(f, TR(CHANNEL_UNPROGRAMMED, "Unprogrammed"), gfx_width() - x, fit, sizeof fit);
+		gfx_text(f, x, L->talk_y, fit, ui_col.warn);
+		return;
+	}
 #if CONFIG_DMR
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		draw_talk_dmr(v, label_first);
@@ -1167,9 +1180,7 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		}
 #endif
 	} else if (v->ch.rx_only) {
-		bool empty_slot = !v->vfo && v->channel_number == 0 && v->ch.rx_hz == 0 &&
-				  board.input != NULL && board.input->position_locked;
-		sb_str(&b, empty_slot ? v->ch.name : TR(WORD_RX_ONLY, "RX only"));
+		sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
 		c = ui_col.warn;
 	} else if (v->ch.tx_hz == 0) {
 		sb_str(&b, TR(HOME_STATE_NO_TX_FREQ, "No TX frequency"));
@@ -2391,7 +2402,9 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	if (v->vfo)
 		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
 	else
-		sb_str(&b, v->ch.name);
+		sb_str(&b, board.input != NULL && board.input->position != NULL &&
+			v->channel_number == 0 && v->ch.rx_hz == 0 ?
+			TR(CHANNEL_UNPROGRAMMED, "Unprogrammed") : v->ch.name);
 	const font_t *f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, tx ? ui_col.tx : ui_col.fg);
@@ -2531,7 +2544,7 @@ static void dual_name(const ui_state_t *s, int i, char *buf, size_t len)
 // widest pill (PTT)
 static uint16_t dual_display_number(const ui_dual_pane_t *p)
 {
-	return board.input != NULL && board.input->position_locked && p->zone_slot != 0 ? p->zone_slot : p->number;
+	return board.input != NULL && board.input->position != NULL && p->zone_slot != 0 ? p->zone_slot : p->number;
 }
 
 static const font_t *dual_name_font(const ui_state_t *s, int i, const font_t *nf)

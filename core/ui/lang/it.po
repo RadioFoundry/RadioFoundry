@@ -4738,6 +4738,11 @@ msgid "ROAM"
 msgstr "ROAM"
 
 #: core/ui/ui_screens.c
+msgctxt "CHANNEL_UNPROGRAMMED"
+msgid "Unprogrammed"
+msgstr "Non programmato"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "Ricerca sistema"

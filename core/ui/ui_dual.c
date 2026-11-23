@@ -711,7 +711,8 @@ bool ui_dual_home_key(const input_event_t *ev)
 			return false;
 		if (ui_st.updown == 1) {	// Settings > Keys > Up/Down: Zone
 			int dir = ev->action == ACT_NAV_UP ? 1 : -1;
-			ui_dual_zone_step(board.input != NULL && board.input->position_locked ? -dir : dir);
+			// With the knob selecting slots, Down moves forward through the zone list.
+			ui_dual_zone_step(board.input != NULL && board.input->position != NULL ? -dir : dir);
 		} else {
 			step_selected(ev->action == ACT_NAV_UP ? 1 : -1);
 		}
@@ -719,6 +720,13 @@ bool ui_dual_home_key(const input_event_t *ev)
 	case ACT_ENC_STEP:
 		if (ui_st.entry)
 			return false;
+		if (ev->slot != 0 && !ref[d->sel].vfo) {
+			ui_dual_ref_t next = ref[d->sel];
+			next.pos = ev->slot - 1;
+			if (!ref_same(&next, &ref[d->sel]))
+				set_pane(d->sel, &next);
+			return true;
+		}
 		for (int n = ev->value < 0 ? -ev->value : ev->value; n > 0; n--)
 			step_selected(ev->value > 0 ? 1 : -1);
 		return true;

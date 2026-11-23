@@ -420,11 +420,13 @@ A channel switch read as a position (`hal_input_t.position`, `drivers/input/chsw
 selects that position in the zone (`radio_req_zone_pos`), at power-on too, so the channel is always the one the knob
 points at, and again after a zone change (a new zone starts on its first channel). It asks again until the radio is
 on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
-position past the end of the zone changes nothing. Once on it, the knob is left alone until it moves or the zone
-changes, so a scan stands. A host's zone and channel request ([tcp-services.md](tcp-services.md) 8) holds too: the
+position without a programmed channel shows **Unprogrammed** on Home and inhibits receive and transmit. The knob
+is left alone until it moves or the zone changes. On boards with `hal_input_t.scan_stop_to_position`, manually stopping a zone scan returns to the switch position. A host's zone and channel request ([tcp-services.md](tcp-services.md) 8) holds too: the
 radio stays on the host's choice, in that zone, until the knob moves. Its position is `input.switch_pos` in the debug
 link view
 (-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
+During dual watch, each pane keeps its own channel or VFO tuning when selected. Turning a position switch selects that slot in the
+selected memory pane's zone if the slot can be watched. A VFO pane and an endless encoder still use steps.
 
 VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
 It is the VFO / MR key's short press, and any side key can send it with the VFO/Channel function (3.1). The VFO / MR

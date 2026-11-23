@@ -4,7 +4,7 @@
 // A new position is asked for at once, and so is the position again when the zone changes (a zone key, the debug
 // link), since a new zone starts on its first channel. The radio may not take it (transmitting, a hotspot, the
 // codeplug not loaded yet), so every SWITCH_FOLLOW_RETRY_MS the task reads the radio's zone and position and asks
-// again when the radio would take it, until the radio is on it or the zone is too short for it. A position the radio
+// again when the radio would take it, until the radio is on it. A position the radio
 // keeps refusing while it could take one (a channel it can't read) is given up after SWITCH_FOLLOW_ASKS asks, since
 // every ask stops a scan and an APRS transmission and resets the battery saver. Then it leaves the radio alone until
 // the knob moves or the zone changes (another zone, or the same one with another size after a codeplug write), so a
@@ -106,7 +106,7 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 		}
 	}
 	if (f->zone_known && (zone != f->zone || zone_size != f->size)) {
-		f->pending = true;	// a position given up as past the end may fit now
+		f->pending = true;	// the slot may have changed
 		f->asks = 0;
 	}
 	f->zone = zone;
@@ -115,7 +115,7 @@ static inline bool switch_follow_check(switch_follow_t *f, uint16_t zone, uint16
 	if (!f->pending || !ready) {
 		return false;
 	}
-	if (zone_pos == (uint16_t)f->want || (uint16_t)f->want >= zone_size) {
+	if (zone_pos == (uint16_t)f->want) {
 		f->pending = false;
 		return false;
 	}

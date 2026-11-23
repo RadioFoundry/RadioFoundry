@@ -665,7 +665,7 @@ static bool channel_read(uint16_t number, channel_t *ch)
 // (core/dmr/ambe routes the speaker itself); the green LED shows a call being played
 static bool position_empty(const radio_sm_t *sm)
 {
-	return board.input != NULL && board.input->position_locked && !sm->view.vfo &&
+	return board.input != NULL && board.input->position != NULL && !sm->view.vfo &&
 	       sm->have_channels && sm->view.channel_number == 0;
 }
 
@@ -1169,34 +1169,20 @@ static void set_channel(radio_sm_t *sm, uint16_t pos, const channel_t *ch)
 #endif
 }
 
-static void follow_channel_switch(radio_sm_t *sm, uint32_t now_ms)
+static void select_switch_position(radio_sm_t *sm, uint16_t pos, uint32_t now_ms)
 {
-	const hal_input_t *input = board.input;
-	if (input == NULL || !input->position_locked || input->position == NULL || !sm->have_channels || sm->view.vfo ||
-	    sm->hotspot || sm->ptt || sm->view.state == RS_TX) {
-		return;
-	}
-#if CONFIG_SCAN
-	if (scan_on(&sm->scan)) {
-		return;
-	}
-#endif
-	int8_t pos = input->position();
-	if (pos < 0 || (uint16_t)pos == sm->view.zone_pos) {
-		return;
-	}
-
 	channel_t ch;
-	if ((uint16_t)pos < sm->zone.count && channel_read(sm->zone.channels[pos], &ch)) {
-		set_channel(sm, (uint16_t)pos, &ch);
+	if (pos < sm->zone.count && channel_read(sm->zone.channels[pos], &ch)) {
+		set_channel(sm, pos, &ch);
 	} else {
-		const channel_t empty = { .name = "Unprogrammed", .mode = RADIO_MODE_FM, .rx_only = true };
 #if CONFIG_DMR_TRUNK
-		t3_channel(sm, 0, &empty);
+		t3_channel(sm, 0, &(channel_t){0});
 #endif
-		sm->view.zone_pos = (uint16_t)pos;
+		sm->view.zone_pos = pos;
 		sm->view.channel_number = 0;
-		load_channel(sm, &empty);
+		sm->view.ch = (channel_t){ .mode = RADIO_MODE_FM, .rx_only = true };
+		clear_temporary(sm);
+		apply_tot(sm);
 	}
 	tune(sm, now_ms);
 }
@@ -5413,8 +5399,15 @@ static void scan_stop_asked(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 		sm->dual_keep[0].valid = sm->dual_keep[1].valid = false;
 #endif
 	}
+	const hal_input_t *input = board.input;
+	bool follow = !cancel && sm->scan.kind == SCAN_ZONE && input != NULL &&
+		      input->scan_stop_to_position && input->position != NULL;
 	scan_stop(sm, cancel, now_ms);
-	follow_channel_switch(sm, now_ms);
+	if (follow) {
+		int8_t pos = input->position();
+		if (pos >= 0 && (uint16_t)pos != sm->view.zone_pos)
+			select_switch_position(sm, (uint16_t)pos, now_ms);
+	}
 }
 
 static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
@@ -6942,7 +6935,6 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		scan_stop(sm, !on_signal, now_ms);
 	}
 #endif
-	follow_channel_switch(sm, now_ms);
 	sm->ptt = true;
 	sm->tot_warned = false;
 	sm->view.tot_warning = false;
@@ -8470,6 +8462,10 @@ static bool retunes(uint8_t type)
 
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
+	// Dual Watch handles knob detents through the selected pane, even as the receiver looks at the other pane.
+	if (req->type == RREQ_ZONE_POS && req->arg2 != 0 &&
+	    (dual_running(sm) || sm->view.vfo || sm->ptt || sm->view.state == RS_TX || sm->hotspot || !sm->have_channels))
+		return;
 	sm->led_now = now_ms;
 	// A beep or a vibration is an alert, not the user doing something; the volume changes nothing on air or on the
 	// channel, so it neither gives way to nor cancels anything either
@@ -8539,7 +8535,14 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_ZONE_POS: {
 		uint16_t pos;
 		channel_t ch;
-		if (busy || !sm->have_channels || req->arg < 0 || req->arg >= sm->zone.count) {
+		if (busy || !sm->have_channels || req->arg < 0) {
+			break;
+		}
+		if (req->arg2 != 0) {
+			select_switch_position(sm, (uint16_t)req->arg, now_ms);
+			break;
+		}
+		if (req->arg >= sm->zone.count) {
 			break;
 		}
 		pos = (uint16_t)req->arg;
@@ -9506,7 +9509,6 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}
-	follow_channel_switch(sm, now_ms);
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
 #if CONFIG_BEEP

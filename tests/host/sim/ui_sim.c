@@ -2563,7 +2563,7 @@ static void step(void)
 		view.tx_elapsed_ms += TICK_MS;
 	if (ptt_up_at && now_ms >= ptt_up_at) {
 		ptt_up_at = 0;
-		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_UP, 0, 0 };
 		ui_app_key(&ev);
 		ptt(false);
 	}
@@ -2818,12 +2818,13 @@ static bool on_map(uint8_t action, bool lng)
 
 static bool press(const char *name, bool lng, char *err, size_t len)
 {
-	if (strcmp(name, "enc+") == 0 || strcmp(name, "enc-") == 0) {
+	int slot = strncmp(name, "slot", 4) == 0 ? atoi(name + 4) : 0;
+	if (strcmp(name, "enc+") == 0 || strcmp(name, "enc-") == 0 || (slot >= 1 && slot <= 16)) {
 		if (!(board.caps & CAP_ENCODER)) {
 			snprintf(err, len, "no encoder on this key map");
 			return false;
 		}
-		input_event_t ev = { ACT_ENC_STEP, GESTURE_DOWN, (int8_t)(name[3] == '+' ? 1 : -1) };
+		input_event_t ev = { ACT_ENC_STEP, GESTURE_DOWN, (int8_t)(name[3] == '+' ? 1 : -1), (uint8_t)slot };
 		presses++;
 		ui_app_key(&ev);
 		advance(PRESS_MS);
@@ -2836,7 +2837,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 			if (k->bit != K_SK2)
 				continue;
 			input_event_t ev = { lng ? k->long_action : k->short_action,
-					     (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
+					     (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0, 0 };
 			presses++;
 			advance(lng ? LONG_MS : PRESS_MS / 2);
 			ui_app_key(&ev);
@@ -2858,7 +2859,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		if (a == ACT_MONITOR) {
 			// The radio gets the edge first, as on the radio (input_forward runs before the UI's queue, and the
 			// radio task outranks the UI): the UI reads the view the edge already changed
-			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0 };
+			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0, 0 };
 			radio_req_monitor(true);
 			ui_app_key(&ev);
 			advance(lng ? LONG_MS : PRESS_MS);
@@ -2867,7 +2868,7 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 			ui_app_key(&ev);
 			return true;
 		}
-		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
+		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0, 0 };
 		advance(lng ? LONG_MS : PRESS_MS / 2);
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
@@ -3079,7 +3080,7 @@ static bool run_token(char *t, char *err, size_t len)
 			return false;
 		}
 		presses++;
-		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0, 0 };
 		ui_app_key(&ev);
 		if (!ptt_blocked)
 			ptt(true);
@@ -3089,7 +3090,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "pttdown") == 0) {	// PTT held until pttup (for a look at the TX screen)
 		presses++;
-		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_DOWN, 0, 0 };
 		ui_app_key(&ev);
 		if (!ptt_blocked)
 			ptt(true);
@@ -3125,7 +3126,7 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 	if (strcmp(t, "pttup") == 0) {
-		input_event_t ev = { ACT_PTT, GESTURE_UP, 0 };
+		input_event_t ev = { ACT_PTT, GESTURE_UP, 0, 0 };
 		ui_app_key(&ev);
 		ptt(false);
 		advance(200);
@@ -3184,7 +3185,7 @@ static bool run_token(char *t, char *err, size_t len)
 		bool down = t[3] == 'd';
 		if (down)
 			presses++;
-		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0, 0 };
 		radio_req_monitor(down);	// the radio first, as on the radio (see `mon`)
 		ui_app_key(&ev);
 		advance(200);
@@ -3838,7 +3839,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "satdoneok") == 0) {
 		sim_satellite_predicting = false;
-		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0 };
+		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0, 0 };
 		presses++;
 		ui_app_key(&ev);
 		advance(200);

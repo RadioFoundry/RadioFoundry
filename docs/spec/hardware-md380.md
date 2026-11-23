@@ -922,7 +922,7 @@ A 16-position switch with four code lines ECN0–ECN3 on PE14, PE15, PB10, PB11 
 
 The driver also reports the signed difference between successive positions for VFO tuning, dual watch, and menu navigation. The switch has physical end stops.
 
-The code is a Gray code in its own line order. Read on RadioFoundry's diagnostics page ("ch x", after the polarity), one detent at a time clockwise (bench, 2026-10-16):
+The code is a Gray code in its own line order. Read on RadioFoundry's diagnostics page ("ch x", after the polarity), one detent at a time clockwise:
 
 | Position | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|

@@ -4194,6 +4194,14 @@ static void test_ui_dual(void)
 	const ui_dual_ref_t pair[2] = { a, tones };
 	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL && sm.dual_sel == 1);
 	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);	// again: nothing changes
+	// An absolute switch request must not retune either pane when the selected zone changes.
+	const radio_req_t switch_pos = { .type = RREQ_ZONE_POS, .arg = 4, .arg2 = 1 };
+	radio_sm_request(&sm, &switch_pos, now);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.dual_sel == 1 && sm.dual[1].pos == 1);
+	CHECK(ui_svc_dual(pair, 0) && sm.dual_sel == 0);
+	radio_sm_request(&sm, &switch_pos, now);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.dual[0].pos == 0 && sm.dual[1].pos == 1);
+	CHECK(ui_svc_dual(pair, 1) && sm.dual_sel == 1);
 	{
 		// The debug link's features section: the pair, the selected one, where the receiver is; it still fits a reply
 		static char buf[DL_REPLY_MAX - 6 - 16];
@@ -6110,27 +6118,27 @@ static void test_channel_selector(void)
 {
 	setup_codeplug();
 	start();
-	fake_input.position_locked = true;
+	fake_input.scan_stop_to_position = true;
 	knob_pos = 1;
-	radio_sm_poll(&sm, now);
+	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	CHECK(sm.view.zone_pos == 1 && sm.view.channel_number == 2);
 
 	knob_pos = (int8_t)zones[0].count;
-	radio_sm_poll(&sm, now);
+	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	CHECK(sm.view.zone_pos == (uint16_t)knob_pos && sm.view.channel_number == 0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_FREQ && hw.tx_calls == 0);
 	req(RREQ_PTT, 0);
 
 	knob_pos = 0;
-	radio_sm_poll(&sm, now);
+	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	req(RREQ_SCAN, RSCAN_ZONE);
 	CHECK(sm.view.scan == SCAN_ZONE);
 	knob_pos = 1;
 	req(RREQ_SCAN, RSCAN_STOP);
 	CHECK(sm.view.scan == 0 && sm.view.zone_pos == 1 && sm.view.channel_number == 2);
 
-	fake_input.position_locked = false;
+	fake_input.scan_stop_to_position = false;
 	knob_pos = -1;
 }
 

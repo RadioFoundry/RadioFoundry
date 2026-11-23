@@ -301,7 +301,15 @@ Follow [Installing](02-installing.md) with these values. To keep the stock codep
 
 On the regular Home screen in memory mode, **Up** and **Down** do not step through channels independently of the knob. To use the arrows to change zones, set **Settings > Keys > Up/Down on Home** to **Zone**. You can also open Zones with **OK**, **4**.
 
-Keep zones at 16 channels or fewer if you want to reach every channel with the knob. Empty slots show **Unprogrammed** and block transmission. When a scan stops, the radio returns to the slot selected by the knob. Home and dual watch show the channel's position within its zone.
+Keep zones at 16 channels or fewer if you want to reach every channel with the knob.
+Empty slots show **Unprogrammed** and block transmission. When you manually stop a
+zone scan, the radio returns to the slot selected by the knob. Home shows the
+codeplug channel number beside the name and the slot position and zone size in the
+upper right.
+
+Dual Watch shows each channel's position within its zone. Pressing A/B recalls
+each pane's selection. The next knob turn selects the physical slot in the active
+memory pane if that slot can be watched. In a VFO pane, the knob steps the frequency.
 
 There are no **P1**, **P2** or **SK3** keys, so there are no dedicated power level, zone, or emergency keys. Change power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The bootloader starts when you hold **PTT** and the side key just above it at power-on.
 

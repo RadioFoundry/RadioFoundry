@@ -50,9 +50,14 @@ static switch_follow_t sw_follow;	// the channel switch (hal_input_t.position), 
 static volatile int8_t switch_pos = -1;	// its settled position, for the debug link
 static volatile int32_t switch_hold = -1;	// input_switch_hold's zone, taken by the input task
 
+static uint8_t deferred_slot;	// slot attached to deferred encoder steps
+
 static void emit(const input_event_t *ev, void *ctx)
 {
-	(void)ctx;
+	input_event_t event = *ev;
+	if (event.action == ACT_ENC_STEP) {
+		event.slot = *(const uint8_t *)ctx;
+	}
 	if (ev->action == ACT_PTT && ev->gesture == GESTURE_DOWN) {
 		// Every press is logged with where it came from: a transmission nobody asked for shows its cause
 		ptt_downs++;
@@ -60,10 +65,11 @@ static void emit(const input_event_t *ev, void *ctx)
 		     (unsigned)raw_keys, ptt_blocked ? ", blocked" : "");
 	}
 	input_forward(ev, ptt_blocked);
-	if (xQueueSend(events, ev, 0) != pdTRUE && ev->action == ACT_ENC_STEP) {
+	if (xQueueSend(events, &event, 0) != pdTRUE && ev->action == ACT_ENC_STEP) {
 		// The UI is behind: keep the detents for the next scan instead of losing them (a full queue drops key
 		// events, but a lost encoder step is a wrong channel or row)
 		enc_carry = (int16_t)(enc_carry + ev->value);
+		deferred_slot = event.slot;
 		enc_deferred++;
 	}
 }
@@ -112,9 +118,6 @@ static void switch_poll(uint32_t now)
 {
 	int8_t pos = board.input->position();
 	switch_pos = pos;
-	if (board.input->position_locked) {
-		return;	// the radio task follows this switch directly
-	}
 	int32_t hold;
 	taskENTER_CRITICAL();
 	hold = switch_hold;
@@ -130,7 +133,7 @@ static void switch_poll(uint32_t now)
 		st = switch_follow_check(&sw_follow, zone, at, size, ready) ? SWITCH_ASK : SWITCH_IDLE;
 	}
 	if (st == SWITCH_ASK) {
-		radio_req_zone_pos((uint16_t)pos);
+		radio_req_switch_pos((uint16_t)pos);
 	}
 }
 
@@ -156,6 +159,8 @@ static void input_task(void *arg)
 		}
 		uint32_t tm = timing;
 		input_engine_set_timing(&engine, (uint16_t)(tm >> 16), (uint16_t)tm);
+		uint8_t slot = enc != 0 && switch_pos >= 0 ? (uint8_t)(switch_pos + 1) : deferred_slot;
+		deferred_slot = 0;
 		int32_t steps = enc_carry + enc + ienc;
 		enc_carry = 0;
 		if (steps > 127 || steps < -127) {	// the rest waits for the next scan
@@ -168,7 +173,7 @@ static void input_task(void *arg)
 			keymap_pending = false;
 			taskEXIT_CRITICAL();
 		}
-		input_engine_step(&engine, keys | inj_keys, (int8_t)steps, now, emit, NULL);
+		input_engine_step(&engine, keys | inj_keys, (int8_t)steps, now, emit, &slot);
 		vTaskDelayUntil(&wake, pdMS_TO_TICKS(INPUT_SCAN_MS));
 	}
 }

@@ -576,6 +576,7 @@ void radio_req_stats(uint32_t *handled, uint32_t *dropped);
 
 // Requests (queued, handled by the radio task)
 void radio_req_channel_step(int8_t dir);	// next / previous channel in the zone, wraps
+void radio_req_switch_pos(uint16_t pos);
 void radio_req_zone_pos(uint16_t pos);		// jump to a position in the zone
 void radio_req_zone(uint16_t index);
 void radio_req_vfo(bool on);

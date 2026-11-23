@@ -44,6 +44,7 @@ typedef struct {
 	uint8_t action;		// input_action_t
 	uint8_t gesture;	// input_gesture_t
 	int8_t value;		// encoder steps
+	uint8_t slot;		// 1-based physical slot, zero for relative steps
 } input_event_t;
 
 // One physical key: its bit in the scan mask and its short / long logical actions.
@@ -96,8 +97,8 @@ typedef struct {
 	// channel by where it points: 0-based, -1 while it hasn't settled. The core selects that position in the zone
 	// (docs/spec/ui.md 3). NULL: the knob, if any, steps through the channels (encoder)
 	int8_t (*position)(void);
-	// The knob owns memory-channel selection outside scans and VFO mode, including empty positions.
-	bool position_locked;
+	// Return to the physical switch position when the operator stops a memory scan.
+	bool scan_stop_to_position;
 	// The PTT line is stuck low and only a power cycle can release it (docs/spec/gotchas.md 16.5). The core flashes the
 	// LEDs to ask for one. NULL: the board can't tell
 	bool (*ptt_line_stuck)(void);
