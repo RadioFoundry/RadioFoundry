@@ -1840,7 +1840,7 @@ dmrDataRxResult_t dmrDataRxBurst(const dmrBurst_t *burst)
 				if (dedicated && burst->payload[0] == 0x9Fu && burst->payload[1] == T3_FID_68)
 				{
 					// The first header can be lost during TX-to-RX turnaround. Start with the
-					// vendor header and wait for the repeater's zero-block response request.
+					// proprietary header and wait for the repeater's zero-block response request.
 					cnf.held = false;
 					p->dpf = DMR_DPF_CONFIRMED;
 					p->firstTry = false;
