@@ -361,15 +361,15 @@ static void volume_apply(void);
 
 #if GD88_BAND_LO_GPIO
 #define LO_GPIO_UHF		4u
-#define LO_GPIO_VHF_BK		5u	// a BK4819 LO
-#define LO_GPIO_VHF		1u	// an FD6818 family or AT1141 LO
+#define LO_GPIO_VHF_BK		1u	// a BK4819 LO
+#define LO_GPIO_VHF		5u	// an AT1141 or FD6818 family LO
 // The LO chip's GPIO, through the superhet LO ops (both chips drive it)
 static void lo_gpio(uint8_t pin, bool high)
 {
 	superhet_lo_gpio(&rf.lo, pin, high);
 }
 
-// The band's path: VHF = the VHF line high, GPIO4 low; UHF the reverse. The VHF line is GPIO5 on a BK4819 LO, GPIO1
+// The band's path: VHF = the VHF line high, GPIO4 low; UHF the reverse. The VHF line is GPIO1 on a BK4819 LO, GPIO5
 // on the other parts
 static void lo_band(uint32_t hz)
 {
