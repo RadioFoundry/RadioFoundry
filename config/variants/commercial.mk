@@ -12,3 +12,5 @@ CONFIG_HOTSPOT ?= n
 CONFIG_APRS ?= n
 # Satellite tracking is an amateur-radio feature
 CONFIG_SATELLITE_TLE ?= n
+# Fox mode (a fox-hunt beacon with a Morse ID) is for amateur radio direction-finding hunts
+CONFIG_FOX ?= n

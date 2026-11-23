@@ -71,7 +71,7 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 |---|---|
 | (none: full) | nothing |
 | `amateur` | basic privacy, AES voice encryption, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
-| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS), satellite tracking |
+| `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS), satellite tracking, fox mode |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
 left out; the site shows both. The lists are a draft for the project lead to settle.
@@ -184,7 +184,7 @@ below are for an STM32F4 radio.
 | `CONFIG_DUAL_WATCH` | y (with `SCAN`) | the dual watch screens: Home with both channels, the channel picker and the dual watch actions ([dual-watch](ux/dual-watch.md)); in the radio core, channels of other zones and the VFO, and PTT on the selected channel without ending the watch (`docs/spec/radio-features.md` 2.1). Off: dual watch stays reachable only from the debug link (two channels of the current zone) |
 | `CONFIG_BEEP` | y | key, TX permit / deny, call end, time-out warning, battery and scan beeps (`docs/spec/radio-features.md` 4) |
 | `CONFIG_SIG_TONES` | = `BEEP` | Settings > Signaling tones: a chain of up to ten tones (frequency and length) for the start of a transmission, its end and a reception's end, on the speaker, on air or both, in DMR and FM (`docs/spec/radio-features.md` 4.3). Needs `CONFIG_BEEP`; an FM tone on air also needs `CONFIG_FM_TX_TONES`. Off: the radio's own talk permit, end and roger sounds |
-| `CONFIG_FOX` | = `FM_TX_TONES` and `SIG_TONES` | Fox mode, Tools > Fox: on a timer the radio keys the FM channel in use and sends a Morse message, a jingle and its callsign (`docs/spec/radio-features.md` 3.8). Needs `CONFIG_FM_TX_TONES` and `CONFIG_SIG_TONES`. Off: no fox, and the codeplug's fox record (key 0x000A) is kept and carried but does nothing |
+| `CONFIG_FOX` | = `FM_TX_TONES` and `SIG_TONES` (n in commercial) | Fox mode, Tools > Fox: on a timer the radio keys the FM channel in use and sends a Morse message, a jingle and its callsign (`docs/spec/radio-features.md` 3.8). Needs `CONFIG_FM_TX_TONES` and `CONFIG_SIG_TONES`. Off: no fox, and the codeplug's fox record (key 0x000A) is kept and carried but does nothing |
 | `CONFIG_FONT_XL` | n (y on a 240 px color radio) | 16x32 font, for 240 px and wider displays |
 | `CONFIG_FONT_AA` | n (y on a color radio) | the fonts from 6x12 up anti-aliased (JetBrains Mono Bold, 2 bits a pixel) on color panels instead of the bitmap ones; a mono panel would draw them as plain ink, so mono radios leave it off. Glyphs: 15.6 KB with `FONT_XL` (8.2 KB without) in place of 9.2 KB (5.3 KB) of bitmap ones (`core/ui/fonts.c`). On a 4 bpp panel (every color board) the edge grays share the 16 palette entries with the screen's own colors; a screen that already uses many colors loses some of them, and some font sizes or colors can then be slightly harder to read (`docs/spec/ui.md` 5) |
 | `CONFIG_FONT_BIG` | n (y on a 240 px color radio) | larger text on 240 px and wider color panels: lists, labels, the status strip and hints in a 9x18 font instead of 8x16 (24 characters a line instead of 27 on a 240 px panel; the 8x16 one takes the small print). Needs `FONT_AA`; 3.5 KB of flash. Unsupported on a panel under 220 px wide (the board's `hardware.gallery`), and so off in its maximal build |
