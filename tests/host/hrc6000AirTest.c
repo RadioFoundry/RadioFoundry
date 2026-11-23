@@ -1177,6 +1177,24 @@ static void copy_setup_check(void)
 	CHECK(AIR->copy && last_write(4, 0x10) == 0x80 && last_write(4, 0x34) == 0x00 && last_write(4, 0x83) == 0xFF);
 }
 
+// The platforms' first-restart record (hal_air.h): kept once, a later restart doesn't overwrite it, a cleared record
+// (stats reset) takes the next one, and the time is never 0 once kept
+static void test_air_lost_note(void)
+{
+	air_lost_rec_t r = { 0 };
+	const uint32_t a[4] = { 1, 2, 3, 4 }, b[4] = { 5, 6, 7, 8 };
+	CHECK(!air_lost_note(&r, 0, a, 100) && r.ms == 0);	// no restart yet
+	CHECK(air_lost_note(&r, 1, a, 0) && r.ms == 1 && r.regs[0] == 1 && r.regs[3] == 4);	// uptime 0 still kept
+	CHECK(!air_lost_note(&r, 1, b, 200) && r.regs[0] == 1);
+	CHECK(air_lost_note(&r, 2, b, 300) && r.ms == 1 && r.regs[0] == 1);	// the first one stays
+	r.ms = 0;	// a stats reset clears the record, not seen
+	memset(r.regs, 0, sizeof r.regs);
+	CHECK(!air_lost_note(&r, 2, b, 400) && r.ms == 0);
+	CHECK(air_lost_note(&r, 3, b, 500) && r.ms == 501 && r.regs[0] == 5 && r.regs[3] == 8);
+	r.seen = 0;	// a new session: its count starts at 0
+	CHECK(air_lost_note(&r, 1, a, 600) && r.ms == 501 && r.regs[0] == 5);
+}
+
 static void test_copy_watchdog(void)
 {
 	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
@@ -1364,6 +1382,7 @@ int main(void)
 	test_abort_stall_suspend();
 	test_open_close();
 	test_copy();
+	test_air_lost_note();
 	test_copy_watchdog();
 	test_chip_description();
 	test_fuzz();
