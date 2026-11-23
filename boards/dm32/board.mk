@@ -10,6 +10,6 @@ MCU_DEFS   := -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BA
 BOARD_DIRS := boards/dm32 drivers/rf/rfbus drivers/rf/fd6818 drivers/rf/subaudio drivers/modem/hrc7000 drivers/display/st7789 drivers/flash/spi_nor \
 	drivers/input/keymatrix drivers/input/quadrature drivers/input/sharedptt drivers/cal/baofeng \
 	drivers/bcast/rda5807m drivers/bus/i2c_gpio
-# The 240x320 panel at full resolution in 16 colors (display_dm32.c): the frame buffer is 37.5 KB (2.5 KB under the
-# 40 KB default) and has 320 rows
-MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_BYTES=38400u -DGFX_MAX_ROWS=320u
+# The 240x320 panel at full resolution in 16 colors (display_dm32.c). The frame buffer holds only the safe area inside
+# the bezel's insets, so config.mk sizes it (GFX_FB_BYTES) once the insets are known. 320 panel rows
+MCU_DEFS   += -DGFX_INDEXED=1 -DGFX_FB_SAFE_AREA=1 -DGFX_MAX_ROWS=320u

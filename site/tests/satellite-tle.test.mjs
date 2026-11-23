@@ -139,7 +139,14 @@ test("the page refreshes AMSAT before export and retains checked satellites thro
 		linkModule.SerialStream.open = async () => { opened++; return { close: async () => {} }; };
 		linkModule.Link.prototype.version = async () => ({ board: "test" });
 		linkModule.Link.prototype.chip = async () => null;
-		linkModule.Link.prototype.request = async (_command, payload) => {
+		linkModule.Link.prototype.request = async (command, payload) => {
+			if (command === 0x09) {
+				const text = new TextEncoder().encode("section=core\nbands=136000000-174000000,400000000-480000000\n");
+				const reply = new Uint8Array(5 + text.length);
+				reply[4] = 1;
+				reply.set(text, 5);
+				return reply;
+			}
 			switch (payload[0]) {
 			case 0: return new Uint8Array([7, 10, 0, 1, 0]);
 			case 9: return new Uint8Array([1, 0]);

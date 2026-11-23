@@ -304,15 +304,19 @@ static bool blank(uint32_t addr, uint32_t len)
 // defaults past it) in the first free slot of the ring. Written while the region holds no valid record of ours, so
 // from then on one always exists (saves never erase the sector holding the newest record) and a cut in the middle
 // of a journal rewrite (J0 erased, J1 full) can't make the region look foreign at the next boot
+// One slot's buffer for scan_region and the mark it may write after its scan, under the storage lock (off the start-up
+// task's stack)
+static uint8_t region_slot[STORAGE_SLOT_SIZE];
+
 static void mark(const hal_flash_map_t *m)
 {
-	static uint8_t r[STORAGE_SLOT_SIZE];
+	uint8_t *r = region_slot;
 	for (uint32_t a = m->settings_addr; a + STORAGE_SLOT_SIZE <= m->settings_addr + m->settings_size;
 	     a += STORAGE_SLOT_SIZE) {
-		if (!rd(a, r, sizeof(r)) || storage_slot_check(r) != STORAGE_SLOT_FREE) {
+		if (!rd(a, r, STORAGE_SLOT_SIZE) || storage_slot_check(r) != STORAGE_SLOT_FREE) {
 			continue;
 		}
-		memset(r, 0xFF, sizeof(r));
+		memset(r, 0xFF, STORAGE_SLOT_SIZE);
 		put32(&r[0], STORAGE_SLOT_MAGIC);
 		put32(&r[4], 0);		// sequence 0: any real record is newer
 		r[8] = r[9] = 0;		// layout 0
@@ -329,13 +333,13 @@ static void mark(const hal_flash_map_t *m)
 // Classify the settings ring and the journal (storage.h "Foreign region guard")
 static storage_region_t scan_region(const hal_flash_map_t *m)
 {
-	static uint8_t r[STORAGE_SLOT_SIZE];	// under the storage lock (off the start-up task's stack)
+	uint8_t *r = region_slot;
 	bool ours = false;			// one valid record of ours somewhere
 	uint16_t other = 0;
 
 	for (uint32_t a = m->settings_addr; a + STORAGE_SLOT_SIZE <= m->settings_addr + m->settings_size;
 	     a += STORAGE_SLOT_SIZE) {
-		storage_slot_t s = rd(a, r, sizeof(r)) ? storage_slot_check(r) : STORAGE_SLOT_OTHER;
+		storage_slot_t s = rd(a, r, STORAGE_SLOT_SIZE) ? storage_slot_check(r) : STORAGE_SLOT_OTHER;
 		ours = ours || s == STORAGE_SLOT_VALID;
 		other = (uint16_t)(other + (s == STORAGE_SLOT_OTHER));
 	}

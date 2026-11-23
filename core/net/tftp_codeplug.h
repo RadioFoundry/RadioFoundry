@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors codeplug.bin for the TFTP server
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+//
+// codeplug.bin for the TFTP server
 // (docs/spec/tftp.md 3, 4): the open-firmware codeplug image in the open-firmware CPS's address space, the same flat
 // file tools/cps_client.py reads and writes (file offset = STM32 wire address). Reads give the regions qdmr transfers
 // and 0xFF elsewhere; a write goes to the flash map's staging area first, is checked there, and only then replaces the

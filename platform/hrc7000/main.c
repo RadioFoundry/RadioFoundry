@@ -10,6 +10,13 @@
 
 void app_start(void);	// core/app: creates the tasks
 
+// The RTOS heap (configAPPLICATION_ALLOCATED_HEAP): every task stack and queue. The linker script puts it last in RAM
+// and starts main() on its top _Min_Stack_Size bytes (common.ld __stack_top), so the start-up stack is RAM the tasks
+// get once the scheduler runs instead of a reservation of its own (2 KB of main RAM, dead after start-up). Before
+// then only the start, idle and timer tasks are created, from the heap's bottom; xPortStartScheduler checks they
+// stayed below the stack (freertos/port.c). Not zeroed by crt0: heap_4 writes its own block headers
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] __attribute__((section(".rtos_heap"), aligned(8)));
+
 int main(void)
 {
 	board_rf_safe();	// transmitter off before anything that could hang (a soft reset may keep the pin levels)
