@@ -335,6 +335,7 @@ typedef struct {
 	int8_t tx_ts;
 	uint8_t tx_access;
 	bool tx_listen;		// receive in the slots between our bursts (hrc6000_dmr_tx_listen)
+	bool tx_master;		// this transmission's bursts keep the timing it started with (0x40 MasterMode)
 	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
 	uint32_t tap_reports;	// st.rc_reports at that read: one since means the chip reported this burst's RC already
 	uint8_t tx_phase;	// phase (tick & 1) of our slots

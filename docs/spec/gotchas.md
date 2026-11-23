@@ -743,9 +743,21 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 (register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11). On an HR_C6000 board with one synthesizer for
 receive and transmit, the end of each burst (the engine's `rf(false)`) retunes to the receive LO without waiting, and
 the RF TX interrupt retunes to the carrier and waits for the lock before the PA. RF_TX_INTER's advance (0x12 bits
-5-0, 100 us steps) gives that time; it is set only while the transmission listens (`tx_listen`) and cleared after.
-Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The
-board's hardware page has the values.
+5-0) gives that time. On the HR_C5000 a step is half a symbol (104.17 us), counted from the value the chip runs with
+(10), not from 0: a wait figured as 100 us from 0 keys the PA about 0.9 ms late (`hrc5000_tx_lead_us`). The lead is
+set only while the transmission listens (`tx_listen`) and cleared after. Too much lead cuts the end of the inbound
+burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The board's hardware page has the values.
+
+**14.6.1 A transmission that listens holds its timing.** In passive timing (0x40 = 0xC3) the chip follows the
+outbound heard in the listen slots, and moved its own bursts every few seconds (104 us, half a symbol, on the
+HR_C5000; about 63 us on the HR_C6000), each step away from the repeater's slot grid, not toward the grid. The burst
+at a step, or one or two after the step, reached the repeater with bit errors: about one burst in a hundred, every bad
+burst at a step (issue 609).
+The SDR bench took those bursts for a carrier a few hundred Hz off, so the retune looked like the cause. Rule: a
+transmission aligned to a repeater that listens sets MasterMode (0xE3) with its first burst and goes passive again at
+its end ([modem-hrc6000.md](modem-hrc6000.md) 6.2). Held, the bench's timing error stayed within 10 us over a 9 s
+over. A wide split can still leave single bits in a burst's first frame while the carrier settles after the retune;
+the board's hardware page has the figures.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On an MK22 board the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms.

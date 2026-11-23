@@ -414,7 +414,13 @@ bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps)
 		}
 		l->kept = true;
 	}
-	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (steps & 0x3Fu)));
+	uint8_t base = (uint8_t)(l->saved & 0x3Fu);
+	if (steps > 0x3Fu - base) {
+		steps = (uint8_t)(0x3Fu - base);
+	}
+	l->us = (uint16_t)(((uint32_t)steps * HRC5000_TX_LEAD_STEP_NUM + HRC5000_TX_LEAD_STEP_DEN / 2u) /
+			   HRC5000_TX_LEAD_STEP_DEN);
+	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (base + steps)));
 	return l->on;
 }
 

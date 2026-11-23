@@ -174,32 +174,43 @@ static void test_tx_lead(void)
 	rd[0][0x12] = 0xC5;	// bits 7-6 kept; the configuration page is 0 on the wire
 
 	nx = 0;
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25));
-	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 25));
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && nx == 2);	// already on: no traffic
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off
+	// Half symbols over the value read (0x05 here), not 100 us from 0: 15 steps = 1563 us (issue 609)
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15));
+	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 20));
+	CHECK(hrc5000_tx_lead_us(&l) == 1563u);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && nx == 2);	// already on: no traffic
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5 && !l.on && !l.kept);
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off again
 	nx = 0;
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && nx == 0);	// nothing to put back
+
+	// A lead past what bits 5-0 hold over the value read stops at 63
+	rd[0][0x12] = 0xCA;
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 60) && last_write(0, 0x12) == 0xFF);
+	CHECK(hrc5000_tx_lead_us(&l) == 5521u);	// 53 steps
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xCA);
+	rd[0][0x12] = 0xC5;
 
 	// The read fails: nothing written then, and nothing at the end (it once wrote 0 back there)
 	nx = 0;
 	fail_reads = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && !l.kept);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && !l.kept);
 	CHECK(count_writes(0, 0x12) == 0);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && count_writes(0, 0x12) == 0);
 
 	// The write fails: not on, the value read kept; the next call writes again without reading, the end puts it back
 	nx = 0;
 	fail_writes = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && l.kept);
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && l.on);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && l.kept);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && l.on);
 	CHECK(count_reads(0, 0x12) == 1 && count_writes(0, 0x12) == 2);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5);
 
 	// The lead's write fails and so does the first restore: the end tries again
 	nx = 0;
 	fail_writes = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && l.kept);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && l.kept);
 	fail_writes = 1;
 	CHECK(!hrc5000_tx_lead_off(&c5, &l) && l.kept && !l.on);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && !l.kept && last_write(0, 0x12) == 0xC5);

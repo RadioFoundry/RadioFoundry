@@ -959,6 +959,77 @@ static void test_tx_aligned_rmo(void)
 	CHECK(last_write(4, 0x41) == 0x50);	// repeater: back to receiving on its timing, no resync
 }
 
+// An aligned transmission that listens between its bursts (a repeater's, tx_listen): its bursts go out on the timing
+// it started with (0x40 MasterMode), so the outbound heard in the listened slots doesn't move them; passive timing
+// again at its end (issue 609)
+static void test_tx_aligned_listen_holds_timing(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
+	uint32_t t = 7000000;
+	for (int k = 0; k < 8; k++) {
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		ts_at(t);
+		t += 30000;
+	}
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 4; i++) {
+		dmr_tx_burst_t b = mk(i == 0 ? DMR_BURST_VOICE_LC_HEADER : DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+	uint8_t r40[8];
+	int n40 = 0, set_up = 0, before = -1;
+	for (int k = 0; k < 12; k++) {	// the transmission and a few slots after it
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		uint8_t v[4];
+		int n = writes_of(0x40, v, 4);
+		for (int i = 0; i < n && n40 < 8; i++) {
+			r40[n40++] = v[i];
+		}
+		if (r41 == 0x80 && set_up++ == 0) {
+			int at40 = first_write_at(4, 0x40);
+			before = at40 >= 0 && at40 < first_write_at(4, 0x41);	// held before the first burst is sent
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(set_up == 4 && before == 1);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
+	CHECK(n40 == 2 && r40[0] == 0xE3 && r40[1] == 0xC3);	// held once, passive again at the end
+
+	// A halt under a held, listening transmission: the next one neither listens nor holds unless asked
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_listen(&eng);
+	dmr_tx_burst_t hb = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+	CHECK(hrc6000_dmr_tx_queue(&eng, &hb));
+	for (int k = 0; k < 4 && !eng.tx_master; k++) {
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		drain();
+		t += 30000;
+	}
+	CHECK(eng.tx_master);
+	hrc6000_dmr_halt(&eng);
+	hrc6000_dmr_run(&eng);
+	drain();
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	CHECK(!eng.tx_listen && !eng.tx_master);
+	hrc6000_dmr_tx_abort(&eng);
+}
+
 // An aligned start whose receiver hears nothing (issue 524: after the restart that ends a wake-up, the receiver at
 // times raised no interrupts and read a constant 0x52 while the repeater was on the air): it searches again every
 // ALIGN_DEAF_TICKS, and keys once the repeater's timing comes back. A wait that hears bursts doesn't restart
@@ -2031,6 +2102,7 @@ int main(void)
 	test_tx_crc_and_underrun();
 	test_tx_end_hold();
 	test_tx_aligned_rmo();
+	test_tx_aligned_listen_holds_timing();
 	test_tx_aligned_deaf();
 	test_tc_locked_one_in_two();
 	test_rx_bs_direct_call();
