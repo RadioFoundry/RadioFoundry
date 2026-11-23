@@ -35,3 +35,7 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 # a wide language is in use (core/ui/ui_screens.c, docs/spec/ui.md 2.5), so a 16 px CJK glyph fits; Home then has no
 # zone line and a list shows 5 rows instead of 7. Off by default like on every radio. Its glyph table (about 27 KB,
 # docs/feature-matrix.md) is far smaller than the old GB2312 one: the `chinese` CI extra builds it beside the default build
+
+# System Fusion (YSF) is written and checked on the HR_C7000 radios only; on this platform it overflows the RAM and
+# the task stacks with the rest of the default build and has not been fitted or brought up
+BOARD_NOT_WRITTEN += YSF	# not fitted to this platform yet (docs/spec/ysf.md)

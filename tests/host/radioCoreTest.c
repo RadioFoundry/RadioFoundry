@@ -9634,6 +9634,7 @@ bool ysf_chan_save(uint16_t number, const channel_t *ch, const ysf_chan_t *c)
 	return codeplug_set_channel(number, ch);
 }
 void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "SQ5FOX"); }
+void ysf_radio_encode(const ysf_radio_t *r, uint8_t out[YSF_CP_CALL_LEN]) { memcpy(out, r->callsign, YSF_CP_CALL_LEN); }
 void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]) { (void)name; out[0] = '\0'; }
 
 // Wires-X (ysf.md 9): a command keys the radio for a short data transmission the far radio hears as one, and the
@@ -9665,7 +9666,8 @@ static void test_ysf_wx(void)
 		run(10);
 	CHECK(sm.view.state != RS_TX && !hw.keyed);
 	CHECK(yfar.rx.stats.data_frames >= data0 + 4);		// header, FN 0, FN 1, terminator
-	CHECK(yfar.rx.stats.calls == 0);				// heard as data, not as a call
+	// heard as a data transmission: a call without voice, from our callsign
+	CHECK(yfar.rx.stats.calls == 1 && yfar.rx.call.dt == YSF_DT_DATA && !strcmp(yfar.rx.call.src, "SQ5FOX"));
 	// RX only: refused, a reason given, nothing left to release
 	chans[3].rx_only = true;
 	start();

@@ -65,3 +65,7 @@ CONFIG_LANG_ES ?= n
 # The maximal configuration leaves the other languages and their fonts (about 110 KB) out of its flash check.
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+
+# System Fusion (YSF) is written and checked on the HR_C7000 radios only; on this platform it overflows the RAM and
+# the task stacks with the rest of the default build and has not been fitted or brought up
+BOARD_NOT_WRITTEN += YSF	# not fitted to this platform yet (docs/spec/ysf.md)
