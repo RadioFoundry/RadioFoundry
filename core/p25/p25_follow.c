@@ -855,9 +855,11 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		if (p25_block_get(u->air, 0, blk) < 0) {
 			f->view.crc_fail++;
 		} else if (p25_mbt_parse(blk, &h)) {
-			// Recognized and counted; its data blocks are not decoded
+			// Explicit status is validated before entering the common identity path.
 			count(&f->view.mbt);
 			f->view.mbt_op = h.opcode;
+			if (p25_mbt_status(u, blk))
+				on_block(f, blk, u->nac, now);
 		} else {
 			count(&f->view.pdu_other);
 		}

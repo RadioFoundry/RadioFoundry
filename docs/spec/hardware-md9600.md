@@ -1,6 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
-<!-- Copyright (c) 2026 Alex Bloom -->
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
