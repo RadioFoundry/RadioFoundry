@@ -190,7 +190,8 @@ typedef struct {
 	bool (*chip_reg)(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 	// Optional: CHIP_REG's fields longer than 32 bits on the same chips. n == 0 reads, such as a baseband's version
 	// text: the register into out, at most cap bytes; returns the bytes read. n > 0 writes data (n bytes, such as a
-	// baseband's voice frames) and returns 0 once the chip took them. -1 for a chip, page or register it doesn't
+	// baseband's voice frames) and returns the bytes of the chip's answer put in out (0 for a plain acknowledgment;
+	// out may be NULL with cap 0). -1 for a chip, page or register it doesn't
 	// offer, a length it refuses, or no answer. May wait for the chip (up to a few hundred ms). NULL: none
 	int (*chip_reg_bytes)(uint8_t chip, uint8_t page, uint8_t reg, const uint8_t *data, uint8_t n, uint8_t *out,
 			      uint8_t cap);

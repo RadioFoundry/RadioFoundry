@@ -839,7 +839,9 @@ static bool field_answer(uint8_t id, const uint8_t *d, uint8_t n, bool ack)
 		s.field.state = FIELD_REFUSED;	// the chip's general error for a packet it couldn't take
 		return true;
 	}
-	if (id != s.field.id || ack == s.field.read)
+	if (id != s.field.id)
+		return false;
+	if (ack == s.field.read)
 		return false;
 	if (ack) {
 		s.field.state = d[0] == SCT_ACK_OK ? FIELD_DONE : FIELD_REFUSED;
@@ -883,6 +885,27 @@ static __attribute__((noinline)) void log_field(uint8_t type, uint8_t id, const 
 	} while (at < n);
 }
 #endif
+
+// A raw write (an ID the length table doesn't know) can be a request answered by a report, such as a data memory
+// read (`20 3F <word>`). The walk stops at that ID, since its length can't be told; when it is the ID a raw write
+// waits on, the rest of the packet is the answer. Any other unknown ID stays a bad packet
+static bool raw_answer(const sct_fields_t *it)
+{
+	uint8_t id = it->p[0];
+
+	if (s.field.state != FIELD_WAIT || s.field.read || id != s.field.id || sct_field_len(id) != SCT_LEN_UNKNOWN ||
+	    (it->type & SCT_TYPE_READ) == 0 || it->left < 2u)
+		return false;
+	uint16_t n = (uint16_t)(it->left - 1u);
+#if CONFIG_DEBUGLINK
+	if (s.log_id[0] != 0 && log_wanted(id))
+		log_field(it->type, id, it->p + 1, (uint8_t)(n > 255u ? 255u : n));
+#endif
+	s.field.n = n < sizeof(s.field.data) ? (uint8_t)n : (uint8_t)sizeof(s.field.data);
+	memcpy(s.field.data, it->p + 1, s.field.n);
+	s.field.state = FIELD_DONE;
+	return true;
+}
 
 static void packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 {
@@ -936,7 +959,7 @@ static void packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 			break;
 		}
 	}
-	if (it.left != 0)
+	if (it.left != 0 && !raw_answer(&it))
 		s.st.rx_bad++;
 	tx_step();
 	rx_voice_step();
@@ -1359,7 +1382,8 @@ int sct_dmr_field_poll(uint8_t *out, uint8_t cap, uint8_t *n)
 	if (s.field.state == FIELD_DONE || s.field.state == FIELD_REFUSED) {
 		r = s.field.state == FIELD_DONE ? 1 : -1;
 		*n = s.field.n < cap ? s.field.n : cap;
-		memcpy(out, s.field.data, *n);
+		if (*n != 0)
+			memcpy(out, s.field.data, *n);
 		s.field.state = FIELD_IDLE;
 	}
 	unlock();

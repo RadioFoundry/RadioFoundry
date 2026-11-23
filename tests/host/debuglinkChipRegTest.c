@@ -77,7 +77,8 @@ static bool soc_reg(uint32_t addr, uint32_t *val, bool write)
 }
 
 // Chip 0 page 3 register 0x32: a 10-byte text read with a length; register 0x40: no answer. Register 0x01 takes
-// writes of any length but 0x3F bytes (kept in written); a write elsewhere is refused
+// writes of any length but 0x3F bytes (kept in written), register 0x02 a 2-byte request with a 2-byte answer; a
+// write elsewhere is refused
 static uint8_t long_cap_seen;
 static uint8_t written[DL_CHIP_REG_WRITE_MAX], written_n;
 
@@ -85,7 +86,12 @@ static int chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, const uint8_t
 			  uint8_t cap)
 {
 	if (n != 0) {
-		if (chip != 0 || page != 3 || reg != 0x01 || n == 0x3F || o != NULL || cap != 0) {
+		// Register 0x02 is a request with an answer, as a baseband's data memory read: the address back, inverted
+		if (chip == 0 && page == 3 && reg == 0x02 && n == 2 && cap >= 2) {
+			o[0] = (uint8_t)~data[0], o[1] = (uint8_t)~data[1];
+			return 2;
+		}
+		if (chip != 0 || page != 3 || reg != 0x01 || n == 0x3F) {
 			return -1;
 		}
 		memcpy(written, data, n);
@@ -257,6 +263,9 @@ static void test_write_bytes(void)
 	logs = 0;
 	req[3] = DL_CHIP_REG_WRITE | 0x3Fu;
 	CHECK(cmd(req, 4 + 0x3F) == 1 && out[0] == DL_ST_BAD_ARG && logs == 0);
+	// A write the chip answers with bytes: they follow the status
+	uint8_t rq[6] = { 0, 3, 0x02, DL_CHIP_REG_WRITE | 2u, 0x01, 0x68 };
+	CHECK(cmd(rq, 6) == 3 && out[0] == DL_ST_OK && out[1] == 0xFE && out[2] == 0x97);
 	// Seven bytes is the u32 write, whatever its first value byte: a value with bit 7 set is no byte write
 	uint8_t wr[7] = { 0, 0, 0x05, 0x83, 0, 0, 0 };
 	CHECK(cmd(wr, 7) == 5 && out[0] == DL_ST_OK && reply32() == 0x83u && chip0[0][5] == 0x83u);

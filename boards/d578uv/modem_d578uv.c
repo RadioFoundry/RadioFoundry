@@ -509,13 +509,13 @@ static void modem_task(void *arg)
 }
 
 // A baseband field: a write sends data as the field (n bytes: a fixed-length field's length, 0 for a bare command;
-// any length for a field with a length byte, such as CHAN_D's voice frames, or an ID the length table doesn't know)
-// and returns 0 once taken; a query returns the bytes of the answer copied to out (at most cap and
-// SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, the slot busy, refused or no answer in
+// any length for a field with a length byte, such as CHAN_D's voice frames, or an ID the length table doesn't know),
+// a query the field's ID alone. Either returns the bytes of the answer copied to out (at most cap and
+// SCT_DMR_FIELD_MAX): a query's value, a raw write's answer report (a data memory read), 0 for a write's plain ACK. -1: not booted, a length the field doesn't have, the slot busy, refused or no answer in
 // FIELD_WAIT_MS
 static int field_io(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool query, uint8_t *out, uint8_t cap)
 {
-	uint8_t got = 0, scratch;
+	uint8_t got = 0;
 	int res = -1;
 
 	int flen = sct_field_len(id);
@@ -528,10 +528,10 @@ static int field_io(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bo
 		int t;
 
 		for (t = 0; t < FIELD_WAIT_MS; t += 2) {
-			int r = query ? sct_dmr_field_poll(out, cap, &got) : sct_dmr_field_poll(&scratch, 0, &got);
+			int r = sct_dmr_field_poll(out, cap, &got);
 
 			if (r != 0) {
-				res = r < 0 ? -1 : query ? got : 0;
+				res = r < 0 ? -1 : got;
 				break;
 			}
 			vTaskDelay(pdMS_TO_TICKS(2));

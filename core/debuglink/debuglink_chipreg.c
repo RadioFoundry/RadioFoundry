@@ -6,6 +6,8 @@
 // platform's register windows). No driver knows about a write: its next set-up of that register overwrites it.
 // With a length byte instead of a value, a read of up to DL_CHIP_REG_BYTES_MAX bytes through board.chip_reg_bytes;
 // with the length's DL_CHIP_REG_WRITE bit set and that many bytes after it, a write of them through the same hook.
+#include <string.h>
+
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -73,7 +75,7 @@ static size_t chip_reg_bytes(const uint8_t *req, uint8_t *out, size_t cap)
 }
 
 // chip u8, page u8, register u8, DL_CHIP_REG_WRITE | n, n bytes: written as they are; the reply has no value
-static size_t chip_write_bytes(const uint8_t *req, uint16_t len, uint8_t *out)
+static size_t chip_write_bytes(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
 {
 	if (board.chip_reg_bytes == NULL) {
 		return answer(out, DL_ST_UNAVAILABLE, 0);
@@ -82,12 +84,19 @@ static size_t chip_write_bytes(const uint8_t *req, uint16_t len, uint8_t *out)
 	if (n == 0u || n > DL_CHIP_REG_WRITE_MAX || len != 4u + n) {
 		return answer(out, DL_ST_BAD_ARG, 0);
 	}
-	if (board.chip_reg_bytes(req[0], req[1], req[2], req + 4, n, NULL, 0) != 0) {
+	// The chip's answer, if it gives more than an acknowledgment (a data memory read), follows the status. The request
+	// is copied first: out may be the buffer req sits in
+	uint8_t data[DL_CHIP_REG_WRITE_MAX];
+	memcpy(data, req + 4, n);
+	uint8_t chip = req[0], page = req[1], reg = req[2];
+	size_t room = cap - 1u > DL_CHIP_REG_BYTES_MAX ? DL_CHIP_REG_BYTES_MAX : cap - 1u;
+	int got = board.chip_reg_bytes(chip, page, reg, data, n, out + 1, (uint8_t)room);
+	if (got < 0) {
 		return answer(out, DL_ST_BAD_ARG, 0);
 	}
-	dlog("debuglink: chip %u page %u reg 0x%02X = %u bytes", req[0], req[1], req[2], n);
+	dlog("debuglink: chip %u page %u reg 0x%02X = %u bytes", chip, page, reg, n);
 	out[0] = DL_ST_OK;
-	return 1;
+	return 1u + (size_t)got;
 }
 
 size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
@@ -102,7 +111,7 @@ size_t debuglink_cmd_chip_reg(const uint8_t *req, uint16_t len, uint8_t *out, si
 		return chip_reg_bytes(req, out, cap);
 	}
 	if (len >= 5u && len != 7u && (req[3] & DL_CHIP_REG_WRITE) != 0u) {
-		return chip_write_bytes(req, len, out);
+		return chip_write_bytes(req, len, out, cap);
 	}
 	if (board.chip_reg == NULL) {
 		return answer(out, DL_ST_UNAVAILABLE, 0);

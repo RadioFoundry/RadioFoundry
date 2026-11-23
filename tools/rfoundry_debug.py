@@ -1027,11 +1027,13 @@ class DebugLink:
 
     def chip_reg_write_bytes(self, chip, reg, data, page=0):
         """Write an RF chip field longer than 32 bits, such as an SCT baseband's voice frames: 1-60 bytes, not 3 (a
-        3-byte request would be the u32 write's length; a field that short takes the value form)"""
+        3-byte request would be the u32 write's length; a field that short takes the value form). Returns the bytes
+        of the chip's answer (empty for a plain acknowledgment; a request such as a data memory read gets its value)"""
         data = bytes(data)
         if not 1 <= len(data) <= CHIP_REG_WRITE_MAX or len(data) == 3:
             raise ValueError("chip_reg_write_bytes: 1-60 bytes, not 3")
-        self.request(CHIP_REG, bytes([chip, page, reg, CHIP_REG_WRITE | len(data)]) + data)
+        _, r = self.request(CHIP_REG, bytes([chip, page, reg, CHIP_REG_WRITE | len(data)]) + data)
+        return bytes(r)
 
     def soc_reg(self, addr, value=None):
         """A 32-bit SoC register inside the platform's register windows: writes value when given, returns the read-back
@@ -3193,10 +3195,11 @@ def main(argv=None):
                     if a.value is not None or a.len is not None:
                         raise SystemExit("reg: --write takes no VALUE or --len")
                     try:
-                        link.chip_reg_write_bytes(a.chip, a.reg, a.write, a.page)
+                        got = link.chip_reg_write_bytes(a.chip, a.reg, a.write, a.page)
                     except ValueError as e:
                         raise SystemExit(f"reg: {e}")
-                    print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} <- {a.write.hex()}")
+                    print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} <- {a.write.hex()}" +
+                          (f" -> {got.hex()}" if got else ""))
                 elif a.len is not None:
                     if a.value is not None:
                         raise SystemExit("reg: --len reads a field; it takes no VALUE")

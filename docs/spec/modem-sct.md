@@ -185,7 +185,8 @@ configuration with `ACK_MESSAGE` 0x01 (measured). Later than a second after eith
 lost what the start set: the start runs again and any transmission is refused (`chip_restarts`).
 
 Reports with IDs the engine doesn't use (DMR_CALLED_ID, DMR_OWN_ID, DMR_EMB) are walked past. An ID the length table
-doesn't know stops the walk: the rest of that packet is lost and counted as bad.
+doesn't know stops the walk: the rest of that packet is lost and counted as bad, but for the answer to a raw field
+write (section 8).
 
 Every entry point takes the board's recursive lock (`sct_dmr_port_t.lock`), so the stack's task and the board's
 modem task can both call in. No RTOS calls and no waits: the host tests run the engine against a fake chip
@@ -301,16 +302,16 @@ it does for an FM signal, and closes it at the call's end; a call it doesn't pla
 open it. The board routes its speaker to the baseband's voice in DMR. Beeps have no PCM path either; such a board plays
 them through `beep_tone` ([radio-features.md](radio-features.md) 4).
 
-The vocoder's frames can be routed through the MCU, but the driver doesn't do it yet: what the chip's frames hold is
-not known well enough (section 10).
+The vocoder's frames can be routed through the MCU, but the driver doesn't do it yet. Receive was checked on a radio
+with the debug link's raw field access (section 8); transmit is open (section 10).
 
 | Item | What is known |
 | --- | --- |
 | Routing | `VOCODER_IO_SET` (0x3E, control, one byte): bit 6 the modulator takes frames from the MCU, bits 5-4 the encoder's output to the modem (00), the MCU (01) or both (10), bit 3 the decoder takes frames from the MCU, bit 2 the demodulator's frames also go to the MCU. 0 restores the normal path. Sent at any time, so it can be set per call |
-| Transport | `CHAN_D` (0x01, control): `01 LEN data`, a whole number of 9-byte frames, one frame per 20 ms. The chip sends its frames as reports and wants no answer; frames from the MCU are answered |
-| Block size | 36 bytes (four frames, 80 ms) in the manual; 27 bytes (three frames, one DMR burst) is also used in DMR mode |
-| Frame content | 49 bits in the first bytes of the 9 (bytes 0-5 and the top bit of byte 6); the meaning of the other 23 bits is unknown. So the chip does the FEC and the MCU sees the vocoder's parameter bits, not the 72 coded bits |
-| Audio | With bit 2 alone the chip still plays the call. With bit 3 set the speaker plays what the MCU sends back |
+| Transport | `CHAN_D` (0x01): `01 LEN data`, a whole number of 9-byte frames, one frame per 20 ms. The chip sends its frames as reports and wants no answer: the demodulator's with TYPE 0x30 (far, read bit), and with bit 3 set TYPE 0x20. Frames from the MCU go with TYPE 0 and are answered |
+| Block size | In DMR receive the chip reports 36 bytes (four frames, 80 ms). 27 bytes (three frames, one DMR burst) is also used in DMR mode; what selects it is unknown |
+| Frame content | The 72 bits of the DMR air interface's AMBE frame, FEC included, in air order: a received call's frames matched the frames sent, byte for byte, but for bit errors on the air. So a DMR or NXDN stack hands the chip the same 9-byte frames it carries, with no bit mapping |
+| Receive, MCU in the loop | 0x0C (bits 3 and 2): the demodulator's frames go to the MCU, and the decoder plays what the MCU sends. Checked on a radio: during a received call of silence frames the speaker played speech fed as `CHAN_D`. With 0x08 alone the chip answers the frames but plays the call's own; with 0x04 alone it plays the call and copies its frames to the MCU |
 
 ## 8. Board glue
 
@@ -337,7 +338,10 @@ makes them take turns. A field doesn't start while the engine has a packet of it
 WORK_MODE), and the chip's general-error ACK, which doesn't say which packet it answers, is the field's only while the
 engine has nothing out; otherwise the engine takes it and the field times out. A field with a length byte (`CHAN_D`)
 takes data of any length, and a write of an ID the length table doesn't know goes out as the ID and the bytes given,
-so the bench can send a field the engine never sends.
+so the bench can send a field the engine never sends. Such a write can be a request the chip answers with a report of
+the same ID, such as a data memory read (TYPE 0x20, `3F` and an address, MSB first, answered with the 16-bit word):
+the parser can't size an ID it doesn't know, so while that write waits, the rest of the report's packet is its
+answer, and the field ends with those bytes. Anywhere else an unknown ID stays a bad packet (section 4).
 
 The report log (`sct_dmr_report_log`) shows the bench what the chip reports: each field it reports whose ID is on a
 list of up to four (or every field) goes to the debug link's log as hex lines, `sct <type> <id> <len>+<offset>
@@ -369,14 +373,13 @@ often (GET_LOG counts the lines lost). A board offers both through the debug lin
   squelch opens on weak signals with them, and the audio levels they give, are unverified.
 - EQUALIZER_FILTER: the chip enables no filter by default, so the driver sends nothing. A user equalizer preset is not written.
 - The vocoder's frames on the MCU (section 7). Needed before the driver can route them:
-  - the order of the 49 bits in a `CHAN_D` frame, against the parameter order the core's FEC and privacy use, and
-    what the other 23 bits carry;
-  - which block size the chip uses in DMR mode, what selects it (a `CHAN_D` with length 0xFF and a count byte
-    occurs, meaning unknown), and whether a block lines up with a burst and its place in the superframe (A-F);
+  - whether the decoder plays frames from the MCU with no call on the air (the case of a voice mode the baseband
+    doesn't demodulate), and how much it buffers;
+  - what selects the 27-byte block (a `CHAN_D` with length 0xFF and a count byte occurs, meaning unknown), and
+    whether a block lines up with a burst and its place in the superframe (A-F);
   - with the modulator fed by the MCU: how many blocks the chip buffers, when it asks for the next, and what it sends
     when a block is late. A hotspot or repeater needs the frames of a burst on air in that burst's slot;
   - whether frames from the MCU are accepted while the encoder isn't running (a network call with the microphone
     idle).
-  Each needs the chip: a received call logged with the demodulator's output routed to the MCU, then frames fed back
-  on the SDR bench.
+  Each needs the chip and the SDR bench, through the debug link's raw field access (section 8).
 - Timing of `TX_DONE` against the last burst on air; checked against a fake chip only.

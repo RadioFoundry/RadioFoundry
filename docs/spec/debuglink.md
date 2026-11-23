@@ -854,7 +854,7 @@ that register overwrites it.
 | chip u8, page u8, register u8 | the value u32 |
 | chip u8, page u8, register u8, value u32 | the value read back u32 (a write-only register: the value written) |
 | chip u8, page u8, register u8, length u8 (1-32) | the register's first bytes as the chip answers them, at most length (a field longer than 32 bits) |
-| chip u8, page u8, register u8, `0x80` + n u8 (n 1-60, not 3), n bytes | none: the bytes written (a field longer than 32 bits) |
+| chip u8, page u8, register u8, `0x80` + n u8 (n 1-60, not 3), n bytes | the chip's answer, if it gives more than an acknowledgment (up to 32 bytes; none for most writes): the bytes written (a field longer than 32 bits, or a request such as a memory read) |
 | `0xFF`, address u32 | the value u32 |
 | `0xFF`, address u32, value u32 | the value read back u32 |
 

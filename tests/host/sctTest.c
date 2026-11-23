@@ -1905,6 +1905,30 @@ static void test_field_raw(void)
 	nsent = 0;
 	CHECK(!sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, three, 3, false) && nsent == 0);
 	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
+	// A raw request whose answer is a report: a data memory read (0x3F, address MSB first) is answered by
+	// `20 3F <word>`, which the parser can't size by its ID: the rest of the packet is the answer, not a bad packet
+	const uint8_t addr[2] = { 0x01, 0x68 };
+	const uint8_t word[] = { 0x84, 0xA9, 0x61, 0x00, 0x03, SCT_TYPE_READ, 0x3F, 0x00, 0x03 };
+	uint8_t w[4];
+	nsent = 0;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_READ, 0x3F, addr, 2, false));
+	CHECK(nsent == 1 && sent[0].pkt[5] == SCT_TYPE_READ && sent[0].pkt[6] == 0x3F && sent[0].pkt[7] == 0x01 &&
+	      sent[0].pkt[8] == 0x68);
+	sct_dmr_stats_t st0, st1;
+	sct_dmr_get_stats(&st0);
+	sct_dmr_packet(word, sizeof(word), 10);
+	CHECK(sct_dmr_field_poll(w, sizeof(w), &n) == 1 && n == 2 && w[0] == 0x00 && w[1] == 0x03);
+	sct_dmr_get_stats(&st1);
+	CHECK(st1.rx_bad == st0.rx_bad);
+	// With no raw write waiting, the same report is a bad packet
+	sct_dmr_packet(word, sizeof(word), 12);
+	sct_dmr_get_stats(&st1);
+	CHECK(st1.rx_bad == st0.rx_bad + 1);
+	// A plain ACK still ends a raw write with no bytes
+	const uint8_t ack3f[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x3F, 0x00 };
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x3F, three, 3, false));
+	sct_dmr_packet(ack3f, sizeof(ack3f), 15);
+	CHECK(sct_dmr_field_poll(w, sizeof(w), &n) == 1 && n == 0);
 	sct_dmr_modem.stop();
 }
 
