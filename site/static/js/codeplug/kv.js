@@ -43,10 +43,23 @@ export const SIG_REC_LEN = 2 + 3 * SIG_STEPS;
 // Byte offsets of step i's frequency and length in a record
 const recHz = (i) => i < SIG_BASE ? 2 + 2 * i : 2 + 3 * SIG_BASE + 2 * (i - SIG_BASE);
 const recMs = (i) => i < SIG_BASE ? 2 + 2 * SIG_BASE + i : 2 + 3 * SIG_BASE + 2 * (SIG_STEPS - SIG_BASE) + (i - SIG_BASE);
+// The fox mode record (3.4; radio-features.md 3.8), kind "fox": the interval (an index into FOX_INTERVALS), whether a
+// cycle sends the message and the jingle, the message (up to 16 characters the radio has Morse for), and a jingle of 32
+// steps in the signaling tones' format (frequencies first, then lengths in 10 ms units, each up to 2550 ms; the whole
+// chain is cut at 10 s). In the model {interval, msg, jingle, text, hz: [32], ms: [32]}, the lengths in ms
+export const FOX_STEPS = 32;
+export const FOX_MSG_MAX = 16;
+export const FOX_MS_MAX = 2550;		// a step's length
+export const FOX_CHAIN_MAX = 10000;	// the jingle's: the radio cuts it to this
+export const FOX_INTERVALS = [30, 60, 120, 300, 600];	// seconds
+export const FOX_REC_LEN = 2 + FOX_MSG_MAX + 3 * FOX_STEPS;
+export const FOX_CHARS = /^[A-Z0-9 /\-=?.,]*$/;	// what the message may hold (morse.c)
+const FOX_F_MSG = 1, FOX_F_JINGLE = 2;
 export const RECORD_KEYS = [
-	{ name: "sigBegin", key: 0x0007, type: "record", air: true, fmAir: true },
-	{ name: "sigEnd", key: 0x0008, type: "record", air: true, fmAir: true },
-	{ name: "sigIdle", key: 0x0009, type: "record", air: false, fmAir: false },
+	{ name: "sigBegin", key: 0x0007, type: "record", kind: "sig", air: true, fmAir: true },
+	{ name: "sigEnd", key: 0x0008, type: "record", kind: "sig", air: true, fmAir: true },
+	{ name: "sigIdle", key: 0x0009, type: "record", kind: "sig", air: false, fmAir: false },
+	{ name: "fox", key: 0x000A, type: "record", kind: "fox" },
 ];
 const SCALAR_MAX = 8;	// a scalar's widest value
 
@@ -140,9 +153,61 @@ export function idValue(id) {
 	return Uint8Array.of(id & 0xFF, (id >>> 8) & 0xFF, (id >>> 16) & 0xFF, (id >>> 24) & 0xFF);
 }
 
+// A fox record's setting the radio takes: an interval it has, a message of Morse characters and spaces, a frequency up
+// to 3400 Hz in steps of 10, each length a multiple of 10 ms up to 2550
+export function foxValid(rec) {
+	return !!rec && Number.isInteger(rec.interval) && rec.interval >= 0 && rec.interval < FOX_INTERVALS.length
+		&& typeof rec.msg === "boolean" && typeof rec.jingle === "boolean"
+		&& typeof rec.text === "string" && rec.text.length <= FOX_MSG_MAX && FOX_CHARS.test(rec.text)
+		&& Array.isArray(rec.hz) && Array.isArray(rec.ms) && rec.hz.length === FOX_STEPS && rec.ms.length === FOX_STEPS
+		&& rec.hz.every((x) => Number.isInteger(x) && x >= 0 && x <= SIG_HZ_MAX && x % SIG_HZ_UNIT === 0)
+		&& rec.ms.every((x) => Number.isInteger(x) && x >= 0 && x <= FOX_MS_MAX && x % 10 === 0);
+}
+
+// The jingle the radio plays when the record's has no step (radio_fox.c): {hz, ms} steps
+export const FOX_TUNE = [[520, 120], [660, 120], [780, 120], [0, 60], [1050, 240], [0, 80], [780, 120], [1050, 360]];
+
+// The fox record the radio uses when the codeplug has none (radio_fox.c): "FOX", the tune, every minute
+export function foxDefault() {
+	return { interval: 1, msg: true, jingle: true, text: "FOX", hz: Array(FOX_STEPS).fill(0), ms: Array(FOX_STEPS).fill(0) };
+}
+
+function getFox(v) {
+	const b = new Uint8Array(FOX_REC_LEN);
+	b.set(v.subarray(0, FOX_REC_LEN));
+	if ((b[1] & ~(FOX_F_MSG | FOX_F_JINGLE)) !== 0) return null;
+	const m = b.subarray(2, 2 + FOX_MSG_MAX);
+	const end = m.indexOf(0) < 0 ? FOX_MSG_MAX : m.indexOf(0);
+	if (m.subarray(end).some((x) => x !== 0)) return null;	// text after the padding
+	const rec = { interval: b[0], msg: (b[1] & FOX_F_MSG) !== 0, jingle: (b[1] & FOX_F_JINGLE) !== 0,
+		text: String.fromCharCode(...m.subarray(0, end)).toUpperCase(), hz: [], ms: [] };
+	for (let i = 0; i < FOX_STEPS; i++) {
+		rec.hz.push(u16(b, 2 + FOX_MSG_MAX + 2 * i));
+		rec.ms.push(b[2 + FOX_MSG_MAX + 2 * FOX_STEPS + i] * 10);
+	}
+	return foxValid(rec) ? rec : null;
+}
+
+// The value a writer stores for a fox record: its bytes. A stored value longer than that keeps the bytes after them
+export function foxValue(rec, old = null) {
+	const b = new Uint8Array(Math.max(FOX_REC_LEN, old ? old.length : 0));
+	if (old) b.set(old);
+	b[0] = rec.interval;
+	b[1] = (rec.msg ? FOX_F_MSG : 0) | (rec.jingle ? FOX_F_JINGLE : 0);
+	b.fill(0, 2, 2 + FOX_MSG_MAX);
+	for (let i = 0; i < rec.text.length; i++) b[2 + i] = rec.text.charCodeAt(i);
+	for (let i = 0; i < FOX_STEPS; i++) {
+		b[2 + FOX_MSG_MAX + 2 * i] = rec.hz[i] & 0xFF;
+		b[2 + FOX_MSG_MAX + 2 * i + 1] = rec.hz[i] >> 8;
+		b[2 + FOX_MSG_MAX + 2 * FOX_STEPS + i] = rec.ms[i] / 10;
+	}
+	return b;
+}
+
 // Whether rec is a record row's setting takes: the outputs the event has, a frequency up to 3400 Hz in steps of 10, each
-// length a multiple of 10 ms up to 900
+// length a multiple of 10 ms up to 900 (a fox record: foxValid)
 export function recordValid(row, rec) {
+	if (row.kind === "fox") return foxValid(rec);
 	if (!rec || !Array.isArray(rec.hz) || !Array.isArray(rec.ms) || rec.hz.length !== SIG_STEPS || rec.ms.length !== SIG_STEPS) return false;
 	const out = (v, air) => Number.isInteger(v) && v >= 0 && v <= 4 && (air || (v !== 3 && v !== 4));
 	return out(rec.dmr, row.air) && out(rec.fm, row.fmAir)
@@ -155,6 +220,7 @@ export function recordValid(row, rec) {
 export function getRecord(entries, row) {
 	const v = getValue(entries, row.key);
 	if (!v || v.length === 0) return null;
+	if (row.kind === "fox") return getFox(v);
 	const b = new Uint8Array(SIG_REC_LEN);
 	b.set(v.subarray(0, SIG_REC_LEN));
 	const rec = { dmr: b[0], fm: b[1], hz: [], ms: [] };
@@ -179,8 +245,10 @@ export function recordValue(rec, old = null) {
 	return b;
 }
 
-export const sameRecord = (a, b) => a === b || (a != null && b != null && a.dmr === b.dmr && a.fm === b.fm
-	&& a.hz.every((x, i) => x === b.hz[i]) && a.ms.every((x, i) => x === b.ms[i]));
+// Whether two records of a row hold the same: field by field, arrays element by element
+const sameField = (x, y) => Array.isArray(x) ? Array.isArray(y) && x.length === y.length && x.every((e, i) => e === y[i]) : x === y;
+export const sameRecord = (a, b) => a === b || (a != null && b != null && Object.keys(a).length === Object.keys(b).length
+	&& Object.keys(a).every((k) => sameField(a[k], b[k])));
 
 // The sector for entries (duplicates dropped): header, entries, 0xFF to the end. Throws when they don't fit. prev, a
 // valid area's sector, gives its header length and the header bytes past the CRC, kept as found (2.4: a later
@@ -239,7 +307,8 @@ export function putKeys(bytes, vals) {
 	}
 	for (const row of recs) {
 		const v = vals[row.name];
-		entries = v == null ? deleteValue(entries, row.key) : setValue(entries, row.key, recordValue(v, getValue(entries, row.key)));
+		entries = v == null ? deleteValue(entries, row.key) : setValue(entries, row.key,
+			(row.kind === "fox" ? foxValue : recordValue)(v, getValue(entries, row.key)));
 	}
 	return putArea(bytes, entries);
 }

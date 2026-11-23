@@ -2397,5 +2397,20 @@
  "editor.sig.play": "Play",
  "editor.sig.roll": "The chain as pitch over time, {ms} ms",
  "editor.sig.no_audio": "No audio here",
- "editor.sig.empty": "No steps: the standard sound"
+ "editor.sig.empty": "No steps: the standard sound",
+ "editor.fox.title": "Fox mode",
+ "editor.fox.help": "Tools > Fox on the radio: on a timer it keys the FM channel in use and sends the message, the jingle and the callsign from the radio name. Not set leaves the radio's defaults (FOX, its own tune, every minute). A change takes effect at the next start.",
+ "editor.fox.card": "Fox",
+ "editor.fox.unset": "Not set: the radio's defaults",
+ "editor.fox.interval": "Interval",
+ "editor.fox.seconds": "{n} s",
+ "editor.fox.minutes": "{n} min",
+ "editor.fox.msg": "Send the message",
+ "editor.fox.text": "Message",
+ "editor.fox.text_help": "Up to 16 characters, sent in Morse: letters, digits, spaces and / - = ? . ,",
+ "editor.fox.text_chars": "Only letters, digits, spaces and / - = ? . , have Morse",
+ "editor.fox.jingle": "Play the jingle",
+ "editor.fox.default_tune": "No steps: the radio's own tune",
+ "editor.field.fox": "fox mode",
+ "editor.problem.fox_range": "The {field} has a message over {max} characters or with a character that has no Morse, a frequency over {hz} Hz or not in steps of 10 Hz, or a length over {ms} ms or not in steps of 10 ms."
 }

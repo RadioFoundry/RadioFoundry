@@ -12,7 +12,8 @@ import { decode, encode, empty, remove, validate, newChannel, newContact, number
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
-import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS } from "../codeplug/kv.js";
+import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS, FOX_STEPS, FOX_MS_MAX, FOX_CHAIN_MAX,
+	FOX_INTERVALS, FOX_MSG_MAX, FOX_CHARS, FOX_TUNE, foxDefault } from "../codeplug/kv.js";
 import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
@@ -461,8 +462,8 @@ function radioTab() {
 		const sum = h("p", { class: "small sig-total" + (total > SIG_MS_MAX ? " ed-err" : " muted") },
 			total === 0 ? t("editor.sig.empty") : t(total > SIG_MS_MAX ? "editor.sig.over" : "editor.sig.total", { ms: total, max: SIG_MS_MAX }));
 		const roll = h("div", { class: "sig-roll", role: "img", "aria-label": t("editor.sig.roll", { ms: total }) });
-		roll.innerHTML = sigRollSvg(rec);
-		const play = button(t("editor.sig.play"), () => sigPlay(rec, play, t), { quiet: true });
+		roll.innerHTML = sigRollSvg(rec, SIG_STEPS, SIG_MS_MAX);
+		const play = button(t("editor.sig.play"), () => sigPlay(rec, play, t, SIG_STEPS, SIG_MS_MAX), { quiet: true });
 		return h("section", { class: "sig-card" },
 			h("div", { class: "sig-head" }, title, play, button(t("editor.sig.reset"), () => put(null), { quiet: true })),
 			h("div", { class: "sig-body" },
@@ -471,6 +472,85 @@ function radioTab() {
 					h("table", { class: "sig-steps" },
 						h("thead", {}, h("tr", {}, h("th", {}, t("editor.sig.step_col")), h("th", {}, t("editor.sig.hz")), h("th", {}, t("editor.sig.ms")))),
 						h("tbody", {}, ...half))))));
+	};
+	// fox mode's record (kv.js, codeplug-settings.md 3.4; radio-features.md 3.8): Not set (the radio's defaults), or the
+	// interval, the message, the jingle on or off and its 32 steps. A value out of range is the Problems tab's to say
+	const foxBlock = () => {
+		const rec = g.fox;
+		const put = (next) => change(t("editor.undo.edit"), () => (S.model.general = { ...S.model.general, fox: next }));
+		const title = h("h4", { class: "sig-title" }, t("editor.fox.card"));
+		if (rec == null) {
+			return h("section", { class: "sig-card sig-off" }, h("div", { class: "sig-head" }, title,
+				h("span", { class: "small muted sig-state" }, t("editor.fox.unset")),
+				button(t("editor.sig.customize"), () => put(foxDefault()), { quiet: true })));
+		}
+		const interval = h("select", { id: "g-fox-interval" },
+			...FOX_INTERVALS.map((s, i) => h("option", { value: String(i) }, s < 60 ? t("editor.fox.seconds", { n: s }) : t("editor.fox.minutes", { n: s / 60 }))));
+		interval.value = String(rec.interval);
+		interval.addEventListener("change", () => put({ ...rec, interval: Number(interval.value) }));
+		const check = (key, label) => {
+			const c = h("input", { type: "checkbox", id: `g-fox-${key}` });
+			c.checked = rec[key];
+			c.addEventListener("change", () => put({ ...rec, [key]: c.checked }));
+			return h("div", { class: "form-row" }, h("label", { for: c.id }, c, " ", label));
+		};
+		const msgErr = h("span", { class: "small ed-err" });
+		const text = h("input", { type: "text", id: "g-fox-text", value: rec.text, maxlength: FOX_MSG_MAX, spellcheck: "false", autocapitalize: "characters" });
+		text.addEventListener("change", () => {
+			const v = text.value.toUpperCase();
+			if (!FOX_CHARS.test(v)) {
+				msgErr.textContent = t("editor.fox.text_chars");
+				return;
+			}
+			msgErr.textContent = "";
+			put({ ...rec, text: v });
+		});
+		const cell = (key, i, max, step) => {
+			const bad = rec[key][i] > max || rec[key][i] % step !== 0;
+			const inp = h("input", { type: "number", min: "0", max: String(max), step: String(step), value: String(rec[key][i]), inputmode: "numeric",
+				class: bad ? "sig-bad" : "", "aria-invalid": bad ? "true" : "false",
+				"aria-label": `${t("editor.sig.step", { n: i + 1 })} ${t(`editor.sig.${key === "hz" ? "hz" : "ms"}`)}` });
+			inp.addEventListener("change", () => {
+				const n = Math.trunc(Number(inp.value));
+				put({ ...rec, [key]: rec[key].map((x, j) => (j === i ? (Number.isFinite(n) && n >= 0 ? n : 0) : x)) });
+			});
+			return h("td", {}, inp);
+		};
+		let ended = false;
+		const rows = Array.from({ length: FOX_STEPS }, (_, i) => {
+			const dim = ended;
+			if (rec.ms[i] === 0) ended = true;
+			return h("tr", { class: dim ? "sig-dim" : "" }, h("th", { scope: "row" }, String(i + 1)),
+				cell("hz", i, SIG_HZ_MAX, SIG_HZ_UNIT), cell("ms", i, FOX_MS_MAX, 10));
+		});
+		let total = 0;
+		for (const m of rec.ms) {
+			if (m === 0) break;
+			total += m;
+		}
+		// an empty jingle is the radio's own tune: shown and played as that
+		const heard = total === 0 ? { hz: FOX_TUNE.map((x) => x[0]), ms: FOX_TUNE.map((x) => x[1]) } : rec;
+		const sum = h("p", { class: "small sig-total" + (total > FOX_CHAIN_MAX ? " ed-err" : " muted") },
+			total === 0 ? t("editor.fox.default_tune") : t(total > FOX_CHAIN_MAX ? "editor.sig.over" : "editor.sig.total", { ms: total, max: FOX_CHAIN_MAX }));
+		const roll = h("div", { class: "sig-roll", role: "img", "aria-label": t("editor.sig.roll", { ms: total }) });
+		roll.innerHTML = sigRollSvg(heard, heard.ms.length, FOX_CHAIN_MAX);
+		const play = button(t("editor.sig.play"), () => sigPlay(heard, play, t, heard.ms.length, FOX_CHAIN_MAX), { quiet: true });
+		const quarter = FOX_STEPS / 4;
+		return h("section", { class: "sig-card" },
+			h("div", { class: "sig-head" }, title, play, button(t("editor.sig.reset"), () => put(null), { quiet: true })),
+			h("div", { class: "sig-body" },
+				h("div", { class: "sig-side" },
+					h("div", { class: "sig-outs" },
+						h("div", { class: "form-row" }, h("label", { for: interval.id }, t("editor.fox.interval")), interval),
+						check("msg", t("editor.fox.msg")),
+						h("div", { class: "form-row" }, h("label", { for: text.id }, t("editor.fox.text")), text,
+							h("span", { class: "small muted" }, t("editor.fox.text_help")), msgErr),
+						check("jingle", t("editor.fox.jingle"))),
+					roll, sum),
+				h("div", { class: "sig-tables" }, ...[0, 1, 2, 3].map((q) =>
+					h("table", { class: "sig-steps" },
+						h("thead", {}, h("tr", {}, h("th", {}, t("editor.sig.step_col")), h("th", {}, t("editor.sig.hz")), h("th", {}, t("editor.sig.ms")))),
+						h("tbody", {}, ...rows.slice(q * quarter, (q + 1) * quarter)))))));
 	};
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
@@ -489,7 +569,10 @@ function radioTab() {
 			...modeSettingsPart(api(), features())),
 		h("h3", {}, t("editor.sig.title")),
 		h("p", { class: "small muted" }, t("editor.sig.help")),
-		h("div", { class: "sig-grid" }, ...RECORD_KEYS.map(sigBlock)),
+		h("div", { class: "sig-grid" }, ...RECORD_KEYS.filter((row) => row.kind === "sig").map(sigBlock)),
+		h("h3", {}, t("editor.fox.title")),
+		h("p", { class: "small muted" }, t("editor.fox.help")),
+		h("div", { class: "sig-grid" }, foxBlock()),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;
@@ -502,15 +585,15 @@ function radioTab() {
 
 // --- Signaling tone roll and preview ---
 
-// The chain as a pitch against time: a bar a step, as wide as it lasts on a fixed axis of SIG_MS_MAX and as high as its
-// frequency (0 to SIG_HZ_MAX). A pause is a tick on the baseline. Steps after the first of 0 ms are not drawn; what is
-// past the limit is marked. Numbers only, so it is safe to set as markup
-function sigRollSvg(rec) {
-	const W = 900, H = 72, pad = 2;
+// The chain as a pitch against time: a bar a step, as wide as it lasts on a fixed axis of max ms (the chain's limit)
+// and as high as its frequency (0 to SIG_HZ_MAX). A pause is a tick on the baseline. Steps after the first of 0 ms are
+// not drawn; what is past the limit is marked. Numbers only, so it is safe to set as markup
+function sigRollSvg(rec, steps, max) {
+	const W = max, H = 72, pad = 2;
 	let x = 0, out = "";
-	for (let i = 0; i < SIG_STEPS && rec.ms[i] > 0; i++) {
+	for (let i = 0; i < steps && rec.ms[i] > 0; i++) {
 		const w = rec.ms[i], hz = Math.min(rec.hz[i], SIG_HZ_MAX);
-		const over = x + w > SIG_MS_MAX;
+		const over = x + w > max;
 		const cls = over ? "sig-r-over" : "sig-r-bar";
 		if (hz === 0) out += `<rect class="sig-r-pause" x="${x}" y="${H - 3}" width="${Math.max(w - 2, 1)}" height="3"/>`;
 		else {
@@ -519,20 +602,21 @@ function sigRollSvg(rec) {
 		}
 		x += w;
 	}
-	const grid = [300, 600].map((g) => `<line class="sig-r-grid" x1="${g}" x2="${g}" y1="0" y2="${H}"/>`).join("");
+	const grid = [max / 3, (2 * max) / 3].map((g) => `<line class="sig-r-grid" x1="${g}" x2="${g}" y1="0" y2="${H}"/>`).join("");
 	return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" focusable="false"><rect class="sig-r-bg" width="${W}" height="${H}" rx="4"/>${grid}${out}</svg>`;
 }
 
 let sigAudio = null;
-// Plays the chain on the browser's speaker: a sine a step with 2 ms fades, as the radio makes it (sigtone.c)
-function sigPlay(rec, btn, t) {
+// Plays the chain on the browser's speaker: a sine a step with 2 ms fades, as the radio makes it (sigtone.c), cut at
+// max ms as the radio cuts it
+function sigPlay(rec, btn, t, steps, max) {
 	try {
 		sigAudio = sigAudio || new (window.AudioContext || window.webkitAudioContext)();
 		const ctx = sigAudio;
 		const now = ctx.currentTime + 0.05;
 		let at = now;
-		for (let i = 0; i < SIG_STEPS && rec.ms[i] > 0; i++) {
-			const d = Math.min(rec.ms[i], SIG_MS_MAX) / 1000;
+		for (let i = 0; i < steps && rec.ms[i] > 0 && at - now < max / 1000; i++) {
+			const d = Math.min(rec.ms[i], max - (at - now) * 1000) / 1000;
 			if (rec.hz[i] > 0) {
 				const o = ctx.createOscillator(), g = ctx.createGain();
 				o.frequency.value = Math.min(rec.hz[i], SIG_HZ_MAX);
