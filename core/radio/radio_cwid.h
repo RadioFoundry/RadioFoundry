@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The standalone SFR repeater's CW ID (CONFIG_SFR_CWID, docs/spec/sfr.md 4, CW ID): when to key it and what it sends. No
-// hardware here: radio_sm.c keys the Morse on the channel's frequency in FM (the hotspot's CW keyer).
+// hardware here: radio_sm.c keys the Morse on the channel's frequency in FM (the hotspot's CW keyer). Fox mode
+// (CONFIG_FOX, radio_fox.h) takes its ID from radio_cwid_callsign too, so this file builds with either.
 #ifndef RADIO_CWID_H
 #define RADIO_CWID_H
 

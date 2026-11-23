@@ -27,6 +27,7 @@
 #define CODEPLUG_KEY_SIG_BEGIN	0x0007u		// record: the signaling tone of a transmission's start (radio/sigtone.h SIG_REC_LEN)
 #define CODEPLUG_KEY_SIG_END	0x0008u		// record: ... of its end
 #define CODEPLUG_KEY_SIG_IDLE	0x0009u		// record: ... of a reception's end
+#define CODEPLUG_KEY_FOX	0x000Au		// record: fox mode's interval, message and jingle (radio/radio_fox.h FOX_REC_LEN)
 
 // Key families (record lists): record n is base + n (docs/spec/channel-modes.md 3). Every range is reserved whole,
 // so a later mode never renumbers

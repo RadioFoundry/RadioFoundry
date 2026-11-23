@@ -63,18 +63,24 @@ void sig_rec_encode(const sig_rec_t *r, uint8_t out[SIG_REC_LEN])
 	}
 }
 
-uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], sig_event_t ev,
-		  beep_seg_t out[SIG_STEPS])
+uint8_t sig_chain_n(const uint16_t *hz, const uint8_t *ms10, uint8_t steps, uint32_t max_ms, beep_seg_t *out)
 {
-	uint32_t left = SIG_MAX_MS;
+	uint32_t left = max_ms;
 	uint8_t m = 0;
-	for (uint8_t i = 0; i < SIG_STEPS && ms10[i] != 0 && left != 0; i++) {
+	for (uint8_t i = 0; i < steps && ms10[i] != 0 && left != 0; i++) {
 		uint32_t ms = (uint32_t)ms10[i] * SIG_MS_UNIT;
 		out[m].hz = hz[i] > SIG_HZ_MAX ? SIG_HZ_MAX : hz[i];
 		out[m].ms = (uint16_t)(ms > left ? left : ms);
 		left -= out[m].ms;
 		m++;
 	}
+	return m;
+}
+
+uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], sig_event_t ev,
+		  beep_seg_t out[SIG_STEPS])
+{
+	uint8_t m = sig_chain_n(hz, ms10, SIG_STEPS, SIG_MAX_MS, out);
 	if (m != 0) {
 		return m;
 	}

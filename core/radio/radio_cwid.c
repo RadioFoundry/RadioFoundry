@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The standalone SFR repeater's CW ID schedule (radio_cwid.h, docs/spec/sfr.md 4, CW ID)
 #include "config.h"
-#if CONFIG_SFR_CWID	// the whole file
+#if CONFIG_SFR_CWID || CONFIG_FOX	// the whole file: the SFR ID and the fox (radio_fox.h) key the callsign
 #include "radio/radio_cwid.h"
 
 uint32_t radio_cwid_interval_ms(uint8_t code)
@@ -73,4 +73,4 @@ uint8_t radio_cwid_callsign(const char *name, char *out, uint8_t cap)
 	return n;
 }
 
-#endif	// CONFIG_SFR_CWID
+#endif	// CONFIG_SFR_CWID || CONFIG_FOX
