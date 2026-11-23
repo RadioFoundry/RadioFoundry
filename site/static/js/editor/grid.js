@@ -5,6 +5,7 @@
 // between cells. Only the cell being edited holds an input, so a table of 1024 channels stays light.
 
 import { h } from "../flasher/dom.js";
+import { combo, comboValue } from "./combo.js";
 
 // The row's edit button icon: a pencil drawn in the text color, so it follows the theme.
 const SVG = "http://www.w3.org/2000/svg";
@@ -222,6 +223,14 @@ export class Grid {
 		}
 		td.replaceChildren(input);
 		td.classList.add("editing");
+		// a long list of usual values (the tones): a searchable list, any other valid value still taken
+		const spec = c.combo?.(r);
+		if (spec) {
+			input.value = c.editValue ? c.editValue(c.get(r), r) : this.text(c, r);
+			const { ts } = combo(input, spec, { floating: true, typed });
+			if (ts) return this.editCombo(td, i, j, r, c, ts, spec);
+			if (typed !== null) input.value = typed;
+		}
 		input.focus();
 		// a value from the attribute leaves the caret at 0 (Chromium), before the key that started the edit: the next
 		// key would land ahead of it ("461" became "614")
@@ -263,6 +272,62 @@ export class Grid {
 		input.addEventListener("input", () => input.setCustomValidity?.(""));
 		input.addEventListener("blur", () => finish(true));
 		if (c.type === "select") input.addEventListener("change", () => finish(true));
+	}
+
+	// A cell edited through a searchable list (combo.js): Enter and Tab take the highlighted row (or the valid text typed)
+	// and move on as in a plain cell, Escape leaves the cell as it was, a click on a row takes it, and leaving the cell
+	// takes what is typed or selected. The list lives in <body>, so it follows the table when the table scrolls.
+	editCombo(td, i, j, r, c, ts, spec) {
+		const wrap = td.closest(".grid-wrap");
+		const follow = () => ts.positionDropdown();
+		wrap?.addEventListener("scroll", follow);
+		let done = false;
+		const finish = (save, move, v) => {
+			if (done) return;
+			if (save && v == null) return;	// typed text that isn't a valid value: keep editing (the list says so)
+			// done before the commit: it redraws the table, which takes the list's input away, and that blur comes back
+			// here at once with the old value
+			done = true;
+			if (save) {
+				const err = this.commit(r, c, v);
+				if (err) {
+					done = false;
+					ts.control_input.title = err;
+					return;
+				}
+			}
+			wrap?.removeEventListener("scroll", follow);
+			ts.close();
+			// destroyed after its own handlers return: they still use it
+			setTimeout(() => ts.destroy());
+			this.render();
+			if (move) this.moveTo(i + move[0], j + move[1]);
+			else this.moveTo(i, j);
+		};
+		ts.wrapper.addEventListener("keydown", (e) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				e.stopPropagation();
+				finish(false);
+			} else if (e.key === "Enter" || e.key === "Tab") {
+				e.preventDefault();
+				e.stopPropagation();
+				const move = e.key === "Enter" ? [e.shiftKey ? -1 : 1, 0] : [0, e.shiftKey ? -1 : 1];
+				finish(true, move, comboValue(ts, spec));
+			}
+		}, true);
+		ts.on("item_add", () => finish(true, null, ts.getValue()));
+		// leaving the cell: combo() has already taken a valid typed value as the item (that finished the edit). Text
+		// that isn't a valid value leaves the cell as it was: an edit started by typing has no item, so getValue()
+		// would be the empty value and clear the cell. A valid value not yet taken (the window lost focus) is saved
+		ts.on("blur", () => {
+			const text = ts.textOnBlur;
+			const v = text ? spec.accept(text) : ts.getValue();
+			if (v == null) finish(false);
+			else finish(true, null, v);
+		});
+		ts.focus();
+		ts.open();
 	}
 
 	commit(row, c, value) {

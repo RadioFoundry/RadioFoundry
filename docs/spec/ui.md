@@ -32,7 +32,10 @@ the code is laid out, who owns the data behind each screen, and how the UI is te
 Spacing on the displays under 200 px high (`UI_TALL_PX`): the status strip and, from 100 px high, each list row take
 one pixel more than the text cell, so lines never touch (easy to read comes before one more row; principles.md 5).
 The board's safe-area insets (`hal_display_t.inset_*`) are outside the drawing area (`gfx_width` / `gfx_height`),
-for panel edges hidden by the case (for example 5 px left and right under a lens). At 160x120i5 a list shows 7 rows, at 160x128 7, at
+for panel edges hidden by the case (for example 5 px left and right under a lens). They show the last `gfx_clear`
+color. A 16-color board may keep only the safe area in RAM (`hal_display_t.fb_safe_area`): the drawing is the same
+to the pixel, the board paints the insets when that color changes, and captures (`gfx_read_rgb565`,
+`gfx_read_packed`, the debug link's screenshot) give the whole panel. At 160x120i5 a list shows 7 rows, at 160x128 7, at
 240x320i10x5 11, at 128x64 5; the 160 px class shows 5 of them while a wide language is in use, whose lines are 16 px
 high (2.5). The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px

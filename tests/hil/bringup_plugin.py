@@ -34,9 +34,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 
 # Test markers and fixtures -> the need they imply
-MARKER_NEEDS = {"rf": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
+MARKER_NEEDS = {"rf": "rf", "rf_fallback": "rf", "radio_tx": "rf", "bench_service": "bench", "usb_switch": "usb_switch",
                 "codeplug_write": "codeplug_write", "reboot": "reboot", "manual": "owner_action",
-                "second_radio": "second_radio", "radio_chain": "radio_chain", "factory_reset": "factory_reset"}
+                "second_radio": "second_radio", "radio_chain": "radio_chain", "factory_reset": "factory_reset",
+                "delete_message": "delete_message"}
 FIXTURE_NEEDS = {"radio": "radio", "sdr_bench": "bench", "microphone": "microphone"}
 # A need -> the run options that allow it (any one of them). radio and bench have none: the radio fixture and
 # the bench fixture decide (an unreachable bench is a bench skip, excused for a feature that needs the bench)
@@ -52,9 +53,11 @@ NEED_FLAGS = {
     "radio_chain": ("--sfr-talker-port",),
     "microphone": ("--microphone",),
     "factory_reset": (),
+    "delete_message": (),
 }
 # A need allowed by the environment instead of an option
-NEED_ENV = {"factory_reset": ("RFOUNDRY_HIL_FACTORY_RESET", "1")}
+NEED_ENV = {"factory_reset": ("RFOUNDRY_HIL_FACTORY_RESET", "1"),
+            "delete_message": ("RFOUNDRY_HIL_DELETE_MESSAGE", "hil", "1")}
 # The VERSION keys a record keeps (docs/spec/debuglink.md 3.1): no uptime, nothing that names one unit
 FIRMWARE_KEYS = ("proto", "view", "git", "board", "features", "codec", "display")
 # Run options a record keeps: what was allowed and where it ran on air, never a port or a host
@@ -134,8 +137,8 @@ def granted(config):
     out = set()
     for need, flags in NEED_FLAGS.items():
         if need in NEED_ENV:
-            var, want = NEED_ENV[need]
-            if os.environ.get(var) == want:
+            var, *allowed = NEED_ENV[need]
+            if os.environ.get(var) in allowed:
                 out.add(need)
         elif not flags or any(config.getoption(f, default=None) for f in flags):
             out.add(need)
@@ -219,6 +222,7 @@ class Plugin:
         config.addinivalue_line("markers", "second_radio: needs a second radio (--split-rx-port)")
         config.addinivalue_line("markers", "radio_chain: needs two more radios, a talker and a listener "
                                 "(--sfr-talker-port, --sfr-listener-port)")
+        config.addinivalue_line("markers", "delete_message: deletes a message on an isolated or disposable receiver")
         config.addinivalue_line("markers", "factory_reset: erases the radio's settings (RFOUNDRY_HIL_FACTORY_RESET=1)")
         config.addinivalue_line("markers", "needs_switch(SWITCH, ...): the test also needs these switches built (a "
                                 "CONFIG_ name without the prefix); it skips not_built without them, which bring-up "

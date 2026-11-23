@@ -109,6 +109,10 @@ those checks is not applied. Tracking must not undo a transmit inhibit or other 
 stopped, the selected channel changes, or required inputs become invalid, remove the tracking override and restore the
 channel's ordinary frequencies. Do not retain an old Doppler correction as a new nominal frequency.
 
+Frequency profiles are accepted only when their RX and TX frequencies are supported by the board. The CLI and site
+TLE installers read the radio's reported bands before writing and explain when a single-band radio cannot use the
+selected profiles. `tools/satellite_tle.py sync` can install TLE data without frequency profiles for pass prediction.
+
 No valid TLE, expired TLE, invalid UTC, stale observer position, non-finite calculation or out-of-range target means no
 automatic retune. The user-visible state should distinguish unavailable tracking from a valid pass below the horizon.
 Reacquiring valid inputs may resume tracking only while the same satellite and frequency pair remain selected.

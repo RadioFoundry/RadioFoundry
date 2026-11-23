@@ -432,10 +432,43 @@ retunes per burst (`radio_md380.c`):
 | When | What |
 |---|---|
 | After each burst (the engine's `rf(false)`, PA off) | The synthesizer to the receive LO, the HR_C5000's receiver input on (4:0x26), the receive tune DAC, the receive path on. No lock wait |
-| RF_TX_INTER, 2.5 ms early | 4:0x12 bits 5-0 = 25 (100 us steps) while the transmission listens, restored at its end (only when it was read: a slot where it can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead |
+| RF_TX_INTER, about 1.56 ms early | 4:0x12 bits 5-0 set 15 half symbols over the value read (to 25 on the bench) while the transmission listens, restored at its end (only when 4:0x12 was read: a slot where 4:0x12 can't be read or set isn't listened to). Receiver input off, the synthesizer to the transmit VCO, lock detect waited for (at most 2 ms), then the PA at the slot as without the lead. No lock in 2 ms: nothing sent for that burst, and the next burst retunes |
+
+4:0x12 bits 5-0 count half symbols (104.17 us, `hrc5000_tx_lead_us`) over the value the chip runs with, 0x0A:
+measured from the RF TX interrupt to the next timeslot interrupt, 1121 us at 10, 2684 us at 25, about 6600 us at 63.
+Before the fix the board waited 25 x 100 us from the interrupt, so the PA keyed about 0.9 ms late on every listened
+burst.
 
 The chip receives the other slot as it does when idle, and its bursts go to the stack as heard while sending. On the
 SDR bench, 45 key-ups of 45 got through a repeater whose hang ended around the key-up, against 13 of 15 without it.
+
+The modem holds its timing while the over listens (0x40 MasterMode, [gotchas.md](gotchas.md) 14.6.1, issue 609).
+Before, in passive timing, the HR_C5000 stepped its bursts by half a symbol every 3 s or so on the bench, and the burst
+at a step reached the repeater with bit errors; the SDR bench read those bursts as a carrier 100-320 Hz off. The
+retune itself was clean: lock detect about 60 us after the retune, the PA keyed 2447 us after the RF TX interrupt on
+every burst. SDR bench, idle outbound on 446.075 MHz, the inbound decoded on 446.125 MHz, 102 voice bursts a run,
+AMBE bits corrected:
+
+| Build | Runs | AMBE bits corrected | Carrier offset, worst |
+|---|---|---|---|
+| Listen on, passive timing | 9 | 0.01-0.12 %, 2 runs with a frame past correction | +28 to +264 Hz |
+| Listen on, timing held | 5 | 0 | +24 to +55 Hz |
+| Listen off | 3 | 0 | +24 to +65 Hz |
+
+A wide split leaves a smaller error with the timing held. The transmit VCO's supply is switched off for each listened
+slot (VCOVCC_SW), and the synthesizer steps between the two VCOs on each retune. On a 15.4 MHz split (outbound 446.075,
+inbound 461.4625 MHz) about one burst in ten carries a single corrected bit, always in the burst's first AMBE frame:
+the carrier is still settling at the burst's start. A longer lead makes the error smaller, never zero. Past about
+2.5 ms the lead also cuts the end of the listened burst. No frame was past correction in any run:
+
+| Build, 15.4 MHz split | Runs | AMBE bits corrected |
+|---|---|---|
+| Listen off | 3 | 0 |
+| Listen on, lead 15 steps (1.56 ms) | 2 | 0.05 % |
+| Listen on, lead 30 steps (3.1 ms) | 3 | 0.02-0.05 % |
+| Listen on, lead 53 steps (5.5 ms) | 3 | 0.01-0.02 % |
+
+The board keeps 15 steps (`LISTEN_LEAD_STEPS`). The 50 kHz split reads 0 at every lead.
 
 The HR_C5000's receive tap is one area, page 2 from 0x30, rewritten per burst received: no CACH, and a voice-layout
 burst's 48-bit sync / EMB / RC field at 0x30-0x35, then the voice bits. A BS's dedicated RC burst lands there too,

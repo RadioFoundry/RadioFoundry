@@ -52,6 +52,17 @@
 // far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
 // (radio-features.md 3.5)
 #define RADIO_SQL_FAST_CLOSE_DB	12
+// A voice peak: on a 12.5 kHz channel, speech above about 2 kHz (fricatives) raises the noise reading over the close
+// line for 100-300 ms, past the fast close line when the sender deviates wide, while the carrier stays as strong as it
+// was (#906). Noise over the line with the signal strength within RADIO_SQL_PEAK_RSSI_DB of the last poll the squelch
+// held closes only after RADIO_SQL_PEAK_POLLS polls (400 ms: the longest sibilant plus 100 ms; radio-features.md 3.5).
+// Only for a carrier RADIO_SQL_PEAK_FLOOR_DB or more over the receiver's floor (sql_floor, learned on idle polls,
+// rising RADIO_SQL_FLOOR_RISE_POLLS polls a dB): when that carrier goes or fades, its strength falls by more than
+// RADIO_SQL_PEAK_RSSI_DB in the same poll or the next, and the squelch closes as before
+#define RADIO_SQL_PEAK_RSSI_DB	3
+#define RADIO_SQL_PEAK_POLLS	16
+#define RADIO_SQL_PEAK_FLOOR_DB	10
+#define RADIO_SQL_FLOOR_RISE_POLLS	4
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
@@ -188,6 +199,9 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+	// New request types go above
+
+	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -294,6 +308,8 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
+	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (close_need)
+	int16_t sql_floor;		// the receiver's floor, from idle polls (track_floor); INT16_MAX not known
 #if CONFIG_DMR
 	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
 	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)

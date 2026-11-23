@@ -61,8 +61,9 @@ application region, also put in the job summary on GitHub) and fails when the ap
 images and logs are workflow artifacts (`firmware-arm`, `firmware-csky`), as are the unit test logs with the screen gallery
 (`host-logs`) and the coverage report (`coverage-report`).
 
-`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`; it doesn't pass on
-the current tree yet (run it to see the files), and the nightly reports it as a warning meanwhile.
+`reuse lint` is part of the `checks` job only when the repository variable `RFOUNDRY_CI_REUSE` is `true`. The tree
+passes it; with the variable set, a pull request that adds a file without an SPDX header (or a `REUSE.toml` entry)
+fails the job. Without the variable the nightly reports it as a warning.
 
 ## Submodules
 
@@ -253,7 +254,7 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 |---|---|
 | `matrix (<board>)` | one job per board in the registry: `tools/ci.sh --matrix --steps firmware --board <board>`: each switch off alone, fm-minimal, maximal. C-SKY boards in the csky-elf image unless the runner has csky-elf GCC |
 | `host` | `tools/ci.sh --steps host`: the host tests at full length (pull requests run the short form) |
-| `reuse` | `reuse lint`, a warning until it passes |
+| `reuse` | `reuse lint`, a warning (the `checks` job fails on it once `RFOUNDRY_CI_REUSE` is `true`) |
 | `mark` | after the matrix and the host tests passed: saves the `nightly-ok-*` entry (below) and moves the `nightly-ci` tag to the commit. The nightly HIL run takes that tag ([tests/hil/README.md](../../tests/hil/README.md)) |
 | `report` | a scheduled run that failed opens one "Nightly failing" issue (or comments on the open one) with the run and the commits since the last pass; the next pass closes the issue |
 

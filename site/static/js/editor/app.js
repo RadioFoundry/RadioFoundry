@@ -8,7 +8,7 @@ import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum,
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, followListen } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
@@ -68,7 +68,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	draftSoon();
 }
 
-// Run fn as one undoable change
+// Run fn as one undoable change. A channel it left in a listen band (an import, a pasted RX) gets TX on RX in the same
+// step, as decode gives a loaded one
 function change(label, fn) {
 	S.history.record(S.model, label);
 	const r = fn();
@@ -76,6 +77,7 @@ function change(label, fn) {
 		S.history.cancel();
 		return false;
 	}
+	for (const c of S.model.channels) followListen(c);
 	S.dirty = true;
 	refresh();
 	draftSoon();
