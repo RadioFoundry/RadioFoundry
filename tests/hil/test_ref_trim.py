@@ -78,6 +78,7 @@ def carrier_hz(radio, sdr_bench, mhz, tag):
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
+@pytest.mark.needs_switch("VFO_FM")
 def test_ref_trim_moves_carrier(fm_vfo, sdr_bench, pytestconfig):
     radio = fm_vfo
     now, _ = trim_view(radio)

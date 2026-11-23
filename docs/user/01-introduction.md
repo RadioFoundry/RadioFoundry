@@ -2,8 +2,8 @@
 
 # Introduction
 
-RadioFoundry is free, MIT-licensed firmware for inexpensive DMR radios. It replaces the radio's stock firmware. One
-radio-independent core provides the DMR stack, the user interface, the codeplug and the host tools. Each radio adds a
+RadioFoundry is free, MIT-licensed multi-mode firmware for inexpensive digital radios: DMR, P25, NXDN and FM. It
+replaces the radio's stock firmware. One radio-independent core provides the digital voice stacks, the user interface, the codeplug and the host tools. Each radio adds a
 thin board layer underneath.
 
 This manual describes what RadioFoundry does on every radio. What differs between radios (the keys, power levels,

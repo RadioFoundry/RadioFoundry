@@ -9,6 +9,7 @@
 #include "usbaudio/audio_mux.h"
 #include "dmr/ipGateway.h"
 #include "radio/radio.h"
+#include "hostlink/hostlink_view.h"
 #include "board.h"
 #include "hal_time.h"
 
@@ -24,7 +25,6 @@ typedef struct {
 
 static usrp_link_t link;
 static usrp_net_stats_t st;
-static radio_view_t view;	// static: too large for the host link task's stack
 static uint32_t view_ms;
 static bool view_read;
 static uint32_t peer_ip;	// learned from the last valid frame, 0 = none (the host's address then)
@@ -36,14 +36,14 @@ static int16_t pcm[USRP_FRAME_SAMPLES];
 
 static bool dmr_mode(void)
 {
-	return view.ch.mode == RADIO_MODE_DMR;
+	return hostlink_view.ch.mode == RADIO_MODE_DMR;
 }
 
 // FM receive audio only from a board whose stream carries it: elsewhere the stream's input is the microphone
 static audio_mux_rx_t rx_source(void)
 {
 	const hal_audio_tap_t *tap = board.audio_tap;
-	if (view.hotspot) {
+	if (hostlink_view.hotspot) {
 		return AUDIO_MUX_RX_OFF;
 	}
 	if (dmr_mode()) {
@@ -68,7 +68,7 @@ static void key(void)
 	}
 	const hal_audio_tap_t *tap = board.audio_tap;
 	bool fm_ok = tap != NULL && tap->fm_tx_inject != NULL && (tap->caps & AUDIO_TAP_FM_TX) != 0;
-	if (view.hotspot || (!dmr_mode() && !fm_ok)) {
+	if (hostlink_view.hotspot || (!dmr_mode() && !fm_ok)) {
 		st.refused++;
 		return;
 	}
@@ -138,7 +138,7 @@ static uint32_t peer(uint32_t now_ms)
 // reads its port again or refreshes the squelch state. After SEND_BUDGET_MS the rest of the backlog is dropped.
 static void send_rx(uint32_t now_ms)
 {
-	bool cos = view.state == RS_RX && !tx_on && !view.hotspot;
+	bool cos = hostlink_view.state == RS_RX && !tx_on && !hostlink_view.hotspot;
 	uint32_t t0 = hal_millis();
 	while (audio_mux_host_avail() >= USRP_FRAME_SAMPLES) {
 		if ((hal_millis() - t0) >= SEND_BUDGET_MS) {
@@ -175,7 +175,7 @@ void usrp_net_poll(uint32_t now_ms, bool up)
 	if (!view_read || (now_ms - view_ms) >= VIEW_MS) {
 		view_read = true;
 		view_ms = now_ms;
-		radio_get_view(&view);
+		radio_get_view(&hostlink_view);
 	}
 	if (!up) {
 		unkey();
@@ -186,12 +186,12 @@ void usrp_net_poll(uint32_t now_ms, bool up)
 		cos_sent = false;
 		return;
 	}
-	if (view.hotspot) {
+	if (hostlink_view.hotspot) {
 		unkey();	// hotspot mode owns the modem (usb-audio.md 6.5)
 	}
 	event(usrp_link_tick(&link, now_ms));
 	audio_mux_host_rx(rx_source());
-	rx_on = !view.hotspot;
+	rx_on = !hostlink_view.hotspot;
 	send_rx(now_ms);
 }
 

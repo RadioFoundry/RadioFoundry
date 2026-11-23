@@ -1,0 +1,98 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Test vectors of docs/spec/channel-modes.md, p25-codeplug.md and nxdn-codeplug.md, read by the host tests (C) and the Codeplug
+# Editor's tests (JS). One vector a line, fields split on spaces; "-" is no bytes; numbers are hex without 0x.
+#
+# check <name check> <name: the rest of the line>
+check 706C
+check 18A9 A
+check 1687 T3 Ops
+check CDD2 Sixteen chars!!!
+check 15B3 P25 Ops
+#
+# p25conv <block> <RX NAC> <TX NAC> <squelch>: decoding a conventional channel's block
+p25conv - 293 293 0
+p25conv 0000000000 293 293 0
+p25conv 01 293 293 1
+p25conv 0034800000 34 34 0
+p25conv 007E8F0000 F7E 293 0
+p25conv 007E8F5582 F7E 255 0
+p25conv 007F8F0000 293 293 0
+p25conv 00000012 293 293 0
+p25conv 03ABCD0000 293 293 0
+p25conv 0000007E8F 293 293 0
+p25conv 01FF8F0000 FFF FFF 1
+p25conv 0034807F8F 34 34 0
+p25conv 0034F00000 293 293 0
+p25conv 0234800000 34 34 0
+#
+# p25enc <RX NAC> <TX NAC> <squelch> <block>: encoding
+p25enc 293 293 0 0000000000
+p25enc 293 293 1 0100000000
+p25enc 34 34 0 0034800000
+p25enc 34 293 0 0034809382
+p25enc F7E 293 0 007E8F0000
+p25enc F7E 255 1 017E8F5582
+p25enc 0 0 0 0000800000
+#
+# p25unit <record> <DMR ID> <unit ID>
+p25unit - 2F5C9C 2F5C9C
+p25unit 00000000 2F5C9C 2F5C9C
+p25unit 01000000 2F5C9C 1
+p25unit FEFFFF00 2F5C9C FFFFFE
+p25unit FFFFFF00 2F5C9C 2F5C9C
+p25unit 4E61BC00 0 BC614E
+p25unit 0100 2F5C9C 2F5C9C
+#
+# p25tsys <block> <WACN> <system ID> <control NAC> <options> <hold s> <roam dBm as a byte>
+p25tsys - 0 0 F7E 0 0 0
+p25tsys 00000000000000000000 0 0 F7E 0 0 0
+p25tsys 45230B1F01938201059C B2345 11F 293 1 5 9C
+p25tsys FFFFFFFFFF0000000000 FFFFFF FFFF F7E 0 0 0
+p25tsys FFFFFFFFFFFFFFFFFFFF FFFFFF FFFF F7E 7 FF FF
+p25tsys 00000000000000040000 0 0 F7E 4 0 0
+p25tsys 452301 12345 0 F7E 0 0 0
+#
+# p25iden <body> <base Hz> <spacing Hz> <TX offset Hz as u32> <bandwidth Hz> <type> <slots>
+p25iden 2A53B932D4300000C05A51FDD43000000000 32B9532A 30D4 FD515AC0 30D4 0 1
+p25iden AA1AD62D6A18000080C3C901D43000000102 2DD61AAA 186A 1C9C380 30D4 1 2
+p25iden AA1AD62D6A18000080C3C901D43000000100 2DD61AAA 186A 1C9C380 30D4 1 2
+p25iden 40BDB932 32B9BD40 0 0 0 0 1
+#
+# nxdnconv <block> <9600: 1, 4800: 0> <RX RAN> <TX RAN> <squelch>: decoding an NXDN channel's block
+nxdnconv - 1 0 1 0
+nxdnconv 000000 1 0 1 0
+nxdnconv 01 1 0 1 1
+nxdnconv 04 0 0 1 0
+nxdnconv 05 0 0 1 1
+nxdnconv 02 1 0 1 0
+nxdnconv 03 1 0 1 0
+nxdnconv 0009 1 9 9 0
+nxdnconv 000985 1 9 5 0
+nxdnconv 000080 1 0 0 0
+nxdnconv 0040 1 0 1 0
+nxdnconv 00FF 1 0 1 0
+nxdnconv 0007C5 1 7 7 0
+nxdnconv 0D3FBF 0 3F 3F 1
+nxdnconv 0000050A 1 0 1 0
+#
+# nxdnenc <9600> <RX RAN> <TX RAN> <squelch> <block>: encoding
+nxdnenc 1 0 1 0 000000
+nxdnenc 1 0 1 1 010000
+nxdnenc 0 0 1 0 040000
+nxdnenc 1 9 9 0 000900
+nxdnenc 1 9 5 0 000985
+nxdnenc 1 0 0 0 000080
+nxdnenc 1 0 2 0 000082
+nxdnenc 0 3F 1 1 053F81
+#
+# nxdnunit <record> <DMR ID> <unit ID>
+nxdnunit - 2F5C9C 1
+nxdnunit - 3E8 3E8
+nxdnunit - FFF0 1
+nxdnunit 0000 3E8 3E8
+nxdnunit 0100 2F5C9C 1
+nxdnunit 3930 3E8 3039
+nxdnunit EFFF 3E8 FFEF
+nxdnunit F0FF 3E8 3E8
+nxdnunit 30 3E8 3E8

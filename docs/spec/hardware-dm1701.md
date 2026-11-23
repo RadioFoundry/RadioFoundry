@@ -373,6 +373,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Write | address+W, register, data high byte, data low byte |
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
+| Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
 | Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 
@@ -496,7 +497,7 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 |---|---|
 | 0x40 = 0x0031 | undocumented; bit 0 set passes low-frequency audio (needed for 4FSK) |
 | 0x15 = 0x1100 | IF tuning |
-| 0x32 = 0x4495 | AGC target |
+| 0x32 = 0x4490 | AGC target 18 (bits 11:6, 2 dB units); bits 2:0 clear (below) |
 | 0x3A = 0x00C3 | no mic input to the AT1846S modulator |
 | 0x3C = 0x1B34 | pk_det_th |
 | 0x3F = 0x29D1 | rssi3_th |
@@ -505,7 +506,48 @@ DMR mode (the HR_C6000 needs the raw 4FSK baseband):
 | 0x43 = 0x0100 | deviation |
 | 0x48 = 0x19B1 | noise1_th |
 | 0x58 = 0x9CDD | all audio filters off |
-| 0x44 = 0x07FF | AF gain 100 %. Lower values (e.g. 0x00CF-ish) give better BER on strong signals but fail to decode some hotspots; the DM-1701 needs more AF gain than the MD-UV380 |
+| 0x44 = 0x07EF | AF gain 1 dB under full (dac_vgain, bits 7-4, 1 dB steps): the receive level window below |
+
+DMR receive level. The 4FSK level the HR_C6000 gets is the AF gain plus the transmitter's deviation, and the modem
+decodes well only in a window about 3 dB wide. Above it the outer symbol threshold is crossed: a +1 symbol read as +3,
+about a bit a frame for the FEC to correct even far above sensitivity. Below it the modem loses sync, a cliff. Voice
+bit errors a frame and the share of frames received, at -103 dBm with the transmitter's deviation scaled (SDR bench,
+`tools/dmr_rx_sweep.py`):
+
+| 0x44 | x0.8 | x0.85 | x0.9 | x1.0 | x1.1 | x1.15 | x1.2 |
+|---|---|---|---|---|---|---|---|
+| 0x07FF (full) | 0.19 | 0.29 | 0.15 | 0.36 | 0.75 | 1.49 | 1.51 |
+| 0x07EF (-1 dB) | 0.14 | 0.18 | 0.08 | 0.09 | 0.21 | 0.31 | 0.89 |
+| 0x07DF (-2 dB) | 44 % frames | 0.83 | 0.12 | 0.04 | 0.00 | 0.05 | 0.03 |
+| 0x07CF (-3 dB) | no sync | 16 % frames | 68 % frames | 0.09 | 0.03 | 0.00 | 0.00 |
+| 0x07BF (-4 dB) | no sync | no sync | no sync | 48 % frames | 0.59 | 0.07 | 0.03 |
+
+0x07EF keeps every frame from x0.8 to x1.2, so a transmitter under deviation (common on hotspots) and one over both
+decode; the over-deviated side costs corrected bits, never frames. The gain also sets how far off frequency a
+transmitter can be: full gain clips first and has the narrowest window (5.13). `test_dmr_audio_rx_deviation`
+(tests/hil) checks x0.85 and x1.15 at -100 dBm.
+
+DMR receive AGC. A simplex transmitter keys one 30 ms burst every 60 ms, so the AGC sees the carrier come and go with
+every burst. With 0x32 bits 2:0 at 2 or more (the 12.5 kHz table's 0x4495 has 5) the start of each burst is overloaded:
+about a bit a frame from -85 to -40 dBm, however strong the signal, and bad frames now and then. A repeater's
+continuous carrier hides it: the same call as a repeater outbound at -65 dBm corrected nothing, as simplex bursts 1.67
+bits a frame. The datasheet names only bits 11:6 (agc_target_pwr); bits 2:0 are undocumented. Bit 15 doesn't take a
+write (reads 0). Voice bit errors a frame, speech at the standard's deviation, simplex (SDR bench, conducted,
+`tools/dmr_rx_sweep.py --reg 0:0x32 --field 2:0`):
+
+| Level at the radio | 0x4490 | 0x4491 | 0x4492 | 0x4493 | 0x4494 | 0x4495 | 0x4496 | 0x4497 | 0x4498 |
+|---|---|---|---|---|---|---|---|---|---|
+| -45 dBm | 0.00 | 0.00 | 0.33 | 1.35 | 1.43 | 1.26 | 1.15 | 0.86 | 0.00 |
+| -65 dBm | 0.01 | 0.00 | 0.64 | 1.07 | 1.38 | 1.01 | 0.98 | 0.88 | 0.00 |
+| -75 dBm | 0.01 | 0.02 | 0.39 | 0.69 | 0.61 | 1.51 | 1.24 | 1.29 | 0.01 |
+| -87 dBm | 0.00 | 0.00 | 0.22 | 0.18 | 0.54 | 0.65 | 0.61 | 0.67 | 0.00 |
+
+Bits 2:0 cost nothing near sensitivity: 0x4490 and 0x4495 are within a run's spread of each other from -107 to
+-126 dBm at x0.85, x1.0 and x1.15 (0.01 at -107 dBm, 0.03-0.05 at -120, 0.3-0.4 at -123, 0.8-0.9 at -126, every frame
+received). With bits 2:0 clear, bits 15:12 make no difference (0x0490 to 0x7490 all clean at -45 and -75 dBm). With
+them at 5, a higher AGC target (20 to 31) only moved the errors to stronger signals, and no 0x33 ("AGC number") value
+removed them (0x44FF read the signal some 30 dB weaker). The DMR table writes 0x4490; FM keeps the bandwidth table's
+0x4495 (a continuous carrier). `test_dmr_audio_rx_strong` (tests/hil) checks simplex speech at -75 and -55 dBm.
 
 ### 5.6 Frequency setting
 
@@ -637,8 +679,66 @@ set. An earlier build wrote bits 6:4 and keyed a silent carrier (`gotchas.md` 3.
 
 ### 5.11 Receiver sleep
 
-RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches the
-receive supply off. `rx_sleep(false)` retunes.
+RadioFoundry's `rx_sleep(true)` (receiver battery save, `radio-features.md` 5.4) puts the AT1846S in idle and switches
+the receive supply off. `rx_sleep(false)` retunes. It does the same on a DMR channel (`rx_sleep_dmr`, a trunked system's
+power save): the HR_C6000 keeps running and the core restarts its receive on waking. On air at 1:4 the receiver is off
+55-60% of the time, the radio stays camped, and traffic for it arrives within one cycle.
+### 5.12 Bench register access
+
+The debug link's CHIP_REG ([debuglink.md 3.24](debuglink.md#324-chip_reg)) reaches both RF chips (`uvf_chip_reg`,
+the DM-1701 and the MD-UV380):
+
+| Chip | Pages | Registers | Width |
+|---|---|---|---|
+| 0, the AT1846S | 0 | 0x00-0x7E (0x7F selects the page; the driver owns it) | 16 bits |
+| 1, the HR_C6000 | 1 and 4 (2 and 3 are the data and vocoder FIFOs, which a read would drain) | 0x00-0xFF | 8 bits |
+
+`rfoundry_debug.py reg 0 0x44` reads the AT1846S AF gain; `reg 1 0x4E --page 4` the HR_C6000's ADC I offset. A
+write goes straight to the chip; the driver's next set-up of that register overwrites it.
+
+What the bench showed:
+
+| Access | Result |
+|---|---|
+| Read 0x29 / 0x2A | not the frequency word written (5.6): write the word, don't read it back |
+| Write 0x30 while receiving (another bandwidth's bits) | the receiver stays deaf, even after the old value is written back, until the next tune |
+| Tune by hand: 0x30 = 0x6006, 0x29, 0x2A, 0x30 = 0x6026 | retunes at once, in 62.5 Hz steps; the DMR receiver follows |
+| HR_C6000 4:0x4E / 4:0x4F in DMR receive | fixed (0x01 / 0x04 here), with or without a signal, whatever the carrier offset |
+
+### 5.13 DMR receive offset
+
+In DMR the AT1846S receives `UVF_DMR_RX_OFFSET_UHF_HZ` / `UVF_DMR_RX_OFFSET_VHF_HZ` below the channel (62.5 Hz steps).
+FM receive is tuned to the channel. UHF: 0. VHF: 1250 Hz.
+
+The carrier offsets the radio decodes form a window whose width and center depend on the AF gain (5.5). UHF, receive
+offset 0, speech at the standard deviation, the carrier offset made by detuning the radio from the bench's carrier
+(SDR bench, 500 Hz steps). Carrier offsets where at least 95 % of the frames arrive with at most 1.5 corrected bits a
+frame:
+
+| 0x44 | -103 dBm | -81 dBm |
+|---|---|---|
+| 0x07FF (full) | -1.5 to +1.5 kHz | -0.5 to +2.0 kHz |
+| **0x07EF (-1 dB)** | **-3.0 to +2.5 kHz** | **-2.5 to +2.5 kHz** |
+| 0x07DF (-2 dB) | -2.5 to +3.0 kHz | -2.0 to +3.0 kHz |
+| 0x07CF (-3 dB) | -2.0 to +2.5 kHz | -1.0 to +3.0 kHz |
+
+- Full gain fails high first: from +2.5 kHz it loses frames at 4-6 bits a frame, the overload of 5.5.
+- Under 1 dB the window moves up: the low side loses sync, the cliff of the under-deviated transmitter in 5.5.
+- 0x07EF's window is centered on the channel within a few hundred Hz; a second transmitter put its edges within 500 Hz
+  of these. A fixed receive offset only moves the window: at 875 Hz below, a transmitter 2.5 kHz high is lost.
+
+The VHF offset was measured at full gain, inside the overload (voice bit errors a frame against the carrier offset):
+
+| Carrier offset (Hz) | -1000 | -500 | 0 | +500 | +1000 | +1500 |
+|---|---|---|---|---|---|---|
+| VHF, tuned to the channel | 2.74 | 2.09 | 1.72 | 1.42 | 1.15 | 1.18 |
+| VHF, 1250 Hz below | 1.53 | 1.30 | 1.10 | 1.59 | 2.85 | no frames |
+
+It is not measured again at 0x07EF yet. `test_dmr_audio_rx_offset_wide` (tests/hil) checks a carrier 2.5 kHz below
+and above the channel at -100 dBm.
+
+Bursts keyed through idle write the transmit frequency, so the receive offset doesn't reach the transmitter. Direct
+bursts (an SFR, section 6) don't write it: they take the receive offset back out in MOD1 steps.
 
 ---
 
@@ -663,22 +763,30 @@ Ordering:
 - Burst-by-burst DMR TX (the PA follows the bursts), keyed 1 ms after the RF TX interrupt (it comes about 1.28 ms
   before the slot boundary; keyed at once, the PA cut the end of the inbound burst an SFR receives in the other slot).
   Two sequences:
-  - Direct, when the synthesizer already holds the TX frequency (SFR, simplex) and the band is UHF: reg 0x30 straight
-    from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) = calibrated value + 42, both RX supplies off, then the PA. Back to
+  - Through idle, the normal one: reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then
+    the PA. Back to RX, the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for
+    the band, reg 0x30 RX on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz
+    off.
+  - Direct, only while an SFR repeats (a channel's or the VFO's role, or the hotspot's SFR mode;
+    the board asks at each burst: `hal_radio_t.dmr_direct_query`), on a simplex UHF channel whose receive frequency the
+    synthesizer already holds: reg 0x30 straight from RX to DMR TX, HR_C6000 4:0x04 (MOD1 offset) =
+    calibrated value + 42, plus the DMR receive offset in MOD1 steps (5.13), both RX supplies off, then the PA. Back to
     RX: the PA enables low, 4:0x04 = calibrated value, the RX supply, reg 0x30 RX on. RX straight to TX puts the
-    carrier about 3.07 kHz low, and a frequency write can't correct it (the AT1846S applies one only coming out of
-    idle); 42 steps of about 75 Hz put it back (measured near 461 MHz: +16..+60 Hz). The idle step that the other
-    sequence takes every slot makes the synthesizer settle again, and an SFR lost the first and last frames of its
-    inbound bursts to it: about 190 bit errors and 5-10 lost frames per 72 repeated frames, against about 60 and none
-    direct (SDR bench, 2026-10-19).
-  - Through idle, otherwise (VHF, where 3.07 kHz is more steps than the register holds; RX and TX frequencies that
-    differ): reg 0x30 receiver off, the TX frequency, reg 0x30 DMR TX, both RX supplies off, then the PA. Back to RX,
-    the PA enables low, reg 0x30 receiver off, the RX frequency if it differs, the RX supply for the band, reg 0x30 RX
-    on. Going straight back to RX after a burst entered from idle leaves the receiver about 3 kHz off.
+    carrier about 3.07 kHz low and a frequency write can't correct it (the AT1846S applies one only coming out of
+    idle); 42 steps of about 75 Hz put it back on the board measured near 461 MHz (+16..+60 Hz). On two other DM-1701s
+    at 433.45 MHz the same correction left the DMR carrier 178 Hz and 449-554 Hz below the FM carrier, enough for an
+    MMDVM hotspot to reject the call, and through idle they measured +36 and +41 Hz (on an SDR). That is
+    why direct keying is kept to the SFR: there the idle step, which makes the synthesizer settle again each slot, lost
+    the first and last frames of the inbound bursts, about 190 bit errors and 5-10 lost frames per 72 repeated frames
+    against about 60 and none direct (on an SDR). A per-radio correction would make it right everywhere.
 
   The receiver must work between bursts (an SFR's inbound slot, `sfr.md` 3). Dropping the PA earlier than the next
   timeslot interrupt (28.5-30 ms after the RF TX interrupt) did not reduce the inbound errors. The "transmitting" state of the radio must therefore be taken from the HR_C6000 slot state, not from the PA
   pins: the last burst of a call (the terminator) is still in flight after the PA logic has gone back to RX once.
+
+  Since the receiver is back on the RX frequency after every burst, a voice over through a repeater listens to its
+  outbound between our bursts on a split channel too (the glue's `listen_split`, [dmr-modem.md](dmr-modem.md) 2.8):
+  on a trunked site's split channel the radio hears a reverse channel cease while it talks (`test_t3_cease`).
 - Power-down: PA enables low, both RX supplies low, mic power optionally low, HR_C6000 PWD high, AT1846S reg 0x30 =
   receiver off value.
 
@@ -719,6 +827,152 @@ Interpolation fractions (empirical):
 
 On the 10 W radio levels 5-8 are 2 W, 3 W, 5 W, 10 W: level 5 = low + (mid - low) x f2, level 6 = low + (mid - low) x
 f3, level 7 = mid, level 8 = high. Clamp to 4095.
+
+### 7.1 Five levels (DM-1701)
+
+The DM-1701 uses five levels in place of the nine above ([power-calibration.md](../testing/power-calibration.md)): the
+two low levels are fixed DAC values per band, the next two lie between factory rows, the top level is the high row.
+
+| Level | Name | VHF | UHF |
+|---|---|---|---|
+| 0 | 100 mW | 517 | 339 |
+| 1 | 500 mW | 800 | 620 |
+| 2 | 1 W | very low + (low - very low) x 0.723 | very low + (low - very low) x 0.838 |
+| 3 | 2.5 W | low + (mid - low) x 0.791 | low + (mid - low) x 0.809 |
+| 4 | 5 W | high | high |
+
+These values are a draft: they come from the SDR bench's relative levels at 145.51 and 449.9 MHz with the high row
+taken as 5 W, and came out within 0.2 dB of their spacing there. No wattmeter reading backs them yet, and the zero
+point and cliff of the procedure are not measured.
+
+Relative output against the DAC value, same radio and frequencies (dB below the high row):
+
+| DAC | UHF | DAC | VHF |
+|---|---|---|---|
+| 250 | -21.3 | 350 | -25.2 |
+| 350 | -16.5 | 490 | -18.1 |
+| 500 | -12.3 | 640 | -13.0 |
+| 650 | -9.5 | 830 | -9.5 |
+| 895 | -6.4 | 1081 | -6.9 |
+| 1200 | -3.9 | 1400 | -4.4 |
+| 1669 | -1.2 | 1882 | -1.1 |
+| 2080 | 0 | 2062 | 0 |
+| 2800 | +0.5 | 2800 | +1.7 |
+
+### 7.2 DMR key-up
+
+The PA is keyed by the shared rule ([pa-keyup.md](pa-keyup.md)), with constants per band
+(`boards/dm1701/board.c`). No step's drive starts earlier than the window. At UHF it is 1.0 ms after the RF TX
+interrupt; at VHF it is the board's earliest point, 2.5 ms before the first symbol. The PA is keyed 1.0 ms (UHF) and
+0.8 ms (VHF) after the interrupt:
+
+| Band | dead_pm | knee_us | slope_us | window_us | settle_us | pa_us |
+|---|---|---|---|---|---|---|
+| VHF | 1 | 638 | 2398 | 2500 | 600 | 1730 |
+| UHF | 349 | 247 | 1248 | 1530 | 800 | 1530 |
+
+UHF is measured with `tools/bench/pa_cal.py` ([pa-keyup.md](pa-keyup.md) 6) over the air on the SDR bench and
+judged by the ramp's shape (`pa_shape.py`): every level's -3 dB point 0.14-0.45 ms before the first symbol, the two top
+levels and the lowest with under 1 dB of overshoot, the second and third with 2.0 and 3.3 dB. The rule can't do
+better on those two: the lowest level's boost and the top level's lead fix the knee and the slope, and with them the
+boosts of the two levels between. Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.14 / -0.34 / -0.41 / -0.45 / -0.31 | 0.6 / 2.0 / 3.3 / 0.5 / 0.3 |
+| Knee 255, slope 1180, settle 700 (the one before) | -0.20 / -0.28 / -0.33 / -0.42 / -0.25 | 1.8 / 2.3 / 3.0 / 0.6 / 0.4 |
+| Knee 230, slope 1100, settle 700 | -0.05 / -0.21 / -0.27 / +0.12 / -0.14 | 0.8 / 1.3 / 2.3 / 0.3 / 0.4 |
+| Knee 210, slope 1060, settle 1000 | the lowest level +0.63 | level 2 1.2 |
+
+A wider window (2000-2400 us) put the lowest level early with 5 dB of overshoot; an approach drive (`ease_pm`) never
+reaches the levels that overshoot.
+
+On a cable into the SDR bench (57 dB) the same set is cleaner than over the air: levels 1-3 come up 0.32-0.49 ms
+ahead with 0.3-0.7 dB of overshoot at 445 MHz and at a second frequency with other calibration rows, so the 2-3 dB
+above came from the path. The lowest level is 123 mW at 445 MHz and 33 mW at the second frequency (the radio's
+calibration tables): early with 1.5 dB of overshoot at the first, 1.6 dB short at the first symbol at the second.
+The top level is 1.6-2.5 dB short at the first symbol
+and settles after it: its PA point can't move earlier (SFR, below). A refit on the cable came out worse at every
+round.
+
+Across the 70 cm band, the radio on its antenna over the air, all five levels: the -3 dB point before the first
+symbol, the overshoot, and the first symbol against the settled level.
+
+| Level | 432 MHz | 445 MHz | 449.9 MHz |
+|---|---|---|---|
+| 100 mW | 0.67 ms, 3.2 dB, +2.6 dB | 0.49 ms, 2.2 dB, +1.9 dB | 0.44 ms, 2.1 dB, +1.8 dB |
+| 500 mW | 0.61 ms, 2.0 dB, +1.5 dB | 0.51 ms, 1.3 dB, +1.1 dB | 0.47 ms, 1.2 dB, +0.9 dB |
+| 1 W | 0.60 ms, 1.8 dB, +1.3 dB | 0.53 ms, 1.4 dB, +1.2 dB | 0.50 ms, 1.6 dB, +1.2 dB |
+| 2.5 W | 0.57 ms, 0.8 dB, +0.4 dB | 0.51 ms, 1.2 dB, +0.8 dB | 0.49 ms, 1.7 dB, +1.3 dB |
+| 5 W | 0.32 ms, 0.3 dB, -1.1 dB | 0.16 ms, 0.3 dB, -1.4 dB | 0.13 ms, 0.3 dB, -1.6 dB |
+
+No level is late, and the -3 dB point stays within 50 µs from burst to burst. The four lower levels are early and
+over, the lowest the most; the first 5 symbols are within 1.8 dB of the settled level (mean). The top level's knee is
+slow: -6 dB 0.32-0.52 ms ahead, -1 dB 0.2 ms after the first symbol's start, so its first symbol is 1.1-1.6 dB low,
+as on the cable, and its first 5 symbols 0.6 dB low (mean). Its lead thins toward the top of the band.
+
+Against this set's row in the table above, the lowest level is 0.35 ms earlier here with 1.6 dB more overshoot, and
+the second and third levels overshoot less. The difference is not traced.
+
+The lowest UHF level's drive (339) lies close over the dead zone's edge, 34.9 % of the low row's drive: 38 counts over
+at 445 MHz (low row 864) and 2 at the second frequency (low row 967). Where the low row is 972 or more it is under
+the edge, and takes the edge's boost ([pa-keyup.md](pa-keyup.md) 2), a count or two under its boost at the second
+frequency. Not measured there.
+
+VHF is measured the same way, on a cable into the SDR bench through 57 dB of attenuation. The lowest level's own
+drive, written 2.5 ms ahead, brings the output up 0.8 ms after the first symbol, so every level is boosted. With the
+board's earliest point and settle time fixed, the boost over the level is (knee x top + slope x drive) / ((window -
+settle) x drive): the knee sets how much more the low levels get. A boost 2.6 times the lowest level's drive brings it
+up in time; 2.0 times leaves it 0.7-1.0 ms late, 3.1 times overshoots 4.5 dB. The top level's boost is capped at 1.2
+times its drive and its PA point can't move earlier (SFR, below), so it is 2 dB short at the first symbol in every set.
+Against the same keys:
+
+| Set | -3 dB, levels 0-4 (ms) | Overshoot, levels 0-4 (dB) |
+|---|---|---|
+| This one | -0.10 / -0.14 / -0.17 / -0.15 / -0.01 | 1.1 / 0.9 / 1.0 / 0.4 / 0.2 |
+| Knee 1106, slope 1433 (the one before) | -0.26 / -0.20 / -0.16 / -0.12 / +0.20 (edge) | 4.5 / 1.6 / 0.9 / 0.3 / 0.2 |
+| Knee 496, slope 2583 | +0.13 / -0.07 / -0.14 / -0.15 / -0.02 | 0.1 / 0.6 / 0.9 / 0.4 / 0.2 |
+| Knee 548, slope 2855, settle 400 | -0.07 / -0.11 / -0.16 / -0.15 / -0.05 | 3.2 / 2.5 / 2.3 / 0.9 / 0.2 |
+| Knee 213, slope 2953 | +0.97 / +0.12 / -0.08 / -0.15 / -0.02 | 0.1 / 0.2 / 0.6 / 0.4 / 0.2 |
+
+The fit of `pa_cal.py` doesn't find this set: its open-loop points are each a level's own drive, which never brings the
+lowest level up in time, and its rounds come out 0.4-1.8 ms late.
+
+The radio's USB link drops while it transmits at VHF above 100 mW, and the host then ignores the port until the radio
+restarts or the cable is replugged. VHF is therefore measured with `--key-run restart`
+([pa-keyup.md](pa-keyup.md) 4, 6).
+
+VHF timing can't be read over the air from the radio's antenna on the SDR bench: each burst carries 1.6-2.8 dB of
+ripple there (0.3 dB at UHF), in a pattern that repeats every fifth burst, and the -3 dB point moves by as much as
+3 ms with it. Its source is not found. The -10 dB point holds through it, 0.20-0.48 ms before the first symbol at every
+level at 146 MHz.
+
+Key-down: TIM7 drops the PA 30 ms after the RF TX interrupt, when the burst's last symbol ends
+([gotchas.md](gotchas.md) 3.4); the timeslot interrupt after it puts the receiver back and stays the fallback. The
+carrier is 30 dB down 0.5-0.9 ms after the last symbol's end, inside the 1.25 ms guard time. Dropped at the timeslot
+interrupt alone it fell 1.7-1.8 ms after the last symbol, about 0.5 ms into the next slot. By level at 432, 445 and
+449.9 MHz: 100 mW to 2.5 W reach -3 dB 0.43-0.47 ms after the last symbol's end and are 30 dB down by 0.49-0.58 ms;
+5 W reaches -3 dB at 0.50-0.62 ms and is 30 dB down by 0.73-0.93 ms.
+
+With the earlier form, every level measured on the SDR bench:
+
+| Band | -3 dB point before the first symbol | First symbol against the settled level | Overshoot |
+|---|---|---|---|
+| UHF | 0.16-0.34 ms | within 0.7 dB | under 1 dB |
+| VHF | 0.08-0.14 ms | within 0.6 dB up to 1 W; the two top levels not measured with this set (1.1 and 1.5 dB low with the sets next to it) | under 2 dB |
+
+What set the points, measured with the earlier form (its `late %`: how much later a lower step started; its knee in
+drive counts × ms):
+
+| Setting | Result |
+|---|---|
+| PA 0.6 ms after the interrupt (`pa_us` 1930) | an SFR repeater loses the end of the burst it receives just before: 16-24 corrected bits in the last voice frame of each burst over a 72-frame call, none at 0.8 or 1.0 ms |
+| Every level started at `boost_us` (late 0 %) | the low levels rise early: at UHF the lowest 0.70 ms before the first symbol with the top at 0.34 ms |
+| VHF at late 100 % | the low levels rise 0.1 ms after the first symbol, which is 3.5 dB low |
+| VHF with a longer low-level boost (knee 1800-2055) | the lowest level overshoots 4-6 dB |
+
+Keyed at the level's drive 1 ms after the interrupt, as before the rule, the lowest level's first symbol was 13 dB low
+at UHF and 24 dB low at VHF.
 
 Without a loaded calibration RadioFoundry drives a fixed DAC value of 300 (`DM1701_DAC_UNCALIBRATED` in
 `boards/dm1701/radio_dm1701.c`), a very low drive.
@@ -872,9 +1126,10 @@ PD8 (PC6 on Plus 10 W), active high. Dimming: a 101-entry table of 32-bit words 
 request, circular, 100 transfers) to the port's BSRR register: entry 0 sets the pin, entry N resets it, all others are
 0, so the duty is N %. 0 % and 100 % stop the DMA and drive the pin directly.
 
-RadioFoundry dims at 40 kHz with two one-word DMA writes per cycle instead (`boards/uv380_family/backlight_uvf.h`):
-TIM1 counts 1800 per cycle, its update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
-Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, 80,000 transfers a second. The ripple of the
+RadioFoundry uses two one-word DMA writes per PWM cycle (`boards/uv380_family/backlight_uvf.h`):
+TIM1's update request (DMA2 Stream5 channel 6) writes the set bit and its CC1 request (DMA2
+Stream1 channel 6) the reset bit, so CCR1 is the duty at any percent, two transfers per cycle. The rates below were tried; the PWM now runs at 2 kHz
+(36000 counts per cycle) and stops while transmitting or while receive audio from a signal is open. The ripple of the
 switched backlight current reaches the FM transmit audio. Measured on a DM-1701, Brightness 10 %, 50 mW, FM
 demodulated from a separate receiver, peak deviation:
 
@@ -882,7 +1137,96 @@ demodulated from a separate receiver, peak deviation:
 |---|---|---|---|---|
 | 101 Hz, the 100-entry table | 8 Hz | 15 Hz | 13-15 Hz | (it is the 101 Hz line: an audible buzz, #330) |
 | 10 kHz (tried) | 0.5 Hz | 1.9 Hz | 1.1 Hz | 470 Hz: sidebands about 33 dB down at ±10 kHz, in the adjacent 12.5 kHz channel |
-| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | 99-206 Hz: sidebands 52-58 dB down at ±40 kHz |
+| 40 kHz | 0.6-0.7 Hz | 1.6-2.3 Hz | 1.6 Hz | The conducted measurement below supersedes the over-the-air estimate for this line |
+
+The panel's backlight driver doesn't follow 40 kHz: Brightness 20 % looked close to full, and the idle dim step (a
+fifth) hardly showed. At 2 kHz it dims as set. The PWM runs at 2 kHz while idle. While transmitting, or while
+receive audio from a signal is open, the pin is held high at any brightness above 0 %. Receive audio is open while the
+FM squelch is open or the monitor is on, and while a DMR, P25 or NXDN call plays: the green LED's state, which the
+radio core passes to the board (`hal_radio_t.rx_open`). The volume doesn't count, so FM at zero volume, which still
+feeds APRS, holds the pin too. A key beep or other local PCM alone keeps the PWM: the ripple reaches the audio through
+the synthesizer, only with a carrier present (below).
+
+An earlier build ran 40 kHz in those states with a one-count pulse (14 ns) for every level below 100 %, expecting the
+stage's tail to fill the period. On one DM-1701 the tail did fill the period and the panel was fully lit. On other DM-1701 and MD-UV380 family
+radios the screen went dark during transmit and receive audio (#759). The likely cause is a stage that doesn't respond
+to a pulse that short; the bench DM-1701 doesn't show the fault, so this is not confirmed. A steady pin gives the same light as a 40 kHz rate the stage follows, without depending on its turn-on.
+
+A conducted DM-1701 UHF measurement through 60 dB of attenuation found at most 4.4 Hz deviation at 40 kHz over
+5–90 % pin duty, with sidebands at or below -85 dBc. At 2 kHz and 50 % brightness, an unmodulated -88 dBm carrier
+put a tone in the FM receive audio 14 dB below a 1 kHz tone at 1 kHz deviation. With 40 kHz PWM the same bin was
+48 dB lower. The receiver's local oscillator picks up the backlight ripple with the squelch open.
+
+Earlier over-the-air DM-1701 measurements, FM, 50 mW, deviation in the demodulated transmit audio:
+
+| Backlight PWM during FM transmit | 2 kHz | 4 kHz | 40 kHz |
+|---|---|---|---|
+| 2 kHz (not switched; test build) | 210 Hz | 185 Hz | 96 Hz |
+| switched to 40 kHz | 3-7 Hz | 0.4-2 Hz | 70-100 Hz |
+| 40 kHz always (before) | 4.3 Hz | 1.4 Hz | 88 Hz |
+
+With the switch, transmit is the same as with 40 kHz always, at every brightness (10-100 % stepped during one
+transmission): the 2 kHz and 40 kHz lines that remain don't change with the brightness, not even at 100 %, where the
+pin is steady, so they aren't the backlight's.
+
+**Why no single rate does both.** PWM rate swept 2-40 kHz at 50 % duty, one 2 s FM transmission per rate (50 mW,
+433.450 MHz, HackRF), TIM1's period and compare written over the debug link (`DL_CMD_CHIP_REG`), with bursts at a
+steady backlight as the reference:
+
+| PWM rate | FM deviation at the rate | Steady backlight, same frequency | First RF sideband |
+|---|---|---|---|
+| 2 kHz | 220 Hz | 4.8 Hz | -30 dBc |
+| 5 kHz | 269 Hz | 1.4 Hz | -36 dBc |
+| 10 kHz | 173 Hz | 1.7 Hz | -46 dBc |
+| 12.5 kHz | 88 Hz | 1.6 Hz | -54 dBc |
+| 15 kHz | 33 Hz | 2.4 Hz | -64 dBc |
+| 18 kHz | 8 Hz | 2.7 Hz | -73 dBc |
+| 20, 22, 25, 30 kHz | 3.3-5.7 Hz | 2.9-6.3 Hz | -76 to -78 dBc (the floor) |
+
+From about 18 kHz up the backlight leaves no trace in transmit. Only 2 kHz lands in the voice band (300-3400 Hz).
+This over-the-air sweep used 50 % pin duty. The conducted sweep above measured both the transmit and receive paths.
+
+The backlight stage behind the pin has a turn-off tail: after the pin falls the LEDs stay at full current for about
+22 us, then fall over about 34 us, 38 us of full light in all, the same at any rate. Two independent measurements on
+DM-1701 A:
+
+- **RF harmonic nulls.** FM transmit at 2987 Hz with the set duty stepped 10-70 % (2 % steps, 1.5 s each, HackRF). The
+  leak path is linear and fixed per frequency, so harmonic n of the light waveform shows as a line at n x 2987 Hz in
+  proportion to its Fourier coefficient, and vanishes where the effective duty makes whole cycles of it (n = 2 at 1/2,
+  n = 3 at 1/3 and 2/3, n = 4 at 1/4, 1/2, 3/4). Every null sits about 11.5 points below its no-tail duty:
+
+  | Harmonic | No-tail null | Measured null (set duty) | Tail |
+  |---|---|---|---|
+  | 2 | 50.0 % | 38.5 % | 38.6 us |
+  | 3 | 33.3 % | 21.8 % | 38.7 us |
+  | 3 | 66.7 % | 55.1 % | 38.6 us |
+  | 4 | 25.0 % | 13.7 % | 37.9 us |
+  | 4 | 50.0 % | 38.5 % | 38.5 us |
+  | 4 | 75.0 % | 63.8 % | 37.4 us |
+
+  A waveform model (instant rise, full current for the pulse plus d, then a linear fall over r) fitted to harmonics 1-4
+  at once: d = 21.5 +- 0.4 us, r = 33.8 +- 0.7 us, full-light tail d + r/2 = 38.4 us.
+  Closed loop: the same sweep with 2736 counts (38 us) taken off each compare, as `uvf_bl_compare` does, puts the nulls
+  at 50.0, 33.1, 66.2, 24.9 and 49.9 % of the requested brightness (expected 50, 33.3, 66.7, 25, 50 %), residuals
+  0.1-1.4 us. The split between d and r moves between runs (25.1 and 26.5 us there); their total, which sets the
+  brightness, repeats (38.3 us).
+- **The 3.3 V rail.** Vrefint (ADC1 IN17) is read against VDDA, so the backlight's load raises the reading (about 1.1
+  counts fully on). One injected conversion per PWM cycle, triggered at a chosen count (TIM1 OC4REF as TRGO, falling
+  edge, 144-cycle sample), averaged and stepped through the cycle, traces the rail's waveform: when the pin rises the
+  load appears at once; when it falls the load holds about 22 us, then falls over about 30 us.
+
+That tail is why 40 kHz (a 25 us period) can't dim at all, why at 15 kHz and 50 % (33 us off) the LEDs never go dark,
+and why 2 kHz lit Brightness 10 % at about 18 %. Clean transmit needs about 18 kHz or more and dimming a few kHz or
+less. While transmitting or receiving, the pin is steady, the reference in every measurement above. The compare is shortened by the tail (`UVF_BL_TAIL`, 38 us, 2736 counts), so a pulse plus
+the tail is the brightness: at 2 kHz and Brightness 20 % the pin is high for 62 us and the light ends at 100 us of the
+500 us cycle. A level too low for the tail keeps one count, the least the rate allows: about 8 % at 2 kHz (the idle
+dim floor of 5 % lights at that).
+
+Caveats: the rail shows the regulator's response as well as the load (a sag at turn-on, an overshoot at turn-off,
+each settling over 100-200 us), so averaging the rail over a cycle doesn't give the duty; only the time of each edge
+is read from it. The tail was measured on one DM-1701, at room temperature; the stage's parts aren't identified (no inductor near the
+display connector in the FCC photos, so a switch, not a boost driver). For sampling over the debug link, avoid rates on
+whole kHz: its USB frames are 1 ms apart, so the samples lock to the PWM phase and the average is biased.
 
 
 ---
@@ -994,7 +1338,40 @@ RadioFoundry's thresholds: `board.battery_low_mv` 6200, `battery_critical_mv` 60
 Log-taper pot read on PA0. Raw ranges (measured): DM-1701 min about 29, max about 2075,
 breakpoint about 318; MD-UV380 22..2070, breakpoint 309; MD-UV390 Plus 10 W 19..2054, breakpoint 308; RT3S 23..2020,
 breakpoint 317; MD-2017 32..2048, breakpoint 321. A two-segment linear approximation around the breakpoint maps it to
--31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis).
+-31..+31 dB, with a "minimum = mute" zone at the bottom (with 5 counts of hysteresis). RadioFoundry writes the knob's
+0..100 % linearly over -31..+31 steps of HR_C6000 4:0x37 ([modem-hrc6000.md](modem-hrc6000.md) 2). The same gain scales
+beeps. The board sets `volume_pcm` and gives the measured curve below (`volume_db10`, table `rx_gain_db10` in
+`radio_uvf.c`), so above volume step 7 the radio core plays each beep softer by the gain over step 7's and the beep
+sounds as at step 7 (`radio-features.md` 4). The speaker volume is not changed for a beep.
+
+The chip offers no electrical copy of its output (with the audio probe's tone on the DAC in DMR, the I2S input stays at
+its noise floor at every 0x37 setting), so the curve is measured at the speaker. A 1500 Hz tone at a fixed PCM level
+played on the prompt FIFO in FM at each of the 63 gain steps, with the programming cable out (the cable mutes the
+speaker), recorded by a microphone 3-5 cm from the grille. Two passes 12 dB apart agree within 0.5 dB, and the level
+rises about 0.77 dB a step over the whole range (not the manual's 1.5 dB). Per volume step:
+
+| Step | Knob | 0x37 step | Speaker level vs step 7 | Beep level at `beep_level` 60 |
+|---|---|---|---|---|
+| 1 | 6 % | -28 | -18.8 dB | 60 |
+| 2 | 13 % | -23 | -14.9 dB | 60 |
+| 3 | 19 % | -20 | -12.5 dB | 60 |
+| 4 | 25 % | -16 | -9.4 dB | 60 |
+| 5 | 31 % | -12 | -6.2 dB | 60 |
+| 6 | 38 % | -8 | -3.1 dB | 60 |
+| 7 | 44 % | -4 | 0 dB | 60 |
+| 8 | 50 % | 0 | +3.1 dB | 42 |
+| 9 | 56 % | +3 | +5.5 dB | 32 |
+| 10 | 63 % | +8 | +9.3 dB | 21 |
+| 11 | 69 % | +11 | +11.7 dB | 16 |
+| 12 | 75 % | +15 | +14.7 dB | 11 |
+| 13 | 81 % | +19 | +17.7 dB | 8 |
+| 14 | 88 % | +23 | +21.0 dB | 5 |
+| 15 | 94 % | +27 | +23.9 dB | 4 |
+| 16 | 100 % | +31 | +26.9 dB | 3 |
+
+The beep level is a whole number of at least 1, so at the top steps a beep can sound louder than at step 7: up to about
+1 dB at `beep_level` 60, and about 7 dB at `beep_level` 10 (step 16 plays level 1 for 0.45). The
+other UV380 family radios have the same chip and knob mapping and use the same curve.
 
 ### 11.3 Mic level
 
@@ -1025,6 +1402,11 @@ table, overwrite those 8 bytes with the marker, derive the very-low power row an
 write the result to 0x010000. The firmware never writes the security registers. The STM32F4 stub can put a backup of
 them back (`stubtool.py --write-secreg`, [stub-stm32f4.md](stub-stm32f4.md) 6.2), refusing a register whose one-time
 lock bit is set; nothing ever writes status register 2.
+
+RadioFoundry reads both copies and writes neither. It takes each band from the working copy when that band passes the
+checks there (no zero power point, very low <= low < high, no erased row), else from the factory table, converted in
+RAM. A working copy with one bad band (a high row wrapped past 255 by a converter that doesn't saturate) still gives
+the other band; the diagnostics page then shows `cal mixed`.
 
 Power conversion when deriving the working copy (empirical): very low = low x k0 (always), and if
 converting: low x= k1, mid x= k2, high x= k3.
@@ -1252,7 +1634,8 @@ runs from 3.3 V all the time and leaves PA9 unconnected. Nothing goes to the mod
 RadioFoundry builds GPS by default (`CONFIG_GPS`). At start-up it drives PA9 high and listens on PA10 in 5 s windows,
 9600 first. One checksum-valid NMEA sentence marks the module present. Characters without a valid sentence move on to
 the next rate (14400). A window of silence means no module: USART1 goes off, PA9 goes low, and the listening task ends
-and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. The code is
+and frees its stack. The task runs at low priority in the background, so start-up doesn't wait for it. Once heard,
+PA9 follows Settings > Location > GPS (`hal_gps_t.enable`): low and USART1 off while the setting is off. The code is
 `boards/uv380_family/gps_uvf.c`, shared with the MD-UV380 G models ([hardware-mduv380.md](hardware-mduv380.md) 9).
 Untested with a module on a DM-1701.
 
@@ -1489,8 +1872,9 @@ across the family.
 3. The bootloader leaves HSE/PLL running: switch to HSI before reprogramming HSE/PLL.
 4. CCM RAM is not zeroed or initialized by default startup code and is invisible to DMA. RadioFoundry puts the RTOS heap (every
    task stack), the slot engine, the radio state machine and the big CPU-only buffers there; `.ccmbss`
-   (`RFOUNDRY_CPU_RAM`) is zeroed before `main` by a `.preinit_array` entry in `board.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`)
-   is not. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
+   (`RFOUNDRY_CPU_RAM`) is zeroed and `.ccmdata` (`RFOUNDRY_CPU_DATA`) copied from flash before `main` by a
+   `.preinit_array` entry in `platform/stm32f4/ccm.c`, `.ccmram` (`RFOUNDRY_CPU_RAM_NOINIT`) is not. The heap is the rest of
+   the CCM. DMA buffers stay static in main SRAM, and each stream's set-up checks that (`DMA_RAM_OK`).
 5. The codec must be at exactly 0x0807537C; the code budget is the space below it. Keep large constant tables above the
    codec end if the code grows.
 6. PA13 is SWDIO; driving it as mic power breaks SWD (use connect-under-reset).
@@ -1502,7 +1886,8 @@ across the family.
     0.5 ms per switch.
 11. The AT1846S TX frequency offset depends on the write sequence (about -3 kHz with the normal sequence, none with a
     direct switch); measure, do not copy.
-12. DMR RX needs AT1846S AF gain at maximum (0x44 = 0x07FF) and reg 0x40 bit 0 set; FM needs bit 0 clear.
+12. DMR RX needs AT1846S AF gain 1 dB under full (0x44 = 0x07EF; 5.5: full overloads the modem, -2 dB loses
+    under-deviated transmitters) and reg 0x40 bit 0 set; FM needs bit 0 clear.
 13. A volume-knob power-off looks like the battery dropping below 5.5 V; the firmware must then release the PA7 latch.
 
 ---
@@ -1764,9 +2149,29 @@ is well above the "mic muted, no tone" row.
   (TIM8 CH3, 72 MHz carrier, DMA2 stream 2), used by AUDIO_PROBE PIN_TONE / PIN_PWM at about 37,000 MOD writes a second.
 - Release and flashing: application sectors 3-9 (720 KB), codec sectors 10 and 11 (1.4), keep supported, profile
   `dm1701-v0206-csv-s11`. Releases before the move linked read-only data into sector 9 as a second range, profile
-  `dm1701-v0206-csv`. An interrupted update writes sector 3 (the vector table) last, so a cut before it leaves the
-  bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
+  `dm1701-v0206-csv`. An update erases first, then writes in sector order, sector 3 (the vector table) first, so a cut
+  before it leaves the bootloader in DFU; a later half application may crash but never bricks. Enter the bootloader by hand (PTT and side
   key 1 at power-on) and flash again.
+
+## Air interface (`CONFIG_P25`, `CONFIG_NXDN`)
+
+`board.air` is the HR_C6000's physical layer mode ([modem-hrc6000.md](modem-hrc6000.md) 10), with receive through
+the chip's FM copy (10.6) for what its correlator can't take: the AT1846S's DMR set-up gives the HR_C6000 the
+discriminator with its audio filters off. Checked on this radio
+against the SDR bench, at the lowest power:
+
+| What | Result |
+|---|---|
+| P25 conventional transmit ([p25.md](p25.md) 9, `test_p25_tx_off_air`) | 19 units, 153 voice frames, none bad, no voice bit corrected; outer deviation 1924 Hz, carrier 75 Hz low |
+| P25 conventional receive (`test_p25_rx_from_bench`) | at -117 dBm: 72 of 72 voice frames, 1 bad, played |
+| A stored P25 or NXDN channel written over CPS | runs the mode on its own parameters, plain again after the restore. One that transmits, keyed: P25 with the channel's NAC, 153 voice frames, none bad; NXDN at 4800 bit/s with the channel's RAN, unit and group, 40 frames, no CRC failure |
+| P25 trunked ([p25-trunking.md](p25-trunking.md), `test_p25_trunk_tx`) | the bench's control channel held; registration, affiliation and voice requests heard off air; two calls keyed on the granted channel, each a header, 5 pairs of voice units and a terminator; back on the control channel after. A call granted to another unit followed to a second transmitter and played (by hand) |
+| NXDN transmit ([nxdn.md](nxdn.md), `test_nxdn_tx_off_air`) | 9600 bit/s: 78 frames, outer deviation 2399 Hz; 4800 bit/s: 40 frames, 1012 Hz; no CRC failure |
+| NXDN receive (`test_nxdn_rx_from_bench`, `test_nxdn_rx_speech`) | through the FM copy, at both rates: a call's frames and its 40 voice frames, no CRC failure; a speech recording's frames, 64 of 64 at 9600 bit/s and 136 of 136 at 4800 bit/s into the vocoder, none bad, decoded PCM peak 15,400 and 16,700. A DMR call right after is received whole |
+
+Not checked: a call with a radio of another make, a live trunked system, how the encoded voice sounds, NXDN
+receive at the speaker (the programming cable mutes it: decoded voice is judged by its PCM, and the PCM stream runs
+at the DMR rate while the copy runs) and its sensitivity.
 
 ## Receive past the rated bands
 

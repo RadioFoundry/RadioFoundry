@@ -10,7 +10,7 @@
 // 0x700000 on the DM-32UV) on the wire. Writes send only changed bytes inside the codeplug's regions, never whole
 // sectors: a sector the codeplug shares with the radio's own settings (0x6000) keeps them.
 
-import { CodeplugImage, REGIONS, IDDB_HEADER, CODEPLUG_SPAN } from "./image.js";
+import { CodeplugImage, EDITOR_REGIONS, IDDB_HEADER, CODEPLUG_SPAN } from "./image.js";
 import { readHeader, extent, AREA1, AREA1_SIZE, AREA2 } from "./iddb.js";
 import { GENERAL, BOOT_TEXT } from "./records.js";
 import { Link, probe, whyNoAnswer } from "../flasher/link.js";
@@ -51,7 +51,7 @@ export function keepIdentity(want, have) {
 // Regions of the codeplug a write may change
 export function writeRanges() {
 	const out = [];
-	for (const [a, b] of REGIONS) {
+	for (const [a, b] of EDITOR_REGIONS) {
 		let s = a;
 		for (const [ka, kb] of KEEP_OUT) {
 			if (ka >= s && ka < b) {
@@ -214,7 +214,7 @@ export class CpsSerial {
 	// The database's header first, so the progress covers the whole read, database too
 	async cpsRead({ iddb, progress, signal }) {
 		const img = await this.cpsGet(CodeplugImage.from(new Uint8Array(0)), [IDDB_HEADER], { signal });
-		return this.cpsGet(img, [...REGIONS, ...(iddb ? this.iddbRest(img) : [])], { signal, progress });
+		return this.cpsGet(img, [...EDITOR_REGIONS, ...(iddb ? this.iddbRest(img) : [])], { signal, progress });
 	}
 
 	cpsReadIddb(img, { progress, signal }) {
@@ -392,7 +392,7 @@ export class CpsSerial {
 	// Whole blocks of the database after its header's block (read whole with the header), and with regions the
 	// codeplug's too, in one pass
 	async fastReadIddb(img, { cache, progress, signal, regions = false, iddb = true }) {
-		const ranges = blocksOf([...(regions ? REGIONS : []), ...(iddb ? this.iddbRest(img) : [])])
+		const ranges = blocksOf([...(regions ? EDITOR_REGIONS : []), ...(iddb ? this.iddbRest(img) : [])])
 			.filter(([a]) => a < IDDB_HEADER[0] || a >= IDDB_HEADER[0] + BLOCK).map(([a]) => [a, a + BLOCK]);
 		await this.fastBlocks(img, ranges, { cache, progress, signal, total: ranges.length * BLOCK });
 		return img;

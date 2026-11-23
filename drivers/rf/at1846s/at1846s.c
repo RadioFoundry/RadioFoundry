@@ -89,7 +89,9 @@ static const reg_val_t fm_regs[] = {
 static const reg_val_t dmr_regs[] = {
 	{ 0x40, 0x0031 },	// bit 0 set: low-frequency baseband for 4FSK
 	{ 0x15, 0x1100 },
-	{ 0x32, 0x4495 },
+	// AGC target 18 (bits 11:6) with bits 2:0 clear: at 2 or more the AGC overloads the start of every simplex burst
+	// (30 ms on, 30 off), about a bit a frame from -85 to -40 dBm (hardware-dm1701.md 5.5)
+	{ 0x32, 0x4490 },
 	{ 0x3A, 0x00C3 },
 	{ 0x3C, 0x1B34 },
 	{ 0x3F, 0x29D1 },
@@ -98,7 +100,10 @@ static const reg_val_t dmr_regs[] = {
 	{ 0x43, 0x0100 },
 	{ 0x48, 0x19B1 },
 	{ 0x58, 0x9CDD },	// audio filters off
-	{ 0x44, 0x07FF },	// AF gain 100 %
+	// Receive audio 1 dB under full (dac_vgain 0xE): the 4FSK level the modem decodes best between transmitters
+	// 15 % under and over the standard's deviation; full gain corrects a bit a frame from one that over-deviates,
+	// and 2 dB under loses sync to one that under-deviates (hardware-dm1701.md 5.5)
+	{ 0x44, 0x07EF },
 };
 
 // 5.3: [state][bw]

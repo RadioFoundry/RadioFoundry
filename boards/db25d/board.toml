@@ -12,6 +12,8 @@ also = ["Kydera CDR-300UV"]
 kind = "mobile"
 # where the radio appears in the site's lists (the lowest: the home page's radio)
 order = 4
+# the sixth character of the APRS tocall, APRDFB (docs/spec/aprs.md 4.2): one per radio, never reused
+aprs_tocall = "B"
 # Older VERSION board= values that also mean this radio (debug link). The current one is board_t .name (or a
 # build option value's board_name), and the id always counts
 debuglink_aliases = ["DB25-D PRO"]

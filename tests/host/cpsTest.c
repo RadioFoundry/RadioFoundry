@@ -9,6 +9,7 @@
 #include <string.h>
 #include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
@@ -581,6 +582,90 @@ static void test_foreign(void)
 	free(snap);
 }
 
+// The settings area sector written through the shim: prepare, data in blocks of block bytes from from to to (sector
+// offsets), commit. The rest of the sector keeps what the flash holds, as with any partial write
+static bool kv_write(const uint8_t *sector, uint32_t block, uint32_t from, uint32_t to)
+{
+	uint32_t a = EE + CODEPLUG_KV_ADDR;
+	bool ok = x_prepare(a / STORAGE_SECTOR);
+	for (uint32_t off = from; ok && off < to; off += block) {
+		uint32_t n = to - off < block ? to - off : block;
+		ok = x_data(a + off, sector + off, (uint16_t)n, 0);
+	}
+	return ok && x_commit() && control(5, 0);
+}
+
+// The radio applies the transfer rule itself (codeplug-settings.md 6): a sector that isn't a valid area never
+// replaces a valid one, a valid one (an empty one too) is taken, a newer radio area is never written
+static void test_settings_area(void)
+{
+	static uint8_t ff[STORAGE_SECTOR], radio[STORAGE_SECTOR], fresh_area[STORAGE_SECTOR], empty[STORAGE_SECTOR];
+	uint32_t id;
+	cps_stats_t st;
+	populate();
+	uint8_t *area = &sim_flash_data[EE + CODEPLUG_KV_ADDR];	// after populate: it makes the flash anew
+	memset(ff, 0xFF, sizeof(ff));
+	// The areas to send, made by the radio's own writer, then the radio's put back
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1) && codeplug_kv_remove(CODEPLUG_KEY_ARS_SERVER));
+	memcpy(empty, area, STORAGE_SECTOR);
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100222) && codeplug_kv_set(0x7100, "new", 3));
+	memcpy(fresh_area, area, STORAGE_SECTOR);
+	CHECK(codeplug_kv_remove(0x7100) && codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 3100111) && codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 9));
+	memcpy(radio, area, STORAGE_SECTOR);
+
+	// 0xFF over the whole sector (a tool that doesn't carry the area): acknowledged, the radio's sector stays
+	cps_get_stats(&st);
+	uint32_t commits = st.commits;
+	CHECK(kv_write(ff, 32, 0, STORAGE_SECTOR));
+	CHECK(memcmp(area, radio, STORAGE_SECTOR) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100111);
+	cps_get_stats(&st);
+	CHECK(st.commits == commits + 1 && st.refused == 0);
+	// A part of it (the header only, or the entries only): the sector isn't a valid area any more, so it stays
+	CHECK(kv_write(ff, 16, 0, 16) && memcmp(area, radio, STORAGE_SECTOR) == 0);
+	CHECK(kv_write(ff, 64, 16, 64) && memcmp(area, radio, STORAGE_SECTOR) == 0);
+
+	// A valid new area, in 32-byte blocks and in large ones: taken
+	CHECK(kv_write(fresh_area, 32, 0, STORAGE_SECTOR) && memcmp(area, fresh_area, STORAGE_SECTOR) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 3100222 && !codeplug_kv_get_id(CODEPLUG_KEY_IP_GATEWAY, &id));
+	CHECK(kv_write(radio, 1024, 0, STORAGE_SECTOR) && memcmp(area, radio, STORAGE_SECTOR) == 0);
+	// Only the bytes that differ (a tool that sends what changed): the result is valid, taken
+	uint32_t from = 0, to = STORAGE_SECTOR;
+	while (from < to && radio[from] == fresh_area[from]) {
+		from++;
+	}
+	while (to > from && radio[to - 1] == fresh_area[to - 1]) {
+		to--;
+	}
+	CHECK(kv_write(fresh_area, 32, from, to) && memcmp(area, fresh_area, STORAGE_SECTOR) == 0);
+	// A valid area with no entries erases every key
+	CHECK(kv_write(empty, 32, 0, STORAGE_SECTOR) && memcmp(area, empty, STORAGE_SECTOR) == 0);
+	CHECK(!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id));
+	uint16_t len, n;
+	CHECK(codeplug_kv_info(&len, &n) == CODEPLUG_KV_VALID && n == 0);
+	// Over an erased area anything goes in as sent
+	memset(area, 0xFF, STORAGE_SECTOR);
+	CHECK(kv_write(ff, 32, 0, 32) && area[0] == 0xFF);
+	fresh_area[20] ^= 0xFF;		// a damaged area (its CRC fails): no keys read, but the bytes are written
+	CHECK(kv_write(fresh_area, 32, 0, STORAGE_SECTOR) && memcmp(area, fresh_area, STORAGE_SECTOR) == 0);
+	CHECK(codeplug_kv_info(&len, &n) == CODEPLUG_KV_BAD);
+
+	// A newer radio area: never written, a valid file area included
+	memcpy(area, radio, STORAGE_SECTOR);
+	area[4] = 2;
+	memcpy(fresh_area, area, STORAGE_SECTOR);
+	CHECK(kv_write(radio, 32, 0, STORAGE_SECTOR) && memcmp(area, fresh_area, STORAGE_SECTOR) == 0);
+	// The sector before and after the area: written as sent
+	memset(ff, 0x5A, 32);
+	CHECK(x_prepare((EE + CODEPLUG_KV_ADDR) / STORAGE_SECTOR - 1u) && x_data(EE + CODEPLUG_KV_ADDR - STORAGE_SECTOR, ff, 32, 0) &&
+	      x_commit());
+	CHECK(sim_flash_data[EE + CODEPLUG_KV_ADDR - STORAGE_SECTOR] == 0x5A);
+	CHECK(x_prepare((EE + CODEPLUG_KV_ADDR) / STORAGE_SECTOR + 1u) && x_data(EE + CODEPLUG_KV_ADDR + STORAGE_SECTOR, ff, 32, 0) &&
+	      x_commit() && control(5, 0));
+	CHECK(sim_flash_data[EE + CODEPLUG_KV_ADDR + STORAGE_SECTOR] == 0x5A);
+	CHECK(sim_flash_violations() == 0);
+}
+
 // Requests a host shouldn't send: reads of nothing, past the image or the flash, too long for a reply, a security
 // register out of range, a data block cut short, a commit the flash fails; and a commit cut by a power loss comes
 // back whole at the next boot
@@ -682,6 +767,7 @@ int main(void)
 	test_session_timeout();
 	test_stray_reboot();
 	test_foreign();
+	test_settings_area();
 	sim_flash_free();
 	test_no_map();
 	printf("# cpsTest %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

@@ -44,7 +44,7 @@ It runs, and reports each as ok / FAIL / skip (exit status 0 only when nothing f
    model; [release.md](../dev/release.md)) and the `--self-test` of `tools/codec_extract.py`, `tools/stm32_dfu.py`,
    `tools/md380_migrate.py`, `tools/serial_loader.py` (against a simulated Baofeng bootloader) and
    `tools/dm32_migrate.py` (DfuSe files, the conversion report, CPS writes against a simulated DM-32 shim), and the
-   stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves.
+   stack check's (`tools/stack_check.py`). `tools/check_doc_links.py` checks that every relative link, image and anchor in the Markdown resolves. `tools/check_keys.py` checks that the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor.
 3. **Firmware, every board with the feature matrix**. For each `boards/<b>/board.mk` whose compiler is installed:
    - `default`: the board's defaults;
    - `no-<FEATURE>`: every switch that is on by default, turned off alone (its sub-features follow it,
@@ -147,7 +147,7 @@ Each flag allows one more kind of action, and a test runs only when all it needs
 | `--allow-usb-switch`, `--allow-codeplug-write`, `--allow-reboot` | as in section 2 (no RF) |
 
 ```
-python3 -m pytest tests/hil -v -rs -s --allow-rf --ambe SPEECH.ambe --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
+python3 -m pytest tests/hil -v -rs -s --allow-rf --dmr-freq MHZ   # the default bench pass, DMR audio smoke included
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop                  # DMR RX / voice, DMR TX, FM TX
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k "dmr_tx or fm_tx"
 python3 -m pytest tests/hil -v -rs -s --allow-rf --allow-service-stop -k dmr_data   # DMR data services

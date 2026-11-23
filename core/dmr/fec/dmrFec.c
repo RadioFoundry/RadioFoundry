@@ -4,7 +4,9 @@
  * DMR FEC from ETSI TS 102 361-1 annex B, see dmrFec.h. Written from the standard.
  */
 
+#include <stddef.h>
 #include <string.h>
+#include "config.h"
 #include "dmr/fec/dmrFec.h"
 
 // --- Burst bit access ---
@@ -41,11 +43,11 @@ static inline int infoToBurstBit(int i)
 
 // B.3.5 Hamming(15,11,3):
 //   p0 = d0+d1+d2+d3+d5+d7+d8, p1 = d1+d2+d3+d4+d6+d8+d9, p2 = d2+d3+d4+d5+d7+d9+d10, p3 = d0+d1+d2+d4+d6+d7+d10
-static const uint8_t H15113_COLUMNS[11] = { 0x9, 0xD, 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3 };
+static const uint8_t H15113_COLUMNS[11] RFOUNDRY_CPU_DATA = { 0x9, 0xD, 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3 };
 
 // B.3.4 Hamming(13,9,3):
 //   p0 = d0+d1+d3+d5+d6, p1 = d0+d1+d2+d4+d6+d7, p2 = d0+d1+d2+d3+d5+d7+d8, p3 = d0+d2+d4+d5+d8
-static const uint8_t H1393_COLUMNS[9] = { 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3 };
+static const uint8_t H1393_COLUMNS[9] RFOUNDRY_CPU_DATA = { 0xF, 0xE, 0x7, 0xA, 0x5, 0xB, 0xC, 0x6, 0x3 };
 
 static uint16_t hammingEncode(uint16_t data, const uint8_t *columns, int dataBits)
 {
@@ -61,37 +63,43 @@ static uint16_t hammingEncode(uint16_t data, const uint8_t *columns, int dataBit
 	return (uint16_t)((data << 4) | parity);
 }
 
+// The codeword bit (0 = the first) a nonzero syndrome points to, or -1 when it matches no single bit
+static int hammingErrorBit(uint8_t syndrome, const uint8_t *columns, int dataBits)
+{
+	for (int j = 0; j < 4; j++)
+	{
+		if (syndrome == (0x8 >> j))
+		{
+			return dataBits + j;
+		}
+	}
+	for (int i = 0; i < dataBits; i++)
+	{
+		if (syndrome == columns[i])
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
 static bool hammingCorrect(uint16_t *codeword, const uint8_t *columns, int dataBits)
 {
 	uint16_t cw = *codeword;
-	uint16_t data = cw >> 4;
-	uint8_t syndrome = (uint8_t)((hammingEncode(data, columns, dataBits) ^ cw) & 0x0F);
+	uint8_t syndrome = (uint8_t)((hammingEncode(cw >> 4, columns, dataBits) ^ cw) & 0x0F);
 
 	if (syndrome == 0)
 	{
 		return true;
 	}
+	int bit = hammingErrorBit(syndrome, columns, dataBits);
 
-	// A single parity bit
-	for (int j = 0; j < 4; j++)
+	if (bit < 0)
 	{
-		if (syndrome == (0x8 >> j))
-		{
-			*codeword = cw ^ (uint16_t)(0x8 >> j);
-			return true;
-		}
+		return false;
 	}
-
-	// A single data bit
-	for (int i = 0; i < dataBits; i++)
-	{
-		if (syndrome == columns[i])
-		{
-			*codeword = cw ^ (uint16_t)(1u << (dataBits + 3 - i));
-			return true;
-		}
-	}
-	return false;
+	*codeword = cw ^ (uint16_t)(1u << (dataBits + 3 - bit));
+	return true;
 }
 
 uint16_t dmrFecHamming15113Encode(uint16_t data)
@@ -187,9 +195,18 @@ static void putColumn(uint8_t *m, int col, uint16_t v)
 
 void dmrFecBptcEncode(const uint8_t *payload, uint8_t *burst)
 {
+	dmrFecBptcEncodeR(payload, 0, burst);
+}
+
+void dmrFecBptcEncodeR(const uint8_t *payload, uint8_t rbits, uint8_t *burst)
+{
 	uint8_t m[BPTC_BITS];
 
 	memset(m, 0, sizeof(m));
+	for (int k = 0; k < 4; k++)
+	{
+		m[k] = (rbits >> (3 - k)) & 1;	// R(3) alone ahead of row 0, R(2)-R(0) in its first three columns
+	}
 	for (int n = 0; n < 96; n++)
 	{
 		m[payloadToMatrix(n)] = (payload[n / 8] >> (7 - (n % 8))) & 1;
@@ -210,16 +227,19 @@ void dmrFecBptcEncode(const uint8_t *payload, uint8_t *burst)
 	}
 }
 
-int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload)
+// A Hamming(15,11,3) codeword's syndrome four bits at a time (the codeword's bits 0-3 are its last four): the XOR of
+// the columns (H15113_COLUMNS, and the parity bits' own) of the bits set in each nibble
+static const uint8_t ROW_SYNDROME[4][16] RFOUNDRY_CPU_DATA = {
+	{ 0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xA, 0xB, 0xC, 0xD, 0xE, 0xF },
+	{ 0x0, 0x3, 0x6, 0x5, 0xC, 0xF, 0xA, 0x9, 0xB, 0x8, 0xD, 0xE, 0x7, 0x4, 0x1, 0x2 },
+	{ 0x0, 0x5, 0xA, 0xF, 0x7, 0x2, 0xD, 0x8, 0xE, 0xB, 0x4, 0x1, 0x9, 0xC, 0x3, 0x6 },
+	{ 0x0, 0xF, 0xD, 0x2, 0x9, 0x6, 0x4, 0xB, 0x0, 0xF, 0xD, 0x2, 0x9, 0x6, 0x4, 0xB }
+};
+
+int dmrFecBptcDecodeRows(uint16_t *rows, uint8_t *payload)
 {
-	uint8_t m[BPTC_BITS];
 	int corrected = 0;
 	bool clean = false;
-
-	for (int k = 0; k < BPTC_BITS; k++)
-	{
-		m[k] = (uint8_t)burstBit(burst, infoToBurstBit(interleave(k)));
-	}
 
 	// Columns, then rows, until both are clean or nothing more can be fixed
 	for (int pass = 0; (pass < 4) && !clean; pass++)
@@ -227,17 +247,40 @@ int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload)
 		bool changed = false;
 
 		clean = true;
+		// Every column's syndrome at once: bit 3 - k of column c's is bit 14 - c of syn[k], its parity row against the
+		// sum of the data rows it covers (the p0-p3 sums of H1393_COLUMNS, written out: a loop over the table costs
+		// several times as much)
+		uint16_t d01 = rows[0] ^ rows[1];
+		uint16_t syn[4] = {
+			(uint16_t)(rows[9] ^ d01 ^ rows[3] ^ rows[5] ^ rows[6]),
+			(uint16_t)(rows[10] ^ d01 ^ rows[2] ^ rows[4] ^ rows[6] ^ rows[7]),
+			(uint16_t)(rows[11] ^ d01 ^ rows[2] ^ rows[3] ^ rows[5] ^ rows[7] ^ rows[8]),
+			(uint16_t)(rows[12] ^ rows[0] ^ rows[2] ^ rows[4] ^ rows[5] ^ rows[8]),
+		};
+		uint16_t any = syn[0] | syn[1] | syn[2] | syn[3];
 		for (int c = 0; c < BPTC_COLS; c++)
 		{
-			uint16_t v = getColumn(m, c), fixed = v;
+			int at = BPTC_COLS - 1 - c;
 
-			if (!dmrFecHamming1393Correct(&fixed))
+			if (!((any >> at) & 1))
+			{
+				continue;
+			}
+			uint8_t sy = 0;
+
+			for (int k = 0; k < 4; k++)
+			{
+				sy = (uint8_t)(sy | (((syn[k] >> at) & 1) << (3 - k)));
+			}
+			int r = hammingErrorBit(sy, H1393_COLUMNS, 9);
+
+			if (r < 0)
 			{
 				clean = false;
 			}
-			else if (fixed != v)
+			else
 			{
-				putColumn(m, c, fixed);
+				rows[r] ^= (uint16_t)(1u << at);
 				corrected++;
 				changed = true;
 			}
@@ -245,15 +288,23 @@ int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload)
 		// The column parity rows are sums of data rows, so row codewords too: all 13 rows are checked
 		for (int r = 0; r < BPTC_ROWS; r++)
 		{
-			uint16_t v = getRow(m, r), fixed = v;
+			uint16_t v = rows[r];
+			uint8_t sy = (uint8_t)(ROW_SYNDROME[0][v & 0xF] ^ ROW_SYNDROME[1][(v >> 4) & 0xF] ^
+					       ROW_SYNDROME[2][(v >> 8) & 0xF] ^ ROW_SYNDROME[3][v >> 12]);
 
-			if (!dmrFecHamming15113Correct(&fixed))
+			if (sy == 0)
+			{
+				continue;
+			}
+			int bit = hammingErrorBit(sy, H15113_COLUMNS, 11);
+
+			if (bit < 0)
 			{
 				clean = false;
 			}
-			else if (fixed != v)
+			else
 			{
-				putRow(m, r, fixed);
+				rows[r] = v ^ (uint16_t)(1u << (14 - bit));
 				corrected++;
 				changed = true;
 			}
@@ -264,15 +315,58 @@ int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload)
 		}
 	}
 
-	memset(payload, 0, DMR_FEC_BPTC_PAYLOAD_BYTES);
-	for (int n = 0; n < 96; n++)
+	// Row 0 columns 3-10, then rows 1-8 columns 0-10
+	uint32_t acc = (rows[0] >> 4) & 0xFFu;
+	int have = 8, out = 0;
+
+	for (int r = 1; r <= 8; r++)
 	{
-		if (m[payloadToMatrix(n)])
+		acc = (acc << 11) | (uint32_t)(rows[r] >> 4);
+		have += 11;
+		while (have >= 8)
 		{
-			payload[n / 8] |= (uint8_t)(0x80u >> (n % 8));
+			have -= 8;
+			payload[out++] = (uint8_t)(acc >> have);
 		}
 	}
 	return clean ? corrected : -1;
+}
+
+int dmrFecBptcDecode(const uint8_t *burst, uint8_t *payload)
+{
+	return dmrFecBptcDecodeR(burst, payload, NULL);
+}
+
+int dmrFecBptcDecodeR(const uint8_t *burst, uint8_t *payload, uint8_t *rbits)
+{
+	uint16_t rows[BPTC_ROWS];
+	uint32_t v = 0;
+	unsigned r = 0, c = 0;
+
+	// Matrix bits 1-195 in order (bit 0 is R(3)), each from its burst bit; a row is stored when its 15 columns are in
+	for (unsigned k = 1, i = 181; k < BPTC_BITS; k++, i += 181)
+	{
+		if (i >= BPTC_BITS)
+		{
+			i -= BPTC_BITS;
+		}
+		unsigned n = (i < 98) ? i : i + 68;	// infoToBurstBit
+
+		v = (v << 1) | ((burst[n >> 3] >> (7 - (n & 7))) & 1u);
+		if (++c == BPTC_COLS)
+		{
+			rows[r++] = (uint16_t)v;
+			v = 0;
+			c = 0;
+		}
+	}
+	int corrected = dmrFecBptcDecodeRows(rows, payload);
+
+	if (rbits != NULL)
+	{
+		*rbits = (uint8_t)(((burst[0] >> 7) << 3) | (rows[0] >> 12));	// R(3) is burst bit 0, not in any codeword
+	}
+	return corrected;
 }
 
 // --- Golay(20,8) ---
@@ -431,4 +525,109 @@ bool dmrFecSlotTypeDecode(const uint8_t *burst, uint8_t *colorCode, uint8_t *dat
 	*colorCode = d >> 4;
 	*dataType = d & 0x0F;
 	return errors >= 0;
+}
+
+// --- Reverse channel (ETSI TS 102 361-1 9.1.5, B.2.2.2, B.3.13) ---
+
+#define RC_CRC_MASK	0x7Au	// table B.21
+#define RC_CRC_POLY	0xA7u	// G7(x) = x^7 + x^5 + x^2 + x + 1
+
+// F7(x) = x^7 M(x) mod G7(x), M(x) the 4-bit command; no inversion, initial remainder 0
+static uint8_t rcCrc7(uint8_t command)
+{
+	uint16_t r = (uint16_t)((command & 0x0Fu) << 7);
+
+	for (int b = 10; b >= 7; b--)
+	{
+		if (r & (1u << b))
+		{
+			r ^= (uint16_t)(RC_CRC_POLY << (b - 7));
+		}
+	}
+	return (uint8_t)(r & 0x7Fu);
+}
+
+uint16_t dmrFecRcInfo(uint8_t command)
+{
+	command &= 0x0Fu;
+	return (uint16_t)((command << 7) | (rcCrc7(command) ^ RC_CRC_MASK));
+}
+
+int dmrFecRcInfoDecode(uint16_t info)
+{
+	uint8_t command = (uint8_t)((info >> 7) & 0x0Fu);
+
+	return ((info & 0x7FFu) == dmrFecRcInfo(command)) ? command : -1;
+}
+
+uint32_t dmrFecRcEncode(uint8_t command)
+{
+	// Row: RC(10)-RC(0) and the Hamming (16,11,4) parity H(4)-H(0), the (15,11,3) code's four and an even parity
+	// bit over the row (table B.16). Column j holds the row's bit j and below it PC(15-j), its complement (odd
+	// column parity). Matrix index 2j is the row's bit j, 2j+1 its PC; it goes out at Index x 17 mod 32 (B.3)
+	uint16_t h15 = dmrFecHamming15113Encode(dmrFecRcInfo(command));
+	uint16_t row = (uint16_t)((h15 << 1) | (popcount32(h15) & 1));
+	uint32_t field = 0;
+
+	for (int j = 0; j < 16; j++)
+	{
+		uint32_t bit = (row >> (15 - j)) & 1u;
+
+		for (int i = 2 * j; i <= 2 * j + 1; i++)
+		{
+			uint32_t v = (i & 1) ? (bit ^ 1u) : bit;
+
+			field |= v << (31 - ((i * 17) % 32));
+		}
+	}
+	return field;
+}
+
+int dmrFecRcDecode(uint32_t field, uint8_t *command)
+{
+	// 16 codewords at least 12 bits apart: the nearest within 3, so noise is seldom taken for a command
+	int best = 33, bestCommand = 0;
+
+	for (uint8_t c = 0; c < 16; c++)
+	{
+		int dist = popcount32(dmrFecRcEncode(c) ^ field);
+
+		if (dist < best)
+		{
+			best = dist;
+			bestCommand = c;
+		}
+	}
+	*command = (uint8_t)bestCommand;
+	return (best <= 3) ? best : -1;
+}
+
+void dmrFecRcField(uint8_t colorCode, uint8_t command, uint8_t field[6])
+{
+	uint16_t emb = dmrFecEmbEncode(colorCode, true, 0);
+	uint32_t rc = dmrFecRcEncode(command);
+
+	field[0] = (uint8_t)(emb >> 8);
+	field[1] = (uint8_t)(rc >> 24);
+	field[2] = (uint8_t)(rc >> 16);
+	field[3] = (uint8_t)(rc >> 8);
+	field[4] = (uint8_t)rc;
+	field[5] = (uint8_t)emb;
+}
+
+int dmrFecRcFromField(const uint8_t *field, uint8_t colorCode, uint8_t *command)
+{
+	uint16_t emb = (uint16_t)((field[0] << 8) | field[5]);
+	uint32_t rc = ((uint32_t)field[1] << 24) | ((uint32_t)field[2] << 16) | ((uint32_t)field[3] << 8) | field[4];
+	uint8_t cc, lcss;
+	bool pi;
+	int embErrors = dmrFecEmbDecode(emb, &cc, &pi, &lcss);
+
+	if (embErrors < 0 || cc != (colorCode & 0x0Fu) || !pi || lcss != 0)
+	{
+		return -1;
+	}
+	int rcErrors = dmrFecRcDecode(rc, command);
+
+	return (rcErrors < 0) ? -1 : embErrors + rcErrors;
 }

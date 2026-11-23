@@ -38,6 +38,8 @@ class PortError(Exception):
 # What RadioFoundry's codeplug layout holds (docs/spec/open-firmware-cps.md 7.2-7.3, docs/user/04-programming.md).
 # dmrconf's OpenUV380 encoder drops what doesn't fit without an error, so these are checked before writing
 RFOUNDRY_LIMITS = {"channels": 1024, "zones": 68, "contacts": 1024, "groupLists": 76}
+# The highest individual DMR ID (0xFFFCDF): the IDs above it are reserved (gateways, all call)
+MAX_DMR_ID = 16776415
 SECTION_NAMES = {"channels": "channels", "zones": "zones", "contacts": "contacts", "groupLists": "RX group lists"}
 
 # The open-firmware channel record's TX contact: 16-bit little endian, 1-based, 0 = none (open-firmware-cps.md 7.2)

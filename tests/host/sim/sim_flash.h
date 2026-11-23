@@ -26,6 +26,8 @@ void sim_flash_power_on(void);
 // Units used so far (programmed bytes + erases), and erases per sector so far
 uint32_t sim_flash_units(void);
 uint32_t sim_flash_erases(uint32_t addr);
+// Read calls so far, for a test of how much a reader reads
+uint32_t sim_flash_reads(void);
 // A worn range: programs there fail (nothing programmed); erases still work. len 0 clears it
 void sim_flash_bad_range(uint32_t addr, uint32_t len);
 // An unreadable range: reads that touch it fail. len 0 clears it

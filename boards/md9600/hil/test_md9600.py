@@ -11,7 +11,7 @@ import pytest
 
 from rfoundry_hil import skip
 
-KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "probe", "clock", "sysclk_hz", "flash.id",
+KEYS = ["rev", "rev.source", "rev.usable", "rev.confirmed", "rev.stored", "rev.ak2365", "probe", "clock", "sysclk_hz", "flash.id",
         "flash.size", "flash.map", "cal", "opt", "opt.backlight_switched", "opt.vhf_hz", "opt.uhf_hz", "keys", "ptt",
         "lo_hz", "retunes", "refused", "apc", "cal.pa", "pin.power", "pin.c5", "pin.r5", "pin.tx", "adc.noise_u",
         "adc.noise_v", "adc.rssi_u", "adc.rssi_v", "adc.mic", "adc.supply", "adc.mic_row", "adc.mic_col"]
@@ -33,6 +33,28 @@ def test_board_view_keys(md9600):
     assert b.get("name") == "MD-9600"
     missing = [k for k in KEYS if k not in b]
     assert not missing, f"board view keys missing: {missing}"
+
+
+@pytest.mark.feature("settings_store", optional=True)
+def test_ak2365_read_test(md9600):
+    """The start-up AK2365A read test (hardware-md9600.md 19.3) agrees with the revision and the hardware option: no
+    chip is V4A / V5, detected and confirmed, the option hidden; a chip is V1-V3 or V4, the option shown, asking until a
+    record confirms it. Receive side only: it ran at the last start."""
+    b = board_view(md9600)
+    ak = b["rev.ak2365"]
+    assert ak in ("yes", "no", "unknown"), ak
+    opt = next(o for o in md9600.link.hwopts() if o["name"] == "Board revision")
+    if ak == "no":
+        assert (b["rev"], b["rev.source"], b["rev.confirmed"]) == ("V4A/V5", "detected", "1"), b
+        assert opt["state"] == "hidden"
+        return
+    if ak == "unknown":
+        skip("state", "the read test gave no verdict on this radio (hardware-md9600.md 19.3)")
+    assert b["rev"] in ("V1-V3", "V4"), f"an AK2365A answered, but the radio runs {b['rev']}"
+    assert opt["state"] in ("ok", "ask", "restart")
+    # asking exactly while transmit waits for a confirmed revision (a restart due is said instead)
+    if opt["state"] != "restart":
+        assert (opt["state"] == "ask") == (b["rev.confirmed"] == "0"), (opt, b)
 
 
 @pytest.mark.feature("fm", optional=True)
@@ -64,10 +86,11 @@ def test_data_flash_map(md9600):
 
 @pytest.mark.feature("settings_store", optional=True)
 def test_revision_record(md9600):
-    """A revision is driven, and where it came from: the stored record (store_md9600.c), the probe or the build's
-    default. A stored source means a record is in the sector (a change made since takes effect at the next start)."""
+    """A revision is driven, and where it came from: the AK2365A read test, the stored record (store_md9600.c), the
+    probe or the build's default. A stored source means a record is in the sector (a change made since takes effect at
+    the next start)."""
     b = board_view(md9600)
-    assert b["rev"] != "none" and b["rev.source"] in ("stored", "probe", "default"), (b["rev"], b["rev.source"])
+    assert b["rev"] != "none" and b["rev.source"] in ("detected", "stored", "probe", "default"), (b["rev"], b["rev.source"])
     assert b["rev.usable"] in ("0", "1")
     if b["rev.source"] == "stored":
         assert b["rev.stored"] != "none", "driven from a stored record, but the sector holds none"

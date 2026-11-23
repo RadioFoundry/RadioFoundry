@@ -391,6 +391,10 @@ static void testMmdvm(void)
 	cfg.framing = SFR_FRAMING_MS;
 	sfrMmdvmVersionSuffix(&cfg, buf, sizeof(buf));
 	CHECK(strcmp(buf, " SFR TS2>TS1 MS") == 0, "suffix '%s'", buf);
+	// A buffer too short: cut and terminated, the whole length returned
+	char cut[8];
+
+	CHECK(sfrMmdvmVersionSuffix(&cfg, cut, sizeof(cut)) == 15 && strcmp(cut, " SFR TS") == 0, "cut '%s'", cut);
 }
 
 // The idle message's info bits, BPTC(196,96) encoded, decode back to themselves (and the table read is ETSI's: its

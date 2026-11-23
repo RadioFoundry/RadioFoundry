@@ -9,6 +9,7 @@ import { EE, FL } from "./image.js";
 import {
 	getFreq, putFreq, getBcdId, putBcdId, getTone, putTone, getName, putName, getCoord, coordBytes, u16, put16,
 } from "./fields.js";
+import { decodeArea, getKey, getRecord, sameRecord, recordValid, putKeys, keyValid, KEYS, RECORD_KEYS } from "./kv.js";
 
 export const LIMITS = {
 	channels: 1024, zones: 68, zoneChannels: 80, contacts: 1024, rxLists: 76, rxListContacts: 32,
@@ -94,7 +95,9 @@ export function decodeChannel(r) {
 		lon: getCoord(r[0x24], r[0x1F], r[0x1E]),
 		sfr: (l1 & 0x02) !== 0,
 		sfrA: r[0x25],
-		sfrB: r[0x2A],
+		sfrB: r[0x2A] & ~0x70,
+		toneBurst: r[0x2A] !== 0xFF && (r[0x2A] & 0x40) !== 0,	// FM: SFR byte B bit 6, read without the SFR flag (7.3.3); 0xFF = not set
+		acceptBadCrc: (r[0x2A] & 0x30) === 0x20,	// SFR byte B bits 5-4 = 2 (7.3.3); 0xFF and 0xBF read as off
 	};
 }
 
@@ -138,7 +141,7 @@ export function encodeChannel(c, r) {
 		r[0x24] = oh; r[0x1F] = om; r[0x1E] = ol;
 	}
 	r[0x25] = c.sfrA & 0xFF;
-	r[0x2A] = c.sfrB & 0xFF;
+	r[0x2A] = (c.sfrB & 0x8F) | (c.toneBurst ? 0x40 : 0) | (c.acceptBadCrc ? 0x20 : 0);	// bits 5-4 always written: never 0xFF
 	return r;
 }
 
@@ -307,10 +310,13 @@ export function encodeAprs(a, r) {
 	return r;
 }
 
-// --- General settings, boot text (7.3.2, 7.2) ---
+// --- General settings, boot text (7.3.2, 7.2), the settings area's keys (codeplug-settings.md) ---
 
+// The settings area's keys (kv.js KEYS; arsServer, ipGateway: DMR IDs, 0 = off; the Settings > Sound tones: true on,
+// false off) are fields too: null when the key is absent (the radio keeps its own setting)
 export function decodeGeneral(b) {
 	const g = b.subarray(GENERAL, GENERAL + GENERAL_SIZE);
+	const kv = decodeArea(b).entries;
 	return {
 		radioName: getName(g, 0, 8),
 		dmrId: getBcdId(g, 8),
@@ -318,6 +324,8 @@ export function decodeGeneral(b) {
 		privateHang: g[0x19] === 0xFF ? 0 : g[0x19],
 		bootLine1: getName(b, BOOT_TEXT, 16),
 		bootLine2: getName(b, BOOT_TEXT + 16, 16),
+		...Object.fromEntries(KEYS.map((row) => [row.name, getKey(kv, row)])),
+		...Object.fromEntries(RECORD_KEYS.map((row) => [row.name, getRecord(kv, row)])),
 	};
 }
 
@@ -333,4 +341,16 @@ export function encodeGeneral(s, b) {
 	if (was.privateHang !== s.privateHang) g[0x19] = s.privateHang & 0xFF;
 	if (was.bootLine1 !== s.bootLine1) putName(b, BOOT_TEXT, 16, s.bootLine1);
 	if (was.bootLine2 !== s.bootLine2) putName(b, BOOT_TEXT + 16, 16, s.bootLine2);
+	// the settings area only when one of its keys changed; an area of a newer version is never written (model.js
+	// validate() warns), nor is a value out of range (validate()'s error)
+	const vals = {};
+	for (const row of KEYS) {
+		const v = s[row.name] ?? null;
+		if (was[row.name] !== v && (v === null || keyValid(row, v))) vals[row.name] = v;
+	}
+	for (const row of RECORD_KEYS) {
+		const v = s[row.name] ?? null;
+		if (!sameRecord(was[row.name], v) && (v === null || recordValid(row, v))) vals[row.name] = v;
+	}
+	if (Object.keys(vals).length) putKeys(b, vals);
 }

@@ -251,7 +251,8 @@ Rules:
   startup can stop the host, which is the right outcome for a frequency the radio can't tune. Ignore the POCSAG
   frequency unless POCSAG TX is implemented (never NAK because of it).
 - RF level: map 0-255 onto the radio's power steps; FF (the user never touched it) keeps the radio's own power setting.
-  RadioFoundry retunes at once.
+  RadioFoundry retunes at once. A new power step that arrives while the radio transmits applies when that
+  transmission ends.
 - SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
   is closed. If an uplink call was open, send DMR_LOST2 before the ACK (a host may otherwise keep such a call open,
   3.7). After the ACK, every frame sent up must have been heard on the new frequency.
@@ -412,6 +413,9 @@ D-Star, YSF, P25, NXDN, M17 and POCSAG data: NAK 2.
 7. Sends SET_MODE idle and starts polling GET_STATUS every 250 ms.
 
 Commands follow each other about 10 ms apart at the modem port, so ACK quickly (within 10 ms is ideal), and in any case before any other frame.
+
+In hotspot mode's trial the radio answers the first host-like frame but takes the modem only with the second
+([open-firmware-cps.md 6](open-firmware-cps.md#6-hotspot-mode-switch-0xe0), trial). Both startups above pass.
 
 The order is SET_FREQ before SET_CONFIG. The bench tools also send SET_FREQ,
 SET_CONFIG, SET_MODE in that order, and skip GET_VERSION entirely. The modem must accept these commands in any order, repeated, at any time.

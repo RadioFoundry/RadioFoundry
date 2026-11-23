@@ -7,7 +7,8 @@
 // reported as a flash chip select on others, so nothing drives it until NMEA has been heard: the UART listens for
 // LISTEN_MS after start-up with PD8 left as an input. One checksum-valid sentence makes the module present; PD8 is then
 // held at the level it already had (the level the module runs at, whatever its polarity), and every sentence goes to
-// the APRS position source (CONFIG_APRS). Nothing heard: the UART is switched off again and the radio has no GPS.
+// the position service (core/position). Nothing heard: the UART is switched off again and the radio has no GPS.
+// Once heard, Settings > Location > GPS off drives PD8 to the other level, on back to the running one.
 #include "md380.h"
 #include "pins.h"
 #include "gps_uart/gps_uart.h"
@@ -16,18 +17,26 @@
 
 static const uint32_t rates[] = { 9600 };	// the usual default of these modules (?)
 
+static bool on_level;	// PD8's level while the module runs, as found
+
 // Heard: hold the power pin where it is (hardware-md380.md 13.2)
 static void found(void)
 {
-	bool level = PIN_READ(PIN_GPS_POWER);
-	stm32_pin_out(PIN_PORT(PIN_GPS_POWER), PIN_MASK(PIN_GPS_POWER), level, false);
+	on_level = PIN_READ(PIN_GPS_POWER);
+	stm32_pin_out(PIN_PORT(PIN_GPS_POWER), PIN_MASK(PIN_GPS_POWER), on_level, false);
+}
+
+// Settings > Location > GPS, only after found: the other level switches the module off
+static void power(bool on)
+{
+	PIN_WRITE(PIN_GPS_POWER, on ? on_level : !on_level);
 }
 
 static const stm32_gps_cfg_t gps = {
 	.uart = USART3, .irq = USART3_IRQn,
 	.rx_port = PIN_PORT(PIN_GPS_RX), .rx_pin = PIN_MASK(PIN_GPS_RX), .rx_af = GPIO_AF7_USART3,
 	.rates = rates, .n_rates = 1, .listen_ms = 5000,
-	.found = found,
+	.found = found, .power = power,
 };
 
 void USART3_IRQHandler(void)

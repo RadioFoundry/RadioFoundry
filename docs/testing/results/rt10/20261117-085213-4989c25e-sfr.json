@@ -1,0 +1,111 @@
+{
+ "board": "rt10",
+ "commit": "4989c25e1ca91680c1d9ff2941f43a3b9247299c",
+ "date": "2026-11-17T08:52:13Z",
+ "dirty": false,
+ "features": [
+  "sfr"
+ ],
+ "firmware": {
+  "board": "RT10",
+  "codec": "rt10-112",
+  "display": "128x64x1",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,APRS,APRS_AFSK,APRS_DMR,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_ARS,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,DMR_UDP_COMPRESS,IDDB_COMPACT,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "220ab160",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 2,
+  "dmr-tg": 9990
+ },
+ "sources": {
+  "sfr": {
+   "core/dmr/sfr.c": "15879c2b9ea737509764ff5f282fb1bcb5fed9b5",
+   "core/dmr/sfrRunner.c": "da0908c8828e27dd80e083d061d9e6abb40dda85",
+   "docs/spec/sfr.md": "e2333f8d596584aefe4240013eb47ec2717fc99d"
+  }
+ },
+ "tests": [
+  {
+   "excused": true,
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_hotspot_sfr.py::test_hotspot_sfr_mode",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the SFR (make CONFIG_SFR=y)",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_hotspot_sfr.py::test_sfr_repeats_bench_call",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the SFR (make CONFIG_SFR=y)",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_chain_rfoundry_user",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[opt_in] needs a talker (--sfr-talker-port) and a listener (--sfr-listener-port) beside the repeater",
+   "required": true,
+   "skip_kind": "opt_in"
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_repeater_quality",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_repeater_tx_inhibit",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "sfr"
+   ],
+   "id": "tests/hil/test_sfr_standalone.py::test_sfr_user_modes",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

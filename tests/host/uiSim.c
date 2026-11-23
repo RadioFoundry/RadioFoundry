@@ -8,8 +8,8 @@
 //                            in DIR/sheets. A color page is drawn again in each highlight color UI_GALLERY_COLORS
 //                            names (space separated, sim_color_find: "red yellow light_blue"), as
 //                            <screen>__<color>.png right after it, on color displays only (none when it is unset).
-//                            The theme pages are drawn again in the light and high-contrast themes too, as
-//                            <screen>__light.png and <screen>__high_contrast.png
+//                            The theme pages are drawn again in the light, high-contrast and night themes too, as
+//                            <screen>__light.png, <screen>__high_contrast.png and <screen>__night.png
 //   uiSim --sheets DIR [GEOM] contact sheets only: DIR/<geom>.png, every gallery screen at 2x under its name in one
 //                            palette PNG, at one display class or all of them (a quick layout audit)
 //   uiSim --ellipsis [GEOM]  every text shortened with an ellipsis on the gallery screens and the settings pages
@@ -30,6 +30,10 @@
 #include "config.h"
 #include "ui/ui_screens.h"
 #include "ui/gfx.h"
+
+// A message as long as a DMR message can be (143 characters): the message screen shortens it
+#define LONG_SMS "Your_Special_Configuration_is:_Active_SMS:_LONG_SMS_Delay:_2.5_s_Retries:_3_Language:_English_" \
+	"Time_zone:_UTC_Units:_metric_Echo:_off_Thanks."
 
 // Screens for the gallery: a name and the script that reaches it from Home (zone 0, channel 3, a DMR channel)
 static const struct { const char *name, *script; } gallery[] = {
@@ -52,12 +56,16 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
 	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
+	{ "tx_aprs", "aprstx" },
 	{ "tx_private", "5 6 3 ok wait:5000 pttdown" },
 	{ "tx_dtmf", "down pttdown dtmf:5551234#" },	// DTMF sent on FM (radio-features.md 3.7)
 	{ "banner_message", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery." },
 	{ "banner_call_alert", "alert:9995678" },
 	{ "banner_radio_check", "call:9991234,91,g wait:11000 ctx 4 wait:1000" },
 	{ "message_view", "msg:9991234,Meet_at_the_north_lot_in_15_minutes._Bring_the_spare_battery. ctx" },
+	// a text the message screen shortens: Full message, and the whole text on its own page
+	{ "message_long", "msg:9991234," LONG_SMS " ctx" },
+	{ "message_read", "msg:9991234," LONG_SMS " ctx ok" },
 	{ "quick_dmr", "quick" },
 	{ "quick_fm", "down quick" },
 	{ "quick_fm_squelch", "down quick 2 up" },
@@ -81,6 +89,9 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 	{ "caller_actions", "call:9991234,91,g wait:11000 ctx" },
 	{ "compose", "call:9991234,91,g wait:11000 ctx 3" },
+	{ "aprs_station", "wait:600000 aprs:heard ok" },
+	{ "aprs_station_text", "aprs:heard ok up up" },
+	{ "aprs_station_evicted", "aprs:heard ok aprs:evict down" },
 	{ "hub", "ok" },
 	{ "contacts", "ok 1" },
 	{ "contacts_find", "ok 1 5 6" },
@@ -133,6 +144,15 @@ static const struct { const char *name, *script; } gallery[] = {
 #endif
 #endif
 	{ "tools", "ok 6" },
+#if CONFIG_SATELLITE_TLE
+	{ "satellite_passes", "ok 6 9" },
+	{ "satellite", "ok 6 9 ok" },
+	{ "satellite_passes_predicting", "satpredict ok 6 9" },
+	{ "satellite_tle_text", "ok 6 9 ok ctx" },
+#endif
+	{ "home_gps_off", "gps:off" },		// the status strip's GPS dish: off (hollow)
+	{ "home_gps_search", "gps:search" },	// on, no fix (solid)
+	{ "home_gps_fix", "gps:fix" },		// with a fix (waves)
 	{ "position", "ok 6 2" },
 	{ "gps_sky", "ok 6 2 2" },
 	{ "gps_signal", "ok 6 2 3" },
@@ -141,11 +161,16 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
 	{ "settings", "ok 7" },
+	{ "settings_sound", "ok 7 1" },
+	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)
 	{ "settings_display", "ok 7 2" },
 	{ "settings_editor", "ok 7 2 ok up" },
 	{ "settings_freq_trim", "trim ok 7 up ok up" },	// on a radio with a reference trim (radio-features.md 6.1)
 	{ "freq_trim", "trim ok 7 up ok up ok ctx 4 5 ok" },
 	{ "freq_trim_typing", "trim ok 7 up ok up ok 1 2" },
+	{ "settings_signaling", "ok 7 up up ok" },	// Settings > Signaling tones (radio-features.md 4.3)
+	{ "signaling_steps", "ok 7 up up ok down down down down down down ok" },
+	{ "signaling_step_edit", "ok 7 up up ok down down down down down down ok ok 1 5 7 0" },
 	{ "settings_advanced", "ok 7 up ok" },
 	{ "factory_reset", "ok 7 up ok down down down ok" },
 	{ "about", "ok 7 up ok ok" },
@@ -183,6 +208,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "dual_actions", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 ctx" },
 #endif
 	{ "emergency", "emergency:9991234" },
+	{ "incoming-call", "t3 dlpos:3 t3ring:101125" },
 	{ "volume", "softvol volkey up up" },
 #if CONFIG_VOLUME_BAR
 	// A knob radio: the knob turned, over Home and over a call (#354)
@@ -215,6 +241,7 @@ static const struct { const char *name, *script; } audit_extra[] = {
 	{ "settings_power", "ok 7 7" DOWN12 },
 	{ "settings_keys", "ok 7 8" DOWN12 },
 	{ "settings_my_radio", "ok 7 0" DOWN12 },
+	{ "settings_signaling", "ok 7 up up ok" DOWN12 },
 	{ "settings_advanced", "ok 7 up ok" DOWN12 },
 	{ "about_scrolled", "ok 7 up ok ok" DOWN12 DOWN12 },
 	{ "codeplug", "ok 7 up ok down ok" },
@@ -282,12 +309,15 @@ static const struct { const char *name, *script; } worst_screens[] = {
 	{ "w_roaming", "ok 6 6 1 wait:4000" },
 	{ "w_aprs", "ok 6 8" },
 	{ "w_aprs_nocall", "aprs:nocall ok 6 8" },
-	{ "w_aprs_position", "ok 6 8 9 2 3 3 7 4 9 0 ok 3 8 4 3 8 8 0 down ok wait:3000" },
-	{ "w_aprs_position_edit", "ok 6 8 9 2 3 3 7" },
+	{ "w_fixed_position", "ok 7 5 down down ok 1 3 3 7 4 9 0 ok 2 8 4 3 8 8 0 down ok wait:3000" },
+	{ "w_fixed_position_edit", "ok 7 5 down down ok 1 3 3 7" },
 	{ "w_aprs_heard", "ok 6 8 up ok" },
+	{ "w_aprs_station", "wait:600000 ok 6 8 up ok ok" },
+	{ "w_aprs_station_text", "ok 6 8 up ok ok up up" },
+	{ "w_aprs_station_evicted", "ok 6 8 up ok ok aprs:evict down" },
 	{ "w_usb", "ok 6 4" },
 	{ "w_sfr", "ok 6 5" },
-	{ "w_battery", "battery:5 ok 6 9" },
+	{ "w_satellite", "ok 6 9" },
 	{ "w_my_radio", "ok 7 0 ok" },
 	{ "w_codeplug", "ok 7 up ok down ok" },
 	{ "w_settings_number", "ok 7 3 ok up" },
@@ -396,9 +426,14 @@ static void audit_text(const char *s, char *o, size_t len, bool key)
 	size_t n = 0;
 	for (; *s && n + 4 < len; s++) {
 		unsigned char c = (unsigned char)*s;
-		if (c == 0x80 || c == 0x81) {	// GLYPH_ELLIPSIS, GLYPH_DOT
-			memcpy(o + n, c == 0x80 ? "\xe2\x80\xa6" : "\xc2\xb7", c == 0x80 ? 3 : 2);
-			n += c == 0x80 ? 3 : 2;
+		if (c >= 0x80 && c <= 0x88) {
+			const char *glyph = c == 0x80 ? "\xe2\x80\xa6" : c == 0x81 ? "\xc2\xb7" :
+				c == 0x82 ? "\xe2\x86\x92" : c == 0x83 ? "\xc2\xb0" :
+				c == 0x84 ? "\xe2\xa4\x92" : c == 0x85 ? "\xe2\xa4\x93" :
+				c == 0x86 ? "\xe2\x86\xb5" : c == 0x87 ? "\xe2\x86\x91" : "\xe2\x86\x93";
+			size_t bytes = c == 0x81 || c == 0x83 ? 2u : 3u;
+			memcpy(o + n, glyph, bytes);
+			n += bytes;
 		} else {
 			o[n++] = key && c >= '0' && c <= '9' ? '#' : (char)c;
 		}
@@ -472,7 +507,7 @@ static int run_audit(const char *only)
 
 // Gallery screens drawn differently on color displays. G_COLOR: color displays only (on a monochrome one it would
 // repeat another screen); G_COLORS: also once in each UI_GALLERY_COLORS highlight color, on color displays;
-// G_THEMES: also in the light and high-contrast themes (Settings > Display), on color displays
+// G_THEMES: also in the light, high-contrast and night themes (Settings > Display), on color displays
 #define G_COLOR		1u
 #define G_COLORS	2u
 #define G_THEMES	4u

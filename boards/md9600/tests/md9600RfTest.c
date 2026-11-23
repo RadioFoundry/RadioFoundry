@@ -240,22 +240,41 @@ static void test_resolve(void)
 {
 	md9600_rev_state_t s;
 	// The stored record wins and is the only source that allows transmit
-	s = md9600_rev_resolve(MD9600_REV_V5, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	s = md9600_rev_resolve(MD9600_REV_V5, MD9600_IF_UNKNOWN, MD9600_REV_UNKNOWN, MD9600_REV_V5);
 	CHECK(s.rev == MD9600_REV_V5 && s.source == MD9600_REV_SRC_STORED && s.usable && s.confirmed);
-	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_UNKNOWN, MD9600_REV_UNKNOWN, MD9600_REV_V5);
 	CHECK(s.rev == MD9600_REV_V5 && s.source == MD9600_REV_SRC_DEFAULT && s.usable && !s.confirmed);
 #if CONFIG_MD9600_V4
-	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_REV_V4, MD9600_REV_V5);
+	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_UNKNOWN, MD9600_REV_V4, MD9600_REV_V5);
 	CHECK(s.rev == MD9600_REV_V4 && s.source == MD9600_REV_SRC_PROBE && s.usable && !s.confirmed);
-	s = md9600_rev_resolve(MD9600_REV_V4, MD9600_REV_V5, MD9600_REV_V5);
+	s = md9600_rev_resolve(MD9600_REV_V4, MD9600_IF_UNKNOWN, MD9600_REV_V5, MD9600_REV_V5);
 	CHECK(s.rev == MD9600_REV_V4 && s.source == MD9600_REV_SRC_STORED);
 #else
 	// A stored revision this image can't drive: kept (the receiver stays off), not replaced by the default
-	s = md9600_rev_resolve(MD9600_REV_V4, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	s = md9600_rev_resolve(MD9600_REV_V4, MD9600_IF_UNKNOWN, MD9600_REV_UNKNOWN, MD9600_REV_V5);
 	CHECK(s.rev == MD9600_REV_V4 && s.source == MD9600_REV_SRC_STORED && !s.usable && s.confirmed);
 	// A probe result for an unbuilt revision is ignored; a default that isn't built falls to one that is
-	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_REV_V4, MD9600_REV_V1V3);
+	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_UNKNOWN, MD9600_REV_V4, MD9600_REV_V1V3);
 	CHECK(s.rev == MD9600_REV_V5 && s.source == MD9600_REV_SRC_DEFAULT && s.usable);
+#endif
+	// No AK2365A (V4A / V5): detected and confirmed, a stored older revision overruled
+	s = md9600_rev_resolve(MD9600_REV_V1V3, MD9600_IF_ABSENT, MD9600_REV_V4, MD9600_REV_V5);
+	CHECK(s.rev == MD9600_REV_V5 && s.source == MD9600_REV_SRC_DETECTED && s.usable && s.confirmed);
+	CHECK(s.if_chip == MD9600_IF_ABSENT);
+	// An AK2365A answered: a stored V4A / V5 or a V5 probe result can't be right
+	s = md9600_rev_resolve(MD9600_REV_V5, MD9600_IF_PRESENT, MD9600_REV_V5, MD9600_REV_V5);
+	CHECK(!s.confirmed && s.rev != MD9600_REV_V5);
+#if CONFIG_MD9600_V1V3
+	CHECK(s.rev == MD9600_REV_V1V3 && s.source == MD9600_REV_SRC_DEFAULT && s.usable);
+	s = md9600_rev_resolve(MD9600_REV_V1V3, MD9600_IF_PRESENT, MD9600_REV_UNKNOWN, MD9600_REV_V5);
+	CHECK(s.rev == MD9600_REV_V1V3 && s.source == MD9600_REV_SRC_STORED && s.confirmed);
+#else
+	// This image drives neither older revision: nothing usable, the receiver stays off
+	CHECK(s.rev == MD9600_REV_UNKNOWN && !s.usable);
+#endif
+#if CONFIG_MD9600_V4
+	s = md9600_rev_resolve(MD9600_REV_UNKNOWN, MD9600_IF_PRESENT, MD9600_REV_V4, MD9600_REV_V5);
+	CHECK(s.rev == MD9600_REV_V4 && s.source == MD9600_REV_SRC_PROBE && !s.confirmed);
 #endif
 }
 

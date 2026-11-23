@@ -188,7 +188,10 @@ bool dmrShortLcDecode(const uint32_t rows[4], uint32_t *slc)
 	for (int r = 0; r < 3; r++) {
 		ok &= dmrCachHamming1712Correct(&enc[r]);
 	}
-	ok &= ((enc[0] ^ enc[1] ^ enc[2] ^ enc[3]) & 0x1FFFFu) == 0;
+	// The column parity row has no code of its own: one bit wrong there is that row's error, not the data's (the rows
+	// and the CRC vouch for the data). Rejecting it lost a quarter of the CACH bit errors on air, 17 of 68 positions
+	uint32_t par = (enc[0] ^ enc[1] ^ enc[2] ^ enc[3]) & 0x1FFFFu;
+	ok &= (par & (par - 1u)) == 0;
 	uint64_t all = ((uint64_t)(enc[0] >> 5) << 24) | ((uint64_t)(enc[1] >> 5) << 12) | (enc[2] >> 5);
 	uint32_t s = (uint32_t)(all >> 8) & 0x0FFFFFFFu;
 

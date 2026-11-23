@@ -5,7 +5,7 @@ JSON, the shape test_aprs.py's on-air tests read. No radio and no bench: these r
 them."""
 from rfoundry_hil import SdrBench
 
-FRAME = {"tnc2": "N0CALL-15>APZRDF:>status", "src": "N0CALL-15", "dst": "APZRDF", "digis": [], "control": 3,
+FRAME = {"tnc2": "N0CALL-15>APZTST:>status", "src": "N0CALL-15", "dst": "APZTST", "digis": [], "control": 3,
          "pid": 240, "info": ">status", "fcs_ok": True, "t0": 1.234, "t1": 1.534, "txdelay_flags": 22,
          "txdelay_ms": 146.7, "decision_gain": 1.0, "peak_dev_hz": 3100.0, "max_dev_hz": 3400.0,
          "rms_dev_hz": 2100.0, "mark_dev_hz": 2900.0, "space_dev_hz": 2700.0, "twist_db": 0.6, "mark_hz": 1200.4,
@@ -27,7 +27,7 @@ def test_frame_fields_and_units():
     res = SdrBench.aprs_from_records(_blocks((10, 17)) + [{"aprs": FRAME}], _done())
     assert res["source"] == "board" and res["fcs_bad"] == 0 and res["decoded"] == 1
     (f,) = res["frames"]
-    assert f["src"] == "N0CALL-15" and f["dst"] == "APZRDF" and f["digis"] == [] and f["fcs_ok"]
+    assert f["src"] == "N0CALL-15" and f["dst"] == "APZTST" and f["digis"] == [] and f["fcs_ok"]
     assert f["control"] == 0x03 and f["pid"] == 0xF0
     assert f["t_start_s"] == 1.234 and f["t_end_s"] == 1.534 and "t0" not in f
     for k in ("peak_dev_hz", "max_dev_hz", "mark_dev_hz", "space_dev_hz", "twist_db", "mark_hz", "space_hz",

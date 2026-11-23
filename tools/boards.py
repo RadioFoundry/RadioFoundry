@@ -69,6 +69,8 @@ FAMILIES = {
     # loader on the cable, through the RAM stub
     "usb-hid-sgl": {"link": "usb", "needs": (), "web": "sgl-hid", "update_mode": None},	# a vendor loader's USB HID
     # update mode, taking the image inside a stock update file (.sgl) as its envelope (rfoundry hidboot.py, updatefile.py)
+    "boot-rom": {"link": "serial-cable", "needs": (), "web": "c7000-stub", "update_mode": None},	# no vendor loader:
+    # the SoC's boot ROM serial window on the cable at every power-on, through the RAM stub
 }
 # [flash.stub] stock_console: the debug console a stock firmware answers on the cable, by protocol (the web flasher
 # loads the stub through it before RadioFoundry is installed: site/static/js/flasher/usmart.js)
@@ -80,10 +82,12 @@ ORIGINAL_VERSION_READS = ("dfu-info",)
 RFOUNDRY_JSON = "tools/rfoundry/rfoundry/registry.json"	# the flashing tools' view, generated and committed
 # hal_flash_map_t fields (hal/hal_flash.h). The site reads the open-firmware image's data flash address, the end of the
 # room for it and the DMR ID database, and the TFTP staging area (the codeplug editor); the check reads every area, to
-# keep a stub write test out of them. The open-firmware flash image follows the EEPROM image at a fixed offset
+# keep a stub write test out of them. Satellite map expressions are checked conservatively for the feature-on layout.
+# The open-firmware flash image follows the EEPROM image at a fixed offset
 # (docs/spec/cps-fast.md)
 FLASH_MAP_FIELDS = ("settings_addr", "settings_size", "journal_addr", "openfw_eeprom", "openfw_flash", "openfw_end",
-                    "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size")
+                    "calibration_addr", "calibration_size", "native_addr", "native_size", "staging_addr", "staging_size",
+                    "satellite_addr", "satellite_size")
 OPENFW_FLASH_OFFSET = 0x20000
 APP_SLOT = "app+slot"		# [flash] sectors: one sector for the application, one for the codec slot (no geometry)
 NAND_DRIVER = "drivers/flash/spi_nand"	# in BOARD_DIRS: the board's data memory is SPI NAND (the stub's nand flag)
@@ -99,9 +103,9 @@ STUB_WRITE_TEST = 0x4000	# [flash.stub] write_test: the data flash bytes stubtoo
 NO_PIN = 255			# the universal stub's "no pin"
 # board.mk values the registry reads, through make (conditionals and config.mk included)
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
-             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "HSE_VALUE", "MCU_DEFS")
+             "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "BOARD_DEFAULT_OFF", "HSE_VALUE", "MCU_DEFS")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
-GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
+GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0, "GFX_FB_SAFE_AREA": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
 # never names a real board
 STUB_TEST_ID = 0xFE
@@ -155,6 +159,7 @@ BOARD_SCHEMA = {
     "also": _req(STR_LIST),
     "kind": _req(KINDS),
     "order": _req(int),		# where the radio appears in the site's lists; the lowest is the home page's radio
+    "aprs_tocall": _req(str),	# the APRS tocall's sixth character, APRDF? (docs/spec/aprs.md 4.2): 1-9, A-Z, unique
     "part_of": _opt(str),
     # other bodies the same board ships in that look too different to share its picture: each is its own card on the
     # site, drawn in site/static/img/radios/src/<id>-<look id>.svg (the site build refuses a missing one), and links to
@@ -231,15 +236,20 @@ BOARD_SCHEMA = {
         # platform lists in board_stub.keys, nothing another platform's stub takes
         "stub": _opt({"id": _req(int), "tested": _req(bool),
                       "hold_power": _opt(bool), "progmem": _opt(int),	# the HR_C7000 universal stub
+                      # HR_C7000 without a vendor loader: the boot ROM starts the image its flag sector at flash 0
+                      # names, so stubtool --write-app keeps that sector naming this entry
+                      "rom_entry": _opt(int),
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
-                      # the data flash offset of STUB_WRITE_TEST bytes no area of the flash map, no protected region
-                      # and no other firmware's known data uses: stubtool --write-test erases and programs only there
+                      # data flash offset and optional length (defaults to STUB_WRITE_TEST) of the blank area
+                      # stubtool --write-test erases and programs; it must not overlap stored or protected data
                       "write_test": _opt(int),
+                      "write_test_size": _opt(int),
                       # where the factory calibration is, for a backup: in a data flash, the 4 KB page of the stock
                       # codeplug area [0, area) whose last byte is page_id; on a radio whose data memory is a NAND,
                       # the 4 KB sectors of the program flash (progmem) and the NAND (nand) that each hold a copy
                       # starting with magic
-                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int),
+                      # or, data: the data flash sector (4 KB) at a fixed address that holds it
+                      "calibration": _opt({"area": _opt(int), "page_id": _opt(int), "data": _opt(int),
                                            "progmem": _opt(int), "nand": _opt(int), "magic": _opt(str)}),
                       # the STM32F4 stub: the SPI flash's bus (SPIn), mode and fastest clock; the pins come from pins.h
                       # (F4_SPI_PINS), and idle_cs names other chip selects on that bus to hold high
@@ -268,6 +278,10 @@ BOARD_SCHEMA = {
     "features": _opt(("map", {"state": _req(("unsupported", "n/a")), "reason": _req(str)})),
     # the open-firmware CPS radio types the board's hal_cps_t reports (docs/spec/cps-protocol.md 2.2, test_cps.py)
     "cps": _opt({"radio_types": _req(("list", int))}),
+    # the stock firmware's codeplug in a data flash backup (tools/backup_codeplug.py, docs/spec/codeplug-port.md 5):
+    # dmrconf's driver for it, the span of data flash it sits in, and how its pages map to the addresses the driver
+    # takes (block-id: each 4 KB page names its logical block in its last byte)
+    "stock_codeplug": _opt({"dmrconf": _req(str), "span": _req(RANGE), "pages": _req(("block-id", "linear"))}),
 }
 
 PLATFORM_SCHEMA = {
@@ -459,23 +473,38 @@ def board_t_names(board_dir):
 
 
 def flash_map(board_dir):
-    """The FLASH_MAP_FIELDS of the board's hal_flash_map_t definition, {field: address}. A value is a number or a macro
-    #defined to one in the board's headers. A board has one map, or one per data flash size (the part decides at run
-    time): those must agree, except that an area only the larger parts have (the staging area for a TFTP codeplug, the
-    native codeplug) is left out."""
-    macros = {}
+    """The board's hal_flash_map_t fields as {field: address}, ignoring maps for smaller chips (.small_map). A value is a
+    number or a macro #defined to one in the board's headers. For satellite ternaries, reserve the feature-on satellite
+    area and the smaller staging size. A board without .small_map may have one map per data flash size (the part decides
+    at run time): those must agree, except that an area only the larger parts have (the staging area for a TFTP
+    codeplug, the native codeplug) is left out."""
     dirs = [board_dir] if isinstance(board_dir, str) else board_dir
+    macros = {}
     for d, f in [(d, f) for d in dirs for f in sorted(os.listdir(d))]:
         if f.endswith(".h"):
             with open(os.path.join(d, f), encoding="utf-8") as fh:
                 macros.update(re.findall(r"(?m)^\s*#\s*define\s+(\w+)\s+\(?(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*\)?",
                                          _strip_c_comments(fh.read())))
+    num = r"0[xX][0-9A-Fa-f]+|\d+"
+    sources = list(_c_sources(board_dir))
+    small_maps = {name for _, text in sources
+                  for name in re.findall(r"\.small_map\s*=\s*&\s*(\w+)", text)}
     maps = []
-    for f, text in _c_sources(board_dir):
-        for m in re.finditer(r"\bhal_flash_map_t\s+\w+\s*=\s*\{", text):
-            found = {k: int(macros.get(v, v), 0) for k, v in re.findall(r"\.(\w+)\s*=\s*(0[xX][0-9A-Fa-f]+|\d+|[A-Za-z_]\w*)[uUlL]*",
-                                                                     _braced(text, m.end()))
-                     if k in FLASH_MAP_FIELDS and re.fullmatch(r"0[xX][0-9A-Fa-f]+|\d+", macros.get(v, v))}
+    for f, text in sources:
+        for m in re.finditer(r"\bhal_flash_map_t\s+(\w+)\s*=\s*\{", text):
+            if m.group(1) in small_maps:
+                continue
+            body = _braced(text, m.end())
+            found = {k: int(macros.get(v, v), 0) for k, v in re.findall(
+                r"\.(\w+)\s*=\s*(%s|[A-Za-z_]\w*)[uUlL]*\s*[,}]" % num, body + "}")
+                     if k in FLASH_MAP_FIELDS and re.fullmatch(num, macros.get(v, v))}
+            for k, _, a, b in re.findall(
+                    r"\.(\w+)\s*=\s*([A-Za-z_]\w*)\s*\?\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*"
+                    r"\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*", body):
+                if k not in FLASH_MAP_FIELDS:
+                    continue
+                av, bv = int(a, 0), int(b, 0)
+                found[k] = min(av, bv) if k == "staging_size" else max(av, bv) if k == "satellite_size" else av or bv
             maps.append((f, found))
     if not maps:
         return {}
@@ -555,16 +584,29 @@ def unsupported_reasons(config_mk):
 NOT_WRITTEN_RE = re.compile(r"^\s*BOARD_NOT_WRITTEN\s*[:+]?=([^#]*)(?:#(.*))?$")
 
 
+DEFAULT_OFF_RE = re.compile(r"^\s*BOARD_DEFAULT_OFF\s*[:+]?=([^#]*)(?:#(.*))?$")
+
+
 def not_written_reasons(config_mk):
     """{switch: reason} from config.mk's BOARD_NOT_WRITTEN lines, in BOARD_UNSUPPORTED's form: the switches the
     radio's hardware can do but whose driver or glue isn't written yet (docs/build-config.md)."""
+    return _listed_reasons(config_mk, NOT_WRITTEN_RE)
+
+
+def default_off_reasons(config_mk):
+    """{switch: reason} from config.mk's BOARD_DEFAULT_OFF lines, in the same form: switches that work but carry a
+    risk on this radio, left for a custom build to turn on. The reason is shown to users by the switch."""
+    return _listed_reasons(config_mk, DEFAULT_OFF_RE)
+
+
+def _listed_reasons(config_mk, line_re):
     out = {}
     try:
         lines = open(config_mk, encoding="utf-8").read().splitlines()
     except OSError:
         return out
     for line in lines:
-        m = NOT_WRITTEN_RE.match(line)
+        m = line_re.match(line)
         if m:
             sws = m.group(1).split()
             for s in sws:
@@ -583,6 +625,30 @@ def not_written_problems(bid, b):
         if s in b.unsupported:
             out.append("boards/%s: %s is in both BOARD_UNSUPPORTED and BOARD_NOT_WRITTEN: UNSUPPORTED only when the "
                        "hardware can't do it (docs/build-config.md)" % (bid, s))
+    return out
+
+
+def listed_off_problems(bid, listed, built):
+    """A switch in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (listed) that the default build still builds (built: switch ->
+    "y"/"n"): the list alone doesn't turn it off, and the site then shows the feature as there."""
+    return ["boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN but built by default: add CONFIG_%s ?= n "
+            "next to the config.mk line that lists it" % (bid, s, s) for s in listed if built.get(s) == "y"]
+
+
+def default_off_problems(bid, b, built):
+    """config.mk's BOARD_DEFAULT_OFF of a board (built: switch -> "y"/"n"): each switch has the reason users read, is
+    off by default and can be chosen, so it is in neither list of what can't be."""
+    out = []
+    for s, why in b.default_off.items():
+        if not why:
+            out.append("boards/%s/config.mk: BOARD_DEFAULT_OFF %s has no reason: one switch a line, "
+                       "BOARD_DEFAULT_OFF += %s  # <the reason users read>" % (bid, s, s))
+        if s in b.unsupported or s in b.not_written:
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF and in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN: "
+                       "a default-off switch can be chosen (docs/build-config.md)" % (bid, s))
+        if built.get(s) != "n":
+            out.append("boards/%s: %s is in BOARD_DEFAULT_OFF but built by default: add CONFIG_%s ?= n to its config.mk"
+                       % (bid, s, s))
     return out
 
 
@@ -636,6 +702,8 @@ class Board:
         self.unsupported = {s: reasons.get(s, "") for s in mk.get("BOARD_UNSUPPORTED", "").split()}
         # config.mk BOARD_NOT_WRITTEN, the same way (load() fills it)
         self.not_written = {}
+        # config.mk BOARD_DEFAULT_OFF, the same way (load() fills it)
+        self.default_off = {}
         boot = mk.get("BOOT_STAGE")
         self.first_stage = None
         if boot:
@@ -715,10 +783,10 @@ class Board:
     def stub(self):
         """The board's profile for its platform's stub (platform.toml board_stub.tool), with what other files say.
         stubtool (the HR_C7000 universal stub): the power latch and key from pins.h when the stub must hold the radio
-        on (a soft power key), else none. f4stub: the board record's facts, the SPI flash pins from pins.h, the crystal
-        from HSE_VALUE and the bootloader's end from APP_BASE. k22stub: the application's base and the end of the flash
-        it may write (the last sector not left unwritten), the SPI NOR pins from pins.h, its write floor and where a merged
-        image ends. None without a profile."""
+        on (a soft power key), else none; the status LEDs from pins.h (PIN_LED_RED, PIN_LED_GREEN), else none. f4stub:
+        the board record's facts, the SPI flash pins from pins.h, the crystal from HSE_VALUE and the bootloader's end from
+        APP_BASE. k22stub: the application's base and the end of the flash it may write (the last sector not left
+        unwritten), the SPI NOR pins from pins.h, its write floor and where a merged image ends. None without a profile."""
         s = self.data["flash"].get("stub")
         bs = self.platform.data.get("board_stub")
         if s is None or bs is None:
@@ -740,11 +808,13 @@ class Board:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
                        key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
-                       progmem=s["progmem"], stock_console=s.get("stock_console"))
+                       progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"),
+                       # the status LEDs the stub blinks: a pin the radio uses for something else must never be driven
+                       led={"red": self.pins.get("PIN_LED_RED", NO_PIN), "green": self.pins.get("PIN_LED_GREEN", NO_PIN)})
             if "calibration" in s:
                 out["calibration"] = s["calibration"]
-            if "write_test" in s:		# start and end: the length is the registry's alone
-                out["write_test"] = [s["write_test"], s["write_test"] + STUB_WRITE_TEST]
+            if "write_test" in s:		# start and end: the length defaults to 16 KB
+                out["write_test"] = [s["write_test"], s["write_test"] + s.get("write_test_size", STUB_WRITE_TEST)]
         return out
 
     def map_areas(self):
@@ -761,7 +831,8 @@ class Board:
                             ("open-firmware flash image", fl, m.get("openfw_end", 0) - fl),
                             ("calibration", m.get("calibration_addr", 0), m.get("calibration_size", 0)),
                             ("native codeplug", m.get("native_addr", 0), m.get("native_size", 0)),
-                            ("staging", m.get("staging_addr", 0), m.get("staging_size", 0))):
+                            ("staging", m.get("staging_addr", 0), m.get("staging_size", 0)),
+                            ("satellite data", m.get("satellite_addr", 0), m.get("satellite_size", 0))):
             if n > 0:
                 out.append((lo, lo + n, name))
         return out
@@ -936,6 +1007,9 @@ def load(root=ROOT, only=None):
         nw = {**not_written_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
               **not_written_reasons(os.path.join(bdir, "config.mk"))}
         out[bid].not_written = {s: nw.get(s, "") for s in mk.get("BOARD_NOT_WRITTEN", "").split()}
+        off = {**default_off_reasons(os.path.join(root, "platform", plat.id, "config.mk")),
+               **default_off_reasons(os.path.join(bdir, "config.mk"))}
+        out[bid].default_off = {s: off.get(s, "") for s in mk.get("BOARD_DEFAULT_OFF", "").split()}
     return out
 
 
@@ -957,14 +1031,15 @@ def gallery_classes(root=ROOT):
 
 
 def gallery_geoms(root=ROOT):
-    """{class: (width, height, bpp)} from ui_sim.c's sim_geoms table, or None without it."""
+    """{class: (width, height, bpp, inset left and right, inset top and bottom)} from ui_sim.c's sim_geoms table, or
+    None without it."""
     path = os.path.join(root, UI_SIM)
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as f:
         m = re.search(r"sim_geoms\[\]\s*=\s*\{(.*?)\n\};", f.read(), re.S)
-    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
-    return {n: (int(w), int(h), int(bpp)) for n, w, h, bpp in rows}
+    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
+    return {n: (int(w), int(h), int(bpp), int(i), int(itb)) for n, w, h, bpp, i, itb in rows}
 
 
 def gfx_defs(mcu_defs):
@@ -977,15 +1052,25 @@ def gfx_defs(mcu_defs):
 
 
 def gfx_problems(geom, gfx):
-    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp): rows, bytes, and the
-    16-color path for a 4 bpp class."""
-    w, h, bpp = geom
+    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp[, inset left and right,
+    inset top and bottom]): rows, bytes, and the 16-color path for a 4 bpp class. With GFX_FB_SAFE_AREA the frame
+    buffer holds the class's safe area only (hal_display_t fb_safe_area), a 16-color one."""
+    w, h, bpp = geom[:3]
+    inset, inset_tb = geom[3:5] if len(geom) >= 5 else (0, 0)
     out = []
     if gfx["GFX_MAX_ROWS"] < h:
         out.append("GFX_MAX_ROWS %d is under the panel's %d rows" % (gfx["GFX_MAX_ROWS"], h))
-    need = (w * bpp + 7) // 8 * h
-    if gfx["GFX_FB_BYTES"] < need:
-        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" % (gfx["GFX_FB_BYTES"], need, w, h, bpp))
+    if gfx["GFX_FB_SAFE_AREA"] and bpp == 4:
+        sw, sh = w - 2 * inset, h - 2 * inset_tb
+        need = (sw * bpp + 7) // 8 * sh
+        if gfx["GFX_FB_BYTES"] < need:
+            out.append("GFX_FB_BYTES %d is under the %d B the %dx%d safe area of a %dx%d %d bpp panel needs" %
+                       (gfx["GFX_FB_BYTES"], need, sw, sh, w, h, bpp))
+    elif gfx["GFX_FB_SAFE_AREA"]:
+        out.append("GFX_FB_SAFE_AREA needs a 16-color panel (bpp 4), not %d bpp" % bpp)
+    elif gfx["GFX_FB_BYTES"] < (w * bpp + 7) // 8 * h:
+        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" %
+                   (gfx["GFX_FB_BYTES"], (w * bpp + 7) // 8 * h, w, h, bpp))
     if bpp == 4 and not gfx["GFX_INDEXED"]:
         out.append("a 16-color panel needs GFX_INDEXED=1")
     return out
@@ -1003,7 +1088,7 @@ def hardware_switches(root=ROOT):
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
     BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
-    board.toml [hardware] unconfirmed. One in either list must also be off by default."""
+    board.toml [hardware] unconfirmed. That one in either list is also off by default is listed_off_problems' check."""
     out = []
     for s, what in sorted(hw.items()):
         on, gone = built.get(s) == "y", s in unsupported
@@ -1011,9 +1096,6 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
             if on or gone:
                 out.append("boards/%s/board.toml: hardware.unconfirmed %s, but the board %s: drop the entry"
                            % (bid, s, "builds it" if on else "lists it in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN"))
-        elif on and gone:
-            out.append("boards/%s: %s is in BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (it needs %s) but built by default: "
-                       "add CONFIG_%s ?= n to its config.mk" % (bid, s, what, s))
         elif not on and not gone:
             out.append("boards/%s: %s needs %s and is off by default: build it (config.mk CONFIG_%s ?= y) if the "
                        "radio has it and the code is written; BOARD_NOT_WRITTEN += %s  # <what isn't written> if "
@@ -1026,12 +1108,14 @@ def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     return out
 
 
-def write_test_problems(start, nand, spi_size, areas, protect, floor=0):
-    """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + STUB_WRITE_TEST): a NAND
+def write_test_problems(start, nand, spi_size, areas, protect, floor=0, size=STUB_WRITE_TEST):
+    """Why [flash.stub] write_test can't be the stub's data flash test region [start, start + size): a NAND
     (never written by the stub tool), a negative offset, below the board's write floor (the radio's own data), off the
     sector boundaries, past the chip (an address past it wraps to a low one), or over an area of the flash map or a
     protected region. areas: Board.map_areas(); protect: the data entries; floor: write_floor()."""
-    end = start + STUB_WRITE_TEST
+    if size <= 0 or size % DATA_SECTOR:
+        return ["size is not a positive multiple of 0x%X" % DATA_SECTOR]
+    end = start + size
     if nand:
         return ["the data memory is a NAND, which the stub tool never writes"]
     out = []
@@ -1137,7 +1221,7 @@ def check(root=ROOT):
     except RegistryError as e:
         return [str(e)]
     hw = hardware_switches(root)
-    stub_ids, orders = {}, {}
+    stub_ids, orders, tocalls = {}, {}, {}
     classes = gallery_classes(root)
     geoms = gallery_geoms(root) or {}
     for bid, b in boards.items():
@@ -1151,15 +1235,20 @@ def check(root=ROOT):
                 problems.append("boards/%s/config.mk: BOARD_UNSUPPORTED %s has no reason: one switch a line, "
                                 "BOARD_UNSUPPORTED += %s  # <reason>" % (bid, s, s))
         problems += not_written_problems(bid, b)
-        if hw:
+        # not written yet counts as left off on purpose, as unsupported does
+        listed = {**b.unsupported, **b.not_written}
+        names = sorted(set(listed) | set(b.default_off) | set(hw))
+        if names:
             try:
-                built = {s: v for s, v in ((k[len("CONFIG_"):], v) for k, v in
-                                           make_vars(root, bid, ["CONFIG_" + s for s in hw]).items())}
-                # not written yet counts as left off on purpose, as unsupported does
-                problems += hardware_problems(bid, {**b.unsupported, **b.not_written},
-                                              d["hardware"].get("unconfirmed", {}), built, hw)
+                built = {k[len("CONFIG_"):]: v for k, v in make_vars(root, bid, ["CONFIG_" + s for s in names]).items()}
             except RegistryError as e:
                 problems.append(str(e))
+            else:
+                problems += listed_off_problems(bid, listed, built)
+                if b.default_off:
+                    problems += default_off_problems(bid, b, built)
+                if hw:
+                    problems += hardware_problems(bid, listed, d["hardware"].get("unconfirmed", {}), built, hw)
         for k, p in d["docs"].items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
@@ -1188,6 +1277,13 @@ def check(root=ROOT):
         if d["order"] in orders:
             bad("order %d is also the %s's" % (d["order"], orders[d["order"]]))
         orders.setdefault(d["order"], bid)
+        # "0" is the host tests' (no radio); the registry lists each character with its radio, so one never moves
+        if not re.fullmatch(r"[1-9A-Z]", d["aprs_tocall"]):
+            bad("aprs_tocall %r: one character, 1-9 or A-Z" % d["aprs_tocall"])
+        elif d["aprs_tocall"] in tocalls:
+            bad("aprs_tocall %r is also the %s's" % (d["aprs_tocall"], tocalls[d["aprs_tocall"]]))
+        else:
+            tocalls[d["aprs_tocall"]] = bid
         fm = b.flash_map
         if b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
@@ -1302,13 +1398,16 @@ def check(root=ROOT):
                 for k in set(stub) - {"id", "tested"} - set(bs["keys"]) - set(bs["optional"]):
                     bad("flash.stub %s is not a key of the %s stub (platform.toml board_stub)" % (k, bs["tool"]))
                 wt = stub.get("write_test")
+                if "write_test_size" in stub and wt is None:
+                    bad("flash.stub write_test_size needs write_test")
                 if wt is not None:
                     for why in write_test_problems(wt, b.nand, b.data["flash"]["backup"]["spi_size"], b.map_areas(),
-                                                   [p for p in b.protect if p["mem"] == "data"], b.write_floor):
+                                                   [p for p in b.protect if p["mem"] == "data"], b.write_floor,
+                                                   stub.get("write_test_size", STUB_WRITE_TEST)):
                         bad("flash.stub write_test 0x%X: %s" % (wt, why))
                 cal = stub.get("calibration")
-                if cal is not None and set(cal) not in ({"area", "page_id"}, {"progmem", "nand", "magic"}):
-                    bad("flash.stub calibration is either {area, page_id} (a data flash) or {progmem, nand, magic} (a NAND)")
+                if cal is not None and set(cal) not in ({"area", "page_id"}, {"data"}, {"progmem", "nand", "magic"}):
+                    bad("flash.stub calibration is {area, page_id} or {data} (a data flash) or {progmem, nand, magic} (a NAND)")
                 if cal is not None and ("nand" in cal) != b.nand:
                     bad("flash.stub calibration names %s, but the data memory is %s" % ("the NAND" if "nand" in cal else "a data flash",
                         "a NAND" if b.nand else "a data flash"))
@@ -1542,7 +1641,8 @@ def site_view(boards, root=ROOT):
             "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
-            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written), "volts": b.volts,
+            "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
+            "default_off": dict(b.default_off), "volts": b.volts,
             "clock": hw["clock"]["rtc"],
             # the hardware variants and how the flasher reads them ([hardware] variants)
             "variants": json.loads(json.dumps(hw.get("variants", []))), "variant_pattern": hw.get("variant_pattern"),
@@ -1720,7 +1820,8 @@ def self_test():
        "board_t_names: only board_t, any whitespace, comments skipped, a macro %r" % board_t_names(tmpc))
     ok(pin_defines(os.path.join(tmpc, "pins.h")) == {"PIN_A": 0x2D, "PIN_B": 12}, "pin_defines: integer defines only")
     ok(gfx_defs("-DX=1 -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u") ==
-       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1} and gfx_defs(None) == GFX_DEFAULTS,
+       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1, "GFX_FB_SAFE_AREA": 0} and
+       gfx_defs(None) == GFX_DEFAULTS,
        "gfx_defs: MCU_DEFS values, gfx.h's defaults for the rest")
     ok(gfx_problems((160, 120, 4), gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u")) == [] and
        gfx_problems((128, 64, 1), gfx_defs("-DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u")) == [] and
@@ -1728,35 +1829,77 @@ def self_test():
                                                        "GFX_FB_BYTES 40960 is under the 153600 B a 240x320 16 bpp panel needs"]
        and gfx_problems((160, 128, 4), GFX_DEFAULTS) == ["a 16-color panel needs GFX_INDEXED=1"],
        "gfx_problems: rows, bytes and the 16-color path")
+    safe = gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_SAFE_AREA=1 -DGFX_FB_BYTES=34100u -DGFX_MAX_ROWS=320u")
+    ok(gfx_problems((240, 320, 4, 10, 5), safe) == [] and
+       gfx_problems((240, 320, 4, 8, 5), safe) == ["GFX_FB_BYTES 34100 is under the 34720 B the 224x310 safe area of "
+                                                   "a 240x320 4 bpp panel needs"] and
+       gfx_problems((240, 320, 16, 10, 5), dict(safe, GFX_FB_BYTES=200000)) ==
+       ["GFX_FB_SAFE_AREA needs a 16-color panel (bpp 4), not 16 bpp"],
+       "gfx_problems: a safe-area frame buffer is sized by the class's insets")
     with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
         f.write("// hal_flash_map_t old = { .openfw_eeprom = 1 };\n"
                 "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"
                 "\t.openfw_end = 0x00800000UL, .other = 5, .regions = { 1, 2 },\n\t.staging_addr = 0,\n};\n")
     ok(flash_map(tmpc) == {"openfw_eeprom": 0x700000, "openfw_end": 0x800000, "staging_addr": 0},
        "flash_map: the map's fields, suffixes and comments skipped %r" % flash_map(tmpc))
+    ok(flash_map([tmpc]) == flash_map(tmpc), "flash_map: board and family source directories")
+    with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t fmap = {\n"
+                "\t.openfw_eeprom = 0x00700000u,\n"
+                "\t.openfw_end = 0x00800000u,\n"
+                "\t.staging_addr = 0xF00000u,\n"
+                "\t.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,\n"
+                "\t.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,\n"
+                "\t.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,\n};\n")
+    ok(flash_map(tmpc) == {"staging_addr": 0xF00000, "staging_size": 0x3D000,
+                           "satellite_addr": 0xF3D000, "satellite_size": 0x3000,
+                           "openfw_eeprom": 0x700000, "openfw_end": 0x800000},
+       "flash_map: reserves satellite sectors and checks the reduced staging range")
+    fixture_board = Board({"id": "fixture"}, {}, {}, {"symbols": {}, "flash": (0, 0x100000)}, [], {},
+                          fmap=flash_map(tmpc))
+    ok((0xF3D000, 0xF40000, "satellite data") in fixture_board.map_areas() and
+       any("satellite data" in p for p in write_test_problems(0xF3D000, False, 0x1000000,
+                                                               fixture_board.map_areas(), [])),
+       "map_areas: the satellite sectors are protected from stub writes")
     areas = [(0x700000, 0x710000, "EEPROM"), (0x711000, 0x719000, "settings"), (0x719000, 0x71B000, "journal"),
-             (0x720000, 0xF00000, "flash image")]
+             (0x71B000, 0x71E000, "satellite data"), (0x720000, 0xF00000, "flash image")]
     prot = [{"start": 0x1000, "end": 0xC9000, "what": "cal"}]
-    ok(write_test_problems(0x71C000, False, 0x1000000, areas, prot) == [], "write_test: a free gap of the map")
+    ok(write_test_problems(0x71C000, False, 0x1000000, areas, prot) == ["overlaps satellite data (0x71B000-0x71E000)"],
+       "write_test: refuses satellite data")
+    ok(write_test_problems(0x71E000, False, 0x1000000, areas, prot, size=0x2000) == [],
+       "write_test: accepts the remaining two sectors")
+    ok(write_test_problems(0x71E000, False, 0x1000000, areas, prot, size=0x1800) ==
+       ["size is not a positive multiple of 0x1000"], "write_test: requires whole sectors")
     ok(len(write_test_problems(0xC00000, False, 0x1000000, areas, prot)) == 1, "write_test: inside the flash image")
-    ok(len(write_test_problems(0x71A000, False, 0x1000000, areas, prot)) == 1, "write_test: over the journal's end")
+    ok(any("journal" in p for p in write_test_problems(0x71A000, False, 0x1000000, areas, prot)),
+       "write_test: over the journal's end")
     ok(len(write_test_problems(0x2000, False, 0x1000000, areas, prot)) == 1, "write_test: over a protected region")
     ok(any("past the data flash" in w for w in write_test_problems(0x71C000, False, 0x200000, areas, prot)),
        "write_test: past a smaller chip")
-    ok(write_test_problems(0x71B800, False, 0x1000000, areas, prot) == ["not on a 0x1000 sector boundary"],
+    ok(any("not on a 0x1000 sector boundary" in p for p in
+           write_test_problems(0x71B800, False, 0x1000000, areas, prot)),
        "write_test: off a sector boundary")
     ok(write_test_problems(0x71C000, True, 0x1000000, [], []) != [], "write_test: never on a NAND")
     ok(write_test_problems(-0x4000, False, 0x1000000, areas, []) == ["a negative offset"], "write_test: not below 0")
     ok(write_test_problems(0x500000, False, 0x1000000, areas, prot, 0x700000) == ["below the write floor 0x700000 (the "
-       "radio's own data)"] and write_test_problems(0x71C000, False, 0x1000000, areas, prot, 0x700000) == [],
+       "radio's own data)"] and write_test_problems(0x71E000, False, 0x1000000, areas, prot, 0x700000,
+                                                      size=0x2000) == [],
        "write_test: not below the board's write floor")
     ok(openfw_bases("-DX=1 -DCODEPLUG_OPENFW_EEPROM_BASE=0x700000u -DCODEPLUG_OPENFW_FLASH_BASE=0x720000u") ==
        (0x700000, 0x720000) and openfw_bases("-DX=1") == (0, 0x20000) and openfw_bases(None) == (0, 0x20000),
        "openfw_bases: board.mk's, else the STM32 defaults")
+    with open(os.path.join(tmpc, "flash3.c"), "w", encoding="utf-8") as f:
+        f.write("static const hal_flash_map_t small = { .openfw_eeprom = 0, .openfw_end = 0x100000 };\n"
+                "static const cfg_t cfg = { .map = &fmap, .small_map = &small };\n")
+    ok(flash_map(tmpc) == {"staging_addr": 0xF00000, "staging_size": 0x3D000,
+                           "satellite_addr": 0xF3D000, "satellite_size": 0x3000,
+                           "openfw_eeprom": 0x700000, "openfw_end": 0x800000},
+       "flash_map: a map for a smaller chip (.small_map) is not the board's map")
+    os.remove(os.path.join(tmpc, "flash3.c"))
     with open(os.path.join(tmpc, "flash2.c"), "w", encoding="utf-8") as f:
         f.write("const hal_flash_map_t m2 = { .openfw_eeprom = 0x600000 };\n")
     try:
-        flash_map(tmpc)
+        flash_map([tmpc])
         ok(False, "flash_map refuses two maps that differ")
     except RegistryError:
         ok(True, "flash_map refuses two maps that differ")
@@ -1814,6 +1957,17 @@ def self_test():
     ok(not_written_reasons(os.path.join(tmpm, "config.mk")) == {"DTMF": "no tone path yet"}
        and unsupported_reasons(os.path.join(tmpm, "config.mk")) == {"USB": "no USB port"},
        "not_written_reasons: BOARD_NOT_WRITTEN lines only, and BOARD_UNSUPPORTED's reader skips them")
+    with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
+        f.write("BOARD_NOT_WRITTEN += DTMF\t# no tone path yet\nBOARD_DEFAULT_OFF += PPP\t# may lock up the line\n")
+    ok(default_off_reasons(os.path.join(tmpm, "config.mk")) == {"PPP": "may lock up the line"},
+       "default_off_reasons: BOARD_DEFAULT_OFF lines only")
+    fake = type("B", (), {"default_off": {"A": "why", "B": "", "C": "why", "D": "why"}, "unsupported": {"C": "x"},
+                          "not_written": {}})
+    probs = default_off_problems("t", fake, {"A": "n", "B": "n", "C": "n", "D": "y"})
+    ok(len(probs) == 3 and "B has no reason" in probs[0] and "C is in" in probs[1] and "D is in" in probs[2],
+       "default_off_problems: a reason, choosable, off by default")
+    probs = listed_off_problems("t", ["A", "B", "C"], {"A": "n", "B": "y"})
+    ok(len(probs) == 1 and "B is in" in probs[0], "listed_off_problems: a listed switch built by default")
     shutil.rmtree(tmpm)
     for bad, what in (({"hil": {"battery_mv": "5V"}}, "a [hil] value of the wrong type"),
                       ({"hil": {"no_such": 1}}, "an unknown [hil] key"),
@@ -1872,8 +2026,8 @@ def self_test():
        "hardware switches: unconfirmed on a switch the board builds fails")
     ok(len(hp("x", {}, {"FONT_BIG": "?"}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
        "hardware switches: unconfirmed on a switch that isn't a hardware switch fails")
-    ok(len(hp("x", {"NAND_STORAGE": "NOR"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "y"}, hw)) == 1,
-       "hardware switches: in BOARD_UNSUPPORTED but built by default fails")
+    ok(len(listed_off_problems("x", {"NAND_STORAGE": "NOR"}, {"VIBRATE": "y", "NAND_STORAGE": "y"})) == 1,
+       "hardware switches: in BOARD_UNSUPPORTED but built by default fails (listed_off_problems)")
     ok(hp("x", {"NAND_STORAGE": "the driver isn't written"}, {}, {"VIBRATE": "y", "NAND_STORAGE": "n"}, hw) == [],
        "hardware switches: one in BOARD_NOT_WRITTEN (check() passes both lists) passes off by default")
 
@@ -2008,6 +2162,10 @@ def self_test():
         two = board_dirs(tmp)[1]
         other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["order"]
         broken(re.sub(r"(?m)^order = .*$", "order = %d" % other, good), "an order another board has", "also the")
+        other = _tomllib().load(open(os.path.join(tmp, "boards", two, "board.toml"), "rb"))["aprs_tocall"]
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "%s"' % other, good), "an APRS tocall another board has",
+               "also the")
+        broken(re.sub(r"(?m)^aprs_tocall = .*$", 'aprs_tocall = "0"', good), "the host tests' APRS tocall", "1-9 or A-Z")
         fm_c = [os.path.join(tmp, "boards", one, f) for f, text in _c_sources(os.path.join(tmp, "boards", one))
                 if "hal_flash_map_t" in text]
         fm_good = open(fm_c[0], encoding="utf-8").read()

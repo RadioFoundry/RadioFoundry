@@ -75,6 +75,29 @@ switch = "RX_EXT"
 hardware = "a receiver chip whose documents give a range past the rated bands"
 spec = "docs/spec/radio-features.md"
 
+# P25 brings the air interface, the full-rate voice decoder and the MBE core (derived switches AIR, IMBE, MBE)
+[feature.p25]
+switch = "P25"
+spec = "docs/spec/p25.md"
+source = ["core/p25", "core/radio/radio_p25.c", "core/radio/radio_p25.h", "core/air", "core/fec", "core/mbe",
+          "hal/hal_air.h", "hal/hal_baseband.h"]
+
+[feature.p25_trunk]
+switch = "P25_TRUNK"
+spec = "docs/spec/p25-trunking.md"
+source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c"]
+
+[feature.nxdn]
+switch = "NXDN"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn", "core/air", "core/fec", "core/radio/radio_nxdn.c", "core/radio/radio_nxdn.h",
+          "core/radio/radio_air.h", "core/debuglink/debuglink_view_nxdn.c"]
+
+[feature.nxdn_scrambler]
+switch = "NXDN_SCRAMBLER"
+spec = "docs/spec/nxdn.md"
+source = ["core/nxdn/nxdn_scramble.c", "core/nxdn/nxdn_call.c", "core/nxdn/nxdn_engine.c"]
+
 [feature.dmr_voice]
 switch = "DMR"
 spec = "docs/spec/dmr-voice.md"
@@ -83,6 +106,12 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 [feature.dmr_privacy]
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
+
+[feature.dmr_data_privacy]
+requires = "DMR_PRIVACY"
+# Packet data under a privacy key: the privacy header, the user data encrypted, or held back
+spec = "docs/spec/dmr-data.md"
+source = ["core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/dmr/dmrPrivacy.c"]
 
 [feature.dmr_talker_alias]
 switch = "DMR_TALKER_ALIAS"
@@ -99,6 +128,30 @@ spec = "docs/spec/dmr-emergency.md"
 [feature.dmr_roaming]
 switch = "DMR_ROAMING"
 spec = "docs/spec/dmr-roaming.md"
+
+[feature.dmr_trunk]
+switch = "DMR_TRUNK"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_tx]
+switch = "DMR_TRUNK_TX"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_supl]
+switch = "DMR_TRUNK_SUPL"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.dmr_trunk_gw]
+switch = "DMR_TRUNK_GW"
+spec = "docs/spec/dmr-trunking.md"
+source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
+
+[feature.voice_capture]
+switch = "VOICE_CAPTURE"
+spec = "docs/spec/debuglink.md"
 
 [feature.dmr_signaling]
 switch = "DMR_SIGNALING"
@@ -155,6 +208,11 @@ spec = "docs/spec/radio-features.md"
 switch = "BEEP"
 spec = "docs/spec/radio-features.md"
 
+[feature.signaling_tones]
+switch = "SIG_TONES"
+spec = "docs/spec/radio-features.md"
+source = ["core/radio/sigtone.c", "core/radio/sigtone.h", "core/radio/beep.c", "core/radio/radio_sm.c"]
+
 [feature.vibrate]
 switch = "VIBRATE"
 hardware = "a vibration motor"
@@ -163,8 +221,28 @@ spec = "docs/spec/radio-features.md"
 [feature.gps]
 switch = "GPS"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
-source = ["drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+spec = "docs/spec/position.md"
+source = ["hal/hal_gps.h", "drivers/gps", "platform/stm32f4/gps_uart", "platform/hrc7000/gps_hrc.c"]
+
+[feature.satellite_tle]
+switch = "SATELLITE_TLE"
+spec = "docs/spec/satellite.md"
+source = ["core/debuglink/debuglink_satellite.c", "core/debuglink/debuglink_view.c", "core/radio/radio_task.c",
+          "core/satellite", "core/ui/ui_satellite.c", "core/position/position.c",
+          "hal/hal_flash.h", "boards/db25d/flash_db25d.c", "boards/dm32/board.c",
+          "boards/dm1801pro/board.c", "boards/md380/flash_md380.c",
+          "boards/md9600/store_md9600.c", "boards/uv380_family/flash_uvf.c"]
+
+# The status strip's GPS icon: none, off, searching, a fix (ui.md 3); part of GPS, no switch of its own
+[feature.gps_icon]
+requires = "GPS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/ui_screens.c", "core/ui/ui_app.c"]
+
+# The position service: built for GPS, APRS, DMR_LRRP or DMR_GPS, so it has no switch of its own
+[feature.position]
+spec = "docs/spec/position.md"
+source = ["core/position", "core/debuglink/debuglink_position.c", "core/ui/ui_position.c"]
 
 # ── DMR data ──
 
@@ -213,9 +291,21 @@ spec = "docs/spec/sfr.md"
 switch = "APRS"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_afsk]
+switch = "APRS_AFSK"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_dmr]
+switch = "APRS_DMR"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_rx]
 switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
+spec = "docs/spec/aprs.md"
+
+[feature.aprs_mute]
+requires = "APRS_RX"
 spec = "docs/spec/aprs.md"
 
 [feature.aprs_igate]
@@ -225,8 +315,8 @@ spec = "docs/spec/aprs.md"
 [feature.gps_sky]
 switch = "GPS_SKY"
 hardware = "a GPS receiver"
-spec = "docs/spec/aprs.md"
-source = ["core/aprs/nmea_sky.c", "core/ui/ui_gps.c"]
+spec = "docs/spec/position.md"
+source = ["core/position/nmea_sky.c", "core/ui/ui_gps.c"]
 
 # ── Host link and USB ──
 
@@ -291,6 +381,10 @@ spec = "docs/spec/crash-log.md"
 switch = "WATCHDOG"
 spec = "docs/spec/watchdog.md"
 
+[feature.support_info]
+switch = "SUPPORT_INFO"
+spec = "docs/spec/support-info.md"
+
 [feature.fault_trace]
 switch = "FAULT_TRACE"
 spec = "docs/spec/crash-log.md"
@@ -299,6 +393,10 @@ spec = "docs/spec/crash-log.md"
 
 [feature.usb_network]
 switch = "USB_NETWORK"
+spec = "docs/spec/usb-network.md"
+
+[feature.usb_serial_request]
+switch = "USB_SERIAL_REQUEST"
 spec = "docs/spec/usb-network.md"
 
 [feature.dmr_ip_gateway]
@@ -338,6 +436,10 @@ spec = "docs/spec/tcp-services.md"
 switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"
 planned_tests = ["tests/hil/test_webctl.py::test_webctl_keys_ptt_audio"]
+
+[feature.net_radio_udp]
+switch = "NET_RADIO_UDP"
+spec = "docs/spec/tcp-services.md"
 
 [feature.net_rigctl]
 switch = "NET_RIGCTL"
@@ -404,6 +506,10 @@ spec = "docs/spec/ui.md"
 switch = "DIAG"
 spec = "docs/spec/ui.md"
 
+[feature.backlight_test]
+switch = "BACKLIGHT_TEST"
+spec = "docs/testing/backlight-curve.md"
+
 [feature.ui_color]
 switch = "UI_COLOR"
 hardware = "a color display"
@@ -429,12 +535,33 @@ spec = "docs/spec/ui.md"
 switch = "LANG_IT"
 spec = "docs/spec/ui.md"
 
+[feature.lang_fr]
+switch = "LANG_FR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_zh]
+switch = "LANG_ZH"
+spec = "docs/spec/ui.md"
+
+[feature.cjk_glyphs]
+switch = "CJK_GLYPHS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/cjk_font.c", "core/ui/cjk_font_data.c"]
+
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"
 spec = "docs/spec/ui.md"
 
 [feature.lang_default_it]
 switch = "LANG_DEFAULT_IT"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_fr]
+switch = "LANG_DEFAULT_FR"
+spec = "docs/spec/ui.md"
+
+[feature.lang_default_zh]
+switch = "LANG_DEFAULT_ZH"
 spec = "docs/spec/ui.md"
 
 # ── Radio core, storage and codec ──
@@ -461,6 +588,11 @@ spec = "docs/spec/codec-placement.md"
 source = ["tools/rfoundry/rfoundry"]
 
 # ── Bench ──
+
+[feature.air_raw]
+switch = "AIR_RAW"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
 [feature.audio_probe]
 switch = "AUDIO_PROBE"

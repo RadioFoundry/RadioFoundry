@@ -11,8 +11,10 @@ received audio, a demodulator, a station list, messages to us and a digipeater.
 
 Code: `core/aprs` (portable, host tested), the RF part in `core/radio/radio_sm.c` (the APRS block), the board's tone
 path behind `hal/hal_afsk.h`, the UI in `core/ui/ui_aprs.c`, the debug link in `core/debuglink/debuglink_aprs.c`, the
-host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS`, `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, and on the
-USB network link `CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` (`docs/build-config.md`). The DMR GPS Info LC, which shares the position source, is in `dmr-voice.md` 3.1.
+host helper `tools/aprs_gate.py`. Build switches: `CONFIG_APRS` (the engine), `CONFIG_APRS_AFSK` and
+`CONFIG_APRS_DMR` (its two ways out, section 2), `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, and on the USB network link
+`CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` (`docs/build-config.md`). Where our position comes from is the position
+service's ([position.md](position.md)); DMR GPS Info and LRRP use it too and need no APRS.
 
 Sources (all public, read for the formats only; no implementation was used as a source, `CLEANROOM.md`):
 
@@ -37,12 +39,12 @@ aprx can stand in.
 
 | Feature | Needs |
 |---|---|
-| FM AFSK transmit | `board.afsk->tx_*` (5.1) |
+| FM AFSK transmit | `CONFIG_APRS_AFSK` and `board.afsk->tx_*` (5.1) |
 | FM AFSK receive, station list, digipeater, messages to us | `CONFIG_APRS_RX` and receive audio: `board.afsk->rx_*`, or FM receive audio on the PCM stream (`AUDIO_TAP_FM_RX`) (5.3) |
-| Positions over DMR (LRRP / UDT) | a DMR radio, on a DMR channel |
-| KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | nothing more (TX path; RX frames only with RX) |
+| Positions over DMR (LRRP / UDT) | `CONFIG_APRS_DMR`, on a DMR channel |
+| KISS TNC on the host port (UDP 3334 and TCP 8001 in network mode) | `CONFIG_APRS_AFSK` (TX path; RX frames only with RX) |
 | iGate | RX for RF -> IS; IS -> RF messages only once RX exists |
-| GPS | `CAP_GPS` boards feed `aprs_nmea(..., gps=true)`; otherwise host NMEA or the fixed position. `CONFIG_GPS=n` leaves out the board's GPS driver and `CAP_GPS`, so the radio behaves as one without a receiver. Settings > Location > GPS (`settings_t.gps`, default off) goes through `ui_svc_apply` at start-up and on each change to `board_t.gps_enable` (the module's power; the board probes the module at start-up whatever the setting says, so `board_has_gps()` stays true) and to `aprs_gps_enable`: off drops the board fix at once and ignores later sentences, so the position falls back to the computer or the fixed one |
+| Position | the position service ([position.md](position.md)): the board GPS, host NMEA or the fixed position |
 
 What a board provides:
 
@@ -64,11 +66,30 @@ debug link and the host link reach it through the "any task" calls, which take a
 (`aprs_set_lock`, the scheduler suspended for short copies). Settings and codeplug reads take the storage mutex and so
 happen outside that lock.
 
+The engine sends through two backends. Each has its own switch and works without the other:
+
+| Part | Switch | File | Holds |
+|---|---|---|---|
+| Engine | `CONFIG_APRS` | `aprs.c` | the settings, the beacon triggers, the view, "Send position now" |
+| AX.25 on FM | `CONFIG_APRS_AFSK` (needs `APRS` and `FM`) | `aprs_ax25.c` | the callsign, the frame queue and the AFSK jobs the radio core sends, status and messages, the KISS TNC and APRS-IS lines, receive |
+| Positions over DMR | `CONFIG_APRS_DMR` (needs `APRS` and `DMR`) | `aprs_dmr.c` | the LRRP or UDT report to the gateway ID (section 8); turns on the DMR data core |
+
+- `CONFIG_APRS=y` needs at least one backend; the build stops otherwise.
+- `CONFIG_APRS_RX`, `CONFIG_APRS_IGATE`, `CONFIG_NET_KISS` and `CONFIG_NET_APRSIS` need `CONFIG_APRS_AFSK`.
+- The halves share one state block (`aprs_int.h`). The engine calls the AX.25 half through `aprs_ax25_*`, which are
+  empty inline functions when it isn't built. Calls other modules make into it (`aprs_send_message`,
+  `aprs_rf_pending`, `aprs_host_frame`, ...) answer "nothing there" the same way, so callers need no switch.
+- With one backend built, "Send via" is not asked: a beacon goes the way there is, whatever the setting stored by
+  another build says. The settings record is the same in every build.
+- Without the AX.25 half: no callsign, APRS frequency, path, messages or station list; the radio core has no APRS
+  RF job; the host port takes NMEA lines only (`$...`, no KISS decoder).
+
 Pure parts, each with host tests in `tests/host/aprsTest.c`: `ax25.c` (addresses, frames, TNC2 text), `hdlc.c` (FCS,
 bit stuffing, NRZI symbols, the receive deframer), `afsk.c` (the tone plan for TX, a correlator demodulator with a PLL
-for RX), `kiss.c`, `aprs_fmt.c` (APRS formats in and out), `aprs_nmea.c`, `aprs_beacon.c` (when to send),
+for RX), `kiss.c`, `aprs_fmt.c` (APRS formats in and out), `aprs_beacon.c` (when to send),
 `aprs_igate.c` (gating and digipeater rules). `tests/host/aprsRadioTest.c` runs the engine with the radio core on a
-fake board whose AFSK output is demodulated back to frames.
+fake board whose AFSK output is demodulated back to frames, in a build without DMR; `radioCoreTestAprsDmr` runs it
+with the DMR backend alone.
 
 ## 3. Rules
 
@@ -128,14 +149,23 @@ meters away gets a true bearing. The longitude difference is wrapped to the shor
 
 ### 4.2 Tocall
 
-Destination `APZRDF`: the APZ block is the experimental range anyone may use. A registered tocall (APxxxx from the
-tocalls list) is an open decision.
+Destination `APRDF?`. The [APRS device identifier list](https://github.com/aprsorg/aprs-deviceid) allocates `APRDF?`
+to RadioFoundry as one entry, so APRS apps and aprs.fi name the firmware, not yet the radio. The sixth character tells
+the radios apart: each board's `board.toml` sets it (`aprs_tocall`, [board-registry.md](../dev/board-registry.md)), and
+`tools/boards.py check` keeps it unique. A character stays with its radio for good, so the list can later name the
+model per character. `0` is no radio: the host tests build without a board. The debug link shows the tocall in use as `aprs.tocall`.
 
 ### 4.3 Received (RX builds)
 
 Positions (plain, compressed, with and without timestamps), Mic-E (the destination field's latitude and message bits,
 longitude, speed and course from the information field), objects, items, status, messages, third-party packets,
 queries, weather and telemetry recognized by type (not decoded further).
+
+Third-party packets (`}SRC>DST,PATH:info`, how an iGate puts APRS-IS traffic on RF): a message or ack inside one is
+handled as from SRC (`aprs_ax25.c`, `third_party_in`). It is kept, matched to our pending message and acked under SRC; the
+ack goes to SRC on our own path. One level only. A packet from our own call is ignored. Nothing else inside is
+decoded: the station list keeps the iGate, the station actually heard, so an Internet station never counts as heard
+on RF for the iGate rules (section 9.1).
 
 ## 5. The radio side
 
@@ -181,6 +211,22 @@ at full deviation pushed the AT1846S noise reading over the line for a poll or t
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
 says whether the path runs.
 
+The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
+(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
+
+The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker
+silent on the APRS frequency in FM while the squelch is open, unless Monitor holds it open (`radio_sm.c` `outputs`,
+`aprs_mute_hz()`). The receive path must keep its audio, so it depends on where the board's decoder reads it:
+
+| Board | How the core mutes |
+|---|---|
+| `hal_radio_t.speaker_mute` set | `speaker_mute(true)`: the speaker silent, `audio()` left on. For a decoder whose FM audio passes the path `audio()` gates (an I2S tap behind the FM feed-through) |
+| no `speaker_mute` | `audio(false)`: for a decoder that takes the FM audio before the speaker path (the board's own AFSK input) |
+
+The green LED and Stations heard are unaffected, and a second receiver's speaker isn't held off by a muted carrier.
+Off by default.
+
 The receive setting and messaging default to on when the radio can receive (`aprs_can_receive()`: the build has
 `CONFIG_APRS_RX` and one of the two paths exists).
 
@@ -215,8 +261,8 @@ below the squelch could be decoded. That needs a board receive path (1 above) re
 ## 6. RF transmission
 
 The radio core's APRS block (`radio_sm.c`, `aprs_*`): when a frame waits (`aprs_rf_pending`) and the radio is idle
-(no PTT, no call heard or sent, no scan, no hotspot, no monitor, no TX inhibit, battery not critical), it takes the
-job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags before, 3 after), and:
+(no PTT, no call heard or sent, no zone or VFO scan, no hotspot, no monitor, no TX inhibit, battery not critical),
+it takes the job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags before, 3 after), and:
 
 1. LISTEN: tunes the APRS frequency (25 kHz, or 12.5 kHz when narrow is set), 50 ms to settle, then 100 ms slots with
    p-persistence 64/256 while the squelch is closed; gives up after 10 s (`rf_busy`, retried later).
@@ -226,15 +272,26 @@ job (`aprs_rf_take`: our queued frames, 1 flag between them, a TX delay of flags
 3. SEND: `board.afsk->tx_start`; at most 6 s.
 4. Back: transmitter off, the user's channel retuned exactly as it was.
 
+While keyed, Home keeps the selected channel on screen. Its status pill says "TX APRS" and its activity says
+"SENDING", without elapsed or remaining TX time. The ordinary status and activity return when the APRS job ends or is
+aborted.
+
+During dual watch, the job temporarily interrupts the watch and sends on APRS's configured frequency regardless of
+which channel is selected or tuned. A call on either receiver defers the job. A second receiver is stopped during the
+job. After the channel is restored, dual watch resumes its normal listen dwell; a second receiver is engaged again. A
+short look at the other channel finishes before a job starts. Zone and VFO scans still defer APRS transmission until
+they stop.
+
 PTT, a channel change or any request other than beeps, DMR focus and settings aborts it (`rf_failed`, the frame
 retried after 15 s, 3 tries). A failure counts in `rf_failed` and names its step in `rf_fail`: `aborted`, `no_key`
 (the transmitter didn't key), `no_afsk` (`tx_start` refused), `timeout` (the tones didn't finish in 6 s). The settings save waits while a job is pending.
 
 ## 7. Position and triggers
 
-Position source (setting: Auto, GPS, Computer, Fixed): Auto takes a board GPS fix younger than 60 s, else a host NMEA
-fix younger than 60 s (`$GPRMC`, `$GPGGA` with valid checksums, from KISS SetHardware 'N' or a bare `$` line on the
-host port), else the fixed position (settings, or the debug link). GPS and host fixes carry speed and course.
+The position is the position service's ([position.md](position.md)): its source setting and the fixed position
+are in Settings > Location and serve DMR GPS Info and LRRP as well. The engine reads
+`position_fix` every tick; GPS and host fixes carry speed and course. Host NMEA (`$GPRMC`, `$GPGGA` with valid
+checksums) comes from KISS SetHardware 'N' or a bare `$` line on the host port.
 
 Triggers (`aprs_beacon.c`), all under the hard minimum:
 
@@ -249,25 +306,10 @@ Triggers (`aprs_beacon.c`), all under the hard minimum:
 
 Without a known speed SmartBeaconing falls back to the interval. The defaults are an open decision (section 14).
 
-### 7.1 The board GPS's state and satellites
-
-`aprs_gps()` gives the UI the board GPS as it is now: false while Settings > Location > GPS is off or no valid sentence
-came for 60 s, else the last fix (60 s old at most), satellites used and HDOP (GGA), speed, course and time (RMC).
-
-With `CONFIG_GPS_SKY` (needs `GPS` and `APRS`) `nmea_sky.c` also reads the board GPS's satellite sentences:
-
-| Sentence | What it gives |
-|---|---|
-| GSV (talker GP, GL, GA, BD / GB, GQ, GN) | each satellite in view: number, elevation, azimuth, SNR. A round (messages 1 to N of one talker) replaces that system's satellites; one the round no longer lists is dropped. A receiver that sends a round per signal (the NMEA 4.1 signal ID, e.g. L1 and L5) has only the first signal heard kept per system. A GN talker places a satellite by its number (GLONASS 65-96, QZSS 193-200, BeiDou 201-263 and 401-463, Galileo 301-336); SBAS and unknown numbers are skipped |
-| GSA | the fix mode (1 none, 2 2D, 3 3D) and the satellites the fix uses. The GSAs in a row (one per system, or several GN) make one round; the first clears the used set. A GN GSA takes its system from the NMEA 4.1 system ID when present, else from the numbers |
-
-The table holds 28 satellites of 4 bytes each (number, elevation, system, SNR, azimuth / 2); the used sets are a 64-bit
-mask per system. In all 168 B, kept in the APRS state under its lock; `aprs_gps_sat(i)` copies one satellite out, so a
-reader needs no table of its own. Turning the GPS setting off empties it.
-
 ## 8. Positions over DMR
 
-Send via (AFSK / DMR / Both): DMR positions go out when the radio is on a DMR channel with the call stack running,
+Built with `CONFIG_APRS_DMR`. Send via (AFSK / DMR / Both; DMR always in a build without the AX.25 half): DMR
+positions go out when the radio is on a DMR channel with the call stack running,
 as a private data call to the destination ID (default 310999). BrandMeister's APRS gateway is a private ID
 "MCC999", with MCC replaced by the master's MCC (310999 for US masters, 204999 for a Dutch one). 310999 works from any master; your own master's prefix
 (`<MCC>999`) is recommended. The old 5057 was
@@ -278,6 +320,8 @@ value: run `aprs set dmr_dst <MCC>999` (US: `aprs set dmr_dst 310999`).
 - Motorola LRRP triggered location report (the default): UDP port 4001, built by `dmrLrrp.c`.
 - ETSI UDT location (`dmr_udt` on): `dmrDataBuildUDTLocation`. BrandMeister forwards the position reports of Motorola
   (LRRP) and Hytera radios to APRS, so use LRRP, not UDT, for BrandMeister.
+- The position in either report has the ambiguity setting applied (`position_blur`, [position.md](position.md) 3), as
+  the AX.25 packets and the other DMR reports do.
 
 ### 8.1 LRRP details
 
@@ -333,7 +377,7 @@ in the radio's own APRS-IS client (`CONFIG_NET_APRSIS`, `tcp-services.md` 7), wh
   packet once per 30 s.
 - IS -> RF (`igate_tx`, off): only messages and acks, to a station heard directly in the last 30 minutes, from a
   station not heard on RF in the last 10 minutes, not seen in the last 30 s; sent as `}SRC>DST,TCPIP,OURCALL*:info`.
-- Our own beacons to APRS-IS (`to_is`): `CALL>APZRDF,TCPIP*:info` over the same channel.
+- Our own beacons to APRS-IS (`to_is`): `CALL>APRDF?,TCPIP*:info` over the same channel.
 - Digipeater (RX builds, off): fill-in (WIDE1-1 only) or wide (WIDE1-1 and WIDE2-N), also our own call in the path;
   our call inserted before the WIDE entry, marked used (traced), the hop count decremented; duplicates suppressed
   for 30 s.
@@ -345,22 +389,51 @@ frequency, not amateur, no AFSK), the position and its source, the next beacon a
 position now, Automatic beacons, Frequency (region: N America 144.390, Europe 144.800, Australia 145.175, New Zealand
 144.575, Japan 144.660, China 144.640, Custom), Power (As channel, then each of the board's levels), Path (the
 digipeater path of RF packets: None, WIDE1-1, WIDE1-1,WIDE2-1, WIDE2-1, WIDE2-2; OK steps to the next and WIDE2-2
-wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), Position (opens its page, below), Position in DMR calls (`dmr-voice.md` 3.1), KISS on USB, Stations
+wraps to None), Interval (Off, 1, 2, 5, 10, 30 min), SmartBeaconing, Send via (AFSK, DMR, Both), KISS on USB, Stations
 heard (RX builds: the list, most recent first, dimmed when heard through a digipeater; a station with a position shows
-its distance and compass point from ours, `aprs_position_now` as DMR GPS Info uses it, "14.5 km NE" by `sb_range`,
+its distance and compass point from ours, `position_now` as DMR GPS Info uses it, "14.5 km NE" by `sb_range`,
 left out first when the row is too narrow, and nothing without a position on either side; that row's age is the
 position's, `pos_ms`, else the last packet's. An object's or item's position is not stored as its sender's; a
 station's position is dropped at 24 h, `STATION_POS_MS`, so its age never wraps). On a radio without
-`board.afsk`, Power and Path are dimmed, and so is Frequency unless the build receives APRS. Rows 11 and 12 have no
-digit key.
+`board.afsk`, Power, Path and SSID are dimmed, and so is Frequency unless the build receives APRS. SSID (the last
+row, so the rows above keep their digits): 0-15, OK steps up and wraps 15 to 0, a long OK steps down.
 
-APRS > Position (`aprs-pos`; the APRS page's body shows the position in use). Rows: Source (Auto, GPS, Computer, Fixed),
-Latitude and Longitude (the fixed position, "Not set" while both are 0). OK on Latitude or Longitude opens an editor in
-decimal degrees to 4 places (about 11 m): the digits fill `DD.DDDD` or `DDD.DDDD` from the left (a longitude's first
-digit of 2-9 gets its leading zero by itself), a digit that would pass 90 or 180 degrees is refused with a toast, Up /
-Down or the knob switch N / S or E / W, BACK takes the last digit back (with none typed it closes the editor unchanged),
-OK saves with the places not typed as zeros. The editor starts with the stored value shown; the first digit starts over.
-Find knows the page as "APRS position".
+The page shows the rows the build has:
+
+| Build | Rows left out | Body |
+|---|---|---|
+| Both backends | none | callsign and frequency, why RF is blocked, position, next beacon, count |
+| No `CONFIG_APRS_DMR` | Send via | the same |
+| No `CONFIG_APRS_AFSK` | Frequency, Power, Path, Send via, Stations heard, SSID; "KISS on USB" reads "NMEA on USB" | position, next beacon, count |
+
+The digit keys follow the rows shown. Where the position comes from, the fixed position and "Send in DMR calls" are
+in Settings > Location ([position.md](position.md) 6).
+
+Selecting a heard station opens `aprs-station`, a scrollable detail list. The UI keeps its callsign,
+not its row index, and resolves the current station through `ui_svc_aprs_station_find` on each draw. New packets
+can reorder the heard list without changing the open station or Message recipient. Message is the first row and
+opens the composer with that callsign. The remaining rows show distance and compass direction when both positions
+exist, heard age, Direct or Via digipeater, position age when different from heard age, speed in km/h and course
+when the retained position has them, symbol table and code, the retained comment/status text, and packet count.
+Unknown speed and course have no row. Text is limited to the engine's 24-byte field; no digipeater identity or
+additional comment text is retained. Detail rows scroll with Up / Down and do not perform actions. If the station
+is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
+and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
+
+**Inbound message notification (`CONFIG_APRS_RX`).** When `ui_svc_aprs_msg_poll` (called every UI pass from
+`ui_svc_poll`) sees `aprs_view_t.msg_serial` advance, it fires `UI_EV_APRS_MESSAGE` with the sender's callsign and
+message text. `handle_event` in `ui_app.c` raises a `UI_BANNER_APRS_MESSAGE` banner (8 s, `BANNER_MS`) that shows
+"APRS message from <callsign>" in the title and the message text in the body, wakes the backlight, and plays a
+message tone and vibration alert if those are on. `msg_serial` is an integer that wraps; `ui_svc_aprs_msg_poll` saves
+the last-seen serial in a static variable and fires only when it changes, so duplicates and retries produce no
+additional events. The engine sets `msg_serial`, `last_msg_ms` and `last_msg_from` in `message_in` when a non-duplicate
+message addressed to us is accepted (`CONFIG_APRS_RX`, guarded).
+
+**Home screen last-activity (`CONFIG_APRS_RX`).** `draw_activity` reads `aprs_view_t.last_msg_ms` via
+`ui_svc_aprs_view`. When `last_msg_ms` is non-zero and either `radio_view_t.last_rx_ms` is zero or
+`last_msg_ms + 2000 >= last_rx_ms` (the APRS reception caused the squelch to close, within the squelch tail), the
+activity line reads "APRS: <callsign> <age>" instead of the generic "Last activity Xm ago". The 2 s threshold
+accounts for the FM squelch tail between packet decode and squelch close.
 
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
@@ -369,22 +442,29 @@ debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native c
 
 `settings_t` (`core/settings/settings.h`), taken only when `aprs_stored` is 1, else the defaults: `aprs_flags`
 (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX), `aprs_flags2` (iGate, iGate TX, messaging, UDT,
-to APRS-IS, DMR GPS Info), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_lat` / `aprs_lon` (1e-7 degree),
-`aprs_dmr_dst`, `aprs_alt_m`, `aprs_interval_s`, `aprs_distance_m`, `aprs_symbol`, `aprs_path`, `aprs_pos_src`,
-`aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1), `aprs_txdelay`, `aprs_misc`
-(via, digipeater, ambiguity). The codeplug's APRS record 1 (EEPROM 0x1588,
+to APRS-IS, mute), `aprs_region`, `aprs_ssid`, `aprs_freq_hz`, `aprs_dmr_dst`, `aprs_interval_s`, `aprs_distance_m`,
+`aprs_symbol`, `aprs_path`, `aprs_level`, `aprs_power` (0 = the radio's current level, n = the board's level n - 1),
+`aprs_txdelay`, `aprs_misc` bits 0-3 (via, digipeater). The position fields in the same record (`aprs_lat`,
+`aprs_lon`, `aprs_alt_m`, `aprs_pos_src`, the DMR GPS Info flag, `aprs_misc` bits 4-7) are the position service's
+([position.md](position.md) 5): APRS never changes them, and its save keeps them. The codeplug's APRS record 1 (EEPROM 0x1588,
 64 bytes each) gives the SSID, path, symbol, comment and ambiguity when present; its fixed position and frequency
-encodings are unknown and not used. Of these the radio takes the comment and the path.
+encodings are unknown and not used. Of these the radio takes the comment, the path and the SSID.
 
-The path lives in both places, and the one changed last wins:
+The path and the SSID live in both places, and the one changed last wins, each on its own:
 
-- Codeplug to radio: when the record's path differs from `aprs_cp_path` (the codeplug path last taken, `aprs_path_t` +
-  1), it replaces `aprs_path` and becomes the new `aprs_cp_path`. Checked at start-up and whenever the codeplug
-  serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a first) is
-  left alone.
-- Radio to codeplug: a change on the APRS page posts a storage job (`aprs_path_to_codeplug`) that rewrites the record's
-  two path entries (callsign space padded, SSID byte) and sets `aprs_cp_path` to match. No record is made when there is
-  none: the radio then keeps the path in the settings only. A change over the debug link stays in the settings.
+- Codeplug to radio: `aprs_cp_path` holds what was last taken from the record, bits 0-2 the path (`aprs_path_t` + 1)
+  and bits 3-7 the SSID (+ 1); 0 = none yet (`settings_aprs_cp_path` / `_ssid`). When the record's path or SSID
+  differs from it, it replaces `aprs_path` or `aprs_ssid` and is stored there. Checked at start-up and whenever the
+  codeplug serial changes (a CPS write). A path that isn't one of the five (another callsign, a second entry without a
+  first) is left alone.
+- Radio to codeplug: a change of the path or SSID on the APRS page posts a storage job (`aprs_to_codeplug`) that
+  rewrites what differs in the record (the two path entries, callsign space padded with an SSID byte; the SSID byte at
+  0x08) and sets `aprs_cp_path` to match. No record is made when there is none: the radio then keeps them in the
+  settings only. A change over the debug link stays in the settings.
+
+The SSID marker uses `aprs_cp_path`'s upper bits, so a record from before it reads "none yet" and the codeplug's SSID
+is taken once at the first start-up, unless it is 0: that first time a 0 is marked as taken and the radio keeps its own
+SSID (a byte no one set would otherwise drop the SSID from every packet). A later CPS write of another SSID is taken.
 
 Defaults: TX off, region N America, SSID 7, symbol `/[`, path WIDE1-1,WIDE2-1, compressed, interval 10 min,
 SmartBeaconing on, level 50, TX delay 300 ms, via Radio, destination 310999; messaging and RX only on boards with a
@@ -393,7 +473,8 @@ receive path.
 ## 12. Size
 
 The flash and RAM cost of `CONFIG_APRS` and `CONFIG_APRS_RX` per radio is in [feature-matrix.md](../feature-matrix.md).
-`CONFIG_DMR_GPS` costs about 2.2 KB flash.
+`CONFIG_DMR_GPS` costs about 2.2 KB flash. A build with `CONFIG_APRS_AFSK=n` (positions over DMR only) leaves out
+AX.25, the tone plan, KISS, messages and the receive path.
 
 ## 13. Tests
 
@@ -417,7 +498,7 @@ saved and put back once the queued frames and message retries have gone out on t
 
 1. Position, status, message: a bench board decodes Bell 202 / AX.25 itself while the radio sends (an FM receive
    job with APRS decode: frames with a good FCS and their tone measurements, no I/Q). Asserted: a valid FCS,
-   `CALL-SSID>APZRDF` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
+   `CALL-SSID>` the radio's `aprs.tocall` with no digipeaters, the payload (position within 1e-4 degree, `>status`,
    `:ADDRESSEE:text{N`), `aprs.rf_sent` +1, the radio back on its channel, deviation peak 2.0-4.5 kHz, twist under
    6 dB. Printed: mark and space deviation, TX delay (flags before the frame). The position is sent from the DMR
    channel and from the FM VFO.
@@ -437,7 +518,6 @@ is still to run on the HR_C7000 boards. Per-radio levels and results are in the 
 ## 14. Open decisions
 
 - Default triggers: SmartBeaconing on with a 10 min interval fallback, after-PTT and boot off.
-- A registered tocall instead of APZRDF.
 - The LRRP request ID and token for unsolicited reports to BrandMeister; whether LRRP answers should use the APRS
   position when there is no GPS; whether Settings > Location > Send position should drive APRS.
 - The codeplug APRS record's fixed position and frequency encodings.

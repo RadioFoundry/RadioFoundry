@@ -3,5 +3,5 @@
 
 # Contributing
 
-See [docs/dev/contributing.md](/docs/dev/contributing.md). Security problems go through
+See [docs/dev/contributing.md](/docs/dev/contributing.md). Using RadioFoundry in another project: [FORKING.md](/FORKING.md). Security problems go through
 [SECURITY.md](/.github/SECURITY.md), not an issue.

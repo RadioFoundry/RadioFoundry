@@ -4,7 +4,10 @@
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
 #include <stddef.h>
+#include <string.h>
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
+#include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
 
@@ -36,7 +39,14 @@ WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
-WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch) { (void)number; (void)ch; return false; }
+WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from) { (void)number; (void)ch; (void)from; return false; }
+#if CONFIG_P25 || CONFIG_NXDN
+WEAK bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	(void)conv;
+	return ui_svc_write_channel(number, ch, from);
+}
+#endif
 #if CONFIG_CONTACT_EDIT
 WEAK bool ui_svc_write_contact(uint16_t index, const contact_t *c) { (void)index; (void)c; return false; }
 #endif
@@ -47,6 +57,15 @@ WEAK bool ui_svc_save_talk_target(uint32_t id, bool private_call) { (void)id; (v
 
 WEAK bool ui_svc_scan(bool on) { (void)on; return false; }
 WEAK bool ui_svc_roam(uint8_t cmd) { (void)cmd; return false; }
+#if CONFIG_DMR_TRUNK
+WEAK int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable) { (void)num; (void)ch; (void)usable; return -1; }
+WEAK bool ui_svc_t3_name(uint8_t n, char *name) { (void)n; name[0] = '\0'; return false; }
+WEAK void ui_svc_t3_cancel(void) {}
+WEAK void ui_svc_t3_reject(void) {}
+WEAK void ui_svc_t3_poll(uint32_t id) { (void)id; }
+WEAK void ui_svc_t3_dial(const char *digits) { (void)digits; }
+WEAK bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len) { (void)gw; (void)out; (void)len; return false; }
+#endif
 WEAK bool ui_svc_scan_skip(void) { return false; }
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }
 WEAK bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel) { (void)ref; (void)sel; return false; }
@@ -58,8 +77,18 @@ WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
-WEAK void ui_svc_poll(void) { }
+WEAK void ui_svc_aprs_msg_poll(void) { }
+WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return false; }
+WEAK void ui_svc_poll(void)
+{
+#if CONFIG_APRS_RX
+	ui_svc_aprs_msg_poll();
+#endif
+}
 WEAK void ui_svc_keys_poll(void) { }
+// Without key assignment no home key sends ACT_HOME_KEY_n: every action is the key map's
+WEAK uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home) { (void)gesture; (void)home; return action; }
+WEAK bool ui_svc_key_offered(uint8_t id, int32_t value) { (void)id; (void)value; return false; }
 WEAK void ui_svc_apply(uint8_t id, int32_t value) { (void)id; (void)value; }
 
 WEAK uint16_t ui_svc_msg_count(void) { return 0; }
@@ -68,10 +97,90 @@ WEAK bool ui_svc_msg_get(uint16_t i, ui_msg_t *out) { (void)i; (void)out; return
 WEAK void ui_svc_msg_read(uint16_t i) { (void)i; }
 WEAK bool ui_svc_msg_delete(uint16_t i) { (void)i; return false; }
 WEAK bool ui_svc_msg_send(uint32_t dst, bool group, const char *text) { (void)dst; (void)group; (void)text; return false; }
+WEAK bool ui_svc_msg_reply(uint16_t i, const char *text) { (void)i; (void)text; return false; }
 WEAK bool ui_svc_radio_check(uint32_t id) { (void)id; return false; }
 WEAK bool ui_svc_call_alert(uint32_t id) { (void)id; return false; }
+WEAK uint8_t ui_svc_ars_state(void) { return UI_ARS_OFF; }
 
 WEAK bool ui_svc_position(ui_position_t *out) { (void)out; return false; }
+#if CONFIG_GPS && CONFIG_POSITION && CONFIG_SATELLITE_TLE
+WEAK bool ui_svc_position_save_gps(void) { return false; }
+#endif
+#if CONFIG_SATELLITE_TLE
+WEAK uint8_t ui_svc_satellite_count(void) { return 0; }
+WEAK bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
+{
+	(void)index;
+	(void)record;
+	return false;
+}
+WEAK bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
+{
+	(void)index;
+	(void)summary;
+	return false;
+}
+WEAK bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
+{
+	(void)epoch;
+	(void)age_days;
+	return false;
+}
+WEAK uint32_t ui_svc_satellite_generation(void) { return 0u; }
+WEAK uint8_t ui_svc_satellite_selected(void) { return SETTINGS_UNSET8; }
+WEAK bool ui_svc_satellite_select(uint8_t index) { (void)index; return false; }
+WEAK bool ui_svc_satellite_track(bool enabled, uint8_t index) { (void)enabled; (void)index; return false; }
+WEAK void ui_svc_satellite_arm(void) { }
+WEAK bool ui_svc_satellite_scan(bool enabled) { (void)enabled; return false; }
+WEAK void ui_svc_satellite_poll(void) { }
+WEAK void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (status != NULL) *status = RADIO_SAT_SCAN_UNAVAILABLE;
+	if (completed != NULL) *completed = 0u;
+	if (total != NULL) *total = 0u;
+	if (passes != NULL) *passes = 0u;
+}
+WEAK bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	(void)rank;
+	if (pass != NULL) *pass = (radio_satellite_pass_t){0};
+	return false;
+}
+
+WEAK bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
+{
+	(void)record_index;
+	if (summary != NULL) *summary = (satellite_record_brief_t){0};
+	return false;
+}
+
+WEAK bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	(void)epoch;
+	return false;
+}
+
+WEAK bool ui_svc_satellite_view(radio_satellite_view_t *view)
+{
+	if (view != NULL) *view = (radio_satellite_view_t){0};
+	return false;
+}
+
+WEAK bool ui_svc_satellite_path(satellite_path_view_t *path)
+{
+	if (path != NULL)
+		*path = (satellite_path_view_t){0};
+	return false;
+}
+WEAK bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
+{
+	(void)index;
+	(void)lines;
+	return false;
+}
+WEAK bool ui_svc_satellite_update_busy(void) { return false; }
+#endif
+WEAK uint8_t ui_svc_gps_power(void) { return UI_GPS_POWER_NONE; }
 WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; return false; }
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
@@ -99,13 +208,13 @@ WEAK void ui_svc_zone_offer_reject(uint32_t serial) { (void)serial; }
 WEAK bool ui_svc_zone_offer_import(uint32_t serial, uint16_t zone) { (void)serial; (void)zone; return false; }
 
 // Safe defaults (P7): no auto-transmit feature on, tones on, hints on
-static int32_t settings[UI_SET_COUNT] = {
+static int32_t settings[UI_SET_RAM_COUNT] = {
 	[UI_SET_KEY_TONES] = 1, [UI_SET_TONE_VOLUME] = 5, [UI_SET_TALK_PERMIT] = 1, [UI_SET_MESSAGE_TONE] = 1,
 	[UI_SET_BRIGHTNESS] = 100, [UI_SET_BACKLIGHT_S] = 30, [UI_SET_HINTS] = 1,
 	[UI_SET_REPLY_S] = 10, [UI_SET_TOT_S] = 180, [UI_SET_SQUELCH] = 5, [UI_SET_MIC_GAIN] = 5, [UI_SET_ALIAS_SHOW] = 1,
 	[UI_SET_PTT_LOCKED] = 1, [UI_SET_LOW_BATTERY] = 15, [UI_SET_LONG_PRESS_MS] = 600, [UI_SET_REPEAT_MS] = 120,
 	[UI_SET_ROAM_SURVEY] = 1, [UI_SET_ROAM_BEACON_S] = 60, [UI_SET_ROAM_BEACON_LEN] = 4, [UI_SET_TFTP_WRITE] = 1,
-	[UI_SET_MSG_FORMAT] = 2,	// ETSI IP text
+	[UI_SET_MSG_FORMAT] = 255,	// Automatic
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
 	[UI_SET_BCAST_STEP] = 200,
 	[UI_SET_NOISE_REDUCTION] = 1,
@@ -113,12 +222,12 @@ static int32_t settings[UI_SET_COUNT] = {
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
 
-int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_COUNT ? settings[id] : 0; }
+int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_RAM_COUNT ? settings[id] : 0; }
 
 bool ui_svc_ram_set(uint8_t id, int32_t value)
 {
-	if (id >= UI_SET_COUNT)
-		return false;
+	if (id >= UI_SET_RAM_COUNT)
+		return false;	// past the table (RAM is short): the codeplug's, set through ui_svc_storage.c
 	settings[id] = value;
 	return true;
 }

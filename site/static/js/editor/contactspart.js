@@ -342,13 +342,9 @@ function addRegion() {
 	const country = P.country.value;
 	if (!country) return;
 	const states = [...P.states.querySelectorAll("input:checked")].map((x) => x.value);
-	const add = states.length ? states.map((state) => ({ country, state })) : [{ country }];
-	const k = (r) => `${r.country}\n${r.state || ""}`.toLowerCase();
-	const have = new Set(B.prefs.regions.map(k));
-	// a whole country replaces its states; a state under a chosen whole country adds nothing
-	if (!states.length) B.prefs.regions = B.prefs.regions.filter((r) => r.country !== country);
-	else if (have.has(k({ country }))) return;
-	for (const r of add) if (!have.has(k(r))) B.prefs.regions.push(r);
+	const regions = radioid.addRegion(B.prefs.regions, country, states);
+	if (regions === B.prefs.regions) return;
+	B.prefs.regions = regions;
 	for (const x of P.states.querySelectorAll("input:checked")) x.checked = false;
 	save();
 	update();
@@ -379,7 +375,7 @@ async function fetchUsers() {
 	B.apiClient = B.apiClient || new radioid.RadioIdApi({ key: B.key });
 	const client = B.apiClient;
 	const ctrl = new AbortController();
-	const bar = progressBar();
+	const bar = progressBar({ stay: false });
 	const d = api.dialog(t("editor.rid.fetching"), [bar.el], null, null, () => ctrl.abort(), { cancel: t("editor.stop") });
 	try {
 		// sizes first, so a selection too big for the API is caught before the long part

@@ -9,7 +9,6 @@
 #include "config.h"
 #if CONFIG_SFR
 
-#include <stdio.h>
 #include <string.h>
 #include "dmr/sfr.h"
 #include "dmr/dmrData.h"
@@ -848,7 +847,26 @@ bool sfrMmdvmTrigger(bool simplexFlag, uint32_t rxFreq, uint32_t txFreq)
 
 int sfrMmdvmVersionSuffix(const sfrConfig_t *cfg, char *buf, size_t size)
 {
-	return snprintf(buf, size, " SFR TS%d>TS%d %s", cfg->inboundSlot + 1, 2 - cfg->inboundSlot, sfrFramingName(cfg->framing));
+	// Not snprintf: it would be the image's only use of the C library's printf, and of the allocator behind it
+	const char *const parts[2] = { (cfg->inboundSlot == 0) ? " SFR TS1>TS2 " : " SFR TS2>TS1 ",
+				       sfrFramingName(cfg->framing) };
+	size_t n = 0;
+
+	for (int i = 0; i < 2; i++)
+	{
+		for (const char *s = parts[i]; *s != '\0'; s++, n++)
+		{
+			if (n + 1 < size)
+			{
+				buf[n] = *s;
+			}
+		}
+	}
+	if (size > 0)
+	{
+		buf[(n < size) ? n : (size - 1)] = '\0';
+	}
+	return (int)n;	// the whole length, as snprintf gave: past size - 1 says the text was cut
 }
 
 #endif // HAS_SFR

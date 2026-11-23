@@ -77,12 +77,17 @@ def test_hub_and_back(home):
     assert s["ui.depth"] == "2"
     r.press("back")
     wait_screen(r, "hub", "BACK goes up to the Hub")
-    r.press("7")
-    wait_screen(r, "settings", "Settings on 7")
-    r.press("2")
-    wait_screen(r, "group", "a settings group on 2")
+    if "UI_SETTINGS" in r.features():
+        r.press("7")
+        wait_screen(r, "settings", "Settings on 7")
+        r.press("2")
+        wait_screen(r, "group", "a settings group on 2")
+    else:
+        # Built without the Settings menu: depth 2 through Contacts again
+        r.press("1")
+        wait_screen(r, "contacts", "Contacts on 1")
     r.press("back", LONG)
-    s = wait_screen(r, "home", "long BACK goes Home from depth 3")
+    s = wait_screen(r, "home", "long BACK goes Home")
     assert s["ui.depth"] == "0"
 
 
@@ -163,9 +168,12 @@ def test_recent_from_the_hub(home):
 
 
 @pytest.mark.feature("channel_list")
+@pytest.mark.needs_switch("CHANNEL_LIST")
 def test_zones_and_channels_lists(home):
     """Hub 4 lists the VFO and the zones, hub 5 every channel by number; OK on a channel opens its settings page."""
     r = home
+    if "CHANNEL_LIST" not in r.features():
+        skip("not_built", "built without CONFIG_CHANNEL_LIST: no Zones or Channels list")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("4")
@@ -317,7 +325,7 @@ def test_vfo_toggle_key(home):
     feats = r.features()
     if "VFO_FM" not in feats and "VFO_DMR" not in feats:
         skip("not_built", "built without a VFO")
-    chan = r.core()
+    chan = r.leave_vfo()    # a session that found the radio in the VFO puts it back there before each test
     try:
         r.press("vfo_toggle")
         r.wait_for(lambda x: x.get("vfo") == "1", what="the VFO")
@@ -713,14 +721,30 @@ def test_zone_editor_moves_a_channel(home):
 
 
 @pytest.mark.feature("dmr_sms")
+@pytest.mark.rf_fallback
+@pytest.mark.delete_message
+# The firmware deletes by row number. An arrival after the final read can take row zero.
+@skip_if(os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") not in ("hil", "1"), "opt_in",
+         "isolate the receiver from other message sources and set RFOUNDRY_HIL_DELETE_MESSAGE=hil, "
+         "or authorize deletion from a disposable inbox with RFOUNDRY_HIL_DELETE_MESSAGE=1")
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
 def test_delete_message(home, request, pytestconfig):
-    """Hub 2 (Messages), OK on the newest, Delete (the fourth action): the inbox has one message less. Only a message
-    a HIL test sent (its text starting HIL_SMS_PREFIX) is deleted without asking: when the newest isn't one, the bench
-    sends one first (with --allow-rf; the radio only receives). To delete one of the owner's instead set
-    RFOUNDRY_HIL_DELETE_MESSAGE=1."""
+    """Hub 2 (Messages), OK on the newest, Delete (the last action): the inbox has one message less. Only a message
+    from an isolated bench (RFOUNDRY_HIL_DELETE_MESSAGE=hil) or a disposable inbox
+    (RFOUNDRY_HIL_DELETE_MESSAGE=1) can be deleted. On the isolated bench the selected text must start with
+    HIL_SMS_PREFIX. With --allow-rf the bench can supply that message."""
     r = home
     if r.data_view().get("data.built") != 1:
         skip("not_built", "built without the DMR data features")
+
+    def require_dmr_rows():
+        # The Messages screen merges DMR and APRS by age. inbox(0) identifies only the newest DMR message.
+        aprs = r.view(["aprs"])
+        if aprs.get("aprs.built") != "0" and aprs.get("aprs.messages") != "0":
+            skip("state", "cannot identify the first Messages row as DMR with this APRS inbox")
+
+    require_dmr_rows()
     n = as_int(r.view(["dmr_data"]).get("data.inbox_count"))
     newest = (r.link.inbox(0) or {}) if n else {}
     if not newest.get("text", "").startswith(HIL_SMS_PREFIX) and os.environ.get("RFOUNDRY_HIL_DELETE_MESSAGE") != "1":
@@ -729,19 +753,31 @@ def test_delete_message(home, request, pytestconfig):
                            "RFOUNDRY_HIL_DELETE_MESSAGE=1 to delete it")
         n = bench_sms(r, request.getfixturevalue("sdr_bench"), rig(pytestconfig, "dmr-freq"),
                       rig(pytestconfig, "dmr-cc"))
-    if not n:
+        newest = r.link.inbox(0) or {}
+        if not newest.get("text", "").startswith(HIL_SMS_PREFIX):
+            skip("state", "the bench message is no longer first in the DMR inbox")
+    if not n or not newest:
         skip("state", "the inbox is empty")
     r.press("ok")
     wait_screen(r, "hub")
     r.press("2")
-    wait_screen(r, "messages")
+    if as_int(wait_screen(r, "messages").get("ui.focus")) != 0:
+        skip("state", "the first Messages row is not selected")
     r.press("ok")
-    wait_screen(r, "message")
-    for _ in range(3):
+    s = wait_screen(r, "message")
+    last = as_int(s.get("ui.count")) - 1     # Delete is the last row: a long message has Full message first
+    for _ in range(last):
         r.press("down")
+    r.wait_for(lambda v: as_int(v.get("ui.focus")) == last, sections=("link",), what="Delete (the last row)")
+    require_dmr_rows()
+    current = r.link.inbox(0)
+    # Opening the message marks it read. Its addresses, format and text must still match before Delete.
+    if not current or any(current.get(k) != newest.get(k) for k in ("src", "dst", "group", "format", "text")):
+        skip("state", "the selected DMR message changed before Delete")
     r.press("ok")
     r.wait_for(lambda x: as_int(x.get("data.inbox_count")) == n - 1, sections=("dmr_data",), what="one message less")
-    assert "deleted" in ui(r).get("ui.toast", "")
+    # The toast shows a UI tick after the inbox changes
+    r.wait_for(lambda v: "deleted" in v.get("ui.toast", ""), sections=("link",), what="the Message deleted toast")
 
 
 @pytest.mark.feature("ui_settings")

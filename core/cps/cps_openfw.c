@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The open-firmware CPS protocol engine
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+//
+// The open-firmware CPS protocol engine
 // (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
 // request ends when its header says it is complete (R, W/X, most C commands), or after CPS_GAP_MS of quiet for the rest
 // (C 2 text without a NUL, D, unknown bytes). A request still short of its header's length waits CPS_STALL_MS, so a
@@ -7,6 +10,7 @@
 #include "cps/cps_openfw.h"
 #include "board.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_kv.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 
@@ -23,7 +27,7 @@
 #define EE_IMAGE_SIZE	0x10000u
 
 static const cps_io_t *io;
-static uint8_t req[CPS_REQUEST_MAX];
+static uint8_t req[CPS_REQUEST_MAX] RFOUNDRY_COLD_RAM;	// the CPS task's request being assembled (cps_feed)
 static size_t req_len;
 static bool overflow;
 static uint32_t last_rx_ms;
@@ -450,7 +454,9 @@ static void cmd_write(void)
 			return;
 		}
 		cps_openfw_vfo_written(sector_addr, sector, last_rx_ms);
-		bool ok = storage_sector_write(sector_addr, sector);
+		// A settings area sector that would wipe or overwrite the radio's keys against the transfer rule (a tool
+		// without the area writes it 0xFF) is acknowledged and left as it is (codeplug-settings.md 6)
+		bool ok = codeplug_kv_commit(sector_addr, sector);
 		drop_sector();
 		if (!ok) {
 			refuse();

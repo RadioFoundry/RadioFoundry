@@ -5,6 +5,11 @@ Copyright (C) 2010 DSD Author
 (As carried by DSD-FME, https://github.com/lwvmobile/dsd-fme, include/bp.h, the source of the Motorola Basic
 Privacy key table in core/dmr/dmrPrivacy.c.)
 
+Copyright (C) 2010 mbelib Author
+
+(mbelib 1.3.0: the source of the full-rate voice decoder's dequantizer and its tables, ported to integers in
+core/mbe/imbe_dec.c and core/mbe/imbe_tab.c.)
+
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
 copyright notice and this permission notice appear in all copies.

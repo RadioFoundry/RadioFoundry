@@ -1,0 +1,179 @@
+{
+ "board": "rt10",
+ "commit": "4989c25e1ca91680c1d9ff2941f43a3b9247299c",
+ "date": "2026-11-17T08:44:51Z",
+ "dirty": false,
+ "features": [
+  "nxdn"
+ ],
+ "firmware": {
+  "board": "RT10",
+  "codec": "rt10-112",
+  "display": "128x64x1",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,APRS,APRS_AFSK,APRS_DMR,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_ARS,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,DMR_UDP_COMPRESS,IDDB_COMPACT,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "220ab160",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 2,
+  "dmr-tg": 9990
+ },
+ "sources": {
+  "nxdn": {
+   "core/air": "69cc66acdae800238ca5e03e2424b0610c1d3c8e",
+   "core/debuglink/debuglink_view_nxdn.c": "d446ee9e4f9034802cd8c3fe36ec98ed2a8f92a7",
+   "core/fec": "2b55fdfc671feb97605601120fa6000e0da9df6b",
+   "core/nxdn": "b16b304182a77d405678e51fb3a7adfc995e24b5",
+   "core/radio/radio_air.h": "c3aa8ab2f2991f16a80894c46e6a106f983dfb4d",
+   "core/radio/radio_nxdn.c": "7a3d79fcf1c373dae79373e8f7b7da1d1c7783c6",
+   "core/radio/radio_nxdn.h": "b9e74018330ad60688f3a0eafcd179b167e149cb",
+   "docs/spec/nxdn.md": "be1bbe0c2208f67ce2be3768b0491e504b722b48"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_mode_switch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_from_bench[4800]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_from_bench[9600]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_speech[4800]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_rx_speech[9600]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_scan_from_bench[dual]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_scan_from_bench[zone]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_stored_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_stored_channel_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_tx_off_air[4800]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "excused": true,
+   "features": [
+    "nxdn"
+   ],
+   "id": "tests/hil/test_nxdn.py::test_nxdn_tx_off_air[9600]",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

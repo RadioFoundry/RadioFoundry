@@ -9,6 +9,7 @@
 #include "modem/hrc5000/hrc5000.h"
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "dmr/ambe/ambeFec.h"
+#include "dmr/fec/dmrFec.h"
 
 static int failures;
 
@@ -24,10 +25,21 @@ static xfer_t xlog[8192];
 static int nx;
 static uint8_t rd[8][256];
 
+static int fail_reads, fail_writes;	// this many transfers of each kind fail next (logged all the same)
+
 static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
 {
 	uint8_t page = hdr[0] & 7u, reg = hdr[1];
 	bool read = (hdr[0] & 0x80u) != 0;
+	int *fail = read ? &fail_reads : &fail_writes;
+	if (*fail > 0) {
+		(*fail)--;
+		if (nx < (int)(sizeof(xlog) / sizeof(xlog[0]))) {
+			xlog[nx] = (xfer_t){ page, reg, (uint8_t)len, read, { 0 } };
+		}
+		nx++;
+		return false;
+	}
 	if (nx < (int)(sizeof(xlog) / sizeof(xlog[0]))) {
 		xfer_t *x = &xlog[nx];
 		x->page = page;
@@ -150,6 +162,59 @@ static void test_chip(void)
 	nx = 0;
 	CHECK(hrc_set_dmr_id(&c5.hrc, 0x123456u));		// low byte first
 	CHECK(last_write(0, 0x14) == 0x56 && last_write(0, 0x15) == 0x34 && last_write(0, 0x16) == 0x12);
+}
+
+// --- The TX lead for listening between bursts (4:0x12) ---
+
+static void test_tx_lead(void)
+{
+	hrc5000_t c5;
+	hrc5000_attach(&c5, &bus, false);
+	hrc5000_lead_t l = { 0 };
+	rd[0][0x12] = 0xC5;	// bits 7-6 kept; the configuration page is 0 on the wire
+
+	nx = 0;
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off
+	// Half symbols over the value read (0x05 here), not 100 us from 0: 15 steps = 1563 us (issue 609)
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15));
+	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 20));
+	CHECK(hrc5000_tx_lead_us(&l) == 1563u);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && nx == 2);	// already on: no traffic
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5 && !l.on && !l.kept);
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off again
+	nx = 0;
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && nx == 0);	// nothing to put back
+
+	// A lead past what bits 5-0 hold over the value read stops at 63
+	rd[0][0x12] = 0xCA;
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 60) && last_write(0, 0x12) == 0xFF);
+	CHECK(hrc5000_tx_lead_us(&l) == 5521u);	// 53 steps
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xCA);
+	rd[0][0x12] = 0xC5;
+
+	// The read fails: nothing written then, and nothing at the end (it once wrote 0 back there)
+	nx = 0;
+	fail_reads = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && !l.kept);
+	CHECK(count_writes(0, 0x12) == 0);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && count_writes(0, 0x12) == 0);
+
+	// The write fails: not on, the value read kept; the next call writes again without reading, the end puts it back
+	nx = 0;
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && l.kept);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && l.on);
+	CHECK(count_reads(0, 0x12) == 1 && count_writes(0, 0x12) == 2);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5);
+
+	// The lead's write fails and so does the first restore: the end tries again
+	nx = 0;
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && l.kept);
+	fail_writes = 1;
+	CHECK(!hrc5000_tx_lead_off(&c5, &l) && l.kept && !l.on);
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && !l.kept && last_write(0, 0x12) == 0xC5);
+	rd[0][0x12] = 0;
 }
 
 // --- Register traffic ---
@@ -306,11 +371,17 @@ static dmr_tx_burst_t mk(uint8_t kind, uint8_t idx, bool host_crc)
 	return b;
 }
 
+static dmr_event_t evs[256];
+static int nev;
+
 static void drain(void)
 {
 	dmr_event_t ev;
 	dmr_burst_t b;
 	while (hrc6000_dmr_pop(&eng, &ev, &b)) {
+		if (nev < 256) {
+			evs[nev++] = ev;
+		}
 	}
 }
 
@@ -400,6 +471,59 @@ static void test_engine(void)
 	CHECK(count_page(4) == 0);
 }
 
+
+// A BS's outbound RC burst heard between our bursts: the HR_C5000 leaves its 48-bit field (EMB + RC) at page 2 0x30,
+// with bytes after it that change per burst. One DMR_EV_RC per new field, the same RC twice counted twice, another
+// color code's not at all
+static void test_tx_listen_rc_field(void)
+{
+	static const uint8_t cease[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };	// CC 2, cease, as sent on air
+	memset(rd, 0, sizeof(rd));
+	hrc5000_attach(&c5, &bus, false);
+	hrc_t *h = hrc5000_hrc(&c5);
+	CHECK(hrc6000_dmr_enter(h, 0x40, 0x40, 0xC8));
+	t_us = 1000000;
+	hrc6000_dmr_init(&eng, h, &ops);
+	hrc6000_dmr_run(&eng);
+	dmr_config_t cfg = { .own_id = 0x0A0B0C, .cc = 2, .access = DMR_ACCESS_IMPOLITE, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	drain();
+	nev = 0;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 2, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 8; i++) {
+		dmr_tx_burst_t b = mk(DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	t_us = 6000000;
+	for (int k = 0; k < 30; k++) {
+		if (k == 3 || k == 7 || k == 11) {
+			memcpy(&rd[2][0x30], cease, sizeof cease);
+			rd[2][0x36] = (uint8_t)k;	// the bytes after the field change per burst
+			if (k == 11) {
+				dmrFecRcField(3, DMR_RC_CEASE, &rd[2][0x30]);	// another color code's
+			}
+		}
+		hrc6000_dmr_isr_timeslot(&eng);
+		t_us += 1500;
+		hrc6000_dmr_isr_rftx(&eng);
+		t_us += 28500;
+		drain();
+	}
+	int rc = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_RC) {
+			rc++;
+			CHECK(evs[i].arg == dmrFecRcInfo(DMR_RC_CEASE));
+		}
+	}
+	hrc6000_dmr_stats_t st;
+	hrc6000_dmr_stats(&eng, &st);
+	CHECK(rc == 2 && st.rc_tap == 2);
+	CHECK(st.rc_tap_changed == 4);	// the empty area first, then each field
+}
 
 // Received voice on the HR_C5000 (hardware-md380.md 4.8): no report per burst. A call's header starts the decoder
 // (0x22 DecodeStart); the voice port is read at every tick, the slot whose reads carry valid AMBE+2 frames is locked,
@@ -733,10 +857,10 @@ static void test_tick_rx_resume(void)
 	hrc6000_dmr_stats(&eng, &st);
 	CHECK(st.lc_resumed == 1);
 
-	// One report only: nothing proves it, the voice count decides (the second F)
+	// One report only: nothing proves it, the sticky rule decides (the A after the first whole superframe)
 	resume_opts_t one = { .gap = 26, .reports = 1 };
 	r = resume_run(&one);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 
 	// Someone else came on in the gap: their LC at the first report, handed over at once (never the old one)
 	resume_opts_t other = { .gap = 26, .reports = 2, .lc2 = res_other };
@@ -751,12 +875,13 @@ static void test_tick_rx_resume(void)
 	// The call ended by its terminator: the same LC after it is a new call, by the sticky LC rule
 	resume_opts_t term = { .terminator = true, .gap = 26, .reports = 2 };
 	r = resume_run(&term);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
+	CHECK(memcmp(r.lc, res_lc, 9) == 0);
 
 	// Too long after the call: a new one
 	resume_opts_t late = { .gap = 70, .reports = 2 };
 	r = resume_run(&late);
-	CHECK(r.lc_at >= 12);
+	CHECK(r.lc_at >= 7 && r.lc_at <= 8);
 }
 
 // A post-access read's LC with no reception after it stays out of later receptions: the flag that keeps it for the
@@ -1339,18 +1464,83 @@ static void test_two_slots(void)
 	TWO_CHECK("headers, a mix that stays", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1]);
 }
 
+// A BS-framed direct call (a simplex hotspot), heard in the hunt's BS dwell: the chip reports the header, the voice
+// comes from the port. Neither carries its sync family (no 0x5F), and both stay labeled MS; the family is the one
+// 0x10 finds. Our answer keys in direct mode; the first dwell after it is in BS mode, where the chip finds the
+// sender's answer. Taken by the label, the call left the radio in direct mode for a whole dwell after the answer,
+// deaf to the hotspot for about 0.85 s (SDR bench)
+static void test_bs_direct_answer_dwell(void)
+{
+	tr_setup();
+	nx = 0;
+	for (int k = 0; k < 200 && last_write(0, 0x10) != 0x4F; k++) {	// into the BS dwell
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(last_write(0, 0x10) == 0x4F);
+	int ms = 0, voice = 0;
+	for (int k = 0; k < 42; k++) {		// three headers, then 18 voice bursts from the port (the other slot noise)
+		if (k >= 6) {
+			burst((uint8_t)k, (k & 1) == 1);
+		}
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		hrc6000_dmr_poll(&eng);
+		if (k < 6 && (k & 1) == 0) {
+			tr_report(0x08, 0x12);	// the voice LC header
+		}
+		dmr_event_t ev;
+		dmr_burst_t bu;
+		while (hrc6000_dmr_pop(&eng, &ev, &bu)) {
+			if (ev.kind == DMR_EV_BURST_RX) {
+				ms += bu.sync == DMR_SYNC_MS;
+				voice += bu.kind == DMR_BURST_VOICE;
+			}
+		}
+	}
+	CHECK(voice >= 12 && ms >= voice);	// the slot numbers stay direct mode's (no CACH, no slot filter)
+	CHECK(eng.bs_last);
+
+	t_us += 2000000;			// the call over, the hunt running
+	for (int k = 0; k < 20; k++) {
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(last_write(0, 0x10) == 0x6B);	// keyed in the channel's mode
+	hrc6000_dmr_tx_abort(&eng);
+	for (int k = 0; k < 100 && hrc6000_dmr_is_transmitting(&eng); k++) {	// no ticks: ended by the stall check
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	nx = 0;
+	t_us += 5000;
+	hrc6000_dmr_poll(&eng);
+	CHECK(last_write(0, 0x10) == 0x4F);	// BS mode at once
+	nx = 0;
+	for (int k = 0; k < 74; k++) {		// and for a whole dwell (370 ms)
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(count_writes(0, 0x10) == 0);
+}
+
 int main(void)
 {
 	test_chip();
+	test_tx_lead();
 	test_modes();
 	test_engine();
 	test_tick_rx();
+	test_bs_direct_answer_dwell();
 	test_tick_rx_stale_headers();
 	test_tick_rx_same_bursts();
 	test_tick_rx_resume();
 	test_tick_rx_stale_post_access();
 	test_repeater_slot();
 	test_two_slots();
+	test_tx_listen_rc_field();
 	printf("hrc5000Test: %s (%d failures)\n", failures ? "FAILED" : "passed", failures);
 	return failures ? 1 : 0;
 }

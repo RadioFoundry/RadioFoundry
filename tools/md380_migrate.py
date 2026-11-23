@@ -57,6 +57,19 @@ RDT_SIZE = RDT_HEADER + CODEPLUG_SIZE + RDT_TRAILER
 STOCK_DRIVER = "md390"        # dmrconf --radio for the stock codeplug (MD-380, MD-390, RT3)
 RFOUNDRY_DRIVER = "openuv380"      # dmrconf --radio for RadioFoundry (open-firmware-cps.md 4: radio type 7, OpenUV380 family)
 
+# The DMR ID database on a data flash under 16 MB, where RadioFoundry's flash image ends at 0x100000 (image 0xE0000;
+# hardware-md380.md 12.2): area 1 at image 0x50000 holds 256 KB less the 12-byte header, area 2 runs from image
+# 0xD8000 to the image end (open-firmware-cps.md 7.5). openuv380 records are 27 bytes (32-character text)
+IDDB_RECORD = 27
+IDDB_SMALL_IMAGE_END = 0x100000 - 0x20000
+
+
+def iddb_capacity(flash_bytes):
+    """How many database records RadioFoundry reads on a data flash of this size; None when qdmr's own limit applies"""
+    if not flash_bytes or flash_bytes >= 0x1000000:
+        return None
+    return (0x40000 - 12) // IDDB_RECORD + max(0, IDDB_SMALL_IMAGE_END - 0xD8000) // IDDB_RECORD
+
 # What RadioFoundry's codeplug layout holds, and the qdmr YAML helpers: shared (codeplug_port.py)
 RFOUNDRY_LIMITS = cp.RFOUNDRY_LIMITS
 SECTION_NAMES = cp.SECTION_NAMES
@@ -593,6 +606,7 @@ def prepare_stream(sess, args):
                 raise MigrateError("the updater file doesn't decrypt to an MD-380 application with this key")
             sess.say("   checked with the key: a valid vector table")
         sess.cache["stream"] = stream
+        sess.cache["stock_image"] = True    # TYT's firmware, not ours: what the flash says it wrote
         return stream
     dfu = stm32_dfu()
     if not info:
@@ -667,8 +681,40 @@ def wait_dfu(sess, dfu, timeout):
     raise MigrateError("the bootloader did not appear within %d s (USB 0483:DF11)" % timeout)
 
 
+EXIT_WATCH_S = 6    # after the bootloader's exit request: long enough for the radio to leave USB and come back
+
+
+def flash_result(stock, loader_back):
+    """What to say after the write and the exit request. stock: a TYT updater file was written, not RadioFoundry.
+    loader_back: a device 0483:DF11 is on USB when the watch ends. RadioFoundry never uses that ID, so there it is the
+    bootloader; the stock firmware in programming mode uses it too (docs/spec/md380-migration.md 3), so there only the
+    screen tells."""
+    what = "the stock firmware" if stock else "RadioFoundry"
+    off_on = "switch the radio off and on (take the battery off and refit it if the switch does nothing)"
+    if not loader_back:
+        return ["written; the radio restarts into %s" % what]
+    if stock:
+        return ["written: %s. A device 0483:DF11 is on USB, which is the bootloader or the stock firmware." % what,
+                "If the screen is dark and the LED blinks, the radio is still in the bootloader: " + off_on + "."]
+    return ["written: %s, but the radio is still in the bootloader (USB 0483:DF11, screen dark, LED blinking):" % what,
+            off_on + "."]
+
+
+def loader_back_after_exit(dfu, usb, watch_s=EXIT_WATCH_S, step_s=0.5):
+    """True when 0483:DF11 is on USB at the end of the watch (it never left, or it came back)"""
+    present = True
+    end = time.monotonic() + watch_s
+    while time.monotonic() < end:
+        time.sleep(step_s)
+        try:
+            present = bool(dfu.find_devices(usb))
+        except Exception:
+            present = False     # the bus is re-enumerating: not there right now
+    return present
+
+
 def step_flash(sess, args):
-    sess.step("2. Flash RadioFoundry")
+    sess.step("2. Flash the firmware")
     stream = prepare_stream(sess, args)
     dfu = stm32_dfu()
     shown = stream if stream is not None else bytes(sess.cache.get("plain_len", 0))
@@ -707,7 +753,8 @@ def step_flash(sess, args):
     except Exception as e:
         raise MigrateError("flashing failed: %s. The bootloader is never erased: enter it again and rerun "
                            "'flash'. Your codeplug backup is in %s" % (e, sess.workdir))
-    sess.say("   written; the radio restarts into RadioFoundry")
+    for line in flash_result(bool(sess.cache.get("stock_image")), loader_back_after_exit(dfu, usb)):
+        sess.say("   " + line)
     sess.save_state(flashed=sha256(stream))
     return True
 
@@ -749,8 +796,8 @@ def step_prepare_rfoundry(sess, args):
     region = re.search(r"region\s+(\w+)", out or "")
     region = region.group(1) if region else ("foreign" if sess.dry else "?")
     if region == "none":
-        raise MigrateError("RadioFoundry found no usable SPI flash: this radio has the small (1 MB) flash part, or the flash "
-                           "was not detected. RadioFoundry runs on this radio but keeps nothing (no codeplug, no settings), "
+        raise MigrateError("RadioFoundry found no usable SPI flash: this radio has a flash part smaller than 1 MB, or the "
+                           "flash was not detected. RadioFoundry runs on this radio but keeps nothing (no codeplug, no settings), "
                            "so there is nothing to restore. Your backup is in %s" % sess.workdir)
     if region == "foreign":
         sess.say("   The flash area RadioFoundry keeps its settings in still holds the stock firmware's data. RadioFoundry doesn't")
@@ -813,10 +860,23 @@ def step_iddb(sess, args):
         sess.say("   from your users file (%s records)" % sess.state.get("users_count", "?"))
     else:
         sess.say("   dmrconf downloads the public DMR user database (internet needed)")
-    if args.db_limit:
-        cmd += ["--limit", str(args.db_limit)]
-    sess.say("   a large database takes several minutes over USB; don't unplug the radio")
     wait_rfoundry(sess, args.wait)
+    limit = args.db_limit
+    if not sess.dry:
+        # a smaller data flash ends the database early: writes past its end are refused and the write would stop there
+        c = open_cps(sess)
+        try:
+            flash_id = c.info()["flash_id"]
+        finally:
+            c.close()
+        code = flash_id & 0xFF
+        cap = iddb_capacity(2 ** code if 0x10 <= code <= 0x1C else None)
+        if cap and (not limit or limit > cap):
+            sess.say("   this radio's data flash holds %d records: the database is cut to the %d nearest your ID" % (cap, cap))
+            limit = cap
+    if limit:
+        cmd += ["--limit", str(limit)]
+    sess.say("   a large database takes several minutes over USB; don't unplug the radio")
     sess.dmr(*cmd, radio=True, serial=True)
     sess.say("   done: names show on the receive screen for IDs that are not contacts")
     return True
@@ -1059,6 +1119,27 @@ zones:
                 check(want is not None and want in str(e), "pick_port: %s (got %r)" % (want, str(e)))
     finally:
         globals()["load_module"] = real
+
+    # After the flash: what was written, and a radio left in the bootloader is told how to leave it
+    check(flash_result(False, False) == ["written; the radio restarts into RadioFoundry"], "flash result: RadioFoundry")
+    check(flash_result(True, False) == ["written; the radio restarts into the stock firmware"], "flash result: stock")
+    for stock in (False, True):
+        text = " ".join(flash_result(stock, True))
+        check("bootloader" in text and "off and on" in text and "restarts into" not in text,
+              "flash result: loader still there (stock %s)" % stock)
+    check("RadioFoundry" not in " ".join(flash_result(True, True)), "flash result: a stock image is not called ours")
+
+    class FakeDfu:
+        def __init__(self, seen):
+            self.seen = list(seen)
+
+        def find_devices(self, usb):
+            return [1] if self.seen.pop(0) else []
+    check(loader_back_after_exit(FakeDfu([False] * 50), None, watch_s=0.03, step_s=0.01) is False, "exit watch: gone")
+    check(loader_back_after_exit(FakeDfu([True] * 50), None, watch_s=0.03, step_s=0.01) is True, "exit watch: still there")
+
+    check(iddb_capacity(1 << 20) == 9708 + 1213, "1 MB data flash: both database areas, up to 0x100000")
+    check(iddb_capacity(1 << 24) is None and iddb_capacity(None) is None, "16 MB or unknown: no cap")
 
     # What --stock and the flash load, here and from a kit. None of it needs the stock file
     check(stockfw().codecmap.load_maps(), "stockfw loads, with the codec maps")

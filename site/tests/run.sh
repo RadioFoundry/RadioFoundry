@@ -11,6 +11,7 @@ OUT=${RFOUNDRY_SITE_FIXTURES:-build/site-tests}
 python3 site/tests/fixtures.py "$OUT"
 python3 site/tests/radio_images_test.py
 python3 site/tests/shots_test.py
+python3 site/tests/features_test.py
 python3 site/tests/toolzip_test.py
 python3 site/tests/firmware_links_test.py
 RFOUNDRY_SITE_FIXTURES="$OUT" node --test site/tests/*.test.mjs

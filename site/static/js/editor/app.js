@@ -6,27 +6,30 @@
 
 import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum, date as fmtDate } from "../flasher/dom.js";
 import { equal } from "../flasher/bytes.js";
-import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, browserErrorKey, knownRadioPort } from "../flasher/link.js";
-import { CodeplugImage, IDDB_HEADER, REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
+import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
+import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, followListen } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
+import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS } from "../codeplug/kv.js";
+import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
-import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel } from "./views.js";
-import { openFile, saveBytes, tftpBytes, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
+import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
+import { systemsTab, systemsShown, modeSettingsPart } from "./modesview.js";
+import { syncModes, countSecrets, withoutSecrets } from "../codeplug/channelmodes.js";
+import { openFile, saveBytes, tftpBytes, datedName, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
 import "./parts.js";
 import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
-const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
-const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "iddb", "problems"];
+const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
 const S = {
@@ -65,7 +68,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	draftSoon();
 }
 
-// Run fn as one undoable change
+// Run fn as one undoable change. A channel it left in a listen band (an import, a pasted RX) gets TX on RX in the same
+// step, as decode gives a loaded one
 function change(label, fn) {
 	S.history.record(S.model, label);
 	const r = fn();
@@ -73,6 +77,7 @@ function change(label, fn) {
 		S.history.cancel();
 		return false;
 	}
+	for (const c of S.model.channels) followListen(c);
 	S.dirty = true;
 	refresh();
 	draftSoon();
@@ -109,7 +114,12 @@ function say(text, kind = "info", { report = null } = {}) {
 // --- Rendering ---
 
 function problems() {
-	return validate(S.model, { bands: S.conn?.radio?.bands_hz || null });
+	return validate(S.model, { bands: S.conn?.radio?.bands_hz || null, features: features() });
+}
+
+// The connected radio's firmware features (its probe), which say the channel modes it runs; null without a radio
+function features() {
+	return S.conn ? S.conn.probe?.features ?? "" : null;
 }
 
 function refresh() {
@@ -119,9 +129,10 @@ function refresh() {
 	const counts = {
 		channels: S.model.channels.length, zones: S.model.zones.length, contacts: S.model.contacts.length,
 		rxLists: S.model.rxLists.length, dtmfContacts: S.model.dtmfContacts.length, aprs: S.model.aprs.length,
-		iddb: S.model.iddb?.count || 0, problems: p.length,
+		systems: S.model.systems?.length || 0, iddb: S.model.iddb?.count || 0, problems: p.length,
 	};
-	tabs.replaceChildren(...TABS.map((k) => {
+	// the Systems tab only where a mode that has systems is offered, or the codeplug has systems
+	tabs.replaceChildren(...TABS.filter((k) => k !== "systems" || systemsShown(S.model, features())).map((k) => {
 		const b = h("button", { type: "button", role: "tab", "aria-selected": String(S.tab === k), class: k === "problems" && errors ? "has-errors" : "",
 			onclick: () => show(k) }, t(`editor.tab.${k}`), k in counts && k !== "radio" ? h("span", { class: "ed-count" }, String(counts[k])) : null);
 		return b;
@@ -169,6 +180,7 @@ function renderView(p) {
 	const tab = S.tab;
 	if (tab === "radio") return view.replaceChildren(radioTab());
 	if (tab === "iddb") return view.replaceChildren(extensions.iddbTab(api()));
+	if (tab === "systems") return view.replaceChildren(systemsTab(api(), features()));
 	if (tab === "problems") return view.replaceChildren(problemsTab(p));
 	// a table: keep the grid (focus, sort, selection) when only its rows changed
 	if (S.grid && S.grid.table === tab) {
@@ -177,7 +189,7 @@ function renderView(p) {
 		return;
 	}
 	const g = new Grid({
-		columns: columns(tab, S.model, t), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
+		columns: columns(tab, S.model, t, { features: features() }), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
 		onChange: (row, col, value) => {
 			let err = null;
 			change(t("editor.undo.edit"), () => {
@@ -209,7 +221,7 @@ function tableActions(tab, g) {
 	const numbered = tab !== "zones";
 	const out = [
 		// first, so it sits above the row checkboxes it acts on; not on a table with nothing it can set (zones, RX lists)
-		bulkColumns(tab, S.model, t).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
+		bulkColumns(tab, S.model, t, { features: features() }).length ? button(sel.length ? t("editor.bulk_edit_n", { n: sel.length }) : t("editor.bulk_edit"), () => bulkSet(tab, g), { disabled: sel.length < 2 }) : null,
 		button(t("editor.add"), () => addRecord(tab, g), { disabled: full }),
 		button(t("editor.duplicate"), () => duplicate(tab, g), { disabled: full || !g.targets().length }),
 		button(t("editor.delete"), () => del(tab, g), { disabled: !g.targets().length, danger: true }),
@@ -309,7 +321,7 @@ function renumber(tab) {
 
 function bulkSet(tab, g) {
 	const rows = g.selection();
-	const cols = bulkColumns(tab, S.model, t);
+	const cols = bulkColumns(tab, S.model, t, { features: features() });
 	if (!cols.length) return;
 	const pickCol = h("select", {}, ...cols.map((c, i) => h("option", { value: String(i) }, c.label)));
 	const slot = h("div");
@@ -349,7 +361,11 @@ function bulkSet(tab, g) {
 
 function openRecord(tab, r) {
 	if (tab === "channels") {
-		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t), r, t, (work) => change(t("editor.undo.edit"), () => Object.assign(r, work)));
+		// a channel of a kind keeps its stand-in record (channelmodes.js syncModes), whatever the form's hidden fields hold
+		formDialog(t("editor.channel_title", { name: r.name }), channelForm(S.model, t, { features: features() }), r, t, (work) => change(t("editor.undo.edit"), () => {
+			Object.assign(r, work);
+			syncModes(S.model);
+		}));
 	} else if (tab === "zones") {
 		membersDialog(t("editor.zone_title", { name: r.name }), r.channels, [...S.model.channels].sort((a, b) => a.number - b.number), LIMITS.zoneChannels, t,
 			(c) => `${c.number} · ${c.name}`, (list) => change(t("editor.undo.edit"), () => (r.channels = list)));
@@ -382,6 +398,78 @@ function radioTab() {
 		const n = Number(v.trim() || 0);
 		return Number.isInteger(n) && n >= lo && n <= hi ? { value: n } : { error: t("editor.err.range", { min: lo, max: hi }) };
 	};
+	// a number kept as a key of the settings area (kv.js KEYS): the row gives its range, empty is an absent key
+	const areaKey = (name) => (v) => parseAreaKey(KEYS.find((row) => row.name === name), v, t);
+	// a bool kept as a key of the settings area: Not set (an absent key, the radio keeps its own), On or Off
+	const onOff = (key, label) => {
+		const sel = h("select", { id: "g-" + key },
+			h("option", { value: "" }, t("editor.general.not_set")),
+			h("option", { value: "1" }, t("editor.general.on")),
+			h("option", { value: "0" }, t("editor.general.off")));
+		sel.value = g[key] == null ? "" : g[key] ? "1" : "0";
+		sel.addEventListener("change", () => change(t("editor.undo.edit"),
+			() => (S.model.general = { ...S.model.general, [key]: sel.value === "" ? null : sel.value === "1" })));
+		return h("div", { class: "form-row" }, h("label", { for: "g-" + key }, label), sel,
+			h("span", { class: "small muted" }, t("editor.general.tone_help")));
+	};
+	// a signaling tone record of the settings area (kv.js RECORD_KEYS, codeplug-settings.md 3.3): Not set, or Set with the
+	// outputs and the ten steps. A value out of range is the Problems tab's to say
+	const sigBlock = (row) => {
+		const rec = g[row.name];
+		const id = `g-${row.name}`;
+		const put = (next) => change(t("editor.undo.edit"), () => (S.model.general = { ...S.model.general, [row.name]: next }));
+		const title = h("h4", { class: "sig-title" }, t(`editor.sig.${row.name.slice(3).toLowerCase()}`));
+		if (rec == null) {
+			return h("section", { class: "sig-card sig-off" }, h("div", { class: "sig-head" }, title,
+				h("span", { class: "small muted sig-state" }, t("editor.sig.unset")),
+				button(t("editor.sig.customize"), () => put({ dmr: 0, fm: 0, hz: Array(SIG_STEPS).fill(0), ms: Array(SIG_STEPS).fill(0) }), { quiet: true })));
+		}
+		const outputs = (key, air) => {
+			const o = h("select", { id: `${id}-${key}` },
+				...[0, 1, 2, 3, 4].filter((v) => air || (v !== 3 && v !== 4)).map((v) => h("option", { value: String(v) }, t(`editor.sig.out.${v}`))));
+			o.value = String(rec[key]);
+			o.addEventListener("change", () => put({ ...rec, [key]: Number(o.value) }));
+			return h("div", { class: "form-row" }, h("label", { for: o.id }, t(`editor.sig.${key}`)), o);
+		};
+		// a step's cell: a number that stays as typed until it is valid; an out of range one is marked, never clamped
+		const cell = (key, i, max, step) => {
+			const bad = rec[key][i] > max || rec[key][i] % step !== 0;
+			const inp = h("input", { type: "number", min: "0", max: String(max), step: String(step), value: String(rec[key][i]), inputmode: "numeric",
+				class: bad ? "sig-bad" : "", "aria-invalid": bad ? "true" : "false",
+				"aria-label": `${t("editor.sig.step", { n: i + 1 })} ${t(`editor.sig.${key === "hz" ? "hz" : "ms"}`)}` });
+			inp.addEventListener("change", () => {
+				const n = Math.trunc(Number(inp.value));
+				put({ ...rec, [key]: rec[key].map((x, j) => (j === i ? (Number.isFinite(n) && n >= 0 ? n : 0) : x)) });
+			});
+			return h("td", {}, inp);
+		};
+		// the chain ends at the first step of 0 ms (kv.js, sigtone.h), so the steps after it are shown dimmed
+		let ended = false;
+		const rows = Array.from({ length: SIG_STEPS }, (_, i) => {
+			const dim = ended;
+			if (rec.ms[i] === 0) ended = true;
+			return h("tr", { class: dim ? "sig-dim" : "" }, h("th", { scope: "row" }, String(i + 1)),
+				cell("hz", i, SIG_HZ_MAX, SIG_HZ_UNIT), cell("ms", i, SIG_MS_MAX, 10));
+		});
+		let total = 0;
+		for (const m of rec.ms) {
+			if (m === 0) break;
+			total += m;
+		}
+		const sum = h("p", { class: "small sig-total" + (total > SIG_MS_MAX ? " ed-err" : " muted") },
+			total === 0 ? t("editor.sig.empty") : t(total > SIG_MS_MAX ? "editor.sig.over" : "editor.sig.total", { ms: total, max: SIG_MS_MAX }));
+		const roll = h("div", { class: "sig-roll", role: "img", "aria-label": t("editor.sig.roll", { ms: total }) });
+		roll.innerHTML = sigRollSvg(rec);
+		const play = button(t("editor.sig.play"), () => sigPlay(rec, play, t), { quiet: true });
+		return h("section", { class: "sig-card" },
+			h("div", { class: "sig-head" }, title, play, button(t("editor.sig.reset"), () => put(null), { quiet: true })),
+			h("div", { class: "sig-body" },
+				h("div", { class: "sig-side" }, h("div", { class: "sig-outs" }, outputs("dmr", row.air), outputs("fm", row.fmAir)), roll, sum),
+				h("div", { class: "sig-tables" }, ...[rows.slice(0, SIG_STEPS / 2), rows.slice(SIG_STEPS / 2)].map((half) =>
+					h("table", { class: "sig-steps" },
+						h("thead", {}, h("tr", {}, h("th", {}, t("editor.sig.step_col")), h("th", {}, t("editor.sig.hz")), h("th", {}, t("editor.sig.ms")))),
+						h("tbody", {}, ...half))))));
+	};
 	const parts = [
 		h("div", { class: "form-grid ed-radio-form" },
 			field("dmrId", t("editor.general.dmr_id"), 8, t("editor.general.dmr_id_help"), num(0, 0xFFFFFF)),
@@ -389,7 +477,17 @@ function radioTab() {
 			field("bootLine1", t("editor.general.boot1"), LIMITS.bootText, null, text(LIMITS.bootText)),
 			field("bootLine2", t("editor.general.boot2"), LIMITS.bootText, null, text(LIMITS.bootText)),
 			field("groupHang", t("editor.general.group_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
-			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255))),
+			field("privateHang", t("editor.general.private_hang"), 3, t("editor.general.hang_help"), num(0, 255)),
+			field("arsServer", t("editor.general.ars_server"), 8, t("editor.general.ars_server_help"), areaKey("arsServer")),
+			field("ipGateway", t("editor.general.ip_gateway"), 8, t("editor.general.ip_gateway_help"), areaKey("ipGateway")),
+			onOff("callEndTone", t("editor.general.call_end_tone")),
+			onOff("totWarnTone", t("editor.general.tot_warn_tone")),
+			onOff("batteryTone", t("editor.general.battery_tone")),
+			onOff("txDenyTone", t("editor.general.tx_deny_tone")),
+			...modeSettingsPart(api(), features())),
+		h("h3", {}, t("editor.sig.title")),
+		h("p", { class: "small muted" }, t("editor.sig.help")),
+		h("div", { class: "sig-grid" }, ...RECORD_KEYS.map(sigBlock)),
 	];
 	if (S.conn) {
 		const p = S.conn.probe;
@@ -398,6 +496,59 @@ function radioTab() {
 			h("dt", {}, t("editor.firmware")), h("dd", {}, p?.git || "?")));
 	}
 	return h("div", {}, ...parts);
+}
+
+// --- Signaling tone roll and preview ---
+
+// The chain as a pitch against time: a bar a step, as wide as it lasts on a fixed axis of SIG_MS_MAX and as high as its
+// frequency (0 to SIG_HZ_MAX). A pause is a tick on the baseline. Steps after the first of 0 ms are not drawn; what is
+// past the limit is marked. Numbers only, so it is safe to set as markup
+function sigRollSvg(rec) {
+	const W = 900, H = 72, pad = 2;
+	let x = 0, out = "";
+	for (let i = 0; i < SIG_STEPS && rec.ms[i] > 0; i++) {
+		const w = rec.ms[i], hz = Math.min(rec.hz[i], SIG_HZ_MAX);
+		const over = x + w > SIG_MS_MAX;
+		const cls = over ? "sig-r-over" : "sig-r-bar";
+		if (hz === 0) out += `<rect class="sig-r-pause" x="${x}" y="${H - 3}" width="${Math.max(w - 2, 1)}" height="3"/>`;
+		else {
+			const bh = Math.max(4, Math.round((hz / SIG_HZ_MAX) * (H - pad * 2)));
+			out += `<rect class="${cls}" x="${x}" y="${H - bh}" width="${Math.max(w - 2, 1)}" height="${bh}" rx="2"/>`;
+		}
+		x += w;
+	}
+	const grid = [300, 600].map((g) => `<line class="sig-r-grid" x1="${g}" x2="${g}" y1="0" y2="${H}"/>`).join("");
+	return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" focusable="false"><rect class="sig-r-bg" width="${W}" height="${H}" rx="4"/>${grid}${out}</svg>`;
+}
+
+let sigAudio = null;
+// Plays the chain on the browser's speaker: a sine a step with 2 ms fades, as the radio makes it (sigtone.c)
+function sigPlay(rec, btn, t) {
+	try {
+		sigAudio = sigAudio || new (window.AudioContext || window.webkitAudioContext)();
+		const ctx = sigAudio;
+		const now = ctx.currentTime + 0.05;
+		let at = now;
+		for (let i = 0; i < SIG_STEPS && rec.ms[i] > 0; i++) {
+			const d = Math.min(rec.ms[i], SIG_MS_MAX) / 1000;
+			if (rec.hz[i] > 0) {
+				const o = ctx.createOscillator(), g = ctx.createGain();
+				o.frequency.value = Math.min(rec.hz[i], SIG_HZ_MAX);
+				g.gain.setValueAtTime(0, at);
+				g.gain.linearRampToValueAtTime(0.25, at + 0.002);
+				g.gain.setValueAtTime(0.25, Math.max(at + 0.002, at + d - 0.002));
+				g.gain.linearRampToValueAtTime(0, at + d);
+				o.connect(g).connect(ctx.destination);
+				o.start(at);
+				o.stop(at + d + 0.01);
+			}
+			at += d;
+		}
+		btn.disabled = true;
+		setTimeout(() => { btn.disabled = false; }, Math.max(100, (at - now) * 1000 + 100));
+	} catch {
+		btn.textContent = t("editor.sig.no_audio");
+	}
 }
 
 // --- Problems tab ---
@@ -452,12 +603,26 @@ function saveFile(kind) {
 	const errors = problems().filter((p) => p.level === "error");
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
 	const img = encode(S.model);
+	// keys (channel-modes.md 8) go into a file only when the user turns them on for this export
+	const n = countSecrets(img.bytes);
+	if (!n) return saveImage(kind, img);
+	const box = h("input", { type: "checkbox", id: "keep-secrets" });
+	dialog(t("editor.secrets.title"), [h("p", {}, t("editor.secrets.text", { n })),
+		h("div", { class: "form-row form-check" }, h("label", { for: "keep-secrets" }, t("editor.secrets.include")), box)],
+	t("editor.save"), (close) => {
+		close();
+		if (!box.checked) withoutSecrets(img.bytes);
+		saveImage(kind, img);
+	});
+}
+
+function saveImage(kind, img) {
 	if (kind === "tftp") {
 		download("codeplug.bin", tftpBytes(img, iddbEnd(S.conn?.radio)));
 		say(t("editor.saved_tftp"), "info");
 		return;
 	}
-	download(`${S.fileName || "codeplug"}.bin`, saveBytes(img));
+	download(`${datedName(S.fileName)}.bin`, saveBytes(img));
 	S.dirty = false;
 	refresh();
 	draftSoon();
@@ -488,13 +653,17 @@ async function connect() {
 		// &git_time=N: a build of a commit from that time (Unix seconds)
 		const hash = location.hash;
 		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
-			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			// #sim-modes: firmware that runs every channel mode the editor knows (modes.js)
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
 			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
 		if (!serialSupported()) throw new TransportError("no_serial");
 		// one chooser for both links: the radio's own USB port, or a programming cable, told apart by the port's USB ID.
-		// A port granted before where RadioFoundry answers needs no chooser
+		// A port granted before where RadioFoundry answers needs no chooser. A radio in USB network mode is asked for
+		// its serial port first, where WebUSB reaches it (netmode.js); it goes back when it restarts. The wait is short:
+		// the chooser below must still open in this click
+		await toSerial({ http: false, ms: CLICK_WAIT_MS });
 		const known = await knownRadioPort([RFOUNDRY_USB, ...CABLES]);
 		let port = known?.port;
 		if (!port) {
@@ -503,6 +672,14 @@ async function connect() {
 			} catch (e) {
 				if (e?.name !== "NotFoundError") throw e;
 				say(t("editor.connect.none"), "warn");
+				// the message says a radio in network mode isn't listed: the radio's own page switches it where
+				// WebUSB couldn't (netmode.js). A tab, so from a click
+				const go = button(t("flash.net.switch"), async () => {
+					go.disabled = true;
+					const r = await toSerial();
+					say(t(r.back ? "flash.net.switched" : "flash.net.switch_unseen"), r.back ? "info" : "warn");
+				});
+				messages.firstChild?.append(h("p", {}, go), h("p", { class: "small" }, t("flash.net.not_secure")));
 				return null;
 			}
 		}
@@ -538,7 +715,7 @@ function radioError(e) {
 		return t(`editor.radio_err.${e.code}`, p);
 	}
 	if (e instanceof FastError && e.status === "no answer") return t("editor.radio_err.no_answer");
-	if (e?.name === "NotFoundError" && !/disconnect/i.test(e.message || "")) return null;	// the user closed the port chooser
+	if (noDeviceChosen(e)) return null;	// the user closed the port chooser
 	// the browser's own serial errors (a port another program holds, a radio unplugged): what to do, then its words
 	const key = browserErrorKey(e);
 	if (key) return `${t(key)} (${e.message})`;
@@ -657,7 +834,7 @@ async function sameCodeplug(c, img) {
 	const now = await withProgress(t("editor.reading", { radio: c.radio.name }), (bar, signal) =>
 		c.transport.read({ iddb: false, signal, cache: img, progress: (n, total) => bar.set(n, total) }));
 	const at = (x, a, b) => x.bytes.subarray(a, Math.min(b, x.bytes.length));
-	return REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
+	return EDITOR_REGIONS.every(([a, b]) => equal(at(now, a, b), at(img, a, b)));
 }
 
 function readSkippedIddb() {
@@ -754,7 +931,7 @@ async function readRadio() {
 }
 
 // Features a newer release may add that change what the editor can do with the radio, with what each gains
-const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT"];
+const UPDATE_GAINS = ["CPS_FAST", "IDDB_COMPACT", "DMR_TRUNK", "P25", "P25_TRUNK", "NXDN"];
 let releaseList = null;
 
 // After a read: a newer release for this radio (releases.json, updateFor), offered once per tab for each radio, running
@@ -827,6 +1004,7 @@ async function planWrite() {
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
+		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
@@ -1025,11 +1203,17 @@ function reportContext() {
 }
 
 // What the user may add to a report: the codeplug being edited and the one last read from the radio
+function reportCodeplug(image) {
+	const copy = image.clone();
+	withoutSecrets(copy.bytes);
+	return saveBytes(copy);
+}
+
 function reportFiles() {
 	const out = [];
-	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => saveBytes(encode(S.model)) });
+	if (S.model) out.push({ name: "codeplug-edited.bin", label: t("report.attach_codeplug"), data: () => reportCodeplug(encode(S.model)) });
 	const radio = S.conn?.image || S.lastRadioImage;
-	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => saveBytes(radio) });
+	if (radio) out.push({ name: "codeplug-radio.bin", label: t("report.attach_radio"), data: () => reportCodeplug(radio) });
 	return out;
 }
 

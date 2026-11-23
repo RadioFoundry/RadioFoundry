@@ -93,7 +93,9 @@ def check(data):
 def render(data, scope):
 	"""The Markdown of one generated page."""
 	title, intro = HEADER[scope]
+	# REUSE-IgnoreStart: the generated page's header, not this file's
 	out = ["<!-- SPDX-License-Identifier: MIT -->",
+	# REUSE-IgnoreEnd
 	       "<!-- Generated from docs/glossary.json by tools/glossary.py. Edit the data file, not this page. -->",
 	       "<!-- glossary: off -->", "", "# " + title, "", intro, ""]
 	for cat in data["categories"]:

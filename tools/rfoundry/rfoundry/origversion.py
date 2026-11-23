@@ -140,3 +140,17 @@ def hwopt_action(opts, name, choice):
             return "missing", i, c, None
         return ("same" if v == c else "mismatch"), i, c, o["choices"][v]
     return "missing", None, None, None
+
+
+def pending_hwopt(opts):
+    """The first hardware option the radio still needs from a person (state "ask": transmit waits for it) or that
+    waits for a restart ("restart"), as (index, option), or None (debuglink.md 3.25)."""
+    for i, o in enumerate(opts):
+        if o.get("state") in ("ask", "restart"):
+            return i, o
+    return None
+
+
+def majors_for(spec, choice):
+    """The original firmware's major versions that mean `choice` (board.toml [flash.original_version] major)."""
+    return sorted(m for m, c in ((spec or {}).get("major") or {}).items() if c == choice)

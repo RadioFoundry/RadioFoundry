@@ -46,7 +46,8 @@ static bool same_channel(const channel_t *a, const channel_t *b)
 	       a->tx_tone.type == b->tx_tone.type && a->tx_tone.value == b->tx_tone.value && a->power == b->power &&
 	       a->rx_only == b->rx_only && a->color_code == b->color_code && a->timeslot == b->timeslot &&
 	       a->contact == b->contact && a->listen_list == b->listen_list && a->dmr_id == b->dmr_id && a->dmo == b->dmo &&
-	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco;
+	       a->vox == b->vox && a->scan_skip == b->scan_skip && a->no_beep == b->no_beep && a->no_eco == b->no_eco &&
+	       a->tone_burst == b->tone_burst;
 }
 
 static channel_t make(const char *name, uint32_t rx, uint32_t tx)
@@ -137,6 +138,37 @@ static void test_encode(void)
 	codeplug_openfw_encode(&d, r);
 	CHECK((r[0x33] & 0x60) == 0 && (r[0x26] & 0x62) == 0x22);
 	CHECK(codeplug_openfw_decode(r, &d) && !d.vox && !d.scan_skip && !d.no_beep && d.no_eco);
+	// The FM tone burst is SFR byte B bit 6 (open-firmware-cps.md 7.3.3): set and cleared alone, the SFR bits kept
+	CHECK(!d.tone_burst);
+	d.tone_burst = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xC5 && r[0x25] == 0x0B && (r[0x26] & 0x02));
+	CHECK(codeplug_openfw_decode(r, &d) && d.tone_burst && d.sfr_b == 0xC5);
+	d.tone_burst = false;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0x85);
+	// Read without the SFR flag too: a channel with no SFR has the burst
+	r[0x26] &= (uint8_t)~0x02u;
+	r[0x2A] = 0x40;
+	CHECK(codeplug_openfw_decode(r, &d) && d.tone_burst && d.sfr_b == 0);
+	// A byte a writer filled with 0xFF is "not set", not a burst on every channel; turning the burst on there is
+	// never written as 0xFF again
+	r[0x2A] = 0xFF;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.tone_burst && !d.accept_bad_crc);
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0x8F);
+	r[0x2A] = 0xFF;
+	d.tone_burst = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xCF && codeplug_openfw_decode(r, &d) && d.tone_burst);
+	// Accept invalid CRC is bits 5-4 = 2; the 0xBF earlier versions wrote with the burst off reads as off
+	r[0x2A] = 0xBF;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.accept_bad_crc && !d.tone_burst);
+	d.accept_bad_crc = true;
+	codeplug_openfw_encode(&d, r);
+	CHECK(r[0x2A] == 0xAF && codeplug_openfw_decode(r, &d) && d.accept_bad_crc && !d.tone_burst);
+	r[0x2A] = 0x30;
+	CHECK(codeplug_openfw_decode(r, &d) && !d.accept_bad_crc);
 }
 
 static void test_materialize(void)
@@ -479,6 +511,44 @@ static void populate(void)
 	CHECK(codeplug_set_dmr_id(9997030));
 }
 
+// A name saves and reads back byte for byte: ASCII, Latin-1, 3-byte UTF-8 and the fonts' glyph bytes mix freely in one name,
+// so a name a CPS wrote is not rewritten. U+00FF is the byte 0xFF, which would end the name field there: a save writes '?'
+// for it (the CPS's rule) and the rest of the name stays
+static void test_name_round_trip(void)
+{
+	fresh();
+	char name[CODEPLUG_NAME_LEN + 1], l1[CODEPLUG_NAME_LEN + 1], l2[CODEPLUG_NAME_LEN + 1];
+
+	// the radio name (8 bytes): two 3-byte UTF-8 characters
+	CHECK(codeplug_set_radio_name("\xE4\xB8\xAD\xE9\x81\x93"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "\xE4\xB8\xAD\xE9\x81\x93") == 0);
+	// Latin-1 is one byte, as it stands
+	CHECK(codeplug_set_radio_name("Caf\xE9"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "Caf\xE9") == 0);
+	// each of the fonts' six glyph bytes (0x80..0x85) is one byte and comes back the same
+	for (uint8_t g = 0x80; g <= 0x85; g++) {
+		char glyph[2] = { (char)g, '\0' };
+		CHECK(codeplug_set_radio_name(glyph));
+		codeplug_radio_name(name);
+		CHECK(strcmp(name, glyph) == 0);
+	}
+	// U+00FF, the byte 0xFF, saves as '?' rather than ending the name at its first byte
+	CHECK(codeplug_set_radio_name("A\xFF" "B"));
+	codeplug_radio_name(name);
+	CHECK(strcmp(name, "A?B") == 0);
+
+	// the boot lines (16 bytes) and a channel name follow the same rules
+	CHECK(codeplug_set_boot_text("\xE4\xB8\xAD\xE9\x81\x93", "\xFF" "x"));
+	codeplug_boot_text(l1, l2);
+	CHECK(strcmp(l1, "\xE4\xB8\xAD\xE9\x81\x93") == 0 && strcmp(l2, "?x") == 0);
+	channel_t c = make("A\xE4\xB8\xAD" "\x81\xFF" "B", 145500000, 145500000), back;
+	CHECK(codeplug_set_channel(7, &c));
+	CHECK(codeplug_channel(7, &back) && strcmp(back.name, "A\xE4\xB8\xAD" "\x81?B") == 0);
+	CHECK(sim_flash_violations() == 0);
+}
+
 static void test_round_trip(void)
 {
 	static model_t a, b;
@@ -593,6 +663,12 @@ static void test_aprs_path(void)
 	CHECK(codeplug_set_aprs_path(1, "WIDE1-1", "WIDE2-1") && codeplug_aprs(1, &a) &&
 	      strcmp(a.path[0], "WIDE1-1") == 0 && strcmp(a.path[1], "WIDE2-1") == 0);
 	CHECK(!codeplug_set_aprs_path(2, "WIDE1-1", "") && !codeplug_set_aprs_path(0, "", ""));	// no record: none made
+	ser = codeplug_serial();
+	CHECK(codeplug_set_aprs_ssid(1, 12) && codeplug_serial() == ser + 1u && codeplug_aprs(1, &a) && a.ssid == 12 &&
+	      strcmp(a.path[0], "WIDE1-1") == 0 && strcmp(a.comment, "Mobile") == 0);
+	CHECK(sim_flash_data[EE + 0x1588u + 0x08] == 12 && sim_flash_data[EE + 0x1588u + 0x07] == 0 &&
+	      sim_flash_data[EE + 0x1588u + 0x09] == 0);	// one byte written
+	CHECK(!codeplug_set_aprs_ssid(1, 16) && !codeplug_set_aprs_ssid(2, 3) && !codeplug_set_aprs_ssid(0, 3));
 	CHECK(sim_flash_data[EE + 0x1588u + 0x40u] == 0xFF);
 }
 #endif
@@ -687,8 +763,17 @@ static void test_foreign(void)
 	CHECK(codeplug_acceptance() == CODEPLUG_ACCEPT_DROPPED);
 	codeplug_accept(false);
 
-	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit
+	// Start new: what the radio reads of the old bytes cleared, the built-in set stored; then the edit. The settings
+	// area goes too: keys from before the other firmware don't come back in the clean codeplug
+	memset(&sim_flash_data[EE + 0xE000], 0x00, 64);
+	sim_flash_data[EE + 0xEFFF] = 0x00;
 	CHECK(codeplug_start_new() && codeplug_set_channel(10, &c));
+	for (uint32_t i = 0; i < 0x1000; i++) {
+		if (sim_flash_data[EE + 0xE000 + i] != 0xFF) {
+			CHECK(!"the settings area erased by Start new");
+			break;
+		}
+	}
 	CHECK(codeplug_source() == CODEPLUG_OPENFW && !codeplug_foreign() && codeplug_channel_count() == 10);
 	CHECK(codeplug_init() == CODEPLUG_OPENFW && !codeplug_foreign());
 	codeplug_evidence(&good, &bad);
@@ -747,6 +832,7 @@ int main(void)
 #endif
 	test_quick_keys();
 	test_foreign();
+	test_name_round_trip();
 	test_round_trip();
 	test_edit_cuts();
 	sim_flash_free();

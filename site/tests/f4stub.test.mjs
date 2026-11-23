@@ -13,7 +13,8 @@ import { join } from "node:path";
 
 import { crc32, equal, fromHex, toHex } from "../static/js/flasher/bytes.js";
 import { FakeRadio, simulation, randomBytes, rng } from "../static/js/flasher/fake.js";
-import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP, registerShort } from "../static/js/flasher/f4stub.js";
+import { F4Stub, f4Image, f4StubHeader, HDR, APP_BASE, MEM_SPI, OP, registerShort, withCodec } from "../static/js/flasher/f4stub.js";
+import { codecSegments, readCodec } from "../static/js/flasher/codecsave.js";
 import { Stub, StubError } from "../static/js/flasher/stub.js";
 import { Link } from "../static/js/flasher/link.js";
 import { readRadio } from "../static/js/flasher/backup.js";
@@ -111,18 +112,52 @@ test("DM-1701 install: sector 3 erased first and committed last, codec sectors u
 	assert.deepEqual(await s2.writeImage(owned, segs), { written: 0, same: r.written + r.same });
 });
 
-test("MD-380: sectors 3-7 are the application's, the codec sectors stay as they are", async () => {
+test("MD-380: sectors 3-10 are the application's, the codec sector stays as it is", async () => {
 	const { sim, radio } = await running("md380");
 	const owned = fb.f4stub.boards.md380.owned;
-	assert.deepEqual(owned, [[APP_BASE, 0x08080000]]);
+	assert.deepEqual(owned, [[APP_BASE, 0x080E0000]]);
+	assert.deepEqual(fb.f4stub.boards.md380.codec, [0x080E0000, 0x08100000]);
 	const s = await enter(radio);
-	const codec = at(radio, 0x08080000, 0x80000).slice();
+	const codec = at(radio, 0x080E0000, 0x20000).slice();
 	const kept = [];
-	await s.writeImage(owned, [[APP_BASE, app(4, 0x74000)]], { onKept: async (sec) => kept.push(sec) });
+	await s.writeImage(owned, [[APP_BASE, app(4, 0xC0000)]], { onKept: async (sec) => kept.push(sec) });
 	assert.equal(kept.length, 0, "no sector shared with the codec");
-	assert.ok(equal(at(radio, APP_BASE, 0x74000), app(4, 0x74000)));
-	assert.ok(equal(at(radio, 0x08080000, 0x80000), codec), "sectors 8-11 unchanged");
+	assert.ok(equal(at(radio, APP_BASE, 0xC0000), app(4, 0xC0000)));
+	assert.ok(!radio.events.includes("erase 11"));
+	assert.ok(equal(at(radio, 0x080E0000, 0x20000), codec), "sector 11 unchanged");
 	for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d));
+});
+
+// A radio whose codec is where an earlier release put it (fake.js "rfoundry-former"), partly in what is now the
+// application's flash: a plain build is refused before anything is erased (the descriptor names the windows), and the
+// build merged with the codec, moved from the copy read back first (codecsave.js), writes it where it goes now
+test("a codec in an earlier layout: a plain build is refused before any erase, the merged one moves it", async () => {
+	for (const id of Object.keys(fb.f4stub.boards).filter((b) => fb.boards[b].codec.former?.length)) {
+		const sim = await simulation(fb, id, 7);
+		const radio = new FakeRadio(sim, { state: "rfoundry-former", spiSize: 0x200000 });
+		radio.flash.set(app(1, 0x30000), APP_BASE - 0x08000000);
+		assert.equal(radio.codecReport(), sim.profile.former[0].codec_profile, id);
+		const { owned, codec: codecFlash } = fb.f4stub.boards[id];
+		const img = app(4, 0x50000);
+		const s = await enter(radio);
+		await assert.rejects(s.writeImage(owned, [[APP_BASE, img]]), (e) => /hold the radio's codec/.test(e.message) && e.codecGuard === true, id);
+		assert.ok(!radio.events.some((e) => e.startsWith("erase")), `${id}: nothing erased`);
+		const copy = await readCodec({ readMem: async (a, n) => at(radio, a, n).slice() }, sim.board, sim.fb);
+		const codec = await codecSegments(copy.profile, copy.segments, sim.fb);
+		assert.deepEqual(codec, sim.codecSegments, id);
+		assert.throws(() => withCodec([[APP_BASE, img]], [[codecFlash[0] - 4, new Uint8Array(8)]], codecFlash), StubError);
+		const r = await s.writeImage(owned, withCodec([[APP_BASE, img]], codec, codecFlash));
+		assert.ok(r.written > 0);
+		assert.equal(radio.events[1], "erase 3", "sector 3 first");
+		assert.ok(equal(at(radio, APP_BASE, img.length), img), id);
+		for (const [a, d] of sim.codecSegments) assert.ok(equal(at(radio, a, d.length), d), `${id} ${a}`);
+		assert.equal(radio.codecReport(), sim.board.codec.id, id);
+		await s.resetChip();
+		// the next plain build leaves the codec alone
+		const s2 = await enter(radio);
+		await s2.writeImage(owned, [[APP_BASE, app(6, 0x50000)]]);
+		assert.equal(radio.codecReport(), sim.board.codec.id, id);
+	}
 });
 
 test("a sector shared with other data: a copy is handed out first and the other bytes stay", async () => {

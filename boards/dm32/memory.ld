@@ -7,8 +7,8 @@
  * hosting": the stock codec code and tables are merged there on the user's machine; never linked into).
  *
  * SRAM (288 KB at 0x10000): RadioFoundry's region from 0x10000, and at the top the codec window 0x43A00..0x58000 (83,456 B, the
- * 049 code). The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E28, is reserved (046 puts its
- * tables lowest, the 049 NRF and fanti builds 8 bytes above 049; codec-dm32.md).
+ * 049 code). The modem SRAM window the codec's tables are copied to, 0x18000E48..0x18003E38, is reserved (046 puts its
+ * tables lowest, the 049 NRF and fanti builds 8 bytes above 049, the NRFB 050 build 16 bytes above NRF; codec-dm32.md).
  *
  * The layout is the platform's (platform/hrc7000/common.ld). */
 
@@ -20,12 +20,18 @@ __codec_slot_end = 0x03100000;
 __codec_run_lo = 0x00043A00;
 __codec_run_hi = 0x00058000;
 __codec_tab_lo = 0x18000E48;
-__codec_tab_hi = 0x18003E28;
+__codec_tab_hi = 0x18003E38;
+/* RadioFoundry's part of the modem SRAM (common.ld MODEM_BSS: the cold state, RFOUNDRY_COLD_RAM), up to the crash log's
+ * words. It starts at 0x18004F90, 4,440 B past the table window's end, as a margin for state the codec might keep past
+ * its tables (hardware-dm32.md 17.1) */
+__modem_bss_lo = 0x18004F90;
+__modem_bss_hi = 0x18007EF0;
 
 MEMORY
 {
 	FLASH  (rx)  : ORIGIN = __app_start, LENGTH = __codec_slot - __app_start
 	RAM    (rwx) : ORIGIN = 0x00010000, LENGTH = __codec_run_lo - 0x00010000	/* up to the codec window */
+	MODEM_BSS (rw) : ORIGIN = __modem_bss_lo, LENGTH = __modem_bss_hi - __modem_bss_lo
 }
 
 INCLUDE common.ld

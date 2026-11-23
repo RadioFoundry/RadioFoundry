@@ -118,7 +118,8 @@ static int makeRecord(uint32_t zoneId, int channels, const char *name)
 		zsChannel_t ch = { .dmr = true, .rxHz = 461000000u + (uint32_t)i * 12500u, .colorCode = 1, .timeslot = 1,
 						   .contact = 1 };
 
-		snprintf(ch.name, sizeof(ch.name), "Channel %d", i + 1);
+		// % 1000: a bound GCC 15's -Wformat-truncation can see (a record holds far fewer)
+		snprintf(ch.name, sizeof(ch.name), "Channel %u", (unsigned)(i + 1) % 1000u);
 		zsWriterChannel(&w, &ch);
 	}
 	return zsWriterEnd(&w);

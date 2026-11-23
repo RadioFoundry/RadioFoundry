@@ -5,7 +5,7 @@
 // both read the same table. The codec and the key are only ever handled on the user's machine.
 
 import { u32le, sha256, startsWith, crc32, hex } from "./bytes.js";
-import { byCodeSha, moveCode, moveBranches, branchesIn, moveWindow, unmoveWindow, tableWindow, MapError } from "./codecmap.js";
+import { byCodeSha, moveCode, moveBranches, branchesIn, moveWindow, unmoveWindow, tableWindow, relocate, MapError } from "./codecmap.js";
 
 // code: what kind of problem it is, for the page's explanation (explain.js) and the error report: "not-vendor" (not a
 // vendor firmware file), "damaged", "other-radio" (a file for another radio; params.board names it), "wrong-key" (it
@@ -63,28 +63,56 @@ export async function identify(data, fb, boardId = null) {
 	return { sha, known: fb.known_files[sha] || null, profile: profileFor(fb.profiles, sha, boardId) };
 }
 
-// Where the merge puts a profile's codec (stockfw.placed_windows): [[addr, length, sha256]], code first, then the
-// table windows (the extra ones at their stock address, unchanged)
-export function placedWindows(prof) {
-	if (!prof.placement) return prof.windows;
-	const pl = prof.placement, pd = prof.placed, tab = prof.windows[1];
-	return [[pl.code, prof.windows[0][1], pd.code[1]], [pl.tables ?? tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...prof.windows.slice(2)];
+// Every layout a profile's codec can be in on a radio, newest first (stockfw.forms): the current placement, then each
+// "former" one an earlier release used, as {codec_profile, placement, placed, current}; [] for a profile that doesn't
+// move its codec. The stock windows (prof.windows, form null below) are the other place a radio can hold it
+export function forms(prof) {
+	if (!prof.placement) return [];
+	return [{ codec_profile: prof.codec_profile, placement: prof.placement, placed: prof.placed, current: true },
+		...(prof.former || []).map((f) => ({ ...f, current: false }))];
 }
+
+const formOf = (prof, form) => (form === undefined ? forms(prof)[0] ?? null : form);
+
+// Where the merge puts a profile's codec (stockfw.placed_windows): [[addr, length, sha256]], code first, then the
+// table windows (the extra ones at their stock address, unchanged, unless the placement moves them too). form: one of
+// forms() (default the current placement; null: the stock windows). A SHA-256 is null where the profile has none for
+// the placed bytes (checkForm checks those through the stock windows)
+export function placedWindows(prof, form) {
+	form = formOf(prof, form);
+	if (!form) return prof.windows;
+	const pl = form.placement, pd = form.placed, [code, tab, ...rest] = prof.windows;
+	const extra = pl.extra ? pl.extra.map((a, i) => [a, rest[i][1], null]) : rest;
+	return [[pl.code, code[1], pd.code[1]], [pl.tables ?? tab[0], pl.tables_len ?? tab[1], pd.tables[1]], ...extra];
+}
+
+// The stock windows [[addr, length]] as a placement carves them (stockfw.carve), in placedWindows order: the tables cut
+// to tables_len where the placement keeps only the codec's data
+export function carve(prof, form) {
+	const pl = formOf(prof, form).placement, [code, tab, ...rest] = prof.windows;
+	return [[code[0], code[1]], [tab[0], pl.tables_len ?? tab[1]], ...rest.map(([a, n]) => [a, n])];
+}
+
+const crcsOf = (form) => [form.placed.code[0], form.placed.tables[0], ...(form.placed.extra || [])];
 
 // The windows a merge of this profile writes, [[addr, length]] (stockfw.layout): the placed windows and the descriptor
 // for a profile that moves the code, else its stock windows. A board with several stock files plans each merge
 // against its own file's layout, not the board's windows (their union)
-export function layoutWindows(prof, fb) {
-	const wins = placedWindows(prof).map(([a, n]) => [a, n]);
-	return prof.placement ? [...wins, [fb.descriptor.addr, fb.descriptor.len]] : wins;
+export function layoutWindows(prof, fb, form) {
+	form = formOf(prof, form);
+	const wins = placedWindows(prof, form).map(([a, n]) => [a, n]);
+	return form ? [...wins, [fb.descriptor.addr, fb.descriptor.len]] : wins;
 }
 
-// The 128-byte descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h, stockfw.descriptor)
-export function descriptor(prof, fb) {
-	const wins = placedWindows(prof);
-	const crcs = [prof.placed.code[0], prof.placed.tables[0], ...(prof.placed.extra || [])];
+// The 128-byte descriptor at the end of sector 11 (platform/stm32f4/codec_desc.h, stockfw.descriptor), for a form
+// (default the current placement)
+export function descriptor(prof, fb, form) {
+	form = formOf(prof, form);
+	const wins = placedWindows(prof, form);
+	const crcs = crcsOf(form);
 	const d = fb.descriptor;
-	const words = [d.magic, d.version, prof.placement.tag, wins[0][0], wins[0][1], crcs[0], wins.length - 1];
+	if (wins.length - 1 > d.windows) throw new StockError(`${wins.length - 1} table windows: the descriptor holds ${d.windows}`);
+	const words = [d.magic, d.version, form.placement.tag, wins[0][0], wins[0][1], crcs[0], wins.length - 1];
 	for (let i = 0; i < d.windows; i++) words.push(...(i + 1 < wins.length ? [wins[i + 1][0], wins[i + 1][1], crcs[i + 1]] : [0, 0, 0]));
 	const out = new Uint8Array(d.len);
 	const view = new DataView(out.buffer);
@@ -93,18 +121,78 @@ export function descriptor(prof, fb) {
 	return out;
 }
 
+const mapOf = (prof, fb) => prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0] || null;
+
+// A placed copy [[addr, bytes]] (placedWindows(prof, form) order, without the descriptor) taken back to the stock
+// windows (stockfw.unplace): [[stock address, bytes]] as the stock file holds them, each checked against the profile's
+// stock SHA-256, or null when the copy isn't this profile's codec in that form. Nothing is trusted from the copy: every
+// rewritten site must hold what the form says (relocate) and every window must come out as stock has it
+export async function unplace(prof, form, parts, fb) {
+	const m = mapOf(prof, fb);
+	const wins = carve(prof, form);
+	if (!m || parts.map(([a]) => a).join() !== placedWindows(prof, form).map(([a]) => a).join()) return null;
+	let back;
+	try {
+		back = relocate(m, wins, parts.map(([, d]) => d), parts.map(([a]) => a), wins.map(([a]) => a));
+	} catch (e) {
+		if (e instanceof MapError) return null;
+		throw e;
+	}
+	const tw = (m.table_windows || [])[0] || {};
+	const out = [];
+	for (const [i, [a, n]] of wins.entries()) {
+		let want = prof.windows[i][2];
+		// a cut table window: the map's hash of the cut
+		if (n !== prof.windows[i][1]) want = a === tw.min_start && n === tw.min_len ? tw.min_sha256 : null;
+		if (!want || (await sha256(back[i])) !== want) return null;
+		out.push([a, back[i]]);
+	}
+	return out;
+}
+
+// True when parts [[addr, bytes]] are the profile's codec in this form (null: the stock windows), at its addresses
+// (stockfw.check_form): by SHA-256 where the profile has one for each window, else through unplace()
+export async function checkForm(prof, form, parts, fb) {
+	const wins = form ? placedWindows(prof, form) : prof.windows;
+	if (parts.length !== wins.length || parts.some(([a, d], i) => a !== wins[i][0] || d.length !== wins[i][1])) return false;
+	if (parts[0][1].length < 4 || u32le(parts[0][1], 0) !== fb.codec_sig) return false;
+	if (wins.every(([, , want]) => want)) {
+		for (const [i, [, d]] of parts.entries()) if ((await sha256(d)) !== wins[i][2]) return false;
+		return true;
+	}
+	return (await unplace(prof, form, parts, fb)) !== null;
+}
+
+// A copy found in a radio, in any form (null: the stock windows; else one of forms()), as the merge writes it now
+// (stockfw.from_form): the current placement with its descriptor. A copy in the stock or a former form is taken back to
+// stock and placed again (the move a layout change needs); null when the copy doesn't check
+export async function fromForm(prof, form, parts, fb) {
+	if (!(await checkForm(prof, form, parts, fb))) return null;
+	if (form?.current) return [...parts, [fb.descriptor.addr, descriptor(prof, fb, form)]];
+	const stock = form ? await unplace(prof, form, parts, fb) : parts;
+	return stock && place(prof, stock, fb);
+}
+
 // The decrypted stock windows as the merge writes them (stockfw.place): the code moved (its self references
 // rewritten by the codec map), the table window cut to the codec's data with the islands' calls into the code
-// re-encoded, the extra windows unchanged, then the descriptor; every part checked against the profile's "placed" hashes
+// re-encoded, the extra windows unchanged (or, where the placement says, every window moved as its own block:
+// relocate), then the descriptor; every part checked against the profile's "placed": its SHA-256, and its CRC-32
+// where the profile has no SHA-256
 export async function place(prof, segs, fb) {
 	if (!prof.placement) return segs;
 	const pl = prof.placement;
-	const m = prof.map || byCodeSha(fb.codec_maps, prof.windows[0][2])[0];
+	const m = mapOf(prof, fb);
 	if (!m) throw new StockError(`no codec map for ${prof.name}: its code can't be moved`, "unmapped");
-	const [[, code], [stockTab, tables], ...extra] = segs;
-	let moved, tab, tabAddr = stockTab;
+	const [[, code], [stockTab, tables], ...rest] = segs;
+	let moved, tab, tabAddr = stockTab, extra = rest;
 	try {
-		if (pl.tables !== undefined) {
+		if (pl.extra) {
+			const wins = carve(prof);
+			const out = relocate(m, wins, [code, tables.slice(0, wins[1][1]), ...rest.map(([, d]) => d)], wins.map(([a]) => a), placedWindows(prof).map(([a]) => a));
+			[moved, tab] = out;
+			tabAddr = pl.tables;
+			extra = pl.extra.map((a, i) => [a, out[i + 2]]);
+		} else if (pl.tables !== undefined) {
 			[moved, tab] = await moveWindow(code, tables, m, pl.code, pl.tables);
 			tabAddr = pl.tables;
 		} else {
@@ -115,11 +203,12 @@ export async function place(prof, segs, fb) {
 		if (e instanceof MapError) throw new StockError(`can't move the codec: ${e.message}`);
 		throw e;
 	}
-	if (pl.tables === undefined && branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
+	if (!pl.extra && pl.tables === undefined && branchesIn(m, tabAddr, tab.length) !== (m.branches || []).length) throw new StockError("a branch into the code lies outside the tables the merge keeps");
 	const want = placedWindows(prof);
+	const crcs = crcsOf(forms(prof)[0]);
 	const got = [moved, tab, ...extra.map(([, d]) => d)];
 	for (const [i, d] of got.entries()) {
-		if ((await sha256(d)) !== want[i][2]) throw new StockError("the moved codec doesn't match the profile");
+		if (want[i][2] ? (await sha256(d)) !== want[i][2] : crc32(d) !== crcs[i] >>> 0) throw new StockError("the moved codec doesn't match the profile");
 	}
 	return [[pl.code, moved], [tabAddr, tab], ...extra, [fb.descriptor.addr, descriptor(prof, fb)]];
 }
@@ -161,26 +250,26 @@ export async function extract(data, key, fb, profiles = fb.profiles, boardId = n
 // The codec in a read of a radio's internal flash (stockfw.from_flash; the bytes from base, normally the whole 1 MB):
 // {profile, segments} as the merge writes them, or null. A radio on its stock firmware holds a build's windows plain at
 // their stock addresses (found by their SHA-256), placed here as a merge from the stock file places them; a radio
-// running RadioFoundry holds them placed, with the descriptor, and they are taken as they are. No key is needed.
+// running RadioFoundry holds them placed, and they are taken as they are; one where an earlier release put them (a
+// "former" placement) is taken back to stock and placed again. No key is needed.
 export async function fromFlash(flash, fb, profiles = fb.profiles, base = 0x08000000) {
-	const read = async (wins) => {
+	const grab = (wins) => {
 		const parts = [];
-		for (const [a, n, want] of wins) {
+		for (const [a, n] of wins) {
 			const off = a - base;
 			if (off < 0 || off + n > flash.length) return null;
-			const d = flash.slice(off, off + n);
-			if ((await sha256(d)) !== want) return null;
-			parts.push([a, d]);
+			parts.push([a, flash.slice(off, off + n)]);
 		}
-		return u32le(parts[0][1], 0) === fb.codec_sig ? parts : null;
+		return parts;
 	};
 	for (const prof of Object.values(profiles)) {
-		let parts = await read(prof.windows);
-		if (parts) return { profile: prof, segments: await place(prof, parts, fb) };
-		if (!prof.placement) continue;
-		const desc = descriptor(prof, fb);
-		parts = await read([...placedWindows(prof), [fb.descriptor.addr, fb.descriptor.len, await sha256(desc)]]);
-		if (parts) return { profile: prof, segments: parts };
+		const parts = grab(prof.windows);
+		if (parts && (await checkForm(prof, null, parts, fb))) return { profile: prof, segments: await place(prof, parts, fb) };
+		for (const form of forms(prof)) {
+			const placed = grab(placedWindows(prof, form));
+			const got = placed && (await fromForm(prof, form, placed, fb));
+			if (got) return { profile: prof, segments: got };
+		}
 	}
 	return null;
 }

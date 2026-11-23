@@ -4,6 +4,7 @@
   "languages": [
     {"code": "en", "name": "English", "dir": "ltr", "locale": "en-US"},
     {"code": "es", "name": "Español", "dir": "ltr", "locale": "es-ES"},
-    {"code": "it", "name": "Italiano", "dir": "ltr", "locale": "it-IT"}
+    {"code": "it", "name": "Italiano", "dir": "ltr", "locale": "it-IT"},
+    {"code": "zh", "name": "简体中文", "dir": "ltr", "locale": "zh-CN"}
   ]
 }

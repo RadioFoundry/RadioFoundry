@@ -273,11 +273,11 @@ static void test_own_listener(void)
 
 	// VERSION with the build's keys (build_info.h): preset= and off= last, and a key that doesn't fit left out whole
 	const stub_link_t full = { .board = "X", .git = "g", .git_time = 1793318400u, .release = "v26.10", .features = "FM,DMR",
-				   .preset = "custom", .off = "APRS_IGATE,FONT_AA" };
+				   .start = "es", .preset = "custom", .off = "APRS_IGATE,FONT_AA" };
 	n = stub_link_handle(&full, DL_CMD_VERSION, NULL, 0, out, sizeof(out));
 	out[n] = '\0';
 	CHECK(strcmp((char *)out + 1, "proto=1\ngit=g\ngit_time=1793318400\nrelease=v26.10\nboard=X\nfeatures=FM,DMR\n"
-				      "codec=none\nstub=1\npreset=custom\noff=APRS_IGATE,FONT_AA\n") == 0,
+				      "codec=none\nstub=1\nstart=es\npreset=custom\noff=APRS_IGATE,FONT_AA\n") == 0,
 	      "VERSION with the build's keys: %s", (char *)out + 1);
 	size_t cut = n - strlen("off=APRS_IGATE,FONT_AA\n") + 4u;
 	CHECK(stub_link_handle(&full, DL_CMD_VERSION, NULL, 0, out, cut) == cut - 4u, "a list that doesn't fit is left out");

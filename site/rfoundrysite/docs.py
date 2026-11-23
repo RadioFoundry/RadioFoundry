@@ -115,18 +115,35 @@ class Docs:
 		with open(repo.path(page["src"]), encoding="utf-8") as f:
 			return f.read(), lang != self.default_lang
 
+	def title_for(self, page, lang):
+		"""The page's h1 in this language, else the English one the docs index and the side bar were collected with."""
+		text, _ = self.source_for(page, lang)
+		m = re.search(r"^#\s+(.+)$", text, re.M)
+		return m.group(1).strip() if m else page["title"]
+
 	def render(self, page, lang):
 		"""(body HTML, [(level, id, text)] of the h2/h3 headings, fallback flag)."""
 		text, fallback = self.source_for(page, lang)
 		tokens = self.md.parse(text)
+		# A translated page keeps the English page's heading ids, so a link written as #english-anchor works in every
+		# language: docs/i18n/<lang> mirrors the English tree, chapter for chapter (docs/dev/website.md)
+		ids = None
+		if not fallback and lang != self.default_lang:
+			with open(repo.path(page["src"]), encoding="utf-8") as f:
+				ids = heading_ids(self.md.parse(f.read()))
 		seen, toc = {}, []
+		h = 0
 		for i, tok in enumerate(tokens):
 			if tok.type == "heading_open":
 				inline = tokens[i + 1]
-				base = slug(inline.content)
-				k = seen.get(base, 0)
-				seen[base] = k + 1
-				hid = base if k == 0 else "%s-%d" % (base, k)
+				if ids is not None and h < len(ids):
+					hid = ids[h]
+				else:
+					base = slug(inline.content)
+					k = seen.get(base, 0)
+					seen[base] = k + 1
+					hid = base if k == 0 else "%s-%d" % (base, k)
+				h += 1
 				tok.attrSet("id", hid)
 				if tok.tag in ("h2", "h3"):
 					toc.append((int(tok.tag[1]), hid, plain(inline.content)))
@@ -269,6 +286,18 @@ def _text(content):
 	t = Token("text", "", 0)
 	t.content = content
 	return t
+
+
+def heading_ids(tokens):
+	"""The ids render() gives a page's headings, in order: GitHub's slug, a repeat gets -1, -2 (tools/check_doc_links.py)."""
+	seen, out = {}, []
+	for i, tok in enumerate(tokens):
+		if tok.type == "heading_open":
+			base = slug(tokens[i + 1].content)
+			k = seen.get(base, 0)
+			seen[base] = k + 1
+			out.append(base if k == 0 else "%s-%d" % (base, k))
+	return out
 
 
 def plain(md_inline):

@@ -91,6 +91,21 @@ function joined(ranges) {
 // than the flash the firmware owns. Some radios' chips read 512 KB while the board's flash reaches 1 MB (the codec sits
 // in the top sectors): the loader refuses everything past the register's size, so their install goes through the
 // bootloader. owned: [[lo, hi)] (data/f4-stub.json). An unknown size (null, 0) is not short
+// The codec descriptor at the end of the codec flash (platform/stm32f4/codec_desc.h)
+const DESC_LEN = 0x80, DESC_MAGIC = 0x43534544;
+
+// The segments the loader writes for a build merged with the codec: the build, then the codec's sectors (codec: [lo,
+// hi), the board's) whole, 0xFF but for the codec's segments (stockfw.place's, descriptor last), which must lie in them
+export function withCodec(segs, codecSegs, codec) {
+	const [lo, hi] = codec;
+	const buf = new Uint8Array(hi - lo).fill(0xFF);
+	for (const [a, d] of codecSegs) {
+		if (a < lo || a + d.length > hi) throw new StubError(`codec data at ${hex8(a)} is outside the codec's sectors`);
+		buf.set(d, a - lo);
+	}
+	return [...segs, [lo, buf]];
+}
+
 export const registerShort = (flashKb, owned) => !!flashKb && owned.some(([, hi]) => hi > FLASH_BASE + flashKb * 1024);
 
 export class F4Stub extends Stub {
@@ -104,6 +119,7 @@ export class F4Stub extends Stub {
 		this.chip = chip;
 		this.board = board;
 		this.configured = false;	// the stub echoes this.board's record (protocol 4)
+		this.erased = false;		// writeImage erased the commit sector: a restart now starts the radio's loader
 	}
 
 	// Status 0x11 is the stub's own refusal of a write before a board record; the rest stay the generic error
@@ -386,10 +402,14 @@ export class F4Stub extends Stub {
 	// {sectors: [{index, addr, size, data, kept}], changed: [index]} for every sector holding firmware-owned flash.
 	// Owned bytes come from the segments (0xFF where they have none); the rest of a sector is read back from the radio
 	// and written again unchanged (kept: a codec may start in the sector the application ends in). owned:
-	// [[lo, hi)] (data/f4-stub.json, or the K22F radios' stub profile in flash-boards.json)
-	async plan(owned, segs) {
+	// [[lo, hi)] (data/f4-stub.json, or the K22F radios' stub profile in flash-boards.json).
+	// codec: [lo, hi), the codec's own sectors (default the board's): never written, except from a segment that covers
+	// them whole (withCodec), and a plain image that would erase a sector the radio's codec descriptor names is refused
+	// here, before anything is erased (guardCodec)
+	async plan(owned, segs, codec = this.board?.codec ?? null) {
 		const c = this.chip;
-		const ranges = joined(owned);
+		const codecOwned = !!codec && segs.some(([a, d]) => a === codec[0] && d.length === codec[1] - codec[0]);
+		const ranges = joined(codecOwned ? [...owned, codec] : owned);
 		for (const [addr, data] of segs) {
 			if (!ranges.some(([lo, hi]) => lo <= addr && addr + data.length <= hi))
 				throw new StubError(`image data at ${hex8(addr)} is outside the flash the firmware owns: a codec-merged image or the wrong radio?`);
@@ -412,7 +432,23 @@ export class F4Stub extends Stub {
 			}
 			sectors.push({ ...sec, data: buf, kept });
 		}
-		return { sectors, changed: await this.mismatched(new Map(sectors.map((s) => [s.index, s]))) };
+		const changed = await this.mismatched(new Map(sectors.map((s) => [s.index, s])));
+		if (codec && !codecOwned) await this.guardCodec(codec, sectors.filter((x) => changed.includes(x.index)));
+		return { sectors, changed };
+	}
+
+	// Refuse a plain image that would erase a sector holding the radio's codec (f4stub.py guard_codec). The descriptor at
+	// the end of the codec flash says where every codec window is (docs/spec/codec-placement.md); a codec placed by an
+	// earlier release can lie in what is now the application's flash. Moving it takes the build merged with the codec
+	// (withCodec), made from a copy read back from the radio first
+	async guardCodec(codec, changed) {
+		const d = await this.readRange(codec[1] - DESC_LEN, DESC_LEN);
+		const w = (i) => u32le(d, 4 * i);
+		if (w(0) !== DESC_MAGIC || w(1) !== 1 || w(6) < 1 || w(6) > 5) return;
+		const wins = [[w(3), w(4)], ...Array.from({ length: w(6) }, (_, i) => [w(7 + 3 * i), w(8 + 3 * i)])];
+		const hit = changed.filter((sec) => wins.some(([a, n]) => a < sec.addr + sec.size && a + n > sec.addr)).map((sec) => sec.index);
+		// codecGuard: nothing was erased, so the page restarts the radio out of the loader into its firmware as it was
+		if (hit.length) throw Object.assign(new StubError(`sector(s) ${hit.join(", ")} hold the radio's codec (its descriptor at ${hex8(codec[1] - DESC_LEN)} says so), which this build would erase: nothing was written. Install with the codec read back from the radio or taken from the stock file, which moves it`), { codecGuard: true });
 	}
 
 	// Install a build, in the order the stub's interlock enforces: erase the commit sector (the one at the application
@@ -432,6 +468,7 @@ export class F4Stub extends Stub {
 		const commit = p.sectors.find((s) => s.addr <= c.appBase && c.appBase < s.addr + s.size);
 		for (const i of p.changed) if (by.get(i).kept) await onKept(by.get(i));
 		const order = [commit.index, ...p.changed.filter((i) => i !== commit.index)];
+		this.erased = true;	// from here a restart starts the radio's loader (the commit sector blank) until the commit word
 		await this.erase(commit.index);
 		for (const [n, i] of order.slice(1).entries()) {
 			progress(n + 1, order.length, i);

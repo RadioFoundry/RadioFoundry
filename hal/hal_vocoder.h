@@ -23,7 +23,9 @@ typedef struct {
 	// True when the codec is present and matches the board's profile (signature / hash). False: FM only
 	bool (*present)(void);
 	void (*reset)(void);	// fresh encoder and decoder state (start of a call)
-	// 49 bits, one per byte (0/1), MSB of the parameter frame first
+	// 49 bits, one per byte (0/1), MSB of the parameter frame first. Voice is simplex: the caller never decodes while a
+	// transmission encodes (core/dmr/ambe), so a platform may keep both states in one block, built again by the first
+	// encode after a decode and the first decode after an encode
 	void (*encode)(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS]);
 	void (*decode)(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES]);
 	// Optional (may be NULL): the id of the codec profile the board recognized in flash, e.g. "<radio>-v0206-csv", or
@@ -40,6 +42,11 @@ typedef struct {
 	// Optional: the codec's own word for the options in force, for the debug link only (its meaning is per codec,
 	// docs/spec/codec-*.md)
 	uint32_t (*encode_flags)(void);
+	// Optional: the codec's working memory, lent while no DMR voice runs (another voice path, P25's decoder, uses it
+	// then). Returns it (8-byte aligned) and its size in *len; the codec's next call rebuilds its own state, so the
+	// borrower must be done with it before DMR voice starts again. A platform that lends defines
+	// HAL_VOCODER_LEND_BYTES (the size it always lends) for every core file, so the borrower links no copy of its own
+	void *(*lend)(size_t *len);
 } hal_vocoder_t;
 
 // The codec in flash as VERSION reports it (codec=, docs/spec/debuglink.md 3.1): the profile the board recognized,

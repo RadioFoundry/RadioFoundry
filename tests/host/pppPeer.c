@@ -68,7 +68,7 @@ static size_t port_write(const uint8_t *b, size_t n)
 static bool port_true(void) { return true; }
 static size_t port_read(uint8_t *b, size_t n) { (void)b; (void)n; return 0; }
 static bool port_wait(uint32_t t) { (void)t; return false; }
-static const hal_stream_t port = { port_true, port_true, port_read, port_wait, port_write };
+static const hal_stream_t port = { port_true, port_true, port_read, port_wait, port_write, NULL };
 const board_t board = { .name = "pppPeer", .host_port = &port, .netif = &hostlink_ppp_netif };
 
 static uint8_t frame_buf[IPGW_MAX_FRAME];
@@ -156,8 +156,9 @@ static uint8_t *tcp_buffer(void) { return ipGatewayLocalPayload(); }
 static bool tcp_send(uint32_t dst, int length) { return ipGatewaySendLocal(6, dst, length); }
 static const tcp_io_t tcp_io = { .buffer = tcp_buffer, .send = tcp_send, .local_ip = ipGatewayRadioIP };
 
-static void tcp_in(uint32_t src, const uint8_t *seg, int length)
+static void tcp_in(uint32_t src, uint32_t dst, const uint8_t *seg, int length)
 {
+	(void)dst;
 	tcp_input(src, seg, length, now_ms());
 }
 

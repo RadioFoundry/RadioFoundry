@@ -213,10 +213,16 @@ test("practice radio: switched on with its keys held it enters the updater, whic
 
 // ---- the route on every HR_C7000 radio
 
-test("every HR_C7000 radio has a factory update mode with steps into it, offered in Troubleshooting", () => {
-	const c7radios = RADIOS.filter((r) => r.flash.backend === "c7000-stub");
+test("every HR_C7000 radio with a factory update mode has steps into it, offered in Troubleshooting", () => {
+	const c7all = RADIOS.filter((r) => r.flash.backend === "c7000-stub");
+	const b = backendOf(c7all[0]);
+	// a radio with no vendor loader (the boot ROM's window is its only way in) offers no update mode
+	for (const r of c7all.filter((x) => !x.flash.update_mode)) {
+		assert.equal(factoryRoute(r, FB), null, r.id);
+		assert.deepEqual(b.recovery.extra(r, FB), [], r.id);
+	}
+	const c7radios = c7all.filter((r) => r.flash.update_mode);
 	assert.ok(c7radios.length >= 3);
-	const b = backendOf(c7radios[0]);
 	for (const r of c7radios) {
 		const route = factoryRoute(r, FB);
 		assert.ok(route, `${r.id}: a factory update mode`);

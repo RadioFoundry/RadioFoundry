@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // HR_C7000 DMR transmit where every burst runs a radio's whole RF key-up and key-down (dmr_rfburst.c): the scheme of
-// the radios whose modem modulates the reference oscillator (hardware-db25d.md 4.5). The modem's
+// the radios whose modem modulates the reference oscillator (hardware-db25d.md 4.5, hardware-rt10.md 7). The modem's
 // RF TX interrupt, raised the RF TX lead before our burst, wakes a task that runs the board's TX-on sequence; the end
 // of the burst (the slot engine's tick or the RF RX interrupt after it) wakes it for the TX-off sequence. The
 // sequences take a few milliseconds with waits in them, so they run in a task of their own at the highest priority,
@@ -34,6 +34,9 @@ typedef struct {
 	void (*on)(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait);
 	// The burst's TX off, from the RF task: the PA down and the RF back to receive
 	void (*off)(void);
+	// off this long after the last symbol's point, for a PA that drops at once: one with a ramp of its own is still
+	// up at the symbol's end, and needs none
+	uint16_t off_after_us;
 } hrc_rfburst_board_t;
 
 typedef struct {

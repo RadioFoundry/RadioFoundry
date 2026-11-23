@@ -26,7 +26,9 @@ static const hal_flash_map_t map = {
 	.native_addr = 0x120000u,
 	.native_size = 0x100000u,
 	.staging_addr = 0x220000u,
-	.staging_size = 0x040000u,
+	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0x25D000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };
 
 // The layer's RAM: 2 bytes per sector, 6 per block (1408 bytes)
@@ -82,6 +84,12 @@ static bool rep(uint32_t addr, const void *data)
 	return ok;
 }
 
+static uint32_t jedec(void)
+{
+	uint16_t id = db25d_nand_id();
+	return (uint32_t)(id >> 8) << 16 | (id & 0xFFu);
+}
+
 hal_flash_t db25d_flash = {
 	.init = init,
 	.size = 0,
@@ -91,6 +99,7 @@ hal_flash_t db25d_flash = {
 	.erase = er,
 	.replace = rep,
 	.map = &map,
+	.jedec = jedec,
 };
 
 bool db25d_flash_init(void)

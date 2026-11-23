@@ -44,6 +44,22 @@ export function suggestPack(features, languages, sel, dismissed = new Set()) {
 	return null;
 }
 
+// When each start-language switch came into the tree: its merge on main, Unix seconds. A radio's off= names only the
+// switches its build knew, so one built before a start switch doesn't name it, and an update must not read that as on
+// (it did: radios came up in Chinese, then French). A switch missing here counts as newer than every build. Remove
+// this once no radio without VERSION start= is left to update
+export const START_SINCE = {
+	LANG_DEFAULT_ES: 1793469559, LANG_DEFAULT_IT: 1793469559,	// #290
+	LANG_DEFAULT_ZH: 1794446428,	// #365
+	LANG_DEFAULT_FR: 1794881988,	// #346
+};
+
+// Whether a build made at gitTime (VERSION git_time, Unix seconds) could have had this start switch
+export function startKnownAt(name, gitTime) {
+	const since = START_SINCE[name];
+	return since !== undefined && Number(gitTime) >= since;
+}
+
 // The language code (lower case) of a start-language switch (LANG_DEFAULT_<CODE>), or null for any other switch
 export function startCode(name) {
 	const m = START.exec(name || "");

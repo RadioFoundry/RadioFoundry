@@ -31,6 +31,14 @@ Any way you can:
 - **Donate or lend a radio.** This helps the most, especially older models that are hard to find now, because every
   port needs the hardware on the bench.
 
+**Can I use RadioFoundry in my own project?**
+
+Yes, including commercial and closed-source products. The license has one condition: keep our copyright and
+license notices in the code you copy and with the firmware you ship. We also ask that you give your project its
+own name. If you're adding a feature, we'd be glad to have it here, credited to you, on every radio whose
+hardware can run it: start a [discussion](https://github.com/radiofoundry/radiofoundry/discussions) or send a pull
+request. Details: [using RadioFoundry in your project](../../FORKING.md).
+
 **The web flasher or the Codeplug Editor failed. How do I report it?**
 
 On radiofoundry.org most errors are reported automatically: the message says so and gives a reference. Type what you

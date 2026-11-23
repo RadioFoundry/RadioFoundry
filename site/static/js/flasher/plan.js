@@ -49,7 +49,7 @@ function checkSegments(board, segments) {
 
 // segments: the firmware as [[addr, Uint8Array]]; codecSegments: the codec (merge mode); codecWindows: the windows that
 // codec fills (stockfw.layoutWindows of the merged file), default the board's windows (the union over its stock files)
-export function makePlan(board, segments, mode, codecSegments = [], codecWindows = board.codec.windows) {
+export function makePlan(board, segments, mode, codecSegments = [], codecWindows = board.codec.windows, { vectorLast = false } = {}) {
 	if (![KEEP, MERGE, RESTORE].includes(mode)) throw new PlanError(`unknown codec mode ${mode}`);
 	const codecSecs = codecSectors(board);
 	const codecIdx = new Set(codecSecs.map((s) => s.index));
@@ -116,7 +116,7 @@ export function makePlan(board, segments, mode, codecSegments = [], codecWindows
 		const content = mode === RESTORE ? "image" : ["app", "codec"].filter((k) => kinds.has(k)).join("+");
 		steps.push(step(s, "write", blocks, content));
 	}
-	const plan = new Plan(board, mode, steps);
+	const plan = new Plan(board, mode, steps, vectorLast);
 	for (const s of plan.erase) {
 		try {
 			protect.check(board.protect, "progmem", s.addr - board.rom_base, end(s) - board.rom_base, "erase");
@@ -133,14 +133,27 @@ function step(sector, action, blocks, content, note = "") {
 }
 
 export class Plan {
-	constructor(board, mode, steps) {
+	constructor(board, mode, steps, vectorLast = false) {
 		this.board = board;
 		this.mode = mode;
 		this.steps = steps;
+		this.vectorLast = vectorLast;
 	}
 
 	get erase() { return this.steps.filter((s) => s.action === "write" || s.action === "erase").map((s) => s.sector); }
 	get writes() { return this.steps.filter((s) => s.action === "write"); }
+	// The erases and the writes in the order they run: the board's sector order, or for a codec move (vectorLast) the
+	// sector with the application's start (its vector table) erased first and written last, so a move stopped anywhere
+	// leaves no application the bootloader would start (plan.py)
+	get eraseOrder() {
+		const a = this.board.app_base;
+		return this.vectorLast ? [...this.erase].sort((x, y) => (x.addr !== a) - (y.addr !== a)) : this.erase;
+	}
+
+	get writeOrder() {
+		const a = this.board.app_base;
+		return this.vectorLast ? [...this.writes].sort((x, y) => (x.sector.addr === a) - (y.sector.addr === a)) : this.writes;
+	}
 	get kept() { return this.steps.filter((s) => s.action === "keep").map((s) => s.sector); }
 	get totalBlocks() { return this.writes.reduce((a, s) => a + s.blocks.length, 0); }
 
@@ -163,6 +176,8 @@ export class Plan {
 			}
 		}
 		lines.push(`erase ${this.erase.length} sector(s): ${this.erase.map((s) => s.index).join(", ")}`);
+		const first = this.vectorLast && this.writes.length ? this.erase.find((s) => s.addr === b.app_base) : null;
+		if (first) lines.push(`order: sector ${first.index} erased first and written last (a codec move: a cut leaves the radio in its bootloader)`);
 		lines.push(`write ${this.totalBlocks} blocks (${this.totalBlocks * BLOCK} bytes)`);
 		if (this.kept.length) lines.push(`never erased or written: codec sector(s) ${this.kept.map((s) => s.index).join(", ")}`);
 		for (const [lo, hi] of b.protected) lines.push(`never erased or written: the bootloader ${hex(lo)}..${hex(hi - 1)}`);

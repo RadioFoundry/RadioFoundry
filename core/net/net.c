@@ -15,23 +15,26 @@
 #include "usbaudio/usrp_net.h"
 #endif
 
+#if CONFIG_NET_TCP || CONFIG_NET_RADIO_UDP
+#include "net/net_svc.h"
+#endif
+
 static bool was_up;
 
-#if CONFIG_NET_TCP
-#include "net/tcp.h"
-#include "net/net_svc.h"
-
-#define IP_PROTO_TCP	6
-
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
-static radio_view_t view;
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
+#include "hostlink/hostlink_view.h"
 
 const radio_view_t *net_radio_view(void)
 {
-	radio_get_view(&view);
-	return &view;
+	radio_get_view(&hostlink_view);
+	return &hostlink_view;
 }
 #endif
+
+#if CONFIG_NET_TCP
+#include "net/tcp.h"
+
+#define IP_PROTO_TCP	6
 
 #if CONFIG_NET_KISS || CONFIG_NET_APRSIS
 #include "aprs/aprs.h"
@@ -114,11 +117,11 @@ static uint8_t *io_buffer(void)
 
 // The USB IN endpoint holds one frame at a time: wait a little for it rather than lose the segment (an ACK lost here
 // would cost the peer a retransmission timeout)
-static bool io_send(uint32_t dst, int length)
+static bool io_send_from(uint32_t src, uint32_t dst, int length)
 {
 	uint32_t t0 = hal_millis();
 
-	while (!ipGatewaySendLocal(IP_PROTO_TCP, dst, length)) {
+	while (!ipGatewaySendLocalFrom(IP_PROTO_TCP, src, dst, length)) {
 		if ((board.netif == NULL) || !board.netif->up() || ((hal_millis() - t0) >= NET_SEND_WAIT_MS)) {
 			return false;
 		}
@@ -128,11 +131,20 @@ static bool io_send(uint32_t dst, int length)
 	return true;
 }
 
-static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP };
-
-static void tcp_in(uint32_t src, const uint8_t *seg, int length)
+static bool io_send(uint32_t dst, int length)
 {
-	tcp_input(src, seg, length, hal_millis());
+	return io_send_from(ipGatewayRadioIP(), dst, length);
+}
+
+static const tcp_io_t io = { .buffer = io_buffer, .send = io_send, .local_ip = ipGatewayRadioIP,
+#if CONFIG_USB_SERIAL_REQUEST
+			     .send_from = io_send_from,
+#endif
+};
+
+static void tcp_in(uint32_t src, uint32_t dst, const uint8_t *seg, int length)
+{
+	tcp_input_to(src, dst, seg, length, hal_millis());
 }
 #else
 bool net_tnc_taken(void)
@@ -148,6 +160,9 @@ void net_start(uint32_t salt)
 #endif
 #if CONFIG_NET_USRP
 	usrp_net_start();
+#endif
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_start();
 #endif
 #if CONFIG_NET_TCP
 	tcp_init(&io, salt);
@@ -190,6 +205,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 		return;
 	}
 	was_up = true;
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_poll(now_ms);	// requests held back by the rate limit, and the change notices
+#endif
 #if CONFIG_NET_APRSIS
 	aprsis_poll(now_ms);
 #endif

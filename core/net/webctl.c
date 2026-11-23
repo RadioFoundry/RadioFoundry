@@ -189,10 +189,14 @@ static uint32_t row_raw(void)
 	return ((uint32_t)d->width * d->bpp + 7u) / 8u;
 }
 
+// A row at 1 or 4 bits a pixel, read for its runs: 320 pixels at 4 bits
+#define ROW_PACKED_MAX	160u
+
 // Rows go out whole, so one must fit a frame
 static bool screen_ok(void)
 {
-	return http_screen_ok() && (SCREEN_HEAD_MAX + 2u + row_raw() <= JSON_MAX);
+	return http_screen_ok() && (SCREEN_HEAD_MAX + 2u + row_raw() <= JSON_MAX) &&
+	       (board.display->bpp == 16 || row_raw() <= ROW_PACKED_MAX);
 }
 
 static uint8_t pixel(const uint8_t *r, int x, uint8_t bpp)
@@ -231,12 +235,13 @@ static int screen_row(int y, uint8_t *out, int max)
 {
 	const hal_display_t *d = board.display;
 	int raw = (int)row_raw(), n = -1;
-	const uint8_t *r = (const uint8_t *)gfx_framebuffer() + (uint32_t)y * (uint32_t)raw;
+	static uint8_t r[ROW_PACKED_MAX];	// the panel's row, also from a safe-area frame buffer (gfx_read_packed)
 
 	if (max < 2) {
 		return -1;
 	}
 	if (d->bpp != 16) {
+		gfx_read_packed((uint32_t)y * (uint32_t)raw, r, (size_t)raw);
 		n = runs(r, d->width, d->bpp, out + 2, (raw - 1 < max - 2) ? raw - 1 : max - 2);
 	}
 	if (n < 0) {

@@ -6,7 +6,9 @@
 // stub/stubtool.py through data/flash-boards.json ("c7000"), so the two read the same table.
 //
 // Program flash, as offsets from 0x03000000 (1 MB):
-//   0x00000 .. 0x0C000   the Baofeng bootloader: never written
+//   0x00000 .. 0x0C000   the Baofeng bootloader: never written. On a board the boot ROM starts directly (rom_entry) the
+//                        original firmware starts here, after the boot ROM's flag sector at 0, which an install
+//                        writes last (c7000ui.js installWrite)
 //   0x0C000 .. slot      the application (stock firmware, or RadioFoundry)
 //   slot .. 0x100000     RadioFoundry's codec slot: a 128-byte header, the radio's own stock codec code and tables, and
 //                        the relocation list: the words the firmware moves when it copies the code to its window
@@ -45,6 +47,9 @@ export const profilesFor = (c, boardId) => c.profiles.filter((p) => p.board === 
 // The size of the board's whole program flash (the DB25-D's is 2 MB), and the first progmem_size bytes of a read of it,
 // which is where the codec and the profiles' addresses lie
 export const totalSize = (c, boardId) => c.boards[boardId]?.progmem_size || c.progmem_size;
+// A whole read of the data memory: the board's SPI NOR (radios.json backup.spi_size, 0 on a board with a NAND), else
+// the memory's usual size. Reading past a smaller chip's end only wraps around to its start
+export const dataMemSize = (radio, mem, usual) => (mem === "q128" && radio?.backup?.spi_size) || usual;
 export const lowPart = (c, progmem) => (progmem.length > c.progmem_size ? progmem.subarray(0, c.progmem_size) : progmem);
 
 // A known codec anywhere in a program flash read: each stock version puts it at its own addresses. Returns

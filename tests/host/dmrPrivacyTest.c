@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // SPDX-FileCopyrightText: 2010 DSD Author (BPK_1_TO_4, from DSD-FME include/bp.h, ISC license, see LICENSES/ISC.txt)
 /*
- * Host tests for the DMR voice privacy module
+ * Host tests for the DMR privacy schemes: voice, and packet data (docs/spec/dmr-data.md 13)
  *
  *   make -C tests/host
  */
@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrData.h"
 #include "dmr/ambe/ambeFec.h"
 
 static int failures = 0;
@@ -221,6 +222,59 @@ static void testSignaling(void)
 	CHECK(memcmp(burst, orig, 27) == 0, "untouched when off or not a voice burst");
 }
 
+
+// Packet data: what each scheme does with it, and the Motorola BP keystream (the key's table value repeated over the
+// octets, high octet first, from the first user data octet)
+static void testData(void)
+{
+	dmrDataPrivacy_t d;
+	dmrPrivacyKey_t moto = { DMR_PRIVACY_MOTOROLA_BP, 4 }, anytone = { DMR_PRIVACY_ANYTONE_BP, 0x1234 };
+	dmrPrivacyKey_t off = { DMR_PRIVACY_OFF, 0 }, bad = { DMR_PRIVACY_MOTOROLA_BP, 0 };
+
+	dmrPrivacyDataConfig(&moto, &d);
+	CHECK(d.mode == DMR_DATA_PRIVACY_ENCRYPT && d.alg == DMR_DATA_ALG_BASIC && d.crypt != NULL && d.ctx == &moto,
+	      "Moto BP encrypts data");
+	dmrPrivacyDataConfig(&anytone, &d);
+	CHECK(d.mode == DMR_DATA_PRIVACY_BLOCK && d.crypt == NULL, "Anytone BP has no data form: blocked");
+	dmrPrivacyDataConfig(&off, &d);
+	CHECK(d.mode == DMR_DATA_PRIVACY_CLEAR && d.crypt == NULL, "off: clear");
+	dmrPrivacyDataConfig(&bad, &d);
+	CHECK(d.mode == DMR_DATA_PRIVACY_CLEAR, "an invalid key: clear");
+	dmrPrivacyDataConfig(NULL, &d);
+	CHECK(d.mode == DMR_DATA_PRIVACY_CLEAR, "no key: clear");
+
+	// An IPv4 header's first octets under key 4 (0x2503), and back
+	uint8_t data[7] = { 0x45, 0x00, 0x00, 0x1C, 0x12, 0x34, 0x40 };
+	const uint8_t want[7] = { 0x45 ^ 0x25, 0x00 ^ 0x03, 0x00 ^ 0x25, 0x1C ^ 0x03, 0x12 ^ 0x25, 0x34 ^ 0x03, 0x40 ^ 0x25 };
+	CHECK(dmrPrivacyDataCrypt(&moto, DMR_DATA_ALG_BASIC, 0, data, 7) && memcmp(data, want, 7) == 0, "BP data keystream");
+	CHECK(dmrPrivacyDataCrypt(&moto, DMR_DATA_ALG_BASIC, 0, data, 7) && data[0] == 0x45 && data[6] == 0x40,
+	      "the same XOR decrypts");
+	// Each key 1-4 is its table value, whatever the message indicator
+	for (uint16_t key = 1; key <= 4; key++)
+	{
+		dmrPrivacyKey_t k = { DMR_PRIVACY_MOTOROLA_BP, key };
+		uint8_t z[4] = { 0, 0, 0, 0 };
+
+		CHECK(dmrPrivacyDataCrypt(&k, DMR_DATA_ALG_BASIC, 0x12345678, z, 4) && z[0] == (BPK_1_TO_4[key] >> 8) &&
+		      z[1] == (BPK_1_TO_4[key] & 0xFF) && z[2] == z[0] && z[3] == z[1], "key %u", key);
+	}
+	// Other algorithms, schemes without a data form and invalid keys leave the data alone
+	memcpy(data, want, 7);
+	CHECK(!dmrPrivacyDataCrypt(&moto, DMR_DATA_ALG_RC4, 0, data, 7) && memcmp(data, want, 7) == 0, "RC4 isn't BP");
+	CHECK(!dmrPrivacyDataCrypt(&anytone, DMR_DATA_ALG_BASIC, 0, data, 7) && memcmp(data, want, 7) == 0, "Anytone BP");
+	CHECK(!dmrPrivacyDataCrypt(&bad, DMR_DATA_ALG_BASIC, 0, data, 7) && !dmrPrivacyDataCrypt(NULL, 0, 0, data, 7),
+	      "no valid key");
+	// The key ranges and names come from the same table
+	CHECK(dmrPrivacyKeyIsValid(DMR_PRIVACY_MOTOROLA_BP, 255) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_MOTOROLA_BP, 256) &&
+	      dmrPrivacyKeyIsValid(DMR_PRIVACY_ANYTONE_BP, 0) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_OFF, 0) &&
+	      !dmrPrivacyKeyIsValid(DMR_PRIVACY_NUM_TYPES, 1) && !dmrPrivacyKeyIsValid(DMR_PRIVACY_NUM_TYPES, 0),
+	      "key ranges");
+	CHECK(dmrPrivacyKeyMax(DMR_PRIVACY_MOTOROLA_BP) == 255 && dmrPrivacyKeyMax(DMR_PRIVACY_ANYTONE_BP) == 0xFFFF,
+	      "key max");
+	CHECK(strcmp(dmrPrivacyTypeName(DMR_PRIVACY_MOTOROLA_BP), "Moto BP") == 0 &&
+	      strcmp(dmrPrivacyTypeName(DMR_PRIVACY_NUM_TYPES), "Off") == 0, "names");
+}
+
 int main(void)
 {
 	srand(1);
@@ -228,6 +282,7 @@ int main(void)
 	testMotorolaBP();
 	testAnytoneBP();
 	testSignaling();
+	testData();
 
 	printf("# %s\n", failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;

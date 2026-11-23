@@ -3,10 +3,20 @@
 // Frame buffer drawing: primitives, text, icons, and a flush that sends only the rows whose content changed
 #include <string.h>
 #include "gfx.h"
+#include "cjk_font.h"
 
-static uint32_t fb_words[GFX_FB_BYTES / 4];
+// Words for the alignment, but rounded up: gfx_init accepts a frame buffer of up to GFX_FB_BYTES, which need not be a
+// multiple of 4 (a board that holds only its safe area sizes it from the insets: 111 B rows x 310 with
+// CONFIG_DISPLAY_INSET_RIGHT=9, say), and GFX_FB_BYTES / 4 would leave its last bytes past the array
+static uint32_t fb_words[(GFX_FB_BYTES + 3u) / 4u];
 static const hal_display_t *display;
-static int width, height, bpp, stride;	// stride in bytes
+static int width, height, bpp, stride;	// the frame buffer's: the panel's, or its safe area's (fb_safe); stride in bytes
+// The panel, and where the frame buffer's top left pixel is on it: 0, 0 unless the frame buffer holds the safe area
+// only (hal_display_t fb_safe_area). Then the insets are never in RAM: margin is their color, the last gfx_clear's,
+// and gfx_flush has the board paint them when it changed (margin_sent)
+static int pw, ph, fx, fy;
+static bool fb_safe, insets_dirty;	// insets_dirty: the first frame, or gfx_invalidate (the panel may have lost them)
+static color_t margin, margin_sent;
 static int clip_x0, clip_y0, clip_x1, clip_y1;	// panel coordinates, x1, y1 exclusive
 // The viewport (the board's safe area): every drawing call takes coordinates relative to it
 static int ox, oy, vw, vh;
@@ -128,16 +138,10 @@ static color_t blend(color_t fg, color_t bg, unsigned a)
 bool gfx_init(const hal_display_t *disp)
 {
 	display = disp;
-	width = disp->width;
-	height = disp->height;
+	pw = width = disp->width;
+	ph = height = disp->height;
+	fx = fy = 0;
 	bpp = disp->bpp;
-	stride = bpp == 1 ? (width + 7) / 8 : bpp == 4 ? (width + 1) / 2 : width * 2;
-	if ((bpp != 1 && bpp != 16 && (bpp != 4 || !GFX_INDEXED || disp->flush_indexed == NULL)) ||
-	    (uint32_t)stride * (uint32_t)height > GFX_FB_BYTES || height > (int)GFX_MAX_ROWS) {
-		width = height = 0;
-		display = NULL;
-		return false;
-	}
 	ox = disp->inset_left;
 	oy = disp->inset_top;
 	vw = width - disp->inset_left - disp->inset_right;
@@ -147,6 +151,28 @@ bool gfx_init(const hal_display_t *disp)
 		vw = width;
 		vh = height;
 	}
+	// The safe area only: every drawing call is clipped to it (gfx_clip, gfx_margins narrow it further), so the
+	// frame buffer's coordinates are the safe area's and the insets are the board's to paint (fill_insets). A
+	// palette's entry 0 is their color (the clear color, held while anything uses it), which captures need: bpp 4 only
+	fb_safe = disp->fb_safe_area && bpp == 4 && disp->fill_insets != NULL && (ox != 0 || oy != 0 || vw != width ||
+		  vh != height);
+	if (fb_safe) {
+		fx = ox;
+		fy = oy;
+		width = vw;
+		height = vh;
+		ox = oy = 0;
+	}
+	stride = bpp == 1 ? (width + 7) / 8 : bpp == 4 ? (width + 1) / 2 : width * 2;
+	if ((bpp != 1 && bpp != 16 && (bpp != 4 || !GFX_INDEXED || disp->flush_indexed == NULL)) ||
+	    (uint32_t)stride * (uint32_t)height > GFX_FB_BYTES || ph > (int)GFX_MAX_ROWS) {
+		width = height = pw = ph = 0;
+		vw = vh = 0;
+		display = NULL;
+		return false;
+	}
+	margin = margin_sent = 0;	// the frame buffer starts as zeros, the palette's entry 0 black
+	insets_dirty = true;
 	gfx_clip_off();
 #if GFX_INDEXED
 	pal_reset(0);		// the frame buffer starts as zeros
@@ -281,6 +307,7 @@ void gfx_clear(color_t c)
 #ifdef GFX_FIT_TRACE
 	trace(GFX_TRACE_CLEAR, 0, 0, vw, vh, NULL);
 #endif
+	margin = c;
 #if GFX_INDEXED
 	if (bpp == 4) {		// nothing drawn before is left: the palette starts over with c
 		pal_reset(c);
@@ -292,15 +319,57 @@ void gfx_clear(color_t c)
 		span(0, width, y, c);
 }
 
+// A panel pixel's frame buffer coordinates: false for one in the insets of a safe-area frame buffer
+static bool on_fb(int *x, int *y)
+{
+	*x -= fx;
+	*y -= fy;
+	return *x >= 0 && *y >= 0 && *x < width && *y < height;
+}
+
 void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 {
-	uint32_t total = (uint32_t)width * (uint32_t)height * 2u;
+	uint32_t total = (uint32_t)pw * (uint32_t)ph * 2u;
 	for (size_t k = 0; k < n; k++, off++) {
 		color_t c = 0;
-		if (off < total && bpp != 1)
-			c = raw_pixel((int)(off / 2u % (uint32_t)width), (int)(off / 2u / (uint32_t)width));
+		if (off < total && bpp != 1) {
+			int x = (int)(off / 2u % (uint32_t)pw), y = (int)(off / 2u / (uint32_t)pw);
+			c = on_fb(&x, &y) ? raw_pixel(x, y) : margin;
+		}
 		out[k] = (uint8_t)((off & 1u) ? c >> 8 : c);
 	}
+}
+
+void gfx_read_packed(uint32_t off, uint8_t *out, size_t n)
+{
+	if (!fb_safe) {		// the frame buffer is the panel
+		uint32_t total = (uint32_t)stride * (uint32_t)height;
+		for (size_t k = 0; k < n; k++, off++)
+			out[k] = off < total ? ((const uint8_t *)fb_words)[off] : 0;
+		return;
+	}
+	// bpp 4 (gfx_init): two pixels a byte, the insets palette entry 0
+	uint32_t pstride = ((uint32_t)pw + 1u) / 2u, total = pstride * (uint32_t)ph;
+	for (size_t k = 0; k < n; k++, off++) {
+		uint8_t b = 0;
+		for (int h = 0; h < 2 && off < total; h++) {
+			int x = (int)(off % pstride * 2u) + h, y = (int)(off / pstride);
+			if (x < pw && on_fb(&x, &y))
+				b |= (uint8_t)((((const uint8_t *)fb_words)[y * stride + (x >> 1)] >> ((x & 1) ? 0 : 4) & 0x0Fu) <<
+					       (h ? 0 : 4));
+		}
+		out[k] = b;
+	}
+}
+
+void gfx_fb_rect(gfx_fb_rect_t *r)
+{
+	r->x = (uint16_t)fx;
+	r->y = (uint16_t)fy;
+	r->w = (uint16_t)width;
+	r->h = (uint16_t)height;
+	r->stride = (uint32_t)stride;
+	r->safe_area = fb_safe;
 }
 
 color_t gfx_palette(uint8_t i)
@@ -365,6 +434,37 @@ static void icon_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 	}
 	int t = f->w >= 12 ? 2 : 1;			// line width
 	int l = x, r = x + f->w - 1 - (f->w >= 8 ? 1 : 0), tp = y + top, bt = y + top + rows - 1;
+	if (c == 0x87 || c == 0x88) {
+		bool up = c == 0x87;
+		int cx = l + (r - l + 1 - t) / 2;
+		int head = (bt - tp) / 3;
+		if (head > (r - l) / 2)
+			head = (r - l) / 2;
+		if (head < 1)
+			head = 1;
+		int stem_top = up ? tp + head : tp;
+		int stem_bottom = up ? bt : bt - head;
+		gfx_fill(cx, stem_top, t, stem_bottom - stem_top + 1, fg);
+		int tip = up ? tp : bt;
+		int back = up ? tp + head : bt - head;
+		seg(cx - head, back, cx, tip, t, fg);
+		seg(cx + head, back, cx, tip, t, fg);
+		return;
+	}
+	if (c == 0x86) {
+		// Reply: a riser on the right, the bar back along the lower third, the head at its left end
+		int mid = tp + (bt - tp) * 2 / 3;
+		int head = (r - l) / 2;
+		if (head > bt - mid)
+			head = bt - mid;
+		if (head < 1)
+			head = 1;
+		gfx_fill(r - t + 1, tp, t, mid - tp + t, fg);
+		gfx_fill(l, mid, r - l + 1, t, fg);
+		seg(l + head, mid - head, l, mid, t, fg);
+		seg(l + head, mid + head, l, mid, t, fg);
+		return;
+	}
 	// An arrow on a tray: up out of it for share, down onto it for download
 	int cx = l + (r - l + 1 - t) / 2, head = (r - l) / 2 - (t - 1);
 	gfx_fill(l, bt - t + 1, r - l + 1, t, fg);			// the tray
@@ -407,6 +507,9 @@ static void fallback_glyph(const font_t *f, int x, int y, uint8_t c, color_t fg)
 		break;
 	case 0x84:
 	case 0x85:
+	case 0x86:
+	case 0x87:
+	case 0x88:
 		icon_glyph(f, x, y, c, fg);
 		break;
 	default:	// not drawable: a box
@@ -451,12 +554,55 @@ static size_t alt_expand(const char *s, int level, char *out, size_t cap, bool *
 	return n;
 }
 
+#if CONFIG_LANG_ZH
+#define ALT_TEXT_MAX	160	// a CJK alternative takes 3 bytes a character, so the 96 a Latin-1 catalog needs are not enough
+#else
 #define ALT_TEXT_MAX	96
+#endif
 
 size_t gfx_text_alt(const char *s, int level, char *out, size_t cap, bool *more)
 {
 	return alt_expand(s, level, out, cap, more);
 }
+
+#if CONFIG_LANG_ZH
+// A CJK catalog's text is UTF-8 (tools/i18n.py), so the text layer steps a character at a time. Only a three-byte
+// sequence is UTF-8: a Chinese catalog has nothing below U+0800, so every other byte is one character the Latin font
+// draws (ASCII, one of font.h's glyphs, or a Latin-1 letter: a channel name, a received message and the Spanish and
+// Italian catalogs are Latin-1, and must not turn into boxes in a build with the CJK face). A CJK glyph is 16 px wide,
+// the height of the 8x16 font, and sits at the bottom of the cell so it shares the Latin baseline.
+uint32_t gfx_utf8_next(const char *s, int *len)
+{
+	const uint8_t *b = (const uint8_t *)s;
+	if ((b[0] & 0xF0) == 0xE0 && (b[1] & 0xC0) == 0x80 && (b[2] & 0xC0) == 0x80) {
+		uint32_t cp = ((uint32_t)(b[0] & 0x0Fu) << 12) | ((uint32_t)(b[1] & 0x3Fu) << 6) | (uint32_t)(b[2] & 0x3Fu);
+		if (cp >= 0x800) {	// not an overlong form
+			*len = 3;
+			return cp;
+		}
+	}
+	*len = 1;			// ASCII, a glyph byte (0x80..0x88), or Latin-1 text
+	return b[0];
+}
+
+// How far a character moves the pen in a font: its Latin cell, or a CJK glyph's 16 (a missing one is a box as wide)
+static int char_w(const font_t *f, uint32_t cp)
+{
+	return cp > 0xFF ? CJK_FONT_W : f->w;
+}
+
+static int text_w(const font_t *f, const char *s)
+{
+	int w = 0;
+	while (*s) {
+		int seq;
+		uint32_t cp = gfx_utf8_next(s, &seq);
+		w += char_w(f, cp);
+		s += seq;
+	}
+	return w;
+}
+#endif
 
 static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool opaque, color_t bg)
 {
@@ -470,6 +616,71 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 	const char *s0 = s;
 	int x0 = x;
 #endif
+#if CONFIG_LANG_ZH
+	while (*s) {
+		int seq;
+		uint32_t cp = gfx_utf8_next(s, &seq);
+		int adv = char_w(f, cp);
+		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
+		if (px >= clip_x1)
+			break;
+		if (px + adv <= clip_x0 || py >= clip_y1 || py + f->h <= clip_y0) {
+			s += seq;
+			x += adv;
+			continue;
+		}
+		if (opaque)
+			gfx_fill(x, y, adv, f->h, bg);
+		const uint8_t *g;
+		int top = 0, rows = 0;
+		if (cp > 0xFF) {
+			g = cjk_font_glyph(cp);
+			top = f->h - CJK_FONT_H;	// the bottom of the cell: on the Latin baseline
+			rows = CJK_FONT_H;
+			if (top < 0) {			// a cell shorter than the glyph (a layout that must not hold Chinese): clip it to the cell
+				rows += top;		// top is negative: the rows above the cell go
+				if (g != NULL)
+					g += (size_t)(CJK_FONT_H - rows) * CJK_FONT_ROW_BYTES;
+				top = 0;
+			}
+			if (g == NULL)
+				gfx_rect(x + 1, y + 1, adv - 2, f->h - 2, fg);	// no glyph: a box
+		} else {
+			g = font_glyph(f, (uint8_t)cp, &top, &rows);
+			if (g == NULL)
+				fallback_glyph(f, x, y, (uint8_t)cp, fg);
+		}
+		if (g != NULL) {
+			int bytes = cp > 0xFF ? CJK_FONT_ROW_BYTES : (f->w * f->bpp + 7) / 8;
+			for (int r = 0; r < rows; r++, g += bytes) {
+				int yy = py + top + r;
+				if (yy < clip_y0 || yy >= clip_y1)
+					continue;
+				for (int col = 0; col < adv; col++) {
+#if CONFIG_FONT_AA
+					unsigned a = (cp <= 0xFF && f->bpp == 2) ?
+						     (g[col >> 2] >> (6 - 2 * (col & 3))) & 3u :
+						     (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+#else
+					unsigned a = (g[col >> 3] & (0x80u >> (col & 7))) ? 3u : 0;
+#endif
+					int xx = px + col;
+					if (a == 0 || xx < clip_x0 || xx >= clip_x1)
+						continue;
+#if CONFIG_FONT_AA
+					if (a != 3) {
+						edge_pixel(xx, yy, fg, a);
+						continue;
+					}
+#endif
+					span(xx, xx + 1, yy, fg);
+				}
+			}
+		}
+		s += seq;
+		x += adv;
+	}
+#else
 	int bytes = (f->w * f->bpp + 7) / 8;
 	for (; *s; s++, x += f->w) {
 		int px = x + ox, py = y + oy;	// panel coordinates for the clip tests and spans
@@ -509,8 +720,12 @@ static int text(const font_t *f, int x, int y, const char *s, color_t fg, bool o
 			}
 		}
 	}
+#endif
 #ifdef GFX_FIT_TRACE
-	trace(GFX_TRACE_TEXT, x0, y, (int)strlen(s0) * f->w, f->h, s0);	// after the glyph cells gfx_text_bg fills
+	// The whole text's width, not the cells drawn: the loop stops at the clip's edge, so a glyph that starts past it
+	// is dropped without a pixel cut, and a trace of the drawn cells alone hid that from the layout check ("CC12"
+	// shown as "CC1" at the screen's edge, #837). After the glyph cells gfx_text_bg fills
+	trace(GFX_TRACE_TEXT, x0, y, gfx_text_width(f, s0), f->h, s0);
 #endif
 	return x;
 }
@@ -527,54 +742,174 @@ int gfx_text_bg(const font_t *f, int x, int y, const char *s, color_t fg, color_
 
 int gfx_text_width(const font_t *f, const char *s)
 {
+#if CONFIG_LANG_ZH
+	char first[ALT_TEXT_MAX];
+	if (strchr(s, TEXT_ALT_OPEN[0])) {
+		bool more;
+		alt_expand(s, 0, first, sizeof first, &more);
+		s = first;
+	}
+	return text_w(f, s);
+#else
 	if (strchr(s, TEXT_ALT_OPEN[0])) {
 		char first[ALT_TEXT_MAX];
 		bool more;
 		return (int)alt_expand(s, 0, first, sizeof first, &more) * f->w;
 	}
 	return (int)strlen(s) * f->w;
+#endif
 }
 
-void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t out_len)
+// The Latin cut: the start and the end, one glyph for the ellipsis between them (the start gets the odd one)
+static void fit_latin(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
 {
 	size_t fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
-	if (out_len == 0)
-		return;
 	if (fit > out_len - 1)
 		fit = out_len - 1;
-	// The longest set of alternates that fits; past the last one, shorten that with an ellipsis
-	char alt[ALT_TEXT_MAX];
-	const char *s = src;
 	size_t n = strlen(s);
-	if (strchr(src, TEXT_ALT_OPEN[0])) {
-		bool more = true;
-		for (int level = 0; more; level++) {
-			n = alt_expand(src, level, alt, sizeof alt, &more);
-			if (n <= fit)
-				break;
-		}
-		s = alt;
-	}
 	if (n <= fit) {
 		memcpy(out, s, n + 1);
 		return;
 	}
 	if (fit == 0) {
 		out[0] = 0;
-#ifdef GFX_FIT_TRACE
-		gfx_fit_trace(s, out);
-#endif
 		return;
 	}
-	// Keep the start and the end, one glyph for the ellipsis between them (start gets the odd one)
 	size_t keep = fit - 1;
 	size_t head = (keep + 1) / 2, tail = keep - head;
 	memcpy(out, s, head);
 	out[head] = GLYPH_ELLIPSIS[0];
 	memcpy(out + head + 1, s + n - tail, tail);
 	out[fit] = 0;
+}
+
+#if CONFIG_LANG_ZH
+// True when the text holds a character only the CJK face can draw
+static bool has_wide(const char *s)
+{
+	while (*s) {
+		int seq;
+		if (gfx_utf8_next(s, &seq) > 0xFF)
+			return true;
+		s += seq;
+	}
+	return false;
+}
+
+// The CJK cut: at the end, one whole character at a time, never inside one (docs/spec/ui.md 2.5). Chinese has no spaces
+// to cut at the middle, and the start of a short line carries its meaning
+static void fit_cjk(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
+{
+	size_t n = strlen(s);
+	size_t cap = out_len - 1;
+	if (text_w(f, s) <= max_w) {
+		if (n > cap) {			// a buffer too small for the whole text: cut whole characters
+			n = cap;
+			while (n > 0 && ((uint8_t)s[n] & 0xC0u) == 0x80u)
+				n--;
+		}
+		memcpy(out, s, n);
+		out[n] = 0;
+		return;
+	}
+	int room = max_w - f->w;		// the ellipsis takes a cell
+	if (room <= 0) {
+		out[0] = 0;
+		return;
+	}
+	int w = 0;
+	n = 0;
+	while (s[n]) {
+		int seq;
+		uint32_t cp = gfx_utf8_next(s + n, &seq);
+		int adv = char_w(f, cp);
+		if (w + adv > room || n + (size_t)seq > cap)
+			break;
+		w += adv;
+		n += (size_t)seq;
+	}
+	memcpy(out, s, n);
+	if (n < cap)
+		out[n++] = GLYPH_ELLIPSIS[0];
+	out[n] = 0;
+}
+
+// The end cut: keep the start and shorten at the end, at a word for Latin text and at a whole character for Chinese (a
+// message preview, a text page's last line, a row's label). A line without a wide character keeps the word cut every
+// other language has, so an English or Spanish screen looks the same in a build with the CJK face
+void gfx_text_fit_end(const font_t *f, const char *s, int max_w, char *out, size_t out_len)
+{
+	if (out_len == 0)
+		return;
+	if (has_wide(s)) {
+		fit_cjk(f, s, max_w, out, out_len);
+#ifdef GFX_FIT_TRACE
+		if (strcmp(s, out) != 0)
+			gfx_fit_trace(s, out);
+#endif
+		return;
+	}
+	size_t n = strlen(s), fit = max_w <= 0 ? 0 : (size_t)(max_w / f->w);
+	if (fit >= out_len)
+		fit = out_len - 1;
+	if (n <= fit) {
+		memcpy(out, s, n + 1);
+		return;
+	}
+	if (fit == 0) {
+		out[0] = 0;
+		return;
+	}
+	size_t keep = fit - 1;
+	size_t cut = keep;
+	while (cut > 0 && s[cut] != ' ')
+		cut--;
+	if (cut >= keep / 2)
+		keep = cut;			// end at a word unless that throws away more than half
+	while (keep > 0 && s[keep - 1] == ' ')
+		keep--;
+	memcpy(out, s, keep);
+	out[keep] = GLYPH_ELLIPSIS[0];
+	out[keep + 1] = 0;
 #ifdef GFX_FIT_TRACE
 	gfx_fit_trace(s, out);
+#endif
+}
+#endif
+
+void gfx_text_fit(const font_t *f, const char *src, int max_w, char *out, size_t out_len)
+{
+	if (out_len == 0)
+		return;
+	// The longest set of alternates that fits; the last one is what gets shortened below
+	char alt[ALT_TEXT_MAX];
+	const char *s = src;
+	if (strchr(src, TEXT_ALT_OPEN[0])) {
+		bool more = true;
+		for (int level = 0; more; level++) {
+			bool next;
+			alt_expand(src, level, alt, sizeof alt, &next);
+			more = next;
+			// It has to fit the space and the buffer: out_len - 1 bytes, whatever their width
+#if CONFIG_LANG_ZH
+			if (text_w(f, alt) <= max_w && strlen(alt) <= out_len - 1)
+#else
+			if ((int)strlen(alt) * f->w <= max_w && strlen(alt) <= out_len - 1)
+#endif
+				break;
+		}
+		s = alt;
+	}
+#if CONFIG_LANG_ZH
+	// A line with Chinese is cut at the end; a line of Latin keeps the middle cut every other language has
+	if (has_wide(s))
+		fit_cjk(f, s, max_w, out, out_len);
+	else
+#endif
+		fit_latin(f, s, max_w, out, out_len);
+#ifdef GFX_FIT_TRACE
+	if (strcmp(s, out) != 0)	// only a text that was actually shortened (the simulator lists them)
+		gfx_fit_trace(s, out);
 #endif
 }
 
@@ -649,6 +984,17 @@ void gfx_flush(void)
 		pal_n_sent = pal_n;
 	}
 #endif
+	// The insets of a safe-area frame buffer: painted with the first frame and when the background changed, not with
+	// every frame the palette made all_dirty (entry 0, their color, only changes with the background). Every panel row
+	// has some of them (the left and right ones), so a copy elsewhere gets every row again
+	if (fb_safe && (insets_dirty || margin != margin_sent)) {
+		display->fill_insets(margin);
+		margin_sent = margin;
+		insets_dirty = false;
+#if CONFIG_NET_WEBCTL
+		gfx_rows_mark_all();
+#endif
+	}
 	int band = -1;
 	for (int y = 0; y < height; y++) {
 		uint32_t h = hash_row(y);
@@ -656,7 +1002,7 @@ void gfx_flush(void)
 		row_hash[y] = h;
 #if CONFIG_NET_WEBCTL
 		if (changed)
-			row_new[y >> 3] |= (uint8_t)(1u << (y & 7));
+			row_new[(y + fy) >> 3] |= (uint8_t)(1u << ((y + fy) & 7));
 #endif
 		if (changed && band < 0)
 			band = y;
@@ -686,7 +1032,7 @@ bool gfx_frame_idle(uint32_t *frames)
 #if CONFIG_NET_WEBCTL
 int gfx_row_next(int from)
 {
-	for (int y = from < 0 ? 0 : from; y < height; y++)
+	for (int y = from < 0 ? 0 : from; y < ph; y++)
 		if (row_new[y >> 3] & (1u << (y & 7)))
 			return y;
 	return -1;
@@ -694,7 +1040,7 @@ int gfx_row_next(int from)
 
 void gfx_rows_take(int from, int to)
 {
-	for (int y = from; y <= to && y < height; y++)
+	for (int y = from; y <= to && y < ph; y++)
 		row_new[y >> 3] &= (uint8_t)~(1u << (y & 7));
 }
 
@@ -707,6 +1053,7 @@ void gfx_rows_mark_all(void)
 void gfx_invalidate(void)
 {
 	all_dirty = true;
+	insets_dirty = true;
 }
 
 static volatile uint32_t hold_until;

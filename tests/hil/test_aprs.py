@@ -23,7 +23,7 @@ Where and how it transmits, so that nothing reaches the APRS network:
   settings' default power (1 W on the DM-1701) whatever the radio was set to.
   A fixed APRS power level (`set.aprs_power` not 0) is set to follow the channel for the run and put back after.
 - Callsign: --callsign as the RAM-only test call (never saved) with SSID --aprs-ssid (default 15). Destination
-  APZRDF.
+  APRDF plus the radio's own sixth character (view key aprs.tocall, aprs_set section).
 - Every APRS setting a test changes (transmit, region, custom frequency, SSID, path, send via, position source, fixed
   position, digital destination, UDT) is put back afterwards, after the queued frames and message retries are on
   air (still on the test frequency). If they don't drain, the region stays on the test frequency and the test fails
@@ -48,7 +48,7 @@ location to --aprs-dmr-dst; the bench modem's listener (a bench_tx listen job) h
 the test reassembles and decodes them here.
 
 Pass criteria:
-- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to APZRDF, no digipeaters, control 0x03,
+- test_aprs_on_air_position: one frame with a valid FCS from <call>-<ssid> to the radio's aprs.tocall, no digipeaters, control 0x03,
   PID 0xF0, a position within 1e-4 degree of 33.7490, -84.3880; aprs.rf_sent +1; afterwards aprs.rf_active=0, the
   radio idle on its channel (ch.rx_hz, rx_hz, mode unchanged). Deviation peak (99.9th percentile of the
   demodulated audio over the transmission) 2.0-4.5 kHz; |twist| (mark / space tone amplitudes) under 6 dB. Printed,
@@ -60,7 +60,7 @@ Pass criteria:
   LRRP: DPF 2 (unconfirmed) carrying IPv4 / UDP to port 4001 with a triggered location report (document 0x0D);
   UDT: DPF 0, format 5 (NMEA location), appended block CRC ok; the position within 2e-5 degree.
 - test_aprs_rx_on_air: aprs.rx_frames +1 with aprs.rx_bad unchanged, and aprs.stations at least 1.
-- test_aprs_igate_on_air: aprs.igated +1, and the line "<src>>APZRDF,qAR,<radio's call>:<info>" arrives once:
+- test_aprs_igate_on_air: aprs.igated +1, and the line "<src>>APZTST,qAR,<radio's call>:<info>" arrives once:
   [aprsis] at the server, after a login as the radio's call with its passcode; [kiss_tcp] on KISS TCP.
 """
 import contextlib
@@ -69,6 +69,7 @@ import time
 
 import pytest
 
+from dmr_packets import crc16_ccitt, crc32_dmr, data_packets, lrrp_position, udt_position
 from rfoundry_hil import DebugLinkError, skip
 from hil_config import rig, tx_allowed
 
@@ -163,7 +164,8 @@ class AprsSession:
                      "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                      "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                      "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"),
-                     "digi": _n(v, "set.aprs_digi"), "power": _n(v, "set.aprs_power")}
+                     "digi": _n(v, "set.aprs_digi"), "power": _n(v, "set.aprs_power"),
+                     "ambiguity": _n(v, "set.pos_ambiguity"), "mute": _n(v, "set.aprs_mute")}
         self.v0 = v
         self.expected_rf = 0
         self.message = False
@@ -246,7 +248,7 @@ class AprsSession:
         if {"lat", "lon"} & self.changed:
             L.aprs_set("lat", self.fixed[0])
             L.aprs_set("lon", self.fixed[1])
-        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power"):
+        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power", "ambiguity", "mute"):
             if f in self.changed:
                 L.aprs_set(f, k[f])
         if self.custom_hz is not None:
@@ -260,7 +262,8 @@ class AprsSession:
                 "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                 "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                 "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"), "digi": _n(v, "set.aprs_digi"),
-                "power": _n(v, "set.aprs_power")}
+                "power": _n(v, "set.aprs_power"), "ambiguity": _n(v, "set.pos_ambiguity"),
+                "mute": _n(v, "set.aprs_mute")}
         assert back == k, f"APRS settings not restored: {back} != {k}"
 
 
@@ -307,8 +310,8 @@ def aprs_air(radio, pytestconfig, request):
     start = getattr(request, "param", "channel")
     _need_aprs(radio)
     call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
-    if "FM" not in radio.features():
-        skip("not_built", "built without FM")
+    if "APRS_AFSK" not in radio.features():
+        skip("not_built", "built without CONFIG_APRS_AFSK (APRS on FM)")
     hz = round(rig(pytestconfig, "aprs-test-mhz") * 1e6)
     if not allowed_test_hz(hz):
         pytest.fail(f"--aprs-test-mhz {hz / 1e6:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
@@ -372,20 +375,27 @@ def send_and_capture(radio, sdr_bench, s, send):
     for k in ("rx_hz", "mode", "zone_pos", "vfo"):
         assert core.get(k) == core0.get(k), f"{k}: {core0.get(k)} -> {core.get(k)}"
     assert ch.get("ch.rx_hz") == ch0.get("ch.rx_hz"), (ch0, ch)
-    if "fcs_bad" in res:
-        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
-    for seg in res.get("segments", []):
-        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
-              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
+    print_capture(res)
     ours = [f for f in res["frames"] if f["src"] == f"{s.call}-{s.ssid}"]
     for f in res["frames"]:
         print_frame(f)
     assert len(ours) == 1, f"expected one frame from {s.call}-{s.ssid} with a valid FCS, got {res['frames']} " \
                            f"(segments {res.get('segments')})"
     f = ours[0]
-    assert f["fcs_ok"] and f["dst"] == "APZRDF" and f["digis"] == [], f
+    tocall = v0.get("aprs.tocall")     # aprs_set, read before keying
+    assert tocall and re.fullmatch(r"APRDF[0-9A-Z]", tocall), f"aprs.tocall {tocall!r}: firmware too old?"
+    assert f["fcs_ok"] and f["dst"] == tocall and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
     return f
+
+
+def print_capture(res):
+    """The bench board's decode counts and the keyed segments it saw"""
+    if "fcs_bad" in res:
+        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
+    for seg in res.get("segments", []):
+        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
+              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
 
 
 def print_frame(f):
@@ -407,10 +417,12 @@ def check_tones(f):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.parametrize("aprs_air", ["channel", "fm_vfo"], indirect=True)
+@pytest.mark.needs_switch("VFO_FM")
 def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
     """One position at 50 mW on the test frequency, decoded off air; deviation, twist, phase, TX delay printed."""
     f = send_and_capture(radio, sdr_bench, aprs_air, radio.link.aprs_send_now)
@@ -421,6 +433,7 @@ def test_aprs_on_air_position(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -432,6 +445,7 @@ def test_aprs_on_air_status(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
@@ -453,6 +467,7 @@ def test_aprs_on_air_message(radio, sdr_bench, aprs_air):
 
 
 @pytest.mark.feature("aprs")
+@pytest.mark.feature("aprs_afsk")
 @pytest.mark.radio_tx
 @pytest.mark.parametrize("over", ["serial", pytest.param("network", marks=pytest.mark.usb_switch),
                                   pytest.param("kiss_tcp", marks=pytest.mark.usb_switch)])
@@ -509,85 +524,10 @@ def _link_answers(radio, aprs_air, send):
 
 # ── digital APRS: positions over DMR ────────────────────────────────────────
 
-def crc16_ccitt(data, mask):
-    crc = 0
-    for b in data[:10]:
-        crc ^= b << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
-    return (~crc ^ ((mask << 8) | mask)) & 0xFFFF
-
-
-def crc32_dmr(data):
-    """ETSI TS 102 361-1 B.3.8: the octets of each 16 bit word swapped, polynomial 0x04C11DB7, initial 0."""
-    crc = 0
-    n = len(data) + (len(data) & 1)
-    for i in range(n):
-        j = i ^ 1
-        crc ^= (data[j] if j < len(data) else 0) << 24
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x04C11DB7) & 0xFFFFFFFF if crc & 0x80000000 else (crc << 1) & 0xFFFFFFFF
-    return crc
-
-
-def data_packets(lines):
-    """Data headers heard (dt 6) with the rate 1/2 blocks (dt 7) that follow: dicts with the header fields."""
-    out, cur = [], None
-    for r in lines:
-        dt, info = r.get("dt"), r.get("info")
-        if not info:
-            continue
-        b = bytes.fromhex(info)
-        if dt == 6:
-            dpf = b[0] & 0x0F
-            n = (b[8] & 0x7F) if dpf == 2 else (b[8] & 0x03) + 1 if dpf == 0 else 0
-            cur = {"dpf": dpf, "sap": b[1] >> 4, "dst": int.from_bytes(b[2:5], "big"),
-                   "src": int.from_bytes(b[5:8], "big"), "pad": (b[0] & 0x10) | (b[1] & 0x0F), "fmt": b[1] & 0x0F,
-                   "crc_ok": crc16_ccitt(b, 0xCC) == int.from_bytes(b[10:12], "big"), "need": n, "blocks": []}
-            out.append(cur)
-        elif dt == 7 and cur is not None and len(cur["blocks"]) < cur["need"]:
-            cur["blocks"].append(b)
-    return out
-
-
-def lrrp_position(user):
-    """(lat, lon) of an LRRP triggered location report in IPv4 / UDP to port 4001; asserts the layers."""
-    assert user[0] >> 4 == 4 and user[9] == 17, f"not IPv4 / UDP: {user.hex()}"
-    ihl = (user[0] & 0x0F) * 4
-    udp = user[ihl:]
-    assert int.from_bytes(udp[2:4], "big") == 4001, f"UDP port {int.from_bytes(udp[2:4], 'big')}"
-    doc = udp[8:]
-    assert doc[0] == 0x0D, f"LRRP document {doc[0]:#x} (0x0D: triggered location report): {doc.hex()}"
-    i = 2 if doc[1] < 0x80 else 3
-    while i < len(doc):
-        t = doc[i]
-        if t == 0x22:
-            i += 2 + doc[i + 1]
-        elif t == 0x34:
-            i += 6
-        elif t == 0x51:
-            la, lo = int.from_bytes(doc[i + 1:i + 5], "big"), int.from_bytes(doc[i + 5:i + 9], "big", signed=True)
-            lat = (la & 0x7FFFFFFF) * 90.0 / 2 ** 31
-            return (-lat if la & 0x80000000 else lat), lo * 360.0 / 2 ** 32
-        else:
-            break
-    raise AssertionError(f"no position token in the LRRP report: {doc.hex()}")
-
-
-def udt_position(block):
-    bits = int.from_bytes(block[:10], "big")
-
-    def f(pos, width):
-        return (bits >> (80 - pos - width)) & ((1 << width) - 1)
-    north, east, valid = f(1, 1), f(2, 1), f(3, 1)
-    lat = f(11, 7) + (f(18, 6) + f(24, 14) / 10000.0) / 60.0
-    lon = f(38, 8) + (f(46, 6) + f(52, 14) / 10000.0) / 60.0
-    return valid, (lat if north else -lat), (lon if east else -lon)
-
-
 @pytest.mark.feature("dmr_lrrp")
 @pytest.mark.feature("aprs", optional=True)
-@pytest.mark.needs_switch("APRS")
+@pytest.mark.feature("aprs_dmr")
+@pytest.mark.needs_switch("APRS_DMR", "DMR_LRRP")
 @pytest.mark.radio_tx
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
@@ -596,8 +536,8 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
     """The position as an LRRP report or a UDT location over DMR at the lowest power, decoded from the bench modem."""
     _need_aprs(radio)
     feats = radio.features()
-    if "DMR" not in feats or "DMR_DATA_CORE" not in feats:
-        skip("not_built", "built without DMR data")
+    if "APRS_DMR" not in feats:
+        skip("not_built", "built without CONFIG_APRS_DMR (APRS over DMR)")
     if form == "lrrp" and "DMR_LRRP" not in feats:
         skip("not_built", "built without CONFIG_DMR_LRRP")
     freq, cc = rig(pytestconfig, "dmr-freq"), rig(pytestconfig, "dmr-cc")
@@ -615,6 +555,7 @@ def test_aprs_dmr_position(radio, sdr_bench, pytestconfig, form):
         s.set("via", VIAS["dmr"])
         s.set("dmr_dst", dst)
         s.set("dmr_udt", 1 if form == "udt" else 0)
+        s.set("ambiguity", 0)       # a DMR report gets the ambiguity's blur (position_blur): the exact position here
         s.position()
         v0 = _aprs(radio)
         with sdr_bench.lease():
@@ -656,19 +597,15 @@ def bench_frame(call, own, info=BENCH_RX_INFO):
     radio's own call (the radio skips its own packets)"""
     import aprs_afsk_check as afsk
     src = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
-    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZRDF", [], info)], 40)     # 40 flags: 267 ms TX delay
+    bits = afsk.hdlc_bits([afsk.ax25_frame(src, "APZTST", [], info)], 40)     # 40 flags: 267 ms TX delay
     packed = bits + "0" * (-len(bits) % 8)
     hexs = "".join(f"{int(packed[i:i + 8], 2):02x}" for i in range(0, len(packed), 8))   # MSB first, as sent
     return src, [{"kind": "fsk", "hex": hexs, "bits": len(bits), "nrzi": True, "level": 1.0}]
 
 
-@pytest.mark.feature("aprs_rx")
-@pytest.mark.rf
-@pytest.mark.bench_service
-def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
-    """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
-    --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
-    FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
+def _rx_on_air(radio, sdr_bench, pytestconfig, mute=False):
+    """The bench's frame on --fm-mhz, decoded in the FM VFO there (test_aprs_rx_on_air); mute: with Mute APRS audio
+    on, as the APRS frequency's speaker is silent"""
     _need_aprs(radio)
     if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
         skip("not_built", "built without APRS receive or the FM VFO")
@@ -686,6 +623,9 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
         L.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
         s.rx_setup(hz)
+        if mute:
+            s.set("mute", 1)
+            radio.wait_for(lambda v: v.get("set.aprs_mute") == "1", sections=("aprs_set",), what="APRS audio muted")
         radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
         v0 = _aprs(radio)
         with sdr_bench.lease():
@@ -704,6 +644,77 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
         assert _n(v, "aprs.rx_frames") == _n(v0, "aprs.rx_frames") + 1, f"one frame expected: {v}"
         assert _n(v, "aprs.rx_bad") == _n(v0, "aprs.rx_bad"), f"the frame was refused (rx_bad): {v}"
         assert _n(v, "aprs.stations") >= 1, f"the station isn't listed: {v}"
+
+
+
+
+@pytest.mark.feature("aprs_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
+def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
+    """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
+    --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
+    FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
+    _rx_on_air(radio, sdr_bench, pytestconfig)
+
+
+@pytest.mark.feature("aprs_mute")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
+def test_aprs_rx_muted_on_air(radio, sdr_bench, pytestconfig):
+    """test_aprs_rx_on_air with Mute APRS audio on: the speaker is silent on the APRS frequency, and the frame is still
+    decoded (aprs.rx_frames). A board whose decoder reads the FM audio behind the speaker path needs the board's
+    speaker_mute for this (aprs.md 5.3)."""
+    _rx_on_air(radio, sdr_bench, pytestconfig, mute=True)
+
+
+@pytest.mark.feature("aprs_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
+def test_aprs_rx_third_party_message(radio, sdr_bench, pytestconfig):
+    """A message to the radio wrapped as an iGate puts APRS-IS traffic on RF ("}SRC>DST,TCPIP,IGATE*:info", sent by
+    --callsign-7 or -11 as the iGate, from --callsign-12 inside), from the bench board's FM transmitter on --fm-mhz:
+    the radio keeps it as from the inner sender (aprs.msg_from, msg_text). No message number, so no ack: the radio doesn't transmit."""
+    _need_aprs(radio)
+    if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
+        skip("not_built", "built without APRS receive or the FM VFO")
+    call = rig(pytestconfig, "callsign", "an amateur transmission: needs a licensed operator's callsign,")
+    mhz = rig(pytestconfig, "fm-mhz")
+    hz = round(mhz * 1e6)
+    if not allowed_test_hz(hz):
+        pytest.fail(f"--fm-mhz {mhz:.4f}: an APRS frequency, or not one of the rig's transmit frequencies (tx_mhz)")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    own = _aprs(radio).get("aprs.call")
+    if not own:
+        skip("state", "the radio has no APRS callsign")
+    inner = f"{call.upper()}-12"
+    if inner == own:
+        skip("state", f"the radio's own call is {own}, the test's inner sender")
+    gate = next(c for c in (f"{call.upper()}-{n}" for n in BENCH_RX_SSIDS) if c != own)
+    text = f"RadioFoundry HIL third party {int(time.time()) % 100000}"     # new each run: not the inbox's last one
+    info = f"}}{inner}>APZTST,TCPIP,{gate}*::{own:<9}:{text}"
+    src, program = bench_frame(call, own, info)
+    L = radio.link
+    with radio.vfo_session(), aprs_session(radio) as s:
+        L.vfo_set(hz)
+        radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
+        s.rx_setup(hz)
+        radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
+        v0 = _aprs(radio)
+        with sdr_bench.lease():
+            done = sdr_bench.fm_transmit(mhz, program, dev_hz=3000, lead_s=0.1, tail_s=0.1)
+        print(f"bench: {src}: {info}: {done}")
+        v = radio.wait_for(lambda x: _n(x, "aprs.rx_frames") > _n(v0, "aprs.rx_frames"), timeout=5,
+                           sections=("aprs",), what="the bench's frame decoded")
+        v = radio.wait_for(lambda x: x.get("aprs.msg_text") == text, timeout=2, sections=("aprs",),
+                           what="the wrapped message kept")
+        assert v.get("aprs.msg_from") == inner, f"the message isn't from the inner sender {inner}: {v}"
+        assert _n(v, "aprs.rf_sent") == _n(v0, "aprs.rf_sent"), f"the radio transmitted: {v}"
 
 
 def kiss_frames(data):
@@ -789,7 +800,7 @@ class AprsIsServer:
 @pytest.mark.parametrize("to", ["aprsis", "kiss_tcp"])
 def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
     """RF to APRS-IS (aprs.md 9.1): the bench's frame, as in test_aprs_rx_on_air, heard by the radio in the USB network
-    personality with the iGate on and the test callsign; the line "<src>>APZRDF,qAR,<radio's call>:<info>" goes out
+    personality with the iGate on and the test callsign; the line "<src>>APZTST,qAR,<radio's call>:<info>" goes out
     once, and aprs.igated counts it.
     aprsis: through the radio's own APRS-IS client (CONFIG_NET_APRSIS) to a server the test runs on the host: the
     client logs in as the radio's call with its passcode, and the line arrives at the server.
@@ -875,7 +886,7 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
             raise AssertionError("not gated: " + " ".join(
                 f"{key}={_n(v0, key)}->{_n(v, key)}" for key in ("aprs.rx_frames", "aprs.rx_fcs_errors", "aprs.rx_bad",
                                                                  "aprs.igated", "aprs.host_out", "aprs.rx_peak")))
-        want = f"{src}>APZRDF,qAR,{own}:{info}"
+        want = f"{src}>APZTST,qAR,{own}:{info}"
         end = time.monotonic() + 3
         if to == "aprsis":
             while time.monotonic() < end and want not in srv.lines[n0:]:

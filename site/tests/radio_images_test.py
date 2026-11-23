@@ -2,7 +2,8 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Every radio's picture (site/rfoundrysite/device.py), which the web flasher shows beside its update mode steps
 (radiotop.js, data/radios.json frame_image and frame_geometry): each board in the registry renders one, from its own
-illustration or the generic drawing for its shape, with one screen where the flasher lays what the screen shows, and
+illustration or the generic drawing for its shape, with one screen where the flasher lays what the screen shows (none
+on a radio without a display), and
 each key held to enter update mode (board.toml [flash.bootloader] hold) on it, or named undrawn, with its label for the
 flasher's caption. A new board without what it needs fails here, not on the flasher page.
 
@@ -29,6 +30,11 @@ class RadioImages(unittest.TestCase):
 		for b in self.boards:
 			with self.subTest(board=b["id"]):
 				img = device.render(b, b["name"])
+				if not device.has_display(b):
+					self.assertEqual(device.SCREEN_RECT.findall(img["frame"]), [])
+					self.assertIsNone(img["geometry"]["screen_pct"])
+					self.assertEqual(device.boot(img, b""), img["frame"])
+					continue
 				self.assertEqual(len(device.SCREEN_RECT.findall(img["frame"])), 1)
 				pct = img["geometry"]["screen_pct"]
 				for k in ("left", "top", "width", "height"):

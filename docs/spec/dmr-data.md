@@ -3,7 +3,8 @@
 Text messages, packet data answers, CSBK call alert and radio check, ARS registration and LRRP location answers on
 the DMR call stack; IP packets with compressed headers and confirmed delivery (11, 12). Status: built and host-tested
 (`dmrDataServiceTest`, `dmrDataChainTest`). On air against the SDR bench (measured): text messages,
-call alert and radio check, both ways (`tests/hil/test_dmr_data.py`); ARS and LRRP not yet (`docs/testing/on-air-coverage.md`);
+call alert and radio check, both ways, and LRRP immediate answers with and without a position (`tests/hil/test_dmr_data.py`);
+ARS not yet (`docs/testing/on-air-coverage.md`);
 IP over DMR: 11.4.
 
 Sources: ETSI TS 102 361-1 (bursts, data headers, blocks, CRCs, CSBK), TS 102 361-2 (call alert, radio check),
@@ -102,18 +103,33 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 |---|---|---|---|---|---|
 | call alert | 0x80 \| 0x1F | 0x00 | 0 | the alerted radio | the caller |
 | call alert ack | 0x80 \| 0x20 | 0x00 | 0 | the caller | the alerted radio |
-| radio check request | 0x80 \| 0x24 | 0x10 (Motorola) | 0x80 | the checked radio | the checker |
-| radio check answer | 0x80 \| 0x24 | 0x10 | 0x00 | the checked radio | the checker |
-| radio check, ETSI form | 0x80 \| 0x24 | 0x00 | 0x80 request, 0x00 answer | as above | as above |
+| radio check request | 0x80 \| 0x24 | 0x10 | 0x00 | the checker | the checked radio |
+| radio check answer | 0x80 \| 0x24 | 0x10 | 0x80 | the checker | the checked radio |
+| radio check request, ETSI form | 0x80 \| 0x24 | 0x00 | 0x80 | the checked radio | the checker |
+| radio check answer, ETSI form | 0x80 \| 0x24 | 0x00 | 0x00 | the checked radio (or the checker) | the checker (or the checked radio) |
 | emergency alarm | 0x80 \| 0x27 | 0x10 or 0x00 | 0 | the group or radio | the radio in emergency (`dmr-emergency.md` 2) |
 
 - Received call alert to us: event `CALL_ALERT` (the UI shows "Call alert from N"), acknowledged when the setting
   allows. A caller repeats until it hears the ack, so the same caller within 10 s rings once.
 - Received radio check to us: counted; answered (event `RADIO_CHECK_ANSWERED`) only when the setting allows.
-- Both are answered for FID 0x00 and 0x10, with the request's FID.
-- Our radio check goes with FID 0x10 (Motorola), or 0x00 with the setting `radioCheckEtsi` (the "ETSI form": the
-  same opcode and octets with the ETSI FID; an assumption, no ETSI text we have names it). An answer is taken with
-  the IDs in either order (octets 4-6 the checked radio as the Motorola answer has it, or swapped).
+- Both are answered for FID 0x00 and 0x10, with the request's FID. A radio check answer is the request echoed with
+  octet 3 bit 7 flipped, in either form.
+- The FID 0x10 form matches a commercial portable on air: the request and the answer both carry the checker in
+  octets 4-6 and the checked radio in 7-9, and octet 3 is 0x00 in the request and 0x80 in the answer.
+- Our radio check goes in the FID 0x10 form, or in the ETSI form (FID 0x00) with the setting
+  `radioCheckEtsi`. The ETSI form keeps the layout of the call alert (the checked radio in octets 4-6), an
+  assumption: no ETSI text we have names the form. An ETSI-form answer is taken with the IDs in either order.
+- Bit 7 of octet 3 tells a request from an answer, by FID. Any other bit of octet 3 set is another service on the
+  opcode: neither counted nor answered. A radio check is addressed to us only in the octets
+  the form gives the receiver: a FID 0x10 request when we are in octets 7-9, a FID 0x10 answer when we are in 4-6.
+  Our own request or answer repeated back by a repeater is addressed to the other radio and is ignored. The one
+  exception is an ETSI-form answer: repeated back, it reads as the checked radio's answer with the IDs swapped, and
+  finishes a check of that radio running at the same time.
+- An answer is taken only from the radio we are checking while the check runs, also while a retry waits for a busy
+  channel. A late answer, or a second one to an
+  earlier try, is dropped and never answered.
+- RadioFoundry builds before this layout sent the ETSI layout with FID 0x10. They don't interoperate with newer builds
+  in the FID 0x10 form until both radios are updated. The ETSI form is unaffected.
 - Ours (`dmr_signal_call_alert`, `dmr_signal_radio_check`): up to 3 tries, each waiting 1.5 s after the CSBK has
   gone for the answer; events `CALL_ALERT_ACKED` / `RADIO_CHECK_OK` or `..._FAILED`. One call alert or radio check
   at a time.
@@ -122,13 +138,16 @@ Formats (10 octets before the CRC; octets 4-6 and 7-9 are 24-bit radio IDs):
 
 Three formats. Which one a message goes in: per message (`sms_send(..., DMR_SMS_FORMAT_ETSI_IP / _ETSI / _TMS)`,
 `dmrDataServiceSendSMSFormat`) or the radio's default (`DMR_SMS_FORMAT_DEFAULT`: the setting `smsFormat`, used by
-the UI, Settings > Connections > Message format). A reply uses the received message's format
-(`dmrDataMessage_t.format`). A per-contact format is not stored yet (the codeplug's contact has no field for it).
+the UI, Settings > Connections > Message format). Automatic selects UTF-16BE Tier III control-channel short data
+for up to 23 characters on a clear trunked channel when the UDT sender is available. It uses ETSI IP text otherwise.
+Canned replies use the received message's format (`dmrDataMessage_t.format`) where available; a UDT reply that exceeds
+the short-data limit or is sent on a conventional channel uses ETSI IP text. The message composer uses the selected
+format setting. A per-contact format is not stored yet (the codeplug's contact has no field for it).
 All three are read whatever the setting.
 
 | Format | `dmr_sms_format_t` | Carried as | Delivery confirmed by |
 |---|---|---|---|
-| ETSI IP text (5.3), the default | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
+| ETSI IP text (5.3) | `ETSI_IP` (2) | UDP 5016, UTF-16BE, full IPv4 header, SAP 4 | individual: the ETSI response to the confirmed packet (12); group: nothing |
 | ETSI defined short data (5.2) | `ETSI` (1) | DD_HEAD, SAP 10, ISO 8859-1 | the ETSI response (A bit) |
 | Motorola TMS (5.1), `CONFIG_DMR_TMS` | `TMS` (0) | UDP 4007, UTF-16LE with the TMS header | the TMS ACK |
 
@@ -296,7 +315,8 @@ with N(S) 0 within 20 s.
   first).
 - DD formats read (`dmrData.h`): 0x02 7-bit (ISO/IEC 646, packed, the bit padding gives the length), 0x03-0x11 ISO
   8859-x (all read as 8859-1), 0x12 UTF-8, 0x13 UTF-16 (with a byte order mark; big endian without one), 0x14
-  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?'. Binary and BCD are not text: counted, not shown.
+  UTF-16BE, 0x15 UTF-16LE; characters outside Latin-1 become '?', and control characters (C0, DEL and C1,
+  0x00-0x1F and 0x7F-0x9F) are dropped: the UI's text takes 0x80-0x86 as its own glyphs (`core/ui/font.h`). Binary and BCD are not text: counted, not shown.
   The codes are TS 102 361-1 V2.7.1 Table 9.50 (9.3.38); the bit padding is 9.3.44. A host test holds one message
   computed from those clauses apart from this code (`dmrDataChainTest`, "ETSI TXT 541"); a commercial radio is still
   to be tried (open point). HIL 2026-10-10: the bench tool sent ISO 8859-1 text marked 0x02 (its bug, fixed), and the
@@ -364,15 +384,18 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 ## 7. LRRP
 
 - Immediate location requests to us are answered; triggered requests (periodic, distance) start a trigger (2 at
-  most, reports at most every 5 s) with a start response, then reports.
-- Without a position source (`hasGps` false) every immediate request is answered with
-  result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
+  most, reports 30 s to 1 day apart, whatever the requester asks) with a start response, then reports.
+- The position is the position service's ([position.md](position.md)), through the `ownPosition` hook the radio
+  core sets (`position_report`: the board GPS, the host's NMEA or the fixed position, ambiguity applied). It needs no
+  APRS and no GPS receiver: `CONFIG_DMR_LRRP` builds the service, and `hasGps` is set in every such build.
+- While there is no position (no fix and no fixed position) an immediate request is answered with result 0x10 (no
+  fix). A triggered request starts its trigger; a report due without a position is skipped.
+- Built without a position source (`hasGps` false: a platform that sets no hook) every immediate request is answered
+  with result 0x10 (no fix) and a triggered request is refused with 0x10: no trigger is started, so nothing is sent
   later on its behalf.
 - `lrrpReply` off: requests are counted, not answered.
-- `dmrDataServiceGetPosition` is weak: a platform with a GPS overrides it and sets `hasGps`.
 - Positions elsewhere: the ETSI GPS Info LC in voice calls is in `dmr-voice.md` 3.1, positions to an APRS gateway ID
-  (LRRP triggered report or UDT location) in `aprs.md` 8. Neither feeds the LRRP answers yet (open: answer with the
-  APRS position when there is no GPS).
+  (LRRP triggered report or UDT location) in `aprs.md` 8. All of them read the same position.
 - Not ported: the UDT location reports and the GPS power management (`dmrDataServiceLocationNeededInMs` exists for
   it).
 
@@ -383,10 +406,10 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 | `arsServer` | 0 (off) | no transmission the user didn't ask for (`docs/ux/principles.md`) |
 | `radioCheckReply` | on | a radio check is how another user finds out whether this radio is on and in range; the answer is one short CSBK. A settings record saved before this default (no `SETTINGS_DS_CHECK_SET` in `ds_ip_cnf`, `settings-store.md` 3) answers too |
 | `callAlertAck` | on | the ack is what makes a call alert work for the caller |
-| `lrrpReply` | on | answers only a dispatcher's request; without GPS it says "no fix" |
-| `hasGps` | false | the radio core sets it false on every radio today, GPS models included (`data_init` in `core/radio/radio_sm.c`) |
+| `lrrpReply` | on | answers only a dispatcher's request; without a position (no fix, no fixed position) it says "no fix" |
+| `hasGps` | true with `CONFIG_DMR_LRRP` | the radio core sets it when the position service answers (`data_init` in `core/radio/radio_sm.c`, `ownPosition`); a source can come after start-up (7) |
 | `smsFormat` | ETSI IP text | the standard text application (5.4); ETSI short data and Motorola TMS (`CONFIG_DMR_TMS`) for radios that need them. A settings record from before this default (no format bit in `ds_flags`, `settings-store.md` 3) keeps TMS: only the default changed |
-| `radioCheckEtsi` | off | the Motorola form is what most radios answer |
+| `radioCheckEtsi` | off | the FID 0x10 form is what most radios answer |
 | `udpCompress` | auto | SAP 3 saves 19-23 octets per UDP packet; auto leaves the DMR application ports (MOTOTRBO servers) on the full header (11.2) |
 | `ipConfirmed`, `ipConfirmedRule[2]` | rules, none | confirmed only where the user names a destination or UDP port: an unanswered confirmed packet costs every retry on air (12.4) |
 | `ipConfirmedTries` | 4 | the first transmission and 3 retries (N_RtryLmt at most 8) |
@@ -394,7 +417,9 @@ that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for
 
 The settings are kept in the settings store (the `ds_*` fields, `settings-store.md` 3): the radio core loads them
 at start and, from its data tick, saves any change made by `dmr_data_set_settings` or the debug link's DMR_DATA
-SETTINGS. `hasGps` is the board's, not saved. The codeplug does not hold them. Only committed settings are applied, never an edit in
+SETTINGS. `hasGps` is the board's, not saved. The ARS server and the IP gateway are also in the codeplug's settings
+area ([codeplug-settings.md](codeplug-settings.md) 5): a key there holds the setting, and the settings store keeps
+the radio's own value for a codeplug without the key. Only committed settings are applied, never an edit in
 progress (gotcha 3.7).
 
 Transmission rules: nothing is sent unless the channel is a DMR channel we may transmit on (not RX only, in band,
@@ -765,7 +790,10 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
 - SAP 3 and SAP 4 behave the same in every case.
 - The portable sends confirmed data at rate 3/4 and unconfirmed at rate 1/2; BrandMeister sends confirmed at rate 3/4
   (5.1.1). We send the same: IP packets confirmed at rate 3/4, unconfirmed at rate 1/2 (`IP_CONFIRMED_RATE`,
-  `IP_UNCONFIRMED_RATE` in `dmrDataService.c`). Text and other packets outside the IP path stay at rate 1/2.
+  `IP_UNCONFIRMED_RATE` in `dmrDataService.c`). Text and other packets outside the IP path stay at rate 1/2. A
+  modem that can't send rate 3/4 blocks a receiver decodes (`hal_dmr_modem_t.tx_rate34_bad`) sends confirmed IP at
+  rate 1/2 instead, which a receiver decodes but this portable refuses (below). The debug link can set either rate for
+  the bench (`data.ip_cnf_rate`, debuglink.md 3.12 op 12).
 - Rate 1/2 confirmed: the portable answers the first try with a NACK (class 1, type 1, packet CRC failed), each retry
   with a selective ACK that has only block 0. Our blocks follow B.3.9 and B.3.10, and both CRCs, computed the same
   way, check on the portable's own rate 3/4 blocks. 14 other block forms got the same answer, block 0 always taken:
@@ -793,7 +821,65 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   ACK a second time 2.5 s later on most sends (9 of 10): it missed our link ACK to the first. With both, one of the
   two got a single TMS ACK on 8 sends of 8, and a third radio listening decoded our link ACK every time.
 
-## 13. Tests
+## 13. Privacy
+
+The channel's privacy key (`CONFIG_DMR_PRIVACY`, [dmr-voice.md](dmr-voice.md) 5) covers packet data too. Each scheme
+in `core/dmr/dmrPrivacy.c` says what it does with data; the data layer (`dmrData.c`, `dmrDataService.c`) gets a
+descriptor (`dmrDataPrivacy_t`: mode, algorithm ID, crypt callback) and never tests a scheme. A new scheme is a table
+entry.
+
+| Scheme | Data |
+|---|---|
+| Off, or no valid key | clear |
+| Motorola BP | encrypted: privacy header, algorithm 0 |
+| Anytone BP | no data form: every data list is refused |
+
+### 13.1 Privacy header
+
+A data header with DPF 15 right after the first data header (`dmrDataBuild*` add it; it counts in the first header's
+blocks to follow):
+
+| Octet | Content |
+|---|---|
+| 0 | SAP << 4 \| 0xF |
+| 1 | MFID 0x10 |
+| 2 | algorithm (bits 6-4: 0 BP, 1 RC4, 2 DES, 4 AES-128, 5 AES-256), encrypted 1 (bits 3-0) |
+| 3 | key ID (0 for BP) |
+| 4-5 | 0 |
+| 6-9 | MI, big-endian (0 for BP) |
+| 10-11 | CRC-CCITT, mask 0xCC |
+
+We send the real SAP in the first header. On RX a first header with SAP 9 takes the user data's SAP from the privacy
+header. A header with MFID 0x10 and SAP 1 is not a privacy header.
+
+### 13.2 BP keystream
+
+The key (1-255) selects a 16-bit word from the BP key table. The word repeats over the user data octets, high octet
+first, from octet 0 of the packet's user data (the IP datagram or the compressed header and payload). There is no MI
+and no restart per block. Pad octets and the CRC-32 stay clear. The CRC-32, and the CRC-9 of each confirmed block, are
+computed over the ciphertext, so a receiver without the key still checks and acknowledges the packet.
+
+### 13.3 What is refused, what is dropped
+
+- TX: `queueTx` is the one place every list passes (`dmrDataPrivacyAllows`). With an encrypting scheme every data
+  header except responses and proprietary headers must be followed by a privacy header. With a blocking scheme any
+  data header is refused. ETSI defined short data (5.2) has no privacy header, so it is refused under an encrypting
+  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
+  fails at once; other requests fail or time out as when the channel is busy.
+- Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
+- RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
+  MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives
+  garbage that the IP checks drop.
+- Counters (debug link section 8): `data.privacy_rx` (decrypted), `data.privacy_rx_dropped`, `data.privacy_tx` (lists
+  sent encrypted), `data.privacy_blocked` (lists refused).
+
+### 13.4 Open
+
+- Not yet checked against a commercial portable on air: whether its first header carries SAP 9 or the real SAP, and
+  octets 4-5.
+- Talker alias and the embedded LC are still sent in the clear.
+
+## 14. Tests
 
 - `tests/host/dmrDataServiceTest.c`: the service on a fake host: replies and duplicates, confirmed data, queue
   overflow and aging, CSBK both ways, our SMS and its ACK, ARS, LRRP with and without a position, the block window,
@@ -819,6 +905,11 @@ portable (confirmed: also its TMS ACK back). Each failing case was sent at least
   bursts, NACK), `tests/host/hostlinkNetTest.c` (the gateway's datagrams through the service path: SAP 3 for ports
   outside 4000-4099, SAP 4 for 4007). The vectors come from `tests/host/dmr_ip_vectors.py` (polynomial division from
   the standard's text, apart from the C code).
+- Privacy (13): `tests/host/dmrDataTest.c` (testPrivacy: the privacy header octet for octet, the keystream and clear
+  pad, the CRC over the ciphertext, RX with the right, wrong and no key, SAP 9, a bad header CRC, a network header (MFID 0x10, SAP 1),
+  confirmed with a retry, what `dmrDataPrivacyAllows` lets through), `tests/host/dmrPrivacyTest.c` (testData: the
+  modes per scheme, the BP key words), `tests/host/dmrDataServiceTest.c` (testPrivacy: a refused SMS fails with
+  nothing on air, an encrypted SMS out and in, an encrypted packet without the key dropped).
 - `tests/hil/test_dmr_ip.py`: on air, the bench modem decoding with `tools/bench/dmr_packet.py` (opt-in RF; 11.4).
 - `tests/hil/test_dmr_ip_burst.py`: datagrams back to back each way (radio, host and bench) and the air MTU on air
   (12.8): the largest datagram each way, the receiver's limit and one block more; one octet more to the air and the

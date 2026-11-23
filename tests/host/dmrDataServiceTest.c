@@ -16,7 +16,7 @@
 #include <string.h>
 #define DMR_DATA_SERVICE_TEST
 #include "../../core/dmr/dmrDataService.c"
-#include "../../core/aprs/aprs_nmea.h"
+#include "../../core/position/nmea.h"
 
 static int failures = 0;
 
@@ -51,9 +51,10 @@ void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload,
 
 static bool haveLocation = false;
 static int positionLatMinutes = 0;// the test moves the radio north by this many 1/10000 minutes
-bool dmrDataServiceGetPosition(lrrpPosition_t *position)
+static bool fakeOwnPosition(lrrpPosition_t *position, uint32_t nowMs, void *ctx)
 {
-	memset(position, 0, sizeof(*position));
+	(void)nowMs;
+	(void)ctx;
 	if (!haveLocation)
 	{
 		return false;
@@ -206,7 +207,8 @@ static void fakePosition(uint32_t src, const uint8_t *nmea, int length, uint32_t
 }
 
 static const dmrDataEnv_t fakeEnv = { .txStart = fakeTxStart, .channelClear = fakeClear, .inRxGroup = fakeInRxGroup,
-									  .notify = fakeNotify, .packet = fakePacket, .position = fakePosition };
+									  .notify = fakeNotify, .packet = fakePacket, .position = fakePosition,
+									  .ownPosition = fakeOwnPosition };
 
 // The radio task: ticks every 10 ms for a while, everything queued goes out
 static void runMainTask(int ms)
@@ -578,6 +580,32 @@ static void testLrrp(void)
 	CHECK(countLrrp(0x0D) == 0);
 	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
 
+	// A period under 30 s (1 s asked): reports 30 s apart, the first after 5 s
+	sentCount = 0;
+	receiveLrrp("0909220411223344343101");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(25000);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(5000);
+	CHECK(countLrrp(0x0D) == 2);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
+	// A period past what milliseconds hold in 32 bits (4294968 s): capped at a day, not a period of a few hundred ms
+	sentCount = 0;
+	receiveLrrp("090c220411223344343182869238");
+	runMainTask(8000);
+	CHECK(countLrrp(0x0B) == 1);
+	CHECK(countLrrp(0x0D) == 1);
+	runMainTask(120000);
+	CHECK(countLrrp(0x0D) == 1);
+	receiveLrrp("0f06220411223344");
+	runMainTask(3000);
+	CHECK(dmrDataServiceLrrpTriggerCount() == 0);
+
 	// Distance 500 m checked every 30 s: the first report, then only once it has moved 500 m
 	sentCount = 0;
 	receiveLrrp("090922015534311e788374");
@@ -665,21 +693,22 @@ static void testSignaling(void)
 	runMainTask(500);
 	CHECK(sentCount == 2);
 
-	// A radio check with the reply off: counted, not answered; on: answered (the request echoed, octet 3 cleared)
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	// A radio check in the FID 0x10 form (octet 3 0x00, the checker in octets 4-6, us in 7-9) with the reply off:
+	// counted, not answered; on: answered (the request echoed, octet 3 0x80)
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_B, OUR_ID);
 	runMainTask(500);
 	CHECK(sentCount == 2);
 	CHECK(stats.radioChecksReceived == 1);
 	settings.radioCheckReply = true;
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_B);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_B, OUR_ID);
 	runMainTask(500);
 	CHECK(sentCount == 3);
-	CHECK((sent[2].kind == 'C') && (sent[2].seq == DMR_CSBKO_RADIO_CHECK) && (sent[2].extra == 0x00) &&
-		  (sent[2].dst == OUR_ID));
+	CHECK((sent[2].kind == 'C') && (sent[2].seq == DMR_CSBKO_RADIO_CHECK) && (sent[2].extra == 0x80) &&
+		  (sent[2].dst == RADIO_B));
 	CHECK(events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1);
 	// A bad CRC: dropped
 	{
-		uint8_t c[10] = { 0x80 | DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, 0x80, 0, 0x03, 0xE8, 0, 0x07, 0xD2 };
+		uint8_t c[10] = { 0x80 | DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0, 0x00, 0, 0x07, 0xD2, 0, 0x03, 0xE8 };
 		dmrBurst_t b;
 		uint32_t errors = stats.rxCrcErrors;
 
@@ -692,15 +721,16 @@ static void testSignaling(void)
 		CHECK(stats.rxCrcFlagMismatch >= 1);// the modem said it was fine
 	}
 
-	// Our radio check: one CSBK, answered by the radio checked
+	// Our radio check: one CSBK in the FID 0x10 form (octet 3 0x00, us in octets 4-6, the radio checked in 7-9),
+	// answered by the radio checked (octet 3 0x80, same IDs)
 	reset();
 	CHECK(dmr_signal_radio_check(RADIO_A));
 	CHECK(!dmr_signal_call_alert(RADIO_B));// one at a time
 	runMainTask(100);
-	CHECK(countCsbk(DMR_CSBKO_RADIO_CHECK, RADIO_A) == 1);
-	CHECK(sent[0].extra == 0x80);
+	CHECK(countCsbk(DMR_CSBKO_RADIO_CHECK, OUR_ID) == 1);
+	CHECK(sent[0].extra == 0x00 && lastTx[0].payload[1] == DMR_FID_MOTOROLA && getId(&lastTx[0].payload[7]) == RADIO_A);
 	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING);
-	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x00, RADIO_A, OUR_ID);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_MOTOROLA, 0x80, OUR_ID, RADIO_A);
 	runMainTask(100);
 	uint8_t kind;
 	uint32_t dst;
@@ -708,6 +738,7 @@ static void testSignaling(void)
 	CHECK((kind == DMR_DATA_EV_RADIO_CHECK_OK) && (dst == RADIO_A));
 	CHECK(events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
 	CHECK(dmr_data_last_event().kind == DMR_DATA_EV_RADIO_CHECK_OK);
+	CHECK(sentCount == 1);// the answer isn't answered
 
 	// Our call alert with no answer: three tries, then failed
 	reset();
@@ -727,6 +758,113 @@ static void testSignaling(void)
 	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == 2);
 	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK);
 	CHECK(events[DMR_DATA_EV_CALL_ALERT_ACKED] == 1);
+}
+
+// Radio check CSBKs as heard on air (12 octets with the CRC) between radios 3229842 and 3229279. FID 0x10 form,
+// between two commercial portables: 3229842 checks 3229279, which answers
+static const uint8_t rcMotoRequest[12] = { 0xA4, 0x10, 0x00, 0x00, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0xD5, 0xD3 };
+static const uint8_t rcMotoAnswer[12] = { 0xA4, 0x10, 0x00, 0x80, 0x31, 0x48, 0x92, 0x31, 0x46, 0x5F, 0x7E, 0x2A };
+#define RC_CHECKER	3229842
+#define RC_CHECKED	3229279
+
+static void receiveRaw(const uint8_t csbk12[12])
+{
+	dmrBurst_t b;
+
+	dmrDataBuildCSBK(csbk12, &b);
+	memcpy(b.payload, csbk12, 12);// the CRC as heard
+	b.flags = 0;
+	millis += 60;
+	dmrDataServiceRxBurst(&b, millis);
+}
+
+// The one CSBK sent since reset() is these 12 octets
+static bool sentExactly(const uint8_t csbk12[12])
+{
+	return (sentCount == 1) && (lastTxCount == 1) && (memcmp(lastTx[0].payload, csbk12, 12) == 0);
+}
+
+// Radio check with a commercial portable, from the CSBKs heard on air: the check and the answer both ways, our own
+// CSBKs repeated back, and late answers (docs/spec/dmr-data.md 4)
+static void testRadioCheckForms(void)
+{
+	uint32_t answered;
+
+	reset();
+	settings.radioCheckReply = true;
+	settings.radioCheckEtsi = false;
+
+	// The portable checks us: answered as the portable answers, and its retry too
+	ch.ownId = RC_CHECKED;
+	reset();
+	receiveRaw(rcMotoRequest);
+	runMainTask(500);
+	CHECK(sentExactly(rcMotoAnswer));
+	CHECK(events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 1 && dmr_data_last_event().id == RC_CHECKER);
+	runMainTask(4000);
+	receiveRaw(rcMotoRequest);
+	runMainTask(500);
+	CHECK(sentCount == 2 && memcmp(lastTx[0].payload, rcMotoAnswer, 12) == 0);
+	// Our answer repeated back (a repeater): nothing
+	receiveRaw(rcMotoAnswer);
+	runMainTask(500);
+	CHECK(sentCount == 2 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 2);
+
+	// We check the portable: the portable's request on air; its answer finishes the check
+	ch.ownId = RC_CHECKER;
+	reset();
+	answered = stats.radioChecksAnswered;
+	CHECK(dmr_signal_radio_check(RC_CHECKED));
+	runMainTask(100);
+	CHECK(sentExactly(rcMotoRequest));
+	// Our own request repeated back (a repeater): neither the answer nor a request to us
+	receiveRaw(rcMotoRequest);
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING && sentCount == 1);
+	receiveRaw(rcMotoAnswer);
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1);
+	CHECK(stats.radioChecksAnswered == answered + 1);
+	// A second answer (to a try the first answer crossed), and one long after: dropped, never answered
+	runMainTask(1500);
+	receiveRaw(rcMotoAnswer);
+	runMainTask(10000);
+	receiveRaw(rcMotoAnswer);
+	runMainTask(500);
+	CHECK(sentCount == 1 && events[DMR_DATA_EV_RADIO_CHECK_ANSWERED] == 0);
+	CHECK(stats.radioChecksAnswered == answered + 1);
+
+	// The answer to the first try while the retry is held back: it still finishes the check, and the retry stays
+	reset();
+	CHECK(dmr_signal_radio_check(RC_CHECKED));
+	runMainTask(100);
+	CHECK(sentCount == 1);
+	ch.canTransmit = false;
+	runMainTask(2000);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_QUEUED);
+	receiveRaw(rcMotoAnswer);
+	ch.canTransmit = true;
+	runMainTask(2000);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1 && sentCount == 1);
+
+	// The ETSI form: our request (octet 3 0x80, the checked radio in octets 4-6), our own request repeated back, then
+	// the answer with the IDs swapped
+	settings.radioCheckEtsi = true;
+	reset();
+	CHECK(dmr_signal_radio_check(RC_CHECKED));
+	runMainTask(100);
+	CHECK(sentCount == 1 && lastTx[0].payload[1] == DMR_FID_ETSI && lastTx[0].payload[3] == 0x80 &&
+		  getId(&lastTx[0].payload[4]) == RC_CHECKED && getId(&lastTx[0].payload[7]) == RC_CHECKER);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0x80, RC_CHECKED, RC_CHECKER);
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_SENDING && sentCount == 1);
+	receiveCSBK(DMR_CSBKO_RADIO_CHECK, DMR_FID_ETSI, 0x00, RC_CHECKER, RC_CHECKED);
+	runMainTask(100);
+	CHECK(dmr_signal_state(NULL, NULL) == DMR_REQ_OK && events[DMR_DATA_EV_RADIO_CHECK_OK] == 1 && sentCount == 1);
+	settings.radioCheckEtsi = false;
+
+	ch.ownId = OUR_ID;
+	reset();
 }
 
 static void ipSettings(uint8_t compress, uint8_t mode, uint8_t tries, uint32_t rule0, uint32_t rule1);
@@ -1137,6 +1275,20 @@ static void testIpTx(void)
 	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
 	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 
+	// The bench's rate override: the same packet confirmed at rate 1/2 (10 octets a block: 8), then back to 3/4
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
+	dmrDataServiceSetIpConfirmedRate(DMR_TYPE_RATE_1_2);
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
+	runMainTask(SEND_MS);
+	h = txHeader();
+	CHECK(h != NULL && (h->payload[0] & 0x4F) == (0x40 | DMR_DPF_CONFIRMED) && (h->payload[8] & 0x7F) == 8 &&
+	      lastTxCount == DMR_DATA_TX_PREAMBLES + 1 + 8 + 1 && h[1].dataType == DMR_TYPE_RATE_1_2 &&
+	      h[8].dataType == DMR_TYPE_RATE_1_2);
+	ns = (h->payload[9] >> 4) & 7;
+	respond(RADIO_A, DMR_SAP_UDPIP_COMPRESSION, DMR_RESPONSE_ACK(ns), NULL);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
+	dmrDataServiceSetIpConfirmedRate(DMR_TYPE_RATE_3_4);
+
 	// The ACK before the stack reports our list done (BrandMeister answers that fast): taken, the late report ignored
 	txAutoDone = false;
 	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, ipL4, sizeof(ipL4)));
@@ -1229,8 +1381,8 @@ static void testIpTx(void)
 	ch.canTransmit = true;
 
 	dmrDataServiceGetStats(&st);
-	CHECK(st.ipPackets - st0.ipPackets == 10 && st.ipSent - st0.ipSent == 7 && st.ipFailed - st0.ipFailed == 3);
-	CHECK(st.ipConfirmed - st0.ipConfirmed == 7 && st.ipCnfAcks - st0.ipCnfAcks == 5 && st.ipCnfSacks - st0.ipCnfSacks == 1);
+	CHECK(st.ipPackets - st0.ipPackets == 11 && st.ipSent - st0.ipSent == 8 && st.ipFailed - st0.ipFailed == 3);
+	CHECK(st.ipConfirmed - st0.ipConfirmed == 8 && st.ipCnfAcks - st0.ipCnfAcks == 6 && st.ipCnfSacks - st0.ipCnfSacks == 1);
 	CHECK(st.ipCnfNacks - st0.ipCnfNacks == 1 && st.ipCnfResyncs - st0.ipCnfResyncs == 1 && st.ipCnfTooLong - st0.ipCnfTooLong == 0);
 	CHECK(st.ipCnfTimeouts - st0.ipCnfTimeouts == DMR_IPC_TRIES_DEFAULT + 3 && st.ipCnfFailed - st0.ipCnfFailed == 3);
 	CHECK(st.ipCnfRetries - st0.ipCnfRetries == 2 + (DMR_IPC_TRIES_DEFAULT - 1) + 1);
@@ -1597,7 +1749,7 @@ static void testIpText(void)
 	dmrDataUDP_t udp;
 
 	// The default (docs/spec/dmr-data.md 8)
-	CHECK(settings.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(settings.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The builder: UTF-16BE, UDP 5016 to 5016, full IPv4 header (SAP 4), unconfirmed
 	int count = dmrDataBuildIPText(false, RADIO_A, OUR_ID, "Hi\xE9", DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
@@ -1623,6 +1775,40 @@ static void testIpText(void)
 	CHECK(dmrDataDecodeIPText(bomLe, sizeof(bomLe), text, sizeof(text)) && (strcmp(text, "le") == 0));
 	CHECK(dmrDataDecodeIPText(bomBe, sizeof(bomBe), text, sizeof(text)) && (strcmp(text, "b?") == 0));
 	CHECK(!dmrDataDecodeIPText(be, 1, text, sizeof(text)));
+	// Control characters are dropped, the C1 ones and DEL too: the UI's text takes 0x80-0x86 as its own glyphs and
+	// icons (core/ui/font.h), so a sender's U+0082 would have drawn an arrow. Latin-1 letters stay
+	static const uint8_t c1[] = { 0x00, 'a', 0x00, 0x82, 0x00, 0x85, 0x00, 0x7F, 0x00, 0x9F, 0x00, 0x0A, 0x00, 0xE9, 0x00, 0xA0 };
+	CHECK(dmrDataDecodeIPText(c1, sizeof(c1), text, sizeof(text)) && (strcmp(text, "a\xE9\xA0") == 0));
+	// The same in ISO 8859-1 defined short data, where the bytes are the characters
+	count = dmrDataBuildEtsiText(false, OUR_ID, RADIO_A, "x\x82y\x9Fz\xF1", false, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataDecodeEtsiText(&dmrDataRxPacket, text, sizeof(text)) && (strcmp(text, "xyz\xF1") == 0));
+	dmrDataRxReset();
+
+#if CONFIG_DMR_TMS
+	// The same in a Motorola-format TMS message (UTF-16), decoded by dmrDataDecodeTMS: the controls drop, the
+	// Latin-1 letters stay. The string literals are kept separate so a \xNN escape never swallows the next letter.
+	// TMS-only: dmrDataBuildTMS/dmrDataDecodeTMS are compiled out of a CONFIG_DMR_TMS=0 firmware (dmrDataServiceTestNoTms).
+	dmrDataTMS_t tms;
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_A, "a" "\x82" "\x85" "\x7F" "\x9F" "\xE9" "z", 1, false,
+						   DMR_TYPE_RATE_1_2, 0, bursts, DMR_DATA_MAX_BURSTS);
+	r = DMR_DATA_RX_NONE;
+	dmrDataRxReset();
+	for (int i = 0; (i < count) && (r != DMR_DATA_RX_PACKET); i++)
+	{
+		r = dmrDataRxBurst(&bursts[i]);
+	}
+	CHECK((count > 0) && (r == DMR_DATA_RX_PACKET));
+	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && dmrDataDecodeTMS(udp.payload, udp.length, &tms) &&
+		  (strcmp(tms.text, "a\xE9z") == 0));
+	dmrDataRxReset();
+#endif	// CONFIG_DMR_TMS
 
 	// Ours, individual, in the default format: confirmed data (no ACK of its own), done when the ETSI response ACKs it
 	reset();
@@ -2449,8 +2635,96 @@ static void testTmsOff(void)
 }
 #endif
 
+// A modem whose rate 3/4 blocks receivers can't decode: confirmed IP at rate 1/2 from the start; others at rate 3/4
+static void testNoRate34(void)
+{
+	dmrDataEnv_t e = fakeEnv;
+	e.noRate34 = true;
+	dmrDataServiceInit(&e);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1_2);
+	dmrDataServiceInit(&fakeEnv);
+	CHECK(dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_3_4);
+}
+
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+// A 16-bit XOR keystream over the user data, as a static key scheme gives (core/dmr/dmrPrivacy.c has the real ones)
+static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+{
+	uint16_t k = *(const uint16_t *)ctx;
+
+	if (alg != DMR_DATA_ALG_BASIC)
+	{
+		return false;
+	}
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (i & 1) ? (k & 0xFF) : (k >> 8);
+	}
+	return true;
+}
+
+// The channel's privacy reaches every data list (docs/spec/dmr-data.md 13)
+static void testPrivacy(void)
+{
+	static const uint16_t key = 0x2503;
+	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL };
+	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key };
+	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
+	int count, heard;
+
+	// A scheme with no data form: the text never goes out, and fails
+	reset();
+	ch.privacy = block;
+	CHECK(sms_send(RADIO_A, false, "secret", true, DMR_SMS_FORMAT_TMS));
+	runMainTask(SMS_TRIES * SMS_ACK_MS + 1000);
+	CHECK(sentCount == 0);
+	CHECK(stats.txPrivacyBlocked >= 1);
+	CHECK(sms_send_state() == DMR_REQ_FAILED);
+
+	// Encrypted: the privacy header follows the data header, and the receiver with the key reads the text
+	reset();
+	ch.privacy = encrypt;
+	uint32_t before = stats.txPrivacy;
+	CHECK(sms_send(RADIO_A, false, "secret", false, DMR_SMS_FORMAT_TMS));
+	runMainTask(200);
+	CHECK((sentCount == 1) && (sent[0].kind == 'S') && (sent[0].dst == RADIO_A));
+	CHECK(stats.txPrivacy == before + 1);
+	const dmrBurst_t *h = txHeader();
+	CHECK((h != NULL) && (h < &lastTx[lastTxCount - 1]) && (h[1].dataType == DMR_TYPE_DATA_HEADER) &&
+		  ((h[1].payload[0] & 0x0F) == 15) && (h[1].payload[1] == DMR_DATA_PRIVACY_MFID));
+	CHECK(dmrDataPrivacyAllows(lastTx, lastTxCount));
+
+	// Received encrypted, with the key: passed on
+	heard = packetsHeard;
+	before = stats.rxPrivacy;
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "for us", 1, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	CHECK(count > 0);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard + 1);
+	CHECK(stats.rxPrivacy == before + 1);
+
+	// Received encrypted, without a key: dropped, nothing of it passed on
+	heard = packetsHeard;
+	uint32_t dropped = stats.rxPrivacyDropped;
+	ch.privacy = clear;
+	runMainTask(100);
+	dmrDataSetPrivacy(&encrypt);
+	count = dmrDataBuildTMS(false, OUR_ID, RADIO_B, "not for you", 2, true, DMR_TYPE_RATE_1_2, 1, bursts, DMR_DATA_MAX_BURSTS);
+	dmrDataSetPrivacy(&clear);
+	rxBursts(bursts, count);
+	CHECK(packetsHeard == heard);
+	CHECK(stats.rxPrivacyDropped == dropped + 1);
+
+	ch.privacy = clear;
+	reset();
+}
+#endif
+
 int main(void)
 {
+	testNoRate34();
 	dmrDataServiceInit(&fakeEnv);
 
 #if CONFIG_DMR_TMS
@@ -2462,6 +2736,7 @@ int main(void)
 	testArsPowerOff();
 	testLrrp();
 	testSignaling();
+	testRadioCheckForms();
 #if CONFIG_DMR_TMS
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);
 	testOurSms();
@@ -2488,6 +2763,11 @@ int main(void)
 #endif
 #if DMR_DATA_UDP_API
 	testUdpSend();
+#endif
+#if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_OFF, 0, 0, 0);
+	testPrivacy();
+	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 #endif
 #if !CONFIG_DMR_TMS
 	testTmsOff();

@@ -8,8 +8,8 @@ import os
 import pytest
 
 import bringup_plugin
-from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_ports, need_radio_tx, skip, skip_kind,
-                          skip_mark)
+from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_network_radios, find_ports, need_radio_tx,
+                          skip, skip_kind, skip_mark)
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
@@ -25,7 +25,7 @@ def pytest_collection_modifyitems(config, items):
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
             if "audio_smoke" in item.keywords:
                 item.add_marker(skip_mark("opt_in", "DMR AUDIO NOT CHECKED: transmits; run the bench pass with "
-                                                    "--allow-rf --ambe FILE (README.md, Default bench pass)"))
+                                                    "--allow-rf (README.md, Default bench pass)"))
             else:
                 item.add_marker(skip_mark("opt_in", "transmits: run with --allow-rf"))
         elif "usb_switch" in item.keywords and not config.getoption("--allow-usb-switch"):
@@ -56,8 +56,9 @@ def pytest_runtest_makereport(item, call):
 @pytest.fixture(scope="session")
 def radio(pytestconfig):
     port = pytestconfig.getoption("--radio-port")
-    if not port and not find_ports():
-        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094): plug it in or give --radio-port "
+    if not port and not find_ports() and not find_network_radios():
+        bringup_plugin.no_radio(pytestconfig, "no radio on USB (1FC9:0094, or one in USB network mode answering on "
+                                            "UDP): plug it in or give --radio-port "
                                             "(DMR audio not checked either)")
     try:
         r = Radio(port)
@@ -76,7 +77,6 @@ def radio(pytestconfig):
     if lang:
         print(f"rfoundry-hil: the radio's language was {lang}: set back to English (the tests read English text)")
     r.tx_gate(False)        # blocked from the start: module fixtures run before any test's own gate
-    r.hwopt_baseline()
     yield r
     try:
         r.tx_gate_end()
@@ -114,9 +114,10 @@ def restore_radio(request):
     with every transmission blocked unless marked radio_tx (Radio.tx_gate). A radio_tx test is blocked again after it,
     so nothing between tests (module fixtures, a module without the radio's serial link) can transmit."""
     # test_tcp_services.py's module fixture "net" has the radio on the network (its serial link closed) for the whole
-    # module and puts it back on serial itself: nothing to snapshot over serial then. test_ppp_link.py's "ppp" has PPP
-    # on the serial port, which a debug link frame there would end (ppp.md 4); its tests change nothing
-    if "radio" not in request.fixturenames or "net" in request.fixturenames or "ppp" in request.fixturenames:
+    # module and puts it back on serial itself: nothing to snapshot over serial then; so does test_radio_udp.py's
+    # "udp_ctl", whose test puts the radio back where it was. test_ppp_link.py's "ppp" has PPP on the serial port, which
+    # a debug link frame there would end (ppp.md 4); its tests change nothing
+    if "radio" not in request.fixturenames or any(f in request.fixturenames for f in ("net", "udp_ctl", "ppp")):
         yield
         return
     r = request.getfixturevalue("radio")
@@ -149,6 +150,21 @@ def sdr_bench(pytestconfig):
     if not b.reachable():
         skip("bench", f"bench board {b.api} (receive {b.api_rx}) not answering on the line protocol, with a TX "
                       "frequency and its receiver running")
+    yield b
+    b.remove_run_dirs()
+
+
+@pytest.fixture(scope="session")
+def sdr_bench_2(pytestconfig):
+    """A second bench transmitter (--bench-api-2), for a test that needs two signals at once"""
+    api = pytestconfig.getoption("--bench-api-2")
+    if not api:
+        skip("bench", "no second bench transmitter: give --bench-api-2 HOST[:PORT]")
+    b = SdrBench(allow_rf=pytestconfig.getoption("--allow-rf"), wait_max=pytestconfig.getoption("--bench-wait-max"),
+                 api=api, api_level=pytestconfig.getoption("--bench-api-level"))
+    if not b.reachable():
+        skip("bench", f"the second bench board {b.api} not answering on the line protocol, with a TX frequency and "
+                      "its receiver running")
     yield b
     b.remove_run_dirs()
 

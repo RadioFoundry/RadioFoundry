@@ -3,7 +3,7 @@
 // NMEA 0183 line framing for a GPS module on a UART: bytes in, checksum-valid sentences out (docs/spec/hardware-md380.md
 // 13, gotchas 13.7). Generic and pure: no UART, no RTOS. A sentence is "$" ... "*hh" (up to 82 characters by the
 // standard), ended by CR and / or LF. Sentences without a valid checksum are dropped; so are overlong ones. Any talker
-// (GP, GN, GL, GA, BD) is accepted: parsing the fields is the position source's job (core/aprs/aprs_nmea.h).
+// (GP, GN, GL, GA, BD) is accepted: parsing the fields is the position source's job (core/position/nmea.h).
 #ifndef NMEA_LINE_H
 #define NMEA_LINE_H
 

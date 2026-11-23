@@ -483,10 +483,9 @@ static uint8_t fake_radio_state = RS_RX;
 static unsigned asserts, delays;
 static unsigned assert_line;
 
-void radio_get_view(radio_view_t *v)
+radio_state_t radio_get_state(void)
 {
-	memset(v, 0, sizeof *v);
-	v->state = fake_radio_state;
+	return (radio_state_t)fake_radio_state;
 }
 
 // The stall test waits for good: after a few waits the fake leaves it, as the stall check's restart would

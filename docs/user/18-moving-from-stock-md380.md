@@ -130,12 +130,15 @@ TYT's updater file goes through the same bootloader:
 python3 md380_migrate.py flash --image "MD-380-D2.32(AD).bin"
 ```
 
+If the screen stays dark and the LED keeps blinking afterwards, the radio is still in the bootloader: switch it off
+and on. If the switch does nothing, take the battery off and refit it. The program tells you when it sees this.
+
 Then write your `backup-stock.rdt` or `backup-stock.dfu` with the TYT CPS or qdmr (`dmrconf write --radio md390`).
 
 ## Limits and notes
 
-- Some early VHF radios have a small 1 MB flash chip. RadioFoundry runs on them, but keeps no codeplug or settings. The
-  program stops after the flash and tells you. Go back to stock if you need your channels.
+- Some early VHF radios have a small 1 MB flash chip. RadioFoundry keeps settings and the codeplug on it as on other
+  radios, but its DMR ID database is limited to what fits.
 - The program never changes the radio's calibration.
 - Windows (untested): to flash, bind the bootloader (0483:DF11) to WinUSB with Zadig
   ([steps](02-installing.md#windows-the-bootloader-driver)). That replaces the driver the TYT CPS uses for the same USB

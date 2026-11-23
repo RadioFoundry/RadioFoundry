@@ -78,7 +78,8 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/hotspot` | [mmdvm-protocol](../spec/mmdvm-protocol.md), [split-duplex](../spec/split-duplex.md) | MMDVM modem protocol, the hotspot, MMDVM SFR and the split duplex repeater |
 | `core/net` | [tcp-services](../spec/tcp-services.md), [mdns](../spec/mdns.md), [tftp](../spec/tftp.md) | The minimal TCP and the radio's services on the USB network link: KISS, HTTP, rigctld, APRS-IS, mDNS, TFTP |
 | `core/snmp` | [snmp](../spec/snmp.md) | SNMPv2c agent, the RadioFoundry MIB, notifications |
-| `core/aprs` | [aprs](../spec/aprs.md) | AX.25 / AFSK, beacons, messages, KISS TNC, iGate rules |
+| `core/aprs` | [aprs](../spec/aprs.md) | The APRS engine and its two backends: AX.25 / AFSK (beacons, messages, KISS TNC, iGate rules) and positions over DMR |
+| `core/position` | [position](../spec/position.md) | Where the radio is (board GPS, host NMEA, fixed position) for DMR GPS Info, LRRP and APRS; NMEA parsing |
 | `core/usbaudio` | [usb-audio](../spec/usb-audio.md) | USRP and the jitter buffer (host tested, not in an image yet) |
 | `core/hostlink` | [cps-protocol](../spec/cps-protocol.md) 1 | Dispatch of the host port by first byte; the USB network side |
 | `core/cps` | [cps-protocol](../spec/cps-protocol.md) | The open-firmware CPS shim |

@@ -34,6 +34,9 @@ export function fromUsbDevice(dev) {
 
 export const isCh340 = (a) => a?.vid === CH340_VID;
 
+// A Web Serial port's getInfo() names one of the programming cables' USB-serial chips
+export const usbSerialChip = (info) => CHIPS.has(id16(info?.usbVendorId));
+
 // One short line: "1a86:7523 CH340"
 export function describe(a) {
 	if (!a) return "";

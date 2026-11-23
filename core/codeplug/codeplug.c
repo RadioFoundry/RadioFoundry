@@ -6,6 +6,8 @@
 // Edits rewrite records through the sector journal (core/storage) and keep every byte the model doesn't own.
 #include <string.h>
 #include "codeplug.h"
+#include "codeplug_kv.h"	// CODEPLUG_KV_ADDR: Start new clears the settings area
+#include "codeplug_tag.h"
 #include "board.h"
 #include "storage/storage.h"
 
@@ -52,7 +54,13 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_SFR_A	0x25u	// SFR byte A (ours, open-firmware-cps.md 7.3.3)
 #define CH_LFLAG1	0x26u
 #define CH_DMR_ID	0x27u
-#define CH_SFR_B	0x2Au	// SFR byte B (ours)
+#define CH_SFR_B	0x2Au	// SFR byte B (ours); bit 6 the FM tone burst, read without the SFR flag
+#define SFRB_TONE_BURST	0x40u
+// Bits 5-4: 2 = accept a failed CRC on control messages and LC (channel_t.accept_bad_crc); any other value is off.
+// A pattern, not one bit, so the 0xFF a writer fills unknown bytes with, and the 0xBF earlier versions of ours left
+// there, read as off
+#define SFRB_BAD_CRC_MASK	0x30u
+#define SFRB_BAD_CRC_ON		0x20u
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -274,14 +282,15 @@ static void copy_name(char *dst, const uint8_t *src, unsigned len)
 	dst[n] = '\0';
 }
 
-// A name field: the text, then 0xFF padding
+// A name field: the text, then 0xFF padding. A 0xFF byte in the text would end the field there, so it is written as '?',
+// the byte the CPS writes for a character a name can't hold (U+00FF): the name is never cut where it stood
 static void put_name(uint8_t *dst, const char *src, unsigned len)
 {
 	unsigned n = 0;
 	memset(dst, 0xFF, len);
 	while (n < len && src[n] != '\0') {
-		dst[n] = (uint8_t)src[n];
-		n++;
+		uint8_t c = (uint8_t)src[n];
+		dst[n++] = c == 0xFFu ? '?' : c;
 	}
 }
 
@@ -311,15 +320,32 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
-// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
-// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
-static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+// A single byte of a name field: printable ASCII, a Latin-1 byte (U+00A0..U+00FE, one byte), or a font.h glyph byte
+// (0x80..0x85). Control bytes (0x01-0x1F) and 0x7F-0x9F are invalid, except the glyph bytes 0x80-0x85 that sit in
+// that range
+static bool name_byte_ok(uint8_t c)
+{
+	if (c >= 0x20u && c <= 0x7Eu) {
+		return true;				// printable ASCII
+	}
+	if (c >= 0x80u && c <= 0x85u) {
+		return true;				// font.h's glyph bytes
+	}
+	if (c >= 0xA0u && c <= 0xFEu) {
+		return true;				// Latin-1 printable
+	}
+	return false;					// 0x00, 0xFF, 0x01-0x1F, 0x7F, 0x86-0x9F
+}
+
+// A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text the CPS or the radio
+// writes is ASCII and Latin-1 (U+00A0..U+00FF) one byte each, font.h's glyph bytes (0x80..0x85) too, and 3-byte UTF-8
+// sequences for the rest (a Chinese name). Latin-1 and UTF-8 mix freely: a valid UTF-8 sequence where there is one and a
+// Latin-1 byte where there isn't. A 3-byte lead (0xE0-0xEF) without its two continuation bytes is a Latin-1 byte (à, ï, …),
+// so "Café" or "à la" stays valid; a control byte (0x01-0x1F, 0x7F) or a stray continuation byte (0x86-0x9F) is invalid
+bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 {
 	unsigned n = 0;
 	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
-		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
-			return false;
-		}
 		n++;
 	}
 	*empty = n == 0;
@@ -328,6 +354,27 @@ static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 			return false;
 		}
 	}
+	if (n == 0) {
+		return true;
+	}
+	for (unsigned i = 0; i < n; ) {
+		uint8_t c = p[i];
+		// A 3-byte UTF-8 sequence (the face covers the BMP only): a lead 0xE0-0xEF with two
+		// continuation bytes. Without two continuations it is a Latin-1 byte, accepted below.
+		if ((c & 0xF0u) == 0xE0u && i + 2 < n &&
+				(p[i + 1] & 0xC0u) == 0x80u && (p[i + 2] & 0xC0u) == 0x80u) {
+			uint32_t cp = ((uint32_t)(c & 0x0Fu) << 12) | ((uint32_t)(p[i + 1] & 0x3Fu) << 6) | (p[i + 2] & 0x3Fu);
+			if (cp >= 0x800u) {		// not overlong
+				i += 3;
+				continue;
+			}
+		}
+		// a single byte: ASCII, a Latin-1 byte, or a font glyph byte (0x80-0x85); invalid otherwise
+		if (!name_byte_ok(c)) {
+			return false;
+		}
+		i += 1;
+	}
 	return true;
 }
 
@@ -335,7 +382,7 @@ static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 static void named(const uint8_t *p)
 {
 	bool empty;
-	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+	if (name_field_ok(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
 		ev_good++;
 	} else {
 		ev_bad++;
@@ -666,13 +713,17 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->no_beep = (r[CH_LFLAG1] & LFLAG1_NO_BEEP) != 0;
 	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->roam = (r[CH_LFLAG1] & LFLAG1_ROAM) != 0;
+	out->tone_burst = r[CH_SFR_B] != 0xFFu && (r[CH_SFR_B] & SFRB_TONE_BURST) != 0;	// 0xFF: a writer that fills unknown bytes
+	out->accept_bad_crc = (r[CH_SFR_B] & SFRB_BAD_CRC_MASK) == SFRB_BAD_CRC_ON;
 	if (r[CH_LFLAG1] & LFLAG1_SFR) {
 		out->sfr_flag1 = LFLAG1_SFR;
 		out->sfr_a = r[CH_SFR_A];
 		out->sfr_b = r[CH_SFR_B];
 	}
 	out->alias_tx = (uint8_t)(((r[CH_FLAG1] & 0x02u) ? CODEPLUG_ALIAS_TS1_TEXT : 0u) |
-				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u));
+				  ((r[CH_FLAG1] & 0x08u) ? CODEPLUG_ALIAS_TS2_TEXT : 0u) |
+				  ((r[CH_FLAG1] & 0x01u) ? CODEPLUG_ALIAS_TS1_GPS : 0u) |
+				  ((r[CH_FLAG1] & 0x04u) ? CODEPLUG_ALIAS_TS2_GPS : 0u));
 	return true;
 }
 
@@ -709,11 +760,17 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
 				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
 				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
+	// The rest of SFR byte B is kept as read (the SFR fields are read only here). Bits 5-4 are always written, so the
+	// byte is never 0xFF, which reads as "not set"
+	r[CH_SFR_B] = (uint8_t)((r[CH_SFR_B] & ~(SFRB_TONE_BURST | SFRB_BAD_CRC_MASK)) |
+				(ch->tone_burst ? SFRB_TONE_BURST : 0) | (ch->accept_bad_crc ? SFRB_BAD_CRC_ON : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
-	// The text bit of each timeslot's talker alias field; the APRS bit is kept
-	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Au) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
-				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u));
+	// Each timeslot's talker alias field: its text bit and its position (APRS) bit
+	r[CH_FLAG1] = (uint8_t)((r[CH_FLAG1] & ~0x0Fu) | ((ch->alias_tx & CODEPLUG_ALIAS_TS1_TEXT) ? 0x02u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_TEXT) ? 0x08u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS1_GPS) ? 0x01u : 0u) |
+				((ch->alias_tx & CODEPLUG_ALIAS_TS2_GPS) ? 0x04u : 0u));
 	if (ch->dmr_id != 0) {
 		r[CH_DMR_ID] = (uint8_t)(ch->dmr_id >> 16);
 		r[CH_DMR_ID + 1] = (uint8_t)(ch->dmr_id >> 8);
@@ -752,6 +809,9 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 	switch (source) {
 	case CODEPLUG_OPENFW:
 		ok = openfw_channel(number, out);
+		if (ok) {
+			codeplug_tag_apply(number, out);	// so no caller takes a tagged channel for a plain one
+		}
 		break;
 	case CODEPLUG_BUILTIN:
 		ok = builtin_channel(number, out);
@@ -970,7 +1030,10 @@ bool codeplug_start_new(void)
 	if (!ok && storage_ready()) {
 		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
-		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE);
+		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE) &&
+		     // The settings area: keys from before the other firmware (it never wrote there) would come back to
+		     // life in a codeplug meant to be clean (docs/spec/codeplug-settings.md 5)
+		     flash_write(EE(CODEPLUG_KV_ADDR), NULL, STORAGE_SECTOR);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
 		banks_unread = 0;	// the owner chose to clear it: materialize writes every bitmap
 		ok = ok && materialize();
@@ -1005,15 +1068,31 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	    ch->tx_hz >= 1000000000u) {
 		return false;
 	}
+	codeplug_tag_t tag;
+	uint8_t action = CODEPLUG_TAG_W_NONE;
 	storage_lock();
 	// A channel shown may be rewritten in an unknown bank: its in-use bit is set already, the bitmap isn't written
 	bool ok = materialize() && (is_used(number) || bank_known(number)) &&
 		  flash_read(channel_addr(number), r, sizeof(r));
 	if (ok) {
+		// The channel's tag follows it, or goes (docs/spec/channel-modes.md 2.4); a tagged kind keeps its safe base
+		bool safe;
+		action = codeplug_tag_before_write(number, ch, is_used(number), (const char *)&r[CH_NAME], &tag, &safe);
 		if (!is_used(number)) {
 			blank_channel(r);	// a free slot's bytes aren't ours to keep (another firmware's, or deleted)
 		}
+		uint8_t base_mode = r[CH_MODE], base_flag4 = r[CH_FLAG4];
 		codeplug_openfw_encode(ch, r);
+		if (safe) {
+			r[CH_MODE] = 1;
+			r[CH_FLAG4] |= FLAG4_RX_ONLY;
+		} else if (ch->kind != CODEPLUG_KIND_NONE) {
+			// The tag that follows says the base record is a channel of its own (flag bit 1). Its mode, receive-only
+			// bit and bandwidth are that channel's: ch has the kind's in their place, so they stay as stored
+			const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+			r[CH_MODE] = base_mode;
+			r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (base_flag4 & own));
+		}
 		ok = flash_write(channel_addr(number), r, sizeof(r));
 	}
 	if (ok && !is_used(number)) {
@@ -1025,6 +1104,30 @@ bool codeplug_set_channel(uint16_t number, const channel_t *ch)
 	}
 	if (ok) {
 		find_max();
+		serial++;
+	}
+	storage_unlock();
+	// The record first: a cut between the two leaves a harmless record
+	return ok && codeplug_tag_after_write(number, ch, action, &tag);
+}
+
+bool codeplug_base_copy(uint16_t from, uint16_t to)
+{
+	uint8_t r[CH_SIZE];
+	uint8_t mode, flag4;
+	if (source != CODEPLUG_OPENFW || from < 1 || from > CH_MAX || to < 1 || to > CH_MAX || from == to) {
+		return false;
+	}
+	const uint8_t own = FLAG4_RX_ONLY | FLAG4_25K;
+	storage_lock();
+	bool ok = is_used(from) && is_used(to) && flash_read(channel_addr(from) + CH_MODE, &mode, 1) &&
+		  flash_read(channel_addr(from) + CH_FLAG4, &flag4, 1) && flash_read(channel_addr(to), r, sizeof(r));
+	if (ok) {
+		r[CH_MODE] = mode;
+		r[CH_FLAG4] = (uint8_t)((r[CH_FLAG4] & ~own) | (flag4 & own));
+		ok = flash_write(channel_addr(to), r, sizeof(r));
+	}
+	if (ok) {
 		serial++;
 	}
 	storage_unlock();
@@ -1050,7 +1153,8 @@ bool codeplug_delete_channel(uint16_t number)
 		serial++;
 	}
 	storage_unlock();
-	return ok;
+	// Its tag goes too: a channel written at this number later is a new one. Nothing is written when there is none
+	return ok && codeplug_tag_remove(number);
 }
 
 static bool write_zone_bitmap(uint8_t slot, bool on)
@@ -1227,8 +1331,8 @@ void codeplug_boot_text(char line1[CODEPLUG_NAME_LEN + 1], char line2[CODEPLUG_N
 	storage_unlock();
 }
 
-#if CONFIG_APRS
-// APRS configuration records (open-firmware-cps.md 7.3.8)
+#if CONFIG_APRS_AFSK
+// APRS configuration records (the AX.25 half reads them) (open-firmware-cps.md 7.3.8)
 #define APRS_BASE	EE(0x1588u)
 #define APRS_SIZE	0x40u
 #define APRS_MAGIC	0x4153u	// 0x4152: the older layout, ambiguity one bit lower
@@ -1319,6 +1423,28 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 		put_aprs_path(&b[0x0F], path1);
 		put_aprs_path(&b[0x16], path2);
 		ok = flash_write(addr + 0x0Fu, &b[0x0F], 14);
+	}
+	if (ok) {
+		serial++;
+	}
+	storage_unlock();
+	return ok;
+}
+
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
+{
+	uint8_t b[APRS_SIZE];
+	if (n < 1 || n > CODEPLUG_APRS_CONFIGS || ssid > 15) {
+		return false;
+	}
+	uint32_t addr = APRS_BASE + (uint32_t)(n - 1u) * APRS_SIZE;
+	storage_lock();
+	bool ok = source == CODEPLUG_OPENFW && flash_read(addr, b, sizeof(b));
+	uint16_t magic = le16(&b[0x3E]);
+	ok = ok && b[0] != 0xFF && b[0] != 0x00 && (magic == APRS_MAGIC || magic == APRS_MAGIC - 1u);
+	if (ok) {
+		b[0x08] = ssid;
+		ok = flash_write(addr + 0x08u, &b[0x08], 1);
 	}
 	if (ok) {
 		serial++;
@@ -1584,7 +1710,9 @@ static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
 		return true;
 	}
-	*f->out = *c;
+	if (f->out != NULL) {
+		*f->out = *c;
+	}
 	f->index = index;
 	return false;
 }

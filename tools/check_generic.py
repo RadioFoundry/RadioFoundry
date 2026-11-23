@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 Open25-DM32 Authors
 """Generic first (AGENTS.md rule 4): a radio's id or name appears only where that radio is the subject.
 
 A name is a board id from the registry or one of its names (board.toml model and also), matched loosely: case, an
@@ -14,6 +15,7 @@ optional hyphen and an optional letter suffix ("XR-100UV", "XR100", "xr100"). Al
                                (that radio's data, such as codec_maps/<id>/)
   LIST_PAGES                   the pages that list radios on purpose
   generated blocks             between the markers tools/registry_docs.py writes, and GENERATED files
+  copyright comments           standalone legal notices name their owners, not hardware
   file references              a path or a file name in the text ("docs/spec/hardware-dm32.md 3.7"): the page it
                                points to is the radio's own
   ALLOW (generic_allow.txt)    a glob and the reason it may name radios; an entry nothing needs is an error
@@ -55,6 +57,8 @@ HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t#]*$")
 FENCE = re.compile(r"^[ \t]*(```|~~~)")
 FILE_REF = re.compile(r"[\w.+<>*-]*(?:/[\w.+<>*-]+)+/?|[\w+<>-]+\.(?:md|c|h|S|py|json|ld|mk|bin|js|mjs|toml|sh|elf|"
                       r"txt|html|map|log|csv|zip)\b")
+COPYRIGHT = re.compile(r"[ \t]*(?://|#)[ \t]+Copyright \(c\) [0-9]{4}(?:-[0-9]{4})? [^\r\n]+"
+                       r"|[ \t]*<!--[ \t]+Copyright \(c\) [0-9]{4}(?:-[0-9]{4})? [^<>\r\n]+-->[ \t]*")
 
 
 def name_pattern(name, strict_suffix=False, whole=False):
@@ -213,6 +217,16 @@ def doc_scope(path):
     return path.endswith(".md") and path.startswith(DOC_DIRS) and path not in LIST_PAGES
 
 
+I18N = re.compile(r"^docs/i18n/[a-z]{2,3}(?:-[A-Za-z0-9]+)?/(.+)$")
+
+
+def canonical(path):
+    """The English page a translated one mirrors (docs/i18n/<lang>/user/23-radios.md is docs/user/23-radios.md): a
+    translation follows the same rules, and a page that lists radios on purpose still does in every language."""
+    m = I18N.match(path)
+    return "docs/" + m.group(1) if m else path
+
+
 def generic_doc(path, owned):
     """A doc that is no radio's: GENERIC_DOCS less hardware-* pages and pages a radio owns (owned)."""
     return doc_scope(path) and not os.path.basename(path).startswith("hardware-") and not owned
@@ -234,16 +248,17 @@ def check(root, radios, docs, part_of=None):
         for p in pages:
             shared_docs[p] = shared_docs.get(p, 0) + 1
     for path in tracked_files(root):
-        if path.startswith(SKIP_DIRS) or path in LIST_PAGES or path in GENERATED or path == ALLOW:
+        canon = canonical(path)
+        if path.startswith(SKIP_DIRS) or canon in LIST_PAGES or path in GENERATED or path == ALLOW:
             continue
         if os.path.splitext(path)[1] not in TEXT_EXT:
             continue
         hits = []
         # a generic doc is a radio's only by its path (hardware-<id>.md), never because one board.toml [docs] lists it
-        generic = generic_doc(path, any(own(path, b, {}, {}) for b in radios))
+        generic = generic_doc(canon, any(own(canon, b, {}, {}) for b in radios))
         pages = {} if generic else docs
         for bid, pat in pats.items():
-            if not own(path, bid, pages, shared_docs, family) and pat.search(path):
+            if not own(canon, bid, pages, shared_docs, family) and pat.search(canon):
                 hits.append((0, bid))
         try:
             with open(os.path.join(root, path), encoding="utf-8") as f:
@@ -257,12 +272,14 @@ def check(root, radios, docs, part_of=None):
             if span:
                 exempt.update((n, g) for n in range(span[0], span[1] + 1))
         for n, line in enumerate(text.split("\n"), 1):
+            if COPYRIGHT.fullmatch(line):
+                continue
             # in docs a link names the radio whose page it is: a generic doc links feature-matrix.md, a radio's page
             # the shared spec
-            if not doc_scope(path):
+            if not doc_scope(canon):
                 line = FILE_REF.sub(" ", line)
             for bid, pat in pats.items():
-                if pat.search(line) and not own(path, bid, pages, shared_docs, family):
+                if pat.search(line) and not own(canon, bid, pages, shared_docs, family):
                     if n in exempt:
                         used.add(exempt[n])
                     else:
@@ -332,6 +349,27 @@ def self_test():
            "board fails: %s" % check(tmp, radios, docs))
         put("boards/qb7/radio.c", "// as on the other radio\n")
         ok(check(tmp, radios, docs) == [], "a clean tree: %s" % check(tmp, radios, docs))
+        for path, notice, content in (
+                ("core/notice.c", "// Copyright (c) 2026 Open25-XR100 Authors", "// XR-100UV speaker timing"),
+                ("tools/notice.py", "# Copyright (c) 2026 Open25-XR100 Authors", "# XR-100UV speaker timing"),
+                ("docs/spec/notice.md", "<!-- Copyright (c) 2026 Open25-XR100 Authors -->", "XR-100UV speaker timing")):
+            put(path, notice + "\n")
+            got = check(tmp, radios, docs)
+            ok(got == [], "copyright attribution passes in %s: %s" % (path, got))
+            put(path, notice + "\n" + content + "\n")
+            got = check(tmp, radios, docs)
+            ok(len(got) == 1 and got[0].startswith(path + ":2:"),
+               "copyright attribution does not exempt other lines in %s: %s" % (path, got))
+            os.remove(os.path.join(tmp, path))
+        for path, content in (
+                ("core/notice.c", 'const char *owner = "Copyright (c) 2026 Open25-XR100 Authors";'),
+                ("core/notice.c", "// The XR-100UV copyright is retained."),
+                ("docs/spec/notice.md", "XR-100UV timing. <!-- Copyright (c) 2026 The Authors -->")):
+            put(path, content + "\n")
+            got = check(tmp, radios, docs)
+            ok(len(got) == 1 and got[0].startswith(path + ":1:"),
+               "ordinary references and inline text are still checked in %s: %s" % (path, got))
+            os.remove(os.path.join(tmp, path))
         put("docs/user/install.md", "Hold PTT on the QB-7\n")
         ok(any(p.startswith("docs/user/install.md:1:") for p in check(tmp, radios, docs)),
            "a [docs] page two boards share is not either one's own")

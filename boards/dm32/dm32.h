@@ -48,15 +48,21 @@ void dm32_lcdbus_unlock(void);
 // DMR PCM to the speaker instead of the FM path (radio_dm32.c; the hal_audio_t speaker_pcm hook of hrc_audio_pcm)
 void dm32_speaker_pcm(bool on);
 void dm32_bcast_audio(bool on);	// the broadcast receiver's audio path (CONFIG_BCAST_FM)
+// Who keeps the speaker amplifier on: 0x01 receive audio, 0x02 speaker PCM, 0x04 the broadcast receiver, 0x40 the
+// TX tone's sidetone (radio_dm32.c amp())
+uint8_t dm32_amp_users(void);
 
 // --- Diagnostics (diag_dm32.c) ---
 typedef struct {
 	uint16_t rssi_raw, noise_raw;	// FD6818 0x67 / 0x65 from the last status poll
 	uint16_t fm_noise;		// HR_C7000 FM_SQL
 	uint32_t fd_writes;
+	char rf_setup;			// the RF section (hardware-dm32.md 8.10): A classic, B newer, - neither locked
 } dm32_radio_diag_t;
 void dm32_radio_diag(dm32_radio_diag_t *d);
+char dm32_rf_setup(void);	// the RF section start-up found, as rf_setup: no bus traffic
 bool dm32_diag_line(uint8_t i, char *buf, uint8_t len);
 void dm32_diag_reset(void);
+bool dm32_view_line(uint8_t i, char *buf, uint8_t len);	// the debug link's board.* keys (view_dm32.c)
 
 #endif

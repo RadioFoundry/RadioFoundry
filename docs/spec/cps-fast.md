@@ -148,6 +148,10 @@ COMMIT                              staged: the copy starts, poll STATUS; direct
   (reason 8) and the block stays open. Bytes that make the stream corrupt drop the block (reason 8).
 - END checks the stream was whole and decodes to exactly 4096 bytes (reason 8), then the CRC-32 (reason 7). A good
   block is written or staged (section 7); a flash failure is reason 9. The buffer is let go either way.
+- The codeplug settings area's block (image 0xE000) follows its transfer rule where it goes into the codeplug: at
+  END (direct) or at its copy (staged, the boot's resume included). The radio keeps its own block when its area is
+  valid and the one sent isn't, or its area is of a newer version (`codeplug-settings.md` 6). END answers OK either
+  way.
 - COMMIT ends the session. Direct: the codeplug is re-read if a block was written. Staged: the record is written and
   checked (reason 9 if it didn't take; the staged blocks stay and COMMIT may be sent again), then the host link task
   copies one block per pass. The host polls STATUS until DONE or FAILED.

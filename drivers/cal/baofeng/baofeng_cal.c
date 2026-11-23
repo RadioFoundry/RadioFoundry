@@ -66,14 +66,9 @@ static uint32_t bcd8(uint32_t v)
 	return r;
 }
 
-bool bf_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[BF_CAL_LEN])
+// The page's three pieces in the image (at 0x000, 0x108, 0x11D), decoded in place: the tables from BCD, then K
+static void decode(uint8_t out[BF_CAL_LEN])
 {
-	if (sector == NULL || sector_len < 0x300u + 0x50u) {
-		return false;
-	}
-	memcpy(out + 0x000, sector + 0x000, 0x108);
-	memcpy(out + 0x108, sector + 0x200, 0x015);
-	memcpy(out + 0x11D, sector + 0x300, 0x050);
 	for (int i = 0; i < 20; i++) {
 		uint8_t *p = out + OFF_FREQ_TABLES + 4 * i;
 		wr32(p, bcd8(rd32(p)));
@@ -86,6 +81,17 @@ bool bf_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[BF_CAL
 	}
 	wr32(out + OFF_K_VHF, kv / 5u);
 	wr32(out + OFF_K_UHF, ku / 5u);
+}
+
+bool bf_cal_parse(const uint8_t *sector, uint32_t sector_len, uint8_t out[BF_CAL_LEN])
+{
+	if (sector == NULL || sector_len < 0x300u + 0x50u) {
+		return false;
+	}
+	memcpy(out + 0x000, sector + 0x000, 0x108);
+	memcpy(out + 0x108, sector + 0x200, 0x015);
+	memcpy(out + 0x11D, sector + 0x300, 0x050);
+	decode(out);
 	return true;
 }
 
@@ -95,15 +101,16 @@ void bf_cal_set_image(const uint8_t in[BF_CAL_LEN], bool ok)
 	valid = ok;
 }
 
-// The three pieces of the page into a buffer laid out as the page (only the first 0x350 bytes), then decoded
+// The page's three pieces read straight to their places in the image (as bf_cal_parse lays them out), then decoded:
+// no page buffer in RAM. A failed read leaves the image partly written, but not valid
 static bool read_factory(const hal_flash_t *f, uint32_t page)
 {
-	static uint8_t sector[0x350];
-	if (!f->read(page + 0x000, sector + 0x000, 0x108) || !f->read(page + 0x200, sector + 0x200, 0x015) ||
-		!f->read(page + 0x300, sector + 0x300, 0x050)) {
+	if (!f->read(page + 0x000, image + 0x000, 0x108) || !f->read(page + 0x200, image + 0x108, 0x015) ||
+		!f->read(page + 0x300, image + 0x11D, 0x050)) {
 		return false;
 	}
-	return bf_cal_parse(sector, sizeof sector, image);
+	decode(image);
+	return true;
 }
 
 bool bf_cal_load(const hal_flash_t *flash, uint32_t copy_addr)

@@ -11,8 +11,9 @@ CODEPLUG command, in 4 KB blocks, blank blocks skipped, only blocks whose CRC-32
   cps_fast.py verify image.bin                       compare by CRC-32, block by block
 
 Image files are the ones tools/cps_client.py keeps (file offset = image offset = the STM32 wire address). Regions
-(--regions) as cps_client.py's: qdmr (default), codeplug, all. Whole blocks travel: a write keeps the radio's bytes
-of a block outside the regions (it reads such a block first). Transport as cps_client.py: --port (the radio's USB
+(--regions) as cps_client.py's: radio (default), qdmr, codeplug, all. Whole blocks travel: a write keeps the radio's
+bytes of a block outside the regions (it reads such a block first), and its codeplug settings area unless the file
+holds a valid one (cps_client.area_state). Transport as cps_client.py: --port (the radio's USB
 serial port or a programming cable), $RFOUNDRY_PORT, the only 1FC9:0094 device, or --exec "tests/host/cpsSim --populate".
 A radio without the protocol (CONFIG_CPS_FAST off, older firmware) answers unavailable or unknown: use
 cps_client.py.
@@ -290,7 +291,11 @@ class FastLink:
         addrs = blocks_of(regions)
         sums = self.sums(addrs)
         jobs = []
+        area = cps_client.SETTINGS_AREA[0]
         for a in addrs:
+            if a == area and (cps_client.area_state(img[a:a + BLOCK]) != "valid" or
+                              (not sums[a][1] and cps_client.area_state(self.read_block(a)) == "newer")):
+                continue        # the radio keeps its settings area (codeplug-settings.md 4)
             if covers(regions, a):
                 want = bytes(img[a:a + BLOCK])
             else:
@@ -331,11 +336,14 @@ class FastLink:
         """Block addresses whose bytes inside the regions differ from img (the VFO A record aside)"""
         bad = []
         sums = self.sums(blocks_of(regions))
+        area = cps_client.SETTINGS_AREA[0]
         for a, (crc, blank) in sums.items():
             want = bytes(img[a:a + BLOCK])
             if crc32(want) == crc:
                 continue
             got = BLANK if blank else self.read_block(a)
+            if a == area and cps_client.area_kept(want, got):
+                continue        # a write leaves the radio's settings area, so verify does too
             for s, e in regions:
                 lo, hi = max(s, a), min(e, a + BLOCK)
                 if lo < hi and not cps_client.same_but_vfo(got[lo - a:hi - a], want[lo - a:hi - a], lo):
@@ -357,7 +365,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port")
     ap.add_argument("--exec", dest="exec_cmd", help="command speaking the protocol on stdin / stdout (tests)")
-    ap.add_argument("--regions", choices=sorted(cps_client.REGIONS), default="qdmr")
+    ap.add_argument("--regions", choices=sorted(cps_client.REGIONS), default="radio")
     ap.add_argument("--quiet", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("info")

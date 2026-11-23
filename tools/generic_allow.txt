@@ -48,6 +48,7 @@ tools/rfoundry/tests/test_serialflash.py per-radio flash routes, stock formats a
 site/i18n/en.json per-radio route or stock format data
 site/i18n/es.json per-radio route or stock format data (en.json's keys, translated)
 site/i18n/it.json per-radio route or stock format data (en.json's keys, translated)
+site/i18n/zh.json per-radio route or stock format data (en.json's keys, translated)
 site/static/js/codeplug/detect.js per-radio route or stock format data
 site/static/js/codeplug/fakecps.js per-radio route or stock format data
 site/static/js/codeplug/image.js per-radio route or stock format data
@@ -60,7 +61,6 @@ site/static/js/flasher/app.js per-radio route or stock format data
 site/static/js/flasher/backup.js per-radio route or stock format data
 site/static/js/flasher/c7000.js per-radio route or stock format data
 site/static/js/flasher/c7000ui.js per-radio route or stock format data
-site/static/js/flasher/codecsave.js per-radio route or stock format data
 site/static/js/flasher/codeplug.js per-radio route or stock format data
 site/static/js/flasher/f4stub.js per-radio route or stock format data
 site/static/js/flasher/fake.js per-radio route or stock format data

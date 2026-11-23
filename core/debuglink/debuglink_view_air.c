@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The air section: the data service's TX queue (docs/spec/dmr-data.md 12), its post-TX guard, and zone sharing
-// (docs/spec/zone-share.md). "airq.built=0" without the queue; "zs.built=0" without zone sharing
+// The air section: the air interface provider's receive counters (airp.*), the data service's TX queue
+// (docs/spec/dmr-data.md 12), its post-TX guard, and zone sharing (docs/spec/zone-share.md). "airq.built=0" without
+// the queue; "zs.built=0" without zone sharing
 #include "config.h"
 #include "debuglink/debuglink.h"
 #if CONFIG_DMR_AIR_QUEUE
@@ -13,9 +14,31 @@
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
 #endif
+#if CONFIG_AIR
+#include "board.h"
+#endif
 
 void debuglink_view_air(dl_text_t *t)
 {
+#if CONFIG_AIR
+	air_rx_counts_t rc;
+
+	// The air interface provider's receive side in the open P25 / NXDN session (hal_air.h air_rx_counts_t):
+	// airp.open=0 while none is open or the provider doesn't count
+	if (board.air != NULL && board.air->rx_counts != NULL && board.air->rx_counts(&rc)) {
+		dl_text(t, "airp.open=1\nairp.records=%u\nairp.synced=%u\nairp.halves=%u\nairp.overruns=%u\nairp.chunks=%u\n"
+			"airp.copy_restarts=%u\n",
+			(unsigned)rc.records, (unsigned)rc.synced, (unsigned)rc.halves, (unsigned)rc.overruns,
+			(unsigned)rc.chunks, (unsigned)rc.copy_restarts);
+		if (rc.lost_ms != 0) {
+			dl_text(t, "airp.copy_lost_ms=%u\nairp.copy_lost_regs=%x,%x,%x,%x\n", (unsigned)rc.lost_ms,
+				(unsigned)rc.lost_regs[0], (unsigned)rc.lost_regs[1], (unsigned)rc.lost_regs[2],
+				(unsigned)rc.lost_regs[3]);
+		}
+	} else {
+		dl_text(t, "airp.open=0\n");
+	}
+#endif
 #if CONFIG_DMR_AIR_QUEUE
 	airqStats_t q;
 
@@ -36,6 +59,8 @@ void debuglink_view_air(dl_text_t *t)
 	dmrDataServiceGetStats(&d);
 	dl_text(t, "data.tx_guarded=%u\ndata.tx_guard_ms=%u\ndata.tx_chain=%u\n", (unsigned)d.txGuarded,
 		dmrDataServiceTxGuardMs(), dmrDataServiceTxChain());
+	dl_text(t, "data.ip_cnf_rate=%s\n", dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1_2 ? "1/2" :
+		dmrDataServiceIpConfirmedRate() == DMR_TYPE_RATE_1 ? "1" : "3/4");
 	// Transmissions that carried more than one IP packet, and the packets after the first in them
 	dl_text(t, "ip.chains=%u\nip.chained=%u\n", (unsigned)d.ipChains, (unsigned)d.ipChained);
 #endif

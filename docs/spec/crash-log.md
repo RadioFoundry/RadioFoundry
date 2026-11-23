@@ -308,7 +308,7 @@ Checked with `tests/hil/test_crash.py` and `tests/hil/test_watchdog.py` under `-
 - The hang check and the task snapshot: CRASH TEST hang keeps kind 5, 3000 ms (3750 on a board with a slower
   timer), task `host`, pc in `debuglink_crash_service`; the snapshot names each waiting task's own wait.
 - The stall check: CRASH TEST stall (kind 4) keeps kind 6 with `cause` from 60000 ms and `host` in the snapshot, and
-  the link answers again after the restart. Not yet run on a radio.
+  the link answers again after the restart.
 
 Each radio's result is in its hardware spec and in `docs/testing/results/`. Not checked: the report on the air (no
 receiver for port 4090 exists yet) and, on a radio that has not run `test_crash.py`, that its store survives the

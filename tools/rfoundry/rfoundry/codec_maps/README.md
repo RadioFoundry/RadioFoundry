@@ -8,10 +8,12 @@ codec and which words and instructions in it hold addresses. Format and use:
 
 A map is found by the SHA-256 of the stock code window, so one map serves every stock build whose code window is
 byte-identical: `dm32-049` also covers DM32.01.01.047, `dm32-037` covers 039 and 040, `dm32-046` covers 01.02.046,
-`dm32-nrf-049` covers the DM32.NRF.01.049 and fanti 049 builds, `dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map each: the DM-1701
-noCSV files have `dm1701-v0206-nocsv` and `dm1701-v0203-nocsv`.
+`dm32-nrf-049` covers the DM32.NRF.01.049 and fanti 049 builds, `dm32-nrfb-050` the DM32.NRFB.01.050 build (known from
+program flash reads, the same on two radios), `dm1701-v0203-csv` covers DM-1701 V02.01 and V02.02 CSV. Builds whose codec code differs get a map
+each: the DM-1701 noCSV files have `dm1701-v0206-nocsv` and `dm1701-v0203-nocsv`. A build whose window differs only in
+words outside the codec also gets its own map, as `dm32-l01-048` and `dm32-047-20250425` (a second 01.01.047 build) do.
 
-`md9600/` maps the 32 TYT MD-9600 and Retevis RT90 original firmware files, one per build (03.28 to 26.57, in the CSV,
+`md9600/` maps the 33 TYT MD-9600 and Retevis RT90 original firmware files, one per build (03.28 to 126.61, in the CSV,
 CSV-GPS, REC and GPS-REC variants that exist). The MD-9600 board installs the codec from any of them, and the DM-1701
 takes its codec from the 21 of them it has profiles for, since an open-firmware install leaves that codec on the radio
 ([docs/spec/codec-md9600.md](../../../../docs/spec/codec-md9600.md),

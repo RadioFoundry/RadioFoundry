@@ -5,8 +5,8 @@
  */
 
 #include <string.h>
-#include <math.h>
 #include "dmr/dmrLrrp.h"
+#include "dmr/call/dmr_lc.h"
 
 // Document IDs: requests come with or without a constant data table (even / odd), the answers are sent without
 #define DOC_IMMEDIATE_RESPONSE		0x07
@@ -272,11 +272,13 @@ static int putRequestId(uint8_t *out, const uint8_t *requestId, int requestIdLen
 	return n + requestIdLength;
 }
 
-static double degreesOf(uint8_t degrees, uint32_t minutes10000, bool positive)
+// A coordinate in 1e-7 degree, as dmr_gps_range takes it: minutes10000 / 600000 degree is minutes10000 * 50 / 3 in
+// 1e-7, rounded half up
+static int32_t e7Of(uint8_t degrees, uint32_t minutes10000, bool positive)
 {
-	double d = degrees + (minutes10000 / 600000.0);
+	int32_t v = (int32_t)(degrees * 10000000u + (minutes10000 * 50u + 1u) / 3u);
 
-	return positive ? d : -d;
+	return positive ? v : -v;
 }
 
 // Info time, latitude / longitude with a radius, and speed and direction when asked for and known
@@ -416,11 +418,55 @@ int lrrpBuildTriggeredStopResponse(const uint8_t *requestId, int requestIdLength
 
 uint32_t lrrpDistanceMeters(const dmrDataLocation_t *a, const dmrDataLocation_t *b)
 {
-	double lat1 = degreesOf(a->latDegrees, a->latMinutes10000, a->north) * (M_PI / 180.0);
-	double lat2 = degreesOf(b->latDegrees, b->latMinutes10000, b->north) * (M_PI / 180.0);
-	double dLon = (degreesOf(b->lonDegrees, b->lonMinutes10000, b->east) - degreesOf(a->lonDegrees, a->lonMinutes10000, a->east)) * (M_PI / 180.0);
-	double x = dLon * cos((lat1 + lat2) / 2.0);
-	double y = lat2 - lat1;
+	// dmr_gps_range's single-precision math: double cos and sqrt cost about 8 KB of flash (libm and the soft-float
+	// library) on a build without LTO to drop them
+	uint32_t meters;
+	uint16_t bearing;
 
-	return (uint32_t)(sqrt((x * x) + (y * y)) * 6371000.0);
+	dmr_gps_range(e7Of(a->latDegrees, a->latMinutes10000, a->north), e7Of(a->lonDegrees, a->lonMinutes10000, a->east),
+			e7Of(b->latDegrees, b->latMinutes10000, b->north), e7Of(b->lonDegrees, b->lonMinutes10000, b->east),
+			&meters, &bearing);
+	return meters;
+}
+
+static uint32_t minutesOf(uint32_t e7)
+{
+	uint32_t m = (e7 % 10000000u * 60u + 500u) / 1000u;
+	return m < 600000u ? m : 599999u;
+}
+
+void lrrpPositionFromE7(int32_t lat, int32_t lon, uint16_t speedKnots, uint16_t course, uint32_t utcHms, uint32_t date,
+		lrrpPosition_t *out)
+{
+	dmrDataLocation_t *l = &out->location;
+	uint32_t la = lat < 0 ? 0u - (uint32_t)lat : (uint32_t)lat;
+	uint32_t lo = lon < 0 ? 0u - (uint32_t)lon : (uint32_t)lon;
+
+	memset(out, 0, sizeof(*out));
+	l->fixValid = true;
+	l->north = lat >= 0;
+	l->east = lon >= 0;
+	l->latDegrees = (uint8_t)(la / 10000000u);
+	l->lonDegrees = (uint8_t)(lo / 10000000u);
+	// 1e-7 degree -> 1e-4 minute: x 60 / 1000 rounded (under 6e8: 32 bits do), at most 59.9999
+	l->latMinutes10000 = minutesOf(la);
+	l->lonMinutes10000 = minutesOf(lo);
+	l->speedKnots = speedKnots < DMR_LOCATION_SPEED_UNKNOWN ? speedKnots : DMR_LOCATION_SPEED_UNKNOWN;
+	if (utcHms != 0xFFFFFFFFu)
+	{
+		l->utcHours = (uint8_t)(utcHms / 10000u);
+		l->utcMinutes = (uint8_t)(utcHms / 100u % 100u);
+		l->utcSeconds = (uint8_t)(utcHms % 100u);
+		if (date != 0)
+		{
+			out->utcDay = (uint8_t)(date / 10000u);
+			out->utcMonth = (uint8_t)(date / 100u % 100u);
+			out->utcYear = (uint16_t)(2000u + date % 100u);
+		}
+	}
+	if (course != 0xFFFFu)
+	{
+		out->hasCourse = true;
+		out->courseDegrees = course;
+	}
 }

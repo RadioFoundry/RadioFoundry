@@ -12,8 +12,8 @@
 #   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list); with --toolchain,
 #                               the boards both select
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
-#   tools/ci.sh --steps host,python   only these steps (registry, host, python, firmware, licenses, similarity;
-#                                     default all)
+#   tools/ci.sh --steps host,python   only these steps (registry, host, bench, python, firmware, licenses,
+#                                     similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
 #   RFOUNDRY_CI_SANITIZE=1 tools/ci.sh   the host step also runs the host tests under ASan and UBSan (make SANITIZE=1)
 #   RFOUNDRY_CI_PRUNE=0 tools/ci.sh  keep every build tree (about 65 MB per configuration). By default each tree is
@@ -21,19 +21,24 @@
 #                               a configuration that failed keeps its tree to debug)
 #
 # The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
-# `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
+# `--steps bench`, `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
-# Every step but host needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
+# Every step but host and bench needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
 # reported as ok / FAIL / skip:
 #   0. registry: boards/*/board.toml and platform/*/platform.toml (tools/boards.py) are well formed and agree
 #      with board.mk, the linker scripts and board_t; tools/rfoundry/rfoundry/registry.json is current; the loader's
 #      self-test
 #   1. host tests (make -C tests/host, with each board's boards/<b>/tests/host.mk), and with RFOUNDRY_CI_SANITIZE=1 again
 #      under ASan and UBSan
+#   1b. bench: each bench tool under tools/bench/*/ (its Makefile builds it from core/ sources, e.g. the P25 and NXDN
+#      tools), with zero warnings, so a core change that breaks a bench tool fails here and not on the bench
 #   2. Python: every tool and HIL test parses; pytest collects tests/hil (when pytest is installed); rfoundry's tests
 #      (tools/rfoundry/tests) and every tool's --self-test (the tools under tools/ and stub/ that have one); the stack
 #      check's self-test
 #      (tools/stack_check.py); every relative link, image and anchor in the Markdown resolves (tools/check_doc_links.py);
+#      the codeplug settings area's keys agree in the spec, the firmware and the Codeplug Editor (tools/check_keys.py);
+#      the channel-mode kinds and system types agree in the spec, the firmware and the Codeplug Editor
+#      (tools/check_modes.py);
 #      the glossary data is sound and its pages current (tools/glossary.py); the web site builds without a warning (site/build.py, needs markdown-it-py or uv) and the web flasher's tests
 #      pass against rfoundry (site/tests/run.sh, needs Node 20+)
 #   3. firmware, for every boards/<b>/board.mk whose compiler is installed (a board without one is skipped with a
@@ -64,7 +69,7 @@
 # Build trees: build/ci/<board>-<config>/ (logs next to them). The exit status is 0 only when nothing failed.
 set -u
 # Switches the maximal configuration leaves off on every board: bench diagnostics, never in a release
-MAXIMAL_SKIP="AUDIO_PROBE"
+MAXIMAL_SKIP="AUDIO_PROBE AIR_RAW"
 cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
@@ -72,7 +77,7 @@ MATRIX=0
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
-STEPS="registry,host,python,firmware,licenses,similarity"
+STEPS="registry,host,bench,python,firmware,licenses,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
@@ -81,13 +86,13 @@ while [ $# -gt 0 ]; do
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,62p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,69p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in registry|host|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
@@ -103,6 +108,9 @@ ok()   { echo "ci: ok    $*"; }
 bad()  { echo "ci: FAIL  $*"; FAILED="$FAILED
   $*"; }
 skip() { echo "ci: skip  $*"; SKIPPED="$SKIPPED
+  $*"; }
+WARNED=""
+warn() { echo "ci: warn  $*"; WARNED="$WARNED
   $*"; }
 # The registry tools (tools/boards.py) read TOML: Python 3.11 or later. Empty when there is none (the steps that need it
 # fail with the reason)
@@ -182,10 +190,38 @@ fi
 
 fi
 
+# ── 1b. bench tools ──────────────────────────────────────────────────────────
+# Found by their Makefiles, so a new bench tool needs no change here. Each is built from scratch into build/ci/bench:
+# the warning check reads the compiler's output
+if step bench; then
+echo "== bench tools"
+for mk in tools/bench/*/Makefile; do
+	[ -f "$mk" ] || continue
+	d=$(dirname "$mk")
+	name=$(basename "$d")
+	log="$OUT/bench-$name.log"
+	rm -rf "$OUT/bench-$name"
+	if make -C "$d" OUT="$PWD/$OUT/bench-$name" > "$log" 2>&1; then
+		if grep -qi 'warning:' "$log"; then
+			grep -i 'warning:' "$log" | sort -u | head -10
+			bad "bench tool $name: warnings (see $log)"
+		else
+			ok "bench tool $name"
+		fi
+	else
+		grep -iE 'error|warning:' "$log" | sort -u | head -20
+		bad "bench tool $name (see $log)"
+	fi
+	rm -rf "$OUT/bench-$name"
+done
+fi
+
 # ── 2. Python ────────────────────────────────────────────────────────────────
 if step python; then
 echo "== python"
 PY_FILES=$(git ls-files 'tools/*.py' 'tools/**/*.py' 'tests/hil/*.py' 'boards/*/hil/*.py' 2>/dev/null)
+# The HIL checks below read no rig file: the result doesn't depend on the rig, and it needs no tomllib
+export RFOUNDRY_HIL_CONFIG=none
 if command -v python3 > /dev/null; then
 	if python3 -c 'import ast, sys
 for f in sys.argv[1:]:
@@ -227,10 +263,10 @@ for f in sys.argv[1:]:
 	fi
 	if python3 -c 'import pytest' 2>/dev/null; then
 		if python3 -m pytest -q -p no:cacheprovider tests/hil/test_skip_kinds.py tests/hil/test_radio_reconnect.py tests/hil/test_bench_line.py \
-			tests/hil/test_bench_envelope.py \
-			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py \
+			tests/hil/test_bench_envelope.py tests/hil/test_pa_cal.py tests/hil/test_pa_shape.py \
+			tests/hil/test_tx_guard.py tests/hil/test_rig_state.py tests/hil/test_dmr_packets.py \
 			> "$OUT/hil-skip-test.log" 2>&1; then
-			ok "HIL skip, reconnect, TX guard, rig state and bench line helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
+			ok "HIL skip, reconnect, TX guard, rig state, bench line and DMR packet helper tests ($(grep -oE '[0-9]+ passed' "$OUT/hil-skip-test.log"))"
 		else
 			tail -20 "$OUT/hil-skip-test.log"
 			bad "HIL skip, reconnect, TX guard, rig state and bench line helper tests (see $OUT/hil-skip-test.log)"
@@ -301,6 +337,18 @@ for f in sys.argv[1:]:
 	else
 		head -20 "$OUT/doc-links.log"
 		bad "doc links (see $OUT/doc-links.log)"
+	fi
+	if python3 tools/check_keys.py > "$OUT/keys.log" 2>&1; then
+		ok "settings area keys: $(tail -1 "$OUT/keys.log" | sed 's/^check_keys: //')"
+	else
+		head -20 "$OUT/keys.log"
+		bad "settings area keys (see $OUT/keys.log)"
+	fi
+	if python3 tools/check_modes.py > "$OUT/modes.log" 2>&1; then
+		ok "channel-mode registry: $(tail -1 "$OUT/modes.log" | sed 's/^check_modes: //')"
+	else
+		head -20 "$OUT/modes.log"
+		bad "channel-mode registry (see $OUT/modes.log)"
 	fi
 	if python3 tools/glossary.py --check > "$OUT/glossary.log" 2>&1; then
 		ok "glossary: $(tail -1 "$OUT/glossary.log" | sed 's/^glossary: //')"
@@ -418,6 +466,14 @@ build() {
 			bad "$b $name: stack check (see $dir.stack.log)"
 		fi
 	fi
+	# double and libm in a release image: a warning, not a failure (docs/spec/gotchas.md 13.12)
+	if [ "$name" = default ] || [ "$name" = maximal ]; then
+		cross=$(make -s BOARD="$b" BUILD="$dir" "$@" print-vars VARS=CROSS | sed 's/^CROSS=//')
+		soft=$("${cross}nm" "$target.elf" 2>/dev/null | awk '$2 ~ /^[TtWw]$/ { print $3 }' |
+			grep -E '^(__aeabi_(d[a-z]+|[iu]?l?2d|f2d|d2[a-z]+)|__(add|sub|mul|div|extendsf|truncdf|float[a-z]*|fix[a-z]*)df[0-9]?|(sin|cos|tan|asin|acos|atan2?|sqrt|pow|exp|log|log10|floor|ceil|fmod|round|hypot)f?)$' |
+			sort -u | tr '\n' ' ')
+		if [ -n "$soft" ]; then warn "$b $name: links double or libm code: $soft(docs/spec/gotchas.md 13.12)"; fi
+	fi
 	bin=$target.bin
 	bytes=$(wc -c < "$bin" | tr -d ' ')
 	# --print-memory-usage: "FLASH:  123024 B  336 KB  35.76%" (the app region, codec sectors excluded)
@@ -514,7 +570,8 @@ for bm in boards/*/board.mk boards/*/; do
 	while err=$(make -s BOARD="$b" $all_on $maximal_vars print-config 2>&1 >/dev/null); [ -n "$err" ]; do
 		f=$(printf '%s\n' "$err" | sed -n 's/.*CONFIG_\([A-Z0-9_]*\)=y needs .*/\1/p' | head -1)
 		case "$all_on " in *" CONFIG_$f=y "*) ;; *) break ;; esac	# not a dependency: the build reports it
-		all_on=$(printf '%s ' $all_on | sed "s/CONFIG_$f=y //")
+		# the leading space stays, or the first switch could never match the test above once one was dropped
+		all_on=" $(printf '%s ' $all_on | sed "s/ CONFIG_$f=y / /;s/^CONFIG_$f=y //")"
 		dropped="$dropped $f"
 	done
 	[ -n "$dropped" ] && echo "ci: $b maximal: off, their parent left out:$dropped"
@@ -582,6 +639,9 @@ else
 fi
 
 echo
+if [ -n "$WARNED" ]; then
+	echo "ci: warnings:$WARNED"
+fi
 if [ -n "$SKIPPED" ]; then
 	echo "ci: skipped:$SKIPPED"
 fi

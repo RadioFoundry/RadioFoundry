@@ -7,6 +7,8 @@
 #include "dmr_db25d.h"
 #include "pins.h"
 #include "platform.h"
+#include "rfchip_db25d.h"
+#include "ui/fmt.h"
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
@@ -27,7 +29,8 @@ static const band_t bands[] = {
 };
 
 // Nominal 20 W mobile. The radio refuses TX until the PA calibration can be read (radio_db25d.c)
-static const char *const power_names[] = { "L", "H" };
+// Five levels from the calibration's two tables (radio_db25d.c): "L" and "H" are the tables
+static const char *const power_names[] = { "L--", "L-", "L", "M", "H" };
 
 // docs/ux/information-architecture.md 7.4 (mobile: front encoder and a few keys; the encoder push is OK). The hand
 // mic adds the digits, * and # (marked down and up) and P4-P7, which send DTMF A-D while PTT is held on FM (the
@@ -78,6 +81,31 @@ static const hal_cps_t cps = {
 static const uint8_t side_keys[] = { KEY_P3, KEY_TONE, KEY_MIC_P4, KEY_MIC_P5 };
 static const char *const side_key_names[] = { "P3", "TONE", "Mic P4", "Mic P5" };
 
+// The support info (docs/spec/support-info.md 2): each RF chain's part and ID register as detection read them, then the
+// batch code the pair gives (hardware-db25d.md 4.8); the HR_C7000 is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	if (i < 2) {
+		*role = BOARD_HW_RF;
+		sb_str(&b, i == 0 ? "main " : "LO ");
+		sb_str(&b, db25d_rf_chip_name(i == 1));
+		sb_str(&b, " id ");
+		sb_hex(&b, i == 0 ? db25d_rf_main_id() : db25d_rf_lo_id(), 4);
+		return true;
+	}
+	if (i == 2) {
+		char v[4];
+		db25d_rf_variant(v);
+		*role = BOARD_HW_BOARD;
+		sb_str(&b, "batch ");
+		sb_str(&b, v);
+		return true;
+	}
+	return false;
+}
+
 const board_t board = {
 	.name = "DB25-D",
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
@@ -89,7 +117,7 @@ const board_t board = {
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 0,
+	.power_default = 2,	// "L"
 	.display = &db25d_display,
 	.input = &db25d_input,
 	.keymap = keymap,
@@ -100,8 +128,7 @@ const board_t board = {
 	.radio = &db25d_radio,
 	.power = &db25d_power,
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 #if CONFIG_DIAG
 	.diag_line = db25d_diag_line,
@@ -111,6 +138,10 @@ const board_t board = {
 	.dmr = &hrc_dmr,
 	.audio = &db25d_audio,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
+#endif
 #endif
 #if CONFIG_HOSTLINK
 	.host_port = &hrc_host_uart_stream,
@@ -119,6 +150,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the host port's UART1 (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
+	.hw_line = hw_line,
 #if CONFIG_NAND_STORAGE
 	.flash = &db25d_flash,
 #endif
@@ -173,6 +205,7 @@ static void io_init(void)
 	hrc_pin_in(PIN_POWER_KEY);
 }
 
+#if CONFIG_GPS
 // The GPS module on UART2 (hardware-db25d.md 3.1). Its RXD pad is PTA11, a GPIO until IO_DIPLEX0 bit 11 is cleared
 // (HR_C7000 user guide 4.4.4.4); the stock firmware's mux for it hasn't been traced
 static const hrc_gps_cfg_t gps_cfg = {
@@ -182,6 +215,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_on_level = GPS_POWER_ON_LEVEL,
 	.rxd_mux_clear = 1u << 11,
 };
+#endif
 
 // Transmitter off from any context (board.h, docs/spec/crash-log.md 8; hardware-db25d.md 3.2): both TX supplies, both
 // PA selects and the PA drive (DAC B to 0, powered down), with PTA23 (RX_SUPPLY) high as in receive. RAM code, register

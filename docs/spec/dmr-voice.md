@@ -10,16 +10,27 @@ references are ETSI TS 102 361-1 and -2.
 ## 1. Who we hear
 
 A voice call on our timeslot and color code starts from a voice LC header or by late entry (section 4). It is played
-when it passes the filters, and shown either way:
+when it passes the filters, and shown either way. Digital monitor (hear all, below) also takes calls on any color code
+and either timeslot (`dmr_listen_filter_t.any_cc`, `.both_ts`; the modem gets no color code filter and, through a
+repeater, no slot lock). The first call heard keeps the voice until it ends: bursts on the other slot meanwhile are
+dropped. Turning it on or off changes only the modem's filters: the call being heard and the reply window stay, and
+a call heard as not ours plays at once. The view gives the call's color code and slot (`rx_cc`, `rx_ts`; the slot 0
+when unknown, the code from the first burst that carries one, never burst A) beside the channel's (`cc`, `ts`), which
+PTT always uses.
 
 | Call | Played when |
 |---|---|
-| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it) |
+| Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it. A zone or VFO scan started with it on keeps it on at every stop and latches it on the channel the scan ends on; turning it off during the scan ends it for the scan, [radio-features.md](radio-features.md) 2). On a trunked channel it follows every talkgroup's grant instead ([dmr-trunking.md](dmr-trunking.md), Grants): the call plays on its own slot and the system's color code, not any |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
 | Encrypted | only with a privacy key, and never after a PI header (section 5) |
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
+
+A voice LC header or terminator whose RS(12,9) check fails is not taken. With the channel's Accept invalid CRC
+(`dmr_listen_filter_t.accept_bad_crc`, [open-firmware-cps.md](open-firmware-cps.md) 7.3.3) it is taken when the same
+9 LC octets failed among the last four failures (`core/fec/rx_seen.h`): a system that sends every LC that way repeats
+it, and a burst damaged on the air rarely decodes the same twice. The call stack counts those (`rx_lc_taken`).
 
 The caller is shown by name when one is known: the channel's talk target and listen list contacts first, then every
 codeplug contact with that ID (group and private IDs are separate name spaces), then, for a private ID, the DMR ID
@@ -64,7 +75,10 @@ sends bursts. When the modem takes no burst for `DMR_CALL_TX_STALL_MS` (1.5 s; a
 slot starts), the stack aborts the transmission and returns to receive with `DMR_TX_ERR_STALLED` (`dmr.tx_error=stalled`
 on the debug link). With PTT still held the radio shows "Modem refused to send" until release. A modem without slot
 timing (a modem that stops answering) otherwise kept the radio keyed until the battery came out
-([gotchas](gotchas.md) 3.12).
+([gotchas](gotchas.md) 3.12). Through a repeater, before the first burst's slot, the wait is 300 ms longer
+(`DMR_CALL_TX_ALIGN_GRACE_MS`): the modem's own aligned-start timeout (1.5 s and a slot) must come first, so its
+refusal wakes the repeater again ([dmr-modem.md](dmr-modem.md) 2.7). With an encoder slow to start, the headers are
+the last bursts queued, so without the margin the stall cut comes first.
 
 ### 2.1 The DMR VFO
 
@@ -85,7 +99,8 @@ Not in the VFO: talker alias (a channel's setting), roaming, the "hear all by de
 
 These are the VFO's own settings, so they are not temporary changes: no dot on Home, BACK on Home doesn't undo them,
 they stay while the radio is on a channel, and they are kept across power cycles with the VFO's frequency
-(`settings-store.md` 3). The requests are the ones a channel uses and the radio core gives them the VFO meaning:
+(`settings-store.md` 3). Squelch has no VFO value: changed in the VFO it becomes the radio's default squelch at once,
+so it is not temporary either. The requests are the ones a channel uses and the radio core gives them the VFO meaning:
 `radio_req_mode` (needs both `CONFIG_VFO_FM` and `CONFIG_VFO_DMR`; on a channel the mode is no longer a quick menu change, Copy to VFO (2.2) is the way in), `radio_req_dmr_color_code`,
 `radio_req_dmr_timeslot`, and `radio_req_dmr_target` / `radio_req_dmr_contact` for the talk target. A typed or
 chosen target is the VFO's from then on (`dmr.target_manual` stays 0); "call back" is for now as on a channel and
@@ -162,17 +177,24 @@ not a position.
 
 Receive: `dmr_call` decodes every GPS Info LC on the call into `dmr_caller_t.gps` / `gps_valid` (counter `rx_gps`);
 a new talker clears it, and `last_heard` keeps it after the call. The radio core adds the distance and bearing from
-our own position (the APRS position source, `aprs.md` 7) in `radio_dmr_call_t`, the receive screen shows "12.3 km NE"
+our own position (the position service, [position.md](position.md)) in `radio_dmr_call_t`, the receive screen shows "12.3 km NE"
 (or the coordinates when we have no position of our own), Recent keeps the distance with the entry, and in
 `CONFIG_APRS_RX` builds the caller goes into the APRS station list (named by its alias's callsign, else its DMR ID).
 
-Transmit: Tools > APRS > "Position in DMR calls" (radio-wide, off by default, `aprs_cfg_t.dmr_gps`, P7). At PTT the
-radio core takes the APRS position in use (GPS on boards with one, the host's NMEA, else the fixed position;
-position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
+Transmit, when either asks for it:
+
+| Setting | Where | Scope |
+|---|---|---|
+| "Send in DMR calls" | Settings > Location (`position_cfg_t.dmr_gps`, off by default, P7) | every DMR call |
+| The channel's talker alias field for its timeslot: APRS or Both | the codeplug (`open-firmware-cps.md` 7.3.3, offset 0x30; `channel_t.alias_tx` `CODEPLUG_ALIAS_TS1_GPS` / `_TS2_GPS`), so a CPS sets it | calls on that channel; not the VFO |
+
+At
+PTT the radio core takes the position in use (`position_now`: GPS on boards with one, the host's NMEA, else the fixed
+position; position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
 LC is one more entry at the end of the talker alias rotation in the odd superframes: LC, header, LC, block 1, LC,
 block 2, LC, GPS, ... with an alias, or LC, GPS, LC, GPS without (counter `tx_gps_lcs`). The position error says 20 m
-for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. Without `CONFIG_APRS` there is no
-position source, so nothing is sent (receive still works).
+for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. It needs no APRS: the setting and the
+position are the position service's, built with `CONFIG_DMR_GPS`. A radio without a GPS sends its fixed position.
 
 The hotspot already passes FLCO 4-8 embedded LCs through to the host (`hotspot.c`).
 
@@ -195,6 +217,9 @@ is XORed onto the 49 AMBE+2 parameter bits of each frame by superframe position:
 encoder's bits as they are), on RX before the voice sink (after the FEC decode, `core/dmr/ambe/ambeFec.c`). With a key
 loaded our calls carry FID 0x10 and the privacy service option (0x40), and received calls with the privacy service
 option (or PI) are descrambled. Without a key such bursts are never played; they count as `rx_enc_dropped`.
+
+The same key covers packet data where its scheme defines a data form (Motorola BP encrypts it, Anytone BP blocks
+data TX): [dmr-data.md](dmr-data.md) 13.
 
 The key is set over the debug link (RADIO op 19, `radio_req_dmr_privacy`). The radio core saves it in settings slot 1
 and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware codeplug has no key storage, so qdmr can't
@@ -228,13 +253,35 @@ codec bits.
   `reset()`, so a new transmission starts with the options in force.
 * The options are read at start-up from the settings and on every change (`ui_svc_apply`). With AGC on, the mic gain
   is step 5, the board's levels (FM too on a radio whose board sets the gain), and Mic gain is dimmed, showing "AGC".
+* Voice is simplex: while a transmission runs, nothing is decoded. A call still being heard goes on as silence, and
+  the decoder starts fresh once the transmission ends; a call that begins meanwhile resets nothing until then. A
+  platform may keep the encoder's and the decoder's state in one block (`hal_vocoder_t`): a decode during the
+  transmission would cost it its encoder.
 * Each board's codec mapping is on its `codec-<id>.md` page ("Encode flags"). Boards with an AMBE+2 host share
   `drivers/vocoder/ambe2_flags.h`.
+
+### 6.1 A tone in place of the microphone
+
+`ambeVoiceTxTone` (`ambeVoice.h`, radio task) hands the audio callback a tone sequence of up to `SIG_AIR_STEPS` steps (`SIG_STEPS` and a guard of silence, `SIG_AIR_GUARD_MS`)
+([radio-features.md](radio-features.md) 4.3). From the next block of a transmission (the first, if it has not started)
+the encoder gets the generated tone instead of the microphone, after the mic gain. While it plays the encode options are
+`VOCODER_OPT_TONE_FRAMES` set and `VOCODER_OPT_NOISE_REDUCTION` cleared, and the options in force come back after it.
+
+* The encoder waits for room in its queue (`AMBE_VOICE_QUEUE`) before each block of the tone, instead of letting the
+  queue overflow, so a tone longer than the headers' time is not cut.
+* `final`: the microphone stays muted after the tone until the transmission ends.
+* `dmr_voice_source_t.busy` tells the call stack the tone's frames are not all pulled yet. After PTT is let go the stack
+  then goes on at each superframe boundary, for at most `DMR_CALL_TX_TAIL_HOLDS` superframes, before it ends the over
+  with the terminator. A time-out ends it at once.
+* `ambeVoiceTxToneCancel` drops a request, and the source's `end` does it too: a request for a transmission that never
+  went on air is not played in the next one. `busy` is false while no transmission runs.
+* The tone's amplitude is fixed (`TONE_AMP_Q15`). It is not checked on air, nor how other makes of radio play a tone
+  frame.
 
 ## 7. Observing it
 
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
-`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`; RADIO op 31 sets the mode, color code and timeslot (the VFO's
+`dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`, `dmr.gps_tx_channel` (the channel's own position setting); RADIO op 31 sets the mode, color code and timeslot (the VFO's
 own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (2.2); the `dmr_call` view's
 `emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
@@ -242,6 +289,33 @@ own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (
 `tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, a `bench_tx`
 `voice --gps LAT,LON[,ERR]` job), `tests/hil/test_dmr_tx.py` (`test_dmr_gps_tx`: our GPS Info decoded by the
 bench modem's listener).
+
+### 7.1 Receive level
+
+A DMR receiver decodes 4FSK well only while the demodulated level at its modem sits in a window: too high and the outer
+symbol threshold is crossed (corrected bits on every frame, even far above sensitivity), too low and sync is lost. That
+level is the receiver's audio gain times the transmitter's deviation, and transmitters differ by 10-20 % in deviation,
+so the gain a board sets has to sit in the middle of the window, not at its best point for an exact transmitter. A
+carrier offset shifts the same level: a gain with no headroom clips on one side of the channel first, and a fixed
+receive offset moves the whole window off the channel. Transmitters a kHz or two off frequency are common, so a board
+keeps its window centered on the channel. Where a board's window was measured is on its hardware page
+([feature-matrix.md](../feature-matrix.md) for the radios).
+
+| Tool | What it does |
+|---|---|
+| `tools/dmr_rx_sweep.py` | Steps a chip register (debug link CHIP_REG), or one bit field of it (`--field HI:LO`), through values while the SDR bench sends speech, over bench levels, deviations and carrier offsets (`--detune` makes the offset by tuning the radio away instead); ranks the values by their worst cell. About three minutes a grid |
+| `test_dmr_audio_rx_strong` | The bench's simplex speech at -75 and -55 dBm at the radio: 95 % of the frames and at most 0.2 corrected bits a frame at each (a level the bench can't reach is left out) |
+| `test_dmr_audio_rx_deviation` | The bench's speech at 0.85 and 1.15 of the standard deviation, at -100 dBm at the radio: 95 % of the frames and at most 0.8 corrected bits a frame, both ways |
+| `test_dmr_audio_rx_offset_wide` | The bench's speech with its carrier 2.5 kHz below and above the channel, at -100 dBm at the radio: 90 % of the frames and at most 2 corrected bits a frame, both ways |
+
+Measure near sensitivity (-90 to -105 dBm at the radio) for the level window: there a fraction of a dB shows. Measure
+strong simplex signals too (-75 to -45 dBm): a simplex transmitter keys one 30 ms burst every 60 ms, so the receiver's
+AGC sees the carrier come and go with every burst, and one that settles too slowly overloads the start of each burst.
+That costs a bit or more a frame however strong the signal, and only on simplex: a repeater's continuous carrier
+hides it. A clean receiver corrects almost nothing at those levels. Use speech or another varied recording, never
+AMBE silence: its errors land in bits with no FEC.
+Let the radio drop the last call before the next one starts (about 2 s): a call that begins while it still follows the
+last one's slot timing can be decoded at that timing to its end.
 
 ## 8. Open points
 

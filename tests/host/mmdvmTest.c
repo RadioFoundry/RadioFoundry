@@ -1301,6 +1301,88 @@ static void test_ext_space(void)
 	CHECK(st[7] == 22 && st[8] == 22);
 }
 
+// A UART host link that saw a 0xE0 (a loose cable puts noise on the line): a trial. Noise gets no reply and never the
+// modem; a host's GET_VERSION is answered at once and its next command takes the modem
+static void test_trial(void)
+{
+	static const uint8_t noise[] = { 0xE0, 0x05, 0x18, 0x41, 0x7F };	// DMR_DATA1 framed by chance
+
+	reset_world();
+	mmdvm_trial_begin();
+	CHECK(!mmdvm_frame(noise, sizeof(noise), now));
+	CHECK(out_count == 0 && r.enters == 0 && mmdvm_in_trial());
+	host(MMDVM_GET_VERSION, (const uint8_t *)"x", 1);	// GET_VERSION with a payload: not a host's
+	CHECK(out_count == 0 && mmdvm_in_trial());
+
+	// MMDVMHost: GET_VERSION answered without the modem, then SET_FREQ ends the trial
+	reset_world();
+	mmdvm_trial_begin();
+	host(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(last_out(MMDVM_GET_VERSION) != NULL && r.enters == 0 && mmdvm_in_trial());
+	poll_for(100);
+	CHECK(r.enters == 0);			// mmdvm_poll doesn't take it either
+	set_freq(461462500, 461462500, 0);
+	CHECK(!mmdvm_in_trial() && r.enters == 1 && hotspot_running());
+	// The bench tools: SET_FREQ, SET_CONFIG
+	reset_world();
+	mmdvm_trial_begin();
+	set_freq(461462500, 461462500, 0);
+	CHECK(r.enters == 0 && mmdvm_in_trial());
+	configure(2);
+	CHECK(!mmdvm_in_trial() && hotspot_running());
+	// mmdvm_end ends a trial: the next session without one takes the modem on its first frame
+	mmdvm_end();
+	host(MMDVM_GET_VERSION, NULL, 0);
+	CHECK(r.enters == 2);
+
+	// The host link's rule
+	CHECK(!hostlink_trial_failed(false, false, false, 10));
+	CHECK(hostlink_trial_failed(false, true, false, 10));
+	CHECK(hostlink_trial_failed(false, false, true, 10));
+	CHECK(hostlink_trial_failed(false, false, false, HOSTLINK_HOTSPOT_OPEN_MS + 1));
+	CHECK(!hostlink_trial_failed(true, true, true, HOSTLINK_HOTSPOT_OPEN_MS + 1));
+
+	// Random line noise, as the host link feeds it: every 0xE0 outside a trial starts one; the trial runs until the
+	// rule ends it. 4 MB of noise (about 16000 trials) never takes the modem
+	mmdvm_framer_t f;
+	uint32_t seed = 12345;
+	int trials = 0, opened = 0;
+	bool in = false;
+	uint32_t entered = 0;
+
+	reset_world();
+	for (uint32_t i = 0; i < 4u * 1024u * 1024u; i++) {
+		seed = seed * 1103515245u + 12345u;
+		uint8_t b = (uint8_t)(seed >> 16);
+
+		now++;
+		if (!in) {
+			if (b != MMDVM_FRAME_START) {
+				continue;
+			}
+			mmdvm_end();
+			mmdvm_framer_reset(&f);
+			mmdvm_trial_begin();
+			in = true;
+			entered = now;
+			trials++;
+		}
+		uint32_t junk = f.junk + f.skipped;
+		uint16_t n = mmdvm_framer_byte(&f, b);
+		bool dropped = (n > 0) && !mmdvm_frame(f.buf, n, now);
+
+		if (!mmdvm_in_trial()) {
+			opened++;
+			in = false;
+		} else if (hostlink_trial_failed(false, dropped, f.junk + f.skipped != junk, now - entered)) {
+			in = false;
+		}
+	}
+	CHECK(trials > 10000);
+	CHECK(opened == 0 && r.enters == 0 && !hotspot_running());
+	mmdvm_end();
+}
+
 // A-2 / T-USB-2: hotspot mode never depends on DTR being set, only on it dropping
 static void test_hostlink_dtr(void)
 {
@@ -1410,6 +1492,7 @@ int main(void)
 	test_morse();
 	test_ext_space();
 	test_hostlink_dtr();
+	test_trial();
 	test_end();
 	if (failures == 0) {
 		printf(SPLIT_SUFFIX_LEN ? "mmdvmTestSplit: all passed\n" : "mmdvmTest: all passed\n");

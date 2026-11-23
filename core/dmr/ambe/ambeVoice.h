@@ -23,9 +23,11 @@
 #define RFOUNDRY_AMBE_VOICE_H
 
 #include <stdint.h>
+#include "config.h"
 #include <stdbool.h>
 #include "hal_audio.h"
 #include "hal_vocoder.h"
+#include "radio/beep.h"	// beep_seg_t
 #include "dmr/call/dmr_call.h"
 
 #define AMBE_VOICE_QUEUE	8	// frames each way (160 ms), power of two
@@ -72,6 +74,9 @@ const dmr_voice_sink_t *ambeVoiceSink(void);
 const dmr_voice_source_t *ambeVoiceSource(void);
 // Stop the audio stream (leaving DMR mode); the next begin restarts it
 void ambeVoiceStop(void);
+// Start the audio stream now, for a voice path whose frames come from a task that must not start it (NXDN's
+// provider task, radio/radio_nxdn.c): the sink's begin then finds it running. The task that calls ambeVoiceStop
+void ambeVoiceStart(void);
 // Whether the voice stream runs (its callback owns hal_audio_t). Call task only
 bool ambeVoiceStreaming(void);
 // Something else to hear while the voice stream runs (beeps): called at the end of each audio block with the speaker
@@ -85,6 +90,15 @@ void ambeVoiceSetMicGain(uint8_t step);
 // Test signal for DMR transmissions (the debug link's RADIO op 33, RAM only): on, the encoder gets a generated tone
 // that changes pitch every 60 ms in place of the mic, so an over carries known, varying audio whatever the mic hears
 // (the HIL audio smoke test). Any task
+#if CONFIG_SIG_TONES
+// A tone sequence (up to SIG_AIR_STEPS steps of {Hz, ms}, sigtone.h) sent as voice in place of the mic: from the next block
+// of the transmission, or from its first if it has not started. Encoded as a tone frame, noise reduction off for it.
+// final: after the tone the mic stays muted until the transmission ends (an end of transmission tone). The encoder
+// waits for room in its queue, so none of the tone is lost. Radio task. A request for a transmission that never
+// starts is cancelled by ambeVoiceTxToneCancel (the stack's end of transmission drops it too, in the audio callback)
+void ambeVoiceTxTone(const beep_seg_t *steps, uint8_t n, bool final);
+void ambeVoiceTxToneCancel(void);
+#endif
 void ambeVoiceSetTestSignal(bool on);
 bool ambeVoiceTestSignal(void);
 // Encode options for DMR transmissions (VOCODER_OPT_*, default VOCODER_OPT_DEFAULT; Settings > Talk & listen > Mic
@@ -97,6 +111,18 @@ void ambeVoiceGetStats(ambe_voice_stats_t *out);
 // Zero the counters (the debug link's RESET_COUNTERS). Counters only: no state changes. From any task; an increment
 // racing the reset may survive it
 void ambeVoiceResetStats(void);
+
+// Voice capture (CONFIG_VOICE_CAPTURE): the next n (up to AMBE_VOICE_CAP) frames received, raw as on air, each frame or
+// a lost one in order. Arm clears what was captured; 0 stops. For receive tests that compare the bits with what was
+// sent (debug link RADIO op 41, the voice_cap view)
+#define AMBE_VOICE_CAP	32u
+typedef struct {
+	uint8_t lost;			// 1: a frame the call stack lost (frame all zero)
+	uint8_t frame[DMR_AMBE_FRAME_BYTES];
+} ambe_cap_entry_t;
+void ambeVoiceCaptureArm(uint8_t n);
+// The frames captured so far (count returned), and how many were asked for
+uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want);
 
 // The audio block callback (exposed for tests): one 20 ms block in, one out
 void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx);

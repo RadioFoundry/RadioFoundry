@@ -8,7 +8,8 @@
 # ck801 variants of strstr.c / memmem.c, and newlib's system.c needs -Wno-error=implicit-function-declaration.
 # On macOS the build also needs --with-system-zlib and MAKEINFO=true; Linux is the tested route.
 # CLEAN=1 deletes each stage's source and build tree once it's installed (peak about 4 GB instead of about 7 GB).
-# tools/docker/csky-toolchain/ wraps this in a container and makes a CI image from the result.
+# tools/docker/csky-toolchain/ (the CI image) and tools/docker/toolchains/ (amd64 and arm64 images, with docker or
+# Apple's container) wrap this in a container and make an image from the result.
 set -e
 PREFIX=${PREFIX:-$HOME/toolchains/csky-elf}
 SRC=${SRC:-$HOME/toolchains/src}
@@ -16,6 +17,11 @@ SRC=${SRC:-$HOME/toolchains/src}
 # since only this script is in its container
 GV=${GV:-$("$(dirname "$0")/platform_toolchain.sh" hrc7000 version)}
 BV=2.43.1; NV=4.5.0.20241231; J=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+case $GV in
+14.2.0) GSUM=a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9 ;;
+15.2.0) GSUM=438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e ;;
+*) echo "build-csky-toolchain: no checksum for gcc-$GV here; add it beside the others" >&2; exit 1 ;;
+esac
 export PATH=$PREFIX/bin:$PATH
 mkdir -p $SRC && cd $SRC
 [ -f binutils-$BV.tar.xz ] || curl -fsSLO https://ftp.gnu.org/gnu/binutils/binutils-$BV.tar.xz
@@ -25,7 +31,7 @@ mkdir -p $SRC && cd $SRC
 if command -v sha256sum >/dev/null; then SHA="sha256sum -c -"; else SHA="shasum -a 256 -c -"; fi
 $SHA <<SUMS
 13f74202a3c4c51118b797a39ea4200d3f6cfbe224da6d1d95bb938480132dfd  binutils-$BV.tar.xz
-a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9  gcc-$GV.tar.xz
+$GSUM  gcc-$GV.tar.xz
 33f12605e0054965996c25c1382b3e463b0af91799001f5bb8c0630f2ec8c852  newlib-$NV.tar.gz
 SUMS
 done_stage() { [ "${CLEAN:-0}" = 1 ] && rm -rf "$SRC/$1" "$SRC/$2"; cd "$SRC"; }
@@ -39,6 +45,7 @@ done_stage binutils-$BV b-binutils
 [ -f $PREFIX/bin/csky-elf-gcc ] || [ -d gcc-$GV ] || tar xf gcc-$GV.tar.xz
 mkdir -p $SRC/b-gcc && cd $SRC/b-gcc
 [ -f $PREFIX/bin/csky-elf-gcc ] || { ../gcc-$GV/configure --target=csky-elf --prefix=$PREFIX --enable-languages=c \
+	--with-cpu=ck803s --with-float=soft --disable-multilib \
 	--without-headers --with-newlib --disable-nls --disable-shared --disable-threads --disable-libssp \
 	--disable-libquadmath --disable-libgomp --disable-libatomic; make -j$J all-gcc all-target-libgcc; \
 	make install-strip-gcc install-target-libgcc; }

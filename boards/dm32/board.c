@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "hrc_afsk.h"
 #include "hrc_bcast.h"
+#include "ui/fmt.h"
 #if CONFIG_BCAST_FM
 #include "bcast/rda5807m/rda5807m_hal.h"
 #endif
@@ -38,9 +39,9 @@ static const band_t bands[] = {
 #endif
 };
 
-// Power levels 0..8 of hardware-dm32.md 11.3 (level 9, the user value, isn't offered). Labels are nominal: the radio
-// is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "L+", "L++", "M", "M+", "M++", "H-", "H" };
+// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
+// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
+static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {
@@ -70,6 +71,22 @@ static const keymap_entry_t keymap[] = {
 // Reassignable in Settings > Keys and the codeplug (core/input/keyassign.h): the side keys top to bottom
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2 };
 static const char *const side_key_names[] = { "SK1", "SK2" };
+// The arrows left and right of the 4-way key are printed P1 and P2: programmable on Home, arrows in the menus
+static const uint8_t home_keys[] = { KEY_LEFT, KEY_RIGHT };
+static const char *const home_key_names[] = { "P1", "P2" };
+
+// The support info (docs/spec/support-info.md 2): the FD6818 set-up start-up found (hardware-dm32.md 8.10: A the classic
+// RF section, B the newer one, "no lock" neither); the HR_C7000 is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	char s = dm32_rf_setup();
+	*role = BOARD_HW_RF;
+	str_copy(buf, len, s == 'A' ? "FD6818 set-up A" : s == 'B' ? "FD6818 set-up B" : "FD6818 no lock");
+	return true;
+}
 
 const board_t board = {
 	.name = "DM-32UV",
@@ -91,6 +108,9 @@ const board_t board = {
 	.side_keys = side_keys,
 	.side_key_names = side_key_names,
 	.side_key_count = sizeof(side_keys),
+	.home_keys = home_keys,
+	.home_key_names = home_key_names,
+	.home_key_count = sizeof(home_keys),
 	.radio = &dm32_radio,
 	.power = &dm32_power,
 	.flash = &hrc_flash_spi0,
@@ -98,12 +118,19 @@ const board_t board = {
 	.diag_line = dm32_diag_line,
 	.diag_reset = dm32_diag_reset,
 #endif
+#if CONFIG_DEBUGLINK
+	.view_line = dm32_view_line,
+#endif
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,
 	.vocoder = &hrc_vocoder,
+#if CONFIG_AIR
+	.air = &hrc_air,		// the physical layer and the receive copy (modem-hrc7000.md 10)
+	.baseband = &hrc_baseband,
 #endif
-#if CONFIG_APRS
+#endif
+#if CONFIG_APRS_AFSK
 	.afsk = &hrc_afsk,
 #endif
 #if CONFIG_HOSTLINK
@@ -113,11 +140,11 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 #if CONFIG_GPS
-	.gps_enable = hrc_gps_enable,
-	.gps_present = hrc_gps_present,	// CAP_GPS: the module is fitted, but say so only once it has been heard
+	.gps = &hrc_gps,	// CAP_GPS: the module is fitted, but say so only once it has been heard
 #endif
 	.system = &hrc_system,
 	.chip_reg = dm32_chip_reg,
+	.hw_line = hw_line,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
@@ -206,13 +233,15 @@ void board_early_init(void)
 
 // Everything the core stores lives above the write floor (hardware-dm32.md 10.1): the open-firmware codeplug's 64 KB
 // "EEPROM" image at 0x700000, a decoded calibration copy from other firmware left alone at 0x710000, the settings ring
-// and the sector journal after it, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID
-// database, the native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets
-// no calibration window
+// and the sector journal after it, optional satellite snapshots at 0x71B000..0x71DFFF, the stub write-test sectors at
+// 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at 0x720000 with room above it for the DMR ID database, the
+// native codeplug in the last 1 MB. The factory calibration is read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x719000u,	// 2 sectors
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0x71B000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,	// 3 sectors; 8 KB remains for the stub write test
 	.openfw_eeprom = 0x700000u,
 	.openfw_flash = 0x720000u,
 	.openfw_end = 0xF00000u,
@@ -227,6 +256,7 @@ static const hrc_flash_cfg_t flash_cfg = {
 	.map = &flash_map,
 };
 
+#if CONFIG_GPS
 // The ATGM336H on UART1; PTA9 is UART1's RXD from io_init
 static const hrc_gps_cfg_t gps_cfg = {
 	.uart_base = UART1_BASE,
@@ -234,6 +264,7 @@ static const hrc_gps_cfg_t gps_cfg = {
 	.power_pin = PIN_GPS_POWER,
 	.power_on_level = GPS_POWER_ON_LEVEL,
 };
+#endif
 
 #if CONFIG_BCAST_FM
 // The RDA5807M on PTA25 / PTA26 (hardware-dm32.md 8.7): no enable line is known; its audio is assumed to reach the

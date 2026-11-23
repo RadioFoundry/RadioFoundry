@@ -12,7 +12,7 @@
 // tap (disc_md9600.c). It runs while the core listens.
 #include "config.h"
 
-#if CONFIG_APRS && (CONFIG_APRS_RX || CONFIG_MD9600_TX)
+#if CONFIG_APRS_AFSK && (CONFIG_APRS_RX || CONFIG_MD9600_TX)
 #include <stdbool.h>
 #include "md9600.h"
 #include "pins.h"

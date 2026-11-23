@@ -12,7 +12,7 @@
 // Unverified on the bench: whether the tone generator's phase stays continuous across a retune, the deviation the
 // level gives, and the flatness of mark vs space (aprs.md 13 HIL steps).
 #include "config.h"
-#if CONFIG_APRS
+#if CONFIG_APRS_AFSK
 #include "uvf.h"
 #include "stm32f4xx_hal.h"
 

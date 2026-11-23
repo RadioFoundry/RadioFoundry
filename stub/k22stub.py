@@ -214,6 +214,7 @@ class K22Chip(f4stub.Chip):
     sram_size = SRAM_SIZE
     erase_timeout = ERASE_TIMEOUT
     min_version = VERSION
+    loader = "update mode"
 
     @property
     def boards(self):
@@ -360,8 +361,9 @@ def self_test():
     try:
         r.write_image(TB, [(APP_BASE, img)], backup_dir=tmp)
         check(False, "interrupted write raises")
-    except OSError:
-        pass
+    except f4stub.UncommittedError as e:
+        check(isinstance(e.__cause__, OSError) and "update mode" in str(e) and "--attach --board %s" % TB in str(e),
+              "interrupted: the error says update mode and how to finish (%s)" % e)
     check(fake.w(APP_BASE) == 0xFFFFFFFF and bytes(fake.flash[:APP_BASE]) == loader,
           "interrupted: not committed, loader untouched")
     fake.fail_after = None

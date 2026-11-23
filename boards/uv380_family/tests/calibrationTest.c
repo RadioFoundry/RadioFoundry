@@ -152,6 +152,33 @@ static void test_working(void)
 	CHECK(writes == 0);
 }
 
+// One band of the working copy broken, the other good: the broken band comes from the factory table, not refused. The
+// UHF high row here wrapped at 8 bits on its last point, as a converter without saturation leaves it (x 1.7: 156 ->
+// 265 -> 9), so the order check fails there (diagnostics "w:VokUO8"); VHF stays the working copy's (issues 508, 510)
+static void test_working_one_band_bad(void)
+{
+	uint8_t f[512], t[512];
+	build_factory(f);
+	memcpy(security[0], f, 256);
+	memcpy(security[1], f + 256, 256);
+	memcpy(t, f, 512);
+	fill(t, 0x1A0, 9, 30, 1);	// very low rows present
+	fill(t, 0x1A9, 5, 30, 1);
+	t[0x010 + 8] = 9;		// UHF high, point 8: below the low row's 72
+	static const uint8_t marker[8] = { 0x00, 0x25, 0x00, 0x40, 0x00, 0x45, 0x01, 0x40 };
+	memcpy(&t[0x1B0], marker, 8);
+	memcpy(working, t, 512);
+
+	CHECK(uvf_cal_load());
+	uvf_cal_point_t p;
+	CHECK(uvf_cal_at(145000000, &p) && p.valid);
+	CHECK(p.power_dac[0] == 31 * 16);	// VHF: the working copy's very low row, point 1
+	CHECK(uvf_cal_at(400000000, &p) && p.valid);
+	CHECK(p.power_dac[0] == UHF_VLOW * 16 && p.power_dac[3] == UHF_HIGH * 16);	// UHF: the factory table, converted
+	CHECK(uvf_cal_at(446000000, &p) && p.valid);
+	CHECK(writes == 0);
+}
+
 static void test_blank(void)
 {
 	memset(working, 0xFF, sizeof(working));
@@ -176,11 +203,31 @@ static void test_blank(void)
 static void test_direct_tx_ref(void)
 {
 	int8_t v = 0;
-	CHECK(uvf_direct_tx_ref(463612500u, -49, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS);
-	CHECK(uvf_direct_tx_ref(463612500u, 127 - UVF_DIRECT_TX_REF_STEPS, &v) && v == 127);
+	CHECK(uvf_direct_tx_ref(463612500u, -49, 0, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS);
+	CHECK(uvf_direct_tx_ref(463612500u, 127 - UVF_DIRECT_TX_REF_STEPS, 0, &v) && v == 127);
 	v = 5;
-	CHECK(!uvf_direct_tx_ref(463612500u, 128 - UVF_DIRECT_TX_REF_STEPS, &v) && v == 5);	// overflow: idle path
-	CHECK(!uvf_direct_tx_ref(146520000u, 0, &v) && v == 5);	// VHF: idle path
+	CHECK(!uvf_direct_tx_ref(463612500u, 128 - UVF_DIRECT_TX_REF_STEPS, 0, &v) && v == 5);	// overflow: idle path
+	CHECK(!uvf_direct_tx_ref(146520000u, 0, 0, &v) && v == 5);	// VHF: idle path
+	// A synthesizer 875 Hz below near 461 MHz (a DMR receive offset): 11.8 steps of about 74 Hz, taken back as 11
+	// (whole steps toward zero), and as many off for one above
+	CHECK(uvf_direct_tx_ref(461187500u, -49, -875, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS + 11);
+	CHECK(uvf_direct_tx_ref(461187500u, -49, 875, &v) && v == -49 + UVF_DIRECT_TX_REF_STEPS - 11);
+	// The step is a share of the carrier: the same offset is fewer steps higher in the band
+	int8_t lo = 0, hi = 0;
+	CHECK(uvf_direct_tx_ref(403000000u, 0, -875, &lo) && uvf_direct_tx_ref(479000000u, 0, -875, &hi) && lo > hi);
+	// The take-back alone past the register: idle path
+	CHECK(uvf_direct_tx_ref(461187500u, 80, 0, &v) && v == 80 + UVF_DIRECT_TX_REF_STEPS);
+	v = 5;
+	CHECK(!uvf_direct_tx_ref(461187500u, 80, -875, &v) && v == 5);
+}
+
+static void test_dmr_rx_offset(void)
+{
+	// UHF on the channel (its receive window is centered there), VHF below; both whole 62.5 Hz synthesizer steps
+	CHECK(uvf_dmr_rx_offset_hz(461187500u) == UVF_DMR_RX_OFFSET_UHF_HZ);
+	CHECK(uvf_dmr_rx_offset_hz(151625000u) == UVF_DMR_RX_OFFSET_VHF_HZ);
+	CHECK(UVF_DMR_RX_OFFSET_UHF_HZ == 0 && UVF_DMR_RX_OFFSET_VHF_HZ < 0);
+	CHECK((-UVF_DMR_RX_OFFSET_UHF_HZ * 2) % 125 == 0 && (-UVF_DMR_RX_OFFSET_VHF_HZ * 2) % 125 == 0);
 }
 
 static void test_ref_trimmed(void)
@@ -197,8 +244,10 @@ int main(void)
 {
 	test_factory();
 	test_working();
+	test_working_one_band_bad();
 	test_blank();
 	test_direct_tx_ref();
+	test_dmr_rx_offset();
 	test_ref_trimmed();
 	printf(failures ? "# %s FAILED (%d)\n" : "# %s PASSED\n", TEST_NAME, failures);
 	return failures ? 1 : 0;

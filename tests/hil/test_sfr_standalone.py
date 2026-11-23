@@ -9,7 +9,8 @@ listener of the chain test still need channels). Every setting they change is pu
 
 test_sfr_repeater_quality (rf, radio_tx, bench_service): a repeater-role channel (Rpt or Rpt Moto) repeats a 4
 superframe call. Pass: at least 19 bursts repeated (18 voice and a header); the inbound frames the runner decoded
-(sfr.rx_fec) at least 60 of the call's 72, with at most 3 lost and fewer than 4 bit errors a frame on average. The
+(sfr.rx_fec) at least 60 of the call's 72, with at most 3 lost and fewer than 4 bit errors a frame on average, and
+where the board reports it the bursts keyed straight from RX at UHF (dmr.keyed_direct 1). The
 An AT1846S board with the direct keying gives 0 lost and under 1 bit a frame (gotchas 14.14); the per-frame-place counts (sfr.rx_fec_pos) are printed.
 
 test_sfr_repeater_tx_inhibit (rf, radio_tx, bench_service): with TX inhibit the repeater role lets go of the modem
@@ -70,9 +71,10 @@ def _vfo_restore(radio):
             _vfo_back = None
 
 
-def _vfo_role(radio, hz, role, cc):
-    """The DMR VFO on hz, one frequency, color code cc, with the SFR role (RADIO op 38, docs/spec/sfr.md 4); its dmr
-    view, or skip. The VFO's frequency, mode, tones (vfo_session), color code and role are put back after the test."""
+def _vfo_role(radio, hz, role, cc, tg=None):
+    """The DMR VFO on hz, one frequency, color code cc, with the SFR role (RADIO op 38, docs/spec/sfr.md 4) and, with
+    tg, talking to that talkgroup; its dmr view, or skip. The VFO's frequency, mode, tones (vfo_session), color code,
+    role and target are put back after the test."""
     L = radio.link
     stack = _vfo_back
     stack.enter_context(radio.vfo_session())       # in the VFO, FM, no tones
@@ -98,11 +100,20 @@ def _vfo_role(radio, hz, role, cc):
     L.vfo_sfr(role, inbound_ts=1)
     d = radio.wait_for(lambda v: v.get("dmr.sfr_role") == str(role), 5, sections=("dmr",),
                        what=f"VFO SFR role {role}")
-    print(f"no channel with the role: the VFO on {hz / 1e6:.5f} MHz, role {role}, CC {cc}")
+    if tg is not None:
+        # A user plays a group call only to its target (the VFO's is its own, not the bench's): a channel has the
+        # bench's talkgroup in its RX group list, the VFO talks to it for the test. In the VFO the target is the VFO's
+        # own (kept, not a manual target a clear drops): its old one goes back
+        old_tg, old_private = int(d["dmr.target_id"]), d.get("dmr.target_private") == "1"
+        if old_tg:
+            stack.callback(L.dmr_target, old_tg, old_private)
+        L.dmr_target(tg)
+        d = radio.wait_for(lambda v: v.get("dmr.target_id") == str(tg), 5, sections=("dmr",), what=f"target TG {tg}")
+    print(f"no channel with the role: the VFO on {hz / 1e6:.5f} MHz, role {role}, CC {cc}, target {tg}")
     return d
 
 
-def _sfr_channel(radio, hz, roles, cc=None):
+def _sfr_channel(radio, hz, roles, cc=None, tg=None):
     """Select the first channel on hz whose SFR role is in roles, the current zone first, then the others (restore()
     puts the zone back); its dmr view. None: with cc (the bench color code) the VFO takes roles[0] (_vfo_role), else
     skip."""
@@ -128,7 +139,7 @@ def _sfr_channel(radio, hz, roles, cc=None):
                 return d
         searched.append(repr(radio.core().get("zone_name")))
     if cc is not None and _vfo_back is not None:
-        return _vfo_role(radio, hz, roles[0], cc)
+        return _vfo_role(radio, hz, roles[0], cc, tg)
     skip("state", f"no channel with SFR role {roles} on {hz / 1e6:.5f} MHz in any zone ({', '.join(searched)})")
 
 
@@ -185,6 +196,11 @@ def test_sfr_repeater_quality(radio, sdr_bench, pytestconfig, tx_allowed):
     assert frames >= 60, f"the runner decoded only {frames} of the call's 72 frames"
     assert lost <= 3, f"{lost} inbound frames lost"
     assert bits < 4 * frames, f"{bits} bit errors in {frames} frames"
+    # The repeater keys straight from RX for the inbound slot (hal_radio_t.dmr_keying, where the board reports it;
+    # UHF only on the UV380 family: at VHF the correction is out of range and it keys through idle)
+    keyed = radio.view(["dmr"]).get("dmr.keyed_direct")
+    if freq > 300:
+        assert keyed in (None, "1"), "the SFR repeated through idle (dmr.keyed_direct=0), not straight from RX"
 
 
 @pytest.mark.rf
@@ -237,7 +253,7 @@ def test_sfr_cwid(radio, sdr_bench, pytestconfig, tx_allowed):
 @pytest.mark.feature("sfr")
 def test_sfr_user_modes(radio, sdr_bench, pytestconfig):
     freq, cc, tg = _freq(pytestconfig)
-    d = _sfr_channel(radio, round(freq * 1e6), USER_ROLES, cc)
+    d = _sfr_channel(radio, round(freq * 1e6), USER_ROLES, cc, tg)
     ts = int(d.get("dmr.ts", 1))
     old = int(d.get("dmr.sfr_rx", 0))
     keys = ("call.rx_sfr_direct", "call.rx_voice_bursts", "call.rx_calls")

@@ -12,12 +12,17 @@
 #include "radio/battery.h"
 #include "radio/morse.h"
 #include "radio/radio_cwid.h"
+#include "radio/beep.h"	// beep_seg_t
+#include "radio/sigtone.h"	// SIG_STEPS
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
 #if CONFIG_DMR_ROAMING
 #include "radio/roam.h"
 #include "settings/settings.h"	// SETTINGS_ROAM_ZONE_BYTES
+#endif
+#if CONFIG_DMR_TRUNK
+#include "radio/radio_trunk.h"	// not under roaming: trunking builds without it
 #endif
 
 #define RADIO_SM_CW		(CONFIG_HOTSPOT || CONFIG_SFR_CWID)	// the CW keyer (radio_sm.c)
@@ -28,6 +33,7 @@
 // repeater to wake, red blinks once per wake-up burst sent, not solid (a burst is 30 ms: stretched to be seen); a
 // deny flashes red, green, red, green, red, green, RADIO_LED_DENY_STEP_MS each
 #define RADIO_LED_WAKE_MS	100
+#define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
@@ -46,10 +52,24 @@
 // far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
 // (radio-features.md 3.5)
 #define RADIO_SQL_FAST_CLOSE_DB	12
+// A voice peak: on a 12.5 kHz channel, speech above about 2 kHz (fricatives) raises the noise reading over the close
+// line for 100-300 ms, past the fast close line when the sender deviates wide, while the carrier stays as strong as it
+// was (#906). Noise over the line with the signal strength within RADIO_SQL_PEAK_RSSI_DB of the last poll the squelch
+// held closes only after RADIO_SQL_PEAK_POLLS polls (400 ms: the longest sibilant plus 100 ms; radio-features.md 3.5).
+// Only for a carrier RADIO_SQL_PEAK_FLOOR_DB or more over the receiver's floor (sql_floor, learned on idle polls,
+// rising RADIO_SQL_FLOOR_RISE_POLLS polls a dB): when that carrier goes or fades, its strength falls by more than
+// RADIO_SQL_PEAK_RSSI_DB in the same poll or the next, and the squelch closes as before
+#define RADIO_SQL_PEAK_RSSI_DB	3
+#define RADIO_SQL_PEAK_POLLS	16
+#define RADIO_SQL_PEAK_FLOOR_DB	10
+#define RADIO_SQL_FLOOR_RISE_POLLS	4
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
 #define RADIO_DMR_SQL_L1_DBM	(-112)
+// ... and level 1 at least this far above the floor the scan measured on the stops before (scan_floor): an uncalibrated
+// strength reading can sit above the scale with no signal at all (gotchas 17.4)
+#define RADIO_DMR_SQL_L1_FLOOR_DB	6
 // While APRS receive listens (aprs.md 5.3): a packet's tones at full deviation push the noise reading over the line
 // for a poll or two, and on a radio whose modem gates it, a closed squelch zeroes the receive audio, so a packet came apart (on air,
 // 2026-10-13). On the APRS frequency the squelch holds this many polls (300 ms) instead
@@ -80,6 +100,10 @@
 					// LC from the second complete superframe at worst: about 1.1 s from the retune)
 #define RADIO_SCAN_DMR_CARRIER_MS 150	// DMR: a carrier this recent still counts (direct mode: 30 ms on air in 60)
 #define RADIO_SCAN_DMR_SYNC_AGE_MS 400	// DMR: bursts this recent are sync (a superframe and a slot)
+#define RADIO_SCAN_AIR_PROBE_MS	700	// P25, NXDN: a carrier, waiting for a call of the channel's NAC or RAN (the engine
+					// starts at the retune; a P25 voice frame and its NID come every 180 ms)
+#define RADIO_SCAN_AIR_SYNC_MS	1500	// P25, NXDN: such a call heard, waiting for the field its squelch needs (a P25
+					// late entry's link control comes every 360 ms, an NXDN VCALL in each SACCH superframe)
 // Dual watch with a second receiver (board.rx2): how often its settings go again (the link drops repeats), how long
 // it may take to say it is on them, and how long after a failure to try it again (meanwhile the main receiver alternates)
 #define RADIO_RX2_REFRESH_MS	2000
@@ -163,6 +187,21 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_SATELLITE_TRACK,	// satellite mode: arg = enabled, arg2 = installed TLE record index
+	RREQ_SATELLITE_SCAN,	// satellite pass picker: arg = start/cancel
+#if CONFIG_SATELLITE_TLE
+	RREQ_SATELLITE_ARM,	// SO-50: explicitly transmit the two-second timer-arm tone
+#endif
+	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
+	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
+	RREQ_T3_DIAL,		// the digits a call through a gateway sends (CONFIG_DMR_TRUNK_GW): radio_req_t3_dial()
+	RREQ_P25_SET,		// radio_task.c: the pending P25 settings were copied (radio_p25_set_settings); applied here
+	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
+	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
+	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+	// New request types go above
+
+	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -242,6 +281,7 @@ typedef struct {
 	uint8_t base_squelch;		// squelch without the temporary change
 	bool temp_power;
 	bool temp_squelch;
+	bool squelch_save;		// a squelch set in the VFO: the radio's default, written by persist()
 	uint8_t base_bw;		// the channel's own bandwidth and tones, for undoing temporary changes
 	subtone_t base_rx_tone;
 	subtone_t base_tx_tone;
@@ -268,12 +308,17 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
+	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (close_need)
+	int16_t sql_floor;		// the receiver's floor, from idle polls (track_floor); INT16_MAX not known
 #if CONFIG_DMR
 	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
 	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)
 	uint8_t rssi_ring_pos;
 #endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
+#if CONFIG_APRS_RX
+	int8_t speaker_mute_out;	// last speaker_mute sent to the board, -1 = not yet
+#endif
 #if CONFIG_BCAST_FM
 	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
 	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet
@@ -286,11 +331,31 @@ typedef struct {
 	uint32_t led_now;
 	uint32_t deny_led_ms;		// a TX deny: red, green, red, green, red, green from here
 	bool deny_led;
+	bool deny_rx;			// FM: PTT refused as busy over a reception, which plays on while PTT is held
+	int8_t rx_open_out;		// last board.radio->rx_open(), -1 = not yet (here: fills the padding before wake_led_ms)
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
+#if CONFIG_AIR
+	// An air-framed mode (P25, NXDN; radio_air.h)
+	bool air_tx;			// a transmission runs in the engine (from prepare until it is done and cleared)
+	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
+#endif
+#if CONFIG_P25
+#if CONFIG_P25_TRUNK
+	bool p25_req;			// PTT on a trunked channel: a voice request waits for its grant
+	bool p25_talk;			// the transmission runs on the voice channel granted to us
+#endif
+#endif
+#if CONFIG_AIR_RAW
+	bool air_bench;			// the debug link's air interface bench has the modem (RREQ_AIR_BENCH)
+	bool bench_keyed;		// ... and the transmitter keyed for it (RREQ_AIR_TX)
+	uint16_t bench_max_ms;		// its cap
+	uint32_t bench_key_ms;		// when it keyed
+	uint8_t bench_seq;		// the latest bench request handled (radio_task.c waits for it)
+#endif
 
 	radio_settings_t set;		// the settings in effect
 	uint32_t activity_ms;		// last request, reception or transmission (battery save)
@@ -300,6 +365,12 @@ typedef struct {
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
+	// Zone scan, an FM stop about to hold on a signal that may be digital (scan_mixed): the FM stop, while the scan
+	// checks the digital channel of its frequency, and whether that check heard its mode's signal; then the FM stop
+	// the check heard none on, which holds when the scan goes back to it. SCAN_NO_POS: none
+	uint16_t scan_twin_fm;
+	uint16_t scan_fm_heard;
+	bool scan_twin_digital;
 #if CONFIG_DUAL_WATCH
 	bool rx2_on;			// the second receiver (board.rx2) holds the other channel; the main one stays on dual_sel
 	// Each channel's changes for now (P7), kept while the receiver is on the other one: a hop reloads the channel
@@ -328,7 +399,12 @@ typedef struct {
 	uint32_t burst_ms;		// start of the side-key burst
 	bool burst_keyed;		// the 1750 Hz burst keyed the transmitter (not PTT)
 	uint32_t burst_end_ms;		// the burst ends by itself at this time (RREQ_TONE_BURST arg2), 0 = no limit
-	uint32_t roger_ms;		// roger beep start, 0 = none
+	uint32_t roger_ms;		// start of the roger beep's current step (the end tone's, sigtone.h), 0 = none
+#if CONFIG_SIG_TONES
+	uint8_t roger_n, roger_i;	// its steps and the one sounding
+	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
+	beep_seg_t roger_seg[SIG_STEPS];
+#endif
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
@@ -361,8 +437,13 @@ typedef struct {
 	uint8_t dmr_wake_admits;	// the stack's wake_admits at the last tick (the permit tone for a short press)
 	uint8_t dmr_permit_seq;		// the stack's permit_seq at the last tick (the permit tone before keying)
 	uint8_t dmr_prev_state;		// radio_dmr_state_t at the last tick (beeps on changes)
+#if CONFIG_SIG_TONES
+	bool dmr_end_wait;		// our end tone waits for the audio path to open after the transmission
+	uint32_t dmr_end_ms;		// when it started waiting
+#endif
 	bool codec;			// the vocoder is present
 	bool dmr_running;		// the call stack has the modem
+	bool dmr_killed;		// settings t3_kill: no DMR at all (dmr-trunking.md 7.9)
 	bool dmr_keyed;			// board.radio->tx() armed the per-burst keying (until tx_off)
 	bool sfr_rpt;			// the channel's SFR repeater role has the modem (radio_sfr.c), not the call stack
 	bool sfr_denied;		// a repeater channel kept ordinary because the radio may not transmit or a scan
@@ -390,6 +471,7 @@ typedef struct {
 	bool hear_all_latch;
 	uint16_t latch_ch;
 	bool latch_vfo;
+	bool scan_hear_all;	// ... and carried by a scan (not dual watch) started with it on: on at every stop
 	// The focused row's target (RREQ_DMR_FOCUS) and the one-shot target PTT took from it: the talk target until
 	// one_shot_until (0 = while the call goes on), on channel one_shot_ch
 	uint32_t focus_id;
@@ -406,6 +488,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
 	uint8_t cw_phase;		// a CW ID: CW_* in radio_sm.c, 0 = not keying
@@ -419,6 +502,47 @@ typedef struct {
 #if CONFIG_SFR_CWID
 	radio_cwid_t cwid;		// the SFR repeater's ID schedule (the counts are in view.dmr)
 #endif
+#endif
+#if CONFIG_DMR_TRUNK
+	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on
+	bool t3_on;
+	bool t3_pending;		// a trunked channel was selected: start its system (t3s) at the next t3_tick
+	bool t3_tagged;			// the channel is a trunked one (channel_t.kind)
+	bool t3_ch_rx;			// and receive only (its tag): the system runs listen only from it
+	bool t3_monitor_set;		// the loaded system's own T3_OPT_MONITOR; digital monitor adds it while on (t3_monitor)
+	uint8_t t3_kv;			// codeplug_kv_serial() when t3s was loaded from the codeplug
+	uint8_t t3_fb;			// fallback (dmr-trunking.md 12): 0 off, 1 on the fallback channel, 2 probing
+	uint16_t t3_fb_number;		// the fallback channel, 0: none
+	uint32_t t3_hunt_ms;		// since when the engine has been hunting with no TSCC (0: it isn't)
+	uint32_t t3_probe_ms;		// on the fallback channel: when to look next; probing: until when
+	channel_t t3_fb_ch;
+	bool t3_both;			// on a control channel: both slots
+	bool t3_ptt_wait;		// waiting for our grant after a PTT-initiated call request
+	bool t3_als_keyed;		// keyed by an Ambient Listening call (6.6.2.6), not by the user
+	uint32_t t3_als_quiet_ms;	// unkeyed at T_ALS: the call ends once the terminator is out
+	uint8_t t3_stun_kept;		// settings t3_stun as last written for the system in use (0: not stunned)
+	uint32_t t3_sd_seen;		// the engine's short data count already given to the inbox
+	bool t3_polling;		// a poll from the menus is out (RREQ_T3_POLL): its outcome is counted
+	bool t3_talking;		// PTT went to the stack for a trunked call
+	uint32_t t3_ticks;		// the stack's tick count handed to the engine
+	uint32_t t3_slc_n;		// the stack's short LC count handed to the engine
+	bool t3_rx_off;			// the receiver is off: the engine sleeps (power save)
+	uint32_t t3_rx_off_at;
+	uint32_t t3_tx_end_ms;	// when our last transmission on the system ended, 0 = a burst was heard since
+	uint8_t t3_sent_report;	// the stack's word on our last burst list: 1 sent, 2 dropped, 0 none pending
+	uint8_t t3_slot;		// the slot of the last tick handed to it
+	uint8_t t3_at[2];		// the last tick flags (DMR_TICK_AT_*) of the CACH naming slot 1, 2
+	uint8_t t3_cc;			// the color code of the channel being listened to
+	uint8_t t3_send_left;		// the bursts the data source still has to give
+	uint8_t t3_send_n;		// bursts in t3_send_burst: a CSBK, or a UDT header and its blocks
+	bool t3_send_udt;
+	bool t3_sending;		// a burst list is with the stack: a retune would drop it, so it waits
+	bool t3_tune_held;		// a retune waiting for it: t3_tune_chan, t3_tune_slot, since t3_tune_ms
+	uint8_t t3_tune_slot;
+	t3_chan_t t3_tune_chan;
+	uint32_t t3_tune_ms;
+	uint8_t t3_send_burst[1 + T3_UDT_BLOCKS_MAX][T3_CSBK_BYTES];
+	uint32_t t3_now;		// the clock at the last t3_tick (for the data service's start, which has none)
 #endif
 #if CONFIG_DMR_ROAMING
 	roam_t roam;
@@ -439,20 +563,47 @@ typedef struct {
 	uint32_t em_cfg_serial;		// dmr_emergency_config_serial() the call stack was configured with
 #endif
 #if CONFIG_APRS
-	// APRS transmissions (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
+	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
+#endif
+#if CONFIG_APRS_AFSK
+	// APRS transmissions on FM (core/aprs, docs/spec/aprs.md 6): the radio leaves the channel for the APRS frequency
 	uint8_t aprs_phase;		// APRS_RF_* in radio_sm.c, 0 = not on the APRS frequency
 	uint32_t aprs_ms;		// start of the current phase (LISTEN: of the current slot)
 	uint32_t aprs_listen_ms;	// start of the wait for a clear channel
 	uint32_t aprs_rand;		// p-persistence
-	bool aprs_was_tx;		// our own transmission (not APRS) at the last poll: the "after PTT" trigger
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
+#if CONFIG_SATELLITE_TLE
+	bool satellite_session;
+	bool satellite_pending;
+	bool satellite_config_pending;
+	bool satellite_restore_config_pending;
+	bool satellite_saved_vfo;
+	uint8_t satellite_saved_vfo_index;
+	uint16_t satellite_saved_zone, satellite_saved_pos, satellite_saved_channel;
+	uint8_t satellite_saved_mode, satellite_saved_bw;
+	subtone_t satellite_saved_rx_tone, satellite_saved_tx_tone;
+	uint16_t satellite_profile_tx_tone_tenths;
+	uint32_t satellite_restore_rx_hz, satellite_restore_tx_hz;
+	radio_satellite_tracking_view_t satellite_view;
+	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
+	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
+#if CONFIG_FM_TX_TONES
+	bool satellite_arm_active;
+	uint32_t satellite_arm_end_ms;
+#endif
+#endif
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
 // first channel (or the VFO); FM receive. Every request notes the position and the VFO in the settings, and
 // radio_sm_poll re-reads the codeplug when codeplug_serial() moves
+#if CONFIG_DMR_TRUNK
+// The whole trunking view; view.t3 is its brief, made by radio_sm_t3_brief before the view is published
+extern radio_t3_view_t radio_t3v;
+void radio_sm_t3_brief(radio_sm_t *sm);
+#endif
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms);
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms);
 // Every RADIO_POLL_MS: status, squelch, audio, LEDs, TX time-out
@@ -469,6 +620,12 @@ uint8_t radio_sm_hotspot_power(uint8_t rf_level);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
+#if CONFIG_SATELLITE_TLE
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms);
+#endif
 
 // The view as the screens and the debug link get it: during a roaming survey visit (a few hundred ms on another
 // site, docs/spec/dmr-roaming.md 4.9) it still shows the site the radio returns to. radio_task.c applies it when it

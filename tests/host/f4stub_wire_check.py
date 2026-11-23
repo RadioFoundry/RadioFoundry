@@ -105,12 +105,12 @@ def main():
     erases = [int(x.split()[1]) for x in log.splitlines() if x.startswith("erase")]
     check(sorted(erases) == [3, 4, 5, 6, 7, 8, 9, 10, 11] and out[0xC0000:] == codec, "dm1701 merged image %s" % erases)
 
-    md_app = bytearray((i * 13 + 1) & 0xFF for i in range(0x08080000 - 0x0800C000 - 4))
+    md_app = bytearray((i * 13 + 1) & 0xFF for i in range(0x080E0000 - 0x0800C000 - 4))
     md_app[:4] = (0x2001FFFC).to_bytes(4, "little")
     out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image("md380", [(0x0800C000, bytes(md_app))], backup_dir=d),
                         board="md380")
-    check(res[0] == 5, "md380 install: sectors 3-7 %s" % (res,))
-    check(out[0x80000:] == bytes(flash[0x80000:]), "md380 codec sectors 8-11 untouched")
+    check(res[0] == 8, "md380 install: sectors 3-10 %s" % (res,))
+    check(out[0xE0000:] == bytes(flash[0xE0000:]), "md380 codec sector 11 untouched")
     check(out[0xC000:0xC000 + len(md_app)] == bytes(md_app), "md380 image in place")
 
     def reads(r, d):
@@ -194,7 +194,7 @@ def main():
     # Other wiring (f4stub's test profile): its board record reaches the engine (SPI2, mode 3, chip select PB12), then
     # an install in sectors 3-7
     f4stub.BOARDS[f4stub.TEST_BOARD] = f4stub.test_board()
-    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(f4stub.TEST_BOARD, [(0x0800C000, bytes(md_app))],
+    out, res, log = run(sim, bytes(flash), lambda r, d: r.write_image(f4stub.TEST_BOARD, [(0x0800C000, bytes(md_app[:0x74000 - 4]))],
                                                                       backup_dir=d), board=f4stub.TEST_BOARD)
     del f4stub.BOARDS[f4stub.TEST_BOARD]
     check("config 254 2 3 1C" in log, "test profile record decoded by the stub: %r" % log.splitlines()[:1])
