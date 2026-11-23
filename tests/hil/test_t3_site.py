@@ -545,7 +545,7 @@ def test_t3_pdata_pair(pytestconfig):
             if (view.get("t3.state"), view.get("t3.reg"), view.get("t3.rx_hz"), view.get("t3.tx_hz")) != (
                     "camped", "ok", str(rx_hz), str(tx_hz)):
                 skip("state", "both radios must be registered on the specified control channel")
-        if any(view.get("t3.dedicated_data") != "1" for view in views):
+        if any(r.link.view(["t3_roam"]).get("t3.dedicated_data") != "1" for r in (radio, peer)):
             skip("state", "select the dedicated packet-data profile on both test radios")
         assert views[0]["t3.syscode"] == views[1]["t3.syscode"], "radios are camped on different Tier III sites"
         own, other = (num(view, "t3.own_id") for view in views)
