@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors Safe writes to the board's data flash
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+//
+// Safe writes to the board's data flash
 // (docs/spec/settings-store.md 4): a sector rewrite goes through a journal (a copy of the new sector and a header
 // saying where it goes), so a power cut in the middle of the erase or the program is finished at the next boot instead
 // of leaving a half-erased codeplug sector. Shared by the codeplug editor and the open-firmware CPS shim. No RTOS here:

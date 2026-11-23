@@ -12,9 +12,9 @@ APP_BASE   := 0x08006000
 BOARD_T_NAME := AT-D578UV
 D578UV_DEFS ?=
 MCU_DEFS   += $(D578UV_DEFS)
-# The UI task's deepest chain (a quick key that opens the crash report's screen) is 1784 bytes here: with make
-# stack-check's overhead and margin, 532 words, 8 bytes to spare
-MCU_DEFS   += -DUI_TASK_STACK_WORDS=532
+# The UI task's deepest chain (a quick key that opens the satellite pass screen, down to a NAND read) is 1808 bytes
+# here: with make stack-check's overhead and margin, 538 words, 8 bytes to spare
+MCU_DEFS   += -DUI_TASK_STACK_WORDS=538
 # The start task's deepest chain (the satellite channel sync's zone write down to a NAND page move) is 2528 bytes:
 # with the overhead and margin, 716 words
 MCU_DEFS   += -DSTART_TASK_STACK=720

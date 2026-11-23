@@ -88,10 +88,10 @@ static const pa_keyup_cfg_t keyup_cfg = { .dead_pm = 563, .knee_us = 91, .slope_
 					  .pa_us = KEYUP_MAX_AHEAD_US, .ease_pm = 0 };
 #endif
 
-// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer goes to the receive LO and the receiver on; RF_TX_INTER comes LISTEN_LEAD_STEPS earlier, and
-// there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
-#define LISTEN_LEAD_STEPS	25u	// 4:0x12 bits 5-0, about 100 us steps: 2.5 ms
-#define LISTEN_LEAD_US		(LISTEN_LEAD_STEPS * 100u)
+// Receive the repeater's outbound between our bursts (the modem's tx_listen_split): after each burst the synthesizer
+// goes to the receive LO and the receiver on; RF_TX_INTER comes earlier (4:0x12, LISTEN_LEAD_STEPS over its value),
+// and there the synthesizer goes back to the carrier, lock detect is waited for, and the PA keys at the slot as before
+#define LISTEN_LEAD_STEPS	15u	// half symbols over the value 4:0x12 runs with (10 on the bench): about 1.56 ms
 #define LISTEN_LOCK_MAX_US	2000u
 
 // Voice SPI2 (hardware-md380.md 4.4): PB13 SCK, PB14 MISO, PB15 MOSI (AF5), chip select PIN_C5000_VCS
@@ -511,14 +511,23 @@ bool md380_rf_dmr_switch(bool tx)
 		}
 		r.dmr_tx_tuned = true;
 		if (back) {
-			// From the receive LO: lock detect before the PA, normally well inside the lead
+			// From the receive LO: lock detect before the PA, normally well inside the lead (about 60 us). A wait
+			// past the lead keys the PA late on a locked carrier; no lock at all sends nothing for this burst (never
+			// an unlocked carrier), and the next burst retunes
 			while (!PIN_READ(PIN_PLL_LD) && hal_micros() - t0 < LISTEN_LOCK_MAX_US) {
+			}
+			if (!PIN_READ(PIN_PLL_LD)) {
+				r.diag.pll_fails++;
+				r.rf_skipped++;
+				r.dmr_tx_tuned = false;
+				return false;
 			}
 		}
 	}
 	if (r.dmr_lead) {
-		// RF_TX_INTER came LISTEN_LEAD_US early: the PA at the slot, as without the lead
-		while (hal_micros() - t0 < LISTEN_LEAD_US) {
+		// RF_TX_INTER came the lead early: the PA at the slot, as without the lead
+		uint32_t lead_us = hrc5000_tx_lead_us(&r.lead);
+		while (hal_micros() - t0 < lead_us) {
 		}
 	}
 	pa_timer_start();	// the key-up points, then the PA drop

@@ -223,6 +223,33 @@ HRC_FLASHFUNC static void lost_check(const uint32_t before[4])
 	hrc_irq_restore(s);
 }
 
+#if CONFIG_AIR
+// The same for an air session or tap, kept apart from the engine's record: dmr.modem_stalls and dmr.modem_stuck count
+// the engine's recoveries only. The air poll set the copy up again (no half for 200 ms, modem-hrc7000.md 3.3): keep the
+// first one's PIC words, and unmask the modem sources again, in case a mask left set and not the chip stopped the halves
+static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
+static uint32_t air_lost_ms;
+static uint32_t air_lost_regs[4];
+
+HRC_FLASHFUNC static void air_lost_check(const uint32_t before[4])
+{
+	uint32_t n = AIR->st.copy_restarts;
+	if (n == air_lost_seen) {
+		return;
+	}
+	air_lost_seen = n;
+	if (air_lost_ms == 0) {
+		memcpy(air_lost_regs, before, sizeof air_lost_regs);
+		air_lost_ms = hal_millis() | 1u;
+	}
+	uint32_t s = hrc_irq_save();
+	if (active && lock_depth == 0) {
+		irqs_enable(true);
+	}
+	hrc_irq_restore(s);
+}
+#endif
+
 HRC_FLASHFUNC static void health(dmr_modem_health_t *h)
 {
 	h->stalls = eng.st.stalls;
@@ -258,7 +285,10 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 		}
 #if CONFIG_AIR
 		if (air_on) {
+			uint32_t pic[4];
+			pic_words(pic);
 			hrc7000_air_poll(AIR);	// the engine is halted, and its queue is the session's memory
+			air_lost_check(pic);
 			continue;
 		}
 #endif
@@ -529,6 +559,7 @@ HRC_FLASHFUNC static bool air_take(void)
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped
+	air_lost_seen = 0;		// the session's stats start at 0
 	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM);
 	return true;	// locked
 }
@@ -627,7 +658,9 @@ static bool air_rx_counts(air_rx_counts_t *c)
 	if (!air_on) {
 		return false;
 	}
-	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks };
+	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks,
+				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost_ms };
+	memcpy(c->lost_regs, air_lost_regs, sizeof c->lost_regs);
 	return true;
 }
 
@@ -696,6 +729,10 @@ HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
+#if CONFIG_AIR
+	air_lost_ms = 0;
+	memset(air_lost_regs, 0, sizeof air_lost_regs);
+#endif
 	unlock(NULL);
 	hrc_audio_pcm_gate_reset();	// its line is one of ours
 }

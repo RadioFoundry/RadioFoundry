@@ -165,7 +165,7 @@ class AprsSession:
                      "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                      "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"),
                      "digi": _n(v, "set.aprs_digi"), "power": _n(v, "set.aprs_power"),
-                     "ambiguity": _n(v, "set.pos_ambiguity")}
+                     "ambiguity": _n(v, "set.pos_ambiguity"), "mute": _n(v, "set.aprs_mute")}
         self.v0 = v
         self.expected_rf = 0
         self.message = False
@@ -248,7 +248,7 @@ class AprsSession:
         if {"lat", "lon"} & self.changed:
             L.aprs_set("lat", self.fixed[0])
             L.aprs_set("lon", self.fixed[1])
-        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power", "ambiguity"):
+        for f in ("ssid", "path", "via", "dmr_dst", "dmr_udt", "pos_src", "rx", "digi", "power", "ambiguity", "mute"):
             if f in self.changed:
                 L.aprs_set(f, k[f])
         if self.custom_hz is not None:
@@ -262,7 +262,8 @@ class AprsSession:
                 "pos_src": _n(v, "set.aprs_pos_src"), "dmr_dst": _n(v, "set.aprs_dmr_dst"),
                 "dmr_udt": _n(v, "set.aprs_dmr_udt"), "via": VIAS[v["set.aprs_via"]],
                 "path": PATHS.index(v["set.aprs_path"]), "rx": _n(v, "set.aprs_rx"), "digi": _n(v, "set.aprs_digi"),
-                "power": _n(v, "set.aprs_power"), "ambiguity": _n(v, "set.pos_ambiguity")}
+                "power": _n(v, "set.aprs_power"), "ambiguity": _n(v, "set.pos_ambiguity"),
+                "mute": _n(v, "set.aprs_mute")}
         assert back == k, f"APRS settings not restored: {back} != {k}"
 
 
@@ -374,11 +375,7 @@ def send_and_capture(radio, sdr_bench, s, send):
     for k in ("rx_hz", "mode", "zone_pos", "vfo"):
         assert core.get(k) == core0.get(k), f"{k}: {core0.get(k)} -> {core.get(k)}"
     assert ch.get("ch.rx_hz") == ch0.get("ch.rx_hz"), (ch0, ch)
-    if "fcs_bad" in res:
-        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
-    for seg in res.get("segments", []):
-        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
-              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
+    print_capture(res)
     ours = [f for f in res["frames"] if f["src"] == f"{s.call}-{s.ssid}"]
     for f in res["frames"]:
         print_frame(f)
@@ -390,6 +387,15 @@ def send_and_capture(radio, sdr_bench, s, send):
     assert f["fcs_ok"] and f["dst"] == tocall and f["digis"] == [], f
     assert f["control"] == 0x03 and f["pid"] == 0xF0, f
     return f
+
+
+def print_capture(res):
+    """The bench board's decode counts and the keyed segments it saw"""
+    if "fcs_bad" in res:
+        print(f"bench board: {res['decoded']} frames decoded, {res['fcs_bad']} with a bad FCS")
+    for seg in res.get("segments", []):
+        print(f"keyed {seg['t_start_s']:.2f}-{seg['t_end_s']:.2f} s, carrier {seg['carrier_hz']:+d} Hz, "
+              f"{seg['level_dbfs']} dBFS (floor {res.get('floor_dbfs')})")
 
 
 def print_frame(f):
@@ -597,14 +603,9 @@ def bench_frame(call, own, info=BENCH_RX_INFO):
     return src, [{"kind": "fsk", "hex": hexs, "bits": len(bits), "nrzi": True, "level": 1.0}]
 
 
-@pytest.mark.feature("aprs_rx")
-@pytest.mark.rf
-@pytest.mark.bench_service
-@pytest.mark.needs_switch("VFO_FM")
-def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
-    """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
-    --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
-    FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
+def _rx_on_air(radio, sdr_bench, pytestconfig, mute=False):
+    """The bench's frame on --fm-mhz, decoded in the FM VFO there (test_aprs_rx_on_air); mute: with Mute APRS audio
+    on, as the APRS frequency's speaker is silent"""
     _need_aprs(radio)
     if "APRS_RX" not in radio.features() or "VFO_FM" not in radio.features():
         skip("not_built", "built without APRS receive or the FM VFO")
@@ -622,6 +623,9 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
         L.vfo_set(hz)
         radio.wait_for(lambda v: v.get("rx_hz") == str(hz) and v.get("mode") == "fm", what="FM VFO")
         s.rx_setup(hz)
+        if mute:
+            s.set("mute", 1)
+            radio.wait_for(lambda v: v.get("set.aprs_mute") == "1", sections=("aprs_set",), what="APRS audio muted")
         radio.wait_for(lambda v: v.get("aprs.rx_listening") == "1", sections=("aprs",), what="APRS receiver on")
         v0 = _aprs(radio)
         with sdr_bench.lease():
@@ -640,6 +644,30 @@ def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
         assert _n(v, "aprs.rx_frames") == _n(v0, "aprs.rx_frames") + 1, f"one frame expected: {v}"
         assert _n(v, "aprs.rx_bad") == _n(v0, "aprs.rx_bad"), f"the frame was refused (rx_bad): {v}"
         assert _n(v, "aprs.stations") >= 1, f"the station isn't listed: {v}"
+
+
+
+
+@pytest.mark.feature("aprs_rx")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
+def test_aprs_rx_on_air(radio, sdr_bench, pytestconfig):
+    """One AX.25 UI frame (a position, from --callsign-7 or -11, not the radio's own call) in Bell 202 AFSK from the bench board's FM transmitter on
+    --fm-mhz: the radio, in the FM VFO there with APRS receive on that frequency, decodes it (aprs.rx_frames) with no
+    FCS error and lists the station. The radio doesn't transmit: beacons and the digipeater are off for the test."""
+    _rx_on_air(radio, sdr_bench, pytestconfig)
+
+
+@pytest.mark.feature("aprs_mute")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
+def test_aprs_rx_muted_on_air(radio, sdr_bench, pytestconfig):
+    """test_aprs_rx_on_air with Mute APRS audio on: the speaker is silent on the APRS frequency, and the frame is still
+    decoded (aprs.rx_frames). A board whose decoder reads the FM audio behind the speaker path needs the board's
+    speaker_mute for this (aprs.md 5.3)."""
+    _rx_on_air(radio, sdr_bench, pytestconfig, mute=True)
 
 
 @pytest.mark.feature("aprs_rx")

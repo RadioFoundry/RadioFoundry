@@ -12,6 +12,7 @@
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
+#include "text_edit.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "codeplug/codeplug_tag.h"
@@ -2327,12 +2328,15 @@ static bool text_key_fn(const input_event_t *ev)
 	if (dir != 0 && ev->gesture != GESTURE_UP) {
 		// Step the last character through the printable ones (the way in without a keypad); down past the space
 		// deletes it
-		if (text_len == 0)
+		if (text_len == 0) {
 			text_append('A');
-		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+		} else if (dir < 0 && text_buf[text_len - 1] == ' ') {
 			text_buf[--text_len] = 0;
-		else
+		} else if ((uint8_t)text_buf[text_len - 1] < 0x80) {
+			// a single-byte character: step it through the printable range
 			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		}
+		// a multi-byte last character (a Chinese name) is left whole: Up/Down does nothing to it
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -2355,8 +2359,12 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
 			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
-		if (text_len > 0)
-			text_buf[--text_len] = 0;
+		if (text_len > 0) {
+			// Drop the last character whole: three bytes for a Chinese name, one otherwise (a Latin-1
+			// or font glyph byte is one character too). text_edit_backspace() decides the length.
+			text_len = text_edit_backspace(text_buf, text_len);
+			text_buf[text_len] = 0;
+		}
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -6715,9 +6723,11 @@ static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms 
 static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 min"), TRN(VALUE_10_MIN, "10 min"),
 	TRN(VALUE_15_MIN, "15 min"), TRN(VALUE_30_MIN, "30 min") };
 #endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
 static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "Motorola"),
 	TRX(SET_VALUE_KEY_TYPE_ANYTONE, "Anytone") };
+#endif
 
 #if CONFIG_SIG_TONES
 // Signaling tones (core/radio/sigtone.h): where each sounds (sig_out_t). The reception's end and FM's start have no on
@@ -6826,11 +6836,13 @@ static const set_item_t s_talk[] = {
 		UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
 #endif
 };
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const set_item_t s_privacy[] = {
 	LIST(TRN(SET_LABEL_PRIVACY_KEY_TYPE, "Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	// the range follows the type (set_range)
 	NUMBER(TRN(SET_LABEL_PRIVACY_KEY, "Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),
 };
+#endif
 // The key lock's rules: when it locks by itself and what still works while locked
 static const set_item_t s_lock[] = {
 	LIST(TRN(SET_LABEL_AUTO_LOCK, "Auto lock"), "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
@@ -6972,7 +6984,12 @@ static const set_item_t s_advanced[] = {
 static const set_group_t groups[] = {
 	GROUP(TRN(SET_ROW_SOUND, "Sound"), s_sound), GROUP(TRN(SET_ROW_DISPLAY, "Display"), s_display),
 	GROUP_T(TRN(SET_ROW_TALK_LISTEN, "Talk & listen"), TRN(SET_TITLE_TALK_LISTEN, "Talk & Listen"), s_talk),
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 		GROUP(TRN(SET_ROW_PRIVACY, "Privacy"), s_privacy),
+#else
+		// Privacy compiled out: a row with no settings keeps the groups after it on their keys (settings_select)
+		{ TRN(SET_ROW_PRIVACY, "Privacy"), TRN(SET_ROW_PRIVACY, "Privacy"), NULL, 0 },
+#endif
 	GROUP(TRN(SET_ROW_LOCATION, "Location"), s_location), GROUP(TRN(SET_ROW_CONNECTIONS, "Connections"),
 		s_connections),
 	GROUP_T(TRN(SET_ROW_POWER_SAVING, "Power saving"), TRN(SET_TITLE_POWER_SAVING, "Power Saving"), s_power),
@@ -7088,11 +7105,21 @@ static void settings_item(uint16_t i, ui_item_t *it)
 {
 	str_copy(it->label, sizeof it->label, tr(groups[i].name));
 	item_num(it, (uint16_t)(i + 1u));
+#if !(CONFIG_DMR && CONFIG_DMR_PRIVACY)
+	if (groups[i].items == NULL)
+		it->flags |= UI_ITEM_DIM;	// the Privacy placeholder
+#endif
 }
 
 static void settings_select(uint16_t i, bool hold)
 {
 	(void)hold;
+#if !(CONFIG_DMR && CONFIG_DMR_PRIVACY)
+	if (groups[i].items == NULL) {	// the Privacy placeholder: dimmed, and OK says why instead of opening it
+		ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build"));
+		return;
+	}
+#endif
 	ui_push(SCR_GROUP, i);
 }
 

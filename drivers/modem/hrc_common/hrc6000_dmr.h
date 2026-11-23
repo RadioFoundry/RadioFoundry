@@ -164,6 +164,7 @@ typedef struct {
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
 	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (modem-hrc6000.md)
 	uint32_t tx_stalls;	// ... of those: while sending, the transmission dropped (a lost timeslot interrupt)
+	uint32_t hunt_flips;	// direct channel, bs_by_mode chip: 0x10 switched between direct and BS receive
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
 	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
 	uint32_t by_type[16];	// ... by 0x51 bits 7-4
@@ -243,6 +244,11 @@ typedef struct {
 	uint32_t tick;
 	uint32_t t_tick;	// now_us at the last timeslot interrupt
 	bool timing;		// timeslot interrupts are coming
+	bool hunt_bs;		// bs_by_mode chip on a direct channel: 0x10 now has ISRepeater set to hear BS sync
+	uint32_t t_hunt;	// now_us of the last hunt switch, or of the last burst taken
+	bool hunt_ext;		// this dwell was restarted once by a timeslot interrupt
+	bool bs_last;		// the last burst taken had BS sync: the first dwell after a transmission hears BS sync
+	bool hunt_tx;		// a transmission began: the first dwell after it and its answer slot is still to choose
 	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
 	uint8_t ctl_next;	// 0x41 written for the slot after the current one
 	uint8_t ctl_now;	// ... and the one for the slot now starting
@@ -255,6 +261,11 @@ typedef struct {
 	uint8_t slc_last[5];	// the short LC bytes last read (a new one is reported when they change)
 	uint32_t bs_tick;	// tick of the last BS-sync burst heard
 	bool rmo_seen;
+	uint32_t bs_slot;	// slot of the last BS-sync burst taken (bs_slot_valid)
+	bool bs_slot_valid;
+	uint8_t bs_tc;		// its CACH TC bit
+	uint8_t bs_run;		// BS-sync bursts in slots in a row with the TC alternating, up to CACH_RUN
+	bool cach_seen;		// a run of CACH_RUN since the timing was acquired: a CACH is on air
 
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
@@ -324,6 +335,7 @@ typedef struct {
 	int8_t tx_ts;
 	uint8_t tx_access;
 	bool tx_listen;		// receive in the slots between our bursts (hrc6000_dmr_tx_listen)
+	bool tx_master;		// this transmission's bursts keep the timing it started with (0x40 MasterMode)
 	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
 	uint32_t tap_reports;	// st.rc_reports at that read: one since means the chip reported this burst's RC already
 	uint8_t tx_phase;	// phase (tick & 1) of our slots

@@ -51,7 +51,8 @@ typedef struct {
 	bool refuse_tx;		// tx_begin returns false
 	bool refuse_start;	// start returns false (a board whose modem is not in DMR mode)
 	bool reject_next;	// send DMR_EV_TX_REJECTED at the next slot
-	bool repeater;		// emit slot ticks with the slot number alternating (a repeater's CACH)
+	bool repeater;		// on air: slot ticks with the slot number alternating (its CACH) and, while we don't
+				// transmit, its idle burst (BS sync, our CC) in every slot: a real repeater's bursts
 	uint8_t at_busy;	// repeater ticks: bit 0 / 1 = the CACH naming slot 1 / 2 has AT busy (flags known)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
 	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
@@ -59,10 +60,11 @@ typedef struct {
 				// not (the HR_C6000 engine keeps the timing it last had)
 	bool align_needs_repeater;	// an aligned start waits for repeater ticks; DMR_EV_TX_REJECTED, then
 					// DMR_EV_TX_DONE, after 50 slots
-	bool listen_bursts;	// the repeater's idle burst (BS sync) in every slot while it is on; while transmitting,
-				// only after tx_listen and in the slots between ours
+	bool listen_bursts;	// the repeater's idle bursts heard while transmitting too: after tx_listen, in the slots
+				// between ours
+	bool ticks_only;	// repeater: its slot numbers but none of its bursts (a modem's slot labels from noise, issue 721)
 	bool free_ticks;	// slot numbers alternate with the repeater down too (the modem's own timing, held)
-	bool listen_other_cc;	// listen_bursts carry another color code (a neighbor's repeater; no CC filter here)
+	bool listen_other_cc;	// the repeater's bursts carry another color code (a neighbor's repeater; no CC filter here)
 	bool lose_own_csbk;	// a CSBK begun on DMR_TIMING_ASAP or ALIGNED never goes on air: TX done, no slot started
 	unsigned lose_next;	// this many next CSBKs never go on air, whatever their timing
 	bool no_split_listen;	// tx_listen_split refused (the radio's RF can't retune between bursts)

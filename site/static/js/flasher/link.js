@@ -22,7 +22,7 @@ export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ u
 // it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
+export const CMD = { PING: 0x01, VERSION: 0x02, GET_VIEW: 0x09, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 
