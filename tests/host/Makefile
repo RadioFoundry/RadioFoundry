@@ -479,6 +479,10 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
+# The mic gain and peak limiter before a vocoder's encoder (drivers/audio/miclimit): DMR's
+TESTS   += miclimitTest
+miclimitTest: miclimitTest.c $(ROOT)/drivers/audio/miclimit/miclimit.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclimitTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -815,7 +819,8 @@ run-aes: dmrAesTest
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest
-micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
+micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
+             $(ROOT)/drivers/audio/miclimit/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
@@ -900,12 +905,13 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
+run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest miclimitTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./ambeVoiceCaptureTest
 	./sigToneTest
 	./micGainTest
+	./miclimitTest
 	./refTrimTest
 	./paKeyupTest
 	./paSweepTest
