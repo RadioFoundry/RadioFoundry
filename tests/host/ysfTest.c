@@ -12,6 +12,7 @@
 #include "ysf/ysf_id.h"
 #include "dmr/ambe/ambeFec.h"
 #include "air/air_syms.h"
+#include "fec/crc16.h"
 
 static int failures, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -72,7 +73,7 @@ static void testReference(void)
 	for (uint16_t i = 0; i < 160; i++)
 		pn_ok &= ysf_pn(i) == ((pn[i / 8] >> (7 - i % 8)) & 1);
 	CHECK(pn_ok, "the whitening sequence");
-	CHECK(ysf_crc((const uint8_t *)"123456789", 9) == (uint16_t)~0x31C3, "the CRC-16 check value");
+	CHECK(fec_crc_ccitt((const uint8_t *)"123456789", 9) == (uint16_t)~0x31C3, "the CRC-16 check value");
 
 	for (uint8_t k = 0; k < 2; k++) {
 		memset(frame, 0, sizeof frame);

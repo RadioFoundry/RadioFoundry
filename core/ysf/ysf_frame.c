@@ -8,6 +8,7 @@
 
 #include "../air/air_syms.h"
 #include "../fec/conv.h"
+#include "../fec/crc16.h"
 
 const uint8_t ysf_sync[5] = { 0xD4, 0x71, 0xC9, 0x63, 0x4D };
 
@@ -61,21 +62,10 @@ static void whiten(uint8_t *p, uint16_t nbits)
 }
 
 // ── CRC-16 (ysf.md 3.2): x^16 + x^12 + x^5 + 1, register cleared, the result inverted, sent high byte first ──
-uint16_t ysf_crc(const uint8_t *p, uint16_t len)
-{
-	uint16_t r = 0;
-
-	while (len--) {
-		r ^= (uint16_t)(*p++ << 8);
-		for (uint8_t k = 0; k < 8; k++)
-			r = (r & 0x8000u) ? (uint16_t)((r << 1) ^ 0x1021u) : (uint16_t)(r << 1);
-	}
-	return (uint16_t)~r;
-}
 
 static void crc_append(uint8_t *p, uint16_t len)
 {
-	uint16_t c = ysf_crc(p, len);
+	uint16_t c = fec_crc_ccitt(p, len);
 
 	p[len] = (uint8_t)(c >> 8);
 	p[len + 1] = (uint8_t)c;
@@ -83,7 +73,7 @@ static void crc_append(uint8_t *p, uint16_t len)
 
 static bool crc_ok(const uint8_t *p, uint16_t len)
 {
-	uint16_t c = ysf_crc(p, len);
+	uint16_t c = fec_crc_ccitt(p, len);
 
 	return p[len] == (uint8_t)(c >> 8) && p[len + 1] == (uint8_t)c;
 }

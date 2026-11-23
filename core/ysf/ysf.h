@@ -94,7 +94,6 @@ void ysf_vch_put(uint8_t *frame, uint8_t n, const uint8_t bits[AMBE_PARAM_BITS])
 int ysf_vch_get(const uint8_t *hard, const int8_t *soft, uint8_t n, uint8_t bits[AMBE_PARAM_BITS]);
 
 // The parts of the codec, for tests and tools
-uint16_t ysf_crc(const uint8_t *p, uint16_t len);	// CRC-16 as the channels append it
 uint8_t ysf_pn(uint16_t i);				// the whitening sequence's bit i
 extern const uint8_t ysf_sync[5];
 
