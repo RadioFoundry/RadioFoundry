@@ -12,13 +12,23 @@
 #include "hal_time.h"
 #include "modem/sct/sct_host.h"
 #include "modem/sct/sct_dmr.h"
+#if CONFIG_AIR
+#include "air/air_tap.h"
+#endif
 #include "FreeRTOS.h"
 #include "semphr.h"
 #include "task.h"
 
 #if CONFIG_DMR
 
+// With P25 or NXDN the task also runs the air tap's poll, and the framer and the mode's receive hooks under it: an
+// NXDN call's start looks its scrambler key up in the codeplug, down to a NAND read's lock, 1520 bytes at worst (make
+// stack-check). With the overhead and margin, 466 words, 8 bytes to spare
+#if CONFIG_AIR
+#define MODEM_TASK_STACK	466
+#else
 #define MODEM_TASK_STACK	288
+#endif
 #define MODEM_TASK_PRIORITY	(configMAX_PRIORITIES - 2)
 #define MODEM_POLL_MS		2
 // The chip answers about 2.15 s after the boot block (measured at HOBIB on a radio): 2 s gave up just before it
@@ -459,20 +469,41 @@ static void on_packet(const uint8_t *pkt, uint16_t len, void *ctx)
 	sct_dmr_packet(pkt, len, hal_millis());
 }
 
+#if CONFIG_AIR
+void d578uv_modem_lock(void)
+{
+	port_lock(NULL);
+}
+
+void d578uv_modem_unlock(void)
+{
+	port_unlock(NULL);
+}
+#endif
+
+// Without the boot block the task runs only for the air tap (P25 and NXDN receive need no baseband)
 static void modem_task(void *arg)
 {
-	(void)arg;
-	boot_result = sct_host_boot(&host, &rx, BOOT_TIMEOUT_MS);
-	booted = boot_result == SCT_BOOT_OK;
-	boot_done = true;
-	while (!booted)
+	bool block = arg != NULL;
+
+	if (block) {
+		boot_result = sct_host_boot(&host, &rx, BOOT_TIMEOUT_MS);
+		booted = boot_result == SCT_BOOT_OK;
+		boot_done = true;
+	}
+	while (!booted && !CONFIG_AIR)
 		vTaskDelay(portMAX_DELAY);	// FM only: nothing to poll
 	for (;;) {
-		port_lock(NULL);
-		sct_host_poll(&host, &rx, on_packet, NULL);
-		port_unlock(NULL);
-		sct_dmr_poll(hal_millis());
-		ident_step(hal_millis());
+		if (booted) {
+			port_lock(NULL);
+			sct_host_poll(&host, &rx, on_packet, NULL);
+			port_unlock(NULL);
+			sct_dmr_poll(hal_millis());
+			ident_step(hal_millis());
+		}
+#if CONFIG_AIR
+		air_tap_poll();		// the samples of an open P25 or NXDN session (rxtap_d578uv.c)
+#endif
 		vTaskDelay(pdMS_TO_TICKS(MODEM_POLL_MS));
 	}
 }
@@ -539,17 +570,21 @@ bool d578uv_modem_field(uint8_t type, uint8_t id, uint32_t *val, bool write)
 
 bool d578uv_modem_init(void)
 {
+	bool block = crc32(__codec_slot, SCT_BOOT_BLOCK_BYTES) == BOOT_BLOCK_CRC32;
+
 	sct_dmr_init(&port);
-	if (crc32(__codec_slot, SCT_BOOT_BLOCK_BYTES) != BOOT_BLOCK_CRC32) {
+	if (!block) {
 		boot_result = SCT_BOOT_NO_BLOCK;
 		boot_done = true;
-		return false;
+		if (!CONFIG_AIR)
+			return false;
+	} else {
+		cal_values();
 	}
-	cal_values();
 	lock = xSemaphoreCreateRecursiveMutex();
 	field_mutex = xSemaphoreCreateMutex();
-	xTaskCreate(modem_task, "modem", MODEM_TASK_STACK, NULL, MODEM_TASK_PRIORITY, NULL);
-	return true;
+	xTaskCreate(modem_task, "modem", MODEM_TASK_STACK, block ? (void *)1 : NULL, MODEM_TASK_PRIORITY, NULL);
+	return block;
 }
 
 // 2, ready with the phase reversed: with the RF chip's DMR AF output (inverted below 300 MHz, qa4818.h), that is the

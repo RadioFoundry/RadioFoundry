@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT-D578UV audio synthesized on the MCU and fed to the RF chip's audio input: DTMF,
-// and APRS's AFSK (hal_afsk.h transmit). TIM4 CH4 (the GD32 manual's TIMER3 CH3) runs PB9 as an 8-bit PWM (period 256
-// at the core clock, about 470 kHz); TIM5's (TIMER4's) update interrupt, about 26.1 kHz, writes the next duty from
-// 16-bit phase accumulators and a quarter sine table. DTMF: the sum of the two sines, the low group at 39/63 of the
-// high group's amplitude, a twist of about 4.2 dB. AFSK: one tone, phase continuous across the symbols (tone_synth.h;
-// the core's modulator divides in 64 bits per sample, too slow for this interrupt). The radio code sets the RF chip up
-// for its audio input pin before either starts here.
+// APRS's AFSK (hal_afsk.h transmit), and P25 and NXDN transmit (the soft modem's samples, from a ring). TIM4 CH4 (the
+// GD32 manual's TIMER3 CH3) runs PB9 as an 8-bit PWM (period 256 at the core clock, about 470 kHz); TIM5's (TIMER4's)
+// update interrupt, about 26.1 kHz, writes the next duty from 16-bit phase accumulators and a quarter sine table. DTMF:
+// the sum of the two sines, the low group at 39/63 of the high group's amplitude, a twist of about 4.2 dB. AFSK: one
+// tone, phase continuous across the symbols (tone_synth.h; the core's modulator divides in 64 bits per sample, too slow
+// for this interrupt). The radio code sets the RF chip up for its audio input pin before any starts here.
+//
+// Air transmit (CONFIG_AIR): the interrupt runs at the soft modem's rate and takes one sample a tick from a ring the
+// transmit tap fills (rxtap_d578uv.c), holding the last when it runs dry.
 #include "d578uv.h"
 #include "config.h"
 #include "pins.h"
 #include "mcu_io.h"
 
-#if CONFIG_DTMF || CONFIG_APRS
+#if CONFIG_DTMF || CONFIG_APRS || CONFIG_AIR
 #include "tone_synth.h"
 #if CONFIG_APRS
 #include "aprs/afsk.h"
@@ -35,6 +38,16 @@
 static volatile uint16_t phase_lo, phase_hi, step_lo, step_hi;
 static volatile bool afsk_on;
 
+#if CONFIG_AIR
+// The ring of PWM duties (the transmit tap's), read by the interrupt from head, written from tail
+static uint8_t *air_ring;
+static uint16_t air_mask;
+static volatile uint16_t air_head, air_tail;
+static volatile bool air_on;
+static uint8_t air_last;
+static int32_t air_gain;	// Q15
+#endif
+
 #if CONFIG_APRS
 // The tones' PWM amplitude at the core's level 50 (its nominal deviation). Measured off air (UHF, 2026-11-13): 90
 // gave a 2.0 kHz peak, 108 2.34 kHz, 126 2.74 kHz, with the twist the same (no clipping). Full scale is 127, so the
@@ -49,6 +62,18 @@ static volatile bool afsk_busy;
 void MCU_TIM5_HANDLER(void)
 {
 	MCU_TIM_SR(SAMPLE_TIMER) = 0;
+#if CONFIG_AIR
+	if (air_on) {
+		uint16_t h = air_head;
+
+		if (h != air_tail) {
+			air_last = air_ring[h];
+			air_head = (uint16_t)((h + 1u) & air_mask);
+		}
+		MCU_TIM_CCR4(PWM_TIMER) = air_last;
+		return;
+	}
+#endif
 #if CONFIG_APRS
 	if (afsk_on) {
 		int32_t d = afsk_busy ? afsk_tx_next(&afsk) : -1;
@@ -110,10 +135,65 @@ void d578uv_dtmf_start(uint16_t low_hz, uint16_t high_hz)
 }
 #endif
 
+#if CONFIG_AIR
+void d578uv_air_tx_ring(uint8_t *buf, uint16_t len, uint16_t gain_q15)
+{
+	air_on = false;
+	air_gain = gain_q15;
+	air_ring = buf;
+	air_mask = (uint16_t)(len - 1u);
+	air_head = air_tail = 0;
+	air_last = PWM_PERIOD / 2u;
+}
+
+// 256 counts a duty step: the duty is 128 + s x gain / 256, rounded, within 1..255
+uint16_t d578uv_air_tx_put(const int16_t *s, uint16_t n)
+{
+	uint16_t t = air_tail, room = (uint16_t)((air_head - t - 1u) & air_mask), k;
+
+	if (air_ring == NULL) {
+		return 0;
+	}
+	if (n > room) {
+		n = room;
+	}
+	for (k = 0; k < n; k++) {
+		int32_t d = 128 + (((s[k] * air_gain >> 15) + 128) >> 8);
+
+		air_ring[t] = (uint8_t)(d < 1 ? 1 : d > 255 ? 255 : d);
+		t = (uint16_t)((t + 1u) & air_mask);
+	}
+	air_tail = t;
+	return n;
+}
+
+bool d578uv_air_tx_start(uint32_t rate_hz)
+{
+	if (air_ring == NULL || rate_hz == 0) {
+		return false;
+	}
+	synth_start();
+	afsk_on = false;
+	MCU_TIM_ARR(SAMPLE_TIMER) = SystemCoreClock / rate_hz - 1u;
+	air_on = true;
+	NVIC_EnableIRQ(MCU_TIM5_IRQn);
+	return true;
+}
+
+void d578uv_air_tx_stop(void)
+{
+	d578uv_tone_stop();
+	air_ring = NULL;
+}
+#endif
+
 // Plain register writes (d578uv_rf_safe calls it): both timers stopped, PB9 back to analog between tones
 void d578uv_tone_stop(void)
 {
 	afsk_on = false;
+#if CONFIG_AIR
+	air_on = false;
+#endif
 #if CONFIG_APRS
 	afsk_busy = false;
 #endif

@@ -22,7 +22,7 @@
 #define BT_KEY_MS		150u	// a key event holds its key bit this long, past the core's debounce
 
 static bt_at_t bt;
-static uint32_t start_ms, key_ms, key_seen;
+static uint32_t start_ms, key_ms, key_seen, offs;
 static uint8_t probes, key_bit_held = 0xFF;
 
 void MCU_UART4_HANDLER(void)
@@ -101,6 +101,20 @@ void d578uv_bt_stats(hal_bt_stats_t *st)
 	st->keys = bt.key_events;
 	st->lines = bt.lines;
 	st->errors = bt.errors;
+	st->links = bt.links;
+	st->offs = offs;
+}
+
+// The radio powers the module off for a P25 or NXDN transmission (radio_d578uv.c, tx) only while it serves no link:
+// with one up, the key fob or hand mic holding PTT would drop and end the transmission. A single byte read, no lock
+bool d578uv_bt_linked(void)
+{
+	return bt.links != 0;
+}
+
+void d578uv_bt_off(void)
+{
+	offs++;
 }
 
 #endif

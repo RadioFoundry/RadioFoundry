@@ -2,11 +2,13 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The soft modem's receiver (air_softmodem.h, docs/spec/air-interface.md 6).
 //
-// Input samples -> minus the tap's offset -> polyphase interpolator to five samples per symbol -> integrate and
-// dump -> the line (a ring of the last 28 symbols of filtered samples). On every filtered sample the newest symbol
-// spaced samples in the line are fitted to each sync pattern (sample = offset + level x pattern); where the fit's
-// error passes through a minimum, that sample is a symbol center, and the fit's level and offset are the signal's.
-// Symbols leave from the far end of the line, so a sync is sampled on the timing it gave.
+// Input samples (a slope tap's integrated first) -> minus the tap's offset -> polyphase interpolator to five samples
+// per symbol -> integrate and dump -> the line (a ring of the last 28 symbols of filtered samples). On every filtered
+// sample the newest symbol spaced samples in the line are fitted to each sync pattern (sample = offset + level x
+// pattern); where the fit's error passes through a minimum, that sample is a symbol center, and the fit's level and
+// offset are the signal's.
+// Symbols leave from the far end of the line, so a sync is sampled on the timing it gave; a slope tap's are sliced
+// from the sums before and after them there (TWO_K, below).
 //
 // The cost is per filtered sample (24,000 a second at 4800 symbols), so that path is kept short (../dsp/fxp.h has
 // the rules and the kernels): the fit runs only where a gate of one bit per symbol says a pattern can be there, the
@@ -17,6 +19,10 @@
 
 #include "../dsp/fxp.h"
 #include "air_syms.h"
+
+// The per-sample path: the linker may place hot code where the processor runs it fastest (a GD32F30x runs only its
+// first 256 KB of flash without wait states)
+#define SM_HOT	__attribute__((hot, noinline))
 
 #define SPS		AIR_SOFTMODEM_SPS
 #define LINE		AIR_SOFTMODEM_LINE
@@ -37,6 +43,35 @@
 #define TRACK_SHIFT_MAX	10
 #define HOLE_US		2000			// input time off by more: samples were lost
 #define GAIN_MAX	(1u << 20)		// 16 line units per summed count
+// A slope tap: the leak's range (the sum stays in 32 bits: 2^16 x 2^LEAK_MAX), the offset average ahead of the
+// integrator (2^10 samples: an offset left in is multiplied by up to 2^leak; from an open its window starts at 2^4
+// and doubles every 256 samples, so a signal from the first sample is not lost to a 1 s settling), the baseline's
+// time constant (2^BASE_SHIFT symbols: fast against the leak's, about 30 symbols at 4800 a second and 20 Hz, and
+// against the slow wander noise leaves after the integrator; 4 slices better than 8 in tests/host/airTapTest.c) and
+// its limit (a level and a half)
+#define LEAK_MIN	3
+#define LEAK_MAX	14
+#define SLOPE_DC_SHIFT	10
+#define SLOPE_DC_SHIFT_MIN 4
+#define BASE_SHIFT	2
+#define BASE_MAX	((AIR_SOFT_OUTER / 2) * 16)
+// A slope tap's symbols are sliced mostly (TWO_MIX sixteenths) from both halves of the integral: the sum up to the
+// symbol (its leak's corner moved up to a 64th of the symbol rate) and, less, the sum from it to TWO_K symbols ahead
+// (the line holds them), averaged. The noise the integrator lifts below that corner comes from two independent halves
+// and the corner takes it, while the signal's low end, which a one-sided corner that high would take with it, adds
+// up. The rest is the line's one-sided sum, as the sync fit sees it: it keeps more of the signal's low end, and its
+// share holds a symbol whose look-ahead runs past the signal's end. On a slope tap's captures (most of the noise left
+// under 200 Hz) the mix halves the symbol errors; with the noise flat in deviation (tests/host/airTapTest.c) it
+// changes little either way, where the halves alone lose a little. two_q: the corner's decay a symbol, q^j
+// (q = e^(-2 pi / 64)) x 2^14
+#define TWO_K		26
+static const int16_t two_q[TWO_K] = {
+	16384, 14852, 13463, 12204, 11063, 10029, 9091, 8241, 7470, 6772, 6138, 5564, 5044,
+	4572, 4145, 3757, 3406, 3087, 2799, 2537, 2300, 2085, 1890, 1713, 1553, 1408,
+};
+_Static_assert(TWO_K * SPS <= EMIT_AT, "the symbols ahead are in the line when one leaves");
+#define TWO_Q		14852
+#define TWO_MIX		12
 // The gate (filtered, below): the steps of four levels or more between a pattern's neighboring symbols, as bits.
 // A fit with two of them missing (a step the wrong way, or none) is over Q_MAX whatever the rest does: the two cost
 // 10.7 levels squared at least, 256 x 10.7 / 24 symbols = 113. So a pattern is fitted only with one missing at most
@@ -83,7 +118,7 @@ static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, ui
 
 	// Below 8 kHz a 4800 symbol/s signal does not fit; above twice the filtered rate the interpolator (which does
 	// not filter for the lower rate) would fold noise in
-	if (!p->sym_rate || rate_hz < 8000 || rate_hz > 2 * out || rate_hz < (uint32_t)p->sym_rate * 5 / 3)
+	if (!p->sym_rate || rate_hz < 8000 || rate_hz > 2 * out || rate_hz > 48000 || rate_hz < (uint32_t)p->sym_rate * 5 / 3)
 		return false;
 	g = gcd32(rate_hz, out);
 	if (rate_hz / g + out / g > 0xFFFF)
@@ -93,9 +128,28 @@ static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, ui
 	return true;
 }
 
+uint8_t air_softmodem_leak(uint32_t rate_hz, uint16_t slope_hz, uint16_t *corner_hz)
+{
+	// The leak of 1 / 2^k a sample puts the corner at rate / (2 pi 2^k): 2^k nearest rate / (2 pi slope), by ratio
+	uint64_t t1000;			// rate / (2 pi slope), x 1000 (once per open: no per-sample cost)
+	uint8_t k = 0;
+
+	if (!slope_hz || !rate_hz)
+		return 0;
+	t1000 = (uint64_t)rate_hz * 1000000u / (6283u * (uint32_t)slope_hz);
+	while (k < LEAK_MAX && ((uint64_t)1000u << (k + 1)) * 1000u <= t1000 * 1414u)
+		k++;
+	if (k < LEAK_MIN)
+		return 0;
+	if (corner_hz)
+		*corner_hz = (uint16_t)(((uint64_t)rate_hz * 1000u) / ((uint64_t)6283u << k));
+	return k;
+}
+
 uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 {
-	uint16_t step, den;
+	uint16_t step, den, lo;
+	uint32_t below;
 
 	if (!bb || !bb->rx_start || !bb->rx_read || bb->rx_channels != 1)
 		return 0;		// a split band (two channels) is not written
@@ -107,7 +161,22 @@ uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 	// levels have no room for a sagging baseline)
 	if (bb->rx_hi_hz < (uint32_t)p->sym_rate * 11 / 20)
 		return 0;
-	if (bb->rx_lo_hz > p->sym_rate / (p->levels == 4 ? 100 : 20))
+	lo = bb->rx_lo_hz;
+	below = p->levels == 4 ? 100 : 20;
+	if (bb->rx_slope_hz) {
+		// A slope tap is flat after the integrator down to the leak's corner or the tap's own, whichever is higher.
+		// The decision-directed baseline takes back what that high-pass leaves between syncs, so a 4-level profile
+		// needs the band down to a fiftieth of the symbol rate, not a hundredth (tests/host/airTapTest.c)
+		uint16_t corner = 0;
+
+		if (!air_softmodem_leak(bb->rx_rate_hz, bb->rx_slope_hz, &corner))
+			return 0;
+		if (corner > lo)
+			lo = corner;
+		if (p->levels == 4)
+			below = 50;
+	}
+	if (lo > p->sym_rate / below)
 		return 0;
 	return AIR_FIT_RX | AIR_FIT_SOFT;
 }
@@ -139,25 +208,34 @@ void air_softmodem_rx_reset(air_softmodem_t *m)
 	m->sync_wait = 0;
 	m->gap = true;
 	m->n = 0;
+	m->integ = 0;
+	m->base = 0;
+	m->two_past = 0;
 }
 
 bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t rate_hz, uint16_t counts_per_khz,
-			   air_softmodem_out_t out, void *ctx)
+			   uint16_t slope_hz, air_softmodem_out_t out, void *ctx)
 {
 	uint16_t step, den;
+	uint8_t leak = air_softmodem_leak(rate_hz, slope_hz, NULL);
 
-	if ((p->levels != 2 && p->levels != 4) || !rate_ok(p, rate_hz, &step, &den))
+	if ((p->levels != 2 && p->levels != 4) || !rate_ok(p, rate_hz, &step, &den) || (slope_hz && !leak))
 		return false;
 	memset(m, 0, sizeof *m);
 	m->p = p;
 	m->out = out;
 	m->ctx = ctx;
-	m->rate_hz = rate_hz;
+	m->rate_hz = (uint16_t)rate_hz;
 	m->step = step;
 	m->den = den;
 	// The integrate and dump over a symbol is the receive filter the C4FM pulse is made for, and close to a matched
 	// one for a 2-level square pulse. A root raised cosine or Gaussian pulse gets a shorter one: it only smooths
 	m->box = (p->shape == AIR_SHAPE_C4FM || p->shape == AIR_SHAPE_NRZ) ? SPS : 3;
+	if (leak) {
+		m->leak = leak;
+		m->slope_shift = SLOPE_DC_SHIFT_MIN;	// the tap's offset is learned once a session: a hole keeps it
+		counts_per_khz = 0;	// the integrator's gain is not the tap's: the level is tracked
+	}
 	m->gain_known = counts_per_khz != 0;
 	if (m->gain_known) {
 		// The outer symbol (dev_outer_hz) to 3 x LINE_LVL, after the sum over box samples
@@ -201,14 +279,14 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 	return true;
 }
 
-static int line_back(const air_softmodem_t *m, unsigned back)
+SM_HOT static int line_back(const air_softmodem_t *m, unsigned back)
 {
 	int at = (int)m->line_at - 1 - (int)back;
 
 	return m->line[at < 0 ? at + LINE : at];
 }
 
-static void flush(air_softmodem_t *m)
+SM_HOT static void flush(air_softmodem_t *m)
 {
 	uint8_t hard[AIR_SOFTMODEM_CHUNK / 4];
 	air_chunk_t c;
@@ -234,9 +312,20 @@ static void flush(air_softmodem_t *m)
 	m->out(&c, m->ctx);
 }
 
+// A slope tap's leak over a symbol, x 2^14: e^-a, a = (input samples a symbol) / 2^leak, by its series to the cube
+// (a is 0.32 at most: rx_fit keeps the leak's corner to a twentieth of the symbol rate). Once a symbol, not kept:
+// the state has no room to spare (air_softmodem_t)
+static int32_t two_rs(const air_softmodem_t *m)
+{
+	int32_t a = (int32_t)(((uint32_t)m->rate_hz << 14) / ((uint32_t)m->p->sym_rate << m->leak));
+	int32_t a2 = (a * a) >> 14, a3 = (a2 * a) >> 14;
+
+	return fxp_clamp(16384 - a + a2 / 2 - a3 / 6, 0, 16384);
+}
+
 // The symbol whose center is due samples back leaves the line. t_us: the time of the input sample in hand, less the
 // filters' delay
-static void emit(air_softmodem_t *m, uint32_t t_us)
+SM_HOT static void emit(air_softmodem_t *m, uint32_t t_us)
 {
 	int32_t x = line_back(m, m->due) * 16, v;
 	bool sync;
@@ -246,7 +335,41 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 		x += m->sub * (line_back(m, m->due - 1u) - line_back(m, m->due));
 	else if (m->sub < 0)
 		x -= m->sub * (line_back(m, m->due + 1u) - line_back(m, m->due));
-	v = ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+	if (m->leak) {
+		// The two halves (TWO_K above), x16 line units. The line's symbols are sums at the leak's corner: a
+		// symbol's step (it less the one before, decayed by the leak's rs) is the slope summed over that symbol.
+		// The half before sums the steps at the corner, q a symbol: it is this symbol's line value and two_past
+		// (q x the last half before, less rs x the last line value). The half ahead weighs the k-th step ahead by
+		// q^(k-1): over the symbols' values, the newer of each pair less rs times the older. The halves take any
+		// offset out between them: the sync's offset only comes off the line's share
+		int32_t newer = 0, older = 0, xj = x, rs = two_rs(m), past, two;
+
+		for (unsigned j = 0; j < TWO_K; j++) {
+			older += two_q[j] * xj;
+			xj = line_back(m, m->due - (j + 1) * SPS) * 16;
+			newer += two_q[j] * xj;
+		}
+		past = m->two_past * 2 + x;
+		m->two_past = (int16_t)fxp_clamp((((past * TWO_Q) >> 14) - ((x * rs) >> 14)) / 2, -32768, 32767);
+		two = (past - ((newer >> 14) - (((older >> 14) * rs) >> 14))) / 2;
+		x -= m->off / 16;
+		x += ((two - x) * TWO_MIX) / 16;
+		v = (x * (int32_t)m->scale) / 4096;
+	} else {
+		v = ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+	}
+	if (m->leak) {
+		// A slope tap: the baseline the last symbols left (each symbol's distance from the level it is nearest,
+		// averaged) comes off, so a run of one level that the leak lets sag still slices right
+		int32_t d, e;
+
+		v -= m->base / 16;
+		d = m->p->levels == 2 ? (v >= 0 ? AIR_SOFT_OUTER : -AIR_SOFT_OUTER)
+		    : v >= 2 * AIR_SOFT_OUTER / 3 ? AIR_SOFT_OUTER : v >= 0 ? AIR_SOFT_OUTER / 3
+		    : v >= -2 * AIR_SOFT_OUTER / 3 ? -AIR_SOFT_OUTER / 3 : -AIR_SOFT_OUTER;
+		e = m->base + (((v - d) * 16) >> BASE_SHIFT);
+		m->base = (int16_t)fxp_clamp(e, -BASE_MAX, BASE_MAX);
+	}
 	if (v > 127)
 		v = 127;
 	if (v < -127)
@@ -281,7 +404,7 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 }
 
 // A sync's last symbol center is `back` samples back: take its timing, level and offset
-static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
+SM_HOT static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 {
 	const air_sync_t *s = &m->p->sync[m->cand_sync];
 	int32_t lvl = m->cand_lvl, off = m->cand_off;
@@ -301,10 +424,12 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 		m->env = (m->env / f) * 256 + ((m->env % f) * 256) / f;
 		m->env_fast = (m->env_fast / f) * 256 + ((m->env_fast % f) * 256) / f;
 		off = (off * f) / 256;
+		m->two_past = (int16_t)fxp_clamp((m->two_past * f) / 256, -32768, 32767);
 		lvl = LVL_NOM;
 	}
 	m->scale = (uint16_t)(((AIR_SOFT_OUTER / 3) * 65536) / lvl);
 	m->off = (int16_t)off;
+	m->base = 0;		// the sync's offset is the baseline now
 	// Where between the samples the error was least: a parabola through the candidate and its two neighbors
 	if (m->cand_prev_q != Q_NONE && q_next != Q_NONE) {
 		int32_t a = m->cand_prev_q, b = m->cand_q, c = q_next, curv = a - 2 * b + c;
@@ -332,7 +457,7 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 
 // Fit the symbol-spaced samples that end `back` samples before the line's newest to every pattern; returns the
 // least error (past Q_MAX too: the sides of a peak place its bottom), Q_NONE when no pattern's slope is there
-static uint16_t search(const air_softmodem_t *m, unsigned back, uint8_t *which, int16_t *lvl, int16_t *off)
+SM_HOT static uint16_t search(const air_softmodem_t *m, unsigned back, uint8_t *which, int16_t *lvl, int16_t *off)
 {
 	int8_t x[AIR_SYNC_SYMS_MAX];
 	const air_profile_t *p = m->p;
@@ -404,7 +529,7 @@ static uint16_t search(const air_softmodem_t *m, unsigned back, uint8_t *which, 
 }
 
 // Can a pattern end at the newest sample: all its large steps there but one (steps: the sample's phase's bits)
-static bool gate(const air_softmodem_t *m, unsigned steps)
+SM_HOT static bool gate(const air_softmodem_t *m, unsigned steps)
 {
 	for (unsigned i = 0, valid = m->valid; valid; i++, valid >>= 1) {
 		unsigned v = (steps ^ m->gate_up[i]) & m->gate_mask[i];
@@ -416,7 +541,7 @@ static bool gate(const air_softmodem_t *m, unsigned steps)
 }
 
 // One filtered sample v (summed input counts, before the gain) into the line; t_us as emit's
-static void filtered(air_softmodem_t *m, int32_t v, uint32_t t_us)
+SM_HOT static void filtered(air_softmodem_t *m, int32_t v, uint32_t t_us)
 {
 	int32_t y = fxp_clamp(fxp_scale16(v, m->gain), -127, 127);
 	unsigned at = m->line_at, ph = m->phase;
@@ -478,7 +603,7 @@ static void filtered(air_softmodem_t *m, int32_t v, uint32_t t_us)
 		m->locked = false;
 }
 
-void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, uint32_t t_us)
+SM_HOT void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, uint32_t t_us)
 {
 	uint32_t us_q = 1000000u / m->rate_hz, us_r = 1000000u % m->rate_hz, us_acc = 0;
 	uint32_t out_rate = (uint32_t)m->p->sym_rate * SPS;
@@ -497,9 +622,29 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 			air_softmodem_rx_reset(m);
 	}
 	m->running = true;
+	unsigned leak = m->leak, ishift = 0;
+
+	// The sum of a derivative is the deviation times about the samples a symbol takes: shifted back by as many bits,
+	// a symbol's level comes out near the tap's own peak, with room to the 16-bit limit
+	while (leak && ((uint32_t)m->p->sym_rate << ishift) < m->rate_hz && ishift < 8)
+		ishift++;
+
 	for (unsigned i = 0; i < n; i++) {
-		int32_t x = samples[i], v = x - (m->dc >> 10);
+		int32_t x = samples[i], v;
 		unsigned at = (m->in_at + 1u) & (TAPS - 1u);
+
+		if (leak) {
+			// A slope tap: its offset off (a derivative has none of its own, so the average always runs), then
+			// the leaky sum. |x| < 2^16, so the sum stays under 2^(16 + leak)
+			int32_t d = x - (m->slope_dc >> SLOPE_DC_SHIFT);
+
+			m->slope_dc += (x * (1 << SLOPE_DC_SHIFT) - m->slope_dc) >> m->slope_shift;
+			if (m->slope_shift < SLOPE_DC_SHIFT && ++m->slope_n == 0)
+				m->slope_shift++;
+			m->integ += d - (m->integ >> leak);
+			x = fxp_sat16(m->integ >> ishift);
+		}
+		v = x - (m->dc >> 10);
 
 		if (!m->locked) {
 			m->dc += (x * 1024 - m->dc) >> m->track_shift;

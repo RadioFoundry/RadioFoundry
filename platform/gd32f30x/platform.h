@@ -82,6 +82,7 @@ void gd32_adc_init(void);
 uint16_t gd32_adc_read(uint8_t ch);
 // The sampling channel (adc.c): ch converted by the inserted group, started from an interrupt (mcu_io.h)
 void gd32_adc_sample_init(uint8_t ch);
+extern volatile bool gd32_adc_hold;	// gd32_adc_read converting: the sampling channel starts nothing (mcu_io.h)
 
 // DAC (dac.c): channel 0 on PA4, 1 on PA5. Init makes the pin analog and starts the channel at 0; write takes 12 bits
 void gd32_dac_init(uint8_t ch);

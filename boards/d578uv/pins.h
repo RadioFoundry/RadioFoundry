@@ -103,7 +103,7 @@
 // The PA's temperature sensor, higher = hotter: the fan runs from it
 #define PIN_PA_TEMP		GPIOA, MCU_PIN(6)
 #define ADC_PA_TEMP		6u
-// Demodulated receive audio, biased at mid-scale: APRS receive samples it (afsk_d578uv.c)
+// Demodulated receive audio, biased at mid-scale: the receive tap samples it (rxtap_d578uv.c)
 #define PIN_RX_AUDIO		GPIOC, MCU_PIN(0)
 #define ADC_RX_AUDIO		10u
 

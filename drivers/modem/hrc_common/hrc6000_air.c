@@ -828,7 +828,8 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 		return false;
 	}
 	bool copy = (chip_fit(p, a->dev->chip) & AIR_FIT_RX) == 0 && (f & AIR_FIT_RX) != 0;
-	if (copy && !air_softmodem_rx_open(a->sm, p, HRC6000_AIR_COPY_HZ, a->tap_desc->rx_counts_per_khz, sm_out, a)) {
+	if (copy && !air_softmodem_rx_open(a->sm, p, HRC6000_AIR_COPY_HZ, a->tap_desc->rx_counts_per_khz,
+					      a->tap_desc->rx_slope_hz, sm_out, a)) {
 		return false;
 	}
 	lock(a);

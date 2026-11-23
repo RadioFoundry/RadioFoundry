@@ -433,7 +433,8 @@ static void link_section(dl_text_t *t)
 	if (input_bt_stats(&bt)) {
 		dl_text(t, "input.bt_present=%u\ninput.bt_ptt=%u\ninput.bt_key=%u\ninput.bt_keys=%u\n", (unsigned)bt.present,
 			(unsigned)bt.ptt, (unsigned)bt.key, (unsigned)bt.keys);
-		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\n", (unsigned)bt.lines, (unsigned)bt.errors);
+		dl_text(t, "input.bt_lines=%u\ninput.bt_errors=%u\ninput.bt_links=%u\ninput.bt_offs=%u\n",
+			(unsigned)bt.lines, (unsigned)bt.errors, (unsigned)bt.links, (unsigned)bt.offs);
 	}
 	dl_text(t, "input.long_ms=%u\ninput.ptt_downs=%u\n", (unsigned)input_long_ms(), (unsigned)input_ptt_downs());
 	if (board.system != NULL && board.system->irq_unhandled != NULL) {

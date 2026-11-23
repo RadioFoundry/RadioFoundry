@@ -183,6 +183,13 @@ fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
 TESTS   += airSoftmodemTest
 airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_framer.c $(P25) $(FEC) -lm
+# The soft modem's transmitter against floating point pulses, and sent through it to its receiver
+TESTS   += airSoftmodemTxTest
+airSoftmodemTxTest: airSoftmodemTxTest.c $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(NXDN) $(FEC) $(ROOT)/hal/hal_baseband.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ airSoftmodemTxTest.c $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_framer.c $(P25) $(NXDN) $(FEC) -lm
+TESTS   += airTapTest
+airTapTest: airTapTest.c $(CORE)/air/air_tap.c $(CORE)/air/air_tap.h $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_softmodem.h $(CORE)/air/air_framer.c $(CORE)/air/air_session.c $(P25) $(NXDN) $(FEC) $(ROOT)/hal/hal_baseband.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ airTapTest.c $(CORE)/air/air_tap.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem_tx.c $(CORE)/air/air_framer.c $(CORE)/air/air_session.c $(P25) $(NXDN) $(FEC) -lm
 
 airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ airFramerTest.c $(CORE)/air/air_framer.c
@@ -257,6 +264,8 @@ run: $(TESTS)
 	./imbeEncTest | tail -1
 	for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done
 	./airSoftmodemTest | tail -1
+	./airSoftmodemTxTest | tail -1
+	./airTapTest | tail -1
 	./p25EngineTest
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1

@@ -16,6 +16,9 @@
 //                          +PTT=R (release), +KEY=NN (a key event, two decimal digits; 01-04 only)
 // A link dropped (+DISC=, or +CONN= with the all-zero address) or the module restarting (+READY) clears every PTT
 // source, so a link lost mid-transmission doesn't hold the transmitter on.
+//
+// Links: +CONN= with an address counts one up, +DISC= or the all-zero address one down, +READY clears them. The
+// board uses the count to know the module serves nobody (links == 0) and may be powered off for a while.
 #ifndef BT_AT_H
 #define BT_AT_H
 
@@ -27,6 +30,7 @@
 #define BT_AT_LINE_MAX		64u	// the longest line kept (a +CONN line with a device name)
 #define BT_AT_KEY_MIN		1u	// +KEY codes acted on
 #define BT_AT_KEY_MAX		4u
+#define BT_AT_LINKS_MAX		8u	// a count past the module's own limit: a lost +DISC can't wrap it
 
 typedef struct {
 	char line[BT_AT_LINE_MAX];
@@ -37,6 +41,7 @@ typedef struct {
 	bool fob_ptt, hf_ptt, mic_ptt;	// the three PTT sources
 	uint8_t key;			// the last +KEY code (BT_AT_KEY_MIN..MAX), 0 for none yet
 	uint32_t key_events;		// +KEY lines taken: a new one is a new key press
+	uint8_t links;			// links up (key fob, hand mic, headset, host), BT_AT_LINKS_MAX at most
 	uint32_t lines, errors;		// lines taken; bytes or lines dropped (diagnostics)
 } bt_at_t;
 
@@ -131,9 +136,19 @@ static inline void bt_at_line(bt_at_t *b, const char *s)
 		if (len > 0 && len < 1000) {
 			b->payload = (uint16_t)len;
 		}
-	} else if (bt_at_starts(s, "+DISC=") || strcmp(s, "+READY") == 0 ||
+	} else if (strcmp(s, "+READY") == 0) {
+		bt_at_release(b);
+		b->links = 0;
+	} else if (bt_at_starts(s, "+DISC=") ||
 		   (bt_at_starts(s, "+CONN=") && strlen(s) >= 18u && bt_at_no_address(s + 6))) {
 		bt_at_release(b);
+		if (b->links > 0) {
+			b->links--;
+		}
+	} else if (bt_at_starts(s, "+CONN=") && strlen(s) >= 18u) {
+		if (b->links < BT_AT_LINKS_MAX) {
+			b->links++;
+		}
 	} else if (bt_at_starts(s, "+APRS:")) {
 		b->aprs_board = true;
 	}

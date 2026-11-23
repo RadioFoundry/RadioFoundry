@@ -20,6 +20,8 @@ SECTIONS
 	.text :
 	{
 		. = ALIGN(4);
+		/* Hot code first: only the first 256 KB of flash run without wait states */
+		*(.text.hot .text.hot.*)
 		*(.text) *(.text*) *(.glue_7) *(.glue_7t) *(.eh_frame)
 		KEEP(*(.init)) KEEP(*(.fini))
 		. = ALIGN(4);

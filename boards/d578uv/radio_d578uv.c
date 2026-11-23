@@ -64,6 +64,9 @@
 #if CONFIG_DUAL_WATCH
 #include "radio/radio_sm.h"
 #endif
+#if CONFIG_AIR
+#include "air/air_tap.h"
+#endif
 // The KTMicro receiver: air band AM and broadcast FM
 #define KT_USED			(CONFIG_AM_RX || CONFIG_BCAST_FM)
 #if KT_USED
@@ -107,13 +110,14 @@
 #define GPIO_LO_B_AM		0x0040u
 // Chip 1 GPIO bit 1: set passes side A's RF chip audio toward the speaker, clear holds it off (measured on a radio)
 #define GPIO_B_A_AUDIO		0x0002u
-// Chip 1 GPIO bit 6: set connects side A's demodulated receive audio to PC0 (ADC channel 10, the APRS receiver,
-// afsk_d578uv.c), ahead of the squelch and the speaker gate; clear, PC0 is flat (measured on a radio). Set in receive,
+// Chip 1 GPIO bit 6: set connects side A's demodulated receive audio to PC0 (ADC channel 10, the receive tap,
+// rxtap_d578uv.c), ahead of the squelch and the speaker gate; clear, PC0 is flat (measured on a radio). Set in receive,
 // cleared while transmitting
 #define GPIO_B_RX_TAP		0x0040u
 
 // Shift register bits (roles inferred)
-#define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c)
+#define SR_BOOT			0x02u	// the Bluetooth module's supply, on from boot (bt_d578uv.c); off for a P25 or
+					// NXDN transmission while the module serves no link (tx)
 #define SR_RX_DEMOD		0x04u	// the baseband's receive source: set, chip 0's demodulator (side A, FM and DMR alike;
 					// measured: with it clear the baseband hears nothing from chip 0); clear, chip 1's
 					// (side B), for a DMR channel on chip 1 (inferred)
@@ -248,6 +252,7 @@ static bool src_b;
 static bool a_kept;
 static struct { uint32_t hz; radio_bw_t bw; bool digital; subtone_t tone; int16_t trim; } a_set;
 static bool transmitting;
+static bool bt_cut;		// the Bluetooth module's supply off for this transmission (tx)
 static uint8_t sr;			// the shift register's outputs
 static bool main_audio;			// side A's audio to the speaker (audio())
 // The squelch tail: when an FM carrier goes, the chip's noise reading takes a poll or two to rise, and the core's
@@ -1943,6 +1948,43 @@ static bool dmr_tx(uint32_t hz, uint16_t dac)
 }
 #endif
 
+#if CONFIG_AIR
+// Three drive steps (0x40 bits 11:8, 6 dB each) above DTMF's calibrated level: the outer level near a quarter of
+// PB9's range, room for the low-end filter's peaks (rxtap_d578uv.c)
+#define AIR_DRIVE_STEPS		0x300u
+
+// The P25 and NXDN set-up of chip 0 (tx() keyed in FM): the audio input pin with the digital path's transmit
+// high-pass (qa4818_tx_line_digital), at DTMF's calibrated drive plus AIR_DRIVE_STEPS. The transmit tap's equalizer
+// and scale were measured with it
+static void air_line_in(void)
+{
+	uint8_t level = cal_uhf[tx_hz > 200000000u ? BLK_DTMF_UHF : BLK_DTMF_VHF];
+
+	qa4818_tx_line_digital(&chip_if, (uint16_t)(qa4818_line_drive_word(tx_hz, false, level) - AIR_DRIVE_STEPS));
+	aux = AUX_LINE;
+}
+
+bool d578uv_air_keyed(void)
+{
+	return transmitting && mode == RADIO_MODE_DMR && aux == AUX_LINE;
+}
+
+// The Bluetooth module's audio sits on the microphone line that carries PB9's samples (inferred), and loads it: now
+// and then (about one P25 transmission in 8 to 30, the trigger not found) it starts to load it more, the transmit level
+// about 17 % lower above 200 Hz, the low end not, until the module's supply goes off. So a transmission on PB9 powers
+// the module off (tx) and back on after (tx_off): it starts clean each time. Not while it serves a link, whose PTT
+// would drop: then it stays on, at the path's gain the tables in rxtap_d578uv.c were measured with.
+// Off-air gain of the path with the module off against on, the known C4FM call on UHF: 1.69 (5 plays, 1.679-1.698);
+// chip 0's 0x64 under a 600 Hz square: 861 on, 722 loaded more, 1015 off (near its top)
+#define BT_OFF_GAIN_Q15		19400u	// 1 / 1.69
+
+// The transmission keyed now (tx): the ring is set up only while keyed (rxtap_d578uv.c), after tx() decided
+uint16_t d578uv_air_tx_gain(void)
+{
+	return bt_cut ? BT_OFF_GAIN_Q15 : 32768u;
+}
+#endif
+
 static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 {
 	if (!board_in_band(hz, true)) {
@@ -1966,21 +2008,35 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 		beep_quiet = false;
 		qa4818_tone_gen(&chip_if, false);
 	}
-#if CONFIG_DTMF || CONFIG_APRS
+#if CONFIG_DTMF || CONFIG_APRS || CONFIG_AIR
 	d578uv_tone_stop();
 #endif
 	aux = AUX_NONE;
 	// The TX start's register 4, by band and level
 	aux_write(AUX_TRIM_TX, trim_tx(hz / 10u, power, cal_uhf[BLK_TRIM_TX], cal_vhf[BLK_TRIM_TX]));
-	if (mode == RADIO_MODE_DMR) {
+#if CONFIG_AIR
+	// P25 and NXDN: an air session's transmission goes out in FM, the soft modem's samples on PB9 into chip 0's audio
+	// input (air_line_in, rxtap_d578uv.c), the microphone muted
+	bool air = mode == RADIO_MODE_DMR && air_tap_is_open();
+#else
+	bool air = false;
+#endif
+	if (mode == RADIO_MODE_DMR && !air) {
 #if CONFIG_DMR
 		return dmr_tx(hz, dac);
 #else
 		return false;
 #endif
 	}
+	// The Bluetooth module off for a transmission on PB9 while no link is up; its samples are scaled for that
+	// (d578uv_air_tx_gain)
+	if (air && !d578uv_bt_linked()) {
+		d578uv_bt_off();
+		bt_cut = true;
+		sr_set(0, SR_BOOT);
+	}
 	bool uhf = hz > UHF_FROM_HZ;
-	bool wide = bw == RADIO_BW_25K;
+	bool wide = bw == RADIO_BW_25K && !air;
 	qa4818_tone_t tone = t != NULL ? chip_tone(t->type) : QA4818_TONE_NONE;
 	bool dcs = tone == QA4818_TONE_DCS || tone == QA4818_TONE_DCS_INV;
 	uint8_t lvl_ctcss = cal_uhf[BLK_TONE_CTCSS], lvl_dcs = cal_uhf[BLK_TONE_DCS];
@@ -2004,8 +2060,14 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 	qa4818_tx_tone(&chip_if, tone, t != NULL ? t->value : 0, lvl_ctcss, lvl_dcs);
 	qa4818_tx_drive(&chip_if, hz, wide, drive, tx_level);
 	qa4818_tx_on(&chip_if);
+#if CONFIG_AIR
+	if (air) {
+		air_line_in();
+	}
+#endif
 	band_bits(hz);
-	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN);
+	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE,
+		   (hz > UHF_FROM_HZ ? GPIO_TX_UHF : 0) | GPIO_FAN | (air ? GPIO_MIC_MUTE : 0));
 	chip1_gpio(GPIO_B_RX_TAP, 0);
 	hal_delay_ms(10);
 	mcu_dac_write(0, dac);
@@ -2023,7 +2085,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *t)
 // The microphone again after a tone: the chip's voice set-up first, then the mute bit
 static void mic_again(void)
 {
-#if CONFIG_DTMF || CONFIG_APRS
+#if CONFIG_DTMF || CONFIG_APRS || CONFIG_AIR
 	if (aux == AUX_LINE) {
 		d578uv_tone_stop();
 	}
@@ -2169,7 +2231,8 @@ static void tx_off(void)
 	if (aux != AUX_NONE) {
 		mic_again();	// the chip's voice path for the next key-up, and the tone generator off
 	}
-	sr_set(0, SR_RX_AUDIO);
+	sr_set(bt_cut ? SR_BOOT : 0, SR_RX_AUDIO);
+	bt_cut = false;
 	qa4818_tx_drive_off(&chip_if);
 	chip0_gpio(GPIO_TX_UHF | GPIO_FAN | GPIO_MIC_MUTE, GPIO_MIC_MUTE | (fan_hot ? GPIO_FAN : 0));
 	chip1_gpio(GPIO_B_RX_TAP, GPIO_B_RX_TAP);
@@ -2400,10 +2463,16 @@ static void audio(bool on)
 	audio_route();
 }
 
-#if CONFIG_APRS_RX
-bool d578uv_fm_rx_a(void)
+#if CONFIG_APRS_RX || CONFIG_AIR
+bool d578uv_rx_a(radio_mode_t m)
 {
-	return have_rx && mode == RADIO_MODE_FM && !transmitting && !AM_ON;
+	return have_rx && mode == m && !transmitting && !AM_ON && !src_b;
+}
+#endif
+#if CONFIG_AIR
+bool d578uv_digital(void)
+{
+	return mode == RADIO_MODE_DMR;
 }
 #endif
 
@@ -2504,7 +2573,7 @@ void d578uv_rf_safe(void)
 	mcu_exti_disable(BURST_LINE);
 #endif
 	mcu_pin_force(PIN_TX_ENABLE, false);
-#if CONFIG_DTMF || CONFIG_APRS
+#if CONFIG_DTMF || CONFIG_APRS || CONFIG_AIR
 	d578uv_tone_stop();
 #endif
 	if (mcu_dac_clocked()) {

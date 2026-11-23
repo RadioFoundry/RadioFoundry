@@ -99,6 +99,8 @@ typedef struct {
 	uint32_t keys;		// key events since start
 	uint32_t lines;		// lines taken since start
 	uint32_t errors;	// bytes or lines dropped
+	uint8_t links;		// links up (key fob, hand mic, headset, host)
+	uint32_t offs;		// times the board powered the module off while it served no link
 } hal_bt_stats_t;
 
 typedef struct {

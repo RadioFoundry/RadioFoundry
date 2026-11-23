@@ -13,6 +13,9 @@
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
+#if CONFIG_NXDN && !defined(HAL_VOCODER_LEND_BYTES)
+#include "nxdn/nxdn_engine.h"
+#endif
 #if CONFIG_P25_TRUNK
 #include "hal_time.h"
 #include "p25/p25_follow.h"
@@ -65,7 +68,14 @@ typedef struct {
 // The platform's DMR vocoder lends its memory while P25 runs (hal_vocoder_t.lend): no copy here
 _Static_assert(sizeof(p25_mem_t) <= HAL_VOCODER_LEND_BYTES, "P25 does not fit the memory the vocoder lends");
 #else
-static p25_mem_t own_mem;
+// NXDN runs in this memory while P25 is idle (radio_p25_idle_mem): room for its engine too, which can be the larger
+// (a build without the voice decoder or trunking)
+static union {
+	p25_mem_t p25;
+#if CONFIG_NXDN
+	nxdn_engine_t nxdn;
+#endif
+} own_mem __attribute__((aligned(8)));
 #endif
 
 #if CONFIG_IMBE
@@ -208,7 +218,7 @@ static p25_mem_t *mem_get(void)
 	stats.mem_lent++;
 	return m;
 #else
-	return &own_mem;
+	return &own_mem.p25;
 #endif
 }
 
@@ -550,7 +560,9 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 			stats.begin_fails++;
 			return false;
 		}
-		trunk_params(&mem->trunk, &mem->load, !ch->rx_only, ch->accept_bad_crc, &cfg);
+		// A receive-only provider: listen only (no registration, no voice requests)
+		trunk_params(&mem->trunk, &mem->load, !ch->rx_only && (p25_engine_fit(board.air) & AIR_FIT_TX) != 0,
+			     ch->accept_bad_crc, &cfg);
 		ttx = (mem->trunk.cfg.flags & P25_FOLLOW_TX) != 0;
 	} else
 #endif
@@ -828,8 +840,14 @@ void radio_p25_tx_clear(void)
 	}
 }
 
+// A receive-only provider (opened without AIR_FIT_TX): PTT is refused as such
+static bool p25_no_tx(void)
+{
+	return mem != NULL && (mem->eng.session.fit & AIR_FIT_TX) == 0;
+}
+
 const radio_air_ops_t radio_p25_air = {
-	radio_p25_running, NULL, radio_p25_tx_prepare, radio_p25_tx_go, radio_p25_tx_stop, radio_p25_tx_abort,
+	radio_p25_running, p25_no_tx, radio_p25_tx_prepare, radio_p25_tx_go, radio_p25_tx_stop, radio_p25_tx_abort,
 	radio_p25_tx_state, radio_p25_tx_clear,
 };
 

@@ -8,9 +8,10 @@
 
 #if CONFIG_DMR
 // The RTOS heap holds every task stack and queue, and main RAM (96 KB, no CCM) is this radio's limit with DMR on. The
-// ten tasks' stacks are about 16.7 KB (the GPS task's 1.4 KB with CONFIG_GPS), their control blocks about 0.9 KB, the
-// queues and locks about 1.3 KB, and a zone share send takes 1 KB for a moment: about 19.9 KB. 22 KB keeps about
-// 2.1 KB spare (3.1 KB with zone sharing off, as it is with DMR on), above the 2 KB
+// ten tasks' stacks are about 17.3 KB (the GPS task's 1.4 KB with CONFIG_GPS, the modem task's 1.8 KB with P25 or
+// NXDN), their control blocks about 0.9 KB, the queues and locks about 1.3 KB, and a zone share send takes 1 KB for a
+// moment: about 20.6 KB. 22 KB keeps about 1.4 KB spare (2.4 KB with zone sharing off, as it is with DMR on), above
+// the 2 KB
 // tests/hil/test_task_stacks.py asks for. Estimated from the source, not yet measured on the radio: the debug link's
 // tasks view reports the least free since start (tasks.heap_min_free)
 #define configTOTAL_HEAP_SIZE	(22 * 1024)

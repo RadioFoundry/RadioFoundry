@@ -101,6 +101,30 @@ static void test_release(void)
 	CHECK(bt_at_ptt(&b));
 }
 
+// Links: counted up by +CONN with an address, down by +DISC or the all-zero address, cleared by +READY; never below 0
+// and never past BT_AT_LINKS_MAX
+static void test_links(void)
+{
+	bt_at_t b;
+	bt_at_init(&b);
+	feed(&b, "+CONN:000000000000,HOSTDEVICE\r\n");	// a query's answer, not an event
+	CHECK(b.links == 0);
+	feed(&b, "+CONN=0011223344AA,PTT-1\r\n+CONN=0011223344BB,BT01\r\n");
+	CHECK(b.links == 2);
+	feed(&b, "+DISC=0011223344AA,PTT-1\r\n");
+	CHECK(b.links == 1);
+	feed(&b, "+CONN=000000000000,\r\n");
+	CHECK(b.links == 0);
+	feed(&b, "+DISC=0011223344AA,PTT-1\r\n");
+	CHECK(b.links == 0);
+	for (unsigned i = 0; i < BT_AT_LINKS_MAX + 3u; i++) {
+		feed(&b, "+CONN=0011223344AA,PTT-1\r\n");
+	}
+	CHECK(b.links == BT_AT_LINKS_MAX);
+	feed(&b, "+READY\r\n");
+	CHECK(b.links == 0);
+}
+
 static void test_errors(void)
 {
 	bt_at_t b;
@@ -131,6 +155,7 @@ int main(void)
 	test_ptt_sources();
 	test_keys();
 	test_release();
+	test_links();
 	test_errors();
 	if (failures) {
 		printf("# btAtTest FAILED (%d)\n", failures);

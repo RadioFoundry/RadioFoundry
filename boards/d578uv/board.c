@@ -10,6 +10,9 @@
 #if CONFIG_DMR
 #include "modem/sct/sct_dmr.h"
 #endif
+#if CONFIG_AIR
+#include "air/air_tap.h"
+#endif
 #if CONFIG_GPS
 #include "gps_uart/gps_uart.h"
 #endif
@@ -137,6 +140,11 @@ const board_t board = {
 #if CONFIG_APRS
 	.afsk = &d578uv_afsk,
 #endif
+#if CONFIG_AIR
+	// P25 and NXDN through the soft modem: receive on PC0's samples (rxtap_d578uv.c), transmit as PWM on PB9
+	.air = &air_tap,
+	.baseband = &d578uv_baseband,
+#endif
 	.power = &d578uv_power,
 #if CONFIG_USB
 	.host_port = &usb_cdc_stream,	// the debug link, CPS and the hotspot's MMDVM on the USB serial port
@@ -184,6 +192,9 @@ void board_init(void)
 	// The core's storage: mounted before storage_init reads it. Without it the radio runs on
 	// the default settings
 	d578uv_flash.init();
+#endif
+#if CONFIG_AIR
+	d578uv_air_init();	// before the modem task, which polls it
 #endif
 #if CONFIG_DMR
 	d578uv_modem_init();

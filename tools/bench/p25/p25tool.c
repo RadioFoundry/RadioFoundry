@@ -11,6 +11,8 @@
 //   p25tool cc     OUT.dibits EXPECT.json [options]	a trunked system's control channel: signaling blocks (TSDU)
 //
 // decode and disc --trunk also take trunking signaling and multi-block trunking packets, and print their blocks.
+// disc --slope-hz HZ: the samples are the derivative of the deviation (hal_baseband_t.rx_slope_hz), integrated with a
+// leak at about HZ.
 // Dibit files: four symbols to a byte, the first in bits 7-6; 01 = +3, 00 = +1, 10 = -1, 11 = -3 (hal/hal_air.h).
 // --unpacked: one symbol a byte, in its low two bits.
 #include <math.h>
@@ -1013,7 +1015,8 @@ static int cmd_disc(const char *in, const opts_t *o)
 	cpk16 = (uint16_t)lround(g_cpk);
 	g_cpk = cpk16;
 	rx_setup(o);
-	if (!air_softmodem_rx_open(&g_m, &p25_air_mode.profile, (uint32_t)rate, cpk16, sm_out, NULL))
+	if (!air_softmodem_rx_open(&g_m, &p25_air_mode.profile, (uint32_t)rate, cpk16,
+				   (uint16_t)opt_double(o, "--slope-hz", 0), sm_out, NULL))
 		die("the soft modem takes 8 to 48 kHz", NULL);
 	g_gain0 = g_m.gain;
 	{

@@ -172,6 +172,10 @@ void qa4818_tx_drive_off(qa4818_t *c);
 // 0 as well, the drive r40, page 1 0x1B = 5 (the tone path, inferred). The set-up before a 1750 Hz burst (line false)
 // or DTMF synthesized on an MCU pin (line true)
 void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40);
+// The audio input pin as qa4818_tx_aux(true) sets it, with the digital path's page 1 0x1B (0x07FF): the transmit
+// high-pass moves from about 250 Hz down to about 100 Hz and the signal inverts in the band (measured off air), for a
+// modem's baseband on the pin
+void qa4818_tx_line_digital(qa4818_t *c, uint16_t r40);
 // After qa4818_tx_aux(false): the tone generator on at hz (0x71, then 0x70)
 void qa4818_tone_start(qa4818_t *c, uint16_t hz);
 // The tone generator on (the tone set last) or off, the rest unchanged: keying a tone

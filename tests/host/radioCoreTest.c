@@ -427,15 +427,17 @@ static void air_step1(uint8_t i)
 	}
 }
 
-// 4800 symbols/s (P25, NXDN at 9600 bit/s): everything. 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says
-// for each provider (a provider that transmits a profile only, or receives it only)
+// 4800 symbols/s (P25, NXDN at 9600 bit/s): what air_fit4800 says (everything, or receive only as on a sample tap).
+// 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says for each provider (a provider that transmits a profile
+// only, or receives it only)
+static uint32_t air_fit4800 = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
 static uint32_t air_fit2400[2] = { AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT, AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT };
 static uint32_t air_fit(uint8_t i, const air_profile_t *pr)
 {
 	if (air_nofit) {
 		return 0;
 	}
-	return pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
+	return pr->sym_rate == 4800 ? air_fit4800 : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
 }
 static bool air_open(uint8_t i, air_event_cb_t cb, void *ctx)
 {
@@ -7235,6 +7237,26 @@ static void test_p25_denied(void)
 	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
 	req(RREQ_PTT, 0);
 	air_nofit = false;
+
+	// A provider that receives P25 only (a sample tap): the engine runs, PTT is refused before anything is queued
+	air_fit4800 = AIR_FIT_RX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && fair[0].open);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && fair[0].qn == 0);
+	run(100);
+	CHECK(!fair[0].on && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	air_fit4800 = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
 #ifdef HAL_VOCODER_LEND_BYTES
 	// ... or the vocoder lends nothing
 	lend_refuse = true;

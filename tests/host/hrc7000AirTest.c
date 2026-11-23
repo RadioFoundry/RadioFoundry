@@ -82,7 +82,7 @@ uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 }
 
 bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t rate_hz, uint16_t counts_per_khz,
-			   air_softmodem_out_t out, void *ctx)
+			   uint16_t slope_hz, air_softmodem_out_t out, void *ctx)
 {
 	memset(m, 0, sizeof(*m));
 	m->p = p;

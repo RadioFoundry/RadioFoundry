@@ -625,6 +625,14 @@ void qa4818_tx_aux(qa4818_t *c, bool line, uint16_t r40)
 	page(c, 0);
 }
 
+void qa4818_tx_line_digital(qa4818_t *c, uint16_t r40)
+{
+	qa4818_tx_aux(c, true, r40);
+	page(c, 1);
+	wr(c, 0x1B, P1_1B_DIGITAL);
+	page(c, 0);
+}
+
 void qa4818_tone_start(qa4818_t *c, uint16_t hz)
 {
 	wr(c, QA4818_REG_TONE_FREQ, qa4818_tone_word(hz));

@@ -9,7 +9,8 @@
 //   nxdntool disc   IN.raw [options]			discriminator samples through the soft modem, then as decode
 //   nxdntool mod    IN.dibits OUT.raw [options]		a 4-level FSK model: symbols to discriminator samples (for tests)
 //
-// --9600: the 9600 bit/s mode (4800 symbols/s), else 4800 bit/s (2400 symbols/s).
+// --9600: the 9600 bit/s mode (4800 symbols/s), else 4800 bit/s (2400 symbols/s). disc --slope-hz HZ: the samples are
+// the derivative of the deviation (hal_baseband_t.rx_slope_hz), integrated with a leak at about HZ.
 // Dibit files: four symbols to a byte, the first in bits 7-6; 01 = +3, 00 = +1, 10 = -1, 11 = -3 (hal/hal_air.h).
 // --unpacked: one symbol a byte, in its low two bits.
 #include <math.h>
@@ -533,7 +534,8 @@ static int cmd_disc(const char *in, const opts_t *o)
 	if (cpk > 65535)
 		die("the scale is past what the soft modem takes (counts per kHz under 65536)", NULL);
 	rx_setup(o);
-	if (!air_softmodem_rx_open(&g_m, &g_mode->profile, (uint32_t)rate, (uint16_t)lround(cpk), sm_out, NULL))
+	if (!air_softmodem_rx_open(&g_m, &g_mode->profile, (uint32_t)rate, (uint16_t)lround(cpk),
+				   (uint16_t)opt_double(o, "--slope-hz", 0), sm_out, NULL))
 		die("the soft modem does not take this rate for this mode (8 kHz up to 10 samples a symbol)", NULL);
 	for (size_t at = 0; at < n; at += 256) {
 		uint16_t k = (uint16_t)(n - at < 256 ? n - at : 256);

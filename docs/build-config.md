@@ -203,7 +203,7 @@ below are for an STM32F4 radio.
 Derived (not set by hand): `CONFIG_DMR_DATA_CORE`, the shared packet data / CSBK code, on when any data feature is;
 `CONFIG_DMR_AIR_QUEUE`, the data service's TX queue (`docs/spec/dmr-data.md` 12.6), on with `CONFIG_DMR_IP_GATEWAY` or
 `CONFIG_ZONE_SHARE`. `CONFIG_AIR` (the air interface) is on with `CONFIG_P25` or `CONFIG_NXDN`; `CONFIG_IMBE` and `CONFIG_MBE`
-(the full-rate voice decoder, the MBE core) follow `CONFIG_P25`; a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
+(the full-rate voice decoder, the MBE core) follow `CONFIG_P25`, except on a board with `BOARD_NO_PCM` (below); a command line or a board's `config.mk` that sets one stops the build. `CONFIG_ZONE_SHARE_MODES`: zone sharing carries channels of a kind and their systems
 (`docs/spec/zone-share.md` 4.2), on with `CONFIG_ZONE_SHARE` and `CONFIG_P25`, `CONFIG_NXDN` or `CONFIG_DMR_TRUNK`. `CONFIG_LANG_ANY`
 (`core/config.h`): on when any `CONFIG_LANG_*` is, the translation lookup and the fonts' Latin-1 glyphs.
 
@@ -232,6 +232,7 @@ Not feature switches: they pick the hardware variant or set bench knobs, and `pr
 | `BOARD_NOT_WRITTEN` | a board's own | the same form: switches the hardware can do but whose driver or glue isn't written for the radio yet; the maximal build leaves them off too (`make print-not-written`), and every switch that needs one of them |
 | `BOARD_DEFAULT_OFF` | a board's own | the same form: switches that work but carry a risk on this radio. The switch stays off by default (`CONFIG_X ?= n` next to it) and stays selectable in a custom build; the web flasher shows the comment by its checkbox, so write it for users |
 | `BOARD_REQUIRED` | a board's own | set in a board's `config.mk`: switches the board can't build without; ci.sh builds no `no-` configuration for them (`make print-required`) |
+| `BOARD_NO_PCM` | a board's own | `y` in a board's `config.mk`: the MCU has no PCM path to the speaker (the modem plays the voice itself). The full-rate voice decoder (`CONFIG_IMBE`) is left out: P25 receives and shows calls without voice |
 | `MAXIMAL_SKIP` | a board's own | set in a board's `config.mk`: switches that work on the radio but that it doesn't need or has no room for beside its other features, which the maximal build leaves off too (`make print-maximal-skip`). A switch that needs hardware (`tests/hil/features.toml`), is written for the radio and is off by default for room goes here, the reason in `config.mk`'s comment, not in `BOARD_NOT_WRITTEN`. `NET_PPP` stands in for the USB network adapter on UART-only radios. The maximal build also leaves `CONFIG_AUDIO_PROBE` off on every board (`MAXIMAL_SKIP` in `tools/ci.sh`); one board's `audio-probe` build covers it |
 
 ### Board defaults

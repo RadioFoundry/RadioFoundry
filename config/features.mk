@@ -331,7 +331,9 @@ CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
 $(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
 	and CONFIG_NXDN ($(origin CONFIG_$(f))): set those instead)))
 CONFIG_AIR := $(if $(filter y,$(CONFIG_P25) $(CONFIG_NXDN)),y,n)
-CONFIG_IMBE := $(CONFIG_P25)
+# A board with no PCM path from the MCU to its speaker (BOARD_NO_PCM := y in its config.mk) has nothing to play the
+# decoder's audio on: P25 receives and shows calls there, without the decoder
+CONFIG_IMBE := $(if $(filter y,$(BOARD_NO_PCM)),n,$(CONFIG_P25))
 CONFIG_MBE := $(CONFIG_IMBE)
 # diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs an
 # air-framed mode such as P25 or NXDN, and DEBUGLINK; docs/spec/debuglink.md)

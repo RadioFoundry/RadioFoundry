@@ -18,6 +18,11 @@ static bool is_ldu(uint8_t duid)
 	return duid == P25_DUID_LDU1 || duid == P25_DUID_LDU2;
 }
 
+static bool is_terminator(uint8_t duid)
+{
+	return duid == P25_DUID_TDU || duid == P25_DUID_TDULC;
+}
+
 #if CONFIG_P25_TRUNK
 static bool is_blocks(uint8_t duid)
 {
@@ -62,6 +67,10 @@ static uint16_t rx_head(const air_frame_t *f, void *ctx)
 	if (f->nsyms > P25_HEAD_SYMS && rx->trunk && is_blocks(rx->cur_duid))
 		return blocks_head(f, rx->cur_duid);
 #endif
+	// A terminator ends the transmission: what comes next brings a sync of its own. Counted on from one, a carrier
+	// held after it reads as a NID of all zeros (a header of NAC 0)
+	if ((f->flags & AIR_FRAME_NO_SYNC) && is_terminator(rx->last_duid))
+		return 0;
 	errs = p25_nid_get(f->hard, &nac, &duid);
 #if CONFIG_P25_TRUNK
 	if (errs >= 0 && rx->trunk && is_blocks(duid)) {

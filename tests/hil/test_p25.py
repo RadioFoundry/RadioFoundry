@@ -120,6 +120,13 @@ def p25_ready(radio):
         skip("state", "the radio is in hotspot mode")
 
 
+def p25_can_tx(radio):
+    # A receive-only air interface (a board that only samples the receive signal): PTT is refused, nothing to check
+    fit = as_int(radio.view(["p25"]).get("p25.fit"))
+    if fit is not None and fit & 0x2 == 0:
+        skip("no_hw", "the radio's air interface can't transmit P25")
+
+
 def p25_view(radio):
     v = radio.view(["p25"])
     if v.get("p25.built") != "1":
@@ -315,6 +322,7 @@ def test_p25_tx_off_air(radio, sdr_bench, pytestconfig):
     mhz = rig(pytestconfig, "p25-mhz")
     hz = round(mhz * 1e6)
     p25_ready(radio)
+    p25_can_tx(radio)
     if not sdr_bench.can_fm_rx():
         skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
     with radio.vfo_session():
@@ -412,6 +420,7 @@ def test_p25_stored_channel_tx(radio, sdr_bench, backup_dir, pytestconfig):
     mhz = rig(pytestconfig, "p25-mhz")
     hz = round(mhz * 1e6)
     p25_ready(radio)
+    p25_can_tx(radio)
     if not sdr_bench.can_fm_rx():
         skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
     import cps_client
@@ -886,6 +895,7 @@ def test_p25_trunk_tx(radio, sdr_bench, backup_dir, pytestconfig):
     if "P25_TRUNK" not in radio.features():
         skip("not_built", "built without CONFIG_P25_TRUNK")
     p25_ready(radio)
+    p25_can_tx(radio)
     if not sdr_bench.can_fm_rx():
         skip("bench", f"the bench board {sdr_bench.api_rx} has no FM receive")
     from test_cps import codeplug_edited

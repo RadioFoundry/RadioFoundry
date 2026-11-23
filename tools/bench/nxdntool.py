@@ -12,6 +12,7 @@ than its sources).
                [--ber P --seed S] [--unpacked]
     nxdntool.py decode IN.dibits [--9600] [--expect EXP.json] [--ran N] [--unpacked | --records | --air-jsonl]
     nxdntool.py disc IN.raw --rate HZ [--9600] [--full HZ | --counts-per-khz N] [--invert] [--expect EXP.json] [--ran N]
+               [--slope-hz HZ]
     nxdntool.py mod IN.dibits OUT.raw [--9600] [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ]
                [--invert] [--carrier-gap S] [--seed S]
     nxdntool.py selftest
@@ -262,7 +263,7 @@ def cmd_decode(a):
 
 
 def cmd_disc(a):
-    return report(run(["disc", a.input] + pass_opts(a, ["--9600", "--ran", "--rate", "--full", "--counts-per-khz", "--invert"])), a)
+    return report(run(["disc", a.input] + pass_opts(a, ["--9600", "--ran", "--rate", "--full", "--counts-per-khz", "--slope-hz", "--invert"])), a)
 
 
 def cmd_mod(a):
@@ -376,6 +377,7 @@ def main(argv=None):
     s.add_argument("--rate", type=int, required=True)
     s.add_argument("--full", type=float)
     s.add_argument("--counts-per-khz", type=float)
+    s.add_argument("--slope-hz", type=int)
     s.add_argument("--invert", action="store_true")
     common(s)
     s.set_defaults(fn=cmd_disc)

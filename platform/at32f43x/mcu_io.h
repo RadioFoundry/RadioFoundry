@@ -119,9 +119,14 @@ static inline void mcu_adc_init(void) { at32_adc_init(); }
 static inline uint16_t mcu_adc_read(uint8_t ch) { return at32_adc_read(ch); }
 // The sampling channel: ch converted on its own trigger and data register (the preempted group, adc.c), so a timer
 // interrupt can sample audio while tasks go on with mcu_adc_read. The interrupt starts a conversion each tick and reads
-// the one it started the tick before (done well within a tick at audio rates); neither waits
+// the one it started the tick before (done well within a tick at audio rates); neither waits. Always started (true): a
+// refused start (gd32f30x) is for an ADC too slow to share at the sampling rate
 static inline void mcu_adc_sample_init(uint8_t ch) { at32_adc_sample_init(ch); }
-static inline void mcu_adc_sample_start(void) { ADC_CTRL2(ADC1_BASE) |= ADC_CTRL2_PCSWTRG; }
+static inline bool mcu_adc_sample_start(void)
+{
+	ADC_CTRL2(ADC1_BASE) |= ADC_CTRL2_PCSWTRG;
+	return true;
+}
 static inline uint16_t mcu_adc_sample_value(void) { return (uint16_t)(ADC_PDT1(ADC1_BASE) & 0xFFFu); }
 
 // --- Clocks, system services, USB identity ---

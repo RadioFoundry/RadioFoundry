@@ -789,6 +789,11 @@ A keypad microphone unplugged while the radio is on stops its PTT within 3 secon
   90-100 % the brightest). By default it dims after 30 s and never goes off (**Backlight Dim/Off** 30s/dim). RadioFoundry doesn't control the status light yet, so its colors don't follow the radio's manual.
 - The hotspot, single frequency repeating, privacy, the USB network and zone sharing are left out: the
   radio's memory is too small for all of them, and the vocoder runs in the DMR chip, out of the processor's reach.
+- P25 and NXDN ([P25 channels](07-channels-zones-vfo.md#p25-channels), [NXDN
+  channels](07-channels-zones-vfo.md#nxdn-channels)) receive only, with no voice: a call shows on the screen but
+  stays silent, and PTT on a P25 or NXDN channel is refused ("This mode: receive only"). The DMR chip has no P25 or
+  NXDN of its own, so the processor decodes the receive signal itself. Untested on the radio. P25 trunking is left
+  out: it doesn't fit the memory.
 
 ## AnyTone AT-D578UV (AT32)
 

@@ -64,10 +64,40 @@ void d578uv_pa_counts_reset(void);
 // From the last DMR burst's line fall to tx_off() and to the receiver set up again, in us (0 before any)
 void d578uv_rx_back(uint32_t *off_us, uint32_t *rx_us);
 #endif
-#if CONFIG_APRS_RX
-// Side A is receiving FM (tuned, not transmitting, not in AM): what PC0 carries is worth demodulating
-// (afsk_d578uv.c). Radio task
-bool d578uv_fm_rx_a(void);
+#if CONFIG_APRS_RX || CONFIG_AIR
+// Side A is receiving in mode (tuned, not transmitting, not in AM, the baseband not on side B): what PC0 carries is
+// worth demodulating (rxtap_d578uv.c). Any task
+bool d578uv_rx_a(radio_mode_t mode);
+// The receive tap on PC0 (rxtap_d578uv.c), APRS receive's and the air tap's, one at a time: start at hz (false while
+// running); readings with the bias removed while side A receives in mode (else none, and what is held goes); the
+// time of the next read's first reading, on hal_micros; stop
+bool d578uv_rxtap_start(uint32_t hz);
+uint16_t d578uv_rxtap_read(int16_t *buf, uint16_t max, radio_mode_t mode);
+uint32_t d578uv_rxtap_time_us(void);
+void d578uv_rxtap_stop(void);
+#endif
+#if CONFIG_AIR
+// P25 and NXDN receive: the air tap on PC0 (rxtap_d578uv.c), polled by the modem task (modem_d578uv.c)
+extern const hal_baseband_t d578uv_baseband;
+void d578uv_air_init(void);
+bool d578uv_digital(void);		// the board is in its digital mode (radio_d578uv.c)
+// The modem task's lock (recursive), held around each of its polls
+void d578uv_modem_lock(void);
+void d578uv_modem_unlock(void);
+// P25 and NXDN transmit (rxtap_d578uv.c's transmit tap). The radio keyed for it: tx() on a digital channel while an
+// air session is open keys FM with chip 0's audio input for PB9 (radio_d578uv.c)
+bool d578uv_air_keyed(void);
+// The samples' gain for the transmission keyed now (Q15, 32768 = 1): lower while it has the Bluetooth module off
+uint16_t d578uv_air_tx_gain(void);
+// PB9's samples (tone_d578uv.c): a ring the caller gives (len a power of two; it stays the caller's until stop) and
+// the samples' gain (Q15), the samples into it as PWM duties (how many it took), the interrupt at rate_hz taking one a
+// tick, stop
+void d578uv_air_tx_ring(uint8_t *buf, uint16_t len, uint16_t gain_q15);
+uint16_t d578uv_air_tx_put(const int16_t *s, uint16_t n);
+bool d578uv_air_tx_start(uint32_t rate_hz);
+void d578uv_air_tx_stop(void);
+// The duties' ring in the receive tap's memory, for the transmit side while the tap is stopped (NULL while it runs)
+uint8_t *d578uv_rxtap_mem(uint16_t *len);
 #endif
 #if CONFIG_APRS
 // APRS: the tones sent on PB9 (tone_d578uv.c), received on PC0 with CONFIG_APRS_RX (afsk_d578uv.c)
@@ -110,8 +140,8 @@ void d578uv_diag_reset(void);
 // The DTMF pair on PB9 (tone_d578uv.c): start, or change to, low_hz + high_hz
 void d578uv_dtmf_start(uint16_t low_hz, uint16_t high_hz);
 #endif
-#if CONFIG_DTMF || CONFIG_APRS
-// PB9's audio off, DTMF or AFSK; plain register writes (d578uv_rf_safe)
+#if CONFIG_DTMF || CONFIG_APRS || CONFIG_AIR
+// PB9's audio off, DTMF, AFSK or air transmit; plain register writes (d578uv_rf_safe)
 void d578uv_tone_stop(void);
 #endif
 
@@ -149,6 +179,16 @@ void d578uv_flash_ext_stats(nand_blocks_stats_t *st);	// the ID database's range
 void d578uv_bt_init(void);
 uint32_t d578uv_bt_scan(void);		// key bits from the module, the probe while nothing has answered
 void d578uv_bt_stats(hal_bt_stats_t *st);
+bool d578uv_bt_linked(void);		// a link is up (radio task)
+void d578uv_bt_off(void);		// the radio powered the module off: counted for the debug link
+#else
+static inline bool d578uv_bt_linked(void)
+{
+	return false;	// nothing reads the module
+}
+static inline void d578uv_bt_off(void)
+{
+}
 #endif
 
 // --- GPS (gps_d578uv.c) ---

@@ -419,8 +419,11 @@ key scan, so the core sees PTT and keys as from any other key. Which radios have
 
 Any one held is PTT. A link that ends, or the module restarting, releases all three: a link lost mid-transmission
 doesn't hold the transmitter on, and the core's TX time-out still applies. A hand mic's key events hold their key for
-a short time each, past the core's debounce. Present, PTT, the last key and the counts are in the debug link's
-`input.bt_*` keys (`hal_input_t.bt_stats`). Pairing and Bluetooth audio aren't part of it.
+a short time each, past the core's debounce. The parser also counts the links up (a connection line with an address
+adds one, a disconnection removes one, a restart clears them). A board whose module shares an audio line with a
+transmit path may power the module off for a transmission while no link is up, so the module starts clean after it.
+Present, PTT, the last key, the links, those power-offs and the counts are in the debug link's `input.bt_*` keys
+(`hal_input_t.bt_stats`). Pairing and Bluetooth audio aren't part of it.
 
 ## 4. Beeps (CONFIG_BEEP)
 
