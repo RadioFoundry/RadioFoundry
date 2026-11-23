@@ -319,6 +319,26 @@ it also runs its online audits (impostor commits, actions with known vulnerabili
 A finding that stays is ignored at its line with `# zizmor: ignore[<rule>]` and the reason. `.github/zizmor.yml` turns
 off only `self-repository`: Gitea runs the same workflows and has no `$/` syntax.
 
+## Repository settings
+
+The workflows rely on settings only the owner can change (Settings on GitHub). They are not in the tree, so this table
+is what to check after a fork, a transfer or a settings change.
+
+| Setting | Where | Value |
+|---|---|---|
+| `main` ruleset | Rules, Rulesets | Require a pull request, code owner review (`.github/CODEOWNERS`), the `PR checks` status check, the merge queue (groups of up to 5, all entries must pass); no force-push, no deletion |
+| Release tags | Rules, Rulesets, new tag ruleset | Target `refs/tags/v*`. Restrict creations, restrict updates, restrict deletions. Bypass list: the Maintain and Admin repository roles, the people who serve as release manager ([release.md](release.md)); no App, no GitHub Actions. Nothing in CI creates a `v*` tag; `release.yml` and `manual.yml` only read one |
+| `nightly-ci` tag | Rules, Rulesets, new tag ruleset | Target `refs/tags/nightly-ci`. Restrict creations, updates and deletions. Bypass list: GitHub Actions only (`nightly.yml`'s `mark` job moves the tag with the job's token), no role. Check after saving that the next nightly's `mark` job still pushes; if the bypass list doesn't offer GitHub Actions, add the GitHub App whose token the job is given instead |
+| `nightly` tag | Rules, Rulesets, new tag ruleset | Target `refs/tags/nightly`. Restrict creations, updates and deletions. Bypass list: GitHub Actions (`hil.yml`'s `nightly` job moves the tag) and whoever else may move it by hand (`site.yml`: a person or an App), by name |
+| `hil-rf` environment | Environments | Required reviewers: the people who may let a HIL run transmit. Deployment branches: `main` only. `hil.yml` sends a run with `rf` ticked through it, so the run waits for a reviewer |
+| `site` environment | Environments | Secret `CLOUDFLARE_DEPLOY_HOOK`; deployment branches and tags: `main`, `v*`, `nightly` (`site.yml`, [website.md](website.md)) |
+| Fork runs | Actions, General | Approval for running fork pull request workflows: all external contributors |
+| Allowed actions | Actions, General | GitHub's own actions only, full-length commit SHAs required |
+
+On Gitea (the HIL runner's primary, [ci-runners.md](ci-runners.md#hil-runner)) there are no environments with
+reviewers: there the `rf` checkbox and the refusal of `--allow-*` in free-text flags are the gate, and dispatching a
+run takes write access to the repository.
+
 ## Running the pieces locally
 
 ```
