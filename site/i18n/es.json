@@ -1888,7 +1888,7 @@
  "editor.p25.hold": "Espera tras una llamada (s)",
  "editor.p25.hold_help": "Cuánto se queda la radio en el canal de voz tras una llamada, para una respuesta. 0: vuelve al canal de control de inmediato.",
  "editor.p25.roam_dbm": "Cambiar de sitio por debajo de (dBm)",
- "editor.p25.roam_dbm_help": "Se guarda para más adelante: la radio aún no cambia de sitio según la señal. 0: el ajuste propio de la radio.",
+ "editor.p25.roam_dbm_help": "Con firmware de itinerancia de solo recepción que evalúa la calidad: busca tras 3 segundos de señal débil o mala decodificación del canal de control. Prefiere una mejor decodificación y usa la intensidad de señal cuando la calidad es similar. 0 desactiva ambos criterios.",
  "editor.p25.site_no": "Sitio",
  "editor.p25.rfss": "RFSS",
  "editor.p25.site": "ID de sitio",

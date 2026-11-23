@@ -1888,7 +1888,7 @@
  "editor.p25.hold": "Attesa dopo una chiamata (s)",
  "editor.p25.hold_help": "Per quanto la radio resta sul canale voce dopo una chiamata, per una risposta. 0: torna subito al canale di controllo.",
  "editor.p25.roam_dbm": "Cambia sito sotto (dBm)",
- "editor.p25.roam_dbm_help": "Salvato per dopo: la radio non cambia ancora sito in base al segnale. 0: l'impostazione della radio.",
+ "editor.p25.roam_dbm_help": "Con firmware di roaming in sola ricezione basato sulla qualità: cerca dopo 3 secondi di segnale debole o scarsa decodifica del canale di controllo. Preferisce una decodifica migliore e usa la potenza del segnale quando la qualità è simile. 0 disabilita entrambi i criteri.",
  "editor.p25.site_no": "Sito",
  "editor.p25.rfss": "RFSS",
  "editor.p25.site": "ID sito",

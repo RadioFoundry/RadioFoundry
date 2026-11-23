@@ -22,7 +22,7 @@ State:
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
 | Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
+| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
 check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
@@ -268,7 +268,7 @@ caller refused, and waits on a busy inbound channel.
 | `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
 | `groups[]`, `voice_lost_ms`, `call_max_ms`, `P25_FOLLOW_NO_UNIT` | none yet |
 
-Not used: `sys.roam_dbm`.
+`sys.roam_dbm`: negative values enable receive-only quality and signal site surveys with `CONFIG_P25_ROAM`; 0 disables both triggers.
 
 ## 7. The radio core
 
@@ -306,7 +306,7 @@ registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits,
 refusal. The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
-Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
+Not used yet: the fallback channel and an RX group list (`groups`).
 
 Memory: the transmit side adds 120 bytes to the follower (lent with it) and 28 bytes to the radio task's copy of the
 view, plus the radio core's request state (`p25_trunk_t`: the burst in hand, 12 bytes, and a few flags).
@@ -372,3 +372,42 @@ of a live control channel settles them.
 | The system service broadcast's layout | view only |
 | The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
 | The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | used to recognize the header and count it only |
+
+### Receive-only quality and signal roaming
+
+`CONFIG_P25_ROAM` enables optional control-channel surveys. A negative system
+`roam_dbm` enables both decode-quality and signal triggers; 0 disables both.
+The transmit side must be disabled and at least two control channels programmed.
+
+Quality is measured over one second of control traffic. The score is the lower
+of the CRC-valid TSDU block percentage and the percentage of five 200 ms intervals
+containing a CRC-valid block. Fewer than eight valid blocks score zero. Repeated
+bad-CRC recovery does not count as valid reception. Samples reset on retuning;
+voice traffic never contributes. This is a control-channel reliability heuristic,
+not a measured RF bit error rate or a guarantee of voice-channel decoding quality.
+
+Three continuous seconds of RSSI below the configured threshold or quality below
+90 starts a survey, at least 30 seconds after startup or the last survey start.
+Voice calls are never interrupted to begin a survey. The old frequency is skipped.
+Each identity-matched candidate is sampled for one second and needs fresh RSSI.
+A candidate must score at least 80 and meet either condition:
+
+- Quality improves by at least 10 points and RSSI is no lower than 10 dB below
+  the configured threshold. This permits a cleaner, weaker site to win.
+- Quality is no more than five points worse, RSSI improves by at least 6 dB,
+  and RSSI is at or above the configured threshold.
+
+The survey keeps the best qualifying sample: quality differences greater than
+five points take precedence; within five points, stronger RSSI wins. It examines
+candidates until the list is exhausted or 20 seconds elapse, then reacquires the
+best measured candidate. With no qualifying improvement it reacquires the old
+control channel. Missing or incomplete measurements never count as improvement.
+
+This selects the best eligible candidate measured within the survey budget, not
+the best of every site at all times. A healthy current site is retained. A single
+receiver misses grants while surveying and cannot measure two sites simultaneously.
+Codeplug loading retains up to 32 programmed control channels per system. Host
+tests cover strong corrupt and weaker clean candidates, coverage gaps, ranking,
+stale RSSI, recovered bad CRCs, hysteresis, bounded return, disabled roaming,
+and no survey during voice or on a transmit-enabled system. Live road behavior
+and degraded-simulcast performance remain unverified.

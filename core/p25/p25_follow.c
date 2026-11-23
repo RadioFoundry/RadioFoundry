@@ -8,7 +8,7 @@
 #include <string.h>
 
 // It sits in memory the caller places, with the engine; the tightest radio lends both from its vocoder
-_Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its budget");
+_Static_assert(sizeof(p25_follow_t) <= 480 + (CONFIG_P25_ROAM ? 48 : 0), "the trunking follower grew past its budget");
 
 #define IDEN_VALID	0x01
 #define IDEN_PROG	0x02	// programmed: never replaced off air
@@ -18,7 +18,7 @@ _Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its
 
 #define NO_OP		0xFF	// acc.pend: nothing waiting
 
-enum { PH_DWELL, PH_IDENT, PH_BACKOFF };
+enum { PH_DWELL, PH_IDENT, PH_BACKOFF, PH_SAMPLE };
 // Why a voice channel is left
 enum { LEAVE_TERM, LEAVE_ENC, LEAVE_OTHER };
 
@@ -39,8 +39,61 @@ static void count8(uint8_t *c)
 		(*c)++;
 }
 
+#if CONFIG_P25_ROAM
+// A one-second control sample combines CRC integrity with coverage of five
+// 200 ms intervals. A high RSSI cannot hide long gaps without decoded blocks.
+// This is a control-channel reliability score, not a measured RF bit error rate.
+static uint8_t quality_score(const p25_follow_t *f)
+{
+	if (f->quality_good < 8)
+		return 0;
+	unsigned total = (unsigned)f->quality_good + f->quality_bad;
+	unsigned crc = (unsigned)f->quality_good * 100 / total;
+	unsigned bins = 0;
+	for (unsigned i = 0; i < 5; i++)
+		bins += (f->quality_bins >> i) & 1u;
+	unsigned coverage = bins * 20;
+	return (uint8_t)(crc < coverage ? crc : coverage);
+}
+
+static void quality_reset(p25_follow_t *f, uint32_t now)
+{
+	f->t_quality = now;
+	f->quality_good = f->quality_bad = f->quality_bins = 0;
+	f->quality_ready = false;
+}
+
+static void quality_update(p25_follow_t *f, uint32_t now)
+{
+	if (f->view.state == P25_FOLLOW_CONTROL && elapsed(now, f->t_quality, 1000)) {
+		f->quality = quality_score(f);
+		quality_reset(f, now);
+		f->quality_ready = true;
+	}
+}
+
+static void quality_block(p25_follow_t *f, bool good, uint32_t now)
+{
+	if (f->view.state != P25_FOLLOW_CONTROL && f->view.state != P25_FOLLOW_HUNT)
+		return;
+	quality_update(f, now);
+	if (good) {
+		count8(&f->quality_good);
+		unsigned bin = (uint32_t)(now - f->t_quality) / 200;
+		if (bin < 5)
+			f->quality_bins |= (uint8_t)(1u << bin);
+	} else {
+		count8(&f->quality_bad);
+	}
+}
+#endif
+
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
+#if CONFIG_P25_ROAM
+	f->signal_valid = false;
+	f->weak = false;
+#endif
 	f->tuning = true;
 	f->acc.heard = false;
 	if (f->hooks->tune)
@@ -154,6 +207,17 @@ static void cc_learn(p25_follow_t *f, uint16_t ch)
 // ── Hunt ──
 static void hunt_try(p25_follow_t *f, uint32_t now);
 
+#if CONFIG_P25_ROAM
+static void roam_finish(p25_follow_t *f, uint32_t now)
+{
+	// Reacquire the measured winner, or the original when no candidate improved.
+	f->roaming = false;
+	f->view.cc = f->best_cc;
+	f->tried = 0;
+	hunt_try(f, now);
+}
+#endif
+
 static void hunt_next(p25_follow_t *f, uint32_t now)
 {
 	uint8_t n = cc_count(f);
@@ -176,7 +240,11 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	while (f->tried < n) {
 		uint32_t hz = cc_hz(f, f->view.cc);
 
-		if (hz) {
+		if (hz
+#if CONFIG_P25_ROAM
+		    && (!f->roaming || hz != cc_hz(f, f->roam_origin))
+#endif
+		) {
 			f->phase = PH_DWELL;
 			f->view.cc_hz = hz;
 			tune(f, hz, P25_FOLLOW_TUNE_CONTROL, 0);
@@ -185,6 +253,12 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 		f->tried++;
 		f->view.cc = (uint8_t)(f->view.cc + 1 >= n ? 0 : f->view.cc + 1);
 	}
+#if CONFIG_P25_ROAM
+	if (f->roaming) {
+		roam_finish(f, now);
+		return;
+	}
+#endif
 	f->phase = PH_BACKOFF;
 	f->tried = 0;
 	f->view.cc = f->good < n ? f->good : 0;
@@ -192,6 +266,28 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	if (f->view.cc_hz)
 		tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
 }
+
+#if CONFIG_P25_ROAM
+static void roam_sample(p25_follow_t *f, uint32_t now)
+{
+	uint8_t score = quality_score(f);
+	bool fresh = f->signal_valid && !elapsed(now, f->t_signal, 500);
+	// A clearly cleaner site may be weaker. RSSI still supplies a floor; a
+	// stronger site with essentially equal decoding must clear a 6 dB margin.
+	bool cleaner = score >= 80 && score >= (unsigned)f->origin_quality + 10 &&
+		f->signal_dbm >= f->cfg->roam_dbm - 10;
+	bool stronger = score >= 80 && (unsigned)score + 5 >= f->origin_quality &&
+		f->signal_dbm >= f->cfg->roam_dbm && f->signal_dbm >= f->origin_dbm + 6;
+	if (fresh && (cleaner || stronger) &&
+	    (f->best_cc == f->roam_origin || score > (unsigned)f->best_quality + 5 ||
+	     ((unsigned)score + 5 >= f->best_quality && f->signal_dbm > f->best_dbm))) {
+		f->best_cc = f->view.cc;
+		f->best_quality = score;
+		f->best_dbm = f->signal_dbm;
+	}
+	hunt_next(f, now);
+}
+#endif
 
 static void acc_lost(p25_follow_t *f);
 
@@ -209,6 +305,10 @@ static void hunt_start(p25_follow_t *f, uint32_t now)
 
 static void accept(p25_follow_t *f, uint16_t nac, uint32_t now)
 {
+#if CONFIG_P25_ROAM
+	f->roaming = false;
+	f->weak = false;
+#endif
 	f->view.state = P25_FOLLOW_CONTROL;
 	f->view.nac = nac;
 	f->view.fallback = false;
@@ -676,6 +776,14 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 			}
 			return;
 		}
+#if CONFIG_P25_ROAM
+		if (f->roaming) {
+			// Identity matched, but one good block is not enough to rank a site.
+			// Grants during the bounded survey are deliberately not followed.
+			f->phase = PH_SAMPLE;
+			return;
+		}
+#endif
 		accept(f, nac, now);
 	}
 	f->t_good = now;
@@ -748,6 +856,9 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	f->cfg = cfg;
 	f->hooks = hooks;
 	f->ctx = ctx;
+#if CONFIG_P25_ROAM
+	f->t_roam = now;
+#endif
 	f->good = 0xFF;
 	f->view.wacn = UINT32_MAX;
 	f->view.sysid = UINT16_MAX;
@@ -797,6 +908,9 @@ void p25_follow_end(p25_follow_t *f)
 void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 {
 	view_begin(f);
+#if CONFIG_P25_ROAM
+	quality_reset(f, now);
+#endif
 	f->tuning = false;
 	// Timers run from the moment the receiver is there
 	f->t_state = now;
@@ -814,6 +928,9 @@ void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	view_begin(f);
 	f->view.blocks++;
 	f->view.unverified = false;	// a block that passed its CRC
+#if CONFIG_P25_ROAM
+	quality_block(f, true, now);
+#endif
 	on_block(f, blk, nac, now);
 	view_end(f);
 }
@@ -836,6 +953,10 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 
 		for (uint8_t k = 0; k < n && !f->tuning; k++) {
 			bool good = p25_block_get(u->air, k, blk) >= 0;
+#if CONFIG_P25_ROAM
+			// Repeated bad-CRC recovery must never improve the quality score.
+			quality_block(f, good, now);
+#endif
 			if (!good && !((f->cfg->flags & P25_FOLLOW_BAD_CRC) && rx_seen(&f->seen, blk, P25_TSBK_BYTES))) {
 				f->view.crc_fail++;
 				continue;
@@ -903,6 +1024,51 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 	view_end(f);
 }
 
+#if CONFIG_P25_ROAM
+void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
+{
+	if (f->tuning || dbm >= 0 || dbm < -160)
+		return;
+	// The RF status can briefly still describe the previous frequency.
+	if (f->view.state == P25_FOLLOW_HUNT && !elapsed(now, f->t_state, 100))
+		return;
+	f->signal_dbm = dbm;
+	f->t_signal = now;
+	f->signal_valid = true;
+	quality_update(f, now);
+	bool poor = f->quality_ready && f->quality < 90;
+	if (f->view.state != P25_FOLLOW_CONTROL || f->cfg->roam_dbm >= 0 ||
+	    (f->cfg->flags & P25_FOLLOW_TX) || f->cfg->ncc < 2 || (dbm >= f->cfg->roam_dbm && !poor)) {
+		f->weak = false;
+		return;
+	}
+	if (!f->weak) {
+		f->weak = true;
+		f->t_weak = now;
+	}
+	if (!elapsed(now, f->t_weak, 3000) || !elapsed(now, f->t_roam, 30000))
+		return;
+	view_begin(f);
+	f->roam_origin = f->view.cc;
+	f->origin_dbm = f->best_dbm = dbm;
+	// No complete origin sample is not evidence of poor decoding.
+	f->origin_quality = f->best_quality = f->quality_ready ? f->quality : 100;
+	f->best_cc = f->roam_origin;
+	f->t_roam = now;
+	f->weak = false;
+	f->roaming = true;
+	acc_lost(f);
+	f->view.state = P25_FOLLOW_HUNT;
+	count(&f->view.hunts);
+	f->t_nocc = now;
+	f->tried = 0;
+	f->backoff = P25_FOLLOW_BACKOFF_MS;
+	f->view.cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+	hunt_try(f, now);
+	view_end(f);
+}
+#endif
+
 void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
@@ -912,6 +1078,16 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 	view_begin(f);
 	switch (f->view.state) {
 	case P25_FOLLOW_HUNT:
+#if CONFIG_P25_ROAM
+		if (f->roaming && elapsed(now, f->t_roam, 20000)) {
+			roam_finish(f, now);
+			break;
+		}
+		if (f->roaming && f->phase == PH_SAMPLE && elapsed(now, f->t_quality, 1000)) {
+			roam_sample(f, now);
+			break;
+		}
+#endif
 		if (c->fallback_ms && !f->view.fallback && elapsed(now, f->t_nocc, c->fallback_ms)) {
 			f->view.fallback = true;
 			if (f->hooks->fallback)

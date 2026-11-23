@@ -312,6 +312,7 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 		c->flags |= P25_FOLLOW_TX;
 	if (l->sys.options & P25_TSYS_NO_REG)
 		c->flags |= P25_FOLLOW_NO_REG;
+	c->roam_dbm = l->sys.roam_dbm;
 	c->ncc = l->ctl_count;
 	for (uint8_t i = 0; i < l->ctl_count; i++)
 		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .tx_hz = l->ctl[i].tx_hz, .chan = l->ctl[i].chan,
@@ -375,6 +376,13 @@ static void trunk_service(p25_mem_t *m)
 		t->ptt_done = t->ptt_seq;
 		p25_follow_ptt(&t->f, t->ptt, now);
 	}
+#if CONFIG_P25_ROAM
+	if (board.radio->status) {
+		radio_status_t st = {0};
+		board.radio->status(&st);
+		p25_follow_signal(&t->f, st.rssi_dbm, now);
+	}
+#endif
 	p25_follow_tick(&t->f, now);
 	leave(&t->in_radio);
 	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which

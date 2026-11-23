@@ -454,3 +454,20 @@ Either way you can type any frequency, 90.2 for example. In the air band **Auto*
 
 Channels outside the radio's bands don't transmit ("Outside ..."). Receive-only channels show "RX only" as the talk
 target.
+
+### Receive-only P25 site search
+
+A P25 system can hold multiple sites and up to 32 control-channel candidates.
+With receive-only quality and signal roaming built in, a negative **Change site
+below** value enables searches after three seconds of weak signal or unreliable
+control decoding. A clean but weaker site can beat a strong, poorly decoded one;
+signal strength breaks close quality comparisons. The radio measures candidates
+for a full second, checks their system identity, and requires a clear improvement.
+It waits at least 30 seconds between survey starts and searches for at most 20
+seconds before reacquiring the best candidate measured, or the old control channel
+when none improves reception. It never interrupts a voice call to start a search.
+Set the value to 0 to disable both quality and signal roaming.
+
+Healthy reception stays on its current site. Searches can miss new calls; this is
+not simultaneous reception of several sites. Control-channel quality is useful
+for site choice but cannot guarantee clear voice on every channel of that site.

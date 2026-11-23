@@ -112,7 +112,7 @@ void p25_iden_encode(const p25_iden_t *i, uint8_t out[P25_CP_IDEN_LEN]);
 
 // What following a system needs: the system, its sites' control channels in hunt order, the plan; the channel's
 // talk group, whether it follows every group, the fallback
-#define P25_CP_CTL_MAX		16u
+#define P25_CP_CTL_MAX		32u
 #define P25_CP_IDEN_MAX		16u
 typedef struct {
 	p25_tsys_t sys;

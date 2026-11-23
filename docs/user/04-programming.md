@@ -192,7 +192,7 @@ transmit.
 | Skip encrypted calls | Don't follow a grant for an encrypted call |
 | Hold after a call | Seconds on the voice channel after a call ends. 0: back to the control channel at once |
 | Use only the channel plan entered here (sites and roaming) | Ignore the plan the control channel sends |
-| Change site below (sites and roaming) | Kept in the codeplug; the radio doesn't change site on signal level yet |
+| Change site below (sites and roaming) | With receive-only roaming firmware, a negative value enables searches on weak signal or unreliable control decoding; 0 disables them |
 
 **Sites** and **Channel plan** (per identifier: base frequency, spacing, TX offset, bandwidth) are optional. Without a
 plan entry the radio uses the plan the control channel sends.
