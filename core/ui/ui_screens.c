@@ -1021,6 +1021,24 @@ static void draw_talk_dmr(const radio_view_t *v, bool label_first);
 static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 #endif
 
+static const char *home_channel_name(const radio_view_t *v, uint16_t *number)
+{
+	*number = v->channel_number;
+#if CONFIG_P25_ZONE_SCAN
+	// Only the displayed name/number follows the scan hit. Actions and priority
+	// continue to use the selected channel in the radio view.
+	if (v->scan && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
+	    v->p25.trunk == RADIO_P25_TRUNK_VOICE && v->p25.scan_channel) {
+		static char name[CODEPLUG_NAME_LEN + 1];
+		if (codeplug_channel_name(v->p25.scan_channel, name)) {
+			*number = v->p25.scan_channel;
+			return name;
+		}
+	}
+#endif
+	return v->ch.name;
+}
+
 static void draw_place(const radio_view_t *v, const ui_state_t *s)
 {
 	const ui_layout_t *L = &ui_layout;
@@ -1089,19 +1107,21 @@ static void draw_place(const radio_view_t *v, const ui_state_t *s)
 
 	// Channel number (medium, dim) and name, baselines aligned. The name uses the largest font it fits in; only a name
 	// too long even for the small font is shortened from the middle
+	uint16_t number;
+	const char *name = home_channel_name(v, &number);
 	sb_init(&b, buf, sizeof buf);
-	sb_u32(&b, v->channel_number, 1);
+	sb_u32(&b, number, 1);
 	int x = gfx_text(L->medium, 0, base - L->medium->ascent, buf, gfx_bpp() == 1 ? ui_col.dim : ui_col.chnum) +
 		L->medium->w / 2;
 	int avail = w - x;
 	if (v->temporary)
 		avail -= L->medium->w;
 	const font_t *nf = L->large;
-	if (gfx_text_width(nf, v->ch.name) > avail)
+	if (gfx_text_width(nf, name) > avail)
 		nf = L->medium;
-	if (gfx_text_width(nf, v->ch.name) > avail)
+	if (gfx_text_width(nf, name) > avail)
 		nf = L->small;
-	gfx_text_fit(nf, v->ch.name, avail, fit, sizeof fit);
+	gfx_text_fit(nf, name, avail, fit, sizeof fit);
 	x = gfx_text(nf, x, nf == L->large ? y : base - nf->ascent, fit, ui_col.fg);
 	if (v->temporary)
 		gfx_text(L->medium, x, base - L->medium->ascent, GLYPH_DOT, ui_col.warn);
@@ -2385,8 +2405,10 @@ static void draw_home_large(const radio_view_t *v, const ui_state_t *s)
 	bool tx = v->state == RS_TX && v->vfo;
 	if (v->vfo)
 		sb_freq(&b, tx ? v->ch.tx_hz : v->ch.rx_hz);
-	else
-		sb_str(&b, v->ch.name);
+	else {
+		uint16_t number;
+		sb_str(&b, home_channel_name(v, &number));
+	}
 	const font_t *f = large_font(buf, room, form, sizeof form);
 	gfx_text_fit(f, form, w, fit, sizeof fit);
 	gfx_text(f, 0, y, fit, tx ? ui_col.tx : ui_col.fg);

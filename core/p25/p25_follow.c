@@ -8,7 +8,8 @@
 #include <string.h>
 
 // It sits in memory the caller places, with the engine; the tightest radio lends both from its vocoder
-_Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its budget");
+_Static_assert(sizeof(p25_follow_t) <= 480 + (CONFIG_P25_ZONE_SCAN ? 24 : 0),
+	       "the trunking follower grew past its budget");
 
 #define IDEN_VALID	0x01
 #define IDEN_PROG	0x02	// programmed: never replaced off air
@@ -41,6 +42,9 @@ static void count8(uint8_t *c)
 
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
+#if CONFIG_P25_ZONE_SCAN
+	f->pending.valid = false;
+#endif
 	f->tuning = true;
 	f->acc.heard = false;
 	if (f->hooks->tune)
@@ -230,6 +234,10 @@ static bool group_wanted(const p25_follow_t *f, uint16_t tg, uint32_t now)
 
 	if (!tg)
 		return false;
+#if CONFIG_P25_ZONE_SCAN
+	if ((c->flags & P25_FOLLOW_ZONE_SCAN) && tg == c->talk_group)
+		return true;	// the selected group wins even during another group's reply hold
+#endif
 	if (f->hold_tg && c->hold_ms && !elapsed(now, f->t_hold, c->hold_ms))
 		return tg == f->hold_tg;
 	if ((c->flags & P25_FOLLOW_ALL_GROUPS) || tg == c->talk_group)
@@ -274,6 +282,10 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 		return false;
 	}
 	if (has_svc && (svc & P25_SVC_PROTECTED) && (c->flags & P25_FOLLOW_SKIP_ENC)) {
+#if CONFIG_P25_ZONE_SCAN
+		if (f->pending.valid && f->pending.ch == ch && f->pending.tg == tg)
+			f->pending.valid = false;
+#endif
 		count(&f->view.enc_skip);
 		refuse(f, P25_REFUSE_ENC, tg);
 		f->left_ch = ch;
@@ -292,6 +304,21 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 		refuse(f, P25_REFUSE_TDMA, tg);
 		return false;
 	}
+#if CONFIG_P25_ZONE_SCAN
+	if ((c->flags & P25_FOLLOW_ZONE_SCAN) && !unit && tg != c->talk_group && !f->pending.release) {
+		if (!f->pending.valid) {
+			f->pending.since = now;
+			f->pending.src = src;
+			f->pending.ch = ch;
+			f->pending.tg = tg;
+			f->pending.op = op;
+			f->pending.svc = svc;
+			f->pending.has_svc = has_svc;
+			f->pending.valid = true;
+		}
+		return false;
+	}
+#endif
 	f->view.state = P25_FOLLOW_VOICE;
 	f->view.voice_hz = hz;
 	f->view.unit_call = unit;
@@ -741,6 +768,20 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 static void view_begin(p25_follow_t *f) { f->seq++; }
 static void view_end(p25_follow_t *f) { f->seq++; }
 
+#if CONFIG_P25_ZONE_SCAN
+void p25_follow_groups_changed(p25_follow_t *f, uint32_t now)
+{
+	view_begin(f);
+	f->pending.valid = false;
+	f->hold_tg = 0;
+	if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK &&
+	    (f->view.unit_call ? (f->cfg->flags & P25_FOLLOW_NO_UNIT) != 0 : !group_wanted(f, f->view.tg, now)))
+		leave(f, LEAVE_OTHER, now);
+	f->hold_tg = 0;	// leaving an excluded call must not create a new hold on that group
+	view_end(f);
+}
+#endif
+
 void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_follow_hooks_t *hooks, void *ctx,
 		      uint32_t now)
 {
@@ -933,6 +974,15 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 			hunt_start(f, now);
 		} else {
 			acc_tick(f, now);
+#if CONFIG_P25_ZONE_SCAN
+			if (!f->tuning && f->pending.valid && elapsed(now, f->pending.since, P25_FOLLOW_PRIORITY_MS)) {
+				f->pending.valid = false;
+				f->pending.release = true;
+				consider(f, f->pending.op, false, f->pending.ch, f->pending.tg, 0, f->pending.src,
+					 f->pending.has_svc, f->pending.svc, now);
+				f->pending.release = false;
+			}
+#endif
 		}
 		break;
 	case P25_FOLLOW_VOICE:

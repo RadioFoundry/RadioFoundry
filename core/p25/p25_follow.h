@@ -40,6 +40,8 @@
 #define P25_FOLLOW_NO_UNIT	0x08	// unit to unit calls to or from unit_id are not followed
 #define P25_FOLLOW_TX		0x10	// the transmit side: register, affiliate, ask for voice channels (unit_id set)
 #define P25_FOLLOW_NO_REG	0x20	// ... without registering or affiliating: PTT asks at once
+#define P25_FOLLOW_ZONE_SCAN	0x80	// listed groups only, selected group has priority between calls
+#define P25_FOLLOW_PRIORITY_MS	150	// collect other grants briefly while waiting for the selected group
 #define P25_FOLLOW_BAD_CRC	0x40	// the channel's Accept invalid CRC: a block that fails its CRC is taken when the
 					// same block failed lately, and the transmit side waits while the last one taken
 					// failed (view.unverified)
@@ -212,6 +214,14 @@ typedef struct {
 	uint32_t t_left;	// left a call on its terminator
 	uint32_t backoff;	// ms
 	uint16_t hold_tg, left_tg, left_ch;
+#if CONFIG_P25_ZONE_SCAN
+	struct {
+		uint32_t since, src;
+		uint16_t ch, tg;
+		uint8_t op, svc;
+		bool valid, has_svc, release;
+	} pending;
+#endif
 	uint16_t learn[P25_FOLLOW_LEARN];
 	uint8_t nlearn;
 	uint8_t good;		// the last control channel that answered, 0xFF none
@@ -240,6 +250,10 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now);
 void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now);
 // Timers: call at least every 100 ms
 void p25_follow_tick(p25_follow_t *f, uint32_t now);
+#if CONFIG_P25_ZONE_SCAN
+// After changing the receive group list under the follower's lock: discard obsolete grants and holds.
+void p25_follow_groups_changed(p25_follow_t *f, uint32_t now);
+#endif
 // A copy of the view for another task
 void p25_follow_view(const p25_follow_t *f, p25_follow_view_t *out);
 
