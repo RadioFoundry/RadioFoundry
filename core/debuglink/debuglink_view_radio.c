@@ -48,6 +48,23 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 	return v < n ? names[v] : "?";
 }
 
+// Fox mode (radio-features.md 3.8; section fox): whether it runs, the part of the cycle, the seconds to the next one
+// while it waits, the cycles sent and cut short, why it last stopped or was refused (and the transmitter's reason)
+void debuglink_view_fox(const radio_view_t *v, dl_text_t *t)
+{
+	dl_text(t, "fox.built=%u\n", CONFIG_FOX);
+#if CONFIG_FOX
+	static const char *const phases[] = { "off", "wait", "lead", "msg", "gap", "jingle", "gap", "id", "tail" };
+	static const char *const whys[] = { "none", "stopped", "not_fm", "no_call", "too_long", "no_tone", "busy",
+					    "denied", "unavailable" };
+	dl_text(t, "fox.on=%u\nfox.phase=%s\nfox.next_s=%u\nfox.cycles=%u\nfox.cut=%u\nfox.why=%s\nfox.deny=%u\n",
+		v->fox, word(v->fox_phase, phases, 9), v->fox_next_s, v->fox_cycles, v->fox_cut, word(v->fox_why, whys, 9),
+		v->fox_deny);
+#else
+	(void)v;
+#endif
+}
+
 // The speaker route of the beeps (section audio; the features section has no room left): which stream played them,
 // their lead-in and the amplifier hang (radio-features.md 4); and the PCM stream's timing, which a speaker test reads to
 // tell a block played late (heard as the sound before it again) from what its microphone does
@@ -514,6 +531,18 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			radio_req_tone_burst(a[0] != 0, max_ms == 0 || max_ms > INPUT_INJECT_MAX_MS ? INPUT_INJECT_MAX_MS : max_ms);
 		}
 		return DL_ST_OK;
+	case DL_OP_FOX:
+		// cmd u8: RFOX_STOP, RFOX_START on the channel in use, RFOX_PREVIEW (the jingle on the speaker). The fox keys
+		// through the transmitter's rules as PTT does; the fox section says whether it runs and why not
+		if (len < 1 || a[0] > RFOX_PREVIEW) {
+			return DL_ST_BAD_ARG;
+		}
+#if CONFIG_FOX
+		radio_req_fox(a[0]);
+		return DL_ST_OK;
+#else
+		return DL_ST_UNAVAILABLE;
+#endif
 	case DL_OP_TX_LIMIT: {
 		// flags u8 (bit 0: block every transmission), n u8, then n frequencies u32 (Hz): the test TX limit, RAM only
 		// (tx_limit.h). No block and no list: off

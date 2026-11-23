@@ -4342,6 +4342,32 @@ static int job_runs;
 static void test_job(void *ctx) { (void)ctx; job_runs++; }
 
 #if CONFIG_DUAL_WATCH
+#if CONFIG_FOX
+// Fox mode through the debug link (RADIO op 44, section fox): started and stopped by the op, the section says what the
+// view has; a command it doesn't know is refused (radioFeaturesTest covers the fox itself)
+static void test_debuglink_fox(void)
+{
+	setup_codeplug();
+	start();
+	static char buf[DL_REPLY_MAX - 6 - 16];
+	dl_text_t t;
+	CHECK(debuglink_radio_feature_op(DL_OP_FOX, (const uint8_t[]){ 3 }, 1) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_FOX, NULL, 0) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_FOX, (const uint8_t[]){ RFOX_START }, 1) == DL_ST_OK);
+	CHECK(sm.view.fox || sm.view.fox_why != RFOX_WHY_NONE);	// started, or refused with a reason
+	dl_text_init(&t, buf, sizeof buf);
+	debuglink_view_fox(&sm.view, &t);
+	char want[64];
+	snprintf(want, sizeof want, "fox.built=1\nfox.on=%u\n", sm.view.fox);
+	CHECK(!t.full && strstr(buf, want) == buf && strstr(buf, "fox.why=") != NULL && strstr(buf, "fox.phase=") != NULL);
+	CHECK(debuglink_radio_feature_op(DL_OP_FOX, (const uint8_t[]){ RFOX_STOP }, 1) == DL_ST_OK);
+	CHECK(!sm.view.fox);
+	dl_text_init(&t, buf, sizeof buf);
+	debuglink_view_fox(&sm.view, &t);
+	CHECK(strstr(buf, "fox.on=0\nfox.phase=off\n") != NULL);
+}
+#endif
+
 // Dual watch through the UI's service (ui_svc_dual on radio_req_dual): any zone or the VFO; what can't work is refused
 // at once, the rest goes to the radio core (radioFeaturesTest covers the watch itself)
 static void test_ui_dual(void)
@@ -11850,6 +11876,9 @@ int main(void)
 	test_position();
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
+#if CONFIG_FOX
+	test_debuglink_fox();
+#endif
 	test_dual_two_vfos();
 #endif
 	test_ui_settings();
