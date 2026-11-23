@@ -4168,6 +4168,11 @@ msgid "RX past bands"
 msgstr "RX hors bandes"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_CLEAR_TUNING"
+msgid "Clear tuning"
+msgstr "Effacer réglages RF"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_FREQ_TRIM"
 msgid "Freq trim"
 msgstr "Ajustement fréq."
@@ -4391,6 +4396,21 @@ msgstr "Pos. DMR non dispo."
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diag. non supporté"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_HOLD_TO_CLEAR"
+msgid "Hold OK to clear tuning"
+msgstr "Maintenir OK pour effacer"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_TOAST_CLEARED"
+msgid "Tuning cleared"
+msgstr "Réglages RF effacés"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_TUNE_BUSY"
+msgid "Tuning: try again shortly"
+msgstr "Réglages: réessayer bientôt"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -5681,6 +5701,11 @@ msgstr "Reset: erreur sauv"
 msgctxt "STORE_ERR_RESET_ERASE"
 msgid "Reset: native area couldn't be erased"
 msgstr "Reset: erreur effac."
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TUNE_CLEAR"
+msgid "Tuning: the change couldn't be saved"
+msgstr "Réglages: erreur sauv"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_KEYS_NOT_SAVED"

@@ -4170,6 +4170,11 @@ msgid "RX past bands"
 msgstr "超频段接收"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_ROW_CLEAR_TUNING"
+msgid "Clear tuning"
+msgstr "清除电台微调"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_FREQ_TRIM"
 msgid "Freq trim"
 msgstr "频率微调"
@@ -4393,6 +4398,21 @@ msgstr "DMR 定位：本版本无"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "诊断：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_HOLD_TO_CLEAR"
+msgid "Hold OK to clear tuning"
+msgstr "长按 OK 清除微调"
+
+#: core/ui/ui_menus.c
+msgctxt "TUNE_TOAST_CLEARED"
+msgid "Tuning cleared"
+msgstr "微调已清除"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_TUNE_BUSY"
+msgid "Tuning: try again shortly"
+msgstr "微调：请稍后重试"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -5683,6 +5703,11 @@ msgstr "重置：设置无法保存"
 msgctxt "STORE_ERR_RESET_ERASE"
 msgid "Reset: native area couldn't be erased"
 msgstr "重置：原厂区无法擦除"
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TUNE_CLEAR"
+msgid "Tuning: the change couldn't be saved"
+msgstr "微调：更改无法保存"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_KEYS_NOT_SAVED"

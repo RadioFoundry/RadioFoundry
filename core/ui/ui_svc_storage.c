@@ -19,6 +19,7 @@
 #include "radio/radio.h"
 #include "settings/settings.h"
 #include "radio/ref_trim.h"
+#include "radio/radio_tune.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
@@ -66,7 +67,7 @@ _Static_assert(CODEPLUG_CONTACTS_MAX <= 0x7FF, "the crash report's target doesn'
 
 uint32_t ui_svc_feat_storage(void)
 {
-	return UI_FEAT_SAVE_CHANNEL | UI_FEAT_FACTORY_RESET;
+	return UI_FEAT_SAVE_CHANNEL | UI_FEAT_FACTORY_RESET | (CONFIG_RADIO_TUNE ? UI_FEAT_TUNE : 0u);
 }
 
 static uint16_t clamp16(int32_t v, int32_t lo, int32_t hi)
@@ -1466,6 +1467,21 @@ bool ui_svc_factory_reset(void)
 {
 	return storage_job_post(factory_reset_job, NULL);
 }
+
+#if CONFIG_RADIO_TUNE
+static void tune_clear_job(void *ctx)
+{
+	(void)ctx;
+	if (!radio_tune_clear() && storage_ready()) {
+		save_failed(TRN(STORE_ERR_TUNE_CLEAR, "Tuning: the change couldn't be saved"));
+	}
+}
+
+bool ui_svc_tune_clear(void)
+{
+	return storage_job_post(tune_clear_job, NULL);
+}
+#endif
 
 void ui_svc_boot_text(char line1[17], char line2[17])
 {

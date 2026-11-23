@@ -2479,6 +2479,17 @@ static bool emergency_on;
 bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
+// Radio tuning's Clear tuning: counted (tune_clears); "tunebusy" a job that can't start
+static unsigned tune_clears;
+static bool tune_busy;
+bool ui_svc_tune_clear(void)
+{
+	if (tune_busy) {
+		return false;
+	}
+	tune_clears++;
+	return true;
+}
 
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
 // the same with the report's mode and the first contact (USA, TG 3100) as its target. A report goes at once;
@@ -2775,6 +2786,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
 	memset(&zs_sim, 0, sizeof zs_sim);
+	tune_clears = 0;
+	tune_busy = false;
 	ptt_blocked = false;
 	ui_app_init();
 	presses = 0;
@@ -3032,6 +3045,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "zs_one") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_one);
 	else if (strcmp(key, "zs_zone") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_zone);
 	else if (strcmp(key, "zs_pos") == 0) snprintf(got, sizeof got, "%u", zs_sim.sent_pos);
+	else if (strcmp(key, "tune_clears") == 0) snprintf(got, sizeof got, "%u", tune_clears);
 	else if (strcmp(key, "crash_sends") == 0) snprintf(got, sizeof got, "%u", crash_sim.sends);
 	else if (strcmp(key, "crash_seen") == 0) snprintf(got, sizeof got, "%u", crash_sim.seen);
 	else if (strcmp(key, "crash_have") == 0) snprintf(got, sizeof got, "%u", crash_sim.have);
@@ -3779,6 +3793,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
 		board.hwopts = sim_hwopts;
 		board.hwopt_count = 2;
+		return true;
+	}
+	if (strcmp(t, "tunebusy") == 0) {	// Clear tuning's job can't start (a save still going on)
+		tune_busy = true;
 		return true;
 	}
 	if (strcmp(t, "trim") == 0) {		// this radio has a reference trim (hal_radio_t.ref_trim)

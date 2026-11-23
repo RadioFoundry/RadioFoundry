@@ -6512,7 +6512,7 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
-	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
+	SA_TUNE_CLEAR, SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6961,6 +6961,8 @@ static const set_item_t s_advanced[] = {
 #if CONFIG_RX_EXT
 	TOGGLE(TRN(SET_LABEL_RX_PAST_BANDS, "RX past bands"), "extended out of band receive range", UI_SET_RX_EXT),
 #endif
+	// Radio tuning's trims (UI_FEAT_TUNE): before Freq trim, which stays last
+	ACTION(TRN(SET_ROW_CLEAR_TUNING, "Clear tuning"), "radio tuning trims drive deviation reset", SA_TUNE_CLEAR),
 #if CONFIG_REF_TRIM
 	NUMBER(TRN(SET_ROW_FREQ_TRIM, "Freq trim"), "frequency offset reference oscillator calibration ppm",
 		UI_SET_REF_TRIM, -REF_TRIM_MAX_PPB,
@@ -7021,6 +7023,8 @@ static bool set_hidden(const set_item_t *s)
 	if (s->type == ST_ACTION && s->id == SA_HARDWARE)
 		return hwopt_visible() == 0;	// none, or every one detected
 #endif
+	if (s->type == ST_ACTION && s->id == SA_TUNE_CLEAR)
+		return !(feats() & UI_FEAT_TUNE);
 #if CONFIG_KEY_ASSIGN
 	if (s->type != ST_ACTION && s->id >= UI_SET_KEY_FIRST && s->id <= UI_SET_KEY_LAST) {
 		key_labels();
@@ -7606,6 +7610,15 @@ static void group_select(uint16_t i, bool hold)
 		case SA_CODEPLUG: ui_push(SCR_INFO, INFO_CODEPLUG); break;
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
+		case SA_TUNE_CLEAR:
+			// On a hold only: the trims took a wattmeter and time to make
+			if (!hold)
+				ui_toast(TR(TUNE_HOLD_TO_CLEAR, "Hold OK to clear tuning"));
+			else if (ui_svc_tune_clear())
+				ui_toast(TR(TUNE_TOAST_CLEARED, "Tuning cleared"));
+			else
+				ui_toast(TR(WHY_TUNE_BUSY, "Tuning: try again shortly"));
+			break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if CONFIG_SIG_TONES
 		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;

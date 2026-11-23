@@ -54,6 +54,7 @@ extern radio_view_t ui_svc_view;
 #define UI_FEAT_REF_TRIM	(1u << 20)	// a reference trim (hal_radio_t.ref_trim, radio/ref_trim.h): Freq trim setting
 #define UI_FEAT_P25		(1u << 22)	// P25 on this board (CONFIG_P25, radio_p25_fits): the VFO's mode tile offers it
 #define UI_FEAT_NXDN		(1u << 23)	// NXDN on this board (CONFIG_NXDN, radio_nxdn_fits): the same
+#define UI_FEAT_TUNE		(1u << 24)	// radio tuning (CONFIG_RADIO_TUNE): Settings > Advanced > Clear tuning
 uint32_t ui_svc_features(void);
 // The parts of it each package reports (ui_svc_features ORs them): dmr-voice / radio core, dmr-data, storage-cps,
 // radio-features
@@ -290,6 +291,9 @@ void ui_svc_emergency_dismiss(void);
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
 bool ui_svc_factory_reset(void);
+// Radio tuning's trims removed (radio_tune_clear: live at once, the saved record emptied) by the housekeeping task; a
+// factory reset keeps them. False if it can't be started
+bool ui_svc_tune_clear(void);
 // Another firmware's codeplug (codeplug_foreign, docs/spec/codeplug-native.md 2): the codeplug write the UI asks for
 // is held, not made, and UI_EV_CODEPLUG_FOREIGN asks the owner. The answer: UI_CP_CANCEL drops the write; UI_CP_NEW
 // clears the old codeplug, starts a new one and makes the write; UI_CP_USE keeps the old codeplug as the radio's own,
