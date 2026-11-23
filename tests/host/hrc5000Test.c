@@ -1453,6 +1453,68 @@ static void test_two_slots(void)
 	TWO_CHECK("headers, a mix that stays", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1]);
 }
 
+// A BS-framed direct call (a simplex hotspot), heard in the hunt's BS dwell: the chip reports the header, the voice
+// comes from the port. Neither carries its sync family (no 0x5F), and both stay labeled MS; the family is the one
+// 0x10 finds. Our answer keys in direct mode; the first dwell after it is in BS mode, where the chip finds the
+// sender's answer. Taken by the label, the call left the radio in direct mode for a whole dwell after the answer,
+// deaf to the hotspot for about 0.85 s (SDR bench)
+static void test_bs_direct_answer_dwell(void)
+{
+	tr_setup();
+	nx = 0;
+	for (int k = 0; k < 200 && last_write(0, 0x10) != 0x4F; k++) {	// into the BS dwell
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(last_write(0, 0x10) == 0x4F);
+	int ms = 0, voice = 0;
+	for (int k = 0; k < 42; k++) {		// three headers, then 18 voice bursts from the port (the other slot noise)
+		if (k >= 6) {
+			burst((uint8_t)k, (k & 1) == 1);
+		}
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		hrc6000_dmr_poll(&eng);
+		if (k < 6 && (k & 1) == 0) {
+			tr_report(0x08, 0x12);	// the voice LC header
+		}
+		dmr_event_t ev;
+		dmr_burst_t bu;
+		while (hrc6000_dmr_pop(&eng, &ev, &bu)) {
+			if (ev.kind == DMR_EV_BURST_RX) {
+				ms += bu.sync == DMR_SYNC_MS;
+				voice += bu.kind == DMR_BURST_VOICE;
+			}
+		}
+	}
+	CHECK(voice >= 12 && ms >= voice);	// the slot numbers stay direct mode's (no CACH, no slot filter)
+	CHECK(eng.bs_last);
+
+	t_us += 2000000;			// the call over, the hunt running
+	for (int k = 0; k < 20; k++) {
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(last_write(0, 0x10) == 0x6B);	// keyed in the channel's mode
+	hrc6000_dmr_tx_abort(&eng);
+	for (int k = 0; k < 100 && hrc6000_dmr_is_transmitting(&eng); k++) {	// no ticks: ended by the stall check
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	nx = 0;
+	t_us += 5000;
+	hrc6000_dmr_poll(&eng);
+	CHECK(last_write(0, 0x10) == 0x4F);	// BS mode at once
+	nx = 0;
+	for (int k = 0; k < 74; k++) {		// and for a whole dwell (370 ms)
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(count_writes(0, 0x10) == 0);
+}
+
 int main(void)
 {
 	test_chip();
@@ -1460,6 +1522,7 @@ int main(void)
 	test_modes();
 	test_engine();
 	test_tick_rx();
+	test_bs_direct_answer_dwell();
 	test_tick_rx_stale_headers();
 	test_tick_rx_same_bursts();
 	test_tick_rx_resume();

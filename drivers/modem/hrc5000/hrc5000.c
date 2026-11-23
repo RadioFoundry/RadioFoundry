@@ -161,6 +161,7 @@ static const hrc_chip_t chip = {
 	.mcu_crc = false,
 	.sync_reg = false,
 	.mode_per_channel = true,
+	.bs_by_mode = true,	// 0x6B hears no BS sync, 0x4F no MS sync (bench: a BS-framed direct call, every 60 ms)
 	.tc_last_rx = true,
 	.air_tx_only = true,	// no physical layer receive interrupt in any setting tried (modem-hrc6000.md 10.7)
 	.dmr_mode = dmr_mode,
