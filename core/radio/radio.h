@@ -467,6 +467,7 @@ typedef struct {
 				// mode instead); 0 none. Set at power-up only
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+	uint8_t hs_power;	// the board power level the hotspot keys, while hotspot
 	// Scan (CONFIG_SCAN; all 0 otherwise)
 	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
