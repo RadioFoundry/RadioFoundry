@@ -353,7 +353,7 @@ static void copy_on(hrc6000_air_t *a)
 	w(a, R_FM_TX, 0x00);
 	w(a, R_FM_FILT, FILT_COPY);
 	w(a, R_MODE, MODE_FM);
-	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : 0x19u) | INT_FM_RX));
+	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : HRC_INT_MASK_DMR) | INT_FM_RX));
 	w(a, R_INT_CLEAR, 0xFF);
 	a->last_any = false;	// which half fills next is found again (take_half)
 	a->t_copy = now(a);
@@ -374,7 +374,7 @@ static void copy_restore(hrc6000_air_t *a, bool chip)
 	} else if (chip && a->copy_tried) {
 		// The save failed: copy_on's mask without the FM receive interrupt. 0x34 (FM audio filters only) waits for
 		// the board's next FM entry
-		w(a, R_INT_MASK, 0x19u);
+		w(a, R_INT_MASK, HRC_INT_MASK_DMR);
 		w(a, R_INT_CLEAR, 0xFF);
 	}
 	a->copy_saved = a->copy_tried = false;

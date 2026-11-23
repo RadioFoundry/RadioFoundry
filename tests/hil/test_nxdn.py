@@ -495,6 +495,18 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                     return
             pytest.fail(f"the interrupt bit 0x{bit:08X} would not {'stop' if on else 'start'} the copy")
 
+        def put_back():
+            # The bit on again whatever else failed: a link error on one try isn't the last word
+            for i in range(3):
+                try:
+                    if stopped():
+                        set_off(False)
+                    return
+                except DebugLinkError:
+                    if i == 2:
+                        raise
+                    time.sleep(0.2)
+
         def stays_off():
             # The firmware's own lock sets some of these bits for a moment (set_off's comment): off on every one of
             # a few reads, not one
@@ -511,8 +523,7 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
             set_off(True)
         except DebugLinkError as e:
             try:  # a write that went through before the error: never leave the copy off
-                if stopped():
-                    set_off(False)
+                put_back()
             except DebugLinkError:
                 pass
             skip("not_built", f"CHIP_REG can't reach the copy's interrupt bit (status {e.status})")
@@ -538,8 +549,7 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                      f"{a1.get('airp.copy_restarts')}, turned on again by the provider: {on_again}")
                 time.sleep(0.1)
         finally:
-            if stopped():
-                set_off(False)
+            put_back()
         time.sleep(0.5)
         a2 = radio.view(["air"])
         # From the later view: the count rises in the provider's poll, the record a moment after it. The record is
