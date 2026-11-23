@@ -311,6 +311,7 @@ const sim_geom_t sim_geoms[] = {
 	// safe area only (boards/dm32/board.mk GFX_FB_SAFE_AREA)
 	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true, true },
 	{ "240x320", 240, 320, 16, 0, 0, true, false, false },	// 240x320 class at full resolution, standard text size
+	{ "320x240", 320, 240, 4, 0, 0, true, true, false },	// GD-88: landscape, 16 colors, the larger text as its build
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 

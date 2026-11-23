@@ -16,11 +16,6 @@
 #include "hal_time.h"
 #include "display/st7789/st7789.h"
 
-#define LCDC_CMD		REG32(LCDC_BASE + 0x00)	// write: command byte (RS low)
-#define LCDC_DATA		REG32(LCDC_BASE + 0x04)	// write: data byte (RS high)
-#define LCDC_CFG		REG32(LCDC_BASE + 0x10)
-#define LCDC_EN			REG32(LCDC_BASE + 0x28)	// b0 enable, b1 ready
-#define LCDC_CFG_VALUE		0x303u
 #define LCDC_PINS_MASK		0xFFF80107u		// IO_DIPLEX2 &= this: CS, RS, WR, DB0-DB7 to the controller
 
 #define PANEL_W			240u
@@ -33,13 +28,6 @@ _Static_assert((SAFE_W + 1u) / 2u * SAFE_H <= GFX_FB_BYTES, "the safe area's fra
 #endif
 
 static bool ready;
-
-// The port needed a few cycles after each byte (3.10)
-static inline void byte_gap(void)
-{
-	for (volatile uint32_t i = 0; i < 4; i++) {
-	}
-}
 
 static void lcd_pins(void)
 {
@@ -56,32 +44,8 @@ static void bus_begin(void)
 
 static void bus_end(void)
 {
-	byte_gap();
+	hrc_lcdc_drain();
 	dm32_lcdbus_unlock();
-}
-
-static void bus_cmd(uint8_t c)
-{
-	LCDC_CMD = c;
-	byte_gap();
-}
-
-static void bus_data(const uint8_t *d, uint32_t n)
-{
-	for (uint32_t i = 0; i < n; i++) {
-		LCDC_DATA = d[i];
-		byte_gap();
-	}
-}
-
-static void bus_pixels(const uint16_t *px, uint32_t n)
-{
-	for (uint32_t i = 0; i < n; i++) {
-		LCDC_DATA = px[i] >> 8;
-		byte_gap();
-		LCDC_DATA = px[i] & 0xFFu;
-		byte_gap();
-	}
 }
 
 static void bus_reset(bool level)
@@ -92,9 +56,10 @@ static void bus_reset(bool level)
 static const st7789_bus_t bus = {
 	.begin = bus_begin,
 	.end = bus_end,
-	.cmd = bus_cmd,
-	.data = bus_data,
-	.pixels = bus_pixels,
+	.cmd = hrc_lcdc_cmd,
+	.data = hrc_lcdc_data,
+	.pixels = hrc_lcdc_pixels,
+	.pixels4 = hrc_lcdc_pixels4,
 	.reset = bus_reset,
 	.delay_ms = hal_delay_ms,
 };
@@ -113,10 +78,7 @@ static void lcdc_init(void)
 {
 	hrc_pin_out(PIN_LCD_RD, true);
 	hrc_pin_out(PIN_LCD_RESET, true);
-	LCDC_CFG = LCDC_CFG_VALUE;
-	LCDC_EN |= 1u;
-	for (uint32_t n = 100000; n != 0 && (LCDC_EN & 2u) == 0; n--) {
-	}
+	hrc_lcdc_start();
 }
 
 static void set_backlight(uint8_t percent)

@@ -960,7 +960,14 @@ static uint32_t hash_row(int y)
 	return h;
 }
 
-static void send(int y0, int y1)
+static void (*rest_hook)(void);
+
+void gfx_set_rest(void (*rest)(void))
+{
+	rest_hook = rest;
+}
+
+static void send_rows(int y0, int y1)
 {
 #if GFX_INDEXED
 	if (bpp == 4) {
@@ -969,6 +976,21 @@ static void send(int y0, int y1)
 	}
 #endif
 	display->flush(fb_words, (uint16_t)y0, (uint16_t)y1);
+}
+
+// In bands that end on a multiple of GFX_SEND_ROWS, so a panel written in 8-row pages never gets a page twice
+static void send(int y0, int y1)
+{
+	while (y0 < y1) {
+		int y = (y0 / GFX_SEND_ROWS + 1) * GFX_SEND_ROWS;
+
+		if (y > y1)
+			y = y1;
+		send_rows(y0, y);
+		y0 = y;
+		if (rest_hook != NULL)
+			rest_hook();
+	}
 }
 
 void gfx_flush(void)

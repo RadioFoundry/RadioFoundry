@@ -2,8 +2,8 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DB25-D RF chips, whichever the radio has (docs/spec/hardware-db25d.md 4.2, 4.8). One image serves every batch: the
 // main transceiver is a BK4819 (PRO) or an FD6818 (older batches), the LO a BK4819, an FD6818, the 0x7813 part or an
-// AT1141. rfchip_db25d.c reads register 0 of each chip at start-up and drives the pair it finds; radio_db25d.c and
-// dmr_db25d.c only call the functions below.
+// AT1141. The shared superhet layer (rf/superhet/superhet_chips.h) finds and sets up the pair; rfchip_db25d.c adds
+// this radio's wiring (band flags, the sub-audio line) and radio_db25d.c and dmr_db25d.c only call the functions below.
 #ifndef RFCHIP_DB25D_H
 #define RFCHIP_DB25D_H
 

@@ -188,6 +188,9 @@ static const char features[] =
 #if CONFIG_CHANNEL_LIST
 	"CHANNEL_LIST,"
 #endif
+#if CONFIG_KEY_ASSIGN
+	"KEY_ASSIGN,"
+#endif
 #if CONFIG_CRASH_LOG
 	"CRASH_LOG,"
 #endif

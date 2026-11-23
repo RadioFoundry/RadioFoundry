@@ -1,0 +1,14 @@
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" width="320" height="240">
+  <!-- GD-88 IAP update mode screen (IAP_A), what the radio shows. 320x240 panel: the loader draws only the
+       top-left box; the rest of the panel is left as the controller powers up (gray-blue) -->
+  <rect width="320" height="240" fill="#a7b4c8"/>
+  <rect width="222" height="107" fill="#dbeff3"/>
+  <text x="111" y="15" font-family="Courier New, monospace" font-size="13" text-anchor="middle" fill="#111">IAP_A</text>
+  <line x1="0" y1="21.5" x2="222" y2="21.5" stroke="#333" stroke-width="1"/>
+  <text x="0" y="38" font-family="Courier New, monospace" font-size="12" fill="#111">Addr:</text>
+  <text x="0" y="56" font-family="Courier New, monospace" font-size="12" fill="#111">Pages:</text>
+  <text x="88" y="56" font-family="Courier New, monospace" font-size="12" fill="#111">/</text>
+  <rect y="107" width="222" height="19" fill="#e2a94e"/>
+</svg>

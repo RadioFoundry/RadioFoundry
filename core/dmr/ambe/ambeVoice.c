@@ -624,6 +624,9 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 	// DMR is simplex: TX first (a fresh transmission resets the vocoder), then RX playback (silent while transmitting)
 	tx_block(mic);
 	rx_block(spk);
+	if (aud != NULL && aud->spk_beep != NULL) {
+		aud->spk_beep(!cb_rx_playing);	// between calls the stream carries only the beeps mixed in
+	}
 	ambe_voice_mixer_t mix = LOAD(mixer);
 	if (mix != NULL && mix(spk)) {
 		cb_mixing = true;

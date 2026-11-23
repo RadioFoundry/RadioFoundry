@@ -9,7 +9,7 @@ test_speaker_beeps: every beep the debug link can ask for, one recording each, p
 The first beep finds the amplifier as the radio left it; on a radio that keeps it warm (speaker_hang_s), the next
 ones find it warm.
 
-test_speaker_beep_cold: on a radio with an amplifier hang (the beep.warm view key), waits for the hang to run out,
+test_speaker_beep_cold: on a radio with an amplifier hang (beep.hang_s above 0), waits for the hang to run out,
 then the shortest beep (key): the lead-in must cover the amplifier's start.
 
 test_speaker_sweep: the speaker test's sweep, 150 Hz to 3.8 kHz (BEEP_SWEEP): prints the speaker's response along it
@@ -109,6 +109,20 @@ def _beep_ready(radio):
     radio.go_home()
     if radio.screen() == "hotspot":
         skip("state", "the radio is in hotspot mode")
+    _channel_quiet(radio, 15)
+
+
+def _channel_quiet(radio, wait_s=0):
+    """Skip while the radio receives (traffic on its channel, an open squelch): the speaker plays that too, and the
+    recording judges the beep against it. Waits up to wait_s for the channel to go quiet first"""
+    end = time.monotonic() + wait_s
+    while True:
+        state = radio.view(["core"]).get("state")
+        if state != "rx":
+            return
+        if time.monotonic() > end:
+            skip("state", f"the radio is receiving (state {state}): traffic on its channel or an open squelch")
+        time.sleep(1)
 
 
 def _audio(radio):
@@ -141,6 +155,7 @@ def _play(radio, mic, name, segs):
     p, path = mic.start(length + 1.2)
     radio.link.beep(name)
     r = _judge(mic, mic.finish(p, path), segs)
+    _channel_quiet(radio)      # a reception that started during the recording spoils it
     s1 = _stream(radio)
     if s0 is not None and s1 is not None:
         if s1[:2] != s0[:2]:
@@ -180,6 +195,8 @@ def test_speaker_beep_cold(radio, microphone):
     a = _audio(radio)
     if "beep.warm" not in a:
         skip("not_built", "no amplifier hang on this firmware (no beep.warm view key)")
+    if a.get("beep.hang_s") == "0":
+        skip("no_hw", "the board keeps no amplifier hang (beep.hang_s 0): every beep starts it cold")
     if a["beep.warm"] != "0":
         end = time.monotonic() + 90
         print("waiting for the amplifier hang to run out")
@@ -225,10 +242,10 @@ FM_LEAD_S = 0.5
 
 def squelch_close_ms():
     """The longest the core's squelch stays open after the carrier: up to one poll before a poll sees the carrier gone,
-    then the close polls (read from radio_sm.h so the test copies no number), plus one pop analysis frame for where the
-    burst's edges fall."""
+    then the close polls (read from the core's headers so the test copies no number), plus one pop analysis frame for
+    where the burst's edges fall."""
     import re
-    src = open(os.path.join(A.ROOT, "core", "radio", "radio_sm.h")).read()
+    src = "".join(open(os.path.join(A.ROOT, "core", "radio", f)).read() for f in ("radio_sm.h", "radio_squelch.h"))
     get = lambda name: int(re.search(rf"#define\s+{name}\s+(\d+)", src).group(1))  # noqa: E731
     return (get("RADIO_SQL_CLOSE_POLLS") + 1) * get("RADIO_POLL_MS") + A.POP_WIN_MS
 FM_PROGRAM = [{"kind": "silence", "s": FM_LEAD_S},
@@ -271,25 +288,33 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
             if tone0 != "none:0":
                 k, v = tone0.split(":")
                 L.tone(2, k, int(v))
+    _fm_judge(radio, microphone, path, segs, done, f"FM {mhz} MHz")
+
+
+def _fm_judge(radio, microphone, path, segs, done, label, slack_ms=0):
+    """test_fm_rx_speaker's checks of a recording of FM_PROGRAM: the tones, no pop, and a squelch tail no longer than
+    the squelch's close time (plus slack_ms, the route to the speaker from a second receiver)"""
     print(f"bench {done}")
     assert not done.get("cut"), f"the bench cut its transmission: {done}"
     # the squelch's opening is in the guard before the first tone, its closing (and any tail) in the one after
     r = _judge(microphone, path, segs, guard_ms=(FM_LEAD_S * 1000 - 50, 900))
-    problems = _check(r, f"FM {mhz} MHz", path)
+    problems = _check(r, label, path)
     if r.quiet:
-        _quiet(f"FM {mhz} MHz")
+        _quiet(label)
     end = r.tones[-1].end_s      # the program ends with its last tone: the carrier goes with it
     if end is not None:
         # a tail's own length, without the room's echo after it (audio_check.burst_ms): how long the squelch took
         x, fs = A.load_wav(path)
         freqs = [h for h, _ in segs if h]
         tails = [(t0, over, A.burst_ms(x, fs, freqs, t0, ms), ms) for t0, over, ms in r.pops if t0 > end + 0.02]
-        allowed, why = squelch_close_ms(), None
+        allowed, why = squelch_close_ms() + slack_ms, None
         o = rfoundry_hil.board_hil(rfoundry_hil.board_id(radio.version().get("board"))).get("limits", {}).get(
             "fm_squelch_tail_ms")
         if o:
-            allowed, why = o["value"], o["reason"]
+            allowed, why = o["value"] + slack_ms, o["reason"]
             print(f"squelch tail limit {allowed:.0f} ms from the board's [hil.limits]: {why}")
+        if not tails:
+            print(f"{label}: no squelch tail")
         for i, (t0, over, ms, echo_ms) in enumerate(tails):
             problems = [p for p in problems if f"at {t0:.3f} s" not in p]     # named below instead
             what = (f"{ms:.0f} ms of noise {over:.0f} dB over the floor ({echo_ms:.0f} ms with the room's echo), "
@@ -298,10 +323,110 @@ def test_fm_rx_speaker(radio, sdr_bench, microphone, pytestconfig):
                 print(f"squelch tail: {what} (within {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'}"
                       ": expected)")
             else:
-                problems.append(f"FM {mhz} MHz: a squelch tail: {what}" +
+                problems.append(f"{label}: a squelch tail: {what}" +
                                 (f" (more than {allowed:.0f} ms{f': {why}' if why else ', the squelch close time'})"
                                  if i == 0 else ""))
     assert not problems, "\n".join(problems)
+
+
+# The second receiver's squelch is its own, by the core's rule (radio_squelch.h); its audio reaches the speaker through
+# the main receiver's board, which hears of the squelch closing by the second receiver's next status report
+RX2_ROUTE_MS = 60
+
+
+@pytest.mark.feature("dual_watch")
+@pytest.mark.rf
+@pytest.mark.bench_service
+def test_fm_rx_speaker_second_receiver(radio, sdr_bench, microphone, pytestconfig, backup_dir):
+    """test_fm_rx_speaker through a second receiver (hal_rx2.h): dual watch puts it on a stored FM channel on --fm-mhz
+    while the main receiver stays on another channel of the zone. Silent before the carrier (its squelch shut), the
+    tones whole, and a tail no longer than the core's squelch close time plus RX2_ROUTE_MS. Without such a channel,
+    and with --allow-codeplug-write, an FM channel of the current zone is moved to --fm-mhz for the test (backed up
+    and restored, test_cps.codeplug_edited)."""
+    from test_radio_features import features, need_scan
+    need_scan(radio)
+    if features(radio).get("dual.receivers") != "2":
+        skip("other_board", "no second receiver (board.rx2)")
+    radio.go_home()
+    if radio.screen() == "hotspot":
+        skip("state", "the radio is in hotspot mode")
+    mhz = rig(pytestconfig, "fm-mhz")
+    hz = round(mhz * 1e6)
+    radio.leave_vfo()           # test_fm_rx_speaker leaves it in the VFO
+    start = radio.core()        # find_channel leaves the radio in another zone when it finds none
+    try:
+        pos = radio.find_channel(hz, "fm")
+    except AssertionError as e:
+        if not pytestconfig.getoption("--allow-codeplug-write"):
+            skip("opt_in", f"no stored FM channel on --fm-mhz ({e}); --allow-codeplug-write moves one there")
+        _rx2_on_moved_channel(radio, sdr_bench, microphone, mhz, hz, backup_dir, start)
+        return
+    _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos)
+
+
+def _rx2_on_moved_channel(radio, sdr_bench, microphone, mhz, hz, backup_dir, core):
+    """An FM channel of the zone the radio was on (core: its view then), moved to hz (RX and TX) for the test, then the
+    codeplug restored"""
+    import cps_client
+    from test_cps import codeplug_edited, read_backup
+    image, _ = read_backup(radio, backup_dir, "rx2probe")
+    here = rfoundry_hil.as_int(core.get("channel_number"), 0)
+    if core.get("vfo") == "1" or here == 0:
+        skip("state", "the radio isn't on a stored channel: no zone to put the FM channel in")
+    zone = next((m for _, _, m in cps_client.zones(image) if here in m), None)
+    if zone is None:
+        skip("state", f"channel {here} is in no zone")
+    fm = [n for n in zone if n != here and cps_client.decode_channel(image, n) and
+          not cps_client.channel_dmr(image, n)[0]]
+    if not fm:
+        skip("state", "the zone has no other FM channel to move to --fm-mhz")
+    number = fm[0]
+
+    def edit(img):
+        cps_client.set_channel_rx(img, number, hz)
+        cps_client.set_channel_tx(img, number, hz)
+    with codeplug_edited(radio, backup_dir, edit, "rx2fm"):
+        radio.go_home()
+        pos = radio.find_channel(hz, "fm")
+        print(f"channel {number} moved to {mhz} MHz for the test")
+        _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos)
+
+
+def _rx2_speaker(radio, sdr_bench, microphone, mhz, hz, pos):
+    from test_radio_features import scan_off, settings, wait_features
+    other = None
+    for p in range(rfoundry_hil.as_int(radio.core().get("zone_size"), 0)):
+        if p == pos:
+            continue
+        radio.link.zone_pos(p)
+        radio.wait_for(lambda v: v.get("zone_pos") == str(p), what="another channel of the zone")
+        if radio.core().get("rx_hz") != str(hz):
+            other = p
+            break
+    if other is None:
+        skip("state", "no other channel of the FM test channel's zone is on another frequency")
+    segs = A.program_segs(FM_PROGRAM)[1:]
+    length = sum(p["s"] for p in FM_PROGRAM)
+    with settings(radio, scan_resume=1):
+        radio.link.scan("dual", pos)
+        try:
+            wait_features(radio, lambda v: v.get("dual.both") == "1", 12.0, "the second receiver on the FM channel")
+            time.sleep(0.5)
+            with sdr_bench.lease():
+                p, path = microphone.start(length + 3.0)
+                tx = sdr_bench.fm_tx_start(mhz, FM_PROGRAM)
+                seen = set()
+                while tx.poll() is None:
+                    v = radio.view(["core", "channel"])
+                    seen.add((v.get("state"), v.get("rx2.active")))
+                    time.sleep(0.05)
+                done = tx.wait(15)
+                microphone.finish(p, path)
+        finally:
+            scan_off(radio)
+    print(f"(main state, rx2.active) seen: {sorted(seen, key=str)}")
+    assert ("idle", "1") in seen, f"the second receiver never opened alone: {sorted(seen, key=str)}"
+    _fm_judge(radio, microphone, path, segs, done, f"FM {mhz} MHz, second receiver", slack_ms=RX2_ROUTE_MS)
 
 
 AM_LEAD_S = 0.5

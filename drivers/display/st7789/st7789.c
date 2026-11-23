@@ -149,6 +149,10 @@ void st7789_write_rows_indexed(const st7789_t *p, const uint8_t *fb, const uint1
 	window(p, 0, (uint16_t)(y0 * s), (uint16_t)(fbw * s), (uint16_t)(y1 * s));
 	for (uint32_t y = y0; y < y1; y++) {
 		const uint8_t *row = fb + y * stride;
+		if (s == 1 && b->pixels4 != NULL) {
+			b->pixels4(row, palette, fbw);
+			continue;
+		}
 		for (uint32_t x = 0; x < fbw; x++) {
 			uint16_t c = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
 			for (uint32_t k = 0; k < s; k++) {

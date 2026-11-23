@@ -51,7 +51,14 @@ console gets one, with its first stock version. `#sim=<radio>-romfail` is an HR_
 ROM refuses the load, to practice the factory update mode; `#sim=<radio>-slowcable` one on a cable too slow for the
 boot ROM's 48 ms window, to check that the page's answer sent ahead gets through; `#sim=<radio>-deafcable` one on a
 cable that carries the radio's data and none of the page's; a radio with the Baofeng updater enters it when switched on
-with "Hold the Keys and Turn On".
+with "Hold the Keys and Turn On". A radio with the serial update mode (`update_mode = "iap"`) gets a row of practice
+controls above the steps: what the screen shows, switching it off and on (with or without the update mode key held), the
+long key press that switches between two receivers' loaders, and pulling the cable out. Each loader reads its own receiver's NAND pages, receiver B's loader drops a
+"Read" now and then, and a pulled cable ends the stream as a lost device does, so every wait and error of the two-step
+install can be tried without a radio. A loader that gets a request during the long key press doesn't switch, as on the
+radio. So the page sends nothing while the user switches loaders: the second step starts on Continue, and a wait that
+finds the other receiver's loader, or in the second step no answer for a few seconds, stops until the user checks the
+radio and selects Continue again.
 
 ## The beta notice
 
@@ -689,6 +696,32 @@ route knows, `update_mode` (the `serial-iap` family), `read_rate` (the program m
 The first stage is the only way into the stub from a radio that runs RadioFoundry without answering.
 `site/tests/iap.test.mjs` runs the console stub load and the IAP write against simulated radios (`fakec7000.js`) and
 compares the codec carve with `tools/hrc7000_codec.py`.
+
+### A radio with a second chip
+
+A radio with a second receiver on another chip has that chip as a board of its own, `part_of` the radio in its
+`board.toml` with `[flash.stub] bridge`; the site's radio entry carries it as `flash.second`. The cable doesn't reach
+that chip, so the page installs both images in one run:
+
+| Step | What the page does |
+|---|---|
+| Build | One request per chip, sent together (`requestBuild()`): the radio's own selection, and the second board's own configuration of the same variant, less the switches the selection turned off (`secondSelection()` in `select.js`, from `flash.second.config` and `.required`). The second chip never gets a build step of its own. Both images must come from the same commit. With an own firmware file, the build step takes a second file for the second chip |
+| Install | A chain inside the write step (`S.chain`, `c7000ui.js`): write the first chip, connect to the second chip through the first chip's stub, which stays, check the second chip's codec slot, write it, then restart both and check that they answer. Every stage draws into one Install card (`chainSlots()`): the first chip's sector map, then the stage between (connect, check), then the second chip's sector map, then the end. Each chip's map stays in the card after its write. While the second chip writes, its stub plays the LEDs red and green in turn (`LED_SEQ`), as they go while the first chip writes. The stages follow each other without a click, and there is no way back once the first chip is written |
+
+For its part of the chain the second chip is a radio with the second board's id (`secondRadio()`), reached through the
+first chip. The first chip's stub, kept from its own write, passes the cable through to the second chip (PASS,
+[rx2-link.md](../spec/rx2-link.md) 4.2; RadioFoundry on the first chip loads that stub when the second chip is installed
+alone). The second chip's stub loads and writes as usual. The page then restarts the second chip, ends the pass-through
+(`endPass()`) and restarts the first chip; the done step asks it whether the second chip answers. A second chip that
+still runs its original firmware has no first stage and no link: the first chip reports it down (`DL_CMD_RX2` flags), so
+the chain offers the factory update mode there (`IAP_B`, steps from the second board's `[flash.bootloader]`), with the
+same write as any other factory update mode install. Without a second image (an own file for the first chip only) the
+install is the plain one, and the done step says the second chip was left as it is. The page's `#sim=` simulation has a
+case for that second chip on its original firmware.
+
+The update-mode texts that describe the screen take the radio's form where `site/i18n/en.json` has a `<key>_<board id>`
+text (`iapui.js` `own`): the second chip's board id first, then its radio's. A board is listed with
+`[flash.stub] tested = false` until the stub has run on a radio.
 
 The codec decision (`decide()` in `c7000.js`), first match wins:
 

@@ -1,0 +1,131 @@
+{
+ "board": "gd88",
+ "commit": "b10c10cb594cc7f430b7668bc23da3e575cb8f6a",
+ "date": "2026-11-17T09:29:53Z",
+ "dirty": false,
+ "features": [
+  "p25"
+ ],
+ "firmware": {
+  "board": "GD-88",
+  "codec": "gd88-2501",
+  "display": "320x240x4",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,DMR_GPS,GPS,APRS,APRS_AFSK,APRS_DMR,DMR_DATA_CORE,DMR_SMS,DMR_ARS,DMR_LRRP,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,HOTSPOT,DMR_IP_GATEWAY,DMR_UDP_COMPRESS,NET_TCP,NET_PPP,NET_KISS,NET_HTTP,NET_HTTP_GZIP,NET_RIGCTL,NET_APRSIS,MDNS,TFTP,TFTP_IDDB,IDDB_COMPACT,SNMP,VFO,VFO_FM,VFO_DMR,BCAST_FM,DIAG,UI_SETTINGS,CHANNEL_LIST,KEY_ASSIGN,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,DTMF,VOX,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "62dd5acd",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 1,
+  "dmr-freq": 446.1,
+  "dmr-tg": 202,
+  "fm-mhz": 446.075
+ },
+ "sources": {
+  "p25": {
+   "core/air": "69cc66acdae800238ca5e03e2424b0610c1d3c8e",
+   "core/fec": "2b55fdfc671feb97605601120fa6000e0da9df6b",
+   "core/mbe": "ef06976ac85c529a008f8ea0ffa787645b969c1e",
+   "core/p25": "ccd211d096774a913ab3647bdb1fec690beed0b4",
+   "core/radio/radio_p25.c": "2e5f94ac86094d3d756e5b035f61a921e77ed5b2",
+   "core/radio/radio_p25.h": "1abbfb3bf9cfee8bfcee94aaa714c542267ba7af",
+   "docs/spec/p25.md": "408a4c92ec950967c9cad3188e6d01a812b6be23",
+   "hal/hal_air.h": "7bcd520956bb22dd75360df0839c1b7acfd2ed9d",
+   "hal/hal_baseband.h": "c60a52fb437fee317f35fbcc6ab5573e4e2df3df"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_channel_switch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_rx_from_bench",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[dual]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[zone]",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_p25.py:572: AssertionError",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel_tx",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[bench] the bench board lost samples (gap_samples 2769)",
+   "required": true,
+   "skip_kind": "bench"
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_tx_off_air",
+   "optional": [],
+   "outcome": "failed",
+   "reason": "tests/hil/test_p25.py:394: AssertionError",
+   "required": true
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

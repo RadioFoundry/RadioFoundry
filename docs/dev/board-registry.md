@@ -31,7 +31,7 @@ Derived values:
 | CPU | The platform, unless `[hardware] cpu` names another |
 | Protected range | The platform's `flash_base` up to the application base |
 | Erasable sectors | The platform geometry from the application base up |
-| Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS` |
+| Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS`, unless `[flash.stub] nand` is set |
 | Stub power pins | `PIN_POWER_LATCH` and `PIN_POWER_KEY` in `pins.h`, when `hold_power` is set |
 | Stub LED pins (HR_C7000) | `PIN_LED_RED` and `PIN_LED_GREEN` in `pins.h`, else none |
 | Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
@@ -53,26 +53,28 @@ neighbor on the same platform.
 | `maker`, `model` | string | The two parts of the name |
 | `also` | list of strings | The same radio sold under other names |
 | `kind` | `handheld` or `mobile` | |
-| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique; `0` is the host tests'. Never change or reuse one: it is meant to name the radio's model in the device identifier list |
-| `part_of` | string, optional | Another board this one is a build of |
+| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique, except that a `part_of` board has its radio's; `0` is the host tests'. Never change or reuse one: it is meant to name the radio's model in the device identifier list |
+| `part_of` | string, optional | The radio this board is a second SoC of. The generated tables and the site list only that radio, which flashes this board through its own stub (`[flash.stub] bridge`). The board keeps no codeplug and draws no screen, so the flash map and frame buffer checks are the radio's |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
 
 ### [docs]
 
+Optional. A radio whose hardware notes are kept outside the repository has no `[docs]` table.
+
 | Key | Meaning |
 |---|---|
-| `hardware` | The hardware spec, `docs/spec/hardware-<id>.md` |
+| `hardware` | Optional: the hardware spec, `docs/spec/hardware-<id>.md` |
 | `codec` | Optional: the codec spec |
 | `install` | Optional: the user manual's page for moving from stock firmware |
 | `bringup` | Optional: the bring-up checklist |
 
 `check` fails when a page doesn't exist. The README's radio table links the board to its `bringup` page, else its
-`hardware` page.
+`hardware` page, else shows its name without a link.
 
 ### [hardware]
 
-One-line summaries for the site and the generated tables; the facts stay in `docs.hardware`.
+One-line summaries for the site and the generated tables; the facts stay in the hardware notes.
 
 | Key | Meaning |
 |---|---|
@@ -140,6 +142,7 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `stock_versions` | The stock versions the tools know |
 | `backup` | `{ stock, rfoundry, spi_size }`: what a backup reads from stock firmware and from RadioFoundry (`none` or `full`), and the SPI flash size |
 | `notice` | Optional: a warning the web flasher shows on every step once the radio is picked, for a choice the radio can't check itself (two images that differ in hardware the radio can't report, for example) |
+| `led_hints` | Optional, default `true`. `false`: the radio's page and the web flasher's steps (its second SoC's too) describe no LED, only the screen. For a radio whose LED behavior during installation isn't settled |
 
 `[flash.bootloader]`:
 
@@ -148,8 +151,13 @@ to the build directory and the image: `make BOARD=<id> BAND=vhf` writes `build/<
 | `steps` | How to enter the bootloader, one step per item, for the web flasher and the manual |
 | `keys` | Optional: the short form the tools print |
 | `hold` | Optional: the keys held to enter it, by key name (the board's `KEY_*` in lower case, `["ptt", "sk1"]`). The web flasher marks them on the radio's picture and names them under it; `steps` stays the instructions. Each must be a key of the board (`tools/boards.py check`) and tagged in its drawing or listed in `data-undrawn` ([Radio images](website.md#radio-images)) |
+| `banner` | Optional, default `true`. `false`: the radio's loader prints nothing when it starts in update mode. The web flasher then asks it with a read-only request until it answers, instead of listening for a banner |
 | `id` | Optional: the string the loader answers, also the magic of its files (`serial-loader`) |
 | `sign` | Optional: what the radio shows in the bootloader |
+
+The web flasher's radio picture can show what the screen looks like: `site/static/img/update/<board>.svg` in update mode,
+`site/static/img/normal/<board>.svg` with the original firmware running (320 × 240 or the display's size). `tools/boards.py`
+lists them in radios.json (`flash.update_screen`, `flash.stock_screen`) when the file exists.
 
 `[flash.dfu]` (`usb-dfu`): `vid`, `pid`, `string1`, `product` (the USB identity) and `key_sha256`, `key_prefix` (the
 per-model XOR key's hash and first bytes, never the key). Optional `layout`: the bootloader's alt 0 interface string,
@@ -195,7 +203,7 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 
 | Platform stub | Required | Optional |
 |---|---|---|
-| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size), `calibration` | `stock_console` (the original firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash), `rom_entry` (the boot ROM starts the application itself: the flag sector at program flash 0 names this entry) |
+| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size), `calibration` | `stock_console` (the original firmware answers a console the web flasher reads), `read_rate`, `uart` (the UART the stub answers on before CONFIG), `bridge` (reached through the main SoC's stub, for a `part_of` board: `uart`, the main SoC's UART to it, and `mux`, `[address, bits]` set in that word to give the UART its pins), `nand` (SPI NAND the build has no driver for), `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash), `rom_entry` (the boot ROM starts the application itself: the flag sector at program flash 0 names this entry) |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
 
 A key of another platform's stub fails the check.
@@ -222,7 +230,7 @@ what = "factory calibration: the page tagged 2 in the stock codeplug area (hardw
 |---|---|
 | `mem` | The memory: `progmem` (the MCU's program flash), `data` (the SPI NOR data flash), `nand` (the SPI NAND's main area, without spare bytes) or `secreg` (the SPI NOR flash's security registers) |
 | `start`, `end` | The range, `end` exclusive, as offsets in that memory: `progmem` from the platform's `flash_base`, `data` and `nand` from 0, `secreg` 256 bytes per register from register 1 at 0 |
-| `what` | What lies there, with the spec section that establishes it in parentheses |
+| `what` | What lies there, with the spec section that establishes it in parentheses when the board has a `hardware` page |
 
 `tools/boards.py check` refuses an entry:
 
@@ -232,7 +240,7 @@ what = "factory calibration: the page tagged 2 in the stock codeplug area (hardw
 - that isn't on the memory's erase boundaries: the platform's sectors (or 4 KB) for `progmem`, 4 KB for `data`, a
   block for `nand`, a register for `secreg`
 - that overlaps another entry, the application or the codec slot
-- whose `what` cites no section
+- whose `what` is empty, or cites no section on a board with a `hardware` page
 
 A region whose place moves (remapped by a bad-block table, for example) is protected over every place it can be. The
 registry carries the list as `protect` (`registry.json`, `radios.json` `flash`, `flash-boards.json` `boards`, `c7000`

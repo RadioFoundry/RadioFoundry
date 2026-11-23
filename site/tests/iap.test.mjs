@@ -11,10 +11,10 @@ import { join } from "node:path";
 import { equal, sha256, be32, concat } from "../static/js/flasher/bytes.js";
 import { stubImages, univFits, StubError } from "../static/js/flasher/stub.js";
 import * as c7 from "../static/js/flasher/c7000.js";
-import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD } from "../static/js/flasher/usmart.js";
+import { Usmart, HIJACK, UsmartError, stockVersion, stockName, BUILDS, STUB_WINDOW, stubTarget, UNKNOWN_BUILD, versionOf, buildsFor } from "../static/js/flasher/usmart.js";
 import {
 	Iap, iapPlan, readPacket, checkInstallImage as checkInstall, checkRestoreImage as checkRestore, trimTail, erasePacket,
-	IapError,
+	IapError, socPages, telling,
 } from "../static/js/flasher/iap.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -37,12 +37,14 @@ test("the DB25-D's data in the flasher tables", () => {
 	assert.equal(radio.flash.update_mode, "iap");
 	assert.deepEqual(FS, { size: 0x1000, head: "2c1101c0" });
 	assert.equal(radio.flash.read_rate, 46000);
-	// every build the stub goes in through is a stock version of the board, by which the page names it; every build
-	// known has its version string inside the application and its RAM copy in the console's RAM
-	for (const b of BUILDS.filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
+	// every build the console route knows of this board's series is a stock version of it or an older build, the ones the
+	// stub goes in through by the board's names; every build known has its version string inside the application, and
+	// those whose RAM copy is known have it in the console's RAM
+	for (const v of radio.flash.stock_versions) assert.ok(BUILDS.some((b) => versionOf(b) === v), `the console knows ${v}`);
+	for (const b of buildsFor(radio.flash.stock_versions).filter((x) => x.stub)) assert.equal(stockName(radio.flash, b.name), `909E.DBB.EARSAB.${b.name}`);
 	for (const b of BUILDS) {
 		assert.ok(b.at >= 0x0300C000 && b.at < 0x03090000 && b.at % 4 === 0, b.date);
-		assert.ok(b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0, b.date);
+		assert.ok(b.ram === undefined || (b.ram >= 0x18000000 && b.ram < 0x18001000 && b.ram % 4 === 0), b.date);
 	}
 	assert.equal(new Set(BUILDS.map((b) => b.date)).size, BUILDS.length);
 	assert.deepEqual(b.stub_board, { id: 3, latch: 45, key: 44, nand: true, led: { red: 33, green: 32 } });
@@ -247,6 +249,32 @@ test("USMART: the build comes from the version string; an unknown build is repor
 	assert.equal(await new Usmart(r.stream).build(), null);
 });
 
+test("GD-88: its main SoC's console build 021 is found by its own version string, and takes the stub as the DB25-D's", { timeout: 120000 }, async (t) => {
+	const { FakeC7000, c7000Simulation } = await import("../static/js/flasher/fakec7000.js");
+	const { Stub } = await import("../static/js/flasher/stub.js");
+	const { stubFor, ledFor } = await import("../static/js/flasher/c7000ui.js");
+	const gd88 = json("radios.json").radios.find((x) => x.id === "gd88");
+	const sim = await c7000Simulation(C, "gd88", 7000, gd88);
+	assert.equal(stockVersion(sim.progmem, gd88.flash.stock_versions), "B49E.D64.EOPSAB.021");
+	assert.equal(stockVersion(sim.progmem, radio.flash.stock_versions), null, "not a DB25-D version");
+	const r = new FakeC7000({ progmem: sim.progmem.slice(), dataSize: 0x200000, speed: 200, romWindow: 50, bootTime: 50, board: "GD-88",
+		usmart: "021" });
+	t.after(() => r.stop());
+	r.powerOn();
+	await new Promise((ok) => setTimeout(ok, 300));
+	assert.equal((await new Usmart(r.stream, { versions: gd88.flash.stock_versions }).build())?.name, "021");
+	assert.equal(await new Usmart(r.stream, { versions: radio.flash.stock_versions }).build(), null,
+		"the DB25-D's builds are not looked for on a GD-88");
+	const image = stubFor(C, "gd88", stubImages(json("c7000-stub.json")).image);
+	await new Usmart(r.stream, { quiet: 2 }).loadStub(image);
+	assert.equal(r.state, "stub");
+	assert.ok(equal(r.loaded.subarray(0, image.length), image), "the patched image");
+	const s = new Stub(r.stream, { log: () => {} });
+	await s.helloWithin(3000, "no stub");
+	await s.configure(C.boards.gd88.stub_board, ledFor(C, "gd88"));
+	assert.equal(r.stubCfg.board, C.boards.gd88.stub_board.id);
+});
+
 test("USMART: the version comes from its RAM copy, which carries the variant the flash copy leaves out", async (t) => {
 	const { r } = await stockDb25d(t, { variant: "D6T" });
 	const u = new Usmart(r.stream);
@@ -317,15 +345,33 @@ test("USMART: a radio whose application does not start with the stock entry is r
 
 // ---- IAP
 
-function iapRadio({ corrupt = false } = {}) {
+function iapRadio({ corrupt = false, fill = 0xA5, lose = 0 } = {}) {
 	const got = { erase: null, pages: [] };
-	let phase = "banner", want = 0, sum = 0;
+	let phase = "banner", want = 0, sum = 0, reading = -1;
+	const enc = (x) => new TextEncoder().encode(x);
 	const pipe = new Pipe((b, p) => {
-		// the read-only request: the version string, one page and its checksum (hardware-db25d.md 7); phase is unchanged
+		// the read-only request: the version string, then one page per "Read" and one more "Read" for the checksum and
+		// "IAPReady" (hardware-db25d.md 7); phase is unchanged
 		if (b.length === 19 && new TextDecoder().decode(b.subarray(0, 11)) === "Flash Read ") {
 			got.reads = (got.reads || 0) + 1;
-			p.push(concat(new TextEncoder().encode("Read_2M_V1.08BZSRJun 30 2023"), new Uint8Array(2048).fill(0xA5),
-				new TextEncoder().encode("ChecksumR"), be32(2048 * 0xA5), new TextEncoder().encode("IAPReady")));
+			reading = (b[15] << 24 | b[16] << 16 | b[17] << 8 | b[18]) >>> 0;
+			p.push("  Read_2M_V1.08BZSRJun 30 2023");
+			return;
+		}
+		if (reading >= 0 && b.length === 4 && new TextDecoder().decode(b) === "Read") {
+			// a second SoC's loader: some "Read"s are not answered (lose: how many)
+			if (lose > 0) {
+				lose--;
+				return;
+			}
+			if (reading-- > 0) p.push(new Uint8Array(2048).fill(fill));
+			else p.push(concat(enc("ChecksumR"), be32(2048 * fill), enc("IAPReady")));
+			return;
+		}
+		// an Erase while a read still waits for its "Read": the loader fails it (seen on a radio)
+		if (reading >= 0 && phase === "banner") {
+			got.failedErase = true;
+			p.push("ChecksumR\0\0\0\0Flash operation fail!");
 			return;
 		}
 		if (phase === "banner") {
@@ -397,11 +443,93 @@ test("IAP: a radio stuck in update mode at power-on answers the read-only probe,
 	assert.equal(got.erase, null, "the probe never sends Erase");
 	assert.equal(got.pages.length, 0, "and writes no page");
 	// the install that follows starts at once (no waitBanner), as the page does after a probe
+	// the probe ended its read: an Erase sent while one is open fails on the radio
 	const img = installImage();
 	await iap.write(img);
+	assert.ok(!got.failedErase);
 	assert.equal(got.pages.length, Math.floor(img.length / 2048) + 1);
 	// a radio that is off, or runs something else, does not answer
 	assert.equal(await iapOn(new Pipe(() => {})).probe(200), null);
+});
+
+test("IAP: which SoC answers, from its own NAND pages; a Read left unanswered is sent again", async () => {
+	const pages = socPages({ nand: 0x280000 });
+	assert.deepEqual(pages, [0, 0x280000, 0x2A0000, 0x2C0000]);
+	const a = await iapOn(iapRadio({ fill: 0x11 }).pipe).whose(pages);
+	const b = iapRadio({ fill: 0x22, lose: 2 });
+	const bWho = await iapOn(b.pipe).whose(pages);
+	assert.ok(a && bWho);
+	assert.notEqual(a, bWho);
+	assert.equal(await iapOn(iapRadio({ fill: 0x11, lose: 1 }).pipe).whose(pages), a, "the same SoC reads the same");
+	// the reads end cleanly: an install follows on the same loader
+	await iapOn(b.pipe).write(installImage());
+	assert.ok(!b.got.failedErase);
+	assert.equal(await iapOn(new Pipe(() => {})).whose(pages, 200), null);
+	// a print tells its SoC apart only by a calibration page with data: erased or zero pages on both would match
+	assert.ok(telling(a));
+	assert.ok(!telling(await iapOn(iapRadio({ fill: 0xFF }).pipe).whose(pages)), "erased");
+	assert.ok(!telling(await iapOn(iapRadio({ fill: 0 }).pipe).whose(pages)), "zero");
+	assert.ok(!telling(null));
+	assert.ok(!telling("00077880"), "page 0 alone");
+	assert.ok(telling("00077880.000594ab.0007f800.0007ab97"), "a radio's receiver A");
+});
+
+test("GD-88 practice radio: each receiver's loader reads its own pages, the stock application reads A's, and a pulled cable ends a wait at once", { timeout: 60000 }, async (t) => {
+	const { FakeC7000, c7000Simulation, fakeC7000Options } = await import("../static/js/flasher/fakec7000.js");
+	const fb = json("flash-boards.json");
+	const gd88 = json("radios.json").radios.find((x) => x.id === "gd88");
+	const sim = await c7000Simulation(C, "gd88", 7000, gd88);
+	const simB = await c7000Simulation(C, gd88.flash.second.board, 7001);
+	const make = (faults = {}) => {
+		const r = new FakeC7000({ progmem: sim.progmem.slice(), speed: 200, romWindow: 50, bootTime: 50,
+			...fakeC7000Options(gd88, fb),
+			rx2: { progmem: simB.progmem.slice(), stock: true } });
+		Object.assign(r.faults, faults);
+		t.after(() => r.stop());
+		return r;
+	};
+	const pages = socPages(C.boards.gd88.calibration);
+	const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+	const r = make();
+	// the stock application: its read of the NAND is receiver A's
+	r.powerOn();
+	await wait(200);
+	const um = await iapOn(r.stream).probe(1500, 0, { all: true });
+	assert.ok(um?.stock && !um.version, "the application answers, not a loader");
+	const viaApp = await iapOn(r.stream).whose(pages);
+	assert.ok(telling(viaApp));
+	// update mode: SK1 held at power-on gives IAP_A; a long press switches to IAP_B and back
+	r.powerOff();
+	r.powerOn({ keys: true });
+	await wait(100);
+	assert.equal(r.screen(), "IAP_A");
+	assert.equal(await iapOn(r.stream).whose(pages), viaApp, "IAP_A reads what the application read");
+	// a long press while the loader answers requests is not seen, so the page must stay quiet during a switch
+	const busy = iapOn(r.stream).whose(pages);
+	await wait(1);
+	r.holdSk1();
+	await busy;
+	await wait(50);
+	assert.equal(r.screen(), "IAP_A", "a press during requests does not switch");
+	r.holdSk1();
+	await wait(50);
+	assert.equal(r.screen(), "IAP_B");
+	const b = await iapOn(r.stream).whose(pages, 300);	// IAP_B drops a Read now and then: sent again
+	assert.ok(telling(b));
+	assert.notEqual(b, viaApp, "receiver B's pages differ");
+	// calibration pages erased on both: nothing tells them apart
+	const blank = make({ iapBlankCal: true });
+	blank.powerOn({ keys: true });
+	await wait(100);
+	assert.ok(!telling(await iapOn(blank.stream).whose(pages)));
+	// the cable pulled out during a wait: the read fails at once with a lost connection, not after its timeout
+	const iap = iapOn(r.stream);
+	const t0 = Date.now();
+	setTimeout(() => r.unplug(), 20);
+	await assert.rejects(iap.until(() => false, 5000), (e) => e.name === "NetworkError");
+	assert.ok(Date.now() - t0 < 1000);
+	r.plug();
+	assert.ok(await iapOn(r.stream).whose(pages, 300), "a new stream after the cable is back");
 });
 
 test("IAP: a checksum that differs is reported, and silence after the erase stops before any data", async () => {

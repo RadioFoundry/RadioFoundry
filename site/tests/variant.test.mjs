@@ -35,6 +35,10 @@ test("the code and the version text come from the radio's pattern", () => {
 	assert.equal(variantCode(radio, "V1.b.X"), null);
 	assert.equal(variantCode({}, "V1.A.X"), null, "a radio without variants has no code");
 	assert.equal(versionText(radio, null), null);
+	// a model without variants still has its version text: the identify alone must not read as no answer
+	const plain = "  Read_2M_\0\0B49E.DBT.EOPSAB.021.Jan 19 2025\0\0\x0015:43:08\0\0+MODEL+";
+	assert.equal(versionText({}, plain), "B49E.DBT.EOPSAB.021.Jan 19 2025");
+	assert.equal(versionText({}, "  Read_2M_\0\0\x03\0"), null);
 	// a long printable run is cut, not taken whole
 	assert.ok(versionText(radio, `${"x".repeat(200)}V1.A.X${"y".repeat(200)}`).length <= 48);
 });

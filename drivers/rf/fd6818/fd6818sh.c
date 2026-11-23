@@ -279,12 +279,17 @@ static void gpio_select(fd6818sh_t *dev, uint8_t pin, uint8_t sel)
 	unsigned shift = (pin & 3u) * 4u;
 	uint16_t v = rfbus_read(dev->bus, reg);
 	wr(dev, reg, (uint16_t)((v & ~(0xFu << shift)) | ((uint16_t)sel << shift)));
+	dev->gpio_sel |= (uint8_t)(1u << pin);
 }
 
 void fd6818sh_gpio(fd6818sh_t *dev, uint8_t pin, bool high)
 {
 	if (pin > 7) {
 		return;
+	}
+	// A pin the init gave no function: a plain output first, whatever its select was after the reset
+	if (!(dev->gpio_sel & (1u << pin))) {
+		gpio_select(dev, pin, 0);
 	}
 	// Bits 15:8 enable the outputs, low active
 	uint16_t v = (uint16_t)(dev->r25 & ~((1u << pin) | (1u << (pin + 8u))));
@@ -308,6 +313,7 @@ void fd6818sh_attach(fd6818sh_t *dev, rfbus_t *bus, fd6818sh_role_t role)
 	dev->freq_10hz = 0;
 	dev->state = FD6818SH_STATE_IDLE;
 	dev->r25 = 0;
+	dev->gpio_sel = 0;
 	dev->r7e = 0;
 	dev->r53 = fd6818sh_volume_word(0);
 	dev->tone_hz = 0;
@@ -324,6 +330,7 @@ static void reset_and_table(fd6818sh_t *dev, bool lo)
 {
 	wr(dev, 0x00, 0x8000);
 	wr(dev, 0x00, 0x0000);
+	dev->gpio_sel = 0;
 	rfbus_delay_ms(dev->bus, RESET_MS);
 	TABLE_OR(dev, page0, init_page0);
 	if (lo) {

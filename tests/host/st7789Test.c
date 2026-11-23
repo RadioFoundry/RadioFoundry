@@ -68,7 +68,7 @@ static void f_pixels(const uint16_t *px, uint32_t n)
 static void f_reset(bool level) { if (n_resets < 8) resets[n_resets++] = level; }
 static void f_delay(uint32_t ms) { delay_total += ms; }
 
-static const st7789_bus_t bus = { f_begin, f_end, f_cmd, f_data, f_pixels, f_reset, f_delay };
+static const st7789_bus_t bus = { f_begin, f_end, f_cmd, f_data, f_pixels, f_reset, f_delay, NULL };
 
 static void clear_log(void)
 {
@@ -190,6 +190,45 @@ static void test_rows_indexed(void)
 	CHECK(n_e == 0 && begins == 0);
 }
 
+// A bus with the 16-color row hook: rows at scale 1 go through it, expanded here as a board would, and send what the
+// line buffer sends; a scaled panel still uses the line buffer
+static int rows4;
+static void f_pixels4(const uint8_t *row, const uint16_t *palette, uint32_t n)
+{
+	uint16_t px[320];
+	rows4++;
+	for (uint32_t x = 0; x < n; x++)
+		px[x] = palette[(row[x >> 1] >> ((x & 1u) ? 0 : 4)) & 0x0Fu];
+	f_pixels(px, n);
+}
+static const st7789_bus_t bus4 = { f_begin, f_end, f_cmd, f_data, f_pixels, f_reset, f_delay, f_pixels4 };
+
+static void test_rows_pixels4(void)
+{
+	static uint8_t fb[120 * 320];
+	uint16_t pal[16];
+	for (int i = 0; i < 16; i++)
+		pal[i] = (uint16_t)(0x0F01u * (unsigned)i);
+	for (size_t i = 0; i < sizeof fb; i++)
+		fb[i] = (uint8_t)(i * 13u + 5u);
+	const st7789_t p = { &bus, 240, 320, 0xC0, true, 1 }, p4 = { &bus4, 240, 320, 0xC0, true, 1 };
+	static uint16_t want[1024];
+	clear_log();
+	st7789_write_rows_indexed(&p, fb, pal, 10, 14);
+	uint32_t n_want = n_px_log;
+	memcpy(want, px_log, sizeof want);
+	clear_log();
+	rows4 = 0;
+	st7789_write_rows_indexed(&p4, fb, pal, 10, 14);
+	CHECK(rows4 == 4 && depth == 0);
+	CHECK(n_px_log == n_want && memcmp(px_log, want, n_want * sizeof want[0]) == 0);
+	const st7789_t s2 = { &bus4, 240, 320, 0xC0, true, 2 };
+	rows4 = 0;
+	clear_log();
+	st7789_write_rows_indexed(&s2, fb, pal, 0, 2);
+	CHECK(rows4 == 0 && log_e[find(0x2C)].n_px == 240u * 4u);
+}
+
 // A frame buffer of the safe area only (hal_display_t fb_safe_area): its rows go to the window inside the insets,
 // row r of the buffer to panel row y + r, w pixels each from its own stride
 static void test_window_indexed(void)
@@ -251,6 +290,7 @@ int main(void)
 	test_init();
 	test_rows();
 	test_rows_indexed();
+	test_rows_pixels4();
 	test_window_indexed();
 	test_misc();
 	if (failures) {

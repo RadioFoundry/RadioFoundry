@@ -54,6 +54,13 @@ export function iapPlan(image, pad = 0xFF) {
 // and ChecksumR. Read only; the page flasher uses one page of it to tell that the loader is the one answering.
 export const readPacket = (addr, pages) => concat(new TextEncoder().encode("Flash Read "), be32(addr), be32(pages));
 
+// The NAND pages whose checksums tell one SoC from the other (Iap.whose): the factory block map and the first page of
+// the calibration's block and the two after it (where it moves past unusable blocks). cal: the board's calibration
+export const socPages = (cal) => [0, ...(cal?.nand != null ? [0, 1, 2].map((k) => cal.nand + k * 0x20000) : [])];
+
+// Whether a print (Iap.whose) can tell its SoC from the other: one calibration page at least holds data, neither erased
+// (2048 × 0xFF) nor zero. Page 0 doesn't count: both SoCs may hold the same there
+export const telling = (print) => !!print && print.split(".").slice(1).some((s) => s !== hex8(0) && s !== hex8(2048 * 0xFF));
 export const erasePacket = (n) => concat(new TextEncoder().encode("Erase      "), be32(0), be32(n));
 
 // What the loader takes: the first stage (firstStage.size bytes, starting with its signature so the loader boots it at
@@ -98,6 +105,8 @@ export class Iap {
 		const t0 = Date.now();
 		let last = Date.now(), n = this.s.buf.length;
 		for (;;) {
+			// a cable pulled out answers nothing more: said at once, not after the timeout
+			if (this.s.lost) throw new DOMException("The device has been lost.", "NetworkError");
 			const now = Date.now();
 			if (this.s.buf.length !== n) {
 				n = this.s.buf.length;
@@ -108,23 +117,61 @@ export class Iap {
 	}
 
 	// Is the loader's update mode on the cable now (a radio whose application is missing or incomplete stays in it at
-	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version} when
-	// the loader answers (version is null when only the banner or the checksum was seen), else null.
-	// The stock application answers the same request as the vendor programming software's identify: "Read_2M_" with no
-	// loader version, then its version string as it filled it in at boot (hardware-db25d.md 7). That returns
+	// every power-on)? Asks for one page of a read, which changes nothing, and never sends Erase. Returns {version, sum}
+	// when the loader answers (version null when only the banner or the checksum was seen; sum the page's ChecksumR), else
+	// null. The stock application answers the same request as the programming utility's identify: "Read_2M_" with
+	// no loader version, then its version string as it filled it in at boot (hardware-db25d.md 7). That returns
 	// {version: null, stock: text}, the reply as text, which still changes nothing; the application then shows
 	// "Flash Read" and waits for the read to go on until it is switched off and on.
-	async probe(timeout = 1500) {
+	// all: end the stock application's read too ({version: null, stock: text, sum}), so it answers the next request
+	async probe(timeout = 1500, addr = 0, { all = false } = {}) {
 		this.s.clear();
-		await this.s.write(readPacket(0, 1));
+		await this.s.write(readPacket(addr, 1));
 		const loader = /Read_\w+_V\d+\.\d+[A-Z]?|ChecksumR|IAPReady/, stock = /Read_\w+_\0/;
 		const seen = (t) => loader.test(t) || stock.test(t);
 		const text = await this.until(seen, timeout);
 		if (!seen(text)) return null;
 		this.s.clear();
-		if (!loader.test(text)) return { version: null, stock: text };
+		if (!loader.test(text)) return all ? { version: null, stock: text, sum: await this.endRead(timeout) } : { version: null, stock: text };
 		const v = /Read_\w+_V\d+\.\d+[A-Z]?/.exec(text);
-		return { version: v ? v[0] : null };
+		// the loader then waits for one "Read" per page and one for the checksum; a read left open makes the next Erase
+		// fail ("Flash operation fail!"), so the probe ends it before anything else is sent
+		const sum = v && !/IAPReady/.test(text) ? await this.endRead(timeout) : null;
+		return { version: v ? v[0] : null, sum };
+	}
+
+	// Ask for the probe's one page and its checksum (the loader then says IAPReady again). Returns the ChecksumR value,
+	// or null when it did not come
+	async endRead(timeout) {
+		// A "Read" can go unanswered (seen on a second SoC's loader, whose bytes go through the first SoC): one that brings
+		// nothing in `timeout` ms is sent again, up to four in all; the page and the checksum may also come together
+		const READ = new TextEncoder().encode("Read");
+		const done = (t) => /ChecksumR[\s\S]{4}/.test(t);
+		this.s.clear();
+		for (let k = 0; k < 4 && !done(this.text()); k++) {
+			const n = this.s.buf.length;
+			await this.s.write(READ);
+			await this.until((t) => done(t) || t.length >= n + PAGE, timeout, 50);
+		}
+		const text = await this.until(() => true, 300, 100);	// the "IAPReady" after the checksum
+		this.s.clear();
+		const k = text.indexOf("ChecksumR");
+		if (k < 0 || text.length < k + 13) return null;
+		return ((text.charCodeAt(k + 9) << 24) | (text.charCodeAt(k + 10) << 16) | (text.charCodeAt(k + 11) << 8) | text.charCodeAt(k + 12)) >>> 0;
+	}
+
+	// Which SoC's loader answers, on a radio with two (each has its own NAND, read through its own loader): the checksums of
+	// a few NAND pages that differ between any two radios' SoCs (the factory block map, the calibration's blocks).
+	// The stock application reads its own SoC's NAND the same way, so the radio's main SoC is known before any write.
+	// A string to compare, or null when a read did not answer
+	async whose(pages, timeout = 1500) {
+		const sums = [];
+		for (const a of pages) {
+			const r = await this.probe(timeout, a, { all: true });
+			if (!r || r.sum === null) return null;
+			sums.push(hex8(r.sum));
+		}
+		return sums.join(".");
 	}
 
 	// Listen for the banner the loader prints when it starts in update mode
@@ -165,7 +212,7 @@ export class Iap {
 		this.s.clear();
 		await this.s.write(erasePacket(n));
 		const er = await this.until((t) => t.includes("ok"), eraseTimeout);
-		if (!er.includes("ok")) throw new IapError("the radio did not confirm the erase. The application area may be erased: enter update mode again and repeat the install");
+		if (!er.includes("ok")) throw new IapError("the radio did not confirm the erase.");
 		onPhase("write");
 		let sent = 0, reply = "";
 		for (let i = 0; i < pages.length; i++) {
@@ -179,11 +226,13 @@ export class Iap {
 				pageTimeout, 50);
 			onPage(i + 1, pages.length);
 			if (last) break;
+			// nothing at all: switched off, or the cable's data line gone; anything else is the loader refusing the page
+			if (!reply.length) throw new IapError(`the radio stopped answering at part ${i + 1} of the write.`);
 			if (!(reply.includes("Write") || reply.includes("d")) || reply.includes("ok"))
-				throw new IapError(`page ${i}: unexpected reply, stopped. Enter update mode again and repeat the install`);
+				throw new IapError(`the radio gave an unexpected answer at part ${i + 1} of the write.`);
 		}
 		const k = reply.indexOf("ChecksumI");
-		if (k < 0 || reply.length < k + 13) throw new IapError("the radio did not report a checksum after the last page");
+		if (k < 0 || reply.length < k + 13) throw new IapError("the radio did not report a checksum after the last page.");
 		const theirs = ((reply.charCodeAt(k + 9) << 24) | (reply.charCodeAt(k + 10) << 16) | (reply.charCodeAt(k + 11) << 8) | reply.charCodeAt(k + 12)) >>> 0;
 		if (theirs !== sent) throw new IapError(`the radio's checksum 0x${hex8(theirs)} does not match the file's 0x${hex8(sent)}: install again`);
 		if (sent !== sum) throw new IapError("internal checksum error");

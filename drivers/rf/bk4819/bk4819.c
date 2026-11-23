@@ -194,6 +194,20 @@ void bk4819_set_af_gain(bk4819_t *dev, uint8_t gain)
 	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xFFF0u) | gain));
 }
 
+void bk4819_set_af_level_db(bk4819_t *dev, uint8_t dac, int db)
+{
+	int down = db > 0 ? 0 : db < BK4819_AF_MIN_DB ? -BK4819_AF_MIN_DB : -db;	// dB below the top
+	unsigned gain1 = 0;	// 6 dB each
+	while (down - 6 * (int)gain1 > BK4819_AF_GAIN2_SPAN_DB && gain1 < 3u) {
+		gain1++;
+	}
+	unsigned gain2 = (unsigned)(63 - 2 * (down - 6 * (int)gain1));	// 0x3F = +5.5 dB, 0.5 dB a code, 0x03 at least
+	if (dac > 15u) {
+		dac = 15u;
+	}
+	bk4819_write(dev, BK4819_REG_AF_GAIN, (uint16_t)((dev->af_gain & 0xF000u) | (gain1 << 10) | (gain2 << 4) | dac));
+}
+
 // 4.5 DMR receive: the stock digital mode set, in its order. 0x27 and 0x48 are saved for the end; the stock firmware
 // leaves its digital values there when it goes back to analog, RadioFoundry doesn't
 static const regval_t dmr_rx_set[] = {
@@ -364,6 +378,17 @@ void bk4819_tone_start(bk4819_t *dev, uint16_t hz, uint8_t gain)
 	// more for some tones
 	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
 	bk4819_write(dev, BK4819_REG_TX_AUDIO, BK4819_TX_AUDIO_LIVE);
+}
+
+void bk4819_tone_freq(bk4819_t *dev, uint16_t hz)
+{
+	dev->tone_hz = hz;
+	bk4819_write(dev, BK4819_REG_TONE1_FREQ, (uint16_t)((uint32_t)hz * 103244u / 10000u));
+}
+
+void bk4819_tone_deviation(bk4819_t *dev, uint16_t scale)
+{
+	bk4819_write(dev, 0x40, (uint16_t)(0x3000u | (scale & 0x0FFFu)));
 }
 
 // 4.4 DTMF: the tone start with both generators at the stock DTMF level and the stock DTMF deviation (0x40)

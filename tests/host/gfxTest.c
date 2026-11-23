@@ -17,9 +17,18 @@
 static int fails;
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while (0)
 
-static int flushes, flushed_rows;
+static int flushes, flushed_rows, rests;
+static int band_max, band_misaligned;	// the tallest band sent, bands that end off a GFX_SEND_ROWS boundary
+static void d_rest(void) { rests++; }
+static void note_band(uint16_t y0, uint16_t y1, uint16_t h)
+{
+	if (y1 - y0 > band_max)
+		band_max = y1 - y0;
+	if (y1 % GFX_SEND_ROWS != 0 && y1 != h)
+		band_misaligned++;
+}
 static void d_init(void) {}
-static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; flushes++; flushed_rows += y1 - y0; }
+static void d_flush(const void *fb, uint16_t y0, uint16_t y1) { (void)fb; flushes++; flushed_rows += y1 - y0; note_band(y0, y1, 120); }
 static uint16_t sent_pal[16];
 static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
 {
@@ -620,6 +629,34 @@ static void test_aa_text(void)
 	gfx_init(&disp);
 }
 
+// A full frame goes out in bands of at most GFX_SEND_ROWS, ending on a multiple of it, with the rest hook after each:
+// the UI task lets the idle task in there, as one frame of a large panel outlasts the hang check while DMR TX keeps
+// the CPU busy (core/ui/ui.c ui_rest)
+static void test_flush_bands(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120;
+	d.bpp = 16;	// a fill in a new color changes the 16-color palette, and with it every row
+	CHECK(gfx_init(&d));
+	gfx_fill(0, 0, 160, 120, 0x0000);
+	gfx_set_rest(d_rest);
+	gfx_invalidate();
+	flushes = flushed_rows = rests = band_max = band_misaligned = 0;
+	gfx_flush();
+	CHECK(flushed_rows == 120 && flushes == (120 + GFX_SEND_ROWS - 1) / GFX_SEND_ROWS);
+	CHECK(rests == flushes && band_max == GFX_SEND_ROWS && band_misaligned == 0);
+	// A changed band that starts mid-way: its first piece ends on the next boundary, its last where the band does
+	gfx_fill(0, GFX_SEND_ROWS / 2, 10, GFX_SEND_ROWS, 0xFFFF);
+	flushes = flushed_rows = rests = band_max = band_misaligned = 0;
+	gfx_flush();
+	CHECK(flushed_rows == GFX_SEND_ROWS && flushes == 2 && rests == 2 && band_misaligned == 1);
+	gfx_set_rest(NULL);
+	flushes = rests = 0;
+	gfx_invalidate();
+	gfx_flush();
+	CHECK(flushes > 0 && rests == 0);
+}
+
 // The UI task's pacing while a capture holds redraws: it waits a frame each pass rather than spinning with a wait of 0,
 // which kept the idle task from feeding the watchdog during a 40-chunk color screenshot (the radio restarted)
 static void test_pass_wait(void)
@@ -843,7 +880,7 @@ int main(void)
 	ui_draw_home(&v, &s);
 	flushes = flushed_rows = 0;
 	gfx_flush();
-	CHECK(flushes == 1 && flushed_rows == 120);
+	CHECK(flushes == (120 + GFX_SEND_ROWS - 1) / GFX_SEND_ROWS && flushed_rows == 120);
 	ui_draw_home(&v, &s);
 	flushes = flushed_rows = 0;
 	gfx_flush();
@@ -852,7 +889,7 @@ int main(void)
 	ui_draw_home(&v, &s);
 	flushes = flushed_rows = 0;
 	gfx_flush();
-	CHECK(flushes == 1 && flushed_rows > 0 && flushed_rows <= ui_layout.strip_h);
+	CHECK(flushes >= 1 && flushed_rows > 0 && flushed_rows <= ui_layout.strip_h);
 #if CONFIG_NET_WEBCTL
 	// The web control's copy: the rows that changed, kept until taken; not readable while a frame is drawn
 	uint32_t seq, seq2;
@@ -928,6 +965,7 @@ int main(void)
 	test_aa_text();
 	test_splash_footer();
 	test_pass_wait();
+	test_flush_bands();
 	test_idle_pill_contrast();
 	test_big_text();
 	test_hc_strip_white();

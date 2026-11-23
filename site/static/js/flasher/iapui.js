@@ -15,11 +15,11 @@
 //
 // Neither ever writes the vendor loader, so update mode always remains.
 
-import { h, t, notice, button, panel, progressBar } from "./dom.js";
+import { h, t, notice, button, panel, progressBar, spinner } from "./dom.js";
 import { sleep } from "./bytes.js";
 import * as c7 from "./c7000.js";
-import { Usmart, stockName, BUILDS, UNKNOWN_BUILD } from "./usmart.js";
-import { trimTail } from "./iap.js";
+import { Usmart, stockName, buildsFor, mayTry, UNKNOWN_BUILD } from "./usmart.js";
+import { trimTail, Iap, socPages, telling } from "./iap.js";
 import { variantCode, verdict, writable, groups } from "./variant.js";
 import * as diag from "../diag.js";
 import { CodecError } from "./c7000.js";
@@ -27,7 +27,29 @@ import { errorNotice, reportLine } from "../report.js";
 import { radioPicture, holdKeys } from "./radiotop.js";
 import { confirmNoCodec } from "./nocodec.js";
 
+const ERASE_TAU_MS = 4000;	// the erase bar's time constant: about 60 % of its way in 4 s
 const LISTEN_MS = 180000;	// how long the page waits for update mode
+const QUIET_HINT_MS = 8000;	// silence on the cable this long while waiting: the page says what to check
+
+// The main SoC's NAND pages (Iap.whose) of radios installed from this browser, per board: a radio whose main SoC was
+// left without an application (a write that stopped) can't answer through it again, and is still known by them. Only
+// sums of calibration pages; nothing else about the radio is kept
+const MAIN_KEY = "rfoundry.mainPrints";
+export function knownMain(board) {
+	try {
+		return JSON.parse(localStorage.getItem(MAIN_KEY) || "{}")[board] || [];
+	} catch (e) {
+		return [];
+	}
+}
+export function rememberMain(board, print) {
+	if (!print) return;
+	try {
+		const all = JSON.parse(localStorage.getItem(MAIN_KEY) || "{}");
+		all[board] = [print, ...(all[board] || []).filter((x) => x !== print)].slice(0, 8);
+		localStorage.setItem(MAIN_KEY, JSON.stringify(all));
+	} catch (e) { /* no storage: the connect step's read is needed every time */ }
+}
 
 // What each protocol's write step says: an IAP loader checks the whole image by its checksum and starts it; the
 // Baofeng updater acknowledges each block by its CRC and may wait for a power cycle (hardware-dm1801pro.md 6.2)
@@ -81,8 +103,19 @@ function variantNote(vd) {
 // host: what c7000ui.js hands over ({S, ctx, C, boardId, session, busy, loader, fill, stubImage}); loader(session) makes
 // the update mode's protocol object (listen, write)
 export function makeStockRoutes(host) {
-	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null } = host;
+	const { S, ctx, C, boardId, session, busy, loader: makeLoader, fill, stubImage, cableBanner = () => null, reopen } = host;
 	const protocol = () => S().radio.flash.update_mode;
+	// a text in the radio's own words where en.json has one (<key>_<radio id>, what its update mode shows), else the
+	// common one. A second SoC takes its own board's text first, then its radio's
+	const own = (key) => {
+		const r = S().radio;
+		for (const id of [r.id, r.second_of]) {
+			const k = `${key}_${id}`;
+			if (id && t(k) !== k) return k;
+		}
+		return key;
+	};
+
 	const radioName = (id) => S().data?.radios?.find((r) => r.flash.board === id)?.name || id;
 
 	// ---- the hardware variant (board.toml [hardware] variants)
@@ -157,17 +190,23 @@ export function makeStockRoutes(host) {
 	// doesn't know); failed: the error of such a try, which this firmware made likely
 	function noBackup({ show, act, onUpdateMode, onAgain }, version, vd, { tryAnyway = null, failed = null } = {}) {
 		// the builds whose console takes the stub, by the board's names for them
-		const versions = BUILDS.filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
+		const versions = buildsFor(S().radio.flash.stock_versions).filter((b) => b.stub).map((b) => `${stockName(S().radio.flash, b.name)} (${b.date})`).join(" or ");
+		const ways = [
+			tryAnyway ? [h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")] : null,
+			versions ? [h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })] : null,
+			onUpdateMode ? [h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")] : null].filter(Boolean);
+		// one way on is no choice: the notice doesn't ask for one, and the way is a paragraph, not a list of one
+		const one = ways.length === 1;
+		const lead = failed ? (one ? "flash.variant.try_failed_one" : "flash.variant.try_failed")
+			: tryAnyway ? (one ? "flash.variant.no_backup_known_one" : "flash.variant.no_backup_known")
+			: one ? "flash.variant.no_backup_one" : "flash.variant.no_backup";
 		show({ led: "off", screen: "on" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.usmart.version")), h("dd", {}, version)) : null,
 			variantNote(vd),
-			failed ? notice(t("flash.variant.try_failed"), "info") : notice(t(tryAnyway ? "flash.variant.no_backup_known" : "flash.variant.no_backup"), "info"),
+			notice(t(lead), "info"),
 			failed ? h("details", { class: "small" }, h("summary", {}, t("flash.problem.details")), h("pre", { class: "log" }, failed)) : null,
-			h("ol", { class: "steps" },
-				tryAnyway ? h("li", {}, h("b", {}, t("flash.variant.try_title")), " ", t("flash.variant.try")) : null,
-				h("li", {}, h("b", {}, t("flash.variant.update_first_title")), " ", t("flash.variant.update_first", { versions })),
-				onUpdateMode ? h("li", {}, h("b", {}, t("flash.variant.direct_title")), " ", t("flash.variant.direct")) : null),
+			one ? h("p", {}, ...ways[0]) : h("ol", { class: "steps" }, ...ways.map((w) => h("li", {}, ...w))),
 			howToCheck(), reportLine());
 		act(tryAnyway ? button(t("flash.variant.try_go"), tryAnyway, { primary: true }) : null,
 			onUpdateMode ? button(t("flash.variant.direct_go"), onUpdateMode, { primary: !tryAnyway, quiet: !!tryAnyway }) : null,
@@ -186,8 +225,10 @@ export function makeStockRoutes(host) {
 	}
 
 	// update mode steps beside the radio's picture, the keys to hold marked on it (radiotop.js; app.js does the same)
-	const withPicture = (steps) => {
-		const pic = radioPicture(S().radio, { keys: holdKeys(S().radio) });
+	// screen: what the radio's screen shows once there (radios.json flash.update_screen)
+	// keys false: no key marked (the radio is being written, nothing is held)
+	const withPicture = (steps, screen = S().radio.flash.update_screen || null, keys = true) => {
+		const pic = radioPicture(S().radio, { keys: keys ? holdKeys(S().radio) : [], screen });
 		return pic ? h("div", { class: "radio-grid" }, steps, pic) : steps;
 	};
 
@@ -198,7 +239,7 @@ export function makeStockRoutes(host) {
 	async function stockFound({ show, act, onLoaded, onUpdateMode, onAgain }) {
 		const c = session();
 		// the simulated radio answers at once: no need to wait for the original firmware's log lines
-		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80 });
+		const con = new Usmart(c.stream, { log: (l) => c.log.add(l), quiet: S().fakeC7 ? 2 : 80, versions: S().radio.flash.stock_versions });
 		show({ led: "off", screen: "on" }, h("p", { class: "c7-big" }, h("b", {}, t("flash.usmart.found"))),
 			h("p", { class: "muted" }, t("flash.usmart.checking")));
 		const other = onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode, { quiet: true });
@@ -229,8 +270,11 @@ export function makeStockRoutes(host) {
 			return act(button(t("flash.iap.none.again"), onAgain, { primary: true }));
 		}
 		const parts = { show, act, onLoaded, onUpdateMode, onAgain };
-		const shown = version || (build && `${build.name} (${build.date})`);
-		if (!build?.stub) return noBackup(parts, shown, vd, { tryAnyway: () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) });
+		const shown = version || (build && `${stockName(S().radio.flash, build.name)} (${build.date})`);
+		if (!build?.stub) {
+			const tryAnyway = mayTry(build, S().radio.flash.stock_versions) ? () => loadOffer(parts, con, shown, vd, true, build || UNKNOWN_BUILD) : null;
+			return noBackup(parts, shown, vd, { tryAnyway });
+		}
 		return loadOffer(parts, con, version || stockName(S().radio.flash, build.name), vd, false, build);
 	}
 
@@ -302,7 +346,7 @@ export function makeStockRoutes(host) {
 	function nothing({ show, act, onUpdateMode, onPowerOn, onAgain }) {
 		show({ led: "off", screen: "any" },
 			notice(t("flash.iap.none.lead"), "info"),
-			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t("flash.iap.none.stock"))),
+			h("ul", {}, h("li", {}, t("flash.iap.none.on")), h("li", {}, t("flash.iap.none.cable")), h("li", {}, t(own("flash.iap.none.stock")))),
 			h("p", { class: "small muted" }, t("flash.iap.none.rfoundry")), howToCheck());
 		act(button(t("flash.iap.none.again"), onAgain, { primary: true }), onUpdateMode && button(t("flash.iap.none.update_mode"), onUpdateMode),
 			button(t("flash.iap.none.power_on"), onPowerOn, { quiet: true }));
@@ -311,10 +355,10 @@ export function makeStockRoutes(host) {
 	// The loader answered a read-only probe: the radio is in update mode already (its application is missing or incomplete,
 	// so it stays there at every power-on, white screen and red LED). The install goes straight on; no keys are needed.
 	function alreadyUpdateMode({ show, act, onUpdateMode, onAgain }, version) {
-		show({ led: "off", screen: "on" },
+		show({ led: "off", screen: "update" },
 			h("p", { class: "c7-big" }, h("b", {}, t("flash.iap.um.found"))),
 			version ? h("dl", { class: "kv-list" }, h("dt", {}, t("flash.iap.um.loader")), h("dd", {}, version)) : null,
-			h("p", {}, t("flash.iap.um.text")), h("p", { class: "small muted" }, t("flash.iap.um.safe")),
+			h("p", {}, t(own("flash.iap.um.text"))), h("p", { class: "small muted" }, t("flash.iap.um.safe")),
 			S().radio.variants?.length ? h("p", { class: "small" }, t("flash.variant.not_read")) : null, howToCheck());
 		act(onUpdateMode ? button(t("flash.iap.um.go"), onUpdateMode, { primary: true }) : button(t("flash.iap.none.again"), onAgain, { primary: true }));
 	}
@@ -345,11 +389,266 @@ export function makeStockRoutes(host) {
 		};
 		return iapPanel({ title: t("flash.c7.write.title"), image, restore: false, gate, allowed,
 			notices: d.mode === "none" ? [noCodecNotice(true)] : [],
-			confirm: d.mode === "none" ? () => confirmNoCodec(() => { S().c7none = false; S().step--; ctx.render(); }) : null,
+			confirm: d.mode === "none" ? () => confirmNoCodec(() => { S().c7none = false; ctx.back(); }) : null,
 			rows: [[t("flash.c7.write.firmware"), `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`], [t("flash.c7.write.codec"), what]],
 			report: { task: "install", source: fw.origin || "", radio: boardId(), firmware: String(fw.manifest.version || ""),
 				variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null },
 			done: t(TEXTS[protocol()].ok), name: `rfoundry_${boardId()}.bin`, onDone: () => ctx.next() });
+	}
+
+	// The install of a radio with two SoCs (flash.second) through update mode: one card, two numbered steps, each SoC
+	// written by its own loader in turn. The radio stays in update mode after the first; a long press switches it to the
+	// second SoC's loader (flash.both.switch), and the second step starts when the user selects Continue. The page sends
+	// nothing while the user switches: a loader that is answering requests doesn't see the long press (seen on the radio).
+	//
+	// Which SoC answers is checked before each erase (Iap.whose: each SoC reads its own NAND), so an image never goes to
+	// the other SoC. The main SoC's pages come from its application in the connect step (c.mainPrint: on the cable only the
+	// main SoC's application answers), else from an earlier install on this computer (knownMain). Without a read in the
+	// connect step and with no remembered pages matching (a radio found in update mode whose main SoC this page never read,
+	// another radio installed from this computer before, or pages that changed since) the user confirms what the screen
+	// shows: remembered pages alone never refuse a loader, or that radio could never be installed. Pages that can't
+	// tell the SoCs apart (Iap telling) stop the install. The second step takes only a loader whose pages differ.
+	//
+	// Every wait says what is wrong and what to do: the normal firmware answering, the other SoC's loader, nothing at all,
+	// the cable pulled out. A write that stops (cable, power, a checksum) offers Install Again, which opens the cable again
+	// if it was lost: the loaders are never written, so both can always be entered again.
+	function iapBothView() {
+		const c = session();
+		const radio = S().radio, fw = S().firmware, d = c.decision;
+		const parts = [
+			{ key: "a", board: radio.flash.board, firstStage: radio.flash.first_stage, image: fw.image,
+				steps: radio.flash.bootloader || [], screen: radio.flash.update_screen || null },
+			{ key: "b", board: radio.flash.second.board, firstStage: radio.flash.second.first_stage, image: fw.second.image,
+				steps: [t(own("flash.both.switch"))], screen: radio.flash.second.update_screen || null },
+		];
+		try {
+			for (const p of parts) p.bytes = factoryInstallImage(C(), p.board, p.image, d);
+		} catch (e) {
+			return panel(t("flash.c7.write.title"), errorNotice(ctx.errorText(e)));
+		}
+		const what = d.mode === "none" ? t("flash.c7.codec.none")
+			: t(`flash.c7.codec.from_${d.source}`, { name: d.name || "", tag: String(d.tag ?? "").padStart(3, "0") });
+		const prog = progressBar({ stay: false });	// the careful notice says it
+		const between = h("p", {}, t("flash.both.careful"));	// the first step only: the second follows in the same update mode
+		const careful = h("div", { class: "notice", hidden: true }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), between);
+		for (const [i, p] of parts.entries()) {
+			p.state = h("span", { class: "small muted" });
+			p.body = h("div", { class: "both-body" });
+			p.el = h("section", { class: "both-step" }, h("h3", { class: "both-head" }, h("span", { class: "both-n" }, String(i + 1)), " ", t(`flash.both.${p.key}`), " ", p.state), p.body);
+		}
+		const box = panel(t("flash.c7.write.title"), cableBanner(),
+			h("dl", { class: "kv-list" }, h("dt", {}, t("flash.c7.write.firmware")), h("dd", {}, `${fw.source} (${Math.round(fw.image.length / 1024)} KB)`),
+				h("dt", {}, t("flash.c7.write.codec")), h("dd", {}, what)),
+			...parts.map((p) => p.el), careful, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
+		const left = () => S().c7 !== c || !box.isConnected;
+		const mark = (p, cls, text = "") => {
+			p.el.className = `both-step ${cls}`;
+			p.state.textContent = text;
+		};
+		// the steps, and under them (beside the picture) what is going on: a status, a button
+		// one step is a paragraph, not a numbered list of one
+		const how = (p, ...under) => withPicture(h("div", {}, p.steps.length === 1 ? h("p", { class: "c7-big" }, p.steps[0])
+			: h("ol", { class: "steps c7-big" }, ...p.steps.map((x) => h("li", {}, x))), ...under), p.screen);
+		// the spinner's line: waiting, or (while the pages are read, a few seconds) which receiver it is
+		const waitLine = (key = "flash.both.listening") => h("p", { class: "muted c7-big wait-line" }, spinner(), " ", t(key));
+		parts[0].print = c.mainPrint || null;
+		const known = knownMain(radio.flash.board);
+		let confirmed = false;		// the user said the screen shows the main SoC's update mode (no pages to check against)
+		let stop = null;
+
+		// step i: Install on the first, Continue on the second
+		const open = (i) => {
+			const p = parts[i];
+			mark(p, "active");
+			// the second step waits for the user's switch before it sends anything: a loader that is answering requests
+			// doesn't see the long key press that switches it
+			const go = i === 1 ? button(t("flash.both.continue"), () => run(1), { primary: true })
+				: button(t("flash.iap.go"), async () => { if (d.mode !== "none" || (await confirmNoCodec(() => { S().c7none = false; ctx.back(); }))) run(0); }, { primary: true });
+			fill(p.body, how(p, h("div", { class: "actions" }, go)));
+			S().forward(null);
+		};
+
+		// the cable, opened again when it was pulled out (a lost port: SerialStream.lost)
+		const cable = async () => {
+			if (c.stream && !c.stream.lost) return c.stream;
+			return reopen();
+		};
+
+		// wait until SoC i's loader answers (never the other SoC's), then write it
+		async function run(i) {
+			const p = parts[i], other = parts[1 - i];
+			const status = h("div", {}, waitLine());
+			fill(p.body, how(p, status));
+			mark(p, "active");
+			stop = new AbortController();
+			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
+			let wrote = false;	// the erase was sent: a try after a failure needs update mode entered again
+			const watch = setInterval(() => { if (!wrote && left()) stop.abort(); }, 250);
+			const pages = socPages(C().boards[p.board].calibration);
+			let started = null, erasing = null;
+			try {
+				let loader = new Iap(await cable(), { log: (l) => c.log.add(l), firstStage: p.firstStage, protect: C().boards[p.board].protect });
+				// what the user is told while the page waits; said again only when it changes
+				let said = null;
+				// spin: the page is listening (not while the cable is out)
+				const say = (key, extra = null, spin = true) => {
+					if (said === key) return;
+					said = key;
+					diag.note(`update mode wait: ${key}`, { step: i + 1 });
+					fill(status, key ? notice(t(key), "info") : null, extra, spin ? waitLine() : null);
+				};
+				let until = Date.now() + LISTEN_MS;
+				let quietSince = Date.now();
+				// nothing sent until the user selects Continue (or stops); the wait starts again after it
+				const pause = async (key) => {
+					await new Promise((resolve) => {
+						say(key, h("div", { class: "actions" }, button(t("flash.both.continue"), resolve, { primary: true })), false);
+						stop.signal.addEventListener("abort", resolve, { once: true });
+					});
+					said = undefined;
+					say(null);
+					until = Date.now() + LISTEN_MS;
+					quietSince = Date.now();
+				};
+				for (;;) {
+					if (stop.signal.aborted) throw new Error("stopped");
+					if (Date.now() > until) throw new Error(t("flash.iap.no_update_mode"));
+					if (c.stream?.lost) {
+						// pulled out: the port is gone, and only the user's click may open it again
+						await new Promise((resolve) => {
+							say("flash.both.unplugged", h("div", { class: "actions" }, button(t("flash.both.continue"), resolve, { primary: true })), false);
+							stop.signal.addEventListener("abort", resolve, { once: true });
+						});
+						if (stop.signal.aborted) throw new Error("stopped");
+						try {
+							loader = new Iap(await cable(), { log: (l) => c.log.add(l), firstStage: p.firstStage, protect: C().boards[p.board].protect });
+							said = undefined;	// the plain wait drawn again, in place of the unplugged notice
+							quietSince = Date.now();
+							say(null);
+						} catch (e) {
+							diag.note("update mode wait: cable not opened", { error: ctx.errorText(e) });
+							said = null;
+						}
+						continue;
+					}
+					let um = null;
+					try {
+						um = await loader.probe(1500);
+					} catch (e) {
+						// a port whose device went away refuses writes before its reading ends (link.js SerialStream)
+						if (e?.name !== "NetworkError" && !c.stream?.lost) throw e;
+						if (c.stream) c.stream.lost = true;
+						continue;
+					}
+					if (um?.version) {
+						quietSince = Date.now();
+						// update mode answered: a hint about the radio not answering, or running its normal firmware, is
+						// out of date
+						if (said) {
+							said = null;
+							fill(status, waitLine());
+						}
+						status.querySelector(".wait-line")?.replaceWith(waitLine("flash.both.checking"));
+						const who = await loader.whose(pages);
+						status.querySelector(".wait-line")?.replaceWith(waitLine());
+						if (!who) continue;
+						if (i === 0 && !telling(who)) throw new Error(t("flash.both.same"));
+						const mine = i === 0 ? (p.print ? who === p.print : known.includes(who) || confirmed) : who !== other.print;
+						if (mine) {
+							p.print = who;
+							break;
+						}
+						if (i === 0 && !p.print) {
+							// nothing read from this radio to check against: what the screen shows decides, once
+							await new Promise((resolve) => {
+								say(own("flash.both.confirm_a"), h("div", { class: "actions" }, button(t(own("flash.both.confirm_yes")), () => { confirmed = true; say(null); resolve(); }, { primary: true })), false);
+								stop.signal.addEventListener("abort", resolve, { once: true });
+							});
+							said = null;
+							until = Date.now() + LISTEN_MS;
+							continue;
+						}
+						// the other receiver's loader: silent until the user switched, since a loader that is answering
+						// requests doesn't see the long key press
+						await pause(own(i === 0 ? "flash.both.not_a" : "flash.both.not_b"));
+						continue;
+					} else if (um?.stock) {
+						quietSince = Date.now();
+						say("flash.iap.not_update_mode");
+					} else if (Date.now() - quietSince > QUIET_HINT_MS) {
+						// the second step: the radio may still be on the first loader, which may not answer after its write,
+						// so the page goes quiet while the user checks and switches
+						if (i === 1) {
+							await pause(own("flash.both.silent_b"));
+							continue;
+						}
+						say(own("flash.both.silent_a"));
+					}
+					await sleep(400);
+				}
+				diag.note("update mode", { step: i + 1, soc: p.board });
+				if (i === 0) rememberMain(radio.flash.board, p.print);
+				started = ctx.flashStarted({ task: "install", source: fw.origin || "", radio: p.board, firmware: String(fw.manifest.version || ""),
+					variant: fw.variant || fw.manifest.variant || (fw.manifest.dev_build ? "dev" : ""), features: fw.manifest.features || "", build: fw.build || null });
+				wrote = true;
+				await busy(true);
+				between.hidden = i !== 0;
+				careful.hidden = false;
+				S().forward(null);	// nothing stops a write midway safely
+				mark(p, "active", t("flash.iap.erasing"));
+				prog.set(0, 100);	// not the last step's bar; the heading says what is going on
+				// the bar takes the steps' place beside the picture: the radio stays where it was, so the page doesn't jump
+				fill(p.body, withPicture(prog.el, p.screen, false));
+				const t0 = Date.now();
+				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100), 250);
+				await loader.write(p.bytes, { name: `rfoundry_${p.board}.bin`,
+					onPhase: (ph) => {
+						if (ph !== "erase") clearInterval(erasing);
+						mark(p, "active", t(ph === "erase" ? "flash.iap.erasing" : "flash.iap.writing"));
+					},
+					onPage: (k, n) => { if (k > 0) ctx.flashMark(started, "first_byte"); prog.set(k, n, t("flash.iap.page", { done: k, total: n })); } });
+				ctx.flashMark(started, "last_byte");
+				ctx.flashFinished(started);
+				await busy(false);
+				careful.hidden = true;
+				mark(p, "done", t("flash.both.done"));
+				fill(p.body);
+				if (left()) return;
+				if (i === 0) return open(1);
+				finish();
+			} catch (e) {
+				if (started) ctx.flashFinished(started, e);
+				await busy(false);
+				careful.hidden = true;
+				if (left()) return;
+				const stopped = e.message === "stopped";
+				mark(p, "active", stopped ? "" : t("flash.both.failed"));
+				// what to do before trying again: nothing after a stop or a wait that found no update mode; the update mode
+				// entered again (this SoC's) after a write that stopped
+				const lost = !!c.stream?.lost;
+				const why = lost ? t("flash.both.cable_out") : ctx.errorText(e);
+				fill(p.body, how(p, stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t(`flash.both.failed_${p.key}`, { error: why })),
+					lost && !stopped ? h("p", {}, h("b", {}, t("flash.both.replug"))) : null,
+					wrote && !stopped ? h("p", {}, h("b", {}, t(own(`flash.both.again_${p.key}`)))) : null,
+					wrote && !stopped ? h("p", { class: "small muted" }, t("flash.iap.retry_safe")) : null));
+				S().forward(button(t(stopped ? "flash.iap.go" : "flash.both.again"), () => run(i), { primary: true }));
+			} finally {
+				clearInterval(erasing);
+				clearInterval(watch);
+			}
+		}
+
+		// both written: the radio starts RadioFoundry at the next power-on
+		function finish() {
+			c.resetAt = Date.now();
+			c.bothDone = true;	// the verify step then says nothing of a second receiver left out
+			careful.before(notice(t("flash.both.finished"), "ok"));	// under the steps, above the log
+			S().forward(button(t("flash.nav.to_now"), () => ctx.next(), { primary: true }));
+		}
+
+		mark(parts[1], "waiting", t("flash.both.waiting"));
+		open(0);
+		return box;
 	}
 
 	// The restore task through update mode: the backup's application area and codec slot, exactly (c7.restoreTarget).
@@ -375,24 +674,49 @@ export function makeStockRoutes(host) {
 	// start, asked again once the radio answers; confirm(): asked when go is pressed, false stays on the step
 	function iapPanel({ title, rows, image, restore, report, done, onDone, name, lead = null, gate = null, allowed = () => true, notices = [], confirm = null }) {
 		const c = session();
-		const prog = progressBar();
+		const prog = progressBar({ stay: false })	// the careful notice below says it;
 		const status = h("div");
 		const steps = S().radio.flash.bootloader || [];
+		// a loader that prints no banner (flash.update_banner false): the page asks it with the read-only probe instead
+		const silent = S().radio.flash.update_banner === false;
+		const stepGo = h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go"));
 		const go = button(t(restore ? "flash.iap.restore_go" : "flash.iap.go"), async () => { if (!confirm || (await confirm())) run(); }, { primary: true });
+		const careful = h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(own(TEXTS[protocol()].careful))));
 		const box = panel(title, cableBanner(),	// a CH340 cable: the warning here too (programming through update mode)
 			rows.length ? h("dl", { class: "kv-list" }, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])) : null,
 			gate ? gate(go) : null, ...notices,
 			h("p", {}, lead || t(restore ? "flash.iap.restore_lead" : "flash.iap.lead")),
-			withPicture(h("ol", { class: "steps c7-big" }, h("li", {}, t(restore ? "flash.iap.restore_step_go" : "flash.iap.step_go")), ...steps.map((x) => h("li", {}, x)))),
+			withPicture(h("ol", { class: "steps c7-big" }, stepGo, ...steps.map((x) => h("li", {}, x)))),
 			simKeys(),
-			h("div", { class: "notice" }, h("p", {}, h("b", {}, t("flash.c7.write.careful"))), h("p", {}, t(TEXTS[protocol()].careful))),
+			careful,
 			prog.el, status, h("details", { class: "small" }, h("summary", {}, t("flash.c7.log")), c.log.el));
 		prog.el.hidden = true;
 		S().forward(go);
 
+		// A loader without a banner: ask it with the read-only probe until it answers, so nothing is erased before the
+		// radio is in update mode. The normal firmware answers the same request (its identify) and then stays quiet until
+		// switched off: the radio was switched on without the keys held
+		async function probeUntil(loader, signal) {
+			const until = Date.now() + LISTEN_MS;
+			let normal = false;
+			while (Date.now() < until) {
+				if (signal.aborted) throw new Error("stopped");
+				const um = await loader.probe(1500);
+				if (um?.version) return;
+				if (um?.stock && !normal) {
+					normal = true;
+					diag.note("probe: normal firmware, not update mode");
+					fill(status, notice(t("flash.iap.not_update_mode"), "info"), h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
+				}
+				await sleep(500);
+			}
+			throw new Error(t("flash.iap.no_update_mode"));
+		}
+
 		async function run() {
 			go.disabled = true;
-			fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.listening")));
+			careful.hidden = false;
+			fill(status, h("p", { class: "muted c7-big" }, spinner(), " ", t("flash.iap.listening")));
 			prog.el.hidden = true;
 			const stop = new AbortController();
 			S().forward(button(t("flash.c7.connect.cancel"), () => stop.abort(), { quiet: true }));
@@ -400,7 +724,7 @@ export function makeStockRoutes(host) {
 			// with its keys later, for anything else, would be erased by a step no longer on the page. Nothing is drawn
 			// then. A write that started runs to its end
 			const left = () => S().c7 !== c || !box.isConnected;
-			let writing = false;
+			let writing = false, erasing = null;
 			const watch = setInterval(() => { if (!writing && left()) stop.abort(); }, 250);
 			const started = ctx.flashStarted(report);
 			try {
@@ -410,6 +734,7 @@ export function makeStockRoutes(host) {
 				const loader = c.loader?.ready && c.loader.s === c.stream ? c.loader : (c.loader = makeLoader(c));
 				// a loader that answered the probe is waiting already: its banner was printed before the page asked
 				if (c.iapReady) c.iapReady = false;
+				else if (!loader.ready && silent) await probeUntil(loader, stop.signal);
 				else if (!loader.ready) await loader.listen(LISTEN_MS, { signal: stop.signal });
 				if (left()) throw new Error("stopped");
 				if (!allowed()) throw new Error(t("flash.variant.nothing_written"));
@@ -417,8 +742,14 @@ export function makeStockRoutes(host) {
 				await busy(true);
 				fill(status, h("p", { class: "muted c7-big" }, t("flash.iap.erasing")));
 				prog.el.hidden = false;
+				// the erase reports nothing until it ends: the bar creeps toward 90 % meanwhile, so a working radio never sits at 0
+				const t0 = Date.now();
+				erasing = setInterval(() => prog.set(90 * (1 - Math.exp(-(Date.now() - t0) / ERASE_TAU_MS)), 100, t("flash.iap.erasing")), 250);
 				await loader.write(image, { signal: stop.signal, restore, name,
-					onPhase: (p) => fill(status, h("p", { class: "muted c7-big" }, t(p === "erase" ? "flash.iap.erasing" : "flash.iap.writing"))),
+					onPhase: (p) => {
+						if (p !== "erase") clearInterval(erasing);
+						fill(status, h("p", { class: "muted c7-big" }, t(p === "erase" ? "flash.iap.erasing" : "flash.iap.writing")));
+					},
 					onPage: (i, n) => { if (i > 0) ctx.flashMark(started, "first_byte"); prog.set(i, n, t("flash.iap.page", { done: i, total: n })); } });
 				ctx.flashMark(started, "last_byte");
 				prog.set(1, 1, t(TEXTS[protocol()].written));
@@ -442,14 +773,16 @@ export function makeStockRoutes(host) {
 				const cableLoses = c.blockFails >= 2 ? h("div", { class: "notice bad" }, h("p", {}, h("b", {}, t("flash.cable.fault_title"))),
 					h("p", {}, t("flash.cable.blocks_lost", { tries: c.blockFails })), h("p", {}, t("flash.cable.blocks_fix"))) : null;
 				if (cableLoses) diag.note("cable fault", { code: "blocks_lost", tries: c.blockFails, block: e.block });
+				// one notice and one line on what to do: the error notice carries the help links already
+				careful.hidden = true;
 				fill(status, (stopped ? notice(t("flash.iap.cancelled"), "info") : errorNotice(t("flash.iap.failed", { error: ctx.errorText(e) }))), cableLoses,
 					// with the cable at fault, the retry steps come after the cable change the warning asks for
-					stopped ? null : h("div", { class: "notice info" }, h("p", {}, t("flash.iap.retry_safe")), cableLoses ? null : h("p", { class: "small" }, t("flash.iap.retry_how"))),
-					stopped ? null : ctx.helpLink());
+					stopped ? null : h("p", {}, t("flash.iap.retry_safe"), cableLoses ? null : [" ", t("flash.iap.retry_how")]));
 				prog.el.hidden = true;
 				go.disabled = false;
 				S().forward(button(t("flash.c7.write.again"), () => run(), { primary: true }));
 			} finally {
+				clearInterval(erasing);
 				clearInterval(watch);
 			}
 		}
@@ -464,6 +797,6 @@ export function makeStockRoutes(host) {
 			button(t("flash.sim.c7_keys_on"), () => fake.powerOn({ keys: true }), { primary: true }));
 	}
 
-	return { stockFound, stockIdentified, stubSilent, nothing, alreadyUpdateMode, iapWriteView, iapRestoreView, variantStop, variantPicker, howToCheck };
+	return { stockFound, stockIdentified, stubSilent, nothing, alreadyUpdateMode, iapWriteView, iapBothView, iapRestoreView, variantStop, variantPicker, howToCheck };
 }
 

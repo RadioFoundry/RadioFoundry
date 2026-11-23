@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D)
+# stub: flash access for the HR_C7000 radios (DM-32UV, DM-1801 Pro, DB25-D, GD-88)
 
 A small RAM monitor and the host tool that drives it. The tool loads the monitor into the radio's RAM through the chip's
 serial boot ROM (radio switched on with the cable in), through the DB25-D's first stage, or, with `CONFIG_STUB_ENTRY=y`,
@@ -91,10 +91,10 @@ the modem writes only its own SRAM, so after the stub masks every interrupt noth
 | Region | Address | Size |
 |---|---|---|
 | Entry and copy loop (position independent, no stack) | load address | 0x80 |
-| Image (text, parameter block at +0x80, data) | 0x30000-0x31E68 after the copy | 7,784 B |
-| .bss (receive buffer, sector buffers) | to 0x36C90 | 20,008 B |
-| Stack (4 KB, painted) | 0x36C90-0x37C90 | 4,096 B |
-| Whole footprint | 0x30000-0x37C90 | 31,888 B (32 KB budget, checked by the linker) |
+| Image (text, parameter block at +0x80, data) | 0x30000-0x31FA8 after the copy | 8,104 B |
+| .bss (receive buffer, sector buffers) | to 0x36DD0 | 20,008 B |
+| Stack (4 KB, painted) | 0x36DD0-0x37DD0 | 4,096 B |
+| Whole footprint | 0x30000-0x37DD0 | 32,208 B (32 KB budget, checked by the linker) |
 
 Measured stack use: 168 bytes on the DM-32UV and DM-1801 Pro, 252 bytes on the DB25-D (NAND reads included); 200 bytes on
 the DM-32UV after two 126-sector WRITE installs (protocol 7, 7,796-byte build).
@@ -106,6 +106,7 @@ rule, and that the load lies in IRAM, before it sends the image (`check_univ_loa
 |---|---|---|---|
 | Boot ROM, power-on (all three radios) | 0x10000 (28 blocks of 256 B) | Nothing: the ROM uses no RAM (registers only) | All IRAM is free |
 | DB25-D first stage, power-on | 0x10000 | The first stage (accepts blocks below 0x4E000) | It is never returned to |
+| GD-88 A or B first stage | 0x10000 | As the DB25-D's | As the DB25-D's |
 | Running RadioFoundry, DM-32UV, DM-1801 Pro | 0x17000 (span 96 KB) | RadioFoundry, about to be dropped | RadioFoundry is not returned to; the reset restarts it |
 | Running RadioFoundry, DB25-D without DMR | 0x30000 (span 128 KB) | RadioFoundry | Loaded at the run address, no copy |
 | Running RadioFoundry, DB25-D with DMR | 0x1D000 (span 72 KB, codec window) | RadioFoundry | The copy goes up to 0x30000, which does not overlap the source |
@@ -122,10 +123,36 @@ On the stock routes the stub hands the program flash back from execute-in-place 
 controller before it touches the flash. The clocks are left as stock set them; the host measures timer 2 and sends the
 rates in CONFIG, so the same `db25d` profile serves stock and RadioFoundry (both use UART1 on the K1 jack).
 
+### GD-88
+
+The GD-88 has two HR_C7000 SoCs, each with its own program flash. `--board gd88` is A, the one on the cable: the DB25-D's
+routes and pins (latch PTB13, key PTB12, the NAND). `--board gd88b` is B, the second receiver. B has no cable, so the
+tool reaches it through A's stub ([rx2-link.md](../docs/spec/rx2-link.md) 4.2): with `--rfoundry-enter` it loads and
+configures the stub on A, gives A's UART3 its pins, and sends PASS (protocol 8). A's stub then passes the cable through
+to B, and the tool moves the cable to the UARTs' real rate (112500 baud at the stub's 36 MHz clock, so the 4 KB write
+requests don't overflow A's FIFO), sends B to its first stage and loads the stub into B. B's first stage and stub use
+the same rate. A B image from before that sends 5 % fast, and the tool takes its acks with bit 7 set. When the tool is
+done with B, after `--boot reset` or on an error, it sends the exit sequence `7E E7 81 18` alone with quiet before and
+after ([rx2-link.md](../docs/spec/rx2-link.md) 4.1). A's stub then answers again, and the tool restarts A. `--attach`
+takes a B still in a stub from an earlier run.
+
+`--via-bridge` takes the older route, for work on B's firmware: RadioFoundry on A bridges the cable (`DL_CMD_RX2`), and
+A restarts by itself after the exit sequence. That route takes no `--rfoundry-enter` and no `--baud`.
+
+The radio's two LEDs are on B (PTA16, PTB17), and on A the default LED pins (PTB0 / PTB1) clock and feed its serial
+output chain. So the tool patches the image's parameter block before it sends it, as for every board's LED pins
+(`PIN_LED_RED`, `PIN_LED_GREEN` in `pins.h`, none on A). The two SoCs of this radio also get their pins for the part
+before CONFIG: the latch and key on A; UART3 on B (`[flash.stub]` `uart` in `board.toml`).
+
+```sh
+stubtool.py PORT --board gd88 --write-app build/gd88/rfoundry_gd88_install.bin --boot reset     # A at power-on
+stubtool.py PORT --board gd88b --write-app build/gd88b/rfoundry_gd88b_install.bin --boot reset  # B, A running RadioFoundry
+```
+
 ### The first stage
 
-On the DB25-D, 0xC000 holds RadioFoundry's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,
-so the DB25-D takes the `_install.bin`, which starts with the stage. The tool reads the radio's word at 0xC000 first.
+On the DB25-D and the GD-88, 0xC000 holds RadioFoundry's first stage and the application starts at 0xD000. `--write-app` writes at 0xC000,
+so these radios take the `_install.bin`, which starts with the stage. The tool reads the radio's word at 0xC000 first.
 When it is the stage's and the image does not start with it, the write is refused: the application alone there leaves
 the radio in its update loader (white screen, red LED) until an IAP install. No board list is involved, so any radio
 with the stage is covered, and a radio whose stage is already gone takes either image. `--replace-stage` overrides

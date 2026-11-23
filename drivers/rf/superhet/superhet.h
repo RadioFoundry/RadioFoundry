@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The two RF chips of a superheterodyne radio, whichever parts a board has: the main transceiver (receives at the IF,
 // transmits on the channel) and the local oscillator. A chip driver that can fill a role provides the ops for it
-// (bk4819_superhet_main, fd6818sh_superhet_lo, at1141_superhet_lo, ...); the board detects its chips, binds each to
-// its ops with the driver's device, and calls only these. Generic: no radio, no pin, no IF frequency in here.
+// (bk4819_superhet_main, fd6818sh_superhet_lo, at1141_superhet_lo, ...); superhet_chips.h detects a radio's chips and
+// binds each to its ops with the driver's device, and the board calls only these. Generic: no radio, no pin, no IF
+// frequency in here.
 #ifndef SUPERHET_H
 #define SUPERHET_H
 

@@ -20,6 +20,9 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 sys.path.insert(0, os.path.join(ROOT, "tools", "bench"))
 
+import rfoundry_debug
+rfoundry_debug.DebugLink.hold_session = True    # noise from a transmission must not take the port during a test
+rfoundry_debug.DebugLink.hold_watch_s = 120     # and a link that dies restarts the radio, with a record of why
 from rfoundry_debug import (DebugLink, DebugLinkError, as_int, find_network_radios, find_ports,  # noqa: E402
                        parse_counters,
                        to_rgb, write_png, ACTIONS, PRESS, LONG, UP, APRS, APRS_OP_MESSAGE, APRS_OP_SEND_NOW,
@@ -523,12 +526,25 @@ class Radio:
         write_png(path, w, h, rows, scale)
         return path
 
-    def wait_for(self, pred, timeout=3.0, interval=0.1, sections=("core",), what="condition"):
-        """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not."""
+    def wait_for(self, pred, timeout=3.0, interval=0.1, sections=("core",), what="condition", quiet_s=0.0):
+        """Poll the view until pred(view) is true; returns that view. AssertionError with the last view if not.
+        quiet_s: while the radio keys up for that long (a CW ID), unanswered requests for up to that many seconds."""
         end = time.monotonic() + timeout
         v = {}
+        missed = None   # when the first unanswered request in a row was sent
         while True:
-            v = self.link.view(list(sections))
+            sent = time.monotonic()
+            try:
+                v = self.link.view(list(sections))
+            except DebugLinkError as e:
+                # One unanswered request is no fault: a key-up or burst can disturb a cable line shared with the PTT
+                # (docs/spec/gotchas.md 2.13). A second in a row (or quiet_s of them) is a radio that stopped answering
+                if e.status is not None or (missed is not None and sent - missed >= quiet_s):
+                    raise
+                if missed is None:
+                    missed = sent
+                continue
+            missed = None
             if pred(v):
                 return v
             if time.monotonic() > end:
@@ -677,7 +693,10 @@ class Radio:
         return lang
 
     def ptt_for(self, seconds):
-        self.link.ptt_for(seconds)
+        try:
+            self.link.ptt_for(seconds)
+        except DebugLinkError:          # a key-up can disturb a cable line shared with the PTT and lose the reply: it is
+            time.sleep(seconds + 0.5)   # keyed anyway, and asking again would be lost too. The caller checks what went out
 
     # ── radio state: every test leaves the radio as it found it ──
     def snapshot(self):
@@ -1155,6 +1174,11 @@ class SdrBench:
             L = self._line()
             setattr(self, key, L.request(L.address(self.api_rx if rx else self.api), {"op": "info"}))
         return getattr(self, key)
+
+    def max_key_s(self, default):
+        """The TX board's longest single key-up (its info's tx.max_key_s); default when it states none"""
+        v = (self._api_info().get("tx") or {}).get("max_key_s")
+        return default if v is None else float(v)
 
     def has(self, feature):
         """Whether the TX board says it can do feature (its info's features, e.g. "dev_scale")"""
@@ -1870,8 +1894,9 @@ class SdrBench:
     def aprs_rx_start(self, freq, seconds, bw=APRS_RX_BW):
         """The receive board's own Bell 202 / AX.25 decode (an FM rx job with "aprs": true, the gateway's
         bench-api.md 14.6) on freq (MHz) for `seconds` from now, in the background; returns once the board receives,
-        so the radio can key next. No raw I/Q comes back. Finish with aprs_rx_result()."""
-        job = self.fm_rx_start(freq, seconds, bw=bw, aprs=True)
+        so the radio can key next. No raw I/Q comes back. Finish with aprs_rx_result(). The FM tests' squelch: the
+        board's default (10 dB over the floor) shut out a radio on its lowest power."""
+        job = self.fm_rx_start(freq, seconds, bw=bw, aprs=True, squelch_over_db=FM_SQUELCH_DB)
         job.seconds = float(seconds)
         return job
 

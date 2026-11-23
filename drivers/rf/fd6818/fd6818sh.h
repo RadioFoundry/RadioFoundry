@@ -17,7 +17,7 @@
 #include "rf/rfbus/rfbus.h"
 
 #define FD6818SH_ID		0x6818u
-#define FD6818SH_ID_7813	0x7813u		// the sibling part, seen only as an LO
+#define FD6818SH_ID_7813	0x7813u		// the sibling part: its own LO set; as a main chip, the FD6818 set
 
 #define FD6818SH_REG_STATE	0x03
 #define FD6818SH_REG_PAGE	0x7F		// 1 = page 1, for the registers a table marks so
@@ -64,6 +64,7 @@ typedef struct {
 	uint32_t freq_10hz;	// last frequency written (0 = none)
 	uint16_t state;		// last 0x03 value
 	uint16_t r25;		// the GPIO output register as last written
+	uint8_t gpio_sel;	// pins whose output select was written since the reset (fd6818sh_gpio makes the rest plain)
 	uint16_t r7e;		// main: 0x7E after the init, the base of the digital value
 	uint16_t r53;		// main: the analog audio gain word (the volume)
 	uint16_t tone_hz;	// TX tone running, 0 = the microphone is live

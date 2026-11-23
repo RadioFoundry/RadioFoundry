@@ -162,7 +162,7 @@ BOARD_SCHEMA = {
     # also lists the radios in that body (each one of the board's also too)
     "looks": _opt(("list", {"id": _req(str), "name": _req(str), "also": _opt(STR_LIST)})),
     "debuglink_aliases": _opt(STR_LIST),
-    "docs": _req({"hardware": _req(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
+    "docs": _opt({"hardware": _opt(str), "codec": _opt(str), "install": _opt(str), "bringup": _opt(str)}),
     # unconfirmed: a hardware switch (tests/hil/features.toml hardware) that is neither built nor in
     # BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN because no source says yet whether the radio has the part: switch ->
     # what is missing (docs/build-config.md, "Unsupported, not written, unconfirmed")
@@ -196,12 +196,18 @@ BOARD_SCHEMA = {
         "stock_download": _opt(str),
         # a warning the web flasher shows on every step once the radio is picked: a choice the radio can't check itself
         "notice": _opt(str),
+        # false: the web pages describe no LED for this radio (its second SoC's steps too), while what it shows isn't
+        # settled; the steps say what the screen shows instead
+        "led_hints": _opt(bool),
         "stock_versions": _req(STR_LIST),
         "backup": _req({"stock": _req(("none", "full")), "rfoundry": _req(("none", "full")), "spi_size": _req(int)}),
         # hold: the keys held to enter it, by their key names (the board's KEY_* in lower case, as the drawing's
         # key-<name> ids), for the web flasher's picture; steps stays the instructions
         "bootloader": _req({"keys": _opt(str), "steps": _req(STR_LIST), "id": _opt(str), "sign": _opt(str),
-                            "hold": _opt(STR_LIST)}),
+                            "hold": _opt(STR_LIST),
+                            # false: the loader prints no banner when it starts in update mode; the web flasher asks
+                            # it with a read-only request until it answers, instead of listening for one
+                            "banner": _opt(bool)}),
         # layout: the bootloader's alt 0 interface string, only once read from a radio in its bootloader. The
         # flashers then accept no other device; without it they refuse a layout of only the bootloader's sectors
         # (rfoundry dfu.py normal_mode)
@@ -232,6 +238,15 @@ BOARD_SCHEMA = {
                       # names, so stubtool --write-app keeps that sector naming this entry
                       "rom_entry": _opt(int),
                       "stock_console": _opt(STOCK_CONSOLES), "read_rate": _opt(int),
+                      # the UART the universal stub answers on before CONFIG, and, for a part_of board's second
+                      # SoC, how the main SoC's stub reaches it (PASS, op 0F): the main SoC's UART to pass the cable
+                      # to, and the pin mux bits that give it its pins (address, bits to set). Its LED pins are
+                      # pins.h PIN_LED_RED and PIN_LED_GREEN
+                      "uart": _opt(int),
+                      "bridge": _opt({"uart": _req(int), "mux": _req(("list", int))}),
+                      # the data memory is SPI NAND though the build has no NAND driver (a second SoC that keeps
+                      # nothing on its own NAND); otherwise it follows BOARD_DIRS
+                      "nand": _opt(bool),
                       # data flash offset and optional length (defaults to STUB_WRITE_TEST) of the blank area
                       # stubtool --write-test erases and programs; it must not overlap stored or protected data
                       "write_test": _opt(int),
@@ -248,9 +263,12 @@ BOARD_SCHEMA = {
                       "spi": _opt({"bus": _req(int), "mode": _req(int), "hz": _req(int)}),
                       "idle_cs": _opt(STR_LIST)}),
     }),
-    # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file
+    # stock_version: the stock firmware version whose file carries the codec, as the web flasher asks for the file.
+    # from: boards whose codec this board runs too, preferred to its own stock files (a second SoC that takes the first
+    # SoC's codec, so the user supplies one SoC's file): the same codec tool, slot and code window, and each one's
+    # table window inside this board's, so the slot is the same bytes on both
     "codec": _req({"tool": _req(CODEC_TOOLS), "stock": _opt(STR_LIST), "profile": _opt(str), "sources": _opt(STR_LIST),
-                   "installed": _opt(STR_LIST), "stock_version": _opt(str)}),
+                   "installed": _opt(STR_LIST), "stock_version": _opt(str), "from": _opt(STR_LIST)}),
     "frame": _req({"shape": _req(str), "body": _req(str), "accent": _req(str), "lens": _req(RANGE)}),
     # tests/hil: what the health checks expect (test_health.py), and the features built here but not working yet
     # (tools/bringup.py, which checks the feature ids; what the hardware lacks is config.mk's BOARD_UNSUPPORTED, code
@@ -411,11 +429,12 @@ def _c_sources(board_dir):
 
 def shared_board_dirs(root, bid, mk):
     """The directories under boards/ besides boards/<bid> that the board's BOARD_DIRS builds: code a family of radios
-    shares (boards/uv380_family), which has no board.mk of its own."""
+    shares (boards/uv380_family), which has no board.mk of its own, and a subdirectory such as boards/<radio>/common
+    (code a radio's SoCs share)."""
     out = []
     for d in mk.get("BOARD_DIRS", "").split():
         parts = d.strip("/").split("/")
-        if parts[0] == "boards" and len(parts) == 2 and parts[1] != bid and os.path.isdir(os.path.join(root, d)):
+        if parts[0] == "boards" and parts[1:] != [bid] and len(parts) >= 2 and os.path.isdir(os.path.join(root, d)):
             out.append(os.path.join(root, d))
     return out
 
@@ -763,7 +782,7 @@ class Board:
         if "hold_power" in s:
             hold = s["hold_power"]
             out.update(latch=self.pins.get("PIN_POWER_LATCH", NO_PIN) if hold else NO_PIN,
-                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=self.nand,
+                       key=self.pins.get("PIN_POWER_KEY", NO_PIN) if hold else NO_PIN, nand=s.get("nand", self.nand),
                        progmem=s["progmem"], stock_console=s.get("stock_console"), rom_entry=s.get("rom_entry"),
                        # the status LEDs the stub blinks: a pin the radio uses for something else must never be driven
                        led={"red": self.pins.get("PIN_LED_RED", NO_PIN), "green": self.pins.get("PIN_LED_GREEN", NO_PIN)})
@@ -771,6 +790,9 @@ class Board:
                 out["calibration"] = s["calibration"]
             if "write_test" in s:		# start and end: the length defaults to 16 KB
                 out["write_test"] = [s["write_test"], s["write_test"] + s.get("write_test_size", STUB_WRITE_TEST)]
+        for k in ("uart", "bridge"):
+            if k in s:
+                out[k] = s[k]
         return out
 
     def map_areas(self):
@@ -1040,6 +1062,34 @@ def hardware_switches(root=ROOT):
     return {e["switch"]: e["hardware"] for e in feats.values() if e.get("switch") and e.get("hardware")}
 
 
+def codec_from_problems(bid, b, boards):
+    """[codec] from: each board named exists, isn't this one, uses the same codec tool, has the same codec slot and
+    code window start (the slot's code runs there, so its moved words are the same), and its modem SRAM table window
+    lies inside this board's (the tables go to the donor's stock addresses). Then a slot built for it is a valid slot
+    here, byte for byte."""
+    out = []
+    names = b.data["codec"].get("from", [])
+    if len(set(names)) != len(names):
+        out.append("codec.from lists each board once")
+    for other in names:
+        o = boards.get(other)
+        if o is None or other == bid:
+            out.append("codec.from %r is not another board" % other)
+            continue
+        if o.data["codec"]["tool"] != b.data["codec"]["tool"]:
+            out.append("codec.from %r: another codec tool (%s)" % (other, o.data["codec"]["tool"]))
+            continue
+        run, orun = b.window("__codec_run_lo", "__codec_run_hi"), o.window("__codec_run_lo", "__codec_run_hi")
+        tab, otab = b.window("__codec_tab_lo", "__codec_tab_hi"), o.window("__codec_tab_lo", "__codec_tab_hi")
+        if b.codec_slot is None or b.codec_slot != o.codec_slot or run is None or orun is None or run[0] != orun[0]:
+            out.append("codec.from %r: the codec slot and the code window's start must be the same on both" % other)
+        if run and orun and run[1] - run[0] < orun[1] - orun[0]:
+            out.append("codec.from %r: its code window (0x%X bytes) is bigger than this board's" % (other, orun[1] - orun[0]))
+        if tab is None or otab is None or not (tab[0] <= otab[0] and otab[1] <= tab[1]):
+            out.append("codec.from %r: its table window must lie inside this board's (__codec_tab_lo/hi)" % other)
+    return out
+
+
 def hardware_problems(bid, unsupported, unconfirmed, built, hw):
     """A board's hardware switches that read "off by default": each must be built (built: switch -> "y"/"n"), listed in
     BOARD_UNSUPPORTED or BOARD_NOT_WRITTEN (unsupported: both, with their reasons), or, while the fact is unknown, in
@@ -1088,11 +1138,11 @@ def write_test_problems(start, nand, spi_size, areas, protect, floor=0, size=STU
     return out
 
 
-def protect_problems(entries, mems, owned=()):
+def protect_problems(entries, mems, owned=(), cite=True):
     """Why a board's [[flash.protect]] entries can't stand: a memory the board lacks, an empty or reversed range, one
     past the memory's end or off its erase boundaries, an overlap with another entry, or with flash the firmware owns
     (owned: [(mem, start, end, what)], the application and the codec slot), which every install would then be refused.
-    mems: Board.memories()."""
+    mems: Board.memories(). cite: the board has a hardware page, so each what cites its section."""
     out = []
     for i, p in enumerate(entries):
         m, lo, hi = p["mem"], p["start"], p["end"]
@@ -1110,7 +1160,9 @@ def protect_problems(entries, mems, owned=()):
         if not (bounds(lo) and bounds(hi)):
             out.append("%s: start and end must be on the %s's erase boundaries (%s)" % (
                 tag, PROTECT_MEMS[m], "0x%X" % step if isinstance(step, int) else "its sectors"))
-        if not p["what"].strip() or not re.search(r"\(.*\d.*\)", p["what"]):
+        if not p["what"].strip():
+            out.append("%s: what names the data" % tag)
+        elif cite and not re.search(r"\(.*\d.*\)", p["what"]):
             out.append("%s: what names the data and cites the spec section, e.g. \"factory calibration "
                        "(hardware-<radio>.md 6.1)\"" % tag)
         for q in entries[:i]:
@@ -1204,7 +1256,7 @@ def check(root=ROOT):
                     problems += default_off_problems(bid, b, built)
                 if hw:
                     problems += hardware_problems(bid, listed, d["hardware"].get("unconfirmed", {}), built, hw)
-        for k, p in d["docs"].items():
+        for k, p in d.get("docs", {}).items():
             if not os.path.isfile(os.path.join(root, p)):
                 bad("docs.%s %s doesn't exist" % (k, p))
         variant_problems(bid, d, boards, bad)
@@ -1235,18 +1287,25 @@ def check(root=ROOT):
         # "0" is the host tests' (no radio); the registry lists each character with its radio, so one never moves
         if not re.fullmatch(r"[1-9A-Z]", d["aprs_tocall"]):
             bad("aprs_tocall %r: one character, 1-9 or A-Z" % d["aprs_tocall"])
+        elif d.get("part_of") is not None:
+            # a second SoC is part of its radio: the radio's character, not one of its own
+            if d["part_of"] in boards and d["aprs_tocall"] != boards[d["part_of"]].data.get("aprs_tocall"):
+                bad("aprs_tocall %r: a part_of board has its radio's (%s)" % (d["aprs_tocall"], d["part_of"]))
         elif d["aprs_tocall"] in tocalls:
             bad("aprs_tocall %r is also the %s's" % (d["aprs_tocall"], tocalls[d["aprs_tocall"]]))
         else:
             tocalls[d["aprs_tocall"]] = bid
         fm = b.flash_map
-        if b.codeplug() is None:
+        # a board that is part_of another (a second SoC) keeps no codeplug and draws no screen: the radio's main board
+        # does both, so the codeplug and frame buffer checks are its
+        part = d.get("part_of") is not None
+        if not part and b.codeplug() is None:
             bad("no hal_flash_map_t with openfw_eeprom and openfw_end in boards/%s/*.c" % bid)
-        elif fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET) - fm["openfw_eeprom"] \
+        elif not part and fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET) - fm["openfw_eeprom"] \
                 != OPENFW_FLASH_OFFSET:
             bad("hal_flash_map_t openfw_flash isn't openfw_eeprom + 0x%X (the codeplug editor assumes it)"
                 % OPENFW_FLASH_OFFSET)
-        else:
+        elif not part:
             # the code builds these in where it has no map (core/codeplug), and the DMR ID database's areas always
             built = openfw_bases(b.mk.get("MCU_DEFS"))
             if built != (fm["openfw_eeprom"], fm.get("openfw_flash", fm["openfw_eeprom"] + OPENFW_FLASH_OFFSET)):
@@ -1261,7 +1320,7 @@ def check(root=ROOT):
             # the site links docs/ux/screens/<class>/, which only the classes in sim_geoms get
             bad("hardware.gallery %r is not in %s sim_geoms (make ui-gallery renders only those)"
                 % (d["hardware"]["gallery"], UI_SIM))
-        if d["hardware"]["gallery"] in geoms:
+        if d["hardware"]["gallery"] in geoms and not part:
             # the gallery renders the panel the radio draws; the build's frame buffer (board.mk MCU_DEFS) must hold it
             for why in gfx_problems(geoms[d["hardware"]["gallery"]], gfx_defs(b.mk.get("MCU_DEFS"))):
                 bad("board.mk MCU_DEFS: %s (hardware.gallery %s)" % (why, d["hardware"]["gallery"]))
@@ -1276,7 +1335,7 @@ def check(root=ROOT):
         owned = [("progmem", b.app_base - base, b.app_region[1] - base, "the application")]
         if b.codec_slot:
             owned.append(("progmem", b.codec_slot[0] - base, b.codec_slot[1] - base, "the codec slot"))
-        for why in protect_problems(b.protect, b.memories(), owned):
+        for why in protect_problems(b.protect, b.memories(), owned, cite="hardware" in d.get("docs", {})):
             bad(why)
         for (_, a0, s0), (_, a1, _) in zip(secs, secs[1:]):
             if a0 + s0 > a1:
@@ -1305,6 +1364,8 @@ def check(root=ROOT):
         if codec is not None and not codec["profile"].startswith(bid + "-"):
             bad("codec.profile %r must start with %r: the firmware reports <id>-<stock tag> (RFOUNDRY_BOARD_ID)"
                 % (codec["profile"], bid + "-"))
+        for problem in codec_from_problems(bid, b, boards):
+            bad(problem)
         for sym in b.platform.data["codec_symbols"]:
             if sym not in b.symbols:
                 bad("the linker scripts define no %s (platform/%s/platform.toml codec_symbols)" % (sym, b.platform.id))
@@ -1373,6 +1434,11 @@ def check(root=ROOT):
                     bad("flash.stub id %d is also the %s's" % (stub["id"], stub_ids[(bs["tool"], stub["id"])]))
                 else:
                     stub_ids[(bs["tool"], stub["id"])] = bid
+            if "nand" in stub and (not stub["nand"] or b.nand):
+                bad("flash.stub nand is only for a board with SPI NAND and no %s in BOARD_DIRS (else it follows "
+                    "BOARD_DIRS)" % NAND_DRIVER)
+            if stub.get("bridge") and d.get("part_of") is None:
+                bad("flash.stub bridge is for a board that is part_of another (its second receiver)")
             if stub.get("hold_power") and not {"PIN_POWER_LATCH", "PIN_POWER_KEY"} <= set(b.pins):
                 bad("flash.stub hold_power needs PIN_POWER_LATCH and PIN_POWER_KEY in boards/%s/pins.h" % bid)
             if "spi" in stub:
@@ -1465,6 +1531,8 @@ def rfoundry_view(boards):
             "keep_codec_supported": fl["keep_codec"],
             "first_stage": [b.first_stage[0], b.first_stage[1].hex()] if b.first_stage else None,
             "codec_tool": d["codec"]["tool"], "codec_stock": list(d["codec"].get("stock", [])),
+            # the boards whose codec this one runs too ([codec] from), preferred to its own stock files
+            "codec_from": list(d["codec"].get("from", [])),
             # a stock-file placement has no id or windows here: rfoundry reads them from its stock-file tables
             "codec": {"id": codec["profile"] if codec else None,
                       "windows": [list(w) for w in codec["windows"]] if codec else None,
@@ -1558,35 +1626,66 @@ def _product(opts):
     for n, vals in opts:
         combos = [c + [(n, v)] for c in combos for v in vals]
     return combos
+
+
+def _site_flash(b):
+    """A board's flash entry for the site (radios.json flash)."""
+    d, fl = b.data, b.data["flash"]
+    stub = fl.get("stub") or {}
+    flash = {"backend": b.family["web"], "board": b.id, "family": fl["family"], "link": b.link,
+             "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
+             # the keys to hold, by key name: the flasher marks them on the radio's picture (radiotop.js)
+             "bootloader_hold": list(fl["bootloader"].get("hold", [])),
+             # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
+             "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
+             "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
+             "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
+             "build_options": json.loads(json.dumps(d.get("build_options", []))),
+             # what no write may touch ([[flash.protect]], site/static/js/flasher/protect.js)
+             "protect": b.protect}
+    if "stock_download" in fl:
+        flash["stock_download"] = fl["stock_download"]
+    if "notice" in fl:
+        flash["notice"] = fl["notice"]
+    if fl.get("led_hints") is False:
+        flash["led_hints"] = False
+    if fl["bootloader"].get("banner") is False:
+        flash["update_banner"] = False
+    # what the screen shows, drawn for the web flasher's picture: in update mode (site/static/img/update/<board>.svg) and
+    # with the original firmware running (site/static/img/normal/<board>.svg)
+    for key, d in (("update_screen", "update"), ("stock_screen", "normal")):
+        if os.path.isfile(os.path.join(ROOT, "site/static/img", d, f"{b.id}.svg")):
+            flash[key] = f"static/img/{d}/{b.id}.svg"
+    if stub:
+        flash["stub_tested"] = stub["tested"]
+    return flash
+
+
 def site_view(boards, root=ROOT):
     """What the web site and the web flasher read (site/rfoundrysite/repo.py), in the boards' order. The radio entries keep
-    the keys the pages' scripts use (site/data/radios.json)."""
+    the keys the pages' scripts use (site/data/radios.json). A board that is part_of another is that radio's second
+    receiver: not listed on its own, but its flash entry is its radio's flash.second (flashed through the radio's
+    bridge)."""
     out = []
+    parts = {}
+    for bid, b in sorted(boards.items()):
+        if b.data.get("part_of") is not None:
+            parts.setdefault(b.data["part_of"], []).append(b)
     for bid, b in sorted(boards.items(), key=lambda kv: kv[1].data["order"]):
         d, fl, hw = b.data, b.data["flash"], b.data["hardware"]
-        stub = fl.get("stub") or {}
-        flash = {"backend": b.family["web"], "board": bid, "family": fl["family"], "link": b.link,
-                 "bootloader": list(fl["bootloader"]["steps"]), "stock_versions": list(fl["stock_versions"]),
-                 # the keys to hold, by key name: the flasher marks them on the radio's picture (radiotop.js)
-                 "bootloader_hold": list(fl["bootloader"].get("hold", [])),
-                 # the image starts with a first stage of this size, its first word this signature (board.mk BOOT_*)
-                 "first_stage": {"size": b.first_stage[0], "head": b.first_stage[1].hex()} if b.first_stage else None,
-                 "stock_console": stub.get("stock_console"), "update_mode": b.family["update_mode"],
-                 "read_rate": stub.get("read_rate"), "codec_version": d["codec"].get("stock_version"),
-                 "build_options": json.loads(json.dumps(d.get("build_options", []))),
-                 # what no write may touch ([[flash.protect]], site/static/js/flasher/protect.js)
-                 "protect": b.protect}
-        if "stock_download" in fl:
-            flash["stock_download"] = fl["stock_download"]
-        if "notice" in fl:
-            flash["notice"] = fl["notice"]
-        if stub:
-            flash["stub_tested"] = stub["tested"]
+        if d.get("part_of") is not None:
+            continue
+        flash = _site_flash(b)
+        second = [p for p in parts.get(bid, []) if (p.data["flash"].get("stub") or {}).get("bridge")]
+        if second:
+            flash["second"] = _site_flash(second[0])
+            if flash.get("led_hints") is False:
+                flash["second"]["led_hints"] = False	# one radio, one LED: the radio's word holds for its second SoC
         out.append({
             "id": bid, "name": d["name"], "maker": d["maker"], "model": d["model"], "also": list(d["also"]),
             "kind": d["kind"], "order": d["order"], "level": d["status"]["level"], "release": d["status"]["release"],
             "summary": d["status"]["summary"], "bands": hw["bands"], "power": hw["power"],
-            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d["docs"]), "flash": flash,
+            "cpu": b.cpu, "display": hw["display"], "gallery": hw["gallery"], "docs": dict(d.get("docs", {})), "flash": flash,
             "backup": dict(fl["backup"]), "frame": json.loads(json.dumps(d["frame"])), "codeplug": b.codeplug(),
             "looks": json.loads(json.dumps(d.get("looks", []))),
             "unsupported": dict(b.unsupported), "not_written": dict(b.not_written),
@@ -1890,10 +1989,13 @@ def self_test():
             ([pe("data", 0x1000, 0x3000), pe("data", 0x2000, 0x4000)], mems, "overlaps the entry"),
             ([pe("progmem", 0xE0000, 0xF0000)], mems, "every install writes"),
             ([pe("secreg", 0x80, 0x100)], mems, "erase boundaries"),
-            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec")):
+            ([pe("data", 0, 0x1000, "calibration")], mems, "cites the spec"),
+            ([pe("data", 0, 0x1000, " ")], mems, "names the data")):
         got = protect_problems(ents, ms, owned)
         ok(len(got) == 1 and want in got[0], "protect refuses: %s %r" % (want, got))
     ok(protect_problems([pe("progmem", 0x8000, 0x10000)], geo) == [], "protect: on a geometry's sector boundaries")
+    ok(protect_problems([pe("data", 0, 0x1000, "calibration")], mems, owned, cite=False) == [],
+       "protect: no section to cite on a board without a hardware page")
     tmpm = tempfile.mkdtemp(prefix="rfoundry-boards-mk-")
     with open(os.path.join(tmpm, "config.mk"), "w", encoding="utf-8") as f:
         f.write("# BOARD_UNSUPPORTED += NO\nBOARD_UNSUPPORTED += USB\t# no USB port\nBOARD_UNSUPPORTED += AM_RX\n"
@@ -1991,7 +2093,9 @@ def self_test():
             with open(os.path.join(tmps, registry_docs.SURVEY), "w", encoding="utf-8") as f:
                 f.write("## Summary table\n\n| Radio | MCU | Port |\n|---|---|---|\n" + "".join(
                     "| %s | x | %s |\n" % r for r in rows))
-            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100")})
+            part = Stub("ab", "AB-100 receiver B")
+            part.data["part_of"] = "a"
+            return registry_docs.survey(tmps, {"a": Stub("a", "AB-100"), "ab": part})
         rows, probs = survey_of([("Maker AB-100, Other", "Supported"), ("Maker CD-9", "In progress, #12. Its note"),
                                  ("Maker EF-1", "Planned, hardware needed"), ("Maker GH-2", "Not planned. No")])
         ok(probs == [] and [(r["board"], r["status"], r["pr"], r["hardware_needed"], r["note"]) for r in rows] ==
@@ -2077,7 +2181,7 @@ def self_test():
         os.makedirs(os.path.dirname(os.path.join(tmp, UI_SIM)))
         shutil.copy(os.path.join(ROOT, UI_SIM), os.path.join(tmp, UI_SIM))
         for b in board_dirs(ROOT):
-            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb"))["docs"].values():
+            for p in _tomllib().load(open(os.path.join(ROOT, "boards", b, "board.toml"), "rb")).get("docs", {}).values():
                 os.makedirs(os.path.dirname(os.path.join(tmp, p)), exist_ok=True)
                 open(os.path.join(tmp, p), "w").close()
         ok(check(tmp) == [], "the copied registry is consistent: %s" % check(tmp)[:3])
@@ -2096,6 +2200,14 @@ def self_test():
         broken(good.replace('id = "%s"' % one, 'id = "other"', 1), "an id that isn't the directory", "directory name")
         broken(re.sub(r'(?m)^family = ".*"$', 'family = "usb-dfu"', good), "a family's missing table", "needs flash.dfu")
         broken(good.replace('hardware = "', 'hardware = "missing/', 1), "a missing docs page", "doesn't exist")
+        with open(path, "w", encoding="utf-8") as f:	# hardware notes kept out of the repository: no pages, name unlinked
+            f.write(re.sub(r"(?ms)^\[docs\]\n.*?(?=^\[)", "", good))
+        b = load(tmp)[one]
+        ok(check(tmp) == [] and registry_docs.board_title(b, "").startswith(b.data["name"])
+           and "](" not in registry_docs.board_title(b, ""),
+           "a board without docs pages: %s" % (check(tmp)[:2] or registry_docs.board_title(b, "")))
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(good)
         broken(re.sub(r'(?m)^gallery = ".*"$', 'gallery = "200x100"', good), "a display class the gallery lacks",
                "sim_geoms")
         broken(re.sub(r"(?m)^hold_power = .*$", "", good), "a missing stub key", "needs hold_power")
@@ -2103,6 +2215,16 @@ def self_test():
                "the test profiles' stub id", "reserved for the stub tools' test profiles")
         broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nspi = { bus = 1, mode = 0, hz = 1000000 }", good),
                "a key of another platform's stub", "not a key of the stubtool stub")
+        broken(re.sub(r"(?m)^(hold_power = .*)$", r"\1\nbridge = { uart = 0x14090000, mux = [0x11000034, 0x6000] }", good),
+               "a bridged stub on a board that isn't part of another", "bridge is for a board that is part_of")
+        if "hold_power = true" in good:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^(hold_power = .*)$", r'\1\nuart = 7', good))
+            b = load(tmp)[one]
+            prof = b.stub()
+            ok(not [p for p in check(tmp) if "flash.stub" in p] and prof["uart"] == 7, "stub: the UART %r" % prof.get("uart"))
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(good)
         broken(re.sub(r"(?m)^(\[flash\.bootloader\]\n)", r'\1hold = ["ptt", "no_such_key"]\n',
                       re.sub(r"(?m)^hold = \[.*\n", "", good)),
                "a key to hold the board doesn't have", "no_such_key is not a key of the board")
@@ -2191,6 +2313,27 @@ def self_test():
                 ok(any(want in q for q in got), "check finds %s (%s)" % (what, got[:2]))
             with open(sp, "w", encoding="utf-8") as f:
                 f.write(st_good)
+        # a board that runs another board's codec ([codec] from): that board must exist, and its table window must
+        # lie inside this board's
+        fr = next((b for b in board_dirs(tmp) if re.search(r"(?m)^from = \[", open(os.path.join(tmp, "boards", b,
+                                                                                         "board.toml")).read())), None)
+        if fr:
+            ok(not any("codec.from" in p for p in check(tmp)), "a [codec] from whose windows agree passes")
+            fp = os.path.join(tmp, "boards", fr, "board.toml")
+            fr_good = open(fp, encoding="utf-8").read()
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^from = \[.*\]$", 'from = ["no-such-board"]', fr_good))
+            ok(any("is not another board" in p for p in check(tmp)), "check finds a codec.from naming no board")
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(fr_good)
+            ld = os.path.join(tmp, "boards", fr, "memory.ld")
+            ld_good = open(ld, encoding="utf-8").read()
+            with open(ld, "w", encoding="utf-8") as f:
+                f.write(re.sub(r"(?m)^(__codec_tab_hi\s*=\s*)0x[0-9A-Fa-f]+;", r"\g<1>0x18000004;", ld_good))
+            ok(any("table window must lie inside" in p for p in check(tmp)),
+               "check finds a codec.from whose tables fall outside this board's window")
+            with open(ld, "w", encoding="utf-8") as f:
+                f.write(ld_good)
         # the build view's file names against the Makefile's
         mkf = os.path.join(tmp, "Makefile")
         mkf_good = open(mkf, encoding="utf-8").read()

@@ -42,6 +42,9 @@ typedef struct {
 	int8_t last_ts;
 	dmr_access_t last_access;
 	unsigned tx_ends, tx_aborts, underflows;
+	bool split_offer;		// tx_split(true) answers true (a second transmitter)
+	bool split;			// on and not off since
+	unsigned split_ons, split_offs;	// tx_split calls
 	unsigned configures;	// configure calls (each restarts a real modem's receiver)
 	unsigned rx_restarts;	// rx_restart calls: the receiver drops its slot timing and searches again
 	uint8_t emb_lc[9];
@@ -55,6 +58,7 @@ typedef struct {
 				// transmit, its idle burst (BS sync, our CC) in every slot: a real repeater's bursts
 	uint8_t at_busy;	// repeater ticks: bit 0 / 1 = the CACH naming slot 1 / 2 has AT busy (flags known)
 	bool wake_repeater_on_csbk;	// a BS_Dwn_Act on air starts the repeater (repeater = true)
+	bool no_fill;		// tx_fill finds no placeholder (a modem without one, as a second transmitter)
 	bool stalled;		// no slot timing: no ticks, nothing sent, no tx_done (a modem chip that doesn't answer)
 	bool held_slot_numbers;	// while transmitting, ticks carry slot numbers from the modem's own timing, repeater or
 				// not (the HR_C6000 engine keeps the timing it last had)

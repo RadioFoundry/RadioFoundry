@@ -126,6 +126,12 @@ int gfx_pill(const font_t *f, int x, int y, int h, const char *s, color_t fg, co
 
 // Send the rows that changed since the last flush (compared by a hash per row) to the display
 void gfx_flush(void);
+// Rows sent to the display in one call: a full frame of a large panel on an 8-bit bus costs 30-140 ms of CPU, many times
+// that in wall time while busier tasks share the CPU, so a flush goes out in bands this tall with the rest hook between
+// them
+#define GFX_SEND_ROWS	16
+// Called between bands of a flush (NULL: none): the UI task lets the idle task in there (core/ui/ui.c)
+void gfx_set_rest(void (*rest)(void));
 // Freeze the frame buffer for a screen capture: the UI skips redraws until ms (hal_millis) or gfx_hold(0)
 void gfx_hold(uint32_t until_ms);
 bool gfx_held(uint32_t now_ms);

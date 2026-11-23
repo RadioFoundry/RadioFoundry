@@ -324,7 +324,9 @@ mode, AUDIO_CONTROL b0 = 1); 0x4B–0x50 embedded RC; 0x495–0x4AF send voice k
 
 **RX RAM (0x160004B0)**, datasheet table 53: the deframed control burst at 0x00 (LC header / terminator 9 + 3, CSBK / headers
 10 + 2, data blocks 12 / 18 / 24, idle 12, C_RC 7 + 2). Embedded LC after late entry also appears at 0x00–0x08; the
-chip keeps the previous call's LC there until a new one is decoded (measured).
+chip keeps the previous call's LC there until a new one is decoded (measured). The LC belongs to the
+chip slot RX_TYPE_INFO shows at its interrupt: through a repeater with a call on each slot, the next burst heard is the
+other slot's, so the driver holds one LC per chip slot and hands each to the next voice burst of that slot.
 0x2B–0x2F: the CACH short LC of a BS signal, 28 bits and the CRC-8 received, the low 4 bits of 0x2F unused; new
 at system interrupt bit 4. The interrupt only counts it, and only while a BS signal is heard (the RAM keeps the last
 one); the event task reads it (`hrc7000_dmr_short_lc`, in flash: a new one comes every 120 ms at most) and reports it

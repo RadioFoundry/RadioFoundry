@@ -78,3 +78,9 @@ uint8_t batt_backlight_pct(uint8_t brightness, uint16_t dim_s, uint16_t off_s, u
 	}
 	return pct;
 }
+
+bool batt_key_light(uint8_t pct, uint8_t brightness)
+{
+	uint8_t full = brightness > 100 ? 100 : brightness;
+	return pct != 0 && pct >= full;
+}

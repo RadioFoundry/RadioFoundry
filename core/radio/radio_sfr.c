@@ -98,7 +98,11 @@ bool radio_sfr_start(const hal_dmr_modem_t *modem, const sfrConfig_t *cfg, uint1
 	modem->set_cc_filter(mc.cc);
 	sfrRunnerStart(&run, modem, cfg, NULL);
 	if (keep_stats) {
+		// The counters carry on, the second transmitter's flag is this start's: the stopped runner's is off, and
+		// with it the next stop would leave the split on, every later DMR transmission going to that transmitter
+		bool split = run.stats.tx_split;
 		run.stats = stats;
+		run.stats.tx_split = split;
 	}
 	sfrRunnerSetBeacon(&run, beacon_s, beacon_len_s, now_ms);
 	running = true;

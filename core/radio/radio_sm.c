@@ -240,6 +240,10 @@ static uint8_t beep_level_now(const radio_sm_t *sm)
 		return level;
 	}
 	if (!r->volume_pcm) {
+		// A board with spk_beep plays beeps at their own gain: beep_level as it is, none at volume 0
+		if (board.audio != NULL && board.audio->spk_beep != NULL) {
+			return sm->volume_sent == 0 ? 0 : level;
+		}
 		return radio_beep_level(level, sm->volume_sent);
 	}
 	if (r->volume_db10 != NULL && sm->volume_sent > 0) {
@@ -411,13 +415,7 @@ static uint8_t channel_power(const channel_t *ch)
 
 uint8_t radio_sm_squelch_open_below(uint8_t level)
 {
-	if (level == 0) {
-		return 255;
-	}
-	if (level > RADIO_SQUELCH_MAX) {
-		level = RADIO_SQUELCH_MAX;
-	}
-	return (uint8_t)(RADIO_SQL_OPEN_L1 - (level - 1) * RADIO_SQL_DB_PER_STEP);
+	return radio_squelch_open_below(level);
 }
 
 bool radio_view_wakes(const radio_view_t *v)
@@ -5854,7 +5852,7 @@ static bool aprs_can_start(const radio_sm_t *sm)
 {
 	if (sm->aprs_phase != APRS_RF_OFF || sm->ptt || sm->hotspot || (sm->view.state != RS_IDLE && !(sm->view.state == RS_RX && bcast_listening(sm))) ||
 	    sm->view.monitor || sm->power_off_req || sm->set.tx_inhibit || sm->batt.level == BATT_CRITICAL || board.afsk == NULL ||
-	    board.afsk->tx_start == NULL) {
+	    board.afsk->tx_start == NULL || (board.afsk->tx_ready != NULL && !board.afsk->tx_ready())) {
 		return false;
 	}
 #if CONFIG_SCAN
@@ -9419,6 +9417,8 @@ static bool save_poll(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+_Static_assert(RADIO_SQL_CLOSE_POLLS * RADIO_POLL_MS == RADIO_SQL_CLOSE_MS, "the close polls make the close time");
+
 // Polls of noise above the line before the squelch closes
 static uint8_t close_polls(void)
 {
@@ -9785,11 +9785,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	// Open on carrier (noise below the level's threshold) and the RX tone, both; the monitor overrides (outputs())
 	follow_tone(sm, st.tone_ok);
 	uint8_t sq = sm->view.squelch;
-	uint8_t open_below = radio_sm_squelch_open_below(sq);
+	uint8_t open_below = radio_squelch_open_below(sq);
+	radio_squelch_read_t sql = radio_squelch_read(sq, st.noise, sm->view.tone_ok);
 	bool listening = bcast_listening(sm);
-	bool opens = (listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below))) && !dual_peeking(sm) &&
-		     !parked(&sm->view.ch);
-	bool holds = listening || (sm->view.tone_ok && (sq == 0 || st.noise < open_below + RADIO_SQL_HYST_DB));
+	bool opens = (listening || sql.opens) && !dual_peeking(sm) && !parked(&sm->view.ch);
+	bool holds = listening || sql.holds;
 	uint8_t need = close_need(sm, &st, sq);		// for the close below
 
 	if (sm->view.state == RS_IDLE) {
@@ -9805,9 +9805,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 		activity(sm, now_ms);
 		sm->close_count = 0;
 		sm->sql_rssi = held_rssi(&st, sq, open_below);
-	} else if (++sm->close_count >= need ||
-		   (sq != 0 && need == RADIO_SQL_CLOSE_POLLS &&
-		    st.noise >= open_below + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB)) {
+	} else if (++sm->close_count >= need || (sql.fast && need == RADIO_SQL_CLOSE_POLLS)) {
 		bool was_rx = sm->view.state == RS_RX;
 		sm->view.sql_close = sm->close_count;
 		if (sm->view.state == RS_TX_DENIED) {
