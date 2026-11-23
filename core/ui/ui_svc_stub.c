@@ -68,6 +68,11 @@ WEAK void ui_svc_t3_dial(const char *digits) { (void)digits; }
 WEAK bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len) { (void)gw; (void)out; (void)len; return false; }
 #endif
 WEAK bool ui_svc_scan_skip(void) { return false; }
+#if CONFIG_FOX
+WEAK bool ui_svc_fox(uint8_t cmd) { (void)cmd; return false; }
+WEAK void ui_svc_fox_get(fox_rec_t *r) { memset(r, 0, sizeof(*r)); }
+WEAK bool ui_svc_fox_set(const fox_rec_t *r) { (void)r; return false; }
+#endif
 WEAK bool ui_svc_dual(const ui_dual_ref_t ref[2], uint8_t sel) { (void)ref; (void)sel; return false; }
 WEAK bool ui_svc_dual_get(ui_dual_ref_t ref[2], uint8_t *sel) { (void)ref; (void)sel; return false; }
 WEAK bool ui_svc_vfo_get(uint8_t index, channel_t *out) { (void)index; (void)out; return false; }

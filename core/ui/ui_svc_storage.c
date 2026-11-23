@@ -777,6 +777,9 @@ static struct {
 #if CONFIG_DMR
 		contact_t target;	// save_target_job's search: the stored contact found
 #endif
+#if CONFIG_FOX
+		uint8_t fox[FOX_REC_LEN];	// fox_job's record, encoded
+#endif
 	};
 	uint32_t id;		// the talk target's, or the radio's own DMR ID
 	bool private_call;
@@ -1100,6 +1103,44 @@ static bool sig_post(uint8_t id, int32_t value)
 	job.channel = id;
 	job.id = (uint32_t)value;
 	return storage_job_post(sig_job, NULL);
+}
+#endif
+
+#if CONFIG_FOX
+// --- Fox mode's record (CODEPLUG_KEY_FOX): the codeplug is its only home ---
+
+void ui_svc_fox_get(fox_rec_t *r)
+{
+	uint8_t v[FOX_REC_LEN];
+	int len = codeplug_kv_get(CODEPLUG_KEY_FOX, v, sizeof(v));
+	if (len < 0 || !fox_rec_decode(v, len, r)) {
+		fox_rec_default(r);
+	}
+}
+
+static void fox_job(void *ctx)
+{
+	(void)ctx;
+	fox_rec_t r;
+	uint8_t was[FOX_REC_LEN];
+	ui_svc_fox_get(&r);	// the record as the radio reads it now (the defaults when absent)
+	fox_rec_encode(&r, was);
+	if (!codeplug_keys_write_record(CODEPLUG_KEY_FOX, was, job.fox, FOX_REC_LEN)) {
+		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+	}
+}
+
+bool ui_svc_fox_set(const fox_rec_t *r)
+{
+	fox_rec_t check;
+	if (job_busy()) {
+		return false;
+	}
+	fox_rec_encode(r, job.fox);
+	if (!fox_rec_decode(job.fox, FOX_REC_LEN, &check)) {
+		return false;	// a value the fox can't take
+	}
+	return storage_job_post(fox_job, NULL);
 }
 #endif
 

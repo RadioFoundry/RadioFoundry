@@ -263,6 +263,14 @@ bool ui_svc_scan_skip(void)
 }
 #endif
 
+#if CONFIG_FOX
+bool ui_svc_fox(uint8_t cmd)
+{
+	radio_req_fox(cmd);
+	return true;
+}
+#endif
+
 #if CONFIG_DUAL_WATCH
 // The radio core alternates the one receiver between the two channels (radio-features.md 2.1). The same pair again
 // only changes the selection there, so this is cheap to call on every change. Refused here, where the answer is

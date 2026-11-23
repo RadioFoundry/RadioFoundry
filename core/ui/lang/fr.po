@@ -3573,6 +3573,11 @@ msgid "Zones/Chs Received"
 msgstr "Zones/Canaux reçus"
 
 #: core/ui/ui_menus.c
+msgctxt "TITLE_FOX"
+msgid "Fox"
+msgstr "Balise"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "Double écoute"
@@ -4277,21 +4282,6 @@ msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 ouvrir  Retour"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "Pas "
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_VALUE_STANDARD_SOUND"
-msgid "Standard sound"
-msgstr "Son standard"
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_LABEL_LENGTH"
-msgid "Length: "
-msgstr "Durée: "
-
 #: core/ui/ui_menus.c
 msgctxt "SIG_TITLE_START_TONE"
 msgid "Start Tone"
@@ -4306,6 +4296,21 @@ msgstr "Tonalité de fin"
 msgctxt "SIG_TITLE_IDLE_TONE"
 msgid "Idle Tone"
 msgstr "Tonalité de repos"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "Son standard"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "Pas "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "Durée: "
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED"
@@ -4341,6 +4346,126 @@ msgstr " étape"
 msgctxt "SIG_UNIT_STEPS"
 msgid " steps"
 msgstr " étapes"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_INTERVAL"
+msgid "Interval"
+msgstr "Intervalle"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE"
+msgid "Message"
+msgstr "Message"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE"
+msgid "Jingle"
+msgstr "Mélodie"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_STEPS"
+msgid "Jingle steps"
+msgstr "Pas de mélodie"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_PREVIEW_JINGLE"
+msgid "Preview jingle"
+msgstr "Écouter mélodie"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_NO_MESSAGE"
+msgid "None"
+msgstr "Aucun"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_DEFAULT_TUNE"
+msgid "Default tune"
+msgstr "Mélodie standard"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_FOX_NOT_IN_BUILD"
+msgid "Fox: not in this build"
+msgstr "Balise indispo."
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_SET_MESSAGE"
+msgid "Set the message in the Codeplug Editor"
+msgstr "Saisir le message dans l'éditeur de codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NOT_FM"
+msgid "Not an FM channel"
+msgstr "Pas un canal FM"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_CALL"
+msgid "No callsign in the radio name"
+msgstr "Pas d'indicatif dans le nom radio"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_TOO_LONG"
+msgid "A cycle is longer than the TX time-out"
+msgstr "Un cycle dépasse la limite d'émission"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_TONE"
+msgid "This radio can't send the tone"
+msgstr "Cette radio ne peut pas émettre le ton"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_BUSY"
+msgid "Radio busy"
+msgstr "Radio occupée"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_DENIED"
+msgid "Transmit refused"
+msgstr "Émission refusée"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_OFF"
+msgid "Off: OK on Fox starts it on this channel"
+msgstr "Arrêt : OK sur Balise la lance sur ce canal"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_NEXT_IN"
+msgid "Next in "
+msgstr "Suivant dans "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_MESSAGE"
+msgid "On air: message"
+msgstr "Émission : message"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_JINGLE"
+msgid "On air: jingle"
+msgstr "Émission : mélodie"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_ID"
+msgid "On air: callsign"
+msgstr "Émission : indicatif"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_ON_AIR"
+msgid "On air"
+msgstr "Émission"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENT"
+msgid " sent"
+msgstr " envoyés"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_HINT_OK_BACK_STOPS"
+msgid "OK change  Back stops"
+msgstr "OK changer  Retour arrête"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TITLE_JINGLE"
+msgid "Fox Jingle"
+msgstr "Mélodie Balise"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"

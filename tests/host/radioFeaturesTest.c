@@ -4987,6 +4987,21 @@ static void test_fox(void)
 	CHECK(sm.view.fox_phase == FOX_WAIT && hw.tone_hz == 0);
 	req(RREQ_FOX, 0);
 
+	// The preview: the jingle on the speaker, nothing keyed; ignored while a cycle is on air
+	start();
+	board.radio = &radio_key;
+	beep_get_stats(&b0);
+	req(RREQ_FOX, RFOX_PREVIEW);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM && hw.tx_calls == 0 && !sm.view.fox);
+	req(RREQ_FOX, RFOX_START);
+	CHECK(fox_until(FOX_MSG, 400));
+	beep_get_stats(&b0);
+	req(RREQ_FOX, RFOX_PREVIEW);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.fox && sm.view.fox_phase == FOX_MSG);
+	req(RREQ_FOX, RFOX_STOP);
+
 	// A restart comes up with it off
 	start();
 	CHECK(!sm.view.fox && sm.view.fox_phase == FOX_OFF);

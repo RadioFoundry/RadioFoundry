@@ -8537,6 +8537,31 @@ static uint8_t fox_callsign(radio_sm_t *sm)
 	return sm->fox_call_len;
 }
 
+// The codeplug's record into fox_rec: the defaults when it has none, or one the fox can't take
+static void fox_read(radio_sm_t *sm)
+{
+	uint8_t v[FOX_REC_LEN];
+	int len = codeplug_kv_get(CODEPLUG_KEY_FOX, v, sizeof(v));
+	if (len < 0 || !fox_rec_decode(v, len, &sm->fox_rec)) {
+		fox_rec_default(&sm->fox_rec);
+	}
+}
+
+// The jingle on the speaker, as a start would send it (fox_rec and fox_seg are free while no cycle is on air; a fox
+// waiting plays the jingle it runs: a change applies at the next start)
+static void fox_preview(radio_sm_t *sm)
+{
+	if (radio_fox_on_air(&sm->fox)) {
+		return;
+	}
+	if (sm->fox.phase == FOX_OFF) {
+		fox_read(sm);
+	}
+	_Static_assert(BEEP_CUSTOM_MAX >= FOX_STEPS, "the beep plays a whole jingle");
+	uint8_t n = fox_jingle(&sm->fox_rec, sm->fox_seg);
+	beep_play_custom(sm->fox_seg, n, beep_level_now(sm), beep_shared_now());
+}
+
 static void fox_start(radio_sm_t *sm, uint32_t now_ms)
 {
 	if (sm->fox.phase != FOX_OFF) {
@@ -8559,11 +8584,7 @@ static void fox_start(radio_sm_t *sm, uint32_t now_ms)
 		why = RFOX_WHY_DENIED;		// a busy channel only delays the first cycle
 		sm->view.fox_deny = deny;
 	}
-	uint8_t v[FOX_REC_LEN];
-	int len = codeplug_kv_get(CODEPLUG_KEY_FOX, v, sizeof(v));
-	if (len < 0 || !fox_rec_decode(v, len, &sm->fox_rec)) {
-		fox_rec_default(&sm->fox_rec);	// absent, or one the fox can't take
-	}
+	fox_read(sm);
 	fox_rec_t *r = &sm->fox_rec;
 	if ((r->flags & FOX_F_MSG) != 0 && fox_msg_len(r) == 0) {
 		r->flags &= (uint8_t)~FOX_F_MSG;	// nothing to send
@@ -9535,7 +9556,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 #endif
 	case RREQ_FOX:
 #if CONFIG_FOX
-		if (req->arg != 0) {
+		if (req->arg == RFOX_PREVIEW) {
+			fox_preview(sm);
+		} else if (req->arg != RFOX_STOP) {
 			fox_start(sm, now_ms);
 		} else if (sm->fox.phase != FOX_OFF) {
 			fox_end(sm, RFOX_WHY_STOPPED, now_ms);

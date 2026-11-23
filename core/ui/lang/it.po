@@ -3573,6 +3573,11 @@ msgid "Zones/Chs Received"
 msgstr "Zone/Can. ricevuti"
 
 #: core/ui/ui_menus.c
+msgctxt "TITLE_FOX"
+msgid "Fox"
+msgstr "Volpe"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "Doppio ascolto"
@@ -4277,21 +4282,6 @@ msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 apri  Indietro"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "Passo "
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_VALUE_STANDARD_SOUND"
-msgid "Standard sound"
-msgstr "Suono standard"
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_LABEL_LENGTH"
-msgid "Length: "
-msgstr "Durata: "
-
 #: core/ui/ui_menus.c
 msgctxt "SIG_TITLE_START_TONE"
 msgid "Start Tone"
@@ -4306,6 +4296,21 @@ msgstr "Tono di Fine"
 msgctxt "SIG_TITLE_IDLE_TONE"
 msgid "Idle Tone"
 msgstr "Tono Libero"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "Suono standard"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "Passo "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "Durata: "
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED"
@@ -4341,6 +4346,126 @@ msgstr " passo"
 msgctxt "SIG_UNIT_STEPS"
 msgid " steps"
 msgstr " passi"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_INTERVAL"
+msgid "Interval"
+msgstr "Intervallo"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE"
+msgid "Message"
+msgstr "Messaggio"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE"
+msgid "Jingle"
+msgstr "Melodia"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_STEPS"
+msgid "Jingle steps"
+msgstr "Passi melodia"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_PREVIEW_JINGLE"
+msgid "Preview jingle"
+msgstr "Ascolta melodia"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_NO_MESSAGE"
+msgid "None"
+msgstr "Nessuno"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_DEFAULT_TUNE"
+msgid "Default tune"
+msgstr "Melodia standard"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_FOX_NOT_IN_BUILD"
+msgid "Fox: not in this build"
+msgstr "Volpe: non in questa build"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_SET_MESSAGE"
+msgid "Set the message in the Codeplug Editor"
+msgstr "Imposta il messaggio nell'editor del codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NOT_FM"
+msgid "Not an FM channel"
+msgstr "Non è un canale FM"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_CALL"
+msgid "No callsign in the radio name"
+msgstr "Nessun nominativo nel nome radio"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_TOO_LONG"
+msgid "A cycle is longer than the TX time-out"
+msgstr "Un ciclo supera il limite TX"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_TONE"
+msgid "This radio can't send the tone"
+msgstr "Questa radio non può inviare il tono"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_BUSY"
+msgid "Radio busy"
+msgstr "Radio occupata"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_DENIED"
+msgid "Transmit refused"
+msgstr "Trasmissione rifiutata"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_OFF"
+msgid "Off: OK on Fox starts it on this channel"
+msgstr "No: OK su Volpe la avvia su questo canale"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_NEXT_IN"
+msgid "Next in "
+msgstr "Prossimo tra "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_MESSAGE"
+msgid "On air: message"
+msgstr "In onda: messaggio"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_JINGLE"
+msgid "On air: jingle"
+msgstr "In onda: melodia"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_ID"
+msgid "On air: callsign"
+msgstr "In onda: nominativo"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_ON_AIR"
+msgid "On air"
+msgstr "In onda"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENT"
+msgid " sent"
+msgstr " inviati"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_HINT_OK_BACK_STOPS"
+msgid "OK change  Back stops"
+msgstr "OK cambia  Indietro ferma"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TITLE_JINGLE"
+msgid "Fox Jingle"
+msgstr "Melodia Volpe"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"

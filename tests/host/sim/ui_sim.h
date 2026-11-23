@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "radio/radio.h"
 
 // Display classes (information-architecture.md, wireframes) and key maps (7.1 - 7.5)
@@ -96,5 +97,8 @@ typedef struct {
 extern sim_record_t sim_rec;
 const radio_view_t *sim_view(void);
 uint32_t sim_now(void);
+#if CONFIG_FOX
+uint32_t sim_fox_preview_count(void);	// the fox's jingle previews asked of the radio (RFOX_PREVIEW)
+#endif
 
 #endif

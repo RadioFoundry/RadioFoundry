@@ -160,6 +160,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "hotspot_info", "ok 6 3" },
 	{ "diagnostics", "ok 6 7" },
 	{ "roaming", "ok 6 6 1 wait:4000" },
+	{ "fox", "dlpos:1 ok 6 up ok" },		// Tools > Fox (radio-features.md 3.8): off, waiting, on air
+	{ "fox_waiting", "dlpos:1 ok 6 up ok ok" },
+	{ "fox_on_air", "dlpos:1 ok 6 up ok ok foxair:5" },
+	{ "fox_jingle_steps", "ok 6 up ok down down down down ok" },
 	{ "settings", "ok 7" },
 	{ "settings_sound", "ok 7 1" },
 	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)

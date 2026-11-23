@@ -24,6 +24,9 @@
 #if CONFIG_NXDN
 #include "nxdn/nxdn_codeplug.h"
 #endif
+#if CONFIG_FOX
+#include "radio/radio_fox.h"
+#endif
 
 // The UI services' one radio view copy (the UI task's only; too big for its stack). A service fetches it with
 // radio_get_view and reads it before returning: nothing may hold it across a call into another service
@@ -135,6 +138,18 @@ bool ui_svc_save_talk_target(uint32_t id, bool private_call);
 // --- Scan (radio-features). Whether a scan runs is radio_view_t.scan ---
 bool ui_svc_scan(bool on);			// on: the zone (in the VFO: the band); off: stop where it is
 bool ui_svc_scan_skip(void);			// nuisance delete of the channel that stopped the scan
+#if CONFIG_FOX
+// Fox mode (docs/spec/radio-features.md 3.8): RFOX_START on the channel in use, RFOX_STOP, or RFOX_PREVIEW (the jingle
+// on the speaker). Whether it runs, what it sends and why it stopped are the view's (radio_view_t.fox, fox_why).
+// False: not in this build
+bool ui_svc_fox(uint8_t cmd);
+// Its record as the codeplug holds it (the defaults when it has none, radio_fox.h)
+void ui_svc_fox_get(fox_rec_t *r);
+// The record written by the housekeeping task, as the other codeplug writes (UI_EV_SAVE_FAILED when the write fails).
+// False: a write still queued, a record the fox can't take, or no codeplug storage in this build. The next start
+// takes it
+bool ui_svc_fox_set(const fox_rec_t *r);
+#endif
 // Dual watch (docs/ux/dual-watch.md): two channels, each a channel of any zone or the VFO. ref[sel] is the selected
 // one: PTT transmits on it (and the watch goes on after), keys and quick settings act on it. NULL refs stop the
 // watch on the selected one. False: the radio can't watch this pair (today's radio core: two channels of one zone)

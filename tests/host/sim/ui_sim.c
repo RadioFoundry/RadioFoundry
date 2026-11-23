@@ -27,6 +27,7 @@
 //                       zone z cut to n channels
 //   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
+//   foxair:<phase>      fox mode (running) is in this fox_phase_t: 1 waits, 3 the message, 5 the jingle, 7 the ID
 //   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
@@ -2010,6 +2011,53 @@ bool ui_svc_scan(bool on)
 	changed();
 	return true;
 }
+#if CONFIG_FOX
+// Fox mode as the radio core starts it: refused off FM, else waiting for its first cycle. The record is the codeplug's
+static fox_rec_t sim_fox;
+static uint32_t sim_fox_previews;
+
+bool ui_svc_fox(uint8_t cmd)
+{
+	if (cmd == RFOX_PREVIEW) {
+		sim_fox_previews++;
+		return true;
+	}
+	if (cmd == RFOX_STOP) {
+		if (view.fox) {
+			view.fox = false;
+			view.fox_phase = FOX_OFF;
+			view.fox_why = RFOX_WHY_STOPPED;
+		}
+	} else if (view.ch.mode != RADIO_MODE_FM) {
+		view.fox_why = RFOX_WHY_NOT_FM;
+	} else {
+		view.fox = true;
+		view.fox_why = RFOX_WHY_NONE;
+		view.fox_phase = FOX_WAIT;
+		view.fox_next_s = (uint16_t)(fox_interval_ms(sim_fox.interval) / 1000u);
+		view.fox_cycles = view.fox_cut = 0;
+	}
+	changed();
+	return true;
+}
+
+void ui_svc_fox_get(fox_rec_t *r) { *r = sim_fox; }
+
+bool ui_svc_fox_set(const fox_rec_t *r)
+{
+	uint8_t b[FOX_REC_LEN];
+	fox_rec_t check;
+	fox_rec_encode(r, b);
+	if (!fox_rec_decode(b, FOX_REC_LEN, &check))
+		return false;
+	sim_fox = *r;
+	sim_rec.codeplug_writes++;
+	return true;
+}
+
+uint32_t sim_fox_preview_count(void) { return sim_fox_previews; }
+#endif
+
 // Roaming as the radio core does it, without sites to search: roam now "moves" at once
 bool ui_svc_roam(uint8_t cmd)
 {
@@ -2672,6 +2720,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 #if CONFIG_DMR_AES
 	sim_aes_keys = false;
 #endif
+#if CONFIG_FOX
+	fox_rec_default(&sim_fox);
+	sim_fox_previews = 0;
+#endif
 #if CONFIG_SATELLITE_TLE
 	sim_satellite_predicting = false;
 	sim_satellite_no_passes = false;
@@ -3082,6 +3134,17 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
 	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
 	else if (strcmp(key, "aprs_kiss") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.kiss);
+#if CONFIG_FOX
+	else if (strcmp(key, "fox") == 0) snprintf(got, sizeof got, "%u", view.fox);
+	else if (strcmp(key, "foxwhy") == 0) snprintf(got, sizeof got, "%u", view.fox_why);	// radio_fox_why_t
+	else if (strcmp(key, "foxint") == 0) snprintf(got, sizeof got, "%u", sim_fox.interval);
+	else if (strcmp(key, "foxflags") == 0) snprintf(got, sizeof got, "%u", sim_fox.flags);	// FOX_F_*
+	else if (strcmp(key, "foxpreviews") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_fox_previews);
+	else if (strncmp(key, "foxstep", 7) == 0 && key[7] >= '0' && key[7] <= '9') {	// foxstep<k>: Hz/ms of step k
+		unsigned k = (unsigned)atoi(key + 7) % FOX_STEPS;
+		snprintf(got, sizeof got, "%u/%u", sim_fox.hz[k], sim_fox.ms10[k] * 10u);
+	}
+#endif
 #if CONFIG_DMR_ROAMING
 	else if (strcmp(key, "roam") == 0) snprintf(got, sizeof got, "%u", view.roam.state);	// RROAM_STATE_*
 	else if (strcmp(key, "roamzone") == 0) snprintf(got, sizeof got, "%u", view.roam.zone_on);
@@ -3381,6 +3444,16 @@ static bool run_token(char *t, char *err, size_t len)
 			view.t3.poll_fails++;
 		}
 		serial++;
+		advance(100);
+		return true;
+	}
+#endif
+#if CONFIG_FOX
+	if (strcmp(t, "foxair") == 0 && arg != NULL && view.fox) {
+		view.fox_phase = (uint8_t)atoi(arg);
+		if (view.fox_phase == FOX_WAIT)
+			view.fox_cycles++;
+		changed();
 		advance(100);
 		return true;
 	}

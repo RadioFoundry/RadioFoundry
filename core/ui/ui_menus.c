@@ -6377,8 +6377,10 @@ void ui_crash_tick(uint32_t now_ms)
 // ======================= Tools =======================
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
+// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9. Fox, the
+// eleventh, has no digit: it is reached by moving to it
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_FOX,
+       T_COUNT };
 
 // A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
@@ -6387,7 +6389,8 @@ static bool tool_shown(uint16_t i)
 	if (i == T_ZONE_OFFER)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
+	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE) &&
+	       (i != T_FOX || UI_FOX);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6433,7 +6436,8 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
-					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
+					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received"),
+					 TRN(TITLE_FOX, "Fox") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -6487,6 +6491,11 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		if (!CONFIG_APRS)
 			it->flags |= UI_ITEM_DIM;
 		break;
+#if UI_FOX
+	case T_FOX:
+		sb_str(&b, ui_view()->fox ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
+		break;
+#endif
 #if CONFIG_ZONE_SHARE
 	case T_ZONE_OFFER: {
 		ui_zone_offer_t o;
@@ -6524,6 +6533,9 @@ static void tools_select(uint16_t row, bool hold)
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
+#if UI_FOX
+	case T_FOX: ui_push(SCR_FOX, 0); break;
+#endif
 	default: break;
 	}
 }
@@ -7154,13 +7166,25 @@ static const ui_scr_def_t settings_screen = {
 };
 
 #if CONFIG_SIG_TONES
-// ======================= Signaling tone steps (Settings > Signaling tones) =======================
-// One event's five steps (the frame's arg is the sig_event_t). OK on a step opens its frequency: digits type it, Up /
-// Down / the knob step it by 10, OK takes it and opens the length, OK again saves both. BACK leaves the step as it was.
-// A step of length 0 ends the chain (the ones after it are not played), and a chain with no step is the event's
-// standard sound. A step that was off starts at 40 ms
+// ======================= Tone steps (Settings > Signaling tones, Tools > Fox > Jingle steps) =======================
+// A chain's steps: an event's ten (SCR_SIG_CHAIN, the frame's arg is the sig_event_t) or the fox's jingle
+// (SCR_FOX_JINGLE). OK on a step opens its frequency: digits type it, Up / Down / the knob step it by 10, OK takes it
+// and opens the length, OK again saves both. BACK leaves the step as it was. A step of length 0 ends the chain (the
+// ones after it are not played), and a chain with no step is the standard sound. A step that was off starts at 40 ms
 
-static uint8_t sc_row = SIG_STEPS;	// the step being edited (SIG_STEPS: none)
+// Where the steps come from and go: a source per screen
+typedef struct {
+	uint8_t steps;			// rows
+	uint16_t step_ms;		// a step's longest
+	uint16_t total_ms;		// the chain's longest (the rest is cut)
+	int32_t (*get)(uint8_t k, bool ms);
+	void (*put)(uint8_t k, uint32_t hz, uint32_t ms);
+	const char *(*title)(void);
+	tr_id_t standard;		// the body with no step
+} sc_src_t;
+
+#define SC_NONE	0xFFu
+static uint8_t sc_row = SC_NONE;	// the step being edited (SC_NONE: none)
 static uint8_t sc_phase;		// 0: its frequency, 1: its length
 static int32_t sc_hz;			// the frequency taken, while the length is edited
 static int32_t sc_val;			// the value being edited
@@ -7172,31 +7196,70 @@ static uint8_t sc_event(void)
 	return ui_frame()->arg < SIG_EV_COUNT ? (uint8_t)ui_frame()->arg : 0;
 }
 
-static int32_t sc_get(uint8_t ev, uint8_t k, bool ms)
+static int32_t sig_src_get(uint8_t k, bool ms)
 {
-	return ui_svc_setting_get((uint8_t)((ms ? UI_SET_SIG_MS : UI_SET_SIG_HZ) + SIG_STEPS * ev + k));
+	return ui_svc_setting_get((uint8_t)((ms ? UI_SET_SIG_MS : UI_SET_SIG_HZ) + SIG_STEPS * sc_event() + k));
 }
 
-// How many steps the event's chain has (0: the standard sound)
-static uint8_t sc_steps(uint8_t ev)
+static void sc_store(uint8_t id, int32_t v)
+{
+	if (ui_svc_setting_set(id, v))
+		ui_svc_apply(id, v);
+	else
+		ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+}
+
+static void sig_src_put(uint8_t k, uint32_t hz, uint32_t ms)
+{
+	sc_store(UI_SET_SIG_STEP, UI_SIG_STEP(sc_event(), k, hz, ms));	// one write of the record
+}
+
+static const char *sig_src_title(void)
+{
+	static const tr_id_t names[SIG_EV_COUNT] = { TRN(SIG_TITLE_START_TONE, "Start Tone"), TRN(SIG_TITLE_END_TONE, "End Tone"), TRN(SIG_TITLE_IDLE_TONE, "Idle Tone") };
+	return tr(names[sc_event()]);
+}
+
+static const sc_src_t sig_src = {
+	.steps = SIG_STEPS, .step_ms = SIG_MAX_MS, .total_ms = SIG_MAX_MS, .get = sig_src_get, .put = sig_src_put,
+	.title = sig_src_title, .standard = TRN(SIG_VALUE_STANDARD_SOUND, "Standard sound"),
+};
+
+#if UI_FOX
+static const sc_src_t fox_src;
+#endif
+
+static const sc_src_t *sc_src(void)
+{
+#if UI_FOX
+	if (ui_frame()->scr == SCR_FOX_JINGLE)
+		return &fox_src;
+#endif
+	return &sig_src;
+}
+
+#if UI_FOX
+// How many steps a chain has (0: the standard sound)
+static uint8_t sc_steps_of(const sc_src_t *src)
 {
 	uint8_t n = 0;
-	while (n < SIG_STEPS && sc_get(ev, n, true) != 0)
+	while (n < src->steps && src->get(n, true) != 0)
 		n++;
 	return n;
 }
+#endif
 
-static uint16_t sc_count(void) { return SIG_STEPS; }
+static uint16_t sc_count(void) { return sc_src()->steps; }
 
 static void sc_item(uint16_t i, ui_item_t *it)
 {
 	sbuf_t b;
-	uint8_t ev = sc_event();
+	const sc_src_t *src = sc_src();
 	sb_init(&b, it->label, sizeof it->label);
 	sb_str(&b, TR(HOME_LABEL_STEP, "Step "));
 	sb_u32(&b, i + 1u, 1);
 	sb_init(&b, it->value, sizeof it->value);
-	int32_t hz = sc_get(ev, (uint8_t)i, false), ms = sc_get(ev, (uint8_t)i, true);
+	int32_t hz = src->get((uint8_t)i, false), ms = src->get((uint8_t)i, true);
 	if (sc_row == i) {
 		it->flags |= UI_ITEM_EDIT;
 		sb_i32(&b, sc_phase == 0 ? sc_val : hz);
@@ -7221,16 +7284,16 @@ static void sc_item(uint16_t i, ui_item_t *it)
 static const char *sc_body(void)
 {
 	sbuf_t b;
-	uint8_t ev = sc_event();
+	const sc_src_t *src = sc_src();
 	int32_t total = 0;
-	for (uint8_t k = 0; k < SIG_STEPS && sc_get(ev, k, true) != 0; k++)
-		total += sc_get(ev, k, true);
+	for (uint8_t k = 0; k < src->steps && src->get(k, true) != 0; k++)
+		total += src->get(k, true);
 	sb_init(&b, sc_text, sizeof sc_text);
-	sb_str(&b, total == 0 ? TR(SIG_VALUE_STANDARD_SOUND, "Standard sound") : TR(SIG_LABEL_LENGTH, "Length: "));
+	sb_str(&b, total == 0 ? tr(src->standard) : TR(SIG_LABEL_LENGTH, "Length: "));
 	if (total != 0) {
 		sb_i32(&b, total);
 		sb_str(&b, " / ");
-		sb_u32(&b, SIG_MAX_MS, 1);
+		sb_u32(&b, src->total_ms, 1);
 		sb_str(&b, " ms");
 	}
 	return sc_text;
@@ -7238,8 +7301,7 @@ static const char *sc_body(void)
 
 static const char *sc_title(void)
 {
-	static const tr_id_t names[SIG_EV_COUNT] = { TRN(SIG_TITLE_START_TONE, "Start Tone"), TRN(SIG_TITLE_END_TONE, "End Tone"), TRN(SIG_TITLE_IDLE_TONE, "Idle Tone") };
-	return tr(names[sc_event()]);
+	return sc_src()->title();
 }
 
 static void sc_begin(uint16_t row)
@@ -7247,27 +7309,20 @@ static void sc_begin(uint16_t row)
 	sc_row = (uint8_t)row;
 	sc_phase = 0;
 	sc_typed = false;
-	sc_val = sc_get(sc_event(), (uint8_t)row, false);
-}
-
-static void sc_store(uint8_t id, int32_t v)
-{
-	if (ui_svc_setting_set(id, v))
-		ui_svc_apply(id, v);
-	else
-		ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+	sc_val = sc_src()->get((uint8_t)row, false);
 }
 
 static void sc_select(uint16_t i, bool hold)
 {
 	(void)hold;
-	if (i >= SIG_STEPS)
+	const sc_src_t *src = sc_src();
+	if (i >= src->steps)
 		return;
 	if (sc_row != i) {
 		sc_begin(i);
 		return;
 	}
-	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)SIG_MAX_MS;
+	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)src->step_ms;
 	if (sc_val < 0 || sc_val > hi || sc_val % (int32_t)SIG_MS_UNIT != 0) {
 		// A value off the steps or out of the range: say what fits instead of guessing
 		static char msg[40];
@@ -7280,29 +7335,29 @@ static void sc_select(uint16_t i, bool hold)
 		sb_str(&b, TR(SET_TOAST_STEPS_OF, ", steps of "));
 		sb_u32(&b, SIG_MS_UNIT, 1);
 		ui_toast(msg);
-		sc_row = SIG_STEPS;
+		sc_row = SC_NONE;
 		return;
 	}
-	uint8_t ev = sc_event();
 	if (sc_phase == 0) {
 		sc_hz = sc_val;
 		sc_phase = 1;
 		sc_typed = false;
-		sc_val = sc_get(ev, (uint8_t)i, true);
+		sc_val = src->get((uint8_t)i, true);
 		if (sc_val == 0)
 			sc_val = 40;
 		return;
 	}
-	sc_store(UI_SET_SIG_STEP, UI_SIG_STEP(ev, i, (uint32_t)sc_hz, (uint32_t)sc_val));	// one write of the record
-	sc_row = SIG_STEPS;
+	src->put((uint8_t)i, (uint32_t)sc_hz, (uint32_t)sc_val);
+	sc_row = SC_NONE;
 }
 
 static bool sc_key(const input_event_t *ev)
 {
 	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	const sc_src_t *src = sc_src();
 	uint16_t focus = ui_frame()->focus;
-	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)SIG_MAX_MS;
-	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && focus < SIG_STEPS) {
+	int32_t hi = sc_phase == 0 ? (int32_t)SIG_HZ_MAX : (int32_t)src->step_ms;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press && focus < src->steps) {
 		if (sc_row != focus)
 			sc_begin(focus);
 		int32_t d = ev->action - ACT_DIGIT_0;
@@ -7312,7 +7367,7 @@ static bool sc_key(const input_event_t *ev)
 		ui_dirty();
 		return true;
 	}
-	if (sc_row == SIG_STEPS)
+	if (sc_row == SC_NONE)
 		return false;
 	int dir = ev->action == ACT_NAV_UP ? 1 : ev->action == ACT_NAV_DOWN ? -1 :
 		ev->action == ACT_ENC_STEP ? (ev->value > 0 ? 1 : -1) : 0;
@@ -7324,20 +7379,28 @@ static bool sc_key(const input_event_t *ev)
 		return true;
 	}
 	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS) {
-		sc_row = SIG_STEPS;
+		sc_row = SC_NONE;
 		ui_dirty();
 		return true;
 	}
 	return false;
 }
 
-static void sc_enter(void) { sc_row = SIG_STEPS; }
+static void sc_enter(void) { sc_row = SC_NONE; }
 
 static const ui_scr_def_t sc_screen = {
 	.name = "sig-chain", .flags = SF_LIST, .hint = TRN(SIG_HINT_TYPE_OK_NEXT_BACK, "0-9 type  OK next  Back"),
 	.count = sc_count, .item = sc_item, .select = sc_select, .key = sc_key, .enter = sc_enter, .body = sc_body,
 	.title = sc_title,
 };
+
+static uint8_t sc_steps(uint8_t ev)
+{
+	uint8_t n = 0;
+	while (n < SIG_STEPS && ui_svc_setting_get((uint8_t)(UI_SET_SIG_MS + SIG_STEPS * ev + n)) != 0)
+		n++;
+	return n;
+}
 
 // The row in Settings > Signaling tones: how many steps the event's chain has
 static void sc_summary(char *out, size_t len, uint8_t ev)
@@ -7352,6 +7415,221 @@ static void sc_summary(char *out, size_t len, uint8_t ev)
 	sb_u32(&b, n, 1);
 	sb_str(&b, n == 1 ? TR(SIG_UNIT_STEP, " step") : TR(SIG_UNIT_STEPS, " steps"));
 }
+#endif
+
+#if UI_FOX
+// ======================= Fox (Tools > Fox; docs/spec/radio-features.md 3.8) =======================
+// The radio as a fox-hunt transmitter on the channel in use: on a timer it keys up and sends the message, the jingle
+// and its callsign. The text above the rows says what it does now; the rows start it and set what a cycle holds.
+// Leaving the screen (Back, Home) stops it, as PTT does. The record is the codeplug's (ui_svc_fox_get); a change
+// applies at the next start
+
+static fox_rec_t fox_ui;	// the record as last read or written
+
+enum { FOX_R_RUN, FOX_R_INTERVAL, FOX_R_MSG, FOX_R_JINGLE, FOX_R_STEPS, FOX_R_PREVIEW, FOX_R_COUNT };
+
+static bool fox_write(const fox_rec_t *r)
+{
+	if (!ui_svc_fox_set(r)) {
+		ui_toast(TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
+		return false;
+	}
+	fox_ui = *r;
+	return true;
+}
+
+static const char *fox_interval_name(uint8_t code)
+{
+	static const tr_id_t names[FOX_INTERVALS] = { TRX(FOX_VALUE_30_S, "30 s"), TRX(FOX_VALUE_1_MIN, "1 min"),
+						      TRX(FOX_VALUE_2_MIN, "2 min"), TRX(FOX_VALUE_5_MIN, "5 min"),
+						      TRX(FOX_VALUE_10_MIN, "10 min") };
+	return tr(names[code < FOX_INTERVALS ? code : FOX_INTERVAL_DEFAULT]);
+}
+
+static uint16_t fox_count(void) { return FOX_R_COUNT; }
+
+static void fox_item(uint16_t i, ui_item_t *it)
+{
+	static const tr_id_t names[FOX_R_COUNT] = { TRN(TITLE_FOX, "Fox"), TRN(FOX_ROW_INTERVAL, "Interval"),
+						    TRN(FOX_ROW_MESSAGE, "Message"), TRN(FOX_ROW_JINGLE, "Jingle"),
+						    TRN(FOX_ROW_JINGLE_STEPS, "Jingle steps"),
+						    TRN(FOX_ROW_PREVIEW_JINGLE, "Preview jingle") };
+	if (i >= FOX_R_COUNT)
+		return;
+	str_copy(it->label, sizeof it->label, tr(names[i]));
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	switch (i) {
+	case FOX_R_RUN:
+		sb_str(&b, ui_view()->fox ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
+		break;
+	case FOX_R_INTERVAL:
+		sb_str(&b, fox_interval_name(fox_ui.interval));
+		break;
+	case FOX_R_MSG: {
+		uint8_t n = fox_msg_len(&fox_ui);
+		if (n == 0) {
+			sb_str(&b, TR(FOX_VALUE_NO_MESSAGE, "None"));
+			it->flags |= UI_ITEM_DIM;
+		} else if ((fox_ui.flags & FOX_F_MSG) == 0) {
+			sb_str(&b, TR(VALUE_OFF, "Off"));
+		} else {
+			for (uint8_t k = 0; k < n; k++)
+				sb_chr(&b, fox_ui.msg[k]);
+		}
+		break;
+	}
+	case FOX_R_JINGLE:
+		sb_str(&b, (fox_ui.flags & FOX_F_JINGLE) != 0 ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
+		break;
+	case FOX_R_STEPS: {
+		uint8_t n = sc_steps_of(&fox_src);
+		if (n == 0) {
+			sb_str(&b, TR(FOX_VALUE_DEFAULT_TUNE, "Default tune"));
+		} else {
+			sb_u32(&b, n, 1);
+			sb_str(&b, n == 1 ? TR(SIG_UNIT_STEP, " step") : TR(SIG_UNIT_STEPS, " steps"));
+		}
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static void fox_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	fox_rec_t r = fox_ui;
+	switch (i) {
+	case FOX_R_RUN:
+		if (!ui_svc_fox(ui_view()->fox ? RFOX_STOP : RFOX_START))
+			ui_toast(TR(WHY_FOX_NOT_IN_BUILD, "Fox: not in this build"));
+		break;
+	case FOX_R_INTERVAL:
+		r.interval = (uint8_t)((r.interval + 1u) % FOX_INTERVALS);
+		(void)fox_write(&r);
+		break;
+	case FOX_R_MSG:
+		if (fox_msg_len(&r) == 0) {
+			ui_toast(TR(FOX_TOAST_SET_MESSAGE, "Set the message in the Codeplug Editor"));
+			break;
+		}
+		r.flags ^= FOX_F_MSG;
+		(void)fox_write(&r);
+		break;
+	case FOX_R_JINGLE:
+		r.flags ^= FOX_F_JINGLE;
+		(void)fox_write(&r);
+		break;
+	case FOX_R_STEPS:
+		ui_push(SCR_FOX_JINGLE, 0);
+		break;
+	case FOX_R_PREVIEW:
+		(void)ui_svc_fox(RFOX_PREVIEW);
+		break;
+	default:
+		break;
+	}
+}
+
+// What the fox does now, or why it isn't running
+static const char *fox_body(void)
+{
+	static char text[48];
+	const radio_view_t *v = ui_view();
+	sbuf_t b;
+	sb_init(&b, text, sizeof text);
+	if (!v->fox) {
+		static const tr_id_t why[] = {
+			[RFOX_WHY_NOT_FM] = TRN(FOX_WHY_NOT_FM, "Not an FM channel"),
+			[RFOX_WHY_NO_CALL] = TRN(FOX_WHY_NO_CALL, "No callsign in the radio name"),
+			[RFOX_WHY_TOO_LONG] = TRN(FOX_WHY_TOO_LONG, "A cycle is longer than the TX time-out"),
+			[RFOX_WHY_NO_TONE] = TRN(FOX_WHY_NO_TONE, "This radio can't send the tone"),
+			[RFOX_WHY_BUSY] = TRN(FOX_WHY_BUSY, "Radio busy"),
+			[RFOX_WHY_DENIED] = TRN(FOX_WHY_DENIED, "Transmit refused"),
+			[RFOX_WHY_UNAVAILABLE] = TRN(WHY_FOX_NOT_IN_BUILD, "Fox: not in this build"),
+		};
+		if (v->fox_why < sizeof why / sizeof why[0] && why[v->fox_why] != TR_NONE) {
+			sb_str(&b, tr(why[v->fox_why]));
+		} else {
+			sb_str(&b, TR(FOX_BODY_OFF, "Off: OK on Fox starts it on this channel"));
+		}
+		return text;
+	}
+	switch (v->fox_phase) {
+	case FOX_WAIT:
+		sb_str(&b, TR(FOX_BODY_NEXT_IN, "Next in "));
+		sb_mmss(&b, v->fox_next_s);
+		break;
+	case FOX_MSG:
+		sb_str(&b, TR(FOX_BODY_SENDING_MESSAGE, "On air: message"));
+		break;
+	case FOX_JINGLE:
+		sb_str(&b, TR(FOX_BODY_SENDING_JINGLE, "On air: jingle"));
+		break;
+	case FOX_ID:
+		sb_str(&b, TR(FOX_BODY_SENDING_ID, "On air: callsign"));
+		break;
+	default:
+		sb_str(&b, TR(FOX_BODY_ON_AIR, "On air"));
+		break;
+	}
+	sb_str(&b, "  ");
+	sb_u32(&b, v->fox_cycles, 1);
+	sb_str(&b, TR(FOX_BODY_SENT, " sent"));
+	return text;
+}
+
+static void fox_enter(void)
+{
+	ui_svc_fox_get(&fox_ui);
+}
+
+static void fox_leave(void)
+{
+	if (ui_view()->fox)
+		(void)ui_svc_fox(RFOX_STOP);
+}
+
+static const ui_scr_def_t fox_screen = {
+	.name = "fox", .flags = SF_LIST, .prefix = TRN(TITLE_FOX, "Fox"),
+	.hint = TRN(FOX_HINT_OK_BACK_STOPS, "OK change  Back stops"),
+	.count = fox_count, .item = fox_item, .select = fox_select, .body = fox_body, .enter = fox_enter,
+	.leave = fox_leave,
+};
+
+// The jingle's steps, in the shared step editor
+static int32_t fox_src_get(uint8_t k, bool ms)
+{
+	if (k >= FOX_STEPS)
+		return 0;
+	return ms ? (int32_t)fox_ui.ms10[k] * (int32_t)SIG_MS_UNIT : (int32_t)fox_ui.hz[k];
+}
+
+static void fox_src_put(uint8_t k, uint32_t hz, uint32_t ms)
+{
+	fox_rec_t r = fox_ui;
+	r.hz[k] = (uint16_t)hz;
+	r.ms10[k] = (uint8_t)(ms / SIG_MS_UNIT);
+	(void)fox_write(&r);
+}
+
+static const char *fox_src_title(void)
+{
+	return TR(FOX_TITLE_JINGLE, "Fox Jingle");
+}
+
+static const sc_src_t fox_src = {
+	.steps = FOX_STEPS, .step_ms = 255u * SIG_MS_UNIT, .total_ms = FOX_MAX_MS, .get = fox_src_get,
+	.put = fox_src_put, .title = fox_src_title, .standard = TRN(FOX_VALUE_DEFAULT_TUNE, "Default tune"),
+};
+
+static const ui_scr_def_t fox_jingle_screen = {
+	.name = "fox-jingle", .flags = SF_LIST, .hint = TRN(SIG_HINT_TYPE_OK_NEXT_BACK, "0-9 type  OK next  Back"),
+	.count = sc_count, .item = sc_item, .select = sc_select, .key = sc_key, .enter = sc_enter, .body = sc_body,
+	.title = sc_title,
+};
 #endif
 
 // A group: each row shows its value; toggles and lists change on OK, numbers open an inline editor
@@ -8218,6 +8496,9 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 #endif
 #if CONFIG_UI_SETTINGS && CONFIG_SIG_TONES
 	[SCR_SIG_CHAIN] = &sc_screen,
+#endif
+#if UI_FOX
+	[SCR_FOX] = &fox_screen, [SCR_FOX_JINGLE] = &fox_jingle_screen,
 #endif
 #if CONFIG_APRS_AFSK
 	[SCR_APRS_TO] = &aprs_to_screen,

@@ -738,7 +738,10 @@ typedef enum {
 	RFOX_WHY_DENIED,	// the transmitter refused (the view's fox_deny says why)
 	RFOX_WHY_UNAVAILABLE,	// built without fox mode
 } radio_fox_why_t;
-void radio_req_fox(bool on);
+// What radio_req_fox asks: stop, start on the channel in use, or play the jingle on the speaker (the one a start would
+// send; ignored while a cycle is on air)
+enum { RFOX_STOP, RFOX_START, RFOX_PREVIEW };
+void radio_req_fox(uint8_t cmd);
 // A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
 // view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
 void radio_req_dtmf(char digit, bool down);
