@@ -1311,6 +1311,9 @@ TESTS   += fd6818shTest
 # The superhet chip ops each of those drivers provides: filled in, and the same writes as the driver's own calls
 TESTS   += superhetTest
 
+# Superhet chip detection: every main / LO pair found and bound, parts not driven left alone, the sub-audio source
+TESTS   += superhetChipsTest
+
 # The RF register bus on a bit-banged I2C bus: frames, byte order, no acknowledge, the critical section
 TESTS   += rfbusI2cTest
 
@@ -1328,6 +1331,10 @@ SUPERHET_SRC := $(ROOT)/drivers/rf/bk4819/bk4819.c $(ROOT)/drivers/rf/bk4819/bk4
 	$(ROOT)/drivers/rf/at1141/at1141.c $(ROOT)/drivers/rf/at1141/at1141_superhet.c $(RFBUS) $(SUBAUDIO)
 superhetTest: superhetTest.c $(SUPERHET_SRC) $(ROOT)/drivers/rf/superhet/superhet.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ superhetTest.c $(SUPERHET_SRC) -lm
+
+superhetChipsTest: superhetChipsTest.c $(SUPERHET_SRC) $(ROOT)/drivers/rf/superhet/superhet_chips.c \
+		$(ROOT)/drivers/rf/superhet/superhet_chips.h $(ROOT)/drivers/rf/superhet/superhet.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ superhetChipsTest.c $(ROOT)/drivers/rf/superhet/superhet_chips.c $(SUPERHET_SRC) -lm
 
 bk4819Test: bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(ROOT)/drivers/rf/bk4819/bk4819.h $(SUBAUDIO)
 	$(CC) $(CFLAGS) -Wshadow -o $@ bk4819Test.c $(ROOT)/drivers/rf/bk4819/bk4819.c $(RFBUS) $(SUBAUDIO)
@@ -1370,12 +1377,13 @@ hrc7000CodecSlotTest: hrc7000CodecSlotTest.c $(ROOT)/platform/hrc7000/codec_slot
 	$(CC) $(CFLAGS) -Wshadow -o $@ hrc7000CodecSlotTest.c
 
 run: run-platform
-run-platform: bk4819Test at1141Test fd6818shTest superhetTest rfbusI2cTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
+run-platform: bk4819Test at1141Test fd6818shTest superhetTest superhetChipsTest rfbusI2cTest hrc7000ClockTest hrc7000UartFormatTest hrc7000CodecSlotTest \
 		hrc7000IrqStallTest hrc7000UartIdleTest hrc7000RfburstTest
 	./bk4819Test
 	./at1141Test
 	./fd6818shTest
 	./superhetTest
+	./superhetChipsTest
 	./rfbusI2cTest
 	./hrc7000ClockTest
 	./hrc7000UartFormatTest
