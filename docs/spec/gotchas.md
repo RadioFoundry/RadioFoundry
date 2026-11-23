@@ -165,7 +165,8 @@ sends), was not heard at all: 0 of 8 calls, no timeslot interrupt, no report. MS
 played. Cause: with 4:0x10 = 0x6B (ISRepeater clear) the chip finds MS and direct mode sync only; with 0x4F
 (ISRepeater set) it finds BS sync only. A test image with 0x4F on the direct channel heard the BS calls and none of
 the MS ones. Rule: on a direct channel the engine hunts both modes while nothing is taken
-([modem-hrc6000.md](modem-hrc6000.md) 5.3). A call can lose up to one dwell (120 ms) of its start. Test direct mode
+([modem-hrc6000.md](modem-hrc6000.md) 5.3). A dwell shorter than a superframe (120 ms) lost whole calls: voice A, the
+only sync after the headers, fell at a switch every time. A call can lose up to about 1 s of its start. Test direct mode
 receive with both sync families. Radios: HR_C5000 (chip flag `bs_by_mode`); the HR_C6000 hears both families in
 either mode.
 

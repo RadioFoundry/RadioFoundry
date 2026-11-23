@@ -3,6 +3,7 @@
 // HR_C6000 DMR: register sequences, burst status decode, receive de-duplication, and the TX queue / slot scheduling of
 // the slot engine, against a fake config port, voice port and RF switch with a fake microsecond clock
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
@@ -1106,15 +1107,14 @@ static void c5_mode_track(void)
 	log_reset();
 }
 
-static void test_rx_bs_direct_hunt(void)
+// One BS-framed direct call (headers, then voice from A; no headers: a call joined at A) starting lead_us after the
+// engine was configured on a direct channel. The fake chip hears nothing while 0x10 is the direct mode, and in the BS
+// mode only from a burst with a sync (a header, voice A, a terminator) on: after each switch it has to find the sync
+// again, as the radio's does. Returns the voice bursts taken; the engine is left as the call left it
+static int hunt_call(hrc_chip_t *c5, uint32_t lead_us, int headers, int *numbered)
 {
 	fresh_engine();
-	hrc_chip_t c5 = *dev.chip;
-	c5.mode_per_channel = true;
-	c5.bs_by_mode = true;
-	c5.dmr_mode = fake_c5_dmr_mode;
-	const hrc_chip_t *c6 = dev.chip;
-	dev.chip = &c5;
+	dev.chip = c5;
 	c5_mode = 0;
 	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
 	hrc6000_dmr_configure(&eng, &cfg);
@@ -1125,7 +1125,7 @@ static void test_rx_bs_direct_hunt(void)
 
 	uint8_t seq[3 + 96 + 3];
 	int n = 0;
-	for (int i = 0; i < 3; i++) {
+	for (int i = 0; i < headers; i++) {
 		seq[n++] = 0x12;
 	}
 	for (int sf = 0; sf < 16; sf++) {
@@ -1138,54 +1138,92 @@ static void test_rx_bs_direct_hunt(void)
 		seq[n++] = 0x22;
 	}
 	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
-	// The sender's slots every 30 ms (its burst in every other one); the poll runs every 5 ms. The chip ticks and
-	// reports only while 0x10 lets it hear BS sync
-	uint32_t t = 15000000, junk = 999;
-	int voices = 0, numbered = 0;
+	// The sender's slots every 30 ms (its burst in every other one); the poll runs every 5 ms
+	uint32_t t = t_us + lead_us, junk = 999;
+	for (uint32_t q = t_us; q < t; q += 5000u) {
+		t_us = q;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	bool locked = false;
+	uint8_t mode_was = c5_mode;
 	for (int slot = 0; slot < 2 * n; slot++) {
 		for (int step = 0; step < 6; step++) {
 			t_us = t + (uint32_t)step * 5000u;
 			hrc6000_dmr_poll(&eng);
 			c5_mode_track();
 		}
-		if (c5_mode & 0x04) {
+		if (c5_mode != mode_was) {
+			locked = false;		// a new mode: the chip searches for the sync again
+			mode_was = c5_mode;
+		}
+		uint8_t b = seq[slot / 2];
+		if ((c5_mode & 0x04) && (slot & 1) == 0 && (b & 3u) != 0) {
+			locked = true;
+		}
+		if (locked) {
 			junk = junk * 1103515245u + 12345u;
 			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
 			ts_at(t);
 			c5_mode_track();
 			if ((slot & 1) == 0) {
-				report_at(t + 3500, seq[slot / 2], (uint8_t)(0x20 | tc), 0xF1);
+				report_at(t + 3500, b, (uint8_t)(0x20 | tc), 0xF1);
 			} else {
-				report_at(t + 3500, (uint8_t)(seq[slot / 2] & 0x70), (uint8_t)(0x20 | tc), 0xF0);
+				report_at(t + 3500, (uint8_t)(b & 0x70), (uint8_t)(0x20 | tc), 0xF0);
 			}
 			c5_mode_track();
+			mode_was = c5_mode;
 		}
 		t += 30000;
 		drain();
 	}
+	int voices = 0;
+	*numbered = 0;
 	for (int i = 0; i < nev; i++) {
 		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].sync == DMR_SYNC_BS) {
 			voices += bursts[i].kind == DMR_BURST_VOICE;
-			numbered += bursts[i].ts != 0;
+			*numbered += bursts[i].ts != 0;
 		}
 	}
-	if (!(voices >= 90 && numbered == 0)) {
-		printf("bs direct hunt: voices %d numbered %d flips %u\n", voices, numbered, (unsigned)eng.st.hunt_flips);
+	return voices;
+}
+
+static void test_rx_bs_direct_hunt(void)
+{
+	hrc_chip_t c5 = *dev.chip;
+	c5.mode_per_channel = true;
+	c5.bs_by_mode = true;
+	c5.dmr_mode = fake_c5_dmr_mode;
+	const hrc_chip_t *c6 = dev.chip;
+	int numbered;
+
+	// Every phase of the call against the hunt: the chip finds the sync only at a header or voice A (every 360 ms),
+	// so a dwell shorter than a superframe could miss A at every switch and lose a whole call (bench: 4 of 24 calls
+	// with a 120 ms dwell). The first dwell in the direct mode and the wait for A cost at most about 16 bursts
+	for (uint32_t lead = 0; lead < 720000u; lead += 30000u) {
+		int v = hunt_call(&c5, lead, 0, &numbered);
+		if (getenv("HUNT_SHOW") || v < 80 || numbered != 0) {
+			printf("bs direct hunt: lead %u ms voices %d numbered %d\n", (unsigned)(lead / 1000u), v, numbered);
+		}
+		CHECK(v >= 80);
+		CHECK(numbered == 0);
 	}
-	CHECK(voices >= 90);		// the hunt's first dwell in the direct mode may cost the first burst or two
-	CHECK(numbered == 0);
+	int voices = hunt_call(&c5, 0, 3, &numbered);
+	CHECK(voices >= 80 && numbered == 0);
 	CHECK(c5_mode == 0x4F);		// still in the mode that heard the call
+	uint32_t t = t_us;
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
 
 	// Quiet again: the hunt goes on in both modes, and a transmission keys in the channel's (direct) mode
 	uint32_t flips = eng.st.hunt_flips;
-	for (int k = 0; k < 200; k++) {
+	for (int k = 0; k < 600; k++) {
 		t_us = t + (uint32_t)k * 5000u;
 		hrc6000_dmr_poll(&eng);
 		c5_mode_track();
 	}
 	CHECK(eng.st.hunt_flips >= flips + 6);
 	t_us += 5000u;
-	for (int k = 0; k < 100 && !(c5_mode & 0x04); k++) {	// into the BS dwell
+	for (int k = 0; k < 200 && !(c5_mode & 0x04); k++) {	// into the BS dwell
 		t_us += 5000u;
 		hrc6000_dmr_poll(&eng);
 		c5_mode_track();

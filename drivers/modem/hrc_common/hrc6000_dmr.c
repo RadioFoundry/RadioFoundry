@@ -95,7 +95,8 @@
 #define TC_RESYNC		3u	// more than this many disagreements
 #define CACH_RUN		4u	// BS-sync bursts in slots in a row with the TC alternating: a CACH on air (the HR_C7000's TC_LOCK)
 #define BS_RECENT_TICKS		40u
-#define HUNT_US			120000u	// bs_by_mode chip, direct channel: dwell in each receive mode while nothing is taken
+#define HUNT_US			390000u	// bs_by_mode chip, direct channel: dwell in each receive mode while nothing is taken; more
+					// than a superframe, so each BS dwell holds a voice A (sync) the chip can find
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
 #define DONE_FALLBACK_TICKS	4u
@@ -2177,6 +2178,7 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	memset(e->held, 0, sizeof(e->held));
 	slot_lc_forget(e);	// their ticks are from before the tick restarted
 	e->hunt_bs = false;
+	e->hunt_ext = false;
 	e->t_hunt = now(e);
 	if (e->dev->chip->mode_per_channel) {
 		// The channel's 0x10 again: whoever held the chip while the engine was halted (an air session) left its own
@@ -2245,8 +2247,9 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 
 // A chip that hears BS sync only in repeater mode (bs_by_mode), on a direct channel: while nothing is taken, switch
 // 0x10 between the channel's direct mode and repeater mode every HUNT_US, so a direct sender framing its bursts with
-// BS sync (a simplex hotspot: one burst every 60 ms, no CACH) is heard as well as an MS one. A burst taken keeps the
-// mode (take() moves t_hunt) until the reception has been over for HUNT_US. The slot numbers stay direct mode's:
+// BS sync (a simplex hotspot: one burst every 60 ms, no CACH) is heard as well as an MS one. The chip finds a BS-framed
+// call's sync only at a header or voice A, once a superframe, so a dwell is longer than a superframe. A burst taken
+// keeps the mode (take() moves t_hunt) until the reception has been over for HUNT_US. The slot numbers stay direct mode's:
 // with no CACH on air a BS-sync burst goes up with ts 0 (cach_on_air). Transmissions key in the channel's own mode
 static void hunt(hrc6000_dmr_t *e, uint32_t t)
 {
@@ -2258,10 +2261,17 @@ static void hunt(hrc6000_dmr_t *e, uint32_t t)
 		e->t_hunt = t;		// a reception is going on
 		return;
 	}
+	if (e->timing && !e->hunt_ext && (int32_t)(e->t_tick - e->t_hunt) > 0) {
+		// The chip found a sync in this dwell and ticks: a dwell from here, once, so the engine can take the
+		// burst (a find near the end of a dwell was switched away before the first report was taken)
+		e->t_hunt = e->t_tick;
+		e->hunt_ext = true;
+	}
 	if ((uint32_t)(t - e->t_hunt) < HUNT_US) {
 		return;
 	}
 	e->t_hunt = t;
+	e->hunt_ext = false;
 	e->hunt_bs = !e->hunt_bs;
 	w(e->dev, R_MODE, rx_mode(e));
 	e->st.hunt_flips++;
@@ -2310,6 +2320,7 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	e->cfg = *cfg;
 	hrc_set_dmr_id(e->dev, cfg->own_id);
 	e->hunt_bs = false;
+	e->hunt_ext = false;
 	e->t_hunt = now(e);
 	if (e->dev->chip->mode_per_channel) {
 		w(e->dev, R_MODE, e->dev->chip->dmr_mode(cfg->repeater));	// the HR_C5000's 0x10 differs by channel

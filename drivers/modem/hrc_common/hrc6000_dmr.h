@@ -246,6 +246,7 @@ typedef struct {
 	bool timing;		// timeslot interrupts are coming
 	bool hunt_bs;		// bs_by_mode chip on a direct channel: 0x10 now has ISRepeater set to hear BS sync
 	uint32_t t_hunt;	// now_us of the last hunt switch, or of the last burst taken
+	bool hunt_ext;		// this dwell was restarted once by a timeslot interrupt
 	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
 	uint8_t ctl_next;	// 0x41 written for the slot after the current one
 	uint8_t ctl_now;	// ... and the one for the slot now starting
