@@ -120,6 +120,12 @@ the screenshots are the `hil-results` artifact. The `tier` input picks `--tier` 
 of the firmware already on the radio happens only when the repository variable `RFOUNDRY_HIL_SCHEDULE` is `true`,
 with the flags in `RFOUNDRY_HIL_SCHEDULE_FLAGS`.
 
+Permissions come only from the checkboxes. `tools/hil_flags.py` fails the run when `RFOUNDRY_HIL_SCHEDULE_FLAGS`,
+`RFOUNDRY_HIL_NIGHTLY_FLAGS` or the `extra` input holds an `--allow-*` option, so scheduled and nightly runs never
+transmit, write the codeplug, switch USB or reboot the radio, and free text can't add `--allow-rf` past the `rf`
+checkbox. A run with `rf` ticked takes the `hil-rf` environment: on GitHub it waits for one of the environment's
+required reviewers ([ci.md](ci.md#repository-settings)). Gitea has no such reviewers.
+
 With the repository variable `RFOUNDRY_HIL_NIGHTLY` set to `true`, the schedule runs the `nightly` job instead: the
 commit tagged `nightly-ci` is built for each bench radio, flashed through `RFOUNDRY_HIL_FLASH_CMD` and tested with
 `--tier standard` plus `RFOUNDRY_HIL_NIGHTLY_FLAGS`; when every radio passes, the job moves the tag `nightly` to that

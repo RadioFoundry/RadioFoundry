@@ -127,7 +127,8 @@ worktrees are removed at the end (`--keep` leaves them). The radio is left on th
 The HIL workflow's `nightly` job (`.github/workflows/hil.yml`, on when the repository variable `RFOUNDRY_HIL_NIGHTLY`
 is `true`) takes the commit tagged `nightly-ci`, which the CI nightly moves to each commit that passes it. It builds
 that commit for each bench radio, flashes it with `tools/hil_flash.sh` and runs `--tier standard` plus
-`RFOUNDRY_HIL_NIGHTLY_FLAGS`. When every radio passes, it moves the tag `nightly` to the commit; a commit already
+`RFOUNDRY_HIL_NIGHTLY_FLAGS` (which may not hold an `--allow-*` option: the nightly never transmits; `tools/hil_flags.py`
+refuses one). When every radio passes, it moves the tag `nightly` to the commit; a commit already
 tagged `nightly` is not run again. Records and JUnit XML are the `hil-nightly` artifact. The runner's set-up is in
 [ci-runners.md](../../docs/dev/ci-runners.md#hil-runner).
 
