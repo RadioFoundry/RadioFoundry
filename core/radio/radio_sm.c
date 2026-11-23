@@ -4545,7 +4545,7 @@ static bool list_go(radio_sm_t *sm, uint16_t zi, uint16_t pos, uint32_t now_ms)
 		}
 		z = &list_buf;
 	}
-	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch)) {
+	if (pos >= z->count || !channel_read(z->channels[pos], &ch)) {
 		return false;
 	}
 	if (z != &sm->zone) {

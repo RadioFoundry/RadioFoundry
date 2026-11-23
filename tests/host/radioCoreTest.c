@@ -7776,6 +7776,45 @@ static void test_p25_scan(void)
 	far_stop();
 	p25_defaults();
 }
+#if CONFIG_SCAN_LIST
+// A scan list with a stored P25 channel in it: the stop runs P25 as a zone scan's does (the mode, the NAC and talk
+// group from the channel's own record), and the scan's end on it leaves the channel as it was read
+static void test_p25_scan_list(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = true };
+	start();
+	p25_defaults();
+	far_hz = 446100000;
+	req(RREQ_ZONE_POS, 0);
+	const uint16_t two[] = { 1, 3 };
+	list_set("P25 mix", 2, two);
+	list_req(3);
+	CHECK(sm.view.scan == SCAN_LIST);
+	bool on_p25 = false;
+	for (int i = 0; i < 600 && !on_p25; i++) {
+		run(10);
+		on_p25 = sm.view.channel_number == 3;
+	}
+	CHECK(on_p25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && sm.view.ch.kind == CODEPLUG_KIND_P25);
+	CHECK(v->rx_nac == 0x2A0 && v->talk == 201 && (v->flags & RADIO_P25_ON));
+	// The scan ends on the P25 channel: it stays P25 with its NAC and talk group
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(100);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_P25);
+	CHECK(v->rx_nac == 0x2A0 && v->talk == 201 && radio_p25_running());
+	far_hz = 0;
+	far_stop();
+	p25_defaults();
+}
+#endif
 #if CONFIG_DUAL_WATCH
 // Dual watch with a stored P25 channel on one side (docs/spec/radio-features.md 2.1): the receiver alternates onto it
 // and the engine runs there for each look; a call that plays holds the watch there until it ends and the delay
@@ -8680,6 +8719,9 @@ static void test_p25(void)
 	test_p25_stored();
 #if CONFIG_SCAN
 	test_p25_scan();
+#if CONFIG_SCAN_LIST
+	test_p25_scan_list();
+#endif
 #if CONFIG_DUAL_WATCH
 	test_p25_dual();
 #endif
