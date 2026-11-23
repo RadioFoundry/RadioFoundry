@@ -95,6 +95,7 @@
 #define TC_RESYNC		3u	// more than this many disagreements
 #define CACH_RUN		4u	// BS-sync bursts in slots in a row with the TC alternating: a CACH on air (the HR_C7000's TC_LOCK)
 #define BS_RECENT_TICKS		40u
+#define HUNT_US			120000u	// bs_by_mode chip, direct channel: dwell in each receive mode while nothing is taken
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
 #define DONE_FALLBACK_TICKS	4u
@@ -400,6 +401,12 @@ static bool rmo(const hrc6000_dmr_t *e)
 static bool cach_on_air(const hrc6000_dmr_t *e)
 {
 	return e->cfg.repeater || (rmo(e) && e->cach_seen);
+}
+
+// 0x10 for receive: the channel's, or on a bs_by_mode chip on a direct channel the mode the hunt is in
+static uint8_t rx_mode(const hrc6000_dmr_t *e)
+{
+	return e->dev->chip->dmr_mode(e->cfg.repeater || e->hunt_bs);
 }
 
 static void set_ctl(hrc6000_dmr_t *e, uint8_t ctl)
@@ -1334,6 +1341,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->rx_tick = e->tick;
 	e->rx_any = true;
+	e->t_hunt = now(e);	// the hunt stays in the mode that heard it
 	e->tx_hold = false;	// an answer: the reception holds the timing as any does
 	e->idle_restarted = false;
 	if (voice && e->voice_since_start < 255u) {
@@ -2168,6 +2176,8 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	memset(e->vs, 0, sizeof(e->vs));
 	memset(e->held, 0, sizeof(e->held));
 	slot_lc_forget(e);	// their ticks are from before the tick restarted
+	e->hunt_bs = false;
+	e->t_hunt = now(e);
 	if (e->dev->chip->mode_per_channel) {
 		// The channel's 0x10 again: whoever held the chip while the engine was halted (an air session) left its own
 		w(e->dev, R_MODE, e->dev->chip->dmr_mode(e->cfg.repeater));
@@ -2233,6 +2243,31 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 	return true;
 }
 
+// A chip that hears BS sync only in repeater mode (bs_by_mode), on a direct channel: while nothing is taken, switch
+// 0x10 between the channel's direct mode and repeater mode every HUNT_US, so a direct sender framing its bursts with
+// BS sync (a simplex hotspot: one burst every 60 ms, no CACH) is heard as well as an MS one. A burst taken keeps the
+// mode (take() moves t_hunt) until the reception has been over for HUNT_US. The slot numbers stay direct mode's:
+// with no CACH on air a BS-sync burst goes up with ts 0 (cach_on_air). Transmissions key in the channel's own mode
+static void hunt(hrc6000_dmr_t *e, uint32_t t)
+{
+	if (!e->dev->chip->bs_by_mode || !e->dev->chip->mode_per_channel || e->cfg.repeater || e->tx_state != TXS_IDLE ||
+	    e->tx_hold || e->restart_pending) {
+		return;
+	}
+	if (e->rx_any && e->timing && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS) {
+		e->t_hunt = t;		// a reception is going on
+		return;
+	}
+	if ((uint32_t)(t - e->t_hunt) < HUNT_US) {
+		return;
+	}
+	e->t_hunt = t;
+	e->hunt_bs = !e->hunt_bs;
+	w(e->dev, R_MODE, rx_mode(e));
+	e->st.hunt_flips++;
+	do_restart(e, HRC6000_RS_COUNT);	// not counted by reason: the hunt's own counter
+}
+
 void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 {
 	BS_HOOK(hrc6000_bs_poll(e));
@@ -2246,6 +2281,7 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 		    && (uint32_t)(t - e->t_tick) > (e->hold_due ? HOLD_REPORT_US : HOLD_NO_TICK_US)) {
 			do_restart(e, HRC6000_RS_TX_END);	// no answer on our timing: follow whoever talks next
 		}
+		hunt(e, t);
 		if (e->timing && (uint32_t)(t - e->t_tick) > STALL_US) {
 			e->timing = false;
 			bool busy = e->tx_state != TXS_IDLE || (e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS);
@@ -2273,6 +2309,8 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	}
 	e->cfg = *cfg;
 	hrc_set_dmr_id(e->dev, cfg->own_id);
+	e->hunt_bs = false;
+	e->t_hunt = now(e);
 	if (e->dev->chip->mode_per_channel) {
 		w(e->dev, R_MODE, e->dev->chip->dmr_mode(cfg->repeater));	// the HR_C5000's 0x10 differs by channel
 	}
@@ -2338,6 +2376,10 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->last_kind = KIND_UNSET;
 		e->restart_pending = false;
 		e->tx_state = TXS_START;
+		if (e->hunt_bs) {
+			e->hunt_bs = false;	// a direct transmission keys in the channel's mode, not the hunt's
+			w(e->dev, R_MODE, rx_mode(e));
+		}
 		// modem-hrc6000.md 6.2: access policy and encoder start, then own timing for direct mode
 		if (e->dev->chip->tx_begin != NULL) {
 			e->dev->chip->tx_begin(e->dev, hrc6000_dmr_access_reg(access));

@@ -1089,6 +1089,127 @@ static void test_tc_locked_one_in_two(void)
 	CHECK(wrong == 0);
 }
 
+// An HR_C5000-type chip (bs_by_mode) hears BS sync only with ISRepeater set in 0x10, MS sync only without. On a
+// direct channel a simplex hotspot's call (BS sync, one burst every 60 ms, no CACH) was never heard: 0x10 held the
+// direct mode, no timeslot interrupt came and the call stack saw nothing (SDR bench, issue 736). The
+// engine hunts both modes while nothing is taken, stays in the one that hears the call, and keys in the channel's
+static uint8_t c5_mode;
+static uint8_t fake_c5_dmr_mode(bool repeater) { return repeater ? 0x4F : 0x6B; }
+
+static void c5_mode_track(void)
+{
+	for (int i = 0; i < nx && i < (int)(sizeof(xlog) / sizeof(xlog[0])); i++) {
+		if (!xlog[i].read && xlog[i].page == 4 && xlog[i].reg == 0x10 && xlog[i].n == 1) {
+			c5_mode = xlog[i].data[0];
+		}
+	}
+	log_reset();
+}
+
+static void test_rx_bs_direct_hunt(void)
+{
+	fresh_engine();
+	hrc_chip_t c5 = *dev.chip;
+	c5.mode_per_channel = true;
+	c5.bs_by_mode = true;
+	c5.dmr_mode = fake_c5_dmr_mode;
+	const hrc_chip_t *c6 = dev.chip;
+	dev.chip = &c5;
+	c5_mode = 0;
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	CHECK(c5_mode == 0x6B);
+	drain();
+	nev = 0;
+
+	uint8_t seq[3 + 96 + 3];
+	int n = 0;
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x12;
+	}
+	for (int sf = 0; sf < 16; sf++) {
+		seq[n++] = 0x91;
+		for (int k = 1; k < 6; k++) {
+			seq[n++] = (uint8_t)((((sf + k) & 1 ? 0x8 : 0x0) | (k + 1)) << 4);
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x22;
+	}
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	// The sender's slots every 30 ms (its burst in every other one); the poll runs every 5 ms. The chip ticks and
+	// reports only while 0x10 lets it hear BS sync
+	uint32_t t = 15000000, junk = 999;
+	int voices = 0, numbered = 0;
+	for (int slot = 0; slot < 2 * n; slot++) {
+		for (int step = 0; step < 6; step++) {
+			t_us = t + (uint32_t)step * 5000u;
+			hrc6000_dmr_poll(&eng);
+			c5_mode_track();
+		}
+		if (c5_mode & 0x04) {
+			junk = junk * 1103515245u + 12345u;
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			ts_at(t);
+			c5_mode_track();
+			if ((slot & 1) == 0) {
+				report_at(t + 3500, seq[slot / 2], (uint8_t)(0x20 | tc), 0xF1);
+			} else {
+				report_at(t + 3500, (uint8_t)(seq[slot / 2] & 0x70), (uint8_t)(0x20 | tc), 0xF0);
+			}
+			c5_mode_track();
+		}
+		t += 30000;
+		drain();
+	}
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].sync == DMR_SYNC_BS) {
+			voices += bursts[i].kind == DMR_BURST_VOICE;
+			numbered += bursts[i].ts != 0;
+		}
+	}
+	if (!(voices >= 90 && numbered == 0)) {
+		printf("bs direct hunt: voices %d numbered %d flips %u\n", voices, numbered, (unsigned)eng.st.hunt_flips);
+	}
+	CHECK(voices >= 90);		// the hunt's first dwell in the direct mode may cost the first burst or two
+	CHECK(numbered == 0);
+	CHECK(c5_mode == 0x4F);		// still in the mode that heard the call
+
+	// Quiet again: the hunt goes on in both modes, and a transmission keys in the channel's (direct) mode
+	uint32_t flips = eng.st.hunt_flips;
+	for (int k = 0; k < 200; k++) {
+		t_us = t + (uint32_t)k * 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	CHECK(eng.st.hunt_flips >= flips + 6);
+	t_us += 5000u;
+	for (int k = 0; k < 100 && !(c5_mode & 0x04); k++) {	// into the BS dwell
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	CHECK(c5_mode == 0x4F);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	c5_mode_track();
+	CHECK(c5_mode == 0x6B);
+	hrc6000_dmr_tx_abort(&eng);
+
+	// A repeater channel never hunts: its 0x10 is the repeater mode throughout
+	cfg.repeater = true;
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	flips = eng.st.hunt_flips;
+	for (int k = 0; k < 100; k++) {
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	c5_mode_track();
+	CHECK(eng.st.hunt_flips == flips && c5_mode == 0x4F);
+	dev.chip = c6;
+}
+
 static void test_tx_rejected_and_stall(void)
 {
 	fresh_engine();
@@ -1796,6 +1917,7 @@ int main(void)
 	test_tx_aligned_deaf();
 	test_tc_locked_one_in_two();
 	test_rx_bs_direct_call();
+	test_rx_bs_direct_hunt();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
 	test_cc_any_rx();
