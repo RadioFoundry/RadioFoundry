@@ -17,7 +17,7 @@
 #include "rf/rfbus/rfbus.h"
 
 #define FD6818SH_ID		0x6818u
-#define FD6818SH_ID_7813	0x7813u		// the sibling part, seen only as an LO
+#define FD6818SH_ID_7813	0x7813u		// the sibling part: its own LO set; as a main chip, the FD6818 set
 
 #define FD6818SH_REG_STATE	0x03
 #define FD6818SH_REG_PAGE	0x7F		// 1 = page 1, for the registers a table marks so
