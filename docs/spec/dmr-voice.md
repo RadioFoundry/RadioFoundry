@@ -300,7 +300,7 @@ position that never repeats, not one that can't be guessed (the late-entry field
 |---|---|
 | One sequence per radio, every key | the next over's MI is the word after the last superframe sent, w(S) after S superframes. A superframe counts from its first burst the hook encrypted, a cut-short one included |
 | First position | a radio with none: the first 4 bytes of a two-block CBC-MAC under the channel's key over (the chip UID with a tag; the own DMR ID and the uptime in ms), never 0 (`dmrAesSeqSeed`). Radios sharing a key start at unrelated places |
-| Reservation | positions are used only inside a reservation in the settings record (`settings_t.aes_mi_res`, the word 16,384 superframes past the position it was made from, about 98 minutes of talk). It is asked for on an AES channel when less than 8,192 are left, between overs (`aes_seq_poll`), and counts once the settings store holds it (no unsaved change left) |
+| Reservation | positions are used only inside a reservation in the settings record (`settings_t.aes_mi_res`, the word 16,384 superframes past the position it was made from, about 98 minutes of talk). It is asked for on an AES channel when less than 8,192 are left, between overs (`radio_aes_poll`), and counts once the settings store holds it |
 | After a restart | the sequence goes on from the saved reservation, and TX is refused (`aes_wait`) until the next one is saved, about 2 s (the settings save delay). A settings store in RAM only never saves one: AES TX stays refused |
 | Past the reservation | the hook refuses the burst (silence goes out); `dmrAesNewMi` returns 0 and the over is refused |
 
