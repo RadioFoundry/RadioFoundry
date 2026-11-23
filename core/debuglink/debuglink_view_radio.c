@@ -4,6 +4,7 @@
 // extras, battery, beeps, settings) and the RADIO operations that drive them (scan, beep, tone burst, one setting,
 // roaming)
 #include "config.h"
+#include "audio/rx_agc.h"
 #include "board.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -53,6 +54,19 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 // tell a block played late (heard as the sound before it again) from what its microphone does
 void debuglink_view_audio(dl_text_t *t)
 {
+#if CONFIG_RX_AGC
+	dl_text(t, "agc.built=1\n");
+	for (unsigned mode = 0; mode < RX_AGC_MODES; mode++) {
+		rx_agc_view_t a;
+		rx_agc_view((rx_agc_mode_t)mode, &a);
+		dl_text(t, "agc.%u.enabled=%u\nagc.%u.input=%d\nagc.%u.output=%d\nagc.%u.gain=%d\n"
+			"agc.%u.valid=%u\nagc.%u.acquiring=%u\nagc.%u.cached=%u\n",
+			mode, a.enabled, mode, a.input_dbfs, mode, a.output_dbfs, mode, a.gain_db,
+			mode, a.valid, mode, a.acquiring, mode, a.cached);
+	}
+#else
+	dl_text(t, "agc.built=0\n");
+#endif
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);

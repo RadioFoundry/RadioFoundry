@@ -2693,6 +2693,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	battery_tick(v);
 	// A banner's countdown ticks; one that waits for the user has none
 	bool fast = v->state == RS_TX || stack[sp].scr == SCR_DIAG || (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold);
+#if CONFIG_RX_AGC
+	fast = fast || (v->state == RS_RX && ui_svc_setting_get(UI_SET_RX_AUDIO_LEVELS) != 0);
+#endif
 #if CONFIG_SUPPORT_INFO
 	fast = fast || (stack[sp].scr == SCR_ABOUT && ui_about_busy());	// each redraw hashes a step of the image
 #endif

@@ -6793,10 +6793,22 @@ static const set_item_t s_display[] = {
 	TOGGLE(TRN(SET_LABEL_TG_NAME_FIRST, "Talkgroup name first"), "talk line label TG number Home",
 		UI_SET_LABEL_FIRST),
 #endif
+#if CONFIG_RX_AGC
+	TOGGLE(TRN(SET_LABEL_RX_AUDIO_LEVELS, "RX audio levels"), "receive input output AGC dBFS", UI_SET_RX_AUDIO_LEVELS),
+#endif
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
 	ACTION(TRN(SET_LABEL_LANGUAGE, "Language"), "idioma langue sprache lingua taal jezyk", SA_LANGUAGE),
 };
+#if CONFIG_RX_AGC
+static const int16_t v_rx_agc[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+static const tr_id_t n_rx_agc[] = {
+	TRN(VALUE_OFF, "Off"), TRX(AGC_VALUE_MINUS_36, "-36 dBFS"), TRX(AGC_VALUE_MINUS_33, "-33 dBFS"),
+	TRX(AGC_VALUE_MINUS_30, "-30 dBFS"), TRX(AGC_VALUE_MINUS_27, "-27 dBFS"), TRX(AGC_VALUE_MINUS_25, "-25 dBFS"),
+	TRX(AGC_VALUE_MINUS_24, "-24 dBFS"), TRX(AGC_VALUE_MINUS_21, "-21 dBFS"), TRX(AGC_VALUE_MINUS_18, "-18 dBFS"),
+	TRX(AGC_VALUE_MINUS_15, "-15 dBFS"), TRX(AGC_VALUE_MINUS_12, "-12 dBFS"),
+};
+#endif
 static const set_item_t s_talk[] = {
 	NUMBER(TRN(SET_LABEL_REPLY_WINDOW, "Reply window"), NULL, UI_SET_REPLY_S, 0, 30, 1, " s"),
 	LIST(TRN(SET_LABEL_TX_TIMEOUT, "TX timeout"), "TOT", UI_SET_TOT_S, v_tot, n_tot),
@@ -6827,6 +6839,15 @@ static const set_item_t s_talk[] = {
 #if CONFIG_SFR_CWID
 	LIST(TRN(SET_LABEL_SFR_CW_ID, "SFR CW ID"), "single frequency repeater morse callsign identify",
 		UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
+#endif
+#if CONFIG_RX_AGC
+	LIST(TRN(SET_LABEL_DMR_RX_AGC, "DMR RX AGC"), "receive audio target gain level", UI_SET_RX_AGC_DMR, v_rx_agc, n_rx_agc),
+#if CONFIG_P25
+	LIST(TRN(SET_LABEL_P25_RX_AGC, "P25 RX AGC"), "receive audio target gain level", UI_SET_RX_AGC_P25, v_rx_agc, n_rx_agc),
+#endif
+#if CONFIG_NXDN
+	LIST(TRN(SET_LABEL_NXDN_RX_AGC, "NXDN RX AGC"), "receive audio target gain level", UI_SET_RX_AGC_NXDN, v_rx_agc, n_rx_agc),
+#endif
 #endif
 };
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY

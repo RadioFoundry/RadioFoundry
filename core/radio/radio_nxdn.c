@@ -144,10 +144,22 @@ static void v_start(const nxdn_call_t *c, void *ctx)
 {
 	const dmr_voice_sink_t *s = ambeVoiceSink();
 
+#if CONFIG_RX_AGC
+	ambeVoiceRxIdentity(RX_AGC_NXDN, c != NULL && c->have_vcall ? c->vcall.src : 0, c != NULL ? c->ran : 0);
+#else
 	(void)c;
+#endif
 	(void)ctx;
 	s->begin(NULL, s->ctx);
 }
+
+#if CONFIG_RX_AGC
+static void v_update(const nxdn_call_t *c, void *ctx)
+{
+	(void)ctx;
+	ambeVoiceRxIdentity(RX_AGC_NXDN, c->have_vcall ? c->vcall.src : 0, c->ran);
+}
+#endif
 
 static void v_voice(const uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 {
@@ -182,7 +194,13 @@ static uint16_t v_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
 #endif
 
 static const nxdn_engine_hooks_t voice_hooks = {
-	v_start, NULL, v_voice, v_end, v_tx,
+	v_start,
+#if CONFIG_RX_AGC
+	v_update,
+#else
+	NULL,
+#endif
+	v_voice, v_end, v_tx,
 #if CONFIG_NXDN_SCRAMBLER
 	v_key,
 #endif

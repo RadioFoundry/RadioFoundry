@@ -1127,3 +1127,10 @@ it; a test that resets, waits a moment and then starts its traffic is not affect
 Add the number to `debuglink_proto.h`, a handler in `core/debuglink/debuglink.c` (short, non-blocking, reply at most
 1024 bytes), a row here, and a method in `tools/rfoundry_debug.py`. New view keys need only the renderer and the table
 in 3.7.
+
+## Receive audio levels
+
+The `audio` view includes `agc.built`. When built, `agc.<mode>.enabled`, `.input`, `.output`, `.gain`,
+`.valid`, `.acquiring` and `.cached` expose atomic snapshots of the shared [receive AGC](rx-agc.md).
+Modes 0, 1 and 2 are DMR, P25 and NXDN. Input/output are whole dBFS before user volume; gain is whole dB.
+A reading with `valid=0` is not current speech. These diagnostics do not start audio or transmit.

@@ -10,6 +10,7 @@
 #include "ui_svc.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
+#include "audio/rx_agc.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
 #if CONFIG_DMR_TRUNK
 #include "dmr/trunk/t3_ms.h"	// the engine's states, for the trunked status words
@@ -1967,6 +1968,35 @@ static int call_line(const font_t *f, int y, const char *text, color_t c)
 	return y + f->h;
 }
 
+#if CONFIG_RX_AGC
+static bool rx_audio_levels(void)
+{
+	return ui_svc_setting_get(UI_SET_RX_AUDIO_LEVELS) != 0;
+}
+
+static void rx_audio_text(rx_agc_mode_t mode, char *buf, size_t len)
+{
+	rx_agc_view_t a;
+	rx_agc_view(mode, &a);
+	sbuf_t b;
+	sb_init(&b, buf, len);
+	sb_str(&b, TR(AGC_LABEL_PREFIX, "AGC "));
+	uint8_t id = (uint8_t)(UI_SET_RX_AGC_DMR + mode);
+	if (ui_svc_setting_get(id) == 0) {
+		sb_str(&b, TR(VALUE_OFF, "Off"));
+		return;
+	}
+	if (a.valid) {
+		sb_i32(&b, a.input_dbfs);
+		sb_str(&b, " > ");
+		sb_i32(&b, a.output_dbfs);
+	} else {
+		sb_str(&b, "-- > --");
+	}
+	sb_str(&b, " dBFS");
+}
+#endif
+
 // Receiving and Transmitting: the call takes the screen below the status strip
 static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 {
@@ -2041,6 +2071,10 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		return;
 	}
 
+	#if CONFIG_RX_AGC
+	bool levels = rx_audio_levels() && d->state == RDMR_RX && d->codec;
+	bool compact_levels = levels && gfx_height() <= 64;
+#endif
 	// Receiving: the caller large, then ID, alias, talkgroup, signal
 	sb_init(&b, buf, sizeof buf);
 	sb_caller(&b, &d->call);
@@ -2067,19 +2101,31 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 	if (d->call.emergency)
 		sb_str(&b, TR(CALL_CHIP_EMERGENCY, " EMERGENCY"));
 	y = call_line(L->small, y, buf, d->call.emergency ? ui_col.warn : ui_col.dim);
-	if (d->alias[0] != '\0' && s->alias_show) {
+	if (d->alias[0] != '\0' && s->alias_show
+#if CONFIG_RX_AGC
+	    && !compact_levels
+#endif
+	) {
 		// The talker alias in quotes, on two lines when it needs them and they fit above the signal line
 		char lines[2][64];
 		sb_init(&b, buf, sizeof buf);
 		sb_chr(&b, '"');
 		sb_str(&b, d->alias);
 		sb_chr(&b, '"');
-		int room = (L->hint_y - y) / L->small->h - 2;	// the talkgroup and signal lines stay
+		int room = (L->hint_y - y) / L->small->h - 2;
+#if CONFIG_RX_AGC
+		if (levels)
+			room--;
+#endif	// the talkgroup and signal lines stay
 		int n = wrap_lines(L->small, buf, w, room >= 2 ? 2 : 1, lines, false);
 		for (int i = 0; i < n; i++)
 			y = call_line(L->small, y, lines[i], ui_col.fg);
 	}
-	if (d->call.gps_valid) {	// the caller's ETSI GPS Info: how far and which way, else where
+	if (d->call.gps_valid
+#if CONFIG_RX_AGC
+	    && !compact_levels
+#endif
+	) {	// the caller's ETSI GPS Info: how far and which way, else where
 		sb_init(&b, buf, sizeof buf);
 		if (d->call.gps_range) {
 			sb_range(&b, d->call.gps_dist_m, d->call.gps_bearing);
@@ -2102,6 +2148,13 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		sb_call_dst(&b, &d->call);
 		y = call_line(L->small, y, buf, ui_col.fg);
 	}
+#if CONFIG_RX_AGC
+	if (levels && y + 2 * L->small->h > L->hint_y) {
+		rx_audio_text(RX_AGC_DMR, buf, sizeof buf);
+		y = call_line(L->small, y, buf, ui_col.dim);
+		levels = false;
+	}
+#endif
 	if (y + L->small->h <= L->hint_y) {
 		int16_t dbm = d->rssi_dbm != 0 ? d->rssi_dbm : v->rssi_dbm;
 		sb_init(&b, buf, sizeof buf);
@@ -2111,6 +2164,12 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 		gfx_text(L->small, w - tw, y, buf, ui_col.fg);
 		draw_meter(0, y + L->small->h / 4, w - tw - L->small->w, L->small->h / 2, dbm);
 	}
+#if CONFIG_RX_AGC
+	if (levels) {
+		rx_audio_text(RX_AGC_DMR, buf, sizeof buf);
+		call_line(L->small, y + L->small->h, buf, ui_col.dim);
+	}
+#endif
 	ui_draw_hint(d->state == RDMR_RX_OTHER ? TR(CALL_HINT_MON_DMON, "MON: digital monitor") :
 		TR(HINT_PTT_REPLIES, "PTT replies"), false);
 }
@@ -2186,6 +2245,34 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	}
 	gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
 	gfx_text(f, 0, y, fit, ui_col.rx);
+}
+#endif
+
+#if CONFIG_RX_AGC && CONFIG_AIR
+static bool draw_air_audio(const radio_view_t *v, const ui_state_t *s)
+{
+	air_call_t c;
+	if (!rx_audio_levels() || s->large_text || !air_call(v, &c) || !c.played)
+		return false;
+	const ui_layout_t *L = &ui_layout;
+	gfx_clear(ui_col.bg);
+	int y = ui_draw_top(v, s, NULL, NULL) + 1;
+	char buf[64];
+	sbuf_t b;
+	sb_init(&b, buf, sizeof buf);
+	sb_str(&b, "ID ");
+	sb_u32(&b, c.src, 1);
+	y = call_line(L->medium, y, buf, ui_col.fg);
+	air_call_line(&c, L->small, y);
+	y += L->small->h;
+	sb_init(&b, buf, sizeof buf);
+	sb_i32(&b, v->rssi_dbm);
+	sb_str(&b, " dBm");
+	y = call_line(L->small, y, buf, ui_col.fg);
+	rx_audio_text(v->ch.mode == RADIO_MODE_P25 ? RX_AGC_P25 : RX_AGC_NXDN, buf, sizeof buf);
+	call_line(L->small, y, buf, ui_col.dim);
+	ui_draw_hint(TR(HINT_PTT_REPLIES, "PTT replies"), false);
+	return true;
 }
 #endif
 
@@ -2429,6 +2516,14 @@ void ui_draw_home(const radio_view_t *v, const ui_state_t *s)
 	ui_st_dmr_off = s->dmr_off;
 	if (dmr_call_screen(v)) {
 		draw_dmr_call(v, s);
+		ui_draw_banner(s);
+		if (s->toast != NULL)
+			ui_draw_hint(s->toast, true);
+		return;
+	}
+#endif
+#if CONFIG_RX_AGC && CONFIG_AIR
+	if (draw_air_audio(v, s)) {
 		ui_draw_banner(s);
 		if (s->toast != NULL)
 			ui_draw_hint(s->toast, true);

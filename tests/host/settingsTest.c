@@ -930,7 +930,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
 	};
-	CHECK(sizeof(settings_t) == 408);
+	CHECK(sizeof(settings_t) == 412);
 	for (unsigned i = 0; i < sizeof(offs) / sizeof(offs[0]); i++) {
 		if (offs[i].got != offs[i].want) {
 			printf("FAIL settings_t field %u at %zu, layout 1 has it at %zu\n", i, offs[i].got, offs[i].want);
@@ -1248,11 +1248,43 @@ static void test_read_field(void)
 	      settings_zs_accept_of(s.zs_offers) == settings_zs_accept(&s));
 }
 
+
+static void test_settings_receive_agc(void)
+{
+	settings_t old, s;
+	settings_stats_t st;
+	settings_defaults(&old);
+	old.squelch = 4;
+	old.rx_agc[0] = 5;
+	old.rx_agc[1] = 7;
+	old.rx_agc[2] = 9;
+	old.rx_audio_levels = 1;
+	sim_flash_create(FLASH_SIZE, &map);
+	// The immediately preceding firmware wrote 408 bytes, without the four preferences.
+	put_record(&map, 0, 0, 1, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT),
+		   408 - SETTINGS_PAGE_BYTES, (const uint8_t *)&old + SETTINGS_PAGE_BYTES, true, true);
+	put_record(&map, 0, 1, 2, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, &old, true, true);
+	boot();
+	settings_read(&s);
+	settings_get_stats(&st);
+	CHECK(st.load == SETTINGS_UPGRADED && s.squelch == 4);
+	CHECK(s.rx_agc[0] == 0 && s.rx_agc[1] == 0 && s.rx_agc[2] == 0 && s.rx_audio_levels == 0);
+	settings_t *w = settings_begin();
+	memcpy(w->rx_agc, old.rx_agc, sizeof w->rx_agc);
+	w->rx_audio_levels = 1;
+	settings_end(1);
+	CHECK(settings_flush());
+	boot();
+	settings_read(&s);
+	CHECK(memcmp(s.rx_agc, old.rx_agc, sizeof s.rx_agc) == 0 && s.rx_audio_levels == 1);
+}
+
 int main(void)
 {
 	test_journal_basic();
 	test_journal_cuts();
 	test_settings_basic();
+	test_settings_receive_agc();
 	test_settings_wear();
 	test_settings_cuts();
 	test_settings_versions();

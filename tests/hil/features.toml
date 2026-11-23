@@ -597,3 +597,9 @@ source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
+
+[feature.rx_agc]
+switch = "RX_AGC"
+spec = "docs/spec/rx-agc.md"
+source = ["core/audio", "core/dmr/ambe/ambeVoice.c", "core/p25/p25Voice.c", "core/radio/radio_nxdn.c"]
+manual = "Receive quiet and loud digital speech, check convergence and recalled caller gain, listen for distortion and gaps."

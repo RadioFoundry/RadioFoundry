@@ -5,6 +5,7 @@
 // owns one of these defines it without the weak attribute and the linker takes that one.
 #include <stddef.h>
 #include "ui_svc.h"
+#include "audio/rx_agc.h"
 #include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
@@ -213,10 +214,30 @@ static int32_t settings[UI_SET_RAM_COUNT] = {
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
 
-int32_t ui_svc_ram_get(uint8_t id) { return id < UI_SET_RAM_COUNT ? settings[id] : 0; }
+#if CONFIG_RX_AGC
+static uint8_t rx_audio_preferences[4];
+#endif
+int32_t ui_svc_ram_get(uint8_t id)
+{
+#if CONFIG_RX_AGC
+	if (id >= UI_SET_RX_AGC_DMR && id <= UI_SET_RX_AUDIO_LEVELS)
+		return rx_audio_preferences[id - UI_SET_RX_AGC_DMR];
+#endif
+	return id < UI_SET_RAM_COUNT ? settings[id] : 0;
+}
 
 bool ui_svc_ram_set(uint8_t id, int32_t value)
 {
+#if CONFIG_RX_AGC
+	if (id >= UI_SET_RX_AGC_DMR && id <= UI_SET_RX_AUDIO_LEVELS) {
+		uint8_t choice = id == UI_SET_RX_AUDIO_LEVELS ? value != 0 :
+			value >= 0 && value < (int32_t)RX_AGC_TARGETS ? (uint8_t)value : 0;
+		rx_audio_preferences[id - UI_SET_RX_AGC_DMR] = choice;
+		if (id != UI_SET_RX_AUDIO_LEVELS)
+			rx_agc_configure((rx_agc_mode_t)(id - UI_SET_RX_AGC_DMR), choice);
+		return true;
+	}
+#endif
 	if (id >= UI_SET_RAM_COUNT)
 		return false;	// past the table (RAM is short): the codeplug's, set through ui_svc_storage.c
 	settings[id] = value;

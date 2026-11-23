@@ -135,6 +135,12 @@ static const flow_t flows[] = {
 	{ "1 next channel", "", "up", "pos=4", 1, false },
 	{ "1 channel 12 by number", "", "1 2 ok", "pos=12 screen=home", 3, false },
 	// A P25 channel (the debug link's mode): named P25 in the strip; FM's tiles say why they are off
+#if CONFIG_RX_AGC
+	{ "Receive AGC: measured input and output", "rx:9991234,91,g agc:0,5,464", "",
+	  "screen=home shows=AGC_-37_>_-25_dBFS shows=TG_91", 0, false },
+	{ "Receive AGC: explicit bypass", "rx:9991234,91,g agc:0,0", "",
+	  "screen=home shows=AGC_Off shows=TG_91", 0, false },
+#endif
 	{ "P25 channel shows its mode", "dlmode:p25", "", "mode=p25 screen=home shows=P25 hides=No_tone hides=12.5k hides=25k hides=SQ5", 0, false },
 #if CONFIG_NXDN
 	// NXDN the same way: the power, the RAN sent and the rate in the chips, the group PTT calls on the talk line
@@ -151,6 +157,14 @@ static const flow_t flows[] = {
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
+#if CONFIG_RX_AGC
+	{ "P25 receive AGC levels", "dlmode:p25 p25rx:3101234,7 agc:1,5,464", "",
+	  "screen=home shows=AGC_-37_>_-25_dBFS shows=ID_3101234 shows=TG_7", 0, false },
+#if CONFIG_NXDN
+	{ "NXDN receive AGC levels", "dlmode:nxdn nxdnrx:1234,7 agc:2,5,464", "",
+	  "screen=home shows=AGC_-37_>_-25_dBFS shows=ID_1234 shows=TG_7", 0, false },
+#endif
+#endif
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
 	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
 	{ "P25 home: encrypted", "dlmode:p25", "p25rx:3101234,7,e", "shows=Encrypted:_not_played hides=ID_3101234", 0,

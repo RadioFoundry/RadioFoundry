@@ -49,6 +49,12 @@ static bool cb_speaker_unsent;
 static uint8_t cb_lead;			// silent blocks left before the first frame plays
 static uint32_t cb_call_frames;
 
+#if CONFIG_RX_AGC
+static rx_agc_t agc;
+static uint32_t rx_source;
+static uint16_t rx_scope;
+static bool cb_rx_good;
+#endif
 static p25_voice_stats_t stats;
 static p25_voice_mixer_t mixer;
 
@@ -56,14 +62,24 @@ static p25_voice_mixer_t mixer;
 
 static void rx_start(const p25_call_t *c, void *ctx)
 {
+#if CONFIG_RX_AGC
+	rx_source = c != NULL && c->have_lc ? c->lc.src : 0;
+	rx_scope = c != NULL ? c->nac : 0;
+#else
 	(void)c;
+#endif
 	(void)ctx;
 	STORE(rx_seq, (uint8_t)(rx_seq + 1));
 }
 
 static void rx_update(const p25_call_t *c, void *ctx)
 {
+#if CONFIG_RX_AGC
+	rx_source = c != NULL && c->have_lc ? c->lc.src : 0;
+	rx_scope = c != NULL ? c->nac : 0;
+#else
 	(void)c;
+#endif
 	(void)ctx;
 }
 
@@ -88,6 +104,10 @@ static void rx_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx
 		stats.rx_queue_max = used + 1u;
 	}
 	p25_voice_entry_t *e = &mem->q[h & (P25_VOICE_QUEUE - 1)];
+#if CONFIG_RX_AGC
+	e->source = rx_source;
+	e->scope = rx_scope;
+#endif
 	e->seq = rx_seq;
 	e->errs = errs;
 	memcpy(e->imbe, imbe, P25_IMBE_BYTES);
@@ -146,6 +166,9 @@ static void rx_block(int16_t *spk)
 	uint8_t seq = LOAD(rx_seq);
 	if (seq != cb_seq) {
 		// A new call: the decoder starts over. The speaker route may be off (an end, a stop): sent again in any case
+#if CONFIG_RX_AGC
+		rx_agc_end(&agc);
+#endif
 		cb_seq = seq;
 		cb_live = true;
 		cb_primed = cb_playing = cb_speaker = false;
@@ -163,6 +186,15 @@ static void rx_block(int16_t *spk)
 
 	bool ended = LOAD(rx_end_seq) == cb_seq;
 	uint8_t queued = (uint8_t)(h - t);
+#if CONFIG_RX_AGC
+	if (queued != 0) {
+		const p25_voice_entry_t *first = &mem->q[t & (P25_VOICE_QUEUE - 1)];
+		if (!agc.started)
+			rx_agc_begin(&agc, RX_AGC_P25, first->source, first->scope);
+		else
+			rx_agc_identify(&agc, first->source, first->scope);
+	}
+#endif
 	if (!cb_live) {
 		silence(spk);
 		return;
@@ -206,6 +238,9 @@ static void rx_block(int16_t *spk)
 		stats.rx_concealed++;
 		return;
 	}
+#if CONFIG_RX_AGC
+	cb_rx_good = true;
+#endif
 	stats.rx_frames++;
 	cb_call_frames++;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -262,6 +297,9 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		silence(spk);
 		return;
 	}
+#if CONFIG_RX_AGC
+	cb_rx_good = false;
+#endif
 	uint8_t g = LOAD(tx_gen);
 	if ((g & 1u) != 0) {
 		if (g != cb_tx_gen) {
@@ -279,6 +317,14 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		}
 		rx_block(spk);
 	}
+#if CONFIG_RX_AGC
+	if (agc.started) {
+		if (!cb_live || (g & 1u) != 0)
+			rx_agc_end(&agc);
+		else if (cb_playing)
+			rx_agc_process(&agc, spk, cb_rx_good);
+	}
+#endif
 	p25_voice_mixer_t mix = LOAD(mixer);
 	if (mix != NULL && mix(spk)) {
 		cb_mixing = true;
@@ -309,6 +355,9 @@ void p25VoiceInit(const hal_audio_t *audio)
 
 void p25VoiceBegin(p25_voice_mem_t *m)
 {
+#if CONFIG_RX_AGC
+	rx_agc_end(&agc);
+#endif
 	// The stream is stopped (p25VoiceEnd) and the engine not started: nothing else touches this state now
 	rx_head = rx_tail = 0;
 	rx_seq = rx_end_seq = 0;
@@ -365,6 +414,9 @@ void p25VoiceEnd(void)
 		}
 	}
 	streaming = false;
+#if CONFIG_RX_AGC
+	rx_agc_end(&agc);
+#endif
 	STORE(mem, (p25_voice_mem_t *)NULL);
 }
 

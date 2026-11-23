@@ -264,3 +264,8 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+## Digital receive AGC
+
+`CONFIG_RX_AGC` follows `CONFIG_DMR`. It builds shared receive speech normalization for digital modes.
+Each mode defaults to Off at run time. FM is unchanged. See [receive AGC](spec/rx-agc.md).

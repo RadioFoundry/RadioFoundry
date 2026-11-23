@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "p25/p25Voice.h"
+#include "audio/rx_agc.h"
 
 static int failures, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -342,6 +343,38 @@ static void testRouteTakeover(void)
 	p25VoiceEnd();
 }
 
+
+#if CONFIG_RX_AGC
+static void testReceiveAgc(void)
+{
+	begin();
+	rx_agc_reset();
+	rx_agc_configure(RX_AGC_P25, 5);
+	p25_call_t c = { .nac = 0x293, .have_lc = true };
+	c.lc.src = 12345;
+	hk->rx_start(&c, NULL);
+	p25VoicePoll();
+	for (int n = 0; n < 12; n++) {
+		ldu(0);
+		for (int i = 0; i < P25_VOICE_FRAMES; i++) block();
+	}
+	rx_agc_view_t v;
+	rx_agc_view(RX_AGC_P25, &v);
+	CHECK(v.enabled && v.valid, "P25 callback measures decoded speech");
+	CHECK(v.output_dbfs > v.input_dbfs + 6 && v.output_dbfs <= -22,
+	      "P25 playback applies bounded positive gain: input %d output %d", v.input_dbfs, v.output_dbfs);
+	hk->rx_end(NULL);
+	for (int i = 0; i < 30; i++) block();
+	hk->rx_start(&c, NULL);
+	ldu(0);
+	for (int i = 0; i <= P25_VOICE_LEAD; i++) block();
+	rx_agc_view(RX_AGC_P25, &v);
+	CHECK(v.cached, "P25 caller metadata reaches the history");
+	p25VoiceEnd();
+	rx_agc_reset();
+}
+#endif
+
 int main(void)
 {
 	p25VoiceInit(&audio);
@@ -352,6 +385,9 @@ int main(void)
 	testMixerAndTx();
 	testTransmit();
 	testRouteTakeover();
+#if CONFIG_RX_AGC
+	testReceiveAgc();
+#endif
 	printf("p25VoiceTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

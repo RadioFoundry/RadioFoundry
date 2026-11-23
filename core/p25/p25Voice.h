@@ -23,6 +23,7 @@
 #ifndef RFOUNDRY_P25_VOICE_H
 #define RFOUNDRY_P25_VOICE_H
 
+#include "audio/rx_agc.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include "hal_audio.h"
@@ -36,6 +37,10 @@
 #define P25_VOICE_TX_QUEUE	8	// encoded frames waiting for the engine (160 ms), power of two
 
 typedef struct {
+	#if CONFIG_RX_AGC
+	uint32_t source;
+	uint16_t scope;
+#endif
 	uint8_t seq;		// the call it belongs to
 	uint8_t errs;		// what the FEC corrected, packed (IMBE_ERRS)
 	uint8_t imbe[P25_IMBE_BYTES];

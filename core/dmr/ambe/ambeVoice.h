@@ -24,6 +24,7 @@
 
 #include <stdint.h>
 #include "config.h"
+#include "audio/rx_agc.h"
 #include <stdbool.h>
 #include "hal_audio.h"
 #include "hal_vocoder.h"
@@ -69,6 +70,10 @@ typedef struct {
 
 // audio and vocoder from the board; vocoder->present() false: frames are still queued and counted, but play silence
 // and TX sends the vocoder's output (silence)
+#if CONFIG_RX_AGC
+// Provider task, before begin and when a late source ID arrives. DMR begin supplies its own identity.
+void ambeVoiceRxIdentity(rx_agc_mode_t mode, uint32_t source, uint16_t scope);
+#endif
 void ambeVoiceInit(const hal_audio_t *audio, const hal_vocoder_t *vocoder);
 const dmr_voice_sink_t *ambeVoiceSink(void);
 const dmr_voice_source_t *ambeVoiceSource(void);
