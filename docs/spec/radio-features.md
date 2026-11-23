@@ -445,8 +445,8 @@ the interval after this one unkeyed: 15 s, 30 s, 1, 2, 5 or 10 min. The first ke
 two parts' switches, the message and the jingle's 32 steps. Each step is a frequency (0 = a pause, up to 3400 Hz in
 10 Hz steps) and a length (10 ms units, up to 2550 ms). A step of length 0 ends the chain. A jingle with no step is the
 default tune, written for this. No record, or one the fox can't take, is the defaults: "FOX", the tune, every minute.
-The radio reads it when the fox starts, so a change takes effect at the next start. The radio's menu sets the
-interval, the two switches and the steps; the message is typed in the Codeplug Editor.
+The radio reads it when the fox starts, so a change takes effect at the next start. The radio's menu sets all of it:
+the message in Text entry ([ui.md](ui.md) 2), upper case and only characters with Morse.
 
 **Refused at start** (`view.fox_why`; the error beep):
 

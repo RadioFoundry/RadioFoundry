@@ -4348,6 +4348,16 @@ msgid " steps"
 msgstr " pasos"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_NO_MORSE"
+msgid "No Morse for "
+msgstr "Sin Morse para "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_MESSAGE_SAVED"
+msgid "Message saved"
+msgstr "Mensaje guardado"
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_ROW_INTERVAL"
 msgid "Interval"
 msgstr "Intervalo"
@@ -4356,6 +4366,11 @@ msgstr "Intervalo"
 msgctxt "FOX_ROW_MESSAGE"
 msgid "Message"
 msgstr "Mensaje"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE_TEXT"
+msgid "Message text"
+msgstr "Texto del mensaje"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_ROW_JINGLE"
@@ -4381,11 +4396,6 @@ msgstr "Ninguno"
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "Zorro: no disponible"
-
-#: core/ui/ui_menus.c
-msgctxt "FOX_TOAST_SET_MESSAGE"
-msgid "Set the message in the Codeplug Editor"
-msgstr "Escriba el mensaje en el editor de codeplug"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_WHY_NOT_FM"

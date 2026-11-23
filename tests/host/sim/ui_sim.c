@@ -3139,6 +3139,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "foxwhy") == 0) snprintf(got, sizeof got, "%u", view.fox_why);	// radio_fox_why_t
 	else if (strcmp(key, "foxint") == 0) snprintf(got, sizeof got, "%u", sim_fox.interval);
 	else if (strcmp(key, "foxflags") == 0) snprintf(got, sizeof got, "%u", sim_fox.flags);	// FOX_F_*
+	else if (strcmp(key, "foxmsg") == 0) snprintf(got, sizeof got, "%.*s", (int)fox_msg_len(&sim_fox), sim_fox.msg);
 	else if (strcmp(key, "foxpreviews") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_fox_previews);
 	else if (strncmp(key, "foxstep", 7) == 0 && key[7] >= '0' && key[7] <= '9') {	// foxstep<k>: Hz/ms of step k
 		unsigned k = (unsigned)atoi(key + 7) % FOX_STEPS;

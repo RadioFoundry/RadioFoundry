@@ -163,7 +163,8 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "fox", "dlpos:1 ok 6 up ok" },		// Tools > Fox (radio-features.md 3.8): off, waiting, on air
 	{ "fox_waiting", "dlpos:1 ok 6 up ok ok" },
 	{ "fox_on_air", "dlpos:1 ok 6 up ok ok foxair:5" },
-	{ "fox_jingle_steps", "ok 6 up ok down down down down ok" },
+	{ "fox_jingle_steps", "ok 6 up ok down down down down down ok" },
+	{ "fox_message_text", "ok 6 up ok down down down ok" },	// the message in Text entry
 	{ "settings", "ok 7" },
 	{ "settings_sound", "ok 7 1" },
 	{ "settings_sound_tones", "ok 7 1 down down down down down down" },	// the tones (radio-features.md)

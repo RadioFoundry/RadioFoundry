@@ -4350,6 +4350,16 @@ msgid " steps"
 msgstr " 步"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_NO_MORSE"
+msgid "No Morse for "
+msgstr "CW 无法发送 "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_MESSAGE_SAVED"
+msgid "Message saved"
+msgstr "消息已保存"
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_ROW_INTERVAL"
 msgid "Interval"
 msgstr "间隔"
@@ -4358,6 +4368,11 @@ msgstr "间隔"
 msgctxt "FOX_ROW_MESSAGE"
 msgid "Message"
 msgstr "消息"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE_TEXT"
+msgid "Message text"
+msgstr "消息文字"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_ROW_JINGLE"
@@ -4383,11 +4398,6 @@ msgstr "无"
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "信标：本版本无"
-
-#: core/ui/ui_menus.c
-msgctxt "FOX_TOAST_SET_MESSAGE"
-msgid "Set the message in the Codeplug Editor"
-msgstr "请在码表编辑器中设置消息"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_WHY_NOT_FM"

@@ -7426,7 +7426,7 @@ static void sc_summary(char *out, size_t len, uint8_t ev)
 
 static fox_rec_t fox_ui;	// the record as last read or written
 
-enum { FOX_R_RUN, FOX_R_INTERVAL, FOX_R_MSG, FOX_R_JINGLE, FOX_R_STEPS, FOX_R_PREVIEW, FOX_R_COUNT };
+enum { FOX_R_RUN, FOX_R_INTERVAL, FOX_R_MSG, FOX_R_TEXT, FOX_R_JINGLE, FOX_R_STEPS, FOX_R_PREVIEW, FOX_R_COUNT };
 
 static bool fox_write(const fox_rec_t *r)
 {
@@ -7449,10 +7449,60 @@ static const char *fox_interval_name(uint8_t code)
 
 static uint16_t fox_count(void) { return FOX_R_COUNT; }
 
+#if CONFIG_CHANNEL_EDIT
+static char fox_text[FOX_MSG_MAX + 1];	// Text entry's target: the message as typed
+
+// The message typed (Text entry, OK): upper case, every character one the fox can send in Morse, else nothing changes.
+// A message turns the message on; an empty one is no message
+static void fox_text_kept(void)
+{
+	fox_rec_t r = fox_ui;
+	uint8_t n = 0;
+	for (; n < FOX_MSG_MAX && fox_text[n] != '\0'; n++) {
+		char c = fox_text[n];
+		if (c >= 'a' && c <= 'z')
+			c = (char)(c - 'a' + 'A');
+		if (!fox_msg_char_ok(c)) {
+			static char t[48];
+			sbuf_t b;
+			sb_init(&b, t, sizeof t);
+			sb_str(&b, TR(FOX_TOAST_NO_MORSE, "No Morse for "));
+			sb_chr(&b, c);
+			ui_toast(t);
+			return;
+		}
+		r.msg[n] = c;
+	}
+	memset(&r.msg[n], 0, FOX_MSG_MAX - n);
+	if (n != 0)
+		r.flags |= FOX_F_MSG;
+	else
+		r.flags &= (uint8_t)~FOX_F_MSG;
+	if (fox_write(&r))
+		ui_toast(TR(FOX_TOAST_MESSAGE_SAVED, "Message saved"));
+}
+#endif
+
+// OK on the message's text: Text entry on it, where the build has it
+static void fox_text_open(void)
+{
+#if CONFIG_CHANNEL_EDIT
+	uint8_t n = fox_msg_len(&fox_ui);
+	memcpy(fox_text, fox_ui.msg, n);
+	fox_text[n] = '\0';
+	ui_text_open(fox_text, FOX_MSG_MAX);
+	text_done = fox_text_kept;
+	text_prefix = TEXT_MESSAGE;	// titled Message, not Name
+#else
+	ui_toast(TR(WHY_TYPING_NOT_IN_BUILD, "Typing: not in this build"));
+#endif
+}
+
 static void fox_item(uint16_t i, ui_item_t *it)
 {
 	static const tr_id_t names[FOX_R_COUNT] = { TRN(TITLE_FOX, "Fox"), TRN(FOX_ROW_INTERVAL, "Interval"),
-						    TRN(FOX_ROW_MESSAGE, "Message"), TRN(FOX_ROW_JINGLE, "Jingle"),
+						    TRN(FOX_ROW_MESSAGE, "Message"),
+						    TRN(FOX_ROW_MESSAGE_TEXT, "Message text"), TRN(FOX_ROW_JINGLE, "Jingle"),
 						    TRN(FOX_ROW_JINGLE_STEPS, "Jingle steps"),
 						    TRN(FOX_ROW_PREVIEW_JINGLE, "Preview jingle") };
 	if (i >= FOX_R_COUNT)
@@ -7467,17 +7517,18 @@ static void fox_item(uint16_t i, ui_item_t *it)
 	case FOX_R_INTERVAL:
 		sb_str(&b, fox_interval_name(fox_ui.interval));
 		break;
-	case FOX_R_MSG: {
+	case FOX_R_MSG:
+		sb_str(&b, fox_msg_len(&fox_ui) != 0 && (fox_ui.flags & FOX_F_MSG) != 0 ? TR(VALUE_ON, "On") :
+			   TR(VALUE_OFF, "Off"));
+		break;
+	case FOX_R_TEXT: {
 		uint8_t n = fox_msg_len(&fox_ui);
 		if (n == 0) {
 			sb_str(&b, TR(FOX_VALUE_NO_MESSAGE, "None"));
 			it->flags |= UI_ITEM_DIM;
-		} else if ((fox_ui.flags & FOX_F_MSG) == 0) {
-			sb_str(&b, TR(VALUE_OFF, "Off"));
-		} else {
-			for (uint8_t k = 0; k < n; k++)
-				sb_chr(&b, fox_ui.msg[k]);
 		}
+		for (uint8_t k = 0; k < n; k++)
+			sb_chr(&b, fox_ui.msg[k]);
 		break;
 	}
 	case FOX_R_JINGLE:
@@ -7513,11 +7564,14 @@ static void fox_select(uint16_t i, bool hold)
 		break;
 	case FOX_R_MSG:
 		if (fox_msg_len(&r) == 0) {
-			ui_toast(TR(FOX_TOAST_SET_MESSAGE, "Set the message in the Codeplug Editor"));
+			fox_text_open();	// nothing to send yet: type it
 			break;
 		}
 		r.flags ^= FOX_F_MSG;
 		(void)fox_write(&r);
+		break;
+	case FOX_R_TEXT:
+		fox_text_open();
 		break;
 	case FOX_R_JINGLE:
 		r.flags ^= FOX_F_JINGLE;
