@@ -64,7 +64,10 @@ static void n_macs(uint8_t host[6], uint8_t radio[6]) { memcpy(host, HOST_MAC, 6
 static const hal_netif_t fake_netif = { n_select, n_selected, n_up, n_send, n_receive, n_tick, n_macs, NULL, 600 };
 hal_display_t fake_display = { .width = 160, .height = 128, .bpp = 16 };	// netSvcCases.c changes the depth
 static const char *const power_names[] = { "Low", "High" };
-static const band_t bands[] = { { 136000000u, 174000000u, true }, { 400000000u, 480000000u, true } };
+// Six bands, four receive only: rigctl's dump_state must still end whole (it was cut short past three or so)
+static const band_t bands[] = { { 136000000u, 174000000u, true }, { 400000000u, 480000000u, true },
+				{ 108000000u, 136000000u, false }, { 65000000u, 108000000u, false },
+				{ 174000000u, 230000000u, false }, { 480000000u, 520000000u, false } };
 // Two keys for the web control: bit 3 up, bit 7 the PTT
 static const keymap_entry_t keymap[] = {
 	{ 3, ACT_NAV_UP, ACT_NAV_UP, false, true, 0 },
@@ -77,7 +80,7 @@ static int8_t fake_encoder(void)
 
 static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
 const board_t board = { .name = "fake", .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
-			.power_names = power_names, .bands = bands, .band_count = 2, .keymap = keymap, .keymap_len = 2 };
+			.power_names = power_names, .bands = bands, .band_count = 6, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }

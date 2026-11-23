@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The open-firmware CPS protocol shim
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+//
+// The open-firmware CPS protocol shim
 // (docs/spec/open-firmware-cps.md, our behavior in docs/spec/cps-protocol.md 2): lets qdmr's open-firmware drivers and
 // the open-firmware CPS read and write the codeplug over the host port. The radio presents the open-firmware image
 // directly (it is our storage today); writes go through the sector journal (core/storage), and the radio's own areas

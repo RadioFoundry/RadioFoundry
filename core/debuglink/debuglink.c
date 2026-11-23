@@ -279,10 +279,12 @@ static void shot_hold(bool last)
 static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
 {
 	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
-	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+	gfx_fb_rect_t r;
 
+	gfx_fb_rect(&r);	// the panel, or its safe area only: sent as it is, the host rebuilds the insets
 	s.fb = gfx_framebuffer();
-	s.size = stride * d->height;
+	s.size = r.stride * r.h;
+	s.safe_area = r.safe_area;
 	if (s.size > 0xFFFFu) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
@@ -355,7 +357,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
-		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+		gfx_read_packed(offset, out + 19, n);	// the whole panel's rows, whatever the frame buffer holds
 	}
 	return 19u + n;
 }

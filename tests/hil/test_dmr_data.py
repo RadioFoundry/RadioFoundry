@@ -290,14 +290,16 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
-    """A radio check request (opcode 0x24, Motorola FID, octet 3 0x80) to our ID: answered when the setting allows
-    (the request echoed with octet 3 cleared), counted but not answered when it doesn't (the default)."""
+    """A radio check request in the FID 0x10 form (opcode 0x24, FID 0x10, octet 3 0x00, octets 4-6 the checker,
+    7-9 us) as a commercial portable sends it: answered when the setting allows (the request echoed with octet 3
+    0x80), counted but not answered when it doesn't (the default)."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SIGNALING")
     radio.link.data_settings(0, radio_check_reply=False)
     before = radio.data_view()
     with sdr_bench.lease():
-        sdr_bench.csbk(freq, cc, own, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x80, src=BENCH_SRC)
+        # The bench tool puts dst in octets 4-6 and src in 7-9
+        sdr_bench.csbk(freq, cc, BENCH_SRC, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x00, src=own)
         time.sleep(0.5)
         mid = radio.data_view()
         d = _deltas(before, mid, ["data.radio_checks_received", "data.csbk_answers_sent"])
@@ -306,15 +308,15 @@ def test_radio_check_rx(radio, sdr_bench, pytestconfig, data_settings):
 
         need_radio_tx(radio)
         radio.link.data_settings(0, radio_check_reply=True)
-        heard = sdr_bench.csbk(freq, cc, own, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x80,
-                               src=BENCH_SRC, listen_after=3)
+        heard = sdr_bench.csbk(freq, cc, BENCH_SRC, opcode=CSBK_RADIO_CHECK, fid=FID_MOTOROLA, octet3=0x00,
+                               src=own, listen_after=3)
     time.sleep(0.5)
     after = radio.data_view()
     d = _deltas(mid, after, ["data.radio_checks_received", "data.csbk_answers_sent", "data.tx_ok"])
     print("reply on:", d)
     assert d["data.radio_checks_received"] == 1 and d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
     assert after["data.event"] == "radio_check_answered" and after["data.event_id"] == BENCH_SRC, after
-    _soft(any(o3 == 0 and a == own and b == BENCH_SRC for o3, a, b in _heard_csbks(heard, CSBK_RADIO_CHECK)),
+    _soft(any(o3 == 0x80 and a == BENCH_SRC and b == own for o3, a, b in _heard_csbks(heard, CSBK_RADIO_CHECK)),
           "the radio check answer")
 
 
@@ -358,8 +360,8 @@ def test_call_alert_tx(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_radio_check_tx(radio, sdr_bench, pytestconfig):
-    """Our radio check of the bench: the request on air (opcode 0x24, Motorola FID, octet 3 0x80), three tries
-    without an answer, then failed."""
+    """Our radio check of the bench: the request on air in the FID 0x10 form (opcode 0x24, FID 0x10, octet 3 0x00,
+    octets 4-6 us, 7-9 the bench), three tries without an answer, then failed."""
     freq, cc, own, feats = _setup(radio, pytestconfig, tx=True)
     _need(feats, "DMR_SIGNALING")
     before = radio.data_view()
@@ -371,7 +373,7 @@ def test_radio_check_tx(radio, sdr_bench, pytestconfig):
     assert after["data.signal_state"] == "failed" and after["data.signal_kind"] == "radio_check", after
     assert d["data.radio_checks_sent"] == 3 and d["data.tx_failed"] == 0, d
     heard_tries(heard, CSBK_RADIO_CHECK, d["data.radio_checks_sent"],
-                lambda x: x[1] == FID_MOTOROLA and x[2] == 0x80 and x[3] == BENCH_SRC and x[4] == own, "radio check")
+                lambda x: x[1] == FID_MOTOROLA and x[2] == 0x00 and x[3] == own and x[4] == BENCH_SRC, "radio check")
 
 
 @pytest.mark.feature("dmr_tms")

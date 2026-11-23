@@ -92,8 +92,11 @@ The short version:
 - Don't open, copy or paraphrase GPL or non-commercial firmware, vendor SDKs or disassembly while writing code
   for this repository. If you have read them, write specs (facts, not code) and let someone else implement.
 - Never add the AMBE codec, a stock firmware image, a bootloader key or a memory dump to the repository.
+<!-- REUSE-IgnoreStart: an example header, not this file's -->
 - Every file carries an SPDX header (`SPDX-License-Identifier: MIT` and the copyright line, in the style of its
-  neighbors). `reuse lint` must not report your files (the whole tree doesn't pass yet, [CI](ci.md)).
+  neighbors). `reuse lint` must pass ([CI](ci.md)): a file that can't hold a comment (data, an image) gets an entry
+  in `REUSE.toml`.
+<!-- REUSE-IgnoreEnd -->
 - Test vectors come from standards or from your own captures.
 
 The checks, all in `tools/ci.sh`: `tools/license_grep.sh` (markers of foreign code), `reuse lint` (when installed),

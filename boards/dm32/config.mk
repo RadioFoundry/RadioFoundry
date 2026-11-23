@@ -20,6 +20,14 @@ CONFIG_DISPLAY_INSET_LEFT ?= 10
 CONFIG_DISPLAY_INSET_RIGHT ?= 10
 CONFIG_DISPLAY_INSET_TOP ?= 5
 CONFIG_DISPLAY_INSET_BOTTOM ?= 5
+# The frame buffer holds only the safe area inside those insets, 4 bits a pixel with each row rounded up to whole bytes:
+# 220 x 310, 34,100 B at the defaults instead of the whole panel's 38,400. Nothing is drawn in the insets; the panel's
+# own memory keeps their background. It is worked out here rather than written in board.mk because board.mk is read
+# before this file, so a fixed number there fitted only the default insets: larger ones wasted RAM and smaller ones
+# failed display_dm32.c's build-time check. tools/boards.py reads the number from MCU_DEFS, so it must be a literal
+DM32_FB_BYTES := $(shell echo $$(( (240 - $(CONFIG_DISPLAY_INSET_LEFT) - $(CONFIG_DISPLAY_INSET_RIGHT) + 1) / 2 * \
+	(320 - $(CONFIG_DISPLAY_INSET_TOP) - $(CONFIG_DISPLAY_INSET_BOTTOM)) )))
+MCU_DEFS += -DGFX_FB_BYTES=$(DM32_FB_BYTES)u
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
 CONFIG_VOX ?= n
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
