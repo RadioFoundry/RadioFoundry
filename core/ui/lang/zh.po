@@ -3116,8 +3116,8 @@ msgstr "DMR ID 已保存"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_RID_FROM_CHIP"
-msgid "Made from this radio's chip: unique, not editable"
-msgstr "由本机芯片生成：唯一，不可编辑"
+msgid "Not editable, unique"
+msgstr "唯一，不可编辑"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -5873,11 +5873,6 @@ msgstr "请先输入房间 ID"
 msgctxt "WX_BODY_NODE"
 msgid "Node: "
 msgstr "节点： "
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_HINT"
-msgid "Commands go out as a short transmission"
-msgstr "命令以短暂发射发出"
 
 #: core/ui/ui_wiresx.c
 msgctxt "HINT_TYPE_OK_SEND_BACK"

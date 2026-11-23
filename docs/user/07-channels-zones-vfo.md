@@ -457,7 +457,7 @@ channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A 
 
 On a YSF channel, the radio talks to the Wires-X node it hears (a repeater or a gateway linked to the Wires-X
 network): it asks the node where it is, connects it to a room, disconnects it, and lists the rooms. Open it from
-**Tools > Wires-X**, from quick settings tile **3** on a YSF channel, or from a key set to **Wires-X**
+**Tools > Wires-X** (key **0** in Tools), from quick settings tile **3** on a YSF channel, or from a key set to **Wires-X**
 (Settings > Keys).
 
 | Row | What it does |

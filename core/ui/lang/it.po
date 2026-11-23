@@ -3114,8 +3114,8 @@ msgstr "ID DMR salvato"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_RID_FROM_CHIP"
-msgid "Made from this radio's chip: unique, not editable"
-msgstr "Ricavato dal chip di questa radio: unico, non modificabile"
+msgid "Not editable, unique"
+msgstr "Non modificabile, unico"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -5871,11 +5871,6 @@ msgstr "Prima digita un ID stanza"
 msgctxt "WX_BODY_NODE"
 msgid "Node: "
 msgstr "Nodo: "
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_HINT"
-msgid "Commands go out as a short transmission"
-msgstr "I comandi partono come una breve trasmissione"
 
 #: core/ui/ui_wiresx.c
 msgctxt "HINT_TYPE_OK_SEND_BACK"

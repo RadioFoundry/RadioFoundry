@@ -3734,7 +3734,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_TO_VFO] = TRN(QUICK_LABEL_COPY_TO_VFO, TEXT_ALT_OPEN "Copy to VFO"
 			TEXT_ALT_NEXT "To VFO" TEXT_ALT_CLOSE),
 		[QT_SPLIT] = TRN(QUICK_LABEL_TX_FREQ, TEXT_ALT_OPEN "TX freq" TEXT_ALT_NEXT "TXFreq" TEXT_ALT_CLOSE),
-		[QT_WIRESX] = TRX(QUICK_LABEL_WIRESX, TEXT_ALT_OPEN "Wires-X" TEXT_ALT_NEXT "WX" TEXT_ALT_CLOSE),
+		[QT_WIRESX] = TRX(QUICK_LABEL_WIRESX, TEXT_ALT_OPEN "Wires-X" TEXT_ALT_NEXT "Wires" TEXT_ALT_CLOSE),
 	};
 	uint8_t kind = ui_quick_kind(tile, v);
 	bool editing = s->quick_edit && s->quick_focus == tile;

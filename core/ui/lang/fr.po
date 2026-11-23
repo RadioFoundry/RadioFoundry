@@ -3114,8 +3114,8 @@ msgstr "ID DMR enregistré"
 
 #: core/ui/ui_menus.c
 msgctxt "MYID_TOAST_RID_FROM_CHIP"
-msgid "Made from this radio's chip: unique, not editable"
-msgstr "Tiré de la puce de cette radio : unique, non modifiable"
+msgid "Not editable, unique"
+msgstr "Non modifiable, unique"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -5871,11 +5871,6 @@ msgstr "Tapez d'abord un ID de salon"
 msgctxt "WX_BODY_NODE"
 msgid "Node: "
 msgstr "Noeud : "
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_HINT"
-msgid "Commands go out as a short transmission"
-msgstr "Les commandes partent en une courte émission"
 
 #: core/ui/ui_wiresx.c
 msgctxt "HINT_TYPE_OK_SEND_BACK"

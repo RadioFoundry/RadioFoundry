@@ -216,13 +216,11 @@ static const char *wx_body(void)
 	static char body[48];
 	sbuf_t b;
 
+	if (!wx.serial || !wx.node_call[0])
+		return NULL;	// the node's callsign once it answered, else no line
 	sb_init(&b, body, sizeof body);
-	if (wx.serial && wx.node_call[0]) {
-		sb_str(&b, TR(WX_BODY_NODE, "Node: "));
-		sb_str(&b, wx.node_call);
-	} else {
-		sb_str(&b, TR(WX_BODY_HINT, "Commands go out as a short transmission"));
-	}
+	sb_str(&b, TR(WX_BODY_NODE, "Node: "));
+	sb_str(&b, wx.node_call);
 	return body;
 }
 

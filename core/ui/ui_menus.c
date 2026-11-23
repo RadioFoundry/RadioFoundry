@@ -5131,7 +5131,7 @@ static void dmr_id_select(uint16_t i, bool hold)
 		return;
 #if CONFIG_YSF
 	if (i == MY_RID) {
-		ui_toast(TR(MYID_TOAST_RID_FROM_CHIP, "Made from this radio's chip: unique, not editable"));
+		ui_toast(TR(MYID_TOAST_RID_FROM_CHIP, "Not editable, unique"));
 		return;
 	}
 #endif
@@ -6577,7 +6577,18 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	if (i >= T_COUNT)
 		return;
 	str_copy(it->label, sizeof it->label, tr(names[i]));
-	item_num(it, (uint16_t)(i + 1u));	// the tool's own number, not its row (see the enum)
+	uint16_t num = (uint16_t)(i + 1u);	// the tool's own number, not its row (see the enum)
+#if CONFIG_YSF
+	// Wires-X takes the 0 while no zone offer waits for it (the offer is the rarer and the shorter-lived)
+	if (i == T_WIRESX) {
+#if CONFIG_ZONE_SHARE
+		num = offer_waiting() ? 0u : 10u;
+#else
+		num = 10u;
+#endif
+	}
+#endif
+	item_num(it, num);
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 	switch (i) {
