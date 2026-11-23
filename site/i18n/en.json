@@ -1716,6 +1716,8 @@
  "editor.power.max": "Maximum",
  "editor.power.level": "Level {n}",
  "editor.squelch.default": "Radio Default",
+ "editor.tone.use": "Use {tone}",
+ "editor.tone.no_match": "Not a CTCSS tone or DCS code",
  "editor.tot.default": "Radio Default",
  "editor.alias.off": "Off",
  "editor.alias.text": "Text",

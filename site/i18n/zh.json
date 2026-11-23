@@ -1716,6 +1716,8 @@
  "editor.power.max": "最高",
  "editor.power.level": "级别 {n}",
  "editor.squelch.default": "电台默认",
+ "editor.tone.use": "使用 {tone}",
+ "editor.tone.no_match": "不是 CTCSS 亚音或 DCS 码",
  "editor.tot.default": "电台默认",
  "editor.alias.off": "关闭",
  "editor.alias.text": "文本",

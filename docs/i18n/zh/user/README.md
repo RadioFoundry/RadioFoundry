@@ -33,6 +33,7 @@
 14. [热点模式](14-hotspot.md)：MMDVMHost 与 Pi-Star、SFR、两台电台组成双工中继
 15. [USB 网络模式](15-usb-network.md)：DMR 承载 IP、状态页、rig 控制、KISS、TFTP、SNMP、控制站
 16. [电池与供电](16-battery-and-power.md)
+18. [卫星跟踪](18-satellite.md)：先在电脑上选择并安装 TLE 记录，再从电台跟踪
 
 ### 参考
 

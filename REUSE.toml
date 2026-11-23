@@ -29,3 +29,9 @@ path = ["tests/data/voice/**", "tests/host/data/**", "tools/rfoundry/rfoundry/co
         "core/net/http_assets/index.html"]
 SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
 SPDX-License-Identifier = "MIT"
+
+# Tom Select, copied unchanged from its npm package (site/static/vendor/tom-select/README.md)
+[[annotations]]
+path = ["site/static/vendor/tom-select/tom-select.complete.min.js", "site/static/vendor/tom-select/tom-select.default.css"]
+SPDX-FileCopyrightText = "2013-2026 Tom Select contributors"
+SPDX-License-Identifier = "Apache-2.0"

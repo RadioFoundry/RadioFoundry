@@ -10,6 +10,7 @@ import { bulkColumns, channelForm, columns, parseAreaKey } from "../static/js/ed
 import { empty } from "../static/js/codeplug/model.js";
 import { KEYS } from "../static/js/codeplug/kv.js";
 import { Grid } from "../static/js/editor/grid.js";
+import { comboText } from "../static/js/editor/combo.js";
 
 const t = (k) => (k === "editor.tot.default" ? "Radio Default" : k);
 const field = (key) => channelForm(empty(), t).find((f) => f.key === key);
@@ -27,13 +28,23 @@ test("channel TX timeout: a list of the radio default and the 15 s steps the rec
 	assert.ok(opts.every(([v]) => v % 15 === 0));
 });
 
-test("tone fields offer every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
-	const tones = field("txTone").suggest();
+test("tone fields list every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
+	const spec = field("txTone").combo({});
+	const tones = spec.values;
 	assert.equal(tones.length, 50 + 104 * 2);
 	assert.ok(tones.includes("88.5") && tones.includes("D023N") && tones.includes("D754I"));
-	assert.ok(field("rxTone").suggest().includes("254.1"));
+	assert.ok(field("rxTone").combo({}).values.includes("254.1"));
 	const col = columns("channels", empty(), t).find((c) => c.key === "rxTone");
-	assert.equal(col.suggest().length, tones.length);
+	assert.equal(col.combo({}).values.length, tones.length);
+	// typed text: normalized when it is a tone (the list's "Use ..." row), refused otherwise ("Not a CTCSS tone ...")
+	assert.equal(spec.accept("69.4"), "69.4");
+	assert.equal(spec.accept("d23"), "D023N");
+	assert.equal(spec.accept("none"), "");
+	assert.equal(spec.accept("abc"), null);
+	assert.equal(spec.accept("400"), null);
+	assert.equal(spec.none, t("editor.none"));
+	assert.equal(spec.use("69.4"), "editor.tone.use");
+	assert.ok(spec.noMatch);
 	const r = {};
 	assert.equal(field("rxTone").parse(r, "rxTone", "69.4"), undefined);
 	assert.equal(r.rxTone, "69.4");
@@ -177,6 +188,71 @@ test("the table filter and sort take every column's text, numbers too", () => {
 	g.filter = "";
 	g.sort = { key: "number", dir: 1 };
 	assert.deepEqual(g.shown().map((r) => r.number), [3, 12]);
+});
+
+// A stand-in for Tom Select with what the grid and the form use. blur(text) leaves the field as Tom Select does:
+// the "before onBlur" hooks see the text, then the text is cleared and "blur" fires
+function fakeTs(value, text) {
+	const on = {}, before = [];
+	const ts = {
+		value, text, textOnBlur: "", isOpen: false, activeOption: null,
+		wrapper: { addEventListener() {} }, control_input: {},
+		getValue: () => ts.value, inputValue: () => ts.text,
+		hook: (when, method, fn) => before.unshift(fn),
+		on: (ev, fn) => (on[ev] ??= []).push(fn),
+		focus() {}, open() {}, close() {}, destroy() {}, positionDropdown() {},
+		blur() {
+			for (const fn of before) fn();
+			ts.text = "";
+			for (const fn of on.blur ?? []) fn();
+		},
+	};
+	// what combo() installs: the text the field held when it lost focus
+	ts.hook("before", "onBlur", () => { if (ts.inputValue().trim()) ts.textOnBlur = ts.inputValue().trim(); });
+	ts.on("focus", () => { ts.textOnBlur = ""; });
+	ts.refocus = () => { for (const fn of on.focus) fn(); };
+	return ts;
+}
+
+test("leaving a tone cell with text that isn't a tone leaves the cell as it was", () => {
+	const m = empty();
+	const g = Object.assign(Object.create(Grid.prototype), { columns: columns("channels", m, t), render() {}, moveTo() {} });
+	const c = g.columns.find((x) => x.key === "rxTone"), spec = c.combo({});
+	const td = { closest: () => null };
+	const edit = (value, typed) => {
+		const saved = [];
+		g.onChange = (r, col, v) => { saved.push(v); };
+		const ts = fakeTs(value, typed);
+		g.editCombo(td, 0, 0, {}, c, ts, spec);
+		ts.blur();
+		return saved;
+	};
+	// an edit started by typing has no item: "xyz" (or a half-typed tone) used to save None over 88.5
+	assert.deepEqual(edit("", "xyz"), []);
+	assert.deepEqual(edit("", "8"), []);
+	assert.deepEqual(edit("88.5", "q"), []);
+	// a valid tone typed and not yet taken (the window lost focus) is saved; no text keeps the selected value
+	assert.deepEqual(edit("", "d23"), ["D023N"]);
+	assert.deepEqual(edit("88.5", ""), ["88.5"]);
+});
+
+test("the form saves the tone text left in the field, so text that isn't a tone gets its error", () => {
+	const ts = fakeTs("88.5", "6.7");
+	const input = { value: "88.5", tomselect: ts };
+	assert.equal(comboText(input), "6.7");
+	ts.blur();
+	assert.equal(comboText(input), "6.7");
+	// Tom Select's second onBlur, text already gone, keeps it; focusing the field again and leaving it empty drops it
+	ts.blur();
+	assert.equal(comboText(input), "6.7");
+	ts.refocus();
+	ts.blur();
+	assert.equal(comboText(input), "88.5");
+	assert.equal(comboText({ value: "100.0" }), "100.0");
+	// what Save then does with "6.7": the tone's error, and the record keeps its tone
+	const r = { rxTone: "88.5" };
+	assert.ok(field("rxTone").parse(r, "rxTone", comboText({ value: "88.5", tomselect: fakeTs("88.5", "6.7") })));
+	assert.equal(r.rxTone, "88.5");
 });
 
 test("Radio tab ARS server and IP gateway: empty is an absent key, 0 is off", () => {
