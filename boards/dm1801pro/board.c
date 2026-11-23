@@ -95,7 +95,7 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 
 const board_t board = {
 	.name = "DM-1801 Pro",
-	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
+	.caps = CAP_KEYPAD | CAP_BEEP_NOT_IN_FM_TX | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
 		(CONFIG_AM_RX ? CAP_AM_RX : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),

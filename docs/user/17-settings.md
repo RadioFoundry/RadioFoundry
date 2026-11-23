@@ -243,9 +243,9 @@ sound** (the permit beep at the start, the call end beep at the end and when idl
   other makes of radio may play them differently. Try it with a second radio before you rely on it.
 - An end tone on air counts in the transmit time-out.
 - On a radio that cannot beep while it transmits, the start tone on the speaker plays just before the radio keys, in
-  DMR and in FM: the radio keeps receiving while it plays (at most about a second), the carrier follows, and a **PTT**
-  let go meanwhile never keys. Where the radio has a tone sidetone, an FM start tone set to Speaker + air is the one
-  that goes on air, heard as it goes, so it keys at once.
+  DMR and in FM: the radio stays on the receive frequency while it plays (at most about a second), the carrier
+  follows, and a **PTT** let go meanwhile never keys. Where the radio has a tone sidetone, an FM start tone set to
+  Speaker + air is the one that goes on air, heard as it goes, so it keys at once.
 - Output Default always plays the radio's own tone, whatever the chain says: pick Speaker, On air or both to use it.
 
 ## Factory reset

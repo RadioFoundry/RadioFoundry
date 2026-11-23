@@ -4093,11 +4093,11 @@ static void test_sig_fm(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	board.radio = &fake_radio;
-	// ... and on a board that can't play the speaker while it transmits (CAP_BEEP_NOT_ON_AIR, all four HR_C7000 radios:
+	// ... and on a board that can't play the speaker while it transmits (CAP_BEEP_NOT_IN_FM_TX, all four HR_C7000 radios:
 	// the codec's PCM is gated and the amplifier is off in FM TX): the tone plays first, receive-only, and the carrier
 	// follows once it has played out. Nothing more sounds once on air
 	uint32_t caps = board.caps;
-	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	board.caps |= CAP_BEEP_NOT_IN_FM_TX;
 	start();
 	settings(set_sig_begin_local);
 	beep_get_stats(&b0);
@@ -4158,6 +4158,19 @@ static void test_sig_fm(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	board.radio = &fake_radio;
+	// A radio that can't beep in DMR TX but can in FM (CAP_BEEP_NOT_ON_AIR alone: the MD-380 and DM-1701 family): no
+	// hold, it keys at once and the tone plays on the speaker as before
+	board.caps = (caps & ~CAP_BEEP_NOT_IN_FM_TX) | CAP_BEEP_NOT_ON_AIR;
+	start();
+	settings(set_sig_begin_local);
+	beep_get_stats(&b0);
+	hw.tx_calls = 0;
+	req(RREQ_PTT, 1);
+	run(10);
+	beep_get_stats(&b1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && b1.played == b0.played + 1);
+	req(RREQ_PTT, 0);
+	run(300);
 	board.caps = caps;
 	// ... and not on a no-beep channel
 	start();

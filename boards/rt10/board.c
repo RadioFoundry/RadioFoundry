@@ -56,7 +56,7 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 
 const board_t board = {
 	.name = "RT10",
-	.caps = CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0,
+	.caps = CAP_BEEP_NOT_IN_FM_TX | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),

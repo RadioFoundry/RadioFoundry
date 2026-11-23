@@ -1566,6 +1566,20 @@ static void tx_timer(radio_sm_t *sm, uint32_t now_ms)
 	}
 }
 
+#if CONFIG_DMR || CONFIG_SIG_TONES
+// A beep is playing or its audio is still in the board's buffers: a hold before keying (the DMR talk permit, the FM
+// start tone) waits for it, so none of it is left to reach the modulator
+static bool permit_busy(void)
+{
+#if CONFIG_BEEP
+	const hal_audio_t *a = board.audio;
+	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
+#else
+	return false;
+#endif
+}
+#endif
+
 // --- DMR: the call stack on DMR channels (core/dmr/call), voice through core/dmr/ambe ---
 #if CONFIG_DMR
 static void add_name(radio_sm_t *sm, const contact_t *c)
@@ -1686,16 +1700,6 @@ static uint8_t hang_s(uint16_t ms, uint8_t dflt)
 #define PERMIT_HOLD_MIN_MS	40u
 // Longest our DMR end tone waits for the audio path to open after the transmission (the engine's last burst)
 #define DMR_END_WAIT_MS		400u
-
-static bool permit_busy(void)
-{
-#if CONFIG_BEEP
-	const hal_audio_t *a = board.audio;
-	return beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
-#else
-	return false;
-#endif
-}
 
 // Whether the DMR talk permit sounds on the speaker: the radio's own tone when the setting is the default (and the
 // talk permit is on), else the start of transmission tone's sequence when it is set to sound there
@@ -6477,14 +6481,14 @@ static void fm_lead_start(radio_sm_t *sm, uint32_t now_ms)
 // ... and the shortest: the tone's first block is only queued by then (as PERMIT_HOLD_MIN_MS)
 #define FM_PREKEY_MIN_MS	40u
 
-// Whether the FM start tone's speaker copy plays before the transmitter keys. A board with CAP_BEEP_NOT_ON_AIR can't play
-// the speaker while it transmits FM: its modem mixes the speaker PCM into the modulator, so the codec doesn't play it
-// then, or its speaker amplifier is off. So the copy plays in a short receive-only hold, as the DMR talk permit does
+// Whether the FM start tone's speaker copy plays before the transmitter keys. A board with CAP_BEEP_NOT_IN_FM_TX can't
+// play the speaker while it transmits FM: its modem mixes the speaker PCM into the modulator, so the codec doesn't play
+// it then, or its speaker amplifier is off. So the copy plays in a short receive-only hold, as the DMR talk permit does
 // (permit_before_key), and the carrier follows. Not when the modem's sidetone plays it with the
 // on-air copy (lead_side), nor with the host's audio, which has no start tone
 static bool fm_start_before_key(const radio_sm_t *sm)
 {
-	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0 || sm->host_audio || !sig_local_on(sm, SIG_EV_BEGIN)) {
+	if ((board.caps & CAP_BEEP_NOT_IN_FM_TX) == 0 || sm->host_audio || !sig_local_on(sm, SIG_EV_BEGIN)) {
 		return false;
 	}
 #if CONFIG_FM_TX_TONES
@@ -6499,9 +6503,7 @@ static bool fm_start_before_key(const radio_sm_t *sm)
 static void fm_prekey_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	uint32_t held = now_ms - sm->fm_pre_ms;
-	const hal_audio_t *a = board.audio;
-	bool playing = beep_busy() || (a != NULL && a->spk_pending != NULL && a->spk_pending());
-	if (held < FM_PREKEY_MIN_MS || (held < FM_PREKEY_MAX_MS && playing)) {
+	if (held < FM_PREKEY_MIN_MS || (held < FM_PREKEY_MAX_MS && permit_busy())) {
 		return;
 	}
 	sm->fm_pre_ms = 0;
@@ -7041,7 +7043,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 #endif
-	// The start of transmission tone on the speaker, now that it is keyed. On a board with CAP_BEEP_NOT_ON_AIR it already
+	// The start of transmission tone on the speaker, now that it is keyed. On a board with CAP_BEEP_NOT_IN_FM_TX it already
 	// played before keying (above): none of them plays the speaker while it transmits FM
 	bool side = false;
 #if CONFIG_FM_TX_TONES && CONFIG_SIG_TONES
