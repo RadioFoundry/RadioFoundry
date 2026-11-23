@@ -7485,7 +7485,7 @@ static void fox_item(uint16_t i, ui_item_t *it)
 	case FOX_R_STEPS: {
 		uint8_t n = sc_steps_of(&fox_src);
 		if (n == 0) {
-			sb_str(&b, TR(FOX_VALUE_DEFAULT_TUNE, "Default tune"));
+			sb_str(&b, TR(SIG_VALUE_STANDARD, "Standard"));	// the radio's own tune
 		} else {
 			sb_u32(&b, n, 1);
 			sb_str(&b, n == 1 ? TR(SIG_UNIT_STEP, " step") : TR(SIG_UNIT_STEPS, " steps"));
