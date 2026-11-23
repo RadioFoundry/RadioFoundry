@@ -4380,11 +4380,6 @@ msgid "None"
 msgstr "无"
 
 #: core/ui/ui_menus.c
-msgctxt "FOX_VALUE_DEFAULT_TUNE"
-msgid "Default tune"
-msgstr "默认乐曲"
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "信标：本版本无"
@@ -4468,6 +4463,11 @@ msgstr "OK 更改  返回 停止"
 msgctxt "FOX_TITLE_JINGLE"
 msgid "Fox Jingle"
 msgstr "信标乐曲"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_DEFAULT_TUNE"
+msgid "Default tune"
+msgstr "默认乐曲"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"

@@ -4378,11 +4378,6 @@ msgid "None"
 msgstr "Aucun"
 
 #: core/ui/ui_menus.c
-msgctxt "FOX_VALUE_DEFAULT_TUNE"
-msgid "Default tune"
-msgstr "Mélodie standard"
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "Balise indispo."
@@ -4466,6 +4461,11 @@ msgstr "OK changer  Retour arrête"
 msgctxt "FOX_TITLE_JINGLE"
 msgid "Fox Jingle"
 msgstr "Mélodie Balise"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_DEFAULT_TUNE"
+msgid "Default tune"
+msgstr "Mélodie standard"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
