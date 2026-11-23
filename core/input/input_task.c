@@ -126,10 +126,12 @@ static void switch_poll(uint32_t now)
 	if (hold >= 0) {
 		switch_follow_hold(&sw_follow, (uint16_t)hold, now);
 	}
+	uint16_t zone, at, size;
+	bool detached;
+	bool ready = radio_get_zone_pos(&zone, &at, &size, &detached);
+	switch_follow_mode(&sw_follow, detached, pos, zone, size);
 	switch_step_t st = switch_follow_step(&sw_follow, pos, now);
 	if (st == SWITCH_CHECK) {
-		uint16_t zone, at, size;
-		bool ready = radio_get_zone_pos(&zone, &at, &size);
 		st = switch_follow_check(&sw_follow, zone, at, size, ready) ? SWITCH_ASK : SWITCH_IDLE;
 	}
 	if (st == SWITCH_ASK) {

@@ -94,6 +94,16 @@ int main(void)
 	CHECK(!switch_follow_check(&f, 1, 4, 8, true));
 	CHECK(switch_follow_step(&f, 4, 23000 + SWITCH_HOLD_MS + R) == SWITCH_CHECK);
 	CHECK(!switch_follow_check(&f, 1, 4, 8, true));
+	// A pending request and knob turns in VFO or dual watch must not move the restored memory channel.
+	CHECK(switch_follow_step(&f, 6, 26000) == SWITCH_ASK);
+	switch_follow_mode(&f, true, 6, 1, 8);
+	CHECK(switch_follow_step(&f, 6, 26010) == SWITCH_IDLE);
+	switch_follow_mode(&f, true, 7, 0, 19);
+	CHECK(switch_follow_step(&f, 7, 26020) == SWITCH_IDLE);
+	switch_follow_mode(&f, false, 7, 2, 11);
+	CHECK(switch_follow_step(&f, 7, 26000 + R) == SWITCH_CHECK);
+	CHECK(!switch_follow_check(&f, 2, 1, 11, true));
+	CHECK(switch_follow_step(&f, 8, 26000 + R + 10) == SWITCH_ASK);
 	// Across the clock's wrap
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u) == SWITCH_ASK);
 	CHECK(switch_follow_step(&f, 2, 0xFFFFFF00u + R) == SWITCH_CHECK);

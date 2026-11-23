@@ -427,6 +427,8 @@ link view
 (-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.
 During dual watch, each pane keeps its own channel or VFO tuning when selected. Turning a position switch selects that slot in the
 selected memory pane's zone if the slot can be watched. A VFO pane and an endless encoder still use steps.
+When returning to regular memory mode from the VFO or dual watch, the restored channel stays selected
+until the switch moves again.
 
 VFO_TOGGLE goes between the channel and the VFO, "VFO" and "Back to channels" (in dual watch, on the selected side).
 It is the VFO / MR key's short press, and any side key can send it with the VFO/Channel function (3.1). The VFO / MR

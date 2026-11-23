@@ -28,6 +28,7 @@ typedef enum {
 
 typedef struct {
 	int8_t want;		// the switch's position, -1 none yet
+	bool detached;		// the knob is controlling VFO or dual watch
 	bool pending;		// asked for, and the radio not seen on it yet
 	bool zone_known;	// zone and size hold the zone last seen loaded
 	uint8_t asks;		// asked again since pending was set
@@ -42,6 +43,7 @@ typedef struct {
 static inline void switch_follow_init(switch_follow_t *f)
 {
 	f->want = -1;
+	f->detached = false;
 	f->pending = false;
 	f->zone_known = false;
 	f->asks = 0;
@@ -63,10 +65,27 @@ static inline void switch_follow_hold(switch_follow_t *f, uint16_t zone, uint32_
 	f->pending = false;
 }
 
+// Detents outside regular memory mode belong to that mode. Adopt the restored zone without requesting a
+// channel change, then let the next physical turn take over again.
+static inline void switch_follow_mode(switch_follow_t *f, bool detached, int8_t pos, uint16_t zone, uint16_t size)
+{
+	if (detached) {
+		if (pos >= 0)
+			f->want = pos;
+		f->pending = false;
+		f->hold = false;
+	} else if (f->detached) {
+		f->zone = zone;
+		f->size = size;
+		f->zone_known = size != 0;
+	}
+	f->detached = detached;
+}
+
 // Each scan, with the switch's settled position (-1: none)
 static inline switch_step_t switch_follow_step(switch_follow_t *f, int8_t pos, uint32_t now_ms)
 {
-	if (pos < 0) {
+	if (f->detached || pos < 0) {
 		return SWITCH_IDLE;
 	}
 	if (pos != f->want) {

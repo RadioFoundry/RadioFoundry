@@ -575,22 +575,24 @@ radio_state_t radio_get_state(void)
 	return st;
 }
 
-bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size)
+bool radio_get_zone_pos(uint16_t *zone, uint16_t *pos, uint16_t *size, bool *detached)
 {
 	if (view_lock == NULL) {
 		*zone = 0;
 		*pos = 0;
 		*size = 0;
+		*detached = false;
 		return false;
 	}
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 	*zone = shared_view.zone_index;
 	*pos = shared_view.zone_pos;
 	*size = shared_view.zone_size;
-	bool ready = shared_view.state != RS_TX && !shared_view.hotspot && !shared_view.vfo;	// radio_sm_request's busy
+	*detached = shared_view.vfo;
 #if CONFIG_SCAN
-	ready = ready && !shared_dual_on;
+	*detached = *detached || shared_dual_on;
 #endif
+	bool ready = shared_view.state != RS_TX && !shared_view.hotspot && !*detached;
 	xSemaphoreGive(view_lock);
 	return ready;
 }
