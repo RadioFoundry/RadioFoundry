@@ -41,6 +41,15 @@ static const hal_flash_map_t dm1701_map = {
 	.staging_addr = STAGING, .staging_size = 0x40000u,
 };
 
+// The same with the tune area cut from the end of the staging span (docs/spec/radio-tune.md 1)
+static const hal_flash_map_t dm1701_tune_map = {
+	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x1C0000u,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+	.native_addr = 0x1C0000u, .native_size = 0x40000u,
+	.staging_addr = STAGING, .staging_size = 0x3B000u, .tune_addr = STAGING + 0x3B000u, .tune_owned = true,
+};
+
 // An HR_C7000-style layout: the image at +0x200000, no staging area, a calibration window inside the flash image
 static const hal_flash_map_t offset_map = {
 	.settings_addr = 0x211000u, .settings_size = 0x8000u, .journal_addr = 0x219000u,
@@ -904,6 +913,39 @@ static void test_bad_records(void)
 	printf("# boot records: a changed slot, a protected block, the good one, TFTP leaves ours\n");
 }
 
+// An update to the map with the tune area: the firmware before it, with the whole 256 KB staging area, staged 63
+// blocks and was cut off after COMMIT. The new firmware's area holds 58 slots, but its boot finishes the commit from
+// the slots where the old one put them, and the settings ring is left as it was
+static void test_tune_area_upgrade(void)
+{
+	static uint8_t b[63][BLOCK], old[BLOCK], ring[0x8000];
+
+	boot(&dm1701_map, true);
+	settings_begin()->squelch = 7;
+	settings_end(now);
+	CHECK(settings_flush());
+	codeplug_block(old, 5);
+	CHECK(begin(CPSF_MODE_STAGED) == DL_ST_OK);
+	for (unsigned k = 0; k < 63; k++) {
+		memcpy(&sim_flash_data[0x20000 + k * BLOCK], old, BLOCK);
+		codeplug_block(b[k], 1 + k % 70);
+		CHECK(write_block(0x20000 + k * BLOCK, b[k], 61) == DL_ST_OK);
+	}
+	CHECK(op(CPSF_OP_COMMIT) == DL_ST_OK && g32(&sim_flash_data[STAGING + 8]) == 63);	// cut before the copy
+	memcpy(ring, &sim_flash_data[0x11000], sizeof(ring));
+
+	sim_flash.map = &dm1701_tune_map;	// the new firmware, on the same flash
+	boot(&dm1701_tune_map, false);
+	CHECK(g32(&sim_flash_data[STAGING]) == 0xFFFFFFFFu && !cps_fast_staging_busy());
+	for (unsigned k = 0; k < 63; k++) {
+		CHECK(memcmp(&sim_flash_data[0x20000 + k * BLOCK], b[k], BLOCK) == 0);
+	}
+	CHECK(memcmp(&sim_flash_data[0x11000], ring, sizeof(ring)) == 0 && SETTINGS_FIELD(squelch) == 7);
+	CHECK(begin(CPSF_MODE_STAGED) == DL_ST_OK && g16(&rep[1]) == 58 && op(CPSF_OP_ABORT) == DL_ST_OK);
+	sim_flash.map = &dm1701_map;
+	printf("# tune area update: a commit staged by the firmware before finished from the old slots, settings kept\n");
+}
+
 // The settings area (codeplug-settings.md 6): a block that isn't a valid area never replaces the radio's valid one,
 // direct, staged, or staged and finished at the next boot; a valid one (an empty one too) is taken
 static void kv_send(uint8_t mode, const uint8_t *area, bool cut)
@@ -983,6 +1025,7 @@ int main(void)
 	test_power_cuts();
 	test_bad_records();
 	test_settings_area();
+	test_tune_area_upgrade();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	printf("# cpsFastTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

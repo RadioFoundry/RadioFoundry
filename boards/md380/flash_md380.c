@@ -17,7 +17,6 @@ static const hal_flash_map_t map = {
 	.settings_addr = 0x011000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x019000u,	// 2 sectors
-	.tune_addr = 0x01C000u,		// radio tuning, 2 sectors (docs/spec/radio-tune.md)
 	.openfw_eeprom = 0x000000u,
 	.openfw_flash = 0x020000u,
 	.openfw_end = 0xE00000u,
@@ -25,8 +24,10 @@ static const hal_flash_map_t map = {
 	.calibration_size = 0,
 	.native_addr = 0xE00000u,
 	.native_size = 0x100000u,
-	.staging_addr = 0xF00000u,	// 256 KB of the unused top megabyte (docs/spec/tftp.md 4)
-	.staging_size = CONFIG_SATELLITE_TLE ? 0x03D000u : 0x040000u,
+	.staging_addr = 0xF00000u,	// the first 236 KB of a 256 KB span in the unused top megabyte (docs/spec/tftp.md 4)
+	.staging_size = 0x03B000u,
+	.tune_addr = 0xF3B000u,		// radio tuning, 2 sectors cut from the staging span (docs/spec/radio-tune.md 1)
+	.tune_owned = true,
 	.satellite_addr = CONFIG_SATELLITE_TLE ? 0xF3D000u : 0u,
 	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,
 };
@@ -34,12 +35,12 @@ static const hal_flash_map_t map = {
 // A 1 MB part (W25Q80, early VHF radios): the same addresses up to the chip's end, so settings, the journal and the
 // open-firmware codeplug sit where they do on 16 MB and the CPS tools work the same. The open-firmware flash image gets
 // 0x20000..0xFFFFF (image 0..0xDFFFF: the codeplug, and the DMR ID database as far as it fits); no native area and no
-// staging, which live above the first megabyte
+// staging, which live above the first megabyte. No radio tuning store either: the free sectors below 0x20000 are
+// where the factory codeplug keeps data (trims still work live, docs/spec/radio-tune.md 1.1)
 static const hal_flash_map_t map_1mb = {
 	.settings_addr = 0x011000u,
 	.settings_size = 0x008000u,
 	.journal_addr = 0x019000u,
-	.tune_addr = 0x01C000u,
 	.openfw_eeprom = 0x000000u,
 	.openfw_flash = 0x020000u,
 	.openfw_end = 0x100000u,

@@ -820,7 +820,7 @@ Logical map (the core's `storage_map_t`, [settings-store.md](settings-store.md))
 | Open-firmware codeplug, EEPROM part | 0x000000 | 64 KB |
 | Settings ring | 0x011000 | 32 KB |
 | Sector journal | 0x019000 | 4 KB |
-| Radio tuning ([radio-tune.md](radio-tune.md)) | 0x01C000 | 8 KB |
+| Radio tuning ([radio-tune.md](radio-tune.md) 1.1) | 0x01C000 | 8 KB: the logical device is RadioFoundry's own blocks, so any logical sector is ours |
 | Open-firmware codeplug, flash part | 0x020000 | 1 MB |
 | Native codeplug | 0x120000 | 1 MB |
 | Staging | 0x220000 | 256 KB |

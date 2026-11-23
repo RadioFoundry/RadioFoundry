@@ -39,6 +39,10 @@ typedef struct {
 	// Radio tuning (core/radio/radio_tune.h, docs/spec/radio-tune.md): two erase units from here, one copy of the
 	// record each, outside every area above; never written by a CPS, never part of a codeplug. 0: none
 	uint32_t tune_addr;
+	// The tune area is flash only RadioFoundry writes, clear of the factory calibration and of every other firmware's
+	// data (the board's hardware page gives the evidence): a save erases whatever a copy holds, so a damaged copy never
+	// blocks the next save. false: a save first checks that both units hold tune copies or nothing, and refuses if not
+	bool tune_owned;
 } hal_flash_map_t;
 
 #define HAL_FLASH_TUNE_UNITS	2u	// the tune area's erase units

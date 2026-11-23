@@ -1225,8 +1225,13 @@ status page.
 
 - Settings and storage: on a 16 MB part the core's map is settings 0x011000 (32 KB, 8 sectors), journal 0x019000,
   open-firmware EEPROM 0x000000, open-firmware flash 0x020000 up to 0xE00000, native area 0xE00000 (1 MB), TFTP staging
-  0xF00000 (256 KB), radio tuning 0x01C000 (2 sectors, [radio-tune.md](radio-tune.md)). There is no calibration
-  window.
+  0xF00000 (236 KB), radio tuning 0xF3B000 (2 sectors, [radio-tune.md](radio-tune.md)), satellite data 0xF3D000
+  (12 KB, when built in). There is no calibration window: the calibration is in the security registers, which the map
+  never reaches.
+- Radio tuning sits at the end of the staging span, which only RadioFoundry writes (staged codeplug writes fill it from
+  0xF01000 up); 0xF20000-0xFFFFFF read blank on a radio that came from the factory firmware. The 1 MB part has no
+  staging area, and its free sectors below 0x020000 lie in the factory codeplug's range (0x002000-0x03FFFF), so it has
+  no tune area: trims work live only.
 - Roaming reads the IF chain level on an ADC as the site signal ([dmr-roaming.md](dmr-roaming.md) 3).
 - USB: the STM32F405 OTG_FS has three IN endpoints besides EP0, so serial and network are alternatives, not a
   composite ([usb-network.md](usb-network.md)).

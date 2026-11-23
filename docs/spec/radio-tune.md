@@ -27,11 +27,29 @@ page at Tools > Radio tuning ([16-battery-and-power.md](../user/16-battery-and-p
 | Frequency | nothing: the radio core adds `radio_tune_freq(mode, hz)` to the transmit frequency at key-up | |
 | Names | nothing | |
 | Battery | a battery (`board_has_battery()`) and `hal_power_t.battery_mv`: the radio core applies the trims ([radio-features.md](radio-features.md) 5.1) | no battery trims |
-| Storage | `hal_flash_map_t.tune_addr`: two erase units (`HAL_FLASH_TUNE_UNITS`) | trims work live only, nothing is stored |
+| Storage | `hal_flash_map_t.tune_addr`: two erase units (`HAL_FLASH_TUNE_UNITS`) in flash only RadioFoundry writes, and `tune_owned` (1.1) | trims work live only, nothing is stored |
 
 The tune area is outside the codeplug, the CPS windows, the settings ring and the calibration. The open-firmware CPS
 shim, the fast CPS path and the staging area all refuse to write it. Codeplug reads, writes and shares never include
 it. Which radios have which trims is in [feature-matrix.md](../feature-matrix.md).
+
+### 1.1 Where the tune area goes
+
+The tune area sits in flash that only RadioFoundry writes. It never overlaps the factory calibration, any byte that
+the factory firmware or the bootloader keeps, or any of the core's other areas. A board sets `tune_owned` once its
+hardware page shows that the area meets this rule, with the evidence for the board.
+
+| Board's flash | Tune area |
+|---|---|
+| SPI NOR with a staging area | the last two sectors of the 256 KB staging span: `staging_size` is 236 KB (0x3B000) and `tune_addr` is `staging_addr` + 0x3B000, the same in every build. The satellite data keeps the span's last three sectors |
+| SPI NOR without a staging area | two sectors inside the board's own range, clear of every page the factory firmware writes |
+| A sector layer over the board's own NAND blocks | any two logical sectors: the whole logical device is RadioFoundry's |
+| No flash that meets the rule | none (`tune_addr` 0): trims work live only |
+
+A board's tune area never moves into a range that another firmware might use, so a firmware update does not move it
+again. The staging area is scratch: a staged image that a firmware with the longer area left there is finished at
+the next boot before anything else writes past the shorter area ([cps-fast.md](cps-fast.md) 7.2), and the bytes it
+leaves in the tune area are not a valid tune copy.
 
 ## 2. Trims
 
@@ -125,13 +143,20 @@ the new record in the first copy. TUNE_WRITE runs under the storage lock and is 
 TUNE_WRITE answers unavailable while the storage region still holds another firmware's data (the region not yet
 claimed, [settings-store.md](settings-store.md)).
 
-On some boards the tune area sits where another firmware may keep its own data, such as the end of a codeplug. So
-before each erase (offset 0), TUNE_WRITE checks both units. Each unit must be blank or hold a tune copy: the record's
-magic at its start, whole or cut short by a lost save, from this radio or another. Otherwise the radio refuses with
-reason 2 and erases nothing. The page and `rfoundry_debug.py` show that the area holds other data and nothing was
-saved. Only an offset-0 write checks and erases, so a write at a later offset goes only into a copy that an offset-0
-write erased since the last TUNE_LOAD. Otherwise the radio refuses with reason 3 and writes nothing. A storage claim
-does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
+Only an offset-0 write erases a copy. A write at a later offset goes only into a copy that an offset-0 write erased
+since the last TUNE_LOAD. Otherwise the radio refuses with reason 3 and writes nothing.
+
+In a tune area the board owns (`tune_owned`, 1.1), every byte is RadioFoundry's: a damaged copy, a save cut short, or
+bytes the staging area left. An offset-0 write erases the copy whatever the copy holds, so no content of the area
+ever stops the next save.
+
+For a tune area the board doesn't own, a backstop applies. Before each erase, TUNE_WRITE checks both units. Each unit
+must be blank or hold a tune copy: the record's magic at its start, whole or cut short by a lost save, from this
+radio or another. Otherwise the radio refuses with reason 2 and erases nothing. The page and `rfoundry_debug.py` show
+that the area holds other data and nothing was saved. No board uses such an area: an area that could hold another
+firmware's data could block saves for good.
+
+A storage claim does not erase the tune area. TUNE_LOAD answers busy while a save or a CPS write holds the shared
 storage buffer, and the table stays as it was. The host tries again.
 
 To clear every trim, the host saves a record with no entries. The page's Restore factory values also sets the
@@ -184,10 +209,14 @@ A TUNE_LOAD empties the table before it fills it again.
 
 ## 7. Testing
 
-`tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, the tune area check before an erase
+`tests/host/radioTuneTest.c` covers interpolation and the clamps, the band edge, the backstop check before an erase
 (blank, a record, a cut save, other data, a failed read), the copy choice (newest wins, a copy cut before the
 commit word, a flipped bit, sequence wrap), a record from another radio, stale drive trims, names, live words and
 battery trims. `tests/host/radioFeaturesTest.c` covers the charge curve, the moved empty and full and the gain.
-`site/tests/tune.test.mjs` covers the page's record, CRC, payloads and charge against the same layouts.
+`tests/host/debuglinkCmdTest.c` covers TUNE_WRITE: the save order, the backstop's refusals, and an owned area with
+other bytes in both units, erased and saved with nothing outside the area changed. `tests/host/cpsFastTest.c` covers
+the update that made the staging area shorter: a staged commit cut off under the longer area is finished at the next
+boot, and the settings stay. A board's own store test checks its map: no area overlaps, and the tune area ends the
+staging span. `site/tests/tune.test.mjs` covers the page's record, CRC, payloads and charge against the same layouts.
 `tests/hil/test_radio_tune.py` sets the battery trims live on a radio and checks the corrected reading and charge
 against the raw reading, with no transmission.

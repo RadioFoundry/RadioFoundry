@@ -48,9 +48,15 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t n)
 
 #define FLASH_SIZE	0x20000u
 #define TUNE		0x1C000u
+// A tune area the board doesn't own: the backstop check runs before each erase
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
 	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u, .tune_addr = TUNE,
+};
+// The same area in the board's own flash, as every board with a tune area has it
+static const hal_flash_map_t owned_map = {
+	.settings_addr = 0x11000u, .settings_size = 0x2000u, .journal_addr = 0x19000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x20000u, .tune_addr = TUNE, .tune_owned = true,
 };
 static const band_t bands[] = { { 400000000u, 480000000u, true } };
 static const char *const names[] = { "1W", "5W" };
@@ -115,11 +121,17 @@ static void tune_load(void)
 	CHECK(cmd_storage(req, 1, out, sizeof(out)) == 2u && out[0] == DL_ST_OK);
 }
 
-static void fresh(void)
+static void fresh_with(const hal_flash_map_t *m)
 {
-	sim_flash_create(FLASH_SIZE, &map);
+	sim_flash_free();
+	sim_flash_create(FLASH_SIZE, m);
 	CHECK(storage_init());
 	tune_load();		// a new session: no copy erased yet
+}
+
+static void fresh(void)
+{
+	fresh_with(&map);
 }
 
 static bool refused(size_t n, uint8_t reason)
@@ -173,10 +185,45 @@ static void test_tune_write(void)
 	CHECK(sim_flash_violations() == 0);
 }
 
+// A tune area in the board's own flash: any bytes there are ours (a damaged copy, leftovers of what the flash held
+// before), so a save erases them and never refuses. Nothing outside the area changes
+static void test_tune_owned(void)
+{
+	static uint8_t before[FLASH_SIZE];
+	uint8_t chunk[60], back[60];
+	memset(chunk, 0x5A, sizeof(chunk));
+	put32(chunk, RADIO_TUNE_MAGIC);
+
+	fresh_with(&owned_map);
+	// Junk in both units: data at the start of one, a copy with a flipped magic in the other; and data on both sides
+	uint8_t other[4] = { 'C', 'P', 0x01, 0x00 }, bad[4] = { 0x52, 0x46, 0x54, 0x4F };
+	CHECK(sim_flash.write(TUNE, other, sizeof(other)));
+	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR, bad, sizeof(bad)));
+	CHECK(sim_flash.write(TUNE + SIM_FLASH_SECTOR + 2000u, other, sizeof(other)));
+	CHECK(sim_flash.write(TUNE - 4u, other, sizeof(other)));
+	CHECK(sim_flash.write(TUNE + 2u * SIM_FLASH_SECTOR, other, sizeof(other)));
+	memcpy(before, sim_flash_data, FLASH_SIZE);
+	for (uint8_t copy = 0; copy < 2u; copy++) {
+		uint32_t a = TUNE + copy * SIM_FLASH_SECTOR;
+		CHECK(tune_write(copy, 0, chunk, 60) == 1u && out[0] == DL_ST_OK);
+		CHECK(tune_write(copy, 60, chunk + 4, 40) == 1u && out[0] == DL_ST_OK);
+		CHECK(sim_flash.read(a, back, 60) && memcmp(back, chunk, 60) == 0);
+		CHECK(sim_flash.read(a + 2000u, back, 4) && back[0] == 0xFFu);	// the rest of the unit erased
+	}
+	tune_load();
+	CHECK(memcmp(sim_flash_data, before, TUNE) == 0);
+	CHECK(memcmp(sim_flash_data + TUNE + 2u * SIM_FLASH_SECTOR, before + TUNE + 2u * SIM_FLASH_SECTOR,
+		     FLASH_SIZE - TUNE - 2u * SIM_FLASH_SECTOR) == 0);
+	// The sequence rule still holds: a later offset needs its copy's offset-0 write first
+	CHECK(refused(tune_write(0, 60, chunk, 4), DL_TUNE_REFUSED_NOT_ERASED));
+	CHECK(sim_flash_violations() == 0);
+}
+
 int main(void)
 {
 	test_feature_ops();
 	test_tune_write();
+	test_tune_owned();
 	printf("debuglinkCmdTest: %d checks, %d failures\n", checks, failures);
 	return failures != 0;
 }

@@ -29,15 +29,17 @@ settings start from the defaults at every boot and nothing can be written.
 | `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
 | `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the open-firmware CPS (above `openfw_end`); 0 when the board has none |
 | `tune_addr` | the radio tuning record, two erase units (`HAL_FLASH_TUNE_UNITS`, [radio-tune.md](radio-tune.md) 3); never written by a CPS or a codeplug transfer, never in a codeplug; 0 when the board has none |
+| `tune_owned` | the tune area is flash only RadioFoundry writes ([radio-tune.md](radio-tune.md) 1.1), so a save erases whatever it holds; false: a save checks the area first and refuses other data |
 
 The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there.
 Each board fixes the values in its `hal_flash_map_t`, and its hardware page lists the map. The usual order, low to
 high, is the open-firmware EEPROM image, the settings ring (32 KB, 8 sectors), the journal (2 sectors), the
-open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB staging
-area. A board that keeps its calibration in the vendor layout lists no calibration window. A map assumes its chip's
-size: when the probed chip is smaller than the map's highest area (`hal_flash_map_end`), the driver offers the board's
-map for a smaller part if it has one and the chip holds it (`hal_flash_map_for`), else no map, and an address past the
-chip fails rather than wrapping to a lower one. A map without a native area makes the factory reset skip that step. The boards are in
+open-firmware flash image (up to `openfw_end`), the native codeplug (1 MB) and, on boards with room, a 256 KB span for
+the staging area and, at its end, the radio tuning area. A board that keeps its calibration in the vendor layout lists
+no calibration window. A map assumes its chip's size: when the probed chip is smaller than the map's highest area
+(`hal_flash_map_end`), the driver offers the board's map for a smaller part if it has one and the chip holds it
+(`hal_flash_map_for`), else no map, and an address past the chip fails rather than wrapping to a lower one. A map
+without a native area makes the factory reset skip that step. The boards are in
 [feature-matrix.md](../feature-matrix.md).
 
 The core works in 4 KB erase units (`STORAGE_SECTOR`). A board whose flash erases in other units gets no writes. A

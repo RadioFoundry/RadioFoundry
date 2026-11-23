@@ -228,8 +228,8 @@ static void take(const uint8_t *r)
 }
 
 // Each unit blank, or a tune copy: a record's magic at its start, whole or cut short by a lost save, from this radio
-// or not. Anything else is data the board's map didn't plan for (another firmware's codeplug kept where this map
-// puts the area), and a save would erase it
+// or not. Anything else may be another firmware's data, and a save would erase it. Only for a tune area the board
+// doesn't own: in its own flash every byte is ours
 bool radio_tune_area_ours(uint8_t *buf, uint32_t cap)
 {
 	const hal_flash_map_t *m = storage_map();

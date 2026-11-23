@@ -698,7 +698,11 @@ bool cps_fast_resume(void)
 	if (magic == 0xFFFFFFFFu || magic == STORAGE_STAGE_MAGIC_TFTP) {
 		return false;		// nothing, or the TFTP server's record (tftp_codeplug_resume)
 	}
-	bool valid = magic == STORAGE_STAGE_MAGIC_CPSF && get32(&r[4]) == REC_VERSION && count != 0 && count <= cap &&
+	// A record may hold more slots than this map's area: a firmware with a larger staging area wrote it before an
+	// update. Its slots are still where it put them (nothing writes past the area before this runs), and the CRCs below
+	// prove it, so the commit is finished rather than left half done
+	bool valid = magic == STORAGE_STAGE_MAGIC_CPSF && get32(&r[4]) == REC_VERSION && count != 0 &&
+		     count <= CPSF_STAGE_MAX && slot_addr(count - 1u) + CPSF_BLOCK <= board.flash->size &&
 		     get32(&r[REC_HDR + 2u * count]) == storage_crc32(0, r, REC_HDR + 2u * count) &&
 		     staged_crc(count, &crc) && crc == get32(&r[12]);
 	for (uint32_t k = 0; valid && k < count; k++) {

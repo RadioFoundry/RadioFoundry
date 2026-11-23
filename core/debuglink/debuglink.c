@@ -835,11 +835,12 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 			return 2;
 		}
 		storage_lock();
-		// Before an erase, both units must be blank or tune copies: on some boards the area sits where another
-		// firmware may keep its codeplug, and a save never erases that (out is the check's scratch)
+		// The area is the board's own flash (tune_owned): whatever a copy holds is ours, a damaged copy included, and
+		// the erase goes ahead. Anywhere else both units must be blank or tune copies, so a save never erases another
+		// firmware's data (out is the check's scratch)
 		if (off == 0u) {
 			tune_erased = (uint8_t)(tune_erased & ~bit);
-			if (!radio_tune_area_ours(out, (uint32_t)cap)) {
+			if (!m->tune_owned && !radio_tune_area_ours(out, (uint32_t)cap)) {
 				storage_unlock();
 				out[0] = DL_ST_REFUSED;
 				out[1] = DL_TUNE_REFUSED_FOREIGN;
