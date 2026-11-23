@@ -4,6 +4,13 @@
 
 Each key does the same kind of thing on every screen.
 
+The Home shortcut hint shows **Recent** beside the key assigned to open recent
+calls. Reassigning that function moves the hint to the new key; a long-press
+assignment includes **hold**. With no assignment, open **Recent** from the menu.
+The hint does not show the last caller's name or ID.
+On a small display, the hints use colons and abbreviations to keep Menu, Quick
+and Recent visible together: **h** means hold and **Rcnt** means Recent.
+
 ## The five rules
 
 1. **OK** opens or chooses the thing with the focus. Holding **OK** does the lasting version, such as save or make

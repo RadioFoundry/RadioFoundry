@@ -112,6 +112,31 @@ msgctxt "HOME_HINT_MENU_HOLD_QUICK"
 msgid "OK Menu  Hold OK Quick"
 msgstr "OK Menú  Mant OK Rápido"
 
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SET_LABEL_KEY_N"
+msgid "Key "
+msgstr "Tecla "
+
+#: core/ui/ui_app.c
+msgctxt "HOME_HINT_HOLD_SHORT"
+msgid "h"
+msgstr "m"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SET_LABEL_KEY_N_HOLD"
+msgid " hold"
+msgstr " mant"
+
+#: core/ui/ui_app.c
+msgctxt "HOME_HINT_RECENT_SHORT"
+msgid "Rcnt"
+msgstr "Rec."
+
+#: core/ui/ui_app.c core/ui/ui_find.c core/ui/ui_menus.c
+msgctxt "TITLE_RECENT"
+msgid "Recent"
+msgstr "Recientes"
+
 #: core/ui/ui_app.c
 msgctxt "CPLUG_TOAST_NOT_SAVED"
 msgid "Not saved"
@@ -747,6 +772,16 @@ msgctxt "ROAM_TOAST_MOVED_TO"
 msgid "Moved to "
 msgstr "Movido a "
 
+#: core/ui/ui_app.c
+msgctxt "HOME_HINT_MENU_QUICK_COMPACT"
+msgid "OK:Menu *:Quick"
+msgstr "OK:Menú *:Ráp."
+
+#: core/ui/ui_app.c
+msgctxt "HOME_HINT_MENU_HOLD_QUICK_COMPACT"
+msgid "OK:Menu OKh:Qk"
+msgstr "OK:Menú OKm:Ráp."
+
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgctxt "VALUE_1_MIN"
 msgid "1 min"
@@ -1301,11 +1336,6 @@ msgstr "Contactos"
 msgctxt "TITLE_MESSAGES"
 msgid "Messages"
 msgstr "Mensajes"
-
-#: core/ui/ui_find.c core/ui/ui_menus.c
-msgctxt "TITLE_RECENT"
-msgid "Recent"
-msgstr "Recientes"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
 msgctxt "TITLE_CHANNELS"
@@ -4116,16 +4146,6 @@ msgstr "Apagado automático"
 msgctxt "SET_LABEL_LOW_BATTERY_WARNING"
 msgid "Low battery warning"
 msgstr "Aviso batería baja"
-
-#: core/ui/ui_menus.c
-msgctxt "SET_LABEL_KEY_N"
-msgid "Key "
-msgstr "Tecla "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_LABEL_KEY_N_HOLD"
-msgid " hold"
-msgstr " mant"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LONG_PRESS_TIME"

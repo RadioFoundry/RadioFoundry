@@ -713,7 +713,8 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 				p += 2;
 			continue;
 		}
-		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) && (p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
+		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) &&
+			(p[1] == 0 || p[1] == ' ' || p[1] == ':' || alt_mark(p[1]));
 		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
 		if (sub == NULL) {
 			out[n++] = *p;

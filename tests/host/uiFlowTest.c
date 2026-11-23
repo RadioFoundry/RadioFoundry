@@ -10,10 +10,14 @@
 // - long presses keep their one meaning on every screen: long BACK Home, long QUICK lock, long CONTEXT the talk target picker on DMR (P3);
 // - the Transmitting screen names a private call's contact and tells it apart from a group call (P2).
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/ui_svc.h"
+#include "ui/ui_nav.h"
+#include "input/keyassign.h"
 #include "ui/gfx.h"
 #include "ui/i18n.h"
 #include "ui/gfx.h"
@@ -2343,8 +2347,46 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
+static int check_recent_hint(void)
+{
+#if CONFIG_KEY_ASSIGN
+	char err[160] = "";
+	sim_reset(sim_geom_find("128x64"), SIM_MAP_P);
+	if (!sim_run(CALLER " wait:2000", err, sizeof err) || strstr(ui_st.home_hint, "# "))
+		goto fail;
+	sim_reset(sim_geom_find("128x64"), SIM_MAP_P);
+	ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_RECENT);
+	if (!sim_run("hints:on wait:1100 expect:shows=OK:Menu expect:shows=P1:Quick expect:shows=P3:Rcnt expect:shows=1W", err, sizeof err))
+		goto fail;
+	ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_NONE);
+	ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_RECENT);
+	if (!sim_run("wait:1100 expect:shows=P4:Rcnt expect:hides=P3:Rcnt expect:shows=P1:Quick", err, sizeof err))
+		goto fail;
+	ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_NONE);
+	ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_RECENT);
+	if (!sim_run("wait:1100 expect:shows=OK:Menu expect:shows=P1:Quick expect:shows=P4h:Rcnt expect:shows=1W", err, sizeof err))
+		goto fail;
+	const char *preview = getenv("RFOUNDRY_HINT_PREVIEW");
+	if (preview && !sim_save_png(preview, 4))
+		goto fail;
+	ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_NONE);
+	if (!sim_run("wait:1100", err, sizeof err) || strstr(ui_st.home_hint, "Recent"))
+		goto fail;
+#endif
+	return 0;
+#if CONFIG_KEY_ASSIGN
+fail:
+	sim_save_png("build/recent-hint-failure.png", 4);
+	printf("FAIL assigned Recent hint: %s [%s] enabled=%d toast=%s\n", err, ui_st.home_hint,
+	       ui_st.hints, ui_st.toast ? ui_st.toast : "none");
+	return 1;
+#endif
+}
+
 int main(void)
 {
+	if (check_recent_hint() != 0)
+		return 1;
 	if (check_name_is_id() != 0)
 		return 1;
 #if CONFIG_SATELLITE_TLE

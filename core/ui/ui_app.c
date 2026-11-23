@@ -23,6 +23,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
+#include "input/keyassign.h"
 #include "radio/tones.h"
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
@@ -61,18 +62,54 @@ static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = no
 #endif
 static bool dirty = true;
 static uint32_t draws;
-static bool has_quick_key, has_context_key;
+static bool has_quick_key;
 // Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
 // side key set to key lock could unlock it
 static bool has_unlock_key;
 static int16_t knob_last = -1;	// the volume knob's position last seen, -1 = none since start-up
-static char home_hint[32];
+static char home_hint[96];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
 static const char *home_hint_keys(void)
 {
 	return has_quick_key ? TR(HOME_HINT_MENU_QUICK, "OK Menu  * Quick") :
 		TR(HOME_HINT_MENU_HOLD_QUICK, "OK Menu  Hold OK Quick");
+}
+
+// Name the assigned Recent key, not the fixed context key or the last caller.
+// Prefer a press over a hold when more than one key opens the list.
+static bool home_recent_hint(sbuf_t *b, bool compact)
+{
+#if CONFIG_KEY_ASSIGN
+	for (uint8_t hold = 0; hold < 2; hold++) {
+		for (uint8_t role = 0; role < board.side_key_count + board.home_key_count && role < UI_KEY_ROLES; role++) {
+			uint8_t id = UI_SET_KEY_FIRST + 2u * role;
+			if (ui_svc_setting_get(id + hold) != KEYFN_RECENT)
+				continue;
+			// Tone burst owns both edges; its stored hold assignment cannot run.
+			if (role < board.side_key_count && ui_svc_setting_get(id) == KEYFN_TONE_BURST)
+				continue;
+			const char *name = role < board.side_key_count ?
+				(board.side_key_names ? board.side_key_names[role] : NULL) :
+				(board.home_key_names ? board.home_key_names[role - board.side_key_count] : NULL);
+			if (name)
+				sb_str(b, name);
+			else {
+				sb_str(b, TR(SET_LABEL_KEY_N, "Key "));
+				sb_u32(b, role + 1u, 1);
+			}
+			if (hold)
+				sb_str(b, compact ? TR(HOME_HINT_HOLD_SHORT, "h") : TR(SET_LABEL_KEY_N_HOLD, " hold"));
+			sb_chr(b, compact ? ':' : ' ');
+			sb_str(b, compact ? TR(HOME_HINT_RECENT_SHORT, "Rcnt") : TR(TITLE_RECENT, "Recent"));
+			return true;
+		}
+	}
+#else
+	(void)b;
+	(void)compact;
+#endif
+	return false;
 }
 #if CONFIG_HOTSPOT
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
@@ -2106,7 +2143,6 @@ void ui_app_init(void)
 #endif
 	has_quick_key = ui_has_action(ACT_QUICK);
 	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
-	has_context_key = ui_has_action(ACT_CONTEXT);
 	// ui_app_tick builds it again each tick, in the language in use then
 	str_copy(home_hint, sizeof home_hint, home_hint_keys());
 	ui_st.home_hint = home_hint;
@@ -2828,24 +2864,22 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_DMR
 	hear_all_tick(v);
 #endif
-	// The hint names the last caller: "OK Menu  * Quick  # Joe"
-	ui_target_t t;
-	char name[12];
+	// Keep the shortcut hint stable while calls and aliases change.
 	sbuf_t b;
 	sb_init(&b, home_hint, sizeof home_hint);
+	sb_str(&b, TEXT_ALT_OPEN);
 	sb_str(&b, home_hint_keys());
-	if (has_context_key && recent_n && caller_target(&t)) {
-		sb_str(&b, "  # ");
-		if (t.name[0]) {
-			memcpy(name, t.name, sizeof name - 1);
-			name[sizeof name - 1] = 0;
-			char *sp_ = strchr(name, ' ');
-			if (sp_ != NULL)
-				*sp_ = 0;	// first word of the name
-			sb_str(&b, name);
-		} else {
-			sb_u32(&b, t.id, 1);
-		}
+	sb_str(&b, "  ");
+	if (home_recent_hint(&b, false)) {
+		// Offer all shortcuts in a compact form before the renderer drops a group.
+		sb_str(&b, TEXT_ALT_NEXT);
+		sb_str(&b, has_quick_key ? TR(HOME_HINT_MENU_QUICK_COMPACT, "OK:Menu *:Quick") :
+			TR(HOME_HINT_MENU_HOLD_QUICK_COMPACT, "OK:Menu OKh:Qk"));
+		sb_chr(&b, ' ');
+		(void)home_recent_hint(&b, true);
+		sb_str(&b, TEXT_ALT_CLOSE);
+	} else {
+		str_copy(home_hint, sizeof home_hint, home_hint_keys());
 	}
 	uint32_t serial = radio_view_serial();
 	if (serial != serial_seen) {

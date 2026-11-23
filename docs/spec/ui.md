@@ -66,6 +66,14 @@ Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without th
 drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
 ("0-9 find") is left out. Toasts keep their numbers.
 
+Home's idle hint names the key assigned to Recent, preferring a press over a hold.
+It follows the configured side or Home key and includes `hold` for a long press.
+Without an assigned Recent key, this hint is omitted; Recent remains in the Hub.
+Caller names and IDs belong in the call display and Recent, not in the shortcut hint.
+When the full Home hints do not fit, a compact alternate keeps Menu, Quick and
+Recent together on the same row. Colons join keys to actions, `h` means hold,
+and `Rcnt` abbreviates Recent. This does not consume the activity or status rows.
+
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
