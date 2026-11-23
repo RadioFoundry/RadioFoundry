@@ -14,6 +14,7 @@
 #include "radio/radio_cwid.h"
 #include "radio/beep.h"	// beep_seg_t
 #include "radio/sigtone.h"	// SIG_STEPS
+#include "radio/radio_fox.h"
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -199,6 +200,7 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+	RREQ_FOX,		// fox mode (CONFIG_FOX): arg 1 start on the channel, 0 stop
 	// New request types go above
 
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
@@ -405,6 +407,22 @@ typedef struct {
 	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
 	beep_seg_t roger_seg[SIG_STEPS];
 #endif
+#endif
+#if CONFIG_FOX
+	// Fox mode (radio_sm.c, radio_fox.h): the schedule, what it sends and the part playing
+	radio_fox_t fox;
+	fox_rec_t fox_rec;		// the record in force: the codeplug's (CODEPLUG_KEY_FOX) or the defaults
+	bool fox_keyed;			// the fox keyed the transmitter (not PTT), as burst_keyed
+	uint8_t fox_part;		// what plays now: FOX_PART_* in radio_sm.c
+	bool fox_down;			// the tone is keyed now (a Morse element, a chain step that isn't a pause)
+	morse_t fox_morse;		// the message or the ID
+	beep_seg_t fox_seg[FOX_STEPS];	// the jingle
+	uint8_t fox_seg_n, fox_seg_i;
+	uint32_t fox_seg_ms;		// start of the step sounding
+	uint8_t fox_wpm;
+	uint16_t fox_tone_hz;		// the Morse tone (the CW keyer's setting)
+	char fox_call[RADIO_CWID_CALL_MAX + 1];	// the ID, from the radio name at the start
+	uint8_t fox_call_len;
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down
