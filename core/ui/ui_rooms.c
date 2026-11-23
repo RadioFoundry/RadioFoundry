@@ -21,6 +21,7 @@ WEAK void ui_svc_ysf_wx_state(radio_ysf_wx_t *out) { memset(out, 0, sizeof *out)
 WEAK bool ui_svc_ysf_wx_room(uint8_t i, ysf_wx_room_t *out) { (void)i; (void)out; return false; }
 
 static radio_ysf_wx_t wx;		// the radio's state, read at each draw
+static char body[48];			// the body line of whichever page is drawn (one at a time)
 static uint32_t asked_ms;		// when we last sent a command, 0 none
 static uint32_t asked_serial;		// the reply serial then
 static uint32_t room_id;		// typed (0 none), kept while the radio runs
@@ -249,7 +250,6 @@ static bool wx_key(const input_event_t *ev)
 
 static const char *wx_body(void)
 {
-	static char body[48];
 	sbuf_t b;
 
 	if (!wx.serial || !wx.node_call[0])
@@ -326,7 +326,6 @@ static void rooms_select(uint16_t i, bool hold)
 
 static const char *rooms_body(void)
 {
-	static char body[40];
 	sbuf_t b;
 
 	sb_init(&b, body, sizeof body);

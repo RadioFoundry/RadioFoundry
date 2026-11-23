@@ -9,12 +9,13 @@ static void view_begin(air_voice_t *v) { v->seq++; }
 static void view_end(air_voice_t *v) { v->seq++; }
 
 // ── Receive (provider's task) ──
-air_voice_event_t air_voice_rx_fields(air_voice_t *v, const void *call, bool start, bool play)
+air_voice_event_t air_voice_rx_fields(air_voice_t *v, const void *call, bool start, bool play, void *heard,
+				      uint16_t size)
 {
 	if (start)
 		v->played = false;
 	view_begin(v);
-	memcpy(v->view_call, call, v->call_size);
+	memcpy(heard, call, size);
 	v->view.rx_active = true;
 	v->view.rx_played = play;
 	if (start)
@@ -71,33 +72,36 @@ static void tx_fill(void *ctx)
 {
 	air_voice_t *v = ctx;
 	const air_voice_tx_ops_t *o = v->txo;
+	void *tx = (uint8_t *)v + o->tx_at;
 	const hal_air_t *air = v->session.air;
-	uint16_t lead = (uint16_t)(((uint32_t)air->tx_lead_ms * v->mode->profile.sym_rate) / 1000 + air->tx_chunk_syms);
+	uint16_t lead = (uint16_t)(((uint32_t)air->tx_lead_ms * v->session.fr.mode->profile.sym_rate) / 1000 +
+				   air->tx_chunk_syms);
 
 	for (;;) {
-		uint16_t first, n = o->ready(v->tx, &first), space;
+		uint16_t first, n = o->ready(tx, &first), space;
 
-		if (o->done(v->tx)) {
+		if (o->done(tx)) {
 			air_session_tx_finish(&v->session);
 			return;
 		}
 		if (v->tx_stop && !v->tx_ended) {
 			v->tx_ended = true;
-			o->end(v->tx, v->silence);
+			o->end(tx, o->silence(v));
 			continue;
 		}
 		if (!n) {
 			uint8_t f[AIR_VOICE_FRAME_MAX];
+			int8_t got = o->next(v, f);
 
 			// (not done and nothing ready: a frame waits for its next voice frame)
-			if (v->tx_voice && v->tx_voice(f, v->ctx) && o->voice(v->tx, f))
+			if (got > 0 && o->voice(tx, f))
 				continue;
-			if (!v->tx_voice ||
+			if (got < 0 ||
 			    (air_session_tx_state(&v->session) != AIR_TX_PRIMING && air_session_tx_queued(&v->session) < lead)) {
 				// (before the transmitter is on nothing is lost by waiting: the preamble and header are queued)
-				if (v->tx_voice)
+				if (got >= 0)
 					v->view.tx_filler++;
-				if (!o->voice(v->tx, v->silence))
+				if (!o->voice(tx, o->silence(v)))
 					return;
 			} else {
 				return;
@@ -109,23 +113,18 @@ static void tx_fill(void *ctx)
 			return;
 		if (n > space)
 			n = space;
-		if (!air_session_tx(&v->session, o->syms(v->tx), first, n))
+		if (!air_session_tx(&v->session, o->syms(tx), first, n))
 			return;
-		o->sent(v->tx, n);
+		o->sent(tx, n);
 	}
 }
 
 static const air_session_ops_t ops = { tx_fill, NULL };
 
 bool air_voice_open(air_voice_t *v, const hal_air_t *air, const air_mode_t *mode, void *mode_ctx,
-		    uint8_t *frame, int8_t *soft, uint16_t frame_syms, const air_voice_tx_ops_t *txo, void *tx,
-		    void *view_call, uint16_t call_size)
+		    uint8_t *frame, int8_t *soft, uint16_t frame_syms, const air_voice_tx_ops_t *txo)
 {
-	v->mode = mode;
 	v->txo = txo;
-	v->tx = tx;
-	v->view_call = view_call;
-	v->call_size = call_size;
 	return air_session_open(&v->session, air, mode, mode_ctx, frame, soft, frame_syms, &ops, v);
 }
 
@@ -141,7 +140,8 @@ void air_voice_retuned(air_voice_t *v)
 
 bool air_voice_tx_can(const air_voice_t *v, bool need_silence)
 {
-	return air_session_is_open(&v->session) && (v->session.fit & AIR_FIT_TX) && (!need_silence || v->silence);
+	return air_session_is_open(&v->session) && (v->session.fit & AIR_FIT_TX) &&
+	       (!need_silence || v->txo->silence((void *)v) != NULL);
 }
 
 bool air_voice_tx_begin(air_voice_t *v)
@@ -185,7 +185,7 @@ void air_voice_tx_clear(air_voice_t *v)
 	air_session_tx_clear(&v->session);
 }
 
-void air_voice_view(const air_voice_t *v, air_voice_view_t *out, void *call_out)
+void air_voice_view(const air_voice_t *v, air_voice_view_t *out, const void *heard, void *call_out, uint16_t size)
 {
 	uint8_t seq;
 
@@ -193,7 +193,7 @@ void air_voice_view(const air_voice_t *v, air_voice_view_t *out, void *call_out)
 	do {
 		seq = v->seq;
 		*out = v->view;
-		memcpy(call_out, v->view_call, v->call_size);
+		memcpy(call_out, heard, size);
 	} while ((seq & 1) || seq != v->seq);
 	out->tx = (uint8_t)air_session_tx_state(&v->session);
 }

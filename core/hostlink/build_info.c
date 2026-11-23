@@ -11,9 +11,9 @@
 #include "radio/radio_nxdn.h"
 #endif
 #if CONFIG_YSF
+#include <string.h>
 #include "radio/radio_ysf.h"
 #endif
-#include <string.h>
 
 #ifndef RFOUNDRY_PRESET
 #define RFOUNDRY_PRESET "unknown"
@@ -33,6 +33,9 @@ const char *build_start_now(void) { return lang_code(lang_find(0)); }
 #define P25_FEATURES	"P25,P25_TRUNK,"
 #elif CONFIG_P25
 #define P25_FEATURES	"P25,"
+#endif
+#if CONFIG_P25 && CONFIG_NXDN && !CONFIG_YSF
+static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
 
 static const char features[] =
@@ -228,10 +231,11 @@ static const char features[] =
 	"HOSTLINK";	// both listeners run on the host link (USB CDC or a UART)
 
 // P25, NXDN and YSF run where the board's air interface carries them: the Codeplug Editor offers their channels only
-// there. One buffer, rebuilt at each call: its callers copy it into their reply at once
+// there
 const char *build_modes_now(void)
 {
-#if CONFIG_P25 || CONFIG_NXDN || CONFIG_YSF
+#if CONFIG_YSF
+	// One buffer, rebuilt at each call: its callers copy it into their reply at once
 	static char modes[sizeof("P25,P25_TRUNK,NXDN,YSF,")];
 
 	modes[0] = '\0';
@@ -243,11 +247,17 @@ const char *build_modes_now(void)
 	if (radio_nxdn_fits())
 		strcat(modes, "NXDN,");
 #endif
-#if CONFIG_YSF
 	if (radio_ysf_fits())
 		strcat(modes, "YSF,");
-#endif
 	return modes;
+#elif CONFIG_P25 && CONFIG_NXDN
+	bool p25 = radio_p25_fits(), nxdn = radio_nxdn_fits();
+
+	return p25 && nxdn ? modes_both : p25 ? P25_FEATURES : nxdn ? "NXDN," : "";
+#elif CONFIG_P25
+	return radio_p25_fits() ? P25_FEATURES : "";
+#elif CONFIG_NXDN
+	return radio_nxdn_fits() ? "NXDN," : "";
 #else
 	return "";
 #endif

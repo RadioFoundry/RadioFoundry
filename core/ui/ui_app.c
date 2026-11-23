@@ -369,7 +369,7 @@ static void recent_add(const ui_recent_t *r)
 	uint8_t i;
 	for (i = 0; i < recent_n; i++)
 		if (recent[i].src == r->src && recent[i].dst == r->dst && recent[i].out == r->out &&
-		    recent[i].ysf == r->ysf && (!r->ysf || strcmp(recent[i].name, r->name) == 0))
+		    ui_recent_ysf(&recent[i]) == ui_recent_ysf(r) && (!ui_recent_ysf(r) || strcmp(recent[i].name, r->name) == 0))
 			break;
 	if (i == recent_n && recent_n < UI_RECENT_MAX)
 		recent_n++;
@@ -570,7 +570,7 @@ static bool caller_target(ui_target_t *t)
 	}
 #endif
 	for (uint8_t i = 0; i < recent_n; i++) {
-		if (!recent[i].out && !recent[i].ysf) {
+		if (!recent[i].out && !ui_recent_ysf(&recent[i])) {
 			ui_recent_target(&recent[i], t);
 			return true;
 		}
@@ -1409,11 +1409,13 @@ static void quick_change(uint8_t kind, int8_t dir)
 		ui_st.cc_edit = (uint8_t)(c < 0 ? 15 : c > 15 ? 0 : c);
 		break;
 	}
+#if CONFIG_YSF
 	case QT_DGID: {
 		int g = ui_st.dgid_edit + dir;
 		ui_st.dgid_edit = (uint8_t)(g < 0 ? 99 : g > 99 ? 0 : g);
 		break;
 	}
+#endif
 	case QT_BRIGHTNESS: {
 		int b = ui_st.brightness + dir * 10;
 		ui_st.brightness = (uint8_t)(b < 10 ? 10 : b > 100 ? 100 : b);
@@ -1659,9 +1661,11 @@ bool ui_quick_key(const input_event_t *ev)
 		} else if (ui_st.quick_edit && kind == QT_CC) {
 			int c = ui_st.cc_edit * 10 + d;
 			ui_st.cc_edit = (uint8_t)(ui_st.cc_edit < 2 && c <= 15 && ui_st.cc_edit != 0 ? c : d);
+#if CONFIG_YSF
 		} else if (ui_st.quick_edit && kind == QT_DGID) {
 			int g = ui_st.dgid_edit * 10 + d;	// two digits; a third starts again
 			ui_st.dgid_edit = (uint8_t)(ui_st.dgid_edit != 0 && ui_st.dgid_edit < 10 && g <= 99 ? g : d);
+#endif
 		} else if (ui_st.quick_edit && kind == QT_BRIGHTNESS) {
 			ui_st.brightness = (uint8_t)(d == 0 ? 100 : d * 10);
 			quick_close_editor();
@@ -2179,7 +2183,7 @@ static void call_back_key(void)
 {
 	for (uint8_t i = 0; i < ui_recent_count(); i++) {
 		const ui_recent_t *r = ui_recent_get(i);
-		if (r->out || r->ysf)
+		if (r->out || ui_recent_ysf(r))
 			continue;
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR) {
 			ui_toast(TR(HOME_WHY_CALL_BACK_DMR_ONLY, "Call back: DMR only"));

@@ -2186,17 +2186,20 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 // A P25, NXDN or YSF call coming in (air_call): whether one is heard now, and its fields. YSF names its caller by
 // callsign (call, "" until heard) and its target by DG-ID: dgid >= 0
 typedef struct {
-	bool played, enc, unit, not_dn, data;
+	bool played, enc, unit;
 	uint32_t src, dst;
+#if CONFIG_YSF
+	bool not_dn, data;
 	const char *call;
 	int16_t dgid;
+#endif
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
 	memset(c, 0, sizeof *c);
-	c->dgid = -1;
 #if CONFIG_YSF
+	c->dgid = -1;
 	if (v->ch.mode == RADIO_MODE_YSF && (v->ysf.flags & RADIO_YSF_RX) != 0) {
 		c->played = (v->ysf.flags & RADIO_YSF_PLAYED) != 0;
 		c->not_dn = (v->ysf.flags & RADIO_YSF_NOT_DN) != 0;
@@ -2240,6 +2243,7 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
+#if CONFIG_YSF
 	if (!c->played && !c->data) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			c->not_dn ? TR(CALL_WHY_NOT_DN, "Not DN voice: not played") :
@@ -2248,6 +2252,15 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
+#else
+	if (!c->played) {
+		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
+			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
+		gfx_text(f, 0, y, fit, ui_col.warn);
+		return;
+	}
+#endif
+#if CONFIG_YSF
 	if (c->call != NULL) {
 		// YSF: "N0CALL > DG-ID 12", or "N0RPT > Data" for a data transmission (room data); the callsign kept longest
 		for (int with_dgid = 1; with_dgid >= 0; with_dgid--) {
@@ -2267,6 +2280,7 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		gfx_text(f, 0, y, fit, ui_col.rx);
 		return;
 	}
+#endif
 	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);

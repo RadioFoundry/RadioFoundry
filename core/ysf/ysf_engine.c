@@ -3,6 +3,7 @@
 // YSF DN voice on a channel (ysf_engine.h), on the shared voice engine (air_voice.h)
 #include "ysf_engine.h"
 
+#include <stddef.h>
 #include <string.h>
 
 _Static_assert(YSF_VOICE_BYTES <= AIR_VOICE_FRAME_MAX, "a voice frame fits air_voice's");
@@ -31,7 +32,7 @@ static void notify(ysf_engine_t *e, const ysf_call_t *c, air_voice_event_t ev)
 
 static void rx_fields(ysf_engine_t *e, const ysf_call_t *c, bool start)
 {
-	notify(e, c, air_voice_rx_fields(&e->av, c, start, wanted(e, c)));
+	notify(e, c, air_voice_rx_fields(&e->av, c, start, wanted(e, c), &e->heard, sizeof e->heard));
 }
 
 static void on_start(const ysf_call_t *c, void *ctx)
@@ -79,7 +80,21 @@ static bool t_done(void *t) { return ysf_call_tx_done(t); }
 static bool t_voice(void *t, const uint8_t *v) { return ysf_call_tx_voice(t, v); }
 static void t_end(void *t, const uint8_t *silence) { ysf_call_tx_end(t, silence); }
 
-static const air_voice_tx_ops_t tx_ops = { t_ready, t_syms, t_sent, t_done, t_voice, t_end };
+// The encoder's next frame through the hook, and the silence frame from the configuration
+static int8_t t_next(void *eng, uint8_t v[AIR_VOICE_FRAME_MAX])
+{
+	ysf_engine_t *e = eng;
+
+	if (!e->hooks.tx_voice)
+		return -1;
+	return e->hooks.tx_voice(v, e->ctx) ? 1 : 0;
+}
+static const uint8_t *t_silence(void *eng) { return ((ysf_engine_t *)eng)->cfg.silence; }
+
+_Static_assert(offsetof(ysf_engine_t, av) == 0, "air_voice_t first: tx_fill reaches the engine from it");
+static const air_voice_tx_ops_t tx_ops = {
+	offsetof(ysf_engine_t, tx), t_ready, t_syms, t_sent, t_done, t_voice, t_end, t_next, t_silence,
+};
 
 bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cfg_t *cfg,
 		      const ysf_engine_hooks_t *hooks, void *ctx)
@@ -88,15 +103,11 @@ bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cf
 	e->cfg = *cfg;
 	e->hooks = *hooks;
 	e->ctx = ctx;
-	e->av.tx_voice = hooks->tx_voice;
-	e->av.ctx = ctx;
-	e->av.silence = cfg->silence;
 	ysf_call_rx_init(&e->rx, &sink, e);
 #if CONFIG_AIR_RX_ADAPT
 	air_softmodem_lend(&e->adapt);	// before the open: a provider with a soft modem sets it up there
 #endif
-	if (air_voice_open(&e->av, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &tx_ops, &e->tx,
-			   &e->heard, sizeof e->heard))
+	if (air_voice_open(&e->av, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &tx_ops))
 		return true;
 #if CONFIG_AIR_RX_ADAPT
 	air_softmodem_lend(NULL);
@@ -120,7 +131,6 @@ void ysf_engine_retuned(ysf_engine_t *e)
 void ysf_engine_set(ysf_engine_t *e, const ysf_engine_cfg_t *cfg)
 {
 	e->cfg = *cfg;
-	e->av.silence = cfg->silence;
 	air_voice_recheck(&e->av);
 }
 
@@ -171,7 +181,7 @@ void ysf_engine_view(const ysf_engine_t *e, ysf_engine_view_t *out)
 {
 	air_voice_view_t v;
 
-	air_voice_view(&e->av, &v, &out->rx);
+	air_voice_view(&e->av, &v, &e->heard, &out->rx, sizeof out->rx);
 	out->rx_active = v.rx_active;
 	out->rx_played = v.rx_played;
 	out->tx = v.tx;

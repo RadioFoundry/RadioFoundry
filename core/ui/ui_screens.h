@@ -107,10 +107,12 @@ typedef struct {
 	uint8_t tone_target;		// Tone editor: RADIO_TONE_BOTH, RADIO_TONE_TX or RADIO_TONE_RX
 	subtone_t tone_edit;		// Tone editor: the value picked (shown at once, before the radio's view catches up)
 	uint8_t cc_edit;		// Color code editor: the value picked
+#if CONFIG_YSF
 	uint8_t dgid_edit;		// DG-ID editor (YSF): the value picked
 	char ysf_last[11];		// the last YSF call heard (Home's activity when idle): callsign, DG-ID, when
 	uint8_t ysf_last_dgid;
 	uint32_t ysf_last_ms;		// 0: none yet
+#endif
 	uint8_t diag_first;	// first board line on the diagnostics page
 	bool locked;		// keys locked (long QUICK)
 	bool scanning;

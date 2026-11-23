@@ -101,11 +101,17 @@ static unsigned num_of(const uint8_t *src, uint8_t n)
 	return v;
 }
 
+// out keeps the last reply taken: the room list stays for the screens while other replies come and go (a reply
+// that isn't a list never writes its room entries)
 void ysf_wx_rx_begin(ysf_wx_rx_t *r)
 {
 	memset(r, 0, offsetof(ysf_wx_rx_t, out));
-	memset(&r->out, 0, sizeof r->out);
 	r->on = true;
+}
+
+static bool is_list(const uint8_t *h)
+{
+	return h[1] == 0x5D && h[2] == 0x46 && h[3] == 0x5F;
 }
 
 static void take(ysf_wx_rx_t *r, uint8_t b)
@@ -114,7 +120,7 @@ static void take(ysf_wx_rx_t *r, uint8_t b)
 
 	if (p < sizeof r->hdr)
 		r->hdr[p] = b;
-	if (p >= ROOMS_AT) {
+	if (p >= ROOMS_AT && is_list(r->hdr)) {
 		unsigned j = (unsigned)(p - ROOMS_AT) / ROOM_LEN, i = (unsigned)(p - ROOMS_AT) % ROOM_LEN;
 
 		r->rec[i] = b;
@@ -185,7 +191,7 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 	if (r->broken || !r->end)
 		return false;
 	end = r->end - 1u;		// the 0x03
-	if (h[1] == 0x5D && h[2] == 0x46 && h[3] == 0x5F && end >= ROOMS_AT) {
+	if (is_list(h) && end >= ROOMS_AT) {
 		// The list: [7..11] the node's ID, [12..21] its callsign, [22..24] rooms on the page, [25..27] in all; a
 		// search's result has '0' at [5], '1' at [22] and its count at [23..24]
 		unsigned n, k = 0;
@@ -213,6 +219,8 @@ bool ysf_wx_rx_end(ysf_wx_rx_t *r)
 	if (w->connected) {
 		text_of(h + 36, 5, w->room_id);
 		text_of(h + 41, 16, w->room_name);
+	} else {
+		w->room_id[0] = w->room_name[0] = '\0';
 	}
 	return true;
 }

@@ -793,6 +793,20 @@ static void testRooms(void)
 	wx_n = 0;
 	send_data(&rx, &fr, d, len, 3);
 	CHECK(wx_n == 0, "a lost frame drops the reply");
+	// A status reply after the list: the list stays in the parser for the screens (the reply only sets its own fields)
+	memset(d, ' ', sizeof d);
+	d[0] = 0x00;
+	memcpy(d + 1, "\x5D\x51\x5F\x26", 4);
+	put_text(d + 5, "54321", 5);
+	put_text(d + 10, "N0RPT", 10);
+	put_text(d + 20, "NODE-RPT", 14);
+	put_text(d + 34, "12", 2);
+	len = reply_end(d, 57);
+	wx_n = 0;
+	send_data(&rx, &fr, d, len, -1);
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && !wx_got.connected && wx_got.room_name[0] == '\0' &&
+	      !strcmp(wx_got.room[0].id, "10000") && !strcmp(wx_got.room[19].name, "ROOM-19"),
+	      "status after a list: the rooms stay, no room now");
 }
 
 int main(void)

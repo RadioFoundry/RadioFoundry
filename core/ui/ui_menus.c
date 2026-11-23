@@ -1080,7 +1080,7 @@ static uint16_t recent_count(void) { return ui_recent_count(); }
 static bool recent_target(uint16_t i, ui_target_t *t)
 {
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
-	if (r == NULL || r->ysf)
+	if (r == NULL || ui_recent_ysf(r))
 		return false;	// YSF: nobody to call by ID (PTT on the channel calls everyone with its DG-ID)
 	ui_recent_target(r, t);
 	if (!t->group && t->heard_tg) {
@@ -1101,12 +1101,15 @@ static void recent_item(uint16_t i, ui_item_t *it)
 	sb_init(&b, it->label, sizeof it->label);
 	sbuf_t vb;
 	sb_init(&vb, it->value, sizeof it->value);
+#if CONFIG_YSF
 	if (r->ysf) {
 		sb_str(&b, r->name);	// the callsign, then the DG-ID it came with
 		sb_str(&vb, "DG-ID ");
 		sb_u32(&vb, r->dgid, 2);
 		sb_chr(&vb, ' ');
-	} else if (r->out) {
+	} else
+#endif
+	if (r->out) {
 		sb_str(&b, GLYPH_ARROW);
 		sb_str(&b, r->group ? "TG " : "");
 		sb_u32(&b, r->dst, 1);
@@ -1147,7 +1150,7 @@ static void recent_context(uint16_t i)
 {
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
 	ui_target_t t;
-	if (r != NULL && r->ysf) {
+	if (r != NULL && ui_recent_ysf(r)) {
 		ui_toast(TR(TOAST_NO_ACTIONS_HERE, "No actions here"));
 	} else if (r != NULL) {
 		ui_recent_target(r, &t);

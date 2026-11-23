@@ -50,7 +50,7 @@ typedef struct {
 	uint16_t end;			// where a checked end marker was, + 1; 0 none
 	uint8_t hdr[64];		// the reply's first bytes
 	uint8_t rec[50];		// the room entry being filled
-	ysf_wx_t out;			// what it is being parsed into
+	ysf_wx_t out;			// what it is being parsed into; it keeps the last reply taken, the room list too
 } ysf_wx_rx_t;
 
 void ysf_wx_rx_begin(ysf_wx_rx_t *r);

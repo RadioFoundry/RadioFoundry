@@ -4,6 +4,7 @@
 #include "nxdn_engine.h"
 #include "config.h"
 
+#include <stddef.h>
 #include <string.h>
 
 _Static_assert(NXDN_EHR_BYTES <= AIR_VOICE_FRAME_MAX, "a voice frame fits air_voice's");
@@ -65,7 +66,7 @@ static void rx_fields(nxdn_engine_t *e, const nxdn_call_t *c, bool start)
 	// A field that came in late may say the call is not for us after all, or that it turned encrypted
 	bool play = wanted(e, c) && !c->iv && (c->vcall.cipher == NXDN_CIPHER_NONE || e->rx.scramble_key);
 
-	notify(e, c, air_voice_rx_fields(&e->av, c, start, play));
+	notify(e, c, air_voice_rx_fields(&e->av, c, start, play, &e->heard, sizeof e->heard));
 }
 
 static void on_start(const nxdn_call_t *c, void *ctx)
@@ -106,7 +107,21 @@ static bool t_done(void *t) { return nxdn_call_tx_done(t); }
 static bool t_voice(void *t, const uint8_t *v) { return nxdn_call_tx_voice(t, v); }
 static void t_end(void *t, const uint8_t *silence) { nxdn_call_tx_end(t, silence); }
 
-static const air_voice_tx_ops_t tx_ops = { t_ready, t_syms, t_sent, t_done, t_voice, t_end };
+// The encoder's next frame through the hook, and the silence frame from the configuration
+static int8_t t_next(void *eng, uint8_t v[AIR_VOICE_FRAME_MAX])
+{
+	nxdn_engine_t *e = eng;
+
+	if (!e->hooks.tx_voice)
+		return -1;
+	return e->hooks.tx_voice(v, e->ctx) ? 1 : 0;
+}
+static const uint8_t *t_silence(void *eng) { return ((nxdn_engine_t *)eng)->cfg.silence; }
+
+_Static_assert(offsetof(nxdn_engine_t, av) == 0, "air_voice_t first: tx_fill reaches the engine from it");
+static const air_voice_tx_ops_t tx_ops = {
+	offsetof(nxdn_engine_t, tx), t_ready, t_syms, t_sent, t_done, t_voice, t_end, t_next, t_silence,
+};
 
 bool nxdn_engine_begin(nxdn_engine_t *e, const hal_air_t *air, const nxdn_engine_cfg_t *cfg,
 		       const nxdn_engine_hooks_t *hooks, void *ctx)
@@ -115,12 +130,9 @@ bool nxdn_engine_begin(nxdn_engine_t *e, const hal_air_t *air, const nxdn_engine
 	e->cfg = *cfg;
 	e->hooks = *hooks;
 	e->ctx = ctx;
-	e->av.tx_voice = hooks->tx_voice;
-	e->av.ctx = ctx;
-	e->av.silence = cfg->silence;
 	nxdn_call_rx_init(&e->rx, cfg->rx_ran, &sink, e);
 	return air_voice_open(&e->av, air, nxdn_engine_mode(cfg->rate9600), &e->rx.rx, e->frame, e->soft,
-			      NXDN_FRAME_SYMS, &tx_ops, &e->tx, &e->heard, sizeof e->heard);
+			      NXDN_FRAME_SYMS, &tx_ops);
 }
 
 void nxdn_engine_end(nxdn_engine_t *e)
@@ -139,7 +151,6 @@ void nxdn_engine_set(nxdn_engine_t *e, const nxdn_engine_cfg_t *cfg)
 
 	e->cfg = *cfg;
 	e->cfg.rate9600 = rate;		// the mode is the session's: a new rate is a new session
-	e->av.silence = cfg->silence;
 	e->rx.rx.ran = cfg->rx_ran;
 	e->rx.scramble_key = key_for(e, e->rx.call.vcall.cipher, e->rx.call.vcall.key_id);
 	air_voice_recheck(&e->av);
@@ -206,7 +217,7 @@ void nxdn_engine_view(const nxdn_engine_t *e, nxdn_engine_view_t *out)
 {
 	air_voice_view_t v;
 
-	air_voice_view(&e->av, &v, &out->rx);
+	air_voice_view(&e->av, &v, &e->heard, &out->rx, sizeof out->rx);
 	out->rx_active = v.rx_active;
 	out->rx_played = v.rx_played;
 	out->tx = v.tx;

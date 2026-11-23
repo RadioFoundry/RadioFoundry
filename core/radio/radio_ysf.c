@@ -22,10 +22,10 @@ _Static_assert(RADIO_YSF_RID_LEN == YSF_RID_LEN && RADIO_YSF_CALL_LEN == YSF_CS_
 
 static radio_ysf_settings_t set;
 // Rooms: the command armed for the next transmission, and the node's last reply as published (the provider's task
-// writes it, any task reads it: wx_seq odd while it writes)
+// writes it, any task reads it: wx_seq odd while it writes). The room list itself stays in the engine's parser
+// (ysf_wx_rx_t.out): it goes with the engine, as the page needs the YSF channel anyway
 static uint8_t wx_buf[YSF_WX_CMD_MAX], wx_len, wx_cmd = YSF_WX_NONE;
 static uint32_t wx_arg;
-static ysf_wx_t wx_pub;
 static radio_ysf_wx_t wx_state = { .asked_cmd = YSF_WX_NONE };
 static volatile uint8_t wx_seq;
 // This radio's RID and where it came from: worked out on the radio task only (init, and again at each begin while
@@ -173,7 +173,6 @@ static void v_wx(const ysf_wx_t *w, void *ctx)
 	(void)ctx;
 	wx_seq++;
 	if (w->kind == YSF_WX_ALL) {
-		wx_pub = *w;
 		wx_state.search = w->search;
 		wx_state.rooms = w->rooms;
 		wx_state.rooms_total = w->rooms_total;
@@ -220,10 +219,12 @@ bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
 	bool ok;
 
 	do {
+		const ysf_engine_t *e = eng;
+
 		s = wx_seq;
-		ok = i < wx_state.rooms;
+		ok = e != NULL && i < wx_state.rooms;
 		if (ok)
-			*out = wx_pub.room[i];
+			*out = e->rx.wx.out.room[i];
 	} while ((s & 1) || s != wx_seq);
 	return ok;
 }
@@ -259,6 +260,9 @@ void radio_ysf_end(void)
 {
 	if (eng == NULL)
 		return;
+	wx_seq++;
+	wx_state.rooms = 0;	// the list lived in the engine
+	wx_seq++;
 	ysf_engine_end(eng);
 	ambeVoiceStop();
 	eng = NULL;
