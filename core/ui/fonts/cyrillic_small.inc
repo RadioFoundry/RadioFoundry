@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: LicenseRef-X11-Fixed-Public-Domain
+// SPDX-FileCopyrightText: NONE
 // X11 5x8 fixed font. BDF COPYRIGHT: "Public domain font.  Share and enjoy."
 // https://github.com/olikraus/u8g2/blob/master/tools/font/bdf/5x8.bdf
 

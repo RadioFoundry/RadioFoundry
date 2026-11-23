@@ -29,9 +29,12 @@ def main():
     ap.add_argument("output", type=Path)
     a = ap.parse_args()
 
+    # REUSE-IgnoreStart: header for the generated font
     tiny = ["// SPDX-License-Identifier: LicenseRef-X11-Fixed-Public-Domain",
+            "// SPDX-FileCopyrightText: NONE",
             '// X11 5x8 fixed font. BDF COPYRIGHT: "Public domain font.  Share and enjoy."',
             "// https://github.com/olikraus/u8g2/blob/master/tools/font/bdf/5x8.bdf", ""]
+    # REUSE-IgnoreEnd
     add_bdf(tiny, a.x11, "spleen_5x8_cyrillic")
     spleen = header("BSD-2-Clause", "https://github.com/fcambus/spleen/tree/2.1.0", a.spleen / "LICENSE")
     spleen.append("#if !CONFIG_FONT_AA || defined(FONT_BOTH)")
