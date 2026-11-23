@@ -45,6 +45,10 @@ nearest new level.
 
 ### Programming several radios
 
+Opening a saved file or draft sends its valid settings area, including its channel modes and trunking systems.
+After reading from a radio, edits on that connection merge only the settings you changed, preserving settings
+changed in the radio's menus. A file without a valid settings area leaves the radio's existing area intact.
+
 To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
 connected. A radio swapped on the programming cable is read again before anything is written, so the write is
 compared with that radio's codeplug, not the last one's.
@@ -83,7 +87,9 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
-In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
+In a table, double-click a cell or type on it to edit it in place. The RX Tone and TX Tone fields list the CTCSS tones
+and DCS codes. Typing narrows the list, and the arrow keys and Enter pick a tone. A tone missing from the list, such as
+69.4, is taken as typed, and a short DCS code such as D23 becomes D023N. Click a column heading to sort, and type in the
 filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.

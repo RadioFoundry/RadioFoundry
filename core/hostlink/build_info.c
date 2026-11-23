@@ -98,6 +98,9 @@ static const char features[] =
 #if CONFIG_DMR_ROAMING
 	"DMR_ROAMING,"
 #endif
+#if CONFIG_DMR_AES
+	"DMR_AES,"
+#endif
 #if CONFIG_DMR_TRUNK
 	"DMR_TRUNK,"
 #endif

@@ -369,11 +369,14 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - **Basic privacy** (Motorola-style, Anytone 16-bit): the voice LC carries the privacy bit (service options bit 6)
   and a manufacturer FID; the AMBE bits of each burst are XORed with a key-derived pattern that depends on the burst
   position (A-F). The modem must give the stack the raw 27-byte AMBE before decoding and take raw AMBE for
-  transmission, with the burst position. The EMB PI bit is set on voice bursts of an encrypted call.
+  transmission, with the burst position. The EMB PI bit is clear on the voice bursts of the AES-256 calls measured on
+  air: privacy is told by the service options and PI headers.
 - **Receivers without the key**: drop bursts with PI set (do not play them).
-- **Enhanced / AES schemes**: need a PI header (DT 0) before the voice and the per-superframe privacy information in
-  burst F. The modem must let the stack send a PI header burst and set the burst F embedded content, or at least
-  pass them through. Late entry needs the IV from burst F (not supported by the HR_C6000 path today).
+- **Enhanced / AES schemes**: need a PI header (DT 0) before the voice and the algorithm / key ID in burst F's
+  embedded field ([dmr-voice.md](dmr-voice.md) 5.1). The modem must let the stack send a PI header burst (a host CRC
+  burst, mask 0x6969) and set burst F's field before key-up (`set_burst_f`; the HR_C7000 driver has it, the
+  HR_C6000's is #864). A late entry's MI is carried in the voice frames' late-entry bits, not in burst F; our RX
+  doesn't read it yet (#863).
 - The HR_C6000 has its own "end-to-end encryption" interrupts (TX-start sub-status bit 5); not used.
 
 ---
@@ -496,4 +499,5 @@ interrupt.
 - RF TX interrupt lead on the HR_C6000 has not been measured.
 - Whether the C7000 has the double voice report and the stale LC behavior (assumed, as it derives from the C6000).
 - ETSI hang time and wake-up retry timings are configuration in practice; the 600 ms retry is a common vendor value.
-- Enhanced privacy (PI header, burst F IV) is not exercised by any of our drivers.
+- AES-256 (PI header, burst F field) is sent through the HR_C7000 driver only; the HR_C6000 driver has no
+  `set_burst_f` yet (#864).

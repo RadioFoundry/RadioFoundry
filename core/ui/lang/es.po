@@ -207,6 +207,11 @@ msgctxt "HOTSPOT_BANNER_OK_STOPS"
 msgid "OK stops it"
 msgstr "OK lo detiene"
 
+#: core/ui/ui_app.c
+msgctxt "APRS_BANNER_MSG_FROM"
+msgid "APRS message from "
+msgstr "Mensaje APRS de "
+
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "TOAST_SAVE_FAILED"
 msgid "Couldn't save: try again"
@@ -421,6 +426,21 @@ msgstr "Escaneando la banda"
 msgctxt "SCAN_TOAST_SCANNING_ZONE"
 msgid "Scanning this zone"
 msgstr "Escaneando esta zona"
+
+#: core/ui/ui_app.c
+msgctxt "SCAN_TOAST_NOT_SCANNING"
+msgid "Not scanning"
+msgstr "No hay escaneo"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
+msgid "Skipped until the scan stops"
+msgstr "Ignorado hasta parar escaneo"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
+msgid "Nothing to skip yet"
+msgstr "Nada que ignorar aún"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
@@ -2248,6 +2268,11 @@ msgid "Tone burst"
 msgstr "Ráfaga de tono"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Clave AES"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Código de color"
@@ -3698,6 +3723,11 @@ msgid "Prev zone"
 msgstr "Zona anterior"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_SKIP"
+msgid "Scan skip"
+msgstr "Saltar canal"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "Bloq. teclas"
@@ -4493,16 +4523,6 @@ msgid "Always skip"
 msgstr "Saltar siempre"
 
 #: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
-msgid "Skipped until the scan stops"
-msgstr "Ignorado hasta parar escaneo"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
-msgid "Nothing to skip yet"
-msgstr "Nada que ignorar aún"
-
-#: core/ui/ui_menus.c
 msgctxt "SCAN_TOAST_STOPPED_HERE"
 msgid "Scan stopped here"
 msgstr "Escaneo detenido aquí"
@@ -4743,6 +4763,11 @@ msgid "Finding system"
 msgstr "Buscando sistema"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_BLOCKED"
+msgid "Blocked system"
+msgstr "Sistema bloqueado"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Espere"
@@ -4833,6 +4858,16 @@ msgid "No TX frequency set"
 msgstr "Sin frecuencia TX fijada"
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Sin clave AES o TX"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES: guardando, reintenta"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "Modo: no disponible"
@@ -4916,6 +4951,11 @@ msgstr "Sistema no responde"
 msgctxt "DENY_WHY_P25T_NO_CHAN"
 msgid "Voice channel unusable"
 msgstr "Canal de voz inválido"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "Blocked system: no TX"
+msgstr "Sistema bloqueado: sin TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"
@@ -5296,6 +5336,11 @@ msgstr "No se puede transmitir"
 msgctxt "ACTIVITY_BODY_TX_WAITS"
 msgid "Transmit waits for it"
 msgstr "Sin TX hasta entonces"
+
+#: core/ui/ui_screens.c
+msgctxt "APRS_ACTIVITY_LAST_MSG"
+msgid "APRS: "
+msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
