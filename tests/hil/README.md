@@ -70,8 +70,9 @@ working tree) can break, in the standard tier unless `--tier` says otherwise:
 
 - a test marked `@pytest.mark.feature("<id>")`, required or optional, whose feature the change reaches: its `switch` in
   the switches `tools/affected.py` finds (named in a changed line, a guard around one, the Makefile's switch for a
-  changed file), or a changed file under its `source` paths (without `source`: the files the Makefile builds for
-  the switch, else the changed files that name `CONFIG_<switch>` and at most two other switches)
+  changed file), or a changed file under its `source` paths. Without `source`, the same default paths
+  `tools/bringup.py` hashes for a record: the files the Makefile builds for the switch, else every file that names
+  `CONFIG_<switch>`. A change that makes a feature's record need a re-run selects the tests that renew it
 - every test in a changed test file
 
 A test without a feature marker runs only if it is smoke. `tools/affected.py features --base BASE` prints the

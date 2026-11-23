@@ -69,6 +69,8 @@ def affected_selection(config, base):
         return affected.affected_features(ROOT, mb, None, diff), set(diff)
     except subprocess.CalledProcessError as e:
         raise pytest.UsageError(f"--affected {base}: {' '.join(e.cmd)}: {e.stderr.strip()}")
+    except affected.registry.RegistryError as e:
+        raise pytest.UsageError(f"--affected {base}: {e}")
 
 
 def item_path(item):

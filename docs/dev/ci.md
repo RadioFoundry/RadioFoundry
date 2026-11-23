@@ -141,20 +141,34 @@ maximal) plus the switch-off and fm-minimal builds the change reaches, from `too
 builds about a hundred switches off on every board; a change can only break the switches its code sits under, so the
 tool reads them from the diff:
 
+The boards' facts come from make (`make print-vars`, as `tools/boards.py` reads them), so `config.mk` and its
+conditionals count: a driver a board adds with `BOARD_DIRS += $(if ...)` is that board's. One make per board, none
+for a change without firmware sources.
+
 | From | Switches | Boards |
 |---|---|---|
-| A changed line | Every `CONFIG_<X>` it names (a guard added, moved or removed), and the `#if` guards around it, in the new and the old file | |
-| An added line | The switches of a quoted include's declarations it uses, where the header has them only under a guard (the unguarded `contact_t` that broke `CONFIG_DMR=n`) | |
+| A changed line | Every `CONFIG_<X>` it names (a guard added, moved or removed), and the `#if` guards around it, in the new and the old file. A guard counts through a macro defined from a switch or under one (`#if HAS_FOO`) | |
+| An added line | The switches of the declarations it uses that the headers it reaches have only under a guard (the unguarded `contact_t` that broke `CONFIG_DMR=n`): its quoted includes and theirs, each resolved as the compiler does (the file's directory, then the board's `-I` directories in order) | |
 | The Makefile | The switch the Makefile builds the changed file for | |
-| A file under a directory a `board.mk` lists (`BOARD_DIRS`), `boards/<b>/`, `boot/<stage>/` | | Those boards |
+| A board's own switch (not in `config/features.mk`) | The board's `[ci] extra` configuration that turns it off | |
+| A file under a directory a board builds (`BOARD_DIRS` and the other lists, the deepest listed directory deciding), `boards/<b>/`, `boot/<stage>/` | | Those boards |
 | `platform/<p>/`, a linker script, a `.mk`, a boot stage | fm-minimal | Every board on the platform, or the board |
 | Other firmware sources (`core/`, `hal/`, `config/`, a driver no board lists, the Makefile) | | One board per platform: the one with the most switches on |
 
 Only switches on by default and not required by the board are built off, as in the matrix. `RFOUNDRY_AFFECTED_LIMIT`
 caps the list (12 per firmware job on a pull request, about 6 minutes), most relevant first: a board's own switches,
 fm-minimal for a platform, linker or boot change, shared switches by how many changed files name them, then
-fm-minimal for DMR. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed file or its includes name. The
+fm-minimal for DMR. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed file or its own includes name. The
 nightly matrix stays the backstop for what the selection misses.
+
+When the tool can't tell, it builds more, never less. A firmware file that maps to no board (a platform no board
+uses, a board or boot directory no `board.mk` names) selects every board's whole matrix, and a board make fails on
+gets its own; each prints a warning that `tools/ci.sh` lists at the end (`ci: warnings:`). The limit never cuts these.
+
+The C side is a heuristic over the source text, not a compiler: the selection runs before any build, and on the HIL
+host (`pytest --affected`, `tools/hil_batch.sh`) without the boards' cross compilers or `third_party/`. It misses a
+guard through a macro defined in another `.c` file, a conditional include and a name built by token pasting. The
+module's docstring lists what it reads.
 
 `tools/affected.py summary --base origin/main` prints the list with the files behind each build, so a local
 `tools/ci.sh --affected origin/main --board <b>` runs the same builds before a push.

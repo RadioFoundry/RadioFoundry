@@ -545,7 +545,14 @@ if [ -n "$AFFECTED" ]; then
 	if [ -n "$REG_PY" ] && $REG_PY tools/affected.py builds --base "$AFFECTED" ${ONLY:+--board "$ONLY"} \
 		--scope "${RFOUNDRY_AFFECTED_SCOPE:-precise}" --limit "${RFOUNDRY_AFFECTED_LIMIT:-0}" \
 		> "$OUT/affected.builds" 2> "$OUT/affected.log"; then
-		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(sed -n 's/^affected: /, /p' "$OUT/affected.log")"
+		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(grep -v '^affected: warning: ' "$OUT/affected.log" | sed -n 's/^affected: /, /p')"
+		# what the tool couldn't map (a file no board uses, a board make fails on): it fell back to that board's
+		# whole matrix, and says so here
+		grep '^affected: warning: ' "$OUT/affected.log" > "$OUT/affected.warn"
+		while read -r wline <&3; do
+			warn "affected builds: ${wline#affected: warning: }"
+		done 3< "$OUT/affected.warn"
+		rm -f "$OUT/affected.warn"
 	else
 		cat "$OUT/affected.log"
 		bad "affected builds: tools/affected.py failed (see $OUT/affected.log)"
@@ -574,6 +581,9 @@ for bm in boards/*/board.mk boards/*/; do
 		# Each build option value besides the default (a band): its image, default config
 		builds "$b"
 	fi
+	# --affected falls back to the board's whole matrix when it can't tell what the change reaches ("<b> matrix")
+	bquick=$QUICK
+	[ -n "$AFFECTED" ] && grep -q "^$b matrix *\$" "$OUT/affected.builds" && bquick=0
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
 	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-not-written 2>/dev/null)"
@@ -582,11 +592,11 @@ for bm in boards/*/board.mk boards/*/; do
 	for kv in $features; do
 		f=${kv%%=*}
 		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
-		[ "$QUICK" = 1 ] && continue
+		[ "$bquick" = 1 ] && continue
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	if [ "$QUICK" = 0 ]; then
+	if [ "$bquick" = 0 ]; then
 		# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
 		builds "$b" --extra
 		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
@@ -608,7 +618,10 @@ for bm in boards/*/board.mk boards/*/; do
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $maximal_vars
 	if [ -n "$AFFECTED" ]; then
-		grep "^$b " "$OUT/affected.builds" | while read -r _ aname aargs; do echo "$aname $aargs"; done > "$OUT/$b.affected"
+		grep "^$b " "$OUT/affected.builds" | while read -r _ aname aargs; do
+			# a board on its whole matrix built every one of these above
+			[ "$bquick" = 0 ] || [ "$aname" = matrix ] || echo "$aname $aargs"
+		done > "$OUT/$b.affected"
 		while read -r aname aargs <&3; do
 			# shellcheck disable=SC2086
 			build "$b" "$aname" $aargs
