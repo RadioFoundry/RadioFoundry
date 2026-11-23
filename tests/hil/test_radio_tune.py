@@ -76,7 +76,7 @@ def test_battery_trims(radio):
         skip("not_built", "the firmware has no battery trims (older firmware)")
     raw, empty, full, _, _ = reading(radio)
     if empty == 0:
-        skip("n/a", "the radio has no battery")
+        skip("no_hw", "the radio has no battery")
     assert raw > 0, "a radio with a battery reads one"
     try:
         settle(radio, [], lambda raw, e, f, mv, p: mv == raw and p == pct(mv, e, f), "no trims: the raw reading")
