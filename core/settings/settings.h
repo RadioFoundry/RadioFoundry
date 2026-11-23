@@ -263,6 +263,10 @@ typedef struct {
 #define SETTINGS_PAGES_MAX	16u
 #define SETTINGS_PAGES		((sizeof(settings_t) + SETTINGS_PAGE_BYTES - 1u) / SETTINGS_PAGE_BYTES)
 #define SETTINGS_PAGE_SHIFT	12	// a record's layout field: the page in bits 12-15, the layout in bits 0-11
+// The ring's other record type (settings-store.md 2.2): radio tuning's record (core/radio/radio_tune.h), page field 15,
+// its own format version in the layout bits. Firmware that doesn't know it reads it as a settings page it never loads
+#define SETTINGS_PAGE_TUNE	15u
+#define SETTINGS_TUNE_LAYOUT	1u
 // cp_flags: the owner kept another firmware's codeplug as the radio's own ("Use anyway", docs/spec/codeplug-native.md
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
@@ -514,5 +518,14 @@ void settings_poll(uint32_t now_ms);
 bool settings_flush(void);
 
 void settings_get_stats(settings_stats_t *s);
+
+// Radio tuning's record (settings-store.md 2.2): one slot, kept apart from settings_t and from every settings save, a
+// factory reset included; the ring's turns carry it forward. Save: fill writes the payload (at most cap bytes) and
+// returns its length; written, committed and read back like a settings page, the one before it kept until then. False
+// without a settings ring, or when the write failed (the record before stays in force)
+bool settings_tune_save(uint16_t (*fill)(uint8_t *p, uint16_t cap));
+// Load: take gets the newest tune record's payload under the storage lock (nothing it calls may take that lock). False
+// when there is none (take is not called)
+bool settings_tune_load(void (*take)(const uint8_t *p, uint16_t n));
 
 #endif
