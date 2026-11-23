@@ -84,7 +84,7 @@ def test_hotspot_rf_level_power(radio):
     core = radio.core()
     n = int(core.get("power_count") or 0)
     if n < 2:
-        skip("hardware", "one power level: nothing to tell apart")
+        skip("no_hw", "one power level: nothing to tell apart")
     hz = int(core["tx_hz"])
     radio.link.power_level("lowest")
     _set_freq(radio, hz, 0xFF)
