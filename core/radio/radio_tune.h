@@ -64,7 +64,9 @@ enum { RADIO_TUNE_BATT_GAIN, RADIO_TUNE_BATT_EMPTY, RADIO_TUNE_BATT_FULL };
 
 #if CONFIG_RADIO_TUNE
 // Load the record in force into the RAM table (at start, after the calibration the drive trims are checked against;
-// and after the debug link wrote a new record). Returns the copies found valid, bit 0 copy A, bit 1 copy B
+// and after the debug link wrote a new record). Returns the copies found valid, bit 0 copy A, bit 1 copy B, or
+// RADIO_TUNE_LOAD_BUSY when the shared storage buffer is taken (nothing loaded)
+#define RADIO_TUNE_LOAD_BUSY	0xFFu
 uint8_t radio_tune_load(void);
 // The drive for a transmission: the board's drive for level at hz with the trim applied, clamped. 0 stays 0
 uint16_t radio_tune_drive(uint32_t hz, uint8_t level, uint16_t drive);

@@ -120,14 +120,15 @@ const char *radio_tune_name(uint8_t level, uint32_t tx_hz)
 
 bool radio_tune_set(uint8_t first, uint8_t total, const uint8_t *w, uint8_t n)
 {
-	if (total > RADIO_TUNE_WORDS || first + n > total) {
+	// A gap before first would bring back words of an earlier table
+	if (total > RADIO_TUNE_WORDS || first + n > total || first > n_words) {
 		return false;
 	}
-	n_words = first < n_words ? first : n_words;	// a reader meanwhile sees a shorter table, never a torn word
+	n_words = first;	// a reader meanwhile sees a shorter table, never a torn word
 	for (uint8_t i = 0; i < n; i++) {
 		words[first + i] = get32(w + 4u * i);
 	}
-	n_words = total;
+	n_words = (uint8_t)(first + n);	// only words written are live; the next request continues at first + n
 	return true;
 }
 
@@ -169,6 +170,9 @@ static uint32_t read_copy(uint32_t addr, uint8_t *r)
 static void take(const uint8_t *r)
 {
 	uint8_t nw = 0, nn = 0;
+	// Readers on other tasks see an empty table while it fills, never old and new words mixed
+	n_words = 0;
+	n_names = 0;
 	for (uint8_t i = 0; r != NULL && i < r[9]; i++) {
 		const uint8_t *e = r + RADIO_TUNE_HDR + i * RADIO_TUNE_ENTRY;
 		uint32_t kind = e[0] >> 4, sel = e[0] & 0xFu, khz = (uint32_t)(e[2] | e[3] << 8) * 25u;
@@ -197,8 +201,6 @@ static void take(const uint8_t *r)
 		}
 		words[nw++] = RADIO_TUNE_WORD(khz, kind, sel, v);
 	}
-	n_words = 0;
-	n_names = 0;
 	n_names = nn;
 	n_words = nw;
 }
@@ -206,9 +208,12 @@ static void take(const uint8_t *r)
 uint8_t radio_tune_load(void)
 {
 	const hal_flash_map_t *m = storage_map();
-	uint8_t *r = m != NULL && m->tune_addr != 0u && board.flash != NULL && board.radio != NULL ? storage_buffer_acquire() : NULL;
-	if (r == NULL) {
+	if (m == NULL || m->tune_addr == 0u || board.flash == NULL || board.radio == NULL) {
 		return 0;
+	}
+	uint8_t *r = storage_buffer_acquire();
+	if (r == NULL) {
+		return RADIO_TUNE_LOAD_BUSY;	// a save or a CPS write holds the buffer: the table stays, the host tries again
 	}
 	// Copy A at the buffer's start, copy B after it (the shared buffer is a sector; a record is under 300 bytes)
 	uint8_t *rb = r + RADIO_TUNE_HDR + RADIO_TUNE_ENTRIES * RADIO_TUNE_ENTRY + 8u;

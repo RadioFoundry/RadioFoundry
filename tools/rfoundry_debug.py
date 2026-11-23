@@ -760,11 +760,19 @@ class DebugLink:
         """Load the record in force into the radio's RAM table (STORAGE TUNE_LOAD): the copies found valid, bit 0 A, bit 1 B"""
         return self.request(STORAGE, bytes([STORAGE_OP_TUNE_LOAD]))[1][0]
 
+    TUNE_SET_WORDS = 15     # words a request holds: the 64-byte request less op, first and total
+
     def tune_set(self, words, first=0, total=None):
         """RADIO TUNE_SET: words (u32 each, radio-tune.md 4) at first.. of a RAM table of total; [] empties the table.
         Live from the next use; the stored record comes back with tune_load or a restart"""
         total = len(words) + first if total is None else total
-        self.radio(OP_TUNE_SET, struct.pack(f"<BB{len(words)}I", first, total, *words))
+        if not words:
+            self.radio(OP_TUNE_SET, struct.pack("<BB", first, total))
+        for i in range(0, len(words), self.TUNE_SET_WORDS):
+            part = words[i:i + self.TUNE_SET_WORDS]
+            if i:
+                time.sleep(0.06)    # the radio request rate limit
+            self.radio(OP_TUNE_SET, struct.pack(f"<BB{len(part)}I", first + i, total, *part))
 
     # ── the air interface (CONFIG_AIR_RAW, docs/spec/debuglink.md 3.28) ──
     def air_status(self):
@@ -1247,8 +1255,9 @@ class DebugLink:
     def vfo(self, on):
         self.radio(OP_VFO, bytes([1 if on else 0]))
 
-    def vfo_set(self, hz):
-        self.radio(OP_VFO_SET, struct.pack("<I", int(hz)))
+    def vfo_set(self, hz, tx_hz=None):
+        """The VFO's RX frequency; TX keeps a split's offset where it can, unless tx_hz is given (0: simplex)"""
+        self.radio(OP_VFO_SET, struct.pack("<I", int(hz)) + (b"" if tx_hz is None else struct.pack("<I", int(tx_hz))))
 
     def vfo_step(self, d):
         self.radio(OP_VFO_STEP, struct.pack("<b", d))

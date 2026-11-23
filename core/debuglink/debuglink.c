@@ -509,6 +509,9 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		break;
 	case OP_VFO_SET:
 		radio_req_vfo_set(get32(a));
+		if (len >= 9u) {
+			radio_req_vfo_tx(get32(a + 4));	// the TX frequency too, 0 simplex (else a split's offset carries)
+		}
 		break;
 	case OP_VFO_STEP:
 		radio_req_vfo_step((int8_t)a[0]);
@@ -810,7 +813,8 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		if (n == 0u || req[1] > 1u || off + n > board.flash->erase_size) {
 			return status_only(out, DL_ST_BAD_ARG);
 		}
-		if (m->tune_addr == 0u) {
+		// A region still holding another firmware's data (not claimed) takes no write, the tune area's included
+		if (m->tune_addr == 0u || !storage_ready()) {
 			return status_only(out, DL_ST_UNAVAILABLE);
 		}
 		if (radio_get_state() == RS_TX) {
@@ -822,10 +826,15 @@ static size_t cmd_storage(const uint8_t *req, uint16_t len, uint8_t *out, size_t
 		storage_unlock();
 		return status_only(out, ok ? DL_ST_OK : DL_ST_BUSY);
 	}
-	case DL_STORAGE_OP_TUNE_LOAD:
+	case DL_STORAGE_OP_TUNE_LOAD: {
+		uint8_t valid = radio_tune_load();
+		if (valid == RADIO_TUNE_LOAD_BUSY) {
+			return status_only(out, DL_ST_BUSY);
+		}
 		out[0] = DL_ST_OK;
-		out[1] = radio_tune_load();
+		out[1] = valid;
 		return 2;
+	}
 #endif
 	default:
 		return status_only(out, DL_ST_BAD_ARG);

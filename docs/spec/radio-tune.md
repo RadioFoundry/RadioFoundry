@@ -58,11 +58,14 @@ the debug link's `power_name` and the web and SNMP services (`radio_tune_name`).
 board's names.
 
 Battery trims are one value each, at no frequency. The gain corrects the reading itself: `battery_mv`, the low and
-critical thresholds and the power-off all use the corrected value. Empty and full move only the charge percentage
+critical thresholds, the transmit refusal and the power-off all use the corrected value. A gain set from a wrong meter
+reading moves these protections too, so the clamp is ±15 %. Empty and full move only the charge percentage
 (and the Low battery warning, which follows the percentage). When the moved voltages are less than 400 mV apart
 (`BATT_SPAN_MV`), the radio keeps the board's own.
 
 The frequency trim applies to every transmission the radio core keys, including DMR bursts keyed later in a call. The
+trim is the one of the mode the board transmits in: P25 and NXDN use the DMR trim, since the board keys them in its
+DMR mode. The
 deviation trim applies at key-up in the modes the board marks in `board_t.tune`.
 
 ## 3. The record
@@ -116,6 +119,9 @@ The host saves through the debug link's STORAGE command ([debuglink.md](debuglin
 
 A power cut or a lost link during step 2 leaves the old record in force in the other copy. A cut during step 4 leaves
 the new record in the first copy. TUNE_WRITE runs under the storage lock and is refused while the radio transmits.
+TUNE_WRITE answers unavailable while the storage region still holds another firmware's data (the region not yet
+claimed, [settings-store.md](settings-store.md)). TUNE_LOAD answers busy while a save or a CPS write holds the shared
+storage buffer, and the table stays as it was. The host tries again.
 
 To clear every trim, the host saves a record with no entries. The page's Restore factory values also sets the
 oscillator trim to 0.
@@ -141,7 +147,9 @@ reaches the PA at the next key-up, so the page ends the test transmission and ke
 deviation and oscillator changes also take effect at key-up, so the page re-keys for those on every board.
 
 The table changes one aligned word at a time. TUNE_SET first shortens the table to the words before the first one it
-replaces, so a reader on another task sees a shorter table, never a torn word.
+replaces, so a reader on another task sees a shorter table, never a torn word. The table then ends after the last word
+written: words past it from an earlier table never come back. A request that starts past the table's end is refused.
+A TUNE_LOAD empties the table before it fills it again.
 
 ## 6. Debug link
 

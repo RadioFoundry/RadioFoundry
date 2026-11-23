@@ -297,7 +297,17 @@ export class TuneRadio {
 		return this.load();
 	}
 
-	async load() { return (await this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_LOAD])))[0]; }
+	// The copies the radio found valid; busy while a save or a CPS write holds the radio's storage buffer
+	async load() {
+		for (let i = 0; ; i++) {
+			try {
+				return (await this.link.request(STORAGE, new Uint8Array([S_OP.TUNE_LOAD])))[0];
+			} catch (e) {
+				if (e?.status !== ST.BUSY || i >= 20) throw e;
+				await sleep(100);
+			}
+		}
+	}
 
 	// The RAM table, live from the next use; each request's total is only what was written so far, so a reader on the
 	// radio never sees a word left from the table before
@@ -357,7 +367,7 @@ export class TuneRadio {
 		if (mode === MODE.FM) await this.radio(R.TONE, [3, 0, 0, 0]);
 		const hz = khz * 1000;
 		if (c.rxHz !== hz || c.txHz !== hz) {
-			await this.radio(R.VFO_SET, le32(hz));
+			await this.radio(R.VFO_SET, [...le32(hz), ...le32(0)]);	// TX 0: simplex, whatever offset the VFO had
 			c = await this.waitCore((x) => x.rxHz === hz && x.txHz === hz, "frequency");
 		}
 		await this.txLimit(khz);

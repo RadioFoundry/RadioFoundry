@@ -145,7 +145,7 @@ static bool protected_area(const hal_flash_map_t *m, uint32_t a, uint32_t n)
 	return overlaps(a, n, m->settings_addr, m->settings_size) || overlaps(a, n, m->journal_addr, 2u * STORAGE_SECTOR) ||
 	       overlaps(a, n, m->native_addr, m->native_size) || overlaps(a, n, m->staging_addr, m->staging_size) ||
 	       overlaps(a, n, m->calibration_addr, m->calibration_size) ||
-	       overlaps(a, n, m->tune_addr, m->tune_addr != 0u ? HAL_FLASH_TUNE_UNITS * STORAGE_SECTOR : 0u);
+	       overlaps(a, n, m->tune_addr, hal_flash_tune_size(m, board.flash->erase_size));
 }
 
 // An image block the protocol may read and write: inside the EEPROM image or the flash image, on the flash, clear of

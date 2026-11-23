@@ -85,8 +85,8 @@ static void cw_cancel(radio_sm_t *sm);
 #if CONFIG_APRS_AFSK
 #include "aprs/afsk.h"			// AFSK_BAUD, the tones
 #endif
+#include "radio/radio_tune.h"	// the owner's trims (docs/spec/radio-tune.md)
 #if CONFIG_POSITION
-#include "radio/radio_tune.h"
 #include "position/position.h"		// our position for DMR GPS Info and LRRP (docs/spec/position.md)
 #endif
 

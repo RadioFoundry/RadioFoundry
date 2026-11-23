@@ -43,6 +43,12 @@ typedef struct {
 
 #define HAL_FLASH_TUNE_UNITS	2u	// the tune area's erase units
 
+// The tune area's size in bytes (0 without one) on flash that erases in units of erase_size
+static inline uint32_t hal_flash_tune_size(const hal_flash_map_t *m, uint32_t erase_size)
+{
+	return m != NULL && m->tune_addr != 0u ? HAL_FLASH_TUNE_UNITS * erase_size : 0u;
+}
+
 // The end of the highest area of a map whose flash erases in units of erase_size (an area of size 0 is none): a chip
 // smaller than this can't hold the map, and a driver then offers none (an address past the chip fails, it never
 // wraps to a lower one)
@@ -60,7 +66,7 @@ static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t eras
 		m->native_size != 0u ? m->native_addr + m->native_size : 0u,
 		m->staging_size != 0u ? m->staging_addr + m->staging_size : 0u,
 		m->satellite_size != 0u ? m->satellite_addr + m->satellite_size : 0u,
-		m->tune_addr != 0u ? m->tune_addr + HAL_FLASH_TUNE_UNITS * erase_size : 0u,
+		m->tune_addr != 0u ? m->tune_addr + hal_flash_tune_size(m, erase_size) : 0u,
 	};
 	uint32_t end = 0;
 	for (unsigned i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {

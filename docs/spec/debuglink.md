@@ -402,7 +402,7 @@ At most one per 20 ms (busy otherwise; the radio core's queue holds 16).
 | 2 | pos u16 | `radio_req_zone_pos`: position in the zone, 0-based |
 | 3 | index u16 | `radio_req_zone` |
 | 4 | on u8 | `radio_req_vfo` |
-| 5 | hz u32 | `radio_req_vfo_set` (simplex; in the DMR VFO it retunes the DMR VFO) |
+| 5 | hz u32 [, tx u32] | `radio_req_vfo_set`: RX at hz; TX keeps a split's offset where it can transmit, else = RX. With tx, `radio_req_vfo_tx` too: TX at tx, 0 simplex. In the DMR VFO it retunes the DMR VFO |
 | 6 | dir i8 | `radio_req_vfo_step` |
 | 7 | dir i8 | `radio_req_power` (wraps; a temporary change on a channel, the VFO's own power in the VFO) |
 | 8 | dir i8 | `radio_req_squelch` |

@@ -275,6 +275,16 @@ static void test_live(void)
 	CHECK(!radio_tune_set(1, 2, w, 2));		// past total
 	CHECK(radio_tune_set(0, 0, w, 0));		// empty
 	CHECK(tuned(446000, 2) == 0);
+	// Only words written are live: a gap before first is refused, a total past them shows none of the old table
+	uint8_t nw, nn;
+	CHECK(!radio_tune_set(1, 2, w, 1));
+	CHECK(radio_tune_set(0, 2, w, 1));
+	radio_tune_counts(&nw, &nn);
+	CHECK(nw == 1);
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 146000000u) == 0);
+	CHECK(radio_tune_set(1, 2, w + 4, 1));
+	CHECK(radio_tune_freq(RADIO_MODE_FM, 146000000u) == 120);
+	CHECK(radio_tune_set(0, 0, w, 0));
 	// The stored record back
 	trim(RADIO_TUNE_DRIVE, 2, 446000, 7);
 	write_copy(1, 1, true);
