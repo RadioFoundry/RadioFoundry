@@ -14,7 +14,7 @@ State:
 |---|---|
 | Frame codec: FSW, LICH, scrambler, SACCH, FACCH1, the four VCH (1, 2) | written, host tested |
 | Receive, the call layer, the engine (3, 4, 7) | written, host tested; 4800 bit/s, and 9600 bit/s with half-rate voice |
-| Voice (5) | through the DMR side's voice path to the vocoder the board hosts (`hal_vocoder_t`); host tested |
+| Voice (5) | through the DMR side's voice path to the vocoder the board hosts (`hal_vocoder_t`), or to a baseband that plays the voice itself; host tested |
 | The radio core: mode, settings, PTT, debug link, home screen (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([nxdn-codeplug.md](nxdn-codeplug.md)) | written, host tested |
 | Scan (6.4) | written, host tested; not checked on a radio |
@@ -152,7 +152,13 @@ frame is the one the board's DMR vocoder takes.
 The voice path is the DMR side's (`core/dmr/ambe/ambeVoice.c`, [dmr-voice.md](dmr-voice.md)): the engine's `rx_voice`
 hook hands each 72-bit frame to its sink, which takes the FEC off (`ambeFec`, 72 to 49 bits) and queues the 49
 parameter bits for `hal_vocoder_t`; `tx_voice` takes the next frame from its source, which encodes the microphone's
-49 bits and adds the FEC. The audio stream runs while the engine does. Nothing in the tree encodes or decodes NXDN
+49 bits and adds the FEC. The audio stream runs while the engine does.
+
+A board whose baseband plays the voice (`CAP_MODEM_VOICE`) has no `hal_vocoder_t`. When its modem has the play hooks
+(`hal_dmr_modem_t.play_begin`, `play_frame`, `play_end`; [modem-sct.md](modem-sct.md) 7.1), the engine's 72-bit
+frames go to the modem unchanged, from the call's first voice frame to its end, and the core opens the speaker path
+while the call plays. Descrambling happens before the hook (the call layer re-adds the FEC), so the modem gets clear
+frames. Transmit on such a board is not written. Nothing in the tree encodes or decodes NXDN
 speech: the engine, the call layer, the tests and `nxdntool` move made-up patterns.
 
 With `CONFIG_NXDN_SCRAMBLER` and a key from 1 to 32767, TS 1-D 5.3.1 and 5.4.4.1 apply a key-seeded 15-bit sequence

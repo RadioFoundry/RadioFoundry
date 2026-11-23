@@ -17,6 +17,12 @@
 #define SCT_DMR_MODE_WAIT_MS	40	// the Packet Interface's answer time for a field
 #define SCT_DMR_RESTART_MS	1000	// a chip that keeps restarting gets a start this often at most
 #define CR_UNSENT	0xFF	// CARRIER_READY not sent since the chip went to receive
+#define PLAY_FRAMES	4	// 72-bit frames a CHAN_D block holds for the vocoder (80 ms)
+#define PLAY_FRAME_BYTES	9
+#define VOCODER_IO_MCU_IN	0x08	// VOCODER_IO_SET bit 3: the decoder's frames come from the MCU
+
+// The 72-bit air frame of AMBE+2 silence (a DMR voice burst's, FEC included)
+static const uint8_t play_silence[PLAY_FRAME_BYTES] = { 0xB9, 0xE8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2A, 0x6B };
 
 typedef enum { TX_IDLE, TX_ON, TX_ENDING, TX_DRAIN } tx_state_t;
 
@@ -84,6 +90,11 @@ static struct {
 	uint32_t cr_due;
 
 	uint8_t option[5];	// DMR_CALL_OPTION: the port's, unless a bench poke changed a byte
+
+	// The vocoder playing frames the MCU gives it (play_begin): a block of PLAY_FRAMES being filled
+	bool play;
+	uint8_t play_n;
+	uint8_t play_buf[PLAY_FRAMES * PLAY_FRAME_BYTES];
 
 	// One field asked from the debug link (sct_dmr_field_begin)
 	struct {
@@ -969,6 +980,78 @@ static void packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 // --- hal_dmr_modem ---
 
 // The board's start fields of one packet type (TYPE 5 or TYPE 0), in its order
+// The vocoder plays the MCU's frames with no call on the air (modem-sct.md 7): the work mode's audio loop-back with
+// layer 2 processing, then the decoder's input from the MCU. Without the loop-back the chip refuses the frames
+// unless a DMR call it receives has started the decoder. The frames go four to a CHAN_D block, as the chip reports
+// them in a call; the chip acknowledges each block
+static bool play_block(void)
+{
+	sct_pkt_t p;
+
+	sct_pkt_begin(&p, SCT_TYPE_CONTROL);
+	sct_pkt_add(&p, SCT_F_CHAN_D, s.play_buf, sizeof(s.play_buf));
+	s.play_n = 0;
+	if (!send(&p))
+		return false;
+	s.st.play_blocks++;
+	return true;
+}
+
+static bool x_play_begin(void)
+{
+	static const uint8_t idle[3] = { 0, 0, 0 }, loop[3] = { 0x03, 0x03, 0x00 };
+	sct_pkt_t p;
+
+	if (s.port == NULL || s.running || (s.port->ready != NULL && !s.port->ready(s.port->ctx)))
+		return false;
+	s.play_n = 0;
+	sct_pkt_begin(&p, SCT_TYPE_DMR);
+	sct_pkt_add1(&p, SCT_F_CARRIER_READY, 0);
+	sct_pkt_add(&p, SCT_F_WORK_MODE, idle, 3);
+	sct_pkt_add1(&p, SCT_F_PROCESS_MODE, 0x02);
+	if (!send(&p))
+		return false;
+	sct_pkt_begin(&p, SCT_TYPE_DMR);
+	sct_pkt_add(&p, SCT_F_WORK_MODE, loop, 3);
+	if (!send(&p))
+		return false;
+	sct_pkt_begin(&p, SCT_TYPE_CONTROL);
+	sct_pkt_add1(&p, SCT_F_VOCODER_IO_SET, VOCODER_IO_MCU_IN);
+	s.play = send(&p);
+	return s.play;
+}
+
+static void x_play_frame(const uint8_t ambe72[PLAY_FRAME_BYTES])
+{
+	if (!s.play)
+		return;
+	memcpy(&s.play_buf[s.play_n * PLAY_FRAME_BYTES], ambe72, PLAY_FRAME_BYTES);
+	if (++s.play_n == PLAY_FRAMES)
+		play_block();
+}
+
+// A part block is filled with silence, so its frames still play
+static void x_play_end(void)
+{
+	static const uint8_t idle[3] = { 0, 0, 0 };
+	sct_pkt_t p;
+
+	if (!s.play)
+		return;
+	s.play = false;
+	if (s.play_n != 0) {
+		while (s.play_n < PLAY_FRAMES)
+			memcpy(&s.play_buf[s.play_n++ * PLAY_FRAME_BYTES], play_silence, PLAY_FRAME_BYTES);
+		play_block();
+	}
+	sct_pkt_begin(&p, SCT_TYPE_CONTROL);
+	sct_pkt_add1(&p, SCT_F_VOCODER_IO_SET, 0);
+	send(&p);
+	sct_pkt_begin(&p, SCT_TYPE_DMR);
+	sct_pkt_add(&p, SCT_F_WORK_MODE, idle, 3);
+	send(&p);
+}
+
 static void add_start_fields(sct_pkt_t *p, bool dmr)
 {
 	for (uint8_t i = 0; i < s.port->start_count; i++) {
@@ -985,6 +1068,8 @@ static bool x_start(const dmr_config_t *cfg, dmr_event_cb_t cb, void *ctx)
 		return false;
 	sct_pkt_t p;
 
+	if (s.play)
+		x_play_end();	// the DMR side takes the chip back
 	s.cfg = *cfg;
 	s.cb = cb;
 	s.cb_ctx = ctx;
@@ -1270,6 +1355,9 @@ LOCKED_VOID(tx_release, (void), ())
 LOCKED_VOID(set_embedded_lc, (const uint8_t lc[9]), (lc))
 LOCKED_VOID(set_cc_filter, (int8_t cc), (cc))
 LOCKED(bool, is_transmitting, (void), ())
+LOCKED(bool, play_begin, (void), ())
+LOCKED_VOID(play_frame, (const uint8_t ambe72[PLAY_FRAME_BYTES]), (ambe72))
+LOCKED_VOID(play_end, (void), ())
 
 static void m_health(dmr_modem_health_t *h)
 {
@@ -1300,6 +1388,9 @@ const hal_dmr_modem_t sct_dmr_modem = {
 	.set_cc_filter = m_set_cc_filter,
 	.is_transmitting = m_is_transmitting,
 	.health = m_health,
+	.play_begin = m_play_begin,
+	.play_frame = m_play_frame,
+	.play_end = m_play_end,
 	.clears_crc9 = true,	// modem-sct.md 6
 	.cach_ticks = true,	// DMR_SLOT_FOUND, sent for each CACH heard (rx_slot_found)
 };
@@ -1332,7 +1423,9 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 	s.field.id = id;
 	s.field.read = read;
 	s.field.n = 0;
-	ok = s.running && !engine_busy() && send(&p);
+	// Not only while the engine runs: the bench reaches the chip in any mode once the board has booted it (FM, or a
+	// voice mode the chip doesn't demodulate, whose engine is stopped)
+	ok = !engine_busy() && send(&p);
 	if (!ok)
 		s.field.state = FIELD_IDLE;
 	unlock();

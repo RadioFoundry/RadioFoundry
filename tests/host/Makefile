@@ -374,6 +374,14 @@ radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
 
+# NXDN with a modem that plays the voice itself and takes frames from the MCU (play hooks): the call's frames go to it
+TESTS   += radioCoreTestNxdnModemVoice
+radioCoreTestNxdnModemVoice: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) \
+                             $(CORE)/dmr/dmrDataService.h $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) \
+                             $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -DFAKE_MODEM_VOICE=1 -o $@ $(RCNXDN) -lm
+
 # P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
 RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
            $(CORE)/debuglink/debuglink_view_p25.c

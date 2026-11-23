@@ -100,6 +100,8 @@ bool radio_nxdn_poll(radio_nxdn_view_t *v);
 
 void radio_nxdn_stats(radio_nxdn_stats_t *out);
 void radio_nxdn_reset_stats(void);
+// The modem plays NXDN voice itself (CAP_MODEM_VOICE with play hooks): the core opens the speaker path for a call
+bool radio_nxdn_modem_voice(void);
 #endif
 
 #endif

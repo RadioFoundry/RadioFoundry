@@ -693,6 +693,7 @@ static void outputs(radio_sm_t *sm)
 	    (sm->view.nxdn.flags & RADIO_NXDN_PLAYED) != 0) {
 		green = true;
 		digital_rx = true;
+		open = radio_nxdn_modem_voice();	// the modem's voice reaches the speaker through the board's path
 	}
 #endif
 #if CONFIG_DMR

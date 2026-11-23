@@ -104,6 +104,7 @@ typedef struct {
 	// is the same harm seen from here
 	uint32_t drain_silent;	// transmissions with frames sent, ended by the drain time-out with no packet meanwhile
 	uint32_t rx_late;	// received voice bursts skipped: the poll came five bursts late or more (a stalled task)
+	uint32_t play_blocks;	// voice blocks of frames the MCU gave the vocoder to play (play_frame)
 	uint32_t first_ms;	// the poll time of the first of either, 0 none yet
 	uint8_t first[4];	// ... then: the transmission's state, its queued frames, the last event and NAK codes
 } sct_dmr_stats_t;

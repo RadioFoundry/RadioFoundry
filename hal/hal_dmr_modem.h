@@ -168,6 +168,13 @@ typedef struct {
 	// Optional. The call is ending but runs to its superframe boundary: a modem that takes the voice from the
 	// microphone itself sends silence from here on (the stack does that for the voice it gives the modem)
 	void (*tx_release)(void);
+	// Optional (NULL: can't), a modem with its own vocoder (CAP_MODEM_VOICE): it plays voice frames the MCU gives it
+	// while its DMR side is stopped, for an air mode whose voice is the DMR air frame's AMBE+2 (NXDN). play_begin sets
+	// the vocoder up (false: the modem can't now, as while started); play_frame takes one 72-bit air frame (9 bytes, as
+	// a DMR voice burst carries it) at the air's pace, 20 ms each; play_end plays what is held and stops
+	bool (*play_begin)(void);
+	void (*play_frame)(const uint8_t ambe72[9]);
+	void (*play_end)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
 	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
 	// writes it to the chip's one CC register leaves the TX code as configured). configure() keeps any-CC listening:

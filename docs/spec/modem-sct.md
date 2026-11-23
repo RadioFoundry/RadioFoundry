@@ -302,8 +302,8 @@ it does for an FM signal, and closes it at the call's end; a call it doesn't pla
 open it. The board routes its speaker to the baseband's voice in DMR. Beeps have no PCM path either; such a board plays
 them through `beep_tone` ([radio-features.md](radio-features.md) 4).
 
-The vocoder's frames can be routed through the MCU, but the driver doesn't do it yet. Receive was checked on a radio
-with the debug link's raw field access (section 8); transmit is open (section 10).
+The vocoder's frames can be routed through the MCU. The driver uses this for one case, playback with the DMR side
+stopped (below); the DMR call path keeps the chip's own routing. Transmit through the MCU is open (section 10).
 
 | Item | What is known |
 | --- | --- |
@@ -312,6 +312,23 @@ with the debug link's raw field access (section 8); transmit is open (section 10
 | Block size | In DMR receive the chip reports 36 bytes (four frames, 80 ms). 27 bytes (three frames, one DMR burst) is also used in DMR mode; what selects it is unknown |
 | Frame content | The 72 bits of the DMR air interface's AMBE frame, FEC included, in air order: a received call's frames matched the frames sent, byte for byte, but for bit errors on the air. So a DMR or NXDN stack hands the chip the same 9-byte frames it carries, with no bit mapping |
 | Receive, MCU in the loop | 0x0C (bits 3 and 2): the demodulator's frames go to the MCU, and the decoder plays what the MCU sends. Checked on a radio: during a received call of silence frames the speaker played speech fed as `CHAN_D`. With 0x08 alone the chip answers the frames but plays the call's own; with 0x04 alone it plays the call and copies its frames to the MCU |
+| No DMR call | With no call in progress the chip refuses `CHAN_D` under 0x0C, and under 0x08 alone it answers but plays nothing. It plays with the vocoder looped back (below) |
+
+### 7.1 Playback with the DMR side stopped
+
+A voice mode the baseband doesn't demodulate (NXDN, [nxdn.md](nxdn.md) 5) hands its 72-bit frames to the modem's
+optional `play_begin`, `play_frame` and `play_end` hooks (`hal_dmr_modem_t`). The driver accepts `play_begin` only
+while its DMR engine is stopped and the chip is booted; a DMR start ends a playback first.
+
+| Step | Packets |
+| --- | --- |
+| Begin | DMR: `CARRIER_READY` 0, `WORK_MODE` 00 00 00, `PROCESS_MODE` 2; then DMR: `WORK_MODE` 03 03 00 (the vocoder looped back on itself); then control: `VOCODER_IO_SET` 0x08 |
+| Frames | control: `CHAN_D` with 36 bytes, four frames (80 ms), sent as the fourth frame arrives (`play_blocks` counts them) |
+| End | a partial block padded with the silence frame and sent; control: `VOCODER_IO_SET` 0; DMR: `WORK_MODE` 00 00 00 |
+
+Checked on a radio: speech frames from a bench NXDN call played at the speaker, and the same call carrying silence
+frames left the speaker at its noise floor. Blocks go as the frames arrive, at the air rate; the chip's buffering
+and what it does on a late block are not measured. The core opens the speaker path as for a played DMR call.
 
 ## 8. Board glue
 
@@ -373,8 +390,7 @@ often (GET_LOG counts the lines lost). A board offers both through the debug lin
   squelch opens on weak signals with them, and the audio levels they give, are unverified.
 - EQUALIZER_FILTER: the chip enables no filter by default, so the driver sends nothing. A user equalizer preset is not written.
 - The vocoder's frames on the MCU (section 7). Needed before the driver can route them:
-  - whether the decoder plays frames from the MCU with no call on the air (the case of a voice mode the baseband
-    doesn't demodulate), and how much it buffers;
+  - how much the decoder buffers in playback (section 7.1), and whether its answers to the blocks should pace them;
   - what selects the 27-byte block (a `CHAN_D` with length 0xFF and a count byte occurs, meaning unknown), and
     whether a block lines up with a burst and its place in the superframe (A-F);
   - with the modulator fed by the MCU: how many blocks the chip buffers, when it asks for the next, and what it sends

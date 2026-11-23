@@ -1884,6 +1884,72 @@ static void test_report_log(void)
 
 // A write of an ID the length table doesn't know goes out as the ID and the bytes given; a fixed-length ID with
 // another length is refused (no packet)
+// Playback of the MCU's frames with the DMR side stopped (NXDN voice): the vocoder set-up, four frames to a block, a
+// part block filled with silence at the end, refused while the DMR side runs, ended by a start
+static bool pkt_is(int i, uint8_t type, const uint8_t *f, uint8_t n)
+{
+	return i < nsent && sent[i].pkt[5] == type && sent[i].pkt[4] == n && memcmp(&sent[i].pkt[6], f, n) == 0;
+}
+
+static void test_play(void)
+{
+	static const uint8_t setup[] = { SCT_F_CARRIER_READY, 0, SCT_F_WORK_MODE, 0, 0, 0, SCT_F_PROCESS_MODE, 0x02 };
+	static const uint8_t loop[] = { SCT_F_WORK_MODE, 0x03, 0x03, 0x00 };
+	static const uint8_t io_in[] = { SCT_F_VOCODER_IO_SET, 0x08 }, io_off[] = { SCT_F_VOCODER_IO_SET, 0x00 };
+	static const uint8_t idle[] = { SCT_F_WORK_MODE, 0, 0, 0 };
+	static const uint8_t sil[9] = { 0xB9, 0xE8, 0x81, 0x52, 0x61, 0x73, 0x00, 0x2A, 0x6B };
+	uint8_t f[9], blk[2 + 36];
+	sct_dmr_stats_t st;
+
+	sct_dmr_init(&port);
+	nsent = 0;
+	CHECK(m->play_begin != NULL && m->play_begin());
+	CHECK(nsent == 3 && pkt_is(0, SCT_TYPE_DMR, setup, sizeof(setup)) && pkt_is(1, SCT_TYPE_DMR, loop, sizeof(loop)) &&
+	      pkt_is(2, SCT_TYPE_CONTROL, io_in, sizeof(io_in)));
+	nsent = 0;
+	blk[0] = SCT_F_CHAN_D;
+	blk[1] = 36;
+	for (uint8_t i = 0; i < 6; i++) {
+		memset(f, 0x10 + i, sizeof(f));
+		m->play_frame(f);
+		if (i < 4)
+			memcpy(&blk[2 + 9 * i], f, 9);
+		CHECK(nsent == (i < 3 ? 0 : 1));
+	}
+	CHECK(pkt_is(0, SCT_TYPE_CONTROL, blk, sizeof(blk)));
+	nsent = 0;
+	m->play_end();
+	memset(&blk[2], 0x14, 9);
+	memset(&blk[11], 0x15, 9);
+	memcpy(&blk[20], sil, 9);
+	memcpy(&blk[29], sil, 9);
+	CHECK(nsent == 3 && pkt_is(0, SCT_TYPE_CONTROL, blk, sizeof(blk)) &&
+	      pkt_is(1, SCT_TYPE_CONTROL, io_off, sizeof(io_off)) && pkt_is(2, SCT_TYPE_DMR, idle, sizeof(idle)));
+	sct_dmr_get_stats(&st);
+	CHECK(st.play_blocks == 2);
+	nsent = 0;
+	m->play_frame(f);	// ended: nothing more goes
+	m->play_end();
+	CHECK(nsent == 0);
+
+	// Not while the DMR side runs; a start takes the chip back from a playback
+	start();
+	nsent = 0;
+	CHECK(!m->play_begin() && nsent == 0);
+	m->stop();
+	CHECK(m->play_begin());
+	m->play_frame(f);
+	nsent = 0;
+	dmr_config_t cfg = { .own_id = 1234567, .cc = 2, .access = DMR_ACCESS_IMPOLITE };
+	CHECK(m->start(&cfg, on_event, NULL));
+	CHECK(nsent > 2 && pkt_is(1, SCT_TYPE_CONTROL, io_off, sizeof(io_off)) && pkt_is(2, SCT_TYPE_DMR, idle, sizeof(idle)));
+	m->stop();
+	booted = false;
+	sct_dmr_init(&port);
+	CHECK(!m->play_begin());	// a chip not booted
+	booted = true;
+}
+
 static void test_field_raw(void)
 {
 	const uint8_t slot_ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, SCT_F_DMR_CALL_SLOT, 0x00 };
@@ -1930,6 +1996,10 @@ static void test_field_raw(void)
 	sct_dmr_packet(ack3f, sizeof(ack3f), 15);
 	CHECK(sct_dmr_field_poll(w, sizeof(w), &n) == 1 && n == 0);
 	sct_dmr_modem.stop();
+	// With the engine stopped (FM, or a voice mode the chip doesn't demodulate) the bench still reaches the chip
+	nsent = 0;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, SCT_F_CHAN_D, three, 3, false) && nsent == 1);
+	sct_dmr_field_cancel();
 }
 
 int main(void)
@@ -1958,6 +2028,7 @@ int main(void)
 	test_chip_answers();
 	test_field_access();
 	test_field_raw();
+	test_play();
 #if CONFIG_DEBUGLINK
 	test_report_log();
 #endif

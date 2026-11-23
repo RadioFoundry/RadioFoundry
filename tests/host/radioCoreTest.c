@@ -8591,6 +8591,48 @@ static void test_nxdn_rx(void)
 	nxdn_defaults();
 }
 
+#if FAKE_MODEM_VOICE
+// A modem that plays the voice itself and can take frames from the MCU (play hooks): an NXDN call's frames go to it,
+// begun and ended with the call, and the board's speaker path is open while the call plays
+static hal_dmr_modem_t mv_modem;
+static int mv_begins, mv_ends, mv_frames;
+static bool mv_begin(void) { mv_begins++; return true; }
+static void mv_frame(const uint8_t ambe72[9]) { (void)ambe72; mv_frames++; }
+static void mv_end(void) { mv_ends++; }
+
+static void test_modem_voice_nxdn(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+
+	mv_modem = sim_modem;
+	mv_modem.play_begin = mv_begin;
+	mv_modem.play_frame = mv_frame;
+	mv_modem.play_end = mv_end;
+	board.dmr = &mv_modem;
+	CHECK(radio_nxdn_modem_voice());
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !hw.audio);
+	run(300);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && mv_begins == 0);
+	nfar_next = 0;
+	nfar_begin(true, 1, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(1000);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_PLAYED) && hw.led[LED_GREEN] && hw.audio);
+	CHECK(mv_begins == 1 && mv_ends == 0 && mv_frames >= 30);
+	nxdn_engine_tx_stop(&nfar);
+	for (int i = 0; i < 100 && (sm.view.state != RS_IDLE || (v->flags & RADIO_NXDN_RX)); i++)
+		run(5);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && mv_begins == 1 && mv_ends == 1);
+	board.dmr = &sim_modem;
+	CHECK(!radio_nxdn_modem_voice());	// no play hooks: the DMR side's voice path, as before
+}
+#endif
+
 static void test_nxdn_tx(void)
 {
 	radio_nxdn_stats_t st;
@@ -11529,6 +11571,9 @@ int main(void)
 {
 #if FAKE_MODEM_VOICE
 	test_modem_voice();
+#if CONFIG_NXDN
+	test_modem_voice_nxdn();
+#endif
 	printf("# radioCoreTestModemVoice: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 #endif

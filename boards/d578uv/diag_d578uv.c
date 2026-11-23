@@ -129,6 +129,8 @@ bool d578uv_diag_line(uint8_t i, char *buf, uint8_t len)
 			put_u(&o, st.tx_rejected);
 			put(&o, " uns ");
 			put_u(&o, st.rx_unsupported);
+			put(&o, " ply ");
+			put_u(&o, st.play_blocks);
 		}
 #else
 		put(&o, "-");

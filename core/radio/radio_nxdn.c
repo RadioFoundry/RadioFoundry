@@ -140,12 +140,25 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 // ── Voice: the DMR side's voice path (ambeVoice.h), its sink on receive and its source on transmit. The hooks run in
 // the provider's task, which is the only one feeding that path while NXDN runs (the DMR stack is stopped); the
 // audio stream is started and stopped by the radio task (begin, end) ──
+// A modem that plays the voice itself (CAP_MODEM_VOICE) takes the frames as they are, when its DMR side can give its
+// vocoder to the MCU (play_begin); the radio core opens the speaker path for the call (radio_nxdn_modem_voice)
+static bool modem_playing;	// the provider's task only
+
+bool radio_nxdn_modem_voice(void)
+{
+	return (board.caps & CAP_MODEM_VOICE) != 0 && board.dmr != NULL && board.dmr->play_begin != NULL;
+}
+
 static void v_start(const nxdn_call_t *c, void *ctx)
 {
 	const dmr_voice_sink_t *s = ambeVoiceSink();
 
 	(void)c;
 	(void)ctx;
+	if (radio_nxdn_modem_voice()) {
+		modem_playing = board.dmr->play_begin();
+		return;
+	}
 	s->begin(NULL, s->ctx);
 }
 
@@ -154,6 +167,11 @@ static void v_voice(const uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
 	const dmr_voice_sink_t *s = ambeVoiceSink();
 
 	(void)ctx;
+	if (radio_nxdn_modem_voice()) {
+		if (modem_playing)
+			board.dmr->play_frame(ehr);
+		return;
+	}
 	s->frame(ehr, s->ctx);
 }
 
@@ -162,6 +180,12 @@ static void v_end(void *ctx)
 	const dmr_voice_sink_t *s = ambeVoiceSink();
 
 	(void)ctx;
+	if (radio_nxdn_modem_voice()) {
+		if (modem_playing)
+			board.dmr->play_end();
+		modem_playing = false;
+		return;
+	}
 	s->end(s->ctx);
 }
 
