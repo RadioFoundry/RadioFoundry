@@ -154,7 +154,7 @@ function systemDialog(api, s, isNew) {
 				help: t(mod.fallbackHelp ?? "editor.modes.fallback_help") },
 		],
 		sharing: [
-			{ key: "sharing", label: t("editor.modes.share_what"), type: "select", options: () => SHARE_LEVELS.map((n) => [n, t(shareLabel(mod, n))]), help: t(mod.conventional ? "editor.nxdn.sharing_help" : "editor.modes.sharing_help") },
+			{ key: "sharing", label: t("editor.modes.share_what"), type: "select", options: () => SHARE_LEVELS.map((n) => [n, t(shareLabel(mod, n))]), help: t(mod.sharingHelp ?? (mod.conventional ? "editor.nxdn.sharing_help" : "editor.modes.sharing_help")) },
 		],
 	};
 	const sections = mod.sections ?? [{ id: "identity" }, { id: "radio" }, { id: "fallback" }, { id: "sharing" }];
@@ -196,20 +196,28 @@ function systemDialog(api, s, isNew) {
 
 function trafficFields({ t, h, button }, system, traffic) {
 	const rows = (system.trafficKeys ?? []).map((key) => ({ ...key }));
+	const labels = { title: "editor.nxdn.traffic_keys", add: "editor.nxdn.add_key", show: "editor.nxdn.show_seeds", ...traffic.labels };
 	let reveal = false;
 	const tbody = h("tbody", {});
-	const add = button(`+ ${t("editor.nxdn.add_key")}`, () => {
+	const add = button(`+ ${t(labels.add)}`, () => {
 		rows.push({});
 		draw();
 	}, { quiet: true });
+	// A secret column's cell: "set" while hidden, else its input; a Generate button where the column makes values
+	const secretCell = (col, row) => {
+		const hidden = !reveal;
+		const has = row[col.key] != null || row._text?.[col.key];
+		const body = hidden && has ? t("editor.modes.secret_set") : cell(h, t, col, row, hidden);
+		if (!col.generate) return body;
+		return h("span", {}, body, button(t("editor.aes.generate"), () => {
+			row._text = { ...row._text, [col.key]: col.generate() };
+			draw();
+		}, { quiet: true }));
+	};
 	const draw = () => {
 		add.disabled = rows.length >= traffic.max;
 		tbody.replaceChildren(...rows.map((row, i) => h("tr", {},
-			...traffic.columns.map((col) => {
-				const hiddenSeed = col.key === "seed" && !reveal;
-				return h("td", {}, hiddenSeed && row.seed != null
-					? t("editor.modes.secret_set") : cell(h, t, col, row, hiddenSeed));
-			}),
+			...traffic.columns.map((col) => h("td", {}, col.secret ? secretCell(col, row) : cell(h, t, col, row, false))),
 			h("td", {}, button(t("editor.modes.remove_row"), () => {
 				rows.splice(i, 1);
 				draw();
@@ -222,19 +230,20 @@ function trafficFields({ t, h, button }, system, traffic) {
 		draw();
 	});
 	const table = h("div", { class: "form-table" },
-		h("div", { class: "form-row form-check" }, h("label", { for: show.id }, t("editor.nxdn.show_seeds")), show),
+		h("div", { class: "form-row form-check" }, h("label", { for: show.id }, t(labels.show)), show),
 		h("div", { class: "table-wrap" }, h("table", { class: "data" },
 			h("thead", {}, h("tr", {}, ...traffic.columns.map((col) => h("th", {}, label(t, col.label))), h("th", {}))), tbody)),
 		add);
+	const blank = (col) => (col.type === "hexbytes" ? t("editor.err.hex_bytes", { n: col.bytes }) : t("editor.err.range", { min: col.min, max: col.max }));
 	return [
-		{ group: t("editor.nxdn.traffic_keys") },
+		{ group: t(labels.title) },
 		{ type: "custom", key: "trafficKeys", render: () => table, parse: (form) => {
 			const errors = [], keys = [], ids = new Set();
 			for (const row of rows) {
 				const key = { slot: row.slot, flags: row.flags };
 				for (const col of traffic.columns) {
 					const raw = row._text?.[col.key] ?? formatSpec(col, row[col.key], t);
-					const result = raw.trim() ? parseSpec(col, raw, t) : { error: t("editor.err.range", { min: col.min, max: col.max }) };
+					const result = raw.trim() ? parseSpec(col, raw, t) : { error: blank(col) };
 					if (result.error) errors.push(`${label(t, col.label)}: ${result.error}`);
 					else key[col.key] = result.value;
 				}
@@ -342,7 +351,7 @@ function cell(h, t, col, r, masked = false) {
 		sel.addEventListener("change", () => (r[col.key] = opts[sel.selectedIndex][0]));
 		return sel;
 	}
-	const input = h("input", { type: masked ? "password" : "text", size: col.type === "freq" ? 9 : 5, spellcheck: "false", "aria-label": label(t, col.label), value: r._text?.[col.key] ?? formatSpec(col, r[col.key], t) });
+	const input = h("input", { type: masked ? "password" : "text", size: col.type === "freq" ? 9 : col.type === "hexbytes" ? 2 * col.bytes : 5, spellcheck: "false", "aria-label": label(t, col.label), value: r._text?.[col.key] ?? formatSpec(col, r[col.key], t) });
 	input.addEventListener("input", () => (r._text = { ...r._text, [col.key]: input.value }));
 	return input;
 }

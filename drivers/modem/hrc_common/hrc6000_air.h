@@ -101,6 +101,7 @@ typedef struct {
 	uint32_t overruns;	// ... dropped: the ring was full (the task was behind)
 	uint32_t half_fixes;	// ... where the RAM showed the other half complete than the one expected
 	uint32_t chunks;	// chunks handed out (records and the soft modem's; not the erasures for a fill)
+	uint32_t copy_restarts;	// no copy half for AIR_COPY_STALL_US while receiving: the copy set up again
 	uint32_t modem_us;	// time in the soft modem ...
 	uint32_t modem_span_us;	// ... for this much signal
 } hrc6000_air_stats_t;
@@ -126,11 +127,14 @@ typedef struct hrc6000_air {
 	bool tap;		// the hal_baseband_t tap is open (no session)
 	bool rx_copy;		// the session receives through the copy
 	volatile bool copy;	// the chip is in the copy set-up and the system interrupt takes halves
-	bool copy_saved;
+	bool copy_saved;	// saved_34 and saved_81 hold the registers before the copy
+	bool copy_tried;	// copy_on read them once for this set-up (the board's mode entry or the close ends one)
 	uint8_t saved_34, saved_81;	// FM audio filters and the interrupt mask before the copy set-up
 	uint8_t ram_half;	// the RAM half the next copy interrupt completes
 	bool last_any;
 	uint16_t last_word[2];	// each RAM half's last sample at the last copy interrupt
+	uint32_t t_copy;	// the last copy interrupt or the set-up: the watchdog's start
+	uint8_t copy_lost_flags;	// the system flags (0x82) the last restart found
 	volatile uint32_t rhead, rtail;	// ring samples, free running: the interrupt moves rhead, the task rtail
 	uint32_t t_half[2];	// the time of each ring half's first sample
 	bool cgap;		// the next half taken does not follow the ring's last
@@ -203,15 +207,17 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 // PA off, the deviation pair back, the chip back in the DMR receive set-up (when chip, else left as it is: the board
 // has it in another mode). The board restarts the slot engine after it. Task level
 void hrc6000_air_close(hrc6000_air_t *a, bool chip);
-// The chip was put in DMR again (a mode change, a retune): the receive set-up again, the next chunk a gap
+// The chip was put in DMR again (a mode change, a retune): the receive set-up (a session's or the tap's copy) again,
+// the next chunk a gap
 void hrc6000_air_rx_restart(hrc6000_air_t *a);
-// The chip leaves DMR under the session: any transmission ends now (PA off, TX_DONE); receive waits for rx_restart
+// The chip leaves DMR under the session or the tap: any transmission ends now (PA off, TX_DONE); receive waits for
+// rx_restart
 void hrc6000_air_suspend(hrc6000_air_t *a);
 
 void hrc6000_air_isr_timeslot(hrc6000_air_t *a);
 void hrc6000_air_isr_sys(hrc6000_air_t *a);
 void hrc6000_air_isr_rftx(hrc6000_air_t *a);
-// The board's modem task: events to the callback, the re-arm's second write, the transmit watchdog
+// The board's modem task: events to the callback, the re-arm's second write, the transmit and copy watchdogs
 void hrc6000_air_poll(hrc6000_air_t *a);
 
 // The tap (hal_baseband_t receive): the chip in DMR with the slot engine halted, no session (task level)
