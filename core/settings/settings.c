@@ -135,10 +135,9 @@ static bool have_newest;		// stats.sector / stats.slot point at the newest valid
 static uint32_t valid_mask, save_mask;
 #define SECTORS_MAX	32u
 static uint32_t next_seq;		// the next record's sequence number: past every record in the ring
-// The tune record in force (settings_tune_*): where it is and its sequence number
+// The tune record in force (settings_tune_*): where it is (sector < SECTORS_MAX, slot < SLOTS)
 static bool have_tune;
-static uint16_t tune_sec, tune_sl;
-static uint32_t tune_seq;
+static uint8_t tune_sec, tune_sl;
 // The slot buffer, used only under the storage lock (kept off the small housekeeping and start-up task stacks). One is
 // enough: next_slot's scan is over before put_record reads its record back, and settings_init calls neither. The
 // record put_record builds has its own
@@ -173,7 +172,7 @@ settings_load_t settings_init(void)
 	}
 	// First pass: the newest record of any page (where the next save follows) and the newest page 0 (the set)
 	bool have0 = false;
-	uint32_t seq0 = 0, seq_any = 0;
+	uint32_t seq0 = 0, seq_any = 0, seq_tune = 0;
 	uint16_t sec0 = 0, sl0 = 0;
 	storage_lock();
 	for (uint16_t sec = 0; sec < sectors; sec++) {
@@ -193,11 +192,11 @@ settings_load_t settings_init(void)
 				stats.sector = sec;
 				stats.slot = sl;
 			}
-			if (rec_tune(r) && (!have_tune || (int32_t)(q - tune_seq) > 0)) {
+			if (rec_tune(r) && (!have_tune || (int32_t)(q - seq_tune) > 0)) {
 				have_tune = true;
-				tune_seq = q;
-				tune_sec = sec;
-				tune_sl = sl;
+				seq_tune = q;
+				tune_sec = (uint8_t)sec;
+				tune_sl = (uint8_t)sl;
 			}
 			if (rec_page(r) == 0 && (!have0 || (int32_t)(q - seq0) > 0)) {
 				have0 = true;
@@ -410,9 +409,8 @@ static bool put_tune(uint16_t (*fill)(uint8_t *p, uint16_t cap))
 		return false;
 	}
 	have_tune = true;
-	tune_seq = next_seq - 1u;
-	tune_sec = stats.sector;
-	tune_sl = stats.slot;
+	tune_sec = (uint8_t)stats.sector;
+	tune_sl = (uint8_t)stats.slot;
 	return true;
 }
 
