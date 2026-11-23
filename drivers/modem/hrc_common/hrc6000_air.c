@@ -353,6 +353,7 @@ static void copy_on(hrc6000_air_t *a)
 	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : 0x19u) | INT_FM_RX));
 	w(a, R_INT_CLEAR, 0xFF);
 	a->last_any = false;	// which half fills next is found again (take_half)
+	a->t_copy = now(a);
 	a->cgap = true;
 	a->rx_paused = false;
 	__atomic_thread_fence(__ATOMIC_RELEASE);
@@ -387,6 +388,7 @@ static void take_half(hrc6000_air_t *a, uint32_t t)
 {
 	uint16_t last[2];
 
+	a->t_copy = t;	// a half came, taken or dropped for a full ring: the copy runs
 	for (uint8_t i = 0; i < 2; i++) {
 		uint8_t b[2] = { 0, 0 };
 		(void)hrc_ram(a->dev, HRC_PAGE_DATA, (uint16_t)(COPY_RAM + i * COPY_HALF_BYTES + COPY_HALF_BYTES - 2u), b, 2,
@@ -886,7 +888,9 @@ void hrc6000_air_close(hrc6000_air_t *a, bool chip)
 void hrc6000_air_rx_restart(hrc6000_air_t *a)
 {
 	lock(a);
-	if (a->open) {
+	if (a->tap && !a->open) {
+		copy_on(a);	// the tap's copy, after the board's mode entry rewrote the chip
+	} else if (a->open) {
 		if (a->tx == HRC6000_AIR_RX) {
 			rx_setup(a);
 		} else {
@@ -899,8 +903,8 @@ void hrc6000_air_rx_restart(hrc6000_air_t *a)
 void hrc6000_air_suspend(hrc6000_air_t *a)
 {
 	lock(a);
-	if (a->open) {
-		if (a->tx != HRC6000_AIR_RX) {
+	if (a->open || a->tap) {
+		if (a->open && a->tx != HRC6000_AIR_RX) {
 			tx_stop(a, now(a), false);
 		}
 		a->copy = false;	// the board's mode entry rewrote what copy_on changed; rx_restart sets it up again
@@ -914,8 +918,20 @@ void hrc6000_air_suspend(hrc6000_air_t *a)
 void hrc6000_air_poll(hrc6000_air_t *a)
 {
 	lock(a);
+	uint32_t t = now(a);
+	// The copy stopped: no half for 200 ms (one every 32 ms) while receiving through it. Nothing else would bring it
+	// back before the session closes. A lost edge alone doesn't get here (the board pends the system handler for a
+	// line left low), so this is the copy set-up undone or the chip no longer filling the RAM: the flags cleared and
+	// the copy set up again; the next half is a gap
+	if ((a->open || a->tap) && a->copy && a->tx == HRC6000_AIR_RX && !a->rx_paused &&
+	    (uint32_t)(t - a->t_copy) > AIR_COPY_STALL_US) {
+		uint8_t flags = 0;
+		(void)hrc_read(a->dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
+		a->copy_lost_flags = flags;
+		a->st.copy_restarts++;
+		copy_on(a);	// clears every flag
+	}
 	if (a->open) {
-		uint32_t t = now(a);
 		if (a->rearm_hold && (uint32_t)(t - a->t_rearm) >= REARM_HOLD_US) {
 			w(a, R_SLOT_CTL, CTL_SOFT);
 			a->rearm_hold = false;

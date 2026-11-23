@@ -72,7 +72,7 @@ import time
 import pytest
 
 from rfoundry_hil import DebugLinkError, as_int, counter_deltas, skip, speech_file
-from rfoundry_debug import CHIP_HRC7000
+from rfoundry_debug import CHIP_HRC7000, CHIP_STM32F4
 from hil_config import rig
 
 AIR_FIT_RX, AIR_FIT_TX = 0x1, 0x2
@@ -91,8 +91,13 @@ TEST_GROUP = 77
 NXDN_SYNC = "CDF59"     # the FSW, ten symbols (TS 1-A 4.3)
 SYNC_LEN = 10
 RATES = {"9600": (4800, 2400), "4800": (2400, 1050)}    # bit/s -> (symbols/s, outer deviation Hz, TS 1-A table 3.3-1)
-# Per chip family: the interrupt controller's mask register and the copy's source bit in it
-LOST_COPY = {CHIP_HRC7000: (0x17000008, 1 << 29)}      # PIC_MASK, the modem's system interrupt
+# What stops the receive copy's interrupt, by chip family: (CHIP_REG chip and page, None for an SoC register; the
+# register; its bit; True when setting the bit stops it). The provider's watchdog must undo it
+LOST_COPY = {
+    CHIP_HRC7000: (None, 0x17000008, 1 << 29, True),    # PIC_MASK: the modem's system interrupt masked
+    CHIP_STM32F4: ((1, 4), 0x81, 0x02, False),          # the modem (chip 1 where a board has the hook), page 4 0x81
+                                                        # bit 1: the FM receive RAM's interrupt off
+}
 RECOVER_S = 1.5         # the provider's 200 ms without a half, with room for the debug link's polls
 
 
@@ -458,7 +463,7 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
     family = radio.link.chip()["family"]
     if family not in LOST_COPY:
         skip("no_hw", f"no known receive copy interrupt source on chip family {family}")
-    mask_reg, bit = LOST_COPY[family]
+    chip, reg_addr, bit, set_stops = LOST_COPY[family]
     got = {}
 
     def lose_request():
@@ -469,27 +474,35 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
         time.sleep(0.3)
         if (as_int(radio.view(["air"]).get("airp.halves")) or 0) <= (as_int(a0.get("airp.halves")) or 0):
             skip("no_hw", "the air provider takes no receive copy halves")
+        def reg(value=None):
+            if chip is None:
+                return L.soc_reg(reg_addr, value)
+            return L.chip_reg(chip[0], reg_addr, value, page=chip[1])
+
+        def stopped():
+            return bool(reg() & bit) == set_stops
+
         def set_mask(on):
             # A read-modify-write racing the firmware's own masking (its lock saves and puts back these bits): check
             # the bit held a moment later and write again if not, so the source is never left masked
             for _ in range(5):
-                v = L.soc_reg(mask_reg)
-                L.soc_reg(mask_reg, v | bit if on else v & ~bit)
+                v = reg()
+                reg(v | bit if on == set_stops else v & ~bit)
                 time.sleep(0.05)
-                if bool(L.soc_reg(mask_reg) & bit) == on:
+                if stopped() == on:
                     return
-            pytest.fail(f"the interrupt mask bit 0x{bit:08X} would not {'set' if on else 'clear'}")
+            pytest.fail(f"the interrupt bit 0x{bit:08X} would not {'stop' if on else 'start'} the copy")
 
         try:
             set_mask(True)
         except DebugLinkError as e:
-            skip("not_built", f"CHIP_REG can't write the interrupt mask (status {e.status})")
+            skip("not_built", f"CHIP_REG can't write the copy's interrupt bit (status {e.status})")
         r0 = as_int(a0.get("airp.copy_restarts")) or 0
         try:
             end = time.monotonic() + RECOVER_S
             while True:
                 a1 = radio.view(["air"])
-                unmasked = not L.soc_reg(mask_reg) & bit
+                unmasked = not stopped()
                 if (as_int(a1.get("airp.copy_restarts")) or 0) > r0 and unmasked:
                     break
                 assert time.monotonic() < end, \
@@ -497,7 +510,7 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                      f"{a1.get('airp.copy_restarts')}, unmasked by the provider: {unmasked}")
                 time.sleep(0.1)
         finally:
-            if L.soc_reg(mask_reg) & bit:
+            if stopped():
                 set_mask(False)
         assert a1.get("airp.copy_lost_regs"), "the first loss's controller words are missing (airp.copy_lost_regs)"
         time.sleep(0.5)

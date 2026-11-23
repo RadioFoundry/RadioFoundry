@@ -133,6 +133,10 @@ typedef struct {
 	uint32_t lost_regs[4];	// controller just before the poll that found it, as the provider's source lists them
 } air_rx_counts_t;
 
+// A tap provider receiving this long with no copy half (one comes every few tens of ms) sets the copy up again and
+// counts it in copy_restarts: a copy that stopped would otherwise stay deaf until the session closes
+#define AIR_COPY_STALL_US	200000u
+
 // A provider. One session at a time: open ... close. The core stops the board's DMR stack before open (the provider
 // may run on its chip, interrupts and task) and starts it again after close. What every provider keeps while a
 // session is open:

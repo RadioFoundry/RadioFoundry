@@ -210,6 +210,36 @@ static void lost_check(void)
 	lost_ms = hal_millis() | 1u;
 }
 
+#if CONFIG_AIR
+// The same record for an air session or tap, kept apart from the engine's: dmr.modem_stalls and dmr.modem_stuck count
+// the engine only. The air poll set the copy up again (no half for 200 ms): keep the first one's words, the system
+// flags it found and the three below as lost_check takes them
+static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
+static uint32_t air_lost_ms;
+static uint32_t air_lost_regs[4];
+
+static void air_lost_words(uint32_t w[3])
+{
+	w[0] = EXTI->PR;
+	w[1] = hooks->int_port->IDR;
+	w[2] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+}
+
+static void air_lost_check(const uint32_t before[3])
+{
+	uint32_t n = AIR->st.copy_restarts;
+	if (n == air_lost_seen) {
+		return;
+	}
+	air_lost_seen = n;
+	if (air_lost_ms == 0) {
+		air_lost_regs[0] = AIR->copy_lost_flags;
+		memcpy(&air_lost_regs[1], before, 3 * sizeof before[0]);
+		air_lost_ms = hal_millis() | 1u;
+	}
+}
+#endif
+
 // The system line is low and no edge will run its handler: count it once for this low stretch
 static void sys_lost(void)
 {
@@ -528,7 +558,10 @@ static void dmr_task(void *arg)
 		}
 #if CONFIG_AIR
 		if (air_on) {
+			uint32_t w[3];
+			air_lost_words(w);
 			hrc6000_air_poll(AIR);	// the engine is halted: nothing of its own to pop
+			air_lost_check(w);
 			continue;
 		}
 #endif
@@ -927,6 +960,7 @@ static void air_take(void)
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped: its queue is the session's memory now
 	eng.txq_tail = eng.txq_head;
+	air_lost_seen = 0;	// the session's stats start at 0
 	hrc6000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM,
 			 air_tap());
 }
@@ -1046,7 +1080,9 @@ static bool air_rx_counts(air_rx_counts_t *c)
 		return false;
 	}
 	*c = (air_rx_counts_t){ .records = AIR->st.records, .synced = AIR->st.synced, .halves = AIR->st.halves,
-				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks };
+				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks,
+				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost_ms };
+	memcpy(c->lost_regs, air_lost_regs, sizeof c->lost_regs);
 	return true;
 }
 
@@ -1155,6 +1191,10 @@ void stm32_hrc_dmr_stats_reset(void)
 	lost_seen = 0;	// the loss record goes with its counters: health() would show a first loss from before the reset
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
+#if CONFIG_AIR
+	air_lost_ms = 0;
+	memset(air_lost_regs, 0, sizeof air_lost_regs);
+#endif
 	unlock(NULL);
 	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
 }

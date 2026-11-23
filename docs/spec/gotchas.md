@@ -226,7 +226,9 @@ state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine
 FM copy request there, or the modem's system source left masked at the PIC, leaves receive deaf until the session
 closes (suspected in #923; the masked source measured so, the lost request not reproduced): the session's poll sets
 the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
-words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report. The HR_C6000 boards keep their check for a
+system line left low running under a session, and their copy has the same 200 ms watchdog
+(`modem-hrc6000.md` 10.6).
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot
