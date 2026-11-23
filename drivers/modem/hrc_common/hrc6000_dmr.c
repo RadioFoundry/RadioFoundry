@@ -38,7 +38,8 @@
 
 // 0x40
 #define L2_PASSIVE	0xC3	// TX + RX enabled, timing follows received bursts
-#define L2_ACTIVE	0xE3	// TX + RX enabled, own timing
+#define L2_MASTER	0x20	// MasterMode: own timing
+#define L2_ACTIVE	(L2_PASSIVE | L2_MASTER)	// TX + RX enabled, own timing
 #define L2_MCU_CRC	0x08	// CRC_MCU_Control
 
 // 0x41
@@ -528,7 +529,15 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 
 	// CRC_MCU_Control only for bursts that carry their own CRC; voice and idle never (gotchas 5.1)
 	bool mcu_crc = !voice && kind != DMR_BURST_IDLE && b->host_crc && e->dev->chip->mcu_crc;
-	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u));
+	// A transmission aligned to a repeater that listens between its bursts (tx_listen) holds the timing it started
+	// with: in passive timing the chip followed the outbound it heard in the listened slots and stepped its own bursts
+	// every few seconds (104 us on the HR_C5000, about 63 us on the HR_C6000), away from the repeater's grid, and the
+	// burst at each step reached the repeater with bit errors (issue 609). Without the listen the chip hears nothing
+	// while it sends, so its timing was held already. An SFR (DMO framing) stays passive: there the timing it follows
+	// is the inbound caller's. Once held, held to the end: rmo() can lapse under the over (a BS heard too long ago)
+	e->tx_master = e->tx_master || (e->tx_listen && e->tx_timing != DMR_TIMING_OWN && rmo(e));
+	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) |
+				(e->tx_master ? L2_MASTER : 0u));
 	if (r40 != e->reg40) {
 		w(e->dev, R_L2_CTL, r40);
 		e->reg40 = r40;
@@ -607,6 +616,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 	}
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
+	e->tx_master = false;
 	e->tap_reports = e->st.rc_reports;	// a report after the last tap read is not the next transmission's
 	e->tx_end_req = false;
 	e->tx_abort_req = false;
@@ -2415,6 +2425,9 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_end_req = false;
 		e->tx_abort_req = false;
 		e->tx_any_setup = false;
+		// A halt under a transmission leaves both set (tx_finish never ran): this one listens only when asked
+		e->tx_listen = false;
+		e->tx_master = false;
 		e->tx_wait = 0;
 		e->tx_found = false;
 		e->last_kind = KIND_UNSET;

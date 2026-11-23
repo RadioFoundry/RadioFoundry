@@ -209,7 +209,8 @@ framing the next slot's burst at t1, and the MCU must write its data in the wind
 everything at the start of the timeslot handler, and the burst goes out in the following slot. A late setup slips the
 burst by one slot (30 ms) or by a frame (60 ms).
 While transmitting, the slot between our bursts gets 0x00. An SFR writes 0x50 there instead, because it hears its
-inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3).
+inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3), as does a voice over through a repeater on a board
+that listens there. The repeater over holds its timing while listening (6.2); the SFR stays passive.
 
 The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received. It is the TC of
 the slot that just ended, not the one starting (5.3).
@@ -575,7 +576,12 @@ Common: 0x21=0xA2 (polite to own CC, clear the encode buffer), 0x22=0x86 (start 
   timing). The timeslot interrupts start on the chip's own timing; the next one starts the burst sequence.
 - **Through a repeater, already receiving it** (its hang time or a call): stay in passive timing; when the slot
   tracking is stable with no disagreement and the slot that just started is the other one, lock to ours, write
-  0x21=0xA2, 0x22=0x86, 0x41=0x00, and start the sequence at the next timeslot interrupt.
+  0x21=0xA2, 0x22=0x86, 0x41=0x00, and start the sequence at the next timeslot interrupt. A transmission that
+  listens between its bursts (`hrc6000_dmr_tx_listen`, RMO only) sets MasterMode with its first burst (0x40=0xE3)
+  and keeps the timing the over was aligned with to its end, where passive timing comes back. In passive timing the
+  chip followed the outbound heard in the listen slots and stepped its own bursts (104 us on the HR_C5000, about
+  63 us on the HR_C6000), away from the repeater's grid, and each step's burst reached the repeater with bit errors
+  ([gotchas.md](gotchas.md) 14.6.1).
 - **Through a repeater, nothing heard**: wake it (section 6.5) first.
 - **Data**: as voice, but the sequence sends the queued bursts instead of headers and voice.
 
