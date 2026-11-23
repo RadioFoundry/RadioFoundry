@@ -35,7 +35,7 @@ function decodeBlock(v) {
 	const opts = u16(v, 5);
 	const s = {
 		model: u8(v, 0) & 3, net: u16(v, 1), category: u8(v, 3) === 2 ? "b" : "a", colorCode: u8(v, 4) & 0x0F,
-		profile: (opts & DEDICATED_DATA) ? "hytera" : "standard",
+		profile: (opts & DEDICATED_DATA) ? "dedicated" : "standard",
 		fallbackHold: u8(v, 7), planBaseHz: u32(v, 8), planFirstLcn: u16(v, 12), planSep: u8(v, 14) & 7,
 		planTxLow: (u8(v, 15) & 1) !== 0, planNoLearn: (u8(v, 15) & 2) !== 0, planSplitHz: u32(v, 16), leaveDbm: s8(v, 20),
 		powerSave: u8(v, 21) <= 7 ? u8(v, 21) : 0, sites: [],
@@ -51,7 +51,7 @@ function encodeBlock(s, prev) {
 	put16(v, 1, s.net);
 	v[3] = s.category === "b" ? 2 : 1;
 	v[4] = s.colorCode & 0x0F;
-	const profile = s.profile === "hytera" ? DEDICATED_DATA : 0;
+	const profile = s.profile === "dedicated" ? DEDICATED_DATA : 0;
 	put16(v, 5, (u16(v, 5) & ~OPT_MASK) | Object.entries(OPTS).reduce((a, [k, bit]) => a | (s[k] ? bit : 0), profile));
 	v[7] = s.fallbackHold & 0xFF;
 	put32(v, 8, s.planBaseHz || 0);
@@ -132,7 +132,7 @@ export const t3System = {
 		{ key: "category", label: "editor.t3.category", type: "select", options: () => [["a", "A"], ["b", "B"]], section: "identity", help: "editor.t3.category_help" },
 		{ key: "colorCode", label: "editor.t3.color_code", type: "select", options: () => [...Array(16).keys()].map((n) => [n, String(n)]), section: "identity", help: "editor.t3.color_code_help" },
 		{ key: "profile", label: "editor.t3.profile", type: "select", section: "identity",
-		  options: () => [["standard", "editor.t3.profile.standard"], ["hytera", "editor.t3.profile.hytera"]],
+		  options: () => [["standard", "editor.t3.profile.standard"], ["dedicated", "editor.t3.profile.dedicated"]],
 		  help: "editor.t3.profile_help" },
 		...optionFields("identity"),
 		...optionFields("radio"),
