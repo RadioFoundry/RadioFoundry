@@ -724,10 +724,12 @@ uiFlowTest: uiFlowTest.c $(UIDEPS)
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
-# (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down.
+# (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down; and
+# without privacy (CONFIG_DMR_PRIVACY=n): Settings > Privacy dimmed.
 # uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -DCONFIG_DMR_PRIVACY=0 -o $@ \
+		uiFlowTest.c $(UIAPP) -lz
 
 uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiFlowTest.c $(UIAPP) -lz

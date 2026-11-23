@@ -154,6 +154,8 @@
  "tools.satellite.status.done": "Creato {name}.",
  "tools.satellite.status.push_failed": "Sincronizzazione radio non riuscita: {error}",
  "tools.satellite.status.profile_version": "Per sincronizzare più di quattro satelliti è necessaria la versione 6 o successiva del protocollo satellitare della radio.",
+ "tools.satellite.status.single_band": "Questa radio a banda singola non può usare i profili di frequenza satellitare selezionati. Usa una radio dual band oppure esegui satellite_tle.py sync per installare i TLE senza profili di frequenza.",
+ "tools.satellite.status.band_error": "Le bande supportate dalla radio non coprono i profili di frequenza satellitare selezionati.",
  "tools.satellite.status.radio_connecting": "Scegli e collega la radio via USB/seriale…",
  "tools.satellite.status.radio_checking": "Verifica della radio selezionata…",
  "tools.satellite.status.radio_writing": "Scrittura dei record TLE selezionati…",
