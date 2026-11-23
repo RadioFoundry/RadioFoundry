@@ -691,11 +691,12 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 
 **13.8 Canceled menu edits must re-apply hardware state** (GPS and USB modes) after restoring the old values.
 
-**13.9 No git stash in a worktree with symlinked submodules.** In an agent worktree whose `third_party/*` are symlinks
-to another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
+**13.9 No git stash in a worktree with symlinked submodules.** In a worktree whose `third_party/*` are symlinks to
+another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
 duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
-path not to be a symbolic link"). The pop put them back. Build a baseline from `git archive HEAD` into a scratch
-directory with its own `third_party` symlinks instead, and delete it afterwards.
+path not to be a symbolic link"). Leave a worktree's submodules uninitialized and build with `RFOUNDRY_THIRD_PARTY`
+instead ([building.md](../dev/building.md#worktrees)), and build a baseline in a `git worktree add --detach` of the
+base commit.
 
 **13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
 (CI) sorts it, macOS's make 3.81 doesn't. With LTO the object order on the link line steers partitioning and

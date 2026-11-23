@@ -16,6 +16,39 @@ pinned version of each toolchain is in `platform/<p>/platform.toml` `[toolchain]
 You also need make, git and Python 3. Clone with submodules: `git submodule update --init` fetches FreeRTOS, TinyUSB
 and ST's HAL and CMSIS into `third_party/`.
 
+## Worktrees
+
+A `git worktree` does not need its own copy of the submodules (about 100 MB of files). Leave them uninitialized and
+set `RFOUNDRY_THIRD_PARTY` to the `third_party/` of a checkout that has them, as an absolute path:
+
+```
+git worktree add ../rf-topic -b topic origin/main
+export RFOUNDRY_THIRD_PARTY=$HOME/src/RadioFoundry/third_party    # once, in the shell profile
+make -C ../rf-topic BOARD=<b>
+```
+
+`platform/third_party.mk` picks the directory a build reads:
+
+| The tree's `third_party/` | `RFOUNDRY_THIRD_PARTY` | The build reads |
+|---|---|---|
+| Checked out | Any | The tree's own copies, as before |
+| Empty | Set | That directory, after a check that it holds the commits the tree pins |
+| Empty | Not set | Nothing: make stops and says what to do |
+
+- Git sees an uninitialized submodule as unchanged. `git status` stays clean, nothing under `third_party/` can be
+  staged by accident, and `git worktree remove` works without `--force`.
+- A branch that moves a submodule fails the pin check. Run `git submodule update --init` in its worktree: the
+  tree's own copies then win.
+- The image is the same as one built from the tree's own copies. `-ffile-prefix-map` records the files as
+  `third_party/...` in debug info and `__FILE__`.
+- `tools/docker/toolchains/run.sh` and `tools/docker/csky-toolchain/run.sh` mount the other checkout and pass the
+  variable into the container.
+- The query targets (`print-config`, `print-vars` and the rest) need no submodules.
+- A worktree whose `third_party/*` are symlinks to another checkout still builds: the links count as checked out.
+  Git trips on them, though. To switch one over, run `for m in third_party/*; do rm "$m" && mkdir "$m"; done` (it
+  removes the links, not what they point to) and `git update-index --no-skip-worktree third_party/*` if they were
+  marked.
+
 ## Make targets
 
 `<b>` is the board directory under `boards/` (`tools/boards.py list` lists them).

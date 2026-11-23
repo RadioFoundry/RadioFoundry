@@ -20,7 +20,16 @@ if ! have_image "$IMG"; then
 	*) echo "run: image $IMG not here" >&2; exit 3 ;;
 	esac
 fi
-# safe.directory: the tree may belong to another user than the container's (git only reads it for version strings)
-# shellcheck disable=SC2046
-exec "$ENGINE" run --rm $(run_opts) -v "$ROOT:$ROOT" -w "$ROOT" -e HOME=/tmp -e JOBS="${JOBS:-$NCPU}" \
+# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): that checkout is mounted at its own path too, whole, so git in the
+# container can read its submodules' commits (in that checkout's .git) for the pin check
+TP_OPTS=
+if [ -n "${RFOUNDRY_THIRD_PARTY:-}" ]; then
+	TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd)
+	TP_TOP=$(git -C "$TP" rev-parse --show-toplevel 2>/dev/null || echo "$TP")
+	TP_OPTS="-v $TP_TOP:$TP_TOP -e RFOUNDRY_THIRD_PARTY=$TP"
+fi
+# safe.directory: the tree may belong to another user than the container's (git only reads it, for version strings
+# and the third_party pin check)
+# shellcheck disable=SC2046,SC2086
+exec "$ENGINE" run --rm $(run_opts) $TP_OPTS -v "$ROOT:$ROOT" -w "$ROOT" -e HOME=/tmp -e JOBS="${JOBS:-$NCPU}" \
 	-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' "$IMG" "$@"
