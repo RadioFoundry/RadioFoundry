@@ -744,6 +744,9 @@ static void message_in(const ax25_frame_t *f, const aprs_parsed_t *p)
 		memcpy(m->text, p->text, k);
 		memcpy(m->msgno, p->msgno, sizeof(m->msgno));
 		m->ms = aprs_s.now;
+		aprs_s.v.msg_serial++;
+		aprs_s.v.last_msg_ms = aprs_s.now;
+		memcpy(aprs_s.v.last_msg_from, from, sizeof(aprs_s.v.last_msg_from));
 		aprs_changed();
 	}
 	if (p->msgno[0] != '\0' && aprs_s.block == APRS_OK) {

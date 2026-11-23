@@ -420,6 +420,21 @@ additional comment text is retained. Detail rows scroll with Up / Down and do no
 is evicted, the screen says "No longer in list" and Message still addresses the saved callsign. This detail code
 and the saved callsign are guarded by `CONFIG_APRS_RX`; the engine storage is unchanged.
 
+**Inbound message notification (`CONFIG_APRS_RX`).** When `ui_svc_aprs_msg_poll` (called every UI pass from
+`ui_svc_poll`) sees `aprs_view_t.msg_serial` advance, it fires `UI_EV_APRS_MESSAGE` with the sender's callsign and
+message text. `handle_event` in `ui_app.c` raises a `UI_BANNER_APRS_MESSAGE` banner (8 s, `BANNER_MS`) that shows
+"APRS message from <callsign>" in the title and the message text in the body, wakes the backlight, and plays a
+message tone and vibration alert if those are on. `msg_serial` is an integer that wraps; `ui_svc_aprs_msg_poll` saves
+the last-seen serial in a static variable and fires only when it changes, so duplicates and retries produce no
+additional events. The engine sets `msg_serial`, `last_msg_ms` and `last_msg_from` in `message_in` when a non-duplicate
+message addressed to us is accepted (`CONFIG_APRS_RX`, guarded).
+
+**Home screen last-activity (`CONFIG_APRS_RX`).** `draw_activity` reads `aprs_view_t.last_msg_ms` via
+`ui_svc_aprs_view`. When `last_msg_ms` is non-zero and either `radio_view_t.last_rx_ms` is zero or
+`last_msg_ms + 2000 >= last_rx_ms` (the APRS reception caused the squelch to close, within the squelch tail), the
+activity line reads "APRS: <callsign> <age>" instead of the generic "Last activity Xm ago". The 2 s threshold
+accounts for the FM squelch tail between packet decode and squelch close.
+
 The rest (symbol, comment, digital destination, ambiguity, iGate, digipeater, fixed altitude) is set over the
 debug link (`rfoundry_debug.py aprs set`) and later by qdmr through the native codeplug.
 
