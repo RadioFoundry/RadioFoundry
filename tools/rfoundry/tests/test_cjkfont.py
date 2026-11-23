@@ -16,7 +16,9 @@ import cjkfont
 class CjkFontTest(unittest.TestCase):
     def test_chars_file_ignores_comments(self):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as f:
+            # REUSE-IgnoreStart: a header written into the test file, not this file's
             f.write("# SPDX-License-Identifier: MIT\n中文\n\n北京 天津\n")
+            # REUSE-IgnoreEnd
             path = f.name
         try:
             self.assertEqual(cjkfont.chars_from_file(path), set("中文北京天津"))

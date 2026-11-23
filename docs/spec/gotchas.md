@@ -208,7 +208,11 @@ is unmasked, but a line still high after its request was taken never interrupts 
 and rises. A modem request whose cause stays set (the system interrupt handler stops after four passes with causes
 still listed) leaves its source silent for good. A dead timeslot interrupt means no repeater wake-up is ever sent. Rule: drop every pending modem request at each receiver restart and after a stalled
 transmission; drop a system request pending for 50 ms with no handler run; count both and keep the first one's PIC
-state (`modem-hrc7000.md` 3.3). Radios: the HR_C7000 boards; one report.
+state (`modem-hrc7000.md` 3.3). An air session (P25, NXDN) halts the slot engine and that check with it, so a lost
+FM copy request there, or the modem's system source left masked at the PIC, leaves receive deaf until the session
+closes (suspected in #923; the masked source measured so, the lost request not reproduced): the session's poll sets
+the copy up again and unmasks the modem sources after 200 ms with no half (`airp.copy_restarts`, the first one's PIC
+words in `airp.copy_lost_regs`). Radios: the HR_C7000 boards; one report.
 
 **2.10 A receiver restart in the middle of a burst.**
 Symptom: a direct answer in the other timeslot, right after our terminator (30 ms after its start), was lost: decoded but with BS sync, its timeslot

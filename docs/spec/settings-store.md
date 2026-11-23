@@ -97,6 +97,11 @@ changes have rested `SETTINGS_SAVE_DELAY_MS` (2 s), so turning the knob through 
 `settings_flush()` saves at once: at power-off, on the CPS's "save" (`C 6 0` and `C 6 2`), and before a debug link
 restart or boot stub entry (a change still in its save delay would otherwise be lost).
 
+**Reading**: `settings_read(&copy)` takes the whole record, a few hundred bytes. A caller deep in a task's stack (a menu's
+value getter, the debug link) reads one field instead: `SETTINGS_FIELD(brightness)` is `settings_read_field(offset, size)`
+with the field's own type, a 1, 2 or 4 byte value copied under the same lock. A rule or a mapping the record's readers
+share (`settings_theme`, `settings_crash_contact`) has an `_of` form that takes the field values.
+
 **Who writes what**:
 
 - The radio core (`radio_sm.c` `persist()`): VFO or channel mode, the zone, the channel number and its position,
@@ -148,7 +153,7 @@ callsign. The own DMR ID is always the codeplug's.
 | roaming survey | `roam_beacon_s` (the repeaters' beacon interval, 0 = none, else 10..600, default 60), `roam_beacon_len_s` (1..10, default 4), `roam_survey` (0 off, 1 synced, 2 per site; default 1), `rpt_beacon` (bit 0: our repeater roles' idle beacon, default 0; bits 1-2: an SFR user's receive mode `sfr_rx`, 0 repeater only (default), 1 first copy, 2 dual-path RX, `sfr.md` 4; bits 3-5: the SFR repeater's CW ID interval `sfr_cwid`, 0 off (default), 1 5 min, 2 10 min, 3 15 min, 4 30 min, `sfr.md` 4; a record from before reads 0), `aprs_power` (APRS's RF power, `aprs.md` 11; 0 = the radio's current level, which a record from before it reads as), `aprs_cp_path` (what was last taken from the codeplug APRS record,
 `aprs.md` 11: bits 0-2 the path into `aprs_path`, bits 3-7 the SSID into `aprs_ssid`, each + 1, 0 = none yet; through
 `settings_aprs_cp_path` / `_ssid`, so a record from before the SSID reads none), `volume` (the speaker volume of a radio without a knob; in the old `reserved6`, so a record from before it reads as the default. 0 = the default step; bit 7 set = `0x80 | (step + 1)` for step 0..16 (0 = mute); 1..11 = step + 1 of the first version's 0..10 range, read as step 0..10 scaled to 0..16 (round(step * 16 / 10): the default 5 is 8, 10 is 16) and rewritten in the new form at the next save; `radio-features.md` 4.2) |
-| APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved u16, now `snmp_rf_gap_s`; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
+| APRS | `aprs_flags aprs_flags2` (TX, SmartBeaconing, compressed, after PTT, boot, KISS, narrow, RX; iGate, iGate TX, messaging, UDT, to APRS-IS, DMR GPS Info, mute) `aprs_region aprs_ssid aprs_freq_hz aprs_lat aprs_lon aprs_dmr_dst aprs_alt_m aprs_interval_s aprs_distance_m aprs_symbol[2] aprs_path aprs_pos_src aprs_level aprs_txdelay aprs_misc aprs_stored` and a reserved u16, now `snmp_rf_gap_s`; taken when `aprs_stored` is 1 (appended for aprs, `aprs.md` 11) |
 | position | In the APRS block, owned by the position service (`position.md` 5): `aprs_pos_src aprs_lat aprs_lon aprs_alt_m`, the DMR GPS Info flag in `aprs_flags2`, `aprs_misc` bits 4-6 (ambiguity). Taken when `aprs_misc` bit 7 (`SETTINGS_APRS_MISC_POSITION`, the position's own stored marker) is set or `aprs_stored` is 1. A record written before the marker has bit 7 clear and reads as before |
 | APRS-IS client | `aprsis_ip` (the server's IPv4 address, 0 = off; appended for tcp), `aprsis_port` (0 = 14580; in the old `reserved5`), `aprsis_range_km` (the filter `m/<km>`, 0 = none; in the old `reserved3`) (`tcp-services.md` 7) |
 | control station | `net_link_ip` (the radio's fixed link address, 0 = 192.168.10.1; in force with `net_flags` bit 2), 0 = off, the link by DMR ID (appended for dispatch after `aprsis_ip`, `usb-network.md` 5.4) |

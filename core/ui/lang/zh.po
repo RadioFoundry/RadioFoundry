@@ -940,6 +940,11 @@ msgid "Stations heard"
 msgstr "收到的台站"
 
 #: core/ui/ui_aprs.c
+msgctxt "APRS_LABEL_MUTE"
+msgid "Mute APRS audio"
+msgstr "APRS静音"
+
+#: core/ui/ui_aprs.c
 msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"

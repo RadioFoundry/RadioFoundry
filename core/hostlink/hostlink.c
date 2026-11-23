@@ -57,7 +57,10 @@
 // or two from build to build (three words)
 #define HOSTLINK_TASK_STACK	752
 #else
-#define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
+// words: MMDVM frames are built on the stack. The deepest chain without the debug link is a CPS write through the stub
+// entry's listener into the VFO record, which copies the settings: 1768 bytes on the deepest board with the CI's
+// toolchain, and stack-check.md's overhead and margin come on top
+#define HOSTLINK_TASK_STACK	544
 #endif
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
@@ -466,12 +469,13 @@ static void ppp_switch_now(uint32_t now)
 void hostlink_settings_changed(void)
 {
 #if CONFIG_DMR_IP_GATEWAY
-	settings_t st;
+	// Two fields, not a settings_t: this runs under the UI task's setting writes, a 236 byte copy under them is too much
+	const uint8_t net_flags = SETTINGS_FIELD(net_flags);
+	const uint32_t link_ip = SETTINGS_FIELD(net_link_ip);
 
-	settings_read(&st);
-	hostlink_net_set_control((st.net_flags & SETTINGS_NET_PASSTHROUGH) != 0,
-				 (st.net_flags & SETTINGS_NET_FIXED_LINK) ?
-					 (st.net_link_ip != 0 ? st.net_link_ip : IPGW_FIXED_LINK_DEFAULT) : 0);
+	hostlink_net_set_control((net_flags & SETTINGS_NET_PASSTHROUGH) != 0,
+				 (net_flags & SETTINGS_NET_FIXED_LINK) ?
+					 (link_ip != 0 ? link_ip : IPGW_FIXED_LINK_DEFAULT) : 0);
 #endif
 }
 
@@ -498,10 +502,7 @@ static void hostlink_task(void *arg)
 	hostlink_settings_changed();
 #endif
 #if CONFIG_USB_NETWORK
-	settings_t st;
-
-	settings_read(&st);
-	if ((st.usb_mode == 1) && (board.netif != NULL) && (board.netif->select != NULL)) {
+	if ((SETTINGS_FIELD(usb_mode) == 1) && (board.netif != NULL) && (board.netif->select != NULL)) {
 		// Before the stack starts: enumerates as the adapter straight away. The select arms the fallback to serial
 		// for a host that never configures it (usb_ncm.c), counted from the host's first bus reset
 		dlog("hostlink: USB network at power-on");
