@@ -3548,11 +3548,6 @@ msgid "Zones/Chs Received"
 msgstr "Zones/Canaux reçus"
 
 #: core/ui/ui_menus.c
-msgctxt "KF_TITLE"
-msgid "Key fill"
-msgstr "Transfert de clé"
-
-#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "Double écoute"
@@ -4021,6 +4016,11 @@ msgstr "Contrôle clé"
 msgctxt "SET_LABEL_PRIVACY_KEYS"
 msgid "Stored keys"
 msgstr "Clés stockées"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "Transfert de clé"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
@@ -4694,8 +4694,8 @@ msgstr "Autre radio "
 
 #: core/ui/ui_menus.c
 msgctxt "KF_BODY_SAME"
-msgid "Same on both? OK yes, Back no"
-msgstr "Identique sur les deux ? OK oui, Retour non"
+msgid "Same on both?"
+msgstr "Identique sur les deux ?"
 
 #: core/ui/ui_menus.c
 msgctxt "KF_BODY_SENDING"

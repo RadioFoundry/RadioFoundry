@@ -3550,11 +3550,6 @@ msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
 
 #: core/ui/ui_menus.c
-msgctxt "KF_TITLE"
-msgid "Key fill"
-msgstr "密钥注入"
-
-#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "双守候"
@@ -4023,6 +4018,11 @@ msgstr "密钥检查"
 msgctxt "SET_LABEL_PRIVACY_KEYS"
 msgid "Stored keys"
 msgstr "已存密钥"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "密钥注入"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
@@ -4696,8 +4696,8 @@ msgstr "对方电台 "
 
 #: core/ui/ui_menus.c
 msgctxt "KF_BODY_SAME"
-msgid "Same on both? OK yes, Back no"
-msgstr "两台一致？OK 是，返回 否"
+msgid "Same on both?"
+msgstr "两台一致？"
 
 #: core/ui/ui_menus.c
 msgctxt "KF_BODY_SENDING"

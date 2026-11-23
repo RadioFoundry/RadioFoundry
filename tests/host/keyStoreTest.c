@@ -306,6 +306,28 @@ static void test_traffic(void)
 	p = traffic(TYPE_A, id3, 5, 0x0010, big, KEY_STORE_MAX_LEN);
 	CHECK(key_store_put(&p, kcv) == KEY_PUT_STORED && traffic_count() == before + 1);
 	CHECK(kcv_traffic(TYPE_A, ALG, big, KEY_STORE_MAX_LEN, want) && memcmp(kcv, want, KCV_LEN) == 0);
+
+	// A page of entries from one walk is what key_store_get gives one by one, the count too, at every start and size
+	uint16_t total = 0, n = key_store_count();
+	key_entry_t page[4], one;
+	CHECK(n >= 5);
+	for (uint16_t first = 0; first <= n; first++) {
+		for (uint16_t max = 0; max <= 4; max++) {
+			uint16_t got = key_store_window(first, page, max, &total);
+			CHECK(total == n && got == (uint16_t)(first + max <= n ? max : n - first));
+			for (uint16_t i = 0; i < got; i++) {
+				CHECK(key_store_get((uint16_t)(first + i), &one, NULL));
+				CHECK(memcmp(&one, &page[i], sizeof one) == 0);
+			}
+		}
+	}
+	// ... and an entry by its record, with its key
+	CHECK(key_store_get(1, &one, NULL) && one.cls == KCV_CLASS_TRAFFIC);
+	uint8_t k_a[KEY_STORE_MAX_LEN], k_b[KEY_STORE_MAX_LEN];
+	key_entry_t two;
+	CHECK(key_store_get(1, &one, k_a) && key_store_get_record(one.record, &two, k_b));
+	CHECK(memcmp(&one, &two, sizeof one) == 0 && memcmp(k_a, k_b, one.len) == 0);
+	CHECK(!key_store_get_record(CODEPLUG_KEY_TRAFFIC + 0x3FF, &two, NULL) && !key_store_get_record(0, &two, NULL));
 }
 
 static void test_unsupported(void)

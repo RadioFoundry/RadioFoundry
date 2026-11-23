@@ -16,6 +16,7 @@
 #include "support/hkdf.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/key_store.h"
+#include "settings/settings.h"
 #include "radio/radio.h"
 #include "storage/storage.h"
 #include "hal_time.h"
@@ -92,10 +93,15 @@ static int send_payload(uint8_t *out, int cap, void *ctx)
 	int n = 0;
 	memset(&it, 0, sizeof it);
 	bool found = false;
-	for (uint16_t i = 0, n_keys = key_store_count(); i < n_keys && !found; i++) {
-		found = key_store_get(i, &c->e, c->key_buf) && e->cls == c->pick_cls && e->kcv_ok &&
-			(e->cls == KCV_CLASS_PRIVACY ? e->slot == c->pick_slot : e->record == c->pick_record) &&
-			memcmp(e->kcv, c->pick_kcv, KCV_LEN) == 0;
+	// A traffic key by its record, in one walk; a privacy slot among the few that come first (each walk of the store
+	// checks the whole codeplug area: one per entry was seconds with a few dozen keys)
+	if (c->pick_cls == KCV_CLASS_TRAFFIC) {
+		found = key_store_get_record(c->pick_record, &c->e, c->key_buf) && e->cls == KCV_CLASS_TRAFFIC &&
+			e->kcv_ok && memcmp(e->kcv, c->pick_kcv, KCV_LEN) == 0;
+	} else {
+		for (uint16_t i = 0; i < SETTINGS_PRIVACY_KEYS && !found; i++)
+			found = key_store_get(i, &c->e, c->key_buf) && e->cls == KCV_CLASS_PRIVACY && e->kcv_ok &&
+				e->slot == c->pick_slot && memcmp(e->kcv, c->pick_kcv, KCV_LEN) == 0;
 	}
 	if (found && e->len >= 1 && e->len <= KEY_STORE_MAX_LEN) {
 		it.cls = e->cls;

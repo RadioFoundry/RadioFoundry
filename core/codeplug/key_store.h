@@ -51,6 +51,12 @@ enum { KEY_PUT_STORED = 0, KEY_PUT_NO_SYSTEM = 1, KEY_PUT_AMBIGUOUS = 2, KEY_PUT
 
 #if KEY_STORE
 uint16_t key_store_count(void);
+// The traffic key in record (key_entry_t.record), as key_store_get: one walk, not one per entry before it
+bool key_store_get_record(uint16_t record, key_entry_t *e, uint8_t *key);
+// Entries first .. first + max - 1 into out (as key_store_get without the key octets) and the count into *total, from
+// one walk of the codeplug area: how many it filled. A list that draws several rows reads them this way, since every
+// walk (and every system looked up) checks the whole area first
+uint16_t key_store_window(uint16_t first, key_entry_t *out, uint16_t max, uint16_t *total);
 // Entry i in *e; with key not NULL its octets too (at most KEY_STORE_MAX_LEN copied). False past the end, or when the
 // list changed under the walk
 bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key);
@@ -63,6 +69,12 @@ int key_store_identity(uint8_t system, uint8_t *out, uint8_t cap);
 uint8_t key_store_put(const key_put_t *p, uint8_t kcv[KCV_LEN]);
 #else
 static inline uint16_t key_store_count(void) { return 0; }
+static inline uint16_t key_store_window(uint16_t first, key_entry_t *out, uint16_t max, uint16_t *total)
+{
+	(void)first; (void)out; (void)max;
+	*total = 0;
+	return 0;
+}
 static inline bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key) { (void)i; (void)e; (void)key; return false; }
 #endif
 

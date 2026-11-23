@@ -55,21 +55,50 @@ static bool privacy_entry(uint16_t n, key_entry_t *e, uint8_t *key, uint16_t *co
 #endif
 
 #if CODEPLUG_MODE_RECORDS
+// The systems one walk has looked up: a few systems hold all the keys, and each lookup checks the whole area
+typedef struct {
+	uint8_t n;
+	uint8_t id[4];
+	bool ok[4];
+	codeplug_system_t s[4];
+} sys_cache_t;
+
+static bool cached_system(sys_cache_t *c, uint8_t id, codeplug_system_t *out)
+{
+	for (uint8_t i = 0; i < c->n; i++) {
+		if (c->id[i] == id) {
+			*out = c->s[i];
+			return c->ok[i];
+		}
+	}
+	uint8_t block[CODEPLUG_SYS_HDR];
+	memset(out, 0, sizeof *out);	// the name's tail too: an entry copies it whole
+	bool ok = codeplug_system(id, out, block, 0) >= 0;
+	uint8_t slot = c->n < 4u ? c->n++ : (uint8_t)(id & 3u);
+	c->id[slot] = id;
+	c->ok[slot] = ok;
+	c->s[slot] = *out;
+	return ok;
+}
+#endif
+
+#if CODEPLUG_MODE_RECORDS
 // Traffic key entry n, in the area's order, counting only records whose system exists: as privacy_entry
-static bool traffic_entry(uint16_t n, key_entry_t *e, uint8_t *key, uint16_t *count)
+static bool traffic_entry(uint16_t n, uint16_t want_record, key_entry_t *e, uint8_t *key, uint16_t *count)
 {
 	uint8_t v[CODEPLUG_TRAFFIC_HDR + KEY_STORE_MAX_LEN];
 	codeplug_kv_cursor_t c;
 	uint16_t k, seen = 0;
 	int len;
 	bool found = false;
+	sys_cache_t sc;
+	sc.n = 0;
 	codeplug_kv_begin(&c, CODEPLUG_KEY_TRAFFIC, (uint16_t)(CODEPLUG_KEY_TRAFFIC + TRAFFIC_RECORDS - 1u));
 	while (!found && (len = codeplug_kv_next(&c, &k, v, sizeof v)) >= 0) {
 		codeplug_system_t s;
-		uint8_t block[CODEPLUG_SYS_HDR];
-		if (len <= (int)CODEPLUG_TRAFFIC_HDR || codeplug_system(v[0], &s, block, 0) < 0)
+		if (len <= (int)CODEPLUG_TRAFFIC_HDR || !cached_system(&sc, v[0], &s))
 			continue;
-		if (seen++ != n)
+		if (want_record != 0 ? k != want_record : seen++ != n)
 			continue;
 		memset(e, 0, sizeof *e);
 		e->cls = KCV_CLASS_TRAFFIC;
@@ -103,11 +132,70 @@ bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key)
 	i = (uint16_t)(i - n);
 #endif
 #if CODEPLUG_MODE_RECORDS
-	if (traffic_entry(i, e, key, &n))
+	if (traffic_entry(i, 0, e, key, &n))
 		return true;
 #endif
 	(void)n;
 	return false;
+}
+
+
+bool key_store_get_record(uint16_t record, key_entry_t *e, uint8_t *key)
+{
+#if CODEPLUG_MODE_RECORDS
+	uint16_t n = 0;
+	return record != 0 && traffic_entry(0, record, e, key, &n);
+#else
+	(void)record; (void)e; (void)key;
+	return false;
+#endif
+}
+
+uint16_t key_store_window(uint16_t first, key_entry_t *out, uint16_t max, uint16_t *total)
+{
+	uint16_t filled = 0, at = 0;
+#if CONFIG_DMR_PRIVACY
+	uint16_t np = 0;
+	key_entry_t pe;
+	(void)privacy_entry(0xFFFFu, &pe, NULL, &np);
+	for (uint16_t i = first; i < np && filled < max; i++)
+		if (privacy_entry(i, &out[filled], NULL, &at))
+			filled++;
+	at = np;
+#endif
+#if CODEPLUG_MODE_RECORDS
+	uint8_t v[CODEPLUG_TRAFFIC_HDR + KEY_STORE_MAX_LEN];
+	sys_cache_t sc;
+	codeplug_kv_cursor_t c;
+	uint16_t k;
+	int len;
+	sc.n = 0;
+	codeplug_kv_begin(&c, CODEPLUG_KEY_TRAFFIC, (uint16_t)(CODEPLUG_KEY_TRAFFIC + TRAFFIC_RECORDS - 1u));
+	while ((len = codeplug_kv_next(&c, &k, v, sizeof v)) >= 0) {
+		codeplug_system_t s;
+		if (len <= (int)CODEPLUG_TRAFFIC_HDR || !cached_system(&sc, v[0], &s))
+			continue;
+		uint16_t n = at++;
+		if (n < first || filled >= max)
+			continue;
+		key_entry_t *e = &out[filled++];
+		memset(e, 0, sizeof *e);
+		e->cls = KCV_CLASS_TRAFFIC;
+		e->type = s.type;
+		e->system = v[0];
+		e->alg = v[1];
+		e->key_id = (uint16_t)(v[2] | v[3] << 8);
+		e->flags = v[4];
+		e->record = k;
+		e->len = (uint16_t)(len - (int)CODEPLUG_TRAFFIC_HDR);
+		memcpy(e->name, s.name, sizeof e->name);
+		e->kcv_ok = e->len <= KEY_STORE_MAX_LEN &&
+			kcv_traffic(s.type, e->alg, &v[CODEPLUG_TRAFFIC_HDR], e->len, e->kcv);
+	}
+	crypto_wipe(v, sizeof v);
+#endif
+	*total = at;
+	return filled;
 }
 
 uint16_t key_store_count(void)
@@ -119,7 +207,7 @@ uint16_t key_store_count(void)
 	total = (uint16_t)(total + n);
 #endif
 #if CODEPLUG_MODE_RECORDS
-	(void)traffic_entry(0xFFFFu, &e, NULL, &n);
+	(void)traffic_entry(0xFFFFu, 0, &e, NULL, &n);
 	total = (uint16_t)(total + n);
 #endif
 	(void)e;

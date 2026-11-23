@@ -881,16 +881,19 @@ static const flow_t flows[] = {
 	{ "S key check needs a type", "ok 7 4 down down", "ok", "toast=Pick_a_key", 1, false },
 	{ "S keys list", "", "ok 7 4 down down down ok", "screen=keys shows=51588D", 7, false },
 	{ "S keys list with a slot", "ok 7 4 ok down ok 1 ok", "down down ok", "screen=keys shows=9507A7 shows=51588D", 3, false },
-	// Key fill (docs/spec/key-fill.md 9; the session is the simulator's, kf_sim): Tools > Key fill (Up from the first
-	// tool: it is the last), receive, the steps, every way out
+	// Key fill (docs/spec/key-fill.md 9; the session is the simulator's, kf_sim): Settings > Privacy > Key fill (row 5,
+	// after Stored keys), receive, the steps, every way out
 	// gives the power level back. Low power only on a direct mode channel (2.1)
-#define KF_RECEIVE	"ok 6 up ok 1"
-#define KF_SEND		"ok 6 up ok 2 ok 9 9 9 1 2 3 4 ok"
-	{ "S key fill is the last tool", "", "ok 6 up", "screen=tools shows=Key_fill", 3, false },
-	{ "S key fill menu", "", "ok 6 up ok", "screen=key-fill-menu shows=Receive_a_key shows=Send_a_key", 4, false },
-	{ "S key fill: Send a key lists the stored keys", "ok 6 up ok", "2", "screen=keys shows=51588D", 1, false },
-	{ "S key fill left Privacy", "", "ok 7 4 down down down down", "hides=Receive_a_key", 7, false },
-	{ "S receive a key opens", "", KF_RECEIVE, "screen=key-fill shows=Press_keys_at_random:_12 shows=Low_power txlow=1", 8,
+#define KF_MENU		"ok 7 4 down down down down ok"
+#define KF_RECEIVE	KF_MENU " 1"
+#define KF_SEND		KF_MENU " 2 ok 9 9 9 1 2 3 4 ok"
+	{ "S key fill is in Privacy, after Stored keys", "", "ok 7 4 down down down down", "screen=group focus=Key_fill", 7,
+	  false },
+	{ "S key fill is not a tool", "", "ok 6", "screen=tools hides=Key_fill", 2, false },
+	{ "S key fill menu", "", KF_MENU, "screen=key-fill-menu shows=Receive_a_key shows=Send_a_key", 8, false },
+	{ "S key fill: Back goes to Privacy", KF_MENU, "back", "screen=group focus=Key_fill", 1, false },
+	{ "S key fill: Send a key lists the stored keys", KF_MENU, "2", "screen=keys shows=51588D", 1, false },
+	{ "S receive a key opens", "", KF_RECEIVE, "screen=key-fill shows=Press_keys_at_random:_12 shows=Low_power txlow=1", 11,
 	  false },
 	{ "S receive a key: random presses fill the pool", KF_RECEIVE, "1 2 3 4 5 6 7 8 9 0 1 2",
 	  "screen=key-fill shows=Ready._This_radio: shows=9996543", 12, false },
@@ -908,22 +911,22 @@ static const flow_t flows[] = {
 	{ "S receive a key: the other radio aborts", KF_RECEIVE " kf:full", "kf:abort",
 	  "shows=other_radio shows=canceled txlow=0", 0, false },
 	{ "S receive a key through a repeater: no low power", "kf:rpt", KF_RECEIVE,
-	  "screen=key-fill txlow=0 hides=Low_power", 8, false },
+	  "screen=key-fill txlow=0 hides=Low_power", 11, false },
 	{ "S receive a key through a repeater: never low", "kf:rpt " KF_RECEIVE " kf:full kf:peer", "ok kf:peer back",
 	  "screen=key-fill-menu txlow=0", 2, false },
-	{ "S receive a key needs DMR", "up", KF_RECEIVE, "screen=key-fill-menu toast=Key_fill:_DMR", 8, false },
+	{ "S receive a key needs DMR", "up", KF_RECEIVE, "screen=key-fill-menu toast=Key_fill:_DMR", 11, false },
 	// Send: OK on a stored key, the receiver's ID, OK
-	{ "S send a key opens", "", "ok 6 up ok 2 ok", "screen=key-send shows=To_ID shows=51588D", 8, false },
-	{ "S send a key starts", "ok 6 up ok 2 ok", "9 9 9 1 2 3 4 ok",
+	{ "S send a key opens", "", KF_MENU " 2 ok", "screen=key-send shows=To_ID shows=51588D", 11, false },
+	{ "S send a key starts", KF_MENU " 2 ok", "9 9 9 1 2 3 4 ok",
 	  "screen=key-fill shows=Press_keys txlow=1", 8, false },
-	{ "S send a key: no ID typed", "ok 6 up ok 2 ok", "ok", "screen=key-send toast=Type_the_other", 1, false },
-	{ "S send a key: not to itself", "ok 6 up ok 2 ok", "9 9 9 6 5 4 3 ok",
+	{ "S send a key: no ID typed", KF_MENU " 2 ok", "ok", "screen=key-send toast=Type_the_other", 1, false },
+	{ "S send a key: not to itself", KF_MENU " 2 ok", "9 9 9 6 5 4 3 ok",
 	  "screen=key-send toast=Type_another", 8, false },
 	{ "S send a key: compare", KF_SEND " kf:full", "kf:peer", "shows=Code_482_913 shows=Other_radio_9991234", 0, false },
 	{ "S send a key: sent", KF_SEND " kf:full kf:peer ok", "kf:peer",
 	  "screen=key-fill shows=Key_sent shows=Check_9507A7 txlow=0", 0, false },
 	{ "S send a key: Back leaves", KF_SEND, "back", "screen=keys txlow=0", 1, false },
-	{ "S send a key: Back leaves the ID screen", "ok 6 up ok 2 ok", "back", "screen=keys", 1, false },
+	{ "S send a key: Back leaves the ID screen", KF_MENU " 2 ok", "back", "screen=keys", 1, false },
 #endif
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 7 1 down down down down down down down down down", "ok", "toast=Voice_prompts", 1, false },

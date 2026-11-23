@@ -32,7 +32,8 @@
 #include "hotspot/hotspot.h"
 #endif
 
-#define UI_STACK_MAX		6
+// Screens deep: Home > Menu > Settings > Privacy > Key fill > Stored keys > Send this key is 7
+#define UI_STACK_MAX		8
 #define TOAST_MS		1800
 #define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
 #define ENTRY_TIMEOUT_MS	10000

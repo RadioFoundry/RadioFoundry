@@ -433,7 +433,7 @@
  "screen.stored_keys": "Stored keys and their check values",
  "screen.zone_share_to_id": "Sharing to an ID that isn't a contact",
  "screen.zone_share_sending": "Sending a zone, and the frequency it goes on",
- "screen.key_fill_menu": "Tools > Key fill: receive a key, or send a stored one",
+ "screen.key_fill_menu": "Settings > Privacy > Key fill: receive a key, or send a stored one",
  "screen.key_fill_ready": "Waiting to receive a key from another radio",
  "screen.key_fill_compare": "Comparing the code on both radios before a key is sent",
  "screen.key_fill_done": "A key received, with its check value",

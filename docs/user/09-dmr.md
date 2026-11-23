@@ -329,9 +329,9 @@ see that no third radio got in between. Status: untested on a radio.
 
 1. Put both radios on the same DMR channel: side by side on a direct mode channel, or through a repeater when they
    are apart.
-2. On the radio that gets the key: **Tools > Key fill > Receive a key**. Key fill is the last tool: open Tools and
+2. On the radio that gets the key: **Settings > Privacy > Key fill > Receive a key**. Key fill is the last tool: open Tools and
    press **Up** once. It shows its DMR ID and waits.
-3. On the radio that has the key: **Tools > Key fill > Send a key**, pick the key, press **OK** (Send this key),
+3. On the radio that has the key: **Settings > Privacy > Key fill > Send a key**, pick the key, press **OK** (Send this key),
    type the other radio's DMR ID and press **OK**.
 4. When a radio asks for random key presses, press keys at random until the count reaches zero. Both radios may ask.
 5. Both screens show a six-digit code, such as `482 913`, and the other radio's ID. Look at the other radio's screen.

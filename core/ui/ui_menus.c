@@ -6354,10 +6354,8 @@ void ui_crash_tick(uint32_t now_ms)
 // ======================= Tools =======================
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
-// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9. Key fill
-// comes after the zone offer's 0, so it has no digit: Up from the first tool reaches it (a list wraps)
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_KEY_FILL,
-       T_COUNT };
+// user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_COUNT };
 
 // A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
@@ -6366,8 +6364,7 @@ static bool tool_shown(uint16_t i)
 	if (i == T_ZONE_OFFER)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE) &&
-	       (i != T_KEY_FILL || CONFIG_KEY_FILL);
+	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6413,8 +6410,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	static const tr_id_t names[] = { TRN(WORD_SCAN, "Scan"), TRN(TITLE_POSITION, "Position"), TRN(TITLE_HOTSPOT, "Hotspot"),
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
-					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received"),
-					 TRN(KF_TITLE, "Key fill") };
+					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -6505,9 +6501,6 @@ static void tools_select(uint16_t row, bool hold)
 	case T_APRS: ui_push(SCR_APRS, 0); break;
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
-#if CONFIG_KEY_FILL
-	case T_KEY_FILL: ui_push(SCR_KEY_FILL_MENU, 0); break;
-#endif
 	default: break;
 	}
 }
@@ -6524,7 +6517,7 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
-	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_KEY_CHECK, SA_KEYS,
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_KEY_CHECK, SA_KEYS, SA_KEY_FILL,
 	SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
 
 typedef struct {
@@ -6854,6 +6847,10 @@ static const set_item_t s_privacy[] = {
 #if KEY_STORE
 	// every stored key with its check value: the privacy slots and the systems' traffic keys
 	ACTION(TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"), "privacy encryption traffic keys kcv list", SA_KEYS),
+#endif
+#if CONFIG_KEY_FILL
+	// key fill (key-fill.md 9): receive a key from another radio, or send one; beside the keys it moves
+	ACTION(TRN(KF_TITLE, "Key fill"), "privacy key fill load transfer send receive", SA_KEY_FILL),
 #endif
 };
 #endif
@@ -7644,6 +7641,9 @@ static void group_select(uint16_t i, bool hold)
 #if KEY_STORE
 		case SA_KEYS: ui_push(SCR_KEYS, 0); break;
 #endif
+#if CONFIG_KEY_FILL
+		case SA_KEY_FILL: ui_push(SCR_KEY_FILL_MENU, 0); break;
+#endif
 #if CONFIG_SIG_TONES
 		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;
 #endif
@@ -8257,10 +8257,9 @@ static const ui_scr_def_t key_send_screen = {
 #endif
 
 #if CONFIG_KEY_FILL
-// ======================= Tools > Key fill (docs/spec/key-fill.md 9) =======================
-// Key fill is an operation, not a preference, so it lives under Tools (information-architecture.md P1); the key's
-// setup (Key type, Key, Key check, Stored keys) stays in Settings > Privacy. 1 waits for a key, 2 lists the stored
-// keys, where OK on one sends it
+// ======================= Settings > Privacy > Key fill (docs/spec/key-fill.md 9) =======================
+// Beside the keys it moves (Key type, Key, Key check, Stored keys), so the Tools list stays as it is. 1 waits for a
+// key, 2 lists the stored keys, where OK on one sends it
 enum { KFM_RECEIVE, KFM_SEND, KFM_COUNT };
 
 static uint16_t kfm_count(void) { return KFM_COUNT; }
@@ -8380,7 +8379,7 @@ static const char *kf_body(void)
 		sb_str(&b, TR(KF_BODY_OTHER_RADIO, "Other radio "));
 		sb_u32(&b, k.peer_id, 1);
 		sb_chr(&b, '\n');
-		sb_str(&b, TR(KF_BODY_SAME, "Same on both? OK yes, Back no"));
+		sb_str(&b, TR(KF_BODY_SAME, "Same on both?"));
 		break;
 	case KF_ST_SENT_KEY:
 		sb_str(&b, TR(KF_BODY_SENDING, "Sending the key"));
