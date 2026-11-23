@@ -159,6 +159,20 @@ through the chip: the board reports its chip in FM receive (`stm32_i2s_pcm_fm_ch
 FIFO while its PCM route is on (`audio.fifo_fm`, `test_beep_fm_fifo`). Radios: HR_C6000; the HR_C5000's FIFO is not
 known, so a board turns the path on with `prompt_fifo`.
 
+**1.15 The HR_C5000 hears BS sync only in repeater mode.**
+Symptom: on a direct channel, a call framed with BS sync, one burst every 60 ms and no CACH (as a simplex hotspot
+sends), was not heard at all: 0 of 8 calls, no timeslot interrupt, no report. MS sync calls on the same channel
+played. Cause: with 4:0x10 = 0x6B (ISRepeater clear) the chip finds MS and direct mode sync only; with 0x4F
+(ISRepeater set) the chip finds BS sync only. A test image with 0x4F on the direct channel heard the BS calls and none of
+the MS ones. Rule: on a direct channel the engine hunts both modes while nothing is taken
+([modem-hrc6000.md](modem-hrc6000.md) 5.3). A dwell shorter than a superframe (120 ms) lost whole calls: voice A, the
+only sync after the headers, fell at a switch every time. A call can lose up to about 1 s of its start. A first dwell in the direct mode after
+a transmission left the radio deaf for about 0.85 s to a BS-framed sender's answer; the first dwell is now in the mode
+of the last burst taken, read from the mode that heard the burst (a direct channel's bursts are labeled MS, whatever
+the mode heard). Test direct mode
+receive with both sync families. Radios: HR_C5000 (chip flag `bs_by_mode`); the HR_C6000 hears both families in
+either mode.
+
 ## 2. DMR modem timing: HR_C7000
 
 **2.1 The TX interrupts must be hooked.** Without the TX timeslot interrupt (vector 62) and the RF TX interrupt (vector 64) connected, the TX handler is never called and DMR TX never starts. TX states must run on the
@@ -729,9 +743,21 @@ cleared). The raw 264-bit RX RAM areas (0x30 / 0x60) only held a fill pattern in
 (register page 0 and no CRC_MCU_Control). The HR_C7000 is (14.11). On an HR_C6000 board with one synthesizer for
 receive and transmit, the end of each burst (the engine's `rf(false)`) retunes to the receive LO without waiting, and
 the RF TX interrupt retunes to the carrier and waits for the lock before the PA. RF_TX_INTER's advance (0x12 bits
-5-0, 100 us steps) gives that time; it is set only while the transmission listens (`tx_listen`) and cleared after.
-Too much lead cuts the end of the inbound burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The
-board's hardware page has the values.
+5-0) gives that time. On the HR_C5000 a step is half a symbol (104.17 us), counted from the value the chip runs with
+(10), not from 0: a wait figured as 100 us from 0 keys the PA about 0.9 ms late (`hrc5000_tx_lead_us`). The lead is
+set only while the transmission listens (`tx_listen`) and cleared after. Too much lead cuts the end of the inbound
+burst: its last voice frame takes the errors (`sfr.rx_fec_pos`). The board's hardware page has the values.
+
+**14.6.1 A transmission that listens holds its timing.** In passive timing (0x40 = 0xC3) the chip follows the
+outbound heard in the listen slots, and moved its own bursts every few seconds (104 us, half a symbol, on the
+HR_C5000; about 63 us on the HR_C6000), each step away from the repeater's slot grid, not toward the grid. The burst
+at a step, or one or two after the step, reached the repeater with bit errors: about one burst in a hundred, every bad
+burst at a step (issue 609).
+The SDR bench took those bursts for a carrier a few hundred Hz off, so the retune looked like the cause. Rule: a
+transmission aligned to a repeater that listens sets MasterMode (0xE3) with its first burst and goes passive again at
+its end ([modem-hrc6000.md](modem-hrc6000.md) 6.2). Held, the bench's timing error stayed within 10 us over a 9 s
+over. A wide split can still leave single bits in a burst's first frame while the carrier settles after the retune;
+the board's hardware page has the figures.
 
 **14.7 SFR channels never switch to repeater mode on BS sync.** RMO slot lock needs a CACH every slot and an SFR sends
 none. On an MK22 board the repeater ends its own burst at the RF RX interrupt once the PA has been on 20 ms.

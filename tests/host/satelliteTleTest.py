@@ -81,6 +81,12 @@ class FakeRadio:
         self.expected_crc = 0
         self.inject_after_commit = False
         self.replace_inventory = False
+        self.bands = "136000000-174000000,400000000-480000000"
+
+    def view_section(self, section):
+        if section != "core":
+            raise AssertionError(f"unexpected view section {section}")
+        return 0, 1, {"bands": self.bands}
 
     def request(self, command, payload):
         self.calls.append((command, bytes(payload)))
@@ -427,6 +433,15 @@ def test_install_transaction():
     check(all(payload[0] != tle.OP_SYNC_CHANNELS for _, payload in profiles_radio.calls),
           "profile sync does not create codeplug zones or channels")
     check(tle.radio_profile_ids(profiles_radio) == selected_profiles, "profile list reads back through protocol")
+    single_band_radio = FakeRadio()
+    single_band_radio.bands = "400000000-480000000"
+    try:
+        tle.install_records(single_band_radio, [make_record(25544)], [25544])
+        check(False, "schema-v2 profile install rejects a single-band radio")
+    except tle.SatelliteTleError as exc:
+        check("single-band radio" in str(exc) and
+              all(payload[0] != tle.OP_REPLACE_BEGIN for _, payload in single_band_radio.calls),
+              "schema-v2 profile install reports single-band limitation before writing")
     manual = [make_record(99001)]
     manual_profiles = [{"catalog_id": 99001, "rx_hz": 145900000, "tx_hz": 435100000, "tx_tone_tenths": 885}]
     manual_radio = FakeRadio(protocol_version=tle.PROFILE_VALUES_PROTOCOL_VERSION)

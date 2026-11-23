@@ -84,6 +84,8 @@ Some settings are on the menu before the feature behind them exists, or don't ap
 
 ### Privacy (key 4)
 
+If the firmware was built without privacy, the Privacy row is dimmed and OK on it shows "Privacy: not in this build".
+
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
 | Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
