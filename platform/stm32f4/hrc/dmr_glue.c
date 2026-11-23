@@ -190,6 +190,14 @@ static uint32_t nvic_lines(volatile uint32_t *reg)
 	return (reg[0] >> EXTI0_IRQn) & 7u;	// EXTI0-2 are IRQs 6-8: one word, adjacent bits
 }
 
+// The interrupt controller's words a lost interrupt's record keeps after the system flags (dmr.modem_lost_regs 1-3)
+static void lost_words(uint32_t w[3])
+{
+	w[0] = EXTI->PR;
+	w[1] = hooks->int_port->IDR;
+	w[2] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+}
+
 // From the timeslot ISR or under the lock (the modem ISRs kept out): a count rose since the last check
 static void lost_check(void)
 {
@@ -204,26 +212,17 @@ static void lost_check(void)
 	uint8_t flags = 0;
 	(void)hrc_read(eng.dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
 	lost_regs[0] = flags;
-	lost_regs[1] = EXTI->PR;
-	lost_regs[2] = hooks->int_port->IDR;
-	lost_regs[3] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
+	lost_words(&lost_regs[1]);
 	lost_ms = hal_millis() | 1u;
 }
 
 #if CONFIG_AIR
-// The same record for an air session or tap, kept apart from the engine's: dmr.modem_stalls and dmr.modem_stuck count
-// the engine only. The air poll set the copy up again (no half for 200 ms): keep the first one's words, the system
-// flags it found and the three below as lost_check takes them
+// The same record for an air session's or the tap's copy, kept apart from dmr.modem_*, which count the engine's
+// stalls and lost system edges (an edge lost under a session too). The air poll set the copy up again (no half for
+// 200 ms): keep the first restart's words, the system flags the poll found and the three lost_words takes
 static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
 static uint32_t air_lost_ms;
 static uint32_t air_lost_regs[4];
-
-static void air_lost_words(uint32_t w[3])
-{
-	w[0] = EXTI->PR;
-	w[1] = hooks->int_port->IDR;
-	w[2] = nvic_lines(NVIC->ISER) | nvic_lines(NVIC->ISPR) << 8 | nvic_lines(NVIC->IABR) << 16;
-}
 
 static void air_lost_check(const uint32_t before[3])
 {
@@ -559,7 +558,7 @@ static void dmr_task(void *arg)
 #if CONFIG_AIR
 		if (air_on) {
 			uint32_t w[3];
-			air_lost_words(w);
+			lost_words(w);
 			hrc6000_air_poll(AIR);	// the engine is halted: nothing of its own to pop
 			air_lost_check(w);
 			continue;

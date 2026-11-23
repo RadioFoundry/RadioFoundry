@@ -1039,7 +1039,7 @@ back at close.
   from each sync. Positive is above the carrier.
 - For a transmission the chip leaves FM for the set-up of 10.3, and `rx_setup` after it is `copy_on` again.
 - No half for 200 ms (`AIR_COPY_STALL_US`) while a session or the tap receives this way, not transmitting and not
-  suspended: the poll reads 0x82, runs `copy_on` again (which clears it), and the next half is a gap. Each one counts
+  suspended: the poll reads 0x82, runs `copy_on` again (which clears 0x82), and the next half is a gap. Each one counts
   in `copy_restarts` (`airp.copy_restarts`); the board keeps the first one's 0x82, EXTI_PR, the interrupt port's IDR
   and the three lines' NVIC bits (`airp.copy_lost_regs`, laid out as `dmr.modem_lost_regs`). A lost edge on the
   system line alone doesn't get here: the board's check for a line left low keeps running under a session and pends
