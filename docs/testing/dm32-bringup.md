@@ -201,8 +201,10 @@ between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series rad
 
 ## System Fusion (YSF)
 
-Written and host tested, untested on air with this code ([ysf.md](../spec/ysf.md)). The checks, in order, by a person
-with another System Fusion radio:
+Manual on-air testing with build `d92e9dc2` confirmed DN voice transmit and receive direct with a Yaesu FT-70D and an
+FT5D, through a Yaesu DR-3XUE repeater and through an MMDVM hotspot; `view ysf` showed `ysf.on=1`,
+`ysf.rid_weak=0` and the callsign from the codeplug. Not yet checked: two DM-32UV radios side by side (different
+`ysf.rid`). The checks, in order, by a person with another System Fusion radio ([ysf.md](../spec/ysf.md)):
 
 | Check | Expected | If not |
 |---|---|---|
