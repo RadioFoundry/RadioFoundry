@@ -46,6 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
           fetch-depth: 2   # a pull request's merge commit and main, its first parent
           sparse-checkout: tools/release_version.py   # the tag's check
@@ -94,6 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
           fetch-depth: 0
       - name: third_party submodules
@@ -164,6 +166,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0   # v7.1.0
         if: runner.environment != 'self-hosted'
@@ -181,9 +184,13 @@ jobs:
       - name: Test
         run: python -W ignore -m unittest discover -s tools/rfoundry/tests -v
       - name: Build the executable
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          NAME: ${{ matrix.name }}
+          EXT: ${{ matrix.ext }}
         run: |
           set -eu
-          out="rfoundry-${{ needs.version.outputs.version }}-${{ matrix.name }}"
+          out="rfoundry-$VERSION-$NAME"
           # the serial route (rfoundry/serialflash.py) imports these tools from the checkout; bundle them
           pyinstaller --onefile --clean --name "$out" --paths tools/rfoundry --paths tools --paths stub \
             --hidden-import serial_loader --hidden-import hrc7000_codec --hidden-import stubtool \
@@ -191,8 +198,8 @@ jobs:
             --add-data "tools/rfoundry/rfoundry/codec_maps:rfoundry/codec_maps" \
             --add-data "tools/rfoundry/rfoundry/registry.json:rfoundry" \
             tools/rfoundry/rfoundry/__main__.py
-          "./dist/$out${{ matrix.ext }}" --version
-          "./dist/$out${{ matrix.ext }}" --help > /dev/null
+          "./dist/$out$EXT" --version
+          "./dist/$out$EXT" --help > /dev/null
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         with:
           name: rfoundry-${{ matrix.name }}
@@ -208,6 +215,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333   # v8.0.2
         with:
@@ -217,7 +225,7 @@ jobs:
           set -eu
           mkdir -p out
           find artifacts -type f ! -name SHA256SUMS -exec cp {} out/ \;
-          (cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS)
+          (cd out && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
           # the manifests' own image hashes must agree with the files
           for j in out/rfoundry-*.json; do
             python3 - "$j" <<'EOF'

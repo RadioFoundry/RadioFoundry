@@ -11,6 +11,8 @@ updates:
       - /.github/actions/toolchain
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7   # a release at least a week old: a compromised one is usually pulled by then
     groups:
       actions:
         patterns: ["*"]

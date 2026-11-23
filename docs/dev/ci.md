@@ -301,13 +301,32 @@ the next night still diffs against the last pass and builds again until the fail
 an entry, or holds only entries from before this scheme, the cost is one repeated run. A manual run (Actions,
 Nightly, Run workflow, or `gh workflow run nightly.yml`) always builds.
 
+## Workflow checks
+
+`pr-tests.yml`'s `checks` job installs pinned [actionlint](https://github.com/rhysd/actionlint) (the release archive,
+checked against its SHA-256) and [zizmor](https://docs.zizmor.sh/) and runs `tools/ci.sh --steps workflows`. actionlint
+checks each workflow's syntax, expressions and `run` scripts (shellcheck); zizmor checks them for security mistakes:
+template injection, credentials left in the checkout, risky triggers, unpinned actions. With the job's read-only token
+it also runs its online audits (impostor commits, actions with known vulnerabilities).
+
+| Rule | How the workflows meet it |
+|---|---|
+| No `${{ }}` in a `run` script | Every value a script reads comes through `env:` |
+| Checkout without credentials | `persist-credentials: false`, except in the two jobs that push a tag (`nightly-ci`, `nightly`), which say so at the line |
+| Dangerous triggers | `labeler.yml` and `backport.yml` (`pull_request_target`) and `ui-gallery-comment.yml` (`workflow_run`) never run the pull request's code; each says so at the trigger |
+| Dependabot cooldown | A new release waits 7 days |
+
+A finding that stays is ignored at its line with `# zizmor: ignore[<rule>]` and the reason. `.github/zizmor.yml` turns
+off only `self-repository`: Gitea runs the same workflows and has no `$/` syntax.
+
 ## Running the pieces locally
 
 ```
 tools/ci.sh                                   # everything (the release gate)
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
-tools/ci.sh --steps registry,python,licenses  # the checks job
+tools/ci.sh --steps registry,python,licenses  # the checks job of ci.yml
+tools/ci.sh --steps workflows                 # actionlint and zizmor (pr-tests.yml's checks job adds this step)
 tools/ci.sh --quick --steps firmware --board <id>
 tools/ci.sh --quick --steps firmware --toolchain arm         # a firmware CI job: every board on the toolchain
 tools/ci.sh --quick --steps firmware --platform stm32f4      # every board on one platform
@@ -327,6 +346,7 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 | `python` | Every Python file parses, the HIL test collection, rfoundry's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
 | `licenses` | `tools/license_grep.sh` and `reuse lint` |
+| `workflows` | `actionlint` and `zizmor` over `.github/` ([Workflow checks](#workflow-checks)); each is skipped when not installed |
 | `similarity` | `tools/similarity_scan.py`, only with `RFOUNDRY_SIMILARITY_REFS` set |
 
 Every step but `host` and `bench` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:

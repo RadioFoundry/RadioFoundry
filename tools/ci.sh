@@ -23,7 +23,7 @@
 #                               removed once its size is in the report and it built clean (the log and the .bin stay;
 #                               a configuration that failed keeps its tree to debug)
 #
-# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
+# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses,workflows`, the host tests and
 # `--steps bench`, `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
 # Every step but host and bench needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
@@ -66,6 +66,8 @@
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
+#   4b. workflows: actionlint (.github/actionlint.yaml) and zizmor (.github/zizmor.yml) over .github/, each skipped with
+#      a notice when not installed. zizmor runs its online audits too when GH_TOKEN is set
 #   5. tools/similarity_scan.py against the trees in $RFOUNDRY_SIMILARITY_REFS (space separated), only when it is set:
 #      the reference trees are never part of this repository or of public CI
 #
@@ -81,7 +83,7 @@ AFFECTED=""
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
-STEPS="registry,host,bench,python,firmware,licenses,similarity"
+STEPS="registry,host,bench,python,firmware,licenses,workflows,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
@@ -91,13 +93,13 @@ while [ $# -gt 0 ]; do
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,72p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,74p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|bench|python|firmware|licenses|workflows|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
 [ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick (or --affected) and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
@@ -681,6 +683,25 @@ if command -v reuse > /dev/null; then
 	if reuse lint > "$OUT/reuse.log" 2>&1; then ok "reuse lint"; else tail -30 "$OUT/reuse.log"; bad "reuse lint (see $OUT/reuse.log)"; fi
 else
 	skip "reuse lint: reuse not installed (pipx install reuse, or pip install --user reuse)"
+fi
+fi
+
+# ── 4b. workflow checks ──────────────────────────────────────────────────────
+if step workflows; then
+echo "== workflows"
+if command -v actionlint > /dev/null; then
+	if actionlint > "$OUT/actionlint.log" 2>&1; then ok "actionlint"
+	else tail -30 "$OUT/actionlint.log"; bad "actionlint (see $OUT/actionlint.log)"; fi
+else
+	skip "actionlint: not installed (https://github.com/rhysd/actionlint, the version pr-tests.yml pins)"
+fi
+if command -v zizmor > /dev/null; then
+	zo=""; [ -n "${GH_TOKEN:-}" ] || zo="--offline"
+	# shellcheck disable=SC2086
+	if zizmor $zo --no-progress .github/ > "$OUT/zizmor.log" 2>&1; then ok "zizmor${zo:+ (offline)}"
+	else tail -40 "$OUT/zizmor.log"; bad "zizmor (see $OUT/zizmor.log)"; fi
+else
+	skip "zizmor: not installed (pipx install zizmor, the version pr-tests.yml pins)"
 fi
 fi
 

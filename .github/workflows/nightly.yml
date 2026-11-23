@@ -44,6 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0   # the last passed commit must be here to diff against
           submodules: false
       # the newest nightly-ok-* entry: this commit's (an exact hit) or the last commit that passed (a prefix match)
@@ -56,11 +57,13 @@ jobs:
           key: nightly-ok-${{ github.sha }}
           restore-keys: nightly-ok-
       - id: decide
+        env:
+          CACHE_HIT: ${{ steps.tested.outputs.cache-hit }}
         run: |
           set -u
           decide() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "reuse=$2" >> "$GITHUB_OUTPUT"; echo "::notice::$3"; exit 0; }
-          [ "${{ github.event_name }}" = schedule ] || decide true true "run by hand"
-          [ "${{ steps.tested.outputs.cache-hit }}" = true ] && decide false false "${GITHUB_SHA::8} already passed a nightly run"
+          [ "$GITHUB_EVENT_NAME" = schedule ] || decide true true "run by hand"
+          [ "$CACHE_HIT" = true ] && decide false false "${GITHUB_SHA::8} already passed a nightly run"
           last=$(cat .nightly-ok/sha 2> /dev/null || true)
           echo "last=$last" >> "$GITHUB_OUTPUT"
           [ -n "$last" ] || decide true true "no earlier nightly pass to compare with"
@@ -118,6 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh
@@ -165,6 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - name: reuse lint (a warning until the tree passes)
         run: |
@@ -184,6 +189,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - name: Install tshark, numpy, pytest, pyserial
         run: |
@@ -202,7 +208,7 @@ jobs:
       contents: write   # the nightly-ci tag
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-        with:
+        with:   # zizmor: ignore[artipacked] the next step pushes the tag nightly-ci; the job uploads no artifact
           submodules: false
           fetch-depth: 1
       - name: Move nightly-ci to this commit (the nightly HIL run takes it)

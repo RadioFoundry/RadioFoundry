@@ -59,6 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false   # the host tests use none of third_party
 
       - name: Install gcovr, tshark
@@ -108,8 +109,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - name: Install numpy, pytest, pyserial, the site's packages
+        env:
+          RFOUNDRY_CI_REUSE: ${{ vars.RFOUNDRY_CI_REUSE }}
         run: |
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
@@ -120,7 +124,7 @@ jobs:
             python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
           # reuse lint only when the tree is expected to pass it (repository variable RFOUNDRY_CI_REUSE=true)
-          if [ "${{ vars.RFOUNDRY_CI_REUSE }}" = true ]; then
+          if [ "$RFOUNDRY_CI_REUSE" = true ]; then
             if [ -x /opt/reuse/bin/reuse ]; then echo /opt/reuse/bin >> "$GITHUB_PATH"   # the self-hosted runner's image
             else pipx install reuse && echo "$HOME/.local/bin" >> "$GITHUB_PATH"; fi
           fi
@@ -148,6 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh

@@ -239,8 +239,25 @@ jobs:
             # without them ci.sh skips the strict site build, which Cloudflare Pages then fails on
             python3 -m pip install -q --user --break-system-packages -r site/requirements.txt
           fi
-      - name: Python checks, license checks
-        run: tools/ci.sh --steps registry,python,licenses
+      - name: Install actionlint and zizmor
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+          ZIZMOR_VERSION: "1.32.0"
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/lint"
+          cd "$RUNNER_TEMP/lint"
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          python3 -m venv zz && zz/bin/pip install -q "zizmor==${ZIZMOR_VERSION}"
+          { echo "$RUNNER_TEMP/lint"; echo "$RUNNER_TEMP/lint/zz/bin"; } >> "$GITHUB_PATH"
+      - name: Python checks, license checks, workflow checks
+        env:
+          GH_TOKEN: ${{ github.token }}   # zizmor's online audits (impostor commits, known-vulnerable actions); read-only
+        run: tools/ci.sh --steps registry,python,licenses,workflows
       - name: Install pandoc and typst
         if: needs.changes.outputs.docs == 'true'
         run: |

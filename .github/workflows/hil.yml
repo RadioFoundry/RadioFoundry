@@ -71,6 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
 
       - name: Pytest options
@@ -139,7 +140,7 @@ jobs:
       actions: write    # asks site.yml to rebuild the site for it
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-        with:
+        with:   # zizmor: ignore[artipacked] pushes the tag nightly; the artifact is build/hil/ only
           fetch-depth: 0
           submodules: false
 
