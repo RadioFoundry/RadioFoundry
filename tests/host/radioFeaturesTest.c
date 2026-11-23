@@ -4158,8 +4158,8 @@ static void test_sig_fm(void)
 	req(RREQ_PTT, 0);
 	run(300);
 	board.radio = &fake_radio;
-	// A radio that can't beep in DMR TX but can in FM (CAP_BEEP_NOT_ON_AIR alone: the MD-380 and DM-1701 family): no
-	// hold, it keys at once and the tone plays on the speaker as before
+	// A radio whose beeps sound in FM TX but not in DMR TX (CAP_BEEP_NOT_ON_AIR alone): no hold, it keys at once and
+	// the tone plays on the speaker as before
 	board.caps = (caps & ~CAP_BEEP_NOT_IN_FM_TX) | CAP_BEEP_NOT_ON_AIR;
 	start();
 	settings(set_sig_begin_local);
