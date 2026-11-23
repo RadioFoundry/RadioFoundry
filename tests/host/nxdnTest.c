@@ -505,10 +505,37 @@ static void testAlias(void)
 
 		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
 			tx_air[second + j] = air_sym_get(original, j);
-		tx_n = first_call_end - NXDN_FRAME_SYMS;	// lost release, then the same caller with the alias off
+		// Join the transmissions at the next header to model a missed release with sync held.
+		uint32_t second_call = first_call_end - NXDN_FRAME_SYMS;
+		tx_n = second_call;
 		make_call(&v, 7, rate9600, 8);
+		memmove(tx_air + second_call, tx_air + second_call + NXDN_PREAMBLE_SYMS,
+			tx_n - second_call - NXDN_PREAMBLE_SYMS);
+		tx_n -= NXDN_PREAMBLE_SYMS;
 		receive(mode, 7, 0, false);
-		CHECK(got.starts == 2 && got.call.alias[0] == '\0', "new call clears old alias");
+		CHECK(got.starts == 1 && got.ends == 1 && strcmp(got.call.alias, "ABCDEFGHIJKLMN") == 0,
+		      "same caller after missed release (%u): starts %u, ends %u, alias '%s'",
+		      rate9600, got.starts, got.ends, got.call.alias);
+
+		nxdn_vcall_t other = v;
+		other.src++;
+		tx_n = second_call;
+		make_call(&other, 7, rate9600, 20);
+		memmove(tx_air + second_call, tx_air + second_call + NXDN_PREAMBLE_SYMS,
+			tx_n - second_call - NXDN_PREAMBLE_SYMS);
+		tx_n -= NXDN_PREAMBLE_SYMS;
+		receive(mode, 7, 0, false);
+		CHECK(got.starts == 2 && got.ends == 2 && got.call.vcall.src == other.src && got.call.alias[0] == '\0',
+		      "changed FACCH1 VCALL starts a new call with no stale alias");
+
+		// Drop the header as well so only SACCH identifies the new source.
+		uint32_t second_voice = second_call + NXDN_FRAME_SYMS;
+		memmove(tx_air + second_call, tx_air + second_voice, tx_n - second_voice);
+		tx_n -= second_voice - second_call;
+		receive(mode, 7, 0, false);
+		CHECK(got.starts == 1 && got.ends == 1 && got.call.vcall.src == other.src && got.call.alias[0] == '\0',
+		      "changed SACCH VCALL (%u): starts %u, ends %u, source %u, alias '%s'",
+		      rate9600, got.starts, got.ends, got.call.vcall.src, got.call.alias);
 
 		tx_n = 0;
 		make_call_with_alias(&v, 7, rate9600, 8, "TEST 1");

@@ -221,7 +221,6 @@ typedef struct {
 	nxdn_call_t call;
 #if CONFIG_NXDN_OTA_ALIAS
 	nxdn_alias_rx_t facch_alias, sacch_alias;
-	bool seen_superframe;
 #endif
 	// The superframe's SACCH message as it comes in, one part a frame
 	uint8_t sf[NXDN_SACCH_MSG_BYTES];

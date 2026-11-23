@@ -48,7 +48,7 @@ typedef struct {
 	const uint8_t *silence;	// a voice frame of silence (NXDN_EHR_BYTES), from the vocoder
 #if CONFIG_NXDN_OTA_ALIAS
 	char tx_alias[NXDN_ALIAS_LEN + 1];
-	bool tx_alias_disabled;	// disabled for this channel or no stored channel
+	bool tx_alias_enabled;	// enabled for this stored channel
 #endif
 } nxdn_engine_cfg_t;
 

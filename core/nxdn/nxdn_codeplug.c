@@ -19,7 +19,7 @@ void nxdn_conv_decode(const uint8_t *b, int len, nxdn_conv_t *out)
 
 	out->squelch = (f & 0x03u) == NXDN_SQUELCH_SELECTIVE ? NXDN_SQUELCH_SELECTIVE : NXDN_SQUELCH_RAN;
 	out->rate9600 = (f & NXDN_CP_4800) == 0;
-	out->alias_disabled = (f & NXDN_CP_ALIAS_OFF) != 0;
+	out->alias_enabled = (f & NXDN_CP_ALIAS_ON) != 0;
 	if (rx > NXDN_CP_RAN_MAX)
 		rx = 0;			// every RAN
 	out->rx_ran = rx;
@@ -36,7 +36,7 @@ void nxdn_conv_encode(const nxdn_conv_t *c, uint8_t out[NXDN_CP_CONV_LEN])
 	uint8_t tx_dflt = rx != 0 ? rx : (uint8_t)NXDN_CP_TX_RAN_DEFAULT;
 
 	out[0] = (uint8_t)((c->squelch == NXDN_SQUELCH_SELECTIVE ? NXDN_SQUELCH_SELECTIVE : NXDN_SQUELCH_RAN) |
-			   (c->rate9600 ? 0u : NXDN_CP_4800) | (c->alias_disabled ? NXDN_CP_ALIAS_OFF : 0u));
+			   (c->rate9600 ? 0u : NXDN_CP_4800) | (c->alias_enabled ? NXDN_CP_ALIAS_ON : 0u));
 	out[1] = rx;
 	out[2] = c->tx_ran == tx_dflt ? 0u : (uint8_t)(NXDN_CP_TX_RAN_SET | (c->tx_ran & NXDN_CP_RAN_MAX));
 }

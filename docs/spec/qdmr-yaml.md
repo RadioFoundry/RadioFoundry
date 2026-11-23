@@ -278,7 +278,7 @@ bits, only when set), then the class's fields:
 | `ownFrequencies` | The record stands on its own (tag flag bit 1) | |
 | `noFallback` | The kind's flag bit 4 | Tier III and P25 trunked |
 | `fallback` | The channel's own fallback | A channel id |
-| `settings` | The kind's parameter block | P25: `squelch`, `rxNac`, `txNac`. P25 trunked: `followAll`. NXDN: `rate9600`, `squelch`, `rxRan`, `txRan`, `aliasDisabled`, and `txKeyId` when set. Tier III: none |
+| `settings` | The kind's parameter block | P25: `squelch`, `rxNac`, `txNac`. P25 trunked: `followAll`. NXDN: `rate9600`, `squelch`, `rxRan`, `txRan`, `aliasEnabled` (defaults to false), and `txKeyId` when set. Tier III: none |
 | `acceptInvalidCrc` | Accept Invalid CRC | A DMR channel's, plain or of a kind. Ignored on an FM channel |
 
 The channel element around the block is the channel's record. A channel of a kind without frequencies of its own

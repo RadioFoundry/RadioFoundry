@@ -118,7 +118,6 @@ static void call_start(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f, bool late)
 #if CONFIG_NXDN_OTA_ALIAS
 	c->facch_alias.next = c->sacch_alias.next = 0;
 	c->facch_alias.ready = c->sacch_alias.ready = false;
-	c->seen_superframe = false;
 #endif
 	c->active = true;
 	c->stats.calls++;
@@ -158,12 +157,8 @@ static void on_msg(nxdn_call_rx_t *c, const nxdn_rx_frame_t *f, const uint8_t *m
 	case NXDN_MSG_VCALL:
 		if (!nxdn_vcall_parse(msg, &v))
 			return;
-		// A header after voice: a new call whose start the old one's release was lost before
-		bool new_call = c->call.have_vcall && memcmp(&v, &c->call.vcall, sizeof v) != 0;
-#if CONFIG_NXDN_OTA_ALIAS
-		new_call = new_call || c->seen_superframe;
-#endif
-		if (c->active && head && new_call)
+		// A changed header starts a new call if the previous release was missed.
+		if (c->active && head && c->call.have_vcall && memcmp(&v, &c->call.vcall, sizeof v))
 			call_end(c);
 		if (!c->active)
 			call_start(c, f, !head);
@@ -260,10 +255,6 @@ static void on_frame(const nxdn_rx_frame_t *f, void *ctx)
 			c->sf_next = -1;
 		}
 	}
-#if CONFIG_NXDN_OTA_ALIAS
-	if (sf && c->active)
-		c->seen_superframe = true;
-#endif
 	// FACCH1 in the halves the LICH names; an idle FACCH1 frame carries nothing (TS 1-B 4.1.2.1)
 	for (uint8_t h = 0; h < 2; h++) {
 		int errs;

@@ -8964,7 +8964,7 @@ static void test_nxdn_stored(void)
 	chans[3].kind = CODEPLUG_KIND_NXDN;
 	chans[3].system = 0xFF;
 	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 8,
-						      .squelch = NXDN_SQUELCH_SELECTIVE },
+						      .squelch = NXDN_SQUELCH_SELECTIVE, .alias_enabled = true },
 					    .unit_id = 4321, .target = 20, .target_unit = false };
 	start();
 	nxdn_defaults();
@@ -9041,7 +9041,7 @@ static void test_nxdn_stored(void)
 	st_edit = settings_begin();
 	st_edit->ui_flags |= SETTINGS_UI_ALIAS;
 	settings_end(now);
-	stored_nxdn[3].conv.alias_disabled = true;
+	stored_nxdn[3].conv.alias_enabled = false;
 	req(RREQ_ZONE_POS, 0);
 	req(RREQ_ZONE_POS, 2);
 	nfar_begin(true, 8, 2001, false, 1);

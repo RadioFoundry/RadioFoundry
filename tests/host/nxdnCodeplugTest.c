@@ -86,7 +86,7 @@ static void test_vectors(void)
 			nxdn_conv_t c;
 			nxdn_conv_decode(b, unhex(w[1], b, sizeof b), &c);
 			CHECK(c.rate9600 == (h(w[2]) != 0) && c.rx_ran == h(w[3]) && c.tx_ran == h(w[4]) && c.squelch == h(w[5]));
-			CHECK(c.alias_disabled == (n >= 7 && h(w[6]) != 0));
+			CHECK(c.alias_enabled == (n >= 7 && h(w[6]) != 0));
 		} else if (strcmp(w[0], "nxdnenc") == 0) {
 			nxdn_conv_t c = { h(w[1]) != 0, (uint8_t)h(w[2]), (uint8_t)h(w[3]), (uint8_t)h(w[4]),
 					  n >= 7 && h(w[6]) != 0 };
