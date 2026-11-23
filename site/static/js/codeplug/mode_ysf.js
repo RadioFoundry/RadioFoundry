@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The System Fusion (YSF) mode module of the Codeplug Editor (docs/spec/ysf-codeplug.md): kind 103 (0x67) on the
+// The YSF (C4FM) mode module of the Codeplug Editor (docs/spec/ysf-codeplug.md): kind 103 (0x67) on the
 // channel-mode layer (channelmodes.js). Bytes to fields and back, and the fields the pages show, as data. YSF names
 // its caller and us by callsign: no contacts. The radio ID is never in the codeplug: every radio makes its own from
 // its chip (docs/spec/ysf.md 6), so this module has no field for it.

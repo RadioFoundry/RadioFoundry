@@ -799,7 +799,7 @@ msgctxt "VALUE_30_MIN"
 msgid "30 min"
 msgstr "30 分钟"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c core/ui/ui_wiresx.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_rooms.c core/ui/ui_screens.c
 msgctxt "VALUE_NONE"
 msgid "None"
 msgstr "无"
@@ -3054,7 +3054,7 @@ msgctxt "MYID_LABEL_DMR_ID"
 msgid "DMR ID"
 msgstr "DMR ID"
 
-#: core/ui/ui_menus.c core/ui/ui_position.c core/ui/ui_wiresx.c
+#: core/ui/ui_menus.c core/ui/ui_position.c core/ui/ui_rooms.c
 msgctxt "VALUE_NOT_SET"
 msgid "Not set"
 msgstr "未设置"
@@ -3608,6 +3608,11 @@ msgstr "诊断"
 msgctxt "TOOLS_ROW_SHARES_RECEIVED"
 msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
+
+#: core/ui/ui_menus.c core/ui/ui_rooms.c
+msgctxt "WX_TITLE"
+msgid "Rooms"
+msgstr "房间"
 
 #: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
@@ -4628,6 +4633,106 @@ msgstr "经度"
 msgctxt "POS_TOAST_RANGE"
 msgid "Up to 90 N/S, 180 E/W"
 msgstr "北南 90，东西 180"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_YSF_ONLY"
+msgid "Rooms: on a YSF channel"
+msgstr "房间：仅限 YSF 信道"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_NODE"
+msgid "Node"
+msgstr "节点"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM"
+msgid "Room"
+msgstr "房间"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_LABEL_ROOM_ID"
+msgid "Room ID"
+msgstr "房间 ID"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_CONNECT"
+msgid "Connect"
+msgstr "连接"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_DISCONNECT"
+msgid "Disconnect"
+msgstr "断开"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_ROOMS"
+msgid "Rooms"
+msgstr "房间列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_SEARCH"
+msgid "Search"
+msgstr "搜索"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_WAITING"
+msgid "Waiting..."
+msgstr "等待中..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_VALUE_NO_ANSWER"
+msgid "No answer"
+msgstr "无应答"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TOAST_ROOM_ID_FIRST"
+msgid "Type a room ID first"
+msgstr "请先输入房间 ID"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NODE"
+msgid "Node: "
+msgstr "节点： "
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_TYPE_OK_SEND_BACK"
+msgid "0-9 room  OK send  Back"
+msgstr "0-9 房间  OK 发送  返回"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_ROW_NEXT_PAGE"
+msgid "Next page"
+msgstr "下一页"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_WAITING"
+msgid "Waiting for the node..."
+msgstr "等待节点..."
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NOTHING_FOUND"
+msgid "Nothing found"
+msgstr "未找到"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_NO_LIST"
+msgid "No list yet"
+msgstr "尚无列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_BODY_OF"
+msgid " of "
+msgstr " / "
+
+#: core/ui/ui_rooms.c
+msgctxt "WX_TITLE_ROOMS"
+msgid "Rooms"
+msgstr "房间列表"
+
+#: core/ui/ui_rooms.c
+msgctxt "HINT_OK_CONNECT_BACK"
+msgid "OK connect  Back"
+msgstr "OK 连接  返回"
 
 #: core/ui/ui_satellite.c
 msgctxt "SATELLITE_TLE_STALE"
@@ -5665,6 +5770,11 @@ msgid "{TX freq|TXFreq}"
 msgstr "{发射频率|发频}"
 
 #: core/ui/ui_screens.c
+msgctxt "QUICK_LABEL_ROOMS"
+msgid "Rooms"
+msgstr "房间"
+
+#: core/ui/ui_screens.c
 msgctxt "QUICK_LABEL_TONE_TX"
 msgid "Tone TX"
 msgstr "发射亚音"
@@ -5813,103 +5923,3 @@ msgstr "本机无法识别该区域"
 msgctxt "SHARE_ERR_OFFER_GONE"
 msgid "The offer is gone"
 msgstr "该邀请已失效"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_TOAST_YSF_ONLY"
-msgid "Wires-X: on a YSF channel"
-msgstr "Wires-X：仅限 YSF 信道"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_LABEL_NODE"
-msgid "Node"
-msgstr "节点"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_LABEL_ROOM"
-msgid "Room"
-msgstr "房间"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_LABEL_ROOM_ID"
-msgid "Room ID"
-msgstr "房间 ID"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_ROW_CONNECT"
-msgid "Connect"
-msgstr "连接"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_ROW_DISCONNECT"
-msgid "Disconnect"
-msgstr "断开"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_ROW_ROOMS"
-msgid "Rooms"
-msgstr "房间列表"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_ROW_SEARCH"
-msgid "Search"
-msgstr "搜索"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_VALUE_WAITING"
-msgid "Waiting..."
-msgstr "等待中..."
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_VALUE_NO_ANSWER"
-msgid "No answer"
-msgstr "无应答"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_TOAST_ROOM_ID_FIRST"
-msgid "Type a room ID first"
-msgstr "请先输入房间 ID"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_NODE"
-msgid "Node: "
-msgstr "节点： "
-
-#: core/ui/ui_wiresx.c
-msgctxt "HINT_TYPE_OK_SEND_BACK"
-msgid "0-9 room  OK send  Back"
-msgstr "0-9 房间  OK 发送  返回"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_ROW_NEXT_PAGE"
-msgid "Next page"
-msgstr "下一页"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_WAITING"
-msgid "Waiting for the node..."
-msgstr "等待节点..."
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_NOTHING_FOUND"
-msgid "Nothing found"
-msgstr "未找到"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_NO_LIST"
-msgid "No list yet"
-msgstr "尚无列表"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_BODY_OF"
-msgid " of "
-msgstr " / "
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_TITLE_ROOMS"
-msgid "Rooms"
-msgstr "房间列表"
-
-#: core/ui/ui_wiresx.c
-msgctxt "HINT_OK_CONNECT_BACK"
-msgid "OK connect  Back"
-msgstr "OK 连接  返回"

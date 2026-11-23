@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion DN on a channel, the radio core's side (docs/spec/ysf.md 5): the engine (core/ysf/ysf_engine.h) on
+// YSF DN on a channel, the radio core's side (docs/spec/ysf.md 5): the engine (core/ysf/ysf_engine.h) on
 // the memory it runs in, its voice frames to and from the vocoder the board hosts for DMR (core/dmr/ambe), the
 // channel's DG-IDs, who we are on air (callsign and radio ID), and a compact view for the radio view. radio_sm.c
 // decides when YSF runs and keys the transmitter (radio_air.h); nothing here keys it.
@@ -40,7 +40,7 @@ typedef struct {
 #define RADIO_YSF_NOT_DN	0x10u	// ... is not DN voice (VW or data: shown, not played)
 #define RADIO_YSF_NO_CALL	0x20u	// we have no callsign: PTT refused
 #define RADIO_YSF_RID_WEAK	0x40u	// our RID comes from the fallback, not the MCU's unique ID
-#define RADIO_YSF_DATA		0x80u	// the call heard is a data transmission (Wires-X): no voice
+#define RADIO_YSF_DATA		0x80u	// the call heard is a data transmission (room data): no voice
 
 // The radio view's part (radio_view_t.ysf): the call heard now, or the last one
 typedef struct {
@@ -65,7 +65,7 @@ typedef struct {
 #include "radio/radio_air.h"
 #include "ysf/ysf_wx.h"
 
-// Wires-X (docs/spec/ysf.md 9): what the node said last, and what was asked of it
+// Rooms (docs/spec/ysf.md 9): what the node said last, and what was asked of it
 typedef struct {
 	uint32_t serial;		// moves at every reply (ysf_wx_t.serial)
 	uint32_t asked;			// moves at every command sent
@@ -78,7 +78,7 @@ typedef struct {
 	uint16_t rooms_total, rooms_first;	// rooms the node knows; the page's first entry (1-based)
 } radio_ysf_wx_t;
 
-// Radio task: arm a Wires-X command for the next transmission (RREQ_YSF_WX keys for it); false: not one
+// Radio task: arm a room command for the next transmission (RREQ_YSF_WX keys for it); false: not one
 bool radio_ysf_wx_arm(uint8_t cmd, uint32_t arg, const char *text);
 void radio_ysf_wx_disarm(void);
 // Any task: the state, and room i of the page held (false past it)

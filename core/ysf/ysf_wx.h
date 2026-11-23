@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Wires-X (docs/spec/ysf.md 9): the commands a radio sends the node it hears (a repeater or a gateway linked to the
-// Wires-X network), as a short data transmission, and the node's replies. Bytes in, values out: the frames are the
+// Rooms (docs/spec/ysf.md 9): the commands a radio sends the node it hears (a repeater or a gateway linked to a
+// room network), as a short data transmission, and the node's replies. Bytes in, values out: the frames are the
 // call layer's (ysf.h), the keying the radio core's. No RTOS or board call.
 #ifndef RFOUNDRY_YSF_WX_H
 #define RFOUNDRY_YSF_WX_H

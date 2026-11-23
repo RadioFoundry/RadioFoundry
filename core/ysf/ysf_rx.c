@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion receive (ysf.h): the framer's table for the mode and its hooks. The sync is 20 symbols; the head
+// YSF receive (ysf.h): the framer's table for the mode and its hooks. The sync is 20 symbols; the head
 // hook takes a frame once the FICH behind it decodes (four Golay words and a CRC), or, inside a call, places a frame
 // whose FICH is lost in a fade by the call's order for a few frames.
 #include "ysf.h"

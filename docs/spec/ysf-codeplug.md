@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# System Fusion in the codeplug
+# YSF in the codeplug
 
-The stored records of System Fusion (YSF) channels, on the generic layer of [channel-modes.md](channel-modes.md).
+The stored records of YSF (C4FM) channels, on the generic layer of [channel-modes.md](channel-modes.md).
 The firmware's codec is `core/ysf/ysf_codeplug.c` (`CONFIG_YSF`). The radio core runs a channel of kind 103 where the
 build has `CONFIG_YSF` and the board's air interface carries YSF ([ysf.md](ysf.md) 5); elsewhere it is parked
 ([channel-modes.md](channel-modes.md) 6).

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Wires-X (docs/spec/ysf.md 9): the node this YSF channel hears, the room it is in, connect and disconnect,
+// Rooms (docs/spec/ysf.md 9): the node this YSF channel hears, the room it is in, connect and disconnect,
 // the room list a page at a time, a search. Every command is a short transmission the radio core keys (refused as
 // PTT would be); the node's reply comes in its own time, so the screens show what was asked until it answers.
-// The first row is the DG-ID, both ways (as quick settings tile 8). Opened from Tools > Wires-X (key 0), # on Home or
-// quick settings tile 3 on a YSF channel, or a key set to Wires-X
+// The first row is the DG-ID, both ways (as quick settings tile 8). Opened from Tools > Rooms (key 0), # on Home or
+// quick settings tile 3 on a YSF channel, or a key set to Rooms
 #include "config.h"
 #if CONFIG_YSF	// the whole file
 #include <string.h>
@@ -54,7 +54,7 @@ static bool send(uint8_t cmd, uint32_t arg, const char *text)
 {
 	wx_read();
 	if (ui_view()->ch.mode != RADIO_MODE_YSF || !ui_svc_ysf_wx(cmd, arg, text)) {
-		ui_toast(TR(WX_TOAST_YSF_ONLY, "Wires-X: on a YSF channel"));
+		ui_toast(TR(WX_TOAST_YSF_ONLY, "Rooms: on a YSF channel"));
 		return false;
 	}
 	asked_ms = ui_st.now_ms != 0 ? ui_st.now_ms : 1;
@@ -63,7 +63,7 @@ static bool send(uint8_t cmd, uint32_t arg, const char *text)
 	return true;
 }
 
-// ── The Wires-X page ──
+// ── The Rooms page ──
 enum { WX_DGID, WX_NODE, WX_ROOM, WX_ROOM_ID, WX_CONNECT, WX_DISCONNECT, WX_ROOMS,
 #if CONFIG_CHANNEL_EDIT
 	WX_SEARCH,
@@ -145,7 +145,7 @@ static void wx_item(uint16_t i, ui_item_t *it)
 static void search_kept(void)
 {
 	if (search_text[0] != '\0' && send(YSF_WX_SEARCH, 0, search_text))
-		ui_push(SCR_WIRESX_ROOMS, 0);
+		ui_push(SCR_ROOM_LIST, 0);
 }
 #endif
 
@@ -192,7 +192,7 @@ static void wx_select(uint16_t i, bool hold)
 		break;
 	case WX_ROOMS:
 		if (send(YSF_WX_ALL, 1, NULL))
-			ui_push(SCR_WIRESX_ROOMS, 0);
+			ui_push(SCR_ROOM_LIST, 0);
 		break;
 #if CONFIG_CHANNEL_EDIT
 	case WX_SEARCH:
@@ -267,8 +267,8 @@ static void wx_enter(void)
 	wx_read();
 }
 
-const ui_scr_def_t ui_wiresx_screen = {
-	.name = "wiresx", .flags = SF_LIST | SF_FIELD, .prefix = TRX(WX_TITLE, "Wires-X"),
+const ui_scr_def_t ui_rooms_screen = {
+	.name = "rooms", .flags = SF_LIST | SF_FIELD, .prefix = TRN(WX_TITLE, "Rooms"),
 	.hint = TRN(HINT_TYPE_OK_SEND_BACK, "0-9 room  OK send  Back"),
 	.count = wx_count, .item = wx_item, .select = wx_select, .key = wx_key, .enter = wx_enter, .body = wx_body,
 };
@@ -346,19 +346,19 @@ static const char *rooms_body(void)
 	return body;
 }
 
-const ui_scr_def_t ui_wiresx_rooms_screen = {
-	.name = "wiresx-rooms", .flags = SF_LIST | SF_FIELD, .prefix = TRN(WX_TITLE_ROOMS, "Rooms"),
+const ui_scr_def_t ui_room_list_screen = {
+	.name = "room-list", .flags = SF_LIST | SF_FIELD, .prefix = TRN(WX_TITLE_ROOMS, "Rooms"),
 	.hint = TRN(HINT_OK_CONNECT_BACK, "OK connect  Back"),
 	.count = rooms_count, .item = rooms_item, .select = rooms_select, .body = rooms_body,
 };
 
-// Tools > Wires-X, quick tile 3 on YSF, a key set to Wires-X
-void ui_wiresx_open(void)
+// Tools > Rooms, quick tile 3 on YSF, a key set to Rooms
+void ui_rooms_open(void)
 {
 	if (ui_view()->ch.mode != RADIO_MODE_YSF) {
-		ui_toast(TR(WX_TOAST_YSF_ONLY, "Wires-X: on a YSF channel"));
+		ui_toast(TR(WX_TOAST_YSF_ONLY, "Rooms: on a YSF channel"));
 		return;
 	}
-	ui_push(SCR_WIRESX, 0);
+	ui_push(SCR_ROOMS, 0);
 }
 #endif	// CONFIG_YSF

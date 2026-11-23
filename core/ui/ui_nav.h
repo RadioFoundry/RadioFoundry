@@ -46,7 +46,7 @@ typedef enum {
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
 	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
-	SCR_WIRESX, SCR_WIRESX_ROOMS,	// Wires-X (CONFIG_YSF, ui_wiresx.c): the node and room; a page of rooms
+	SCR_ROOMS, SCR_ROOM_LIST,	// Rooms (CONFIG_YSF, ui_rooms.c): the node and room; a page of rooms
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -125,8 +125,8 @@ typedef struct {
 } ui_scr_def_t;
 
 #if CONFIG_YSF
-// Wires-X (ui_wiresx.c): open its page, or say it needs a YSF channel
-void ui_wiresx_open(void);
+// Rooms (ui_rooms.c): open its page, or say it needs a YSF channel
+void ui_rooms_open(void);
 #endif
 #if CONFIG_CHANNEL_EDIT
 // Text entry for another screen's field: target holds max characters; done runs once the text is kept

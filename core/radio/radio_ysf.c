@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion DN on a channel, the radio core's side (radio_ysf.h)
+// YSF DN on a channel, the radio core's side (radio_ysf.h)
 #include "config.h"
 #if CONFIG_YSF	// the whole file
 #include <stddef.h>
@@ -21,7 +21,7 @@ _Static_assert(RADIO_YSF_RID_LEN == YSF_RID_LEN && RADIO_YSF_CALL_LEN == YSF_CS_
 
 
 static radio_ysf_settings_t set;
-// Wires-X: the command armed for the next transmission, and the node's last reply as published (the provider's task
+// Rooms: the command armed for the next transmission, and the node's last reply as published (the provider's task
 // writes it, any task reads it: wx_seq odd while it writes)
 static uint8_t wx_buf[YSF_WX_CMD_MAX], wx_len, wx_cmd = YSF_WX_NONE;
 static uint32_t wx_arg;
@@ -418,7 +418,7 @@ static bool ysf_tx_prepare(void)
 	if (eng == NULL)
 		return false;
 	if (wx_cmd != YSF_WX_NONE) {
-		// A Wires-X command armed: this transmission is it, and ends by itself
+		// A room command armed: this transmission is it, and ends by itself
 		uint8_t cmd = wx_cmd;
 
 		wx_cmd = YSF_WX_NONE;

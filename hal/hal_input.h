@@ -28,7 +28,7 @@ typedef enum {
 	ACT_TALK_LABEL,		// Home's talk line: the talkgroup's name or its number first (a side key function)
 	ACT_SCAN_SKIP,		// skip the channel that stopped the scan, until the scan stops (a side key function)
 	ACT_MONITOR_TOGGLE,	// latch the monitor on / off, as quick tile 5 does (a side key function)
-	ACT_WIRESX,		// the Wires-X page (a side key function, on a YSF channel)
+	ACT_YSF_ROOMS,		// the Rooms page (a side key function, on a YSF channel)
 	// A home key with a function set (board.home_keys, keyassign.h): the UI turns it into that function on Home and
 	// back into the key's own action elsewhere. The gesture says press or long press
 	ACT_HOME_KEY_1, ACT_HOME_KEY_2, ACT_HOME_KEY_3, ACT_HOME_KEY_4,

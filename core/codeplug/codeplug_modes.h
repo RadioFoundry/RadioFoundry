@@ -31,7 +31,7 @@ bool radio_nxdn_fits(void);
 #define CODEPLUG_RUNS_NXDN	0
 #endif
 
-// What runs System Fusion: the build (CONFIG_YSF) and a board whose air interface carries it (core/radio/radio_ysf.c)
+// What runs YSF: the build (CONFIG_YSF) and a board whose air interface carries it (core/radio/radio_ysf.c)
 #if CONFIG_YSF
 bool radio_ysf_fits(void);
 #define CODEPLUG_RUNS_YSF	radio_ysf_fits()
@@ -46,7 +46,7 @@ bool radio_ysf_fits(void);
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK && CODEPLUG_RUNS_P25)	/* P25 trunked, receive only (radio_p25.c) */ \
 	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN)	/* NXDN conventional: the radio core runs it (core/radio/radio_nxdn.c) */ \
 	X(5, DMR_AES, "AES", CONFIG_DMR_AES) \
-	X(103, YSF, "YSF", CODEPLUG_RUNS_YSF)	/* 0x67: System Fusion DN (core/radio/radio_ysf.c) */
+	X(103, YSF, "YSF", CODEPLUG_RUNS_YSF)	/* 0x67: YSF DN (core/radio/radio_ysf.c) */
 
 // System types: the first byte of a system record
 #define CODEPLUG_SYSTEM_TYPES(X) \

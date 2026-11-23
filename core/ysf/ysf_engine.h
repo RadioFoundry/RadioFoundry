@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion DN voice on a channel (docs/spec/ysf.md 5): the call layer (ysf.h) on an air interface session
+// YSF DN voice on a channel (docs/spec/ysf.md 5): the call layer (ysf.h) on an air interface session
 // (core/air/air_session.h). The radio core begins it on a YSF channel and ends it on leaving; in between it receives
 // calls, hands their voice frames to a sink, and transmits when the radio core says so. No RTOS call: the radio
 // core's task and the provider's task use it as air_session.h describes.
@@ -21,7 +21,7 @@ typedef struct {
 	// Transmit, from the provider's task: the next voice frame, false when none is ready. NULL: every frame is
 	// `silence`
 	bool (*tx_voice)(uint8_t v[YSF_VOICE_BYTES], void *ctx);
-	// A Wires-X reply heard, from the provider's task (ysf.md 9.3)
+	// A room reply heard, from the provider's task (ysf.md 9.3)
 	void (*rx_wx)(const ysf_wx_t *w, void *ctx);
 } ysf_engine_hooks_t;
 
@@ -74,7 +74,7 @@ void ysf_engine_set(ysf_engine_t *e, const ysf_engine_cfg_t *cfg);
 // Transmit (the radio core's task), as nxdn_engine.h: prepare, hal_radio_t.tx(), go; stop when the operator lets
 // go; AIR_TX_DONE = switch the transmitter off, then clear
 bool ysf_engine_tx_prepare(ysf_engine_t *e);
-// The same for a data transmission (a Wires-X command, ysf.md 9.1): the engine ends it by itself, no stop needed
+// The same for a data transmission (a room command, ysf.md 9.1): the engine ends it by itself, no stop needed
 bool ysf_engine_tx_prepare_data(ysf_engine_t *e, const uint8_t *data, uint8_t len);
 bool ysf_engine_tx_go(ysf_engine_t *e);
 void ysf_engine_tx_stop(ysf_engine_t *e);

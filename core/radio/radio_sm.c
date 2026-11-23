@@ -9167,7 +9167,7 @@ static void ysf_set_request(radio_sm_t *sm)
 	changed(sm);
 }
 
-// A Wires-X command (ysf.md 9.1): a short transmission the engine ends by itself, refused as PTT would be. A refusal
+// A room command (ysf.md 9.1): a short transmission the engine ends by itself, refused as PTT would be. A refusal
 // says why in the view and beeps, without the refusal state PTT's release would clear
 static void ysf_wx_request(radio_sm_t *sm, uint32_t now_ms)
 {

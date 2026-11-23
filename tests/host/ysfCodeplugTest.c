@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion in the codeplug (core/ysf/ysf_codeplug.c, docs/spec/ysf-codeplug.md) on a simulated NOR flash: the
+// YSF in the codeplug (core/ysf/ysf_codeplug.c, docs/spec/ysf-codeplug.md) on a simulated NOR flash: the
 // shared vectors (tests/vectors/channel-modes.txt, also read by the Codeplug Editor's tests), a channel's DG-IDs from
 // its tag, the radio-wide record (the callsign; never a radio ID), and a channel written from the radio
 #include <stdio.h>
@@ -127,10 +127,10 @@ static void test_load(void)
 	channel_t c;
 
 	fresh();
-	c = make("Fusion", 438900000, 431300000);
+	c = make("YSF", 438900000, 431300000);
 	CHECK(codeplug_set_channel(10, &c));
 	ysf_chan_encode(&yc, blk);
-	CHECK(codeplug_tag_write(10, "Fusion", &t, blk, sizeof blk));
+	CHECK(codeplug_tag_write(10, "YSF", &t, blk, sizeof blk));
 	CHECK(codeplug_channel(10, &c) && c.kind == CODEPLUG_KIND_YSF && !c.rx_only);
 	fits = false;
 	CHECK(!codeplug_kind_built(CODEPLUG_KIND_YSF) && strcmp(codeplug_kind_name(c.kind), "YSF") == 0);
@@ -157,20 +157,20 @@ static void test_radio_record(void)
 	fresh();
 	ysf_radio_load(&r);
 	CHECK(r.callsign[0] == '\0');		// none: the radio name's
-	strcpy(r.callsign, "SQ5FOX");
+	strcpy(r.callsign, "N0CALL");
 	ysf_radio_encode(&r, rec);
-	CHECK(memcmp(rec, "SQ5FOX\0\0\0\0", YSF_CP_CALL_LEN) == 0);
+	CHECK(memcmp(rec, "N0CALL\0\0\0\0", YSF_CP_CALL_LEN) == 0);
 	CHECK(codeplug_kv_set((uint16_t)(CODEPLUG_KEY_MODE_SET + CODEPLUG_KIND_YSF), rec, sizeof rec));
 	memset(&r, 0, sizeof r);
 	ysf_radio_load(&r);
-	CHECK(strcmp(r.callsign, "SQ5FOX") == 0);
+	CHECK(strcmp(r.callsign, "N0CALL") == 0);
 }
 
 // The callsign from the radio name, when the record has none (ysf.md 5.2)
 static void test_callsign_from_name(void)
 {
 	static const struct { const char *name, *call; } v[] = {
-		{ "SQ5FOX", "SQ5FOX" }, { "sq5fox Adrian", "SQ5FOX" }, { "SP5WLF-7", "SP5WLF" }, { "SP5WLF/P", "SP5WLF" },
+		{ "N0CALL", "N0CALL" }, { "n0call Jamie", "N0CALL" }, { "N1ABC-7", "N1ABC" }, { "N1ABC/P", "N1ABC" },
 		{ "K1A", "K1A" }, { "Base", "" }, { "12345", "" }, { "", "" }, { "N0CALL12345", "" }, { "SQ5_FOX", "" },
 	};
 	char out[YSF_CP_CALL_LEN + 1];

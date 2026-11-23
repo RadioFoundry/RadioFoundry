@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The System Fusion radio ID (ysf_id.h, docs/spec/ysf.md 6)
+// The YSF radio ID (ysf_id.h, docs/spec/ysf.md 6)
 #include "ysf/ysf_id.h"
 
 // One 32-bit word folded into the hash with a full avalanche: every input bit moves about half the output bits, so

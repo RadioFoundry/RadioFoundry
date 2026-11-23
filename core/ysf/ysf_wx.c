@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Wires-X commands and replies (ysf_wx.h, docs/spec/ysf.md 9)
+// room commands and replies (ysf_wx.h, docs/spec/ysf.md 9)
 #include "ysf/ysf_wx.h"
 
 #include <stddef.h>

@@ -420,9 +420,9 @@ squelch and the group (when a contact has that group; else group 1).
 
 ### YSF in the VFO
 
-On a radio that runs System Fusion, YSF is one of the VFO's modes, after NXDN ("VFO: YSF"). It is System Fusion
-digital voice in DN mode (C4FM, 12.5 kHz), through the radio's DMR voice codec. Other System Fusion radios, repeaters
-and Wires-X nodes hear it as they hear a Yaesu handheld.
+On a radio that runs YSF, YSF is one of the VFO's modes, after NXDN ("VFO: YSF"). It is YSF
+digital voice in DN mode (C4FM, 12.5 kHz), through the radio's DMR voice codec. Other YSF radios, repeaters
+and room nodes hear it as they hear a commercial portable.
 
 - It hears DN voice calls with every DG-ID. A call in VW (full rate) or data mode shows on Home but stays silent
   ("Not DN voice: not played").
@@ -431,12 +431,12 @@ and Wires-X nodes hear it as they hear a Yaesu handheld.
   Home says "No callsign" and PTT is refused.
 - Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
   call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. Calls heard go into
-  **Recent** with the callsign and DG-ID, and while idle Home shows the last one ("SP5WLF", "DG-ID 12 11s ago"). Your
+  **Recent** with the callsign and DG-ID, and while idle Home shows the last one ("N1ABC", "DG-ID 12 11s ago"). Your
   own callsign coming back from a hotspot is left out.
 - **Squelch**: YSF doesn't need it. The radio decodes a YSF signal whatever the squelch level and never plays noise;
   the DG-ID decides what plays. The squelch level only tells scan and dual watch when to stop on the channel. A
-  Wires-X data transmission from a repeater shows its callsign and "Data" and goes into Recent.
-- **DG-ID**: quick settings tile **8**, or the first row of the Wires-X page (# on Home). Type two digits or step with
+  room data transmission from a repeater shows its callsign and "Data" and goes into Recent.
+- **DG-ID**: quick settings tile **8**, or the first row of the Rooms page (# on Home). Type two digits or step with
   Up/Down, **OK** sets it for receive and transmit (00 hears every DG-ID). In the VFO it stays until the radio is
   switched off; on a stored channel it lasts until you change channel. To keep a channel's DG-ID, set it in the
   channel editor.
@@ -452,18 +452,18 @@ channel: press **OK** on its Mode until it says YSF, set the DG-ID, and save. A 
 
 - **DG-ID** (0-99) is in the channel's settings: the radio sends it and hears only calls with it. 00 sends 0 and hears
   every DG-ID. (The codeplug can hold different DG-IDs for sending and hearing; the Codeplug Editor sets them apart.)
-- A YSF channel has no TX contact and no Own ID: System Fusion names you by your callsign and radio ID.
+- A YSF channel has no TX contact and no Own ID: YSF names you by your callsign and radio ID.
 - **OK** on Mode steps on to FM, then back round to YSF with its settings as they were. Saving the channel as another
   mode removes its YSF settings: the radio asks first.
 - Scan stops on YSF channels and holds on a call you would hear there. Dual watch takes one as A or B, with a channel
   of any other mode as the other one (FM, DMR, P25, NXDN or another YSF channel): the radio listens to each in turn
   and stays on the one where a call you would hear comes in.
 
-### Wires-X
+### Rooms
 
-On a YSF channel, the radio talks to the Wires-X node it hears (a repeater or a gateway linked to the Wires-X
+On a YSF channel, the radio talks to the room node it hears (a repeater or a gateway linked to a room
 network): it asks the node where it is, connects it to a room, disconnects it, and lists the rooms. Open it from
-**Tools > Wires-X** (key **0** in Tools), with **#** on Home or quick settings tile **3** on a YSF channel, or from a key set to **Wires-X**
+**Tools > Rooms** (key **0** in Tools), with **#** on Home or quick settings tile **3** on a YSF channel, or from a key set to **Rooms**
 (Settings > Keys).
 
 | Row | What it does |
@@ -481,14 +481,14 @@ Each command is a short transmission (about half a second) with your callsign an
 
 ### Your radio ID
 
-Every System Fusion radio sends a radio ID: five letters and digits. Repeaters, Wires-X nodes and other radios use it
+Every YSF radio sends a radio ID: five letters and digits. Repeaters, room nodes and other radios use it
 to tell radios apart, so no two radios may share one. RadioFoundry makes yours from the radio's own chip, which is
 different in every radio: it is the same every time the radio starts, after every update and every codeplug write,
 and nothing can change it. It is never in the codeplug, so copying a codeplug to another radio never copies it.
 
 See it in **Settings > My radio > YSF RID** and in **Settings > About**. If it shows a **?** after it, this radio
 has no chip ID to make it from and the radio ID comes from your DMR ID and radio name instead: two radios with the same
-codeplug would then share it. Details: [System Fusion, the radio ID](../spec/ysf.md#6-the-radio-id-rid).
+codeplug would then share it. Details: [YSF, the radio ID](../spec/ysf.md#6-the-radio-id-rid).
 
 ### Leaving the VFO
 

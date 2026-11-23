@@ -199,12 +199,12 @@ The HR_C7000 copies its FM receive audio to the CPU (`modem-hrc7000.md` 8.5). AP
 Manual on-air testing with build `21bf5df8` (firmware source matching `c11d6e83`) confirmed scrambled NXDN voice
 between Baofeng DM-32UV radios and between a DM-32UV and Kenwood 5000-series radios. See [NXDN Scrambler](../spec/nxdn.md).
 
-## System Fusion (YSF)
+## YSF (C4FM)
 
-Manual on-air testing with build `d92e9dc2` confirmed DN voice transmit and receive direct with a Yaesu FT-70D and an
-FT5D, through a Yaesu DR-3XUE repeater and through an MMDVM hotspot; `view ysf` showed `ysf.on=1`,
+Manual on-air testing with build `d92e9dc2` confirmed DN voice transmit and receive direct with two commercial portables,
+through a commercial repeater and through an MMDVM hotspot; `view ysf` showed `ysf.on=1`,
 `ysf.rid_weak=0` and the callsign from the codeplug. Not yet checked: two DM-32UV radios side by side (different
-`ysf.rid`). The checks, in order, by a person with another System Fusion radio ([ysf.md](../spec/ysf.md)):
+`ysf.rid`). The checks, in order, by a person with another YSF radio ([ysf.md](../spec/ysf.md)):
 
 | Check | Expected | If not |
 |---|---|---|
@@ -213,7 +213,7 @@ FT5D, through a Yaesu DR-3XUE repeater and through an MMDVM hotspot; `view ysf` 
 | Our call heard by another radio, direct | its display shows our callsign and radio ID; clean speech | no lock: the deviation (`dev_outer_hz`, the provider's scaling against DMR's) |
 | Through a repeater that sends a tone under C4FM | heard | `fec_bits` and `vch_fixed` high: the tone and inter-symbol interference the soft modem doesn't remove yet |
 | Two DM-32UV radios side by side | different `ysf.rid` | the same: report it with both radios' `INFO_CHIP` UIDs |
-| Wires-X on a node's channel: Tools > Wires-X, OK on Node | `ysf.wx_asked` +1, then `ysf.wx_serial` +1 and the node's name on the page | no answer: the node heard nothing (our signal) or answered what we didn't parse (`ysf.data_frames` / the call layer's `wx_replies`) |
+| Rooms on a node's channel: Tools > Rooms, OK on Node | `ysf.wx_asked` +1, then `ysf.wx_serial` +1 and the node's name on the page | no answer: the node heard nothing (our signal) or answered what we didn't parse (`ysf.data_frames` / the call layer's `wx_replies`) |
 | Rooms, then a room | the page of rooms; the node connects | the list cut short: a lost frame drops the reply, ask again |
 
 ## Open items to settle on the bench

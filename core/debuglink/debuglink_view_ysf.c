@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The ysf section: System Fusion DN on the channel (docs/spec/ysf.md 5, core/radio/radio_ysf.h): the call heard, who
+// The ysf section: YSF DN on the channel (docs/spec/ysf.md 5, core/radio/radio_ysf.h): the call heard, who
 // we are on air (the callsign and the radio ID, with where the ID came from), the DG-IDs, what the board's provider
 // gives YSF, the engine's counters. The voice path's are the DMR side's (dmr_stats, ambe.*). "ysf.built=0" without
 // CONFIG_YSF
@@ -49,7 +49,7 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ysf.voice_held=%u\nysf.fec_bits=%u\nysf.vch_fixed=%u\nysf.rx_chunks=%u\n", (unsigned)c.voice_held,
 		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.rx_chunks);
 	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
-	// Wires-X (ysf.md 9): what was asked (wx_asked counts commands sent), the node's last reply (wx_serial counts
+	// Rooms (ysf.md 9): what was asked (wx_asked counts commands sent), the node's last reply (wx_serial counts
 	// them), the page of rooms held
 	radio_ysf_wx_t w;
 

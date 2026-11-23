@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion DN voice on a channel (ysf_engine.h).
+// YSF DN voice on a channel (ysf_engine.h).
 #include "ysf_engine.h"
 
 #include <string.h>

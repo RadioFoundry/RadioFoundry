@@ -346,7 +346,7 @@
 #ifndef CONFIG_NXDN_SCRAMBLER
 #define CONFIG_NXDN_SCRAMBLER		0
 #endif
-// System Fusion (C4FM) DN voice (core/ysf, docs/spec/ysf.md)
+// YSF (C4FM) DN voice (core/ysf, docs/spec/ysf.md)
 #ifndef CONFIG_YSF
 #define CONFIG_YSF			0
 #endif

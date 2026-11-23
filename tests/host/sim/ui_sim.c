@@ -31,7 +31,7 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   ysfrx:<call>,<dgid>[,o|v|d] a YSF call: o another DG-ID (not played), v not DN voice (not played), d a data
-//                               transmission (Wires-X: shown, no voice)
+//                               transmission (room data: shown, no voice)
 //   ysfend                      the YSF call heard ends
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
@@ -981,7 +981,7 @@ void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : "N0CALL");
 }
 static radio_view_t view;	// (defined again below: one object)
-// The DG-ID set (quick settings, the Wires-X page): the view shows it at once; dgid / dgchan in the results
+// The DG-ID set (quick settings, the Rooms page): the view shows it at once; dgid / dgchan in the results
 static int sim_dgid = -1, sim_dgchan = -1;
 bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan)
 {
@@ -993,7 +993,7 @@ bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan)
 	view.ysf.rx_dgid = dgid;
 	return true;
 }
-// Wires-X: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
+// Rooms: a command is recorded (wxcmd, wxarg in the results); the node's replies come from the wxdx and wxrooms
 // tokens
 static radio_ysf_wx_t sim_wx = { .asked_cmd = YSF_WX_NONE };
 static ysf_wx_room_t sim_wx_rooms[YSF_WX_ROOMS];
@@ -3603,14 +3603,14 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #endif
 #if CONFIG_YSF
-	if (strcmp(t, "wxdx") == 0) {		// the node answers its status: in room 27299 POLAND
+	if (strcmp(t, "wxdx") == 0) {		// the node answers its status: in room 27299 TEST
 		sim_wx.serial++;
 		sim_wx.kind = YSF_WX_DX;
 		sim_wx.connected = true;
-		strcpy(sim_wx.node_name, "WARSZAWA");
-		strcpy(sim_wx.node_call, "SR5WI");
+		strcpy(sim_wx.node_name, "NODE");
+		strcpy(sim_wx.node_call, "N0RPT");
 		strcpy(sim_wx.room_id, "27299");
-		strcpy(sim_wx.room_name, "POLAND");
+		strcpy(sim_wx.room_name, "TEST");
 		changed();
 		advance(100);
 		return true;

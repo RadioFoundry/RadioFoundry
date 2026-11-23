@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The radio ID (RID) of System Fusion (docs/spec/ysf.md 6): five characters 0-9, A-Z that every transmission
+// The radio ID (RID) of YSF (docs/spec/ysf.md 6): five characters 0-9, A-Z that every transmission
 // carries, by which repeaters, rooms and other radios tell one radio from another. Two radios with the same RID look
 // like one, so it MUST differ from radio to radio. It is made here from the MCU's factory-unique ID and nothing
 // else: never stored in the codeplug (codeplugs are copied between radios) and never set by hand.

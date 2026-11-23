@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// A System Fusion DN voice call (ysf.h, docs/spec/ysf.md 4): on receive, the frames of ysf_rx.c become a call with
+// A YSF DN voice call (ysf.h, docs/spec/ysf.md 4): on receive, the frames of ysf_rx.c become a call with
 // its fields and its voice frames in order; on transmit, the frames are built and released symbol by symbol.
 #include "ysf.h"
 
@@ -251,7 +251,7 @@ static void on_frame(const ysf_rx_frame_t *f, void *ctx)
 		return;
 	}
 	c->stats.fec_bits += (uint32_t)f->fich_errs;
-	// A data transmission (Wires-X, ysf.md 9.3): no call, its frames to the reply being parsed
+	// A data transmission (room data, ysf.md 9.3): no call, its frames to the reply being parsed
 	if (f->fich.dt == YSF_DT_DATA) {
 		on_data(c, f);
 		return;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion (C4FM) voice, DN mode (docs/spec/ysf.md): the frame and its channels, the framer's table for the
+// YSF (C4FM) voice, DN mode (docs/spec/ysf.md): the frame and its channels, the framer's table for the
 // mode, and a voice call on top of them.
 //
 // A frame is 480 symbols (960 bits, 100 ms at 4800 symbols/s): a 20-symbol sync, the 100-symbol FICH, then five
@@ -38,7 +38,7 @@
 #define YSF_FI_TEST		3
 // DT: what a communications frame carries
 #define YSF_DT_VD1		0		// voice and data, the voice at full FEC
-#define YSF_DT_DATA		1		// data at full rate (Wires-X commands)
+#define YSF_DT_DATA		1		// data at full rate (room commands)
 #define YSF_DT_VD2		2		// DN: voice (AMBE+2 2450 bit/s) and data
 #define YSF_DT_VW		3		// voice at full rate
 // MR: message route
@@ -139,7 +139,7 @@ typedef struct {
 	void (*update)(const ysf_call_t *c, void *ctx);		// a field changed
 	void (*voice)(const uint8_t v[YSF_VOICE_BYTES], void *ctx);
 	void (*end)(void *ctx);
-	// A Wires-X reply heard (a data transmission, ysf.md 9): valid during the call. NULL: data is ignored
+	// A room reply heard (a data transmission, ysf.md 9): valid during the call. NULL: data is ignored
 	void (*wx)(const ysf_wx_t *w, void *ctx);
 } ysf_call_sink_t;
 
@@ -149,7 +149,7 @@ typedef struct {
 	uint32_t voice_held;	// VCH of another data type
 	uint32_t fec_bits;	// bits the FICH, CSD and DCH decoders corrected
 	uint32_t vch_fixed;	// VCH bits the vote corrected
-	uint32_t data_frames, wx_replies;	// frames of data transmissions; Wires-X replies parsed from them
+	uint32_t data_frames, wx_replies;	// frames of data transmissions; room replies parsed from them
 } ysf_call_stats_t;
 
 typedef struct {
@@ -182,7 +182,7 @@ typedef struct {
 	uint8_t nvoice;			// VCH filled in it
 	uint16_t nsyms, ready, sent, pre_left;
 	ysf_tx_id_t id;
-	// A data transmission (a Wires-X command) in place of voice: its bytes, their count, the last FN
+	// A data transmission (a room command) in place of voice: its bytes, their count, the last FN
 	bool data;
 	uint8_t data_len, data_ft;
 	uint8_t data_buf[YSF_WX_CMD_MAX];

@@ -326,7 +326,7 @@ CONFIG_P25 ?= $(CONFIG_DMR)
 # DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
 CONFIG_NXDN ?= $(CONFIG_DMR)
 CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
-# System Fusion (C4FM) DN voice (core/ysf, docs/spec/ysf.md): frames, the call layer and its engine on the air
+# YSF (C4FM) DN voice (core/ysf, docs/spec/ysf.md): frames, the call layer and its engine on the air
 # interface, and the YSF channel mode. Voice frames go to and from the vocoder the board already hosts for DMR, through
 # the DMR voice path, as NXDN's do. Needs DMR
 CONFIG_YSF ?= $(CONFIG_DMR)

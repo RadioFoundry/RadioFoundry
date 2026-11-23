@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion channels in the codeplug (docs/spec/ysf-codeplug.md): the codec from the stored bytes to a plain
+// YSF channels in the codeplug (docs/spec/ysf-codeplug.md): the codec from the stored bytes to a plain
 // struct the radio core sets the YSF engine up from. Bytes in, values out: no engine here. Built with CONFIG_YSF
 #ifndef RFOUNDRY_YSF_CODEPLUG_H
 #define RFOUNDRY_YSF_CODEPLUG_H

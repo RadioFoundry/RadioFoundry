@@ -9569,7 +9569,7 @@ static void test_nxdn(void)
 #endif
 
 #if CONFIG_YSF
-// ---- System Fusion in the radio core (docs/spec/ysf.md 5): the far radio is a YSF engine on the other fake
+// ---- YSF in the radio core (docs/spec/ysf.md 5): the far radio is a YSF engine on the other fake
 // provider. Dual watch between YSF and every other mode the build runs: each look starts its own engine (or the DMR
 // stack), never two at once, and a YSF call holds the watch ----
 #include "ysf/ysf_engine.h"
@@ -9605,7 +9605,7 @@ static void yfar_begin(uint8_t dgid)
 {
 	ysf_engine_cfg_t c = { .rx_dgid = YSF_DGID_ALL, .silence = dmr_ambe_silence };
 
-	strcpy(c.tx.callsign, "SP5WLF");
+	strcpy(c.tx.callsign, "N1ABC");
 	strcpy(c.tx.radio_id, "AB123");
 	c.tx.dgid = dgid;
 	if (yfar_running)
@@ -9637,11 +9637,11 @@ bool ysf_chan_save(uint16_t number, const channel_t *ch, const ysf_chan_t *c)
 	stored_ysf[number] = *c;
 	return codeplug_set_channel(number, ch);
 }
-void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "SQ5FOX"); }
+void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "N0CALL"); }
 void ysf_radio_encode(const ysf_radio_t *r, uint8_t out[YSF_CP_CALL_LEN]) { memcpy(out, r->callsign, YSF_CP_CALL_LEN); }
 void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]) { (void)name; out[0] = '\0'; }
 
-// Wires-X (ysf.md 9): a command keys the radio for a short data transmission the far radio hears as one, and the
+// Rooms (ysf.md 9): a command keys the radio for a short data transmission the far radio hears as one, and the
 // radio unkeys by itself; refused as PTT is (RX only), without the refusal state PTT's release would clear
 static void test_ysf_wx(void)
 {
@@ -9671,7 +9671,7 @@ static void test_ysf_wx(void)
 	CHECK(sm.view.state != RS_TX && !hw.keyed);
 	CHECK(yfar.rx.stats.data_frames >= data0 + 4);		// header, FN 0, FN 1, terminator
 	// heard as a data transmission: a call without voice, from our callsign
-	CHECK(yfar.rx.stats.calls == 1 && yfar.rx.call.dt == YSF_DT_DATA && !strcmp(yfar.rx.call.src, "SQ5FOX"));
+	CHECK(yfar.rx.stats.calls == 1 && yfar.rx.call.dt == YSF_DT_DATA && !strcmp(yfar.rx.call.src, "N0CALL"));
 	// RX only: refused, a reason given, nothing left to release
 	chans[3].rx_only = true;
 	start();
@@ -9774,7 +9774,7 @@ static void test_ysf_dual(void)
 	CHECK(radio_ysf_running() && (v->flags & RADIO_YSF_PLAYED) && v->dgid == 12);
 	run(1500);
 	// Entered late (the watch looked in mid-call): the callsign came from the DCH meanwhile
-	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD && !strcmp(v->src, "SP5WLF") &&
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD && !strcmp(v->src, "N1ABC") &&
 	      (v->flags & RADIO_YSF_LATE));
 	ysf_engine_tx_stop(&yfar);
 	run(600 + RADIO_DUAL_DELAY_MS + 600);

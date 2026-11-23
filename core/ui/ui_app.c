@@ -1289,7 +1289,7 @@ bool ui_home_key(const input_event_t *ev)
 			ui_push(SCR_SCAN, 0);	// skip / stay / always skip (task-flows.md 11)
 #if CONFIG_YSF
 		else if (ui_view()->ch.mode == RADIO_MODE_YSF)
-			ui_wiresx_open();	// beside * (quick settings): a YSF call has no caller's actions
+			ui_rooms_open();	// beside * (quick settings): a YSF call has no caller's actions
 #endif
 		else
 			open_caller_actions();
@@ -1518,8 +1518,8 @@ static void quick_activate(int tile)
 		copy_to_vfo();
 		break;
 #if CONFIG_YSF
-	case QT_WIRESX:
-		ui_wiresx_open();
+	case QT_YSF_ROOMS:
+		ui_rooms_open();
 		break;
 #endif
 	case QT_SPLIT:
@@ -2334,8 +2334,8 @@ void ui_app_key(const input_event_t *ev)
 			call_back_key();
 			return;
 #if CONFIG_YSF
-		case ACT_WIRESX:
-			ui_wiresx_open();
+		case ACT_YSF_ROOMS:
+			ui_rooms_open();
 			return;
 #endif
 #if CONFIG_DMR

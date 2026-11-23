@@ -1,14 +1,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
-# System Fusion (YSF)
+# YSF (C4FM)
 
-System Fusion's digital voice (C4FM, DN mode) on the air interface ([air-interface.md](air-interface.md)): frames,
+YSF's digital voice (C4FM, DN mode) on the air interface ([air-interface.md](air-interface.md)): frames,
 calls, the radio core's YSF mode and the radio ID. Switch: `CONFIG_YSF`, which also builds the air interface
 ([build-config.md](../build-config.md)). Which radios could carry it: [feature-matrix.md](../feature-matrix.md). The
 codeplug's records: [ysf-codeplug.md](ysf-codeplug.md).
 
-There is no published standard for System Fusion. Everything here was measured on air against other System Fusion
+There is no published standard for YSF. Everything here was measured on air against other YSF
 equipment (a handheld direct and through a repeater) or follows from those measurements; what isn't known says so.
 
 State:
@@ -22,7 +22,7 @@ State:
 | The radio ID (6) | written, host tested |
 | Codeplug channels, the site's Codeplug Editor ([ysf-codeplug.md](ysf-codeplug.md)) | written, host tested |
 | On air | not checked with this code; see the radio's bring-up record |
-| Wires-X: status, connect, disconnect, room list, search (9) | written, host tested |
+| Rooms: status, connect, disconnect, room list, search (9) | written, host tested |
 | VW (full rate voice), Group Monitor, positions, news, V/D mode 1 | not supported in this first version (8). A VW call shows on Home, not played |
 
 ## 1. On air
@@ -162,7 +162,7 @@ The DCH cycle:
 
 ### 4.2 The fields as one maker's handheld sends them
 
-RadioFoundry fills every field as a Yaesu FT-70D handheld does (recorded on air), so that repeaters, Wires-X nodes and
+RadioFoundry fills every field as a commercial portable does (recorded on air), so that repeaters, room nodes and
 other radios take its transmissions as they take that radio's. What the handheld sends that a minimal transmitter
 would leave blank:
 
@@ -217,8 +217,8 @@ FICH, so a weak signal is decoded whatever the squelch level, and noise never pl
 level matters only where the radio has to judge a channel by its noise reading before a call is decoded: scan and dual
 watch stop on a carrier by that reading (or by signal strength), as on P25 and NXDN. The CTCSS a repeater sends under
 C4FM isn't a squelch here either: the receiver finds it and notches it out (5.4), and the channel's tone settings
-aren't used on YSF. What decides whether a call plays is the DG-ID above. A data transmission (Wires-X) shows as a call
-from its callsign ("SR5WI > Data") and goes into Recent, with nothing to play.
+aren't used on YSF. What decides whether a call plays is the DG-ID above. A data transmission (room data) shows as a call
+from its callsign ("N0RPT > Data") and goes into Recent, with nothing to play.
 
 ### 5.2 Callsign
 
@@ -240,24 +240,24 @@ callsign and the radio ID can't be set there.
 ### 5.4 Receive through a repeater
 
 A repeater's chain cuts the upper band of the 4FSK (inter-symbol interference) and some repeaters send a CTCSS tone
-under C4FM, which other System Fusion radios ignore. YSF's profile asks a soft modem for its equalizer and tone notch
+under C4FM, which other YSF radios ignore. YSF's profile asks a soft modem for its equalizer and tone notch
 (`AIR_RX_EQ | AIR_RX_TONE`, [air-interface.md](air-interface.md) 6.1), and the engine lends their memory for its
 session. A board whose provider receives with its own demodulator ignores them.
 
-Measured on one maker's repeater (SR5WI, a Yaesu DR-3XUE as its operator gives it, 2026-11-14): it sends its CTCSS
-tone (127.3 Hz) under the C4FM it repeats, also while set to FM only, and the tone was in every capture through it
-and in none direct. The likely reason, not confirmed: the tone opens the tone squelch of radios listening in FM, and
-their automatic mode select (AMS) then finds the C4FM and switches to it. Whatever the reason, a receiver that slices
+Measured on a commercial repeater: it sends its CTCSS tone (127.3 Hz) under the C4FM it repeats, also while set to FM
+only, and the tone was in every capture through it and in none direct. Operators of other such repeaters report the
+same as common practice. The likely reason, not confirmed: the tone opens the tone squelch of radios listening in FM,
+and their automatic mode select then finds the C4FM and switches to it. Whatever the reason, a receiver that slices
 the 4FSK from the discriminator sees the tone as a slow error on every symbol's level: the notch takes it out. With
 the equalizer and the notch the voice bit errors through that repeater fell from 5.6 % to about 1.7 % in the
-recordings of that day (measured with the proof of concept's receiver, the same two methods).
+recordings (measured with the proof of concept's receiver, the same two methods).
 
 ## 6. The radio ID (RID)
 
 ### 6.1 What it is and why it must be unique
 
-Every System Fusion radio sends a radio ID: five characters, each 0-9 or A-Z, in the header's destination and again in
-the DCH (4.2). Repeaters, Wires-X nodes and other radios keep it with the callsign, and whatever picks out one radio
+Every YSF radio sends a radio ID: five characters, each 0-9 or A-Z, in the header's destination and again in
+the DCH (4.2). Repeaters, room nodes and other radios keep it with the callsign, and whatever picks out one radio
 from another goes by it: lists of radios heard, a node's view of who is on it, a repeater's list of the radios it
 lets in. Two radios with the same radio ID look like one radio to all of them: their entries merge, one's calls are
 shown as the other's, and a list that admits one admits both.
@@ -330,7 +330,7 @@ caller's radio ID shows as `ysf.src_rid` on the debug link.
 ## 8. Scope: what this first version does and doesn't
 
 This is a first version: it covers the basic use a handheld such as the one in 4.2 gives, DN voice direct and through
-repeaters with callsign, radio ID and DG-ID, and the Wires-X basics (9). Not supported yet:
+repeaters with callsign, radio ID and DG-ID, and the room basics (9). Not supported yet:
 
 | Function | Why |
 |---|---|
@@ -338,7 +338,7 @@ repeaters with callsign, radio ID and DG-ID, and the Wires-X basics (9). Not sup
 | Group Monitor (GM) | Not written |
 | Positions (GPS) in the frames | Our transmissions carry none |
 | News, voice messages and pictures from a repeater or node | Not written |
-| V/D mode 1, data at full rate other than the Wires-X commands | Not written |
+| V/D mode 1, data at full rate other than the room commands | Not written |
 
 Planned next, once this is in the main line:
 
@@ -347,9 +347,9 @@ Planned next, once this is in the main line:
 3. A repeater's or node's news: voice messages and pictures.
 4. VW, if its voice can be carried (above).
 
-## 9. Wires-X
+## 9. Rooms (node commands)
 
-A radio controls the Wires-X node it hears (a repeater, or a gateway linked to the network) with short data
+A radio controls the room node it hears (a repeater, or a gateway linked to the network) with short data
 transmissions, and the node answers with one. The layout is what nodes accept and send; RadioFoundry's proof of
 concept was checked against a hotspot gateway's node (status, connect and their replies). Not checked yet with this
 code: the radio's bring-up record lists the on-air checks.
@@ -394,7 +394,7 @@ with no buffer for a whole list:
 
 | Item | Rule |
 |---|---|
-| Where | Tools > Wires-X (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Wires-X (`KEYFN_WIRESX`). Off a YSF channel: "Wires-X: on a YSF channel" |
+| Where | Tools > Rooms (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Rooms (`KEYFN_YSF_ROOMS`). Off a YSF channel: "Rooms: on a YSF channel" |
 | The page | DG-ID (as quick settings tile 8: OK, two digits, OK sets both ways; BACK leaves it), Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
 | Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
 | State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |

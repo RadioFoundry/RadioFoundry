@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion (core/ysf): the frame's channels against reference frames from another implementation of the
+// YSF (core/ysf): the frame's channels against reference frames from another implementation of the
 // format, the FEC under bit errors and soft values, the transmit builder through the framer into the call layer, and
 // two engines on two made-up providers whose transmit queues feed each other's receivers: a call heard with its
 // callsigns and voice in order, late entry, the DG-ID squelch, an encoder that stalls, the end of an over.
@@ -205,7 +205,7 @@ static void testCallThroughFramer(void)
 	static sink_t s;
 	static air_framer_t fr;
 	static uint8_t fbuf[YSF_FRAME_BYTES], made[40][YSF_VOICE_BYTES], silence[YSF_VOICE_BYTES];
-	ysf_tx_id_t id = { .callsign = "sq5fox", .radio_id = "K7Q2Z", .dgid = 12 };
+	ysf_tx_id_t id = { .callsign = "n0call", .radio_id = "K7Q2Z", .dgid = 12 };
 	uint16_t nmade = 0, total = 0, first;
 	uint8_t chunk[36];
 
@@ -242,7 +242,7 @@ static void testCallThroughFramer(void)
 	// 100 ms of preamble, the header, eight communications frames (40 voice frames), the terminator
 	CHECK(total == 11 * YSF_FRAME_SYMS, "symbols sent: %u", total);
 	CHECK(s.starts == 1 && s.ends == 1 && !s.call.late, "one call, from its header: starts %u ends %u", s.starts, s.ends);
-	CHECK(!strcmp(s.call.src, "SQ5FOX") && !strcmp(s.call.dst, "*****K7Q2Z") && !strcmp(s.call.src_id, "K7Q2Z") &&
+	CHECK(!strcmp(s.call.src, "N0CALL") && !strcmp(s.call.dst, "*****K7Q2Z") && !strcmp(s.call.src_id, "K7Q2Z") &&
 	      s.call.dgid == 12 && s.call.dt == YSF_DT_VD2, "fields: '%s' '%s' '%s' DG-ID %u", s.call.src, s.call.dst,
 	      s.call.src_id, s.call.dgid);
 	CHECK(s.nvoice == 40, "voice frames heard: %u", s.nvoice);
@@ -259,7 +259,7 @@ static void testCallThroughFramer(void)
 	ysf_dch_content(&id, 0, d);
 	CHECK(!memcmp(d, "*****K7Q2Z", 10), "FN 0: destination");
 	ysf_dch_content(&id, 1, d);
-	CHECK(!memcmp(d, "SQ5FOX    ", 10), "FN 1: source");
+	CHECK(!memcmp(d, "N0CALL    ", 10), "FN 1: source");
 	ysf_dch_content(&id, 5, d);
 	CHECK(!memcmp(d, "     K7Q2Z", 10), "FN 5: remarks with the radio ID");
 }
@@ -407,7 +407,7 @@ static ysf_engine_cfg_t cfg_for(uint8_t i, uint8_t rx_dgid, uint8_t tx_dgid)
 {
 	ysf_engine_cfg_t c = { .rx_dgid = rx_dgid, .silence = silence };
 
-	snprintf(c.tx.callsign, sizeof c.tx.callsign, i ? "SP5WLF" : "SQ5FOX");
+	snprintf(c.tx.callsign, sizeof c.tx.callsign, i ? "N1ABC" : "N0CALL");
 	snprintf(c.tx.radio_id, sizeof c.tx.radio_id, i ? "AB123" : "K7Q2Z");
 	c.tx.dgid = tx_dgid;
 	return c;
@@ -496,13 +496,13 @@ static void testEngines(void)
 	ysf_engine_view(&r[0].e, &v);
 	CHECK(v.tx == AIR_TX_IDLE && v.tx_calls == 1 && v.tx_filler <= 10, "sender: tx %u calls %u filler %u", v.tx,
 	      v.tx_calls, v.tx_filler);
-	CHECK(r[1].s.starts == 1 && r[1].s.ends == 1 && !r[1].s.call.late && !strcmp(r[1].s.call.src, "SQ5FOX") &&
+	CHECK(r[1].s.starts == 1 && r[1].s.ends == 1 && !r[1].s.call.late && !strcmp(r[1].s.call.src, "N0CALL") &&
 	      !strcmp(r[1].s.call.src_id, "K7Q2Z"), "receiver: starts %u ends %u src '%s'", r[1].s.starts, r[1].s.ends,
 	      r[1].s.call.src);
 	CHECK(check_order(&r[1], &r[0], &first) == 0 && first == 0 && r[1].s.nvoice % 5 == 0 && r[1].s.nvoice >= r[0].enc_made,
 	      "voice in order: heard %u made %u first %u", r[1].s.nvoice, r[0].enc_made, first);
 	ysf_engine_view(&r[1].e, &v);
-	CHECK(!v.rx_active && v.rx_calls == 1 && !strcmp(v.rx.src, "SQ5FOX"), "receiver's view after the call");
+	CHECK(!v.rx_active && v.rx_calls == 1 && !strcmp(v.rx.src, "N0CALL"), "receiver's view after the call");
 	CHECK(r[0].s.starts == 0, "the sender did not hear itself");
 
 	// The encoder stalls: silence covers the gap, the air never runs dry
@@ -538,7 +538,7 @@ static void testEngines(void)
 	steps(20);
 	CHECK(r[1].s.starts == 1 && r[1].s.call.late && r[1].s.ends == 1 && check_order(&r[1], &r[0], &first) == 0 &&
 	      first > 0, "late entry: starts %u late %u first %u", r[1].s.starts, r[1].s.call.late, first);
-	CHECK(!strcmp(r[1].s.call.src, "SQ5FOX") && !strcmp(r[1].s.call.src_id, "K7Q2Z"), "late entry: fields from the DCH");
+	CHECK(!strcmp(r[1].s.call.src, "N0CALL") && !strcmp(r[1].s.call.src_id, "K7Q2Z"), "late entry: fields from the DCH");
 
 	// DG-ID: another one is seen, not played; ours, and 0 at the receiver, are
 	c0 = cfg_for(0, 0, 33);
@@ -623,12 +623,12 @@ static void testRid(void)
 	CHECK(bad_chars == 0 && same > 40 && same < 140, "100000 radios: %u shared RIDs (83 expected)", same);
 	uint32_t zero[3] = { 0, 0, 0 }, ones[3] = { ~0u, ~0u, ~0u };
 	CHECK(!ysf_uid_usable(zero) && !ysf_uid_usable(ones) && ysf_uid_usable(uid), "unusable IDs");
-	ysf_rid_fallback(2602100, "SQ5FOX", a);
-	ysf_rid_fallback(2602101, "SQ5FOX", b);
+	ysf_rid_fallback(2602100, "N0CALL", a);
+	ysf_rid_fallback(2602101, "N0CALL", b);
 	CHECK(strlen(a) == YSF_RID_LEN && strcmp(a, b), "fallback: %s %s", a, b);
 }
 
-// ── Wires-X (ysf.md 9): commands as a node reads them, replies as a node sends them, through the framer ──
+// ── Rooms (ysf.md 9): commands as a node reads them, replies as a node sends them, through the framer ──
 static void put_text(uint8_t *d, const char *s, unsigned n)
 {
 	for (unsigned i = 0; i < n; i++)
@@ -681,7 +681,7 @@ static void send_data(ysf_call_rx_t *rx, air_framer_t *fr, const uint8_t *d, uin
 				memset(c1, ' ', 20);
 				memset(c2, ' ', 20);
 				if (part == 0)
-					memcpy(c1, "ALL       SR5WI     ", 20);	// the header's CSD1: to all, from the node
+					memcpy(c1, "ALL       N0RPT     ", 20);	// the header's CSD1: to all, from the node
 				if (part == 1 && fn == 1) {
 					uint8_t k = 0;
 
@@ -712,7 +712,7 @@ static void send_data(ysf_call_rx_t *rx, air_framer_t *fr, const uint8_t *d, uin
 	}
 }
 
-static void testWiresX(void)
+static void testRooms(void)
 {
 	static ysf_call_rx_t rx;
 	static sink_t s;
@@ -729,8 +729,8 @@ static void testWiresX(void)
 	CHECK(n == 13 && !memcmp(cmd + 1, "\x5D\x23\x5F\x26" "12345 \x03", 11), "CONNECT 12345");
 	n = ysf_wx_command(YSF_WX_ALL, 21, NULL, cmd);
 	CHECK(n == 12 && !memcmp(cmd + 4, "\x26" "01021\x03", 7), "ALL from 21");
-	n = ysf_wx_command(YSF_WX_SEARCH, 0, "poland", cmd);
-	CHECK(n == 28 && !memcmp(cmd + 5, "11001POLAND          \x03", 22), "SEARCH");
+	n = ysf_wx_command(YSF_WX_SEARCH, 0, "test", cmd);
+	CHECK(n == 28 && !memcmp(cmd + 5, "11001TEST            \x03", 22), "SEARCH");
 	CHECK(ysf_wx_command(9, 0, NULL, cmd) == 0, "no such command");
 
 	memset(&s, 0, sizeof s);
@@ -742,19 +742,19 @@ static void testWiresX(void)
 	d[0] = 0x00;
 	memcpy(d + 1, "\x5D\x51\x5F\x26", 4);
 	put_text(d + 5, "54321", 5);
-	put_text(d + 10, "SR5WI", 10);
-	put_text(d + 20, "WARSZAWA-RPT", 14);
+	put_text(d + 10, "N0RPT", 10);
+	put_text(d + 20, "NODE-RPT", 14);
 	put_text(d + 34, "15", 2);
 	put_text(d + 36, "27299", 5);
-	put_text(d + 41, "POLAND-ROOM", 16);
+	put_text(d + 41, "TEST-ROOM", 16);
 	len = reply_end(d, 57);
 	wx_n = 0;
 	send_data(&rx, &fr, d, len, -1);
-	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.node_name, "WARSZAWA-RPT") &&
-	      !strcmp(wx_got.room_id, "27299") && !strcmp(wx_got.room_name, "POLAND-ROOM") && !strcmp(wx_got.node_call, "SR5WI"),
+	CHECK(wx_n == 1 && wx_got.kind == YSF_WX_DX && wx_got.connected && !strcmp(wx_got.node_name, "NODE-RPT") &&
+	      !strcmp(wx_got.room_id, "27299") && !strcmp(wx_got.room_name, "TEST-ROOM") && !strcmp(wx_got.node_call, "N0RPT"),
 	      "DX reply: n %u kind %u '%s' '%s'", wx_n, wx_got.kind, wx_got.node_name, wx_got.room_name);
 	// ... and shows as a call without voice, from the node's callsign, ended by its terminator
-	CHECK(s.starts == 1 && s.ends == 1 && s.call.dt == YSF_DT_DATA && !strcmp(s.call.src, "SR5WI") && s.nvoice == 0,
+	CHECK(s.starts == 1 && s.ends == 1 && s.call.dt == YSF_DT_DATA && !strcmp(s.call.src, "N0RPT") && s.nvoice == 0,
 	      "a data transmission as a call: starts %u ends %u dt %u src '%s'", s.starts, s.ends, s.call.dt, s.call.src);
 
 	// A room list of 20 rooms, in five blocks (BN counts on past its two bits)
@@ -763,7 +763,7 @@ static void testWiresX(void)
 	memcpy(d + 1, "\x5D\x46\x5F\x26", 4);
 	put_text(d + 5, "21", 2);	// a list ('0' at [5]: a search's result)
 	put_text(d + 7, "54321", 5);
-	put_text(d + 12, "SR5WI", 10);
+	put_text(d + 12, "N0RPT", 10);
 	put_text(d + 22, "020", 3);
 	put_text(d + 25, "137", 3);
 	d[28] = 0x0D;
@@ -801,7 +801,7 @@ int main(void)
 	testFec();
 	testCallThroughFramer();
 	testEngines();
-	testWiresX();
+	testRooms();
 	printf("# ysfTest %s (%d checks, %d failures)\n", failures ? "FAILED" : "PASSED", checks, failures);
 	return failures != 0;
 }

@@ -21,7 +21,7 @@ static const uint8_t fn_action[KEYFN_COUNT] = {
 	[KEYFN_TALK_LABEL] = ACT_TALK_LABEL, [KEYFN_SCAN_SKIP] = ACT_SCAN_SKIP,
 	[KEYFN_MONITOR_TOGGLE] = ACT_MONITOR_TOGGLE,
 #if CONFIG_YSF
-	[KEYFN_WIRESX] = ACT_WIRESX,
+	[KEYFN_YSF_ROOMS] = ACT_YSF_ROOMS,
 #endif
 };
 
@@ -39,7 +39,7 @@ bool keyassign_allowed(uint8_t fn, bool hold)
 	}
 #endif
 #if !CONFIG_YSF
-	if (fn == KEYFN_WIRESX) {
+	if (fn == KEYFN_YSF_ROOMS) {
 		return false;
 	}
 #endif

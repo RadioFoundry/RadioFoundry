@@ -209,7 +209,7 @@ doesn't use it yet and keeps hunting for a control channel. A trunked channel ha
 
 ### YSF
 
-Pick **YSF** in the channel form's **Mode** for System Fusion (C4FM DN voice). Using it on the radio:
+Pick **YSF** in the channel form's **Mode** for YSF (C4FM DN voice). Using it on the radio:
 [Channels, zones and the VFO](07-channels-zones-vfo.md#ysf-channels). A YSF channel has no contact or Own ID.
 
 **YSF channel:**

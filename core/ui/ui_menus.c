@@ -68,7 +68,7 @@ extern const ui_scr_def_t ui_satellite_passes_screen;	// ui_satellite.c
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
 #endif
 #if CONFIG_YSF
-extern const ui_scr_def_t ui_wiresx_screen, ui_wiresx_rooms_screen;	// ui_wiresx.c
+extern const ui_scr_def_t ui_rooms_screen, ui_room_list_screen;	// ui_rooms.c
 #endif
 
 static void item_num(ui_item_t *it, uint16_t n)
@@ -4950,7 +4950,7 @@ enum {
 #endif
 	MY_NAME, MY_BOOT1, MY_BOOT2,
 #if CONFIG_YSF
-	MY_YSF_CALL, MY_RID,	// read only: what System Fusion sends about this radio (docs/spec/ysf.md 6)
+	MY_YSF_CALL, MY_RID,	// read only: what YSF sends about this radio (docs/spec/ysf.md 6)
 #endif
 	MY_COUNT };
 static const uint8_t my_names[] = { [MY_NAME] = UI_NAME_RADIO, [MY_BOOT1] = UI_NAME_BOOT1, [MY_BOOT2] = UI_NAME_BOOT2,
@@ -5681,7 +5681,7 @@ static const char *about_text(void)
 	sb_chr(&b, '\n');
 #if CONFIG_YSF
 	{
-		// The System Fusion radio ID: made from this radio's chip, never set (docs/spec/ysf.md 6)
+		// The YSF radio ID: made from this radio's chip, never set (docs/spec/ysf.md 6)
 		char rid[RADIO_YSF_RID_LEN + 1];
 		bool weak;
 
@@ -6520,7 +6520,7 @@ void ui_crash_tick(uint32_t now_ms)
 
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9.
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_WIRESX, T_COUNT };
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_ROOMS, T_COUNT };
 
 // A tool this build doesn't have is left out of the list
 static bool tool_shown(uint16_t i)
@@ -6530,7 +6530,7 @@ static bool tool_shown(uint16_t i)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
 	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE) &&
-	       (i != T_WIRESX || CONFIG_YSF);
+	       (i != T_ROOMS || CONFIG_YSF);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6577,15 +6577,15 @@ static void tools_item(uint16_t row, ui_item_t *it)
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
 					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received"),
-					 TRX(WX_TITLE, "Wires-X") };
+					 TRN(WX_TITLE, "Rooms") };
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
 	str_copy(it->label, sizeof it->label, tr(names[i]));
 	uint16_t num = (uint16_t)(i + 1u);	// the tool's own number, not its row (see the enum)
 #if CONFIG_YSF
-	// Wires-X takes the 0 while no zone offer waits for it (the offer is the rarer and the shorter-lived)
-	if (i == T_WIRESX) {
+	// Rooms takes the 0 while no zone offer waits for it (the offer is the rarer and the shorter-lived)
+	if (i == T_ROOMS) {
 #if CONFIG_ZONE_SHARE
 		num = offer_waiting() ? 0u : 10u;
 #else
@@ -6642,7 +6642,7 @@ static void tools_item(uint16_t row, ui_item_t *it)
 		if (!CONFIG_APRS)
 			it->flags |= UI_ITEM_DIM;
 		break;
-	case T_WIRESX:
+	case T_ROOMS:
 		if (ui_view()->ch.mode != RADIO_MODE_YSF)
 			it->flags |= UI_ITEM_DIM;	// a YSF channel's: OK says so
 		break;
@@ -6684,7 +6684,7 @@ static void tools_select(uint16_t row, bool hold)
 	case T_ZONE_OFFER: ui_push(SCR_OFFER, 0); break;
 	case T_SATELLITE: ui_push(SCR_SATELLITE_PASSES, 0); break;
 #if CONFIG_YSF
-	case T_WIRESX: ui_wiresx_open(); break;
+	case T_ROOMS: ui_rooms_open(); break;
 #endif
 	default: break;
 	}
@@ -6793,7 +6793,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
 #if CONFIG_YSF
-					 KEYFN_WIRESX,
+					 KEYFN_YSF_ROOMS,
 #endif
 };
 static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
@@ -6818,7 +6818,7 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 					     TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
 #if CONFIG_YSF
-					     TRX(WX_TITLE, "Wires-X"),
+					     TRN(WX_TITLE, "Rooms"),
 #endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
@@ -6837,7 +6837,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 					KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
 #if CONFIG_YSF
-					KEYFN_WIRESX,
+					KEYFN_YSF_ROOMS,
 #endif
 };
 static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
@@ -6861,7 +6861,7 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 					    TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
 #if CONFIG_YSF
-					    TRX(WX_TITLE, "Wires-X"),
+					    TRN(WX_TITLE, "Rooms"),
 #endif
 };
 #endif
@@ -8382,7 +8382,7 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if CONFIG_YSF
-	[SCR_WIRESX] = &ui_wiresx_screen, [SCR_WIRESX_ROOMS] = &ui_wiresx_rooms_screen,
+	[SCR_ROOMS] = &ui_rooms_screen, [SCR_ROOM_LIST] = &ui_room_list_screen,
 #endif
 #if DATA_IDS
 	[SCR_DATA_SERVICES] = &ds_screen,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// System Fusion channels in the codeplug (ysf_codeplug.h, docs/spec/ysf-codeplug.md)
+// YSF channels in the codeplug (ysf_codeplug.h, docs/spec/ysf-codeplug.md)
 #include <string.h>
 #include "config.h"
 #include "ysf/ysf_codeplug.h"

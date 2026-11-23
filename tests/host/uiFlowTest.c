@@ -152,9 +152,9 @@ static const flow_t flows[] = {
 	// YSF: the power, the DG-ID heard and our radio ID in the chips, the DG-ID PTT sends on the talk line; a call names
 	// its caller by callsign
 	{ "YSF channel shows its mode", "dlmode:ysf", "", "mode=ysf screen=home shows=YSF shows=DG-ID_00 hides=K7Q2Z hides=No_tone hides=SQ5", 0, false },
-	{ "YSF home: a call", "dlmode:ysf", "ysfrx:SP5WLF,12", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
-	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:SP5WLF,12,o", "screen=home shows=Other_DG-ID:_not_played hides=SP5WLF", 0, false },
-	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:SP5WLF,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
+	{ "YSF home: a call", "dlmode:ysf", "ysfrx:N1ABC,12", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
+	{ "YSF home: another DG-ID", "dlmode:ysf", "ysfrx:N1ABC,12,o", "screen=home shows=Other_DG-ID:_not_played hides=N1ABC", 0, false },
+	{ "YSF home: not DN voice", "dlmode:ysf", "ysfrx:N1ABC,0,v", "screen=home shows=Not_DN_voice:_not_played", 0, false },
 	// The channel editor: Mode steps on from NXDN to YSF (DG-ID 00), then FM; a YSF channel has a DG-ID row and no
 	// contact or ID row (it names us by callsign)
 	{ "E Mode: NXDN to YSF", "p25 nxdn ysf ok 5 ok down down", "ok ok ok", "focus=Mode shows=YSF shows=DG-ID hides=RAN hides=Contact",
@@ -166,31 +166,31 @@ static const flow_t flows[] = {
 	{ "E Mode: the saved YSF channel opens as YSF", "ysf ok 5 ok down down ok long:ok back back back", "ok 5 ok",
 	  "screen=channel shows=YSF shows=DG-ID hides=Color_code", 3, false },
 	{ "E YSF DG-ID: typed", "ysf ok 5 ok down down ok down", "ok 4 2 ok", "focus=DG-ID shows=42", 4, false },
-	// Wires-X (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
-	{ "Q YSF: tile 3 is Wires-X", "dlmode:ysf", "quick 3", "screen=wiresx shows=Node shows=Room_ID", 2, false },
-	{ "T YSF: 0 in Tools is Wires-X", "dlmode:ysf", "ok 6 0", "screen=wiresx shows=Node", 3, false },
-	{ "H YSF: # on Home is Wires-X", "dlmode:ysf", "ctx", "screen=wiresx shows=Node", 1, false },
-	// The DG-ID: quick settings tile 8 (Width's place) and the Wires-X page's first row; both ways, a channel's for now
+	// Rooms (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
+	{ "Q YSF: tile 3 is Rooms", "dlmode:ysf", "quick 3", "screen=rooms shows=Node shows=Room_ID", 2, false },
+	{ "T YSF: 0 in Tools is Rooms", "dlmode:ysf", "ok 6 0", "screen=rooms shows=Node", 3, false },
+	{ "H YSF: # on Home is Rooms", "dlmode:ysf", "ctx", "screen=rooms shows=Node", 1, false },
+	// The DG-ID: quick settings tile 8 (Width's place) and the Rooms page's first row; both ways, a channel's for now
 	{ "Q YSF: tile 8 is the DG-ID", "dlmode:ysf", "quick 8", "screen=quick shows=DG-ID", 2, false },
 	{ "Q YSF: DG-ID typed", "dlmode:ysf", "quick 8 2 5 ok", "dgid=25 shows=25", 5, false },
 	{ "Q YSF: DG-ID stepped down from 00", "dlmode:ysf", "quick 8 down ok", "dgid=99", 4, false },
-	{ "W Wires-X: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=wiresx dgid=12 shows=12", 4, false },
-	{ "W Wires-X: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=wiresx dgid=-1", 4, false },
+	{ "W Rooms: DG-ID row typed", "dlmode:ysf quick 3", "ok 1 2 ok", "screen=rooms dgid=12 shows=12", 4, false },
+	{ "W Rooms: DG-ID row, BACK leaves it", "dlmode:ysf quick 3", "ok 1 2 back", "screen=rooms dgid=-1", 4, false },
 	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
-	{ "R YSF call in Recent", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3", "screen=recent shows=SP5WLF shows=DG-ID_12", 2, false },
-	{ "YSF home: a Wires-X data transmission", "dlmode:ysf", "ysfrx:SR5WI,0,d", "screen=home shows=SR5WI shows=Data hides=Not_DN", 0, false },
-	{ "R YSF data transmission in Recent", "dlmode:ysf ysfrx:SR5WI,0,d ysfend", "ok 3", "screen=recent shows=SR5WI", 2, false },
-	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:SP5WLF,12 ysfend", "", "screen=home shows=SP5WLF shows=DG-ID_12", 0, false },
+	{ "R YSF call in Recent", "dlmode:ysf ysfrx:N1ABC,12", "ok 3", "screen=recent shows=N1ABC shows=DG-ID_12", 2, false },
+	{ "YSF home: a room data transmission", "dlmode:ysf", "ysfrx:N0RPT,0,d", "screen=home shows=N0RPT shows=Data hides=Not_DN", 0, false },
+	{ "R YSF data transmission in Recent", "dlmode:ysf ysfrx:N0RPT,0,d ysfend", "ok 3", "screen=recent shows=N0RPT", 2, false },
+	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:N1ABC,12 ysfend", "", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
 	{ "R YSF: our own call echoed stays out", "dlmode:ysf ysfrx:N0CALL,0", "ok 3", "screen=recent hides=N0CALL", 2, false },
-	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:SP5WLF,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },
-	{ "W Wires-X: OK on Node asks the node", "dlmode:ysf quick 3", "down ok", "screen=wiresx wxcmd=0 shows=Waiting...", 2, false },
-	{ "W Wires-X: the node's answer", "dlmode:ysf quick 3 down ok", "wxdx", "screen=wiresx shows=WARSZAWA shows=POLAND", 0, false },
-	{ "W Wires-X: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
-	{ "W Wires-X: connect without a room ID", "dlmode:ysf quick 3", "2 back back down ok", "wxcmd=-1 toast=Type_a_room_ID_first", 5, false },
-	{ "W Wires-X: disconnect", "dlmode:ysf quick 3", "down down down down down ok", "wxcmd=2", 6, false },
-	{ "W Wires-X: the room list", "dlmode:ysf quick 3", "down down down down down down ok wxrooms:3", "screen=wiresx-rooms wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 7, false },
-	{ "W Wires-X: a room picked connects", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down ok", "screen=wiresx wxcmd=1 wxarg=20001", 2, false },
-	{ "W Wires-X: the next page", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
+	{ "R YSF call in Recent: no actions", "dlmode:ysf ysfrx:N1ABC,12", "ok 3 ctx", "screen=recent toast=No_actions_here", 3, false },
+	{ "W Rooms: OK on Node asks the node", "dlmode:ysf quick 3", "down ok", "screen=rooms wxcmd=0 shows=Waiting...", 2, false },
+	{ "W Rooms: the node's answer", "dlmode:ysf quick 3 down ok", "wxdx", "screen=rooms shows=NODE shows=TEST", 0, false },
+	{ "W Rooms: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
+	{ "W Rooms: connect without a room ID", "dlmode:ysf quick 3", "2 back back down ok", "wxcmd=-1 toast=Type_a_room_ID_first", 5, false },
+	{ "W Rooms: disconnect", "dlmode:ysf quick 3", "down down down down down ok", "wxcmd=2", 6, false },
+	{ "W Rooms: the room list", "dlmode:ysf quick 3", "down down down down down down ok wxrooms:3", "screen=room-list wxcmd=3 wxarg=1 shows=ROOM0 shows=ROOM2 shows=Next_page", 7, false },
+	{ "W Rooms: a room picked connects", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down ok", "screen=rooms wxcmd=1 wxarg=20001", 2, false },
+	{ "W Rooms: the next page", "dlmode:ysf quick 3 down down down down down down ok wxrooms:3", "down down down ok", "wxcmd=3 wxarg=4", 4, false },
 	{ "E YSF DG-ID: saved with the channel", "ysf ok 5 ok down down ok down ok 4 2 ok", "long:ok",
 	  "screen=channel writes=1 shows=42", 1, true },
 #endif
@@ -1415,8 +1415,8 @@ static const flow_t flows_k[] = {
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
 #if CONFIG_YSF
-	// (Wires-X is the last function in a build with YSF)
-	{ "K top key hold: Wires-X last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=22 shows=Wires-X",
+	// (Rooms is the last function in a build with YSF)
+	{ "K top key hold: Rooms last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=22 shows=Rooms",
 	  1, false },
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },

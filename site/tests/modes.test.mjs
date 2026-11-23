@@ -491,7 +491,7 @@ test("YSF: a channel round-trips, the callsign record too, and no field holds a 
 	assert.equal(hexOf(v), "0C00AABB");	// bytes past the block kept
 	assert.deepEqual(ysf.decodeChan(v), { txDgid: 12, rxDgid: 0 });
 	assert.equal(ysf.encodeRadio({ callsign: "" }), null);	// none: the radio name's
-	assert.equal(hexOf(ysf.encodeRadio({ callsign: "sq5fox" })), "535135464F5800000000");
+	assert.equal(hexOf(ysf.encodeRadio({ callsign: "n0call" })), "4E3043414C4C00000000");
 	const keys = [...ysf.ysfKind.fields().map((f) => f.key), ...ysf.ysfKind.settings.fields.map((f) => f.key)];
 	assert.ok(!keys.some((k) => /rid|radio_?id/i.test(k)), keys.join());
 	const probs = [];

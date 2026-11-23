@@ -114,10 +114,10 @@ ysfenc 63 63 6363
 ysfenc 1 2 0102
 # ysfcall <record> <callsign, "-" for none>: the radio-wide record (ysf-codeplug.md 1)
 ysfcall - -
-ysfcall 535135464F58 SQ5FOX
-ysfcall 5351354F5800000000 SQ5OX
-ysfcall 535135464F582020202020 SQ5FOX
+ysfcall 4E3043414C4C N0CALL
+ysfcall 4E3043414C00000000 N0CAL
+ysfcall 4E3043414C4C2020202020 N0CALL
 ysfcall 5350352F50 SP5/P
-ysfcall 737135666F78 -
-ysfcall 535135464F5821 -
+ysfcall 6E3063616C6C -
+ysfcall 4E3043414C4C21 -
 ysfcall 4E3043414C4C2D3132 N0CALL-12

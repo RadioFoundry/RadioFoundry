@@ -1987,7 +1987,7 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 }
 
 #if CONFIG_YSF
-// Activity on Home, YSF idle: the last YSF call heard (ui_state_t.ysf_last), as DMR's: "SP5WLF" / "DG-ID 12 11s ago"
+// Activity on Home, YSF idle: the last YSF call heard (ui_state_t.ysf_last), as DMR's: "N1ABC" / "DG-ID 12 11s ago"
 static void draw_last_heard_ysf(const ui_state_t *s, int y)
 {
 	const font_t *sm = ui_layout.small;
@@ -2249,7 +2249,7 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 		return;
 	}
 	if (c->call != NULL) {
-		// YSF: "SQ5FOX > DG-ID 12", or "SR5WI > Data" for a data transmission (Wires-X); the callsign kept longest
+		// YSF: "N0CALL > DG-ID 12", or "N0RPT > Data" for a data transmission (room data); the callsign kept longest
 		for (int with_dgid = 1; with_dgid >= 0; with_dgid--) {
 			sb_init(&b, buf, sizeof buf);
 			sb_str(&b, c->call[0] ? c->call : "?");
@@ -3742,7 +3742,7 @@ uint8_t ui_quick_kind(int pos, const radio_view_t *v)
 		return QT_TO_VFO;	// a channel's tile 4 copies it to the VFO; the VFO's stays Mode
 	uint8_t kind = v->ch.mode == RADIO_MODE_DMR ? dmr[pos] : fm[pos];
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_TONE)
-		kind = QT_WIRESX;	// no tones on YSF: tile 3 opens Wires-X
+		kind = QT_YSF_ROOMS;	// no tones on YSF: tile 3 opens Rooms
 	if (CONFIG_YSF && v->ch.mode == RADIO_MODE_YSF && kind == QT_BANDWIDTH)
 		kind = QT_DGID;		// nor a width: tile 8 is the DG-ID
 	if (v->vfo && (kind == QT_MONITOR || kind == QT_PRIVACY))
@@ -3782,7 +3782,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		[QT_TO_VFO] = TRN(QUICK_LABEL_COPY_TO_VFO, TEXT_ALT_OPEN "Copy to VFO"
 			TEXT_ALT_NEXT "To VFO" TEXT_ALT_CLOSE),
 		[QT_SPLIT] = TRN(QUICK_LABEL_TX_FREQ, TEXT_ALT_OPEN "TX freq" TEXT_ALT_NEXT "TXFreq" TEXT_ALT_CLOSE),
-		[QT_WIRESX] = TRX(QUICK_LABEL_WIRESX, TEXT_ALT_OPEN "Wires-X" TEXT_ALT_NEXT "Wires" TEXT_ALT_CLOSE),
+		[QT_YSF_ROOMS] = TRN(QUICK_LABEL_ROOMS, "Rooms"),
 		[QT_DGID] = TRX(QUICK_LABEL_DGID, "DG-ID"),
 	};
 	uint8_t kind = ui_quick_kind(tile, v);
@@ -3869,7 +3869,7 @@ bool ui_quick_tile(int tile, const radio_view_t *v, const ui_state_t *s, char *l
 		sb_u32(&b, s->brightness, 1);
 		sb_chr(&b, '%');
 		return true;
-	case QT_WIRESX:
+	case QT_YSF_ROOMS:
 		sb_str(&b, TR(QUICK_VALUE_OPEN, "Open"));
 		return CONFIG_YSF;
 #if CONFIG_YSF

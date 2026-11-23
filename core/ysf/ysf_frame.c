@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The System Fusion frame's channels (ysf.h, docs/spec/ysf.md 2-3): the FICH, the long channels (CSD), the DCH and
+// The YSF frame's channels (ysf.h, docs/spec/ysf.md 2-3): the FICH, the long channels (CSD), the DCH and
 // the VCH, with their CRC, Golay and convolutional codes, whitening and interleaving.
 #include "ysf.h"
 
