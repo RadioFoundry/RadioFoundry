@@ -492,7 +492,7 @@ static void testEngines(void)
 	CHECK(r[0].s.starts == 0 && r[1].s.starts == 0, "noise starts no call");
 	n = over(100, 1000, 1000);
 	CHECK(n > 100 && n < 115, "the over ended %u periods after 100", n);
-	CHECK(prov[0].underruns == 0 && prov[0].keyed_violations == 0 && r[0].e.session.stats.tx_underruns == 0,
+	CHECK(prov[0].underruns == 0 && prov[0].keyed_violations == 0 && r[0].e.av.session.stats.tx_underruns == 0,
 	      "no underrun: %u", prov[0].underruns);
 	ysf_engine_view(&r[0].e, &v);
 	CHECK(v.tx == AIR_TX_IDLE && v.tx_calls == 1 && v.tx_filler <= 10, "sender: tx %u calls %u filler %u", v.tx,

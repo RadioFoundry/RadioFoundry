@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// YSF DN voice on a channel (ysf_engine.h).
+// YSF DN voice on a channel (ysf_engine.h), on the shared voice engine (air_voice.h)
 #include "ysf_engine.h"
 
 #include <string.h>
+
+_Static_assert(YSF_VOICE_BYTES <= AIR_VOICE_FRAME_MAX, "a voice frame fits air_voice's");
 
 uint32_t ysf_engine_fit(const hal_air_t *air)
 {
@@ -11,46 +13,30 @@ uint32_t ysf_engine_fit(const hal_air_t *air)
 }
 
 // ── Receive (provider's task) ──
-static void view_begin(ysf_engine_t *e) { e->seq++; }
-static void view_end(ysf_engine_t *e) { e->seq++; }
-
 // DN voice whose DG-ID is ours, or every call with ours at 0 (ysf.md 5.1)
 static bool wanted(const ysf_engine_t *e, const ysf_call_t *c)
 {
 	return c->dt == YSF_DT_VD2 && (e->cfg.rx_dgid == YSF_DGID_ALL || c->dgid == e->cfg.rx_dgid);
 }
 
+static void notify(ysf_engine_t *e, const ysf_call_t *c, air_voice_event_t ev)
+{
+	if (ev == AIR_VOICE_START && e->hooks.rx_start)
+		e->hooks.rx_start(c, e->ctx);
+	else if (ev == AIR_VOICE_UPDATE && e->hooks.rx_update)
+		e->hooks.rx_update(c, e->ctx);
+	else if (ev == AIR_VOICE_END && e->hooks.rx_end)
+		e->hooks.rx_end(e->ctx);
+}
+
 static void rx_fields(ysf_engine_t *e, const ysf_call_t *c, bool start)
 {
-	bool play = wanted(e, c);
-
-	view_begin(e);
-	e->view.rx = *c;
-	e->view.rx_active = true;
-	e->view.rx_played = play;
-	if (start)
-		e->view.rx_calls++;
-	view_end(e);
-	if (play && !e->played) {
-		e->played = true;
-		if (e->hooks.rx_start)
-			e->hooks.rx_start(c, e->ctx);
-	} else if (play) {
-		if (e->hooks.rx_update)
-			e->hooks.rx_update(c, e->ctx);
-	} else if (e->played) {
-		e->played = false;
-		if (e->hooks.rx_end)
-			e->hooks.rx_end(e->ctx);
-	}
+	notify(e, c, air_voice_rx_fields(&e->av, c, start, wanted(e, c)));
 }
 
 static void on_start(const ysf_call_t *c, void *ctx)
 {
-	ysf_engine_t *e = ctx;
-
-	e->played = false;
-	rx_fields(e, c, true);
+	rx_fields(ctx, c, true);
 }
 
 static void on_update(const ysf_call_t *c, void *ctx)
@@ -62,11 +48,9 @@ static void on_voice(const uint8_t v[YSF_VOICE_BYTES], void *ctx)
 {
 	ysf_engine_t *e = ctx;
 
-	if (e->recheck) {
-		e->recheck = false;
+	if (air_voice_recheck_due(&e->av))
 		rx_fields(e, &e->rx.call, false);
-	}
-	if (e->played && e->hooks.rx_voice)
+	if (air_voice_rx_voice(&e->av) && e->hooks.rx_voice)
 		e->hooks.rx_voice(v, e->ctx);
 }
 
@@ -74,13 +58,7 @@ static void on_end(void *ctx)
 {
 	ysf_engine_t *e = ctx;
 
-	view_begin(e);
-	e->view.rx_active = false;
-	e->view.rx_played = false;
-	view_end(e);
-	if (e->played && e->hooks.rx_end)
-		e->hooks.rx_end(e->ctx);
-	e->played = false;
+	notify(e, NULL, air_voice_rx_end(&e->av));
 }
 
 static void on_wx(const ysf_wx_t *w, void *ctx)
@@ -93,55 +71,15 @@ static void on_wx(const ysf_wx_t *w, void *ctx)
 
 static const ysf_call_sink_t sink = { on_start, on_update, on_voice, on_end, on_wx };
 
-// ── Transmit ──
-// Symbols to the session while its queue has room. A voice frame the encoder has not made yet is waited for as
-// long as the air can spare: once less than the provider's lead plus one more chunk is queued, silence goes instead
-static void tx_fill(void *ctx)
-{
-	ysf_engine_t *e = ctx;
-	const hal_air_t *air = e->session.air;
-	uint16_t lead = (uint16_t)(((uint32_t)air->tx_lead_ms * ysf_air_mode.profile.sym_rate) / 1000 + air->tx_chunk_syms);
+// ── Transmit: the call layer behind air_voice's tx_fill ──
+static uint16_t t_ready(void *t, uint16_t *first) { return ysf_call_tx_ready(t, first); }
+static const uint8_t *t_syms(void *t) { return ysf_call_tx_syms(t); }
+static void t_sent(void *t, uint16_t n) { ysf_call_tx_sent(t, n); }
+static bool t_done(void *t) { return ysf_call_tx_done(t); }
+static bool t_voice(void *t, const uint8_t *v) { return ysf_call_tx_voice(t, v); }
+static void t_end(void *t, const uint8_t *silence) { ysf_call_tx_end(t, silence); }
 
-	for (;;) {
-		uint16_t first, n = ysf_call_tx_ready(&e->tx, &first), space;
-
-		if (ysf_call_tx_done(&e->tx)) {
-			air_session_tx_finish(&e->session);
-			return;
-		}
-		if (e->tx_stop && !e->tx_ended) {
-			e->tx_ended = true;
-			ysf_call_tx_end(&e->tx, e->cfg.silence);
-			continue;
-		}
-		if (!n) {
-			uint8_t v[YSF_VOICE_BYTES];
-
-			if (e->hooks.tx_voice && e->hooks.tx_voice(v, e->ctx) && ysf_call_tx_voice(&e->tx, v))
-				continue;
-			if (!e->hooks.tx_voice ||
-			    (air_session_tx_state(&e->session) != AIR_TX_PRIMING && air_session_tx_queued(&e->session) < lead)) {
-				if (e->hooks.tx_voice)
-					e->view.tx_filler++;
-				if (!ysf_call_tx_voice(&e->tx, e->cfg.silence))
-					return;
-			} else {
-				return;
-			}
-			continue;
-		}
-		space = air_session_tx_space(&e->session);
-		if (!space)
-			return;
-		if (n > space)
-			n = space;
-		if (!air_session_tx(&e->session, ysf_call_tx_syms(&e->tx), first, n))
-			return;
-		ysf_call_tx_sent(&e->tx, n);
-	}
-}
-
-static const air_session_ops_t ops = { tx_fill, NULL };
+static const air_voice_tx_ops_t tx_ops = { t_ready, t_syms, t_sent, t_done, t_voice, t_end };
 
 bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cfg_t *cfg,
 		      const ysf_engine_hooks_t *hooks, void *ctx)
@@ -150,11 +88,15 @@ bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cf
 	e->cfg = *cfg;
 	e->hooks = *hooks;
 	e->ctx = ctx;
+	e->av.tx_voice = hooks->tx_voice;
+	e->av.ctx = ctx;
+	e->av.silence = cfg->silence;
 	ysf_call_rx_init(&e->rx, &sink, e);
 #if CONFIG_AIR_RX_ADAPT
 	air_softmodem_lend(&e->adapt);	// before the open: a provider with a soft modem sets it up there
 #endif
-	if (air_session_open(&e->session, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &ops, e))
+	if (air_voice_open(&e->av, air, &ysf_air_mode, &e->rx.rx, e->frame, e->soft, YSF_FRAME_SYMS, &tx_ops, &e->tx,
+			   &e->heard, sizeof e->heard))
 		return true;
 #if CONFIG_AIR_RX_ADAPT
 	air_softmodem_lend(NULL);
@@ -164,7 +106,7 @@ bool ysf_engine_begin(ysf_engine_t *e, const hal_air_t *air, const ysf_engine_cf
 
 void ysf_engine_end(ysf_engine_t *e)
 {
-	air_session_close(&e->session);
+	air_voice_close(&e->av);
 #if CONFIG_AIR_RX_ADAPT
 	air_softmodem_lend(NULL);
 #endif
@@ -172,76 +114,68 @@ void ysf_engine_end(ysf_engine_t *e)
 
 void ysf_engine_retuned(ysf_engine_t *e)
 {
-	air_session_retuned(&e->session);
+	air_voice_retuned(&e->av);
 }
 
 void ysf_engine_set(ysf_engine_t *e, const ysf_engine_cfg_t *cfg)
 {
 	e->cfg = *cfg;
-	e->recheck = true;
+	e->av.silence = cfg->silence;
+	air_voice_recheck(&e->av);
 }
 
 bool ysf_engine_tx_prepare(ysf_engine_t *e)
 {
-	if (e->cfg.tx_inhibit)
+	if (e->cfg.tx_inhibit || !air_voice_tx_can(&e->av, true))
 		return false;
-	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX) || !e->cfg.silence)
-		return false;
-	if (air_session_tx_state(&e->session) == AIR_TX_IDLE) {
-		e->tx_stop = e->tx_ended = false;
+	if (air_voice_tx_begin(&e->av))
 		ysf_call_tx_begin(&e->tx, &e->cfg.tx);
-	}
-	return air_session_tx_prime(&e->session);
+	return air_voice_tx_prime(&e->av);
 }
 
 bool ysf_engine_tx_prepare_data(ysf_engine_t *e, const uint8_t *data, uint8_t len)
 {
-	if (e->cfg.tx_inhibit || !len)
+	if (e->cfg.tx_inhibit || !len || !air_voice_tx_can(&e->av, false))
 		return false;
-	if (!air_session_is_open(&e->session) || !(e->session.fit & AIR_FIT_TX))
-		return false;
-	if (air_session_tx_state(&e->session) == AIR_TX_IDLE) {
-		e->tx_stop = e->tx_ended = false;
+	if (air_voice_tx_begin(&e->av))
 		ysf_call_tx_begin_data(&e->tx, &e->cfg.tx, data, len);
-	}
-	return air_session_tx_prime(&e->session);
+	return air_voice_tx_prime(&e->av);
 }
 
 bool ysf_engine_tx_go(ysf_engine_t *e)
 {
-	if (!air_session_tx_go(&e->session))
-		return false;
-	e->view.tx_calls++;
-	return true;
+	return air_voice_tx_go(&e->av);
 }
 
 void ysf_engine_tx_stop(ysf_engine_t *e)
 {
-	e->tx_stop = true;
+	air_voice_tx_stop(&e->av);
 }
 
 void ysf_engine_tx_abort(ysf_engine_t *e)
 {
-	air_session_tx_abort(&e->session);
+	air_voice_tx_abort(&e->av);
 }
 
 air_tx_state_t ysf_engine_tx_state(const ysf_engine_t *e)
 {
-	return air_session_tx_state(&e->session);
+	return air_voice_tx_state(&e->av);
 }
 
 void ysf_engine_tx_clear(ysf_engine_t *e)
 {
-	air_session_tx_clear(&e->session);
+	air_voice_tx_clear(&e->av);
 }
 
 void ysf_engine_view(const ysf_engine_t *e, ysf_engine_view_t *out)
 {
-	uint8_t seq;
+	air_voice_view_t v;
 
-	do {
-		seq = e->seq;
-		*out = e->view;
-	} while ((seq & 1) || seq != e->seq);
-	out->tx = (uint8_t)air_session_tx_state(&e->session);
+	air_voice_view(&e->av, &v, &out->rx);
+	out->rx_active = v.rx_active;
+	out->rx_played = v.rx_played;
+	out->tx = v.tx;
+	out->rx_calls = v.rx_calls;
+	out->tx_calls = v.tx_calls;
+	out->tx_filler = v.tx_filler;
 }

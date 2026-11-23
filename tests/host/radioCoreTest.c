@@ -8799,7 +8799,7 @@ static void test_nxdn_rx(void)
 	}
 	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX) && v->src == 2001);	// the last call stays
 	radio_nxdn_stats(&st);
-	CHECK(st.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
+	CHECK(st.air.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
 	run(500);
 	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX));
 	v_decode_hook = NULL;
@@ -8813,7 +8813,7 @@ static void test_nxdn_rx(void)
 	nfar_call(600);
 	CHECK(sm.view.state == RS_IDLE);
 	radio_nxdn_stats(&st);
-	CHECK(st.rx_calls == 1 && st.ran_rejects > 0);
+	CHECK(st.air.rx_calls == 1 && st.ran_rejects > 0);
 
 	// Group squelch: a call to another group shows (RS_RX), its voice does not play
 	s.rx_ran = 1;
@@ -8869,7 +8869,7 @@ static void test_nxdn_tx(void)
 	CHECK(v->tx == AIR_TX_IDLE && nfar_heard.ends == 1 && nfar_heard.voice >= 40 && nfar_heard.enc >= 30);
 	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
 	radio_nxdn_stats(&st);
-	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+	CHECK(st.air.tx_calls == 1 && st.air.tx_underruns == 0 && st.air.tx_syms > 0);
 
 	// Settings sent while transmitting: in force for the next transmission
 	req(RREQ_PTT, 1);
@@ -9319,7 +9319,7 @@ static void test_nxdn_stored(void)
 	nfar_call(600);
 	CHECK(sm.view.state == RS_IDLE);
 	radio_nxdn_stats(&st);
-	CHECK(st.rx_calls == 0 && st.ran_rejects > 0);
+	CHECK(st.air.rx_calls == 0 && st.ran_rejects > 0);
 	// Selective on RAN 7: the channel's group plays, another group shows and does not, all and a unit call to us play
 	nfar_begin(true, 7, 2001, false, 20);
 	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));

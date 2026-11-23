@@ -219,12 +219,31 @@ In the radio core each mode on the air interface fills one table of these steps 
 release are one path for every mode. A mode whose session opened with `AIR_FIT_RX` and no `AIR_FIT_TX` refuses PTT
 before anything is queued: `tx_deny=air_no_tx` ("This mode: receive only").
 
+### 7.1 The shared voice engine
+
+NXDN and YSF run their engines on `air_voice` (`core/air/air_voice.h`): the session, the call in hand and whether it
+plays, the view the radio core reads (published under a sequence count), and transmit, where `tx_fill` takes the
+encoder's voice frames into the mode's call layer and sends silence once the encoder falls behind the provider's lead.
+A mode gives what differs:
+
+| The mode gives | NXDN | YSF |
+|---|---|---|
+| Its call layer's transmit steps (`air_voice_tx_ops_t`: ready, symbols, sent, done, voice, end) | `nxdn_call_tx_*` | `ysf_call_tx_*` |
+| Which calls play (`air_voice_rx_fields(..., play)`) | RAN, group or unit, the traffic key | the DG-ID, DN voice only |
+| What a transmission sends (before `air_voice_tx_prime`) | the VCALL | the header's fields, or a room command |
+| Its typed hooks, called on the event `air_voice` returns (start, update, end) | `nxdn_engine_hooks_t` | `ysf_engine_hooks_t` |
+
+On the radio core's side both use `radio_air_voice.c`: the DMR side's voice path as sink and source, the engine's
+memory (`radio_air_engine_get`) and the counters every such mode keeps (`radio_air_counts_t`). P25's engine is not on
+it yet.
+
 ## 8. Users
 
 | User | State |
 |---|---|
 | P25 Phase 1 conventional voice | written, host tested ([p25.md](p25.md)) |
-| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6) |
+| NXDN conventional voice, 4800 and 9600 bit/s | written, host tested, in the radio core ([nxdn.md](nxdn.md) 6), on `air_voice` (7.1) |
+| YSF DN voice | written, host tested, in the radio core ([ysf.md](ysf.md)), on `air_voice` (7.1) |
 | A DMR engine on symbols | not written. The interface carries TDMA (slot length, slot events, the slot clock, per-slot transmit chunks, syncs inside the burst); today's DMR runs on the modem chip's own layer 2 |
 | 2-level modes | carried (the dibit map, the soft modem's fit) |
 | AFSK (APRS) | not a symbol mode: its tones ride the audio band. The sample taps can feed a demodulator for it; nothing uses them for that yet |

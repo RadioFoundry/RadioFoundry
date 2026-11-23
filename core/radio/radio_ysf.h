@@ -17,6 +17,7 @@
 #include <stdint.h>
 #include "config.h"
 #include "codeplug/codeplug.h"
+#include "radio/radio_air.h"
 
 #define RADIO_YSF_CALL_LEN	10
 #define RADIO_YSF_RID_LEN	5
@@ -55,9 +56,8 @@ typedef struct {
 
 // Counters for the debug link
 typedef struct {
-	uint32_t rx_calls, tx_calls, tx_filler;
+	radio_air_counts_t air;		// rx_calls, tx_calls, tx_filler; the session's rx_chunks, tx_underruns, tx_syms
 	uint32_t frames, fich_fail, csd_fail, dch_fail, voice, voice_held, fec_bits, vch_fixed;	// the call layer's
-	uint32_t rx_chunks, tx_underruns, tx_syms;	// the session's
 	uint32_t begins, begin_fails;
 } radio_ysf_stats_t;
 

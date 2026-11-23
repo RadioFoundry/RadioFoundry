@@ -39,14 +39,14 @@ void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t)
 	}
 	radio_nxdn_stats(&c);
 	dl_text(t, "nxdn.begins=%u\nnxdn.begin_fails=%u\nnxdn.rx_calls=%u\nnxdn.tx_calls=%u\nnxdn.tx_filler=%u\n",
-		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.rx_calls, (unsigned)c.tx_calls,
-		(unsigned)c.tx_filler);
+		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.air.rx_calls, (unsigned)c.air.tx_calls,
+		(unsigned)c.air.tx_filler);
 	dl_text(t, "nxdn.frames=%u\nnxdn.lich_fail=%u\nnxdn.sacch_fail=%u\nnxdn.facch_fail=%u\nnxdn.voice=%u\n",
 		(unsigned)c.frames, (unsigned)c.lich_fail, (unsigned)c.sacch_fail, (unsigned)c.facch_fail,
 		(unsigned)c.voice);
 	dl_text(t, "nxdn.voice_held=%u\nnxdn.fec_bits=%u\nnxdn.ran_rejects=%u\nnxdn.rx_chunks=%u\n",
-		(unsigned)c.voice_held, (unsigned)c.fec_bits, (unsigned)c.ran_rejects, (unsigned)c.rx_chunks);
-	dl_text(t, "nxdn.tx_underruns=%u\nnxdn.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
+		(unsigned)c.voice_held, (unsigned)c.fec_bits, (unsigned)c.ran_rejects, (unsigned)c.air.rx_chunks);
+	dl_text(t, "nxdn.tx_underruns=%u\nnxdn.tx_syms=%u\n", (unsigned)c.air.tx_underruns, (unsigned)c.air.tx_syms);
 #else
 	(void)v;
 	dl_text(t, "nxdn.built=0\n");

@@ -35,9 +35,8 @@ static bool rid_weak;
 static volatile uint8_t rid_seq;
 static ysf_engine_t *eng;		// while running
 static radio_ysf_stats_t stats;
-static ysf_call_stats_t call_base;
-static air_session_stats_t air_base;
-static uint32_t rx_calls_base, tx_calls_base, filler_base;
+static ysf_call_stats_t call_base;	// the call layer's counters already counted (they restart with the engine)
+static radio_air_counts_t air_base;	// the same for the engine's and the session's
 
 static void rid_update(void)
 {
@@ -163,38 +162,10 @@ static void params(const channel_t *ch, uint16_t number, const char *radio_name,
 }
 
 // ── Voice: the DMR side's voice path (ambeVoice.h), as radio_nxdn.c uses it ──
-static void v_start(const ysf_call_t *c, void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)c;
-	(void)ctx;
-	s->begin(NULL, s->ctx);
-}
-
-static void v_voice(const uint8_t v[YSF_VOICE_BYTES], void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)ctx;
-	s->frame(v, s->ctx);
-}
-
-static void v_end(void *ctx)
-{
-	const dmr_voice_sink_t *s = ambeVoiceSink();
-
-	(void)ctx;
-	s->end(s->ctx);
-}
-
-static bool v_tx(uint8_t v[YSF_VOICE_BYTES], void *ctx)
-{
-	const dmr_voice_source_t *s = ambeVoiceSource();
-
-	(void)ctx;
-	return s->next(v, s->ctx);
-}
+static void v_start(const ysf_call_t *c, void *ctx) { (void)c; (void)ctx; radio_air_voice_rx_start(); }
+static void v_voice(const uint8_t v[YSF_VOICE_BYTES], void *ctx) { (void)ctx; radio_air_voice_rx_frame(v); }
+static void v_end(void *ctx) { (void)ctx; radio_air_voice_rx_end(); }
+static bool v_tx(uint8_t v[YSF_VOICE_BYTES], void *ctx) { (void)ctx; return radio_air_voice_tx_next(v); }
 
 // A node's reply: published for the screens. A list keeps the page asked for as its first entry
 static void v_wx(const ysf_wx_t *w, void *ctx)
@@ -257,26 +228,6 @@ bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
 	return ok;
 }
 
-static void voice_tx(bool on)
-{
-	const dmr_voice_source_t *s = ambeVoiceSource();
-
-	if (on)
-		s->begin(s->ctx);
-	else
-		s->end(s->ctx);
-}
-
-static ysf_engine_t *mem_get(void)
-{
-	size_t len = 0;
-	void *m = radio_air_engine_mem(&len);
-
-	if (m == NULL || len < sizeof(ysf_engine_t) || ((uintptr_t)m & 7u) != 0)
-		return NULL;
-	return m;
-}
-
 bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_name)
 {
 	ysf_engine_cfg_t cfg;
@@ -286,7 +237,7 @@ bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_nam
 	if (rid_weak)
 		rid_update();	// the fallback follows the codeplug
 	params(ch, number, radio_name, &cfg);
-	eng = mem_get();
+	eng = radio_air_engine_get(sizeof(ysf_engine_t));
 	if (eng == NULL || board.air == NULL || ysf_engine_fit(board.air) == 0) {
 		eng = NULL;
 		stats.begin_fails++;
@@ -301,7 +252,6 @@ bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_nam
 	}
 	memset(&call_base, 0, sizeof call_base);
 	memset(&air_base, 0, sizeof air_base);
-	rx_calls_base = tx_calls_base = filler_base = 0;
 	return true;
 }
 
@@ -338,14 +288,8 @@ void radio_ysf_apply(const channel_t *ch, uint16_t number, const char *radio_nam
 static void count(const ysf_engine_view_t *ev)
 {
 	const ysf_call_stats_t *c = &eng->rx.stats;
-	const air_session_stats_t *a = &eng->session.stats;
 
-	stats.rx_calls += ev->rx_calls - rx_calls_base;
-	stats.tx_calls += ev->tx_calls - tx_calls_base;
-	stats.tx_filler += ev->tx_filler - filler_base;
-	rx_calls_base = ev->rx_calls;
-	tx_calls_base = ev->tx_calls;
-	filler_base = ev->tx_filler;
+	radio_air_count(&stats.air, &air_base, ev->rx_calls, ev->tx_calls, ev->tx_filler, &eng->av.session.stats);
 	stats.frames += c->frames - call_base.frames;
 	stats.fich_fail += c->fich_fail - call_base.fich_fail;
 	stats.csd_fail += c->csd_fail - call_base.csd_fail;
@@ -355,10 +299,6 @@ static void count(const ysf_engine_view_t *ev)
 	stats.fec_bits += c->fec_bits - call_base.fec_bits;
 	stats.vch_fixed += c->vch_fixed - call_base.vch_fixed;
 	call_base = *c;
-	stats.rx_chunks += a->rx_chunks - air_base.rx_chunks;
-	stats.tx_underruns += a->tx_underruns - air_base.tx_underruns;
-	stats.tx_syms += a->tx_syms - air_base.tx_syms;
-	air_base = *a;
 }
 
 bool radio_ysf_poll(radio_ysf_view_t *v)
@@ -410,7 +350,7 @@ bool radio_ysf_poll(radio_ysf_view_t *v)
 
 static bool ysf_no_tx(void)
 {
-	return eng != NULL && (eng->session.fit & AIR_FIT_TX) == 0;
+	return eng != NULL && (eng->av.session.fit & AIR_FIT_TX) == 0;
 }
 
 static bool ysf_tx_prepare(void)
@@ -434,7 +374,7 @@ static bool ysf_tx_prepare(void)
 	}
 	if (!ysf_engine_tx_prepare(eng))
 		return false;
-	voice_tx(true);
+	radio_air_voice_tx(true);
 	return true;
 }
 
@@ -446,7 +386,7 @@ static bool ysf_tx_go(void)
 static void ysf_tx_stop(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);
+		radio_air_voice_tx(false);
 		ysf_engine_tx_stop(eng);
 	}
 }
@@ -454,7 +394,7 @@ static void ysf_tx_stop(void)
 static void ysf_tx_abort(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);
+		radio_air_voice_tx(false);
 		ysf_engine_tx_abort(eng);
 	}
 }
@@ -467,7 +407,7 @@ static uint8_t ysf_tx_state(void)
 static void ysf_tx_clear(void)
 {
 	if (eng != NULL) {
-		voice_tx(false);
+		radio_air_voice_tx(false);
 		ysf_engine_tx_clear(eng);
 	}
 }

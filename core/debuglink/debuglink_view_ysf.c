@@ -41,14 +41,14 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 		y->tx_dgid, y->rx_dgid);
 	radio_ysf_stats(&c);
 	dl_text(t, "ysf.begins=%u\nysf.begin_fails=%u\nysf.rx_calls=%u\nysf.tx_calls=%u\nysf.tx_filler=%u\n",
-		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.rx_calls, (unsigned)c.tx_calls,
-		(unsigned)c.tx_filler);
+		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.air.rx_calls, (unsigned)c.air.tx_calls,
+		(unsigned)c.air.tx_filler);
 	dl_text(t, "ysf.frames=%u\nysf.fich_fail=%u\nysf.csd_fail=%u\nysf.dch_fail=%u\nysf.voice=%u\n",
 		(unsigned)c.frames, (unsigned)c.fich_fail, (unsigned)c.csd_fail, (unsigned)c.dch_fail, (unsigned)c.voice);
 	// fec_bits: bits the FICH, CSD and DCH decoders corrected; vch_fixed: voice bits the three copies' vote fixed
 	dl_text(t, "ysf.voice_held=%u\nysf.fec_bits=%u\nysf.vch_fixed=%u\nysf.rx_chunks=%u\n", (unsigned)c.voice_held,
-		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.rx_chunks);
-	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.tx_underruns, (unsigned)c.tx_syms);
+		(unsigned)c.fec_bits, (unsigned)c.vch_fixed, (unsigned)c.air.rx_chunks);
+	dl_text(t, "ysf.tx_underruns=%u\nysf.tx_syms=%u\n", (unsigned)c.air.tx_underruns, (unsigned)c.air.tx_syms);
 	// Rooms (ysf.md 9): what was asked (wx_asked counts commands sent), the node's last reply (wx_serial counts
 	// them), the page of rooms held
 	radio_ysf_wx_t w;

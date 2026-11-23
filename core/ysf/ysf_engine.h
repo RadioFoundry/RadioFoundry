@@ -8,7 +8,7 @@
 #define RFOUNDRY_YSF_ENGINE_H
 
 #include "ysf.h"
-#include "../air/air_session.h"
+#include "../air/air_voice.h"
 #include "../air/air_softmodem.h"
 
 typedef struct {
@@ -42,18 +42,13 @@ typedef struct {
 } ysf_engine_view_t;
 
 typedef struct {
-	air_session_t session;
+	air_voice_t av;			// the session, the call in hand, the view, transmit (air_voice.h)
 	ysf_call_rx_t rx;
 	ysf_call_tx_t tx;
 	ysf_engine_cfg_t cfg;
 	ysf_engine_hooks_t hooks;
 	void *ctx;
-	volatile bool tx_stop;		// the radio core let go: end at the next frame boundary
-	bool tx_ended;			// ... and the call layer knows
-	bool played;			// the call in hand passes the DG-ID
-	volatile bool recheck;		// ysf_engine_set changed what passes it
-	volatile uint8_t seq;		// odd while the provider's task writes view
-	ysf_engine_view_t view;
+	ysf_call_t heard;		// the call heard as published with av's view
 	uint8_t frame[YSF_FRAME_BYTES];		// the framer's frame buffer ...
 	int8_t soft[YSF_FRAME_SYMS];		// ... and its soft values, for the decoders
 #if CONFIG_AIR_RX_ADAPT

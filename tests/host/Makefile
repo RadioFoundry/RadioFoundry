@@ -137,13 +137,13 @@ run-nxdn-scramble: nxdnScrambleTest
 .PHONY: run-nxdn-scramble
 nxdnTest: nxdnTest.c $(NXDN) $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ nxdnTest.c $(NXDN) $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
-nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
-	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
+nxdnEngineTest: nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(CORE)/air/air_voice.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(wildcard $(CORE)/nxdn/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC)
+	$(CC) $(CFLAGS) -DCONFIG_NXDN_SCRAMBLER=1 -I$(ROOT)/hal -Wshadow -o $@ nxdnEngineTest.c $(CORE)/nxdn/nxdn_engine.c $(CORE)/air/air_voice.c $(NXDN) $(CORE)/nxdn/nxdn_scramble.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(FEC) -lm
 # YSF frames, their FEC, calls through the framer and the engine on two made-up providers (core/ysf)
 YSF     := $(CORE)/ysf/ysf_frame.c $(CORE)/ysf/ysf_rx.c $(CORE)/ysf/ysf_call.c $(CORE)/ysf/ysf_id.c $(CORE)/ysf/ysf_wx.c
 TESTS   += ysfTest
-ysfTest: ysfTest.c $(YSF) $(CORE)/ysf/ysf_engine.c $(wildcard $(CORE)/ysf/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ysfTest.c $(YSF) $(CORE)/ysf/ysf_engine.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
+ysfTest: ysfTest.c $(YSF) $(CORE)/ysf/ysf_engine.c $(CORE)/air/air_voice.c $(wildcard $(CORE)/ysf/*.h) $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ ysfTest.c $(YSF) $(CORE)/ysf/ysf_engine.c $(CORE)/air/air_voice.c $(CORE)/air/air_session.c $(CORE)/air/air_framer.c $(FEC) $(CORE)/dmr/ambe/ambeFec.c
 
 # The MBE synthesis core and the full-rate voice decoder on it (core/mbe), against golden vectors
 MBE     := $(wildcard $(CORE)/mbe/*.c)
@@ -358,7 +358,7 @@ radioCoreTestP25T: $(RCP25T) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 # The same with NXDN conventional (CONFIG_NXDN): the far end is an NXDN engine on the fake board.air; the voice goes
 # through the DMR side's vocoder path. No vocoder lends memory (as on the STM32 platform)
 TESTS   += radioCoreTestNxdn radioCoreTestP25Nxdn
-RCNXDN  := $(RCORE) $(CORE)/radio/radio_nxdn.c $(CORE)/radio/radio_air_mem.c $(CORE)/nxdn/nxdn_engine.c $(CORE)/nxdn/nxdn_scramble.c $(NXDN) $(CORE)/air/air_session.c \
+RCNXDN  := $(RCORE) $(CORE)/radio/radio_nxdn.c $(CORE)/radio/radio_air_mem.c $(CORE)/radio/radio_air_voice.c $(CORE)/nxdn/nxdn_engine.c $(CORE)/air/air_voice.c $(CORE)/nxdn/nxdn_scramble.c $(NXDN) $(CORE)/air/air_session.c \
            $(CORE)/air/air_framer.c $(FEC) $(CORE)/debuglink/debuglink_view_nxdn.c $(CORE)/hostlink/build_info.c
 radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/air/*.h) $(wildcard $(CORE)/dmr/ambe/*.h)

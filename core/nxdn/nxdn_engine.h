@@ -10,7 +10,7 @@
 
 #include "config.h"
 #include "nxdn.h"
-#include "../air/air_session.h"
+#include "../air/air_voice.h"
 
 typedef struct {
 	// Receive, from the provider's task. start: a call we take began (its fields may still fill in: update). voice:
@@ -58,19 +58,13 @@ typedef struct {
 } nxdn_engine_view_t;
 
 typedef struct {
-	air_session_t session;
-	const air_mode_t *mode;
+	air_voice_t av;			// the session, the call in hand, the view, transmit (air_voice.h)
 	nxdn_call_rx_t rx;
 	nxdn_call_tx_t tx;
 	nxdn_engine_cfg_t cfg;
 	nxdn_engine_hooks_t hooks;
 	void *ctx;
-	volatile bool tx_stop;		// the radio core let go: end at the next frame boundary
-	bool tx_ended;			// ... and the call layer knows
-	bool played;			// the call in hand passes the squelch
-	volatile bool recheck;		// nxdn_engine_set changed what passes it
-	volatile uint8_t seq;		// odd while the provider's task writes view
-	nxdn_engine_view_t view;
+	nxdn_call_t heard;		// the call heard as published with av's view
 	uint8_t frame[NXDN_FRAME_BYTES];	// the framer's frame buffer ...
 	int8_t soft[NXDN_FRAME_SYMS];		// ... and its soft values, for the Viterbi decoder
 } nxdn_engine_t;
