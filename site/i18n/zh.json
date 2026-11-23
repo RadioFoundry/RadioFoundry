@@ -2416,6 +2416,13 @@
  "editor.fox.text_chars": "只有字母、数字、空格和 / - = ? . , 有摩尔斯码",
  "editor.fox.jingle": "播放乐曲",
  "editor.fox.default_tune": "无步骤：电台自带乐曲",
+ "editor.fox.midi": "导入 MIDI…",
+ "editor.fox.midi_speed": "速度",
+ "editor.fox.midi_help": "用 MIDI 文件作为乐曲：每一刻取最高的音，移入电台的音域，不含鼓声。最多 32 步、10 秒。",
+ "editor.fox.midi_done": "{name}：{n}/32 步，{s} 秒。",
+ "editor.fox.midi_cut": "{name}：{n}/32 步，在 {s} 秒处截断（乐曲最多 32 步、10 秒）。加快速度可容纳更多。",
+ "editor.fox.midi_bad": "{name} 不是编辑器能读取的 MIDI 文件。",
+ "editor.fox.midi_empty": "{name} 没有可播放的音符（鼓声不计）。",
  "editor.field.fox": "信标模式",
  "editor.problem.fox_range": "{field}的消息超过 {max} 个字符或含有没有摩尔斯码的字符、频率超过 {hz} Hz 或不是 10 Hz 的整数倍，或时长超过 {ms} 毫秒或不是 10 毫秒的整数倍。"
 }

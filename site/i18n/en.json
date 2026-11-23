@@ -2416,6 +2416,13 @@
  "editor.fox.text_chars": "Only letters, digits, spaces and / - = ? . , have Morse",
  "editor.fox.jingle": "Play the jingle",
  "editor.fox.default_tune": "No steps: the radio's own tune",
+ "editor.fox.midi": "Import MIDI…",
+ "editor.fox.midi_speed": "Speed",
+ "editor.fox.midi_help": "A MIDI file as the jingle: the highest note at each moment, moved into the radio's range, drums left out. Up to 32 steps and 10 s.",
+ "editor.fox.midi_done": "{name}: {n} of 32 steps, {s} s.",
+ "editor.fox.midi_cut": "{name}: {n} of 32 steps, cut at {s} s (the jingle holds 32 steps and 10 s). A faster speed fits more of it.",
+ "editor.fox.midi_bad": "{name} isn't a MIDI file the editor can read.",
+ "editor.fox.midi_empty": "{name} has no notes to play (drums are left out).",
  "editor.field.fox": "fox mode",
  "editor.problem.fox_range": "The {field} has a message over {max} characters or with a character that has no Morse, a frequency over {hz} Hz or not in steps of 10 Hz, or a length over {ms} ms or not in steps of 10 ms."
 }

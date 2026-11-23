@@ -2416,6 +2416,13 @@
  "editor.fox.text_chars": "Solo lettere, cifre, spazi e / - = ? . , hanno il Morse",
  "editor.fox.jingle": "Suona la melodia",
  "editor.fox.default_tune": "Nessun passo: la melodia della radio",
+ "editor.fox.midi": "Importa MIDI…",
+ "editor.fox.midi_speed": "Velocità",
+ "editor.fox.midi_help": "Un file MIDI come melodia: la nota più acuta in ogni momento, portata nella gamma della radio, senza la batteria. Fino a 32 passi e 10 s.",
+ "editor.fox.midi_done": "{name}: {n} di 32 passi, {s} s.",
+ "editor.fox.midi_cut": "{name}: {n} di 32 passi, tagliata a {s} s (la melodia contiene 32 passi e 10 s). Con una velocità maggiore ne entra di più.",
+ "editor.fox.midi_bad": "{name} non è un file MIDI che l'editor sa leggere.",
+ "editor.fox.midi_empty": "{name} non ha note da suonare (la batteria è esclusa).",
  "editor.field.fox": "modalità volpe",
  "editor.problem.fox_range": "Il campo {field} ha un messaggio oltre {max} caratteri o con un carattere senza Morse, una frequenza sopra {hz} Hz o non a passi di 10 Hz, oppure una durata sopra {ms} ms o non a passi di 10 ms."
 }
