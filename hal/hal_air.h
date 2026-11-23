@@ -145,7 +145,8 @@ typedef struct {
 	uint32_t regs[4];
 } air_lost_rec_t;
 
-// After the provider's poll, under the platform's lock: true when copy_restarts rose since the last note, keeping
+// After the provider's poll, atomic against every other task (the stats reset and the view run in others; a lock
+// that masks only the modem's sources is not enough): true when copy_restarts rose since the last note, keeping
 // regs and the time when it is the first
 static inline bool air_lost_note(air_lost_rec_t *r, uint32_t restarts, const uint32_t regs[4], uint32_t now_ms)
 {

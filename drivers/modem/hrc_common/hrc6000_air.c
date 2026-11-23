@@ -335,8 +335,6 @@ static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
 	return a->t_half[(i / HALF) % 2u] + (i % HALF) * SAMPLE_US;
 }
 
-// The chip from DMR (or the physical layer) to the copy set-up: FM receive with every audio filter off, nothing to
-// the line out, the FM receive RAM's interrupt on
 // A new set-up to come (open, tap start, the board's mode entry, the close): copy_on reads the registers again
 static void copy_forget(hrc6000_air_t *a)
 {
@@ -344,6 +342,8 @@ static void copy_forget(hrc6000_air_t *a)
 	a->copy_tried = false;
 }
 
+// The chip from DMR (or the physical layer) to the copy set-up: FM receive with every audio filter off, nothing to
+// the line out, the FM receive RAM's interrupt on
 static void copy_on(hrc6000_air_t *a)
 {
 	// The registers before the copy, once per set-up: a copy set up again (the watchdog, the end of a transmission)

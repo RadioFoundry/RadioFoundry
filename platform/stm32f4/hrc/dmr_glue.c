@@ -224,9 +224,11 @@ static air_lost_rec_t air_lost;
 
 static void air_lost_check(const uint32_t before[3])
 {
-	uint32_t w[4] = { AIR->copy_lost_flags, before[0], before[1], before[2] };
-	lock(NULL);	// against a stats reset and the view
-	(void)air_lost_note(&air_lost, AIR->st.copy_restarts, w, hal_millis());
+	lock(NULL);	// against a stats reset and the view, and a close: AIR is the engine's queue again after one
+	if (air_on) {
+		uint32_t w[4] = { AIR->copy_lost_flags, before[0], before[1], before[2] };
+		(void)air_lost_note(&air_lost, AIR->st.copy_restarts, w, hal_millis());
+	}
 	unlock(NULL);
 }
 #endif

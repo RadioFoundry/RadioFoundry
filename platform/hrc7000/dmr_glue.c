@@ -231,8 +231,8 @@ static air_lost_rec_t air_lost;
 
 HRC_FLASHFUNC static void air_lost_check(const uint32_t before[4])
 {
-	uint32_t s = hrc_irq_save();	// against a stats reset and the view
-	if (air_lost_note(&air_lost, AIR->st.copy_restarts, before, hal_millis()) && active && lock_depth == 0) {
+	uint32_t s = hrc_irq_save();	// against a stats reset and the view, and a close (air_give clears air_on first)
+	if (air_on && air_lost_note(&air_lost, AIR->st.copy_restarts, before, hal_millis()) && active && lock_depth == 0) {
 		irqs_enable(true);
 	}
 	hrc_irq_restore(s);

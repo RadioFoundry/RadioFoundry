@@ -516,13 +516,13 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                 time.sleep(0.02)
             return True
 
+        # Just before the write: a restart before it is not the provider's answer to it (after it would race the
+        # 200 ms watchdog). Outside the try below: a view that fails is a failure, not a missing CHIP_REG
+        r0 = as_int(radio.view(["air"]).get("airp.copy_restarts")) or 0
         try:
             if stays_off():
                 skip("no_hw", f"register 0x{reg_addr:X} bit 0x{bit:X} reads off while the copy runs: not the copy's "
                      "interrupt on this board")
-            # Just before the write: a restart before it is not the provider's answer to it (after it would race
-            # the 200 ms watchdog)
-            r0 = as_int(radio.view(["air"]).get("airp.copy_restarts")) or 0
             set_off(True)
         except DebugLinkError as e:
             try:  # a write that went through before the error: never leave the copy off
