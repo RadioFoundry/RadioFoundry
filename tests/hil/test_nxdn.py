@@ -530,6 +530,7 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
             except DebugLinkError:
                 pass
             skip("not_built", f"CHIP_REG can't reach the copy's interrupt bit (status {e.status})")
+        recovered = False
         try:
             # Halves come every 32 ms: more than 2 in 100 ms with the bit off, and no watchdog restart in between
             # (one 200 ms after the last half brings them back), means the bit isn't what stops them
@@ -550,8 +551,15 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
                     (f"copy interrupt left off, no half for {RECOVER_S} s: copy_restarts {r0}->"
                      f"{a1.get('airp.copy_restarts')}, turned on again by the provider: {on_again}")
                 time.sleep(0.1)
+            recovered = True
         finally:
-            put_back()
+            try:
+                put_back()
+            except Exception as e:
+                if recovered:
+                    raise
+                # The assertion above is the real failure: a clean-up error must not replace it
+                print(f"\ncould not put the copy's interrupt bit back: {e!r}")
         time.sleep(0.5)
         a2 = radio.view(["air"])
         # From the later view: the count rises in the provider's poll, the record a moment after it. The record is
