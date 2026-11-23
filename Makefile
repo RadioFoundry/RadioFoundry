@@ -56,6 +56,7 @@ $(foreach f,$(sort $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN)),$(eval CONFIG_$(f)
 include config/features.mk
 include platform/third_party.mk
 include platform/$(PLATFORM)/platform.mk
+$(TP_CHECK)
 
 # Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
@@ -241,8 +242,7 @@ APP_SRC += core/debuglink/dl_fmt.c
 endif
 endif
 
-INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen \
-	$(subst -Ithird_party/,-I$(THIRD_PARTY)/,$(PLATFORM_INC))
+INCLUDES := $(call TP_INCLUDES,-Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC))
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
 # directories (both end up in the image). Only the files that use RFOUNDRY_GIT or RFOUNDRY_RELEASE get it, through
@@ -362,8 +362,6 @@ $(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard conf
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -lE 'RFOUNDRY_(GIT|RELEASE)' $(APP_SRC) 2>/dev/null))
 ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
-TP_ERROR_NOW := $(TP_ERROR)
-$(if $(TP_ERROR_NOW),$(error $(TP_ERROR_NOW)))
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
@@ -437,11 +435,11 @@ $(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
-# Third-party sources are listed as third_party/... (platform.mk) and read from $(THIRD_PARTY) (platform/third_party.mk)
-$(BUILD)/third_party/%.o: $(THIRD_PARTY)/%.c
+# A third-party source missing here comes from RFOUNDRY_THIRD_PARTY through vpath (platform/third_party.mk)
+$(BUILD)/third_party/%.o: third_party/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_3P) -c $< -o $@
-$(BUILD)/third_party/%.o: $(THIRD_PARTY)/%.s
+$(BUILD)/third_party/%.o: third_party/%.s
 	@mkdir -p $(dir $@)
 	$(CC) $(CPUFLAGS) -c $< -o $@
 # Platform assembly (start-up, RTOS port), preprocessed (.S)

@@ -117,8 +117,9 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - `third_party/*` are submodules (mode 160000). In a worktree, leave them uninitialized (no checkout, no symlinks)
   and build with `RFOUNDRY_THIRD_PARTY=<a full checkout>/third_party`
   ([building.md](docs/dev/building.md#worktrees)). `git status` stays clean and `git worktree remove` needs no
-  `--force`. A branch that moves a submodule needs `git submodule update --init` in its worktree. An older worktree
-  with symlinks still builds, but never stage them: ci.sh fails if one became a symlink or a plain directory.
+  `--force`. A branch that moves a submodule checks out that one: `git submodule update --init third_party/<name>`.
+  In an older worktree with symlinks, never stage them: check `git diff --cached --stat -- third_party` before every
+  commit. ci.sh fails if one became a symlink or a plain directory.
 - Never force-push, rewrite published history or run destructive cleanup on a shared checkout.
 - **Clean up after yourself.** When a worktree's branch is merged, remove the worktree and its `build/` directories.
   Builds take about 1.5 GB per worktree, and stale ones have filled the disk before.

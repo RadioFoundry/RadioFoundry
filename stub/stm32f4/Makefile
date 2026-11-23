@@ -11,7 +11,7 @@
 ROOT := ../..
 TP_ROOT := $(ROOT)
 include $(ROOT)/platform/third_party.mk
-$(if $(filter-out clean,$(or $(MAKECMDGOALS),all)),$(if $(TP_ERROR),$(error $(TP_ERROR))))
+$(TP_CHECK)
 ARM_GCC_DIR ?= $(firstword $(wildcard $(HOME)/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/) /usr/bin/)
 CROSS ?= $(ARM_GCC_DIR)arm-none-eabi-
 CC := $(CROSS)gcc
@@ -24,7 +24,8 @@ BUILD ?= $(ROOT)/build/stub-stm32f4
 # through the port's callbacks) it saves about 400 bytes
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTM32F405xx \
-	-I../common -I$(THIRD_PARTY)/cmsis-device-f4/Include -I$(THIRD_PARTY)/cmsis-core/Include $(TP_PREFIX_MAP)
+	-I../common $(call TP_INCLUDES,-I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include) \
+	$(TP_PREFIX_MAP)
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \
 	-Wl,-Map=$(BUILD)/f4stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 

@@ -20,13 +20,14 @@ if ! have_image "$IMG"; then
 	*) echo "run: image $IMG not here" >&2; exit 3 ;;
 	esac
 fi
-# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): that checkout is mounted at its own path too, whole, so git in the
-# container can read its submodules' commits (in that checkout's .git) for the pin check
+# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): another checkout is mounted at its own path too, whole, so git in
+# the container can read its submodules' commits (in that checkout's .git) for the pin check
 TP_OPTS=
 if [ -n "${RFOUNDRY_THIRD_PARTY:-}" ]; then
-	TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd)
+	TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd -P)
 	TP_TOP=$(git -C "$TP" rev-parse --show-toplevel 2>/dev/null || echo "$TP")
-	TP_OPTS="-v $TP_TOP:$TP_TOP -e RFOUNDRY_THIRD_PARTY=$TP"
+	TP_OPTS="-e RFOUNDRY_THIRD_PARTY=$TP"
+	[ "$TP_TOP" = "$(cd "$ROOT" && pwd -P)" ] || TP_OPTS="$TP_OPTS -v $TP_TOP:$TP_TOP"
 fi
 # safe.directory: the tree may belong to another user than the container's (git only reads it, for version strings
 # and the third_party pin check)

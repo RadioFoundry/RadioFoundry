@@ -27,26 +27,30 @@ export RFOUNDRY_THIRD_PARTY=$HOME/src/RadioFoundry/third_party    # once, in the
 make -C ../rf-topic BOARD=<b>
 ```
 
-`platform/third_party.mk` picks the directory a build reads:
+`platform/third_party.mk` picks, for each submodule, the directory a build reads:
 
-| The tree's `third_party/` | `RFOUNDRY_THIRD_PARTY` | The build reads |
+| The submodule in this tree | `RFOUNDRY_THIRD_PARTY` | The build reads |
 |---|---|---|
-| Checked out | Any | The tree's own copies, as before |
-| Empty | Set | That directory, after a check that it holds the commits the tree pins |
+| Checked out | Any | This tree's copy, as before |
+| Empty | Set | The copy in that directory, after a check that the copy is the commit this tree pins |
 | Empty | Not set | Nothing: make stops and says what to do |
 
 - Git sees an uninitialized submodule as unchanged. `git status` stays clean, nothing under `third_party/` can be
   staged by accident, and `git worktree remove` works without `--force`.
-- A branch that moves a submodule fails the pin check. Run `git submodule update --init` in its worktree: the
-  tree's own copies then win.
-- The image is the same as one built from the tree's own copies. `-ffile-prefix-map` records the files as
+- A branch that moves a submodule fails the pin check. Check out that one submodule in its worktree
+  (`git submodule update --init third_party/<name>`): this tree's copy then wins, and the others still come from the
+  shared checkout.
+- The image is the same as one built from this tree's copies. `-ffile-prefix-map` records the shared files as
   `third_party/...` in debug info and `__FILE__`.
+- `RFOUNDRY_THIRD_PARTY` must be an absolute path that ends in `third_party`. Makefiles name third-party files by
+  their path in this tree: sources are found through `vpath`, and the `-I` flags in `INCLUDES` are mapped.
+  `$(wildcard)` sees only this tree's copies.
 - `tools/docker/toolchains/run.sh` and `tools/docker/csky-toolchain/run.sh` mount the other checkout and pass the
   variable into the container.
 - The query targets (`print-config`, `print-vars` and the rest) need no submodules.
 - A worktree whose `third_party/*` are symlinks to another checkout still builds: the links count as checked out.
-  Git trips on them, though. To switch one over, run `for m in third_party/*; do rm "$m" && mkdir "$m"; done` (it
-  removes the links, not what they point to) and `git update-index --no-skip-worktree third_party/*` if they were
+  Git trips on them, though. To switch one over, run `for m in third_party/*; do rm "$m" && mkdir "$m"; done` (the
+  loop removes the links, not their targets) and `git update-index --no-skip-worktree third_party/*` if they were
   marked.
 
 ## Make targets

@@ -46,12 +46,13 @@ if [ -n "$SELF" ]; then
 else
 	MOUNT="-v $ROOT:$ROOT"
 	USER_OPT="--user $(id -u):$(id -g)"
-	# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): that checkout is mounted at its own path too, whole, so git in the
-	# container can read its submodules' commits (in that checkout's .git) for the pin check
+	# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): another checkout is mounted at its own path too, whole, so git in
+	# the container can read its submodules' commits (in that checkout's .git) for the pin check
 	if [ -n "${RFOUNDRY_THIRD_PARTY:-}" ]; then
-		TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd)
+		TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd -P)
 		TP_TOP=$(git -C "$TP" rev-parse --show-toplevel 2>/dev/null || echo "$TP")
-		MOUNT="$MOUNT -v $TP_TOP:$TP_TOP -e RFOUNDRY_THIRD_PARTY=$TP"
+		MOUNT="$MOUNT -e RFOUNDRY_THIRD_PARTY=$TP"
+		[ "$TP_TOP" = "$(cd "$ROOT" && pwd -P)" ] || MOUNT="$MOUNT -v $TP_TOP:$TP_TOP"
 	fi
 fi
 echo "csky run: $IMG ($(docker image inspect -f '{{.Id}}' "$IMG" | cut -c1-19)) in $ROOT"
