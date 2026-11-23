@@ -409,6 +409,20 @@ with the same TC. Until then a BS-sync burst goes up with no slot number
 Numbered from the junk, the labels flipped mid-call and the call stack dropped the rest of the call as the other
 slot's. The HR_C7000 driver locks its TC by the same rule ([modem-hrc7000.md](modem-hrc7000.md)).
 
+The HR_C5000 (chip flag `bs_by_mode`) finds BS sync only with 0x10 ISRepeater set (0x4F) and MS or direct mode sync
+only with ISRepeater clear (0x6B). On a direct channel 0x6B alone never hears a BS-framed direct sender: no timeslot interrupt
+comes. While nothing is taken, the engine switches 0x10 between the two every 390 ms (`HUNT_US`, `hunt_flips`) and
+restarts the receiver. The chip finds a BS-framed call's sync only at a header or voice A, once a superframe (360 ms),
+so a dwell is longer than a superframe; a timeslot interrupt in a dwell restarts that dwell once. A burst taken keeps
+the mode until the reception has been over for 390 ms. A transmission keys
+in the channel's own mode. The first dwell after the transmission and its answer slot is a full one in the mode of the
+last burst taken before it (`bs_last`): BS sync after a BS-framed sender, the channel's mode after an MS one or when
+nothing was received since the channel was set. The chip has no sync type register, so a direct channel's bursts are
+labeled MS either way; the family is the mode that heard the burst. A BS-framed sender answers in BS sync, so a dwell
+in the direct mode first would miss its headers and first superframe. A switch also
+makes a restart left pending (a color code filter set on a quiet channel, where no timeslot interrupt comes to make the
+restart). Repeater channels keep 0x4F and never hunt.
+
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
 Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
