@@ -307,6 +307,7 @@ static void t3_main(const radio_t3_view_t *x, void *ctx)
 	dl_text(t, "t3.built=1\nt3.tx_built=%u\nt3.on=%u\nt3.state=%s\nt3.reg=%s\nt3.confirmed=%u\nt3.syscode=0x%04x\n",
 		CONFIG_DMR_TRUNK_TX ? 1u : 0u, x->on, word(x->state, t3_states, 4), word(x->reg, t3_regs, 6), x->confirmed,
 		x->syscode);
+	dl_text(t, "t3.dedicated_data=%u\n", x->dedicated_data);
 	dl_text(t, "t3.own_id=%u\nt3.tscc_lcn=%u\nt3.rx_hz=%u\nt3.tx_hz=%u\nt3.slot=%u\nt3.cc=%u\n", (unsigned)x->own_id,
 		x->tscc_lcn, (unsigned)x->rx_hz, (unsigned)x->tx_hz, x->slot, x->cc);
 	dl_text(t, "t3.aloha_mask=%u\nt3.aloha_sf=%u\nt3.aloha_nrand=%u\nt3.aloha_backoff=%u\nt3.aloha_reg=%u\n",

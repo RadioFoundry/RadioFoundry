@@ -166,6 +166,7 @@ static void test_load(void)
 
 	CHECK(radio_t3_name(0, name) && strcmp(name, "Metro") == 0);
 	CHECK(radio_t3_load(0, &s));
+	CHECK(!t3_dedicated_data(&s.cfg));
 	CHECK(s.cfg.auth.model == 1 && s.cfg.auth.net == 5 && s.cfg.auth.category == T3_PAR_A && s.cc == 2);
 	CHECK(s.cfg.opts == (T3_OPT_PRIVATE | T3_OPT_NO_ROAM | T3_OPT_STUN | T3_OPT_MONITOR | T3_OPT_LEARN_SYSCODE) &&
 	      s.sys == 0 && !s.ip_gw);
@@ -183,11 +184,12 @@ static void test_load(void)
 
 	// The other system: its one channel, no contacts. No transmit flag in its header: listen only, whatever its
 	// options say; its own ID and the IP gateway option
-	sys_rec(v, "Other", 0, 0x1000, 0, 0);
+	sys_rec(v, "Other", 0, 0x1000 | T3_OPT_DEDICATED_DATA, 0, 0);
 	put32(&v[4], 3100077);
 	CHECK(codeplug_kv_set(SYS(1), v, sizeof v));
 	CHECK(radio_t3_load(1, &s) && s.nchans == 1 && s.cfg.nctrl == 1 && s.chans[0].lcn == 7 && s.cfg.ntg == 0);
-	CHECK(s.cfg.opts == T3_OPT_LISTEN_ONLY && s.cfg.own_id == 3100077 && s.ip_gw);
+	CHECK(t3_dedicated_data(&s.cfg) == !!CONFIG_DMR_TRUNK_DEDICATED_DATA);
+	CHECK(s.cfg.opts == (T3_OPT_LISTEN_ONLY | T3_OPT_DEDICATED_DATA) && s.cfg.own_id == 3100077 && s.ip_gw);
 	// An ID DMR can't carry reads as the radio's
 	put32(&v[4], 0x01000000);
 	CHECK(codeplug_kv_set(SYS(1), v, sizeof v));

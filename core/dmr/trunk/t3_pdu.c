@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DMR Tier III layer 3 PDUs (see t3_pdu.h). Field order and widths from ETSI TS 102 361-4 tables 7.9 - 7.34.
 #include <string.h>
+#include "config.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/call/dmr_lc.h"
 
@@ -98,8 +99,14 @@ bool t3_csbk_parse(const uint8_t pdu[T3_CSBK_BYTES], t3_csbk_t *out)
 	out->op = (uint8_t)get(&r, 6);
 	out->fid = (uint8_t)get(&r, 8);
 	memcpy(out->raw, pdu + 2, sizeof(out->raw));
-	if (out->fid != 0 && !(out->fid == T3_FID_08 && out->op == T3_OP_PD_GRANT && !out->lb &&
-			      pdu[2] == 0xFFu && (pdu[3] >> 4) == 0xFu)) {
+	bool fid08_grant = out->fid == T3_FID_08 && out->op == T3_OP_PD_GRANT && !out->lb &&
+		pdu[2] == 0xFFu && (pdu[3] >> 4) == 0xFu;
+	bool fid68_terminal = CONFIG_DMR_TRUNK_DEDICATED_DATA && out->fid == T3_FID_68 && out->op == T3_OP_C_AHOY &&
+		out->lb && !out->pf && pdu[2] == 0x0Eu && pdu[3] == 0x07u &&
+		pdu[7] == (T3_ID_PDDI >> 16) &&
+		pdu[8] == ((T3_ID_PDDI >> 8) & 0xFFu) &&
+		pdu[9] == (T3_ID_PDDI & 0xFFu);
+	if (out->fid != 0 && !fid08_grant && !fid68_terminal) {
 		return false;
 	}
 	uint8_t op = out->op;

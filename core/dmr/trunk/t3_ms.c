@@ -23,6 +23,7 @@ static uint32_t or_default(uint16_t v, uint32_t def)
 
 // An MBC continuation follows its header on the same slot one TDMA frame later; allow one lost frame
 #define MBC_GAP_MS	130
+#define T3_DEDICATED_REPLY_FRAMES	5u
 
 const char *t3_state_name(t3_state_t s)
 {
@@ -480,10 +481,49 @@ static void follow(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_
 	tune(ms, now, &ch, g->slot, true);
 }
 
+// A dedicated data call uses P_MAINT for recipient readiness and for sender completion.
+static void dedicated_data_maint(t3_ms_t *ms, bool downlink)
+{
+	if (!may_send(ms)) {
+		return;
+	}
+	uint32_t id = my_id(ms);
+	uint32_t dst = downlink ? T3_ID_PDDI : T3_ID_PDUI;
+	uint8_t maint[T3_CSBK_BYTES] = {
+		0x80u | T3_OP_P_MAINT, downlink ? T3_FID_68 : 0u, 0x30u, downlink ? 0x1Au : 0x10u,
+		dst >> 16, (dst >> 8) & 0xFFu, dst & 0xFFu, id >> 16, id >> 8, id,
+	};
+	t3_crc_append(maint, T3_CRC_MASK_CSBK);
+	if (!downlink) {
+		// The slot is already granted. Let the modem align this burst without waiting for
+		// another protocol slot callback while the recipient starts access.
+		send(ms, maint, ms->call.slot, true);
+		return;
+	}
+	memcpy(ms->tx.burst, maint, sizeof(maint));
+	ms->tx.count = 1;
+	ms->tx.slot = ms->call.slot;
+	ms->tx.payload = true;
+	ms->tx.request_pddi = false;
+	ms->tx.then_return = false;
+	ms->tx.udt = false;
+}
+
 // A grant heard on the TSCC (camped) or on the payload channel (a move or a second call). chan is set when an
 // appended CG_AP gave the frequencies
 static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_chan_t *chan)
 {
+	// dedicated addresses the PDUI grant to the requester of the uplink.
+	t3_csbk_t uplink;
+	if (t3_dedicated_data(ms->cfg) && ms->state == T3_CAMPED &&
+	    ms->ax.state != T3_AX_IDLE && ms->ax.svc == T3_SVC_PDATA &&
+	    !ms->ax.group && ms->ax.dst == T3_ID_PDUI && p->op == T3_OP_PD_GRANT &&
+	    p->u.grant.src == T3_ID_PDUI && is_me(ms, p->u.grant.dst)) {
+		uplink = *p;
+		uplink.u.grant.src = p->u.grant.dst;
+		uplink.u.grant.dst = p->u.grant.src;
+		p = &uplink;
+	}
 	bool group = false;
 	if (ms->state == T3_CAMPED) {
 		ms->st.grants++;
@@ -491,9 +531,12 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	if (!wants_grant(ms, p, &group)) {
 		return;
 	}
+	const bool download = t3_dedicated_data(ms->cfg) && ms->ax.state != T3_AX_IDLE && ms->ax.svc == T3_SVC_PDATA &&
+	                      ms->ax.dst == T3_ID_PDDI && p->op == T3_OP_PD_GRANT &&
+	                      p->u.grant.src == ms->ax.dst && is_me(ms, p->u.grant.dst);
 	const bool answered = ms->ax.state != T3_AX_IDLE && ms->ax.answering && p->op == T3_OP_PV_GRANT &&
 	                      p->u.grant.src == ms->ax.dst && is_me(ms, p->u.grant.dst);
-	if (ms->ax.state != T3_AX_IDLE && !answered && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
+	if (ms->ax.state != T3_AX_IDLE && !answered && !download && !is_me(ms, p->u.grant.src) && !p->u.grant.emergency) {
 		// Asking for a service: someone else's call doesn't take the radio off the TSCC meanwhile
 		return;
 	}
@@ -524,7 +567,10 @@ static void on_grant(t3_ms_t *ms, uint32_t now, const t3_csbk_t *p, const t3_cha
 	}
 	ms->ring_src = 0;
 	follow(ms, now, p, &c, group);
-	if (answered || (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
+	if (download) {
+		dedicated_data_maint(ms, true);
+	}
+	if (download || answered || (ms->call.ours && ms->ax.state != T3_AX_IDLE &&
 	    (ms->call.data ? ms->ax.svc == T3_SVC_PDATA : is_voice(ms->ax.svc)))) {
 		finish(ms, now, T3_RES_GRANTED);
 	} else if (ms->ax.state != T3_AX_IDLE) {
@@ -758,6 +804,7 @@ static void start_access(t3_ms_t *ms, uint32_t now, t3_svc_t svc, uint32_t dst, 
 	ms->ax.frames = 0;
 	ms->ax.to_air = false;
 	ms->ax.tries = 0;
+	ms->ax.busy_retries = 0;
 	ms->ax.tc_deadline = now + T3_TRAND_TC_MS;
 	ms->ax.ack_deadline = 0;
 	ms->ax.result = T3_RES_PENDING;
@@ -1047,6 +1094,16 @@ static void on_ack(t3_ms_t *ms, uint32_t now, const t3_ack_t *a)
 		finish(ms, now, T3_RES_DONE);
 		break;
 	case T3_NACK:
+		if (t3_dedicated_data(ms->cfg) && svc == T3_SVC_PDATA && ms->ax.dst == T3_ID_PDDI && a->src == ms->ax.dst &&
+		    a->reason == T3_RC_SYS_BUSY && ms->ax.busy_retries < 2u) {
+			// The single payload slot can still be clearing the upload when the download is requested.
+			// Retry after two, then four seconds, inside the original TRand_TC access deadline.
+			ms->ax.state = T3_AX_WAIT_SLOT;
+			ms->ax.frames = 34u * ++ms->ax.busy_retries;
+			ms->ax.tries = 0; // the site replied, so start a new random access sequence
+			ms->ax.to_air = false;
+			break;
+		}
 		if (svc == T3_SVC_REGISTER && a->reason == T3_RC_REG_DENIED) {
 			// Barred from this area until the engine restarts; find another TSCC (6.4.4.1)
 			uint16_t area = reg_area(ms, ms->syscode);
@@ -1103,6 +1160,7 @@ static void answer_info(t3_ms_t *ms, uint8_t slot, bool payload, uint8_t reason,
 	ms->tx.count = 1;
 	ms->tx.slot = slot;
 	ms->tx.payload = payload;
+	ms->tx.request_pddi = false;
 	ms->tx.then_return = then_return;
 	ms->tx.udt = false;
 }
@@ -1160,6 +1218,7 @@ static void queue_udt(t3_ms_t *ms, uint32_t now, uint8_t slot, t3_udt_t *u, cons
 	ms->tx.count = 1;
 	ms->tx.slot = slot;
 	ms->tx.payload = false;
+	ms->tx.request_pddi = false;
 	ms->tx.then_return = false;
 	ms->tx.udt = true;
 	ms->tx.nblocks = u->blocks;
@@ -1488,6 +1547,7 @@ static void challenge_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t what
 	ms->tx.count = 1;
 	ms->tx.slot = slot;
 	ms->tx.payload = false;
+	ms->tx.request_pddi = false;
 	ms->tx.then_return = false;
 	ms->tx.udt = false;
 }
@@ -1657,6 +1717,9 @@ static void on_ahoy(t3_ms_t *ms, uint32_t now, uint8_t slot, const t3_ahoy_t *h,
 		answer_info(ms, slot, false, reason, t3_response_check(ms->syscode), h->src, false);
 	} else if (to_me && !payload && h->kind == T3_SK_IND_VOICE) {
 		answer(ms, slot, false, T3_RC_MS_ACCEPTED, h->src, false);	// availability check: OACSU
+	} else if (t3_dedicated_data(ms->cfg) && payload && to_me && h->src == T3_ID_PDDI && ms->call.data &&
+		   !ms->call.ours && ms->call.src == h->src) {
+		dedicated_data_maint(ms, true);
 	} else if (payload && h->src == T3_ID_TSI && (h->kind == T3_SK_IND_DATA || h->kind == T3_SK_TG_DATA)) {
 		// Packet data radio check on the payload channel (6.6.3.3.2.1; table 6.51, cited there as 6.53)
 		answer(ms, slot, true, T3_RC_MESSAGE_ACCEPTED, h->src, false);
@@ -2022,6 +2085,15 @@ static void on_tscc(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t cc, const t
 		return;
 	}
 	if (p->op == T3_OP_C_AHOY) {
+		if (p->fid == T3_FID_68) {
+			if (ms->state == T3_CAMPED && is_me(ms, p->u.ahoy.dst) && !ms->stunned && may_send(ms)) {
+				ps_wake(ms, now);
+				// The native terminal reply carries Response Info 1 with the reserved bit clear.
+				answer_info(ms, slot, false, T3_RC_MS_ACCEPTED, 1u, p->u.ahoy.src, false);
+				ms->tx.request_pddi = true;
+			}
+			return;
+		}
 		on_ahoy(ms, now, slot, &p->u.ahoy, false);
 		return;
 	}
@@ -2482,7 +2554,9 @@ void t3_ms_rx(t3_ms_t *ms, uint32_t now, uint8_t slot, uint8_t dt, uint8_t cc, c
 	if (p.fid != 0 && good && dt == T3_DT_CSBK) {
 		heard_fid(ms, now, p.fid);	// taken by CRC only: one repeated with a failed CRC names nothing
 	}
-	if (!known || (p.fid != 0 && dt != T3_DT_MBC_HDR)) {
+	const bool dedicated_terminal = p.fid == T3_FID_68 && dt == T3_DT_CSBK && t3_dedicated_data(ms->cfg);
+	if (!known || (p.fid == T3_FID_68 && !dedicated_terminal) ||
+	    (p.fid != 0 && dt != T3_DT_MBC_HDR && !dedicated_terminal)) {
 		return;
 	}
 	if (dt == T3_DT_MBC_HDR) {
@@ -2570,6 +2644,18 @@ void t3_ms_slot(t3_ms_t *ms, uint32_t now, uint8_t slot, bool at_known, bool at_
 		}
 		if (--ms->tx.count == 0 && ms->tx.then_return && ms->state == T3_FOLLOW) {
 			return_to_tscc(ms, now);
+		} else if (ms->tx.request_pddi) {
+			ms->tx.request_pddi = false;
+			// The gateway schedules the download only after the terminal reply. Leave time for
+			// the ACK on air, including a reply to a repeat of the terminal check.
+			if (t3_ms_pdata(ms, now, T3_ID_PDDI, false)) {
+				ms->ax.supl = false;
+			}
+			if (ms->ax.state == T3_AX_WAIT_SLOT && ms->ax.svc == T3_SVC_PDATA &&
+			    ms->ax.dst == T3_ID_PDDI && ms->ax.tries == 0 &&
+			    ms->ax.frames < T3_DEDICATED_REPLY_FRAMES) {
+				ms->ax.frames = T3_DEDICATED_REPLY_FRAMES;
+			}
 		}
 		return;
 	}
@@ -2993,9 +3079,16 @@ void t3_ms_data_done(t3_ms_t *ms, uint32_t now, bool ok)
 	if (ms->state != T3_FOLLOW || !ms->call.data || !ms->call.ours) {
 		return;
 	}
+	if (t3_dedicated_data(ms->cfg) && ok && ms->call.dst == T3_ID_PDUI) {
+		// The site clears the upload when it hears completion addressed to the dedicated gateway.
+		ms->data_end_ms = 0;
+		dedicated_data_maint(ms, false);
+		return_to_tscc(ms, now);
+		return;
+	}
 	if (!ok) {
 		ms->data_end_ms = 0;
-		t3_ms_end_call(ms, now);	// 6.6.3.3.2.5 e: retries spent without an ACK
+		t3_ms_end_call(ms, now);
 		return;
 	}
 	ms->data_end_ms = (now + T3_DATA_LINGER_MS) | 1u;	// 6.6.3.3.2.5 a, c
@@ -3026,6 +3119,7 @@ void t3_ms_end_call(t3_ms_t *ms, uint32_t now)
 		ms->tx.count = T3_N_MAINT;
 		ms->tx.slot = ms->call.slot;
 		ms->tx.payload = true;
+		ms->tx.request_pddi = false;
 		ms->tx.then_return = true;
 		ms->tx.udt = false;
 		return;

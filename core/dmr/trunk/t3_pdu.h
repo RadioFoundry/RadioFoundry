@@ -48,6 +48,9 @@
 #define T3_OP_TD_GRANT_MI	56
 #define T3_OP_C_MOVE		57
 
+#define T3_FID_68	0x68u
+#define T3_ID_PDDI	0xFFFD01u
+#define T3_ID_PDUI	0xFFFD02u	// Dedicated packet-data uplink gateway
 #define T3_FID_08		0x08u	// manufacturer FID used on some absolute packet data grants
 
 // Gateway and special addresses (A.4)

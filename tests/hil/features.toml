@@ -139,6 +139,11 @@ switch = "DMR_TRUNK_TX"
 spec = "docs/spec/dmr-trunking.md"
 source = ["core/dmr/trunk", "core/radio/radio_trunk.c", "core/radio/radio_trunk.h", "core/debuglink/debuglink_t3.c"]
 
+[feature.dmr_trunk_dedicated_data]
+switch = "DMR_TRUNK_DEDICATED_DATA"
+spec = "docs/spec/dmr-dedicated-data.md"
+source = ["core/dmr/trunk", "core/dmr/dmrData.c", "core/dmr/dmrDataService.c", "core/radio/radio_trunk_cp.c"]
+
 [feature.dmr_trunk_supl]
 switch = "DMR_TRUNK_SUPL"
 spec = "docs/spec/dmr-trunking.md"

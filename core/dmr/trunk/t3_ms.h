@@ -59,6 +59,7 @@
 #define T3_OPT_ALS		0x0080	// accept Ambient Listening (6.6.2.6): the radio transmits by itself when called so
 #define T3_OPT_KILL		0x0100	// accept an authenticated kill (6.4.10); the radio core keeps it in the settings (t3_kill)
 #define T3_OPT_NO_ROAM		0x0200	// stay on a TSCC whatever its signal: no Vote Now sampling, no leaving a weak one
+#define T3_OPT_DEDICATED_DATA	0x2000	// dedicated packet-data gateway procedures for this system
 #define T3_OPT_STUN		0x0400	// accept a stun or revive (6.4.9): authenticated first with K, else as sent
 // The channel's Accept invalid CRC (channel_t.accept_bad_crc): a CSBK or MBC block that fails its CRC is taken when the
 // same block failed recently (fec/rx_seen.h), so a system whose PDUs all fail the standard check can be listened to. While the
@@ -156,6 +157,11 @@ typedef struct {
 	const uint8_t *dial;
 	uint8_t dial_n;
 } t3_cfg_t;
+
+static inline bool t3_dedicated_data(const t3_cfg_t *cfg)
+{
+	return CONFIG_DMR_TRUNK_DEDICATED_DATA && (cfg->opts & T3_OPT_DEDICATED_DATA) != 0;
+}
 
 typedef enum {
 	T3_OFF,
@@ -394,6 +400,7 @@ typedef struct {
 		uint16_t frames;	// WAIT_SLOT: frames to the chosen one; WAIT_RESP: frames left to wait
 		bool to_air;		// the last try is with the radio, not yet reported on air (t3_ms_sent)
 		uint8_t tries;
+		uint8_t busy_retries;	// dedicated downlink: retries after explicit System Busy
 		uint32_t tc_deadline;	// TRand_TC
 		uint32_t ack_deadline;	// TP_Timer / TNP_Timer
 		t3_res_t result;
@@ -484,6 +491,7 @@ typedef struct {
 		uint8_t slot;
 		bool payload;
 		bool then_return;	// back to the TSCC once sent
+		bool request_pddi;	// request the dedicated downlink after the terminal ACK
 		bool udt;		// burst is a UDT header with up[] as its nblocks blocks (the short data upload)
 		uint8_t nblocks;
 		uint8_t burst[T3_CSBK_BYTES];

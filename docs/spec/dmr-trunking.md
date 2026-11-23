@@ -28,11 +28,9 @@ it. The radio core runs the engine on a system from the codeplug (section 12) or
 Everything here comes from ETSI TS 102 361-4 (the Tier III trunking protocol), TS 102 361-1 (the air interface) and
 TS 102 361-2 (voice and generic services). Section and table numbers below are TS 102 361-4's unless marked -1 or -2.
 
-- Only the standard's PDUs and procedures, with the standard feature set ID (FID 0). A CSBK with another FID is
-  counted and ignored.
-- Only the standard's trunking protocol, no proprietary one: FID 0 PDUs with the standard's CRC and framing. A system
-  that sends its control channel with another CRC or framing fails the standard CRC checks and is never confirmed as
-  a TSCC (section 9.2 checks this on recordings).
+- The default system profile uses the standard's PDUs and procedures, with FID 0 and the standard CRC and framing.
+  All profiles accept FID 0x08 absolute packet-data grants (section 7.7). The
+  [dedicated packet-data profile](dmr-dedicated-data.md) adds the FID 0x68 terminal check and gateway procedures.
 - On a trunked system the radio transmits only the access side (section 7) and the calls it is granted.
 - Authentication only as section 7.10 gives it: with a key K, the radio answers a challenge and checks the TSCC's
   answer to its own; without one, a challenge is answered "not supported".
@@ -501,8 +499,7 @@ The number belongs to a call when the grant from that gateway to the same destin
 
 Some Tier III systems send individual packet data grants with FID `0x08` and absolute channel
 number `0xFFF`. The first continuation gives the channel definition. The radio waits for the last
-continuation and verifies the CRC across both continuations before following the grant. The grant was observed on air.
-End-to-end IP SMS delivery remains unverified.
+continuation and verifies the CRC across both continuations before following the grant.
 
 Packet data uses the conventional data stack ([dmr-data.md](dmr-data.md)) on a payload channel the TSCC grants for
 each transmission. Single slot, single item only.
@@ -534,6 +531,8 @@ The availability check for data to the radio (C_AHOY, Service_Kind 0010b) is ans
 (6.6.3.2.6). From IPI the same C_AHOY asks for the IPv4 address while the radio's own call to IPI waits (7.7 above);
 with no such call it is the check, for the network's data to the radio (a reply to its datagram, sent once it is back
 on the TSCC).
+
+Some systems use [dedicated packet-data signaling](dmr-dedicated-data.md) for individual confirmed IP SMS.
 
 **To an IP gateway (multi-part, 6.6.3.2.3).** `t3_ms_pdata_ip` asks for packet data to an IPv4 address outside the
 radio network: the C_RAND targets IPI (0xFFFEC3) with the Proxy Flag 0 (IPv4).

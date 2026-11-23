@@ -55,6 +55,7 @@ typedef struct
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
 	bool     trunked;						// default SMS uses the trunked short data service
+	bool     dedicatedData;					// uses the Tier III dedicated packet-data service
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
 	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;

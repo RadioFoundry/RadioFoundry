@@ -2414,6 +2414,39 @@ static void test_fid08_pdata_grant(void)
 	CHECK(t3_ms_data_ready(&ms, T), "ready to transmit packet data on the granted slot");
 }
 
+static void test_dedicated_uplink(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE | T3_OPT_DEDICATED_DATA, true);
+	camp_registered(&ms);
+	CHECK(t3_ms_pdata(&ms, T, T3_ID_PDUI, false) && sent_rand(&ms), "request dedicated uplink");
+
+	// Captured BSCU-to-CHU grant with the subscriber ID adapted to this fixture.
+	uint8_t hdr[T3_CSBK_BYTES] = { 0x33, 0, 0xFF, 0xF8, OWN >> 16, (OWN >> 8) & 0xFF, OWN & 0xFF,
+				      0xFF, 0xFD, 0x02 };
+	uint8_t cont[T3_CSBK_BYTES] = { 0xB3, 0, 0, 0xC0, 0x49, 0x10, 0, 0x12, 0x32, 0xC0 };
+	t3_crc_append(hdr, T3_CRC_MASK_MBC_HDR);
+	t3_crc_append(cont, 0);
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_HDR, CC, hdr);
+	T += 60;
+	t3_ms_rx(&ms, T, 1, T3_DT_MBC_CONT, CC, cont);
+	CHECK(ms.state == T3_FOLLOW && ms.call.ours && ms.call.data && ms.call.dst == T3_ID_PDUI &&
+	      ms.call.src == OWN && ms.ax.result == T3_RES_GRANTED, "addressed PDUI grant completes the uplink request");
+	poll_all(&ms);
+	CHECK(tuned.payload && tuned.slot == 2 && tuned.chan.tx_hz == 145000000u, "dedicated uplink tunes to slot 2");
+	frames(&ms, 3);
+	CHECK(t3_ms_data_ready(&ms, T), "dedicated uplink can start data TX after tuning");
+	nsent = 0;
+	t3_ms_data_done(&ms, T, true);
+	poll_all(&ms);
+	const uint8_t complete[] = { 0xAAu, 0x00u, 0x30u, 0x10u, 0xFFu, 0xFDu, 0x02u,
+				     OWN >> 16, (OWN >> 8) & 0xFFu, OWN & 0xFFu };
+	CHECK(nsent == 1 && sent_act[0].payload && sent_act[0].slot == 2 &&
+	      memcmp(sent_act[0].burst, complete, sizeof(complete)) == 0 &&
+	      t3_crc_ok(sent_act[0].burst, T3_CRC_MASK_CSBK) && ms.state == T3_CAMPED,
+	      "tell the dedicated uplink gateway the upload completed and return to the control channel");
+}
+
 // Packet data (6.6.3): the radio asks for a data channel and follows PD_GRANT / TD_GRANT; to it, the TSCC checks it is
 // there first. The data service sends on the call (the radio side), PTT doesn't
 static void test_pdata(void)
@@ -3208,6 +3241,83 @@ static void test_other_slot(void)
 	CHECK(nsent == 2 && sent_act[1].slot == 2, "a control slot after its Aloha");
 }
 
+static void test_dedicated_terminal_check(void)
+{
+	t3_ms_t ms;
+	setup(T3_OPT_PRIVATE, true);
+	camp_registered(&ms);
+	nsent = 0;
+	uint8_t check[T3_CSBK_BYTES] = {
+		0x9C, 0x68, 0x0E, 0x07, OWN >> 16, (OWN >> 8) & 0xFF, OWN & 0xFF, 0xFF, 0xFD, 0x01,
+	};
+
+	t3_crc_append(check, T3_CRC_MASK_CSBK);
+	t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, check);
+	frames(&ms, 8);
+	CHECK(nsent == 0 && ms.ax.state == T3_AX_IDLE, "a standard system ignores a dedicated terminal check");
+	cfg.opts |= T3_OPT_DEDICATED_DATA;
+
+	check[6] ^= 1u;
+	t3_crc_append(check, T3_CRC_MASK_CSBK);
+	t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, check);
+	frames(&ms, 1);
+	CHECK(nsent == 0, "another terminal's check is ignored");
+
+	check[6] ^= 1u;
+	t3_crc_append(check, T3_CRC_MASK_CSBK);
+	t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, check);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent_act[0].slot == 1 && sent[0].op == T3_OP_C_ACKU &&
+	      sent[0].u.ack.reason == T3_RC_MS_ACCEPTED && sent[0].u.ack.dst == T3_ID_PDDI &&
+	      sent[0].u.ack.src == OWN, "answer the dedicated data terminal check on its control slot");
+	CHECK(sent_act[0].burst[2] == 0x02u && sent_act[0].burst[3] == 0x88u,
+	      "match the captured native terminal reply with Response Info 1");
+	t3_csbk_t normal = ahoy(T3_SK_REGISTRATION, false, OWN, T3_ID_TSI);
+	rx(&ms, 1, &normal);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && sent_act[1].burst[3] == 0x88u, "leave the reserved bit clear on a standard reply");
+	nsent = 0;
+	frames(&ms, 3);
+	CHECK(nsent == 0, "allow the terminal reply to go out before requesting the download");
+	t3_ms_rx(&ms, T, 1, T3_DT_CSBK, CC, check);
+	frames(&ms, 1);
+	CHECK(nsent == 1 && sent[0].op == T3_OP_C_ACKU, "answer a repeat of the terminal check");
+	nsent = 0;
+	frames(&ms, 5);
+	CHECK(nsent == 0, "wait for the repeated terminal reply before requesting the download");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_PDDI &&
+	      sent[0].u.rand.kind == T3_SK_IND_DATA && sent[0].u.rand.options == 0,
+	      "request the dedicated downlink after the terminal acceptance");
+	t3_csbk_t busy = ack(T3_OP_C_ACKD, T3_RC_SYS_BUSY, OWN, T3_ID_PDDI);
+	ms.ax.tries = T3_NRAND_NR; // the site replied to the last random access attempt
+	rx(&ms, 1, &busy);
+	nsent = 0;
+	frames(&ms, 30);
+	CHECK(nsent == 0 && ms.ax.state == T3_AX_WAIT_SLOT, "let the prior slot clear after System Busy");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_PDDI, "retry the dedicated downlink");
+	rx(&ms, 1, &busy);
+	nsent = 0;
+	frames(&ms, 65);
+	CHECK(nsent == 0 && ms.ax.state == T3_AX_WAIT_SLOT, "the second System Busy waits twice as long");
+	CHECK(sent_rand(&ms) && sent[0].u.rand.dst == T3_ID_PDDI, "retry the dedicated downlink again");
+	t3_csbk_t downlink = grant(T3_OP_PD_GRANT, 999, 2, OWN, T3_ID_PDDI);
+	rx(&ms, 1, &downlink);
+	CHECK(ms.state == T3_FOLLOW && ms.call.data && !ms.call.ours && ms.ax.result == T3_RES_GRANTED,
+	      "follow the download grant as the recipient");
+	nsent = 0;
+	frames(&ms, 6);
+	uint8_t ready[] = { 0xAAu, 0x68u, 0x30u, 0x1Au, 0xFFu, 0xFDu, 0x01u,
+			    OWN >> 16, (OWN >> 8) & 0xFFu, OWN & 0xFFu };
+	CHECK(nsent == 1 && sent_act[0].payload && sent_act[0].slot == 2 &&
+	      memcmp(sent_act[0].burst, ready, sizeof(ready)) == 0 &&
+	      t3_crc_ok(sent_act[0].burst, T3_CRC_MASK_CSBK), "send captured downlink readiness on the granted slot");
+	t3_csbk_t check_payload = ahoy(T3_SK_IND_DATA, false, OWN, T3_ID_PDDI);
+	rx(&ms, 2, &check_payload);
+	frames(&ms, 1);
+	CHECK(nsent == 2 && memcmp(sent_act[1].burst, ready, sizeof(ready)) == 0,
+	      "repeat dedicated readiness when the downlink gateway checks the recipient");
+}
+
 // Accept invalid CRC: an Aloha taken with a failed CRC keeps a registration in force (no second registration once a
 // good one comes), and an MBC whose header failed stays unverified when a good PDU on the other slot comes between
 // its header and its continuation
@@ -3278,6 +3388,7 @@ int main(void)
 	test_private_call();
 	test_cancel();
 	test_ahoy();
+	test_dedicated_terminal_check();
 	test_other_slot();
 	test_broadcast();
 	test_stun();
@@ -3301,6 +3412,7 @@ int main(void)
 	test_cli_call();
 	test_pdata();
 	test_fid08_pdata_grant();
+	test_dedicated_uplink();
 	test_pdata_ip();
 	test_ip_advice();
 	test_deregister();
