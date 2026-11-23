@@ -26,6 +26,9 @@
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
+#if CONFIG_RX_TBAND
+	{ 500000000, 503000000, false }, // experimental receive only; never a transmit band
+#endif
 };
 
 // The power levels, per band (hardware-md9600.md 5.6: measured with a wattmeter). The same steps on both bands, the

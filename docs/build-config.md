@@ -2,6 +2,11 @@
 
 # Build configuration
 
+`CONFIG_RX_TBAND` defaults to `n`. It enables a board's experimental 500–503 MHz
+receive-only window, if implemented. It never expands transmit bands. This is
+separate from `RX_EXT`; it is not a sensitivity or synthesizer-lock guarantee.
+See the board's hardware record for validation and limitations.
+
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
 `config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
 in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file

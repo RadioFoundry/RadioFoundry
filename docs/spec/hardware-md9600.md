@@ -3,6 +3,28 @@
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
+## Experimental 500–503 MHz reception
+
+`CONFIG_RX_TBAND=y` adds only 500–503 MHz as a receive-only board band. The
+receive planner accepts this window; the rated-band classifier, TX planner and
+RF TX admission still refuse it. Host tests check receive sequencing and rejected
+TX calls with the PA off. The default build leaves this window disabled.
+
+On V1–V3, the receive LO uses the existing low-side first-IF calculation.
+The SKY72310 divider can represent the experimental window, but this does not
+establish the external RX VCO's tuning range or the front-end sensitivity.
+Factory receive-tuning curves are extrapolated and bounded to the DAC range;
+no factory calibration is changed. There is no known board lock-detect feedback:
+a successful programming command is not measured PLL lock.
+
+One HW V2 decoded valid control signaling during a 45-second passive test,
+with 1,787 decoded blocks and 4 CRC failures. A separate simulcast test was
+intermittent, and another test produced no decode. Reception after leaving the
+experimental window for a learned neighbor was excluded. Identity, transmit
+and registration counters remained zero. This verifies reception under those
+test conditions, not calibrated sensitivity, the whole window, or reliable
+simulcast voice decoding. Test systems and frequencies are intentionally omitted.
+
 The TYT MD-9600 and the Retevis RT90 are one dual-band mobile radio: an STM32F405VGT6 MCU, an HR_C6000 DMR baseband
 and codec chip, **two complete RF chains (one VHF, one UHF)**, each with its own synthesizer, its own RX and TX VCOs,
 its own IF receiver chip and its own PA supply switch, a 49.95 MHz first IF, a 128 x 64 monochrome LCD (ST7567) on

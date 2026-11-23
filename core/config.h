@@ -312,6 +312,9 @@
 #ifndef CONFIG_RX_EXT
 #define CONFIG_RX_EXT			1
 #endif
+#ifndef CONFIG_RX_TBAND
+#define CONFIG_RX_TBAND			0
+#endif
 #ifndef CONFIG_APRS
 #define CONFIG_APRS			CONFIG_FM
 #endif

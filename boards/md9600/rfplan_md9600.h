@@ -113,6 +113,7 @@ typedef enum { MD9600_VHF = 0, MD9600_UHF = 1 } md9600_band_t;
 
 // The band a frequency belongs to; false outside both bands
 bool md9600_band_of(uint32_t hz, uint8_t *band);
+bool md9600_rx_band_of(uint32_t hz, uint8_t *band);
 
 #define MD9600_PLL_MAX_WORDS	14u
 

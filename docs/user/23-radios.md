@@ -2,6 +2,12 @@
 
 # Radio Reference
 
+An experimental MD-9600 build with `CONFIG_RX_TBAND=y` allows reception at
+500–503 MHz. That window is always transmit-inhibited, including when a channel
+is mistakenly marked for transmit. One HW V2 has decoded live control signaling
+within this window; reliable reception throughout the window is not guaranteed;
+see [the hardware record](../spec/hardware-md9600.md#experimental-500503-mhz-reception).
+
 The rest of this manual describes what RadioFoundry does on every radio. This chapter lists what differs from radio to radio:
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.

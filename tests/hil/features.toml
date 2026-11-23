@@ -570,6 +570,11 @@ spec = "docs/spec/ui.md"
 spec = "docs/spec/radio-features.md"
 source = ["core/radio"]
 
+[feature.rx_tband]
+switch = "RX_TBAND"
+hardware = "Receiver with an experimental T-band window"
+spec = "docs/build-config.md"
+
 [feature.settings_store]
 spec = "docs/spec/settings-store.md"
 source = ["core/settings", "core/storage"]
