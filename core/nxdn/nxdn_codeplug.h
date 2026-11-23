@@ -19,12 +19,14 @@
 // A conventional channel's parameter block (2)
 #define NXDN_CP_CONV_LEN	3u
 #define NXDN_CP_4800		0x04u	// byte 0: 4800 bit/s, else 9600
+#define NXDN_CP_ALIAS_OFF	0x08u	// byte 0: suppress transmit alias; clear preserves the legacy default
 enum { NXDN_SQUELCH_RAN, NXDN_SQUELCH_SELECTIVE };
 typedef struct {
 	bool rate9600;
 	uint8_t rx_ran;		// 0: every RAN
 	uint8_t tx_ran;
 	uint8_t squelch;	// NXDN_SQUELCH_*
+	bool alias_disabled;
 } nxdn_conv_t;
 
 // Decode len bytes of a block (a short one, or none, takes the defaults); never fails: a value out of range is read as

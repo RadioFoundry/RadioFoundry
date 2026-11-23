@@ -142,7 +142,8 @@ carry four text bytes in octets 5–8. The last carries two text bytes followed 
 text bytes. Octet 9 is zero. Text is printable ASCII with zero padding. The receiver waits for the complete
 sequence and the caller identity before publishing. Partial text is cleared at a new call.
 
-Transmit takes the configured radio name at PTT when Show talker alias is on. An empty name skips the alias.
+Transmit takes the configured radio name at PTT on a stored channel with its transmit alias enabled. An empty
+name skips the alias.
 The transmitter puts both pairs of fragments in the first two superframe frames after the VCALL header,
 using both FACCH1 halves in each frame. At both rates, SACCH alternates one VCALL superframe with one alias
 fragment, repeating the four fragments in order for longer calls. SACCH carries the same nine-byte fragment

@@ -389,8 +389,8 @@ is NXDN conventional voice at 9600 bit/s (12.5 kHz) or 4800 bit/s (6.25 kHz), th
 - PTT sends a voice call to group 1 with RAN 1 at 9600 bit/s, as unit 1 until a computer sets another ID.
 - Home shows "NXDN", what PTT calls ("TG 1"), the RAN sent and the rate ("RAN 1 9600"). During a call it shows who
   calls and where, or why the call isn't played. FM's tone and width tiles say "FM only: this is NXDN".
-- With **Settings > Talk & listen > Show talker alias** on, NXDN sends the existing radio name with each call.
-  Home shows a received alias in quotes under the caller's ID when there is room.
+- With **Settings > Talk & listen > Show talker alias** on, Home shows a received alias in quotes under the
+  caller's ID when there is room. The VFO sends no alias.
 - The rate, the RANs, the unit ID and the group can be changed only from a computer for now
   (`rfoundry_debug.py radio nxdn`), and the change lasts until the radio is switched off.
 - Some radios only transmit NXDN or only receive it ([feature matrix](../feature-matrix.md)). One that only receives
@@ -403,7 +403,8 @@ open **Channels**, **New channel from current settings** and save it), or any ch
 it says NXDN, set the RAN and rate, and save. A channel made NXDN starts with RAN 1 at 9600 bit/s. The channel keeps the rate, the RANs, the
 squelch and the group (when a contact has that group; else group 1).
 
-- Home shows it as in the VFO. The channel's settings show "NXDN" as the mode.
+- Home shows it as in the VFO. The channel's settings show "NXDN" as the mode. Set **Talker Alias** in the
+  [Codeplug Editor](04-programming.md#p25-and-nxdn) to send the radio name with calls on the channel.
 - **OK** on Mode steps to FM, DMR, P25 (on a radio that runs it), then back to NXDN with its settings as they were.
   Saving the channel as another mode removes its NXDN settings: the radio asks first ("Save as FM?", "Save as
   DMR?", or "Unsaved Changes" for P25).

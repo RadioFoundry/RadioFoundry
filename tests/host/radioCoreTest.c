@@ -8525,7 +8525,7 @@ static void test_nxdn_tx(void)
 	CHECK(nfar_heard.call.vcall.src == 1 && nfar_heard.call.vcall.dst == 1 &&
 	      nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP && !(nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
 #if CONFIG_NXDN_OTA_ALIAS
-	CHECK(strcmp(nfar_heard.call.alias, "Q0TEST") == 0);
+	CHECK(nfar_heard.call.alias[0] == '\0');	// temporary NXDN has no stored alias setting
 #endif
 	req(RREQ_PTT, 0);
 	CHECK(sm.view.state == RS_TX && hw.keyed);	// the frame on air is finished first
@@ -8536,11 +8536,6 @@ static void test_nxdn_tx(void)
 	radio_nxdn_stats(&st);
 	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
 
-#if CONFIG_NXDN_OTA_ALIAS
-	settings_t *st_edit = settings_begin();
-	st_edit->ui_flags &= (uint8_t)~SETTINGS_UI_ALIAS;
-	settings_end(now);
-#endif
 	// Settings sent while transmitting: in force for the next transmission
 	req(RREQ_PTT, 1);
 	run(100);
@@ -8552,12 +8547,6 @@ static void test_nxdn_tx(void)
 	radio_req_nxdn_settings(&s);
 	run(300);
 	CHECK(nfar_heard.call.vcall.src == 1);	// this one goes on as it began
-#if CONFIG_NXDN_OTA_ALIAS
-	CHECK(nfar_heard.call.alias[0] == '\0');
-	st_edit = settings_begin();
-	st_edit->ui_flags |= SETTINGS_UI_ALIAS;
-	settings_end(now);
-#endif
 	req(RREQ_PTT, 0);
 	run(500);
 	req(RREQ_PTT, 1);
@@ -9028,6 +9017,11 @@ static void test_nxdn_stored(void)
 	CHECK(sm.view.state == RS_IDLE);
 
 	// PTT: the channel's TX RAN, our unit ID and its group, on its TX frequency at 12.5 kHz
+#if CONFIG_NXDN_OTA_ALIAS
+	settings_t *st_edit = settings_begin();
+	st_edit->ui_flags &= (uint8_t)~SETTINGS_UI_ALIAS;
+	settings_end(now);
+#endif
 	nfar_begin(true, 8, 2001, false, 1);
 	run(100);
 	req(RREQ_PTT, 1);
@@ -9035,9 +9029,28 @@ static void test_nxdn_stored(void)
 	run(1000);
 	CHECK(nfar_heard.starts == 1 && nfar_heard.call.ran == 8 && nfar_heard.call.vcall.src == 4321 &&
 	      nfar_heard.call.vcall.dst == 20 && nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP);
+#if CONFIG_NXDN_OTA_ALIAS
+	CHECK(strcmp(nfar_heard.call.alias, "Q0TEST") == 0);
+#endif
 	req(RREQ_PTT, 0);
 	run(600);
 	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+#if CONFIG_NXDN_OTA_ALIAS
+	// The codeplug's Disabled option suppresses the name even when Show talker alias is on.
+	st_edit = settings_begin();
+	st_edit->ui_flags |= SETTINGS_UI_ALIAS;
+	settings_end(now);
+	stored_nxdn[3].conv.alias_disabled = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 8, 2001, false, 1);
+	req(RREQ_PTT, 1);
+	run(1600);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.src == 4321 && nfar_heard.call.alias[0] == '\0');
+	req(RREQ_PTT, 0);
+	run(600);
+#endif
 
 	// The debug link's settings don't reach a stored channel
 	s.rx_ran = 33;

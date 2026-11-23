@@ -1912,6 +1912,8 @@
  "editor.nxdn.tx_key": "Transmit key",
  "editor.nxdn.tx_clear": "Clear",
  "editor.nxdn.tx_key_help": "Select a key ID from this system. Firmware without NXDN system-key support may transmit in the clear.",
+ "editor.nxdn.alias": "Talker Alias",
+ "editor.nxdn.alias_disabled": "Disabled",
  "editor.nxdn.rate": "Rate",
  "editor.nxdn.rate9600": "9600 bit/s",
  "editor.nxdn.rate4800": "4800 bit/s",

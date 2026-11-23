@@ -7,7 +7,7 @@
 import { u8, u16, put16, grow } from "./modebytes.js";
 
 export const RAN_MAX = 63, TX_RAN_SET = 0x80, TX_RAN_DEFAULT = 1, RATE_4800 = 0x04;
-const SCRAMBLER = 1, SEED_MAX = 32767;
+const ALIAS_OFF = 0x08, SCRAMBLER = 1, SEED_MAX = 32767;
 export const UNIT_MAX = 65519, ID_ALL = 0xFFFF;
 
 // The TX RAN a block that leaves it unset sends: the RX RAN, RAN 1 when that is every RAN (0)
@@ -30,6 +30,7 @@ export function decodeConv(b) {
 	return {
 		rate9600: (f & RATE_4800) === 0,
 		squelch: (f & 3) === 1 ? 1 : 0,
+		aliasDisabled: (f & ALIAS_OFF) !== 0,
 		rxRan: rx,
 		...(b?.length >= 5 && u8(b, 3) === SCRAMBLER ? { txKeyId: u8(b, 4) } : {}),
 		txRan: (t & 0xC0) === TX_RAN_SET ? t & RAN_MAX : txDefault(rx),
@@ -39,7 +40,8 @@ export function decodeConv(b) {
 export function encodeConv(p, prev = null) {
 	const v = grow(prev, p.txKeyId != null ? 5 : 3);
 	const rx = p.rxRan >= 0 && p.rxRan <= RAN_MAX ? p.rxRan : 0;
-	v[0] = (v[0] & ~7) | (p.squelch === 1 ? 1 : 0) | (p.rate9600 ? 0 : RATE_4800);
+	v[0] = (v[0] & ~(7 | ALIAS_OFF)) | (p.squelch === 1 ? 1 : 0) | (p.rate9600 ? 0 : RATE_4800) |
+		(p.aliasDisabled ? ALIAS_OFF : 0);
 	v[1] = rx;
 	v[2] = p.txRan === txDefault(rx) ? 0 : TX_RAN_SET | (p.txRan & RAN_MAX);
 	if (p.txKeyId != null) {
@@ -77,12 +79,14 @@ export const nxdnKind = {
 	flags: {},
 	// in the params only when set: the traffic key the channel transmits with
 	optionalParams: ["txKeyId"],
-	newParams: () => ({ rate9600: true, squelch: 0, rxRan: 0, txRan: TX_RAN_DEFAULT }),
+	newParams: () => ({ rate9600: true, squelch: 0, rxRan: 0, txRan: TX_RAN_DEFAULT, aliasDisabled: true }),
 	decode: decodeConv,
 	encode: encodeConv,
 	fields: () => [
 		{ key: "rate9600", label: "editor.nxdn.rate", type: "select", options: () => [[true, "editor.nxdn.rate9600"], [false, "editor.nxdn.rate4800"]] },
 		{ key: "squelch", label: "editor.nxdn.squelch", type: "select", options: () => [[0, "editor.nxdn.squelch0"], [1, "editor.nxdn.squelch1"]] },
+		{ key: "aliasDisabled", label: "editor.nxdn.alias", type: "select",
+			options: () => [[true, "editor.nxdn.alias_disabled"], [false, "editor.col.name"]] },
 		ranField("rxRan", "editor.nxdn.rx_ran", { help: "editor.nxdn.ran_any" }),
 		// blank: the RX RAN, RAN 1 when that is every RAN
 		ranField("txRan", "editor.nxdn.tx_ran", { blank: (p) => txDefault(p.rxRan) }),

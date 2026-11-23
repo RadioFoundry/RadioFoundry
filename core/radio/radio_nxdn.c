@@ -109,6 +109,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		c->rate9600 = cc.conv.rate9600;
 		c->rx_ran = cc.conv.rx_ran;
 		c->tx_ran = cc.conv.tx_ran;
+#if CONFIG_NXDN_OTA_ALIAS
+		c->tx_alias_disabled = cc.conv.alias_disabled;
+#endif
 		if (cc.conv.squelch == NXDN_SQUELCH_SELECTIVE)
 			c->rx_gid = cc.target_unit ? (uint16_t)NXDN_ID_ALL : cc.target;
 		c->unit_id = cc.unit_id;
@@ -127,6 +130,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		}
 		return;
 	}
+#if CONFIG_NXDN_OTA_ALIAS
+	c->tx_alias_disabled = true;	// no stored channel to enable the alias
+#endif
 	c->rate9600 = set.rate9600;
 	c->rx_ran = set.rx_ran;
 	c->tx_ran = set.tx_ran;
@@ -391,7 +397,7 @@ static bool nxdn_no_tx(void)
 void radio_nxdn_set_tx_alias(const char *alias)
 {
 	if (eng != NULL) {
-		strncpy(eng->cfg.tx_alias, alias, NXDN_ALIAS_LEN);
+		strncpy(eng->cfg.tx_alias, eng->cfg.tx_alias_disabled ? "" : alias, NXDN_ALIAS_LEN);
 		eng->cfg.tx_alias[NXDN_ALIAS_LEN] = '\0';
 	}
 }
