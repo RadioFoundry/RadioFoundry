@@ -889,7 +889,11 @@ void hrc6000_air_rx_restart(hrc6000_air_t *a)
 {
 	lock(a);
 	if (a->tap) {
-		copy_on(a);	// the tap's copy, after the board's mode entry rewrote the chip (open and tap exclude)
+		// The tap's copy after the board's mode entry (suspend turned it off). A retune leaves a running copy as it
+		// is: setting it up again would drop the next half. Open and tap exclude each other
+		if (!a->copy) {
+			copy_on(a);
+		}
 	} else if (a->open) {
 		if (a->tx == HRC6000_AIR_RX) {
 			rx_setup(a);

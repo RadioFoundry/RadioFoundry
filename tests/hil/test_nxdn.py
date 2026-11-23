@@ -499,19 +499,25 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
             if stopped():
                 skip("no_hw", f"register 0x{reg_addr:X} bit 0x{bit:X} reads off while the copy runs: not the copy's "
                      "interrupt on this board")
-            h0 = as_int(radio.view(["air"]).get("airp.halves")) or 0
             set_off(True)
         except DebugLinkError as e:
+            try:	# a write that went through before the error: never leave the copy off
+                if stopped():
+                    set_off(False)
+            except DebugLinkError:
+                pass
             skip("not_built", f"CHIP_REG can't reach the copy's interrupt bit (status {e.status})")
-        # Halves come every 32 ms: more than 2 in 100 ms with the bit off means it isn't what stops them
-        time.sleep(0.1)
-        h1 = as_int(radio.view(["air"]).get("airp.halves")) or 0
-        if h1 > h0 + 2:
-            set_off(False)
-            skip("no_hw", f"halves still came with register 0x{reg_addr:X} bit 0x{bit:X} off ({h0}->{h1}): not the "
-                 "copy's interrupt on this board")
         r0 = as_int(a0.get("airp.copy_restarts")) or 0
         try:
+            # Halves come every 32 ms: more than 2 in 100 ms with the bit off, and no watchdog restart in between
+            # (one 200 ms after the last half brings them back), means the bit isn't what stops them
+            v = radio.view(["air"])
+            h0 = as_int(v.get("airp.halves")) or 0
+            time.sleep(0.1)
+            v = radio.view(["air"])
+            if (as_int(v.get("airp.halves")) or 0) > h0 + 2 and (as_int(v.get("airp.copy_restarts")) or 0) == r0:
+                skip("no_hw", f"halves still came with register 0x{reg_addr:X} bit 0x{bit:X} off ({h0}->"
+                     f"{v.get('airp.halves')}): not the copy's interrupt on this board")
             end = time.monotonic() + RECOVER_S
             while True:
                 a1 = radio.view(["air"])
@@ -525,9 +531,10 @@ def test_nxdn_rx_after_lost_copy(radio, sdr_bench, pytestconfig):
         finally:
             if stopped():
                 set_off(False)
-        assert a1.get("airp.copy_lost_regs"), "the first loss's controller words are missing (airp.copy_lost_regs)"
         time.sleep(0.5)
         a2 = radio.view(["air"])
+        # From the later view: the count rises in the provider's poll, the record a moment after it
+        assert a2.get("airp.copy_lost_regs"), "the first loss's words are missing (airp.copy_lost_regs)"
         got.update(restarts=(r0, as_int(a2.get("airp.copy_restarts"))), regs=a2.get("airp.copy_lost_regs"),
                    halves=(as_int(a1.get("airp.halves")), as_int(a2.get("airp.halves"))))
         # 500 ms holds about 15 halves (one every 32 ms)

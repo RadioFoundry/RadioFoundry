@@ -1276,6 +1276,10 @@ static void test_copy_watchdog(void)
 	hrc6000_air_poll(AIR);
 	CHECK(AIR->st.copy_restarts == 1);
 	copy_setup_check();
+	// A retune (rx_restart with the copy running) leaves the tap's copy alone
+	nx = 0;
+	hrc6000_air_rx_restart(AIR);
+	CHECK(AIR->copy && nx == 0);
 	hrc6000_air_suspend(AIR);
 	CHECK(!AIR->copy);
 	nx = 0;

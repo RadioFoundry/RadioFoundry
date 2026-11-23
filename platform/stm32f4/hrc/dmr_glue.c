@@ -552,7 +552,9 @@ static void dmr_task(void *arg)
 			uint32_t w[3];
 			lost_words(w);
 			hrc6000_air_poll(AIR);	// the engine is halted: nothing of its own to pop
-			air_lost_check(w);
+			if (AIR->st.copy_restarts != air_lost.seen) {
+				air_lost_check(w);
+			}
 			continue;
 		}
 #endif

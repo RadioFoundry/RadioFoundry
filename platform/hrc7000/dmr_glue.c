@@ -283,7 +283,9 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 			uint32_t pic[4];
 			pic_words(pic);
 			hrc7000_air_poll(AIR);	// the engine is halted, and its queue is the session's memory
-			air_lost_check(pic);
+			if (AIR->st.copy_restarts != air_lost.seen) {
+				air_lost_check(pic);
+			}
 			continue;
 		}
 #endif
