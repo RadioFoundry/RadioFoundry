@@ -768,8 +768,8 @@ dmrAesTest: dmrAesTest.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrAes.h $(CORE)/dmr/d
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dmrAesTest.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c \
 		$(CORE)/dmr/ambe/ambeFec.c
 run: run-aes
-run-aes: dmrAesTest
-	./dmrAesTest
+run-aes: $(call suites,dmrAesTest)
+.PHONY: run-aes
 
 # The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
 TESTS   += micGainTest
