@@ -403,8 +403,10 @@ export function makeStockRoutes(host) {
 	//
 	// Which SoC answers is checked before each erase (Iap.whose: each SoC reads its own NAND), so an image never goes to
 	// the other SoC. The main SoC's pages come from its application in the connect step (c.mainPrint: on the cable only the
-	// main SoC's application answers), else from an earlier install on this computer (knownMain). With neither (a radio
-	// found in update mode whose main SoC this page never read) the user confirms what the screen shows. Pages that can't
+	// main SoC's application answers), else from an earlier install on this computer (knownMain). Without a read in the
+	// connect step and with no remembered pages matching (a radio found in update mode whose main SoC this page never read,
+	// another radio installed from this computer before, or pages that changed since) the user confirms what the screen
+	// shows: remembered pages alone never refuse a loader, or that radio could never be installed. Pages that can't
 	// tell the SoCs apart (Iap telling) stop the install. The second step takes only a loader whose pages differ.
 	//
 	// Every wait says what is wrong and what to do: the normal firmware answering, the other SoC's loader, nothing at all,
@@ -556,8 +558,8 @@ export function makeStockRoutes(host) {
 							p.print = who;
 							break;
 						}
-						if (i === 0 && !p.print && !known.length) {
-							// nothing to check against: what the screen shows decides, once
+						if (i === 0 && !p.print) {
+							// nothing read from this radio to check against: what the screen shows decides, once
 							await new Promise((resolve) => {
 								say(own("flash.both.confirm_a"), h("div", { class: "actions" }, button(t(own("flash.both.confirm_yes")), () => { confirmed = true; say(null); resolve(); }, { primary: true })), false);
 								stop.signal.addEventListener("abort", resolve, { once: true });
