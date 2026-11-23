@@ -152,11 +152,12 @@ static void test_toggles(void)
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE }, { KEYFN_TALK_LABEL, 19, ACT_TALK_LABEL },
+		{ KEYFN_SCAN_SKIP, 20, ACT_SCAN_SKIP },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 20);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 21);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -363,6 +364,7 @@ static void test_home_keys(void)
 	keyassign_build_home(hm, HN, home, 2, 1, s);
 	CHECK(memcmp(hm, hb, sizeof(hm)) == 0);
 	CHECK(keyassign_home_allowed(KEYFN_SCAN, false) && !keyassign_home_allowed(KEYFN_MONITOR, false));
+	CHECK(keyassign_home_allowed(KEYFN_SCAN_SKIP, false) && keyassign_home_allowed(KEYFN_SCAN_SKIP, true));
 	CHECK(!keyassign_home_allowed(KEYFN_TONE_BURST, false) && !keyassign_home_allowed(KEYFN_EMERGENCY, true));
 
 	// P1 press: scan. P2 left alone

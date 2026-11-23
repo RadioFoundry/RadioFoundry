@@ -159,6 +159,7 @@ bool ui_has_action(uint8_t action);
 void ui_apply_setting(uint8_t id, int32_t v);
 // Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
 void ui_scan_toggle(void);
+void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
 // Actions for the last caller (CONTEXT on Home), or a toast when there is none
 void ui_open_caller_actions(void);
 // A list row's number key ('1'..'9', '0')

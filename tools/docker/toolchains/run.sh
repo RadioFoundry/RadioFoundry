@@ -20,7 +20,11 @@ if ! have_image "$IMG"; then
 	*) echo "run: image $IMG not here" >&2; exit 3 ;;
 	esac
 fi
-# safe.directory: the tree may belong to another user than the container's (git only reads it for version strings)
-# shellcheck disable=SC2046
-exec "$ENGINE" run --rm $(run_opts) -v "$ROOT:$ROOT" -w "$ROOT" -e HOME=/tmp -e JOBS="${JOBS:-$NCPU}" \
+# RFOUNDRY_THIRD_PARTY: the other checkout and the git directories its pin check reads
+. "$HERE/../third_party_opts.sh"
+TP_OPTS=$(tp_opts "$ROOT")
+# safe.directory: the tree may belong to another user than the container's (git only reads it, for version strings
+# and the third_party pin check)
+# shellcheck disable=SC2046,SC2086
+exec "$ENGINE" run --rm $(run_opts) $TP_OPTS -v "$ROOT:$ROOT" -w "$ROOT" -e HOME=/tmp -e JOBS="${JOBS:-$NCPU}" \
 	-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' "$IMG" "$@"

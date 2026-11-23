@@ -129,9 +129,39 @@ typedef struct {
 	uint32_t overruns;	// ... dropped: the task was behind
 	uint32_t chunks;	// chunks handed to the framer (AIR_EV_RX)
 	uint32_t copy_restarts;	// the copy set up again after no half came for a while (a tap provider)
-	uint32_t lost_ms;	// ... the first since start-up: its uptime (0: none) and four words of the platform's interrupt
-	uint32_t lost_regs[4];	// controller just before the poll that found it, as the provider's source lists them
+	uint32_t lost_ms;	// ... the first since start-up or a stats reset: its uptime (0: none) and four words the
+	uint32_t lost_regs[4];	// platform took around the poll that found it, as its provider's spec lists them
 } air_rx_counts_t;
+
+// A tap provider receiving this long with no copy half (one comes every few tens of ms), in a session or for the
+// board's baseband tap, sets the copy up again and counts it in copy_restarts: a copy that stopped would otherwise stay
+// deaf until the session or the tap ends
+#define AIR_COPY_STALL_US	200000u
+
+// The platform's record of the first copy restart (air_rx_counts_t.lost_ms, lost_regs), one copy for every platform
+typedef struct {
+	uint32_t seen;		// copy_restarts at the last note (0 again when a session or the tap starts)
+	uint32_t ms;
+	uint32_t regs[4];
+} air_lost_rec_t;
+
+// After the provider's poll, atomic against every other task (the stats reset and the view run in others; a lock
+// that masks only the modem's sources is not enough): true when copy_restarts rose since the last note, keeping
+// regs and the time when it is the first
+static inline bool air_lost_note(air_lost_rec_t *r, uint32_t restarts, const uint32_t regs[4], uint32_t now_ms)
+{
+	if (restarts == r->seen) {
+		return false;
+	}
+	r->seen = restarts;
+	if (r->ms == 0) {
+		for (unsigned i = 0; i < 4u; i++) {
+			r->regs[i] = regs[i];
+		}
+		r->ms = now_ms | 1u;
+	}
+	return true;
+}
 
 // A provider. One session at a time: open ... close. The core stops the board's DMR stack before open (the provider
 // may run on its chip, interrupts and task) and starts it again after close. What every provider keeps while a
