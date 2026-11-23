@@ -3536,6 +3536,7 @@ static void test_dmr_voice_features(void)
 	run(50);
 	settings_read(&sv);
 	uint32_t res0 = sv.aes_mi_res;
+	settings_t older = sv;
 	CHECK(res0 != 0);
 	first = sim.air_count;
 	tx_once();
@@ -3587,6 +3588,34 @@ static void test_dmr_voice_features(void)
 			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
 			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
 	CHECK(mi3 == res0);
+	// Restore a settings record that was saved before this over, then let the radio repair it between overs.
+	uint32_t res1 = sv.aes_mi_res;
+	*settings_begin() = older;
+	settings_end(now);
+	CHECK(settings_flush() && SETTINGS_FIELD(aes_mi_res) == res0);
+	run(RADIO_POLL_MS + 5);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	CHECK(!settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+	CHECK(settings_flush() && settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+
+	// The repaired record, not the restored one, supplies the next boot's first MI.
+	dmr_start(true);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(settings_flush());
+	run(RADIO_POLL_MS + 5);
+	first = sim.air_count;
+	tx_once();
+	uint32_t mi4 = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi4 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi4 == res1 && mi4 != mi3);
 	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
 	run(50);
 	first = sim.air_count;

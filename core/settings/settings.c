@@ -278,6 +278,20 @@ uint32_t settings_read_field(size_t offset, size_t size)
 	return v;
 }
 
+bool settings_u32_is_saved(size_t offset, uint32_t value)
+{
+	if (offset > sizeof(live) - sizeof(value)) {
+		return false;
+	}
+	storage_quick_lock();
+	ensure();
+	bool match = have_flash &&
+		memcmp((const uint8_t *)&live + offset, &value, sizeof(value)) == 0 &&
+		memcmp((const uint8_t *)&saved + offset, &value, sizeof(value)) == 0;
+	storage_quick_unlock();
+	return match;
+}
+
 settings_t *settings_begin(void)
 {
 	storage_quick_lock();

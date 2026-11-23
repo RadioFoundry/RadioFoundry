@@ -507,6 +507,8 @@ void settings_read(settings_t *out);
 uint32_t settings_read_field(size_t offset, size_t size);
 #define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
 							      sizeof(((settings_t *)0)->f)))
+// A 32-bit field equals value both in force and in the last saved record, checked under one lock.
+bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);

@@ -277,6 +277,9 @@ Burst F's field is written by the modem driver (`hal_dmr_modem_t.set_burst_f`, b
 of another make needs it: without it such a receiver played the first superframe and then noise, and through a
 repeater the over played garbled. Between two radios running this firmware it isn't needed, since our RX counts from
 the PI header. Which modems have it: [feature-matrix.md](../feature-matrix.md) (the HR_C6000 is #864).
+In an [on-air test](https://github.com/RadioFoundry/RadioFoundry/pull/758#issuecomment-7090126707), one repeater
+preserved the PI header and MI fragments but replaced burst F's field on its outbound. A late joiner there can
+receive the MI fragments without receiving the algorithm and key ID from burst F.
 
 TX embeds the next superframe's MI after encrypting the voice. Append the four-bit CRC (polynomial 0x13, initial zero,
 final XOR 0xF, MSB first) to the 32-bit MI and split the result into three 12-bit words, most significant first. Each
@@ -301,10 +304,11 @@ position that never repeats, not one that can't be guessed (the late-entry field
 | After a restart | the sequence goes on from the saved reservation, and TX is refused (`aes_wait`) until the next one is saved, about 2 s (the settings save delay). A settings store in RAM only never saves one: AES TX stays refused |
 | Past the reservation | the hook refuses the burst (silence goes out); `dmrAesNewMi` returns 0 and the over is refused |
 
-Two radios with the same key meet only if their stretches of the sequence do. Limits: a factory reset, or a settings
-restore from before, brings back an older position (or none) and can repeat keystream under the same key; change
-the key after either. The period is 2^32 - 1 superframes; a key that has carried a lot of traffic should be changed
-(`docs/user/09-dmr.md`).
+Two radios with the same key meet only if their stretches of the sequence do. After a settings restore while the
+radio is running, the radio writes back its last saved reservation between overs. TX continues from the in-memory
+position. A restart before the repair reaches flash, a restore while the radio is off, or a factory reset can still
+repeat keystream under the same key. Change the key in those cases or if unsure the repair was saved. The period is
+2^32 - 1 superframes; change a key that has carried a lot of traffic (`docs/user/09-dmr.md`).
 
 #### 5.1.2 Open points
 

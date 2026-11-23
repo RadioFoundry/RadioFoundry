@@ -418,9 +418,9 @@ static void test_mi_sequence(void)
 	CHECK(dmrAesNewMi(1000, &st) == 0, "reservation not saved yet");
 	dmrAesSeqSettle(&q);
 	dmrAesSeqReserved(&q, r + 1);
-	CHECK(q.left == 0, "another value saved: not this reservation");
+	CHECK(q.left == 0 && q.end == 0, "another value saved: not this reservation");
 	dmrAesSeqReserved(&q, r);
-	CHECK(q.left == DMR_AES_SEQ_RESERVE, "reserved");
+	CHECK(q.left == DMR_AES_SEQ_RESERVE && q.end == r, "reserved");
 
 	// Over 1: three superframes, the third cut short after burst B
 	uint32_t mi1 = dmrAesNewMi(1000, &st);
@@ -480,7 +480,7 @@ static void test_mi_sequence(void)
 
 	// A restart: on from the saved reservation, nothing usable until the next one is saved
 	dmrAesSeqStart(&q, r);
-	CHECK(q.next == r && q.left == 0 && dmrAesNewMi(6000, &st) == 0, "restart");
+	CHECK(q.next == r && q.end == r && q.left == 0 && dmrAesNewMi(6000, &st) == 0, "restart");
 	CHECK(dmrAesSeqReserve(&q) == dmrAesSeqAdvance(r, DMR_AES_SEQ_RESERVE), "restart reserves past the saved one");
 
 	// The zero state never leaves zero: never a seed

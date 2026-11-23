@@ -258,6 +258,7 @@ void dmrAesSeqStart(dmrAesSeq_t *q, uint32_t saved)
 {
 	dmrAesSeqInit(q);
 	q->next = saved;	// left stays 0: the positions from here on are reserved by the next save, not this one
+	q->end = saved;
 }
 
 uint32_t dmrAesSeqAdvance(uint32_t w, uint32_t n)
@@ -320,6 +321,7 @@ void dmrAesSeqReserved(dmrAesSeq_t *q, uint32_t saved)
 		return;
 	// The reservation ends DMR_AES_SEQ_RESERVE past where next was when it was made
 	q->left = q->pending_used < DMR_AES_SEQ_RESERVE ? DMR_AES_SEQ_RESERVE - q->pending_used : 0;
+	q->end = saved;
 	q->pending = 0;
 }
 

@@ -318,8 +318,9 @@ What AES does not do:
 - A clear call on an AES channel is still played.
 - Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
   keys.
-- After a factory reset, or after restoring old settings, give the key a new value (or generate a new one): the radio
-  may reuse part of an encryption sequence it already sent under that key.
+- Change the key after a factory reset. The radio repairs its saved encryption position after a settings restore
+  while it's running, but a restart before it saves the repair can reuse part of the sequence. Change the key if
+  settings were restored while the radio was off or you're unsure the repair was saved.
 - Change a key that has carried a lot of traffic, for example once a year on a busy channel.
 
 To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).

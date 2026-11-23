@@ -2235,16 +2235,22 @@ static void aes_seq_poll(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	dmrAesSeqSettle(&aes_seq);
+	uint32_t stored = SETTINGS_FIELD(aes_mi_res);
+
 	if (aes_seq.pending != 0) {
-		settings_t st;
-		settings_stats_t ss;
-		settings_read(&st);
-		settings_get_stats(&ss);
-		if (st.aes_mi_res != aes_seq.pending) {
+		if (stored != aes_seq.pending) {
 			dmrAesSeqDropPending(&aes_seq);		// overwritten (a settings restore): asked again
-		} else if (!ss.dirty) {
-			dmrAesSeqReserved(&aes_seq, st.aes_mi_res);
+		} else if (settings_u32_is_saved(offsetof(settings_t, aes_mi_res), stored)) {
+			dmrAesSeqReserved(&aes_seq, stored);
 		}
+		return;
+	}
+	// A restore can replace the flash reservation without changing the positions still in use in RAM.
+	// Repair it even off AES channels, without rewinding or allocating more positions.
+	if (aes_seq.end != 0 && stored != aes_seq.end) {
+		settings_t *st = settings_begin();
+		st->aes_mi_res = aes_seq.end;
+		settings_end(now_ms);
 		return;
 	}
 	if (sm->view.ch.kind != CODEPLUG_KIND_DMR_AES) {

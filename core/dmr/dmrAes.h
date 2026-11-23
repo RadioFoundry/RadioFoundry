@@ -61,6 +61,7 @@ void dmrAesApplyBurst(const uint8_t ks[DMR_AES_BURST_KS_BYTES], uint8_t ambe27[2
 
 typedef struct {
 	uint32_t next;		// the MI of the next over, 0 = no position yet (never seeded, or not loaded)
+	uint32_t end;		// the last saved reservation's end, 0 = none
 	uint32_t left;		// superframes from next that are inside the saved reservation (0: TX refused)
 	uint32_t tx_mi;		// the over in progress (dmrAesNewMi), 0 = none
 	uint32_t tx_used;	// superframes of it the hook encrypted, a partly sent one included
