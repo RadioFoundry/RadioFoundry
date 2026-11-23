@@ -62,6 +62,7 @@ static int8_t knob_seen;		// the knob's last level (percent) the UI saw, -1 = no
 static bool dirty = true;
 static uint32_t draws;
 static bool has_quick_key;
+static bool has_context_key;
 // Long QUICK or long Back unlocks the keys. A radio with neither (side keys only) is never locked by auto lock: only a
 // side key set to key lock could unlock it
 static bool has_unlock_key;
@@ -75,41 +76,6 @@ static const char *home_hint_keys(void)
 		TR(HOME_HINT_MENU_HOLD_QUICK, "OK Menu  Hold OK Quick");
 }
 
-// Name the assigned Recent key, not the fixed context key or the last caller.
-// Prefer a press over a hold when more than one key opens the list.
-static bool home_recent_hint(sbuf_t *b, bool compact)
-{
-#if CONFIG_KEY_ASSIGN
-	for (uint8_t hold = 0; hold < 2; hold++) {
-		for (uint8_t role = 0; role < board.side_key_count + board.home_key_count && role < UI_KEY_ROLES; role++) {
-			uint8_t id = UI_SET_KEY_FIRST + 2u * role;
-			if (ui_svc_setting_get(id + hold) != KEYFN_RECENT)
-				continue;
-			// Tone burst owns both edges; its stored hold assignment cannot run.
-			if (role < board.side_key_count && ui_svc_setting_get(id) == KEYFN_TONE_BURST)
-				continue;
-			const char *name = role < board.side_key_count ?
-				(board.side_key_names ? board.side_key_names[role] : NULL) :
-				(board.home_key_names ? board.home_key_names[role - board.side_key_count] : NULL);
-			if (name)
-				sb_str(b, name);
-			else {
-				sb_str(b, TR(SET_LABEL_KEY_N, "Key "));
-				sb_u32(b, role + 1u, 1);
-			}
-			if (hold)
-				sb_str(b, compact ? TR(HOME_HINT_HOLD_SHORT, "h") : TR(SET_LABEL_KEY_N_HOLD, " hold"));
-			sb_chr(b, compact ? ':' : ' ');
-			sb_str(b, compact ? TR(HOME_HINT_RECENT_SHORT, "Rcnt") : TR(TITLE_RECENT, "Recent"));
-			return true;
-		}
-	}
-#else
-	(void)b;
-	(void)compact;
-#endif
-	return false;
-}
 #if CONFIG_HOTSPOT
 static bool hs_diag;	// hotspot mode: the diagnostics page instead of the Hotspot screen
 #endif
@@ -484,8 +450,7 @@ static void recent_update(const radio_view_t *v)
 #endif
 
 #if CONFIG_P25_ALIAS
-static uint32_t p25_alias_seen, p25_alias_ms;
-static bool p25_alias_visible;
+static uint32_t p25_alias_seen;
 
 const char *ui_p25_caller_alias(const radio_view_t *v)
 {
@@ -506,16 +471,6 @@ const char *ui_p25_caller_alias(const radio_view_t *v)
 	return "";
 }
 
-const char *ui_p25_alias_hold(const radio_view_t *v)
-{
-	const radio_p25_view_t *p = &v->p25;
-	if (!p25_alias_visible || now - p25_alias_ms >= 2000 || v->ch.mode != RADIO_MODE_P25 ||
-	    v->state == RS_TX || !(p->flags & RADIO_P25_ON) ||
-	    (p->trunk != RADIO_P25_TRUNK_OFF && p->trunk != RADIO_P25_TRUNK_CONTROL) ||
-	    p->alias_session != p->call_session || p->alias_event.call != p->call_number)
-		return NULL;
-	return p->alias_event.name;
-}
 
 static void recent_p25_alias(const radio_view_t *v)
 {
@@ -523,8 +478,6 @@ static void recent_p25_alias(const radio_view_t *v)
 	const p25_alias_event_t *a = &p->alias_event;
 	if (a->serial && a->serial != p25_alias_seen) {
 		p25_alias_seen = a->serial;
-		p25_alias_ms = now;
-		p25_alias_visible = true;
 		bool found = false;
 		for (uint8_t i = 0; i < recent_n; i++) {
 			ui_recent_t *r = &recent[i];
@@ -555,11 +508,6 @@ static void recent_p25_alias(const radio_view_t *v)
 		if (ui_target.p25 && ui_target.p25_session == p->alias_session &&
 		    ui_target.p25_call == a->call && ui_target.id == a->src)
 			strcpy(ui_target.name, a->name);
-		dirty = true;
-	}
-	if (p25_alias_visible && (now - p25_alias_ms >= 2000 || v->ch.mode != RADIO_MODE_P25 ||
-	    v->state == RS_TX || p->alias_session != p->call_session || p->alias_event.call != p->call_number)) {
-		p25_alias_visible = false;
 		dirty = true;
 	}
 }
@@ -899,6 +847,16 @@ static void handle_event(const ui_event_t *ev)
 		banner(UI_BANNER_INFO, false, 0, TR(HOTSPOT_BANNER_STARTED_BY_HOST, "Hotspot started by host"),
 			TR(HOTSPOT_BANNER_OK_STOPS, "OK stops it"));
 		break;
+#if CONFIG_APRS_RX
+	case UI_EV_APRS_MESSAGE:
+		sb_str(&b, TR(APRS_BANNER_MSG_FROM, "APRS message from "));
+		sb_str(&b, ev->name);
+		banner(UI_BANNER_APRS_MESSAGE, false, 0, title, ev->text);
+		if (ui_st.message_tone)
+			ui_svc_beep(UI_BEEP_MESSAGE);
+		vibrate(UI_VIBE_MESSAGE);
+		break;
+#endif
 	case UI_EV_SAVE_FAILED: {
 		ui_toast(ev->why != TR_NONE ? tr(ev->why) : TR(TOAST_SAVE_FAILED, "Couldn't save: try again"));
 		ui_menus_save_failed();
@@ -993,6 +951,10 @@ static void banner_open(void)
 #if CONFIG_ZONE_SHARE
 	else if (kind == UI_BANNER_ZONE_OFFER)
 		ui_push(SCR_OFFER, 0);
+#endif
+#if CONFIG_APRS_RX
+	else if (kind == UI_BANNER_APRS_MESSAGE)
+		ui_push(SCR_MESSAGES, 0);
 #endif
 	else
 		ui_open_actions(&t);
@@ -1258,6 +1220,18 @@ void ui_scan_toggle(void)
 	ui_st.scanning = on;
 	ui_toast(!on ? TR(SCAN_TOAST_STOPPED, "Scan stopped") : view->vfo ?
 		TR(SCAN_TOAST_SCANNING_BAND, "Scanning the band") : TR(SCAN_TOAST_SCANNING_ZONE, "Scanning this zone"));
+}
+
+// A side key set to Scan skip: what the scan action's "Skip channel for now" does, without the menu. Nothing happens
+// (a toast says so) when no scan is running, so the key can't skip a channel of a radio that isn't scanning
+void ui_scan_skip(void)
+{
+	if (!ui_st.scanning) {
+		ui_toast(TR(SCAN_TOAST_NOT_SCANNING, "Not scanning"));
+		return;
+	}
+	ui_toast(ui_svc_scan_skip() ? TR(SCAN_TOAST_SKIPPED_UNTIL_STOP, "Skipped until the scan stops") :
+		TR(SCAN_TOAST_NOTHING_TO_SKIP, "Nothing to skip yet"));
 }
 
 #if CONFIG_DMR
@@ -2110,8 +2084,7 @@ void ui_app_init(void)
 #endif
 	recent_n = 0;
 #if CONFIG_P25_ALIAS
-	p25_alias_seen = p25_alias_ms = 0;
-	p25_alias_visible = false;
+	p25_alias_seen = 0;
 #endif
 #if CONFIG_DMR
 	recent_seen_ms = 0;
@@ -2141,6 +2114,7 @@ void ui_app_init(void)
 	hear_all_key = 0;
 #endif
 	has_quick_key = ui_has_action(ACT_QUICK);
+	has_context_key = ui_has_action(ACT_CONTEXT);
 	has_unlock_key = has_quick_key || ui_has_action(ACT_BACK);
 	// ui_app_tick builds it again each tick, in the language in use then
 	str_copy(home_hint, sizeof home_hint, home_hint_keys());
@@ -2404,6 +2378,9 @@ void ui_app_key(const input_event_t *ev)
 		case ACT_SCAN:
 			ui_scan_toggle();
 			return;
+		case ACT_SCAN_SKIP:
+			ui_scan_skip();
+			return;
 #if CONFIG_DUAL_WATCH
 		case ACT_DUAL_WATCH:
 			ui_dual_key();
@@ -2412,10 +2389,6 @@ void ui_app_key(const input_event_t *ev)
 			ui_dual_ab_key();
 			return;
 #endif
-		case ACT_RECENT:
-			if (stack[sp].scr != SCR_RECENT)
-				ui_push(SCR_RECENT, 0);
-			return;
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
@@ -2863,22 +2836,24 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 #if CONFIG_DMR
 	hear_all_tick(v);
 #endif
-	// Keep the shortcut hint stable while calls and aliases change.
+	// The hint names the last caller: "OK Menu  * Quick  # Joe"
+	ui_target_t t;
+	char name[12];
 	sbuf_t b;
 	sb_init(&b, home_hint, sizeof home_hint);
-	sb_str(&b, TEXT_ALT_OPEN);
 	sb_str(&b, home_hint_keys());
-	sb_str(&b, "  ");
-	if (home_recent_hint(&b, false)) {
-		// Offer all shortcuts in a compact form before the renderer drops a group.
-		sb_str(&b, TEXT_ALT_NEXT);
-		sb_str(&b, has_quick_key ? TR(HOME_HINT_MENU_QUICK_COMPACT, "OK:Menu *:Quick") :
-			TR(HOME_HINT_MENU_HOLD_QUICK_COMPACT, "OK:Menu OKh:Qk"));
-		sb_chr(&b, ' ');
-		(void)home_recent_hint(&b, true);
-		sb_str(&b, TEXT_ALT_CLOSE);
-	} else {
-		str_copy(home_hint, sizeof home_hint, home_hint_keys());
+	if (has_context_key && recent_n && caller_target(&t)) {
+		sb_str(&b, "  # ");
+		if (t.name[0]) {
+			memcpy(name, t.name, sizeof name - 1);
+			name[sizeof name - 1] = 0;
+			char *sp_ = strchr(name, ' ');
+			if (sp_ != NULL)
+				*sp_ = 0;	// first word of the name
+			sb_str(&b, name);
+		} else {
+			sb_u32(&b, t.id, 1);
+		}
 	}
 	uint32_t serial = radio_view_serial();
 	if (serial != serial_seen) {

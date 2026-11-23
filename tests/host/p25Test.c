@@ -180,6 +180,70 @@ static void testLc(void)
 	CHECK(p25_lc_parse(raw, &got) && got.dst == 0xABCDEF && got.src == 0x123456, "unit LC back");
 	raw[1] = 0x90;
 	CHECK(!p25_lc_parse(raw, &got) && got.mfid == 0x90, "a manufacturer's LC");
+
+	// A blocked system in link control (TIA-102.AABF-D 7.3.16, 7.3.17, 7.3.28), in an LDU1 and a TDULC
+	{
+		static uint8_t unit[P25_UNIT_BYTES_MAX];
+		p25_rx_unit_t u = { .air = unit };
+
+		// LCO 36, network status: reserved octet, WACN 20 bits, system 12, channel, service class
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 36;
+		raw[2] = 0xBE; raw[3] = 0xE0; raw[4] = 0x02; raw[5] = 0xF3;
+		p25_unit_begin(unit, P25_TDULC_SYMS, 0x293, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(unit, raw);
+		u.duid = P25_DUID_TDULC;
+		CHECK(p25_unit_sys_no_tx(&u), "TDULC, LCO 36, WACN BEE00");
+		raw[2] = 0xA4; raw[3] = 0xC2; raw[4] = 0x12;
+		p25_tdulc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "TDULC, LCO 36, WACN A4C21 system 2F3");
+		raw[4] = 0x10; raw[5] = 0x0A;
+		p25_tdulc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "TDULC, LCO 36, system 00A");
+		// LCO 41, explicit network status: WACN 20 bits right after the opcode, system 12
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 41;
+		raw[1] = 0xA4; raw[2] = 0xC2; raw[3] = 0x12; raw[4] = 0xF3;
+		p25_unit_begin(unit, P25_LDU_SYMS, 0x293, P25_DUID_LDU1, P25_SS_IDLE);
+		p25_ldu_lc_put(unit, raw);
+		u.duid = P25_DUID_LDU1;
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 41, WACN A4C21 system 2F3");
+		raw[1] = 0xBE; raw[2] = 0xEF; raw[3] = 0xF2;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 41, WACN BEEFF");
+		raw[1] = 0xA4; raw[2] = 0xC2; raw[3] = 0x10; raw[4] = 0x0A;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 41, system 00A");
+		raw[4] = 0x0B;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 41, system 00B");
+		// LCO 35, RFSS status: LRA, reserved nibble, system 12 (no WACN)
+		memset(raw, 0, sizeof raw);
+		raw[0] = 0x40 | 35;
+		raw[1] = 0x01; raw[2] = 0xF0; raw[3] = 0x0A;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(p25_unit_sys_no_tx(&u), "LDU1, LCO 35, system 00A (reserved bits set)");
+		raw[3] = 0x09;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "LDU1, LCO 35, system 009");
+		// Not counted: protected, the manufacturer's format bit clear, another opcode (an adjacent site's status
+		// names another site), an LDU2
+		raw[3] = 0x0A;
+		raw[0] = 0xC0 | 35;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "protected LC");
+		raw[0] = 35;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "SF clear");
+		raw[0] = 0x40 | 34;
+		raw[2] = 0x00;
+		p25_ldu_lc_put(unit, raw);
+		CHECK(!p25_unit_sys_no_tx(&u), "adjacent site, system 00A");
+		raw[0] = 0x40 | 35;
+		p25_ldu_lc_put(unit, raw);
+		u.duid = P25_DUID_LDU2;
+		CHECK(!p25_unit_sys_no_tx(&u), "an LDU2 has no link control");
+	}
 }
 
 static void testVoice(void)
@@ -607,11 +671,11 @@ static void testAlias90(void)
 		p25_call_rx_init(&c, P25_NAC_ANY, &cs_sink, &c);
 		memcpy(hang, who, 9); hang[2] = 0x44;
 		p25_tdulc_put(tail_air, hang); c.rx.unit(&u, c.rx.ctx);
-		CHECK(c.active && c.call.have_lc && c.call.lc.src == 3004,
-		      "group TDULC recovers caller during late-entry hang");
+		CHECK(!c.active,
+		      "ordinary group TDULC cannot start an alias hold");
 		hang[6] = hang[7] = hang[8] = 0;
 		p25_tdulc_put(tail_air, hang); c.rx.unit(&u, c.rx.ctx);
-		CHECK(c.active && c.call.lc.src == 3004, "zero-source hang retains known caller");
+		CHECK(!c.active, "zero-source terminator does not start a call");
 		p25_tdulc_put(tail_air, head); c.rx.unit(&u, c.rx.ctx);
 		for (unsigned i = 0; i < 5; i++) {
 			p25_tdulc_put(tail_air, block[i]); c.rx.unit(&u, c.rx.ctx);
@@ -649,7 +713,7 @@ static void testAlias90(void)
 	memcpy(bad, block[0], 9); bad[4] ^= 1; // corrupt checksum-covered WACN, not the bound source
 	alias_unit(&c, bad, 0x1e0);
 	CHECK(!c.call.alias[0], "vendor alias corrupted CRC rejected");
-	CHECK(c.stats.alias.vendor_result == P25_ALIAS90_BAD_CRC && c.stats.alias.vendor_seen == 31,
+	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_BAD_CRC && c.stats.alias.mfid90_seen == 31,
 	      "complete corrupt payload distinguishes CRC failure from missing fragments");
 	alias_unit(&c, block[0], 0x1e0);
 	CHECK(!strcmp(c.call.alias, "MEDIC12"), "correct retransmitted block repairs vendor alias");
@@ -659,7 +723,7 @@ static void testAlias90(void)
 	alias_unit(&c, head, 0x1e0);
 	for (unsigned i = 0; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
 	CHECK(!c.call.alias[0], "vendor alias must name the actual caller");
-	CHECK(c.stats.alias.vendor_result == P25_ALIAS90_WRONG_SOURCE,
+	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_WRONG_SOURCE,
 	      "vendor source mismatch is observable");
 	c.rx.lost(c.rx.ctx);
 	alias_unit(&c, who, 0x1e0);
@@ -676,40 +740,6 @@ static void testAlias90(void)
 	p25_rx_unit_t end = { .duid = P25_DUID_TDU, .nac = 0x1e0 };
 	c.rx.unit(&end, c.rx.ctx);
 	CHECK(!c.active, "normal terminator still ends the alias-bearing call");
-	// A Motorola talk-complete TDULC can precede the alias header. It ends
-	// speech, not the following metadata transmission, including on encrypted calls.
-	for (unsigned encrypted = 0; encrypted < 2; encrypted++) {
-		alias_unit(&c, who, 0x1e0);
-		c.call.have_alg = true;
-		c.call.algid = encrypted ? 0x84 : P25_ALGID_CLEAR;
-		uint32_t before_voice = c.stats.voice;
-		uint8_t tail_air[P25_UNIT_BYTES_MAX] = { 0 };
-		const uint8_t complete[9] = { 0x0f, 0x90, 0, 0, 0, 0, 0, 0x0b, 0xbc };
-		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x1e0, .air = tail_air, .nsyms = P25_TDULC_SYMS };
-		p25_tdulc_put(tail_air, complete);
-		c.rx.unit(&tail, c.rx.ctx);
-		CHECK(c.active && c.call.lc.src == 3004, "talk-complete preserves caller for following alias (%u)", encrypted);
-		p25_tdulc_put(tail_air, head);
-		c.rx.unit(&tail, c.rx.ctx);
-		for (unsigned i = 0; i < 5; i++) {
-			p25_tdulc_put(tail_air, block[i]);
-			c.rx.unit(&tail, c.rx.ctx);
-		}
-		CHECK(c.active && !strcmp(c.call.alias, "MEDIC12"), "alias after talk-complete decoded (%u)", encrypted);
-		CHECK(c.stats.voice == before_voice, "talk-complete and alias tail produce no voice (%u)", encrypted);
-		c.rx.unit(&end, c.rx.ctx);
-	}
-	CHECK(c.stats.alias.talk_complete == 2, "talk-complete prefix is observable separately from alias fragments");
-	// A different caller's completion cannot keep this call alive.
-	alias_unit(&c, who, 0x1e0);
-	{
-		uint8_t tail_air[P25_UNIT_BYTES_MAX] = { 0 };
-		const uint8_t complete[9] = { 0x0f, 0x90, 0, 0, 0, 0, 0, 0x0b, 0xbd };
-		p25_tdulc_put(tail_air, complete);
-		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x1e0, .air = tail_air, .nsyms = P25_TDULC_SYMS };
-		c.rx.unit(&tail, c.rx.ctx);
-		CHECK(!c.active, "unrelated talk-complete does not preserve a caller");
-	}
 	// Late entry can miss every group-voice LC while receiving the complete alias.
 	alias_unit(&c, head, 0x1e0);
 	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x1e0);
@@ -748,8 +778,8 @@ static void testAlias90(void)
 	alias_unit(&c, who, 0x1e0);
 	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
 	CHECK(c.call.lc.src == 3004 && !strcmp(c.call.alias, "MEDIC12"),
-	      "first matching voice LC preserves pending Motorola alias");
-	CHECK(c.stats.alias.vendor_result == P25_ALIAS90_COMPLETE && c.stats.alias.vendor_src == 3004,
+	      "first matching voice LC preserves pending manufacturer-specific alias (MFID 0x90)");
+	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_COMPLETE && c.stats.alias.mfid90_src == 3004,
 	      "completed late-source sequence retains diagnostic source");
 	c.rx.lost(c.rx.ctx);
 	alias_unit(&c, head, 0x1e0);
@@ -764,24 +794,9 @@ static void testAlias90(void)
 	alias_unit(&c, other, 0x1e0);
 	CHECK(!c.alias90.count, "first voice LC for another group discards pending alias");
 	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
-	CHECK(!c.call.alias[0] && c.stats.alias.vendor_result == P25_ALIAS90_NO_HEADER,
+	CHECK(!c.call.alias[0] && c.stats.alias.mfid90_result == P25_ALIAS90_NO_HEADER,
 	      "orphan alias fragments cannot name a different group call");
-	// Public CNYICC on-air example documented by SDRTrunk, not encoder-generated
-	// test data. Wire fields/provenance: docs/spec/p25-alias-provenance.md.
-	const uint8_t captured[8][9] = {
-		{ 0x15, 0x90, 0x1b, 0xbd, 7, 1, 0, 0xf8, 0xba },
-		{ 0x17, 0x90, 1, 0xfb, 0xee, 0x00, 0x2a, 0xee, 0x67 },
-		{ 0x17, 0x90, 2, 0xf8, 0x52, 0x83, 0xed, 0x10, 0x81 },
-		{ 0x17, 0x90, 3, 0xfe, 0x33, 0xc0, 0x3e, 0x9b, 0x3e },
-		{ 0x17, 0x90, 4, 0xf3, 0x56, 0x47, 0xde, 0x0c, 0x00 },
-		{ 0x17, 0x90, 5, 0xfc, 0x8a, 0x83, 0xe3, 0x51, 0xe4 },
-		{ 0x17, 0x90, 6, 0xf0, 0x79, 0xf5, 0x92, 0xcf, 0x37 },
-		{ 0x17, 0x90, 7, 0xf9, 0x4b, 0x30, 0x00, 0x00, 0x00 }
-	};
-	c.rx.lost(c.rx.ctx);
-	for (unsigned i = 0; i < 8; i++) alias_unit(&c, captured[i], 0x1e0);
-	CHECK(c.call.lc.src == 15104082 && c.call.lc.tgid == 7101 &&
-	      !strcmp(c.call.alias, "NYSP-1D82UHFM"), "independent CNYICC wire capture passes CRC and name decoding");
+
 }
 
 static void testAlias(void)

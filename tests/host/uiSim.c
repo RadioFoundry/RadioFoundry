@@ -100,7 +100,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "messages_empty", "ok 2" },
 	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" },
 #if CONFIG_P25_ALIAS
-	{ "p25_recent", "dlmode:p25 p25rx:16700001,100 p25rxend recentkey" },
+	{ "p25_recent", "dlmode:p25 p25rx:16700001,100 p25rxend ok down down ok" },
 #endif
 	{ "zones", "ok 4" },
 	{ "channels", "ok 5" },

@@ -1160,6 +1160,16 @@ class SdrBench:
         """Whether the TX board says it can do feature (its info's features, e.g. "dev_scale")"""
         return feature in (self._api_info().get("features") or {})
 
+    def max_key_s(self, want):
+        """The longest single key-up the TX board allows (its info's tx.max_key_s), at most want s"""
+        limit = (self._api_info().get("tx") or {}).get("max_key_s")
+        return float(want) if limit is None else min(float(want), float(limit))
+
+    def hears_while_keyed(self):
+        """True when the receive board decodes while the TX board keys: a second board, or one board that runs duplex
+        jobs (a half-duplex board says why it can't in info.jobs.bench_repeater)"""
+        return self.api_rx != self.api or not (self._api_info().get("jobs") or {}).get("bench_repeater")
+
     def _api_fail(self, e, what):
         """A BenchLineError from the board: a wait that ran out or a request the board can't serve is a skip."""
         if e.code in ("timeout", "busy", "deadlock"):

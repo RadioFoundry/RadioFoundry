@@ -152,7 +152,7 @@ static void test_toggles(void)
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE }, { KEYFN_TALK_LABEL, 19, ACT_TALK_LABEL },
-		{ KEYFN_RECENT, 20, ACT_RECENT },
+		{ KEYFN_SCAN_SKIP, 20, ACT_SCAN_SKIP },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
@@ -364,6 +364,7 @@ static void test_home_keys(void)
 	keyassign_build_home(hm, HN, home, 2, 1, s);
 	CHECK(memcmp(hm, hb, sizeof(hm)) == 0);
 	CHECK(keyassign_home_allowed(KEYFN_SCAN, false) && !keyassign_home_allowed(KEYFN_MONITOR, false));
+	CHECK(keyassign_home_allowed(KEYFN_SCAN_SKIP, false) && keyassign_home_allowed(KEYFN_SCAN_SKIP, true));
 	CHECK(!keyassign_home_allowed(KEYFN_TONE_BURST, false) && !keyassign_home_allowed(KEYFN_EMERGENCY, true));
 
 	// P1 press: scan. P2 left alone
@@ -390,18 +391,6 @@ static void test_home_keys(void)
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_REPEAT, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);
-
-	// Recent is opt-in on either home key; the other assignment is preserved.
-	keyassign_set(s, 1, false, KEYFN_RECENT);
-	keyassign_build_home(hm, HN, home, 2, 1, s);
-	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_RECENT);
-	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
-	CHECK(HE(ACT_HOME_KEY_2, GESTURE_LONG, true) == ACT_POWER);
-	keyassign_set(s, 2, false, KEYFN_RECENT);
-	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_RECENT);
-	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);
-	keyassign_set(s, 2, false, KEYFN_NONE);
-	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
 
 	// Monitor in a home key's slot (a CPS wrote it) reads as Default there
 	keyassign_set(s, 1, false, KEYFN_MONITOR);

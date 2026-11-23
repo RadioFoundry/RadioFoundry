@@ -23,7 +23,7 @@ PTT always uses.
 | Group (FLCO 0) | its talkgroup is the talk target's, all call (0xFFFFFF), in the channel's RX group list (listen list), the reply target's during the reply window, or hear all, "digital monitor" in the UI (the hear-all latch: the MONITOR key's press toggles it on a DMR channel, its release does nothing (#19); Quick 5; `radio_req_dmr_hear_all`; until the channel changes, DMR stops (a mode change), or BACK on Home; the end of a call doesn't end it. A zone or VFO scan started with it on keeps it on at every stop and latches it on the channel the scan ends on; turning it off during the scan ends it for the scan, [radio-features.md](radio-features.md) 2). On a trunked channel it follows every talkgroup's grant instead ([dmr-trunking.md](dmr-trunking.md), Grants): the call plays on its own slot and the system's color code, not any |
 | Private (FLCO 3) | addressed to our ID (the channel's DMR ID override, else the radio's), or all call, or hear all |
 | Our own ID as source | not while we transmit or for `DMR_CALL_OWN_ECHO_MS` (700 ms) after our call ended or was cut short (the repeater's echo of it); later it is judged as any other call, so a parrot's playback of our call plays (#294). A terminator from our ID ends only the call with its LC, never another station's |
-| Encrypted | only with a privacy key, and never after a PI header (section 5) |
+| Encrypted | with the applicable privacy key; AES requires the opening PI header and a matching key (section 5) |
 
 A call that doesn't pass is shown as busy ("not played") while it lasts, and counts for polite channel access.
 
@@ -226,9 +226,98 @@ and loads the active slot at boot (`settings-store.md` 3.1); the open-firmware c
 set it.
 
 PI header (data type 0, CRC-CCITT masked 0x6969): heard between the voice LC header and burst A, it marks the call
-encrypted and its first two octets are kept for display (algorithm and key ID in the common layout; not interpreted).
-A PI header heard just before a late entry is attached to that call. A PI header means an MI-based scheme the static
-keystream can't undo, so such a call is never played, key or not. We never send PI headers.
+encrypted. Its algorithm ID (octet 0), key ID (octet 2) and MI (octets 3-6) go to the caller info (`pi_alg`,
+`pi_key`, `pi_mi`); octet 1 is not interpreted (0x10 from the radios measured, their FID). A PI header heard just
+before a late entry is attached to that call, and a call that fades and resumes by late entry keeps its PI header. The
+static keystream can't undo an MI-based scheme, so such a call plays only through the crypt hook (`dmr_crypt_fn`,
+5.1) with a key for its algorithm and key ID; otherwise it is dropped as `rx_enc_dropped`. We send PI headers only for our own AES overs (5.1).
+
+### 5.1 AES-256 with a message indicator
+
+The scheme behind PI headers with algorithm ID 0x25, as other radios send it (`CONFIG_DMR_AES`, `core/dmr/dmrAes.c`).
+Measured on air with the SDR bench and checked against a reference decoder used as a black box;
+`tests/host/dmrAesTest.c` decrypts a captured test call with it.
+
+| Part | Layout |
+|---|---|
+| Voice LC | FID 0x10, service options 0x40 (privacy) |
+| PI header | octet 0 algorithm ID (0x25), 1 not interpreted (0x10 sent), 2 key ID, 3-6 MI (most significant octet first), 7-9 not interpreted on RX (`00 00 01` seen on a call to TG 1; we send the destination ID there, which gives the same bytes for TG 1, unconfirmed for other targets), then the CRC. One per over |
+| MI words | w0 = the PI header's MI; each next word is 32 steps of the LFSR x^32 + x^22 + x^2 + x + 1 (shift left, new bit 0 = bits 31, 21, 1 and 0 XORed). Its period is 2^32 - 1 (`dmrAesTest` checks it from the step matrix) |
+| IV | superframe s (0 = the one after the PI header): w(s) w(s+1) w(s+2) w(s+3), 128 bits |
+| Keystream | AES-256 in OFB mode from the IV; the first 16 octets are not used |
+| Per frame | frame j of the superframe (burst A frames 0-2 ... burst F frames 15-17) takes the next 7 octets, 7j to 7j+6; their top 49 bits are XORed onto the 49 AMBE+2 parameter bits (after the FEC decode, parameter bit 0 = the most significant keystream bit) |
+| Burst F | the embedded field carries the algorithm's low 3 bits and the key ID (`dmrFecPrivacyField`) in every superframe, for late entry |
+
+What stays readable: the voice LC (source and destination IDs, so the talkgroup), the embedded LC and the talker alias
+are in the clear, as the format has them. Our overs leave out the GPS Info LC on an encrypted over (the position would
+go out in the clear in the embedded LC). The radios measured encrypt whatever their vocoder held before the call in
+bursts A and B of the first superframe; that decrypts like any other frame.
+
+The call stack (`dmr_call.c`) counts bursts from burst A of superframe 0 and hands the hook the PI header's algorithm,
+key ID and MI with the burst's superframe. A burst index seen again without being a repeat is a superframe on; bursts
+lost in a row are counted from the modem's slot counter (2 slots a burst) or, without one, from the time (60 ms a
+burst). A slot counter difference past the resume window (a counter that restarted) is not a gap in the call: the
+time decides. The hook refuses a superframe past `DMR_AES_SF_MAX` (8192, 49 minutes), so a bad position never turns
+into minutes of LFSR steps. A late entry after the PI header is placed by the time since it, to the nearest burst with
+its index; a PI header is attached to a late entry only when that call's LC has the privacy option. A call whose PI
+header was missed has no MI and is not played until the next over (reading the MI from the late-entry field is #863).
+
+A conventional AES channel selects its own persistent system and PI key ID
+([channel-modes.md](channel-modes.md) section 4). A missing or invalid traffic key inhibits transmit (`aes_key`).
+
+TX: on an AES channel whose key is present, our overs carry FID 0x10 and the privacy option in the voice LC, one PI
+header after the voice LC headers, and every voice burst encrypted from burst A of superframe 0
+(`dmr_call_config_t.tx_crypt_alg`, `tx_crypt_key_id`, `crypt_mi`). The PI header goes to the modem with its CRC
+(masked 0x6969) as a host CRC burst; a modem that makes its own CRC must use the PI mask. On an AES channel
+`tx_crypt_required` is set whether the key loaded or not: the call stack itself refuses an over it can't encrypt (no
+hook, no key, no MI) with `DMR_TX_ERR_CRYPT`, and never sends it in the clear. If the key goes away during an over,
+its voice goes out as silence.
+
+Burst F's field is written by the modem driver (`hal_dmr_modem_t.set_burst_f`, before `tx_begin`). TX to a receiver
+of another make needs it: without it such a receiver played the first superframe and then noise, and through a
+repeater the over played garbled. Between two radios running this firmware it isn't needed, since our RX counts from
+the PI header. Which modems have it: [feature-matrix.md](../feature-matrix.md) (the HR_C6000 is #864).
+In an [on-air test](https://github.com/RadioFoundry/RadioFoundry/pull/758#issuecomment-7090126707), one repeater
+preserved the PI header and MI fragments but replaced burst F's field on its outbound. A late joiner there can
+receive the MI fragments without receiving the algorithm and key ID from burst F.
+
+TX embeds the next superframe's MI after encrypting the voice. Append the four-bit CRC (polynomial 0x13, initial zero,
+final XOR 0xF, MSB first) to the 32-bit MI and split the result into three 12-bit words, most significant first. Each
+frame position carries one word across A-F. Start with the AMBE extended Golay codeword and toggle parity bits 9 and 0
+(LSB numbered 0) when the data word masked by 0x0DC has odd parity, as measured on air. Send the resulting 24 bits in
+six nibbles, most significant first. Each nibble replaces on-air bits 71, 67, 63, 59 of its 72-bit encrypted voice
+frame in that order (air index 0 first). These four speech bits cannot be recovered by decrypting the frame. Host
+tests check the transmitted nibbles against captured calls with different input speech.
+
+#### 5.1.1 The MI sequence
+
+OFB gives the same keystream whenever an IV comes back, and two overs under one keystream give a listener the XOR of
+their voice (near-silence frames at the start and end of an over then decrypt the other outright). Superframe s of an
+over uses words s..s+3, so overs with different MIs still share keystream once their word ranges meet. OFB needs a
+position that never repeats, not one that can't be guessed (the late-entry field announces the next one anyway).
+
+| Rule | How (`dmrAesSeq_t`) |
+|---|---|
+| One sequence per radio, every key | the next over's MI is the word after the last superframe sent, w(S) after S superframes. A superframe counts from its first burst the hook encrypted, a cut-short one included |
+| First position | a radio with none: the first 4 bytes of a two-block CBC-MAC under the channel's key over (the chip UID with a tag; the own DMR ID and the uptime in ms), never 0 (`dmrAesSeqSeed`). Radios sharing a key start at unrelated places |
+| Reservation | positions are used only inside a reservation in the settings record (`settings_t.aes_mi_res`, the word 16,384 superframes past the position it was made from, about 98 minutes of talk). It is asked for on an AES channel when less than 8,192 are left, between overs (`radio_aes_poll`), and counts once the settings store holds it |
+| After a restart | the sequence goes on from the saved reservation, and TX is refused (`aes_wait`) until the next one is saved, about 2 s (the settings save delay). A settings store in RAM only never saves one: AES TX stays refused |
+| Past the reservation | the hook refuses the burst (silence goes out); `dmrAesNewMi` returns 0 and the over is refused |
+
+Two radios with the same key meet only if their stretches of the sequence do. After a settings restore while the
+radio is running, the radio writes back its last saved reservation between overs. TX continues from the in-memory
+position. A restart before the repair reaches flash, a restore while the radio is off, or a factory reset can still
+repeat keystream under the same key. Change the key in those cases or if unsure the repair was saved. The period is
+2^32 - 1 superframes; change a key that has carried a lot of traffic (`docs/user/09-dmr.md`).
+
+#### 5.1.2 Open points
+
+- The first burst's late-entry nibbles of the captured call differ from what its PI header predicts in three bits
+  (the second and third frames' nibbles read 7 / 5, the MI gives 5 / 0); our TX sends what the MI gives
+  (`dmrAesTest`, `test_tx_matches_capture`).
+- A TX underrun makes the modem driver send a clear silence burst, as for clear calls. In an encrypted over the
+  receiver decrypts it to 60 ms of noise, and its late-entry bits are wrong.
+- The AES core's S-box lookups are table reads indexed by secret data: it is not hardened against timing.
 
 The HR_C6000 reports the EMB PI bit unreliably for voice, so its driver clears it (`modem-hrc6000.md`); on that modem
 privacy is recognized from the service options and PI headers only.
@@ -283,7 +372,7 @@ the encoder gets the generated tone instead of the microphone, after the mic gai
 Debug link (`debuglink.md`): the `core` view's `mode` and `vfo`, the `dmr` view's `dmr.cc`, `dmr.ts`, `dmr.target_id`,
 `dmr.target_private`, `dmr.target_manual`, `dmr.privacy`, `dmr.alias_tx`, `dmr.gps_tx_channel` (the channel's own position setting); RADIO op 31 sets the mode, color code and timeslot (the VFO's
 own in the VFO), op 15 the talk target and op 32 copies the channel to the VFO (2.2); the `dmr_call` view's
-`emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`; the counters `rx_private_calls`,
+`emergency`, `pi_header`, `alias_complete`, `fid`, `svc`, `pi_alg`, `pi_key`, `pi_mi`; the counters `rx_private_calls`,
 `rx_emergency_calls`, `rx_encrypted_calls`, `rx_pi_headers`, `rx_alias_complete`, `tx_alias_lcs`, `rx_gps`,
 `tx_gps_lcs`; GPS Info as `call.gps_valid gps_lat gps_lon gps_err gps_dist_m gps_bearing` (and `last.`). HIL tests:
 `tests/hil/test_dmr_call_features.py` (`test_gps_info`: the bench sends a call with a GPS block, a `bench_tx`

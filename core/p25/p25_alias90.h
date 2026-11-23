@@ -21,11 +21,4 @@ static inline bool p25_alias90_word(const uint8_t raw[9])
 {
 	return raw[1] == 0x90 && (raw[0] == 0x15 || raw[0] == 0x17);
 }
-// Motorola talk-complete ends speech while the channel can still send an alias.
-// It cannot identify a caller by itself; a known caller must match its address.
-static inline bool p25_alias90_talk_complete(const uint8_t raw[9], uint32_t src)
-{
-	uint32_t address = (uint32_t)raw[6] << 16 | (uint32_t)raw[7] << 8 | raw[8];
-	return raw[0] == 0x0f && raw[1] == 0x90 && address && (!src || src == address);
-}
 #endif

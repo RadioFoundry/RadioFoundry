@@ -158,28 +158,27 @@ static const flow_t flows[] = {
 	{ "P25 caller details after call", "dlmode:p25 p25rx:3004,31001 p25rxend", "ctx ok", "screen=actions shows=ID_3004 focusid=0", 2, false },
 	{ "P25 context keeps caller action", "dlmode:p25 p25rx:3004,31001", "ctx", "screen=actions shows=ID_3004 focusid=0", 1, false },
 	{ "P25 Recent opens details", "dlmode:p25 p25rx:3004,31001 p25rxend", "ok down down ok ok", "screen=actions shows=ID_3004 focusid=0", 5, false },
-	{ "P25 filtered excluded from history", "dlmode:p25 p25rx:3004,31001,o p25rxend", "recentkey", "screen=recent hides=3004", 1, false },
-	{ "P25 encrypted caller retained", "dlmode:p25 p25rx:3004,31001,e p25rxend", "recentkey", "screen=recent shows=3004 hides=P25_3004", 1, false },
+	{ "P25 filtered excluded from history", "dlmode:p25 p25rx:3004,31001,o p25rxend", "ok down down ok", "screen=recent hides=3004", 4, false },
+	{ "P25 encrypted caller retained", "dlmode:p25 p25rx:3004,31001,e p25rxend", "ok down down ok", "screen=recent shows=3004 hides=P25_3004", 4, false },
 #if CONFIG_P25_ALIAS
-	{ "P25 assigned Recent opens history", "dlmode:p25 p25rx:3004,31001 p25rxend", "recentkey", "screen=recent shows=3004 hides=P25_3004 focusid=0", 1, false },
-	{ "P25 Recent alias without mode prefix", "dlmode:p25 p25rx:8116224,11402 p25alias:DAU-16136 p25rxend", "recentkey", "screen=recent shows=DAU-16136 hides=P25_DAU focusid=0", 1, false },
-	{ "P25 tail alias retained", "dlmode:p25 p25rx:3004,31001", "p25aliastail:EMS-MEDIC recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 2, false },
-	{ "P25 tail alias held on Home", "dlmode:p25 p25rx:3004,31001", "p25aliastail:EMS-MEDIC", "screen=home shows=EMS-MEDIC", 0, false },
+	{ "P25 Recent menu opens history", "dlmode:p25 p25rx:3004,31001 p25rxend", "ok down down ok", "screen=recent shows=3004 hides=P25_3004 focusid=0", 4, false },
+	{ "P25 Recent alias without mode prefix", "dlmode:p25 p25rx:8116224,11402 p25alias:DAU-16136 p25rxend", "ok down down ok", "screen=recent shows=DAU-16136 hides=P25_DAU focusid=0", 4, false },
+	{ "P25 tail alias retained", "dlmode:p25 p25rx:3004,31001", "p25aliastail:EMS-MEDIC ok down down ok ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 5, false },
 	{ "P25 tail alias expires", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "wait:2100", "hides=EMS-MEDIC", 0, false },
 	{ "P25 next caller clears alias", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "p25rx:3005,31001", "hides=EMS-MEDIC shows=ID_3005", 0, false },
-	{ "P25 same caller keeps known alias", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "p25rx:3004,31001 recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 2, false },
+	{ "P25 same caller keeps known alias", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "p25rx:3004,31001 ok down down ok ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 5, false },
 	{ "P25 known alias on next live call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001", "screen=home shows=EMS-MEDIC", 0, false },
-	{ "P25 alias isolated by session", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25session p25rx:3004,31001 recentkey ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 2, false },
-	{ "P25 alias isolated by destination", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31002 recentkey ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 2, false },
-	{ "P25 known alias updated", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001 p25alias:NEW-MEDIC recentkey ok", "screen=actions shows=NEW-MEDIC hides=EMS-MEDIC", 2, false },
-	{ "P25 remembered caller moves to top", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend p25rx:3005,31001 p25rxend", "p25rx:3004,31001 recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 2, false },
-	{ "P25 cached alias shown on encrypted call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001,e", "screen=home shows=EMS-MEDIC hides=ID_3004", 0, false },
+	{ "P25 alias isolated by session", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25session p25rx:3004,31001 ok down down ok ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 5, false },
+	{ "P25 alias isolated by destination", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31002 ok down down ok ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 5, false },
+	{ "P25 known alias updated", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001 p25alias:NEW-MEDIC ok down down ok ok", "screen=actions shows=NEW-MEDIC hides=EMS-MEDIC", 5, false },
+	{ "P25 remembered caller moves to top", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend p25rx:3005,31001 p25rxend", "p25rx:3004,31001 ok down down ok ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 5, false },
+	{ "P25 cached alias shown on encrypted call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001,e", "screen=home shows=Encrypted", 0, false },
 	{ "P25 cached alias hidden on filtered call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001,o", "screen=home hides=EMS-MEDIC", 0, false },
-	{ "P25 encrypted tail held after return", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2", "screen=home shows=PD2-OP02 hides=ID_2002", 0, false },
-	{ "P25 encrypted tail in Recent history", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2 recentkey", "screen=recent shows=PD2-OP02 hides=P25_2002", 1, false },
+	{ "P25 encrypted tail held after return", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2", "screen=home shows=Control_channel hides=PD2-OP02", 0, false },
+	{ "P25 encrypted tail in Recent history", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2 ok down down ok", "screen=recent shows=PD2-OP02 hides=P25_2002", 4, false },
 	{ "P25 encrypted tail expires", "dlmode:p25 p25rx:2002,11402,e p25aliastail:PD2-OP02", "wait:2100", "hides=PD2-OP02", 0, false },
-	{ "P25 alias retained in history", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 2, false },
-	{ "P25 alias updates open details", "dlmode:p25 p25rx:3004,31001 recentkey ok", "p25alias:EMS-MEDIC", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 0, false },
+	{ "P25 alias retained in history", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "ok down down ok ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 5, false },
+	{ "P25 alias updates open details", "dlmode:p25 p25rx:3004,31001 ok down down ok ok", "p25alias:EMS-MEDIC", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 3, false },
 #endif
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
@@ -192,15 +191,15 @@ static const flow_t flows[] = {
 	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
 #if CONFIG_P25_TRUNK
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
-	{ "P25 trunk: caller without losing power and NAC", "dlmode:p25 p25t:3,31001", "p25rx:16777214,31001",
-	  "screen=home shows=ID_16777214 shows=NAC_293 shows=1W", 0, false },
+	{ "P25 trunk: caller without losing power and NAC", "dlmode:p25 p25t:3,31001", "p25rx:3004,31001",
+	  "screen=home shows=ID_3004 shows=NAC_293 shows=1W", 0, false },
 #if CONFIG_P25_ALIAS
-	{ "P25 alias: original layout", "dlmode:p25 p25t:3,31001 p25rx:16777214,31001", "p25alias:EMS-MEDIC-1234",
-	  "screen=home shows=EMS-MEDIC-1234 shows=NAC_293 shows=Local_repeaters hides=ID_16777214 hides=Following", 0, false },
+	{ "P25 alias: original layout", "dlmode:p25 p25t:3,31001 p25rx:16777214,31001", "p25alias:MEDIC12",
+	  "screen=home shows=MEDIC12 shows=NAC_293 shows=TG_31001 hides=ID_16777214", 0, false },
 	{ "P25 alias: expires after call", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC", "p25rxend wait:2100",
 	  "hides=EMS-MEDIC hides=ID_3004", 0, false },
 	{ "P25 alias: encrypted shown", "dlmode:p25 p25rx:3004,31001,e", "p25alias:EMS-MEDIC",
-	  "shows=EMS-MEDIC hides=ID_3004", 0, false },
+	  "shows=Encrypted", 0, false },
 #endif
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
@@ -208,6 +207,21 @@ static const flow_t flows[] = {
 	  0, false },
 	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
 	  false },
+#endif
+#if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
+	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
+	// them (system / key ID) and None, Save keeps the choice
+	{ "AES key row: hidden without keys", "", "ok 5 ok", "screen=channel hides=AES_key", 3, false },
+	{ "AES key row: none set", "aeskeys", "ok 5 ok down down down down down down down",
+	  "screen=channel focus=AES_key shows=None", 10, false },
+	{ "AES key row: steps the keys", "aeskeys ok 5 ok down down down down down down down", "ok",
+	  "focus=AES_key shows=3/0", 1, false },
+	{ "AES key row: the next key", "aeskeys ok 5 ok down down down down down down down", "ok ok",
+	  "focus=AES_key shows=3/7", 2, false },
+	{ "AES key row: back to none", "aeskeys ok 5 ok down down down down down down down", "ok ok ok",
+	  "focus=AES_key shows=None", 3, false },
+	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
@@ -1358,31 +1372,36 @@ static const flow_t flows_k[] = {
 	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
-	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set42=18 shows=Tone_burst", 1, false },
 #endif
 	{ "K side key 1: monitor", "ok 7 8 down down down ok", "ok", "set42=2", 1, false },
 	{ "K side key 1 hold while it monitors (DMR)", "ok 7 8", "down down down down ok", "set43=1", 5, false },
 	{ "K side key 1 hold once it doesn't", "ok 7 8 down down down ok down", "ok", "set43=1", 1, false },
 	{ "K side key 2 hold", "ok 7 8", "down down down down down down ok", "set45=1", 7, false },
-	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
+	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
 	  false },
-	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
+	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=17 shows=VFO/Channel", 1, false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
+	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold: Recent is assignable", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=20 shows=Recent", 1, false },
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
-	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
+	// Scan skip (KEYFN_SCAN_SKIP): "Skip channel for now" on a key, a press or a long press, only while scanning
+	{ "K a key set to scan skip, not scanning", "", "skipkey", "scanning=0 toast=Not_scanning", 1, false },
+	{ "K a key set to scan skip, scanning", "scankey", "skipkey", "scanning=1 toast=Skipped_until_the_scan_stops", 1,
+	  false },
+	{ "K a key set to scan skip, long, scanning", "scankey", "long:skipkey",
+	  "scanning=1 toast=Skipped_until_the_scan_stops", 1, false },
 	// VFO/Channel (KEYFN_VFO_TOGGLE) sends what a VFO/MR key does, on a press or a long press, on any screen
 	{ "K a key set to VFO/Channel", "", "vfokey", "vfo=1 toast=VFO", 1, false },
 	{ "K a key set to VFO/Channel, back", "vfokey", "vfokey", "vfo=0 toast=Back_to_channels", 1, false },
@@ -2346,45 +2365,28 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
-static int check_recent_hint(void)
+static int check_alias_colors(void)
 {
-#if CONFIG_KEY_ASSIGN
+#if CONFIG_P25_ALIAS
 	char err[160] = "";
-	sim_reset(sim_geom_find("128x64"), SIM_MAP_P);
-	if (!sim_run(CALLER " wait:2000", err, sizeof err) || strstr(ui_st.home_hint, "# "))
-		goto fail;
-	sim_reset(sim_geom_find("128x64"), SIM_MAP_P);
-	ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_RECENT);
-	if (!sim_run("hints:on wait:1100 expect:shows=OK:Menu expect:shows=P1:Quick expect:shows=P3:Rcnt expect:shows=1W", err, sizeof err))
-		goto fail;
-	ui_svc_setting_set(UI_SET_KEY_FIRST, KEYFN_NONE);
-	ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_RECENT);
-	if (!sim_run("wait:1100 expect:shows=P4:Rcnt expect:hides=P3:Rcnt expect:shows=P1:Quick", err, sizeof err))
-		goto fail;
-	ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_NONE);
-	ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_RECENT);
-	if (!sim_run("wait:1100 expect:shows=OK:Menu expect:shows=P1:Quick expect:shows=P4h:Rcnt expect:shows=1W", err, sizeof err))
-		goto fail;
-	const char *preview = getenv("RFOUNDRY_HINT_PREVIEW");
-	if (preview && !sim_save_png(preview, 4))
-		goto fail;
-	ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_NONE);
-	if (!sim_run("wait:1100", err, sizeof err) || strstr(ui_st.home_hint, "Recent"))
-		goto fail;
+	sim_reset(sim_geom_find("240x320"), SIM_MAP_K);
+	if (!sim_run("dlmode:p25 p25rx:3004,7 p25alias:MEDIC12", err, sizeof err) ||
+	    !sim_text_has_color("MEDIC12", ui_col.rx)) {
+		printf("FAIL live alias color: %s\n", err);
+		return 1;
+	}
+	if (!sim_run("p25rxend p25rx:3004,7", err, sizeof err) ||
+	    !sim_text_has_color("MEDIC12", ui_col.dim)) {
+		printf("FAIL remembered alias color: %s\n", err);
+		return 1;
+	}
 #endif
 	return 0;
-#if CONFIG_KEY_ASSIGN
-fail:
-	sim_save_png("build/recent-hint-failure.png", 4);
-	printf("FAIL assigned Recent hint: %s [%s] enabled=%d toast=%s\n", err, ui_st.home_hint,
-	       ui_st.hints, ui_st.toast ? ui_st.toast : "none");
-	return 1;
-#endif
 }
 
 int main(void)
 {
-	if (check_recent_hint() != 0)
+	if (check_alias_colors() != 0)
 		return 1;
 	if (check_name_is_id() != 0)
 		return 1;

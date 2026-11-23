@@ -431,7 +431,7 @@ static int cmd_cc(const char *out_path, const char *exp_path, const opts_t *o)
 {
 	static uint8_t unit[P25_UNIT_BYTES_MAX];
 	uint16_t nac = (uint16_t)opt_long(o, "--nac", P25_NAC_DEFAULT, 16);
-	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+	uint32_t wacn = (uint32_t)opt_long(o, "--wacn", 0xA4C21, 16);
 	uint16_t sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
 	uint8_t rfss = (uint8_t)opt_long(o, "--rfss", 1, 10), site = (uint8_t)opt_long(o, "--site", 1, 10);
 	long units = opt_long(o, "--units", 40, 10), grant_at = 10;
@@ -600,7 +600,7 @@ static int cmd_inbound(const char *out_path, const char *exp_path, const opts_t 
 	m[1].opcode = P25_ISP_GRP_AFF_REQ;
 	m[2].opcode = P25_ISP_GRP_V_REQ;
 	for (int i = 0; i < 3; i++) {
-		m[i].wacn = (uint32_t)opt_long(o, "--wacn", 0xBEE00, 16);
+		m[i].wacn = (uint32_t)opt_long(o, "--wacn", 0xA4C21, 16);
 		m[i].sysid = (uint16_t)opt_long(o, "--sysid", 0x2F3, 16);
 		m[i].tg = (uint16_t)opt_long(o, "--tg", 1, 10);
 		m[i].src = (uint32_t)opt_long(o, "--src", 1, 10);

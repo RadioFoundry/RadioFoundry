@@ -131,11 +131,10 @@ void debuglink_view_p25_detail(dl_text_t *t)
 	radio_p25_stats_t c;
 	radio_p25_stats(&c);
 	const p25_alias_stats_t *a = &c.alias;
-	dl_text(t, "p25.alias.talk_complete=%u\n", (unsigned)a->talk_complete);
 	dl_text(t, "p25.alias.parts=%u\np25.alias.complete=%u\np25.alias.rejected=%u\np25.alias.no_source=%u\n",
 		(unsigned)a->parts, (unsigned)a->complete, (unsigned)a->rejected, (unsigned)a->no_source);
-	dl_text(t, "p25.alias.vendor_src=%u\np25.alias.result=%u\np25.alias.seen=%u\np25.alias.count=%u\np25.alias.seq=%u\n",
-		(unsigned)a->vendor_src, a->vendor_result, a->vendor_seen, a->vendor_count, a->vendor_seq);
+	dl_text(t, "p25.alias.mfid90_src=%u\np25.alias.result=%u\np25.alias.seen=%u\np25.alias.count=%u\np25.alias.seq=%u\n",
+		(unsigned)a->mfid90_src, a->mfid90_result, a->mfid90_seen, a->mfid90_count, a->mfid90_seq);
 	dl_text(t, "p25.alias.decoded_src=%u\np25.alias.last_name=%s\n", (unsigned)a->decoded_src, a->last_name);
 #endif
 #if CONFIG_P25 && CONFIG_IMBE

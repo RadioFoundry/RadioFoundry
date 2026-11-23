@@ -12,12 +12,14 @@ CONFIG_DISPLAY_INSET_LEFT ?= 2
 # APRS receive takes the HR_C6000's FM receive audio from the I2S stream (docs/spec/aprs.md 5.3). The iGate (RF to
 # APRS-IS through tools/aprs_gate.py, 1.9 KB) is off by default
 CONFIG_APRS_IGATE ?= n
-MAXIMAL_VARS := LTO=1
+# Include third-party code in LTO so the maximal feature set fits the application region.
+MAXIMAL_VARS := LTO=1 LTO_3P=1
 # Left out of tools/ci.sh's maximal configuration: PPP stands in for the USB network adapter on UART-only radios
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above); French, off by
 # default, so that the maximal build keeps satellite tracking and still fits the app region; Chinese stays out too
 # (its glyph table does not fit beside the rest)
-MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR LANG_ZH LANG_DEFAULT_ZH
+# The optional alias cache does not fit beside all the other maximal features. Live aliases remain enabled.
+MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR LANG_ZH LANG_DEFAULT_ZH P25_ALIAS_CACHE
 
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
 # docs/build-config.md, "Unsupported, not written, unconfirmed"): ci's maximal configuration leaves these off

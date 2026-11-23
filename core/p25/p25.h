@@ -35,6 +35,15 @@
 #define P25_NAC_ANY		0xF7E	// a receiver set to it takes every NAC
 #define P25_NAC_REPEAT_ANY	0xF7F	// a repeater set to it takes every NAC and sends it on as received
 
+// A system whose WACN is in BEE00..BEEFF, or whose system ID is 00A, gets no transmission from the radio, of any
+// kind, however it is heard or programmed
+#define P25_WACN_NO_TX		0xBEE00u
+#define P25_WACN_NO_TX_MASK	0xFFF00u
+#define P25_SYSID_NO_TX		0x00Au
+
+static inline bool p25_wacn_no_tx(uint32_t wacn) { return (wacn & P25_WACN_NO_TX_MASK) == P25_WACN_NO_TX; }
+static inline bool p25_sysid_no_tx(uint16_t sysid) { return sysid == P25_SYSID_NO_TX; }
+
 // Status symbols (table 8-2). A subscriber sends only P25_SS_TALKAROUND or P25_SS_UNKNOWN
 #define P25_SS_BUSY		1	// 01: the inbound channel is busy (a repeater says)
 #define P25_SS_TALKAROUND	0	// 00
@@ -120,6 +129,10 @@ typedef struct {
 	uint16_t nsyms;
 	const uint8_t *air;	// the unit as received, valid during the callback
 } p25_rx_unit_t;
+// An LDU1's or TDULC's link control names a blocked system (p25_wacn_no_tx, p25_sysid_no_tx): the network status
+// broadcast's WACN or system ID, or the RFSS status broadcast's system ID (TIA-102.AABF-D 7.3.16, 7.3.17, 7.3.28:
+// LCO 35, 36 or 41, standard format, not protected). False for another unit or link control, or one undecodable
+bool p25_unit_sys_no_tx(const p25_rx_unit_t *u);
 
 typedef struct {
 	uint16_t nac;		// units of another NAC are not ours; P25_NAC_ANY takes all
@@ -179,14 +192,14 @@ typedef struct {
 	char name[15];
 } p25_alias_event_t;
 typedef struct {
-	uint32_t lc_other, parts, complete, rejected, no_source, unpaired, talk_complete;
+	uint32_t lc_other, parts, complete, rejected, no_source, unpaired;
 	uint32_t last_src;
 	uint8_t last_lc[P25_LC_BYTES];
 	uint32_t decoded_src;
 	char last_name[15];
-	uint32_t vendor_src;
-	uint16_t vendor_seen;
-	uint8_t vendor_result, vendor_count, vendor_seq;
+	uint32_t mfid90_src;
+	uint16_t mfid90_seen;
+	uint8_t mfid90_result, mfid90_count, mfid90_seq;
 } p25_alias_stats_t;
 #if CONFIG_P25_ALIAS_TRACE
 // Diagnostic ring: serial commits each entry; no voice payload or transmit path.
@@ -209,6 +222,7 @@ typedef struct {
 #if CONFIG_P25_ALIAS
 	p25_alias_stats_t alias;
 #endif
+	uint32_t sys_no_tx;	// LDU1s and TDULCs whose link control names a blocked system (p25_unit_sys_no_tx)
 } p25_call_stats_t;
 
 typedef struct {

@@ -11,7 +11,7 @@ can also supply caller metadata; their audio remains muted. Filtered calls do no
 create an entry. Recent remains volatile and is cleared at boot.
 
 P25 and DMR identities are separate even when their numeric source and destination
-IDs match. The assignable Recent function opens the history in every mode. Received P25 entries open the
+IDs match. Received P25 entries open the
 existing Actions screen as read-only details: alias or source ID in the title,
 source ID, received talkgroup if applicable, and a P25 RX-only indication.
 An alias completed while those details are open updates the title.
@@ -42,12 +42,7 @@ and Recent consume. Lookup refreshes recency; the least recently used entry is
 evicted at capacity. Radio initialization clears all entries. The cache uses 1540
 bytes of RAM (64 24-byte entries plus count/padding), performs no flash writes,
 and changes no transmit permissions, IDs, or registration behavior. This is not a
-persistent alias database.
+persistent alias database. The cache is disabled by default. Names reused from
+the cache or Recent are dimmed on Home to distinguish them from this call's alias.
 Filtered calls do not publish alias events. Event storage survives an
 engine restart, but its session prevents use on the new channel's live display.
-
-Assign Recent to an available press or long-press slot in Settings > Keys, or
-open Recent from the menu. Existing assignments and caller-context behavior are unchanged.
-Selecting an entry opens its read-only caller details. A completed alias remains
-visible on idle Home for at most two seconds after UI receipt, without delaying
-the control-channel return. A new call or channel suppresses that display.

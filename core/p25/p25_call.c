@@ -50,11 +50,11 @@ static bool alias_lc(p25_call_rx_t *c, const uint8_t raw[P25_LC_BYTES])
 		uint32_t recovered_src;
 		bool complete = p25_alias90_lc(&c->alias90, raw, c->call.have_lc ? c->call.lc.src : 0,
 					     c->call.lc.tgid, name, &recovered_src);
-		s->vendor_src = c->call.have_lc ? c->call.lc.src : 0;
-		s->vendor_result = c->alias90.result;
-		s->vendor_seen = c->alias90.seen;
-		s->vendor_count = c->alias90.count;
-		s->vendor_seq = c->alias90.seq;
+		s->mfid90_src = c->call.have_lc ? c->call.lc.src : 0;
+		s->mfid90_result = c->alias90.result;
+		s->mfid90_seen = c->alias90.seen;
+		s->mfid90_count = c->alias90.count;
+		s->mfid90_seq = c->alias90.seq;
 		if (c->alias90.result >= P25_ALIAS90_BAD_HEADER)
 			s->rejected++;
 		if (!complete)
@@ -178,6 +178,8 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 #endif
 	if (c->active && c->call.nac != u->nac)
 		call_end(c);
+	if (p25_unit_sys_no_tx(u))
+		c->stats.sys_no_tx++;
 #if CONFIG_P25_TRUNK
 	if (c->sink->unit)
 		c->sink->unit(u, c->ctx);
@@ -259,31 +261,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 			uint8_t raw[P25_LC_BYTES];
 			if (p25_tdulc_get(u->air, raw) >= 0) {
 				trace_unit(c, u, raw, 1);
-				p25_lc_t lc;
-				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP && !lc.tgid) {
-					call_end(c);
-					return;
-				}
-				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP && lc.tgid) {
-					bool fresh_tail = !c->active;
-					if (c->active && c->call.have_lc &&
-					    (c->call.lc.lcf != lc.lcf || c->call.lc.tgid != lc.tgid ||
-					     (lc.src && c->call.lc.src && lc.src != c->call.lc.src))) {
-						call_end(c);
-						fresh_tail = true;
-					}
-					if (fresh_tail) {
-						call_start(c, u, true);
-						c->call.algid = 0;	// metadata alone does not establish clear voice
-					}
-					if (!lc.src && c->call.have_lc) lc.src = c->call.lc.src;
-					c->call.lc = lc;
-					c->call.have_lc = true;
-					if (raw[2] & 0x40) c->call.algid = 0;
-					if (fresh_tail && c->sink->start) c->sink->start(&c->call, c->ctx);
-					else if (c->sink->update) c->sink->update(&c->call, c->ctx);
-					return;
-				}
 				if (p25_alias90_word(raw)) {
 					if (!c->active) {
 						if (raw[0] != 0x15 || !raw[4] || raw[4] > 16 || raw[5] != 1 ||
@@ -296,17 +273,9 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 						c->sink->update(&c->call, c->ctx);
 					return;	// alias data is not a voice frame or the end of its sequence
 				}
-				if (c->active && (!c->call.have_lc || c->call.lc.lcf == P25_LCF_GROUP) &&
-				    p25_alias90_talk_complete(raw, c->call.have_lc ? c->call.lc.src : 0)) {
-					// Preserve the verified caller until the metadata tail or ordinary terminator.
-					c->stats.alias.talk_complete++;
-					return;
-				}
-				if (raw[0] == 0x0f && raw[1] == 0x90) call_end(c);
-				return;	// other valid LC can fill the channel hang before an alias
+
 			} else {
 				trace_unit(c, u, NULL, -1);
-				return;	// wait for a good unit or loss; preserve any partial alias
 			}
 		}
 #endif

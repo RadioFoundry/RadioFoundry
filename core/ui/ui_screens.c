@@ -8,6 +8,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
@@ -713,7 +714,7 @@ static const char *key_names(const char *text, char *out, size_t cap, bool hint)
 			continue;
 		}
 		bool alone = (p == text || p[-1] == ' ' || alt_mark(p[-1])) &&
-			(p[1] == 0 || p[1] == ' ' || p[1] == ':' || alt_mark(p[1]));
+			(p[1] == 0 || p[1] == ' ' || alt_mark(p[1]));
 		const char *sub = !alone ? NULL : *p == '*' ? board.quick_label : *p == '#' ? board.context_label : NULL;
 		if (sub == NULL) {
 			out[n++] = *p;
@@ -1127,23 +1128,6 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
-#if CONFIG_P25_ALIAS
-	} else if (v->ch.mode == RADIO_MODE_P25 && v->state == RS_IDLE &&
-		   !(v->p25.flags & RADIO_P25_RX) &&
-#if CONFIG_P25_TRUNK
-		   (v->ch.kind != CODEPLUG_KIND_P25_TRUNK || v->p25.trunk == RADIO_P25_TRUNK_CONTROL) &&
-#endif
-		   ui_p25_alias_hold(v)) {
-		// A name completed at the terminator must stay readable. IDLE and dim text
-		// distinguish this brief last-caller hold from a call still being received.
-		sb_str(&b, ui_p25_alias_hold(v));
-		c = ui_col.dim;
-	} else if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_ENC) &&
-		   ui_p25_caller_alias(v)[0]) {
-		// Encrypted metadata is useful even while the audio state remains idle.
-		sb_str(&b, ui_p25_caller_alias(v));
-		c = ui_col.warn;
-#endif
 #if CONFIG_P25_TRUNK
 	} else if (v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
@@ -1153,6 +1137,9 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
+			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
@@ -1175,16 +1162,6 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.treq == P25_REQ_TALK) {
 			sb_str(&b, "TG ");
 			sb_u32(&b, v->p25.talk, 1);
-		} else if ((v->p25.flags & RADIO_P25_RX) && v->p25.selected && v->p25.src) {
-#if CONFIG_P25_ALIAS
-			if (ui_p25_caller_alias(v)[0])
-				sb_str(&b, ui_p25_caller_alias(v));
-			else
-#endif
-			{
-				sb_str(&b, "ID ");
-				sb_u32(&b, v->p25.src, 1);
-			}
 		} else {
 			sb_str(&b, TR(HOME_STATE_P25T_FOLLOW, "Following"));
 			sb_str(&b, (v->p25.flags & RADIO_P25_UNIT) != 0 ? " ID " : " TG ");
@@ -1407,6 +1384,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
 	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
+	case TXDENY_AES_KEY: sb_str(&b, TR(WHY_AES_KEY, "AES key or TX disabled")); break;
+	case TXDENY_AES_WAIT: sb_str(&b, TR(WHY_AES_WAIT, "AES: saving, try again")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
 	case TXDENY_NO_DMR: sb_str(&b, TR(DENY_WHY_MODEM_NOT_RUNNING, "DMR modem not running")); break;
@@ -1430,6 +1409,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "Blocked system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
@@ -2148,18 +2128,18 @@ static void draw_dmr_call(const radio_view_t *v, const ui_state_t *s)
 // A P25 or NXDN call coming in (air_call): whether one is heard now, and its fields
 typedef struct {
 	bool played, enc, unit;
-	bool trunked;
 	uint32_t src, dst;
 #if CONFIG_P25_ALIAS
 	const char *alias;
+	bool remembered;
 #endif
 } air_call_t;
 
 static bool air_call(const radio_view_t *v, air_call_t *c)
 {
-	c->trunked = false;
 #if CONFIG_P25_ALIAS
 	c->alias = NULL;
+	c->remembered = false;
 #endif
 #if CONFIG_P25
 	if (v->ch.mode == RADIO_MODE_P25 && (v->p25.flags & RADIO_P25_RX) != 0) {
@@ -2169,11 +2149,9 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		c->unit = (p->flags & RADIO_P25_UNIT) != 0;
 		c->src = p->src;
 		c->dst = p->dst;
-#if CONFIG_P25_TRUNK
-		c->trunked = v->ch.kind == CODEPLUG_KIND_P25_TRUNK;
-#endif
 #if CONFIG_P25_ALIAS
 		c->alias = ui_p25_caller_alias(v);
+		c->remembered = c->alias[0] && (!p->alias[0] || p->alias_cached);
 #endif
 		return true;
 	}
@@ -2201,46 +2179,27 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 	char buf[64], fit[48];
 	sbuf_t b;
 
-	if (!c->played
-#if CONFIG_P25_ALIAS
-	    && !(c->alias && c->alias[0])
-#endif
-	   ) {
+	if (!c->played) {
 		gfx_text_fit(f, c->enc ? TR(CALL_WHY_ENCRYPTED, "Encrypted: not played") :
 			TR(CALL_WHY_OTHER_TG, "Other TG: not played"), gfx_width(), fit, sizeof fit);
 		gfx_text(f, 0, y, fit, ui_col.warn);
 		return;
 	}
-	// P25 caller identity uses the existing activity row; channel, power and status stay put.
-#if CONFIG_P25
-	if (c->src > 0 && (c->trunked
-#if CONFIG_P25_ALIAS
-	    || (c->alias && c->alias[0])
-#endif
-	    )) {
-		sb_init(&b, buf, sizeof buf);
-#if CONFIG_P25_ALIAS
-		if (c->alias && c->alias[0])
-			sb_str(&b, c->alias);
-		else
-#endif
-		{
-			sb_str(&b, "ID ");
-			sb_u32(&b, c->src, 1);
-		}
-		gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
-		gfx_text(f, 0, y, fit, ui_col.rx);
-		return;
-	}
-#endif
 	// Too wide: keep the marker and destination, then cut the destination if needed
 	for (int with_id = c->src != 0; with_id >= 0; with_id--) {
 		sb_init(&b, buf, sizeof buf);
 		if (c->enc)
 			sb_str(&b, "ENC ");
 		if (with_id) {
-			sb_str(&b, "ID ");
-			sb_u32(&b, c->src, 1);
+#if CONFIG_P25_ALIAS
+			if (c->alias && c->alias[0])
+				sb_str(&b, c->alias);
+			else
+#endif
+			{
+				sb_str(&b, "ID ");
+				sb_u32(&b, c->src, 1);
+			}
 			sb_str(&b, " " GLYPH_ARROW " ");
 		}
 		if (c->unit) {
@@ -2253,7 +2212,11 @@ static void air_call_line(const air_call_t *c, const font_t *f, int y)
 			break;
 	}
 	gfx_text_fit(f, buf, gfx_width(), fit, sizeof fit);
-	gfx_text(f, 0, y, fit, ui_col.rx);
+	gfx_text(f, 0, y, fit,
+#if CONFIG_P25_ALIAS
+		 c->remembered ? ui_col.dim :
+#endif
+		 ui_col.rx);
 }
 #endif
 
@@ -2278,23 +2241,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_AIR
 		air_call_t ac;
 		bool air_rx = air_call(v, &ac);
-#if CONFIG_P25_TRUNK
-		// The talk row already identifies this caller. Use the activity row for the
-		// zone on compact layouts that have no zone row; keep the usual meter above
-		// it on taller activity areas.
-		if (air_rx && ac.trunked && ac.played && ac.src && L->zone_y < 0 && v->zone_name[0]) {
-			if (two) {
-				sb_i32(&b, v->rssi_dbm);
-				sb_str(&b, " dBm");
-				int tw = gfx_text_width(big, buf);
-				gfx_text(big, w - tw, y, buf, ui_col.fg);
-				draw_meter(0, y + big->h / 4, w - tw - big->w, big->h / 2, v->rssi_dbm);
-			}
-			gfx_text_fit(sm, v->zone_name, w, fit, sizeof fit);
-			gfx_text(sm, 0, two ? y2 : y, fit, ui_col.dim);
-			break;
-		}
-#endif
+
 		if (!two && air_rx) {
 			air_call_line(&ac, sm, y);	// one line: who calls says more than the meter
 			break;
@@ -2386,12 +2333,30 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+#if CONFIG_APRS_RX
+		{
+			aprs_view_t aprs_v;
+			if (ui_svc_aprs_view(&aprs_v) && aprs_v.last_msg_ms != 0 &&
+			    (v->last_rx_ms == 0 || aprs_v.last_msg_ms + 2000u >= v->last_rx_ms)) {
+				sb_str(&b, TR(APRS_ACTIVITY_LAST_MSG, "APRS: "));
+				sb_str(&b, aprs_v.last_msg_from);
+				sb_str(&b, " ");
+				sb_age(&b, s->now_ms - aprs_v.last_msg_ms);
+			} else if (v->last_rx_ms) {
+				sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
+				sb_age(&b, s->now_ms - v->last_rx_ms);
+			} else {
+				sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
+			}
+		}
+#else
 		if (v->last_rx_ms) {
 			sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
 			sb_age(&b, s->now_ms - v->last_rx_ms);
 		} else {
 			sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
 		}
+#endif
 		bool mon = v->monitor && L->activity_h >= 2 * sm->h;
 		y += (L->activity_h - (mon ? 2 : 1) * sm->h) / 2;	// centered in the activity area
 		gfx_text_fit(sm, buf, gfx_width(), fit, sizeof fit);
@@ -3156,7 +3121,7 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
 	for (int i = 0; i < nx; i++, ty += f->h)
 		gfx_text(f, 2, ty, text[i], fg);
-	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ?
+	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER || bn->kind == UI_BANNER_APRS_MESSAGE) ?
 		TR(BANNER_HINT_OPEN, "# Open") :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ?
 			TR(BANNER_HINT_ACTIONS, "# Actions") : TR(BANNER_HINT_HIDE, "Back hide");

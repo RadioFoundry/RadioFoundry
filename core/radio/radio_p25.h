@@ -63,6 +63,7 @@ enum {
 	RADIO_TRUNK_WHY_REG_REFUSED,	// the system refused the radio's registration (Tier III Reg_Refused: ID not known)
 	RADIO_TRUNK_WHY_UNMAPPED,	// granted on a channel the codeplug doesn't list (Tier III: radio_t3_brief_t.unmapped)
 	RADIO_TRUNK_WHY_OTHER_KIND,	// no control channel held; a trunking system of another kind heard (Tier III: its FID)
+	RADIO_TRUNK_WHY_BLOCKED,	// P25: the system's WACN or system ID is blocked, never transmitted on
 };
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
@@ -80,6 +81,7 @@ typedef struct {
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
 #if CONFIG_P25_ALIAS
 	char alias[15];
+	bool alias_cached;
 	uint32_t call_session, call_number;
 	uint32_t alias_session;
 	p25_alias_event_t alias_event;

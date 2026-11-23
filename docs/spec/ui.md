@@ -66,14 +66,6 @@ Hints and toasts call the QUICK and CONTEXT keys `*` and `#`. A radio without th
 drawn as that name ("OK Menu  P1 Quick"). On a radio with no digit keys a hint group that starts with a digit
 ("0-9 find") is left out. Toasts keep their numbers.
 
-Home's idle hint names the key assigned to Recent, preferring a press over a hold.
-It follows the configured side or Home key and includes `hold` for a long press.
-Without an assigned Recent key, this hint is omitted; Recent remains in the Hub.
-Caller names and IDs belong in the call display and Recent, not in the shortcut hint.
-When the full Home hints do not fit, a compact alternate keeps Menu, Quick and
-Recent together on the same row. Colons join keys to actions, `h` means hold,
-and `Rcnt` abbreviates Recent. This does not consume the activity or status rows.
-
 Text is shortened with a middle ellipsis only as a last resort (P5 allows it for names on Home). Before that:
 
 - A list row keeps its label whole and gives the value the room left: values carry text alternates (`font.h`) down to
@@ -505,8 +497,9 @@ position in the list is its role. Each role has a press and a long press, and ea
 | VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
 | Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 | TG name / number (19) | TALK_LABEL: Home's talk line puts the talkgroup's name first, or back to its number first; the same as Settings > Display > Talkgroup name first, and saved. Toast "Talkgroup name first" / "Talkgroup number first". Offered in builds with DMR | yes | yes |
+| Scan skip (20) | SCAN_SKIP: what the scan action's "Skip channel for now" does, without the menu: the nuisance delete of the channel that stopped the scan, until the scan stops. Toast "Skipped until the scan stops", "Nothing to skip yet" when the radio has no channel to skip, "Not scanning" (and nothing else) when no scan is running. Allowed on a home key like Scan: it is a plain press or long press function | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
+POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
@@ -758,8 +751,3 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   PTT then talks to it once, and the radio follows it for a reply window (the reply time setting, else the
   codeplug's hang time) before going back to the channel's talk target. A channel change, the call ending outside
   the window, Reply cancel or a new manual target end it.
-
-The assignable **Recent** function opens call history on a press or long press.
-It has no fixed physical key and does not change the caller-context function.
-Home-key assignments still apply only on Home; those keys keep their normal
-navigation behavior elsewhere. Existing stored function numbers are unchanged.
