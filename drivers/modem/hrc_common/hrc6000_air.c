@@ -337,6 +337,13 @@ static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
 
 // The chip from DMR (or the physical layer) to the copy set-up: FM receive with every audio filter off, nothing to
 // the line out, the FM receive RAM's interrupt on
+// A new set-up to come (open, tap start, the board's mode entry, the close): copy_on reads the registers again
+static void copy_forget(hrc6000_air_t *a)
+{
+	a->copy_saved = false;
+	a->copy_tried = false;
+}
+
 static void copy_on(hrc6000_air_t *a)
 {
 	// The registers before the copy, once per set-up: a copy set up again (the watchdog, the end of a transmission)
@@ -377,7 +384,7 @@ static void copy_restore(hrc6000_air_t *a, bool chip)
 		w(a, R_INT_MASK, HRC_INT_MASK_DMR);
 		w(a, R_INT_CLEAR, 0xFF);
 	}
-	a->copy_saved = a->copy_tried = false;
+	copy_forget(a);
 }
 
 // Back to the DMR receive set-up; the board restarts the slot engine (5.1) after
@@ -752,7 +759,7 @@ bool hrc6000_air_tap_start(hrc6000_air_t *a)
 	lock(a);
 	a->tap = true;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = a->copy_tried = false;
+	copy_forget(a);
 	memset(&a->st, 0, sizeof(a->st));
 	copy_on(a);
 	unlock(a);
@@ -844,7 +851,7 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 	lock(a);
 	a->rx_copy = copy;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = a->copy_tried = false;
+	copy_forget(a);
 	a->p = p;
 	a->cb = cb;
 	a->cb_ctx = ctx;
@@ -920,7 +927,7 @@ void hrc6000_air_suspend(hrc6000_air_t *a)
 			tx_stop(a, now(a), false);
 		}
 		a->copy = false;	// the board's mode entry rewrote what copy_on changed; rx_restart sets it up again
-		a->copy_saved = a->copy_tried = false;
+		copy_forget(a);
 		a->rx_paused = true;
 	}
 	unlock(a);
