@@ -46,14 +46,9 @@ if [ -n "$SELF" ]; then
 else
 	MOUNT="-v $ROOT:$ROOT"
 	USER_OPT="--user $(id -u):$(id -g)"
-	# RFOUNDRY_THIRD_PARTY (platform/third_party.mk): another checkout is mounted at its own path too, whole, so git in
-	# the container can read its submodules' commits (in that checkout's .git) for the pin check
-	if [ -n "${RFOUNDRY_THIRD_PARTY:-}" ]; then
-		TP=$(cd "$RFOUNDRY_THIRD_PARTY" && pwd -P)
-		TP_TOP=$(git -C "$TP" rev-parse --show-toplevel 2>/dev/null || echo "$TP")
-		MOUNT="$MOUNT -e RFOUNDRY_THIRD_PARTY=$TP"
-		[ "$TP_TOP" = "$(cd "$ROOT" && pwd -P)" ] || MOUNT="$MOUNT -v $TP_TOP:$TP_TOP"
-	fi
+	# RFOUNDRY_THIRD_PARTY: the other checkout and the git directories its pin check reads
+	. "$ROOT/tools/docker/third_party_opts.sh"
+	MOUNT="$MOUNT $(tp_opts "$ROOT")"
 fi
 echo "csky run: $IMG ($(docker image inspect -f '{{.Id}}' "$IMG" | cut -c1-19)) in $ROOT"
 # safe.directory: the tree may belong to another user than the container's (git only reads it, for version strings

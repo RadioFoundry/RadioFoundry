@@ -694,8 +694,8 @@ error path restarts it; accept any NMEA talker and an 82-character line plus CR 
 **13.9 No git stash in a worktree with symlinked submodules.** In a worktree whose `third_party/*` are symlinks to
 another checkout, `git stash` (to build a baseline for a size comparison) took the symlinks away for the stash's
 duration: the baseline build failed on `FreeRTOS.h`, and git refuses most operations on the paths ("expected submodule
-path not to be a symbolic link"). Leave a worktree's submodules uninitialized and build with `RFOUNDRY_THIRD_PARTY`
-instead ([building.md](../dev/building.md#worktrees)), and build a baseline in a `git worktree add --detach` of the
+path not to be a symbolic link"). Make worktrees with `tools/worktree.sh` and build with `RFOUNDRY_THIRD_PARTY`
+instead ([building.md](../dev/building.md#worktrees)), and build a baseline in `tools/worktree.sh add <dir> --detach` of the
 base commit.
 
 **13.10 Link order changes LTO code.** `$(wildcard)` returns files in an order that depends on the make: GNU make 4.3
