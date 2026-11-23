@@ -2823,7 +2823,9 @@ static void test_hotspot(void)
 	CHECK(radio_sm_hotspot_freq_ok(438800000, 438800000));
 	CHECK(!radio_sm_hotspot_freq_ok(121500000, 121500000));	// TX not allowed there
 	CHECK(!radio_sm_hotspot_freq_ok(438800000, 0));
-	CHECK(radio_sm_hotspot_power(255) == 2 && radio_sm_hotspot_power(0) == 0 && radio_sm_hotspot_power(128) == 1);
+	CHECK(radio_sm_hotspot_power(254, 0) == 2 && radio_sm_hotspot_power(0, 2) == 0 && radio_sm_hotspot_power(128, 0) == 1);
+	// 255 is the host's default, never set by the user: the radio's own power, never the top step (#1018)
+	CHECK(radio_sm_hotspot_power(255, 0) == 0 && radio_sm_hotspot_power(255, 2) == 2 && radio_sm_hotspot_power(255, 9) == 2);
 
 	dmr_start(true);
 	// Refused while PTT is held
@@ -2845,12 +2847,12 @@ static void test_hotspot(void)
 		hw.tx_power == 1);
 	// A new level re-keys, through tx_off: never a second tx() on a keyed board
 	int rk = rekeys;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
 	// The same level again (a split TX half re-sends its cap): the keying stays as it is
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
 	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
 	// outbound stopped for good), so the level waits for its end
@@ -2874,7 +2876,7 @@ static void test_hotspot(void)
 	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
 	CHECK(!sm.hs_power_due);
 	sim.tx_active = false;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
 	radio_sm_request(&sm, &f, now);
 	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
@@ -2884,12 +2886,29 @@ static void test_hotspot(void)
 	// Nor armed on a critical battery, dropped mid-transmission too
 	sm.batt.level = BATT_CRITICAL;
 	sim.tx_active = true;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
 	sim.tx_active = false;
 	sm.batt.level = BATT_OK;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
+	// 255 keys the radio's own power, and the screen shows the level keyed; a power step on the radio follows while
+	// the host leaves its level at 255, and is ignored once the host sets one
+	CHECK(sm.view.hs_power == 2);
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power && sm.dmr_keyed);
+	uint8_t own = sm.view.power;
+	int tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != own && hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power);
+	CHECK(hw.tx_calls == tx1 + 1 && sm.dmr_keyed);
+	req(RREQ_HS_POWER, 0);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0);
+	tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0 && hw.tx_calls == tx1);
+	req(RREQ_POWER, -1);
+	req(RREQ_HS_POWER, 254);
 	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;

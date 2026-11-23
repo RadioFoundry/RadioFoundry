@@ -241,7 +241,7 @@ A standard host sends SET_MODE idle at startup and when its mode hang expires, a
 | 10-13 | POCSAG TX frequency, Hz, little endian (hosts send a filler or the TX frequency when POCSAG is off) |
 
 Lengths: hosts normally send 14 payload bytes (frame length 11 hex). Accept 9 (no
-RF level: full power), 10 (with RF level) and 14. Protocol 1 and 2 use the same layout.
+RF level: as FF, the radio's own power), 10 (with RF level) and 14. Protocol 1 and 2 use the same layout.
 
 Rules:
 
@@ -250,8 +250,9 @@ Rules:
   channels (461-467 MHz), and a band check that refused them had to go (gotchas 8.7). A NAK at
   startup can stop the host, which is the right outcome for a frequency the radio can't tune. Ignore the POCSAG
   frequency unless POCSAG TX is implemented (never NAK because of it).
-- RF level: map 0-255 onto the radio's power steps; FF (the user never touched it) keeps the radio's own power setting.
-  RadioFoundry retunes at once. A new power step that arrives while the radio transmits applies when that
+- RF level: map 0-FE onto the radio's power steps (0 the lowest, FE the highest); FF (the host's default 100 %, which
+  the user never touched) keeps the radio's own power setting, and a power change on the radio applies at once while the
+  level stays FF. The hotspot screen shows the step in use. RadioFoundry retunes at once. A new power step that arrives while the radio transmits applies when that
   transmission ends.
 - SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
   is closed. If an uplink call was open, send DMR_LOST2 before the ACK (a host may otherwise keep such a call open,
