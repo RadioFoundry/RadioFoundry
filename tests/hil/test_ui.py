@@ -786,7 +786,7 @@ def test_delete_message(home, request, pytestconfig):
 @skip_if(os.environ.get("RFOUNDRY_HIL_FACTORY_RESET") != "1", "opt_in",
          "erases the settings and the native area: set RFOUNDRY_HIL_FACTORY_RESET=1 (and --allow-reboot)")
 def test_factory_reset(home):
-    """Settings > Advanced (0) > Factory reset > Yes: the settings go back to their defaults, the native area is erased
+    """Settings > Advanced > Factory reset > Yes: the settings go back to their defaults, the native area is erased
     (never the codeplug or calibration), and the radio restarts. The channel position survives only as the default.
     Radio tuning's trims stay (radio-tune.md 4): one saved before the reset is there after, then the trims as found go
     back."""
@@ -801,30 +801,36 @@ def test_factory_reset(home):
             r.link.tune_save()
         except DebugLinkError:
             tune = None
-    # Hub digits are the entry numbers in every build (Settings 7), Advanced is group 0, Factory reset its fourth row
-    for k, screen in (("ok", "hub"), ("7", "settings"), ("0", "group")):
-        r.press(k)
-        wait_screen(r, screen)
-    for k in ("down", "down", "down", "ok"):
-        r.press(k)
-    wait_screen(r, "confirm", "the confirmation (defaults to No)")
-    assert ui(r)["ui.focus"] == "0"
-    r.press("down")
-    up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
-    r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
-    time.sleep(2.0)
-    r.reconnect(20.0)
-    s = r.view(["storage", "link"])
-    assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
-    assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
-    assert as_int(s.get("settings.failures"), 0) == 0, s
-    # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
-    assert r.core().get("zone_count") == zones, "the codeplug changed"
+    got = None
+    try:
+        # Hub digits are the entry numbers in every build (Settings 7). Advanced is the last group (its digit depends on
+        # the build), reached by Up from the first; Factory reset is its fourth row
+        for k, screen in (("ok", "hub"), ("7", "settings"), ("up", "settings"), ("ok", "group")):
+            r.press(k)
+            wait_screen(r, screen)
+        for k in ("down", "down", "down", "ok"):
+            r.press(k)
+        wait_screen(r, "confirm", "the confirmation (defaults to No)")
+        assert ui(r)["ui.focus"] == "0"
+        r.press("down")
+        up0 = as_int(r.link.view(["link"]).get("uptime_ms"), 0)
+        r.link.key("ok")    # not press(): it waits for the keys to go idle, and the radio is restarting then
+        time.sleep(2.0)
+        r.reconnect(20.0)
+        s = r.view(["storage", "link"])
+        assert as_int(s.get("uptime_ms"), up0) < up0, f"the radio did not restart: {s.get('uptime_ms')} ms up"
+        assert as_int(s.get("settings.long_press_ms")) in (0, 600) and s.get("settings.auto_lock_s") == "0", s
+        assert as_int(s.get("settings.failures"), 0) == 0, s
+        # The channel position goes back to the default (another zone), so the zone count says the codeplug stayed
+        assert r.core().get("zone_count") == zones, "the codeplug changed"
+        if tune is not None:
+            got = r.link.tune_get()
+    finally:
+        if tune is not None:    # the trims as found, also when a step above failed
+            if tune[0]:
+                r.link.tune_put(tune[0])
+                r.link.tune_save()
+            else:
+                r.link.tune_clear()
     if tune is not None:
-        got = r.link.tune_get()
-        if tune[0]:
-            r.link.tune_put(tune[0])
-            r.link.tune_save()
-        else:
-            r.link.tune_clear()
         assert got == tune[1], "a factory reset removed the radio tuning trims"
