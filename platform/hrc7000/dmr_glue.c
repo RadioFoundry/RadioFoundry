@@ -227,22 +227,17 @@ HRC_FLASHFUNC static void lost_check(const uint32_t before[4])
 // The same for an air session or tap, kept apart from the engine's record: dmr.modem_stalls and dmr.modem_stuck count
 // the engine's recoveries only. The air poll set the copy up again (no half for 200 ms, modem-hrc7000.md 3.3): keep the
 // first one's PIC words, and unmask the modem sources again, in case a mask left set and not the chip stopped the halves
-static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
-static uint32_t air_lost_ms;
-static uint32_t air_lost_regs[4];
+static air_lost_rec_t air_lost;
 
 HRC_FLASHFUNC static void air_lost_check(const uint32_t before[4])
 {
-	uint32_t n = AIR->st.copy_restarts;
-	if (n == air_lost_seen) {
+	uint32_t s = hrc_irq_save();	// against a stats reset and the view
+	bool rose = air_lost_note(&air_lost, AIR->st.copy_restarts, before, hal_millis());
+	hrc_irq_restore(s);
+	if (!rose) {
 		return;
 	}
-	air_lost_seen = n;
-	if (air_lost_ms == 0) {
-		memcpy(air_lost_regs, before, sizeof air_lost_regs);
-		air_lost_ms = hal_millis() | 1u;
-	}
-	uint32_t s = hrc_irq_save();
+	s = hrc_irq_save();
 	if (active && lock_depth == 0) {
 		irqs_enable(true);
 	}
@@ -559,7 +554,7 @@ HRC_FLASHFUNC static bool air_take(void)
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped
-	air_lost_seen = 0;		// the session's stats start at 0
+	air_lost.seen = 0;		// the session's stats start at 0
 	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM);
 	return true;	// locked
 }
@@ -659,8 +654,11 @@ static bool air_rx_counts(air_rx_counts_t *c)
 		return false;
 	}
 	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks,
-				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost_ms };
-	memcpy(c->lost_regs, air_lost_regs, sizeof c->lost_regs);
+				.copy_restarts = AIR->st.copy_restarts };
+	uint32_t s = hrc_irq_save();
+	c->lost_ms = air_lost.ms;
+	memcpy(c->lost_regs, air_lost.regs, sizeof c->lost_regs);
+	hrc_irq_restore(s);
 	return true;
 }
 
@@ -730,8 +728,8 @@ HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
 #if CONFIG_AIR
-	air_lost_ms = 0;
-	memset(air_lost_regs, 0, sizeof air_lost_regs);
+	air_lost.ms = 0;
+	memset(air_lost.regs, 0, sizeof air_lost.regs);
 #endif
 	unlock(NULL);
 	hrc_audio_pcm_gate_reset();	// its line is one of ours

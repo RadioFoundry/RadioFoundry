@@ -888,8 +888,8 @@ void hrc6000_air_close(hrc6000_air_t *a, bool chip)
 void hrc6000_air_rx_restart(hrc6000_air_t *a)
 {
 	lock(a);
-	if (a->tap && !a->open) {
-		copy_on(a);	// the tap's copy, after the board's mode entry rewrote the chip
+	if (a->tap) {
+		copy_on(a);	// the tap's copy, after the board's mode entry rewrote the chip (open and tap exclude)
 	} else if (a->open) {
 		if (a->tx == HRC6000_AIR_RX) {
 			rx_setup(a);

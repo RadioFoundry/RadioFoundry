@@ -220,22 +220,14 @@ static void lost_check(void)
 // The same record for an air session's or the tap's copy, kept apart from dmr.modem_*, which count the engine's
 // stalls and lost system edges (an edge lost under a session too). The air poll set the copy up again (no half for
 // 200 ms): keep the first restart's words, the system flags the poll found and the three lost_words takes
-static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
-static uint32_t air_lost_ms;
-static uint32_t air_lost_regs[4];
+static air_lost_rec_t air_lost;
 
 static void air_lost_check(const uint32_t before[3])
 {
-	uint32_t n = AIR->st.copy_restarts;
-	if (n == air_lost_seen) {
-		return;
-	}
-	air_lost_seen = n;
-	if (air_lost_ms == 0) {
-		air_lost_regs[0] = AIR->copy_lost_flags;
-		memcpy(&air_lost_regs[1], before, 3 * sizeof before[0]);
-		air_lost_ms = hal_millis() | 1u;
-	}
+	uint32_t w[4] = { AIR->copy_lost_flags, before[0], before[1], before[2] };
+	lock(NULL);	// against a stats reset and the view
+	(void)air_lost_note(&air_lost, AIR->st.copy_restarts, w, hal_millis());
+	unlock(NULL);
 }
 #endif
 
@@ -959,7 +951,7 @@ static void air_take(void)
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped: its queue is the session's memory now
 	eng.txq_tail = eng.txq_head;
-	air_lost_seen = 0;	// the session's stats start at 0
+	air_lost.seen = 0;	// the session's stats start at 0
 	hrc6000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM,
 			 air_tap());
 }
@@ -1078,10 +1070,12 @@ static bool air_rx_counts(air_rx_counts_t *c)
 	if (!air_on) {
 		return false;
 	}
+	lock(NULL);
 	*c = (air_rx_counts_t){ .records = AIR->st.records, .synced = AIR->st.synced, .halves = AIR->st.halves,
 				.overruns = AIR->st.overruns + AIR->st.rx_overflow, .chunks = AIR->st.chunks,
-				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost_ms };
-	memcpy(c->lost_regs, air_lost_regs, sizeof c->lost_regs);
+				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost.ms };
+	memcpy(c->lost_regs, air_lost.regs, sizeof c->lost_regs);
+	unlock(NULL);
 	return true;
 }
 
@@ -1191,8 +1185,8 @@ void stm32_hrc_dmr_stats_reset(void)
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
 #if CONFIG_AIR
-	air_lost_ms = 0;
-	memset(air_lost_regs, 0, sizeof air_lost_regs);
+	air_lost.ms = 0;
+	memset(air_lost.regs, 0, sizeof air_lost.regs);
 #endif
 	unlock(NULL);
 	rf_counters(&rf_base[0], &rf_base[1], &rf_base[2]);
