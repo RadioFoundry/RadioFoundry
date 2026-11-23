@@ -310,7 +310,9 @@ static const flow_t flows[] = {
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
 	{ "9 squelch 2 steps (FM)", "down", "quick 2 up up back", "sq=7 screen=home", 5, false },
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	{ "10 privacy", "", "quick 6 back", "privacy=1 screen=home", 3, false },
+#endif
 	{ "11 scan start (Tools > Scan)", "", "ok 6 1", "scanning=1", 3, false },
 	{ "11 nuisance skip", "ok 6 1", "ctx 1", "pos=4 scanning=1", 2, false },
 	{ "11 scan stop", "ok 6 1", "back", "scanning=0", 1, false },
@@ -874,18 +876,20 @@ static const flow_t flows[] = {
 	// channel with its key), else nothing. The chips line leaves the type out when the badge names it
 	{ "S padlock: a clear channel has none", "", "", "padlock=0 encbadge=0", 0, false },
 	{ "S encryption type: none on a clear channel", "", "", "hides=AES256 hides=BP_MOTO hides=BP_Moto", 0, false },
-	// Basic privacy on (the Quick tile, Motorola key 123)
-	{ "S encryption type: BP Moto", "ok 7 4 ok down ok 1 2 3 ok long:back", "quick 6 back",
-	  "privacy=1 screen=home shows=BP_MOTO hides=BP_Moto encbadge=1 padlock=1", 3, false },
 #if CONFIG_DMR_AES
 	// An AES channel with its key; not one with no key (it won't transmit)
 	{ "S padlock: an AES channel with its key", "aeschan", "", "padlock=1 screen=home", 0, false },
 	{ "S padlock: an AES channel without a key", "aeschan0", "", "padlock=0", 0, false },
 	{ "S encryption type: AES256", "aeschan", "", "shows=AES256 encbadge=1", 0, false },
 #endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	// Basic privacy on (the Quick tile, Motorola key 123)
+	{ "S encryption type: BP Moto", "ok 7 4 ok down ok 1 2 3 ok long:back", "quick 6 back",
+	  "privacy=1 screen=home shows=BP_MOTO hides=BP_Moto encbadge=1 padlock=1", 3, false },
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
+#endif
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 7 1 down down down down down down down down down", "ok", "toast=Voice_prompts", 1, false },
 	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_DMR mode=dmr temporary=0 vfo=1", 2, false },
@@ -906,6 +910,15 @@ static const flow_t flows[] = {
 	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
 	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
 	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	{ "S Privacy opens", "ok 7", "4", "screen=group shows=Key_type", 1, false },
+#else
+	// Privacy compiled out (uiFlowTestNoColor): Settings > Privacy is dimmed and OK says why instead of opening it
+	{ "S Privacy compiled out: its key", "ok 7", "4", "screen=settings toast=Privacy:_not_in_this_build", 1, false },
+	{ "S Privacy compiled out: OK on the row", "ok 7 4", "ok", "screen=settings toast=Privacy:_not_in_this_build", 1,
+	  false },
+	{ "S Privacy compiled out: Location keeps key 5", "ok 7", "5", "screen=group", 1, false },
+#endif
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },

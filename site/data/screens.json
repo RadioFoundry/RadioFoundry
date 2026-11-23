@@ -41,7 +41,11 @@
    ]
   },
   "home_privacy": {
-   "group": "home"
+   "group": "home",
+   "needs": [
+    "DMR",
+    "DMR_PRIVACY"
+   ]
   },
   "home_fm": {
    "group": "home",
