@@ -497,8 +497,9 @@ position in the list is its role. Each role has a press and a long press, and ea
 | VFO/Channel (17) | VFO_TOGGLE: between the channel and the VFO, as a VFO / MR key does ("VFO", "Back to channels"; in dual watch, the selected side). Offered in builds with a VFO | yes | yes |
 | Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 | TG name / number (19) | TALK_LABEL: Home's talk line puts the talkgroup's name first, or back to its number first; the same as Settings > Display > Talkgroup name first, and saved. Toast "Talkgroup name first" / "Talkgroup number first". Offered in builds with DMR | yes | yes |
+| Scan skip (20) | SCAN_SKIP: what the scan action's "Skip channel for now" does, without the menu: the nuisance delete of the channel that stopped the scan, until the scan stops. Toast "Skipped until the scan stops", "Nothing to skip yet" when the radio has no channel to skip, "Not scanning" (and nothing else) when no scan is running. Allowed on a home key like Scan: it is a plain press or long press function | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
+POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
