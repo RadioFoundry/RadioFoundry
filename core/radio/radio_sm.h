@@ -158,7 +158,7 @@ typedef enum {
 	RREQ_DMR_PRIVACY,	// DMR: arg = type << 16 | key
 	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
-	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
+	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-254, RADIO_HS_RF_OWN = the radio's own power
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)

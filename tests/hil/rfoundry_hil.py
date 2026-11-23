@@ -763,7 +763,7 @@ class Radio:
 
     def hotspot_rf_level(self):
         """The MMDVM RF level (SET_FREQ / SET_CONFIG, 0-255) that gives bench_tx_level(): the smallest the radio
-        maps to it (radio_sm_hotspot_power spreads 0-255 over the power levels, rounding)"""
+        maps to it (radio_sm_hotspot_power spreads 0-254 over the power levels, rounding; 255 keeps the radio's own)"""
         level, n = self.bench_tx_level(), int(self.core().get("power_count") or 1)
         if level == 0 or n < 2:
             return 0

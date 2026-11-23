@@ -252,8 +252,8 @@ Rules:
   frequency unless POCSAG TX is implemented (never NAK because of it).
 - RF level: map 0-FE onto the radio's power steps (0 the lowest, FE the highest); FF (the host's default 100 %, which
   the user never touched) keeps the radio's own power setting, and a power change on the radio applies at once while the
-  level stays FF. The hotspot screen shows the step in use. RadioFoundry retunes at once. A new power step that arrives while the radio transmits applies when that
-  transmission ends.
+  level stays FF. The hotspot screen shows the step in use. RadioFoundry retunes at once. A new power step that arrives
+  while the radio transmits applies when that transmission ends.
 - SET_FREQ resets the hotspot's call state (gotchas 8.6): anything buffered for TX is dropped and the RF uplink call
   is closed. If an uplink call was open, send DMR_LOST2 before the ACK (a host may otherwise keep such a call open,
   3.7). After the ACK, every frame sent up must have been heard on the new frequency.
@@ -672,7 +672,7 @@ Example frames (typical host defaults: levels 50 %, CC 1, TX delay 100 ms, simpl
 | C-5 | SET_CONFIG with TX delay 64 hex (1 s) | ACK |
 | C-6 | SET_CONFIG with state 01 (D-Star) | `E0 05 7F 02 04` |
 | C-7 | SET_CONFIG of 13 payload bytes (old hosts) | ACK, color code taken from payload 6 |
-| C-8 | SET_FREQ of 9 and of 10 payload bytes | ACK each; 9 means full power |
+| C-8 | SET_FREQ of 9 and of 10 payload bytes | ACK each; 9 keeps the radio's own power (as FF) |
 | C-9 | SET_FREQ at 463.2500 MHz with POCSAG 433 MHz, and at 146.52 MHz (if the radio has VHF) | ACK (no amateur-band check, POCSAG frequency ignored) |
 | C-10 | SET_FREQ outside the hardware range (e.g. 1 GHz) | `E0 05 7F 04 04` |
 | C-11 | SET_MODE 06, then 00, then 02, then 02 again | four ACKs |

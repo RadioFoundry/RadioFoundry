@@ -2836,6 +2836,11 @@ static void test_hotspot(void)
 	run(1000);
 	CHECK(sm.view.state == RS_IDLE);
 
+	// The first keying, before the host's level, is at the radio's own power (step 1 here)
+	for (int i = 0; i < 3 && sm.view.power != 1; i++) {
+		req(RREQ_POWER, 1);
+	}
+	CHECK(sm.view.power == 1);
 	int modes = hw.set_mode_calls;
 	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
 	req(RREQ_HS_ENTER, 0);

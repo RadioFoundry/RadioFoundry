@@ -51,8 +51,8 @@ Slot2=1
 - The radio uses timeslot 2 only: enable network slot 2 and disable slot 1.
 - The baud rate is ignored on USB. 115200 works.
 - Transmit power: with `RFLevel` in `[Modem]` left at 100 (the default), the radio transmits at the power set on the
-  radio, and a power change on the radio applies at once. A lower `RFLevel` picks a power step instead: 0 is the
-  lowest step, and the steps spread evenly up to 99 %.
+  radio before the hotspot starts. A lower `RFLevel` picks a power step instead: 0 is the lowest step, and the steps
+  spread evenly up to 99 %.
 - Leave the other modes (D-Star, YSF, P25, NXDN, POCSAG, FM) off. The radio refuses them. POCSAG is accepted but never
   transmitted.
 

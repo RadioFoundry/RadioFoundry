@@ -7177,6 +7177,15 @@ static void hotspot_arm(radio_sm_t *sm)
 	}
 }
 
+// A hotspot on the radio's own power (the host's RF level left at its default) follows the radio's power level
+static void hotspot_follow_power(radio_sm_t *sm)
+{
+	if (sm->hotspot && sm->hs_rf_level == RADIO_HS_RF_OWN && sm->hs_power != sm->view.power) {
+		sm->hs_power = sm->view.hs_power = sm->view.power;
+		hotspot_arm(sm);
+	}
+}
+
 #if RADIO_SM_CW
 // --- CW IDs: the hotspot's (SEND_CWID, docs/spec/mmdvm-protocol.md 2.11; the hotspot is idle, mmdvm.c accepts it only
 // then) and the standalone SFR repeater's (CONFIG_SFR_CWID, docs/spec/sfr.md 4, CW ID). The DMR keying is released, the
@@ -7402,6 +7411,9 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 	sm->hs_rx_hz = hz;
 	sm->hs_tx_hz = 0;
 	sm->hs_carrier = false;
+	// The power set now, not the one from the last hotspot: the first keying (hotspot_freq) comes before the host's
+	// level, and the screen shows it
+	sm->hs_power = sm->view.hs_power = radio_sm_hotspot_power(sm->hs_rf_level, sm->view.power);
 	sm->hotspot = true;
 	sm->view.hotspot = true;
 	sm->view.state = RS_IDLE;
@@ -7582,6 +7594,9 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	}
 	if (!sm->temp_power) {
 		sm->view.power = channel_power(&sm->view.ch);
+#if CONFIG_DMR
+		hotspot_follow_power(sm);	// the settings' power while a hotspot runs on it
+#endif
 	}
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
@@ -8312,8 +8327,6 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
-	sm->hs_power = sm->view.hs_power = default_power();
-	sm->hs_rf_level = RADIO_HS_RF_OWN;
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
 	ambeVoiceInit(pcm_audio(), board.vocoder);
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
@@ -8688,11 +8701,7 @@ static void power_request(radio_sm_t *sm, const radio_req_t *req)
 	sm->temp_power = sm->view.power != channel_power(&sm->view.ch);
 	set_temporary(sm);
 #if CONFIG_DMR
-	// A hotspot on the radio's own power (the host's RF level left at its default) follows the new step
-	if (sm->hotspot && sm->hs_rf_level == RADIO_HS_RF_OWN && sm->hs_power != sm->view.power) {
-		sm->hs_power = sm->view.hs_power = sm->view.power;
-		hotspot_arm(sm);
-	}
+	hotspot_follow_power(sm);
 #endif
 	changed(sm);
 }
