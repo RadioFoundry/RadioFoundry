@@ -90,15 +90,16 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 	if (i > 1) {
 		return false;
 	}
-	gd88_radio_diag_t d;
-	gd88_radio_diag(&d);
+	const char *name;
+	uint16_t id;
+	gd88_radio_chip(i == 1, &name, &id);
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	*role = BOARD_HW_RF;
 	sb_str(&b, i == 0 ? "main " : "LO ");
-	sb_str(&b, i == 0 ? d.main_chip : d.lo_chip);
+	sb_str(&b, name);
 	sb_str(&b, " id ");
-	sb_hex(&b, i == 0 ? d.main_id : d.lo_id, 4);
+	sb_hex(&b, id, 4);
 	return true;
 }
 

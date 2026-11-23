@@ -221,7 +221,8 @@ static bool main_is_bk4819(void)
 
 #if !GD88_TX
 // B's main chip's GPIOs, by part: the path to the PA (its own transmitter's output instead of A's), the band (high:
-// VHF; A's transmission uses the same one, gd88_a_tx_band) and B's own TX. The FD6818's own-TX pin isn't known
+// VHF; A's transmission uses the same one, gd88_a_tx_band) and B's own TX. The FD6818's own-TX pin isn't known: B
+// doesn't transmit on one (dmr_tx)
 #define GPIO_NONE		0xFFu	// the drivers ignore a pin above their range
 static uint8_t gpio_path = GPIO_NONE, gpio_vhf = GPIO_NONE, gpio_tx = GPIO_NONE;
 
@@ -528,6 +529,12 @@ static bool dmr_tx(uint32_t hz, uint8_t power)
 	if (!supported || !board_in_band(hz, true) || !gd88_cal_tx_plan(hz, power, &plan)) {
 		return false;
 	}
+#if !GD88_TX
+	// B's own transmitter needs its main chip's TX pin (main_gpio_map): refused on a part where it isn't known
+	if (gpio_tx == GPIO_NONE) {
+		return false;
+	}
+#endif
 	if (dmr_armed) {
 		hrc_rfburst_disarm();
 	}
@@ -807,7 +814,8 @@ static bool tx_tone(uint16_t hz)
 
 #if CONFIG_APRS && GD88_TX
 // APRS AFSK (afsk_tonegen.h): the tone generator again, retuned at each symbol by timer 4. level 50 is the tone
-// burst's level. A BK4819 main chip only: the deviation scale is that chip's (refused on another part)
+// burst's level. A BK4819 main chip only: the deviation scale is that chip's (.ready refuses another part before the
+// core keys up)
 static bool afsk_begin(uint16_t hz, uint8_t level)
 {
 	if (!transmitting || mode != RADIO_MODE_FM || !main_is_bk4819()) {
@@ -833,7 +841,7 @@ static void afsk_end(void)
 
 static const afsk_tonegen_board_t afsk_board = {
 	.begin = afsk_begin, .tone = afsk_tone, .end = afsk_end,
-	.timer_start = hrc_symbol_timer_start, .timer_stop = hrc_symbol_timer_stop,
+	.timer_start = hrc_symbol_timer_start, .timer_stop = hrc_symbol_timer_stop, .ready = main_is_bk4819,
 };
 #endif
 
@@ -887,8 +895,10 @@ static void status(radio_status_t *st)
 		return;
 	}
 #endif
-	uint16_t r0c;
-	superhet_chips_status(&rf, &last_rssi_raw, &last_noise_raw, &r0c);
+	// 0x0C only where the sub-audio check reads it: a BK4819 with a tone set
+	uint16_t r0c = 0;
+	bool css = rx_tone.type != TONE_NONE && main_is_bk4819();
+	superhet_chips_status(&rf, &last_rssi_raw, &last_noise_raw, css ? &r0c : NULL);
 	st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);	// at the main chip's input, the front end's gain not taken out
 	st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
 	st->carrier = false;
@@ -1036,6 +1046,12 @@ void gd88_radio_diag(gd88_radio_diag_t *d)
 	d->pcm_on = pcm_on;
 	d->pa_low = GD88_TX && have_rx ? gd88_cal_pa(rx_hz, false) : 0;
 	d->pa_high = GD88_TX && have_rx ? gd88_cal_pa(rx_hz, true) : 0;
+}
+
+void gd88_radio_chip(bool lo, const char **name, uint16_t *id)
+{
+	*name = superhet_chip_name(lo ? rf.lo_kind : rf.main_kind);
+	*id = lo ? rf.lo_id : rf.main_id;
 }
 
 #if !GD88_TX

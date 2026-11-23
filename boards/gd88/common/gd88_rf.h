@@ -58,6 +58,8 @@ typedef struct {
 	bool audio_open, pcm_on;	// the speaker's requests: FM receive audio, the modem's PCM (speaker())
 } gd88_radio_diag_t;
 void gd88_radio_diag(gd88_radio_diag_t *d);
+// The RF chip pair as found at start-up (lo: the LO, else the main chip): the part's name and register 0 as read
+void gd88_radio_chip(bool lo, const char **name, uint16_t *id);
 // B's own squelch: the main chip's noise reading and RX tone at level, read by the radio core's rule
 // (radio_squelch.h; 0 = open). Nothing opens or holds while it can't receive (transmitting, not tuned). noise_none:
 // this chip's reading with no signal; a lower one than A's is stretched onto A's scale (from the quieted reading
