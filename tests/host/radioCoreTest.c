@@ -6877,6 +6877,14 @@ static void p25_view_text(char *buf, size_t cap)
 	dl_text_t t;
 	dl_text_init(&t, buf, cap);
 	debuglink_view_p25(&sm.view, &t);
+	char detail[1000];
+	dl_text_init(&t, detail, sizeof detail - 1);
+	debuglink_view_p25_detail(&t);
+	detail[t.len] = '\0';
+	CHECK(!t.full && strstr(detail, "p25v.frames="));
+#if CONFIG_P25_ALIAS
+	CHECK(strstr(detail, "p25.alias.result=") && strstr(detail, "p25.alias.seen="));
+#endif
 }
 
 static void setup_codeplug_p25(void)
@@ -6922,7 +6930,8 @@ static void test_p25_rx(void)
 	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == LENDS);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
-	CHECK(strstr(buf, "p25.tx=0\np25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
+	CHECK(strstr(buf, "p25.tx=0\n") != NULL &&
+	      strstr(buf, "p25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
 	run(300);				// noise: no call
 	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
 
@@ -7994,6 +8003,15 @@ static void test_p25_trunk(void)
 	run(800);
 	CHECK(hw.rx_hz == TS_VOICE && v->trunk == RADIO_P25_TRUNK_VOICE && sm.view.state == RS_RX);
 	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001 && hw.led[LED_GREEN]);
+#if CONFIG_P25_ALIAS_CACHE && defined(HAL_VOCODER_LEND_BYTES)
+	// Inject at the validated decoder-event boundary; decoder validation has its
+	// own wire-vector tests. The radio task must retain it outside engine memory.
+	p25_engine_t *local = (p25_engine_t *)(void *)lend_mem;
+	local->view.alias_event = (p25_alias_event_t){ .serial = 1, .src = 1001,
+		.dst = 201, .call = local->view.rx_calls, .name = "FIELD UNIT" };
+	run(20);
+	CHECK(radio_p25_alias_cache_count() == 1 && !strcmp(v->alias, "FIELD UNIT"));
+#endif
 	run(600);
 	p25_engine_tx_stop(&far_eng);
 	site.grant_tg = 0;
@@ -8057,6 +8075,26 @@ static void test_p25_trunk(void)
 	req(RREQ_ZONE_POS, 2);
 	run(3000);
 	CHECK(radio_p25_trunked() && hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+#if CONFIG_P25_ALIAS_CACHE && defined(HAL_VOCODER_LEND_BYTES)
+	// A fresh engine after leaving for FM, and a different talkgroup, must use
+	// the same system/unit identity without receiving another alias packet.
+	stored_trunk.talk_group = 202;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(3000);
+	far_begin(TS_NAC, 1001, false, 202);
+	site.grant_tg = 202;
+	site.grant_ch = 0x100A;
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(800);
+	CHECK(v->selected && v->src == 1001 && v->dst == 202);
+	CHECK(!strcmp(v->alias, "FIELD UNIT") && hw.tx_calls == keyed);
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(600);
+#endif
 
 	// No control channel programmed: the follower hunts and finds none
 	stored_trunk.ctl_count = 0;

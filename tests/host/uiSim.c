@@ -99,6 +99,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "messages", "msg:9991234,Meet_at_the_north_lot msg:9995678,On_my_way wait:9000 ok 2" },
 	{ "messages_empty", "ok 2" },
 	{ "recent", "call:9991234,91,g call:9995678,3100,g call:9992222,0,p ok 3" },
+#if CONFIG_P25_ALIAS
+	{ "p25_recent", "dlmode:p25 p25rx:16700001,100 p25rxend recentkey" },
+#endif
 	{ "zones", "ok 4" },
 	{ "channels", "ok 5" },
 	{ "channel", "ok 5 ok" },

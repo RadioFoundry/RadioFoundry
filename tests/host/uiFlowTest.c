@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // The automated UI checks of docs/ux/usability-tests.md 2, in the host simulator:
 // - press budgets: each task flow of docs/ux/task-flows.md as a script on the reference key maps, at most its budget
 //   (impossible on a key map that should have it = failure);
@@ -150,6 +151,33 @@ static const flow_t flows[] = {
 	  2, false },
 #if CONFIG_P25
 	// P25 on Home: what PTT calls on the talk line, the NAC in the chips, the caller while a call comes in
+	{ "P25 caller details active", "dlmode:p25 p25rx:3004,31001", "ctx ok", "screen=actions shows=ID_3004 shows=TG_31001 shows=P25_RX_only hides=Radio_check hides=PTT_talk focusid=0", 2, false },
+	{ "P25 caller details after call", "dlmode:p25 p25rx:3004,31001 p25rxend", "ctx ok", "screen=actions shows=ID_3004 focusid=0", 2, false },
+	{ "P25 context keeps caller action", "dlmode:p25 p25rx:3004,31001", "ctx", "screen=actions shows=ID_3004 focusid=0", 1, false },
+	{ "P25 Recent opens details", "dlmode:p25 p25rx:3004,31001 p25rxend", "ok down down ok ok", "screen=actions shows=ID_3004 focusid=0", 5, false },
+	{ "P25 filtered excluded from history", "dlmode:p25 p25rx:3004,31001,o p25rxend", "recentkey", "screen=recent hides=3004", 1, false },
+	{ "P25 encrypted caller retained", "dlmode:p25 p25rx:3004,31001,e p25rxend", "recentkey", "screen=recent shows=3004 hides=P25_3004", 1, false },
+#if CONFIG_P25_ALIAS
+	{ "P25 assigned Recent opens history", "dlmode:p25 p25rx:3004,31001 p25rxend", "recentkey", "screen=recent shows=3004 hides=P25_3004 focusid=0", 1, false },
+	{ "P25 Recent alias without mode prefix", "dlmode:p25 p25rx:8116224,11402 p25alias:DAU-16136 p25rxend", "recentkey", "screen=recent shows=DAU-16136 hides=P25_DAU focusid=0", 1, false },
+	{ "P25 tail alias retained", "dlmode:p25 p25rx:3004,31001", "p25aliastail:EMS-MEDIC recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 2, false },
+	{ "P25 tail alias held on Home", "dlmode:p25 p25rx:3004,31001", "p25aliastail:EMS-MEDIC", "screen=home shows=EMS-MEDIC", 0, false },
+	{ "P25 tail alias expires", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "wait:2100", "hides=EMS-MEDIC", 0, false },
+	{ "P25 next caller clears alias", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "p25rx:3005,31001", "hides=EMS-MEDIC shows=ID_3005", 0, false },
+	{ "P25 same caller keeps known alias", "dlmode:p25 p25rx:3004,31001 p25aliastail:EMS-MEDIC", "p25rx:3004,31001 recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 2, false },
+	{ "P25 known alias on next live call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001", "screen=home shows=EMS-MEDIC", 0, false },
+	{ "P25 alias isolated by session", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25session p25rx:3004,31001 recentkey ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 2, false },
+	{ "P25 alias isolated by destination", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31002 recentkey ok", "screen=actions hides=EMS-MEDIC shows=ID_3004", 2, false },
+	{ "P25 known alias updated", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001 p25alias:NEW-MEDIC recentkey ok", "screen=actions shows=NEW-MEDIC hides=EMS-MEDIC", 2, false },
+	{ "P25 remembered caller moves to top", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend p25rx:3005,31001 p25rxend", "p25rx:3004,31001 recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004", 2, false },
+	{ "P25 cached alias shown on encrypted call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001,e", "screen=home shows=EMS-MEDIC hides=ID_3004", 0, false },
+	{ "P25 cached alias hidden on filtered call", "dlmode:p25 p25t:3,31001 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "p25rx:3004,31001,o", "screen=home hides=EMS-MEDIC", 0, false },
+	{ "P25 encrypted tail held after return", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2", "screen=home shows=PD2-OP02 hides=ID_2002", 0, false },
+	{ "P25 encrypted tail in Recent history", "dlmode:p25 p25t:3,11402 p25rx:2002,11402,e", "p25aliastail:PD2-OP02 p25t:2 recentkey", "screen=recent shows=PD2-OP02 hides=P25_2002", 1, false },
+	{ "P25 encrypted tail expires", "dlmode:p25 p25rx:2002,11402,e p25aliastail:PD2-OP02", "wait:2100", "hides=PD2-OP02", 0, false },
+	{ "P25 alias retained in history", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC p25rxend", "recentkey ok", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 2, false },
+	{ "P25 alias updates open details", "dlmode:p25 p25rx:3004,31001 recentkey ok", "p25alias:EMS-MEDIC", "screen=actions shows=EMS-MEDIC shows=ID_3004 focusid=0", 0, false },
+#endif
 	{ "P25 home: talk group and NAC", "dlmode:p25", "", "screen=home shows=TG_1 shows=NAC_293", 0, false },
 	{ "P25 home: the caller", "dlmode:p25", "p25rx:3101234,7", "screen=home shows=ID_3101234 shows=TG_7", 0, false },
 	{ "P25 home: a unit call", "dlmode:p25", "p25rx:3101234,3105555,u", "shows=Private_to_3105555", 0, false },
@@ -161,6 +189,16 @@ static const flow_t flows[] = {
 	{ "P25 dual watch: A in P25", "dlmode:p25", "quick 7", "dual=1 sel=A shows=P25 hides=No_tone hides=12.5k", 2, false },
 #if CONFIG_P25_TRUNK
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
+	{ "P25 trunk: caller without losing power and NAC", "dlmode:p25 p25t:3,31001", "p25rx:16777214,31001",
+	  "screen=home shows=ID_16777214 shows=NAC_293 shows=1W", 0, false },
+#if CONFIG_P25_ALIAS
+	{ "P25 alias: original layout", "dlmode:p25 p25t:3,31001 p25rx:16777214,31001", "p25alias:EMS-MEDIC-1234",
+	  "screen=home shows=EMS-MEDIC-1234 shows=NAC_293 shows=Local_repeaters hides=ID_16777214 hides=Following", 0, false },
+	{ "P25 alias: expires after call", "dlmode:p25 p25rx:3004,31001 p25alias:EMS-MEDIC", "p25rxend wait:2100",
+	  "hides=EMS-MEDIC hides=ID_3004", 0, false },
+	{ "P25 alias: encrypted shown", "dlmode:p25 p25rx:3004,31001,e", "p25alias:EMS-MEDIC",
+	  "shows=EMS-MEDIC hides=ID_3004", 0, false },
+#endif
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
 	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
@@ -1332,7 +1370,8 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	{ "K top key hold: Recent is assignable", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=20 shows=Recent", 1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
 	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },

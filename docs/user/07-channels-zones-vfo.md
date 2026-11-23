@@ -322,6 +322,34 @@ On a radio that runs P25 ([feature matrix](../feature-matrix.md)), P25 is one of
 - PTT sends a P25 voice call to talkgroup 1 from your P25 unit ID, or your DMR ID when the codeplug has none.
 - Home shows "P25", what PTT calls ("TG 1") and the network access code ("NAC 293"). During a call it shows who calls
   and where ("ID 3101234 > TG 7"), or why the call isn't played ("Encrypted: not played", "Other TG: not played").
+  During a played trunked call with a known source, normal Home replaces "Following"
+  with the caller, preserving the channel name, power and status information.
+  Compact layouts show the zone in the activity row during the call.
+  Builds with `CONFIG_P25_ALIAS` receive standard A4 and Motorola MFID 90 Phase 1 broadcast user aliases.
+  When late entry misses the caller ID, a complete checksum-validated Motorola
+  alias can recover both the name and unit ID. Incomplete fragments cannot.
+  Learning the caller ID midway through a matching Motorola alias preserves the
+  fragments already received; the completed name must still match that ID.
+  Motorola names may arrive at the end of the voice transmission; incomplete names
+  remain numeric IDs while the receiver waits briefly for the remaining fragments.
+  Motorola Talk Complete and other valid link-control messages can precede the
+  alias during the site's channel hang. The receiver can wait up to eight seconds
+  for that header, then up to two seconds for its fragments; it leaves sooner when
+  the channel releases, signaling stops, another group appears, or the alias completes.
+  Joining during that tail can still recover a complete validated name without voice.
+  If only a unit ID appears, the computer's `p25_detail` debug view can distinguish missing,
+  incomplete and rejected alias messages; see [alias diagnostics](../spec/p25.md#74-standard-user-alias-reception).
+  The caller row shows the completed name, or the numeric unit ID if no valid name is available.
+  On later selected calls, a name already received for that unit and talkgroup
+  appears immediately from Recent. This remembered name is limited to the current
+  receiver session; changing channels does not reuse it on another system.
+  Encrypted calls remain silent, but a validated alias appears on Home and in Recent.
+  The name takes priority over the numeric ID when known; the ID remains available
+  in the caller details. Calls excluded by the talkgroup filter do not enter Recent.
+  A completed name can remain dimmed on idle Home for up to two seconds so a name
+  received at the end of a short call is readable. A new call or channel clears it. Alias reception
+  sends nothing and works with listen-only systems and ID 0. Motorola decoding has
+  been checked on a live radio; standard A4 decoding remains host-tested only.
   FM's tone and width tiles say "FM only: this is a P25 channel".
 - The code, talkgroup and talkaround can be changed only from a computer for now (`rfoundry_debug.py radio p25`), and the
   change lasts until the radio is switched off.
@@ -347,7 +375,23 @@ silent.
   FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
 
+Open **Recent** from the menu or assign the **Recent** function in Settings > Keys.
+No physical key is reserved for history; existing key assignments and caller-context behavior are preserved.
+Select a received call to inspect its unit ID, talkgroup and completed alias. These
+P25 details are read-only and never send a callback or registration.
+The Recent list omits the P25 prefix so more of the caller's name fits on each row.
+
 ### P25 trunked channels
+
+P25 calls you hear appear in Recent. The assignable Recent function opens the list;
+select a caller to see its alias/ID and talkgroup. A later call without an alias
+keeps that caller's known name within the same receiver session. With the RAM alias
+cache enabled, up to 64 learned trunked names also follow the caller across
+talkgroups and sites on the same system. They appear on Home during calls and in
+Recent. Learning is automatic; nothing is saved to flash, and restarting clears
+the cache. A new decoded alias replaces an older name. These details are
+read-only; no callback, radio-check or registration is sent. Recent clears when
+the radio restarts.
 
 On a radio that runs P25 trunking, a channel can belong to a P25 trunked system (Phase 1 voice channels). The system
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written

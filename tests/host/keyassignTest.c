@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // Side key assignment (core/input/keyassign.c, docs/spec/ui.md 3.1): the quick-key slots with and without our marker,
 // what each slot may hold, and the key map built from them, run through the gesture engine
 #include <stdio.h>
@@ -152,11 +153,12 @@ static void test_toggles(void)
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE }, { KEYFN_TALK_LABEL, 19, ACT_TALK_LABEL },
+		{ KEYFN_RECENT, 20, ACT_RECENT },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 20);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 21);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -389,6 +391,18 @@ static void test_home_keys(void)
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_REPEAT, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
 	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);
+
+	// Recent is opt-in on either home key; the other assignment is preserved.
+	keyassign_set(s, 1, false, KEYFN_RECENT);
+	keyassign_build_home(hm, HN, home, 2, 1, s);
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_RECENT);
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_LONG, true) == ACT_POWER);
+	keyassign_set(s, 2, false, KEYFN_RECENT);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_RECENT);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);
+	keyassign_set(s, 2, false, KEYFN_NONE);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
 
 	// Monitor in a home key's slot (a CPS wrote it) reads as Default there
 	keyassign_set(s, 1, false, KEYFN_MONITOR);

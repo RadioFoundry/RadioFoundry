@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // The list screens and the screen table (information-architecture.md 4, 6, 8): the Hub with its six destinations,
 // actions on a station, Contacts, Messages, Recent, Channels, Tools, Settings grouped by intent, the talk target
 // picker, information pages and the one confirmation (factory reset, P7).
@@ -178,12 +179,16 @@ static uint8_t act_list(uint8_t *out)
 
 static uint16_t act_count(void)
 {
+	if (ui_target.p25)
+		return ui_target.heard_tg ? 3 : 2;
 	uint8_t l[12];
 	return act_list(l);
 }
 
 static bool act_target(uint16_t i, ui_target_t *t)
 {
+	if (ui_target.p25)
+		return false;
 	uint8_t l[12];
 	uint8_t n = act_list(l);
 	*t = ui_target;
@@ -203,6 +208,21 @@ static bool compose_aprs(void);
 
 static void act_item(uint16_t i, ui_item_t *it)
 {
+	if (ui_target.p25) {
+		sbuf_t b;
+		sb_init(&b, it->label, sizeof it->label);
+		if (i == 0) {
+			sb_str(&b, "ID ");
+			sb_u32(&b, ui_target.id, 1);
+		} else if (i == 1 && ui_target.heard_tg) {
+			sb_str(&b, "TG ");
+			sb_u32(&b, ui_target.heard_tg, 1);
+		} else {
+			sb_str(&b, "P25 ");
+			sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
+		}
+		return;
+	}
 	uint8_t l[12];
 	uint8_t n = act_list(l);
 	if (i >= n)
@@ -277,6 +297,8 @@ static void act_item(uint16_t i, ui_item_t *it)
 
 static void act_select(uint16_t i, bool hold)
 {
+	if (ui_target.p25)
+		return;
 	static char msg[40];
 	uint8_t l[12];
 	uint8_t n = act_list(l);
@@ -373,8 +395,13 @@ static const char *act_title(void)
 	return t;
 }
 
+static const char *act_hint(void)
+{
+	return ui_target.p25 ? TR(HINT_BACK, "Back") : TR(ACT_HINT, "1-9 pick  PTT talk  Back");
+}
+
 static const ui_scr_def_t actions_screen = {
-	.name = "actions", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .hint = TRN(ACT_HINT, "1-9 pick  PTT talk  Back"),
+	.name = "actions", .flags = SF_LIST | SF_NUMBERED | SF_FIELD | SF_HINT_FN, .hint_fn = act_hint,
 	.count = act_count, .item = act_item, .select = act_select, .target = act_target, .title = act_title,
 };
 
@@ -1081,6 +1108,8 @@ static bool recent_target(uint16_t i, ui_target_t *t)
 	const ui_recent_t *r = ui_recent_get((uint8_t)i);
 	if (r == NULL)
 		return false;
+	if (r->p25)
+		return false;	// an inspected P25 identity is never a DMR PTT target
 	ui_recent_target(r, t);
 	if (!t->group && t->heard_tg) {
 		// PTT on a station heard on a talkgroup: that talkgroup (the same as Talk to in its actions)
@@ -1133,6 +1162,12 @@ static void recent_item(uint16_t i, ui_item_t *it)
 static void recent_select(uint16_t i, bool hold)
 {
 	ui_target_t t;
+	const ui_recent_t *r = ui_recent_get((uint8_t)i);
+	if (r && r->p25) {
+		ui_recent_target(r, &t);
+		ui_open_actions(&t);
+		return;
+	}
 	if (recent_target(i, &t))
 		ui_talk(&t, hold);
 }
@@ -1147,9 +1182,15 @@ static void recent_context(uint16_t i)
 	}
 }
 
+static const char *recent_hint(void)
+{
+	const ui_recent_t *r = ui_recent_get((uint8_t)ui_frame()->focus);
+	return r && r->p25 ? TR(HINT_BACK, "Back") : TR(RECENT_HINT, "PTT talk  # more  Back");
+}
+
 static const ui_scr_def_t recent_screen = {
-	.name = "recent", .flags = SF_LIST | SF_FIELD, .prefix = TRN(TITLE_RECENT, "Recent"),
-	.hint = TRN(RECENT_HINT, "PTT talk  # more  Back"),
+	.name = "recent", .flags = SF_LIST | SF_FIELD | SF_HINT_FN, .prefix = TRN(TITLE_RECENT, "Recent"),
+	.hint_fn = recent_hint,
 	.empty = TRN(EMPTY_NO_CALLS_HEARD, "No calls heard yet"),
 	.count = recent_count, .item = recent_item, .select = recent_select, .context = recent_context,
 	.target = recent_target,
@@ -6601,6 +6642,7 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #if CONFIG_DUAL_WATCH
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
+	KEYFN_RECENT,
 };
 static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
 	TRN(KEYFN_VALUE_MONITOR, "Monitor"), TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"),
@@ -6622,6 +6664,7 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 #if CONFIG_DUAL_WATCH
 					     TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
+	TRN(TITLE_RECENT, "Recent"),
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
 					KEYFN_ZONE_DOWN, KEYFN_SCAN,
@@ -6638,6 +6681,7 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #if CONFIG_DUAL_WATCH
 					KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
+	KEYFN_RECENT,
 };
 static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
 	TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"), TRN(KEYFN_VALUE_POWER_LEVEL, "Power level"),
@@ -6658,6 +6702,7 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 #if CONFIG_DUAL_WATCH
 					    TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
+	TRN(TITLE_RECENT, "Recent"),
 };
 #endif
 static const int16_t v_updown[] = { 0, 1, 2 };
@@ -7940,7 +7985,7 @@ static void picker_enter(void)
 	// Recent talkgroups
 	for (uint8_t i = 0; i < ui_recent_count(); i++) {
 		const ui_recent_t *r = ui_recent_get(i);
-		if (r->group) {
+		if (r->group && !r->p25) {
 			memset(&t, 0, sizeof t);
 			t.id = r->dst;
 			t.group = true;

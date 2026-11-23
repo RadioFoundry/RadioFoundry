@@ -155,6 +155,10 @@ one lock).
 | CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or the network status names another system: HUNT |
 | VOICE | the conventional call layer plays the call | a terminator, no voice for 1 s, the longest call, another call on the channel, an encrypted call skipped: CONTROL |
 
+With `CONFIG_P25_ALIAS`, valid TDULCs can carry a metadata hang instead of a
+channel release. The bounded wait and immediate-release conditions are described
+in [alias reception](p25-alias-provenance.md). Plain TDUs still return immediately.
+
 Hunting:
 
 | Step | Time | Then |

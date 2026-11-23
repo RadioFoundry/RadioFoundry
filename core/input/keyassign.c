@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // Side key assignment (keyassign.h, docs/spec/ui.md 3.1)
 #include "config.h"
 #if CONFIG_KEY_ASSIGN
@@ -19,6 +20,7 @@ static const uint8_t fn_action[KEYFN_COUNT] = {
 	[KEYFN_COPY_VFO] = ACT_COPY_VFO, [KEYFN_DUAL_WATCH] = ACT_DUAL_WATCH, [KEYFN_AB] = ACT_AB,
 	[KEYFN_VFO_TOGGLE] = ACT_VFO_TOGGLE,
 	[KEYFN_TALK_LABEL] = ACT_TALK_LABEL,
+	[KEYFN_RECENT] = ACT_RECENT,
 };
 
 bool keyassign_allowed(uint8_t fn, bool hold)

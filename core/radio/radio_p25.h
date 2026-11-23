@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // P25 conventional on a channel, the radio core's side (docs/spec/p25.md 7): the engine (core/p25/p25_engine.h) and
 // the voice path (core/p25/p25Voice.h) on the memory they run in, the channel's P25 parameters, and a compact view
 // for the radio view. radio_sm.c decides when P25 runs and keys the transmitter; nothing here keys it.
@@ -15,6 +16,9 @@
 #include "config.h"
 #include "codeplug/codeplug.h"
 #include "hal_audio.h"
+#if CONFIG_P25_ALIAS
+#include "p25/p25.h"
+#endif
 
 // The P25 settings (RAM only, reset at start-up). On a stored P25 channel only unit_id counts (a session override)
 #define RADIO_P25_TA_AUTO	0	// talkaround: on a simplex channel (TX = RX), else off (a repeater)
@@ -65,6 +69,7 @@ enum {
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
 typedef struct {
 	uint8_t flags;		// RADIO_P25_*
+	bool selected;		// destination accepted; metadata is useful even without playable voice
 	uint8_t tx;		// air_tx_state_t of the engine
 	uint16_t nac;
 	uint16_t rx_nac;	// the NAC received (the settings' rx_nac; 0xF7E: any)
@@ -74,6 +79,12 @@ typedef struct {
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
+#if CONFIG_P25_ALIAS
+	char alias[15];
+	uint32_t call_session, call_number;
+	uint32_t alias_session;
+	p25_alias_event_t alias_event;
+#endif
 } radio_p25_view_t;
 
 // Counters for the debug link (any task reads them; the radio task writes them while P25 runs)
@@ -88,6 +99,9 @@ typedef struct {
 	uint32_t trunk_retunes, trunk_untuned, trunk_skips;
 	// Inbound bursts the follower asked: sent, and refused by the radio's transmit checks
 	uint32_t trunk_bursts, trunk_burst_refused;
+#if CONFIG_P25_ALIAS
+	p25_alias_stats_t alias;
+#endif
 } radio_p25_stats_t;
 
 #if CONFIG_P25
@@ -163,6 +177,10 @@ void radio_p25_tx_clear(void);
 
 void radio_p25_stats(radio_p25_stats_t *out);
 void radio_p25_reset_stats(void);
+#if CONFIG_P25_ALIAS_CACHE
+// Diagnostic count only; cache mutation and lookup remain on the radio task.
+uint8_t radio_p25_alias_cache_count(void);
+#endif
 
 // The transmit side above as radio_sm.c drives every air-framed mode
 extern const radio_air_ops_t radio_p25_air;

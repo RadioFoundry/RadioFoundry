@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // The UI's behavior (docs/ux/information-architecture.md, docs/spec/ui.md): the navigation stack, the keys with
 // one meaning everywhere (P3), Home, quick settings, banners and interruptions, key lock, Recent. No RTOS: ui.c
 // runs it in the UI task and the host simulator runs it on a PC.
@@ -141,7 +142,7 @@ static void update_focus_target(void)
 {
 	const ui_scr_def_t *d = ui_scr[stack[sp].scr];
 	ui_target_t t;
-	if (d->target != NULL && d->count != NULL && stack[sp].focus < d->count() && d->target(stack[sp].focus, &t))
+	if (d->target != NULL && d->count != NULL && stack[sp].focus < d->count() && d->target(stack[sp].focus, &t) && !t.p25)
 		ui_svc_focus_target(t.id, !t.group);
 	else
 		ui_svc_focus_target(0, false);
@@ -359,13 +360,13 @@ static bool recent_tx;
 uint8_t ui_recent_count(void) { return recent_n; }
 const ui_recent_t *ui_recent_get(uint8_t i) { return i < recent_n ? &recent[i] : NULL; }
 
-#if CONFIG_DMR
+#if CONFIG_DMR || CONFIG_P25
 static void recent_add(const ui_recent_t *r)
 {
 	// The same station and destination again: move it to the top instead of repeating it
 	uint8_t i;
 	for (i = 0; i < recent_n; i++)
-		if (recent[i].src == r->src && recent[i].dst == r->dst && recent[i].out == r->out)
+		if (recent[i].src == r->src && recent[i].dst == r->dst && recent[i].out == r->out && recent[i].p25 == r->p25)
 			break;
 	if (i == recent_n && recent_n < UI_RECENT_MAX)
 		recent_n++;
@@ -380,6 +381,11 @@ static void recent_add(const ui_recent_t *r)
 void ui_recent_target(const ui_recent_t *r, ui_target_t *t)
 {
 	memset(t, 0, sizeof *t);
+	t->p25 = r->p25;
+#if CONFIG_P25_ALIAS
+	t->p25_session = r->p25_session;
+	t->p25_call = r->p25_call;
+#endif
 	if (r->out) {
 		t->id = r->dst;
 		t->group = r->group;
@@ -407,7 +413,7 @@ static void recent_update(const radio_view_t *v)
 {
 	const radio_dmr_view_t *d = &v->dmr;
 	if (d->last_ms != 0 && d->last_ms != recent_seen_ms && d->last.src != 0 && d->last.src != d->own_id) {
-		bool fresh = recent_n == 0 || recent[0].src != d->last.src || recent[0].dst != d->last.dst || recent[0].out;
+		bool fresh = recent_n == 0 || recent[0].src != d->last.src || recent[0].dst != d->last.dst || recent[0].out || recent[0].p25;
 		recent_seen_ms = d->last_ms;
 		if (fresh) {
 			ui_recent_t r;
@@ -438,6 +444,140 @@ static void recent_update(const radio_view_t *v)
 		recent_add(&r);
 	}
 	recent_tx = tx;
+}
+#endif
+
+#if CONFIG_P25_ALIAS
+static uint32_t p25_alias_seen, p25_alias_ms;
+static bool p25_alias_visible;
+
+const char *ui_p25_caller_alias(const radio_view_t *v)
+{
+	const radio_p25_view_t *p = &v->p25;
+	if (v->ch.mode != RADIO_MODE_P25 || !p->src ||
+	    !(p->flags & RADIO_P25_RX) || !p->selected)
+		return "";
+	if (p->alias[0])
+		return p->alias;
+	// Reuse a verified name only within this receiver session and destination.
+	// Retuning to another channel/system must not carry an unrelated unit's name.
+	for (uint8_t i = 0; i < recent_n; i++) {
+		const ui_recent_t *r = &recent[i];
+		if (r->p25 && r->p25_session == p->call_session && r->src == p->src && r->dst == p->dst &&
+		    r->group == !(p->flags & RADIO_P25_UNIT) && r->name[0])
+			return r->name;
+	}
+	return "";
+}
+
+const char *ui_p25_alias_hold(const radio_view_t *v)
+{
+	const radio_p25_view_t *p = &v->p25;
+	if (!p25_alias_visible || now - p25_alias_ms >= 2000 || v->ch.mode != RADIO_MODE_P25 ||
+	    v->state == RS_TX || !(p->flags & RADIO_P25_ON) ||
+	    (p->trunk != RADIO_P25_TRUNK_OFF && p->trunk != RADIO_P25_TRUNK_CONTROL) ||
+	    p->alias_session != p->call_session || p->alias_event.call != p->call_number)
+		return NULL;
+	return p->alias_event.name;
+}
+
+static void recent_p25_alias(const radio_view_t *v)
+{
+	const radio_p25_view_t *p = &v->p25;
+	const p25_alias_event_t *a = &p->alias_event;
+	if (a->serial && a->serial != p25_alias_seen) {
+		p25_alias_seen = a->serial;
+		p25_alias_ms = now;
+		p25_alias_visible = true;
+		bool found = false;
+		for (uint8_t i = 0; i < recent_n; i++) {
+			ui_recent_t *r = &recent[i];
+			if (!r->p25 || r->src != a->src || r->dst != a->dst || r->group == a->unit)
+				continue;
+			found = true;
+			// The same unit can call again without an alias. Do not rename that newer call.
+			if (r->p25_session < p->alias_session ||
+			    (r->p25_session == p->alias_session && r->p25_call <= a->call)) {
+				r->p25_session = p->alias_session;
+				r->p25_call = a->call;
+				strcpy(r->name, a->name);
+			}
+		}
+		if (!found) {
+			ui_recent_t r;
+			memset(&r, 0, sizeof r);
+			r.p25 = true;
+			r.src = a->src;
+			r.dst = a->dst;
+			r.group = !a->unit;
+			r.ms = now;
+			r.p25_session = p->alias_session;
+			r.p25_call = a->call;
+			strcpy(r.name, a->name);
+			recent_add(&r);
+		}
+		if (ui_target.p25 && ui_target.p25_session == p->alias_session &&
+		    ui_target.p25_call == a->call && ui_target.id == a->src)
+			strcpy(ui_target.name, a->name);
+		dirty = true;
+	}
+	if (p25_alias_visible && (now - p25_alias_ms >= 2000 || v->ch.mode != RADIO_MODE_P25 ||
+	    v->state == RS_TX || p->alias_session != p->call_session || p->alias_event.call != p->call_number)) {
+		p25_alias_visible = false;
+		dirty = true;
+	}
+}
+#endif
+
+#if CONFIG_P25
+static void recent_p25_update(const radio_view_t *v)
+{
+	const radio_p25_view_t *p = &v->p25;
+#if CONFIG_P25_ALIAS
+	recent_p25_alias(v);
+#endif
+	if (v->ch.mode != RADIO_MODE_P25 || !p->src ||
+	    !(p->flags & RADIO_P25_RX) || !p->selected)
+		return;
+	const char *name = "";
+#if CONFIG_P25_ALIAS
+	name = ui_p25_caller_alias(v);
+#endif
+	bool group = !(p->flags & RADIO_P25_UNIT);
+	if (!recent_n || !recent[0].p25 || recent[0].src != p->src || recent[0].dst != p->dst || recent[0].group != group) {
+		ui_recent_t r;
+		memset(&r, 0, sizeof r);
+		r.p25 = true;
+#if CONFIG_P25_ALIAS
+		r.p25_session = p->call_session;
+		r.p25_call = p->call_number;
+#endif
+		r.src = p->src;
+		r.dst = p->dst;
+		r.group = group;
+		r.ms = now;
+		strcpy(r.name, name);
+		recent_add(&r);
+	} else {
+		recent[0].ms = now;
+#if CONFIG_P25_ALIAS
+		recent[0].p25_session = p->call_session;
+		recent[0].p25_call = p->call_number;
+#endif
+		if (strcmp(recent[0].name, name)) {
+			strcpy(recent[0].name, name);
+			dirty = true;
+		}
+	}
+	if (ui_frame()->scr == SCR_ACTIONS && ui_target.p25 && ui_target.id == p->src &&
+	    ui_target.heard_tg == (group ? p->dst : 0) &&
+#if CONFIG_P25_ALIAS
+	    ui_target.p25_session == p->call_session && ui_target.p25_call == p->call_number &&
+#endif
+	    strcmp(ui_target.name, name)) {
+		strcpy(ui_target.name, name);
+		dirty = true;
+	}
 }
 #endif
 
@@ -490,6 +630,8 @@ void ui_sb_age(char *buf, size_t len, uint32_t ms)
 
 void ui_talk(const ui_target_t *t, bool permanent)
 {
+	if (t->p25)
+		return;	// received P25 details never become a DMR reply or saved target
 	static char msg[48];
 	char name[32];
 	ui_sb_target(name, sizeof name, t);
@@ -524,9 +666,26 @@ void ui_open_actions(const ui_target_t *t)
 // The station Home's CONTEXT acts on: the current caller, else the last one heard
 static bool caller_target(ui_target_t *t)
 {
+#if CONFIG_P25
+	if (view->ch.mode == RADIO_MODE_P25 && view->p25.src &&
+	    (view->p25.flags & RADIO_P25_RX) && view->p25.selected) {
+		memset(t, 0, sizeof *t);
+		t->p25 = true;
+#if CONFIG_P25_ALIAS
+		t->p25_session = view->p25.call_session;
+		t->p25_call = view->p25.call_number;
+#endif
+		t->id = view->p25.src;
+		t->heard_tg = (view->p25.flags & RADIO_P25_UNIT) ? 0 : view->p25.dst;
+#if CONFIG_P25_ALIAS
+		strcpy(t->name, ui_p25_caller_alias(view));
+#endif
+		return true;
+	}
+#endif
 #if CONFIG_DMR
 	const radio_dmr_view_t *d = &view->dmr;
-	if (view->state == RS_RX && d->active && d->state != RDMR_IDLE && d->call.src != 0) {
+	if (view->ch.mode == RADIO_MODE_DMR && view->state == RS_RX && d->active && d->state != RDMR_IDLE && d->call.src != 0) {
 		memset(t, 0, sizeof *t);
 		t->id = d->call.src;
 		t->heard_tg = d->call.group ? d->call.dst : 0;
@@ -536,7 +695,7 @@ static bool caller_target(ui_target_t *t)
 	}
 #endif
 	for (uint8_t i = 0; i < recent_n; i++) {
-		if (!recent[i].out) {
+		if (!recent[i].out && recent[i].p25 == (view->ch.mode == RADIO_MODE_P25)) {
 			ui_recent_target(&recent[i], t);
 			return true;
 		}
@@ -1914,6 +2073,10 @@ void ui_app_init(void)
 	ui_dual_reset();
 #endif
 	recent_n = 0;
+#if CONFIG_P25_ALIAS
+	p25_alias_seen = p25_alias_ms = 0;
+	p25_alias_visible = false;
+#endif
 #if CONFIG_DMR
 	recent_seen_ms = 0;
 	recent_tx = false;
@@ -2069,7 +2232,7 @@ static void call_back_key(void)
 {
 	for (uint8_t i = 0; i < ui_recent_count(); i++) {
 		const ui_recent_t *r = ui_recent_get(i);
-		if (r->out)
+		if (r->out || r->p25)
 			continue;
 		if (!CONFIG_DMR || view->ch.mode != RADIO_MODE_DMR) {
 			ui_toast(TR(HOME_WHY_CALL_BACK_DMR_ONLY, "Call back: DMR only"));
@@ -2214,6 +2377,10 @@ void ui_app_key(const input_event_t *ev)
 			ui_dual_ab_key();
 			return;
 #endif
+		case ACT_RECENT:
+			if (stack[sp].scr != SCR_RECENT)
+				ui_push(SCR_RECENT, 0);
+			return;
 		case ACT_CALL_BACK:
 			call_back_key();
 			return;
@@ -2541,6 +2708,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		dirty = true;
 	}
 	zone_queued = queued;
+#endif
+#if CONFIG_P25
+	recent_p25_update(v);
 #endif
 #if CONFIG_DMR
 	recent_update(v);

@@ -2794,7 +2794,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "homekey", ACT_HOME_ZONE }, { "copykey", ACT_COPY_VFO },
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
-	{ "labelkey", ACT_TALK_LABEL },
+	{ "labelkey", ACT_TALK_LABEL }, { "recentkey", ACT_RECENT },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2803,7 +2803,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL || action == ACT_RECENT)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -3490,6 +3490,11 @@ static bool run_token(char *t, char *err, size_t len)
 			(kind == 'u' ? RADIO_P25_UNIT : 0) | (kind == 'e' ? RADIO_P25_ENC : 0) |
 			(kind == 'e' || kind == 'o' ? 0 : RADIO_P25_PLAYED));
 		view.p25.src = src;
+		view.p25.selected = kind != 'o';
+#if CONFIG_P25_ALIAS
+		view.p25.call_number++;
+		memset(view.p25.alias, 0, sizeof view.p25.alias);
+#endif
 		view.p25.dst = dst;
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
@@ -3510,6 +3515,36 @@ static bool run_token(char *t, char *err, size_t len)
 		view.p25.flags = RADIO_P25_ON;
 		view.p25.trunk = (uint8_t)st;
 		view.p25.dst = tg;
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
+#if CONFIG_P25_ALIAS
+	if (strcmp(t, "p25session") == 0) {
+		view.p25.call_session++;
+		view.p25.alias[0] = 0;
+		changed();
+		advance(100);
+		return true;
+	}
+	if ((strcmp(t, "p25alias") == 0 || strcmp(t, "p25aliastail") == 0) && arg != NULL) {
+		str_copy(view.p25.alias, sizeof view.p25.alias, arg);
+		if ((view.p25.flags & RADIO_P25_RX) && view.p25.selected) {
+			p25_alias_event_t *a = &view.p25.alias_event;
+			a->serial++;
+			a->call = view.p25.call_number;
+			a->src = view.p25.src;
+			a->dst = view.p25.dst;
+			a->unit = (view.p25.flags & RADIO_P25_UNIT) != 0;
+			str_copy(a->name, sizeof a->name, arg);
+			view.p25.alias_session = view.p25.call_session;
+		}
+		if (strcmp(t, "p25aliastail") == 0) {
+			view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED);
+			view.p25.alias[0] = 0;
+			view.state = RS_IDLE;
+		}
 		changed();
 		advance(100);
 		return true;

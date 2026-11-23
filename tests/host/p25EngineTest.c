@@ -372,9 +372,60 @@ static void testSquelch(void)
 	p25_engine_end(&r[1].e);
 }
 
+#if CONFIG_P25_ALIAS
+static void testAliasEvent(void)
+{
+	p25_engine_cfg_t cfg = { .rx_nac = 0x293, .rx_tgid = 77 };
+	p25_call_t c = { .have_lc = true, .algid = P25_ALGID_CLEAR,
+		.lc = { .lcf = P25_LCF_GROUP, .src = 3004, .tgid = 77 } };
+	p25_engine_view_t v;
+	begin(0, &cfg, &hooks);
+	p25_engine_t *e = &r[0].e;
+	e->rx.sink->start(&c, e->rx.ctx);
+	strcpy(c.alias, "EMS-MEDIC");
+	e->rx.sink->update(&c, e->rx.ctx);
+	e->rx.sink->end(e->rx.ctx);
+	p25_engine_retuned(e);
+	p25_engine_view(e, &v);
+	CHECK(!v.rx_active && v.alias_event.serial == 1 && v.alias_event.call == 1 &&
+	      v.alias_event.src == 3004 && v.alias_event.dst == 77 && !strcmp(v.alias_event.name, "EMS-MEDIC"),
+	      "completed alias survives call end and retune without a UI poll");
+	c.alias[0] = 0;
+	e->rx.sink->start(&c, e->rx.ctx);
+	p25_engine_view(e, &v);
+	CHECK(v.rx_calls == 2 && v.alias_event.call == 1, "same caller's next call cannot inherit completed alias");
+	strcpy(c.alias, "NOT-OURS");
+	c.lc.tgid = 88;
+	e->rx.sink->update(&c, e->rx.ctx);
+	p25_engine_view(e, &v);
+	CHECK(v.alias_event.serial == 1, "filtered alias does not publish");
+	c.lc.tgid = 77;
+	c.algid = 0x84;
+	e->rx.sink->update(&c, e->rx.ctx);
+	p25_engine_view(e, &v);
+	CHECK(v.alias_event.serial == 2 && v.rx_selected && !v.rx_played &&
+	      v.alias_event.src == 3004, "encrypted selected alias publishes without voice");
+	unsigned starts = r[0].starts;
+	e->rx.sink->end(e->rx.ctx);
+	p25_engine_retuned(e);
+	p25_engine_view(e, &v);
+	CHECK(!v.rx_active && !v.rx_selected && v.alias_event.serial == 2 &&
+	      !strcmp(v.alias_event.name, "NOT-OURS"), "encrypted alias survives immediate retune for history");
+	c.lc.tgid = 88;
+	e->rx.sink->start(&c, e->rx.ctx);
+	p25_engine_view(e, &v);
+	CHECK(v.alias_event.serial == 2 && !v.rx_selected && !v.rx_played && r[0].starts == starts,
+	      "encrypted wrong group remains filtered and silent");
+	p25_engine_end(e);
+}
+#endif
+
 int main(void)
 {
 	testCall();
+#if CONFIG_P25_ALIAS
+	testAliasEvent();
+#endif
 	testSquelch();
 	printf("p25EngineTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;

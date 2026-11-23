@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // Key assignment (docs/spec/ui.md 3.1): what the board's reassignable keys (board.side_keys) do on a press and on a
 // long press, kept in the open-firmware codeplug's ten quick-key slots (open-firmware-cps.md 7.2, EEPROM 0x7524).
 // Slot 0 holds KEYASSIGN_MARKER; without it the slots are another firmware's and the keys keep the board's key map.
@@ -41,6 +42,7 @@ typedef enum {
 	KEYFN_VFO_TOGGLE,	// between the channel and the VFO, as a VFO/MR key (CONFIG_VFO)
 	KEYFN_TONE_BURST,	// FM repeater access, raw edges (press only)
 	KEYFN_TALK_LABEL,	// Home's talk line: the talkgroup's name or its number first (CONFIG_DMR)
+	KEYFN_RECENT,		// open Recent without changing the selected talk target
 	KEYFN_COUNT
 } keyfn_t;
 

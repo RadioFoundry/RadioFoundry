@@ -204,13 +204,34 @@ typedef struct {
 	const p25_follow_cfg_t *cfg;		// the caller's, kept until p25_follow_end
 	const p25_follow_hooks_t *hooks;
 	void *ctx;
-	uint32_t t_state;	// the step in hand began (a dwell, an identity wait, a backoff)
+	union {
+		uint32_t t_state;	// the hunt step began (dwell, identity wait, backoff)
+#if CONFIG_P25_ALIAS
+		uint32_t t_alias_done;	// VOICE only: the alias completed
+#endif
+	};
 	uint32_t t_good;	// the last block decoded on the control channel, or the last voice unit
-	uint32_t t_nocc;	// no control channel since
+	union {
+		uint32_t t_nocc;	// HUNT only: no control channel since
+#if CONFIG_P25_ALIAS
+		uint32_t t_alias_tail;	// VOICE only: first alias terminator
+#endif
+	};
 	uint32_t t_call;	// on the voice channel since
 	uint32_t t_hold;	// the talk group hold began
 	uint32_t t_left;	// left a call on its terminator
-	uint32_t backoff;	// ms
+	// Hunt and voice-tail state never coexist. hunt_start restores all hunt fields;
+	// retuned clears the tail flags only when entering VOICE.
+	union {
+		uint32_t backoff;	// HUNT only: ms
+#if CONFIG_P25_ALIAS
+		struct {
+			bool alias_tail;	// bounded Motorola TDULC sequence after voice
+			bool alias_done;
+			bool alias_wait;	// channel hang before the actual alias fragments
+		};
+#endif
+	};
 	uint16_t hold_tg, left_tg, left_ch;
 	uint16_t learn[P25_FOLLOW_LEARN];
 	uint8_t nlearn;

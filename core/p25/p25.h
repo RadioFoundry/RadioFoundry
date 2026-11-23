@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // P25 Phase 1 (TIA-102.BAAA-A, the FDMA common air interface) at the frame level: the data units of a conventional
 // voice call as they are on air, their fields and their FEC. docs/spec/p25.md.
 //
@@ -152,6 +153,9 @@ typedef struct {
 	uint8_t algid;		// P25_ALGID_CLEAR, or the call is encrypted: its voice is not handed on
 	uint16_t kid;
 	int16_t rssi_dbm;
+#if CONFIG_P25_ALIAS
+	char alias[15];		// complete TIA-102.AABF-D-2 alias for lc.src, never a partial name
+#endif
 } p25_call_t;
 
 typedef struct {
@@ -167,8 +171,45 @@ typedef struct {
 #endif
 } p25_call_sink_t;
 
+#if CONFIG_P25_ALIAS
+#include "p25_alias90.h"
+// A completed, selected alias retained until the next completion, including after call end.
+typedef struct {
+	uint32_t serial, call, src, dst;
+	bool unit;
+	char name[15];
+} p25_alias_event_t;
+typedef struct {
+	uint32_t lc_other, parts, complete, rejected, no_source, unpaired, talk_complete;
+	uint32_t last_src;
+	uint8_t last_lc[P25_LC_BYTES];
+	uint32_t decoded_src;
+	char last_name[15];
+	uint32_t vendor_src;
+	uint16_t vendor_seen;
+	uint8_t vendor_result, vendor_count, vendor_seq;
+} p25_alias_stats_t;
+#if CONFIG_P25_ALIAS_TRACE
+// Diagnostic ring: serial commits each entry; no voice payload or transmit path.
+typedef struct {
+	uint32_t serial, t_us, src;
+	uint16_t nac;
+	uint8_t duid, flags;	// active=1, LC valid=2, LC bad=4, encrypted=8
+	uint8_t raw[9], pad[3];
+} p25_alias_trace_entry_t;
+typedef struct {
+	uint32_t count;
+	p25_alias_trace_entry_t entries[64];
+} p25_alias_trace_t;
+extern volatile p25_alias_trace_t p25_alias_trace;
+#endif
+#endif
+
 typedef struct {
 	uint32_t units, voice, voice_bad, voice_bits, lc_fail, es_fail, calls;
+#if CONFIG_P25_ALIAS
+	p25_alias_stats_t alias;
+#endif
 } p25_call_stats_t;
 
 typedef struct {
@@ -178,6 +219,12 @@ typedef struct {
 	bool active;
 	p25_call_t call;
 	p25_call_stats_t stats;
+#if CONFIG_P25_ALIAS
+	uint8_t alias_part[7];
+	uint8_t alias_opcode, alias_age;	// pending Part A; expires after 12 received units
+	p25_alias90_t alias90;
+	uint8_t alias90_age;
+#endif
 } p25_call_rx_t;
 
 // nac as p25_rx_init. Hand &c->rx to air_framer_init as the mode's context

@@ -46,9 +46,13 @@ typedef struct {
 typedef struct {
 	bool rx_active;		// a call is being received (whether or not it is played)
 	bool rx_played;
+	bool rx_selected;	// passes destination filtering, even when encrypted and silent
 	p25_call_t rx;		// its fields; kept after it ends (the last call heard)
 	uint8_t tx;		// air_tx_state_t
 	uint32_t rx_calls, tx_calls;
+#if CONFIG_P25_ALIAS
+	p25_alias_event_t alias_event;
+#endif
 	uint32_t tx_filler;	// silence frames sent because the encoder had none ready
 } p25_engine_view_t;
 

@@ -1482,12 +1482,10 @@ static void voice_unit(tx_t *t)
 
 	if (ms >= c->t1) {
 		if (c->term) {
-			p25_lc_t lc = { .lcf = P25_LCF_GROUP, .tgid = c->tg, .src = c->src };
-
-			p25_lc_build(&lc, lcraw);
-			p25_unit_begin(unit, P25_TDULC_SYMS, c->sys->nac, P25_DUID_TDULC, P25_SS_UNKNOWN);
-			p25_tdulc_put(unit, lcraw);
-			tx_add(t, unit, P25_TDULC_SYMS, true);
+			// This script releases the carrier, with no metadata hang. TDULC
+			// hang/alias timing is exercised separately in testAliasTail.
+			p25_unit_begin(unit, P25_TDU_SYMS, c->sys->nac, P25_DUID_TDU, P25_SS_UNKNOWN);
+			tx_add(t, unit, P25_TDU_SYMS, true);
 		} else {
 			tx_add(t, NULL, 48, false);
 		}
@@ -1814,6 +1812,98 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+#if CONFIG_P25_ALIAS
+static void testAliasTail(void)
+{
+	const p25_follow_cc_t cc = { .hz = HZ_CC1 };
+	p25_follow_cfg_t cfg = { .ncc = 1, .cc = &cc, .nac = NAC, .talk_group = 100 };
+	p25_follow_t f;
+	uint8_t air[P25_UNIT_BYTES_MAX] = { 0 };
+	const uint8_t raw[9] = { 0x15, 0x90, 0, 100, 7, 1, 0, 0x80, 0 };
+	p25_tdulc_put(air, raw);
+	p25_rx_unit_t u = { .duid = P25_DUID_TDULC, .nac = NAC, .air = air, .nsyms = P25_TDULC_SYMS };
+	for (unsigned pass = 0; pass < 4; pass++) {
+		ntunes = 0;
+		p25_follow_begin(&f, &cfg, &fhooks, NULL, 100);
+		p25_follow_retuned(&f, 100);
+		CHECK(f.backoff == P25_FOLLOW_BACKOFF_MS && f.t_nocc == 100,
+		      "hunt retune preserves backoff and fallback epoch shared with alias tail");
+		f.view.state = P25_FOLLOW_VOICE;
+		p25_follow_retuned(&f, 100);
+		f.view.tg = 100;
+		f.view.src = 3004;
+		f.good = f.view.cc = 0;
+		f.t_call = f.t_good = 100;
+		if (pass >= 2) {
+			const uint8_t complete[9] = { 0x0f, 0x90, 0, 0, 0, 0, 0, 0x0b, 0xbc };
+			p25_tdulc_put(air, complete);
+			p25_follow_unit(&f, &u, 150);
+			CHECK(f.view.state == P25_FOLLOW_VOICE && f.alias_tail,
+			      "talk-complete keeps receiver on frequency before alias header");
+		}
+		p25_tdulc_put(air, raw);
+		p25_follow_unit(&f, &u, 200);
+		CHECK(f.view.state == P25_FOLLOW_VOICE && f.alias_tail, "alias TDULC retains voice frequency");
+		if ((pass & 1) == 0) {
+			for (unsigned t = 700; t <= 2200; t += 500) {
+				p25_follow_unit(&f, &u, t);
+				p25_follow_tick(&f, t);
+			}
+			CHECK(f.view.state == P25_FOLLOW_CONTROL, "alias tail has absolute two-second cap despite repeated fragments");
+		} else {
+			p25_call_t call = { .have_lc = true, .lc = { .lcf = P25_LCF_GROUP, .tgid = 100, .src = 3004 } };
+			strcpy(call.alias, "MEDIC12");
+			p25_follow_call(&f, &call, 250);
+			p25_follow_tick(&f, 250);
+			CHECK(f.view.state == P25_FOLLOW_CONTROL, "completed alias returns immediately without a UI delay");
+		}
+		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0, "alias tail never registers or requests a channel");
+		p25_follow_retuned(&f, 2300);
+		p25_follow_tick(&f, 4300);
+		CHECK(f.view.state == P25_FOLLOW_HUNT && f.backoff == P25_FOLLOW_BACKOFF_MS && f.t_nocc == 4300,
+		      "control loss after alias tail restores hunt backoff and fallback epoch");
+	}
+	// A site can send group/network TDULCs for over five seconds before its alias.
+	for (unsigned pass = 0; pass < 4; pass++) {
+		p25_follow_begin(&f, &cfg, &fhooks, NULL, 100);
+		f.view.state = P25_FOLLOW_VOICE;
+		p25_follow_retuned(&f, 100);
+		f.view.tg = 100; f.view.src = 3004; f.good = f.view.cc = 0;
+		const uint8_t hang[9] = { 0, 0, 0x44, 0, 0, 100, 0, 0x0b, 0xbc };
+		const uint8_t network[9] = { 0x62, 0, 0x31, 0xe8, 1, 5, 0x72, 0x1b, 0x70 };
+		p25_tdulc_put(air, hang); p25_follow_unit(&f, &u, 200);
+		p25_follow_tick(&f, 1400);
+		CHECK(f.view.state == P25_FOLLOW_VOICE, "metadata hang exceeds ordinary voice inactivity timeout");
+		for (unsigned t = 2000; t <= 5600; t += 1800) {
+			p25_tdulc_put(air, network); p25_follow_unit(&f, &u, t);
+			p25_follow_tick(&f, t);
+		}
+		CHECK(f.view.state == P25_FOLLOW_VOICE && f.alias_wait, "network LC does not abort delayed field alias");
+		if (pass == 0) {
+			p25_tdulc_put(air, raw); p25_follow_unit(&f, &u, 5800);
+			CHECK(!f.alias_wait && f.t_alias_tail == 5800, "actual alias gets its own bounded assembly window");
+			u.duid = P25_DUID_TDU; p25_follow_unit(&f, &u, 5900); u.duid = P25_DUID_TDULC;
+			CHECK(f.view.state == P25_FOLLOW_CONTROL, "plain terminator releases hang immediately");
+		} else if (pass == 1) {
+			p25_tdulc_put(air, network); p25_follow_unit(&f, &u, 7400);
+			p25_follow_tick(&f, 8200);
+			CHECK(f.view.state == P25_FOLLOW_CONTROL, "metadata hang has absolute eight-second cap");
+		} else if (pass == 2) {
+			uint8_t wrong[9]; memcpy(wrong, hang, 9); wrong[5]++;
+			p25_tdulc_put(air, wrong); p25_follow_unit(&f, &u, 5700);
+			CHECK(f.view.state == P25_FOLLOW_CONTROL && f.view.wrong_call == 1,
+			      "another group's hang cannot retain the receiver");
+		} else {
+			p25_follow_tick(&f, 8100);
+			CHECK(f.view.state == P25_FOLLOW_CONTROL, "silent metadata hang expires after 2.5 seconds");
+		}
+		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0,
+		      "delayed alias hold never registers or transmits");
+	}
+}
+#endif
+
+
 int main(void)
 {
 	pulse_init();
@@ -1829,6 +1919,9 @@ int main(void)
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
+#if CONFIG_P25_ALIAS
+	testAliasTail();
+#endif
 	printf("p25TrunkTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

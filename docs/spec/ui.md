@@ -750,3 +750,8 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   PTT then talks to it once, and the radio follows it for a reply window (the reply time setting, else the
   codeplug's hang time) before going back to the channel's talk target. A channel change, the call ending outside
   the window, Reply cancel or a new manual target end it.
+
+The assignable **Recent** function opens call history on a press or long press.
+It has no fixed physical key and does not change the caller-context function.
+Home-key assignments still apply only on Home; those keys keep their normal
+navigation behavior elsewhere. Existing stored function numbers are unchanged.

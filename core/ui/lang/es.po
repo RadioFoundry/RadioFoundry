@@ -1552,6 +1552,11 @@ msgctxt "HINT_1_7_OPEN_BACK"
 msgid "1-7 open  Back"
 msgstr "1-7 abrir  Atrás"
 
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "WORD_RX_ONLY"
+msgid "RX only"
+msgstr "Solo RX"
+
 #: core/ui/ui_menus.c
 msgctxt "ACT_ROW_TALK_TO"
 msgid "Talk to "
@@ -2221,11 +2226,6 @@ msgstr "Modo"
 msgctxt "CHAN_LABEL_RATE"
 msgid "Rate"
 msgstr "Velocidad"
-
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "WORD_RX_ONLY"
-msgid "RX only"
-msgstr "Solo RX"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_BANDWIDTH"

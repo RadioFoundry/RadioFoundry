@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Alex Bloom
 // Screen drawing (docs/ux/wireframes): layout from the display size, no task or input code, so host tests and the
 // host simulator can render any screen at any geometry
 #ifndef UI_SCREENS_H
@@ -12,6 +13,11 @@
 #include "gfx.h"
 #include "config.h"
 #include "fmt.h"
+#if CONFIG_P25_ALIAS
+// UI-owned, call-scoped completion hold; NULL outside its short display window.
+const char *ui_p25_alias_hold(const radio_view_t *v);
+const char *ui_p25_caller_alias(const radio_view_t *v);
+#endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"
 #endif

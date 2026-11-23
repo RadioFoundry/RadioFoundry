@@ -797,6 +797,13 @@ void p25_follow_end(p25_follow_t *f)
 void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 {
 	view_begin(f);
+#if CONFIG_P25_ALIAS
+	if (f->view.state == P25_FOLLOW_VOICE) {
+		f->alias_tail = false;
+		f->alias_done = false;
+		f->alias_wait = false;
+	}
+#endif
 	f->tuning = false;
 	// Timers run from the moment the receiver is there
 	f->t_state = now;
@@ -866,11 +873,50 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 	case P25_DUID_HDU:
 	case P25_DUID_LDU1:
 	case P25_DUID_LDU2:
+#if CONFIG_P25_ALIAS
+		if (f->view.state == P25_FOLLOW_VOICE) {
+			f->alias_tail = false;
+			f->alias_done = false;
+			f->alias_wait = false;
+		}
+#endif
 		if (f->view.state == P25_FOLLOW_VOICE)
 			f->t_good = now;
 		break;
-	case P25_DUID_TDU:
 	case P25_DUID_TDULC:
+#if CONFIG_P25_ALIAS
+		if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK &&
+		    u->air && u->nsyms >= P25_TDULC_SYMS) {
+			uint8_t raw[P25_LC_BYTES];
+			if (p25_tdulc_get(u->air, raw) >= 0) {
+				p25_lc_t lc;
+				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP && !lc.tgid) {
+					leave(f, LEAVE_TERM, now);
+					break;
+				}
+				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP &&
+				    (f->view.unit_call || lc.tgid != f->view.tg)) {
+					count(&f->view.wrong_call);
+					leave(f, LEAVE_OTHER, now);
+					break;
+				}
+				bool fragment = p25_alias90_word(raw);
+				// Sites continue sending group/network LC during their channel hang.
+				// Speech has ended, but the alias can follow several seconds later.
+				if (!f->alias_tail || (f->alias_wait && fragment)) {
+					f->alias_tail = true;
+					f->t_alias_tail = now;
+					f->alias_wait = !fragment;
+				}
+				f->t_good = now;
+				break;
+			}
+			break;	// damaged LC is not proof that the channel was released
+		}
+#endif
+		// An ordinary terminator still returns immediately.
+		// fall through
+	case P25_DUID_TDU:
 		// (on our own voice channel the caller ends it: p25_follow_talk_end)
 		if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK)
 			leave(f, LEAVE_TERM, now);
@@ -900,8 +946,15 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 	} else if (c->have_lc && !f->view.src) {
 		f->view.src = c->lc.src;
 	}
+#if CONFIG_P25_ALIAS
+	if (f->view.state == P25_FOLLOW_VOICE && f->alias_tail && c->alias[0] && !f->alias_done) {
+		f->alias_done = true;
+		f->t_alias_done = now;
+	}
+#endif
 	view_end(f);
 }
+
 
 void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
@@ -942,7 +995,16 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 				f->view.req = P25_REQ_IDLE;
 				leave(f, LEAVE_OTHER, now);
 			}
-		} else if (elapsed(now, f->t_good, c->voice_lost_ms ? c->voice_lost_ms : P25_FOLLOW_VOICE_LOST_MS)) {
+		}
+#if CONFIG_P25_ALIAS
+		// The retained alias event survives retuning; no UI wait belongs on RF.
+		else if (f->alias_tail) {
+			if (elapsed(now, f->t_alias_tail, f->alias_wait ? 8000 : 2000) || f->alias_done ||
+			    elapsed(now, f->t_good, 2500))
+				leave(f, LEAVE_TERM, now);
+		}
+#endif
+		else if (elapsed(now, f->t_good, c->voice_lost_ms ? c->voice_lost_ms : P25_FOLLOW_VOICE_LOST_MS)) {
 			count(&f->view.voice_lost);
 			leave(f, LEAVE_OTHER, now);
 		} else if (elapsed(now, f->t_call, c->call_max_ms ? c->call_max_ms : P25_FOLLOW_CALL_MAX_MS)) {
