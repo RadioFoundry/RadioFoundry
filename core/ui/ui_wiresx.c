@@ -94,7 +94,7 @@ static void wx_item(uint16_t i, ui_item_t *it)
 		else if (no_answer())
 			sb_str(&b, TR(WX_VALUE_NO_ANSWER, "No answer"));
 		else if (wx.serial == 0)
-			sb_str(&b, TR(WX_VALUE_ASK, "OK asks"));
+			sb_str(&b, "-");	// not asked yet
 		else
 			sb_str(&b, wx.node_name[0] ? wx.node_name : wx.node_call);
 		break;

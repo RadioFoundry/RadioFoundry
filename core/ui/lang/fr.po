@@ -3113,9 +3113,9 @@ msgid "DMR ID saved"
 msgstr "ID DMR enregistré"
 
 #: core/ui/ui_menus.c
-msgctxt "MYID_TOAST_RID_FROM_CHIP"
-msgid "Not editable, unique"
-msgstr "Non modifiable, unique"
+msgctxt "VALUE_READ_ONLY"
+msgid "Read only"
+msgstr "Lecture seule"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_TYPING_NOT_IN_BUILD"
@@ -5856,11 +5856,6 @@ msgstr "Attente..."
 msgctxt "WX_VALUE_NO_ANSWER"
 msgid "No answer"
 msgstr "Pas de réponse"
-
-#: core/ui/ui_wiresx.c
-msgctxt "WX_VALUE_ASK"
-msgid "OK asks"
-msgstr "OK demande"
 
 #: core/ui/ui_wiresx.c
 msgctxt "WX_TOAST_ROOM_ID_FIRST"

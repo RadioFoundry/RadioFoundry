@@ -5131,7 +5131,7 @@ static void dmr_id_select(uint16_t i, bool hold)
 		return;
 #if CONFIG_YSF
 	if (i == MY_RID) {
-		ui_toast(TR(MYID_TOAST_RID_FROM_CHIP, "Not editable, unique"));
+		ui_toast(TR(VALUE_READ_ONLY, "Read only"));
 		return;
 	}
 #endif

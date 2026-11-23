@@ -386,7 +386,7 @@ with no buffer for a whole list:
 
 | Item | Rule |
 |---|---|
-| Where | Tools > Wires-X (key 0 there, while no zone offer waits), quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Wires-X (`KEYFN_WIRESX`). Off a YSF channel: "Wires-X: on a YSF channel" |
+| Where | Tools > Wires-X (key 0 there, while no zone offer waits), # on Home and quick settings tile 3 on a YSF channel (Tone's place: YSF has no tones), a key set to Wires-X (`KEYFN_WIRESX`). Off a YSF channel: "Wires-X: on a YSF channel" |
 | The page | Node (OK asks for the status), Room, Room ID (digits type it anywhere on the page, kept while the radio runs), Connect, Disconnect, Rooms (the list, 20 a page), Search (text entry) |
 | Waiting | Until the node answers what was asked: "Waiting..."; "No answer" after 8 s |
 | State | `radio_ysf_wx`: the last reply's fields, what was asked; `radio_ysf_wx_room`: the page of rooms. The provider's task writes them, the screens read them under a sequence count |

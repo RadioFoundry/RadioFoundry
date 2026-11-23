@@ -170,6 +170,7 @@ static const flow_t flows[] = {
 	// Wires-X (ysf.md 9): tile 3 on YSF opens it; the node's status, a typed room ID connected, the room list
 	{ "Q YSF: tile 3 is Wires-X", "dlmode:ysf", "quick 3", "screen=wiresx shows=Node shows=Room_ID", 2, false },
 	{ "T YSF: 0 in Tools is Wires-X", "dlmode:ysf", "ok 6 0", "screen=wiresx shows=Node", 3, false },
+	{ "H YSF: # on Home is Wires-X", "dlmode:ysf", "ctx", "screen=wiresx shows=Node", 1, false },
 	{ "W Wires-X: OK on Node asks the node", "dlmode:ysf quick 3", "ok", "screen=wiresx wxcmd=0 shows=Waiting...", 1, false },
 	{ "W Wires-X: the node's answer", "dlmode:ysf quick 3 ok", "wxdx", "screen=wiresx shows=WARSZAWA shows=POLAND", 0, false },
 	{ "W Wires-X: a typed room connected", "dlmode:ysf quick 3", "2 7 2 9 9 down ok", "wxcmd=1 wxarg=27299", 7, false },
@@ -885,7 +886,7 @@ static const flow_t flows[] = {
 	  "screen=dmr-id toast=Saved writes=1 focus=YSF_callsign hides=N0CALL", 2, true },
 	{ "S My radio shows the YSF radio ID", "ok 7 0 ok", "down down down down down", "screen=dmr-id focus=YSF_RID shows=K7Q2Z", 5, false },
 	{ "S About shows the YSF radio ID", "ok 7 0 down ok", "down", "screen=about shows=K7Q2Z", 1, false },
-	{ "S the radio ID is not editable", "ok 7 0 ok down down down down down", "ok", "screen=dmr-id toast=Not_editable,_unique", 1, false },
+	{ "S the radio ID is not editable", "ok 7 0 ok down down down down down", "ok", "screen=dmr-id toast=Read_only", 1, false },
 #endif
 	{ "S About from My radio", "", "ok 7 0 down ok", "screen=about shows=Build:", 5, false },
 	{ "S DMR ID typed and saved", "ok 7 0 ok", "9 9 9 9 9 9 9 ok", "set76=9999999 toast=DMR_ID_saved", 8, false },

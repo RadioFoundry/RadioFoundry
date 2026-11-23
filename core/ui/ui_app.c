@@ -1253,6 +1253,10 @@ bool ui_home_key(const input_event_t *ev)
 			entry_commit();		// # tunes the typed frequency, like OK
 		else if (ui_st.scanning)
 			ui_push(SCR_SCAN, 0);	// skip / stay / always skip (task-flows.md 11)
+#if CONFIG_YSF
+		else if (ui_view()->ch.mode == RADIO_MODE_YSF)
+			ui_wiresx_open();	// beside * (quick settings): a YSF call has no caller's actions
+#endif
 		else
 			open_caller_actions();
 		return true;
