@@ -456,6 +456,7 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	UI_SET_RX_AGC_DMR, UI_SET_RX_AGC_P25, UI_SET_RX_AGC_NXDN, UI_SET_RX_AUDIO_LEVELS,
 	UI_SET_COUNT
 } ui_setting_t;
 

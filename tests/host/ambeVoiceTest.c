@@ -30,6 +30,7 @@ static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .spea
 // Vocoder: encode copies the low bit of the first 49 samples; decode writes the bits into samples 0..48 and a frame
 // marker into sample 159
 static int resets, decodes;
+static bool agc_wave;
 static bool fake_present(void) { return true; }
 static void fake_reset(void) { resets++; }
 static void fake_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
@@ -40,6 +41,11 @@ static void fake_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[V
 static void fake_decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRAME_SAMPLES])
 {
 	decodes++;
+	if (agc_wave) {
+		for (int i = 0; i < VOCODER_FRAME_SAMPLES; i++)
+			pcm[i] = i & 1 ? 464 : -464;
+		return;
+	}
 	memset(pcm, 0, VOCODER_FRAME_SAMPLES * sizeof(int16_t));
 	for (int i = 0; i < VOCODER_BITS; i++)
 		pcm[i] = bits[i];
@@ -725,6 +731,47 @@ static void testRouteTakeover(void)
 	starts = stops = 0;
 }
 
+
+#if CONFIG_RX_AGC
+static void testReceiveAgc(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	uint8_t bits[49], frame[9];
+	ambeVoiceStop();
+	rx_agc_reset();
+	agc_wave = true;
+	for (unsigned mode = RX_AGC_DMR; mode <= RX_AGC_NXDN; mode += 2) {
+		rx_agc_configure((rx_agc_mode_t)mode, 5);
+		ambeVoiceRxIdentity((rx_agc_mode_t)mode, 12345, 7);
+		s->begin(NULL, s->ctx);
+		makeFrame(1, bits, frame);
+		for (int i = 0; i < 3; i++)
+			s->frame(frame, s->ctx);
+		for (int i = 0; i < 65; i++) {
+			s->frame(frame, s->ctx);
+			block();
+		}
+		rx_agc_view_t v;
+		rx_agc_view((rx_agc_mode_t)mode, &v);
+		CHECK(v.valid && v.input_dbfs >= -38 && v.input_dbfs <= -36,
+		      "mode %u measures decoded input: %d", mode, v.input_dbfs);
+		CHECK(v.output_dbfs >= -26 && v.output_dbfs <= -24 && spk[159] > 1600,
+		      "mode %u normalizes playback: %d, sample %d", mode, v.output_dbfs, spk[159]);
+		s->end(s->ctx);
+		for (int i = 0; i < 6; i++) block();
+		ambeVoiceRxIdentity((rx_agc_mode_t)mode, 12345, 7);
+		s->begin(NULL, s->ctx);
+		for (int i = 0; i < 3; i++) s->frame(frame, s->ctx);
+		block();
+		rx_agc_view((rx_agc_mode_t)mode, &v);
+		CHECK(v.cached && spk[159] > 1600, "mode %u recalls caller at first playback", mode);
+		ambeVoiceStop();
+	}
+	agc_wave = false;
+	rx_agc_reset();
+}
+#endif
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
@@ -744,6 +791,9 @@ int main(void)
 	CHECK(stops == 1 && !speaker_on, "stop");
 	ambeVoiceSink()->begin(NULL, NULL);
 	CHECK(starts == 2, "restarted after stop");
+#if CONFIG_RX_AGC
+	testReceiveAgc();
+#endif
 	printf("# ambeVoiceTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

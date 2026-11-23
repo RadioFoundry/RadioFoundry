@@ -54,6 +54,10 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "home_usb_ip", "usbnet:on" },
 	{ "home_usb_ip_up", "usbnet:up" },
 	{ "rx_group", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA" },
+#if CONFIG_RX_AGC
+	{ "rx_agc", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA agc:0,5,464" },
+	{ "rx_agc_off", "rx:9991234,91,g,Q1ABC_Joe_-_Boston,_MA agc:0,0" },
+#endif
 	{ "rx_private", "rx:9995678,0,p" },
 	{ "tx", "pttdown" },
 	{ "tx_aprs", "aprstx" },

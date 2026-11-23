@@ -10,6 +10,7 @@
 #include "radio/tones.h"
 #include "settings/settings.h"
 #include "config.h"
+#include "audio/rx_agc.h"
 #include "hal_dtmf.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
 #include "codeplug/codeplug_tag.h"	// CODEPLUG_SYSTEM_NONE
@@ -7551,6 +7552,10 @@ static void load_own_id(radio_sm_t *sm)
 // The preferences the radio core uses: base squelch, master power, VFO step
 static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 {
+#if CONFIG_RX_AGC
+	for (unsigned mode = 0; mode < RX_AGC_MODES; mode++)
+		rx_agc_configure((rx_agc_mode_t)mode, st->rx_agc[mode]);
+#endif
 	master_power = st->master_power;
 	sm->vol_step = radio_volume_step(st->volume);
 	if (st->squelch <= RADIO_SQUELCH_MAX && sm->base_squelch != st->squelch) {

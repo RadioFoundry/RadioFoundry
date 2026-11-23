@@ -3925,6 +3925,11 @@ msgid "Hint row"
 msgstr "提示行"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_RX_AUDIO_LEVELS"
+msgid "RX audio levels"
+msgstr "接收音频电平"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"
 msgid "Language"
 msgstr "语言"
@@ -3998,6 +4003,21 @@ msgstr "单频中继接收"
 msgctxt "SET_LABEL_SFR_CW_ID"
 msgid "SFR CW ID"
 msgstr "单频中继 CW ID"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_DMR_RX_AGC"
+msgid "DMR RX AGC"
+msgstr "DMR 接收 AGC"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_P25_RX_AGC"
+msgid "P25 RX AGC"
+msgstr "P25 接收 AGC"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_NXDN_RX_AGC"
+msgid "NXDN RX AGC"
+msgstr "NXDN 接收 AGC"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_PRIVACY_KEY_TYPE"
@@ -5188,6 +5208,11 @@ msgstr "，仅 A 类"
 msgctxt "TRUNK_OTHER_CAT_B"
 msgid ", category B only"
 msgstr "，仅 B 类"
+
+#: core/ui/ui_screens.c
+msgctxt "AGC_LABEL_PREFIX"
+msgid "AGC "
+msgstr "AGC "
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"

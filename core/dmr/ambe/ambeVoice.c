@@ -17,6 +17,11 @@
 #define STORE(x, v)	__atomic_store_n(&(x), (v), __ATOMIC_RELEASE)
 
 typedef struct {
+#if CONFIG_RX_AGC
+	uint32_t source;
+	uint16_t scope;
+	uint8_t mode;
+#endif
 	uint8_t seq;		// call it belongs to
 	uint8_t bad;		// 1 uncorrectable, 2 lost
 	uint8_t bits[VOCODER_BITS];
@@ -56,6 +61,21 @@ static uint8_t cb_bad_run;
 static uint32_t cb_call_frames;		// frames played in this call (rx_underrun_at)
 static uint8_t last_bits[VOCODER_BITS];
 static bool have_last;
+
+#if CONFIG_RX_AGC
+static rx_agc_t agc;
+static rx_agc_mode_t rx_mode;
+static uint32_t rx_source;
+static uint16_t rx_scope;
+static bool cb_rx_good;
+
+void ambeVoiceRxIdentity(rx_agc_mode_t mode, uint32_t source, uint16_t scope)
+{
+	rx_mode = mode;
+	rx_source = source;
+	rx_scope = scope;
+}
+#endif
 
 static ambe_voice_stats_t stats;
 static ambe_voice_mixer_t mixer;
@@ -119,6 +139,11 @@ static void rx_push(const uint8_t bits[VOCODER_BITS], uint8_t bad)
 		stats.rx_queue_max = (uint8_t)(h + 1 - LOAD(rx_tail));
 	}
 	rx_entry_t *e = &rxq[h & (AMBE_VOICE_QUEUE - 1)];
+#if CONFIG_RX_AGC
+	e->source = rx_source;
+	e->scope = rx_scope;
+	e->mode = (uint8_t)rx_mode;
+#endif
 	e->seq = rx_seq;
 	e->bad = bad;
 	if (bits != NULL) {
@@ -166,7 +191,12 @@ uint8_t ambeVoiceCapture(const ambe_cap_entry_t **entries, uint8_t *want)
 
 static void sink_begin(const dmr_caller_t *caller, void *ctx)
 {
+#if CONFIG_RX_AGC
+	if (caller != NULL)
+		ambeVoiceRxIdentity(RX_AGC_DMR, caller->src, 0);
+#else
 	(void)caller;
+#endif
 	(void)ctx;
 	rx_place = 0;
 	rx_have_prev = false;
@@ -351,6 +381,9 @@ static void rx_block(int16_t *spk)
 	uint8_t seq = LOAD(rx_seq);
 	if (seq != cb_rx_seq) {
 		// a new call. The speaker route is off after an end or ambeVoiceStop(); re-send it in any case
+#if CONFIG_RX_AGC
+		rx_agc_end(&agc);
+#endif
 		cb_rx_seq = seq;
 		cb_speaker = false;
 		cb_rx_live = true;
@@ -377,6 +410,15 @@ static void rx_block(int16_t *spk)
 
 	bool ended = LOAD(rx_end_seq) == cb_rx_seq;
 	uint8_t queued = (uint8_t)(h - t);
+#if CONFIG_RX_AGC
+	if (queued != 0) {
+		const rx_entry_t *first = &rxq[t & (AMBE_VOICE_QUEUE - 1)];
+		if (!agc.started)
+			rx_agc_begin(&agc, (rx_agc_mode_t)first->mode, first->source, first->scope);
+		else
+			rx_agc_identify(&agc, first->source, first->scope);
+	}
+#endif
 	if (!cb_rx_live) {
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof(int16_t));
 		return;
@@ -418,6 +460,9 @@ static void rx_block(int16_t *spk)
 		cb_call_frames++;
 		if (voc_ok()) {
 			decode(last_bits, spk);
+#if CONFIG_RX_AGC
+			cb_rx_good = !cb_tx_on;
+#endif
 			// A decoder fed the wrong bits plays silence with every counter clean (a codec reading stale voice RAM)
 			for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 				uint32_t a = (uint32_t)(spk[i] < 0 ? -spk[i] : spk[i]);
@@ -623,7 +668,18 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 	(void)ctx;
 	// DMR is simplex: TX first (a fresh transmission resets the vocoder), then RX playback (silent while transmitting)
 	tx_block(mic);
+#if CONFIG_RX_AGC
+	cb_rx_good = false;
+#endif
 	rx_block(spk);
+#if CONFIG_RX_AGC
+	if (agc.started) {
+		if (!cb_rx_live || cb_tx_on)
+			rx_agc_end(&agc);
+		else if (cb_rx_playing)
+			rx_agc_process(&agc, spk, cb_rx_good);
+	}
+#endif
 	ambe_voice_mixer_t mix = LOAD(mixer);
 	if (mix != NULL && mix(spk)) {
 		cb_mixing = true;
@@ -702,6 +758,10 @@ void ambeVoiceStop(void)
 		}
 	}
 	streaming = false;
+#if CONFIG_RX_AGC
+	rx_agc_end(&agc);
+	ambeVoiceRxIdentity(RX_AGC_DMR, 0, 0);
+#endif
 }
 
 void ambeVoiceStart(void)

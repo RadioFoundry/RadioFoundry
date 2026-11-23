@@ -76,7 +76,7 @@ so with two pages a sector is erased once every 64 saves.
 ### 2.1 Pages
 
 `settings_t` is longer than one slot's payload, so it is stored as pages: page k holds bytes `236 * k` on.
-`SETTINGS_PAGES` is the number its size needs (2 now, 408 bytes); the page field allows 16 (3776 bytes). Each page is
+`SETTINGS_PAGES` is the number its size needs (2 now, 412 bytes); the page field allows 16 (3776 bytes). Each page is
 a record with its own length, so `settings_t` grows by appending fields, and a short page fills the fields it has.
 
 | Rule | Why |
@@ -350,3 +350,9 @@ send it:
 | `cpsTest.c` `test_foreign` | a foreign region: reads answered, `X 1` and codeplug edits refused, flash unchanged; after a claim, CPS writes work |
 | `tests/hil/test_cps.py` `test_storage_region` | on the radio: the region state matches the view, reads inside the window work and outside it are refused (skips with instructions when foreign) |
 | `tests/hil/test_cps.py` `test_settings_survive_restart` | opt-in `--allow-reboot`: the channel position survives a restart |
+
+## Receive audio preferences
+
+Offsets 408-410 append `rx_agc[3]`, in DMR, P25, NXDN order. Each byte is the target choice in
+[rx-agc.md](rx-agc.md); zero is Off. Offset 411 is `rx_audio_levels` (0 hidden, 1 shown).
+Older records zero-fill these appended bytes. The layout version and earlier offsets stay unchanged.

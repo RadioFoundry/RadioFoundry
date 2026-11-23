@@ -304,3 +304,23 @@ Roaming** ([DMR](09-dmr.md#roaming)).
 
 A build without the Settings menu (`CONFIG_UI_SETTINGS=n`) shows "Set them with qdmr" instead, and keeps the stored
 values.
+
+## Digital receive audio levels
+
+**Settings > Talk & listen** has separate **DMR RX AGC**, **P25 RX AGC** and **NXDN RX AGC** targets
+for the modes included in the build. Off is the default. Try **-25 dBFS** to bring quiet and loud callers
+toward the same average level. Volume still controls the speaker. FM is unchanged.
+
+The controller adjusts quickly over the first 300 ms of active audio, then tracks a speech-energy average over
+about 1.5 seconds. Gain increases gently, about 1 dB per second, but decreases quickly when a voice is too loud.
+It holds during pauses so individual syllables retain their natural level differences. It remembers ten recent caller IDs
+until power-off. A caller without history starts from the last level heard in that mode. Gain and peak limits
+can keep the audio below the target. A separate startup loudness guard limits each audio block to the target while
+the controller acquires the voice. Afterward it allows about 6 dB of headroom for normal speech. The guard also
+limits garbled or lost-frame audio; it cannot repair the sound.
+
+Enable **Settings > Display > RX audio levels** to see a compact row such as `AGC -37 > -25 dBFS`
+while receiving: input on the left, output on the right. These are averaged audio levels before volume,
+not RF signal strength. Pauses show dashes after one second. Off shows `AGC Off`. Small screens give this
+row space by hiding optional alias or location details. P25/NXDN large-text and all dual-watch layouts retain their
+usual information. See [receive AGC](../spec/rx-agc.md) for the measurement and limits.

@@ -14,6 +14,9 @@
 #ifndef CONFIG_DMR
 #define CONFIG_DMR			1
 #endif
+#ifndef CONFIG_RX_AGC
+#define CONFIG_RX_AGC			CONFIG_DMR
+#endif
 #ifndef CONFIG_DMR_PRIVACY
 #define CONFIG_DMR_PRIVACY		1
 #endif

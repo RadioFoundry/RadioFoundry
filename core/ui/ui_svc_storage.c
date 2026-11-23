@@ -26,6 +26,7 @@
 #include "dmr/dmr_emergency.h"	// the emergency tone (Settings > Sound); stubs without CONFIG_DMR_EMERGENCY
 #include "hal_time.h"
 #include "config.h"
+#include "audio/rx_agc.h"
 #if CONFIG_HOSTLINK
 #include "hostlink/hostlink.h"
 #endif
@@ -239,6 +240,16 @@ static __attribute__((noinline)) int32_t setting_get_radio(uint8_t id)
 static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 {
 	switch (id) {
+#if CONFIG_RX_AGC
+	case UI_SET_RX_AGC_DMR:
+	case UI_SET_RX_AGC_P25:
+	case UI_SET_RX_AGC_NXDN: {
+		uint8_t choice = (uint8_t)settings_read_field(offsetof(settings_t, rx_agc) + id - UI_SET_RX_AGC_DMR, 1);
+		return choice < RX_AGC_TARGETS ? choice : 0;
+	}
+	case UI_SET_RX_AUDIO_LEVELS:
+		return SETTINGS_FIELD(rx_audio_levels) != 0;
+#endif
 	case UI_SET_VOLUME:
 		return radio_volume_step(SETTINGS_FIELD(volume));
 	case UI_SET_KNOB_WHEN_LOCKED:
@@ -428,6 +439,24 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 	}
 #endif
 	switch (id) {
+#if CONFIG_RX_AGC
+	case UI_SET_RX_AGC_DMR:
+	case UI_SET_RX_AGC_P25:
+	case UI_SET_RX_AGC_NXDN: {
+		uint8_t mode = id - UI_SET_RX_AGC_DMR;
+		uint8_t choice = value >= 0 && value < (int32_t)RX_AGC_TARGETS ? (uint8_t)value : 0;
+		st = settings_begin();
+		st->rx_agc[mode] = choice;
+		settings_end(hal_millis());
+		rx_agc_configure((rx_agc_mode_t)mode, choice);
+		return true;
+	}
+	case UI_SET_RX_AUDIO_LEVELS:
+		st = settings_begin();
+		st->rx_audio_levels = value != 0;
+		settings_end(hal_millis());
+		return true;
+#endif
 	case UI_SET_KEY_TONES:
 	case UI_SET_TONE_VOLUME:
 	case UI_SET_TOT_S:

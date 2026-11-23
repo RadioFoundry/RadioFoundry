@@ -6296,7 +6296,8 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	// Both settings pages commit, then the native erase fails. Appended settings must not move the cut earlier.
+	sim_flash_cut_after(sizeof(settings_t) + SETTINGS_PAGES * (STORAGE_SLOT_HDR + 8u));
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);

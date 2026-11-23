@@ -3923,6 +3923,11 @@ msgid "Hint row"
 msgstr "Ligne d'aide"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_RX_AUDIO_LEVELS"
+msgid "RX audio levels"
+msgstr "Niveaux audio RX"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LANGUAGE"
 msgid "Language"
 msgstr "Langue / Language"
@@ -3996,6 +4001,21 @@ msgstr "Réception SFR"
 msgctxt "SET_LABEL_SFR_CW_ID"
 msgid "SFR CW ID"
 msgstr "ID CW SFR"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_DMR_RX_AGC"
+msgid "DMR RX AGC"
+msgstr "AGC RX DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_P25_RX_AGC"
+msgid "P25 RX AGC"
+msgstr "AGC RX P25"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_NXDN_RX_AGC"
+msgid "NXDN RX AGC"
+msgstr "AGC RX NXDN"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_PRIVACY_KEY_TYPE"
@@ -5186,6 +5206,11 @@ msgstr ", catégorie A seule"
 msgctxt "TRUNK_OTHER_CAT_B"
 msgid ", category B only"
 msgstr ", catégorie B seule"
+
+#: core/ui/ui_screens.c
+msgctxt "AGC_LABEL_PREFIX"
+msgid "AGC "
+msgstr "AGC "
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"

@@ -13,6 +13,7 @@
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
 //   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
+//   agc:<mode>,<choice>[,<amplitude>]  feed synthetic receive levels (modes 0 DMR, 1 P25, 2 NXDN)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
@@ -67,6 +68,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ui_sim.h"
+#include "audio/rx_agc.h"
 #if CONFIG_SATELLITE_TLE
 #include "satellite/store.h"
 #endif
@@ -743,11 +745,19 @@ static int32_t sim_late[UI_SET_COUNT - UI_SET_RAM_COUNT];
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
+#if CONFIG_RX_AGC
+	if (id >= UI_SET_RX_AGC_DMR && id <= UI_SET_RX_AUDIO_LEVELS)
+		return ui_svc_ram_get(id);
+#endif
 	return id >= UI_SET_RAM_COUNT && id < UI_SET_COUNT ? sim_late[id - UI_SET_RAM_COUNT] : ui_svc_ram_get(id);
 }
 
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
+#if CONFIG_RX_AGC
+	if (id >= UI_SET_RX_AGC_DMR && id <= UI_SET_RX_AUDIO_LEVELS)
+		return ui_svc_ram_set(id, value);
+#endif
 	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
 		return ui_svc_ram_set(id, value);
 	if (id == UI_SET_SIG_STEP) {	// a whole step: the firmware writes one record, here its two settings
@@ -2754,6 +2764,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ACCENT, 0);
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
+#if CONFIG_RX_AGC
+	rx_agc_reset();
+	for (uint8_t id = UI_SET_RX_AGC_DMR; id <= UI_SET_RX_AUDIO_LEVELS; id++)
+		ui_svc_setting_set(id, 0);
+#endif
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
 	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
@@ -3397,6 +3412,29 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+#if CONFIG_RX_AGC
+	if (strcmp(t, "agc") == 0) {
+		unsigned mode = 0, choice = 5, amplitude = 464;
+		if (arg == NULL || sscanf(arg, "%u,%u,%u", &mode, &choice, &amplitude) < 2 ||
+		    mode >= RX_AGC_MODES || choice >= RX_AGC_TARGETS || amplitude > 32767u) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		ui_svc_setting_set(UI_SET_RX_AUDIO_LEVELS, 1);
+		ui_svc_setting_set((uint8_t)(UI_SET_RX_AGC_DMR + mode), (int32_t)choice);
+		rx_agc_t state;
+		rx_agc_begin(&state, (rx_agc_mode_t)mode, 9991234, 0);
+		int16_t pcm[AUDIO_BLOCK_SAMPLES];
+		for (unsigned n = 0; n < 60; n++) {
+			for (unsigned i = 0; i < AUDIO_BLOCK_SAMPLES; i++)
+				pcm[i] = (int16_t)(i % 8 < 4 ? (int)amplitude : -(int)amplitude);
+			rx_agc_process(&state, pcm, true);
+		}
+		changed();
+		advance(300);
+		return true;
+	}
+#endif
 	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25 or nxdn
 		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
 			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);

@@ -2388,5 +2388,7 @@
  "editor.sig.play": "播放",
  "editor.sig.roll": "链路的音高随时间变化，{ms} 毫秒",
  "editor.sig.no_audio": "此处无法播放",
- "editor.sig.empty": "无步骤:使用标准声音"
+ "editor.sig.empty": "无步骤:使用标准声音",
+ "screen.rx_agc": "接收音频 AGC 处理前后的电平",
+ "screen.rx_agc_off": "接收音频 AGC 已关闭"
 }

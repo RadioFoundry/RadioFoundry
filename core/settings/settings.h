@@ -254,6 +254,9 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// Digital receive AGC: stable target-choice indices (0 Off), DMR/P25/NXDN; history is RAM only.
+	uint8_t rx_agc[3];
+	uint8_t rx_audio_levels; // optional input/output dBFS row
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
