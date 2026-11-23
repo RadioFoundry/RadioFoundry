@@ -431,7 +431,8 @@ and Wires-X nodes hear it as they hear a Yaesu handheld.
   Home says "No callsign" and PTT is refused.
 - Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
   call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. Calls heard go into
-  **Recent** with the callsign and DG-ID.
+  **Recent** with the callsign and DG-ID, and while idle Home shows the last one ("SP5WLF", "DG-ID 12 11s ago"). Your
+  own callsign coming back from a hotspot is left out.
 - **DG-ID**: quick settings tile **8**, or the first row of the Wires-X page (# on Home). Type two digits or step with
   Up/Down, **OK** sets it for receive and transmit (00 hears every DG-ID). In the VFO it stays until the radio is
   switched off; on a stored channel it lasts until you change channel. To keep a channel's DG-ID, set it in the

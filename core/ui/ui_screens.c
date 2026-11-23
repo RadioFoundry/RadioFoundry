@@ -1986,6 +1986,42 @@ static void draw_last_heard(const radio_view_t *v, const ui_state_t *s, int y)
 	gfx_text(sm, 0, y, fit, ui_col.fg);
 }
 
+#if CONFIG_YSF
+// Activity on Home, YSF idle: the last YSF call heard (ui_state_t.ysf_last), as DMR's: "SP5WLF" / "DG-ID 12 11s ago"
+static void draw_last_heard_ysf(const ui_state_t *s, int y)
+{
+	const font_t *sm = ui_layout.small;
+	int w = gfx_width();
+	char where[32], fit[48];
+	sbuf_t b;
+
+	if (s->ysf_last_ms == 0) {
+		gfx_text(sm, 0, y + (ui_layout.activity_h - sm->h) / 2, TR(EMPTY_NO_CALLS_HEARD, "No calls heard yet"),
+			ui_col.dim);
+		return;
+	}
+	sb_init(&b, where, sizeof where);
+	sb_str(&b, "DG-ID ");
+	sb_u32(&b, s->ysf_last_dgid, 2);
+	sb_chr(&b, ' ');
+	sb_age(&b, s->now_ms - s->ysf_last_ms);
+	if (ui_layout.activity_h >= 2 * sm->h) {
+		gfx_text_fit(sm, s->ysf_last, w, fit, sizeof fit);
+		gfx_text(sm, 0, y, fit, ui_col.fg);
+		gfx_text_fit(sm, where, w, fit, sizeof fit);
+		gfx_text(sm, 0, y + sm->h, fit, ui_col.dim);
+		return;
+	}
+	// One line: the callsign whole (10 at most), where and when in what is left
+	y += (ui_layout.activity_h - sm->h) / 2;
+	gfx_text_fit(sm, s->ysf_last, w, fit, sizeof fit);
+	int cw = gfx_text_width(sm, fit);
+	gfx_text(sm, 0, y, fit, ui_col.fg);
+	gfx_text_fit(sm, where, w - cw - sm->w, fit, sizeof fit);
+	gfx_text(sm, w - gfx_text_width(sm, fit), y, fit, ui_col.dim);
+}
+#endif
+
 // One text line of the call screens, if it still fits above the hint row; returns the next y
 static int call_line(const font_t *f, int y, const char *text, color_t c)
 {
@@ -2360,6 +2396,12 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 #if CONFIG_DMR
 		if (v->ch.mode == RADIO_MODE_DMR && v->dmr.active) {
 			draw_last_heard(v, s, y);	// hear all shows as "All" in the chips and in the hint
+			break;
+		}
+#endif
+#if CONFIG_YSF
+		if (v->ch.mode == RADIO_MODE_YSF) {
+			draw_last_heard_ysf(s, y);
 			break;
 		}
 #endif

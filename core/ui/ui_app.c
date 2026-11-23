@@ -433,7 +433,13 @@ static void recent_update(const radio_view_t *v)
 	// A YSF call: in once its callsign is known (from the header, or later from the DCH), then kept fresh
 	const radio_ysf_view_t *y = &v->ysf;
 	if ((y->flags & RADIO_YSF_RX) && y->src[0]) {
-		if (!recent_ysf_in) {
+		char own[RADIO_YSF_CALL_LEN + 1];
+
+		if (!recent_ysf_in)
+			ui_svc_ysf_callsign(own);	// our own call coming back (a hotspot's echo) stays out, as DMR's own ID
+		if (!recent_ysf_in && strcmp(own, y->src) == 0) {
+			recent_ysf_in = true;
+		} else if (!recent_ysf_in) {
 			ui_recent_t r;
 			memset(&r, 0, sizeof r);
 			r.ysf = true;
@@ -442,8 +448,12 @@ static void recent_update(const radio_view_t *v)
 			str_copy(r.name, sizeof r.name, y->src);
 			recent_add(&r);
 			recent_ysf_in = true;
-		} else if (recent_n && recent[0].ysf) {
+			str_copy(ui_st.ysf_last, sizeof ui_st.ysf_last, y->src);
+			ui_st.ysf_last_dgid = y->dgid;
+			ui_st.ysf_last_ms = now;
+		} else if (recent_n && recent[0].ysf && strcmp(recent[0].name, y->src) == 0) {
 			recent[0].ms = now;
+			ui_st.ysf_last_ms = now;
 		}
 	} else if (!(y->flags & RADIO_YSF_RX)) {
 		recent_ysf_in = false;

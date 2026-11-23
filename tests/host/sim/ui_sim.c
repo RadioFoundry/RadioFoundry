@@ -31,6 +31,7 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   ysfrx:<call>,<dgid>[,o|v]   a YSF call: o another DG-ID (not played), v not DN voice (not played)
+//   ysfend                      the YSF call heard ends
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
 //   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
 //                       1 finding the system, 2 on the control channel, 3 following talk group tg
@@ -3627,6 +3628,14 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		changed();
 		advance(100);
+		return true;
+	}
+	if (strcmp(t, "ysfend") == 0) {		// the YSF call heard ends
+		view.ysf.flags = RADIO_YSF_ON;
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(300);
 		return true;
 	}
 	if (strcmp(t, "ysfrx") == 0) {
