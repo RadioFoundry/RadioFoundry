@@ -953,12 +953,14 @@ P25T_REG_BLOCKED = 8
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.sdr_rx
+@pytest.mark.reboot
 @pytest.mark.parametrize("wacn,sysid", [("BEEFF", SITE_SYSID), (SITE_WACN, "00A")], ids=["wacn_beeff", "sysid_00a"])
-def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig, wacn, sysid):
+def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig, request, wacn, sysid):
     """A control channel naming a blocked system (WACN BEEFF, of BEE00..BEEFF, or system ID 00A), the system
     programmed as any WACN and system ID with transmit on: the follower holds it but blocks its transmit side. No
     registration goes out, PTT keys nothing, and nothing is heard on the inbound frequency (radio_tx: the radio could
-    key there if the block failed)"""
+    key there if the block failed). The blocked system's frequencies stay in a RAM table until power off, so the radio
+    restarts at the end: a later trunked test on the same control channel would find it blocked"""
     cc_mhz, in_mhz, voice_mhz = (rig(pytestconfig, k) for k in ("p25-cc-mhz", "p25-cc-in-mhz", "p25-voice-mhz"))
     if "P25_TRUNK" not in radio.features():
         skip("not_built", "built without CONFIG_P25_TRUNK")
@@ -969,6 +971,13 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig, wacn, 
     cc_hz, in_hz, voice_in_hz = (round(m * 1e6) for m in (cc_mhz, in_mhz, voice_mhz))
     plan = site_plan(cc_hz, in_hz, voice_in_hz)
     number, regions = trunk_slot(radio, backup_dir)
+
+    def restart():
+        radio.link.reboot(0, radio.link.chip()["token"])
+        radio.link.close()
+        time.sleep(2.0)
+        radio.reconnect(20.0)
+    request.addfinalizer(restart)
     with codeplug_edited(radio, backup_dir,
                          lambda img: make_p25_trunk(img, number, plan, cc_hz, in_hz, wacn="FFFFFF", sysid="FFFF"),
                          "p25tbee", regions):
@@ -1007,7 +1016,8 @@ def test_p25_trunk_wacn_bee00(radio, sdr_bench, backup_dir, pytestconfig, wacn, 
         f"the system heard: WACN {v0.get('p25t.wacn')}, system {v0.get('p25t.sysid')}"
     assert v1.get("p25t.reg") == str(P25T_REG_BLOCKED), f"registration state {v1.get('p25t.reg')}"
     for k in ("p25t.reg_tx", "p25t.aff_tx", "p25t.req_tx", "p25t.bursts", "p25.tx_calls"):
-        assert (as_int(v1.get(k)) or 0) == 0, f"{k} {v1.get(k)}: something was sent"
+        # Counted since boot: against the reading with the channel running, before the control channel played
+        assert (as_int(v1.get(k)) or 0) == (as_int(v.get(k)) or 0), f"{k} {v.get(k)} -> {v1.get(k)}: something was sent"
     kinds = inbound_blocks(job)
     assert not kinds, f"inbound blocks on {in_mhz} MHz: " + ", ".join(f"{k} x{len(m)}" for k, m in kinds.items())
 
