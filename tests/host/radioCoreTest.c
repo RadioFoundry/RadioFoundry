@@ -5749,6 +5749,18 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
 	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
+	// Scan skip, stored as 20 (append only): a CPS's press in role 0 and long press in role 1 come back as the same
+	// functions and send ACT_SCAN_SKIP
+	cp_quick[1] = 20;
+	cp_quick[2] = 20 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN_SKIP && got_keymap[1].short_action == ACT_SCAN_SKIP);
+	CHECK(got_keymap[2].long_action == ACT_SCAN_SKIP);
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[2] = KEYFN_ZONE_UP << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
 	// A write that fails is reported; the key works for now
 	cp_quick_fail = true;
 	n_ev = 0;

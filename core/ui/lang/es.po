@@ -423,6 +423,21 @@ msgid "Scanning this zone"
 msgstr "Escaneando esta zona"
 
 #: core/ui/ui_app.c
+msgctxt "SCAN_TOAST_NOT_SCANNING"
+msgid "Not scanning"
+msgstr "No hay escaneo"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
+msgid "Skipped until the scan stops"
+msgstr "Ignorado hasta parar escaneo"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
+msgid "Nothing to skip yet"
+msgstr "Nada que ignorar aún"
+
+#: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
 msgid "Default: "
 msgstr "Predet.: "
@@ -3698,6 +3713,11 @@ msgid "Prev zone"
 msgstr "Zona anterior"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_SKIP"
+msgid "Scan skip"
+msgstr "Saltar canal"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "Bloq. teclas"
@@ -4491,16 +4511,6 @@ msgstr "Quedarse aquí"
 msgctxt "SCAN_ROW_ALWAYS_SKIP"
 msgid "Always skip"
 msgstr "Saltar siempre"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
-msgid "Skipped until the scan stops"
-msgstr "Ignorado hasta parar escaneo"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
-msgid "Nothing to skip yet"
-msgstr "Nada que ignorar aún"
 
 #: core/ui/ui_menus.c
 msgctxt "SCAN_TOAST_STOPPED_HERE"
