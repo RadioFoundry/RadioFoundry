@@ -161,6 +161,7 @@ static const hrc_chip_t chip = {
 	.mcu_crc = false,
 	.sync_reg = false,
 	.mode_per_channel = true,
+	.bs_by_mode = true,	// 0x6B hears no BS sync, 0x4F no MS sync (bench: a BS-framed direct call, every 60 ms)
 	.tc_last_rx = true,
 	.air_tx_only = true,	// no physical layer receive interrupt in any setting tried (modem-hrc6000.md 10.7)
 	.dmr_mode = dmr_mode,
@@ -413,7 +414,13 @@ bool hrc5000_tx_lead_on(hrc5000_t *dev, hrc5000_lead_t *l, uint8_t steps)
 		}
 		l->kept = true;
 	}
-	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (steps & 0x3Fu)));
+	uint8_t base = (uint8_t)(l->saved & 0x3Fu);
+	if (steps > 0x3Fu - base) {
+		steps = (uint8_t)(0x3Fu - base);
+	}
+	l->us = (uint16_t)(((uint32_t)steps * HRC5000_TX_LEAD_STEP_NUM + HRC5000_TX_LEAD_STEP_DEN / 2u) /
+			   HRC5000_TX_LEAD_STEP_DEN);
+	l->on = hrc_write(&dev->hrc, HRC_PAGE_SYS, REG_TX_LEAD, (uint8_t)((l->saved & 0xC0u) | (base + steps)));
 	return l->on;
 }
 
