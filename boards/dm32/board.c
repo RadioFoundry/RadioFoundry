@@ -118,6 +118,9 @@ const board_t board = {
 	.diag_line = dm32_diag_line,
 	.diag_reset = dm32_diag_reset,
 #endif
+#if CONFIG_DEBUGLINK
+	.view_line = dm32_view_line,
+#endif
 #if CONFIG_DMR
 	.dmr = &hrc_dmr,
 	.audio = &hrc_audio_pcm,

@@ -450,6 +450,8 @@ typedef struct {
 	bool tone_ok;		// the RX tone or code is heard (debounced; true when the channel has no RX tone)
 	int16_t rssi_dbm;
 	uint8_t noise;
+	uint8_t sql_close;	// polls over the close line the squelch's last close took (1 or 2 as a carrier goes, more
+				// after a voice peak hold); 0 none yet
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
 				// APRS beacon. It doesn't light the screen (radio_view_wakes)

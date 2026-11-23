@@ -590,7 +590,8 @@ th[aria-sort="ascending"] .grid-sort::after { content: " ▲"; }
 th[aria-sort="descending"] .grid-sort::after { content: " ▼"; }
 table.grid td[data-col] { cursor: cell; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
 table.grid td:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
-table.grid td.editing { padding: 0; }
+/* position: Tom Select's hidden original input stays in the cell instead of widening the page */
+table.grid td.editing { padding: 0; position: relative; }
 table.grid td.editing input, table.grid td.editing select { font: inherit; width: 100%; min-width: 7rem; padding: var(--space-1) var(--space-2);
 	border: 2px solid var(--focus); background: var(--surface); color: var(--text); }
 table.grid td.c-num { font-variant-numeric: tabular-nums; }
@@ -653,6 +654,35 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .form-toggle[aria-expanded="true"]::before { content: "▾ "; }
 .form-toggle:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
 .form-row input:disabled, .form-row select:disabled { opacity: 0.5; }
+/* the searchable lists (Tom Select, editor/combo.js): its layout, the site's colors and the editor inputs' size */
+.ts-control, .ts-wrapper.single.input-active .ts-control, .ts-wrapper.single .ts-control, .full .ts-control {
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: none;
+	padding: var(--space-1) var(--space-2); min-height: 0; }
+.ts-wrapper.single .ts-control { padding-right: 2rem; }
+.ts-dropdown, .ts-control, .ts-control input { color: var(--text); font: inherit; line-height: var(--line); }
+.ts-control input::placeholder { color: var(--muted); }
+.focus .ts-control { box-shadow: none; border-color: var(--focus); outline: 1px solid var(--focus); }
+.ts-wrapper.single .ts-control::after { border-color: var(--muted) transparent transparent transparent; }
+.ts-wrapper.single.dropdown-active .ts-control::after { border-color: transparent transparent var(--muted) transparent; }
+.disabled .ts-control { opacity: 0.5; background: var(--surface); }
+.ts-dropdown { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow);
+	margin-top: 2px; z-index: 50; }
+.ts-dropdown-content { max-height: 16rem; }
+.ts-dropdown .option, .ts-dropdown .create, .ts-dropdown .no-results { padding: var(--space-1) var(--space-2); font-variant-numeric: tabular-nums; }
+.ts-dropdown .active, .ts-dropdown .active.create { background: var(--accent-soft); color: var(--text); }
+.ts-dropdown .create, .ts-dropdown .no-results { color: var(--muted); }
+.ts-dropdown [data-selectable] .highlight { background: none; font-weight: 700; }
+.ts-dropdown .option.selected { font-weight: 600; }
+/* in a table cell: the cell's own edit frame, the list over the page */
+table.grid td.editing .ts-control { border: 2px solid var(--focus); border-radius: 0; outline: none; min-width: 7rem; }
+/* Tom Select parks its input at left: -10000px while a value is shown; focusing it there scrolled the table back to
+   its first column */
+table.grid td.editing .input-hidden .ts-control > input { left: 0; }
+/* one line in a narrow cell: the text box's own 7rem minimum would wrap it under the value */
+table.grid td.editing .ts-control { flex-wrap: nowrap; }
+table.grid td.editing .ts-control > input { min-width: 1rem; }
+.ts-wrapper.single.typing .ts-control > .item { display: none; }
+body > .ts-dropdown { font-size: var(--text-sm); z-index: 60; }
 .form-check > .small { order: 3; grid-column: 1 / -1; }	/* a checkbox's help: under the box and its label */
 /* a table inside the form: cells and inputs sized to their numbers, so it fits without scrolling */
 .form-table .table-wrap { margin: 0; }

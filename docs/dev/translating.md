@@ -14,7 +14,7 @@ source of both. This page is the how-to; the rules are in [ui.md 2.5](../spec/ui
 | Tool | `tools/i18n.py` | `python3 -m rfoundrysite.i18n` (from `site/`) |
 | Build switch | `CONFIG_LANG_<CODE>`, one per language; `CONFIG_LANG_DEFAULT_<CODE>` to start in it | None: every language is on the site |
 | Missing string | Shown in English; fails CI | Shown in English; fails CI |
-| Characters | ASCII and Latin-1 (U+00A0 to U+00FF) | Any Unicode |
+| Characters | ASCII and Latin-1 (U+00A0 to U+00FF), with separate support for [CJK catalogs](#chinese-and-other-cjk-languages) | Any Unicode |
 
 ## Translating the radio
 
@@ -160,27 +160,28 @@ above: one catalog, one switch, the same checks.
 |---|---|
 | The catalog | `tools/i18n.py --new zh 中文 Chinese` writes it with an `X-Glyphs: utf8` header and an `X-Language-Name-Latin` one. A catalog with that header holds UTF-8: ASCII, `font.h`'s glyphs, and characters the CJK face has. Two-byte characters (Latin-1 letters with an accent) are not allowed: the text layer decodes only three-byte sequences, so that Latin-1 names, messages and the Spanish catalog keep working in a build with the CJK face. `--check` lists every character it rejects or the face lacks |
 | The list | A build without the CJK face (`CONFIG_LANG_ZH` off) still lists the language, dimmed: it shows `X-Language-Name-Latin` ("Chinese"), because the Latin font would draw the UTF-8 name as boxes |
-| The face | `tools/cjkfont.py` rasterizes every character the catalogs use into a 16x16 one-bit glyph and writes the table the firmware links. The current 505-character table is 16,160 B. Run it whenever a translation adds a character (`--check` fails until it does) and commit both |
+| The face | `tools/cjkfont.py` rasterizes every character the catalogs use plus a reviewed list of Chinese province, prefecture-level city and common repeater words (`tools/cjk_names_zh.txt`) into a 16x16 one-bit glyph and writes the table the firmware links. The current table has 802 characters and is about 27 KB; with the text, Chinese costs about 44 KB. Channel names that use a character outside this list draw a box. Run it whenever a translation or the names list adds a character (`--check` fails until it does) and commit both |
 | The font | One whose license allows embedding bitmaps: an SIL OFL font such as Noto Sans CJK SC or Source Han Sans. The generated file carries the font's copyright, its full OFL text and the font file's SHA-256, because that data is under the font's license, not MIT (see the header of `core/ui/cjk_font_data.c`). Do not use a vendor font that forbids it |
-| Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; a layout whose words use the 5x8 or 6x12 font (a 128x64 display, and the 160x128 class) has no room for 16 px lines, so those boards list `LANG_ZH` and `LANG_DEFAULT_ZH` in `BOARD_UNSUPPORTED`, and CI's maximal build and the flasher leave the language out there |
+| Size | A CJK character is 16 px wide and 16 tall, the height of the 8x16 font: 8 characters a line on a 128 px screen, 10 on a 160 px one, 15 on a 240 px one. **A line must be at least 16 px high.** A 240 px color radio draws its words in 8x16 (a CJK build moves its text pages up to that font too) and shows Chinese everywhere; the 160 px class draws them in 6x12 and moves lists, labels, the strip, the hints and the text pages up to the 8x16 font while the language in use is wide, so its lines and rows get taller (`ui_layout_init`, [ui.md 2.5](../spec/ui.md#25-languages)). A 128x64 panel has no room for 16 px lines: it lists `LANG_ZH` and `LANG_DEFAULT_ZH` in `BOARD_UNSUPPORTED`, and CI's maximal build and the flasher leave the language out there. Flash is the other limit: the face and the catalog add about 44 KB, so compare that with the board's app region (`boards/<radio>/memory.ld`) and [the feature matrix](../feature-matrix.md#whole-images). A board without room leaves `CONFIG_LANG_ZH` off in its `config.mk`; the language packs otherwise build side by side |
 | Cutting | A string too long for its space is cut at the end, whole characters only (`gfx_text_fit_end` for a line that keeps its start, `gfx_text_fit` for a middle cut), because Chinese has no spaces to cut at a middle. A line wraps after any CJK character (`wrap_line`); Latin words inside it still wrap at their spaces |
 | Switch | `CONFIG_LANG_ZH` is off by default. Measure it like any switch and put the bytes in [the feature matrix](../feature-matrix.md) |
 
-The table in this tree comes from Noto Sans CJK SC 2.004 ([noto-cjk](https://github.com/notofonts/noto-cjk)), rendered
-with Pillow 12.1. Rebuild it with:
+The table in this tree comes from Noto Sans SC VF, rendered with Pillow 13.0 (see the hash and options in
+`core/ui/cjk_font_data.c`). Rebuild it with the same font and Pillow version:
 
 ```
-python3 tools/cjkfont.py --font NotoSansCJK-Regular.ttc --font-index 2 --weight 0 \
-    --font-name "Noto Sans CJK SC 2.004 (NotoSansCJK-Regular.ttc, index 2)" \
+python3 tools/cjkfont.py --font /path/to/NotoSansSC-VF.ttf --weight 500 \
+    --font-name "Noto Sans SC (Windows variable font)" \
     --copyright "2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'." \
     --license LICENSES/OFL-1.1.txt --spdx OFL-1.1 \
-    --po core/ui/lang/zh.po --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
+    --po core/ui/lang/zh.po --chars-file tools/cjk_names_zh.txt \
+    --out-c core/ui/cjk_font_data.c --out-png /tmp/cjk.png
 ```
 
-`--font-index 2` picks the Simplified Chinese face of a `.ttc` (0 is Japanese). The header records the font file's
-SHA-256: a different hash means a different font file, so say which one you used in the pull request. `--weight` picks
-a variable font's axis; 0 keeps a static face's own weight. A different Pillow can render slightly different bytes;
-commit the table it wrote.
+`--chars-file` adds the characters from the reviewed name list without pulling in GB2312 level 1. Lines beginning
+with `#` are comments. The header records the font file's SHA-256: a different hash means a different font file, so
+say which one you used in the pull request. `--weight` picks a variable font's axis. A different Pillow can render
+slightly different bytes; commit the table it wrote.
 
 ### When the source changes
 

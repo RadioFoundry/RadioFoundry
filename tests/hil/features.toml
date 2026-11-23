@@ -309,6 +309,10 @@ switch = "APRS_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
 spec = "docs/spec/aprs.md"
 
+[feature.aprs_mute]
+requires = "APRS_RX"
+spec = "docs/spec/aprs.md"
+
 [feature.aprs_igate]
 switch = "APRS_IGATE"
 spec = "docs/spec/aprs.md"
@@ -543,6 +547,11 @@ spec = "docs/spec/ui.md"
 [feature.lang_zh]
 switch = "LANG_ZH"
 spec = "docs/spec/ui.md"
+
+[feature.cjk_glyphs]
+switch = "CJK_GLYPHS"
+spec = "docs/spec/ui.md"
+source = ["core/ui/cjk_font.c", "core/ui/cjk_font_data.c"]
 
 [feature.lang_default_es]
 switch = "LANG_DEFAULT_ES"

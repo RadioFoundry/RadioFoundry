@@ -704,9 +704,31 @@ static void testTxTone(void)
 	ambeVoiceInit(&audio, &vocoder);
 }
 
+// A beep's own stream left the speaker route on, and DMR voice took the running stream over (the first key-up after
+// power-on or an FM channel, #705): the voice stream's first block gives the route back, though its own state says off
+static void testRouteTakeover(void)
+{
+	ambeVoiceStop();
+	fake_speaker(true);	// the beep's callback routed the speaker
+	int calls = speaker_calls;
+	ambeVoiceStart();
+	block();
+	CHECK(!speaker_on && speaker_calls == calls + 1, "the beep's route left on after the takeover (%d, %d calls)",
+	      speaker_on, speaker_calls - calls);
+	block();
+	CHECK(speaker_calls == calls + 1, "the route sent again with nothing changed");
+	ambeVoiceStop();
+	ambeVoiceStart();
+	block();
+	CHECK(!speaker_on, "a restart with the route off");
+	ambeVoiceStop();
+	starts = stops = 0;
+}
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
+	testRouteTakeover();
 	testRx();
 	testTx();
 	testSimplex();

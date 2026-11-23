@@ -20,6 +20,8 @@ class FakeLink {
 		this.records = records;
 		this.expectedProfiles = profiles;
 		this.calls = [];
+		this.bands = "136000000-174000000,400000000-480000000";
+		this.viewCalls = 0;
 		this.recordBytes = new Uint8Array(0);
 		this.profiles = [];
 		this.reportedEpoch = 1794545852 - 8 * 86400;
@@ -27,6 +29,14 @@ class FakeLink {
 	}
 
 	async request(command, payload) {
+		if (command === 0x09) {
+			this.viewCalls++;
+			const text = new TextEncoder().encode(`section=core\nbands=${this.bands}\n`);
+			const reply = new Uint8Array(5 + text.length);
+			reply[4] = 1;
+			reply.set(text, 5);
+			return reply;
+		}
 		assert.equal(command, 0x26);
 		this.calls.push([...payload]);
 		switch (payload[0]) {
@@ -111,6 +121,7 @@ test("pushes, commits, verifies, and synchronizes a full replacement", async () 
 	const progress = [];
 	await pushSatelliteBundle(link, bundle, (step) => progress.push(step));
 	assert.deepEqual(link.calls.map((call) => call[0]), [0, 9, 3, 3, 3, 10, 4, 1, 11]);
+	assert.equal(link.viewCalls, 1);
 	const chunks = link.calls.filter((call) => call[0] === 3);
 	assert.deepEqual(chunks.map((call) => [call[3] | call[4] << 8, call.length]), [[0, 64], [59, 64], [118, 46]]);
 	assert.deepEqual(progress, ["writing", "committing", "verifying", "done"]);
@@ -163,4 +174,14 @@ test("rejects older firmware before starting a transaction", async () => {
 	const link = new FakeLink(4);
 	await assert.rejects(() => pushSatelliteBundle(link, bundle), /protocol version 5/);
 	assert.deepEqual(link.calls.map((call) => call[0]), [0]);
+});
+
+test("reports a single-band radio before writing TLE data", async () => {
+	const link = new FakeLink();
+	link.bands = "400000000-480000000";
+	await assert.rejects(() => pushSatelliteBundle(link, bundle), {
+		translationKey: "tools.satellite.status.single_band",
+	});
+	assert.deepEqual(link.calls.map((call) => call[0]), [0]);
+	assert.equal(link.viewCalls, 1);
 });

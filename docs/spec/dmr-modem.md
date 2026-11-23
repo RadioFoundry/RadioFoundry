@@ -277,8 +277,7 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 
 - Send a BS_Dwn_Act CSBK (CSBKO 0x38, LB=1, FID 0, BS address 0 = any, source = own ID). Octets: B8 00 00 00 00 00 00
   + source (3). HR_C7000 practice: in two consecutive slots with the PA keyed; HR_C6000 practice: one burst.
-- Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
-  in a row.
+- Then listen: the repeater is up when a burst of its outbound (BS sync, our color code) is heard after the CSBK went.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
 - The CSBK goes on our own timing (`DMR_TIMING_OWN`): no repeater is heard, so there is nothing to align to. On the
   timing the modem last had, from a repeater that had just dropped, the HR_C6000 sent nothing: its passive timing had
@@ -296,6 +295,11 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
   numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
   0.6 s later, and a second wake-up counted as answered by them.
+- Slot numbers never bring a repeater up on their own, on any channel: only its bursts (BS sync, our color code) do.
+  The slot numbers only hold a repeater its bursts showed up through our own over, when nothing is heard between our
+  bursts. The HR_C6000 labels slots from its CACH TC reads, which noise gives too: on a duplex channel with nothing
+  on its output, a repeater no burst had shown counted as up 7 to 19 s after the channel was selected, and a key-up
+  skipped its wake-up (issue 721). A neighbor's repeater of another color code doesn't count either.
 - Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
   wake-up starts it. It never makes the channel busy.
 - A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut

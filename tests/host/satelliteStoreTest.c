@@ -29,12 +29,13 @@ void storage_quick_unlock(void) { }
 
 #define FLASH_SIZE 0x13000u
 #define TEST_RECORD_MAX (4u + 1u + 48u + 2u * 69u)
+static band_t test_band = { .lo_hz = 10000000u, .hi_hz = 999999999u, .tx = true };
 static const hal_flash_map_t map = {
 	.settings_addr = 0x01000u, .settings_size = 0x02000u, .journal_addr = 0x03000u,
 	.openfw_eeprom = 0, .openfw_flash = 0x08000u, .openfw_end = 0x10000u,
 	.satellite_addr = 0x10000u, .satellite_size = 0x03000u,
 };
-const board_t board = { .name = "satellite-test", .flash = &sim_flash };
+const board_t board = { .name = "satellite-test", .bands = &test_band, .band_count = 1u, .flash = &sim_flash };
 
 static uint8_t output[256];
 static bool channel_sync_result = true;
@@ -680,6 +681,30 @@ static void test_first_install_recovery(void)
 	CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 1u);
 }
 
+static void test_cross_band_profiles_install(void)
+{
+	static const satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX] = {
+		{ 25544u, "ISS", 437800000u, 145990000u, 670u },
+		{ 27607u, "SO-50", 436795000u, 145850000u, 670u },
+		{ 43017u, "AO-91", 145960000u, 435250000u, 0u },
+	};
+	static const uint32_t band_limits[][2] = {
+		{ 136000000u, 174000000u },
+		{ 400000000u, 480000000u },
+	};
+	sim_flash_create(FLASH_SIZE, &map);
+	test_band.lo_hz = 10000000u;
+	test_band.hi_hz = 999999999u;
+	CHECK(storage_init());
+	for (uint8_t band = 0u; band < sizeof(band_limits) / sizeof(band_limits[0]); band++) {
+		test_band.lo_hz = band_limits[band][0];
+		test_band.hi_hz = band_limits[band][1];
+		CHECK(!satellite_store_frequency_profiles_set(3u, profiles));
+	}
+	test_band.lo_hz = 10000000u;
+	test_band.hi_hz = 999999999u;
+}
+
 int main(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -692,6 +717,7 @@ int main(void)
 	test_custom_frequency_profiles();
 	test_arm_capability();
 	test_first_install_recovery();
+	test_cross_band_profiles_install();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	if (failures != 0) {

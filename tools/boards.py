@@ -103,7 +103,7 @@ NO_PIN = 255			# the universal stub's "no pin"
 MAKE_VARS = ("PLATFORM", "APP_BASE", "LDSCRIPT", "BOOT_STAGE", "BOOT_SIZE", "BOOT_SIGNATURE", "BOARD_DIRS",
              "BUILD_OPTIONS", "BOARD_UNSUPPORTED", "BOARD_NOT_WRITTEN", "BOARD_DEFAULT_OFF", "HSE_VALUE", "MCU_DEFS")
 # The frame buffer core/ui/gfx.h builds when a board's MCU_DEFS don't size it (RGB565, 160x128, at most 160 rows)
-GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0}
+GFX_DEFAULTS = {"GFX_FB_BYTES": 160 * 128 * 2, "GFX_MAX_ROWS": 160, "GFX_INDEXED": 0, "GFX_FB_SAFE_AREA": 0}
 # The [flash.stub] id every stub keeps for its tools' test profiles (stub/f4stub.py test_board()), so a test record
 # never names a real board
 STUB_TEST_ID = 0xFE
@@ -986,14 +986,15 @@ def gallery_classes(root=ROOT):
 
 
 def gallery_geoms(root=ROOT):
-    """{class: (width, height, bpp)} from ui_sim.c's sim_geoms table, or None without it."""
+    """{class: (width, height, bpp, inset left and right, inset top and bottom)} from ui_sim.c's sim_geoms table, or
+    None without it."""
     path = os.path.join(root, UI_SIM)
     if not os.path.isfile(path):
         return None
     with open(path, encoding="utf-8") as f:
         m = re.search(r"sim_geoms\[\]\s*=\s*\{(.*?)\n\};", f.read(), re.S)
-    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
-    return {n: (int(w), int(h), int(bpp)) for n, w, h, bpp in rows}
+    rows = re.findall(r'\{\s*"([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),', m.group(1)) if m else []
+    return {n: (int(w), int(h), int(bpp), int(i), int(itb)) for n, w, h, bpp, i, itb in rows}
 
 
 def gfx_defs(mcu_defs):
@@ -1006,15 +1007,25 @@ def gfx_defs(mcu_defs):
 
 
 def gfx_problems(geom, gfx):
-    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp): rows, bytes, and the
-    16-color path for a 4 bpp class."""
-    w, h, bpp = geom
+    """Why a board's frame buffer can't hold its panel's gallery class geom (width, height, bpp[, inset left and right,
+    inset top and bottom]): rows, bytes, and the 16-color path for a 4 bpp class. With GFX_FB_SAFE_AREA the frame
+    buffer holds the class's safe area only (hal_display_t fb_safe_area), a 16-color one."""
+    w, h, bpp = geom[:3]
+    inset, inset_tb = geom[3:5] if len(geom) >= 5 else (0, 0)
     out = []
     if gfx["GFX_MAX_ROWS"] < h:
         out.append("GFX_MAX_ROWS %d is under the panel's %d rows" % (gfx["GFX_MAX_ROWS"], h))
-    need = (w * bpp + 7) // 8 * h
-    if gfx["GFX_FB_BYTES"] < need:
-        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" % (gfx["GFX_FB_BYTES"], need, w, h, bpp))
+    if gfx["GFX_FB_SAFE_AREA"] and bpp == 4:
+        sw, sh = w - 2 * inset, h - 2 * inset_tb
+        need = (sw * bpp + 7) // 8 * sh
+        if gfx["GFX_FB_BYTES"] < need:
+            out.append("GFX_FB_BYTES %d is under the %d B the %dx%d safe area of a %dx%d %d bpp panel needs" %
+                       (gfx["GFX_FB_BYTES"], need, sw, sh, w, h, bpp))
+    elif gfx["GFX_FB_SAFE_AREA"]:
+        out.append("GFX_FB_SAFE_AREA needs a 16-color panel (bpp 4), not %d bpp" % bpp)
+    elif gfx["GFX_FB_BYTES"] < (w * bpp + 7) // 8 * h:
+        out.append("GFX_FB_BYTES %d is under the %d B a %dx%d %d bpp panel needs" %
+                   (gfx["GFX_FB_BYTES"], (w * bpp + 7) // 8 * h, w, h, bpp))
     if bpp == 4 and not gfx["GFX_INDEXED"]:
         out.append("a 16-color panel needs GFX_INDEXED=1")
     return out
@@ -1757,7 +1768,8 @@ def self_test():
        "board_t_names: only board_t, any whitespace, comments skipped, a macro %r" % board_t_names(tmpc))
     ok(pin_defines(os.path.join(tmpc, "pins.h")) == {"PIN_A": 0x2D, "PIN_B": 12}, "pin_defines: integer defines only")
     ok(gfx_defs("-DX=1 -DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u") ==
-       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1} and gfx_defs(None) == GFX_DEFAULTS,
+       {"GFX_FB_BYTES": 9600, "GFX_MAX_ROWS": 120, "GFX_INDEXED": 1, "GFX_FB_SAFE_AREA": 0} and
+       gfx_defs(None) == GFX_DEFAULTS,
        "gfx_defs: MCU_DEFS values, gfx.h's defaults for the rest")
     ok(gfx_problems((160, 120, 4), gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_BYTES=9600u -DGFX_MAX_ROWS=120u")) == [] and
        gfx_problems((128, 64, 1), gfx_defs("-DGFX_FB_BYTES=1024u -DGFX_MAX_ROWS=64u")) == [] and
@@ -1765,6 +1777,13 @@ def self_test():
                                                        "GFX_FB_BYTES 40960 is under the 153600 B a 240x320 16 bpp panel needs"]
        and gfx_problems((160, 128, 4), GFX_DEFAULTS) == ["a 16-color panel needs GFX_INDEXED=1"],
        "gfx_problems: rows, bytes and the 16-color path")
+    safe = gfx_defs("-DGFX_INDEXED=1 -DGFX_FB_SAFE_AREA=1 -DGFX_FB_BYTES=34100u -DGFX_MAX_ROWS=320u")
+    ok(gfx_problems((240, 320, 4, 10, 5), safe) == [] and
+       gfx_problems((240, 320, 4, 8, 5), safe) == ["GFX_FB_BYTES 34100 is under the 34720 B the 224x310 safe area of "
+                                                   "a 240x320 4 bpp panel needs"] and
+       gfx_problems((240, 320, 16, 10, 5), dict(safe, GFX_FB_BYTES=200000)) ==
+       ["GFX_FB_SAFE_AREA needs a 16-color panel (bpp 4), not 16 bpp"],
+       "gfx_problems: a safe-area frame buffer is sized by the class's insets")
     with open(os.path.join(tmpc, "flash.c"), "w", encoding="utf-8") as f:
         f.write("// hal_flash_map_t old = { .openfw_eeprom = 1 };\n"
                 "static const hal_flash_map_t fmap = {\n\t.openfw_eeprom = 0x00700000u,\t/* { */\n"

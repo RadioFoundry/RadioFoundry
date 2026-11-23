@@ -299,6 +299,24 @@ with the tone debounce (8 polls) that keeps fades from chopping audio.
 The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
 (open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
 or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+A voice peak doesn't close the squelch. On a 12.5 kHz channel, speech above about 2 kHz (fricatives such as S, SH
+and T) raises some receivers' noise reading over the close line for 100-300 ms, past the fast close line from a sender
+that deviates wide, while the carrier stays as strong as it was. On a 12.5 kHz channel, noise over the line with the
+RX tone still heard and the signal strength within `RADIO_SQL_PEAK_RSSI_DB` (3 dB) of the last poll that held the
+squelch open closes only after `RADIO_SQL_PEAK_POLLS` (16) polls, 400 ms: the longest sibilant plus 100 ms. A carrier
+that goes takes the strength down with the noise up: one poll past the fast close line, two otherwise. If the strength
+reading lags the noise reading by a poll, the second poll sees the drop and closes on schedule. A lost RX tone closes
+as before. Wider channels never hold.
+
+The hold needs a carrier `RADIO_SQL_PEAK_FLOOR_DB` (10 dB) over the receiver's floor, so that a weak carrier's drop
+always moves the strength by more than 3 dB. The core learns the floor from idle polls with the noise over the level
+1 close line: the floor follows a lower reading at once and rises 1 dB every `RADIO_SQL_FLOOR_RISE_POLLS` (4) polls.
+Until the first idle poll there is no floor and no hold. A weaker carrier closes on voice peaks as before.
+
+The core view's `sql_close` gives the number of polls over the line at the last close: 1 or 2 for a carrier that went,
+16 for a hold that ran out. Widening the receive filter also lowered the reading on voice, but raised the reading on
+weak signals by up to 8 dB, so the squelch would open later on a weak station.
+
 Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
 (BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
 `test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
@@ -430,7 +448,10 @@ routed; otherwise its tone starts in the first block. Without the voice stream t
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
 block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
 the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
-lead-in. A board with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
+lead-in. When the DMR or P25 voice stream starts while a beep's own stream runs (the first key-up after power-on or an
+FM channel), the voice stream takes the running stream over; its first block sets the speaker route to what the voice
+stream wants, so a route the beep had on doesn't stay on (and keep the amplifier on) after the beep. A board
+with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
 silent (`speaker_warm`) from any key, PTT, reception or beep until that many seconds after the last one, so a key click
 or the DMR talk permit tone plays at once: while it is warm, beeps take the one-block lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and

@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 
+import { CMD } from "./flasher/link.js";
 import { tleEpochMilliseconds } from "./satellite-tle.js";
 
 const COMMAND = 0x26;
 const OP = Object.freeze({ INFO: 0, LIST: 1, DATA: 3, COMMIT: 4, ABORT: 5,
 	REPLACE_BEGIN: 9, PROFILE_STAGE: 10, PROFILE_VALUES_GET: 11, PROFILE_STAGE_CHUNK: 12 });
+const SINGLE_BAND_ERROR = "tools.satellite.status.single_band";
+const OTHER_BAND_ERROR = "tools.satellite.status.band_error";
 
 function put16(view, offset, value) { view.setUint16(offset, value, true); }
 function put32(view, offset, value) { view.setUint32(offset, value, true); }
@@ -76,6 +79,32 @@ function profilesChunkPayload(transaction, total, start, profiles) {
 	return payload;
 }
 
+async function radioBands(link) {
+	const reply = await link.request(CMD.GET_VIEW, new Uint8Array([0]));
+	if (reply.length < 5) throw new Error("Radio returned an invalid supported-band view");
+	const text = new TextDecoder().decode(reply.subarray(5));
+	const match = /^bands=([^\r\n]*)$/m.exec(text);
+	if (!match || !match[1]) throw new Error("Radio did not report its supported frequency bands");
+	// The view includes RX-only ranges; no catalog satellite uplink currently falls in one.
+	return match[1].split(",").map((range) => {
+		const parsed = /^(\d+)-(\d+)$/.exec(range);
+		if (!parsed || Number(parsed[1]) > Number(parsed[2]))
+			throw new Error("Radio returned malformed supported-band data");
+		return [Number(parsed[1]), Number(parsed[2])];
+	});
+}
+
+async function checkProfileBands(link, profiles) {
+	const bands = await radioBands(link);
+	const unsupported = profiles.some((profile) => [profile.rx_hz, profile.tx_hz].some((frequency) =>
+		!bands.some(([low, high]) => frequency >= low && frequency <= high)));
+	if (unsupported) {
+		const translationKey = bands.length === 1 ? SINGLE_BAND_ERROR : OTHER_BAND_ERROR;
+		throw Object.assign(new Error("Selected profiles include frequencies outside the radio's supported bands"),
+			{ translationKey });
+	}
+}
+
 export async function pushSatelliteBundle(link, bundle, onProgress = () => {}) {
 	if (bundle?.schema_version !== 3 || !Array.isArray(bundle.records) || !Array.isArray(bundle.profiles) ||
 	    bundle.records.length < 1 || bundle.records.length > 10 || bundle.profiles.length !== bundle.records.length)
@@ -87,6 +116,7 @@ export async function pushSatelliteBundle(link, bundle, onProgress = () => {}) {
 			{ translationKey: "tools.satellite.status.profile_version" });
 	if (get16(new DataView(info.buffer, info.byteOffset, info.byteLength), 1) < bundle.records.length)
 		throw new Error("The radio cannot store this many satellites");
+	await checkProfileBands(link, bundle.profiles);
 
 	const data = encodeSatelliteRecords(bundle.records);
 	const crc = satelliteCrc32(data);

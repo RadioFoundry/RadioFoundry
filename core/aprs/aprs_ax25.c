@@ -875,6 +875,11 @@ uint32_t aprs_rx_freq(void)
 	return aprs_s.cfg.rx_on && aprs_can_receive() ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
 }
 
+uint32_t aprs_mute_hz(void)
+{
+	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
+}
+
 // The receive path: on while receiving FM with the setting on (radio task, outside the lock)
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {

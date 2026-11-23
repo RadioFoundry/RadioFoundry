@@ -528,6 +528,16 @@ TESTS   += codeplugTest
 codeplugTest: codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug.h $(CORE)/codeplug/dmr_iddb.c $(CORE)/codeplug/dmr_iddb.h $(CORE)/storage/storage.c
 	$(CC) $(CFLAGS) $(FLASH_HAL) -o $@ codeplugTest.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/dmr_iddb.c $(CORE)/storage/storage.c -lm
 
+# The text editor's Back: one character per press, a Chinese name by its three UTF-8 bytes (core/ui/text_edit.h)
+TESTS += textEditTest
+textEditTest: textEditTest.c $(CORE)/ui/text_edit.h
+	$(CC) $(CFLAGS) -o $@ textEditTest.c
+
+run: run-text
+run-text: textEditTest
+	./textEditTest
+.PHONY: run-text
+
 # The same without format C (CONFIG_IDDB_COMPACT=0): a format C database is no database (iddb-compact.md 3.1)
 TESTS   += codeplugNoCompactTest
 
@@ -673,6 +683,14 @@ TESTS   += gfxTestZh
 gfxTestZh: gfxTest.c $(UI) $(CJK) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Iout/gen -Wshadow -DGFX_INDEXED=1 -DCONFIG_NET_WEBCTL=1 -DCONFIG_LANG_ZH=1 -o $@ gfxTest.c $(UI) $(CJK)
 
+# The frame buffer's last bytes with a GFX_FB_BYTES that is not a multiple of 4 (the DM-32UV's, sized from its insets):
+# a safe area of exactly that size, drawn to its bottom right corner. Always under AddressSanitizer, which is what sees
+# a write past the buffer: without it the bytes land in the next variable and nothing fails
+TESTS   += gfxFbEdgeTest
+gfxFbEdgeTest: gfxFbEdgeTest.c $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
+	$(CC) $(CFLAGS) -fsanitize=address -fno-omit-frame-pointer -I$(ROOT)/hal -Wshadow -DGFX_INDEXED=1 -DGFX_FB_BYTES=34410u \
+	      -DGFX_MAX_ROWS=320u -o $@ gfxFbEdgeTest.c $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c
+
 # The language lookup and the fonts' Latin-1 glyphs, with Spanish, without, and with Spanish the default (core/ui/i18n.c,
 # docs/spec/ui.md 2.5)
 TESTS   += i18nTest i18nTestNoLang i18nTestDefault
@@ -708,10 +726,12 @@ uiFlowTest: uiFlowTest.c $(UIDEPS)
 
 # The same flows built as a radio with only a monochrome screen builds them (CONFIG_UI_COLOR=n): no color rows;
 # without a translation (CONFIG_LANG_ES=n): the Language screen dims Spanish; and with the backlight tests
-# (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down.
+# (CONFIG_BACKLIGHT_TEST=y, off in uiFlowTest): their screen, and the Advanced rows below it one further down; and
+# without privacy (CONFIG_DMR_PRIVACY=n): Settings > Privacy dimmed.
 # uiFlowTest has P25 and NXDN (CONFIG_P25, CONFIG_NXDN) and this one not: their home screen flows run in the first
 uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
-	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+	$(CC) $(UIFLAGS) -DCONFIG_UI_COLOR=0 -DCONFIG_LANG_ES=0 -DCONFIG_BACKLIGHT_TEST=1 -DCONFIG_DMR_PRIVACY=0 -o $@ \
+		uiFlowTest.c $(UIAPP) -lz
 
 uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiFlowTest.c $(UIAPP) -lz
@@ -756,9 +776,10 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
+run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
 	./gfxTest
 	./gfxTestZh
+	./gfxFbEdgeTest
 	./i18nTest
 	./i18nTestNoLang
 	./i18nTestDefault
@@ -1828,6 +1849,33 @@ run-httpassets: httpAssetsTest httpAssetsTestPlain
 	./httpAssetsTestPlain out/http_plain
 	python3 -I $(ROOT)/tools/gen_http_assets.py --check out/http_plain $(HTTP_ASSETS)
 .PHONY: run-httpassets
+
+# core/dsp/fxp.h's products from 16-bit halves (what a C-SKY build without HI/LO runs) against the 64-bit ones, as the
+# host builds it and as that core does (-DFXP_SPLIT16); and the full-rate codec's output the same either way
+# -O1 because its 137 million checks take minutes at -O0. Optimizing turns on _FORTIFY_SOURCE where the compiler
+# defaults it (Ubuntu's GCC: the CI runners), and its printf wrappers rely on always_inline, which CFLAGS'
+# -D__attribute__(x)= removes, so they fail to compile: these are the only tests built optimized, hence no fortify
+FXPOPT  := -O1 -U_FORTIFY_SOURCE
+TESTS   += fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+fxpHalvesTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow $(FXPOPT) -o $@ fxpHalvesTest.c
+
+fxpHalvesSplitTest: fxpHalvesTest.c $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow $(FXPOPT) -DFXP_SPLIT16 -o $@ fxpHalvesTest.c
+
+mbeExactTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ mbeExactTest.c $(MBE) -lm
+
+mbeExactSplitTest: mbeExactTest.c $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/fxp.h
+	$(CC) $(CFLAGS) -Wshadow -DFXP_SPLIT16 -o $@ mbeExactTest.c $(MBE) -lm
+
+run: run-mbe-halves
+run-mbe-halves: fxpHalvesTest fxpHalvesSplitTest mbeExactTest mbeExactSplitTest
+	./fxpHalvesTest | tail -1
+	./fxpHalvesSplitTest | tail -1
+	./mbeExactTest | tail -1
+	./mbeExactSplitTest | tail -1
+.PHONY: run-mbe-halves
 
 # Each board's own host tests (boards/<id>/tests/host.mk): a fragment adds its tests to TESTS and a run-boards:: rule
 # that builds and runs them. Sources stay in the board directory; the binaries are built here like the rest

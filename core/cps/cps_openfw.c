@@ -1,4 +1,7 @@
-// SPDX-License-Identifier: MIT Copyright (c) 2026 The RadioFoundry Authors The open-firmware CPS protocol engine
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+//
+// The open-firmware CPS protocol engine
 // (cps_openfw.h). Requests are assembled from the byte stream: the host link sees no USB packet boundaries, so a
 // request ends when its header says it is complete (R, W/X, most C commands), or after CPS_GAP_MS of quiet for the rest
 // (C 2 text without a NUL, D, unknown bytes). A request still short of its header's length waits CPS_STALL_MS, so a
