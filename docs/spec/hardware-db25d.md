@@ -204,6 +204,10 @@ The firmware reads register 0 of each chip at boot and writes the letters into i
 | 0x4819 (BK4819) | 'B' | 'B' |
 | other | soft reset and read again | same |
 
+RadioFoundry finds the pair in the shared superhet layer (`drivers/rf/superhet/superhet_chips.c`). A 0x7813 main
+transceiver gets the FD6818's main set; no DB25-D with one has been seen, so that path is untested. 0x1846 is not
+driven.
+
 ### 4.3 BK4819 registers (address: value, in order)
 
 The register meanings are the BK4819's public ones; the values are what the vendor firmware writes.

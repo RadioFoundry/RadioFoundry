@@ -37,7 +37,7 @@ on the radio`, any of the three. The README marks each ◐ until the board merge
 | TYT MD-9600, Retevis RT90 (mobile) | STM32F405VG | HR_C6000 | 2x SKY72310 (V1-V3), "PLL1590" (V4), LMX2571 (V4A/V5, unverified) PLLs; AK2365A IF x2 on V1-V4 | 128x64 mono, ST7567 | 25Q128FV, 16 MB | optional, JS-M710 (unverified) | USB DFU on the MCU | Supported ([hardware-md9600.md](hardware-md9600.md)) |
 | TYT MD-380 / MD-390, Retevis RT3 | STM32F405VGT6 (unverified) | HR_C5000 (unverified) | SKY72310 PLL + GT3136 receiver (unverified) | 160x128 color, HX8302A (unverified, controller ?) | W25Q128FV 16 MB; some early VHF 1 MB (unverified) | optional "G" models (unverified, module ?) | USB DFU, encrypted images (unverified) | Supported ([md380-bringup.md](../testing/md380-bringup.md)) |
 | Radioddity GD-77, TYT MD-760, GD-77S, Baofeng DM-1801 v1 / DM-860, RD-5R | NXP MK22FN512 (unverified) | HR_C6000 (unverified) | AT1846S (unverified) | 128x64 mono, UC1701 (unverified) | 25Q80BV 1 MB + AT24C512 64 KB EEPROM (unverified) | none (unverified) | USB HID bootloader, .sgl files (unverified) | In progress, #111, builds, host tests, on the radio. A new platform: a different MCU (NXP MK22FN512), the same HR_C6000 and AT1846S, a 128x64 mono LCD. A DM-1801 bought new today is not v1, and the look-alike DR-1801 is unrelated |
-| Radioddity GD-88 | two HR_C7000 class SoCs, A and B | HR_C7000 on each SoC | an RF pair on each SoC, BK4819 likely | 320x240 color, 8080 bus, four init variants | SPI NAND on each SoC; 2 MB program flash each | yes, on SoC A, module ? | IAP loader over the K-plug cable | Bring-up |
+| Radioddity GD-88 | two HR_C7000 class SoCs, A and B | HR_C7000 on each SoC | an RF pair on each SoC, parts vary by unit: main BK4819 or FD6818, LO BK4819, FD6818, WX4818N or AT1141 | 320x240 color, 8080 bus, four init variants | SPI NAND on each SoC; 2 MB program flash each | yes, on SoC A, module ? | IAP loader over the K-plug cable | Bring-up |
 | Baofeng DM-32UV | HR_C7000 SoC, C-SKY CK803S core (unverified) | HR_C7000 (unverified) | FD6818 (unverified) | 240x320 color, ST7789 class | 16 MB data flash (unverified); program flash size ? | yes, ATGM336H | Baofeng bootloader over UART cable (unverified) | Supported ([dm32-bringup.md](../testing/dm32-bringup.md)) |
 | Baofeng DM-36 | HR_C7000 SoC (photo) | HR_C7000 | FD6818B (photo) | 2.0" 240x320 color, ST7789 class | 16 MB data flash | no | Boot ROM serial stub over the cable | In progress, #607. Built on the DM-32UV's platform: FM, the display, keys and programming run; DMR voice on air and power levels open |
 | Baofeng DM-1801 Pro, DM-1801 (current) | HR_C7000 class SoC (the HR_C7000 from the FCC photo; the MCU part ?) | HR_C7000 (FCC photo) | ? | 1.77", type and controller ? | ? | none | ? | Supported ([dm1801pro-bringup.md](../testing/dm1801pro-bringup.md)) |
@@ -367,7 +367,7 @@ different architecture from anything in RadioFoundry. The Retevis C62 and Quansh
 | `drivers/modem/hrc6000` | yes | every HR_C6000 radio above |
 | `drivers/modem/hrc7000` | yes | the HR_C7000 radios |
 | `drivers/rf/at1846s` | yes | DM-1701, MD-UV380, GD-77 family, HD1, Anytone |
-| `drivers/rf/fd6818` | yes | DM-32UV (GD-88 ?) |
+| `drivers/rf/fd6818` | yes | DM-32UV, DB25-D (older batches), GD-88 (some units) |
 | `drivers/display/st7735` | yes | 160x128 color radios (HX8302A compatibility per radio ?) |
 | `drivers/display/st7789` | yes | DM-32UV |
 | `platform/mk22` | **new** | GD-77 family, HD1 |
@@ -376,7 +376,7 @@ different architecture from anything in RadioFoundry. The Retevis C62 and Quansh
 | UC1701 / ST7567 mono display driver | **new** | GD-77 family (UC1701), MD-9600 (ST7567). Both are 128x64-class page-addressed controllers, so one driver may cover both |
 | I2C EEPROM | **new** | GD-77 family |
 | GPS NMEA reader on a UART | yes (`drivers/gps/nmea_line`; the UART in the board) | MD-UV380G, MD-9600G, MD-380G, DM-32UV, GD-88, DB25-D, DB40-D |
-| BK4819 transceiver | **new** | DB25-D PRO (two per radio) |
+| BK4819 transceiver | yes | DB25-D PRO (two per radio), GD-88 (some units) |
 | SPI NAND + storage adapter | **new** | DB25-D, DB40-D (Kioxia TC58CVG1S3, bad-block handling) |
 | `drivers/bcast/rda5807m` | yes | DM-32UV; the RDA5802 in the DB25-D and DB40-D is a close relative (register compatibility ?) |
 | Dual-SoC (A/B) core support | **new** | GD-88, DB40-D |
