@@ -39,6 +39,9 @@
 #define DMR_CALL_TX_DROP_MS		240	// listening, no repeater burst this long during our over: it dropped
 #define DMR_CALL_TX_START_DROP_MS	540	// the same before our first burst: the modem's search for the slot gets two tries
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
+// Superframes at the start of an over whose embedded LC is the voice LC whatever the talker alias / GPS rotation: a
+// receiver that missed the headers and the first superframe (issue 898) late-enters on the voice LC, not on an alias
+#define DMR_CALL_TX_ALIAS_LEAD_SF	3
 #define DMR_CALL_TX_TERMINATORS		1
 #define DMR_CALL_FADE_MS		390	// no voice burst on the call for this long ends it (13 slots)
 #define DMR_CALL_RESUME_MS		1500	// the same LC this soon after a call faded is that call, not a new one

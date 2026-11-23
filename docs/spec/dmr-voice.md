@@ -161,10 +161,13 @@ complete at the first zero character (padding) or once all four parts are in. A 
 starts a new alias; a new talker resets it.
 
 Transmit (`CONFIG_DMR_TALKER_ALIAS`): the radio name (the codeplug callsign, 8 characters) in ISO 8-bit, when the
-channel's talker alias setting asks for text on its timeslot. From the second superframe, every other superframe
-carries one alias LC instead of the voice LC (LC, header, LC, block 1, LC, header, ...), so late entry still finds the
-voice LC within two superframes. The modem takes the new embedded LC at the next burst A it sets up; the stack hands
-it over before queueing that burst A.
+channel's talker alias setting asks for text on its timeslot. The first three superframes (`DMR_CALL_TX_ALIAS_LEAD_SF`)
+carry the voice LC alone; from the fourth, every other superframe carries one alias LC instead (LC, LC, LC, header,
+LC, block 1, LC, header, ...) for the whole over, so late entry still finds the voice LC within two superframes. The
+lead is for receivers that lose the start of an over and take the first embedded LC they decode as the call's,
+whatever its FLCO: one logged a call of ours under a source and talkgroup made of our alias header's text (issue 898).
+The modem takes the new embedded LC at the next burst A it sets up; the stack hands it over before queueing that
+burst A.
 
 ### 3.1 GPS Info
 
@@ -191,8 +194,9 @@ Transmit, when either asks for it:
 At
 PTT the radio core takes the position in use (`position_now`: GPS on boards with one, the host's NMEA, else the fixed
 position; position ambiguity applied) and hands it to the stack (`dmr_call_set_tx_gps`); no position, no GPS Info. The GPS Info
-LC is one more entry at the end of the talker alias rotation in the odd superframes: LC, header, LC, block 1, LC,
-block 2, LC, GPS, ... with an alias, or LC, GPS, LC, GPS without (counter `tx_gps_lcs`). The position error says 20 m
+LC is one more entry at the end of the talker alias rotation, after the same three-superframe lead: LC, LC, LC,
+header, LC, block 1, LC, block 2, LC, GPS, ... with an alias, or LC, LC, LC, GPS, LC, GPS without (counter
+`tx_gps_lcs`). The position error says 20 m
 for GPS and host fixes, 200 m for a typed position, or the ambiguity's blur. It needs no APRS: the setting and the
 position are the position service's, built with `CONFIG_DMR_GPS`. A radio without a GPS sends its fixed position.
 

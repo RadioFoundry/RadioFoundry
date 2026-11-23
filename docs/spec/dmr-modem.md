@@ -380,7 +380,8 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 
 ## 4. Talker alias and embedded data
 
-- TX: in alternate superframes, replace the embedded LC with one talker alias block (the header, FLCO 4, carries the
+- TX: after a lead of voice LC superframes (the stack's choice, [dmr-voice.md](dmr-voice.md) 3), in alternate
+  superframes, replace the embedded LC with one talker alias block (the header, FLCO 4, carries the
   format and length and the first 6 characters; blocks 1-3, FLCO 5-7, carry 7 characters each) or a GPS embedded LC
   (FLCO 8, 25-bit longitude scaled 2^25/360, 24-bit latitude scaled 2^24/180). The modem must accept a new embedded LC per superframe.
 - RX: the modem reports each assembled embedded LC (FLCO 0, 3, 4-8) once per superframe; the stack assembles the
