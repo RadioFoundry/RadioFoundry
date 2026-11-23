@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // DL_CMD_CHIP_REG (core/debuglink/debuglink_chipreg.c, docs/spec/debuglink.md 3.24): an RF chip register through
 // board.chip_reg, a SoC register through board.system->reg, the request lengths, a SoC write refused on the air, and
-// boards without the hooks. A read with a length through board.chip_reg_bytes. The board, the transmit check and the
+// boards without the hooks. A read with a length, and a write of bytes, through board.chip_reg_bytes. The board, the transmit check and the
 // log are faked
 #include <stdarg.h>
 #include <stdio.h>
@@ -76,11 +76,22 @@ static bool soc_reg(uint32_t addr, uint32_t *val, bool write)
 	return true;
 }
 
-// Chip 0 page 3 register 0x32: a 10-byte text read with a length; register 0x40: no answer
+// Chip 0 page 3 register 0x32: a 10-byte text read with a length; register 0x40: no answer. Register 0x01 takes
+// writes of any length but 0x3F bytes (kept in written); a write elsewhere is refused
 static uint8_t long_cap_seen;
+static uint8_t written[DL_CHIP_REG_WRITE_MAX], written_n;
 
-static int chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, uint8_t *o, uint8_t cap)
+static int chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, const uint8_t *data, uint8_t n, uint8_t *o,
+			  uint8_t cap)
 {
+	if (n != 0) {
+		if (chip != 0 || page != 3 || reg != 0x01 || n == 0x3F || o != NULL || cap != 0) {
+			return -1;
+		}
+		memcpy(written, data, n);
+		written_n = n;
+		return 0;
+	}
 	long_cap_seen = cap;
 	if (chip != 0 || page != 3 || reg != 0x32) {
 		return -1;
@@ -216,9 +227,49 @@ static void test_bytes(void)
 	CHECK(cmd(rd3, 3) == 5 && out[0] == DL_ST_OK);
 }
 
+// A write of bytes: the length byte's DL_CHIP_REG_WRITE bit, then the bytes; the reply is the status alone
+static void test_write_bytes(void)
+{
+	reset();
+	uint8_t req[4 + DL_CHIP_REG_WRITE_MAX + 1];
+	for (unsigned i = 0; i < sizeof req; i++) {
+		req[i] = (uint8_t)(0xA0u + i);
+	}
+	req[0] = 0, req[1] = 3, req[2] = 0x01;
+	// A voice block's 27 bytes
+	req[3] = DL_CHIP_REG_WRITE | 27u;
+	written_n = 0;
+	CHECK(cmd(req, 4 + 27) == 1 && out[0] == DL_ST_OK && written_n == 27 && memcmp(written, req + 4, 27) == 0 &&
+	      logs == 1);
+	// The shortest, and the longest
+	req[3] = DL_CHIP_REG_WRITE | 1u;
+	CHECK(cmd(req, 5) == 1 && out[0] == DL_ST_OK && written_n == 1);
+	req[3] = DL_CHIP_REG_WRITE | DL_CHIP_REG_WRITE_MAX;
+	CHECK(cmd(req, 4 + DL_CHIP_REG_WRITE_MAX) == 1 && out[0] == DL_ST_OK && written_n == DL_CHIP_REG_WRITE_MAX);
+	// The length byte and the bytes sent disagree; none; one past the longest
+	req[3] = DL_CHIP_REG_WRITE | 10u;
+	CHECK(cmd(req, 4 + 9) == 1 && out[0] == DL_ST_BAD_ARG);
+	req[3] = DL_CHIP_REG_WRITE;
+	CHECK(cmd(req, 4) == 1 && out[0] == DL_ST_BAD_ARG);
+	req[3] = DL_CHIP_REG_WRITE | (DL_CHIP_REG_WRITE_MAX + 1u);
+	CHECK(cmd(req, 4 + DL_CHIP_REG_WRITE_MAX + 1) == 1 && out[0] == DL_ST_BAD_ARG);
+	// The board refuses: bad argument, nothing logged
+	logs = 0;
+	req[3] = DL_CHIP_REG_WRITE | 0x3Fu;
+	CHECK(cmd(req, 4 + 0x3F) == 1 && out[0] == DL_ST_BAD_ARG && logs == 0);
+	// Seven bytes is the u32 write, whatever its first value byte: a value with bit 7 set is no byte write
+	uint8_t wr[7] = { 0, 0, 0x05, 0x83, 0, 0, 0 };
+	CHECK(cmd(wr, 7) == 5 && out[0] == DL_ST_OK && reply32() == 0x83u && chip0[0][5] == 0x83u);
+	// Without the hook
+	board.chip_reg_bytes = NULL;
+	req[3] = DL_CHIP_REG_WRITE | 2u;
+	CHECK(cmd(req, 6) == 1 && out[0] == DL_ST_UNAVAILABLE);
+}
+
 int main(void)
 {
 	test_bytes();
+	test_write_bytes();
 	test_chip();
 	test_soc();
 	test_short_buffer();

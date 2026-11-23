@@ -2506,12 +2506,21 @@ static void trims_b(void)
 }
 #endif
 
+#define REPORT_LOG_PAGE		0xFFu	// chip 5's page for the baseband's report log (no packet TYPE)
+
 // board.chip_reg (debuglink.md 3.24): chips 0-3 are the QA4818s, pages 0 and 1 (not the page register itself); chip
-// 4 is the PA5 trims device, registers 0-0xF, write-only; chip 5 the baseband's fields (page
-// the packet TYPE, register the field ID) and chip 6 the bytes of its DMR_CALL_OPTION
+// 4 is the PA5 trims device, registers 0-0xF, write-only; chip 5 the baseband's fields (page the packet TYPE,
+// register the field ID; page 0xFF the report log, value 1 logs the field ID's reports, 0 stops, register 0xFF every
+// field: sct_dmr_report_log) and chip 6 the bytes of its DMR_CALL_OPTION
 bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool write)
 {
 #if CONFIG_DMR
+	if (chip == 5 && pg == REPORT_LOG_PAGE) {
+		if (write && (*val > 1u || !sct_dmr_report_log(reg, *val != 0)))
+			return false;
+		*val = sct_dmr_report_logged(reg);
+		return true;
+	}
 	if (chip == 5) {
 		return d578uv_modem_field(pg, reg, val, write);
 	}
@@ -2553,15 +2562,16 @@ bool d578uv_chip_reg(uint8_t chip, uint8_t pg, uint8_t reg, uint32_t *val, bool 
 }
 
 // board.chip_reg_bytes (debuglink.md 3.24): chip 5's baseband fields of any length, such as the identity queries'
-// text
-int d578uv_chip_reg_bytes(uint8_t chip, uint8_t pg, uint8_t reg, uint8_t *out, uint8_t cap)
+// text, or a write of the vocoder's frames (CHAN_D)
+int d578uv_chip_reg_bytes(uint8_t chip, uint8_t pg, uint8_t reg, const uint8_t *data, uint8_t n, uint8_t *out,
+			  uint8_t cap)
 {
 #if CONFIG_DMR
-	if (chip == 5) {
-		return d578uv_modem_field_bytes(pg, reg, NULL, 0, out, cap);
+	if (chip == 5 && pg != REPORT_LOG_PAGE) {
+		return d578uv_modem_field_bytes(pg, reg, data, n, out, cap);
 	}
 #else
-	(void)chip, (void)pg, (void)reg, (void)out, (void)cap;
+	(void)chip, (void)pg, (void)reg, (void)data, (void)n, (void)out, (void)cap;
 #endif
 	return -1;
 }

@@ -127,6 +127,10 @@ enum {
 #define DL_CHIP_SOC		0xFFu
 // DL_CMD_CHIP_REG's longest read with a length (chip, page, register, length): a field longer than 32 bits
 #define DL_CHIP_REG_BYTES_MAX	32u
+// DL_CMD_CHIP_REG's write of bytes: the length byte with this bit set, then that many bytes (a field longer than 32
+// bits, such as a baseband's voice frames). At most DL_CHIP_REG_WRITE_MAX: the 64-byte request less the four in front
+#define DL_CHIP_REG_WRITE	0x80u
+#define DL_CHIP_REG_WRITE_MAX	60u
 
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {

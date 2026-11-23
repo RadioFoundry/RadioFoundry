@@ -144,6 +144,8 @@ KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
 T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
 T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
+CHIP_REG_WRITE = 0x80               # CHIP_REG's length byte: bytes to write follow (a field longer than 32 bits)
+CHIP_REG_WRITE_MAX = 60
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -349,7 +351,7 @@ def changes_radio(a):
     if a.cmd == "hwopt":
         return a.choice is not None
     if a.cmd == "reg":
-        return a.value is not None
+        return a.value is not None or getattr(a, "write", None) is not None
     return ops is not None and getattr(a, "op", None) not in ops
 
 
@@ -1022,6 +1024,14 @@ class DebugLink:
     def chip_reg_bytes(self, chip, reg, length, page=0):
         """An RF chip field longer than 32 bits: its first `length` bytes (1-32) as the chip answers them"""
         return self.request(CHIP_REG, bytes([chip, page, reg, length]))[1]
+
+    def chip_reg_write_bytes(self, chip, reg, data, page=0):
+        """Write an RF chip field longer than 32 bits, such as an SCT baseband's voice frames: 1-60 bytes, not 3 (a
+        3-byte request would be the u32 write's length; a field that short takes the value form)"""
+        data = bytes(data)
+        if not 1 <= len(data) <= CHIP_REG_WRITE_MAX or len(data) == 3:
+            raise ValueError("chip_reg_write_bytes: 1-60 bytes, not 3")
+        self.request(CHIP_REG, bytes([chip, page, reg, CHIP_REG_WRITE | len(data)]) + data)
 
     def soc_reg(self, addr, value=None):
         """A 32-bit SoC register inside the platform's register windows: writes value when given, returns the read-back
@@ -2882,7 +2892,8 @@ def self_test():
         check(changes_radio(reboot) and not changes_radio(view) and changes_radio(ap_(cmd="ptt")) and
               changes_radio(ap_(cmd="crash", op="test")) and not changes_radio(ap_(cmd="crash", op="show")) and
               changes_radio(ap_(cmd="hwopt", option="x", choice="V4")) and not changes_radio(ap_(cmd="hwopt", option=None, choice=None)) and
-              changes_radio(ap_(cmd="reg", chip=1, reg=2, value=3)) and not changes_radio(ap_(cmd="reg", chip=1, reg=2, value=None)),
+              changes_radio(ap_(cmd="reg", chip=1, reg=2, value=3)) and not changes_radio(ap_(cmd="reg", chip=1, reg=2, value=None)) and
+              changes_radio(ap_(cmd="reg", chip=5, reg=1, value=None, write=b"\x01")),
               "restart and write commands told from reads")
         try:
             pick_port(None, True)
@@ -3056,6 +3067,8 @@ def main(argv=None):
     p.add_argument("--page", type=lambda x: int(x, 0), default=0)
     p.add_argument("--len", type=int, help="read this many bytes (1-32) of a field longer than 32 bits, such as "
                    "an SCT baseband's version text (the board's hardware page has its numbers)")
+    p.add_argument("--write", type=bytes.fromhex, metavar="HEX", help="write these bytes (1-60, not 3) to a field "
+                   "longer than 32 bits, such as an SCT baseband's voice frames")
     p = sub.add_parser("split", help="split duplex: view, BS framing experiment variant (docs/spec/split-duplex.md 10.1)")
     p.add_argument("op", choices=["view", "variant"])
     p.add_argument("args", nargs="*", help="variant: N [REG=VAL ...] (hex or decimal)")
@@ -3172,10 +3185,18 @@ def main(argv=None):
                     print(f"{i} {r['text']!r}" if r["found"] else f"{i} -")
             elif a.cmd == "reg":
                 if a.chip == CHIP_SOC:
-                    if a.len is not None:
-                        raise SystemExit("reg: --len is for a chip's fields, not soc")
+                    if a.len is not None or a.write is not None:
+                        raise SystemExit("reg: --len and --write are for a chip's fields, not soc")
                     v = link.soc_reg(a.reg, a.value)
                     print(f"soc 0x{a.reg:08X} = 0x{v:08X}")
+                elif a.write is not None:
+                    if a.value is not None or a.len is not None:
+                        raise SystemExit("reg: --write takes no VALUE or --len")
+                    try:
+                        link.chip_reg_write_bytes(a.chip, a.reg, a.write, a.page)
+                    except ValueError as e:
+                        raise SystemExit(f"reg: {e}")
+                    print(f"chip {a.chip} page {a.page} 0x{a.reg:02X} <- {a.write.hex()}")
                 elif a.len is not None:
                     if a.value is not None:
                         raise SystemExit("reg: --len reads a field; it takes no VALUE")

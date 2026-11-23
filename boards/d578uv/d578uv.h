@@ -52,7 +52,8 @@ void d578uv_bus_init(void);
 void d578uv_rf_safe(void);
 // board.chip_reg: the QA4818s (chips 0-3) and the PA5 trims device (chip 4, write-only)
 bool d578uv_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
-int d578uv_chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, uint8_t *out, uint8_t cap);
+int d578uv_chip_reg_bytes(uint8_t chip, uint8_t page, uint8_t reg, const uint8_t *data, uint8_t n, uint8_t *out,
+			  uint8_t cap);
 void d578uv_outputs_off(void);		// the shift register all off, for the standby (power_d578uv.c)
 bool d578uv_fan_on(void);		// the fan runs (chip 0's GPIO bit 1: transmitting or the PA hot)
 extern const hal_temp_t d578uv_temp;

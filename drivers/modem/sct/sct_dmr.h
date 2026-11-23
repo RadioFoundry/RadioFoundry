@@ -139,13 +139,23 @@ bool sct_dmr_synced(void);
 
 // Field access for a board, such as the debug link's CHIP_REG (docs/spec/modem-sct.md 8): one field to the chip in a
 // packet of TYPE `type`, or a query for it (read: the data is ignored). One at a time; false when the engine isn't
-// running or has a packet of its own out or queued (a frame, the start, WORK_MODE). sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
+// running or has a packet of its own out or queued (a frame, the start, WORK_MODE). A write of an ID the length
+// table doesn't know (sct_field_len) goes out as the ID and the bytes given. sct_dmr_field_poll: 0 no answer yet, 1 answered (a query's
 // data in out, at most cap bytes of the first SCT_DMR_FIELD_MAX; *n the bytes copied), -1 refused. The caller waits
 // between polls and cancels if the answer never comes. A field the engine also sends is overwritten at its next set-up
 #define SCT_DMR_FIELD_MAX	16	// the longest answer kept: the version queries' text (Q_SW_VER "V2.01.01PF")
 bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool read);
 int sct_dmr_field_poll(uint8_t *out, uint8_t cap, uint8_t *n);
 void sct_dmr_field_cancel(void);
+// The report log, for bench work on fields the engine doesn't use (a vocoder's frames, a report not yet known): each
+// field the chip reports with a listed ID goes to the debug link's log as hex lines, "sct <type> <id> <len>+<offset>
+// <bytes>", at most 24 bytes a line. Up to SCT_DMR_LOG_IDS IDs, or SCT_DMR_LOG_ALL for every field (busy: a received
+// call reports a field each burst); ID 0 isn't logged. Off at the engine's init. sct_dmr_report_log: on adds the ID
+// (false when the list is full), off removes it, off with SCT_DMR_LOG_ALL clears the list. Answers aren't logged
+#define SCT_DMR_LOG_IDS	4
+#define SCT_DMR_LOG_ALL	0xFFu
+bool sct_dmr_report_log(uint8_t id, bool on);
+bool sct_dmr_report_logged(uint8_t id);
 // A byte of DMR_CALL_OPTION (five bytes, too long for CHIP_REG's value): read it, or change it and send the field at
 // once when in receive. Lasts until the engine's next init
 bool sct_dmr_call_option(uint8_t byte, uint8_t *value, bool write);

@@ -335,7 +335,16 @@ baseband field: the debug link's checks of a driver value against the chip, and 
 baseband identity a diagnostics page shows. The engine has one field slot, so a board with more than one user
 makes them take turns. A field doesn't start while the engine has a packet of its own out or queued (a frame, the start,
 WORK_MODE), and the chip's general-error ACK, which doesn't say which packet it answers, is the field's only while the
-engine has nothing out; otherwise the engine takes it and the field times out.
+engine has nothing out; otherwise the engine takes it and the field times out. A field with a length byte (`CHAN_D`)
+takes data of any length, and a write of an ID the length table doesn't know goes out as the ID and the bytes given,
+so the bench can send a field the engine never sends.
+
+The report log (`sct_dmr_report_log`) shows the bench what the chip reports: each field it reports whose ID is on a
+list of up to four (or every field) goes to the debug link's log as hex lines, `sct <type> <id> <len>+<offset>
+<bytes>`, 24 bytes a line. Answers to the host's packets aren't logged. The list is empty at the engine's init. A
+received call reports a field every burst, so with every field logged the log ring overflows unless the host reads it
+often (GET_LOG counts the lines lost). A board offers both through the debug link's CHIP_REG
+([debuglink.md](debuglink.md) 3.24) on the chip number its hardware page gives the baseband.
 
 ## 9. Packet Interface options not taken
 

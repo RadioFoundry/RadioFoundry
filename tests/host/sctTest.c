@@ -3,9 +3,11 @@
 // The SCT baseband driver (drivers/modem/sct): packet building and parsing against the datasheet's and the vendor
 // scripts' byte sequences, both chips' boot and the voice set-up after it, and the layer 2 DMR engine against a fake
 // chip (frames paced by the chip's answers, voice bursts taken in their slots, the end of a transmission, timeouts,
-// received bursts)
+// received bursts), and the report log the debug link turns on
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include "config.h"
 #include "modem/sct/sct_pkt.h"
 #include "modem/sct/sct_host.h"
 #include "modem/sct/sct_dmr.h"
@@ -13,6 +15,22 @@
 static int failures;
 static int checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
+
+#if CONFIG_DEBUGLINK
+// The debug link's log: the lines the report log writes, the last few kept
+static char log_line[4][96];
+static unsigned log_lines;
+
+void dlog(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vsnprintf(log_line[log_lines % 4], sizeof(log_line[0]), fmt, ap);
+	va_end(ap);
+	log_lines++;
+}
+#endif
 
 // --- Packets ---
 
@@ -1814,6 +1832,82 @@ static void test_field_access(void)
 	sct_dmr_modem.stop();
 }
 
+#if CONFIG_DEBUGLINK
+// The report log: the listed IDs' reports as hex lines, 24 bytes a line; answers and other fields not logged
+static void test_report_log(void)
+{
+	// A report (the read bit in TYPE): CHAN_D with three 9-byte voice frames, then DMR_CC in the same packet
+	uint8_t chan_d[6 + 2 + 27 + 2] = { 0x84, 0xA9, 0x61, 0x00, 2 + 27 + 2, SCT_TYPE_CONTROL | SCT_TYPE_READ,
+					   SCT_F_CHAN_D, 27 };
+	for (uint8_t i = 0; i < 27; i++)
+		chan_d[8 + i] = (uint8_t)(0x10 + i);
+	chan_d[35] = SCT_F_DMR_CC;
+	chan_d[36] = 0x05;
+
+	start();
+	log_lines = 0;
+	sct_dmr_packet(chan_d, sizeof(chan_d), 5);
+	CHECK(log_lines == 0);	// none listed
+	CHECK(sct_dmr_report_log(SCT_F_CHAN_D, true) && sct_dmr_report_logged(SCT_F_CHAN_D));
+	CHECK(!sct_dmr_report_logged(SCT_F_DMR_CC));
+	sct_dmr_packet(chan_d, sizeof(chan_d), 10);
+	CHECK(log_lines == 2);
+	CHECK(strcmp(log_line[0], "sct 20 01 27+0 101112131415161718191a1b1c1d1e1f2021222324252627") == 0);
+	CHECK(strcmp(log_line[1], "sct 20 01 27+24 28292a") == 0);
+	// Every field: the CC too
+	log_lines = 0;
+	CHECK(sct_dmr_report_log(SCT_DMR_LOG_ALL, true));
+	sct_dmr_packet(chan_d, sizeof(chan_d), 15);
+	CHECK(log_lines == 3 && strcmp(log_line[2], "sct 20 77 1+0 05") == 0);
+	// A field's answer (an ACK) isn't logged
+	log_lines = 0;
+	const uint8_t ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, 0x2F, 0x00 };
+	sct_dmr_packet(ok, sizeof(ok), 20);
+	CHECK(log_lines == 0);
+	// The list: four at most, an ID once, off removes one, off with ALL clears it; ID 0 never goes in
+	CHECK(sct_dmr_report_log(SCT_DMR_LOG_ALL, false) && !sct_dmr_report_logged(SCT_F_CHAN_D));
+	CHECK(!sct_dmr_report_log(0, true));
+	for (uint8_t id = 1; id <= SCT_DMR_LOG_IDS; id++)
+		CHECK(sct_dmr_report_log(id, true));
+	CHECK(sct_dmr_report_log(2, true));	// already in
+	CHECK(!sct_dmr_report_log(0x30, true));
+	CHECK(sct_dmr_report_log(2, false) && !sct_dmr_report_logged(2) && sct_dmr_report_logged(4));
+	CHECK(sct_dmr_report_log(0x30, true) && sct_dmr_report_logged(0x30));
+	CHECK(sct_dmr_report_log(0x31, false));	// not in: nothing to do
+	CHECK(sct_dmr_report_log(SCT_DMR_LOG_ALL, false));
+	log_lines = 0;
+	sct_dmr_packet(chan_d, sizeof(chan_d), 25);
+	CHECK(log_lines == 0);
+	sct_dmr_modem.stop();
+}
+#endif
+
+// A write of an ID the length table doesn't know goes out as the ID and the bytes given; a fixed-length ID with
+// another length is refused (no packet)
+static void test_field_raw(void)
+{
+	const uint8_t slot_ok[] = { 0x84, 0xA9, 0x61, 0x00, 0x02, 0x00, SCT_F_DMR_CALL_SLOT, 0x00 };
+	const uint8_t three[3] = { 0xAB, 0xCD, 0xEF };
+	uint8_t d[1], n;
+
+	CHECK(sct_field_len(0x03) == SCT_LEN_UNKNOWN);
+	start();
+	sct_dmr_packet(slot_ok, sizeof(slot_ok), 5);
+	nsent = 0;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x03, three, 3, false));
+	CHECK(nsent == 1 && sent[0].pkt[4] == 4 && sent[0].pkt[6] == 0x03 && memcmp(&sent[0].pkt[7], three, 3) == 0);
+	sct_dmr_field_cancel();
+	// CHAN_D has a length byte: written before the data
+	nsent = 0;
+	CHECK(sct_dmr_field_begin(SCT_TYPE_CONTROL, SCT_F_CHAN_D, three, 3, false));
+	CHECK(nsent == 1 && sent[0].pkt[6] == SCT_F_CHAN_D && sent[0].pkt[7] == 3 && memcmp(&sent[0].pkt[8], three, 3) == 0);
+	sct_dmr_field_cancel();
+	nsent = 0;
+	CHECK(!sct_dmr_field_begin(SCT_TYPE_CONTROL, 0x2F, three, 3, false) && nsent == 0);
+	CHECK(sct_dmr_field_poll(d, sizeof(d), &n) == 0);
+	sct_dmr_modem.stop();
+}
+
 int main(void)
 {
 	test_build();
@@ -1839,6 +1933,10 @@ int main(void)
 	test_dmr_codec_start();
 	test_chip_answers();
 	test_field_access();
+	test_field_raw();
+#if CONFIG_DEBUGLINK
+	test_report_log();
+#endif
 	CHECK(lock_depth == 0 && lock_max == 1);
 	// Not booted: start fails and sends nothing
 	booted = false;

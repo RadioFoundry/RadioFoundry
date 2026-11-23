@@ -854,6 +854,7 @@ that register overwrites it.
 | chip u8, page u8, register u8 | the value u32 |
 | chip u8, page u8, register u8, value u32 | the value read back u32 (a write-only register: the value written) |
 | chip u8, page u8, register u8, length u8 (1-32) | the register's first bytes as the chip answers them, at most length (a field longer than 32 bits) |
+| chip u8, page u8, register u8, `0x80` + n u8 (n 1-60, not 3), n bytes | none: the bytes written (a field longer than 32 bits) |
 | `0xFF`, address u32 | the value u32 |
 | `0xFF`, address u32, value u32 | the value read back u32 |
 
@@ -861,7 +862,10 @@ Chips below `0xFF` are the radio's RF chips, through the board's `board.chip_reg
 board's, listed on its hardware page. A chip, page, register or value the board doesn't offer answers bad argument (2);
 a board without the hook answers unavailable (4). The read with a length goes through the board's
 `board.chip_reg_bytes`, for fields longer than 32 bits; a board without that hook answers it unavailable (4), and
-firmware from before it answers bad argument (2). It reads only. An SCT DMR baseband answers its identity queries this
+firmware from before it answers bad argument (2). The write of bytes goes through the same hook: the length byte's top
+bit set, then that many bytes. A 3-byte write would make the request seven bytes long, the value write's length, so
+the request is read as the value write: a field that short takes the value form. A board that refuses the bytes, or
+firmware from before the form, answers bad argument (2). An SCT DMR baseband answers its identity queries this
 way (the product, hardware and software versions as text, the customer ID and serial in BCD); the board's hardware
 page gives its chip number and the field IDs.
 
@@ -877,8 +881,8 @@ hook answers unavailable (4).
 | GD32F30x, AT32F43x (`platform/cortexm/sys_windows.h`) | READ_MEM's register windows (3.10: NVIC, SCB) |
 | STM32F4 (`platform/stm32f4/mem_window.h`) | the peripheral buses `0x40000000-0x5FFFFFFF`, the FSMC control registers `0xA0000000-0xA0000FFF` and the Cortex-M4 private peripheral bus `0xE0000000-0xE00FFFFF` (SCB, NVIC, SysTick, DWT, DBGMCU). The access runs with bus faults ignored: a reserved address that faults is refused (7) |
 
-Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N] [--len N]`, or `reg soc ADDR [VALUE]` for the
-SoC.
+Writes are logged. `rfoundry_debug.py reg CHIP REG [VALUE] [--page N] [--len N | --write HEX]`, or `reg soc ADDR [VALUE]` for
+the SoC.
 
 ### 3.25 HWOPT
 

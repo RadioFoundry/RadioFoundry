@@ -4,6 +4,7 @@
 #include <string.h>
 #include "sct_dmr.h"
 #include "sct_pkt.h"
+#include "debuglink/dlog.h"
 
 #define TXQ_DEPTH	8
 #define LC_BYTES	9
@@ -92,6 +93,8 @@ static struct {
 		uint8_t n;
 		uint8_t data[SCT_DMR_FIELD_MAX];
 	} field;
+	// The report log (sct_dmr_report_log): the field IDs the bench asked to see, SCT_DMR_LOG_ALL for every one
+	uint8_t log_id[SCT_DMR_LOG_IDS];
 
 	sct_dmr_stats_t st;
 } s;
@@ -848,6 +851,39 @@ static bool field_answer(uint8_t id, const uint8_t *d, uint8_t n, bool ack)
 	return true;
 }
 
+static bool log_wanted(uint8_t id)
+{
+	for (uint8_t i = 0; i < SCT_DMR_LOG_IDS; i++) {
+		if (s.log_id[i] == id || s.log_id[i] == SCT_DMR_LOG_ALL)
+			return true;
+	}
+	return false;
+}
+
+#if CONFIG_DEBUGLINK
+// One reported field as hex lines in the debug link's log, LOG_LINE_BYTES a line (a dlog line holds 80 characters).
+// Out of line, so its line buffer is on the stack only while a field is logged
+#define LOG_LINE_BYTES	24
+static __attribute__((noinline)) void log_field(uint8_t type, uint8_t id, const uint8_t *d, uint8_t n)
+{
+	static const char hexd[] = "0123456789abcdef";
+	char hex[2 * LOG_LINE_BYTES + 1];
+	uint8_t at = 0;
+
+	do {
+		uint8_t k = (uint8_t)(n - at < LOG_LINE_BYTES ? n - at : LOG_LINE_BYTES);
+
+		for (uint8_t i = 0; i < k; i++) {
+			hex[2 * i] = hexd[d[at + i] >> 4];
+			hex[2 * i + 1] = hexd[d[at + i] & 0x0F];
+		}
+		hex[2 * k] = '\0';
+		dlog("sct %02x %02x %u+%u %s", type, id, n, at, hex);
+		at = (uint8_t)(at + k);
+	} while (at < n);
+}
+#endif
+
 static void packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 {
 	sct_fields_t it;
@@ -863,6 +899,10 @@ static void packet(const uint8_t *pkt, uint16_t len, uint32_t now_ms)
 	if (it.type & SCT_TYPE_CODEC)
 		return;		// a codec register answer: not the DMR side's
 	while (sct_fields_next(&it, &id, &d, &n, &ack)) {
+#if CONFIG_DEBUGLINK
+		if (!ack && s.log_id[0] != 0 && log_wanted(id))
+			log_field(it.type, id, d, n);
+#endif
 		if (field_answer(id, d, n, ack))
 			continue;
 		if (id == SCT_F_ACK) {
@@ -1258,10 +1298,13 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 
 	lock();
 	sct_pkt_begin(&p, read ? (uint8_t)(type | SCT_TYPE_READ) : type);
-	if (read)
-		sct_pkt_add_raw(&p, &id, 1);
-	else
+	if (read || sct_field_len(id) == SCT_LEN_UNKNOWN) {
+		sct_pkt_add_raw(&p, &id, 1);	// a query, or an ID the length table doesn't know: the bytes as given
+		if (!read)
+			sct_pkt_add_raw(&p, data, n);
+	} else {
 		sct_pkt_add(&p, id, data, n);
+	}
 	s.field.state = FIELD_WAIT;
 	s.field.id = id;
 	s.field.read = read;
@@ -1271,6 +1314,41 @@ bool sct_dmr_field_begin(uint8_t type, uint8_t id, const uint8_t *data, uint8_t 
 		s.field.state = FIELD_IDLE;
 	unlock();
 	return ok;
+}
+
+bool sct_dmr_report_log(uint8_t id, bool on)
+{
+	bool ok = false;
+
+	if (id == 0)
+		return !on;	// never listed: 0 marks a free place
+	lock();
+	if (!on && id == SCT_DMR_LOG_ALL) {
+		memset(s.log_id, 0, sizeof(s.log_id));
+		ok = true;
+	}
+	for (uint8_t i = 0; !ok && i < SCT_DMR_LOG_IDS; i++) {
+		if (s.log_id[i] == id) {
+			if (!on) {	// close the gap, so the list stays packed and log_id[0] says whether any is on
+				memmove(&s.log_id[i], &s.log_id[i + 1], SCT_DMR_LOG_IDS - 1u - i);
+				s.log_id[SCT_DMR_LOG_IDS - 1u] = 0;
+			}
+			ok = true;
+		}
+	}
+	for (uint8_t i = 0; !ok && on && id != 0 && i < SCT_DMR_LOG_IDS; i++) {
+		if (s.log_id[i] == 0) {
+			s.log_id[i] = id;
+			ok = true;
+		}
+	}
+	unlock();
+	return ok || !on;
+}
+
+bool sct_dmr_report_logged(uint8_t id)
+{
+	return id != 0 && log_wanted(id);
 }
 
 int sct_dmr_field_poll(uint8_t *out, uint8_t cap, uint8_t *n)

@@ -508,8 +508,9 @@ static void modem_task(void *arg)
 	}
 }
 
-// A baseband field: a write sends data as the field (n bytes, the field's length, 0 for a
-// bare command) and returns 0 once taken; a query returns the bytes of the answer copied to out (at most cap and
+// A baseband field: a write sends data as the field (n bytes: a fixed-length field's length, 0 for a bare command;
+// any length for a field with a length byte, such as CHAN_D's voice frames, or an ID the length table doesn't know)
+// and returns 0 once taken; a query returns the bytes of the answer copied to out (at most cap and
 // SCT_DMR_FIELD_MAX). -1: not booted, a length the field doesn't have, the slot busy, refused or no answer in
 // FIELD_WAIT_MS
 static int field_io(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bool query, uint8_t *out, uint8_t cap)
@@ -517,7 +518,9 @@ static int field_io(uint8_t type, uint8_t id, const uint8_t *data, uint8_t n, bo
 	uint8_t got = 0, scratch;
 	int res = -1;
 
-	if (!booted || field_mutex == NULL || (!query && sct_field_len(id) != n))
+	int flen = sct_field_len(id);
+
+	if (!booted || field_mutex == NULL || (!query && flen >= 0 && flen != n))
 		return -1;
 	if (xSemaphoreTake(field_mutex, pdMS_TO_TICKS(FIELD_TAKE_MS)) != pdTRUE)
 		return -1;
