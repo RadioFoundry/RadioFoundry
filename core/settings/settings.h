@@ -254,6 +254,9 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
+	// record reads 0, no position yet). A restart starts here, past every position sent
+	uint32_t aes_mi_res;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -504,6 +507,8 @@ void settings_read(settings_t *out);
 uint32_t settings_read_field(size_t offset, size_t size);
 #define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
 							      sizeof(((settings_t *)0)->f)))
+// A 32-bit field equals value both in force and in the last saved record, checked under one lock.
+bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);

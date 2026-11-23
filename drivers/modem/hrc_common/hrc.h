@@ -27,6 +27,9 @@ typedef struct {
 // sits on (the HR_C6000: 4, the HR_C5000: 0)
 enum { HRC_PAGE_AUX = 1, HRC_PAGE_DATA = 2, HRC_PAGE_VOCODER = 3, HRC_PAGE_SYS = 4 };
 
+// The system interrupt mask (0x81) in DMR: post access, received data, PHY
+#define HRC_INT_MASK_DMR	0x19u
+
 typedef struct hrc hrc_t;
 
 // What differs between the chips, as far as the shared code is concerned
@@ -36,6 +39,9 @@ typedef struct {
 	bool mcu_crc;			// CRC_MCU_Control: a burst's CRC can be sent as given (else the chip makes its own)
 	bool sync_reg;			// the sync type register 0x5F exists
 	bool mode_per_channel;		// 4:0x10 depends on the channel (repeater or not) and is rewritten when it changes
+	// The receiver finds BS sync only with 4:0x10 ISRepeater set, and MS or direct mode sync only with it clear: on a
+	// direct channel the engine hunts both while nothing is received (BS-framed direct senders, a simplex hotspot)
+	bool bs_by_mode;
 	// 0x41 bit 3 (CC_Match_Ctrl) deframes bursts of any color code: with the color code filter off the receiver
 	// takes every call as it comes, no 0x1F rewrites or restarts to follow a new code (modem-hrc6000.md 5.4)
 	bool cc_any_rx;

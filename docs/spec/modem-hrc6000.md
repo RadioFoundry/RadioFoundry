@@ -209,7 +209,8 @@ framing the next slot's burst at t1, and the MCU must write its data in the wind
 everything at the start of the timeslot handler, and the burst goes out in the following slot. A late setup slips the
 burst by one slot (30 ms) or by a frame (60 ms).
 While transmitting, the slot between our bursts gets 0x00. An SFR writes 0x50 there instead, because it hears its
-inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3).
+inbound slot in that slot (`hrc6000_dmr_tx_listen`, `sfr.md` 3), as does a voice over through a repeater on a board
+that listens there. The repeater over holds its timing while listening (6.2); the SFR stays passive.
 
 The CACH TC bit (0x52 bit 2) can be read here. The chip refreshes it only in slots being received. It is the TC of
 the slot that just ended, not the one starting (5.3).
@@ -409,6 +410,20 @@ with the same TC. Until then a BS-sync burst goes up with no slot number
 Numbered from the junk, the labels flipped mid-call and the call stack dropped the rest of the call as the other
 slot's. The HR_C7000 driver locks its TC by the same rule ([modem-hrc7000.md](modem-hrc7000.md)).
 
+The HR_C5000 (chip flag `bs_by_mode`) finds BS sync only with 0x10 ISRepeater set (0x4F) and MS or direct mode sync
+only with ISRepeater clear (0x6B). On a direct channel 0x6B alone never hears a BS-framed direct sender: no timeslot interrupt
+comes. While nothing is taken, the engine switches 0x10 between the two every 390 ms (`HUNT_US`, `hunt_flips`) and
+restarts the receiver. The chip finds a BS-framed call's sync only at a header or voice A, once a superframe (360 ms),
+so a dwell is longer than a superframe; a timeslot interrupt in a dwell restarts that dwell once. A burst taken keeps
+the mode until the reception has been over for 390 ms. A transmission keys
+in the channel's own mode. The first dwell after the transmission and its answer slot is a full one in the mode of the
+last burst taken before it (`bs_last`): BS sync after a BS-framed sender, the channel's mode after an MS one or when
+nothing was received since the channel was set. The chip has no sync type register, so a direct channel's bursts are
+labeled MS either way; the family is the mode that heard the burst. A BS-framed sender answers in BS sync, so a dwell
+in the direct mode first would miss its headers and first superframe. A switch also
+makes a restart left pending (a color code filter set on a quiet channel, where no timeslot interrupt comes to make the
+restart). Repeater channels keep 0x4F and never hunt.
+
 ### 5.4 Color code acquisition (when the user's CC filter is off)
 
 Reconfiguration keeps any-CC listening. The receive code stays in 0x1F while an aligned start waits for its slot.
@@ -561,7 +576,12 @@ Common: 0x21=0xA2 (polite to own CC, clear the encode buffer), 0x22=0x86 (start 
   timing). The timeslot interrupts start on the chip's own timing; the next one starts the burst sequence.
 - **Through a repeater, already receiving it** (its hang time or a call): stay in passive timing; when the slot
   tracking is stable with no disagreement and the slot that just started is the other one, lock to ours, write
-  0x21=0xA2, 0x22=0x86, 0x41=0x00, and start the sequence at the next timeslot interrupt.
+  0x21=0xA2, 0x22=0x86, 0x41=0x00, and start the sequence at the next timeslot interrupt. A transmission that
+  listens between its bursts (`hrc6000_dmr_tx_listen`, RMO only) sets MasterMode with its first burst (0x40=0xE3)
+  and keeps the timing the over was aligned with to its end, where passive timing comes back. In passive timing the
+  chip followed the outbound heard in the listen slots and stepped its own bursts (104 us on the HR_C5000, about
+  63 us on the HR_C6000), away from the repeater's grid, and each step's burst reached the repeater with bit errors
+  ([gotchas.md](gotchas.md) 14.6.1).
 - **Through a repeater, nothing heard**: wake it (section 6.5) first.
 - **Data**: as voice, but the sequence sends the queued bursts instead of headers and voice.
 
@@ -1018,7 +1038,15 @@ back at close.
 - The band is 0 to 3400 Hz. The counts per kHz are not known (`rx_counts_per_khz` 0): the soft modem takes the level
   from each sync. Positive is above the carrier.
 - For a transmission the chip leaves FM for the set-up of 10.3, and `rx_setup` after it is `copy_on` again.
-- The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`).
+- No half for 200 ms (`AIR_COPY_STALL_US`) while a session or the tap receives this way, not transmitting and not
+  suspended: the poll reads 0x82, runs `copy_on` again (which clears 0x82), and the next half is a gap. Each one counts
+  in `copy_restarts` (`airp.copy_restarts`); the board keeps the first one's 0x82, EXTI_PR, the interrupt port's IDR
+  and the three lines' NVIC bits (`airp.copy_lost_regs`, laid out as `dmr.modem_lost_regs`). A lost edge on the
+  system line alone doesn't get here: the board's check for a line left low keeps running under a session and pends
+  the handler. A half dropped for a full ring holds the watchdog off (the copy runs; the task is behind).
+- The same ring is the board's `hal_baseband_t` receive tap while no session is open (`stm32_hrc_baseband`). The
+  board's mode change suspends the tap the same way as a session, and the mode entry (`rx_restart`) sets the tap's
+  copy up again. A retune (`rx_restart` with the copy running) leaves a running tap copy unchanged.
 - `rx_load` counts the soft modem's time for a session that receives this way and reports false for one the
   correlator serves.
 

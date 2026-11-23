@@ -70,7 +70,7 @@ make BOARD=<id> VARIANT=commercial       # build/<id>-commercial/
 | Variant | Leaves out |
 |---|---|
 | (none: full) | nothing |
-| `amateur` | basic privacy, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
+| `amateur` | basic privacy, AES voice encryption, NXDN Scrambler, Motorola TMS, ARS, LRRP, control station mode, SNMP |
 | `commercial` | the MMDVM hotspot (and split duplex), APRS (and KISS, APRS-IS), satellite tracking |
 
 Each variant file starts with `## title:` and `## summary:` lines, and the comment above each switch says why it is
@@ -106,6 +106,7 @@ below are for an STM32F4 radio.
 | `CONFIG_APRS_IGATE` | = APRS_RX and HOSTLINK (n where flash is short) | the iGate rules, RF to APRS-IS and messages back, with the host helper `tools/aprs_gate.py` holding the APRS-IS connection |
 | `CONFIG_DMR` | y | DMR voice: modem driver, call stack, AMBE FEC, vocoder hosting, PCM audio |
 | `CONFIG_DMR_PRIVACY` | = DMR | basic privacy (Motorola / Anytone BP) on the voice path, `core/dmr/dmrPrivacy.c` (`docs/spec/dmr-voice.md` 5) |
+| `CONFIG_DMR_AES` | = DMR_PRIVACY | AES-256 voice encryption (DMRA, PI header ALG 0x25), RX and TX on channels bound to a traffic key in the codeplug, `core/dmr/dmrAes.c` (`docs/spec/dmr-voice.md` 5.1) |
 | `CONFIG_DMR_TALKER_ALIAS` | = DMR | talker alias decode and our own alias TX (`docs/spec/dmr-voice.md` 3) |
 | `CONFIG_DMR_GPS` | = DMR | ETSI GPS Info in the embedded LC (FLCO 8): the caller's position on the receive screen (with distance and bearing when ours is known), in Recent and on the debug link; ours sent in the alias superframes when Settings > Location > Send in DMR calls is on and there is a position (GPS, host, fixed: `docs/spec/position.md`; no APRS needed; `docs/spec/dmr-voice.md`) |
 | `CONFIG_DMR_SMS` | = DMR | text messages: ETSI IP text (the default format) and ETSI defined short data, received (inbox, ETSI response) and sent (docs/spec/dmr-data.md 5) |

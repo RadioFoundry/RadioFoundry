@@ -4,7 +4,9 @@
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
 #include <stddef.h>
+#include <string.h>
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
@@ -37,6 +39,7 @@ WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
+WEAK void ui_svc_next_aes_key(channel_t *ch) { (void)ch; }
 WEAK bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from) { (void)number; (void)ch; (void)from; return false; }
 #if CONFIG_P25 || CONFIG_NXDN
 WEAK bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
@@ -75,7 +78,14 @@ WEAK void ui_svc_vibrate(uint8_t vibe) { (void)vibe; }
 WEAK void ui_svc_ptt_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_dtmf_block(bool blocked) { (void)blocked; }
 WEAK void ui_svc_volume_hold(bool hold) { (void)hold; }
-WEAK void ui_svc_poll(void) { }
+WEAK void ui_svc_aprs_msg_poll(void) { }
+WEAK bool ui_svc_aprs_view(aprs_view_t *v) { memset(v, 0, sizeof(*v)); return false; }
+WEAK void ui_svc_poll(void)
+{
+#if CONFIG_APRS_RX
+	ui_svc_aprs_msg_poll();
+#endif
+}
 WEAK void ui_svc_keys_poll(void) { }
 // Without key assignment no home key sends ACT_HOME_KEY_n: every action is the key map's
 WEAK uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home) { (void)gesture; (void)home; return action; }

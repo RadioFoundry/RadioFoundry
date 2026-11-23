@@ -27,7 +27,6 @@
 #define TX_AIR_DELAY_US		5000u	// a slot set up at a boundary goes on air about 5 ms later (2.10)
 #define STALL_US		200000u
 #define NO_KEY_US		200000u	// transmitting this long without an RF TX interrupt: dropped
-#define COPY_STALL_US		200000u	// receiving this long without a copy half (one every 32 ms): set up again
 
 _Static_assert((HRC7000_AIR_RING % HALF) == 0 && HRC7000_AIR_RING / HALF == 2, "the ring is two copy halves");
 
@@ -595,7 +594,7 @@ void hrc7000_air_poll(hrc7000_air_t *a)
 	// request never interrupts again, and receive goes deaf. No half for 200 ms: the request cleared, the copy set up
 	// again. The halted slot engine's own check (dmr.modem_stuck) does not run in a session
 	if ((a->open || a->tap) && a->copy && a->tx == HRC7000_AIR_RX && !a->suspended &&
-	    (uint32_t)(now(a) - a->t_copy) > COPY_STALL_US) {
+	    (uint32_t)(now(a) - a->t_copy) > AIR_COPY_STALL_US) {
 		a->st.copy_restarts++;
 		w(a, C7_SYS_INTERP_CLEAR, r(a, C7_SYS_INTERP_LIST));
 		copy_on(a);

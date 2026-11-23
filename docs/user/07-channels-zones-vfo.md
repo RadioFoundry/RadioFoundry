@@ -362,9 +362,13 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 | TG 201 | Registered. PTT asks the system for a voice channel |
 | Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
 | Denied, Reg. denied | The system refused the request or the registration |
+| Blocked system | The system's network ID is blocked: the radio never transmits on it |
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
+- A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
+  says "Blocked system: no TX" until the radio is switched off. A P25 conventional channel that announces one of them
+  says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
   ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).

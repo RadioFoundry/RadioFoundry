@@ -227,23 +227,12 @@ HRC_FLASHFUNC static void lost_check(const uint32_t before[4])
 // The same for an air session or tap, kept apart from the engine's record: dmr.modem_stalls and dmr.modem_stuck count
 // the engine's recoveries only. The air poll set the copy up again (no half for 200 ms, modem-hrc7000.md 3.3): keep the
 // first one's PIC words, and unmask the modem sources again, in case a mask left set and not the chip stopped the halves
-static uint32_t air_lost_seen;	// copy_restarts at the last check (the session's count: 0 again at each take)
-static uint32_t air_lost_ms;
-static uint32_t air_lost_regs[4];
+static air_lost_rec_t air_lost;
 
 HRC_FLASHFUNC static void air_lost_check(const uint32_t before[4])
 {
-	uint32_t n = AIR->st.copy_restarts;
-	if (n == air_lost_seen) {
-		return;
-	}
-	air_lost_seen = n;
-	if (air_lost_ms == 0) {
-		memcpy(air_lost_regs, before, sizeof air_lost_regs);
-		air_lost_ms = hal_millis() | 1u;
-	}
-	uint32_t s = hrc_irq_save();
-	if (active && lock_depth == 0) {
+	uint32_t s = hrc_irq_save();	// against a stats reset and the view, and a close (air_give clears air_on first)
+	if (air_on && air_lost_note(&air_lost, AIR->st.copy_restarts, before, hal_millis()) && active && lock_depth == 0) {
 		irqs_enable(true);
 	}
 	hrc_irq_restore(s);
@@ -288,7 +277,9 @@ HRC_FLASHFUNC static void dmr_task(void *arg)
 			uint32_t pic[4];
 			pic_words(pic);
 			hrc7000_air_poll(AIR);	// the engine is halted, and its queue is the session's memory
-			air_lost_check(pic);
+			if (AIR->st.copy_restarts != air_lost.seen) {
+				air_lost_check(pic);
+			}
 			continue;
 		}
 #endif
@@ -472,6 +463,7 @@ static int8_t tx_fill(const dmr_tx_burst_t *b) { return AIR_ON() ? -1 : hrc7000_
 static void tx_end(void) { if (!AIR_ON()) hrc7000_dmr_tx_end(&eng); }
 static void tx_abort(void) { if (!AIR_ON()) hrc7000_dmr_tx_abort(&eng); }
 static void set_embedded_lc(const uint8_t lc[9]) { if (!AIR_ON()) hrc7000_dmr_set_embedded_lc(&eng, lc); }
+static void set_burst_f(const uint8_t field[4]) { if (!AIR_ON()) hrc7000_dmr_set_burst_f(&eng, field); }
 static void set_cc_filter(int8_t cc) { if (!AIR_ON()) hrc7000_dmr_set_cc_filter(&eng, cc); }
 static bool is_transmitting(void) { return !AIR_ON() && hrc7000_dmr_is_transmitting(&eng); }
 
@@ -539,7 +531,7 @@ const hal_dmr_modem_t hrc_dmr = {
 	.start = start, .stop = stop, .configure = configure, .rx_restart = rx_restart, .rx_lock_slot = rx_lock_slot,
 	.tx_begin = tx_begin, .tx_queue = tx_queue, .tx_queue_space = tx_queue_space, .tx_listen = tx_listen, .tx_end = tx_end,
 	.tx_listen_split = tx_listen_split,
-	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_cc_filter = set_cc_filter,
+	.tx_abort = tx_abort, .set_embedded_lc = set_embedded_lc, .set_burst_f = set_burst_f, .set_cc_filter = set_cc_filter,
 	.is_transmitting = is_transmitting, .tx_fill = tx_fill, .health = health,
 	.tx_rate34_bad = true,	// modem-hrc7000.md 6.4
 	.tx_listen_gaps = true,	// modem-hrc7000.md 5.4
@@ -559,7 +551,7 @@ HRC_FLASHFUNC static bool air_take(void)
 	hrc7000_dmr_halt(&eng);
 	lock(NULL);
 	eng.evq_tail = eng.evq_head;	// what the engine left is dropped
-	air_lost_seen = 0;		// the session's stats start at 0
+	air_lost.seen = 0;		// the session's stats start at 0
 	hrc7000_air_init(AIR, eng.dev, &ops, &((air_mem_t *)(void *)eng.evq)->b, AIR_SM);
 	return true;	// locked
 }
@@ -648,19 +640,25 @@ static uint32_t air_now_us(void) { return hrc_micros(); }
 
 static bool air_rx_load(uint32_t *work_us, uint32_t *span_us)
 {
+	uint32_t s = hrc_irq_save();	// as air_rx_counts: a session closing now is not read
 	*work_us = air_on ? AIR->st.modem_us : 0;
 	*span_us = air_on ? AIR->st.modem_span_us : 0;
+	hrc_irq_restore(s);
 	return true;
 }
 
 static bool air_rx_counts(air_rx_counts_t *c)
 {
+	uint32_t s = hrc_irq_save();	// air_give clears air_on first: a session closing now is not read
 	if (!air_on) {
+		hrc_irq_restore(s);
 		return false;
 	}
 	*c = (air_rx_counts_t){ .halves = AIR->st.halves, .overruns = AIR->st.overruns, .chunks = AIR->st.chunks,
-				.copy_restarts = AIR->st.copy_restarts, .lost_ms = air_lost_ms };
-	memcpy(c->lost_regs, air_lost_regs, sizeof c->lost_regs);
+				.copy_restarts = AIR->st.copy_restarts };
+	c->lost_ms = air_lost.ms;
+	memcpy(c->lost_regs, air_lost.regs, sizeof c->lost_regs);
+	hrc_irq_restore(s);
 	return true;
 }
 
@@ -730,8 +728,11 @@ HRC_FLASHFUNC void hrc_dmr_stats_reset(void)
 	lost_ms = 0;
 	memset(lost_regs, 0, sizeof lost_regs);
 #if CONFIG_AIR
-	air_lost_ms = 0;
-	memset(air_lost_regs, 0, sizeof air_lost_regs);
+	// lock() masks only the modem's sources, not the dmr task that notes a restart: as air_lost_check does
+	uint32_t s = hrc_irq_save();
+	air_lost.ms = 0;
+	memset(air_lost.regs, 0, sizeof air_lost.regs);
+	hrc_irq_restore(s);
 #endif
 	unlock(NULL);
 	hrc_audio_pcm_gate_reset();	// its line is one of ours

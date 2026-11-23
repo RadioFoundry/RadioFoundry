@@ -60,6 +60,7 @@ enum {
 	RADIO_TRUNK_WHY_REG_REFUSED,	// the system refused the radio's registration (Tier III Reg_Refused: ID not known)
 	RADIO_TRUNK_WHY_UNMAPPED,	// granted on a channel the codeplug doesn't list (Tier III: radio_t3_brief_t.unmapped)
 	RADIO_TRUNK_WHY_OTHER_KIND,	// no control channel held; a trunking system of another kind heard (Tier III: its FID)
+	RADIO_TRUNK_WHY_BLOCKED,	// P25: the system's WACN or system ID is blocked, never transmitted on
 };
 
 // The radio view's part (radio_view_t.p25): the call heard now, or the last one
@@ -104,6 +105,10 @@ typedef struct {
 	uint32_t retunes, untuned, skips, bursts, burst_refused;	// radio_p25_stats_t's trunk_*
 	p25_follow_view_t v;
 } radio_p25_trunk_view_t;
+#if CONFIG_P25_ROAM
+// Radio task: reuse its status sample before polling, without another bus read.
+void radio_p25_signal(int16_t rssi_dbm);
+#endif
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
 
 // Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 7). The follower's transmit side is on

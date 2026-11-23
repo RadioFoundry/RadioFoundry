@@ -168,6 +168,21 @@ static const flow_t flows[] = {
 	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
 	  false },
 #endif
+#if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
+	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
+	// them (system / key ID) and None, Save keeps the choice
+	{ "AES key row: hidden without keys", "", "ok 5 ok", "screen=channel hides=AES_key", 3, false },
+	{ "AES key row: none set", "aeskeys", "ok 5 ok down down down down down down down",
+	  "screen=channel focus=AES_key shows=None", 10, false },
+	{ "AES key row: steps the keys", "aeskeys ok 5 ok down down down down down down down", "ok",
+	  "focus=AES_key shows=3/0", 1, false },
+	{ "AES key row: the next key", "aeskeys ok 5 ok down down down down down down down", "ok ok",
+	  "focus=AES_key shows=3/7", 2, false },
+	{ "AES key row: back to none", "aeskeys ok 5 ok down down down down down down down", "ok ok ok",
+	  "focus=AES_key shows=None", 3, false },
+	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
+#endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
 	{ "P25 new from current: its rows", "dlmode:p25", "ok 5 up up up ok down down down",
@@ -1317,30 +1332,36 @@ static const flow_t flows_k[] = {
 	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
-	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set42=18 shows=Tone_burst", 1, false },
 #endif
 	{ "K side key 1: monitor", "ok 7 8 down down down ok", "ok", "set42=2", 1, false },
 	{ "K side key 1 hold while it monitors (DMR)", "ok 7 8", "down down down down ok", "set43=1", 5, false },
 	{ "K side key 1 hold once it doesn't", "ok 7 8 down down down ok down", "ok", "set43=1", 1, false },
 	{ "K side key 2 hold", "ok 7 8", "down down down down down down ok", "set45=1", 7, false },
-	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
+	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
 	  false },
-	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
+	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=17 shows=VFO/Channel", 1, false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
+	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
-	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
+	// Scan skip (KEYFN_SCAN_SKIP): "Skip channel for now" on a key, a press or a long press, only while scanning
+	{ "K a key set to scan skip, not scanning", "", "skipkey", "scanning=0 toast=Not_scanning", 1, false },
+	{ "K a key set to scan skip, scanning", "scankey", "skipkey", "scanning=1 toast=Skipped_until_the_scan_stops", 1,
+	  false },
+	{ "K a key set to scan skip, long, scanning", "scankey", "long:skipkey",
+	  "scanning=1 toast=Skipped_until_the_scan_stops", 1, false },
 	// VFO/Channel (KEYFN_VFO_TOGGLE) sends what a VFO/MR key does, on a press or a long press, on any screen
 	{ "K a key set to VFO/Channel", "", "vfokey", "vfo=1 toast=VFO", 1, false },
 	{ "K a key set to VFO/Channel, back", "vfokey", "vfokey", "vfo=0 toast=Back_to_channels", 1, false },
