@@ -604,8 +604,23 @@ static int16_t kv_sig_len[SIG_EV_COUNT] = { -1, -1, -1 };
 static uint8_t kv_sig[SIG_EV_COUNT][SIG_REC_LEN];
 static bool kv_is_sig(uint16_t key) { return key >= CODEPLUG_KEY_SIG_BEGIN && key <= CODEPLUG_KEY_SIG_IDLE; }
 static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
+static int kv_em_len[3] = { -1, -1, -1 };
+static uint8_t kv_em[3][8];
+static void kv_em_put(uint16_t key, const void *value, int len)
+{
+	kv_serial++;
+	kv_em_len[key - CODEPLUG_KEY_EM_KEY] = len;
+	if (len > 0)
+		memcpy(kv_em[key - CODEPLUG_KEY_EM_KEY], value, (size_t)len);
+}
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (codeplug_foreign()) return -1;
+	if (key >= CODEPLUG_KEY_EM_KEY && key <= CODEPLUG_KEY_EM_HOLD) {
+		int n = kv_em_len[key - CODEPLUG_KEY_EM_KEY];
+		if (n > 0) memcpy(buf, kv_em[key - CODEPLUG_KEY_EM_KEY], max < n ? max : (size_t)n);
+		return n;
+	}
 	if (kv_is_sig(key)) {
 		int e = key - CODEPLUG_KEY_SIG_BEGIN;
 		if (kv_sig_len[e] < 0) {
@@ -638,6 +653,10 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 // One set: the ARS server as a u32, a tone as one byte
 static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 {
+	if (key >= CODEPLUG_KEY_EM_KEY && key <= CODEPLUG_KEY_EM_HOLD && len <= 8) {
+		kv_em_put(key, v, len);
+		return true;
+	}
 	if (kv_is_sig(key)) {
 		// A record is set from the front (CODEPLUG_KV_HEAD): the bytes after it stay
 		int e = key - CODEPLUG_KEY_SIG_BEGIN;
@@ -682,7 +701,7 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
-	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_SIG_IDLE; c->at++) {
+	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_EM_HOLD; c->at++) {
 		int n = codeplug_kv_get(c->at, buf, max);
 		if (n >= 0) {
 			*key = c->at++;
@@ -702,7 +721,7 @@ int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t
 }
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
-	if (kv_held) {
+	if (kv_held || codeplug_foreign()) {
 		return false;
 	}
 	for (uint8_t i = 0; i < n; i++) {
@@ -3710,6 +3729,30 @@ static void test_dmr_emergency(void)
 	dmr_emergency_cancel();
 	run(20);
 
+	// Mic off (Home's BACK, ui_svc_emergency_mic_off): the hot mic unkeys at once, the radio stays in emergency. In
+	// any other state it changes nothing
+	es.hot_mic_s = 10;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	CHECK(dmr_emergency_start());
+	run(300);
+	CHECK(sm.em_keyed && sm.view.state == RS_TX && ui_svc_emergency_phase() == UI_EM_TX);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(!sm.em_keyed && dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && ui_svc_emergency_phase() == UI_EM_ON);
+	run(1000);
+	CHECK(sm.view.state == RS_IDLE);
+	ui_svc_emergency_mic_off();
+	run(20);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !sm.em_keyed);
+	dmr_emergency_cancel();
+	run(20);
+	CHECK(ui_svc_emergency_phase() == UI_EM_OFF);
+
 	// Heard: an emergency call on a group we listen to raises the alert and its tone once
 	dmr_emergency_stats_t s0, s1;
 	dmr_emergency_get_stats(&s0);
@@ -5932,8 +5975,10 @@ static void test_vfo_dmr_data(void)
 				    DMR_IP_PROTO_UDP, l4, sizeof(l4)));
 	run(3000);
 	dmr_emergency_start();		// queued, then refused by the tick
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_WAITING);
 	run(3000);
 	CHECK(dmr_emergency_state() == DMR_EMERGENCY_FAILED && !sm.em_keyed);
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_FAILED);
 	CHECK(sim.air_count == n0 && hw.tx_calls == tx0);
 	dmr_emergency_cancel();
 
@@ -6300,6 +6345,151 @@ static void test_factory_reset(void)
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+	sim_flash_free();
+}
+
+// Settings > Keys > Emergency (dmr-emergency.md 5.1): Hold, Key and Alert are keys of the codeplug's settings area
+// (codeplug-settings.md 3): absent keeps the radio's own copy, initially 3 s, on, Beep+vibrate. Open mic and the
+// emergency module's other settings stay separate from these controls
+static void test_emergency_key_settings(void)
+{
+	settings_t sv;
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);
+	for (int k = 0; k < 3; k++)
+		kv_em_len[k] = -1;
+	ui_svc_em_settings_poll(true);
+	// No key in the codeplug's settings area: the key on, Beep+vibrate, 3 s
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == 3 && ui_svc_setting_get(UI_SET_EM_KEY) == 1 &&
+	      ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_BEEP);
+	// A set is a codeplug job writing one byte; every hold, and the edges past them clamped
+	for (int32_t h = 1; h <= 10; h++) {
+		CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, h) && storage_job_busy());
+		storage_job_poll();
+	ui_svc_em_settings_poll(false);
+		CHECK(!storage_job_busy() && kv_em_len[2] == 1 && kv_em[2][0] == h && ui_svc_setting_get(UI_SET_EM_HOLD_S) == h);
+	}
+	static const int32_t clamp_in[] = { 0, -5, 11, 99 }, clamp_out[] = { 1, 1, 10, 10 };
+	for (size_t i = 0; i < sizeof clamp_in / sizeof clamp_in[0]; i++) {
+		CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, clamp_in[i]));
+		storage_job_poll();
+	ui_svc_em_settings_poll(false);
+		CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == clamp_out[i]);
+	}
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, 7));
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	CHECK(ui_svc_setting_set(UI_SET_EM_KEY, 0) && !ui_svc_setting_set(UI_SET_EM_ALERT, UI_EM_ALERT_SILENT));	// one job
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	CHECK(ui_svc_setting_set(UI_SET_EM_ALERT, UI_EM_ALERT_SILENT));
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	CHECK(kv_em_len[0] == 1 && kv_em[0][0] == 0 && kv_em_len[1] == 1 && kv_em[1][0] == UI_EM_ALERT_SILENT);
+	CHECK(ui_svc_setting_get(UI_SET_EM_KEY) == 0 && ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_SILENT);
+	// What another tool may write (3.1): a bool not 0 is on; invalid values keep the radio-owned defaults here,
+	// a longer value zero-extends
+	static const struct { uint16_t key; uint8_t v[8]; int len; uint8_t id; int32_t want; } odd[] = {
+		{ CODEPLUG_KEY_EM_KEY, { 0, 0, 0, 0, 1 }, 5, UI_SET_EM_KEY, 1 },
+		{ CODEPLUG_KEY_EM_ALERT, { 1, 0, 0, 0, 1 }, 5, UI_SET_EM_ALERT, 0 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5, 0, 0, 0, 1 }, 5, UI_SET_EM_HOLD_S, 3 },
+		{ CODEPLUG_KEY_EM_KEY, { 0 }, 5, UI_SET_EM_KEY, 0 },
+		{ CODEPLUG_KEY_EM_ALERT, { 1 }, 5, UI_SET_EM_ALERT, 1 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5 }, 5, UI_SET_EM_HOLD_S, 5 },
+		{ CODEPLUG_KEY_EM_KEY, { 0, 0, 0, 0, 0, 0, 0, 1 }, 8, UI_SET_EM_KEY, 1 },
+		{ CODEPLUG_KEY_EM_ALERT, { 1, 0, 0, 0, 0, 0, 0, 1 }, 8, UI_SET_EM_ALERT, 0 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5, 0, 0, 0, 0, 0, 0, 1 }, 8, UI_SET_EM_HOLD_S, 3 },
+		{ CODEPLUG_KEY_EM_KEY, { 0 }, 8, UI_SET_EM_KEY, 0 },
+		{ CODEPLUG_KEY_EM_ALERT, { 1 }, 8, UI_SET_EM_ALERT, 1 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5 }, 8, UI_SET_EM_HOLD_S, 5 },
+		{ CODEPLUG_KEY_EM_KEY, { 2 }, 1, UI_SET_EM_KEY, 1 },
+		{ CODEPLUG_KEY_EM_KEY, { 0, 1 }, 2, UI_SET_EM_KEY, 1 },
+		{ CODEPLUG_KEY_EM_KEY, { 0, 0 }, 2, UI_SET_EM_KEY, 0 },
+		{ CODEPLUG_KEY_EM_KEY, { 0 }, 0, UI_SET_EM_KEY, 1 },	// empty: as absent
+		{ CODEPLUG_KEY_EM_ALERT, { 7 }, 1, UI_SET_EM_ALERT, UI_EM_ALERT_BEEP },
+		{ CODEPLUG_KEY_EM_ALERT, { 1, 0 }, 2, UI_SET_EM_ALERT, UI_EM_ALERT_SILENT },
+		{ CODEPLUG_KEY_EM_HOLD, { 0 }, 1, UI_SET_EM_HOLD_S, 3 },
+		{ CODEPLUG_KEY_EM_HOLD, { 11 }, 1, UI_SET_EM_HOLD_S, 3 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5, 0 }, 2, UI_SET_EM_HOLD_S, 5 },
+		{ CODEPLUG_KEY_EM_HOLD, { 5, 1 }, 2, UI_SET_EM_HOLD_S, 3 },	// 261 s
+	};
+	for (size_t i = 0; i < sizeof odd / sizeof odd[0]; i++) {
+		settings_begin()->em_key_controls = 0;
+		settings_end(now);
+		kv_em_put(odd[i].key, odd[i].v, odd[i].len);
+		ui_svc_em_settings_poll(true);
+		CHECK(ui_svc_setting_get(odd[i].id) == odd[i].want);
+	}
+	kv_em_put(CODEPLUG_KEY_EM_KEY, (const uint8_t[]){ 0 }, 1);
+	kv_em_put(CODEPLUG_KEY_EM_ALERT, (const uint8_t[]){ 1 }, 1);
+	kv_em_put(CODEPLUG_KEY_EM_HOLD, (const uint8_t[]){ 7 }, 1);
+	// Open mic goes to the emergency module, which the radio core saves; 0 is off, past the maximum clamped
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOT_MIC_S, 0));
+	run(20);
+	settings_read(&sv);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOT_MIC_S) == 0 && sv.em_stored == 1 && sv.em_hot_mic_s == 0);
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOT_MIC_S, 70));
+	run(20);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOT_MIC_S) == DMR_EMERGENCY_HOT_MIC_MAX_S);
+	// The radio core's own emergency settings (here over the debug link) are whole bytes of settings_t again, and its
+	// save leaves the keys alone
+	dmr_emergency_settings_t es;
+	dmr_emergency_get_settings(&es);
+	es.alarm_tries = 9;
+	es.rx_tone = false;
+	es.etsi_fid = true;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	settings_read(&sv);
+	CHECK(sv.em_alarm_tries == 9 && sv.em_flags == (SETTINGS_EM_NO_TONE | SETTINGS_EM_ETSI_FID));
+	CHECK(kv_em[0][0] == 0 && kv_em[1][0] == 1 && kv_em[2][0] == 7);
+	// The UI's sets leave the module's settings alone
+	CHECK(ui_svc_setting_set(UI_SET_EM_HOLD_S, 4));
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	settings_t after;
+	settings_read(&after);
+	CHECK(after.em_alarm_tries == sv.em_alarm_tries && after.em_flags == sv.em_flags && kv_em[2][0] == 4);
+	// A present key refuses a failed write; absent keys accept a radio-owned copy.
+	kv_held = true;
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_EM_KEY, 1));
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && ui_svc_setting_get(UI_SET_EM_KEY) == 0);
+	cp_foreign = true;
+	kv_serial++;
+	ui_svc_em_settings_poll(false);
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_EM_KEY, 1));
+	storage_job_poll();
+	ui_svc_em_settings_poll(false);
+	CHECK(n_ev == 0 && kv_em[0][0] == 0 && ui_svc_setting_get(UI_SET_EM_KEY) == 1);
+	CHECK(settings_flush());
+	settings_init();
+	boot();
+	run(50);
+	ui_svc_em_settings_poll(true);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == 4 && ui_svc_setting_get(UI_SET_EM_KEY) == 1 &&
+	      ui_svc_setting_get(UI_SET_EM_ALERT) == UI_EM_ALERT_SILENT);
+	cp_foreign = false;
+	kv_held = false;
+	kv_serial++;
+	ui_svc_em_settings_poll(false);
+	CHECK(ui_svc_setting_get(UI_SET_EM_KEY) == 0);
+	// Removal retains the key's last value in the radio's own copy.
+	kv_em_put(CODEPLUG_KEY_EM_HOLD, NULL, -1);
+	ui_svc_em_settings_poll(false);
+	CHECK(ui_svc_setting_get(UI_SET_EM_HOLD_S) == 4);
+	dmr_emergency_get_settings_now(&es);
+	CHECK(es.alarm_tries == 9 && es.hot_mic_s == DMR_EMERGENCY_HOT_MIC_MAX_S && !es.rx_tone && es.etsi_fid);
+	for (int k = 0; k < 3; k++)
+		kv_em_len[k] = -1;
 	sim_flash.map = NULL;
 	storage_init();			// back to no flash for anything after
 	settings_init();
@@ -11561,6 +11751,7 @@ int main(void)
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	test_volume_step_of();
+	test_emergency_key_settings();
 	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;

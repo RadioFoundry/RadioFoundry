@@ -121,7 +121,7 @@ const dmrId = (t) => (r, k, v) => {
 export function parseAreaKey(row, v, t) {
 	const s = String(v ?? "").trim();
 	if (s === "") return { value: null };
-	const n = Number(s);
+	const n = row.type === "bool" && (s === "0" || s === "1") ? s === "1" : Number(s);
 	return keyValid(row, n) ? { value: n } : { error: t("editor.err.range", { min: row.min, max: row.max }) };
 }
 

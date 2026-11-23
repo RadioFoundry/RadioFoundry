@@ -12,6 +12,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "config.h"
+#include "dmr/dmr_emergency.h"
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"
@@ -181,7 +182,9 @@ bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len);
 #endif
 
 // --- Beeps (radio-features): the radio sounds key beeps only when its key_beep setting is on ---
-typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW } ui_beep_t;
+// UI_BEEP_COUNTDOWN: each second of the emergency hold; UI_BEEP_EM_SENT / _CANCELED: its end (none gated by Key tones)
+typedef enum { UI_BEEP_KEY, UI_BEEP_ERROR, UI_BEEP_MESSAGE, UI_BEEP_BATTERY_LOW, UI_BEEP_COUNTDOWN, UI_BEEP_EM_SENT,
+	       UI_BEEP_EM_CANCELED } ui_beep_t;
 void ui_svc_beep(uint8_t beep);
 // --- Vibration (radio-features 4.1): a pattern on the board's motor; the UI asks only when Settings > Sound >
 // Vibrate is on. Weak no-op without CONFIG_VIBRATE ---
@@ -278,14 +281,29 @@ bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out);	// false past the last
 // Emergency is dmr-ext's: it defines ui_svc_emergency and reports UI_FEAT_EMERGENCY from ui_svc_feat_ext. Until
 // then the weak stub says "not set up"
 bool ui_svc_emergency(bool on);
+dmr_emergency_result_t ui_svc_emergency_result(void);
 // Our own emergency is going (alarm, hot mic or in emergency until canceled): the key then cancels it
 bool ui_svc_emergency_active(void);
+// Our emergency's phase for Home's emergency bar: UI_EM_OFF, UI_EM_TX (the alarm or the hot mic), UI_EM_ON (in
+// emergency until canceled). Weak: UI_EM_OFF
+#define UI_EM_OFF	0
+#define UI_EM_TX	1
+#define UI_EM_ON	2
+uint8_t ui_svc_emergency_phase(void);
+// The hot mic ends now (during the alarm: it doesn't start); the emergency goes on. Weak no-op
+void ui_svc_emergency_mic_off(void);
+// The name printed on the radio ("SK3") of the reassignable key whose long press is action in the key map in use
+// (Settings > Keys), NULL when no such key has one. Weak: NULL
+const char *ui_svc_key_name_long(uint8_t action);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
 // Every UI pass: fire UI_EV_APRS_MESSAGE when a new message addressed to us arrives (CONFIG_APRS_RX; weak no-op without it)
 void ui_svc_aprs_msg_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
 void ui_svc_emergency_dismiss(void);
+// Where our emergency goes: the set target (id, private_call), id 0 = the channel's talk target. True when an alarm
+// goes first (else only the emergency call). Weak: 0, true
+bool ui_svc_emergency_target(uint32_t *id, bool *private_call);
 // The settings back to their defaults and the native codeplug area emptied (never the open-firmware codeplug or the
 // calibration: those would need a second, explicit confirmation), then the radio restarts. Done by the housekeeping
 // task, not the UI's; false if it can't be started (no flash, or a save still going on)
@@ -429,6 +447,9 @@ typedef enum {
 	// position comes from (position_pref_t), the fixed position in 1e-7 degree (both 0 = not set), our position
 	// sent in DMR voice calls 0 / 1 (ETSI GPS Info, CONFIG_DMR_GPS)
 	UI_SET_POS_SOURCE, UI_SET_POS_FIXED_LAT, UI_SET_POS_FIXED_LON, UI_SET_POS_DMR_CALLS,
+	// Settings > Keys > Emergency: the hot mic time 0..60 s (the emergency module's hot_mic_s, docs/spec/dmr-emergency.md
+	// 5.1; the key's own settings are past UI_SET_RAM_COUNT)
+	UI_SET_EM_HOT_MIC_S,
 	UI_SET_RAM_COUNT,	// the ids up to here have a slot in ui_svc_ram_get/set's table; those after live elsewhere only
 	// Home's talk line: the talkgroup's name first, 1 on (Settings > Display; updown_home bit 7, ui_svc_storage.c)
 	UI_SET_LABEL_FIRST = UI_SET_RAM_COUNT,
@@ -458,11 +479,23 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	// Settings > Keys > Emergency (UI_FEAT_EMERGENCY, CONFIG_DMR_EMERGENCY): the key's hold 1..10 s (default 3), the key
+	// on (1, the default) or off, the alert UI_EM_ALERT_*. Keys of the codeplug's settings area (an absent key is the
+	// default); a set is a codeplug write job
+	UI_SET_EM_HOLD_S, UI_SET_EM_KEY, UI_SET_EM_ALERT,
 	UI_SET_COUNT
 } ui_setting_t;
 
 // The value of UI_SET_SIG_STEP: the frequency in bits 0-11, the length in 10 ms units in 12-18, the step in 19-22, the event in 23-24
 #define UI_SIG_STEP(ev, k, hz, ms)	((int32_t)(((hz) & 0xFFFu) | ((((ms) / 10u) & 0x7Fu) << 12) | (((k) & 15u) << 19) | (((ev) & 3u) << 23)))
+
+
+// UI_SET_EM_ALERT values
+#define UI_EM_ALERT_BEEP	0	// beep and vibrate each second
+#define UI_EM_ALERT_SILENT	1	// only the screen
+// UI_SET_EM_HOLD_S: 1..UI_EM_HOLD_MAX_S s
+#define UI_EM_HOLD_DEFAULT_S	3
+#define UI_EM_HOLD_MAX_S	10
 
 // UI_SET_ACCENT values: the theme's own highlight (blue), or one of seven. Color displays only
 enum {
@@ -538,5 +571,8 @@ void ui_svc_keys_poll(void);
 uint8_t ui_svc_home_key(uint8_t action, uint8_t gesture, bool home);
 // Settings > Keys: value may go in the setting id's slot (a home key's role can't hold Monitor or Tone burst)
 bool ui_svc_key_offered(uint8_t id, int32_t value);
+
+// Refresh the emergency controls on the UI task, never from a setting getter.
+bool ui_svc_em_settings_poll(bool force);
 
 #endif

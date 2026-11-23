@@ -103,6 +103,9 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0007 | Start tone | record | The signaling tone of a transmission's start: outputs and chain (3.3) | `sig_dmr[0]`, `sig_fm[0]`, `sig_hz[0]`, `sig_ms[0]` | Signaling tones in the build (`CONFIG_SIG_TONES`) |
 | 0x0008 | End tone | record | The same for a transmission's end | `sig_dmr[1]`, `sig_fm[1]`, `sig_hz[1]`, `sig_ms[1]` | `CONFIG_SIG_TONES` |
 | 0x0009 | Idle tone | record | The same for a reception's end (no on-air output) | `sig_dmr[2]`, `sig_fm[2]`, `sig_hz[2]`, `sig_ms[2]` | `CONFIG_SIG_TONES` |
+| 0x000A | Emergency key | bool | 0 = disabled, nonzero = enabled; default enabled | `em_key_controls` bit 4 (inverted) | Emergency in the build (`CONFIG_DMR_EMERGENCY`) |
+| 0x000B | Emergency alert | enum | 0 = beep and vibrate (default), 1 = silent | `em_key_controls` bit 5 | Emergency in the build (`CONFIG_DMR_EMERGENCY`) |
+| 0x000C | Emergency hold | uint | 1-10 seconds; default 3 | `em_key_controls` bits 0-3 (0 = 3 seconds) | Emergency in the build (`CONFIG_DMR_EMERGENCY`) |
 | 0x0100 | Systems | record list | 0x0100-0x01FF: system n's record ([channel-modes.md](channel-modes.md) 7.1) | none (codeplug data) | the system's type built |
 | 0x0200 | System entries | record list | 0x0200-0x02FF: a system's sites, channels and plan rows ([channel-modes.md](channel-modes.md) 7.2) | none | the system's type built |
 | 0x0300 | System secrets | record list | 0x0300-0x03FF: system n's own secret ([channel-modes.md](channel-modes.md) 7.4) | none | the system's type built |

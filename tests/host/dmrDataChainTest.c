@@ -576,6 +576,7 @@ static void test_emergency_alarm_out(void)
 	CHECK(alarms == 3);
 	CHECK((slots[1] - slots[0]) * 30u >= DMR_DATA_EMERGENCY_GAP_MS && (slots[2] - slots[1]) * 30u >= DMR_DATA_EMERGENCY_GAP_MS);
 	CHECK(events[DMR_DATA_EV_EMERGENCY_SENT] == 1);
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_SENT);
 	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !dmr_emergency_hot_mic());
 	uint32_t id;
 	bool priv;
@@ -587,6 +588,48 @@ static void test_emergency_alarm_out(void)
 	dmrDataStats_t st;
 	dmrDataServiceGetStats(&st);
 	CHECK(st.emergencyAlarmsSent == 3);
+
+	// Mic off during the alarm (Home's BACK): the alarms still go, no hot mic follows, the radio stays in emergency
+	es.mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	es.alarm_tries = 1;
+	es.hot_mic_s = 5;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	CHECK(dmr_emergency_start());
+	run(50);	// mid alarm: with this tick phase the one alarm is out after about 95 ms
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ALARM);
+	dmr_emergency_mic_off();
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && !dmr_emergency_hot_mic());
+	dmr_emergency_cancel();
+	run(50);
+	// The next emergency has its hot mic again: the skip was for that one only
+	CHECK(dmr_emergency_start());
+	run(3000);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_HOT_MIC && dmr_emergency_hot_mic());
+	dmr_emergency_cancel();
+	run(50);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !dmr_emergency_hot_mic());
+
+	// A queued request can exhaust its one alarm attempt without a completed transmission.
+	refuse_tx = true;
+	CHECK(dmr_emergency_start());
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_WAITING);
+	run(15000);
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_FAILED);
+	dmr_emergency_cancel();
+	run(50);
+
+	es.mode = DMR_EMERGENCY_MODE_CALL;
+	es.hot_mic_s = 0;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	int before = ntx;
+	CHECK(dmr_emergency_start());
+	run(3000);
+	CHECK(dmr_emergency_result() == DMR_EM_RESULT_ON && ntx == before && !dmr_emergency_hot_mic());
+	dmr_emergency_cancel();
+	run(50);
 }
 
 // --- ETSI short data (docs/spec/dmr-data.md 5.2) ---

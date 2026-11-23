@@ -23,6 +23,7 @@ TX_TOL_MHZ = 1e-6
 RIG = {
     "dmr-freq": (float, "MHz: the DMR test channel (simplex, the radio's channel or VFO on it)", True),
     "dmr-cc": (int, "the DMR test channel's color code", False),
+    "emergency-peer-id": (int, "optional private DMR destination for the emergency key-hold bench test", False),
     "dmr-tg": (int, "the talkgroup the bench transmitter calls (in the radio channel's RX group list)", False),
     "fm-mhz": (float, "MHz: the FM test frequency (the radio's VFO)", True),
     "p25-mhz": (float, "MHz: the P25 test frequency (the radio's VFO; test_p25_tx_off_air)", True),

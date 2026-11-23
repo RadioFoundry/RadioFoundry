@@ -199,6 +199,7 @@ settings_load_t settings_init(void)
 		uint16_t n = (uint16_t)(r[10] | (r[11] << 8));
 		memcpy(&live, &r[HDR], n < page_len(0) ? n : page_len(0));
 		bool whole = n == page_len(0);
+		uint16_t page1_len = 0;
 		// Second pass: each other page, the newest of it older than page 0 (an older firmware's save wrote
 		// page 0 alone: the page from before it, else the defaults)
 		for (unsigned k = 1; k < SETTINGS_PAGES; k++) {
@@ -223,11 +224,20 @@ settings_load_t settings_init(void)
 			if (found && read_slot(sk, lk, r) == SLOT_VALID) {
 				uint16_t nk = (uint16_t)(r[10] | (r[11] << 8));
 				memcpy((uint8_t *)&live + k * SETTINGS_PAGE_BYTES, &r[HDR], nk < page_len(k) ? nk : page_len(k));
+				if (k == 1) {
+					page1_len = nk;
+				}
 				whole = whole && nk == page_len(k) && qk == seq0 - k;
 				valid_mask |= 1u << sk;	// part of the set in force: saves must not erase it either
 			} else {
 				whole = false;
 			}
+		}
+		if (page1_len <= offsetof(settings_t, em_key_controls) - SETTINGS_PAGE_BYTES) {
+			// The countdown preview stored hold in the tries' upper nibble and key-off/silent in flag bits 3/4.
+			live.em_key_controls = (uint8_t)((live.em_alarm_tries >> 4) | ((live.em_flags & 0x18u) << 1));
+			live.em_alarm_tries &= 0x0Fu;
+			live.em_flags &= (uint8_t)~0x18u;
 		}
 		stats.load = whole ? SETTINGS_LOADED : SETTINGS_UPGRADED;
 		power_levels_check(&live);

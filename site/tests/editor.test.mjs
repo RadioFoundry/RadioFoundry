@@ -263,3 +263,12 @@ test("Radio tab ARS server and IP gateway: empty is an absent key, 0 is off", ()
 	assert.deepEqual(typed("16776415"), { value: 16776415 });
 	for (const s of ["16776416", "-1", "1.5", "abc"]) assert.deepEqual(typed(s), { error: "editor.err.range 0-16776415" }, s);
 });
+
+test("emergency key field: blank, off, on, and invalid input", () => {
+	const row = KEYS.find((r) => r.name === "emKey");
+	const t = (key) => key;
+	assert.deepEqual(parseAreaKey(row, "", t), { value: null });
+	assert.deepEqual(parseAreaKey(row, "0", t), { value: false });
+	assert.deepEqual(parseAreaKey(row, "1", t), { value: true });
+	assert.ok(parseAreaKey(row, "2", t).error);
+});

@@ -32,6 +32,7 @@ static uint32_t set_serial;
 static uint8_t state;			// dmr_emergency_state_t
 static uint32_t hot_mic_until;
 static bool hot_mic;
+static bool mic_skip;		// mic off asked during the alarm: no hot mic after it
 static uint32_t target_id;
 static bool target_private;
 static uint32_t cfg_serial;
@@ -43,10 +44,11 @@ static dmr_emergency_stats_t stats;
 static dmr_emergency_alert_t alert;
 static volatile uint32_t serial;
 static volatile uint8_t shown_state;
+static volatile uint8_t result;
 
 // Requests from other tasks
 static struct {
-	bool start, cancel, dismiss, settings;
+	bool start, cancel, dismiss, settings, mic_off;
 	dmr_emergency_settings_t set;
 } mbox;
 
@@ -91,6 +93,7 @@ void dmr_emergency_init(const dmr_emergency_settings_t *s)
 	set_serial++;
 	state = DMR_EMERGENCY_IDLE;
 	shown_state = state;
+	result = DMR_EM_RESULT_NONE;
 	hot_mic = false;
 	tone_due = false;
 	cfg_serial++;
@@ -138,6 +141,7 @@ bool dmr_emergency_take_tone(void)
 static void stop(void)
 {
 	dmrDataServiceEmergencyAlarmCancel();
+	result = DMR_EM_RESULT_CANCELED;
 	hot_mic = false;
 	set_state(DMR_EMERGENCY_IDLE);
 }
@@ -149,7 +153,7 @@ static void begin_call(uint32_t now_ms)
 		set_state(DMR_EMERGENCY_ACTIVE);
 		return;
 	}
-	if (set.hot_mic_s == 0) {
+	if (set.hot_mic_s == 0 || mic_skip) {
 		set_state(DMR_EMERGENCY_ACTIVE);
 		return;
 	}
@@ -163,10 +167,12 @@ static void begin_call(uint32_t now_ms)
 static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 {
 	stats.started++;
+	mic_skip = false;
 	uint32_t id = set.dst != 0 ? set.dst : ch->talk_id;
 	bool priv = set.dst != 0 ? set.dst_private : ch->talk_private;
 	if (!ch->can_transmit || id == 0) {
 		stats.failed++;
+		result = DMR_EM_RESULT_FAILED;
 		set_state(DMR_EMERGENCY_FAILED);
 		return;
 	}
@@ -178,6 +184,7 @@ static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 	if (set.mode != DMR_EMERGENCY_MODE_CALL) {
 		if (!dmrDataServiceEmergencyAlarm(id, !priv, set.etsi_fid ? DMR_FID_ETSI : DMR_FID_MOTOROLA, set.alarm_tries)) {
 			stats.failed++;
+			result = DMR_EM_RESULT_FAILED;
 			set_state(DMR_EMERGENCY_FAILED);
 			return;
 		}
@@ -186,11 +193,12 @@ static void start(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 		return;
 	}
 	begin_call(now_ms);
+	result = DMR_EM_RESULT_ON;
 }
 
 void dmr_emergency_tick(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 {
-	bool do_start, do_cancel, do_dismiss, do_set;
+	bool do_start, do_cancel, do_dismiss, do_set, do_mic_off;
 	dmr_emergency_settings_t ns;
 
 	lock();
@@ -198,8 +206,9 @@ void dmr_emergency_tick(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 	do_cancel = mbox.cancel;
 	do_dismiss = mbox.dismiss;
 	do_set = mbox.settings;
+	do_mic_off = mbox.mic_off;
 	ns = mbox.set;
-	mbox.start = mbox.cancel = mbox.dismiss = mbox.settings = false;
+	mbox.start = mbox.cancel = mbox.dismiss = mbox.settings = mbox.mic_off = false;
 	if (do_dismiss && alert.active) {
 		alert.active = false;
 		alert.pending = 0;
@@ -218,10 +227,21 @@ void dmr_emergency_tick(uint32_t now_ms, const dmr_emergency_channel_t *ch)
 	if (do_start && !dmr_emergency_in_progress()) {
 		start(now_ms, ch);
 	}
+	// Mic off: the hot mic ends now (or never starts after the alarm); the radio stays in emergency
+	if (do_mic_off && state == DMR_EMERGENCY_ALARM) {
+		mic_skip = true;
+	} else if (do_mic_off && state == DMR_EMERGENCY_HOT_MIC) {
+		hot_mic = false;
+		set_state(DMR_EMERGENCY_ACTIVE);
+	}
 
 	switch (state) {
 	case DMR_EMERGENCY_ALARM:
+		if (dmrDataServiceEmergencyAlarmSent())
+			result = DMR_EM_RESULT_SENT;
 		if (!dmrDataServiceEmergencyAlarmBusy()) {
+			if (result != DMR_EM_RESULT_SENT)
+				result = DMR_EM_RESULT_FAILED;
 			begin_call(now_ms);	// all tries out (or the channel went: the call then fails like PTT would)
 		}
 		break;
@@ -310,6 +330,7 @@ bool dmr_emergency_start(void)
 	lock();
 	ok = !mbox.start && !dmr_emergency_in_progress();
 	if (ok) {
+		result = DMR_EM_RESULT_WAITING;
 		mbox.start = true;
 		mbox.cancel = false;
 	}
@@ -325,6 +346,13 @@ void dmr_emergency_cancel(void)
 	unlock();
 }
 
+void dmr_emergency_mic_off(void)
+{
+	lock();
+	mbox.mic_off = true;
+	unlock();
+}
+
 void dmr_emergency_dismiss(void)
 {
 	lock();
@@ -335,6 +363,11 @@ void dmr_emergency_dismiss(void)
 dmr_emergency_state_t dmr_emergency_state(void)
 {
 	return (dmr_emergency_state_t)shown_state;
+}
+
+dmr_emergency_result_t dmr_emergency_result(void)
+{
+	return (dmr_emergency_result_t)result;
 }
 
 bool dmr_emergency_alert(dmr_emergency_alert_t *out)

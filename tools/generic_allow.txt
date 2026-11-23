@@ -120,7 +120,6 @@ tests/hil/test_audio_probe.py per-radio skip reasons and bench notes
 tests/hil/test_boot.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_audio_smoke.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_call_features.py per-radio skip reasons and bench notes
-tests/hil/test_dmr_emergency.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_ip.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_tx.py per-radio skip reasons and bench notes
 tests/hil/test_dmr_voice.py per-radio skip reasons and bench notes

@@ -2388,5 +2388,16 @@
  "editor.sig.play": "播放",
  "editor.sig.roll": "链路的音高随时间变化，{ms} 毫秒",
  "editor.sig.no_audio": "此处无法播放",
- "editor.sig.empty": "无步骤:使用标准声音"
+ "editor.sig.empty": "无步骤:使用标准声音",
+ "editor.general.em_key": "紧急呼叫键",
+ "editor.general.em_key_help": "0 = 关闭，1 = 开启。留空保留电台自身设置。",
+ "editor.general.em_alert": "紧急呼叫提示",
+ "editor.general.em_alert_help": "0 = 提示音和振动，1 = 静音。留空保留电台自身设置。",
+ "editor.general.em_hold": "紧急呼叫按住时间（秒）",
+ "editor.general.em_hold_help": "1–10 秒。留空保留电台自身设置。",
+ "screen.emergency_hold": "按住紧急键：倒计时",
+ "screen.emergency_sent": "紧急呼叫已发送",
+ "screen.emergency_mic": "紧急状态：自动开麦，按返回键关闭",
+ "screen.emergency_on": "仍处于紧急状态：如何结束",
+ "screen.settings_emergency": "紧急键设置"
 }

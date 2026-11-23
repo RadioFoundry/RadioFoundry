@@ -185,6 +185,11 @@ WEAK bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out) { (void)i; (void)out; ret
 WEAK bool ui_svc_emergency(bool on) { (void)on; return false; }
 WEAK void ui_svc_emergency_dismiss(void) { }
 WEAK bool ui_svc_emergency_active(void) { return false; }
+WEAK dmr_emergency_result_t ui_svc_emergency_result(void) { return DMR_EM_RESULT_FAILED; }
+WEAK uint8_t ui_svc_emergency_phase(void) { return UI_EM_OFF; }
+WEAK void ui_svc_emergency_mic_off(void) { }
+WEAK const char *ui_svc_key_name_long(uint8_t action) { (void)action; return NULL; }
+WEAK bool ui_svc_emergency_target(uint32_t *id, bool *private_call) { *id = 0; *private_call = false; return true; }
 WEAK bool ui_svc_factory_reset(void) { return false; }
 WEAK bool ui_svc_codeplug_answer(uint8_t answer) { (void)answer; return false; }
 
@@ -218,6 +223,7 @@ static int32_t settings[UI_SET_RAM_COUNT] = {
 	[UI_SET_VIBRATE] = 1, [UI_SET_VOLUME] = RADIO_VOLUME_DEFAULT, [UI_SET_DUAL_DELAY_MS] = RADIO_DUAL_DELAY_MS,
 	[UI_SET_BCAST_STEP] = 200,
 	[UI_SET_NOISE_REDUCTION] = 1,
+	[UI_SET_EM_HOT_MIC_S] = 10,	// dmr_emergency.h's default
 };
 // (ui_svc_storage.c keeps the ones settings_t has fields for: these are the defaults of the rest, and the UI's
 // stand-ins in a build without the store)
@@ -234,3 +240,5 @@ bool ui_svc_ram_set(uint8_t id, int32_t value)
 
 WEAK int32_t ui_svc_setting_get(uint8_t id) { return ui_svc_ram_get(id); }
 WEAK bool ui_svc_setting_set(uint8_t id, int32_t value) { return ui_svc_ram_set(id, value); }
+
+WEAK bool ui_svc_em_settings_poll(bool force) { (void)force; return false; }

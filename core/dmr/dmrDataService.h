@@ -329,6 +329,7 @@ bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, boo
 bool dmrDataServiceEmergencyAlarm(uint32_t dst, bool group, uint8_t fid, uint8_t tries);
 void dmrDataServiceEmergencyAlarmCancel(void);
 bool dmrDataServiceEmergencyAlarmBusy(void);
+bool dmrDataServiceEmergencyAlarmSent(void);
 // The 10 octets of an emergency alarm CSBK (docs/spec/dmr-emergency.md 2)
 void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t fid, uint8_t out[10]);
 

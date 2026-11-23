@@ -380,7 +380,7 @@ function openRecord(tab, r) {
 function radioTab() {
 	const g = S.model.general;
 	const field = (key, label, max, help, parse) => {
-		const input = h("input", { type: "text", value: g[key] ?? "", maxlength: max, id: "g-" + key, spellcheck: "false" });
+		const input = h("input", { type: "text", value: typeof g[key] === "boolean" ? Number(g[key]) : g[key] ?? "", maxlength: max, id: "g-" + key, spellcheck: "false" });
 		const err = h("span", { class: "small ed-err" });
 		input.addEventListener("change", () => {
 			const res = parse(input.value);
@@ -484,6 +484,9 @@ function radioTab() {
 			onOff("totWarnTone", t("editor.general.tot_warn_tone")),
 			onOff("batteryTone", t("editor.general.battery_tone")),
 			onOff("txDenyTone", t("editor.general.tx_deny_tone")),
+			field("emKey", t("editor.general.em_key"), 1, t("editor.general.em_key_help"), areaKey("emKey")),
+			field("emAlert", t("editor.general.em_alert"), 1, t("editor.general.em_alert_help"), areaKey("emAlert")),
+			field("emHold", t("editor.general.em_hold"), 2, t("editor.general.em_hold_help"), areaKey("emHold")),
 			...modeSettingsPart(api(), features())),
 		h("h3", {}, t("editor.sig.title")),
 		h("p", { class: "small muted" }, t("editor.sig.help")),

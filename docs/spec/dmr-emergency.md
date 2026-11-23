@@ -44,7 +44,8 @@ assumption.
 
 ## 3. The emergency key
 
-`dmr_emergency_start()` (UI: hold the emergency key, `ui_svc_emergency(true)`; debug link DMR_DATA op 7). Per the
+`dmr_emergency_start()` (UI: hold the emergency key to the end of its countdown, 5.1, `ui_svc_emergency(true)`;
+debug link DMR_DATA op 7). Per the
 mode:
 
 | Mode | What happens |
@@ -96,6 +97,55 @@ Kept in the settings store (`settings_t em_*`, `settings-store.md` 3); the radio
 The hot mic default (10 s) and keying it at all are owner decisions (`docs/ux/principles.md`: no transmission the
 user didn't ask for; holding the emergency key is that request).
 
+### 5.1 The key's hold
+
+The emergency key (a key map entry or side key whose long action is `ACT_EMERGENCY`) is held to start or cancel, with
+a countdown on the screen. Hold time counts from the press.
+
+| Step | Input layer (`core/input/input_engine.c`) | UI (`core/ui/ui_app.c`, screen `emergency-hold`) |
+|---|---|---|
+| Released before `INPUT_EMERGENCY_SHOW_MS` (0.3 s) | the key's short action (`GESTURE_PRESS`) | the key's own role, no countdown |
+| Held 0.3 s | `GESTURE_LONG` of `ACT_EMERGENCY` (`input_long_threshold`, whatever the long press time) | the countdown under the status strip: an amber banner "HOLD FOR EMERGENCY" (dark text; "HOLD TO CANCEL" in white while ours runs; inverted on 1 bpp) as the title, the seconds left in amber as large as the room allows (the largest font, scaled up by `gfx_text_scaled`, centered between the banner and the bar) with a small "s", a cue "((o)) beep / ~~ vibrate" beside them or on a line over the bar (not when Silent; "vibrate" with a motor and Vibrate on), an amber bar, the target ("Alarm to" / "Call to" and `dst`, else the channel's talk target), "Let go to stop" |
+| Each second of the hold | | `UI_BEEP_COUNTDOWN` and a vibration pulse (`UI_VIBE_CALL`; Settings > Sound > Vibrate applies) |
+| Released before `INPUT_EMERGENCY_PRESS_MS` (1.5 s, or the long press time if longer; `input_press_window`) | `GESTURE_UP`, value 2, of `ACT_EMERGENCY`, then the key's short action (`GESTURE_PRESS`; not on a raw-edge key) | the countdown closes without a trace and the press acts (the next power level); after a 1 s hold that already acted, the UI consumes the paired press before global key actions |
+| Released later, before the end | `GESTURE_UP`, value 1, of `ACT_EMERGENCY` (`input_long_up`) | nothing sent; the previous screen. BACK, long BACK or another screen pushed over the countdown do the same |
+| The end of the hold | | `ui_svc_emergency(true)` (or `false` to cancel); "Emergency" in the status strip, WAITING until the radio task processes the request. The first completed modem alarm transfer shows SENT as large as fits on red (inverted on 1 bpp; the background when Silent), the target under it and "Hold again to cancel", with `UI_BEEP_EM_SENT`, `UI_VIBE_EMERGENCY`, or CANCELED with `UI_BEEP_EM_CANCELED`. Call-only activation displays On. A refused request or exhausted alarm retries with no successful transfer displays FAILED with the error tone. Each outcome stays up 2.5 s or until OK / BACK |
+| After the outcome, while the alarm or the hot mic runs (`ui_svc_emergency_phase()` = `UI_EM_TX`) | | Home's hint row is a red bar (inverted on 1 bpp; Alert Silent: the hint row's colors, no red; hints on or off; a toast goes over it): "EMERGENCY  Back: mic off". BACK on Home: `ui_svc_emergency_mic_off()` (`dmr_emergency_mic_off()`): the hot mic unkeys now, or doesn't key after the alarm; the radio stays in emergency; toast "Mic off: still in emergency" |
+| In emergency until canceled (`UI_EM_ON`) | | the bar says how to end it: "EMERGENCY  Hold <key> to end", naming the key whose long press is `ACT_EMERGENCY` in the key map in use (`ui_svc_key_name_long`, the board's `side_key_names`; Settings > Keys can move it). With no such key (Key off, or no key holds it): "EMERGENCY  Back twice: end"; BACK asks "Back again to end emergency", a second BACK within 1.8 s cancels ("Emergency ended", `UI_BEEP_EM_CANCELED`) |
+| Any phase of our emergency | | the status strip's pill reads EMERG where it would read IDLE, in red (Alert Silent: the idle pill's colors), on every display class and screen; RX, TX and NO TX keep their words |
+| Any phase of our emergency, on a DMR channel | | Home's talk line starts "EMERG→" in red (ink on 1 bpp) instead of the normal target or reply icon, keeping the selected name-first or number-first layout: PTT's call carries the emergency option to the target shown, the emergency target the radio core made the talk target (section 3). On dual watch, while a call comes in on the selected pane, its row shows the caller and the pill says RX, as usual; the bottom bar still says EMERGENCY |
+
+The hold is timed from the UI tick that follows the LONG (the UI task ticks right after each key, `ui.c`), less 0.3 s;
+a release at or past the deadline resolves the hold using the current time, even before the next tick;
+the bar redraws every 250 ms (each redraw holds the bus that some boards' key rows share). A screen that covered the
+countdown stops it, and when that screen closes the countdown goes too. A raw-edge key (monitor press, emergency hold)
+sends its own `GESTURE_UP` and then the emergency's. The beeps are not
+gated by Key tones (the radio core drops only `BEEP_KEY`) and are never `BEEP_EMERGENCY` (someone else's emergency).
+The red LED is the transmit LED of the alarm and the hot mic; there is no LED of its own.
+
+Settings > Keys > Emergency (`UI_SET_EM_*`, shown with `UI_FEAT_EMERGENCY`):
+
+| Setting | Default | Range | Kept in |
+|---|---|---|---|
+| Hold | 3 s | 1-10 s | key 0x000C of the codeplug's settings area |
+| Emergency key | on | on, off (the hold does nothing; the short press keeps its role) | key 0x000A |
+| Alert | beep and vibrate | beep and vibrate, silent (no beep, vibration or red screen) | key 0x000B |
+| Open mic | 10 s | off, 5-60 s | `hot_mic_s` above (`dmr_emergency_set_settings`) |
+
+The page shows the ranges in a dim line under its rows (the list's `footer`).
+
+Hold, Emergency key and Alert are keys of the codeplug settings area ([codeplug-settings.md](codeplug-settings.md) 3),
+so a CPS that carries the area sets them too. An absent or invalid key keeps the radio's own last value, initially
+on, beep and vibrate, and 3 seconds. The UI owns the table in `ui_em_keys.h` and refreshes it at start and when
+`codeplug_kv_serial()` changes. Getters read the accepted controls without reading flash. The settings store keeps
+these controls in `em_key_controls`; a removed key leaves its last value there.
+A menu edit runs `codeplug_keys_store` on the housekeeping task. If the key cannot be written but is absent, the
+radio saves its own copy, including with a foreign codeplug, without asking the Old codeplug question. If the key
+is present and cannot be written, the change is refused and the controls keep the stored value. Factory reset
+resets the radio's own copy; present codeplug keys still hold. The radio core's settings above
+stay in `settings_t em_*`. The target is `dst` as set over the debug link, else the channel's talk target; there is no
+picker on the radio.
+
 ## 6. Observing it
 
 Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst ...`, the newest alert
@@ -112,4 +162,13 @@ Debug link view section `dmr_ext` (`debuglink.md` 3.7): `em.state em.mode em.dst
 - `radioCoreTest` `test_dmr_emergency`: the hot mic keys a call with the option to the talk target, released after
   the hot mic, the user's own calls keep the option until canceled, PTT takes the hot mic over, a set target, an
   emergency call heard raises one alert and one tone, `UI_EV_EMERGENCY`, the UI's key.
+- `inputTest` `test_emergency_hold`: the LONG at 0.3 s for every long press time and the UP at the release, plain and
+  raw-edge keys, one scan either side; a seeded run of random holds (`fuzz.h`).
+- `uiFlowTest` (`flows_em`, every display class, and `em_hold_checks`): 0.29 / 0.3 s, one tick before the end / at
+  the end for every hold 1-10 s, start and cancel, BACK and long BACK, Key off, Silent (no countdown or outcome beeps
+  or vibrations), the settings page; a seeded run of random holds, settings and display classes counting the beeps by
+  kind and the vibrations.
+- `radioCoreTest` `test_emergency_key_settings`: absent/invalid codeplug-key defaults, 1-8-byte values, setter clamps,
+  queued writes and busy rejection, foreign-codeplug radio-owned saves, present-key write refusal, separation from module settings and module-setting
+  persistence. The KV interface is a test double; this test does not prove a flash reload of the keys.
 - HIL (opt-in RF): `tests/hil/test_dmr_emergency.py`, pass criteria in `tests/hil/README.md`.

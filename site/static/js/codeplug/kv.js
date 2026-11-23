@@ -26,6 +26,9 @@ export const KEYS = [
 	{ name: "totWarnTone", key: 0x0004, type: "bool", size: 1, min: 0, max: 1 },
 	{ name: "batteryTone", key: 0x0005, type: "bool", size: 1, min: 0, max: 1 },
 	{ name: "txDenyTone", key: 0x0006, type: "bool", size: 1, min: 0, max: 1 },
+	{ name: "emKey", key: 0x000A, type: "bool", size: 1, min: 0, max: 1 },
+	{ name: "emAlert", key: 0x000B, type: "enum", size: 1, min: 0, max: 1 },
+	{ name: "emHold", key: 0x000C, type: "uint", size: 1, min: 1, max: 10 },
 ];
 export const KEY = Object.fromEntries(KEYS.map((k) => [k.name, k.key]));
 

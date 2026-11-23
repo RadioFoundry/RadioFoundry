@@ -644,6 +644,30 @@ static void test_pass_wait(void)
 // a cut that keeps whole characters (docs/spec/ui.md 2.5, core/ui/cjk_font.h)
 static void test_cjk_text(void)
 {
+	// Scaled outcome text must be the same CJK ink, with every pixel doubled.
+	disp.width = 160;
+	disp.height = 128;
+	disp.bpp = 16;
+	gfx_init(&disp);
+	gfx_clear(0);
+	const font_t *scaled = &font_8x16;
+	const char *sent = "已发送";
+	color_t expected[16][48];
+	CHECK(gfx_text(scaled, 0, 0, sent, 0xFFFF) == 48);
+	unsigned ink = 0;
+	for (int y = 0; y < 16; y++)
+		for (int x = 0; x < 48; x++) {
+			expected[y][x] = gfx_get_pixel(x, y);
+			ink += expected[y][x] != 0;
+		}
+	CHECK(ink > 0);
+	gfx_clear(0);
+	CHECK(gfx_text_scaled(scaled, 0, 0, sent, 2, 0xFFFF) == 96);
+	bool same = true;
+	for (int y = 0; y < 32; y++)
+		for (int x = 0; x < 96; x++)
+			same &= gfx_get_pixel(x, y) == expected[y / 2][x / 2];
+	CHECK(same);
 	const font_t *f = &font_6x12;
 	char buf[24];
 	// E4 BF A1 and E9 81 93: two 3-byte UTF-8 characters

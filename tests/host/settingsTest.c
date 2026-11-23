@@ -573,6 +573,35 @@ static void put_record(const hal_flash_map_t *m, unsigned sector, unsigned slot,
 	memcpy(&sim_flash_data[m->settings_addr + sector * STORAGE_SECTOR + slot * 256u], r, sizeof(r));
 }
 
+static void test_emergency_preview_settings_upgrade(void)
+{
+	// The public countdown preview wrote 392 bytes. Flags at 137 and tries at 138 were shared with the UI.
+	uint8_t old[392] = { 0 };
+	static const struct { uint8_t flags, tries, controls; } cases[] = {
+		{ 0x07, 4, 0 }, { 0x0D, 5, 0x10 }, { 0x12, 0xA3, 0x2A }, { 0x19, 0x52, 0x35 },
+	};
+	for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+		old[137] = cases[i].flags;
+		old[138] = cases[i].tries;
+		sim_flash_create(FLASH_SIZE, &map);
+		put_record(&map, 0, 0, 1, SETTINGS_LAYOUT | (1u << SETTINGS_PAGE_SHIFT),
+			   sizeof(old) - SETTINGS_PAGE_BYTES, old + SETTINGS_PAGE_BYTES, true, true);
+		put_record(&map, 0, 1, 2, SETTINGS_LAYOUT, SETTINGS_PAGE_BYTES, old, true, true);
+		boot();
+		settings_t loaded;
+		settings_read(&loaded);
+		CHECK(loaded.em_key_controls == cases[i].controls);
+		CHECK(loaded.em_flags == (old[137] & 7u) && loaded.em_alarm_tries == (old[138] & 15u));
+
+		settings_begin()->squelch = 5;
+		settings_end(1);
+		CHECK(settings_flush());
+		boot();
+		settings_read(&loaded);
+		CHECK(loaded.em_key_controls == cases[i].controls && loaded.squelch == 5);
+	}
+}
+
 // A set saved before the IP gateway ID was appended (page 1 ended at ds_ip_gateway): it loads with the gateway ID 0,
 // so a radio updated from it drops off-net packets until the owner sets one
 static void test_settings_gateway_upgrade(void)
@@ -925,7 +954,7 @@ static void test_settings_layout(void)
 		{ offsetof(settings_t, t3_stun), 396 },
 		{ offsetof(settings_t, t3_kill), 397 },
 		{ offsetof(settings_t, satellite_index), 398 },
-		{ offsetof(settings_t, reserved10), 399 },
+		{ offsetof(settings_t, em_key_controls), 399 },
 		{ offsetof(settings_t, sig_dmr), 400 },
 		{ offsetof(settings_t, sig_fm), 403 },
 		{ offsetof(settings_t, reserved11), 406 },
@@ -1265,6 +1294,7 @@ int main(void)
 	test_map_end();
 	test_map_for();
 	test_settings_pages();
+	test_emergency_preview_settings_upgrade();
 	test_settings_gateway_upgrade();
 	test_settings_power_levels();
 	test_settings_bad_records();

@@ -22,6 +22,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "input/input.h"
+#include "hal_time.h"
 #include "radio/tones.h"
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE
@@ -35,6 +36,7 @@
 #define UI_STACK_MAX		6
 #define TOAST_MS		1800
 #define VOLUME_MS		3000	// the volume screen closes this long after the last key, the knob's bar after its last turn
+#define EM_DONE_MS		2500	// the emergency hold's outcome stays up this long
 #define ENTRY_TIMEOUT_MS	10000
 #define BANNER_MS		8000
 #define REFRESH_MS		1000
@@ -1127,8 +1129,12 @@ static bool talk_step(int dir)
 }
 #endif
 
+static bool em_back(void);
+
 bool ui_home_key(const input_event_t *ev)
 {
+	if (CONFIG_DMR_EMERGENCY && ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && em_back())
+		return true;
 #if CONFIG_DUAL_WATCH
 	if (ui_dual_home_key(ev))
 		return true;
@@ -1884,6 +1890,10 @@ static void list_draw(const ui_scr_def_t *d)
 	l.empty = tr(d->empty);
 	l.hint = (d->flags & SF_HINT_FN) ? d->hint_fn() : tr(d->hint);
 	l.body = d->body != NULL ? d->body() : NULL;
+	if (d->flags & SF_BODY_FOOTER) {
+		l.footer = l.body;
+		l.body = NULL;
+	}
 	if ((d->flags & SF_FILTER) && filter_keys[0]) {
 		sbuf_t b;
 		sb_init(&b, header, sizeof header);
@@ -1904,6 +1914,21 @@ static void list_draw(const ui_scr_def_t *d)
 	}
 	ui_draw_list(view, &ui_st, &l);
 }
+
+// The emergency key's hold (the functions are below, with emergency_key)
+static struct {
+	uint32_t t0;		// the key went down
+	uint32_t done_at;	// the outcome came up
+	uint32_t id;		// the target shown, 0 none
+	uint16_t step;		// left_ms / REFRESH_FAST_MS last drawn
+	uint8_t hold_s;		// Settings > Keys > Emergency: Hold
+	uint8_t secs;		// the seconds left last signalled
+	uint8_t done;		// DMR_EM_RESULT_*
+	bool key_off, silent;	// ... Key Off, Alert Silent
+	bool holding, cancel, alarm, private_call, drop_press, back_armed;
+	bool timed;		// t0 set (at the first tick after the LONG: the key's time can be a wait old)
+	char name[CODEPLUG_NAME_LEN + 1];
+} em;
 
 // --- the app ---
 
@@ -1935,6 +1960,10 @@ void ui_app_init(void)
 	ev_head = ev_tail = 0;
 	sp = 0;
 	stack[0].scr = SCR_HOME;
+	memset(&em, 0, sizeof em);
+#if CONFIG_DMR_EMERGENCY
+	ui_svc_em_settings_poll(true);
+#endif
 	for (uint8_t id = 0; id < UI_SET_COUNT; id++)
 		ui_svc_apply(id, ui_svc_setting_get(id));
 	static const uint8_t ui_ids[] = { UI_SET_HINTS, UI_SET_LARGE_TEXT, UI_SET_AUTO_LOCK_S, UI_SET_BRIGHTNESS,
@@ -1942,6 +1971,7 @@ void ui_app_init(void)
 					  UI_SET_UPDOWN_HOME, UI_SET_LABEL_FIRST, UI_SET_LOW_BATTERY, UI_SET_AUTO_OFF_MIN, UI_SET_THEME, UI_SET_ACCENT,
 					  UI_SET_STRIP, UI_SET_VIBRATE, UI_SET_VOLUME, UI_SET_LANGUAGE,
 					  UI_SET_KNOB_WHEN_LOCKED,
+					  UI_SET_EM_HOLD_S, UI_SET_EM_KEY, UI_SET_EM_ALERT,
 #if CONFIG_DUAL_WATCH
 					  UI_SET_DUAL_TALK_BACK,
 #endif
@@ -2017,6 +2047,9 @@ void ui_apply_setting(uint8_t id, int32_t v)
 		break;
 	case UI_SET_MESSAGE_TONE: ui_st.message_tone = v != 0; break;
 	case UI_SET_VIBRATE: ui_st.vibrate = v != 0; break;
+	case UI_SET_EM_HOLD_S: em.hold_s = (uint8_t)(v >= 1 && v <= UI_EM_HOLD_MAX_S ? v : UI_EM_HOLD_DEFAULT_S); break;
+	case UI_SET_EM_KEY: em.key_off = v == 0; break;
+	case UI_SET_EM_ALERT: em.silent = v == UI_EM_ALERT_SILENT; break;
 #if CONFIG_DUAL_WATCH
 	case UI_SET_DUAL_TALK_BACK: ui_st.dual.talk_back = v != 0; break;
 #endif
@@ -2057,22 +2090,246 @@ void ui_apply_setting(uint8_t id, int32_t v)
 
 bool ui_app_key_while_dark(const input_event_t *ev)
 {
-	// PTT and Monitor are live keys; Emergency sends only its long press, so a dark screen must not eat it
+	// PTT and Monitor are live keys; the emergency hold also needs its release while the screen is dark
 	return ev->action == ACT_PTT || ev->action == ACT_MONITOR || ev->action == ACT_EMERGENCY;
+}
+
+// --- The emergency key's hold (docs/spec/dmr-emergency.md 5.1). The input layer sends its LONG once the key has been
+// held INPUT_EMERGENCY_SHOW_MS and an UP at the release; the hold counts from the key going down. Letting go, BACK, or
+// another screen over the countdown before its end sends nothing. The functions are noinline: their frames stay out
+// of ui_app_key's and ui_app_tick's, the UI task's deepest paths ---
+
+static void em_stop(void)
+{
+	em.holding = false;
+	em.done = DMR_EM_RESULT_NONE;
+	if (stack[sp].scr == SCR_EM_HOLD)
+		ui_pop();
+	dirty = true;
+}
+
+static void __attribute__((noinline)) em_start(void)
+{
+	em.holding = true;
+	em.done = DMR_EM_RESULT_NONE;
+	em.timed = false;
+	em.cancel = ui_svc_emergency_active();	// the radio core's state: a start over the debug link counts too
+	em.alarm = ui_svc_emergency_target(&em.id, &em.private_call);
+	em.name[0] = 0;
+	if (em.id != 0) {
+		ui_contact_name(em.id, !em.private_call, em.name);
+	} else {
+#if CONFIG_DMR
+		if (view->ch.mode == RADIO_MODE_DMR) {
+			em.id = view->dmr.target_id;
+			em.private_call = view->dmr.target_private;
+			str_copy(em.name, sizeof em.name, view->dmr.target_name);
+		}
+#endif
+	}
+	em.secs = 0xFF;
+	em.step = 0xFFFF;
+	if (stack[sp].scr != SCR_EM_HOLD)
+		ui_push(SCR_EM_HOLD, 0);
+}
+
+static void em_show_result(dmr_emergency_result_t outcome)
+{
+	em.done = outcome;
+	em.done_at = now;
+	dirty = true;
+	if (em.silent || outcome == DMR_EM_RESULT_WAITING || outcome == DMR_EM_RESULT_NONE)
+		return;
+	if (outcome == DMR_EM_RESULT_FAILED) {
+		ui_svc_beep(UI_BEEP_ERROR);
+		return;
+	}
+	bool ended = outcome == DMR_EM_RESULT_CANCELED;
+	ui_svc_beep(ended ? UI_BEEP_EM_CANCELED : UI_BEEP_EM_SENT);
+	vibrate(ended ? UI_VIBE_MESSAGE : UI_VIBE_EMERGENCY);
+}
+
+// At the end of the hold: the request, then the radio task's outcome
+static void __attribute__((noinline)) em_fire(void)
+{
+	bool start = !em.cancel;
+	em.holding = false;
+	if (!ui_svc_emergency(start)) {
+		em_stop();
+		if (!em.silent)
+			ui_svc_beep(UI_BEEP_ERROR);
+		ui_toast(TR(EMERG_WHY_NEEDS_DMR_AND_ID, "Emergency needs a DMR channel and ID"));
+		return;
+	}
+	em_show_result(start ? ui_svc_emergency_result() : DMR_EM_RESULT_CANCELED);
+}
+
+static void __attribute__((noinline)) em_tick(void)
+{
+	if (!CONFIG_DMR_EMERGENCY)
+		return;		// the countdown code leaves the image with it
+	if (stack[sp].scr == SCR_EM_HOLD && !em.holding && em.done == DMR_EM_RESULT_NONE) {
+		ui_pop();	// back on top after a screen that covered it (which stopped it): the previous screen
+		dirty = true;
+		return;
+	}
+	if (em.done != DMR_EM_RESULT_NONE) {
+		if (stack[sp].scr != SCR_EM_HOLD)
+			em.done = DMR_EM_RESULT_NONE;
+		else if (em.done == DMR_EM_RESULT_WAITING) {
+			dmr_emergency_result_t outcome = ui_svc_emergency_result();
+			if (outcome != em.done)
+				em_show_result(outcome);
+		} else if (now - em.done_at >= EM_DONE_MS)
+			em_stop();
+		return;
+	}
+	if (!em.holding)
+		return;
+	if (stack[sp].scr != SCR_EM_HOLD) {	// Home from a long BACK, an alert over it: nothing sent
+		em.holding = false;
+		return;
+	}
+	if (!em.timed) {	// the UI task ticks right after a key, with the time read then (ui.c)
+		em.t0 = now - INPUT_EMERGENCY_SHOW_MS;
+		em.timed = true;
+	}
+	uint32_t left = ui_em_left_ms(now - em.t0, em.hold_s);
+	if (left == 0) {
+		em_fire();
+		return;
+	}
+	uint8_t secs = (uint8_t)((left + 999u) / 1000u);
+	if (secs != em.secs) {	// each second: a tick and a pulse
+		em.secs = secs;
+		dirty = true;
+		if (!em.silent) {
+			ui_svc_beep(UI_BEEP_COUNTDOWN);
+			vibrate(UI_VIBE_CALL);
+		}
+	}
+	// The bar steps at REFRESH_FAST_MS: each redraw holds the bus some boards' key rows share
+	if (left / REFRESH_FAST_MS != em.step) {
+		em.step = (uint16_t)(left / REFRESH_FAST_MS);
+		dirty = true;
+	}
+}
+
+#if CONFIG_DMR_EMERGENCY
+void ui_em_hold_draw(void)
+{
+	ui_em_hold_t h = {
+		.left_ms = (uint16_t)(em.holding ? (em.timed ? ui_em_left_ms(now - em.t0, em.hold_s) : em.hold_s * 1000u) : 0),
+		.hold_ms = (uint16_t)(em.hold_s * 1000u), .cancel = em.cancel, .done = em.done, .alarm = em.alarm,
+		.silent = em.silent, .vibe = CONFIG_VIBRATE && ui_st.vibrate && (ui_svc_features() & UI_FEAT_VIBRATE) != 0,
+		.private_call = em.private_call, .id = em.id, .name = em.name,
+	};
+	ui_draw_em_hold(view, &ui_st, &h);
+}
+
+// BACK stops the countdown (nothing sent) or closes the outcome, as OK does; other keys (the emergency key's own press
+// after a 1 s hold) do nothing here
+bool ui_em_hold_key(const input_event_t *ev)
+{
+	if (ev->gesture == GESTURE_PRESS && (ev->action == ACT_BACK || (ev->action == ACT_SELECT && !em.holding)))
+		em_stop();
+	return true;
+}
+#endif
+
+// Home's emergency bar (ui_state_t.em_bar): what ends the hot mic, or the emergency. The key named is the one whose
+// long press is Emergency now (Settings > Keys can move it); with none (Key off, or no key has it) BACK twice ends it
+static char em_bar_text[64];
+static uint32_t em_back_at;	// the first of the two BACK presses (valid while em.back_armed)
+
+static const char *em_key_name(void)
+{
+	return em.key_off ? NULL : ui_svc_key_name_long(ACT_EMERGENCY);
+}
+
+static void __attribute__((noinline)) em_bar_tick(void)
+{
+	uint8_t ph = ui_svc_emergency_phase();
+	const char *key = ph == UI_EM_ON ? em_key_name() : NULL;
+	char t[sizeof em_bar_text];
+	sbuf_t b;
+	sb_init(&b, t, sizeof t);
+	if (ph == UI_EM_TX) {
+		sb_str(&b, TR(EMERG_BAR_MIC, TEXT_ALT_OPEN "EMERGENCY  Back: mic off" TEXT_ALT_NEXT "EMERG  Back mic off" TEXT_ALT_CLOSE));
+	} else if (ph == UI_EM_ON && key != NULL) {
+		sb_str(&b, TR(EMERG_BAR_HOLD, TEXT_ALT_OPEN "EMERGENCY  Hold" TEXT_ALT_NEXT "EMERG  Hold" TEXT_ALT_CLOSE));
+		sb_str(&b, " ");
+		sb_str(&b, key);
+		sb_str(&b, " ");
+		sb_str(&b, TR(EMERG_TO_END, "to end"));
+	} else if (ph == UI_EM_ON) {
+		sb_str(&b, TR(EMERG_BAR_BACK, TEXT_ALT_OPEN "EMERGENCY  Back twice: end" TEXT_ALT_NEXT "EMERG  Back x2 end" TEXT_ALT_CLOSE));
+	}
+	if (em.back_armed && (ph != UI_EM_ON || now - em_back_at >= TOAST_MS))
+		em.back_armed = false;
+	if (strcmp(t, em_bar_text) != 0) {
+		memcpy(em_bar_text, t, sizeof t);
+		dirty = true;
+	}
+	ui_st.em_bar = em_bar_text[0] ? em_bar_text : NULL;
+	ui_st.em_quiet = em.silent;
+}
+
+// BACK on Home in emergency: the hot mic off (the emergency goes on), or with no key to end it, twice ends it
+static bool __attribute__((noinline)) em_back(void)
+{
+	uint8_t ph = ui_svc_emergency_phase();
+	if (ph == UI_EM_TX) {
+		ui_svc_emergency_mic_off();
+		ui_toast(TR(EMERG_MIC_OFF_STILL_IN_EMERGENCY, "Mic off: still in emergency"));
+		return true;
+	}
+	if (ph != UI_EM_ON || em_key_name() != NULL)
+		return false;
+	if (!em.back_armed || now - em_back_at >= TOAST_MS) {
+		em.back_armed = true;
+		em_back_at = now;
+		ui_toast(TR(EMERG_BACK_AGAIN_TO_END_EMERGENCY, "Back again to end emergency"));
+		return true;
+	}
+	em.back_armed = false;
+	ui_svc_emergency(false);
+	if (!em.silent)
+		ui_svc_beep(UI_BEEP_EM_CANCELED);
+	ui_toast(TR(EMERG_EMERGENCY_ENDED, "Emergency ended"));
+	return true;
 }
 
 static bool emergency_key(const input_event_t *ev)
 {
-	if (ev->action != ACT_EMERGENCY || ev->gesture != GESTURE_LONG)
+	if (em.drop_press) {
+		em.drop_press = false;
+		if (ev->gesture == GESTURE_PRESS)
+			return true;
+	}
+	if (ev->action != ACT_EMERGENCY)
 		return false;
-	bool on = ui_svc_emergency_active();	// the radio core's state: a cancel over the debug link counts too
+	if (ev->gesture == GESTURE_UP) {
+		// Let go: before the end nothing is sent; the outcome stays up. Value 2: early enough to be the key's press,
+		// which follows: the countdown goes without a trace and the press reaches the screen under it. After a short
+		// hold (1 s) that already acted, consume the paired press before global side-key actions.
+		if (em.holding) {
+			now = hal_millis();	// the release's own time: the deadline check and the outcome's start (em_fire)
+			if (em.timed && stack[sp].scr == SCR_EM_HOLD && ui_em_left_ms(now - em.t0, em.hold_s) == 0)
+				em_fire();
+			else
+				em_stop();
+		}
+		em.drop_press = ev->value == 2 && em.done != DMR_EM_RESULT_NONE;
+		return true;
+	}
+	if (ev->gesture != GESTURE_LONG)
+		return false;
 	if (!(ui_svc_features() & UI_FEAT_EMERGENCY)) {
+		ui_svc_beep(UI_BEEP_KEY);
 		ui_toast(TR(WHY_EMERGENCY_NOT_IN_BUILD, "Emergency: not in this build"));
-	} else if (!ui_svc_emergency(!on)) {
-		ui_toast(TR(EMERG_WHY_NEEDS_DMR_AND_ID, "Emergency needs a DMR channel and ID"));
-	} else {
-		ui_toast(!on ? TR(EMERG_TOAST_SENT, "EMERGENCY sent: hold again to cancel") :
-			TR(EMERG_TOAST_CANCELED, "Emergency canceled"));
+	} else if (CONFIG_DMR_EMERGENCY && !em.key_off) {	// Key Off: the hold does nothing
+		em_start();	// the countdown and its first beep come with the next tick
 	}
 	return true;
 }
@@ -2148,10 +2405,10 @@ void ui_app_key(const input_event_t *ev)
 	// may be typing a frequency or a filter
 	if (ptt_held && view->state == RS_TX && ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9)
 		return;
+	if (emergency_key(ev))	// before the key beep: the hold has its own sounds (none when Silent)
+		return;
 	if (ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG)
 		ui_svc_beep(UI_BEEP_KEY);
-	if (emergency_key(ev))
-		return;
 	// Key lock: only long QUICK (and PTT, MONITOR, emergency) get through
 	// Long * locks only from Home (principles 3): in a menu it would lock the keys mid-task, and in text entry a slow *
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
@@ -2514,6 +2771,15 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 		ev_tail = (uint8_t)((ev_tail + 1u) % UI_EVENTS);
 		handle_event(&ev);
 	}
+#if CONFIG_DMR_EMERGENCY
+	// The emergency key's settings are keys of the codeplug's settings area: a CPS, TFTP or debug link write of them
+	// counts without a restart
+	if (ui_svc_em_settings_poll(false)) {
+		for (uint8_t id = UI_SET_EM_HOLD_S; id <= UI_SET_EM_ALERT; id++)
+			ui_apply_setting(id, ui_svc_setting_get(id));
+		dirty = true;	// a row the menu shows: the write lands up to 100 ms after the change
+	}
+#endif
 #if CONFIG_ZONE_WRITE
 	// The codeplug changed (a zone edit's job, an import, a CPS write): the screens holding a zone index follow it when
 	// zones moved (zone_edit.h), a filtered list reads its rows again, so the zone editor's lists show the change, and
@@ -2588,6 +2854,9 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	if (stack[sp].scr == SCR_VOLUME && now - last_key_ms >= VOLUME_MS) {
 		ui_pop();
 	}
+	em_tick();
+	if (CONFIG_DMR_EMERGENCY)
+		em_bar_tick();
 	if (ui_st.banner.kind != UI_BANNER_NONE && !ui_st.banner.hold && (int32_t)(now - ui_st.banner.until_ms) >= 0) {
 		ui_st.banner.kind = UI_BANNER_NONE;
 		dirty = true;

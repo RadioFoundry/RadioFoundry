@@ -644,25 +644,50 @@ msgctxt "SET_TOAST_RX_PAST_BANDS"
 msgid "Receive only. Sensitivity not rated"
 msgstr "仅接收。灵敏度未标定"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
-msgctxt "WHY_EMERGENCY_NOT_IN_BUILD"
-msgid "Emergency: not in this build"
-msgstr "紧急：本版本无"
-
 #: core/ui/ui_app.c
 msgctxt "EMERG_WHY_NEEDS_DMR_AND_ID"
 msgid "Emergency needs a DMR channel and ID"
 msgstr "紧急需 DMR 信道和 ID"
 
 #: core/ui/ui_app.c
-msgctxt "EMERG_TOAST_SENT"
-msgid "EMERGENCY sent: hold again to cancel"
-msgstr "紧急已发：再长按取消"
+msgctxt "EMERG_BAR_MIC"
+msgid "{EMERGENCY  Back: mic off|EMERG  Back mic off}"
+msgstr "{紧急状态  返回键关闭麦克风|紧急  返回关麦}"
 
 #: core/ui/ui_app.c
-msgctxt "EMERG_TOAST_CANCELED"
-msgid "Emergency canceled"
+msgctxt "EMERG_BAR_HOLD"
+msgid "{EMERGENCY  Hold|EMERG  Hold}"
+msgstr "{紧急状态  长按|紧急  长按}"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_TO_END"
+msgid "to end"
+msgstr "结束"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_BAR_BACK"
+msgid "{EMERGENCY  Back twice: end|EMERG  Back x2 end}"
+msgstr "{紧急状态  按两次返回键结束|紧急  返回两次结束}"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_MIC_OFF_STILL_IN_EMERGENCY"
+msgid "Mic off: still in emergency"
+msgstr "麦克风已关闭：仍处于紧急状态"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_BACK_AGAIN_TO_END_EMERGENCY"
+msgid "Back again to end emergency"
+msgstr "再次按返回键结束紧急状态"
+
+#: core/ui/ui_app.c
+msgctxt "EMERG_EMERGENCY_ENDED"
+msgid "Emergency ended"
 msgstr "紧急呼叫已取消"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "WHY_EMERGENCY_NOT_IN_BUILD"
+msgid "Emergency: not in this build"
+msgstr "紧急：本版本无"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_WHY_CALL_BACK_DMR_ONLY"
@@ -4150,6 +4175,36 @@ msgid "Up/Down on Home"
 msgstr "主页上下键"
 
 #: core/ui/ui_menus.c
+msgctxt "EMERG_BEEP_VIBRATE"
+msgid "Beep+vibrate"
+msgstr "提示音和振动"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_SILENT"
+msgid "Silent"
+msgstr "静音"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_HOLD"
+msgid "Hold"
+msgstr "长按"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_EMERGENCY_KEY"
+msgid "Emergency key"
+msgstr "紧急键"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_ALERT"
+msgid "Alert"
+msgstr "提醒"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_OPEN_MIC"
+msgid "Open mic"
+msgstr "自动开麦"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_ROW_DMR_ID_AND_NAME"
 msgid "DMR ID and name"
 msgstr "DMR ID 和名称"
@@ -4408,6 +4463,11 @@ msgstr "当前无 GPS 定位"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
+
+#: core/ui/ui_menus.c
+msgctxt "EMERG_SETTINGS_HINT"
+msgid "Hold 1-10 s, Emergency key On/Off, Alert Beep+vibrate/Silent"
+msgstr "长按1-10秒，紧急键开/关，提醒：提示音和振动/静音"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4730,6 +4790,11 @@ msgid "NO TX"
 msgstr "禁发"
 
 #: core/ui/ui_screens.c
+msgctxt "EMERG_STATE_SHORT"
+msgid "EMERG"
+msgstr "紧急"
+
+#: core/ui/ui_screens.c
 msgctxt "TOP_CHIP_DUAL"
 msgid "DUAL"
 msgstr "双守"
@@ -5033,6 +5098,11 @@ msgstr "发给你的个呼"
 msgctxt "CALL_VALUE_PRIVATE_TO"
 msgid "Private to "
 msgstr "个呼至 "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_TALK_PREFIX"
+msgid "EMERG→ "
+msgstr "紧急→ "
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_SFR_SENDING_ID"
@@ -5453,6 +5523,61 @@ msgstr "OK 确认  返回 隐藏"
 msgctxt "VOL_LABEL_SHORT"
 msgid "Vol"
 msgstr "音量"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_ALARM_TO"
+msgid "Alarm to "
+msgstr "紧急信号至 "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CALL_TO"
+msgid "Call to "
+msgstr "呼叫至 "
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CUE_BEEP"
+msgid "((o)) beep"
+msgstr "((o)) 提示音"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CUE_VIBRATE"
+msgid "~~ vibrate"
+msgstr "~~ 振动"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_SENT"
+msgid "SENT"
+msgstr "已发送"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_STATE_FAILED"
+msgid "FAILED"
+msgstr "失败"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_CANCELED"
+msgid "CANCELED"
+msgstr "已取消"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_TO_CANCEL"
+msgid "HOLD TO CANCEL"
+msgstr "长按取消"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_FOR_EMERGENCY"
+msgid "HOLD FOR EMERGENCY"
+msgstr "长按启动紧急呼叫"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_HOLD_AGAIN_TO_CANCEL"
+msgid "Hold again to cancel"
+msgstr "紧急已发：再长按取消"
+
+#: core/ui/ui_screens.c
+msgctxt "EMERG_LET_GO_TO_STOP"
+msgid "Let go to stop"
+msgstr "松开停止"
 
 #: core/ui/ui_screens.c
 msgctxt "VOL_VALUE_MUTED"
