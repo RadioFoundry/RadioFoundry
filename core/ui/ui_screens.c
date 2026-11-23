@@ -1026,6 +1026,7 @@ static void draw_chips_dmr(const radio_view_t *v, const ui_state_t *s);
 // basic privacy on for DMR. The VFO counts the same way
 bool ui_home_encrypted(const radio_view_t *v)
 {
+#if CONFIG_DMR
 	if (v->ch.mode != RADIO_MODE_DMR)
 		return false;
 #if CONFIG_DMR_AES
@@ -1033,6 +1034,10 @@ bool ui_home_encrypted(const radio_view_t *v)
 		return v->ch.aes_ref != 0;	// no key bound: the radio refuses to transmit there, no lock to promise
 #endif
 	return v->dmr.privacy;
+#else
+	(void)v;	// no DMR: nothing on Home is encrypted
+	return false;
+#endif
 }
 
 // The padlock, hand drawn at three sizes ('#' set): a round-topped shackle, a body with rounded corners and a keyhole
