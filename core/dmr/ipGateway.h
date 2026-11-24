@@ -62,8 +62,8 @@
 #define IPGW_SHARED_RADIO_IP	(IPGW_ALL_CALL_IP - 1)	// the radio on a shared link
 // The radio on this link, whatever its DMR ID or link addressing: TCP to it is the radio's own (the host routes the
 // individual range through the radio, DHCP option 121), so a host that can't know the radio's address or resolve its
-// mDNS name reaches its services (a web page: docs/spec/usb-network.md 1). The shared link's radio address, which
-// no DMR ID maps to on any link
+// mDNS name reaches its services (a web page: docs/spec/usb-network.md 1). Ping is answered; UDP and SCTP get an ICMP
+// error and never go over the air. The shared link's radio address, which no DMR ID maps to on any link
 #define IPGW_ANY_RADIO_IP		IPGW_SHARED_RADIO_IP
 #if IPGW_POINT_TO_POINT
 #define IPGW_BROADCAST_IP		0xFFFFFFFFu
@@ -114,8 +114,9 @@ typedef struct
 	uint32_t fragNeeded;					// ICMP "fragmentation needed" sent back for them (DF set)
 	uint32_t upTooBig;						// packets from the air too long for the link (dropped): another
 											// make's, up to 608 octets of user data (dmr-data.md 12.8)
-	uint32_t portUnreachable;				// UDP from the host to the radio's address on a port no service has
-											// (dropped, an ICMP port unreachable back)
+	uint32_t ownUnreachable;				// from the host to the radio's address or IPGW_ANY_RADIO_IP that no
+											// service took: UDP to an unbound port, SCTP (dropped, an ICMP port or
+											// protocol unreachable back)
 } ipGatewayStats_t;
 void ipGatewayGetStats(ipGatewayStats_t *stats);
 // The octets a host packet (from layer 4 on) takes as the user data of a packet on the air, as the data service will

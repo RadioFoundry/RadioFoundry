@@ -88,7 +88,7 @@ def test_usb_network_own_address(radio):
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
     with usb_network(radio, own_id) as (udp, host_ip, radio_ip):
         before = udp.view(["hotspot", "net_svc"])
-        assert "net_svc.port_unreachable" in before, "firmware without the own-address check"
+        assert "net_svc.unreachable" in before, "firmware without the own-address check"
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             s.bind((host_ip, 0))
@@ -108,6 +108,6 @@ def test_usb_network_own_address(radio):
         time.sleep(0.5)
         after = udp.view(["hotspot", "net_svc"])
     assert refused >= 1, "no ICMP port unreachable back"
-    assert int(after["net_svc.port_unreachable"]) - int(before["net_svc.port_unreachable"]) == 3, after
+    assert int(after["net_svc.unreachable"]) - int(before["net_svc.unreachable"]) == 3, after
     for k in ("net.to_air", "net.to_air_refused"):     # never handed to the air
         assert after[k] == before[k], (k, before, after)

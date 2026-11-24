@@ -43,12 +43,12 @@ void debuglink_view_net(dl_text_t *t)
 
 #if CONFIG_DMR_IP_GATEWAY
 // Not inlined: the stats copy stays off the host task's deepest path (docs/dev/stack-check.md)
-__attribute__((noinline)) static void port_unreachable_line(dl_text_t *t)
+__attribute__((noinline)) static void unreachable_line(dl_text_t *t)
 {
 	ipGatewayStats_t gs;
 
 	ipGatewayGetStats(&gs);
-	dl_text(t, "net_svc.port_unreachable=%u\n", (unsigned)gs.portUnreachable);
+	dl_text(t, "net_svc.unreachable=%u\n", (unsigned)gs.ownUnreachable);
 }
 #endif
 
@@ -56,7 +56,7 @@ __attribute__((noinline)) static void port_unreachable_line(dl_text_t *t)
 void debuglink_view_net_svc(dl_text_t *t)
 {
 #if CONFIG_DMR_IP_GATEWAY
-	port_unreachable_line(t);
+	unreachable_line(t);
 #endif
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_view(t);

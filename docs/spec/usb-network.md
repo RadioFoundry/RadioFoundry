@@ -52,8 +52,9 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   is the radio's own, answered from that address. A page can't know the radio's own address, and a sandboxed browser
   (Flatpak, Snap) resolves no `.local` name. It is reached by the route to the individual range the radio's DHCP
   gives (option 121 / 249, section 5.3), so not from a host that ignores that option or routes the address
-  elsewhere: the tab then shows the browser's error and nothing changes. Only TCP: UDP and ICMP to the address go
-  the way they always did. No DMR ID has it (it is the radio's address on a shared link, section 3.1).
+  elsewhere: the tab then shows the browser's error and nothing changes. TCP is answered, as is ping; UDP and SCTP
+  get an ICMP error and never go over the air (section 3). No DMR ID has it (it is the radio's address on
+  a shared link, section 3.1).
 
   After the job a page sends op 25 (network) over the serial port, or leaves it: a restart, as at the end of a
   firmware update, puts the radio back in network mode when the stored setting is on.
@@ -121,11 +122,13 @@ mode can replace the link pair with a fixed one (5.3).
   the radio's address go to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP
   datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port in the gateway's one table
   (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link.
-  224.0.0.0/24 never goes over the air, bound or not. Nor does the radio's address: UDP from the host to a port
-  there that no service has (and not the serial port 3334) gets an ICMP destination unreachable, port unreachable
-  (RFC 792, RFC 1122 3.2.2.1), from the radio's address, quoting the IP header and 8 octets, counted as
-  `net_svc.port_unreachable`. On a /31 or /32 link that address is also the radio with the host's ID xor 1: the
-  host can't send that radio UDP. TCP there goes to the radio's TCP (a RST for a port the TCP doesn't serve,
+  224.0.0.0/24 never goes over the air, bound or not. Nor does the radio's address, nor 12.255.255.254
+  (`IPGW_ANY_RADIO_IP`, section 2): UDP from the host to a port there that no service has (and not the serial port
+  3334), and SCTP, get an ICMP destination unreachable, port or protocol unreachable (RFC 792, RFC 1122 3.2.2.1),
+  from the radio's address, quoting the IP header and 8 octets, counted as `net_svc.unreachable`. The services
+  answer UDP at the radio's address only, so at 12.255.255.254 every UDP port is unreachable. On a /31 or /32 link
+  the radio's address is also the radio with the host's ID xor 1: the host can't send that radio UDP or SCTP.
+  TCP there goes to the radio's TCP (a RST for a port the TCP doesn't serve,
   `tcp-services.md` 2), or is dropped without `CONFIG_NET_TCP`.
   A port bound with `ipGatewayUdpBindAir` also takes UDP received
   over the air for our own DMR ID and its address (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the

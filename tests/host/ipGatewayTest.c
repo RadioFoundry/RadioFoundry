@@ -831,12 +831,12 @@ static void boundHandler(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t 
 	bound.length = length;
 }
 
-static int portUnreachableCount(void)
+static int unreachableCount(void)
 {
 	ipGatewayStats_t st;
 
 	ipGatewayGetStats(&st);
-	return (int)st.portUnreachable;
+	return (int)st.ownUnreachable;
 }
 
 // UDP to the radio's own address on a port no service has never goes over the air (on a /31 or /32 that address is
@@ -846,11 +846,11 @@ static void testOwnAddress(void)
 {
 	uint8_t f[200];
 	const uint8_t req[] = { 's', 'e', 'l', 'e', 'c', 't' };
-	int airCalls = air.calls, rawCalls = raw.calls, count = portUnreachableCount();
+	int airCalls = air.calls, rawCalls = raw.calls, count = unreachableCount();
 
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));// a service this build left out
 	CHECK(air.calls == airCalls && framesSent == 1 && isUnreachable(f, 3, 0));
-	CHECK(portUnreachableCount() == count + 1);
+	CHECK(unreachableCount() == count + 1);
 	int n = hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 9, req, sizeof(req));// without DF: the same
 	f[20] = 0; fixIpChecksum(f, n);
 	in(f, n);
@@ -858,16 +858,16 @@ static void testOwnAddress(void)
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4001, req, sizeof(req)));// a DMR application port
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, IPGW_RAW_PORT, req, sizeof(req)));// raw data
 	CHECK(air.calls == airCalls && raw.calls == rawCalls && framesSent == 1 && isUnreachable(f, 3, 0));
-	CHECK(portUnreachableCount() == count + 4);
+	CHECK(unreachableCount() == count + 4);
 	in(f, hostUdp(f, GW_MAC, HOST_IP + 2, RADIO_IP, 50000, 4191, req, sizeof(req)));// not from the host: silent
-	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 4);
+	CHECK(air.calls == airCalls && framesSent == 0 && unreachableCount() == count + 4);
 
 	// Bound: the service gets it, nothing goes back from the gateway or over the air
 	CHECK(ipGatewayUdpBind(4191, boundHandler));
 	bound.calls = 0;
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));
 	CHECK(bound.calls == 1 && bound.dstPort == 4191 && bound.length == sizeof(req));
-	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 4);
+	CHECK(air.calls == airCalls && framesSent == 0 && unreachableCount() == count + 4);
 	CHECK(ipGatewayUdpBind(4191, NULL));
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));// unbound again
 	CHECK(bound.calls == 1 && air.calls == airCalls && framesSent == 1 && isUnreachable(f, 3, 0));
@@ -879,7 +879,39 @@ static void testOwnAddress(void)
 
 	// Link local multicast, bound or not: never over the air, nothing back
 	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_LOCAL_MULTICAST | 251, 5353, 5353, req, sizeof(req)));
-	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 5);
+	CHECK(air.calls == airCalls && framesSent == 0 && unreachableCount() == count + 5);
+
+	// SCTP to the radio: an ICMP protocol unreachable, never over the air
+	uint8_t sctp[16] = { 0x13, 0x88, 0x13, 0x88, 0, 0, 0, 0 };
+	sctpChecksum(sctp, sizeof(sctp));
+	in(f, hostIp(f, GW_MAC, HOST_IP, RADIO_IP, 132, sctp, sizeof(sctp)));
+	CHECK(air.calls == airCalls && framesSent == 1 && isUnreachable(f, 2, 0) && unreachableCount() == count + 6);
+
+	// The address every radio answers TCP on (IPGW_ANY_RADIO_IP; on a /31 or /32 also the DMR ID 0xFFFFFE): UDP, bound
+	// port or not, and SCTP never go over the air
+	CHECK(ipGatewayUdpBind(4191, boundHandler));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_ANY_RADIO_IP, 50000, 4191, req, sizeof(req)));
+	if (IPGW_POINT_TO_POINT)
+	{
+		CHECK(air.calls == airCalls && framesSent == 1 && isUnreachable(f, 3, 0) && bound.calls == 1);
+	}
+	else
+	{
+		CHECK(air.calls == airCalls && framesSent == 0 && bound.calls == 2);// the shared link's own address: the service
+	}
+	CHECK(ipGatewayUdpBind(4191, NULL));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_ANY_RADIO_IP, 50000, 4001, req, sizeof(req)));
+	CHECK(air.calls == airCalls && framesSent == 1 && lastFrame[34] == 3 && lastFrame[35] == 3);
+	in(f, hostIp(f, GW_MAC, HOST_IP, IPGW_ANY_RADIO_IP, 132, sctp, sizeof(sctp)));
+	CHECK(air.calls == airCalls && framesSent == 1 && lastFrame[34] == 3 && lastFrame[35] == 2);
+	count += IPGW_POINT_TO_POINT ? 3 : 2;
+	CHECK(unreachableCount() == count + 6);
+	uint8_t echo[8] = { 8, 0, 0, 0, 0x12, 0x34, 0, 1 };
+	uint16_t c = sum16(echo, sizeof(echo), 0);
+	echo[2] = c >> 8; echo[3] = c;
+	in(f, hostIp(f, GW_MAC, HOST_IP, IPGW_ANY_RADIO_IP, 1, echo, sizeof(echo)));// ping: answered from that address
+	CHECK(air.calls == airCalls && framesSent == 1 && lastFrame[23] == 1 && lastFrame[34] == 0 &&
+		  get32(&lastFrame[26]) == IPGW_ANY_RADIO_IP && get32(&lastFrame[30]) == HOST_IP);
 
 	// Every other address as before: another radio, a talkgroup, the all call, the off-net route
 	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 235, 50000, 4191, req, sizeof(req)));
@@ -892,7 +924,7 @@ static void testOwnAddress(void)
 	in(f, hostUdp(f, GW_MAC, HOST_IP, 0xC0A80A05u, 50000, 4191, req, sizeof(req)));// 192.168.10.5, through a gateway
 	CHECK(air.calls == airCalls + 4 && !air.group && air.dst == 9990500 && air.dstIp == 0xC0A80A05u);
 	ipGatewaySetOffNetId(0);
-	CHECK(portUnreachableCount() == count + 5 && raw.calls == rawCalls);
+	CHECK(unreachableCount() == count + 6 && raw.calls == rawCalls);
 	air.calls = airCalls;// the tests after count on from the ones before
 }
 

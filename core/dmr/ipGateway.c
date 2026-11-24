@@ -31,6 +31,7 @@
 #define DMR_APP_PORT_LAST	4099			// chatter (NetBIOS, discovery, LAN sync ...)
 #define DHCP_OPTION_MTU		26				// interface MTU (RFC 2132 5.1)
 #define ICMP_UNREACHABLE	3
+#define ICMP_PROTOCOL_UNREACHABLE	2		// with ICMP_UNREACHABLE (RFC 792, RFC 1122 3.2.2.1)
 #define ICMP_PORT_UNREACHABLE	3			// with ICMP_UNREACHABLE (RFC 792, RFC 1122 3.2.2.1)
 #define ICMP_FRAG_NEEDED	4				// with ICMP_UNREACHABLE, the next-hop MTU in octets 6-7 (RFC 1191)
 #define IP_DF				0x4000
@@ -570,7 +571,10 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	const uint8_t *l4 = &ip[ihl];
 	int l4Length = total - ihl;
 
-	if ((ip[9] == IP_PROTO_ICMP) && (dst == ipGatewayRadioIP()) && (dst != 0))
+	// The radio itself: its address, or the one every radio has (IPGW_ANY_RADIO_IP, no DMR ID's)
+	bool own = ((dst == ipGatewayRadioIP()) && (dst != 0)) || (dst == IPGW_ANY_RADIO_IP);
+
+	if ((ip[9] == IP_PROTO_ICMP) && own)
 	{
 		handleICMP(frame, ip, l4, l4Length);
 		return;
@@ -621,13 +625,13 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		ipGatewaySerialIn(&l4[8], l4Length - 8);
 		return;
 	}
-	if ((ip[9] == IP_PROTO_UDP) && (dst == ipGatewayRadioIP()) && (dst != 0))
+	if (own && ((ip[9] == IP_PROTO_UDP) || (ip[9] == IP_PROTO_SCTP)))
 	{
-		// The radio's own address, a port no service has: never over the air. On a /31 or /32 that address is also
-		// the radio with the host's ID xor 1, so a port scan or a client sending to a service the build left out
-		// would key the radio
-		stats.portUnreachable++;
-		sendUnreachable(frame, l4Length, ICMP_PORT_UNREACHABLE, 0);
+		// To the radio and no service took the packet: never over the air. On a /31 or /32 the radio's address is
+		// also the radio with the host's ID xor 1, so a port scan or a client sending to a service the build left
+		// out would key the radio
+		stats.ownUnreachable++;
+		sendUnreachable(frame, l4Length, (ip[9] == IP_PROTO_UDP) ? ICMP_PORT_UNREACHABLE : ICMP_PROTOCOL_UNREACHABLE, 0);
 		return;
 	}
 
