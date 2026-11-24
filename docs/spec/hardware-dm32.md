@@ -818,8 +818,8 @@ most 1.2 × the top level's, from 1.5 ms to 0.4 ms before the first symbol; the 
 At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the mean of a burst's first 2 ms
 from its −3 dB point is −0.25 to +0.38 dB from the burst's level from 500 mW to 5 W, and the first burst is within
 0.47 dB of the call's median (bursts spread 0.11 dB at most). The top level is at the cap and creeps: its first 2 ms
-read 0.2-0.9 dB under its level whatever the boost (a longer boost, window 1.58 ms and settle 0.3 ms, moved it 0.2 dB
-and put the lower levels up to 0.7 dB over). The set before (a dead zone at 79.3 % of the low row on UHF, 65 % on VHF) gave every level
+read 0.2-0.9 dB under its level whatever the boost (a longer boost, window 1.58 ms and settle 0.3 ms, moved the top
+level 0.2 dB and put the lower levels up to 0.7 dB over). The set before (a dead zone at 79.3 % of the low row on UHF, 65 % on VHF) gave every level
 under the dead zone one boost, about twice its drive: the two lowest levels came up 1.0-3.0 dB over for their first 2 ms,
 and the middle levels sagged 0.2-0.6 dB. From 470 MHz up the PA loop is fast: the 1 W and 2.5 W levels peak
 1.6-5.0 dB over for a moment, and the adjacent channel power around a burst's start is −30 to −50 dBc (−44 to −65
@@ -1369,8 +1369,8 @@ to 3000 from M to H. Rounded to the nearest count, clamped 0..4095. A radio whos
 every level but the lowest, because the factory calibration puts each radio's rows at the same powers.
 
 - **The lowest level is a fixed drive over the PA's turn-on.** Under a drive of about 805-905 the PA gives nothing;
-  for the next 25-50 counts it comes on and creeps (a key-up there reads 0.3-2 dB under its final power for 130 ms);
-  over that it is stable. The lowest stable output is 0.30-0.46 W on UHF and 0.22-0.60 W on VHF, so 100, 200 and
+  for the next 25-50 counts the PA comes on and creeps (a key-up there reads 0.3-2 dB under its final power for
+  130 ms); over that the output is stable. The lowest stable output is 0.30-0.46 W on UHF and 0.22-0.60 W on VHF, so 100, 200 and
   250 mW are not stable everywhere and the lowest level is 500 mW. The turn-on is at a nearly fixed drive (840-955
   on both bands, 2-3 counts per MHz), while L moves by hundreds of counts over the UHF band (1712 at 400 MHz, 1312 at
   435, 1584 at 452.5): as a place on L the turn-on lands anywhere from 0.55 to 0.70 · L, and the earlier lowest level
@@ -1435,7 +1435,7 @@ Steady FM is −56 to −71 dBc. The FM key-up overshoots 0.4-0.8 dB at 500 mW a
 479.975 MHz, under 0.1 dB elsewhere at the upper levels. The PA loop sets the edges more than the ramp does: on a
 key-up nothing is on air through the crawl, then the carrier comes up from −20 dB to −11 to −4 dB inside 0.5 ms; on a
 key-down the carrier holds about the 500 mW level through the crawl and falls when the drive goes to 0. The loop has
-an offset and slows as the output falls, so it can't follow a drive under about 0.5 W. The 3 ms crawl gave no better
+an offset and slows as the output falls, so the loop can't follow a drive under about 0.5 W. The 3 ms crawl gave no better
 adjacent channel power than a 2 ms ramp from 0.6 · L. Before the ramps (a step of the drive at the key-up, the drive
 and the PA select cut at once at the key-down and a burst's end) the key-down read −25 to −38 dBc.
 

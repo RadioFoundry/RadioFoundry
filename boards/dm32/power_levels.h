@@ -12,6 +12,7 @@
 #include "radio/apc_ramp.h"
 
 #define DM32_POWER_LEVELS	5u
+#define DM32_UHF_FROM_HZ	280000000u	// the PA / LNA band split (8.5): the levels follow it
 
 // The lowest level, 500 mW: a drive over the PA's turn-on, not a place on the rows. Under a drive of about 840-955
 // (both bands) the PA gives nothing or creeps up over tens of milliseconds; that edge moves 2-3 counts per MHz while
@@ -23,7 +24,7 @@
 
 static inline uint16_t dm32_floor_drive(uint32_t hz)
 {
-	if (hz < 280000000u) {
+	if (hz < DM32_UHF_FROM_HZ) {
 		return DM32_FLOOR_VHF;
 	}
 	uint32_t over = hz > 400000000u ? (hz - 400000000u) / 100000u : 0u;	// 0.1 MHz over 400
@@ -42,10 +43,18 @@ static inline uint16_t dm32_level_drive(const bf_cal_power_points_t *rows, uint3
 		return dm32_floor_drive(hz);
 	}
 	uint8_t i = (uint8_t)((level < DM32_POWER_LEVELS ? level : DM32_POWER_LEVELS - 1u) - 1u);
-	if (hz < 280000000u) {
-		return bf_cal_drive_pos(rows, vhf_pos[i]);
-	}
-	return (uint16_t)(((uint32_t)rows->high * uhf_part[i] + 500u) / 1000u);
+	uint16_t floor = dm32_floor_drive(hz);
+	uint16_t drive = hz < DM32_UHF_FROM_HZ ? bf_cal_drive_pos(rows, vhf_pos[i])
+		: (uint16_t)(((uint32_t)rows->high * uhf_part[i] + 500u) / 1000u);
+	return drive > floor ? drive : floor;	// a radio with weak rows: never under the lowest level
+}
+
+// A level's drive at a TX frequency on this radio's held rows (bf_cal_power_held); without calibration every level is
+// the fallback drive (11.3)
+static inline uint16_t dm32_level_drive_at(uint32_t hz, uint8_t level)
+{
+	bf_cal_power_points_t rows;
+	return bf_cal_power_held(hz, &rows) ? dm32_level_drive(&rows, hz, level) : bf_cal_power_level(hz, 0);
 }
 
 // The PA ramps (hardware-dm32.md 11.4): DAC B in two parts on the shared APC ramp's curve, with the PA selected. The

@@ -70,6 +70,12 @@ static void test_order(void)
 		}
 		CHECK(dm32_level_drive(&p, hz[i], DM32_POWER_LEVELS - 1u) == p.high);
 	}
+	// Weak rows (a high row of 2000 at 400 MHz puts 1 W at 836): no level falls under the lowest
+	bf_cal_power_points_t weak = { .low = 900, .mid = 1300, .high = 2000 };
+	for (uint8_t l = 1; l < DM32_POWER_LEVELS; l++) {
+		CHECK(dm32_level_drive(&weak, 400000000u, l) >= dm32_floor_drive(400000000u));
+		CHECK(dm32_level_drive(&weak, 155000000u, l) >= dm32_floor_drive(155000000u));
+	}
 }
 
 // A radio whose PA needs a fifth more drive for each row gets about a fifth more at every level over the lowest
@@ -100,6 +106,7 @@ static void test_scaling(void)
 static void test_ramp(void)
 {
 	static const bf_cal_power_points_t uhf = { .low = 1200, .mid = 1888, .high = 2560 };	// 479.975 MHz, held
+	static const bf_cal_power_points_t vhf = { .low = 1360, .mid = 1840, .high = 3024 };	// 155 MHz, held
 	static const uint16_t parts[2][2] = { { DM32_CRAWL_STEPS, DM32_RISE_STEPS },
 					      { DM32_DMR_CRAWL_STEPS, DM32_DMR_RISE_STEPS } };
 	static const uint32_t hz[3] = { 400025000u, 479975000u, 155000000u };
@@ -107,7 +114,8 @@ static void test_ramp(void)
 	for (uint8_t h = 0; h < 3; h++) {
 		uint16_t fl = dm32_floor_drive(hz[h]);
 		for (uint8_t l = 0; l <= DM32_POWER_LEVELS; l++) {
-			uint16_t d = l < DM32_POWER_LEVELS ? dm32_level_drive(&uhf, hz[h], l) : 700u;
+			const bf_cal_power_points_t *rows = hz[h] >= DM32_UHF_FROM_HZ ? &uhf : &vhf;
+			uint16_t d = l < DM32_POWER_LEVELS ? dm32_level_drive(rows, hz[h], l) : 700u;
 			uint16_t st = dm32_ramp_start(d, fl);
 			CHECK(st < dark[h] && st <= d);
 			for (uint8_t r = 0; r < 2; r++) {
@@ -135,8 +143,9 @@ int main(void)
 	test_ramp();
 	static const uint8_t none[BF_CAL_LEN];
 	bf_cal_set_image(none, false);
-	bf_cal_power_points_t p;
-	CHECK(!bf_cal_power_held(146000000u, &p) && bf_cal_power_level(146000000u, 0) == 1408);
+	for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
+		CHECK(dm32_level_drive_at(146000000u, l) == 1408 && dm32_level_drive_at(440000000u, l) == 1408);
+	}
 	if (failures) {
 		printf("dm32PowerTest: %d failure(s)\n", failures);
 		return 1;

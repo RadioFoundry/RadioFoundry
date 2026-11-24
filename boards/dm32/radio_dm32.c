@@ -20,7 +20,7 @@
 
 #define DAC_C_INIT		0x06E2u
 
-#define UHF_FROM_HZ		280000000u	// PA / LNA band split (8.5)
+#define UHF_FROM_HZ		DM32_UHF_FROM_HZ	// PA / LNA band split (8.5, power_levels.h)
 #define MIC_GAIN_DB		11u		// GCR_ADCL at init (9.1)
 // DMR bursts on the shared RF-burst task (dmr_rfburst.h), timed from the RF TX interrupt (hardware-dm32.md 8.5). The PA
 // keys up from the power cal table (radio/pa_keyup.h): a drive boost sized for the step, then the
@@ -315,7 +315,7 @@ static void burst_off(void)
 // The ramp down 300 us after the last symbol's point, inside the guard (hardware-dm32.md 8.5): the drive and the PA cut
 // at once at the point left the carrier 5 dB down 0.2 ms before the last symbol's end, and 300 us later the carrier
 // holds to the end. The cut at once then fell in 0.03 ms at the top of the UHF band, where the PA loop is fast, so the
-// drive ramps down over 200 us (DM32_DMR_RAMP_*) before the PA goes off
+// drive ramps down over 500 us (DM32_DMR_RISE_STEPS, then DM32_DMR_CRAWL_STEPS) before the PA goes off
 static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = 300 };
 
 static void dmr_tx_end(void);
@@ -510,12 +510,11 @@ static void retune(bool keep)
 // level's. Any task sets it; tx_off clears it
 static volatile uint16_t drive_override;
 
-// A power level's PA drive: its place on this radio's own calibration rows at the TX frequency (power_levels.h,
-// hardware-dm32.md 11.4)
+// A power level's PA drive at the TX frequency: a fixed drive for the lowest, this radio's own calibration rows for
+// the others (power_levels.h, hardware-dm32.md 11.4)
 static uint16_t level_drive(uint32_t hz, uint8_t level)
 {
-	bf_cal_power_points_t rows;
-	return bf_cal_power_held(hz, &rows) ? dm32_level_drive(&rows, hz, level) : bf_cal_power_level(hz, 0);
+	return dm32_level_drive_at(hz, level);
 }
 
 #if CONFIG_DMR
@@ -528,7 +527,8 @@ static void keyup_plan(uint32_t hz)
 		top = v > top ? v : top;
 	}
 	pa_keyup_select(&keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0]);
-	ku = pa_keyup_plan(tx_drive, top, bf_cal_power_pos(hz, BF_CAL_POS_LOW));	// the dead zone's anchor: the low row
+	// The low row: the anchor of a dead zone or an ease (both 0 in keyup_cfg, so unused there)
+	ku = pa_keyup_plan(tx_drive, top, bf_cal_power_pos(hz, BF_CAL_POS_LOW));
 }
 #endif
 
