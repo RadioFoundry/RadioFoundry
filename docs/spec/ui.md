@@ -75,10 +75,12 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
 - Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
-  short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
-  short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
-  becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
-  says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+  short form; a frequency is never shortened. An FM channel's line is its RX frequency and a repeater's offset
+  ("147.060 MHz +600k", no arrow), which drops " MHz", then the offset. While PTT is held (transmitting or refused),
+  and in the VFO, the line is the arrow and the TX frequency. Large-text Home picks the largest font each line fits
+  in, and takes the short form before it would go below the medium font. The short form of a talkgroup is its number
+  ("TG 91 World" becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A
+  contact's ID alone says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
 - While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
   places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
   a digit; OK or # tunes the selected pane.

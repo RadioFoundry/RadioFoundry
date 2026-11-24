@@ -54,7 +54,7 @@ typedef struct {
 	uint32_t rx_repeats;	// good frames whose parameter bits equal the call's previous good frame
 	uint32_t tx_repeats;	// encoded frames whose parameter bits equal the transmission's previous frame
 	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
-	// The mic gain's limiter in the latest transmission (audio/miclimit/miclimit.h): the lowest gain it used, Q8 (the
+	// The mic gain's limiter in the latest transmission (core/dsp/miclimit.h): the lowest gain it used, Q8 (the
 	// set gain when it never cut; 256 at unity, which skips it), and the largest sample the encoder got after the gain
 	uint32_t tx_mic_low_q8;
 	uint32_t tx_enc_peak;
@@ -88,7 +88,7 @@ bool ambeVoiceStreaming(void);
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // Microphone gain for DMR transmissions, Q8 (256 = as the board delivers it): the samples go through a peak limiter
-// (audio/miclimit/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
+// (core/dsp/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
 // a transmission starts at the gain set then and follows a change from its next block. Set through radio_set_mic_gain
 // (radio/mic_gain.h): the Mic gain step where the board doesn't take it, plus the board's hal_radio_t.mic_pcm_db
 void ambeVoiceSetMicGainQ8(uint16_t q8);
