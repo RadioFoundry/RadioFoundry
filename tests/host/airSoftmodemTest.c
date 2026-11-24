@@ -726,6 +726,33 @@ static double run_adapt(const air_profile_t *p, bool lend, uint32_t *nsync)
 	return (double)nerr / ncmp;
 }
 
+// A DCS code (octal) at amplitude a (counts) added to the tap: the Golay(23,12) word (the 9-bit code, then 100,
+// then 11 parity bits), data first and LSB first, sent over and over at 134.4 bit/s through a 300 Hz low-pass, as a
+// transmitter does; inverted when inv
+static void add_dcs(unsigned code, bool inv, double a)
+{
+	uint32_t data = code | 4u << 9, word = data << 11, r = word;
+	int bits[23];
+	double y = 0, k = 1 - exp(-2 * M_PI * 300.0 / 8000);
+
+	for (int i = 22; i >= 11; i--)
+		if (r & (1u << i))
+			r ^= 0xC75u << (i - 11);
+	word |= r & 0x7FFu;
+	for (int i = 0; i < 12; i++)
+		bits[i] = (word >> (11 + i)) & 1;
+	for (int i = 0; i < 11; i++)
+		bits[12 + i] = (word >> i) & 1;
+	for (uint32_t i = 0; i < tap_n; i++) {
+		int b = bits[(uint32_t)(i * 134.4 / 8000) % 23] ^ (inv ? 1 : 0);
+		double v;
+
+		y += k * ((b ? a : -a) - y);
+		v = tap[i] + y;
+		tap[i] = (int16_t)lround(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+	}
+}
+
 // The same with the receiver reset every `every` samples, as lost samples or a new lock do: only the tone found counts
 static void run_adapt_resets(const air_profile_t *p, uint32_t every)
 {
@@ -825,6 +852,33 @@ static void testAdapt(void)
 	run_adapt_resets(&tone, 4000);
 	air_softmodem_adapt_get(&v);
 	CHECK(v.tone_dhz == 1273, "tone found across resets: %u", v.tone_dhz);
+	// DCS 023 at half a level under the signal (about 450 Hz, as repeaters send it): found (its word averaged by its place, any start of it a
+	// codeword), named, taken off the samples: fewer errors than without. Inverted it reads as 047, the code whose
+	// word is 023's inverted, as radios list them. Without DCS nothing locks
+	{
+		air_profile_t dcs = c4fm_like(AIR_RX_DCS);
+
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_dcs(023, false, 0.5 * 1800);
+		e0 = run_adapt(&plain, true, &ns0);
+		e1 = run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		printf("  DCS 023: symbol errors %.2f %% plain, %.2f %% with DCS taken off (code %03o)\n", 100 * e0, 100 * e1,
+		       v.dcs_code & 0x1FFu);
+		CHECK(v.dcs_code == 023 && v.dcs_locks >= 1, "DCS found: %03o, %u locks", v.dcs_code, v.dcs_locks);
+		CHECK(e1 < e0 * 0.6, "DCS taken off: %.4f against %.4f", e1, e0);
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_dcs(023, true, 0.5 * 1800);
+		run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		CHECK(v.dcs_code == 047, "DCS 023 inverted reads as 047: %03o", v.dcs_code);
+		sample_tap(8000, 17, 3600, 2000, 300, 450);
+		add_tone(127.3, 0.4 * 1800);
+		run_adapt(&dcs, true, &ns1);
+		air_softmodem_adapt_get(&v);
+		CHECK(v.dcs_code == 0 && v.dcs_locks == 0, "no DCS, a tone: none locked (%03o, %u)", v.dcs_code, v.dcs_locks);
+	}
+
 	// No tone: none picked, however long (and the same data again and again, as silence repeats, picks none)
 	sample_tap(8000, 17, 3600, 2000, 300, 300);
 	e1 = run_adapt(&both, true, &ns1);

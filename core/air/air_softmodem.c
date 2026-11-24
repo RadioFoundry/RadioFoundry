@@ -304,6 +304,13 @@ static void adapt_reset(air_softmodem_adapt_t *a, bool tone)
 	a->cand = a->sel = TONE_NONE;
 	a->x1 = a->x2 = a->y1 = a->y2 = 0;
 	adapt_view.tone_dhz = 0;
+	memset(a->dcs_avg, 0, sizeof a->dcs_avg);
+	a->dcs_pos = 0;
+	a->dcs_mean = 0;
+	a->dcs_words = a->dcs_bad = 0;
+	a->dcs_lock = false;
+	adapt_view.dcs_code = 0;
+	adapt_view.dcs_amp = 0;
 }
 
 // At open: the tones' filter coefficients for this symbol rate and frame, from the profile
@@ -333,6 +340,8 @@ static void adapt_open(air_softmodem_t *m)
 		// The CIC's droop toward the high tones is weighed in, so the tones compete on what the signal holds
 		a->gain[k] = (uint16_t)(((gs >> 18) + 1) ?: 1);
 	}
+	// DCS: 134.4 bit/s, 8 bins a bit: bins a sample x 65536
+	a->dcs_step = (uint32_t)(((uint64_t)1344u * 8u << 16) / (10u * m->rate_hz));
 	adapt_reset(a, true);
 	m->ad = a;
 	adapt_view.opts = a->opts;
@@ -458,6 +467,155 @@ static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
 		a->n = 0;
 		tone_block(m);
 	}
+}
+
+// ── DCS (AIR_RX_DCS) ──
+// A DCS code is a Golay(23,12) codeword sent over and over at 134.4 bit/s: under the 4FSK, a slow two-level offset
+// whose energy spreads over 0 to 150 Hz, which no notch takes, and which the receiver's level and offset tracking
+// half follows, so the symbols' error doesn't show it either. It shows in the input samples averaged by their place in
+// the word: the word repeats every 171 ms and the 4FSK doesn't, so that average keeps the code's waveform (its level,
+// its edges, its sign) and lets the data and the noise go. Once a word, the average's 23 bits are read (each bit's
+// 8 bins summed, at the bins' offset that gives the most): the code is cyclic, so any word of a code sent over and
+// over is a codeword, whatever its start. A codeword locks, and from then the average comes off every input sample;
+// three words running that aren't codewords end it
+#define DCS_AVG_SHIFT	4		// each bin's average: x += (in - x) / 16 a visit (7.4 visits a word at 8 kHz)
+#define DCS_WORDS_MIN	4		// words averaged before the first read
+#define DCS_BAD_MAX	3
+#define DCS_POS_WRAP	((uint32_t)AIR_ADAPT_DCS_BINS << 16)
+
+static bool golay_codeword(uint32_t w, uint32_t g)
+{
+	for (int i = 22; i >= 11; i--)
+		if (w & (1u << i))
+			w ^= g << (i - 11);
+	return (w & 0x7FFu) == 0;
+}
+
+// A word read in either order is a codeword of the code or of its reciprocal; all zeros or all ones are noise
+static bool dcs_codeword(uint32_t w)
+{
+	return w != 0 && w != 0x7FFFFFu && (golay_codeword(w, 0xC75u) || golay_codeword(w, 0xAE3u));
+}
+
+static uint32_t rot23(uint32_t w, unsigned r)
+{
+	return r ? ((w << r) | (w >> (23 - r))) & 0x7FFFFFu : w;
+}
+
+static uint32_t rev23(uint32_t w)
+{
+	uint32_t r = 0;
+
+	for (unsigned i = 0; i < 23; i++)
+		r |= ((w >> i) & 1u) << (22 - i);
+	return r;
+}
+
+// The standard DCS codes (octal): a codeword read off the average names one of them, whatever its start
+static const uint16_t dcs_codes[104] = {
+	0023, 0025, 0026, 0031, 0032, 0036, 0043, 0047, 0051, 0053, 0054, 0065, 0071,
+	0072, 0073, 0074, 0114, 0115, 0116, 0122, 0125, 0131, 0132, 0134, 0143, 0145,
+	0152, 0155, 0156, 0162, 0165, 0172, 0174, 0205, 0212, 0223, 0225, 0226, 0243,
+	0244, 0245, 0246, 0251, 0252, 0255, 0261, 0263, 0265, 0266, 0271, 0274, 0306,
+	0311, 0315, 0325, 0331, 0332, 0343, 0346, 0351, 0356, 0364, 0365, 0371, 0411,
+	0412, 0413, 0423, 0431, 0432, 0445, 0446, 0452, 0454, 0455, 0462, 0464, 0465,
+	0466, 0503, 0506, 0516, 0523, 0526, 0532, 0546, 0565, 0606, 0612, 0624, 0627,
+	0631, 0632, 0654, 0662, 0664, 0703, 0712, 0723, 0731, 0732, 0734, 0743, 0754,
+};
+
+static bool dcs_standard(uint32_t code)
+{
+	for (unsigned i = 0; i < sizeof dcs_codes / sizeof dcs_codes[0]; i++)
+		if (dcs_codes[i] == code)
+			return true;
+	return false;
+}
+
+// The code's 9 bits (0x8000: inverted) from a codeword read off the average: the start, order and sign whose data
+// bits end in 100, the code's fixed bits, and that is a standard code (several starts of one word end in 100);
+// 0x7FFF none. Once a lock, not a sample
+static uint16_t dcs_code_of(uint32_t w)
+{
+	for (unsigned inv = 0; inv < 2; inv++) {
+		for (unsigned order = 0; order < 2; order++) {
+			uint32_t w0 = inv ? ~w & 0x7FFFFFu : w;
+
+			if (order)
+				w0 = rev23(w0);
+			for (unsigned r = 0; r < 23; r++) {
+				uint32_t c = rot23(w0, r);
+
+				if (golay_codeword(c, 0xC75u) && ((c >> 20) & 7u) == 4u && dcs_standard((c >> 11) & 0x1FFu))
+					return (uint16_t)(((c >> 11) & 0x1FFu) | (inv ? 0x8000u : 0));
+			}
+		}
+	}
+	return 0x7FFF;
+}
+
+// Once a word: the average's mean, its bits, a lock taken or kept
+static void dcs_word(air_softmodem_adapt_t *a)
+{
+	int32_t mean = 0, best_e = -1, best_amp = 0;
+	uint32_t best_w = 0;
+
+	for (unsigned b = 0; b < AIR_ADAPT_DCS_BINS; b++)
+		mean += a->dcs_avg[b];
+	mean /= AIR_ADAPT_DCS_BINS;
+	a->dcs_mean = (int16_t)mean;
+	if (a->dcs_words < DCS_WORDS_MIN) {
+		a->dcs_words++;
+		return;
+	}
+	for (unsigned off = 0; off < 8; off++) {
+		int32_t e = 0;
+		uint32_t w = 0;
+
+		for (unsigned k = 0; k < 23; k++) {
+			int32_t sum = 0;
+
+			for (unsigned j = 0; j < 8; j++)
+				sum += a->dcs_avg[(off + 8 * k + j) % AIR_ADAPT_DCS_BINS] - mean;
+			if (sum > 0)
+				w |= 1u << k;
+			e += sum < 0 ? -sum : sum;
+		}
+		if (e > best_e) {
+			best_e = e;
+			best_w = w;
+			best_amp = e / (23 * 8);
+		}
+	}
+	if (dcs_codeword(best_w)) {
+		a->dcs_bad = 0;
+		if (!a->dcs_lock) {
+			a->dcs_lock = true;
+			adapt_view.dcs_code = dcs_code_of(best_w);
+			adapt_view.dcs_locks++;
+		}
+	} else if (a->dcs_lock && ++a->dcs_bad >= DCS_BAD_MAX) {
+		a->dcs_lock = false;
+		adapt_view.dcs_code = 0;
+	}
+	adapt_view.dcs_amp = (uint16_t)best_amp;
+}
+
+// One input sample: into its bin's average and, locked, the waveform off it (between two bins, a straight line: the
+// difference times the place's top 8 bits stays in 32 bits)
+static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
+{
+	uint32_t b = a->dcs_pos >> 16, b2 = b + 1u < AIR_ADAPT_DCS_BINS ? b + 1u : 0;
+	int32_t avg = a->dcs_avg[b], y = x;
+
+	if (a->dcs_lock)
+		y = x - (avg + ((((int32_t)a->dcs_avg[b2] - avg) * (int32_t)((a->dcs_pos >> 8) & 0xFFu)) >> 8) - a->dcs_mean);
+	a->dcs_avg[b] = (int16_t)(avg + ((x - avg) >> DCS_AVG_SHIFT));
+	a->dcs_pos += a->dcs_step;
+	if (a->dcs_pos >= DCS_POS_WRAP) {
+		a->dcs_pos -= DCS_POS_WRAP;
+		dcs_word(a);
+	}
+	return y;
 }
 
 // The notch on one input sample, once a tone is picked. 32 bits, as the rest of the sample path (6): the samples
@@ -853,6 +1011,8 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 	for (unsigned i = 0; i < n; i++) {
 		int32_t x = samples[i], v;
 #if CONFIG_AIR_RX_ADAPT
+		if (m->ad && (m->ad->opts & AIR_RX_DCS) && !(air_softmodem_adapt_off & AIR_RX_DCS))
+			x = fxp_sat16(dcs_sample(m->ad, x));
 		if (m->ad && m->ad->sel != TONE_NONE && !(air_softmodem_adapt_off & AIR_RX_TONE))
 			x = fxp_sat16(notch(m->ad, x));
 #endif

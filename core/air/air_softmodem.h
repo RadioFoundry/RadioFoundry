@@ -34,6 +34,7 @@ typedef void (*air_softmodem_out_t)(const air_chunk_t *c, void *ctx);
 #define AIR_ADAPT_TONES		50			// the standard CTCSS tones
 #define AIR_ADAPT_PERIOD_MAX	480			// a tone search's frame: the profile's sync spacing, up to this
 #define AIR_ADAPT_DECIM		4			// symbols per tone filter step: 1200 Hz at 4800 symbols/s
+#define AIR_ADAPT_DCS_BINS	184			// the DCS word's waveform: 8 bins a bit, 23 bits
 
 typedef struct {
 	uint8_t opts;				// the profile's options this session runs (AIR_RX_*)
@@ -59,6 +60,13 @@ typedef struct {
 	// The notch on the input samples: b0 b1 b2 a1 a2 x 2^28, its state
 	int32_t nb0, nb1, na1, na2;
 	int32_t x1, x2, y1, y2;
+	// DCS: the input samples averaged by their place in the 23-bit word (it repeats every 171 ms, the 4FSK doesn't),
+	// the place in bins x 65536 and its step a sample, the words seen, the lock, the words against it running
+	int16_t dcs_avg[AIR_ADAPT_DCS_BINS];
+	uint32_t dcs_pos, dcs_step;
+	int16_t dcs_mean;			// the average's mean at the last word: what comes off is the rest
+	uint8_t dcs_words, dcs_bad;
+	bool dcs_lock;
 } air_softmodem_adapt_t;
 
 // What they do now, for the debug link (any task reads it; the modem writes it)
@@ -67,6 +75,9 @@ typedef struct {
 	uint16_t tone_dhz;			// the tone notched, Hz x 10, 0 none
 	int16_t eq_center;			// the equalizer's center tap x 16384
 	uint16_t eq_resets, tone_blocks, tone_picks;
+	uint16_t dcs_code;			// the DCS code taken off (its 9 bits: octal digits), 0 none; 0x8000 inverted
+	uint16_t dcs_amp;			// its amplitude in input counts
+	uint16_t dcs_locks;
 } air_softmodem_adapt_view_t;
 
 // The memory a session's options run in, from the engine that opens it (NULL after it closes): lent before the

@@ -64,6 +64,7 @@ typedef struct {
 // air_profile_t.rx_opts (docs/spec/air-interface.md 6.1)
 #define AIR_RX_EQ		0x01	// an adaptive equalizer on the symbols: inter-symbol interference a repeater adds
 #define AIR_RX_TONE		0x02	// a CTCSS tone found under the signal and notched out of the samples
+#define AIR_RX_DCS		0x04	// a DCS code found under the signal, its waveform learned and taken off the samples
 
 // What a provider answers for a profile (fit). 0 = can't
 enum {

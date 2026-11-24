@@ -16,6 +16,9 @@
 #endif
 #if CONFIG_AIR
 #include "board.h"
+#if CONFIG_AIR_RX_ADAPT
+#include "air/air_softmodem.h"
+#endif
 #endif
 
 void debuglink_view_air(dl_text_t *t)
@@ -30,6 +33,13 @@ void debuglink_view_air(dl_text_t *t)
 			"airp.copy_restarts=%u\n",
 			(unsigned)rc.records, (unsigned)rc.synced, (unsigned)rc.halves, (unsigned)rc.overruns,
 			(unsigned)rc.chunks, (unsigned)rc.copy_restarts);
+		if (board.air->rx_load != NULL) {
+			uint32_t work, span;
+
+			// What receive costs the MCU since the session opened: work / span is the share of the CPU
+			if (board.air->rx_load(&work, &span))
+				dl_text(t, "airp.rx_work_us=%u\nairp.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
+		}
 		if (rc.lost_ms != 0) {
 			dl_text(t, "airp.copy_lost_ms=%u\nairp.copy_lost_regs=%x,%x,%x,%x\n", (unsigned)rc.lost_ms,
 				(unsigned)rc.lost_regs[0], (unsigned)rc.lost_regs[1], (unsigned)rc.lost_regs[2],
@@ -38,6 +48,19 @@ void debuglink_view_air(dl_text_t *t)
 	} else {
 		dl_text(t, "airp.open=0\n");
 	}
+#if CONFIG_AIR_RX_ADAPT
+	{
+		air_softmodem_adapt_view_t v;
+
+		// The soft modem's adaptive receive options (air-interface.md 6.1): which run, the equalizer's center tap
+		// (x 16384), the tone notched (Hz x 10), the DCS code taken off (octal digits as 9 bits, 0x8000 inverted)
+		air_softmodem_adapt_get(&v);
+		dl_text(t, "airx.opts=%u\nairx.off=%u\nairx.eq_center=%d\nairx.eq_resets=%u\nairx.tone_dhz=%u\n"
+			"airx.tone_blocks=%u\nairx.tone_picks=%u\nairx.dcs=%03o\nairx.dcs_inverted=%u\nairx.dcs_amp=%u\n"
+			"airx.dcs_locks=%u\n", v.opts, air_softmodem_adapt_off, v.eq_center, v.eq_resets, v.tone_dhz,
+			v.tone_blocks, v.tone_picks, v.dcs_code & 0x1FFu, (v.dcs_code & 0x8000u) != 0, v.dcs_amp, v.dcs_locks);
+	}
+#endif
 #endif
 #if CONFIG_DMR_AIR_QUEUE
 	airqStats_t q;
