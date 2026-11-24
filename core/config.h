@@ -572,6 +572,9 @@
 #if CONFIG_P25_TRUNK && !CONFIG_P25
 #error "CONFIG_P25_TRUNK needs CONFIG_P25"
 #endif
+#if CONFIG_P25_ROAM && !CONFIG_P25_TRUNK
+#error "CONFIG_P25_ROAM needs CONFIG_P25_TRUNK"
+#endif
 #if CONFIG_NXDN && !CONFIG_DMR
 #error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"
 #endif
