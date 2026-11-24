@@ -3,19 +3,22 @@
 """USB network personality (opt-in: --allow-usb-switch; firmware built with CONFIG_DMR_IP_GATEWAY): the radio
 re-enumerates as a CDC-NCM adapter, gives the host its address by DHCP (12.<DMR ID>), answers ping at the host's
 address xor 1, and its debug link answers over UDP port 3334 there; then it switches back to the serial port.
+test_usb_network_own_address: UDP to the radio's address on a port no service has gets an ICMP port unreachable and
+never goes over the air (usb-network.md 3).
 
 Nothing is transmitted (no IP goes to another radio). Needs the host to bring the adapter up with DHCP (macOS and
 Linux do by default); on a cold first plug macOS may take up to 10 s. If the host never configures the adapter, the
 radio falls back to serial after 10 s (firmware from 5a13814 on; older firmware stays a network adapter until it is
 powered off and on)."""
 import ipaddress
+import socket
 import subprocess
 import sys
 import time
 
 import pytest
 
-from rfoundry_hil import DebugLink, DebugLinkError, skip
+from rfoundry_hil import DebugLink, DebugLinkError, skip, usb_network
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
 
@@ -70,3 +73,41 @@ def test_usb_network_roundtrip(radio):
                 again.close()
             assert radio.serial_back(20), "the radio didn't come back as a serial port"
     assert radio.view(["hotspot"]).get("usb.network") == "0"
+
+
+UNBOUND_PORT = 9        # discard: no radio service binds it
+
+
+@pytest.mark.feature("usb_network")
+@pytest.mark.usb_switch
+def test_usb_network_own_address(radio):
+    feats = radio.features()
+    if "DMR_IP_GATEWAY" not in feats or "USB_NETWORK" not in feats:
+        skip("not_built", "built without CONFIG_DMR_IP_GATEWAY or CONFIG_USB_NETWORK")
+    own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
+    assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
+    with usb_network(radio, own_id) as (udp, host_ip, radio_ip):
+        before = udp.view(["hotspot", "net_svc"])
+        assert "net_svc.port_unreachable" in before, "firmware without the own-address check"
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.bind((host_ip, 0))
+            s.connect((radio_ip, UNBOUND_PORT))
+            s.settimeout(2.0)
+            refused = 0
+            for _ in range(3):
+                s.send(b"probe")
+                try:
+                    s.recv(64)
+                except ConnectionRefusedError:      # the ICMP port unreachable, on a connected socket
+                    refused += 1
+                except socket.timeout:
+                    pass
+        finally:
+            s.close()
+        time.sleep(0.5)
+        after = udp.view(["hotspot", "net_svc"])
+    assert refused >= 1, "no ICMP port unreachable back"
+    assert int(after["net_svc.port_unreachable"]) - int(before["net_svc.port_unreachable"]) == 3, after
+    for k in ("net.to_air", "net.to_air_refused"):     # never handed to the air
+        assert after[k] == before[k], (k, before, after)
