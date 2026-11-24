@@ -469,7 +469,7 @@ typedef struct {
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
 	uint8_t hs_power;	// the board power level the hotspot keys, while hotspot
 	// Scan (CONFIG_SCAN; all 0 otherwise)
-	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
+	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch, 4 scan list
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
 	uint8_t scan_skipped;	// nuisance-deleted stops
 	uint16_t scan_probes;	// this scan: stops probed (a carrier at the end of the dwell)
@@ -673,10 +673,13 @@ void radio_req_dmr_privacy(uint8_t type, uint16_t key);
 // and zone position pos. Stop stays where the scan is, cancel goes back to where it started. Nuisance leaves the
 // current stop out until the scan ends and moves on. Any channel, zone or VFO change, PTT, or hotspot mode stops it
 // (dual watch: PTT doesn't, and a change starts from the selected channel; radio_req_dual)
-typedef enum { RSCAN_STOP, RSCAN_ZONE, RSCAN_VFO, RSCAN_DUAL, RSCAN_CANCEL, RSCAN_NUISANCE, RSCAN_TOGGLE } radio_scan_cmd_t;
+typedef enum { RSCAN_STOP, RSCAN_ZONE, RSCAN_VFO, RSCAN_DUAL, RSCAN_CANCEL, RSCAN_NUISANCE, RSCAN_TOGGLE, RSCAN_LIST } radio_scan_cmd_t;
 void radio_req_scan(uint8_t cmd);		// radio_scan_cmd_t; TOGGLE: stop if scanning, else zone (or VFO in the VFO)
 void radio_req_scan_vfo(uint32_t lo_hz, uint32_t hi_hz);
 void radio_req_scan_dual(uint16_t pos);		// the current channel (selected) and zone position pos
+// Scan the stored scan list in slot (CONFIG_SCAN_LIST, core/codeplug/scan_list.h): from a zone channel, with at least two
+// of its channels in a zone. Ignored otherwise. Cancel (RSCAN_CANCEL) goes back to the channel it started from
+void radio_req_scan_list(uint16_t slot);
 // Dual watch (CONFIG_DUAL_WATCH; docs/spec/radio-features.md 2.1): the receiver alternates between two channels, each
 // a channel of any zone or the VFO (its own settings). ref[sel] is the selected one: PTT retunes to it, transmits,
 // and the watch goes on after. Asking again with the same pair only changes the selection. NULL: stop on the

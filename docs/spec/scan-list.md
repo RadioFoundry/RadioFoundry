@@ -4,9 +4,11 @@
 # Scan lists
 
 Named lists of channels from any zone, scanned without switching zones. This page is the stored list: its record, its
-area in the flash and the calls that read and write it. The scan that walks a list, and the menus that edit one, are
-not built yet (section 6). Code: `core/codeplug/scan_list.c`, switch `CONFIG_SCAN_LIST`
-([build-config.md](../build-config.md)). Test: `tests/host/scanListTest.c`.
+area in the flash and the calls that read and write it (sections 1 to 5), then the scan that walks a list (6) and the
+screens that edit one (7). Code: `core/codeplug/scan_list.c`, the scan in `core/radio/radio_sm.c`, the screens in
+`core/ui/ui_scanlist.c` and `core/ui/ui_svc_scanlist.c`; switch `CONFIG_SCAN_LIST` ([build-config.md](../build-config.md)).
+Tests: `tests/host/scanListTest.c` (the store), `tests/host/radioCoreTest.c` (the scan), `tests/host/uiFlowTest.c` (the
+screens).
 
 | Section | Contents |
 |---|---|
@@ -15,7 +17,9 @@ not built yet (section 6). Code: `core/codeplug/scan_list.c`, switch `CONFIG_SCA
 | 3 | The record |
 | 4 | Calls |
 | 5 | Safety |
-| 6 | Not built yet |
+| 6 | The scan |
+| 7 | The screens |
+| 8 | Not built yet |
 
 ## 1. What a scan list is
 
@@ -28,7 +32,7 @@ any zone or in none. A list does not appear among the zones, so choosing one nev
 - A list is named by its slot, the way a zone is by its index. Deleting one frees its slot and the lists after it keep
   their numbers.
 - A channel number the codeplug no longer holds stays in the list. The scan skips it.
-- A channel's skip flag (`scan_skip`) applies to every list, as it does to the zone scan.
+- A channel's skip flag (`scan_skip`) does not apply to a list: a channel put in a list is scanned.
 
 ## 2. The area
 
@@ -91,8 +95,31 @@ hands it to the housekeeping task.
   satellite area: a sector whose slots are all free or ours is not touched.
 - **No RAM copy.** A list is read from flash when asked for.
 
-## 6. Not built yet
+## 6. The scan
 
-- The scan: starting one on a list, and the view following each channel's zone as dual watch does.
-- The menus: create, name, add channel, remove, rename and delete a list, and starting its scan.
-- The Codeplug Editor and qdmr do not see the lists.
+`radio_req_scan_list(slot)` (`RSCAN_LIST`) starts the list in `slot`; the view's `scan` is 4. It uses the zone scan's
+dwell, probe, hold and resume rules ([radio-features.md](radio-features.md) 2), `scan_stop` and CANCEL included.
+
+- **Stops.** When the scan starts the radio finds each list channel's zone once: the zone in use first, then the others in
+  order. A channel in no zone, or no longer in the codeplug, is left out of the scan (it stays in the list). The scan
+  starts only with at least two stops, from a channel (not the VFO); otherwise the request does nothing.
+- **Order.** The list's own order, from its first channel. There is no priority revisit: a list has no start channel.
+- **The view.** Each stop tunes as a zone change plus a channel change does, so the view's zone, position and channel
+  number are the stop's and agree with each other. Dual watch tunes across zones the same way.
+- **Cancel** goes back to the channel the scan started from, in its zone.
+- **Nuisance delete** leaves the stop out until the scan ends.
+- **The codeplug changes** (any write, an import): the scan stops where it is, because its stops are zone positions found
+  at the start.
+- A stop that can't be read when its turn comes (the codeplug changed under it) is left out for the rest of the scan.
+
+## 7. The screens
+
+Tools > Scan opens "Scan" when the radio has a usable area; without one it starts the zone scan as it always did.
+All of them are in `core/ui/ui_scanlist.c`; a write is a job for the housekeeping task (`ui_svc_scanlist_*`), one at a time,
+so a second change while one is saving says "Busy saving: try again". [ui.md](ui.md) 2.7 has the screens.
+
+## 8. Not built yet
+
+- The Codeplug Editor and qdmr do not see the lists, and a codeplug backup does not carry them.
+- Moving a channel up or down inside a list, and sharing a list.
+- A scan list from the VFO.

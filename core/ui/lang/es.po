@@ -92,7 +92,7 @@ msgctxt "ABOUT_VALUE_HWOPT_UNSET"
 msgid "not set"
 msgstr "sin definir"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "No"
@@ -407,7 +407,7 @@ msgctxt "VFO_TOAST_BACK_TO_CHANNELS"
 msgid "Back to channels"
 msgstr "Volver a canales"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "WHY_SCAN_NOT_IN_BUILD"
 msgid "Scan: not in this build"
 msgstr "Escaneo: no disponible"
@@ -967,7 +967,7 @@ msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "NMEA por USB"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "VALUE_ON"
 msgid "On"
 msgstr "Sí"
@@ -1287,7 +1287,7 @@ msgctxt "HINT_1_5_PICK_BACK"
 msgid "1-5 pick  Back"
 msgstr "1-5 elegir  Atrás"
 
-#: core/ui/ui_dual.c core/ui/ui_menus.c
+#: core/ui/ui_dual.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "WORD_ZONE"
 msgid "Zone"
 msgstr "Zona"
@@ -1307,7 +1307,7 @@ msgctxt "DUAL_TITLE_ZONE_FOR"
 msgid "Zone for"
 msgstr "Zona para"
 
-#: core/ui/ui_dual.c core/ui/ui_menus.c
+#: core/ui/ui_dual.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_OK_PICK_BACK"
 msgid "OK pick  Back"
 msgstr "OK elegir  Atrás"
@@ -1327,7 +1327,7 @@ msgctxt "TITLE_RECENT"
 msgid "Recent"
 msgstr "Recientes"
 
-#: core/ui/ui_find.c core/ui/ui_menus.c
+#: core/ui/ui_find.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "TITLE_CHANNELS"
 msgid "Channels"
 msgstr "Canales"
@@ -1812,7 +1812,7 @@ msgctxt "MSG_ROW_CALL"
 msgid "Call"
 msgstr "Llamar"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "MSG_ROW_DELETE"
 msgid "Delete"
 msgstr "Borrar"
@@ -1917,7 +1917,7 @@ msgctxt "TOAST_CANT_SAVE_NOW"
 msgid "Couldn't save now: try again"
 msgstr "No se pudo guardar: reintenta"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_ADD_CHANNEL"
 msgid "Add channel"
 msgstr "Añadir canal"
@@ -2007,7 +2007,7 @@ msgctxt "SHARE_ROW_REJECT"
 msgid "Reject"
 msgstr "Rechazar"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "TOAST_BUSY_SAVING"
 msgid "Busy saving: try again"
 msgstr "Todavía guardando: reintenta"
@@ -2322,7 +2322,7 @@ msgctxt "CHAN_LABEL_TX_TIMEOUT"
 msgid "TX time-out"
 msgstr "Límite TX"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "WORD_SCAN"
 msgid "Scan"
 msgstr "Escanear"
@@ -2662,7 +2662,7 @@ msgctxt "ZONE_TITLE_ADD_CHANNEL"
 msgid "Add Channel"
 msgstr "Añadir canal"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_HINT_ADD_CHANNEL"
 msgid "{OK add  0-9 find  Back|OK add  Back}"
 msgstr "{OK añadir  0-9 buscar  Atrás|OK añadir  Atrás}"
@@ -2677,7 +2677,7 @@ msgctxt "ZONE_VALUE_IN"
 msgid "In"
 msgstr "Sí"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_RENAME"
 msgid "Rename"
 msgstr "Renombrar"
@@ -2697,7 +2697,7 @@ msgctxt "ZONE_TOAST_RENAMED"
 msgid "Renamed"
 msgstr "Renombrada"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_TOAST_ADDED"
 msgid "Added "
 msgstr "Añadida "
@@ -2727,22 +2727,22 @@ msgctxt "HINT_1_4_PICK_BACK"
 msgid "1-4 pick  Back"
 msgstr "1-4 elegir  Atrás"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_1_3_PICK_BACK"
 msgid "1-3 pick  Back"
 msgstr "1-3 elegir  Atrás"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_KEEP"
 msgid "No, keep it"
 msgstr "No, conservar"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_CONFIRM_DELETE"
 msgid "Yes, delete"
 msgstr "Sí, borrar"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_TOAST_DELETED"
 msgid "Deleted "
 msgstr "Borrada "
@@ -2762,7 +2762,7 @@ msgctxt "ZONE_TITLE_DELETE"
 msgid "Delete Zone"
 msgstr "Borrar zona"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_OK_CHOOSE_BACK_CANCELS"
 msgid "OK choose  Back cancel"
 msgstr "OK elegir  Atrás cancelar"
@@ -4736,6 +4736,96 @@ msgstr "Seguimiento no detenido"
 msgctxt "SATELLITE_TOAST_STOPPED"
 msgid "Tracking stopped"
 msgstr "Seguimiento detenido"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_SCAN_BAND"
+msgid "Scan band"
+msgstr "Escanear banda"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_SCAN_ZONE"
+msgid "Scan zone"
+msgstr "Escanear zona"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_NEW"
+msgid "New scan list"
+msgstr "Nueva lista de escaneo"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_UNIT_CH"
+msgid "ch"
+msgstr "can."
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_LEAVE_VFO"
+msgid "Leave the VFO first"
+msgstr "Sal del VFO primero"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_NEEDS_TWO_CHANNELS"
+msgid "Add two channels first"
+msgstr "Añade dos canales primero"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_HINT_LISTS"
+msgid "OK scan  # options  Back"
+msgstr "OK escanear  # opciones  Atrás"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_EDIT_CHANNELS"
+msgid "Edit channels"
+msgstr "Editar canales"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_RENAMED"
+msgid "Renamed "
+msgstr "Renombrada "
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TITLE"
+msgid "Scan list"
+msgstr "Lista de escaneo"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_BODY_DELETE_ASK"
+msgid "Delete this scan list? Its channels stay in their zones."
+msgstr "¿Borrar esta lista de escaneo? Sus canales siguen en sus zonas."
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_VALUE_MISSING"
+msgid "Missing"
+msgstr "Falta"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_FULL"
+msgid "The list is full"
+msgstr "La lista está llena"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_REMOVED"
+msgid "Removed"
+msgstr "Quitado"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_HINT_CHANNELS"
+msgid "OK remove  Back"
+msgstr "OK quitar  Atrás"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_VALUE_IN_LIST"
+msgid "In list"
+msgstr "En lista"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TITLE_ADD_TO"
+msgid "Add to"
+msgstr "Añadir a"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_SCANNING"
+msgid "Scanning "
+msgstr "Escaneando "
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"

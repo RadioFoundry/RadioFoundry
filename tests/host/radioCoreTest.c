@@ -28,6 +28,7 @@
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug_kv.h"
+#include "codeplug/scan_list.h"
 #include "dmr/dmrPrivacy.h"
 #include "dmr/dmrAes.h"
 #include "dmr/dmrData.h"
@@ -4181,6 +4182,7 @@ void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
 #endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
+void radio_req_scan_list(uint16_t slot) { (void)slot; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
 void radio_req_zone(uint16_t index) { req(RREQ_ZONE, index); }
 void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
@@ -4339,6 +4341,123 @@ bool codeplug_delete_zone(uint16_t i)
 
 static int job_runs;
 static void test_job(void *ctx) { (void)ctx; job_runs++; }
+
+#if CONFIG_SCAN_LIST
+// A scan list across zones (the store itself is scanListTest's): the slot the radio asks for, answered from here
+static scan_list_t fake_list;
+static bool fake_list_ok;
+bool scan_list_read(uint16_t slot, scan_list_t *out)
+{
+	if (slot != 3 || !fake_list_ok) {
+		return false;
+	}
+	*out = fake_list;
+	return true;
+}
+
+static void list_set(const char *name, unsigned n, const uint16_t *channels)
+{
+	memset(&fake_list, 0, sizeof fake_list);
+	strcpy(fake_list.name, name);
+	fake_list.count = (uint8_t)n;
+	memcpy(fake_list.channels, channels, n * sizeof(uint16_t));
+	fake_list_ok = true;
+}
+
+static void list_req(uint16_t slot)
+{
+	radio_req_t r = { RREQ_SCAN, RSCAN_LIST, slot };
+	radio_sm_request(&sm, &r, now);
+}
+
+// Channels of three zones in one scan: the view follows each stop's zone, a channel in no zone is left out, a cancel goes
+// back to the start channel, and a list with fewer than two channels in zones never starts
+static void test_scan_list(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	CHECK(sm.view.zone_index == 0 && sm.view.zone_pos == 0 && sm.view.scan == SCAN_OFF);
+
+	const uint16_t mix[] = { 8, 2, 99, 6 };	// Tones, Local, none, Two
+	list_set("Mix", 4, mix);
+	list_req(3);
+	CHECK(sm.view.scan == SCAN_LIST && sm.scan.kind == SCAN_LIST);
+	CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 8);	// the list's first stop, in its own zone
+	bool seen[NCH + 1] = { false };
+	for (int i = 0; i < 400 && sm.view.scan == SCAN_LIST; i++) {
+		run(10);
+		seen[sm.view.channel_number] = true;
+		CHECK(sm.view.channel_number != 1 && sm.view.channel_number != 99);
+		CHECK(sm.zone.channels[sm.view.zone_pos] == sm.view.channel_number);	// zone, position and channel agree
+	}
+	CHECK(sm.view.scan == SCAN_LIST && seen[8] && seen[2] && seen[6] && !seen[7]);
+	CHECK(sm.view.zone_index == 0 || sm.view.zone_index == 1 || sm.view.zone_index == 2);
+
+	// A cancel goes back to where it started
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_index == 0 && sm.view.zone_pos == 0 && sm.view.channel_number == 1);
+
+	// A stop is a stop: the scan ends on the channel it was on
+	list_req(3);
+	run(60);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number != 99);
+
+	// Nuisance delete leaves the stop out until the scan ends
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	list_req(3);
+	uint16_t gone = sm.view.channel_number;
+	req(RREQ_SCAN, RSCAN_NUISANCE);
+	CHECK(sm.view.scan == SCAN_LIST && sm.view.channel_number != gone);
+	for (int i = 0; i < 400; i++) {
+		run(10);
+		CHECK(sm.view.channel_number != gone);
+	}
+	req(RREQ_SCAN, RSCAN_CANCEL);
+
+	// Refused: only one of its channels is in a zone, an unreadable slot, a start from the VFO
+	const uint16_t one[] = { 2, 99, 98 };
+	list_set("One", 3, one);
+	list_req(3);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 1);
+	list_set("Mix", 4, mix);
+	list_req(4);
+	CHECK(sm.view.scan == SCAN_OFF);
+	req(RREQ_VFO, 1);
+	run(50);
+	if (sm.view.vfo) {
+		list_req(3);
+		CHECK(sm.view.scan == SCAN_OFF);
+		req(RREQ_VFO, 0);
+		run(50);
+	}
+
+	// The codeplug changes under it: its stops are zone positions found at the start, so it ends
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	list_req(3);
+	CHECK(sm.view.scan == SCAN_LIST);
+	run(20);
+	cp_serial++;
+	run(100);
+	CHECK(sm.view.scan == SCAN_OFF);
+
+	// PTT on a signal-free stop ends it and goes back to the start channel
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	list_req(3);
+	CHECK(sm.view.scan == SCAN_LIST);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == SCAN_OFF);
+	fake_list_ok = false;
+}
+#endif
 
 #if CONFIG_DUAL_WATCH
 // Dual watch through the UI's service (ui_svc_dual on radio_req_dual): any zone or the VFO; what can't work is refused
@@ -11847,6 +11966,9 @@ int main(void)
 	test_ui_requests();
 	test_ui_glue();
 	test_position();
+#if CONFIG_SCAN_LIST
+	test_scan_list();
+#endif
 #if CONFIG_DUAL_WATCH
 	test_ui_dual();
 	test_dual_two_vfos();

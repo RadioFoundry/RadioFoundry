@@ -18,6 +18,30 @@ A scan needs at least one other channel to go to. It doesn't run in hotspot mode
 
 If dual watch is running, starting a scan stops it. The radio stays on the selected channel and scans from there.
 
+## Scan lists
+
+A scan list is a named set of channels from any of your zones, so you can scan the channels you care about without
+making a zone for them. With scan lists on your radio, **OK**, **6**, **1** opens a list of them; the first row,
+"Scan zone", scans as before.
+
+| Do | To |
+|---|---|
+| **OK** on a list | Scan it. The status line shows SCAN and the radio follows each channel into its own zone |
+| **#** on a list (long **OK** on a radio without **#**) | Edit channels, Rename or Delete it |
+| "New scan list" | Name a list (text entry, as for a zone name) |
+
+In **Edit channels**, "Add channel" shows one zone's channels: **OK** adds a channel or takes it out again, and the
+zone row at the top picks another zone, so a list can hold channels from all of them. **OK** on a channel in the list
+removes it. A list holds up to 80 channels and the radio stores 16 lists.
+
+- A list scans from a channel, not from the VFO, and needs at least two channels that are in a zone. A channel you took
+  out of every zone is skipped, but stays in the list.
+- The list's order is the scan's order. A channel the codeplug marks to skip is scanned if it is in your list.
+- Stopping the scan with **Back** leaves you where it stopped; the scan actions (**#**) work as in any scan, and
+  **Back** or a channel change ends it.
+- Editing the codeplug (or loading one) while a list scan runs ends the scan.
+- Lists are kept in the radio, not in the codeplug: the editor, a codeplug backup and qdmr do not carry them yet.
+
 ## How the scan moves
 
 - The scan visits the zone's channels in order, from the one it started on. It skips empty positions and channels
@@ -48,7 +72,7 @@ The scan actions:
 |---|---|---|
 | 1 | Skip channel for now | Skips the channel until the scan stops ("Skipped until the scan stops") |
 | 2 | Stay here | Stops the scan on this channel |
-| 3 | Always skip | Not built yet. Edit scan lists in qdmr |
+| 3 | Always skip | Not built yet |
 
 A noisy channel takes two presses this way (**#**, then **1**). Set a side key to **Scan skip** in
 [Settings > Keys](17-settings.md), on its press or its long press, and one press does what action 1 does.

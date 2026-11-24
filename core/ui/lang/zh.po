@@ -94,7 +94,7 @@ msgctxt "ABOUT_VALUE_HWOPT_UNSET"
 msgid "not set"
 msgstr "未设置"
 
-#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_screens.c
+#: core/ui/fmt.c core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_satellite.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "VALUE_OFF"
 msgid "Off"
 msgstr "关"
@@ -409,7 +409,7 @@ msgctxt "VFO_TOAST_BACK_TO_CHANNELS"
 msgid "Back to channels"
 msgstr "返回信道"
 
-#: core/ui/ui_app.c core/ui/ui_menus.c
+#: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "WHY_SCAN_NOT_IN_BUILD"
 msgid "Scan: not in this build"
 msgstr "扫描：本版本无"
@@ -969,7 +969,7 @@ msgctxt "APRS_LABEL_NMEA_ON_USB"
 msgid "NMEA on USB"
 msgstr "USB NMEA"
 
-#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_aprs.c core/ui/ui_menus.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "VALUE_ON"
 msgid "On"
 msgstr "开"
@@ -1289,7 +1289,7 @@ msgctxt "HINT_1_5_PICK_BACK"
 msgid "1-5 pick  Back"
 msgstr "1-5 选  返回"
 
-#: core/ui/ui_dual.c core/ui/ui_menus.c
+#: core/ui/ui_dual.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "WORD_ZONE"
 msgid "Zone"
 msgstr "区域"
@@ -1309,7 +1309,7 @@ msgctxt "DUAL_TITLE_ZONE_FOR"
 msgid "Zone for"
 msgstr "区域为"
 
-#: core/ui/ui_dual.c core/ui/ui_menus.c
+#: core/ui/ui_dual.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_OK_PICK_BACK"
 msgid "OK pick  Back"
 msgstr "OK 选  返回"
@@ -1329,7 +1329,7 @@ msgctxt "TITLE_RECENT"
 msgid "Recent"
 msgstr "最近"
 
-#: core/ui/ui_find.c core/ui/ui_menus.c
+#: core/ui/ui_find.c core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "TITLE_CHANNELS"
 msgid "Channels"
 msgstr "信道"
@@ -1814,7 +1814,7 @@ msgctxt "MSG_ROW_CALL"
 msgid "Call"
 msgstr "呼叫"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "MSG_ROW_DELETE"
 msgid "Delete"
 msgstr "删除"
@@ -1919,7 +1919,7 @@ msgctxt "TOAST_CANT_SAVE_NOW"
 msgid "Couldn't save now: try again"
 msgstr "现在无法保存：请重试"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_ADD_CHANNEL"
 msgid "Add channel"
 msgstr "添加信道"
@@ -2009,7 +2009,7 @@ msgctxt "SHARE_ROW_REJECT"
 msgid "Reject"
 msgstr "拒绝"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "TOAST_BUSY_SAVING"
 msgid "Busy saving: try again"
 msgstr "正在保存：请重试"
@@ -2324,7 +2324,7 @@ msgctxt "CHAN_LABEL_TX_TIMEOUT"
 msgid "TX time-out"
 msgstr "发射超时"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c core/ui/ui_screens.c
 msgctxt "WORD_SCAN"
 msgid "Scan"
 msgstr "扫描"
@@ -2664,7 +2664,7 @@ msgctxt "ZONE_TITLE_ADD_CHANNEL"
 msgid "Add Channel"
 msgstr "添加信道"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_HINT_ADD_CHANNEL"
 msgid "{OK add  0-9 find  Back|OK add  Back}"
 msgstr "{OK 添加  0-9 查找  返回|OK 添加  返回}"
@@ -2679,7 +2679,7 @@ msgctxt "ZONE_VALUE_IN"
 msgid "In"
 msgstr "在"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_RENAME"
 msgid "Rename"
 msgstr "重命名"
@@ -2699,7 +2699,7 @@ msgctxt "ZONE_TOAST_RENAMED"
 msgid "Renamed"
 msgstr "已重命名"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_TOAST_ADDED"
 msgid "Added "
 msgstr "已添加 "
@@ -2729,22 +2729,22 @@ msgctxt "HINT_1_4_PICK_BACK"
 msgid "1-4 pick  Back"
 msgstr "1-4 选  返回"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_1_3_PICK_BACK"
 msgid "1-3 pick  Back"
 msgstr "1-3 选  返回"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_KEEP"
 msgid "No, keep it"
 msgstr "否，保留"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_ROW_CONFIRM_DELETE"
 msgid "Yes, delete"
 msgstr "是，删除"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "ZONE_TOAST_DELETED"
 msgid "Deleted "
 msgstr "已删除 "
@@ -2764,7 +2764,7 @@ msgctxt "ZONE_TITLE_DELETE"
 msgid "Delete Zone"
 msgstr "删除区域"
 
-#: core/ui/ui_menus.c
+#: core/ui/ui_menus.c core/ui/ui_scanlist.c
 msgctxt "HINT_OK_CHOOSE_BACK_CANCELS"
 msgid "OK choose  Back cancel"
 msgstr "OK 选  返回取消"
@@ -4738,6 +4738,96 @@ msgstr "跟踪未停止"
 msgctxt "SATELLITE_TOAST_STOPPED"
 msgid "Tracking stopped"
 msgstr "跟踪已停止"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_SCAN_BAND"
+msgid "Scan band"
+msgstr "扫描频段"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_SCAN_ZONE"
+msgid "Scan zone"
+msgstr "扫描区域"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_NEW"
+msgid "New scan list"
+msgstr "新建扫描列表"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_UNIT_CH"
+msgid "ch"
+msgstr "信道"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_LEAVE_VFO"
+msgid "Leave the VFO first"
+msgstr "请先退出VFO"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_NEEDS_TWO_CHANNELS"
+msgid "Add two channels first"
+msgstr "请先添加两个信道"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_HINT_LISTS"
+msgid "OK scan  # options  Back"
+msgstr "OK扫描  #选项  返回"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_ROW_EDIT_CHANNELS"
+msgid "Edit channels"
+msgstr "编辑信道"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_RENAMED"
+msgid "Renamed "
+msgstr "已重命名 "
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TITLE"
+msgid "Scan list"
+msgstr "扫描列表"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_BODY_DELETE_ASK"
+msgid "Delete this scan list? Its channels stay in their zones."
+msgstr "删除此扫描列表？其信道仍留在原区域。"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_VALUE_MISSING"
+msgid "Missing"
+msgstr "缺失"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_WHY_FULL"
+msgid "The list is full"
+msgstr "列表已满"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_REMOVED"
+msgid "Removed"
+msgstr "已移除"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_HINT_CHANNELS"
+msgid "OK remove  Back"
+msgstr "OK移除  返回"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_VALUE_IN_LIST"
+msgid "In list"
+msgstr "在列表中"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TITLE_ADD_TO"
+msgid "Add to"
+msgstr "添加到"
+
+#: core/ui/ui_scanlist.c
+msgctxt "SCANLIST_TOAST_SCANNING"
+msgid "Scanning "
+msgstr "扫描中 "
 
 #: core/ui/ui_screens.c
 msgctxt "TOP_STATE_IDLE"

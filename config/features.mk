@@ -408,6 +408,11 @@ ifneq ($(call feature_on,SCAN_LIST),)
     $(error CONFIG_SCAN_LIST=y needs CONFIG_SCAN=y)
   endif
 endif
+ifneq ($(call feature_on,SCAN_LIST),)
+  ifeq ($(call feature_on,CHANNEL_EDIT),)
+    $(error CONFIG_SCAN_LIST=y needs CONFIG_CHANNEL_EDIT=y: its screens name a list with the text entry)
+  endif
+endif
 ifneq ($(call feature_on,FONT_BIG),)
   ifeq ($(call feature_on,FONT_AA),)
     $(error CONFIG_FONT_BIG=y needs CONFIG_FONT_AA=y)

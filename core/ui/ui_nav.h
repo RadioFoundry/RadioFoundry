@@ -13,6 +13,7 @@
 #include "ui_svc.h"
 #include "i18n.h"
 #include "config.h"	// the switches that shape the types below
+#include "fmt.h"
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
@@ -49,6 +50,9 @@ typedef enum {
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
+	// Tools > Scan with CONFIG_SCAN_LIST (ui_scanlist.c): the lists, a list's options (arg = its slot), its delete
+	// question, its channels, the picker that adds channels (arg = slot) and the zone it lists
+	SCR_SLISTS, SCR_SLOPT, SCR_SLDEL, SCR_SLEDIT, SCR_SLPICK, SCR_SLZONE,
 	SCR_COUNT
 } ui_scr_t;
 
@@ -161,6 +165,15 @@ void ui_apply_setting(uint8_t id, int32_t v);
 void ui_scan_toggle(void);
 void ui_monitor_toggle(void);	// a side key set to Monitor toggle: what quick tile 5 does
 void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
+// A channel row's value (ui_menus.c): its RX frequency and what it talks to; false for a trunked channel whose system
+// isn't set up (the caller dims the row)
+bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch);
+#if CONFIG_SCAN_LIST
+// Scan the stored list in slot (ui_scanlist.c): Home, with a toast naming it
+void ui_scan_list(uint8_t slot, const char *name);
+// The text entry (ui_menus.c) with something to do once the text is kept
+void ui_text_open_done(char *target, uint8_t max, void (*done)(void));
+#endif
 // Actions for the last caller (CONTEXT on Home), or a toast when there is none
 void ui_open_caller_actions(void);
 // A list row's number key ('1'..'9', '0')

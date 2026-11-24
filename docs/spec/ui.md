@@ -107,7 +107,7 @@ into logical actions (`hal_input.h`).
 
 ## 2. Screens and the stack
 
-The stack holds up to 6 frames; Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
+The stack holds up to 8 frames (`UI_STACK_MAX`); Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
 link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the talk target of the focused row, a title,
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
 scrolling, numbered shortcuts (`SF_NUMBERED`: 1-9, then 0 for the 10th row; later rows have none), T9 filtering (`SF_FILTER`), and the long-press target.
@@ -397,6 +397,25 @@ hand-tuned bitmap at that line height: an outline font scaled to 12x12 loses the
 characters (`tools/cjkfont.py`). It needs an advance width and row pitch of its own in `ui_layout_init`, and every
 screen that draws words needs checking at the new pitch. The generated 16x16 face is cropped there and cannot be
 reused, so a board with such a panel keeps `CONFIG_LANG_ZH` unsupported until a face with a suitable license exists.
+
+### 2.7 Scan lists
+
+With `CONFIG_SCAN_LIST` and a usable scan list area ([scan-list.md](scan-list.md) 2), Tools > Scan (`scan-lists`,
+`ui_scanlist.c`; Tools 1) opens the lists; without them it starts the zone scan at once. A list is named and holds up to
+80 channels from any zone; it is scanned without changing zone ([scan-list.md](scan-list.md) 6).
+
+| Screen | Shows |
+|---|---|
+| Scan (`scan-lists`) | Row 0 "Scan zone" ("Scan band" in the VFO) with On or Off: the zone scan as before. Then each stored list with its channel count ("12 ch"), then "New scan list" while there is room. OK on a list scans it (Home, with "Scanning" and its name); "Leave the VFO first" in the VFO, "Add two channels first" under two. `#` (long OK without a CONTEXT key) opens the list's options. "New scan list" opens text entry; the new list appears focused with "Added" and its name |
+| Scan list (`scan-list`) | The options, numbered: 1 Edit channels, 2 Rename (text entry with the name), 3 Delete |
+| Delete (`scan-list-delete`) | "No, keep it" / "Yes, delete" and a line that the channels stay in their zones |
+| Channels (`scan-list-edit`) | "Add channel", then the list's channels as "1 Name" with frequency and talk target; OK removes one ("Removed"). A channel the codeplug no longer has reads "Missing", dim, and OK removes it. A list of 80 says "The list is full" |
+| Add to (`scan-list-add`) | The zone row (OK picks another zone), then that zone's channels. OK adds a channel or takes it out again ("In list" marks them) and stays, so a list takes channels from several zones in a row. Digits filter by name |
+| Zone (`scan-list-zone`) | Every zone; OK returns to the picker on it |
+
+Changes are saved by a job for the housekeeping task, one at a time: a second change before it finishes says "Busy saving:
+try again" and is not made. The stack is 8 deep (`UI_STACK_MAX`): Home, hub, Tools, Scan, the options, Channels, Add to,
+Zone. Only Scan is a field-use screen.
 
 ## 3. Key meanings
 

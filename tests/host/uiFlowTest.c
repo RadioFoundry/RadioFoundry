@@ -331,6 +331,26 @@ static const flow_t flows[] = {
 	{ "11 scan start (Tools > Scan)", "", "ok 6 1", "scanning=1", 3, false },
 	{ "11 nuisance skip", "ok 6 1", "ctx 1", "pos=4 scanning=1", 2, false },
 	{ "11 scan stop", "ok 6 1", "back", "scanning=0", 1, false },
+#if CONFIG_SCAN_LIST
+	// Scan lists (docs/spec/ui.md 2.7): Tools > Scan opens the lists once the radio has the area; the zone scan is its first row
+	{ "11 scan lists: Tools > Scan opens the lists", "scanlists:seed", "ok 6 1", "screen=scan-lists", 3, false },
+	{ "11 scan lists: the first row scans the zone", "scanlists:seed", "ok 6 1 ok", "scanning=1 listscan=-1 screen=home", 4, false },
+	{ "11 scan lists: OK on a list scans it", "scanlists:seed", "ok 6 1 down ok", "listscan=0 scanning=1 screen=home toast=Scanning_Mix", 5, false },
+	{ "11 scan lists: Back stops it", "scanlists:seed ok 6 1 down ok", "back", "scanning=0", 1, false },
+	{ "11 scan lists: a list of no channels says so", "scanlists:seed", "ok 6 1 down down ok", "scanning=0 toast=Add_two_channels_first screen=scan-lists", 6, false },
+	{ "11 scan lists: not from the VFO", "scanlists:seed vfokey", "ok 6 1 down ok", "scanning=0 toast=Leave_the_VFO_first", 5, false },
+	{ "11 scan lists: a new list", "scanlists:on", "ok 6 1 down ok 9 2 ok", "lists=1 list0=WA: toast=Added_WA screen=scan-lists", 8, false },
+	{ "11 scan lists: the options", "scanlists:seed", "ok 6 1 down ctx", "screen=scan-list", 5, false },
+	{ "11 scan lists: channels from two zones", "scanlists:seed", "ok 6 1 down down ctx 1 ok ok up ok down ok ok",
+	  "list1=Empty:1,17 screen=scan-list-add", 14, false },
+	{ "11 scan lists: OK on a channel in the list takes it out", "scanlists:seed", "ok 6 1 down down ctx 1 ok ok ok",
+	  "list1=Empty: screen=scan-list-add", 10, false },
+	{ "11 scan lists: remove a channel", "scanlists:seed", "ok 6 1 down ctx 1 down ok", "list0=Mix:17,29 toast=Removed screen=scan-list-edit", 8, false },
+	{ "11 scan lists: rename", "scanlists:seed", "ok 6 1 down ctx 2 back back back 9 2 ok", "list0=WA:3,17,29 toast=Renamed_WA screen=scan-list", 12, false },
+	{ "11 scan lists: delete asks first", "scanlists:seed", "ok 6 1 down ctx 3", "screen=scan-list-delete lists=2", 6, false },
+	{ "11 scan lists: delete", "scanlists:seed", "ok 6 1 down ctx 3 down ok", "lists=1 list0=- toast=Deleted_Mix screen=scan-lists", 8, false },
+	{ "11 scan lists: no, keep it", "scanlists:seed", "ok 6 1 down ctx 3 ok", "lists=2 screen=scan-list", 7, false },
+#endif
 	// Dual watch (docs/ux/dual-watch.md): on in a few presses, PTT on the selected channel, the other one press away
 	{ "11 dual watch: start, B the next channel", "", "quick 7", "dual=1 sel=A pos=3 bpos=4 screen=home", 2, false },
 	{ "11 dual watch: start, then B by number", "", "quick 7 ctx 3 5 ok", "dual=1 sel=A pos=3 bpos=5 screen=home", 6, false },

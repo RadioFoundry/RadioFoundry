@@ -48,6 +48,9 @@
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 #include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
+#if CONFIG_SCAN_LIST
+#include "codeplug/scan_list.h"
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
@@ -4511,6 +4514,87 @@ static bool scan_usable(uint16_t pos, void *ctx)
 	       scan_listens(&ch, sm->zone.channels[pos]);
 }
 
+#if CONFIG_SCAN_LIST
+// A scan list's stops (SCAN_LIST): the list's channels, each tuned in the zone that holds it. Not tied to a zone, so the
+// view follows the stop's zone as dual watch's does. The list's own skip flags don't exist: a channel put in a list is
+// scanned whatever its zone scan flag says
+#define LIST_NONE	0xFFFFu
+#define LIST_REF(z, p)	((uint16_t)(((z) << 7) | (p)))
+#define LIST_ZONE(r)	((uint16_t)((r) >> 7))
+#define LIST_POS(r)	((uint16_t)((r) & 0x7Fu))
+_Static_assert(CODEPLUG_ZONES_MAX < 0x1FF && CODEPLUG_ZONE_MAX <= 0x7F, "a stop is zone and position in 16 bits");
+_Static_assert(SCAN_LIST_MAX <= CODEPLUG_ZONE_MAX, "list_ref holds a list");
+
+static zone_t list_buf;		// only the radio task uses these
+static scan_list_t list_cur;
+
+static bool list_usable(uint16_t pos, void *ctx)
+{
+	const radio_sm_t *sm = ctx;
+	return pos < sm->list_n && sm->list_ref[pos] != LIST_NONE;
+}
+
+// Tune position pos of zone zi. False when it can't be read now (the codeplug changed); the view keeps its channel then
+static bool list_go(radio_sm_t *sm, uint16_t zi, uint16_t pos, uint32_t now_ms)
+{
+	const zone_t *z = &sm->zone;
+	channel_t ch;
+	if (!sm->have_channels || zi != sm->view.zone_index) {
+		if (!read_zone(zi, &list_buf)) {
+			return false;
+		}
+		z = &list_buf;
+	}
+	if (pos >= z->count || !codeplug_channel(z->channels[pos], &ch)) {
+		return false;
+	}
+	if (z != &sm->zone) {
+		set_zone(sm, zi, z);
+	}
+	set_channel(sm, pos, &ch);
+	tune(sm, now_ms);
+	return true;
+}
+
+// Where the list's channels are: the zone in use first, then the others in order. Returns the stops found
+static uint8_t list_resolve(radio_sm_t *sm, const scan_list_t *l)
+{
+	uint8_t found = 0;
+	sm->list_n = l->count;
+	for (uint8_t k = 0; k < l->count; k++) {
+		sm->list_ref[k] = LIST_NONE;
+	}
+	uint16_t zones = codeplug_zone_count(), cur = sm->view.zone_index;
+	for (uint16_t i = 0; i <= zones && found < l->count; i++) {
+		// i == 0: the zone in use; then every other zone
+		uint16_t zi = i == 0 ? cur : (uint16_t)(i - 1u);
+		if (i != 0 && zi == cur) {
+			continue;
+		}
+		const zone_t *z = &sm->zone;
+		if (i != 0 || !sm->have_channels) {
+			if (!read_zone(zi, &list_buf)) {
+				continue;
+			}
+			z = &list_buf;
+		}
+		for (uint8_t k = 0; k < l->count; k++) {
+			if (sm->list_ref[k] != LIST_NONE) {
+				continue;
+			}
+			for (uint16_t p = 0; p < z->count && p < CODEPLUG_ZONE_MAX; p++) {
+				if (z->channels[p] == l->channels[k]) {
+					sm->list_ref[k] = LIST_REF(zi, p);
+					found++;
+					break;
+				}
+			}
+		}
+	}
+	return found;
+}
+#endif
+
 // Dual watch (SCAN_DUAL): the receiver alternates between two channels, dual[0] and dual[1], skip flags ignored. With
 // CONFIG_DUAL_WATCH each is a channel of any zone or the VFO, and PTT talks on the selected one without ending the
 // watch; without it, two channels of the current zone (the debug link's) and PTT ends it as any scan
@@ -4876,6 +4960,12 @@ static void scan_stop(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 				vfo_set_hz(sm, sc->origin_hz);
 				tune(sm, now_ms);
 			}
+#if CONFIG_SCAN_LIST
+		} else if (kind == SCAN_LIST) {
+			if (!sm->view.vfo && (sm->view.zone_index != sm->list_home_zone || sm->view.zone_pos != sm->list_home_pos)) {
+				list_go(sm, sm->list_home_zone, sm->list_home_pos, now_ms);
+			}
+#endif
 		} else if (sm->view.zone_pos != sc->origin_pos) {
 			channel_t ch;
 			if (channel_read(sm->zone.channels[sc->origin_pos], &ch)) {
@@ -4991,6 +5081,27 @@ static bool scan_step(radio_sm_t *sm, uint32_t now_ms)
 		}
 		vfo_set_hz(sm, hz);
 		tune(sm, now_ms);
+#if CONFIG_SCAN_LIST
+	} else if (sc->kind == SCAN_LIST) {
+		// A stop that can't be read now (the codeplug changed) is left out until the scan ends
+		bool ok = false;
+		for (uint8_t tries = 0; tries < sm->list_n && !ok; tries++) {
+			int pos = scan_next_pos(sc, sm->list_n, list_usable, sm);
+			if (pos < 0) {
+				break;
+			}
+			ok = list_go(sm, LIST_ZONE(sm->list_ref[pos]), LIST_POS(sm->list_ref[pos]), now_ms);
+			if (ok) {
+				sm->list_at = (uint8_t)pos;
+			} else {
+				scan_nuisance_pos(sc, (uint16_t)pos);
+			}
+		}
+		if (!ok) {
+			scan_stop(sm, false, now_ms);
+			return false;
+		}
+#endif
 	} else {
 		int pos = scan_next_pos(sc, sm->zone.count, scan_usable, sm);
 		channel_t ch;
@@ -5019,6 +5130,9 @@ static void scan_config(const radio_sm_t *sm, uint8_t kind, scan_cfg_t *cfg)
 	}
 	if (kind == SCAN_DUAL) {
 		cfg->delay_ms = sm->set.dual_delay_ms;
+	}
+	if (kind == SCAN_LIST) {
+		cfg->priority = false;	// a list has no start channel of its own
 	}
 }
 
@@ -5081,6 +5195,33 @@ static void scan_start(radio_sm_t *sm, uint8_t kind, uint32_t lo_hz, uint32_t hi
 	activity(sm, now_ms);
 	scan_step(sm, now_ms);
 }
+
+#if CONFIG_SCAN_LIST
+// Scan the list in slot from the channel in use. Nothing happens when it can't be read or fewer than two of its channels
+// are in a zone (a scan of one channel only retunes it)
+static void list_start(radio_sm_t *sm, uint16_t slot, uint32_t now_ms)
+{
+	scan_t *sc = &sm->scan;
+	if (scan_on(sc)) {
+		scan_stop(sm, false, now_ms);
+	}
+	if (sm->view.vfo || !sm->have_channels || !scan_list_read(slot, &list_cur) || list_resolve(sm, &list_cur) < 2) {
+		return;
+	}
+	scan_cfg_t cfg;
+	scan_config(sm, SCAN_LIST, &cfg);
+	sm->list_home_zone = sm->view.zone_index;
+	sm->list_home_pos = sm->view.zone_pos;
+	sm->list_at = 0;
+	sc->origin_vfo = false;
+	sc->origin_pos = (uint16_t)(sm->list_n - 1u);	// the first stop is the list's first
+	sc->origin_hz = sm->view.ch.rx_hz;
+	sc->lo_hz = sc->hi_hz = 0;
+	scan_begin(sc, SCAN_LIST, &cfg, now_ms);
+	activity(sm, now_ms);
+	scan_step(sm, now_ms);
+}
+#endif
 
 // Dual watch on ref[0] and ref[1], ref[sel] selected. Asked again with the same pair: only the selection changes. A
 // new pair keeps the receiver where it is (a call it holds too) if that channel is still one of the two, else it
@@ -5398,6 +5539,11 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 	case RSCAN_VFO:
 		scan_start(sm, SCAN_VFO, 0, 0, now_ms);
 		break;
+#if CONFIG_SCAN_LIST
+	case RSCAN_LIST:
+		list_start(sm, (uint16_t)req->arg2, now_ms);
+		break;
+#endif
 	case RSCAN_DUAL: {
 		// The current channel (selected) and position arg2 of the current zone
 		radio_dual_ref_t ref[2] = {
@@ -5417,6 +5563,9 @@ static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms
 	case RSCAN_NUISANCE:
 		if (scan_on(&sm->scan) && !dual_running(sm)) {	// dual watch: both channels were picked
 			bool ok = sm->scan.kind == SCAN_VFO ? scan_nuisance_hz(&sm->scan, sm->view.ch.rx_hz)
+#if CONFIG_SCAN_LIST
+				: sm->scan.kind == SCAN_LIST ? scan_nuisance_pos(&sm->scan, sm->list_at)
+#endif
 				: scan_nuisance_pos(&sm->scan, sm->view.zone_pos);
 			if (ok) {
 				scan_step(sm, now_ms);
@@ -8143,6 +8292,11 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	sm->roam_dirty = true;
 #endif
 	sm->reload_pending = false;
+#if CONFIG_SCAN_LIST
+	if (sm->scan.kind == SCAN_LIST && sm->codeplug_serial != codeplug_serial()) {
+		scan_stop(sm, false, now_ms);	// its stops are zone positions found at the start
+	}
+#endif
 	sm->codeplug_serial = codeplug_serial();
 	sm->view.source = codeplug_source();
 #if CONFIG_DMR

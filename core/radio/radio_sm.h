@@ -363,6 +363,16 @@ typedef struct {
 #if CONFIG_SCAN
 	scan_t scan;
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
+#if CONFIG_SCAN_LIST
+	// SCAN_LIST: each stop of the list as its zone (bits 15:7) and position there (6:0), LIST_NONE for a channel in no
+	// zone, found once when the scan starts. list_at is the stop the receiver is on, list_home the channel the scan
+	// started from (zone and position), where a cancel goes back
+	uint16_t list_ref[CODEPLUG_ZONE_MAX];
+	uint8_t list_n;
+	uint8_t list_at;
+	uint16_t list_home_zone;
+	uint16_t list_home_pos;
+#endif
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
 	// Zone scan, an FM stop about to hold on a signal that may be digital (scan_mixed): the FM stop, while the scan

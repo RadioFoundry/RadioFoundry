@@ -577,6 +577,42 @@
     "SCAN"
    ]
   },
+  "scan_lists": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
+  "scan_list_options": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
+  "scan_list_channels": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
+  "scan_list_add": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
+  "scan_list_zone": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
+  "scan_list_delete": {
+   "group": "tools",
+   "needs": [
+    "SCAN_LIST"
+   ]
+  },
   "home_dual": {
    "group": "home",
    "needs": [
