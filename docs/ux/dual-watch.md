@@ -121,6 +121,7 @@ and both names in one font (the largest both fit, never smaller than row 2; a lo
 | Class | Rows per pane | Under the panes |
 |---|---|---|
 | 240x320, 240x320i10x5 (DM-32UV), 320x240 (GD-88) | name (medium or large), target (medium), details, zone | state and the last calls, as many as fit |
+| 220x176 (GD-88, 220x176 panel) | name (medium or large), target (medium), details | one line |
 | 160x128 | name, target (medium) | one line: the state, or the last call |
 | 160x120i5 (DM-1701) | name, target (small) | one line |
 | 128x64 (GD-77) | name, target (small) | none: the last call's age is in its pane |

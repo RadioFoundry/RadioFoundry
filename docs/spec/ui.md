@@ -39,7 +39,10 @@ to the pixel, the board paints the insets when that color changes, and captures 
 240x320i10x5 11, at 128x64 5; the 160 px class shows 5 of them while a wide language is in use, whose lines are 16 px
 high (2.5). The 240 px class keeps 6 px between rows and a separate title row;
 `uiSim --layout` fails a class whose row pitch drops below these. A narrow portrait panel (120x160) keeps the 128 px
-class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. Home's Activity region shows the last caller on two lines
+class's small font (24 characters a line) and takes the 160 px class's channel and talk target fonts. The 240 px class
+also needs 200 rows (`UI_TALL_PX`): a wide but short panel (220x176) has large pixels and takes the 160 px class's
+fonts and row pitch. A board whose panel is found at start-up sets `hal_display_t.width` / `height` in its display's
+`init`, which runs before the UI lays out, so one image serves both sizes. Home's Activity region shows the last caller on two lines
 (name, then "TG 91 11s ago") where it has the rows for them, else one line where the name gives way first; a single
 line ("No calls heard yet") is centered in the region. While a hardware option is pending (`board_hwopt_pending`: one
 the board asks for, or one waiting for a restart) the idle region says so first, in the warning color ("Set: Board
@@ -648,7 +651,8 @@ themes, as `<screen>__light.png`, `<screen>__high_contrast.png` and `<screen>__n
 
 
 Geometries: `160x120i5` (160x120 visible, 5 px inset left and right), `160x128` (both 160 px classes render through the 4 bpp frame buffer, as the boards do),
-`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, `320x240` (landscape, 16 colors), or any
+`240x320i10x5` (16 colors, insets 10 px left and right, 5 px top and bottom), `128x64` (mono), `240x320`, `320x240` (landscape, 16 colors),
+`220x176` (16 colors, the 160 px class's fonts), or any
 `WxH`, `WxHiN` (inset N all round), `WxHiNxM` (N left and right, M top and bottom), `WxHm` (mono). The 240 px classes
 draw the anti-aliased fonts (`CONFIG_FONT_AA`), and `240x320i10x5` and `320x240` the larger text too
 (`CONFIG_FONT_BIG`); the others the bitmap ones. Script tokens:

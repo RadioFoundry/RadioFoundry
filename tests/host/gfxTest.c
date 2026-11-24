@@ -556,13 +556,18 @@ static void test_big_text(void)
 {
 	hal_display_t d = disp;
 	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
-	d.width = 240; d.height = 160; d.bpp = 4;	// the 240 px class in 16 colors (the frame buffer here holds 160 rows)
+	d.width = 320; d.height = 240; d.bpp = 4;	// the 240 px class in 16 colors (gfxTest is built for 240 rows)
 	d.flush_indexed = d_flush_indexed;
 	CHECK(gfx_init(&d));
 	ui_layout_init();
 	CHECK(ui_layout.small->w == (CONFIG_FONT_BIG ? 9 : 8) && ui_layout.small->h == (CONFIG_FONT_BIG ? 18 : 16));
 	CHECK(ui_layout.tiny->w == (CONFIG_FONT_BIG ? 8 : 6) && ui_layout.medium->w == 12);
 	CHECK(ui_layout.row_h == ui_layout.small->h + 6);
+	// Wide but short (220x176, large pixels): the 160 px class's fonts
+	d.width = 220; d.height = 176;
+	CHECK(gfx_init(&d));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == 6 && ui_layout.medium->w == 8);
 	d.width = 160; d.height = 128;
 	CHECK(gfx_init(&d));
 	ui_layout_init();

@@ -184,7 +184,8 @@ void ui_layout_init(void)
 
 	// Display classes (P10): about 128 px wide, about 160 px wide, 240 px and wider. A narrow portrait panel (120x160)
 	// keeps the narrow class's small font, so lists and labels keep their 24 characters a line, and has the rows for
-	// the larger channel and talk target fonts of the 160 px class
+	// the larger channel and talk target fonts of the 160 px class. The 240 px class also needs UI_TALL_PX rows: a
+	// wide but short panel (220x176) has large pixels and the rows of the 160 px class, so it takes that class's fonts
 	// Anti-aliased fonts on color panels (CONFIG_FONT_AA, font.h); a mono panel keeps the bitmap ones
 	bool aa = gfx_bpp() != 1;
 #if CONFIG_FONT_AA && defined(FONT_BOTH)
@@ -193,7 +194,8 @@ void ui_layout_init(void)
 	const font_t *f6 = aa ? &font_aa_6x12 : &font_6x12, *f8 = aa ? &font_aa_8x16 : &font_8x16;
 	const font_t *f12 = aa ? &font_aa_12x24 : &font_12x24;
 	font_largest = aa ? FONT_AA_LARGEST : FONT_LARGEST;
-	if (w >= 220) {
+	bool wide = w >= 220 && h >= UI_TALL_PX;
+	if (wide) {
 		L->tiny = f6; L->small = f8; L->medium = f12; L->large = font_largest;
 #if CONFIG_FONT_BIG
 		// One size up for lists, labels and the status strip (CONFIG_FONT_BIG): 9 px characters instead of 8
@@ -258,7 +260,7 @@ void ui_layout_init(void)
 	}
 	L->activity_y = y;
 	L->activity_h = L->hint_y - y;
-	L->row_h = L->small->h + (w >= 220 ? 6 : tall ? 3 : h >= 100 ? 1 : 0);
+	L->row_h = L->small->h + (wide ? 6 : tall ? 3 : h >= 100 ? 1 : 0);
 }
 
 // --- shared pieces ---
