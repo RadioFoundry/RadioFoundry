@@ -205,7 +205,7 @@ test("system form: a blocked network ID, as it is typed, locks Transmit and hide
 	assert.deepEqual(form.choices("transmit"), ["editor.modes.enforced"], "one choice, and it says so");
 	assert.equal(form.input("transmit").disabled, true);
 	assert.equal(form.row("ownId").hidden, true);
-	assert.ok(form.note().includes("editor.modes.no_tx_note"));
+	assert.ok(form.note().includes("editor.modes.no_tx_note") && form.note().includes("editor.modes.no_tx_note2"), "both paragraphs");
 	assert.ok(!form.heads().includes("editor.col.tx") && !form.heads().includes("editor.p25.tx_offset"), "the TX columns are left out");
 	assert.ok(form.heads().includes("editor.col.rx"), "receiving is all still there");
 

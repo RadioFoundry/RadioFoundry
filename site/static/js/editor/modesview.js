@@ -160,7 +160,8 @@ function systemDialog(api, s, isNew) {
 					r.tx = v > 0;
 					if (mod.noRegField) r.fields = { ...r.fields, [mod.noRegField]: v === 2 };
 				}, help: mod.conventional ? null : t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
-			mod.noTx ? { type: "note", key: "sys.notx", text: (value, r) => (restricted(r, value) ? t("editor.modes.no_tx_note") : "") } : null,
+			// the notice, in two paragraphs
+			...(mod.noTx ? ["editor.modes.no_tx_note", "editor.modes.no_tx_note2"].map((key) => ({ type: "note", key, text: (value, r) => (restricted(r, value) ? t(key) : "") })) : []),
 			systemOwnIdField(mod, t, restricted),
 			mod.secret ? { key: "needsKey", label: t("editor.modes.needs_key"), type: "bool", help: t("editor.modes.needs_key_help") } : null,
 		],
