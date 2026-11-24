@@ -441,7 +441,7 @@ hold), or change the power with **\***, **1**.
 ### DM-32UV power levels
 
 Five power levels, measured into a dummy load: 500 mW, 1 W, 2.5 W, 5 W, and a top level of 8 W on UHF or 9 W on
-VHF. Over each band the levels read within about 1 dB of their names (500 mW reads 0.46-0.67 W), and the top level
+VHF. Over each band the levels read within about 1 dB of their names (500 mW reads 0.43-0.67 W), and the top level
 falls to about 6.3 W at the top of the UHF band. The top level differs by band, and the screen shows the level for the
 channel's band. The upper four are set from the radio's own factory calibration, so a radio whose amplifier needs more
 drive gets more. A radio without a valid factory calibration keeps 500 mW and about 1 W, and its upper three
