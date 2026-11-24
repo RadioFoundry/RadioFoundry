@@ -22,7 +22,8 @@ export const aesKind = {
 		v.set([p.id == null ? 0 : AES_ALG, p.id ?? 0]);
 		return v;
 	},
-	fields: () => [{ key: "id", label: "editor.aes.id", type: "select", options: (r) => {
+	// the keys are the system's, picked in the same form: the list follows it (dynamic)
+	fields: () => [{ key: "id", label: "editor.aes.id", type: "select", dynamic: true, options: (r) => {
 		const ids = new Set((r?.system?.trafficKeys ?? []).map((k) => k.id));
 		if (r?.params?.id != null) ids.add(r.params.id);
 		return [[null, "editor.none"], ...[...ids].sort((a, b) => a - b).map((id) => [id, String(id)])];

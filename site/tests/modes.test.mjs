@@ -407,6 +407,10 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 	// a field of another mode neither sets nor complains
 	const f = specField({ key: "x", label: "editor.x", type: "int", min: 0, max: 1 }, t, { on: () => false, get: (r) => r.p, put: () => assert.fail() }, "k");
 	assert.equal(f.parse({}, f.key, "9"), undefined);
+	// a select that reads other fields rebuilds its list in the form (#1042); a fixed one doesn't
+	const sel = (x) => specField({ key: "s", label: "editor.s", type: "select", options: () => [], ...x }, t, { get: () => ({}), put() {} }, "k");
+	assert.equal(sel({ dynamic: true }).dynamicOptions, true);
+	assert.equal(sel({}).dynamicOptions, false);
 });
 
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
