@@ -51,6 +51,7 @@ static uint32_t cb_call_frames;
 
 static p25_voice_stats_t stats;
 static p25_voice_mixer_t mixer;
+static p25_voice_mic_gate_t mic_gate;
 
 // --- hooks (provider's task) ---
 
@@ -267,7 +268,14 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		if (g != cb_tx_gen) {
 			cb_tx_gen = g;
 			stats.tx_mic_peak = 0;
+			stats.tx_mic_muted = 0;
 			imbe_enc_init(&enc);
+		}
+		p25_voice_mic_gate_t gate = LOAD(mic_gate);
+		if (gate != NULL && gate()) {
+			static const int16_t quiet[AUDIO_BLOCK_SAMPLES];	// a beep on the speaker is in the mic too
+			mic = quiet;
+			stats.tx_mic_muted++;
 		}
 		tx_block(g, mic);
 		silence(spk);
@@ -376,6 +384,11 @@ bool p25VoiceStreaming(void)
 void p25VoiceSetMixer(p25_voice_mixer_t m)
 {
 	STORE(mixer, m);
+}
+
+void p25VoiceSetMicGate(p25_voice_mic_gate_t g)
+{
+	STORE(mic_gate, g);
 }
 
 const p25_engine_hooks_t *p25VoiceHooks(void)

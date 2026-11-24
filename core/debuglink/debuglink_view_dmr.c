@@ -80,6 +80,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			// limiter's lowest gain in the latest transmission (- before one). Here, not in features: that section
 			// is at a reply's size
 			dl_text(t, "voice.mic_pcm_db=%d\nvoice.tx_enc_peak=%u\n", radio_mic_pcm_db(), (unsigned)a.tx_enc_peak);
+			// Blocks sent as silence while a beep played (the mic gate)
+			dl_text(t, "voice.tx_mic_muted=%u\n", (unsigned)a.tx_mic_muted);
 			if (a.tx_mic_low_q8 != 0) {
 				dl_text(t, "voice.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)a.tx_mic_low_q8));
 			} else {

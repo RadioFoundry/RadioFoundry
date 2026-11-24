@@ -8332,6 +8332,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
+	ambeVoiceSetMicGate(beep_mic_echo);	// ... and kept off the air: the mic hears the speaker
 #endif
 #if CONFIG_DMR_DATA_CORE
 	data_init(sm);
@@ -8344,6 +8345,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	radio_p25_init(pcm_audio());
 #if CONFIG_IMBE && CONFIG_BEEP
 	p25VoiceSetMixer(beep_mix);
+	p25VoiceSetMicGate(beep_mic_echo);
 #endif
 #endif
 

@@ -776,6 +776,45 @@ static void testMicGain(void)
 	ambeVoiceSetMicGainQ8(MICLIMIT_UNITY);
 }
 
+// The mic gate (a beep on the speaker, which the mic hears): the gated block goes to the encoder as silence and is
+// counted; the mic's own figures still see the board's samples
+static bool gate;
+static bool gateOn(void) { return gate; }
+
+static void testMicGate(void)
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t frame[9], bits[49];
+	ambe_voice_stats_t st;
+
+	ambeVoiceSetMicGate(gateOn);
+	src->begin(src->ctx);
+	for (int n = 0; n < 2; n++) {
+		gate = n == 0;
+		for (int i = 0; i < 160; i++)
+			mic[i] = (int16_t)(i & 1 ? 301 : 300);
+		block();
+		CHECK(src->next(frame, src->ctx) && ambeFecDecode(frame, bits, NULL) == 0, "frame %d", n);
+		int ones = 0;
+		for (int i = 0; i < 49; i++)
+			ones += bits[i];
+		CHECK(gate ? ones == 0 : ones == 24, "frame %d: %d bits set, gate %d", n, ones, gate);
+	}
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_mic_muted == 1 && st.tx_mic_peak == 301, "muted %u, mic peak %u", (unsigned)st.tx_mic_muted,
+	      (unsigned)st.tx_mic_peak);
+	src->end(src->ctx);
+	block();
+	// A new transmission counts from 0
+	src->begin(src->ctx);
+	block();
+	ambeVoiceGetStats(&st);
+	CHECK(st.tx_mic_muted == 0, "muted %u in a new transmission", (unsigned)st.tx_mic_muted);
+	src->end(src->ctx);
+	block();
+	ambeVoiceSetMicGate(NULL);
+}
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
@@ -789,6 +828,7 @@ int main(void)
 	testTxTone();
 	testRepeats();
 	testMicGain();
+	testMicGate();
 #if CONFIG_VOICE_CAPTURE
 	testCapture();
 #endif
