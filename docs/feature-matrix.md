@@ -167,6 +167,7 @@ is `tools/bringup.py list --radio <id>`.
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `air_raw` | off | off | off | off | off | off | off | off |
+| `air_rx_adapt` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
 <!-- end generated -->
 
@@ -308,6 +309,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `AIR_RX_ADAPT` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | Voltage reading (board, no switch) | Battery | Battery | Battery | None | Battery | Battery | Supply | Battery |
 | Clock kept through power-off (board, no switch) | Yes | ? | Yes | ? | ? | ? | ? | No (only while on) |
 <!-- end generated -->
