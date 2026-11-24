@@ -28,6 +28,7 @@ settings start from the defaults at every boot and nothing can be written.
 | `calibration_addr` / `_size` | the calibration working copy (the CPS window, `cps-protocol.md` 2.4); 0 when the board has none |
 | `native_addr` / `native_size` | reserved for the native codeplug (`codeplug-native.md` 4) |
 | `staging_addr` / `staging_size` | a new codeplug image waits here, checked, before it replaces the stored one (the TFTP write, `tftp.md` 4); never written by the open-firmware CPS (above `openfw_end`); 0 when the board has none |
+| `scan_addr` / `scan_size` | stored scan lists (`CONFIG_SCAN_LIST`, [scan-list.md](scan-list.md)): records of 256 bytes, 16 a sector, never written by the open-firmware CPS; a claim keeps our records and clears other bytes; 0 when the board has none |
 
 The settings ring and journal go where no open-firmware tool reads or writes, and the CPS shim refuses to write there.
 Each board fixes the values in its `hal_flash_map_t`, and its hardware page lists the map. The usual order, low to

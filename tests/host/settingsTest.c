@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stddef.h>
 #include "storage/storage.h"
+#include "codeplug/scan_list.h"
 #include "settings/settings.h"
 #include "sim/sim_flash.h"
 
@@ -495,6 +496,60 @@ static const hal_flash_map_t map_native = {
 
 static int job_runs;
 static void job(void *ctx) { job_runs += *(int *)ctx; }
+
+// One of our scan list records at addr (scan-list.md 3: the frame the claim checks; the fields don't matter)
+static void scan_record(uint32_t addr, uint8_t tag)
+{
+	uint8_t *r = sim_flash_data + addr;
+	memset(r, 0, SCAN_LIST_RECORD);
+	for (unsigned k = 0; k < 4; k++) {
+		r[k] = (uint8_t)(SCAN_LIST_MAGIC >> (8 * k));
+	}
+	r[4] = SCAN_LIST_LAYOUT;
+	r[8] = tag;
+	uint32_t crc = storage_crc32(0, r, SCAN_LIST_RECORD - 4);
+	for (unsigned k = 0; k < 4; k++) {
+		r[SCAN_LIST_RECORD - 4 + k] = (uint8_t)(crc >> (8 * k));
+	}
+}
+
+// A claim clears another firmware's bytes from the scan list area and keeps our lists; the debug link may read the area
+static const hal_flash_map_t map_scan = {
+	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+	.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = FLASH_SIZE,
+	.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+	.scan_addr = 0x1D000u, .scan_size = 0x2000u,
+};
+
+static void test_scan_claim(void)
+{
+	sim_flash_create(FLASH_SIZE, &map_scan);
+	junk(map_scan.settings_addr + 2 * STORAGE_SECTOR, 3000, 7);	// foreign, so a claim is needed
+	// The scan list area: another firmware's bytes over the first two slots, our lists in slots 5 and 9, and one in the
+	// second sector (only ours there)
+	const uint32_t scan0 = map_scan.scan_addr, scan1 = map_scan.scan_addr + STORAGE_SECTOR;
+	junk(scan0, 300, 5);
+	scan_record(scan0 + 5 * SCAN_LIST_RECORD, 'A');
+	scan_record(scan0 + 9 * SCAN_LIST_RECORD, 'B');
+	scan_record(scan1 + 15 * SCAN_LIST_RECORD, 'C');
+	CHECK(storage_debug_read_allowed(map_scan.scan_addr, map_scan.scan_size));
+	CHECK(!storage_debug_read_allowed(map_scan.scan_addr + map_scan.scan_size - 1, 2));
+	uint8_t *snap = malloc(FLASH_SIZE);
+	memcpy(snap, sim_flash_data, FLASH_SIZE);
+	uint32_t se0 = sim_flash_erases(scan0), se1 = sim_flash_erases(scan1);
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	CHECK(storage_claim_request());
+	settings_poll(6000);
+	CHECK(storage_region() == STORAGE_REGION_OURS && storage_ready());
+	for (uint32_t i = 0; i < 5 * SCAN_LIST_RECORD; i++) {
+		CHECK(sim_flash_data[scan0 + i] == 0xFF);			// the other bytes are gone
+	}
+	CHECK(memcmp(snap + scan0 + 5 * SCAN_LIST_RECORD, sim_flash_data + scan0 + 5 * SCAN_LIST_RECORD,
+	             2 * STORAGE_SECTOR - 5 * SCAN_LIST_RECORD) == 0);	// our three lists are kept
+	CHECK(sim_flash_erases(scan0) == se0 + 1 && sim_flash_erases(scan1) == se1);	// the second sector was not erased
+	CHECK(sim_flash_violations() == 0);
+	free(snap);
+}
 
 static void test_native_and_jobs(void)
 {
@@ -1258,6 +1313,7 @@ int main(void)
 	test_settings_cuts();
 	test_settings_versions();
 	test_foreign();
+	test_scan_claim();
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();

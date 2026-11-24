@@ -228,6 +228,12 @@
 #ifndef CONFIG_DUAL_WATCH
 #define CONFIG_DUAL_WATCH		CONFIG_SCAN
 #endif
+
+// Stored scan lists (core/codeplug/scan_list.c, docs/spec/scan-list.md). Needs CONFIG_SCAN (features.mk checks). Off by
+// default: a board lists its scan list area in hal_flash_map_t first
+#ifndef CONFIG_SCAN_LIST
+#define CONFIG_SCAN_LIST		0
+#endif
 #ifndef CONFIG_KEY_ASSIGN
 #define CONFIG_KEY_ASSIGN		1
 #endif

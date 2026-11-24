@@ -36,6 +36,10 @@ typedef struct {
 	// Satellite TLE data (docs/spec/satellite.md): separate from update staging so TFTP and CPS-fast never share it
 	uint32_t satellite_addr;
 	uint32_t satellite_size;
+	// Stored scan lists (CONFIG_SCAN_LIST, docs/spec/scan-list.md): whole erase units outside every area above, never
+	// written by the open-firmware CPS. 16 lists a unit. 0 size: none (the radio has no scan lists)
+	uint32_t scan_addr;
+	uint32_t scan_size;
 } hal_flash_map_t;
 
 // The end of the highest area of a map whose flash erases in units of erase_size (an area of size 0 is none): a chip
@@ -55,6 +59,7 @@ static inline uint32_t hal_flash_map_end(const hal_flash_map_t *m, uint32_t eras
 		m->native_size != 0u ? m->native_addr + m->native_size : 0u,
 		m->staging_size != 0u ? m->staging_addr + m->staging_size : 0u,
 		m->satellite_size != 0u ? m->satellite_addr + m->satellite_size : 0u,
+		m->scan_size != 0u ? m->scan_addr + m->scan_size : 0u,
 	};
 	uint32_t end = 0;
 	for (unsigned i = 0; i < sizeof(ends) / sizeof(ends[0]); i++) {
