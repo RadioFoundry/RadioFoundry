@@ -293,6 +293,10 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
+Most countries don't allow encrypted or scrambled messages on amateur frequencies: read
+[Encryption on amateur frequencies](04-programming.md#encryption-on-amateur-frequencies) before using basic privacy or AES
+there.
+
 For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
 Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal
 digits from your browser; use it rather than typing a key, since typed keys tend to be weak. **Show AES keys**
