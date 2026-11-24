@@ -168,7 +168,8 @@ The NXDN Scrambler is a 15-bit algorithm with 32,767 possible keys. The NXDN sta
 data calls, but RadioFoundry currently supports it for conventional voice calls only. It deters casual listening,
 but does not provide dependable security, and the receiver cannot verify who sent a scrambled call. Use scrambling
 only in licensed services that permit it. Most countries prohibit using codes or ciphers that obscure the meaning of amateur
-radio messages. The Amateur firmware variant disables the NXDN Scrambler.
+radio messages ([Encryption on amateur frequencies](#encryption-on-amateur-frequencies)). The Amateur firmware variant
+disables the NXDN Scrambler.
 
 To use the NXDN scrambler:
 
@@ -186,6 +187,19 @@ does not transmit.
 
 **Show scrambler seeds** reveals the stored values. File exports omit the keys by default. Zone shares omit them
 as well.
+
+#### Encryption on amateur frequencies
+
+Most countries don't allow messages encoded to obscure their meaning on amateur frequencies. In the US the rule is
+47 CFR 97.113(a)(4). Encryption and scrambling belong in licensed services that permit them.
+
+The Codeplug Editor lists a warning under **Problems** for a channel that transmits with an AES key or an NXDN
+scrambler key on a frequency from 144 to 148 MHz, 222 to 225 MHz or 420 to 450 MHz, the edges included. These ranges are the
+common amateur 2 m, 1.25 m and 70 cm allocations. A receive-only channel gets no warning. Basic privacy keys are set on the
+radio, not in the codeplug, so the editor can't check them.
+
+The warning blocks nothing. The codeplug still saves and writes, and the radio doesn't refuse to transmit. Receiving
+encrypted calls is not affected. Each operator is responsible for following the terms of their license.
 
 **P25 Trunking system** (Systems tab, type P25 Trunking). A new system is listen only: set **Transmit** to register and
 transmit.

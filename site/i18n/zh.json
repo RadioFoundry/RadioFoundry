@@ -2172,6 +2172,7 @@
  "editor.problem.nxdn_group_range": "NXDN 组号为 1 至 65535：此联系人的 ID 将呼叫组 1。",
  "editor.problem.nxdn_missing_tx_key": "此信道的系统中没有所选的 NXDN 发射密钥。",
  "editor.problem.nxdn_unit_range": "NXDN 单元 ID 为 1 至 {max}：电台不会使用此 ID。",
+ "editor.problem.crypto_amateur": "此信道在业余无线电频率上发射加密或扰码语音。包括美国在内的大多数国家不允许在业余频段发送加密消息。",
  "editor.field.name": "名称",
  "editor.field.dmrId": "DMR ID",
  "editor.field.radioName": "电台名称",
