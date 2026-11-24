@@ -179,7 +179,7 @@ All three are read whatever the setting.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
   is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
   forwards it to the PC like any datagram. `sms_send(..., TMS)` is refused; a stored default of TMS (a record
-  written by a build with it) sends ETSI IP text instead. The UI's format list has no Motorola entry. Host test:
+  written by a build with it) sends ETSI IP text instead. The UI's format list has no TMS entry. Host test:
   `dmrDataServiceTestNoTms`.
 
 #### 5.1.1 BrandMeister's text service
@@ -367,7 +367,7 @@ The default for messages the radio sends is ETSI IP text. Why this one of the tw
   are sent once and nothing waits for an answer.
 
 Defined short data stays available (Settings > Connections > Message format: "ETSI short") for radios that only show
-that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for MOTOTRBO fleets.
+that form, and it confirms delivery. TMS ("TMS" in the list) is the format for commercial fleets that use TMS.
 
 ## 6. ARS
 

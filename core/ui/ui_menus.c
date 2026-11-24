@@ -6749,7 +6749,7 @@ static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 
 #endif
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
-// Named by key size, as Home's badge names them (BP8, BP16): the 8-bit key is 1-255, the 16-bit one 0-65535
+// Basic privacy key types, named by key size with the key's range (set_range follows the type)
 static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT, "8-bit (1-255)"),
 	TRN(SET_VALUE_KEY_TYPE_16_BIT, "16-bit (0-65535)") };
 #endif
