@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Microphone gain (mic_gain.h; docs/spec/radio-features.md 3.6)
 #include "radio/mic_gain.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #endif

@@ -333,7 +333,7 @@ the debug link's SETTING op 29 sets it in RAM only.
 | without it | not changed | the PCM gain is the board's `mic_pcm_db` plus (step - 5) x 2 dB |
 
 **PCM gain.** The mic samples go to DMR's AMBE+2 encoder (`ambeVoiceSetMicGainQ8`, pushed by `radio_set_mic_gain`)
-through a gain with a peak limiter (`drivers/audio/miclimit/miclimit.h`): one gain a
+through a gain with a peak limiter (`core/dsp/miclimit.h`): one gain a
 20 ms block, never more than the set gain, never so much that the block's peak passes 28000 (about -1.4 dBFS). It
 falls at once and recovers by 0.5 dB a block. At 0 dB nothing is applied, so a board at its own level encodes the
 samples as delivered. `hal_radio_t.mic_pcm_db` is a board's gain at step 5 for a mic that reaches the PCM quiet:

@@ -4,7 +4,7 @@
 // 5 = the board's own levels. A board with hal_radio_t.mic_gain gets the step as a dB offset for FM and DMR (the
 // modem's microphone gain); otherwise the step scales the mic PCM before DMR's encoder and FM isn't changed. A board
 // whose PCM is quiet (hal_radio_t.mic_pcm_db) has that much more gain on the PCM at every step; the PCM gain always
-// goes through a peak limiter (audio/miclimit/miclimit.h). P25's voice path takes the step alone.
+// goes through a peak limiter (core/dsp/miclimit.h). P25's voice path takes the step alone.
 //
 // Threading: any task. Both paths only store a value; the next transmission takes it. RAM only: the UI stores the
 // setting (settings_t.mic_gain) and applies it at start-up.

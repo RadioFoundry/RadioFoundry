@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include "radio/mic_gain.h"
 #include "dmr/ambe/ambeVoice.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 
 static int failures;
 

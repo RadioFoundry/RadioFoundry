@@ -5,7 +5,7 @@
 #include "dmr/ambe/ambeFec.h"
 #include "config.h"
 #include "radio/sigtone.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 
 #include <stddef.h>
 #include <string.h>
