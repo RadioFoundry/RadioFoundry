@@ -28,6 +28,9 @@ CONFIG_DISPLAY_INSET_BOTTOM ?= 5
 DM32_FB_BYTES := $(shell echo $$(( (240 - $(CONFIG_DISPLAY_INSET_LEFT) - $(CONFIG_DISPLAY_INSET_RIGHT) + 1) / 2 * \
 	(320 - $(CONFIG_DISPLAY_INSET_TOP) - $(CONFIG_DISPLAY_INSET_BOTTOM)) )))
 MCU_DEFS += -DGFX_FB_BYTES=$(DM32_FB_BYTES)u
+# USRP voice over UDP: received audio alone is 352 B every 20 ms (about 17.6 KB/s before PPP, IP and UDP headers),
+# more than the programming cable's 115200 baud PPP link carries (about 11.5 KB/s each way)
+CONFIG_NET_USRP ?= n
 # VOX reads the microphone level through hal_power_t.mic_level, which this board doesn't have yet
 CONFIG_VOX ?= n
 # The platform's three TCP connections; a fourth costs about 1.4 KB of main RAM. ci's maximal configuration has
@@ -38,3 +41,4 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (d
 # written, unconfirmed"): off by default, and off in ci's maximal configuration too
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
+BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud
