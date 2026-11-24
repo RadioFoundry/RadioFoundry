@@ -17,6 +17,10 @@ endif
 # the run-time arm for the power cycle, a stored board revision and plausible PA rows. n leaves a receive-only image
 CONFIG_MD9600_TX ?= y
 CONFIG_MD9600_DMR_TX ?= y
+# No DMR, no DMR transmit: its per-burst keying uses the DMR key-up rule (core/radio/pa_keyup.c)
+ifeq ($(CONFIG_DMR),n)
+override CONFIG_MD9600_DMR_TX := n
+endif
 # This board's own switches (config_md9600.h), not feature switches: no other radio has them
 MCU_DEFS += $(foreach s,V1V3 V4 V5 TX DMR_TX,-DCONFIG_MD9600_$(s)=$(if $(filter y,$(CONFIG_MD9600_$(s))),1,0))
 BOARD_DIRS += $(if $(filter y,$(CONFIG_MD9600_V1V3)),drivers/rf/sky72310)
@@ -51,10 +55,13 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 BOARD_REQUIRED := FM
 # CONFIG_STUB_ENTRY is on with the host link (config/features.mk): the STM32F4 flash stub serves this radio through its
 # board record (board.toml [flash.stub], docs/spec/stub-stm32f4.md)
-# Supported, but the maximal configuration leaves these off too: PPP stands in for the USB network adapter on UART-only
-# radios (docs/spec/ppp.md), and this one has the adapter
-MAXIMAL_SKIP := NET_PPP
+# Supported, but the maximal configuration leaves PPP off: it stands in for the USB network adapter on UART-only radios
+# (docs/spec/ppp.md), and this one has the adapter. The all-feature image exceeds app FLASH with satellite tracking
+# enabled, so only the maximal build turns it off; the default build keeps it on.
+MAXIMAL_SKIP := NET_PPP LANG_ES LANG_IT LANG_FR LANG_ZH
+MAXIMAL_VARS := CONFIG_SATELLITE_TLE=n
 # English only (the owner's choice, 2026-11-03)
 CONFIG_LANG_ES ?= n
+# The maximal configuration leaves the other languages and their fonts (about 110 KB) out of its flash check.
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)

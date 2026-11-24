@@ -28,6 +28,8 @@ void hrc_audio_pcm_ring(hrc7000_t *modem, bool want);
 void hrc_audio_pcm_tx_gate(void);
 // Speaker audio other than silence still queued or in the FIFO (hal_audio_t.spk_pending)
 bool hrc_audio_pcm_spk_pending(void);
+// The gate is closed: speaker audio queued now is dropped when it opens (hal_audio_t.speaker_blocked)
+bool hrc_audio_pcm_speaker_blocked(void);
 // The gate's counters, for the DMR glue's "pg" diagnostics line: closings, those that found a beep still sounding (its
 // tail cut, never sent), checks that found ring play on while closed (never). Reset with the DMR counters
 void hrc_audio_pcm_gate_stats(uint32_t *closings, uint32_t *late, uint32_t *ring_on);
@@ -39,7 +41,8 @@ bool hrc_audio_pcm_start(audio_block_cb_t cb, void *ctx);
 void hrc_audio_pcm_stop(void);
 void hrc_audio_pcm_speaker(bool on);
 #define HRC_AUDIO_PCM_OPS	.start = hrc_audio_pcm_start, .stop = hrc_audio_pcm_stop, \
-				.speaker_pcm = hrc_audio_pcm_speaker, .spk_pending = hrc_audio_pcm_spk_pending
+				.speaker_pcm = hrc_audio_pcm_speaker, .spk_pending = hrc_audio_pcm_spk_pending, \
+				.speaker_blocked = hrc_audio_pcm_speaker_blocked
 extern const hal_audio_t hrc_audio_pcm;
 
 // Block, overrun and underrun counters for diagnostics (underruns: the speaker queue ran out with the FIFO taking

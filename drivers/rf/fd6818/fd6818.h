@@ -173,7 +173,8 @@ uint16_t fd6818_read(fd6818_t *dev, uint8_t reg);
 
 // Power-on table, then the post-init writes (receiver at 144.000 MHz, AF muted). Task level
 void fd6818_init(fd6818_t *dev);
-// The FM or DMR register set (8.2 "Enter FM" / "Enter DMR"). Leaves the chip in RX
+// The FM or DMR register set (8.2 "Enter FM" / "Enter DMR"). Leaves the chip in RX. DMR also turns the sub-audio
+// off (fd6818_set_rx_tone NONE)
 void fd6818_set_mode(fd6818_t *dev, fd6818_mode_t mode);
 // Mute (0x30 = idle), band select, frequency (8.3 order). The state stays idle: set_state next
 void fd6818_set_freq(fd6818_t *dev, uint32_t hz);
@@ -223,10 +224,13 @@ static inline bool fd6818_am_on(const fd6818_t *dev)
 
 // --- AM gain loop and squelch (pure) ---
 
-// The gain loop keeps a signal's 0x67 reading near FD6818_AGC_TARGET: a reading (averaged with the one before) 10 dB or
-// more above it takes the gain down at once by the excess less 8 dB; one 6 dB or more below it raises the gain one step,
-// once the gain has held for FD6818_AGC_HOLD readings. An empty channel reads up to about 8 dB over the target at full
-// gain, so a noisy desk or a strong noise burst can take a few dB off; the squelch doesn't use 0x67 (fd6818_am_noise)
+// The gain loop keeps a signal's 0x67 reading just under FD6818_AGC_TARGET: a reading (averaged with the one before)
+// 1 to 9 dB above it takes the gain down one entry; 10 dB or more takes it down at once by the excess less 8 dB. A
+// reading 6 dB or more below it raises the gain one entry per reading once FD6818_AGC_HOLD readings have passed since
+// the last cut or the last reading 6 dB under or above. A steady station settles 0-7 dB under the target (0x67
+// 129-143); without the one-entry cut it sat 3-8 dB over, where the AM demodulator is overdriven (hardware-dm32.md 8.7).
+// An empty channel reads up to about 8 dB over the target at full gain, so noise takes a few dB off; the squelch
+// doesn't use 0x67 (fd6818_am_noise)
 #define FD6818_AGC_TARGET	142u
 #define FD6818_AGC_HOLD		30u
 void fd6818_agc_reset(fd6818_agc_t *a);

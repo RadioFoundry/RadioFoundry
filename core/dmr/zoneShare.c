@@ -9,6 +9,12 @@ _Static_assert((ZS_SEND_CHUNK >= ZS_CHUNK_MIN) && (ZS_SEND_CHUNK <= ZS_CHUNK_MAX
 _Static_assert(ZS_SEND_CHUNK <= 562, "the builds since the first take chunks up to 562 (zone-share.md 3.1)");
 _Static_assert(ZS_SEND_FRAGMENTS_MAX <= 4, "the first builds take at most 4 fragments");
 
+#if CONFIG_ZONE_SHARE_MODES
+#define ZS_FLAGS_TAKEN	(ZS_FLAG_CHANNEL | ZS_FLAG_MODES)
+#else
+#define ZS_FLAGS_TAKEN	ZS_FLAG_CHANNEL	// a record with a modes part is refused whole
+#endif
+
 #define REC_HEADER		10		// version, length (2), zone ID (4), flags, channels, contacts; the name follows
 
 #define CH_DMR			0x01
@@ -156,8 +162,104 @@ bool zsWriterChannel(zsWriter_t *w, const zsChannel_t *ch)
 	return !w->failed;
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+static void putBytes(zsWriter_t *w, const uint8_t *p, uint8_t n)
+{
+	put8(w, n);
+	for (int i = 0; i < n; i++)
+	{
+		put8(w, p[i]);
+	}
+}
+
+void zsWriterModes(zsWriter_t *w, uint8_t systems)
+{
+	if ((w->out == NULL) || (w->at < REC_HEADER) || (w->channels == 0) || (w->modes != 0) || (systems > ZS_SYSTEMS_MAX))
+	{
+		w->failed = true;
+		return;
+	}
+	w->modes = 1;
+	w->out[7] |= ZS_FLAG_MODES;
+	put8(w, systems);
+}
+
+bool zsWriterSystem(zsWriter_t *w, const zsSystem_t *s)
+{
+	bool whole = s->level == ZS_LEVEL_WHOLE;
+
+	if ((w->modes != 1) || (s->type == 0) || (s->type == 0xFF) || (s->flags & ~ZS_SYSTEM_FLAGS) ||
+			((s->level != ZS_LEVEL_IDENTITY) && !whole) || (s->idLen > s->blockLen) || (s->blockLen > ZS_BLOCK_MAX) ||
+			(!whole && (s->blockLen != s->idLen)) || (whole && (s->secretLen > ZS_BODY_MAX)))
+	{
+		w->failed = true;
+		return false;
+	}
+	put8(w, s->type);
+	put8(w, s->flags);
+	put8(w, s->level);
+	put8(w, s->idLen);
+	putBytes(w, s->block, s->blockLen);
+	putName(w, s->name);
+	if (whole)
+	{
+		putBytes(w, s->secret, s->secretLen);
+		put8(w, s->entries);
+	}
+	return !w->failed;
+}
+
+bool zsWriterEntry(zsWriter_t *w, const zsEntry_t *e)
+{
+	if ((w->modes != 1) || (e->len > ZS_BODY_MAX))
+	{
+		w->failed = true;
+		return false;
+	}
+	put8(w, e->cls);
+	put8(w, e->group);
+	put8(w, e->flags);
+	putBytes(w, e->body, e->len);
+	return !w->failed;
+}
+
+bool zsWriterTags(zsWriter_t *w, uint8_t tags)
+{
+	if ((w->modes != 1) || (tags == 0) || (tags > w->channels))
+	{
+		w->failed = true;
+		return false;
+	}
+	w->modes = 2;
+	put8(w, tags);
+	return !w->failed;
+}
+
+bool zsWriterTag(zsWriter_t *w, const zsTag_t *t)
+{
+	if ((w->modes != 2) || (t->channel == 0) || (t->channel > w->channels) || (t->kind == 0) || (t->kind == 0xFF) ||
+			(t->flags & ~ZS_TAG_FLAGS) || (t->len > ZS_BODY_MAX))
+	{
+		w->failed = true;
+		return false;
+	}
+	put8(w, t->channel);
+	put8(w, t->kind);
+	put8(w, t->system);
+	put8(w, t->flags);
+	putBytes(w, t->params, t->len);
+	return !w->failed;
+}
+#endif
+
 int zsWriterEnd(zsWriter_t *w)
 {
+#if CONFIG_ZONE_SHARE_MODES
+	if (w->modes == 1)
+	{
+		w->failed = true;// systems with no tag
+	}
+#endif
 	if (w->failed || (w->channels == 0) || (w->at > w->size))
 	{
 		return 0;
@@ -189,6 +291,23 @@ int zsContactSize(const zsContact_t *c)
 {
 	return 4 + nameSize(c->name);
 }
+
+#if CONFIG_ZONE_SHARE_MODES
+int zsSystemSize(const zsSystem_t *s)
+{
+	return 4 + 1 + s->blockLen + nameSize(s->name) + ((s->level == ZS_LEVEL_WHOLE) ? 1 + s->secretLen + 1 : 0);
+}
+
+int zsEntrySize(const zsEntry_t *e)
+{
+	return 4 + e->len;
+}
+
+int zsTagSize(const zsTag_t *t)
+{
+	return 5 + t->len;
+}
+#endif
 
 int zsChannelSize(const zsChannel_t *ch)
 {
@@ -315,6 +434,111 @@ static void readChannel(reader_t *r, uint8_t contacts, zsChannel_t *ch)
 	r->bad = r->bad || (ch->rxHz == 0) || (ch->rxHz > 0x7FFFFFFF) || (tx <= 0) || (tx > 0x7FFFFFFF);
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// A length and that many octets: where they start in *p (NULL when none), at most max
+static uint8_t getBytes(reader_t *r, const uint8_t **p, uint8_t max)
+{
+	uint8_t n = get8(r);
+
+	*p = (n != 0) ? r->p + r->at : NULL;
+	if ((n > max) || (r->at + n > r->length))
+	{
+		r->bad = true;
+		return 0;
+	}
+	r->at += n;
+	return n;
+}
+
+// A system up to its entries; the entries are the caller's to step over
+static void readSystem(reader_t *r, zsSystem_t *s)
+{
+	memset(s, 0, sizeof(*s));
+	s->type = get8(r);
+	s->flags = get8(r);
+	s->level = get8(r);
+	s->idLen = get8(r);
+	s->blockLen = getBytes(r, &s->block, ZS_BLOCK_MAX);
+	getName(r, s->name);
+	if (s->level == ZS_LEVEL_WHOLE)
+	{
+		s->secretLen = getBytes(r, &s->secret, ZS_BODY_MAX);
+		s->entries = get8(r);
+	}
+	s->entryAt = (uint16_t)r->at;
+	r->bad = r->bad || (s->type == 0) || (s->type == 0xFF) || (s->flags & ~ZS_SYSTEM_FLAGS) ||
+			((s->level != ZS_LEVEL_IDENTITY) && (s->level != ZS_LEVEL_WHOLE)) || (s->idLen > s->blockLen) ||
+			((s->level == ZS_LEVEL_IDENTITY) && (s->blockLen != s->idLen));
+}
+
+static void readEntry(reader_t *r, zsEntry_t *e)
+{
+	e->cls = get8(r);
+	e->group = get8(r);
+	e->flags = get8(r);
+	e->len = getBytes(r, &e->body, ZS_BODY_MAX);
+}
+
+static void readTag(reader_t *r, zsTag_t *t)
+{
+	t->channel = get8(r);
+	t->kind = get8(r);
+	t->system = get8(r);
+	t->flags = get8(r);
+	t->len = getBytes(r, &t->params, ZS_BODY_MAX);
+	r->bad = r->bad || (t->kind == 0) || (t->kind == 0xFF) || (t->flags & ~ZS_TAG_FLAGS);
+}
+
+// The modes part, checked whole: counts, lengths, every tag's channel (in order, each once) and system
+static bool parseModes(reader_t *r, zsRecord_t *rec)
+{
+	int entries = 0;
+
+	rec->systems = get8(r);
+	rec->systemsAt = (uint16_t)r->at;
+	if (rec->systems > ZS_SYSTEMS_MAX)
+	{
+		return false;
+	}
+	for (int i = 0; i < rec->systems; i++)
+	{
+		zsSystem_t s;
+		zsEntry_t e;
+
+		readSystem(r, &s);
+		entries += s.entries;
+		if (r->bad || (entries > ZS_ENTRIES_MAX))
+		{
+			return false;
+		}
+		for (int k = 0; k < s.entries; k++)
+		{
+			readEntry(r, &e);
+		}
+	}
+	rec->tags = get8(r);
+	rec->tagsAt = (uint16_t)r->at;
+	if (r->bad || (rec->tags == 0) || (rec->tags > rec->channels))
+	{
+		return false;
+	}
+	uint8_t last = 0;
+
+	for (int i = 0; i < rec->tags; i++)
+	{
+		zsTag_t t;
+
+		readTag(r, &t);
+		if (r->bad || (t.channel <= last) || (t.channel > rec->channels) || ((t.system > rec->systems) && (t.system != ZS_SYSTEM_WITHHELD)))
+		{
+			return false;
+		}
+		last = t.channel;
+	}
+	return true;
+}
+#endif
+
 bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 {
 	memset(rec, 0, sizeof(*rec));
@@ -331,7 +555,7 @@ bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 	rec->contacts = get8(&r);
 	getName(&r, rec->name);
 	if (r.bad || (rec->zoneId == 0) || (rec->channels == 0) || (rec->channels > ZS_CHANNELS_MAX) ||
-			(rec->contacts > ZS_CONTACTS_MAX) || (rec->flags & ~ZS_FLAG_CHANNEL) ||
+			(rec->contacts > ZS_CONTACTS_MAX) || (rec->flags & ~ZS_FLAGS_TAKEN) ||
 			((rec->flags & ZS_FLAG_CHANNEL) && (rec->channels != 1)))
 	{
 		return false;
@@ -358,6 +582,12 @@ bool zsParse(const uint8_t *data, int length, zsRecord_t *rec)
 			return false;
 		}
 	}
+#if CONFIG_ZONE_SHARE_MODES
+	if ((rec->flags & ZS_FLAG_MODES) && !parseModes(&r, rec))
+	{
+		return false;
+	}
+#endif
 	if (r.at != length)
 	{
 		return false;// trailing octets: not the record its header describes
@@ -390,6 +620,58 @@ bool zsChannelAt(const zsRecord_t *rec, int index, zsChannel_t *ch)
 	readChannel(&r, rec->contacts, ch);
 	return !r.bad;
 }
+
+#if CONFIG_ZONE_SHARE_MODES
+bool zsSystemAt(const zsRecord_t *rec, int index, zsSystem_t *s)
+{
+	if ((rec->data == NULL) || !(rec->flags & ZS_FLAG_MODES) || (index < 0) || (index >= rec->systems))
+	{
+		return false;
+	}
+	reader_t r = { .p = rec->data, .length = rec->length, .at = rec->systemsAt };
+	zsEntry_t e;
+
+	for (int i = 0; i <= index; i++)
+	{
+		readSystem(&r, s);
+		for (int k = 0; (i < index) && (k < s->entries); k++)
+		{
+			readEntry(&r, &e);
+		}
+	}
+	return !r.bad;
+}
+
+bool zsEntryAt(const zsRecord_t *rec, const zsSystem_t *s, int index, zsEntry_t *e)
+{
+	if ((rec->data == NULL) || (index < 0) || (index >= s->entries))
+	{
+		return false;
+	}
+	reader_t r = { .p = rec->data, .length = rec->length, .at = s->entryAt };
+
+	for (int k = 0; k <= index; k++)
+	{
+		readEntry(&r, e);
+	}
+	return !r.bad;
+}
+
+bool zsTagAt(const zsRecord_t *rec, int index, zsTag_t *t)
+{
+	if ((rec->data == NULL) || !(rec->flags & ZS_FLAG_MODES) || (index < 0) || (index >= rec->tags))
+	{
+		return false;
+	}
+	reader_t r = { .p = rec->data, .length = rec->length, .at = rec->tagsAt };
+
+	for (int i = 0; i <= index; i++)
+	{
+		readTag(&r, t);
+	}
+	return !r.bad;
+}
+#endif
 
 // --- Messages ---
 

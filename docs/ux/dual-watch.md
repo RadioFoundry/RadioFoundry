@@ -63,8 +63,8 @@ Two panes of the same size, A over B: neither channel is second class. Each pane
 |---|---|
 | Tag | The letter in a box as tall as the pane; under the letter, an arrow (▶) on the selected pane only |
 | 1 | Channel number and name (the VFO: its frequency); at the right, the PTT pill (selected pane) or TX |
-| 2 | What PTT talks to (DMR: "TG 3100 USA"), or the frequency (FM); while a call comes in, the caller, and the RX pill at the right |
-| 3 | Frequency, timeslot and color code, or tone and width (where there is room) |
+| 2 | What PTT talks to (DMR: "TG 3100 USA"), or the frequency (FM); the VFO: "VFO" and its mode ("VFO FM", "VFO P25"). While a call comes in, the caller (without one: "FM signal", "AM signal", "P25 call", "NXDN call"), and the RX pill at the right |
+| 3 | Frequency, timeslot and color code, or tone and width; in AM "Air Band AM" (where there is room) |
 | 4 | The zone (where there is room: B may be in another zone than A). Where row 3 has room, the zone sits at its right instead |
 
 While a frequency is typed for the selected VFO pane, row 1 shows the digits so far and blanks for the remaining places
@@ -98,7 +98,7 @@ whole wait, and with a conversation on one channel it was seldom checked at all.
 
 <img src="screens/240x320/home_dual_busy.png" width="200" alt="Busy on A during the wait after a call on B">
 
-The status strip shows **DUAL** (amber) and the selected channel's mode (the radio's own mode alternates). It says RX while a call comes in on either pane. Every color comes with a word (P5).
+The status strip shows **DUAL** (amber) and the selected channel's mode (the radio's own mode alternates). The mode is the one the pane's channel is received in: AM for an FM channel or VFO in the air band on a radio that receives AM there ([airband-and-broadcast.md](../spec/airband-and-broadcast.md) 3), on the pane, in the strip and in the picker. It says RX while a call comes in on either pane. Every color comes with a word (P5).
 
 **Large text** (Settings › Display): one line per channel, "A COUNTY DMR" / "B Metro DMR", as large as fits, the
 selected one marked with an arrow at its left, green while a call comes in on it. The line receiving a call has its letter in a filled box.

@@ -14,7 +14,7 @@ The [Radio reference](23-radios.md) says which radios have DMR verified. DMR voi
 | Talk target | Where **PTT** goes now: a talkgroup, a person, or all call |
 | Listen list | The talkgroups a channel listens to (the codeplug's RX group list) |
 | Recent | Stations heard and calls made, newest first |
-| Digital monitor | Play every talkgroup on this timeslot (promiscuous mode) |
+| Digital monitor | Play every call on this frequency: any talkgroup, timeslot or color code (promiscuous mode) |
 | Timeslot (TS) | One of the two time slots of a DMR channel |
 | Color code (CC) | A number from 0 to 15 that a DMR channel uses, like a tone on FM |
 
@@ -29,6 +29,11 @@ The radio plays a group call when one of these is true:
 
 The radio plays a private call addressed to your DMR ID. It shows every other call on the slot as "Other TG: not
 played" and treats the channel as busy while it lasts.
+
+Transmitting keeps the channel's color code even while listening on any color code.
+
+Unless digital monitor is on, a repeater channel hears only its own timeslot. A call the radio joins partway
+through shows that call's caller and talkgroup, never those of a call on the other timeslot or of an earlier call.
 
 ## Who you talk to
 
@@ -96,6 +101,10 @@ On an FM channel **Talk target** shows "Talk target: DMR channels only".
 On Home, type the number. Find lists "Talk to TG 3100" and "Private call 3100" (with a name when the ID is a contact).
 Focus one and press **PTT** for one call, or **OK** for now.
 
+On a trunked channel, Find also lists "Phone call 5551234" last: **PTT** on it calls that number through the system's
+telephone gateway (the system refuses it when it has none). A call from the telephone network shows the caller's
+number, or "Phone line" when the system didn't send one.
+
 ## Replying
 
 After a call the radio played, the reply window opens. During the window **PTT** answers the call. A group call is
@@ -126,6 +135,7 @@ On Home, **#** opens the actions for the current or last caller. A digit picks a
 | 7 | Save as contact | Opens New Contact with their ID and name ([Contacts](#contacts)). "In contacts" when they are one |
 | 8 | Speak status | Not built yet |
 | 9 | Save to channel | Shown only when the channel has temporary changes |
+| last | Poll short data | Shown only on a trunked channel. Asks their radio for its short data; the answer arrives as a message. "Poll: no short data" when none comes |
 
 For a talkgroup the actions are Talk to, Make channel default and Message, and 4 Save as contact when it isn't a contact.
 
@@ -246,14 +256,25 @@ The beep at the end of a call you hear is the call end tone. The channel's **Tal
 
 ## Digital monitor
 
-Digital monitor plays every talkgroup on this frequency, timeslot and color code.
+Digital monitor plays every call on this frequency: any talkgroup, either timeslot, any color code. It plays one
+call at a time, the first it hears, until that call ends. The call screen shows the call's timeslot, and its color code
+when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel to that timeslot and color code
+(**\***, **2** and **\***, **3**).
 
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
+- Or a key set to **Monitor toggle** in [Settings > Keys](17-settings.md), which does what **\***, **5** does.
 
-Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. While it
-is on, the reply window lets you answer any call you heard with **PTT**.
+Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
+[scan](12-scan.md) started with it on keeps it on at every channel. While it
+is on, the reply window lets you answer any call you heard with **PTT**. **PTT** always sends on the channel's
+timeslot and color code, so a call heard on another one doesn't hear the reply. While digital monitor plays a call on
+the other timeslot, the channel counts as busy.
+
+On a [Tier III trunked channel](#setting-one-up) digital monitor follows calls on every talkgroup of the system, not
+only the channel's RX group list. It still plays only the system's calls, on their own timeslot. While it plays one,
+**PTT** talks on that call, as on any call the radio follows (not on a broadcast or an all-call someone else made).
 
 ## Privacy
 
@@ -263,18 +284,58 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
-- Calls with stronger encryption (they send a PI header) are never played.
+- On builds with AES-256 enabled, the radio can play a call when it receives the opening privacy header and has the matching AES key. AES transmissions repeat the message indicator during the call for receivers joining late.
+- Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
+  radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
+  fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
+  the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
+  not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
-To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
+Most countries don't allow encrypted or scrambled messages on amateur frequencies: read
+[Encryption on amateur frequencies](04-programming.md#encryption-on-amateur-frequencies) before using basic privacy or AES
+there.
+
+For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
+Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal
+digits from your browser; use it rather than typing a key, since typed keys tend to be weak. **Show AES keys**
+shows the digits. On the channel, choose **DMR AES-256**, select the system and PI key ID, then write the codeplug
+to the radio. Both radios must have the same key bytes and ID. The system and channel must both allow transmit.
+
+On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
+system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are
+disabled on these channels, and your GPS position is not sent on them. The editor's image export omits key bytes by
+default. Including keys produces a file that contains the keys.
+
+For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
+where its encryption sequence stands, so it never reuses one after a restart. Press PTT again.
+
+Radios of other makes need a part of the signal that not every radio sends yet. Two radios running RadioFoundry always
+understand each other. Check [Feature matrix](../feature-matrix.md) (the `DMR_AES` row) for which radios can talk AES
+to radios of other makes; on the others another make plays the first moments and then noise.
+
+What AES does not do:
+
+- The radio IDs, the talkgroup and the talker alias stay readable to anyone listening.
+- A recorded over can be played back on air later, and nothing tells the listener it is a replay.
+- A clear call on an AES channel is still played.
+- Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
+  keys.
+- Change the key after a factory reset. The radio repairs its saved encryption position after a settings restore
+  while it's running, but a restart before it saves the repair can reuse part of the sequence. Change the key if
+  settings were restored while the radio was off or you're unsure the repair was saved.
+- Change a key that has carried a lot of traffic, for example once a year on a busy channel.
+
+To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
 1. On **Key type**, press **OK** until it shows Motorola or Anytone.
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
 The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
-can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
+doesn't store these basic privacy keys. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
@@ -350,3 +411,118 @@ at least two sites. Changing channel or zone yourself makes the new channel home
 The threshold (default -105 dBm), the hysteresis (6 dB) and the optional periodic search of the other sites are set
 over the debug link for now ([dmr-roaming](../spec/dmr-roaming.md) section 5.1). The debug link also sets the idle
 beacon that a hotspot running MMDVM SFR can send for roaming radios (`rpt_beacon`, off by default).
+
+Polite channel access waits for recent activity to expire before transmitting. A quiet channel becomes available again even if no further bursts arrive.
+
+## Trunked systems
+
+A DMR Tier III trunked system gives out a channel for each call. The radio stays on the system's control channel,
+registers there, and goes to the channel the system grants. The system sets the frequency, slot and color code of each
+call, so a trunked channel has none of its own.
+
+What has been checked on each radio is in the
+[feature matrix](../feature-matrix.md#checked-on-each-radio).
+
+### Setting one up
+
+In the Codeplug Editor ([Programming](04-programming.md#digital-modes-and-systems)):
+
+1. On the **Systems** tab add a system of type DMR Tier III Trunking. Enter its network model, NET, category and color
+   code, and its channels with **Control** ticked on the control channels. The system's operator has these values.
+2. Make a channel, set its **Mode** to DMR Tier III Trunking and pick the system. Set **TX Contact** to the default
+   call destination and **RX Group List** to the talkgroups you want to follow.
+3. Put the channel in a zone, with any other channels.
+
+When a Tier III private call rings, you can release **PTT** while the other person answers. If the system grants
+the call while **PTT** is released, press it again to speak. The screen shows **Calling** while the
+other radio rings. Press **Back** to cancel the pending call.
+
+For an incoming private call, the radio beeps every two seconds and shows who is calling. Press **Back** to
+reject or **PTT** to answer. Release it, then
+press again to speak once the system grants the call.
+
+| Setting | Does |
+|---|---|
+| Transmit | Never (listen only): the radio follows the system and its calls, and never registers or transmits there. Use it until the operator has enabled your radio's ID |
+| Needs its key | For a system that authenticates its radios. Enter the key in the form's **Key** section; without it the channel can't be used |
+| Radio ID on this system | Your ID there, when it isn't the radio's DMR ID |
+| Fallback channel | A conventional channel to use when the system can't be found (below). A channel can name its own, or none |
+| Follow every talkgroup | Plays calls on all the system's talkgroups, not only the channel's RX group list. Digital monitor does the same while it is on. Off by default |
+| Learn the system from the air | For listening to a system whose model and NET you don't know: the radio takes the first control channel it hears as the system. Only while it listens (Transmit off, or a receive-only channel). Off by default |
+
+A channel that is receive only in the editor stays receive only on the system: the radio listens and refuses PTT.
+
+### A ham system
+
+For a ham Tier III system, RadioFoundry recommends one setup, so that a radio set up once works on every ham site
+that follows the recommendation. Your DMR ID is the radio's ID and the talkgroups are BrandMeister's. The values and
+the reasons for each are in [Recommended ham trunked systems](../spec/ham-trunking.md).
+
+- On the **Systems** tab pick DMR Tier III Trunking and press **Add Recommended Ham System**. Enter a name, the
+  control channel's frequencies and the site's number from the site's operator. The system form opens with the rest
+  filled in: network model Huge, NET 1, category A, color code 1, registration on.
+- Or open the template
+  [ham-tier3.yaml](https://github.com/radiofoundry/radiofoundry/blob/main/docs/examples/ham-tier3.yaml) with **Open
+  File** in the Codeplug Editor, change the radio ID, name and frequencies, and write the codeplug. The template holds
+  the system, the BrandMeister talkgroups 91, 93, 3100 and 9 and one channel.
+
+### On the air
+
+Select the channel. Home shows the system's name and what the radio is doing there, in place of slot and color code:
+
+| Home shows | Meaning |
+|---|---|
+| Searching | Looking for the system's control channel |
+| Other system | Looking for the system, and hearing only another one. The line below names what was heard ("Heard: Huge, net 0, site 83"): compare that with the system's network model and network number in the editor. "Incompatible system" means the channel carries another kind of trunking system, which this radio cannot join. No setting changes that |
+| Registering | Found; registering with the system |
+| Reg. refused | The system doesn't accept this radio, most often because your DMR ID isn't in its records. Ask the system's administrator to add it. The radio keeps asking. PTT says "Registration refused" |
+| Ready | On the control channel. Hold **PTT** to call |
+| In call | On a channel the system granted, in a call |
+| Refused | The system refused the registration. PTT is refused |
+| Fallback | No control channel found: on the fallback channel |
+| System not set up | The channel's system is missing, has no control channel or lacks its key. The channel is receive only |
+
+If PTT says **Unknown channel N**, the system granted your call on channel N and the system's channel list doesn't
+have it. Add channel N with its frequencies; on a site with one carrier, give the control channel the number N. The
+number is the one the control channel sends. A site tool or scanner that counts each timeslot as a channel shows
+2 × N + 1 and 2 × N + 2 instead (623 and 624 for 311); the radio takes those too.
+
+Hold **PTT**: the radio asks the system for a channel and talks once the system grants it. When the system refuses or
+doesn't answer, PTT is refused, and the screen says why: no control channel, another system heard, not registered yet,
+denied by the system, or no answer. The talk target is the channel's contact, or one you pick as on any DMR channel
+([Choosing a talk target](#choosing-a-talk-target)).
+
+Zone and channel lists name a trunked channel's system where the frequency would be. A channel whose system isn't set
+up is dimmed, and channel stepping passes it. Scan passes trunked channels by.
+
+### Fallback
+
+When the radio has found no control channel for the hold time (30 s unless the system sets another), it goes to the
+fallback channel and works there as on any channel. While that channel is quiet it looks for the system again every
+10 s. When it finds it, it goes back, beeps and says "Back on" with the system's name.
+
+### Stun and kill
+
+A system can disable a radio it no longer trusts. Both are off unless you turn them on for the system (**Accept a
+stun**, **Accept a kill**).
+
+| | What happens | Undone by |
+|---|---|---|
+| Stun | The radio stays on the system and can't call or follow calls there. Kept across power-off | The system's revive, or a factory reset |
+| Kill | All DMR stops, on every channel and the hotspot. FM still works. Taken only from a system whose key the radio holds | A factory reset only |
+
+On a system without a key a stun is taken as sent, from any transmitter that sends one: leave **Accept a stun** off
+there.
+
+## Accept invalid CRC
+
+Some systems send their control messages and call headers with a checksum (CRC) the standard doesn't accept. The radio
+drops those: a trunked channel stays on **Searching**, and calls on a DMR channel may not be heard. To listen to such
+a system, turn on **Accept Invalid CRC** for its channels in the Codeplug Editor's channel settings. It works on DMR,
+DMR trunked and P25 trunked channels, and is off on a new channel.
+
+- The radio takes a message that fails its checksum only when the same message failed shortly before. These systems
+  repeat their messages; a message damaged on the air rarely comes out the same twice.
+- On a trunked channel the radio doesn't register, answer or call while the last control message it took failed its
+  checksum. On a system whose messages all fail, it only listens, and PTT is refused.
+- Leave it off on systems the radio hears normally.

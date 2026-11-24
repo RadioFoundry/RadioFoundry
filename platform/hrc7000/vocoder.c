@@ -42,10 +42,14 @@ extern const uint8_t __codec_slot_end[];
 // State sizes: at least D 0x1400 and E 0x1900 (codec-dm32.md C, exact sizes open); room to spare
 #define DEC_STATE_BYTES		0x1800u
 #define ENC_STATE_BYTES		0x1C00u
+#define STATE_BYTES		(ENC_STATE_BYTES > DEC_STATE_BYTES ? ENC_STATE_BYTES : DEC_STATE_BYTES)
 #define HALF			(VOCODER_FRAME_SAMPLES / 2)
 
-static uint32_t dec_state[DEC_STATE_BYTES / 4] __attribute__((aligned(8)));
-static uint32_t enc_state[ENC_STATE_BYTES / 4] __attribute__((aligned(8)));
+// One block holds the encoder's state or the decoder's, never both: DMR and NXDN voice are simplex, so a call only
+// encodes or only decodes (core/dmr/ambe/ambeVoice.c decodes nothing while a transmission runs). Each init touches only
+// its own block (codec-dm32.md C), so the first encode after decoding, or the first decode after encoding, builds its
+// half fresh, as reset() did at the start of every call. Saves the 6 KB a second block took
+static uint32_t state[STATE_BYTES / 4] __attribute__((aligned(8)));
 static int16_t bitbuf[72] __attribute__((aligned(4)));	// one bit per halfword
 static int16_t pcmbuf[VOCODER_FRAME_SAMPLES] __attribute__((aligned(4)));
 
@@ -59,12 +63,13 @@ static const codec_slot_t *slot;
 static uint32_t code_ram;
 static int8_t presence = -1;	// the slot's check: -1 not run yet, 1 valid, 0 not
 static volatile bool parked;	// stopped for a stub upload: the calls return at once, the slot's check still holds
-static bool ready;
+enum { HELD_NONE, HELD_ENC, HELD_DEC };
+static uint8_t held = HELD_NONE;	// what the state block holds now; NONE after reset() or a lend
 static uint32_t enc_flags = AMBE2_ENC_DEFAULT;	// set_options (VOCODER_OPT_DEFAULT until then)
 
-static int16_t *h16(void *state, uint32_t off)
+static int16_t *h16(void *blk, uint32_t off)
 {
-	return (int16_t *)((uint8_t *)state + off);
+	return (int16_t *)((uint8_t *)blk + off);
 }
 
 // The slot checked (codec_slot.h: header, windows, entries, relocations, CRC), the code copied to where it runs and
@@ -108,15 +113,12 @@ static void *entry(uint32_t off)
 	return (void *)(uintptr_t)(code_ram + off);
 }
 
-// The stock init sequence (codec-dm32.md C), on our state blocks
-static void reset_run(void)
+// The init sequence (codec-dm32.md C) in its two halves, each on the shared block: the encoder's steps, or the
+// decoder's (with its first decode)
+static void enc_start(void)
 {
-	if (!present()) {
-		return;
-	}
-	void *D = dec_state, *E = enc_state;
-	memset(dec_state, 0, sizeof dec_state);
-	memset(enc_state, 0, sizeof enc_state);
+	void *E = state;
+	memset(state, 0, sizeof state);
 	memset(bitbuf, 0, sizeof bitbuf);
 	static const struct { uint16_t off; int16_t v; } eparams[] = {
 		{ 0x172C, 0x1840 }, { 0x173A, 0x2000 }, { 0x173C, 128 }, { 0x173E, -20 }, { 0x1740, -22 },
@@ -126,18 +128,25 @@ static void reset_run(void)
 	for (uint32_t i = 0; i < sizeof eparams / sizeof eparams[0]; i++) {
 		*h16(E, eparams[i].off) = eparams[i].v;
 	}
-	*h16(D, 0x1152) = 0;
-	*h16(D, 0x116A) = 128;
-	*h16(D, 0x116C) = -20;
-
 	((fn3_t)entry(slot->enc_init))(E, 1, 1);
 	((fn2_t)entry(slot->fec_init))(h16(E, 0x16E0), 1);
 	((fn3_t)entry(slot->enc_set))(E, *h16(E, 0x173C), *h16(E, 0x173E));
+	held = HELD_ENC;
+}
+
+static void dec_start(void)
+{
+	void *D = state;
+	memset(state, 0, sizeof state);
+	memset(bitbuf, 0, sizeof bitbuf);
+	*h16(D, 0x1152) = 0;
+	*h16(D, 0x116A) = 128;
+	*h16(D, 0x116C) = -20;
 	((fn2_t)entry(slot->dec_init))(D, 1);
 	((fn2_t)entry(slot->fec_init))(h16(D, 0xFD0), 1);
 	((decode_t)entry(slot->decode))(h16(D, 0x12AE), HALF, h16(D, 0x1354), 0, 8, 0, D);
 	((fn3_t)entry(slot->dec_set))(D, *h16(D, 0x116A), *h16(D, 0x116C));
-	ready = true;
+	held = HELD_DEC;
 }
 
 // Two calls per 20 ms frame, 80 samples each, half 0 then 1. Both calls pass the same flags word, read once per frame
@@ -149,15 +158,15 @@ static void encode_run(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VO
 		memset(bits, 0, VOCODER_BITS);
 		return;
 	}
-	if (!ready) {
-		reset_run();
+	if (held != HELD_ENC) {
+		enc_start();
 	}
 	memcpy(pcmbuf, pcm, sizeof pcmbuf);
 	encode_t enc = (encode_t)entry(slot->encode);
 	const uint32_t flags = enc_flags;
 	for (int h = 0; h < 2; h++) {
-		enc(bitbuf, *h16(enc_state, 0x1736), &pcmbuf[h * HALF], HALF, (int)flags, h,
-		    *h16(enc_state, 0x173A), enc_state);
+		enc(bitbuf, *h16(state, 0x1736), &pcmbuf[h * HALF], HALF, (int)flags, h,
+		    *h16(state, 0x173A), state);
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bits[i] = (uint8_t)(bitbuf[i] & 1);
@@ -172,27 +181,27 @@ static void decode_run(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FRA
 		memset(pcm, 0, VOCODER_FRAME_SAMPLES * sizeof(int16_t));
 		return;
 	}
-	if (!ready) {
-		reset_run();
+	if (held != HELD_DEC) {
+		dec_start();
 	}
 	for (int i = 0; i < VOCODER_BITS; i++) {
 		bitbuf[i] = bits[i] & 1;
 	}
 	decode_t dec = (decode_t)entry(slot->decode);
 	for (int h = 0; h < 2; h++) {
-		dec(&pcmbuf[h * HALF], HALF, bitbuf, *h16(dec_state, 0x1166), 0, h, dec_state);
+		dec(&pcmbuf[h * HALF], HALF, bitbuf, *h16(state, 0x1166), 0, h, state);
 	}
 	memcpy(pcm, pcmbuf, sizeof pcmbuf);
 }
 
-// The calls mark themselves busy, so a park can wait for the one running
+// A fresh state for the next call: the next encode or decode builds its half (enc_start, dec_start). No codec call
+// here, so nothing for a park to wait out
 static void reset(void)
 {
-	busy = true;
-	hrc_barrier();		// set before present() reads parked: a park sees one or the other
-	reset_run();
-	busy = false;
+	held = HELD_NONE;
 }
+
+// The calls mark themselves busy, so a park can wait for the one running
 
 static void encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
@@ -271,9 +280,21 @@ static uint32_t encode_flags(void)
 	return enc_flags;
 }
 
+// The state block, lent while no DMR voice runs (hal_vocoder_t.lend): the next call builds its half again. The radio
+// core asks only with the DMR stack and its audio stopped, so no codec call is running
+#if HAL_VOCODER_LEND_BYTES != STATE_BYTES
+#error "platform.mk's HAL_VOCODER_LEND_BYTES must be STATE_BYTES"
+#endif
+static void *lend(size_t *len)
+{
+	held = HELD_NONE;
+	*len = sizeof state;
+	return state;
+}
+
 const hal_vocoder_t hrc_vocoder = {
 	.present = present, .reset = reset, .encode = encode, .decode = decode, .profile = profile,
-	.options = options, .set_options = set_options, .encode_flags = encode_flags,
+	.options = options, .set_options = set_options, .encode_flags = encode_flags, .lend = lend,
 };
 
 uint16_t hrc_vocoder_tag(void)

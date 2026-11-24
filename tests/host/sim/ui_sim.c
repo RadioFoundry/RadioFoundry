@@ -6,7 +6,7 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey skipkey monkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
@@ -27,12 +27,21 @@
 //                       zone z cut to n channels
 //   zonejob:<z>         another task (an import) deletes zone z (0-based) through the zone storage job
 //   fmrx / fmrxend      an FM signal opens / closes the squelch
+//   p25rx:<src>,<dst>[,u|e|o]   a P25 call (CONFIG_P25 builds): u a unit call, e encrypted, o another talk group
+//                       (both not played); p25rxend ends it
+//   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
+//   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
+//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
+//                       1 finding the system, 2 on the control channel, 3 following talk group tg
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
 //                       (each also <src>,<name>: the station's name, _ = space, for one not in the contacts)
 //   zoneoffer:<src>[,c] another radio offers its zone "Club net" (,c: one channel); the import and sends always work
 //   zoneexpire          the offer is gone (not opened in time)
+//   dlmode:fm|dmr|p25   the debug link sets the mode: the channel's for now, the VFO's own in the VFO
+//   dlvfo:<hz>          the debug link tunes the VFO to hz (it opens, as Find's Tune VFO)
+//   chhz:<n>,<hz>       stored channel n is an FM channel on hz (the air band with "am": received in AM)
 //   hotspot:on|off      the host link enters / leaves hotspot mode
 //   usbnet:off|on|up    USB a serial port, a network adapter, or a network adapter the computer has brought up
 //   timeout             the TX timeout cuts the transmission off while PTT is still held (shows the timeout deny)
@@ -40,13 +49,15 @@
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
+//   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
+//   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
 //   contacts:full       every contact number holds a talkgroup ("Long 31" ...), but every third: a list past 128
 //   contacts:<n>        the same up to contact n (a list just past 128 at 220)
 //   channels:full       every channel number past the 40 holds one ("Far 41" ...), but every third: a list past 128
 //   color:<name>        the highlight color (sim_color_find); strip:on|off  the filled status bar (Settings > Display)
-//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast)
+//   theme:<name>        the color theme (sim_theme_find: dark, light, high_contrast, night)
 //   splash              draw the boot screen (put it last: nothing redraws over it)
 //   splash:loader       the same splash as the stub entry draws it, while the flashing tools have the radio
 //   shot:<name>         save the screen (sim_set_shot_dir)
@@ -57,6 +68,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ui_sim.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/store.h"
+#endif
 // The board is changed at run time here (display, key map): this file defines it writable, the UI sees it const
 #define board board_as_declared
 #include "board.h"
@@ -72,6 +86,14 @@
 #include "hotspot/hotspot.h"
 #include "stubentry/stub_entry.h"
 #include "ui/ui_svc_aprs.h"
+#include "codeplug/codeplug_tag.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "radio/radio_p25.h"
+#endif
+#if CONFIG_DMR_TRUNK
+#include "dmr/trunk/t3_ms.h"
+#endif
 
 #define TICK_MS		50
 #define PRESS_MS	150
@@ -144,6 +166,33 @@ int sim_layout_issues(char out[][160], int max)
 	for (int i = 0; i < n; i++)
 		memcpy(out[i], issues[i], sizeof issues[0]);
 	return n;
+}
+
+bool sim_text_has_color(const char *text, uint16_t color)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strstr(live[i].s, text) == NULL)
+			continue;
+		for (int y = live[i].y0; y < live[i].y1; y++)
+			for (int x = live[i].x0; x < live[i].x1; x++)
+				if (gfx_get_pixel(x, y) == color)
+					return true;
+	}
+	return false;
+}
+
+bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strcmp(live[i].s, text) != 0)
+			continue;
+		*x = live[i].x0;
+		*y = live[i].y0;
+		*w = live[i].x1 - live[i].x0;
+		*h = live[i].y1 - live[i].y0;
+		return true;
+	}
+	return false;
 }
 
 void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int clip[4], const char *s)
@@ -256,12 +305,13 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 4, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 4, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
-	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
-	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
-	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
-	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
+	{ "160x120i5", 160, 120, 4, 5, 0, false, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 4, 0, 0, false, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "128x64", 128, 64, 1, 0, 0, false, false, false },	// GD-77 class, mono
+	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG; a frame buffer of the
+	// safe area only (boards/dm32/board.mk GFX_FB_SAFE_AREA)
+	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true, true },
+	{ "240x320", 240, 320, 16, 0, 0, true, false, false },	// 240x320 class at full resolution, standard text size
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -374,9 +424,18 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	(void)fb; (void)pal; (void)y0; (void)y1;
 }
 static void d_backlight(uint8_t p) { (void)p; }
+static void d_fill_insets(uint16_t c) { (void)c; }
+// The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
+static uint16_t bl_raw;
+static void d_backlight_raw(uint16_t v) { bl_raw = v; }
+static uint16_t d_backlight_raw_get(void) { return bl_raw; }
+static uint32_t d_backlight_rate(uint8_t i) { return 29296u >> (i < 3 ? i * 2 : 2); }
 static hal_display_t disp = { .width = 160, .height = 120, .bpp = 16, .init = d_init, .flush = d_flush,
 			      .flush_indexed = d_flush_indexed,
-			      .set_backlight = d_backlight };
+			      .set_backlight = d_backlight,
+			      .backlight_raw_max = 4096, .set_backlight_raw = d_backlight_raw,
+			      .backlight_raw = d_backlight_raw_get, .backlight_rates = 3, .backlight_rate_std = 1,
+			      .set_backlight_rate = d_backlight_rate };
 static uint8_t battery = 84;
 static uint8_t p_battery(void) { return battery; }
 static uint16_t p_supply(void) { return 13800; }	// the sim's view carries the reading (supply:<mv>)
@@ -387,6 +446,8 @@ static const band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480
 				{ 108000000, 136000000, false } };
 // "rxonly": a radio whose transmitter isn't written yet, every band receive only
 static const band_t rx_only_bands[] = { { 136000000, 174000000, false }, { 400000000, 480000000, false } };
+// "variant": the board suspects the image is for another hardware version (board_t.variant_mismatch)
+static bool variant_mismatch_yes(void) { return true; }
 static const char *const power_names[] = { "50mW", "250mW", "500mW", "750mW", "1W", "2W", "3W", "4W", "5W" };
 
 static bool afsk_tx_start(const uint8_t *t, uint16_t n, uint16_t baud, uint16_t mark, uint16_t space, uint8_t level)
@@ -407,9 +468,33 @@ static const hal_vocoder_t vocoder = { .options = v_options };
 static bool r_rx_am(uint32_t hz, radio_bw_t bw) { (void)hz; (void)bw; return true; }
 static const hal_radio_t am_radio = { .rx_am = r_rx_am };
 
+// The support info on About (docs/spec/support-info.md): an STM32F4, a small image to hash, a DMR and an RF chip
+static bool s_chip(hal_chip_t *c)
+{
+	c->idcode = 0x10076413u;
+	c->flash_kb = 1024;
+	c->family = HAL_CHIP_STM32F4;
+	return true;
+}
+static const uint8_t sim_image[4096] = { 0x52, 0x46 };
+static void s_read(uint32_t addr, void *dst, size_t n) { memcpy(dst, sim_image + (addr - 0x0800C000u), n); }
+static void s_image(uint32_t *addr, uint32_t *len) { *addr = 0x0800C000u; *len = sizeof sim_image; }
+static const hal_system_t sim_system = { .chip = s_chip, .read = s_read, .image = s_image };
+static bool s_hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	static const char *const v[] = { "HR_C6000", "AT1846S" };
+	if (i >= 2) {
+		return false;
+	}
+	*role = i == 0 ? BOARD_HW_DMR : BOARD_HW_RF;
+	snprintf(buf, len, "%s", v[i]);
+	return true;
+}
+
 board_t board = {
 	.name = "Simulator", .bands = bands, .band_count = 3, .power_count = 9, .power_names = power_names,
 	.power_default = 4, .display = &disp, .power = &power, .afsk = &afsk, .vocoder = &vocoder,
+	.system = &sim_system, .hw_line = s_hw_line,
 };
 
 static uint32_t now_ms = 1000;
@@ -605,8 +690,9 @@ static const sim_contact_t contacts[] = {
 };
 #define N_CONTACTS	(sizeof contacts / sizeof contacts[0])
 
-// Worst case (sim_worst): the same channels with 16-character names, numbered 985 to 1024; the same contacts with
-// 16-character names, 8-digit talkgroups and 7-digit IDs; three zones of 80 channels with 16-character names
+// Worst case (sim_worst): the same channels with 16-character names, numbered 985 to 1024, on frequencies with four
+// decimals and color code 15; the same contacts with 16-character names, 8-digit talkgroups and 7-digit IDs; three
+// zones of 80 channels with 16-character names
 static const char *const worst_ch[16] = {
 	"Johnson Peak Rpt", "COUNTY FIRE DISP", "Metro DMR Wide 2", "North Link TS2 B",
 	"Harbor Pilots Ch", "Airport Ops DMR1", "Lakeshore Rpt 22", "Ridge DMR Statew",
@@ -665,13 +751,28 @@ bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	if (id < UI_SET_RAM_COUNT || id >= UI_SET_COUNT)
 		return ui_svc_ram_set(id, value);
+	if (id == UI_SET_SIG_STEP) {	// a whole step: the firmware writes one record, here its two settings
+		uint32_t ev = (uint32_t)value >> 23 & 3u, k = (uint32_t)value >> 19 & 15u;
+		if (ev >= 3 || k >= 10)
+			return false;
+		sim_late[UI_SET_SIG_HZ + 10 * ev + k - UI_SET_RAM_COUNT] = value & 0xFFF;
+		sim_late[UI_SET_SIG_MS + 10 * ev + k - UI_SET_RAM_COUNT] = (value >> 12 & 0x7F) * 10;
+		return true;
+	}
 	sim_late[id - UI_SET_RAM_COUNT] = value;
 	return true;
 }
 
 // Channels the channel editor saved (ui_svc_write_channel): they shadow the built-in ones and fill numbers past 40
 #define SIM_EDITS	8
-static struct { uint16_t number; channel_t ch; } sim_edits[SIM_EDITS];
+static struct {
+	uint16_t number;
+	channel_t ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	bool air_set;		// saved with a block (ui_svc_write_channel_air)
+	ui_air_conv_t air;
+#endif
+} sim_edits[SIM_EDITS];
 static uint8_t n_edits;
 
 static const channel_t *sim_edit(uint16_t number)
@@ -682,22 +783,61 @@ static const channel_t *sim_edit(uint16_t number)
 	return NULL;
 }
 
-bool ui_svc_write_channel(uint16_t number, const channel_t *ch)
+static int sim_write(uint16_t number, const channel_t *ch)
 {
-	if (sim_hold())
-		return sim_held;
 	uint8_t i = 0;
 	while (i < n_edits && sim_edits[i].number != number)
 		i++;
 	if (i == SIM_EDITS)
-		return false;
+		return -1;
 	if (i == n_edits)
 		n_edits++;
 	sim_edits[i].number = number;
 	sim_edits[i].ch = *ch;
+#if CONFIG_P25 || CONFIG_NXDN
+	sim_edits[i].air_set = false;
+#endif
 	sim_rec.codeplug_writes++;
+	return i;
+}
+
+bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from)
+{
+	(void)from;
+	if (sim_hold())
+		return sim_held;
+	return sim_write(number, ch) >= 0;
+}
+
+#if CONFIG_P25 || CONFIG_NXDN
+// The block goes with the channel: a plain channel in P25 or NXDN becomes one of the kind, as the storage job makes it
+bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t from, const ui_air_conv_t *conv)
+{
+	(void)from;
+	if (sim_hold())
+		return sim_held;
+	channel_t c = *ch;
+	if (c.kind == CODEPLUG_KIND_NONE) {
+		c.kind = c.mode == RADIO_MODE_P25 ? CODEPLUG_KIND_P25 : CODEPLUG_KIND_NXDN;
+		c.mode = RADIO_MODE_DMR;	// the stand-in record
+	}
+	int i = sim_write(number, &c);
+	if (i < 0)
+		return false;
+	sim_edits[i].air_set = true;
+	sim_edits[i].air = *conv;
 	return true;
 }
+
+// The block saved with channel number, NULL: none
+static const ui_air_conv_t *sim_air(uint16_t number)
+{
+	for (uint8_t i = 0; i < n_edits; i++)
+		if (sim_edits[i].number == number && sim_edits[i].air_set)
+			return &sim_edits[i].air;
+	return NULL;
+}
+#endif
 
 uint16_t codeplug_free_channel(void)
 {
@@ -754,12 +894,61 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 		out->tx_tone.value = 1000;
 	}
 	out->color_code = 1;
+	if (worst) {
+		// The widest a frequency and a color code print: 453.6375, CC15. A 12.5 kHz channel with four
+		// decimals and a two-digit color code ran off dual watch's third row on the DM-32UV class (#837)
+		out->rx_hz += 12500;
+		out->tx_hz += 12500;
+		out->color_code = 15;
+	}
 	out->timeslot = 1;
 	out->contact = 1;	// TG 3100 USA
 	out->listen_list = 1;
 	out->rx_only = number == 25 || number == 26;	// NOAA
 	return true;
 }
+
+// Channel tags (codeplug_tag.c): no tag area here; a copy keeps its kind in sim_edits already
+bool codeplug_tag_copy(uint16_t from, uint16_t to, const channel_t *ch)
+{
+	(void)from;
+	(void)to;
+	(void)ch;
+	return true;
+}
+
+#if CONFIG_P25
+static bool p25_radio;		// below: the "p25" token
+// A stored P25 channel's block (p25_codeplug.c): the defaults (NAC 293, normal squelch)
+bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25)
+		return false;
+	out->rx_nac = out->tx_nac = P25_NAC_DEFAULT;
+	out->squelch = P25_SQUELCH_NORMAL;
+	if (sim_air(number) != NULL)
+		*out = sim_air(number)->p25;	// as the editor saved it
+	return true;
+}
+bool radio_p25_fits(void) { return p25_radio; }
+#endif
+#if CONFIG_NXDN
+static bool nxdn_radio;		// below: the "nxdn" token
+bool radio_nxdn_fits(void) { return nxdn_radio; }
+// A stored NXDN channel's set-up (nxdn_codeplug.c): 9600 bit/s, RAN 1, unless the editor saved a block
+bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_NXDN)
+		return false;
+	memset(out, 0, sizeof *out);
+	out->conv = (nxdn_conv_t){ .rate9600 = true, .rx_ran = 1, .tx_ran = 1, .squelch = NXDN_SQUELCH_RAN };
+	if (sim_air(number) != NULL)
+		out->conv = sim_air(number)->nxdn;
+	out->unit_id = 1;
+	out->target = 1;
+	return true;
+}
+#endif
 
 // Zones the zone editor wrote (ui_svc_zone_edit, the real zone_edit.c on these fakes): once one is written, every
 // zone is a copy here, which the editor changes
@@ -857,7 +1046,7 @@ bool codeplug_delete_zone(uint16_t index)
 	return true;
 }
 
-bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch); }
+bool codeplug_set_channel(uint16_t number, const channel_t *ch) { return ui_svc_write_channel(number, ch, 0); }
 // Only a channel the editor wrote (Copy here's rollback when its zone write fails)
 bool codeplug_delete_channel(uint16_t number)
 {
@@ -1057,6 +1246,9 @@ static const char *contact_name(uint32_t id, bool group)
 
 static radio_view_t view;
 static uint32_t serial;
+#if CONFIG_SATELLITE_TLE
+static radio_satellite_view_t satellite_view;
+#endif
 static channel_t ch_saved;	// the channel as stored (temporary changes are on view.ch)
 static uint32_t temp_target;	// temporary talk target (0 = channel default)
 static bool temp_private;
@@ -1146,6 +1338,70 @@ static void default_target(void)
 	}
 }
 
+#if CONFIG_DMR_TRUNK
+// Trunked channels (dmr-trunking-codeplug.md 4), after the "t3" token: channel 3 uses the system "County", set up; channel 5
+// "Metro", not set up. On a usable one the radio is registered; "t3state:" changes what it is doing
+static bool t3_tagged;
+int ui_svc_t3_channel(uint16_t num, const channel_t *ch, bool *usable)
+{
+	(void)ch;
+	if (!t3_tagged || (num != 3 && num != 5))
+		return -1;
+	if (usable != NULL)
+		*usable = num == 3;
+	return num == 3 ? 0 : 1;
+}
+bool ui_svc_t3_name(uint8_t n, char *name)
+{
+	static const char *const names[] = { "County", "Metro" };
+	if (n > 1)
+		return false;
+	strcpy(name, names[n]);
+	return true;
+}
+void ui_svc_t3_reject(void)
+{
+	view.t3.ring_src = 0;
+	serial++;
+}
+
+void ui_svc_t3_poll(uint32_t id)
+{
+	(void)id;
+	view.t3.polls++;
+}
+// The digits staged for a gateway call ("dial" check), and the caller's number "t3cli:" gives the gateway 0xFFFEC0
+static char t3_dial_digits[17], t3_cli_digits[17];
+void ui_svc_t3_dial(const char *digits)
+{
+	snprintf(t3_dial_digits, sizeof t3_dial_digits, "%s", digits);
+}
+bool ui_svc_t3_cli(uint32_t gw, char *out, size_t len)
+{
+	if (gw != 0xFFFEC0u || len == 0 || !view.t3.on)
+		return false;
+	snprintf(out, len, "%s", view.t3.state == T3_FOLLOW ? t3_cli_digits : "");
+	return true;
+}
+static void t3_view(void)
+{
+	bool usable = false;
+	int sys = view.vfo ? -1 : ui_svc_t3_channel(view.channel_number, NULL, &usable);
+	uint32_t backs = view.t3.backs;
+	uint16_t poll_fails = view.t3.poll_fails;
+	memset(&view.t3, 0, sizeof view.t3);
+	view.t3.backs = backs;
+	view.t3.poll_fails = poll_fails;
+	if (sys < 0)
+		return;
+	view.t3.sys = (uint8_t)(sys + 1);
+	view.t3.unavail = !usable;
+	view.t3.on = usable;
+	view.t3.state = usable ? T3_CAMPED : T3_OFF;
+	view.t3.reg = usable ? T3_REG_OK : T3_REG_UNKNOWN;
+}
+#endif
+
 static void load_channel(void)
 {
 	zone_t z;
@@ -1164,9 +1420,12 @@ static void load_channel(void)
 	temp_target = 0;
 	view.dmr.hear_all_latch = false;	// the latch ends with the channel, as in the radio core
 	view.dmr.hear_all = view.monitor;
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
 	view.dmr.codec = true;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	view.dmr.reply_active = false;
 	reply_until = 0;
@@ -1202,7 +1461,14 @@ void radio_req_channel_step(int8_t dir)
 void radio_req_zone_pos(uint16_t pos) { retune(); view.vfo = false; view.zone_pos = pos; load_channel(); }
 void radio_req_zone(uint16_t index) { retune(); view.zone_index = index; view.zone_pos = 0; load_channel(); }
 static void sim_vfo(bool on);
-void radio_req_vfo(bool on) { retune(); sim_vfo(on); }
+void radio_req_vfo(bool on)
+{
+	retune();
+	sim_vfo(on);
+#if CONFIG_DMR_TRUNK
+	t3_view();
+#endif
+}
 static void sim_vfo(bool on)
 {
 	view.vfo = on;
@@ -1219,7 +1485,7 @@ static void sim_vfo(bool on)
 		view.ch.color_code = vfo_cc;
 		view.ch.timeslot = vfo_ts;
 		view.dmr.active = vfo_mode == RADIO_MODE_DMR;
-		view.dmr.cc = vfo_cc;
+		view.dmr.cc = view.dmr.rx_cc = vfo_cc;
 		view.dmr.ts = vfo_ts;
 		view.channel_number = 0;
 		view.temp = 0;		// the VFO has no temporary changes
@@ -1348,7 +1614,7 @@ void radio_req_clear_temporary(void)
 	view.temp = 0;
 	view.temporary = false;
 	view.dmr.active = view.ch.mode == RADIO_MODE_DMR;
-	view.dmr.cc = view.ch.color_code;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code;
 	view.dmr.ts = view.ch.timeslot;
 	temp_target = 0;
 	default_target();
@@ -1475,6 +1741,9 @@ static uint16_t n_inbox;
 static bool soft_volume;
 // The broadcast receiver (Settings > Talk & listen > FM broadcast step) only with the "bcast" token, the same way
 static bool bcast_rx;
+// P25 on this radio (UI_FEAT_P25: the VFO's mode tile offers it) only with the "p25" token; NXDN with "nxdn"
+static bool p25_radio;
+static bool nxdn_radio;
 // Hardware options (Settings > Advanced > Hardware, hal_hwopt.h) only with the "hwopt" token: a revision that starts
 // unset and a plain option
 static int8_t hwopt_val[2];
@@ -1498,7 +1767,8 @@ uint32_t ui_svc_features(void)
 {
 	return 0xFFFFFFFFu & ~(soft_volume ? 0 : UI_FEAT_VOLUME) & ~(bcast_rx ? 0 : UI_FEAT_BCAST) &
 	       ~(ref_trim ? 0 : UI_FEAT_REF_TRIM) &
-	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB);
+	       ~(knob_radio ? 0 : UI_FEAT_VOLUME_KNOB) & ~(p25_radio ? 0 : UI_FEAT_P25) &
+	       ~(nxdn_radio ? 0 : UI_FEAT_NXDN);
 }
 // My radio's names (ui_svc_name_*): placeholders, as the user's own would be; a save writes at once
 static char sim_names[UI_NAME_COUNT][17];
@@ -1526,7 +1796,8 @@ void ui_svc_boot_text(char line1[17], char line2[17])
 	strcpy(line1, sim_names[UI_NAME_BOOT1]);
 	strcpy(line2, sim_names[UI_NAME_BOOT2]);
 }
-// Zone sharing (ui_svc.h): one offer of 6 channels, one of them outside the radio's bands
+// Zone sharing (ui_svc.h): one offer of 7 channels, one of them outside the radio's bands, one trunked on a system the
+// radio hasn't set up
 static struct {
 	bool pending, channel;
 	uint32_t src, serial;
@@ -1534,10 +1805,11 @@ static struct {
 	bool sent_one;			// the last send: one channel, from this zone and position
 	uint16_t sent_zone, sent_pos;
 } zs_sim;
-static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; } zs_chans[] = {
-	{ "Club rpt", 146760000, false, true }, { "Club DMR", 442375000, true, true },
-	{ "Simplex", 146520000, false, true }, { "Club TG 2", 442375000, true, true },
-	{ "Field day", 446350000, true, true }, { "Club 900", 927500000, true, false },
+static const struct { const char *name; uint32_t hz; bool dmr; bool in_band; bool unavailable; } zs_chans[] = {
+	{ "Club rpt", 146760000, false, true, false }, { "Club DMR", 442375000, true, true, false },
+	{ "Simplex", 146520000, false, true, false }, { "Club TG 2", 442375000, true, true, false },
+	{ "Field day", 446350000, true, true, false }, { "Club 900", 927500000, true, false, false },
+	{ "County Fire", 451000000, true, true, true },
 };
 #define ZS_SIM_CHANNELS	(sizeof zs_chans / sizeof zs_chans[0])
 uint8_t ui_svc_zone_send(uint16_t zone, uint16_t pos, bool one, uint32_t dst, bool group, uint8_t *total)
@@ -1561,6 +1833,7 @@ bool ui_svc_zone_offer(ui_zone_offer_t *out)
 	out->src = zs_sim.src;
 	out->channels = zs_sim.channel ? 1 : (uint8_t)ZS_SIM_CHANNELS;
 	out->in_band = zs_sim.channel ? 1 : (uint8_t)(ZS_SIM_CHANNELS - 1);
+	out->unavailable = zs_sim.channel ? 0 : 1;
 	strcpy(out->name, zs_sim.channel ? "Club rpt" : "Club net");
 	strcpy(out->from, contact_name(zs_sim.src, false));
 	return true;
@@ -1576,6 +1849,7 @@ bool ui_svc_zone_offer_channel(uint32_t which, uint16_t i, ui_zone_offer_ch_t *o
 	out->rx_hz = zs_chans[i].hz;
 	out->dmr = zs_chans[i].dmr;
 	out->in_band = zs_chans[i].in_band;
+	out->unavailable = zs_chans[i].unavailable;
 	return true;
 }
 void ui_svc_zone_offer_reject(uint32_t which)
@@ -1596,6 +1870,7 @@ bool ui_svc_zone_offer_import(uint32_t which, uint16_t zone)
 	ev.ok = true;
 	strcpy(ev.name, zs_sim.channel ? "Zone 1" : "Club net");
 	ev.index = zs_sim.channel ? 1 : (uint16_t)(ZS_SIM_CHANNELS - 1);
+	ev.ms = zs_sim.channel ? 0 : 1;
 	ui_notify(&ev);
 	return true;
 }
@@ -1659,7 +1934,7 @@ bool ui_svc_dmr_timeslot(uint8_t ts)
 bool ui_svc_dmr_color_code(uint8_t cc)
 {
 	retune();
-	view.dmr.cc = view.ch.color_code = cc;
+	view.dmr.cc = view.dmr.rx_cc = view.ch.color_code = cc;
 	if (view.vfo) {
 		vfo_cc = cc;
 		changed();
@@ -1954,6 +2229,10 @@ bool ui_svc_msg_send(uint32_t dst, bool group, const char *text)
 	sim_rec.tx_id = dst;
 	return true;
 }
+bool ui_svc_msg_reply(uint16_t i, const char *text)
+{
+	return i < n_inbox && ui_svc_msg_send(inbox[i].m.src, false, text);
+}
 bool ui_svc_aprs_send_message(const char *to, const char *text, uint8_t flags)
 {
 	if (to[0] == '\0')
@@ -1978,10 +2257,17 @@ static const ui_gps_sat_t sim_sats[] = {
 };
 #define SIM_SATS	(sizeof(sim_sats) / sizeof(sim_sats[0]))
 
+// "gps:none" / "gps:off" / "gps:search" / "gps:fix": the board has no GPS or one (CAP_GPS and its hooks), the GPS
+// setting off or on, so the status strip shows the GPS icon hollow, solid, or solid with a fix. Without the token the board has none and the strip
+// none, but the Position screens still read the fix below
+enum { SIM_GPS_NONE, SIM_GPS_SEARCH, SIM_GPS_FIX };
+static uint8_t sim_gps;
+static const hal_gps_t sim_gps_hal;	// every hook NULL: fitted, always on
+
 bool ui_svc_position(ui_position_t *out)
 {
 	memset(out, 0, sizeof(*out));
-	out->fix = true;
+	out->fix = sim_gps != SIM_GPS_SEARCH;
 	out->sats = 9;
 	out->lat_e7 = 423601000;
 	out->lon_e7 = -710589000;
@@ -1994,6 +2280,195 @@ bool ui_svc_position(ui_position_t *out)
 	out->course = 45;
 	out->utc_hms = 123519;
 	return true;
+}
+
+#if CONFIG_SATELLITE_TLE
+static uint8_t sim_satellite_selected;
+static bool sim_satellite_predicting;
+static bool sim_satellite_no_passes;
+static bool sim_satellite_stop_fails;
+static bool sim_satellite_path_pending;
+static bool sim_satellite_los_pending;
+static bool sim_satellite_future_pass;
+static bool sim_satellite_empty;
+static uint16_t sim_satellite_tle_age_days;
+static uint32_t sim_satellite_test_id_offset;
+static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
+static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
+static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
+static const uint8_t sim_satellite_max_elevations[] = { 36u, 21u, 35u, 41u, 17u };
+
+uint8_t ui_svc_satellite_count(void)
+{
+	return sim_satellite_empty ? 0u : (uint8_t)(sizeof(sim_satellite_names) / sizeof(sim_satellite_names[0]));
+}
+
+bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
+{
+	if (index >= ui_svc_satellite_count() || record == NULL)
+		return false;
+	memset(record, 0, sizeof(*record));
+	record->catalog_id = sim_satellite_catalog_ids[index];
+	record->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
+	strcpy(record->name, sim_satellite_names[index]);
+	record->name_length = (uint8_t)strlen(record->name);
+	return true;
+}
+
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
+{
+	if (index >= ui_svc_satellite_count() || summary == NULL)
+		return false;
+	memset(summary, 0, sizeof(*summary));
+	summary->catalog_id = sim_satellite_catalog_ids[index] +
+		(sim_satellite_tle_age_days >= 14u ? sim_satellite_test_id_offset : 0u);
+	summary->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
+	summary->epoch = 0u;
+	summary->name_length = (uint8_t)strlen(sim_satellite_names[index]);
+	memcpy(summary->name, sim_satellite_names[index], summary->name_length);
+	return true;
+}
+
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
+{
+	return ui_svc_satellite_summary(record_index, summary);
+}
+
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	if (epoch == NULL || sim_satellite_empty)
+		return false;
+	*epoch = 0u;
+	return true;
+}
+
+bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
+{
+	(void)epoch;
+	if (age_days == NULL)
+		return false;
+	*age_days = sim_satellite_tle_age_days;
+	return true;
+}
+
+uint32_t ui_svc_satellite_generation(void)
+{
+	return sim_satellite_test_id_offset;
+}
+
+uint8_t ui_svc_satellite_selected(void)
+{
+	return sim_satellite_selected;
+}
+
+bool ui_svc_satellite_select(uint8_t index)
+{
+	if (index >= ui_svc_satellite_count())
+		return false;
+	sim_satellite_selected = index;
+	return true;
+}
+
+bool ui_svc_satellite_track(bool enabled, uint8_t index)
+{
+	if (!enabled && sim_satellite_stop_fails)
+		return false;
+	if (enabled && index >= ui_svc_satellite_count())
+		return false;
+	if (enabled)
+		sim_satellite_selected = index;
+	satellite_view.tracking.tracking = enabled;
+	satellite_view.tracking.index = index;
+	satellite_view.tracking.status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
+	satellite_view.tracking.nominal_rx_hz = enabled ? 145000000u : 0u;
+	satellite_view.tracking.nominal_tx_hz = enabled ? 435000000u : 0u;
+	satellite_view.tracking.rx_offset_hz = enabled ? -1200 : 0;
+	satellite_view.tracking.tx_offset_hz = enabled ? 3600 : 0;
+	return true;
+}
+
+bool ui_svc_satellite_view(radio_satellite_view_t *pass)
+{
+	if (pass == NULL)
+		return false;
+	*pass = satellite_view;
+	pass->valid = satellite_view.tracking.tracking && !sim_satellite_path_pending;
+	pass->visible_now = satellite_view.tracking.tracking && !sim_satellite_path_pending && !sim_satellite_future_pass;
+	pass->los_known = satellite_view.tracking.tracking && !sim_satellite_los_pending;
+	pass->aos_in_s = satellite_view.tracking.tracking && sim_satellite_future_pass ? 61u : 0u;
+	pass->los_in_s = satellite_view.tracking.tracking ? (sim_satellite_future_pass ? 121u :
+			sim_satellite_los_pending ? 0u : 5500u) : 0u;
+	pass->maximum_elevation_tenths = satellite_view.tracking.tracking ? 360u : 0u;
+	pass->elevation_tenths = satellite_view.tracking.tracking ? 330 : 0;
+	return true;
+}
+
+void ui_svc_satellite_arm(void) { }
+
+bool ui_svc_satellite_scan(bool enabled)
+{
+	(void)enabled;
+	return true;
+}
+
+void ui_svc_satellite_poll(void) { }
+
+void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (status != NULL) *status = sim_satellite_predicting ? RADIO_SAT_SCAN_RUNNING : RADIO_SAT_SCAN_COMPLETE;
+	if (completed != NULL) *completed = sim_satellite_predicting ? 2u : ui_svc_satellite_count();
+	if (total != NULL) *total = ui_svc_satellite_count();
+	if (passes != NULL) *passes = sim_satellite_predicting || sim_satellite_no_passes ? 0u : ui_svc_satellite_count();
+}
+
+bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	if (rank >= ui_svc_satellite_count() || pass == NULL)
+		return false;
+	pass->record_index = rank;
+	pass->aos_minutes = sim_satellite_eta_minutes[rank];
+	pass->maximum_elevation_deg = sim_satellite_max_elevations[rank];
+	pass->visible_now = false;
+	return true;
+}
+
+bool ui_svc_satellite_path(satellite_path_view_t *path)
+{
+	if (path == NULL)
+		return false;
+	memset(path, 0, sizeof(*path));
+	if (!satellite_view.tracking.tracking || sim_satellite_path_pending)
+		return false;
+	const uint16_t points[] = {
+		satellite_path_pack(180u, 0u), satellite_path_pack(160u, 8u),
+		satellite_path_pack(140u, 18u), satellite_path_pack(120u, 28u),
+		satellite_path_pack(100u, 35u), satellite_path_pack(80u, 36u),
+		satellite_path_pack(60u, 33u), satellite_path_pack(40u, 26u),
+		satellite_path_pack(24u, 18u), satellite_path_pack(12u, 8u),
+		satellite_path_pack(0u, 0u),
+	};
+	memcpy(path->points, points, sizeof(points));
+	path->count = sizeof(points) / sizeof(points[0]);
+	path->azimuth_deg = 60u;
+	return true;
+}
+
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
+{
+	return index == 0u && lines != NULL;
+}
+
+bool ui_svc_satellite_update_busy(void)
+{
+	return false;
+}
+#endif
+
+// The board's GPS and the setting, as stored (the menu's change counts at once)
+uint8_t ui_svc_gps_power(void)
+{
+	return sim_gps == SIM_GPS_NONE ? UI_GPS_POWER_NONE :
+	       ui_svc_setting_get(UI_SET_GPS) != 0 ? UI_GPS_POWER_ON : UI_GPS_POWER_OFF;
 }
 
 bool ui_svc_gps_sat(uint8_t i, ui_gps_sat_t *out)
@@ -2119,6 +2594,7 @@ static void step(void)
 		ui_notify(&ev);
 	}
 	view.hotspot = hotspot_on;
+	view.hs_power = view.power;	// as the radio core with the host's RF level at its default (FF)
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
 	if (tick_hook != NULL)
@@ -2131,6 +2607,30 @@ static void advance(uint32_t ms)
 		step();
 }
 
+#if CONFIG_DMR_AES
+static bool sim_aes_keys;	// aeskeys
+
+// The codeplug's AES keys as ui_svc_storage.c steps them: system 3 (index 2), PI key IDs 0 and 7, then none
+void ui_svc_next_aes_key(channel_t *c)
+{
+	static const uint16_t refs[] = { 1, 8 };	// key ID + 1
+	unsigned i = 0;
+
+	if (c->kind == CODEPLUG_KIND_DMR_AES)
+		while (i < 2 && refs[i] <= c->aes_ref)
+			i++;
+	if (!sim_aes_keys || i == 2) {
+		c->kind = CODEPLUG_KIND_NONE;
+		c->system = CODEPLUG_SYSTEM_NONE;
+		c->aes_ref = 0;
+		return;
+	}
+	c->kind = CODEPLUG_KIND_DMR_AES;
+	c->system = 2;
+	c->aes_ref = refs[i];
+}
+#endif
+
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
@@ -2140,6 +2640,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.bpp = g->bpp;
 	disp.inset_left = disp.inset_right = g->inset;
 	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	disp.fb_safe_area = g->safe;
+	disp.fill_insets = d_fill_insets;
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
@@ -2152,9 +2654,12 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	board.side_key_names = maps[map].names;
 	board.side_key_count = maps[map].side_n;
 	board.caps = maps[map].caps;
+	board.gps = NULL;
+	sim_gps = SIM_GPS_NONE;
 	board.bands = bands;
 	board.band_count = sizeof bands / sizeof bands[0];
 	power.supply_mv = NULL;
+	board.variant_mismatch = NULL;
 	// The MD-9600's panel names its QUICK and CONTEXT keys in the hints
 	board.quick_label = map == SIM_MAP_P ? "P1" : NULL;
 	board.context_label = map == SIM_MAP_P ? "P2" : NULL;
@@ -2164,6 +2669,20 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_DMR_AES
+	sim_aes_keys = false;
+#endif
+#if CONFIG_SATELLITE_TLE
+	sim_satellite_predicting = false;
+	sim_satellite_no_passes = false;
+	sim_satellite_stop_fails = false;
+	sim_satellite_path_pending = false;
+	sim_satellite_los_pending = false;
+	sim_satellite_future_pass = false;
+	sim_satellite_empty = false;
+	sim_satellite_tle_age_days = 1u;
+	memset(&satellite_view, 0, sizeof satellite_view);
+#endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
 	vfo_bw = RADIO_BW_25K;
@@ -2186,6 +2705,11 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	hotspot_on = rx_on = usb_net = usb_up = false;
 	board.netif = &sim_netif;
 	aprs_sim_reset();
+#if CONFIG_DMR_TRUNK
+	t3_tagged = false;
+	memset(&view.t3, 0, sizeof view.t3);
+	t3_dial_digits[0] = t3_cli_digits[0] = 0;
+#endif
 	n_edits = 0;
 	n_ct_edits = 0;
 	sim_names_reset();
@@ -2205,6 +2729,19 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	view.volume = -1;	// no level passed on yet (power-up)
 	view.volume_src = RVOL_KNOB;
 	bcast_rx = false;
+	p25_radio = false;
+	nxdn_radio = false;
+#if CONFIG_NXDN
+	memset(&view.nxdn, 0, sizeof view.nxdn);
+	view.nxdn.flags = RADIO_NXDN_9600;	// the NXDN settings' defaults (radio_nxdn.c): 9600 bit/s, RAN 1, group 1
+	view.nxdn.tx_ran = 1;
+	view.nxdn.talk = 1;
+#endif
+#if CONFIG_P25
+	memset(&view.p25, 0, sizeof view.p25);
+	view.p25.rx_nac = 0x293;	// the P25 settings' defaults (radio_p25.c): NAC 293, talk group 1
+	view.p25.talk = 1;
+#endif
 	board.radio = NULL;
 	ref_trim = false;
 	knob_radio = false;
@@ -2247,7 +2784,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_STRIP, 1);
 	ui_svc_setting_set(UI_SET_ALIAS_SHOW, 1);
 	ui_svc_setting_set(UI_SET_MESSAGE_TONE, 1);
-	ui_svc_setting_set(UI_SET_MSG_FORMAT, 2);
+	ui_svc_setting_set(UI_SET_MSG_FORMAT, 255);
 	ui_svc_setting_set(UI_SET_VIBRATE, 1);
 	ui_svc_setting_set(UI_SET_PRIVACY_TYPE, 0);
 	ui_svc_setting_set(UI_SET_PRIVACY_KEY, 0);
@@ -2287,6 +2824,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
 	{ "labelkey", ACT_TALK_LABEL },
+	{ "skipkey", ACT_SCAN_SKIP },
+	{ "monkey", ACT_MONITOR_TOGGLE },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2295,7 +2834,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2348,13 +2888,15 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		}
 		presses++;
 		if (a == ACT_MONITOR) {
+			// The radio gets the edge first, as on the radio (input_forward runs before the UI's queue, and the
+			// radio task outranks the UI): the UI reads the view the edge already changed
 			input_event_t ev = { ACT_MONITOR, GESTURE_DOWN, 0 };
-			ui_app_key(&ev);
 			radio_req_monitor(true);
+			ui_app_key(&ev);
 			advance(lng ? LONG_MS : PRESS_MS);
 			ev.gesture = GESTURE_UP;
-			ui_app_key(&ev);
 			radio_req_monitor(false);
+			ui_app_key(&ev);
 			return true;
 		}
 		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
@@ -2398,13 +2940,19 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
 	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
-	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" : "fm");
+#if CONFIG_SATELLITE_TLE
+	else if (strcmp(key, "sattracking") == 0) snprintf(got, sizeof got, "%u", satellite_view.tracking.tracking);
+#endif
+	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
+								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
+								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
 	else if (strcmp(key, "tx") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_count);
 	else if (strcmp(key, "txid") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.tx_id);
 	else if (strcmp(key, "txpriv") == 0) snprintf(got, sizeof got, "%u", sim_rec.tx_private);
 	else if (strcmp(key, "talk") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.target_id);
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
+	else if (strcmp(key, "gps") == 0) snprintf(got, sizeof got, "%u", s.gps);	// UI_GPS_*: the strip's icon
 	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }
@@ -2443,6 +2991,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "hearall") == 0) snprintf(got, sizeof got, "%u", view.dmr.hear_all_latch);
 	else if (strcmp(key, "vox") == 0) snprintf(got, sizeof got, "%u", view.vox_on);
 	else if (strcmp(key, "focusid") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.dmr.focus_id);
+#if CONFIG_DMR_TRUNK
+	else if (strcmp(key, "dial") == 0) snprintf(got, sizeof got, "%s", t3_dial_digits);
+#endif
 	else if (strcmp(key, "longpress") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.long_press_ms);
 	else if (strcmp(key, "monitor") == 0) snprintf(got, sizeof got, "%u", view.monitor);
 	else if (strcmp(key, "beeps") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.beeps);
@@ -2526,6 +3077,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "pos_source") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_SOURCE));
 	else if (strcmp(key, "aprs_power") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.power);
 	else if (strcmp(key, "aprs_path") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.path);
+	else if (strcmp(key, "aprs_ssid") == 0) snprintf(got, sizeof got, "%u", aprs_sim.cfg.ssid);
 	else if (strcmp(key, "pos_lat") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LAT));
 	else if (strcmp(key, "pos_lon") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_FIXED_LON));
 	else if (strcmp(key, "pos_dmrgps") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_POS_DMR_CALLS));
@@ -2665,8 +3217,8 @@ static bool run_token(char *t, char *err, size_t len)
 		if (down)
 			presses++;
 		input_event_t ev = { ACT_MONITOR, down ? GESTURE_DOWN : GESTURE_UP, 0 };
+		radio_req_monitor(down);	// the radio first, as on the radio (see `mon`)
 		ui_app_key(&ev);
-		radio_req_monitor(down);
 		advance(200);
 		return true;
 	}
@@ -2754,6 +3306,85 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+#if CONFIG_DMR_TRUNK
+	if (strcmp(t, "t3") == 0) {		// channels 3 and 5 become trunked (see t3_view)
+		t3_tagged = true;
+		t3_view();
+		serial++;
+		return true;
+	}
+	if (strcmp(t, "t3ring") == 0 && arg != NULL) {
+		view.t3.ring_src = (uint32_t)atoi(arg);
+		serial++;
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "t3cli") == 0) {		// the next call from the PSTN gateway gives this caller's number
+		snprintf(t3_cli_digits, sizeof t3_cli_digits, "%s", arg != NULL ? arg : "");
+		return true;
+	}
+	// hunt, other (hunting, another system heard), otherkind (one of another kind: FID 0x06), denyother /
+	// denyotherkind (PTT refused for either), regrefused,
+	// denyreg (PTT refused for it), denyunmapped (PTT: the grant named channel 311, which no row lists), follow,
+	// refused, fallback, back
+	if (strcmp(t, "t3state") == 0 && arg != NULL && view.t3.sys != 0) {
+		view.t3.on = true;
+		view.t3.fallback = 0;
+		view.t3.state = T3_CAMPED;
+		view.t3.reg = T3_REG_OK;
+		view.t3.other = 0;
+		view.t3.other_fid = 0;
+		view.t3.refused = false;
+		if (strcmp(arg, "hunt") == 0) {
+			view.t3.state = T3_HUNT;
+		} else if (strcmp(arg, "otherkind") == 0 || strcmp(arg, "denyotherkind") == 0) {
+			view.t3.state = T3_HUNT;
+			view.t3.other_fid = 0x06;
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_OTHER_KIND;
+			}
+		} else if (strcmp(arg, "other") == 0 || strcmp(arg, "denyother") == 0) {
+			t3_syscode_t c = { T3_MODEL_HUGE, 0, 83, T3_PAR_AB };
+			view.t3.state = T3_HUNT;
+			view.t3.other = t3_syscode_join(&c);
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_OTHER_SYS;
+			}
+		} else if (strcmp(arg, "regrefused") == 0 || strcmp(arg, "denyreg") == 0) {
+			view.t3.state = T3_HUNT;
+			view.t3.refused = true;
+			if (arg[0] == 'd') {
+				view.state = RS_TX_DENIED;
+				view.tx_deny = TXDENY_TRUNK;
+				view.t3.why = RADIO_TRUNK_WHY_REG_REFUSED;
+			}
+		} else if (strcmp(arg, "denyunmapped") == 0) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.t3.why = RADIO_TRUNK_WHY_UNMAPPED;
+			view.t3.unmapped = 311;
+		} else if (strcmp(arg, "follow") == 0) {
+			view.t3.state = T3_FOLLOW;
+		} else if (strcmp(arg, "refused") == 0) {
+			view.t3.reg = T3_REG_DENIED;
+		} else if (strcmp(arg, "fallback") == 0) {
+			view.t3.on = false;
+			view.t3.fallback = 1;
+			view.t3.fallbacks++;
+		} else if (strcmp(arg, "back") == 0) {
+			view.t3.backs++;
+		} else if (strcmp(arg, "pollfail") == 0) {
+			view.t3.poll_fails++;
+		}
+		serial++;
+		advance(100);
+		return true;
+	}
+#endif
 	if (strcmp(t, "dlpos") == 0 && arg != NULL) {	// the debug link (or any other task) asks for channel position N
 		radio_req_zone_pos((uint16_t)(atoi(arg) - 1));
 		advance(100);
@@ -2798,6 +3429,133 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+	if (strcmp(t, "dlmode") == 0 && arg != NULL) {	// the debug link sets the mode (DMR_FIELDS): fm, dmr, p25 or nxdn
+		ui_svc_mode(strcmp(arg, "p25") == 0 ? RADIO_MODE_P25 : strcmp(arg, "nxdn") == 0 ? RADIO_MODE_NXDN :
+			    strcmp(arg, "dmr") == 0 ? RADIO_MODE_DMR : RADIO_MODE_FM);
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "dlvfo") == 0) {	// the debug link tunes the VFO
+		char *end = NULL;
+		unsigned long hz = arg != NULL ? strtoul(arg, &end, 10) : 0;
+		if (arg == NULL || end == arg || *end != '\0' || hz == 0) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		radio_req_vfo_set((uint32_t)hz);
+		advance(100);
+		return true;
+	}
+	if (strcmp(t, "chhz") == 0) {		// stored channel n is an FM channel on hz
+		unsigned n = 0, hz = 0;
+		channel_t c;
+		if (arg == NULL || sscanf(arg, "%u,%u", &n, &hz) != 2 || !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		c.kind = CODEPLUG_KIND_NONE;	// a plain FM channel, whatever chkind made it
+		c.mode = RADIO_MODE_FM;
+		c.rx_hz = c.tx_hz = hz;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#if CONFIG_P25 || CONFIG_NXDN
+	if (strcmp(t, "chkind") == 0) {		// stored channel n is a P25 or NXDN channel: its tag, over a stand-in record
+		unsigned n = 0;
+		char k[8] = "";
+		channel_t c;
+		int end = 0;
+		if (arg == NULL || sscanf(arg, "%u,%7[^,]%n", &n, k, &end) != 2 ||
+		    !codeplug_channel((uint16_t)n, &c)) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		if (arg[end] == ',') {
+			snprintf(c.name, sizeof c.name, "%s", arg + end + 1);
+			for (char *ch = c.name; *ch; ch++)
+				if (*ch == '_')
+					*ch = ' ';
+		}
+		c.kind = strcmp(k, "nxdn") == 0 ? CODEPLUG_KIND_NXDN : CODEPLUG_KIND_P25;
+		c.mode = RADIO_MODE_DMR;
+		if (sim_write((uint16_t)n, &c) < 0) {
+			snprintf(err, len, "no room for %s", t);
+			return false;
+		}
+		sim_rec.codeplug_writes--;	// the codeplug as found, not a write of the UI's
+		return true;
+	}
+#endif
+#if CONFIG_NXDN
+	if (strcmp(t, "nxdnrx") == 0) {
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.nxdn.flags = (uint8_t)(RADIO_NXDN_ON | RADIO_NXDN_RX |
+			(kind == 'e' || kind == 'p' ? RADIO_NXDN_ENC : 0) |
+			(kind == 'e' ? 0 : RADIO_NXDN_PLAYED));
+		view.nxdn.src = (uint16_t)src;
+		view.nxdn.dst = (uint16_t)dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+#endif
+#if CONFIG_P25
+	if (strcmp(t, "p25rx") == 0) {		// a P25 call: src,dst[,u|e|o] (unit call, encrypted, other talk group)
+		unsigned src = 0, dst = 0;
+		char kind = 'g';
+		if (arg == NULL || sscanf(arg, "%u,%u,%c", &src, &dst, &kind) < 2) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.p25.flags = (uint8_t)((view.p25.flags & RADIO_P25_TALK_UNIT) | RADIO_P25_ON | RADIO_P25_RX |
+			(kind == 'u' ? RADIO_P25_UNIT : 0) | (kind == 'e' ? RADIO_P25_ENC : 0) |
+			(kind == 'e' || kind == 'o' ? 0 : RADIO_P25_PLAYED));
+		view.p25.src = src;
+		view.p25.dst = dst;
+		view.state = RS_RX;
+		view.rssi_dbm = -84;
+		changed();
+		advance(300);
+		return true;
+	}
+#if CONFIG_P25_TRUNK
+	if (strcmp(t, "p25t") == 0) {
+		unsigned st = 0, tg = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+			snprintf(err, len, "bad %s", t);
+			return false;
+		}
+		view.ch.mode = RADIO_MODE_P25;
+		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
+		view.ch.rx_only = true;
+		view.p25.flags = RADIO_P25_ON;
+		view.p25.trunk = (uint8_t)st;
+		view.p25.dst = tg;
+		changed();
+		advance(100);
+		return true;
+	}
+#endif
+	if (strcmp(t, "p25rxend") == 0) {
+		view.p25.flags &= (uint8_t)~(RADIO_P25_RX | RADIO_P25_PLAYED | RADIO_P25_ENC);
+		view.state = RS_IDLE;
+		view.last_rx_ms = now_ms;
+		changed();
+		advance(200);
+		return true;
+	}
+#endif
 	if (strcmp(t, "fmrx") == 0) {		// an FM signal opens the squelch; fmrxend closes it
 		view.state = RS_RX;
 		view.rssi_dbm = -84;
@@ -2927,7 +3685,7 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "splash") == 0) {		// the boot screen (last in a script: nothing redraws over it)
 		if (arg != NULL && strcmp(arg, "loader") == 0) {	// the stub entry's (stub_entry.c show_banner)
-			ui_draw_splash(board.name, "a1b2c3d4", STUB_ENTRY_LINE1, STUB_ENTRY_LINE2);
+			ui_draw_splash(board.name, "a1b2c3d4", tr(STUB_ENTRY_LINE1), tr(STUB_ENTRY_LINE2));
 			return true;
 		}
 		char l1[17], l2[17];
@@ -2943,6 +3701,12 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_DMR_AES
+	if (strcmp(t, "aeskeys") == 0) {
+		sim_aes_keys = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;
@@ -2950,6 +3714,10 @@ static bool run_token(char *t, char *err, size_t len)
 	if (strcmp(t, "rxonly") == 0) {	// no band may transmit
 		board.bands = rx_only_bands;
 		board.band_count = sizeof rx_only_bands / sizeof rx_only_bands[0];
+		return true;
+	}
+	if (strcmp(t, "variant") == 0) {
+		board.variant_mismatch = variant_mismatch_yes;
 		return true;
 	}
 	if (strcmp(t, "nobattery") == 0) {
@@ -2996,6 +3764,18 @@ static bool run_token(char *t, char *err, size_t len)
 		}
 		return true;
 	}
+	if (strcmp(t, "gps") == 0 && arg != NULL) {	// gps:none, gps:off, gps:search, gps:fix (above ui_svc_position)
+		// Settings > Location > GPS: flows share the store
+		ui_svc_setting_set(UI_SET_GPS, strcmp(arg, "off") != 0);
+		if (strcmp(arg, "none") != 0) {
+			sim_gps = strcmp(arg, "fix") == 0 ? SIM_GPS_FIX : SIM_GPS_SEARCH;
+			board.caps |= CAP_GPS;
+			board.gps = &sim_gps_hal;
+		}
+		for (int i = 0; i <= 1000 / TICK_MS; i++)	// the UI checks the GPS once a second
+			step();
+		return true;
+	}
 	if ((strcmp(t, "knob") == 0 || strcmp(t, "override") == 0) && arg != NULL) {
 		// The level the radio core passed on (radio_view_t.volume) and where from: the knob a radio's MCU reads,
 		// the debug link's override, or the stored step of a radio without a knob ("softvol"). "knob" also makes
@@ -3026,6 +3806,14 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 	if (strcmp(t, "bcast") == 0) {		// this radio has a broadcast FM receiver
 		bcast_rx = true;
+		return true;
+	}
+	if (strcmp(t, "p25") == 0) {		// this radio runs P25
+		p25_radio = true;
+		return true;
+	}
+	if (strcmp(t, "nxdn") == 0) {		// this radio runs NXDN
+		nxdn_radio = true;
 		return true;
 	}
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
@@ -3059,6 +3847,62 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_SATELLITE_TLE
+	if (strcmp(t, "satempty") == 0) {
+		sim_satellite_empty = true;
+		return true;
+	}
+	if (strcmp(t, "satagestale") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		sim_satellite_test_id_offset++;
+		return true;
+	}
+	if (strcmp(t, "satageadvance") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		return true;
+	}
+	if (strcmp(t, "satagefresh") == 0) {
+		sim_satellite_tle_age_days = 1u;
+		return true;
+	}
+	if (strcmp(t, "satpredict") == 0) {
+		sim_satellite_predicting = true;
+		return true;
+	}
+	if (strcmp(t, "satdone") == 0) {
+		sim_satellite_predicting = false;
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satdoneok") == 0) {
+		sim_satellite_predicting = false;
+		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0 };
+		presses++;
+		ui_app_key(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satnopasses") == 0) {
+		sim_satellite_no_passes = true;
+		return true;
+	}
+	if (strcmp(t, "satstopfail") == 0) {
+		sim_satellite_stop_fails = true;
+		return true;
+	}
+	if (strcmp(t, "satpathpending") == 0) {
+		sim_satellite_path_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satlospending") == 0) {
+		sim_satellite_los_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satfuturepass") == 0) {
+		sim_satellite_future_pass = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "power") == 0 && arg != NULL) {	// power:<level>, the board's level index
 		view.power = (uint8_t)atoi(arg);
 		changed();
@@ -3070,7 +3914,7 @@ static bool run_token(char *t, char *err, size_t len)
 	return press(t, false, err, len);
 }
 
-const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast" };	// ui_theme_set's order
+const char *const sim_themes[SIM_THEME_COUNT] = { "dark", "light", "high_contrast", "night" };	// ui_theme_set's order
 
 int sim_theme_find(const char *name)
 {

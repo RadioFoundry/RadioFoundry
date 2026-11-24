@@ -126,16 +126,16 @@ bool md9600_cal_apc(uint32_t hz, uint8_t power, uint16_t *dac)
 	}
 	int32_t span = (int32_t)b->row_dw[r + 1u] - (int32_t)b->row_dw[r];
 	lv[3] = (uint16_t)(row[r] + ((int32_t)row[r + 1u] - row[r]) * ((int32_t)b->mid_dw - b->row_dw[r]) / span);
-	lv[4] = (uint16_t)(row[MD9600_FACTORY_PA_ROWS - 1u] + b->top_step);
-	// A radio whose rows don't fit the measured shape (a level not over the one below, or the top past the limit)
-	// transmits on no level rather than on a wrong one
+	// The top level follows the radio's own top row (the rows differ between radios), up to the most drive we give the
+	// PA: the output is flat well before it (2250 gave 47.1 W), so a row past it gets the most and still transmits
+	uint32_t top = (uint32_t)row[MD9600_FACTORY_PA_ROWS - 1u] + b->top_step;
+	lv[4] = (uint16_t)(top > MD9600_APC_MAX ? MD9600_APC_MAX : top);
+	// A radio whose rows don't fit the measured shape (a level not over the one below) transmits on no level rather
+	// than on a wrong one
 	for (uint8_t l = 1; l < MD9600_POWER_LEVELS; l++) {
 		if (lv[l] <= lv[l - 1u]) {
 			return false;
 		}
-	}
-	if (lv[4] > MD9600_APC_MAX) {
-		return false;
 	}
 	*dac = lv[power];
 	return true;

@@ -63,7 +63,8 @@ bool md9600_flash_rev_store(md9600_rev_t rev);
 // 250 mW, 1 W, 5 W, 25 W, 50 W (hardware-md9600.md 5.6)
 #define MD9600_POWER_LEVELS	5u
 #define MD9600_FACTORY_PA_ROWS	4u		// the calibration's PA rows (labeled 5, 10, 25, 40 W; they aren't)
-#define MD9600_APC_MAX		2300u		// the highest drive tx_drive takes (about 47 W UHF, 51 W VHF)
+#define MD9600_APC_MAX		3500u		// the most drive a power level gets: the top level stops here (5.6)
+#define MD9600_APC_DAC_MAX	4095u		// the APC DAC's full scale (12 bit): the debug link override's only bound
 enum { MD9600_CALOK_RX = 1u << 0, MD9600_CALOK_PA = 1u << 1, MD9600_CALOK_SQL = 1u << 2 };
 bool md9600_cal_apc(uint32_t hz, uint8_t power, uint16_t *dac);	// false: no plausible PA rows
 bool md9600_cal_pa_row(uint32_t hz, uint8_t row, uint16_t *dac);	// a factory PA row as stored

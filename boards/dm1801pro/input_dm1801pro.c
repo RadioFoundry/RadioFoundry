@@ -84,6 +84,7 @@ static uint32_t scan(void)
 			shared_ptt_line_t line = { .flagged = hrc_host_uart_line_errors(),
 						   .keyed = dm1801pro_radio_transmitting() };
 			line.rx_seen = hrc_host_uart_last_rx(&line.rx_ms);
+			line.tx_seen = hrc_host_uart_last_tx(&line.tx_ms);
 			low = shared_ptt_pressed(&ptt_gate, low, &line, hal_millis());
 		}
 		if (low) {
@@ -109,7 +110,13 @@ uint32_t dm1801pro_input_ptt_ignored(void)
 	return ptt_gate.ignored;
 }
 
+static bool ptt_line_stuck(void)
+{
+	return shared_ptt_stuck(&ptt_gate, hal_millis());
+}
+
 const hal_input_t dm1801pro_input = {
+	.ptt_line_stuck = ptt_line_stuck,
 	.init = init,
 	.scan = scan,
 };

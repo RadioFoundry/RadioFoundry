@@ -35,6 +35,7 @@
 #ifndef DMR_CALL_TX_LISTEN
 #define DMR_CALL_TX_LISTEN		1
 #endif
+#define DMR_CALL_RC_CONFIRM_MS		1000	// a second reverse channel cease within this stops our over
 #define DMR_CALL_TX_DROP_MS		240	// listening, no repeater burst this long during our over: it dropped
 #define DMR_CALL_TX_START_DROP_MS	540	// the same before our first burst: the modem's search for the slot gets two tries
 #define DMR_CALL_TX_HEADERS		3	// voice LC headers before burst A
@@ -83,6 +84,8 @@ typedef struct {
 typedef struct {
 	bool hear_all;		// every talkgroup (and private calls between others) on our timeslot
 	bool any_cc;		// monitor: any color code too
+	bool both_ts;		// monitor: either timeslot, the first call heard until it ends
+	bool accept_bad_crc;	// the channel's Accept invalid CRC: a header / terminator LC that fails, taken when it repeats
 	const uint32_t *groups;	// the channel's listen list (RX group list), owned by the caller, may be NULL
 	uint16_t group_count;
 	bool (*group_ok)(uint32_t tg, void *ctx);	// optional lookup instead of / besides the table
@@ -92,6 +95,20 @@ typedef struct {
 // Voice privacy hook: transform the 27 raw AMBE octets of a burst in place (TX before queueing, RX before the sink).
 // voice_index 0-5 = A-F (docs/spec/gotchas.md 6.1, 6.2)
 typedef void (*dmr_privacy_fn)(uint8_t ambe27[DMR_VOICE_BYTES], uint8_t voice_index, bool tx, void *ctx);
+
+// Where a burst of a call with a PI header sits in the MI-based schemes' keystream (docs/spec/dmr-voice.md 5.1)
+struct dmr_crypt_pos {
+	uint8_t alg;		// the PI header's algorithm ID
+	uint8_t key_id;
+	uint32_t mi;		// its 32-bit message indicator
+	uint32_t superframe;	// 0 = the superframe right after the PI header
+	uint8_t voice_index;	// 0-5 = A-F
+};
+// MI-based encryption hook: as dmr_privacy_fn, for calls with a PI header. False: no key for it (RX: not played; TX:
+// the over is sent as silence)
+typedef bool (*dmr_crypt_fn)(uint8_t ambe27[DMR_VOICE_BYTES], const struct dmr_crypt_pos *pos, bool tx, void *ctx);
+// A new MI for an over of ours (now_ms: some entropy). Never the same twice for a key: OFB keystream must not repeat
+typedef uint32_t (*dmr_crypt_mi_fn)(uint32_t now_ms, void *ctx);
 
 typedef struct {
 	uint32_t own_id;
@@ -111,6 +128,16 @@ typedef struct {
 	uint8_t tx_svc;			// voice LC service options (privacy bit, emergency, priority)
 	dmr_privacy_fn privacy;		// NULL = none: bursts with PI set are not played
 	void *privacy_ctx;
+	dmr_crypt_fn crypt;		// NULL = none: calls with a PI header are not played
+	void *crypt_ctx;
+	// Our overs through crypt (tx_crypt_alg != 0, crypt and crypt_mi set): a PI header after the voice LC headers
+	// with this algorithm, key ID and a new MI, then every voice burst encrypted. tx_fid / tx_svc are the caller's
+	uint8_t tx_crypt_alg;
+	uint8_t tx_crypt_key_id;
+	dmr_crypt_mi_fn crypt_mi;
+	// Our overs must be encrypted (an AES channel, whether its key loaded or not): an over that can't be is refused
+	// (DMR_TX_ERR_CRYPT), never sent in the clear
+	bool tx_crypt_required;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
 	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
 	// A user of a single frequency repeater (CONFIG_SFR, docs/spec/sfr.md 4; never with rmo): ts is the inbound slot.
@@ -127,6 +154,9 @@ typedef struct {
 	// DMR_CALL_PERMIT_MAX_MS, then keys. Each hold counts in view.permit_seq: the tone's cue. 0 = keys at once
 	uint16_t permit_hold_ms;
 	bool (*permit_busy)(void);	// NULL = the minimum alone
+	// Receive both slots through a repeater (rmo): a trunked control channel (CONFIG_DMR_TRUNK). The stack still
+	// takes calls on ts only; the other slot reaches the RX tap (dmr_call_set_rx_tap)
+	bool both_slots;
 } dmr_call_config_t;
 
 // Caller info for the UI
@@ -141,8 +171,9 @@ typedef struct {
 	bool late_entry;	// acquired from the embedded LC, no header heard
 	bool emergency;		// the emergency service option
 	bool pi_header;		// a PI header (data type 0) was heard for this call
-	uint8_t pi_alg;		// its first two octets (algorithm and key ID in the DMRA layout; not interpreted)
-	uint8_t pi_key;
+	uint8_t pi_alg;		// in the DMRA layout (alg, 0x10, key ID, MI, 3 octets): the algorithm ID
+	uint8_t pi_key;		// ... the key ID
+	uint32_t pi_mi;		// ... and the message indicator
 	char alias[DMR_TA_TEXT_MAX + 1];	// talker alias so far, "" if none
 	bool alias_complete;
 	bool gps_valid;		// a GPS Info LC was heard from this talker (CONFIG_DMR_GPS)
@@ -164,8 +195,12 @@ typedef struct {
 	void (*begin)(void *ctx);	// optional: the transmission was granted, start encoding
 	bool (*next)(uint8_t ambe72[DMR_AMBE_FRAME_BYTES], void *ctx);
 	void (*end)(void *ctx);		// optional: stop encoding
+	// Optional: voice still to send after PTT is let go (an end of transmission tone, ambeVoiceTxTone). While it
+	// returns true the over goes on at each superframe boundary, up to DMR_CALL_TX_TAIL_HOLDS of them
+	bool (*busy)(void *ctx);
 	void *ctx;
 } dmr_voice_source_t;
+#define DMR_CALL_TX_TAIL_HOLDS	3	// superframes (360 ms each) the over is held open for the source's tail
 
 typedef enum { DMR_CALL_STATE_IDLE, DMR_CALL_STATE_RX, DMR_CALL_STATE_TX } dmr_call_state_t;
 
@@ -190,6 +225,8 @@ typedef enum {
 	DMR_TX_ERR_REJECTED,		// the modem refused (tx_begin false or tx_rejected)
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
 	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
+	DMR_TX_ERR_CEASED,		// the system stopped the over with the reverse channel
+	DMR_TX_ERR_CRYPT,		// tx_crypt_required and the over can't be encrypted (no hook, key or MI)
 } dmr_tx_error_t;
 
 typedef struct {
@@ -197,8 +234,10 @@ typedef struct {
 	uint8_t state;			// dmr_call_state_t
 	uint8_t phase;			// dmr_call_phase_t
 	uint8_t tx_error;		// dmr_tx_error_t of the last PTT
-	uint8_t cc;			// the channel's (or the call's, with any_cc)
+	uint8_t cc;			// the channel's
 	uint8_t ts;
+	uint8_t rx_cc;			// the current / last call's color code (any_cc: may differ from cc)
+	uint8_t rx_ts;			// its timeslot, 0 = unknown (simplex without TDMA direct mode sync)
 	bool rmo;
 	bool repeater_up;		// RMO: outbound heard recently
 	int16_t rssi_dbm;		// last burst of the current / last call, 0 = unknown
@@ -268,12 +307,14 @@ typedef struct {
 	uint32_t tx_wake_lost;		// wake-up CSBKs whose transmission ended without going on air (tried again at once)
 	uint32_t evq_overflows;		// modem events dropped
 	uint32_t rx_cc_dropped;		// bursts dropped for another color code (never voice A: it has no CC on air)
+	uint32_t rx_lc_taken;		// header / terminator LCs taken with a failed check (listen.accept_bad_crc)
 	uint32_t rx_ts_dropped;		// bursts of another slot than our call's / the channel's
 	uint32_t rx_term_dropped;	// late-entry starts refused: the call a terminator just ended (its late reports)
 	uint32_t rx_private_calls;	// rx_calls that were private (FLCO 3), to us or not
 	uint32_t rx_emergency_calls;	// rx_calls with the emergency service option
 	uint32_t rx_encrypted_calls;	// rx_calls marked private by the service options, PI or a PI header
 	uint32_t rx_pi_headers;		// PI headers with a good CRC on our call's slot
+	uint32_t tx_pi_headers;		// PI headers sent (encrypted overs, tx_crypt_alg)
 	uint32_t rx_alias_complete;	// talker aliases completed
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 	uint32_t rx_gps;		// GPS Info LCs decoded on our call
@@ -282,6 +323,13 @@ typedef struct {
 	uint32_t rx_sfr_direct;		// SFR user, repeat only: bursts of the talker's own copy dropped
 	uint32_t rx_sfr_held;		// SFR user, dual-path RX: bursts held for the other copy (a frame's FEC failed)
 	uint32_t rx_sfr_fixed;		// ... frames taken from the other copy
+	uint32_t rx_end_term;		// received calls ended by their terminator
+	uint32_t rx_end_sync;		// ... by the modem losing the channel
+	uint32_t rx_end_fade;		// ... by no burst on the call for the fade time
+	uint32_t rc_good;		// reverse channel commands heard while we transmitted (DMR_EV_RC, CRC good)
+	uint32_t rc_bad;		// ... CRC failed (or a null fragment)
+	uint32_t rc_ceased;		// overs the reverse channel stopped (DMR_TX_ERR_CEASED)
+	uint8_t rc_last;		// the last command heard (DMR_RC_*)
 } dmr_call_stats_t;
 void dmr_call_get_stats(dmr_call_stats_t *out);
 // The talker alias our calls send now ("" = none: off for the channel, no callsign, or built without it)
@@ -328,5 +376,19 @@ typedef struct {
 bool dmr_call_data_tx(const dmr_data_source_t *src);
 // A list is being sent (or its repeater woken)
 bool dmr_call_data_busy(void);
+
+// The RX tap (a trunked system, CONFIG_DMR_TRUNK): every burst heard, either slot, after the color code filter and
+// before the slot filter, never while we transmit, from dmr_call_poll(). True takes the burst: the stack doesn't look at
+// it further (control channel CSBKs aren't calls or data for the data service). NULL = no tap
+typedef bool (*dmr_rx_tap_fn)(const dmr_burst_t *b, uint32_t now_ms, void *ctx);
+void dmr_call_set_rx_tap(dmr_rx_tap_fn fn, void *ctx);
+// Slot boundaries the modem has reported since the stack started (DMR_EV_SLOT_TICK), and the slot of the last one
+// (1, 2, 0 unknown). A trunked system paces its slot work by them
+uint32_t dmr_call_ticks(int8_t *ts);
+// Tick n's (a dmr_call_ticks count) slot (0: unknown) and DMR_TICK_* flags; 0 and ts 0 once it is out of the last few
+uint8_t dmr_call_tick_at(uint32_t n, int8_t *ts);
+// CACH short LCs with a good CRC-8 (B.3.7) since boot, which a count newer than the caller's last says has come; *slc
+// the latest (28 bits), *bad those with a bad CRC. Only from modems that report them (DMR_EV_SHORT_LC)
+uint32_t dmr_call_short_lc(uint32_t *slc, uint32_t *bad);
 
 #endif

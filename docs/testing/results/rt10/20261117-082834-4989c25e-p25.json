@@ -1,0 +1,132 @@
+{
+ "board": "rt10",
+ "commit": "4989c25e1ca91680c1d9ff2941f43a3b9247299c",
+ "date": "2026-11-17T08:28:34Z",
+ "dirty": false,
+ "features": [
+  "p25"
+ ],
+ "firmware": {
+  "board": "RT10",
+  "codec": "rt10-112",
+  "display": "128x64x1",
+  "features": "P25,P25_TRUNK,NXDN,FM,SUBTONE,DMR,DMR_PRIVACY,DMR_TALKER_ALIAS,APRS,APRS_AFSK,APRS_DMR,APRS_RX,APRS_IGATE,DMR_DATA_CORE,DMR_ARS,DMR_SIGNALING,DMR_ROAMING,DMR_TRUNK,DMR_TRUNK_TX,SFR,DMR_UDP_COMPRESS,IDDB_COMPACT,CRASH_LOG,SCAN,BEEP,FM_TX_TONES,BATTERY_SAVE,CPS_FAST,DEBUGLINK,HOSTLINK",
+  "git": "220ab160",
+  "proto": "1",
+  "view": "5"
+ },
+ "format": 1,
+ "granted": [
+  "bench",
+  "codeplug_write",
+  "radio",
+  "reboot",
+  "rf"
+ ],
+ "kind": "run",
+ "options": {
+  "allow-codeplug-write": true,
+  "allow-reboot": true,
+  "allow-rf": true,
+  "allow-service-stop": true,
+  "dmr-cc": 2,
+  "dmr-tg": 9990
+ },
+ "sources": {
+  "p25": {
+   "core/air": "69cc66acdae800238ca5e03e2424b0610c1d3c8e",
+   "core/fec": "2b55fdfc671feb97605601120fa6000e0da9df6b",
+   "core/mbe": "ef06976ac85c529a008f8ea0ffa787645b969c1e",
+   "core/p25": "ccd211d096774a913ab3647bdb1fec690beed0b4",
+   "core/radio/radio_p25.c": "2e5f94ac86094d3d756e5b035f61a921e77ed5b2",
+   "core/radio/radio_p25.h": "1abbfb3bf9cfee8bfcee94aaa714c542267ba7af",
+   "docs/spec/p25.md": "408a4c92ec950967c9cad3188e6d01a812b6be23",
+   "hal/hal_air.h": "7bcd520956bb22dd75360df0839c1b7acfd2ed9d",
+   "hal/hal_baseband.h": "c60a52fb437fee317f35fbcc6ab5573e4e2df3df"
+  }
+ },
+ "tests": [
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_channel_switch",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_rx_from_bench",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[dual]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_scan_from_bench[zone]",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_settings",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_stored_channel_tx",
+   "optional": [],
+   "outcome": "passed",
+   "required": true
+  },
+  {
+   "excused": true,
+   "features": [
+    "p25"
+   ],
+   "id": "tests/hil/test_p25.py::test_p25_tx_off_air",
+   "optional": [],
+   "outcome": "skipped",
+   "reason": "[not_built] built without the VFO",
+   "required": true,
+   "skip_kind": "not_built"
+  }
+ ],
+ "tools": {
+  "pytest": "9.2.0",
+  "python": "3.13.5"
+ }
+}

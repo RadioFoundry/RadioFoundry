@@ -134,15 +134,15 @@ bool dm32_diag_line(uint8_t i, char *buf, uint8_t len)
 		break;
 	case 8: {	// GPS (platform/hrc7000/gps_hrc.c): module heard, valid / bad sentences, bytes received
 #if CONFIG_GPS
-		uint32_t good, bad, n;
-		hrc_gps_counts(&good, &bad, &n);
-		put(&o, hrc_gps_present() ? "gps yes " : "gps no ");
+		uint32_t good, bad, n, baud;
+		board_gps_counts(&good, &bad, &n, &baud);
+		put(&o, board_has_gps() ? "gps yes " : "gps no ");
 		put_u(&o, good);
 		put(&o, "/");
 		put_u(&o, bad);
 		put(&o, " b");
 		put_u(&o, n);
-		put(&o, hrc_gps_running() ? " on" : " off");
+		put(&o, board_gps_running() ? " on" : " off");
 #else
 		put(&o, "gps not built");
 #endif

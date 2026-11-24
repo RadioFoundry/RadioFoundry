@@ -33,6 +33,7 @@ Derived values:
 | Erasable sectors | The platform geometry from the application base up |
 | Stub NAND flag | `drivers/flash/spi_nand` in `BOARD_DIRS` |
 | Stub power pins | `PIN_POWER_LATCH` and `PIN_POWER_KEY` in `pins.h`, when `hold_power` is set |
+| Stub LED pins (HR_C7000) | `PIN_LED_RED` and `PIN_LED_GREEN` in `pins.h`, else none |
 | Stub board record (STM32F4) | `spi` and `idle_cs`, the `PIN_FLASH_*` pins, the bus's alternate function from the platform's `board_stub.spi_af`, `HSE_VALUE` and `APP_BASE` |
 | Debug link names | The `board_t` names, each build option value's `board_name`, `debuglink_aliases`, the id |
 | Codec windows of a linker slot | The `__codec_slot` symbols |
@@ -52,6 +53,7 @@ neighbor on the same platform.
 | `maker`, `model` | string | The two parts of the name |
 | `also` | list of strings | The same radio sold under other names |
 | `kind` | `handheld` or `mobile` | |
+| `aprs_tocall` | one character, `1`-`9` or `A`-`Z` | The sixth character of the radio's APRS tocall `APRDF?` ([aprs.md](../spec/aprs.md) 4.2). Unique; `0` is the host tests'. Never change or reuse one: it is meant to name the radio's model in the device identifier list |
 | `part_of` | string, optional | Another board this one is a build of |
 | `debuglink_aliases` | list, optional | Names older firmware reported on the debug link |
 | `looks` | list of tables, optional | Other bodies the board ships in that look too different to share its picture: `{ id, name, also }`. Each is its own radio card on the site, drawn in `site/static/img/radios/src/<id>-<look id>.svg` (the site build refuses a missing drawing), and links to the board's page. `name` and every entry of `also` (the radios in that body) must be in the board's `also`; the board's own card lists the rest |
@@ -193,10 +195,15 @@ original firmware's or the bootloader's DFU device before an install (`origbacku
 
 | Platform stub | Required | Optional |
 |---|---|---|
-| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size) | `stock_console` (the stock firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash) |
+| `stubtool` (HR_C7000) | `hold_power` (the stub drives the power latch), `progmem` (program flash size), `calibration` | `stock_console` (the original firmware answers a console the web flasher reads), `read_rate`, `write_test` (the data flash offset of the 16 KB `--write-test` erases and programs; the check refuses one that overlaps the flash map, a protected region or the chip's end, or a NAND. Without it the tool writes no data flash), `rom_entry` (the boot ROM starts the application itself: the flag sector at program flash 0 names this entry) |
 | `f4stub` (STM32F4) | `spi = { bus, mode, hz }` (the SPI flash's bus 1-3, SPI mode 0-3, fastest clock) | `idle_cs` (up to two `pins.h` names of other chip selects on that bus, held high) |
 
 A key of another platform's stub fails the check.
+
+The HR_C7000 stub's LED pins come from `pins.h`, not `[flash.stub]`. The stub drives its LED pins from its first
+instruction, so the tools write the board's pins into the stub image's parameter block before they send it, and send
+them again in CONFIG. The stub's built-in pins (PTB1 red, PTB0 green) can be other signals on another board. A board
+without `PIN_LED_RED` or `PIN_LED_GREEN` gets 255 (no LED) for it.
 
 #### Protected regions
 
@@ -293,7 +300,7 @@ How the site draws the radio: `shape`, `body` and `accent` colors, `lens` size.
 | `build` | The script that installs or builds it |
 | `version` | The release CI and releases build with |
 | `sha256` | Optional: the SHA-256 of the archive the script downloads |
-| `image` | Optional: the container image that holds the toolchain (`RFOUNDRY_CSKY_IMAGE` overrides it) |
+| `image` | Optional: the container image that holds the toolchain. C-SKY builds run in it (`RFOUNDRY_CSKY_IMAGE` overrides it); `tools/install-arm-toolchain.sh` copies the Arm toolchain out of it |
 
 The toolchain scripts read these values with `tools/platform_toolchain.sh`, which needs no Python. `check` fails when
 a script, Dockerfile or workflow under `tools/` or `.github/` sets `<ID>_GCC_VERSION` or `<ID>_GCC_SHA256` (for

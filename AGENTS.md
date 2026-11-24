@@ -22,7 +22,9 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    datasheets, public standards (ETSI TS 102 361-1..4, the MMDVM protocol) and permissively licensed code. The full
    rules are in [docs/CLEANROOM.md](docs/CLEANROOM.md). If a task seems to need foreign code, stop and ask.
 2. **Never commit** the AMBE codec, stock firmware images, bootloader keys, memory or flash dumps, or audio recordings.
-   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules.
+   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules. The one exception is the
+   synthesized test speech in `tests/data/voice`, tracked by name with `git add -f`
+   ([its README](tests/data/voice/README.md)).
 3. **SPDX header on every new file**, in the style of its neighbors:
    `// SPDX-License-Identifier: MIT` and `// Copyright (c) 2026 The RadioFoundry Authors` (`#` for scripts and
    makefiles, `<!-- -->` for Markdown).
@@ -95,21 +97,29 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 - Match the file you're editing: tabs, naming, comment density. Comments say why.
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
 - **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text
-  a user reads with `TR()` (`TRN()` in a static table, `tr()` where it is shown), never debug link or protocol text,
-  and run `python3 tools/i18n.py --sync`. Code must work with any translation missing: `tr()` returns the English, a
-  site key falls back to `en.json`; build text with `sbuf_t`/`str_copy` (a translation can be longer) and never
-  compare shown text. Translate new or rewritten strings into every catalog (`core/ui/lang/*.po`,
-  `site/i18n/*.json`) when you can; otherwise add an open task to the PR description (`- [ ] translations: es, it`).
-  CI fails on a missing translation, so they are done before the merge. English you changed with a translation left
-  the same is a CI warning (`tools/i18n_changes.py`): say in the PR whether each language still fits.
+  a user reads with a key and its English, `TR(KEY, "English")` (`TRN(KEY, ...)` in a static table or struct field,
+  `tr()` where it is shown; `TRX(KEY, ...)` for untranslated text in such a table), never debug link or protocol text,
+  and run `python3 tools/i18n.py --sync`. Name the key `AREA_ROLE_MEANING` ([Key
+  names](docs/dev/translating.md#key-names)); rename one only with `tools/i18n.py --rename`. One key, one English. A
+  `tr_id_t` is opaque: pass it to `tr()` or `tr_en()`, compare it with `TR_NONE`, nothing else (it is a number in a
+  translated build, the text itself in an English-only one); text crossing tasks travels as its `tr_id_t`. Code must
+  work with any translation missing: `tr()` returns the English, a site key falls back to `en.json`; build text with
+  `sbuf_t`/`str_copy` (a translation can be longer) and never compare shown text. Translate new or rewritten strings
+  into every catalog (`core/ui/lang/*.po`, `site/i18n/*.json`) when you can; otherwise add an open task to the PR
+  description (`- [ ] translations: es, it`). CI fails on a missing translation, so they are done before the merge.
+  English you changed with a translation left the same is a CI warning (`tools/i18n_changes.py`): say in the PR
+  whether each language still fits.
 - Docs read like technical documentation: short sentences, tables, no filler.
 
 ## Git
 
 - Small commits that say what changed and why.
-- `third_party/*` are submodules (mode 160000). In a worktree where they're symlinked to another checkout, never
-  stage them: check `git diff --cached --stat -- third_party` before every commit. ci.sh fails if one became a
-  symlink or a plain directory.
+- `third_party/*` are submodules (mode 160000). Make a worktree with `tools/worktree.sh add <path> ...` and build
+  with `RFOUNDRY_THIRD_PARTY=<a full checkout>/third_party` ([building.md](docs/dev/building.md#worktrees)): the
+  submodules stay uninitialized, `git status` stays clean and `git worktree remove` needs no `--force`. A branch that
+  moves a submodule runs `tools/worktree.sh own <name>`. In an older worktree with symlinks, run
+  `tools/worktree.sh setup`; until then never stage them (check `git diff --cached --stat -- third_party` before every
+  commit). ci.sh fails if one became a symlink or a plain directory.
 - Never force-push, rewrite published history or run destructive cleanup on a shared checkout.
 - **Clean up after yourself.** When a worktree's branch is merged, remove the worktree and its `build/` directories.
   Builds take about 1.5 GB per worktree, and stale ones have filled the disk before.

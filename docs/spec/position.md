@@ -39,12 +39,25 @@ Position source (setting: Auto, GPS, Computer, Fixed):
 | Computer | host NMEA: `position_nmea(..., gps = false)` | the same |
 | Fixed | the settings: latitude, longitude, altitude | position only |
 
-- Auto takes a GPS fix younger than 60 s (`POSITION_STALE_MS`), else a host fix younger than 60 s, else the fixed
-  position.
+- Auto takes a GPS fix younger than 60 s (`POSITION_STALE_MS`), else a configured fixed position, else a host fix
+  younger than 60 s. This lets a saved location remain in use while GPS acquires a lock.
+- Satellite prediction uses the selected source when it has coordinates and altitude, then falls back to an
+  altitude-bearing fixed position if that source is unavailable. It obtains date and UTC independently from a fresh
+  GPS or host NMEA stream. RMC date and GGA/RMC time components are retained even when a sentence reports no position
+  fix, so a saved fixed coordinate can be used while the receiver acquires a fix.
+- Host fixes and their UTC are not saved across a restart. The host must send fresh position, altitude and date/time
+  sentences again; a fixed position still needs fresh UTC for satellite prediction.
+- **Save GPS position** in Settings > Location copies the current fresh board fix into the fixed-position settings.
+  In Auto, that saved coordinate is used after fresh GPS and host fixes are unavailable, including while GPS acquires
+  a fix after startup. Saving requires a current GPS fix and does not change the selected source.
 - GPS, Computer and Fixed take that source only. No position when it has none.
 - The fixed position counts as unset while latitude and longitude are both 0.
 - Settings > Location > GPS off (`position_gps_enable(false)`) drops the board fix at once and ignores later
   sentences, so the position falls back.
+- The same setting goes to the board (`hal_gps_t.enable`, at start-up and on each change): the module is powered and
+  listened to at start-up whatever it says, so the radio knows whether it has one, and once heard its supply and
+  receive path follow the setting within one poll (`drivers/gps/gps_rx/gps_power`). A board whose module shares a
+  supply it can't cut stops only the receive path (its hardware page says so).
 - In a build without the host half, Computer is not offered and a stored Computer counts as Auto.
 
 ## 3. What a reader gets
@@ -115,6 +128,7 @@ Settings > Location, with `CONFIG_POSITION`:
 |---|---|
 | Position source | Auto, GPS, Computer, Fixed (Computer only with the host half) |
 | Fixed position | opens the page below |
+| Save GPS position | copies the current fresh board fix to the fixed position (`CONFIG_GPS` only) |
 | Send in DMR calls | on: our position goes into every DMR voice call. Off: only on channels whose codeplug setting asks for it ([dmr-voice.md](dmr-voice.md) 3.1). "DMR position: not in this build" without `CONFIG_DMR_GPS` |
 
 Fixed position (`fixed-pos`, `ui_position.c`). Rows: Latitude and Longitude ("Not set" while both are 0). OK opens an
@@ -137,7 +151,9 @@ APRS or not:
 | `pos.src` | none, gps, host, fixed |
 | `pos.lat`, `pos.lon`, `pos.err_m`, `pos.age_s` | the position a DMR report would carry now |
 | `pos.gps_heard`, `pos.gps_fix`, `pos.gps_sats` | the board GPS (`CONFIG_GPS`) |
-| `set.aprs_pos_src`, `set.aprs_dmr_gps`, `set.pos_ambiguity`, `set.pos_lat`, `set.pos_lon` | the settings (the settings part of the view) |
+| `set.aprs_pos_src`, `set.aprs_dmr_gps`, `set.pos_ambiguity`, `set.pos_lat`, `set.pos_lon` | the settings (the settings part of the view, `aprs_set`) |
+| `pos.gps_present`, `pos.gps_on` | in `aprs_set`, after the settings (the `aprs` part is full on radios with APRS receive): the module was heard; it is powered and listened to now (`board_t.gps`, `CONFIG_GPS`) |
+| `pos.gps_nmea`, `pos.gps_baud` | in `aprs_set`: valid / bad sentences / bytes received; the rate listened at; 0 while off, once given up, or unknown |
 
 The APRS command's SET fields for the fixed latitude and longitude, the source, "Send in DMR calls" and the
 ambiguity, and its NMEA operation (host half), are answered by the position service, so they work without APRS.
@@ -146,7 +162,7 @@ ambiguity, and its NMEA operation (host half), are answered by the position serv
 
 | Test | Checks |
 |---|---|
-| `tests/host/radioCoreTest.c` `test_position` (a build without APRS) | GPS fix to LRRP and the Position screen; "Send in DMR calls" saved with its own marker and back after a restart; GPS Info sent with it on, not with it off; the fixed position on a radio without a GPS answers LRRP and goes out in calls after a restart; source GPS excludes the fixed position; a record APRS stored before; defaults |
+| `tests/host/radioCoreTest.c` `test_position` (a build without APRS) | GPS fix to LRRP and the Position screen; UTC date retained from void RMC through a valid GGA, independent UTC when Fixed is selected; saving a current GPS fix to persistent fixed fallback and using it after the live fix ages out; "Send in DMR calls" saved with its own marker and back after a restart; GPS Info sent with it on, not with it off; the fixed position on a radio without a GPS answers LRRP and goes out in calls after a restart; source GPS excludes the fixed position; a record APRS stored before; defaults |
 | `tests/host/aprsRadioTest.c` | APRS saves its settings without changing the position's; the host NMEA path |
 | `tests/host/uiFlowTest.c` | the Settings > Location rows, the Fixed position page and its editor |
 | `tests/hil/test_gps.py` (opt-in) | the position keys and settings on the radio, with and without APRS |

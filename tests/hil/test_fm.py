@@ -282,6 +282,7 @@ def test_rx_tone_squelch(radio, pytestconfig, request):
 @pytest.mark.feature("fm", "vfo_fm")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_fm_receive_bench(radio, sdr_bench, pytestconfig):
     _bench_receive(radio, sdr_bench, pytestconfig, "fm-mhz")
 
@@ -289,6 +290,7 @@ def test_fm_receive_bench(radio, sdr_bench, pytestconfig):
 @pytest.mark.feature("fm", "vfo_fm")
 @pytest.mark.rf
 @pytest.mark.bench_service
+@pytest.mark.needs_switch("VFO_FM")
 def test_fm_receive_bench_vhf(radio, sdr_bench, pytestconfig):
     _bench_receive(radio, sdr_bench, pytestconfig, "vhf-fm-mhz", power=255)
 
@@ -345,6 +347,7 @@ def _bench_receive(radio, sdr_bench, pytestconfig, option, power=None):
     ("ctcss", 1000, {"ctcss": 100.0}, {"ctcss": 131.8}),
     ("dcs", 0o23, {"dcs": "023N"}, {"dcs": "025N"}),
 ], ids=["ctcss", "dcs"])
+@pytest.mark.needs_switch("VFO_FM")
 def test_rx_tone_decode_bench(radio, sdr_bench, pytestconfig, kind, value, sub, wrong):
     if "VFO_FM" not in radio.features() or "SUBTONE" not in radio.features():
         skip("not_built", "built without the FM VFO or CTCSS / DCS")

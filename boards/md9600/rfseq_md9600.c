@@ -6,6 +6,7 @@
 #include "config.h"
 #include "radio/apc_ramp.h"
 #include "radio/ref_trim.h"
+#include "rf/ak2365a/ak2365a.h"
 
 // Per band: index md9600_band_t (VHF 0, UHF 1)
 static const uint8_t ln_t5[2] = { MD9600_LN_T5_V, MD9600_LN_T5_U };
@@ -153,6 +154,10 @@ static md9600_rf_err_t pll_reset(const md9600_rf_ops_t *o, md9600_rev_t rev, con
 static md9600_rf_err_t if_setup(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, uint8_t band, bool wide)
 {
 	if (d->if_chip) {
+		// Keep the unused IF receiver in standby across band changes. Leaving both
+		// enabled can prevent the modem from decoding after switching bands.
+		if (!o->ifw(o->ctx, (uint8_t)(1u - band), ak2365a_word(AK2365A_REG_SRST, AK2365A_SRST_VALUE)))
+			return MD9600_RF_E_BUS;
 		uint16_t w[MD9600_IF_WORDS];
 		uint8_t n = md9600_if_words(wide, w);
 		for (uint8_t i = 0; i < n; i++) {
@@ -478,6 +483,47 @@ md9600_rf_err_t md9600_rf_pa_step(md9600_rf_t *rf, uint32_t step, uint32_t *next
 	       (uint16_t)(rf->apc_floor + (uint32_t)(rf->apc - rf->apc_floor) * step / MD9600_BURST_RAMP_STEPS));
 	*next_us = step < MD9600_BURST_RAMP_STEPS ? MD9600_BURST_RAMP_STEP_US : 0u;
 	return MD9600_RF_OK;
+}
+
+static md9600_rf_err_t pa_point_check(md9600_rf_t *rf)
+{
+	// confirmed again here: a confirmation dropped (md9600_rf_confirm) while a transmission runs must stop its next key-up
+	if (rf->state != MD9600_RF_TX || !CONFIG_MD9600_TX || !rf->confirmed) {
+		md9600_rf_pa_safe(rf);
+		return fail(rf, rf->state != MD9600_RF_TX ? MD9600_RF_E_STATE
+			       : !CONFIG_MD9600_TX ? MD9600_RF_E_TX_BUILD : MD9600_RF_E_TX_REV);
+	}
+	return MD9600_RF_OK;
+}
+
+md9600_rf_err_t md9600_rf_pa_supply(md9600_rf_t *rf)
+{
+	const md9600_rf_ops_t *o = rf->ops;
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		set(o, ln_t5[1u - rf->tx_band], false);
+		set(o, ln_t5[rf->tx_band], true);
+	}
+	return e;
+}
+
+md9600_rf_err_t md9600_rf_pa_loop(md9600_rf_t *rf)
+{
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		set(rf->ops, MD9600_LN_APC, true);
+		rf->pa_on = true;
+	}
+	return e;
+}
+
+md9600_rf_err_t md9600_rf_pa_ref(md9600_rf_t *rf, uint16_t dac)
+{
+	md9600_rf_err_t e = pa_point_check(rf);
+	if (e == MD9600_RF_OK) {
+		rf->ops->dac(rf->ops->ctx, MD9600_DAC_APC_TUNE_V, dac < rf->apc_floor ? rf->apc_floor : dac);
+	}
+	return e;
 }
 
 md9600_rf_err_t md9600_rf_burst_rx(md9600_rf_t *rf)

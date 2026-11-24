@@ -33,6 +33,7 @@ bool slotEpochSet(slotEpoch_t *e, uint32_t t_us, uint32_t period_ns, uint32_t no
 	e->set_ms = now_ms;
 	e->track_us = 0;
 	e->avg_us = 0;
+	e->moved = 0;
 	e->sets++;
 	return true;
 }
@@ -64,6 +65,7 @@ int8_t slotEpochLabel(slotEpoch_t *e, uint32_t t_us, uint32_t now_ms, int32_t *r
 
 		e->epoch_us += (uint32_t)us;
 		e->epoch_ns = (uint32_t)(ns - us * 1000);
+		e->moved += (uint32_t)(frames * 2);
 		dt_us = (int32_t)(t_us - e->epoch_us) - e->track_us;
 	}
 	int64_t dt_ns = (int64_t)dt_us * 1000 - (int64_t)e->epoch_ns;
@@ -72,6 +74,7 @@ int8_t slotEpochLabel(slotEpoch_t *e, uint32_t t_us, uint32_t now_ms, int32_t *r
 
 	*residual_us = (int32_t)(res_ns / 1000);
 	e->last_residual_us = *residual_us;
+	e->last_slot = e->moved + (uint32_t)n;
 	return ((n & 1) == 0) ? 1 : 2;
 }
 

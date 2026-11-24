@@ -691,7 +691,7 @@ static bool v_present(void) { return true; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
 static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
-static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL };
+static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, NULL, NULL, NULL, NULL };
 
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
@@ -751,6 +751,9 @@ uint32_t codeplug_dmr_id(void) { return 9996543; }
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { (void)key; (void)buf; (void)max; return -1; }	// no settings area
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }
+// No settings area to write: the radio core writes no tag
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 	{ (void)c; (void)key; (void)buf; (void)max; return -1; }
 uint8_t codeplug_kv_serial(void) { return 0; }

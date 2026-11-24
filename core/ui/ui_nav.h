@@ -12,11 +12,12 @@
 #include "ui_screens.h"
 #include "ui_svc.h"
 #include "i18n.h"
+#include "config.h"	// the switches that shape the types below
 
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
-	SCR_DIAG, SCR_EMERGENCY, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
+	SCR_DIAG, SCR_EMERGENCY, SCR_INCOMING_CALL, SCR_SCAN, SCR_ROAM, SCR_APRS, SCR_APRS_HEARD, SCR_FIXED_POS, SCR_ABOUT,
 	SCR_VOLUME,			// the volume editor (VOL key, radios without a knob)
 	SCR_CHANNELS, SCR_CHANNEL,	// every codeplug channel by number; one channel's settings (arg = its number)
 	SCR_CRASH,			// the crash log's record (arg 1: the prompt after the restart; CONFIG_CRASH_SCREEN)
@@ -39,7 +40,15 @@ typedef enum {
 	SCR_APRS_TO,			// destination callsign editor for APRS transmission
 	SCR_APRS_STATION,		// a heard station's actions
 	SCR_MESSAGE_TEXT,		// message body editor
+	SCR_MESSAGE_READ,		// a message's whole text, scrolled (the message screen's Full message row)
 	SCR_DATA_SERVICES,		// Settings > Connections > Data services: ARS server, IP gateway (CONFIG_DMR_ARS / _IP_GATEWAY)
+	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
+	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
+	SCR_SATELLITE_TEXT,		// one 69-character TLE line
+	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+#if CONFIG_BACKLIGHT_TEST
+	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
+#endif
 	SCR_COUNT
 } ui_scr_t;
 
@@ -50,6 +59,7 @@ typedef enum {
 #define SF_FIELD	0x08u	// "field use": at most 3 levels from Home (P4)
 #define SF_FIND		0x10u	// digits type the query (Find)
 #define SF_NO_STRIP	0x20u	// no status strip while the radio is idle (About: the owner's call); RX / TX bring it back
+#define SF_HINT_FN	0x40u	// the hint is built when drawn (hint_fn), not a marked text (hint)
 
 typedef struct {
 	uint8_t scr;
@@ -65,6 +75,11 @@ typedef struct {
 	bool saved;		// in the contacts
 	char name[CODEPLUG_NAME_LEN + 1];
 } ui_target_t;
+
+#if CONFIG_SATELLITE_TLE
+void ui_menus_satellite_text(char *target, uint8_t line, void (*done)(void));
+void ui_satellite_passes_tick(void);
+#endif
 
 // A filtered list's raw row and its label (NULL: empty); false stops the pass
 typedef bool (*ui_raw_fn)(uint16_t raw, const char *label, void *ctx);
@@ -86,9 +101,12 @@ typedef struct {
 typedef struct {
 	const char *name;	// the debug link's / simulator's name for it
 	uint8_t flags;
-	const char *prefix;	// title
-	const char *hint;
-	const char *empty;
+	tr_id_t prefix;		// title (TRN; TR_NONE: none)
+	union {
+		tr_id_t hint;			// TRN; TR_NONE: none
+		const char *(*hint_fn)(void);	// SF_HINT_FN: the hint, built in the language in use
+	};
+	tr_id_t empty;		// shown when count is 0 (TRN; TR_NONE: none)
 	uint16_t (*count)(void);
 	void (*item)(uint16_t i, ui_item_t *it);
 	void (*select)(uint16_t i, bool hold);		// SELECT; hold = long SELECT (save / make permanent)
@@ -99,6 +117,9 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
+#endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
 } ui_scr_def_t;
 
@@ -111,11 +132,16 @@ ui_frame_t *ui_frame(void);
 uint8_t ui_depth(void);
 void ui_push(uint8_t scr, uint16_t arg);
 void ui_pop(void);
+#if CONFIG_BACKLIGHT_TEST
+// The backlight tests: hold the light at a percent (0-100) against the dim and off times, or -1 to let it go
+void ui_backlight_hold(int16_t percent);
+#endif
 void ui_go_home(void);
 void ui_toast(const char *text);
 // Save temporary channel changes and tell the user why a save cannot start
 bool ui_try_save_channel(void);
 void ui_dirty(void);
+bool ui_about_busy(void);	// About is still working out the image hash: redraw it at the fast rate (CONFIG_SUPPORT_INFO)
 // The focused row changed: tell the radio what PTT would talk to now
 void ui_focus_changed(void);
 // Open the actions for a target (SCR_ACTIONS)
@@ -133,6 +159,8 @@ bool ui_has_action(uint8_t action);
 void ui_apply_setting(uint8_t id, int32_t v);
 // Scan on / off (quick 7, Tools 1, long SK2), with a toast that says what scans: the zone, or the band in the VFO
 void ui_scan_toggle(void);
+void ui_monitor_toggle(void);	// a side key set to Monitor toggle: what quick tile 5 does
+void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
 // Actions for the last caller (CONTEXT on Home), or a toast when there is none
 void ui_open_caller_actions(void);
 // A list row's number key ('1'..'9', '0')
@@ -202,6 +230,10 @@ void ui_recent_target(const ui_recent_t *r, ui_target_t *t);
 bool ui_contact_name(uint32_t id, bool group, char *out);
 
 // Diagnostics, emergency, banners (ui_app.c)
+#if CONFIG_DMR_TRUNK
+void ui_incoming_call_draw(void);
+bool ui_incoming_call_key(const input_event_t *ev);
+#endif
 void ui_emergency_draw(void);
 bool ui_emergency_key(const input_event_t *ev);
 void ui_diag_draw(void);

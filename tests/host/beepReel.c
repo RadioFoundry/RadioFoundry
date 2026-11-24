@@ -80,7 +80,7 @@ typedef struct {
 //
 // Nothing ties these steps to the radio core. If you change when core/radio/radio_sm.c plays a beep, update the
 // matching step here. The calls are in dmr_follow() (TX_PERMIT, TX_PERMIT_SHORT, CALL_END), tx_timer() (TOT_WARN), deny() (TX_DENY),
-// battery_poll() (BATTERY_CRIT), scan_service() (SCAN_HOLD) and emergency_tick() (EMERGENCY).
+// battery_poll() (BATTERY_CRIT), scan_service() (SCAN_HOLD), emergency_tick() (EMERGENCY) and t3_tick() (SYSTEM_BACK).
 static const step_t steps[] = {
 	{ "Browse the menu", "ok down down back", NULL, true, false, 0 },
 	{ "Group call heard", "rx:9991234,91,g,Q1AAA_Joe", NULL, false, true, 700 },
@@ -104,6 +104,7 @@ static const step_t steps[] = {
 	{ NULL, "long:quick", NULL, false, false, 0 },
 	{ NULL, "ptt:500", NULL, false, false, 0 },
 	{ NULL, "long:quick", NULL, false, false, 0 },
+	{ "Back on the trunked system after its fallback channel", NULL, "SYSTEM_BACK", false, false, 0 },
 	{ "Emergency heard", "emergency:3105678", "EMERGENCY", false, false, 0 },
 	{ NULL, "back", NULL, false, false, 500 },
 };

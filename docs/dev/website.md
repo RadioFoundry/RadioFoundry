@@ -16,9 +16,13 @@ python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
+Use `--serve` to test the Satellite TLE Update page locally. A plain static server cannot provide its `/api/amsat-tle` proxy.
+
 The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
-npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
+npm packages: plain HTML, CSS and ES modules. The one outside library, Tom Select (the editor's searchable lists), is
+copied into `site/static/vendor/tom-select/`, whose README gives its version and how to update it.
+`tools/ci.sh` builds the site and runs the tests (Python step).
 
 Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 
@@ -68,6 +72,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height. Every page shows the scaled copies ([Screenshot copies](#screenshot-copies)) |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
+| Support FAQ (`/support/faq.html`) | `site/faq/<code>.md`: each `## ` line a question, the Markdown under it the answer; a language without its file shows `en.md`. The Support page itself is `site/templates/support.html`, its download `static/js/supportpage.js` ([support-info.md](../spec/support-info.md)) |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
 The build fails when a source doesn't parse, and warns (an error with `--strict`) when a feature has no row in the
@@ -202,6 +207,11 @@ flasher, the Codeplug Editor and the Tools page get their strings from the same 
 reasons) is English at its source; a catalog can override it with `feature.<SWITCH>.title`, `feature.<SWITCH>.help`,
 `variant.<id>.title`, `variant.<id>.summary` or `group.<slug>`.
 
+A page embeds only the keys under the prefixes its builder gives `subset()` in `site/rfoundrysite/build.py`. A module
+several pages import (`flasher/dom.js`, `flasher/link.js`) asks for its own keys, so a page that imports one needs
+those prefixes too, or the visitor sees the key itself (#938). `site/tests/i18n_test.py` follows each page's imports
+and fails when a key written out in a `t()` call is not embedded; a key built from a variable is not checked.
+
 | `languages.json` field | Meaning |
 |---|---|
 | `code` | The URL prefix and `<html lang>`: `es`, `pt-BR` |
@@ -269,10 +279,13 @@ catalog has no string. `site/tests/i18n.test.mjs` tests the scripts' side. `tool
 Each radio has an original illustration, `site/static/img/radios/src/<radio>.svg`, drawn from straight-on reference
 photos (the photos stay outside the repository: product photos are not ours to publish). Rules:
 
-- viewBox `0 0 W H`, transparent background, no external references or embedded images;
+- viewBox `0 Y W H`, transparent background, no external references or embedded images. The top edge cuts a handheld's
+  antenna a little above its knobs (Y > 0 when the drawing has the whole antenna), so every radio shows the same stub
+  and its body fills the card;
 - exactly one `<rect id="screen" x y width height/>`, black, transform-free and not covered by anything, on the
   display's visible area, with the aspect ratio of the radio's gallery (5:4 for 160x128 and 160x120i5, 22:31 for
-  240x320i10x5);
+  240x320i10x5). A radio without a display (`board.toml` `display = "none"`) has none: its drawing is the radio as it
+  is, and the site shows no screenshots for it;
 - for the radio's web control page (`docs/spec/tcp-services.md` 5.1): each key it shows carries `id="key-<name>"`, the
   name being the board's `KEY_*` in lower case without `KEY_` (`key-fn_left`); the channel knob `id="encoder"` and a
   drawn LED `id="led"`. Keys whose shape doesn't match a key (a d-pad drawn as one piece) get transparent hit rects
@@ -296,8 +309,8 @@ with the same keys. The build writes its frame and boot-screen files like the bo
 missing.
 
 The build writes `static/img/radios/<radio>-frame.svg` (screen black), `<radio>.svg` (with the boot screen) and the
-screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages), so any screenshot can be
-laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
+screen's position in `data/radios.json` (`frame_geometry`: viewBox units and percentages, `null` without a display),
+so any screenshot can be laid over the frame; the radio pages do that when a screenshot is clicked. `frame_geometry.keys` has each tagged key's
 box, as percentages of the picture. A radio without an illustration gets a generic drawing from board.toml `[frame]`;
 its handheld shapes tag their side PTT, and the caption names any other key.
 
@@ -305,7 +318,10 @@ The web flasher shows the same frame (`frame_image`) beside every update mode st
 (`flasher/radiotop.js`): the bootloader entry steps as the picture alone, the HR_C7000 steps with what the screen shows
 laid over it at `frame_geometry` and an LED swatch that blinks as the real LED does, with a caption in words. Nothing
 in the flasher names a radio: a new board's picture appears with no flasher change. `site/tests/radio_images_test.py`
-(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one.
+(run by `site/tests/run.sh`) renders every board's picture and fails a board without a usable one. The picture is at
+most 300 px high (`--rt-h` of `.rt-pic` in `site.css`), so a tall portable leaves the step's buttons on the screen; its
+width follows from the drawing's shape (`frame_geometry.aspect`, which `radiotop.js` hands the stylesheet as
+`--rt-aspect`).
 
 On the bootloader entry steps (the STM32 radios' and the HR_C7000 update mode's), the flasher rings the keys to hold
 on the picture and names them under it ("Hold PTT and SK1"). The keys are `[flash.bootloader] hold` in board.toml,

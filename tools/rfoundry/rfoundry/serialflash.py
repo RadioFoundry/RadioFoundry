@@ -20,6 +20,7 @@ bundles (--hidden-import).
 import importlib
 import importlib.util
 import os
+import sys
 import struct
 import time
 
@@ -45,10 +46,21 @@ def tool(name):
     if name in _loaded:
         return _loaded[name]
     path = os.path.join(_ROOT, _PLACES[name], name + ".py")
-    if os.path.isfile(path):
+    have = sys.modules.get(name)
+    if have is not None and os.path.realpath(getattr(have, "__file__", "") or "") == os.path.realpath(path):
+        mod = have		# already imported by its plain name (f4stub imports stubtool) from this checkout
+    elif os.path.isfile(path):
         spec = importlib.util.spec_from_file_location("rfoundry_tool_" + name, path)
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        # the tools import each other by their plain names (f4stub imports stubtool): one copy of each, as in the
+        # rfoundry executable, so an error class one raises is the class the other catches
+        mine = sys.modules.setdefault(name, mod) is mod
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            if mine:
+                del sys.modules[name]
+            raise
     else:
         try:
             mod = importlib.import_module(name)

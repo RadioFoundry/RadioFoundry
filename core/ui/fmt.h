@@ -23,6 +23,8 @@ void sb_chr(sbuf_t *b, char c);
 // Unsigned decimal with at least min_digits digits (zero padded)
 void sb_u32(sbuf_t *b, uint32_t v, int min_digits);
 void sb_i32(sbuf_t *b, int32_t v);
+// Upper-case hex, exactly digits digits (a P25 NAC: 293, F7E)
+void sb_hex(sbuf_t *b, uint32_t v, int digits);
 // MHz with 3 decimals, more (up to 5) when the frequency needs them: 146.520, 446.00625
 void sb_freq(sbuf_t *b, uint32_t hz);
 // CTCSS 100.0, DCS D023N / D023I, empty for none
@@ -42,5 +44,11 @@ void sb_coord(sbuf_t *b, int32_t e7, char pos, char neg);
 void sb_compass(sbuf_t *b, uint16_t bearing);
 // A distance and a compass point: "850 m NE", "12.3 km S", "240 km W"
 void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing);
+// A string's display width in cells, for truncation that never splits a character: a CJK glyph (code point > 0xFF) is
+// two cells, matching the room math ((w - x) / f->w) the talk line uses; ASCII, Latin-1 and font glyph bytes are one
+size_t ui_text_cells(const char *s);
+// Append up to max_cells of s to b, stopping at a character boundary (a CJK character is two cells); the caller adds the
+// ellipsis. Never writes a cut-off character, so a Chinese name stays whole or drops whole
+void sb_cut_text(sbuf_t *b, const char *s, size_t max_cells);
 
 #endif

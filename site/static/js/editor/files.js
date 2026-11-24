@@ -14,6 +14,8 @@ import { classify } from "../codeplug/detect.js";
 import { importStock, STOCK, RDT_MD380 } from "../codeplug/stock_tyt.js";
 import { DM32_STOCK, importStock as importDm32 } from "../codeplug/stock_baofeng.js";
 import { empty, encode } from "../codeplug/model.js";
+import { isChirp } from "../codeplug/chirp.js";
+import { isChirpImg } from "../codeplug/chirp_img.js";
 
 // code: the editor.err.* text; params: what the file was, for the error report (never its contents)
 export class FileError extends Error {
@@ -54,7 +56,7 @@ export function fromBytes(bytes, board = null) {
 	return { kind: "foreign", format: layout, board };
 }
 
-// {kind: "image" | "converted" | "foreign" | "yaml" | "csv" | "csv-set", ...} from a file the user picked (fromBytes
+// {kind: "image" | "converted" | "foreign" | "yaml" | "csv" | "chirp" | "chirp-img" | "csv-set", ...} from a file the user picked (fromBytes
 // for the first three)
 export async function openFile(name, bytes) {
 	if (startsWith(bytes, "PK\u0003\u0004")) {
@@ -81,7 +83,11 @@ export async function openFile(name, bytes) {
 		return fromBytes(spi.data, meta?.radio?.board || null);
 	}
 	if (/\.ya?ml$/i.test(name)) return { kind: "yaml", text: new TextDecoder().decode(bytes) };
-	if (/\.(csv|txt)$/i.test(name)) return { kind: "csv", text: new TextDecoder().decode(bytes) };
+	if (/\.(csv|txt)$/i.test(name)) {
+		const text = new TextDecoder().decode(bytes);
+		return { kind: isChirp(text) ? "chirp" : "csv", text };
+	}
+	if (/\.img$/i.test(name) && isChirpImg(bytes)) return { kind: "chirp-img", bytes };
 	if (startsWith(bytes, "OutSecurityBin")) throw new FileError("firmware_not_codeplug");
 	// a codeplug image (0x120000), the USB network codeplug.bin (0xAEE60), a whole data flash dump, or a TYT MD-380
 	// CPS file or memory image

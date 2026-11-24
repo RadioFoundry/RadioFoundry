@@ -293,6 +293,12 @@ The MMDVM protocol itself is public and is specified separately. The switch work
   the radio to hotspot mode, if a hotspot type is configured (MMDVM or BlueDV) and DMR isn't disabled. There is no
   CPS reply. The request is queued as the first MMDVM frame. The radio also stops GPS NMEA output, so MMDVMHost
   doesn't see stray text.
+- **Trial.** Line noise on a UART (a loose cable) is full of 0xE0 bytes, so the switch starts a trial first. The radio
+  shows nothing and keeps the modem until two host-like frames arrive in a row: a command a host starts with
+  (GET_VERSION, GET_STATUS, SET_MODE, SET_FREQ, SET_CONFIG) at the payload length that command takes. The first is
+  answered at once, since a host waits for the GET_VERSION reply. Anything else ends the trial without a reply: a
+  frame that isn't host-like, a byte the framer throws away, or 500 ms without the second frame. The debug link counts
+  failed trials (`hostlink.noise`).
 - **USB (STM32, MK22).** From then on, every USB packet starting with 0xE0 and at least 3 bytes long is taken as one
   MMDVM frame. The radio does not parse the MMDVM length byte. A packet that doesn't fit in the frame ring is dropped
   and counted.
@@ -469,7 +475,8 @@ SFR bytes (ours; the CPS doesn't know them and leaves them as read). The SFR fie
 | A | 5 | Inbound slot: 1 = TS2, 0 = TS1. The outbound slot is the other one |
 | A | 7-6 | Hang time index: 1 s, 2 s, 4 s, none |
 | B (0x2A) | 7 | Outbound color code set |
-| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know); setting the bit on such a byte writes 0xCF (the unused bits 5-4 cleared), never 0xFF |
+| B | 6 | FM: the 1750 Hz tone burst at each PTT key-up ([radio-features.md](radio-features.md) 3.3). Read and written without the SFR flag. A byte of 0xFF reads as off (a writer that fills bytes it doesn't know) |
+| B | 5-4 | Accept invalid CRC ([dmr-trunking.md](dmr-trunking.md), [p25-trunking.md](p25-trunking.md)): 2 = on, any other value off, so 0xFF and 0xBF read as off. Read and written without the SFR flag. Bits 5-4 are always written (2 or 0), so the byte is never 0xFF |
 | B | 3-0 | That color code (else the channel's) |
 
 The repeater's timeout is the channel TOT, or 180 s when the TOT is 0.

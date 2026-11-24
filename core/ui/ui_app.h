@@ -15,6 +15,8 @@
 void ui_app_init(void);
 // One logical input event (PTT / MONITOR edges included: the radio core gets those from the input layer directly)
 void ui_app_key(const input_event_t *ev);
+// A key pressed with the backlight off only wakes the light, except these: they act at once (ui.c)
+bool ui_app_key_while_dark(const input_event_t *ev);
 // Time passes and the radio view may have changed: timeouts, banners, Recent. True if the screen should be redrawn
 bool ui_app_tick(const radio_view_t *v, uint32_t now_ms);
 // Draw the current screen into the frame buffer (no flush)
@@ -22,6 +24,10 @@ void ui_app_draw(void);
 // Backlight percent the user chose (Quick settings / Settings > Display); the dim and off times are the radio's
 // settings (ui_svc_apply)
 uint8_t ui_app_brightness(void);
+// CONFIG_BACKLIGHT_TEST: the percent the backlight tests hold the light at (the task writes no other), -1 when not held
+int16_t ui_app_backlight_hold(void);
+// The hold ended since the last call (then cleared): the task writes its own level again
+bool ui_app_take_backlight_reapply(void);
 // A banner or the emergency screen came up since the last call (then cleared): the backlight comes on for it
 bool ui_app_take_wake(void);
 // Auto power off is due (Settings > Power saving > Auto power off): the housekeeping task switches the radio off. If
@@ -35,6 +41,7 @@ typedef struct {
 	uint16_t focus;		// focused row / tile
 	uint16_t count;		// rows on a list screen
 	bool locked;
+	uint8_t gps;		// UI_GPS_*: the status strip's GPS icon
 	const char *unlock_key;	// the key held to unlock: "quick", "back", or "none" (auto lock never locks then)
 	bool field_use;		// the screen is tagged "field use" (depth rule, usability-tests.md 2)
 	const char *banner;	// banner title, "" = none

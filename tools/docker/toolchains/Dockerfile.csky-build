@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Builder for the csky-elf toolchain (never published): what binutils, GCC and newlib need to build. build-csky-gcc.sh
+# runs tools/build-csky-toolchain.sh in it with a host work directory on /work, so the build tree stays out of the
+# image store.
+FROM debian:trixie
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		build-essential curl ca-certificates xz-utils libgmp-dev libmpfr-dev libmpc-dev libisl-dev zlib1g-dev \
+		libzstd-dev texinfo bison flex \
+	&& rm -rf /var/lib/apt/lists/*

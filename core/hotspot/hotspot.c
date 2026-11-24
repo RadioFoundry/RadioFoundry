@@ -279,6 +279,23 @@ static void send_voice(const uint8_t *voice, uint8_t index, int16_t rssi_dbm, bo
 	send_voice_cmd(MMDVM_DMR_DATA2, voice, index, hotspotUplinkLc(&up), rssi_dbm, heard);
 }
 
+// The SFR mode (alt, not a split role, which has no inbound slot to protect) repeats right now. Read from the state
+// itself (single flags), so it's safe from the RF TX interrupt that asks it (hal_radio_t.dmr_direct_query)
+bool hotspot_sfr_repeating(void)
+{
+	const hotspot_alt_t *a = alt;
+	if (!running || (a == NULL) || !a->active()) {
+		return false;
+	}
+#if CONFIG_HOTSPOT_SPLIT
+	const hotspot_alt_t *p = alt_prio;
+	if ((p != NULL) && p->active()) {
+		return false;
+	}
+#endif
+	return true;
+}
+
 // ---- For another mode on the modem (hotspot_alt_t) ----
 
 void hotspot_set_alt(const hotspot_alt_t *a)

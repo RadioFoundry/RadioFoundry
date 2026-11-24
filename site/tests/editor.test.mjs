@@ -10,21 +10,44 @@ import { bulkColumns, channelForm, columns, parseAreaKey } from "../static/js/ed
 import { empty } from "../static/js/codeplug/model.js";
 import { KEYS } from "../static/js/codeplug/kv.js";
 import { Grid } from "../static/js/editor/grid.js";
+import { comboText } from "../static/js/editor/combo.js";
 
 const t = (k) => (k === "editor.tot.default" ? "Radio Default" : k);
 const field = (key) => channelForm(empty(), t).find((f) => f.key === key);
 
-test("channel TX timeout: 0 shows as the radio default, the rest in the 15 s steps the record stores", () => {
+test("channel TX timeout: a list of the radio default and the 15 s steps the record stores", () => {
 	const f = field("tot");
-	assert.equal(f.format(0), "Radio Default");
-	assert.equal(f.format(180), "180");
-	const typed = (s) => {
-		const r = { tot: 99 };
-		return f.parse(r, "tot", s) ?? r.tot;
-	};
-	for (const s of ["", " ", "0", "Radio Default", "radio default", "default"]) assert.equal(typed(s), 0, JSON.stringify(s));
-	assert.deepEqual(["1", "15", "16", "180", "3825"].map(typed), [15, 15, 30, 180, 3825]);
-	for (const s of ["3826", "-5", "1.5", "3 min", "off"]) assert.equal(typed(s), "editor.err.tot", s);
+	assert.equal(f.type, "select");
+	const opts = f.options({ tot: 0 });
+	assert.deepEqual(opts[0], [0, "Radio Default"]);
+	assert.deepEqual(opts.slice(1, 5).map(([v]) => v), [15, 30, 45, 60]);
+	assert.equal(opts.length, 1 + 255);
+	assert.deepEqual(opts.at(-1)[0], 3825);
+	assert.deepEqual(opts.find(([v]) => v === 90), [90, "1:30 (90 s)"]);
+	// the steps only: every import rounds up to them
+	assert.ok(opts.every(([v]) => v % 15 === 0));
+});
+
+test("tone fields list every standard CTCSS tone and DCS code, and still take any valid tone typed", () => {
+	const spec = field("txTone").combo({});
+	const tones = spec.values;
+	assert.equal(tones.length, 50 + 104 * 2);
+	assert.ok(tones.includes("88.5") && tones.includes("D023N") && tones.includes("D754I"));
+	assert.ok(field("rxTone").combo({}).values.includes("254.1"));
+	const col = columns("channels", empty(), t).find((c) => c.key === "rxTone");
+	assert.equal(col.combo({}).values.length, tones.length);
+	// typed text: normalized when it is a tone (the list's "Use ..." row), refused otherwise ("Not a CTCSS tone ...")
+	assert.equal(spec.accept("69.4"), "69.4");
+	assert.equal(spec.accept("d23"), "D023N");
+	assert.equal(spec.accept("none"), "");
+	assert.equal(spec.accept("abc"), null);
+	assert.equal(spec.accept("400"), null);
+	assert.equal(spec.none, t("editor.none"));
+	assert.equal(spec.use("69.4"), "editor.tone.use");
+	assert.ok(spec.noMatch);
+	const r = {};
+	assert.equal(field("rxTone").parse(r, "rxTone", "69.4"), undefined);
+	assert.equal(r.rxTone, "69.4");
 });
 
 test("an RX frequency in the air band or the broadcast band makes the channel RX only and names the band", () => {
@@ -47,7 +70,14 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 	const txField = freqs.find((f) => f.key === "txHz");
 	const pair = channelForm(empty(), t).find((f) => f.key === "freqs");
 	assert.equal(txField.follows, "rxHz");
-	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v), pair.disabled(null, () => v)]), [[true, true], [false, false]]);
+	const off = () => false;
+	assert.deepEqual(["121.5", "462.5625"].map((v) => [txField.disabled(null, () => v, off), pair.disabled(null, () => v, off)]), [[true, true], [false, false]]);
+	// RX Only ticked outside those bands locks TX too (and the TX tone and power), but TX doesn't follow RX there
+	const on = (k) => k === "rxOnly";
+	const form = channelForm(empty(), t);
+	assert.deepEqual(["power", "tot", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", on)), [true, true, true, true, true]);
+	assert.deepEqual(["power", "tot", "txTone", "vox", "toneBurst"].map((k) => form.find((f) => f.key === k).disabled(null, () => "462.5625", off)), [false, false, false, false, false]);
+	assert.deepEqual([txField.disabled(null, () => "462.5625", on), txField.followsIf(() => "462.5625"), txField.followsIf(() => "121.5")], [true, false, true]);
 	const note = channelForm(empty(), t).find((f) => f.key === "band");
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => note.text(() => v)), ["editor.band.air", "editor.band.bcast", "", ""]);
 	// the form's RX Only box follows the RX frequency as it is typed
@@ -55,10 +85,88 @@ test("an RX frequency in the air band or the broadcast band makes the channel RX
 	assert.deepEqual(["121.5", "88.1", "462.5625", "x"].map((v) => rxOnly.implied(() => v)), [true, true, false, false]);
 });
 
+test("the channel table grays and locks TX, TX tone and power on an RX Only channel (#924)", () => {
+	const cols = columns("channels", empty(), t);
+	const na = (key, r) => cols.find((c) => c.key === key).readOnly(r);
+	const ch = (rxOnly) => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly });
+	assert.deepEqual(["txHz", "power", "txTone"].map((k) => [na(k, ch(true)), na(k, ch(false))]), [[true, false], [true, false], [true, false]]);
+	// and blank there: no TX frequency, power or tone that the channel never uses
+	const shown = (key, r) => {
+		const c = cols.find((x) => x.key === key);
+		return c.format(r[key], r);
+	};
+	assert.deepEqual(["txHz", "power"].map((k) => shown(k, ch(true))), ["", ""]);
+	assert.deepEqual(shown("txHz", ch(false)), "146.520");
+});
+
+test("a TX frequency typed in the air or broadcast band is refused and the channel is left as it was (#924)", () => {
+	const say = (k, p) => (k === "editor.err.tx_listen" ? `${p.mhz} MHz is not a supported transmit frequency.` : k);
+	const ch = () => ({ rxHz: 146520000, txHz: 146520000, mode: "fm", rxOnly: false });
+	const col = (key) => columns("channels", empty(), say).find((c) => c.key === key);
+	const formTx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "txHz");
+	// the table and the form refuse it alike, with the same warning, and keep the old TX frequency and RX Only
+	for (const typeTx of [(r, v) => col("txHz").set(r, v), (r, v) => formTx.parse(r, "txHz", v)]) {
+		for (const [v, mhz] of [["121.5", "121.500"], ["98.1", "98.100"]]) {
+			const r = ch();
+			assert.equal(typeTx(r, v), `${mhz} MHz is not a supported transmit frequency.`);
+			assert.deepEqual([r.txHz, r.rxOnly], [146520000, false]);
+		}
+		// a transmit frequency is taken as before
+		const r = ch();
+		assert.equal(typeTx(r, "146.55"), undefined);
+		assert.deepEqual([r.txHz, r.rxOnly], [146550000, false]);
+		// a TX frequency already there (an import) is kept when it isn't changed, so the form still saves
+		const imported = { ...ch(), txHz: 121500000, rxOnly: true };
+		assert.equal(typeTx(imported, "121.5"), undefined);
+		assert.equal(imported.txHz, 121500000);
+	}
+	// an RX frequency in a listen band still makes the channel RX only with TX on RX
+	const r = ch();
+	assert.equal(col("rxHz").set(r, "121.5"), undefined);
+	assert.deepEqual([r.rxHz, r.txHz, r.rxOnly], [121500000, 121500000, true]);
+	// and the form's TX, following RX there, saves
+	const w = ch();
+	formTx.parse(w, "txHz", "121.5");
+	assert.equal(w.txHz, 146520000);
+	const rx = channelForm(empty(), say).find((f) => f.key === "freqs").fields.find((f) => f.key === "rxHz");
+	rx.parse(w, "rxHz", "121.5");
+	assert.equal(formTx.parse(w, "txHz", "121.5"), undefined);
+	// an imported TX frequency in a listen band stays shown and open in the table, so it can be corrected there
+	const tx = col("txHz");
+	const imp = { ...ch(), txHz: 121500000, rxOnly: true };
+	assert.deepEqual([tx.readOnly(imp), tx.format(imp.txHz, imp)], [false, "121.500"]);
+	assert.equal(tx.set(imp, "146.55"), undefined);
+	assert.deepEqual([imp.txHz, tx.readOnly(imp), tx.format(imp.txHz, imp)], [146550000, true, ""]);
+});
+
 test("the channel table shows the mode the radio uses in a receive-only band", () => {
 	const mode = columns("channels", empty(), t).find((c) => c.key === "mode");
 	assert.deepEqual([[118100000, "fm"], [98500000, "fm"], [146520000, "fm"], [118100000, "dmr"]].map(([rxHz, m]) => mode.format(m, { rxHz, mode: m })),
 		["editor.mode.air", "editor.mode.bcast", "FM", "DMR"]);
+});
+
+test("Tier III channels expose the talk target and RX group list in the grid and form", () => {
+	const model = empty();
+	const contact = { number: 1, name: "TestGroup", id: 147862, type: "group" };
+	const rxList = { number: 1, name: "Test groups", contacts: [contact] };
+	model.contacts.push(contact);
+	model.rxLists.push(rxList);
+	const channel = { kind: 1, mode: "dmr" };
+	const grid = columns("channels", model, t);
+	const form = channelForm(model, t);
+	for (const [key, entry] of [["contact", contact], ["rxList", rxList]]) {
+		const column = grid.find((c) => c.key === key);
+		const selector = form.find((f) => f.key === key);
+		assert.equal(column.readOnly(channel), false);
+		assert.equal(selector.show(channel), true);
+		column.set(channel, entry);
+		assert.equal(channel[key], entry);
+		assert.equal(column.format(entry, channel), entry.name);
+	}
+	for (const key of ["colorCode", "timeslot"]) {
+		assert.equal(grid.find((c) => c.key === key).readOnly(channel), true);
+		assert.equal(form.find((f) => f.key === key).show(channel), false);
+	}
 });
 
 test("Bulk Edit sets no names or numbers, and has nothing to set on zones and RX lists", () => {
@@ -80,6 +188,71 @@ test("the table filter and sort take every column's text, numbers too", () => {
 	g.filter = "";
 	g.sort = { key: "number", dir: 1 };
 	assert.deepEqual(g.shown().map((r) => r.number), [3, 12]);
+});
+
+// A stand-in for Tom Select with what the grid and the form use. blur(text) leaves the field as Tom Select does:
+// the "before onBlur" hooks see the text, then the text is cleared and "blur" fires
+function fakeTs(value, text) {
+	const on = {}, before = [];
+	const ts = {
+		value, text, textOnBlur: "", isOpen: false, activeOption: null,
+		wrapper: { addEventListener() {} }, control_input: {},
+		getValue: () => ts.value, inputValue: () => ts.text,
+		hook: (when, method, fn) => before.unshift(fn),
+		on: (ev, fn) => (on[ev] ??= []).push(fn),
+		focus() {}, open() {}, close() {}, destroy() {}, positionDropdown() {},
+		blur() {
+			for (const fn of before) fn();
+			ts.text = "";
+			for (const fn of on.blur ?? []) fn();
+		},
+	};
+	// what combo() installs: the text the field held when it lost focus
+	ts.hook("before", "onBlur", () => { if (ts.inputValue().trim()) ts.textOnBlur = ts.inputValue().trim(); });
+	ts.on("focus", () => { ts.textOnBlur = ""; });
+	ts.refocus = () => { for (const fn of on.focus) fn(); };
+	return ts;
+}
+
+test("leaving a tone cell with text that isn't a tone leaves the cell as it was", () => {
+	const m = empty();
+	const g = Object.assign(Object.create(Grid.prototype), { columns: columns("channels", m, t), render() {}, moveTo() {} });
+	const c = g.columns.find((x) => x.key === "rxTone"), spec = c.combo({});
+	const td = { closest: () => null };
+	const edit = (value, typed) => {
+		const saved = [];
+		g.onChange = (r, col, v) => { saved.push(v); };
+		const ts = fakeTs(value, typed);
+		g.editCombo(td, 0, 0, {}, c, ts, spec);
+		ts.blur();
+		return saved;
+	};
+	// an edit started by typing has no item: "xyz" (or a half-typed tone) used to save None over 88.5
+	assert.deepEqual(edit("", "xyz"), []);
+	assert.deepEqual(edit("", "8"), []);
+	assert.deepEqual(edit("88.5", "q"), []);
+	// a valid tone typed and not yet taken (the window lost focus) is saved; no text keeps the selected value
+	assert.deepEqual(edit("", "d23"), ["D023N"]);
+	assert.deepEqual(edit("88.5", ""), ["88.5"]);
+});
+
+test("the form saves the tone text left in the field, so text that isn't a tone gets its error", () => {
+	const ts = fakeTs("88.5", "6.7");
+	const input = { value: "88.5", tomselect: ts };
+	assert.equal(comboText(input), "6.7");
+	ts.blur();
+	assert.equal(comboText(input), "6.7");
+	// Tom Select's second onBlur, text already gone, keeps it; focusing the field again and leaving it empty drops it
+	ts.blur();
+	assert.equal(comboText(input), "6.7");
+	ts.refocus();
+	ts.blur();
+	assert.equal(comboText(input), "88.5");
+	assert.equal(comboText({ value: "100.0" }), "100.0");
+	// what Save then does with "6.7": the tone's error, and the record keeps its tone
+	const r = { rxTone: "88.5" };
+	assert.ok(field("rxTone").parse(r, "rxTone", comboText({ value: "88.5", tomselect: fakeTs("88.5", "6.7") })));
+	assert.equal(r.rxTone, "88.5");
 });
 
 test("Radio tab ARS server and IP gateway: empty is an absent key, 0 is off", () => {

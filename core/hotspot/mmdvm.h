@@ -160,11 +160,20 @@ void mmdvm_ext_refresh(void);
 #endif
 
 // One complete frame from the host (as the framer returns it)
-void mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms);
+// Returns false when a trial dropped the frame as noise
+bool mmdvm_frame(const uint8_t *frame, uint16_t len, uint32_t now_ms);
 // Housekeeping, every few ms
 void mmdvm_poll(uint32_t now_ms);
 // The host went away (timeout or port closed): stop the hotspot, forget the configuration
 void mmdvm_end(void);
+
+// A trial (a UART host link that saw a 0xE0, hostlink.h): line noise can frame by chance, so the session waits for
+// a host. A frame that isn't host-like (a command a host starts with, at its length: GET_VERSION, GET_STATUS, SET_MODE,
+// SET_FREQ, SET_CONFIG, the split role's 0xD6) is dropped unanswered. The first host-like frame is answered without
+// taking the modem; the second ends the trial and the session runs as usual. mmdvm_end ends a trial; without one
+// (the default) the first frame takes the modem
+void mmdvm_trial_begin(void);
+bool mmdvm_in_trial(void);
 
 // hal_millis() of the last frame from the host (0 = none since mmdvm_init / mmdvm_end)
 uint32_t mmdvm_last_frame_ms(void);

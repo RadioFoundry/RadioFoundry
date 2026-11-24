@@ -55,6 +55,7 @@
 #define SPLIT_CAP_RX_META	0x0008u
 #define SPLIT_CAP_TRIM		0x0010u
 #define SPLIT_CAP_PPS		0x0020u
+#define SPLIT_CAP_SCHED_CACH	0x0040u	// TX_SCHED may carry the slot's CACH (spec 3.9)
 
 // SET_ROLE byte 6
 #define SPLIT_STREAM_BUFFER	0
@@ -72,6 +73,7 @@
 #define SPLIT_META_BS_SYNC	0x10
 #define SPLIT_META_EPOCH	0x20	// labeled from a valid epoch
 #define SPLIT_META_TIMED	0x40	// t_us is the burst's slot start (the slot clock ran)
+#define SPLIT_META_SLOT		0x80	// bytes 14-15 hold the burst's slot number from the epoch
 
 // ALIGN reply / STATUS 46 flags (spec 3.8)
 #define SPLIT_AL_ALIGNED	0x01

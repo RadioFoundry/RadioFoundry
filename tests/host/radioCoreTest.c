@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The radio core's state machine (core/radio/radio_sm.c) against a fake board and a fake codeplug
+#include "input/input.h"
 #include "input/keyassign.h"
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
 #include "radio/radio_sm.h"
+#include "codeplug/codeplug_modes.h"
 #if CONFIG_APRS
 #include "aprs/aprs_beacon.h"	// APRS_WHY_*
 #endif
 #include "radio/radio_sfr.h"
+#include "radio/radio_bands.h"
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
@@ -19,22 +22,35 @@
 #include "hotspot/hotspot.h"
 #include "hotspot/mmdvm.h"
 #include "settings/settings.h"
+#include "radio/ref_trim.h"
 #include "dmr/dmr_data_api.h"
 #include "dmr/dmr_emergency.h"
 #include "ui/ui_svc.h"
 #include "storage/storage.h"
 #include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrAes.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
+#include "sim/codeplug_copy_stub.h"
 #include "radio/vibe.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "debuglink/dl_fmt.h"
+#include "hostlink/build_info.h"
 #include "radio/tx_limit.h"
 #include "radio/battery.h"
+#if CONFIG_DMR_TRUNK_TX
+#include "radio/radio_trunk.h"
+#include "codeplug/codeplug_tag.h"
+#include "codeplug/codeplug_records.h"
+#include "dmr/fec/dmrCach.h"
+#include "dmr/trunk/t3_pdu.h"
+#include "dmr/trunk/t3_sys.h"
+#endif
 #include "fuzz.h"
 #include "position/position.h"
+#include "radio/beep.h"
 
 static int failures;
 static int checks;
@@ -53,6 +69,8 @@ static struct {
 	uint32_t tx_hz;
 	uint8_t tx_power;
 	int tx_off_calls;
+	bool keyed;		// between a tx() that keyed and the next tx_off()
+	bool rx_since_tx;	// an rx() since the last tx(): a retune ends a DMR keying (the boards disarm in rx())
 	bool audio;
 	bool led[2];
 	radio_status_t st;
@@ -68,23 +86,45 @@ static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
 	hw.rx_calls++;
+	hw.rx_since_tx = true;
 	return true;
 }
+// tx() while keyed with neither tx_off() nor rx() between, over the whole run (hw is cleared per test): a board then
+// reprograms its synthesizer and RF switches under a PA that a DMR burst may be holding keyed (hal_radio_t.tx is
+// written to start from receive)
+static int rekeys;
 static bool tx_fail;			// the board refuses to key (synthesizer won't lock, PA fault)
 static bool r_tx(uint32_t hz, radio_bw_t bw, uint8_t p, const subtone_t *t)
 {
 	if (tx_fail) {
 		return false;
 	}
+	if (hw.keyed && !hw.rx_since_tx) {
+		rekeys++;
+	}
+	hw.rx_since_tx = false;
 	hw.tx_calls++;
 	hw.tx_hz = hz;
 	hw.tx_bw = bw;
 	hw.tx_tone = *t;
 	hw.tx_power = p;
+	hw.keyed = true;
 	return true;
 }
-static void r_tx_off(void) { hw.tx_off_calls++; }
-static void r_status(radio_status_t *st) { *st = hw.st; }
+static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
+// The scan and dual watch tests: the far radio (fake air 1) is heard only on far_hz, a carrier there while it sends
+// (0: on every frequency, no carrier of its own)
+static uint32_t far_hz;
+static bool far_on_air(void);
+static void r_status(radio_status_t *st)
+{
+	*st = hw.st;
+	if (far_hz != 0) {
+		bool here = hw.rx_hz == far_hz && far_on_air();
+		st->noise = here ? 20 : 120;
+		st->rssi_dbm = here ? -80 : -125;
+	}
+}
 static void r_audio(bool on) { hw.audio = on; }
 // FM TX tone and its Morse keying (the hotspot's CW ID): every change logged with the time
 static struct {
@@ -119,12 +159,20 @@ static char dtmf_on;		// tx_dtmf: the digit sounding
 static bool r_tx_dtmf(char digit) { dtmf_on = digit; return true; }
 static int16_t ref_trim_ppb = 1;	// ref_trim: the last trim (1: never called)
 static bool r_ref_trim(int16_t ppb) { ref_trim_ppb = ppb; return true; }
+static bool (*direct_q)(void);	// hal_radio_t.dmr_direct_query: what the board asks as it keys a burst
+static void r_dmr_direct_query(bool (*q)(void)) { direct_q = q; }
+static int direct_now(void) { return direct_q != NULL ? direct_q() : -1; }	// the board's answer at a burst now
 static hal_radio_t fake_radio = { .init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off,
 					.status = r_status, .audio = r_audio, .tx_tone = r_tx_tone,
-					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim };
+					.tx_tone_key = r_tx_tone_key, .tx_dtmf = r_tx_dtmf, .ref_trim = r_ref_trim,
+					.dmr_direct_query = r_dmr_direct_query };
 
 // (fake_radio.volume is set by test_soft_volume only)
 static void p_led(uint8_t which, bool on) { hw.led[which] = on; }
+
+static bool ptt_stuck;
+static bool p_ptt_stuck(void) { return ptt_stuck; }
+static const hal_input_t fake_input = { .ptt_line_stuck = p_ptt_stuck };
 
 // ---- fake PCM audio and vocoder (core/dmr/ambe runs on them) ----
 static struct {
@@ -144,11 +192,38 @@ static bool codec_present;
 static bool v_present(void) { return codec_present; }
 static void v_reset(void) {}
 static void v_encode(const int16_t *pcm, uint8_t *bits) { (void)pcm; memset(bits, 0, VOCODER_BITS); }
-static void v_decode(const uint8_t *bits, int16_t *pcm) { (void)bits; memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2); }
+// Each frame the decoder is given, to a test that looks (the NXDN voice path's check)
+static void (*v_decode_hook)(const uint8_t *bits);
+static void v_decode(const uint8_t *bits, int16_t *pcm)
+{
+	if (v_decode_hook != NULL) {
+		v_decode_hook(bits);
+	}
+	memset(pcm, 0, VOCODER_FRAME_SAMPLES * 2);
+}
 static uint32_t v_options(void) { return VOCODER_OPT_NOISE_REDUCTION | VOCODER_OPT_TONE_FRAMES | VOCODER_OPT_AGC; }
 static void v_set_options(uint32_t opts) { (void)opts; }
+#if CONFIG_P25 || defined(HAL_VOCODER_LEND_BYTES)
+static bool lend_refuse;		// a vocoder with nothing to lend
+static uint32_t lends;
+#endif
+#ifdef HAL_VOCODER_LEND_BYTES
+// As the HR_C7000 platform's: the codec's memory lent while no DMR voice runs (P25 runs in it)
+#define LENDS	1u		// what a P25 start borrows
+static uint64_t lend_mem[HAL_VOCODER_LEND_BYTES / 8];
+static void *v_lend(size_t *len)
+{
+	lends++;
+	*len = sizeof(lend_mem);
+	return lend_refuse ? NULL : lend_mem;
+}
+#else
+// P25 runs in its own memory, which NXDN shares
+#define LENDS	0u
+#define v_lend NULL
+#endif
 static const hal_vocoder_t fake_vocoder = { v_present, v_reset, v_encode, v_decode, NULL, v_options, v_set_options,
-					    NULL };
+					    NULL, v_lend };
 static const char *codec_profile;
 static const char *v_profile(void) { return codec_profile; }
 static uint8_t p_mic(void) { return 0; }
@@ -164,13 +239,15 @@ static const band_t bands[] = {
 };
 static bool rx_ext_on;
 static const char *const power_names[] = { "L", "M", "H" };
-// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys
+// Keys: only what the side key glue (ui_svc_storage.c) needs, two side keys and an arrow programmable on Home
 static const keymap_entry_t keymap[] = {
 	{ 0, ACT_SELECT, ACT_SELECT, false, false, 0 },
 	{ 1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
 	{ 2, ACT_TALK_TARGET, ACT_USER_2, false, false, 0 },
+	{ 3, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
 };
 static const uint8_t side_keys[] = { 1, 2 };
+static const uint8_t home_keys[] = { 3 };
 
 static int gps_enable_calls;
 static bool gps_enabled;
@@ -181,6 +258,7 @@ static void fake_gps_enable(bool on)
 	gps_enable_calls++;
 	gps_enabled = on;
 }
+static const hal_gps_t fake_gps = { .present = fake_gps_present, .enable = fake_gps_enable };
 
 // A hardware option (hal_hwopt.h) whose state the tests set; hidden (detected) unless a test says otherwise
 static uint8_t fake_hwopt_st = HWOPT_ST_HIDDEN;
@@ -192,13 +270,226 @@ static const hal_hwopt_t fake_hwopts[] = {
 	{ "Revision", 2, fake_hwopt_choices, fake_hwopt_get, fake_hwopt_set, true, fake_hwopt_state },
 };
 
+#if CONFIG_AIR
+// ---- fake air interface: board.air (0) and a far radio's provider (1), each the other's far end. A chunk every 30
+// ms (run), as a modem chip's records come ----
+#include "air/air_syms.h"
+#include "p25/p25_engine.h"
+#include "p25/p25_codeplug.h"
+#include "hostlink/build_info.h"
+#if CONFIG_P25_TRUNK
+#include "p25/p25_tsbk.h"
+#endif
+#define AIR_CHUNK	144
+#define AIR_DEPTH	4
+typedef struct {
+	air_event_cb_t cb;
+	void *ctx;
+	bool open, on, started;
+	air_tx_chunk_t q[AIR_DEPTH];
+	uint8_t qn;
+	uint32_t now_us, opens, closes, begins, aborts, underruns, sent;
+	uint32_t keyed_violations;	// board.air modulated with the transmitter off (hal_air.h rule 3)
+} fake_air_t;
+static fake_air_t fair[2];
+static bool air_nofit;			// board.air can't carry P25
+static uint32_t air_rng = 0x1234567;
+
+static void air_ev(fake_air_t *p, uint8_t kind, const air_chunk_t *c)
+{
+	air_event_t e = { .kind = kind, .t_us = p->now_us, .chunk = c };
+	if (p->cb != NULL) {
+		p->cb(&e, p->ctx);
+	}
+}
+
+#if CONFIG_P25_TRUNK
+// A P25 trunked site around the radio (test_p25_trunk): its control channel on cc_hz, and the far radio's voice
+// heard only on voice_hz. On any other frequency the receiver hears noise
+static struct {
+	bool on;
+	uint32_t cc_hz, voice_hz;
+	uint16_t grant_tg, grant_ch;	// a group voice grant sent, 0: none
+	bool grant_enc;
+	bool iden2;			// identifier 2 (out of the radio's bands) sent too
+	uint32_t units, rot;
+	uint8_t unit[P25_UNIT_BYTES_MAX];
+	uint16_t unit_syms, unit_at;
+	// The inbound side: what the radio sends on cc_in_hz, and how the site answers (SITE_ANS_*)
+	uint32_t cc_in_hz;
+	uint8_t ans_reg, ans_aff, ans_req;
+	uint8_t in[P25_UNIT_BYTES_MAX];
+	uint16_t in_n;
+	uint16_t reg_rx, aff_rx, req_rx, bad_rx;
+	p25_isp_t last;
+	uint8_t out[P25_TSBK_BYTES];	// an answer, sent as the first block of the next out_reps units
+	uint8_t out_reps;
+	uint8_t grant_after;		// a queued request: units until its grant
+	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
+	uint32_t lc_wacn;		// not 0: a conventional repeater instead, its terminators' link control naming it
+	uint16_t lc_sysid;		// ... and this system ID (0: TS_SYSID)
+} site;
+enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
+static void site_chunk(uint8_t *syms);
+static void site_inbound(const uint8_t *syms, uint16_t n, bool last);
+#endif
+
+static bool far_carrier;	// a carrier on far_hz without the far radio (test_scan_every_mode: FM, or DMR's bursts)
+static bool far_on_air(void) { return fair[1].on || far_carrier; }
+
+static void air_deliver(fake_air_t *to, const uint8_t *syms, uint16_t n)
+{
+	if (far_hz != 0 && to == &fair[0] && hw.rx_hz != far_hz) {
+		return;		// the far radio sends on far_hz; the radio is tuned elsewhere
+	}
+#if CONFIG_P25_TRUNK
+	if (site.on && to == &fair[0] && hw.rx_hz != site.voice_hz) {
+		return;		// the far radio sends on the voice channel; the radio is tuned elsewhere
+	}
+#endif
+	int8_t soft[AIR_CHUNK];
+	air_chunk_t c = { .t_us = to->now_us, .nsyms = n, .sync_at = -1, .hard = syms, .soft = soft };
+	for (uint16_t i = 0; i < n; i++) {
+		soft[i] = (int8_t)(32 * air_sym_level(air_sym_get(syms, i)));
+	}
+	if (to->open && !to->on) {
+		air_ev(to, AIR_EV_RX, &c);
+	}
+}
+
+// One chunk period at provider i
+static void air_step1(uint8_t i)
+{
+	fake_air_t *p = &fair[i], *far = &fair[i ^ 1];
+	p->now_us += 30000;
+#if CONFIG_P25_TRUNK
+	if (i == 0 && !p->on && site.on && (hw.rx_hz == site.cc_hz || hw.rx_hz != site.voice_hz || !far->on)) {
+		uint8_t syms[AIR_CHUNK / 4];
+		if (hw.rx_hz == site.cc_hz) {
+			site_chunk(syms);
+		} else {
+			for (uint8_t k = 0; k < sizeof(syms); k++) {
+				air_rng ^= air_rng << 13;
+				air_rng ^= air_rng >> 17;
+				air_rng ^= air_rng << 5;
+				syms[k] = (uint8_t)air_rng;
+			}
+		}
+		bool was = site.on;
+		site.on = false;	// (past air_deliver's filter)
+		air_deliver(p, syms, AIR_CHUNK);
+		site.on = was;
+		return;
+	}
+#endif
+	if (!p->on) {
+		if (!far->on) {		// nobody sends: the receiver hands on noise
+			uint8_t noise[AIR_CHUNK / 4];
+			for (uint8_t k = 0; k < sizeof(noise); k++) {
+				air_rng ^= air_rng << 13;
+				air_rng ^= air_rng >> 17;
+				air_rng ^= air_rng << 5;
+				noise[k] = (uint8_t)air_rng;
+			}
+			air_deliver(p, noise, AIR_CHUNK);
+		}
+		return;
+	}
+	if (i == 0 && !hw.keyed) {
+		p->keyed_violations++;
+	}
+	if (!p->started) {
+		p->started = true;
+		air_ev(p, AIR_EV_TX_STARTED, NULL);
+	}
+	if (p->qn == 0) {
+		uint8_t idle[AIR_CHUNK / 4];
+		memset(idle, 0x5F, sizeof(idle));
+		p->underruns++;
+		air_deliver(far, idle, AIR_CHUNK);
+		air_ev(p, AIR_EV_TX_UNDERRUN, NULL);
+		return;
+	}
+	air_tx_chunk_t c = p->q[0];
+	memmove(p->q, p->q + 1, (size_t)(--p->qn) * sizeof(c));
+	p->sent += c.nsyms;
+#if CONFIG_P25_TRUNK
+	if (i == 0 && site.on && hw.tx_hz == site.cc_in_hz) {
+		site_inbound(c.syms, c.nsyms, (c.flags & AIR_TX_LAST) != 0);	// the site's receiver, not the far radio
+	} else
+#endif
+	air_deliver(far, c.syms, c.nsyms);
+	if (c.flags & AIR_TX_LAST) {
+		p->on = false;
+		air_ev(p, AIR_EV_TX_DONE, NULL);
+	} else {
+		air_ev(p, AIR_EV_TX_SPACE, NULL);
+	}
+}
+
+// 4800 symbols/s (P25, NXDN at 9600 bit/s): everything. 2400 symbols/s (NXDN at 4800 bit/s): what air_fit2400 says
+// for each provider (a provider that transmits a profile only, or receives it only)
+static uint32_t air_fit2400[2] = { AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT, AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT };
+static uint32_t air_fit(uint8_t i, const air_profile_t *pr)
+{
+	if (air_nofit) {
+		return 0;
+	}
+	return pr->sym_rate == 4800 ? AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT : pr->sym_rate == 2400 ? air_fit2400[i] : 0;
+}
+static bool air_open(uint8_t i, air_event_cb_t cb, void *ctx)
+{
+	fake_air_t *p = &fair[i];
+	uint32_t opens = p->opens, closes = p->closes;
+	memset(p, 0, sizeof(*p));
+	p->opens = opens + 1;
+	p->closes = closes;
+	p->cb = cb;
+	p->ctx = ctx;
+	p->open = true;
+	return true;
+}
+static void air_close(uint8_t i) { fair[i].open = fair[i].on = false; fair[i].cb = NULL; fair[i].qn = 0; fair[i].closes++; }
+static bool air_begin(uint8_t i) { if (fair[i].qn == 0 || !fair[i].open) return false; fair[i].on = true; fair[i].started = false; fair[i].begins++; return true; }
+static bool air_queue(uint8_t i, const air_tx_chunk_t *c)
+{
+	if (fair[i].qn == AIR_DEPTH) {
+		return false;
+	}
+	fair[i].q[fair[i].qn++] = *c;
+	return true;
+}
+static void air_end(uint8_t i) { if (fair[i].qn != 0) fair[i].q[fair[i].qn - 1].flags |= AIR_TX_LAST; }
+static void air_abort(uint8_t i) { fair[i].qn = 0; fair[i].on = false; fair[i].aborts++; air_ev(&fair[i], AIR_EV_TX_DONE, NULL); }
+
+#define FAKE_AIR(i) \
+	static uint32_t air_fit##i(const air_profile_t *pr) { return air_fit(i, pr); } \
+	static bool air_open##i(const air_profile_t *pr, air_event_cb_t cb, void *ctx) { (void)pr; return air_open(i, cb, ctx); } \
+	static void air_close##i(void) { air_close(i); } \
+	static void air_restart##i(void) { } \
+	static bool air_begin##i(void) { return air_begin(i); } \
+	static bool air_queue##i(const air_tx_chunk_t *c) { return air_queue(i, c); } \
+	static uint8_t air_space##i(void) { return (uint8_t)(AIR_DEPTH - fair[i].qn); } \
+	static void air_end##i(void) { air_end(i); } \
+	static void air_abort##i(void) { air_abort(i); } \
+	static uint32_t air_now##i(void) { return fair[i].now_us; } \
+	static bool air_load##i(uint32_t *w, uint32_t *s) { *w = 1000u + i; *s = 20000u; return true; } \
+	static const hal_air_t fake_air##i = { air_fit##i, air_open##i, air_close##i, air_restart##i, air_begin##i, air_queue##i, \
+					       air_space##i, air_end##i, air_abort##i, air_now##i, NULL, NULL, air_load##i, NULL, AIR_CHUNK, \
+					       AIR_DEPTH, 60, 100 };
+FAKE_AIR(0)
+FAKE_AIR(1)
+static void air_step(void);	// with the far radio's engine, below
+#else
+static bool far_on_air(void) { return false; }
+#endif
+
 const board_t board = {
 	.name = "fake",
 	.hwopts = fake_hwopts,
 	.hwopt_count = 1,
 	.caps = CAP_GPS,
-	.gps_enable = fake_gps_enable,
-	.gps_present = fake_gps_present,
+	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 4,
 	.rx_ext_count = 1,
@@ -207,14 +498,20 @@ const board_t board = {
 	.power_names = power_names,
 	.power_default = 1,
 	.keymap = keymap,
-	.keymap_len = 3,
+	.keymap_len = 4,
 	.side_keys = side_keys,
 	.side_key_count = 2,
+	.home_keys = home_keys,
+	.home_key_count = 1,
 	.radio = &fake_radio,
 	.power = &fake_power,
+	.input = &fake_input,
 	.dmr = &sim_modem,
 	.audio = &fake_audio,
 	.vocoder = &fake_vocoder,
+#if CONFIG_AIR
+	.air = &fake_air0,
+#endif
 	.flash = &sim_flash,		// no map until test_factory_reset: RAM only, as on a radio without one
 };
 
@@ -248,6 +545,7 @@ bool codeplug_channel(uint16_t n, channel_t *out)
 		return false;
 	}
 	*out = chans[n];
+	codeplug_tag_apply(n, out);	// the real tag layer over the fake settings area: a live tag gives the kind
 	return true;
 }
 uint16_t codeplug_zone_count(void) { return nzones; }
@@ -276,9 +574,56 @@ static uint8_t kv_serial;
 static uint32_t kv_ars;
 static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
 static bool kv_held;	// a CPS session holds the flash, or another firmware's codeplug: no key can be written
+// Record keys (0x0100 up: systems, system entries, secrets, channel tags, Tier III's own), kept in key order
+#define KV_T3_MAX	24
+static struct {
+	uint16_t key;
+	uint8_t len;
+	uint8_t v[96];		// a system record is CODEPLUG_SYS_HDR + its block
+} kv_t3[KV_T3_MAX];
+static uint8_t kv_t3_n;
+static void kv_t3_set(uint16_t key, const void *v, uint8_t len)
+{
+	uint8_t i = 0;
+	while (i < kv_t3_n && kv_t3[i].key < key) {
+		i++;
+	}
+	CHECK(len <= sizeof(kv_t3[0].v) && kv_t3_n < KV_T3_MAX);
+	if (i == kv_t3_n || kv_t3[i].key != key) {
+		memmove(&kv_t3[i + 1], &kv_t3[i], (kv_t3_n - i) * sizeof(kv_t3[0]));
+		kv_t3_n++;
+	}
+	kv_t3[i].key = key;
+	kv_t3[i].len = len;
+	memcpy(kv_t3[i].v, v, len);
+	kv_serial++;
+}
+static void kv_t3_clear(void)
+{
+	kv_t3_n = 0;
+	kv_serial++;
+}
+// The signaling tones' records (sigtone.h): one per event, kv_sig_len -1 when the key is absent
+static int16_t kv_sig_len[SIG_EV_COUNT] = { -1, -1, -1 };
+static uint8_t kv_sig[SIG_EV_COUNT][SIG_REC_LEN];
+static bool kv_is_sig(uint16_t key) { return key >= CODEPLUG_KEY_SIG_BEGIN && key <= CODEPLUG_KEY_SIG_IDLE; }
 static bool kv_is_tone(uint16_t key) { return key >= CODEPLUG_KEY_CALL_END_TONE && key <= CODEPLUG_KEY_TX_DENY_TONE; }
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (kv_is_sig(key)) {
+		int e = key - CODEPLUG_KEY_SIG_BEGIN;
+		if (kv_sig_len[e] < 0) {
+			return -1;
+		}
+		memcpy(buf, kv_sig[e], max < (uint16_t)kv_sig_len[e] ? max : (uint16_t)kv_sig_len[e]);
+		return kv_sig_len[e];
+	}
+	for (uint8_t i = 0; i < kv_t3_n; i++) {
+		if (kv_t3[i].key == key) {
+			memcpy(buf, kv_t3[i].v, max < kv_t3[i].len ? max : kv_t3[i].len);
+			return kv_t3[i].len;
+		}
+	}
 	if (kv_is_tone(key)) {
 		if (kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
 			return -1;
@@ -297,6 +642,24 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 // One set: the ARS server as a u32, a tone as one byte
 static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 {
+	if (kv_is_sig(key)) {
+		// A record is set from the front (CODEPLUG_KV_HEAD): the bytes after it stay
+		int e = key - CODEPLUG_KEY_SIG_BEGIN;
+		bool head = (len & CODEPLUG_KV_HEAD) != 0;
+		len &= (uint16_t)~CODEPLUG_KV_HEAD;
+		if (len > SIG_REC_LEN) {
+			return false;
+		}
+		if (!head || kv_sig_len[e] < 0) {
+			memset(kv_sig[e], 0, SIG_REC_LEN);
+			kv_sig_len[e] = (int16_t)len;
+		} else if (len > kv_sig_len[e]) {
+			kv_sig_len[e] = (int16_t)len;
+		}
+		memcpy(kv_sig[e], v, len);
+		kv_serial++;
+		return true;
+	}
 	if (kv_is_tone(key) && len == 1) {
 		kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v[0];
 	} else if (key == CODEPLUG_KEY_ARS_SERVER && len == 4) {
@@ -309,20 +672,33 @@ static bool kv_set(uint16_t key, const uint8_t *v, uint16_t len)
 	return true;
 }
 uint8_t codeplug_kv_serial(void) { return kv_serial; }
-// The walk: c->at the next key to try, up to CODEPLUG_KEY_TX_DENY_TONE
+// The tag layer's writes (codeplug_tag.c): none in these tests
+bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
+bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
+// The walk: c->at the next single key to try, up to CODEPLUG_KEY_TX_DENY_TONE, then the Tier III keys in order
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 {
+	c->lo = lo;
 	c->hi = hi;
 	c->at = lo;
+	c->first = 0;	// here the next Tier III key's index
 	c->done = 0;
 }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
-	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_TX_DENY_TONE; c->at++) {
+	for (; !c->done && c->at <= c->hi && c->at <= CODEPLUG_KEY_SIG_IDLE; c->at++) {
 		int n = codeplug_kv_get(c->at, buf, max);
 		if (n >= 0) {
 			*key = c->at++;
 			return n;
+		}
+	}
+	while (!c->done && c->first < kv_t3_n) {	// then the Tier III keys, above every single key
+		uint8_t i = (uint8_t)c->first++;
+		if (kv_t3[i].key >= c->lo && kv_t3[i].key <= c->hi) {
+			*key = kv_t3[i].key;
+			memcpy(buf, kv_t3[i].v, max < kv_t3[i].len ? max : kv_t3[i].len);
+			return kv_t3[i].len;
 		}
 	}
 	c->done = 1;
@@ -352,6 +728,7 @@ void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { out[0] = 0; }
 // APRS (radioCoreTestAprs): no APRS channel in the codeplug
 bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out) { memset(out, 0, sizeof(*out)); return false; }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2) { return false; }
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid) { return false; }
 #endif
 #if CONFIG_APRS
 // ... and no host link
@@ -382,7 +759,8 @@ uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
 {
 	for (unsigned i = 0; i < sizeof(contacts) / sizeof(contacts[0]); i++) {
 		if (contacts[i].id == id && (contacts[i].type != CONTACT_PRIVATE) == group) {
-			*out = contacts[i];
+			if (out != NULL)
+				*out = contacts[i];
 			return (uint16_t)(i + 1u);
 		}
 	}
@@ -569,6 +947,161 @@ static void test_startup(void)
 	CHECK(!hw.audio && !hw.led[LED_GREEN] && !hw.led[LED_RED]);
 }
 
+#if CONFIG_SATELLITE_TLE
+static void test_satellite_override(void)
+{
+	setup_codeplug();
+	start();
+	uint32_t restore_rx = sm.view.ch.rx_hz;
+	uint32_t restore_tx = sm.view.ch.tx_hz;
+	uint32_t nominal_rx = 437800000u;
+	uint32_t nominal_tx = 145990000u;
+	sm.view.ch.bw = RADIO_BW_25K;
+	sm.view.ch.tx_tone = (subtone_t){ TONE_CTCSS, 123u };
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u,
+				 10, 10, now);
+	CHECK(sm.satellite_view.tracking);
+	CHECK(sm.satellite_view.nominal_rx_hz == nominal_rx && sm.satellite_view.nominal_tx_hz == nominal_tx);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && sm.view.ch.bw == RADIO_BW_12K5);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	int rx_calls = hw.rx_calls;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(hw.rx_calls == rx_calls);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	sm.view.state = RS_IDLE;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 15u, nominal_tx + 15u,
+				 15, 15, now);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	sm.view.state = RS_TX;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u,
+				 20, 20, now);
+	CHECK(hw.rx_calls == rx_calls);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 10u && sm.view.ch.tx_hz == nominal_tx + 10u);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == nominal_rx + 20u && sm.view.ch.tx_hz == nominal_tx + 20u);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, 100000000u, 100000000u, 0, 0, now + 30u);
+	CHECK(sm.satellite_view.status == 1u);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 40u);
+	CHECK(!sm.satellite_view.tracking);
+	CHECK(sm.view.ch.rx_hz == nominal_rx && sm.view.ch.tx_hz == nominal_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now + 41u);
+	CHECK(sm.satellite_pending && sm.satellite_restore_config_pending);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 123u);
+
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	uint8_t restore_mode = sm.view.ch.mode;
+	uint8_t restore_bw = sm.view.ch.bw;
+	subtone_t restore_rx_tone = sm.view.ch.rx_tone;
+	subtone_t restore_tx_tone = sm.view.ch.tx_tone;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_tone.type == restore_rx_tone.type && sm.view.ch.rx_tone.value == restore_rx_tone.value);
+	CHECK(sm.view.ch.tx_tone.type == restore_tx_tone.type && sm.view.ch.tx_tone.value == restore_tx_tone.value);
+
+	setup_codeplug();
+	zones[0].channels[0] = 4;
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_bw = sm.view.ch.bw;
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.ch.bw == restore_bw);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx && hw.rx_hz == restore_rx);
+
+	setup_codeplug();
+	start();
+	restore_rx = sm.view.ch.rx_hz;
+	restore_tx = sm.view.ch.tx_hz;
+	restore_mode = sm.view.ch.mode;
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 10u, nominal_tx + 10u, 10, 10, now);
+	req(RREQ_PTT, 1);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	radio_sm_satellite_update(&sm, true, 2u, 3u, nominal_rx, nominal_tx, 670u,
+				 true, nominal_rx + 20u, nominal_tx + 20u, 20, 20, now);
+	radio_sm_satellite_update(&sm, false, 0u, 0u, 0u, 0u, 0u, false, 0u, 0u, 0, 0, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.ch.rx_hz == restore_rx && sm.view.ch.tx_hz == restore_tx);
+	CHECK(sm.view.ch.mode == restore_mode);
+}
+
+#if CONFIG_FM_TX_TONES
+static void test_so50_arm(void)
+{
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 2u, 3u, 436795000u, 145850000u, 670u,
+				 true, 436795000u, 145850000u, 0, 0, now);
+	CHECK(sm.satellite_view.tracking);
+	int tx_calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 670u);
+	req(RREQ_PTT, 0);
+	CHECK(!sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_hz == 145850000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+	uint32_t tx_off_calls = (uint32_t)hw.tx_off_calls;
+	now += 1990u;
+	radio_sm_poll(&sm, now);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	now += 10u;
+	radio_sm_poll(&sm, now);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK((uint32_t)hw.tx_off_calls == tx_off_calls + 1u);
+	CHECK(sm.view.ch.tx_tone.type == TONE_CTCSS && sm.view.ch.tx_tone.value == 670u);
+
+	setup_codeplug();
+	start();
+	radio_sm_satellite_update(&sm, true, 1u, 3u, 435000000u, 145990000u, 885u,
+				 true, 435000000u, 145990000u, 0, 0, now);
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state == RS_TX && sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls + 1);
+	CHECK(hw.tx_hz == 145990000u);
+	CHECK(hw.tx_tone.type == TONE_CTCSS && hw.tx_tone.value == 744u);
+
+	setup_codeplug();
+	start();
+	tx_calls = hw.tx_calls;
+	req(RREQ_SATELLITE_ARM, 1);
+	CHECK(sm.view.state != RS_TX && !sm.satellite_arm_active);
+	CHECK(hw.tx_calls == tx_calls);
+}
+#endif
+#endif
+
 // The VFO's step: auto (0, the default) follows the width; a step set stays whatever the width; kept in the settings
 static void test_vfo_step_auto(void)
 {
@@ -626,6 +1159,54 @@ static void test_channel_step(void)
 	CHECK(sm.view.zone_index == 1);
 }
 
+// A channel of a kind this build doesn't run (docs/spec/channel-modes.md 6): tuned in FM with the modem off, the squelch
+// never opens, PTT refused for the mode (before receive only), never a VFO copy, the next channel works as before
+static void test_parked_kind(void)
+{
+	setup_codeplug();
+	chans[6].mode = RADIO_MODE_DMR;
+	chans[6].kind = CODEPLUG_KIND_P25;		// not run: no P25 in this build, or a board that can't carry it
+	chans[6].rx_only = false;			// its tag allows TX: the build still refuses
+#if CONFIG_AIR
+	air_nofit = true;
+#endif
+	start();
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.channel_number == 6 && sm.view.ch.kind == CODEPLUG_KIND_P25);
+	CHECK(sm.board_mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !sim.started && hw.rx_hz == 145500000);
+	rx_signal(10, true);
+	poll_for(200);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	CHECK(radio_vfo_copy_check(&sm.view.ch, false) != VFO_COPY_OK);
+	// P25 trunked and NXDN the same where the board can't carry them (with their switches on or off), unknown ids too.
+	// A board that carries the mode runs it: test_p25_stored, test_nxdn_stored
+	static const uint8_t kinds[] = { CODEPLUG_KIND_P25_TRUNK, CODEPLUG_KIND_NXDN };
+	for (unsigned i = 0; i < sizeof kinds; i++) {
+		chans[6].kind = kinds[i];
+		req(RREQ_ZONE, 0);
+		req(RREQ_ZONE, 1);
+		CHECK(sm.view.ch.kind == kinds[i] && sm.board_mode == RADIO_MODE_FM && !sim.started);
+		req(RREQ_PTT, 1);
+		CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+		req(RREQ_PTT, 0);
+	}
+	chans[6].kind = 0x99;
+	req(RREQ_ZONE, 0);
+	req(RREQ_ZONE, 1);
+	CHECK(sm.view.ch.kind == 0x99 && sm.board_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == 0);
+	req(RREQ_PTT, 0);
+	rx_signal(120, true);
+#if CONFIG_AIR
+	air_nofit = false;
+#endif
+	setup_codeplug();
+}
+
 static void test_squelch(void)
 {
 	setup_codeplug();
@@ -649,6 +1230,7 @@ static void test_squelch(void)
 	CHECK(sm.view.state == RS_RX);
 	CHECK(sm.view.last_rx_ms == 0);
 	rx_signal(thr + RADIO_SQL_HYST_DB, true);
+	hw.st.rssi_dbm = -125 - RADIO_SQL_PEAK_RSSI_DB - 1;	// a fade: the strength falls too (a voice peak's doesn't)
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_RX);		// one poll above is not enough
 	poll_for(RADIO_POLL_MS);
@@ -702,6 +1284,131 @@ static void test_squelch(void)
 	rx_signal(10, true);
 	poll_for(RADIO_POLL_MS);
 	CHECK(sm.view.state == RS_IDLE && !hw.audio);
+}
+
+// Receive a carrier at rssi with the noise well under the line, after idle polls that teach the floor (-125)
+static void peak_open(uint8_t thr, int16_t rssi)
+{
+	hw.st.noise = 120;
+	hw.st.tone_ok = true;
+	hw.st.rssi_dbm = -125;
+	poll_for(10 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	hw.st.noise = (uint8_t)(thr - 10);
+	hw.st.rssi_dbm = rssi;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+}
+
+// A voice peak (#906): speech above about 2 kHz on a 12.5 kHz channel raises the noise reading over the close line for
+// a few polls, past the fast close line from a sender that deviates wide, while the carrier stays as strong. The
+// squelch holds through it, and still closes at once when the carrier goes (also when the strength reading lags the
+// noise by a poll), after two polls when the strength falls, after RADIO_SQL_PEAK_POLLS when the noise stays up, and
+// as before on a carrier near the floor or a 25 kHz channel
+static void test_squelch_voice_peak(void)
+{
+	setup_codeplug();
+	start();
+	uint8_t thr = radio_sm_squelch_open_below(RADIO_SQUELCH_DEFAULT);
+	uint8_t peak = (uint8_t)(thr + RADIO_SQL_HYST_DB + RADIO_SQL_FAST_CLOSE_DB - 1);	// short of the fast close
+	CHECK(sm.view.ch.bw == RADIO_BW_12K5);
+
+	peak_open(thr, -70);
+	// A 120 ms fricative, the strength a dB lower: open the whole time, and again after the next one, which reads
+	// past the fast close line
+	for (int n = 0; n < 2; n++) {
+		hw.st.noise = (uint8_t)(peak + n * 10);
+		hw.st.rssi_dbm = -71;
+		for (int i = 0; i < 5; i++) {
+			poll_for(RADIO_POLL_MS);
+			CHECK(sm.view.state == RS_RX && hw.audio);
+		}
+		hw.st.noise = (uint8_t)(thr - 10);
+		hw.st.rssi_dbm = -70;
+		poll_for(2 * RADIO_POLL_MS);
+		CHECK(sm.view.state == RS_RX);
+	}
+	// The noise stays up with the strength: closes after RADIO_SQL_PEAK_POLLS
+	hw.st.noise = peak;
+	poll_for((RADIO_SQL_PEAK_POLLS - 1) * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && !hw.audio && sm.view.sql_close == RADIO_SQL_PEAK_POLLS);
+	// The carrier goes: the noise past the fast close line and the strength at the floor, one poll
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(peak + 1);
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 1);
+	// ... with the strength a poll behind the noise: the poll after
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(peak + 30);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	// A fade: the noise over the line and the strength RADIO_SQL_PEAK_RSSI_DB + 1 lower closes after two polls
+	peak_open(thr, -70);
+	hw.st.noise = (uint8_t)(thr + RADIO_SQL_HYST_DB);
+	hw.st.rssi_dbm = -70 - RADIO_SQL_PEAK_RSSI_DB - 1;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	// The strength falls in the middle of a peak: the polls already counted close it on the next one
+	peak_open(thr, -70);
+	hw.st.noise = peak;
+	poll_for(3 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.rssi_dbm = -80;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	// A carrier just under RADIO_SQL_PEAK_FLOOR_DB over the floor: no hold, a peak closes it in two polls, and its
+	// end (the strength 2 dB down) in one
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB - 1);
+	hw.st.noise = peak;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB - 1);
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125 + RADIO_SQL_PEAK_FLOOR_DB - 3;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 1);
+	// ... and at RADIO_SQL_PEAK_FLOOR_DB the hold is back
+	peak_open(thr, -125 + RADIO_SQL_PEAK_FLOOR_DB);
+	hw.st.noise = peak;
+	poll_for(5 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	// The floor rises slowly: a carrier in the idle polls before it opens doesn't take the hold away
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	hw.st.rssi_dbm = -70;	// the carrier's strength comes up a poll before its noise reading falls
+	poll_for(RADIO_POLL_MS);
+	hw.st.noise = (uint8_t)(thr - 10);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = peak;
+	poll_for(5 * RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	hw.st.noise = 120;
+	hw.st.rssi_dbm = -125;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE);
+	// A 25 kHz channel: no hold, the closes as before
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	CHECK(sm.view.ch.bw == RADIO_BW_25K);
+	peak_open(thr, -70);
+	hw.st.noise = peak;
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_RX);
+	poll_for(RADIO_POLL_MS);
+	CHECK(sm.view.state == RS_IDLE && sm.view.sql_close == 2);
+	req(RREQ_CLEAR_TEMP, 0);
 }
 
 static void test_tx(void)
@@ -1173,6 +1880,9 @@ static void run(uint32_t ms)
 		}
 		if (now % 30 == 0) {
 			sim_slot();
+#if CONFIG_AIR
+			air_step();
+#endif
 		}
 		if (aud.feed && aud.started && aud.cb != NULL && now % 20 == 0) {
 			static const int16_t mic[AUDIO_BLOCK_SAMPLES];
@@ -1310,6 +2020,7 @@ static void test_dmr_rx(void)
 	CHECK(!d->hear_all_latch && !sm.view.monitor);
 	req(RREQ_MONITOR, 0);
 	CHECK(d->hear_all && d->hear_all_latch && !sm.view.monitor && !hw.audio);
+	CHECK(sim.cc_filter == -1 && sim.locked_ts == 0);	// any color code, either slot
 	hear_call(true, 3100, 9997777, 2, 1, true);
 	CHECK(d->last.dst == 3100);
 	// Released after its hold function ran: no toggle
@@ -1318,7 +2029,7 @@ static void test_dmr_rx(void)
 	CHECK(d->hear_all_latch);
 	req(RREQ_MONITOR, 1);
 	req(RREQ_MONITOR, 0);
-	CHECK(!d->hear_all && !d->hear_all_latch);
+	CHECK(!d->hear_all && !d->hear_all_latch && sim.cc_filter == 2);
 	// Another color code: ignored
 	hear_call(true, 201, 9991234, 5, 1, false);
 	CHECK(sm.view.state == RS_IDLE);
@@ -1384,7 +2095,7 @@ static void test_dmr_tx(void)
 // handled, no tx_off() and no receive set-up, so a reply 30 ms after our terminator is heard; refused, tx_off() as before
 static int tx_end_calls;
 static bool tx_end_ok;
-static bool r_dmr_tx_end(void) { tx_end_calls++; return tx_end_ok; }
+static bool r_dmr_tx_end(void) { tx_end_calls++; if (tx_end_ok) hw.keyed = false; return tx_end_ok; }	// handled: unkeyed
 
 static void test_dmr_tx_end(void)
 {
@@ -1473,6 +2184,39 @@ static void test_dmr_list_talk_target(void)
 	CHECK(sm.view.state == RS_TX && sm.view.dmr.call.dst == 201 && sm.view.dmr.call.group);
 	req(RREQ_PTT, 0);
 	run(1000);
+	setup_codeplug();
+}
+
+// The VFO keeps quick-settings changes (#486, #525): power is the VFO's own, squelch the radio's default (as a
+// channel save writes it); neither is left temporary, so Home offers no save and leaving the VFO doesn't undo them
+static void test_vfo_quick_settings_kept(void)
+{
+	setup_codeplug();
+	start();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && !sm.view.temporary);
+	uint8_t p = sm.view.power, sq = sm.view.squelch;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != p && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_POWER));
+	CHECK(sm.vfo_ch.power == sm.view.power);
+	p = sm.view.power;
+	req(RREQ_SQUELCH, sq < RADIO_SQUELCH_MAX ? 1 : -1);
+	uint8_t sq2 = sm.view.squelch;
+	CHECK(sq2 != sq && !sm.view.temporary && !(sm.view.temp & RADIO_TEMP_SQUELCH) && sm.base_squelch == sq2);
+	run(50);
+	settings_t *st = settings_begin();
+	CHECK(st->squelch == sq2 && st->vfo_power == p);
+	settings_end(now);
+	req(RREQ_VFO, 0);			// a channel: squelch is radio-wide, so the new default applies there too
+	CHECK(!sm.view.vfo && sm.view.squelch == sq2 && !sm.view.temporary);
+	req(RREQ_VFO, 1);			// back in the VFO: both kept
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2 && !sm.view.temporary);
+	boot();					// and across a restart
+	run(50);
+	CHECK(sm.view.vfo && sm.view.power == p && sm.view.squelch == sq2);
+	req(RREQ_VFO, 0);
+	settings_defaults(settings_begin());
+	settings_end(now);
 	setup_codeplug();
 }
 
@@ -1565,7 +2309,23 @@ static void test_vfo_dmr(void)
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 7, 2 }, 3) == DL_ST_OK);
 	run(50);
 	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && d->cc == 7 && d->ts == 2);
-	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
+	// P25 (2) in a build without it: unavailable; past P25: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 2, 0xFF, 0 }, 3) ==
+	      (CONFIG_P25 ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_P25
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started);
+#endif
+	// NXDN (3) the same; past NXDN: a bad argument
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 3, 0xFF, 0 }, 3) ==
+	      (CONFIG_NXDN ? DL_ST_OK : DL_ST_UNAVAILABLE));
+#if CONFIG_NXDN
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !sim.started);
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 1, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sim.started && !radio_nxdn_running());
+#endif
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 4, 0xFF, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 16, 0 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF, 3 }, 3) == DL_ST_BAD_ARG);
 	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ 0xFF, 0xFF }, 2) == DL_ST_BAD_ARG);
@@ -1915,6 +2675,50 @@ static void test_dmr_denied(void)
 	chans[4].rx_only = false;
 }
 
+// A duplex DMR channel with nothing on its output but the modem's slot numbers (issue 721: the HR_C6000 labels slots
+// from noise): the repeater is never shown up, and PTT wakes it before anything else, then is refused. Its bursts
+// then show it up, and a key-up goes straight to voice
+static void test_dmr_rpt_ticks_alone(void)
+{
+	dmr_start(true);
+	chans[4].tx_hz = 433500000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 3);
+	sim.repeater = true;
+	sim.ticks_only = true;
+	bool up = false;
+	for (int i = 0; i < 300; i++) {
+		run(100);
+		up = up || sm.view.dmr.repeater_up;
+	}
+	CHECK(sm.view.dmr.rmo && !up);
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.dmr.state == RDMR_TX_WAIT && sim.air_count == air + 1 && sim.air[air].kind == DMR_BURST_CSBK);
+	run(4000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_REPEATER);
+	bool only_csbks = true;
+	for (unsigned i = air; i < sim.air_count; i++) {
+		only_csbks = only_csbks && sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(only_csbks);
+	req(RREQ_PTT, 0);
+	run(600);
+
+	sim.ticks_only = false;	// the repeater's own bursts
+	run(100);
+	CHECK(sm.view.dmr.repeater_up);
+	air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.air_count > air && sim.air[air].kind == DMR_BURST_VOICE_LC_HEADER);
+	req(RREQ_PTT, 0);
+	run(600);
+	sim.repeater = false;
+	chans[4].tx_hz = chans[4].rx_hz;
+}
+
 // The LEDs while a repeater is woken and on a deny (radio-features.md 5.7): red blinks once per wake-up burst, not
 // solid, and the deny flashes red, green, red, green, red, green; a direct call is solid red throughout
 static void test_dmr_wake_leds(void)
@@ -1978,12 +2782,50 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
+// A stand-in for the hotspot's SFR engine (hotspot_alt_t): only its active flag matters here
+static bool fake_alt_on;
+static bool fa_active(void) { return fake_alt_on; }
+static void fa_poll(uint32_t now_ms) { (void)now_ms; }
+static void fa_event(uint8_t kind, const dmr_burst_t *b, uint32_t now_ms) { (void)kind; (void)b; (void)now_ms; }
+static uint8_t fa_net(uint8_t c, uint8_t ctl, const uint8_t *f, uint32_t now_ms)
+{
+	(void)c; (void)ctl; (void)f; (void)now_ms;
+	return 0;
+}
+static void fa_none(void) {}
+static bool fa_tx(void) { return false; }
+static void fa_stopped(void) { fake_alt_on = false; }
+static const hotspot_alt_t fake_alt = { .active = fa_active, .poll = fa_poll, .event = fa_event, .net_frame = fa_net,
+					.net_abort = fa_none, .transmitting = fa_tx, .stopped = fa_stopped };
+
+// A PTT line stuck low: red and green in turn, one at a time, until it isn't (the power cycle)
+static void test_ptt_line_stuck(void)
+{
+	bool red = hw.led[LED_RED], green = hw.led[LED_GREEN];
+	ptt_stuck = true;
+	run(10);
+	uint32_t turns = 0;
+	bool was = hw.led[LED_RED];
+	for (uint32_t t = 0; t < 1000u; t += 5) {
+		CHECK(hw.led[LED_RED] != hw.led[LED_GREEN]);
+		turns += hw.led[LED_RED] != was;
+		was = hw.led[LED_RED];
+		run(5);
+	}
+	CHECK(turns >= 1000u / RADIO_LED_STUCK_STEP_MS - 1u && turns <= 1000u / RADIO_LED_STUCK_STEP_MS + 1u);
+	ptt_stuck = false;
+	run(20);
+	CHECK(hw.led[LED_RED] == red && hw.led[LED_GREEN] == green);
+}
+
 static void test_hotspot(void)
 {
 	CHECK(radio_sm_hotspot_freq_ok(438800000, 438800000));
 	CHECK(!radio_sm_hotspot_freq_ok(121500000, 121500000));	// TX not allowed there
 	CHECK(!radio_sm_hotspot_freq_ok(438800000, 0));
-	CHECK(radio_sm_hotspot_power(255) == 2 && radio_sm_hotspot_power(0) == 0 && radio_sm_hotspot_power(128) == 1);
+	CHECK(radio_sm_hotspot_power(254, 0) == 2 && radio_sm_hotspot_power(0, 2) == 0 && radio_sm_hotspot_power(128, 0) == 1);
+	// 255 is the host's default, never set by the user: the radio's own power, never the top step (#1018)
+	CHECK(radio_sm_hotspot_power(255, 0) == 0 && radio_sm_hotspot_power(255, 2) == 2 && radio_sm_hotspot_power(255, 9) == 2);
 
 	dmr_start(true);
 	// Refused while PTT is held
@@ -1994,6 +2836,11 @@ static void test_hotspot(void)
 	run(1000);
 	CHECK(sm.view.state == RS_IDLE);
 
+	// The first keying, before the host's level, is at the radio's own power (step 1 here)
+	for (int i = 0; i < 3 && sm.view.power != 1; i++) {
+		req(RREQ_POWER, 1);
+	}
+	CHECK(sm.view.power == 1);
 	int modes = hw.set_mode_calls;
 	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
 	req(RREQ_HS_ENTER, 0);
@@ -2003,8 +2850,71 @@ static void test_hotspot(void)
 	radio_sm_request(&sm, &r, now);
 	CHECK(hw.rx_hz == 438800000 && hw.tx_hz == 438800000 && hw.tx_calls == tx0 + 1 &&
 		hw.tx_power == 1);
+	// A new level re-keys, through tx_off: never a second tx() on a keyed board
+	int rk = rekeys;
+	req(RREQ_HS_POWER, 254);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
+	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
+	off0 = hw.tx_off_calls;
+	// The same level again (a split TX half re-sends its cap): the keying stays as it is
+	req(RREQ_HS_POWER, 254);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
+	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
+	// outbound stopped for good), so the level waits for its end
+	sim.tx_active = true;
+	req(RREQ_HS_POWER, 128);
+	poll_for(RADIO_POLL_MS * 2);
+	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.tx_power == 2 && hw.keyed);
+	sim.tx_active = false;
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1 && hw.tx_power == 1 && hw.keyed);
+	CHECK(rekeys == rk && !sm.hs_power_due);
+	poll_for(RADIO_POLL_MS);
+	CHECK(hw.tx_calls == tx0 + 3);	// once
+	off0 = hw.tx_off_calls;
+	// TX inhibit drops the armed keying at once, mid-transmission too, and holds it off; cleared, the keying is armed
+	// again
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	sim.tx_active = true;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
+	CHECK(!sm.hs_power_due);
+	sim.tx_active = false;
+	req(RREQ_HS_POWER, 254);
+	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
+	radio_sm_request(&sm, &f, now);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 4);
+	// Nor armed on a critical battery, dropped mid-transmission too
+	sm.batt.level = BATT_CRITICAL;
+	sim.tx_active = true;
+	req(RREQ_HS_POWER, 254);
+	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
+	sim.tx_active = false;
+	sm.batt.level = BATT_OK;
+	req(RREQ_HS_POWER, 254);
+	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
+	// 255 keys the radio's own power, and the screen shows the level keyed; a power step on the radio follows while
+	// the host leaves its level at 255, and is ignored once the host sets one
+	CHECK(sm.view.hs_power == 2);
 	req(RREQ_HS_POWER, 255);
-	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2);
+	CHECK(hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power && sm.dmr_keyed);
+	uint8_t own = sm.view.power;
+	int tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != own && hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power);
+	CHECK(hw.tx_calls == tx1 + 1 && sm.dmr_keyed);
+	req(RREQ_HS_POWER, 0);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0);
+	tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0 && hw.tx_calls == tx1);
+	req(RREQ_POWER, -1);
+	req(RREQ_HS_POWER, 254);
+	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
 	radio_sm_request(&sm, &r, now);
@@ -2196,9 +3106,38 @@ static void test_hotspot_session(void)
 	}
 	CHECK(mm_naks == 0 && hotspot_running() && sm.hs_tx_hz == 453625000 && sm.dmr_keyed);
 	hs_run(500);
-	mmdvm_end();
+	CHECK(direct_now() == 0);	// a simplex hotspot keys the board's normal way
+	// The hotspot's SFR mode (hotspotSfr.c, not linked here: an alternative engine that says it's active) is read by
+	// the board itself at each burst (hal_radio_t.dmr_direct_query): straight from RX while it runs, normal when it stops
+	hotspot_set_alt(&fake_alt);
+	fake_alt_on = true;
 	hs_run(100);
-	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(hotspot_alt_active() && direct_now() == 1);
+	fake_alt_on = false;
+	hs_run(100);
+	CHECK(direct_now() == 0);
+	// The SFR mode on and off with no radio task poll in between (#540 review): the board's answer follows at once,
+	// as nothing is copied to it
+	fake_alt_on = true;
+	mmdvm_poll(now);
+	CHECK(direct_now() == 1 && hotspot_sfr_repeating());
+	fake_alt_on = false;
+	mmdvm_poll(now);
+	CHECK(direct_now() == 0 && !hotspot_sfr_repeating());
+	hs_run(100);
+	CHECK(direct_now() == 0 && direct_now() == 0);
+	// The radio leaves the hotspot (an orphan watch, a menu) while its SFR mode still says it repeats: normal
+	// keying at once, whatever the hotspot's mode says
+	fake_alt_on = true;
+	hs_run(100);
+	CHECK(direct_now() == 1 && sm.hotspot);
+	req(RREQ_HS_LEAVE, 0);
+	run(50);
+	CHECK(!sm.hotspot && direct_now() == 0);
+	mmdvm_end();
+	CHECK(direct_now() == 0 && !hotspot_sfr_repeating());
+	hs_run(100);
+	CHECK(!sm.hotspot && !sm.dmr_keyed && sm.view.dmr.active && direct_now() == 0);
 	mm_cmd(MMDVM_GET_VERSION, NULL, 0);
 	hs_run(100);
 	hotspot_get_stats(&st);
@@ -2305,7 +3244,7 @@ static void test_persist(void)
 	// The DMR data service's settings: saved when they change, back after a reboot
 	dmrDataSettings_t ds;
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	ds.arsServer = 9990999;
 	ds.radioCheckReply = true;
 	ds.callAlertAck = false;
@@ -2315,12 +3254,12 @@ static void test_persist(void)
 	run(50);
 	settings_read(&cur);
 	CHECK(cur.ds_stored == 1 && cur.ds_ars_server == 9990999 && cur.ds_flags == (SETTINGS_DS_RADIO_CHECK_REPLY |
-											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP));
+											SETTINGS_DS_LRRP_REPLY | SETTINGS_DS_SMS_ETSI_IP | SETTINGS_DS_SMS_ETSI));
 	CHECK(cur.ds_ip_gateway == 9990500);
 	boot();
 	dmrDataServiceGetSettings(&ds);
 	CHECK(ds.arsServer == 9990999 && ds.radioCheckReply && !ds.callAlertAck && ds.lrrpReply);
-	CHECK(ds.ipGatewayId == 9990500);
+	CHECK(ds.ipGatewayId == 9990500 && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 	// Only the ID's 24 bits are read back; a record from before the gateway ID has 0 there: off
 	settings_begin()->ds_ip_gateway = 0xFF000000u | 9990501;
 	settings_end(now);
@@ -2355,7 +3294,7 @@ static void test_persist(void)
 	settings_end(now);
 	boot();
 	dmrDataServiceGetSettings(&ds);
-	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(ds.arsServer == 0 && ds.radioCheckReply && ds.callAlertAck && ds.smsFormat == DMR_SMS_FORMAT_DEFAULT);
 
 	// The codeplug's settings area (docs/spec/codeplug-settings.md 5): a key that is present sets the ARS server, at
 	// start and when the codeplug changes, and the radio's own copy follows it
@@ -2580,6 +3519,143 @@ static void test_dmr_voice_features(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0 && l.svc == 0);
+
+#if CONFIG_DMR_AES
+	// AES: a codeplug channel bound to a system's traffic key. Without the key PTT is refused; with it our overs carry
+	// the privacy FID and option and a PI header with the channel's key ID; a short key record refuses PTT again
+	uint16_t check = codeplug_name_check(chans[4].name);
+	uint8_t tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 0 };
+	uint8_t sys[CODEPLUG_SYS_HDR + 1] = { CODEPLUG_SYSTYPE_DMR_AES, CODEPLUG_SYS_TX };
+	uint8_t traffic[CODEPLUG_TRAFFIC_HDR + 32] = { 2, 0x25, 0, 0, 0, 1, 2, 3 };
+	bool pi;
+
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(d->privacy);
+	// With the settings in RAM only, the MI reservation is never saved: PTT waits for it, nothing goes out clear
+	run(SETTINGS_SAVE_DELAY_MS + 100);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	// On a flash: the reservation is saved (as app.c's housekeeping would), then our overs go out
+	static const hal_flash_map_t aes_map = {
+		.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+		.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
+		.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+		.native_addr = 0x30000u, .native_size = 0x4000u,
+	};
+	settings_t sv;
+	sim_flash_create(0x40000u, &aes_map);
+	CHECK(storage_init());
+	settings_init();		// the reservation asked for in RAM is gone: asked again
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	uint32_t res0 = sv.aes_mi_res;
+	settings_t older = sv;
+	CHECK(res0 != 0);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	uint32_t mi1 = 0, mi2 = 0, mi3 = 0;
+	pi = false;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0) {
+			pi = true;
+			mi1 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+		}
+	CHECK(pi && mi1 != 0);
+	// The next over's MI is the word after the last superframe the first sent: its positions follow on
+	unsigned sfs = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_VOICE && sim.air[i].voice_index == 0)
+			sfs++;
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi2 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(sfs > 0 && mi2 == dmrAesSeqAdvance(mi1, sfs));
+	// A restart: TX waits for a new reservation, then starts at the saved one, past every position sent
+	dmr_start(true);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == res0);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == dmrAesSeqAdvance(res0, DMR_AES_SEQ_RESERVE));
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi3 == res0);
+	// Restore a settings record that was saved before this over, then let the radio repair it between overs.
+	uint32_t res1 = sv.aes_mi_res;
+	*settings_begin() = older;
+	settings_end(now);
+	CHECK(settings_flush() && SETTINGS_FIELD(aes_mi_res) == res0);
+	run(RADIO_POLL_MS + 5);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	CHECK(!settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+	CHECK(settings_flush() && settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+
+	// The repaired record, not the restored one, supplies the next boot's first MI.
+	dmr_start(true);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(settings_flush());
+	run(RADIO_POLL_MS + 5);
+	first = sim.air_count;
+	tx_once();
+	uint32_t mi4 = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi4 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi4 == res1 && mi4 != mi3);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
+	run(50);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_clear();
+	chans[4].rx_only = false;
+	reload_channel();
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+#endif
 }
 
 // ---- DMR emergency in the radio core (docs/spec/dmr-emergency.md): the hot mic keys a call with the emergency service
@@ -2906,6 +3982,25 @@ static void test_hotspot_cwid(void)
 	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
 	CHECK(!(mm_last[5] & MMDVM_STATUS_TX));
 
+	// TX inhibit: no carrier for the ID, counted as not sent, the TX flag clear; the hotspot's keying back after it
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	CHECK(!sm.dmr_keyed);
+	int tx0 = hw.tx_calls;
+	radio_hs_cw_get_stats(&cs0);
+	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"AB", 2);
+	hs_run(300);
+	radio_hs_cw_get_stats(&cs);
+	CHECK(hw.tx_calls == tx0 && tone.hz == 0 && sm.cw_phase == 0 && cs.sent == cs0.sent && !cs.active);
+	mm_cmd(MMDVM_GET_STATUS, NULL, 0);
+	CHECK(!(mm_last[5] & MMDVM_STATUS_TX));
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	hs_run(100);
+	CHECK(sm.dmr_keyed && hw_mode == RADIO_MODE_DMR);
+	radio_hs_cw_get_stats(&cs0);
+
 	// Hotspot mode left in the middle of an ID: cut, counted as not sent
 	mm_cmd(MMDVM_SEND_CWID, (const uint8_t *)"TEST", 4);
 	hs_run(300);
@@ -3064,6 +4159,7 @@ static void test_ui_requests(void)
 // requests go straight into the state machine here instead of through radio_task.c's queue ----
 
 uint32_t hal_millis(void) { return now; }
+void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
 uint32_t radio_view_serial(void) { return sm.serial; }
 void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
@@ -3075,6 +4171,14 @@ void radio_req_volume_override(int8_t step) { req(RREQ_VOLUME_OVERRIDE, step); }
 void radio_req_volume_hold(bool hold) { req(RREQ_VOLUME_HOLD, hold); }
 void radio_req_clear_temporary(void) { req(RREQ_CLEAR_TEMP, 0); }
 void radio_req_retune(void) { req(RREQ_RETUNE, 0); }
+#if CONFIG_NXDN
+// As radio_task.c does it: the settings to the module, the request to the state machine
+void radio_req_nxdn_settings(const radio_nxdn_settings_t *s)
+{
+	radio_nxdn_set_settings(s);
+	req(RREQ_NXDN_SET, 0);
+}
+#endif
 // Not under test here: debuglink_view_radio.c, linked for the volume operation, refers to them
 void radio_req_scan_dual(uint16_t pos) { (void)pos; }
 void radio_req_zone_pos(uint16_t pos) { req(RREQ_ZONE_POS, pos); }
@@ -3083,6 +4187,8 @@ void radio_req_scan_vfo(uint32_t lo, uint32_t hi) { (void)lo; (void)hi; }
 void radio_req_tone_burst(bool on, uint32_t max_ms) { (void)on; (void)max_ms; }
 void radio_req_dtmf(char digit, bool down) { req(RREQ_DTMF, (uint8_t)digit | (down ? 0x100 : 0)); }
 bool radio_dtmf_ready(void) { return sm.view.dtmf_ready; }
+radio_state_t radio_get_state(void) { return (radio_state_t)sm.view.state; }
+input_inject_t input_inject_ptt(bool down, uint32_t max_ms) { (void)down; (void)max_ms; return INPUT_INJ_OK; }
 void radio_req_scan(uint8_t cmd) { req(RREQ_SCAN, cmd); }
 void radio_req_vfo_step_size(uint32_t hz) { req(RREQ_VFO_STEP_SIZE, (int32_t)hz); }
 void radio_req_dual(const radio_dual_ref_t ref[2], uint8_t sel)
@@ -3125,6 +4231,10 @@ void radio_req_dmr_timeslot(uint8_t ts) { req(RREQ_DMR_TS, ts); }
 void radio_req_dmr_color_code(uint8_t cc) { req(RREQ_DMR_CC, cc); }
 void radio_req_vfo_sfr(uint8_t a) { req(RREQ_VFO_SFR, a); }
 void radio_req_mode(uint8_t mode) { req(RREQ_MODE, mode); }
+#if CONFIG_P25
+// As radio_task.c: the settings copied in, then the request
+void radio_req_p25_settings(const radio_p25_settings_t *s) { radio_p25_set_settings(s); req(RREQ_P25_SET, 0); }
+#endif
 void radio_req_vfo_copy(void) { req(RREQ_VFO_COPY, 0); }
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
 {
@@ -3148,7 +4258,7 @@ static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 static bool dtmf_blocked;
 void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
-static keymap_entry_t got_keymap[3];
+static keymap_entry_t got_keymap[4];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }
 void hostlink_set_hotspot_allowed(bool on) { (void)on; }
@@ -3333,6 +4443,7 @@ static void test_position(void)
 {
 	static const char gga[] = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47";
 	static const char rmc[] = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+	static const char rmc_void[] = "$GPRMC,123519,V,,,,,,,230394,,,N*51";
 	lrrpPosition_t lp;
 	ui_position_t up;
 	int32_t lat, lon;
@@ -3347,10 +4458,83 @@ static void test_position(void)
 	gps_here = true;
 	CHECK(ui_svc_feat_radio() & UI_FEAT_GPS);
 	CHECK(!ui_svc_position(&up));		// nothing heard yet
+#if CONFIG_SATELLITE_TLE
+	CHECK(!position_save_gps(now));
+#endif
+	position_nmea(rmc_void, strlen(rmc_void), true, now);
 	position_nmea(gga, strlen(gga), true, now);
+	position_fix_t merged_fix;
+#if CONFIG_SATELLITE_TLE
+	uint32_t gps_date, gps_utc;
+#endif
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(merged_fix.date == 230394u && merged_fix.utc_hms == 123519u);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+	CHECK(gps_date == 230394u && gps_utc == 123519u);
+#endif
 	position_nmea(rmc, strlen(rmc), true, now);
 	CHECK(ui_svc_position(&up) && up.fix && up.sats == 8 && up.lat_e7 == 481173000 && up.lon_e7 == 115166666);
 	CHECK(up.alt_ok && up.alt_m == 545 && up.course == 84);
+	position_cfg_t original_cfg;
+	position_get_cfg(&original_cfg);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_save_gps(now));
+#else
+	position_cfg_t gps_cfg = original_cfg;
+	gps_cfg.fix_lat = up.lat_e7;
+	gps_cfg.fix_lon = up.lon_e7;
+	gps_cfg.fix_alt_m = up.alt_m;
+	position_set_cfg(&gps_cfg, now);
+#endif
+	position_cfg_t saved_cfg;
+	position_get_cfg(&saved_cfg);
+	CHECK(saved_cfg.fix_lat == up.lat_e7 && saved_cfg.fix_lon == up.lon_e7 && saved_cfg.fix_alt_m == up.alt_m);
+	uint32_t auto_fallback_now = now + POSITION_STALE_MS;
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, auto_fallback_now);
+#endif
+	saved_cfg.pref = POSITION_AUTO;
+	position_set_cfg(&saved_cfg, now);
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_HOST);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_fix_for_satellite(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
+#else
+	CHECK(position_fix(&merged_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+#endif
+	saved_cfg.pref = POSITION_GPS;
+	position_set_cfg(&saved_cfg, now);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_fix_for_satellite(&merged_fix, now) == POSITION_SRC_GPS);
+	CHECK(position_fix_for_satellite(&merged_fix, now + POSITION_STALE_MS) == POSITION_SRC_FIXED);
+	CHECK(merged_fix.lat == up.lat_e7 && merged_fix.lon == up.lon_e7 && merged_fix.alt_m == up.alt_m);
+#endif
+	saved_cfg.pref = POSITION_FIXED;
+	position_set_cfg(&saved_cfg, now);
+	CHECK(position_fix(&merged_fix, now) == POSITION_SRC_FIXED && merged_fix.lat == up.lat_e7);
+#if CONFIG_SATELLITE_TLE
+	CHECK(position_utc_fields(&gps_date, &gps_utc, now));
+#endif
+	saved_cfg.pref = original_cfg.pref;
+	position_set_cfg(&saved_cfg, now);
+	settings_t saved_settings;
+	settings_read(&saved_settings);
+	position_load(&saved_settings);
+	position_fix_t saved_fix;
+#if CONFIG_POSITION_HOST
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_HOST);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == POSITION_ALT_NONE);
+#else
+	CHECK(position_fix(&saved_fix, auto_fallback_now) == POSITION_SRC_FIXED);
+	CHECK(saved_fix.lat == up.lat_e7 && saved_fix.lon == up.lon_e7 && saved_fix.alt_m == up.alt_m);
+#endif
+	position_get_cfg(&saved_cfg);
+	saved_cfg.fix_lat = original_cfg.fix_lat;
+	saved_cfg.fix_lon = original_cfg.fix_lon;
+	saved_cfg.fix_alt_m = original_cfg.fix_alt_m;
+	position_set_cfg(&saved_cfg, now);
 	run(10);
 	CHECK(dmrDataServiceOwnPosition(&lp) && lp.location.fixValid && lp.location.north && lp.location.east);
 	CHECK(lp.location.latDegrees == 48 && lp.location.latMinutes10000 == 70380 && lp.location.lonDegrees == 11 &&
@@ -3468,6 +4652,18 @@ static void test_position(void)
 	      ui_svc_setting_get(UI_SET_POS_SOURCE) == POSITION_AUTO);
 	settings_init();
 	boot();
+#if CONFIG_POSITION_HOST
+	position_nmea(rmc, strlen(rmc), false, now);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545);
+	boot();
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_NONE);
+	position_nmea(rmc, strlen(rmc), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == POSITION_ALT_NONE);
+	position_nmea(gga, strlen(gga), false, now);
+	CHECK(position_fix(&saved_fix, now) == POSITION_SRC_HOST && saved_fix.alt_m == 545 &&
+	      saved_fix.date == 230394u && saved_fix.utc_hms == 123519u);
+#endif
 }
 
 static void test_ui_glue(void)
@@ -3512,14 +4708,14 @@ static void test_ui_glue(void)
 	// progress refuses the next, the channel in use drops its temporary changes. So does a write of another channel:
 	// any codeplug write reloads the channel in use (ui.md 2.1)
 	channel_t ed = chans[4];
-	CHECK(!ui_svc_write_channel(0, &ed) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed));
+	CHECK(!ui_svc_write_channel(0, &ed, 0) && !ui_svc_write_channel(CODEPLUG_CHANNELS_MAX + 1, &ed, 0));
 	CHECK(ui_svc_dmr_color_code(9));
 	run(20);
 	CHECK(sm.view.temporary);
 	ed.timeslot = 2;
 	ed.color_code = 5;
 	w = cp_writes;
-	CHECK(ui_svc_write_channel(4, &ed) && cp_writes == w && !ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(4, &ed, 0) && cp_writes == w && !ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	CHECK(cp_writes == w + 1 && chans[4].timeslot == 2 && chans[4].color_code == 5);
 	run(100);
@@ -3528,7 +4724,7 @@ static void test_ui_glue(void)
 	run(20);
 	ed = chans[6];
 	ed.color_code = 7;
-	CHECK(ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	run(100);
 	CHECK(chans[6].color_code == 7 && !sm.view.temporary && d->cc == 5);
@@ -3537,7 +4733,7 @@ static void test_ui_glue(void)
 	run(20);
 	cp_write_fails = true;
 	n_ev = 0;
-	CHECK(ui_svc_write_channel(6, &ed));
+	CHECK(ui_svc_write_channel(6, &ed, 0));
 	storage_job_poll();
 	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && sm.view.temporary);
 	cp_write_fails = false;
@@ -3551,7 +4747,7 @@ static void test_ui_glue(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "not saved") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "not saved") != NULL);
 	CHECK(sm.view.temporary);
 	cp_write_fails = false;
 	req(RREQ_CLEAR_TEMP, 0);
@@ -3567,7 +4763,7 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_talk_to(9999999, true, UI_TALK_PERMANENT));	// not a stored contact: stays for now
 	storage_job_poll();
 	run(20);
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL && d->target_manual && d->target_id == 9999999);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL && d->target_manual && d->target_id == 9999999);
 	chans[4].contact = 1;
 	reload_channel();
 	// Another firmware's codeplug: the write is held and the UI asked; nothing written until the answer
@@ -3576,8 +4772,8 @@ static void test_ui_glue(void)
 	ed.color_code = 3;
 	w = cp_writes;
 	n_ev = 0;
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 1 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
-	CHECK(!ui_svc_write_channel(6, &ed) && !ui_svc_save_channel() && n_ev == 1);	// one question at a time
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 1 && last_ev.kind == UI_EV_CODEPLUG_FOREIGN);
+	CHECK(!ui_svc_write_channel(6, &ed, 0) && !ui_svc_save_channel() && n_ev == 1);	// one question at a time
 	storage_job_poll();
 	CHECK(cp_writes == w && !storage_job_busy());
 	// Cancel: nothing written, nothing cleared
@@ -3585,18 +4781,18 @@ static void test_ui_glue(void)
 	storage_job_poll();
 	CHECK(cp_writes == w && cp_new == 0 && !cp_accepted && chans[6].color_code != 3);
 	// Use anyway: accepted and shown, the write made on the built-in set dropped, nothing cleared
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 2);
 	int reloads = cp_reloads;
 	CHECK(ui_svc_codeplug_answer(UI_CP_USE) && storage_job_busy());
 	storage_job_poll();
 	CHECK(cp_writes == w && cp_new == 0 && cp_accepted && cp_reloads == reloads + 1 && !codeplug_foreign());
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 2);	// ours now: written at once
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 2);	// ours now: written at once
 	storage_job_poll();
 	CHECK(cp_writes == w + 1 && chans[6].color_code == 3);
 	// Start new: the old one cleared, then the write
 	cp_accepted = false;
 	ed.color_code = 4;
-	CHECK(ui_svc_write_channel(6, &ed) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
+	CHECK(ui_svc_write_channel(6, &ed, 0) && n_ev == 3 && ui_svc_codeplug_answer(UI_CP_NEW));
 	storage_job_poll();
 	CHECK(cp_new == 1 && cp_writes == w + 2 && chans[6].color_code == 4 && !codeplug_foreign());
 	// A keyed setting isn't a codeplug write that asks (docs/spec/codeplug-settings.md 5): with another firmware's
@@ -3663,7 +4859,7 @@ static void test_ui_glue(void)
 		storage_job_poll();
 		run(100);
 		CHECK(zone_writes == zw + 2 && zones[0].channels[pos] == num && !ui_svc_zone_pending());
-		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "Already") != NULL);
+		CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "Already") != NULL);
 		uint32_t applied;
 		uint8_t last;
 		zone_edit_stats(&applied, &last);
@@ -3870,6 +5066,23 @@ static void test_ui_glue(void)
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 1));
 	ui_svc_apply(UI_SET_GPS, ui_svc_setting_get(UI_SET_GPS));
 	CHECK(gps_enable_calls == 3 && gps_enabled);
+	// The debug link's SETTING 37 stores and applies it as the menu does, on a radio whose module was heard only
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) ==
+	      DL_ST_UNAVAILABLE);
+	CHECK(gps_enable_calls == 3);
+	gps_here = true;
+	CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 2, 0 }, 3) == DL_ST_BAD_ARG);
+	if (CONFIG_GPS) {
+		// and the status strip's GPS icon follows it too (ui_svc_gps_power: the position service, not a UI copy)
+		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 0, 0 }, 3) == DL_ST_OK);
+		CHECK(gps_enable_calls == 4 && !gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 0 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_OFF);
+		CHECK(debuglink_radio_feature_op(DL_OP_SETTING, (const uint8_t[]){ 37, 1, 0 }, 3) == DL_ST_OK);
+		CHECK(gps_enable_calls == 5 && gps_enabled && ui_svc_setting_get(UI_SET_GPS) == 1 &&
+		      ui_svc_gps_power() == UI_GPS_POWER_ON);
+	}
+	gps_here = false;
+	CHECK(ui_svc_gps_power() == UI_GPS_POWER_NONE);	// no module: no icon, whatever the setting
 	ui_svc_apply(UI_SET_LONG_PRESS_MS, 900);
 	ui_svc_apply(UI_SET_REPEAT_MS, 200);
 	CHECK(input_long == 900 && input_repeat == 200);
@@ -3926,6 +5139,129 @@ static void test_ui_glue(void)
 	ui_svc_apply(UI_SET_TALK_PERMIT, 1);
 	run(20);
 	CHECK(sm.set.talk_permit);
+	// Signaling tones (Settings > Sound, sigtone.h): the default until set; a set reaches the radio core, which clamps
+	// it (no on air copy of a reception's end), saves it in settings_t and gives it back; an old record reads default
+	for (int ev = 0; ev < SIG_EV_COUNT; ev++) {
+		CHECK(ui_svc_setting_get((uint8_t)(UI_SET_SIG_DMR + ev)) == SIG_OUT_DEFAULT &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_FM + ev)) == SIG_OUT_DEFAULT &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_HZ + 10 * ev)) == 0 &&
+		      ui_svc_setting_get((uint8_t)(UI_SET_SIG_MS + 10 * ev)) == 0);
+	}
+	radio_settings_t sr;
+	radio_get_settings(&sr);
+	sr.sig_dmr[SIG_EV_BEGIN] = SIG_OUT_BOTH;
+	sr.sig_dmr[SIG_EV_IDLE] = SIG_OUT_AIR;	// nothing to send when a reception ends
+	sr.sig_fm[SIG_EV_END] = SIG_OUT_AIR;
+	sr.sig_fm[SIG_EV_BEGIN] = SIG_OUT_BOTH;	// FM's start tone goes on air too
+	// The end chain's second step (1570 Hz, 40 ms) and its third (a length of 5000 ms, a frequency of 9000 Hz: both cut)
+	sr.sig_hz[SIG_EV_END][1] = 1570;
+	sr.sig_ms[SIG_EV_END][1] = 4;
+	sr.sig_hz[SIG_EV_END][2] = 9000;
+	sr.sig_ms[SIG_EV_END][2] = 250;
+	radio_set_settings(&sr);
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sm.set.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT &&
+	      sm.set.sig_fm[SIG_EV_END] == SIG_OUT_AIR && sm.set.sig_fm[SIG_EV_BEGIN] == SIG_OUT_BOTH &&
+	      sm.set.sig_hz[SIG_EV_END][1] == 1570 && sm.set.sig_ms[SIG_EV_END][1] == 4 &&
+	      sm.set.sig_hz[SIG_EV_END][2] == SIG_HZ_MAX && sm.set.sig_ms[SIG_EV_END][2] == SIG_MAX_MS / SIG_MS_UNIT &&
+	      sm.set.sig_ms[SIG_EV_IDLE][0] == 0);
+	CHECK(ui_svc_setting_get(UI_SET_SIG_DMR + SIG_EV_BEGIN) == SIG_OUT_BOTH &&
+	      ui_svc_setting_get(UI_SET_SIG_HZ + 10 * SIG_EV_END + 1) == 1570 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 1) == 40 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 2) == (int32_t)SIG_MAX_MS);
+	settings_read(&sv);
+	CHECK(sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sv.sig_fm[SIG_EV_END] == SIG_OUT_AIR &&
+	      sv.sig_dmr[SIG_EV_IDLE] == SIG_OUT_DEFAULT);
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_fm, 0, sizeof sr.sig_fm);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_set_settings(&sr);
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_DEFAULT && sm.set.sig_ms[SIG_EV_END][1] == 0);
+	// Set from the menu (docs/spec/codeplug-settings.md 5.2): a job writes the event's record, 17 bytes with the
+	// outputs first, and the radio core takes the change as the radio's own; a step goes whole
+	n_ev = 0;
+	CHECK(ui_svc_setting_set(UI_SET_SIG_STEP, UI_SIG_STEP(SIG_EV_END, 1, 1570, 40)) && storage_job_busy());
+	storage_job_poll();
+	run(20);
+	CHECK(kv_sig_len[SIG_EV_END] == SIG_REC_LEN && kv_sig[SIG_EV_END][2 + 2] == (1570 & 0xFF) &&
+	      kv_sig[SIG_EV_END][3 + 2] == (1570 >> 8) && kv_sig[SIG_EV_END][2 + 2 * SIG_REC_BASE + 1] == 4);
+	CHECK(kv_sig_len[SIG_EV_BEGIN] < 0 && sm.set.sig_hz[SIG_EV_END][1] == 1570 && sm.set.sig_ms[SIG_EV_END][1] == 4 &&
+	      ui_svc_setting_get(UI_SET_SIG_HZ + 10 * SIG_EV_END + 1) == 1570 &&
+	      ui_svc_setting_get(UI_SET_SIG_MS + 10 * SIG_EV_END + 1) == 40);
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_END, SIG_OUT_BOTH));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(kv_sig[SIG_EV_END][0] == SIG_OUT_BOTH && sm.set.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH &&
+	      sv.sig_dmr[SIG_EV_END] == SIG_OUT_BOTH);
+	// What the setting can't take is refused, with no job
+	CHECK(!ui_svc_setting_set(UI_SET_SIG_FM + SIG_EV_IDLE, SIG_OUT_AIR) && !ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_IDLE, SIG_OUT_BOTH) &&
+	      !ui_svc_setting_set(UI_SET_SIG_STEP, UI_SIG_STEP(SIG_EV_END, 12, 800, 40)) && !ui_svc_setting_set(UI_SET_SIG_HZ, 9000) &&
+	      !storage_job_busy());
+	// A record a CPS wrote holds over the radio's own copy, which follows it: a short one (the outputs only) leaves the
+	// chain empty, a longer one (a later version) is read from the front, and one the setting can't take is ignored
+	kv_sig_len[SIG_EV_BEGIN] = 2;
+	kv_sig[SIG_EV_BEGIN][0] = SIG_OUT_LOCAL;
+	kv_sig[SIG_EV_BEGIN][1] = SIG_OUT_OFF;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_LOCAL && sm.set.sig_fm[SIG_EV_BEGIN] == SIG_OUT_OFF &&
+	      sm.set.sig_ms[SIG_EV_BEGIN][0] == 0);
+	settings_read(&sv);
+	CHECK(sv.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_LOCAL);
+	kv_sig_len[SIG_EV_IDLE] = SIG_REC_LEN;
+	memset(kv_sig[SIG_EV_IDLE], 0, SIG_REC_LEN);
+	kv_sig[SIG_EV_IDLE][0] = SIG_OUT_LOCAL;
+	kv_sig[SIG_EV_IDLE][2] = 800 & 0xFF;
+	kv_sig[SIG_EV_IDLE][3] = 800 >> 8;
+	kv_sig[SIG_EV_IDLE][2 + 2 * SIG_REC_BASE] = 6;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_dmr[SIG_EV_IDLE] == SIG_OUT_LOCAL && sm.set.sig_hz[SIG_EV_IDLE][0] == 800 && sm.set.sig_ms[SIG_EV_IDLE][0] == 6);
+	kv_sig[SIG_EV_END][2] = 9000 & 0xFF;	// a frequency over the limit: the record reads as absent
+	kv_sig[SIG_EV_END][3] = 9000 >> 8;
+	kv_serial++;
+	run(20);
+	CHECK(sm.set.sig_hz[SIG_EV_END][0] == 0 && sm.set.sig_hz[SIG_EV_END][1] == 1570);
+	// With another firmware's codeplug the area can't be written and holds no key: refused with "not saved" (the chains
+	// have no home but the record, so keeping the change in RAM would lose it at the next restart)
+	kv_sig_len[SIG_EV_BEGIN] = kv_sig_len[SIG_EV_END] = kv_sig_len[SIG_EV_IDLE] = -1;
+	cp_foreign = true;
+	kv_held = true;
+	n_ev = 0;
+	uint8_t keep_dmr = sm.set.sig_dmr[SIG_EV_BEGIN];
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_BEGIN, SIG_OUT_AIR));
+	storage_job_poll();
+	run(20);
+	settings_read(&sv);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig_len[SIG_EV_BEGIN] < 0 &&
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr && sv.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
+	cp_foreign = false;
+	n_ev = 0;
+	// A key that is present and can't be updated (a CPS session holds the flash) refuses the change
+	kv_sig_len[SIG_EV_BEGIN] = 2;
+	kv_sig[SIG_EV_BEGIN][0] = SIG_OUT_AIR;
+	kv_sig[SIG_EV_BEGIN][1] = 0;
+	CHECK(ui_svc_setting_set(UI_SET_SIG_DMR + SIG_EV_BEGIN, SIG_OUT_OFF));
+	storage_job_poll();
+	run(20);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && kv_sig[SIG_EV_BEGIN][0] == SIG_OUT_AIR &&
+	      sm.set.sig_dmr[SIG_EV_BEGIN] == keep_dmr);
+	kv_held = false;
+	kv_sig_len[SIG_EV_BEGIN] = -1;
+	n_ev = 0;
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_get_settings(&sr);
+	memset(sr.sig_dmr, 0, sizeof sr.sig_dmr);
+	memset(sr.sig_fm, 0, sizeof sr.sig_fm);
+	memset(sr.sig_hz, 0, sizeof sr.sig_hz);
+	memset(sr.sig_ms, 0, sizeof sr.sig_ms);
+	radio_set_settings(&sr);
+	run(20);
 	// Settings > Sound tones. The four keyed ones (docs/spec/codeplug-settings.md 5.2): on while absent; a set writes
 	// a one-byte bool key with no codeplug reload, and the radio core saves the tone as the radio's own
 	static const uint8_t tone_ids[] = { UI_SET_CALL_END_TONE, UI_SET_TOT_WARN_TONE, UI_SET_BATTERY_TONE,
@@ -4135,6 +5471,45 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_set(UI_SET_POS_SEND_S, -1) && ui_svc_setting_get(UI_SET_POS_SEND_S) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_GPS, 0) && ui_svc_setting_get(UI_SET_GPS) == 0);
 	CHECK(ui_svc_setting_set(UI_SET_THEME, -3) && ui_svc_setting_get(UI_SET_THEME) == 0);
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 9) && ui_svc_setting_get(UI_SET_THEME) == 3);	// night, the last
+	CHECK(ui_svc_setting_set(UI_SET_THEME, 0));
+	// Stored values the setters never write (an older or a damaged record) read back as each getter's fallback or
+	// clamp. Each getter reads its own field of the settings in force (SETTINGS_FIELD), so every width is covered:
+	// bytes, 16 and 32 bit values, a signed 16 bit one, the two language bytes
+	{
+		settings_t keep;
+		settings_read(&keep);
+		settings_t *raw = settings_begin();
+		raw->brightness = 3;
+		raw->mic_gain = 99;
+		raw->pos_format = 7;
+		raw->vfo_step_hz = 500;
+		raw->ref_trim_ppb = -250;
+		raw->lang[0] = 'e';
+		raw->lang[1] = 's';
+		raw->auto_off_min = 0x1234;
+		raw->theme = 0xFF;
+		raw->updown_home = 3;
+		raw->sound_flags = SETTINGS_KNOB_LOCK;
+		raw->accent = SETTINGS_ACCENT_PLAIN | 5;
+		raw->low_batt_pct = 17;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_MIC_GAIN) == 5 &&
+		      ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_VFO_STEP) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_REF_TRIM) == ref_trim_clamp(-250) && ui_svc_setting_get(UI_SET_REF_TRIM) < 0);
+		CHECK(ui_svc_setting_get(UI_SET_LANGUAGE) == ('e' << 8 | 's') && ui_svc_setting_get(UI_SET_AUTO_OFF_MIN) == 0x1234);
+		CHECK(ui_svc_setting_get(UI_SET_THEME) == 3 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+		CHECK(ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 0 && ui_svc_setting_get(UI_SET_LOW_BATTERY) == 17);
+		CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 5 && ui_svc_setting_get(UI_SET_STRIP) == 0);
+		raw = settings_begin();
+		raw->vfo_step_hz = 25000;
+		raw->sound_flags = 0;
+		settings_end(0);
+		CHECK(ui_svc_setting_get(UI_SET_VFO_STEP) == 2500 && ui_svc_setting_get(UI_SET_KNOB_WHEN_LOCKED) == 1);
+		raw = settings_begin();
+		*raw = keep;
+		settings_end(0);
+	}
 	// The highlight color and the filled strip share settings_t.accent: setting one keeps the other. A zero byte (new
 	// or older records) is the defaults: the theme's highlight, the strip filled
 	CHECK(ui_svc_setting_get(UI_SET_ACCENT) == 0 && ui_svc_setting_get(UI_SET_STRIP) == 1);
@@ -4189,7 +5564,6 @@ static void test_ui_settings(void)
 	st->long_press_ms = 0;
 	st->repeat_ms = 0;
 	st->pos_format = 9;
-	st->theme = 7;		// bits 0-1 out of range (the bits above hold the crash report's target)
 	st->updown_home = 7;
 	st->privacy_type[0] = 99;
 	settings_end(now);
@@ -4199,8 +5573,7 @@ static void test_ui_settings(void)
 	CHECK(ui_svc_setting_get(UI_SET_BRIGHTNESS) == 100 && ui_svc_setting_get(UI_SET_SQUELCH) == 3 &&
 	      ui_svc_setting_get(UI_SET_MIC_GAIN) == 5);
 	CHECK(ui_svc_setting_get(UI_SET_LONG_PRESS_MS) == 777 && ui_svc_setting_get(UI_SET_REPEAT_MS) == 111);
-	CHECK(ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_THEME) == 0 &&
-	      ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
+	CHECK(ui_svc_setting_get(UI_SET_POS_FORMAT) == 0 && ui_svc_setting_get(UI_SET_UPDOWN_HOME) == 0);
 	CHECK(ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == DMR_PRIVACY_OFF);
 	// Settings nobody stores: the RAM table
 	CHECK(ui_svc_setting_set(UI_SET_VOICE_PROMPTS, 1) && ram[UI_SET_VOICE_PROMPTS] == 1 &&
@@ -4274,17 +5647,17 @@ static void test_ui_settings(void)
 	n_ev = 0;
 	CHECK(ui_svc_save_channel());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "read the channel") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "read the channel") != NULL);
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "for now only") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "for now only") != NULL);
 	used[4] = true;
 	cp_write_fails = true;			// the contact found, the write fails
 	n_ev = 0;
 	CHECK(ui_svc_save_talk_target(9, false));
 	storage_job_poll();
-	CHECK(n_ev == 1 && strcmp(last_ev.text, "Codeplug not written: for now only") == 0);	// whole: tr() finds it
+	CHECK(n_ev == 1 && strcmp(tr_en(last_ev.why), "Codeplug not written: for now only") == 0);
 	cp_write_fails = false;
 	CHECK(cp_writes == w);
 	// The squelch saved with the channel goes to the default squelch preference
@@ -4431,7 +5804,7 @@ static void test_soft_volume(void)
 	CHECK(debuglink_is_feature_op(DL_OP_VOLUME));	// the dispatcher routes it here
 	// VERSION's codec=: a codec stopped for a stub upload (present() false) still reports its profile from flash
 	{
-		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL };
+		const hal_vocoder_t pv = { v_present, v_reset, v_encode, v_decode, v_profile, NULL, NULL, NULL, NULL };
 		bool was = codec_present;
 		CHECK(strcmp(debuglink_codec_id(NULL), "none") == 0);
 		codec_present = false;
@@ -4515,7 +5888,18 @@ static void test_side_keys(void)
 	CHECK(keymap_sets == 2 && got_keymap[1].short_action == ACT_POWER && !got_keymap[1].raw_edges);
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_POWER);
 	CHECK(cp_quick[0] == 0);		// not yet: the job does it
-	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_SCAN));	// this radio has two side keys
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 6, KEYFN_SCAN));	// two side keys and one home key
+	// The home key (role 2): not Monitor; a function makes it send ACT_HOME_KEY_1, the UI's to turn back
+	CHECK(!ui_svc_key_offered(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR) && ui_svc_key_offered(UI_SET_KEY_FIRST + 2, KEYFN_MONITOR));
+	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_MONITOR));
+	CHECK(ui_svc_home_key(ACT_NAV_LEFT, GESTURE_PRESS, true) == ACT_NAV_LEFT);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_POWER));
+	CHECK(got_keymap[3].short_action == ACT_HOME_KEY_1 && got_keymap[3].long_action == ACT_HOME_KEY_1);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_POWER);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);
+	CHECK(ui_svc_home_key(ACT_HOME_KEY_1, GESTURE_LONG, true) == ACT_USER_1);
+	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 4, KEYFN_DEFAULT));
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT);
 	CHECK(!ui_svc_setting_set(UI_SET_KEY_FIRST + 2, KEYFN_COUNT));
 	uint32_t ser = cp_serial;
 	ui_svc_keys_poll();
@@ -4530,13 +5914,33 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
 	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
+	// Scan skip, stored as 20 (append only): a CPS's press in role 0 and long press in role 1 come back as the same
+	// functions and send ACT_SCAN_SKIP
+	cp_quick[1] = 20;
+	cp_quick[2] = 20 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN_SKIP && got_keymap[1].short_action == ACT_SCAN_SKIP);
+	CHECK(got_keymap[2].long_action == ACT_SCAN_SKIP);
+	// Monitor toggle, stored as 21
+	cp_quick[1] = 21;
+	cp_quick[2] = 21 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_MONITOR_TOGGLE &&
+	      got_keymap[1].short_action == ACT_MONITOR_TOGGLE);
+	CHECK(got_keymap[2].long_action == ACT_MONITOR_TOGGLE);
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[2] = KEYFN_ZONE_UP << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
 	// A write that fails is reported; the key works for now
 	cp_quick_fail = true;
 	n_ev = 0;
 	CHECK(ui_svc_setting_set(UI_SET_KEY_FIRST + 3, KEYFN_ZONE_DOWN));
 	ui_svc_keys_poll();
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "save the keys") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "save the keys") != NULL);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_DOWN && cp_quick[2] == KEYFN_ZONE_UP << 8);
 	cp_quick_fail = false;
 	// Layout 1 (three roles, a slot per gesture), as an older build wrote it: read as it is
@@ -4548,6 +5952,13 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && ui_svc_setting_get(UI_SET_KEY_FIRST + 3) == KEYFN_ZONE_UP);
 	CHECK(got_keymap[2].long_action == ACT_ZONE_UP);
+	// A CPS put Monitor on the home key (role 2): it acts as Default, and Settings says so
+	memset(cp_quick, 0, sizeof(cp_quick));
+	cp_quick[0] = KEYASSIGN_MARKER;
+	cp_quick[3] = KEYFN_MONITOR;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(got_keymap[3].short_action == ACT_NAV_LEFT && ui_svc_setting_get(UI_SET_KEY_FIRST + 4) == KEYFN_DEFAULT);
 	memset(cp_quick, 0, sizeof(cp_quick));	// leave the board's key map for what follows
 	cp_serial++;
 	ui_svc_keys_poll();
@@ -5060,7 +6471,7 @@ static void test_factory_reset(void)
 	sim_flash_bad_range(reset_map.settings_addr, reset_map.settings_size);
 	CHECK(ui_svc_factory_reset());
 	storage_job_poll();
-	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(last_ev.text, "settings") != NULL);
+	CHECK(n_ev == 1 && last_ev.kind == UI_EV_SAVE_FAILED && strstr(tr_en(last_ev.why), "settings") != NULL);
 	sim_flash_bad_range(0, 0);
 	// The native area won't erase (ours, then the flash cut out under it)
 	CHECK(sim_flash.write(reset_map.native_addr, magic, 4));
@@ -5070,10 +6481,10 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(436);	// the settings records (page 1: 176 + 4 bytes, page 0: 252 + 4) go in, the native erase fails
+	sim_flash_cut_after(452);	// the settings records (page 1: 192 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
-	CHECK(n_ev == 1 && strstr(last_ev.text, "native") != NULL);
+	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
 	sim_flash.map = NULL;
 	storage_init();			// back to no flash for anything after
 	settings_init();
@@ -5154,6 +6565,7 @@ static void test_sfr_roles(void)
 	chans[4].sfr_a = SFR_ROLE_RPT_STANDARD;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.view.dmr.sfr_rpt && !sm.view.dmr.active && !sm.dmr_running);
+	CHECK(direct_now() == 1);	// the board may key the SFR's bursts straight from RX (hal_radio_t.dmr_direct_query)
 	CHECK(sm.view.dmr.sfr_role == SFR_ROLE_RPT_STANDARD);
 	CHECK(sim.started && sim.cb != NULL && sim.locked_ts == 0 && sim.cc_filter == 2 && !sim.cfg.repeater);
 	CHECK(hw.tx_calls > tx0 && hw.tx_hz == 438500000 && sm.dmr_keyed);
@@ -5225,6 +6637,7 @@ static void test_sfr_roles(void)
 	tx_fail = true;
 	reload_channel();
 	CHECK(!sm.sfr_rpt && !sm.dmr_keyed && sm.view.dmr.active);
+	CHECK(direct_now() == 0);	// the role stopped: normal keying again
 	tx_fail = false;
 	reload_channel();
 	CHECK(sm.sfr_rpt && sm.dmr_keyed);
@@ -5297,6 +6710,21 @@ static void test_sfr_vfo(void)
 	settings_read(&st);
 	CHECK(st.vfo_sfr == SFR_ROLE_RPT_STANDARD);
 
+	CHECK(direct_now() == 1);
+	// The role back to none, as the HIL test leaves it (#540 review): normal keying at once, and still after the mode
+	// goes FM and back to DMR and an ordinary call keys
+	req(RREQ_VFO_SFR, SFR_ROLE_OFF);
+	run(50);
+	CHECK(!sm.sfr_rpt && direct_now() == 0);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(direct_now() == 0);
+	req(RREQ_PTT, 0);
+	run(3000);
+	CHECK(direct_now() == 0 && !sm.dmr_keyed);
+	req(RREQ_VFO_SFR, SFR_ROLE_RPT_STANDARD);
+	run(50);
+	CHECK(sm.sfr_rpt && direct_now() == 1);
 	// A new color code: the repeater takes it
 	req(RREQ_DMR_CC, 5);
 	run(50);
@@ -5537,19 +6965,4815 @@ static void test_volume_step_of(void)
 	}
 }
 
+#if CONFIG_AIR && CONFIG_SCAN
+// Run the scan (or dual watch) for up to ms: the stops it makes on channel number (visits), and whether it holds there.
+// Returns at the hold
+static bool scan_holds_on(uint16_t number, uint32_t ms, uint16_t *visits)
+{
+	bool was = false;
+	*visits = 0;
+	for (uint32_t t = 0; t < ms; t += RADIO_POLL_MS) {
+		run(RADIO_POLL_MS);
+		bool here = !sm.view.vfo && sm.view.channel_number == number;
+		if (here && !was) {
+			(*visits)++;
+		}
+		was = here;
+		if (here && sm.view.scan_phase == SCAN_PH_HOLD) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+
+#if CONFIG_P25
+// ---- P25 conventional in the radio core (docs/spec/p25.md 7): the far radio is a P25 engine on the other fake
+// provider; it transmits calls the radio under test hears, and hears what the radio sends ----
+#include "p25/p25Voice.h"
+
+static p25_engine_t far_eng;
+static bool far_running, far_tx;
+static struct {
+	uint8_t starts, ends;
+	p25_call_t call;
+	uint16_t voice;
+} far_heard;
+static void far_start(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.starts++; far_heard.call = *c; }
+static void far_update(const p25_call_t *c, void *ctx) { (void)ctx; far_heard.call = *c; }
+static void far_voice(const uint8_t imbe[P25_IMBE_BYTES], uint8_t errs, void *ctx) { (void)imbe; (void)errs; (void)ctx; far_heard.voice++; }
+static void far_end(void *ctx) { (void)ctx; far_heard.ends++; }
+static const p25_engine_hooks_t far_hooks = { .rx_start = far_start, .rx_update = far_update, .rx_voice = far_voice,
+						.rx_end = far_end };
+
+static void far_step(void)
+{
+	if (far_tx && p25_engine_tx_state(&far_eng) == AIR_TX_DONE) {
+		p25_engine_tx_clear(&far_eng);
+		far_tx = false;
+	}
+}
+
+// The far radio on the channel: it sends on nac, as unit, to a talk group or a unit (dst); it hears every NAC
+static void far_begin(uint16_t nac, uint32_t unit, bool unit_call, uint32_t dst)
+{
+	p25_engine_cfg_t c = { .rx_nac = P25_NAC_ANY, .tx_nac = nac, .unit_id = unit, .silence = imbe_silence,
+			       .talkaround = true };
+	if (unit_call) {
+		c.tx_lc.lcf = P25_LCF_UNIT;
+		c.tx_lc.dst = dst;
+	} else {
+		c.tx_lc.lcf = P25_LCF_GROUP;
+		c.tx_lc.tgid = (uint16_t)dst;
+	}
+	if (far_running) {
+		p25_engine_end(&far_eng);
+	}
+	memset(&far_heard, 0, sizeof(far_heard));
+	far_tx = false;
+	far_running = p25_engine_begin(&far_eng, &fake_air1, &c, &far_hooks, NULL);
+	CHECK(far_running);
+}
+
+static void far_stop(void)
+{
+	if (far_running) {
+		p25_engine_end(&far_eng);
+		far_running = far_tx = false;
+	}
+}
+
+// The far radio keys, holds for ms, lets go and runs until its terminator is out
+static void far_call(uint32_t ms)
+{
+	CHECK(p25_engine_tx_prepare(&far_eng));
+	CHECK(p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(ms);
+	p25_engine_tx_stop(&far_eng);
+	for (int i = 0; i < 100 && far_tx; i++) {
+		run(10);
+	}
+	CHECK(!far_tx);
+}
+
+static void p25_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_p25(&sm.view, &t);
+}
+
+static void setup_codeplug_p25(void)
+{
+	setup_codeplug();
+	add(3, "P25 simp", 446100000, RADIO_MODE_P25, false, 2);	// zone Local, position 2
+	radio_p25_reset_stats();
+	p25VoiceResetStats();
+	air_nofit = false;
+	lend_refuse = false;
+	memset(fair, 0, sizeof(fair));
+}
+
+// The radio's settings back to the defaults (they are RAM only and outlive radio_sm_init here)
+static void p25_defaults(void)
+{
+	radio_p25_settings_t s = { .rx_nac = P25_NAC_DEFAULT, .tx_nac = P25_NAC_DEFAULT, .talkaround = RADIO_P25_TA_AUTO,
+				   .tx_dst = 1 };
+	radio_req_p25_settings(&s);
+}
+
+static void test_p25_rx(void)
+{
+	static char buf[4096];
+	radio_p25_stats_t st;
+	p25_voice_stats_t vs;
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	aud.feed = true;
+	uint32_t lends0 = lends;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && sm.view.channel_number == 3);
+	// The board in its digital mode at 12.5 kHz without a tone, the DMR stack stopped, the engine on board.air in
+	// the memory the vocoder lends
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446100000 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	CHECK(!sm.dmr_running && !sim.started);
+	CHECK(radio_p25_running() && fair[0].open && lends == lends0 + LENDS);
+	CHECK(v->flags == RADIO_P25_ON && v->tx == AIR_TX_IDLE);
+	radio_p25_stats(&st);
+	CHECK(st.begins == 1 && st.begin_fails == 0 && st.mem_lent == LENDS);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.built=1\np25.on=1\np25.rx=0\n") != NULL && strstr(buf, "p25.rx_nac=659\n") != NULL);
+	CHECK(strstr(buf, "p25.tx=0\np25.rx_work_us=1000\np25.rx_span_us=20000\n") != NULL);	// the provider's load
+	run(300);				// noise: no call
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN] && !aud.started);
+
+	// A group call on our NAC: received and played (rx_tgid 0: every call of the NAC)
+	far_begin(P25_NAC_DEFAULT, 1001, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & (RADIO_P25_RX | RADIO_P25_PLAYED)) == (RADIO_P25_RX | RADIO_P25_PLAYED));
+	CHECK(!(v->flags & (RADIO_P25_ENC | RADIO_P25_UNIT | RADIO_P25_LATE)));
+	CHECK(v->nac == P25_NAC_DEFAULT && v->src == 1001 && v->dst == 77);
+	CHECK(hw.led[LED_GREEN] && !hw.audio && radio_view_wakes(&sm.view));	// voice is PCM, not the FM speaker path
+	CHECK(aud.started);			// the voice stream plays it
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.rx=1\np25.played=1\n") != NULL && strstr(buf, "p25.src=1001\np25.dst=77\n") != NULL);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(!far_tx && sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
+	CHECK(v->flags == RADIO_P25_ON && v->src == 1001 && v->dst == 77);	// the last call heard stays
+	CHECK(sm.view.last_rx_ms != 0);
+	radio_p25_stats(&st);
+	p25VoiceGetStats(&vs);
+	CHECK(st.rx_calls == 1 && st.voice >= 9 && st.voice_bad == 0 && st.rx_chunks > 0);
+	CHECK(vs.rx_in == st.voice && vs.rx_frames > 0 && vs.rx_calls == 1);
+
+	// Another NAC: another system on the channel, nothing heard
+	far_begin(0x123, 1002, false, 77);
+	far_call(400);
+	CHECK(sm.view.state == RS_IDLE && v->src == 1001);
+	radio_p25_stats(&st);
+	CHECK(st.rx_calls == 1);
+	// ... unless the receiver takes every NAC
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_nac = P25_NAC_ANY;
+	radio_req_p25_settings(&s);
+	far_begin(0x123, 1002, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && v->nac == 0x123 && v->src == 1002);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// The selective squelch: only talk group 5 and calls to us. A call to 77 is shown, not played
+	s.rx_nac = P25_NAC_DEFAULT;
+	s.rx_tgid = 5;
+	radio_req_p25_settings(&s);
+	far_begin(P25_NAC_DEFAULT, 1003, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_P25_RX) && !(v->flags & RADIO_P25_PLAYED) && v->dst == 77);
+	CHECK(!hw.led[LED_GREEN] && !radio_view_wakes(&sm.view));
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// Talk group 5: played
+	far_begin(P25_NAC_DEFAULT, 1003, false, 5);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 5 && hw.led[LED_GREEN]);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// A unit call to us (unit_id 0: the radio's DMR ID): played, shown as a unit call
+	far_begin(P25_NAC_DEFAULT, 1004, true, own_dmr_id);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & (RADIO_P25_PLAYED | RADIO_P25_UNIT)) == (RADIO_P25_PLAYED | RADIO_P25_UNIT));
+	CHECK(v->dst == own_dmr_id && v->src == 1004);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	// ... and to someone else: not played
+	far_begin(P25_NAC_DEFAULT, 1004, true, 4242);
+	far_call(600);
+	CHECK(v->dst == 4242 && sm.view.state == RS_IDLE);
+	radio_p25_stats(&st);
+	CHECK(st.rx_calls == 6);
+
+	// The counter reset clears the engine's and the voice path's counters
+	debuglink_p25_reset();
+	radio_p25_stats(&st);
+	p25VoiceGetStats(&vs);
+	CHECK(st.rx_calls == 0 && st.begins == 0 && vs.rx_in == 0);
+	p25_defaults();
+	far_stop();
+	aud.feed = false;
+}
+
+static void test_p25_tx(void)
+{
+	radio_p25_stats_t st;
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	far_begin(P25_NAC_DEFAULT, 1001, false, 1);
+	run(100);
+
+	// PTT: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider starts inside the key
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.keyed && fair[0].on && fair[0].begins == 1);
+	CHECK(hw.tx_hz == 446100000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE && hw.tx_power == 2);
+	CHECK(hw.led[LED_RED] && !hw.led[LED_GREEN] && !sm.view.tx_auto && v->tx != AIR_TX_IDLE);
+	req(RREQ_CH_STEP, 1);			// no retuning while transmitting
+	CHECK(sm.view.channel_number == 3);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && sm.view.tx_elapsed_ms >= 975 && fair[0].underruns == 0);
+	// The far radio hears the call: our NAC, our unit ID (the DMR ID), talk group tx_dst
+	CHECK(far_heard.starts == 1 && far_heard.ends == 0);
+	CHECK(far_heard.call.nac == P25_NAC_DEFAULT && far_heard.call.lc.src == own_dmr_id && far_heard.call.lc.tgid == 1);
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// the LDU on air is finished first
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	CHECK(v->tx == AIR_TX_IDLE && far_heard.ends == 1 && far_heard.voice % 9 == 0 && far_heard.voice >= 45);
+	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
+	radio_p25_stats(&st);
+	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+
+	// Pressed again while the last one ends: keyed again once it is done
+	req(RREQ_PTT, 1);
+	run(400);
+	req(RREQ_PTT, 0);
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == 2);
+	run(500);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 3 && hw.tx_off_calls == 2 && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 3 && far_heard.starts == 3 && far_heard.ends == 3);
+
+	// Settings sent while transmitting: in force for the next transmission
+	req(RREQ_PTT, 1);
+	run(100);
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.unit_call = true;
+	s.tx_dst = 4321;
+	s.unit_id = 777;
+	s.tx_nac = 0x2A0;
+	radio_req_p25_settings(&s);
+	run(300);
+	CHECK(far_heard.call.lc.src == own_dmr_id);	// this one goes on as it began
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(far_heard.call.nac == 0x2A0 && far_heard.call.lc.lcf == P25_LCF_UNIT && far_heard.call.lc.dst == 4321 &&
+	      far_heard.call.lc.src == 777);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	p25_defaults();
+
+	// The time-out: cut at once, the transmitter off, denied until PTT is released
+	uint32_t offs = (uint32_t)hw.tx_off_calls;
+	req(RREQ_PTT, 1);
+	run(179000);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	run(1100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT && !hw.keyed && hw.tx_off_calls == (int)offs + 1);
+	CHECK(v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
+	run(2000);
+	CHECK(sm.view.state == RS_TX_DENIED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_PTT, 1);			// a fresh press transmits again
+	run(100);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	far_stop();
+}
+
+static void test_p25_denied(void)
+{
+	radio_p25_stats_t st;
+
+	// The board refuses to key: denied, the engine's transmission dropped, nothing on air
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed && !fair[0].on);
+	run(100);
+	CHECK(sm.view.p25.tx == AIR_TX_IDLE && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	tx_fail = false;
+	run(50);
+	CHECK(sm.view.state == RS_IDLE);
+	req(RREQ_PTT, 1);			// and then keys normally
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && fair[0].keyed_violations == 0);
+
+	// Transmit inhibit
+	sm.set.tx_inhibit = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_INHIBIT && !hw.keyed);
+	req(RREQ_PTT, 0);
+	sm.set.tx_inhibit = false;
+
+	// Receive only
+	chans[3].rx_only = true;
+	req(RREQ_RELOAD, 0);
+	run(50);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && !hw.keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+
+	// No engine: the provider can't carry P25. Nothing received, PTT refused
+	air_nofit = true;
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sm.view.channel_number == 3 && !radio_p25_running() && !fair[0].open);
+	CHECK(sm.view.p25.flags == 0);
+	radio_p25_stats(&st);
+	CHECK(st.begin_fails >= 1);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	air_nofit = false;
+#ifdef HAL_VOCODER_LEND_BYTES
+	// ... or the vocoder lends nothing
+	lend_refuse = true;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!radio_p25_running());
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	lend_refuse = false;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+#endif
+
+	// In a listen band (the air band with CONFIG_AM_RX) P25 is refused as a mode, as DMR is
+	req(RREQ_ZONE_POS, 4);			// "Air", 121.5 MHz
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == (radio_listen_band(121500000) ? RADIO_MODE_FM : RADIO_MODE_P25));
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_p25_running());
+}
+
+// Leaving P25 for FM and DMR, and back: P25 stops, the provider closes, the other mode starts on the modem
+static void test_p25_leave(void)
+{
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && fair[0].open);
+
+	// Temporary mode change on the channel (the debug link's DMR_FIELDS mode): FM
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_FM, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && hw_mode == RADIO_MODE_FM && !radio_p25_running() && !fair[0].open);
+	CHECK(fair[0].closes == 1 && sm.view.p25.flags == 0 && (sm.view.temp & RADIO_TEMP_MODE));
+	{
+		char buf[1024];
+		p25_view_text(buf, sizeof buf);
+		CHECK(strstr(buf, "p25.on=0\n") != NULL && strstr(buf, "rx_work_us") == NULL);	// no load off P25
+	}
+	// ... P25 again
+	CHECK(debuglink_radio_feature_op(DL_OP_DMR_FIELDS, (const uint8_t[]){ RADIO_MODE_P25, 0xFF, 0 }, 3) == DL_ST_OK);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && hw_mode == RADIO_MODE_DMR && radio_p25_running() && fair[0].open);
+	CHECK(hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	// ... DMR: the engine stops before the DMR stack starts (the vocoder's lent memory comes back first)
+	req(RREQ_MODE, RADIO_MODE_DMR);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && !fair[0].open && sm.dmr_running && sim.started);
+	CHECK(sm.view.p25.flags == 0);
+	run(100);
+	CHECK(!radio_p25_running() && sm.dmr_running);
+	// ... and from DMR to P25: the DMR stack stops
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(radio_p25_running() && fair[0].open && !sm.dmr_running);
+	// A transmission running when the mode changes is refused (no retune while transmitting)
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// The channel's own mode back (clear temporary)
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+
+	// To an FM channel and a DMR channel by channel step
+	req(RREQ_ZONE_POS, 1);			// Weather, FM
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_p25_running() && hw_mode == RADIO_MODE_FM);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+	req(RREQ_ZONE_POS, 3);			// DMR rptr
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && sm.dmr_running && !fair[0].open);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running() && !sm.dmr_running);
+	// DMR and FM receive work after P25
+	req(RREQ_ZONE_POS, 3);
+	CHECK(sm.dmr_running && sim.started && hw_mode == RADIO_MODE_DMR);
+	req(RREQ_ZONE_POS, 0);
+	rx_signal(10, true);
+	poll_for(50);
+	CHECK(sm.view.state == RS_RX && hw.audio);
+	rx_signal(120, true);
+	poll_for(500);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// The settings request with P25 off: taken, in force at the next P25 start
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_tgid = 9;
+	radio_req_p25_settings(&s);
+	radio_p25_settings(&s);
+	CHECK(s.rx_tgid == 9);
+	// Out of range values are clipped or refused
+	s.rx_nac = 0xFFFF;
+	s.talkaround = 7;
+	radio_p25_set_settings(&s);
+	radio_p25_settings(&s);
+	CHECK(s.rx_nac == 0xFFF && s.talkaround == RADIO_P25_TA_AUTO);
+	static const uint8_t bad_ta[16] = { 0x93, 0x02, 0x93, 0x02, 0, 0, 3 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_ta, 16) == DL_ST_BAD_ARG);
+	static const uint8_t bad_nac[16] = { 0x00, 0x10, 0x93, 0x02 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_nac, 16) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, bad_nac, 15) == DL_ST_BAD_ARG);
+	static const uint8_t ok[16] = { 0x93, 0x02, 0x94, 0x02, 5, 0, 1, 1, 0x39, 0x30, 0, 0, 0x10, 0x27, 0, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_P25, ok, 16) == DL_ST_OK);
+	radio_p25_settings(&s);
+	CHECK(s.rx_nac == 0x293 && s.tx_nac == 0x294 && s.rx_tgid == 5 && s.talkaround == RADIO_P25_TA_ON && s.unit_call &&
+	      s.tx_dst == 12345 && s.unit_id == 10000);
+	p25_defaults();
+}
+
+// The VFO in P25: its own mode, every retune starts the engine over, saved as DMR (the saved VFO has no P25)
+static void test_p25_vfo(void)
+{
+	radio_p25_stats_t st;
+	settings_t set;
+
+	setup_codeplug_p25();
+	start();
+	p25_defaults();
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && hw_mode == RADIO_MODE_DMR);
+	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));	// the VFO's own mode, not a temporary change
+	radio_p25_stats(&st);
+	uint32_t begins = st.begins;
+	req(RREQ_VFO_STEP, 1);
+	CHECK(hw.rx_hz == sm.view.ch.rx_hz && radio_p25_running());
+	radio_p25_stats(&st);
+	CHECK(st.begins == begins + 1);
+	// PTT in the VFO keys on its TX frequency
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == sm.view.ch.tx_hz && hw.tx_bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+	// Saved as P25
+	run(5000);
+	settings_read(&set);
+	CHECK(settings_vfo_mode(&set) == RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25);
+	// Out to a channel and back: the VFO is P25 still (RAM), the engine restarts
+	req(RREQ_VFO, 0);
+	CHECK(!sm.view.vfo && !radio_p25_running());
+	req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	// After a restart the saved VFO comes back in P25, the engine running
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running());
+	CHECK(sm.view.vfo_drop == 0);
+	// A board that can't run P25: the VFO comes back in its default mode, and vfo_drop says why
+	req(RREQ_VFO, 0);
+	run(5000);
+	air_nofit = true;
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode != RADIO_MODE_P25 && !radio_p25_running());
+	CHECK(sm.view.vfo_drop == RADIO_MODE_P25 + 1);
+	air_nofit = false;
+	req(RREQ_VFO, 0);
+}
+
+// The air interface bench (CONFIG_AIR_RAW): it holds the modem and keys at the lowest power (debuglink.md 3.28)
+static void test_air_bench(void)
+{
+	setup_codeplug_p25();
+	start();
+	req(RREQ_ZONE_POS, 3);			// DMR rptr, power 2
+	CHECK(sm.dmr_running);
+	radio_req_t r = { RREQ_AIR_BENCH, 1 | (5 << 8), 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.air_bench && sm.bench_seq == 5 && !sm.dmr_running && hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5);
+	req(RREQ_PTT, 1);			// PTT gives way to the bench
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_BENCH && !hw.keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_CH_STEP, 1);			// no retuning
+	CHECK(sm.view.channel_number == 4);
+	// The bench opened the provider and queued its first chunk; the core keys
+	CHECK(fake_air0.open(NULL, NULL, NULL));
+	air_tx_chunk_t c = { .nsyms = AIR_CHUNK };
+	for (int i = 0; i < AIR_DEPTH; i++) {
+		CHECK(fake_air0.tx_queue(&c));
+	}
+	r = (radio_req_t){ RREQ_AIR_TX, 1 | (6 << 8), 200 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.bench_keyed && hw.keyed && fair[0].on && sm.view.state == RS_TX && sm.view.tx_auto);
+	CHECK(hw.tx_hz == 438500000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE);
+	CHECK(hw.tx_power == 0);		// the lowest power, whatever the channel's
+	run(300);				// the cap (200 ms) unkeys it
+	CHECK(!sm.bench_keyed && !hw.keyed && !fair[0].on && fair[0].aborts == 1 && sm.view.state == RS_IDLE);
+	// Refused: inhibit
+	sm.set.tx_inhibit = true;
+	fake_air0.tx_queue(&c);
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.bench_keyed && !hw.keyed);
+	sm.set.tx_inhibit = false;
+	fake_air0.close();
+	// Leave: the channel again, DMR takes the modem back
+	r = (radio_req_t){ RREQ_AIR_BENCH, 0, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.air_bench && sm.dmr_running);
+	// From a P25 channel: the engine stops for the bench and comes back after
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_running());
+	r = (radio_req_t){ RREQ_AIR_BENCH, 1, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(sm.air_bench && !radio_p25_running());
+	r = (radio_req_t){ RREQ_AIR_BENCH, 0, 0 };
+	radio_sm_request(&sm, &r, now);
+	CHECK(!sm.air_bench && radio_p25_running());
+}
+
+// The codec's side (core/p25/p25_codeplug.c, tested in p25CodeplugTest): a stored channel's set-up, by number, and
+// the radio-wide unit ID
+static p25_conv_cfg_t stored_p25[NCH + 1];
+static uint32_t p25_radio_id;		// the kind's radio-wide record, 0 = none
+bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25 || number < 1 || number > NCH) {
+		return false;
+	}
+	*out = stored_p25[number];
+	return true;
+}
+uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
+// A plain channel in P25 saved as a stored one: the record and block it was given
+static struct { uint16_t number; channel_t ch; p25_conv_t conv; } p25_saved;
+bool p25_conv_save(uint16_t number, const channel_t *ch, const p25_conv_t *conv)
+{
+	p25_saved.number = number;
+	p25_saved.ch = *ch;
+	p25_saved.conv = *conv;
+	return codeplug_set_channel(number, ch);
+}
+
+#if CONFIG_SCAN
+// A zone scan over a stored P25 channel (docs/spec/p25.md 7.1): it stops there, starts the engine, holds on a call
+// that plays and moves on from one that doesn't; a board that can't receive P25 and a trunked channel are left out
+static void test_p25_scan(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	uint16_t visits;
+
+	setup_codeplug_p25();
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = true };
+	start();
+	p25_defaults();
+	far_hz = 446100000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	// Nothing on the air: the scan stops on the P25 channel (the engine runs there) and goes on after the dwell
+	radio_p25_stats_t st;
+	radio_p25_stats(&st);
+	uint32_t begins0 = st.begins;
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_ZONE);
+	radio_p25_stats(&st);
+	CHECK(st.begins >= begins0 + 2);
+	// The channel's talk group, a call already on when the scan comes round (a late entry, its talk group from the
+	// link control): it holds there, the call playing, for as long as the call lasts
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_p25_running() && (v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001);
+	run(2000);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD && hw.led[LED_GREEN]);
+	// The call ends: the resume delay, then the scan moves on
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(!far_tx && sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_RESUME);
+	run(RADIO_SCAN_DELAY_MS + 600);
+	CHECK(sm.view.channel_number != 3 && sm.view.scan == SCAN_ZONE);
+	// Another talk group of the NAC (the channel's selective squelch): heard, not played, and the scan goes on
+	far_begin(0x2A0, 1002, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	// Another NAC: a carrier, probed and left
+	uint16_t probes = sm.view.scan_probes;
+	far_begin(0x123, 1003, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan_probes > probes);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	req(RREQ_SCAN, RSCAN_STOP);
+	CHECK(sm.view.scan == SCAN_OFF);
+
+	// A board whose air interface can't receive P25: the channel is parked and never a stop
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	air_nofit = false;
+	// A trunked channel: left out (it follows its system's control channel)
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	far_hz = 0;
+	far_stop();
+	p25_defaults();
+}
+#if CONFIG_DUAL_WATCH
+// Dual watch with a stored P25 channel on one side (docs/spec/radio-features.md 2.1): the receiver alternates onto it
+// and the engine runs there for each look; a call that plays holds the watch there until it ends and the delay
+// passes. A trunked channel and one the board can't receive are refused
+static void test_p25_dual(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	uint16_t visits;
+
+	setup_codeplug_p25();
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = true };
+	start();
+	p25_defaults();
+	far_hz = 446100000;
+	const ui_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	// Nothing on the air: it goes back and forth, the engine starting at each look at B
+	radio_p25_stats_t st;
+	radio_p25_stats(&st);
+	uint32_t begins0 = st.begins;
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_DUAL);
+	radio_p25_stats(&st);
+	CHECK(st.begins >= begins0 + 2);
+	// A call to the channel's talk group: the watch holds on B while it lasts
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_p25_running() && (v->flags & RADIO_P25_PLAYED) && v->dst == 201);
+	run(2000);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	p25_engine_tx_stop(&far_eng);
+	run(600 + RADIO_DUAL_DELAY_MS + 600);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.channel_number == 1);	// back on A
+	// Another talk group: heard, not played, and the watch goes on
+	far_begin(0x2A0, 1002, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_DUAL);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.channel_number == 1);
+	// B selected: the watch stops there, P25 running
+	CHECK(ui_svc_dual(pair, 1) && sm.view.scan == SCAN_DUAL);
+	run(500);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.channel_number == 3 && radio_p25_running());
+	req(RREQ_ZONE_POS, 0);
+	// Refused: no fit on the board (by the radio core), a trunked channel
+	air_nofit = true;
+	ui_svc_dual(pair, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	air_nofit = false;
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	CHECK(!ui_svc_dual(pair, 0) && sm.view.scan == SCAN_OFF);	// refused at once
+	far_hz = 0;
+	far_stop();
+	p25_defaults();
+}
+#endif
+#endif
+
+// A P25 conventional channel in the codeplug (kind 2, docs/spec/p25-codeplug.md 2): the radio runs it on its own
+// parameters, the debug link's unit ID overrides for a session, and it is parked where the board can't carry P25
+static void test_p25_stored(void)
+{
+	static char buf[4096];
+	const radio_p25_view_t *v = &sm.view.p25;
+
+	setup_codeplug_p25();
+	// The safe stand-in as the codeplug reads it: DMR, the tag's kind and transmit allowed
+	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].tx_hz = 451100000;
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = 0xFF;	// no system
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+					  .target = 201, .target_unit = false, .talkaround = false };
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_P25 && sm.view.ch.kind == CODEPLUG_KIND_P25);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5 && radio_p25_running() && !sm.dmr_running);
+	CHECK(v->rx_nac == 0x2A0 && v->talk == 201 && !(v->flags & RADIO_P25_TALK_UNIT));
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.rx_nac=659\n") != NULL);	// the settings are not what runs
+	CHECK(strstr(buf, "p25.run.rx_nac=672\np25.run.tx_nac=673\np25.run.rx_tgid=201\np25.run.talkaround=2\n") != NULL);
+	CHECK(strstr(buf, "p25.run.unit_call=0\np25.run.tx_dst=201\np25.run.unit_id=1234567\n") != NULL);
+
+	// Selective: the channel's talk group plays, another is shown and not, everyone and a unit call to us play
+	far_begin(0x2A0, 1001, false, 201);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_P25_PLAYED) && v->dst == 201);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, false, 7);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_RX) && !(v->flags & RADIO_P25_PLAYED) && v->dst == 7 && !hw.led[LED_GREEN]);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, false, P25_TGID_EVERYONE);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == P25_TGID_EVERYONE);
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	far_begin(0x2A0, 1001, true, 1234567);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(600);
+	CHECK((v->flags & (RADIO_P25_PLAYED | RADIO_P25_UNIT)) == (RADIO_P25_PLAYED | RADIO_P25_UNIT));
+	p25_engine_tx_stop(&far_eng);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// PTT: the channel's TX NAC, our unit ID and its talk group, on its TX frequency (a repeater: no talkaround)
+	far_begin(0x2A1, 1001, false, 1);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 451100000 && hw.tx_bw == RADIO_BW_12K5);
+	run(1000);
+	CHECK(far_heard.starts == 1 && far_heard.call.nac == 0x2A1 && far_heard.call.lc.src == 1234567 &&
+	      far_heard.call.lc.tgid == 201);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The debug link's settings: only the unit ID reaches a stored channel, for this session
+	radio_p25_settings_t s;
+	radio_p25_settings(&s);
+	s.rx_nac = 0x555;
+	s.unit_id = 7777;
+	radio_req_p25_settings(&s);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_nac=672\n") != NULL && strstr(buf, "p25.run.unit_id=7777\n") != NULL);
+	p25_defaults();
+
+	// A private contact: PTT calls the unit; selective keeps everyone and calls to us. Direct mode: talkaround
+	stored_p25[3].target = 9991234;
+	stored_p25[3].target_unit = true;
+	stored_p25[3].talkaround = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_tgid=65535\np25.run.talkaround=1\np25.run.unit_call=1\np25.run.tx_dst=9991234\n"));
+	CHECK(v->talk == 9991234 && (v->flags & RADIO_P25_TALK_UNIT));
+	// Normal squelch: every call of the NAC
+	stored_p25[3].conv.squelch = P25_SQUELCH_NORMAL;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_tgid=0\n") != NULL);
+
+	// No mode change for now on a channel of a kind: its mode is the kind's
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && !(sm.view.temp & RADIO_TEMP_MODE));
+	// Receive only from the tag: PTT refused as on any channel
+	chans[3].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+	// The editor's feature list says P25 here
+	CHECK(strncmp(build_modes_now(), "P25,", 4) == 0);
+
+	// A board that can't carry P25: parked (DMR modem off, never keyed), and no P25 in the feature list
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_p25_running() && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	CHECK(strstr(build_modes_now(), "P25,") == NULL && build_features_now()[0] != '\0');
+#if CONFIG_P25 && CONFIG_SATELLITE_TLE
+	CHECK(strstr(build_features_now(), "SATELLITE_TLE,") != NULL);
+#endif
+	air_nofit = false;
+
+	// The VFO takes the radio-wide unit ID, then the DMR ID
+	p25_radio_id = 5555;
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_P25);
+	p25_view_text(buf, sizeof buf);
+	CHECK(sm.view.vfo && strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=5555\n") != NULL);
+	p25_radio_id = 0;
+
+	// Saved as a channel (the editor's New from current): a stored P25 channel from the P25 settings, its contact
+	// the stored one of the talk target, talkaround on kept
+	radio_p25_settings(&s);
+	s.rx_nac = 0x2B0;
+	s.tx_nac = 0x2B1;
+	s.rx_tgid = 9;
+	s.tx_dst = 9;
+	s.unit_call = false;
+	s.talkaround = RADIO_P25_TA_ON;
+	radio_req_p25_settings(&s);
+	run(20);
+	memset(&p25_saved, 0, sizeof p25_saved);
+	channel_t ed = sm.view.ch;
+	CHECK(ed.mode == RADIO_MODE_P25 && ed.kind == CODEPLUG_KIND_NONE);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(p25_saved.number == 6 && p25_saved.conv.rx_nac == 0x2B0 && p25_saved.conv.tx_nac == 0x2B1);
+	CHECK(p25_saved.conv.squelch == P25_SQUELCH_SELECTIVE && p25_saved.ch.contact == 3 && p25_saved.ch.dmo);
+	// No stored contact for the talk group: none (talk group 1); automatic talkaround, normal squelch
+	s.tx_dst = 4242;
+	s.rx_tgid = 0;
+	s.talkaround = RADIO_P25_TA_AUTO;
+	radio_req_p25_settings(&s);
+	run(20);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(p25_saved.ch.contact == 0 && !p25_saved.ch.dmo && p25_saved.conv.squelch == P25_SQUELCH_NORMAL);
+	p25_defaults();
+	// A copy of the stored P25 channel at another number takes its tag; edited in place, the tag follows by itself
+	ed = chans[3];
+	sim_tag_copy_from = 0;
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel(7, &ed, 3));
+	storage_job_poll();
+	CHECK(sim_tag_copy_from == 3 && chans[7].kind == CODEPLUG_KIND_P25 && p25_saved.number == 0);
+	sim_tag_copy_from = 0;
+	CHECK(ui_svc_write_channel(3, &ed, 3));
+	storage_job_poll();
+	CHECK(sim_tag_copy_from == 0 && p25_saved.number == 0);
+	// The channel editor's NAC (ui_svc_write_channel_air): the stored channel written again with its block, in place
+	// or as a copy, which takes the source's tag first; a plain channel in P25 takes the block given and the rest
+	// from the P25 settings
+	ui_air_conv_t air = { .p25 = { 0x1A5, 0x1A6, P25_SQUELCH_SELECTIVE } };
+	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 3 && p25_saved.conv.rx_nac == 0x1A5 && p25_saved.conv.tx_nac == 0x1A6 &&
+	      p25_saved.ch.kind == CODEPLUG_KIND_P25 && sim_tag_copy_from == 0);
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(8, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 8 && p25_saved.conv.rx_nac == 0x1A5 && sim_tag_copy_from == 3);
+	s.tx_dst = 9;
+	radio_req_p25_settings(&s);
+	run(20);
+	air.p25.rx_nac = air.p25.tx_nac = 0x3C3;
+	ed = sm.view.ch;
+	CHECK(ui_svc_write_channel_air(6, &ed, 0, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 6 && p25_saved.conv.rx_nac == 0x3C3 && p25_saved.ch.contact == 3);
+	// A write that is no P25 channel takes no block
+	ed = chans[1];
+	p25_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(1, &ed, 1, &air));
+	storage_job_poll();
+	CHECK(p25_saved.number == 0);
+	p25_defaults();
+	req(RREQ_MODE, RADIO_MODE_FM);
+	req(RREQ_VFO, 0);
+	far_stop();
+	memset(stored_p25, 0, sizeof(stored_p25));
+}
+
+#if CONFIG_P25_TRUNK
+// ---- P25 trunked (docs/spec/p25-trunking.md 7): a site on the fake air (site above), the far radio its voice ----
+#define TS_WACN		0xA4C21u
+#define TS_SYSID	0x2F3u
+#define TS_NAC		0x293u
+#define TS_BASE		451000000u	// identifier 1: 12.5 kHz channels from here
+#define TS_CC1		451012500u	// channel 0x1001, the primary control channel
+#define TS_CC2		451025000u	// channel 0x1002, programmed by number only
+#define TS_VOICE	451125000u	// channel 0x100A
+#define TS_FAR_VOICE	851068750u	// identifier 2 (off air), channel 0x200A: outside the radio's bands
+
+static void site_unit(void)
+{
+	uint8_t b[3][P25_TSBK_BYTES];
+	unsigned n = 0;
+
+	site.units++;
+	if (site.lc_wacn != 0) {
+		// The network status broadcast in link control (LCO 36): reserved, WACN, system, channel, service class
+		uint16_t sysid = site.lc_sysid != 0 ? site.lc_sysid : TS_SYSID;
+		uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(site.lc_wacn >> 12), (uint8_t)(site.lc_wacn >> 4),
+					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | sysid >> 8), (uint8_t)sysid, 0x10, 0x01,
+					      0x70 };
+		site.unit_syms = P25_TDULC_SYMS;
+		p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(site.unit, raw);
+		site.unit_at = 0;
+		return;
+	}
+	if (site.grant_after != 0 && --site.grant_after == 0) {
+		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
+		m.u.grant.ch = 0x100A;
+		m.u.grant.tg = site.last.tg;
+		m.u.grant.src = site.last.src;
+		p25_tsbk_make(&m, site.out);
+		site.out_reps = 3;
+	}
+	if (site.out_reps != 0) {
+		site.out_reps--;
+		memcpy(b[n++], site.out, P25_TSBK_BYTES);
+	}
+	if (site.grant_tg != 0) {
+		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
+		m.u.grant.svc = site.grant_enc ? P25_SVC_PROTECTED : 0;
+		m.u.grant.ch = site.grant_ch;
+		m.u.grant.tg = site.grant_tg;
+		m.u.grant.src = 1001;
+		p25_tsbk_make(&m, b[n++]);
+	}
+	while (n < 2) {
+		p25_tsbk_t m = { 0 };
+		switch (site.rot++ % 4) {
+		case 0:
+			m.kind = P25_TSBK_NET;
+			m.u.net.lra = 1;
+			m.u.net.wacn = site.wacn != 0 ? site.wacn : TS_WACN;
+			m.u.net.sysid = TS_SYSID;
+			m.u.net.ch = 0x1001;
+			break;
+		case 1:
+			m.kind = P25_TSBK_RFSS;
+			m.u.site.lra = 1;
+			m.u.site.sysid = TS_SYSID;
+			m.u.site.rfss = 1;
+			m.u.site.site = 7;
+			m.u.site.ch = 0x1001;
+			break;
+		case 2:
+			if (!site.iden2) {
+				continue;
+			}
+			m.kind = P25_TSBK_IDEN;
+			m.u.iden.id = 2;
+			m.u.iden.form = P25_OP_IDEN_UP;
+			m.u.iden.base = 851006250u / 5;
+			m.u.iden.spacing = 50;
+			m.u.iden.bw_khz8 = 100;
+			break;
+		default:
+			m.kind = P25_TSBK_SYS_SRV;
+			m.u.svc.avail = m.u.svc.supp = 0x1F;
+			break;
+		}
+		p25_tsbk_make(&m, b[n++]);
+	}
+	for (unsigned k = 0; k < n; k++) {
+		b[k][0] = (uint8_t)((b[k][0] & 0x7F) | (k == n - 1 ? P25_TSBK_LB : 0));
+		p25_tsbk_seal(b[k]);
+	}
+	site.unit_syms = p25_blocks_syms((uint8_t)n);
+	p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TSDU, P25_SS_IDLE);
+	for (unsigned k = 0; k < n; k++) {
+		p25_block_put(site.unit, (uint8_t)k, b[k]);
+	}
+	site.unit_at = 0;
+}
+
+// The site hears the radio's inbound burst (on cc_in_hz): its TSDU found, decoded and answered as ans_* say
+static void site_answer(const p25_tsbk_t *m)
+{
+	p25_tsbk_make(m, site.out);
+	site.out_reps = 3;
+}
+static void site_inbound(const uint8_t *syms, uint16_t n, bool last)
+{
+	for (uint16_t i = 0; i < n && site.in_n < P25_UNIT_SYMS_MAX; i++) {
+		air_sym_put(site.in, site.in_n++, air_sym_get(syms, i));
+	}
+	if (!last) {
+		return;
+	}
+	uint16_t got = site.in_n;
+	site.in_n = 0;
+	uint8_t blk[P25_TSBK_BYTES];
+	uint16_t nac;
+	uint8_t duid;
+	p25_isp_t q;
+	if (got < 180 || p25_nid_get(site.in, &nac, &duid) < 0 || duid != P25_DUID_TSDU || nac != TS_NAC ||
+	    p25_block_get(site.in, 0, blk) < 0 || !p25_isp_parse(blk, &q)) {
+		site.bad_rx++;
+		return;
+	}
+	site.last = q;
+	p25_tsbk_t m = { 0 };
+	if (q.opcode == P25_ISP_U_REG_REQ) {
+		site.reg_rx++;
+		if (site.ans_reg == SITE_ANS_NONE) {
+			return;
+		}
+		m.kind = P25_TSBK_REG_RSP;
+		m.u.reg = (typeof(m.u.reg)){ .rv = site.ans_reg == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .sysid = TS_SYSID,
+					     .id = q.src, .addr = q.src };
+	} else if (q.opcode == P25_ISP_GRP_AFF_REQ) {
+		site.aff_rx++;
+		if (site.ans_aff == SITE_ANS_NONE) {
+			return;
+		}
+		m.kind = P25_TSBK_AFF_RSP;
+		m.u.aff = (typeof(m.u.aff)){ .gav = site.ans_aff == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .ann = q.tg,
+					     .tg = q.tg, .dst = q.src };
+	} else {
+		site.req_rx++;
+		if (site.ans_req == SITE_ANS_NONE) {
+			return;
+		}
+		if (site.ans_req == SITE_ANS_ACCEPT) {
+			site.grant_after = 1;
+			return;
+		}
+		m.kind = site.ans_req == SITE_ANS_DENY ? P25_TSBK_DENY : P25_TSBK_QUEUED;
+		m.u.rsp = (typeof(m.u.rsp)){ .svc = q.opcode, .reason = site.ans_req == SITE_ANS_DENY ? 0x59 : 0x2F, .dst = q.src };
+		if (site.ans_req == SITE_ANS_QUEUE) {
+			site.grant_after = 40;	// the grant 2.4 s later
+		}
+	}
+	site_answer(&m);
+}
+
+// One chunk of the control channel: its units back to back
+static void site_chunk(uint8_t *syms)
+{
+	for (uint16_t i = 0; i < AIR_CHUNK; i++) {
+		if (site.unit_at >= site.unit_syms) {
+			site_unit();
+		}
+		air_sym_put(syms, i, air_sym_get(site.unit, site.unit_at++));
+	}
+}
+
+// The codec's side (p25_codeplug.c, tested in p25CodeplugTest): channel 3's system
+static p25_trunk_cfg_t stored_trunk;
+static int trunk_loads;
+static bool trunk_load_fails;
+bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_P25_TRUNK || number != 3 || trunk_load_fails) {
+		return false;
+	}
+	trunk_loads++;
+	*out = stored_trunk;
+	return true;
+}
+
+static void p25t_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_p25_trunk(&t);
+}
+
+static void test_p25_trunk(void)
+{
+	static char buf[2048];
+	const radio_p25_view_t *v = &sm.view.p25;
+	radio_p25_stats_t st;
+	p25_voice_stats_t vs;
+
+	setup_codeplug_p25();
+	// The record as the codeplug reads it: the safe stand-in (DMR, receive only) on the primary control channel
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, true, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 2;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .chan = 0x1002 };
+	stored_trunk.ctl_site[0] = stored_trunk.ctl_site[1] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	CHECK(strncmp(build_modes_now(), "P25,P25_TRUNK,", 14) == 0);
+
+	// The channel runs P25, receive only; the follower finds the system on the primary
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_P25 && trunk_loads == 1);
+	CHECK(radio_p25_running() && radio_p25_trunked() && !sm.dmr_running && hw_mode == RADIO_MODE_DMR);
+	CHECK(hw.rx_hz == TS_CC1 && hw.rx_bw == RADIO_BW_12K5);
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
+	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=674849\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
+	CHECK(strstr(buf, "p25t.blocks=0\n") == NULL && strstr(buf, "p25t.crc_fail=0\n") != NULL);
+	p25_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=4321\n") != NULL);
+
+	// PTT on a trunked channel: refused, nothing keyed
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(!radio_p25_tx_prepare() && !fair[0].on);
+	// The same with the record's (the tag's) receive only cleared on a listen-only system
+	chans[3].rx_only = false;
+	stored_trunk.listen_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// A grant for our talk group: the receiver goes to the voice channel, the call plays, then back
+	radio_p25_reset_stats();
+	p25VoiceResetStats();
+	far_begin(TS_NAC, 1001, false, 201);
+	site.grant_tg = 201;
+	site.grant_ch = 0x100A;
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(800);
+	CHECK(hw.rx_hz == TS_VOICE && v->trunk == RADIO_P25_TRUNK_VOICE && sm.view.state == RS_RX);
+	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001 && hw.led[LED_GREEN]);
+	run(600);
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(600);
+	CHECK(!far_tx && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL && sm.view.state == RS_IDLE);
+	p25VoiceGetStats(&vs);
+	radio_p25_stats(&st);
+	CHECK(vs.rx_calls == 1 && vs.rx_in > 0 && st.trunk_retunes >= 2 && st.trunk_untuned == 0 && st.tx_calls == 0);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.tg=201\np25t.src=1001\n") != NULL && strstr(buf, "p25t.follows=1\n") != NULL);
+	CHECK(fair[0].begins == 0 && fair[0].keyed_violations == 0);
+
+	// Another talk group's grant: heard on the control channel, not followed
+	site.grant_tg = 300;
+	run(600);
+	CHECK(hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.follows=1\n") != NULL);
+	// An encrypted grant with the system's skip on: refused
+	site.grant_tg = 201;
+	site.grant_enc = true;
+	stored_trunk.sys.options = P25_TSYS_SKIP_ENC;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(1500);
+	CHECK(hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.refused=1\np25t.refused_tg=201\n") != NULL && strstr(buf, "p25t.follows=0\n") != NULL);
+	site.grant_enc = false;
+	stored_trunk.sys.options = 0;
+
+	// A grant on a channel the radio can't receive: not tuned; with no voice there the follower comes back
+	site.iden2 = true;
+	site.grant_ch = 0x200A;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	radio_p25_reset_stats();
+	run(3000);
+	radio_p25_stats(&st);
+	CHECK(st.trunk_untuned >= 1 && hw.rx_hz == TS_CC1);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.voice_lost=0\n") == NULL);
+	site.grant_tg = 0;
+	site.iden2 = false;
+	run(1500);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// The primary goes quiet and the site moves to its other control channel (programmed by number): found
+	site.cc_hz = TS_CC2;
+	run(5000);
+	CHECK(hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.cc=1\n") != NULL && strstr(buf, "p25t.cc_lost=0\n") == NULL);
+
+	// Leave for an FM channel: the follower stops with the engine; back, it hunts from the start
+	req(RREQ_ZONE_POS, 0);
+	CHECK(!radio_p25_running() && !radio_p25_trunked() && v->trunk == RADIO_P25_TRUNK_OFF);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && hw.rx_hz == chans[1].rx_hz);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.on=0\np25t.state=0\n") != NULL);
+	req(RREQ_ZONE_POS, 2);
+	run(3000);
+	CHECK(radio_p25_trunked() && hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// No control channel programmed: the follower hunts and finds none
+	stored_trunk.ctl_count = 0;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	CHECK(radio_p25_trunked() && v->trunk == RADIO_P25_TRUNK_HUNT && hw.rx_hz == TS_CC1);
+	// The system missing (the codeplug can't load it): no engine, PTT still refused
+	trunk_load_fails = true;
+	radio_p25_reset_stats();
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	radio_p25_stats(&st);
+	CHECK(!radio_p25_running() && st.begin_fails == 1 && sm.view.ch.mode == RADIO_MODE_P25);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	trunk_load_fails = false;
+	req(RREQ_ZONE_POS, 0);
+	far_stop();
+	site.on = false;
+}
+#endif
+
+#if CONFIG_P25_TRUNK
+// The transmit side on a trunked channel (docs/spec/p25-trunking.md 5, 7): registration and affiliation through the
+// site's inbound receiver, PTT's request, the grant, the call on the voice channel heard by the far radio, the return;
+// queued, denied and unanswered requests
+#define TS_OFFSET	5000000		// identifier 1's transmit offset
+static void test_p25_trunk_tx(void)
+{
+	static char buf[4096];
+	const radio_p25_view_t *v = &sm.view.p25;
+	radio_p25_stats_t st;
+
+	setup_codeplug_p25();
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl_site[0] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET,
+					     .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = SITE_ANS_NONE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	far_begin(TS_NAC, 1001, false, 201);	// the far radio listens on the voice channel
+
+	// PTT before the system is found: no control channel
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_p25_trunked() && radio_p25_trunk_tx() && (v->flags & RADIO_P25_TRUNK_TX));
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_CC);
+	req(RREQ_PTT, 0);
+	// Registration, unanswered: sent on the control channel's inbound frequency, retried
+	run(4000);
+	CHECK(site.reg_rx >= 2 && site.bad_rx == 0 && site.last.src == 4321 && site.last.wacn == TS_WACN && hw.tx_hz == TS_CC1 + TS_OFFSET);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_RETRY && !hw.keyed && hw.rx_hz == TS_CC1);
+	CHECK(sm.view.state == RS_IDLE && fair[0].keyed_violations == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NOT_REG && hw.tx_calls == keyed + site.reg_rx);
+	req(RREQ_PTT, 0);
+	// Answered (the next round, after the pause): affiliation to the talk group, then ready
+	site.ans_reg = site.ans_aff = SITE_ANS_ACCEPT;
+	run(P25_ACC_RETRY_MS + 1000);
+	CHECK(v->treg == P25_REG_READY && site.aff_rx == 1 && site.last.tg == 201 && site.last.sysid == TS_SYSID);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.tx=1\np25t.reg=4\np25t.req=0\np25t.aff_tg=201\n") != NULL);
+	CHECK(strstr(buf, "p25t.aff_tx=1\np25t.aff_ok=1\n") != NULL && strstr(buf, "p25t.reg_ok=1\n") != NULL);
+	radio_p25_stats(&st);
+	CHECK(st.trunk_bursts == site.reg_rx + site.aff_rx && st.trunk_burst_refused == 0 && st.tx_calls == 0);
+
+	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back
+	site.ans_req = SITE_ANS_ACCEPT;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_IDLE && sm.p25_req);
+	run(600);
+	CHECK(site.req_rx == 1 && site.last.opcode == P25_ISP_GRP_V_REQ && site.last.tg == 201 && site.last.src == 4321);
+	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == TS_VOICE + TS_OFFSET && hw.rx_hz == TS_VOICE);
+	CHECK(v->trunk == RADIO_P25_TRUNK_VOICE && v->treq == P25_REQ_TALK);
+	run(1500);
+	CHECK(sm.view.state == RS_TX && far_heard.starts == 1 && far_heard.call.lc.tgid == 201 && far_heard.call.lc.src == 4321);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(!hw.keyed && sm.view.state != RS_TX && far_heard.ends == 1 && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+	CHECK(v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
+	radio_p25_stats(&st);
+	CHECK(st.tx_calls == 1);
+	run(1500);
+
+	// Queued, then granted
+	site.ans_req = SITE_ANS_QUEUE;
+	req(RREQ_PTT, 1);
+	run(800);
+	CHECK(v->treq == P25_REQ_QUEUED && sm.view.state == RS_IDLE && !hw.keyed);
+	run(2500);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == 2);
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
+
+	// Denied
+	site.ans_req = SITE_ANS_DENY;
+	req(RREQ_PTT, 1);
+	run(800);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_DENIED);
+	p25t_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "p25t.deny_svc=0\np25t.deny_reason=89\n") != NULL);
+	req(RREQ_PTT, 0);
+	run(500);
+	// Unanswered: three sends, then refused
+	site.ans_req = SITE_ANS_NONE;
+	uint16_t sent = site.req_rx;
+	req(RREQ_PTT, 1);
+	run(5000);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_NO_ANSWER && site.req_rx == sent + 3);
+	req(RREQ_PTT, 0);
+	// Released while waiting: the grant that comes later is not used
+	site.ans_req = SITE_ANS_QUEUE;
+	req(RREQ_PTT, 1);
+	run(500);
+	req(RREQ_PTT, 0);
+	keyed = hw.tx_calls;
+	run(3000);
+	CHECK(!hw.keyed && hw.tx_calls == keyed && v->treq == P25_REQ_IDLE);
+	run(1500);
+
+	// The transmit inhibit: PTT refused, and no burst goes out
+	sm.set.tx_inhibit = true;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_INHIBIT);
+	req(RREQ_PTT, 0);
+	sm.set.tx_inhibit = false;
+
+	// A listen-only system: receive only as before, nothing sent
+	stored_trunk.listen_only = true;
+	req(RREQ_ZONE_POS, 0);
+	sent = site.reg_rx;
+	keyed = hw.tx_calls;
+	req(RREQ_ZONE_POS, 2);
+	run(4000);
+	CHECK(radio_p25_trunked() && !radio_p25_trunk_tx() && v->treg == P25_REG_OFF && site.reg_rx == sent && hw.tx_calls == keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	stored_trunk.listen_only = false;
+	req(RREQ_ZONE_POS, 0);
+	far_stop();
+	site.on = false;
+}
+
+// A system heard naming WACN $BEEFF (blocked as $BEE00 is) gets nothing from the radio until power off: not on this visit, not when the
+// channel is left and taken again, not when the site later names another WACN. Power on again forgets it
+static void test_p25_trunk_wacn_nogo(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	int keyed;
+
+	setup_codeplug_p25();
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = P25_CP_WACN_ANY, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl_site[0] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET,
+					     .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = site.ans_req = SITE_ANS_ACCEPT;
+	site.wacn = 0xBEEFF;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	keyed = hw.tx_calls;
+	run(4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 && hw.tx_calls == keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_BLOCKED &&
+	      hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// Left and taken again, the site naming another WACN now: still nothing
+	site.wacn = TS_WACN;
+	req(RREQ_ZONE_POS, 0);
+	run(500);
+	req(RREQ_ZONE_POS, 2);
+	run(P25_ACC_RETRY_MS + 4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 &&
+	      hw.tx_calls == keyed && !hw.keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_BLOCKED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten, it registers
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(4000);
+	CHECK(site.reg_rx >= 1 && v->treg == P25_REG_READY);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+}
+
+
+// A conventional channel whose repeater names WACN $BEE7F in its link control: PTT refused there until power off.
+// System ID $00A, under an ordinary WACN, is refused the same way
+static void test_p25_conv_wacn_nogo(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25 rpt", TS_CC1, RADIO_MODE_P25, false, 2);
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { TS_NAC, TS_NAC, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567 };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.lc_wacn = TS_WACN;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	site.on = false;
+	run(300);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// another WACN: as before
+	req(RREQ_PTT, 0);
+	run(500);
+	site.lc_wacn = 0xBEE7F;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	// Left and taken again, nothing heard there since: still refused
+	req(RREQ_ZONE_POS, 0);
+	run(300);
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	site.lc_wacn = TS_WACN;
+	site.lc_sysid = P25_SYSID_NO_TX;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	site.lc_sysid = 0;
+	req(RREQ_ZONE_POS, 0);
+}
+
+#endif
+
+static void test_p25(void)
+{
+#if CONFIG_P25_TRUNK
+	test_p25_trunk();
+	test_p25_trunk_tx();
+	test_p25_trunk_wacn_nogo();
+	test_p25_conv_wacn_nogo();
+#endif
+	test_p25_rx();
+	test_p25_stored();
+#if CONFIG_SCAN
+	test_p25_scan();
+#if CONFIG_DUAL_WATCH
+	test_p25_dual();
+#endif
+#endif
+	test_p25_tx();
+	test_p25_denied();
+	test_p25_leave();
+	test_p25_vfo();
+	test_air_bench();
+	// Off P25 for the tests after: an FM channel, nothing of P25 left running
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+	if (radio_p25_running()) {
+		radio_p25_end();
+	}
+}
+#endif
+
+#if CONFIG_NXDN
+// ---- NXDN conventional in the radio core (docs/spec/nxdn.md 6): the far radio is an NXDN engine on the other fake
+// provider. Voice is made-up 72-bit frames through the fake vocoder: nothing here encodes or decodes speech ----
+#include "nxdn/nxdn_engine.h"
+#include "nxdn/nxdn_codeplug.h"
+#include "dmr/ambe/ambeFec.h"
+
+static nxdn_engine_t nfar;
+static bool nfar_running, nfar_tx;
+static struct {
+	uint8_t starts, ends;
+	nxdn_call_t call;
+	uint16_t voice;		// voice frames heard
+	uint16_t enc;		// ... that are what the radio's encoder made (the fake encoder's all-zero bits)
+} nfar_heard;
+static uint8_t nfar_next;	// the far radio's next made-up frame
+static uint8_t zero_frame[NXDN_EHR_BYTES];	// the fake encoder's frame with its FEC
+
+// Frame k of a made-up sequence: 49 bits from k (not speech), and with the voice frame's FEC
+static void made_up_bits(uint8_t k, uint8_t bits[VOCODER_BITS])
+{
+	for (uint8_t i = 0; i < VOCODER_BITS; i++) {
+		bits[i] = (uint8_t)((((uint32_t)k * 2654435761u) >> (i % 29)) & 1u);
+	}
+	bits[0] = (uint8_t)(k & 1u);
+}
+
+static void nf_start(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.starts++; nfar_heard.call = *c; }
+static void nf_update(const nxdn_call_t *c, void *ctx) { (void)ctx; nfar_heard.call = *c; }
+static void nf_voice(const uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
+{
+	(void)ctx;
+	nfar_heard.voice++;
+	if (!memcmp(ehr, zero_frame, NXDN_EHR_BYTES)) {
+		nfar_heard.enc++;
+	}
+}
+static void nf_end(void *ctx) { (void)ctx; nfar_heard.ends++; }
+static bool nf_tx(uint8_t ehr[NXDN_EHR_BYTES], void *ctx)
+{
+	uint8_t bits[VOCODER_BITS];
+
+	(void)ctx;
+	made_up_bits(nfar_next++, bits);
+	ambeFecEncode(bits, ehr);
+	return true;
+}
+#if CONFIG_NXDN_SCRAMBLER
+static uint16_t nf_key(uint8_t system, uint8_t cipher, uint8_t id, void *ctx)
+{
+	(void)ctx;
+	return nxdn_system_key(system, cipher, id);
+}
+#endif
+static const nxdn_engine_hooks_t nfar_hooks = { .rx_start = nf_start, .rx_update = nf_update, .rx_voice = nf_voice,
+	.rx_end = nf_end, .tx_voice = nf_tx,
+#if CONFIG_NXDN_SCRAMBLER
+	.traffic_key = nf_key,
+#endif
+};
+
+// The decoder's frames: how many came in the far radio's order (a repeat to conceal a gap is not counted)
+static uint8_t dec_next;
+static uint32_t dec_in_order;
+static void dec_hook(const uint8_t *bits)
+{
+	uint8_t want[VOCODER_BITS];
+
+	for (uint8_t k = 0; k < 8; k++) {
+		made_up_bits((uint8_t)(dec_next + k), want);
+		if (!memcmp(bits, want, VOCODER_BITS)) {
+			dec_in_order += k == 0;
+			dec_next = (uint8_t)(dec_next + k + 1);
+			return;
+		}
+	}
+}
+
+static void nfar_step(void)
+{
+	if (nfar_tx && nxdn_engine_tx_state(&nfar) == AIR_TX_DONE) {
+		nxdn_engine_tx_clear(&nfar);
+		nfar_tx = false;
+	}
+}
+
+// The far radio on the channel: it sends at the rate on ran, as unit, to a group or a unit (dst); it hears every RAN
+static void nfar_begin(bool rate9600, uint8_t ran, uint16_t unit, bool unit_call, uint16_t dst)
+{
+	nxdn_engine_cfg_t c = { .rate9600 = rate9600, .rx_ran = NXDN_RAN_ANY, .tx_ran = ran, .unit_id = unit,
+				.tx_call_type = unit_call ? NXDN_CALL_INDIVIDUAL : NXDN_CALL_GROUP, .tx_dst = dst,
+				.silence = dmr_ambe_silence };
+	uint8_t zero[VOCODER_BITS] = { 0 };
+
+	ambeFecEncode(zero, zero_frame);
+	if (nfar_running) {
+		nxdn_engine_end(&nfar);
+	}
+	memset(&nfar_heard, 0, sizeof(nfar_heard));
+	nfar_tx = false;
+	nfar_running = nxdn_engine_begin(&nfar, &fake_air1, &c, &nfar_hooks, NULL);
+	CHECK(nfar_running);
+}
+
+static void nfar_stop(void)
+{
+	if (nfar_running) {
+		nxdn_engine_end(&nfar);
+		nfar_running = nfar_tx = false;
+	}
+}
+
+// The far radio keys, holds for ms, lets go and runs until its release frame is out
+static void nfar_call(uint32_t ms)
+{
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(ms);
+	nxdn_engine_tx_stop(&nfar);
+	for (int i = 0; i < 100 && nfar_tx; i++) {
+		run(10);
+	}
+	CHECK(!nfar_tx);
+}
+
+static void nxdn_view_text(char *buf, size_t cap)
+{
+	dl_text_t t;
+	dl_text_init(&t, buf, cap);
+	debuglink_view_nxdn(&sm.view, &t);
+}
+
+static void setup_codeplug_nxdn(void)
+{
+	setup_codeplug();
+	add(3, "NXDN", 446100000, RADIO_MODE_NXDN, false, 2);	// zone Local, position 2
+	radio_nxdn_reset_stats();
+	air_nofit = false;
+	air_fit2400[0] = air_fit2400[1] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	memset(fair, 0, sizeof(fair));
+	v_decode_hook = NULL;
+}
+
+static const radio_nxdn_settings_t nxdn_default_set = { .rate9600 = true, .rx_ran = 0, .tx_ran = 1, .unit_id = 1,
+							 .tx_dst = 1 };
+static void nxdn_defaults(void)
+{
+	radio_req_nxdn_settings(&nxdn_default_set);
+}
+
+static void test_nxdn_rx(void)
+{
+	static char buf[4096];
+	radio_nxdn_stats_t st;
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && sm.view.channel_number == 3);
+	// The board in its digital mode at 12.5 kHz without a tone, the DMR stack stopped, the engine on board.air, the
+	// DMR side's audio stream running for its voice
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_hz == 446100000 && hw.rx_bw == RADIO_BW_12K5 && hw.rx_tone.type == TONE_NONE);
+	CHECK(!sm.dmr_running && !sim.started && aud.started);
+	CHECK(radio_nxdn_running() && fair[0].open);
+	CHECK(v->flags == (RADIO_NXDN_ON | RADIO_NXDN_9600) && v->tx == AIR_TX_IDLE);
+	CHECK(v->fit == (AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT) && v->rx_ran == 0 && v->tx_ran == 1 && v->talk == 1);
+	radio_nxdn_stats(&st);
+	CHECK(st.begins == 1 && st.begin_fails == 0);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.built=1\nnxdn.on=1\nnxdn.rx=0\n") != NULL && strstr(buf, "nxdn.rate=9600\n") != NULL);
+	CHECK(strstr(buf, "nxdn.fit=7\n") != NULL && strstr(buf, "nxdn.unit_id=1\n") != NULL);
+	run(300);				// noise: no call
+	CHECK(sm.view.state == RS_IDLE && !hw.led[LED_GREEN]);
+
+	// A group call on RAN 1: received (rx_ran 0 takes every RAN) and played; its voice frames reach the decoder in
+	// order through the DMR side's voice path
+	dec_next = 0;
+	dec_in_order = 0;
+	v_decode_hook = dec_hook;
+	nfar_next = 0;
+	nfar_begin(true, 1, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(1000);
+	CHECK(sm.view.state == RS_RX && hw.led[LED_GREEN]);
+	CHECK((v->flags & (RADIO_NXDN_RX | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_RX | RADIO_NXDN_PLAYED));
+	CHECK(v->src == 2001 && v->dst == 20 && v->ran == 1 && !(v->flags & (RADIO_NXDN_UNIT | RADIO_NXDN_ENC)));
+	CHECK(dec_in_order >= 30);
+	nxdn_engine_tx_stop(&nfar);
+	// The call's counters are read when its release ends it: the framer stays locked a few frames after, and the
+	// noise there can pass for a frame (a LICH that reads, then coasted ones), counted but no part of the call
+	for (int i = 0; i < 100 && (sm.view.state != RS_IDLE || (v->flags & RADIO_NXDN_RX)); i++) {
+		run(5);
+	}
+	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX) && v->src == 2001);	// the last call stays
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 1 && st.voice >= 40 && st.sacch_fail == 0 && st.facch_fail == 0 && st.voice_held == 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !(v->flags & RADIO_NXDN_RX));
+	v_decode_hook = NULL;
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.src=2001\nnxdn.dst=20\n") != NULL && strstr(buf, "nxdn.rx_calls=1\n") != NULL);
+
+	// Another RAN: not taken, counted
+	s.rx_ran = 5;
+	radio_req_nxdn_settings(&s);
+	CHECK(v->rx_ran == 5);
+	nfar_call(600);
+	CHECK(sm.view.state == RS_IDLE);
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 1 && st.ran_rejects > 0);
+
+	// Group squelch: a call to another group shows (RS_RX), its voice does not play
+	s.rx_ran = 1;
+	s.rx_gid = 30;
+	radio_req_nxdn_settings(&s);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(600);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_RX) && !(v->flags & RADIO_NXDN_PLAYED) && !hw.led[LED_GREEN]);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	// ... and one to our group plays
+	nfar_begin(true, 1, 2002, false, 30);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(600);
+	CHECK((v->flags & RADIO_NXDN_PLAYED) && v->src == 2002 && v->dst == 30);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_stop();
+	nxdn_defaults();
+}
+
+static void test_nxdn_tx(void)
+{
+	radio_nxdn_stats_t st;
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 1, 2001, false, 1);
+	run(100);
+
+	// PTT: keyed on the channel's TX frequency at 12.5 kHz, its power, no tone; the provider starts inside the key
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && hw.keyed && fair[0].on && fair[0].begins == 1);
+	CHECK(hw.tx_hz == 446100000 && hw.tx_bw == RADIO_BW_12K5 && hw.tx_tone.type == TONE_NONE && hw.tx_power == 2);
+	CHECK(hw.led[LED_RED] && v->tx != AIR_TX_IDLE);
+	run(1000);
+	CHECK(sm.view.state == RS_TX && fair[0].underruns == 0);
+	// The far radio hears the call: RAN 1, unit 1, group 1; its voice is the encoder's frames
+	CHECK(nfar_heard.starts == 1 && nfar_heard.ends == 0 && nfar_heard.call.ran == 1);
+	CHECK(nfar_heard.call.vcall.src == 1 && nfar_heard.call.vcall.dst == 1 &&
+	      nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP && !(nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// the frame on air is finished first
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && hw.tx_off_calls == 1 && !hw.led[LED_RED]);
+	CHECK(v->tx == AIR_TX_IDLE && nfar_heard.ends == 1 && nfar_heard.voice >= 40 && nfar_heard.enc >= 30);
+	CHECK(fair[0].keyed_violations == 0 && fair[0].underruns == 0);
+	radio_nxdn_stats(&st);
+	CHECK(st.tx_calls == 1 && st.tx_underruns == 0 && st.tx_syms > 0);
+
+	// Settings sent while transmitting: in force for the next transmission
+	req(RREQ_PTT, 1);
+	run(100);
+	s.unit_call = true;
+	s.tx_dst = 4321;
+	s.unit_id = 777;
+	s.tx_ran = 9;
+	s.emergency = true;
+	radio_req_nxdn_settings(&s);
+	run(300);
+	CHECK(nfar_heard.call.vcall.src == 1);	// this one goes on as it began
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(nfar_heard.call.ran == 9 && nfar_heard.call.vcall.call_type == NXDN_CALL_INDIVIDUAL &&
+	      nfar_heard.call.vcall.dst == 4321 && nfar_heard.call.vcall.src == 777 &&
+	      (nfar_heard.call.vcall.cc_opt & NXDN_CC_EMERGENCY));
+	CHECK(v->flags & RADIO_NXDN_TALK_UNIT);
+	req(RREQ_PTT, 0);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// 4800 bit/s: a new session at 2400 symbols/s
+	radio_nxdn_stats(&st);
+	uint32_t begins = st.begins;
+	s = nxdn_default_set;
+	s.rate9600 = false;
+	radio_req_nxdn_settings(&s);
+	radio_nxdn_stats(&st);
+	CHECK(radio_nxdn_running() && st.begins == begins + 1 && !(v->flags & RADIO_NXDN_9600));
+	nfar_begin(false, 1, 2001, false, 1);
+	req(RREQ_PTT, 1);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(800);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && nfar_heard.starts == 1 && nfar_heard.ends == 1);
+
+	// A provider that transmits the rate only (no receive): the engine runs, PTT keys, the far radio hears it
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(radio_nxdn_running() && v->fit == AIR_FIT_TX);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	run(600);
+	req(RREQ_PTT, 0);
+	run(800);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed && nfar_heard.starts == 2 && nfar_heard.ends == 2);
+
+	// One that receives it only: PTT refused before anything is queued
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_SOFT;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	uint32_t keyed = (uint32_t)hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed &&
+	      hw.tx_calls == (int)keyed && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	run(50);
+	// ... and one that gives the rate nothing: no engine, refused
+	air_fit2400[0] = 0;
+	req(RREQ_ZONE_POS, 1);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(!radio_nxdn_running() && v->fit == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_REFUSED && !hw.keyed);
+	req(RREQ_PTT, 0);
+	run(50);
+	// Back to 9600 bit/s, which the board carries: the engine starts again
+	nxdn_defaults();
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_9600));
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+
+	// The time-out: cut at once, the transmitter off, denied until PTT is released
+	nfar_begin(true, 1, 2001, false, 1);
+	uint32_t offs = (uint32_t)hw.tx_off_calls;
+	req(RREQ_PTT, 1);
+	run(181000);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TIMEOUT && !hw.keyed && hw.tx_off_calls == (int)offs + 1);
+	req(RREQ_PTT, 0);
+	run(100);
+	CHECK(sm.view.state == RS_IDLE && v->tx == AIR_TX_IDLE && fair[0].keyed_violations == 0);
+	nfar_stop();
+}
+
+static void test_nxdn_mode(void)
+{
+	settings_t set;
+	radio_nxdn_settings_t s;
+
+	setup_codeplug_nxdn();
+	start();
+	nxdn_defaults();
+	// The VFO in NXDN through the mode request: its own mode, the engine running
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && hw_mode == RADIO_MODE_DMR);
+	CHECK(!(sm.view.temp & RADIO_TEMP_MODE));
+	// The settings from the debug link: 4800 bit/s, RAN 7 both ways, unit 1234 calls group 55
+	static const uint8_t op[] = { 0x00, 7, 7, 0, 0, 0xD2, 0x04, 55, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, op, sizeof op) == DL_ST_OK);
+	radio_nxdn_settings(&s);
+	CHECK(!s.rate9600 && s.rx_ran == 7 && s.tx_ran == 7 && s.unit_id == 1234 && s.tx_dst == 55 && !s.unit_call);
+	CHECK(radio_nxdn_running() && !(sm.view.nxdn.flags & RADIO_NXDN_9600) && sm.view.nxdn.rx_ran == 7);
+	static const uint8_t bad_ran[] = { 0x01, 64, 1, 0, 0, 1, 0, 1, 0 }, bad_unit[] = { 0x01, 1, 1, 0, 0, 0, 0, 1, 0 },
+			     bad_flag[] = { 0x08, 1, 1, 0, 0, 1, 0, 1, 0 };
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_ran, sizeof bad_ran) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_unit, sizeof bad_unit) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, bad_flag, sizeof bad_flag) == DL_ST_BAD_ARG);
+	CHECK(debuglink_radio_feature_op(DL_OP_NXDN, op, 8) == DL_ST_BAD_ARG);
+	CHECK(debuglink_is_feature_op(DL_OP_NXDN));
+	nxdn_defaults();
+	// Saved with the VFO, back after a restart
+	run(5000);
+	settings_read(&set);
+	CHECK(settings_vfo_mode(&set) == RADIO_MODE_NXDN);
+	boot();
+	if (!sm.view.vfo)
+		req(RREQ_VFO, 1);
+	CHECK(sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && sm.view.vfo_drop == 0);
+#if CONFIG_P25
+	// To P25 and back: one engine at a time, in the same memory where P25 has its own
+	req(RREQ_MODE, RADIO_MODE_P25);
+	CHECK(sm.view.ch.mode == RADIO_MODE_P25 && radio_p25_running() && !radio_nxdn_running());
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !radio_p25_running());
+#endif
+	// To FM: the engine closes, the audio stream stops
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running() && hw_mode == RADIO_MODE_FM && !aud.started);
+	CHECK(!(sm.view.nxdn.flags & RADIO_NXDN_ON));
+	// A board whose air interface carries no NXDN: the mode is refused
+	air_nofit = true;
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running());
+	air_nofit = false;
+	// On a channel: a temporary change
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(!sm.view.vfo && sm.view.ch.mode == RADIO_MODE_NXDN && (sm.view.temp & RADIO_TEMP_MODE) && radio_nxdn_running());
+	req(RREQ_CLEAR_TEMP, 0);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM && !radio_nxdn_running());
+}
+
+// The codec's side (core/nxdn/nxdn_codeplug.c, tested in nxdnCodeplugTest): a stored channel's set-up, by number
+static nxdn_conv_cfg_t stored_nxdn[NCH + 1];
+bool nxdn_conv_load(uint16_t number, const channel_t *ch, nxdn_conv_cfg_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_NXDN || number < 1 || number > NCH)
+		return false;
+	*out = stored_nxdn[number];
+	return true;
+}
+bool nxdn_system_load(uint8_t system, uint16_t *own_id)
+{
+	*own_id = system == 2 ? 3333 : 0;
+	if (system != 2)
+		return false;
+	return true;
+}
+#if CONFIG_NXDN_SCRAMBLER
+uint16_t nxdn_system_key(uint8_t system, uint8_t cipher, uint8_t id)
+{
+	return system == 2 && cipher == NXDN_CIPHER_SCRAMBLE && id == 12 ? 1234 : 0;
+}
+#endif
+// A plain channel in NXDN saved as a stored one: the record and block it was given
+static struct { uint16_t number; channel_t ch; nxdn_conv_t conv; } nxdn_saved;
+bool nxdn_conv_save(uint16_t number, const channel_t *ch, const nxdn_conv_t *conv)
+{
+	nxdn_saved.number = number;
+	nxdn_saved.ch = *ch;
+	nxdn_saved.conv = *conv;
+	return codeplug_set_channel(number, ch);
+}
+
+#if CONFIG_SCAN
+// A zone scan over a stored NXDN channel (docs/spec/nxdn.md 6.4): it stops there, holds on a call that plays (once its
+// VCALL says so) and moves on from one that doesn't; a channel at a rate the board can't receive is left out
+static void test_nxdn_scan(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	uint16_t visits;
+
+	setup_codeplug_nxdn();
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	far_hz = 446100000;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE);
+	// Nothing on the air: a stop on the NXDN channel (the engine runs there), then on
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_ZONE);
+	// The channel's group on its RAN, a call already on: held, playing, while it lasts
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20 && v->src == 2001);
+	run(1500);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	CHECK(!nfar_tx && sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_RESUME);
+	run(RADIO_SCAN_DELAY_MS + 600);
+	CHECK(sm.view.channel_number != 3 && sm.view.scan == SCAN_ZONE);
+	// Another group on the RAN (selective squelch), and the channel's group on another RAN: not held
+	nfar_begin(true, 7, 2002, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	nfar_begin(true, 9, 2003, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_ZONE);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	req(RREQ_SCAN, RSCAN_STOP);
+
+	// A 4800 bit/s channel on a board that only transmits 2400 symbols/s: never a stop. At 9600 it is one again
+	stored_nxdn[3].conv.rate9600 = false;
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(sm.view.scan == SCAN_ZONE && !scan_holds_on(3, 3000, &visits) && visits == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+	stored_nxdn[3].conv.rate9600 = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 1);
+	req(RREQ_SCAN, RSCAN_STOP);
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+	far_hz = 0;
+	nfar_stop();
+	nxdn_defaults();
+}
+
+#if CONFIG_P25
+// Every mode in one zone scan, on one frequency: FM, DMR, P25 and NXDN channels on 446.1 MHz. Any of their signals
+// opens the FM squelch, so the FM stop (first in the zone) sees each call as a signal: the scan checks the frequency's
+// digital channels in turn and holds on the one whose call it is, never on FM. A plain FM signal (no digital mode
+// heard on any of them) holds the FM stop
+static void test_scan_every_mode(void)
+{
+	enum { M_FM, M_DMR, M_P25, M_NXDN, M_N };
+	static const char *const names[M_N] = { "FM", "DMR", "P25", "NXDN" };
+	static const uint16_t number[M_N] = { 2, 4, 3, 5 };	// the channel each signal should hold
+	const uint32_t hz = 446100000;
+	uint8_t lc[9];
+
+	mk_lc(lc, true, 201, 9991234);
+	for (int sig = M_FM; sig < M_N; sig++) {
+		setup_codeplug();
+		// Zone Local: Simplex, then FM, P25, DMR and NXDN on one frequency (positions 1-4)
+		add(2, "Mixed FM", hz, RADIO_MODE_FM, false, CODEPLUG_POWER_DEFAULT);
+		add(3, "Mixed P25", hz, RADIO_MODE_P25, false, 2);
+		chans[4].rx_hz = chans[4].tx_hz = hz;
+		add(5, "Mixed NXDN", hz, RADIO_MODE_NXDN, false, 2);
+		radio_p25_reset_stats();
+		radio_nxdn_reset_stats();
+		air_nofit = false;
+		air_fit2400[0] = air_fit2400[1] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+		memset(fair, 0, sizeof(fair));
+		start();
+		p25_defaults();
+		nxdn_defaults();
+		far_hz = hz;
+		req(RREQ_ZONE_POS, 0);
+		req(RREQ_SCAN, RSCAN_ZONE);
+		CHECK(sm.view.scan == SCAN_ZONE);
+		if (sig == M_P25) {
+			far_begin(P25_NAC_DEFAULT, 1001, false, 201);
+			CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+			far_tx = true;
+		} else if (sig == M_NXDN) {
+			nfar_begin(true, 0, 2001, false, 20);
+			CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+			nfar_tx = true;
+		} else {
+			far_carrier = true;
+		}
+		// 6 s of the call: where the scan held, and for how long at the end
+		uint16_t held[NCH + 1] = { 0 };
+		uint32_t last_ms = 0;
+		uint8_t vi = 0;
+		for (uint32_t t = 0; t < 6000; t += 60) {
+			if (sig == M_DMR && hw.rx_hz == hz && sm.view.ch.mode == RADIO_MODE_DMR) {
+				burst_voice(vi, 2, lc);	// a call already on: voice with its embedded LC
+				vi = (uint8_t)((vi + 1u) % 6u);
+			}
+			run(60);
+			bool hold = sm.view.scan_phase == SCAN_PH_HOLD;
+			if (hold && !sm.view.vfo && sm.view.channel_number <= NCH) {
+				held[sm.view.channel_number]++;
+			}
+			last_ms = hold && sm.view.channel_number == number[sig] ? last_ms + 60 : 0;
+		}
+		bool ok = last_ms >= 3000;
+		for (uint16_t n = 1; n <= NCH; n++) {
+			ok &= n == number[sig] || held[n] == 0;
+		}
+		if (!ok) {
+			printf("  every mode, %s signal: held on channel %u for %u ms at the end; holds FM %u P25 %u DMR %u "
+			       "NXDN %u\n", names[sig], sm.view.channel_number, last_ms, held[2], held[3], held[4], held[5]);
+		}
+		CHECK(ok);
+		if (sig == M_P25) {
+			CHECK(radio_p25_running() && (sm.view.p25.flags & RADIO_P25_PLAYED));
+			p25_engine_tx_stop(&far_eng);
+		} else if (sig == M_NXDN) {
+			CHECK(radio_nxdn_running() && (sm.view.nxdn.flags & RADIO_NXDN_PLAYED));
+			nxdn_engine_tx_stop(&nfar);
+		} else if (sig == M_DMR) {
+			CHECK(sm.view.dmr.state == RDMR_RX && sm.view.dmr.call.dst == 201);
+		}
+		far_carrier = false;
+		run(600);
+		req(RREQ_SCAN, RSCAN_STOP);
+		run(100);
+		far_stop();
+		nfar_stop();
+		far_hz = 0;
+	}
+	setup_codeplug();
+	p25_defaults();
+	nxdn_defaults();
+}
+#endif
+#if CONFIG_DUAL_WATCH
+// Dual watch with a stored NXDN channel on one side: the receiver alternates onto it and a call that plays holds the
+// watch there. With P25 built too, a P25 channel on the other side: one engine at a time, each started at its look
+static void test_nxdn_dual(void)
+{
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	uint16_t visits;
+
+	setup_codeplug_nxdn();
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	far_hz = 446100000;
+	const ui_dual_ref_t a = { false, 0, 0 }, b = { false, 0, 2 }, pair[2] = { a, b };
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	CHECK(!scan_holds_on(3, 3000, &visits) && visits >= 2 && sm.view.scan == SCAN_DUAL);
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(scan_holds_on(3, 4000, &visits));
+	CHECK(radio_nxdn_running() && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20);
+	run(1500);
+	CHECK(sm.view.channel_number == 3 && sm.view.scan_phase == SCAN_PH_HOLD);
+	nxdn_engine_tx_stop(&nfar);
+	run(600 + RADIO_DUAL_DELAY_MS + 600);
+	CHECK(sm.view.scan == SCAN_DUAL && sm.view.channel_number == 1);
+	// Another group: not held
+	nfar_begin(true, 7, 2002, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	CHECK(!scan_holds_on(3, 4000, &visits) && visits >= 1 && sm.view.scan == SCAN_DUAL);
+	nxdn_engine_tx_stop(&nfar);
+	run(600);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	// A rate the board can't receive: refused by the radio core
+	stored_nxdn[3].conv.rate9600 = false;
+	air_fit2400[0] = AIR_FIT_TX;
+	req(RREQ_ZONE_POS, 0);
+	ui_svc_dual(pair, 0);
+	CHECK(sm.view.scan == SCAN_OFF);
+	stored_nxdn[3].conv.rate9600 = true;
+	air_fit2400[0] = AIR_FIT_RX | AIR_FIT_TX | AIR_FIT_SOFT;
+#if CONFIG_P25
+	// P25 on A, NXDN on B: each look starts its own engine, the other stopped first
+	add(1, "P25 simp", 446200000, RADIO_MODE_P25, false, 2);
+	start();
+	radio_p25_stats_t p0, p1;
+	radio_nxdn_stats_t n0, n1;
+	radio_p25_stats(&p0);
+	radio_nxdn_stats(&n0);
+	CHECK(ui_svc_dual(pair, 0) && sm.view.scan == SCAN_DUAL);
+	bool p25_seen = false;
+	for (int i = 0; i < 3000 / RADIO_POLL_MS; i++) {
+		run(RADIO_POLL_MS);
+		CHECK(!(radio_p25_running() && radio_nxdn_running()));
+		p25_seen = p25_seen || (sm.view.channel_number == 1 && radio_p25_running());
+	}
+	radio_p25_stats(&p1);
+	radio_nxdn_stats(&n1);
+	CHECK(p25_seen && p1.begins >= p0.begins + 2 && n1.begins >= n0.begins + 2);
+	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF);
+	setup_codeplug_nxdn();
+#endif
+	far_hz = 0;
+	nfar_stop();
+	nxdn_defaults();
+}
+#endif
+#endif
+
+// An NXDN conventional channel in the codeplug (kind 4, docs/spec/nxdn-codeplug.md 2): the radio runs it on its own
+// parameters, not the settings; saved from the VFO it becomes one; parked where the board can't carry NXDN
+static void test_nxdn_stored(void)
+{
+	static char buf[4096];
+	const radio_nxdn_view_t *v = &sm.view.nxdn;
+	radio_nxdn_settings_t s = nxdn_default_set;
+	radio_nxdn_stats_t st;
+
+	setup_codeplug_nxdn();
+	// The safe stand-in as the codeplug reads it: DMR, the tag's kind and transmit allowed
+	add(3, "NXDN rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].tx_hz = 451100000;
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 0xFF;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 8,
+						      .squelch = NXDN_SQUELCH_SELECTIVE },
+					    .unit_id = 4321, .target = 20, .target_unit = false };
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.channel_number == 3 && sm.view.ch.mode == RADIO_MODE_NXDN && sm.view.ch.kind == CODEPLUG_KIND_NXDN);
+	CHECK(hw_mode == RADIO_MODE_DMR && hw.rx_bw == RADIO_BW_12K5 && radio_nxdn_running() && !sm.dmr_running);
+	CHECK(v->rx_ran == 7 && v->tx_ran == 8 && v->talk == 20 && !(v->flags & RADIO_NXDN_TALK_UNIT) &&
+	      (v->flags & RADIO_NXDN_9600));
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.rx_ran=0\n") != NULL);	// the settings are not what runs
+	CHECK(strstr(buf, "nxdn.run.rate=9600\nnxdn.run.rx_ran=7\nnxdn.run.tx_ran=8\nnxdn.run.rx_gid=20\n") != NULL);
+	CHECK(strstr(buf, "nxdn.run.unit_id=4321\nnxdn.run.unit_call=0\nnxdn.run.tx_dst=20\n") != NULL);
+
+	// RAN squelch first: another RAN is not taken
+	nfar_begin(true, 9, 2001, false, 20);
+	nfar_call(600);
+	CHECK(sm.view.state == RS_IDLE);
+	radio_nxdn_stats(&st);
+	CHECK(st.rx_calls == 0 && st.ran_rejects > 0);
+	// Selective on RAN 7: the channel's group plays, another group shows and does not, all and a unit call to us play
+	nfar_begin(true, 7, 2001, false, 20);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK(sm.view.state == RS_RX && (v->flags & RADIO_NXDN_PLAYED) && v->dst == 20 && v->ran == 7);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, false, 21);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & RADIO_NXDN_RX) && !(v->flags & RADIO_NXDN_PLAYED) && v->dst == 21 && !hw.led[LED_GREEN]);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, false, NXDN_ID_ALL);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & RADIO_NXDN_PLAYED) && v->dst == NXDN_ID_ALL);
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	nfar_begin(true, 7, 2001, true, 4321);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((v->flags & (RADIO_NXDN_PLAYED | RADIO_NXDN_UNIT)) == (RADIO_NXDN_PLAYED | RADIO_NXDN_UNIT));
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	CHECK(sm.view.state == RS_IDLE);
+
+	// PTT: the channel's TX RAN, our unit ID and its group, on its TX frequency at 12.5 kHz
+	nfar_begin(true, 8, 2001, false, 1);
+	run(100);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == 451100000 && hw.tx_bw == RADIO_BW_12K5);
+	run(1000);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.ran == 8 && nfar_heard.call.vcall.src == 4321 &&
+	      nfar_heard.call.vcall.dst == 20 && nfar_heard.call.vcall.call_type == NXDN_CALL_GROUP);
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
+
+	// The debug link's settings don't reach a stored channel
+	s.rx_ran = 33;
+	s.tx_ran = 34;
+	s.unit_id = 777;
+	s.rate9600 = false;
+	radio_req_nxdn_settings(&s);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.rx_ran=33\n") != NULL && strstr(buf, "nxdn.run.rx_ran=7\n") != NULL &&
+	      strstr(buf, "nxdn.run.unit_id=4321\n") != NULL && strstr(buf, "nxdn.run.rate=9600\n") != NULL);
+	nxdn_defaults();
+
+	// 4800 bit/s, a unit target, RAN squelch: read again when the channel is
+	stored_nxdn[3].conv.rate9600 = false;
+	stored_nxdn[3].conv.squelch = NXDN_SQUELCH_RAN;
+	stored_nxdn[3].target = 2001;
+	stored_nxdn[3].target_unit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.run.rate=4800\nnxdn.run.rx_ran=7\nnxdn.run.tx_ran=8\nnxdn.run.rx_gid=0\n") != NULL);
+	CHECK(strstr(buf, "nxdn.run.unit_call=1\nnxdn.run.tx_dst=2001\n") != NULL);
+	CHECK(v->talk == 2001 && (v->flags & RADIO_NXDN_TALK_UNIT) && !(v->flags & RADIO_NXDN_9600));
+	// Selective with a unit target: all and unit calls to us only
+	stored_nxdn[3].conv.squelch = NXDN_SQUELCH_SELECTIVE;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(strstr(buf, "nxdn.run.rx_gid=65535\n") != NULL);
+
+	// No mode change for now on a channel of a kind: its mode is the kind's
+	req(RREQ_MODE, RADIO_MODE_FM);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && radio_nxdn_running() && !(sm.view.temp & RADIO_TEMP_MODE));
+	// Receive only from the tag: PTT refused as on any channel
+	chans[3].rx_only = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_RX_ONLY && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	chans[3].rx_only = false;
+	// The editor's feature list says NXDN here
+	CHECK(strstr(build_modes_now(), "NXDN,") != NULL);
+
+	// A board that can't carry NXDN: parked (DMR modem off, never keyed), and no NXDN in the feature list
+	air_nofit = true;
+	req(RREQ_ZONE_POS, 0);
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && !radio_nxdn_running() && !sm.dmr_running && hw_mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_MODE && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	CHECK(strstr(build_modes_now(), "NXDN,") == NULL && build_features_now()[0] != '\0');
+	air_nofit = false;
+
+	// The VFO keeps the settings
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	nxdn_view_text(buf, sizeof buf);
+	CHECK(sm.view.vfo && strstr(buf, "nxdn.run.rx_ran=0\n") != NULL && strstr(buf, "nxdn.run.unit_id=1\n") != NULL);
+
+	// Saved as a channel (the editor's New from current): a stored NXDN channel from the NXDN settings, its contact
+	// the stored one of the talk target
+	s = nxdn_default_set;
+	s.rate9600 = false;
+	s.rx_ran = 12;
+	s.tx_ran = 13;
+	s.rx_gid = 9;
+	s.tx_dst = 9;
+	radio_req_nxdn_settings(&s);
+	run(20);
+	memset(&nxdn_saved, 0, sizeof nxdn_saved);
+	channel_t ed = sm.view.ch;
+	CHECK(ed.mode == RADIO_MODE_NXDN && ed.kind == CODEPLUG_KIND_NONE);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 6 && !nxdn_saved.conv.rate9600 && nxdn_saved.conv.rx_ran == 12 &&
+	      nxdn_saved.conv.tx_ran == 13);
+	CHECK(nxdn_saved.conv.squelch == NXDN_SQUELCH_SELECTIVE && nxdn_saved.ch.contact == 3);
+	// No stored contact for the group: none (group 1); RAN squelch
+	s.tx_dst = 4242;
+	s.rx_gid = 0;
+	radio_req_nxdn_settings(&s);
+	run(20);
+	CHECK(ui_svc_write_channel(6, &ed, 0));
+	storage_job_poll();
+	CHECK(nxdn_saved.ch.contact == 0 && nxdn_saved.conv.squelch == NXDN_SQUELCH_RAN);
+	nxdn_defaults();
+	// A copy of the stored NXDN channel at another number takes its tag; edited in place, the tag follows by itself
+	ed = chans[3];
+	sim_tag_copy_from = 0;
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_write_channel(7, &ed, 3));
+	storage_job_poll();
+	CHECK(sim_tag_copy_from == 3 && chans[7].kind == CODEPLUG_KIND_NXDN && nxdn_saved.number == 0);
+	// The channel editor's RAN and rate (ui_svc_write_channel_air): the stored channel written again with its block
+	ui_air_conv_t air = { .nxdn = { .rate9600 = false, .rx_ran = 17, .tx_ran = 17, .squelch = NXDN_SQUELCH_RAN } };
+	sim_tag_copy_from = 0;
+	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 3 && nxdn_saved.conv.rx_ran == 17 && !nxdn_saved.conv.rate9600 && sim_tag_copy_from == 0);
+	// As a copy: the source's tag first, then the block
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_write_channel_air(8, &ed, 3, &air));
+	storage_job_poll();
+	CHECK(nxdn_saved.number == 8 && nxdn_saved.conv.rx_ran == 17 && sim_tag_copy_from == 3);
+	sim_tag_copy_from = 0;
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_write_channel(3, &ed, 3));
+	storage_job_poll();
+	CHECK(sim_tag_copy_from == 0 && nxdn_saved.number == 0);
+	// A channel in NXDN for now, saved: a stored NXDN channel too
+	req(RREQ_MODE, RADIO_MODE_FM);
+	req(RREQ_VFO, 0);
+	req(RREQ_ZONE_POS, 0);
+	CHECK(sm.view.ch.kind == CODEPLUG_KIND_NONE && sm.view.channel_number != 0);
+	uint16_t plain = sm.view.channel_number;
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	CHECK(sm.view.ch.mode == RADIO_MODE_NXDN && (sm.view.temp & RADIO_TEMP_MODE));
+	nxdn_saved.number = 0;
+	CHECK(ui_svc_save_channel());
+	storage_job_poll();
+	CHECK(nxdn_saved.number == plain);
+	req(RREQ_MODE, RADIO_MODE_FM);
+	nfar_stop();
+	memset(stored_nxdn, 0, sizeof(stored_nxdn));
+}
+
+#if CONFIG_NXDN_SCRAMBLER
+static void test_nxdn_system(void)
+{
+	setup_codeplug_nxdn();
+	add(3, "NXDN system", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_NXDN;
+	chans[3].system = 2;
+	stored_nxdn[3] = (nxdn_conv_cfg_t){ .conv = { .rate9600 = true, .rx_ran = 7, .tx_ran = 7 },
+					    .unit_id = 4321, .target = 20,
+					    .tx_cipher = NXDN_CIPHER_SCRAMBLE, .tx_key_id = 12 };
+	start();
+	nxdn_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	nfar_begin(true, 7, 2001, false, 20);
+	nxdn_engine_cfg_t cfg = nfar.cfg;
+	cfg.tx_cipher = NXDN_CIPHER_SCRAMBLE;
+	cfg.tx_key_id = 12;
+	cfg.system = 2;
+	nxdn_engine_set(&nfar, &cfg);
+	CHECK(nxdn_engine_tx_prepare(&nfar) && nxdn_engine_tx_go(&nfar));
+	nfar_tx = true;
+	run(800);
+	CHECK((sm.view.nxdn.flags & (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED)) == (RADIO_NXDN_ENC | RADIO_NXDN_PLAYED));
+	nxdn_engine_tx_stop(&nfar);
+	run(500);
+	req(RREQ_PTT, 1);
+	run(600);
+	CHECK(nfar_heard.starts == 1 && nfar_heard.call.vcall.src == 3333 &&
+	      nfar_heard.call.vcall.cipher == NXDN_CIPHER_SCRAMBLE && nfar_heard.call.vcall.key_id == 12);
+	req(RREQ_PTT, 0);
+	run(500);
+	nfar_stop();
+
+	channel_t override = sm.view.ch;
+	radio_nxdn_settings_t active;
+	override.dmr_id = 4321;
+	radio_nxdn_apply(&override, 3);
+	CHECK(radio_nxdn_in_force(&active) && active.unit_id == 4321);
+
+	stored_nxdn[3].tx_key_id = 13;
+	radio_nxdn_apply(&sm.view.ch, 3);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state != RS_TX && !hw.keyed);
+	req(RREQ_PTT, 0);
+}
+#endif
+
+static void test_nxdn(void)
+{
+	test_nxdn_rx();
+	test_nxdn_tx();
+#if CONFIG_NXDN_SCRAMBLER
+	test_nxdn_system();
+#endif
+	test_nxdn_mode();
+	test_nxdn_stored();
+#if CONFIG_SCAN
+	test_nxdn_scan();
+#if CONFIG_P25
+	test_scan_every_mode();
+#endif
+#if CONFIG_DUAL_WATCH
+	test_nxdn_dual();
+#endif
+#endif
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+	if (radio_nxdn_running()) {
+		radio_nxdn_end();
+	}
+}
+#endif
+
+#if CONFIG_AIR
+static void air_step(void)
+{
+	air_step1(0);
+	air_step1(1);
+#if CONFIG_P25
+	far_step();
+#endif
+#if CONFIG_NXDN
+	nfar_step();
+#endif
+}
+#endif
+
+#if CONFIG_DMR_TRUNK_TX
+// A Tier III site on the sim: TS1 of 450.0125 is the TSCC (C_ALOHA, no registration asked), LCN 1 is that carrier
+#define T3_OWN		2345679u
+#define T3_TG		1u
+#define T3_RX_HZ	450012500u
+#define T3_TX_HZ	455012500u
+
+// A site's PDU comes when the radio can hear it: not in the middle of the radio's own burst list
+static void t3_quiet(void)
+{
+	for (int i = 0; i < 60 && dmr_call_data_busy(); i++) {
+		run(5);
+	}
+}
+
+static void t3_csbk_rx(const t3_csbk_t *p, int8_t ts)
+{
+	t3_quiet();
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = DMR_BURST_CSBK;
+	b.sync = DMR_SYNC_BS;
+	b.ts = ts;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = T3_CSBK_BYTES;
+	CHECK(t3_csbk_build(p, T3_CRC_MASK_CSBK, b.payload));
+	sim_rx(&b);
+}
+
+static uint16_t t3_site_code;	// the TSCC's system code when not 0 (another network's), else t3_code()
+
+static uint16_t t3_code(void)
+{
+	if (t3_site_code != 0) {
+		return t3_site_code;
+	}
+	t3_syscode_t c = { T3_MODEL_SMALL, 5, 1, T3_PAR_A };
+	return t3_syscode_join(&c);
+}
+
+static bool t3_site_offset;	// the TSCC's Aloha says offset timing
+
+// The TSCC for ms: an Aloha on TS1 every frame
+static void t3_site_run(uint32_t ms)
+{
+	for (uint32_t t = 0; t < ms; t += 60) {
+		t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+		a.u.aloha.syscode = t3_code();
+		a.u.aloha.nrand_wait = 6;
+		a.u.aloha.backoff = 1;
+		a.u.aloha.version = 2;
+		a.u.aloha.offset = t3_site_offset;
+		t3_csbk_rx(&a, 1);
+		run(60);
+	}
+}
+
+static unsigned t3_sent(uint8_t op)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == op) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// PTT on the TSCC asks for the call, held through the wait (the request is sent, not refused as talking), and on
+// the grant the radio talks; with nothing heard while it talks, the call stays up (its own TX is the activity)
+// Stage the test system and select it: the radio camps on its TSCC
+static void t3_stage_with(uint16_t opts, const uint8_t *key)
+{
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = opts;
+	if (key != NULL) {
+		s->cfg.auth_key_set = true;
+		memcpy(s->cfg.auth_key, key, T3_AUTH_KEY_LEN);
+	}
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+}
+
+static void t3_stage_start(void)
+{
+	t3_stage_with(T3_OPT_PRIVATE | T3_OPT_STUN, NULL);
+}
+
+static void t3_data_rx(uint8_t kind, const uint8_t *d, int8_t ts)
+{
+	if (kind == DMR_BURST_DATA_HEADER) {
+		t3_quiet();	// a UDT's blocks follow its header in the next frames: wait only before the header
+	}
+	dmr_burst_t b;
+	memset(&b, 0, sizeof(b));
+	b.kind = kind;
+	b.sync = DMR_SYNC_BS;
+	b.ts = ts;
+	b.cc = 2;
+	b.crc_ok = true;
+	b.in_step = true;
+	b.len = T3_CSBK_BYTES;
+	memcpy(b.payload, d, T3_CSBK_BYTES);
+	sim_rx(&b);
+}
+
+// Random access on the TSCC (TS1) reads the AT bit of the CACH describing its inbound: with aligned timing that is the
+// CACH naming slot 2 (361-1 table 5.1, 4.5), so a call on the other slot doesn't block it; with offset timing, slot 1's
+static bool t3_at_case(bool offset, uint8_t busy)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	sim.at_busy = busy;
+	t3_site_offset = offset;
+	t3_stage_start();
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	t3_site_run(900);
+	bool sent = t3_sent(T3_OP_C_RAND) > before;
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+	sim.at_busy = 0;
+	t3_site_offset = false;
+	return sent;
+}
+
+static void test_t3_at(void)
+{
+	CHECK(t3_at_case(false, 1));	// aligned: slot 1's CACH (TS2's inbound) busy, the TSCC's free
+	CHECK(!t3_at_case(false, 2));	// aligned: slot 2's CACH (the TSCC's inbound) busy
+	CHECK(!t3_at_case(true, 1));	// offset: slot 1's own
+	CHECK(t3_at_case(true, 2));
+}
+
+// A refused send is counted under its reason (t3.send_* view keys), nothing goes on the air and send_fail counts every
+// one: here the board refuses to key for each of the engine's tries at a call request
+static void test_t3_send_refused(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t fail = radio_t3v.send_fail;
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	tx_fail = true;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.send_key >= 1 && radio_t3v.send_fail >= fail + radio_t3v.send_key);
+	CHECK(radio_t3v.send_limit == 0 && radio_t3v.send_slot == 0 && radio_t3v.send_stack == 0);
+	CHECK(t3_sent(T3_OP_C_RAND) == before);
+	req(RREQ_PTT, 0);
+	run(100);
+	tx_fail = false;
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+static void test_t3_talk(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	CHECK(sm.view.dmr.own_id == T3_OWN);
+
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait && t3_sent(T3_OP_C_RAND) > before);
+	CHECK(radio_t3v.send_fail == 0);
+	// The site's bursts go on after our C_RAND: the turnaround is measured, short on the simulated modem
+	CHECK(radio_t3v.turns >= 1 && radio_t3v.turn_ms <= 90 && radio_t3v.turn_max_ms >= radio_t3v.turn_ms &&
+	      radio_t3v.turn_slow == 0);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.can_talk);
+	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
+
+	run(4000);		// longer than TV_Inactive, nothing heard
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	CHECK(radio_t3v.returns == 0);
+
+	req(RREQ_PTT, 0);
+	// The call's hang, filled with idle bursts: a signal, so the call stays (6.6.2.3.2.9 a)
+	static const uint8_t idle[T3_CSBK_BYTES];
+	for (int i = 0; i < 70; i++) {
+		t3_data_rx(DMR_BURST_IDLE, idle, 2);
+		run(60);
+	}
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.returns == 0);
+	sim.ticks_only = true;	// then nothing (the modem's slot numbers run on): the inactivity timer ends it
+	run(4000);
+	CHECK(radio_t3v.state != T3_FOLLOW && sm.view.state != RS_TX);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+	sim.ticks_only = false;
+}
+
+// Voice bursts the radio sent on TS2 (the payload slot of a one-carrier site)
+static unsigned ts2_voice(void)
+{
+	unsigned n = 0;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if ((sim.air[i].kind == DMR_BURST_VOICE || sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) && sim.air[i].ts == 2) {
+			n++;
+		}
+	}
+	return n;
+}
+
+// A one-carrier site: TSCC on TS1, the call granted on TS2 of the same LPCN. The site sends Late_Entry grants and
+// P_PROTECT(ILLEGALLY_PARKED) naming the call in its gaps, Message_Accepted, and a P_CLEAR naming an LPCN the radio
+// doesn't know. The caller talks through all of it; a Message_Accepted before the grant doesn't end the ask
+static void test_t3_one_carrier(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	unsigned v0 = ts2_voice();
+	// The payload slot: Late_Entry grants and P_PROTECT(ILLEGALLY_PARKED) naming the call
+	for (int i = 0; i < 50; i++) {
+		t3_csbk_t p;
+		if (i % 2) {
+			p = g;
+			p.u.grant.late_entry = true;
+		} else {
+			p = (t3_csbk_t){ .lb = true, .op = T3_OP_P_PROTECT };
+			p.u.protect.kind = T3_PROTECT_ILLEGALLY_PARKED;
+			p.u.protect.group = true;
+			p.u.protect.dst = T3_TG;
+			p.u.protect.src = T3_OWN;
+		}
+		t3_csbk_rx(&p, 2);
+		run(60);
+	}
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX && radio_t3v.returns == 0);
+	CHECK(ts2_voice() - v0 > 20);
+	// The call's end: C_ACKD Message_Accepted (MS <- TG), then P_CLEAR to an LPCN never programmed
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = T3_TG;
+	t3_csbk_rx(&a, 2);
+	run(60);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(800);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.lpcn = 622;
+	c.u.clear.dst = T3_ID_ALLMSI;
+	c.u.clear.src = T3_ID_TSI;
+	c.u.clear.group = true;
+	t3_csbk_rx(&c, 2);
+	run(200);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.tscc_lcn == 1 && radio_t3v.rx_hz == T3_RX_HZ);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+
+	// Message_Accepted to the ask before the grant comes (the site acknowledging the C_RAND): the ask goes on
+	dmr_start(true);
+	t3_stage_start();
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(radio_t3v.ptt_wait);
+	t3_csbk_rx(&a, 1);
+	t3_site_run(200);
+	CHECK(radio_t3v.ptt_wait && sm.view.state != RS_TX_DENIED);
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(500);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// Short data: the upload goes out as a UDT header and its blocks in consecutive frames of the TSCC's slot; a download
+// to the radio is kept and answered
+static void test_t3_sdata(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	radio_t3_setup_t *s = radio_t3_staged();
+	s->sd_dst = 1000001u;
+	s->sd_group = false;
+	s->sd_format = T3_UDTF_ISO8;
+	memcpy(s->sd_data, "hello trunk world", 17);
+	s->sd_len = 17;
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	req(RREQ_T3, RADIO_T3_SDATA);
+	t3_site_run(600);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.blocks = 1;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SDMI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER) {
+			hdr = (int)i;
+			break;
+		}
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 2u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 2u < sim.air_count) {
+		const sim_air_t *a = &sim.air[hdr];
+		t3_udt_t u;
+		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
+		      u.blocks == 2 && u.format == T3_UDTF_ISO8);
+		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
+		// One frame apart each: consecutive inbound slots of the TSCC's slot
+		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
+		uint8_t blk[2][T3_UDT_BLOCK];
+		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
+		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, "hello trunk world", 17) == 0);
+	}
+	CHECK(radio_t3v.send_fail == 0);
+
+	// A download to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = T3_OWN, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"hi there", 8, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	before = t3_sent(T3_OP_C_ACKU);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.sd_count == 1 && radio_t3v.sd_len == 8 && memcmp(radio_t3v.sd_data, "hi there", 8) == 0 &&
+	      radio_t3v.sd_src == 1000001u);
+	CHECK(t3_sent(T3_OP_C_ACKU) > before);
+	// ... into the message inbox, as a message from the sender
+	int msgs = sms_inbox_count();
+	CHECK(msgs >= 1);
+	if (msgs >= 1) {
+		const dmrDataMessage_t *m = dmrDataServiceMessage(0);
+		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread);
+	}
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+static void test_t3_udt_sms(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	static const uint8_t expected[] = { 0, 'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0, '!' };
+	unsigned before = t3_sent(T3_OP_C_RAND);
+	CHECK(sms_send(1000001u, false, "Hello!", true, DMR_SMS_FORMAT_DEFAULT));
+	t3_site_run(600);
+	CHECK(t3_sent(T3_OP_C_RAND) > before && radio_t3v.ax_svc == T3_SVC_SDATA);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.blocks = 1;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SDMI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER) {
+			hdr = (int)i;
+			break;
+		}
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 2u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 2u < sim.air_count) {
+		const sim_air_t *a = &sim.air[hdr];
+		t3_udt_t u;
+		CHECK(t3_udt_parse(a->payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == 1000001u && u.src == T3_OWN &&
+		      u.blocks == 2 && u.format == T3_UDTF_UTF16);
+		CHECK(sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA && sim.air[hdr + 2].kind == DMR_BURST_RATE_12_DATA);
+		// One frame apart each: consecutive inbound slots of the TSCC's slot
+		CHECK(sim.air[hdr + 1].slot == a->slot + 2u && sim.air[hdr + 2].slot == a->slot + 4u);
+		uint8_t blk[2][T3_UDT_BLOCK];
+		memcpy(blk[0], sim.air[hdr + 1].payload, T3_UDT_BLOCK);
+		memcpy(blk[1], sim.air[hdr + 2].payload, T3_UDT_BLOCK);
+		CHECK(t3_udt_crc_ok((const uint8_t (*)[T3_UDT_BLOCK])blk, 2) && memcmp(blk, expected, sizeof expected) == 0);
+	}
+	CHECK(radio_t3v.send_fail == 0);
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = 1000001u;
+	t3_csbk_rx(&ack, 1);
+	t3_site_run(180);
+	CHECK(sms_send_state() == DMR_REQ_OK);
+
+	// A download to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = T3_OWN, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"hi there", 8, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	before = t3_sent(T3_OP_C_ACKU);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.sd_count == 1 && radio_t3v.sd_len == 8 && memcmp(radio_t3v.sd_data, "hi there", 8) == 0 &&
+	      radio_t3v.sd_src == 1000001u);
+	CHECK(t3_sent(T3_OP_C_ACKU) > before);
+	// ... into the message inbox, as a message from the sender
+	int msgs = sms_inbox_count();
+	CHECK(msgs >= 1);
+	if (msgs >= 1) {
+		const dmrDataMessage_t *m = dmrDataServiceMessage(0);
+		CHECK(m->src == 1000001u && !m->group && strcmp(m->text, "hi there") == 0 && m->unread &&
+		      m->format == DMR_SMS_FORMAT_T3_UDT);
+	}
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+// Packet data (6.6.3): the data service's message waits while the radio asks the TSCC for a data channel, then goes on
+// the granted slot without preambles; data to the radio on a payload channel reaches the data service
+static void test_t3_pdata(bool automatic)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	unsigned from = sim.air_count;
+	if (!automatic)
+		CHECK(ui_svc_setting_set(UI_SET_MSG_FORMAT, DMR_SMS_FORMAT_ETSI_IP));
+	CHECK(sms_send(1000001u, false, automatic ? "123456789012345678901234" : "Hello!",
+		       false, DMR_SMS_FORMAT_DEFAULT));
+	t3_site_run(600);
+	CHECK(radio_t3v.pd_wait && radio_t3v.ax_svc == T3_SVC_PDATA);
+	int rand_at = -1;
+	bool data_early = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_RAND) {
+			rand_at = (int)i;
+		}
+		data_early |= sim.air[i].kind == DMR_BURST_DATA_HEADER;
+	}
+	CHECK(rand_at >= 0 && !data_early);
+	if (rand_at >= 0) {
+		t3_csbk_t q;
+		CHECK(t3_csbk_parse(sim.air[rand_at].payload, &q) && q.u.rand.kind == T3_SK_IND_DATA &&
+		      q.u.rand.dst == 1000001u && q.u.rand.src == T3_OWN);
+	}
+
+	// The grant: on TS2 of the channel, the data goes once settled
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PD_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = 1000001u;
+	g.u.grant.src = T3_OWN;
+	t3_quiet();
+	from = sim.air_count;
+	t3_csbk_rx(&g, 1);
+	run(1500);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data && !radio_t3v.can_talk && sm.view.ch.timeslot == 2);
+	CHECK(!radio_t3v.pd_wait);
+	int hdr = -1;
+	unsigned csbks = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_DATA_HEADER && hdr < 0) {
+			hdr = (int)i;
+		}
+		csbks += hdr < 0 && sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(hdr >= 0 && csbks == 0);	// no preambles
+	if (hdr >= 0) {
+		const uint8_t *h = sim.air[hdr].payload;
+		uint32_t dst = ((uint32_t)h[2] << 16) | ((uint32_t)h[3] << 8) | h[4];
+		uint32_t src = ((uint32_t)h[5] << 16) | ((uint32_t)h[6] << 8) | h[7];
+		CHECK(dst == 1000001u && src == T3_OWN && (h[0] & 0x80) == 0);
+		CHECK((unsigned)hdr + 1u < sim.air_count && sim.air[hdr + 1].kind == DMR_BURST_RATE_12_DATA);
+	}
+	CHECK(sms_send_state() == DMR_REQ_OK);
+	// PTT on a call the radio may not talk on: the reason is that call's, not the last request's (granted)
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_DENIED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = 1000001u;
+	t3_csbk_rx(&c, 2);
+	run(300);
+	CHECK(radio_t3v.state == T3_CAMPED);
+
+	// Data to the radio: the TSCC's check is answered, PD_GRANT followed, the text taken by the data service
+	unsigned acks = t3_sent(T3_OP_C_ACKU);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) > acks);
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(500);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data);
+	int inbox = sms_inbox_count();
+	dmrBurst_t b[16];
+	int n = dmrDataBuildIPText(false, T3_OWN, 1000001u, "hi radio", DMR_TYPE_RATE_1_2, 0, b, 16);
+	CHECK(n >= 2);
+	for (int i = 0; i < n; i++) {
+		t3_data_rx(b[i].dataType, b[i].payload, 2);
+		run(60);
+	}
+	run(500);
+	CHECK(sms_inbox_count() == inbox + 1);
+	dmrDataMessage_t m;
+	CHECK(sms_inbox_get(0, &m) && m.src == 1000001u && strcmp(m.text, "hi radio") == 0 &&
+	      m.format == DMR_SMS_FORMAT_ETSI_IP);
+	CHECK(sms_inbox_delete(0));	// the inbox as the later tests expect it
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+// The last C_RAND sent at or after from with this Service_Kind; false when none
+static bool t3_rand_since(unsigned from, uint8_t kind, t3_csbk_t *q)
+{
+	bool found = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		t3_csbk_t c;
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_RAND &&
+		    t3_csbk_parse(sim.air[i].payload, &c) && c.u.rand.kind == kind) {
+			*q = c;
+			found = true;
+		}
+	}
+	return found;
+}
+
+static uint8_t t3_rand_status(const t3_csbk_t *q)
+{
+	return (uint8_t)(((q->u.rand.options & 0x1Fu) << 2) | (q->u.rand.extra & 3u));
+}
+
+static void test_t3_incoming_foacsu(void)
+{
+	const uint32_t caller = 1000001u;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.kind_flag = true;
+	h.u.ahoy.src = caller;
+	h.u.ahoy.dst = T3_OWN;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.ring_src == caller);
+	bool alerted = false;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		t3_csbk_t a;
+		if (sim.air[i].kind == DMR_BURST_CSBK && t3_csbk_parse(sim.air[i].payload, &a) &&
+		    a.op == T3_OP_C_ACKU && a.u.ack.reason == T3_RC_MS_ALERTING && a.u.ack.dst == caller) {
+			alerted = true;
+		}
+	}
+	CHECK(alerted);
+
+	from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_REJECT);
+	t3_site_run(600);
+	t3_csbk_t rejected;
+	CHECK(t3_rand_since(from, T3_SK_ANSWER, &rejected) && rejected.u.rand.dst == caller &&
+	      rejected.u.rand.extra == 0x2u);
+
+	// Start with a fresh TSCC after the independent rejection exchange.
+	req(RREQ_T3, RADIO_T3_STOP);
+	t3_stage_start();
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	req(RREQ_PTT, 0);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_ANSWER, &q) && q.u.rand.dst == caller);
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.ring_src == 0);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = caller;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.ax_result == T3_RES_GRANTED);
+	CHECK(!sm.ptt && !sm.dmr_keyed && sm.view.state != RS_TX);
+
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+static void test_t3_foacsu_ptt_release(void)
+{
+	const uint32_t called = 1000001u;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | called));
+
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == called);
+
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = called;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait);
+
+	from = sim.air_count;
+	req(RREQ_PTT, 0);
+	t3_site_run(300);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
+	CHECK(!t3_rand_since(from, T3_SK_CANCEL, &q));
+	radio_sm_t3_brief(&sm);
+	CHECK(sm.view.t3.alerting);
+
+	req(RREQ_T3, RADIO_T3_CANCEL);
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_CANCEL, &q) && q.u.rand.dst == called);
+	radio_sm_t3_brief(&sm);
+	CHECK(!sm.view.t3.alerting && !radio_t3v.ptt_wait);
+
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	a.u.ack.reason = T3_RC_MS_ALERTING;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(100);
+	req(RREQ_PTT, 0);
+	t3_site_run(100);
+	CHECK(radio_t3v.ptt_wait && !sm.ptt);
+
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = called;
+	g.u.grant.src = T3_OWN;
+	t3_csbk_rx(&g, 1);
+	run(200);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.can_talk && !radio_t3v.ptt_wait);
+	CHECK(!sm.ptt && sm.view.state != RS_TX && !sm.dmr_keyed);
+
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX && sm.view.ch.timeslot == 2);
+	req(RREQ_PTT, 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// A radio check on a trunked system goes as a status poll (6.6.6.2): the poll's acknowledgement is the check's answer;
+// a refusal fails it at once, without the conventional retries
+static void test_t3_radio_check(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint8_t kind;
+	uint32_t dst;
+	unsigned from = sim.air_count;
+	CHECK(dmr_signal_radio_check(1000001u));
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_POLL && q.u.rand.dst == 1000001u &&
+	      !(q.u.rand.options & 0x40u));
+	CHECK(air_count(from, DMR_BURST_CSBK, DMR_CSBKO_RADIO_CHECK) == 0);	// no conventional check on the TSCC
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_SENDING);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MS_POLL_ACCEPTED;
+	a.u.ack.info = 5;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = 1000001u;
+	t3_csbk_rx(&a, 1);
+	t3_site_run(300);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_OK && dst == 1000001u);
+
+	// Refused (the polled MS isn't there)
+	from = sim.air_count;
+	CHECK(dmr_signal_radio_check(1000002u));
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && q.u.rand.dst == 1000002u);
+	t3_csbk_t n = { .lb = true, .op = T3_OP_C_ACKD };
+	n.u.ack.reason = T3_RC_MS_AWAY;
+	n.u.ack.dst = T3_OWN;
+	n.u.ack.src = 1000002u;
+	t3_csbk_rx(&n, 1);
+	t3_site_run(300);
+	CHECK(dmr_signal_state(&kind, &dst) == DMR_REQ_FAILED && dst == 1000002u);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// What the trunking engine sends by itself (here the answer to the TSCC's check before data to us) keys nothing with
+// TX inhibit on: it goes through the same gate as PTT. With the inhibit off the same check is answered
+static void test_t3_inhibit(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	radio_settings_t set = sm.set;
+	set.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &set, now);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	unsigned air = sim.air_count, acks = t3_sent(T3_OP_C_ACKU);
+	unsigned inh = radio_t3v.send_inhibit, key = radio_t3v.send_key;
+	int tx = hw.tx_calls;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(sim.air_count == air && t3_sent(T3_OP_C_ACKU) == acks && hw.tx_calls == tx && !sm.dmr_keyed);
+	CHECK(radio_t3v.send_inhibit > inh && radio_t3v.send_key == key);	// counted as inhibit, not a board refusal
+	set.tx_inhibit = false;
+	radio_sm_set_settings(&sm, &set, now);
+	t3_site_run(3000);
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) > acks);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+#if CONFIG_DMR_TRUNK_GW
+// Digits from the UI (RREQ_T3_DIAL) go to the system in use: PTT to the PSTN gateway asks for the call, and the
+// digits go up when the gateway asks; an empty string drops them, and the call is refused again
+static void test_t3_dial(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t w[2];
+	radio_t3_dial_args("5551234", w);
+	CHECK(w[0] == 0x5551234Fu && w[1] == 0xFFFFFFFFu);
+	radio_t3_dial_args("0123456789*#01234567", w);	// the first 16
+	CHECK(w[0] == 0x01234567u && w[1] == 0x89AB0123u);
+	radio_t3_dial_args("5551234", w);
+	radio_req_t r = { RREQ_T3_DIAL, (int32_t)w[0], w[1] };
+	radio_sm_request(&sm, &r, now);
+	req(RREQ_DMR_TARGET, (int32_t)((1u << 24) | T3_ID_PSTNI));
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == T3_ID_PSTNI);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_PSTNI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.sf && u.dst == T3_ID_PSTNI && u.format == T3_UDTF_BCD);
+		CHECK(memcmp(sim.air[hdr + 1].payload, "\x55\x51\x23\x4f", 4) == 0);
+	}
+	req(RREQ_PTT, 0);
+	t3_site_run(4000);	// unanswered: NRand_NR tries of NWait + 2 frames and the backoff, then free again
+
+	// The focused row's target (one call) goes before the one chosen for now
+	req(RREQ_DMR_FOCUS, (int32_t)((1u << 24) | 1000001u));
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(t3_rand_since(from, T3_SK_IND_VOICE, &q) && q.u.rand.dst == 1000001u);
+	req(RREQ_PTT, 0);
+	req(RREQ_DMR_FOCUS, 0);
+	t3_site_run(3000);
+
+	// No digits: refused, nothing asked for
+	radio_t3_dial_args("", w);
+	r = (radio_req_t){ RREQ_T3_DIAL, (int32_t)w[0], w[1] };
+	radio_sm_request(&sm, &r, now);
+	from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	CHECK(!t3_rand_since(from, T3_SK_IND_VOICE, &q));
+	req(RREQ_PTT, 0);
+	req(RREQ_DMR_TARGET_CLEAR, 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+#endif
+
+// A selective clear on a payload slot of the TSCC's own carrier (6.6.2.3.2.7): the P_ACKU goes out on that slot before
+// the radio returns, and once back on the TSCC the radio ignores the clear's repeats on the payload slot
+static void test_t3_clear_slot(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_CANCEL;
+	h.u.ahoy.group = true;
+	h.u.ahoy.dst = T3_TG;
+	h.u.ahoy.src = T3_ID_TSI;
+	unsigned from = sim.air_count;
+	t3_csbk_rx(&h, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	unsigned acks = 0;
+	int8_t ts = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_P_ACKU) {
+			acks++;
+			ts = sim.air[i].ts;
+		}
+	}
+	CHECK(acks == 1 && ts == 2);
+	// The clear again, on the payload slot, while camped: not the TSCC's slot, not answered
+	h.u.ahoy.group = false;
+	h.u.ahoy.dst = T3_OWN;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 2);
+	t3_site_run(600);
+	unsigned after = 0;
+	for (unsigned i = from; i < sim.air_count; i++) {
+		after += sim.air[i].kind == DMR_BURST_CSBK;
+	}
+	CHECK(after == 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// Emergency on a trunked system: the alarm is status 126 to the target, acknowledged once (no repeats); the call
+// asks with the emergency option; the end of the emergency sends status 124; status 126 heard raises the alert
+static void test_t3_emergency(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_ALARM_CALL;
+	es.hot_mic_s = 2;
+	es.alarm_tries = 3;
+	dmr_emergency_set_settings(&es);
+	run(20);
+	unsigned from = sim.air_count;
+	CHECK(dmr_emergency_start());
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY &&
+	      (q.u.rand.options & 0x40u) && q.u.rand.dst == T3_TG);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ALARM);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = T3_TG;
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(600);
+	// Acknowledged: no second alarm; the hot mic asks for an emergency call to the same group
+	t3_csbk_t v;
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));
+	CHECK(t3_rand_since(from, T3_SK_TG_VOICE, &v) && (v.u.rand.options & T3_SO_EMERGENCY) && v.u.rand.dst == T3_TG);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	g.u.grant.emergency = true;
+	t3_csbk_rx(&g, 1);
+	run(500);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	run(2500);	// the hot mic runs out
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_ACTIVE && sm.view.state != RS_TX);
+	req(RREQ_T3, RADIO_T3_END);
+	run(400);
+	CHECK(radio_t3v.state == T3_CAMPED);
+
+	// Canceled: status 124 to the alarm's target
+	from = sim.air_count;
+	dmr_emergency_cancel();
+	t3_site_run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY_CANCEL &&
+	      q.u.rand.dst == T3_TG);
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(600);
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));	// once
+
+	// Heard: another MS's status 126 to our group raises the alarm alert
+	dmr_emergency_stats_t s0, s1;
+	dmr_emergency_get_stats(&s0);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_STATUS;
+	h.u.ahoy.group = true;
+	h.u.ahoy.options = T3_STATUS_EMERGENCY >> 2;
+	h.u.ahoy.blocks = T3_STATUS_EMERGENCY & 3;
+	h.u.ahoy.dst = T3_TG;
+	h.u.ahoy.src = 1000002u;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	dmr_emergency_get_stats(&s1);
+	dmr_emergency_alert_t al;
+	CHECK(s1.alerts_alarm == s0.alerts_alarm + 1 && dmr_emergency_alert(&al) && al.src == 1000002u && al.dst == T3_TG);
+	dmr_emergency_dismiss();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	dmr_emergency_settings_default(&es);
+	dmr_emergency_set_settings(&es);
+	run(20);
+	sim.repeater = false;
+}
+// A stun outlasts leaving the system and coming back; PTT is refused while stunned; the revive lifts it
+// A broadcast talkgroup: PTT asks with the broadcast option; on the BTV_GRANT the voice LC carries the broadcast
+// service option (361-2 5.3.3.1)
+static void test_t3_broadcast(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	radio_t3_staged()->cfg.tg[0].flags |= T3_TG_BROADCAST;
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	unsigned from = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_TG_VOICE, &q) && (q.u.rand.options & T3_SO_BROADCAST) && q.u.rand.dst == T3_TG);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_BTV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_TG;
+	g.u.grant.src = T3_OWN;
+	from = sim.air_count;
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.state == RS_TX);
+	bool found = false;
+	for (unsigned i = from; i < sim.air_count && !found; i++) {
+		if (sim.air[i].kind == DMR_BURST_VOICE_LC_HEADER) {
+			dmr_lc_t l;
+			air_lc(i, &l);
+			CHECK((l.svc & DMR_SVC_BROADCAST) && l.dst == T3_TG);
+			found = true;
+		}
+	}
+	CHECK(found);
+	req(RREQ_PTT, 0);
+	run(400);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// An ALS call to the radio (6.6.2.6): the radio check accepted, then on the caller's private grant the radio transmits
+// with no PTT until T_ALS, sends its terminator and P_MAINT, and goes back to the TSCC
+static void test_t3_als(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	radio_t3_staged()->cfg.opts |= T3_OPT_ALS;
+	radio_t3_staged()->cfg.als_s = 2;
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_VOICE;
+	h.u.ahoy.als = true;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = 1000001u;
+	unsigned acks = t3_sent(T3_OP_C_ACKU);
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(t3_sent(T3_OP_C_ACKU) == acks + 1u);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_OWN;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(600);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_als && radio_t3v.als_calls == 1);
+	CHECK(sm.view.state == RS_TX);
+	unsigned maints = t3_sent(T3_OP_P_MAINT);
+	run(2200);
+	CHECK(sm.view.state != RS_TX);
+	CHECK(t3_sent(T3_OP_P_MAINT) > maints);
+	run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// Trunked channels in the codeplug (dmr-trunking-codeplug.md): system n's record and its control channel. opts: the
+// block's options, plus two bits these tests give the header's flags with: 0x0800 the system needs a key,
+// T3_OPT_LISTEN_ONLY no transmit side
+#define T3_CP_NEEDS_KEY	0x0800u
+#define SYS_IP_GW	0x1000u
+static void t3_cp_system(uint8_t n, uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const char *fb_name)
+{
+	uint8_t v[CODEPLUG_SYS_HDR + 39];
+	uint8_t *b = &v[CODEPLUG_SYS_HDR];
+	memset(v, 0, sizeof(v));
+	v[0] = CODEPLUG_SYSTYPE_DMR_TRUNK;
+	v[1] = (uint8_t)(((opts & T3_CP_NEEDS_KEY) != 0 ? CODEPLUG_SYS_NEEDS_KEY : 0u) |
+			 ((opts & T3_OPT_LISTEN_ONLY) != 0 ? 0u : CODEPLUG_SYS_TX));
+	v[3] = 4;			// the identity: model, NET, category
+	v[8] = (uint8_t)fb_chan;
+	v[9] = (uint8_t)(fb_chan >> 8);
+	uint16_t check = fb_name != NULL ? codeplug_name_check(fb_name) : 0;
+	v[10] = (uint8_t)check;
+	v[11] = (uint8_t)(check >> 8);
+	snprintf((char *)&v[12], 16, "Sys %u", n);
+	opts &= (uint16_t)~(T3_CP_NEEDS_KEY | T3_OPT_LISTEN_ONLY);
+	b[0] = T3_MODEL_SMALL;
+	b[1] = 5;			// NET 5
+	b[3] = T3_PAR_A;
+	b[4] = 2;			// CC
+	b[5] = (uint8_t)opts;
+	b[6] = (uint8_t)(opts >> 8);
+	b[7] = hold_s;
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_SYSTEM + n), v, sizeof(v));
+	uint8_t c[CODEPLUG_SYS_ENTRY_HDR + 11] = { n, CODEPLUG_ENTRY_CHANNEL, CODEPLUG_GROUP_NONE, CODEPLUG_ENTRY_CONTROL, 1, 0 };
+	for (int i = 0; i < 4; i++) {	// a control channel, LCN 1
+		c[6 + i] = (uint8_t)(T3_RX_HZ >> (8 * i));
+		c[10 + i] = (uint8_t)(T3_TX_HZ >> (8 * i));
+	}
+	c[14] = 2;
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_SYS_CHAN + n), c, sizeof(c));
+}
+
+// Channel c (named in the fake codeplug) tagged to system n, with these tag flags
+static void t3_cp_tag_flags(uint16_t c, uint8_t n, uint8_t flags)
+{
+	uint16_t check = codeplug_name_check(chans[c].name);
+	uint8_t t[CODEPLUG_TAG_HDR] = { CODEPLUG_KIND_DMR_TRUNK, n, (uint8_t)check, (uint8_t)(check >> 8), flags };
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_CH_TAG + c - 1u), t, sizeof(t));
+}
+
+// The same, transmit allowed (as an editor writes a new one)
+static void t3_cp_tag(uint16_t c, uint8_t n)
+{
+	t3_cp_tag_flags(c, n, CODEPLUG_TAG_TX);
+}
+
+// Zone "Tones" (index 2) made two trunked channels of system 0, as an editor writes them: DMR, receive only, the
+// control channel's frequencies, the talk target (TG 201, then TG 9)
+static void t3_cp_zone(uint16_t opts, uint8_t hold_s, uint16_t fb_chan, const char *fb_name)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	// The site's slot numbers only: its CSBKs are the test's, and the sim's idle bursts, knowing no frequency, would
+	// be a carrier on the payload channel too, so a followed call would never end
+	sim.ticks_only = true;
+	kv_t3_clear();
+	add(7, "Ops A", T3_RX_HZ, RADIO_MODE_DMR, true, CODEPLUG_POWER_DEFAULT);
+	chans[7].tx_hz = T3_TX_HZ;
+	chans[7].contact = 1;
+	add(8, "Ops B", T3_RX_HZ, RADIO_MODE_DMR, true, CODEPLUG_POWER_DEFAULT);
+	chans[8].tx_hz = T3_TX_HZ;
+	chans[8].contact = 3;
+	t3_cp_system(0, opts, hold_s, fb_chan, fb_name);
+	t3_cp_tag(7, 0);
+	t3_cp_tag(8, 0);
+}
+
+static void t3_cp_done(void)
+{
+	req(RREQ_ZONE, 0);
+	run(100);
+	kv_t3_clear();
+	sim.repeater = false;
+	sim.ticks_only = false;
+	setup_codeplug();
+}
+
+// The cancel of an emergency alarm goes to the system that took it (another system's IDs are another network's): the
+// emergency ended on another system, the cancel waits until the radio is back on the alarm's
+static void test_t3_emergency_other_system(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_system(1, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(8, 1);			// "Ops B" on system 1
+	req(RREQ_ZONE, 0);
+	run(100);
+	dmr_emergency_settings_t es;
+	dmr_emergency_settings_default(&es);
+	es.mode = DMR_EMERGENCY_MODE_ALARM;
+	es.alarm_tries = 3;
+	dmr_emergency_set_settings(&es);
+	req(RREQ_ZONE, 2);			// "Ops A", system 0, talking to TG 201
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.sys == 1);
+	unsigned from = sim.air_count;
+	CHECK(dmr_emergency_start());
+	t3_csbk_t q;
+	for (int i = 0; i < 20 && !t3_rand_since(from, T3_SK_STATUS, &q); i++) {
+		t3_site_run(60);
+	}
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY && q.u.rand.dst == 201);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_MESSAGE_ACCEPTED;
+	a.u.ack.dst = own_dmr_id;
+	a.u.ack.src = 201;
+	t3_csbk_rx(&a, 1);
+	from = sim.air_count;
+	t3_site_run(1200);
+	CHECK(!t3_rand_since(from, T3_SK_STATUS, &q));	// acknowledged: no repeats
+
+	req(RREQ_ZONE_POS, 1);			// system 1
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.sys == 2);
+	from = sim.air_count;
+	dmr_emergency_cancel();
+	t3_site_run(600);
+	CHECK(dmr_emergency_state() == DMR_EMERGENCY_IDLE && !t3_rand_since(from, T3_SK_STATUS, &q));
+	req(RREQ_ZONE_POS, 0);			// back on system 0: the cancel goes
+	t3_site_run(1200);
+	CHECK(t3_rand_since(from, T3_SK_STATUS, &q) && t3_rand_status(&q) == T3_STATUS_EMERGENCY_CANCEL &&
+	      q.u.rand.dst == 201);
+	t3_csbk_rx(&a, 1);
+	run(100);
+	t3_cp_done();
+}
+
+// No ID to register with (the system's record has none, nor the radio): the channel shows as unavailable, the engine
+// never starts and nothing is sent
+// A system set up with another network number than the site's: the radio searches, the view names the system it
+// hears, and PTT is refused saying so, with nothing sent. With the site gone quiet, PTT says no control channel
+static void test_t3_other_system(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 6;	// the site's is 5 (t3_code)
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0 && radio_t3v.other == t3_code());
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK &&
+	      radio_t3v.why == RADIO_TRUNK_WHY_OTHER_SYS && sm.view.t3.why == RADIO_TRUNK_WHY_OTHER_SYS);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(100);
+
+	// The site goes quiet: the other system is no longer named, and PTT finds no control channel
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_NO_CC && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(100);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// The control channel carries a trunking system of another kind: CSBKs of its own FID with a good CRC, no ETSI Aloha.
+// The view names it (other_fid, no C_SYScode) and PTT is refused saying so, with nothing sent
+static void test_t3_other_kind(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	s->cfg.tg[0] = (t3_tg_t){ T3_TG, T3_TG_LISTEN | T3_TG_TALK };
+	s->cfg.ntg = 1;
+	radio_t3_fix(s);
+	req(RREQ_T3, RADIO_T3_START);
+	for (int i = 0; i < 25; i++) {
+		uint8_t d[T3_CSBK_BYTES] = { 0x81, 0x06, 0x12, 0x13, 0x17, 0x18, 0x1b, 0x00, 0x00, 0x07 };
+		t3_crc_append(d, T3_CRC_MASK_CSBK);
+		t3_data_rx(DMR_BURST_CSBK, d, 1);
+		run(60);
+	}
+	radio_sm_t3_brief(&sm);	// as the radio task does before it publishes the view
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.other == 0 && radio_t3v.other_fid == 0x06 &&
+	      sm.view.t3.other_fid == 0x06);
+	int keyed = hw.tx_calls;
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	run(300);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && radio_t3v.why == RADIO_TRUNK_WHY_OTHER_KIND);
+	CHECK(hw.tx_calls == keyed && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	run(T3_OTHER_MS + 500);
+	CHECK(radio_t3v.other_fid == 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// The channel selected before its system's record was written (an editor writing channels first): unavailable, then
+// usable once the record lands, with no other channel selected meanwhile (a zone of one channel has none to select)
+static void test_t3_system_late(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(7, 1);			// "Ops A" names system 1, which has no record yet
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(300);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && radio_t3v.unavail && !radio_t3v.on &&
+	      sm.view.ch.rx_only);
+	t3_cp_system(1, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 2 && !radio_t3v.unavail && radio_t3v.on &&
+	      radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
+// A trunked channel the radio was on when switched off: the system starts again at power-on (the radio's ID loaded
+// before the channel is selected, not after it, which left the channel unavailable)
+static void test_t3_boot(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	run(50);
+	boot();
+	t3_site_run(600);
+	CHECK(sm.view.zone_index == 2 && sm.view.channel_number == 7 && radio_t3v.sys == 1 && !radio_t3v.unavail &&
+	      radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
+static void test_t3_no_id(void)
+{
+	own_dmr_id = 0;
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	unsigned air = sim.air_count;
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.sys == 1 && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only && sim.air_count == air);
+	own_dmr_id = 9996543;
+	t3_cp_done();
+}
+
+// Selecting trunked channels: the first starts its system and camps; another of the same system keeps the TSCC; an
+// untagged channel leaves; a renamed channel (its name check no longer matches) is conventional; one whose system
+// authenticates without a key is unavailable and refuses PTT; zone scan passes trunked channels by
+static void test_t3_channels(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	CHECK(sm.view.channel_number == 7 && radio_t3v.sys == 1 && !radio_t3v.unavail);
+	t3_site_run(600);
+	CHECK(radio_t3v.on && radio_t3v.state == T3_CAMPED && !sm.view.ch.rx_only);
+	CHECK(hw.rx_hz == T3_RX_HZ);
+	unsigned hunts = radio_t3v.hunts;
+	req(RREQ_ZONE_POS, 1);		// "Ops B": the same system
+	t3_site_run(120);
+	CHECK(sm.view.channel_number == 8 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+	CHECK(radio_t3v.hunts == hunts);
+	CHECK(strcmp(sm.view.ch.name, "Ops B") == 0);
+
+	// Following a call on a payload slot, another channel of the system (the same talkgroup): the radio stays on the
+	// call's slot, not the record's control channel
+	chans[8].contact = 1;
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(120);
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = 201;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+	CHECK(radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	req(RREQ_ZONE_POS, 1);
+	run(20);
+	CHECK(sm.view.channel_number == 8 && radio_t3v.state == T3_FOLLOW && sm.view.ch.timeslot == 2);
+	CHECK(hw.rx_hz == T3_RX_HZ);
+	chans[8].contact = 3;
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(3000);
+	CHECK(radio_t3v.state == T3_CAMPED);
+
+	// A zone scan visits only the conventional channel; canceled, the radio is back on its system
+	zones[2].channels[2] = 6;
+	zones[2].count = 3;
+	req(RREQ_ZONE, 1);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	bool on_t3 = false, on_6 = false;
+	for (int i = 0; i < 400; i++) {
+		run(5);
+		on_t3 = on_t3 || (sm.view.scan != 0 && hw.rx_hz == T3_RX_HZ);
+		on_6 = on_6 || hw.rx_hz == 145500000;
+	}
+	CHECK(sm.view.scan != 0 && on_6 && !on_t3);
+	req(RREQ_SCAN, RSCAN_CANCEL);
+	t3_site_run(600);
+	CHECK(sm.view.scan == 0 && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
+	zones[2].count = 2;
+
+	req(RREQ_ZONE, 0);		// a conventional channel: the system goes
+	run(100);
+	CHECK(!radio_t3v.on && radio_t3v.sys == 0 && hw.rx_hz == 146520000);
+
+	strcpy(chans[7].name, "Renamed");	// a CPS that renumbered or renamed it: no longer the tagged channel
+	req(RREQ_ZONE, 2);
+	run(100);
+	CHECK(radio_t3v.sys == 0 && !radio_t3v.on && sm.view.ch.rx_only);
+	strcpy(chans[7].name, "Ops A");
+
+	t3_cp_system(1, T3_OPT_PRIVATE | T3_CP_NEEDS_KEY, 0, 0, NULL);	// authenticates, no key in the codeplug
+	t3_cp_tag(8, 1);
+	req(RREQ_ZONE_POS, 1);
+	run(100);
+	CHECK(radio_t3v.sys == 2 && radio_t3v.unavail && !radio_t3v.on);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state != RS_TX && t3_sent(T3_OP_C_RAND) == 0);
+	req(RREQ_PTT, 0);
+	run(100);
+	// Stepping passes an unavailable channel by: from "Ops A" up, down, both land on "Ops A" (the zone's only other)
+	req(RREQ_ZONE_POS, 0);
+	run(50);
+	req(RREQ_CH_STEP, 1);
+	CHECK(sm.view.channel_number == 7);
+	req(RREQ_CH_STEP, -1);
+	CHECK(sm.view.channel_number == 7);
+	t3_cp_done();
+}
+
+// A grant on the TSCC for talkgroup tg, on the carrier's TS2
+static void t3_grant_tg(uint32_t tg)
+{
+	t3_csbk_t g = { .lb = true, .op = T3_OP_TV_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = tg;
+	g.u.grant.src = 1000001u;
+	t3_csbk_rx(&g, 1);
+	run(300);
+}
+
+// Digital monitor on a trunked channel follows every talkgroup's grant (dmr-trunking.md 6), as the system's own
+// "follow every talkgroup" does; off again, only the channel's talkgroups. The call plays on its own slot and color
+// code: monitor's any color code and both slots stay conventional DMR's
+static void test_t3_follow_all(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	t3_grant_tg(777);		// not the channel's talkgroup
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 0);
+
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(20);
+	CHECK(sm.view.dmr.hear_all_latch);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.followed == 1 && sm.view.ch.timeslot == 2);
+	CHECK(sim.cc_filter == 2);	// the system's color code, not monitor's any
+	t3_site_run(3000);		// the call ends: back on the TSCC
+	CHECK(radio_t3v.state == T3_CAMPED);
+
+	req(RREQ_DMR_HEAR_ALL, 0);
+	run(20);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 1);
+
+	// Monitor on, the system lost to the fallback channel and found again: the engine restarts with the system's
+	// own setting, not the one monitor added. Monitor off then, a grant to another talkgroup isn't followed
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE, 3, 6, "Other");
+	req(RREQ_ZONE, 2);
+	run(100);
+	req(RREQ_DMR_HEAR_ALL, 1);
+	run(3000);			// no TSCC heard: the fallback channel
+	CHECK(radio_t3v.fallback == 1);
+	run(RADIO_T3_PROBE_MS);		// a probe restarts the engine
+	t3_site_run(600);
+	CHECK(radio_t3v.fallback == 0 && radio_t3v.state == T3_CAMPED);
+	req(RREQ_DMR_HEAR_ALL, 0);
+	run(20);
+	CHECK(!sm.view.dmr.hear_all_latch);
+	t3_grant_tg(777);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.followed == 0);
+
+	// The system's own option: every grant, monitor off
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_MONITOR, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	t3_grant_tg(778);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.followed == 1);
+	t3_site_run(3000);
+	t3_cp_done();
+}
+
+// "Learn the system code" (dmr-trunking-codeplug.md 1): a listen-only system takes the first TSCC heard as its own,
+// whatever its NET says. A system that transmits never does: another network's TSCC stays foreign
+static void test_t3_learn_syscode(void)
+{
+	t3_syscode_t other = { T3_MODEL_LARGE, 12, 4, T3_PAR_AB };
+	t3_site_code = t3_syscode_join(&other);
+
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);	// NET 5 in the codeplug, NET 12 on the air
+	req(RREQ_ZONE, 2);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0);
+	t3_cp_done();
+
+	// A system without a transmit side: listen only, so it learns
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_LEARN_SYSCODE | T3_OPT_LISTEN_ONLY, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.foreign == 0 && radio_t3v.syscode == t3_site_code);
+	t3_cp_done();
+
+	// The same system with a transmit side and channels allowed to transmit: the option is dropped
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_LEARN_SYSCODE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(1500);
+	CHECK(radio_t3v.state == T3_HUNT && radio_t3v.foreign > 0);
+	t3_cp_done();
+	t3_site_code = 0;
+}
+
+#if CONFIG_DUAL_WATCH
+// A Tier III channel is never one of dual watch's two (radio-features.md 2.1): the UI's service refuses it at once on
+// either side, and a request that gets past it starts nothing in the radio core; the system goes on as it was
+static void test_t3_dual(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);			// "Ops A"
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	const ui_dual_ref_t t3 = { false, 2, 0 }, conv = { false, 0, 0 };
+	const ui_dual_ref_t as_a[2] = { t3, conv }, as_b[2] = { conv, t3 };
+	CHECK(!ui_svc_dual(as_a, 0) && !ui_svc_dual(as_a, 1) && !ui_svc_dual(as_b, 0) && !ui_svc_dual(as_b, 1));
+	CHECK(sm.view.scan == SCAN_OFF && radio_t3v.on);
+	const radio_dual_ref_t r[2] = { { false, 2, 0 }, { false, 0, 0 } };
+	radio_req_dual(r, 1);
+	t3_site_run(300);
+	CHECK(sm.view.scan == SCAN_OFF && sm.view.channel_number == 7 && radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+#endif
+
+// A trunked channel transmits only when its tag allows it and its system is one the radio runs with a transmit side
+// (channel-modes.md 3 and 4): a receive-only channel and a system without the transmit flag camp and listen, send
+// nothing on the control channel and refuse PTT; a channel that names no system, or one with no record, is unavailable
+static void t3_no_tx(void)
+{
+	unsigned air = sim.air_count;
+	t3_site_run(600);
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sm.view.state != RS_TX && sim.air_count == air);
+	req(RREQ_PTT, 0);
+	t3_site_run(120);
+	CHECK(sim.air_count == air);
+}
+
+static void test_t3_never_keys(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag_flags(8, 0, 0);			// "Ops B": a zeroed flags byte, receive only
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 1);
+	t3_no_tx();
+	CHECK(sm.view.channel_number == 8 && radio_t3v.on && !radio_t3v.unavail && sm.view.ch.rx_only);
+	CHECK(radio_t3v.state == T3_CAMPED);		// it listens to its system
+
+	// "Ops A" may transmit; its system's header has no transmit flag: listen only, whatever the tag says
+	t3_cp_system(0, T3_OPT_PRIVATE | T3_OPT_LISTEN_ONLY, 0, 0, NULL);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(sm.view.channel_number == 7 && radio_t3v.on && radio_t3v.state == T3_CAMPED);
+
+	// No system named, then a system with no record: unavailable, nothing started
+	t3_cp_tag(7, CODEPLUG_SYSTEM_NONE);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(radio_t3v.sys == 0xFF && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only);
+	t3_cp_tag(7, 5);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_no_tx();
+	CHECK(radio_t3v.sys == 6 && radio_t3v.unavail && !radio_t3v.on && sm.view.ch.rx_only);
+
+	// The same channel with its system's transmit side back asks for its call: the checks above can see a transmit
+	t3_cp_system(0, T3_OPT_PRIVATE, 0, 0, NULL);
+	t3_cp_tag(7, 0);
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	req(RREQ_ZONE_POS, 0);
+	t3_site_run(600);
+	unsigned air = sim.air_count;
+	req(RREQ_PTT, 1);
+	t3_site_run(300);
+	CHECK(sim.air_count > air && t3_sent(T3_OP_C_RAND) > 0 && !sm.view.ch.rx_only);
+	req(RREQ_PTT, 0);
+	t3_site_run(300);
+	t3_cp_done();
+}
+
+// Fallback (12.5): hunting past the hold time goes to the fallback channel, which works as any channel; a probe in a
+// quiet moment that finds the TSCC goes back with the system-back tone, one that doesn't returns to the fallback
+static void test_t3_fallback(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 3, 6, "Other");
+	req(RREQ_ZONE, 2);
+	run(2900);			// no TSCC heard
+	CHECK(radio_t3v.on && radio_t3v.fallback == 0);
+	run(200);
+	CHECK(radio_t3v.fallback == 1 && radio_t3v.fallbacks == 1 && !radio_t3v.on);
+	CHECK(hw.rx_hz == 145500000 && strcmp(sm.view.ch.name, "Other") == 0 && sm.view.channel_number == 7);
+
+	run(RADIO_T3_PROBE_MS);		// a probe: nothing found in RADIO_T3_PROBE_HUNT_MS, back
+	CHECK(radio_t3v.fallback == 2 && radio_t3v.on);
+	run(RADIO_T3_PROBE_HUNT_MS + 100);
+	CHECK(radio_t3v.fallback == 1 && !radio_t3v.on && hw.rx_hz == 145500000 && radio_t3v.fallbacks == 1);
+
+	// A probe while the channel is busy waits for it to go quiet
+	rx_signal(10, true);
+	run(RADIO_T3_PROBE_MS);
+	CHECK(radio_t3v.fallback == 1);
+	rx_signal(120, true);
+	run(RADIO_T3_PROBE_QUIET_MS + 500);
+	CHECK(radio_t3v.fallback == 2);
+	t3_site_run(600);		// found
+	CHECK(radio_t3v.fallback == 0 && radio_t3v.backs == 1 && radio_t3v.state == T3_CAMPED);
+	CHECK(strcmp(sm.view.ch.name, "Ops A") == 0 && !sm.view.ch.rx_only && hw.rx_hz == T3_RX_HZ);
+	beep_stats_t bs;
+	beep_get_stats(&bs);
+	CHECK(bs.last == BEEP_SYSTEM_BACK);
+	t3_cp_done();
+}
+
+// A stun on a codeplug system outlasts a restart: kept in the settings with the system's slot and network, lifted by
+// the revive; a stun kept for another network doesn't apply
+static void t3_stun_ahoy(bool revive)
+{
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = sm.view.dmr.own_id;	// a codeplug system's ID is the radio's
+	h.u.ahoy.src = T3_ID_STUNI;
+	h.u.ahoy.kind_flag = revive;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+}
+
+static void t3_set_stun(uint8_t w)
+{
+	settings_t *st = settings_begin();
+	st->t3_stun = w;
+	settings_end(now);
+}
+
+static void test_t3_stun_kept(void)
+{
+	settings_t st;
+	t3_cp_zone(T3_OPT_PRIVATE | T3_OPT_STUN, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == 0);
+	t3_stun_ahoy(false);
+	CHECK(radio_t3v.stunned);
+	settings_read(&st);
+	uint8_t w = st.t3_stun;
+	CHECK((w & SETTINGS_T3_STUN) != 0 && ((w >> 4) & 7u) == 0);
+	t3_stun_ahoy(true);
+	CHECK(!radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == 0);
+
+	// A restart with the stun kept (the engine's own memory of it gone with the revive): stunned on the system again
+	t3_set_stun(w);
+	req(RREQ_ZONE, 0);
+	run(100);
+	boot();
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.stunned);
+	unsigned rands = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && t3_sent(T3_OP_C_RAND) == rands);
+	req(RREQ_PTT, 0);
+	run(200);
+	t3_stun_ahoy(true);
+	settings_read(&st);
+	CHECK(!radio_t3v.stunned && st.t3_stun == 0);
+
+	// Kept for another network in that slot (the system was replaced): not this one's
+	t3_set_stun((uint8_t)(w ^ 0x01u));
+	req(RREQ_ZONE, 0);
+	run(100);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.stunned);
+	settings_read(&st);
+	CHECK(st.t3_stun == (uint8_t)(w ^ 0x01u));	// left for its own system
+	t3_set_stun(0);
+	t3_cp_done();
+}
+
+// A kill (6.4.10.0: the radio loses all DMR functionality) outlasts a restart: kept in the settings, the DMR stack
+// stops at once and doesn't start again on a conventional DMR channel, PTT there is denied, FM still works; the
+// defaults (a factory reset) clear it
+static void test_t3_kill_kept(void)
+{
+	static const uint8_t key[T3_AUTH_KEY_LEN] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA };
+	settings_t st;
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_with(T3_OPT_PRIVATE | T3_OPT_KILL, key);
+	CHECK(sm.view.dmr.active && !sm.view.dmr.killed);
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_KILLI;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	t3_csbk_t v = { 0 };
+	bool challenged = false;
+	for (unsigned i = 0; i < sim.air_count; i++) {
+		if (sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3Fu) == T3_OP_C_ACKVIT) {
+			challenged = t3_csbk_parse(sim.air[i].payload, &v);
+		}
+	}
+	CHECK(challenged && !radio_t3v.killed);
+	t3_csbk_t a = { .lb = true, .op = T3_OP_C_ACKD };
+	a.u.ack.reason = T3_RC_AUTH_RESPONSE;
+	a.u.ack.dst = T3_OWN;
+	a.u.ack.src = t3_auth_response(key, v.u.ahoy.dst, 0);
+	t3_csbk_rx(&a, 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.killed && sm.view.dmr.killed && !sm.view.dmr.active);
+	settings_read(&st);
+	CHECK((st.t3_kill & SETTINGS_T3_KILLED) != 0);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+
+	// A restart: a conventional DMR channel doesn't start the stack, PTT is denied, nothing goes on air
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_DMR && sm.view.dmr.killed && !sm.view.dmr.active);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_DMR && hw.tx_calls == 0 &&
+	      sim.air_count == 0);
+	req(RREQ_PTT, 0);
+	run(200);
+
+	// FM still transmits
+	req(RREQ_ZONE_POS, 0);
+	run(100);
+	CHECK(sm.view.ch.mode == RADIO_MODE_FM);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(200);
+
+	// The defaults clear it
+	settings_t *w = settings_begin();
+	settings_defaults(w);
+	settings_end(now);
+	boot();
+	req(RREQ_ZONE_POS, 3);
+	run(100);
+	CHECK(!sm.view.dmr.killed && sm.view.dmr.active);
+}
+
+// Power save on a board whose rx_sleep works on DMR (dmr-trunking.md 7.13): registered with a wake frame and the
+// CSC known, the receiver goes off between wake frames and comes back, restarting the modem's receive, for them
+static int ps_sleeps, ps_wakes;
+static void r_rx_sleep(bool sleep)
+{
+	if (sleep) {
+		ps_sleeps++;
+	} else {
+		ps_wakes++;
+	}
+}
+
+static void ps_site_run(uint32_t ms, bool slc)
+{
+	for (uint32_t t = 0; t < ms; t += 60) {
+		t3_csbk_t a = { .lb = true, .op = T3_OP_C_ALOHA };
+		a.u.aloha.syscode = t3_code();
+		a.u.aloha.nrand_wait = 6;
+		a.u.aloha.backoff = 1;
+		a.u.aloha.version = 2;
+		a.u.aloha.reg = true;
+		if (!radio_t3v.rx_off) {
+			t3_csbk_rx(&a, 1);	// asleep, nothing is heard
+		}
+		if (slc && t % 120 == 0) {
+			t3_sysparms_t sp = { true, T3_MODEL_SMALL, (uint16_t)((t3_code() >> 2) & 0xFFFu), true,
+					     (uint16_t)((now / 120u) & 0x1FFu) };
+			uint32_t w = t3_sysparms_build(&sp);
+			if (!radio_t3v.rx_off) {
+				sim_short_lc(w, dmrShortLcCrc8(w));
+			}
+		}
+		run(60);
+	}
+}
+
+static void test_t3_power_save(void)
+{
+	fake_radio.rx_sleep = r_rx_sleep;
+	fake_radio.rx_sleep_dmr = true;
+	ps_sleeps = ps_wakes = 0;
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->cfg.ps_rq = 2;	// 1:4
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	radio_t3_fix(s);
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_START);
+	ps_site_run(1200, false);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_REGISTRATION, &q) && ((q.u.rand.options >> 1) & 7u) == 2u);
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_REG_ACCEPTED;
+	ack.u.ack.info = 1;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = T3_ID_REGI;
+	t3_csbk_rx(&ack, 1);
+	ps_site_run(600, false);
+	CHECK(radio_t3v.ps_offset == 1);
+	ps_site_run(3000, false);	// no CSC: awake
+	CHECK(ps_sleeps == 0 && !radio_t3v.rx_off);
+	unsigned restarts = sim.rx_restarts;
+	ps_site_run(6000, true);
+	CHECK(radio_t3v.csc_valid && ps_sleeps > 2 && ps_wakes > 2 && radio_t3v.rx_offs == (uint32_t)ps_sleeps);
+	CHECK(radio_t3v.rx_off_ms > 2000u && sim.rx_restarts - restarts >= (unsigned)ps_wakes - 1u);
+	CHECK(radio_t3v.state == T3_CAMPED);	// T_Nosig counts only the time awake
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(200);
+	CHECK(!radio_t3v.rx_off && ps_wakes == ps_sleeps);	// leaving wakes the receiver
+	fake_radio.rx_sleep = NULL;
+	fake_radio.rx_sleep_dmr = false;
+	sim.repeater = false;	// the site's carrier: later tests start with none on air
+}
+
+// IP Connection Advice (6.4.11): on a system with an IP gateway the registration carries IP_Inform, and the C_AHOY
+// from IPI gets the radio's CAI address; the final C_ACKD from IPI shows on the link as ip_advised
+static void test_t3_ip_advice(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	radio_t3_setup_t *s = radio_t3_staged();
+	radio_t3_reset(s);
+	s->cfg.own_id = T3_OWN;
+	s->cfg.auth.model = T3_MODEL_SMALL;
+	s->cfg.auth.net = 5;
+	s->cfg.auth.category = T3_PAR_A;
+	s->cfg.opts = T3_OPT_PRIVATE;
+	s->ip_gw = true;
+	s->cc = 2;
+	s->cfg.ctrl[0] = (t3_chan_t){ .lcn = 1, .rx_hz = T3_RX_HZ, .tx_hz = T3_TX_HZ, .cc = 2 };
+	s->cfg.nctrl = 1;
+	s->chans[0] = s->cfg.ctrl[0];
+	s->nchans = 1;
+	radio_t3_fix(s);
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_START);
+	ps_site_run(1200, false);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_REGISTRATION, &q) && (q.u.rand.options & T3_SO_REG_IP_INFORM));
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_IPI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	ps_site_run(400, false);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.dst == T3_ID_IPI && u.format == T3_UDTF_IP);
+		uint32_t ip = dmrDataIdAddress(false, T3_OWN);
+		const uint8_t *b = sim.air[hdr + 1].payload;
+		CHECK(b[0] == (uint8_t)(ip >> 24) && b[1] == (uint8_t)(ip >> 16) && b[2] == (uint8_t)(ip >> 8) &&
+		      b[3] == (uint8_t)ip);
+	}
+	t3_csbk_t ack = { .lb = true, .op = T3_OP_C_ACKD };
+	ack.u.ack.reason = T3_RC_REG_ACCEPTED;
+	ack.u.ack.dst = T3_OWN;
+	ack.u.ack.src = T3_ID_IPI;
+	t3_csbk_rx(&ack, 1);
+	ps_site_run(300, false);
+	CHECK(radio_t3v.reg == T3_REG_OK && radio_t3v.ip_advised);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+
+// Supplementary user data (6.4.13): staged with the system, offered with a request and uploaded to SUPLI; one heard
+// from SUPLI shows in the view, its sender named by the user data that follows
+static void udt_down_rx(uint32_t src, bool sf, uint8_t format, const uint8_t *data, uint8_t len)
+{
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .sf = sf, .format = format, .dst = T3_OWN, .src = src };
+	u.blocks = t3_udt_pack(data, len, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	for (uint8_t i = 0; i < u.blocks; i++) {
+		run(60);
+		t3_data_rx(DMR_BURST_RATE_12_DATA, blk[i], 1);
+	}
+	t3_site_run(300);
+}
+
+static void test_t3_supl(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	radio_t3_setup_t *s = radio_t3_staged();
+	memcpy(s->supl, "\x01\x02\x03\x04", 4);
+	s->cfg.supl_len = 4;
+	s->cfg.supl_format = T3_UDTF_BINARY;
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	s->sd_dst = 1000001u;
+	s->sd_group = false;
+	s->sd_format = T3_UDTF_ISO8;
+	memcpy(s->sd_data, "hi", 2);
+	s->sd_len = 2;
+	unsigned from = sim.air_count;
+	req(RREQ_T3, RADIO_T3_SDATA);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_IND_UDT, &q) && (q.u.rand.options & T3_SO_SUPPL_DATA));
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_UDT;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_SUPLI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.sf && u.dst == T3_ID_SUPLI && u.src == T3_OWN &&
+		      u.format == T3_UDTF_BINARY && u.blocks == 1);
+		CHECK(memcmp(sim.air[hdr + 1].payload, "\x01\x02\x03\x04", 4) == 0);
+	}
+	// Heard: in the view, sender unknown; the user data that follows names it
+	udt_down_rx(T3_ID_SUPLI, true, T3_UDTF_BINARY, (const uint8_t *)"\x0a\x0b\x0c", 3);
+	CHECK(radio_t3v.supl_count == 1 && radio_t3v.supl_len == 3 && radio_t3v.supl_src == 0 &&
+	      memcmp(radio_t3v.supl_data, "\x0a\x0b\x0c", 3) == 0 && radio_t3v.supl_dst == T3_OWN);
+	udt_down_rx(1000001u, false, T3_UDTF_ISO8, (const uint8_t *)"hello", 5);
+	CHECK(radio_t3v.sd_count >= 1 && radio_t3v.supl_src == 1000001u);
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// The CACH short LC from the modem (DMR_EV_SHORT_LC): a good CRC gives the engine the Common_Slot_Counter, a bad
+// one is only counted
+static void test_t3_short_lc(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	uint32_t ok0 = radio_t3v.slc_ok, bad0 = radio_t3v.slc_bad;
+	CHECK(!radio_t3v.csc_valid);
+	t3_syscode_t c;
+	t3_syscode_split(t3_code(), &c);
+	t3_sysparms_t sp = { true, c.model, (uint16_t)((t3_code() >> 2) & 0xFFFu), false, 77 };
+	uint32_t slc = t3_sysparms_build(&sp);
+	sim_short_lc(slc, (uint8_t)(dmrShortLcCrc8(slc) ^ 0x01u));
+	t3_site_run(120);
+	CHECK(!radio_t3v.csc_valid && radio_t3v.slc_bad == bad0 + 1u && radio_t3v.slc_ok == ok0);
+	sim_short_lc(slc, dmrShortLcCrc8(slc));
+	t3_site_run(120);
+	CHECK(radio_t3v.csc_valid && radio_t3v.slc_ok == ok0 + 1u && radio_t3v.slc_bad == bad0 + 1u);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+
+// Off-net IP on a system with an IP gateway (dmr-trunking.md 7.7): the data service's packet to IPI asks for a
+// multi-part call to IPI, uploads the packet's destination when the TSCC asks, and sends the data to IPI on the grant
+static void test_t3_ip_gateway(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && !radio_t3v.ip_gw);	// not set: conventional off-net routing stays
+	t3_cp_done();
+	t3_cp_zone(T3_OPT_PRIVATE | SYS_IP_GW, 0, 0, NULL);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.ip_gw);
+
+	static const uint8_t udp[12] = { 0x10, 0x00, 0x10, 0x01, 0x00, 0x0C, 0x00, 0x00, 'p', 'i', 'n', 'g' };
+	unsigned from = sim.air_count;
+	CHECK(dmrDataServiceSendIP(false, T3_ID_IPI, DMR_DATA_IP_OURS, 0x08080404u, 64, 17, udp, sizeof udp));
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(radio_t3v.pd_wait && t3_rand_since(from, T3_SK_IND_DATA, &q) && q.u.rand.dst == T3_ID_IPI && !q.u.rand.proxy);
+
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_IND_DATA;
+	h.u.ahoy.dst = sm.view.dmr.own_id;
+	h.u.ahoy.src = T3_ID_IPI;
+	from = sim.air_count;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(400);
+	int hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0 && (unsigned)hdr + 1u < sim.air_count);
+	if (hdr >= 0 && (unsigned)hdr + 1u < sim.air_count) {
+		t3_udt_t u;
+		CHECK(t3_udt_parse(sim.air[hdr].payload, &u) && u.op == T3_OP_C_UDTHU && u.dst == T3_ID_IPI && u.sf &&
+		      u.format == T3_UDTF_IP && u.blocks == 1);
+		const uint8_t *b = sim.air[hdr + 1].payload;
+		CHECK(b[0] == 8 && b[1] == 8 && b[2] == 4 && b[3] == 4 && b[4] == 0 && b[9] == 0);
+	}
+
+	// The grant: the data goes to IPI, the packet's full header carrying its destination
+	t3_csbk_t g = { .lb = true, .op = T3_OP_PD_GRANT };
+	g.u.grant.lpcn = 1;
+	g.u.grant.slot = 2;
+	g.u.grant.dst = T3_ID_IPI;
+	g.u.grant.src = sm.view.dmr.own_id;
+	from = sim.air_count;
+	sim.ticks_only = false;	// the site keys the payload channel for the grant: its bursts say it is up
+	t3_csbk_rx(&g, 1);
+	run(1500);
+	CHECK(radio_t3v.state == T3_FOLLOW && radio_t3v.call_data && !radio_t3v.pd_wait);
+	hdr = -1;
+	for (unsigned i = from; i < sim.air_count && hdr < 0; i++) {
+		hdr = sim.air[i].kind == DMR_BURST_DATA_HEADER ? (int)i : -1;
+	}
+	CHECK(hdr >= 0);
+	if (hdr >= 0) {
+		const uint8_t *p = sim.air[hdr].payload;
+		CHECK((((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 8) | p[4]) == T3_ID_IPI && (p[0] & 0x80) == 0);
+	}
+	t3_csbk_t c = { .lb = true, .op = T3_OP_P_CLEAR };
+	c.u.clear.dst = T3_ID_IPI;
+	t3_csbk_rx(&c, 2);
+	run(300);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	t3_cp_done();
+}
+
+// A short data poll from the menus (RREQ_T3_POLL): the system's poll setting gives the format and size; the answer is
+// a message in the inbox; a refusal counts in poll_fails. The radio's own reply to a poll comes from the same setting
+static void test_t3_poll(void)
+{
+	t3_cp_zone(T3_OPT_PRIVATE, 0, 0, NULL);
+	uint8_t p[2 + 5] = { T3_UDTF_ISO8, 2, 'r', 'e', 'a', 'd', 'y' };
+	kv_t3_set((uint16_t)(CODEPLUG_KEY_T3_POLL + 0), p, sizeof p);
+	static radio_t3_setup_t ld;	// the loader: the radio's own reply to a poll, and the size to ask for
+	CHECK(radio_t3_load(0, &ld) && ld.cfg.poll_format == T3_UDTF_ISO8 && ld.cfg.poll_len == 5 && ld.poll_blocks == 2 &&
+	      memcmp(ld.poll_reply, "ready", 5) == 0 && ld.cfg.poll_data == ld.poll_reply);
+	req(RREQ_ZONE, 2);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED);
+	unsigned from = sim.air_count;
+	uint16_t fails = radio_t3v.poll_fails;
+	radio_req_t r = { .type = RREQ_T3_POLL, .arg2 = 1000001u };
+	radio_sm_request(&sm, &r, now);
+	t3_site_run(600);
+	t3_csbk_t q;
+	CHECK(t3_rand_since(from, T3_SK_UDT_POLL, &q) && q.u.rand.dst == 1000001u && (q.u.rand.options & 0x0Fu) == T3_UDTF_ISO8 &&
+	      (q.u.rand.extra & 3u) == 1u);
+	// The polled MS's data: a C_UDTHD to the radio
+	uint8_t blk[T3_UDT_BLOCKS_MAX][T3_UDT_BLOCK], pad, d[T3_CSBK_BYTES];
+	t3_udt_t u = { .op = T3_OP_C_UDTHD, .a = true, .format = T3_UDTF_ISO8, .dst = sm.view.dmr.own_id, .src = 1000001u };
+	u.blocks = t3_udt_pack((const uint8_t *)"at gate 4", 9, 0xFF, blk, &pad);
+	u.pad = pad;
+	t3_udt_build(&u, d);
+	t3_data_rx(DMR_BURST_DATA_HEADER, d, 1);
+	run(60);
+	t3_data_rx(DMR_BURST_RATE_12_DATA, blk[0], 1);
+	t3_site_run(300);
+	CHECK(sms_inbox_count() >= 1 && strcmp(dmrDataServiceMessage(0)->text, "at gate 4") == 0);
+	CHECK(radio_t3v.polls == 1 && radio_t3v.poll_fails == fails);
+	while (sms_inbox_count() > 0 && sms_inbox_delete(0)) {
+	}
+
+	// Refused: counted
+	radio_sm_request(&sm, &r, now);
+	t3_site_run(600);
+	t3_csbk_t n = { .lb = true, .op = T3_OP_C_ACKD };
+	n.u.ack.reason = T3_RC_MS_AWAY;
+	n.u.ack.dst = sm.view.dmr.own_id;
+	n.u.ack.src = 1000001u;
+	t3_csbk_rx(&n, 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.poll_fails == fails + 1u);
+	t3_cp_done();
+}
+
+static void test_t3_stun(void)
+{
+	dmr_start(true);
+	sim.repeater = true;
+	t3_stage_start();
+	t3_csbk_t h = { .lb = true, .op = T3_OP_C_AHOY };
+	h.u.ahoy.kind = T3_SK_SUPPLEMENTARY;
+	h.u.ahoy.dst = T3_OWN;
+	h.u.ahoy.src = T3_ID_STUNI;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(radio_t3v.stunned && radio_t3v.stuns == 1);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	req(RREQ_T3, RADIO_T3_START);
+	t3_site_run(600);
+	CHECK(radio_t3v.state == T3_CAMPED && radio_t3v.stunned);
+	unsigned rands = t3_sent(T3_OP_C_RAND);
+	req(RREQ_PTT, 1);
+	run(200);
+	CHECK(sm.view.state == RS_TX_DENIED && t3_sent(T3_OP_C_RAND) == rands);
+	req(RREQ_PTT, 0);
+	run(200);
+	h.u.ahoy.kind_flag = true;
+	t3_csbk_rx(&h, 1);
+	t3_site_run(300);
+	CHECK(!radio_t3v.stunned && radio_t3v.revives == 1);
+	req(RREQ_T3, RADIO_T3_STOP);
+	run(100);
+	sim.repeater = false;
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
 	test_startup();
+#if CONFIG_SATELLITE_TLE
+	test_satellite_override();
+#if CONFIG_FM_TX_TONES
+	test_so50_arm();
+#endif
+#endif
 	test_persist();
 	test_channel_step();
 	test_vfo_step_auto();
 	test_squelch();
+	test_squelch_voice_peak();
+	test_parked_kind();
 	test_tx();
 	test_deny_flash_then_tx();
 	test_timeout();
 	test_power();
 	test_vfo();
+	test_vfo_quick_settings_kept();
 	test_no_codeplug();
 	test_codeplug_tones();
 	test_tone_squelch();
@@ -5560,6 +11784,52 @@ int main(void)
 	test_fm_rssi_raw();
 	test_dmr_tx();
 	test_dmr_tx_end();
+#if CONFIG_DMR_TRUNK_TX
+	test_t3_at();
+	test_t3_talk();
+	test_t3_send_refused();
+	test_t3_foacsu_ptt_release();
+	test_t3_incoming_foacsu();
+	test_t3_one_carrier();
+	test_t3_sdata();
+	test_t3_udt_sms();
+	test_t3_radio_check();
+	test_t3_inhibit();
+	test_t3_clear_slot();
+#if CONFIG_DMR_TRUNK_GW
+	test_t3_dial();
+#endif
+	test_t3_pdata(true);
+	test_t3_pdata(false);
+	test_t3_emergency();
+#if CONFIG_DMR_EMERGENCY
+	test_t3_emergency_other_system();
+#endif
+	test_t3_broadcast();
+	test_t3_als();
+	test_t3_stun();
+	test_t3_stun_kept();
+	test_t3_kill_kept();
+	test_t3_poll();
+	test_t3_ip_gateway();
+	test_t3_ip_advice();
+	test_t3_supl();
+	test_t3_short_lc();
+	test_t3_power_save();
+	test_t3_channels();
+	test_t3_never_keys();
+	test_t3_boot();
+	test_t3_no_id();
+	test_t3_system_late();
+	test_t3_other_system();
+	test_t3_other_kind();
+	test_t3_fallback();
+	test_t3_follow_all();
+	test_t3_learn_syscode();
+#if CONFIG_DUAL_WATCH
+	test_t3_dual();
+#endif
+#endif
 	test_dmr_stalled();
 	test_dmr_list_talk_target();
 #if CONFIG_VFO_DMR
@@ -5570,6 +11840,7 @@ int main(void)
 	test_vfo_copy();
 	test_vfo_copy_dmr();
 	test_dmr_denied();
+	test_dmr_rpt_ticks_alone();
 	test_dmr_wake_leds();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
@@ -5585,6 +11856,7 @@ int main(void)
 	test_side_keys();
 	test_rx_ext();
 	test_error_paths();
+	test_ptt_line_stuck();
 	test_hotspot();
 	test_hotspot_session();
 	test_hotspot_cwid();
@@ -5608,9 +11880,16 @@ int main(void)
 #if CONFIG_VFO_DMR
 	test_vfo_dmr_data();
 #endif
+#if CONFIG_P25
+	test_p25();
+#endif
+#if CONFIG_NXDN
+	test_nxdn();
+#endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
 	test_volume_step_of();
+	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

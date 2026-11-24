@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The HR_C7000 prompt FIFO's push for the platform's users: speaker PCM (audio_pcm.c) and APRS AFSK (hrc_afsk.c)
+// Copyright (c) 2026 Open25-DM32 Authors
+// The HR_C7000 prompt FIFO's settling interval and blocking push for APRS AFSK (hrc_afsk.c).
+// Speaker PCM (audio_pcm.c) defers its raw push to a later timer interrupt instead of waiting inside an interrupt
 // (docs/spec/modem-hrc7000.md 8.4).
 //
 // The FIFO is two halves of one 32-sample chunk each, and AUDIO_CONTROL b31 clears as the modem moves on to play the
@@ -18,7 +20,7 @@
 #include "hal_time.h"
 #include "modem/hrc7000/hrc7000.h"
 
-#define HRC_PROMPT_SETTLE_US	200u	// twice the shortest wait measured clean; 5 % of the CPU at 250 chunks a second
+#define HRC_PROMPT_SETTLE_US	200u	// twice the shortest wait measured clean
 
 // One chunk (C7_PROMPT_CHUNK samples) when the FIFO has room; false when it is full. Waits HRC_PROMPT_SETTLE_US
 // before writing. Interrupt or task context

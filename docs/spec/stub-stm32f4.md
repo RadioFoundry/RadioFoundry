@@ -342,6 +342,22 @@ The bootloader stays in DFU mode when the application's initial stack pointer at
 
 The bootloader (sectors 0-2) is never touched, so the bootloader route always stays.
 
+On the bench, a host USB controller fault at step 5 dropped the link and the radio came back in DFU (the stub reset,
+nothing committed). The host reports any failure from step 4 on as one error (`UncommittedError` in `f4stub.py`): the
+step reached, the cause, that the radio now starts in DFU, and both ways to finish. A failure once the commit word was
+sent says instead that the word may already be written, so the radio may start either way. A write that stalled keeps
+its cable advice in the cause, and a stop by hand prints the same note before it ends. `rfoundry flash` then attaches
+once, in case the stub still runs on a link that came back, and otherwise ends with "NOT INSTALLED" and a rerun
+without `--route`, which takes the bootloader route. A script that drives `stubtool.py` must stop on its exit code:
+a reset, a version read or a cleanup after a failed write hides this state.
+
+A request in steps 5 and 6 that gets no clean reply (lost, cut or damaged, not a refusal) is not the end of the
+install. The stub may have done it, and a PROGRAM over bytes already written is refused (not blank), so the host
+waits 300 ms, drops what came late, checks the stub answers HELLO, and erases and programs that whole sector once more.
+For step 8 it reads the first word back: still erased, it programs it again; written, the block's SUMS decides. A
+second failure in the same sector ends the install as above. On the bench the first PROGRAM after an erase went
+unanswered on two runs in a row, and the third run went through.
+
 HR_C5000 boards: whether the bootloader checks the stack pointer the same way is **unverified**. If it does not, an
 interrupted update makes the radio jump to an erased vector. The power-on key combination still reaches DFU, so
 recovery is the same with the keys held.
@@ -353,12 +369,19 @@ The host knows which flash the firmware owns (`f4stub.BOARDS`, from the board re
 | Radio | Owned | Sectors touched by an update | Codec |
 |---|---|---|---|
 | HR_C6000 boards | 0x0800C000-0x080BFFFF (sectors 3-9) | those of 3-9 the image covers | sectors 10 and 11: written only from an image merged with the codec, otherwise never erased, so the installed codec stays (rfoundry's keep mode) |
-| HR_C5000 boards | 0x0800C000-0x0807FFFF (sectors 3-7) | those of 3-7 the image covers | sectors 8-11: written only from an image merged with the codec, otherwise never erased |
+| HR_C5000 boards | 0x0800C000-0x080DFFFF (sectors 3-10) | those of 3-10 the image covers | sector 11: written only from an image merged with the codec, otherwise never erased |
 
 Inside an owned range, bytes past the image end become 0xFF, so an older, longer build leaves nothing behind. An image
 merged with the codec (`rfoundry_<board>_codec.bin`) runs to the end of flash; the tool splits it into the application and
 the codec sectors and writes both whole ([codec-placement.md](codec-placement.md), "STM32 radios"). Any other image
 that reaches outside the owned range (the wrong board) is refused before anything is erased.
+
+When a board's owned range grows into sectors an earlier layout gave the codec, a plain image would erase the codec.
+Before it erases anything for an image without the codec, the tool reads the descriptor at the end of flash: if a
+window it names lies in a sector the plan erases, it refuses and writes nothing. Since nothing was erased, the tool
+then resets the radio out of the stub (it starts its firmware as before) and prints the command that leaves the stub
+by hand, `stubtool.py PORT --attach --board <id> --boot reset`, for a reset that did not get through; the web
+flasher restarts the radio the same way. The image merged with the codec in the new layout is what moves it ([codec-placement.md](codec-placement.md), "Moving to a new layout").
 
 No radio shares a sector between the firmware and the codec. The rule for one that would stays in the code: a sector
 that is rewritten and holds bytes the firmware doesn't own is read back and written again with those bytes unchanged.
@@ -385,7 +408,7 @@ never committed.
 | Stub image | 8,072 bytes (limit 8 KB, RadioFoundry's staging buffer, asserted by `f4stub.ld`). Built with link-time optimization (`-flto`): without it, protocol 5 is about 8,500 bytes |
 | Stub RAM after the jump | 28.6 KB of SRAM (image, engine buffers, 8 KB receive ring), then the stack: at least 4 KB is left for it (asserted by `f4stub.ld`); the deepest call chain needs under 1 KB (`-fstack-usage`) |
 | RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C6000 board | the STUB state machine, the entry and the banner text, all in sectors 3-9 (720 KB); +8 KB of SRAM (the staging buffer): RAM 95.4 % used, the default build |
-| RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 464 KB (the default image is 320,236 bytes), RAM 78.8 %. The switch fits with no other switch off |
+| RadioFoundry with `CONFIG_STUB_ENTRY=y`, HR_C5000 board | the same code, in an application area of 848 KB (the default image is 465,912 bytes). The switch fits with no other switch off |
 | RadioFoundry with the switch off | no change: the same image, byte for byte in size |
 
 The switch is on by default. The command hands the whole SoC to whatever image the host sends, guarded by the magic,

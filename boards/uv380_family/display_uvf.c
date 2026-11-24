@@ -141,16 +141,20 @@ static st7735_t panel = {
 };
 
 static bool ready;
+static int16_t factory = -1;	// the factory panel byte (security register 3, 0x1D), -1: not read
 
 // ---- Backlight: TIM1 paces two one-word DMA writes to the backlight port's BSRR (backlight_uvf.h) ----
 // The update (DMA2 Stream5 channel 6) sets the pin, the CC1 match (DMA2 Stream1 channel 6) clears it: duty = CCR1 /
-// period at 40 kHz, two transfers per cycle. 0 % and 100 % stop both and drive the pin steady.
+// period, two transfers per cycle at 2 kHz. 0 %, 100 % and any lit level during TX or open receive audio stop both and
+// drive the pin steady.
 
 #define BL_MASK		PIN_MASK(PIN_LCD_BACKLIGHT)
 
 static uint32_t bl_set = BL_MASK;			// main SRAM, reachable by DMA2
 static uint32_t bl_clear = (uint32_t)BL_MASK << 16;
 static bool bl_running;
+static uint8_t bl_percent;	// the brightness set last
+static bool bl_tx, bl_rx_open;
 
 static void bl_stream_stop(DMA_Stream_TypeDef *st)
 {
@@ -206,21 +210,49 @@ static void bl_init(void)
 	TIM1->CR1 = TIM_CR1_ARPE | TIM_CR1_CEN;
 }
 
-// 0 = off, 100 or more = fully on, otherwise PWM duty in percent
-static void set_backlight(uint8_t percent)
+// The brightness, or fully on during TX or open receive audio (uvf_backlight_rx). Interrupts off: called from the
+// backlight's task, the radio's tx and the radio task's rx_open, where the pin is steady before the PA or receive audio
+// comes on. The compare is preloaded, so a new duty starts at the next cycle.
+static void bl_apply(void)
 {
-	uint16_t cmp = uvf_bl_compare(percent);
+	uint32_t primask = __get_PRIMASK();
+	__disable_irq();
+	uint16_t cmp = uvf_bl_compare(bl_percent, bl_tx || bl_rx_open);
 
 	if (!ready || cmp == 0 || cmp >= UVF_BL_PERIOD) {
 		if (bl_running) {
 			bl_dma_stop();
 		}
 		PIN_WRITE(PIN_LCD_BACKLIGHT, cmp > 0);
-		return;
+	} else {
+		TIM1->CCR1 = cmp;
+		if (!bl_running) {
+			bl_dma_start();
+		}
 	}
-	TIM1->CCR1 = cmp;
-	if (!bl_running) {
-		bl_dma_start();
+	__set_PRIMASK(primask);
+}
+
+// 0 = off, 100 or more = fully on, otherwise PWM duty in percent
+static void set_backlight(uint8_t percent)
+{
+	bl_percent = percent;
+	bl_apply();
+}
+
+void uvf_backlight_tx(bool tx)
+{
+	if (tx != bl_tx) {
+		bl_tx = tx;
+		bl_apply();
+	}
+}
+
+void uvf_backlight_rx(bool open)
+{
+	if (open != bl_rx_open) {
+		bl_rx_open = open;
+		bl_apply();
 	}
 }
 
@@ -239,6 +271,8 @@ static void init(void)
 
 	if (!stm32_spi_flash_read_security(3, 0x1D, &type, 1)) {
 		type = 0;
+	} else {
+		factory = type;
 	}
 	// hardware-dm1701.md 9.2: what each factory type means is the radio's (the DM-1701 runs its type 2 as type 3 in RGB
 	// order, the MD-UV380 keeps every type and is always RGB)
@@ -256,6 +290,14 @@ static void flush(const void *fb, const uint16_t *palette, uint16_t y0, uint16_t
 	st7735_write_rows_indexed(&panel, (const uint8_t *)fb, palette, y0, y1);
 }
 
+// What init chose the panel's type from (the support info): the factory byte as read, nothing from the bus
+static void panel_info(hal_display_panel_t *p)
+{
+	p->factory = factory;
+	p->type = panel.type;
+	p->source = factory >= 0 ? "factory" : "default";
+}
+
 const hal_display_t uvf_display = {
 	// Safe area from the build (the board's config.mk)
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
@@ -266,6 +308,7 @@ const hal_display_t uvf_display = {
 	.init = init,
 	.flush_indexed = flush,
 	.set_backlight = set_backlight,
+	.panel = panel_info,
 };
 
 uint8_t uvf_display_panel_type(void)

@@ -152,11 +152,12 @@ static void test_toggles(void)
 		{ KEYFN_KEY_LOCK, 11, ACT_LOCK }, { KEYFN_CALL_BACK, 12, ACT_CALL_BACK }, { KEYFN_HOME_ZONE, 13, ACT_HOME_ZONE },
 		{ KEYFN_COPY_VFO, 14, ACT_COPY_VFO }, { KEYFN_DUAL_WATCH, 15, ACT_DUAL_WATCH }, { KEYFN_AB, 16, ACT_AB },
 		{ KEYFN_VFO_TOGGLE, 17, ACT_VFO_TOGGLE }, { KEYFN_TALK_LABEL, 19, ACT_TALK_LABEL },
+		{ KEYFN_SCAN_SKIP, 20, ACT_SCAN_SKIP }, { KEYFN_MONITOR_TOGGLE, 21, ACT_MONITOR_TOGGLE },
 	};
 	// Stored in the codeplug's slots: append only, so every value that shipped keeps its number
 	CHECK(KEYFN_DEFAULT == 0 && KEYFN_NONE == 1 && KEYFN_MONITOR == 2 && KEYFN_TALK_TARGET == 3 &&
 	      KEYFN_POWER == 4 && KEYFN_ZONE_UP == 5 && KEYFN_ZONE_DOWN == 6 && KEYFN_SCAN == 7 && KEYFN_EMERGENCY == 8);
-	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 20);
+	CHECK(KEYFN_HEAR_ALL == 9 && KEYFN_MONITOR_LATCH == 10 && KEYFN_COUNT == 22);
 	for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
 		uint16_t s[KEYASSIGN_SLOTS] = { 0 };
 		CHECK(t[i].fn == t[i].value);
@@ -178,6 +179,9 @@ static void test_toggles(void)
 	// A value one past the last is not a function: it reads as the default
 	uint16_t s[KEYASSIGN_SLOTS] = { KEYASSIGN_MARKER, KEYFN_COUNT, KEYFN_COUNT };
 	CHECK(keyassign_get(s, 0, false) == KEYFN_DEFAULT && keyassign_get(s, 0, true) == KEYFN_DEFAULT);
+	// The value is 21 and the retired 9 and 10 stay retired: Monitor toggle is a new function, not their return
+	CHECK(KEYFN_MONITOR_TOGGLE == 21 && KEYFN_MONITOR_TOGGLE == KEYFN_SCAN_SKIP + 1);
+	CHECK(!keyassign_allowed(KEYFN_HEAR_ALL, false) && !keyassign_allowed(KEYFN_MONITOR_LATCH, true));
 	// The retired monitor latch reads as the default: the monitor key stays held
 	uint16_t m[KEYASSIGN_SLOTS] = { 0 };
 	keyassign_set(m, 0, false, KEYFN_MONITOR_LATCH);
@@ -342,6 +346,66 @@ static void test_board_defaults(void)
 	CHECK(toggles >= 1);	// at least one board has the key, so the check reads something
 }
 
+// Home keys (board.home_keys: arrows printed P1 and P2): unset, the key map's own actions everywhere; set, the key
+// sends ACT_HOME_KEY_n, which is the function on Home and the arrow anywhere else. Monitor and Tone burst can't go
+// there (no raw edges), nor Emergency (no 1.5 s hold on a home key's long press)
+static void test_home_keys(void)
+{
+	enum { K_LEFT = 5, K_RIGHT = 6 };
+	static const keymap_entry_t hb[] = {
+		{ K_OK, ACT_SELECT, ACT_SELECT, false, false, 0 },
+		{ K_SK1, ACT_MONITOR, ACT_MONITOR, true, false, 0 },
+		{ K_LEFT, ACT_NAV_LEFT, ACT_USER_1, false, true, 0 },
+		{ K_RIGHT, ACT_NAV_RIGHT, ACT_USER_4, false, true, 0 },
+	};
+	enum { HN = sizeof(hb) / sizeof(hb[0]) };
+	static const uint8_t hside[] = { K_SK1 }, home[] = { K_LEFT, K_RIGHT };
+	keymap_entry_t hm[HN];
+	uint16_t s[KEYASSIGN_SLOTS] = { 0 };
+
+	keyassign_build(hb, HN, hside, 1, s, hm);
+	keyassign_build_home(hm, HN, home, 2, 1, s);
+	CHECK(memcmp(hm, hb, sizeof(hm)) == 0);
+	CHECK(keyassign_home_allowed(KEYFN_SCAN, false) && !keyassign_home_allowed(KEYFN_MONITOR, false));
+	CHECK(keyassign_home_allowed(KEYFN_SCAN_SKIP, false) && keyassign_home_allowed(KEYFN_SCAN_SKIP, true));
+	// Monitor toggle is a plain press or long press function (it latches, it needs no held key), so a home key may have it
+	CHECK(keyassign_home_allowed(KEYFN_MONITOR_TOGGLE, false) && keyassign_home_allowed(KEYFN_MONITOR_TOGGLE, true));
+	CHECK(!keyassign_home_allowed(KEYFN_TONE_BURST, false) && !keyassign_home_allowed(KEYFN_EMERGENCY, true));
+
+	// P1 press: scan. P2 left alone
+	keyassign_set(s, 1, false, KEYFN_SCAN);
+	keyassign_build(hb, HN, hside, 1, s, hm);
+	keyassign_build_home(hm, HN, home, 2, 1, s);
+	CHECK(hm[2].short_action == ACT_HOME_KEY_1 && hm[2].long_action == ACT_HOME_KEY_1 && hm[2].repeat);
+	CHECK(hm[3].short_action == ACT_NAV_RIGHT && hm[3].long_action == ACT_USER_4);
+	CHECK(hm[1].short_action == ACT_MONITOR);	// the side key's role is its own
+#define HE(a, g, h) keyassign_home_event(a, g, h, hb, HN, home, 2, 1, s)
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, true) == ACT_SCAN);
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_LONG, true) == ACT_USER_1);	// the long press is still the board's
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_REPEAT, true) == ACT_USER_1);
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_PRESS, false) == ACT_NAV_LEFT);	// a menu: the arrow
+	CHECK(HE(ACT_HOME_KEY_1, GESTURE_REPEAT, false) == ACT_USER_1);
+	CHECK(HE(ACT_SELECT, GESTURE_PRESS, true) == ACT_SELECT);	// any other action as it is
+
+	// P2 long press: power level, once per hold; Nothing on its press
+	keyassign_set(s, 2, true, KEYFN_POWER);
+	keyassign_set(s, 2, false, KEYFN_NONE);
+	keyassign_build_home(hm, HN, home, 2, 1, s);
+	CHECK(hm[3].short_action == ACT_HOME_KEY_2);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_LONG, true) == ACT_POWER);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_REPEAT, true) == ACT_NONE);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, true) == ACT_NONE);
+	CHECK(HE(ACT_HOME_KEY_2, GESTURE_PRESS, false) == ACT_NAV_RIGHT);
+
+	// Monitor in a home key's slot (a CPS wrote it) reads as Default there
+	keyassign_set(s, 1, false, KEYFN_MONITOR);
+	keyassign_set(s, 1, true, KEYFN_DEFAULT);
+	keyassign_build(hb, HN, hside, 1, s, hm);
+	keyassign_build_home(hm, HN, home, 2, 1, s);
+	CHECK(hm[2].short_action == ACT_NAV_LEFT && !hm[2].raw_edges);
+#undef HE
+}
+
 int main(void)
 {
 	test_marker();
@@ -353,6 +417,7 @@ int main(void)
 	test_burst_edges();
 	test_burst_lock();
 	test_board_defaults();
+	test_home_keys();
 	printf("# keyassignTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

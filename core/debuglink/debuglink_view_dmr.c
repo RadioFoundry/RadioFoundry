@@ -9,6 +9,8 @@
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
+#include "audio/miclimit/miclimit.h"
+#include "radio/mic_gain.h"
 #endif
 
 #if CONFIG_DMR
@@ -67,13 +69,22 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 	switch (part) {
 	case 0:
 		dl_text(t, "dmr.built=1\n");
-		dl_text(t, "dmr.active=%u\ndmr.codec=%u\n", d->active, d->codec);
+		dl_text(t, "dmr.active=%u\ndmr.codec=%u\ndmr.killed=%u\n", d->active, d->codec, d->killed);
 		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
 		{
 			ambe_voice_stats_t a;
 			ambeVoiceGetStats(&a);
 			dl_text(t, "voice.tx_mic_peak=%u\nvoice.tx_test=%u\n", (unsigned)a.tx_mic_peak,
 				ambeVoiceTestSignal() ? 1u : 0u);
+			// The mic gain (DMR's) in force now; after it, the encoder's largest sample and the
+			// limiter's lowest gain in the latest transmission (- before one). Here, not in features: that section
+			// is at a reply's size
+			dl_text(t, "voice.mic_pcm_db=%d\nvoice.tx_enc_peak=%u\n", radio_mic_pcm_db(), (unsigned)a.tx_enc_peak);
+			if (a.tx_mic_low_q8 != 0) {
+				dl_text(t, "voice.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)a.tx_mic_low_q8));
+			} else {
+				dl_text(t, "voice.tx_mic_low_db=-\n");
+			}
 		}
 		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
 		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
@@ -85,16 +96,23 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dmr.phase=%s\n", phase_key(cv->phase));
 		dl_text(t, "dmr.tx_error=%s\n", tx_error_key(cv->tx_error));
 		dl_text(t, "dmr.own_id=%u\ndmr.cc=%u\ndmr.ts=%u\n", (unsigned)d->own_id, d->cc, d->ts);
+		dl_text(t, "dmr.rx_cc=%u\ndmr.rx_ts=%u\n", d->rx_cc, d->rx_ts);
 		char alias[DMR_TA_TEXT_MAX + 1];
 		dmr_call_tx_alias(alias);
 		dl_text(t, "dmr.tx_alias=%s\n", alias);
 		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
 		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
-		radio_settings_t rs;
-		radio_get_settings(&rs);
-		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, rs.sfr_rx);
-		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", rs.sfr_cwid, d->sfr_cw,
+		uint8_t sfr_rx, sfr_cwid;
+		radio_get_sfr_settings(&sfr_rx, &sfr_cwid);
+		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, sfr_rx);
+		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", sfr_cwid, d->sfr_cw,
 			d->sfr_cwid_sent, d->sfr_cwid_cut);
+		if (board.radio->dmr_keying != NULL) {	// how the board keyed DMR bursts (hal_radio_t)
+			hal_dmr_keying_t k;
+			board.radio->dmr_keying(&k);
+			dl_text(t, "dmr.keyed_direct=%u\ndmr.keyed_direct_n=%u\ndmr.keyed_idle_n=%u\n", k.last_direct ? 1u : 0u,
+				(unsigned)k.direct, (unsigned)k.idle);
+		}
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);
@@ -133,6 +151,18 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		dl_text_kv_str(t, "call.alias", d->alias);
 		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
 		call(t, "last", &d->last);
+		{
+			// Why received calls ended, and what the filters dropped: a call cut short shows here
+			dmr_call_stats_t c;
+			dmr_call_get_stats(&c);
+			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
+				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
+				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
+			// The reverse channel heard while sending: here, as dmr_stats fills a reply
+			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
+				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
+		}
 		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
 		break;
 	case 2: {

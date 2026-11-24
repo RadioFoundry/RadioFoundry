@@ -8,6 +8,7 @@
 #include <string.h>
 #include "config.h"
 #include "dmr/dmrDataService.h"
+#include "dmr/trunk/t3_pdu.h"
 #include "dmr/dmr_data_api.h"
 #if CONFIG_DMR_EMERGENCY
 #include "dmr/dmr_emergency.h"
@@ -55,6 +56,8 @@ _Static_assert(DMR_DATA_IP_PREAMBLES == DMR_DATA_SMS_PREAMBLES, "IP packets keep
 // The preambles, the header, the blocks of a confirmed packet of the air MTU (10 octets each) and the terminator
 _Static_assert(IP_PREAMBLES + 1 + ((DMR_DATA_IP_MTU + 4 + 9) / 10) + 1 <= DMR_DATA_MAX_BURSTS,
 				"a confirmed packet of the air MTU goes in one transmission");
+// With data privacy its header takes the place of one of those preambles (ipCnfPreambles)
+_Static_assert(IP_PREAMBLES >= 2, "a preamble to spare for the privacy header");
 // DMR_DATA_TX_PREAMBLES preamble CSBKs ahead of a text or IP packet where the buffer has room (fewer, down to
 // IP_PREAMBLES, for the longest). BrandMeister's data services ignore packets with 1 or 2 and answer the same packet
 // with 15 or 16, as MOTOTRBO radios send them (docs/spec/dmr-data.md 5.1.1). About 0.8 s more on air per try; the ACK
@@ -69,7 +72,7 @@ _Static_assert(DMR_DATA_TX_PREAMBLES >= IP_PREAMBLES, "more preambles where they
 
 static dmrDataEnv_t env;
 static dmrDataSettings_t settings = { .radioCheckReply = true, .callAlertAck = true, .lrrpReply = true,
-										.smsFormat = DMR_SMS_FORMAT_ETSI_IP, .udpCompress = DMR_UDPC_AUTO,
+										.smsFormat = DMR_SMS_FORMAT_DEFAULT, .udpCompress = DMR_UDPC_AUTO,
 										.ipConfirmed = DMR_IPC_RULES, .ipConfirmedTries = DMR_IPC_TRIES_DEFAULT };
 static bool passthrough;				// control station: IP based packets to us belong to the PC
 static dmrDataChannel_t channel;
@@ -109,6 +112,7 @@ static bool txIsReply;
 static uint8_t txKind;
 static uint16_t txGuardMs = DMR_DATA_TX_GUARD_MS;
 static bool txChain = true;
+static uint8_t ipConfirmedRate = IP_CONFIRMED_RATE;	// RAM override for the bench (dmrDataServiceSetIpConfirmedRate)
 static bool txEnded;					// txEndedAt holds when our last list ended (the guard)
 static bool txEndStamp;					// a list just ended: stamped at the next tick, never before the real end
 static bool txGuardCounted;
@@ -280,6 +284,13 @@ static bool queueTx(int count, uint8_t kind)
 	{
 		return false;
 	}
+	// The one place every list passes: data the channel's privacy can't protect isn't sent (dmrData.h)
+	if (!dmrDataPrivacyAllows(txBursts, count))
+	{
+		stats.txPrivacyBlocked++;
+		return false;
+	}
+	stats.txPrivacy += dmrDataPrivacyEncrypted(txBursts, count) ? 1 : 0;// not CSBKs and responses: never encrypted
 
 	txBurstCount = count;
 	txPendingSince = now;
@@ -316,6 +327,12 @@ static void queueReply(int count)
 	{
 		txIsReply = true;
 	}
+}
+
+// The preamble CSBKs of a confirmed IP packet: one fewer with the privacy header, so the air MTU still fits
+static int ipCnfPreambles(void)
+{
+	return IP_PREAMBLES - dmrDataPrivacyBursts();
 }
 
 static bool sendUDP(bool group, uint32_t dst, uint16_t srcPort, uint16_t dstPort, const uint8_t *payload, int length, uint8_t blockType,
@@ -629,14 +646,14 @@ static void ipTransmit(void)
 	if (ipx.confirmed)
 	{
 		// One burst kept for the terminator
-		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, IP_CONFIRMED_RATE, ipx.ns, ipx.firstTry,
-										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, IP_PREAMBLES, txBursts, DMR_DATA_MAX_BURSTS - 1);
+		count = dmrDataBuildConfirmed(ipx.sap, ipx.dst, channel.ownId, pdu, n, ipConfirmedRate, ipx.ns, ipx.firstTry,
+										(ipx.blocks != 0) ? ipx.blocks : ~0ULL, ipCnfPreambles(), txBursts, DMR_DATA_MAX_BURSTS - 1);
 		if ((count == 0) && (ipx.tries == 0))
 		{
 			stats.ipCnfTooLong++;// longer than one confirmed packet can carry: as it would go without the setting
 			ipx.confirmed = false;
 		}
-		count = widenPreambles(false, ipx.dst, count, IP_PREAMBLES, DMR_DATA_MAX_BURSTS - 1);
+		count = widenPreambles(false, ipx.dst, count, ipCnfPreambles(), DMR_DATA_MAX_BURSTS - 1);
 		if ((count > 0) && !channel.rmo)
 		{
 			terminatorLC(ipx.dst, channel.ownId, ipx.firstTry, ipx.ns, &txBursts[count++]);
@@ -691,7 +708,7 @@ static void ipTransmit(void)
 	}
 	if (ipx.tries == 0)
 	{
-		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? IP_CONFIRMED_RATE : IP_UNCONFIRMED_RATE, ipx.confirmed);
+		dmrDataCountIpTx(ipx.sap, pdu, n, ipx.confirmed ? ipConfirmedRate : IP_UNCONFIRMED_RATE, ipx.confirmed);
 		stats.ipConfirmed += ipx.confirmed ? 1 : 0;
 	}
 	else
@@ -847,6 +864,16 @@ uint16_t dmrDataServiceTxGuardMs(void)
 	return txGuardMs;
 }
 
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType)
+{
+	ipConfirmedRate = dataType;
+}
+
+uint8_t dmrDataServiceIpConfirmedRate(void)
+{
+	return ipConfirmedRate;
+}
+
 bool dmrDataServiceTxChain(void)
 {
 	return txChain;
@@ -858,6 +885,11 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	return ipSend(group, dst, srcIp, dstIp, ttl, protocol, l4, length, DMR_IPS_SETTINGS);
 }
 
+uint32_t dmrDataServiceTxIpDst(void)
+{
+	return ((txKind == TXK_IP) && (ipx.state == IPX_SENDING)) ? ipx.dstIp : 0u;
+}
+
 bool dmrDataServiceIpBusy(void)
 {
 	return ipx.state != IPX_IDLE;
@@ -866,6 +898,11 @@ bool dmrDataServiceIpBusy(void)
 uint8_t dmrDataServiceIpResult(void)
 {
 	return ipx.result;
+}
+
+uint32_t dmrDataServiceIpFailures(void)
+{
+	return stats.ipFailed;
 }
 
 static uint8_t ipTries(void)
@@ -1049,6 +1086,20 @@ static bool smsTransmit(void)
 		return false;
 	}
 
+	if (sms.format == DMR_SMS_FORMAT_T3_UDT)
+	{
+		if (!channel.trunked || channel.privacy.mode != DMR_DATA_PRIVACY_CLEAR || env.txSmsUdt == NULL ||
+			!env.txSmsUdt(sms.dst, sms.group, sms.text, now, env.ctx))
+		{
+			smsFinish(DMR_REQ_FAILED);
+			return false;
+		}
+		sms.state = DMR_REQ_SENDING;
+		txKind = TXK_SMS;
+		txRunning = true;
+		stats.smsSent++;
+		return true;
+	}
 	if (sms.tries == 0)
 	{
 		smsSeq = (smsSeq + 1) & 0x1F;
@@ -1117,6 +1168,10 @@ static bool smsTransmit(void)
 	count = widenPreambles(sms.group, sms.dst, count, DMR_DATA_SMS_PREAMBLES, DMR_DATA_MAX_BURSTS);
 	if (!queueTx(count, TXK_SMS))
 	{
+		if (count > 0)
+		{
+			smsFinish(DMR_REQ_FAILED);// built, but the channel's privacy can't protect it: no try will go
+		}
 		return false;
 	}
 	sms.tries++;
@@ -1141,17 +1196,31 @@ static bool smsFormatBuilt(uint8_t format)
 
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format)
 {
-	if (format == DMR_SMS_FORMAT_DEFAULT)
-	{
-		// A setting this build can't send (TMS stored by a build with it): the standard default instead
-		format = smsFormatBuilt(settings.smsFormat) ? settings.smsFormat : DMR_SMS_FORMAT_ETSI_IP;
-	}
-	if (!smsFormatBuilt(format))
+	if (!CONFIG_DMR_SMS || (sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) ||
+			(text[0] == '\0') || (dst == 0))
 	{
 		return false;
 	}
-	if (!CONFIG_DMR_SMS || (sms.state == DMR_REQ_QUEUED) || (sms.state == DMR_REQ_SENDING) || (text == NULL) ||
-			(text[0] == '\0') || (dst == 0))
+
+	if (format == DMR_SMS_FORMAT_DEFAULT)
+	{
+		format = settings.smsFormat;
+		if (format == DMR_SMS_FORMAT_DEFAULT)
+		{
+			format = channel.trunked && channel.privacy.mode == DMR_DATA_PRIVACY_CLEAR && env.txSmsUdt != NULL ?
+					DMR_SMS_FORMAT_T3_UDT : DMR_SMS_FORMAT_ETSI_IP;
+		}
+		else if (!smsFormatBuilt(format))
+		{
+			// A format stored by another build (such as TMS): use IP text.
+			format = DMR_SMS_FORMAT_ETSI_IP;
+		}
+	}
+	if (format == DMR_SMS_FORMAT_T3_UDT && (!channel.trunked || strlen(text) > T3_UDT_MAX / 2u))
+	{
+		format = DMR_SMS_FORMAT_ETSI_IP;
+	}
+	if (format != DMR_SMS_FORMAT_T3_UDT && !smsFormatBuilt(format))
 	{
 		return false;
 	}
@@ -1203,7 +1272,7 @@ static void smsTxDone(bool ok)
 	{
 		return;
 	}
-	if (!sms.ack)
+	if (sms.format == DMR_SMS_FORMAT_T3_UDT || !sms.ack)
 	{
 		smsFinish(ok ? DMR_REQ_OK : DMR_REQ_FAILED);
 		return;
@@ -1228,21 +1297,19 @@ static bool signalTransmit(void)
 	{
 		buf[0] = 0x80 | DMR_CSBKO_CALL_ALERT;// last block; ETSI call alert (TS 102 361-2), FID 0
 		buf[1] = DMR_FID_ETSI;
+		buf[4] = (sig.dst >> 16) & 0xFF;
+		buf[5] = (sig.dst >> 8) & 0xFF;
+		buf[6] = sig.dst & 0xFF;
+		buf[7] = (channel.ownId >> 16) & 0xFF;
+		buf[8] = (channel.ownId >> 8) & 0xFF;
+		buf[9] = channel.ownId & 0xFF;
 		stats.callAlertsSent++;
 	}
 	else
 	{
-		buf[0] = 0x80 | DMR_CSBKO_RADIO_CHECK;// radio check request: octet 3 0x80; FID per the setting (Motorola / ETSI)
-		buf[1] = settings.radioCheckEtsi ? DMR_FID_ETSI : DMR_FID_MOTOROLA;
-		buf[3] = 0x80;
+		dmrDataBuildRadioCheck(sig.dst, channel.ownId, settings.radioCheckEtsi, buf);// form per the setting
 		stats.radioChecksSent++;
 	}
-	buf[4] = (sig.dst >> 16) & 0xFF;
-	buf[5] = (sig.dst >> 8) & 0xFF;
-	buf[6] = sig.dst & 0xFF;
-	buf[7] = (channel.ownId >> 16) & 0xFF;
-	buf[8] = (channel.ownId >> 8) & 0xFF;
-	buf[9] = channel.ownId & 0xFF;
 	queueTx(dmrDataBuildCSBK(buf, txBursts), TXK_SIGNAL);
 	sig.tries++;
 	sig.state = DMR_REQ_SENDING;
@@ -1292,6 +1359,23 @@ bool dmrDataServiceCallAlert(uint32_t dst)
 bool dmrDataServiceRadioCheck(uint32_t dst)
 {
 	return signalStart(DMR_DATA_EV_RADIO_CHECK_OK, dst);
+}
+
+void dmrDataServiceSignalResult(uint32_t dst, bool ok)
+{
+	if (!CONFIG_DMR_SIGNALING || (sig.state != DMR_REQ_SENDING) || (dst != sig.dst))
+	{
+		return;
+	}
+	if (ok && (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED))
+	{
+		stats.callAlertsAcked++;
+	}
+	else if (ok)
+	{
+		stats.radioChecksAnswered++;
+	}
+	signalFinish(ok);
 }
 
 static void signalTick(void)
@@ -1595,7 +1679,8 @@ dmrArsState_t dmrDataServiceArsState(void)
 // position source (settings.hasGps false: a radio without GPS) every answer says "no fix" and no trigger is started
 #define LRRP_QUEUE_SIZE				3		// one slot kept free
 #define LRRP_TRIGGERS_MAX			2
-#define LRRP_MIN_INTERVAL_S			5
+#define LRRP_MIN_INTERVAL_S			30		// each report is a transmission: a shorter period is stretched
+#define LRRP_MAX_INTERVAL_S			86400	// one day: a longer period is capped (its milliseconds fit 32 bits)
 #define LRRP_DISTANCE_CHECK_S		30
 #define LRRP_FIRST_REPORT_MS		5000	// a new trigger's first report, after its start response
 
@@ -1755,6 +1840,11 @@ static bool lrrpHandleRequest(const lrrpPendingRequest_t *pending)
 				if (interval < LRRP_MIN_INTERVAL_S)
 				{
 					interval = LRRP_MIN_INTERVAL_S;
+				}
+				// The requester picks the period; ours runs in milliseconds
+				if (interval > LRRP_MAX_INTERVAL_S)
+				{
+					interval = LRRP_MAX_INTERVAL_S;
 				}
 
 				memset(t, 0, sizeof(*t));
@@ -2020,6 +2110,7 @@ void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *ch)
 	{
 		channel = *ch;
 	}
+	dmrDataSetPrivacy(&channel.privacy);
 
 	takeMailbox();
 
@@ -2257,6 +2348,31 @@ static void rxResult(dmrDataRxResult_t result, bool block)
 	queueReplyEntry(&reply);
 }
 
+// A received message into the inbox (replacing the oldest when full), announced
+static void inboxStore(uint32_t src, uint32_t dst, bool group, uint8_t seq, uint8_t format, const char *text)
+{
+	lock();
+	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);
+	dmrDataMessage_t *message = &inbox[next];
+	message->src = src;
+	message->dst = dst;
+	message->group = group;
+	message->seq = seq;
+	message->receivedAt = now;
+	message->unread = true;
+	message->format = format;
+	strncpy(message->text, text, sizeof(message->text) - 1);
+	message->text[sizeof(message->text) - 1] = '\0';
+	inboxNewest = next;
+	if (inboxUsed < DMR_DATA_INBOX_SIZE)
+	{
+		inboxUsed++;
+	}
+	unlock();
+	stats.smsReceived++;
+	post(DMR_DATA_EV_SMS_RECEIVED, src);
+}
+
 static void handlePacket(const dmrDataPacket_t *packet)
 {
 	dmrDataUDP_t udp;
@@ -2280,6 +2396,18 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		queueReplyEntry(&reply);
 		return;
 	}
+	// Encrypted with a scheme or key we don't have: nothing in it can be read. Confirmed data is still acknowledged
+	// (its CRCs passed, the sender would retry), as a radio without the key does
+	if (packet->privacy.encrypted && !packet->decrypted)
+	{
+		stats.rxPrivacyDropped++;
+		if (forUs && (reply.response != 0))
+		{
+			queueReplyEntry(&reply);
+		}
+		return;
+	}
+	stats.rxPrivacy += packet->decrypted ? 1 : 0;
 	if (env.packet)
 	{
 		env.packet(packet, env.ctx);
@@ -2477,27 +2605,17 @@ static void handlePacket(const dmrDataPacket_t *packet)
 		}
 	}
 
-	lock();
-	uint8_t next = (inboxUsed == 0) ? 0 : ((inboxNewest + 1) % DMR_DATA_INBOX_SIZE);// replaces the oldest when full
-	dmrDataMessage_t *message = &inbox[next];
-	message->src = packet->src;
-	message->dst = packet->dst;
-	message->group = packet->group;
-	message->seq = tms.seq;
-	message->receivedAt = now;
-	message->unread = true;
-	message->format = format;
-	memcpy(message->text, tms.text, sizeof(message->text));
-	inboxNewest = next;
-	if (inboxUsed < DMR_DATA_INBOX_SIZE)
-	{
-		inboxUsed++;
-	}
-	unlock();
-	stats.smsReceived++;
+	inboxStore(packet->src, packet->dst, packet->group, tms.seq, format, tms.text);
 	stats.etsiSmsReceived += (format == DMR_SMS_FORMAT_ETSI) ? 1 : 0;
 	stats.ipTextReceived += (format == DMR_SMS_FORMAT_ETSI_IP) ? 1 : 0;
-	post(DMR_DATA_EV_SMS_RECEIVED, packet->src);
+}
+
+void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *text)
+{
+	if (CONFIG_DMR_SMS && (text[0] != '\0'))
+	{
+		inboxStore(src, dst, group, 0, DMR_SMS_FORMAT_T3_UDT, text);
+	}
 }
 
 static uint32_t getId(const uint8_t *p)
@@ -2535,6 +2653,47 @@ static void handleEmergencyAlarm(const uint8_t *csbk)
 #endif
 }
 
+// Our call alert or radio check of the kind is running: sent and waiting, or a retry held back by a busy channel (the
+// busy channel may be the answer to the try before)
+static bool signalRunning(uint8_t kind)
+{
+	return (sig.kind == kind) && ((sig.state == DMR_REQ_SENDING) || ((sig.state == DMR_REQ_QUEUED) && (sig.tries > 0)));
+}
+
+// A radio check to us (dmrDataRadioCheckKind): the answer to ours, or a request (answered when the setting allows). An
+// answer from anyone else, or after the check ended, is dropped
+static void handleRadioCheck(const uint8_t *csbk)
+{
+	uint32_t peer = 0;
+	uint8_t kind = dmrDataRadioCheckKind(csbk, channel.ownId, &peer);
+	dmrBurst_t answer;
+
+	if (kind == DMR_RC_ANSWER)
+	{
+		if (signalRunning(DMR_DATA_EV_RADIO_CHECK_OK) && (peer == sig.dst))
+		{
+			stats.radioChecksAnswered++;
+			signalFinish(true);
+		}
+		return;
+	}
+	if ((kind != DMR_RC_REQUEST) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
+	{
+		return;
+	}
+	stats.radioChecksReceived++;
+	if (!settings.radioCheckReply)
+	{
+		return;
+	}
+	post(DMR_DATA_EV_RADIO_CHECK_ANSWERED, peer);
+	if (!csbkAnswerPending)
+	{
+		csbkAnswer = answer;
+		csbkAnswerPending = true;
+	}
+}
+
 // Call alert and radio check: answers to ours, and requests to us (answered, a call alert rings); emergency alarms
 static void handleCSBK(const uint8_t *csbk)
 {
@@ -2551,71 +2710,40 @@ static void handleCSBK(const uint8_t *csbk)
 	{
 		return;
 	}
-
-	if ((sig.state == DMR_REQ_SENDING) && (source == channel.ownId) && (target == sig.dst))
+	if (opcode == DMR_CSBKO_RADIO_CHECK)
 	{
-		if (((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK)) ||
-				((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80)))
-		{
-			if (sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED)
-			{
-				stats.callAlertsAcked++;
-			}
-			else
-			{
-				stats.radioChecksAnswered++;
-			}
-			signalFinish(true);
-			return;
-		}
+		handleRadioCheck(csbk);
+		return;
 	}
-	// The ack's IDs are the other way round: to the caller (us) from the alerted radio. A radio check answered in
-	// that order (the ETSI acknowledgment convention) counts too
-	if ((sig.state == DMR_REQ_SENDING) && (target == channel.ownId) && (source == sig.dst))
+
+	// The ack's IDs are the other way round from the alert: to the caller (us) from the alerted radio. One with the
+	// alert's order counts too
+	if (signalRunning(DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK) &&
+			(((source == channel.ownId) && (target == sig.dst)) || ((target == channel.ownId) && (source == sig.dst))))
 	{
-		if ((sig.kind == DMR_DATA_EV_CALL_ALERT_ACKED) && (opcode == DMR_CSBKO_CALL_ALERT_ACK))
-		{
-			stats.callAlertsAcked++;
-			signalFinish(true);
-			return;
-		}
-		if ((sig.kind == DMR_DATA_EV_RADIO_CHECK_OK) && (opcode == DMR_CSBKO_RADIO_CHECK) && (csbk[3] != 0x80))
-		{
-			stats.radioChecksAnswered++;
-			signalFinish(true);
-			return;
-		}
+		stats.callAlertsAcked++;
+		signalFinish(true);
+		return;
 	}
 
 	dmrBurst_t answer;
 
-	if ((channel.ownId == 0) || (dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
+	if ((opcode != DMR_CSBKO_CALL_ALERT) || (channel.ownId == 0) ||
+			(dmrDataBuildCSBKAnswer(csbk, channel.ownId, &answer) == 0))
 	{
 		return;
 	}
 
-	if (opcode == DMR_CSBKO_CALL_ALERT)
+	stats.callAlertsReceived++;
+	if ((source != lastCallAlertSrc) || ((now - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
 	{
-		stats.callAlertsReceived++;
-		if ((source != lastCallAlertSrc) || ((now - lastCallAlertTime) > CALL_ALERT_REPEAT_MS))
-		{
-			post(DMR_DATA_EV_CALL_ALERT, source);
-		}
-		lastCallAlertSrc = source;
-		lastCallAlertTime = now;
-		if (!settings.callAlertAck)
-		{
-			return;
-		}
+		post(DMR_DATA_EV_CALL_ALERT, source);
 	}
-	else
+	lastCallAlertSrc = source;
+	lastCallAlertTime = now;
+	if (!settings.callAlertAck)
 	{
-		stats.radioChecksReceived++;
-		if (!settings.radioCheckReply)
-		{
-			return;
-		}
-		post(DMR_DATA_EV_RADIO_CHECK_ANSWERED, source);
+		return;
 	}
 
 	if (!csbkAnswerPending)
@@ -2701,6 +2829,7 @@ void dmrDataServiceInit(const dmrDataEnv_t *e)
 	{
 		env = *e;
 	}
+	ipConfirmedRate = env.noRate34 ? DMR_TYPE_RATE_1_2 : IP_CONFIRMED_RATE;
 	txEnded = false;
 	txEndStamp = false;
 	dmrDataRxReset();
@@ -2873,7 +3002,7 @@ bool sms_send(uint32_t dst, bool group, const char *text, bool ack_requested, dm
 	bool ok = false;
 
 	if (!CONFIG_DMR_SMS || (text == NULL) || (text[0] == '\0') || (dst == 0) ||
-			(!smsFormatBuilt(format) && (format != DMR_SMS_FORMAT_DEFAULT)))
+			(!smsFormatBuilt(format) && format != DMR_SMS_FORMAT_DEFAULT && format != DMR_SMS_FORMAT_T3_UDT))
 	{
 		return false;
 	}

@@ -13,8 +13,14 @@ import { h, svg, t, ROOT } from "./dom.js";
 // The picture's address in the site, or null when the data has none
 export const pictureSrc = (radio) => radio?.frame_image || null;
 
+// The picture's shape for the stylesheet (width / height, frame_geometry.aspect), which keeps a tall radio's picture
+// from pushing the step's buttons off the screen (site.css .rt-pic); "" when the data has none
+export const shapeStyle = (radio) => (radio?.frame_geometry?.aspect > 0 ? `--rt-aspect:${radio.frame_geometry.aspect}` : "");
+
 // The keys held to enter update mode, by key name (board.toml [flash.bootloader] hold): [] when the data has none
 export const holdKeys = (radio) => radio?.flash?.bootloader_hold || [];
+// a radio without a display (radios.json display "none"): text and pictures that would point at a screen change
+export const hasNoScreen = (radio) => radio?.display === "none";
 
 // A key as the radio's label names it (flash.key.<name>), else its name in capitals
 export function keyLabel(name, tr = t) {
@@ -48,7 +54,7 @@ export function radioPicture(radio, { keys = [] } = {}) {
 		"data-key": m.name, style: `left:${m.left}%;top:${m.top}%;width:${m.width}%;height:${m.height}%` }));
 	const caption = keys.length ? h("figcaption", { class: "rt-caption" }, h("span", {}, holdCaption(keys))) : null;
 	return h("figure", { class: "radio-top radio-pic" },
-		h("div", { class: "rt-pic" }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
+		h("div", { class: "rt-pic", style: shapeStyle(radio) }, h("img", { src: ROOT + src, alt: radio.name || "", class: "rt-img" }), ...marks), caption);
 }
 
 // What RadioFoundry's own screens look like on this radio: the UI gallery's picture of a screen for the radio's display
@@ -67,10 +73,12 @@ const screenShot = (radio, sc) => (radio?.gallery && SCREEN_SHOTS[sc] ? `${ROOT}
 export function radioTop(radio, initial = {}) {
 	const src = pictureSrc(radio);
 	const pct = radio?.frame_geometry?.screen_pct;
+	// no screen line in the caption, no shot over the picture
+	const noScreen = hasNoScreen(radio);
 	const shot = h("img", { alt: "", class: "rt-shot", hidden: true });
 	// what the screen shows, laid over the picture's screen where the data says it is
 	const screen = src && pct ? h("div", { class: "rt-screen", style: `left:${pct.left}%;top:${pct.top}%;width:${pct.width}%;height:${pct.height}%` }, shot) : null;
-	const pic = h("div", { class: "rt-pic", role: "img" }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
+	const pic = h("div", { class: "rt-pic", role: "img", style: shapeStyle(radio) }, src ? h("img", { src: ROOT + src, alt: "", class: "rt-img" }) : null, screen);
 	const led = svg("circle", { cx: 12, cy: 12, r: 5, class: "rt-led" });
 	const glow = svg("circle", { cx: 12, cy: 12, r: 11, class: "rt-glow" });
 	const label = h("strong", {});
@@ -82,11 +90,11 @@ export function radioTop(radio, initial = {}) {
 		el.dataset.screen = sc;
 		el.dataset.knob = knob || "";
 		label.textContent = l === "off" ? "" : t(`flash.c7.visual.tag_${l}`);
-		const url = screenShot(radio, sc);
+		const url = noScreen ? null : screenShot(radio, sc);
 		shot.hidden = !url;
 		if (url && shot.getAttribute("src") !== url) shot.setAttribute("src", url);
 		const words = [knob === "cycle" ? t("flash.c7.visual.cycle") : knob === "on" ? t("flash.c7.visual.on") : null,
-			note || t(`flash.c7.visual.led_${l}`), sc === "any" ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
+			note || t(`flash.c7.visual.led_${l}`), sc === "any" || noScreen ? null : t(`flash.c7.visual.screen_${sc}`)].filter(Boolean);
 		caption.replaceChildren(...words.map((w) => h("span", {}, w)));
 		pic.setAttribute("aria-label", [radio?.name, ...words].filter(Boolean).join(" "));
 		// restart the animation on every change, so "done" plays its three flashes from the start

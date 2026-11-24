@@ -10,8 +10,11 @@
 #   ARM_GCC_VERSION=... ARM_GCC_SHA256=... tools/install-arm-toolchain.sh
 #   FULL=1 tools/install-arm-toolchain.sh      every multilib and tool, as Arm ships it
 #
-# Does nothing when ~/opt/arm-gnu-toolchain-<version>-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc already runs (a CI
-# cache restored it). Downloads to $RUNNER_TEMP (or /tmp) and checks the SHA-256 before extracting.
+# Does nothing when ~/opt/arm-gnu-toolchain-<version>-x86_64-arm-none-eabi/bin/arm-none-eabi-gcc already runs (the
+# runner has it). Otherwise, with docker, it copies the same trimmed tree out of the image [toolchain] image pins by
+# digest (tools/docker/toolchains/build-arm-ci.sh; ARM_GCC_IMAGE overrides it, empty skips it): Arm's download site
+# has been down for hours at a time. Failing that it downloads Arm's archive to $RUNNER_TEMP (or /tmp) and checks the
+# SHA-256 before extracting.
 set -eu
 TCV="$(dirname "$0")/platform_toolchain.sh"
 VER=${ARM_GCC_VERSION:-$("$TCV" stm32f4 version)}
@@ -24,6 +27,21 @@ if "$TC/bin/arm-none-eabi-gcc" --version > /dev/null 2>&1; then
 	echo "install-arm-toolchain: $TC already there"
 	"$TC/bin/arm-none-eabi-gcc" --version | head -1
 	exit 0
+fi
+IMG=${ARM_GCC_IMAGE-$("$TCV" stm32f4 image 2>/dev/null || true)}
+if [ "${FULL:-0}" != 1 ] && [ -n "$IMG" ] && command -v docker > /dev/null 2>&1; then
+	if docker pull -q "$IMG" > /dev/null && c=$(docker create "$IMG" /none); then
+		mkdir -p "$DEST"
+		docker cp "$c:/opt/$NAME" "$DEST/" || true
+		docker rm "$c" > /dev/null || true
+	fi
+	if "$TC/bin/arm-none-eabi-gcc" --version > /dev/null 2>&1; then
+		echo "install-arm-toolchain: $TC from $IMG"
+		"$TC/bin/arm-none-eabi-gcc" --version | head -1
+		exit 0
+	fi
+	echo "install-arm-toolchain: no $NAME from $IMG, downloading it" >&2
+	rm -rf "$TC"
 fi
 TMP=${RUNNER_TEMP:-/tmp}
 f="$TMP/$NAME.tar.xz"

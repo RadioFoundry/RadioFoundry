@@ -3,6 +3,7 @@
 // DMR voice glue (core/dmr/ambe/ambeVoice.c) against a fake audio driver and a fake vocoder
 #include <stdio.h>
 #include <string.h>
+#include "audio/miclimit/miclimit.h"
 
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
@@ -15,6 +16,14 @@ static int failures, checks;
 static audio_block_cb_t cb;
 static int starts, stops, speaker_on, speaker_calls;
 static bool fake_start(audio_block_cb_t c, void *ctx) { (void)ctx; cb = c; starts++; return true; }
+// The tone is asked for, playing, or its frames are not yet pulled by the call stack (the source's busy: the over is
+// held open for it after PTT)
+static bool ambeVoiceTxToneBusy(void)
+{
+	const dmr_voice_source_t *s = ambeVoiceSource();
+	return s->busy != NULL && s->busy(s->ctx);
+}
+
 static void fake_stop(void) { stops++; cb = NULL; }
 static void fake_speaker(bool on) { speaker_on = on; speaker_calls++; }
 static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .speaker_pcm = fake_speaker };
@@ -24,8 +33,11 @@ static const hal_audio_t audio = { .start = fake_start, .stop = fake_stop, .spea
 static int resets, decodes;
 static bool fake_present(void) { return true; }
 static void fake_reset(void) { resets++; }
+static int enc_peak;	// the largest sample the encoder was given (after the mic gain)
 static void fake_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
 {
+	for (int i = 0; i < VOCODER_FRAME_SAMPLES; i++)
+		enc_peak = pcm[i] > enc_peak ? pcm[i] : -pcm[i] > enc_peak ? -pcm[i] : enc_peak;
 	for (int i = 0; i < VOCODER_BITS; i++)
 		bits[i] = (uint8_t)(pcm[i] & 1);
 }
@@ -37,7 +49,7 @@ static void fake_decode(const uint8_t bits[VOCODER_BITS], int16_t pcm[VOCODER_FR
 		pcm[i] = bits[i];
 	pcm[159] = 1000;
 }
-static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL, NULL, NULL, NULL };
+static const hal_vocoder_t vocoder = { fake_present, fake_reset, fake_encode, fake_decode, NULL, NULL, NULL, NULL, NULL };
 
 // A vocoder with encode options, built as the AMBE+2 hosts are: set_options keeps the flags word, and each frame is
 // two codec calls (two halves) that both pass it. Every call's flags are recorded
@@ -234,6 +246,49 @@ static void testTx(void)
 		got++;
 	CHECK(got == 1, "only the new transmission's frame (%d)", got);
 	src->end(src->ctx);
+}
+
+// Simplex: a transmission started while a call plays decodes nothing (a platform may keep both codec states in one
+// block, hal_vocoder_t); the call goes on as silence, and the decoder starts fresh once the transmission is over. A call
+// that begins during a transmission doesn't reset the codec then (that would reset the encoder too)
+static void testSimplex(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t bits[8][49], frame[9];
+
+	s->begin(NULL, s->ctx);
+	for (int n = 0; n < 6; n++) {
+		makeFrame(n, bits[n], frame);
+		s->frame(frame, s->ctx);
+	}
+	block();
+	CHECK(spkIs(bits[0]), "simplex: the call plays");
+	int d0 = decodes, r0 = resets;
+	src->begin(src->ctx);
+	block();
+	CHECK(spkSilent() && decodes == d0, "no decode while transmitting");
+	CHECK(resets == r0 + 1, "the transmission's own reset only");
+	block();
+	CHECK(spkSilent() && decodes == d0, "still none");
+	s->begin(NULL, s->ctx);	// a new call meanwhile
+	for (int n = 6; n < 8; n++) {
+		makeFrame(n, bits[n], frame);
+		s->frame(frame, s->ctx);
+	}
+	block();
+	CHECK(spkSilent() && decodes == d0 && resets == r0 + 1, "a call beginning during a transmission: no reset");
+	src->end(src->ctx);
+	makeFrame(5, bits[5], frame);	// a third frame: the new call primes
+	s->frame(frame, s->ctx);
+	s->end(s->ctx);
+	block();
+	CHECK(decodes == d0 + 1 && resets == r0 + 2 && spkIs(bits[6]), "after the transmission: fresh decoder, plays");
+	while (src->next(frame, src->ctx))
+		;
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(!speaker_on, "and ends");
 }
 
 // One transmission of n blocks from gen(sample index), then its mic statistics
@@ -479,15 +534,264 @@ static void testEncodeOptions(void)
 	ambeVoiceInit(&audio, &vocoder);
 }
 
+#if CONFIG_VOICE_CAPTURE
+// The capture keeps the frames as received, before the FEC, lost ones marked, up to the number armed
+static void testCapture(void)
+{
+	const dmr_voice_sink_t *s = ambeVoiceSink();
+	const ambe_cap_entry_t *e;
+	uint8_t want, bits[49], frame[9], sent[3][9];
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == 0, "not armed: nothing");
+	s->begin(NULL, s->ctx);
+	makeFrame(1, bits, frame);
+	s->frame(frame, s->ctx);
+	CHECK(ambeVoiceCapture(&e, &want) == 0, "nothing before arming");
+	ambeVoiceCaptureArm(3);
+	makeFrame(2, bits, sent[0]);
+	sent[0][4] ^= 0x10;	// an error: kept as received
+	s->frame(sent[0], s->ctx);
+	s->lost(s->ctx);
+	makeFrame(3, bits, sent[2]);
+	s->frame(sent[2], s->ctx);
+	s->frame(frame, s->ctx);	// past the three asked for
+	uint8_t n = ambeVoiceCapture(&e, &want);
+	CHECK(n == 3 && want == 3, "three captured of three: %u of %u", n, want);
+	CHECK(!e[0].lost && memcmp(e[0].frame, sent[0], 9) == 0, "the first as received, error and all");
+	CHECK(e[1].lost, "a lost frame is marked");
+	CHECK(!e[2].lost && memcmp(e[2].frame, sent[2], 9) == 0, "the third");
+	ambeVoiceCaptureArm(200);
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == AMBE_VOICE_CAP, "armed again: cleared, capped at %u", want);
+	for (unsigned i = 0; i < AMBE_VOICE_CAP + 5; i++) {
+		s->frame(frame, s->ctx);
+	}
+	CHECK(ambeVoiceCapture(&e, &want) == AMBE_VOICE_CAP, "full");
+	ambeVoiceCaptureArm(0);
+	s->frame(frame, s->ctx);
+	CHECK(ambeVoiceCapture(&e, &want) == 0 && want == 0, "0 stops");
+	s->end(s->ctx);
+}
+#endif
+
+// A vocoder that keeps the PCM it was handed and the options in force for each encode
+static int16_t cap_pcm[64][160];
+static uint32_t cap_opts[64];
+static int ncap;
+static void cap_encode(const int16_t pcm[VOCODER_FRAME_SAMPLES], uint8_t bits[VOCODER_BITS])
+{
+	if (ncap < 64) {
+		memcpy(cap_pcm[ncap], pcm, sizeof cap_pcm[0]);
+		cap_opts[ncap] = opt_last_set;
+	}
+	ncap++;
+	fake_encode(pcm, bits);
+}
+static const hal_vocoder_t cap_vocoder = {
+	.present = fake_present, .reset = fake_reset, .encode = cap_encode, .decode = fake_decode,
+	.options = opt_options, .set_options = opt_set, .encode_flags = opt_encode_flags,
+};
+
+static int zeroCrossings(const int16_t *p, int n)
+{
+	int c = 0;
+	for (int i = 1; i < n; i++)
+		c += (p[i - 1] < 0) != (p[i] < 0);
+	return c;
+}
+
+static bool isMic(const int16_t *p)
+{
+	for (int i = 0; i < 160; i++)
+		if (p[i] != 5000)
+			return false;
+	return true;
+}
+
+// A tone sequence in place of the mic (ambeVoiceTxTone): from the first block, as a tone frame with the noise reduction
+// off, then the mic again; paced by the queue; final mutes the rest; busy until the call stack has the frames; a
+// cancelled or unused request does not leak into the next transmission
+static void testTxTone(void)
+{
+	ambeVoiceInit(&audio, &cap_vocoder);
+	ambeVoiceSetEncodeOptions(VOCODER_OPT_DEFAULT);
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t frame[9];
+	for (int i = 0; i < 160; i++)
+		mic[i] = 5000;
+	// the request comes before the transmission: it is for the first blocks
+	beep_seg_t one[] = { { 1000, 40 } };
+	ncap = 0;
+	ambeVoiceTxTone(one, 1, false);
+	CHECK(!ambeVoiceTxToneBusy(), "no transmission: nothing to wait for");
+	src->begin(src->ctx);
+	CHECK(ambeVoiceTxToneBusy(), "asked for: busy");
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(ncap == 4, "four blocks encoded (%d)", ncap);
+	int c = zeroCrossings(cap_pcm[0] + 16, 128);
+	CHECK(!isMic(cap_pcm[0]) && c >= 2 * 1000 * 128 / 8000 - 2 && c <= 2 * 1000 * 128 / 8000 + 2, "block 0 is the 1 kHz tone (%d)", c);
+	CHECK(!isMic(cap_pcm[1]), "block 1 is the tone's second half");
+	CHECK(isMic(cap_pcm[2]) && isMic(cap_pcm[3]), "the mic again after the tone");
+	CHECK((cap_opts[0] & VOCODER_OPT_TONE_FRAMES) && !(cap_opts[0] & VOCODER_OPT_NOISE_REDUCTION), "tone frame, no noise reduction (%#x)", (unsigned)cap_opts[0]);
+	CHECK(cap_opts[2] == VOCODER_OPT_DEFAULT, "the options back after it (%#x)", (unsigned)cap_opts[2]);
+	CHECK(ambeVoiceTxToneBusy(), "frames not pulled: busy");
+	int got = 0;
+	while (src->next(frame, src->ctx))
+		got++;
+	CHECK(got == 4 && !ambeVoiceTxToneBusy(), "all pulled: not busy (%d)", got);
+	src->end(src->ctx);
+	block();
+
+	// paced: 200 ms is ten frames and the queue holds eight; none is lost to an overflow
+	ambeVoiceResetStats();
+	beep_seg_t ten[] = { { 1500, 200 } };
+	ncap = 0;
+	ambeVoiceTxTone(ten, 1, false);
+	src->begin(src->ctx);
+	for (int n = 0; n < 14; n++)
+		block();
+	ambe_voice_stats_t st;
+	ambeVoiceGetStats(&st);
+	CHECK(ncap == AMBE_VOICE_QUEUE && st.tx_overflows == 0, "waits for room: %d encoded, %u overflows", ncap, st.tx_overflows);
+	got = 0;
+	for (int n = 0; n < 6; n++) {
+		while (src->next(frame, src->ctx))
+			got++;
+		block();
+		block();
+		block();
+	}
+	CHECK(got >= 10, "the whole tone comes out (%d)", got);
+	bool allTone = true;
+	for (int n = 0; n < 10; n++)
+		allTone = allTone && !isMic(cap_pcm[n]);
+	CHECK(allTone && ncap >= 10, "ten blocks of tone");
+	src->end(src->ctx);
+	block();
+
+	// final: the mic is muted after the tone until the transmission ends
+	ncap = 0;
+	src->begin(src->ctx);
+	block();
+	ambeVoiceTxTone(one, 1, true);
+	for (int n = 0; n < 4; n++)
+		block();
+	CHECK(isMic(cap_pcm[0]) && !isMic(cap_pcm[1]) && !isMic(cap_pcm[2]), "mic, then the tone");
+	bool muted = true;
+	for (int i = 0; i < 160; i++)
+		muted = muted && cap_pcm[3][i] == 0 && cap_pcm[4][i] == 0;
+	CHECK(muted, "muted after a final tone");
+	while (src->next(frame, src->ctx))
+		;
+	CHECK(!ambeVoiceTxToneBusy(), "pulled: not busy");
+	src->end(src->ctx);
+	block();
+
+	// a request for a transmission that never started does not play in the next one
+	ambeVoiceTxTone(ten, 1, false);
+	src->begin(src->ctx);
+	src->end(src->ctx);		// the stack's end of the over cancels it
+	ncap = 0;
+	src->begin(src->ctx);
+	block();
+	block();
+	CHECK(ncap == 2 && isMic(cap_pcm[0]) && isMic(cap_pcm[1]) && !ambeVoiceTxToneBusy(), "no stale tone");
+	// cancelled while it plays
+	ambeVoiceTxTone(ten, 1, false);
+	block();
+	ambeVoiceTxToneCancel();
+	block();
+	CHECK(!isMic(cap_pcm[2]) && isMic(cap_pcm[3]), "the tone stops when cancelled");
+	while (src->next(frame, src->ctx))
+		;
+	src->end(src->ctx);
+	block();
+	ambeVoiceInit(&audio, &vocoder);
+}
+
+// A beep's own stream left the speaker route on, and DMR voice took the running stream over (the first key-up after
+// power-on or an FM channel, #705): the voice stream's first block gives the route back, though its own state says off
+static void testRouteTakeover(void)
+{
+	ambeVoiceStop();
+	fake_speaker(true);	// the beep's callback routed the speaker
+	int calls = speaker_calls;
+	ambeVoiceStart();
+	block();
+	CHECK(!speaker_on && speaker_calls == calls + 1, "the beep's route left on after the takeover (%d, %d calls)",
+	      speaker_on, speaker_calls - calls);
+	block();
+	CHECK(speaker_calls == calls + 1, "the route sent again with nothing changed");
+	ambeVoiceStop();
+	ambeVoiceStart();
+	block();
+	CHECK(!speaker_on, "a restart with the route off");
+	ambeVoiceStop();
+	starts = stops = 0;
+}
+
+// One transmission of `blocks` mic blocks, a square wave of +-amp: the largest sample the encoder got
+static int gainOver(int16_t amp, int blocks, ambe_voice_stats_t *st)
+{
+	const dmr_voice_source_t *src = ambeVoiceSource();
+	uint8_t out[9];
+	src->begin(src->ctx);
+	enc_peak = 0;
+	for (int n = 0; n < blocks; n++) {
+		for (int i = 0; i < 160; i++)
+			mic[i] = (int16_t)((i / 10) & 1 ? amp : -amp);
+		block();
+		while (src->next(out, src->ctx))
+			;
+	}
+	ambeVoiceGetStats(st);
+	src->end(src->ctx);
+	block();
+	return enc_peak;
+}
+
+// The mic gain (radio/mic_gain.h pushes it as Q8): a quiet mic lifted 12 dB (one radio's digital voice came out 13 dB
+// faint without it), a shout held under the limiter's ceiling where the old scaling clipped at full scale, unity
+// passing the samples as delivered
+static void testMicGain(void)
+{
+	ambe_voice_stats_t st;
+	int p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 && st.tx_enc_peak == 1000 && st.tx_mic_low_q8 == MICLIMIT_UNITY, "unity: %d %u %u", p,
+	      st.tx_enc_peak, st.tx_mic_low_q8);
+
+	ambeVoiceSetMicGainQ8(miclimit_db_q8(12));
+	p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 * 1019 / 256 && st.tx_enc_peak == (uint32_t)p && st.tx_mic_peak == 1000, "+12 dB: %d", p);
+	CHECK(st.tx_mic_low_q8 == miclimit_db_q8(12), "the limiter idle: lowest %u", st.tx_mic_low_q8);
+
+	p = gainOver(20000, 3, &st);
+	CHECK(p <= MICLIMIT_CEILING && p > MICLIMIT_CEILING - 300, "a shout under the ceiling: %d", p);
+	CHECK(st.tx_mic_peak == 20000 && miclimit_q8_db(st.tx_mic_low_q8) == 3, "cut to %d dB",
+	      miclimit_q8_db(st.tx_mic_low_q8));
+
+	// A change between transmissions is the next one's gain
+	ambeVoiceSetMicGainQ8(miclimit_db_q8(-6));
+	p = gainOver(1000, 3, &st);
+	CHECK(p == 1000 * 128 / 256, "-6 dB: %d", p);
+	ambeVoiceSetMicGainQ8(MICLIMIT_UNITY);
+}
+
 int main(void)
 {
 	ambeVoiceInit(&audio, &vocoder);
+	testRouteTakeover();
 	testRx();
 	testTx();
+	testSimplex();
 	testMicStats();
 	testFlagsMap();
 	testEncodeOptions();
+	testTxTone();
 	testRepeats();
+	testMicGain();
+#if CONFIG_VOICE_CAPTURE
+	testCapture();
+#endif
 	ambeVoiceStop();
 	CHECK(stops == 1 && !speaker_on, "stop");
 	ambeVoiceSink()->begin(NULL, NULL);

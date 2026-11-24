@@ -67,6 +67,7 @@ typedef struct {
 	uint16_t pos;		// INSERT, REMOVE, MOVE, ADD_NEW: the position
 	uint16_t channel;	// INSERT: the channel; ADD_NEW: the new channel's number
 	char name[CODEPLUG_NAME_LEN + 1];	// RENAME, NEW
+	uint16_t from;		// ADD_NEW: the channel ch is a copy of (a channel of a kind takes its tag), 0 = none
 	channel_t ch;		// ADD_NEW
 } zone_op_t;
 

@@ -12,11 +12,11 @@ is OK.
 
 | Region | Shows |
 |---|---|
-| Status line | Left: the state (IDLE, RX, TX, or NO TX when a transmission is refused; RX whenever the squelch is open, monitor included), the mode (DMR or FM), SCAN or MON when scan or monitor is on, and IP while USB is a network adapter, with an up and a down arrow after it once the computer has connected to it. Right: "L" when the keys are locked, "M" and a number for unread messages, the signal bars, the battery icon and the battery percentage. On a color screen the line is filled with the highlight color, its text black (Settings > Display > Filled status bar) |
+| Status line | Left: the state (IDLE, RX, TX, or NO TX when a transmission is refused; RX whenever the squelch is open, monitor included), the mode (DMR or FM), SCAN or MON when scan or monitor is on, and IP while USB is a network adapter, with an up and a down arrow after it once the computer has connected to it. Right: "L" when the keys are locked, "M" and a number for unread messages, a satellite dish on a radio with GPS (hollow while GPS is off, solid while it searches, with its feed arm and waves once it has a fix), the signal bars, the battery icon and the battery percentage. On a color screen the line is filled with the highlight color, its text black (Settings > Display > Filled status bar) |
 | Place | The zone name and the channel's position in the zone ("3/16"). In the VFO: "VFO" |
 | Channel | The channel number and name, as large as they fit. In the VFO: the frequency |
 | Talk target | An arrow and where **PTT** goes. DMR: a talkgroup or person, as "TG 91 World"; a name too long to fit is cut ("TG 201 Main O…") before it is dropped. FM: the transmit frequency. During the reply window: a return arrow in a filled box, and a countdown. To read the talkgroup's name first ("World TG 91"), turn on **Settings > Display > Talkgroup name first**, or give a side key **TG name / number** (Settings > Keys) |
-| Chips | DMR: timeslot, color code, power. FM: tone, bandwidth, power, squelch level |
+| Chips | DMR: timeslot, color code, "Rpt" on a repeater channel, power (the signal bars show when the repeater is heard). FM: tone, bandwidth, power, squelch level |
 | Activity | Idle: the last station heard and how long ago, or "No calls heard yet". A setting the radio needs before it can transmit comes first, in the warning color ("Set: Board revision", or "Restart to apply"), with the hint row saying where to set it. Receiving or transmitting: see below |
 | Hint row | What the nearest keys do now |
 
@@ -83,7 +83,7 @@ answers, and packet data from a computer on USB or serial. While it does, the st
 lights and Home says SENDING. Data the radio receives shows RX on the status line.
 
 When the radio refuses to transmit, the status line shows NO TX and the LEDs flash red, green, red, green, red, green
-once with the deny tone. The screen says why, and the hint row says what to do:
+once with the deny tone. On a busy channel there is no tone, and the call you are hearing keeps playing. The screen says why, and the hint row says what to do:
 
 | Message | Cause | What to do |
 |---|---|---|

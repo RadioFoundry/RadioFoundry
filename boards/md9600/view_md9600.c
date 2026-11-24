@@ -10,7 +10,6 @@
 #include "spi_flash/spi_flash.h"
 #include "pins.h"
 #include "debuglink/dl_fmt.h"
-#include "gps_uart/gps_uart.h"
 
 static const char *const sources[] = { "none", "stored", "probe", "default", "detected" };
 static const char *const if_chips[] = { "unknown", "yes", "no" };
@@ -42,16 +41,12 @@ static uint8_t latch(GPIO_TypeDef *port, uint16_t pin)
 
 #define LATCH(p)	latch(PIN_PORT(p), PIN_MASK(p))
 
-// The HR_C6000, the speaker routing, the hand-mic keypad and the GPS receiver (c6000_md9600.c, input_md9600.c,
-// gps_md9600.c)
+// The HR_C6000, the speaker routing and the hand-mic keypad (c6000_md9600.c, input_md9600.c). The GPS receiver is in
+// the generic pos.gps_* keys (board_t.gps)
 static bool audio_line(uint8_t i, char *buf, uint8_t len)
 {
 	md9600_c6000_diag_t c;
-	uint32_t good = 0, bad = 0, bytes = 0;
 	md9600_c6000_diag(&c);
-#if CONFIG_GPS
-	stm32_gps_counts(&good, &bad, &bytes);
-#endif
 	switch (i) {
 	case 0:		// the chip answered after its set-up, and its 4:0x10
 		dl_fmt(buf, len, "c6000=%u r10=0x%02x", c.up ? 1u : 0u, c.r10);
@@ -71,17 +66,8 @@ static bool audio_line(uint8_t i, char *buf, uint8_t len)
 	case 5:		// the hand-mic key decoded on the last scan, 255 for none (the md9600.h key number)
 		dl_fmt(buf, len, "mic_key=%u", md9600_mic_key());
 		return true;
-	case 6:		// GPS not built: the lines stay, as a radio without a module (0)
-		dl_fmt(buf, len, "gps=%u", CONFIG_GPS && stm32_gps_present() ? 1u : 0u);
-		return true;
-	case 7:		// the rate listened at, 0 once given up
-		dl_fmt(buf, len, "gps.baud=%u", (unsigned)(CONFIG_GPS ? stm32_gps_baud() : 0u));
-		return true;
-	case 8:
-		dl_fmt(buf, len, "gps.nmea=%u/%u/%u", (unsigned)good, (unsigned)bad, (unsigned)bytes);
-		return true;
 #if CONFIG_SUBTONE
-	case 9: {	// the sub-audio detector: samples fed, rate, input level, tone kind, match, ADC fault
+	case 6: {	// the sub-audio detector: samples fed, rate, input level, tone kind, match, ADC fault
 		md9600_subtone_stats_t s;
 		md9600_subtone_stats(&s);
 		dl_fmt(buf, len, "subtone=%u/%u rms=%u mean=%u kind=%u match=%u fault=%u", (unsigned)s.samples,

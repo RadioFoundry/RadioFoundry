@@ -15,8 +15,9 @@ plan for a native format. Nothing in section 4 is built yet.
 - The open-firmware layout keeps working for as long as qdmr and the open-firmware CPS are the tools people have.
 - The native format carries what the open-firmware one can't: per-channel privacy key slot, more zones, longer names, and
   per-channel features without overloading vendor flag bits.
-- Radio-wide state, keys included, lives in the settings store, not in the codeplug. A codeplug file can be shared
-  without leaking keys or the owner's last channel.
+- Radio-wide state and DMR Basic Privacy slots live in the settings store. Per-system traffic keys live in the
+  codeplug settings area ([channel-modes.md](channel-modes.md) 5.4). The editor omits these secrets from exports by
+  default, and the owner's last channel stays in the settings store.
 
 ## 2. The editing model (built)
 
@@ -36,6 +37,10 @@ Rules:
   100 ms on the W25Q128). A new record also rewrites its bitmap's sector: the record goes first, then its in-use bit.
 - **Fields the model doesn't own are kept.** An edit reads the stored record, changes the bytes the model knows and
   writes it back. Vendor bytes and flags that no field covers survive a radio-side edit.
+- **Names.** A name field is the text and then 0xFF padding, one byte a character: ASCII, Latin-1 0xA0-0xFE and the
+  fonts' glyph bytes 0x80-0x85 as they are, Chinese as 3-byte UTF-8 ([codeplug-stock-tyt.md](codeplug-stock-tyt.md) 2).
+  A name reads back byte for byte, so one a CPS wrote is not rewritten. U+00FF is the byte 0xFF, which ends the field: a
+  save writes `?` for it, as the CPS does, and the rest of the name stays.
 - **`codeplug_serial()`** goes up on every change. That covers edits and `codeplug_reload()` after the CPS shim
   wrote the image underneath. The radio core polls it and re-reads its zone and channel (`RREQ_RELOAD`). It falls
   back to the saved zone position when the saved channel number is gone. It also forgets the contact names it looked
@@ -109,7 +114,7 @@ The fields `channel_t` holds today, plus what the open-firmware record can't hol
 | **privacy_slot** | 1 | 0 = the radio-wide choice (`settings.privacy_active`), 1..4 = that key slot of the settings store (`settings-store.md` 3.1), 0xFF = privacy off on this channel |
 | reserved | to 64 bytes | 0, append only |
 
-The privacy key itself is never in the codeplug. A channel names a slot. The open-firmware layout has no field for it, so
+The DMR Basic Privacy key itself stays in the settings store. A channel names a slot. The open-firmware layout has no field for it, so
 until the native format exists every channel uses the radio-wide slot.
 
 ## 4. Storage plan (not built)

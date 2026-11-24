@@ -153,6 +153,42 @@ DMR counters.
 | Transmit on a dummy load (data call or a short key-up) | A burst per slot on a meter or SDR, `tx`, `rf` and `ok` rise | `un` (underrun) or `rj`: the per-burst switch takes too long (`dmr_rf_switch`, `RF_BIT_SCALE_US`); no carrier: `dmr_pa_on`, the 28 ms PA delay |
 | The mic on DMR transmit, no person: `pytest tests/hil -k mic_uart_inject --allow-rf --mic-inject` on the host the cable is plugged into (its device path, not a network bridge) | The tone bursts sent on the cable's line show at the vocoder: `voice.tx_mic_spread_db` 12 or more, `tx_mic_level_db` 9 dB over a quiet over | Both overs at the ADC's floor (level about 6, no spread): the mic doesn't reach the codec ADC on DMR. PTB14 must be high, as for FM ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 3.1) |
 
+### 9.1 Tier III receive (listen only)
+
+Against a Tier III site on the SDR bench (TSCC on one carrier, a second traffic carrier), with the engine staged over
+the debug link listen-only (`T3_OPT_LISTEN_ONLY`) and `tx_inhibit` set, read from the `t3` and `dmr_stats` views
+([dmr-trunking.md](../spec/dmr-trunking.md) 11):
+
+| Step | Seen | If not |
+|---|---|---|
+| Start on the TSCC | `t3.state=camped` within 0.4-0.7 s, `t3.syscode` the site's, `t3.csbk` rising at the site's CSBK rate, `t3.crc_bad` 0-1 in 400 | No CSBKs: the CC, or the channel not in repeater mode (the TSCC is a BS signal) |
+| Short LC | `t3.slc_ok` rising 6-8 a second on the TSCC, `t3.slc_bad` under 1 % of them (a few more on a payload channel) | `slc_ok` 0: system interrupt bit 4 not enabled, or the short LC read (`hrc7000_dmr_short_lc`) not called by the event task |
+| Slot ticks | `t3.ticks` about 33 a second, `t3.at_known` rising with them once the TC lock holds, `t3.at_busy` while the inbound is in use | `at_known` 0: no TC lock (the channel not in repeater mode, or the TC not alternating) |
+| Group call on the TSCC carrier's other slot | followed in about 0.5-1 s (`t3.state=follow`, `t3.slot=2`), voice decoded (`call.rx_voice_bursts` about 49 of 50 a 3 s call), back on the TSCC (`t3.returns`) | |
+| Group call on the second carrier | followed there (`t3.rx_hz` the carrier's, `t3.slot=1`), voice decoded, back on the TSCC | |
+
+Not checked on the radio: an MBC continuation with the chip's CRC flag set (host test only) and the audio heard (the
+cable mutes the speaker; the counters show it decoded).
+
+### 9.2 Tier III transmit
+
+The same site, the engine staged over the debug link with transmit, the lowest power setting, the radio's ID
+registered (`t3`, `t3_svc`, `dmr_ext`, `dmr_ip` views). Every step starts the engine again, so each one registers
+first:
+
+| Step | Seen | If not |
+|---|---|---|
+| Register | `t3.reg=ok`, `t3.ax_reason=0x62`, 1-4 random accesses (`t3.ra_tries`) | `t3.sent` 0: the engine listen-only or `tx_inhibit` set |
+| Group call, PTT with the test tone (`voice_test`) | granted in about 0.3 s, `t3.slot=2`, keyed (`state=tx`), back on the TSCC (`t3.returns`) after the hang | |
+| Private call | the same, `t3.call_dst` the called ID | |
+| Group and private call from another MS | followed, 49 voice bursts a 3 s call, `voice.rx_peak` about 16700 (speech), back on the TSCC | `voice.rx_peak` near 0: the other MS sent silence |
+| Status, short data to another MS | `t3.ax_result=done`, `t3.ax_reason=0x44` | |
+| Short data poll from another MS | the poll ahoy (`t3.ahoy_kind=6`), the answer UDT sent (`t3.last_tx_op=0x1b`) | |
+| Radio check during the radio's own call | the answer sent in the call (`t3.last_tx_op=0x23`), back on the TSCC | |
+| IP datagram to the gateway, unconfirmed | a data grant (`t3.call_data=1`), `ip.sent` +1, `ip.result=ok`, back on the TSCC | confirmed: `ip.cnf_timeouts` with no response from the site (the site sends none yet) |
+| Power save, PowerSave_RQ 2 | `t3.ps_offset` granted, `t3.sleeps` and `t3.rx_offs` rising, the receiver off about half the time (`t3.rx_off_ms`); a status, short data, a poll (answered) and a group call from another MS all reach the sleeping radio | `t3.rx_off_ms` 0: the board's `rx_sleep_dmr` not set |
+| Emergency: alarm, hot-mic call, cancel | `em.state=active`, `data.emergency_alarms_sent` +1, `em.hot_mic_keyed` 1, a call followed and back on the TSCC, the cancel `done` | |
+
 ## 10. VOX and the microphone level
 
 The level comes from the codec ADC's mic PCM ([hardware-dm1801pro.md](../spec/hardware-dm1801pro.md) 12). The

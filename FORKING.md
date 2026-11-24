@@ -44,11 +44,13 @@ Your project can be under any license you choose, including the GPL or a proprie
 with either. Your license then applies to your own files and to the combined work. A file that came from RadioFoundry
 still keeps our notice, with yours added below it:
 
+<!-- REUSE-IgnoreStart: an example header, not this file's -->
 ```c
 // SPDX-License-Identifier: MIT AND GPL-3.0-or-later
 // Copyright (c) 2026 The RadioFoundry Authors (MIT)
 // Copyright (c) 2026 Your Name or Project (changes, GPL-3.0-or-later)
 ```
+<!-- REUSE-IgnoreEnd -->
 
 ### If the notices are already gone
 

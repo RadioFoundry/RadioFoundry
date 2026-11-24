@@ -3,10 +3,11 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Write the About page's data header from AUTHORS (the maintainers) and a platform's THIRD_PARTY list (run by make).
 
-    gen_about.py AUTHORS platform/<platform>/THIRD_PARTY OUT.h
+    gen_about.py AUTHORS platform/<platform>/THIRD_PARTY OUT.h [MORE_THIRD_PARTY ...]
 
 AUTHORS: one maintainer per line, "Name [CALLSIGN] <email>"; the email is not shown on the radio. THIRD_PARTY: one
-"component: license" per line. In both, lines starting with # are comments. The header also gives the bytes the two
+"component: license" per line; the lists after OUT.h are those of the features this build has (the makefile names
+them). In both, lines starting with # are comments. The header also gives the bytes the two
 lists take on the page, which sizes the page's text buffer. OUT.h is rewritten only when its content changes, so
 builds don't redo work for nothing; it prints "changed" when it was rewritten.
 """
@@ -31,9 +32,10 @@ def main():
     authors_path, third_path, out = sys.argv[1:4]
     authors = [re.sub(r"\s*<[^>]*>", "", a).strip()[:35] for a in lines(authors_path)]
     third = []
-    for t in lines(third_path):
-        name, _, lic = t.partition(":")
-        third.append((name.strip()[:35], lic.strip()[:19]))
+    for path in [third_path] + sys.argv[4:]:
+        for t in lines(path):
+            name, _, lic = t.partition(":")
+            third.append((name.strip()[:35], lic.strip()[:19]))
     # as the page writes them: a newline before each maintainer, "\nname: license" for each component
     list_bytes = (sum(1 + len(a.encode("utf-8")) for a in authors)
                   + sum(1 + len(n.encode("utf-8")) + 2 + len(l.encode("utf-8")) for n, l in third))

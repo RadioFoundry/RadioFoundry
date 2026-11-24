@@ -477,6 +477,152 @@ static void test_fuzz(void)
 	printf("# zone share fuzz: %ld records, %ld parsed\n", iters, parsed);
 }
 
+#if CONFIG_ZONE_SHARE_MODES
+// A zone with a modes part (zone-share.md 4.2): channels 2 and 3 of a kind, one on a whole system with two entries
+// and a secret, one on a system sent as its identity, and a third tag on a system the sender withholds
+static int sampleModes(uint8_t *out, int size)
+{
+	static const uint8_t block[] = { 0x12, 0x34, 0x56, 0x01, 0x02, 0x03 }, body[] = { 1, 2, 3, 4, 5 };
+	static const uint8_t key[] = { 0xAA, 0xBB }, params[] = { 0x9A, 0x00 };
+	zsWriter_t w;
+	zsSystem_t whole = { .type = 3, .flags = 0x02, .level = ZS_LEVEL_WHOLE, .idLen = 3, .blockLen = sizeof(block),
+						 .block = block, .name = "County", .entries = 2, .secretLen = sizeof(key), .secret = key };
+	zsSystem_t ident = { .type = 1, .flags = 0x01, .level = ZS_LEVEL_IDENTITY, .idLen = 2, .blockLen = 2, .block = block,
+						 .name = "Site" };
+	zsEntry_t e1 = { 0, 1, 1, sizeof(body), body }, e2 = { 2, 0xFF, 0, 0, NULL };
+	zsTag_t t2 = { 2, 3, 1, 0x01, sizeof(params), params }, t3 = { 3, 1, 2, 0x01, 0, NULL };
+	zsTag_t t4 = { 4, 2, ZS_SYSTEM_WITHHELD, 0x10, 0, NULL };
+
+	zsWriterBegin(&w, out, size, 0x55, 0, "Modes");
+	for (int i = 0; i < 4; i++)
+	{
+		zsChannel_t ch = dmrChannel("Ch", 851000000 + 12500 * (uint32_t)i, 0, 1, 1, 0);
+		zsWriterChannel(&w, &ch);
+	}
+	zsWriterModes(&w, 2);
+	zsWriterSystem(&w, &whole);
+	zsWriterEntry(&w, &e1);
+	zsWriterEntry(&w, &e2);
+	zsWriterSystem(&w, &ident);
+	zsWriterTags(&w, 3);
+	zsWriterTag(&w, &t2);
+	zsWriterTag(&w, &t3);
+	zsWriterTag(&w, &t4);
+	int n = zsWriterEnd(&w);
+	int want = zsHeaderSize("Modes") + 4 * zsChannelSize(&(zsChannel_t){ .dmr = true, .name = "Ch" }) + 1 +
+			zsSystemSize(&whole) + zsEntrySize(&e1) + zsEntrySize(&e2) + zsSystemSize(&ident) + 1 + zsTagSize(&t2) +
+			zsTagSize(&t3) + zsTagSize(&t4);
+	CHECK(n == want);
+	return n;
+}
+#endif
+
+static void test_modes(void)
+{
+	zsRecord_t r;
+
+#if CONFIG_ZONE_SHARE_MODES
+	uint8_t buf[ZS_RECORD_MAX];
+	int n = sampleModes(buf, sizeof(buf));
+	zsSystem_t s;
+	zsEntry_t e;
+	zsTag_t t;
+
+	CHECK(n > 0 && zsParse(buf, n, &r) && (r.flags & ZS_FLAG_MODES) && r.systems == 2 && r.tags == 3);
+	CHECK(zsSystemAt(&r, 0, &s) && s.type == 3 && s.flags == 0x02 && s.level == ZS_LEVEL_WHOLE && s.idLen == 3 &&
+		  s.blockLen == 6 && s.block[5] == 0x03 && strcmp(s.name, "County") == 0 && s.entries == 2 && s.secretLen == 2 &&
+		  s.secret[1] == 0xBB);
+	CHECK(zsEntryAt(&r, &s, 0, &e) && e.cls == 0 && e.group == 1 && e.flags == 1 && e.len == 5 && e.body[4] == 5);
+	CHECK(zsEntryAt(&r, &s, 1, &e) && e.cls == 2 && e.group == 0xFF && e.len == 0);
+	CHECK(!zsEntryAt(&r, &s, 2, &e));
+	CHECK(zsSystemAt(&r, 1, &s) && s.type == 1 && s.level == ZS_LEVEL_IDENTITY && s.blockLen == 2 && s.entries == 0 &&
+		  strcmp(s.name, "Site") == 0);
+	CHECK(!zsSystemAt(&r, 2, &s));
+	CHECK(zsTagAt(&r, 0, &t) && t.channel == 2 && t.kind == 3 && t.system == 1 && t.flags == 0x01 && t.len == 2 &&
+		  t.params[0] == 0x9A);
+	CHECK(zsTagAt(&r, 2, &t) && t.channel == 4 && t.system == ZS_SYSTEM_WITHHELD && t.flags == 0x10);
+	CHECK(!zsTagAt(&r, 3, &t));
+
+	// Refused: each octet that breaks a rule. Offsets from the end: the last tag is channel, kind, system, flags, len
+	struct { int at; uint8_t v; } bad[] = {
+		{ n - 5, 3 },				// a tag's channel not after the one before
+		{ n - 5, 5 },				// a channel the record doesn't have
+		{ n - 4, 0 },				// kind 0
+		{ n - 4, 0xFF },			// kind 0xFF
+		{ n - 3, 3 },				// a system the record doesn't have
+		{ n - 2, 0x04 },			// a reserved flag (a fallback is never carried)
+		{ n - 1, 1 },				// a parameter block past the end
+	};
+	for (unsigned i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+	{
+		uint8_t copy[ZS_RECORD_MAX];
+		memcpy(copy, buf, (size_t)n);
+		copy[bad[i].at] = bad[i].v;
+		CHECK(!parse(copy, n, &r));
+	}
+	// A modes part with no tag, and systems past the limit
+	zsWriter_t w;
+	zsChannel_t ch = dmrChannel("Ch", 851000000, 0, 1, 1, 0);
+	zsWriterBegin(&w, buf, sizeof(buf), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	zsWriterModes(&w, 0);
+	CHECK(zsWriterEnd(&w) == 0);
+	zsWriterBegin(&w, buf, sizeof(buf), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	zsWriterModes(&w, ZS_SYSTEMS_MAX + 1);
+	CHECK(zsWriterEnd(&w) == 0);
+
+	// Fuzz the modes part: whatever parses reads back within bounds
+	fuzz_t f;
+	long parsed = 0, wrong = 0;
+	n = sampleModes(buf, sizeof(buf));
+	fuzz_init(&f, 0x4D0D);
+	for (long i = 0; i < fuzz_iters(20000); i++)
+	{
+		uint8_t m[ZS_RECORD_MAX + 64];
+		memcpy(m, buf, (size_t)n);
+		int len = fuzz_mutate(&f, m, n, ZS_RECORD_MAX);
+		if (len >= 3)
+		{
+			m[1] = (uint8_t)(len >> 8);
+			m[2] = (uint8_t)len;
+		}
+		uint8_t *p = fuzz_exact(m, len);
+		if (zsParse(p, len, &r) && (r.flags & ZS_FLAG_MODES))
+		{
+			parsed++;
+			for (int k = 0; k < r.systems; k++)
+			{
+				wrong += !zsSystemAt(&r, k, &s) || s.blockLen > ZS_BLOCK_MAX || s.idLen > s.blockLen;
+				for (int j = 0; j < s.entries; j++)
+				{
+					wrong += !zsEntryAt(&r, &s, j, &e) || e.len > ZS_BODY_MAX;
+				}
+			}
+			for (int k = 0; k < r.tags; k++)
+			{
+				wrong += !zsTagAt(&r, k, &t) || t.channel == 0 || t.channel > r.channels || t.kind == 0 || t.len > ZS_BODY_MAX ||
+						(t.system > r.systems && t.system != ZS_SYSTEM_WITHHELD);
+			}
+		}
+		free(p);
+	}
+	CHECK(wrong == 0 && parsed > 0);
+	printf("# modes part fuzz: %ld parsed\n", parsed);
+#else
+	// A record with the modes flag is refused whole by a build without the modes part
+	uint8_t one[ZS_RECORD_MAX];
+	zsWriter_t w;
+	zsChannel_t ch = dmrChannel("Ch", 851000000, 0, 1, 1, 0);
+	zsWriterBegin(&w, one, sizeof(one), 0x55, 0, "Z");
+	zsWriterChannel(&w, &ch);
+	int n = zsWriterEnd(&w);
+	CHECK(parse(one, n, &r));
+	one[7] |= ZS_FLAG_MODES;
+	CHECK(!parse(one, n, &r));
+#endif
+}
+
 int main(void)
 {
 	test_roundtrip();
@@ -484,6 +630,7 @@ int main(void)
 	test_malformed();
 	test_messages();
 	test_fuzz();
+	test_modes();
 	printf("zoneShareTest: %d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
 }

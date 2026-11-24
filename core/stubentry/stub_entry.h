@@ -23,9 +23,9 @@
 // same screen (stub_entry.png), which the web flasher shows for this state. In English here; the radio shows them
 // translated (tr). The marks sit on lines of their own: tools/i18n.py passes over a line that starts with #define
 #define STUB_ENTRY_LINE1 \
-	TRN("PC Loader Connected")
+	TRN(STUB_TITLE_PC_LOADER, "PC Loader Connected")
 #define STUB_ENTRY_LINE2 \
-	TRN("Power-cycle to exit")
+	TRN(STUB_HINT_POWER_CYCLE, "Power-cycle to exit")
 
 #if CONFIG_STUB_ENTRY
 #if !CONFIG_DEBUGLINK

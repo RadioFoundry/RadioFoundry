@@ -4,7 +4,8 @@
 // module power on PA9, high = on. A factory module on the MD-UV380 G models (hardware-mduv380.md 9); the DM-1701 has the
 // same two pins and no module, but an owner can fit one there (hardware-dm1701.md 14). Radios with and without a module
 // share an image, so the module is powered for the listen window only and switched off again when nothing is heard. A
-// sentence keeps it on, and every sentence goes to the position service (core/position)
+// sentence keeps it on, and every sentence goes to the position service (core/position). From then on PA9 follows
+// Settings > Location > GPS (board_t.gps)
 #include "config.h"
 #include "uvf.h"
 #include "pins.h"
@@ -22,11 +23,16 @@ static void absent(void)
 	PIN_WRITE(PIN_GPS_POWER, false);
 }
 
+static void power(bool on)
+{
+	PIN_WRITE(PIN_GPS_POWER, on);
+}
+
 static const stm32_gps_cfg_t gps = {
 	.uart = USART1, .irq = USART1_IRQn,
 	.rx_port = PIN_PORT(PIN_GPS_RX), .rx_pin = PIN_MASK(PIN_GPS_RX), .rx_af = GPIO_AF7_USART1,
 	.rates = rates, .n_rates = sizeof(rates) / sizeof(rates[0]), .listen_ms = 5000,
-	.absent = absent,
+	.absent = absent, .power = power,
 };
 
 void USART1_IRQHandler(void)

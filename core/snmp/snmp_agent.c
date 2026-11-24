@@ -11,6 +11,7 @@
 #include "settings/settings.h"
 #include "codeplug/codeplug.h"
 #include "hostlink/hostlink.h"
+#include "hostlink/hostlink_view.h"
 #include "hostlink/hostlink_net.h"
 #include "dmr/ipGateway.h"
 #include "dmr/dmr_data_api.h"
@@ -40,7 +41,6 @@ static snmpStats_t stats;
 static snmpMibCtx_t ctx;
 static snmpMib_t mib;
 static snmpEvents_t events;
-static radio_view_t view;		// static: too large for the host link task's stack
 static settings_t st;			// the same
 static dmrDataMessage_t msg;
 static uint8_t out[SNMP_USB_MAX];
@@ -81,10 +81,12 @@ static void name_copy(char *dst, const char *src, size_t n)
 // The snapshot the MIB and the event check read
 static void fill(uint32_t now)
 {
-	radio_get_view(&view);
+	const radio_view_t *v = &hostlink_view;
+
+	radio_get_view(&hostlink_view);
 	settings_read(&st);
 	data.uptimeMs = now;
-	data.dmrId = view.dmr.own_id;
+	data.dmrId = v->dmr.own_id;
 	if (st.radio_name[0] != '\0') {
 		name_copy(data.name, st.radio_name, SETTINGS_NAME_LEN);
 	} else {
@@ -96,27 +98,27 @@ static void fill(uint32_t now)
 	data.board = board.name;
 	data.firmware = RFOUNDRY_GIT;
 	// The rfoundryPower objects are mandatory: a radio without a battery reports 0 mV, 0 % and state ok, never a trap
-	data.batteryMv = board_has_battery() ? view.battery_mv : 0;
-	data.batteryPct = board_has_battery() ? view.battery_pct : 0;
-	data.batteryState = board_has_battery() ? view.battery : 0;
-	data.radioState = (uint8_t)view.state;
-	data.rssiDbm = view.rssi_dbm;
-	data.mode = (view.ch.mode == RADIO_MODE_DMR) ? 1 : 0;
-	data.vfo = view.vfo;
-	name_copy(data.zoneName, view.zone_name, SNMP_NAME_MAX);
-	data.channelNumber = view.channel_number;
-	name_copy(data.channelName, view.ch.name, SNMP_NAME_MAX);
-	data.rxHz = view.ch.rx_hz;
-	data.txHz = view.ch.tx_hz;
-	data.power = view.power;
-	data.powerName = view.power < board.power_count ? board_power_name(view.power, view.ch.tx_hz) : "";
-	data.cc = view.dmr.cc;
-	data.ts = view.dmr.ts;
-	data.talkTarget = view.dmr.target_id;
-	data.talkPrivate = view.dmr.target_private;
-	data.role = view.hotspot ? SNMP_ROLE_HOTSPOT : SNMP_ROLE_RADIO;
+	data.batteryMv = board_has_battery() ? v->battery_mv : 0;
+	data.batteryPct = board_has_battery() ? v->battery_pct : 0;
+	data.batteryState = board_has_battery() ? v->battery : 0;
+	data.radioState = (uint8_t)v->state;
+	data.rssiDbm = v->rssi_dbm;
+	data.mode = (v->ch.mode == RADIO_MODE_DMR) ? 1 : 0;
+	data.vfo = v->vfo;
+	name_copy(data.zoneName, v->zone_name, SNMP_NAME_MAX);
+	data.channelNumber = v->channel_number;
+	name_copy(data.channelName, v->ch.name, SNMP_NAME_MAX);
+	data.rxHz = v->ch.rx_hz;
+	data.txHz = v->ch.tx_hz;
+	data.power = v->power;
+	data.powerName = v->power < board.power_count ? board_power_name(v->power, v->ch.tx_hz) : "";
+	data.cc = v->dmr.cc;
+	data.ts = v->dmr.ts;
+	data.talkTarget = v->dmr.target_id;
+	data.talkPrivate = v->dmr.target_private;
+	data.role = v->hotspot ? SNMP_ROLE_HOTSPOT : SNMP_ROLE_RADIO;
 #if CONFIG_HOTSPOT && CONFIG_SFR
-	if (view.hotspot) {
+	if (v->hotspot) {
 		hotspot_sfr_view_t f;
 
 		hotspot_sfr_get_view(&f);
@@ -126,7 +128,7 @@ static void fill(uint32_t now)
 	}
 #endif
 #if CONFIG_HOTSPOT && CONFIG_HOTSPOT_SPLIT
-	if (view.hotspot) {
+	if (v->hotspot) {
 		hotspot_split_view_t sp;
 
 		hotspot_split_get_view(&sp);
@@ -137,15 +139,15 @@ static void fill(uint32_t now)
 		}
 	}
 #endif
-	data.dmrState = view.dmr.state;
-	data.callSrc = view.dmr.call.src;
-	data.callDst = view.dmr.call.dst;
-	data.callGroup = view.dmr.call.group;
-	data.callEmergency = view.dmr.call.emergency;
-	data.lastSrc = view.dmr.last.src;
-	data.lastDst = view.dmr.last.dst;
-	data.lastGroup = view.dmr.last.group;
-	data.lastMs = view.dmr.last_ms;
+	data.dmrState = v->dmr.state;
+	data.callSrc = v->dmr.call.src;
+	data.callDst = v->dmr.call.dst;
+	data.callGroup = v->dmr.call.group;
+	data.callEmergency = v->dmr.call.emergency;
+	data.lastSrc = v->dmr.last.src;
+	data.lastDst = v->dmr.last.dst;
+	data.lastGroup = v->dmr.last.group;
+	data.lastMs = v->dmr.last_ms;
 
 	dmrDataStats_t ds;
 

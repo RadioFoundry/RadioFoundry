@@ -6,7 +6,9 @@ superframes each (8 voice LC headers, 60 voice bursts and 3 terminators per call
 counters must show exactly that.
 
 Tolerances (documented in README.md): voice bursts 120 - 0 / + 0, headers 14..16 (the first header of a call can
-fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack."""
+fall in the receiver's acquisition), terminators 5..6, CRC errors 0, two calls seen by the call stack. A build without
+the board's diagnostics lines (CONFIG_DIAG off) has no modem counters: the call stack's voice bursts are counted
+instead, 120 with none lost."""
 import time
 
 import pytest
@@ -14,6 +16,8 @@ import pytest
 from rfoundry_hil import counter_deltas, skip
 
 CALLS, SUPERFRAMES, HEADERS, TERMINATORS = 2, 10, 8, 3
+# Voice bursts test_dmr_rx_bs_direct lets the air lose (5 %); the slot bug it guards dropped about 90 %
+AIR_LOSS_MAX = 6
 
 
 @pytest.mark.feature("dmr_voice")
@@ -35,13 +39,47 @@ def test_dmr_rx_counters(radio, sdr_bench, pytestconfig):
     time.sleep(1.5)                      # the last call times out / ends in the radio
     _, after = radio.counters()
     d = counter_deltas(before, after, ["modem.voice", "modem.headers", "modem.terminators", "modem.crc",
-                                       "call.rx_calls", "call.rx_dup_dropped",
+                                       "call.rx_calls", "call.rx_dup_dropped", "call.rx_voice_bursts",
+                                       "call.rx_lost_frames",
                                        # a call counted twice: joined again by late entry after a gap, or another
                                        # station's call on the channel
                                        "call.rx_late_entries", "call.rx_calls_played"])
     print("bench:", recs[-1:] if recs else "no JSON", "radio deltas:", d)
-    assert d["modem.voice"] == CALLS * SUPERFRAMES * 6, d
-    assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d
-    assert CALLS * TERMINATORS - 1 <= d["modem.terminators"] <= CALLS * TERMINATORS, d
-    assert d["modem.crc"] == 0, d
+    if "modem.voice" in after:
+        assert d["modem.voice"] == CALLS * SUPERFRAMES * 6, d
+        assert CALLS * HEADERS - 2 <= d["modem.headers"] <= CALLS * HEADERS, d
+        assert CALLS * TERMINATORS - 1 <= d["modem.terminators"] <= CALLS * TERMINATORS, d
+        assert d["modem.crc"] == 0, d
+    else:                                # no board diagnostics lines in this build: the call stack's count
+        assert d["call.rx_voice_bursts"] == CALLS * SUPERFRAMES * 6 and d["call.rx_lost_frames"] == 0, d
     assert d["call.rx_calls"] == CALLS, d
+
+
+@pytest.mark.feature("dmr_voice")
+@pytest.mark.rf
+@pytest.mark.bench_service
+@pytest.mark.bench_modem
+def test_dmr_rx_bs_direct(radio, sdr_bench, pytestconfig):
+    """Direct mode calls framed with BS sync, one burst every 60 ms and no CACH between them, as a simplex hotspot may
+    send (issue 910). The receiver must not number the bursts' slot from the missing CACH: a slot number that changed
+    mid-call dropped the rest of the call as the other slot's. One call each, no burst dropped as the other slot's
+    and nearly every voice burst played: a few may be lost on the air (rx_lost_frames), as on any bench call."""
+    if "DMR" not in radio.features():
+        skip("not_built", "built without DMR")
+    freq, cc, tg = (pytestconfig.getoption(o) for o in ("--dmr-freq", "--dmr-cc", "--dmr-tg"))
+    radio.go_home()
+    radio.find_channel(round(freq * 1e6), "dmr")
+    time.sleep(1.0)
+    _, before = radio.counters()
+    with sdr_bench.lease():
+        sdr_bench.voice_call(freq, cc, tg, superframes=SUPERFRAMES, calls=CALLS, headers=3, terminators=TERMINATORS,
+                             gap_ms=500, family="bs")
+    time.sleep(1.5)
+    _, after = radio.counters()
+    d = counter_deltas(before, after, ["call.rx_calls", "call.rx_voice_bursts", "call.rx_lost_frames",
+                                       "call.rx_late_entries", "call.rx_ts_dropped"])
+    print("radio deltas:", d)
+    assert d["call.rx_ts_dropped"] == 0, d
+    assert d["call.rx_calls"] == CALLS and d["call.rx_late_entries"] == 0, d
+    want = CALLS * SUPERFRAMES * 6
+    assert d["call.rx_voice_bursts"] >= want - AIR_LOSS_MAX, d

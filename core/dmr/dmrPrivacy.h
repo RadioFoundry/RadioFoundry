@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 /*
- * DMR voice privacy (static keystream "basic privacy" schemes)
+ * DMR privacy schemes (static keystream "basic privacy"): voice, and packet data where the scheme defines it
+ *
+ * Each scheme is one entry of a table in dmrPrivacy.c: its name, key range, voice keystream and what it does with
+ * packet data (dmrPrivacyDataMode_t). A new scheme is a new dmrPrivacyType_t and a table entry; the call stack and the
+ * data layers (core/dmr/dmrData.c, dmrDataService.c) ask the table and never test a scheme.
  */
 
 #ifndef RFOUNDRY_DMRPRIVACY_H
@@ -61,5 +65,15 @@ typedef struct
 // The call stack's voice privacy hook (dmr_privacy_fn, core/dmr/call/dmr_call.h): ctx is a dmrPrivacyKey_t. RX bursts
 // are FEC corrected (core/dmr/ambe/ambeFec) before the keystream is removed, TX bursts are taken as encoded
 void dmrPrivacyCallHook(uint8_t *ambe27, uint8_t voiceIndex, bool tx, void *ctx);
+
+// Packet data (docs/spec/dmr-data.md 13): what the key's scheme does with data, for the data layer
+// (dmrDataSetPrivacy, core/dmr/dmrData.h): clear (no key), encrypt, or block when the scheme has no data form. The
+// result points at key, which must outlive it. A key that isn't valid gives clear
+struct dmrDataPrivacy_s;
+void dmrPrivacyDataConfig(const dmrPrivacyKey_t *key, struct dmrDataPrivacy_s *out);
+// Encrypts or decrypts (the same XOR) the user data octets of one packet in place: the IP datagram or compressed
+// header and payload, never the pad octets or the CRC-32. alg and mi are the privacy header's. False when the key's
+// scheme doesn't handle alg (the data is left as it is)
+bool dmrPrivacyDataCrypt(const dmrPrivacyKey_t *key, uint8_t alg, uint32_t mi, uint8_t *data, int length);
 
 #endif

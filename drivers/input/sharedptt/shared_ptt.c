@@ -7,7 +7,15 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 {
 	if (!pin_low) {
 		s->state = SHARED_PTT_UP;
+		s->high = true;
+		s->high_rx_seen = line->rx_seen;
+		s->high_rx_ms = line->rx_ms;
+		s->after_send = false;
+		s->stuck_timing = false;
 		return false;
+	}
+	if (s->state == SHARED_PTT_UP && line->tx_seen && (uint32_t)(now_ms - line->tx_ms) < SHARED_PTT_TX_GUARD_MS) {
+		s->after_send = true;
 	}
 	if (s->state == SHARED_PTT_NOISE) {
 		return false;
@@ -18,6 +26,9 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 	if (data || (line->keyed && s->state != SHARED_PTT_PRESSED)) {
 		s->ignored++;	// serial data, or the radio's own transmission on the line
 		s->state = SHARED_PTT_UP;
+		if (data) {
+			s->stuck_timing = false;	// good bytes arrive: the line isn't clamped
+		}
 		return false;
 	}
 	if (s->state == SHARED_PTT_PRESSED) {
@@ -37,6 +48,14 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 		return false;
 	}
 	if (s->state == SHARED_PTT_UP) {
+		bool high_since = s->high && (!line->rx_seen || (s->high_rx_seen && s->high_rx_ms == line->rx_ms));
+		if (!high_since || s->after_send) {
+			if (!s->stuck_timing) {
+				s->stuck_timing = true;
+				s->stuck_ms = now_ms;
+			}
+			return false;
+		}
 		s->state = SHARED_PTT_LOW;
 		s->low_ms = now_ms;
 	}
@@ -47,4 +66,9 @@ bool shared_ptt_pressed(shared_ptt_t *s, bool pin_low, const shared_ptt_line_t *
 	s->low_ms = now_ms;	// the settle time runs from the report, however late the scan
 	s->flagged = (uint16_t)line->flagged;
 	return true;
+}
+
+bool shared_ptt_stuck(const shared_ptt_t *s, uint32_t now_ms)
+{
+	return s->stuck_timing && (uint32_t)(now_ms - s->stuck_ms) >= SHARED_PTT_STUCK_MS;
 }

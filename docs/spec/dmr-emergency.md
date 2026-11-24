@@ -66,6 +66,9 @@ access. The radio core reconfigures the call stack when the emergency starts, en
 It can't start (state `failed`, until the next start) when the channel is not a DMR channel we may transmit on (the
 data service's rule: not RX only, in band, not in hotspot mode, an own ID; a DMR VFO counts) or there is no target.
 
+On a Tier III trunked system the alarm and its cancel are statuses 126 and 124, and the call is an emergency request
+([dmr-trunking.md](dmr-trunking.md) 7.8).
+
 ## 4. Alerts heard
 
 An alarm (section 2) or a voice call with the emergency option that is played (to us or a group we listen to)

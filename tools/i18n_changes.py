@@ -57,7 +57,8 @@ def line_of(rel, needle):
 
 
 def radio(base):
-    """[(file, line, old English, new English, [(code, old translation, new translation)])]"""
+    """[(file, line, old English, new English, [(code, old translation, new translation)])]: by key; a base catalog
+    from before the keys is matched by its English"""
     head, old = {}, {}
     for code, path in i18n.catalogs().items():
         text = at_base(base, os.path.relpath(path, ROOT))
@@ -66,20 +67,26 @@ def radio(base):
         with tempfile.NamedTemporaryFile("w", suffix=".po", encoding="utf-8", delete=False) as f:
             f.write(text)
         try:
-            old[code] = {m: s for m, s, fz in i18n.read_po(f.name)[1] if s and fz is False}
+            body = i18n.read_po(f.name)[1]
         finally:
             os.unlink(f.name)
-        head[code] = {m: s for m, s, fz in i18n.read_po(path)[1]}
+        cur = i18n.read_po(path)[1]
+        by_text = {m: k for k, m, _, _ in cur}
+        old[code] = {(k if k is not None else by_text.get(m)): (m, s) for k, m, s, fz in body if s and fz is False}
+        head[code] = {k: (m, s) for k, m, s, _ in cur}
     if not old:
         return []
     first = sorted(head)[0]
-    was = i18n.reworded(sorted({m for c in old.values() for m in c}), list(head[first]))
     rel = os.path.relpath(i18n.catalogs()[first], ROOT)
     out = []
-    for new, en in sorted(was.items()):
-        langs = [(c, old[c].get(en, ""), head[c].get(new, "")) for c in sorted(head) if c in old]
+    for key in sorted(head[first]):
+        new = head[first][key][0]
+        was = next((old[c][key][0] for c in sorted(old) if key in old[c]), None)
+        if was is None or was == new:
+            continue
+        langs = [(c, old[c].get(key, ("", ""))[1], head[c].get(key, ("", ""))[1]) for c in sorted(head) if c in old]
         if any(a and a == b for _, a, b in langs):
-            out.append((rel, line_of(rel, "msgid " + i18n.po_quote(new)), en, new, langs))
+            out.append((rel, line_of(rel, "msgctxt " + i18n.po_quote(key)), was, new, langs))
     return out
 
 

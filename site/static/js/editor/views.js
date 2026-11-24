@@ -5,10 +5,14 @@
 // nothing when the value was taken.
 
 import { h, button } from "../flasher/dom.js";
-import { parseFreq, parseTone, mhz } from "../codeplug/fields.js";
+import { parseFreq, parseTone, mhz, TONES } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES } from "../codeplug/records.js";
-import { refNumber, listenBand } from "../codeplug/model.js";
+import { refNumber, listenBand, followListen } from "../codeplug/model.js";
 import { keyValid } from "../codeplug/kv.js";
+import { kindRow, kindName, offeredKinds } from "../codeplug/modes.js";
+import { setKind } from "../codeplug/channelmodes.js";
+import { specField } from "./modefields.js";
+import { combo, comboText } from "./combo.js";
 
 // --- Parsers shared by the columns and the forms ---
 
@@ -25,39 +29,74 @@ const int = (lo, hi) => (t) => (r, k, v) => {
 	r[k] = n;
 };
 
-// TX timeout in seconds: 0 (blank, or the default label) is the radio's own, the rest rounds up to the 15 s the
-// record stores, so the form shows what will be saved
-const tot = (t) => (r, k, v) => {
-	const s = String(v ?? "").trim();
-	if (!s || /^(0|default)$/i.test(s) || s.toLowerCase() === t("editor.tot.default").toLowerCase()) {
-		r[k] = 0;
-		return;
-	}
-	const n = Number(s);
-	if (!Number.isInteger(n) || n < 1 || n > 3825) return t("editor.err.tot");
-	r[k] = Math.ceil(n / 15) * 15;
-};
-
 const freq = (t) => (r, k, v) => {
 	const hz = parseFreq(v);
 	if (hz === null) return t("editor.err.bad_freq");
 	r[k] = hz;
 };
 
-// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (no stray TX
-// frequency left from before)
+// A TX frequency typed in a receive-only band is refused, and the channel keeps its TX frequency and RX Only. TX on an
+// RX in such a band (TX follows RX there) and a TX frequency left unchanged (an import) are taken
+const txFreq = (t) => (r, k, v) => {
+	const hz = parseFreq(v);
+	if (hz === null) return t("editor.err.bad_freq");
+	if (listenBand(hz) && !listenBand(r.rxHz) && hz !== r[k]) return t("editor.err.tx_listen", { mhz: mhz(hz) });
+	r[k] = hz;
+};
+
+// An RX frequency in a receive-only band (model.js listenBand) makes the channel RX only, with TX on RX (followListen)
 const rxFreq = (t) => (r, k, v) => {
 	const err = freq(t)(r, k, v);
-	if (!err && listenBand(r.rxHz)) {
-		r.rxOnly = true;
-		r.txHz = r.rxHz;
-	}
+	if (!err) followListen(r);
 	return err;
 };
 const listening = (value) => !!listenBand(parseFreq(value("rxHz")));
+// The form's transmit fields (TX frequency, TX tone, power, VOX, tone burst) don't apply while RX Only is ticked, or implied by the band
+const noTx = (w, value, checked) => listening(value) || checked("rxOnly");
 
 // The mode as the radio shows it: an FM channel in the air band is received in AM
-const modeText = (r, t) => (r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+// A channel of a kind (channel-modes.md): the kind's short name
+// a kind's full name, or its short one where the text is missing
+const kindText = (id, t) => {
+	const key = `editor.mode_name.${kindRow(id)?.token}`, s = kindRow(id) ? t(key) : key;
+	return s === key ? kindName(id) : s;
+};
+const modeText = (r, t) => (r.kind ? kindText(r.kind, t) : r.mode === "dmr" ? "DMR" : listenBand(r.rxHz) ? t(`editor.mode.${listenBand(r.rxHz)}`) : "FM");
+
+// A channel's Mode, in its form and in the table: FM, DMR and the kinds offered (modes.js), the channel's own kind too.
+// The value is "fm", "dmr" or "k<kind>"
+function modeColumn(m, t, features) {
+	const kinds = offeredKinds(m, features);
+	return {
+		options: (r) => {
+			const out = [["fm", "FM"], ["dmr", "DMR"], ...kinds.map((k) => [`k${k.id}`, kindText(k.id, t)])];
+			if (r?.kind && !kinds.some((k) => k.id === r.kind)) out.push([`k${r.kind}`, kindText(r.kind, t)]);
+			return out;
+		},
+		get: (r) => (r.kind ? `k${r.kind}` : r.mode),
+		set: (r, v) => {
+			if (v === (r.kind ? `k${r.kind}` : r.mode)) return;
+			if (v.startsWith("k")) setKind(m, r, Number(v.slice(1)));
+			else setKind(m, r, 0, v);
+		},
+	};
+}
+const kindMod = (r) => (r.kind ? kindRow(r.kind)?.module ?? null : null);
+// A channel of a kind keeps the record's fields its module lists (a talk target, a unit ID); the rest of FM and DMR
+// stays as stored and is not shown
+const recordField = (r, key) => !r.kind || !!kindMod(r)?.recordFields?.includes(key);
+// Frequencies of its own: a trunked kind's are its system's
+const ownFreqs = (r) => !r.kind || kindMod(r)?.ownFreqs !== false;
+// Receive only: for a channel of a kind, its tag's transmit allowed turned round (the record is receive only)
+const rxOnlyGet = (r) => (r.kind ? !r.tagTx : r.rxOnly);
+// The TX timeouts the record can hold: the radio's default, then 15 s steps to 3825 s (the imports round up to them)
+export function totOptions(t) {
+	const out = [[0, t("editor.tot.default")]];
+	for (let s = 15; s <= 3825; s += 15) out.push([s, s < 60 ? `${s} s` : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} (${s} s)`]);
+	return out;
+}
+
+const rxOnlySet = (r, v) => (r.kind ? (r.tagTx = !v) : (r.rxOnly = !!v));
 
 const tone = (t) => (r, k, v) => {
 	const s = parseTone(v);
@@ -96,6 +135,12 @@ const bool = (r, k, v) => {
 
 export const toneText = (v, t) => v || t("editor.none");
 
+// The tone fields' searchable list (combo.js): every CTCSS tone and DCS code, and any other tone typed
+export const toneCombo = (t) => () => ({
+	values: TONES, accept: parseTone, none: t("editor.none"),
+	use: (v) => t("editor.tone.use", { tone: v || t("editor.none") }), noMatch: t("editor.tone.no_match"),
+});
+
 export function powerOptions(t) {
 	const opts = [[0, t("editor.power.default")]];
 	for (let n = 1; n <= 10; n++) opts.push([n, POWER_NAMES[n] ? t(`editor.power.${POWER_NAMES[n].toLowerCase()}`) : t("editor.power.level", { n: n - 1 })]);
@@ -112,9 +157,9 @@ const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.m
 
 // The columns Bulk Edit can set: every editable one but the name and number, which must differ per record. None on a
 // table whose members are edited in its own dialog (zones, RX lists): Bulk Edit isn't offered there
-export const bulkColumns = (table, m, t) => columns(table, m, t).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
+export const bulkColumns = (table, m, t, opts) => columns(table, m, t, opts).filter((c) => c.readOnly !== true && c.key !== "name" && c.key !== "number");
 
-export function columns(table, m, t) {
+export function columns(table, m, t, { features = null } = {}) {
 	const col = (key, label, type, parse, extra = {}) => ({
 		key, label: t(label), type,
 		get: (r) => r[key],
@@ -122,10 +167,24 @@ export function columns(table, m, t) {
 		readOnly: !parse,
 		...extra,
 	});
-	// a column of one mode only: blank and locked on a channel of the other mode (its value is kept)
+	// a column of one mode only: blank and locked on a channel of the other mode (its value is kept), and on a
+	// channel of a kind that doesn't use the record's field
 	const only = (mode, c) => {
 		const format = c.format;
-		return { ...c, readOnly: (r) => r.mode !== mode, format: (v, r) => (r.mode !== mode ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v) };
+		const off = (r) => r.mode !== mode || !recordField(r, c.key);
+		return { ...c, readOnly: off, format: (v, r) => (off(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v) };
+	};
+	const own = (c) => ({ ...c, readOnly: (r) => !ownFreqs(r) });
+	// a transmit field on an RX only channel: blank, grayed and locked like a field that doesn't apply (the value is
+	// kept, and shows again when RX Only is cleared). A TX frequency in a receive-only band (an import) is what made
+	// the channel RX only (followListen): that cell stays shown and open, so the frequency can be corrected
+	const tx = (c) => {
+		const ro = c.readOnly, format = c.format;
+		const off = (r) => !!rxOnlyGet(r) && !(c.key === "txHz" && !listenBand(r.rxHz) && listenBand(r.txHz));
+		return {
+			...c, readOnly: (r) => off(r) || (typeof ro === "function" ? ro(r) : !!ro),
+			format: (v, r) => (off(r) ? "" : format ? format(v, r) : c.type === "select" ? c.options(r).find(([k]) => k === v)?.[1] ?? "" : v),
+		};
 	};
 	const num = { key: "number", label: "#", type: "number", get: (r) => r.number, readOnly: true, width: "3.5rem", format: (v) => v ?? "–" };
 	switch (table) {
@@ -133,24 +192,24 @@ export function columns(table, m, t) {
 		return [
 			num,
 			col("name", "editor.col.name", "text", name(LIMITS.name)(t)),
-			col("mode", "editor.col.mode", "select", pick, { options: () => [["fm", "FM"], ["dmr", "DMR"]], format: (v, r) => modeText(r, t) }),
-			col("rxHz", "editor.col.rx", "text", (r, k, v) => {
+			{ ...col("mode", "editor.col.mode", "select", pick), ...modeColumn(m, t, features), readOnly: false, format: (v, r) => modeText(r, t) },
+			own(col("rxHz", "editor.col.rx", "text", (r, k, v) => {
 				// a simplex channel stays simplex: TX follows RX when they were the same
 				const was = r.rxHz;
 				const err = rxFreq(t)(r, k, v);
 				if (!err && r.txHz === was) r.txHz = r.rxHz;
 				return err;
-			}, { format: mhz, numeric: true }),
-			col("txHz", "editor.col.tx", "text", freq(t), { format: mhz, numeric: true }),
-			col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) }),
+			}, { format: mhz, numeric: true })),
+			tx(own(col("txHz", "editor.col.tx", "text", txFreq(t), { format: mhz, numeric: true }))),
+			tx(col("power", "editor.col.power", "select", pick, { options: () => powerOptions(t) })),
 			only("fm", col("bw", "editor.col.bw", "select", pick, { options: () => [[12.5, "12.5"], [25, "25"]] })),
-			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
-			only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v })),
+			only("fm", col("rxTone", "editor.col.rx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, combo: toneCombo(t) })),
+			tx(only("fm", col("txTone", "editor.col.tx_tone", "text", tone(t), { format: (v) => toneText(v, t), editValue: (v) => v, combo: toneCombo(t) }))),
 			only("dmr", col("colorCode", "editor.col.cc", "select", pick, { options: () => [...Array(16).keys()].map((n) => [n, String(n)]) })),
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: () => refOptions(m.contacts, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
 			only("dmr", col("rxList", "editor.col.rx_list", "select", pick, { options: () => refOptions(m.rxLists, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.rxList, t) })),
-			col("rxOnly", "editor.col.rx_only", "bool", bool),
+			{ ...col("rxOnly", "editor.col.rx_only", "bool", bool), get: rxOnlyGet, set: (r, v) => rxOnlySet(r, v) },
 			col("zoneSkip", "editor.col.zone_skip", "bool", bool),
 		];
 	case "zones":
@@ -226,22 +285,72 @@ const sfrField = (key, shift, mask, byte = "sfrA") => ({
 	key,
 });
 
-export function channelForm(m, t) {
+// The channels a fallback may name (channel-modes.md 7.3): plain ones, but the record being edited (self, or the
+// form's copy of it); the current one stays listed when it isn't one of them
+export function fallbackOptions(m, t, current, self = null, none = t("editor.modes.fallback_system")) {
+	const list = m.channels.filter((c) => !c.kind && c !== self && !(self?.number && c.number === self.number)).sort((a, b) => a.number - b.number);
+	const out = [[null, none], ...list.map((c) => [c, `${c.number} · ${c.name}`])];
+	if (current != null && !list.includes(current)) out.push([current, typeof current === "number" ? t("editor.missing", { n: current }) : `${current.number} · ${current.name}`]);
+	return out;
+}
+
+// The systems of a type a channel may name; a number as read stays listed
+export function systemOptions(m, t, type, current, optional = false) {
+	const out = (m.systems ?? []).filter((s) => s.type === type).sort((a, b) => a.number - b.number).map((s) => [s, s.name]);
+	if (optional || current == null) out.unshift([null, t("editor.none")]);
+	if (typeof current === "number") out.push([current, t("editor.missing", { n: current })]);
+	return out;
+}
+
+// features: the connected radio's (null: none), which says the kinds a channel may be made
+export function channelForm(m, t, { features = null } = {}) {
 	const sel = (key, label, options, extra = {}) => ({ key, label: t(label), type: "select", options, ...extra });
 	const chk = (key, label) => ({ key, label: t(label), type: "bool" });
 	const txt = (key, label, parse, format) => ({ key, label: t(label), type: "text", parse, format });
-	// the FM and DMR parts show only for a channel of that mode; the other mode's values are kept as they are
-	const fm = (f) => ({ ...f, show: (r) => r.mode === "fm" });
-	const dmr = (f) => ({ ...f, show: (r) => r.mode === "dmr" && (!f.show || f.show(r)) });
-	const sfr = (f, label, options) => dmr({ ...sfrField(...f), label: t(label), type: "select", options, show: (r) => r.sfr });
+	// the FM and DMR parts show only for a channel of that mode; the other mode's values are kept as they are. A
+	// channel of a kind shows the DMR record fields its module uses
+	const fm = (f) => ({ ...f, show: (r) => r.mode === "fm" && !r.kind });
+	const dmr = (f) => ({ ...f, show: (r) => r.mode === "dmr" && recordField(r, f.key) && (!f.show || f.show(r)) });
+	const sfr = (f, label, options) => dmr({ ...sfrField(...f), label: t(label), type: "select", options, show: (r) => r.sfr && !r.kind });
+	const kinds = offeredKinds(m, features);
+	const mode = modeColumn(m, t, features);
+	const kindFields = [];
+	for (const k of kinds) {
+		const mod = k.module, on = (r) => r.kind === k.id;
+		const holder = { on, get: (r) => r.params, put: (r, key, v) => (r.params = { ...r.params, [key]: v }) };
+		if (mod.systemType) kindFields.push({ ...sel("system", "editor.modes.system", (r) => systemOptions(m, t, mod.systemType, r.system, mod.optionalSystem)), key: `k${k.id}.system`, get: (r) => r.system, set: (r, v) => on(r) && (r.system = v), show: on });
+		if (mod.txKeyOptions) kindFields.push(sel(`k${k.id}.txKeyId`, "editor.nxdn.tx_key", (r) => {
+			const ids = mod.txKeyOptions(r);
+			const current = r.params?.txKeyId;
+			return [[null, t("editor.nxdn.tx_clear")], ...ids.map((id) => [id, String(id)]),
+				...(current != null && !ids.includes(current) ? [[current, t("editor.missing", { n: current })]] : [])];
+		}, {
+			dynamicOptions: true, show: on,
+			get: (r) => r.params?.txKeyId ?? null,
+			set: (r, id) => {
+				if (!on(r)) return;
+				const params = { ...r.params };
+				if (id == null) delete params.txKeyId;
+				else params.txKeyId = id;
+				r.params = params;
+			},
+			help: t("editor.nxdn.tx_key_help"),
+		}));
+		for (const flag of Object.keys(mod.flags ?? {})) kindFields.push({ ...chk(`k${k.id}.${flag}`, `editor.modes.flag.${flag}`), get: (r) => r[flag], set: (r, v) => on(r) && (r[flag] = !!v), show: on });
+		if (mod.fallback) {
+			kindFields.push({ ...sel(`k${k.id}.fallback`, "editor.modes.fallback", (r) => fallbackOptions(m, t, r.fallback, r)), get: (r) => r.fallback, set: (r, v) => on(r) && (r.fallback = v), show: (r) => on(r) && !r.noFallback });
+		}
+		for (const spec of mod.fields()) kindFields.push(specField(spec, t, holder, `k${k.id}`));
+	}
 	return [
 		{ group: t("editor.form.basic") },
 		txt("name", "editor.col.name", name(LIMITS.name)(t)),
-		sel("mode", "editor.col.mode", () => [["fm", "FM"], ["dmr", "DMR"]]),
-		sel("power", "editor.col.power", () => powerOptions(t)),
-		// in a receive-only band TX follows RX, locked (rxFreq)
-		{ type: "pair", key: "freqs", disabled: (w, value) => listening(value),
-			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", freq(t), mhz), disabled: (w, value) => listening(value), follows: "rxHz" }], buttons: [
+		sel("mode", "editor.col.mode", mode.options, { get: mode.get, set: mode.set }),
+		{ type: "note", key: "kindNote", text: (value, w) => (w?.kind && !ownFreqs(w) ? t("editor.modes.freqs_system") : "") },
+		{ ...sel("power", "editor.col.power", () => powerOptions(t)), disabled: noTx },
+		// in a receive-only band TX follows RX, locked (rxFreq); RX Only locks TX where it is
+		{ type: "pair", key: "freqs", show: ownFreqs, disabled: noTx,
+			fields: [txt("rxHz", "editor.col.rx", rxFreq(t), mhz), { ...txt("txHz", "editor.col.tx", txFreq(t), mhz), disabled: noTx, follows: "rxHz", followsIf: listening }], buttons: [
 			["→", t("editor.freq.rx_to_tx"), ([rx]) => [rx, rx]],
 			["⇄", t("editor.freq.swap"), ([rx, tx]) => [tx, rx]],
 			["←", t("editor.freq.tx_to_rx"), ([, tx]) => [tx, tx]],
@@ -250,16 +359,18 @@ export function channelForm(m, t) {
 			const band = listenBand(parseFreq(value("rxHz")));
 			return band ? t(`editor.band.${band}`) : "";
 		} },
-		txt("tot", "editor.col.tot", tot(t), (v) => (v ? String(v) : t("editor.tot.default"))),
+		sel("tot", "editor.col.tot", () => totOptions(t), { disabled: noTx }),
 		// a receive-only band makes the channel RX only on save (rxFreq): the box shows it as the RX frequency is typed
-		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening },
+		{ ...chk("rxOnly", "editor.col.rx_only"), implied: listening, get: rxOnlyGet, set: rxOnlySet },
+		{ group: t("editor.form.mode_params"), show: (r) => !!r.kind },
+		...kindFields,
 		fm({ group: t("editor.form.analog") }),
 		fm(sel("bw", "editor.col.bw", () => [[12.5, "12.5 kHz"], [25, "25 kHz"]])),
-		fm(txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v)),
-		fm(txt("txTone", "editor.col.tx_tone", tone(t), (v) => v)),
+		fm({ ...txt("rxTone", "editor.col.rx_tone", tone(t), (v) => v), combo: toneCombo(t) }),
+		fm({ ...txt("txTone", "editor.col.tx_tone", tone(t), (v) => v), combo: toneCombo(t), disabled: noTx }),
 		fm(sel("squelch", "editor.col.squelch", () => [[0, t("editor.squelch.default")], ...[...Array(21).keys()].map((n) => [n + 1, String(n + 1)])])),
-		fm(chk("vox", "editor.col.vox")),
-		fm(chk("toneBurst", "editor.col.tone_burst")),
+		fm({ ...chk("vox", "editor.col.vox"), disabled: noTx }),
+		fm({ ...chk("toneBurst", "editor.col.tone_burst"), disabled: noTx }),
 		dmr({ group: t("editor.form.digital") }),
 		dmr(sel("colorCode", "editor.col.cc", () => [...Array(16).keys()].map((n) => [n, String(n)]))),
 		dmr(sel("timeslot", "editor.col.ts", () => [[1, "1"], [2, "2"]])),
@@ -267,6 +378,7 @@ export function channelForm(m, t) {
 		dmr(sel("rxList", "editor.col.rx_list", () => refOptions(m.rxLists, t))),
 		dmr(txt("dmrId", "editor.col.channel_id", dmrId(t), (v) => (v ? String(v) : ""))),
 		dmr(chk("dmo", "editor.col.dmo")),
+		dmr(chk("acceptBadCrc", "editor.col.accept_bad_crc")),
 		dmr(sel("aliasTs1", "editor.col.alias_ts1", () => aliasOptions(t))),
 		dmr(sel("aliasTs2", "editor.col.alias_ts2", () => aliasOptions(t))),
 		dmr(chk("noBeep", "editor.col.no_beep")),
@@ -274,7 +386,8 @@ export function channelForm(m, t) {
 		chk("zoneSkip", "editor.col.zone_skip"),
 		chk("allSkip", "editor.col.all_skip"),
 		chk("noEco", "editor.col.no_eco"),
-		chk("roam", "editor.col.roam"),
+		// roaming hunts DMR repeaters by their own frequencies: a channel of a kind follows its system instead
+		{ ...chk("roam", "editor.col.roam"), show: (r) => !r.kind },
 		{ group: t("editor.form.location") },
 		sel("aprs", "editor.col.aprs", () => refOptions(m.aprs, t)),
 		chk("useLocation", "editor.col.use_location"),
@@ -300,11 +413,12 @@ const coord = (t, max) => (r, k, v) => {
 };
 
 // A form in a dialog over a working copy of the record; Save hands the copy back
-export function formDialog(title, fields, record, t, onSave) {
+// opts.list: one field per line, for forms whose fields carry help text
+export function formDialog(title, fields, record, t, onSave, opts = {}) {
 	const work = { ...record };
 	const errs = h("p", { class: "notice bad", hidden: true });
 	const rows = [];
-	const body = h("div", { class: "form-grid" });
+	const body = h("div", { class: opts.list ? "form-grid form-list" : "form-grid" });
 	// One field: its label and input, kept in rows for sync() and save()
 	const field = (f) => {
 		const id = "f-" + f.key;
@@ -323,14 +437,39 @@ export function formDialog(title, fields, record, t, onSave) {
 			input = h("input", { type: "text", id, value: f.format ? f.format(v ?? "") : v ?? "", spellcheck: "false" });
 		}
 		const label = h("label", { for: id }, typeof f.label === "function" ? f.label(work) : f.label);
-		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input);
+		const row = h("div", { class: "form-row" + (f.type === "bool" ? " form-check" : "") }, label, input, f.help ? h("span", { class: "small muted" }, f.help) : null);
+		// a long list of usual values (the tones): a searchable list over the input, which keeps the value
+		if (f.combo && input.tagName === "INPUT") combo(input, f.combo(work));
 		rows.push({ f, input, row, label });
 		return row;
 	};
+	// a group with collapsed set is a section the user opens: its rows stay hidden until then
+	let section = null;
 	for (const f of fields) {
+		const n0 = rows.length;
 		if (f.group) {
-			const row = h("h3", { class: "form-group" }, f.group);
+			let row;
+			if (f.collapsed != null) {
+				const sec = { open: !f.collapsed };
+				const btn = h("button", { type: "button", class: "form-toggle", "aria-expanded": String(sec.open) }, f.group);
+				btn.addEventListener("click", () => {
+					sec.open = !sec.open;
+					btn.setAttribute("aria-expanded", String(sec.open));
+					sync();
+				});
+				row = h("h3", { class: "form-group" }, btn);
+				section = sec;
+			} else {
+				row = h("h3", { class: "form-group" }, f.group);
+				section = null;
+			}
 			rows.push({ f: { key: null, type: "group", show: f.show }, input: null, row });
+			body.append(row);
+			continue;
+		} else if (f.type === "custom") {
+			// a part the caller draws (a table of rows): f.render() gives its element, f.parse(work) its errors on save
+			const row = f.render();
+			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "note") {
 			// a line of text from the inputs as they are typed
@@ -350,28 +489,44 @@ export function formDialog(title, fields, record, t, onSave) {
 				return btn;
 			});
 			const mid = h("div", { class: "pair-tools" }, ...tools);
-			rows.push({ f: { key: f.key, type: "pair", disabled: f.disabled }, input: null, row: null, tools });
-			body.append(h("div", { class: "form-pair" }, a, mid, b));
+			const pair = h("div", { class: "form-pair" }, a, mid, b);
+			rows.push({ f: { key: f.key, type: "pair", disabled: f.disabled, show: f.show }, input: null, row: pair, tools });
+			body.append(pair);
 		} else body.append(field(f));
+		for (const r of rows.slice(n0)) r.section = section;
 	}
 	const byKey = (k) => rows.find((r) => r.f.key === k);
+	// a row inside a closed section is hidden whatever its own show says
+	const shut = (r) => r.section && !r.section.open;
 	const value = (k) => byKey(k).input.value;
+	const checked = (k) => !!byKey(k)?.input?.checked;
 	const sync = () => {
+		for (const r of rows) if (r.section) r.row.hidden = false;
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
-				for (const b of tools) b.disabled = !!f.disabled?.(work, value);
+				for (const b of tools) b.disabled = !!f.disabled?.(work, value, checked);
+				if (f.show && row) row.hidden = !f.show(work);
 				continue;
 			}
-			if (f.type === "group") {
+			if (f.type === "group" || f.type === "custom") {
 				if (f.show) row.hidden = !f.show(work);
 				continue;
 			}
 			if (f.type === "note") {
-				row.textContent = f.text(value);
+				row.textContent = f.text(value, work);
 				row.hidden = !row.textContent;
 				continue;
 			}
 			if (f.type === "select") {
+				if (f.dynamicOptions) {
+					const current = input._opts[input.selectedIndex]?.[0];
+					const options = f.options(work);
+					if (options.length !== input._opts.length || options.some(([v, l], i) => v !== input._opts[i][0] || l !== input._opts[i][1])) {
+						input.replaceChildren(...options.map(([, l], i) => h("option", { value: String(i) }, l)));
+						input.selectedIndex = Math.max(0, options.findIndex(([v]) => v === current));
+						input._opts = options;
+					}
+				}
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
 			}
@@ -384,10 +539,13 @@ export function formDialog(title, fields, record, t, onSave) {
 			if (f.show) row.hidden = !f.show(work);
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
-				input.disabled = f.disabled(work, value);
-				if (input.disabled && f.follows) input.value = byKey(f.follows).input.value;
+				input.disabled = f.disabled(work, value, checked);
+				const ts = input.tomselect;
+				if (ts && ts.isDisabled !== input.disabled) input.disabled ? ts.disable() : ts.enable();
+				if (input.disabled && f.follows && (!f.followsIf || f.followsIf(value))) input.value = byKey(f.follows).input.value;
 			}
 		}
+		for (const r of rows) if (shut(r)) r.row.hidden = true;
 	};
 	body.addEventListener("change", sync);
 	body.addEventListener("input", sync);
@@ -396,13 +554,18 @@ export function formDialog(title, fields, record, t, onSave) {
 	const save = () => {
 		const bad = [];
 		for (const { f, input } of rows) {
+			if (f.type === "custom") {
+				if (!f.show || f.show(work)) bad.push(...(f.parse(work) ?? []));
+				continue;
+			}
 			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;
 			if (f.type === "select") {
 				const v = input._opts[input.selectedIndex]?.[0];
 				f.set ? f.set(work, v) : (work[f.key] = v);
 				continue;
 			}
-			const err = f.parse ? f.parse(work, f.key, input.value) : ((work[f.key] = input.value), null);
+			const text = f.combo ? comboText(input) : input.value;
+			const err = f.parse ? f.parse(work, f.key, text) : ((work[f.key] = text), null);
 			if (err) bad.push(`${typeof f.label === "function" ? f.label(work) : f.label}: ${err}`);
 		}
 		if (bad.length) {

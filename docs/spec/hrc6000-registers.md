@@ -164,8 +164,8 @@ or which register makes the chip transmit from them instead of the codec. Sectio
 | EMB_48_INFO_0 | 0x1F-0x24 | the 48-bit EMB field received in slot 0 |
 | EMB_48_INFO_1 | 0x25-0x2A | the 48-bit EMB field received in slot 1 |
 | Short LC | 0x2B-0x2F | the 36-bit CACH short LC received; the low 4 bits of 0x2F are unused |
-| 264bit_info_0 | 0x30-0x50 | slot 0's current 264 decoded bits, including a voice burst's 216 bits |
-| 264bit_info_1 | 0x60-0x80 | slot 1's current 264 decoded bits |
+| 264bit_info_0 | 0x30-0x53 | one slot's last burst received, 288 bits: the CACH (24), then the burst deframed (a voice burst: its sync / EMB / RC 48, then the voice 216). Live in layer 2 mode too |
+| 264bit_info_1 | 0x60-0x83 | the other slot's, the same layout |
 | 264bit_soft_0 | 0xA8-0x1AF | slot 0's 264 soft values, one per byte in bits 5-0 |
 | 264bit_soft_1 | 0x1C8-0x2CF | slot 1's 264 soft values, one per byte in bits 5-0 |
 | FM data buffer 1 | 0x030-0x22F | 512 bytes |

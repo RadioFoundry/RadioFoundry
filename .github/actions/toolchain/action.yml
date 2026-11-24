@@ -6,7 +6,8 @@
 # build with it, read here and by the scripts it calls, never typed into a workflow. A composite action, so it costs no
 # job. A new platform on a known toolchain needs no edit here; a new toolchain needs a branch below.
 #
-#   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it). Never cached:
+#   arm   tools/install-arm-toolchain.sh into ~/opt (a no-op on the self-hosted image, which has it): copied out of the
+#         platform's image (public, pinned by digest), else Arm's checksummed archive. Never cached:
 #         pr-tests.yml runs a pull request's code with main's cache scope, and a cache restore can write any file the
 #         job's user can, so a poisoned entry could swap the compiler of a release build (docs/dev/ci.md)
 #   csky  csky-elf-gcc on PATH (the self-hosted image's /opt/csky-elf): nothing to do. Otherwise the csky-elf image

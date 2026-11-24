@@ -4,6 +4,7 @@
 #include "fmt.h"
 #include "font.h"
 #include "i18n.h"
+#include "gfx.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -71,6 +72,12 @@ void sb_i32(sbuf_t *b, int32_t v)
 	}
 }
 
+void sb_hex(sbuf_t *b, uint32_t v, int digits)
+{
+	for (int sh = 4 * (digits - 1); sh >= 0; sh -= 4)
+		sb_chr(b, "0123456789ABCDEF"[(v >> sh) & 0xFu]);
+}
+
 void sb_freq(sbuf_t *b, uint32_t hz)
 {
 	sb_u32(b, hz / 1000000u, 1);
@@ -109,7 +116,7 @@ void sb_tone(sbuf_t *b, const subtone_t *t)
 void sb_split(sbuf_t *b, uint32_t rx_hz, uint32_t tx_hz)
 {
 	if (tx_hz == rx_hz) {
-		sb_str(b, TR("Off"));
+		sb_str(b, TR(VALUE_OFF, "Off"));
 		return;
 	}
 	sb_chr(b, tx_hz > rx_hz ? '+' : '-');
@@ -161,7 +168,7 @@ void sb_age_long(sbuf_t *b, uint32_t ms)
 	char unit;
 	sb_u32(b, age_unit(ms, &unit), 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 }
 
 // "14m ago", "14m" as text alternates: the drawing keeps the longest that fits (font.h). One unit style everywhere,
@@ -173,7 +180,7 @@ void sb_age(sbuf_t *b, uint32_t ms)
 	sb_str(b, TEXT_ALT_OPEN);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
-	sb_str(b, TR(" ago"));
+	sb_str(b, TR(PART_AGO, " ago"));
 	sb_str(b, TEXT_ALT_NEXT);
 	sb_u32(b, v, 1);
 	sb_chr(b, unit);
@@ -224,4 +231,47 @@ void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
 		sb_str(b, " km ");
 	}
 	sb_compass(b, bearing);
+}
+
+// A string's display width in cells, for truncation that never splits a character: a CJK glyph (code point > 0xFF) is
+// two cells, matching the room math ((w - x) / f->w) the talk line uses; ASCII, Latin-1 and font glyph bytes are one
+size_t ui_text_cells(const char *s)
+{
+	size_t cells = 0;
+	for (const char *p = s; *p; ) {
+		int seq;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cells += (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cells += 1;
+#endif
+		p += seq;
+	}
+	return cells;
+}
+
+// Append up to max_cells of s to b, stopping at a character boundary (a CJK character is two cells); the caller adds the
+// ellipsis. Never writes a cut-off character, so a Chinese name stays whole or drops whole
+void sb_cut_text(sbuf_t *b, const char *s, size_t max_cells)
+{
+	size_t cells = 0;
+	for (const char *p = s; *p; ) {
+		int seq;
+		size_t cw;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cw = (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cw = 1;
+#endif
+		if (cells + cw > max_cells)
+			break;
+		cells += cw;
+		for (size_t k = 0; k < (size_t)seq; k++)
+			sb_chr(b, p[k]);
+		p += seq;
+	}
 }

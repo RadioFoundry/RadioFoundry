@@ -21,7 +21,12 @@
 #include "aprs/ax25.h"
 #include "position/position.h"
 
-#define APRS_TOCALL		"APZRDF"	// destination: the experimental APZ block (docs/spec/aprs.md 4.2)
+// Destination: our registered tocall APRDF?, the sixth character the board's (board.toml aprs_tocall, passed in by the
+// build; docs/spec/aprs.md 4.2). "0" is no radio: the host tests
+#ifndef APRS_TOCALL_ID
+#define APRS_TOCALL_ID		"0"
+#endif
+#define APRS_TOCALL		"APRDF" APRS_TOCALL_ID
 #define APRS_SSID_DEFAULT	7		// handheld
 #define APRS_DMR_DST_DEFAULT	310999u		// BrandMeister's APRS gateway, <master MCC>999 (310999 for US masters); 5057 retired 2019-03-01
 #define APRS_LEVEL_DEFAULT	50
@@ -70,6 +75,7 @@ typedef struct {
 	bool igate;		// RF -> APRS-IS
 	bool igate_tx;		// APRS-IS -> RF
 	uint8_t digi;		// aprs_digi_mode_t
+	bool mute;		// the speaker stays off on the APRS frequency in FM; decoding goes on, Monitor plays it
 } aprs_cfg_t;	// where our position comes from and its ambiguity: the position service's settings (position.h)
 
 void aprs_cfg_default(aprs_cfg_t *c);
@@ -119,6 +125,11 @@ typedef struct {
 	bool msg_acked;
 	char last_info[48];	// the information field of our last beacon (truncated)
 	uint32_t serial;	// bumped on every change worth a redraw
+#if CONFIG_APRS_RX
+	uint32_t msg_serial;		// bumped on each new (non-dup) inbound message addressed to us
+	uint32_t last_msg_ms;		// hal_millis() when the newest such message arrived (0 = none yet)
+	char last_msg_from[AX25_CALL_LEN + 4];	// who sent it
+#endif
 } aprs_view_t;
 
 typedef struct {
@@ -228,9 +239,9 @@ bool aprs_host_enabled(void);
 // answer "nothing there", so a caller needs no switch of its own ---
 #if CONFIG_APRS_AFSK
 const char *aprs_path_text(uint8_t path);
-// A storage job (it writes flash; not the radio or UI task): our path into the codeplug's APRS record 1, so the CPS
-// reads what the radio uses. False when there is no such record or the write failed
-bool aprs_path_to_codeplug(void);
+// A storage job (it writes flash; not the radio or UI task): our path and SSID into the codeplug's APRS record 1, so
+// the CPS reads what the radio uses. False when there is no such record or the write failed
+bool aprs_to_codeplug(void);
 // The level an RF transmission keys at: APRS's own setting (aprs_cfg_t.power: n = the board's level n - 1, capped at
 // its highest) or, with none (0), the radio's current level
 uint8_t aprs_tx_power(uint8_t current);
@@ -241,6 +252,12 @@ bool aprs_rf_pending(void);
 bool aprs_can_receive(void);
 // The receive path is running (the receiver must stay awake: no battery saving)
 bool aprs_rx_listening(void);
+// The frequency the receive path decodes on, 0 when receiving is off or the radio can't (radio task)
+uint32_t aprs_rx_freq(void);
+// Stop the receive path at once (radio task): before tuning away from the APRS frequency (aprs_ax25.c)
+void aprs_rx_release(void);
+// The APRS frequency while its audio is muted (aprs_cfg_t mute), else 0 (radio task)
+uint32_t aprs_mute_hz(void);
 // A status packet (">text")
 bool aprs_send_status(const char *text);
 // A message with acks and retries; false when one is still waiting or the text is unusable
@@ -265,11 +282,14 @@ static inline bool aprs_host_frame(const uint8_t *frame, size_t n, uint32_t now_
 static inline void aprs_host_is_line(const char *line, size_t n, uint32_t now_ms) { (void)line; (void)n; (void)now_ms; }
 static inline size_t aprs_host_output(uint8_t *out, size_t max) { (void)out; (void)max; return 0; }
 static inline const char *aprs_path_text(uint8_t path) { (void)path; return ""; }
-static inline bool aprs_path_to_codeplug(void) { return false; }
+static inline bool aprs_to_codeplug(void) { return false; }
 static inline uint8_t aprs_tx_power(uint8_t current) { return current; }
 static inline bool aprs_rf_pending(void) { return false; }
 static inline bool aprs_can_receive(void) { return false; }
 static inline bool aprs_rx_listening(void) { return false; }
+static inline uint32_t aprs_rx_freq(void) { return 0u; }
+static inline void aprs_rx_release(void) {}
+static inline uint32_t aprs_mute_hz(void) { return 0u; }
 static inline bool aprs_send_status(const char *text) { (void)text; return false; }
 static inline bool aprs_send_message(const char *to, const char *text) { (void)to; (void)text; return false; }
 static inline bool aprs_send_message_opts(const char *to, const char *text, uint8_t flags)

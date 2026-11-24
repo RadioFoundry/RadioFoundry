@@ -50,13 +50,22 @@ the hardware option the version settled over the debug link (HWOPT) unless the r
 
 | Mode | Erases and writes | When |
 |---|---|---|
-| keep | the firmware's sectors only (DM-1701: within 3-9; MD-380: within 3-7); the codec sectors (DM-1701: 10, 11; MD-380: 8, 10, 11) are never touched | the radio runs RadioFoundry and reports a matching codec (`rfoundry probe`, or the start of `flash`); or `--codec keep` |
+| keep | the firmware's sectors only (DM-1701: within 3-9; MD-380: within 3-10); the codec sectors (DM-1701: 10, 11; MD-380: 11) are never touched | the radio runs RadioFoundry and reports a matching codec (`rfoundry probe`, or the start of `flash`); or `--codec keep` |
 | merge | the firmware's sectors and the codec sectors, with the codec from the copy saved from the radio or from `--stock` | keeping isn't known to be safe and rfoundry has a saved copy or `--stock FILE`; or `--codec merge` |
 
 A radio on a RadioFoundry build from before the codec moved reports `dm1701-v0206-csv` (the new layout's profile is
 `dm1701-v0206-csv-s11`). Its codec code sits in sectors the update overwrites, so rfoundry writes the codec: from a
 copy saved earlier, else from `--stock`. Stock firmware never holds the codec where RadioFoundry keeps it, so `--stock-installed`
 does not make keep safe.
+
+A radio whose codec is where an earlier release kept it (MD-380 `md380-d2032-s11`, MD-9600 `md9600-s11`) has it partly
+in flash this release's firmware uses, so the install moves it, on both routes. Before anything is written rfoundry
+reads the codec back over the debug link (every time, even with a copy saved before), checks it and saves it as
+`codecs/<board>-<codec id>-<chip UID>.bin` in its settings folder, one file per radio; the codec is then merged in where
+it goes now. Where the radio can't be read, only a copy saved from the same radio is used, else `--stock`. With
+neither, or with `--codec keep`, the install is refused and nothing is written. An install that stops halfway is
+finished by running it again (through the bootloader route if the radio now starts in its bootloader); rfoundry says
+which copy or file finishes it ([codec-placement.md](../../docs/spec/codec-placement.md), "Moving to a new layout").
 
 If rfoundry keeps a codec that turns out not to be there, nothing breaks: the firmware checks the codec before it
 uses it, so the radio runs FM only and shows "No codec: voice off". Flash again with `--stock`.

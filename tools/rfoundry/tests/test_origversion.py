@@ -20,6 +20,8 @@ from unittest import mock
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+sys.path.insert(0, HERE)
+import home  # noqa: E402,F401 (the settings folder in a temporary folder)
 from rfoundry import boards, cli, debuglink, fakedfu, origversion, stockfw  # noqa: E402
 from rfoundry import dfu as dfumod  # noqa: E402
 

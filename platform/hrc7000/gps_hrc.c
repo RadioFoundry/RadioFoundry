@@ -7,12 +7,14 @@
 // The module is powered at start-up and listened for for LISTEN_MS, whatever Settings > Location > GPS says, so the
 // radio knows whether it has one. One checksum-valid sentence makes it present, and every sentence then goes to the
 // position service (core/position, CONFIG_GPS). Nothing heard: the module is powered off again, the UART stopped,
-// and the radio reports no GPS (board.gps_present). Once present, the module is powered only while the setting is on
-// (hrc_gps_enable, board_t.gps_enable): the task switches it within one poll, the UART and the supply together.
+// and the radio reports no GPS (hal_gps_t.present). Once present, the module is powered only while the setting is on
+// (hal_gps_t.enable; drivers/gps/gps_rx/gps_power): the task switches it within one poll, the UART and
+// the supply together.
 #include "platform.h"
 #include "config.h"
 #include "hal_time.h"
 #include "gps/gps_rx/gps_rx.h"
+#include "gps/gps_rx/gps_power.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #if CONFIG_GPS
@@ -28,8 +30,7 @@
 static gps_rx_t rx;
 static const hrc_gps_cfg_t *cfg;
 static volatile bool present;
-static volatile bool want = true;	// the setting, as hrc_gps_enable last had it; on until the UI says otherwise
-static bool running;			// the module is powered and the UART listening (the task's own state)
+static gps_power_t power;		// the probe, then the setting (gps_enable)
 static TaskHandle_t task;
 
 static void rx_char(uint8_t c, bool flagged)
@@ -79,14 +80,15 @@ static void gps_task(void *arg)
 	(void)arg;
 	for (;;) {
 		vTaskDelay(pdMS_TO_TICKS(GPS_POLL_MS));
-		if (running) {
+		if (power.on) {
 			switch (gps_rx_poll(&rx, hal_millis(), sentence)) {
 			case GPS_RX_FOUND:
 				present = true;
+				gps_power_found(&power);
 				break;
 			case GPS_RX_ABSENT:
 				gps_on(false);		// no module answered: don't keep its supply on
-				running = false;
+				gps_power_absent(&power);
 				task = NULL;
 				vTaskDelete(NULL);
 				break;
@@ -94,10 +96,8 @@ static void gps_task(void *arg)
 				break;
 			}
 		}
-		// The setting decides once the module is known (a probe ends with the first sentence, whatever it says)
-		if (present && want != running) {
-			gps_on(want);
-			running = want;
+		if (gps_power_step(&power)) {
+			gps_on(power.on);
 		}
 	}
 }
@@ -111,28 +111,41 @@ void hrc_gps_init(const hrc_gps_cfg_t *c)
 	hrc_uart_setup(cfg->uart_base, GPS_BAUD);	// before the module is powered: its line is idle, the UART not busy
 	hrc_irq_register(cfg->irq, uart_isr);
 	gps_on(true);
-	running = true;
+	gps_power_init(&power);
 	if (task == NULL) {
 		xTaskCreate(gps_task, "gps", GPS_TASK_STACK, NULL, GPS_TASK_PRIORITY, &task);
 	}
 }
 
-void hrc_gps_enable(bool on)
+static void gps_enable(bool on)
 {
-	want = on;
+	gps_power_set(&power, on);
 }
 
-bool hrc_gps_running(void)
+static bool gps_running(void)
 {
-	return running;
+	return power.on;
 }
 
-bool hrc_gps_present(void)
+static bool gps_present(void)
 {
 	return present;
 }
 
-void hrc_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
+static void gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes)
 {
 	gps_rx_counts(&rx, good, bad, bytes);
 }
+
+static uint32_t gps_baud(void)
+{
+	return power.on ? GPS_BAUD : 0u;	// 0 while off or once given up, as on the STM32 boards
+}
+
+const hal_gps_t hrc_gps = {
+	.present = gps_present,
+	.enable = gps_enable,
+	.running = gps_running,
+	.counts = gps_counts,
+	.baud = gps_baud,
+};

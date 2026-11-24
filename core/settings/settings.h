@@ -12,6 +12,7 @@
 #ifndef RFOUNDRY_SETTINGS_H
 #define RFOUNDRY_SETTINGS_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -130,7 +131,7 @@ typedef struct {
 	uint16_t roam_check_s;		// beacon check interval, 0 = off
 	uint8_t roam_zones[SETTINGS_ROAM_ZONE_BYTES];	// bit z % 8 of byte z / 8: zone z is a roaming zone
 	// More of the UI's settings (docs/spec/ui.md 4; appended for uifix)
-	uint8_t theme;			// 0 dark, 1 light, 2 high contrast (color displays)
+	uint8_t theme;			// 0 dark, 1 light, 2 high contrast, 3 night (color displays)
 	uint8_t ui_flags;		// SETTINGS_UI_* bits
 	uint8_t updown_home;		// what Up / Down change on Home: 0 channel, 1 zone, 2 talk target
 	uint8_t low_batt_pct;		// warn at this battery percent (5-30), 0 = only the board's low voltage
@@ -146,8 +147,10 @@ typedef struct {
 					// bits 3-5 the SFR repeater's CW ID interval (radio_settings_t.sfr_cwid; 0 off)
 	uint8_t aprs_power;		// APRS RF power: 0 = the radio's current level, n = level n - 1 (was reserved6[0]; taken
 					// with the aprs_ fields below)
-	uint8_t aprs_cp_path;		// the codeplug APRS record's path last taken into aprs_path, aprs_path_t + 1 (0 = none
-					// yet; was reserved6[1]). A different path in the codeplug replaces aprs_path (aprs.md 11)
+	uint8_t aprs_cp_path;		// what was last taken from the codeplug APRS record (aprs.md 11; was reserved6[1]):
+					// bits 0-2 the path into aprs_path, aprs_path_t + 1, bits 3-7 the SSID into
+					// aprs_ssid, + 1; 0 = none yet. A different one in the codeplug replaces ours.
+					// Through settings_aprs_cp_path / _ssid
 	uint8_t volume;			// speaker volume on radios without a knob: 0 = the default, else 0x80 | (step + 1)
 					// (step 0..RADIO_VOLUME_MAX, 0 = mute); 1..11 = a step 0..10 of the first version
 					// (was reserved6, radio.h RADIO_VOLUME_*, radio_volume_step)
@@ -231,7 +234,29 @@ typedef struct {
 	// none (was reserved9[0..1]: an older record reads none). The VFO's outbound color code is its own (no byte B)
 	uint8_t vfo_sfr;		// the first VFO
 	uint8_t vfo2_sfr;		// the second
-	uint8_t reserved9;
+	// The board's power level count the stored levels count against (vfo_power, vfo2_power, master_power, aprs_power;
+	// was reserved9: 0 in an older record). A record whose count isn't the board's has those levels reset at load
+	// (settings-store.md 3): a level index names another power when a board's levels change
+	uint8_t power_levels;
+	// A Tier III stun kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
+	// SETTINGS_T3_STUN set, the codeplug system's slot in bits 4-6, its network's hash in bits 0-3
+	uint8_t t3_stun;
+	// A Tier III kill kept across a restart (dmr-trunking.md 7.9; appended: an older record reads none):
+	// SETTINGS_T3_KILLED set, no DMR at all until a factory reset
+	uint8_t t3_kill;
+	uint8_t satellite_index;	// reserved10[0]: selected TLE record; older records select the first
+	uint8_t reserved10[1];		// 0
+	// Signaling tones (core/radio/sigtone.h), appended at the end so a record written before reads them as 0:
+	// per event (start of a transmission, its end, a reception's end) where it sounds in DMR and in FM (sig_out_t).
+	// 0 = the default output, as an older record reads. The event's chain of steps is only in its codeplug record
+	// (CODEPLUG_KEY_SIG_BEGIN + event): settings_t is copied onto several task stacks, and the steps would cost every
+	// copy 60 bytes
+	uint8_t sig_dmr[3];
+	uint8_t sig_fm[3];
+	uint8_t reserved11[2];		// 0
+	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
+	// record reads 0, no position yet). A restart starts here, past every position sent
+	uint32_t aes_mi_res;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -245,6 +270,8 @@ typedef struct {
 // 2); app.c keeps it equal to codeplug_acceptance(), which a codeplug written by a CPS or TFTP drops
 #define SETTINGS_CP_ACCEPTED		0x01u
 #define SETTINGS_CP_RX_EXT		0x02u	// receive past the band table is on (not about the codeplug: the free bit here)
+#define SETTINGS_T3_STUN		0x80u	// t3_stun: a stun is kept (bits 0-6 say on which system)
+#define SETTINGS_T3_KILLED		0x01u	// t3_kill: killed
 
 #define SETTINGS_ZONE_JRN_NONE		0u	// zone_jrn_kind
 #define SETTINGS_ZONE_JRN_ADD		1u
@@ -256,7 +283,8 @@ typedef struct {
 
 // Zone shares are accepted unless the user turned them off: 0 (a record from before, or never set) and the old Ask
 // (1) both accept
-static inline bool settings_zs_accept(const settings_t *s) { return s->zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept_of(uint8_t zs_offers) { return zs_offers != SETTINGS_ZS_OFF; }
+static inline bool settings_zs_accept(const settings_t *s) { return settings_zs_accept_of(s->zs_offers); }
 
 // The DMR VFO's talk target (docs/spec/settings-store.md 3): a 24-bit ID and a private call flag, packed into bytes
 // that were reserved or held a small value, so the record stays 236 bytes and an older record reads as "none" (0).
@@ -293,31 +321,53 @@ static inline void settings_set_vfo_talk(settings_t *s, uint32_t id, bool privat
 	s->vfo_ts = (uint8_t)((s->vfo_ts & 0x03u) | (((id >> 20) & 0x0Fu) << 2) | (private_call ? 0x80u : 0));
 }
 
+// settings_t.aprs_cp_path: the codeplug APRS record's path (bits 0-2) and SSID (bits 3-7) last taken, each + 1 so 0
+// is "none yet", as an older record reads the SSID
+static inline uint8_t settings_aprs_cp_path(const settings_t *s) { return s->aprs_cp_path & 0x07u; }
+static inline uint8_t settings_aprs_cp_ssid(const settings_t *s) { return s->aprs_cp_path >> 3; }
+static inline void settings_set_aprs_cp_path(settings_t *s, uint8_t path_plus_1)
+{
+	s->aprs_cp_path = (uint8_t)((s->aprs_cp_path & 0xF8u) | (path_plus_1 & 0x07u));
+}
+static inline void settings_set_aprs_cp_ssid(settings_t *s, uint8_t ssid_plus_1)
+{
+	s->aprs_cp_path = (uint8_t)((s->aprs_cp_path & 0x07u) | ((ssid_plus_1 & 0x1Fu) << 3));
+}
+
 // settings_t.accent: bits 0-2 the highlight color (0 the theme's own, 1 red, 2 orange, 3 yellow, 4 teal, 5 light blue,
 // 6 purple, 7 pink), bit 3 set: the status strip on the screen's background, not filled (0, the default: filled),
 // bits 4-5 the crash report's mode (below), bits 6-7 the vocoder's mic options (SETTINGS_AUDIO_* below)
 #define SETTINGS_ACCENT_COLOR	0x07u
 #define SETTINGS_ACCENT_PLAIN	0x08u
 
-// theme and updown_home hold 0..2 in bits 0-1; their upper bits hold the crash report's target (below), and
-// updown_home bit 7 Home's talk line order (0, older records: talkgroup number first, 1: its name first)
+// theme holds 0..3 and updown_home 0..2 in bits 0-1 (firmware from before night reads theme 3 as dark); their upper
+// bits hold the crash report's target (below), and updown_home bit 7 Home's talk line order (0, older records:
+// talkgroup number first, 1: its name first)
 #define SETTINGS_SMALL_MASK	0x03u
 #define SETTINGS_HOME_LABEL_FIRST	0x80u
-static inline uint8_t settings_theme(const settings_t *s) { return (s->theme & 3u) <= 2u ? s->theme & 3u : 0; }
-static inline uint8_t settings_updown_home(const settings_t *s)
+// Each reader has an _of form that takes the field's value, for a caller that read just that field (SETTINGS_FIELD)
+static inline uint8_t settings_theme_of(uint8_t theme) { return theme & SETTINGS_SMALL_MASK; }
+static inline uint8_t settings_theme(const settings_t *s) { return settings_theme_of(s->theme); }
+static inline uint8_t settings_updown_home_of(uint8_t updown_home)
 {
-	return (s->updown_home & 3u) <= 2u ? s->updown_home & 3u : 0;
+	return (updown_home & 3u) <= 2u ? updown_home & 3u : 0;
 }
+static inline uint8_t settings_updown_home(const settings_t *s) { return settings_updown_home_of(s->updown_home); }
 
 // The crash report (docs/spec/crash-log.md 5.2), packed into spare bits so the record stays 236 bytes and an older
 // record reads as off with no target: the mode (0 off, 1 ask, 2 send at once) in accent bits 4-5; the target's
 // codeplug contact number (0 none, else 1..CODEPLUG_CONTACTS_MAX, 11 bits) bits 0-5 in theme bits 2-7 and bits 6-10
 // in updown_home bits 2-6. Firmware from before reads theme and updown_home with these bits as out of range: dark
 // and Up/Down = channel
-static inline uint8_t settings_crash_mode(const settings_t *s) { return (s->accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode_of(uint8_t accent) { return (accent >> 4) & 3u; }
+static inline uint8_t settings_crash_mode(const settings_t *s) { return settings_crash_mode_of(s->accent); }
+static inline uint16_t settings_crash_contact_of(uint8_t theme, uint8_t updown_home)
+{
+	return (uint16_t)((theme >> 2) | (((updown_home >> 2) & 0x1Fu) << 6));
+}
 static inline uint16_t settings_crash_contact(const settings_t *s)
 {
-	return (uint16_t)((s->theme >> 2) | (((s->updown_home >> 2) & 0x1Fu) << 6));
+	return settings_crash_contact_of(s->theme, s->updown_home);
 }
 static inline void settings_set_crash_mode(settings_t *s, uint8_t mode)
 {
@@ -418,6 +468,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 #define SETTINGS_APRS2_DMR_UDT		0x08u	// digital APRS as an ETSI UDT location (else Motorola LRRP)
 #define SETTINGS_APRS2_TO_IS		0x10u	// our own beacons to APRS-IS through the host helper
 #define SETTINGS_APRS2_DMR_GPS		0x20u	// our position in DMR voice calls (ETSI GPS Info LC, CONFIG_DMR_GPS)
+#define SETTINGS_APRS2_MUTE		0x40u	// the speaker stays off on the APRS frequency (decoding goes on)
 // aprs_misc bit 7: the position service's settings are set (core/position: aprs_lat, aprs_lon, aprs_alt_m,
 // aprs_pos_src, the ambiguity and SETTINGS_APRS2_DMR_GPS). They are also taken when aprs_stored is 1
 #define SETTINGS_APRS_MISC_POSITION	0x80u
@@ -449,6 +500,15 @@ settings_load_t settings_init(void);
 
 // A consistent copy
 void settings_read(settings_t *out);
+// One field of the settings in force, zero-extended: size bytes (1, 2 or 4) at byte offset of settings_t, copied under the
+// same lock as settings_read. For a caller deep in a task's stack, where a whole settings_t (a few hundred bytes) doesn't
+// fit; 0 for any other size or a range outside the struct. SETTINGS_FIELD(brightness) says it with the field's name and
+// type: a signed field comes back with its sign
+uint32_t settings_read_field(size_t offset, size_t size);
+#define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
+							      sizeof(((settings_t *)0)->f)))
+// A 32-bit field equals value both in force and in the last saved record, checked under one lock.
+bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);

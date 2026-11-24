@@ -213,6 +213,7 @@ export class BfLoader {
 			last = got.length === 1 && got[0] === NAK ? "refused (NAK)" : `answered ${hexs(got)}`;
 			this.s.clear();
 		}
-		throw new BfError(`step 8, block ${n}: ${last} after ${1 + this.retries} tries. The application area is erased now: the radio won't start until an installation completes. Enter update mode again and repeat it`);
+		// block: the page counts these per cable, since one that loses a block keeps losing them (iapui.js)
+		throw Object.assign(new BfError(`step 8, block ${n}: ${last} after ${1 + this.retries} tries. The application area is erased now: the radio won't start until an installation completes. Enter update mode again and repeat it`), { block: n });
 	}
 }

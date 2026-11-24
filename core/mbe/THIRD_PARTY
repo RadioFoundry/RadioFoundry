@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Third-party code in the full-rate voice decoder (imbe_dec.c, imbe_tab.c), shown on Settings > Advanced > About
+# (tools/gen_about.py). The notice itself: LICENSES/ISC.txt
+mbelib: ISC

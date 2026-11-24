@@ -4,7 +4,8 @@
 """DMR receive sweep: tune a receiver register against the SDR bench, fast.
 
     tools/dmr_rx_sweep.py --allow-rf --port PORT --bench-api HOST --freq MHZ --cc N --tg TG --ambe FILE
-                          [--reg CHIP:REG[:PAGE] --values V,V,...] [--offsets=-1000:1000:500] [--dbm=D,D,...]
+                          [--reg CHIP:REG[:PAGE] [--field HI:LO] --values V,V,...|FROM:TO] [--offsets=-1000:1000:500]
+                          [--dbm=D,D,...]
                           [--devs 0.9,1.0,1.1] [--dwell S] [--repeat N] [--per-call] [--out FILE.jsonl]
 
 The radio receives on its VFO (DMR, --cc, slot 1, --tg the talk target) and never transmits. For each bench level
@@ -27,11 +28,17 @@ One call covers every value: a grid of 4 values x 3 offsets x 2 deviations x 3 l
 --per-call writes each value before a call of its own instead, so the radio syncs at it: slower, for a setting that
 may cost a call's start.
 
-Choose where to sweep. At full level a receiver's errors come from what doesn't depend on the signal (an overloaded
-stage, the transmitter's own flaws), and a small change in a setting barely shows. Near sensitivity a fraction of a dB,
-or a few hundred Hz, is a clear difference: add a level where the radio's own setting loses a few frames. The summary
-ranks each value by its worst cell over everything swept: the setting to pick is the one that holds up best for
-transmitters a little off frequency or off deviation, not the best cell at the center.
+--field HI:LO sweeps one bit field: --values are the field's values (a FROM:TO range works too) and the other bits keep
+the radio's value. That is how to explore a register with undocumented fields; the summary names the whole word.
+A bit that reads back other than written (read-only) stops the run with the value named.
+
+Choose where to sweep, and sweep both ends. Near sensitivity a fraction of a dB, or a few hundred Hz, is a clear
+difference: add a level where the radio's own setting loses a few frames. Strong signals (-75 to -45 dBm at the radio)
+test the receiver's AGC: the bench sends a simplex call, one 30 ms burst every 60 ms, so the AGC sees the carrier come
+and go with every burst. One that settles too slowly overloads the start of each burst, a bit or more a frame however
+strong the signal; a clean receiver corrects almost nothing there. The summary ranks each value by its worst cell over
+everything swept: the setting to pick is the one that holds up best for transmitters a little off frequency or off
+deviation, not the best cell at the center. A value that wins at one end must still be checked at the other.
 
 Without --reg the radio's own settings are measured. The register's value at the start is written back at the end.
 Use a speech file, never silence: a receiver can flip bits in ways only some frame contents show.
@@ -60,6 +67,25 @@ def parse_reg(text):
     if len(p) not in (2, 3):
         raise argparse.ArgumentTypeError("--reg is CHIP:REG or CHIP:REG:PAGE")
     return p[0], p[1], p[2] if len(p) == 3 else 0
+
+
+def parse_field(text):
+    """HI:LO bit numbers -> (mask, shift)"""
+    try:
+        hi, lo = (int(x) for x in text.split(":"))
+    except ValueError:
+        raise argparse.ArgumentTypeError("--field is HI:LO (bit numbers, 11:6)")
+    if not 0 <= lo <= hi <= 31:
+        raise argparse.ArgumentTypeError("--field HI:LO with 0 <= LO <= HI <= 31")
+    return ((1 << (hi - lo + 1)) - 1) << lo, lo
+
+
+def parse_values(text):
+    """A comma list, or FROM:TO for every value in between"""
+    if ":" in text:
+        lo, hi = (int(x, 0) for x in text.split(":"))
+        return list(range(lo, hi + 1))
+    return [int(v, 0) for v in text.split(",")]
 
 
 def parse_offsets(text):
@@ -234,7 +260,9 @@ def main():
     ap.add_argument("--tg", type=int, default=9)
     ap.add_argument("--ambe", required=True, help="a speech recording, 9-byte AMBE frames")
     ap.add_argument("--reg", type=parse_reg, help="CHIP:REG[:PAGE] to sweep (CHIP_REG numbering, debuglink.md)")
-    ap.add_argument("--values", help="comma list of register values")
+    ap.add_argument("--values", help="register values: a comma list, or FROM:TO")
+    ap.add_argument("--field", type=parse_field,
+                    help="HI:LO: --values are values of these bits; the others keep the radio's value")
     ap.add_argument("--offsets", type=parse_offsets, default=[0],
                     help="carrier offsets, Hz: FROM:TO:STEP or a list (--offsets=-1000:1000:500 with a leading minus)")
     ap.add_argument("--detune", action="store_true",
@@ -254,9 +282,13 @@ def main():
         ap.error("the bench transmits: pass --allow-rf (on a frequency you may use)")
     if (a.reg is None) != (a.values is None):
         ap.error("--reg and --values go together")
+    if a.field and a.reg is None:
+        ap.error("--field needs --reg")
     if os.path.getsize(a.ambe) % 9 or not os.path.getsize(a.ambe):
         ap.error(f"{a.ambe}: not a 9-byte-frame .ambe file")
-    values = [int(v, 0) for v in a.values.split(",")] if a.values else [None]
+    values = parse_values(a.values) if a.values else [None]
+    if a.field and any(v << a.field[1] & ~a.field[0] for v in values):
+        ap.error("a --values value doesn't fit in --field")
     dbms = [float(x) for x in a.dbm.split(",")] if a.dbm else [None]
     devs = [float(x) for x in a.devs.split(",")]
     tmp = tempfile.mkdtemp(prefix="dmr-rx-sweep-")
@@ -277,6 +309,10 @@ def main():
         chip, reg, page = a.reg
         orig = L.chip_reg(chip, reg, page=page)
         print(f"chip {chip} reg 0x{reg:02X} page {page}: 0x{orig:04X} at the start")
+        if a.field:                         # field values -> whole words, the other bits the radio's
+            mask, shift = a.field
+            values = [(orig & ~mask) | (v << shift) for v in values]
+            print("values: " + ", ".join(name(v) for v in values))
     out = open(a.out, "a") if a.out else None
     table = {}
     conds = [(d, s, o) for d in dbms for s in devs for o in a.offsets]

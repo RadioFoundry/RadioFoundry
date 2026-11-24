@@ -24,6 +24,7 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 |---|---|---|
 | Tier II voice, direct mode and through repeaters, color code and slot per channel, talk groups, private calls, late entry, talker alias | `DMR`, `DMR_TALKER_ALIAS` | [dmr-voice.md](dmr-voice.md) |
 | Basic Privacy | `DMR_PRIVACY` | [dmr-voice.md](dmr-voice.md) |
+| AES-256 voice (PI header, per-channel traffic keys) | `DMR_AES` | [dmr-voice.md](dmr-voice.md) 5.1 |
 | Text messages, call alert, radio check, ARS, LRRP, confirmed data, compressed headers | `DMR_SMS`, `DMR_SIGNALING`, `DMR_ARS`, `DMR_LRRP`, `DMR_UDP_COMPRESS` | [dmr-data.md](dmr-data.md) |
 | Emergency alarm, emergency call, hot mic | `DMR_EMERGENCY` | [dmr-emergency.md](dmr-emergency.md) |
 | Repeater roaming by position | `DMR_ROAMING` | [dmr-roaming.md](dmr-roaming.md) |
@@ -57,5 +58,5 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 ## Not built
 
 - Trunking (Capacity Plus, Connect Plus, Tier III): not built.
-- Encryption beyond Basic Privacy (ARC4, AES).
+- Encryption beyond Basic Privacy and AES-256 voice (ARC4, AES on data, enhanced privacy).
 - DTMF decode and stored DTMF codes ([radio-features.md](radio-features.md)).

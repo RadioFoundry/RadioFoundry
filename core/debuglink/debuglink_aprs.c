@@ -41,7 +41,7 @@ static void view_settings(dl_text_t *t)
 	aprs_cfg_t c;
 
 	aprs_get_cfg(&c);
-	dl_text(t, "aprs.built=1\n");
+	dl_text(t, "aprs.built=1\naprs.tocall=%s\n", APRS_TOCALL);
 	dl_text(t, "set.aprs_tx=%u\nset.aprs_region=%u\nset.aprs_ssid=%u\nset.aprs_symbol=%c%c\nset.aprs_path=%s\n",
 		c.tx_on, c.region, c.ssid, c.sym_table, c.sym_code, aprs_path_text(c.path));
 	dl_text(t, "set.aprs_interval_s=%u\nset.aprs_smart=%u\nset.aprs_distance_m=%u\nset.aprs_after_ptt=%u\n",
@@ -50,7 +50,8 @@ static void view_settings(dl_text_t *t)
 		"set.aprs_power=%u\n", c.boot, c.level, c.txdelay, word(c.via, vias, 3), (unsigned)c.dmr_dst, c.power);
 	dl_text(t, "set.aprs_dmr_udt=%u\nset.aprs_kiss=%u\nset.aprs_rx=%u\nset.aprs_igate=%u\n",
 		c.dmr_udt, c.kiss, c.rx_on, c.igate);
-	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\n", c.igate_tx, c.digi, c.to_is);
+	dl_text(t, "set.aprs_igate_tx=%u\nset.aprs_digi=%u\nset.aprs_to_is=%u\nset.aprs_mute=%u\n", c.igate_tx, c.digi, c.to_is,
+		c.mute);
 }
 
 void debuglink_view_aprs(uint8_t part, dl_text_t *t)
@@ -167,6 +168,7 @@ static uint8_t set_field(uint8_t field, uint32_t val)
 	case DL_APRS_F_IGATE_TX: c.igate_tx = val != 0; break;
 	case DL_APRS_F_DIGI: c.digi = (uint8_t)val; break;
 	case DL_APRS_F_TO_IS: c.to_is = val != 0; break;
+	case DL_APRS_F_MUTE: c.mute = val != 0; break;
 	case DL_APRS_F_POWER:
 		if (val > board.power_count) {
 			return DL_ST_BAD_ARG;

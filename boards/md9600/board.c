@@ -9,6 +9,7 @@
 #include "pins.h"
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "ui/fmt.h"
 #include "hrc/dmr_glue.h"
 #include "hrc/vocoder.h"
 #include "gps_uart/gps_uart.h"
@@ -19,19 +20,6 @@
 #if CONFIG_NET_PPP
 #include "hostlink/hostlink_ppp.h"
 #endif
-
-// The RTOS heap, and with it every task stack, in the CCM (as on the other STM32F4 radios): nothing on a stack or from
-// pvPortMalloc may be a DMA buffer
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] RFOUNDRY_CPU_RAM_NOINIT __attribute__((aligned(8)));
-
-// Zero the CCM's .ccmbss (RFOUNDRY_CPU_RAM) like .bss: run from __libc_init_array before main and before any interrupt
-extern uint32_t _sccmbss[], _eccmbss[];
-static void ccm_zero(void)
-{
-	for (uint32_t *p = _sccmbss; p < _eccmbss; p++)
-		*p = 0;
-}
-__attribute__((section(".preinit_array"), used)) static void (*const ccm_zero_entry)(void) = ccm_zero;
 
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
@@ -105,12 +93,30 @@ static const hal_cps_t cps = {
 };
 #endif
 
+// The support info (docs/spec/support-info.md 2): the modem, then the board revision driven and what chose it, and
+// the start-up's IF chip read test and receiver probe (hardware-md9600.md 16): the lines of the diagnostics page
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i == 0) {
+		*role = BOARD_HW_DMR;
+		str_copy(buf, len, "HR_C6000");
+		return true;
+	}
+	if (i > 2) {
+		return false;
+	}
+	md9600_radio_diag_t rd;
+	md9600_radio_diag(&rd);
+	*role = BOARD_HW_BOARD;
+	return md9600_rev_text(i == 1 ? 0 : 2, md9600_rev_state(), rd.probe, buf, len);
+}
+
 const board_t board = {
 	.name = "MD-9600",
 	// A mobile on a fixed supply: no battery. No CAP_VOLUME_POT: the knob sets the volume in the analog path only.
 	// No CAP_KEYPAD: the keypad is on the hand mic, which may not have one, so text entry keeps the panel's way. The
-	// GPS module is optional: gps_present says
-	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0),
+	// GPS module is optional: board_t.gps says
+	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
@@ -134,6 +140,10 @@ const board_t board = {
 #endif
 #if CONFIG_DMR
 	.dmr = &stm32_hrc_dmr,
+#if CONFIG_AIR
+	.air = &stm32_hrc_air,	// the HR_C6000 physical layer mode (hrc6000_air.c)
+	.baseband = &stm32_hrc_baseband,	// its FM copy (hrc6000_air.c), the soft modem's input
+#endif
 	.audio = &md9600_audio,
 	.vocoder = &stm32_vocoder,
 #if CONFIG_AUDIO_PROBE || MD9600_FM_RX_TAP
@@ -141,11 +151,11 @@ const board_t board = {
 #endif
 #endif
 #if CONFIG_GPS
-	.gps_present = stm32_gps_present,
-	.gps_enable = stm32_gps_enable,
+	.gps = &stm32_gps,
 #endif
 	.power = &md9600_power,
 	.flash = &stm32_spi_flash,
+	.hw_line = hw_line,
 #if CONFIG_DIAG
 	.diag_line = md9600_diag_line,
 	.diag_reset = md9600_diag_reset,
@@ -258,7 +268,7 @@ static void reset_levels(void)
 	stm32_pin_out(PIN_PORT(PIN_TONE_PWM), PIN_MASK(PIN_TONE_PWM), true, true);
 	PIN_OUT(PIN_BEEP_PWM, false);
 	PIN_OUT(PIN_BACKLIGHT, false);
-	PIN_OUT(PIN_MIC_GPS_POWER, true);	// hand mic and GPS powered while the radio runs
+	PIN_OUT(PIN_MIC_GPS_POWER, false);	// hand mic and GPS: off through the standby wait, on in board_init
 
 	PIN_OUT(PIN_FLASH_CS, true);
 	PIN_OUT(PIN_LCD_CS, true);
@@ -304,6 +314,7 @@ void board_early_init(void)
 
 void board_init(void)
 {
+	PIN_WRITE(PIN_MIC_GPS_POWER, true);	// switched on: hand mic and GPS powered while the radio runs (latch drops it)
 	spi2_lock = xSemaphoreCreateMutex();
 	md9600_power.init();
 	md9600_flash_init();

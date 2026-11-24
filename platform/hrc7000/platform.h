@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // HR_C7000 (Dahua DH4570) SoC with a C-SKY CK803S core: register map and platform services for boards built on it
 // (docs/spec/hardware-dm32.md 1-4). The modem / baseband registers are the driver's (drivers/modem/hrc7000).
 #ifndef PLATFORM_HRC7000_H
@@ -10,6 +11,7 @@
 #include "hal_system.h"
 #include "hal_flash.h"
 #include "hal_input.h"
+#include "hal_gps.h"
 
 #define REG32(a)		(*(volatile uint32_t *)(uintptr_t)(a))
 
@@ -78,12 +80,13 @@
 #define TMR_CTRL_INT_MASK	0x04u	// 1 = interrupt masked
 
 // Timer allocation: 1 = RTOS tick, 2 = free-running microsecond clock (no interrupt), 3 = DMR PA one-shot (as
-// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 free
+// stock; hardware-dm32.md 8.6), 4 = AFSK, 5 = the board's own, 6 = PCM FIFO check / deferred write
 #define TIMER_TICK		1
 #define TIMER_CLOCK		2
 #define TIMER_PA		3
 #define TIMER_AFSK		4	// APRS AFSK transmit: tops up the prompt FIFO (hrc_afsk.c)
 #define TIMER_BOARD		5	// a board's one-shot (e.g. the waits of a board's own DMR burst sequence)
+#define TIMER_PCM		6	// speaker FIFO check / settled write, independent of blocking voice decoders
 
 // --- PIC: source s is CPU vector s + 32 (hardware-dm32.md 4) ---
 #define PIC_MODE		REG32(PIC_BASE + 0x00)
@@ -369,6 +372,8 @@ uint32_t hrc_host_uart_line_errors(void);	// characters the UART flagged (its FI
 // When the last byte without a line error arrived (hal_millis()); false if none has yet. A board whose PTT shares the
 // serial line (drivers/input/sharedptt) reads it to tell host data from a press
 bool hrc_host_uart_last_rx(uint32_t *ms);
+// When the radio last sent on the host port (hal_millis()); false if it hasn't. For the same boards: gotchas.md 16.5
+bool hrc_host_uart_last_tx(uint32_t *ms);
 // Host port traffic for the diagnostics page: when the host link stops answering, these tell a dead receiver (rx
 // stops), a stuck transmitter (tx_stalls) and a stuck host link task (waits stops) apart
 typedef struct {
@@ -398,9 +403,6 @@ typedef struct {
 	uint32_t rxd_mux_clear;	// IO_DIPLEX0 bits cleared to give the RXD pad to the UART; 0 = the board's io init has
 } hrc_gps_cfg_t;
 void hrc_gps_init(const hrc_gps_cfg_t *cfg);
-void hrc_gps_enable(bool on);	// Settings > Location > GPS (board_t.gps_enable): the module's power, once it has been heard
-bool hrc_gps_present(void);	// the module has been heard: board_t.gps_present
-void hrc_gps_counts(uint32_t *good, uint32_t *bad, uint32_t *bytes);	// valid / bad sentences, bytes received
-bool hrc_gps_running(void);	// the module is powered and listened to (diagnostics)
+extern const hal_gps_t hrc_gps;	// board_t.gps: once heard, the module's power follows the setting
 
 #endif

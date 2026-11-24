@@ -61,9 +61,9 @@ static bool init(void)
 	give();
 	ready = ok;
 	stm32_spi_flash.size = ok ? nor.size : 0;
-	// No map on a chip too small for it; a chip that didn't answer keeps it with size 0, as on HR_C7000 (the debug link
-	// tells "didn't start" from "too small" by it)
-	stm32_spi_flash.map = !ok || hal_flash_map_end(cfg->map, SPI_NOR_SECTOR_SIZE) <= nor.size ? cfg->map : NULL;
+	// The map the chip holds (the board's, else its small one), none when it holds neither; a chip that didn't answer
+	// keeps the board's with size 0, as on HR_C7000 (the debug link tells "didn't start" from "too small" by it)
+	stm32_spi_flash.map = !ok ? cfg->map : hal_flash_map_for(cfg->map, cfg->small_map, nor.size, SPI_NOR_SECTOR_SIZE);
 	return ok;
 }
 
@@ -111,6 +111,11 @@ static bool er(uint32_t addr)
 	return ok;
 }
 
+static uint32_t jedec(void)
+{
+	return ready ? (uint32_t)nor.manufacturer << 16 | nor.device : 0u;
+}
+
 hal_flash_t stm32_spi_flash = {
 	.init = init,
 	.size = 0,
@@ -119,6 +124,7 @@ hal_flash_t stm32_spi_flash = {
 	.write = wr,
 	.erase = er,
 	.map = NULL,	// set by init
+	.jedec = jedec,
 };
 
 bool stm32_spi_flash_read_security(uint8_t reg, uint32_t offset, void *buf, uint32_t len)

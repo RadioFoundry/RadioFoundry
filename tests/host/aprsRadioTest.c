@@ -22,6 +22,7 @@
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
+#include "ui/ui_svc.h"
 
 static int failures;
 static int checks;
@@ -56,15 +57,27 @@ static struct {
 
 static uint32_t now;
 uint32_t hal_millis(void) { return now; }	// ui_svc_aprs.c
+
+static ui_event_t last_ev;
+static int n_ev;
+bool ui_notify(const ui_event_t *ev) { last_ev = *ev; n_ev++; return true; }
 static char frames[8][AX25_TNC2_MAX];	// what went out, decoded from the tones
 static int nframes;
 
 static void r_init(void) {}
 static void r_set_mode(radio_mode_t m) { (void)m; }
+// Tunes off the APRS frequency with APRS receive still holding the FM audio: on the HR_C7000 a P25, NXDN or YSF
+// engine can't start then (dmr_glue.c air_take), so this must stay 0
+static int retune_while_aprs;
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
 	(void)bw;
 	(void)t;
+#if CONFIG_APRS_RX
+	if (hz != APRS_HZ && aprs_rx_listening()) {
+		retune_while_aprs++;
+	}
+#endif
 	hw.rx_hz = hz;
 	return true;
 }
@@ -89,17 +102,28 @@ static void r_tx_off(void)
 static void r_status(radio_status_t *st)
 {
 	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
-	st->rssi_dbm = -120;
+	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
 	st->tone_ok = true;
 }
-static void r_audio(bool on) { (void)on; }
+static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
+static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
+static int spk_blips;	// the speaker audible on the APRS frequency while muted (on and unmuted at once)
+static bool blip_watch;	// count spk_blips
+static void blip_check(void)
+{
+	if (blip_watch && spk_on && !spk_muted && hw.rx_hz == APRS_HZ) {
+		spk_blips++;
+	}
+}
+static void r_audio(bool on) { spk_on = on; blip_check(); }
+static void r_speaker_mute(bool mute) { spk_muted = mute; blip_check(); }
 static bool r_tone(uint16_t hz)
 {
 	hw.tone_hz = hz;
 	return true;
 }
-static const hal_radio_t fake_radio = {
+static hal_radio_t fake_radio = {	// not const: test_mute gives it speaker_mute
 	.init = r_init, .set_mode = r_set_mode, .rx = r_rx, .tx = r_tx, .tx_off = r_tx_off, .status = r_status,
 	.audio = r_audio, .tx_tone = r_tone,
 };
@@ -226,9 +250,13 @@ static const band_t bands[] = {
 };
 static const char *const power_names[] = { "L", "H" };
 
+// A module that is always there and always on (hal_gps_t with no hooks)
+static const hal_gps_t fake_gps = { 0 };
+
 const board_t board = {
 	.name = "fake",
 	.caps = CAP_GPS | CAP_BCAST_FM,
+	.gps = &fake_gps,
 	.bands = bands,
 	.band_count = 3,
 	.power_count = 2,
@@ -254,6 +282,7 @@ static char cp_name[CODEPLUG_NAME_LEN + 1];
 codeplug_source_t codeplug_source(void) { return CODEPLUG_OPENFW; }
 static uint32_t cp_serial = 1;
 static char cp_path[2][10];		// the APRS record's path entries
+static uint8_t cp_ssid;			// ... and its SSID
 uint32_t codeplug_serial(void) { return cp_serial; }
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi) { (void)c; (void)lo; (void)hi; }	// no settings area
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
@@ -298,6 +327,7 @@ bool codeplug_aprs(uint8_t n, codeplug_aprs_t *out)
 	strcpy(out->comment, "RadioFoundry test");
 	strcpy(out->path[0], cp_path[0]);
 	strcpy(out->path[1], cp_path[1]);
+	out->ssid = cp_ssid;
 	return true;
 }
 bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
@@ -307,6 +337,17 @@ bool codeplug_set_aprs_path(uint8_t n, const char *path1, const char *path2)
 	}
 	strcpy(cp_path[0], path1);
 	strcpy(cp_path[1], path2);
+	cp_serial++;
+	return true;
+}
+static unsigned cp_ssid_writes;
+bool codeplug_set_aprs_ssid(uint8_t n, uint8_t ssid)
+{
+	if (n != 1 || ssid > 15) {
+		return false;
+	}
+	cp_ssid = ssid;
+	cp_ssid_writes++;
 	cp_serial++;
 	return true;
 }
@@ -379,6 +420,8 @@ static void reset(void)
 	strcpy(cp_name, "");
 	strcpy(cp_path[0], "WIDE1-1");
 	strcpy(cp_path[1], "WIDE2-1");
+	cp_ssid = APRS_SSID_DEFAULT;
+	cp_ssid_writes = 0;
 	settings_init();
 	radio_sm_init(&sm, now);
 	aprs_set_test_call("");
@@ -476,7 +519,7 @@ static void test_beacon_on_air(void)
 	CHECK(sm.view.state == RS_TX);
 	CHECK(sm.view.tx_auto && !radio_view_wakes(&sm.view));	// a timed beacon leaves the screen as it is
 	CHECK(nframes == 1);
-	CHECK(strcmp(frames[0], "Q1TST-7>APZRDF,WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
+	CHECK(strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ",WIDE1-1,WIDE2-1:!4903.50N/07201.75W[RadioFoundry test") == 0);
 	if (nframes > 0) {
 		printf("# on air: %s\n", frames[0]);
 	}
@@ -879,7 +922,31 @@ static void test_host_kiss_nmea(void)
 	host_out_has("");
 	CHECK(aprs_send_now());
 	run(1000);
-	CHECK(host_out_has("GQ1TST-7>APZRDF,TCPIP*:!/"));	// compressed, no messaging (no receive path)
+	CHECK(host_out_has("GQ1TST-7>" APRS_TOCALL ",TCPIP*:!/"));	// compressed, no messaging (no receive path)
+}
+
+// The last try's ack wait ends while the frequency is blocked: the message is over, not pending forever
+static void test_message_ends_blocked(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	CHECK(aprs_send_message("Q1ABC-9", "Hello"));
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(wait_start(2, 35u * 1000u));
+	wait_idle();
+	CHECK(wait_start(3, 65u * 1000u));
+	wait_idle();
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.region = APRS_REGION_CUSTOM;
+	c.freq_hz = 150000000u;		// not amateur: nothing can be sent now
+	aprs_set_cfg(&c, now);
+	run(125u * 1000u);
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.block == APRS_NOT_AMATEUR && !v.msg_pending && hw.starts == 3);
 }
 
 static void test_messages(void)
@@ -976,7 +1043,7 @@ static void test_third_party_messages(void)
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC-9>APQRX,TCPIP,Q1GTE*::Q1XYZ    :Not ours{78");
 	rx_line("Q1GTE>APDW17,WIDE2*:}garbage");
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1ABC>:");
-	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZRDF,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
+	rx_line("Q1GTE>APDW17,WIDE2*:}Q1TST-7>APZTST,TCPIP,Q1GTE*::Q1TST-7  :Echo{79");
 	rx_line("Q1GTE>APDW17,WIDE2*:}Q1GTF>APDW17,TCPIP,Q1GTE*:}Q1ABC-9>APQRX,TCPIP,Q1GTF*::Q1TST-7  :Nested{80");
 	run(10u * 1000u);
 	CHECK(aprs_msg_count() == 1 && nframes == 2 && hw.starts == 2);
@@ -1079,23 +1146,23 @@ static void test_stations_digi_igate(void)
 	c.igate_tx = true;
 	aprs_set_cfg(&c, now);
 	host_out_has("");
-	rx_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
+	rx_line("Q1ABC-9>APZTST,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>Mobile");
 	CHECK(aprs_station_count() == 1);
 	aprs_station_t s;
 	CHECK(aprs_station(0, &s) && strcmp(s.call, "Q1ABC-9") == 0 && s.has_pos && s.direct && s.sym_code == '>');
 	// gated to APRS-IS with our q construct; the raw frame to the KISS host too
-	CHECK(host_out_has("GQ1ABC-9>APZRDF,WIDE1-1,WIDE2-1,qAR,Q1TST-7:=4903.50N/07201.75W>Mobile"));
+	CHECK(host_out_has("GQ1ABC-9>APZTST,WIDE1-1,WIDE2-1,qAR,Q1TST-7:=4903.50N/07201.75W>Mobile"));
 	// digipeated (fill-in): our call in the path, used (TNC2 stars the last used entry)
 	CHECK(wait_start(1, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "Q1ABC-9>APZRDF,Q1TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1ABC-9>APZTST,Q1TST-7,WIDE1*,WIDE2-1:=4903.50N/07201.75W>Mobile") == 0);
 	// a message from APRS-IS for the station we just heard: to RF as a third-party packet
 	nframes = 0;
 	const char *is = "Q9WXY>APRS,TCPIP*,qAC,TIER2::Q1ABC-9  :From the net{7";
 	aprs_host_is_line(is, strlen(is), now);
 	CHECK(wait_start(2, 5000));
 	wait_idle();
-	CHECK(nframes == 1 && strcmp(frames[0], "Q1TST-7>APZRDF:}Q9WXY>APRS,TCPIP,Q1TST-7*::Q1ABC-9  :From the net{7") == 0);
+	CHECK(nframes == 1 && strcmp(frames[0], "Q1TST-7>" APRS_TOCALL ":}Q9WXY>APRS,TCPIP,Q1TST-7*::Q1ABC-9  :From the net{7") == 0);
 	// RFONLY stays local
 	rx_line("Q2DEF>APRS,RFONLY:>local only");
 	CHECK(!host_out_has("Q2DEF"));
@@ -1159,16 +1226,16 @@ static void test_station_range(void)
 
 	reset();
 	aprs_set_test_call("Q1TST");
-	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// 10' north of the fixed position
-	rx_line("Q1ABC-8>APZRDF:=4903.50N/07201.75W>Here");	// on it
-	rx_line("Q1ABC-7>APZRDF:>Status only");
+	rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");	// 10' north of the fixed position
+	rx_line("Q1ABC-8>APZTST:=4903.50N/07201.75W>Here");	// on it
+	rx_line("Q1ABC-7>APZTST:>Status only");
 	CHECK(aprs_station_count() == 3);
 	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && far.has_pos);
-	rx_line("Q1ABC-8>APZRDF:>New packet");
+	rx_line("Q1ABC-8>APZTST:>New packet");
 	CHECK(aprs_station(0, &here) && strcmp(here.call, "Q1ABC-8") == 0);
 	CHECK(ui_svc_aprs_station_find("Q1ABC-9", &far) && strcmp(far.call, "Q1ABC-9") == 0);
 	CHECK(!ui_svc_aprs_station_find("Q1NONE", &nopos));
-	rx_line("Q1ABC-7>APZRDF:>Status only");
+	rx_line("Q1ABC-7>APZTST:>Status only");
 	CHECK(aprs_station(2, &far) && far.has_pos && aprs_station(1, &here) && here.has_pos);
 	CHECK(aprs_station(0, &nopos) && !nopos.has_pos);
 	// our position: none
@@ -1189,12 +1256,12 @@ static void test_station_range(void)
 	reset();
 	aprs_set_test_call("Q1TST");
 	configure(0, false);
-	rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
-	rx_line("Q1ABC-9>APZRDF:;LEADER   *092345z4803.50N/07001.75W>Object far away");
-	rx_line("Q1ABC-9>APZRDF:)AID#2!4703.50N/07101.75W>Item far away");
-	rx_line("Q1ABC-9>APZRDF:;LEADER   _092345z4803.50N/07001.75W>Object deleted");
-	rx_line("Q1OBJ>APZRDF:;MARKER   *092345z4803.50N/07001.75W>Object only");
-	rx_line("Q1OBJ>APZRDF:)AID#3!4703.50N/07101.75W>Item only");
+	rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");
+	rx_line("Q1ABC-9>APZTST:;LEADER   *092345z4803.50N/07001.75W>Object far away");
+	rx_line("Q1ABC-9>APZTST:)AID#2!4703.50N/07101.75W>Item far away");
+	rx_line("Q1ABC-9>APZTST:;LEADER   _092345z4803.50N/07001.75W>Object deleted");
+	rx_line("Q1OBJ>APZTST:;MARKER   *092345z4803.50N/07001.75W>Object only");
+	rx_line("Q1OBJ>APZTST:)AID#3!4703.50N/07101.75W>Item only");
 	CHECK(aprs_station_count() == 2 && aprs_station(1, &far) && strcmp(far.call, "Q1ABC-9") == 0);
 	CHECK(far.count == 4 && far.has_pos && far.lat == 492250000);
 	CHECK(ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600 && deg == 0);
@@ -1203,10 +1270,10 @@ static void test_station_range(void)
 	// The position's time: packets without one later move heard_ms on, not pos_ms (the row shows pos_ms's age)
 	uint32_t t0 = now;
 	now += 600000;
-	rx_line("Q1ABC-9>APZRDF:>Status, no position");
+	rx_line("Q1ABC-9>APZTST:>Status, no position");
 	CHECK(aprs_station(0, &far) && strcmp(far.call, "Q1ABC-9") == 0 && far.heard_ms == now && far.pos_ms == t0);
 	CHECK(far.has_pos && ui_svc_aprs_range(&far, &m, &deg) && m > 18450 && m < 18600);
-	rx_line("Q1ABC-9>APZRDF:=4923.50N/07201.75W>Further north");
+	rx_line("Q1ABC-9>APZTST:=4923.50N/07201.75W>Further north");
 	CHECK(aprs_station(0, &far) && far.pos_ms == now && ui_svc_aprs_range(&far, &m, &deg) && m > 37000 && m < 37200);
 
 	// BVA on the position's age (STATION_POS_MS, 24 h): packets without a position keep the entry fresh, the
@@ -1217,11 +1284,11 @@ static void test_station_range(void)
 		aprs_set_test_call("Q1TST");
 		configure(0, false);
 		now = starts[k];
-		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");
+		rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");
 		t0 = now;
 		for (int h = 1; h < 24; h++) {	// a status every hour
 			now = t0 + (uint32_t)h * 3600000u;
-			rx_line("Q1ABC-9>APZRDF:>Status");
+			rx_line("Q1ABC-9>APZTST:>Status");
 			run(RADIO_POLL_MS);
 		}
 		now = t0 + 24u * 3600000u - RADIO_POLL_MS - 1u;	// 1 ms inside the day after this poll
@@ -1230,10 +1297,10 @@ static void test_station_range(void)
 		run(RADIO_POLL_MS);				// a day old: gone
 		CHECK(aprs_station(0, &far) && !far.has_pos && !ui_svc_aprs_range(&far, &m, &deg));
 		now = t0 + 0x80000000u;				// still sending, the old position doesn't come back
-		rx_line("Q1ABC-9>APZRDF:>Status");
+		rx_line("Q1ABC-9>APZTST:>Status");
 		run(RADIO_POLL_MS);
 		CHECK(aprs_station_count() == 1 && aprs_station(0, &far) && !far.has_pos && far.heard_ms == now - RADIO_POLL_MS);
-		rx_line("Q1ABC-9>APZRDF:=4913.50N/07201.75W>North");	// a new one counts again
+		rx_line("Q1ABC-9>APZTST:=4913.50N/07201.75W>North");	// a new one counts again
 		CHECK(aprs_station(0, &far) && far.has_pos && far.pos_ms == now);
 	}
 }
@@ -1468,7 +1535,7 @@ static void test_codeplug_path(void)
 	CHECK(c.path == APRS_PATH_WIDE2);
 	settings_t st;
 	settings_read(&st);
-	CHECK(st.aprs_stored == 1 && st.aprs_path == APRS_PATH_WIDE2 && st.aprs_cp_path == APRS_PATH_WIDE2 + 1u);
+	CHECK(st.aprs_stored == 1 && st.aprs_path == APRS_PATH_WIDE2 && settings_aprs_cp_path(&st) == APRS_PATH_WIDE2 + 1u);
 	// The menu changes it: the codeplug's unchanged path doesn't take it back
 	c.path = APRS_PATH_WIDE2_2;
 	aprs_set_cfg(&c, now);
@@ -1477,20 +1544,20 @@ static void test_codeplug_path(void)
 	aprs_get_cfg(&c);
 	CHECK(c.path == APRS_PATH_WIDE2_2);
 	// ... and the storage job writes it into the codeplug
-	CHECK(aprs_path_to_codeplug());
+	CHECK(aprs_to_codeplug());
 	CHECK(strcmp(cp_path[0], "WIDE2-2") == 0 && cp_path[1][0] == '\0');
 	run(200);
 	aprs_get_cfg(&c);
 	settings_read(&st);
-	CHECK(c.path == APRS_PATH_WIDE2_2 && st.aprs_cp_path == APRS_PATH_WIDE2_2 + 1u);
+	CHECK(c.path == APRS_PATH_WIDE2_2 && settings_aprs_cp_path(&st) == APRS_PATH_WIDE2_2 + 1u);
 	// Two entries go into both slots
 	c.path = APRS_PATH_WIDE1_WIDE2;
 	aprs_set_cfg(&c, now);
-	CHECK(aprs_path_to_codeplug() && strcmp(cp_path[0], "WIDE1-1") == 0 && strcmp(cp_path[1], "WIDE2-1") == 0);
+	CHECK(aprs_to_codeplug() && strcmp(cp_path[0], "WIDE1-1") == 0 && strcmp(cp_path[1], "WIDE2-1") == 0);
 	// None: both empty
 	c.path = APRS_PATH_NONE;
 	aprs_set_cfg(&c, now);
-	CHECK(aprs_path_to_codeplug() && cp_path[0][0] == '\0' && cp_path[1][0] == '\0');
+	CHECK(aprs_to_codeplug() && cp_path[0][0] == '\0' && cp_path[1][0] == '\0');
 	// The CPS writes a new path: taken
 	strcpy(cp_path[0], "WIDE1-1");
 	cp_serial++;
@@ -1509,6 +1576,93 @@ static void test_codeplug_path(void)
 	run(200);
 	aprs_get_cfg(&c);
 	CHECK(c.path == APRS_PATH_WIDE1);
+}
+
+// The SSID too: a CPS write of a new SSID is taken (it used to stay at the settings' 7), a change on the radio stays
+// and goes into the codeplug, and a later CPS change wins again
+static void test_codeplug_ssid(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == APRS_SSID_DEFAULT);
+	settings_read(&st);
+	CHECK(settings_aprs_cp_ssid(&st) == APRS_SSID_DEFAULT + 1u && settings_aprs_cp_path(&st) == APRS_PATH_WIDE1_WIDE2 + 1u);
+	cp_ssid = 9;				// the CPS writes 9
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.ssid == 9 && st.aprs_ssid == 9 && settings_aprs_cp_ssid(&st) == 10u);
+	CHECK(strcmp(v.call, "Q1TST-9") == 0);
+	CHECK(settings_aprs_cp_path(&st) == APRS_PATH_WIDE1_WIDE2 + 1u);	// the path marker kept
+	// The menu changes it: the codeplug's unchanged 9 doesn't take it back
+	c.ssid = 5;
+	aprs_set_cfg(&c, now);
+	aprs_reload();
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	CHECK(c.ssid == 5 && strcmp(v.call, "Q1TST-5") == 0);
+	// ... and the storage job writes it into the codeplug, leaving the path (unchanged) unwritten
+	uint32_t ser = cp_serial;
+	CHECK(aprs_to_codeplug() && cp_ssid == 5 && cp_ssid_writes == 1u && cp_serial == ser + 1u);
+	run(200);
+	aprs_get_cfg(&c);
+	settings_read(&st);
+	CHECK(c.ssid == 5 && settings_aprs_cp_ssid(&st) == 6u);
+	CHECK(aprs_to_codeplug() && cp_ssid_writes == 1u);	// nothing differs: no write
+	// SSID 0 (no suffix) both ways
+	cp_ssid = 0;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	CHECK(c.ssid == 0 && strcmp(v.call, "Q1TST") == 0);
+	// A path change on its own leaves the SSID alone
+	strcpy(cp_path[0], "WIDE2-1");
+	cp_path[1][0] = '\0';
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.path == APRS_PATH_WIDE2 && c.ssid == 0);
+}
+
+// The first take after an upgrade (no SSID marker yet) leaves a codeplug SSID of 0 alone: the radio keeps sending
+// its own SSID, not the bare callsign. A later CPS write of another SSID is taken as usual
+static void test_codeplug_ssid_first_zero(void)
+{
+	aprs_cfg_t c;
+	aprs_view_t v;
+	settings_t st;
+	reset();
+	strcpy(cp_name, "Q1TST");
+	run(200);
+	settings_t *s = settings_begin();	// a record from before the SSID marker
+	settings_set_aprs_cp_ssid(s, 0);
+	settings_end(now);
+	cp_ssid = 0;				// ... and a codeplug that says 0
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	aprs_get_view(&v);
+	settings_read(&st);
+	CHECK(c.ssid == APRS_SSID_DEFAULT && strcmp(v.call, "Q1TST-7") == 0);
+	CHECK(settings_aprs_cp_ssid(&st) == 1u);	// 0 marked as taken: not looked at again
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == APRS_SSID_DEFAULT);
+	cp_ssid = 9;
+	cp_serial++;
+	run(200);
+	aprs_get_cfg(&c);
+	CHECK(c.ssid == 9);
 }
 
 // The transmission's failures: the transmitter won't key, the AFSK won't start, the AFSK never finishes. Each time
@@ -1565,6 +1719,102 @@ static void feed(const int16_t *s)
 		pcm.cb(s, spk, pcm.ctx);
 	}
 	run(RADIO_POLL_MS);
+}
+
+// From a channel on the APRS frequency to another, and dual watch hopping off it: the receive path lets go of the FM
+// audio before the board is tuned (a P25, NXDN or YSF engine needs it to start), not later in the same poll
+static void test_rx_release_on_retune(void)
+{
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	retune_while_aprs = 0;
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	run(200);
+	CHECK(aprs_rx_listening() && hw.rx_hz == APRS_HZ);
+	req(RREQ_CH_STEP, 1);
+	CHECK(hw.rx_hz == CH2_HZ && !aprs_rx_listening() && retune_while_aprs == 0);
+	run(200);
+	CHECK(!aprs_rx_listening());
+	req(RREQ_CH_STEP, -1);	// back: it listens again
+	run(200);
+	CHECK(hw.rx_hz == APRS_HZ && aprs_rx_listening());
+#if CONFIG_DUAL_WATCH
+	// dual watch, one side on the APRS frequency: every hop off it is a retune
+	radio_req_t watch = { RREQ_SCAN, RSCAN_DUAL, 1 };
+	radio_sm_request(&sm, &watch, now);
+	int starts = pcm.starts;
+	run(3000);
+	CHECK(sm.scan.kind == SCAN_DUAL && pcm.starts > starts + 3 && retune_while_aprs == 0);
+	req(RREQ_SCAN, RSCAN_STOP);
+#endif
+	fake_tap.caps = 0;
+}
+
+// Mute APRS audio: a signal on the APRS frequency keeps the speaker silent (the decoder still listens), Monitor plays
+// it, another channel isn't touched, and the setting is kept. A board with speaker_mute keeps the receive audio path
+// open and silences the speaker; one without has the path closed
+static void mute_case(bool hook)
+{
+	fake_radio.speaker_mute = hook ? r_speaker_mute : NULL;
+	spk_muted = false;
+	fake_tap.caps = AUDIO_TAP_FM_RX;
+	memset(&pcm, 0, sizeof(pcm));
+	reset();
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_hz = chan.tx_hz = APRS_HZ;
+	settings_init();
+	radio_sm_init(&sm, now);
+	hw.noise_on_aprs = 30;	// a carrier on 144.390
+	run(200);
+	CHECK(spk_on && !spk_muted && aprs_rx_listening());	// off by default: plays as before
+	aprs_cfg_t c;
+	aprs_get_cfg(&c);
+	c.mute = true;
+	aprs_set_cfg(&c, now);
+	run(100);
+	CHECK(aprs_rx_listening());
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	req(RREQ_MONITOR, 1);
+	CHECK(spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	run(100);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	// the end of a packet: the squelch closes and the speaker never plays for a moment on the way (with the hook,
+	// speaker_mute(false) before audio(false) did), nor when the next carrier opens it
+	spk_blips = 0;
+	blip_watch = true;
+	hw.noise_on_aprs = 120;
+	run(300);
+	CHECK(!spk_on && (!hook || spk_muted));
+	hw.noise_on_aprs = 30;
+	run(300);
+	CHECK(hook ? spk_on && spk_muted : !spk_on);
+	blip_watch = false;
+	CHECK(spk_blips == 0);
+	aprs_init(now);	// as at power-up: the setting comes back
+	aprs_get_cfg(&c);
+	CHECK(c.mute);
+	hw.noise_on_aprs = 120;
+	req(RREQ_CH_STEP, 1);	// another channel, the squelch held open: plays
+	req(RREQ_MONITOR, 1);
+	CHECK(hw.rx_hz == CH2_HZ && spk_on && !spk_muted);
+	req(RREQ_MONITOR, 0);
+	c.mute = false;
+	aprs_set_cfg(&c, now);
+	fake_tap.caps = 0;
+	fake_radio.speaker_mute = NULL;
+}
+
+static void test_mute(void)
+{
+	mute_case(false);
+	mute_case(true);
 }
 
 // FM receive audio on the PCM stream (AUDIO_TAP_FM_RX) into the demodulator: only on the APRS frequency, battery saving
@@ -1755,6 +2005,68 @@ static void test_rx_board_only(void)
 }
 #endif
 
+// ui_svc_aprs_msg_poll: fires UI_EV_APRS_MESSAGE on a new inbound message; does not re-fire for the same message;
+// aprs_view_t carries last_msg_ms and last_msg_from after receipt
+#if CONFIG_APRS_RX
+static void test_msg_poll(void)
+{
+	reset();
+	aprs_set_test_call("Q1TST");
+	configure(0, false);
+	n_ev = 0;
+
+	// no message yet: poll is silent
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 0);
+
+	// receive a message addressed to us
+	rx_line("Q1ABC-9>APRS,WIDE1-1::Q1TST-7  :Hello poll{51");
+	CHECK(wait_start(1, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 1);
+
+	// first poll after receipt: fires one event with the right callsign and text
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	CHECK(strcmp(last_ev.name, "Q1ABC-9") == 0);
+	CHECK(strcmp(last_ev.text, "Hello poll") == 0);
+
+	// second poll with the same msg_serial: no new event
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 1);
+
+	// the view carries the sender and the timestamp
+	aprs_view_t v;
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 1);
+	CHECK(v.last_msg_ms != 0);
+	CHECK(strcmp(v.last_msg_from, "Q1ABC-9") == 0);
+
+	// a second message from a different sender: poll fires again with the new message
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	CHECK(wait_start(2, 5000));
+	wait_idle();
+	CHECK(aprs_msg_count() == 2);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+	CHECK(last_ev.kind == UI_EV_APRS_MESSAGE);
+	// peek(0) is the newest message in the inbox
+	aprs_msg_t m;
+	CHECK(aprs_msg_peek(0, &m));
+	CHECK(strcmp(last_ev.name, m.from) == 0);
+
+	// duplicate of the second message: msg_serial stays the same, poll stays silent
+	rx_line("Q1XYZ-3>APRS,WIDE1-1::Q1TST-7  :Second message{52");
+	run(500);
+	ui_svc_aprs_msg_poll();
+	CHECK(n_ev == 2);
+
+	aprs_get_view(&v);
+	CHECK(v.msg_serial == 2);
+}
+#endif
+
 int main(void)
 {
 	test_defaults();
@@ -1776,11 +2088,13 @@ int main(void)
 	test_tx_power_own();
 	test_host_kiss_nmea();
 	test_messages();
+	test_message_ends_blocked();
 	test_third_party_messages();
 	test_message_options();
 	test_message_replaces_pending();
 #if CONFIG_APRS_RX
 	test_message_rejection();
+	test_msg_poll();
 #endif
 	test_dmr_position();
 	test_gps_setting();
@@ -1788,10 +2102,14 @@ int main(void)
 	test_cfg_store();
 	test_dmr_dst();
 	test_codeplug_path();
+	test_codeplug_ssid();
+	test_codeplug_ssid_first_zero();
 	test_rf_failures();
 #if CONFIG_APRS_RX
 	test_stations_digi_igate();
 	test_rx_stream();
+	test_rx_release_on_retune();
+	test_mute();
 	test_rx_board_only();
 	test_station_lookup();
 	test_station_range();

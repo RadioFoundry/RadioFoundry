@@ -54,8 +54,8 @@ def firmware_rows(names):
 
 
 def editor_rows(text):
-    """[(key, type)] from the KEYS table"""
-    table = re.search(r"export const KEYS = \[(.*?)^\];", text, re.M | re.S).group(1)
+    """[(key, type)] from the KEYS and RECORD_KEYS tables"""
+    table = "".join(m.group(1) for m in re.finditer(r"export const (?:KEYS|RECORD_KEYS) = \[(.*?)^\];", text, re.M | re.S))
     return [(int(k, 16), t) for k, t in re.findall(r"key:\s*0x([0-9A-Fa-f]+)\s*,\s*type:\s*\"(\w+)\"", table)]
 
 

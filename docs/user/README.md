@@ -22,15 +22,15 @@ The chapters below name the command line tools as alternatives.
 1. [Introduction](01-introduction.md): what RadioFoundry is, project status, conventions
 2. [Installing](02-installing.md): the web installer first, then the advanced rfoundry command line; updating, backups, going back
 3. [First boot](03-first-boot.md): built-in channels, the first checks
-4. [Programming the radio](04-programming.md): the Codeplug Editor, qdmr, RadioID contacts
+4. [Programming the radio](04-programming.md): the Codeplug Editor (P25 and NXDN channels, trunked systems), qdmr, RadioID contacts
 
 ### Use the radio
 
 5. [Keys and navigation](05-keys-and-navigation.md): the five key rules, Find, temporary changes, key lock
 6. [The Home screen](06-home-screen.md): what each region shows, receiving, transmitting
-7. [Channels, zones and the VFO](07-channels-zones-vfo.md)
+7. [Channels, zones and the VFO](07-channels-zones-vfo.md): P25, P25 trunked and NXDN channels too
 8. [FM](08-fm.md): squelch, monitor, tones, bandwidth, VOX, touch tones
-9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming
+9. [DMR](09-dmr.md): talk targets, replying, Recent, contacts, timeslot and color code, privacy, roaming, trunked systems
 10. [Messages, call alert and radio check](10-messages-and-signaling.md)
 11. [Emergency](11-emergency.md)
 12. [Scan and dual watch](12-scan.md)
@@ -38,6 +38,7 @@ The chapters below name the command line tools as alternatives.
 14. [Hotspot mode](14-hotspot.md): MMDVMHost and Pi-Star, SFR, two radios as a duplex repeater
 15. [USB network mode](15-usb-network.md): IP over DMR, the status page, rig control, KISS, TFTP, SNMP, control station
 16. [Battery and power](16-battery-and-power.md)
+18. [Satellite tracking](18-satellite.md): install selected TLE records on a PC, then track from the radio
 
 ### Reference
 

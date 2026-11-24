@@ -15,6 +15,9 @@
 #include "gfx.h"
 #include "i18n.h"
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_modes.h"
+#include "radio/radio_am.h"
+#include "radio/radio_bands.h"
 
 #define START_GRACE_MS	500	// the radio view may still show no watch this soon after asking for one
 #define BACK_AGAIN_MS	2000	// Back on Home, then Back again within this: the watch stops
@@ -169,6 +172,16 @@ static uint8_t tuned_pane(const radio_view_t *v)
 	return UI_DUAL_NONE;
 }
 
+// The mode a channel runs in: a stored channel of a kind keeps DMR in its record (channel-modes.md 2), its kind's mode
+// is the one shown. A Tier III channel runs on its record's DMR
+static uint8_t shown_mode(const channel_t *c)
+{
+	if (!codeplug_kind_built(c->kind) || c->kind == CODEPLUG_KIND_DMR_TRUNK)
+		return c->mode;
+	// The other kinds a build runs: P25 (trunked too) and NXDN
+	return c->kind == CODEPLUG_KIND_NXDN ? RADIO_MODE_NXDN : RADIO_MODE_P25;
+}
+
 static void pane_fill(uint8_t i)
 {
 	static channel_t ch;	// static: not on the UI task's stack
@@ -200,10 +213,19 @@ static void pane_fill(uint8_t i)
 	}
 	if (s->valid)
 		ch = s->ch;	// as the radio has it: changes for now included
-	p->mode = ch.mode;
+	if (radio_listen_band(ch.rx_hz))
+		ch.mode = RADIO_MODE_FM;	// the radio core receives FM (or AM) there, whatever the record says
+	p->mode = shown_mode(&ch);
+	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
+	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
+		return;	// no tone or slot: the engine's own squelch (the channel's settings say which)
 	sbuf_t b;
 	sb_init(&b, p->detail, sizeof p->detail);
+	if (p->am) {
+		sb_str(&b, TR(HOME_CHIP_AIR_BAND_AM, "Air Band AM"));	// no tone or width: the receiver is fixed (Home's chip)
+		return;
+	}
 #if CONFIG_DMR
 	if (ch.mode == RADIO_MODE_DMR) {
 		static contact_t c;
@@ -231,7 +253,7 @@ static void pane_fill(uint8_t i)
 	}
 #endif
 	if (ch.rx_tone.type == TONE_NONE && ch.tx_tone.type == TONE_NONE) {
-		sb_str(&b, TR("No tone"));
+		sb_str(&b, TR(CHIP_NO_TONE, "No tone"));
 	} else {
 		const subtone_t *t = ch.tx_tone.type != TONE_NONE ? &ch.tx_tone : &ch.rx_tone;
 		if (t->type == TONE_CTCSS)
@@ -351,6 +373,9 @@ static void snap_seed(uint8_t i, const radio_view_t *v)
 		strcpy(s->zone_name, z.name);
 	}
 	s->valid = true;
+	if (radio_listen_band(s->ch.rx_hz))
+		s->ch.mode = RADIO_MODE_FM;	// as the radio core tunes it (pane_fill)
+	s->am = radio_am_channel(&s->ch);	// as the radio core's view has it: Home's chips, the mode tile's refusal
 	s->tot_s = v->tot_s;
 	s->power = s->ch.power != CODEPLUG_POWER_DEFAULT ? s->ch.power : v->power;	// the default level, as on the other
 	s->squelch = v->squelch;
@@ -395,7 +420,7 @@ const radio_view_t *ui_dual_view(const radio_view_t *v)
 static bool apply(uint8_t sel)
 {
 	if (!ui_svc_dual(ref, sel)) {
-		ui_toast(TR(TEXT_ALT_OPEN "Can't watch that channel: pick another"
+		ui_toast(TR(DUAL_TOAST_CANT_WATCH_CHANNEL, TEXT_ALT_OPEN "Can't watch that channel: pick another"
 			    TEXT_ALT_NEXT "Can't watch that channel" TEXT_ALT_CLOSE));
 		return false;
 	}
@@ -464,7 +489,7 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	else if (ref_same(&ref[0], &ref[1]) && !b_default(&ref[0], &ref[1]))
 		ref[1] = ref[0];
 	if (ref_same(&ref[0], &ref[1])) {
-		ui_toast(TR("B is the channel you are on: pick another"));
+		ui_toast(TR(DUAL_TOAST_B_IS_CURRENT, "B is the channel you are on: pick another"));
 		ref[0] = keep[0];
 		ref[1] = keep[1];
 		return false;
@@ -480,7 +505,7 @@ bool ui_dual_start(const ui_dual_ref_t *b)
 	}
 	b_known = true;
 	watch_on(d);
-	ui_toast(TR("Dual watch on"));
+	ui_toast(TR(DUAL_TOAST_ON, "Dual watch on"));
 	return true;
 }
 
@@ -498,7 +523,8 @@ static void stop(bool asked)
 	}
 	d->on = false;
 	d->back_to = UI_DUAL_NONE;
-	ui_toast(d->sel ? TR("Dual watch off: on B") : TR("Dual watch off: on A"));
+	ui_toast(d->sel ? TR(DUAL_TOAST_OFF_ON_B, "Dual watch off: on B") :
+		TR(DUAL_TOAST_OFF_ON_A, "Dual watch off: on A"));
 	if (d->sel) {
 		// The radio stays on B: the next start has it as A and the old A as B, the same pair
 		ui_dual_ref_t t = ref[0];
@@ -528,7 +554,8 @@ void ui_dual_back(void)
 		return;
 	}
 	back_ms = ui_st.now_ms != 0 ? ui_st.now_ms : 1;
-	ui_toast(TR(TEXT_ALT_OPEN "Press Back again to stop dual watch" TEXT_ALT_NEXT "Back again: stop watch"
+	ui_toast(TR(DUAL_TOAST_BACK_AGAIN_STOPS, TEXT_ALT_OPEN "Press Back again to stop dual watch"
+		TEXT_ALT_NEXT "Back again: stop watch"
 		    TEXT_ALT_CLOSE));
 }
 
@@ -540,7 +567,8 @@ void ui_dual_select(uint8_t pane)
 	d->back_to = UI_DUAL_NONE;	// the user's choice ends talk back
 	if (apply(pane)) {
 		state_save();
-		ui_toast(pane ? TR("Talking on B") : TR("Talking on A"));
+		ui_toast(pane ? TR(DUAL_TOAST_TALKING_ON_B, "Talking on B") :
+			TR(DUAL_TOAST_TALKING_ON_A, "Talking on A"));
 	}
 }
 
@@ -552,7 +580,8 @@ static void talk_back(ui_dual_t *d, uint8_t pane, uint32_t now)
 		return;
 	d->back_to = from;
 	d->back_ms = now + TALK_BACK_MS;
-	ui_toast(pane ? TR("Talk back on B") : TR("Talk back on A"));
+	ui_toast(pane ? TR(DUAL_TOAST_TALK_BACK_ON_B, "Talk back on B") :
+		TR(DUAL_TOAST_TALK_BACK_ON_A, "Talk back on A"));
 }
 
 static void talk_back_poll(ui_dual_t *d, const radio_view_t *v, uint32_t now)
@@ -568,7 +597,8 @@ static void talk_back_poll(ui_dual_t *d, const radio_view_t *v, uint32_t now)
 	uint8_t to = d->back_to;
 	d->back_to = UI_DUAL_NONE;
 	if (to != d->sel && apply(to))
-		ui_toast(to ? TR("Talking on B") : TR("Talking on A"));
+		ui_toast(to ? TR(DUAL_TOAST_TALKING_ON_B, "Talking on B") :
+			TR(DUAL_TOAST_TALKING_ON_A, "Talking on A"));
 }
 
 // Pane `pane` is another channel now (it was `old`): the last call and the calls list forget it, Home shows the new one
@@ -607,7 +637,8 @@ static bool set_pane(uint8_t pane, const ui_dual_ref_t *r)
 	if (!d->on)
 		return ui_dual_start(r);
 	if (ref_same(r, &ref[!pane])) {
-		ui_toast(pane ? TR("That is A: pick another") : TR("That is B: pick another"));
+		ui_toast(pane ? TR(DUAL_TOAST_THAT_IS_A, "That is A: pick another") :
+			TR(DUAL_TOAST_THAT_IS_B, "That is B: pick another"));
 		return false;
 	}
 	d->back_to = UI_DUAL_NONE;
@@ -637,7 +668,8 @@ static void step_selected(int dir)
 	if (!codeplug_zone(r->zone, &z))
 		return;
 	if (z.count < 2) {
-		ui_toast(TR(TEXT_ALT_OPEN "Only one channel in this zone" TEXT_ALT_NEXT "One channel in zone"
+		ui_toast(TR(DUAL_TOAST_ONE_CHANNEL_IN_ZONE, TEXT_ALT_OPEN "Only one channel in this zone"
+			TEXT_ALT_NEXT "One channel in zone"
 			    TEXT_ALT_CLOSE));
 		return;
 	}
@@ -648,9 +680,9 @@ static void step_selected(int dir)
 			break;
 	}
 	if (ref_same(&next, r)) {	// the zone's only other channel is the other pane's
-		ui_toast(d->sel ? TR(TEXT_ALT_OPEN "No other channel here: A has it"
+		ui_toast(d->sel ? TR(DUAL_TOAST_A_HAS_OTHER_CHANNEL, TEXT_ALT_OPEN "No other channel here: A has it"
 				     TEXT_ALT_NEXT "A has the other channel" TEXT_ALT_CLOSE) :
-				  TR(TEXT_ALT_OPEN "No other channel here: B has it"
+				  TR(DUAL_TOAST_B_HAS_OTHER_CHANNEL, TEXT_ALT_OPEN "No other channel here: B has it"
 				     TEXT_ALT_NEXT "B has the other channel" TEXT_ALT_CLOSE));
 		return;
 	}
@@ -711,7 +743,8 @@ void ui_dual_ab_key(void)
 	if (d->on)
 		ui_dual_select(!d->sel);
 	else
-		ui_toast(TR(TEXT_ALT_OPEN "Turn on dual watch first" TEXT_ALT_NEXT "Dual watch is off" TEXT_ALT_CLOSE));
+		ui_toast(TR(DUAL_TOAST_TURN_ON_FIRST, TEXT_ALT_OPEN "Turn on dual watch first"
+			TEXT_ALT_NEXT "Dual watch is off" TEXT_ALT_CLOSE));
 }
 
 // The zone keys while it runs: the selected channel goes to the next or previous zone (from the VFO, the zone the
@@ -734,12 +767,12 @@ static void zone_to(uint16_t zi, int dir)
 			return;
 		sbuf_t b;
 		sb_init(&b, msg, sizeof msg);
-		sb_str(&b, d->sel ? TR("B zone: ") : TR("A zone: "));
+		sb_str(&b, d->sel ? TR(DUAL_TOAST_B_ZONE, "B zone: ") : TR(DUAL_TOAST_A_ZONE, "A zone: "));
 		sb_str(&b, z.name);
 		ui_toast(msg);
 		return;
 	}
-	ui_toast(TR("No other zone"));
+	ui_toast(TR(DUAL_TOAST_NO_OTHER_ZONE, "No other zone"));
 }
 
 bool ui_dual_zone_step(int dir)
@@ -749,7 +782,7 @@ bool ui_dual_zone_step(int dir)
 		return false;
 	uint16_t n = codeplug_zone_count();
 	if (n < 2 && !ref[d->sel].vfo) {
-		ui_toast(TR("Only one zone"));
+		ui_toast(TR(ZONE_TOAST_ONLY_ONE, "Only one zone"));
 		return true;
 	}
 	const ui_dual_ref_t *r = &ref[d->sel];
@@ -781,18 +814,33 @@ void ui_dual_key(void)
 		if (b_default(&here, &b))
 			ui_dual_start(&b);
 		else
-			ui_toast(TR(TEXT_ALT_OPEN "No other channel to watch" TEXT_ALT_NEXT "No other channel"
+			ui_toast(TR(DUAL_TOAST_NO_OTHER_CHANNEL, TEXT_ALT_OPEN "No other channel to watch"
+				TEXT_ALT_NEXT "No other channel"
 				    TEXT_ALT_CLOSE));
 	}
 }
 
-// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last
-static void caller_text(char *out, size_t len, bool dmr, uint32_t src, const char *name, uint32_t dst, bool group)
+// What comes in on pane p without a caller to name: the pane's mode (AM in the air band)
+static const char *signal_word(const ui_dual_pane_t *p, bool dmr)
+{
+	if (dmr || p->mode == RADIO_MODE_DMR)
+		return TR(DUAL_VALUE_DMR_CALL, "DMR call");
+	if (p->mode == RADIO_MODE_P25)
+		return TR(DUAL_VALUE_P25_CALL, "P25 call");
+	if (p->mode == RADIO_MODE_NXDN)
+		return TR(DUAL_VALUE_NXDN_CALL, "NXDN call");
+	return p->am ? TR(DUAL_VALUE_AM_SIGNAL, "AM signal") : TR(DUAL_VALUE_FM_SIGNAL, "FM signal");
+}
+
+// "Joe Smith TG 91", with "Joe Smith" as the shorter alternate (font.h): the caller's name gives way last. Without a
+// DMR caller: what pane p hears ("FM signal")
+static void caller_text(char *out, size_t len, const ui_dual_pane_t *p, bool dmr, uint32_t src, const char *name,
+			uint32_t dst, bool group)
 {
 	sbuf_t b;
 	sb_init(&b, out, len);
 	if (!dmr || (!src && !dst)) {
-		sb_str(&b, dmr ? TR("DMR call") : TR("FM signal"));
+		sb_str(&b, signal_word(p, dmr));
 		return;
 	}
 	sb_str(&b, TEXT_ALT_OPEN);
@@ -806,7 +854,7 @@ static void caller_text(char *out, size_t len, bool dmr, uint32_t src, const cha
 				sb_str(&b, " TG ");
 				sb_u32(&b, dst, 1);
 			} else {
-				sb_str(&b, TR(" to you"));
+				sb_str(&b, TR(DUAL_VALUE_TO_YOU, " to you"));
 			}
 			sb_str(&b, TEXT_ALT_NEXT);
 		}
@@ -842,7 +890,7 @@ static void watch_lost(ui_dual_t *d, const radio_view_t *v)
 	state_save();
 	sbuf_t b;
 	sb_init(&b, msg, sizeof msg);
-	sb_str(&b, TR("Dual watch off: on "));
+	sb_str(&b, TR(DUAL_TOAST_OFF_ON, "Dual watch off: on "));
 	if (v->vfo)
 		sb_freq(&b, v->ch.rx_hz);
 	else
@@ -859,7 +907,7 @@ static bool watch_again(ui_dual_t *d, const radio_view_t *v)
 		d->on = false;
 		d->back_to = UI_DUAL_NONE;
 		state_save();
-		ui_toast(TR("Dual watch off: scanning"));
+		ui_toast(TR(DUAL_TOAST_OFF_SCANNING, "Dual watch off: scanning"));
 		return false;
 	}
 	uint8_t t = tuned_pane(v);
@@ -867,7 +915,8 @@ static bool watch_again(ui_dual_t *d, const radio_view_t *v)
 		if (t != UI_DUAL_NONE) {
 			d->sel = t;
 			d->back_to = UI_DUAL_NONE;
-			ui_toast(t ? TR("Talking on B") : TR("Talking on A"));
+			ui_toast(t ? TR(DUAL_TOAST_TALKING_ON_B, "Talking on B") :
+				TR(DUAL_TOAST_TALKING_ON_A, "Talking on A"));
 		} else {
 			ui_dual_ref_t old = ref[d->sel];
 			ref_here(v, &ref[d->sel]);
@@ -963,7 +1012,7 @@ static bool resume_poll(ui_dual_t *d, const radio_view_t *v)
 	started_ms = ui_st.now_ms;
 	b_known = true;
 	watch_on(d);
-	ui_toast(TR("Dual watch on"));
+	ui_toast(TR(DUAL_TOAST_ON, "Dual watch on"));
 	return true;
 }
 
@@ -981,7 +1030,7 @@ static bool adopt_poll(ui_dual_t *d, const radio_view_t *v)
 	b_known = true;
 	started_ms = ui_st.now_ms;
 	watch_on(d);
-	ui_toast(TR("Dual watch on"));
+	ui_toast(TR(DUAL_TOAST_ON, "Dual watch on"));
 	return true;
 }
 
@@ -996,13 +1045,13 @@ bool ui_dual_vfo_key(void)
 	if (!ref[sel].vfo) {
 		ui_dual_ref_t vfo = vfo_for(sel);
 		if (set_pane(sel, &vfo))
-			ui_toast(sel ? TR("B: VFO") : TR("A: VFO"));
+			ui_toast(sel ? TR(DUAL_TOAST_B_VFO, "B: VFO") : TR(DUAL_TOAST_A_VFO, "A: VFO"));
 		return true;
 	}
 	if (chan_ok[sel] && !ref_same(&chan[sel], &ref[!sel])) {
 		ui_dual_ref_t r = chan[sel];
 		if (set_pane(sel, &r))
-			ui_toast(TR("Back to channels"));
+			ui_toast(TR(VFO_TOAST_BACK_TO_CHANNELS, "Back to channels"));
 		return true;
 	}
 	zone_to(ui_view()->zone_index, 1);	// the first channel of the last zone that isn't the other one
@@ -1040,7 +1089,8 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 		d->sel = v->dual_sel ? 1 : 0;
 		d->back_to = UI_DUAL_NONE;
 		state_save();
-		ui_toast(d->sel ? TR("Talking on B") : TR("Talking on A"));
+		ui_toast(d->sel ? TR(DUAL_TOAST_TALKING_ON_B, "Talking on B") :
+			TR(DUAL_TOAST_TALKING_ON_A, "Talking on A"));
 		dirty = true;
 	}
 	if (v->state == RS_TX)
@@ -1073,7 +1123,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 			ui_dual_rx_t *x = &r[t];
 			x->active = x->heard = true;
 			x->rssi_dbm = v->rssi_dbm;
-			x->dmr = v->ch.mode == RADIO_MODE_DMR;
+			x->dmr = shown_mode(&v->ch) == RADIO_MODE_DMR;	// a P25 or NXDN record keeps DMR
 #if CONFIG_DMR
 			x->src = v->dmr.call.src;
 			x->dst = v->dmr.call.dst;
@@ -1093,7 +1143,7 @@ __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 				talk_back(d, i, now);
 		}
 		if (x->active) {
-			caller_text(caller_buf, sizeof caller_buf, x->dmr, x->src, x->src_name, x->dst, x->group);
+			caller_text(caller_buf, sizeof caller_buf, p, x->dmr, x->src, x->src_name, x->dst, x->group);
 			if (strcmp(caller_buf, p->caller) != 0) {
 				strcpy(p->caller, caller_buf);
 				dirty = true;
@@ -1170,19 +1220,19 @@ static void actions_item(uint16_t i, ui_item_t *it)
 	item_num_set(it, (uint16_t)(i + 1u));
 	switch (i) {
 	case DA_SELECT:
-		sb_str(&b, other ? TR("Talk on B") : TR("Talk on A"));
+		sb_str(&b, other ? TR(DUAL_ROW_TALK_ON_B, "Talk on B") : TR(DUAL_ROW_TALK_ON_A, "Talk on A"));
 		pane_value(&vb, other);
 		break;
 	case DA_CHANGE_A:
-		sb_str(&b, TR("Change A"));
+		sb_str(&b, TR(DUAL_ROW_CHANGE_A, "Change A"));
 		pane_value(&vb, 0);
 		break;
 	case DA_CHANGE_B:
-		sb_str(&b, TR("Change B"));
+		sb_str(&b, TR(DUAL_ROW_CHANGE_B, "Change B"));
 		pane_value(&vb, 1);
 		break;
 	case DA_CALLER:
-		sb_str(&b, TR("Caller"));
+		sb_str(&b, TR(DUAL_ROW_CALLER, "Caller"));
 		if (!d->caller[0])
 			it->flags |= UI_ITEM_DIM;
 		else if (d->rx != UI_DUAL_NONE)
@@ -1191,7 +1241,8 @@ static void actions_item(uint16_t i, ui_item_t *it)
 			caller_age(&vb, d->caller, ui_st.now_ms - d->last_ms);
 		break;
 	case DA_STOP:
-		sb_str(&b, d->sel ? TR("Stop, stay on B") : TR("Stop, stay on A"));
+		sb_str(&b, d->sel ? TR(DUAL_ROW_STOP_ON_B, "Stop, stay on B") :
+			TR(DUAL_ROW_STOP_ON_A, "Stop, stay on A"));
 		break;
 	}
 }
@@ -1219,8 +1270,8 @@ static void actions_select(uint16_t i, bool hold)
 }
 
 const ui_scr_def_t ui_dual_screen = {
-	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN("Dual Watch"),
-	.hint = TRN("1-5 pick  Back"),
+	.name = "dual", .flags = SF_LIST | SF_NUMBERED | SF_FIELD, .prefix = TRN(DUAL_TITLE, "Dual Watch"),
+	.hint = TRN(HINT_1_5_PICK_BACK, "1-5 pick  Back"),
 	.count = actions_count, .item = actions_item, .select = actions_select,
 };
 
@@ -1245,7 +1296,7 @@ static bool pick_raw_label(uint16_t raw, char *buf, uint8_t len)
 	sbuf_t b;
 	sb_init(&b, buf, len);
 	if (raw == 0) {
-		sb_str(&b, TR("Zone"));
+		sb_str(&b, TR(WORD_ZONE, "Zone"));
 		return true;
 	}
 	if (!pick_z_ok || raw - 1u >= z->count || !codeplug_channel_name(z->channels[raw - 1u], name))
@@ -1308,7 +1359,9 @@ static void pick_item(uint16_t i, ui_item_t *it)
 	// "146.940 FM", else "146.940": the channel's name gives way last
 	sb_str(&b, TEXT_ALT_OPEN);
 	sb_freq(&b, ch.rx_hz);
-	sb_str(&b, ch.mode == RADIO_MODE_DMR ? " DMR" : " FM");
+	sb_chr(&b, ' ');
+	uint8_t mode = shown_mode(&ch);
+	sb_str(&b, mode == RADIO_MODE_FM && radio_am_channel(&ch) ? "AM" : ui_mode_name(mode));
 	sb_str(&b, TEXT_ALT_NEXT);
 	sb_freq(&b, ch.rx_hz);
 	sb_str(&b, TEXT_ALT_CLOSE);
@@ -1336,8 +1389,9 @@ static const char *pick_title(void)
 }
 
 const ui_scr_def_t ui_dual_pick_screen = {
-	.name = "dual_pick", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = TRN("Watch on"),
-	.hint = TRN(TEXT_ALT_OPEN "OK watch  0-9 find  Back" TEXT_ALT_NEXT "OK watch  Back" TEXT_ALT_CLOSE),
+	.name = "dual_pick", .flags = SF_LIST | SF_FILTER | SF_FIELD, .prefix = TRN(DUAL_TITLE_WATCH_ON, "Watch on"),
+	.hint = TRN(DUAL_HINT_PICK, TEXT_ALT_OPEN "OK watch  0-9 find  Back"
+		TEXT_ALT_NEXT "OK watch  Back" TEXT_ALT_CLOSE),
 	.count = ui_filter_count, .item = pick_item, .select = pick_select, .title = pick_title,
 	.enter = pick_enter,
 	.filter = &(const ui_filter_def_t){ .raw_count = pick_raw_count, .raw_label = pick_raw_label },
@@ -1395,8 +1449,9 @@ static const char *zone_title(void)
 }
 
 const ui_scr_def_t ui_dual_zone_screen = {
-	.name = "dual_zone", .flags = SF_LIST | SF_FIELD, .prefix = TRN("Zone for"),
-	.hint = TRN("OK pick  Back"), .count = zone_count, .item = zone_item, .select = zone_select, .enter = zone_enter,
+	.name = "dual_zone", .flags = SF_LIST | SF_FIELD, .prefix = TRN(DUAL_TITLE_ZONE_FOR, "Zone for"),
+	.hint = TRN(HINT_OK_PICK_BACK, "OK pick  Back"), .count = zone_count, .item = zone_item, .select = zone_select,
+	.enter = zone_enter,
 	.title = zone_title,
 };
 #endif

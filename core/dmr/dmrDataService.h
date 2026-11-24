@@ -54,7 +54,9 @@ typedef struct
 	uint32_t talkGroup;						// the channel's talkgroup (group data to it is ours); 0: none
 	bool     rmo;							// through a repeater
 	bool     canTransmit;					// a DMR channel we may send on now: not RX only, in band, no hotspot
+	bool     trunked;						// default SMS uses the trunked short data service
 	uint32_t channelKey;					// changes with the frequency, slot or color code (ARS registers again)
+	dmrDataPrivacy_t privacy;				// the channel's data privacy (dmrData.h): data encrypted or held back
 } dmrDataChannel_t;
 
 // The service's user settings. Only committed settings, never an edit in progress (gotcha 3.7)
@@ -117,6 +119,8 @@ typedef struct
 	// done its listen before talk. An accepted start may call dmrDataServiceTxDone synchronously; a start that
 	// returns false must not call it (the service would count the list twice).
 	bool (*txStart)(const dmrBurst_t *bursts, int count, void *ctx);
+	// Start a Tier III short-data SMS. An accepted start completes via dmrDataServiceTxDone.
+	bool (*txSmsUdt)(uint32_t dst, bool group, const char *text, uint32_t nowMs, void *ctx);
 	// Listen before talk for machine traffic (gotcha 3.6; dmr_call_channel_clear in the firmware)
 	bool (*channelClear)(uint32_t nowMs, void *ctx);
 	// Group calls of the channel's listen list count as ours (may be NULL)
@@ -131,6 +135,9 @@ typedef struct
 	// Our position for LRRP (docs/spec/position.md): false for none, and NULL for none ever. Only asked when the
 	// settings say hasGps
 	bool (*ownPosition)(lrrpPosition_t *position, uint32_t nowMs, void *ctx);
+	// The modem can't send rate 3/4 blocks a receiver decodes (hal_dmr_modem_t.tx_rate34_bad): confirmed IP packets
+	// go at rate 1/2
+	bool noRate34;
 	void *ctx;
 } dmrDataEnv_t;
 
@@ -147,6 +154,10 @@ typedef struct
 	uint32_t rxPackets;						// complete packets
 	uint32_t rxForUs;						// ... addressed to us (or a group we listen to)
 	uint32_t rxConfirmed;					// ... confirmed data to us
+	uint32_t rxPrivacy;						// packets decrypted with the channel's privacy key
+	uint32_t rxPrivacyDropped;				// encrypted packets dropped: another scheme, or no key
+	uint32_t txPrivacy;						// lists sent with the privacy header (encrypted data)
+	uint32_t txPrivacyBlocked;				// lists not sent: data the channel's privacy can't protect
 	uint32_t smsReceived;					// text messages kept
 	uint32_t smsDuplicates;					// a sender's retry: ACKed, not kept
 	uint32_t smsSent;						// SMS lists sent
@@ -235,6 +246,9 @@ void dmrDataServicePostEvent(uint8_t kind, uint32_t id);
 void dmrDataServiceSetTxSpacing(uint16_t guardMs, bool chain);
 uint16_t dmrDataServiceTxGuardMs(void);
 bool dmrDataServiceTxChain(void);
+// The block rate of confirmed IP packets (DMR_TYPE_RATE_3_4 by default, DMR_TYPE_RATE_1_2 or DMR_TYPE_RATE_1); not stored
+void dmrDataServiceSetIpConfirmedRate(uint8_t dataType);
+uint8_t dmrDataServiceIpConfirmedRate(void);
 // Every 10-25 ms with the time and the channel
 void dmrDataServiceTick(uint32_t nowMs, const dmrDataChannel_t *channel);
 // A data / control burst heard on our slot (dmr_call_set_data_rx)
@@ -289,13 +303,23 @@ typedef struct
 int dmrDataServiceSendIPChain(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl,
 							const dmrDataChainPacket_t *packets, int count);
 bool dmrDataServiceIpBusy(void);
+// The IPv4 destination of the IP packet whose transmission is starting, when it carries one in a full header (off-net:
+// not one addressed by DMR ID); 0 otherwise. A trunked system asks its IP gateway for it (dmr-trunking.md 7.7)
+uint32_t dmrDataServiceTxIpDst(void);
 // The last one's outcome: DMR_REQ_OK (on air; confirmed: acknowledged) or DMR_REQ_FAILED
 uint8_t dmrDataServiceIpResult(void);
+// How many IP packets have failed (on air or unacknowledged), whoever sent them: a change says an item of one's own failed
+uint32_t dmrDataServiceIpFailures(void);
 // Whether an IP packet to dst between these ports goes confirmed under the settings
 bool dmrDataServiceIpWantConfirmed(const dmrDataSettings_t *s, bool group, uint32_t dst, uint8_t protocol, uint16_t srcPort,
 									uint16_t dstPort);
 bool dmrDataServiceCallAlert(uint32_t dst);
 bool dmrDataServiceRadioCheck(uint32_t dst);
+// The answer to the call alert or radio check being sent to dst, learned another way (a trunked system answers a radio
+// check as a status poll): finishes it as if the answer was heard (ok) or never came. Before dmrDataServiceTxDone
+void dmrDataServiceSignalResult(uint32_t dst, bool ok);
+// A text received another way (a trunked system's short data) into the inbox, as a received message
+void dmrDataServiceInboxAdd(uint32_t src, uint32_t dst, bool group, const char *text);
 // format: dmr_sms_format_t (ETSI_IP, ETSI or TMS; DEFAULT: the setting)
 bool dmrDataServiceSendSMSFormat(bool group, uint32_t dst, const char *text, bool ackRequested, uint8_t format);
 // The emergency alarm (CONFIG_DMR_EMERGENCY): the CSBK to dst (group or individual) with the feature set ID fid,

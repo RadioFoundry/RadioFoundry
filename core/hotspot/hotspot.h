@@ -41,7 +41,7 @@ typedef struct {
 	// Hotspot frequencies may lie outside the amateur bands (docs/spec/gotchas.md 8.7): only the board's band
 	// limits apply. False if out of range (the host gets a NAK). A few register writes; must not block for long
 	bool (*set_freq)(uint32_t rx_hz, uint32_t tx_hz);
-	// Transmit power from the MMDVM RF level (0-255, 255 = full): map it to a board power step
+	// Transmit power from the MMDVM RF level: 0-254 map to a board power step, 255 keeps the radio's own power
 	void (*set_power)(uint8_t rf_level);
 	// Back to normal operation; the modem is stopped already and the call stack gets it back (may be posted)
 	void (*leave)(void);
@@ -130,6 +130,9 @@ bool hotspot_rssi_byte(int16_t rssi_dbm, uint8_t *raw);
 void hotspot_set_power_cap(uint8_t cap);
 #endif
 bool hotspot_alt_active(void);
+// The SFR mode (the other mode, not a split role) repeats right now. Read from its state each call, safe from an
+// interrupt (the board asks it as it keys each burst: hal_radio_t.dmr_direct_query)
+bool hotspot_sfr_repeating(void);
 // A DMR_DATA1 / DMR_DATA2 frame while the other mode is active: 0 if taken, else the MMDVM NAK reason
 uint8_t hotspot_alt_net_frame(uint8_t command, uint8_t control, const uint8_t *frame, uint32_t now_ms);
 // The simplex engine drops what it has (a call going up gets its DMR_LOST2), before the other mode takes over

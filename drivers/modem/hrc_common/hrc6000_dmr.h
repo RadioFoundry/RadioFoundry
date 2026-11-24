@@ -22,8 +22,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 #include "hrc.h"
 #include "hal_dmr_modem.h"
+#include "dmr/fec/dmrSoftComb.h"
 
 // --- Chip-level helpers (any context that owns the bus; each register write is one atomic transaction) ---
 
@@ -127,7 +129,7 @@ typedef struct {
 	uint32_t rx_csbk;	// CSBK, MBC
 	uint32_t rx_data;	// PI header, data headers and rate 1/2, 3/4, 1, USBD blocks
 	uint32_t rx_idle;
-	uint32_t rx_crc_err;	// delivered with a CRC error (data blocks and voice) or dropped for one (headers, CSBK)
+	uint32_t rx_crc_err;	// delivered with a CRC error flagged: the receivers check headers and CSBKs themselves
 	uint32_t rx_dup;	// second report for one burst (the EMB report, extra reports), dropped
 	uint32_t rx_dup_slot;	// ... of those: a second report in the same tick
 	uint32_t rx_dup_extra;	// ... the same voice number again in the next slot (beyond the 45 ms window)
@@ -143,11 +145,16 @@ typedef struct {
 				// CC), or without a filter for burst A (no CC on air) by its superframe's
 	uint32_t sys_at_tick;	// system interrupts still pending at the timeslot interrupt, serviced there
 	uint32_t rx_rc;		// reverse channel / unusable status, dropped
+	uint32_t rc_reports;	// reports between our bursts that may carry an RC (class 3, or burst F with LCSS 0): DMR_EV_RC
+	uint32_t rc_last;	// the last one's 0x51 << 16 | 0x53 << 8 | 0x54
+	uint32_t rc_tap;	// RCs decoded from the receive tap after a listen slot (rc_tap_read): DMR_EV_RC
+	uint32_t rc_tap_changed;	// tap areas found changed there (a new burst), RC or not
 	uint32_t rx_out_of_step;	// reports 22 ms or more after the timeslot interrupt
 	uint32_t rx_restarts;	// receiver restarts by the engine (silence, out of step, CC change, stall)
 	uint32_t late_entry;	// post-access interrupts
 	uint32_t voice_lost;	// voice-abnormal interrupts
 	uint32_t ev_overflow;	// events dropped, the task was behind
+	uint32_t slc_reads;	// CACH short LCs reported (DMR_EV_SHORT_LC), CRC not checked
 	uint32_t tx_bursts;	// bursts set up
 	uint32_t tx_underrun;	// our slot came with an empty queue mid-transmission
 	uint32_t tx_rejected;	// send request rejected (polite access)
@@ -157,6 +164,7 @@ typedef struct {
 	uint32_t stalls;	// timing stopped while busy (200 ms without a timeslot interrupt)
 	uint32_t rx_holds;	// direct transmissions ended without the restart, held for an answer (modem-hrc6000.md)
 	uint32_t tx_stalls;	// ... of those: while sending, the transmission dropped (a lost timeslot interrupt)
+	uint32_t hunt_flips;	// direct channel, bs_by_mode chip: 0x10 switched between direct and BS receive
 	uint32_t rs_why[HRC6000_RS_COUNT];	// receiver restarts by reason
 	uint32_t by_class[4];	// every received-data report by 0x51 bits 1-0, before any filtering
 	uint32_t by_type[16];	// ... by 0x51 bits 7-4
@@ -208,6 +216,7 @@ typedef struct {
 	dmr_event_t ev;
 	dmr_burst_t burst;
 	uint8_t dms;		// DMR_EV_BURST_RX: ms after the timeslot interrupt the report came, 255 = unknown / at the tick
+	uint8_t soft_tag;	// DMR_EV_BURST_RX: its soft values staged in soft (dmrSoftCombStage), 0 none
 } hrc6000_dmr_evslot_t;
 
 // A report taken but not yet delivered: a lone voice sync (burst A with nothing before it on its slot) waits for the
@@ -235,6 +244,11 @@ typedef struct {
 	uint32_t tick;
 	uint32_t t_tick;	// now_us at the last timeslot interrupt
 	bool timing;		// timeslot interrupts are coming
+	bool hunt_bs;		// bs_by_mode chip on a direct channel: 0x10 now has ISRepeater set to hear BS sync
+	uint32_t t_hunt;	// now_us of the last hunt switch, or of the last burst taken
+	bool hunt_ext;		// this dwell was restarted once by a timeslot interrupt
+	bool bs_last;		// the last burst taken had BS sync: the first dwell after a transmission hears BS sync
+	bool hunt_tx;		// a transmission began: the first dwell after it and its answer slot is still to choose
 	int8_t phase_ts[2];	// slot number of each phase (tick & 1), 0 unknown
 	uint8_t ctl_next;	// 0x41 written for the slot after the current one
 	uint8_t ctl_now;	// ... and the one for the slot now starting
@@ -242,8 +256,16 @@ typedef struct {
 	// CACH TC tracking (5.3)
 	int8_t own_ts;
 	uint8_t tc_agree, tc_disagree;
+	uint32_t at_tick[2];	// per TS: the tick its last CACH AT bit was read at (0: never)
+	bool at_busy[2];
+	uint8_t slc_last[5];	// the short LC bytes last read (a new one is reported when they change)
 	uint32_t bs_tick;	// tick of the last BS-sync burst heard
 	bool rmo_seen;
+	uint32_t bs_slot;	// slot of the last BS-sync burst taken (bs_slot_valid)
+	bool bs_slot_valid;
+	uint8_t bs_tc;		// its CACH TC bit
+	uint8_t bs_run;		// BS-sync bursts in slots in a row with the TC alternating, up to CACH_RUN
+	bool cach_seen;		// a run of CACH_RUN since the timing was acquired: a CACH is on air
 
 	// Receive
 	uint32_t rx_tick;	// tick of the last burst taken
@@ -292,6 +314,7 @@ typedef struct {
 	uint32_t t_cc;
 	uint32_t cc_hold_tick;
 	bool cc_held;
+	uint8_t cc_tick_last[2], cc_tick_n[2];	// a chip without any-CC deframing: 0x52's code at the ticks, by phase
 	bool restart_pending;
 	uint8_t restart_why;
 	bool idle_restarted;	// the quiet-period restart has been done
@@ -312,6 +335,9 @@ typedef struct {
 	int8_t tx_ts;
 	uint8_t tx_access;
 	bool tx_listen;		// receive in the slots between our bursts (hrc6000_dmr_tx_listen)
+	bool tx_master;		// this transmission's bursts keep the timing it started with (0x40 MasterMode)
+	uint32_t tap_sum[2];	// a checksum of each receive tap area at its last read: only a changed one is decoded
+	uint32_t tap_reports;	// st.rc_reports at that read: one since means the chip reported this burst's RC already
 	uint8_t tx_phase;	// phase (tick & 1) of our slots
 	bool tx_end_req;
 	bool tx_abort_req;
@@ -352,6 +378,12 @@ typedef struct {
 	int8_t tr_skip_ph;
 	bool tr_skip_all;
 
+#if CONFIG_DMR
+	// Soft combining of control bursts whose CRC failed (dmr-modem.md 2.2.1): the glue's task sets it while DMR runs,
+	// NULL otherwise. The report stages (soft_pending until the burst is queued), hrc6000_dmr_pop combines
+	dmrSoftComb_t *volatile soft;
+	uint8_t soft_pending;
+#endif
 	hrc6000_dmr_stats_t st;
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 	struct hrc6000_bs *bs;	// split duplex BS outbound in charge of the chip (hrc6000_bs.c), NULL otherwise

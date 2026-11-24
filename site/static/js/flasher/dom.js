@@ -77,19 +77,31 @@ export function filePicker(label, accept, onFile) {
 const STALL_S = 4;
 const running = new Set();
 
+// Whether a bar is moving: work on the radio or a build is under way
+export const barsRunning = () => running.size > 0;
+
 // Ends every bar's shimmer and wait line, wherever it stopped: errorNotice(), a "bad" notice() and flashFinished() call it
 export function stopBars() {
 	for (const stop of [...running]) stop();
 }
 
-export function progressBar() {
+// stay: the warning to keep the page in front, shown only while the bar moves (a radio transfer; false for a download)
+export function progressBar({ stay = true } = {}) {
 	const bar = h("span");
 	const text = h("span", { class: "small muted" });
 	const wait = h("span", { class: "small muted progress-wait", role: "status", hidden: true });
 	const track = h("div", { class: "progress", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100 }, bar);
-	const el = h("div", {}, track, text, wait);
+	const warn = stay ? h("p", { class: "notice bad progress-stay", hidden: true }, h("strong", {}, t("flash.stay_on_page"))) : null;
+	const el = h("div", {}, track, text, wait, warn);
 	let timer = null, changed = 0, key = "";
-	const stop = () => { clearInterval(timer); timer = null; running.delete(stop); wait.hidden = true; track.className = "progress"; };
+	const stop = () => {
+		clearInterval(timer);
+		timer = null;
+		running.delete(stop);
+		wait.hidden = true;
+		if (warn) warn.hidden = true;
+		track.className = "progress";
+	};
 	const tick = () => {
 		if (!el.isConnected) return stop();
 		const s = Math.floor((Date.now() - changed) / 1000);
@@ -108,6 +120,7 @@ export function progressBar() {
 			if (now !== key) { key = now; changed = Date.now(); wait.hidden = true; }
 			if (pct >= 100) return stop();
 			track.className = "progress active";
+			if (warn) warn.hidden = false;
 			if (!timer) { timer = setInterval(tick, 1000); running.add(stop); }
 		},
 	};

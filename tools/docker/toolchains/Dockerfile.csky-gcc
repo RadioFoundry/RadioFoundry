@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# csky-elf toolchain image: the install prefix build-csky-gcc.sh built in Dockerfile.csky-build's image (same Debian
+# release, so the same GMP, MPFR, MPC and ISL), plus make, python3 and git for `make BOARD=<radio>`.
+FROM debian:trixie-slim
+RUN apt-get update \
+	&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+		libgmp10 libmpfr6 libmpc3 libisl23 zlib1g libzstd1 make python3 git ca-certificates \
+	&& rm -rf /var/lib/apt/lists/*
+COPY prefix /opt/toolchain
+COPY toolchain-info.txt /toolchain-info.txt
+ENV PATH=/opt/toolchain/bin:$PATH CSKY_GCC_DIR=/opt/toolchain/bin/
+WORKDIR /work

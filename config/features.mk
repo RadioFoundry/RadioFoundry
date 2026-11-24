@@ -21,6 +21,10 @@ CONFIG_SUBTONE ?= $(CONFIG_FM)
 CONFIG_DMR ?= y
 # basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
+# AES-256 voice encryption, the DMRA scheme (PI header ALG 0x25, docs/spec/dmr-voice.md 5.1): calls with a PI header
+# decrypted, and our overs encrypted, on channels bound to a traffic key in the codeplug. Needs DMR_PRIVACY (its AMBE
+# FEC helpers)
+CONFIG_DMR_AES ?= $(CONFIG_DMR_PRIVACY)
 # talker alias decode and TX of our radio name (needs DMR)
 CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 # ETSI GPS Info in the embedded LC (FLCO 8): the caller's position decoded and shown, ours sent from the position
@@ -42,6 +46,21 @@ CONFIG_DMR_EMERGENCY ?= $(CONFIG_DMR)
 # DMR repeater roaming: move between the repeater sites of a roaming zone by signal strength (needs DMR;
 # core/radio/roam.c, docs/spec/dmr-roaming.md)
 CONFIG_DMR_ROAMING ?= $(CONFIG_DMR)
+# DMR Tier III trunking, the mobile station side: camp on a trunked system's control channel and follow its grants
+# (needs DMR; core/dmr/trunk, docs/spec/dmr-trunking.md)
+CONFIG_DMR_TRUNK ?= $(CONFIG_DMR)
+# Tier III access: registration, call requests, answers to the control channel, ending calls. Off: a listen-only
+# trunking receiver (needs DMR_TRUNK)
+CONFIG_DMR_TRUNK_TX ?= $(CONFIG_DMR_TRUNK)
+# Tier III supplementary user data: data offered with a call request, and the last heard from the system kept for the
+# debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
+CONFIG_DMR_TRUNK_SUPL ?= $(CONFIG_DMR_TRUNK_TX)
+# Tier III calls through the PSTN, PABX, line and dispatcher gateways: dialed digits uploaded with the call, and the
+# caller's number a gateway sends kept for the debug link (needs DMR_TRUNK_TX; docs/spec/dmr-trunking.md 7.6)
+CONFIG_DMR_TRUNK_GW ?= $(CONFIG_DMR_TRUNK_TX)
+# Voice capture for receive tests: the next 32 voice frames received, raw as on air, read over the debug link
+# (needs DMR; core/dmr/ambe/ambeVoice.c, debug link RADIO op 41 and the voice_cap view)
+CONFIG_VOICE_CAPTURE ?= n
 # IP over DMR packet data through a network link to the host: the USB network adapter or PPP on the serial host port
 # (needs DMR and USB_NETWORK or NET_PPP; core/hostlink/hostlink_net.c)
 CONFIG_DMR_IP_GATEWAY ?= $(if $(and $(filter y,$(CONFIG_DMR)),$(filter y,$(CONFIG_USB_NETWORK) $(CONFIG_NET_PPP))),y,n)
@@ -64,6 +83,11 @@ CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
 # web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
 # (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
 CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
+# zone and channel control over UDP, port 4191 from the computer only (USB network or PPP), with no TCP or HTTP:
+# where the radio is, select or step a zone and channel as a knob would, each answered with one datagram, and change
+# notices to the sender; what takRF's radio controls use (needs DMR_IP_GATEWAY; core/net/radio_udp.c,
+# docs/spec/tcp-services.md 8)
+CONFIG_NET_RADIO_UDP ?= $(CONFIG_DMR_IP_GATEWAY)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)
 CONFIG_NET_RIGCTL ?= $(CONFIG_NET_TCP)
@@ -138,6 +162,9 @@ CONFIG_CPS_OPENFW ?= $(CONFIG_HOSTLINK)
 CONFIG_CPS_FAST ?= $(if $(filter y,$(CONFIG_CPS_OPENFW)),$(if $(filter y,$(CONFIG_DEBUGLINK) $(CONFIG_STUB_ENTRY)),y,n),n)
 # the diagnostics page
 CONFIG_DIAG ?= y
+# Settings > Advanced > Backlight tests: a bench tool that sets the backlight's PWM compare value, brightness and rate
+# by hand, to measure a radio's backlight drive (docs/testing/backlight-curve.md). Untranslated; off in every release
+CONFIG_BACKLIGHT_TEST ?= n
 # 16x32 font, only useful on 240 px and wider displays
 CONFIG_FONT_XL ?= n
 # anti-aliased fonts from 6x12 up (JetBrains Mono Bold, 2 bits a pixel) instead of the bitmap ones: smooth text on color
@@ -155,15 +182,23 @@ CONFIG_LANG_ES ?= y
 # Italian on the radio (core/ui/lang/it.po): off by default, listed dimmed; the web flasher offers it to Italian
 # browsers. About 17 KB with Spanish on
 CONFIG_LANG_IT ?= n
+# French on the radio (core/ui/lang/fr.po): off by default, listed dimmed; the web flasher offers it to French
+# browsers. About 15.5 KB with Spanish on
+CONFIG_LANG_FR ?= n
 # Chinese on the radio (core/ui/lang/zh.po): the Latin fonts have no glyph for it, so it brings a 16x16 CJK font of the
 # characters its catalog uses (core/ui/cjk_font_data.c, built by tools/cjkfont.py) and text the text layer decodes.
-# Off by default: about 16 KB of glyphs and 12 KB of text. Each radio with another display font needs its glyphs checked
+# Off by default: about 27 KB of glyphs and 17 KB of text. Each radio with another display font needs its glyphs checked
 # against that font's height (docs/dev/translating.md)
 CONFIG_LANG_ZH ?= n
+# the CJK glyph table for Chinese channel names and text: built with CONFIG_LANG_ZH, but a board too small to show
+# Chinese (docs/build-config.md) turns it off and keeps the translated menus (it draws boxes for any Chinese). Needs
+# CONFIG_LANG_ZH (the radio's font has no glyph for the characters otherwise)
+CONFIG_CJK_GLYPHS ?= $(CONFIG_LANG_ZH)
 # the language the radio starts in, until the user picks one in Settings > Display > Language: one switch per language,
 # at most one on (with more, the first listed wins), off = English. Needs that language's switch. No flash cost
 CONFIG_LANG_DEFAULT_ES ?= n
 CONFIG_LANG_DEFAULT_IT ?= n
+CONFIG_LANG_DEFAULT_FR ?= n
 CONFIG_LANG_DEFAULT_ZH ?= n
 # color screen settings: theme, highlight color, filled status bar (off: the dark theme only; for radios whose only
 # screen is monochrome)
@@ -194,6 +229,9 @@ CONFIG_VOLUME_BAR ?= y
 CONFIG_CONTACT_EDIT ?= $(if $(and $(filter y,$(CONFIG_CHANNEL_EDIT)),$(filter y,$(CONFIG_DMR))),y,n)
 # beeps and alert tones as PCM through the speaker (needs the board's PCM audio, which some radios have only with DMR)
 CONFIG_BEEP ?= y
+# signaling tones: Settings > Signaling tones, a chain of up to ten tones for the start of a transmission, its end and a
+# reception's end, on the speaker, on air or both, in DMR and FM (docs/spec/radio-features.md 4.3; needs BEEP)
+CONFIG_SIG_TONES ?= $(CONFIG_BEEP)
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 # DTMF transmit: keypad digits send touch tones while PTT is held on FM (needs FM; docs/spec/radio-features.md 3.7)
@@ -248,6 +286,11 @@ CONFIG_CRASH_REPORT ?= $(if $(and $(filter y,$(CONFIG_CRASH_SCREEN)),$(filter y,
 # the chip (the IWDG on the STM32F4, the SoC's watchdog on the HR_C7000; docs/spec/watchdog.md). With the debug link it
 # also has a bench test (command 0x1D). Off: no watchdog runs, as before. Needs nothing else
 CONFIG_WATCHDOG ?= y
+# the support info: About shows where the build came from and the radio's hardware identity (chips and their versions
+# where a model has several), and hashes the firmware image so a host can tell one of our images from another; the
+# debug link's SUPPORT command gives the same to the web site's support download (core/support,
+# docs/spec/support-info.md). Read only when asked, never at start-up. Needs nothing else
+CONFIG_SUPPORT_INFO ?= y
 # the fault trace: a CPU fault prints its registers on the host UART, three framed lines a second apart, before the
 # restart (core/crash/crash_trace.c, tools/rfoundry_fault_trace.py; docs/spec/crash-log.md 2.3). Only where the host port is
 # a UART the fault handler can drive polled: the HR_C7000 radios (the STM32 radios' config.mk turn it off: USB only).
@@ -272,14 +315,43 @@ CONFIG_APRS_DMR ?= $(if $(and $(filter y,$(CONFIG_APRS)),$(filter y,$(CONFIG_DMR
 CONFIG_APRS_RX ?= $(CONFIG_APRS_AFSK)
 # APRS iGate rules, RF <-> APRS-IS through the host helper tools/aprs_gate.py (needs APRS_RX and HOSTLINK)
 CONFIG_APRS_IGATE ?= $(if $(and $(filter y,$(CONFIG_APRS_RX)),$(filter y,$(CONFIG_HOSTLINK))),y,n)
+# P25 Phase 1 conventional (core/p25, docs/spec/p25.md): the one switch for everything P25 needs. It brings the air
+# interface (core/air: the framer, the soft modem, the shared FEC, and the board's provider behind board.air), the
+# engine and the P25 channel mode, the full-rate voice decoder and the MBE core it sits on (core/mbe). A board without
+# an air interface provider (board.air) lists it in BOARD_NOT_WRITTEN. Needs DMR: its talk groups are the codeplug's
+# contacts and RX group lists
+CONFIG_P25 ?= $(CONFIG_DMR)
+# NXDN conventional voice (core/nxdn, docs/spec/nxdn.md): 4800 and 9600 bit/s frames, the call layer and its engine
+# on the air interface, and the NXDN channel mode. Voice frames go to and from the vocoder the board already hosts for
+# DMR, through the DMR voice path; nothing of the vocoder is in it. Needs DMR
+CONFIG_NXDN ?= $(CONFIG_DMR)
+CONFIG_NXDN_SCRAMBLER ?= $(CONFIG_NXDN)
+# Derived, never set by hand (a command line or a board's config.mk that sets one stops the build): AIR the air
+# interface, on with any air-framed mode (P25, NXDN); IMBE the full-rate voice decoder and MBE the MBE core, with P25
+$(foreach f,AIR IMBE MBE,$(if $(filter-out undefined,$(origin CONFIG_$(f))),$(error CONFIG_$(f) is derived from CONFIG_P25 \
+	and CONFIG_NXDN ($(origin CONFIG_$(f))): set those instead)))
+CONFIG_AIR := $(if $(filter y,$(CONFIG_P25) $(CONFIG_NXDN)),y,n)
+CONFIG_IMBE := $(CONFIG_P25)
+CONFIG_MBE := $(CONFIG_IMBE)
+# diagnostics: debug link commands that open an air interface session and move raw symbols, for bench tests (needs an
+# air-framed mode such as P25 or NXDN, and DEBUGLINK; docs/spec/debuglink.md)
+CONFIG_AIR_RAW ?= n
+# P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), a control channel decoded and voice
+# channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
+# (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
+CONFIG_P25_TRUNK ?= $(CONFIG_P25)
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text
 CONFIG_GPS_SKY ?= $(CONFIG_GPS)
 
+# Satellite TLE storage and tracking (docs/spec/satellite.md); needs DEBUGLINK. Full and amateur builds use 12 KB of
+# update staging
+CONFIG_SATELLITE_TLE ?= $(if $(filter y,$(CONFIG_DEBUGLINK)),y,n)
 
-FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
-	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_ZH LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP FM_TX_TONES DTMF \
-	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR
+
+FEATURES := USB_SERIAL_REQUEST FM SUBTONE DMR DMR_PRIVACY DMR_AES DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_TMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_TRUNK_TX DMR_TRUNK_SUPL DMR_TRUNK_GW VOICE_CAPTURE DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_WEBCTL NET_RADIO_UDP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP TFTP_IDDB IDDB_COMPACT DMR_CONTROL_STATION SNMP SFR SFR_DUALPATH_RX SFR_CWID TASK_STACKS \
+	USB HOSTLINK USB_NETWORK NET_PPP HOTSPOT HOTSPOT_SPLIT DEBUGLINK CPS_OPENFW CPS_FAST VFO VFO_FM VFO_DMR DIAG BACKLIGHT_TEST FONT_XL FONT_AA FONT_BIG LANG_ES LANG_IT LANG_FR LANG_ZH CJK_GLYPHS LANG_DEFAULT_ES LANG_DEFAULT_IT LANG_DEFAULT_FR LANG_DEFAULT_ZH UI_COLOR UI_SETTINGS SCAN DUAL_WATCH BEEP SIG_TONES FM_TX_TONES DTMF \
+	RX_EXT VOX REF_TRIM BATTERY_SAVE VIBRATE GPS AUDIO_PROBE STUB_ENTRY NAND_STORAGE CRASH_LOG CRASH_SCREEN CRASH_REPORT WATCHDOG SUPPORT_INFO FAULT_TRACE AM_RX BCAST_FM APRS APRS_AFSK APRS_DMR APRS_RX APRS_IGATE GPS_SKY SATELLITE_TLE KEY_ASSIGN CHANNEL_LIST CHANNEL_EDIT ZONE_EDIT CONTACT_EDIT VOLUME_BAR P25 P25_TRUNK NXDN NXDN_SCRAMBLER AIR_RAW
 
 # The panel's width in pixels: the display class the board's board.toml names (hardware.gallery = "160x128", the width
 # first). Empty when it names none, which counts as a narrow panel
@@ -298,11 +370,16 @@ ifneq ($(call feature_on,SUBTONE),)
     $(error CONFIG_SUBTONE=y needs CONFIG_FM=y)
   endif
 endif
-$(foreach f,IDDB_COMPACT DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
+$(foreach f,IDDB_COMPACT VOICE_CAPTURE DMR_PRIVACY DMR_TALKER_ALIAS DMR_GPS DMR_SMS DMR_ARS DMR_LRRP DMR_SIGNALING DMR_EMERGENCY DMR_ROAMING DMR_TRUNK DMR_IP_GATEWAY ZONE_SHARE DMR_UDP_COMPRESS NET_TCP NET_KISS NET_HTTP NET_HTTP_GZIP NET_RADIO_UDP NET_RIGCTL NET_APRSIS NET_USRP MDNS TFTP SFR HOTSPOT APRS_DMR,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR=y)))
 $(if $(and $(call feature_on,LANG_DEFAULT_ES),$(if $(call feature_on,LANG_ES),,x)),$(error CONFIG_LANG_DEFAULT_ES=y needs CONFIG_LANG_ES=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_IT),$(if $(call feature_on,LANG_IT),,x)),$(error CONFIG_LANG_DEFAULT_IT=y needs CONFIG_LANG_IT=y))
+$(if $(and $(call feature_on,LANG_DEFAULT_FR),$(if $(call feature_on,LANG_FR),,x)),$(error CONFIG_LANG_DEFAULT_FR=y needs CONFIG_LANG_FR=y))
 $(if $(and $(call feature_on,LANG_DEFAULT_ZH),$(if $(call feature_on,LANG_ZH),,x)),$(error CONFIG_LANG_DEFAULT_ZH=y needs CONFIG_LANG_ZH=y))
+$(if $(and $(call feature_on,DMR_AES),$(if $(call feature_on,DMR_PRIVACY),,x)),$(error CONFIG_DMR_AES=y needs CONFIG_DMR_PRIVACY=y))
+$(if $(and $(call feature_on,CJK_GLYPHS),$(if $(call feature_on,LANG_ZH),,x)),$(error CONFIG_CJK_GLYPHS=y needs CONFIG_LANG_ZH=y))
 $(foreach f,SFR_DUALPATH_RX SFR_CWID,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,SFR),,x)),$(error CONFIG_$(f)=y needs CONFIG_SFR=y)))
+$(foreach f,DMR_TRUNK_TX,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK=y)))
+$(foreach f,DMR_TRUNK_SUPL DMR_TRUNK_GW,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_TRUNK_TX),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_TRUNK_TX=y)))
 ifneq ($(call feature_on,CHANNEL_EDIT),)
   ifeq ($(call feature_on,CHANNEL_LIST),)
     $(error CONFIG_CHANNEL_EDIT=y needs CONFIG_CHANNEL_LIST=y)
@@ -338,9 +415,20 @@ ifneq ($(call feature_on,HOTSPOT_SPLIT),)
     $(error CONFIG_HOTSPOT_SPLIT=y needs CONFIG_HOTSPOT=y)
   endif
 endif
+$(if $(and $(call feature_on,NXDN_SCRAMBLER),$(if $(call feature_on,NXDN),,x)),$(error CONFIG_NXDN_SCRAMBLER=y needs CONFIG_NXDN=y))
+$(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
+$(if $(and $(call feature_on,P25_TRUNK),$(if $(call feature_on,P25),,x)),$(error CONFIG_P25_TRUNK=y needs CONFIG_P25=y))
+$(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFIG_P25=y needs CONFIG_DMR=y (its talk groups are the codeplug's contacts)))
+$(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
+$(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)
+  endif
+endif
+ifneq ($(call feature_on,SATELLITE_TLE),)
+  ifeq ($(call feature_on,DEBUGLINK),)
+    $(error CONFIG_SATELLITE_TLE=y needs CONFIG_DEBUGLINK=y)
   endif
 endif
 ifneq ($(call feature_on,TASK_STACKS),)
@@ -387,7 +475,7 @@ $(foreach f,USB_SERIAL_REQUEST,$(if $(and $(call feature_on,$(f)),$(if $(call fe
 $(foreach f,NET_HTTP_GZIP NET_WEBCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_HTTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_HTTP=y)))
 $(foreach f,NET_HTTP NET_RIGCTL,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,NET_TCP),,x)),$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y)))
 $(foreach f,NET_KISS NET_APRSIS,$(if $(call feature_on,$(f)),$(if $(and $(call feature_on,NET_TCP),$(call feature_on,APRS_AFSK)),,$(error CONFIG_$(f)=y needs CONFIG_NET_TCP=y and CONFIG_APRS_AFSK=y))))
-$(foreach f,MDNS TFTP NET_USRP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
+$(foreach f,MDNS TFTP NET_USRP NET_RADIO_UDP,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,DMR_IP_GATEWAY),,x)),$(error CONFIG_$(f)=y needs CONFIG_DMR_IP_GATEWAY=y)))
 $(foreach f,TFTP_IDDB,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,TFTP),,x)),$(error CONFIG_$(f)=y needs CONFIG_TFTP=y)))
 ifneq ($(call feature_on,DMR_TMS),)
   ifeq ($(call feature_on,DMR_SMS),)
@@ -418,6 +506,11 @@ ifneq ($(call feature_on,VFO_DMR),)
   endif
   ifeq ($(call feature_on,DMR),)
     $(error CONFIG_VFO_DMR=y needs CONFIG_DMR=y)
+  endif
+endif
+ifneq ($(call feature_on,SIG_TONES),)
+  ifeq ($(call feature_on,BEEP),)
+    $(error CONFIG_SIG_TONES=y needs CONFIG_BEEP=y)
   endif
 endif
 $(foreach f,FM_TX_TONES DTMF VOX BATTERY_SAVE AM_RX APRS_AFSK,$(if $(and $(call feature_on,$(f)),$(if $(call feature_on,FM),,x)),$(error CONFIG_$(f)=y needs CONFIG_FM=y)))
@@ -474,7 +567,7 @@ CONFIG_DMR_DATA_CORE := $(if $(strip $(foreach f,DMR_SMS DMR_ARS DMR_LRRP DMR_SI
 # Derived: the position service (core/position) is built for the GPS and for everything that reports our position
 CONFIG_POSITION := $(if $(strip $(foreach f,GPS APRS DMR_LRRP DMR_GPS,$(call feature_on,$(f)))),y,n)
 
-FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
+FEATURE_DEFS := $(foreach f,$(FEATURES) DMR_DATA_CORE POSITION AIR IMBE MBE,-DCONFIG_$(f)=$(if $(call feature_on,$(f)),1,0))
 
 ## Numeric build values (board config.mk sets the defaults; the command line overrides)
 # Display safe area in pixels: edges hidden by the bezel or lens. CONFIG_DISPLAY_INSET sets all four

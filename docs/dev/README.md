@@ -18,6 +18,7 @@ tooling and link the specs for behavior; they don't repeat them. Users read [doc
 | | [Stack check](stack-check.md) | The static worst-case stack depth of every task |
 | 6. Add a radio | [Adding a radio](adding-a-radio.md) | The files a board needs, `board_t`, the key map, bring-up order and records |
 | | [The board registry](board-registry.md) | `board.toml` and `platform.toml` field by field, what is derived, `tools/boards.py` |
+| | [Adding a mode](adding-a-mode.md) | A digital mode in the codeplug, the firmware, the Codeplug Editor and zone sharing |
 | 7. Codec | [The codec](codec.md) | How a radio's codec is merged and hosted, and what a merge tool must do |
 | 8. Release | [Releases](release.md) | The checklist, artifacts and manifests, sector maps, codec handling, the release workflow |
 | | [The user manual PDF](manual-pdf.md) | Building the manual and its workflow |

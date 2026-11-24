@@ -49,6 +49,7 @@ def tx_spacing(radio):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 @pytest.mark.parametrize("mode", list(MODES))
+@pytest.mark.needs_switch("DMR_IP_GATEWAY")
 def test_back_to_back_delivery(radio, sdr_bench, pytestconfig, ip_settings, tx_spacing, mode):
     """COUNT datagrams queued at once to the bench's ID, unconfirmed (compressed headers, ports outside 4000-4099)."""
     freq, cc, own, _ = _setup(radio, pytestconfig)

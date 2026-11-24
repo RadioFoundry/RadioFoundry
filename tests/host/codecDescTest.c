@@ -3,8 +3,9 @@
 // The STM32 codec descriptor (platform/stm32f4/codec_desc.h): a sound one passes, every malformed one is refused, the
 // window CRCs are checked against the bytes. Synthetic flash, no codec. With file arguments, also checks the codec
 // sectors as tools/codec_extract.py merges them for its synthetic codecs (--test-desc: the DM-1701's sectors 10 and
-// 11, then the MD-380's 8-11 with five table windows, then the DM-1701's from an MD-9600 file, its tables moved), so
-// the writer and the firmware agree on the format.
+// 11, then the MD-380's sector 11 with five table windows, then the DM-1701's from an MD-9600 file, then the MD-9600's
+// sectors 10 and 11, its tables moved), so the writer and the firmware agree on the format, and a codec where an
+// earlier release put it is refused.
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -140,15 +141,16 @@ static void test_tool(const char *path)
 	CHECK(d->table[0].addr == TABLES && d->table[0].len == TABLES_LEN);
 }
 
-// Sectors 8-11 as codec_extract.py merges its synthetic MD-380 codec: the code at the start of sector 11, the main
-// table window in sector 8 and four small ones (boards/md380/vocoder_md380.c)
-static uint8_t md[0x80000];
+// Sector 11 as codec_extract.py merges its synthetic MD-380 codec: every window moved into it, the code, the main
+// table window and four small ones (boards/md380/vocoder_md380.c). A descriptor where releases before this layout
+// put the codec (the main table window in sector 8, now the application's) is refused before any byte is read
+static uint8_t md[0x20000];
 
 static void test_tool_md380(const char *path)
 {
-	static const uint32_t addr[CODEC_DESC_WINDOWS] = { 0x0808FC64u, 0x080D0FC8u, 0x080F9698u, 0x080F9E74u, 0x080FD490u };
+	static const uint32_t addr[CODEC_DESC_WINDOWS] = { 0x080F0894u, 0x080FB898u, 0x080FB8C8u, 0x080FB8E4u, 0x080FB900u };
 	static const uint32_t len[CODEC_DESC_WINDOWS] = { 0xAFF8u, 0x24u, 0x18u, 0x14u, 0x20u };
-	const uint32_t lo = 0x08080000u;
+	const uint32_t lo = 0x080E0000u;
 	FILE *f = fopen(path, "rb");
 	CHECK(f != NULL);
 	if (!f) {
@@ -157,13 +159,40 @@ static void test_tool_md380(const char *path)
 	size_t n = fread(md, 1, sizeof md, f);
 	fclose(f);
 	CHECK(n == sizeof md);
-	const codec_desc_t *d = (const codec_desc_t *)(md + (CODEC_DESC_ADDR - lo));
+	codec_desc_t *d = (codec_desc_t *)(md + (CODEC_DESC_ADDR - lo));
 	CHECK(codec_desc_check(d, 0x2032u, lo, CODEC_DESC_ADDR, 0x10884u));
 	CHECK(codec_desc_check_bytes(d, md, lo));
-	CHECK(d->code.addr == 0x080E0000u && d->code.len == 0x10884u && d->windows == CODEC_DESC_WINDOWS);
+	CHECK(d->code.addr == 0x080E0004u && d->code.len == 0x10884u && d->windows == CODEC_DESC_WINDOWS);
 	for (uint32_t i = 0; i < CODEC_DESC_WINDOWS; i++) {
 		CHECK(d->table[i].addr == addr[i] && d->table[i].len == len[i]);
 	}
+	d->code.addr = 0x080E0000u;			// the former layout: the code at the start of sector 11...
+	d->table[0].addr = 0x0808FC64u;			// ...the main table window in sector 8
+	d->crc = codec_desc_crc32((const uint8_t *)d, offsetof(codec_desc_t, crc), 0);
+	CHECK(!codec_desc_check(d, 0x2032u, lo, CODEC_DESC_ADDR, 0x10884u));
+}
+
+// Sectors 10 and 11 as codec_extract.py merges a synthetic codec for the MD-9600 from its V06.09 CSV file: the table
+// window moved as one block to the start of sector 10, the code to the start of sector 11
+// (boards/md9600/vocoder_md9600.c). The former layout (the tables in sector 9) is refused
+static void test_tool_md9600own(const char *path)
+{
+	FILE *f = fopen(path, "rb");
+	CHECK(f != NULL);
+	if (!f) {
+		return;
+	}
+	size_t n = fread(flash, 1, sizeof flash, f);
+	fclose(f);
+	CHECK(n == ROOM);
+	codec_desc_t *d = desc();
+	CHECK(codec_desc_check(d, 0x0609u, LO, CODEC_DESC_ADDR, 0xF214u));
+	CHECK(codec_desc_check_bytes(d, flash, LO));
+	CHECK(d->code.addr == 0x080E0000u && d->code.len == 0xF214u && d->windows == 1);
+	CHECK(d->table[0].addr == 0x080C000Cu && d->table[0].len == 0x10FE6u);
+	d->table[0].addr = 0x080AB13Cu;			// the former layout: the tables at their stock address in sector 9
+	seal();
+	CHECK(!codec_desc_check(d, 0x0609u, LO, CODEC_DESC_ADDR, 0xF214u));
 }
 
 // The DM-1701's sectors 10 and 11 as codec_extract.py merges a synthetic codec from the MD-9600 V16.45 CSV file: the
@@ -198,6 +227,9 @@ int main(int argc, char **argv)
 	}
 	if (argc > 3) {
 		test_tool_md9600(argv[3]);
+	}
+	if (argc > 4) {
+		test_tool_md9600own(argv[4]);
 	}
 	if (failures) {
 		printf("codecDescTest: %d failures\n", failures);

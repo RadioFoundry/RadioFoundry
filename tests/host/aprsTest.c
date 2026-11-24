@@ -90,7 +90,7 @@ static void test_addresses(void)
 	      "decode");
 
 	// TNC2 round trip with a used digipeater
-	const char *line = "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
+	const char *line = "Q1ABC-9>APZTST,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test";
 	n = make_frame(line, buf, sizeof(buf));
 	CHECK(ax25_decode(buf, n, &f), "decode digi");
 	CHECK(f.ndigi == 2 && f.digi[0].h && !f.digi[1].h, "h bits");
@@ -199,6 +199,7 @@ static int afsk_run_emph(uint32_t mod_rate, uint32_t demod_rate, float snr_db, f
 {
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
 	static int16_t pcm[400000];
+	// The noise limits below were set with this frame's bits: change a byte and the counts move by a frame or two
 	size_t n = make_frame("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W>RadioFoundry APRS test 0123456789",
 			      frame, sizeof(frame));
 	hdlc_enc_t e;
@@ -1153,18 +1154,18 @@ static void test_igate(void)
 	memset(&d, 0, sizeof(d));
 	ax25_addr_t me = addr("Q0TEST-10");
 	char out[AX25_TNC2_MAX + 20];
-	ax25_frame_t f = parse_line("Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
+	ax25_frame_t f = parse_line("Q1ABC-9>APZTST,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-Test\r");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 1000, out, sizeof(out)) == APRS_GATE_OK, "gate");
-	CHECK(strcmp(out, "Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1,qAR,Q0TEST-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
+	CHECK(strcmp(out, "Q1ABC-9>APZTST,Q1XYZ-1*,WIDE2-1,qAR,Q0TEST-10:!4903.50N/07201.75W-Test") == 0, "line %s", out);
 	// the same packet over another digipeater within 30 s: once only; after 30 s again
-	f = parse_line("Q1ABC-9>APZRDF,Q1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
+	f = parse_line("Q1ABC-9>APZTST,Q1ZZZ*,WIDE2*:!4903.50N/07201.75W-Test");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 5000, out, sizeof(out)) == APRS_GATE_DUP, "dup");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 32000, out, sizeof(out)) == APRS_GATE_OK, "after 30 s");
-	f = parse_line("Q1ABC-9>APZRDF,RFONLY:>local");
+	f = parse_line("Q1ABC-9>APZTST,RFONLY:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "rfonly");
-	f = parse_line("Q1ABC-9>APZRDF,NOGATE:>local");
+	f = parse_line("Q1ABC-9>APZTST,NOGATE:>local");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_NO_PATH, "nogate");
-	f = parse_line("Q1ABC-9>APZRDF:?APRS?");
+	f = parse_line("Q1ABC-9>APZTST:?APRS?");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_QUERY, "query");
 	// third party: from the Internet (TCPIP inside) stays; from RF elsewhere is gated as the inner packet
 	f = parse_line("Q1GATE>APRS,WIDE1-1:}Q9XYZ>APRS,TCPIP,Q1GATE*::Q1ABC-9  :hi{1");
@@ -1173,9 +1174,9 @@ static void test_igate(void)
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 40000, out, sizeof(out)) == APRS_GATE_OK &&
 	      strcmp(out, "Q9XYZ>APRS,Q9DIGI*,qAR,Q0TEST-10:>far away") == 0, "third party inner %s", out);
 	// the information field ends at a CR in the middle
-	f = parse_line("Q1ABC-9>APZRDF:>one\rtwo");
+	f = parse_line("Q1ABC-9>APZTST:>one\rtwo");
 	CHECK(aprs_igate_rf_to_is(&d, &f, &me, 41000, out, sizeof(out)) == APRS_GATE_OK &&
-	      strcmp(out, "Q1ABC-9>APZRDF,qAR,Q0TEST-10:>one") == 0, "cr %s", out);
+	      strcmp(out, "Q1ABC-9>APZTST,qAR,Q0TEST-10:>one") == 0, "cr %s", out);
 
 	// IS -> RF
 	aprs_igate_env_t env = { fake_direct, fake_rf, NULL };
@@ -1202,27 +1203,27 @@ static void test_digi(void)
 	ax25_addr_t me = addr("Q0TEST-10");
 	ax25_frame_t in, out;
 	char s[AX25_TNC2_MAX];
-	in = parse_line("Q1ABC-9>APZRDF,WIDE1-1,WIDE2-1:>hi");
+	in = parse_line("Q1ABC-9>APZTST,WIDE1-1,WIDE2-1:>hi");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 1000), "fill-in");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q0TEST-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZTST,Q0TEST-10,WIDE1*,WIDE2-1:>hi") == 0, "fill-in path %s", s);
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 2000), "dup");
 	// WIDE2-2 after a first hop: only in WIDE mode
-	in = parse_line("Q1ABC-9>APZRDF,Q1XYZ*,WIDE2-2:>two");
+	in = parse_line("Q1ABC-9>APZTST,Q1XYZ*,WIDE2-2:>two");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 3000), "fill-in leaves WIDE2");
 	memset(&d, 0, sizeof(d));
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 3000), "wide");
 	ax25_to_tnc2(&out, s, sizeof(s));
-	CHECK(strcmp(s, "Q1ABC-9>APZRDF,Q1XYZ,Q0TEST-10*,WIDE2-1:>two") == 0, "wide path %s", s);
+	CHECK(strcmp(s, "Q1ABC-9>APZTST,Q1XYZ,Q0TEST-10*,WIDE2-1:>two") == 0, "wide path %s", s);
 	// directed at us
-	in = parse_line("Q1ABC-9>APZRDF,Q0TEST-10:>direct");
+	in = parse_line("Q1ABC-9>APZTST,Q0TEST-10:>direct");
 	CHECK(aprs_digi(&d, &in, &out, &me, APRS_DIGI_FILL_IN, 4000) && out.digi[0].h, "direct");
 	// used up, our own, WIDE3-3
-	in = parse_line("Q1ABC-9>APZRDF,WIDE1*,WIDE2*:>done");
+	in = parse_line("Q1ABC-9>APZTST,WIDE1*,WIDE2*:>done");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "used up");
-	in = parse_line("Q0TEST-10>APZRDF,WIDE1-1:>mine");
+	in = parse_line("Q0TEST-10>APZTST,WIDE1-1:>mine");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "own");
-	in = parse_line("Q1ABC-9>APZRDF,WIDE3-3:>far");
+	in = parse_line("Q1ABC-9>APZTST,WIDE3-3:>far");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_WIDE, 5000), "WIDE3-3");
 	CHECK(!aprs_digi(&d, &in, &out, &me, APRS_DIGI_OFF, 5000), "off");
 }
@@ -1235,9 +1236,9 @@ static void wav_u16(FILE *f, uint16_t v) { fputc(v & 255, f); fputc(v >> 8, f); 
 static int write_wav(const char *dir)
 {
 	static const char *const lines[] = {
-		"Q0TST-7>APZRDF,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
-		"Q0TST-7>APZRDF,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
-		"Q0TST-7>APZRDF::Q1ABC-9  :Hello from the host test{42",
+		"Q0TST-7>APZTST,WIDE1-1,WIDE2-1:=4903.50N/07201.75W-RadioFoundry test 1",
+		"Q0TST-7>APZTST,WIDE1-1:=/5L!!<*e7>7PCRadioFoundry test 2",
+		"Q0TST-7>APZTST::Q1ABC-9  :Hello from the host test{42",
 	};
 	static int16_t pcm[100000];
 	static uint8_t frame[AX25_FRAME_MAX], tones[1024];
@@ -1397,7 +1398,7 @@ static void test_parse_edges(void)
 static void test_parse_fuzz(void)
 {
 	static const char *const lines[] = {
-		"Q1ABC-9>APZRDF,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
+		"Q1ABC-9>APZTST,Q1XYZ-1*,WIDE2-1:!4903.50N/07201.75W-088/036/A=003281Test",
 		"Q0TEST>APRS:=/5L!!<*e7>7P[compressed",
 		"Q0TEST>SSRUVT,WIDE1-1:`(_fn\"Oj/`\"4T}mic-e",
 		"Q0TEST>APRS::Q0TEST-7 :hello{12}AB",
