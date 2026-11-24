@@ -170,18 +170,13 @@ For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191
 ## Linking audio: AllStarLink and DVSwitch
 
 The radio speaks the USRP voice protocol on UDP port 34001, the protocol AllStarLink's USRP channel driver and DVSwitch
-Analog_Bridge use. A node on your computer hears what the radio receives and talks through it, as an RF link.
-
-Turn on **Settings > Connections > Linking audio** first. It is off by default, so a computer that uses the link only
-for data doesn't receive audio. Then set up the node:
+Analog_Bridge use. A node on your computer hears what the radio receives and talks through it, as an RF link:
 
 - AllStarLink: `rxchannel = usrp/<radio address>:34001:32001` in the node's `rpt.conf` section.
 - Analog_Bridge: `txPort = 34001`, `rxPort = 32001`, the radio's address as the destination.
 
-While the radio receives a signal (the squelch open, or a DMR call playing), it sends the audio to UDP port 32001 of
-your computer, or of the node once the node has sent the radio anything, with the squelch as the keyup flag. A node
-on another machine your computer routes to works once it has sent first. While one node is talking to the radio,
-others are ignored. When the program keys up, the radio transmits its audio on the
+While the radio receives a signal (the squelch open, or a DMR call playing), it sends the audio to your computer's
+UDP port 32001, with the squelch as the keyup flag. When the program keys up, the radio transmits its audio on the
 current channel: on FM through the radio's own transmit audio (its tone and deviation limit apply), on DMR as a call
 to the channel's contact. The radio stops transmitting when the program unkeys, stops sending, or after 3 minutes.
 Received audio follows the volume knob. `tools/usrp_client.py` is a small test program

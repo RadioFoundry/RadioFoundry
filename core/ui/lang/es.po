@@ -4098,11 +4098,6 @@ msgid "USB address"
 msgstr "Dirección USB"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_LINKING_AUDIO"
-msgid "Linking audio"
-msgstr "Audio de enlace"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_ROW_DATA_SERVICES"
 msgid "Data services"
 msgstr "Servicios de datos"

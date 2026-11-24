@@ -589,7 +589,7 @@ static size_t cmd_radio(const uint8_t *req, uint16_t len, uint8_t *out)
 		settings_t *st = settings_begin();
 
 		st->usb_mode = (a[0] & 1u) ? 1 : 0;
-		st->net_flags = (uint8_t)((st->net_flags & (SETTINGS_NET_TFTP_NO_WRITE | SETTINGS_NET_USRP)) |	// not this op's
+		st->net_flags = (uint8_t)((st->net_flags & SETTINGS_NET_TFTP_NO_WRITE) |	// not this op's
 					  (CONFIG_DMR_CONTROL_STATION && (a[0] & 2u) ? SETTINGS_NET_PASSTHROUGH : 0) |
 					  (CONFIG_DMR_CONTROL_STATION && (a[0] & 4u) ? SETTINGS_NET_FIXED_LINK : 0));
 		st->net_link_ip = ip;

@@ -132,7 +132,6 @@ static void reset(void)
 	keyed = false;
 	prim_blocks = 0;
 	radio_audio = audio_mux_wrap(&fake_audio);
-	usrp_net_enable(true);	// Settings > Connections > Linking audio (off by default: test_usrp_off)
 }
 
 // One 20 ms block of time: the radio task's service, the stream's block, the host task's poll (every 5 ms)
@@ -352,87 +351,6 @@ static void test_usrp_rx(void)
 	CHECK(!hw.streaming);
 }
 
-// Linking audio off (the default, #703): nothing to the host, no frame taken, the web page still fed; the switch
-// going off mid-signal sends the closing keyup 0 frame and unkeys a transmission; on again, the host until a peer speaks
-static void test_usrp_off(void)
-{
-	reset();
-	usrp_net_enable(false);
-	usrp_net_start();
-	CHECK(!usrp_net_enabled());
-	view.state = RS_RX;
-	wc_frames = wc_open = 0;
-	for (int i = 0; i < 5; i++) {
-		tick();
-	}
-	CHECK(nsent == 0);
-	CHECK(wc_frames >= 4 && wc_open == wc_frames);	// the web page's Listen hears the squelch open
-	// A keyup frame is ignored: no transmission, no peer learned
-	peer_frame(0x0A000063u, true, 1, 1000);
-	tick();
-	CHECK(!keyed && host_downs == 0);
-	// On: to the host's address
-	usrp_net_enable(true);
-	tick();
-	tick();
-	CHECK(nsent >= 1 && sent[nsent - 1].ip == 0x0A000002u);
-	// Off mid-signal: one closing keyup 0 frame to the peer that had the audio, then nothing
-	peer_frame(0x0A000063u, false, 1, 0);
-	tick();
-	CHECK(sent[nsent - 1].ip == 0x0A000063u);
-	usrp_net_enable(false);
-	int n0 = nsent;
-	for (int i = 0; i < 5; i++) {
-		tick();
-	}
-	usrp_header_t h;
-	int16_t pcm[USRP_FRAME_SAMPLES];
-	size_t ns;
-	CHECK(nsent == n0 + 1 && sent[n0].ip == 0x0A000063u);
-	usrp_parse(sent[n0].data, (size_t)sent[n0].len, &h, pcm, &ns);
-	CHECK(!h.keyup);
-	// Off while a peer transmits: unkeyed at the next poll, and the peer forgotten
-	view.state = RS_IDLE;
-	usrp_net_enable(true);
-	peer_frame(0x0A000063u, true, 2, 1000);
-	CHECK(keyed);
-	usrp_net_enable(false);
-	tick();
-	CHECK(!keyed);
-	usrp_net_enable(true);
-	view.state = RS_RX;
-	tick();
-	tick();
-	CHECK(sent[nsent - 1].ip == 0x0A000002u);
-}
-
-// One peer at a time: while a peer holds the link, another address can't key the radio or take the audio; once the
-// peer has been silent for USRP_PEER_IDLE_MS, another may claim it
-static void test_usrp_one_peer(void)
-{
-	reset();
-	usrp_net_start();
-	peer_frame(0x0A000063u, false, 1, 0);
-	peer_frame(0x0A000077u, true, 1, 1000);
-	tick();
-	CHECK(!keyed && host_downs == 0);
-	view.state = RS_RX;
-	tick();
-	tick();
-	CHECK(sent[nsent - 1].ip == 0x0A000063u);
-	char buf[1500];
-	dl_text_t t;
-	dl_text_init(&t, buf, sizeof buf);
-	usrp_net_view(&t);
-	buf[t.len] = '\0';
-	CHECK(strstr(buf, "usrp.on=1\n") != NULL && strstr(buf, "usrp.foreign=1\n") != NULL);
-	view.state = RS_IDLE;
-	now += USRP_PEER_IDLE_MS;
-	peer_frame(0x0A000077u, true, 2, 1000);
-	CHECK(keyed);
-	peer_frame(0x0A000077u, false, 3, 0);
-}
-
 // A link that sends slower than real time (115200 baud serial): one poll must return, not chase the audio
 static void test_usrp_rx_slow_link(void)
 {
@@ -525,7 +443,7 @@ static void test_usrp_tx(void)
 
 	// Garbage counts as bad and doesn't change the peer
 	static const uint8_t junk[8] = "NOTUSRP";
-	bound(false, 0x0A000063u, 1, 0, USRP_PORT, junk, sizeof junk);
+	bound(false, 0x0A0000AAu, 1, 0, USRP_PORT, junk, sizeof junk);
 	char buf[1500];
 	dl_text_t t;
 	dl_text_init(&t, buf, sizeof buf);
@@ -588,8 +506,6 @@ int main(void)
 	test_mux_passthrough();
 	test_mux_dmr_tx();
 	test_usrp_rx();
-	test_usrp_off();
-	test_usrp_one_peer();
 	test_usrp_rx_slow_link();
 	test_usrp_tx();
 #if CONFIG_APRS_RX

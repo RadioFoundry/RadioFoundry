@@ -35,9 +35,6 @@
 #if CONFIG_GPS
 #include "position/position.h"
 #endif
-#if CONFIG_NET_USRP
-#include "usbaudio/usrp_net.h"
-#endif
 
 #define DL_SETTING_MIC_GAIN	29u	// SETTING id of the mic gain step (radio/mic_gain.h)
 #define DL_SETTING_ENC_OPTIONS	31u	// SETTING id of the vocoder's encode options (VOCODER_OPT_*)
@@ -45,7 +42,6 @@
 #define DL_SETTING_REF_TRIM	35u	// SETTING id of the reference trim, ppb two's complement (radio/ref_trim.h)
 #define DL_SETTING_TONES_OFF	36u	// SETTING id of the Settings > Sound tones (radio_settings_t.tones_off)
 #define DL_SETTING_GPS		37u	// SETTING id of Settings > Location > GPS (settings_t.gps, board_t.gps)
-#define DL_SETTING_USRP		38u	// SETTING id of Settings > Connections > Linking audio (net_flags SETTINGS_NET_USRP)
 
 static const char *word(uint8_t v, const char *const *names, uint8_t n)
 {
@@ -733,21 +729,6 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 			position_gps_enable(v != 0);
 #endif
 			return DL_ST_OK;
-		}
-		if (a[0] == DL_SETTING_USRP) {
-			// Stored and applied as the menu does: a test turns USRP on without walking Settings > Connections
-			if (v > 1) {
-				return DL_ST_BAD_ARG;
-			}
-#if CONFIG_NET_USRP
-			settings_t *st = settings_begin();
-			st->net_flags = (uint8_t)(v ? (st->net_flags | SETTINGS_NET_USRP) : (st->net_flags & ~SETTINGS_NET_USRP));
-			settings_end(hal_millis());
-			usrp_net_enable(v != 0);
-			return DL_ST_OK;
-#else
-			return DL_ST_UNAVAILABLE;
-#endif
 		}
 		radio_settings_t s;
 		radio_get_settings(&s);
