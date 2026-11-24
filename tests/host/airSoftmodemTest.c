@@ -726,6 +726,21 @@ static double run_adapt(const air_profile_t *p, bool lend, uint32_t *nsync)
 	return (double)nerr / ncmp;
 }
 
+// The same with the receiver reset every `every` samples, as lost samples or a new lock do: only the tone found counts
+static void run_adapt_resets(const air_profile_t *p, uint32_t every)
+{
+	air_softmodem_t m;
+
+	air_softmodem_lend(&adapt_mem);
+	air_softmodem_rx_open(&m, p, 8000, 2000, on_chunk, NULL);
+	out_reset();
+	for (uint32_t at = 0; at < tap_n; at += every) {
+		feed(&m, 8000, at, at + every < tap_n ? at + every : tap_n, 256);
+		air_softmodem_rx_reset(&m);
+	}
+	air_softmodem_lend(NULL);
+}
+
 // A tone of amplitude a (counts) at f Hz added to the tap
 static void add_tone(double f, double a)
 {
@@ -803,6 +818,13 @@ static void testAdapt(void)
 		}
 	}
 
+	// Resets every half second (lost samples, a new lock) don't start the search over: the tone a repeater sends
+	// outlasts them, and a search that began again at each never reached the second block it needs
+	sample_tap(8000, 17, 3600, 2000, 300, 450);
+	add_tone(127.3, 0.4 * 1800);
+	run_adapt_resets(&tone, 4000);
+	air_softmodem_adapt_get(&v);
+	CHECK(v.tone_dhz == 1273, "tone found across resets: %u", v.tone_dhz);
 	// No tone: none picked, however long (and the same data again and again, as silence repeats, picks none)
 	sample_tap(8000, 17, 3600, 2000, 300, 300);
 	e1 = run_adapt(&both, true, &ns1);

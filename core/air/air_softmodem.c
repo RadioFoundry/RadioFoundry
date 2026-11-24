@@ -95,7 +95,7 @@ static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, ui
 
 #if CONFIG_AIR_RX_ADAPT
 static void adapt_open(air_softmodem_t *m);
-static void adapt_reset(air_softmodem_adapt_t *a);
+static void adapt_reset(air_softmodem_adapt_t *a, bool tone);
 #endif
 
 uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
@@ -146,7 +146,7 @@ void air_softmodem_rx_reset(air_softmodem_t *m)
 	m->n = 0;
 #if CONFIG_AIR_RX_ADAPT
 	if (m->ad)
-		adapt_reset(m->ad);
+		adapt_reset(m->ad, false);	// the tone is the channel's, not the signal's: it stays
 #endif
 }
 
@@ -221,7 +221,7 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 #define FRESH_SLACK	(2 * AIR_SYNC_SYMS_MAX)
 #define TONE_NONE	0xFF
 #define TONE_BLOCK	6				// frames per tone block: 1.7 Hz bins on a 100 ms frame (neighbors 2.9 Hz apart)
-#define TONE_RATIO	6				// a tone's power over the mean of the others' (its neighbors left out)
+#define TONE_RATIO	10				// a tone's power over the mean of the others' (its neighbors left out)
 #define NOTCH_Q		20
 #define Q30		(1LL << 30)
 
@@ -276,26 +276,34 @@ void air_softmodem_adapt_get(air_softmodem_adapt_view_t *out)
 	*out = adapt_view;
 }
 
-// The equalizer a pass-through, no tone, the search from the start: a new lock owes nothing to the last signal
-static void adapt_reset(air_softmodem_adapt_t *a)
+// The equalizer a pass-through: a new lock owes nothing to the last signal's channel. The tone search and the notch
+// (tone) only when the session opens: the tone a repeater sends belongs to the channel and outlasts every lock, and
+// a strong one costs locks itself, so a search that started over at each never reached its second block, and the
+// notch that would have kept the lock went with it
+static void adapt_reset(air_softmodem_adapt_t *a, bool tone)
 {
 	memset(a->eq_w, 0, sizeof a->eq_w);
 	a->eq_w[EQ_MID] = EQ_ONE;
 	memset(a->eq_past, 0, sizeof a->eq_past);
-	memset(a->hist, 0xFF, sizeof a->hist);		// no neighborhood a frame before yet
-	a->ctx = 0;
+	adapt_view.eq_center = EQ_ONE;
+	// The frame before is lost either way (the place in the frame may have moved): nothing is compared against it
+	// until a frame has passed again. What the tone filters summed and the notch stay
+	memset(a->hist, 0xFF, sizeof a->hist);
+	a->at = 0;
 	a->e_ok = false;
+	if (!tone)
+		return;
+	a->ctx = 0;
 	a->e_prev = 0;
 	a->e_mean = 0;
 	memset(a->s1, 0, sizeof a->s1);
 	memset(a->s2, 0, sizeof a->s2);
-	a->at = a->n = 0;
+	a->n = 0;
 	a->ci1 = a->ci2 = a->cc1 = a->cc2 = 0;
 	a->dn = 0;
 	a->cand = a->sel = TONE_NONE;
 	a->x1 = a->x2 = a->y1 = a->y2 = 0;
 	adapt_view.tone_dhz = 0;
-	adapt_view.eq_center = EQ_ONE;
 }
 
 // At open: the tones' filter coefficients for this symbol rate and frame, from the profile
@@ -325,7 +333,7 @@ static void adapt_open(air_softmodem_t *m)
 		// The CIC's droop toward the high tones is weighed in, so the tones compete on what the signal holds
 		a->gain[k] = (uint16_t)(((gs >> 18) + 1) ?: 1);
 	}
-	adapt_reset(a);
+	adapt_reset(a, true);
 	m->ad = a;
 	adapt_view.opts = a->opts;
 }
@@ -423,7 +431,7 @@ static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
 	a->at = (uint16_t)(a->at + 1 == a->period ? 0 : a->at + 1);
 	if (fresh_timing && a->e_ok) {
 		a->e_mean += a->e_prev - (a->e_mean >> 8);		// x 256, a time constant of 256 symbols
-		if (was != (uint8_t)(a->ctx | 0x40))
+		if (was != 0xFF && was != (uint8_t)(a->ctx | 0x40))
 			x = a->e_prev - (a->e_mean >> 8);
 	}
 	a->e_prev = (int8_t)e;
@@ -631,7 +639,7 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 
 #if CONFIG_AIR_RX_ADAPT
 	if (m->ad && !fresh(m))
-		adapt_reset(m->ad);	// a new lock starts from a pass-through and no tone
+		adapt_reset(m->ad, false);	// a new lock: the equalizer from a pass-through, the tone kept
 #endif
 	// The level far from nominal (a tap of unknown or wrong scale): bring the line and the gain to it, so the
 	// samples keep their resolution and their headroom
