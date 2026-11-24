@@ -17,7 +17,7 @@ static void test_measured(void)
 {
 	static const bf_cal_power_points_t uhf = { .low = 1389, .mid = 1981, .high = 2912 };
 	static const bf_cal_power_points_t vhf = { .low = 1360, .mid = 1840, .high = 3024 };
-	static const uint16_t want_uhf[DM32_POWER_LEVELS] = { 981, 1217, 1701, 2196, 2912 };
+	static const uint16_t want_uhf[DM32_POWER_LEVELS] = { 981, 1217, 1639, 2196, 2912 };
 	static const uint16_t want_vhf[DM32_POWER_LEVELS] = { 925, 1064, 1419, 1833, 3024 };
 	for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
 		CHECK(dm32_level_drive(&uhf, 440000000u, l) == want_uhf[l]);

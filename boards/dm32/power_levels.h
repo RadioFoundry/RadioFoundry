@@ -38,7 +38,7 @@ static inline uint16_t dm32_floor_drive(uint32_t hz)
 static inline uint16_t dm32_level_drive(const bf_cal_power_points_t *rows, uint32_t hz, uint8_t level)
 {
 	static const uint16_t vhf_pos[DM32_POWER_LEVELS - 1u] = { 782, 1122, 1985, BF_CAL_POS_HIGH };
-	static const uint16_t uhf_part[DM32_POWER_LEVELS - 1u] = { 418, 584, 754, 1000 };
+	static const uint16_t uhf_part[DM32_POWER_LEVELS - 1u] = { 418, 563, 754, 1000 };
 	if (level == 0u) {
 		return dm32_floor_drive(hz);
 	}

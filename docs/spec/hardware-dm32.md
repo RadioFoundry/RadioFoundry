@@ -669,7 +669,8 @@ Inverse video is done by toggling 0x21 / 0x20 with 10 ms around it.
 ## 8. FD6818 RF transceiver
 
 Single-chip VHF/UHF transceiver; register-compatible in spirit with the RDA1846S/AT1846S family but with its own
-addresses for frequency and band. **No FD6818 datasheet is available**; the values are the ones that work on the radio.
+addresses for frequency and band. The values are the ones that work on the radio. The chip's datasheet doesn't match every register on this radio: its
+TX gain register (0x28) has no effect here, and the level that reaches the PA is in 0x36 (11.4).
 
 ### 8.1 Bus and timing
 
@@ -1360,7 +1361,7 @@ levels at 479.975 MHz at 639 and 790, where the PA gives nothing.
 |---|---|---|
 | 500 mW | 1085 at 400 MHz, 2.6 less per MHz over 400 (877 at 480) | 925 |
 | 1 W | 0.418 · H | place 782 (0.782 · L) |
-| 2.5 W | 0.584 · H | place 1122 (L + 12.2 % of M − L) |
+| 2.5 W | 0.563 · H | place 1122 (L + 12.2 % of M − L) |
 | 5 W | 0.754 · H | place 1985 (L + 98.5 % of M − L) |
 | 8 W (UHF), 9 W (VHF) | H | H |
 
@@ -1401,7 +1402,10 @@ wattmeter reading at each frequency (the path is flat within 0.3 dB against the 
 | 155 | 0.67 | 1.14 | 2.89 | 5.80 | 8.40 |
 | 173.975 | 0.60 | 0.98 | 2.47 | 5.51 | 9.38 |
 
-The 500 mW level's 0.67 W at 155 MHz is the steep part of that frequency's curve (0.38 W 20 counts lower). DMR bursts
+The 500 mW level's 0.67 W at 155 MHz stays: the output there is flat to the PA's turn-on, then drops (drive 925
+0.64 W, 919 0.62 W, 912 0.60 W, 905 0.38 W), so no drive over the turn-on gives 0.5 W, and a lower VHF floor would
+sit closer to the creep. The UHF 2.5 W part is 0.563 · H; at 0.584 the level read 0.03 to 1.05 dB high (mean
++0.47 dB), at 0.563 −0.42 to +0.63 dB (mean +0.04 dB). DMR bursts
 read the same as FM within 0.1 dB, and spread 0.11 dB at most.
 
 **The PA ramps.** DAC B moves in two parts on the shared APC ramp's curve (`core/radio/apc_ramp.h`), with the PA
@@ -1444,6 +1448,27 @@ and the PA select cut at once at the key-down and a burst's end) the key-down re
 
 - **The top of the UHF band.** The PA loop is fast from about 470 MHz up: the key-up and a DMR burst's start read
   −30 to −40 dBc at 2.5 W and over at 479.975 MHz (8.5).
+- **The FD6818's own output level is no second lever.** Under the PA loop's knee the drive has no control, so the
+  FD6818's transmit registers were tried as a second one, each written over the debug link during a key-up at
+  479.975 MHz. 0x28 (all 16 bits, 0x0000 to 0xFFFF; the radio's value is 0x6B38) and the PA bias word 0x19 (bits 3:0)
+  change the output by less than 0.05 dB at 500 mW, under the knee (drive 860) and at the top level. The driver enable,
+  0x30 bit 3 (0xC1FE to 0xC1F6), cuts the carrier by 49 dB. 0x36 (0x003F after power-on) sets the level that reaches
+  the PA: at the top level its bits 2:0 take the output down 11.6 dB in steps of 0.3 to 3.8 dB. At 500 mW the output
+  falls off a cliff, as for the drive: 0x3C reads −0.5 dB, 0x27 −1.5 dB, 0x34 −3.6 dB, 0x26 −5.1 dB, 0x2C −13.9 dB,
+  0x1E −22.7 dB, 0x38 −43.8 dB. A ramp of 0x36 through those 17 values with the drive at the knee (FM: 150 µs a
+  step after the crawl at the key-up and before the drive goes to 0 at the key-down) made the edges worse: at
+  479.975 MHz the key-up read −21 to −28 dBc instead of −32 to −50 and overshot 9.7 dB at 500 mW (the loop winds up
+  while the PA gets little), and the key-down read −8 to −26 dBc instead of −35 to −48. At 800 µs a step the key-down
+  still read −25 to −27 dBc. At a DMR burst's end the same ramp over 0.1 ms made the fall shorter, not longer. The
+  steps are several dB each where the PA turns on, so the 0x36 ramp splatters, and the loop fights the ramp. The ramps
+  stay on DAC B alone, and 0x36 stays 0x003F.
+- **The other slot.** A DMR burst now ends 0.5 ms later than with a cut at once, so the receiver comes back 0.5 ms
+  later. With the simplex repeater (SFR) and split duplex HIL tests on a bench hotspot (`test_sfr_standalone`,
+  `test_hotspot_sfr`, `test_split_duplex`), the radio repeated 32 bursts with none lost and decoded both slots in
+  each receive mode, and the split tests that time the other half (`test_split_align`, `test_split_rx_half_labels`,
+  `test_split_tx_sched`) pass. The two-frequency repeater tests (`test_dmr_repeater_slots`,
+  `test_dmr_repeater_keyup`, `test_dmr_tx_split_repeater`) fail the same way on the firmware before the ramps: the
+  bench repeater heard none of the radio's inbound bursts on either build.
 - Not measured yet: a low battery and other radios.
 
 ---
