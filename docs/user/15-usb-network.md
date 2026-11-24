@@ -161,11 +161,11 @@ Nothing changes while the radio transmits or is a hotspot. Details: [tcp-service
 
 For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
 
-> **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
-> as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
-> radio transmit, and so does port 4191 on firmware without this feature (check its build options first,
-> [build options](../build-config.md)). Whenever the radio is in network mode, keep an antenna or a dummy load on it
-> and leave it on a channel you may transmit on.
+> **Warning: send only to the radio's own address.** The radio passes messages for other addresses in its range to
+> the air as DMR data, so a message to another address makes the radio transmit. Messages to the radio's own address
+> never go on the air: on firmware without this feature (check the firmware's [build options](../build-config.md)),
+> or to a port the radio doesn't serve, your program gets a "port unreachable" error back. Whenever the radio is in
+> network mode, keep an antenna or a dummy load on the radio and leave the radio on a channel you may transmit on.
 
 ## Linking audio: AllStarLink and DVSwitch
 

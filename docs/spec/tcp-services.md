@@ -333,11 +333,15 @@ controlled. Each request is one datagram to the radio's port 4191, and each is a
 - **Send to the radio's own address on the link, and nowhere else.** On the default /32 link that is the host's
   address xor 1 (DMR ID 10005: the host is 12.0.39.21, the radio 12.0.39.20). It is the DHCP server and router the
   host got with its lease (option 54), and on PPP the link's peer address.
-- The radio answers on that address for its own ports only. **Any other datagram into the individual or talkgroup
-  ranges, or to a port the radio doesn't serve, goes over the air** as DMR data, to the radio with that ID
-  ([usb-network.md](usb-network.md)). A client that guesses an address, probes ports, or sends to 4191 on firmware
-  built without this makes the radio transmit. Check that VERSION lists `NET_RADIO_UDP` before sending. A radio in
-  USB network or PPP mode must be ready to transmit: an antenna or a dummy load, on a frequency the operator may use.
+- The radio answers on that address for its own ports only. A datagram to the radio's address on a port no service
+  has (4191 on firmware built without this, a port scan) never goes over the air: the radio answers with an ICMP port
+  unreachable and counts the datagram (`net_svc.port_unreachable`), though on a /31 or /32 link that address is also
+  the radio with the host's ID xor 1 ([usb-network.md](usb-network.md) 3). Check that VERSION lists `NET_RADIO_UDP`
+  before sending; without the feature a client gets the ICMP error, which most socket APIs report on the next receive.
+- **Any datagram into the individual or talkgroup ranges, other than the radio's own address, goes over the air** as
+  DMR data, to the radio or talkgroup with that ID. A client that guesses another address makes the radio transmit.
+  A radio in USB network or PPP mode must be ready to transmit: an antenna or a dummy load, on a frequency the
+  operator may use.
 - The reply goes from port 4191 to the request's source address and port, the notices to the same. A client binds one
   socket to its end of the link and gets both there.
 
@@ -404,7 +408,9 @@ Notices:
 
 `core/dmr/ipGateway.{c,h}`: TCP (protocol 6) to the radio's own address goes to the function set with
 `ipGatewaySetTCP` (NULL by default: dropped, as before), from any source and before the "only what the host itself
-sends" check; any other TCP is dropped and never goes over the air. `ipGatewayLocalPayload` / `ipGatewaySendLocal`
+sends" check; any other TCP is dropped and never goes over the air. UDP from the host to the radio's own address on a
+port no service has bound gets an ICMP port unreachable (RFC 1122 3.2.2.1) and is never sent over the air
+([usb-network.md](usb-network.md) 3). `ipGatewayLocalPayload` / `ipGatewaySendLocal`
 send a packet from the radio's address to any destination through the host's MAC address. The TCP's glue
 (`core/net/net.c`) waits up to 20 ms for a busy USB IN endpoint before giving a segment up to the retransmission timer.
 

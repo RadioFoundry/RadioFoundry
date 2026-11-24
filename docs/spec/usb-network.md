@@ -121,7 +121,13 @@ mode can replace the link pair with a fixed one (5.3).
   the radio's address go to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP
   datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port in the gateway's one table
   (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link.
-  224.0.0.0/24 never goes over the air, bound or not. A port bound with `ipGatewayUdpBindAir` also takes UDP received
+  224.0.0.0/24 never goes over the air, bound or not. Nor does the radio's address: UDP from the host to a port
+  there that no service has (and not the serial port 3334) gets an ICMP destination unreachable, port unreachable
+  (RFC 792, RFC 1122 3.2.2.1), from the radio's address, quoting the IP header and 8 octets, counted as
+  `net_svc.port_unreachable`. On a /31 or /32 link that address is also the radio with the host's ID xor 1: the
+  host can't send that radio UDP. TCP there goes to the radio's TCP (a RST for a port the TCP doesn't serve,
+  `tcp-services.md` 2), or is dropped without `CONFIG_NET_TCP`.
+  A port bound with `ipGatewayUdpBindAir` also takes UDP received
   over the air for our own DMR ID and its address (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
   radio task, link up or not) instead of the host, with the sender's DMR ID and `fromAir` set; the service answers
   over the air itself. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`), SNMP on
