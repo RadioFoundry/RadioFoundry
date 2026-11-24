@@ -488,8 +488,10 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 		}
 #if CONFIG_YSF
 		radio_ysf_settings_t y = { .tx_dgid = a[0], .rx_dgid = a[1] };
+#if CONFIG_AIR_RX_ADAPT
 		if (len >= 3)
-			air_softmodem_adapt_off = a[2];
+			air_softmodem_adapt_off = a[2];	// (without the options there is nothing to turn off)
+#endif
 		radio_req_ysf_settings(&y);
 		return DL_ST_OK;
 #else
