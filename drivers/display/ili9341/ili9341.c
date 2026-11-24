@@ -16,8 +16,8 @@
 #define CMD_RASET	0x2B
 #define CMD_RAMWR	0x2C
 
-#define REG_H_ADDR	0x20u	// frame memory address, short side (0..239)
-#define REG_V_ADDR	0x21u	// frame memory address, long side (0..319)
+#define REG_H_ADDR	0x20u	// frame memory address, x: the glass's long side (0..319)
+#define REG_V_ADDR	0x21u	// frame memory address, y (0..239)
 #define REG_GRAM	0x22u
 #define REG_DISP_CTRL	0x07u
 #define REG_H_START	0x50u
@@ -109,10 +109,9 @@ static const uint8_t seq0[] = {
 	0x00,
 };
 
-// The register-style panel. R03 0x1038: AM = 1, so the address steps along R21 (the long side) first and a landscape
-// row goes out in one run, as window() sends it. With AM = 0 a row lands along the short side and every partial
-// update is drawn transposed. I/D = 11 and the window registers keep the same corner, so only the stepping order
-// changes. TODO(panel): unknown, needs a radio: the R00 writes' value
+// The register-style panel. On the glass, R20 and the R50 / R51 window run along x (the long side) and R21 and R52 /
+// R53 along y, so window() puts x there. R03 0x1030: AM = 0, so the address steps along R20 first and a row goes out
+// in one run. x on R21 draws the whole screen transposed. TODO(panel): unknown, needs a radio: the R00 writes' value
 const uint16_t ili9341_reg_seq[] = {
 	0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000,
 	0xA4, 0x0001,
@@ -121,9 +120,9 @@ const uint16_t ili9341_reg_seq[] = {
 	0x35, 0x150D, 0x36, 0x740A, 0x37, 0x100C, 0x38, 0x070C, 0x39, 0x0000,
 	0x10, 0x0730, 0x11, 0x0237, 0x12, 0x0198, 0x0E, 0x0020, 0x13, 0x1800, 0x2A, 0x0074, 0x12, 0x01BC,
 	REG_DELAY, 120,
-	0x50, 0, 0x51, 239, 0x52, 0, 0x53, 319,
+	0x50, 0, 0x51, 319, 0x52, 0, 0x53, 239,
 	0x61, 0x0001, 0x80, 0, 0x81, 0, 0x82, 0, 0x92, 0x0600, 0x93, 0x0402, 0x6A, 0, 0x0A, 0x0008,
-	0x01, 0x0100, 0x02, 0x0700, 0x03, 0x1038, 0x20, 0, 0x21, 0,
+	0x01, 0x0100, 0x02, 0x0700, 0x03, 0x1030, 0x20, 0, 0x21, 0,
 	REG_DISP_CTRL, 0x0100,
 	REG_DELAY, 40,
 	REG_END,
@@ -158,12 +157,12 @@ static void window(const ili9341_t *p, uint16_t x0, uint16_t y0, uint16_t x1, ui
 {
 	const ili9341_bus_t *b = p->bus;
 	if (p->variant == ILI9341_VARIANT_REG) {
-		reg_write(b, REG_H_START, y0);
-		reg_write(b, REG_H_END, (uint16_t)(y1 - 1));
-		reg_write(b, REG_V_START, x0);
-		reg_write(b, REG_V_END, (uint16_t)(x1 - 1));
-		reg_write(b, REG_H_ADDR, y0);
-		reg_write(b, REG_V_ADDR, x0);
+		reg_write(b, REG_H_START, x0);
+		reg_write(b, REG_H_END, (uint16_t)(x1 - 1));
+		reg_write(b, REG_V_START, y0);
+		reg_write(b, REG_V_END, (uint16_t)(y1 - 1));
+		reg_write(b, REG_H_ADDR, x0);
+		reg_write(b, REG_V_ADDR, y0);
 		reg_index(b, REG_GRAM);
 		return;
 	}

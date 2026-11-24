@@ -120,15 +120,14 @@ static void test_register_variant(void)
 		}
 	}
 	CHECK(r60);
-	// R03 (entry mode) has AM set: rows go out along x, so the address must step along R21 first, or every partial
-	// update is drawn transposed
-	bool r03 = false;
+	// R03 (entry mode) has AM clear: x is on R20, so the address steps along x and a row goes out in one run
+	int r03 = -1;
 	for (uint32_t i = 0; i + 3 < n_words; i++) {
 		if (words[i] == 0x100 && words[i + 1] == 0x103) {
-			r03 = (words[i + 3] & 0x08u) != 0;
+			r03 = words[i + 3] & 0x08u;
 		}
 	}
-	CHECK(r03);
+	CHECK(r03 == 0);
 	// A row write: window registers, then the frame memory index 0x22
 	static uint8_t fb[160 * 240];
 	static const uint16_t pal[16] = { 0x0000, 0xF800 };
@@ -136,6 +135,17 @@ static void test_register_variant(void)
 	clear();
 	ili9341_write_rows_indexed(&p, fb, pal, 10, 12);
 	CHECK(find_cmd(0x22, 0) > 0);
+	// x on R50 / R51 / R20 (0..319), y on R52 / R53 / R21: rows 10 and 11
+	static const uint16_t want[][2] = { { 0x50, 0 }, { 0x51, 319 }, { 0x52, 10 }, { 0x53, 11 }, { 0x20, 0 }, { 0x21, 10 } };
+	for (unsigned k = 0; k < sizeof want / sizeof want[0]; k++) {
+		bool seen = false;
+		for (uint32_t i = 0; i + 3 < n_words; i++) {
+			if (words[i] == 0x100 && words[i + 1] == (0x100u | want[k][0])) {
+				seen = (uint16_t)(words[i + 2] << 8 | words[i + 3]) == want[k][1];
+			}
+		}
+		CHECK(seen);
+	}
 	CHECK(px_total == 2u * 320u);
 	CHECK(last_px[0] == 0x0000 && last_px[1] == 0xF800);
 }
