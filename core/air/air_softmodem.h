@@ -57,14 +57,17 @@ typedef struct {
 	uint16_t gain[AIR_ADAPT_TONES];		// the CIC's power gain at the tone, x 4096
 	uint8_t cand;				// the last block's winner, waiting for a second block (0xFF none)
 	uint8_t sel;				// the tone notched (0xFF none)
-	// The notch on the input samples: b0 b1 b2 a1 a2 x 2^28, its state
-	int32_t nb0, nb1, na1, na2;
+	// The notch on the input samples: its gain x 2^14; 2 - 2 cos w, 2 + a1 and 1 - a2 x 2^20 (each a small
+	// difference from the double zero and double pole at DC, so they keep their precision at the low tones); its state
+	int32_t ng, ndc, nda, ne;
 	int32_t x1, x2, y1, y2;
 	// DCS: the input samples averaged by their place in the 23-bit word (it repeats every 171 ms, the 4FSK doesn't),
 	// the place in bins x 65536 and its step a sample, the words seen, the lock, the words against it running
 	int16_t dcs_avg[AIR_ADAPT_DCS_BINS];
 	uint32_t dcs_pos, dcs_step;
-	int16_t dcs_mean;			// the average's mean at the last word: what comes off is the rest
+	uint32_t dcs_w;				// the word read last, bit k from bin dcs_off + 8 k
+	int16_t dcs_shape[8];			// the waveform off a 1 bit, by the place in the bit (a 0 bit's is minus it)
+	uint8_t dcs_off;
 	uint8_t dcs_words, dcs_bad;
 	bool dcs_lock;
 } air_softmodem_adapt_t;

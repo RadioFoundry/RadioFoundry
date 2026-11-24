@@ -222,6 +222,7 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 #define TONE_NONE	0xFF
 #define TONE_BLOCK	6				// frames per tone block: 1.7 Hz bins on a 100 ms frame (neighbors 2.9 Hz apart)
 #define TONE_RATIO	10				// a tone's power over the mean of the others' (its neighbors left out)
+#define TONE_SURE	30				// ... so far over it that one block is enough
 #define NOTCH_Q		20
 #define Q30		(1LL << 30)
 
@@ -235,11 +236,24 @@ static air_softmodem_adapt_t *lent;
 volatile uint8_t air_softmodem_adapt_off;
 static air_softmodem_adapt_view_t adapt_view;
 
+// The cosine of t radians x 2^30, |t| up to a quarter turn, x 2^30
+static int64_t cos_rad(int64_t t)
+{
+	int64_t t2 = (t * t) >> 30, c;		// x^2 <= (pi/2)^2 x 2^30
+
+	// Horner: 1 - x^2/2 (1 - x^2/12 (1 - x^2/30 (1 - x^2/56))). Each factor stays below 2^30, so no product
+	// passes 2^62 (x^4 times x^2 on its own would overflow near a quarter turn)
+	c = Q30 - t2 / 56;
+	c = Q30 - ((t2 * c) >> 30) / 30;
+	c = Q30 - ((t2 * c) >> 30) / 12;
+	return Q30 - ((t2 * c) >> 30) / 2;
+}
+
 // cos of a phase in 1/65536 turn, x 2^30: folded to the first quarter, then the series to x^8 (2.5e-5 off at most),
 // so no floating point and no library cosine are built in
 static int64_t cos_turn(uint32_t ph)
 {
-	int64_t t, t2, c;
+	int64_t t;
 	int sign = 1;
 
 	ph &= 0xFFFFu;
@@ -250,14 +264,7 @@ static int64_t cos_turn(uint32_t ph)
 		sign = -1;
 	}
 	t = (int64_t)ph * 102944;		// radians x 2^30: 2 pi x 2^30 / 65536
-	t2 = (t * t) >> 30;			// x^2 <= (pi/2)^2 x 2^30
-	// Horner: 1 - x^2/2 (1 - x^2/12 (1 - x^2/30 (1 - x^2/56))). Each factor stays below 2^30, so no product
-	// passes 2^62 (x^4 times x^2 on its own would overflow near a quarter turn)
-	c = Q30 - t2 / 56;
-	c = Q30 - ((t2 * c) >> 30) / 30;
-	c = Q30 - ((t2 * c) >> 30) / 12;
-	c = Q30 - ((t2 * c) >> 30) / 2;
-	return sign * c;
+	return sign * cos_rad(t);
 }
 
 // A frequency in Hz x 10 at a rate as a phase step in 1/65536 turn
@@ -306,7 +313,9 @@ static void adapt_reset(air_softmodem_adapt_t *a, bool tone)
 	adapt_view.tone_dhz = 0;
 	memset(a->dcs_avg, 0, sizeof a->dcs_avg);
 	a->dcs_pos = 0;
-	a->dcs_mean = 0;
+	a->dcs_w = 0;
+	a->dcs_off = 0;
+	memset(a->dcs_shape, 0, sizeof a->dcs_shape);
 	a->dcs_words = a->dcs_bad = 0;
 	a->dcs_lock = false;
 	adapt_view.dcs_code = 0;
@@ -362,7 +371,10 @@ static int decide(const air_softmodem_t *m, int32_t v)
 }
 
 // The tone search's block: the strongest tone, weighted by what the difference does at it, against the rest. A
-// tone that wins two blocks running is notched; a neighbor of the one notched takes over only at twice its power
+// tone that wins two blocks is notched, or one block by far (TONE_SURE; on the recordings without a tone no block
+// passed 9); a block nothing wins clearly leaves the candidate as it was, so a weak block between two wins (a frame
+// lost, the tone's near-harmonic winning one) doesn't start the count over. A neighbor of the one notched takes over
+// only at twice its power
 static void tone_block(air_softmodem_t *m)
 {
 	air_softmodem_adapt_t *a = m->ad;
@@ -387,30 +399,42 @@ static void tone_block(air_softmodem_t *m)
 		sum += p[k];
 		nsum++;
 	}
-	if (!nsum || p[best] * nsum <= TONE_RATIO * sum) {
-		a->cand = TONE_NONE;
-		return;
-	}
+	if (!nsum || p[best] * nsum <= TONE_RATIO * sum)
+		return;		// a weak block: no vote, the candidate stays
 	if (a->cand != best) {
-		a->cand = best;
-		return;
+		// One block is enough for the first pick only, far over the rest and clear of both neighbors: in a first
+		// block the tone's power still spreads into theirs, and once a tone is notched its own power is gone, so a
+		// neighbor would pass both tests on what the notch leaves
+		bool sure = a->sel == TONE_NONE && p[best] * nsum > TONE_SURE * sum
+			    && (best == 0 || p[best] > 4 * p[best - 1])
+			    && (best + 1 == AIR_ADAPT_TONES || p[best] > 4 * p[best + 1]);
+
+		if (!sure) {
+			a->cand = best;
+			return;
+		}
 	}
 	if (best == a->sel)
 		return;
-	if (a->sel != TONE_NONE && (best + 1 == a->sel || best == a->sel + 1) && p[best] <= 2 * p[a->sel])
+	// A neighbor of the tone notched never takes over: what the notch leaves of the right tone shows in the
+	// neighbors (a 67.0 Hz tone notched, 69.3 Hz then won blocks at 170 times the rest), and the first pick is kept
+	// off a neighbor by the two blocks it needs, or by the four times over each neighbor of a pick in one
+	if (a->sel != TONE_NONE && (best + 1 == a->sel || best == a->sel + 1))
 		return;
 	// The notch: zeros on the unit circle at the tone, poles just inside (Q 20), unity gain at DC
 	{
-		uint32_t ph = turn_of(tone_dhz[best], m->rate_hz, 1);
-		int64_t c = cos_turn(ph), w = (int64_t)ph * 102944;			// x 2^30
+		// The tone in radians a sample x 2^30, exact: a phase step in 1/65536 turn put 69.3 Hz at 69.2 Hz, a
+		// twentieth of the notch's width, and the notch then took 26 dB off the tone where it takes 50
+		int64_t w = (int64_t)tone_dhz[best] * 6746518852LL / (10 * (int64_t)m->rate_hz);	// 2 pi x 2^30
+		int64_t c = cos_rad(w);
 		int64_t r = Q30 - w / (2 * NOTCH_Q);
 		int64_t a1 = -((2 * r * c) >> 30), a2 = (r * r) >> 30;
 		int64_t g = ((Q30 + a1 + a2) << 30) / (2 * Q30 - 2 * c);
 
-		a->nb0 = (int32_t)(g >> 16);						// x 2^14
-		a->nb1 = (int32_t)(-((2 * c * g) >> 30) >> 16);
-		a->na1 = (int32_t)(a1 >> 16);
-		a->na2 = (int32_t)(a2 >> 16);
+		a->ng = (int32_t)(g >> 16);						// x 2^14
+		a->ndc = (int32_t)((2 * Q30 - 2 * c) >> 10);				// x 2^20
+		a->nda = (int32_t)((2 * Q30 + a1) >> 10);
+		a->ne = (int32_t)((Q30 - a2) >> 10);
 		a->x1 = a->x2 = a->y1 = a->y2 = 0;
 	}
 	a->sel = best;
@@ -476,8 +500,9 @@ static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
 // the word: the word repeats every 171 ms and the 4FSK doesn't, so that average keeps the code's waveform (its level,
 // its edges, its sign) and lets the data and the noise go. Once a word, the average's 23 bits are read (each bit's
 // 8 bins summed, at the bins' offset that gives the most): the code is cyclic, so any word of a code sent over and
-// over is a codeword, whatever its start. A codeword locks, and from then the average comes off every input sample;
-// three words running that aren't codewords end it
+// over is a codeword, whatever its start. A codeword locks, and from then the waveform of the word read (its bits,
+// and the shape of a bit from the average) comes off every input sample; three words running that aren't codewords
+// end it
 #define DCS_AVG_SHIFT	4		// each bin's average: x += (in - x) / 16 a visit (7.4 visits a word at 8 kHz)
 #define DCS_WORDS_MIN	4		// words averaged before the first read
 #define DCS_BAD_MAX	3
@@ -553,16 +578,36 @@ static uint16_t dcs_code_of(uint32_t w)
 	return 0x7FFF;
 }
 
-// Once a word: the average's mean, its bits, a lock taken or kept
+// The waveform off a 1 bit, from the word just read: each place in the bit, the mean over the 23 bits of the bins
+// there, each with its bit's sign. A bin's own average still holds the 4FSK of its last 16 visits, as strong as the
+// code itself; the mean of 23 takes that down almost five times. (Telling the places next to a change of bit apart
+// as well left too few bins in each and did worse on the recordings)
+static void dcs_shape(air_softmodem_adapt_t *a, uint32_t w, unsigned off, int32_t mean)
+{
+	for (unsigned j = 0; j < 8; j++) {
+		int32_t sum = 0;
+
+		for (unsigned k = 0; k < 23; k++) {
+			int32_t d = a->dcs_avg[(off + 8 * k + j) % AIR_ADAPT_DCS_BINS] - mean;
+
+			sum += (w >> k) & 1u ? d : -d;
+		}
+		a->dcs_shape[j] = (int16_t)(sum / 23);
+	}
+	a->dcs_w = w;
+	a->dcs_off = (uint8_t)off;
+}
+
+// Once a word: the average's mean, its bits, a lock taken or kept and its waveform
 static void dcs_word(air_softmodem_adapt_t *a)
 {
 	int32_t mean = 0, best_e = -1, best_amp = 0;
 	uint32_t best_w = 0;
+	unsigned best_off = 0;
 
 	for (unsigned b = 0; b < AIR_ADAPT_DCS_BINS; b++)
 		mean += a->dcs_avg[b];
 	mean /= AIR_ADAPT_DCS_BINS;
-	a->dcs_mean = (int16_t)mean;
 	if (a->dcs_words < DCS_WORDS_MIN) {
 		a->dcs_words++;
 		return;
@@ -583,6 +628,7 @@ static void dcs_word(air_softmodem_adapt_t *a)
 		if (e > best_e) {
 			best_e = e;
 			best_w = w;
+			best_off = off;
 			best_amp = e / (23 * 8);
 		}
 	}
@@ -593,6 +639,7 @@ static void dcs_word(air_softmodem_adapt_t *a)
 			adapt_view.dcs_code = dcs_code_of(best_w);
 			adapt_view.dcs_locks++;
 		}
+		dcs_shape(a, best_w, best_off, mean);
 	} else if (a->dcs_lock && ++a->dcs_bad >= DCS_BAD_MAX) {
 		a->dcs_lock = false;
 		adapt_view.dcs_code = 0;
@@ -600,15 +647,27 @@ static void dcs_word(air_softmodem_adapt_t *a)
 	adapt_view.dcs_amp = (uint16_t)best_amp;
 }
 
-// One input sample: into its bin's average and, locked, the waveform off it (between two bins, a straight line: the
+// The waveform at bin b: its place in the bit's shape, with the bit's sign
+static int32_t dcs_at(const air_softmodem_adapt_t *a, uint32_t b)
+{
+	uint32_t rel = b >= a->dcs_off ? b - a->dcs_off : b + AIR_ADAPT_DCS_BINS - a->dcs_off;
+	int32_t v = a->dcs_shape[rel & 7u];
+
+	return (a->dcs_w >> (rel >> 3)) & 1u ? v : -v;
+}
+
+// One input sample: into its bin's average and, locked, the word's waveform off it (between two bins, a straight line: the
 // difference times the place's top 8 bits stays in 32 bits)
 static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
 {
 	uint32_t b = a->dcs_pos >> 16, b2 = b + 1u < AIR_ADAPT_DCS_BINS ? b + 1u : 0;
 	int32_t avg = a->dcs_avg[b], y = x;
 
-	if (a->dcs_lock)
-		y = x - (avg + ((((int32_t)a->dcs_avg[b2] - avg) * (int32_t)((a->dcs_pos >> 8) & 0xFFu)) >> 8) - a->dcs_mean);
+	if (a->dcs_lock) {
+		int32_t t = dcs_at(a, b);
+
+		y = x - (t + (((dcs_at(a, b2) - t) * (int32_t)((a->dcs_pos >> 8) & 0xFFu)) >> 8));
+	}
 	a->dcs_avg[b] = (int16_t)(avg + ((x - avg) >> DCS_AVG_SHIFT));
 	a->dcs_pos += a->dcs_step;
 	if (a->dcs_pos >= DCS_POS_WRAP) {
@@ -618,14 +677,19 @@ static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
 	return y;
 }
 
-// The notch on one input sample, once a tone is picked. 32 bits, as the rest of the sample path (6): the samples
-// at half scale, the coefficients x 2^14 (|b1|, |a1| under 2), so no sum of the five products passes 2^31
+// The notch on one input sample, once a tone is picked. 32 bits, as the rest of the sample path (6), the samples at
+// half scale. Written as differences from a double zero and a double pole at DC: y = g (x - 2 x1 + x2 + (2 - 2 cos w)
+// x1) + 2 y1 - y2 - (2 + a1) y1 + (1 - a2) y2. The small terms keep 20 bits of their own: plain coefficients x 2^14
+// put the zero of a 69.3 Hz notch 0.7 Hz off the tone, a fifth of its width, and it took the tone down by 14 dB
+// only. The small terms are under 0.06 for the highest tone (x 2^20: 63,000), so with the samples under 2^14 no
+// product passes 2^31
 #define NOTCH_HALF	16383
 static int32_t notch(air_softmodem_adapt_t *a, int32_t x)
 {
-	int32_t xs = x / 2, y;
+	int32_t xs = x / 2, u, y;
 
-	y = (a->nb0 * (xs + a->x2) + a->nb1 * a->x1 - a->na1 * a->y1 - a->na2 * a->y2) >> 14;
+	u = xs - 2 * a->x1 + a->x2 + ((a->ndc * a->x1) >> 20);
+	y = ((a->ng * u) >> 14) + 2 * a->y1 - a->y2 - ((a->nda * a->y1) >> 20) + ((a->ne * a->y2) >> 20);
 	y = y > NOTCH_HALF ? NOTCH_HALF : y < -NOTCH_HALF ? -NOTCH_HALF : y;
 	a->x2 = a->x1;
 	a->x1 = xs;
@@ -745,13 +809,16 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 #if CONFIG_AIR_RX_ADAPT
 	if (m->ad) {
 		uint8_t on = (uint8_t)(m->ad->opts & ~air_softmodem_adapt_off);
+		int32_t v_in = v;
 
 		adapt_view.opts = on;
 		if (on & AIR_RX_EQ)
 			v = equalize(m, v);
-		// Syncs and coasting give no error worth having: zeros, as the frame they leave out
+		// The tone search on the value before the equalizer: adapting on the error, the equalizer follows a low tone
+		// in part and hides it (69.3 Hz took 7 s to find behind it, 2 s without). Syncs and coasting give no error
+		// worth having: zeros, as the frame they leave out
 		if (on & AIR_RX_TONE)
-			tone_symbol(m, v, fresh(m));
+			tone_symbol(m, v_in, fresh(m));
 	}
 #endif
 	if (v > 127)

@@ -4,6 +4,7 @@
 // pulse to a deviation waveform, a band-limited tap sampled at its own rate and phase, with a scale error, an
 // offset and noise. It checks the symbols and soft values that come out, the times on them, that a whole P25 call
 // decodes through the framer behind it, that noise makes no sync, and what a hole in the samples does.
+#include <complex.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -829,6 +830,32 @@ static void testAdapt(void)
 	       v.tone_dhz / 10, v.tone_dhz % 10);
 	CHECK(v.tone_dhz == 1273 && v.tone_picks >= 1, "tone found: %u", v.tone_dhz);
 	CHECK(e0 > 0.005 && e1 < e0 * 0.6, "tone notched: %.4f against %.4f", e1, e0);
+	// A low tone notched as deep as a high one: coefficients x 2^14 put the zero of a 69.3 Hz notch 0.7 Hz off the
+	// tone. And found as fast behind the equalizer, which follows a low tone in part and hid it from a search run
+	// after it
+	sample_tap(8000, 17, 3600, 2000, 300, 450);
+	add_tone(69.3, 0.4 * 1800);
+	e0 = run_adapt(&plain, true, &ns0);
+	e1 = run_adapt(&tone, true, &ns1);
+	{
+		// The notch's own response at the tone, from the coefficients it runs (x 2^14 and x 2^20, at 8 kHz)
+		const air_softmodem_adapt_t *a = &adapt_mem;
+		double w = 2 * M_PI * 69.3 / 8000, g = a->ng / 16384.0, dc = a->ndc / 1048576.0;
+		double a1 = a->nda / 1048576.0 - 2, a2 = 1 - a->ne / 1048576.0;
+		double complex z1 = cexp(-I * w), z2 = z1 * z1;
+		double h = cabs(g * (1 - (2 - dc) * z1 + z2) / (1 + a1 * z1 + a2 * z2));
+
+		printf("  69.3 Hz tone: symbol errors %.2f %% plain, %.2f %% notched, the notch %.1f dB at the tone\n",
+		       100 * e0, 100 * e1, 20 * log10(h + 1e-12));
+		CHECK(e0 > 0.005 && e1 < e0 * 0.7 && h < 0.01, "69.3 Hz tone notched: %.4f against %.4f, %.4f at the tone",
+		      e1, e0, h);
+	}
+	e1 = run_adapt(&both, true, &ns1);
+	air_softmodem_adapt_get(&v);
+	printf("  69.3 Hz tone, equalizer on: symbol errors %.2f %% (found %u.%u Hz)\n", 100 * e1, v.tone_dhz / 10,
+	       v.tone_dhz % 10);
+	CHECK(v.tone_dhz == 693 && e1 < e0 * 0.5, "69.3 Hz tone behind the equalizer: %u, %.4f against %.4f",
+	      v.tone_dhz, e1, e0);
 	// Tones on or next to a multiple of the 10 Hz frame rate (100.0 Hz is one: what repeats every frame is left out,
 	// not differenced away), close neighbors and the band's edges, each found as itself
 	{
@@ -843,6 +870,27 @@ static void testAdapt(void)
 			air_softmodem_adapt_get(&v);
 			CHECK(v.tone_dhz == t[i].dhz, "%.1f Hz tone: found %u", t[i].hz, v.tone_dhz);
 		}
+	}
+	// Every standard tone, at 0.2 and at 0.4 of a level, found as itself (air-interface.md 6.1)
+	{
+		static const uint16_t all[50] = { 670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000, 1035,
+			1072, 1109, 1148, 1188, 1230, 1273, 1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679, 1713,
+			1738, 1773, 1799, 1835, 1862, 1899, 1928, 1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418,
+			2503, 2541 };
+		unsigned found = 0;
+
+		for (unsigned lv = 1; lv <= 2; lv++) {
+			for (unsigned i = 0; i < 50; i++) {
+				sample_tap(8000, 17, 3600, 2000, 300, 450);
+				add_tone(all[i] / 10.0, 0.2 * lv * 1800);
+				run_adapt(&tone, true, &ns1);
+				air_softmodem_adapt_get(&v);
+				found += v.tone_dhz == all[i];
+				CHECK(v.tone_dhz == all[i], "%u.%u Hz tone at %.1f of a level: found %u", all[i] / 10,
+				      all[i] % 10, 0.2 * lv, v.tone_dhz);
+			}
+		}
+		printf("  standard tones: %u of 100 found as themselves (50 at 0.2, 50 at 0.4 of a level)\n", found);
 	}
 
 	// Resets every half second (lost samples, a new lock) don't start the search over: the tone a repeater sends
@@ -866,7 +914,7 @@ static void testAdapt(void)
 		printf("  DCS 023: symbol errors %.2f %% plain, %.2f %% with DCS taken off (code %03o)\n", 100 * e0, 100 * e1,
 		       v.dcs_code & 0x1FFu);
 		CHECK(v.dcs_code == 023 && v.dcs_locks >= 1, "DCS found: %03o, %u locks", v.dcs_code, v.dcs_locks);
-		CHECK(e1 < e0 * 0.6, "DCS taken off: %.4f against %.4f", e1, e0);
+		CHECK(e1 < e0 * 0.45, "DCS taken off: %.4f against %.4f", e1, e0);
 		sample_tap(8000, 17, 3600, 2000, 300, 450);
 		add_dcs(023, true, 0.5 * 1800);
 		run_adapt(&dcs, true, &ns1);
