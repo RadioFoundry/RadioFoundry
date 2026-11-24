@@ -15,8 +15,8 @@ end generated
 
 ## Size
 
-<!-- The net change against main on the radio(s) you built and tested on, in bytes, measured (contributing.md,
-"Size impact"). CI's firmware job adds every radio's change to its summary. If a radio's default build grows by more
+<!-- The net change against main on the one or two radios you built and tested on, in bytes, measured (contributing.md,
+"Size impact"): a first look. CI's firmware job then adds every radio's change to its summary. If a radio's default build grows by more
 than 1 KB of flash or 256 bytes of RAM, say why and which CONFIG_ switch removes it. No firmware change: say so and
 delete the table. -->
 
