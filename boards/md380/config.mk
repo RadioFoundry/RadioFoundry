@@ -47,6 +47,7 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, the 
 BOARD_NOT_WRITTEN += FM_TX_TONES	# the TX tone path (through the HR_C5000 or the PC7 PWM) isn't written (above)
 BOARD_NOT_WRITTEN += DTMF	# the DTMF tones need the same TX tone path (above)
 BOARD_NOT_WRITTEN += APRS_RX	# no APRS receive audio path yet (the HR_C5000's I2S receive audio isn't fed to it)
+BOARD_NOT_WRITTEN += DTMF_RX	# needs the same receive audio path (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the split duplex glue is HR_C6000 and HR_C7000 only (docs/spec/split-duplex.md)
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet

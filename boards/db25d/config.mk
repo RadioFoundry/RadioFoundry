@@ -80,6 +80,7 @@ BOARD_UNSUPPORTED += AM_RX	# no air band receive (owner, 2026-10-22)
 BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud; it stalled the link here
 BOARD_NOT_WRITTEN += HOTSPOT_SPLIT	# the per-burst TX path has no continuous base-station outbound yet (above)
 BOARD_NOT_WRITTEN += APRS_RX	# FM receive audio isn't taken from the modem's AF ADC as PCM yet (above)
+BOARD_NOT_WRITTEN += DTMF_RX	# needs the same receive audio path (above)
 BOARD_NOT_WRITTEN += APRS_IGATE	# needs APRS receive (above)
 BOARD_NOT_WRITTEN += BCAST_FM	# the RDA5802N broadcast receiver is fitted, its glue isn't written
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet

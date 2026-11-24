@@ -332,6 +332,10 @@
 #ifndef CONFIG_APRS_IGATE
 #define CONFIG_APRS_IGATE		(CONFIG_APRS_RX && CONFIG_HOSTLINK)
 #endif
+// DTMF receive (core/radio/dtmf_rx.c): on the FM receive audio path APRS receive brings (core/radio/rx_pcm.c)
+#ifndef CONFIG_DTMF_RX
+#define CONFIG_DTMF_RX			CONFIG_APRS_RX
+#endif
 // P25 Phase 1 conventional (core/p25): the one switch. Derived from it (config/features.mk, never set by hand): AIR the
 // air interface (core/air, docs/spec/air-interface.md: the framer for digital modes the core frames itself and the
 // board's provider behind board.air), IMBE the full-rate voice decoder, MBE the MBE core it sits on (core/mbe).
@@ -574,6 +578,9 @@
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"
+#endif
+#if CONFIG_DTMF_RX && !CONFIG_APRS_RX
+#error "CONFIG_DTMF_RX needs CONFIG_APRS_RX (the FM receive audio path)"
 #endif
 #if !CONFIG_FM && !CONFIG_DMR
 #error "at least one of CONFIG_FM and CONFIG_DMR"

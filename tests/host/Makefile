@@ -585,6 +585,16 @@ run-rf: at1846sTest subaudioTest
 	./subaudioTest
 .PHONY: run-rf
 
+# DTMF receive: the Goertzel decoder on synthesized digits, noise and speech-like sound (core/radio/dtmf_rx.c)
+TESTS   += dtmfRxTest
+dtmfRxTest: dtmfRxTest.c $(CORE)/radio/dtmf_rx.c $(CORE)/radio/dtmf_rx.h $(ROOT)/hal/hal_dtmf.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -o $@ dtmfRxTest.c $(CORE)/radio/dtmf_rx.c -lm
+
+run: run-dtmf-rx
+run-dtmf-rx: dtmfRxTest
+	./dtmfRxTest
+.PHONY: run-dtmf-rx
+
 # The SKY72310 synthesizer's divider words against the data sheet and a register model, the HR_C5000 variant of the
 # HR_C6000 driver, and the GPS NMEA line framing and receive ring the GPS drivers share
 TESTS   += sky72310Test hrc5000Test nmeaLineTest gpsRxTest
