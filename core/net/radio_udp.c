@@ -337,10 +337,8 @@ static void fix_poll(uint32_t now)
 	char *buf = (char *)ipGatewayUdpPayload();
 	dl_text_t t;
 	dl_text_init(&t, buf, IPGW_UDP_PAYLOAD_MAX);
-	dl_text(&t, "{\"gps\":1,\"lat\":");
-	dl_deg(&t, g.lat);
-	dl_text(&t, ",\"lon\":");
-	dl_deg(&t, g.lon);
+	char la[DL_DEG_LEN], lo[DL_DEG_LEN];
+	dl_text(&t, "{\"gps\":1,\"lat\":%s,\"lon\":%s", dl_deg(la, g.lat), dl_deg(lo, g.lon));
 	// the optional fields each in their own piece, then the ones every fix has in one
 	if (g.alt_m != POSITION_ALT_NONE) {
 		dl_text(&t, ",\"alt_m\":%d", (int)g.alt_m);
@@ -423,7 +421,6 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 	int fix = -1;	// "gps" 1, "gps?off" 0
 	int err = (n == 0) ? 400 : request(r, now, v, &fix);
 	bool ask_gps = fix == 1;
-	bool gps_off = fix == 0;
 	st.bad += err == 400;
 	// The sender subscribes (a new one gets a notice at once), or cancels. Fixes: on with "gps", the first at the
 	// next check; off with "gps?off", notify=0, a new subscriber or the lease ending; any other request renews them
@@ -438,7 +435,7 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 		gps = board_has_gps();
 		sub.gps = gps != 0;
 		sub.gps_sec = 0xFFu;
-	} else if (gps_off || lease == 0) {
+	} else if (fix == 0 || lease == 0) {
 		sub.gps = false;
 	}
 #endif

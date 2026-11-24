@@ -50,11 +50,9 @@ static void call(dl_text_t *t, const char *p, const radio_dmr_call_t *c)
 	// ETSI GPS Info (CONFIG_DMR_GPS): degrees with 7 decimals, the error code, range and bearing from us
 	dl_text(t, "%s.gps_valid=%u\n", p, c->gps_valid);
 	if (c->gps_valid) {
-		dl_text(t, "%s.gps_lat=", p);
-		dl_deg(t, c->gps_lat);
-		dl_text(t, "\n%s.gps_lon=", p);
-		dl_deg(t, c->gps_lon);
-		dl_text(t, "\n%s.gps_err=%u\n", p, c->gps_err);
+		char la[DL_DEG_LEN], lo[DL_DEG_LEN];
+		dl_text(t, "%s.gps_lat=%s\n%s.gps_lon=%s\n%s.gps_err=%u\n", p, dl_deg(la, c->gps_lat), p, dl_deg(lo, c->gps_lon), p,
+			c->gps_err);
 		if (c->gps_range)
 			dl_text(t, "%s.gps_dist_m=%u\n%s.gps_bearing=%u\n", p, (unsigned)c->gps_dist_m, p, c->gps_bearing);
 	}

@@ -175,8 +175,9 @@ void dl_text_kv_str(dl_text_t *t, const char *key, const char *value)
 	dl_text(t, "%s=%s\n", key, v);
 }
 
-void dl_deg(dl_text_t *t, int32_t e7)
+const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7)
 {
 	uint32_t m = e7 < 0 ? 0u - (uint32_t)e7 : (uint32_t)e7;
-	dl_text(t, "%s%u.%07u", e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
+	dl_fmt(buf, DL_DEG_LEN, "%s%u.%07u", e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
+	return buf;
 }

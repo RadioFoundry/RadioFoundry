@@ -15,9 +15,8 @@
 
 static void deg(dl_text_t *t, const char *key, int32_t e7)
 {
-	dl_text(t, "%s=", key);
-	dl_deg(t, e7);
-	dl_text(t, "\n");
+	char d[DL_DEG_LEN];
+	dl_text(t, "%s=%s\n", key, dl_deg(d, e7));
 }
 
 void debuglink_view_position(uint8_t part, dl_text_t *t)
