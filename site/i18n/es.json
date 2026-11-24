@@ -315,6 +315,7 @@
  "screen.contact_edit": "Un contacto nuevo",
  "screen.contact_edit_save": "Guardar un contacto nuevo",
  "screen.home_dmr_lastheard": "Inicio, DMR, último escuchado",
+ "screen.home_dmr_heard_list": "Inicio, DMR, lista de estaciones escuchadas",
  "screen.home_dmr": "Inicio, canal DMR",
  "screen.home_fm": "Inicio, canal FM",
  "screen.home_gps_off": "Inicio, GPS desactivado: una antena parabólica hueca junto a las barras de señal",
