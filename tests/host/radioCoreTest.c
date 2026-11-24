@@ -5922,6 +5922,14 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN_SKIP && got_keymap[1].short_action == ACT_SCAN_SKIP);
 	CHECK(got_keymap[2].long_action == ACT_SCAN_SKIP);
+	// Monitor toggle, stored as 21
+	cp_quick[1] = 21;
+	cp_quick[2] = 21 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_MONITOR_TOGGLE &&
+	      got_keymap[1].short_action == ACT_MONITOR_TOGGLE);
+	CHECK(got_keymap[2].long_action == ACT_MONITOR_TOGGLE);
 	cp_quick[1] = KEYFN_SCAN;
 	cp_quick[2] = KEYFN_ZONE_UP << 8;
 	cp_serial++;
