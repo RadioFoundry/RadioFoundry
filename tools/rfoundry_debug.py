@@ -323,9 +323,9 @@ def find_ports():
     return sorted(p.device for p in list_ports.comports() if p.vid == VID and p.pid == PID)
 
 
-# The USB-serial bridges of radios' programming cables (FTDI, Prolific, WCH, Silicon Labs): a radio on one of them has
-# no USB ID of its own, so find_ports() can't see it
-CABLE_VIDS = (0x0403, 0x067B, 0x1A86, 0x10C4)
+# The USB-serial bridges of radios' programming cables (FTDI, Prolific, WCH, Silicon Labs, and RT Systems' FTDI cables
+# under their own id): a radio on one of them has no USB ID of its own, so find_ports() can't see it
+CABLE_VIDS = (0x0403, 0x067B, 0x1A86, 0x10C4, 0x2100)
 
 
 def find_cables():

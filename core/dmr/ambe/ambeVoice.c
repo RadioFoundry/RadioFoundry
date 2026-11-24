@@ -5,6 +5,7 @@
 #include "dmr/ambe/ambeFec.h"
 #include "config.h"
 #include "radio/sigtone.h"
+#include "audio/miclimit/miclimit.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -64,7 +65,8 @@ static bool cb_mixing;
 // one block (hal_vocoder_t), so a decode then would cost the transmission its encoder. A call heard meanwhile plays as
 // silence, and the decoder starts fresh once the transmission is over (cb_dec_fresh)
 static bool cb_tx_on, cb_dec_fresh;
-static uint16_t mic_gain_q8 = 256;	// ambeVoiceSetMicGain: the mic samples times this / 256 before encoding
+static uint16_t mic_gain_q8 = MICLIMIT_UNITY;	// ambeVoiceSetMicGainQ8: the mic samples times this / 256 before encoding
+static miclimit_t cb_limit;		// its limiter (audio callback)
 static bool test_signal;		// ambeVoiceSetTestSignal
 
 #if CONFIG_SIG_TONES
@@ -514,6 +516,9 @@ static void tx_block(const int16_t *mic)
 			voc->reset();	// fresh encoder: the first frame of a transmission
 		}
 		stats.tx_mic_peak = 0;
+		stats.tx_enc_peak = 0;
+		miclimit_reset(&cb_limit, LOAD(mic_gain_q8));
+		stats.tx_mic_low_q8 = cb_limit.low_q8;
 		tx_have_prev = false;
 		test_blocks = 0;
 #if CONFIG_SIG_TONES
@@ -564,13 +569,18 @@ static void tx_block(const int16_t *mic)
 		test_block(scaled);
 		mic = scaled;
 	}
+	// The gain with its limiter; skipped at unity, so a board at its own level encodes the samples as delivered
 	uint16_t g = LOAD(mic_gain_q8);
-	if (g != 256) {
-		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-			int32_t v = ((int32_t)mic[i] * g) / 256;
-			scaled[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
-		}
+	if (g != MICLIMIT_UNITY) {
+		miclimit_block(&cb_limit, g, mic, scaled, AUDIO_BLOCK_SAMPLES);
+		stats.tx_mic_low_q8 = cb_limit.low_q8;
 		mic = scaled;
+	}
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		uint32_t a = (uint32_t)(mic[i] < 0 ? -mic[i] : mic[i]);
+		if (a > stats.tx_enc_peak) {
+			stats.tx_enc_peak = a;
+		}
 	}
 #if CONFIG_SIG_TONES
 	// The tone's last block: tone_active stays set until its frame is queued and tone_last_* published below, so
@@ -641,11 +651,9 @@ void ambeVoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 
 // --- set-up ---
 
-// 2 dB per step around step 5 (unity): -10 dB .. +10 dB, Q8
-void ambeVoiceSetMicGain(uint8_t step)
+void ambeVoiceSetMicGainQ8(uint16_t q8)
 {
-	static const uint16_t q8[11] = { 81, 102, 128, 161, 203, 256, 322, 406, 511, 643, 810 };
-	STORE(mic_gain_q8, q8[step > 10 ? 10 : step]);
+	STORE(mic_gain_q8, q8);
 }
 
 void ambeVoiceSetEncodeOptions(uint32_t opts)

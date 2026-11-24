@@ -428,6 +428,21 @@ msgid "Scanning this zone"
 msgstr "Scansione di questa zona"
 
 #: core/ui/ui_app.c
+msgctxt "SCAN_TOAST_NOT_SCANNING"
+msgid "Not scanning"
+msgstr "Nessuna scansione"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
+msgid "Skipped until the scan stops"
+msgstr "Saltato fino a fine scansione"
+
+#: core/ui/ui_app.c core/ui/ui_menus.c
+msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
+msgid "Nothing to skip yet"
+msgstr "Ancora niente da saltare"
+
+#: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
 msgid "Default: "
 msgstr "Predef.: "
@@ -2253,6 +2268,11 @@ msgid "Tone burst"
 msgstr "Tono di apertura"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_AES_KEY"
+msgid "AES key"
+msgstr "Chiave AES"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_LABEL_COLOR_CODE"
 msgid "Color code"
 msgstr "Color code"
@@ -3703,6 +3723,16 @@ msgid "Prev zone"
 msgstr "Zona prec."
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_SKIP"
+msgid "Scan skip"
+msgstr "Salta canale"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_MONITOR_TOGGLE"
+msgid "Monitor toggle"
+msgstr "Monitor fisso"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "Blocco tasti"
@@ -4498,16 +4528,6 @@ msgid "Always skip"
 msgstr "Salta sempre"
 
 #: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_SKIPPED_UNTIL_STOP"
-msgid "Skipped until the scan stops"
-msgstr "Saltato fino a fine scansione"
-
-#: core/ui/ui_menus.c
-msgctxt "SCAN_TOAST_NOTHING_TO_SKIP"
-msgid "Nothing to skip yet"
-msgstr "Ancora niente da saltare"
-
-#: core/ui/ui_menus.c
 msgctxt "SCAN_TOAST_STOPPED_HERE"
 msgid "Scan stopped here"
 msgstr "Scansione ferma qui"
@@ -4748,6 +4768,11 @@ msgid "Finding system"
 msgstr "Ricerca sistema"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_STATE_P25T_BLOCKED"
+msgid "Blocked system"
+msgstr "Sistema bloccato"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Attendere"
@@ -4838,6 +4863,16 @@ msgid "No TX frequency set"
 msgstr "Nessuna freq. TX impostata"
 
 #: core/ui/ui_screens.c
+msgctxt "WHY_AES_KEY"
+msgid "AES key or TX disabled"
+msgstr "Chiave AES o TX assente"
+
+#: core/ui/ui_screens.c
+msgctxt "WHY_AES_WAIT"
+msgid "AES: saving, try again"
+msgstr "AES: salvataggio, riprova"
+
+#: core/ui/ui_screens.c
 msgctxt "WHY_MODE_NOT_IN_BUILD"
 msgid "Mode: not in this build"
 msgstr "Modo: non in questa build"
@@ -4921,6 +4956,11 @@ msgstr "Sistema non risponde"
 msgctxt "DENY_WHY_P25T_NO_CHAN"
 msgid "Voice channel unusable"
 msgstr "Canale voce inutilizzabile"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
+msgid "Blocked system: no TX"
+msgstr "Sistema bloccato: no TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

@@ -100,6 +100,7 @@ bool ui_svc_save_channel(void);
 // ui_svc_save_channel. from: the stored channel ch is a copy of (number itself when edited in place), 0 = none; a
 // copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
 // codeplug storage in this build
+void ui_svc_next_aes_key(channel_t *ch);
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
 #if CONFIG_P25 || CONFIG_NXDN
 // A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)

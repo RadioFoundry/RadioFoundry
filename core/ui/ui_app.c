@@ -1079,6 +1079,18 @@ void ui_scan_toggle(void)
 		TR(SCAN_TOAST_SCANNING_BAND, "Scanning the band") : TR(SCAN_TOAST_SCANNING_ZONE, "Scanning this zone"));
 }
 
+// A side key set to Scan skip: what the scan action's "Skip channel for now" does, without the menu. Nothing happens
+// (a toast says so) when no scan is running, so the key can't skip a channel of a radio that isn't scanning
+void ui_scan_skip(void)
+{
+	if (!ui_st.scanning) {
+		ui_toast(TR(SCAN_TOAST_NOT_SCANNING, "Not scanning"));
+		return;
+	}
+	ui_toast(ui_svc_scan_skip() ? TR(SCAN_TOAST_SKIPPED_UNTIL_STOP, "Skipped until the scan stops") :
+		TR(SCAN_TOAST_NOTHING_TO_SKIP, "Nothing to skip yet"));
+}
+
 #if CONFIG_DMR
 // Up / Down on Home set to "Talk target" (Settings > Keys): the channel's default talkgroup, then its listen list,
 // each a temporary talk target (the default ends it). False when there is nothing to step through
@@ -1402,6 +1414,32 @@ static void quick_unavailable(uint8_t kind)
 	}
 }
 
+// Quick tile 5's action, on its own so a side key set to Monitor toggle runs the very same code: FM latches the
+// squelch open (or closes it again), DMR turns digital monitor on or off. kind is QT_MONITOR or QT_HEAR_ALL
+static void quick_monitor(uint8_t kind)
+{
+#if CONFIG_DMR
+	if (kind == QT_HEAR_ALL) {
+		if (ui_svc_hear_all(!ui_st.hear_all)) {
+			ui_st.hear_all = !ui_st.hear_all;
+			ui_toast(dmon_text(ui_st.hear_all));
+		} else {
+			quick_unavailable(kind);
+		}
+		return;
+	}
+#endif
+	if (!ui_svc_monitor(!view->monitor))
+		quick_unavailable(kind);
+}
+
+// A side key set to Monitor toggle: tile 5 of the quick settings, kept to the channel's mode (also in the VFO, where
+// the tile is TX freq and the monitor stays on its key)
+void ui_monitor_toggle(void)
+{
+	quick_monitor(view->ch.mode == RADIO_MODE_DMR ? QT_HEAR_ALL : QT_MONITOR);
+}
+
 static void quick_activate(int tile)
 {
 	char label[20], value[12];
@@ -1462,8 +1500,7 @@ static void quick_activate(int tile)
 		break;
 	}
 	case QT_MONITOR:
-		if (!ui_svc_monitor(!view->monitor))
-			quick_unavailable(kind);
+		quick_monitor(kind);
 		break;
 	case QT_VOX:
 		if (ui_svc_vox(!view->vox_on))
@@ -1496,12 +1533,7 @@ static void quick_activate(int tile)
 		ui_st.quick_edit = true;
 		break;
 	case QT_HEAR_ALL:
-		if (ui_svc_hear_all(!ui_st.hear_all)) {
-			ui_st.hear_all = !ui_st.hear_all;
-			ui_toast(dmon_text(ui_st.hear_all));
-		} else {
-			quick_unavailable(kind);
-		}
+		quick_monitor(kind);
 		break;
 	case QT_PRIVACY:
 		if (ui_svc_privacy(!ui_st.privacy)) {
@@ -2219,6 +2251,12 @@ void ui_app_key(const input_event_t *ev)
 			return;
 		case ACT_SCAN:
 			ui_scan_toggle();
+			return;
+		case ACT_SCAN_SKIP:
+			ui_scan_skip();
+			return;
+		case ACT_MONITOR_TOGGLE:
+			ui_monitor_toggle();
 			return;
 #if CONFIG_DUAL_WATCH
 		case ACT_DUAL_WATCH:
