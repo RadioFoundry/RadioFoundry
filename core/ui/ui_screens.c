@@ -1120,7 +1120,7 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
-	char buf[60];	// a channel's three forms, "146.94375 MHz -12.5k" at their widest in use
+	char buf[60];	// a channel's three forms: up to 57 bytes ("1296.94375 MHz +300.125M" ...)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	color_t c = ui_col.fg;
@@ -1190,10 +1190,10 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #endif
 	} else {
 		// A channel shows the frequency it listens on, as dual watch does, and a repeater's offset after it: no
-		// other row has either (#1031). Where PTT goes, with the arrow, only while transmitting and in the VFO,
-		// whose receive frequency is the large one above. " MHz", then the offset, go before the frequency is cut
-		// (font.h alternates)
-		arrow = v->vfo || v->state == RS_TX;
+		// other row has either (#1031). Where PTT goes, with the arrow, only while PTT is held (transmitting, or
+		// refused: an out-of-band refusal needs the TX frequency in view) and in the VFO, whose receive frequency
+		// is the large one above. " MHz", then the offset, go before the frequency is cut (font.h alternates)
+		arrow = v->vfo || v->state == RS_TX || v->state == RS_TX_DENIED;
 		uint32_t hz = arrow ? v->ch.tx_hz : v->ch.rx_hz;
 		sb_str(&b, TEXT_ALT_OPEN);
 		sb_freq(&b, hz);

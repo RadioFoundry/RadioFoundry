@@ -1999,10 +1999,12 @@ static void fm_duplex_home_checks(void)
 	char err[300];
 	for (int g = 0; g < sim_geom_count; g++) {
 		sim_reset(&sim_geoms[g], SIM_MAP_K);
-		// Idle and receiving: RX and the offset. Transmitting: where PTT goes, the TX frequency
+		// Idle and receiving: RX and the offset. PTT held, transmitting or refused (the timeout): where PTT goes,
+		// the TX frequency
 		bool ok = sim_run("dlpos:2 expect:screen=home expect:shows=147.060 expect:hides=147.660 "
 				  "fmrx expect:shows=147.060 expect:hides=147.660 fmrxend "
-				  "pttdown expect:shows=147.660 expect:hides=147.060 pttup", err, sizeof err);
+				  "pttdown expect:shows=147.660 expect:hides=147.060 "
+				  "timeout expect:shows=147.660 expect:hides=147.060 pttup", err, sizeof err);
 		// The offset where the row has room for it
 		if (ok && sim_geoms[g].w >= 160)
 			ok = sim_run("expect:shows=147.060_MHz_+600k", err, sizeof err);
