@@ -81,7 +81,6 @@ static void test_order(void)
 // A radio whose PA needs a fifth more drive for each row gets about a fifth more at every level over the lowest
 static void test_scaling(void)
 {
-	set_rows(80, 110, 160, 80, 110, 160);
 	static const uint32_t hz[2] = { 146000000u, 435000000u };
 	for (uint8_t b = 0; b < 2; b++) {
 		set_rows(80, 110, 160, 80, 110, 160);

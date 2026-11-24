@@ -980,7 +980,8 @@ burst's interrupt looked early against it. The first burst is now timed from the
 drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
 carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
 the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. From there the
-drive ramps down over 0.2 ms before the PA select goes off (11.4, the PA ramps). The switch moved earlier only
+drive ramps down over 0.5 ms (the rise down in 0.2 ms, the crawl in 0.3 ms) before the PA select goes off (11.4, the
+PA ramps). The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
@@ -1380,7 +1381,7 @@ every level but the lowest, because the factory calibration puts each radio's ro
 - **UHF on H, VHF on L and M.** On UHF the low row doesn't follow the PA: as places on the rows, 1 W and 2.5 W were
   1.0-1.6 dB off over the band at best; as parts of H, 0.6 dB. On VHF the places are within 0.5 dB.
 - **Without calibration** the 500 mW level keeps its fixed drive, which doesn't depend on the rows. The levels
-  over it take the rows the levels were measured on (H 2912 on UHF; L 1360, M 1840 on VHF) and are capped at the
+  over 500 mW take the rows the levels were measured on (H 2912 on UHF; L 1360, M 1840 on VHF) and are capped at the
   fallback drive (1408, about 2 W, 11.3), the most an uncalibrated radio was given before (`dm32_level_drive_at`):
   1 W is 1217 at 440 MHz and 1064 at 155 MHz, and 2.5 W, 5 W and the top level are 1408.
 

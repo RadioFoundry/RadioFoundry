@@ -172,8 +172,9 @@ static void pa_key(void)
 	DAC_DATA_B = tx_drive;
 }
 
-// The lowest level's drive at the TX frequency, the ramps' knee (power_levels.h), set at the key-up
-static uint16_t ramp_floor;
+// The lowest level's drive at the TX frequency, the ramps' knee (power_levels.h), set at the key-up. The RF task reads
+// it at each burst end, as it does tx_drive
+static volatile uint16_t ramp_floor;
 
 // DAC B along the ramp between its start and tx_drive, step_us a step (the PA selected), ending on the drive (up) or
 // the start (down)
@@ -183,6 +184,20 @@ static void pa_ramp(bool up, uint16_t crawl, uint16_t rise, uint16_t step_us)
 	for (uint16_t i = 1u; i <= n; i++) {
 		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_floor, up ? i : (uint16_t)(n - i), crawl, rise);
 		hal_delay_us(step_us);
+	}
+}
+
+// FM keys down on the ramp (power_levels.h), so the carrier doesn't splatter (a cut at once put the channel next to it
+// 20 dB higher than the key-up's), then 0 for the PA loop's low-pass to settle; the caller then turns the PA off. Every
+// path out of an FM transmission (tx_end, a retune with the PA up) comes here before pa_off
+#define RAMP_TAIL_US		300u
+
+static void fm_key_down(void)
+{
+	if (transmitting && mode == RADIO_MODE_FM) {
+		pa_ramp(false, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
+		DAC_DATA_B = 0;
+		hal_delay_us(RAMP_TAIL_US);
 	}
 }
 
@@ -446,6 +461,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
 	bool back = keep && mode == RADIO_MODE_DMR && have_rx && hz == rx_hz && !asleep;
 	wake();
+	fm_key_down();
 	pa_off();
 	lna(hz, true);
 	if (back) {
@@ -602,18 +618,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	return true;
 }
 
-// FM keys down on the ramp (power_levels.h), so the carrier doesn't splatter (a cut at once put the channel next to it
-// 20 dB higher than the key-up's), then 0 for the PA loop's low-pass to settle, then the PA off
-#define RAMP_TAIL_US		300u
-
 static void tx_end(bool keep)
 {
 	dmr_disarm();
-	if (transmitting && mode == RADIO_MODE_FM) {
-		pa_ramp(false, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
-		DAC_DATA_B = 0;
-		hal_delay_us(RAMP_TAIL_US);
-	}
+	fm_key_down();
 	pa_off();
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {
