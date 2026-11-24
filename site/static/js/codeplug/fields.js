@@ -53,6 +53,18 @@ export function putBcdId(b, off, id) {
 	b[off + 3] = w & 0xFF;
 }
 
+// The 50 standard CTCSS tones (Hz) and the 104 standard DCS codes (octal, as written), in order
+export const CTCSS = [67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8, 97.4, 100.0, 103.5, 107.2, 110.9,
+	114.8, 118.8, 123.0, 127.3, 131.8, 136.5, 141.3, 146.2, 151.4, 156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8, 177.3,
+	179.9, 183.5, 186.2, 189.9, 192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3, 254.1];
+export const DCS = [23, 25, 26, 31, 32, 36, 43, 47, 51, 53, 54, 65, 71, 72, 73, 74, 114, 115, 116, 122, 125, 131, 132, 134,
+	143, 145, 152, 155, 156, 162, 165, 172, 174, 205, 212, 223, 225, 226, 243, 244, 245, 246, 251, 252, 255, 261, 263, 265,
+	266, 271, 274, 306, 311, 315, 325, 331, 332, 343, 346, 351, 356, 364, 365, 371, 411, 412, 413, 423, 431, 432, 445, 446,
+	452, 454, 455, 462, 464, 465, 466, 503, 506, 516, 523, 526, 532, 546, 565, 606, 612, 624, 627, 631, 632, 654, 662, 664,
+	703, 712, 723, 731, 732, 734, 743, 754];
+// Every standard tone as parseTone writes it: the CTCSS tones, then each DCS code normal and inverted
+export const TONES = [...CTCSS.map((f) => f.toFixed(1)), ...DCS.flatMap((d) => ["N", "I"].map((p) => `D${String(d).padStart(3, "0")}${p}`))];
+
 // Tone as text: "" none, "88.5" CTCSS, "D023N" / "D023I" DCS normal / inverted. Malformed words read as none
 export function getTone(b, off) {
 	const v = b[off] | (b[off + 1] << 8);
@@ -98,24 +110,71 @@ export function putTone(b, off, text) {
 	b[off + 1] = w >> 8;
 }
 
-// A name field: text up to the first 0x00 or 0xFF. Bytes are Latin-1, as the radio's font takes them
+// font.h's extra glyphs (tools/i18n.py MACROS): a character with no Latin-1 byte, then the byte the radio draws it as.
+// "·" (B7) and "°" (B0) keep their Latin-1 bytes; putName checks Latin-1 first, so it does not rewrite them
+const TEXT_TO_BYTE = { "\u2026": 0x80, "\u2192": 0x82, "\u2912": 0x84, "\u2913": 0x85 };
+const BYTE_TO_TEXT = Object.fromEntries(Object.entries(TEXT_TO_BYTE).map(([t, b]) => [b, t]));
+
+// A name field holds the text the radio draws: ASCII and Latin-1 (U+00A0-U+00FF) one byte each, font.h's glyphs their
+// byte, and other characters (Chinese) UTF-8, three bytes a character. The radio's text layer reads a three-byte
+// sequence as one character and anything else as one byte (docs/dev/translating.md), so this mirrors it.
 export function getName(b, off, len) {
 	let s = "";
-	for (let i = 0; i < len; i++) {
+	for (let i = 0; i < len; ) {
 		const c = b[off + i];
 		if (c === 0x00 || c === 0xFF) break;
+		if (BYTE_TO_TEXT[c] !== undefined) {
+			s += BYTE_TO_TEXT[c];
+			i += 1;
+			continue;
+		}
+		if ((c & 0xF0) === 0xE0 && i + 2 < len) {
+			const c1 = b[off + i + 1], c2 = b[off + i + 2];
+			if ((c1 & 0xC0) === 0x80 && (c2 & 0xC0) === 0x80) {
+				const cp = ((c & 0x0F) << 12) | ((c1 & 0x3F) << 6) | (c2 & 0x3F);
+				if (cp >= 0x800) { s += String.fromCodePoint(cp); i += 3; continue; }
+			}
+		}
 		s += String.fromCharCode(c);
+		i += 1;
 	}
 	return s;
 }
 
-// The text, then 0xFF padding. Characters outside Latin-1 become '?'
+// The bytes a name field takes, by putName's rules: a character the radio draws is one byte, Chinese is three
+export function nameBytes(text) {
+	let n = 0;
+	for (const ch of String(text ?? "")) {
+		if (TEXT_TO_BYTE[ch] !== undefined) n += 1;
+		else {
+			const cp = ch.codePointAt(0);
+			n += ((cp >= 0x20 && cp < 0x7F) || (cp >= 0xA0 && cp <= 0xFF)) ? 1
+			   : (cp >= 0x800 && cp <= 0xFFFF) ? 3 : 1;
+		}
+	}
+	return n;
+}
+
+// The text, then 0xFF padding, a character never cut in half: a character the radio can't draw (control, two-byte,
+// above the BMP) becomes '?'
 export function putName(b, off, len, text) {
 	b.fill(0xFF, off, off + len);
 	const s = String(text ?? "");
-	for (let i = 0; i < len && i < s.length; i++) {
-		const c = s.charCodeAt(i);
-		b[off + i] = c < 0x100 && c !== 0xFF ? c : 0x3F;
+	let i = 0;
+	for (const ch of s) {
+		let bytes;
+		if (TEXT_TO_BYTE[ch] !== undefined) {
+			bytes = [TEXT_TO_BYTE[ch]];
+		} else {
+			const cp = ch.codePointAt(0);
+			if (cp === 0x81 || cp === 0x83) bytes = [cp];	// font glyph bytes (middle dot, degree): keep as-is
+			else if (cp >= 0x20 && cp < 0x7F) bytes = [cp];
+			else if (cp >= 0xA0 && cp < 0xFF) bytes = [cp];
+			else if (cp >= 0x800 && cp <= 0xFFFF) bytes = [0xE0 | (cp >> 12), 0x80 | ((cp >> 6) & 0x3F), 0x80 | (cp & 0x3F)];
+			else bytes = [0x3F];
+		}
+		if (i + bytes.length > len) break;
+		for (const by of bytes) b[off + i++] = by;
 	}
 }
 

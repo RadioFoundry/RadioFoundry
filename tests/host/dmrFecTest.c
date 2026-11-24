@@ -384,6 +384,8 @@ static void testReverseChannel(void)
 	// A BS's cease as sent on air, CC 2
 	static const uint8_t onAir[6] = { 0x28, 0x70, 0xD0, 0x4F, 0x1F, 0x7E };
 	CHECK(memcmp(field, onAir, 6) == 0, "RC field: as on air");
+	// Burst F of an AES-256 call, key ID 1, measured on air
+	CHECK(dmrFecPrivacyField(0x25, 1) == 0x44428881u, "privacy burst F field: as on air");
 	CHECK(dmrFecRcFromField(field, 2, &got) == 0 && got == DMR_RC_CEASE, "RC field: decode");
 	field[2] ^= 0x41;	// two RC bit errors and one EMB bit error
 	field[0] ^= 0x02;

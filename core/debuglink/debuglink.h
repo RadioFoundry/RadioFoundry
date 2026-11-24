@@ -131,6 +131,8 @@ void debuglink_dmr_data_reset(void);
 // The audio probe (debuglink_audio_probe.c, docs/spec/debuglink.md 3.14): built without CONFIG_AUDIO_PROBE it answers
 // unavailable
 size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// Satellite TLE transaction protocol (debuglink_satellite.c); unavailable without CONFIG_SATELLITE_TLE
+size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 // The dmr_ext section (debuglink_view_ext.c): emergency state, alert and settings, the ETSI data counters, CW ID
 void debuglink_view_dmr_ext(dl_text_t *t);
 // The roam section (debuglink_view_roam.c); built without CONFIG_DMR_ROAMING it says "roam.built=0"

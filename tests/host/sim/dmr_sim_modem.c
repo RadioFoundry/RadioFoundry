@@ -140,6 +140,11 @@ void sim_rx(const dmr_burst_t *b)
 	emit(DMR_EV_BURST_RX, b->ts, 0, b);
 }
 
+void sim_rx_at(const dmr_burst_t *b, uint32_t slot)
+{
+	emit(DMR_EV_BURST_RX, b->ts, slot, b);
+}
+
 void sim_event(uint8_t kind, int8_t ts)
 {
 	emit(kind, ts, 0, NULL);
@@ -231,8 +236,8 @@ void sim_slot(void)
 			return;
 		}
 	}
-	if (sim.listen_bursts && sim.repeater &&
-	    (!sim.tx_active || ((int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf))) {
+	if (sim.repeater && (!sim.tx_active ? !sim.ticks_only :
+	    sim.listen_bursts && (int8_t)(sim.slot & 1) != sim.tx_parity && sim.listening && !sim.listen_deaf)) {
 		dmr_burst_t b;
 
 		memset(&b, 0, sizeof(b));

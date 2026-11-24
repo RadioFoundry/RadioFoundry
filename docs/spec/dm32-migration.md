@@ -35,7 +35,7 @@ differ ([hardware-dm1801pro.md](hardware-dm1801pro.md) 6.2).
 | Step 7 | `00 FF`, the 128-byte block (file name, NUL, decimal size), CRC-16/XMODEM big endian. The answer `06 43` comes after the erase: the wait is 30 s (13.2 says up to about 15 s) |
 | Step 8 | Per 1 KB: `02`, wait `43`, then block number n (from 1, 0xFF wraps to 0x00), 0xFF - n, 1024 bytes (the last zero padded), CRC. `06` accepts. A `15` (NAK), another answer or a timeout resends the block from `02`, up to four times. Then the flash stops: the application area is erased, update mode is needed again |
 | Step 9 | `04`; an answer within 0.5 s is read but not required |
-| Ports | `--port`, or the only USB-serial bridge among CH340 / CH341 / CH9102 (1A86), FTDI (0403: 6001, 6010, 6014, 6015), CP210x (10C4:EA60) and PL2303 (067B:2303) |
+| Ports | `--port`, or the only USB-serial bridge among CH340 / CH341 / CH9102 (1A86), FTDI (0403: 6001, 6010, 6014, 6015; RT Systems 2100:9E5D), CP210x (10C4:EA60) and PL2303 (067B:2303) |
 | Recovery | `--stock FILE` flashes a stock `BFUV32-V2` file the same way |
 
 Assumptions not in 13.2 (to check on the first radio): the bootloader answers a bad block with `15`, it accepts a

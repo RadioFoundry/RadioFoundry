@@ -96,6 +96,20 @@ typedef struct {
 // voice_index 0-5 = A-F (docs/spec/gotchas.md 6.1, 6.2)
 typedef void (*dmr_privacy_fn)(uint8_t ambe27[DMR_VOICE_BYTES], uint8_t voice_index, bool tx, void *ctx);
 
+// Where a burst of a call with a PI header sits in the MI-based schemes' keystream (docs/spec/dmr-voice.md 5.1)
+struct dmr_crypt_pos {
+	uint8_t alg;		// the PI header's algorithm ID
+	uint8_t key_id;
+	uint32_t mi;		// its 32-bit message indicator
+	uint32_t superframe;	// 0 = the superframe right after the PI header
+	uint8_t voice_index;	// 0-5 = A-F
+};
+// MI-based encryption hook: as dmr_privacy_fn, for calls with a PI header. False: no key for it (RX: not played; TX:
+// the over is sent as silence)
+typedef bool (*dmr_crypt_fn)(uint8_t ambe27[DMR_VOICE_BYTES], const struct dmr_crypt_pos *pos, bool tx, void *ctx);
+// A new MI for an over of ours (now_ms: some entropy). Never the same twice for a key: OFB keystream must not repeat
+typedef uint32_t (*dmr_crypt_mi_fn)(uint32_t now_ms, void *ctx);
+
 typedef struct {
 	uint32_t own_id;
 	uint8_t cc;			// 0-15
@@ -114,6 +128,16 @@ typedef struct {
 	uint8_t tx_svc;			// voice LC service options (privacy bit, emergency, priority)
 	dmr_privacy_fn privacy;		// NULL = none: bursts with PI set are not played
 	void *privacy_ctx;
+	dmr_crypt_fn crypt;		// NULL = none: calls with a PI header are not played
+	void *crypt_ctx;
+	// Our overs through crypt (tx_crypt_alg != 0, crypt and crypt_mi set): a PI header after the voice LC headers
+	// with this algorithm, key ID and a new MI, then every voice burst encrypted. tx_fid / tx_svc are the caller's
+	uint8_t tx_crypt_alg;
+	uint8_t tx_crypt_key_id;
+	dmr_crypt_mi_fn crypt_mi;
+	// Our overs must be encrypted (an AES channel, whether its key loaded or not): an over that can't be is refused
+	// (DMR_TX_ERR_CRYPT), never sent in the clear
+	bool tx_crypt_required;
 	char tx_alias[DMR_TA_TEXT_MAX + 1];	// our talker alias, "" = none (CONFIG_DMR_TALKER_ALIAS)
 	uint8_t tx_alias_format;	// DMR_TA_7BIT or DMR_TA_ISO8
 	// A user of a single frequency repeater (CONFIG_SFR, docs/spec/sfr.md 4; never with rmo): ts is the inbound slot.
@@ -147,8 +171,9 @@ typedef struct {
 	bool late_entry;	// acquired from the embedded LC, no header heard
 	bool emergency;		// the emergency service option
 	bool pi_header;		// a PI header (data type 0) was heard for this call
-	uint8_t pi_alg;		// its first two octets (algorithm and key ID in the DMRA layout; not interpreted)
-	uint8_t pi_key;
+	uint8_t pi_alg;		// in the DMRA layout (alg, 0x10, key ID, MI, 3 octets): the algorithm ID
+	uint8_t pi_key;		// ... the key ID
+	uint32_t pi_mi;		// ... and the message indicator
 	char alias[DMR_TA_TEXT_MAX + 1];	// talker alias so far, "" if none
 	bool alias_complete;
 	bool gps_valid;		// a GPS Info LC was heard from this talker (CONFIG_DMR_GPS)
@@ -201,6 +226,7 @@ typedef enum {
 	DMR_TX_ERR_TIMEOUT,		// TX time-out ended the transmission
 	DMR_TX_ERR_STALLED,		// the modem took no burst for DMR_CALL_TX_STALL_MS (no slot timing)
 	DMR_TX_ERR_CEASED,		// the system stopped the over with the reverse channel
+	DMR_TX_ERR_CRYPT,		// tx_crypt_required and the over can't be encrypted (no hook, key or MI)
 } dmr_tx_error_t;
 
 typedef struct {
@@ -288,6 +314,7 @@ typedef struct {
 	uint32_t rx_emergency_calls;	// rx_calls with the emergency service option
 	uint32_t rx_encrypted_calls;	// rx_calls marked private by the service options, PI or a PI header
 	uint32_t rx_pi_headers;		// PI headers with a good CRC on our call's slot
+	uint32_t tx_pi_headers;		// PI headers sent (encrypted overs, tx_crypt_alg)
 	uint32_t rx_alias_complete;	// talker aliases completed
 	uint32_t tx_alias_lcs;		// superframes sent with a talker alias block instead of the voice LC
 	uint32_t rx_gps;		// GPS Info LCs decoded on our call

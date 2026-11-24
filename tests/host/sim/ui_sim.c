@@ -6,7 +6,7 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey skipkey monkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
@@ -49,6 +49,7 @@
 //   autolock:<s>        Settings > Keys > Auto lock: s seconds, 0 off
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
+//   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -67,6 +68,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ui_sim.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/store.h"
+#endif
 // The board is changed at run time here (display, key map): this file defines it writable, the UI sees it const
 #define board board_as_declared
 #include "board.h"
@@ -162,6 +166,33 @@ int sim_layout_issues(char out[][160], int max)
 	for (int i = 0; i < n; i++)
 		memcpy(out[i], issues[i], sizeof issues[0]);
 	return n;
+}
+
+bool sim_text_has_color(const char *text, uint16_t color)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strstr(live[i].s, text) == NULL)
+			continue;
+		for (int y = live[i].y0; y < live[i].y1; y++)
+			for (int x = live[i].x0; x < live[i].x1; x++)
+				if (gfx_get_pixel(x, y) == color)
+					return true;
+	}
+	return false;
+}
+
+bool sim_text_bounds(const char *text, int *x, int *y, int *w, int *h)
+{
+	for (int i = 0; i < live_n; i++) {
+		if (strcmp(live[i].s, text) != 0)
+			continue;
+		*x = live[i].x0;
+		*y = live[i].y0;
+		*w = live[i].x1 - live[i].x0;
+		*h = live[i].y1 - live[i].y0;
+		return true;
+	}
+	return false;
 }
 
 void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int clip[4], const char *s)
@@ -274,12 +305,13 @@ void gfx_draw_trace(gfx_trace_kind_t kind, int x, int y, int w, int h, const int
 }
 
 const sim_geom_t sim_geoms[] = {
-	{ "160x120i5", 160, 120, 4, 5, 0, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
-	{ "160x128", 160, 128, 4, 0, 0, false, false },	// MD-380 / MD-UV380 / MD-9600 class
-	{ "128x64", 128, 64, 1, 0, 0, false, false },	// GD-77 class, mono
-	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG
-	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true },
-	{ "240x320", 240, 320, 16, 0, 0, true, false },	// 240x320 class at full resolution, standard text size
+	{ "160x120i5", 160, 120, 4, 5, 0, false, false, false },	// DM-1701: the lens hides 5 px left and right (boards/dm1701/config.mk)
+	{ "160x128", 160, 128, 4, 0, 0, false, false, false },	// MD-380 / MD-UV380 / MD-9600 class
+	{ "128x64", 128, 64, 1, 0, 0, false, false, false },	// GD-77 class, mono
+	// DM-32UV: 16 colors, the bezel hides 10 px left and right, 5 top and bottom; FONT_BIG; a frame buffer of the
+	// safe area only (boards/dm32/board.mk GFX_FB_SAFE_AREA)
+	{ "240x320i10x5", 240, 320, 4, 10, 5, true, true, true },
+	{ "240x320", 240, 320, 16, 0, 0, true, false, false },	// 240x320 class at full resolution, standard text size
 };
 const int sim_geom_count = sizeof sim_geoms / sizeof sim_geoms[0];
 
@@ -392,6 +424,7 @@ static void d_flush_indexed(const void *fb, const uint16_t *pal, uint16_t y0, ui
 	(void)fb; (void)pal; (void)y0; (void)y1;
 }
 static void d_backlight(uint8_t p) { (void)p; }
+static void d_fill_insets(uint16_t c) { (void)c; }
 // The backlight tests' raw hooks (CONFIG_BACKLIGHT_TEST): a 4096-count period at 7324 Hz, three rates
 static uint16_t bl_raw;
 static void d_backlight_raw(uint16_t v) { bl_raw = v; }
@@ -657,8 +690,9 @@ static const sim_contact_t contacts[] = {
 };
 #define N_CONTACTS	(sizeof contacts / sizeof contacts[0])
 
-// Worst case (sim_worst): the same channels with 16-character names, numbered 985 to 1024; the same contacts with
-// 16-character names, 8-digit talkgroups and 7-digit IDs; three zones of 80 channels with 16-character names
+// Worst case (sim_worst): the same channels with 16-character names, numbered 985 to 1024, on frequencies with four
+// decimals and color code 15; the same contacts with 16-character names, 8-digit talkgroups and 7-digit IDs; three
+// zones of 80 channels with 16-character names
 static const char *const worst_ch[16] = {
 	"Johnson Peak Rpt", "COUNTY FIRE DISP", "Metro DMR Wide 2", "North Link TS2 B",
 	"Harbor Pilots Ch", "Airport Ops DMR1", "Lakeshore Rpt 22", "Ridge DMR Statew",
@@ -860,6 +894,13 @@ bool codeplug_channel(uint16_t number, channel_t *out)
 		out->tx_tone.value = 1000;
 	}
 	out->color_code = 1;
+	if (worst) {
+		// The widest a frequency and a color code print: 453.6375, CC15. A 12.5 kHz channel with four
+		// decimals and a two-digit color code ran off dual watch's third row on the DM-32UV class (#837)
+		out->rx_hz += 12500;
+		out->tx_hz += 12500;
+		out->color_code = 15;
+	}
 	out->timeslot = 1;
 	out->contact = 1;	// TG 3100 USA
 	out->listen_list = 1;
@@ -1205,6 +1246,9 @@ static const char *contact_name(uint32_t id, bool group)
 
 static radio_view_t view;
 static uint32_t serial;
+#if CONFIG_SATELLITE_TLE
+static radio_satellite_view_t satellite_view;
+#endif
 static channel_t ch_saved;	// the channel as stored (temporary changes are on view.ch)
 static uint32_t temp_target;	// temporary talk target (0 = channel default)
 static bool temp_private;
@@ -2238,6 +2282,188 @@ bool ui_svc_position(ui_position_t *out)
 	return true;
 }
 
+#if CONFIG_SATELLITE_TLE
+static uint8_t sim_satellite_selected;
+static bool sim_satellite_predicting;
+static bool sim_satellite_no_passes;
+static bool sim_satellite_stop_fails;
+static bool sim_satellite_path_pending;
+static bool sim_satellite_los_pending;
+static bool sim_satellite_future_pass;
+static bool sim_satellite_empty;
+static uint16_t sim_satellite_tle_age_days;
+static uint32_t sim_satellite_test_id_offset;
+static const char *const sim_satellite_names[] = { "ISS", "NOAA 19", "SO-50", "AO-91", "AO-123" };
+static const uint32_t sim_satellite_catalog_ids[] = { 25544u, 33591u, 27607u, 43017u, 58421u };
+static const uint16_t sim_satellite_eta_minutes[] = { 14u, 36u, 53u, 71u, 96u };
+static const uint8_t sim_satellite_max_elevations[] = { 36u, 21u, 35u, 41u, 17u };
+
+uint8_t ui_svc_satellite_count(void)
+{
+	return sim_satellite_empty ? 0u : (uint8_t)(sizeof(sim_satellite_names) / sizeof(sim_satellite_names[0]));
+}
+
+bool ui_svc_satellite_get(uint8_t index, satellite_record_t *record)
+{
+	if (index >= ui_svc_satellite_count() || record == NULL)
+		return false;
+	memset(record, 0, sizeof(*record));
+	record->catalog_id = sim_satellite_catalog_ids[index];
+	record->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
+	strcpy(record->name, sim_satellite_names[index]);
+	record->name_length = (uint8_t)strlen(record->name);
+	return true;
+}
+
+bool ui_svc_satellite_summary(uint8_t index, satellite_record_brief_t *summary)
+{
+	if (index >= ui_svc_satellite_count() || summary == NULL)
+		return false;
+	memset(summary, 0, sizeof(*summary));
+	summary->catalog_id = sim_satellite_catalog_ids[index] +
+		(sim_satellite_tle_age_days >= 14u ? sim_satellite_test_id_offset : 0u);
+	summary->flags = index == 2u ? SATELLITE_RECORD_NEEDS_ARM : 0u;
+	summary->epoch = 0u;
+	summary->name_length = (uint8_t)strlen(sim_satellite_names[index]);
+	memcpy(summary->name, sim_satellite_names[index], summary->name_length);
+	return true;
+}
+
+bool ui_svc_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
+{
+	return ui_svc_satellite_summary(record_index, summary);
+}
+
+bool ui_svc_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	if (epoch == NULL || sim_satellite_empty)
+		return false;
+	*epoch = 0u;
+	return true;
+}
+
+bool ui_svc_satellite_tle_age(uint32_t epoch, uint16_t *age_days)
+{
+	(void)epoch;
+	if (age_days == NULL)
+		return false;
+	*age_days = sim_satellite_tle_age_days;
+	return true;
+}
+
+uint32_t ui_svc_satellite_generation(void)
+{
+	return sim_satellite_test_id_offset;
+}
+
+uint8_t ui_svc_satellite_selected(void)
+{
+	return sim_satellite_selected;
+}
+
+bool ui_svc_satellite_select(uint8_t index)
+{
+	if (index >= ui_svc_satellite_count())
+		return false;
+	sim_satellite_selected = index;
+	return true;
+}
+
+bool ui_svc_satellite_track(bool enabled, uint8_t index)
+{
+	if (!enabled && sim_satellite_stop_fails)
+		return false;
+	if (enabled && index >= ui_svc_satellite_count())
+		return false;
+	if (enabled)
+		sim_satellite_selected = index;
+	satellite_view.tracking.tracking = enabled;
+	satellite_view.tracking.index = index;
+	satellite_view.tracking.status = enabled ? (sim_satellite_path_pending || sim_satellite_future_pass ? 2u : 3u) : 0u;
+	satellite_view.tracking.nominal_rx_hz = enabled ? 145000000u : 0u;
+	satellite_view.tracking.nominal_tx_hz = enabled ? 435000000u : 0u;
+	satellite_view.tracking.rx_offset_hz = enabled ? -1200 : 0;
+	satellite_view.tracking.tx_offset_hz = enabled ? 3600 : 0;
+	return true;
+}
+
+bool ui_svc_satellite_view(radio_satellite_view_t *pass)
+{
+	if (pass == NULL)
+		return false;
+	*pass = satellite_view;
+	pass->valid = satellite_view.tracking.tracking && !sim_satellite_path_pending;
+	pass->visible_now = satellite_view.tracking.tracking && !sim_satellite_path_pending && !sim_satellite_future_pass;
+	pass->los_known = satellite_view.tracking.tracking && !sim_satellite_los_pending;
+	pass->aos_in_s = satellite_view.tracking.tracking && sim_satellite_future_pass ? 61u : 0u;
+	pass->los_in_s = satellite_view.tracking.tracking ? (sim_satellite_future_pass ? 121u :
+			sim_satellite_los_pending ? 0u : 5500u) : 0u;
+	pass->maximum_elevation_tenths = satellite_view.tracking.tracking ? 360u : 0u;
+	pass->elevation_tenths = satellite_view.tracking.tracking ? 330 : 0;
+	return true;
+}
+
+void ui_svc_satellite_arm(void) { }
+
+bool ui_svc_satellite_scan(bool enabled)
+{
+	(void)enabled;
+	return true;
+}
+
+void ui_svc_satellite_poll(void) { }
+
+void ui_svc_satellite_scan_state(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (status != NULL) *status = sim_satellite_predicting ? RADIO_SAT_SCAN_RUNNING : RADIO_SAT_SCAN_COMPLETE;
+	if (completed != NULL) *completed = sim_satellite_predicting ? 2u : ui_svc_satellite_count();
+	if (total != NULL) *total = ui_svc_satellite_count();
+	if (passes != NULL) *passes = sim_satellite_predicting || sim_satellite_no_passes ? 0u : ui_svc_satellite_count();
+}
+
+bool ui_svc_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	if (rank >= ui_svc_satellite_count() || pass == NULL)
+		return false;
+	pass->record_index = rank;
+	pass->aos_minutes = sim_satellite_eta_minutes[rank];
+	pass->maximum_elevation_deg = sim_satellite_max_elevations[rank];
+	pass->visible_now = false;
+	return true;
+}
+
+bool ui_svc_satellite_path(satellite_path_view_t *path)
+{
+	if (path == NULL)
+		return false;
+	memset(path, 0, sizeof(*path));
+	if (!satellite_view.tracking.tracking || sim_satellite_path_pending)
+		return false;
+	const uint16_t points[] = {
+		satellite_path_pack(180u, 0u), satellite_path_pack(160u, 8u),
+		satellite_path_pack(140u, 18u), satellite_path_pack(120u, 28u),
+		satellite_path_pack(100u, 35u), satellite_path_pack(80u, 36u),
+		satellite_path_pack(60u, 33u), satellite_path_pack(40u, 26u),
+		satellite_path_pack(24u, 18u), satellite_path_pack(12u, 8u),
+		satellite_path_pack(0u, 0u),
+	};
+	memcpy(path->points, points, sizeof(points));
+	path->count = sizeof(points) / sizeof(points[0]);
+	path->azimuth_deg = 60u;
+	return true;
+}
+
+bool ui_svc_satellite_replace(uint8_t index, const satellite_tle_lines_t *lines)
+{
+	return index == 0u && lines != NULL;
+}
+
+bool ui_svc_satellite_update_busy(void)
+{
+	return false;
+}
+#endif
+
 // The board's GPS and the setting, as stored (the menu's change counts at once)
 uint8_t ui_svc_gps_power(void)
 {
@@ -2368,6 +2594,7 @@ static void step(void)
 		ui_notify(&ev);
 	}
 	view.hotspot = hotspot_on;
+	view.hs_power = view.power;	// as the radio core with the host's RF level at its default (FF)
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
 	if (tick_hook != NULL)
@@ -2380,6 +2607,30 @@ static void advance(uint32_t ms)
 		step();
 }
 
+#if CONFIG_DMR_AES
+static bool sim_aes_keys;	// aeskeys
+
+// The codeplug's AES keys as ui_svc_storage.c steps them: system 3 (index 2), PI key IDs 0 and 7, then none
+void ui_svc_next_aes_key(channel_t *c)
+{
+	static const uint16_t refs[] = { 1, 8 };	// key ID + 1
+	unsigned i = 0;
+
+	if (c->kind == CODEPLUG_KIND_DMR_AES)
+		while (i < 2 && refs[i] <= c->aes_ref)
+			i++;
+	if (!sim_aes_keys || i == 2) {
+		c->kind = CODEPLUG_KIND_NONE;
+		c->system = CODEPLUG_SYSTEM_NONE;
+		c->aes_ref = 0;
+		return;
+	}
+	c->kind = CODEPLUG_KIND_DMR_AES;
+	c->system = 2;
+	c->aes_ref = refs[i];
+}
+#endif
+
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
@@ -2389,6 +2640,8 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	disp.bpp = g->bpp;
 	disp.inset_left = disp.inset_right = g->inset;
 	disp.inset_top = disp.inset_bottom = g->inset_tb;
+	disp.fb_safe_area = g->safe;
+	disp.fill_insets = d_fill_insets;
 	font_aa_on = g->aa;
 	font_big_on = g->big;
 	worst = false;
@@ -2416,6 +2669,20 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_layout_init();
 	memset(&view, 0, sizeof view);
 	memset(&sim_rec, 0, sizeof sim_rec);
+#if CONFIG_DMR_AES
+	sim_aes_keys = false;
+#endif
+#if CONFIG_SATELLITE_TLE
+	sim_satellite_predicting = false;
+	sim_satellite_no_passes = false;
+	sim_satellite_stop_fails = false;
+	sim_satellite_path_pending = false;
+	sim_satellite_los_pending = false;
+	sim_satellite_future_pass = false;
+	sim_satellite_empty = false;
+	sim_satellite_tle_age_days = 1u;
+	memset(&satellite_view, 0, sizeof satellite_view);
+#endif
 	vfo_mode = RADIO_MODE_FM;	// a fresh VFO
 	vfo_cc = vfo_ts = 1;
 	vfo_bw = RADIO_BW_25K;
@@ -2557,6 +2824,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "dualkey", ACT_DUAL_WATCH }, { "abkey", ACT_AB },	// dual watch's side key functions
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
 	{ "labelkey", ACT_TALK_LABEL },
+	{ "skipkey", ACT_SCAN_SKIP },
+	{ "monkey", ACT_MONITOR_TOGGLE },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2565,7 +2834,8 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
-	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL)
+	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
@@ -2670,6 +2940,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vfo") == 0) snprintf(got, sizeof got, "%u", view.vfo);
 	else if (strcmp(key, "freq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.rx_hz);
 	else if (strcmp(key, "txfreq") == 0) snprintf(got, sizeof got, "%u", (unsigned)view.ch.tx_hz);
+#if CONFIG_SATELLITE_TLE
+	else if (strcmp(key, "sattracking") == 0) snprintf(got, sizeof got, "%u", satellite_view.tracking.tracking);
+#endif
 	else if (strcmp(key, "mode") == 0) snprintf(got, sizeof got, "%s", view.ch.mode == RADIO_MODE_DMR ? "dmr" :
 								     view.ch.mode == RADIO_MODE_P25 ? "p25" :
 								     view.ch.mode == RADIO_MODE_NXDN ? "nxdn" : "fm");
@@ -3428,6 +3701,12 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_DMR_AES
+	if (strcmp(t, "aeskeys") == 0) {
+		sim_aes_keys = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;
@@ -3568,6 +3847,62 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_SATELLITE_TLE
+	if (strcmp(t, "satempty") == 0) {
+		sim_satellite_empty = true;
+		return true;
+	}
+	if (strcmp(t, "satagestale") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		sim_satellite_test_id_offset++;
+		return true;
+	}
+	if (strcmp(t, "satageadvance") == 0) {
+		sim_satellite_tle_age_days = 14u;
+		return true;
+	}
+	if (strcmp(t, "satagefresh") == 0) {
+		sim_satellite_tle_age_days = 1u;
+		return true;
+	}
+	if (strcmp(t, "satpredict") == 0) {
+		sim_satellite_predicting = true;
+		return true;
+	}
+	if (strcmp(t, "satdone") == 0) {
+		sim_satellite_predicting = false;
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satdoneok") == 0) {
+		sim_satellite_predicting = false;
+		input_event_t ev = { ACT_SELECT, GESTURE_PRESS, 0 };
+		presses++;
+		ui_app_key(&ev);
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "satnopasses") == 0) {
+		sim_satellite_no_passes = true;
+		return true;
+	}
+	if (strcmp(t, "satstopfail") == 0) {
+		sim_satellite_stop_fails = true;
+		return true;
+	}
+	if (strcmp(t, "satpathpending") == 0) {
+		sim_satellite_path_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satlospending") == 0) {
+		sim_satellite_los_pending = true;
+		return true;
+	}
+	if (strcmp(t, "satfuturepass") == 0) {
+		sim_satellite_future_pass = true;
+		return true;
+	}
+#endif
 	if (strcmp(t, "power") == 0 && arg != NULL) {	// power:<level>, the board's level index
 		view.power = (uint8_t)atoi(arg);
 		changed();

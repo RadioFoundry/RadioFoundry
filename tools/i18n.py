@@ -42,6 +42,8 @@ MACROS = {
     "GLYPH_DEGREE": (0x83, "\u00b0"),
     "GLYPH_SHARE": (0x84, "\u2912"),
     "GLYPH_DOWNLOAD": (0x85, "\u2913"),
+    "GLYPH_UP": (0x87, "\u2191"),
+    "GLYPH_DOWN": (0x88, "\u2193"),
     "TEXT_ALT_OPEN": (0x1D, "{"),
     "TEXT_ALT_NEXT": (0x1F, "|"),
     "TEXT_ALT_CLOSE": (0x1E, "}"),
@@ -543,7 +545,9 @@ HEADER_ORDER = ["Project-Id-Version", "Language", "X-Language-Name", LATIN_NAME_
 def write_po(path, headers, entries, refs):
     """entries: [(key, msgid, msgstr, fuzzy)] in source order; refs: {key: [files]}"""
     code = headers.get("Language", "")
+    # REUSE-IgnoreStart: the catalog's header, not this file's
     out = ["# SPDX-License-Identifier: MIT",
+    # REUSE-IgnoreEnd
            "# Copyright (c) 2026 The RadioFoundry Authors",
            "#",
            "# The radio's strings in %s (%s; docs/dev/translating.md). Kept in step with the source by"

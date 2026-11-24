@@ -22,7 +22,9 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    datasheets, public standards (ETSI TS 102 361-1..4, the MMDVM protocol) and permissively licensed code. The full
    rules are in [docs/CLEANROOM.md](docs/CLEANROOM.md). If a task seems to need foreign code, stop and ask.
 2. **Never commit** the AMBE codec, stock firmware images, bootloader keys, memory or flash dumps, or audio recordings.
-   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules.
+   `codecs/` and `build/` are ignored for that reason. Don't weaken those ignore rules. The one exception is the
+   synthesized test speech in `tests/data/voice`, tracked by name with `git add -f`
+   ([its README](tests/data/voice/README.md)).
 3. **SPDX header on every new file**, in the style of its neighbors:
    `// SPDX-License-Identifier: MIT` and `// Copyright (c) 2026 The RadioFoundry Authors` (`#` for scripts and
    makefiles, `<!-- -->` for Markdown).
@@ -112,9 +114,12 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
 ## Git
 
 - Small commits that say what changed and why.
-- `third_party/*` are submodules (mode 160000). In a worktree where they're symlinked to another checkout, never
-  stage them: check `git diff --cached --stat -- third_party` before every commit. ci.sh fails if one became a
-  symlink or a plain directory.
+- `third_party/*` are submodules (mode 160000). Make a worktree with `tools/worktree.sh add <path> ...` and build
+  with `RFOUNDRY_THIRD_PARTY=<a full checkout>/third_party` ([building.md](docs/dev/building.md#worktrees)): the
+  submodules stay uninitialized, `git status` stays clean and `git worktree remove` needs no `--force`. A branch that
+  moves a submodule runs `tools/worktree.sh own <name>`. In an older worktree with symlinks, run
+  `tools/worktree.sh setup`; until then never stage them (check `git diff --cached --stat -- third_party` before every
+  commit). ci.sh fails if one became a symlink or a plain directory.
 - Never force-push, rewrite published history or run destructive cleanup on a shared checkout.
 - **Clean up after yourself.** When a worktree's branch is merged, remove the worktree and its `build/` directories.
   Builds take about 1.5 GB per worktree, and stale ones have filled the disk before.

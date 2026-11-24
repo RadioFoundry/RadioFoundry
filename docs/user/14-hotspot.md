@@ -50,6 +50,9 @@ Slot2=1
 - Use the same frequency for receive and transmit, inside the radio's bands ([Radio reference](23-radios.md)).
 - The radio uses timeslot 2 only: enable network slot 2 and disable slot 1.
 - The baud rate is ignored on USB. 115200 works.
+- Transmit power: with `RFLevel` in `[Modem]` left at 100 (the default), the radio transmits at the power set on the
+  radio before the hotspot starts. A lower `RFLevel` picks a power step instead: 0 is the lowest step, and the steps
+  spread evenly up to 99 %.
 - Leave the other modes (D-Star, YSF, P25, NXDN, POCSAG, FM) off. The radio refuses them. POCSAG is accepted but never
   transmitted.
 
@@ -68,7 +71,7 @@ changes to the hotspot screen.
 The hotspot screen shows:
 
 - the state: STARTING, HOTSPOT, RX RF while a radio nearby talks, TX NET while a network call goes out;
-- the frequency, the color code and the power;
+- the frequency, the color code and the power the hotspot transmits at;
 - the current or last call, with its source ("RF" or "Net"), the caller and the talkgroup.
 
 **OK**, **6** (Tools), **3** (Hotspot) shows how to start hotspot mode. While it runs, the page has a "Stop hotspot"

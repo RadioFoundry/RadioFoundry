@@ -1062,7 +1062,7 @@ times are unverified on a radio; the V4A / V5 transmit settle and reset wait are
 | 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO); V4A / V5: both IF routes off |
 | 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms (12 ms on V4A / V5) |
 | 5 | front-end tuning: DAC1 (UHF) or DAC2 (VHF) from calibration | the band's T5 on, 1 ms |
-| 6 | the IF: AK2365A set-up and 2 ms for its calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
+| 6 | the IF: reset the unused AK2365A to standby, set up the selected chip and wait 2 ms for calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
 | 7 | U_V_AF_SW to the band, FM_SW on in FM, off in DMR; 3 ms | APC reference (DAC2) up to the calibrated level in 8 steps of 250 us |
 
 Return to receive ramps the APC reference down in the same steps, opens the loop, drops both T5, then runs the receive
