@@ -314,7 +314,7 @@ switch = "DTMF_RX"
 hardware = "FM receive audio sampled by the processor (the AFSK input path)"
 spec = "docs/spec/radio-features.md"
 planned_tests = ["tests/hil/test_fm.py::test_dtmf_rx_on_air"]
-manual = "a second radio sends DTMF (PTT held, digit keys) on an FM channel the radio receives, with its RX tone: the main screen shows DTMF and the digits, the features view's dtmf_rx has them; with the wrong tone, nothing"
+manual = "a second radio sends DTMF (PTT held, digit keys) on an FM channel the radio receives, with its RX tone: the main screen shows DTMF and the digits, the dtmf section's dtmf.rx has them; with the wrong tone, nothing"
 
 [feature.aprs_mute]
 requires = "APRS_RX"

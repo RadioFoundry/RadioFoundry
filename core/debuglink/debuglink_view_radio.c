@@ -48,6 +48,21 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 	return v < n ? names[v] : "?";
 }
 
+// DTMF digits heard on FM (radio-features.md 3.7a; section dtmf, as the features section has no room left): the
+// count since start-up, and the last ones while the view holds them
+void debuglink_view_dtmf(const radio_view_t *v, dl_text_t *t)
+{
+	dl_text(t, "dtmf.rx_built=%u\n", CONFIG_DTMF_RX);
+#if CONFIG_DTMF_RX
+	dl_text(t, "dtmf.rx_count=%u\n", v->dtmf_rx_count);
+	if (v->dtmf_rx[0] != 0) {
+		dl_text(t, "dtmf.rx=%s\n", v->dtmf_rx);
+	}
+#else
+	(void)v;
+#endif
+}
+
 // The speaker route of the beeps (section audio; the features section has no room left): which stream played them,
 // their lead-in and the amplifier hang (radio-features.md 4); and the PCM stream's timing, which a speaker test reads to
 // tell a block played late (heard as the sound before it again) from what its microphone does
@@ -180,13 +195,6 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	}
 	if (v->dtmf_digits[0] != 0) {
 		dl_text(t, "dtmf_digits=%s\n", v->dtmf_digits);
-	}
-#endif
-#if CONFIG_DTMF_RX
-	// digits heard on FM (radio-features.md 3.7): the count since start-up, the last ones while the view holds them
-	dl_text(t, "dtmf_rx_count=%u\n", v->dtmf_rx_count);
-	if (v->dtmf_rx[0] != 0) {
-		dl_text(t, "dtmf_rx=%s\n", v->dtmf_rx);
 	}
 #endif
 	bool mic = board.power != NULL && board.power->mic_level != NULL;

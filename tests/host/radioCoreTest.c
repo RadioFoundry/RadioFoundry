@@ -4384,6 +4384,10 @@ static void test_ui_dual(void)
 		char at[24];
 		snprintf(at, sizeof at, "dual.sel=b\ndual.at=%c\n", 'a' + sm.dual_at);
 		CHECK(!t.full && strstr(buf, "dual.a=0:0\ndual.b=2:1\n") != NULL && strstr(buf, at) != NULL);
+		// DTMF receive has a section of its own: the features section has no room for it
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_dtmf(&sm.view, &t);
+		CHECK(strcmp(buf, CONFIG_DTMF_RX ? "dtmf.rx_built=1\ndtmf.rx_count=0\n" : "dtmf.rx_built=0\n") == 0);
 	}
 	CHECK(ui_svc_dual(NULL, 0) && sm.view.scan == SCAN_OFF && sm.view.zone_index == 2 && sm.view.zone_pos == 1);
 	// The VFO's settings while on a channel, and the VFO as A

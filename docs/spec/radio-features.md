@@ -460,8 +460,8 @@ twice. Tones 1.5 % off (Q.24's acceptance, both tones off the same way as from o
 Noise, single tones and a source-filter vowel model at three pitches give no digits (`dtmfRxTest`).
 
 **Shown.** The view keeps the last `RADIO_DTMF_RX_SHOWN` (16) digits, oldest first, until `RADIO_DTMF_RX_HOLD_MS`
-(3 s) pass without a new one, plus a count since start-up (`dtmf_rx`, `dtmf_rx_count`; the debug link's `features`
-view). The main screen's activity line shows "DTMF" and the digits in place of "Receiving". On a one-line activity
+(3 s) pass without a new one, plus a count since start-up (`dtmf.rx`, `dtmf.rx_count`; the debug link's `dtmf`
+section). The main screen's activity line shows "DTMF" and the digits in place of "Receiving". On a one-line activity
 area they replace the meter. After the reception, the idle line shows them until they are let go.
 
 ## 4. Beeps (CONFIG_BEEP)
