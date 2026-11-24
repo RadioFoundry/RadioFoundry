@@ -6,6 +6,8 @@
 // (FTDI AN232B-05 baud divisors, a 2-byte modem status at the start of every bulk IN packet). serialApi() is what
 // pages call in place of navigator.serial; SerialStream (link.js) takes either kind of port.
 
+import { isFtdi } from "./adapter.js";
+
 export const FTDI = 0x0403;
 
 // CDC class requests (PSTN 1.2, 6.3)
@@ -99,7 +101,7 @@ const bulk = (alt, dir) => alt.endpoints.find((e) => e.type === "bulk" && e.dire
 // The interfaces and endpoints a device's serial function uses, or null when it has none this file drives
 export function serialLayout(device) {
 	const ifaces = device.configuration?.interfaces || [];
-	if (device.vendorId === FTDI) {
+	if (isFtdi(device.vendorId)) {
 		const alt = ifaces[0]?.alternates[0];
 		if (!alt || !bulk(alt, "in") || !bulk(alt, "out")) return null;
 		return { kind: "ftdi", claim: [ifaces[0].interfaceNumber], data: ifaces[0].interfaceNumber, alt: alt.alternateSetting,
