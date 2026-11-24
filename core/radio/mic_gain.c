@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Microphone gain (mic_gain.h; docs/spec/radio-features.md 3.6)
 #include "radio/mic_gain.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 #if CONFIG_DMR
 #include "dmr/ambe/ambeVoice.h"
 #endif
@@ -26,7 +26,7 @@ void radio_set_mic_gain(uint8_t step)
 	ambeVoiceSetMicGainQ8(radio_mic_pcm_q8());
 #endif
 #if CONFIG_P25 && CONFIG_IMBE
-	p25VoiceSetMicGain(hw ? (uint8_t)MIC_GAIN_UNITY : step);
+	p25VoiceSetMicGainQ8(radio_mic_pcm_q8());
 #endif
 }
 

@@ -4,6 +4,7 @@
 #include "config.h"
 #if CONFIG_P25 && CONFIG_IMBE	// the whole file
 #include "p25Voice.h"
+#include "dsp/miclimit.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -37,7 +38,7 @@ static uint8_t rx_seq, rx_end_seq;
 // (head), its consumer the provider's task (tail). Frames of an earlier transmission are dropped by their count
 static uint8_t tx_gen;
 static uint8_t tx_head, tx_tail;
-static uint16_t mic_gain_q8 = 256;	// p25VoiceSetMicGain: the mic samples times this / 256 before encoding
+static uint16_t mic_gain_q8 = MICLIMIT_UNITY;	// p25VoiceSetMicGainQ8: the mic samples times this / 256 before encoding
 
 // Audio callback state
 static uint8_t cb_tx_gen;		// the transmission the encoder runs for (even: none)
@@ -48,6 +49,7 @@ static bool cb_live, cb_primed, cb_playing, cb_speaker, cb_mixing;
 static bool cb_speaker_unsent;
 static uint8_t cb_lead;			// silent blocks left before the first frame plays
 static uint32_t cb_call_frames;
+static miclimit_t cb_limit;		// the mic gain's limiter, for the transmission cb_tx_gen
 
 static p25_voice_stats_t stats;
 static p25_voice_mixer_t mixer;
@@ -223,11 +225,17 @@ static void tx_block(uint8_t g, const int16_t *mic)
 	uint16_t gain = LOAD(mic_gain_q8);
 	uint32_t peak = 0;
 
+	// The gain with its limiter (as DMR's, ambeVoice.c): a gain that lifts a quiet mic must not clip a loud one, and
+	// IMBE codes a clipped edge as a buzz just as AMBE+2 does. Skipped at unity: a board at its own level encodes the
+	// samples as delivered
+	if (gain != MICLIMIT_UNITY) {
+		miclimit_block(&cb_limit, gain, mic, scaled, AUDIO_BLOCK_SAMPLES);
+		stats.tx_mic_low_q8 = cb_limit.low_q8;
+	} else {
+		memcpy(scaled, mic, sizeof scaled);
+	}
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-		int32_t v = gain == 256 ? mic[i] : ((int32_t)mic[i] * gain) / 256;
-
-		v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
-		scaled[i] = (int16_t)v;
+		int32_t v = scaled[i];
 		if ((uint32_t)(v < 0 ? -v : v) > peak) {
 			peak = (uint32_t)(v < 0 ? -v : v);
 		}
@@ -267,6 +275,8 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		if (g != cb_tx_gen) {
 			cb_tx_gen = g;
 			stats.tx_mic_peak = 0;
+			miclimit_reset(&cb_limit, LOAD(mic_gain_q8));
+			stats.tx_mic_low_q8 = cb_limit.low_q8;
 			imbe_enc_init(&enc);
 		}
 		tx_block(g, mic);
@@ -348,12 +358,9 @@ void p25VoiceTx(bool on)
 	}
 }
 
-void p25VoiceSetMicGain(uint8_t step)
+void p25VoiceSetMicGainQ8(uint16_t q8)
 {
-	// 2 dB a step around unity at 5, as the DMR voice path's
-	static const uint16_t q8[11] = { 81, 102, 128, 161, 203, 256, 322, 406, 511, 643, 810 };
-
-	STORE(mic_gain_q8, q8[step > 10 ? 10 : step]);
+	STORE(mic_gain_q8, q8);
 }
 
 void p25VoiceEnd(void)
