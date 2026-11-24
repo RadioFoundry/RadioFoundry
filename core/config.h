@@ -357,6 +357,10 @@
 #ifndef CONFIG_AIR_RAW
 #define CONFIG_AIR_RAW			0
 #endif
+// AIR_RX_ADAPT: the soft modem's adaptive receive options a mode's profile may ask for (docs/spec/air-interface.md 6.1)
+#ifndef CONFIG_AIR_RX_ADAPT
+#define CONFIG_AIR_RX_ADAPT		0
+#endif
 #ifndef CONFIG_IMBE
 #define CONFIG_IMBE			CONFIG_P25
 #endif
@@ -505,6 +509,9 @@
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_DEBUGLINK
 #error "CONFIG_AIR_RAW needs CONFIG_DEBUGLINK"
+#endif
+#if CONFIG_AIR_RX_ADAPT && !CONFIG_AIR
+#error "CONFIG_AIR_RX_ADAPT needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
 #endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"

@@ -54,9 +54,16 @@ typedef struct {
 	// sync is shorter than 24 symbols); 0 = sync_every_syms. The soft modem holds its timing this long
 	uint16_t sync_any_syms;
 	uint8_t idle;			// four dibits a provider sends when a continuous transmission runs dry
+	// What a soft modem receiving the profile adds (AIR_RX_*): a mode's own choice, 0 for the plain receiver. Only
+	// where the build has them (CONFIG_AIR_RX_ADAPT) and the session lent their memory (air_softmodem_lend)
+	uint8_t rx_opts;
 	uint8_t nsyncs;
 	air_sync_t sync[AIR_SYNCS_MAX];
 } air_profile_t;
+
+// air_profile_t.rx_opts (docs/spec/air-interface.md 6.1)
+#define AIR_RX_EQ		0x01	// an adaptive equalizer on the symbols: inter-symbol interference a repeater adds
+#define AIR_RX_TONE		0x02	// a CTCSS tone found under the signal and notched out of the samples
 
 // What a provider answers for a profile (fit). 0 = can't
 enum {

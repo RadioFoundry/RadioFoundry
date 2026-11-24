@@ -93,6 +93,11 @@ static bool rate_ok(const air_profile_t *p, uint32_t rate_hz, uint16_t *step, ui
 	return true;
 }
 
+#if CONFIG_AIR_RX_ADAPT
+static void adapt_open(air_softmodem_t *m);
+static void adapt_reset(air_softmodem_adapt_t *a);
+#endif
+
 uint32_t air_softmodem_rx_fit(const air_profile_t *p, const hal_baseband_t *bb)
 {
 	uint16_t step, den;
@@ -139,6 +144,10 @@ void air_softmodem_rx_reset(air_softmodem_t *m)
 	m->sync_wait = 0;
 	m->gap = true;
 	m->n = 0;
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad)
+		adapt_reset(m->ad);
+#endif
 }
 
 bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t rate_hz, uint16_t counts_per_khz,
@@ -197,9 +206,268 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 				m->gate_mask[i] |= (uint16_t)(1u << j);
 		}
 	}
+#if CONFIG_AIR_RX_ADAPT
+	adapt_open(m);
+#endif
 	air_softmodem_rx_reset(m);
 	return true;
 }
+
+#if CONFIG_AIR_RX_ADAPT
+// ── The adaptive receive options (air-interface.md 6.1): only for a profile that asks, in memory its engine lends ──
+#define EQ_ONE		16384				// a tap of 1
+#define EQ_MID		(AIR_ADAPT_EQ_TAPS / 2)
+#define EQ_MU_SHIFT	6				// the step: 2^-6 of the normalized error
+#define FRESH_SLACK	(2 * AIR_SYNC_SYMS_MAX)
+#define TONE_NONE	0xFF
+#define TONE_BLOCK	6				// frames per tone block: 1.7 Hz bins on a 100 ms frame (neighbors 2.9 Hz apart)
+#define TONE_RATIO	6				// a tone's power over the mean of the others' (its neighbors left out)
+#define NOTCH_Q		20
+#define Q30		(1LL << 30)
+
+static const uint16_t tone_dhz[AIR_ADAPT_TONES] = {
+	670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000, 1035, 1072, 1109, 1148,
+	1188, 1230, 1273, 1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679, 1713, 1738, 1773,
+	1799, 1835, 1862, 1899, 1928, 1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418, 2503, 2541,
+};
+
+static air_softmodem_adapt_t *lent;
+volatile uint8_t air_softmodem_adapt_off;
+static air_softmodem_adapt_view_t adapt_view;
+
+// cos of a phase in 1/65536 turn, x 2^30: folded to the first quarter, then the series to x^8 (2.5e-5 off at most),
+// so no floating point and no library cosine are built in
+static int64_t cos_turn(uint32_t ph)
+{
+	int64_t t, t2, c;
+	int sign = 1;
+
+	ph &= 0xFFFFu;
+	if (ph > 32768u)
+		ph = 65536u - ph;
+	if (ph > 16384u) {
+		ph = 32768u - ph;
+		sign = -1;
+	}
+	t = (int64_t)ph * 102944;		// radians x 2^30: 2 pi x 2^30 / 65536
+	t2 = (t * t) >> 30;			// x^2 <= (pi/2)^2 x 2^30
+	// Horner: 1 - x^2/2 (1 - x^2/12 (1 - x^2/30 (1 - x^2/56))). Each factor stays below 2^30, so no product
+	// passes 2^62 (x^4 times x^2 on its own would overflow near a quarter turn)
+	c = Q30 - t2 / 56;
+	c = Q30 - ((t2 * c) >> 30) / 30;
+	c = Q30 - ((t2 * c) >> 30) / 12;
+	c = Q30 - ((t2 * c) >> 30) / 2;
+	return sign * c;
+}
+
+// A frequency in Hz x 10 at a rate as a phase step in 1/65536 turn
+static uint32_t turn_of(uint32_t dhz, uint32_t rate, uint32_t times)
+{
+	return (uint32_t)(((uint64_t)dhz * times * 65536u) / (10u * rate));
+}
+
+void air_softmodem_lend(air_softmodem_adapt_t *a)
+{
+	lent = a;
+}
+
+void air_softmodem_adapt_get(air_softmodem_adapt_view_t *out)
+{
+	*out = adapt_view;
+}
+
+// The equalizer a pass-through, no tone, the search from the start: a new lock owes nothing to the last signal
+static void adapt_reset(air_softmodem_adapt_t *a)
+{
+	memset(a->eq_w, 0, sizeof a->eq_w);
+	a->eq_w[EQ_MID] = EQ_ONE;
+	memset(a->eq_past, 0, sizeof a->eq_past);
+	memset(a->hist, 0xFF, sizeof a->hist);		// no neighborhood a frame before yet
+	a->ctx = 0;
+	a->e_ok = false;
+	a->e_prev = 0;
+	a->e_mean = 0;
+	memset(a->s1, 0, sizeof a->s1);
+	memset(a->s2, 0, sizeof a->s2);
+	a->at = a->n = 0;
+	a->ci1 = a->ci2 = a->cc1 = a->cc2 = 0;
+	a->dn = 0;
+	a->cand = a->sel = TONE_NONE;
+	a->x1 = a->x2 = a->y1 = a->y2 = 0;
+	adapt_view.tone_dhz = 0;
+	adapt_view.eq_center = EQ_ONE;
+}
+
+// At open: the tones' filter coefficients for this symbol rate and frame, from the profile
+static void adapt_open(air_softmodem_t *m)
+{
+	air_softmodem_adapt_t *a = lent;
+	uint16_t period = sync_spacing(m->p);
+
+	m->ad = NULL;
+	memset(&adapt_view, 0, sizeof adapt_view);
+	if (!a || !m->p->rx_opts)
+		return;
+	memset(a, 0, sizeof *a);
+	a->opts = m->p->rx_opts;
+	a->period = period <= AIR_ADAPT_PERIOD_MAX ? period : 0;
+	if (!a->period)
+		a->opts &= (uint8_t)~AIR_RX_TONE;	// no frame to difference against
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		int64_t c = cos_turn(turn_of(tone_dhz[k], m->p->sym_rate, AIR_ADAPT_DECIM));
+		int64_t gs = AIR_ADAPT_DECIM * Q30;				// the sum's, |sum of e^-jwn|^2 x 2^30
+
+		for (uint8_t j = 1; j < AIR_ADAPT_DECIM; j++)
+			gs += 2 * (AIR_ADAPT_DECIM - j) * cos_turn(turn_of(tone_dhz[k], m->p->sym_rate, j));
+		gs /= AIR_ADAPT_DECIM * AIR_ADAPT_DECIM;			// x 2^30, 1 at DC
+		gs = (gs * gs) >> 30;						// the CIC is two such sums
+		a->coef[k] = (int16_t)((2 * c + (1 << 17)) >> 18);		// x 4096
+		// The CIC's droop toward the high tones is weighed in, so the tones compete on what the signal holds
+		a->gain[k] = (uint16_t)(((gs >> 18) + 1) ?: 1);
+	}
+	adapt_reset(a);
+	m->ad = a;
+	adapt_view.opts = a->opts;
+}
+
+// The timing is a sync's, not coasting on an old one
+static bool fresh(const air_softmodem_t *m)
+{
+	return m->since_sync != 0xFFFF && m->since_sync <= (uint32_t)sync_spacing(m->p) + FRESH_SLACK;
+}
+
+static int decide(const air_softmodem_t *m, int32_t v)
+{
+	if (m->p->levels == 2)
+		return v >= 0 ? AIR_SOFT_OUTER : -AIR_SOFT_OUTER;
+	return v >= 2 * AIR_SOFT_OUTER / 3 ? AIR_SOFT_OUTER : v >= 0 ? AIR_SOFT_OUTER / 3 :
+	       v >= -2 * AIR_SOFT_OUTER / 3 ? -AIR_SOFT_OUTER / 3 : -AIR_SOFT_OUTER;
+}
+
+// The tone search's block: the strongest tone, weighted by what the difference does at it, against the rest. A
+// tone that wins two blocks running is notched; a neighbor of the one notched takes over only at twice its power
+static void tone_block(air_softmodem_t *m)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int64_t p[AIR_ADAPT_TONES], sum = 0;
+	uint8_t best = TONE_NONE, nsum = 0;
+
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		int64_t s1 = a->s1[k], s2 = a->s2[k];
+		int64_t pw = s1 * s1 + s2 * s2 - ((a->coef[k] * s1) >> 12) * s2;
+
+		p[k] = a->gain[k] && pw > 0 ? (pw << 12) / a->gain[k] : -1;
+		if (p[k] >= 0 && (best == TONE_NONE || p[k] > p[best]))
+			best = k;
+		a->s1[k] = a->s2[k] = 0;
+	}
+	adapt_view.tone_blocks++;
+	if (best == TONE_NONE)
+		return;
+	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+		if (p[k] < 0 || k + 1 == best || k == best || k == best + 1)
+			continue;
+		sum += p[k];
+		nsum++;
+	}
+	if (!nsum || p[best] * nsum <= TONE_RATIO * sum) {
+		a->cand = TONE_NONE;
+		return;
+	}
+	if (a->cand != best) {
+		a->cand = best;
+		return;
+	}
+	if (best == a->sel)
+		return;
+	if (a->sel != TONE_NONE && (best + 1 == a->sel || best == a->sel + 1) && p[best] <= 2 * p[a->sel])
+		return;
+	// The notch: zeros on the unit circle at the tone, poles just inside (Q 20), unity gain at DC
+	{
+		uint32_t ph = turn_of(tone_dhz[best], m->rate_hz, 1);
+		int64_t c = cos_turn(ph), w = (int64_t)ph * 102944;			// x 2^30
+		int64_t r = Q30 - w / (2 * NOTCH_Q);
+		int64_t a1 = -((2 * r * c) >> 30), a2 = (r * r) >> 30;
+		int64_t g = ((Q30 + a1 + a2) << 30) / (2 * Q30 - 2 * c);
+
+		a->nb0 = (int32_t)(g >> 16);						// x 2^14
+		a->nb1 = (int32_t)(-((2 * c * g) >> 30) >> 16);
+		a->na1 = (int32_t)(a1 >> 16);
+		a->na2 = (int32_t)(a2 >> 16);
+		a->x1 = a->x2 = a->y1 = a->y2 = 0;
+	}
+	a->sel = best;
+	adapt_view.tone_dhz = tone_dhz[best];
+	adapt_view.tone_picks++;
+}
+
+// One symbol into the search. Its slicing error counts only where the neighborhood (this symbol and the two before)
+// differs from the same place a frame before: what repeats every frame (the sync, a FICH, a transmission of silence)
+// makes a comb at the frame rate, and leaving it out removes the comb at its source, where differencing against the
+// frame before would also cancel every tone near a multiple of the frame rate (100.0 Hz is one). The error used is the
+// middle symbol's, the one its neighborhood centers on; the slow mean comes off first, so the places left out don't
+// make a comb of it. Then a second-order CIC (two sums of AIR_ADAPT_DECIM symbols, one output each AIR_ADAPT_DECIM):
+// CTCSS tones stay under 254 Hz, so the filters run at a quarter of the symbol rate (1200 Hz at 4800 symbols/s), 50
+// updates every 4 symbols, and what folds onto the tones comes from above 940 Hz, held off by more than 20 dB
+_Static_assert(AIR_ADAPT_DECIM == 4, "the CIC's gain out with >> 4: 2 log2(AIR_ADAPT_DECIM)");
+static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int dec = decide(m, v);
+	int32_t err = v - dec, e = err > 127 ? 127 : err < -127 ? -127 : err, x = 0;
+	uint8_t sym = (uint8_t)(dec > 0 ? (dec > AIR_SOFT_OUTER / 2 ? 3 : 2) : (dec < -AIR_SOFT_OUTER / 2 ? 0 : 1));
+	uint8_t was = a->hist[a->at];
+
+	a->ctx = (uint8_t)(((a->ctx << 2) | sym) & 0x3F);
+	a->hist[a->at] = fresh_timing ? (uint8_t)(a->ctx | 0x40) : 0xFF;
+	a->at = (uint16_t)(a->at + 1 == a->period ? 0 : a->at + 1);
+	if (fresh_timing && a->e_ok) {
+		a->e_mean += a->e_prev - (a->e_mean >> 8);		// x 256, a time constant of 256 symbols
+		if (was != (uint8_t)(a->ctx | 0x40))
+			x = a->e_prev - (a->e_mean >> 8);
+	}
+	a->e_prev = (int8_t)e;
+	a->e_ok = fresh_timing;
+	a->ci1 += (uint32_t)x;
+	a->ci2 += a->ci1;
+	if (++a->dn >= AIR_ADAPT_DECIM) {
+		// The integrators wrap; the combs' differences are exact all the same. Out of the CIC's gain (4 x 4) again,
+		// |d| <= 254: the filters' sums stay in 32 bits over a block (coef x s1 under 2^31)
+		uint32_t c1 = a->ci2 - a->cc1;
+		int32_t d = (int32_t)(c1 - a->cc2) >> 4;
+
+		a->cc1 = a->ci2;
+		a->cc2 = c1;
+		a->dn = 0;
+		for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
+			int32_t s0 = d + ((a->coef[k] * a->s1[k]) >> 12) - a->s2[k];
+
+			a->s2[k] = a->s1[k];
+			a->s1[k] = s0;
+		}
+	}
+	if (++a->n >= TONE_BLOCK * a->period) {
+		a->n = 0;
+		tone_block(m);
+	}
+}
+
+// The notch on one input sample, once a tone is picked. 32 bits, as the rest of the sample path (6): the samples
+// at half scale, the coefficients x 2^14 (|b1|, |a1| under 2), so no sum of the five products passes 2^31
+#define NOTCH_HALF	16383
+static int32_t notch(air_softmodem_adapt_t *a, int32_t x)
+{
+	int32_t xs = x / 2, y;
+
+	y = (a->nb0 * (xs + a->x2) + a->nb1 * a->x1 - a->na1 * a->y1 - a->na2 * a->y2) >> 14;
+	y = y > NOTCH_HALF ? NOTCH_HALF : y < -NOTCH_HALF ? -NOTCH_HALF : y;
+	a->x2 = a->x1;
+	a->x1 = xs;
+	a->y2 = a->y1;
+	a->y1 = y;
+	return 2 * y;
+}
+#endif
 
 static int line_back(const air_softmodem_t *m, unsigned back)
 {
@@ -207,6 +475,67 @@ static int line_back(const air_softmodem_t *m, unsigned back)
 
 	return m->line[at < 0 ? at + LINE : at];
 }
+
+#if CONFIG_AIR_RX_ADAPT
+// Symbol-centered sample `back` samples back, on the symbol's own fraction (as emit takes it), in soft units
+static int32_t soft_at(const air_softmodem_t *m, unsigned back)
+{
+	int32_t x = line_back(m, back) * 16;
+
+	if (m->sub > 0)
+		x += m->sub * (line_back(m, back - 1u) - line_back(m, back));
+	else if (m->sub < 0)
+		x -= m->sub * (line_back(m, back + 1u) - line_back(m, back));
+	return ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+}
+
+// The equalizer on the symbol whose soft value is v (due samples back): the symbols before it from its own memory,
+// those after it from the line. Decision directed, normalized LMS towards the level decided, only on fresh timing.
+// The center tap stays within 0.7-1.2: free, it has a second resting point near 0.4, where the outer levels fall on
+// the inner ones and every decision holds it there. A side tap past 0.5 is a runaway: back to a pass-through
+static int32_t equalize(air_softmodem_t *m, int32_t v)
+{
+	air_softmodem_adapt_t *a = m->ad;
+	int32_t x[AIR_ADAPT_EQ_TAPS], y = 0, norm = 64;	// (64: a step that stays small on a weak sample)
+
+	for (unsigned k = 0; k < EQ_MID; k++) {
+		x[EQ_MID - 1 - k] = a->eq_past[k];
+		x[EQ_MID + 1 + k] = soft_at(m, m->due - (k + 1) * SPS);
+	}
+	x[EQ_MID] = v;
+	for (unsigned k = 0; k < AIR_ADAPT_EQ_TAPS; k++) {
+		y += a->eq_w[k] * x[k];
+		norm += x[k] * x[k];
+	}
+	y /= EQ_ONE;
+	if (fresh(m)) {
+		// One divide a symbol: the step x 2^16, then each tap's share (mu x e x x / norm, x 16384)
+		int32_t g = (decide(m, y) - y) * 65536 / norm;
+		bool runaway = false;
+
+		for (unsigned k = 0; k < AIR_ADAPT_EQ_TAPS; k++) {
+			int32_t w = a->eq_w[k] + ((g * x[k]) >> (16 - 14 + EQ_MU_SHIFT));
+
+			if (k != EQ_MID && (w > EQ_ONE / 2 || w < -EQ_ONE / 2))
+				runaway = true;
+			a->eq_w[k] = (int16_t)(w > 32767 ? 32767 : w < -32767 ? -32767 : w);
+		}
+		if (a->eq_w[EQ_MID] < EQ_ONE * 7 / 10)
+			a->eq_w[EQ_MID] = EQ_ONE * 7 / 10;
+		if (a->eq_w[EQ_MID] > EQ_ONE * 12 / 10)
+			a->eq_w[EQ_MID] = EQ_ONE * 12 / 10;
+		if (runaway) {
+			memset(a->eq_w, 0, sizeof a->eq_w);
+			a->eq_w[EQ_MID] = EQ_ONE;
+			adapt_view.eq_resets++;
+		}
+		adapt_view.eq_center = a->eq_w[EQ_MID];
+	}
+	memmove(&a->eq_past[1], &a->eq_past[0], (EQ_MID - 1) * sizeof a->eq_past[0]);
+	a->eq_past[0] = (int16_t)(v > 32767 ? 32767 : v < -32767 ? -32767 : v);
+	return y;
+}
+#endif
 
 static void flush(air_softmodem_t *m)
 {
@@ -247,6 +576,18 @@ static void emit(air_softmodem_t *m, uint32_t t_us)
 	else if (m->sub < 0)
 		x -= m->sub * (line_back(m, m->due + 1u) - line_back(m, m->due));
 	v = ((x - m->off / 16) * (int32_t)m->scale) / 4096;
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad) {
+		uint8_t on = (uint8_t)(m->ad->opts & ~air_softmodem_adapt_off);
+
+		adapt_view.opts = on;
+		if (on & AIR_RX_EQ)
+			v = equalize(m, v);
+		// Syncs and coasting give no error worth having: zeros, as the frame they leave out
+		if (on & AIR_RX_TONE)
+			tone_symbol(m, v, fresh(m));
+	}
+#endif
 	if (v > 127)
 		v = 127;
 	if (v < -127)
@@ -288,6 +629,10 @@ static void commit(air_softmodem_t *m, uint8_t back, uint16_t q_next)
 	uint8_t first = (uint8_t)(back + (s->nsyms - 1) * SPS), d;
 	int8_t sub = 0;
 
+#if CONFIG_AIR_RX_ADAPT
+	if (m->ad && !fresh(m))
+		adapt_reset(m->ad);	// a new lock starts from a pass-through and no tone
+#endif
 	// The level far from nominal (a tap of unknown or wrong scale): bring the line and the gain to it, so the
 	// samples keep their resolution and their headroom
 	if (lvl < LVL_NOM * 4 / 5 || lvl > LVL_NOM * 5 / 4) {
@@ -498,7 +843,12 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 	}
 	m->running = true;
 	for (unsigned i = 0; i < n; i++) {
-		int32_t x = samples[i], v = x - (m->dc >> 10);
+		int32_t x = samples[i], v;
+#if CONFIG_AIR_RX_ADAPT
+		if (m->ad && m->ad->sel != TONE_NONE && !(air_softmodem_adapt_off & AIR_RX_TONE))
+			x = fxp_sat16(notch(m->ad, x));
+#endif
+		v = x - (m->dc >> 10);
 		unsigned at = (m->in_at + 1u) & (TAPS - 1u);
 
 		if (!m->locked) {
