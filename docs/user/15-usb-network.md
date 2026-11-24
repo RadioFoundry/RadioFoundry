@@ -175,6 +175,23 @@ python3 tools/rfoundry_gps.py --nmea-udp 127.0.0.1:4349  # NMEA for gpsd: gpsd -
 While the tool runs, takRF can't connect and the radio's web page shows the status only. The position is the radio's own GPS, never one your computer or phone gave the radio, and it is
 exact, whatever the position ambiguity setting. Nothing comes while Settings > Location > GPS is off or without a fix.
 
+### A rig control page in your browser
+
+`tools/ws_rig_control.html` is a demo of all of the above in one web page: the status, zone and channel stepping and
+selecting, the GPS position, the radio's screen, receive audio, its keys and PTT, and a box to send any message. It
+is also a working example for writing your own program.
+
+**Serve it from a web server on the computer the radio is plugged into. Double-clicking the file does not work:** the
+radio refuses a page opened from disk. Python's built-in server is enough:
+
+```
+cd tools
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000/ws_rig_control.html`, enter the radio's address and press **Connect**. Close the
+radio's own web page and takRF first: the radio takes one connection at a time.
+
 > **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
 > as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
 > radio transmit. Whenever the radio is in network mode, keep an antenna or a dummy load on it
