@@ -951,7 +951,7 @@ The diagnostics page shows the raw row bits ("keys rr rr rr"), so one press of e
 
 A 16-position switch with four code lines ECN0–ECN3 on PE14, PE15, PB10, PB11 (unverified). The inputs are pulled up, and closed contacts read low (`MD380_CH_ACTIVE_HIGH` reverses the polarity).
 
-`input_md380.c` samples the switch every 10 ms and accepts a position after three equal samples (30 ms) to debounce the contacts. The driver reports the settled position as an index from 0 to 15. In regular memory mode, the radio uses that index to select the corresponding slot in the current zone. Empty slots show **Unprogrammed** and inhibit transmission. On scan stop, the radio returns to the slot selected by the switch.
+`input_md380.c` samples the switch every 10 ms and accepts a position after three equal samples (30 ms) to debounce the contacts. The driver reports the settled position as an index from 0 to 15. In regular memory mode, the radio uses that index to select the corresponding slot in the current zone. Empty slots show **Unprogrammed** and inhibit transmission. When a zone scan is stopped, the radio stays on the scanned channel until the switch moves.
 
 The driver also reports the signed difference between successive positions for VFO tuning, dual watch, and menu navigation. The switch has physical end stops.
 

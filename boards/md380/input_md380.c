@@ -134,4 +134,4 @@ void md380_input_raw(uint8_t rows[3], uint8_t *channel_code)
 
 // The channel knob is a 16-position switch with end stops (hardware-md380.md)
 const hal_input_t md380_input = { .init = init, .scan = scan, .encoder = encoder, .encoder_limited = true,
-			       .position = position, .scan_stop_to_position = true };
+			       .position = position };

@@ -303,7 +303,7 @@ On the regular Home screen in memory mode, **Up** and **Down** do not step throu
 
 Keep zones at 16 channels or fewer if you want to reach every channel with the knob.
 Empty slots show **Unprogrammed** and block transmission. When you manually stop a
-zone scan, the radio returns to the slot selected by the knob. Home shows the
+zone scan, the radio stays on the scanned channel until the knob moves. Home shows the
 codeplug channel number beside the name and the slot position and zone size in the
 upper right.
 

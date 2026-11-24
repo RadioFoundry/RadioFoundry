@@ -421,7 +421,7 @@ selects that position in the zone (`radio_req_zone_pos`), at power-on too, so th
 points at, and again after a zone change (a new zone starts on its first channel). It asks again until the radio is
 on it, so a turn during a transmission, in hotspot mode or before the codeplug is loaded takes effect afterward; a
 position without a programmed channel shows **Unprogrammed** on Home and inhibits receive and transmit. The knob
-is left alone until it moves or the zone changes. On boards with `hal_input_t.scan_stop_to_position`, manually stopping a zone scan returns to the switch position. A host's zone and channel request ([tcp-services.md](tcp-services.md) 8) holds too: the
+is left alone until it moves or the zone changes. Manually stopping a zone scan keeps the scanned channel until the operator moves the switch. A host's zone and channel request ([tcp-services.md](tcp-services.md) 8) holds too: the
 radio stays on the host's choice, in that zone, until the knob moves. Its position is `input.switch_pos` in the debug
 link view
 (-1: no switch, or not settled). A radio's hardware page says which kind of knob it has.

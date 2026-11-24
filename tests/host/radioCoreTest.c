@@ -6303,7 +6303,6 @@ static void test_channel_selector(void)
 {
 	setup_codeplug();
 	start();
-	fake_input.scan_stop_to_position = true;
 	knob_pos = 1;
 	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	CHECK(sm.view.zone_pos == 1 && sm.view.channel_number == 2);
@@ -6319,11 +6318,14 @@ static void test_channel_selector(void)
 	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
 	req(RREQ_SCAN, RSCAN_ZONE);
 	CHECK(sm.view.scan == SCAN_ZONE);
-	knob_pos = 1;
+	uint16_t scanned = sm.view.zone_pos;
+	knob_pos = scanned == 0 ? 1 : 0;
 	req(RREQ_SCAN, RSCAN_STOP);
-	CHECK(sm.view.scan == 0 && sm.view.zone_pos == 1 && sm.view.channel_number == 2);
+	CHECK(sm.view.scan == 0 && sm.view.zone_pos == scanned);
 
-	fake_input.scan_stop_to_position = false;
+	knob_pos = knob_pos == 0 ? 1 : 0;
+	radio_sm_request(&sm, &(radio_req_t){ .type = RREQ_ZONE_POS, .arg = knob_pos, .arg2 = 1 }, now);
+	CHECK(sm.view.zone_pos == (uint16_t)knob_pos && sm.view.channel_number == (uint16_t)knob_pos + 1);
 	knob_pos = -1;
 }
 

@@ -5405,15 +5405,7 @@ static void scan_stop_asked(radio_sm_t *sm, bool cancel, uint32_t now_ms)
 		sm->dual_keep[0].valid = sm->dual_keep[1].valid = false;
 #endif
 	}
-	const hal_input_t *input = board.input;
-	bool follow = !cancel && sm->scan.kind == SCAN_ZONE && input != NULL &&
-		      input->scan_stop_to_position && input->position != NULL;
 	scan_stop(sm, cancel, now_ms);
-	if (follow) {
-		int8_t pos = input->position();
-		if (pos >= 0 && (uint16_t)pos != sm->view.zone_pos)
-			select_switch_position(sm, (uint16_t)pos, now_ms);
-	}
 }
 
 static void scan_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
