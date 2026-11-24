@@ -158,7 +158,7 @@ typedef enum {
 	RREQ_DMR_PRIVACY,	// DMR: arg = type << 16 | key
 	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
-	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
+	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-254, RADIO_HS_RF_OWN = the radio's own power
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
@@ -488,6 +488,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	uint8_t hs_rf_level;		// hotspot: the host's RF level, RADIO_HS_RF_OWN = the radio's own power
 	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
@@ -615,8 +616,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms);
 // Hotspot frequencies the board can use: RX in a band, TX in a band that allows transmit (the amateur band plan does
 // not apply, docs/spec/gotchas.md 8.7)
 bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz);
-// MMDVM RF level 0-255 -> board power level
-uint8_t radio_sm_hotspot_power(uint8_t rf_level);
+// MMDVM RF level 0-254 -> board power level; RADIO_HS_RF_OWN (the host's default, never set by the user) -> own,
+// the radio's own power (docs/spec/mmdvm-protocol.md)
+#define RADIO_HS_RF_OWN	255u
+uint8_t radio_sm_hotspot_power(uint8_t rf_level, uint8_t own);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);

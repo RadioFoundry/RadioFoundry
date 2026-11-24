@@ -38,8 +38,8 @@ def config(cc=1):
 
 def freq(rx, tx, rf_level=0):
     """SET_FREQ with an RF level: 0 the board's lowest power step (radio_sm_hotspot_power), or the bench's level
-    (Radio.hotspot_rf_level). In hotspot mode the RF level sets the power, not the radio's power setting, and level 255
-    keyed the ID at full power"""
+    (Radio.hotspot_rf_level). In hotspot mode the RF level sets the power, not the radio's power setting; level 255
+    keys the ID at the radio's own power"""
     return bytes([0]) + struct.pack("<II", rx, tx) + bytes([rf_level]) + struct.pack("<I", tx)
 
 

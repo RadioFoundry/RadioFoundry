@@ -29,6 +29,7 @@
 #include "storage/storage.h"
 #include "codeplug/codeplug_kv.h"
 #include "dmr/dmrPrivacy.h"
+#include "dmr/dmrAes.h"
 #include "dmr/dmrData.h"
 #include "sim/sim_flash.h"
 #include "sim/codeplug_copy_stub.h"
@@ -324,6 +325,9 @@ static struct {
 	uint8_t out[P25_TSBK_BYTES];	// an answer, sent as the first block of the next out_reps units
 	uint8_t out_reps;
 	uint8_t grant_after;		// a queued request: units until its grant
+	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
+	uint32_t lc_wacn;		// not 0: a conventional repeater instead, its terminators' link control naming it
+	uint16_t lc_sysid;		// ... and this system ID (0: TS_SYSID)
 } site;
 enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
@@ -2819,7 +2823,9 @@ static void test_hotspot(void)
 	CHECK(radio_sm_hotspot_freq_ok(438800000, 438800000));
 	CHECK(!radio_sm_hotspot_freq_ok(121500000, 121500000));	// TX not allowed there
 	CHECK(!radio_sm_hotspot_freq_ok(438800000, 0));
-	CHECK(radio_sm_hotspot_power(255) == 2 && radio_sm_hotspot_power(0) == 0 && radio_sm_hotspot_power(128) == 1);
+	CHECK(radio_sm_hotspot_power(254, 0) == 2 && radio_sm_hotspot_power(0, 2) == 0 && radio_sm_hotspot_power(128, 0) == 1);
+	// 255 is the host's default, never set by the user: the radio's own power, never the top step (#1018)
+	CHECK(radio_sm_hotspot_power(255, 0) == 0 && radio_sm_hotspot_power(255, 2) == 2 && radio_sm_hotspot_power(255, 9) == 2);
 
 	dmr_start(true);
 	// Refused while PTT is held
@@ -2830,6 +2836,11 @@ static void test_hotspot(void)
 	run(1000);
 	CHECK(sm.view.state == RS_IDLE);
 
+	// The first keying, before the host's level, is at the radio's own power (step 1 here)
+	for (int i = 0; i < 3 && sm.view.power != 1; i++) {
+		req(RREQ_POWER, 1);
+	}
+	CHECK(sm.view.power == 1);
 	int modes = hw.set_mode_calls;
 	int tx0 = hw.tx_calls, off0 = hw.tx_off_calls;
 	req(RREQ_HS_ENTER, 0);
@@ -2841,12 +2852,12 @@ static void test_hotspot(void)
 		hw.tx_power == 1);
 	// A new level re-keys, through tx_off: never a second tx() on a keyed board
 	int rk = rekeys;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_power == 2 && hw.keyed);
 	CHECK(rekeys == rk && hw.tx_off_calls == off0 + 1);
 	off0 = hw.tx_off_calls;
 	// The same level again (a split TX half re-sends its cap): the keying stays as it is
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(hw.tx_calls == tx0 + 2 && hw.tx_off_calls == off0 && hw.keyed);
 	// A new level while the modem transmits: tx_off may end that transmission on a board (the split TX half's
 	// outbound stopped for good), so the level waits for its end
@@ -2870,7 +2881,7 @@ static void test_hotspot(void)
 	CHECK(!sm.dmr_keyed && hw.rx_hz == 438800000 && hw.tx_calls == tx0 + 3 && hw.tx_off_calls == off0 + 1);
 	CHECK(!sm.hs_power_due);
 	sim.tx_active = false;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	radio_req_t f = { RREQ_HS_FREQ, 438800000, 438800000 };
 	radio_sm_request(&sm, &f, now);
 	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 3);
@@ -2880,12 +2891,29 @@ static void test_hotspot(void)
 	// Nor armed on a critical battery, dropped mid-transmission too
 	sm.batt.level = BATT_CRITICAL;
 	sim.tx_active = true;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(!sm.dmr_keyed && hw.tx_calls == tx0 + 4 && hw.rx_hz == 438800000 && !sm.hs_power_due);
 	sim.tx_active = false;
 	sm.batt.level = BATT_OK;
-	req(RREQ_HS_POWER, 255);
+	req(RREQ_HS_POWER, 254);
 	CHECK(sm.dmr_keyed && hw.tx_calls == tx0 + 5);
+	// 255 keys the radio's own power, and the screen shows the level keyed; a power step on the radio follows while
+	// the host leaves its level at 255, and is ignored once the host sets one
+	CHECK(sm.view.hs_power == 2);
+	req(RREQ_HS_POWER, 255);
+	CHECK(hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power && sm.dmr_keyed);
+	uint8_t own = sm.view.power;
+	int tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power != own && hw.tx_power == sm.view.power && sm.view.hs_power == sm.view.power);
+	CHECK(hw.tx_calls == tx1 + 1 && sm.dmr_keyed);
+	req(RREQ_HS_POWER, 0);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0);
+	tx1 = hw.tx_calls;
+	req(RREQ_POWER, 1);
+	CHECK(hw.tx_power == 0 && sm.view.hs_power == 0 && hw.tx_calls == tx1);
+	req(RREQ_POWER, -1);
+	req(RREQ_HS_POWER, 254);
 	off0 = hw.tx_off_calls;
 	r.arg = 121500000;	// refused: the radio stays where it was
 	r.arg2 = 121500000;
@@ -3491,6 +3519,143 @@ static void test_dmr_voice_features(void)
 	tx_once();
 	air_lc(first, &l);
 	CHECK(l.fid == 0 && l.svc == 0);
+
+#if CONFIG_DMR_AES
+	// AES: a codeplug channel bound to a system's traffic key. Without the key PTT is refused; with it our overs carry
+	// the privacy FID and option and a PI header with the channel's key ID; a short key record refuses PTT again
+	uint16_t check = codeplug_name_check(chans[4].name);
+	uint8_t tag[] = { CODEPLUG_KIND_DMR_AES, 2, (uint8_t)check, (uint8_t)(check >> 8), CODEPLUG_TAG_TX, 0x25, 0 };
+	uint8_t sys[CODEPLUG_SYS_HDR + 1] = { CODEPLUG_SYSTYPE_DMR_AES, CODEPLUG_SYS_TX };
+	uint8_t traffic[CODEPLUG_TRAFFIC_HDR + 32] = { 2, 0x25, 0, 0, 0, 1, 2, 3 };
+	bool pi;
+
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(d->privacy);
+	// With the settings in RAM only, the MI reservation is never saved: PTT waits for it, nothing goes out clear
+	run(SETTINGS_SAVE_DELAY_MS + 100);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	// On a flash: the reservation is saved (as app.c's housekeeping would), then our overs go out
+	static const hal_flash_map_t aes_map = {
+		.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
+		.openfw_eeprom = 0, .openfw_flash = 0x20000u, .openfw_end = 0x30000u,
+		.calibration_addr = 0x10000u, .calibration_size = 0x200u,
+		.native_addr = 0x30000u, .native_size = 0x4000u,
+	};
+	settings_t sv;
+	sim_flash_create(0x40000u, &aes_map);
+	CHECK(storage_init());
+	settings_init();		// the reservation asked for in RAM is gone: asked again
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	uint32_t res0 = sv.aes_mi_res;
+	settings_t older = sv;
+	CHECK(res0 != 0);
+	first = sim.air_count;
+	tx_once();
+	air_lc(first, &l);
+	CHECK(l.fid == 0x10 && l.svc == DMR_SVC_PRIVACY);
+	uint32_t mi1 = 0, mi2 = 0, mi3 = 0;
+	pi = false;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER && sim.air[i].payload[0] == 0x25 && sim.air[i].payload[2] == 0) {
+			pi = true;
+			mi1 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+		}
+	CHECK(pi && mi1 != 0);
+	// The next over's MI is the word after the last superframe the first sent: its positions follow on
+	unsigned sfs = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_VOICE && sim.air[i].voice_index == 0)
+			sfs++;
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi2 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(sfs > 0 && mi2 == dmrAesSeqAdvance(mi1, sfs));
+	// A restart: TX waits for a new reservation, then starts at the saved one, past every position sent
+	dmr_start(true);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == res0);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_WAIT && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(settings_flush());
+	run(50);
+	settings_read(&sv);
+	CHECK(sv.aes_mi_res == dmrAesSeqAdvance(res0, DMR_AES_SEQ_RESERVE));
+	first = sim.air_count;
+	tx_once();
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi3 == res0);
+	// Restore a settings record that was saved before this over, then let the radio repair it between overs.
+	uint32_t res1 = sv.aes_mi_res;
+	*settings_begin() = older;
+	settings_end(now);
+	CHECK(settings_flush() && SETTINGS_FIELD(aes_mi_res) == res0);
+	run(RADIO_POLL_MS + 5);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	CHECK(!settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+	CHECK(settings_flush() && settings_u32_is_saved(offsetof(settings_t, aes_mi_res), res1));
+
+	// The repaired record, not the restored one, supplies the next boot's first MI.
+	dmr_start(true);
+	CHECK(SETTINGS_FIELD(aes_mi_res) == res1);
+	chans[4].rx_only = true;
+	kv_t3_set(CODEPLUG_KEY_SYSTEM + 2, sys, sizeof sys);
+	kv_t3_set(CODEPLUG_KEY_CH_TAG + 3, tag, sizeof tag);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic);
+	reload_channel();
+	CHECK(settings_flush());
+	run(RADIO_POLL_MS + 5);
+	first = sim.air_count;
+	tx_once();
+	uint32_t mi4 = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		if (sim.air[i].kind == DMR_BURST_PI_HEADER)
+			mi4 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
+			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
+	CHECK(mi4 == res1 && mi4 != mi3);
+	kv_t3_set(CODEPLUG_KEY_TRAFFIC, traffic, sizeof traffic - 1);
+	run(50);
+	first = sim.air_count;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
+	req(RREQ_PTT, 0);
+	kv_t3_clear();
+	chans[4].rx_only = false;
+	reload_channel();
+	sim_flash.map = NULL;
+	storage_init();			// back to no flash for anything after
+	settings_init();
+#endif
 }
 
 // ---- DMR emergency in the radio core (docs/spec/dmr-emergency.md): the hot mic keys a call with the emergency service
@@ -5749,6 +5914,26 @@ static void test_side_keys(void)
 	ui_svc_keys_poll();
 	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN && got_keymap[1].short_action == ACT_SCAN);
 	CHECK(got_keymap[2].short_action == ACT_TALK_TARGET && got_keymap[2].long_action == ACT_ZONE_UP);
+	// Scan skip, stored as 20 (append only): a CPS's press in role 0 and long press in role 1 come back as the same
+	// functions and send ACT_SCAN_SKIP
+	cp_quick[1] = 20;
+	cp_quick[2] = 20 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_SCAN_SKIP && got_keymap[1].short_action == ACT_SCAN_SKIP);
+	CHECK(got_keymap[2].long_action == ACT_SCAN_SKIP);
+	// Monitor toggle, stored as 21
+	cp_quick[1] = 21;
+	cp_quick[2] = 21 << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
+	CHECK(ui_svc_setting_get(UI_SET_KEY_FIRST) == KEYFN_MONITOR_TOGGLE &&
+	      got_keymap[1].short_action == ACT_MONITOR_TOGGLE);
+	CHECK(got_keymap[2].long_action == ACT_MONITOR_TOGGLE);
+	cp_quick[1] = KEYFN_SCAN;
+	cp_quick[2] = KEYFN_ZONE_UP << 8;
+	cp_serial++;
+	ui_svc_keys_poll();
 	// A write that fails is reported; the key works for now
 	cp_quick_fail = true;
 	n_ev = 0;
@@ -6296,7 +6481,7 @@ static void test_factory_reset(void)
 	CHECK(settings_flush());
 	n_ev = 0;
 	CHECK(ui_svc_factory_reset());
-	sim_flash_cut_after(448);	// the settings records (page 1: 188 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
+	sim_flash_cut_after(452);	// the settings records (page 1: 192 + 4 bytes, page 0: 252 + 4, rounded up as the sizes are) go in, the native erase fails
 	storage_job_poll();
 	sim_flash_power_on();
 	CHECK(n_ev == 1 && strstr(tr_en(last_ev.why), "native") != NULL);
@@ -7744,7 +7929,7 @@ static void test_p25_stored(void)
 
 #if CONFIG_P25_TRUNK
 // ---- P25 trunked (docs/spec/p25-trunking.md 7): a site on the fake air (site above), the far radio its voice ----
-#define TS_WACN		0xBEE00u
+#define TS_WACN		0xA4C21u
 #define TS_SYSID	0x2F3u
 #define TS_NAC		0x293u
 #define TS_BASE		451000000u	// identifier 1: 12.5 kHz channels from here
@@ -7759,6 +7944,18 @@ static void site_unit(void)
 	unsigned n = 0;
 
 	site.units++;
+	if (site.lc_wacn != 0) {
+		// The network status broadcast in link control (LCO 36): reserved, WACN, system, channel, service class
+		uint16_t sysid = site.lc_sysid != 0 ? site.lc_sysid : TS_SYSID;
+		uint8_t raw[P25_LC_BYTES] = { 0x40 | 36, 0, (uint8_t)(site.lc_wacn >> 12), (uint8_t)(site.lc_wacn >> 4),
+					      (uint8_t)((site.lc_wacn & 0x0F) << 4 | sysid >> 8), (uint8_t)sysid, 0x10, 0x01,
+					      0x70 };
+		site.unit_syms = P25_TDULC_SYMS;
+		p25_unit_begin(site.unit, site.unit_syms, TS_NAC, P25_DUID_TDULC, P25_SS_IDLE);
+		p25_tdulc_put(site.unit, raw);
+		site.unit_at = 0;
+		return;
+	}
 	if (site.grant_after != 0 && --site.grant_after == 0) {
 		p25_tsbk_t m = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT };
 		m.u.grant.ch = 0x100A;
@@ -7785,7 +7982,7 @@ static void site_unit(void)
 		case 0:
 			m.kind = P25_TSBK_NET;
 			m.u.net.lra = 1;
-			m.u.net.wacn = TS_WACN;
+			m.u.net.wacn = site.wacn != 0 ? site.wacn : TS_WACN;
 			m.u.net.sysid = TS_SYSID;
 			m.u.net.ch = 0x1001;
 			break;
@@ -7960,7 +8157,7 @@ static void test_p25_trunk(void)
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
-	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=781824\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
+	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=674849\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
 	CHECK(strstr(buf, "p25t.blocks=0\n") == NULL && strstr(buf, "p25t.crc_fail=0\n") != NULL);
 	p25_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25.run.rx_nac=659\n") != NULL && strstr(buf, "p25.run.unit_id=4321\n") != NULL);
@@ -8221,6 +8418,135 @@ static void test_p25_trunk_tx(void)
 	site.on = false;
 }
 
+// A system heard naming WACN $BEEFF (blocked as $BEE00 is) gets nothing from the radio until power off: not on this visit, not when the
+// channel is left and taken again, not when the site later names another WACN. Power on again forgets it
+static void test_p25_trunk_wacn_nogo(void)
+{
+	const radio_p25_view_t *v = &sm.view.p25;
+	int keyed;
+
+	setup_codeplug_p25();
+	add(3, "P25T sys", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = P25_CP_WACN_ANY, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.ctl_site[0] = 7;
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET,
+					     .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = site.ans_req = SITE_ANS_ACCEPT;
+	site.wacn = 0xBEEFF;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	keyed = hw.tx_calls;
+	run(4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 && hw.tx_calls == keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_BLOCKED &&
+	      hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	run(1000);
+	// Left and taken again, the site naming another WACN now: still nothing
+	site.wacn = TS_WACN;
+	req(RREQ_ZONE_POS, 0);
+	run(500);
+	req(RREQ_ZONE_POS, 2);
+	run(P25_ACC_RETRY_MS + 4000);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treg == P25_REG_BLOCKED && site.reg_rx == 0 &&
+	      hw.tx_calls == keyed && !hw.keyed);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && v->twhy == RADIO_TRUNK_WHY_BLOCKED && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten, it registers
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(4000);
+	CHECK(site.reg_rx >= 1 && v->treg == P25_REG_READY);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+}
+
+
+// A conventional channel whose repeater names WACN $BEE7F in its link control: PTT refused there until power off.
+// System ID $00A, under an ordinary WACN, is refused the same way
+static void test_p25_conv_wacn_nogo(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25 rpt", TS_CC1, RADIO_MODE_P25, false, 2);
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { TS_NAC, TS_NAC, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567 };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.lc_wacn = TS_WACN;
+	site.on = true;
+	start();
+	p25_defaults();
+
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	site.on = false;
+	run(300);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);	// another WACN: as before
+	req(RREQ_PTT, 0);
+	run(500);
+	site.lc_wacn = 0xBEE7F;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	// Left and taken again, nothing heard there since: still refused
+	req(RREQ_ZONE_POS, 0);
+	run(300);
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	// Power on again: forgotten
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	req(RREQ_PTT, 1);
+	run(400);
+	CHECK(sm.view.state == RS_TX && hw.keyed);
+	req(RREQ_PTT, 0);
+	run(500);
+	site.lc_wacn = TS_WACN;
+	site.lc_sysid = P25_SYSID_NO_TX;
+	site.on = true;
+	run(1000);
+	site.on = false;
+	run(300);
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_AIR_NO_TX && !hw.keyed && hw.tx_calls == keyed);
+	req(RREQ_PTT, 0);
+	site.lc_sysid = 0;
+	req(RREQ_ZONE_POS, 0);
+}
+
 #endif
 
 static void test_p25(void)
@@ -8228,6 +8554,8 @@ static void test_p25(void)
 #if CONFIG_P25_TRUNK
 	test_p25_trunk();
 	test_p25_trunk_tx();
+	test_p25_trunk_wacn_nogo();
+	test_p25_conv_wacn_nogo();
 #endif
 	test_p25_rx();
 	test_p25_stored();

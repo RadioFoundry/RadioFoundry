@@ -8,6 +8,7 @@
 #include "fmt.h"
 #include "i18n.h"
 #include "ui_svc.h"
+#include "ui_svc_aprs.h"
 #include "cjk_font.h"	// CJK_FONT_H: the line height a CJK language needs (CONFIG_LANG_ZH)
 #include "config.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds: the mode word
@@ -1135,6 +1136,9 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
+			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
@@ -1379,6 +1383,8 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_TIMEOUT: sb_str(&b, TR(DENY_WHY_TIMEOUT, "TX time-out reached")); break;
 	case TXDENY_CEASED: sb_str(&b, TR(DENY_WHY_SYSTEM_STOPPED, "System stopped TX")); break;
 	case TXDENY_NO_FREQ: sb_str(&b, TR(DENY_WHY_NO_TX_FREQ, "No TX frequency set")); break;
+	case TXDENY_AES_KEY: sb_str(&b, TR(WHY_AES_KEY, "AES key or TX disabled")); break;
+	case TXDENY_AES_WAIT: sb_str(&b, TR(WHY_AES_WAIT, "AES: saving, try again")); break;
 	case TXDENY_MODE: sb_str(&b, TR(WHY_MODE_NOT_IN_BUILD, "Mode: not in this build")); break;
 	case TXDENY_NO_CODEC: sb_str(&b, TR(WHY_NO_CODEC, "No codec: voice off")); break;
 	case TXDENY_NO_DMR: sb_str(&b, TR(DENY_WHY_MODEM_NOT_RUNNING, "DMR modem not running")); break;
@@ -1402,6 +1408,7 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "Blocked system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
@@ -2301,12 +2308,30 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+#if CONFIG_APRS_RX
+		{
+			aprs_view_t aprs_v;
+			if (ui_svc_aprs_view(&aprs_v) && aprs_v.last_msg_ms != 0 &&
+			    (v->last_rx_ms == 0 || aprs_v.last_msg_ms + 2000u >= v->last_rx_ms)) {
+				sb_str(&b, TR(APRS_ACTIVITY_LAST_MSG, "APRS: "));
+				sb_str(&b, aprs_v.last_msg_from);
+				sb_str(&b, " ");
+				sb_age(&b, s->now_ms - aprs_v.last_msg_ms);
+			} else if (v->last_rx_ms) {
+				sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
+				sb_age(&b, s->now_ms - v->last_rx_ms);
+			} else {
+				sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
+			}
+		}
+#else
 		if (v->last_rx_ms) {
 			sb_str(&b, TR(ACTIVITY_BODY_LAST, "Last activity "));
 			sb_age(&b, s->now_ms - v->last_rx_ms);
 		} else {
 			sb_str(&b, TR(ACTIVITY_EMPTY, "No activity yet"));
 		}
+#endif
 		bool mon = v->monitor && L->activity_h >= 2 * sm->h;
 		y += (L->activity_h - (mon ? 2 : 1) * sm->h) / 2;	// centered in the activity area
 		gfx_text_fit(sm, buf, gfx_width(), fit, sizeof fit);
@@ -3071,7 +3096,7 @@ void ui_draw_banner(const ui_state_t *s)
 		gfx_text(f, 2, ty, title[i], gfx_bpp() == 1 ? fg : bn->warn ? ui_col.warn : ui_col.fg);
 	for (int i = 0; i < nx; i++, ty += f->h)
 		gfx_text(f, 2, ty, text[i], fg);
-	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER) ?
+	const char *act = (bn->kind == UI_BANNER_MESSAGE || bn->kind == UI_BANNER_ZONE_OFFER || bn->kind == UI_BANNER_APRS_MESSAGE) ?
 		TR(BANNER_HINT_OPEN, "# Open") :
 		(bn->kind == UI_BANNER_CALL_ALERT || bn->kind == UI_BANNER_PRIVATE) ?
 			TR(BANNER_HINT_ACTIONS, "# Actions") : TR(BANNER_HINT_HIDE, "Back hide");
@@ -3581,7 +3606,8 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	sb_str(&b, "CC");
 	sb_u32(&b, h->cc, 1);
 	sb_str(&b, " ");
-	sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
+	// What the hotspot keys; the radio's own power until the radio core has entered hotspot mode
+	sb_str(&b, ui_power_name(v->hotspot ? v->hs_power : v->power, h->tx_hz != 0 ? h->tx_hz : v->ch.tx_hz));
 	y = call_line(L->small, y, buf, ui_col.dim);
 	sb_init(&b, buf, sizeof buf);
 	if (h->src != 0) {

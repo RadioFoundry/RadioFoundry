@@ -125,6 +125,11 @@ typedef struct {
 	bool msg_acked;
 	char last_info[48];	// the information field of our last beacon (truncated)
 	uint32_t serial;	// bumped on every change worth a redraw
+#if CONFIG_APRS_RX
+	uint32_t msg_serial;		// bumped on each new (non-dup) inbound message addressed to us
+	uint32_t last_msg_ms;		// hal_millis() when the newest such message arrived (0 = none yet)
+	char last_msg_from[AX25_CALL_LEN + 4];	// who sent it
+#endif
 } aprs_view_t;
 
 typedef struct {
