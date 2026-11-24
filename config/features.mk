@@ -80,8 +80,9 @@ CONFIG_NET_HTTP ?= $(CONFIG_NET_TCP)
 # the status server's static files (core/net/http_assets) stored gzip compressed at build time and served with
 # Content-Encoding: gzip; off: stored and served as they are (needs NET_HTTP; tools/gen_http_assets.py)
 CONFIG_NET_HTTP_GZIP ?= $(CONFIG_NET_HTTP)
-# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio
-# (needs NET_HTTP; core/net/ws.c, docs/spec/tcp-services.md 5)
+# web control on the status server: /ws (WebSocket) for the radio's front panel page, keys, status and receive audio,
+# and for programs on the host: zone and channel select and step, the board GPS's fix (needs NET_HTTP; core/net/ws.c,
+# core/net/webctl.c, core/net/radio_ctl.c, docs/spec/tcp-services.md 5)
 CONFIG_NET_WEBCTL ?= $(CONFIG_NET_HTTP)
 # Hamlib rigctld on port 4532: frequency, mode, PTT, S meter for loggers and SDR programs (needs NET_TCP;
 # core/net/rigctld.c)

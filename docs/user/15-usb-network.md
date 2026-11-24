@@ -140,31 +140,25 @@ USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
 
 ## Selecting zones and channels from a program
 
-A device or program on your computer, such as takRF, can choose the radio's zone and channel as a knob would. It
-sends short text messages over UDP to port 4191 at the radio's address. This works without the radio's web page, so
-it is also on firmware built without it. Zones and channels are counted from 0, in the order the radio shows them.
+A program on your computer or a page in its browser, such as takRF, can choose the radio's zone and channel as a
+knob would. It opens the connection the radio's web page uses, `ws://<radio address>/ws` (a WebSocket), and sends
+short text messages on it. Zones and channels are counted from 0, in the order the radio shows them.
 
 | Message | Does |
 |---|---|
-| `select` | Says where the radio is and what it is on: zone, channel, name, frequency, and on DMR the color code, timeslot and talkgroup |
 | `select?zone=2&pos=5` | The third zone, its sixth channel (without `pos`, its first) |
 | `step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
-| `step?zone=1` | One zone on, to its first channel; `-1` one back |
-| `select?notify=0` | Stop the change messages (below) |
+| `step?zone=1` | One zone on, to its first channel; `-1` one back; it wraps from the last zone to the first and back |
+| `status?changes` | Send the status only when the zone or channel changes, not every second; `status` goes back to every change |
 
-The radio answers each message with where it is now. After any message it also sends a short update to the same
-program whenever the zone, channel or talkgroup changes, and every 30 seconds, for two minutes. Send `select` every
-minute to keep the updates coming. `codeplug` in the answer goes up whenever the channels or zones change (on the
-radio, or a codeplug written to it).
+The radio sends its status on the same connection: zone, position, zone name, channel, frequency, and on DMR the
+color code, timeslot and talkgroup. `codeplug` in it goes up whenever the channels or zones change (on the radio, or a
+codeplug written to it). The radio answers a message only when it refuses it, with `{"err":...}`.
 
-Nothing changes while the radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 8.
-
-For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
-
-The same messages also work over the connection the radio's web page uses (`ws://<radio address>/ws`), which a
-browser page can open and UDP can't. There the radio answers only an error, and sends its status instead: send
-`status?changes` to get it only when the zone or channel changes. Zones and channels change only from the computer
-the radio is plugged into. Details: [tcp-services.md](../spec/tcp-services.md) 5.1.
+Zones and channels change only from the computer the radio is plugged into, and not while the radio transmits or is a
+hotspot. The radio takes one such connection at a time: while a program has it, the radio's web page shows the status
+only. `tools/rfoundry_ws.py --radio <radio address> "select?zone=1"` tries it from a terminal. Details:
+[tcp-services.md](../spec/tcp-services.md) 5.1 and 8.
 
 ### The radio's GPS on your computer
 
@@ -178,14 +172,12 @@ python3 tools/rfoundry_gps.py                            # the positions, one li
 python3 tools/rfoundry_gps.py --nmea-udp 127.0.0.1:4349  # NMEA for gpsd: gpsd -N udp://127.0.0.1:4349
 ```
 
-The radio takes one such connection at a time: while the tool runs, the radio's web page shows the status only, and
-takRF can't connect. The position is the radio's own GPS, never one your computer or phone gave the radio, and it is
+While the tool runs, takRF can't connect and the radio's web page shows the status only. The position is the radio's own GPS, never one your computer or phone gave the radio, and it is
 exact, whatever the position ambiguity setting. Nothing comes while Settings > Location > GPS is off or without a fix.
 
 > **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
 > as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
-> radio transmit, and so does port 4191 on firmware without this feature (check its build options first,
-> [build options](../build-config.md)). Whenever the radio is in network mode, keep an antenna or a dummy load on it
+> radio transmit. Whenever the radio is in network mode, keep an antenna or a dummy load on it
 > and leave it on a channel you may transmit on.
 
 ## Linking audio: AllStarLink and DVSwitch
