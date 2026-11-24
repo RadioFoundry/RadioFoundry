@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "gd88_cal.h"
+#include "radio/radio_squelch.h"
 #include "dmr_rfburst_timing.h"
 
 static int failures;
@@ -296,6 +297,30 @@ static void test_dmr_timing(void)
 	CHECK(hrc_rfburst_late_us(20000u + GD88_DMR_OFF_AHEAD_US, lead) == 0);
 }
 
+// An FD6818 family main's squelch (segment 1 at 405 MHz: level L's threshold is 120 - L dB, 0x67 = 2 x (49 + L))
+static void test_fd_squelch(void)
+{
+	build(flash_page, 1);
+	gd88_cal_load(flash_page, NULL);
+	const uint32_t f = 405000000;
+	CHECK(gd88_fd_squelch_noise(f, 200, 20, 10, false) == radio_squelch_open_below(9) - 1u);	// strong and quiet
+	uint8_t n = gd88_fd_squelch_noise(f, 108, 30, 10, false);	// level 5's threshold exactly
+	CHECK(radio_squelch_read(5, n, true).opens && !radio_squelch_read(6, n, true).opens);
+	n = gd88_fd_squelch_noise(f, 107, 30, 10, false);	// half a dB under: level 5 holds, doesn't open
+	CHECK(!radio_squelch_read(5, n, true).opens && radio_squelch_read(5, n, true).holds);
+	n = gd88_fd_squelch_noise(f, 105, 30, 10, false);	// under level 4's: level 5 closes
+	CHECK(!radio_squelch_read(5, n, true).holds && radio_squelch_read(3, n, true).opens);
+	n = gd88_fd_squelch_noise(f, 95, 30, 10, false);	// level 1 holds 3 dB under its threshold, no further
+	CHECK(!radio_squelch_read(1, n, true).opens && radio_squelch_read(1, n, true).holds);
+	CHECK(gd88_fd_squelch_noise(f, 93, 30, 10, false) == 0x7F);
+	CHECK(gd88_fd_squelch_noise(f, 0xA8, 49, 10, false) == 0x7F);		// noise over the limit (41 here): shut
+	CHECK(gd88_fd_squelch_noise(f, 0x1A8, 49, 10, false) == 0x7F);		// 0x67's upper bits ignored
+	CHECK(gd88_fd_squelch_noise(f, 60, 44, 10, false) == 0x7F);		// weak: the limit rises to 45, but level 1's isn't met
+	CHECK(gd88_fd_squelch_noise(f, 200, 41, 10, false) != 0x7F && gd88_fd_squelch_noise(f, 200, 40, 10, true) == 0x7F);
+	CHECK(gd88_fd_squelch_noise(f, 200, 20, 140, false) != 0x7F && gd88_fd_squelch_noise(f, 200, 20, 141, false) == 0x7F);
+	CHECK(gd88_fd_squelch_noise(f, 200, 20, 0x178, true) != 0x7F && gd88_fd_squelch_noise(f, 200, 20, 121, true) == 0x7F);
+}
+
 int main(void)
 {
 	test_choice();
@@ -303,6 +328,7 @@ int main(void)
 	test_interpolation();
 	test_limits();
 	test_squelch();
+	test_fd_squelch();
 	test_tx_plan();
 	test_power_drive();
 	test_apc();

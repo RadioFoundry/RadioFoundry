@@ -45,7 +45,7 @@
 #define DAC_C_RX		1780u
 
 #define IF_HZ			GD88_IF_HZ
-#define LOW_SIDE_FROM_HZ	400000000u	// AT1141: f - IF from here to LOW_SIDE_TO_HZ
+#define LOW_SIDE_FROM_HZ	400000000u	// any LO but a BK4819: f - IF from here to LOW_SIDE_TO_HZ
 #define LOW_SIDE_TO_HZ		440000000u
 #define UHF_FROM_HZ		280000000u
 
@@ -214,6 +214,8 @@ static const superhet_chips_cfg_t rf_cfg = {
 	.bus_main = &bus_main.bus, .bus_lo = &bus_lo.bus, .css_line = css_line, .at1141_restart = true,
 };
 
+#define REG_FD_GLITCH		0x6Au	// an FD6818 family main's glitch count, low byte
+
 static bool main_is_bk4819(void)
 {
 	return rf.main_kind == SUPERHET_CHIP_BK4819;
@@ -248,7 +250,7 @@ static superhet_tone_t sh_tone(uint8_t type)
 
 static uint32_t lo_hz_for(uint32_t hz)
 {
-	if (rf.lo_kind == SUPERHET_CHIP_AT1141 && hz >= LOW_SIDE_FROM_HZ && hz <= LOW_SIDE_TO_HZ) {
+	if (rf.lo_kind != SUPERHET_CHIP_BK4819 && hz >= LOW_SIDE_FROM_HZ && hz <= LOW_SIDE_TO_HZ) {
 		return hz - IF_HZ;
 	}
 	return hz + IF_HZ;
@@ -895,7 +897,12 @@ static void status(radio_status_t *st)
 	bool css = rx_tone.type != TONE_NONE && main_is_bk4819();
 	superhet_chips_status(&rf, &last_rssi_raw, &last_noise_raw, css ? &r0c : NULL);
 	st->rssi_dbm = bk4819_rssi_dbm(last_rssi_raw);	// at the main chip's input, the front end's gain not taken out
-	st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
+	if (main_is_bk4819()) {
+		st->noise = (uint8_t)(last_noise_raw & 0x7Fu);
+	} else {
+		st->noise = gd88_fd_squelch_noise(rx_hz, last_rssi_raw, last_noise_raw, rfbus_read(rf_cfg.bus_main, REG_FD_GLITCH),
+				rx_bw == RADIO_BW_25K);
+	}
 	st->carrier = false;
 	st->tone_ok = superhet_chips_tone_heard(&rf, r0c, sh_tone(rx_tone.type));
 }
@@ -913,7 +920,8 @@ radio_squelch_read_t gd88_radio_squelch_read(uint8_t level, uint8_t noise_none)
 	radio_status_t st;
 	status(&st);
 	uint32_t n = st.noise;
-	if (noise_none > NOISE_QUIET && noise_none < NOISE_NONE && n > NOISE_QUIET) {
+	// The rescale is a BK4819's: an FD6818 family main's value is on the squelch's scale already
+	if (main_is_bk4819() && noise_none > NOISE_QUIET && noise_none < NOISE_NONE && n > NOISE_QUIET) {
 		n = NOISE_QUIET + (n - NOISE_QUIET) * (NOISE_NONE - NOISE_QUIET) / (noise_none - NOISE_QUIET);
 		if (n > 0x7Fu) {
 			n = 0x7Fu;

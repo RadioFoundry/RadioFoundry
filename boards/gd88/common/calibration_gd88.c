@@ -10,6 +10,7 @@
 #include <string.h>
 #include "gd88_cal.h"
 #include "radio/cal_curve.h"
+#include "radio/radio_squelch.h"
 
 #define OFF_RX_TUNE		0x02Cu
 #define OFF_TX_CENTER		0x43Fu		// VHF half only, used for both bands
@@ -240,4 +241,34 @@ uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level)
 		seg++;
 	}
 	return at(hz, OFF_SQUELCH)[1 + 18u * seg + 2u * (level - 1u)];
+}
+
+// FD6818-family squelch: the noise limit falls as the signal rises (83.5 - 0.38 x 0x67, within 41 or 39 .. 45)
+#define FD_NOISE_TOP		45
+#define FD_NOISE_FLOOR_12K5	41
+#define FD_NOISE_FLOOR_25K	39
+#define FD_GLITCH_12K5		141u	// glitch count limits (below)
+#define FD_GLITCH_25K		121u
+#define FD_RSSI_ZERO		169	// 0x67 = 2 x (169 - v) is v dB under +9 dBm
+#define FD_HOLD_STEPS		6	// level 1 holds this many 0x67 steps (3 dB) under its threshold
+#define FD_NONE			0x7Fu
+
+uint8_t gd88_fd_squelch_noise(uint32_t hz, uint16_t r67, uint16_t r65, uint16_t r6a, bool wide)
+{
+	int32_t raw = (int32_t)(r67 & 0x1FFu);
+	int32_t lim = (8350 - 38 * raw) / 100;
+	int32_t low = wide ? FD_NOISE_FLOOR_25K : FD_NOISE_FLOOR_12K5;
+	lim = lim < low ? low : lim > FD_NOISE_TOP ? FD_NOISE_TOP : lim;
+	if ((int32_t)(r65 & 0x7Fu) > lim || (r6a & 0xFFu) >= (wide ? FD_GLITCH_25K : FD_GLITCH_12K5)) {
+		return FD_NONE;
+	}
+	for (uint8_t level = RADIO_SQUELCH_MAX; level >= 1; level--) {
+		if (raw >= 2 * (FD_RSSI_ZERO - (int32_t)gd88_cal_squelch_db(hz, level))) {
+			return (uint8_t)(radio_squelch_open_below(level) - 1u);
+		}
+	}
+	if (raw + FD_HOLD_STEPS >= 2 * (FD_RSSI_ZERO - (int32_t)gd88_cal_squelch_db(hz, 1))) {
+		return (uint8_t)(radio_squelch_open_below(1) + RADIO_SQL_HYST_DB - 1u);
+	}
+	return FD_NONE;
 }

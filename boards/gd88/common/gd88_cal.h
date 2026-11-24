@@ -63,6 +63,12 @@ uint16_t gd88_cal_zero(uint32_t hz);
 uint16_t gd88_apc_level(uint16_t target, uint16_t step);
 // Squelch open threshold for level 0..9, in dB below 0 dBm at the main chip (bk4819_squelch_rssi(-v, 2))
 uint8_t gd88_cal_squelch_db(uint32_t hz, uint8_t level);
+// An FD6818-family main chip's readings as a noise value on the squelch's scale (radio_squelch.h). Its noise reading
+// spans too little for the noise levels, so a level opens on RSSI (0x67) at or above that level's calibrated
+// threshold (9 - gd88_cal_squelch_db dBm, in 0x67's 0.5 dB steps), and only while noise (0x65) and glitch (0x6A)
+// stay under their limits; else 0x7F. The value is just under the highest level met, so a level holds down to the one
+// below it, and level 1 down to 3 dB under its own. wide: 25 kHz
+uint8_t gd88_fd_squelch_noise(uint32_t hz, uint16_t r67, uint16_t r65, uint16_t r6a, bool wide);
 // The page's items at 0x602 (4 bytes), 0x606, 0x607 (1 each), 0x608 and 0x60B (3 each): both bench radios have them
 // unwritten (0xFF), so they aren't used
 #define GD88_CAL_OFF_EXTRA	0x602u
