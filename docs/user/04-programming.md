@@ -30,7 +30,7 @@ server: files, the codeplug and your RadioID API key stay on your computer.
    When the radio's DMR ID database would take 20 seconds or more to read (megabytes over the programming cable), the
    editor first says how long and asks whether to read it too. Skip it unless you want
    to edit the database or keep it in a saved file: a write then leaves the radio's database as it is. The
-   **DMR ID Database** tab can read it later.
+   **DMR ID Database** tab can read it later, or remove it without reading it.
 3. Edit the codeplug.
 4. Choose **Write to Radio**. The editor compares the codeplug with the radio's and writes only the bytes that
    changed. It shows how many bytes and about how long it takes, then writes and verifies them. The radio loads the
@@ -273,6 +273,11 @@ Then choose:
 The page previews the records, and shows the database size against the radio's room. **Write ID Database** puts it in
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
+
+A database too big for the connected radio is never sent. That happens when it was built with no radio chosen, or comes
+from a file made for a bigger radio. **Write to Radio** then offers **Cut to Fit**: the names with the highest IDs are
+left out, and the editor says how many. **Remove ID Database** clears the database, also one the read skipped or one
+the editor can't read. **Write to Radio** then erases it on the radio, and a new one can be written.
 
 Keep contacts for what you call: your talkgroups and the few people you make private calls to. The codeplug holds at
 most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone
