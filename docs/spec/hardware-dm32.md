@@ -1399,6 +1399,12 @@ whose rows there are L / M / H 1467 / 1964 / 2816 (UHF) and 1376 / 1856 / 3024 (
   in 8.5 name the earlier levels, the calibration steps 0, 1, 4, 6 and 8 (L-, L, M, M+, H). The low test drive there,
   955 on UHF and 900 on VHF, is the 100 mW level.
 - **Without calibration** every level is the fallback drive (1408, about 2 W), as in 11.3.
+- **The FM key-down** ramps DAC B from the level's drive down to place 600 (0.6 · L, under the PA's turn-on, so the
+  whole ramp is on air at every level) in 40 steps of 50 µs on the shared APC ramp's curve (`core/radio/apc_ramp.h`),
+  then writes 0, waits 0.3 ms for the PA loop's low-pass and turns the PA select off. With the drive and the PA select
+  cut at once, the key-down took 0.03-0.24 ms and the adjacent channel power around it was -25 to -38 dBc, against -48
+  to -57 dBc at the key-up. The key-up needs no ramp: the PA loop's low-pass shapes it. The ramp is not measured on
+  air yet.
 - Not measured yet: a low battery, DMR bursts, and other radios.
 
 ---

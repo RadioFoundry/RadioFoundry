@@ -577,9 +577,27 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	return true;
 }
 
+// The FM key-down: the drive ramped down to the PA's turn-on edge (power_levels.h), so the carrier doesn't splatter
+// (a cut at once put the channel next to it 20 dB higher than the key-up's), then 0 for the loop's low-pass to settle,
+// then the PA off. The PA loop's own low-pass shapes the key-up
+#define RAMP_TAIL_US		300u
+static void fm_ramp_down(void)
+{
+	uint16_t edge = bf_cal_power_pos(tx_hz, DM32_RAMP_EDGE_POS);
+	for (uint16_t i = 1u; i <= DM32_RAMP_STEPS; i++) {
+		DAC_DATA_B = dm32_ramp_down_level(tx_drive, edge, i);
+		hal_delay_us(DM32_RAMP_STEP_US);
+	}
+	DAC_DATA_B = 0;
+	hal_delay_us(RAMP_TAIL_US);
+}
+
 static void tx_end(bool keep)
 {
 	dmr_disarm();
+	if (transmitting && mode == RADIO_MODE_FM) {
+		fm_ramp_down();
+	}
 	pa_off();
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {

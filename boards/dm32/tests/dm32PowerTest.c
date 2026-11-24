@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The DM-32UV's power levels (power_levels.h, hardware-dm32.md 11.4): the drives they give on the rows of the radio
-// they were set on, their order on any rows, the scaling with a radio's own rows, and the uncalibrated fallback
+// they were set on, their order on any rows, the scaling with a radio's own rows, the uncalibrated fallback, and the
+// FM key-down ramp
 #include <stdio.h>
 #include <string.h>
 #include "power_levels.h"
@@ -104,12 +105,42 @@ static void test_scaling(void)
 	}
 }
 
+// The FM key-down from every level on the measured rows: from the level's drive, never up, down to the edge, which is
+// under the 100 mW level and under the drive where that radio's PA gave nothing (925 on UHF, 875 on VHF)
+static void test_ramp(void)
+{
+	static const bf_cal_power_points_t rows[2] = {
+		{ .low = 1376, .mid = 1856, .high = 3024 },	// VHF, 146 MHz
+		{ .low = 1467, .mid = 1964, .high = 2816 },	// UHF, 445 MHz
+	};
+	static const uint16_t dark[2] = { 875, 925 };
+	for (uint8_t b = 0; b < 2; b++) {
+		uint16_t edge = bf_cal_drive_pos(&rows[b], DM32_RAMP_EDGE_POS);
+		CHECK(edge < dark[b] && edge < level(&rows[b], b != 0, 0));
+		for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
+			uint16_t d = level(&rows[b], b != 0, l);
+			CHECK(dm32_ramp_down_level(d, edge, 0) == d);
+			CHECK(dm32_ramp_down_level(d, edge, DM32_RAMP_STEPS) == edge);
+			for (uint16_t i = 1; i <= DM32_RAMP_STEPS; i++) {
+				CHECK(dm32_ramp_down_level(d, edge, i) <= dm32_ramp_down_level(d, edge, (uint16_t)(i - 1u)));
+			}
+			// The curve's ends are flat: the first and last steps move less than the middle ones
+			uint16_t mid = (uint16_t)(DM32_RAMP_STEPS / 2u);
+			CHECK(d - dm32_ramp_down_level(d, edge, 1) <
+			      dm32_ramp_down_level(d, edge, (uint16_t)(mid - 1u)) - dm32_ramp_down_level(d, edge, mid));
+		}
+	}
+	// A drive at or under the edge (a low drive set over the debug link) ramps down to 0
+	CHECK(dm32_ramp_down_level(800, 880, 0) == 800 && dm32_ramp_down_level(800, 880, DM32_RAMP_STEPS) == 0);
+}
+
 int main(void)
 {
 	test_measured();
 	test_positions();
 	test_order();
 	test_scaling();
+	test_ramp();
 	static const uint8_t none[BF_CAL_LEN];
 	bf_cal_set_image(none, false);
 	for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
