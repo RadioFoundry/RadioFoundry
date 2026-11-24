@@ -13,6 +13,7 @@
 //   datatx / dataend    DMR data goes out without PTT (ARS, SMS, IP): the view says TX; it ends
 //   aprstx / aprsend    an APRS RF beacon keys the transmitter / returns to the selected channel
 //   dtmf:<digits>       during TX: the radio core has sent these DTMF digits (the TX screen's DTMF line)
+//   dtmfrx:<digits>     the radio core heard these DTMF digits on FM (the activity line's DTMF)
 //   wait:<ms>           time passes
 //   reboot              power off and on: the screens start over, the settings stay
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
@@ -3144,6 +3145,19 @@ static bool run_token(char *t, char *err, size_t len)
 		bool on = strcmp(t, "aprstx") == 0;
 		view.state = on ? RS_TX : RS_IDLE;
 		view.aprs_tx = on;
+		changed();
+		advance(200);
+		return true;
+	}
+	if (strcmp(t, "dtmfrx") == 0 && arg != NULL) {
+		const char *d = arg;
+		size_t n = strlen(d);
+		char all[2 * RADIO_DTMF_RX_SHOWN + 1];
+		snprintf(all, sizeof all, "%s%s", view.dtmf_rx, d);
+		size_t total = strlen(all);
+		snprintf(view.dtmf_rx, sizeof view.dtmf_rx, "%s",
+			 all + (total > RADIO_DTMF_RX_SHOWN ? total - RADIO_DTMF_RX_SHOWN : 0));	// the newest
+		view.dtmf_rx_count = (uint16_t)(view.dtmf_rx_count + n);
 		changed();
 		advance(200);
 		return true;

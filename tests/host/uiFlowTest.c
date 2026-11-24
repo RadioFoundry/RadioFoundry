@@ -1127,6 +1127,11 @@ static const flow_t flows[] = {
 	{ "T DMR transmitting: a digit does nothing (#37)", "pttdown", "5", "screen=home toast=none", 1, false },
 	// DMR data without PTT (#148): Home stays, the activity line says SENDING, a call's screen is for voice
 	{ "T DMR data on the air: Home says SENDING", "", "datatx", "screen=home shows=SENDING hides=TALKING", 0, false },
+	// DTMF heard on FM (radio-features.md 3.7): the activity line shows the digits in place of Receiving, and still
+	// after the reception ends, while the radio core holds them
+	{ "T DTMF heard on FM", "down", "fmrx dtmfrx:*12#", "screen=home shows=DTMF_*12# hides=Receiving", 0, false },
+	{ "T DTMF heard: after the reception", "down fmrx dtmfrx:*12# dtmfrx:5", "fmrxend",
+	  "screen=home shows=DTMF_*12#5 hides=Last_activity", 0, false },
 	{ "T DMR data done: Home goes back", "datatx", "dataend", "screen=home hides=SENDING", 0, false },
 	{ "T DMR voice: still TALKING", "", "pttdown", "shows=TALKING hides=SENDING", 1, false },
 	{ "T after the transmission a digit opens Find again", "down pttdown pttup", "5", "screen=find", 1, false },

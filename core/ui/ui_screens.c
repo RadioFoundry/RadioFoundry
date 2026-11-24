@@ -2241,6 +2241,13 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+		if (!two && v->dtmf_rx[0] != 0) {
+			// One line: DTMF heard (radio-features.md 3.7) over the meter while the radio core holds it
+			sb_str(&b, "DTMF ");
+			sb_str(&b, v->dtmf_rx);
+			gfx_text(sm, 0, y, buf, ui_col.rx);
+			break;
+		}
 		sb_i32(&b, v->rssi_dbm);
 		sb_str(&b, " dBm");
 		int tw = gfx_text_width(big, buf);
@@ -2254,6 +2261,14 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			break;
 		}
 #endif
+		if (v->dtmf_rx[0] != 0) {
+			// DTMF heard in this reception (radio-features.md 3.7), newest last
+			sb_init(&b, buf, sizeof buf);
+			sb_str(&b, "DTMF ");
+			sb_str(&b, v->dtmf_rx);
+			gfx_text(sm, 0, y2, buf, ui_col.rx);
+			break;
+		}
 		gfx_text(sm, 0, y2, v->monitor ? TR(ACTIVITY_STATE_SQUELCH_OPEN, "Squelch open") :
 			TR(STATE_RECEIVING, "Receiving"), ui_col.rx);
 		break;
@@ -2328,7 +2343,11 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 		}
 #endif
 #if CONFIG_APRS_RX
-		{
+		if (v->dtmf_rx[0] != 0) {
+			// DTMF heard (radio-features.md 3.7): still shown a moment after the reception ends
+			sb_str(&b, "DTMF ");
+			sb_str(&b, v->dtmf_rx);
+		} else {
 			aprs_view_t aprs_v;
 			if (ui_svc_aprs_view(&aprs_v) && aprs_v.last_msg_ms != 0 &&
 			    (v->last_rx_ms == 0 || aprs_v.last_msg_ms + 2000u >= v->last_rx_ms)) {
