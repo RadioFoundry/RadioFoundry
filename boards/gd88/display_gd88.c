@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// GD-88 display: 320x240 ILI9341-class TFT on the SoC's i8080 LCD controller, backlight PWM0 on PTA15
+// GD-88 display: 320x240 ILI9341-class TFT on the SoC's i8080 LCD controller, backlight PWM0 on PTA15. The
+// register-style panel (ID 0xC505) is 220x176: its glass sits at x 10 of the controller's 240-wide axis, y from 0
 //. Full resolution in 16 colors, as in hardware-dm32.md: the core's frame buffer
 // holds a palette index per pixel (37.5 KB) and each row goes out as RGB565.
 //
@@ -18,6 +19,9 @@
 
 #define PANEL_W			320u
 #define PANEL_H			240u
+#define REG_PANEL_W		220u
+#define REG_PANEL_H		176u
+#define REG_PANEL_X		10u
 #define PANEL_RECORD		0x031FD000u
 // The record is four bytes, "lcd" and the type 0..3 (an ASCII digit is taken too)
 #define PANEL_DEFAULT		ILI9341_VARIANT_3
@@ -102,6 +106,12 @@ static void init(void)
 	panel.width = PANEL_W;
 	panel.height = PANEL_H;
 	panel.variant = panel_variant();
+	if (panel.variant == ILI9341_VARIANT_REG) {
+		// Before the UI starts (app.c: displays first), so the UI lays out for this size
+		panel.width = gd88_display.width = REG_PANEL_W;
+		panel.height = gd88_display.height = REG_PANEL_H;
+		panel.x_off = REG_PANEL_X;
+	}
 	hrc_pin_out(PIN_KEY_LIGHT, false);
 	ili9341_init(&panel);
 	ready = true;
@@ -125,7 +135,7 @@ static void set_key_light(bool on)
 	hrc_pin_write(PIN_KEY_LIGHT, on);
 }
 
-const hal_display_t gd88_display = {
+hal_display_t gd88_display = {	// not const: the panel found at init sets the size
 	.inset_top = CONFIG_DISPLAY_INSET_TOP, .inset_bottom = CONFIG_DISPLAY_INSET_BOTTOM,
 	.inset_left = CONFIG_DISPLAY_INSET_LEFT, .inset_right = CONFIG_DISPLAY_INSET_RIGHT,
 	.width = PANEL_W,

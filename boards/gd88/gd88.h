@@ -11,7 +11,7 @@
 #include "hal_rx2.h"
 #include "platform.h"
 
-extern const hal_display_t gd88_display;
+extern hal_display_t gd88_display;
 // The panel variant in use (ili9341.h), what chose it ("read": the ID the panel answered, "rec": the panel record in program flash,
 // "dflt") and the ID the panel answered (the debug page)
 uint8_t gd88_panel_variant(void);

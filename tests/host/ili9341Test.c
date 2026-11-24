@@ -135,8 +135,16 @@ static void test_register_variant(void)
 	clear();
 	ili9341_write_rows_indexed(&p, fb, pal, 10, 12);
 	CHECK(find_cmd(0x22, 0) > 0);
-	// x on R50 / R51 / R20 (0..319), y on R52 / R53 / R21: rows 10 and 11
-	static const uint16_t want[][2] = { { 0x50, 0 }, { 0x51, 319 }, { 0x52, 10 }, { 0x53, 11 }, { 0x20, 0 }, { 0x21, 10 } };
+	CHECK(px_total == 2u * 320u);
+	CHECK(last_px[0] == 0x0000 && last_px[1] == 0xF800);
+	// x on R50 / R51 / R20 from the glass's offset, y on R52 / R53 / R21: a 220-wide glass at x 10, rows 10 and 11
+	p.width = 220;
+	p.height = 176;
+	p.x_off = 10;
+	clear();
+	ili9341_write_rows_indexed(&p, fb, pal, 10, 12);
+	CHECK(px_total == 2u * 220u);
+	static const uint16_t want[][2] = { { 0x50, 10 }, { 0x51, 229 }, { 0x52, 10 }, { 0x53, 11 }, { 0x20, 10 }, { 0x21, 10 } };
 	for (unsigned k = 0; k < sizeof want / sizeof want[0]; k++) {
 		bool seen = false;
 		for (uint32_t i = 0; i + 3 < n_words; i++) {
@@ -146,8 +154,6 @@ static void test_register_variant(void)
 		}
 		CHECK(seen);
 	}
-	CHECK(px_total == 2u * 320u);
-	CHECK(last_px[0] == 0x0000 && last_px[1] == 0xF800);
 }
 
 static void test_rows(void)

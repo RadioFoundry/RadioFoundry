@@ -38,6 +38,7 @@ enum {
 typedef struct {
 	const ili9341_bus_t *bus;
 	uint16_t width, height;		// panel pixels as drawn (320 x 240 landscape)
+	uint16_t x_off, y_off;		// where the glass starts in the controller's frame memory: added to every window
 	uint8_t variant;		// ILI9341_VARIANT_*
 } ili9341_t;
 
