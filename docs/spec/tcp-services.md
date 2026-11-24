@@ -260,7 +260,9 @@ port) closes the connection unanswered, so nothing after it runs.
 | anything else | `RPRT -4` |
 
 `\dump_state` is written from the manual's description and the line layout clients are known to parse; the HIL test
-checks it with Hamlib's own `rigctl -m 2` where it is installed.
+checks it with Hamlib's own `rigctl -m 2` where it is installed. The answer fits in 536 bytes, half the TCP transmit
+buffer: range edges go out as whole hertz, and a range that would leave no room for the closing lines is left out,
+since a client that misses those lines fails to open the rig.
 
 View keys: `rigctl.conns rigctl.commands rigctl.errors rigctl.freq_sets rigctl.ptt rigctl.ptt_downs`.
 

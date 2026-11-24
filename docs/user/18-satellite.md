@@ -92,6 +92,9 @@ not from the selected VFO or codeplug channel. A satellite without a stored prof
 tracking, the radio uses FM and 12.5 kHz bandwidth; stopping restores the prior radio settings. TLE providers supply
 orbital elements, not communication frequencies. PC synchronization does not touch the codeplug; editing an existing
 channel does not change the runtime profile used for tracking.
+The radio accepts frequency profiles only when both frequencies are within its supported bands. The TLE tools check
+the connected radio's bands and report when a single-band radio cannot use the selected profiles. To install TLEs
+without frequency profiles for pass prediction, use `tools/satellite_tle.py sync`.
 
 The screen reports receive and transmit Doppler offsets, the current Doppler-adjusted RX and TX frequencies,
 and the next pass's AOS and LOS countdowns. The north-up circular sky plot shows the predicted path from horizon to

@@ -335,12 +335,22 @@ static uint32_t sample_time(const hrc6000_air_t *a, uint32_t i)
 	return a->t_half[(i / HALF) % 2u] + (i % HALF) * SAMPLE_US;
 }
 
+// A new set-up to come (open, tap start, the board's mode entry, the close): copy_on reads the registers again
+static void copy_forget(hrc6000_air_t *a)
+{
+	a->copy_saved = false;
+	a->copy_tried = false;
+}
+
 // The chip from DMR (or the physical layer) to the copy set-up: FM receive with every audio filter off, nothing to
 // the line out, the FM receive RAM's interrupt on
 static void copy_on(hrc6000_air_t *a)
 {
-	if (!a->copy_saved) {
+	// The registers before the copy, once per set-up: a copy set up again (the watchdog, the end of a transmission)
+	// would read its own set-up, and copy_restore would leave those on DMR receive
+	if (!a->copy_tried) {
 		uint8_t f = 0, m = 0;
+		a->copy_tried = true;
 		a->copy_saved = hrc_read(a->dev, HRC_PAGE_SYS, R_FM_FILT, &f) && hrc_read(a->dev, HRC_PAGE_SYS, R_INT_MASK, &m);
 		a->saved_34 = f;
 		a->saved_81 = m;
@@ -350,9 +360,10 @@ static void copy_on(hrc6000_air_t *a)
 	w(a, R_FM_TX, 0x00);
 	w(a, R_FM_FILT, FILT_COPY);
 	w(a, R_MODE, MODE_FM);
-	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : 0x19u) | INT_FM_RX));
+	w(a, R_INT_MASK, (uint8_t)((a->copy_saved ? a->saved_81 : HRC_INT_MASK_DMR) | INT_FM_RX));
 	w(a, R_INT_CLEAR, 0xFF);
 	a->last_any = false;	// which half fills next is found again (take_half)
+	a->t_copy = now(a);
 	a->cgap = true;
 	a->rx_paused = false;
 	__atomic_thread_fence(__ATOMIC_RELEASE);
@@ -367,8 +378,13 @@ static void copy_restore(hrc6000_air_t *a, bool chip)
 		w(a, R_INT_MASK, a->saved_81);
 		w(a, R_FM_FILT, a->saved_34);
 		w(a, R_INT_CLEAR, 0xFF);
+	} else if (chip && a->copy_tried) {
+		// The save failed: copy_on's mask without the FM receive interrupt. 0x34 (FM audio filters only) waits for
+		// the board's next FM entry
+		w(a, R_INT_MASK, HRC_INT_MASK_DMR);
+		w(a, R_INT_CLEAR, 0xFF);
 	}
-	a->copy_saved = false;
+	copy_forget(a);
 }
 
 // Back to the DMR receive set-up; the board restarts the slot engine (5.1) after
@@ -387,6 +403,7 @@ static void take_half(hrc6000_air_t *a, uint32_t t)
 {
 	uint16_t last[2];
 
+	a->t_copy = t;	// a half came, taken or dropped for a full ring: the copy runs
 	for (uint8_t i = 0; i < 2; i++) {
 		uint8_t b[2] = { 0, 0 };
 		(void)hrc_ram(a->dev, HRC_PAGE_DATA, (uint16_t)(COPY_RAM + i * COPY_HALF_BYTES + COPY_HALF_BYTES - 2u), b, 2,
@@ -742,7 +759,7 @@ bool hrc6000_air_tap_start(hrc6000_air_t *a)
 	lock(a);
 	a->tap = true;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = false;
+	copy_forget(a);
 	memset(&a->st, 0, sizeof(a->st));
 	copy_on(a);
 	unlock(a);
@@ -834,7 +851,7 @@ bool hrc6000_air_open(hrc6000_air_t *a, const air_profile_t *p, air_event_cb_t c
 	lock(a);
 	a->rx_copy = copy;
 	a->rhead = a->rtail = 0;
-	a->copy_saved = false;
+	copy_forget(a);
 	a->p = p;
 	a->cb = cb;
 	a->cb_ctx = ctx;
@@ -886,7 +903,13 @@ void hrc6000_air_close(hrc6000_air_t *a, bool chip)
 void hrc6000_air_rx_restart(hrc6000_air_t *a)
 {
 	lock(a);
-	if (a->open) {
+	if (a->tap) {
+		// The tap's copy after the board's mode entry (suspend turned it off). A retune leaves a running copy as it
+		// is: setting it up again would drop the next half. Open and tap exclude each other
+		if (!a->copy) {
+			copy_on(a);
+		}
+	} else if (a->open) {
 		if (a->tx == HRC6000_AIR_RX) {
 			rx_setup(a);
 		} else {
@@ -899,12 +922,12 @@ void hrc6000_air_rx_restart(hrc6000_air_t *a)
 void hrc6000_air_suspend(hrc6000_air_t *a)
 {
 	lock(a);
-	if (a->open) {
-		if (a->tx != HRC6000_AIR_RX) {
+	if (a->open || a->tap) {
+		if (a->open && a->tx != HRC6000_AIR_RX) {
 			tx_stop(a, now(a), false);
 		}
 		a->copy = false;	// the board's mode entry rewrote what copy_on changed; rx_restart sets it up again
-		a->copy_saved = false;
+		copy_forget(a);
 		a->rx_paused = true;
 	}
 	unlock(a);
@@ -914,8 +937,20 @@ void hrc6000_air_suspend(hrc6000_air_t *a)
 void hrc6000_air_poll(hrc6000_air_t *a)
 {
 	lock(a);
+	uint32_t t = now(a);
+	// The copy stopped: no half for 200 ms (one every 32 ms) while receiving through it. Nothing else would bring it
+	// back before the session closes. A lost edge alone doesn't get here (the board pends the system handler for a
+	// line left low), so this is the copy set-up undone or the chip no longer filling the RAM: the flags cleared and
+	// the copy set up again; the next half is a gap
+	if ((a->open || a->tap) && a->copy && a->tx == HRC6000_AIR_RX && !a->rx_paused &&
+	    (uint32_t)(t - a->t_copy) > AIR_COPY_STALL_US) {
+		uint8_t flags = 0;
+		(void)hrc_read(a->dev, HRC_PAGE_SYS, R_INT_FLAGS, &flags);
+		a->copy_lost_flags = flags;
+		a->st.copy_restarts++;
+		copy_on(a);	// clears every flag
+	}
 	if (a->open) {
-		uint32_t t = now(a);
 		if (a->rearm_hold && (uint32_t)(t - a->t_rearm) >= REARM_HOLD_US) {
 			w(a, R_SLOT_CTL, CTL_SOFT);
 			a->rearm_hold = false;

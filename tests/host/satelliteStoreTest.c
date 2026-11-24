@@ -29,12 +29,13 @@ void storage_quick_unlock(void) { }
 
 #define FLASH_SIZE 0x13000u
 #define TEST_RECORD_MAX (4u + 1u + 48u + 2u * 69u)
+static band_t test_band = { .lo_hz = 10000000u, .hi_hz = 999999999u, .tx = true };
 static const hal_flash_map_t map = {
 	.settings_addr = 0x01000u, .settings_size = 0x02000u, .journal_addr = 0x03000u,
 	.openfw_eeprom = 0, .openfw_flash = 0x08000u, .openfw_end = 0x10000u,
 	.satellite_addr = 0x10000u, .satellite_size = 0x03000u,
 };
-const board_t board = { .name = "satellite-test", .flash = &sim_flash };
+const board_t board = { .name = "satellite-test", .bands = &test_band, .band_count = 1u, .flash = &sim_flash };
 
 static uint8_t output[256];
 static bool channel_sync_result = true;
@@ -619,6 +620,44 @@ static void test_custom_frequency_profiles(void)
 	CHECK(satellite_frequency_profile(99001u, &readback) && readback.rx_hz == profile.rx_hz);
 }
 
+// The command's working arrays are one static buffer (debuglink_satellite.c: one debug link command runs at a time): what
+// an earlier command left in it, longer or of another kind, never reaches the next
+static void test_working_buffer_reuse(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	static const uint32_t ten[SATELLITE_PROFILE_MAX] = {
+		40908u, 40931u, 43678u, 61781u, 63213u, 63214u, 63215u, 67291u, 63217u, 63218u
+	};
+	uint8_t set[2u + 4u * SATELLITE_PROFILE_MAX] = { DL_SAT_OP_PROFILE_SET };
+	uint8_t get_ids = DL_SAT_OP_PROFILE_GET, get_values = DL_SAT_OP_PROFILE_VALUES_GET;
+	uint8_t list[3] = { DL_SAT_OP_LIST };
+	uint8_t record[TEST_RECORD_MAX];
+
+	CHECK(install(record, make_record(record, 25544u, "ISS", "26315.50000000"), 1, false, false, false));
+	CHECK(command(list, 3u) == 2u + 8u && output[0] == DL_ST_OK && output[1] == 1u);	// the list buffer holds a record
+	set[1] = SATELLITE_PROFILE_MAX;
+	for (uint8_t i = 0u; i < SATELLITE_PROFILE_MAX; i++)
+		put32(set + 2u + 4u * i, ten[i]);
+	CHECK(command(set, sizeof(set)) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_values, 1u) == 2u + 14u * SATELLITE_PROFILE_MAX && output[0] == DL_ST_OK &&
+	      output[1] == SATELLITE_PROFILE_MAX && get32(output + 2u) == ten[0] &&
+	      get32(output + 2u + 14u * 9u) == ten[9]);		// the buffer now holds ten profiles
+	set[1] = 2u;
+	CHECK(command(set, 2u + 4u * 2u) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 6u) == ten[1]);			// two ids, none of the ten profiles' bytes
+	CHECK(command(&get_values, 1u) == 2u + 14u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 16u) == ten[1] && get32(output + 6u) != 0u);
+	CHECK(command(list, 3u) == 2u + 8u && output[0] == DL_ST_OK && output[1] == 1u && get32(output + 2u) == 25544u);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 6u) == ten[1]);
+	set[1] = SATELLITE_PROFILE_MAX;
+	CHECK(command(set, sizeof(set)) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * SATELLITE_PROFILE_MAX && output[1] == SATELLITE_PROFILE_MAX &&
+	      get32(output + 2u + 4u * 9u) == ten[9]);
+}
+
 static void test_arm_capability(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -680,6 +719,30 @@ static void test_first_install_recovery(void)
 	CHECK(command(&info, 1u) == 6u && output[0] == DL_ST_OK && get16(output + 4) == 1u);
 }
 
+static void test_cross_band_profiles_install(void)
+{
+	static const satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX] = {
+		{ 25544u, "ISS", 437800000u, 145990000u, 670u },
+		{ 27607u, "SO-50", 436795000u, 145850000u, 670u },
+		{ 43017u, "AO-91", 145960000u, 435250000u, 0u },
+	};
+	static const uint32_t band_limits[][2] = {
+		{ 136000000u, 174000000u },
+		{ 400000000u, 480000000u },
+	};
+	sim_flash_create(FLASH_SIZE, &map);
+	test_band.lo_hz = 10000000u;
+	test_band.hi_hz = 999999999u;
+	CHECK(storage_init());
+	for (uint8_t band = 0u; band < sizeof(band_limits) / sizeof(band_limits[0]); band++) {
+		test_band.lo_hz = band_limits[band][0];
+		test_band.hi_hz = band_limits[band][1];
+		CHECK(!satellite_store_frequency_profiles_set(3u, profiles));
+	}
+	test_band.lo_hz = 10000000u;
+	test_band.hi_hz = 999999999u;
+}
+
 int main(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -690,8 +753,10 @@ int main(void)
 	test_commit_power_cuts();
 	test_replace_power_cuts();
 	test_custom_frequency_profiles();
+	test_working_buffer_reuse();
 	test_arm_capability();
 	test_first_install_recovery();
+	test_cross_band_profiles_install();
 	CHECK(sim_flash_violations() == 0);
 	sim_flash_free();
 	if (failures != 0) {

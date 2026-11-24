@@ -49,6 +49,10 @@ typedef struct {
 	void (*status)(radio_status_t *st);
 	// Speaker path (amp and mute) for received audio
 	void (*audio)(bool on);
+	// Optional: keep the speaker silent while audio() stays on, for a mute that must not stop the FM receive audio
+	// reaching a decoder. A board whose decoder reads that audio through the path audio() gates (an I2S tap behind the
+	// FM feed-through) needs it; without it the core mutes with audio(false)
+	void (*speaker_mute)(bool mute);
 	// Optional: receive audio from a signal is open: FM squelch open or monitor, or a DMR, P25 or NXDN call playing
 	// (the green LED's state). Local beeps don't set it. For a board whose own noise reaches the audio only with a
 	// carrier present, such as backlight PWM through the synthesizer
@@ -100,6 +104,12 @@ typedef struct {
 	// start, so any task may call it. NULL = no gain in the board's audio path: DMR then scales the samples before the
 	// vocoder and FM stays as it is
 	void (*mic_gain)(int8_t db);
+	// Optional: dB of gain on the mic PCM before DMR's vocoder encoder, at the setting's middle step, for a board
+	// whose mic reaches the PCM quieter than other radios send it: one radio's digital voice decoded 13 dB under
+	// another maker's handheld's (measured off air), so the far end heard it faint. The core applies it with a peak
+	// limiter (radio/mic_gain.h), so a shout isn't clipped by it. 0 = as the board gives it. Not P25's yet: its voice
+	// path keeps the step alone
+	int8_t mic_pcm_db;
 	// Optional: the reference oscillator trim, parts per billion (the Freq trim setting, -10000..+10000 in steps of
 	// 100; core/radio/ref_trim.h). Positive raises the reference. It moves receive and transmit together, FM and DMR. Any task may call it. The board applies
 	// it now (false) or at the next tune (true: the caller asks the radio task for one, radio_req_retune). NULL = the

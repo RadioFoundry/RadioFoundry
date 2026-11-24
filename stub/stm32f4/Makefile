@@ -9,6 +9,9 @@
 #   make -C stub/stm32f4 BUILD=DIR       elsewhere
 #   make -C stub/stm32f4 check           build, then fail if the copy embedded in stub/f4stub.py differs (ci.sh runs it)
 ROOT := ../..
+TP_ROOT := $(ROOT)
+include $(ROOT)/platform/third_party.mk
+$(TP_CHECK)
 ARM_GCC_DIR ?= $(firstword $(wildcard $(HOME)/opt/arm-gnu-toolchain-*-arm-none-eabi/bin/) /usr/bin/)
 CROSS ?= $(ARM_GCC_DIR)arm-none-eabi-
 CC := $(CROSS)gcc
@@ -21,7 +24,8 @@ BUILD ?= $(ROOT)/build/stub-stm32f4
 # through the port's callbacks) it saves about 400 bytes
 CFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -std=gnu11 -ffreestanding -fno-builtin -ffunction-sections \
 	-fdata-sections -fno-common -Wall -Wextra -Wshadow -Wstrict-prototypes -DSTM32F405xx \
-	-I../common -I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include
+	-I../common $(call TP_INCLUDES,-I$(ROOT)/third_party/cmsis-device-f4/Include -I$(ROOT)/third_party/cmsis-core/Include) \
+	$(TP_PREFIX_MAP)
 LDFLAGS := -mcpu=cortex-m4 -mthumb -mfloat-abi=soft -Os -flto -nostdlib -nostartfiles -Wl,--gc-sections -T f4stub.ld \
 	-Wl,-Map=$(BUILD)/f4stub.map -Wl,--print-memory-usage -Wl,--no-warn-rwx-segments
 

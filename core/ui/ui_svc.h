@@ -100,6 +100,7 @@ bool ui_svc_save_channel(void);
 // ui_svc_save_channel. from: the stored channel ch is a copy of (number itself when edited in place), 0 = none; a
 // copy of a channel of a kind takes its mode with it (channel-modes.md 2.4). false: a write is still going on, or no
 // codeplug storage in this build
+void ui_svc_next_aes_key(channel_t *ch);
 bool ui_svc_write_channel(uint16_t number, const channel_t *ch, uint16_t from);
 #if CONFIG_P25 || CONFIG_NXDN
 // A P25 or NXDN channel's own settings, its tag's parameter block (p25-codeplug.md 2, nxdn-codeplug.md 2)
@@ -282,6 +283,8 @@ bool ui_svc_emergency(bool on);
 bool ui_svc_emergency_active(void);
 // dmr-ext: a new emergency alert heard becomes UI_EV_EMERGENCY (ok: an alarm, else a call); run from ui_svc_poll
 void ui_svc_emergency_poll(void);
+// Every UI pass: fire UI_EV_APRS_MESSAGE when a new message addressed to us arrives (CONFIG_APRS_RX; weak no-op without it)
+void ui_svc_aprs_msg_poll(void);
 // The emergency screen was acknowledged: the received alert is dismissed (weak no-op without dmr-ext)
 void ui_svc_emergency_dismiss(void);
 // The settings back to their defaults and the native codeplug area emptied (never the open-firmware codeplug or the
@@ -498,6 +501,7 @@ typedef enum {
 				// the channels of a kind that can't be used (their system isn't set up here); else why
 				// says why
 	UI_EV_CODEPLUG_FOREIGN,	// a codeplug write is held: ask what to do with another firmware's codeplug
+	UI_EV_APRS_MESSAGE,	// an APRS message addressed to us: name = sender callsign, text = message text
 } ui_event_kind_t;
 
 typedef struct {

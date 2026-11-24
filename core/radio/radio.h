@@ -64,7 +64,8 @@ typedef enum {
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
 	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
-	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX,
+	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
+	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -450,6 +451,8 @@ typedef struct {
 	bool tone_ok;		// the RX tone or code is heard (debounced; true when the channel has no RX tone)
 	int16_t rssi_dbm;
 	uint8_t noise;
+	uint8_t sql_close;	// polls over the close line the squelch's last close took (1 or 2 as a carrier goes, more
+				// after a voice peak hold); 0 none yet
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
 				// APRS beacon. It doesn't light the screen (radio_view_wakes)
@@ -464,6 +467,7 @@ typedef struct {
 				// mode instead); 0 none. Set at power-up only
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+	uint8_t hs_power;	// the board power level the hotspot keys, while hotspot
 	// Scan (CONFIG_SCAN; all 0 otherwise)
 	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
