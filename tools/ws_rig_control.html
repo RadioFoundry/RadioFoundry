@@ -83,6 +83,7 @@ code, #log { font-family: var(--font-mono); font-size: .8rem; }
 	white-space: pre-wrap; word-break: break-all; }
 #screen { image-rendering: pixelated; width: 100%; max-width: 480px; background: #000; border-radius: var(--radius-sm); display: block; }
 #keys button { min-width: 3.2rem; }
+.lbl { min-width: 4.5rem; }
 a { color: var(--link); }
 </style>
 </head>
@@ -101,14 +102,14 @@ a { color: var(--link); }
 <section class="wide">
 	<h2>Radio</h2>
 	<div class="row">
-		<label>Address <input id="addr" value="12.255.255.254" size="16"></label>
+		<label>Address <input id="addr" value="12.255.255.254" size="16" autocomplete="off"></label>
 		<button id="conn" class="primary">Connect</button>
 		<span id="st" class="pill">Not connected</span>
 	</div>
 	<p class="note">On the radio's programming cable: USB network, the radio is 12.255.255.254. Serial (PPP), the radio's
 	address on that link (no audio there).</p>
 	<p id="where" class="note"></p>
-	<p id="hello" class="note"></p>
+	<table id="info"></table>
 </section>
 
 <section>
@@ -123,12 +124,14 @@ a { color: var(--link); }
 <section>
 	<h2>Zone and channel</h2>
 	<div class="row">
-		<span>Channel</span>
-		<button data-cmd="step?channel=-1" data-need="step">−1</button>
-		<button data-cmd="step?channel=1" data-need="step">+1</button>
-		<span>Zone</span>
-		<button data-cmd="step?zone=-1" data-need="step">−1</button>
-		<button data-cmd="step?zone=1" data-need="step">+1</button>
+		<span class="lbl">Channel</span>
+		<button data-cmd="step?channel=-1" data-need="step">Down</button>
+		<button data-cmd="step?channel=1" data-need="step">Up</button>
+	</div>
+	<div class="row" style="margin-top:.5rem">
+		<span class="lbl">Zone</span>
+		<button data-cmd="step?zone=-1" data-need="step">Down</button>
+		<button data-cmd="step?zone=1" data-need="step">Up</button>
 	</div>
 	<div class="row" style="margin-top:.5rem">
 		<label>Zone <input id="zone" type="number" min="0" value="0"></label>
@@ -140,17 +143,18 @@ a { color: var(--link); }
 
 	<h2 style="margin-top:1rem">Keys</h2>
 	<div id="keys" class="row"></div>
+	<p id="keynote" class="note"></p>
 	<div class="row" style="margin-top:.5rem" id="enc" hidden>
-		<span>Knob</span><button data-cmd="e-1" data-ctl>◀ −1</button><button data-cmd="e1" data-ctl>+1 ▶</button>
+		<span class="lbl">Knob</span><button data-cmd="e-1" data-ctl>Down</button><button data-cmd="e1" data-ctl>Up</button>
 	</div>
 	<button id="ptt" data-ctl disabled>PTT (hold)</button>
-	<p class="note">Keys are labeled by their bit in the radio's keymap. Keys and PTT work only from the computer the radio is
-	plugged into. PTT transmits: only on a channel you may use, with your own ID.</p>
+	<p class="note">Keys and PTT work only from the computer the radio is plugged into. PTT transmits: only on a channel you may use, with your own ID.</p>
 </section>
 
 <section>
 	<h2>GPS</h2>
-	<button id="gps" aria-pressed="false" data-need="gps">GPS fix</button>
+	<button id="gps" aria-pressed="false" data-need="gps">Enable</button>
+	<span id="gpsst" class="note"></span>
 	<table id="fix"></table>
 	<p id="map" class="note"></p>
 </section>
@@ -181,7 +185,7 @@ a { color: var(--link); }
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
-let ws = null, hi = null, nstat = 0, img = null, cv = null, raf = 0, au = null, gn = null, next = 0, pttTimer = 0;
+let ws = null, hi = null, about = {}, helloTimer = 0, gpsTimer = 0, gpsWait = false, nstat = 0, img = null, cv = null, raf = 0, au = null, gn = null, next = 0, pttTimer = 0;
 
 const store = (k, v) => { try { return v === undefined ? localStorage.getItem(k) : localStorage.setItem(k, v); } catch (e) { return null; } };
 $('addr').value = store('rfoundry-ws-addr') || $('addr').value;
@@ -222,6 +226,27 @@ function enable() {
 	$('enc').hidden = !(on && hi.encoder);
 }
 
+// The radio: the hello, /status's version and uptime, and two debug link view sections where the build has them
+// (board name, codeplug source). The radio sends no build date over HTTP
+const dur = s => s == null ? '' : [[86400, 'd'], [3600, 'h'], [60, 'm']].reduce((t, [n, u]) => s >= n ?
+	(t += Math.floor(s / n) + u + ' ', s %= n, t) : t, '') + s + 's';
+function info() {
+	const h = hi || {};
+	table($('info'), [['Radio', about.radio], ['Board', about.board], ['Firmware', about.version],
+		['Build date', about.version ? 'not reported by the radio' : ''], ['Codeplug', about.codeplug],
+		['Uptime', dur(about.uptime_s)], ['Protocol', h.proto ?? (hi ? 'none (firmware before /ws control)' : '')],
+		['Takes', (h.caps || []).join(', ')],
+		['Control', hi ? (h.control ? 'yes (this computer is the radio\'s host)' : 'view only (not the host)') : ''],
+		['Audio', hi ? (h.audio ? 'yes' : 'no (not on PPP)') : ''],
+		['Screen', h.screen ? `${h.screen[0]}×${h.screen[1]}, ${h.screen[2]} bpp` : '']]
+		.filter(r => r[1] !== undefined && r[1] !== ''));
+}
+function viewInfo(a) {
+	const v = sec => fetch(`http://${a}/api/view?section=${sec}`).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+	v('board').then(j => { if (j['board.name']) { about.board = j['board.name']; info(); } });
+	v('storage').then(j => { if (j['codeplug.source']) { about.codeplug = j['codeplug.source']; info(); } });
+}
+
 // Requests in words are answered only on an error; the status that follows shows the result
 const ERR = {400: 'malformed request', 403: 'not from the host the radio is plugged into', 409: 'refused now (transmitting, a hotspot, or no GPS)'};
 
@@ -246,7 +271,8 @@ function status(j) {
 	];
 	if (j.dmr) rows.push(['DMR', `ID ${j.dmr.own_id} CC${j.dmr.cc} TS${j.dmr.ts} to ${j.dmr.target}` +
 		(j.dmr.private ? ' (private)' : '') + (j.dmr.heard ? `, heard ${j.dmr.heard}` : '')]);
-	rows.push(['Version', j.version], ['Uptime', j.uptime_s != null ? j.uptime_s + ' s' : '']);
+	Object.assign(about, {radio: j.radio, version: j.version, uptime_s: j.uptime_s});
+	info();
 	table($('status'), rows.filter(r => r[1] !== undefined && r[1] !== ''));
 	$('st').textContent = j.state === 'tx' ? 'Transmitting' : hi.control ? 'Connected' : 'View only';
 	$('st').className = 'pill ' + (j.state === 'tx' ? 'bad' : hi.control ? 'ok' : 'warn');
@@ -257,6 +283,11 @@ function fix(j) {
 	table($('fix'), [['Latitude', j.lat], ['Longitude', j.lon], ['Altitude', j.alt_m != null ? j.alt_m + ' m' : ''],
 		['Speed', j.kmh != null ? j.kmh + ' km/h' : ''], ['Course', j.course != null ? j.course + '°' : ''],
 		['Satellites', j.sats], ['HDOP', j.hdop], ['Time', hms]].filter(r => r[1] !== undefined && r[1] !== ''));
+	$('gpsst').textContent = 'Updated ' + new Date().toTimeString().slice(0, 8) + ', next in 1 minute';
+	gpsWait = false;
+	send('gps?off');
+	clearTimeout(gpsTimer);
+	gpsTimer = setTimeout(gpsAsk, 60000);
 	$('map').innerHTML = `<a href="https://www.openstreetmap.org/?mlat=${j.lat}&mlon=${j.lon}#map=16/${j.lat}/${j.lon}" target="_blank" rel="noopener">Open on a map</a>`;
 }
 
@@ -295,15 +326,36 @@ function play(buf) {
 	next += b.duration;
 }
 
+function gpsAsk() {
+	gpsWait = true;
+	send('gps');
+	if (!$('gpsst').textContent.startsWith('Updated')) $('gpsst').textContent = 'Waiting for a fix';
+}
+
 const press = (b, on) => b.setAttribute('aria-pressed', on);
 const pressed = b => b.getAttribute('aria-pressed') === 'true';
+
+// Key names: the radio's /keys.json ({name: bit}, from its board's KEY_* enum), shown in words. Each radio numbers
+// its keys its own way, so without the file a key is only its bit
+const KEYNAME = {star: '*', hash: '#', up: 'Up', down: 'Down', left: 'Left', right: 'Right', green: 'Green', red: 'Red',
+	menu: 'Menu', back: 'Back', vfo_mr: 'VFO/MR', ab: 'A/B', fn_left: 'P1', fn_right: 'P2', sk1: 'Side 1', sk2: 'Side 2',
+	sk3: 'Side 3', sos: 'SOS', ptt: 'PTT'};
+let keyNames = {};
+const keyLabel = n => KEYNAME[n] || (/^\d$/.test(n) ? n : n.replace(/_/g, ' ').toUpperCase());
+function fetchKeys(a) {
+	fetch(`http://${a}/keys.json`).then(r => r.json()).then(m => {
+		keyNames = Object.fromEntries(Object.entries(m).map(([n, b]) => [b, keyLabel(n)]));
+		$('keynote').textContent = '';
+		if (hi) keys();
+	}).catch(() => { $('keynote').textContent = 'The radio didn\'t let this page read its key names (/keys.json), so keys show their bit.'; });
+}
 
 function keys() {
 	const k = $('keys');
 	k.replaceChildren();
 	for (const bit of hi.keys || []) {
 		if (bit === hi.ptt) continue;
-		const b = Object.assign(document.createElement('button'), {textContent: 'key ' + bit, disabled: !hi.control});
+		const b = Object.assign(document.createElement('button'), {textContent: keyNames[bit] ?? 'key ' + bit, disabled: !hi.control});
 		b.dataset.ctl = '';
 		b.onpointerdown = () => { b.setPointerCapture?.(0); send('d' + bit); };
 		b.onpointerup = b.onpointercancel = () => send('u' + bit);
@@ -320,12 +372,21 @@ function ptt(down) {
 	else send('u' + hi.ptt);
 }
 $('ptt').onpointerdown = () => ptt(true);
-$('ptt').onpointerup = $('ptt').onpointerleave = $('ptt').onpointercancel = () => $('ptt').classList.contains('down') && ptt(false);
+$('ptt').onpointerup = $('ptt').onpointerleave = $('ptt').onpointercancel = () => { if ($('ptt').classList.contains('down')) ptt(false); };
 
 function connect() {
 	const a = $('addr').value.trim();
+	// the radio takes its IPv4 address or its .local name in Host (tcp-services.md 5)
+	if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(a) && !/^[a-z0-9-]+\.local$/i.test(a) || a.split('.').some(n => +n > 255)) {
+		$('st').textContent = 'Not an address'; $('st').className = 'pill bad';
+		$('where').textContent = 'Give the radio\'s IPv4 address (12.255.255.254 on USB network) or its .local name.';
+		return;
+	}
 	store('rfoundry-ws-addr', a);
 	ws = new WebSocket('ws://' + a + '/ws');
+	// an address nothing answers at can take a minute to fail: give up when no hello comes in 6 s
+	helloTimer = setTimeout(() => { if (ws && !hi) { $('where').textContent = `No answer from ${a}: check the address and ` +
+		'the cable (USB network or PPP up?).'; ws.close(); } }, 6000);
 	ws.binaryType = 'arraybuffer';
 	$('st').textContent = 'Connecting'; $('st').className = 'pill';
 	$('conn').textContent = 'Disconnect';
@@ -339,8 +400,9 @@ function connect() {
 		if (!j.gps || !$('logbin').checked) log('←', ev.data.length > 300 ? ev.data.slice(0, 300) + '…' : ev.data);
 		if (j.hello) {
 			hi = j;
-			$('hello').textContent = `proto ${j.proto ?? '(none: firmware before #914)'}, caps ${(j.caps || []).join(', ') || 'none'}, ` +
-				`control ${j.control}, audio ${j.audio}` + (j.screen ? `, screen ${j.screen[0]}×${j.screen[1]} ${j.screen[2]} bpp` : '');
+			clearTimeout(helloTimer);
+			$('where').textContent = '';
+			info(); viewInfo(a); fetchKeys(a);
 			if (j.screen) {
 				img = new ImageData(j.screen[0], j.screen[1]);
 				cv = $('screen'); cv.width = j.screen[5]; cv.height = j.screen[6];
@@ -348,7 +410,7 @@ function connect() {
 			keys(); enable();
 			// carry the toggles over a reconnect
 			if (pressed($('chg'))) send('status?changes');
-			if (pressed($('gps'))) send('gps');
+			if (pressed($('gps'))) gpsAsk();
 			if (pressed($('scr'))) send('s1');
 			if (pressed($('aud')) && j.audio) send('a1');
 		} else if (j.err) $('err').textContent = `Error ${j.err}: ${ERR[j.err] || 'unknown'}`;
@@ -356,28 +418,36 @@ function connect() {
 		else { $('err').textContent = ''; status(j); }
 	};
 	ws.onclose = ev => {
-		ptt(false); clearInterval(pttTimer);
+		ptt(false); clearInterval(pttTimer); clearTimeout(helloTimer); clearTimeout(gpsTimer);
 		const was = !!hi;
 		ws = null; hi = null; enable();
 		$('conn').textContent = 'Connect';
 		$('st').className = 'pill bad';
 		// a browser hides the HTTP answer: no hello means 403 (this page's origin), 503 (another client) or no radio
-		$('st').textContent = was ? 'Disconnected' : 'Refused or not found';
-		if (!was) $('where').textContent = 'No answer from /ws: check the address, close the radio\'s own page and takRF ' +
-			'(one client at a time), and serve this page from localhost.';
+		$('st').textContent = was ? 'Disconnected' : 'No answer';
+		if (!was && !$('where').textContent.startsWith('No answer')) $('where').textContent = `No /ws at ${$('addr').value.trim()}: ` +
+			'a wrong address, another client holding it (the radio\'s own page, takRF), or this page not served from localhost.';
 		log('×', 'closed ' + ev.code);
 	};
 }
 
 $('conn').onclick = () => ws ? ws.close() : connect();
-$('addr').onkeydown = e => e.key === 'Enter' && !ws && connect();
+$('addr').onkeydown = e => { if (e.key === 'Enter' && !ws) connect(); };	// a handler returning false eats the key
 document.querySelectorAll('[data-cmd]').forEach(b => b.onclick = () => send(b.dataset.cmd));
 $('select').onclick = () => {
 	const p = $('pos').value;
 	send('select?zone=' + ($('zone').value | 0) + (p === '' ? '' : '&pos=' + (p | 0)));
 };
 $('chg').onclick = () => { const on = !pressed($('chg')); press($('chg'), on); nstat = 0; send(on ? 'status?changes' : 'status'); };
-$('gps').onclick = () => { const on = !pressed($('gps')); press($('gps'), on); send(on ? 'gps' : 'gps?off'); };
+$('gps').onclick = () => {
+	const on = !pressed($('gps'));
+	press($('gps'), on);
+	$('gps').textContent = on ? 'Disable' : 'Enable';
+	clearTimeout(gpsTimer);
+	$('gpsst').textContent = '';
+	if (on) gpsAsk();
+	else { if (gpsWait) send('gps?off'); gpsWait = false; }
+};
 $('scr').onclick = () => { const on = !pressed($('scr')); press($('scr'), on); send(on ? 's1' : 's0'); };
 $('aud').onclick = () => {
 	const on = !pressed($('aud'));
@@ -392,7 +462,7 @@ $('aud').onclick = () => {
 };
 $('vol').oninput = () => gn && (gn.gain.value = $('vol').value);
 $('send').onclick = () => { const t = $('raw').value.trim(); if (t) send(t); };
-$('raw').onkeydown = e => e.key === 'Enter' && $('send').onclick();
+$('raw').onkeydown = e => { if (e.key === 'Enter') $('send').onclick(); };
 $('clear').onclick = () => $('log').replaceChildren();
 enable();
 </script>
