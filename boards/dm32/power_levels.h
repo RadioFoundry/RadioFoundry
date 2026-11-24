@@ -23,19 +23,25 @@ static inline uint16_t dm32_level_pos(bool uhf, uint8_t level)
 	return pos[uhf ? 1 : 0][level < DM32_POWER_LEVELS ? level : DM32_POWER_LEVELS - 1u];
 }
 
-// The FM key-down (hardware-dm32.md 11.4): DAC B from the level's drive down to the PA's turn-on edge on the shared
-// APC ramp's curve, then 0 and the PA off. The edge is a place on the rows too, under the 100 mW level's: under it the
-// PA gives nothing, so the whole ramp is on air at every level. A drive at or under the edge ramps from 0
+// The PA ramps (hardware-dm32.md 11.4): DAC B between the PA's turn-on edge and the level's drive on the shared APC
+// ramp's curve, with the PA selected. The edge is a place on the rows too, under the 100 mW level's: under it the PA
+// gives nothing, so the whole ramp is on air at every level, and its rate doesn't hang on how fast the PA loop is (at
+// the top of the UHF band the loop rose in 0.09 ms where elsewhere it took 0.4-1.6 ms). A drive at or under the edge
+// ramps from 0. FM keys up and down on the long ramp; a DMR burst ends on the short one
 #define DM32_RAMP_EDGE_POS	600u
 #define DM32_RAMP_STEPS		40u
 #define DM32_RAMP_STEP_US	50u
+#define DM32_DMR_RAMP_STEPS	8u
+#define DM32_DMR_RAMP_STEP_US	25u
 
-// DAC B at step 0..DM32_RAMP_STEPS of the key-down (step 0 the drive, the last the edge)
-static inline uint16_t dm32_ramp_down_level(uint16_t drive, uint16_t edge, uint16_t step)
+// DAC B at step 0..steps: up from the edge (step 0) to the drive (the last), or down from the drive to the edge
+static inline uint16_t dm32_ramp_level(uint16_t drive, uint16_t edge, uint16_t step, uint16_t steps, bool up)
 {
 	uint16_t base = edge < drive ? edge : 0u;
-	return (uint16_t)(base + apc_ramp_level((uint16_t)(drive - base), (uint16_t)(DM32_RAMP_STEPS - step),
-						DM32_RAMP_STEPS));
+	if (step > steps) {
+		step = steps;
+	}
+	return (uint16_t)(base + apc_ramp_level((uint16_t)(drive - base), up ? step : (uint16_t)(steps - step), steps));
 }
 
 #endif

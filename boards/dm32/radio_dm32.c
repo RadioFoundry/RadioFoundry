@@ -171,6 +171,18 @@ static void pa_key(void)
 	DAC_DATA_B = tx_drive;
 }
 
+// The ramps' lower end at the TX frequency (power_levels.h), set at the key-up
+static uint16_t ramp_edge;
+
+// DAC B along a ramp between the edge and tx_drive, step_us a step (the PA selected)
+static void pa_ramp(bool up, uint16_t steps, uint16_t step_us)
+{
+	for (uint16_t i = 1u; i <= steps; i++) {
+		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_edge, i, steps, up);
+		hal_delay_us(step_us);
+	}
+}
+
 static uint16_t fm_bw_reg(radio_bw_t bw)
 {
 	return bw == RADIO_BW_25K ? fd.variant->bw_fm_25k : fd.variant->bw_fm_12k5;
@@ -291,13 +303,16 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // radio hears the other slot (the hotspot listens while keyed)
 static void burst_off(void)
 {
+	pa_ramp(false, DM32_DMR_RAMP_STEPS, DM32_DMR_RAMP_STEP_US);
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 	lna(rx_hz, true);
 }
 
-// The PA drops at once: off at the task's point, the carrier was 5 dB down 0.2 ms before the last symbol's end and
-// 10 to 28 dB down at its end (SDR bench, every level). 300 us later it holds to the end and is off inside the guard
+// The ramp down 300 us after the last symbol's point, inside the guard (hardware-dm32.md 8.5): the drive and the PA cut
+// at once at the point left the carrier 5 dB down 0.2 ms before the last symbol's end, and 300 us later the carrier
+// holds to the end. The cut at once then fell in 0.03 ms at the top of the UHF band, where the PA loop is fast, so the
+// drive ramps down over 200 us (DM32_DMR_RAMP_*) before the PA goes off
 static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = 300 };
 
 static void dmr_tx_end(void);
@@ -521,6 +536,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = level_drive(hz, power);
+	// Without calibration the edge is unknown (the fallback drive, about 2 W, would end the ramps on air): from 0
+	bf_cal_power_points_t rows;
+	ramp_edge = bf_cal_power(hz, &rows) ? bf_cal_drive_pos(&rows, DM32_RAMP_EDGE_POS) : 0u;
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
 	}
@@ -571,34 +589,27 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
-		pa_key();
+		// Up on the ramp from the edge: a step of the drive came up in 0.09 ms with 2 dB of overshoot where the PA
+		// loop is fast (the top of the UHF band)
+		pa_select();
+		DAC_DATA_B = ramp_edge < tx_drive ? ramp_edge : 0u;
+		pa_ramp(true, DM32_RAMP_STEPS, DM32_RAMP_STEP_US);
 	}
 	ring_play();
 	return true;
 }
 
-// The FM key-down: the drive ramped down to the PA's turn-on edge (power_levels.h), so the carrier doesn't splatter
-// (a cut at once put the channel next to it 20 dB higher than the key-up's), then 0 for the loop's low-pass to settle,
-// then the PA off. The PA loop's own low-pass shapes the key-up. Without calibration the edge is unknown (the fallback
-// drive, about 2 W, would end the ramp on air), so the ramp runs down to 0
+// FM keys down on the ramp (power_levels.h), so the carrier doesn't splatter (a cut at once put the channel next to it
+// 20 dB higher than the key-up's), then 0 for the PA loop's low-pass to settle, then the PA off
 #define RAMP_TAIL_US		300u
-static void fm_ramp_down(void)
-{
-	bf_cal_power_points_t p;
-	uint16_t edge = bf_cal_power(tx_hz, &p) ? bf_cal_drive_pos(&p, DM32_RAMP_EDGE_POS) : 0u;
-	for (uint16_t i = 1u; i <= DM32_RAMP_STEPS; i++) {
-		DAC_DATA_B = dm32_ramp_down_level(tx_drive, edge, i);
-		hal_delay_us(DM32_RAMP_STEP_US);
-	}
-	DAC_DATA_B = 0;
-	hal_delay_us(RAMP_TAIL_US);
-}
 
 static void tx_end(bool keep)
 {
 	dmr_disarm();
 	if (transmitting && mode == RADIO_MODE_FM) {
-		fm_ramp_down();
+		pa_ramp(false, DM32_RAMP_STEPS, DM32_RAMP_STEP_US);
+		DAC_DATA_B = 0;
+		hal_delay_us(RAMP_TAIL_US);
 	}
 	pa_off();
 #if CONFIG_APRS_AFSK

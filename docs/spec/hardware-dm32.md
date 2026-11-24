@@ -974,7 +974,8 @@ burst's interrupt looked early against it. The first burst is now timed from the
 ([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
 drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
 carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
-the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. The switch moved earlier only
+the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. From there the
+drive ramps down over 0.2 ms before the PA select goes off (11.4, the PA ramps). The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
@@ -1399,12 +1400,27 @@ whose rows there are L / M / H 1467 / 1964 / 2816 (UHF) and 1376 / 1856 / 3024 (
   in 8.5 name the earlier levels, the calibration steps 0, 1, 4, 6 and 8 (L-, L, M, M+, H). The low test drive there,
   955 on UHF and 900 on VHF, is the 100 mW level.
 - **Without calibration** every level is the fallback drive (1408, about 2 W), as in 11.3.
-- **The FM key-down** ramps DAC B from the level's drive down to place 600 (0.6 · L, under the PA's turn-on, so the
-  whole ramp is on air at every level) in 40 steps of 50 µs on the shared APC ramp's curve (`core/radio/apc_ramp.h`),
-  then writes 0, waits 0.3 ms for the PA loop's low-pass and turns the PA select off. Without calibration the ramp
-  runs down to 0: the fallback drive is on air. With the drive and the PA select cut at once, the key-down took
-  0.03-0.24 ms and the adjacent channel power around the key-down was -25 to -38 dBc, against -48 to -57 dBc at the
-  key-up. The key-up needs no ramp: the PA loop's low-pass shapes the key-up. The ramp is not measured on air yet.
+- **The PA ramps.** DAC B moves between place 600 (0.6 · L, under the PA's turn-on, so the whole ramp is on air at
+  every level) and the level's drive on the shared APC ramp's curve (`core/radio/apc_ramp.h`), with the PA selected.
+  Without calibration the ramps run from and to 0: the fallback drive is on air.
+
+  | Edge | Ramp | Then |
+  |---|---|---|
+  | FM key-up | the PA select, the edge, then up in 40 steps of 50 µs | the level's drive |
+  | FM key-down | down in 40 steps of 50 µs | 0, 0.3 ms for the PA loop's low-pass, the PA select off |
+  | DMR burst end | 0.3 ms after the last symbol's point (8.5), down in 8 steps of 25 µs | the PA select off |
+
+  Before the ramps, FM keyed up on a step of the drive and the PA loop's low-pass shaped the key-up, and FM keyed down
+  and every DMR burst ended with the drive and the PA select cut at once. The FM key-down took 0.03-0.24 ms, and the
+  adjacent channel power around the key-down was -25 to -38 dBc, against -48 to -57 dBc at the key-up. The loop's
+  speed changes over the band: at 479.975 MHz the FM key-up at two levels rose in 0.09 ms (0.4-1.6 ms elsewhere), the
+  two lowest levels ran 1.3 and 2.1 dB past their power, the key-up's adjacent channel power was -29 to -33 dBc at the
+  top three levels, and a DMR burst at the top level fell in 0.03 ms. A ramp sets the rate whatever the loop does.
+  The ramps are not measured on air yet.
+- **The top of the UHF band.** The calibration's last point is 470 MHz, and past it the rows are extrapolated
+  (11.3). At 479.975 MHz the rows are L / M / H 982 / 1861 / 2497 on the measured radio, and the PA's output from M
+  to H spans only 1.1 dB, against 2.0 dB at 400.025 MHz. The levels there are not measured with a wattmeter yet; the
+  100 mW and 1 W levels (639 and 790 there) may give nothing.
 - Not measured yet: a low battery, DMR bursts, and other radios.
 
 ---

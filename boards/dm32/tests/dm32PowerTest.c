@@ -2,7 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The DM-32UV's power levels (power_levels.h, hardware-dm32.md 11.4): the drives they give on the rows of the radio
 // they were set on, their order on any rows, the scaling with a radio's own rows, the uncalibrated fallback, and the
-// FM key-down ramp
+// PA ramps
 #include <stdio.h>
 #include <string.h>
 #include "power_levels.h"
@@ -87,8 +87,12 @@ static void test_scaling(void)
 	}
 }
 
-// The FM key-down from every level on the measured rows: from the level's drive, never up, down to the edge, which is
-// under the 100 mW level and under the drive where that radio's PA gave nothing (925 on UHF, 875 on VHF)
+#define DN(d, e, i, n)	dm32_ramp_level((d), (e), (uint16_t)(i), (n), false)
+#define UP(d, e, i, n)	dm32_ramp_level((d), (e), (uint16_t)(i), (n), true)
+
+// The ramps from every level on the measured rows (the FM key-up and key-down, the DMR burst's end): between the
+// level's drive and the edge, never back, with flat ends, the key-up the key-down backwards. The edge is under the
+// 100 mW level and under the drive where that radio's PA gave nothing (925 on UHF, 875 on VHF)
 static void test_ramp(void)
 {
 	static const bf_cal_power_points_t rows[2] = {
@@ -96,24 +100,30 @@ static void test_ramp(void)
 		{ .low = 1467, .mid = 1964, .high = 2816 },	// UHF, 445 MHz
 	};
 	static const uint16_t dark[2] = { 875, 925 };
+	static const uint16_t steps[2] = { DM32_RAMP_STEPS, DM32_DMR_RAMP_STEPS };
 	for (uint8_t b = 0; b < 2; b++) {
 		uint16_t edge = bf_cal_drive_pos(&rows[b], DM32_RAMP_EDGE_POS);
 		CHECK(edge < dark[b] && edge < level(&rows[b], b != 0, 0));
 		for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
 			uint16_t d = level(&rows[b], b != 0, l);
-			CHECK(dm32_ramp_down_level(d, edge, 0) == d);
-			CHECK(dm32_ramp_down_level(d, edge, DM32_RAMP_STEPS) == edge);
-			for (uint16_t i = 1; i <= DM32_RAMP_STEPS; i++) {
-				CHECK(dm32_ramp_down_level(d, edge, i) <= dm32_ramp_down_level(d, edge, (uint16_t)(i - 1u)));
+			for (uint8_t r = 0; r < 2; r++) {
+				uint16_t n = steps[r];
+				CHECK(DN(d, edge, 0, n) == d && DN(d, edge, n, n) == edge);
+				CHECK(UP(d, edge, 0, n) == edge && UP(d, edge, n, n) == d);
+				CHECK(DN(d, edge, n + 1u, n) == edge);	// past the end: the end
+				for (uint16_t i = 1; i <= n; i++) {
+					CHECK(DN(d, edge, i, n) <= DN(d, edge, i - 1u, n));
+					CHECK(UP(d, edge, i, n) == DN(d, edge, n - i, n));
+				}
+				// The curve's ends are flat: the first step moves less than the middle ones
+				uint16_t mid = (uint16_t)(n / 2u);
+				CHECK(d - DN(d, edge, 1, n) < DN(d, edge, mid - 1u, n) - DN(d, edge, mid, n));
 			}
-			// The curve's ends are flat: the first and last steps move less than the middle ones
-			uint16_t mid = (uint16_t)(DM32_RAMP_STEPS / 2u);
-			CHECK(d - dm32_ramp_down_level(d, edge, 1) <
-			      dm32_ramp_down_level(d, edge, (uint16_t)(mid - 1u)) - dm32_ramp_down_level(d, edge, mid));
 		}
 	}
-	// A drive at or under the edge (a low drive set over the debug link) ramps down to 0
-	CHECK(dm32_ramp_down_level(800, 880, 0) == 800 && dm32_ramp_down_level(800, 880, DM32_RAMP_STEPS) == 0);
+	// A drive at or under the edge (a low drive set over the debug link), or no calibration (edge 0): from and to 0
+	CHECK(DN(800, 880, 0, DM32_RAMP_STEPS) == 800 && DN(800, 880, DM32_RAMP_STEPS, DM32_RAMP_STEPS) == 0);
+	CHECK(UP(2000, 0, 0, DM32_RAMP_STEPS) == 0 && UP(2000, 0, DM32_RAMP_STEPS, DM32_RAMP_STEPS) == 2000);
 }
 
 int main(void)
