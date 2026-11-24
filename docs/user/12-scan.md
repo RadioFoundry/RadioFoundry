@@ -111,8 +111,8 @@ its zone. The selected channel has an arrow under its letter.
 
 DMR AES-256 channels show **DMR**, with their timeslot and color code. When caller details are not available, an
 incoming call says **DMR call**. For AES reception, the radio must hear the opening privacy header; alternating
-between channels can miss it. If AES calls remain silent, stop dual watch and stay on the AES channel before the next
-call ([DMR privacy](09-dmr.md#privacy)).
+between channels can miss the header. If AES calls remain silent, stop dual watch and stay on the AES channel before
+the next call ([DMR privacy](09-dmr.md#privacy)).
 
 | You see | It means |
 |---|---|
