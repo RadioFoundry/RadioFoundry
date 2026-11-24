@@ -16,6 +16,10 @@
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "codeplug/codeplug_tag.h"
+#include "codeplug/key_store.h"
+#if CONFIG_KEY_FILL
+#include "keyfill/keyfill.h"
+#endif
 #if CONFIG_P25
 #include "p25/p25_codeplug.h"
 #endif
@@ -4944,8 +4948,9 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 	sb_str(&b, name[0] != 0 ? name : TR(VALUE_NONE, "None"));
 }
 
-// My Radio's and Data Services' text above the rows, one buffer (the two screens never show together)
-static char id_body[48];
+// My Radio's, Data Services' and key fill's text above the rows, one buffer (one body is drawn at a time; key fill's
+// compare step needs the room)
+static char id_body[96];
 
 static const char *dmr_id_body(void)
 {
@@ -6540,7 +6545,8 @@ static const ui_scr_def_t tools_screen = {
 
 typedef enum { ST_TOGGLE, ST_LIST, ST_NUMBER, ST_ACTION } set_type_t;
 enum { SA_DIAG, SA_FIRMWARE, SA_CODEPLUG, SA_RESET, SA_MY_RADIO, SA_CRASH, SA_LANGUAGE, SA_HARDWARE, SA_FIXED_POS,
-	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
+	SA_SAVE_GPS_POS, SA_DATA_SERVICES, SA_BL_TEST, SA_KEY_CHECK, SA_KEYS, SA_KEY_FILL,
+	SA_SIG_BEGIN, SA_SIG_END, SA_SIG_IDLE };	// signaling tone steps, by sig_event_t
 
 typedef struct {
 	tr_id_t name;			// TRN; TR_NONE for a key's row (set_name)
@@ -6865,6 +6871,18 @@ static const set_item_t s_privacy[] = {
 	LIST(TRN(SET_LABEL_PRIVACY_KEY_TYPE, "Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	// the range follows the type (set_range)
 	NUMBER(TRN(SET_LABEL_PRIVACY_KEY, "Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),
+#if CONFIG_KEY_CHECK
+	// the key's check value (key-check.md): compared with another radio's, it says both hold the same key
+	ACTION(TRN(SET_LABEL_PRIVACY_KEY_CHECK, "Key check"), "privacy kcv check value compare", SA_KEY_CHECK),
+#endif
+#if KEY_STORE
+	// every stored key with its check value: the privacy slots and the systems' traffic keys
+	ACTION(TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"), "privacy encryption traffic keys kcv list", SA_KEYS),
+#endif
+#if CONFIG_KEY_FILL
+	// key fill (key-fill.md 9): receive a key from another radio, or send one; beside the keys it moves
+	ACTION(TRN(KF_TITLE, "Key fill"), "privacy key fill load transfer send receive", SA_KEY_FILL),
+#endif
 };
 #endif
 // The key lock's rules: when it locks by itself and what still works while locked
@@ -7453,6 +7471,10 @@ static bool mic_agc_on(void)
 // Why a setting can't be used on this radio or in this build (the row is dimmed and OK says it), NULL if it can
 static const char *set_why_not(const set_item_t *s)
 {
+	if (s->type == ST_ACTION && s->id == SA_KEY_CHECK)
+		return !(feats() & UI_FEAT_PRIVACY) ? TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build") :
+			ui_svc_setting_get(UI_SET_PRIVACY_TYPE) == 0 ? TR(SET_WHY_PICK_KEY_TYPE_FIRST, "Pick a key type first") :
+			NULL;
 	if (s->type == ST_ACTION)
 		return s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE && !(CONFIG_BEEP && CONFIG_SIG_TONES) ?
 			TR(WHY_TONES_NOT_IN_BUILD, "Tones: not in this build") : NULL;
@@ -7554,6 +7576,10 @@ static void group_item(uint16_t i, ui_item_t *it)
 		set_value_text(s, edit ? set_value : ui_svc_setting_get(s->id), it->value, sizeof it->value);
 	else if (s->id == SA_LANGUAGE)
 		str_copy(it->value, sizeof it->value, lang_name(lang_current()));
+#if CONFIG_KEY_CHECK
+	else if (s->id == SA_KEY_CHECK && !ui_svc_privacy_kcv(it->value))
+		strcpy(it->value, "-");
+#endif
 #if CONFIG_SIG_TONES
 	else if (s->id >= SA_SIG_BEGIN && s->id <= SA_SIG_IDLE)
 		sc_summary(it->value, sizeof it->value, (uint8_t)(s->id - SA_SIG_BEGIN));
@@ -7638,6 +7664,17 @@ static void group_select(uint16_t i, bool hold)
 		case SA_MY_RADIO: ui_push(SCR_DMR_ID, 0); break;
 		case SA_RESET: ui_push(SCR_CONFIRM, 0); break;
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
+#if CONFIG_KEY_CHECK
+		case SA_KEY_CHECK:
+			ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+			break;
+#endif
+#if KEY_STORE
+		case SA_KEYS: ui_push(SCR_KEYS, 0); break;
+#endif
+#if CONFIG_KEY_FILL
+		case SA_KEY_FILL: ui_push(SCR_KEY_FILL_MENU, 0); break;
+#endif
 #if CONFIG_SIG_TONES
 		case SA_SIG_BEGIN ... SA_SIG_IDLE: ui_push(SCR_SIG_CHAIN, (uint16_t)(s->id - SA_SIG_BEGIN)); break;
 #endif
@@ -8105,6 +8142,356 @@ static const ui_scr_def_t emergency_screen = {
 	.name = "emergency", .flags = SF_FIELD, .key = ui_emergency_key, .draw = ui_emergency_draw,
 };
 
+#if KEY_STORE
+// ======================= Settings > Privacy > Keys =======================
+// Every stored key (codeplug/key_store.h): a privacy slot by its number and scheme, a traffic key by its system's name
+// and key ID; the value is the key check value (docs/spec/key-check.md), never the key
+
+static uint16_t keys_count(void) { return ui_svc_keys_count(); }
+
+static void keys_item(uint16_t i, ui_item_t *it)
+{
+	key_entry_t e;
+	if (!ui_svc_key(i, &e))
+		return;
+	sbuf_t b;
+	sb_init(&b, it->label, sizeof it->label);
+	if (e.cls == KCV_CLASS_PRIVACY) {
+		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
+		sb_chr(&b, ' ');
+		sb_u32(&b, e.slot, 1);
+		sb_chr(&b, ' ');
+		sb_str(&b, e.type == 1 ? "Moto" : e.type == 2 ? "Anytone" : "?");
+	} else {
+		sb_str(&b, e.name[0] ? e.name : codeplug_systype_name(e.type));
+		sb_str(&b, " #");
+		sb_u32(&b, e.key_id, 1);
+	}
+	if (e.kcv_ok)
+		kcv_text(e.kcv, it->value);
+	else
+		str_copy(it->value, sizeof it->value, "-");
+}
+
+static void keys_select(uint16_t i, bool hold)
+{
+	(void)hold;
+#if CONFIG_KEY_FILL
+	key_entry_t e;
+	if (!ui_svc_key(i, &e))
+		return;
+	if (e.len < 1 || e.len > KEY_STORE_MAX_LEN) {
+		ui_toast(TR(KF_WHY_KEY_TOO_LONG, "This key is too long to send"));
+		return;
+	}
+	ui_push(SCR_KEY_SEND, i);	// Send this key: to which radio
+#else
+	(void)i;
+	ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+#endif
+}
+
+static const ui_scr_def_t keys_screen = {
+	.name = "keys", .flags = SF_LIST, .prefix = TRN(SET_LABEL_PRIVACY_KEYS, "Stored keys"),
+#if CONFIG_KEY_FILL
+	.hint = TRN(HINT_OK_SEND_BACK, "OK send  Back"),
+#else
+	.hint = TRN(HINT_BACK, "Back"),
+#endif
+	.empty = TRN(KEYS_EMPTY, "No keys stored"),
+	.count = keys_count, .item = keys_item, .select = keys_select,
+};
+
+#if CONFIG_KEY_FILL
+// ======================= Send this key (key fill, docs/spec/key-fill.md 9) =======================
+// The key from Stored keys (arg: its index) and its check value; digits type the receiver's DMR ID, OK starts the
+// session. BACK takes the last digit back, and with none typed leaves
+
+static uint32_t kf_to;		// the receiver's ID typed
+static uint8_t kf_to_len;
+
+static uint16_t ksend_count(void) { return 1; }
+
+static void ksend_item(uint16_t i, ui_item_t *it)
+{
+	(void)i;
+	str_copy(it->label, sizeof it->label, TR(KF_LABEL_TO_ID, "To ID"));
+	sbuf_t b;
+	sb_init(&b, it->value, sizeof it->value);
+	if (kf_to_len > 0)
+		sb_u32(&b, kf_to, 1);
+	sb_chr(&b, '_');
+	it->flags |= UI_ITEM_EDIT;
+}
+
+static const char *ksend_body(void)
+{
+	ui_item_t it;
+	memset(&it, 0, sizeof it);
+	keys_item(ui_frame()->arg, &it);
+	sbuf_t b;
+	sb_init(&b, id_body, sizeof id_body);
+	sb_str(&b, it.label);
+	sb_chr(&b, '\n');
+	sb_str(&b, TR(KF_BODY_CHECK, "Check "));
+	sb_str(&b, it.value);
+	return id_body;
+}
+
+static void ksend_select(uint16_t i, bool hold)
+{
+	(void)i;
+	(void)hold;
+	if (kf_to_len == 0) {
+		ui_toast(TR(KF_TOAST_TYPE_ID, "Type the other radio's DMR ID"));
+		return;
+	}
+	ui_kf_open(ui_frame()->arg, kf_to);
+}
+
+static bool ksend_key(const input_event_t *ev)
+{
+	bool press = ev->gesture == GESTURE_PRESS || ev->gesture == GESTURE_LONG;
+	if (ev->action >= ACT_DIGIT_0 && ev->action <= ACT_DIGIT_9 && press) {
+		uint32_t v = kf_to * 10u + (uint32_t)(ev->action - ACT_DIGIT_0);
+		if (v > CODEPLUG_DMR_ID_MAX) {
+			ui_toast(TR(TOAST_ID_MAX_PRIVATE, "IDs go up to 16776415"));
+			return true;
+		}
+		kf_to = v;
+		kf_to_len++;
+		ui_dirty();
+		return true;
+	}
+	if (ev->action == ACT_BACK && ev->gesture == GESTURE_PRESS && kf_to_len > 0) {
+		kf_to_len--;
+		kf_to /= 10u;
+		ui_dirty();
+		return true;
+	}
+	return false;
+}
+
+static void ksend_enter(void)
+{
+	kf_to = 0;
+	kf_to_len = 0;
+}
+
+static const ui_scr_def_t key_send_screen = {
+	.name = "key-send", .flags = SF_LIST, .prefix = TRN(KF_TITLE_SEND, "Send this key"),
+	.hint = TRN(HINT_ID_OK_SEND_BACK, "0-9 ID  OK send  Back"),
+	.count = ksend_count, .item = ksend_item, .select = ksend_select, .body = ksend_body, .key = ksend_key,
+	.enter = ksend_enter,
+};
+#endif
+#endif
+
+#if CONFIG_KEY_FILL
+// ======================= Settings > Privacy > Key fill (docs/spec/key-fill.md 9) =======================
+// Beside the keys it moves (Key type, Key, Key check, Stored keys), so the Tools list stays as it is. 1 waits for a
+// key, 2 lists the stored keys, where OK on one sends it
+enum { KFM_RECEIVE, KFM_SEND, KFM_COUNT };
+
+static uint16_t kfm_count(void) { return KFM_COUNT; }
+
+static void kfm_item(uint16_t i, ui_item_t *it)
+{
+	static const tr_id_t names[KFM_COUNT] = { TRN(KF_ROW_RECEIVE, "Receive a key"), TRN(KF_ROW_SEND, "Send a key") };
+	if (i >= KFM_COUNT)
+		return;
+	str_copy(it->label, sizeof it->label, tr(names[i]));
+	item_num(it, (uint16_t)(i + 1u));
+}
+
+static void kfm_select(uint16_t i, bool hold)
+{
+	(void)hold;
+	switch (i) {
+	case KFM_RECEIVE: ui_kf_open(-1, 0); break;
+	case KFM_SEND:
+#if KEY_STORE
+		ui_push(SCR_KEYS, 0);	// OK on a key: Send this key
+#endif
+		break;
+	default: break;
+	}
+}
+
+static const ui_scr_def_t key_fill_menu_screen = {
+	.name = "key-fill-menu", .flags = SF_LIST | SF_NUMBERED, .prefix = TRN(KF_TITLE, "Key fill"),
+	.hint = TRN(HINT_OK_PICK_BACK, "OK pick  Back"),
+	.count = kfm_count, .item = kfm_item, .select = kfm_select,
+};
+
+// ======================= Key fill: the session's steps (docs/spec/key-fill.md 9) =======================
+// One screen for both radios (arg 0 receive, 1 send), its text the step the session is at. Back leaves, which cancels
+// (ui_app.c left); in Compare it is the user's "no". Every other key is a random key press (6)
+
+// Any DMR channel; only a direct mode one (radio to radio, not through a repeater) holds the lowest power for the
+// session (2.1): through a repeater the radios must reach it, and it sends on at its own power anyway
+void ui_kf_open(int32_t key, uint32_t dst)
+{
+	const radio_view_t *v = ui_view();
+	const channel_t *ch = &v->ch;
+	if (ch->mode != RADIO_MODE_DMR) {
+		ui_toast(TR(KF_WHY_DMR_ONLY, "Key fill: DMR channels only"));
+		return;
+	}
+	bool direct = !(ch->tx_hz != 0 && ch->rx_hz != ch->tx_hz && !ch->dmo);	// as the radio core's rmo
+	uint32_t own = v->dmr.own_id != 0 ? v->dmr.own_id : (uint32_t)ui_svc_setting_get(UI_SET_DMR_ID);
+	switch (ui_svc_kf_start(key, own, dst, direct)) {
+	case UI_KF_OK:
+		if (ui_frame()->scr == SCR_KEY_SEND)
+			ui_pop();	// the session in its place: Back goes to Stored keys
+		ui_push(SCR_KEY_FILL, key >= 0);
+		break;
+	case UI_KF_NO_ID:
+		ui_toast(TR(KF_WHY_NO_DMR_ID, "Set this radio's DMR ID first"));
+		break;
+	case UI_KF_BAD_PEER:
+		ui_toast(TR(KF_WHY_BAD_PEER, "Type another radio's DMR ID"));
+		break;
+	default:
+		ui_toast(TR(KF_WHY_BUSY, "Key fill busy: try again"));
+		break;
+	}
+}
+
+static uint16_t kf_count(void) { return 0; }
+static void kf_item(uint16_t i, ui_item_t *it) { (void)i; (void)it; }
+
+// Why a session failed (4.4), here or as the other radio's answer
+static const char *kf_why_text(const ui_kf_view_t *k)
+{
+	if (k->why == KF_WHY_REFUSED || (k->state == KF_ST_DONE && k->result != KF_STORED)) {
+		switch (k->result) {
+		case KF_RES_NO_SYSTEM: return TR(KF_RES_NO_SYSTEM, "No matching system on the receiver");
+		case KF_RES_AMBIGUOUS: return TR(KF_RES_AMBIGUOUS, "More than one system matches on the receiver");
+		case KF_RES_UNSUPPORTED: return TR(KF_RES_UNSUPPORTED, "The receiver can't store that kind of key");
+		case KF_RES_BAD_PAYLOAD: return TR(KF_RES_BAD_PAYLOAD, "The key didn't arrive whole");
+		default: return TR(KF_RES_WRITE_FAILED, "The receiver couldn't save the key");
+		}
+	}
+	switch (k->why) {
+	case KF_WHY_CANCELED:
+		return k->by_peer ? TR(KF_WHY_PEER_CANCELED, "The other radio canceled") : TR(KF_WHY_CANCELED, "Canceled");
+	case KF_WHY_MISMATCH: return TR(KF_WHY_MISMATCH, "The codes didn't match");
+	case KF_WHY_TIMEOUT: return TR(KF_WHY_TIMEOUT, "The other radio didn't answer");
+	case KF_WHY_CHECK: return TR(KF_WHY_CHECK, "A message failed its check");
+	case KF_WHY_BUSY: return TR(KF_WHY_PEER_BUSY, "The other radio is busy");
+	case KF_WHY_SEND: return TR(KF_WHY_SEND, "Couldn't send: check the channel");
+	default: return TR(KF_WHY_FAILED, "Key fill failed");
+	}
+}
+
+static const char *kf_body(void)
+{
+	ui_kf_view_t k;
+	sbuf_t b;
+	sb_init(&b, id_body, sizeof id_body);
+	if (!ui_svc_kf_view(&k))
+		return id_body;
+	switch (k.state) {
+	case KF_ST_IDLE:
+		sb_str(&b, TR(KF_BODY_PRESS_KEYS, "Press keys at random: "));
+		sb_u32(&b, k.presses, 1);
+		break;
+	case KF_ST_LISTEN:
+		sb_str(&b, TR(KF_BODY_READY, "Ready. This radio: "));
+		sb_u32(&b, k.own_id, 1);
+		break;
+	case KF_ST_COMPARE:
+		sb_str(&b, TR(KF_BODY_CODE, "Code "));
+		sb_u32(&b, k.code / 1000u, 3);
+		sb_chr(&b, ' ');
+		sb_u32(&b, k.code % 1000u, 3);
+		sb_chr(&b, '\n');
+		sb_str(&b, TR(KF_BODY_OTHER_RADIO, "Other radio "));
+		sb_u32(&b, k.peer_id, 1);
+		sb_chr(&b, '\n');
+		sb_str(&b, TR(KF_BODY_SAME, "Same on both?"));
+		break;
+	case KF_ST_SENT_KEY:
+		sb_str(&b, TR(KF_BODY_SENDING, "Sending the key"));
+		break;
+	case KF_ST_STORING:
+		sb_str(&b, TR(KF_BODY_STORING, "Storing the key"));
+		break;
+	case KF_ST_DONE:
+		if (k.result == KF_STORED) {
+			sb_str(&b, k.role ? TR(KF_BODY_STORED, "Key stored") : TR(KF_BODY_SENT, "Key sent"));
+			if (k.kcv_ok) {
+				char t[KCV_TEXT];
+				kcv_text(k.kcv, t);
+				sb_chr(&b, '\n');
+				sb_str(&b, TR(KF_BODY_CHECK, "Check "));
+				sb_str(&b, t);
+			}
+			break;
+		}
+		/* fall through */
+	case KF_ST_FAILED:
+		sb_str(&b, TR(KF_BODY_FAILED, "Failed: "));
+		sb_str(&b, kf_why_text(&k));
+		break;
+	default:	// waiting: for the other radio's message or its OK
+		sb_str(&b, k.state == KF_ST_SENT_READY || k.state == KF_ST_WAIT_READY ?
+			TR(KF_BODY_WAIT_OK, "Waiting for the other radio's OK") :
+			TR(KF_BODY_WAIT, "Waiting for the other radio"));
+		if (k.peer_id != 0) {
+			sb_chr(&b, '\n');
+			sb_str(&b, TR(KF_BODY_OTHER_RADIO, "Other radio "));
+			sb_u32(&b, k.peer_id, 1);
+		}
+		break;
+	}
+	if (ui_view()->tx_low) {
+		sb_chr(&b, '\n');
+		sb_str(&b, TR(KF_BODY_LOW_POWER, "Low power"));
+	}
+	return id_body;
+}
+
+static const char *kf_hint(void)
+{
+	ui_kf_view_t k;
+	if (!ui_svc_kf_view(&k) || k.state == KF_ST_DONE || k.state == KF_ST_FAILED)
+		return TR(HINT_BACK, "Back");
+	return k.state == KF_ST_COMPARE ? TR(HINT_OK_YES_BACK_NO, "OK yes  Back no") :
+		TR(HINT_BACK_CANCELS, "Back cancels");
+}
+
+static bool kf_key(const input_event_t *ev)
+{
+	if (ev->gesture != GESTURE_PRESS)
+		return true;	// a random key press: its time went into the pool already (ui.c)
+	ui_kf_view_t k;
+	bool on = ui_svc_kf_view(&k);
+	bool compare = on && k.state == KF_ST_COMPARE;
+	bool over = !on || k.state == KF_ST_DONE || k.state == KF_ST_FAILED;
+	if (ev->action == ACT_BACK) {
+		if (compare)
+			ui_svc_kf_confirm(false);	// the codes differ: ABORT, and the screen says so
+		else
+			ui_pop();			// leaving cancels the session
+	} else if (ev->action == ACT_SELECT) {
+		if (compare)
+			ui_svc_kf_confirm(true);
+		else if (over)
+			ui_pop();
+	}
+	ui_dirty();
+	return true;
+}
+
+static const ui_scr_def_t key_fill_screen = {
+	.name = "key-fill", .flags = SF_LIST | SF_HINT_FN, .prefix = TRN(KF_TITLE, "Key fill"),
+	.hint_fn = kf_hint,
+	.count = kf_count, .item = kf_item, .body = kf_body, .key = kf_key,
+};
+#endif
+
 // ======================= Settings > Display > Language =======================
 // Every language a catalog exists for, each in its own name; one this image was built without is dimmed and says so
 // (the flasher builds it in, docs/user)
@@ -8205,6 +8592,15 @@ const ui_scr_def_t *const ui_scr[SCR_COUNT] = {
 	[SCR_FIXED_POS] = &ui_fixed_pos_screen,
 #endif
 	[SCR_VOLUME] = &volume_screen, [SCR_LANGUAGE] = &lang_screen,
+#if KEY_STORE
+	[SCR_KEYS] = &keys_screen,
+#if CONFIG_KEY_FILL
+	[SCR_KEY_SEND] = &key_send_screen,
+#endif
+#endif
+#if CONFIG_KEY_FILL
+	[SCR_KEY_FILL] = &key_fill_screen, [SCR_KEY_FILL_MENU] = &key_fill_menu_screen,
+#endif
 	[SCR_DMR_ID] = &dmr_id_screen,
 	[SCR_CP_FOREIGN] = &cpf_screen,
 #if DATA_IDS

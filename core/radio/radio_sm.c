@@ -78,6 +78,9 @@ static void cw_cancel(radio_sm_t *sm);
 #if CONFIG_ZONE_SHARE
 #include "dmr/zone_share_api.h"
 #endif
+#if CONFIG_KEY_FILL
+#include "keyfill/keyfill_api.h"
+#endif
 #if CONFIG_AM_RX
 #include "radio/radio_am.h"	// air band AM receive (docs/spec/airband-and-broadcast.md 3)
 #endif
@@ -1465,6 +1468,9 @@ static bool key_tx(const radio_sm_t *sm, uint32_t hz, radio_bw_t bw, uint8_t pow
 	if (!tx_limit_allows(hz)) {
 		tx_limit_refused(hz);
 		return false;
+	}
+	if (sm->view.tx_low) {
+		power = 0;	// the board's lowest level (board_t power names: lowest first)
 	}
 	return board.radio->tx(hz, bw, power, tone);
 }
@@ -3218,6 +3224,9 @@ static void data_init(radio_sm_t *sm)
 	zone_share_init();
 	// On unless the user turned it off (docs/spec/zone-share.md 5)
 	zone_share_set_offers(settings_zs_accept(st) ? ZS_OFFERS_ASK : ZS_OFFERS_OFF);
+#endif
+#if CONFIG_KEY_FILL
+	key_fill_svc_init();
 #endif
 	dmr_call_set_data_rx(data_rx, NULL);
 #if CONFIG_DMR_EMERGENCY
@@ -9117,6 +9126,10 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_PTT: ptt_request(sm, req, now_ms); break;
 	case RREQ_MONITOR: monitor_request(sm, req, now_ms); break;
 	case RREQ_POWER: power_request(sm, req); break;
+	case RREQ_TX_LOW:
+		sm->view.tx_low = req->arg != 0;
+		changed(sm);
+		break;
 	case RREQ_VOLUME:
 		sm->vol_step = (uint8_t)(req->arg < 0 ? 0 : req->arg > RADIO_VOLUME_MAX ? RADIO_VOLUME_MAX : req->arg);
 		break;

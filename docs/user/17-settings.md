@@ -90,6 +90,9 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 |---|---|---|---|---|
 | Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
 | Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
+| Key check | Six hex digits, read only | | The key's check value ([DMR](09-dmr.md#checking-that-two-radios-have-the-same-key)). Two radios with the same key show the same digits. Dimmed until a type is chosen | Untested on a radio |
+| Stored keys | A list | | Every key the radio holds, with its check value: the privacy key slots, then the traffic keys of the codeplug's systems (NXDN scrambler keys, and others where the build has them). With key fill, **OK** on a key sends it; receiving a key is in **Key fill**, the next row ([DMR](09-dmr.md#loading-a-key-from-another-radio)). Missing from builds with neither | Untested on a radio |
+| Key fill | A screen | | Receive a key from another radio, or send one of the stored keys to it ([DMR](09-dmr.md#loading-a-key-from-another-radio)). Missing from builds without key fill | Untested on a radio |
 
 ### Location (key 5)
 

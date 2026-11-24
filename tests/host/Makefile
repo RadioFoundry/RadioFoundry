@@ -87,12 +87,12 @@ SVC     := dmrDataServiceTest.c $(DATA) $(FRAME) $(CORE)/dmr/dmrLrrp.c $(CORE)/d
            $(CORE)/position/nmea.c
 
 dmrDataServiceTest: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
-	$(CC) $(CFLAGS) -o $@ $(SVC) -lm
+	$(CC) $(CFLAGS) -DCONFIG_KEY_FILL=0 -o $@ $(SVC) -lm
 
 # The same without Motorola TMS format support (CONFIG_DMR_TMS=0, docs/spec/dmr-data.md 5.1)
 TESTS   += dmrDataServiceTestNoTms
 dmrDataServiceTestNoTms: $(SVC) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h
-	$(CC) $(CFLAGS) -DCONFIG_DMR_TMS=0 -o $@ $(SVC) -lm
+	$(CC) $(CFLAGS) -DCONFIG_DMR_TMS=0 -DCONFIG_KEY_FILL=0 -o $@ $(SVC) -lm
 
 # LRRP on its own: request decoding (malformed and mutated too), the answers' bounds, the distance
 TESTS   += lrrpTest
@@ -318,7 +318,9 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/ui/ui_svc_emergency.c $(CORE)/input/keyassign.c sim/sim_flash.c \
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
-           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
+           $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c \
+           $(CORE)/support/sha256.c $(CORE)/support/hkdf.c $(CORE)/support/kcv.c $(CORE)/codeplug/key_store.c \
+           $(CORE)/keyfill/keyfill_svc.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -391,7 +393,7 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplu
            $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/dmrAes.c $(CORE)/radio/radio_aes.c sim/dmr_sim_modem.c $(CORE)/dmr/dmrData.c $(CORE)/dmr/dmrDataService.c \
            $(CORE)/dmr/dmrLrrp.c $(CORE)/dmr/dmr_emergency.c $(CORE)/radio/morse.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c \
            $(CORE)/settings/settings.c $(CORE)/storage/storage.c $(CORE)/usbaudio/audio_mux.c \
-           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c $(POSLIB)
+           $(CORE)/usbaudio/pcm_slip.c $(CORE)/dmr/sfrRunner.c $(CORE)/dmr/sfr.c $(POSLIB) $(CORE)/keyfill/keyfill_svc.c
 
 # CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
 # the network half is usrpNetTest
@@ -713,7 +715,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
-           $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
+           $(CORE)/support/support_info.c $(CORE)/support/hkdf.c $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
 ABOUT_H := out/gen/rfoundry_about.h
 $(shell python3 $(ROOT)/tools/gen_about.py $(ROOT)/AUTHORS $(ROOT)/platform/stm32f4/THIRD_PARTY $(ABOUT_H) >/dev/null)
@@ -860,6 +862,38 @@ run: run-support
 run-support: supportInfoTest
 	./supportInfoTest
 .PHONY: run-support
+# The key primitives (core/support): HMAC and HKDF over SHA-256, X25519, key check values (docs/spec/key-check.md)
+TESTS   += keyCryptoTest
+KEYCRYPTO := $(CORE)/support/sha256.c $(CORE)/support/hkdf.c $(CORE)/support/x25519.c $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c
+keyCryptoTest: keyCryptoTest.c $(KEYCRYPTO) $(wildcard $(CORE)/support/*.h) ../vectors/key-check.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ keyCryptoTest.c $(KEYCRYPTO)
+run: run-key-crypto
+run-key-crypto: keyCryptoTest
+	./keyCryptoTest
+.PHONY: run-key-crypto
+# Key fill between radios (core/keyfill, docs/spec/key-fill.md): two engines end to end, and the randomness pool
+TESTS   += keyFillTest
+KEYFILL := $(CORE)/keyfill/keyfill.c $(CORE)/support/entropy.c $(KEYCRYPTO)
+keyFillTest: keyFillTest.c $(KEYFILL) $(wildcard $(CORE)/keyfill/*.h $(CORE)/support/*.h) fuzz.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_KEY_FILL=1 -o $@ keyFillTest.c $(KEYFILL)
+run: run-key-fill
+run-key-fill: keyFillTest
+	./keyFillTest
+.PHONY: run-key-fill
+# Storing a filled key (core/codeplug/key_store.c, key-fill.md 8): privacy slots, traffic keys into the matching
+# system, on a simulated flash with an in-memory settings record
+TESTS   += keyStoreTest
+KEYSTORE := $(CORE)/codeplug/key_store.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug/codeplug_kv.c \
+            $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/storage/storage.c sim/sim_flash.c \
+            $(CORE)/dmr/dmrPrivacy.c $(CORE)/dmr/ambe/ambeFec.c $(CORE)/support/sha256.c $(CORE)/support/hkdf.c \
+            $(CORE)/support/kcv.c $(CORE)/dmr/dmrAes.c
+keyStoreTest: keyStoreTest.c $(KEYSTORE) $(wildcard $(CORE)/codeplug/*.h $(CORE)/support/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_KEY_CHECK=1 -DCONFIG_DMR_PRIVACY=1 -DCODEPLUG_MODE_RECORDS=1 \
+		-o $@ keyStoreTest.c $(KEYSTORE)
+run: run-key-store
+run-key-store: keyStoreTest
+	./keyStoreTest
+.PHONY: run-key-store
 # The reference trim setting (core/radio/ref_trim.c): clamped, rounded to 100 ppb, to the board's hook
 TESTS   += refTrimTest
 refTrimTest: refTrimTest.c $(CORE)/radio/ref_trim.c $(CORE)/radio/ref_trim.h $(ROOT)/hal/hal_radio.h
@@ -972,7 +1006,8 @@ TESTS   += dmrDataChainTest
 DCHAIN  := dmrDataChainTest.c $(HRCDMR)/hrc6000_dmr.c $(HRC6K)/hrc6000.c $(HRCDMR)/hrc.c $(CORE)/dmr/call/dmr_call.c $(RXSEEN) $(CORE)/dmr/fec/dmrCach.c \
            $(CORE)/dmr/sfr.c \
            $(CORE)/dmr/call/dmr_lc.c $(DATA) $(FRAME) $(CORE)/dmr/dmrDataService.c $(CORE)/dmr/dmrLrrp.c \
-           $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/ambe/ambeFec.c
+           $(CORE)/dmr/dmr_emergency.c $(CORE)/dmr/zoneShare.c $(CORE)/dmr/zoneShareSvc.c $(CORE)/dmr/dmrAirQueue.c $(CORE)/dmr/ambe/ambeFec.c \
+           $(CORE)/keyfill/keyfill_svc.c
 
 dmrDataChainTest: $(DCHAIN) $(HRCDMR)/hrc6000_dmr.h $(ROOT)/hal/hal_dmr_modem.h $(wildcard $(CORE)/dmr/call/*.h) \
                   $(CORE)/dmr/dmrDataService.h $(CORE)/dmr/dmr_data_api.h

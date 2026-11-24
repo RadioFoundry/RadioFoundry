@@ -96,6 +96,7 @@ static bool shared_dual_on;
 static volatile uint32_t shared_serial;
 static volatile bool power_off_busy;	// radio_req_power_off until the radio core is done
 static volatile bool power_off_wanted;	// published view.power_off
+static volatile bool privacy_on;	// published view.dmr.privacy (radio_dmr_privacy_on)
 static SemaphoreHandle_t view_lock;
 static QueueHandle_t requests;
 
@@ -183,6 +184,9 @@ static void publish(void)
 #endif
 	xSemaphoreGive(view_lock);
 	power_off_wanted = sm.view.power_off;
+#if CONFIG_DMR
+	privacy_on = sm.view.dmr.privacy;
+#endif
 	if (sm.power_off_req) {
 		power_off_busy = sm.power_off_busy;
 	}
@@ -652,6 +656,8 @@ void radio_req_ptt_host(bool down) { post(RREQ_PTT, down ? 2 : 0, pdMS_TO_TICKS(
 void radio_req_monitor(bool down) { post(RREQ_MONITOR, down, pdMS_TO_TICKS(50)); }
 void radio_req_monitor_held_up(void) { post(RREQ_MONITOR, 2, pdMS_TO_TICKS(50)); }
 void radio_req_power(int8_t dir) { post(RREQ_POWER, dir, 0); }
+// Must not be lost: a forced low level that never ends, or never starts, is the whole point
+void radio_req_tx_low(bool on) { post(RREQ_TX_LOW, on, pdMS_TO_TICKS(50)); }
 void radio_req_squelch(int8_t dir) { post(RREQ_SQUELCH, dir, 0); }
 // The level must not be lost: the user looks at the bar, and the setting is already saved
 void radio_req_volume(uint8_t step) { post(RREQ_VOLUME, step, pdMS_TO_TICKS(50)); }
@@ -894,6 +900,11 @@ bool radio_power_off_busy(void)
 bool radio_power_off_wanted(void)
 {
 	return power_off_wanted;
+}
+
+bool radio_dmr_privacy_on(void)
+{
+	return privacy_on;
 }
 
 uint8_t radio_backlight_pct(uint8_t brightness, uint32_t idle_ms)

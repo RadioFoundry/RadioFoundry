@@ -92,6 +92,40 @@ static inline const char *ui_mode_name(uint8_t mode)
 uint8_t ui_svc_vfo_copy(const radio_view_t *v);
 bool ui_svc_hear_all(bool on);
 bool ui_svc_privacy(bool on);			// false also when there is no key: the UI says how to add one
+// The key check value of privacy key slot 1 (docs/spec/key-check.md), six hex digits; false when the slot has no key
+bool ui_svc_privacy_kcv(char out[7]);
+// The stored keys (codeplug/key_store.h: privacy slots, then traffic keys) for Settings > Privacy > Keys: how many, and
+// entry i with its check value, never the key
+struct key_entry_s;
+uint16_t ui_svc_keys_count(void);
+bool ui_svc_key(uint16_t i, struct key_entry_s *e);
+#if CONFIG_KEY_FILL
+// Key fill between radios (ui_svc_keyfill.c, docs/spec/key-fill.md): one session while the Key fill screen is open.
+// What the screen shows
+typedef struct {
+	uint8_t state;		// kf_state_t (keyfill/keyfill.h); KF_ST_IDLE while the randomness pool fills
+	uint8_t role;		// 0 sender, 1 receiver
+	uint8_t why;		// KF_WHY_*: why it failed
+	uint8_t result;		// the DONE result (KF_STORED or a KF_RES_*)
+	bool by_peer;		// the failure came as the other radio's ABORT
+	bool kcv_ok;		// kcv holds the stored key's check value
+	uint8_t kcv[3];
+	uint8_t presses;	// random key presses the pool still wants (0: full)
+	uint32_t own_id, peer_id;
+	uint32_t code;		// the six-digit code, from Compare on
+} ui_kf_view_t;
+enum { UI_KF_OK, UI_KF_NO_ID, UI_KF_BAD_PEER, UI_KF_BUSY };
+// Start a session: receive (key < 0), or send stored key `key` (ui_svc_key's index) to dst. own: this radio's DMR ID
+// on the air; low: every transmission at the lowest power until the session ends (a direct mode channel, key-fill.md
+// 2.1). UI_KF_*
+uint8_t ui_svc_kf_start(int32_t key, uint32_t own, uint32_t dst, bool low);
+bool ui_svc_kf_view(ui_kf_view_t *out);		// false: no session
+void ui_svc_kf_confirm(bool same);		// the user's answer in Compare
+// The screen is left: ABORT to the other radio when there is one, then the session is wiped and freed
+void ui_svc_kf_end(void);
+// Every UI pass: runs the session (and the end of one left); true when what the screen shows may have changed
+bool ui_svc_kf_tick(const radio_view_t *v, uint32_t now);
+#endif
 bool ui_svc_monitor(bool on);			// FM monitor latch
 bool ui_svc_vox(bool on);
 // Make temporary channel changes permanent (storage-cps): false when busy, off a stored channel, or unavailable

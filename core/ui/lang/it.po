@@ -4043,6 +4043,21 @@ msgid "Key"
 msgstr "Chiave"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "Verifica chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "Chiavi salvate"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE"
+msgid "Key fill"
+msgstr "Carica chiave"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "Blocco auto"
@@ -4343,6 +4358,11 @@ msgid " steps"
 msgstr " passi"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "Scegli prima il tipo"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono via libera: non in questa build"
@@ -4403,11 +4423,6 @@ msgid "Talker alias: not in this build"
 msgstr "Alias parlante: non in questa build"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "Scegli prima il tipo"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "Niente GPS su questa radio"
@@ -4421,6 +4436,11 @@ msgstr "Posizione DMR: non in questa build"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diagnostica: non in questa build"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "The same check on both radios: the same key"
+msgstr "Stessa verifica su entrambe le radio: stessa chiave"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4536,6 +4556,221 @@ msgstr "Scansione ferma qui"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "Modifica liste scan in qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "Privacy"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_KEY_TOO_LONG"
+msgid "This key is too long to send"
+msgstr "Questa chiave è troppo lunga da inviare"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_SEND_BACK"
+msgid "OK send  Back"
+msgstr "OK invia  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "Nessuna chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_LABEL_TO_ID"
+msgid "To ID"
+msgstr "A ID"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CHECK"
+msgid "Check "
+msgstr "Controllo "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TOAST_TYPE_ID"
+msgid "Type the other radio's DMR ID"
+msgstr "Digita l'ID DMR dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_TITLE_SEND"
+msgid "Send this key"
+msgstr "Invia questa chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_ID_OK_SEND_BACK"
+msgid "0-9 ID  OK send  Back"
+msgstr "0-9 ID  OK invia  Indietro"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_RECEIVE"
+msgid "Receive a key"
+msgstr "Ricevi una chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_ROW_SEND"
+msgid "Send a key"
+msgstr "Invia una chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_DMR_ONLY"
+msgid "Key fill: DMR channels only"
+msgstr "Carica chiave: solo canali DMR"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_NO_DMR_ID"
+msgid "Set this radio's DMR ID first"
+msgstr "Imposta prima l'ID DMR di questa radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BAD_PEER"
+msgid "Type another radio's DMR ID"
+msgstr "Digita l'ID DMR di un'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_BUSY"
+msgid "Key fill busy: try again"
+msgstr "Carica chiave occupata: riprova"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_NO_SYSTEM"
+msgid "No matching system on the receiver"
+msgstr "Nessun sistema corrispondente sul ricevente"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_AMBIGUOUS"
+msgid "More than one system matches on the receiver"
+msgstr "Più di un sistema corrisponde sul ricevente"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_UNSUPPORTED"
+msgid "The receiver can't store that kind of key"
+msgstr "Il ricevente non può salvare quel tipo di chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_BAD_PAYLOAD"
+msgid "The key didn't arrive whole"
+msgstr "La chiave non è arrivata intera"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_RES_WRITE_FAILED"
+msgid "The receiver couldn't save the key"
+msgstr "Il ricevente non ha potuto salvare la chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_CANCELED"
+msgid "The other radio canceled"
+msgstr "L'altra radio ha annullato"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CANCELED"
+msgid "Canceled"
+msgstr "Annullato"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_MISMATCH"
+msgid "The codes didn't match"
+msgstr "I codici non corrispondevano"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_TIMEOUT"
+msgid "The other radio didn't answer"
+msgstr "L'altra radio non ha risposto"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_CHECK"
+msgid "A message failed its check"
+msgstr "Un messaggio non ha superato il controllo"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_PEER_BUSY"
+msgid "The other radio is busy"
+msgstr "L'altra radio è occupata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_SEND"
+msgid "Couldn't send: check the channel"
+msgstr "Invio non riuscito: controlla il canale"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_WHY_FAILED"
+msgid "Key fill failed"
+msgstr "Carica chiave non riuscita"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_PRESS_KEYS"
+msgid "Press keys at random: "
+msgstr "Premi tasti a caso: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_READY"
+msgid "Ready. This radio: "
+msgstr "Pronta. Questa radio: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_CODE"
+msgid "Code "
+msgstr "Codice "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_OTHER_RADIO"
+msgid "Other radio "
+msgstr "Altra radio "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SAME"
+msgid "Same on both?"
+msgstr "Uguale su entrambe?"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENDING"
+msgid "Sending the key"
+msgstr "Invio della chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORING"
+msgid "Storing the key"
+msgstr "Salvataggio della chiave"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_STORED"
+msgid "Key stored"
+msgstr "Chiave salvata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_SENT"
+msgid "Key sent"
+msgstr "Chiave inviata"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_FAILED"
+msgid "Failed: "
+msgstr "Non riuscito: "
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT_OK"
+msgid "Waiting for the other radio's OK"
+msgstr "In attesa dell'OK dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_WAIT"
+msgid "Waiting for the other radio"
+msgstr "In attesa dell'altra radio"
+
+#: core/ui/ui_menus.c
+msgctxt "KF_BODY_LOW_POWER"
+msgid "Low power"
+msgstr "Bassa potenza"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_OK_YES_BACK_NO"
+msgid "OK yes  Back no"
+msgstr "OK sì  Indietro no"
+
+#: core/ui/ui_menus.c
+msgctxt "HINT_BACK_CANCELS"
+msgid "Back cancels"
+msgstr "Indietro annulla"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

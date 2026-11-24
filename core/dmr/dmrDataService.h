@@ -335,6 +335,8 @@ void dmrDataBuildEmergencyAlarm(uint32_t dst, uint32_t src, bool group, uint8_t 
 // Zone share (CONFIG_ZONE_SHARE): a UDP datagram to ZS_PORT for us (or a group we listen to), not left to the PC.
 // zoneShareSvc.c has it
 void dmrDataServiceZoneShareRx(uint32_t src, bool group, const uint8_t *payload, int length);
+// Key fill (CONFIG_KEY_FILL): a UDP datagram to KF_PORT for us, not left to the PC. keyfill/keyfill_svc.c has it
+void dmrDataServiceKeyFillRx(uint32_t src, const uint8_t *payload, int length);
 
 // Control station passthrough (CONFIG_DMR_CONTROL_STATION, docs/spec/usb-network.md 5): while on, IP based packets
 // (SAP 4, SAP 3) to us or our groups are left to the PC on the USB network link: no TMS ACK, no inbox entry, no ARS

@@ -602,7 +602,7 @@ the reply queue and its 5 s age limit, and the service's TX list and listen befo
 - N(S) per destination: the last 4 radios; a radio not in the table starts at a number from the clock, so a receiver
   still holding our number from before a restart doesn't take the first packet as a duplicate (a strict receiver's
   out of sequence NACK resynchronizes either way).
-- The gateway's packets and zone sharing's go through one TX queue (12.6). A confirmed packet is always alone in its
+- The gateway's packets, zone sharing's and key fill's go through one TX queue (12.6). A confirmed packet is always alone in its
   transmission and the next waits for its end; unconfirmed packets to the same destination share one (12.6.2).
 
 ### 12.3 Confirmed data to us
@@ -648,20 +648,20 @@ explicit IP destination optional) (`debuglink.md` 3.12; `rfoundry_debug.py data 
 
 ### 12.6 Our transmissions: the TX queue, chaining and the guard
 
-`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway or zone sharing). It replaced the
+`core/dmr/dmrAirQueue.c` (`CONFIG_DMR_AIR_QUEUE`, built with the IP gateway, zone sharing or key fill). It replaced the
 gateway's one-packet mailbox (#154): a host that sent a second datagram while the first was on air had it refused.
 
 #### 12.6.1 The queue
 
 | Property | Value |
 |---|---|
-| Producers | the IP gateway (the host link task), zone sharing (any task); `airqPut`, `airqPutBatch` (all or none) |
+| Producers | the IP gateway (the host link task), zone sharing (any task, UDP port 4100), key fill (the UI task, UDP port 4101, [key-fill.md](key-fill.md) 3); `airqPut`, `airqPutBatch` (all or none) |
 | Buffer | a static byte ring of `CONFIG_DMR_AIR_QUEUE_BYTES` octets (default 2048); no allocation |
 | Record | a 36-octet header, then the packet, rounded up to 4 octets. Each packet takes its own length, not a fixed slot |
 | Count | no limit but the bytes: a put is refused only when the packet doesn't fit |
 | Layout | a record never wraps. When the end of the buffer has no room, the end is left unused and the record goes at the start, so the data service reads the oldest in place while others are added |
 | Order | first in, first out; the radio task's `airqTick` hands the oldest to the data service |
-| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's for 10 s; then dropped (`airq.gave_up`) |
+| Wait | the gateway's packets are offered for 2 s while the service refuses them (busy, not a DMR channel we may send on), zone sharing's and key fill's for 10 s; then dropped (`airq.gave_up`) |
 | Age | a gateway packet still queued after 10 s is dropped unsent (`airq.aged`): what it was for has likely moved on |
 | Visibility | depth in packets and octets, both high water marks, refusals and every way a packet ends: the `air` view section ([debuglink.md](debuglink.md) 3.7, section 24); drops are also logged on the debug link |
 

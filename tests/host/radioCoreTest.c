@@ -1522,6 +1522,27 @@ static void test_power(void)
 	req(RREQ_POWER, 1);
 	req(RREQ_CLEAR_TEMP, 0);
 	CHECK(sm.view.power == 1 && !sm.view.temporary);
+	// Key fill's low power (radio_req_tx_low): every transmission at level 0, the user's level kept and back after
+	req(RREQ_CH_STEP, -1);			// the channel that transmits
+	req(RREQ_POWER, 1);
+	CHECK(sm.view.power == 2);
+	req(RREQ_TX_LOW, 1);
+	CHECK(sm.view.tx_low && sm.view.power == 2);
+	int calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 0);
+	req(RREQ_PTT, 0);
+	req(RREQ_TX_LOW, 0);
+	CHECK(!sm.view.tx_low && sm.view.power == 2);
+	poll_for(1000);
+	calls = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(hw.tx_calls == calls + 1 && hw.tx_power == 2);
+	req(RREQ_PTT, 0);
+	// Never saved: a restart (a fresh radio core) is at the user's level
+	req(RREQ_TX_LOW, 1);
+	start();
+	CHECK(!sm.view.tx_low);
 }
 
 static void test_vfo(void)
@@ -4161,6 +4182,7 @@ static void test_ui_requests(void)
 uint32_t hal_millis(void) { return now; }
 void hal_delay_ms(uint32_t ms) { now += ms; }	// the PA sweep op's wait
 void radio_get_view(radio_view_t *v) { *v = sm.view; }
+bool radio_dmr_privacy_on(void) { return sm.view.dmr.privacy; }
 uint32_t radio_view_serial(void) { return sm.serial; }
 void radio_get_settings(radio_settings_t *s) { *s = sm.set; }
 void radio_set_settings(const radio_settings_t *s) { radio_sm_set_settings(&sm, s, now); }

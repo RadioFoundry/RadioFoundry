@@ -20,6 +20,12 @@
 #ifndef CONFIG_DMR_AES
 #define CONFIG_DMR_AES			CONFIG_DMR_PRIVACY
 #endif
+#ifndef CONFIG_KEY_CHECK
+#define CONFIG_KEY_CHECK		1
+#endif
+#ifndef CONFIG_KEY_FILL
+#define CONFIG_KEY_FILL			(CONFIG_DMR && CONFIG_KEY_CHECK)
+#endif
 #ifndef CONFIG_DMR_TALKER_ALIAS
 #define CONFIG_DMR_TALKER_ALIAS		1
 #endif
@@ -416,7 +422,7 @@
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \
-					 CONFIG_APRS_DMR)
+					 CONFIG_APRS_DMR || CONFIG_KEY_FILL)
 #endif
 // The position service (core/position): the board GPS, a host's NMEA, the fixed position. Built for the GPS and for
 // everything that reports our position (DMR GPS Info, LRRP, APRS), so each works without the others
@@ -425,8 +431,8 @@
 #endif
 // ... and its host source: NMEA from a computer comes in through APRS's host link and debug link command only
 #define CONFIG_POSITION_HOST		CONFIG_APRS
-// The air queue (core/dmr/dmrAirQueue.c): what the IP gateway and zone sharing send, in order with the guard
-#define CONFIG_DMR_AIR_QUEUE		(CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE)
+// The air queue (core/dmr/dmrAirQueue.c): what the IP gateway, zone sharing and key fill send, in order with the guard
+#define CONFIG_DMR_AIR_QUEUE		(CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_KEY_FILL)
 
 // Numeric build values
 #ifndef CONFIG_DMR_AIR_QUEUE_BYTES

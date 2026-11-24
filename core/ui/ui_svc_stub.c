@@ -36,6 +36,20 @@ WEAK bool ui_svc_mode(uint8_t mode) { (void)mode; return false; }
 WEAK uint8_t ui_svc_vfo_copy(const radio_view_t *v) { (void)v; return VFO_COPY_NO_VFO; }
 WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
+WEAK bool ui_svc_privacy_kcv(char out[7]) { (void)out; return false; }
+WEAK uint16_t ui_svc_keys_count(void) { return 0; }
+WEAK bool ui_svc_key(uint16_t i, struct key_entry_s *e) { (void)i; (void)e; return false; }
+#if CONFIG_KEY_FILL
+WEAK uint8_t ui_svc_kf_start(int32_t key, uint32_t own, uint32_t dst, bool low)
+{
+	(void)key; (void)own; (void)dst; (void)low;
+	return UI_KF_BUSY;
+}
+WEAK bool ui_svc_kf_view(ui_kf_view_t *out) { (void)out; return false; }
+WEAK void ui_svc_kf_confirm(bool same) { (void)same; }
+WEAK void ui_svc_kf_end(void) { }
+WEAK bool ui_svc_kf_tick(const radio_view_t *v, uint32_t now) { (void)v; (void)now; return false; }
+#endif
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }
