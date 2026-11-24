@@ -891,6 +891,11 @@ static const flow_t flows[] = {
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
+	// The key check value (docs/spec/key-check.md): Motorola key 1's, then every stored key's on the Keys screen
+	{ "S privacy key check", "", "ok 7 4 ok down ok 1 ok down", "shows=9507A7", 9, false },
+	{ "S key check needs a type", "ok 7 4 down down", "ok", "toast=Pick_a_key", 1, false },
+	{ "S keys list", "", "ok 7 4 down down down ok", "screen=keys shows=51588D", 7, false },
+	{ "S keys list with a slot", "ok 7 4 ok down ok 1 ok", "down down ok", "screen=keys shows=9507A7 shows=51588D", 3, false },
 #endif
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 7 1 down down down down down down down down down", "ok", "toast=Voice_prompts", 1, false },

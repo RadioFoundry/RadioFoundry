@@ -45,6 +45,7 @@ export const aesSystem = {
 	// Record: system, algorithm, key ID (u16, the PI header's 8 bits), flags, the 32 key bytes
 	traffic: {
 		max: 256,
+		kcv: "aes",	// the key check value is AES's (docs/spec/key-check.md), as the radio's for ALG 0x25
 		labels: { title: "editor.aes.keys", add: "editor.aes.add", show: "editor.aes.show_keys" },
 		columns: [
 			{ key: "id", label: "editor.aes.id", type: "int", min: 0, max: 255 },

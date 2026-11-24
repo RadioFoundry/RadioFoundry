@@ -4043,6 +4043,16 @@ msgid "Key"
 msgstr "Clave"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEY_CHECK"
+msgid "Key check"
+msgstr "Verif. clave"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_PRIVACY_KEYS"
+msgid "Stored keys"
+msgstr "Claves guardadas"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "Bloqueo auto"
@@ -4343,6 +4353,11 @@ msgid " steps"
 msgstr " pasos"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
+msgid "Pick a key type first"
+msgstr "Elige un tipo de clave antes"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono de permiso: no disponible"
@@ -4403,11 +4418,6 @@ msgid "Talker alias: not in this build"
 msgstr "Alias del emisor: no disponible"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_WHY_PICK_KEY_TYPE_FIRST"
-msgid "Pick a key type first"
-msgstr "Elige un tipo de clave antes"
-
-#: core/ui/ui_menus.c
 msgctxt "SET_WHY_NO_GPS_ON_RADIO"
 msgid "No GPS on this radio"
 msgstr "Sin GPS en esta radio"
@@ -4421,6 +4431,11 @@ msgstr "Posición DMR: no disponible"
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
 msgid "Diagnostics: not in this build"
 msgstr "Diagnóstico: no disponible"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
+msgid "The same check on both radios: the same key"
+msgstr "Misma verificación en ambas radios: misma clave"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"
@@ -4536,6 +4551,16 @@ msgstr "Escaneo detenido aquí"
 msgctxt "SCAN_TOAST_LISTS_USE_QDMR"
 msgid "Edit scan lists in qdmr"
 msgstr "Edita listas de escaneo en qdmr"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_LABEL_PRIVACY"
+msgid "Privacy"
+msgstr "Privacidad"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_EMPTY"
+msgid "No keys stored"
+msgstr "No hay claves"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

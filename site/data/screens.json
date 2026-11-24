@@ -497,6 +497,18 @@
     "ZONE_SHARE"
    ]
   },
+  "settings_privacy_check": {
+   "group": "settings",
+   "needs": [
+    "KEY_CHECK"
+   ]
+  },
+  "stored_keys": {
+   "group": "settings",
+   "needs": [
+    "KEY_CHECK"
+   ]
+  },
   "zone_share_to_id": {
    "group": "channels",
    "needs": [
