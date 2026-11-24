@@ -8438,6 +8438,342 @@ static void channel_burst(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_FOX
+// --- Fox mode (radio_fox.h, docs/spec/radio-features.md 3.8): radio_fox.c decides what comes next; this keys the FM
+// channel as the 1750 Hz burst does (ptt_down, held by fox_keyed, every TX check and the time-out as for PTT) and plays
+// the parts on the board's TX tone: the Morse with tx_tone_key (a silent carrier between elements), the jingle as an
+// on-air chain (chain_tone). The record is read from the codeplug at the start, so a change takes effect at the next ---
+
+enum { FOX_PART_NONE, FOX_PART_MORSE, FOX_PART_CHAIN };
+
+#define FOX_TONE_MIN_HZ		300	// the Morse tone, as the CW keyer's (cw_begin)
+#define FOX_TONE_MAX_HZ		3000
+
+// The Morse tone keyed down or up. Up is a silent carrier; a board without tx_tone_key stops the tone instead, which
+// lets the microphone through between elements (the CW keyer does the same)
+static void fox_key(radio_sm_t *sm, bool down)
+{
+	sm->fox_down = down;
+	if (board.radio->tx_tone_key != NULL && board.radio->tx_tone_key(down)) {
+		return;
+	}
+	board.radio->tx_tone(down ? sm->fox_tone_hz : 0);
+}
+
+static void fox_view(radio_sm_t *sm, uint32_t now_ms)
+{
+	uint32_t left = radio_fox_wait_left(&sm->fox, now_ms);
+	uint16_t next = (uint16_t)((left + 999u) / 1000u);
+	uint16_t cycles = (uint16_t)(sm->fox.cycles > 0xFFFFu ? 0xFFFFu : sm->fox.cycles);
+	uint16_t cut = (uint16_t)(sm->fox.cut > 0xFFFFu ? 0xFFFFu : sm->fox.cut);
+	if (sm->view.fox_phase != sm->fox.phase || sm->view.fox_next_s != next || sm->view.fox_cycles != cycles ||
+	    sm->view.fox_cut != cut) {
+		sm->view.fox_phase = sm->fox.phase;
+		sm->view.fox_next_s = next;
+		sm->view.fox_cycles = cycles;
+		sm->view.fox_cut = cut;
+		changed(sm);
+	}
+}
+
+// The part playing stops and the fox lets go of the transmitter, if it holds it (the microphone back first)
+static void fox_unkey(radio_sm_t *sm, uint32_t now_ms)
+{
+	sm->fox_part = FOX_PART_NONE;
+	sm->fox_down = false;
+	if (!sm->fox_keyed) {
+		return;
+	}
+	sm->fox_keyed = false;
+	tx_tone(0);
+	if (board.radio->tx_mic != NULL) {
+		board.radio->tx_mic(true);
+	}
+	ptt_release(sm, false, now_ms);
+}
+
+static void fox_end(radio_sm_t *sm, uint8_t why, uint32_t now_ms)
+{
+	fox_unkey(sm, now_ms);
+	radio_fox_stop(&sm->fox);
+	sm->view.fox = false;
+	sm->view.fox_why = why;
+	fox_view(sm, now_ms);
+	changed(sm);
+}
+
+// Something else has the radio: the fox doesn't start, and stops at its next key-up
+static bool fox_radio_busy(const radio_sm_t *sm)
+{
+	bool busy = sm->hotspot || sm->host_audio;
+#if CONFIG_DMR && CONFIG_SFR
+	busy = busy || sm->sfr_rpt;
+#endif
+#if CONFIG_AIR_RAW
+	busy = busy || sm->air_bench;
+#endif
+	return busy;
+}
+
+// An APRS transmission on its way: the cycle waits for it (PTT would abort it)
+static bool fox_aprs_busy(const radio_sm_t *sm)
+{
+#if CONFIG_APRS_AFSK
+	return sm->aprs_phase != APRS_RF_OFF;
+#else
+	(void)sm;
+	return false;
+#endif
+}
+
+// The ID: the first word of the radio name (the settings' override, else the codeplug's), if it is a callsign
+static uint8_t fox_callsign(radio_sm_t *sm)
+{
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (st_copy.radio_name[0] != '\0') {
+		memcpy(name, st_copy.radio_name, SETTINGS_NAME_LEN);
+		name[SETTINGS_NAME_LEN] = '\0';
+	} else {
+		codeplug_radio_name(name);
+	}
+	sm->fox_call_len = radio_cwid_callsign(name, sm->fox_call, sizeof(sm->fox_call));
+	return sm->fox_call_len;
+}
+
+// The codeplug's record into fox_rec: the defaults when it has none, or one the fox can't take
+static void fox_read(radio_sm_t *sm)
+{
+	uint8_t v[FOX_REC_LEN];
+	int len = codeplug_kv_get(CODEPLUG_KEY_FOX, v, sizeof(v));
+	if (len < 0 || !fox_rec_decode(v, len, &sm->fox_rec)) {
+		fox_rec_default(&sm->fox_rec);
+	}
+}
+
+// The jingle on the speaker, as a start would send it (fox_rec and fox_seg are free while no cycle is on air; a fox
+// waiting plays the jingle it runs: a change applies at the next start)
+static void fox_preview(radio_sm_t *sm)
+{
+	if (radio_fox_on_air(&sm->fox)) {
+		return;
+	}
+	if (sm->fox.phase == FOX_OFF) {
+		fox_read(sm);
+	}
+	_Static_assert(BEEP_CUSTOM_MAX >= FOX_STEPS, "the beep plays a whole jingle");
+	uint8_t n = fox_jingle(&sm->fox_rec, sm->fox_seg);
+	beep_play_custom(sm->fox_seg, n, beep_level_now(sm), beep_shared_now());
+}
+
+static void fox_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->fox.phase != FOX_OFF) {
+		return;
+	}
+	sm->view.fox_deny = TXDENY_NONE;
+	settings_read(&st_copy);
+	uint8_t why = RFOX_WHY_NONE;
+	if (fox_radio_busy(sm) || sm->ptt || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED) {
+		why = RFOX_WHY_BUSY;
+	} else if (sm->view.ch.mode != RADIO_MODE_FM) {
+		why = RFOX_WHY_NOT_FM;
+	} else if (board.radio->tx_tone == NULL) {
+		why = RFOX_WHY_NO_TONE;
+	} else if (fox_callsign(sm) == 0) {
+		why = RFOX_WHY_NO_CALL;
+	}
+	uint8_t deny = why == RFOX_WHY_NONE ? tx_check(sm) : TXDENY_NONE;
+	if (deny != TXDENY_NONE && deny != TXDENY_BUSY) {
+		why = RFOX_WHY_DENIED;		// a busy channel only delays the first cycle
+		sm->view.fox_deny = deny;
+	}
+	fox_read(sm);
+	fox_rec_t *r = &sm->fox_rec;
+	if ((r->flags & FOX_F_MSG) != 0 && fox_msg_len(r) == 0) {
+		r->flags &= (uint8_t)~FOX_F_MSG;	// nothing to send
+	}
+	uint8_t wpm = st_copy.cw_wpm != 0 ? st_copy.cw_wpm : MORSE_WPM_DEFAULT;
+	sm->fox_wpm = wpm >= MORSE_WPM_MIN && wpm <= MORSE_WPM_MAX ? wpm : MORSE_WPM_DEFAULT;
+	uint16_t hz = st_copy.cw_tone_hz;
+	sm->fox_tone_hz = hz >= FOX_TONE_MIN_HZ && hz <= FOX_TONE_MAX_HZ ? hz : MORSE_TONE_HZ_DEFAULT;
+	uint32_t limit = sm->view.tot_s != 0 ? (uint32_t)sm->view.tot_s * 1000u : FOX_CYCLE_MAX_MS;
+	if (why == RFOX_WHY_NONE && fox_cycle_ms(r, sm->fox_call, sm->fox_call_len, sm->fox_wpm) > limit) {
+		why = RFOX_WHY_TOO_LONG;
+	}
+	if (why != RFOX_WHY_NONE) {
+		sm->view.fox_why = why;
+		beep(sm, BEEP_ERROR);
+		changed(sm);
+		return;
+	}
+	radio_fox_start(&sm->fox, r->flags, r->repeats, (uint32_t)r->interval_s * 1000u, now_ms);
+	sm->view.fox = true;
+	sm->view.fox_why = RFOX_WHY_NONE;
+	fox_view(sm, now_ms);
+	changed(sm);
+}
+
+// A cycle is due: key the channel, or wait, or give up
+static void fox_key_up(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (fox_radio_busy(sm)) {
+		fox_end(sm, RFOX_WHY_BUSY, now_ms);
+		return;
+	}
+	if (sm->view.ch.mode != RADIO_MODE_FM) {
+		fox_end(sm, RFOX_WHY_NOT_FM, now_ms);	// a codeplug write changed the channel under it
+		return;
+	}
+	uint8_t deny = tx_check(sm);
+	if (deny == TXDENY_BUSY || sm->ptt || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED ||
+	    fox_aprs_busy(sm)) {
+		radio_fox_retry(&sm->fox, now_ms);	// the channel or the transmitter is in use: a few seconds later
+		return;
+	}
+	if (deny != TXDENY_NONE) {
+		sm->view.fox_deny = deny;	// TX inhibit, a critical battery, the test TX limit: no beep every cycle
+		fox_end(sm, RFOX_WHY_DENIED, now_ms);
+		return;
+	}
+	ptt_down(sm, now_ms);
+	sm->fox_keyed = sm->ptt;	// held by the fox, even when refused (released below)
+	if (sm->view.state != RS_TX) {
+		sm->view.fox_deny = sm->view.tx_deny;	// the board's own refusal
+		fox_end(sm, RFOX_WHY_DENIED, now_ms);
+		return;
+	}
+	sm->view.tx_auto = true;	// the radio's own: an unattended fox doesn't light the screen every cycle
+	roger_cancel(sm);	// a start tone on air (fm_lead_start) gives way, as for the burst
+	dtmf_cancel(sm, now_ms);
+	if (!board.radio->tx_tone(sm->fox_tone_hz)) {
+		fox_end(sm, RFOX_WHY_NO_TONE, now_ms);
+		return;
+	}
+	if (board.radio->tx_mic != NULL) {
+		board.radio->tx_mic(false);	// nothing but the fox's tones on air, the gaps included
+	}
+	fox_key(sm, false);	// a silent carrier for the lead-in
+	radio_fox_keyed(&sm->fox, now_ms);
+}
+
+static void fox_morse(radio_sm_t *sm, const char *text, uint8_t n, uint32_t now_ms)
+{
+	board.radio->tx_tone(sm->fox_tone_hz);	// after the jingle the tone is its last step's
+	fox_key(sm, false);
+	morse_start(&sm->fox_morse, text, n, sm->fox_wpm, now_ms);
+	sm->fox_part = FOX_PART_MORSE;
+}
+
+static void fox_jingle_start(radio_sm_t *sm, uint32_t now_ms)
+{
+	sm->fox_seg_n = fox_jingle(&sm->fox_rec, sm->fox_seg);
+	sm->fox_seg_i = 0;
+	sm->fox_seg_ms = now_ms;
+	sm->fox_part = FOX_PART_CHAIN;
+	sm->fox_down = chain_tone(sm->fox_seg, sm->fox_seg_n, 0) && sm->fox_seg[0].hz != 0;
+}
+
+// The part playing, on: true when it has just ended (the carrier is silent then)
+static bool fox_part_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->fox_part == FOX_PART_MORSE) {
+		bool down = morse_poll(&sm->fox_morse, now_ms);
+		if (down != sm->fox_down) {
+			fox_key(sm, down);
+		}
+		if (!sm->fox_morse.done) {
+			return false;
+		}
+	} else if (sm->fox_part == FOX_PART_CHAIN) {
+		const beep_seg_t *g = sm->fox_seg;
+		while (now_ms - sm->fox_seg_ms >= g[sm->fox_seg_i].ms) {
+			sm->fox_seg_ms += g[sm->fox_seg_i].ms;	// from the step's own start: no drift over the steps
+			if (++sm->fox_seg_i >= sm->fox_seg_n) {
+				break;
+			}
+			sm->fox_down = chain_tone(g, sm->fox_seg_n, sm->fox_seg_i) && g[sm->fox_seg_i].hz != 0;
+		}
+		if (sm->fox_seg_i < sm->fox_seg_n) {
+			return false;
+		}
+	} else {
+		return false;
+	}
+	sm->fox_part = FOX_PART_NONE;
+	fox_key(sm, false);
+	return true;
+}
+
+// Every RADIO_TICK_MS while the fox runs
+static void fox_service(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (sm->fox.phase == FOX_OFF) {
+		return;
+	}
+	if (radio_fox_on_air(&sm->fox) && (!sm->fox_keyed || sm->view.state != RS_TX)) {
+		// The transmission ended under the fox: the time-out, TX inhibit, a critical battery. The next one is due an
+		// interval later
+		fox_unkey(sm, now_ms);
+		radio_fox_cut(&sm->fox, now_ms);
+		fox_view(sm, now_ms);
+		return;
+	}
+	bool done = fox_part_poll(sm, now_ms);
+	switch (radio_fox_poll(&sm->fox, done, now_ms)) {
+	case FOX_ACT_KEY:
+		fox_key_up(sm, now_ms);
+		break;
+	case FOX_ACT_QUIET:
+		sm->fox_part = FOX_PART_NONE;
+		fox_key(sm, false);
+		break;
+	case FOX_ACT_MSG:
+		fox_morse(sm, sm->fox_rec.msg, fox_msg_len(&sm->fox_rec), now_ms);
+		break;
+	case FOX_ACT_JINGLE:
+		fox_jingle_start(sm, now_ms);
+		break;
+	case FOX_ACT_ID:
+		fox_morse(sm, sm->fox_call, sm->fox_call_len, now_ms);
+		break;
+	case FOX_ACT_UNKEY:
+		fox_unkey(sm, now_ms);
+		break;
+	default:
+		break;
+	}
+	if (sm->fox.phase != FOX_OFF) {
+		fox_view(sm, now_ms);
+	}
+}
+
+// Whether a request ends the fox before it runs: PTT (the user takes the channel), a retune, another mode or a
+// transmission of the radio's own that wants the channel. retunes: the request's flags say it retunes (RQ_RETUNES)
+static bool fox_gives_way(const radio_req_t *req, bool retunes)
+{
+	switch (req->type) {
+	case RREQ_FOX:
+		return false;
+	case RREQ_PTT:
+		return req->arg != 0;
+	case RREQ_POWER_OFF:
+		return req->arg == 0;
+	case RREQ_HS_ENTER:
+	case RREQ_SCAN:
+	case RREQ_SCAN_VFO:
+	case RREQ_DUAL:
+	case RREQ_TONE_BURST:
+	case RREQ_TONE_BURST_KEY:
+	case RREQ_SATELLITE_TRACK:
+	case RREQ_AIR_BENCH:
+	case RREQ_AIR_TX:
+		return true;
+	default:
+		return retunes;
+	}
+}
+#endif
+
 // What radio_sm_request does around a request's own work. A request is the user doing something unless it says
 // otherwise: it counts as activity, an APRS transmission gives way and a roaming search goes back where it started
 enum {
@@ -8480,6 +8816,7 @@ static const uint8_t req_flags[RREQ_COUNT] = {
 	[RREQ_DMR_CALL_BACK] = RQ_SELECTED,
 	[RREQ_DMR_TARGET_CLEAR] = RQ_SELECTED,
 	[RREQ_DMR_HEAR_ALL] = RQ_SELECTED,
+	[RREQ_FOX] = RQ_RETUNES,	// the fox keys the channel: a scan or dual watch ends first
 };
 
 // --- The requests' own work (radio_sm_request). busy: transmitting, a hotspot or the air bench has the radio ---
@@ -8605,6 +8942,11 @@ static void vfo_step_size_request(radio_sm_t *sm, const radio_req_t *req, uint32
 
 static void ptt_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
+#if CONFIG_FOX
+	if (sm->fox_keyed) {
+		return;		// a release with no press (a press stopped the fox in radio_sm_request): the cycle goes on
+	}
+#endif
 #if CONFIG_SATELLITE_TLE && CONFIG_FM_TX_TONES
 	if (sm->satellite_arm_active) {
 		return;	// Keep the operator-requested arm burst at its full duration
@@ -9064,6 +9406,11 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	uint8_t flags = req->type < RREQ_COUNT ? req_flags[req->type] : 0;
+#if CONFIG_FOX
+	if (sm->fox.phase != FOX_OFF && fox_gives_way(req, (flags & RQ_RETUNES) != 0)) {
+		fox_end(sm, RFOX_WHY_STOPPED, now_ms);	// before anything sees the radio transmitting: PTT talks, a retune runs
+	}
+#endif
 	if ((flags & (RQ_ALERT | RQ_KEEP_APRS)) == 0) {
 		aprs_rf_abort(sm, now_ms);	// the user does something: an APRS transmission gives way
 	}
@@ -9213,6 +9560,20 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_AIR_BENCH:
 	case RREQ_AIR_TX: bench_request(sm, req, now_ms); break;
 #endif
+	case RREQ_FOX:
+#if CONFIG_FOX
+		if (req->arg == RFOX_PREVIEW) {
+			fox_preview(sm);
+		} else if (req->arg != RFOX_STOP) {
+			fox_start(sm, now_ms);
+		} else if (sm->fox.phase != FOX_OFF) {
+			fox_end(sm, RFOX_WHY_STOPPED, now_ms);
+		}
+#else
+		sm->view.fox_why = RFOX_WHY_UNAVAILABLE;
+		changed(sm);
+#endif
+		break;
 	default:
 		break;
 	}
@@ -9952,6 +10313,9 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if RADIO_SM_CW
 	cw_service(sm, now_ms);
+#endif
+#if CONFIG_FOX
+	fox_service(sm, now_ms);
 #endif
 #if CONFIG_DMR
 	if (sm->dmr_running) {

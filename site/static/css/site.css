@@ -581,6 +581,7 @@ dialog.beta-notice .confirm-actions { position: sticky; bottom: calc(-1 * var(--
 .ed-filter { font: inherit; padding: var(--space-1) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
 	background: var(--surface); color: var(--text); width: min(100%, 18rem); }
 .ed-err { color: var(--bad); }
+.ed-warn { color: var(--warn); }
 .grid-wrap { overflow: auto; max-height: calc(100vh - 16rem); min-height: 12rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
 table.grid { font-size: var(--text-sm); }
 table.grid th, table.grid td { padding: var(--space-1) var(--space-2); white-space: nowrap; vertical-align: middle; }

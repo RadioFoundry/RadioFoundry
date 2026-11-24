@@ -3575,6 +3575,11 @@ msgid "Zones/Chs Received"
 msgstr "收到的区域/信道"
 
 #: core/ui/ui_menus.c
+msgctxt "TITLE_FOX"
+msgid "Fox"
+msgstr "信标"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_DUAL_WATCH"
 msgid "Dual watch"
 msgstr "双守候"
@@ -4279,21 +4284,6 @@ msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 打开  返回"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "步进 "
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_VALUE_STANDARD_SOUND"
-msgid "Standard sound"
-msgstr "标准音"
-
-#: core/ui/ui_menus.c
-msgctxt "SIG_LABEL_LENGTH"
-msgid "Length: "
-msgstr "长度: "
-
 #: core/ui/ui_menus.c
 msgctxt "SIG_TITLE_START_TONE"
 msgid "Start Tone"
@@ -4308,6 +4298,21 @@ msgstr "结束音"
 msgctxt "SIG_TITLE_IDLE_TONE"
 msgid "Idle Tone"
 msgstr "空闲音"
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_VALUE_STANDARD_SOUND"
+msgid "Standard sound"
+msgstr "标准音"
+
+#: core/ui/ui_menus.c core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step "
+msgstr "步进 "
+
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_LENGTH"
+msgid "Length: "
+msgstr "长度: "
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_NOT_CHANGED"
@@ -4343,6 +4348,161 @@ msgstr " 步"
 msgctxt "SIG_UNIT_STEPS"
 msgid " steps"
 msgstr " 步"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_CUSTOM"
+msgid "Custom "
+msgstr "自定 "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_NO_MORSE"
+msgid "No Morse for "
+msgstr "CW 无法发送 "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_MESSAGE_SAVED"
+msgid "Message saved"
+msgstr "消息已保存"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_INTERVAL"
+msgid "Interval"
+msgstr "间隔"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE"
+msgid "Message"
+msgstr "消息"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_MESSAGE_TEXT"
+msgid "Message text"
+msgstr "消息文字"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE"
+msgid "Jingle"
+msgstr "乐曲"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_REPEATS"
+msgid "Jingle repeats"
+msgstr "乐曲重复"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_STEPS"
+msgid "Jingle steps"
+msgstr "乐曲步骤"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_ROW_PREVIEW_JINGLE"
+msgid "Preview jingle"
+msgstr "试听乐曲"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_NO_MESSAGE"
+msgid "None"
+msgstr "无"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIMES"
+msgid " times"
+msgstr " 次"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIME"
+msgid " time"
+msgstr " 次"
+
+#: core/ui/ui_menus.c
+msgctxt "WHY_FOX_NOT_IN_BUILD"
+msgid "Fox: not in this build"
+msgstr "信标：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_SHORT_WAIT"
+msgid "Short wait: the radio may get hot"
+msgstr "间隔太小：电台可能发热"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NOT_FM"
+msgid "Not an FM channel"
+msgstr "不是 FM 信道"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_CALL"
+msgid "No callsign in the radio name"
+msgstr "电台名称中无呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_TOO_LONG"
+msgid "A cycle is longer than the TX time-out"
+msgstr "一个周期超过发射超时"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_NO_TONE"
+msgid "This radio can't send the tone"
+msgstr "此电台无法发送音调"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_BUSY"
+msgid "Radio busy"
+msgstr "电台忙"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_WHY_DENIED"
+msgid "Transmit refused"
+msgstr "拒绝发射"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_OFF"
+msgid "Off: OK on Fox starts it on this channel"
+msgstr "关：在“信标”上按 OK 于本信道启动"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_NEXT_IN"
+msgid "Next in "
+msgstr "下次 "
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_MESSAGE"
+msgid "On air: message"
+msgstr "发射中：消息"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_JINGLE"
+msgid "On air: jingle"
+msgstr "发射中：乐曲"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENDING_ID"
+msgid "On air: callsign"
+msgstr "发射中：呼号"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_ON_AIR"
+msgid "On air"
+msgstr "空中发射"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_BODY_SENT"
+msgid " sent"
+msgstr " 次已发"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_HINT_OK_BACK_STOPS"
+msgid "OK change  Back stops"
+msgstr "OK 更改  返回 停止"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TITLE_JINGLE"
+msgid "Fox Jingle"
+msgstr "信标乐曲"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_DEFAULT_TUNE"
+msgid "Default tune"
+msgstr "默认乐曲"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"

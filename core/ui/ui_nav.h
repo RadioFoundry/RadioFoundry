@@ -14,6 +14,9 @@
 #include "i18n.h"
 #include "config.h"	// the switches that shape the types below
 
+// Tools > Fox: fox mode, with the settings menu (its jingle's steps are the signaling tones' step editor)
+#define UI_FOX	(CONFIG_FOX && CONFIG_UI_SETTINGS)
+
 typedef enum {
 	SCR_HOME, SCR_QUICK, SCR_HUB, SCR_FIND, SCR_ACTIONS, SCR_CONTACTS, SCR_MESSAGES, SCR_MESSAGE, SCR_COMPOSE,
 	SCR_RECENT, SCR_ZONES, SCR_ZONE, SCR_TOOLS, SCR_SETTINGS, SCR_GROUP, SCR_PICKER, SCR_INFO, SCR_CONFIRM,
@@ -45,7 +48,10 @@ typedef enum {
 	SCR_SATELLITE_PASSES,		// Tools > Satellite: predict and select the next installed-TLE passes
 	SCR_SATELLITE,			// selected satellite: live pass details and tracking controls
 	SCR_SATELLITE_TEXT,		// one 69-character TLE line
-	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's five steps (arg = sig_event_t)
+	SCR_SIG_CHAIN,			// Settings > Signaling tones: one event's ten steps (arg = sig_event_t)
+#if UI_FOX
+	SCR_FOX, SCR_FOX_JINGLE,	// Tools > Fox (radio-features.md 3.8), its jingle's steps
+#endif
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
@@ -117,7 +123,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE || UI_FOX
 	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
 #endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)

@@ -484,6 +484,14 @@ typedef struct {
 	bool tot_warning;	// TX: the time-out is near (tot_warn_s)
 	bool tone_burst;	// TX: the 1750 Hz burst is on
 	bool roger;		// TX: the roger beep is being sent after the PTT release
+	// Fox mode (CONFIG_FOX; radio-features.md 3.8, radio_req_fox)
+	bool fox;		// running: it keys the channel on its interval
+	uint8_t fox_phase;	// fox_phase_t (radio/radio_fox.h)
+	uint8_t fox_why;	// radio_fox_why_t: why the last start was refused or the last run ended
+	uint8_t fox_deny;	// with RFOX_WHY_DENIED: the transmitter's refusal (tx_deny_t)
+	uint16_t fox_next_s;	// waiting: seconds to the next cycle
+	uint16_t fox_cycles;	// this run: cycles sent to the end
+	uint16_t fox_cut;	// ... and cut short (the time-out, the transmitter refused)
 	// DTMF (CONFIG_DTMF; radio-features.md 3.7)
 	bool dtmf_ready;	// a digit key would send its tone now (FM TX with PTT held, nothing else on the air)
 	char dtmf;		// the digit sounding, 0 = none
@@ -717,6 +725,23 @@ void radio_req_vibrate(uint8_t pattern);
 void radio_req_tone_burst(bool on, uint32_t max_ms);
 // Side-key edges: send for at least RADIO_BURST_MIN_MS, then until released.
 void radio_req_tone_burst_key(bool down);
+// Fox mode (CONFIG_FOX; radio-features.md 3.8): on starts it on the channel in use (FM), off stops it. Never saved: a
+// restart comes up with it off. The view's fox and fox_why say how it went
+typedef enum {
+	RFOX_WHY_NONE,		// running, or never started
+	RFOX_WHY_STOPPED,	// stopped: the request, PTT, a retune, another mode taking the radio
+	RFOX_WHY_NOT_FM,	// the channel isn't an FM one
+	RFOX_WHY_NO_CALL,	// no callsign in the radio name (radio_cwid_callsign)
+	RFOX_WHY_TOO_LONG,	// a cycle keys longer than the TX time-out allows (or FOX_CYCLE_MAX_MS with none)
+	RFOX_WHY_NO_TONE,	// the board can't send a tone in FM, or refused it
+	RFOX_WHY_BUSY,		// the radio is busy: transmitting, a hotspot, the SFR role, a host audio session
+	RFOX_WHY_DENIED,	// the transmitter refused (the view's fox_deny says why)
+	RFOX_WHY_UNAVAILABLE,	// built without fox mode
+} radio_fox_why_t;
+// What radio_req_fox asks: stop, start on the channel in use, or play the jingle on the speaker (the one a start would
+// send; ignored while a cycle is on air)
+enum { RFOX_STOP, RFOX_START, RFOX_PREVIEW };
+void radio_req_fox(uint8_t cmd);
 // A DTMF key down / up (CONFIG_DTMF; radio-features.md 3.7): digit '0'-'9', '*', '#', 'A'-'D'. Ignored unless the
 // view's dtmf_ready; the tone lasts at least RADIO_DTMF_MIN_MS. The input task sends the keypad's edges (any task)
 void radio_req_dtmf(char digit, bool down);

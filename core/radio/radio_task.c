@@ -836,6 +836,7 @@ void radio_req_t3_dial(const char *digits)
 // A lost release would leave the burst keyed until the time-out
 void radio_req_tone_burst(bool on, uint32_t max_ms) { post_pair(RREQ_TONE_BURST, on, max_ms, pdMS_TO_TICKS(50)); }
 void radio_req_tone_burst_key(bool down) { post(RREQ_TONE_BURST_KEY, down, pdMS_TO_TICKS(50)); }
+void radio_req_fox(uint8_t cmd) { post(RREQ_FOX, cmd, pdMS_TO_TICKS(50)); }
 
 void radio_set_settings(const radio_settings_t *s)
 {

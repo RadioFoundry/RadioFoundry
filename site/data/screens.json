@@ -723,6 +723,42 @@
     "DMR_ROAMING"
    ]
   },
+  "fox": {
+   "group": "tools",
+   "needs": [
+    "FOX",
+    "UI_SETTINGS"
+   ]
+  },
+  "fox_waiting": {
+   "group": "tools",
+   "needs": [
+    "FOX",
+    "UI_SETTINGS"
+   ]
+  },
+  "fox_on_air": {
+   "group": "tools",
+   "needs": [
+    "FOX",
+    "UI_SETTINGS"
+   ]
+  },
+  "fox_jingle_steps": {
+   "group": "tools",
+   "needs": [
+    "FOX",
+    "UI_SETTINGS"
+   ]
+  },
+  "fox_message_text": {
+   "group": "tools",
+   "needs": [
+    "FOX",
+    "UI_SETTINGS",
+    "CHANNEL_EDIT"
+   ]
+  },
   "position": {
    "group": "tools",
    "needs": [

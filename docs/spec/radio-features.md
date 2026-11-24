@@ -415,6 +415,76 @@ pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured
 None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
 `test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
 
+### 3.8 Fox mode (CONFIG_FOX)
+
+The radio as a fox-hunt transmitter (`core/radio/radio_fox.c`, the radio core's fox block). On the FM channel in use
+it keys up on a timer and sends, in one transmission, a Morse message, a jingle and its callsign in Morse. Built with
+`CONFIG_FM_TX_TONES` and `CONFIG_SIG_TONES`. Tools > Fox starts and stops it ([ui.md](ui.md) 2). It is never saved: a
+restart comes up with the fox off.
+
+**A cycle** is one key-up through every TX rule PTT has (`ptt_down`: band, TX inhibit, the test TX limit, busy channel
+lockout, the time-out). It is the radio's own transmission (`tx_auto`), so the screen doesn't light each cycle. All
+of it is on `hal_radio_t.tx_tone`; with `tx_tone_key` a silent carrier is the tone keyed off, else `tx_tone(0)`. A board
+with `tx_mic` takes the microphone off the air from key-up to unkey, for one whose microphone reaches the modulator by a
+path the tone's own muting doesn't cover; without it a gap with `tx_tone(0)` carries the microphone.
+
+| Part | What | Length |
+|---|---|---|
+| Lead-in | silent carrier, so receivers' squelch opens | `FOX_LEAD_MS` 300 ms |
+| Message | the record's text in Morse at the CW tone and speed (`cw_tone_hz`, `cw_wpm`; 800 Hz and 20 wpm when unset) | up to 16 characters |
+| Gap | silent carrier, only between two parts that are sent | `FOX_GAP_MS` 600 ms |
+| Jingle | the record's steps as an on-air chain (4.3's step format, `chain_tone`), played the record's repeats times (1 to `FOX_REPEATS_MAX` 10) with a gap before each further play | at most `FOX_MAX_MS` 10 s a play |
+| Gap | as above | 600 ms |
+| ID | the callsign from the radio name (`radio_cwid_callsign`), in Morse as the message | always sent |
+| Tail | silent carrier | `FOX_TAIL_MS` 300 ms |
+
+The message and the jingle can each be off; the ID can't. A message that is empty sends nothing. The next cycle keys
+the interval after this one unkeyed, 3 s to 60 min (`FOX_INTERVAL_MIN_S`, `FOX_INTERVAL_MAX_S`). The first keys at
+once. The menu steps through presets: 3, 5, 10, 15 and 30 s, 1, 2, 4 and 5 min (4 min is a 5-fox ARDF cycle's wait).
+The Codeplug Editor sets any whole number of seconds in the range; the menu shows one that isn't a preset as Custom
+m:ss, and OK on it goes to the next preset above. A preset under 15 s shows a warning: the transmitter is keyed most of
+the time, and on high power a radio gets hot.
+
+**The record** is the codeplug's (key 0x000A, [codeplug-settings.md](codeplug-settings.md) 3.4): the interval, the
+two parts' switches, the jingle's repeats, the message and the jingle's 32 steps. Each step is a frequency (0 = a pause, up to 3400 Hz in
+10 Hz steps) and a length (10 ms units, up to 2550 ms). A step of length 0 ends the chain. A jingle with no step is the
+default tune, written for this. No record, or one the fox can't take, is the defaults: "FOX", the tune once, every minute.
+The radio reads it when the fox starts, so a change takes effect at the next start. The radio's menu sets all of it:
+the message in Text entry ([ui.md](ui.md) 2), upper case and only characters with Morse.
+
+**Refused at start** (`view.fox_why`; the error beep):
+
+| Reason | `fox_why` |
+|---|---|
+| The radio is busy: PTT or a transmission in progress, hotspot mode, an SFR role, host audio, the air bench | `busy` |
+| The channel isn't FM | `not_fm` |
+| The board has no `tx_tone` | `no_tone` |
+| The radio name holds no callsign | `no_call` |
+| The transmitter refuses for a reason other than a busy channel (TX inhibit, band, the test TX limit) | `denied` (`fox_deny`: the `tx_deny` reason) |
+| A cycle is longer than the channel's time-out (`tot_s`), or than 60 s (`FOX_CYCLE_MAX_MS`) with none | `too_long` |
+
+**While it runs:**
+
+| Event | What the fox does |
+|---|---|
+| The channel busy at key-up (busy channel lockout), PTT, a transmission or APRS in progress | waits `FOX_BUSY_RETRY_MS` (5 s) and tries again, with no beep |
+| The transmitter refuses at key-up for another reason | stops, `denied` |
+| The time-out ends a cycle | the cycle is cut (`fox_cut` counts it) and the next keys an interval later |
+| PTT pressed | stops; the user's transmission goes ahead. On a radio whose PTT shares the programming cable's serial line ([gotchas.md](gotchas.md) 16.2), no new press counts while the radio transmits, so there PTT stops the fox only while it waits; Back stops it at any time |
+| A retune (channel, zone, VFO), scan, dual watch, hotspot entry, the 1750 Hz burst, satellite tracking, the air bench, power off | stops, `stopped` |
+| A PTT release with no press | ignored (the fox holds the transmitter) |
+| Leaving Tools > Fox | stops |
+
+A stop in the middle of a cycle unkeys at once. Power is the channel's power level; milliwatt levels for close-range
+hunts need an attenuator or a board's power calibration ([power-calibration.md](../testing/power-calibration.md)).
+
+**Preview.** `RFOX_PREVIEW` plays the jingle once on the speaker as a custom beep (`beep_play_custom`, which holds 32 steps
+in a fox build). It is ignored while a cycle is on air.
+
+**View** (debug link section `fox`, [debuglink.md](debuglink.md)): `fox.on`, `fox.phase` (off, wait, lead, msg, gap,
+jingle, id, tail), `fox.next_s` (seconds to the next key-up while it waits), `fox.cycles`, `fox.cut`, `fox.why` and
+`fox.deny`. RADIO op 44 starts, stops and previews it. The HIL test `test_fox_cycle` checks one cycle off air.
+
 ## 4. Beeps (CONFIG_BEEP)
 
 | Beep | Sound | When |

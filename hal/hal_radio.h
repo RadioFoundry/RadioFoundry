@@ -78,6 +78,11 @@ typedef struct {
 	// The core turns it on with the FM start tone on air, off when that tone ends or the transmission does. A board
 	// without it plays the start tone's speaker copy with the beep engine
 	void (*tx_tone_side)(bool on);
+	// Optional, with tx_tone: during FM TX, the microphone off (false) or back (true), for a transmission that carries
+	// only the radio's own tones (fox mode). For a board whose microphone reaches the modulator by a path tx_tone's
+	// muting doesn't cover. False when the board can't (off: not in FM TX). The board puts the microphone back at the
+	// end of every transmission. NULL: tx_tone's own muting is all there is
+	bool (*tx_mic)(bool on);
 	// Optional (CONFIG_DTMF): during FM TX, send the DTMF pair of digit ('0'-'9', '*', '#', 'A'-'D'; hal_dtmf.h)
 	// instead of the microphone until called again; 0 = the microphone again. A new digit replaces the one sounding.
 	// False when the board can't (not in FM TX, not a digit). The core never mixes it with tx_tone

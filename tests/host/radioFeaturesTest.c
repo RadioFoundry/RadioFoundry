@@ -55,6 +55,7 @@ static struct {
 	uint16_t tone_hz;	// tx_tone
 	bool side;		// tx_tone_side
 	bool key_down;		// tx_tone_key: the tone is on (a tx_tone call turns it on), false = a silent carrier
+	bool mic_off;		// tx_mic(false) while transmitting, until tx_mic(true) (tx_off leaves it: the core must)
 	int key_calls;
 	unsigned side_calls;
 	int tone_calls;
@@ -162,6 +163,14 @@ static bool r_tx_tone_key(bool down)
 	hw.key_calls++;
 	hw.key_down = down;
 	return hw.tone_hz != 0;
+}
+static bool r_tx_mic(bool on)
+{
+	if (!on && hw.tx_calls <= hw.tx_off_calls) {	// not transmitting
+		return false;
+	}
+	hw.mic_off = !on;
+	return true;
 }
 static bool r_tx_dtmf(char digit)
 {
@@ -353,8 +362,17 @@ uint32_t codeplug_dmr_id(void) { return 9996543; }
 // The settings area holds only the Settings > Sound tone keys here: one-byte bools, -1 absent (kv_tone_set)
 static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
 static uint8_t kv_serial;
+// The fox's record (CODEPLUG_KEY_FOX): fox_kv_len -1 = absent
+static uint8_t fox_kv[FOX_REC_LEN];
+static int fox_kv_len = -1;
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (key == CODEPLUG_KEY_FOX) {
+		if (fox_kv_len >= 0) {
+			memcpy(buf, fox_kv, (unsigned)fox_kv_len < max ? (unsigned)fox_kv_len : max);
+		}
+		return fox_kv_len;
+	}
 	if (key < CODEPLUG_KEY_CALL_END_TONE || key > CODEPLUG_KEY_TX_DENY_TONE || kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
 		return -1;
 	}
@@ -414,6 +432,9 @@ bool codeplug_dmr_settings(codeplug_dmr_settings_t *out)
 	*out = (codeplug_dmr_settings_t){ "Q0TEST", 0, 0 };
 	return true;
 }
+// The codeplug's callsign (the fox's ID when the settings have no radio name)
+static char cp_name[CODEPLUG_NAME_LEN + 1] = "Q0TEST";
+void codeplug_radio_name(char out[CODEPLUG_NAME_LEN + 1]) { memcpy(out, cp_name, sizeof(cp_name)); }
 bool dmr_iddb_lookup(uint32_t id, char *out, size_t len) { (void)id; (void)out; (void)len; return false; }
 
 static void add(uint16_t n, const char *name, uint32_t hz, uint8_t mode)
@@ -4770,6 +4791,247 @@ static void test_host_audio(void)
 	run(500);
 }
 
+#if CONFIG_FOX
+// Run until the fox reaches phase (or max_ms): true if it did
+static bool fox_until(uint8_t phase, uint32_t max_ms)
+{
+	for (uint32_t t = 0; t < max_ms; t += 5) {
+		if (sm.view.fox_phase == phase) {
+			return true;
+		}
+		run(5);
+	}
+	return sm.view.fox_phase == phase;
+}
+
+static void set_cw_wpm(uint8_t wpm)
+{
+	settings_t *st = settings_begin();
+	st->cw_wpm = wpm;
+	settings_end(now);
+}
+
+// Fox mode (radio-features.md 3.8) through the radio core: the cycle's parts on the board's TX tone in order, one key-up
+// per cycle, the wait, what stops it, what it refuses, the busy channel, a time-out, the codeplug's record
+static void test_fox(void)
+{
+	hal_radio_t radio_key = fake_radio;
+	radio_key.tx_tone_key = r_tx_tone_key;
+	radio_key.tx_mic = r_tx_mic;
+	board.radio = &radio_key;
+	fox_kv_len = -1;
+	strcpy(cp_name, "Q0TEST");
+
+	// The defaults (no record): "FOX", the tune, the ID, every minute. The first cycle keys at once, a silent
+	// carrier on the Morse tone for the lead-in, and is the radio's own transmission
+	start();
+	req(RREQ_FOX, 1);
+	CHECK(sm.view.fox && sm.view.fox_why == RFOX_WHY_NONE && sm.view.fox_phase == FOX_WAIT);
+	run(10);
+	CHECK(sm.view.state == RS_TX && sm.view.tx_auto && hw.tx_calls == 1 && hw.tx_hz == 146520000);
+	CHECK(sm.view.fox_phase == FOX_LEAD && hw.tone_hz == MORSE_TONE_HZ_DEFAULT && !hw.key_down);
+	CHECK(hw.mic_off);	// the microphone off the air for the whole cycle, the gaps included
+	// The message: the tone keyed on and off, never stopped (no tx_tone(0): that would open the microphone)
+	CHECK(fox_until(FOX_MSG, 400));
+	int downs = 0;
+	bool was = false;
+	while (sm.view.fox_phase == FOX_MSG && downs < 100) {
+		run(5);
+		CHECK(hw.tone_hz == MORSE_TONE_HZ_DEFAULT && hw.mic_off);
+		downs += hw.key_down && !was;
+		was = hw.key_down;
+	}
+	CHECK(downs == 11);	// F ..-. O --- X -..-: eleven elements
+	CHECK(sm.view.fox_phase == FOX_GAP_JINGLE && !hw.key_down && sm.view.state == RS_TX);
+	// The jingle: the default tune's first note, then the next
+	CHECK(fox_until(FOX_JINGLE, 700));
+	run(5);
+	CHECK(hw.tone_hz == 520 && hw.key_down);
+	run(130);
+	CHECK(hw.tone_hz == 660);
+	// The ID, the tail, then receive until the next cycle
+	CHECK(fox_until(FOX_ID, 2000));
+	CHECK(fox_until(FOX_TAIL, 8000));
+	CHECK(sm.view.state == RS_TX && hw.mic_off);
+	CHECK(fox_until(FOX_WAIT, 400));
+	CHECK(sm.view.state == RS_IDLE && hw.tx_off_calls == 1 && hw.tone_hz == 0 && sm.view.fox_cycles == 1);
+	CHECK(!hw.mic_off);
+	CHECK(sm.view.fox && sm.view.fox_next_s == 60 && hw.tx_calls == 1);
+	run(30000);
+	CHECK(sm.view.state == RS_IDLE && hw.tx_calls == 1 && sm.view.fox_next_s == 30);
+	run(30000);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 2 && sm.view.fox_phase == FOX_LEAD);
+	// Stopped by the request in the middle of a cycle: unkeyed at once
+	CHECK(fox_until(FOX_MSG, 400));
+	req(RREQ_FOX, 0);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_STOPPED && sm.view.state == RS_IDLE && hw.tone_hz == 0);
+	CHECK(sm.view.fox_cycles == 1);
+	run(70000);
+	CHECK(hw.tx_calls == 2);
+
+	// PTT on air takes the channel over: the fox stops, the user transmits, the release ends it
+	start();
+	board.radio = &radio_key;
+	req(RREQ_FOX, 1);
+	CHECK(fox_until(FOX_MSG, 400));
+	req(RREQ_PTT, 1);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_STOPPED && sm.view.state == RS_TX && !sm.view.tx_auto);
+	CHECK(hw.tone_hz == 0 && !hw.mic_off);	// the user's voice on air
+	run(500);
+	req(RREQ_PTT, 0);
+	run(50);
+	CHECK(sm.view.state == RS_IDLE);
+	// PTT while it waits stops it too
+	req(RREQ_FOX, 1);
+	CHECK(fox_until(FOX_TAIL, 12000) && fox_until(FOX_WAIT, 1000) && sm.view.fox_cycles == 1);
+	req(RREQ_PTT, 1);
+	CHECK(!sm.view.fox && sm.view.state == RS_TX);
+	req(RREQ_PTT, 0);
+	run(50);
+	// A stray PTT release (no press) leaves a cycle alone
+	req(RREQ_FOX, 1);
+	CHECK(fox_until(FOX_MSG, 400));
+	req(RREQ_PTT, 0);
+	CHECK(sm.view.fox && sm.view.state == RS_TX && sm.view.fox_phase == FOX_MSG);
+	// A retune stops it
+	CHECK(fox_until(FOX_WAIT, 12000));
+	req(RREQ_ZONE_POS, 1);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_STOPPED);
+
+	// Refusals: nothing keys, the reason says why
+	start();
+	board.radio = &radio_key;
+	req(RREQ_ZONE_POS, 5);	// the DMR channel
+	req(RREQ_FOX, 1);
+	run(100);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_NOT_FM && hw.tx_calls == 0);
+	req(RREQ_ZONE_POS, 0);
+	strcpy(cp_name, "Fox one");	// a name, not a callsign
+	req(RREQ_FOX, 1);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_NO_CALL);
+	strcpy(cp_name, "Q0TEST");
+	settings(set_inhibit);
+	req(RREQ_FOX, 1);
+	run(100);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_DENIED && sm.view.fox_deny == TXDENY_INHIBIT);
+	CHECK(hw.tx_calls == 0 && sm.view.state == RS_IDLE);
+	settings(clear_inhibit);
+	// Longer than the channel's 30 s time-out at 5 wpm (the whole message, a 10 s jingle and the ID)
+	req(RREQ_ZONE_POS, 6);
+	set_cw_wpm(5);
+	fox_rec_t r;
+	fox_rec_default(&r);
+	memcpy(r.msg, "FOX FOX FOX FOX", 15);
+	for (unsigned i = 0; i < FOX_STEPS; i++) {
+		r.hz[i] = 800;
+		r.ms10[i] = 255;
+	}
+	fox_rec_encode(&r, fox_kv);
+	fox_kv_len = FOX_REC_LEN;
+	req(RREQ_FOX, 1);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_TOO_LONG && hw.tx_calls == 0);
+	set_cw_wpm(0);
+	fox_kv_len = -1;
+	// A board that can't send the tone: given up at the first key-up
+	req(RREQ_ZONE_POS, 0);
+	hw.has_tx_tone = false;
+	req(RREQ_FOX, 1);
+	run(50);
+	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_NO_TONE && sm.view.state == RS_IDLE);
+	hw.has_tx_tone = true;
+
+	// The codeplug's record: no message, a two-note jingle played twice, every 3 s
+	start();
+	board.radio = &radio_key;
+	memset(&r, 0, sizeof r);
+	r.interval_s = FOX_INTERVAL_MIN_S;
+	r.repeats = 2;
+	r.flags = FOX_F_MSG | FOX_F_JINGLE;	// the message on but empty: nothing for it
+	r.hz[0] = 1000;
+	r.ms10[0] = 20;
+	r.hz[1] = 2000;
+	r.ms10[1] = 20;
+	fox_rec_encode(&r, fox_kv);
+	fox_kv_len = FOX_REC_LEN;
+	req(RREQ_FOX, 1);
+	run(10);
+	CHECK(sm.view.fox_phase == FOX_LEAD);
+	CHECK(fox_until(FOX_JINGLE, 400));
+	run(5);
+	CHECK(hw.tone_hz == 1000);
+	run(200);
+	CHECK(hw.tone_hz == 2000);
+	// again after a gap, still keyed
+	CHECK(fox_until(FOX_GAP_JINGLE, 400) && sm.view.state == RS_TX);
+	CHECK(fox_until(FOX_JINGLE, 800));
+	run(5);
+	CHECK(hw.tone_hz == 1000);
+	CHECK(fox_until(FOX_GAP_ID, 600) && !hw.key_down);
+	CHECK(fox_until(FOX_WAIT, 8000) && sm.view.fox_next_s == FOX_INTERVAL_MIN_S && sm.view.fox_cycles == 1);
+	int keyed = hw.tx_calls;
+	CHECK(fox_until(FOX_LEAD, FOX_INTERVAL_MIN_S * 1000 + 100) && hw.tx_calls == keyed + 1);	// the next, 3 s on
+	// A record the fox can't take reads as absent: the defaults
+	fox_kv[0] = 0;	// a 0 s wait
+	fox_kv[1] = 0;
+	req(RREQ_FOX, 0);
+	req(RREQ_FOX, 1);
+	CHECK(fox_until(FOX_MSG, 400));	// "FOX" again
+	req(RREQ_FOX, 0);
+	fox_kv_len = -1;
+
+	// The channel busy (busy channel lockout): the cycle waits and keys a few seconds after it clears, quietly
+	start();
+	board.radio = &radio_key;
+	settings(set_bcl_carrier);
+	signal_on(0, 146520000, 30, no_tone);
+	run(100);
+	beep_stats_t b0, b1;
+	beep_get_stats(&b0);
+	req(RREQ_FOX, 1);
+	run(3000);
+	beep_get_stats(&b1);
+	CHECK(sm.view.fox && hw.tx_calls == 0 && sm.view.state == RS_RX && b1.played == b0.played);
+	hw.sig[0].hz = 0;
+	run(FOX_BUSY_RETRY_MS);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == 1 && sm.view.fox_cut == 0);
+	req(RREQ_FOX, 0);
+
+	// A time-out that came after the start (the setting changed): the cycle is cut, counted, the next one an interval
+	// later; the fox goes on
+	start();
+	board.radio = &radio_key;
+	req(RREQ_FOX, 1);
+	run(10);
+	settings(set_tot5);
+	run(6000);
+	CHECK(sm.view.fox && sm.view.fox_cut == 1 && sm.view.fox_cycles == 0 && sm.view.state == RS_IDLE);
+	CHECK(sm.view.fox_phase == FOX_WAIT && hw.tone_hz == 0);
+	req(RREQ_FOX, 0);
+
+	// The preview: the jingle on the speaker, nothing keyed; ignored while a cycle is on air
+	start();
+	board.radio = &radio_key;
+	beep_get_stats(&b0);
+	req(RREQ_FOX, RFOX_PREVIEW);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_CUSTOM && hw.tx_calls == 0 && !sm.view.fox);
+	req(RREQ_FOX, RFOX_START);
+	CHECK(fox_until(FOX_MSG, 400));
+	beep_get_stats(&b0);
+	req(RREQ_FOX, RFOX_PREVIEW);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played && sm.view.fox && sm.view.fox_phase == FOX_MSG);
+	req(RREQ_FOX, RFOX_STOP);
+
+	// A restart comes up with it off
+	start();
+	CHECK(!sm.view.fox && sm.view.fox_phase == FOX_OFF);
+	run(5000);
+	CHECK(hw.tx_calls == 0);
+	board.radio = &fake_radio;
+}
+#endif
+
 int main(void)
 {
 	test_scan_engine();
@@ -4829,6 +5091,9 @@ int main(void)
 	test_dmr_short_press_wake();
 	test_vibrate();
 	test_host_audio();
+#if CONFIG_FOX
+	test_fox();
+#endif
 	printf("# radioFeaturesTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");
 	return failures != 0;
 }

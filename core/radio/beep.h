@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "hal_audio.h"
+#include "config.h"
 
 typedef enum {
 	BEEP_NONE,
@@ -62,7 +63,11 @@ typedef struct {
 } beep_stats_t;
 
 #define BEEP_SEGS_MAX	6
+#if CONFIG_FOX
+#define BEEP_CUSTOM_MAX	32	// steps of a custom pattern: the fox's jingle (FOX_STEPS), previewed on the speaker
+#else
 #define BEEP_CUSTOM_MAX	10	// steps of a custom pattern (SIG_STEPS)
+#endif
 
 // audio NULL: beeps are counted as dropped
 // The tone generator both the beep engine and the signaling tones (the DMR tone frames, ambeVoice.c) use: 8 kHz mono,

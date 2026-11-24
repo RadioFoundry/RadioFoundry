@@ -72,6 +72,10 @@ static inline uint8_t sig_out_clean(uint8_t out, sig_event_t ev)
 // within SIG_MAX_MS
 uint8_t sig_chain(const uint16_t hz[SIG_STEPS], const uint8_t ms10[SIG_STEPS], sig_event_t ev,
 		  beep_seg_t out[SIG_STEPS]);
+// The same for a chain of any length (the fox's jingle, radio_fox.h): the first steps up to the first of length 0,
+// a frequency over SIG_HZ_MAX cut to it, the total cut to max_ms. The count, 0 for a chain with no step (no standard
+// sound here: the caller has its own)
+uint8_t sig_chain_n(const uint16_t *hz, const uint8_t *ms10, uint8_t steps, uint32_t max_ms, beep_seg_t *out);
 
 // The settings area's record of one event (docs/spec/codeplug-settings.md 3): the outputs and the chain, the fields in
 // this order. A record shorter than SIG_REC_LEN reads with the missing fields zero (Default, no step); a longer one

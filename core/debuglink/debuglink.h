@@ -58,6 +58,7 @@ enum {
 	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
+	DL_VIEW_FOX,		// fox mode: whether it runs, the part on air, the time to the next cycle, why it stopped
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -81,6 +82,8 @@ void debuglink_dmr_reset(void);
 // drive, the DMR PA key-up constants, the VFO's SFR role, the P25 and the NXDN settings (DL_OP_*;
 // returns a DL_ST_* status)
 void debuglink_view_radio(const radio_view_t *v, dl_text_t *t);
+// The fox section ("fox.built=0" without CONFIG_FOX)
+void debuglink_view_fox(const radio_view_t *v, dl_text_t *t);
 void debuglink_view_audio(dl_text_t *t);
 // The p25 section (debuglink_view_p25.c; "p25.built=0" without CONFIG_P25) and its counter reset
 void debuglink_view_p25(const radio_view_t *v, dl_text_t *t);
@@ -105,6 +108,7 @@ enum {
 	DL_OP_VOICE_CAPTURE = 41,
 	DL_OP_P25 = 42,
 	DL_OP_NXDN = 43,
+	DL_OP_FOX = 44,
 };
 uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *args, uint16_t len);
 // After a reply: the host port's reattach a PA key run asked for (PA_KEYRUN_FLAG_REATTACH); else a no-op
@@ -116,7 +120,7 @@ static inline bool debuglink_is_feature_op(uint8_t op)
 	       op == DL_OP_DMR_FIELDS || op == DL_OP_VFO_COPY || op == DL_OP_VOICE_TEST || op == DL_OP_DTMF ||
 	       op == DL_OP_TX_LIMIT || op == DL_OP_TX_DRIVE || op == DL_OP_PA_KEYUP || op == DL_OP_VFO_SFR ||
 	       op == DL_OP_PA_SWEEP || op == DL_OP_PA_KEYRUN || op == DL_OP_VOICE_CAPTURE ||
-	       op == DL_OP_P25 || op == DL_OP_NXDN;
+	       op == DL_OP_P25 || op == DL_OP_NXDN || op == DL_OP_FOX;
 }
 // VERSION's codec= (hal_vocoder_id; the name the host tests use)
 static inline const char *debuglink_codec_id(const hal_vocoder_t *v)

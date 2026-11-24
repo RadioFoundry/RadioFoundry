@@ -32,6 +32,7 @@ use it too. Both are plain ES modules that also run in Node. The user's view is 
 | `codeplug/fakecps.js` | A simulated RadioFoundry radio: VERSION, CPS reads, sector writes and `C 5`, writes refused outside the codeplug as the radio refuses them |
 | `codeplug/fastlink.js` | The fast codeplug protocol ([cps-fast.md](../spec/cps-fast.md)): block CRCs, LZ4 reads and pipelined writes |
 | `codeplug/iddb.js` | The DMR ID database in format N and format C ([iddb-compact.md](../spec/iddb-compact.md)): write, read, convert, size |
+| `codeplug/midi.js` | A Standard MIDI File as the fox jingle (the Radio tab's Import MIDI): the file's notes over its tempo map, one voice (the highest note sounding), moved by octaves into 300-3400 Hz, rounded to 10 ms and cut to 32 steps and 10 s ([radio-features.md](../spec/radio-features.md) 3.8) |
 | `codeplug/sources/` | Contacts sources: `radioid.js` (RadioID.net's `user.csv` and API), `regions.js` (generated region names), `output.js` (users to the ID database or contacts) |
 | `editor/app.js` | The page: tabs, the file menu, radio read and write, the draft |
 | `editor/grid.js`, `views.js` | The table (in-place edit, sort, filter, selection, keyboard) and each record kind's columns, form and membership editor |
@@ -113,4 +114,6 @@ import problems; `sources.test.mjs` covers the RadioID parser, the API client ag
 through the proxy), templates and outputs. `chirp.test.mjs` covers the CHIRP CSV mapping, its round trip and what it
 can't read, and the CHIRP image reader: a made-up image in the documented layout, other radios, cut short images and
 receive-only channels. `qdmr.test.mjs` covers the YAML parser, the mapping, round trips and the converters; when
-`dmrconf` (qdmr's command line tool) is installed it also encodes an exported file. Nothing reaches the network.
+`dmrconf` (qdmr's command line tool) is installed it also encodes an exported file. `midi.test.mjs` builds MIDI files
+in the test (format 1, a tempo change, running status, chords, drums) and checks the jingle made from them, its limits
+and the files it refuses. Nothing reaches the network.

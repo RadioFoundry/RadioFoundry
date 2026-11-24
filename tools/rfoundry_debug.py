@@ -203,7 +203,7 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn", "fox"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -228,6 +228,11 @@ OP_PA_KEYUP = 37
 OP_VFO_SFR = 38
 OP_P25 = 42
 OP_NXDN = 43
+OP_FOX = 44
+FOX_CMDS = {"stop": 0, "start": 1, "preview": 2}
+FOX_KEY = 0x000A                    # the fox record (docs/spec/codeplug-settings.md 3.4)
+FOX_INTERVAL_MIN, FOX_INTERVAL_MAX = 3, 3600  # seconds, the record's wait from one cycle's end to the next's start
+FOX_REPEATS_MAX = 10                # the jingle's plays a cycle
 P25_TALKAROUND = {"auto": 0, "on": 1, "off": 2}
 CHANNEL_MODES = {"fm": 0, "dmr": 1, "p25": 2, "nxdn": 3}
 # The VFO's SFR role names (sfrRole_t, docs/spec/sfr.md 4): off, user, user of an ERDM repeater, repeater, ERDM style
@@ -998,6 +1003,21 @@ class DebugLink:
                                        sharing=sharing, own_id=own_id, fb_chan=fb_chan, fb_name=fb_name)
 
     @staticmethod
+    def fox_record(interval_s=60, text="FOX", msg=True, jingle=True, steps=(), repeats=1):
+        """The fox record (docs/spec/codeplug-settings.md 3.4): the interval in seconds (FOX_INTERVAL_MIN to
+        FOX_INTERVAL_MAX), the message (up to 16 Morse characters), whether a cycle sends it and the jingle, how many
+        times the jingle plays, and its steps as (Hz, ms) pairs (up to 32; Hz a multiple of 10 up to 3400, 0 a pause;
+        ms a multiple of 10 up to 2550). No steps: the radio's tune"""
+        if (not FOX_INTERVAL_MIN <= interval_s <= FOX_INTERVAL_MAX or not 1 <= repeats <= FOX_REPEATS_MAX
+                or len(text) > 16 or len(steps) > 32):
+            raise ValueError("fox record: interval %d to %d s, 1 to %d repeats, up to 16 characters, up to 32 steps"
+                             % (FOX_INTERVAL_MIN, FOX_INTERVAL_MAX, FOX_REPEATS_MAX))
+        hz = [h for h, _ in steps] + [0] * (32 - len(steps))
+        ms = [m // 10 for _, m in steps] + [0] * (32 - len(steps))
+        return (struct.pack("<HBB", interval_s, (1 if msg else 0) | (2 if jingle else 0), repeats)
+                + text.upper().encode("ascii").ljust(16, b"\0") + struct.pack("<32H", *hz) + bytes(ms))
+
+    @staticmethod
     def t3_tag_record(system, name, tx=True, base_own=False, no_fallback=False, fb_chan=None, fb_name=""):
         """A trunked channel's tag (docs/spec/dmr-trunking-codeplug.md 4). The channel record under it is a DMR
         receive-only one, or any channel with base_own"""
@@ -1547,6 +1567,11 @@ class DebugLink:
         (0: inject_max_ms, the cap as for PTT), so a lost "off" can't leave the radio keyed."""
         self.radio(OP_TONE_BURST, struct.pack("<BH", 1 if on else 0, max(0, min(int(max_ms), 0xFFFF))))  # firmware caps it
 
+    def fox(self, cmd):
+        """Fox mode (RADIO op 44): "start" on the channel in use, "stop", or "preview" (the jingle on the speaker).
+        The fox section says whether it runs and why it stopped (fox.on, fox.phase, fox.why)."""
+        self.radio(OP_FOX, bytes([FOX_CMDS[cmd]]))
+
     def setting(self, name, value):
         """One radio setting (RADIO op 24, radio_set_settings): in effect at once and saved like the settings
         screen's, except the few debuglink.md 3.8 marks RAM only. A SETTINGS name or id, value u16 (negative: two's
@@ -2044,6 +2069,20 @@ def cmd_radio(link, a):
         if not args or any(c not in DTMF_DIGITS for c in args[0].upper()):
             raise SystemExit("dtmf DIGITS [ms]: digits from " + DTMF_DIGITS)
         link.dtmf(args[0], num(1) if len(args) > 1 else 150)
+    elif op == "fox":                 # fox start|stop|preview, or fox set [interval=S] [text=T] [msg=0|1] [repeats=N] [tune=...]
+        if args[:1] == ["set"]:       # the codeplug's fox record (taken at the next start); fox clear removes it
+            kw = dict(a.split("=", 1) for a in args[1:] if "=" in a)
+            tune = [tuple(int(x) for x in st.split(":")) for st in kw["tune"].split(",")] if kw.get("tune") else []
+            link.cpkv_set(FOX_KEY, DebugLink.fox_record(int(kw.get("interval", 60)), kw.get("text", "FOX"),
+                                                        kw.get("msg", "1") != "0", kw.get("jingle", "1") != "0", tune,
+                                                        int(kw.get("repeats", 1))))
+        elif args[:1] == ["clear"]:
+            link.cpkv_remove(FOX_KEY)
+        elif args[:1] == [] or args[0] not in FOX_CMDS:
+            raise SystemExit("fox start|stop|preview|clear, or fox set [interval=S] [text=T] [msg=0|1] [jingle=0|1] "
+                             "[repeats=N] [tune=HZ:MS,...]")
+        else:
+            link.fox(args[0])
     elif op == "burst":               # burst on|off [max_ms]
         link.tone_burst(args[:1] != ["off"], num(1) if len(args) > 1 else 0)
     elif op == "voice-test":          # voice-test on|off (the DMR encoder's test signal, RAM only)
