@@ -6,11 +6,14 @@
 // stored by a storage job on the housekeeping task. All the RAM is the session's: this file keeps one pointer.
 #include "config.h"
 
+// keyfill.h outside the #if: a build without key fill still lists it, so tools/stack_check.py, which reads the code
+// below either way, knows kf_item_t (unknown, it.key would join every field named key)
+#include "keyfill/keyfill.h"
+
 #if CONFIG_KEY_FILL
 #include <string.h>
 #include "board.h"
 #include "ui_svc.h"
-#include "keyfill/keyfill.h"
 #include "keyfill/keyfill_api.h"
 #include "support/entropy.h"
 #include "support/hkdf.h"
