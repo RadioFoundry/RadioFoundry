@@ -235,8 +235,10 @@ CONFIG_SIG_TONES ?= $(CONFIG_BEEP)
 # FM transmit tones: roger beep and the 1750 Hz repeater access burst (needs FM)
 CONFIG_FM_TX_TONES ?= $(CONFIG_FM)
 # fox mode: the radio as a fox-hunt transmitter, a Morse message, a jingle and the Morse ID on the FM channel on a
-# timer (docs/spec/radio-features.md 3.8; needs FM_TX_TONES and SIG_TONES, whose tone chain is the jingle)
-CONFIG_FOX ?= $(if $(and $(filter y,$(CONFIG_FM_TX_TONES)),$(filter y,$(CONFIG_SIG_TONES))),y,n)
+# timer (docs/spec/radio-features.md 3.8; needs FM_TX_TONES and SIG_TONES, whose tone chain is the jingle). Off by
+# default, an exception to the policy above: few users run a fox, it keys the transmitter unattended, and on the 720 KB
+# radios it no longer fits beside the rest in the maximal build, which must stay a superset of the default image
+CONFIG_FOX ?= n
 # DTMF transmit: keypad digits send touch tones while PTT is held on FM (needs FM; docs/spec/radio-features.md 3.7)
 CONFIG_DTMF ?= $(CONFIG_FM)
 # FM VOX: voice-operated transmit from the microphone level (needs FM; unverified on the bench)

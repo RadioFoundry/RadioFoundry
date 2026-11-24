@@ -83,7 +83,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dual_watch` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | ✕ |
 | `beep` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run | partial, needs re-run |
 | `signaling_tones` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
-| `fox` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `fox` | off | off | off | off | off | off | off | off |
 | `vibrate` | off | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `gps` | pass (seed) | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `satellite_tle` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
@@ -273,7 +273,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
-| `FOX` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `FOX` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
