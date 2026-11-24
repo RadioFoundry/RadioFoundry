@@ -15,14 +15,9 @@ end generated
 
 ## Size
 
-<!-- The net change against main on the one or two radios you built and tested on, in bytes, measured (contributing.md,
-"Size impact"): a first look. CI's firmware job then adds every radio's change to its summary. If a radio's default build grows by more
-than 1 KB of flash or 256 bytes of RAM, say why and which CONFIG_ switch removes it. No firmware change: say so and
-delete the table. -->
-
-| Radio (tested) | Flash | RAM |
-|---|---:|---:|
-| | | |
+<!-- CI's firmware job puts the flash and RAM change against main in its summary (contributing.md, "Size impact").
+If a radio's default build grows by more than 1 KB of flash or 256 bytes of RAM, say why and which CONFIG_ switch
+removes it. Otherwise delete this section. -->
 
 ## Testing
 
@@ -49,7 +44,7 @@ delete the table. -->
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.
 - [ ] Code that costs flash is behind a `CONFIG_` switch, and the build is clean with it off.
-- [ ] Size above, measured on the radio(s) tested; CI's size table checked; growth over 1 KB of flash or 256 bytes of RAM on a radio explained (or "no firmware change").
+- [ ] CI's size table checked; growth over 1 KB of flash or 256 bytes of RAM on a radio is explained above.
 - [ ] Zero warnings in every configuration `tools/ci.sh` builds.
 - [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
 - [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.

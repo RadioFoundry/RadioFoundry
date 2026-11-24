@@ -51,9 +51,8 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    clean with the switch off. `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is
    `BOARD_NOT_WRITTEN`. Written but not yet checked on the radio stays on and in neither list: say "untested" in the
    bring-up records and PRs, never in `config.mk` ([the rule](docs/build-config.md#unsupported-not-written-unconfirmed)).
-   Every PR states its net flash and RAM change against main on the one or two radios it was built and tested on,
-   measured, not estimated, and adds no RAM the change doesn't need. CI's firmware job then has every radio's table:
-   check it, and explain growth over 1 KB of flash or 256 bytes of RAM on a radio
+   Add no RAM or flash the change doesn't need. Check the flash and RAM table CI adds to the firmware job's summary;
+   growth over 1 KB of flash or 256 bytes of RAM on a radio is explained in the PR
    ([Size impact](docs/dev/contributing.md#what-a-pull-request-must-have)).
 6. **Zero warnings** in every configuration `tools/ci.sh` builds.
 7. **US English** in code, comments, docs and commit messages (color, center, behavior).
