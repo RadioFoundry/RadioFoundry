@@ -598,8 +598,9 @@ static void dcs_shape(air_softmodem_adapt_t *a, uint32_t w, unsigned off, int32_
 	a->dcs_off = (uint8_t)off;
 }
 
-// Once a word: the average's mean, its bits, a lock taken or kept and its waveform
-static void dcs_word(air_softmodem_adapt_t *a)
+// Once a word: the average's mean, its bits, a lock taken or kept and its waveform. Not inlined: it runs once a word,
+// and inlined into dcs_sample it would go with it into RAM
+__attribute__((noinline)) static void dcs_word(air_softmodem_adapt_t *a)
 {
 	int32_t mean = 0, best_e = -1, best_amp = 0;
 	uint32_t best_w = 0;
