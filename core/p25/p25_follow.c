@@ -892,16 +892,10 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		if (p25_block_get(u->air, 0, blk) < 0) {
 			f->view.crc_fail++;
 		} else if (p25_mbt_parse(blk, &h)) {
-			uint8_t data[P25_TSBK_BYTES];
-			p25_tsbk_t m;
-
+			// Explicit status is validated before entering the common identity path.
 			count(&f->view.mbt);
 			f->view.mbt_op = h.opcode;
-			// The extended network status broadcast is the system's identity as the abbreviated one is: taken as
-			// that block. Other packets are counted only
-			if (u->nsyms >= p25_blocks_syms(2) && p25_block_decode(u->air, 1, data) >= 0 &&
-			    p25_mbt_net_parse(blk, data, &m)) {
-				p25_tsbk_make(&m, blk);
+			if (p25_mbt_status(u, blk)) {
 				f->view.blocks++;
 				on_block(f, blk, u->nac, now);
 			}
