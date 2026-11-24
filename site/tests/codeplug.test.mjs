@@ -477,6 +477,26 @@ test("an ID database goes to the radio and nothing past its room", async () => {
 	await assert.rejects(tiny.write(img, null, { iddb: true }), (e) => e instanceof TransportError && e.code === "iddb_too_big");
 });
 
+test("a database header the editor can't parse is removed by a write without reading the database", async () => {
+	// the radio's header holds something readHeader() refuses; the codeplug has the header erased and the write is
+	// flagged as an ID database write: the radio's header ends blank and the sector's other bytes are as they were
+	const radio = new FakeCpsRadio({ board: "dm1701" });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify(RADIOS);
+	const base = encode(rich());
+	const junk = base.clone();
+	junk.bytes.set([0x49, 0x64, 0x58, 0x01, 1, 2, 3, 4, 5, 6, 7, 8], iddb.AREA1);	// "IdX", a record size no one wrote
+	assert.equal(iddb.readHeader(junk.bytes), null);
+	await tr.write(junk, null, { iddb: true });
+	const have = await tr.read({ iddb: false });
+	assert.deepEqual([...have.bytes.subarray(iddb.AREA1, iddb.AREA1 + 12)], [0x49, 0x64, 0x58, 0x01, 1, 2, 3, 4, 5, 6, 7, 8]);
+	const want = junk.clone();
+	iddb.erase(want);
+	await tr.write(want, have, { iddb: true });
+	const after = await tr.read({ iddb: false });
+	assert.ok(after.bytes.subarray(iddb.AREA1, iddb.AREA1 + 12).every((b) => b === 0xFF), "header blank");
+});
+
 test("a radio swapped on the cable is told apart by its chip UID", async () => {
 	// one cable, two radios: the stream answers for whichever is plugged in
 	const a = new FakeCpsRadio({ board: "DM-1701", image: encode(rich()).bytes, uid: 0x11 });

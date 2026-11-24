@@ -15,7 +15,7 @@ import { FastError } from "../codeplug/fastlink.js";
 import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS } from "../codeplug/kv.js";
 import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
-import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
+import { convertIddb, eraseIddb, iddbEnd, iddbOverflow } from "../codeplug/sources/output.js";
 import { FakeCpsRadio } from "../codeplug/fakecps.js";
 import { Grid } from "./grid.js";
 import { History } from "./undo.js";
@@ -44,6 +44,8 @@ const S = {
 	lastRadioImage: null,	// the last connection's image, for a bug report after it closed
 	areaSource: null,	// only a read/write on this connection establishes a settings merge baseline
 	iddbChanged: false,
+	iddbSkipped: null,	// {count, bytes, seconds}: a read left the radio's database unread
+	iddbUnreadable: false,	// a read found data in the radio's database header that the editor can't parse
 	sim: location.hash.startsWith("#sim"),		// #sim-foreign: a radio still holding stock data in its settings area
 	filter: {},
 };
@@ -65,6 +67,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.dirty = false;
 	S.iddbChanged = false;
 	S.iddbSkipped = null;
+	S.iddbUnreadable = false;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
@@ -576,7 +579,9 @@ async function openPicked(name, bytes) {
 		const f = await openFile(name, bytes);
 		if (f.kind === "image") {
 			load(decode(f.image), name.replace(/\.[^.]+$/, ""));
-			say(t("editor.opened", { name }), "ok");
+			const over = S.conn ? iddbOverflow(f.image.bytes, S.conn.transport.end) : null;
+			if (over) say(t("editor.iddb.too_big_file", { name, ...over, radio: S.conn.radio.name }), "warn");
+			else say(t("editor.opened", { name }), "ok");
 		} else if (f.kind === "converted") {
 			// another firmware's codeplug (a stock radio's backup, say): converted, never shown as raw bytes
 			load(decode(f.image), name.replace(/\.[^.]+$/, ""));
@@ -912,7 +917,10 @@ async function readRadio() {
 			load(decode(img), `${c.radio.id}-codeplug`, { fromRadio: true });
 			c.dbKnown = !db || readDb;
 			S.iddbSkipped = db && !readDb ? { count: db.count, bytes: dbBytes, seconds } : null;
-			if (S.iddbSkipped) refresh();
+			// a header that is neither blank nor one the editor reads: the radio holds data it can't show, and the model
+			// (loaded with that header as is) says "no database"
+			S.iddbUnreadable = !db && head.bytes.subarray(IDDB_HEADER[0], IDDB_HEADER[1]).some((b) => b !== 0xFF && b !== 0);
+			if (S.iddbSkipped || S.iddbUnreadable) refresh();
 			say(t("editor.read_done", { radio: c.radio.name, channels: S.model.channels.length, contacts: S.model.contacts.length }), "ok");
 			// the database's format against what this radio's firmware reads (iddb-compact.md 6)
 			const fmt = S.model.iddb?.format;
@@ -1003,6 +1011,9 @@ async function planWrite() {
 		// a compact database to a radio that reads only format N goes as format N (iddb-compact.md 6)
 		let older = null;
 		if (iddb && dbHeader(file.bytes)?.format === "C" && !c.transport.compact) older = convertDb(file, "N", { end: c.transport.end });
+		// before any plan or prompt: a database past the radio's room is never sent (the transport refuses it too)
+		const over = iddb ? iddbOverflow(file.bytes, c.transport.end) : null;
+		if (over) return say(t("editor.iddb.too_big", { ...over, radio: c.radio.name }), "bad");
 		stage = "plan write";
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
@@ -1050,6 +1061,20 @@ async function planWrite() {
 	} catch (e) {
 		await fail(stage, e);
 	}
+}
+
+// Remove the radio's database without reading it (a read skipped it, or its header isn't one the editor parses): the
+// header erased in the codeplug and flagged as edited, so Write to Radio sends the blank header and the radio then
+// ignores its records. Not an undoable change: the codeplug may have no bytes of the database to put back
+function removeRadioIddb() {
+	eraseIddb(S.model);
+	S.iddbChanged = true;
+	S.iddbSkipped = null;
+	S.iddbUnreadable = false;
+	S.dirty = true;
+	refresh();
+	draftSoon();
+	say(t("editor.iddb.remove_pending"), "ok");
 }
 
 // The ID database rewritten in format C for a radio that reads it, as one undoable change; Write to Radio sends it
@@ -1189,6 +1214,8 @@ function api() {
 		// the radio's ID database when a read skipped it ({count, bytes, seconds}), and reading it now
 		get iddbSkipped() { return S.iddbSkipped; },
 		readSkippedIddb,
+		get iddbUnreadable() { return S.iddbUnreadable; },
+		removeRadioIddb,
 		encode: () => encode(S.model),
 		decode, numberAll,
 	};

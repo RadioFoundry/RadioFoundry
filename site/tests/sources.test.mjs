@@ -8,7 +8,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { parseUsers, fromApi, regionsOf, select, addRegion, format, RadioIdApi, regionUrl, COUNTRIES } from "../static/js/codeplug/sources/radioid.js";
-import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../static/js/codeplug/sources/output.js";
+import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbOverflow, iddbSize } from "../static/js/codeplug/sources/output.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { empty, newContact } from "../static/js/codeplug/model.js";
 import { History } from "../static/js/editor/undo.js";
@@ -176,4 +176,22 @@ test("contacts: private calls, existing IDs skipped, names in Latin-1 and 16 cha
 	const big = empty();
 	const many = Array.from({ length: 1030 }, (_, i) => user({ id: i + 1, call: `K${i}` }));
 	assert.deepEqual(addContacts(big, many, { template: "{call}" }), { added: 1024, existing: 0, full: 6 });
+});
+
+test("a database past the room is reported, and one that fits, none or an unknown room is not", () => {
+	const m = empty();
+	const users = Array.from({ length: 30000 }, (_, i) => user({ id: i + 1 }));
+	writeIddb(m, users, { template: "{call}", textLen: 32 });	// no radio known: nothing cut
+	const small = iddb.AREA2 + 0x20000;	// a chip with 128 KB past area 1
+	const over = iddbOverflow(m.base.bytes, small);
+	assert.ok(over && over.kb > over.room, JSON.stringify(over));
+	assert.equal(over.room, Math.floor((0x40000 + 0x20000) / 1024), "area 1 and what follows area 2");
+	assert.equal(iddbOverflow(m.base.bytes, Infinity), null, "no room known: checked at write time");
+	assert.equal(iddbOverflow(m.base.bytes, iddb.AREA2 + 0x400000), null, "it fits");
+	eraseIddb(m);
+	assert.equal(iddbOverflow(m.base.bytes, small), null, "no database");
+	// built for the room, it fits
+	const r = writeIddb(m, users, { template: "{call}", textLen: 32, end: small });
+	assert.ok(r.dropped > 0);
+	assert.equal(iddbOverflow(m.base.bytes, small), null);
 });

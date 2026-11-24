@@ -16,6 +16,17 @@ export function iddbEnd(radio) {
 	return cp && cp.end > cp.base ? cp.end - cp.base : Infinity;
 }
 
+// How much of an image the ID database takes: area 1 and area 2 up to the address top (the gap between is no one's)
+const taken = (top) => Math.max(0, Math.min(top, iddb.AREA1 + iddb.AREA1_SIZE) - iddb.AREA1) + Math.max(0, top - iddb.AREA2);
+
+// The database in these image bytes against the room to end (an image address): {kb, room (KB)} when it reaches past
+// the room, else null (it fits, there is none, or the room is not known: end Infinity)
+export function iddbOverflow(bytes, end) {
+	const top = iddb.extent(bytes);
+	if (!top || top <= end) return null;
+	return { kb: Math.ceil(taken(top) / 1024), room: Math.floor(taken(end) / 1024) };
+}
+
 // The ID database's size for these records ([{id, text}]) and how many fit before end. Format N: textLen characters
 // each; format C (iddb-compact.md): measured by laying the records out, so its size depends on the names
 export function iddbSize(records, textLen, end, fmt = "N") {

@@ -131,7 +131,9 @@ three tokens are a record.
 3. Records go into pages in ID order, a page closed when the next record would take it past 90 % (3,686 bytes).
 4. The index, the table and the strings each get their size plus a quarter, rounded up to whole pages.
 5. A database that doesn't fit the radio's space loses records from the top of the ID range, as format N does, and
-   the editor says how many.
+   the editor says how many. A database already past the radio's room (built with no radio known, or in a file) is
+   refused at write time, never cut silently; removing a database erases its header only (`iddb.erase`), so it needs
+   none of its records read.
 
 ### 4.2 Against the database it replaces
 

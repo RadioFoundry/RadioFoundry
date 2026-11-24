@@ -9,7 +9,7 @@ import { register } from "./extensions.js";
 import * as diag from "../diag.js";
 import { h, button, progressBar, num as fmtNum } from "../flasher/dom.js";
 import * as radioid from "../codeplug/sources/radioid.js";
-import { writeIddb, eraseIddb, convertIddb, addContacts, iddbEnd, iddbSize, iddbRecords } from "../codeplug/sources/output.js";
+import { writeIddb, eraseIddb, convertIddb, addContacts, iddbEnd, iddbOverflow, iddbSize, iddbRecords } from "../codeplug/sources/output.js";
 import { TEXT_LENGTHS } from "../codeplug/iddb.js";
 
 const PREFS = "rfoundry-editor-radioid";
@@ -216,11 +216,16 @@ function update() {
 	const upgrade = db?.format === "N" && api.compact === true;
 	// a read that skipped the radio's database: it stays on the radio as it is, until read here or replaced
 	const skipped = api.iddbSkipped;
+	// a database past the room of the connected (or chosen) radio: the Remove button below is the way out
+	const room = targetRadio();
+	const over = db && room ? iddbOverflow(api.model.base.bytes, iddbEnd(room)) : null;
 	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count }), " ",
-		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }))
+		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }), " ", removeRadioDb(api))
 		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t("editor.iddb.none")),
 		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
 			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
+		!skipped && !db && api.iddbUnreadable ? h("p", { class: "notice" }, t("editor.iddb.unreadable"), " ", removeRadioDb(api)) : null,
+		over ? h("p", { class: "notice bad" }, t("editor.iddb.too_big", { ...over, radio: room.name })) : null,
 		db ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
 			api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
 			api.markIddb();
@@ -272,6 +277,13 @@ function selectionSize(sel, end) {
 	return sizeMemo.size;
 }
 
+// Remove the radio's database without reading it, after a confirmation
+function removeRadioDb(api) {
+	const { t } = api;
+	return button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"),
+		() => api.removeRadioIddb()), { danger: true, quiet: true });
+}
+
 function targetRadio() {
 	const api = B.api;
 	return api.radio || api.radios.find((r) => r.id === B.prefs.radio) || null;
@@ -289,6 +301,7 @@ function renderOutput() {
 	else {
 		parts.push(t("editor.rid.selected", { n: sel.length, of: fmtNum(B.users.length) }));
 		if (sel.length) parts.push(t("editor.rid.size", { kb: fmtNum(Math.ceil(size.bytes / 1024)) }));
+		if (!radio && sel.length) parts.push(t("editor.rid.unchecked"));
 		if (radio && sel.length > size.fit) parts.push(t("editor.rid.too_many", { fit: fmtNum(size.fit), radio: radio.name }));
 		else if (radio && size.fit !== Infinity && sel.length) parts.push(t("editor.rid.room", { fit: fmtNum(size.fit), radio: radio.name }));
 	}

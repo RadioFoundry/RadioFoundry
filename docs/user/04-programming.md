@@ -278,6 +278,12 @@ Keep contacts for what you call: your talkgroups and the few people you make pri
 most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone
 else: a caller who isn't a contact is shown by the database's name for their ID.
 
+Without a connected or chosen radio the page can't check the size against any room, and says so. A database bigger than
+the radio's room is never sent: Write to Radio refuses it before it starts, and opening a file that holds one says so
+when a radio is connected. Choose fewer regions or a shorter text, or **Remove ID Database**. That button is also on the
+page when a read left the radio's database unread, or the radio holds one the editor can't read: it erases the header
+without reading the database, and the next write clears the radio's.
+
 Current firmware reads a **compact database**, about half the size, so the same room holds about twice the names.
 After a refresh from RadioID.net, a write sends only the parts that changed. The editor picks the format when it
 writes:
