@@ -8332,7 +8332,11 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
-	ambeVoiceSetMicGate(beep_mic_echo);	// ... and kept off the air: the mic hears the speaker
+	// ... and kept off the air: the mic hears the speaker. A board that holds beeps off the speaker while DMR
+	// transmits (CAP_BEEP_NOT_ON_AIR) plays nothing the mic could hear, so its mic stays open
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0) {
+		ambeVoiceSetMicGate(beep_mic_echo);
+	}
 #endif
 #if CONFIG_DMR_DATA_CORE
 	data_init(sm);
