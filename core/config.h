@@ -404,6 +404,14 @@
 #else
 #define RFOUNDRY_CPU_DATA
 #endif
+// Hot code: in RAM where the platform runs code from RAM faster than from its flash and gives a section for it
+// (RFOUNDRY_HOT_CODE_SECTION), else where all code goes. Only for small functions on a per-sample or per-symbol path:
+// each costs RAM as well as flash, and is never inlined into a caller left in flash
+#ifdef RFOUNDRY_HOT_CODE_SECTION
+#define RFOUNDRY_HOT_CODE		__attribute__((section(RFOUNDRY_HOT_CODE_SECTION), noinline))
+#else
+#define RFOUNDRY_HOT_CODE
+#endif
 // Large, cold state can go in RAM the board sets apart that is slower or shared with another bus master, so it costs
 // no main RAM: zeroed at start-up like .bss. Only for buffers task code uses now and then (a flash sector, a request
 // being assembled): never one an interrupt, the audio or the modem touches, a stack, or one on a per-sample path.

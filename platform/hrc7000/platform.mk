@@ -33,6 +33,9 @@ MCU_DEFS += $(if $(CPU_RAM_SECTION),-DRFOUNDRY_CPU_RAM_SECTION='"$(CPU_RAM_SECTI
 # The cold state the core marks RFOUNDRY_COLD_RAM (common.ld .modem_bss, zeroed by crt0): in the board's part of the
 # modem SRAM when its memory.ld gives one, else in RAM after bss
 MCU_DEFS += -DRFOUNDRY_COLD_RAM_SECTION='".modem_bss"'
+# Hot code the core marks RFOUNDRY_HOT_CODE (common.ld .ramfunc, copied by crt0): the XIP flash's cache misses cost
+# the soft modem's per-sample and per-symbol work more than its instructions do
+MCU_DEFS += -DRFOUNDRY_HOT_CODE_SECTION='".ramfunc"'
 LDSCRIPT ?= boards/$(BOARD)/memory.ld
 # The DMR vocoder lends its one codec state block (vocoder.c) to P25 voice while no DMR voice runs (hal_vocoder.h lend)
 MCU_DEFS += $(if $(filter y,$(CONFIG_DMR)),-DHAL_VOCODER_LEND_BYTES=0x1C00)

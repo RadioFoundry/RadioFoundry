@@ -451,7 +451,7 @@ static void tone_block(air_softmodem_t *m)
 // CTCSS tones stay under 254 Hz, so the filters run at a quarter of the symbol rate (1200 Hz at 4800 symbols/s), 50
 // updates every 4 symbols, and what folds onto the tones comes from above 940 Hz, held off by more than 20 dB
 _Static_assert(AIR_ADAPT_DECIM == 4, "the CIC's gain out with >> 4: 2 log2(AIR_ADAPT_DECIM)");
-static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
+RFOUNDRY_HOT_CODE static void tone_symbol(air_softmodem_t *m, int32_t v, bool fresh_timing)
 {
 	air_softmodem_adapt_t *a = m->ad;
 	int dec = decide(m, v);
@@ -648,7 +648,7 @@ static void dcs_word(air_softmodem_adapt_t *a)
 }
 
 // The waveform at bin b: its place in the bit's shape, with the bit's sign
-static int32_t dcs_at(const air_softmodem_adapt_t *a, uint32_t b)
+RFOUNDRY_HOT_CODE static int32_t dcs_at(const air_softmodem_adapt_t *a, uint32_t b)
 {
 	uint32_t rel = b >= a->dcs_off ? b - a->dcs_off : b + AIR_ADAPT_DCS_BINS - a->dcs_off;
 	int32_t v = a->dcs_shape[rel & 7u];
@@ -658,7 +658,7 @@ static int32_t dcs_at(const air_softmodem_adapt_t *a, uint32_t b)
 
 // One input sample: into its bin's average and, locked, the word's waveform off it (between two bins, a straight line: the
 // difference times the place's top 8 bits stays in 32 bits)
-static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
+RFOUNDRY_HOT_CODE static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
 {
 	uint32_t b = a->dcs_pos >> 16, b2 = b + 1u < AIR_ADAPT_DCS_BINS ? b + 1u : 0;
 	int32_t avg = a->dcs_avg[b], y = x;
@@ -684,7 +684,7 @@ static int32_t dcs_sample(air_softmodem_adapt_t *a, int32_t x)
 // only. The small terms are under 0.06 for the highest tone (x 2^20: 63,000), so with the samples under 2^14 no
 // product passes 2^31
 #define NOTCH_HALF	16383
-static int32_t notch(air_softmodem_adapt_t *a, int32_t x)
+RFOUNDRY_HOT_CODE static int32_t notch(air_softmodem_adapt_t *a, int32_t x)
 {
 	int32_t xs = x / 2, u, y;
 
@@ -708,7 +708,7 @@ static int line_back(const air_softmodem_t *m, unsigned back)
 
 #if CONFIG_AIR_RX_ADAPT
 // Symbol-centered sample `back` samples back, on the symbol's own fraction (as emit takes it), in soft units
-static int32_t soft_at(const air_softmodem_t *m, unsigned back)
+RFOUNDRY_HOT_CODE static int32_t soft_at(const air_softmodem_t *m, unsigned back)
 {
 	int32_t x = line_back(m, back) * 16;
 
@@ -723,7 +723,7 @@ static int32_t soft_at(const air_softmodem_t *m, unsigned back)
 // those after it from the line. Decision directed, normalized LMS towards the level decided, only on fresh timing.
 // The center tap stays within 0.7-1.2: free, it has a second resting point near 0.4, where the outer levels fall on
 // the inner ones and every decision holds it there. A side tap past 0.5 is a runaway: back to a pass-through
-static int32_t equalize(air_softmodem_t *m, int32_t v)
+RFOUNDRY_HOT_CODE static int32_t equalize(air_softmodem_t *m, int32_t v)
 {
 	air_softmodem_adapt_t *a = m->ad;
 	int32_t x[AIR_ADAPT_EQ_TAPS], y = 0, norm = 64;	// (64: a step that stays small on a weak sample)
