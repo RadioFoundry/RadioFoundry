@@ -481,9 +481,9 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 	case DL_OP_YSF: {
 		// The YSF settings (radio_ysf_settings_t, RAM only; docs/spec/debuglink.md 3.8): u8 tx_dgid, u8 rx_dgid
 		// (0..99; rx 0 hears every DG-ID), optionally u8 bench: the soft modem's options turned off for an A/B
-		// (bit 0 the equalizer, bit 1 the tone notch; ysf.md 5.4). The callsign and the radio ID are not settable:
-		// the codeplug and the MCU give them (docs/spec/ysf.md 6)
-		if (len < 2 || a[0] > RADIO_YSF_DGID_MAX || a[1] > RADIO_YSF_DGID_MAX || (len >= 3 && (a[2] & 0xFCu) != 0)) {
+		// (bit 0 the equalizer, bit 1 the tone notch, bit 2 the DCS remover; ysf.md 5.4). The callsign and the
+		// radio ID are not settable: the codeplug and the MCU give them (docs/spec/ysf.md 6)
+		if (len < 2 || a[0] > RADIO_YSF_DGID_MAX || a[1] > RADIO_YSF_DGID_MAX || (len >= 3 && (a[2] & 0xF8u) != 0)) {
 			return DL_ST_BAD_ARG;
 		}
 #if CONFIG_YSF

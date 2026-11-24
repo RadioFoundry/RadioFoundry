@@ -69,7 +69,7 @@ const air_mode_t ysf_air_mode = {
 		.idle = 0x77,			// +3 -3 +3 -3: the preamble's pattern
 		// A soft modem adds its equalizer and tone notch (ysf.md 5.4): repeaters cut the 4FSK's upper band and some
 		// send a CTCSS tone under it
-		.rx_opts = AIR_RX_EQ | AIR_RX_TONE,
+		.rx_opts = AIR_RX_EQ | AIR_RX_TONE | AIR_RX_DCS,
 		.nsyncs = 1,
 		.sync = {
 			// D4 71 C9 63 4D: 40 bits, 20 symbols

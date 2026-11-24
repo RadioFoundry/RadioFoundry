@@ -216,7 +216,7 @@ The FM squelch doesn't gate YSF. The soft modem demodulates all the time and a c
 FICH, so a weak signal is decoded whatever the squelch level, and noise never plays (no sync, no call). The squelch
 level matters only where the radio has to judge a channel by its noise reading before a call is decoded: scan and dual
 watch stop on a carrier by that reading (or by signal strength), as on P25 and NXDN. The CTCSS a repeater sends under
-C4FM isn't a squelch here either: the receiver finds it and notches it out (5.4), and the channel's tone settings
+C4FM isn't a squelch here either, nor a DCS code: the receiver finds them and takes them out (5.4), and the channel's tone settings
 aren't used on YSF. What decides whether a call plays is the DG-ID above. A data transmission (room data) shows as a call
 from its callsign ("N0RPT > Data") and goes into Recent, with nothing to play.
 
@@ -234,7 +234,8 @@ The `ysf` view section (DL_VIEW_YSF, [debuglink.md](debuglink.md)): the call hea
 DG-IDs set and in force, the provider's fit and the counters (`ysf.frames`, `ysf.fich_fail`, `ysf.dch_fail`,
 `ysf.csd_fail`, `ysf.voice`, `ysf.fec_bits`, `ysf.vch_fixed`, ...) and the receive options (5.4: `ysf.rx_eq`,
 `ysf.rx_tone_on`, `ysf.rx_tone` the tone notched, `ysf.rx_eq_center`). RADIO op 44 sets the RAM DG-IDs: u8 transmit,
-u8 receive, 0-99 each, and optionally u8 bench: bit 0 turns the equalizer off, bit 1 the tone notch, for an A/B. The
+u8 receive, 0-99 each, and optionally u8 bench: bit 0 turns the equalizer off, bit 1 the tone notch, bit 2 the DCS
+remover, for an A/B. The
 callsign and the radio ID can't be set there.
 
 The HIL tests (`tests/hil/test_ysf.py`, feature `ysf`) use them: the mode switch, the DG-IDs through op 44, a stored
@@ -244,9 +245,9 @@ channel written over CPS (opt-in), and a transmission decoded off air by the ben
 ### 5.4 Receive through a repeater
 
 A repeater's chain cuts the upper band of the 4FSK (inter-symbol interference) and some repeaters send a CTCSS tone
-under C4FM, which other YSF radios ignore. YSF's profile asks a soft modem for its equalizer and tone notch
-(`AIR_RX_EQ | AIR_RX_TONE`, [air-interface.md](air-interface.md) 6.1), and the engine lends their memory for its
-session. A board whose provider receives with its own demodulator ignores them.
+or a DCS code under C4FM, which other YSF radios ignore. YSF's profile asks a soft modem for its equalizer, tone notch
+and DCS remover (`AIR_RX_EQ | AIR_RX_TONE | AIR_RX_DCS`, [air-interface.md](air-interface.md) 6.1), and the engine
+lends their memory for its session. A board whose provider receives with its own demodulator ignores them.
 
 Measured on a commercial repeater: it sends its CTCSS tone (127.3 Hz) under the C4FM it repeats, also while set to FM
 only, and the tone was in every capture through it and in none direct. Operators of other such repeaters report the
