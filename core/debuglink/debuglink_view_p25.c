@@ -9,6 +9,7 @@
 #include "radio/radio_p25.h"
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
+#include "dsp/miclimit.h"
 #endif
 #endif
 
@@ -70,6 +71,7 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "p25v.tx_encoded=%u\np25v.tx_dropped=%u\np25v.tx_silent=%u\np25v.tx_mic_peak=%u\np25v.tx_mic_muted=%u\n",
 		(unsigned)vs.tx_encoded, (unsigned)vs.tx_dropped, (unsigned)vs.tx_silent, (unsigned)vs.tx_mic_peak,
 		(unsigned)vs.tx_mic_muted);
+	dl_text(t, "p25v.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)vs.tx_mic_low_q8));
 #else
 	dl_text(t, "p25v.built=0\n");
 #endif

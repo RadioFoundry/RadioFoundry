@@ -3,7 +3,7 @@
 // DMR voice glue (core/dmr/ambe/ambeVoice.c) against a fake audio driver and a fake vocoder
 #include <stdio.h>
 #include <string.h>
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 
 #include "dmr/ambe/ambeVoice.h"
 #include "dmr/ambe/ambeFec.h"
