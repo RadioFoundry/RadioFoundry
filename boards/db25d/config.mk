@@ -91,3 +91,5 @@ BOARD_REQUIRED := FM
 # there is no room for a 16 px line, and the CJK face must not be built in (docs/build-config.md)
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+
+BOARD_NOT_WRITTEN += SCAN_LIST	# no scan list area in this radio's flash map yet (docs/spec/scan-list.md)

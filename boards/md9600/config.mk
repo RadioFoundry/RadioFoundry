@@ -65,3 +65,5 @@ CONFIG_LANG_ES ?= n
 # The maximal configuration leaves the other languages and their fonts (about 110 KB) out of its flash check.
 CONFIG_RX_EXT ?= n
 BOARD_NOT_WRITTEN += RX_EXT	# no receive range in its chip documents (a PLL and an IF chain, no single receiver chip)
+
+BOARD_NOT_WRITTEN += SCAN_LIST	# no scan list area in this radio's flash map yet (docs/spec/scan-list.md)

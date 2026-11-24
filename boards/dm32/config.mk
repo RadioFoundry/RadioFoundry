@@ -42,3 +42,6 @@ BOARD_UNSUPPORTED += NAND_STORAGE	# the data flash is SPI NOR, GD25Q128 class (d
 BOARD_NOT_WRITTEN += VOX	# no hal_power_t.mic_level hook yet
 BOARD_NOT_WRITTEN += AUDIO_PROBE	# no board.audio_tap yet
 BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the host link's 115200 baud
+# Stored scan lists (scan_addr) sit in the satellite TLE snapshots' range, so ci's maximal configuration, which turns both
+# on, leaves the snapshots off (board.c checks)
+MAXIMAL_VARS += CONFIG_SATELLITE_TLE=n

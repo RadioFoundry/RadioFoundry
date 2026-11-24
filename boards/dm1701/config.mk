@@ -43,3 +43,5 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 #
 # board.toml's "chinese" ci extra builds exactly that. The web flasher offers Chinese to a browser that asks for it
 # (docs/user/02-installing.md); the build fits without dropping Spanish (docs/user/23-radios.md)
+
+BOARD_NOT_WRITTEN += SCAN_LIST	# no scan list area in this radio's flash map yet (docs/spec/scan-list.md)
