@@ -10,11 +10,6 @@
 #include "p25/p25_codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "radio/radio_bands.h"
-#if CONFIG_P25_ALIAS_CACHE
-#include "p25/p25_alias_cache.h"
-static p25_alias_cache_t alias_cache;
-uint8_t radio_p25_alias_cache_count(void) { return alias_cache.count; }
-#endif
 #if CONFIG_IMBE
 #include "p25/p25Voice.h"
 #endif
@@ -162,9 +157,6 @@ void radio_p25_init(const hal_audio_t *audio)
 {
 	set = defaults;
 	mem = NULL;
-#if CONFIG_P25_ALIAS_CACHE
-	p25_alias_cache_clear(&alias_cache);
-#endif
 	nogo_n = 0;
 	nogo_full = false;
 #if CONFIG_IMBE
@@ -714,11 +706,6 @@ static void count(const p25_engine_view_t *ev)
 		alias_session = call_session;
 		alias_event = ev->alias_event;
 		alias_event.serial = serial;
-#if CONFIG_P25_ALIAS_CACHE
-		if (trunk && !tview.v.unverified)
-			p25_alias_cache_learn(&alias_cache, tview.v.wacn, tview.v.sysid,
-					      alias_event.src, alias_event.name);
-#endif
 	}
 	stats.alias.lc_other += c->alias.lc_other - call_base.alias.lc_other;
 	stats.alias.parts += c->alias.parts - call_base.alias.parts;
@@ -732,7 +719,6 @@ static void count(const p25_engine_view_t *ev)
 	}
 	if (c->alias.lc_other != call_base.alias.lc_other) {
 		stats.alias.last_src = c->alias.last_src;
-		memcpy(stats.alias.last_lc, c->alias.last_lc, sizeof stats.alias.last_lc);
 		stats.alias.mfid90_src = c->alias.mfid90_src;
 		stats.alias.mfid90_result = c->alias.mfid90_result;
 		stats.alias.mfid90_seen = c->alias.mfid90_seen;
@@ -866,10 +852,6 @@ bool radio_p25_poll(radio_p25_view_t *v)
 	n.call_number = ev.rx_calls;
 	if (n.selected && n.src)
 		memcpy(n.alias, ev.rx.alias, sizeof n.alias);
-#if CONFIG_P25_ALIAS_CACHE
-	if (n.selected && n.src && !n.alias[0] && trunk && !tview.v.unverified)
-		n.alias_cached = p25_alias_cache_get(&alias_cache, tview.v.wacn, tview.v.sysid, n.src, n.alias);
-#endif
 #endif
 	n.dst = unit ? ev.rx.lc.dst : ev.rx.lc.tgid;
 #if CONFIG_P25_TRUNK

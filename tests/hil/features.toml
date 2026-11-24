@@ -92,16 +92,6 @@ switch = "P25_ALIAS"
 spec = "docs/spec/p25.md"
 source = ["core/p25/p25_call.c", "core/p25/p25_alias90.c", "core/radio/radio_p25.c", "core/ui/ui_screens.c"]
 
-[feature.p25_alias_trace]
-switch = "P25_ALIAS_TRACE"
-spec = "docs/spec/p25-alias-provenance.md"
-source = ["core/p25/p25_call.c", "core/debuglink/debuglink_view_p25.c"]
-
-[feature.p25_alias_cache]
-switch = "P25_ALIAS_CACHE"
-spec = "docs/spec/p25-caller-history.md"
-source = ["core/p25/p25_alias_cache.c", "core/radio/radio_p25.c"]
-
 [feature.nxdn]
 switch = "NXDN"
 spec = "docs/spec/nxdn.md"

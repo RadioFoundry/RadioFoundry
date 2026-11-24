@@ -9,26 +9,6 @@
 #include <string.h>
 
 // ── Receive ──
-#if CONFIG_P25_ALIAS_TRACE
-volatile p25_alias_trace_t p25_alias_trace;
-static void trace_unit(const p25_call_rx_t *c, const p25_rx_unit_t *u, const uint8_t *raw, int valid)
-{
-	uint32_t serial = p25_alias_trace.count + 1;
-	volatile p25_alias_trace_entry_t *e = &p25_alias_trace.entries[(serial - 1) % 64];
-	e->serial = 0;
-	e->t_us = u ? u->t_us : 0;
-	e->src = c->call.have_lc ? c->call.lc.src : 0;
-	e->nac = u ? u->nac : c->call.nac;
-	e->duid = u ? u->duid : 255;
-	e->flags = (c->active ? 1 : 0) | (valid > 0 ? 2 : valid < 0 ? 4 : 0) |
-		(c->call.have_alg && c->call.algid != P25_ALGID_CLEAR ? 8 : 0);
-	for (unsigned i = 0; i < 9; i++) e->raw[i] = raw ? raw[i] : 0;
-	e->serial = serial;
-	p25_alias_trace.count = serial;
-}
-#else
-#define trace_unit(c, u, raw, valid) ((void)0)
-#endif
 #if CONFIG_P25_ALIAS
 // TIA-102.AABF-D-2 7.3.35/36. Only pair A followed by B of the same conveyance,
 // after learning the current caller. No alias is carried between calls or callers.
@@ -37,7 +17,6 @@ static bool alias_lc(p25_call_rx_t *c, const uint8_t raw[P25_LC_BYTES])
 	p25_alias_stats_t *s = &c->stats.alias;
 	s->lc_other++;
 	s->last_src = c->call.have_lc ? c->call.lc.src : 0;
-	memcpy(s->last_lc, raw, P25_LC_BYTES);
 	if (raw[1] == 0x90 && (raw[0] == 0x15 || raw[0] == 0x17)) {
 		if (!c->call.have_lc || !c->call.lc.src)
 			s->no_source++;
@@ -186,7 +165,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 #endif
 	switch (u->duid) {
 	case P25_DUID_HDU:
-		trace_unit(c, u, NULL, 0);
 		// A header opens a call, also on top of one whose terminator was missed
 		call_end(c);
 		call_start(c, u, false);
@@ -210,7 +188,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 			p25_lc_t lc;
 
 			int lc_result = p25_ldu_lc_get(u->air, raw);
-			trace_unit(c, u, lc_result >= 0 ? raw : NULL, lc_result >= 0 ? 1 : -1);
 			if (lc_result < 0) {
 				c->stats.lc_fail++;
 #if CONFIG_P25_ALIAS
@@ -239,7 +216,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 #endif
 			}
 		} else {
-			trace_unit(c, u, NULL, 0);
 			uint8_t es[P25_ES_BYTES];
 
 			if (p25_ldu_es_get(u->air, es) < 0) {
@@ -260,7 +236,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 		if (u->air && u->nsyms >= P25_TDULC_SYMS) {
 			uint8_t raw[P25_LC_BYTES];
 			if (p25_tdulc_get(u->air, raw) >= 0) {
-				trace_unit(c, u, raw, 1);
 				if (p25_alias90_word(raw)) {
 					if (!c->active) {
 						if (raw[0] != 0x15 || !raw[4] || raw[4] > 16 || raw[5] != 1 ||
@@ -274,15 +249,12 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 					return;	// alias data is not a voice frame or the end of its sequence
 				}
 
-			} else {
-				trace_unit(c, u, NULL, -1);
 			}
 		}
 #endif
 		call_end(c);
 		return;
 	case P25_DUID_TDU:
-		trace_unit(c, u, NULL, 0);
 		call_end(c);
 		return;
 	default:
@@ -317,7 +289,6 @@ static void on_unit(const p25_rx_unit_t *u, void *ctx)
 
 static void on_lost(void *ctx)
 {
-	trace_unit(ctx, NULL, NULL, 0);
 	call_end(ctx);
 }
 

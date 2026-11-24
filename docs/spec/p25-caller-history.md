@@ -29,20 +29,7 @@ with a session and call number. A call ending or a control-channel retune cannot
 lose that event between UI ticks. The history consumer applies each event once to
 its call. A newer played call from the same unit and destination reuses its last
 verified name within the same receiver session. A newly received name replaces it.
-With `CONFIG_P25_ALIAS_CACHE`, a separate radio-task RAM cache retains 64 validated
-trunked aliases across receiver sessions. Its key is the received WACN, system ID,
-and 24-bit unit ID; site and talkgroup changes do not change that identity. Unknown
-or unverified system identity cannot populate or query the cache. Conventional
-channels continue to use the session-scoped Recent lookup.
-
-Completed selected alias events update the cache, including aliases received after
-speech. A newly decoded name takes precedence over a cached name. A selected live
-call without a new alias gets its cached name in the radio view, which both Home
-and Recent consume. Lookup refreshes recency; the least recently used entry is
-evicted at capacity. Radio initialization clears all entries. The cache uses 1540
-bytes of RAM (64 24-byte entries plus count/padding), performs no flash writes,
-and changes no transmit permissions, IDs, or registration behavior. This is not a
-persistent alias database. The cache is disabled by default. Names reused from
-the cache or Recent are dimmed on Home to distinguish them from this call's alias.
+Names reused from Recent are dimmed on Home to distinguish them from this call's
+alias. A name store shared by modes is outside this feature.
 Filtered calls do not publish alias events. Event storage survives an
 engine restart, but its session prevents use on the new channel's live display.

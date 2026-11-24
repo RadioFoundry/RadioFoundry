@@ -194,27 +194,12 @@ typedef struct {
 typedef struct {
 	uint32_t lc_other, parts, complete, rejected, no_source, unpaired;
 	uint32_t last_src;
-	uint8_t last_lc[P25_LC_BYTES];
 	uint32_t decoded_src;
 	char last_name[15];
 	uint32_t mfid90_src;
 	uint16_t mfid90_seen;
 	uint8_t mfid90_result, mfid90_count, mfid90_seq;
 } p25_alias_stats_t;
-#if CONFIG_P25_ALIAS_TRACE
-// Diagnostic ring: serial commits each entry; no voice payload or transmit path.
-typedef struct {
-	uint32_t serial, t_us, src;
-	uint16_t nac;
-	uint8_t duid, flags;	// active=1, LC valid=2, LC bad=4, encrypted=8
-	uint8_t raw[9], pad[3];
-} p25_alias_trace_entry_t;
-typedef struct {
-	uint32_t count;
-	p25_alias_trace_entry_t entries[64];
-} p25_alias_trace_t;
-extern volatile p25_alias_trace_t p25_alias_trace;
-#endif
 #endif
 
 typedef struct {

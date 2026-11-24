@@ -823,8 +823,8 @@ static void testAlias(void)
 	CHECK(!strcmp(cs.call.alias, c.call.alias), "completed alias reaches update sink");
 	CHECK(c.stats.alias.complete == 1 && c.stats.alias.no_source == 2 && c.stats.alias.unpaired == 1,
 	      "alias diagnostics distinguish completed, missing-source and unpaired messages");
-	CHECK(c.stats.alias.last_src == 3004 && !memcmp(c.stats.alias.last_lc, b, sizeof b),
-	      "unknown LC trace retains the received bytes and source");
+	CHECK(c.stats.alias.last_src == 3004,
+	      "alias diagnostics retain the known source");
 	who[8]++;
 	alias_unit(&c, who, 0x293);
 	CHECK(!c.call.alias[0], "caller change clears alias");
@@ -911,16 +911,6 @@ int main(void)
 	testAlias();
 	testAlias90();
 	testAlias90Long();
-#endif
-#if CONFIG_P25_ALIAS_TRACE
-	CHECK(sizeof(p25_alias_trace_entry_t) == 28, "trace wire entry size");
-	CHECK(sizeof(p25_alias_trace_t) == 1796, "trace ring size");
-	CHECK(p25_alias_trace.count > 64, "trace exercised through wraparound");
-	for (unsigned i = 0; i < 64; i++) {
-		uint32_t seq = p25_alias_trace.count - i;
-		CHECK(p25_alias_trace.entries[(seq - 1) % 64].serial == seq,
-		      "trace retains last 64 complete entries");
-	}
 #endif
 	printf("p25Test: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;

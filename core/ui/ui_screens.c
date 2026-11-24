@@ -2151,7 +2151,7 @@ static bool air_call(const radio_view_t *v, air_call_t *c)
 		c->dst = p->dst;
 #if CONFIG_P25_ALIAS
 		c->alias = ui_p25_caller_alias(v);
-		c->remembered = c->alias[0] && (!p->alias[0] || p->alias_cached);
+		c->remembered = c->alias[0] && !p->alias[0];
 #endif
 		return true;
 	}

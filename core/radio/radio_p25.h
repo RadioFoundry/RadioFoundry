@@ -81,7 +81,6 @@ typedef struct {
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
 #if CONFIG_P25_ALIAS
 	char alias[15];
-	bool alias_cached;
 	uint32_t call_session, call_number;
 	uint32_t alias_session;
 	p25_alias_event_t alias_event;
@@ -178,10 +177,6 @@ void radio_p25_tx_clear(void);
 
 void radio_p25_stats(radio_p25_stats_t *out);
 void radio_p25_reset_stats(void);
-#if CONFIG_P25_ALIAS_CACHE
-// Diagnostic count only; cache mutation and lookup remain on the radio task.
-uint8_t radio_p25_alias_cache_count(void);
-#endif
 
 // The transmit side above as radio_sm.c drives every air-framed mode
 extern const radio_air_ops_t radio_p25_air;

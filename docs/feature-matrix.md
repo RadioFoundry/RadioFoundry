@@ -54,8 +54,6 @@ is `tools/bringup.py list --radio <id>`.
 | `p25` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25_alias` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
-| `p25_alias_trace` | off | off | off | off | off | off | off | off |
-| `p25_alias_cache` | off | off | off | off | off | off | off | off |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
@@ -309,8 +307,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `P25` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_TRUNK` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_ALIAS` | ● | ● | ● | ● | ○ | ● | ● | ● |
-| `P25_ALIAS_TRACE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
-| `P25_ALIAS_CACHE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
@@ -349,9 +345,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Trunked calls through a system's telephone, line and dispatcher gateways: dialed digits sent with the call | `DMR_TRUNK_GW` | 1,552 | 1,732 | Needs `DMR_TRUNK_TX` |
 | P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). A stored P25 channel runs on its own parameters ([p25.md](spec/p25.md) 7) |
 | P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,300* | — | Needs `P25`; on top of it. Off on the MD-380 with `P25`. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
-| P25 over-the-air talker aliases | `P25_ALIAS` | 4,044 | — | Decode and display caller aliases; needs `P25`. Measured with GCC 14.2.1 and the DM-1701 default feature set, explicitly setting `P25_ALIAS=y` or `n` (custom preset); RAM: 1,008 B. |
-| P25 alias diagnostics | `P25_ALIAS_TRACE` | 524 | — | Optional decoder diagnostics; needs `P25_ALIAS`. Increment over the same DM-1701 alias-enabled custom preset; RAM: 1,792 B. Left out of maximal builds. |
-| P25 alias RAM cache | `P25_ALIAS_CACHE` | 544 | — | Retain learned names across channel changes within a system; needs `P25_ALIAS` and `P25_TRUNK`. Off by default; no persistent storage. Increment over the same DM-1701 alias-enabled custom preset; RAM: 1,536 B. Left out of the MD-UV380 maximal build to fit flash. |
+| P25 over-the-air talker aliases | `P25_ALIAS` | 3,944 | — | Decode and display caller aliases; needs `P25`. Measured with GCC 13.3.Rel1 and the DM-1701 default feature set, explicitly setting `P25_ALIAS=y` or `n` (custom preset); RAM: 960 B. |
 | VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 504 | 452 |  |
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |

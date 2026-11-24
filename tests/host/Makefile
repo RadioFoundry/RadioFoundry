@@ -108,15 +108,9 @@ fecTest: fecTest.c $(FEC) $(wildcard $(CORE)/fec/*.h)
 	$(CC) $(CFLAGS) -Wshadow -o $@ fecTest.c $(FEC)
 
 # P25 data units, their FEC and a call through the framer (core/p25)
-P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c $(CORE)/p25/p25_alias90.c $(CORE)/p25/p25_alias_cache.c
-TESTS += p25AliasCacheTest
-p25AliasCacheTest: p25AliasCacheTest.c $(CORE)/p25/p25_alias_cache.c $(CORE)/p25/p25_alias_cache.h
-	$(CC) $(CFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ALIAS_CACHE=1 -o $@ p25AliasCacheTest.c $(CORE)/p25/p25_alias_cache.c
+P25     := $(CORE)/p25/p25_unit.c $(CORE)/p25/p25_rx.c $(CORE)/p25/p25_call.c $(CORE)/p25/p25_alias90.c
 TESTS   += p25Test
 TESTS   += p25AliasTest
-TESTS   += p25AliasTraceTest
-p25AliasTraceTest: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_ALIAS=1 -DCONFIG_P25_ALIAS_TRACE=1 -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)
 p25AliasTest: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_P25_ALIAS=1 -o $@ p25Test.c $(P25) $(CORE)/air/air_framer.c $(FEC)
 p25Test: p25Test.c $(P25) $(CORE)/p25/p25.h $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(FEC)
@@ -264,8 +258,6 @@ run: $(TESTS)
 	./airFramerTest
 	./p25Test
 	./p25AliasTest
-	./p25AliasTraceTest
-	./p25AliasCacheTest
 	./fxpTest
 	./mbeTest | tail -1
 	./imbeEncTest | tail -1

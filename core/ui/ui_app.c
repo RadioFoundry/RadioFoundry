@@ -67,7 +67,7 @@ static bool has_context_key;
 // side key set to key lock could unlock it
 static bool has_unlock_key;
 static int16_t knob_last = -1;	// the volume knob's position last seen, -1 = none since start-up
-static char home_hint[96];
+static char home_hint[32];
 
 // The hint's keys part, in the language in use: the quick settings key, or holding OK on a radio without it
 static const char *home_hint_keys(void)

@@ -31,12 +31,6 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 #else
 	dl_text(t, "p25.alias.built=0\n");
 #endif
-#if CONFIG_P25_ALIAS_CACHE
-	dl_text(t, "p25.alias.cache.built=1\np25.alias.cache.count=%u\np25.alias.cache.max=64\n",
-		radio_p25_alias_cache_count());
-#else
-	dl_text(t, "p25.alias.cache.built=0\n");
-#endif
 	if ((p->flags & RADIO_P25_ON) != 0 && board.air != NULL && board.air->rx_load != NULL) {
 		uint32_t work, span;
 
@@ -64,10 +58,6 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 		(unsigned)c.alias.lc_other, (unsigned)c.alias.parts, (unsigned)c.alias.complete,
 		(unsigned)c.alias.rejected, (unsigned)c.alias.no_source, (unsigned)c.alias.unpaired,
 		(unsigned)c.alias.last_src);
-	dl_text(t, "p25.alias.last_lc=");
-	for (unsigned i = 0; i < sizeof c.alias.last_lc; i++)
-		dl_text(t, "%02x", c.alias.last_lc[i]);
-	dl_text(t, "\n");
 	dl_text(t, "p25.alias.decoded_src=%u\np25.alias.last_name=%s\n",
 		(unsigned)c.alias.decoded_src, c.alias.last_name);
 #endif
@@ -100,26 +90,6 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 #else
 	(void)v;
 	dl_text(t, "p25.built=0\n");
-#endif
-}
-
-void debuglink_view_p25_trace(dl_text_t *t)
-{
-#if CONFIG_P25_ALIAS_TRACE
-	uint32_t count = p25_alias_trace.count;
-	dl_text(t, "p25.trace.count=%u\n", (unsigned)count);
-	for (unsigned i = 0; i < 12 && i < count; i++) {
-		uint32_t seq = count - i;
-		const volatile p25_alias_trace_entry_t *e = &p25_alias_trace.entries[(seq - 1) % 64];
-		p25_alias_trace_entry_t copy = *e;
-		if (copy.serial != seq || e->serial != seq) continue;
-		dl_text(t, "pt.%u=%u,%u,%u,%u,%u,%u,", i, (unsigned)copy.serial,
-			(unsigned)copy.t_us, (unsigned)copy.src, copy.nac, copy.duid, copy.flags);
-		for (unsigned j = 0; j < 9; j++) dl_text(t, "%02x", copy.raw[j]);
-		dl_text(t, "\n");
-	}
-#else
-	dl_text(t, "p25.trace.built=0\n");
 #endif
 }
 

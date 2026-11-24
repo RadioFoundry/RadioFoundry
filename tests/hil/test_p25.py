@@ -140,32 +140,6 @@ def test_p25_alias_detail(radio):
     assert 0 <= int(v["p25.alias.result"]) <= 7
 
 
-@pytest.mark.feature("p25_alias_trace")
-def test_p25_alias_trace(radio):
-    """Read-only, bounded trace; diagnostic builds expose recent LC words."""
-    v = radio.view(["p25_trace"])
-    if v.get("p25.trace.built") == "0" or "p25.trace.count" not in v:
-        skip("not_built", "built without CONFIG_P25_ALIAS_TRACE")
-    assert v.get("truncated") != "1"
-    count = int(v["p25.trace.count"])
-    entries = [value.split(",") for key, value in v.items() if key.startswith("pt.")]
-    assert len(entries) <= 12
-    for fields in entries:
-        assert len(fields) == 7
-        assert max(1, count - 11) <= int(fields[0]) <= count
-        assert len(bytes.fromhex(fields[6])) == 9
-
-
-@pytest.mark.feature("p25_alias_cache")
-def test_p25_alias_cache_status(radio):
-    """Read-only cache capacity check; no channel changes or RF requests."""
-    v = p25_view(radio)
-    if v.get("p25.alias.cache.built") != "1":
-        skip("not_built", "built without CONFIG_P25_ALIAS_CACHE")
-    assert int(v["p25.alias.cache.max"]) == 64
-    assert 0 <= int(v["p25.alias.cache.count"]) <= 64
-
-
 @pytest.mark.feature("p25_alias")
 def test_p25_alias_receive(radio):
     """Opt-in, read-only live check; set expected source/name for a known broadcast."""

@@ -7069,6 +7069,9 @@ static void p25_view_text(char *buf, size_t cap)
 	CHECK(!t.full && strstr(detail, "p25v.frames="));
 #if CONFIG_P25_ALIAS
 	CHECK(strstr(detail, "p25.alias.result=") && strstr(detail, "p25.alias.seen="));
+	CHECK(strstr(detail, "p25.alias.parts=") && strstr(detail, "p25.alias.complete=") &&
+	      strstr(detail, "p25.alias.rejected=") && strstr(detail, "p25.alias.no_source="));
+	CHECK(!strstr(buf, "p25.alias.last_lc=") && !strstr(buf, "p25.alias.cache."));
 #endif
 }
 
@@ -8200,15 +8203,6 @@ static void test_p25_trunk(void)
 	run(800);
 	CHECK(hw.rx_hz == TS_VOICE && v->trunk == RADIO_P25_TRUNK_VOICE && sm.view.state == RS_RX);
 	CHECK((v->flags & RADIO_P25_PLAYED) && v->dst == 201 && v->src == 1001 && hw.led[LED_GREEN]);
-#if CONFIG_P25_ALIAS_CACHE && defined(HAL_VOCODER_LEND_BYTES)
-	// Inject at the validated decoder-event boundary; decoder validation has its
-	// own wire-vector tests. The radio task must retain it outside engine memory.
-	p25_engine_t *local = (p25_engine_t *)(void *)lend_mem;
-	local->view.alias_event = (p25_alias_event_t){ .serial = 1, .src = 1001,
-		.dst = 201, .call = local->view.rx_calls, .name = "FIELD UNIT" };
-	run(20);
-	CHECK(radio_p25_alias_cache_count() == 1 && !strcmp(v->alias, "FIELD UNIT"));
-#endif
 	run(600);
 	p25_engine_tx_stop(&far_eng);
 	site.grant_tg = 0;
@@ -8273,25 +8267,6 @@ static void test_p25_trunk(void)
 	run(3000);
 	CHECK(radio_p25_trunked() && hw.rx_hz == TS_CC2 && v->trunk == RADIO_P25_TRUNK_CONTROL);
 
-#if CONFIG_P25_ALIAS_CACHE && defined(HAL_VOCODER_LEND_BYTES)
-	// A fresh engine after leaving for FM, and a different talkgroup, must use
-	// the same system/unit identity without receiving another alias packet.
-	stored_trunk.talk_group = 202;
-	req(RREQ_ZONE_POS, 0);
-	req(RREQ_ZONE_POS, 2);
-	run(3000);
-	far_begin(TS_NAC, 1001, false, 202);
-	site.grant_tg = 202;
-	site.grant_ch = 0x100A;
-	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
-	far_tx = true;
-	run(800);
-	CHECK(v->selected && v->src == 1001 && v->dst == 202);
-	CHECK(!strcmp(v->alias, "FIELD UNIT") && hw.tx_calls == keyed);
-	p25_engine_tx_stop(&far_eng);
-	site.grant_tg = 0;
-	run(600);
-#endif
 
 	// No control channel programmed: the follower hunts and finds none
 	stored_trunk.ctl_count = 0;
