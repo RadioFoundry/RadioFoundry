@@ -188,7 +188,10 @@ pointer.
 
 The coefficients are worked out at open and at a pick in integers (a series cosine): no floating point is built in.
 The per-sample notch and DCS subtraction keep to section 6's rules (32 bits, no divide); the equalizer divides once a
-symbol, the DCS search once a word.
+symbol, the DCS search once a word. The options' per-sample and per-symbol functions are `RFOUNDRY_HOT_CODE`: in RAM
+where the platform gives a section for code (about 1.1 KB on HR_C7000). From the XIP flash, the three together cost
+more than the three apart (34 % of the CPU against 26 % in RAM, on a signal with a tone and a code). The options are
+built on HR_C7000 only so far ([feature-matrix.md](../feature-matrix.md)).
 `air_softmodem_adapt_off` turns an option off from the next symbol, for an A/B on the bench, and
 `air_softmodem_adapt_get` gives what runs: the tone notched, the DCS code locked, the center tap, counters.
 

@@ -8,3 +8,6 @@ CONFIG_FONT_XL ?= n
 # Link time optimization on our sources (about 17 KB smaller): the images no longer hold their features without it.
 # LTO=0 builds the plain way
 LTO ?= 1
+# Not fitted to the platform yet, one switch per line with the reason (docs/build-config.md, "Unsupported, not
+# written, unconfirmed"): ci's maximal configuration leaves these off
+BOARD_NOT_WRITTEN += AIR_RX_ADAPT	# the soft modem's adaptive options: only on HR_C7000 so far (air-interface.md 6.1)
