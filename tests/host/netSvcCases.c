@@ -1096,7 +1096,7 @@ static void test_webctl(void)
 	CHECK(strstr((char *)a.rx, "\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"));
 	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
 	CHECK(ws_next(&a, &at, m, sizeof m, &len) == 0x1);
-	CHECK(strcmp(m, "{\"hello\":1,\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
+	CHECK(strcmp(m, "{\"hello\":1,\"proto\":1,\"caps\":[\"select\",\"step\",\"status\",\"gps\"],\"control\":true,\"audio\":true,\"keys\":[3,7],\"ptt\":7,\"encoder\":true,"
 		"\"screen\":[160,128,16,0,0,160,128]}") == 0);
 	run_for(300);
 	CHECK(ws_find(&a, &at, "\"rx_hz\":446006250", m, sizeof m));
@@ -1483,7 +1483,7 @@ static void test_radio_udp(void)
 	fake_view.dmr.target_id = 0;
 }
 
-// ---- the board GPS's fixes over the UDP control (radio_udp.c) ----
+// ---- zone, channel and the board GPS over /ws (webctl.c, radio_ctl.c) ----
 static position_gps_t fake_gps;
 static bool fake_gps_heard;
 bool position_gps(position_gps_t *out, uint32_t now)
@@ -1495,16 +1495,75 @@ bool position_gps(position_gps_t *out, uint32_t now)
 	return fake_gps_heard;
 }
 
-// The next GPS second, then the checks' wait
-static void next_fix(void)
+// The next text frame from the radio after *at, "" when none came
+static const char *ws_last(peer_t *p, int *at, char *m, int max)
 {
-	fake_gps.utc_hms++;
-	run_for(150);
+	int len;
+
+	m[0] = '\0';
+	while (ws_next(p, at, m, max, &len) >= 0 && m[0] != '{') {
+	}
+	return m;
 }
 
-static void test_radio_udp_gps(void)
+static void test_webctl_ctl(void)
 {
-	const char *last = udp_catch.last;
+	static peer_t a, far;
+	char m[1024];
+	int at, len, zn, pn, sn;
+
+	memset(&fake_view, 0, sizeof(fake_view));
+	fake_view.zone_index = 1;
+	fake_view.zone_pos = 1;
+	fake_view.zone_size = 2;
+	strcpy(fake_view.zone_name, "Caf\xe9");
+	fake_channel(101, &fake_view.ch);
+	fake_view.channel_number = 101;
+	CHECK(ws_open(&a, net_test_host_ip(), 53200, ""));
+	at = (int)(strstr((char *)a.rx, "\r\n\r\n") + 4 - (char *)a.rx);
+	run_for(300);
+	// The status says where the radio is: the zone's position and name (Latin-1 as \u00XX), the codeplug's count
+	CHECK(ws_find(&a, &at, "\"zone\":1,\"pos\":1,\"zone_name\":\"Caf\\u00e9\",\"channel_number\":101,", m, sizeof m));
+	CHECK(strstr(m, "\"codeplug\":7,"));
+
+	// The UDP control's requests; only an error is answered
+	zn = req_zone_n;
+	pn = req_pos_n;
+	sn = req_step_n;
+	ws_text(&a, "select?zone=2&pos=40");
+	run_for(30);
+	CHECK(req_zone_n == zn + 1 && req_zone == 2 && req_pos_n == pn + 1 && req_zone_pos == 40);
+	ws_text(&a, "step?channel=-1");
+	run_for(30);
+	CHECK(req_step_n == sn + 1);
+	at = a.rxn;
+	ws_text(&a, "select?zone=99");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":400}") == 0);
+	ws_text(&a, "stepx");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":400}") == 0);
+	fake_view.state = RS_TX;
+	ws_text(&a, "step?zone=1");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
+	fake_view.state = RS_IDLE;
+
+	// "status?changes": the status only when the zone or channel moves, not for the signal or the clock
+	ws_text(&a, "status?changes");
+	run_for(300);
+	at = a.rxn;
+	fake_view.rssi_dbm = -70;
+	run_for(3000);
+	CHECK(!ws_find(&a, &at, "\"rx_hz\"", m, sizeof m));
+	fake_view.zone_pos = 0;
+	run_for(300);
+	CHECK(ws_find(&a, &at, "\"pos\":0,", m, sizeof m));
+	ws_text(&a, "status");
+	at = a.rxn;
+	run_for(1300);
+	CHECK(ws_find(&a, &at, "\"uptime_s\"", m, sizeof m));	// every change again
+	ws_text(&a, "status?all");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":400}") == 0);
+
+	// "gps": the board GPS's fix once per GPS second, unknown fields left out
 	memset(&fake_gps, 0, sizeof(fake_gps));
 	fake_gps.fix = true;
 	fake_gps.lat = 337490000;
@@ -1516,85 +1575,64 @@ static void test_radio_udp_gps(void)
 	fake_gps.hdop10 = 9;
 	fake_gps.utc_hms = 123519;
 	fake_gps_heard = true;
-	udp_catch.port = 50602;
-
-	// A subscriber gets no fixes until it asks
-	ctl(50602, "select");
-	int c = udp_catch.count;
-	run_for(2000);
-	CHECK(udp_catch.count == c);
-	// "gps": where the radio is, as select, with "gps":1 (it has one); the first fix at once
-	CHECK(strstr(ctl(50602, "gps"), "\"zone\":") && strstr(last, ",\"lease\":120,\"gps\":1}\n"));
-	c = udp_catch.count;
-	run_for(150);
-	CHECK(udp_catch.count == c + 1 && udp_catch.from_port == NET_RADIO_UDP_PORT);
-	CHECK(strcmp(last, "{\"gps\":1,\"lat\":33.7490000,\"lon\":-84.3880000,\"alt_m\":320,\"kmh\":4,\"course\":271,"
-		     "\"hdop\":0.9,\"sats\":9,\"utc\":123519}\n") == 0);
-	// one per GPS second: the same fix isn't sent again
+	ws_text(&a, "status?changes");	// the fixes alone from here
+	run_for(300);
+	at = a.rxn;
+	run_for(1000);
+	CHECK(!ws_find(&a, &at, "\"gps\"", m, sizeof m));	// none until asked
+	ws_text(&a, "gps");
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"gps\":1,\"lat\":33.7490000,\"lon\":-84.3880000,\"alt_m\":320,\"kmh\":4,"
+		     "\"course\":271,\"hdop\":0.9,\"sats\":9,\"utc\":123519}") == 0);
 	run_for(1500);
-	CHECK(udp_catch.count == c + 1);
-	next_fix();
-	CHECK(udp_catch.count == c + 2 && strstr(last, ",\"utc\":123520}\n"));
-	// unknown fields left out; south and west negative
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);	// the same second: not again
+	fake_gps.utc_hms++;
 	fake_gps.alt_m = POSITION_ALT_NONE;
 	fake_gps.speed_kmh = fake_gps.course = fake_gps.hdop10 = 0xFFFF;
 	fake_gps.lat = -1;
 	fake_gps.lon = -1800000000;
-	next_fix();
-	CHECK(strcmp(last, "{\"gps\":1,\"lat\":-0.0000001,\"lon\":-180.0000000,\"sats\":9,\"utc\":123521}\n") == 0);
-	c = udp_catch.count;
-	// no fix, the GPS not heard (off, or silent for a minute), or the link down: nothing
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"gps\":1,\"lat\":-0.0000001,\"lon\":-180.0000000,\"sats\":9,"
+		     "\"utc\":123520}") == 0);
+	// no fix or the GPS not heard: nothing
 	fake_gps.fix = false;
-	next_fix();
+	fake_gps.utc_hms++;
+	run_for(30);
 	fake_gps.fix = true;
 	fake_gps_heard = false;
-	next_fix();
-	uint32_t id = net_test_radio_id;
+	fake_gps.utc_hms++;
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);
 	fake_gps_heard = true;
-	net_test_radio_id = 0;
-	next_fix();
-	CHECK(udp_catch.count == c);
-	net_test_radio_id = id;
-	run_for(150);
-	CHECK(udp_catch.count == c + 1 && strstr(last, "{\"gps\":1,"));
-	// any other request renews them: one client sends "gps" once
-	c = udp_catch.count;
-	ctl(50602, "select");
-	next_fix();
-	CHECK(udp_catch.count == c + 2 && strstr(last, "{\"gps\":1,"));
-	// off: "gps?off" (a reply without "gps"), notify=0, a new subscriber, the lease ending
-	c = udp_catch.count;
-	CHECK(strstr(ctl(50602, "gps?off"), ",\"lease\":120}\n"));
-	next_fix();
-	CHECK(udp_catch.count == c + 1);
-	ctl(50602, "gps");
-	ctl(50602, "select?notify=0");
-	c = udp_catch.count;
-	next_fix();
-	ctl(50602, "select");	// subscribed again: still off
-	next_fix();
-	CHECK(udp_catch.count == c + 1);
-	ctl(50602, "gps");
-	ctl(50603, "select");	// another program takes the subscription over
-	ctl(50602, "select");	// and the first one back
-	c = udp_catch.count;
-	next_fix();
-	CHECK(udp_catch.count == c);
-	ctl(50602, "gps");
-	run_for(121000);
-	c = udp_catch.count;
-	next_fix();
-	next_fix();
-	CHECK(udp_catch.count == c);
-	// a radio without a GPS answers "gps":0, and sends none
+	ws_text(&a, "gps?off");
+	fake_gps.utc_hms++;
+	run_for(30);
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "") == 0);
+	// a radio without a GPS refuses it
 	fake_gps_fitted = false;
-	CHECK(strstr(ctl(50602, "gps"), ",\"lease\":120,\"gps\":0}\n"));
-	c = udp_catch.count;
-	next_fix();
-	CHECK(udp_catch.count == c);
+	ws_text(&a, "gps");
+	CHECK(strcmp(ws_last(&a, &at, m, sizeof m), "{\"err\":409}") == 0);
 	fake_gps_fitted = true;
-	ctl(50602, "select?notify=0");
-	udp_catch.port = 0;
+	peer_close(&a);
+	run_for(3000);
+
+	// From beyond the host: no zone, channel or position
+	CHECK(ws_open(&far, 0xC0000201u, 53201, ""));
+	at = (int)(strstr((char *)far.rx, "\r\n\r\n") + 4 - (char *)far.rx);
+	CHECK(ws_next(&far, &at, m, sizeof m, &len) == 0x1 && strstr(m, "\"control\":false"));
+	run_for(300);
+	at = far.rxn;	// past the status
+	zn = req_zone_n;
+	ws_text(&far, "select?zone=2");
+	CHECK(strcmp(ws_last(&far, &at, m, sizeof m), "{\"err\":403}") == 0 && req_zone_n == zn);
+	ws_text(&far, "gps");
+	CHECK(strcmp(ws_last(&far, &at, m, sizeof m), "{\"err\":403}") == 0);
+	fake_gps.utc_hms++;
+	run_for(300);
+	CHECK(!ws_find(&far, &at, "\"gps\"", m, sizeof m));
+	peer_close(&far);
+	run_for(3000);
+	fake_gps_heard = false;
 }
 
 void tests_run(void)
@@ -1608,5 +1646,7 @@ void tests_run(void)
 	test_aprsis();
 	test_fuzz();
 	test_radio_udp();	// last: its waits move the clock the others' checks expect
-	test_radio_udp_gps();
+#if CONFIG_NET_WEBCTL
+	test_webctl_ctl();
+#endif
 }

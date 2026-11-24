@@ -205,8 +205,11 @@ void net_poll(uint32_t now_ms, bool link_up)
 		return;
 	}
 	was_up = true;
+#if CONFIG_NET_RADIO_CTL
+	radio_ctl_poll(now_ms);	// zone and channel requests held back by the rate limit
+#endif
 #if CONFIG_NET_RADIO_UDP
-	radio_udp_poll(now_ms);	// requests held back by the rate limit, and the change notices
+	radio_udp_poll(now_ms);	// the change notices
 #endif
 #if CONFIG_NET_APRSIS
 	aprsis_poll(now_ms);

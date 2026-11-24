@@ -413,6 +413,8 @@
 // Derived: the shared packet data / CSBK code
 // Any of the radio's own services on the USB network link (core/net/net.c starts and polls them)
 #define CONFIG_NET_LOCAL		(CONFIG_NET_TCP || CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_USRP || CONFIG_NET_RADIO_UDP)
+// Zone and channel control, for whichever carries it: the UDP control or /ws (core/net/radio_ctl.c)
+#define CONFIG_NET_RADIO_CTL		(CONFIG_NET_RADIO_UDP || CONFIG_NET_WEBCTL)
 #ifndef CONFIG_DMR_DATA_CORE
 #define CONFIG_DMR_DATA_CORE		(CONFIG_DMR_SMS || CONFIG_DMR_ARS || CONFIG_DMR_LRRP || CONFIG_DMR_SIGNALING || \
 					 CONFIG_DMR_EMERGENCY || CONFIG_DMR_IP_GATEWAY || CONFIG_ZONE_SHARE || CONFIG_CRASH_REPORT || \

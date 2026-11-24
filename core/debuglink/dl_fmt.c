@@ -181,3 +181,22 @@ const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7)
 	dl_fmt(buf, DL_DEG_LEN, "%s%u.%07u", e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
 	return buf;
 }
+
+void dl_json_str(dl_text_t *t, const char *s)
+{
+	char tmp[8];
+
+	dl_text(t, "\"");
+	for (; *s != '\0'; s++) {
+		unsigned char ch = (unsigned char)*s;
+		if (ch == '"' || ch == '\\') {
+			dl_text(t, "\\%c", ch);
+		} else if (ch < 0x20 || ch >= 0x7F) {
+			dl_fmt(tmp, sizeof(tmp), "\\u%04x", ch);
+			dl_text(t, "%s", tmp);
+		} else {
+			dl_text(t, "%c", ch);
+		}
+	}
+	dl_text(t, "\"");
+}

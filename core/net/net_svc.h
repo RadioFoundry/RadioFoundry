@@ -33,7 +33,7 @@ static inline bool net_http_request(const uint8_t *d, size_t n)
 	return false;
 }
 
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP || CONFIG_NET_RADIO_CTL
 // The radio core's view, fetched now into the host link task's one copy (hostlink_view.h; the services all run in
 // that task)
 #include "radio/radio.h"
@@ -65,6 +65,21 @@ void http_view(dl_text_t *t);
 void http_status_json(dl_text_t *t);
 // The frame buffer can be sent as it is: /api/screen.bmp and the web control page's screen
 bool http_screen_ok(void);
+#endif
+
+#if CONFIG_NET_RADIO_CTL
+// Zone and channel control, for the UDP control and /ws (radio_ctl.c): the requests, pending steps passed on by
+// radio_ctl_poll, and the key a change notice is sent on
+int radio_ctl_request(const char *r, uint32_t now, const radio_view_t *v);
+void radio_ctl_poll(uint32_t now);
+void radio_ctl_view(dl_text_t *t);
+typedef struct {
+	uint16_t zone, pos, number;
+	bool vfo, priv;
+	uint8_t ts, mode;
+	uint32_t codeplug, tg, rx_hz;	// rx_hz and mode: the VFO tuned, which no index shows
+} radio_ctl_key_t;
+void radio_ctl_key(const radio_view_t *v, radio_ctl_key_t *k);
 #endif
 
 #if CONFIG_NET_RADIO_UDP

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""tools/rfoundry_gps.py's NMEA from the radio's fixes (docs/spec/tcp-services.md 8.4): no radio needed."""
+"""tools/rfoundry_gps.py's NMEA from the radio's fixes (docs/spec/tcp-services.md 5.1): no radio needed."""
 import datetime
 import os
 import sys

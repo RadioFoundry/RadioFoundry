@@ -81,14 +81,13 @@ static int8_t fake_encoder(void)
 static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
 bool fake_gps_fitted = true;
 static bool fake_gps_present(void) { return fake_gps_fitted; }
-static const hal_gps_t fake_gps_hal = { .present = fake_gps_present };	// the UDP control's fixes (radio_udp.c)
+static const hal_gps_t fake_gps_hal = { .present = fake_gps_present };	// the web control's fixes (webctl.c)
 const board_t board = { .name = "fake", .caps = CAP_GPS, .gps = &fake_gps_hal, .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
 			.power_names = power_names, .bands = bands, .band_count = 6, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----
 bool ipGatewaySendFrame(const uint8_t *f, int length) { return board.netif->send(f, length); }
-uint32_t net_test_radio_id = RADIO_ID;	// 0: the link is down (no host address)
-uint32_t ipGatewayRadioId(void) { return net_test_radio_id; }
+uint32_t ipGatewayRadioId(void) { return RADIO_ID; }
 void ipGatewaySerialIn(const uint8_t *data, int length) { (void)data; (void)length; }
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol, const uint8_t *l4, int length)
 {
