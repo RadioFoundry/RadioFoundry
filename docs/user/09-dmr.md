@@ -264,6 +264,7 @@ when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
+- Or a key set to **Monitor toggle** in [Settings > Keys](17-settings.md), which does what **\***, **5** does.
 
 Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
 [scan](12-scan.md) started with it on keeps it on at every channel. While it
@@ -291,6 +292,10 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
   not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
+
+Most countries don't allow encrypted or scrambled messages on amateur frequencies: read
+[Encryption on amateur frequencies](04-programming.md#encryption-on-amateur-frequencies) before using basic privacy or AES
+there.
 
 For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
 Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal

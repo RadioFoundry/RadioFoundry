@@ -3631,7 +3631,8 @@ void ui_draw_hotspot(const radio_view_t *v, const hotspot_view_t *h, const ui_st
 	sb_str(&b, "CC");
 	sb_u32(&b, h->cc, 1);
 	sb_str(&b, " ");
-	sb_str(&b, ui_power_name(v->power, v->ch.tx_hz));
+	// What the hotspot keys; the radio's own power until the radio core has entered hotspot mode
+	sb_str(&b, ui_power_name(v->hotspot ? v->hs_power : v->power, h->tx_hz != 0 ? h->tx_hz : v->ch.tx_hz));
 	y = call_line(L->small, y, buf, ui_col.dim);
 	sb_init(&b, buf, sizeof buf);
 	if (h->src != 0) {

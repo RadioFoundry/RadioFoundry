@@ -3728,6 +3728,11 @@ msgid "Scan skip"
 msgstr "Salta canale"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_MONITOR_TOGGLE"
+msgid "Monitor toggle"
+msgstr "Monitor fisso"
+
+#: core/ui/ui_menus.c
 msgctxt "WORD_KEY_LOCK"
 msgid "Key lock"
 msgstr "Blocco tasti"

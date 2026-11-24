@@ -6655,7 +6655,8 @@ static const tr_id_t n_possend[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_1_MIN, "1 
 // Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
 // emergency is hold to activate, so a long press only
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
-					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_KEY_LOCK,
+					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
+					 KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
 #if CONFIG_FM_TX_TONES
 					 KEYFN_TONE_BURST,
@@ -6675,7 +6676,8 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 					     TRN(KEYFN_VALUE_POWER_LEVEL, "Power level"),
 					TRN(KEYFN_VALUE_NEXT_ZONE, "Next zone"),
 					TRN(KEYFN_VALUE_PREV_ZONE, "Prev zone"), TRN(WORD_SCAN, "Scan"),
-					     TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"), TRN(WORD_KEY_LOCK, "Key lock"), TRN(KEYFN_VALUE_HOME_ZONE, "Home zone"),
+					     TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"), TRN(KEYFN_VALUE_MONITOR_TOGGLE, "Monitor toggle"),
+					     TRN(WORD_KEY_LOCK, "Key lock"), TRN(KEYFN_VALUE_HOME_ZONE, "Home zone"),
 #if CONFIG_FM_TX_TONES
 					     TRN(WORD_TONE_BURST, "Tone burst"),
 #endif
@@ -6693,7 +6695,7 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 	TRN(TITLE_RECENT, "Recent"),
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
-					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP,
+					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
 #if CONFIG_DMR_EMERGENCY
 					KEYFN_EMERGENCY,
 #endif
@@ -6712,7 +6714,7 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 	TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"), TRN(KEYFN_VALUE_POWER_LEVEL, "Power level"),
 					    TRN(KEYFN_VALUE_NEXT_ZONE, "Next zone"),
 					TRN(KEYFN_VALUE_PREV_ZONE, "Prev zone"), TRN(WORD_SCAN, "Scan"),
-					TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"),
+					TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"), TRN(KEYFN_VALUE_MONITOR_TOGGLE, "Monitor toggle"),
 #if CONFIG_DMR_EMERGENCY
 					    TRN(TITLE_EMERGENCY, "Emergency"),
 #endif

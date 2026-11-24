@@ -27,6 +27,7 @@ typedef enum {
 	ACT_TONE_BURST,		// FM repeater access: raw down / up edges
 	ACT_TALK_LABEL,		// Home's talk line: the talkgroup's name or its number first (a side key function)
 	ACT_SCAN_SKIP,		// skip the channel that stopped the scan, until the scan stops (a side key function)
+	ACT_MONITOR_TOGGLE,	// latch the monitor on / off, as quick tile 5 does (a side key function)
 	// A home key with a function set (board.home_keys, keyassign.h): the UI turns it into that function on Home and
 	// back into the key's own action elsewhere. The gesture says press or long press
 	ACT_HOME_KEY_1, ACT_HOME_KEY_2, ACT_HOME_KEY_3, ACT_HOME_KEY_4,

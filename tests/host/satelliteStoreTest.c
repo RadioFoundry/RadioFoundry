@@ -620,6 +620,44 @@ static void test_custom_frequency_profiles(void)
 	CHECK(satellite_frequency_profile(99001u, &readback) && readback.rx_hz == profile.rx_hz);
 }
 
+// The command's working arrays are one static buffer (debuglink_satellite.c: one debug link command runs at a time): what
+// an earlier command left in it, longer or of another kind, never reaches the next
+static void test_working_buffer_reuse(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	static const uint32_t ten[SATELLITE_PROFILE_MAX] = {
+		40908u, 40931u, 43678u, 61781u, 63213u, 63214u, 63215u, 67291u, 63217u, 63218u
+	};
+	uint8_t set[2u + 4u * SATELLITE_PROFILE_MAX] = { DL_SAT_OP_PROFILE_SET };
+	uint8_t get_ids = DL_SAT_OP_PROFILE_GET, get_values = DL_SAT_OP_PROFILE_VALUES_GET;
+	uint8_t list[3] = { DL_SAT_OP_LIST };
+	uint8_t record[TEST_RECORD_MAX];
+
+	CHECK(install(record, make_record(record, 25544u, "ISS", "26315.50000000"), 1, false, false, false));
+	CHECK(command(list, 3u) == 2u + 8u && output[0] == DL_ST_OK && output[1] == 1u);	// the list buffer holds a record
+	set[1] = SATELLITE_PROFILE_MAX;
+	for (uint8_t i = 0u; i < SATELLITE_PROFILE_MAX; i++)
+		put32(set + 2u + 4u * i, ten[i]);
+	CHECK(command(set, sizeof(set)) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_values, 1u) == 2u + 14u * SATELLITE_PROFILE_MAX && output[0] == DL_ST_OK &&
+	      output[1] == SATELLITE_PROFILE_MAX && get32(output + 2u) == ten[0] &&
+	      get32(output + 2u + 14u * 9u) == ten[9]);		// the buffer now holds ten profiles
+	set[1] = 2u;
+	CHECK(command(set, 2u + 4u * 2u) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 6u) == ten[1]);			// two ids, none of the ten profiles' bytes
+	CHECK(command(&get_values, 1u) == 2u + 14u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 16u) == ten[1] && get32(output + 6u) != 0u);
+	CHECK(command(list, 3u) == 2u + 8u && output[0] == DL_ST_OK && output[1] == 1u && get32(output + 2u) == 25544u);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * 2u && output[1] == 2u && get32(output + 2u) == ten[0] &&
+	      get32(output + 6u) == ten[1]);
+	set[1] = SATELLITE_PROFILE_MAX;
+	CHECK(command(set, sizeof(set)) == 1u && output[0] == DL_ST_OK);
+	CHECK(command(&get_ids, 1u) == 2u + 4u * SATELLITE_PROFILE_MAX && output[1] == SATELLITE_PROFILE_MAX &&
+	      get32(output + 2u + 4u * 9u) == ten[9]);
+}
+
 static void test_arm_capability(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -715,6 +753,7 @@ int main(void)
 	test_commit_power_cuts();
 	test_replace_power_cuts();
 	test_custom_frequency_profiles();
+	test_working_buffer_reuse();
 	test_arm_capability();
 	test_first_install_recovery();
 	test_cross_band_profiles_install();
