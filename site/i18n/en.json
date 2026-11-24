@@ -1809,6 +1809,8 @@
  "editor.modes.tx2": "Yes, without registering",
  "editor.modes.tx1": "Yes, after registering",
  "editor.modes.tx0": "Never (listen only)",
+ "editor.modes.enforced": "Never (listen only) · Enforced",
+ "editor.modes.no_tx_note": "This system's network ID is blocked: the radio never transmits, registers or affiliates on it. Receiving still works. The editor cannot change this.",
  "editor.modes.transmit": "Transmit",
  "editor.modes.name_help": "Your name for the system, shown on the radio.",
  "editor.modes.sec.sharing": "Wireless Zone/Channel Sharing",

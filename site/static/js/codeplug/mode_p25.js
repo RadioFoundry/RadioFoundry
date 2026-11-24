@@ -11,6 +11,10 @@ export const UNIT_MAX = 0xFFFFFE;
 // Above this the editor warns: unit IDs this long are unusual (the standard's range is not checked here)
 export const UNIT_WARN = 9999999;
 export const WACN_ANY = 0xFFFFFF, SYSID_ANY = 0xFFFF, P25_UNKNOWN = 0xFF;
+// Network IDs the radio never transmits on: WACN BEE00..BEEFF, system ID 00A. The firmware enforces it and these
+// copies only let the editor show it; core/p25/p25.h (P25_WACN_NO_TX, P25_WACN_NO_TX_MASK, P25_SYSID_NO_TX) is the
+// source, and a test compares the two.
+export const WACN_NO_TX = 0xBEE00, WACN_NO_TX_MASK = 0xFFF00, SYSID_NO_TX = 0x00A;
 
 // A NAC field: its value when set, else dflt; a value the field can't hold reads as dflt too
 const nacField = (f, dflt) => ((f & NAC_SET) && !(f & 0x7000) ? f & 0x0FFF : dflt);
@@ -154,6 +158,8 @@ export const p25System = {
 	],
 	// the fallback channel is stored, not used yet (p25-trunking.md)
 	fallbackHelp: "editor.p25.fallback_help",
+	// whether the radio refuses to transmit on a system with these fields, whatever its transmit setting says
+	noTx: (f) => (f.wacn != null && (f.wacn & WACN_NO_TX_MASK) === WACN_NO_TX) || f.sysid === SYSID_NO_TX,
 	// a third transmit choice in the system form: transmit without registering (the field set while the radio transmits)
 	noRegField: "noReg",
 	fields: () => [
@@ -189,7 +195,7 @@ export const p25System = {
 			},
 			fields: [
 				{ key: "rxHz", label: "editor.col.rx", type: "freq" },
-				{ key: "txHz", label: "editor.col.tx", type: "freq", zero: true },
+				{ key: "txHz", label: "editor.col.tx", type: "freq", zero: true, txOnly: true },
 				{ key: "iden", label: "editor.p25.iden", type: "int", min: 0, max: 15 },
 				{ key: "chanNo", label: "editor.p25.chan_no", type: "int", min: 0, max: 4095 },
 			],
@@ -214,7 +220,7 @@ export const p25System = {
 			fields: [
 				{ key: "baseHz", label: "editor.p25.base", type: "freq" },
 				{ key: "spacingHz", label: "editor.p25.spacing", type: "int", min: 1, max: 1000000 },
-				{ key: "txOffsetHz", label: "editor.p25.tx_offset", type: "int", min: -2147483648, max: 2147483647 },
+				{ key: "txOffsetHz", label: "editor.p25.tx_offset", type: "int", min: -2147483648, max: 2147483647, txOnly: true },
 				{ key: "bwHz", label: "editor.p25.bw", type: "int", min: 0, max: 1000000 },
 				{ key: "tdma", label: "editor.p25.tdma", type: "bool" },
 				{ key: "slots", label: "editor.p25.slots", type: "int", min: 1, max: 8 },

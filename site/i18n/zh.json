@@ -1809,6 +1809,8 @@
  "editor.modes.tx2": "是，不注册",
  "editor.modes.tx1": "是，先注册",
  "editor.modes.tx0": "从不（仅收听）",
+ "editor.modes.enforced": "从不（仅收听）· 强制",
+ "editor.modes.no_tx_note": "此系统的网络 ID 已被屏蔽：电台在其上从不发射、注册或附属。仍可接收，但编辑器无法更改此项。",
  "editor.modes.transmit": "发射",
  "editor.modes.name_help": "您为系统取的名称，显示在电台上。",
  "editor.modes.sec.sharing": "无线共享区域/信道",

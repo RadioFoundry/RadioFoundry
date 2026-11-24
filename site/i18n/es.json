@@ -1809,6 +1809,8 @@
  "editor.modes.tx2": "Sí, sin registrarse",
  "editor.modes.tx1": "Sí, tras registrarse",
  "editor.modes.tx0": "Nunca (solo escucha)",
+ "editor.modes.enforced": "Nunca (solo escucha) · Impuesto",
+ "editor.modes.no_tx_note": "El ID de red de este sistema está bloqueado: la radio nunca transmite, se registra ni se afilia en él. La recepción sigue funcionando. El editor no puede cambiarlo.",
  "editor.modes.transmit": "Transmitir",
  "editor.modes.name_help": "Su nombre para el sistema, mostrado en la radio.",
  "editor.modes.sec.sharing": "Compartir zonas/canales por radio",

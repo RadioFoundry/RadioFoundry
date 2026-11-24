@@ -1809,6 +1809,8 @@
  "editor.modes.tx2": "Sì, senza registrazione",
  "editor.modes.tx1": "Sì, dopo la registrazione",
  "editor.modes.tx0": "Mai (solo ascolto)",
+ "editor.modes.enforced": "Mai (solo ascolto) · Imposto",
+ "editor.modes.no_tx_note": "L'ID di rete di questo sistema è bloccato: la radio non trasmette, non si registra e non si affilia mai su di esso. La ricezione funziona comunque. L'editor non può cambiarlo.",
  "editor.modes.transmit": "Trasmissione",
  "editor.modes.name_help": "Il tuo nome per il sistema, mostrato sulla radio.",
  "editor.modes.sec.sharing": "Condivisione via radio di zone/canali",
