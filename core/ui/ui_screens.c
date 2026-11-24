@@ -398,6 +398,17 @@ static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
 	return lx + gfx_text_width(f, word) + 2 * f->w <= rx;
 }
 
+#if CONFIG_P25_TRUNK
+// A trunked P25 channel on a system the radio never transmits on (a blocked WACN or system ID, p25.h). The follower
+// holds P25_REG_BLOCKED from when it knows (programmed, or once heard) until it restarts: on the control channel,
+// while it follows a call, and while it hunts for a system known to be blocked
+static bool p25t_blocked(const radio_view_t *v)
+{
+	return v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
+	       v->p25.trunk != RADIO_P25_TRUNK_OFF && v->p25.treg == P25_REG_BLOCKED;
+}
+#endif
+
 // The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
 // view on the UI task's stack (the UI task's deepest path, stack check)
 static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name)
@@ -577,6 +588,19 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 				lx += aw;
 			}
 		}
+	}
+#endif
+#if CONFIG_P25_TRUNK
+	// A blocked system (the radio never transmits on it) shows TX struck through after the mode and any word above.
+	// It comes last, so it is the first to go when the strip is short, and the words keep their place
+	bool dual_on = false;
+#if CONFIG_DUAL_WATCH
+	dual_on = s->dual.on;	// the mode on the strip is a pane's, not the view's
+#endif
+	if (p25t_blocked(v) && !dual_on && !v->aprs_tx && strip_fits(f, lx, rx, "TX")) {
+		int tx0 = lx + f->w;
+		int tx1 = gfx_text(f, tx0, ty, "TX", swarn);
+		gfx_hline(tx0 - 1, ty + f->ascent / 2 + 1, tx1 - tx0 + 1, swarn);	// through the middle of the capitals
 	}
 #endif
 	if (!titled)
@@ -1132,13 +1156,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
 		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
 		// talk group once PTT can ask for it, a request's state
-		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
+		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering"
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0 && v->p25.treg != P25_REG_BLOCKED;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
-		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
-			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
-			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
@@ -1455,8 +1477,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
-		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
-			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND || trunk_why(v) == RADIO_TRUNK_WHY_BLOCKED)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps, nor a retry
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");

@@ -446,6 +446,12 @@ The same setting blocks Tone burst DOWN; UP always passes so locking cannot prev
 The state pill follows `radio_view_t.state`. RX also shows while the monitor holds an FM squelch open (MON stays beside
 the mode). DMR's monitor key is digital monitor and leaves it IDLE.
 
+On a trunked P25 channel of a blocked system (`p25.treg` BLOCKED, [p25-trunking.md](p25-trunking.md) 5) the strip
+shows TX struck through, in the warning color. It comes after the mode and after DUAL / SCAN / ROAM / MON / IP, and
+only where `strip_fits` says it has room (the same measure as those words), so it is the first thing a short strip
+drops and no word moves for it. Not in dual watch, not during an APRS transmission, not on a screen that merges its
+title into the strip. The text is a literal, as the pill's TX is (`CONFIG_P25_TRUNK`).
+
 On DMR the pill shows TX whenever the stack is on the air, with or without PTT. Data burst lists (ARS, SMS, a
 position, a call alert or its ACK, the IP gateway, a roaming probe) set `RS_TX` with `RDMR_TX_DATA` (`dmr_follow`).
 Home keeps its own screen for them, and the activity line says SENDING instead of TALKING (in dual watch, "SENDING on

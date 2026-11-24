@@ -163,10 +163,20 @@ static const flow_t flows[] = {
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
-	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2",
+	  "screen=home shows=Control_channel hides=RX_only hides=TX", 0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201 hides=TX",
 	  0, false },
-	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
-	  false },
+	// A blocked system reads as any other: the talk line is the follower's state, the struck-through TX sits in the
+	// strip (the strike is a line, so only the word is checked), and a blocked system with the transmit side on
+	// never reads "Registering"
+	{ "P25 trunked home: blocked, control channel, transmit on", "dlmode:p25", "p25t:2,0,8,1",
+	  "screen=home shows=Control_channel shows=TX hides=Blocked_system hides=Registering", 0, false },
+	{ "P25 trunked home: blocked, following a call", "dlmode:p25", "p25t:3,201,8",
+	  "screen=home shows=Following_TG_201 shows=TX hides=Blocked_system", 0, false },
+	// PTT on a blocked system: the reason, and nothing to retry (no setting and no second press changes it)
+	{ "P25 trunked: PTT refused on a blocked system", "dlmode:p25", "p25t:2,0,8,1,11",
+	  "shows=Blocked_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
 #endif
 #if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
 	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
