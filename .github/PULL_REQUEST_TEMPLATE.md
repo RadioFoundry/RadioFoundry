@@ -15,13 +15,14 @@ end generated
 
 ## Size
 
-<!-- Net change against the main this is based on, in bytes, measured (contributing.md, "What a pull request must
-have"). One row per radio the change builds into. "Switch off": the build with this change's CONFIG_ switch off,
-or "no switch". No firmware change: say so and delete the table. -->
+<!-- The net change against main on the radio(s) you built and tested on, in bytes, measured (contributing.md,
+"Size impact"). CI's firmware job adds every radio's change to its summary. If a radio's default build grows by more
+than 1 KB of flash or 256 bytes of RAM, say why and which CONFIG_ switch removes it. No firmware change: say so and
+delete the table. -->
 
-| Radio | Flash, default | RAM, default | Flash, switch off | RAM, switch off |
-|---|---:|---:|---:|---:|
-| | | | | |
+| Radio (tested) | Flash | RAM |
+|---|---:|---:|
+| | | |
 
 ## Testing
 
@@ -48,7 +49,7 @@ or "no switch". No firmware change: say so and delete the table. -->
 - [ ] SPDX header on every new file.
 - [ ] `core/` stays radio independent: no board headers, no radio defines.
 - [ ] Code that costs flash is behind a `CONFIG_` switch, and the build is clean with it off.
-- [ ] Size above: net flash and RAM per radio, with the switch on and off (or "no firmware change").
+- [ ] Size above, measured on the radio(s) tested; CI's size table checked; growth over 1 KB of flash or 256 bytes of RAM on a radio explained (or "no firmware change").
 - [ ] Zero warnings in every configuration `tools/ci.sh` builds.
 - [ ] A behavior change updates its spec in `docs/spec/`; if users see it, `docs/user/` too.
 - [ ] A UI change regenerates the gallery and commits only the PNGs it meant to change.

@@ -62,11 +62,14 @@ subject: `<Area>: <what changed>`, in the present tense, no trailing period.
   the tests. A change the host tests can't reach (a register write, a board's wiring) says so, covers the logic
   around it with a host test, and adds a HIL test when one can be scripted. Pull requests that change only
   documentation are the only exception.
-- **Size impact.** The description gives the net flash and RAM change against the `main` it is based on, for each
-  radio the change builds into: the default build, and the build with the change's `CONFIG_` switch off (a change
-  without a switch says so; its "off" is `main`). Flash is text + data, RAM is data + bss, from `arm-none-eabi-size`
-  or `csky-elf-size` on the `.elf` of the pull request's build and of its base. Update the table when a later push
-  changes it. Pull requests that change no firmware say "no firmware change".
+- **Size impact.** CI builds every radio's default and maximal configuration and adds a table of the flash and RAM
+  change against `main` to the firmware job's summary (`docs/dev/ci.md`). Check it before asking for review. The
+  author doesn't build every radio, but does build the radio(s) the change was tested on, at least one, and gives
+  that build's net flash and RAM change against its base in the description, measured, not estimated. Flash is
+  text + data, RAM is data + bss, from `arm-none-eabi-size` or `csky-elf-size` on the `.elf`. Keep both as small as
+  the change allows; RAM is the tighter limit on most radios. When a radio's default build grows by more than 1 KB
+  of flash or 256 bytes of RAM, the description says why and where the bytes go, and names the `CONFIG_` switch that
+  removes them (rule 5 in `AGENTS.md`). Pull requests that change no firmware say "no firmware change".
 - `JOBS=8 tools/ci.sh` ending with "all checks passed".
 - One topic. Split unrelated changes into separate pull requests.
 - The filled-in template (`.github/PULL_REQUEST_TEMPLATE.md`).
