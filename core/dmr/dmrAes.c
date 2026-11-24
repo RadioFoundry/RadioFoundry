@@ -400,7 +400,10 @@ bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx
 	if (st == NULL || pos == NULL || pos->voice_index >= 6 || pos->superframe >= DMR_AES_SF_MAX)
 		return false;
 
-	int8_t slot = dmrAesFindKey(st, pos->alg, pos->key_id);
+	// Some senders put the short ALG value in their PI header. Only RX aliases it: provisioned keys and our PI
+	// headers keep the full AES-256 ID, and unrelated algorithms still fail closed.
+	uint8_t alg = !tx && pos->alg == 0x05 ? DMR_AES_ALG_AES256 : pos->alg;
+	int8_t slot = dmrAesFindKey(st, alg, pos->key_id);
 
 	if (slot < 0)
 		return false;

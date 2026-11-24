@@ -127,7 +127,8 @@ void dmrAesClearKeys(dmrAesState_t *st);
 
 // The call stack's crypt hook (dmr_crypt_fn, core/dmr/call/dmr_call.h): ctx is a dmrAesState_t. False: no key for the
 // call's algorithm and key ID (the burst is not played), a superframe past DMR_AES_SF_MAX, or (TX) a burst of another
-// MI than the over's or past its reservation (the burst is not sent encrypted)
+// MI than the over's or past its reservation (the burst is not sent encrypted). RX also accepts PI algorithm 0x05
+// with a provisioned 0x25 key; TX always uses 0x25
 struct dmr_crypt_pos;
 bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx, void *ctx);
 

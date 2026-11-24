@@ -372,6 +372,14 @@ static const flow_t flows[] = {
 	  0, false },
 	{ "11 dual watch modes: DMR call", "dlvfo:438800000 dlmode:dmr quick 7 tune:a", "fmrx",
 	  "dual=1 shows=DMR_call hides=FM_signal", 0, false },
+#if CONFIG_DMR_AES
+	{ "11 dual watch modes: AES channel stays DMR", "chkind:3,aes up down quick 7", "",
+	  "dual=1 sel=A shows=DMR hides=P25 hides=NXDN", 0, false },
+	{ "11 dual watch modes: AES call stays DMR", "chkind:3,aes up down quick 7 tune:a", "fmrx",
+	  "dual=1 shows=DMR_call hides=P25_call hides=FM_signal", 0, false },
+	{ "11 dual watch modes: AES on B stays DMR", "chkind:4,aes quick 7 tune:b", "fmrx",
+	  "dual=1 sel=A shows=DMR_call hides=P25_call hides=FM_signal", 0, false },
+#endif
 #if CONFIG_AM_RX
 	{ "11 dual watch modes: AM VFO", "am dlvfo:129700000 quick 7", "", "dual=1 sel=A shows=AM shows=VFO_AM hides=VFO_FM",
 	  0, false },

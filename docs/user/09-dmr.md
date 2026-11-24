@@ -303,6 +303,8 @@ digits from your browser; use it rather than typing a key, since typed keys tend
 shows the digits. On the channel, choose **DMR AES-256**, select the system and PI key ID, then write the codeplug
 to the radio. Both radios must have the same key bytes and ID. The system and channel must both allow transmit.
 
+Reception accepts AES-256 PI algorithm IDs **0x25** and **0x05** with that key ID. Transmissions use **0x25**.
+
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
 A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are

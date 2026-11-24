@@ -185,6 +185,9 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "dual_pick", "quick 7 ctx 3" },
 	{ "dual_zones", "quick 7 ctx 3 up up up up ok" },
 	{ "home_dual", "quick 7 ctx 3 5 ok wait:3000" },
+#if CONFIG_DMR_AES
+	{ "home_dual_aes", "chkind:3,aes up down quick 7 wait:3000 tune:a fmrx" },
+#endif
 	{ "home_dual_rx_b", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000 tune:b rx:9991234,91,g wait:2500" },
 	{ "home_dual_heard", "quick 7 ctx 3 5 ok wait:3000 tune:b call:9991234,91,g tune:a call:9997777,3100,g wait:4000" },
 	// The wait after a call on B: a look at A found a signal there

@@ -238,6 +238,11 @@ The scheme behind PI headers with algorithm ID 0x25, as other radios send it (`C
 Measured on air with the SDR bench and checked against a reference decoder used as a black box;
 `tests/host/dmrAesTest.c` decrypts a captured test call with it.
 
+RX also accepts the short algorithm ID 0x05 in a PI header and selects the provisioned 0x25 key with the same key ID.
+This alias is confined to the receive crypt hook: stored keys, channel tags and our transmitted PI headers use 0x25.
+Other algorithm IDs are rejected. The captured-vector test checks that either accepted ID gives identical plaintext;
+the radio-core test checks both PI IDs through to the voice sink.
+
 | Part | Layout |
 |---|---|
 | Voice LC | FID 0x10, service options 0x40 (privacy) |

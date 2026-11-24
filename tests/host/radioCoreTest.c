@@ -16,6 +16,7 @@
 #include "radio/tones.h"
 #include "dmr/call/dmr_call.h"
 #include "dmr/call/dmr_lc.h"
+#include "dmr/fec/dmrFec.h"
 #include "dmr/ambe/ambeVoice.h"
 #include "sim/dmr_sim_modem.h"
 #include "radio/radio_hotspot.h"
@@ -3578,6 +3579,50 @@ static void test_dmr_voice_features(void)
 			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
 		}
 	CHECK(pi && mi1 != 0);
+	// The configured channel receives AES through the DMR stack too, with P25/NXDN built or absent. Replay its
+	// protected PI and voice as another station; the vocoder must get decrypted frames rather than lost frames.
+	uint8_t rx_lc[9];
+	l.src = 9991234;
+	dmr_lc_pack(&l, rx_lc);
+	aud.feed = true;
+	for (unsigned short_alg = 0; short_alg < 2; short_alg++) {
+		burst_lc(rx_lc, 2, false);
+		run(60);
+		dmr_call_stats_t rx0, rx1;
+		ambe_voice_stats_t voice0, voice1;
+		dmr_call_get_stats(&rx0);
+		ambeVoiceGetStats(&voice0);
+		unsigned rx_bursts = 0;
+		for (unsigned i = first; i < sim.air_count; i++) {
+			const sim_air_t *a = &sim.air[i];
+			if (a->kind != DMR_BURST_PI_HEADER && a->kind != DMR_BURST_VOICE)
+				continue;
+			dmr_burst_t b = { .kind = a->kind, .voice_index = a->voice_index, .sync = DMR_SYNC_MS,
+				.cc = 2, .crc_ok = true, .in_step = true, .len = a->len };
+			memcpy(b.payload, a->payload, a->len);
+			if (short_alg && b.kind == DMR_BURST_PI_HEADER) {
+				b.payload[0] = 0x05;
+				uint16_t crc = (uint16_t)(dmr_crc_ccitt(b.payload, 10) ^ DMR_CRC_MASK_PI);
+				b.payload[10] = (uint8_t)(crc >> 8);
+				b.payload[11] = (uint8_t)crc;
+			}
+			sim_rx(&b);
+			run(60);
+			rx_bursts += a->kind == DMR_BURST_VOICE;
+		}
+		dmr_call_get_stats(&rx1);
+		ambeVoiceGetStats(&voice1);
+		CHECK(sm.view.ch.mode == RADIO_MODE_DMR && d->state == RDMR_RX && d->call.encrypted);
+		CHECK(dmr_call_view()->caller.pi_alg == (short_alg ? 0x05 : 0x25));
+		CHECK(d->call.pi_header && rx1.rx_pi_headers == rx0.rx_pi_headers + 1);
+		CHECK(rx_bursts > 0 && rx1.rx_voice_bursts == rx0.rx_voice_bursts + rx_bursts);
+		CHECK(rx1.rx_enc_dropped == rx0.rx_enc_dropped);
+		CHECK(voice1.rx_in == voice0.rx_in + rx_bursts * 3 && voice1.rx_frames > voice0.rx_frames);
+		CHECK(voice1.rx_bad == voice0.rx_bad);
+		burst_lc(rx_lc, 2, true);
+		run(100);
+	}
+	aud.feed = false;
 	// The next over's MI is the word after the last superframe the first sent: its positions follow on
 	unsigned sfs = 0;
 	for (unsigned i = first; i < sim.air_count; i++)
