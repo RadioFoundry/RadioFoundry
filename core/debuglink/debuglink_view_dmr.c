@@ -9,7 +9,7 @@
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 #include "radio/mic_gain.h"
 #endif
 
