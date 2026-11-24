@@ -7140,10 +7140,13 @@ bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz)
 	return rx_hz != 0 && tx_hz != 0 && board_in_band(rx_hz, false) && board_in_band(tx_hz, true);
 }
 
-uint8_t radio_sm_hotspot_power(uint8_t rf_level)
+uint8_t radio_sm_hotspot_power(uint8_t rf_level, uint8_t own)
 {
 	if (board.power_count == 0) {
 		return 0;
+	}
+	if (rf_level == RADIO_HS_RF_OWN) {
+		return own < board.power_count ? own : board.power_count - 1u;
 	}
 	return (uint8_t)(((uint32_t)rf_level * (board.power_count - 1u) + 127u) / 255u);
 }
@@ -7180,6 +7183,15 @@ static void hotspot_arm(radio_sm_t *sm)
 	sm->dmr_keyed = key_tx(sm, sm->hs_tx_hz, RADIO_BW_12K5, sm->hs_power, &none);
 	if (was && !sm->dmr_keyed) {
 		board.radio->rx(sm->hs_rx_hz, RADIO_BW_12K5, &none);	// refused now (TX inhibit): not left armed
+	}
+}
+
+// A hotspot on the radio's own power (the host's RF level left at its default) follows the radio's power level
+static void hotspot_follow_power(radio_sm_t *sm)
+{
+	if (sm->hotspot && sm->hs_rf_level == RADIO_HS_RF_OWN && sm->hs_power != sm->view.power) {
+		sm->hs_power = sm->view.hs_power = sm->view.power;
+		hotspot_arm(sm);
 	}
 }
 
@@ -7408,6 +7420,9 @@ static void hotspot_enter(radio_sm_t *sm, uint32_t rx_hz, uint32_t now_ms)
 	sm->hs_rx_hz = hz;
 	sm->hs_tx_hz = 0;
 	sm->hs_carrier = false;
+	// The power set now, not the one from the last hotspot: the first keying (hotspot_freq) comes before the host's
+	// level, and the screen shows it
+	sm->hs_power = sm->view.hs_power = radio_sm_hotspot_power(sm->hs_rf_level, sm->view.power);
 	sm->hotspot = true;
 	sm->view.hotspot = true;
 	sm->view.state = RS_IDLE;
@@ -7588,6 +7603,9 @@ static void apply_prefs(radio_sm_t *sm, const settings_t *st)
 	}
 	if (!sm->temp_power) {
 		sm->view.power = channel_power(&sm->view.ch);
+#if CONFIG_DMR
+		hotspot_follow_power(sm);	// the settings' power while a hotspot runs on it
+#endif
 	}
 	sm->vfo_step_set = st->vfo_step_hz >= 1000u && st->vfo_step_hz <= 1000000u ? st->vfo_step_hz : 0;
 	step_update(sm);
@@ -8318,7 +8336,6 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR
 	sm->codec = board.vocoder != NULL && board.vocoder->present != NULL && board.vocoder->present();
 	sm->view.dmr.codec = sm->codec;
-	sm->hs_power = default_power();
 	dmr_call_init(board.dmr);	// board.dmr NULL: DMR channels receive nothing and refuse PTT
 	ambeVoiceInit(pcm_audio(), board.vocoder);
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
@@ -8346,7 +8363,8 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	select_position(sm, st.zone_index, st.channel, st.zone_pos);
 	apply_prefs(sm, &st);
 #if CONFIG_DMR
-	sm->hs_power = default_power();
+	sm->hs_power = sm->view.hs_power = default_power();
+	sm->hs_rf_level = RADIO_HS_RF_OWN;
 #endif
 	if (!sm->have_channels || (st.vfo && VFO_AVAILABLE)) {
 		if (VFO_AVAILABLE) {
@@ -8691,6 +8709,9 @@ static void power_request(radio_sm_t *sm, const radio_req_t *req)
 	}
 	sm->temp_power = sm->view.power != channel_power(&sm->view.ch);
 	set_temporary(sm);
+#if CONFIG_DMR
+	hotspot_follow_power(sm);
+#endif
 	changed(sm);
 }
 
@@ -8908,9 +8929,10 @@ static void dmr_privacy_request(radio_sm_t *sm, const radio_req_t *req)
 
 static void hs_power_request(radio_sm_t *sm, const radio_req_t *req)
 {
-	uint8_t level = radio_sm_hotspot_power((uint8_t)req->arg);
+	sm->hs_rf_level = (uint8_t)req->arg;
+	uint8_t level = radio_sm_hotspot_power(sm->hs_rf_level, sm->view.power);
 	bool same = level == sm->hs_power;
-	sm->hs_power = level;
+	sm->hs_power = sm->view.hs_power = level;
 	// The host re-sends its level (a split TX half's cap): the same one keeps the keying as it is, unless keying is
 	// held now (a critical battery), which drops it
 	if (!same || !sm->dmr_keyed || tx_held(sm)) {
