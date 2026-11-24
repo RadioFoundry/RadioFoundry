@@ -116,7 +116,7 @@ MMDVMHost or a CPS on the same serial port: the host link switches by what it re
 | Check | If not |
 |---|---|
 | Carrier on frequency within a few hundred Hz | TX center / SIG_CENTER (factory TX center byte) |
-| Power levels 0-8 rise monotonically; level 8 near 5 W VHF / 4 W UHF | `bf_cal_power_level` and the 11.3 fractions; DAC B must be powered (PD_CTRL bit 1 clear) |
+| The five power levels read 100 mW, 1 W, 2.5 W, 5 W and 8 W (UHF) / 9 W (VHF) on a wattmeter | the places in `boards/dm32/power_levels.h` on the rows of 11.3 (hardware-dm32.md 11.4); DAC B must be powered (PD_CTRL bit 1 clear) |
 | Deviation about 2.5 kHz (12.5 kHz channel) with normal speech; no distortion | `hrc7000_fm_tx` deviation, mic gain (GCR_ADCL 11 dB) |
 | CTCSS on the air at the right frequency | C7000 TX sub-audio; or switch to the FD6818's (`fd6818_set_tx_ctcss`) |
 | PA off and receiver back on PTT release | `tx_off()` |

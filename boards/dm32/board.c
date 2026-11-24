@@ -5,6 +5,7 @@
 #include "config.h"
 #include "dm32.h"
 #include "pins.h"
+#include "power_levels.h"
 #include "platform.h"
 #include "hrc_afsk.h"
 #include "hrc_bcast.h"
@@ -39,9 +40,17 @@ static const band_t bands[] = {
 #endif
 };
 
-// Five of the power levels 0..8 of hardware-dm32.md 11.3: very low, low, mid, a step above mid, high (radio_dm32.c).
-// Labels are nominal: the radio is rated 5 W VHF / 4 W UHF at high power; check against a meter at the bring-up
-static const char *const power_names[] = { "L-", "L", "M", "M+", "H" };
+// The power levels, per band (power_levels.h, hardware-dm32.md 11.4: set with a wattmeter). The lower four are the same
+// on both bands, the top is the high calibration row
+static const char *const power_names[] = { "100mW", "1W", "2.5W", "5W", "8W" };
+static const char *const power_names_vhf[] = { "100mW", "1W", "2.5W", "5W", "9W" };
+_Static_assert(sizeof(power_names) / sizeof(power_names[0]) == DM32_POWER_LEVELS &&
+	       sizeof(power_names_vhf) / sizeof(power_names_vhf[0]) == DM32_POWER_LEVELS,
+	       "a name for each level of power_levels.h");
+static const board_power_band_t power_bands[] = {
+	{ 136000000u, 174000000u, power_names_vhf },
+	{ 400000000u, 480000000u, power_names },
+};
 
 // docs/ux/information-architecture.md 7.1 (the DM-32 has no top key; SK1 / SK2 are the side keys below the PTT)
 static const keymap_entry_t keymap[] = {
@@ -100,7 +109,9 @@ const board_t board = {
 #endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
-	.power_default = 1,	// low
+	.power_bands = power_bands,
+	.power_band_count = sizeof(power_bands) / sizeof(power_bands[0]),
+	.power_default = 1,	// 1 W
 	.display = &dm32_display,
 	.input = &dm32_input,
 	.keymap = keymap,

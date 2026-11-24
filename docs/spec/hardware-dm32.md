@@ -1343,6 +1343,64 @@ Read three pieces into a 0x175-byte working image:
 
 For a UHF frequency below 400 MHz an unsigned subtraction gives idx 4. Clamp to 0.
 
+### 11.4 Power levels
+
+RadioFoundry has five levels: 100 mW, 1 W, 2.5 W, 5 W, and the high row H at the top (8 W on UHF, 9 W on VHF). The
+lower four are the same power on both bands. Each level is a fixed place on the radio's own rows L, M and H at the TX
+frequency (11.3), not a fixed drive. The drive a watt takes differs from radio to radio, while the factory calibration
+puts each radio's rows at the same powers (L reads about 2.4 W on both bands), so a place between the rows gives about
+the same power on every radio. The place is in thousandths of a row:
+
+| Place p | Drive |
+|---|---|
+| 0 to 1000 | L · p / 1000: a part of the low row |
+| 1000 to 2000 | L + (M − L) · (p − 1000) / 1000 |
+| 2000 to 3000 | M + (H − M) · (p − 2000) / 1000; 3000 and over is H |
+
+Rounded to the nearest count, clamped 0..4095 (`bf_cal_drive_pos`, `bf_cal_power_pos` in `drivers/cal/baofeng`). The
+levels' places are in `boards/dm32/power_levels.h`:
+
+| Level | VHF place | UHF place |
+|---|---|---|
+| 100 mW | 654 (0.654 · L) | 651 (0.651 · L) |
+| 1 W | 810 (0.810 · L) | 804 (0.804 · L) |
+| 2.5 W | 1058 (L + 5.8 % of M − L) | 1050 (L + 5 % of M − L) |
+| 5 W | 2000 (M) | 2129 (M + 12.9 % of H − M) |
+| 9 W (VHF), 8 W (UHF) | 3000 (H) | 3000 (H) |
+
+The places come from a wattmeter (averaging, into a dummy load, FM, a full battery) on one radio, at 445 and 146 MHz,
+whose rows there are L / M / H 1467 / 1964 / 2816 (UHF) and 1376 / 1856 / 3024 (VHF):
+
+| Level | UHF drive | UHF watts | VHF drive | VHF watts |
+|---|---|---|---|---|
+| 100 mW | 955 | 0.11-0.15 | 900 | 0.10-0.14 |
+| 1 W | 1179 | 1.08-1.10 | 1115 | 1.04 |
+| 2.5 W | 1492 | 2.5, interpolated | 1404 | 2.5, interpolated |
+| 5 W | 2074 | 5.16 | 1856 | 5.02-5.07 |
+| Top | 2816 | 7.9-8.0 | 3024 | 9.1-9.2 |
+
+- **Under L, a part of L.** The drive that gives 100 mW, 1 W and 2 W is the same part of L on both bands within 0.6 %
+  (0.651 and 0.654, 0.804 and 0.810, 0.954 and 0.959), 4-9 counts apart. A line through L and M put the same points
+  2-4 % of M − L apart, up to 19 counts. The calibration's own lowest level is also a part of L (0.90 · L, 11.3).
+- **2.5 W** is just over L, which reads 2.35-2.39 W. From the 2 W point to L the output rises about 4.2 mW per count
+  on UHF and 4.8 mW on VHF, from L to M 4.6 and 5.6 mW, so 2.5 W is 25-28 counts over L. The 2.5 W drive itself is not
+  measured yet.
+- **5 W** is M on VHF (5.06 W). On UHF M gives 4.67 W, so 5 W is 12.9 % of the way from M to H.
+- **The top** is H. More drive buys little: 3200 gave 9.0 W on UHF and 3400 under 9.4 W; on VHF 3200 and 3400 gave no
+  more than H.
+- **Across the band**, keyed at about these drives (the 5 W and top drive from that frequency's rows), the
+  levels read 0.07-0.14, 1.04-1.09, 5.03-5.45 and 7.64-8.47 W at 432 and 449.9 MHz, and 0.07-0.14, 1.03-1.20,
+  4.96-5.28 and 9.00-9.35 W at 144.01 and 147.99 MHz.
+- **100 mW sits near the PA's turn-on.** Under about 0.63 · L (925 on UHF, 875 on VHF on that radio) the output is
+  zero, so 100 mW is about 2 % of L over that edge. The 100 mW level held over the band (0.07-0.15 W) and after three
+  5 s key-ups at the top level (0.14-0.15 W hot). A radio whose edge sits higher would show nothing at 100 mW; that
+  level's place would then move up to 200-250 mW.
+- **The DMR key-up** (8.5) keeps L as the dead zone's anchor (`pa_keyup_plan`'s ref), not the lowest level. The tables
+  in 8.5 name the earlier levels, the calibration steps 0, 1, 4, 6 and 8 (L-, L, M, M+, H). The low test drive there,
+  955 on UHF and 900 on VHF, is the 100 mW level.
+- **Without calibration** every level is the fallback drive (1408, about 2 W), as in 11.3.
+- Not measured yet: a low battery, DMR bursts, and other radios.
+
 ---
 
 ## 12. GPS

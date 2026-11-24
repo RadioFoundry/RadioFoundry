@@ -440,9 +440,11 @@ hold), or change the power with **\***, **1**.
 
 ### DM-32UV power levels
 
-Five levels, L-, L, M, M+, H, from the radio's factory calibration. The radio is rated 5 W (VHF) and
-4 W (UHF) at high power. The levels haven't been measured. A channel without a power in the codeplug uses L.
-**\***, **1** steps through L-, L and H.
+Five power levels, measured into a dummy load: 100 mW, 1 W, 2.5 W, 5 W, and a top level of 8 W on UHF or 9 W on
+VHF. The top level differs by band, and the screen shows the level for the channel's band. Each level is set from the
+radio's own factory calibration, so a radio whose amplifier needs more drive gets more
+([how](../spec/hardware-dm32.md#114-power-levels)). A channel without a power in the codeplug uses 1 W. **\***, **1**
+steps through 100 mW, 1 W and the top level.
 
 ### DM-32UV battery
 

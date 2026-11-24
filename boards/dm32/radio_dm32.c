@@ -8,6 +8,7 @@
 #include "dm32.h"
 #include "config.h"
 #include "pins.h"
+#include "power_levels.h"
 #include "platform.h"
 #include "hal_time.h"
 #include "rf/fd6818/fd6818.h"
@@ -491,12 +492,11 @@ static void retune(bool keep)
 // level's. Any task sets it; tx_off clears it
 static volatile uint16_t drive_override;
 
-// A power level's PA drive: five of the calibration's nine steps (drivers/cal/baofeng): very low, low, mid, a step
-// between mid and high, high. Draft choice, to be set with a wattmeter
+// A power level's PA drive: its place on this radio's own calibration rows at the TX frequency (power_levels.h,
+// hardware-dm32.md 11.4)
 static uint16_t level_drive(uint32_t hz, uint8_t level)
 {
-	static const uint8_t step[5] = { 0, 1, 4, 6, 8 };
-	return bf_cal_power_level(hz, step[level > 4u ? 4u : level]);
+	return bf_cal_power_pos(hz, dm32_level_pos(hz >= UHF_FROM_HZ, level));
 }
 
 #if CONFIG_DMR
@@ -509,7 +509,7 @@ static void keyup_plan(uint32_t hz)
 		top = v > top ? v : top;
 	}
 	pa_keyup_select(&keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0]);
-	ku = pa_keyup_plan(tx_drive, top, level_drive(hz, 1));	// the dead zone's anchor: the calibration's low row
+	ku = pa_keyup_plan(tx_drive, top, bf_cal_power_pos(hz, BF_CAL_POS_LOW));	// the dead zone's anchor: the low row
 }
 #endif
 

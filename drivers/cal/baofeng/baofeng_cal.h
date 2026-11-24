@@ -25,6 +25,15 @@ uint16_t bf_cal_modcal(uint32_t hz);
 bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p);
 // DAC value for a power level 0..8 (hardware-dm32.md 11.3), clamped to 4095; the uncalibrated fallback when false
 uint16_t bf_cal_power_level(uint32_t hz, uint8_t level);
+// A drive placed on the radio's own rows (hardware-dm32.md 11.4), pos in thousandths of a row: 0..1000 a part of the
+// low row, 1000..2000 from low to mid, 2000..3000 from mid to high, 3000 and over the high row. Rounded, clamped to
+// 4095. Pure
+#define BF_CAL_POS_LOW		1000u
+#define BF_CAL_POS_MID		2000u
+#define BF_CAL_POS_HIGH		3000u
+uint16_t bf_cal_drive_pos(const bf_cal_power_points_t *p, uint16_t pos);
+// The same at a TX frequency in Hz; the uncalibrated fallback (11.3) when there is no calibration
+uint16_t bf_cal_power_pos(uint32_t hz, uint16_t pos);
 // A calibration row read the way the stock firmware reads it (hardware-dm1801pro.md 6.4): the band by the
 // TX frequency (UHF above 200 MHz), the frequency clamped to the band limits (0x00 / 0xCC), the five TX points (0x314 /
 // 0x33C) and linear interpolation truncated toward the lower point's byte. REG40 has three bytes, at TX points 0, 2

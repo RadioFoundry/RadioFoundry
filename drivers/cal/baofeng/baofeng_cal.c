@@ -284,6 +284,34 @@ uint16_t bf_cal_power_level(uint32_t hz, uint8_t level)
 	return (uint16_t)(v < 0 ? 0 : v > 4095 ? 4095 : v);
 }
 
+// 11.4: a fixed place between the rows, so a radio whose PA needs more drive per watt gets more at every level
+uint16_t bf_cal_drive_pos(const bf_cal_power_points_t *p, uint16_t pos)
+{
+	int32_t a, b, part;
+	if (pos <= BF_CAL_POS_LOW) {
+		a = 0;
+		b = p->low;
+		part = pos;
+	} else if (pos <= BF_CAL_POS_MID) {
+		a = p->low;
+		b = p->mid;
+		part = pos - BF_CAL_POS_LOW;
+	} else {
+		a = p->mid;
+		b = p->high;
+		part = pos < BF_CAL_POS_HIGH ? pos - BF_CAL_POS_MID : 1000;
+	}
+	int32_t d = b - a;
+	int32_t v = a + (d * part + (d < 0 ? -500 : 500)) / 1000;
+	return (uint16_t)(v < 0 ? 0 : v > 4095 ? 4095 : v);
+}
+
+uint16_t bf_cal_power_pos(uint32_t hz, uint16_t pos)
+{
+	bf_cal_power_points_t p;
+	return bf_cal_power(hz, &p) ? bf_cal_drive_pos(&p, pos) : FALLBACK_DAC;
+}
+
 // Band limit in 10 Hz units from a BCD halfword in 100 kHz units (four zero digits below it give the 10 Hz value).
 // 0, or 1000 MHz and up (an erased page reads 1666.5), gives the default, as the radio's start-up does
 static uint32_t limit_10hz(uint16_t off, uint32_t dflt)
