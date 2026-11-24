@@ -126,7 +126,7 @@ export const nxdnSystem = {
 		max: 64,
 		columns: [
 			{ key: "id", label: "editor.nxdn.key_id", type: "int", min: 0, max: RAN_MAX },
-			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX },
+			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX, secret: true },
 		],
 		decode(v) {
 			if (v.length !== 7 || v[1] !== SCRAMBLER) return null;

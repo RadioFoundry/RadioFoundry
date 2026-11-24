@@ -8,7 +8,7 @@ import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum,
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers } from "../codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, followListen } from "../codeplug/model.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
@@ -42,6 +42,7 @@ const S = {
 	radios: [],
 	conn: null,		// {transport, radio, image: the radio's bytes as last read or written, cable}
 	lastRadioImage: null,	// the last connection's image, for a bug report after it closed
+	areaSource: null,	// only a read/write on this connection establishes a settings merge baseline
 	iddbChanged: false,
 	sim: location.hash.startsWith("#sim"),		// #sim-foreign: a radio still holding stock data in its settings area
 	filter: {},
@@ -58,6 +59,7 @@ const messages = h("div", { class: "ed-messages", "aria-live": "polite" });
 
 function load(model, name, { fromRadio = false } = {}) {
 	S.model = model;
+	S.areaSource = fromRadio ? S.conn : null;
 	S.fileName = name;
 	S.history.reset();
 	S.dirty = false;
@@ -68,7 +70,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	draftSoon();
 }
 
-// Run fn as one undoable change
+// Run fn as one undoable change. A channel it left in a listen band (an import, a pasted RX) gets TX on RX in the same
+// step, as decode gives a loaded one
 function change(label, fn) {
 	S.history.record(S.model, label);
 	const r = fn();
@@ -76,6 +79,7 @@ function change(label, fn) {
 		S.history.cancel();
 		return false;
 	}
+	for (const c of S.model.channels) followListen(c);
 	S.dirty = true;
 	refresh();
 	draftSoon();
@@ -788,6 +792,7 @@ async function onLine(c) {
 		diag.note("radio changed: read before write", { was: c.uid, now: uid });
 		c.image = null;
 		c.dbKnown = false;
+		S.areaSource = null;
 	}
 	c.uid = uid;
 }
@@ -1002,7 +1007,9 @@ async function planWrite() {
 		// the same codeplug with this radio's own name, ID and boot text kept, and what each would send
 		// (compared byte for byte: two plans can send the same number of bytes. The second is planned only when there
 		// is something to keep: each plan is a pass over every block's CRC)
-		areaForWrite(file.bytes, c.image.bytes, S.model.base?.bytes);
+		// An opened file (including a restored draft) is a replacement, not an edit of this radio's keys.
+		// Using its bytes as a merge baseline silently drops unchanged channel tags and trunking systems.
+		areaForWrite(file.bytes, c.image.bytes, S.areaSource === c ? S.model.base?.bytes : null);
 		const kept = keepIdentity(file, c.image);
 		const differs = IDENTITY.some(([a, b]) => kept.bytes.subarray(a, b).some((x, i) => x !== file.bytes[a + i]));
 		const plans = { file: await c.transport.plan(file, c.image, { iddb }) };
@@ -1087,6 +1094,7 @@ function writeChosen(c, { want }, iddb, prepared) {
 			if (iddb) c.dbKnown = true;
 			S.iddbChanged = false;
 			S.model.base = want;
+			S.areaSource = c;
 			S.model.iddb = dbHeader(want.bytes);	// format N when it went to a radio that reads only that
 			S.dirty = false;
 			refresh();

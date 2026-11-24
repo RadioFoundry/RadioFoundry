@@ -120,7 +120,7 @@ static bool dmr_enter(hrc_t *dev, uint8_t mod2, uint8_t mod1, uint8_t mic_gain)
 	ok &= hrc_write(dev, 4, 0xE0, 0xC9);		// codec under MCU control, mic on
 	ok &= hrc_set_mic_gain(dev, mic_gain);
 	ok &= hrc_write(dev, 4, 0x26, 0xFD);
-	ok &= hrc_write(dev, 4, 0x81, 0x19);		// system interrupt mask: post access, received data, PHY
+	ok &= hrc_write(dev, 4, 0x81, HRC_INT_MASK_DMR);
 	ok &= hrc_write(dev, 4, 0x83, 0xFF);		// clear interrupts
 	return ok;
 }

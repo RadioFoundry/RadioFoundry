@@ -295,6 +295,105 @@ class BootloaderRoute(unittest.TestCase):
         self.assertIn("step 3", str(e.exception))
 
 
+
+class LoaderStep1(unittest.TestCase):
+    """serial_loader's step 1 and port open against line noise: stray bytes before the 06 are read past, a late 06 from
+    a repeated step 1 never reaches step 2, a radio running its firmware still gets the hint, and an opened port waits
+    for the line to settle and drops what arrived meanwhile."""
+
+    def setUp(self):
+        self.df = sf.tool("serial_loader")
+        self.no_wait = mock.patch.object(self.df, "LATE_ACK_WAIT", 0)
+
+    def noisy(self, noise_per_step1, extra_acks=0, answer=True):
+        """A loader whose line puts noise_per_step1[i] in front of the i-th 0x52's answer (b"" for none), and
+        extra_acks late 06s after the first 06 it gives; answer False: the loader never answers, only the noise."""
+        df = self.df
+
+        class Noisy(df.FakeBootloader):
+            def __init__(self):
+                super().__init__(model=df.MODELS["dm1801pro"])
+                self.step1s = 0
+
+            def write(self, b):
+                if self.state == 1 and b == b"\x52":
+                    i = self.step1s
+                    self.step1s += 1
+                    self.out += noise_per_step1[i] if i < len(noise_per_step1) else b""
+                    if not answer:
+                        return
+                    super().write(b)
+                    if self.state == 2:
+                        self.out += b"\x06" * extra_acks
+                    return
+                super().write(b)
+        return Noisy()
+
+    def flash(self, fake, raw):
+        flasher = self.df.Flasher(fake, log=lambda m: None, step_timeout=0.05, model=self.df.MODELS["dm1801pro"])
+        with self.no_wait:
+            flasher.flash(raw, "rfoundry.bin")
+
+    def test_stray_bytes_before_the_answer_are_read_past(self):
+        fake = self.noisy([b"\x00", b"\x10\x00"])
+        raw = app_image(3000)
+        self.flash(fake, raw)
+        self.assertEqual(fake.image(), raw)
+        self.assertFalse(fake.errors)
+
+    def test_too_much_noise_sends_step_1_again(self):
+        # nine stray bytes are more than step 1 reads past: the first try is abandoned and 0x52 sent again
+        df = self.df
+
+        class Fussy(df.FakeBootloader):
+            def __init__(self):
+                super().__init__(model=df.MODELS["dm1801pro"])
+                self.step1s = 0
+
+            def write(self, b):
+                if self.state == 1 and b == b"\x52":
+                    self.step1s += 1
+                    if self.step1s == 1:
+                        self.out += b"\x00" * 9
+                        return
+                super().write(b)
+        fake = Fussy()
+        raw = app_image(2000)
+        self.flash(fake, raw)
+        self.assertEqual(fake.step1s, 2)
+        self.assertEqual(fake.image(), raw)
+
+    def test_a_late_answer_never_reaches_step_2(self):
+        fake = self.noisy([b""], extra_acks=2)
+        raw = app_image(3000)
+        self.flash(fake, raw)
+        self.assertEqual(fake.image(), raw)
+        self.assertFalse(fake.errors)
+
+    def test_firmware_running_still_gets_the_hint(self):
+        fake = self.noisy([b"\x10"] * 3, answer=False)
+        with self.assertRaises(self.df.FlashError) as e:
+            self.flash(fake, app_image(1000))
+        self.assertIn("answered 10 10 10", str(e.exception))
+        self.assertIn("screen is on", str(e.exception))
+        self.assertEqual(fake.state, 1)
+
+    def test_silence_is_no_answer(self):
+        fake = self.df.FakeBootloader(silent=True, model=self.df.MODELS["dm1801pro"])
+        with self.assertRaises(self.df.FlashError) as e:
+            self.flash(fake, app_image(1000))
+        self.assertIn("step 1: no answer", str(e.exception))
+
+    def test_an_opened_port_settles_then_drops_its_input(self):
+        events = []
+        port = mock.Mock(**{"reset_input_buffer.side_effect": lambda: events.append("reset")})
+        serial = mock.MagicMock(Serial=mock.Mock(return_value=port), SerialException=OSError)
+        with mock.patch.dict(sys.modules, {"serial": serial}), \
+                mock.patch.object(self.df.time, "sleep", side_effect=lambda t: events.append(("sleep", t))):
+            self.df.SerialPort("/dev/ttyUSB0")
+        self.assertEqual(events, [("sleep", self.df.OPEN_SETTLE), "reset"])
+        self.assertGreaterEqual(self.df.OPEN_SETTLE, 0.5)
+
 class Command(unittest.TestCase):
     """rfoundry flash for a DM-1801 Pro, with the cable side replaced by recorders."""
 
