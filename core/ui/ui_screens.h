@@ -31,6 +31,7 @@ typedef enum {
 	UI_BANNER_RESULT,	// result of something we sent (radio check answered, message delivered, ...)
 	UI_BANNER_INFO,		// anything else ("Hotspot started by host. Back to stop.")
 	UI_BANNER_ZONE_OFFER,	// another radio offers a zone or channel: CONTEXT opens the offer
+	UI_BANNER_APRS_MESSAGE,	// APRS message addressed to us: CONTEXT opens the APRS messages screen
 } ui_banner_kind_t;
 
 typedef struct {

@@ -329,12 +329,25 @@ the debug link's SETTING op 29 sets it in RAM only.
 
 | Board | FM | DMR |
 |---|---|---|
-| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
-| without it | not changed | the mic samples are scaled before the vocoder (`ambeVoiceSetMicGain`, with saturation) |
+| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | DMR: the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the PCM gain is the board's `mic_pcm_db` alone |
+| without it | not changed | the PCM gain is the board's `mic_pcm_db` plus (step - 5) x 2 dB |
 
-The board only stores the offset in the hook; a change takes effect at the next transmission. On an HR_C7000 radio
-the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
-the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
+**PCM gain.** The mic samples go to DMR's AMBE+2 encoder (`ambeVoiceSetMicGainQ8`, pushed by `radio_set_mic_gain`)
+through a gain with a peak limiter (`drivers/audio/miclimit/miclimit.h`): one gain a
+20 ms block, never more than the set gain, never so much that the block's peak passes 28000 (about -1.4 dBFS). It
+falls at once and recovers by 0.5 dB a block. At 0 dB nothing is applied, so a board at its own level encodes the
+samples as delivered. `hal_radio_t.mic_pcm_db` is a board's gain at step 5 for a mic that reaches the PCM quiet:
+one radio has 12 dB (its digital voice decoded off air at -31 dBFS against another maker's handheld's -18 dBFS,
+2026-11-19; its hardware page has the measurement). P25's voice path keeps the step alone and takes no board gain.
+The debug link shows the gain in force (`voice.mic_pcm_db`, the `dmr` section) and the latest transmission: the mic's
+peak, the encoder's peak after the gain and the limiter's lowest gain in dB (`voice.tx_mic_peak voice.tx_enc_peak
+voice.tx_mic_low_db`). A lowest gain under the set gain means the
+limiter cut: some cut on a shout is expected, a cut on normal speech says the gain is too high.
+
+The board only stores the offset in the hook; a change takes effect at the next transmission (the PCM gain at the
+next block). On an HR_C7000 radio the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same
+codec ADC, so on these radios the board's mic gain also moves the VOX level; the PCM gain doesn't. Without
+`CONFIG_DMR` and without the hook the row is dimmed.
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)
 

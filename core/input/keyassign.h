@@ -41,6 +41,8 @@ typedef enum {
 	KEYFN_VFO_TOGGLE,	// between the channel and the VFO, as a VFO/MR key (CONFIG_VFO)
 	KEYFN_TONE_BURST,	// FM repeater access, raw edges (press only)
 	KEYFN_TALK_LABEL,	// Home's talk line: the talkgroup's name or its number first (CONFIG_DMR)
+	KEYFN_SCAN_SKIP,	// skip the channel that stopped the scan, until the scan stops
+	KEYFN_MONITOR_TOGGLE,	// latch the monitor on / off, as quick tile 5 does (FM: the squelch held open; DMR: digital monitor)
 	KEYFN_COUNT
 } keyfn_t;
 

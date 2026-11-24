@@ -9,6 +9,7 @@
 #include "board.h"
 #include "storage/storage.h"
 #include "hal_time.h"
+#include <string.h>
 
 bool ui_svc_aprs_view(aprs_view_t *v)
 {
@@ -55,6 +56,29 @@ bool ui_svc_aprs_msg(uint8_t i, aprs_msg_t *out, bool read)
 	return read ? aprs_msg(i, out) : aprs_msg_peek(i, out);
 }
 bool ui_svc_aprs_msg_delete(uint8_t i) { return aprs_msg_delete(i); }
+#endif
+
+#if CONFIG_APRS_RX
+void ui_svc_aprs_msg_poll(void)
+{
+	static uint32_t seen;
+	aprs_view_t v;
+	aprs_get_view(&v);
+	if (v.msg_serial == seen)
+		return;
+	seen = v.msg_serial;
+	aprs_msg_t m;
+	if (!aprs_msg_peek(0, &m))
+		return;
+	ui_event_t ev;
+	memset(&ev, 0, sizeof ev);
+	ev.kind = UI_EV_APRS_MESSAGE;
+	strncpy(ev.name, m.from, sizeof ev.name - 1);
+	strncpy(ev.text, m.text, sizeof ev.text - 1);
+	ui_notify(&ev);
+}
+#else
+void ui_svc_aprs_msg_poll(void) { }
 #endif
 
 #if CONFIG_APRS_RX

@@ -487,6 +487,9 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 - No VOX yet: the board code that reads the microphone level isn't written.
+- The microphone reaches the digital voice codec quieter than on other radios (measured 13 dB under another
+  maker's handheld), so DMR adds 12 dB at **Mic gain** 5 and holds a loud voice back rather than letting it distort.
+  **Mic gain** moves it 2 dB a step either way. Not yet checked on air.
 - Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
 - No beeps while transmitting: the radio's beep path would put them on the air. A beep still playing when the
   transmission ends is heard from then on. The DMR talk permit tone is a single short beep played just before the

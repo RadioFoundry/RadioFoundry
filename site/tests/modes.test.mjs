@@ -16,6 +16,7 @@ import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../st
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
 import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
+import { aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
 
 const VECTORS = new URL("../../tests/vectors/channel-modes.txt", import.meta.url);
 const bytes = (s) => (s === "-" ? null : Uint8Array.from(s.match(/../g) ?? [], (x) => parseInt(x, 16)));
@@ -532,6 +533,46 @@ test("NXDN: offered with the radio's feature; group, unit and channel ID ranges"
 	a.contact.id = 7;
 	a.dmrId = 3101276;
 	assert.ok(has(validate(m, { features: "FM,DMR,NXDN" }), "nxdn_unit_range", a));
+});
+
+test("AES keys are traffic keys: round-trip by system and ID, stripped exports retain the protected channel", () => {
+	const m = empty(), c = newChannel({ name: "Voice" });
+	m.channels.push(c);
+	for (const name of ["North", "South"]) m.systems.push(newSystem(m, 5, name));
+	numberAll(m);
+	m.systems[0].trafficKeys = [{ id: 0, key: "12".repeat(32) }, { id: 255, key: "34".repeat(32) }];
+	m.systems[1].trafficKeys = [{ id: 0, key: "56".repeat(32) }];
+	setKind(m, c, 5);
+	c.params.id = 0;
+	const keys = (x) => x.systems.map((s) => s.trafficKeys.map(({ id, key }) => ({ id, key })));
+	const img = encode(m), again = decode(img);
+	// system, algorithm 0x25, key ID (u16), flags, the 32 key bytes
+	assert.equal(hexOf(getValue(area(img), MODE_KEY.traffic)), "0025000000" + "12".repeat(32));
+	assert.deepEqual(keys(again), keys(m));
+	assert.equal(again.channels[0].params.id, 0);
+	assert.equal(again.channels[0].rxOnly, true);
+	again.systems[0].trafficKeys.shift();
+	const updated = round(again);
+	assert.deepEqual(keys(updated), [keys(m)[0].slice(1), keys(m)[1]]);
+	assert.equal(countSecrets(img.bytes), 3);
+	withoutSecrets(img.bytes);
+	assert.equal(countSecrets(img.bytes), 0);
+	const stripped = decode(img);
+	assert.equal(stripped.channels[0].kind, 5);
+	assert.equal(stripped.channels[0].params.id, 0);
+	assert.ok(stripped.systems.every((s) => s.trafficKeys.length === 0));
+});
+
+test("AES: Generate fills a key from the CSPRNG", () => {
+	const bytes = Uint8Array.from({ length: 32 }, (_, i) => i);
+	const rng = { getRandomValues: (a) => (a.set(bytes.subarray(0, a.length)), a) };
+	assert.equal(randomAesKey(rng), hexOf(bytes));
+	const a = randomAesKey(), b = randomAesKey();
+	assert.match(a, /^[0-9A-F]{64}$/);
+	assert.notEqual(a, b);
+	const col = aesSystem.traffic.columns.find((x) => x.key === "key");
+	assert.ok(col.secret && col.generate);
+	assert.match(col.generate(), /^[0-9A-F]{64}$/);
 });
 
 test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque records", () => {

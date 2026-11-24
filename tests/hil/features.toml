@@ -107,6 +107,11 @@ source = ["core/dmr/call", "core/dmr/ambe", "core/dmr/fec", "drivers/modem", "ha
 switch = "DMR_PRIVACY"
 spec = "docs/spec/dmr-voice.md"
 
+[feature.dmr_aes]
+switch = "DMR_AES"
+spec = "docs/spec/dmr-voice.md"
+manual = "A receiver of another make with the same AES-256 key and key ID plays our over from key-up and when it joins after key-up, simplex and through a repeater (the missing-key refusal is test_dmr_aes.py)"
+
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
 # Packet data under a privacy key: the privacy header, the user data encrypted, or held back

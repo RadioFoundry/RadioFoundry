@@ -264,6 +264,7 @@ when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
+- Or a key set to **Monitor toggle** in [Settings > Keys](17-settings.md), which does what **\***, **5** does.
 
 Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
 [scan](12-scan.md) started with it on keeps it on at every channel. While it
@@ -283,7 +284,7 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
-- Calls with stronger encryption (they send a PI header) are never played.
+- On builds with AES-256 enabled, the radio can play a call when it receives the opening privacy header and has the matching AES key. AES transmissions repeat the message indicator during the call for receivers joining late.
 - Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
   radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
   fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
@@ -292,14 +293,45 @@ been checked against another radio yet ([Radio reference](23-radios.md)).
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
   off again.
 
-To set the key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
+For **AES-256 voice**, open **Systems** in the Codeplug Editor, add a **DMR AES-256** system, and name it.
+Add each traffic key with its on-air PI key ID (0–255). **Generate** fills the key with 64 random hexadecimal
+digits from your browser; use it rather than typing a key, since typed keys tend to be weak. **Show AES keys**
+shows the digits. On the channel, choose **DMR AES-256**, select the system and PI key ID, then write the codeplug
+to the radio. Both radios must have the same key bytes and ID. The system and channel must both allow transmit.
+
+On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
+system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are
+disabled on these channels, and your GPS position is not sent on them. The editor's image export omits key bytes by
+default. Including keys produces a file that contains the keys.
+
+For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
+where its encryption sequence stands, so it never reuses one after a restart. Press PTT again.
+
+Radios of other makes need a part of the signal that not every radio sends yet. Two radios running RadioFoundry always
+understand each other. Check [Feature matrix](../feature-matrix.md) (the `DMR_AES` row) for which radios can talk AES
+to radios of other makes; on the others another make plays the first moments and then noise.
+
+What AES does not do:
+
+- The radio IDs, the talkgroup and the talker alias stay readable to anyone listening.
+- A recorded over can be played back on air later, and nothing tells the listener it is a replay.
+- A clear call on an AES channel is still played.
+- Anyone with the radio and a USB cable can read the keys from its codeplug. If a radio is lost, give everyone new
+  keys.
+- Change the key after a factory reset. The radio repairs its saved encryption position after a settings restore
+  while it's running, but a restart before it saves the repair can reuse part of the sequence. Change the key if
+  settings were restored while the radio was off or you're unsure the repair was saved.
+- Change a key that has carried a lot of traffic, for example once a year on a busy channel.
+
+To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
 1. On **Key type**, press **OK** until it shows Motorola or Anytone.
 2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
    Press **OK** again.
 
 The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
-can't hold privacy keys yet. Developers can also load a key over USB with the debug tool:
+doesn't store these basic privacy keys. Developers can also load a key over USB with the debug tool:
 
 ```
 tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5

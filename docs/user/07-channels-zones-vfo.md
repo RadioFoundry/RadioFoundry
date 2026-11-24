@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Channels, Zones and the VFO
 
@@ -353,6 +354,9 @@ On a radio that runs P25 trunking, a channel can belong to a P25 trunked system 
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
 on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
 
+Control-channel acquisition accepts both ordinary status broadcasts and explicit multi-block network/site status.
+The configured system identity still has to match; receive-only operation never registers with the system.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
@@ -362,9 +366,13 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 | TG 201 | Registered. PTT asks the system for a voice channel |
 | Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
 | Denied, Reg. denied | The system refused the request or the registration |
+| Blocked system | The system's network ID is blocked: the radio never transmits on it |
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
+- A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
+  says "Blocked system: no TX" until the radio is switched off. A P25 conventional channel that announces one of them
+  says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
   ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).
@@ -372,7 +380,7 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
-- This has run against a test control channel only, not yet on a working system.
+- Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
 
 For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
 control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with

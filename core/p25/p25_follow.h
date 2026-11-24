@@ -43,9 +43,10 @@
 #define P25_FOLLOW_BAD_CRC	0x40	// the channel's Accept invalid CRC: a block that fails its CRC is taken when the
 					// same block failed lately, and the transmit side waits while the last one taken
 					// failed (view.unverified)
+#define P25_FOLLOW_BLOCKED	0x80	// a blocked system was heard here before: the transmit side starts blocked
 
 // Access timers, ms (docs/spec/p25-trunking.md 5)
-#define P25_ACC_SITE_MS		2000	// on a control channel without its site's identity yet: register anyway
+#define P25_ACC_SITE_MS		2000	// system verified, site's identity not heard yet: register anyway
 #define P25_ACC_ANSWER_MS	1000	// an inbound block without an answer: sent again
 #define P25_ACC_TRIES		3	// sends of one request
 #define P25_ACC_GAP_MS		100	// a resend waits this much plus up to P25_ACC_GAP_MS x 3 at random
@@ -125,6 +126,7 @@ enum {
 	P25_REG_DENIED,		// the system denied or refused registration or affiliation (deny_* say why)
 	P25_REG_RETRY,		// no answer, or a failure: tried again later
 	P25_REG_NO_TX,		// no inbound frequency for this control channel
+	P25_REG_BLOCKED,	// a blocked WACN or system ID: nothing is sent until the follower restarts
 };
 // A voice request (view.req)
 enum {
@@ -137,7 +139,7 @@ enum {
 	P25_REQ_NO_CHAN,	// granted on a channel we can't use (unknown identifier, TDMA, no transmit frequency)
 };
 // p25_follow_can_talk. OFF also while view.unverified (P25_FOLLOW_BAD_CRC)
-enum { P25_TALK_OK, P25_TALK_OFF, P25_TALK_NO_CC, P25_TALK_NOT_REG };
+enum { P25_TALK_OK, P25_TALK_OFF, P25_TALK_NO_CC, P25_TALK_NOT_REG, P25_TALK_BLOCKED };
 
 typedef struct {
 	uint8_t state;		// P25_FOLLOW_*
@@ -160,6 +162,7 @@ typedef struct {
 	uint32_t blocks, crc_fail;
 	uint16_t crc_taken;	// blocks taken with a failed CRC (P25_FOLLOW_BAD_CRC)
 	bool unverified;	// ... and the last block taken was one
+	bool sys_ok;		// a network status broadcast verified the control channel held: nothing is sent before
 	uint16_t mfr, mbt, pdu_other, grants, follows, enc_skip, tdma, no_iden, wrong_sys, hunts, cc_lost, voice_lost,
 		 wrong_call;
 	uint8_t op[P25_OPCODES];	// blocks of the standard's table by opcode (saturating at 255)
@@ -194,6 +197,7 @@ typedef struct {
 	bool site_heard;	// the site's identity heard on the control channel held
 	bool busy;		// the last outbound status symbol said the inbound channel is busy
 	bool ptt;		// PTT is held
+	bool blocked;		// a blocked system heard or programmed: silent until p25_follow_begin
 	uint16_t talk_ch;	// our granted channel
 	uint16_t cc_chan;	// the control channel's own number, from its broadcasts
 	uint8_t reg_rfss, reg_site;	// where registration was accepted
