@@ -470,7 +470,7 @@ the message in Text entry ([ui.md](ui.md) 2), upper case and only characters wit
 | The channel busy at key-up (busy channel lockout), PTT, a transmission or APRS in progress | waits `FOX_BUSY_RETRY_MS` (5 s) and tries again, with no beep |
 | The transmitter refuses at key-up for another reason | stops, `denied` |
 | The time-out ends a cycle | the cycle is cut (`fox_cut` counts it) and the next keys an interval later |
-| PTT pressed | stops; the user's transmission goes ahead |
+| PTT pressed | stops; the user's transmission goes ahead. On a radio whose PTT shares the programming cable's serial line ([gotchas.md](gotchas.md) 16.2), no new press counts while the radio transmits, so there PTT stops the fox only while it waits; Back stops it at any time |
 | A retune (channel, zone, VFO), scan, dual watch, hotspot entry, the 1750 Hz burst, satellite tracking, the air bench, power off | stops, `stopped` |
 | A PTT release with no press | ignored (the fox holds the transmitter) |
 | Leaving Tools > Fox | stops |
