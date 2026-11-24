@@ -4,8 +4,8 @@
 // radio_mic_pcm_q8(), core/radio/mic_gain.h; docs/spec/radio-features.md 3.6).
 //
 // Why a limiter and not plain saturation: the gain exists because a board's microphone can reach the encoder about
-// 13 dB under a commercial radio's level (one radio: -31 dBFS of loud speech against another maker's handheld's -18,
-// 19 Nov), and lifting that by 12 dB puts a shout's peaks past full scale. Clipped peaks reach the encoder as a harsh
+// 13 dB under a commercial radio's level (one radio: -31 dBFS of loud speech against another maker's handheld's -18),
+// and lifting that by 12 dB puts a shout's peaks past full scale. Clipped peaks reach the encoder as a harsh
 // square edge it codes as a buzz; a gain that steps down for that block codes as the same speech a little quieter.
 //
 // One gain for a whole block, never more than the set gain and never so much that the block's largest sample passes

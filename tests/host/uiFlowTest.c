@@ -2036,6 +2036,29 @@ static void vfo_split_dmr_checks(void)
 	}
 }
 
+// A duplex FM channel on Home shows the frequency it listens on, not its TX frequency, on every display (#1031). The
+// sim's channel 2 is a repeater: RX 147.060, TX 147.660
+static void fm_duplex_home_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		// Idle and receiving: RX and the offset. PTT held, transmitting or refused (the timeout): where PTT goes,
+		// the TX frequency
+		bool ok = sim_run("dlpos:2 expect:screen=home expect:shows=147.060 expect:hides=147.660 "
+				  "fmrx expect:shows=147.060 expect:hides=147.660 fmrxend "
+				  "pttdown expect:shows=147.660 expect:hides=147.060 "
+				  "timeout expect:shows=147.660 expect:hides=147.060 pttup", err, sizeof err);
+		// The offset where the row has room for it
+		if (ok && sim_geoms[g].w >= 160)
+			ok = sim_run("expect:shows=147.060_MHz_+600k", err, sizeof err);
+		if (!ok) {
+			printf("FAIL FM duplex channel on Home [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 static void no_battery_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
@@ -2428,6 +2451,7 @@ int main(void)
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();
+	fm_duplex_home_checks();
 	no_battery_checks();
 	dark_key_checks();
 #if CONFIG_VOLUME_BAR

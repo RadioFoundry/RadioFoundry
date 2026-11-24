@@ -1266,10 +1266,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
-	char buf[40];
+	char buf[60];	// a channel's three forms: up to 57 bytes ("1296.94375 MHz +300.125M" ...)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	color_t c = ui_col.fg;
+	bool arrow = true;
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
@@ -1334,15 +1335,29 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
 	} else {
-		// " MHz" goes before the frequency is cut (font.h alternates)
+		// A channel shows the frequency it listens on, as dual watch does, and a repeater's offset after it: no
+		// other row has either (#1031). Where PTT goes, with the arrow, only while PTT is held (transmitting, or
+		// refused: an out-of-band refusal needs the TX frequency in view) and in the VFO, whose receive frequency
+		// is the large one above. " MHz", then the offset, go before the frequency is cut (font.h alternates)
+		arrow = v->vfo || v->state == RS_TX || v->state == RS_TX_DENIED;
+		uint32_t hz = arrow ? v->ch.tx_hz : v->ch.rx_hz;
 		sb_str(&b, TEXT_ALT_OPEN);
-		sb_freq(&b, v->ch.tx_hz);
-		sb_str(&b, " MHz" TEXT_ALT_NEXT);
-		sb_freq(&b, v->ch.tx_hz);
+		sb_freq(&b, hz);
+		sb_str(&b, " MHz");
+		if (!arrow && v->ch.tx_hz != v->ch.rx_hz) {
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_freq(&b, hz);
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		}
+		sb_str(&b, TEXT_ALT_NEXT);
+		sb_freq(&b, hz);
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);	// no space, on purpose: as on DMR's talk line
+	int x = arrow ? gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim) : 0;	// no space, on purpose: as on DMR's talk line
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
