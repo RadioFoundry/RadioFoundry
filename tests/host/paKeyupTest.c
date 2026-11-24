@@ -226,6 +226,35 @@ static void test_proportional(void)
 	CHECK(pa_keyup_valid(&c, 1580));
 }
 
+// A boost's least drive (lift_pm, a part of ref): a level just over the PA's turn-on whose own boost is too small to
+// bring the turn-on in the window gets the lift; the levels whose boost is over it, the top at its cap, a level fast
+// by itself and a board with no window keep theirs
+static void test_lift(void)
+{
+	pa_keyup_cfg_t c = { .dead_pm = 0, .knee_us = 0, .slope_us = 1760, .window_us = 1500, .settle_us = 400,
+			     .pa_us = 900, .lift_pm = 2150 };
+	static const uint16_t d[5] = { 951, 1122, 1511, 2024, 2684 };
+	static const uint16_t b[5] = { 2044, 2044, 2418, 3239, 3220 };	// the lift (2.15 x 951), then 1.6 x d; the top 1.2 x
+	for (int i = 0; i < 5; i++) {
+		pa_keyup_t k = pa_keyup_drives(&c, d[i], 2684, 951, 4095);
+		CHECK(k.boost == (b[i] > 3220 ? 3220 : b[i]) && k.drive == d[i] && k.boost_us == 1500 && k.pa_us == 900 &&
+		      k.drive_us == 400);
+	}
+	CHECK(pa_keyup_drives(&c, 951, 2684, 951, 1900).boost == 1900);	// the board's limit over the lift
+	CHECK(pa_keyup_drives(&c, 951, 2684, 0, 4095).boost == 1522);	// no anchor, no lift
+	c.ease_pm = 1000;						// an approach caps the lift as it caps a boost
+	CHECK(pa_keyup_drives(&c, 900, 2684, 951, 4095).boost == 951);
+	// A level fast by itself is keyed at its own time: no boost to lift
+	static const pa_keyup_cfg_t fast = { .dead_pm = 0, .knee_us = 0, .slope_us = 800, .window_us = 1500,
+					     .settle_us = 400, .pa_us = 900, .lift_pm = 2150 };
+	pa_keyup_t k = pa_keyup_drives(&fast, 951, 2684, 951, 4095);
+	CHECK(k.boost == 0u && k.pa_us == 800);
+	// A board keyed at one time (no room for a boost) is never lifted
+	pa_keyup_cfg_t fixed = PA_KEYUP_FIXED(1500);
+	fixed.lift_pm = 2150;
+	CHECK(pa_keyup_drives(&fixed, 951, 2684, 951, 4095).boost == 0);
+}
+
 int main(void)
 {
 	// Five levels of a table whose top drive is 1448: each keyed (knee * (top - dead) + slope * (d - dead)) / (d - dead)
@@ -419,6 +448,7 @@ int main(void)
 	check_walks();
 	test_ramp_from();
 	test_proportional();
+	test_lift();
 
 	if (failures == 0) {
 		printf("paKeyupTest: all passed\n");

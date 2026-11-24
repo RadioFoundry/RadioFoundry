@@ -816,9 +816,18 @@ window is 1.5 ms on both bands. The constants are fitted over the air on the SDR
 (11.4), at 137.0, 155, 173.975, 400.025, 440, 449.9, 470 and 479.975 MHz: no dead zone and no knee, so every level
 boosts to slope / (window − settle) of its own drive, 1.6 × on UHF (slope 1760 µs) and 1.5 × on VHF (1650 µs), at
 most 1.2 × the top level's, from 1.5 ms to 0.4 ms before the first symbol; the PA at 0.9 ms (UHF) and 0.5 ms (VHF).
-At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the mean of a burst's first 2 ms
-from its −3 dB point is −0.25 to +0.38 dB from the burst's level from 500 mW to 5 W, and the first burst is within
-0.47 dB of the call's median (bursts spread 0.11 dB at most). The top level is at the cap and creeps: its first 2 ms
+A boost is at least the lift, 2.15 × the 500 mW level's drive (`lift_pm` 2150 on `ref` = `dm32_floor_drive`, a drive
+just over the PA's turn-on, so the lift follows the turn-on over the band). It lifts the 500 mW and 1 W levels only.
+Without it, 1.6 × the 500 mW drive left the PA dark for the first 8-11 symbols of every burst (−42 to −45 dB at the
+first symbol, −1 dB point 1.8-2.3 ms after it; the first 2 ms from the first symbol −7 to −8 dB), and a repeater that
+heard the radio weakly lost the wake-up CSBK: 0 of 10 decoded, against 30 of 45 with the lift and 6 of 10 with the
+earlier lowest level (about 2 W) on the same bench. A plain step to the drive (no boost) is later still. The lift costs the overshoot of
+the PA loop's turn-on: once the output comes up at a low drive, the loop overshoots 2-3 dB and settles in about 1 ms,
+so the first 2 ms from the first symbol read +1.6 to +2.2 dB at 500 mW and +0.8 to +0.9 dB at 1 W (451.875 and 146 MHz),
+while the burst's mean stays within 0.4 dB of the call's median. No boost found puts the PA up by the first symbol at
+500 mW without that overshoot. At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the
+mean of a burst's first 2 ms from its −3 dB point is −0.25 to +0.38 dB from the burst's level from 2.5 W to 5 W, and
+the first burst is within 0.47 dB of the call's median (bursts spread 0.11 dB at most). The top level is at the cap and creeps: its first 2 ms
 read 0.2-0.9 dB under its level whatever the boost (a longer boost, window 1.58 ms and settle 0.3 ms, moved the top
 level 0.2 dB and put the lower levels up to 0.7 dB over). The set before (a dead zone at 79.3 % of the low row on UHF, 65 % on VHF) gave every level
 under the dead zone one boost, about twice its drive: the two lowest levels came up 1.0-3.0 dB over for their first 2 ms,

@@ -59,6 +59,16 @@ needs: a short high boost overshoots with the timer's jitter, a long low one doe
 the window. The boost is never over `PA_KEYUP_BOOST_MAX_PCT` (120 %) of the top step's drive or the board's drive
 limit; a step that needs more comes up late, and the window is too short for it.
 
+`lift_pm` sets a boost's least drive, `ref` × `lift_pm` / 1000. A PA whose output stays dark under a turn-on drive
+and then rises steeply gives the law a problem at a step a few counts over the turn-on: the law sizes the boost from
+the step's own drive, and that boost brings the turn-on in so late that the first symbols go out 10-45 dB low. A
+receiver that hears one burst alone (a repeater's wake-up) loses it. The lift raises such a boost to the drive that
+brings the turn-on in the window. `ref` is then a drive just over the turn-on (the board's lowest step), so the lift
+moves with the frequency and from radio to radio as the turn-on does. The steps whose own boost is over the lift
+keep theirs, and the caps above still apply. A step lifted onto its time comes up with the loop's overshoot from the
+turn-on: the PA's output is steepest there, so on time and within a fraction of a dB of the step's power can't both
+be met at that step.
+
 | Constant | What it sets |
 |---|---|
 | `dead_pm` | the dead zone's edge, in 1/1000 of `ref` |
@@ -68,8 +78,9 @@ limit; a step that needs more comes up late, and the window is too short for it.
 | `settle_us` | a boost ends this long before the first symbol (under `window_us`) |
 | `pa_us` | the PA on this long before, or with the first drive when that is later |
 | `ease_pm` | the fastest approach: the drive over the dead zone a key-up comes up on, in 1/1000 of `ref` (0: no limit) |
+| `lift_pm` | a boost's least drive, in 1/1000 of `ref` (0: none) |
 
-Seven 16-bit values per band with its own PA. None is a drive count. `ref` is a drive the radio's own power
+Eight 16-bit values per band with its own PA. None is a drive count. `ref` is a drive the radio's own power
 calibration gives at the transmit frequency: its lowest step's drive, or the drive where its table says the output
 reaches zero (0: no dead zone). `top` and `d` come from the same table. So one set of constants serves every radio of
 a design: what differs from radio to radio is in its calibration table, and nothing is stored per step or per
@@ -90,6 +101,7 @@ dead = ref * dead_pm / 1000
 q    = knee_us * (top - dead) + slope_us * (d - dead)
 lead = q / (d - dead)                              // d at or under dead: boosted (below)
 b    = dead + ceil(q / (window_us - settle_us))    // only when lead > window_us
+b    = max(b, ref * lift_pm / 1000)                // a boost's least drive, then the caps
 ease = ref * ease_pm / 1000                        // d - dead > ease: the eased key-up
 s    = slope_us * (d - dead - ease) / (d - dead)
 t    = (knee_us * (top - dead) + slope_us * ease) / ease + s
@@ -132,18 +144,19 @@ sets a drive that is not in the table, for one transmission; the key-up is plann
 
 | `core` view key | Values |
 |---|---|
-| `pa_keyup` | the seven constants, in the table's order |
+| `pa_keyup` | the eight constants, in the table's order |
 | `pa_keyup.limits` | the board's earliest point (µs) and its drive limit |
 | `pa_keyup.last` | the last key-up: the first drive (a boost, or under the step's drive the approach drive; 0: none), drive, `boost_us`, `pa_us`, `drive_us`, then the `top` and `ref` it was planned against |
 
 ```
 rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400        # six values: no fastest approach
 rfoundry_debug.py radio pa-keyup 900 120 250 1500 300 400 350    # with ease_pm
+rfoundry_debug.py radio pa-keyup 0 0 1760 1500 400 900 0 2150    # with lift_pm (no fastest approach)
 rfoundry_debug.py radio pa-keyup default
 ```
 
 RADIO op 40, the key run, keys the radio by itself: one request carries the key and gap lengths, optionally the seven
-constants (set first, as op 37), and up to 21 drives (28 without the constants; a request is 64 bytes). Per drive the
+constants and the lift (set first, as op 37), and up to 21 drives (20 with a lift, 28 without the constants; a request is 64 bytes). Per drive the
 radio sets it (as op 36), holds PTT for the key (its time-out just past it), waits for the key-down and the gap, then
 takes the next. The host link is held until the run ends and nothing is sent while the radio transmits, so a radio
 whose own RF upsets its USB link (VHF near the cable) still runs every key in time. Nothing is kept in RAM: the drives

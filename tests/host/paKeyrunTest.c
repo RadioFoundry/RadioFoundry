@@ -115,7 +115,18 @@ int main(void)
 	CHECK(pa_keyrun_parse(b, len, &r) && r.reattach && !r.has_cfg);
 	b[4] = PA_KEYRUN_FLAG_RESTART;
 	CHECK(pa_keyrun_parse(b, len, &r) && r.restart && !r.reattach);
-	b[4] = 8u;					// an unknown flag
+	b[4] = PA_KEYRUN_FLAG_LIFT;			// a lift without the constants
+	CHECK(!pa_keyrun_parse(b, len, &r));
+	b[4] = 16u;					// an unknown flag
+	CHECK(!pa_keyrun_parse(b, len, &r));
+	// The constants with a lift: two bytes more after the seven
+	len = req(b, 300, 350, true, d3, 3);
+	CHECK(pa_keyrun_parse(b, len, &r) && r.cfg.lift_pm == 0u);
+	memmove(b + 6 + 16, b + 6 + 14, 6);
+	b[6 + 14] = 0x66; b[6 + 15] = 0x08;		// 2150
+	b[4] |= PA_KEYRUN_FLAG_LIFT;
+	CHECK(pa_keyrun_parse(b, (uint16_t)(len + 2u), &r) && r.cfg.lift_pm == 2150u && r.cfg.ease_pm == 304 && r.n == 3 &&
+	      r.drives == b + 6 + 16);
 	CHECK(!pa_keyrun_parse(b, len, &r));
 	CHECK(!pa_keyrun_parse(b, req(b, 0, 350, false, d3, 3), &r));
 	CHECK(!pa_keyrun_parse(b, req(b, PA_KEYRUN_KEY_MS_MAX + 1, 350, false, d3, 3), &r));

@@ -40,6 +40,11 @@ def test_plan_is_the_firmwares():
     short = dict(e, window_us=600, settle_us=100)                       # the window is the boosts'
     assert pa_cal.plan(short, 1448, 1448, 760, 4095)["boost_us"] == 1053
     assert pa_cal.plan(short, 1448, 1448, 760, 4095, 800)["boost_us"] == 800    # the board's earliest point
+    # a boost's least drive (lift_pm, a part of ref): the low levels' boosts up to it, the others and the top as before
+    lift = {"dead_pm": 0, "knee_us": 0, "slope_us": 1760, "window_us": 1500, "settle_us": 400, "pa_us": 900,
+            "lift_pm": 2150}
+    assert [pa_cal.plan(lift, d, 2684, 951, 4095)["boost"] for d in (951, 1122, 1511, 2684)] == [2044, 2044, 2418, 3220]
+    assert pa_cal.plan(lift, 951, 2684, 0, 4095)["boost"] == 1522                     # no anchor, no lift
     fixed = {"dead_pm": 0, "knee_us": 0, "slope_us": 936, "window_us": 936, "settle_us": 0, "pa_us": 936}
     for d in (100, 880, 1725):
         k = pa_cal.plan(fixed, d, 1725, 870, 4095)

@@ -42,7 +42,10 @@
 // settle) of its own drive (1.6 x on UHF, 1.5 x on VHF), at most PA_KEYUP_BOOST_MAX_PCT of the top level's, from
 // 1.5 ms to 0.4 ms before the first symbol. The dead zone anchored on the low row put the levels under it on one boost,
 // about twice their drive: the two lowest came up 1-3 dB over. The top level is at the cap and creeps its last
-// 0.3-0.9 dB over a few ms whatever the boost (a longer one moved it 0.2 dB and put the lower levels 0.5 dB over)
+// 0.3-0.9 dB over a few ms whatever the boost (a longer one moved it 0.2 dB and put the lower levels 0.5 dB over).
+// A boost is at least the lift, a part of the 500 mW level's drive (ref: dm32_floor_drive, just over the PA's
+// turn-on): 1.6 x that drive left the PA dark for the first 8-11 symbols of every burst, and a repeater missed the
+// wake-up. The lift brings it up by the first symbol, with the loop's overshoot from the turn-on (8.5)
 #define KEYUP_BOOST_US		1500u
 #define KEYUP_PA_US_VHF		500u
 #define KEYUP_PA_US_UHF		900u
@@ -50,6 +53,8 @@
 #define KEYUP_DRIVE_US_UHF	400u
 #define KEYUP_SLOPE_US_VHF	1650u	// 1.5 x (KEYUP_BOOST_US - KEYUP_DRIVE_US_VHF): the boost's part of the drive
 #define KEYUP_SLOPE_US_UHF	1760u	// 1.6 x (KEYUP_BOOST_US - KEYUP_DRIVE_US_UHF)
+#define KEYUP_LIFT_PM_VHF	2150u	// the least boost, 1/1000 of the 500 mW level's drive (146 MHz: on time)
+#define KEYUP_LIFT_PM_UHF	2150u
 _Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US_VHF <= KEYUP_BOOST_US &&
 	       KEYUP_PA_US_UHF <= KEYUP_BOOST_US && KEYUP_DRIVE_US_VHF <= KEYUP_BOOST_US &&
 	       KEYUP_DRIVE_US_UHF <= KEYUP_BOOST_US,
@@ -60,9 +65,9 @@ _Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US_VHF <= SWITCH_AHEAD_SIMPLEX_MAX_US 
 #if CONFIG_DMR
 static const pa_keyup_cfg_t keyup_cfg[2] = {
 	{ .dead_pm = 0, .knee_us = 0, .slope_us = KEYUP_SLOPE_US_VHF, .window_us = KEYUP_BOOST_US,
-	  .settle_us = KEYUP_DRIVE_US_VHF, .pa_us = KEYUP_PA_US_VHF },
+	  .settle_us = KEYUP_DRIVE_US_VHF, .pa_us = KEYUP_PA_US_VHF, .lift_pm = KEYUP_LIFT_PM_VHF },
 	{ .dead_pm = 0, .knee_us = 0, .slope_us = KEYUP_SLOPE_US_UHF, .window_us = KEYUP_BOOST_US,
-	  .settle_us = KEYUP_DRIVE_US_UHF, .pa_us = KEYUP_PA_US_UHF },
+	  .settle_us = KEYUP_DRIVE_US_UHF, .pa_us = KEYUP_PA_US_UHF, .lift_pm = KEYUP_LIFT_PM_UHF },
 };
 #endif
 // TX data advance (hrc7000_t.tx_pre_on): the chip's 0.4 ms until the inbound burst's offset against the outbound is
@@ -543,8 +548,8 @@ static void keyup_plan(uint32_t hz)
 		top = v > top ? v : top;
 	}
 	pa_keyup_select(&keyup_cfg[hz >= UHF_FROM_HZ ? 1 : 0]);
-	// The low row: the anchor of a dead zone or an ease (both 0 in keyup_cfg, so unused there)
-	ku = pa_keyup_plan(tx_drive, top, bf_cal_power_pos(hz, BF_CAL_POS_LOW));
+	// The anchor: the 500 mW level's fixed drive, just over the PA's turn-on, which the lift is a part of
+	ku = pa_keyup_plan(tx_drive, top, dm32_floor_drive(hz));
 }
 #endif
 

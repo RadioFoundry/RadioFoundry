@@ -20,6 +20,7 @@
 #define PA_KEYRUN_FLAG_REATTACH	2u	// after the run and its reply the host port leaves the bus and comes back
 #define PA_KEYRUN_FLAG_RESTART	4u	// after the run and its reply the radio restarts: what a USB port its own RF
 					// upset needs on some radios (a reattach isn't enough); the constants set are lost
+#define PA_KEYRUN_FLAG_LIFT	8u	// with PA_KEYRUN_FLAG_CFG: lift_pm (u16) follows the seven; without it, lift 0
 #define PA_KEYRUN_END_MS	1000u	// how long a key-down may take before the run stops
 
 typedef struct {
