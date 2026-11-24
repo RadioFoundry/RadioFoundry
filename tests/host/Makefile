@@ -171,7 +171,7 @@ p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard 
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
-p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
+p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -o $@ p25VoiceTest.c $(CORE)/p25/p25Voice.c $(MBE) -lm
 
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
@@ -817,11 +817,11 @@ run: run-aes
 run-aes: dmrAesTest
 	./dmrAesTest
 
-# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
+# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's and P25's sample scaling, never both
 TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
-             $(CORE)/dsp/miclimit.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+             $(CORE)/dsp/miclimit.h $(CORE)/p25/p25Voice.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_IMBE=1 -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
 TESTS   += t3ViewTest

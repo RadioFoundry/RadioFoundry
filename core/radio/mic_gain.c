@@ -26,7 +26,7 @@ void radio_set_mic_gain(uint8_t step)
 	ambeVoiceSetMicGainQ8(radio_mic_pcm_q8());
 #endif
 #if CONFIG_P25 && CONFIG_IMBE
-	p25VoiceSetMicGain(hw ? (uint8_t)MIC_GAIN_UNITY : step);
+	p25VoiceSetMicGainQ8(radio_mic_pcm_q8());
 #endif
 }
 

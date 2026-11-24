@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "p25/p25Voice.h"
+#include "dsp/miclimit.h"
 
 static int failures, checks;
 #define CHECK(c, ...) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -301,7 +302,7 @@ static void testTransmit(void)
 	CHECK(hk->tx_voice(f, NULL) && memcmp(f, imbe_silence, sizeof f) == 0, "a zero block is not a silence frame");
 	p25VoiceGetStats(&s);
 	CHECK(s.tx_silent == 1, "silent frames %u", (unsigned)s.tx_silent);
-	// The mic gain: 6 dB up (three steps) doubles what the encoder sees
+	// The mic gain: 6 dB up doubles what the encoder sees
 	p25VoiceTx(false);
 	p25VoiceTx(true);
 	mic_n = 0;
@@ -309,14 +310,15 @@ static void testTransmit(void)
 	p25VoiceGetStats(&s);
 	uint32_t unity = s.tx_mic_peak;
 	p25VoiceTx(false);
-	p25VoiceSetMicGain(8);
+	p25VoiceSetMicGainQ8(miclimit_db_q8(6));
 	p25VoiceTx(true);
 	mic_n = 0;
 	tx_blocks(2, 1000);
 	p25VoiceGetStats(&s);
 	CHECK(unity > 1000 && s.tx_mic_peak >= 2 * unity - 16 && s.tx_mic_peak <= 2 * unity, "mic peak %u, with gain %u",
 	      (unsigned)unity, (unsigned)s.tx_mic_peak);
-	p25VoiceSetMicGain(5);
+	CHECK(s.tx_mic_low_q8 == miclimit_db_q8(6), "the limiter cut a quiet mic: lowest %u", (unsigned)s.tx_mic_low_q8);
+	p25VoiceSetMicGainQ8(MICLIMIT_UNITY);
 	p25VoiceTx(false);
 	// Reception after it: a call plays as before (the decoder starts over)
 	hk->rx_start(NULL, NULL);
@@ -327,6 +329,92 @@ static void testTransmit(void)
 	p25VoiceEnd();
 	p25VoiceTx(true);	// not running: nothing happens
 	CHECK(!running, "a transmission started the stream with P25 off");
+}
+
+// One transmission of `blocks` mic blocks of the test voice at amplitude amp and gain q8, played back through this
+// module's own receive path (the real decoder): the rms of what the speaker gets once the decoder has settled, and
+// the transmission's statistics. The level that comes out of the decoder is what a listener hears, so it shows the
+// gain reached the encoder, not just the samples
+#define LOOP_BLOCKS	36
+#define LOOP_SETTLE	8	// decoded frames skipped: the encoder's and the decoder's predictions start from none
+static double loopback_rms(uint16_t q8, int amp, p25_voice_stats_t *tx)
+{
+	static uint8_t frames[LOOP_BLOCKS][P25_IMBE_BYTES];
+	int n = 0, fed = 0;
+	double sum = 0;
+	long count = 0;
+	p25_voice_stats_t s;
+
+	begin();
+	p25VoiceSetMicGainQ8(q8);
+	p25VoiceTx(true);
+	mic_n = 0;
+	for (int i = 0; i < LOOP_BLOCKS; i++) {
+		tx_blocks(1, amp);
+		while (n < LOOP_BLOCKS && hk->tx_voice(frames[n], NULL))
+			n++;
+	}
+	p25VoiceGetStats(tx);
+	p25VoiceTx(false);
+	CHECK(n == LOOP_BLOCKS, "frames taken %d of %d", n, LOOP_BLOCKS);
+
+	// Two LDUs' worth queued, then one more a block: playback primes on one LDU, so the queue never overflows
+	hk->rx_start(NULL, NULL);
+	for (; fed < 2 * P25_VOICE_FRAMES && fed < n; fed++)
+		hk->rx_voice(frames[fed], 0, NULL);
+	for (int b = 0; b < 4 * LOOP_BLOCKS; b++) {
+		int16_t mic[AUDIO_BLOCK_SAMPLES] = { 0 }, spk[AUDIO_BLOCK_SAMPLES];
+		if (fed < n)
+			hk->rx_voice(frames[fed++], 0, NULL);
+		p25VoiceGetStats(&s);
+		uint32_t before = s.rx_frames;
+		p25VoiceAudioBlock(mic, spk, NULL);
+		p25VoiceGetStats(&s);
+		if (s.rx_frames != before && before >= LOOP_SETTLE)
+			for (int k = 0; k < AUDIO_BLOCK_SAMPLES; k++, count++)
+				sum += (double)spk[k] * spk[k];
+		if (s.rx_frames == (uint32_t)n)
+			break;
+	}
+	hk->rx_end(NULL);
+	CHECK(s.rx_frames == (uint32_t)n, "frames played %u of %d", (unsigned)s.rx_frames, n);
+	p25VoiceSetMicGainQ8(MICLIMIT_UNITY);
+	p25VoiceEnd();
+	return count ? sqrt(sum / count) : 0;
+}
+
+// The mic gain and its limiter on P25 (as DMR's, core/dsp/miclimit.h): a board whose mic reaches the PCM quiet gets
+// its hal_radio_t.mic_pcm_db here too. A quiet voice lifted 12 dB comes out of the decoder about 12 dB louder; a loud
+// one at the same gain is held at the ceiling, with no sample past it, and comes out about as loud as at unity
+static void testMicGainLimiter(void)
+{
+	p25_voice_stats_t s;
+	uint16_t g12 = miclimit_db_q8(12);
+
+	double quiet = loopback_rms(MICLIMIT_UNITY, 500, &s);
+	uint32_t quiet_peak = s.tx_mic_peak;
+	CHECK(quiet > 50, "the quiet voice decoded silent: rms %.1f", quiet);
+	CHECK(s.tx_mic_low_q8 == MICLIMIT_UNITY, "unity: lowest gain %u", (unsigned)s.tx_mic_low_q8);
+
+	double lifted = loopback_rms(g12, 500, &s);
+	double db = 20 * log10(lifted / quiet);
+	CHECK(db > 11 && db < 13, "12 dB of gain came out as %.1f dB (rms %.1f against %.1f)", db, lifted, quiet);
+	CHECK(s.tx_mic_low_q8 == g12, "the limiter cut a quiet voice: lowest %u of %u", (unsigned)s.tx_mic_low_q8, g12);
+	CHECK(s.tx_mic_peak > 3 * quiet_peak && s.tx_mic_peak <= MICLIMIT_CEILING, "lifted peak %u, unity %u",
+	      (unsigned)s.tx_mic_peak, (unsigned)quiet_peak);
+
+	// Loud: at unity its peaks are near full scale, so +12 dB would clip
+	double loud = loopback_rms(MICLIMIT_UNITY, 7000, &s);
+	uint32_t loud_peak = s.tx_mic_peak;
+	CHECK(loud_peak > MICLIMIT_CEILING / 2, "the loud voice is not loud: peak %u", (unsigned)loud_peak);
+	double held = loopback_rms(g12, 7000, &s);
+	CHECK(s.tx_mic_peak <= MICLIMIT_CEILING && s.tx_mic_peak > MICLIMIT_CEILING - 2000, "loud at +12 dB: peak %u",
+	      (unsigned)s.tx_mic_peak);
+	CHECK(s.tx_mic_low_q8 < g12 && miclimit_q8_db((uint16_t)s.tx_mic_low_q8) <= 2, "the limiter's lowest gain %d dB",
+	      miclimit_q8_db((uint16_t)s.tx_mic_low_q8));
+	db = 20 * log10(held / loud);
+	// Held to the 1-2 dB its peak allows, not the 12 asked for, and not pumped down below unity
+	CHECK(db > -0.5 && db < 3, "the held voice came out %.1f dB over unity", db);
 }
 
 // A beep's own stream left the speaker route on and the transmission took the running stream over (#705): the
@@ -351,6 +439,7 @@ int main(void)
 	testShortCallAndNewCall();
 	testMixerAndTx();
 	testTransmit();
+	testMicGainLimiter();
 	testRouteTakeover();
 	printf("p25VoiceTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
