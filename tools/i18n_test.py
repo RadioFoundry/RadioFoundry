@@ -88,6 +88,88 @@ class Marks(unittest.TestCase):
         with self.assertRaisesRegex(i18n.I18nError, "takes a key"):
             scan('a = TR(GLYPH_DOT, "x");\n')     # a glyph macro is text, never a key
 
+    def test_format_mark(self):
+        # TRF(buffer, KEY, "English", values...): the buffer and the values are skipped, whatever they hold
+        found = scan('TRF(sb(&b, 1), FROM, "Message from %s, "\n\t"%02u", station(ev, id), n);\n'
+                     'x = TR(PCT, "50% of 100%");\nTRF(&b, AT, "At %03u", n);\n'
+                     'TRF(&b, AGE, TEXT_ALT_OPEN "%1$u%2$K ago" TEXT_ALT_NEXT "%1$u%2$K" TEXT_ALT_CLOSE, n, u);\n')
+        self.assertEqual([(m.kind, m.key, m.text) for m in found],
+                         [("TRF", "FROM", "Message from %s, %02u"), ("TR", "PCT", "50% of 100%"),
+                          ("TRF", "AT", "At %03u"), ("TRF", "AGE", "{%1$u%2$K ago|%1$u%2$K}")])
+        self.assertEqual(i18n.format_values(found[0].text, ""), {1: "s", 2: "u"})
+        self.assertEqual(i18n.format_values(found[2].text, ""), {1: "u"})
+        self.assertEqual(i18n.format_values("%1$u, %1$u", ""), {1: "u"})
+        self.assertEqual(i18n.format_values("%s to %2$u", ""), {1: "s", 2: "u"})
+        self.assertEqual(i18n.format_values("%2$u", ""), {2: "u"})
+        self.assertEqual(i18n.format_values("{%1$u%2$K ago|%1$u%2$K}", ""), {1: "u", 2: "K"})
+        # "%%" is a '%', read first: the '%' after it never starts a placeholder
+        self.assertEqual(i18n.format_values("50%%s", ""), {})
+        self.assertEqual(i18n.format_values("%u%%: used", ""), {1: "u"})
+        self.assertEqual(i18n.check_translation("%u%% used", "%u%%usado", "x"), [])
+        for src, why in (('x = TR(FROM, "From %1$s");', "only TRF"),
+                         ('x = TR(FROM, "From %s");', "only TRF"),
+                         ('TRF(&b, FROM, "From %2$s and %3$s or %3$s", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "From", a);', "numbered from 1"),
+                         ('TRF(&b, FROM, "From %1$s", a);', "takes no number"),
+                         ('TRF(&b, FROM, "From %1$s to %2$s", a, b);', "the numbers add nothing"),
+                         ('TRF(&b, FROM, "From %s to %2$s or %2$s", a, b);', "every placeholder or none"),
+                         ('TRF(&b, FROM, "Battery %u%: low", n);', "starts no placeholder"),
+                         ('TRF(&b, FROM, "100% %s", a);', "starts no placeholder"),
+                         ('TRF(&b, FROM, TEXT_ALT_OPEN "Here, %u ch" TEXT_ALT_NEXT "Here" TEXT_ALT_CLOSE, n);',
+                          "inside a text alternate"),
+                         ('TRF(&b, FROM, "%1$s and %1$u", a);', "in one place"),
+                         ('TRF(&b, FROM, "%02s", a);', "only %d and %u take a width"),
+                         ('TRF(&b, FROM, "%1$s %5$s", a);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%1$s %2$x", a, b);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%s %x", a, b);', "is not a placeholder"),
+                         ('TRF(&b, FROM, "%s %3u", a, b);', "is not a placeholder"),
+                         ('TRF(&b, "From %1$s", a);', "takes a buffer, a key")):
+            with self.assertRaisesRegex(i18n.I18nError, why, msg=src):
+                scan(src + "\n")
+        # The English numbers its placeholders when the order alone can't say which argument each takes
+        self.assertEqual([m.text for m in scan('TRF(&b, TO, "To %2$s from %1$s", a, b);\n')], ["To %2$s from %1$s"])
+        # A '%' in plain text (TR) is text
+        self.assertEqual([m.text for m in scan('x = TR(PCT2, "100% done");\n')], ["100% done"])
+        self.assertTrue(i18n.check_translation("%u%% used", "%u% usado", "x"))
+        with self.assertRaisesRegex(i18n.I18nError, "TRF format in one place"):
+            i18n.check_keys([i18n.Mark("TRF", "FROM", "From %s", "x.c", 1, 0),
+                             i18n.Mark("TR", "FROM", "From %s", "x.c", 2, 0)])
+
+    def test_format_translation(self):
+        en = "Site %u of %u: %s"
+        self.assertEqual(i18n.check_translation(en, "%3$s: sitio %1$u de %2$u", "x"), [])
+        self.assertEqual(i18n.check_translation(en, "Sitio %1$u de %2$u: %3$s", "x"), [])
+        # More than one value: the translation numbers every one, even in the English's order
+        self.assertTrue(i18n.check_translation(en, "Sitio %u de %u: %s", "x"))
+        self.assertTrue(i18n.check_translation(en, "Sitio %u de %2$u: %3$s", "x"))
+        for tr in ("Sitio %1$u de %2$u", "Sitio %1$u de %2$u: %3$K", "Sitio %1$u de %2$d: %3$s",
+                   "Sitio %1$u de %2$u: %3$s %4$s", "Sitio %1$u de %2$u: %3$s %1$s"):
+            self.assertTrue(i18n.check_translation(en, tr, "x"), tr)
+        self.assertTrue(i18n.check_translation("Done", "Hecho %s", "x"))
+        # One value: no number, unless the translation uses it twice
+        self.assertEqual(i18n.check_translation("From %s", "De %s", "x"), [])
+        self.assertEqual(i18n.check_translation("From %s", "%1$s, de %1$s", "x"), [])
+        self.assertTrue(i18n.check_translation("From %s", "De %1$s", "x"))
+        self.assertTrue(i18n.check_translation("From %s", "De %u", "x"))
+        # A value inside a text alternate is numbered, even alone
+        en = "{Here, %1$u ch|Here}"
+        self.assertEqual(i18n.check_translation(en, "{Aquí, %1$u can.|Aquí}", "x"), [])
+        self.assertTrue(i18n.check_translation(en, "{Aquí, %u can.|Aquí}", "x"))
+
+    def test_format_prototypes(self):
+        with tempfile.TemporaryDirectory() as d:
+            saved, i18n.LANG_DIR = i18n.LANG_DIR, d
+            try:
+                found = scan('TRF(&b, SITE, "Site %u of %d: %s %K", a, b, c, d);\nx = TR(DONE, "Done");\n')
+                i18n.generate(os.path.join(d, "t.h"), found)
+            finally:
+                i18n.LANG_DIR = saved
+            with open(os.path.join(d, i18n.KEYS_HEADER), encoding="utf-8") as f:
+                keys = f.read()
+        self.assertIn("#define tr_check_SITE(v1, v2, v3, v4)\t(TR_CHECK_NUM(v1) + TR_CHECK_NUM(v2) + "
+                      "TR_CHECK_TEXT(v3) + TR_CHECK_TEXT(v4))", keys)
+        self.assertNotIn("tr_check_DONE", keys)
+
     def test_key_from_text(self):
         self.assertEqual(i18n.key_from_text("Couldn't save: try again"), "COULDNT_SAVE_TRY_AGAIN")
         self.assertEqual(i18n.key_from_text("{Power|Pwr}"), "POWER")
@@ -248,7 +330,7 @@ class Rename(unittest.TestCase):
         self.test = os.path.join(self.dir.name, "tests", "t.c")
         self.po = os.path.join(i18n.LANG_DIR, "xx.po")
         with open(self.src, "w", encoding="utf-8") as f:
-            f.write(SRC + "int TR_TX;\n")
+            f.write(SRC + "int TR_TX;\n" + 'void g(void) { TRF(sb(&b), /* key */ SITE, "Site %u", 1); }\n')
         with open(self.test, "w", encoding="utf-8") as f:
             f.write('CHECK(strcmp(TR( DONE, "Done"), "Hecho") == 0);\n')
         with open(self.po, "w", encoding="utf-8") as f:
@@ -260,11 +342,13 @@ class Rename(unittest.TestCase):
 
     def test_rename_keeps_the_translations(self):
         # DONE and FUZZY swap names, RX (never translated) gets a new one: marks, the tests and the catalog follow
-        self.assertEqual(i18n.rename([("DONE", "FUZZY"), ("FUZZY", "DONE"), ("RX", "LABEL_RX")]), (5, 2))
+        self.assertEqual(i18n.rename([("DONE", "FUZZY"), ("FUZZY", "DONE"), ("RX", "LABEL_RX"),
+                                      ("SITE", "ROAM_SITE")]), (6, 2))
         with open(self.src, encoding="utf-8") as f:
             src = f.read()
         self.assertIn('TRN(FUZZY, "Done"), TRN(UNTRANSLATED, "Untranslated"), TRX(LABEL_RX, "RX")', src)
         self.assertIn('show(TR(DONE, "Fuzzy"), TR(VOLUME, "Volume "), TR(BAD, "Bad"), TR(FUZZY, "Done"));', src)
+        self.assertIn('TRF(sb(&b), /* key */ ROAM_SITE, "Site %u", 1);', src)
         with open(self.test, encoding="utf-8") as f:
             self.assertIn('TR( FUZZY, "Done")', f.read())
         by_key = {k: (en, tr) for k, en, tr, _ in i18n.read_po(self.po)[1]}

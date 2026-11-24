@@ -64,7 +64,7 @@ static bool mcu_line(support_line_t *l, sbuf_t *b)
 		return false;
 	}
 	l->key = "mcu";
-	l->label = TRN(ABOUT_LABEL_MCU, "MCU: ");
+	l->label = TRN(ABOUT_LABEL_MCU, "MCU");
 	if (c.family == HAL_CHIP_HRC7000) {
 		sb_str(b, "HR_C7000");
 		return true;
@@ -92,7 +92,7 @@ static bool flash_line(support_line_t *l, sbuf_t *b)
 	}
 	uint32_t id = board.flash->jedec();
 	l->key = "flash";
-	l->label = TRN(ABOUT_LABEL_FLASH, "Flash: ");
+	l->label = TRN(ABOUT_LABEL_FLASH, "Flash");
 	if (id == 0u) {
 		sb_str(b, "-");
 		return true;
@@ -114,7 +114,7 @@ static bool display_line(support_line_t *l, sbuf_t *b)
 		return false;
 	}
 	l->key = "display";
-	l->label = TRN(ABOUT_LABEL_DISPLAY, "Display: ");
+	l->label = TRN(ABOUT_LABEL_DISPLAY, "Display");
 	// "<controller> <ID> t<type> f<factory byte>", each part the board knows (support-info.md 2)
 	if (p.controller != NULL) {
 		sb_str(b, p.controller);
@@ -156,15 +156,15 @@ static bool board_line(uint8_t j, support_line_t *l)
 	switch (role) {
 	case BOARD_HW_DMR:
 		l->key = "dmr";
-		l->label = TRN(ABOUT_LABEL_DMR_CHIP, "DMR chip: ");
+		l->label = TRN(ABOUT_LABEL_DMR_CHIP, "DMR chip");
 		break;
 	case BOARD_HW_RF:
 		l->key = "rf";
-		l->label = TRN(ABOUT_LABEL_RF_CHIP, "RF chip: ");
+		l->label = TRN(ABOUT_LABEL_RF_CHIP, "RF chip");
 		break;
 	default:
 		l->key = "board";
-		l->label = TRN(ABOUT_LABEL_HARDWARE, "Hardware: ");
+		l->label = TRN(ABOUT_LABEL_HARDWARE, "Hardware");
 		break;
 	}
 	return true;

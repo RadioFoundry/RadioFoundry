@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """The firmware's translations (docs/dev/translating.md): the strings the radio shows, marked in core/ with
-TR(KEY, "English"), TRN(KEY, "English") or TRX(KEY, "English") (never translated), and one gettext catalog per
-language in core/ui/lang/<code>.po, an entry per key (its msgctxt).
+TR(KEY, "English"), TRN(KEY, "English"), TRX(KEY, "English") (never translated) or TRF(buffer, KEY, "English with
+%s values", values...), and one gettext catalog per language in core/ui/lang/<code>.po, an entry per key (its
+msgctxt).
 
     tools/i18n.py --sync            bring every catalog up to date with the source (new keys added untranslated, keys
                                     gone from the source dropped, a key whose English changed keeps its translation); --sync es
@@ -60,7 +61,7 @@ class I18nError(Exception):
 # ---------------------------------------------------------------------------------------------------------------
 # The source: TR("...") and TRN("...") with string literals and the macros above
 
-MARK = re.compile(r"(?<![A-Za-z0-9_])(TR[NX]?)\s*\(")
+MARK = re.compile(r"(?<![A-Za-z0-9_])(TR[NXF]?)\s*\(")
 TOKEN = re.compile(r'\s+|/\*.*?\*/|//[^\n]*|"(?:[^"\\\n]|\\.)*"|[A-Za-z_][A-Za-z0-9_]*|\)|.', re.S)
 SIMPLE_ESC = {"n": 10, "t": 9, "r": 13, "\\": 92, '"': 34, "'": 39, "?": 63, "a": 7, "b": 8, "f": 12, "v": 11, "0": 0}
 
@@ -210,8 +211,94 @@ def taken_keys():
     return taken_cache
 
 
+# A value in a TRF format (core/text/format.h, sb_fmt): %<kind>, or %<number>$<kind> with the number from 1; a
+# number may ask for its least width, zero padded (%03u). Space padding (%3u) is off in the formatter
+# (SB_FMT_SPACE_PAD). Every other '%' is text. FORMAT_LIKE is what was probably meant as a value and isn't one.
+# Numbering (format_numbering): the English writes its values in order without numbers ("Site %u of %u: %s") unless
+# it uses one twice or has one inside a text alternate; a translation of more than one value numbers every value
+# ("%3$s: sitio %1$u de %2$u")
+FORMAT_VALUES = 4
+FORMAT_VALUE = re.compile(r"%(?:([1-" + str(FORMAT_VALUES) + r"])\$)?(0[1-9])?([sKdu])")
+FORMAT_LIKE = re.compile(r"%[0-9]*\$[0-9]*.?|%[-+#0-9.]*l*[sdiuxXcK]")
+# "%%" is a '%': read before the values, so the '%' after it never starts one ("50%%s" has no value)
+FORMAT_TOKEN = re.compile(r"%%|" + FORMAT_VALUE.pattern)
+FORMAT_CHECK = {"s": "TR_CHECK_TEXT", "K": "TR_CHECK_TEXT", "d": "TR_CHECK_NUM", "u": "TR_CHECK_NUM"}
+
+
+def format_found(text):
+    """The values of a format, in order (FORMAT_VALUE matches), "%%" left out"""
+    return [m for m in FORMAT_TOKEN.finditer(text) if m.group(0) != "%%"]
+
+
+def format_text(text):
+    """A format without its values and "%%": what is left must not look like a value"""
+    return FORMAT_TOKEN.sub("", text)
+
+
+def format_values(text, where):
+    """{argument number: kind} of a TRF text's placeholders, arguments numbered from 1. An argument is a string (s, K)
+    or a number (d, u) everywhere it is used; a '%' starts a placeholder or is "%%" """
+    kinds = {}
+    rest = format_text(text)
+    for m in FORMAT_LIKE.finditer(rest):
+        raise I18nError("%s: %r: %r is not a placeholder: use %%s, %%K, %%d, %%u or %%03u (numbered %%1$s to %%%d$s), "
+                        "or %%%% for a percent sign" % (where, text, m.group(0), FORMAT_VALUES))
+    if "%" in rest:
+        raise I18nError("%s: %r: a '%%' that starts no placeholder: write %%%% for a percent sign" % (where, text))
+    unnumbered = 0
+    for m in format_found(text):
+        n, width, kind = m.group(1), m.group(2), m.group(3)
+        if not n:
+            unnumbered += 1
+        # A placeholder without a number takes the argument after the last one without a number (sb_fmt)
+        n = int(n) if n else unnumbered
+        if width and kind in "sK":
+            raise I18nError("%s: %r: %s: only %%d and %%u take a width" % (where, text, m.group(0)))
+        if kinds.setdefault(n, kind) != kind:
+            raise I18nError("%s: %r: argument %d is %%%s in one place and %%%s in another"
+                            % (where, text, n, kinds[n], kind))
+    return kinds
+
+
+def format_numbering(text, where, english=None):
+    """Problems with how a TRF text numbers its placeholders (a list of strings): the English's (english None), or a
+    translation's of the English whose arguments are english. A number is written only where the order alone can't
+    say which argument a placeholder takes (docs/dev/translating.md, Numbering placeholders)"""
+    found = format_found(text)
+    numbered = [m for m in found if m.group(1)]
+    if numbered and len(numbered) < len(found):
+        return ["%s: %r: number every placeholder or none" % (where, text)]
+    order = []
+    for m in numbered:
+        if int(m.group(1)) not in order:
+            order.append(int(m.group(1)))
+    twice = len(order) < len(numbered)
+    # A placeholder inside a text alternate {a|b}: a choice may leave an argument out ("{Here, %1$u ch|Here}"), so
+    # each must say which argument it takes
+    depth, alt = 0, False
+    for i, ch in enumerate(text):
+        depth += (ch == "{") - (ch == "}")
+        alt |= depth > 0 and any(m.start() == i for m in found)
+    if alt:
+        if not numbered:
+            return ["%s: %r: a placeholder inside a text alternate {a|b} needs a number (%%1$u), and then every "
+                    "placeholder does" % (where, text)]
+        return []
+    if len(found) == 1 and numbered:
+        return ["%s: %r: one argument used once takes no number: write %%%s"
+                % (where, text, found[0].group(0).split("$")[1])]
+    if english is None:
+        if numbered and not twice and order == sorted(order):
+            return ["%s: %r: the numbers add nothing: each argument is used once, in the order passed. Leave them out "
+                    "(\"Site %%u of %%u: %%s\")" % (where, text)]
+    elif (len(english) > 1 or twice) and not numbered:
+        return ["%s: %r: a translation of more than one argument numbers every placeholder (%%1$s %%2$u)"
+                % (where, text)]
+    return []
+
+
 class Mark:
-    """One TR / TRN / TRX in the source. key is None for the old form TR("...") (only --rewrite reads it); at is
+    """One TR / TRN / TRX / TRF in the source. key is None for the old form TR("...") (only --rewrite reads it); at is
     where the key goes: just after the opening parenthesis"""
     def __init__(self, kind, key, text, rel, line, at):
         self.kind, self.key, self.text, self.rel, self.line, self.at = kind, key, text, rel, line, at
@@ -232,6 +319,24 @@ def scan(rel, src, old_ok=False):
         where = "%s:%d" % (rel, src.count("\n", 0, m.start()) + 1)
         toks = []
         pos = m.end()
+        at = m.end()
+        if kind == "TRF":
+            # TRF(buffer, KEY, "English", values...): skip the buffer, and stop at the values
+            depth = 0
+            while True:
+                t = TOKEN.match(src, pos)
+                if t is None:
+                    raise I18nError("%s: unterminated TRF(" % where)
+                pos = t.end()
+                if t.group(0) == "(":
+                    depth += 1
+                elif t.group(0) == ")":
+                    depth -= 1
+                    if depth < 0:
+                        raise I18nError("%s: TRF() takes a buffer, a key, the English and its values" % where)
+                elif t.group(0) == "," and depth == 0:
+                    break
+            at = pos
         while True:
             t = TOKEN.match(src, pos)
             if t is None:
@@ -242,11 +347,15 @@ def scan(rel, src, old_ok=False):
                 continue
             if tok == ")":
                 break
+            if kind == "TRF" and tok == "," and len(toks) >= 3:
+                break   # the values
             toks.append(tok)
         key = None
         if len(toks) >= 2 and toks[1] == "," and KEY.match(toks[0]) and toks[0] not in MACROS:
             key = toks[0]
             toks = toks[2:]
+        elif kind == "TRF":
+            raise I18nError("%s: TRF() takes a buffer, a key, the English and its values" % where)
         elif not old_ok:
             raise I18nError("%s: %s() takes a key and the English: %s(KEY, \"English\") (tools/i18n.py --rewrite "
                             "gives an old-form mark one)" % (where, kind, kind))
@@ -261,7 +370,19 @@ def scan(rel, src, old_ok=False):
                                 "(use tr() on a tr_id_t for text chosen at run time)" % (where, kind, tok))
         if not parts:
             raise I18nError("%s: %s() without English" % (where, kind))
-        out.append(Mark(kind, key, bytes_to_text(bytes(parts), where), rel, int(where.rsplit(":", 1)[1]), m.end()))
+        text = bytes_to_text(bytes(parts), where)
+        if kind == "TRF":
+            if key is None:
+                raise I18nError("%s: TRF() takes a buffer, a key, the English and its values" % where)
+            kinds = format_values(text, where)
+            for e in format_numbering(text, where):
+                raise I18nError(e)
+            if sorted(kinds) != list(range(1, len(kinds) + 1)) or not kinds:
+                raise I18nError("%s: %r: every argument must be used, numbered from 1 with none left out (text "
+                                "without placeholders is TR)" % (where, text))
+        elif format_found(text) or FORMAT_LIKE.search(format_text(text)):
+            raise I18nError("%s: %r has a placeholder: only TRF() fills one in" % (where, text))
+        out.append(Mark(kind, key, text, rel, int(where.rsplit(":", 1)[1]), at))
     return out
 
 
@@ -276,9 +397,10 @@ def marks(old_ok=False, files=None):
 
 
 def check_keys(found):
-    """A key has one English and is either translated (TR, TRN) or never (TRX); its name is free. Returns
-    {key: (text, translated)}"""
+    """A key has one English and is translated (TR, TRN), never translated (TRX) or a format (TRF); its name is free.
+    Returns {key: (text, translated)}"""
     keys = {}
+    fmt = {}
     taken = taken_keys()
     for mk in found:
         if mk.key is None:
@@ -293,6 +415,9 @@ def check_keys(found):
         if tr != (mk.kind != "TRX"):
             raise I18nError("%s: key %s is TRX in one place and translated in another: pick one"
                             % (mk.where(), mk.key))
+        if fmt.setdefault(mk.key, mk.kind == "TRF") != (mk.kind == "TRF"):
+            raise I18nError("%s: key %s is a TRF format in one place and a plain text in another: give one a key of "
+                            "its own" % (mk.where(), mk.key))
     return keys
 
 
@@ -647,6 +772,13 @@ def check_translation(en, tr, where, wide=False):
                     % (where, tr, alt_groups(tr), alt_groups(en)))
     except ValueError as e:
         errs.append("%s: %r: %s" % (where, tr, e))
+    try:
+        errs += format_numbering(tr, where, format_values(en, where))
+        if format_values(tr, where) != format_values(en, where):
+            errs.append("%s: %r must use the values of %r, each with the same kind; it may move them"
+                        % (where, tr, en))
+    except I18nError as e:
+        errs.append(str(e))
     lead = lambda s: len(s) - len(s.lstrip(" "))
     trail = lambda s: len(s) - len(s.rstrip(" "))
     if lead(en) != lead(tr) or trail(en) != trail(tr):
@@ -842,13 +974,26 @@ KEYS_HEADER = "tr_keys.h"
 
 def generate(out_path, found=None):
     """OUT.h: the tables core/ui/i18n.c includes; tr_keys.h beside it: the keys' numbers, which i18n.h includes"""
+    if found is None:
+        found = marks()
     ids, translated, english, built = tables(found)
     keys = ["// Generated by tools/i18n.py from the marks in core/; do not edit",
-            "// A key's number (i18n.h): the ones the catalogs translate, then the TRX ones",
+            "// A key's number (i18n.h): the ones the catalogs translate, then the TRX ones. A build without a "
+            "translation uses only the formats' values below",
             "#ifndef TR_KEYS_H", "#define TR_KEYS_H", "", "enum {"]
     for k, i in sorted(ids.items(), key=lambda kv: kv[1]):
         keys.append("\tTR_%s = %d," % (k, i))
-    keys += ["};", "#define TR_TRANSLATED\t%d\t// the first TRX key" % translated,
+    keys.append("};")
+    source, _ = extract(found)
+    formats = [(k, format_values(t, k)) for k, t, _ in sorted(source) if format_found(t)]
+    if formats:
+        keys += ["", "// The values each format takes: TRF (i18n.h) checks a call's values against these, "
+                 "and no code is made"]
+    for k, kinds in formats:
+        args = ["v%d" % n for n in sorted(kinds)]
+        keys.append("#define tr_check_%s(%s)\t(%s)" % (k, ", ".join(args),
+                    " + ".join("%s(v%d)" % (FORMAT_CHECK[kinds[n]], n) for n in sorted(kinds))))
+    keys += ["", "#define TR_TRANSLATED\t%d\t// the first TRX key" % translated,
              "#define TR_KEYS\t\t%d" % (len(ids) + 1), "", "#endif"]
     write_if_changed(os.path.join(os.path.dirname(os.path.abspath(out_path)), KEYS_HEADER), "\n".join(keys) + "\n")
 

@@ -84,7 +84,7 @@ MCU_DEFS += -DAPRS_TOCALL_ID='"$(APRS_TOCALL_ID)"'
 BUILD := build/$(BOARD)$(if $(VARIANT),-$(VARIANT))$(OPTION_SUFFIX)
 TARGET := $(BUILD)/rfoundry_$(BOARD)$(OPTION_SUFFIX)
 
-CORE_DIRS := core/app core/radio core/ui core/input core/codeplug core/settings core/storage
+CORE_DIRS := core/app core/radio core/text core/ui core/input core/codeplug core/settings core/storage
 ifeq ($(CONFIG_DMR),y)
 CORE_DIRS += core/dmr/call core/dmr/ambe core/dmr/fec
 endif

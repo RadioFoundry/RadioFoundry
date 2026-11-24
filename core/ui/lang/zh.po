@@ -61,33 +61,33 @@ msgstr "不详"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_MCU"
-msgid "MCU: "
-msgstr "MCU： "
+msgid "MCU"
+msgstr "MCU"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_FLASH"
-msgid "Flash: "
-msgstr "存储器： "
+msgid "Flash"
+msgstr "存储器"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_DISPLAY"
-msgid "Display: "
-msgstr "显示屏： "
+msgid "Display"
+msgstr "显示屏"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_DMR_CHIP"
-msgid "DMR chip: "
-msgstr "DMR 器件： "
+msgid "DMR chip"
+msgstr "DMR 器件"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_RF_CHIP"
-msgid "RF chip: "
-msgstr "射频器件： "
+msgid "RF chip"
+msgstr "射频器件"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_LABEL_HARDWARE"
-msgid "Hardware: "
-msgstr "设备： "
+msgid "Hardware"
+msgstr "设备"
 
 #: core/support/support_info.c
 msgctxt "ABOUT_VALUE_HWOPT_UNSET"
@@ -100,9 +100,14 @@ msgid "Off"
 msgstr "关"
 
 #: core/ui/fmt.c
-msgctxt "PART_AGO"
-msgid " ago"
-msgstr " 前"
+msgctxt "VALUE_AGE_LONG"
+msgid "%u%K ago"
+msgstr "%1$u%2$K 前"
+
+#: core/ui/fmt.c
+msgctxt "VALUE_AGE"
+msgid "{%1$u%2$K ago|%1$u%2$K}"
+msgstr "{%1$u%2$K 前|%1$u%2$K}"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "HOME_HINT_MENU_QUICK"
@@ -136,13 +141,13 @@ msgstr "通话目标：本版本无"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT_NOW"
-msgid "Default now: "
-msgstr "现默认： "
+msgid "Default now: %s"
+msgstr "现默认： %s"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_TALKING_TO"
-msgid "Talking to "
-msgstr "正在呼叫 "
+msgid "Talking to %s"
+msgstr "正在呼叫 %s"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "EMPTY_NO_CALLS_HEARD"
@@ -151,23 +156,23 @@ msgstr "暂无通话记录"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_FROM"
-msgid "Message from "
-msgstr "消息来自 "
+msgid "Message from %s"
+msgstr "消息来自 %s"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_SENT_TO"
-msgid "Sent to "
-msgstr "已发送至 "
+msgid "Sent to %s"
+msgstr "已发送至 %s"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_DELIVERED_TO"
-msgid "Delivered to "
-msgstr "已送达 "
+msgid "Delivered to %s"
+msgstr "已送达 %s"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
-msgid "No answer from "
-msgstr "无应答： "
+msgid "No answer from %s"
+msgstr "无应答： %s"
 
 #: core/ui/ui_app.c
 msgctxt "MSG_BANNER_NOT_DELIVERED"
@@ -176,8 +181,8 @@ msgstr "未送达：请重发"
 
 #: core/ui/ui_app.c
 msgctxt "ALERT_BANNER_FROM"
-msgid "Call alert from "
-msgstr "呼叫提示来自 "
+msgid "Call alert from %s"
+msgstr "呼叫提示来自 %s"
 
 #: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "HINT_PTT_REPLIES"
@@ -186,13 +191,13 @@ msgstr "PTT 可回复"
 
 #: core/ui/ui_app.c
 msgctxt "CALL_BANNER_PRIVATE_FROM"
-msgid "Private call from "
-msgstr "个呼来自 "
+msgid "Private call from %s"
+msgstr "个呼来自 %s"
 
 #: core/ui/ui_app.c
 msgctxt "CHECK_BANNER_ANSWERED"
-msgid "answered ("
-msgstr "已接听（"
+msgid "answered (%u.%u s)"
+msgstr "已接听（%1$u.%2$u s)"
 
 #: core/ui/ui_app.c
 msgctxt "BANNER_OFF_OR_OUT_OF_RANGE"
@@ -221,8 +226,8 @@ msgstr "保存失败：请重试"
 
 #: core/ui/ui_app.c
 msgctxt "ALERT_BANNER_ANSWERED"
-msgid " answered the alert"
-msgstr " 已回应提示"
+msgid "%s answered the alert"
+msgstr "%s 已回应提示"
 
 #: core/ui/ui_app.c
 msgctxt "AUTOOFF_BANNER_FAILED"
@@ -236,18 +241,18 @@ msgstr "请用旋钮关机"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_FROM"
-msgid "⤓ Channel from "
-msgstr "⤓ 信道来自 "
+msgid "⤓ Channel from %s"
+msgstr "⤓ 信道来自 %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_ZONE_FROM"
-msgid "⤓ Zone from "
-msgstr "⤓ 区域来自 "
+msgid "⤓ Zone from %s"
+msgstr "⤓ 区域来自 %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "未发送至 "
+msgid "Not sent to %s"
+msgstr "未发送至 %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
@@ -256,28 +261,28 @@ msgstr "请在 DMR 信道重试"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_UPDATED"
-msgid "Updated "
-msgstr "已更新 "
+msgid "Updated %s"
+msgstr "已更新 %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_IMPORTED"
-msgid "Imported "
-msgstr "已导入 "
+msgid "Imported %s"
+msgstr "已导入 %s"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_SYSTEM_MISSING"
-msgid " trunked: system not set up"
-msgstr " 个集群信道：系统未设置"
+msgid "%u trunked: system not set up"
+msgstr "%u 个集群信道：系统未设置"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNEL_RX_ONLY"
-msgid " channel, receive only"
-msgstr " 个信道，仅接收"
+msgid "%u channel, receive only"
+msgstr "%u 个信道，仅接收"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_CHANNELS_RX_ONLY"
-msgid " channels, receive only"
-msgstr " 个信道，仅接收"
+msgid "%u channels, receive only"
+msgstr "%u 个信道，仅接收"
 
 #: core/ui/ui_app.c
 msgctxt "SHARE_BANNER_NOT_IMPORTED"
@@ -286,8 +291,8 @@ msgstr "区域未导入"
 
 #: core/ui/ui_app.c
 msgctxt "FREQ_TOAST_BANDS"
-msgid "Bands: "
-msgstr "频段： "
+msgid "Bands: %K"
+msgstr "频段： %K"
 
 #: core/ui/ui_app.c
 msgctxt "FREQ_TOAST_TYPE_MHZ_DIGITS"
@@ -361,13 +366,13 @@ msgstr "保存忙：请重试"
 
 #: core/ui/ui_app.c
 msgctxt "ZONE_TOAST_HOME_ZONE"
-msgid "Home zone: "
-msgstr "主区域： "
+msgid "Home zone: %s"
+msgstr "主区域： %s"
 
 #: core/ui/ui_app.c core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ZONE"
-msgid "Zone: "
-msgstr "区域： "
+msgid "Zone: %s"
+msgstr "区域： %s"
 
 #: core/ui/ui_app.c core/ui/ui_dual.c
 msgctxt "ZONE_TOAST_ONLY_ONE"
@@ -446,18 +451,13 @@ msgstr "暂无可跳过"
 
 #: core/ui/ui_app.c
 msgctxt "TALK_TOAST_DEFAULT"
-msgid "Default: "
-msgstr "默认： "
-
-#: core/ui/ui_app.c
-msgctxt "DIAL_TOAST_SPEED_DIAL"
-msgid "Speed dial "
-msgstr "缩位拨号 "
+msgid "Default: %s"
+msgstr "默认： %s"
 
 #: core/ui/ui_app.c
 msgctxt "DIAL_TOAST_IS_EMPTY"
-msgid " is empty: set it in qdmr"
-msgstr " 为空：请在 qdmr 设置"
+msgid "Speed dial %d is empty: set it in qdmr"
+msgstr "缩位拨号 %d 为空：请在 qdmr 设置"
 
 #: core/ui/ui_app.c
 msgctxt "HOME_TOAST_REPLY_ENDED"
@@ -586,8 +586,8 @@ msgstr "无密钥：在设置 > 加密 中设置"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_POWER"
-msgid "Power "
-msgstr "功率 "
+msgid "Power %K"
+msgstr "功率 %K"
 
 #: core/ui/ui_app.c
 msgctxt "QUICK_TOAST_ALL_DIGITS_TYPED"
@@ -646,8 +646,8 @@ msgstr "无内容可打开"
 
 #: core/ui/ui_app.c
 msgctxt "LIST_TITLE_FIND"
-msgid "Find: "
-msgstr "查找： "
+msgid "Find: %s_"
+msgstr "查找： %s_"
 
 #: core/ui/ui_app.c core/ui/ui_find.c
 msgctxt "LIST_EMPTY_NO_MATCH"
@@ -740,19 +740,14 @@ msgid "Any key keeps it on"
 msgstr "按任意键保持开机"
 
 #: core/ui/ui_app.c
-msgctxt "BATT_BANNER_BATTERY"
-msgid "Battery "
-msgstr "电池 "
-
-#: core/ui/ui_app.c
-msgctxt "BATT_PART_CHARGE_SOON"
-msgid "%: charge soon"
-msgstr "%：请尽快充电"
+msgctxt "BATT_BANNER_CHARGE_SOON"
+msgid "Battery %u%%: charge soon"
+msgstr "电池 %u%%：请尽快充电"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_BACK_ON"
-msgid "Back on "
-msgstr "已回到 "
+msgid "Back on %s"
+msgstr "已回到 %s"
 
 #: core/ui/ui_app.c
 msgctxt "TRUNK_TOAST_POLL_NO_DATA"
@@ -766,8 +761,8 @@ msgstr "该区域已删除"
 
 #: core/ui/ui_app.c
 msgctxt "ROAM_TOAST_MOVED_TO"
-msgid "Moved to "
-msgstr "已移至 "
+msgid "Moved to %s"
+msgstr "已移至 %s"
 
 #: core/ui/ui_aprs.c core/ui/ui_menus.c
 msgctxt "VALUE_1_MIN"
@@ -885,14 +880,14 @@ msgid "No callsign"
 msgstr "无呼号"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_BODY_ON"
-msgid " on "
-msgstr " 于 "
+msgctxt "APRS_BODY_ON_SENDING"
+msgid "%s on %K (sending)"
+msgstr "%1$s 于 %2$K （发送中）"
 
 #: core/ui/ui_aprs.c
-msgctxt "APRS_BODY_SENDING"
-msgid " (sending)"
-msgstr " （发送中）"
+msgctxt "APRS_BODY_ON"
+msgid "%s on %K"
+msgstr "%1$s 于 %2$K"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_NO_POSITION"
@@ -901,13 +896,13 @@ msgstr "无位置"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_NEXT_IN"
-msgid "Next in "
-msgstr "下次于 "
+msgid "Next in %K"
+msgstr "下次于 %K"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_BODY_SENT"
-msgid "  Sent "
-msgstr "  已发 "
+msgid "  Sent %u"
+msgstr "  已发 %u"
 
 #: core/ui/ui_aprs.c
 msgctxt "APRS_ROW_SEND_NOW"
@@ -1176,13 +1171,13 @@ msgstr "{请先开双守候|双守候已关}"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_B_ZONE"
-msgid "B zone: "
-msgstr "B 区域： "
+msgid "B zone: %s"
+msgstr "B 区域： %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_A_ZONE"
-msgid "A zone: "
-msgstr "A 区域： "
+msgid "A zone: %s"
+msgstr "A 区域： %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_NO_OTHER_ZONE"
@@ -1221,13 +1216,13 @@ msgstr "FM 信号"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_VALUE_TO_YOU"
-msgid " to you"
-msgstr " 给你"
+msgid "{%1$s to you|%1$s}"
+msgstr "{%1$s 给你|%1$s}"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_OFF_ON"
-msgid "Dual watch off: on "
-msgstr "双守候关：在 "
+msgid "Dual watch off: on %s"
+msgstr "双守候关：在 %s"
 
 #: core/ui/ui_dual.c
 msgctxt "DUAL_TOAST_OFF_SCANNING"
@@ -1351,8 +1346,8 @@ msgstr "漫游"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_CH"
-msgid "Ch "
-msgstr "信道 "
+msgid "Ch %u"
+msgstr "信道 %u"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_CHIP_CHANNEL"
@@ -1371,8 +1366,8 @@ msgstr "{联系人|}"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_TALK_TO_TG"
-msgid "Talk to TG "
-msgstr "通话 TG "
+msgid "Talk to TG %u"
+msgstr "通话 TG %u"
 
 #: core/ui/ui_find.c core/ui/ui_menus.c
 msgctxt "CHIP_NOT_SAVED"
@@ -1381,23 +1376,23 @@ msgstr "{未保存|}"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_PRIVATE_CALL"
-msgid "Private call "
-msgstr "个呼 "
+msgid "Private call %u"
+msgstr "个呼 %u"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_TUNE_VFO_TO"
-msgid "Tune VFO to "
-msgstr "VFO 调到 "
+msgid "Tune VFO to %K"
+msgstr "VFO 调到 %K"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_ROW_CREATE_CONTACT"
-msgid "Create contact "
-msgstr "新建联系人 "
+msgid "Create contact %u"
+msgstr "新建联系人 %u"
 
 #: core/ui/ui_find.c
 msgctxt "TRUNK_ROW_PHONE_CALL"
-msgid "Phone call "
-msgstr "电话 "
+msgid "Phone call %s"
+msgstr "电话 %s"
 
 #: core/ui/ui_find.c
 msgctxt "FIND_CHIP_MENU"
@@ -1436,18 +1431,18 @@ msgstr "网格"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_GOOD"
-msgid " good"
-msgstr " 良好"
+msgid "%u.%u good"
+msgstr "%1$u.%2$u 良好"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_FAIR"
-msgid " fair"
-msgstr " 一般"
+msgid "%u.%u fair"
+msgstr "%1$u.%2$u 一般"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_VALUE_POOR"
-msgid " poor"
-msgstr " 较差"
+msgid "%u.%u poor"
+msgstr "%1$u.%2$u 较差"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_STATE_3D_FIX"
@@ -1475,14 +1470,9 @@ msgid "No signal"
 msgstr "无信号"
 
 #: core/ui/ui_gps.c
-msgctxt "GPS_BODY_USED"
-msgid " used, "
-msgstr " 已用， "
-
-#: core/ui/ui_gps.c
-msgctxt "GPS_BODY_SEEN"
-msgid " seen"
-msgstr " 可见"
+msgctxt "GPS_BODY_USED_SEEN"
+msgid "%u used, %u seen"
+msgstr "%1$u 已用， %2$u 可见"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_LABEL_SATS"
@@ -1514,15 +1504,10 @@ msgctxt "GPS_EMPTY_NO_SATELLITES"
 msgid "No satellites yet"
 msgstr "暂无卫星"
 
-#: core/ui/ui_gps.c core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "PART_OF"
-msgid " of "
-msgstr " / "
-
 #: core/ui/ui_gps.c
 msgctxt "GPS_BODY_IN_THE_FIX"
-msgid " in the fix"
-msgstr " 参与定位"
+msgid "%u of %u in the fix"
+msgstr "%1$u / %2$u 参与定位"
 
 #: core/ui/ui_gps.c
 msgctxt "GPS_EMPTY_NO_FIX"
@@ -1556,8 +1541,8 @@ msgstr "区域"
 
 #: core/ui/ui_menus.c
 msgctxt "HUB_VALUE_NEW"
-msgid " new"
-msgstr " 新建"
+msgid "%u new"
+msgstr "%u 新建"
 
 #: core/ui/ui_menus.c
 msgctxt "HUB_VALUE_SCANNING"
@@ -1576,8 +1561,8 @@ msgstr "1-7 打开  返回"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_ROW_TALK_TO"
-msgid "Talk to "
-msgstr "通话对象 "
+msgid "Talk to %s"
+msgstr "通话对象 %s"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "ACT_ROW_PRIVATE_CALL"
@@ -1636,8 +1621,8 @@ msgstr "消息：本版本无"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "正在检查 "
+msgid "Checking %s..."
+msgstr "正在检查 %s..."
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
@@ -1646,8 +1631,8 @@ msgstr "电台检查：本版本无"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "呼叫提示至 "
+msgid "Call alert to %s"
+msgstr "呼叫提示至 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
@@ -1671,8 +1656,8 @@ msgstr "在 qdmr 中添加联系人"
 
 #: core/ui/ui_menus.c
 msgctxt "TRUNK_TOAST_POLLING"
-msgid "Polling "
-msgstr "正在请求 "
+msgid "Polling %s"
+msgstr "正在请求 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ACT_HINT"
@@ -1730,9 +1715,9 @@ msgid "Couldn't send: try again"
 msgstr "发送失败：请重试"
 
 #: core/ui/ui_menus.c
-msgctxt "TOAST_SENDING_TO"
-msgid "Sending to "
-msgstr "正在发送至 "
+msgctxt "MSG_TOAST_SENDING_TO"
+msgid "Sending to %s"
+msgstr "正在发送至 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "TEXT_TITLE_CALLSIGN"
@@ -1830,14 +1815,19 @@ msgid "Couldn't delete: try again"
 msgstr "删除失败：请重试"
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_N_OF_M"
+msgid "%u of %u"
+msgstr "%1$u / %2$u"
+
+#: core/ui/ui_menus.c
 msgctxt "MSG_BODY_FROM"
-msgid "From "
-msgstr "来自 "
+msgid "From %s, %K"
+msgstr "来自 %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "MSG_BODY_TO"
-msgid "To "
-msgstr "至 "
+msgid "To %s, %K"
+msgstr "至 %1$s, %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "HINT_OK_CHOOSE_MORE_BACK"
@@ -1865,29 +1855,24 @@ msgid "Create New Zone"
 msgstr "新建区域"
 
 #: core/ui/ui_menus.c
-msgctxt "ZONE_VALUE_HERE_AND"
-msgid "Here, "
-msgstr "此处， "
+msgctxt "ZONE_VALUE_HERE_CHANNEL"
+msgid "{Here, %1$u channel|Here, %1$u ch|Here}"
+msgstr "{此处， %1$u 个信道|此处， %1$u 信道|此处}"
 
 #: core/ui/ui_menus.c
-msgctxt "ZONE_VALUE_HERE"
-msgid "Here"
-msgstr "此处"
-
-#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "UNIT_CHANNEL"
-msgid " channel"
-msgstr " 个信道"
-
-#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "UNIT_CHANNELS"
-msgid " channels"
-msgstr " 个信道"
+msgctxt "ZONE_VALUE_HERE_CHANNELS"
+msgid "{Here, %1$u channels|Here, %1$u ch|Here}"
+msgstr "{此处， %1$u 个信道|此处， %1$u 信道|此处}"
 
 #: core/ui/ui_menus.c
-msgctxt "UNIT_CH"
-msgid " ch"
-msgstr " 信道"
+msgctxt "ZONE_VALUE_CHANNEL"
+msgid "{%1$u channel|%1$u ch|}"
+msgstr "{%1$u 个信道|%1$u 信道|}"
+
+#: core/ui/ui_menus.c
+msgctxt "ZONE_VALUE_CHANNELS"
+msgid "{%1$u channels|%1$u ch|}"
+msgstr "{%1$u 个信道|%1$u 信道|}"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_VFO_TYPE_FREQUENCY"
@@ -1951,8 +1936,8 @@ msgstr "正在保存区域：请重试"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_ROW_PRIVATE_ID"
-msgid "Private ID "
-msgstr "个呼 ID "
+msgid "Private ID %u"
+msgstr "个呼 ID %u"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TOAST_GO_TO_DMR_CHANNEL"
@@ -1965,19 +1950,14 @@ msgid "Can't send now: try again"
 msgstr "现在无法发送：请重试"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_TOAST_VIA"
-msgid " via "
-msgstr " 经 "
-
-#: core/ui/ui_menus.c
 msgctxt "SHARE_TOAST_SENDING_COUNT"
-msgid "Sending "
-msgstr "正在发送 "
+msgid "{Sending %1$u of %2$u channels via %3$K|Sending via %3$K}"
+msgstr "{正在发送 %1$u / %2$u 个信道 经 %3$K|发送中 经 %3$K}"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_TOAST_SENDING"
-msgid "Sending"
-msgstr "发送中"
+msgctxt "SHARE_TOAST_SENDING_TO"
+msgid "{Sending to %1$s via %2$K|Sending via %2$K}"
+msgstr "{正在发送至 %1$s 经 %2$K|发送中 经 %2$K}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_TO"
@@ -2031,33 +2011,38 @@ msgstr "已拒绝"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
 msgctxt "SHARE_BODY_CHANNEL"
-msgid "Channel "
-msgstr "信道 "
+msgid "Channel %s"
+msgstr "信道 %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_zone.c
-msgctxt "SHARE_BODY_ZONE"
-msgid "Zone "
-msgstr "区域 "
+msgctxt "SHARE_BODY_ZONE_CHANNEL"
+msgid "Zone %s, %u channel"
+msgstr "区域 %1$s, %2$u 个信道"
+
+#: core/ui/ui_menus.c core/ui/ui_svc_zone.c
+msgctxt "SHARE_BODY_ZONE_CHANNELS"
+msgid "Zone %s, %u channels"
+msgstr "区域 %1$s, %2$u 个信道"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_FROM"
-msgid ", from "
-msgstr "，来自 "
+msgid ", from %s"
+msgstr "，来自 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_NOT_IN_BAND"
-msgid " not in band"
-msgstr " 不在频段"
+msgid ". %u not in band"
+msgstr ". %u 不在频段"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_CHANNEL_NO_SYSTEM"
-msgid " trunked channel unavailable: system not set up"
-msgstr " 个集群信道不可用：系统未设置"
+msgid ". %u trunked channel unavailable: system not set up"
+msgstr ". %u 个集群信道不可用：系统未设置"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_BODY_CHANNELS_NO_SYSTEM"
-msgid " trunked channels unavailable: system not set up"
-msgstr " 个集群信道不可用：系统未设置"
+msgid ". %u trunked channels unavailable: system not set up"
+msgstr ". %u 个集群信道不可用：系统未设置"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_CHANNEL_RECEIVED"
@@ -2095,9 +2080,9 @@ msgid "No zone offer waiting"
 msgstr "无待处理区域"
 
 #: core/ui/ui_menus.c
-msgctxt "SHARE_UNIT_CHANNELS"
-msgid "{ channels| ch}"
-msgstr "{ 个信道| 信道}"
+msgctxt "SHARE_VALUE_CHANNELS"
+msgid "{%1$u channels|%1$u ch}"
+msgstr "{%1$u 个信道|%1$u 信道}"
 
 #: core/ui/ui_menus.c
 msgctxt "SHARE_TITLE_ADD_TO_ZONE"
@@ -2215,14 +2200,14 @@ msgid "New Channel"
 msgstr "新建信道"
 
 #: core/ui/ui_menus.c
-msgctxt "CHAN_UNIT_ZONE"
-msgid " zone"
-msgstr " 个区域"
+msgctxt "CHAN_VALUE_ZONE"
+msgid "%u zone"
+msgstr "%u 个区域"
 
 #: core/ui/ui_menus.c
-msgctxt "CHAN_UNIT_ZONES"
-msgid " zones"
-msgstr " 个区域"
+msgctxt "CHAN_VALUE_ZONES"
+msgid "%u zones"
+msgstr "%u 个区域"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_VALUE_RADIO_DEFAULT"
@@ -2411,13 +2396,13 @@ msgstr "无更改可保存"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_SAVED_AS"
-msgid "Saved as channel "
-msgstr "已存为信道 "
+msgid "Saved as channel %u"
+msgstr "已存为信道 %u"
 
 #: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_SAVED"
-msgid "Saved channel "
-msgstr "已保存信道 "
+msgid "Saved channel %u"
+msgstr "已保存信道 %u"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_ID_MAX_PRIVATE"
@@ -2511,8 +2496,8 @@ msgstr "是，放弃"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_KIND"
-msgid " settings will be removed"
-msgstr " 设置会删除"
+msgid "%K settings will be removed"
+msgstr "%K 设置会删除"
 
 #: core/ui/ui_menus.c
 msgctxt "DISCARD_ASK_NEW_CONTACT"
@@ -2576,8 +2561,8 @@ msgstr "通话组最大 16777214"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_WHY_ALREADY_EXISTS"
-msgid "Already a contact: "
-msgstr "已是联系人： "
+msgid "Already a contact: %s"
+msgstr "已是联系人： %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_WHY_NO_ROOM"
@@ -2586,8 +2571,8 @@ msgstr "联系人已满"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_TOAST_SAVED"
-msgid "Saved contact "
-msgstr "已保存联系人 "
+msgid "Saved contact %s"
+msgstr "已保存联系人 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CONTACT_TOAST_ID_MAX"
@@ -2636,8 +2621,8 @@ msgstr "已是最后"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_POSITION"
-msgid "Position "
-msgstr "位置 "
+msgid "Position %u of %u"
+msgstr "位置 %1$u / %2$u"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_FULL"
@@ -2646,8 +2631,8 @@ msgstr "区域已满"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_REMOVED_FROM"
-msgid "Removed from "
-msgstr "已移出 "
+msgid "Removed from %s"
+msgstr "已移出 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "HINT_1_6_PICK_BACK"
@@ -2656,8 +2641,8 @@ msgstr "1-6 选  返回"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ADDED_TO"
-msgid "Added to "
-msgstr "已加入 "
+msgid "Added to %s"
+msgstr "已加入 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TITLE_ADD_CHANNEL"
@@ -2701,8 +2686,8 @@ msgstr "已重命名"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_ADDED"
-msgid "Added "
-msgstr "已添加 "
+msgid "Added %s"
+msgstr "已添加 %s"
 
 #: core/ui/ui_menus.c core/ui/ui_svc_storage.c core/ui/ui_svc_zone.c
 msgctxt "ZONE_ERR_NO_ROOM"
@@ -2711,8 +2696,8 @@ msgstr "区域已满"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_COPIED_AS"
-msgid "Copied as "
-msgstr "已复制为 "
+msgid "Copied as %s"
+msgstr "已复制为 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_EMPTY_NOTHING_TO_SEND"
@@ -2746,18 +2731,13 @@ msgstr "是，删除"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TOAST_DELETED"
-msgid "Deleted "
-msgstr "已删除 "
+msgid "Deleted %s"
+msgstr "已删除 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_ASK_DELETE"
-msgid "Delete "
-msgstr "删除 "
-
-#: core/ui/ui_menus.c
-msgctxt "ZONE_ASK_CHANNELS_STAY"
-msgid "? Channels stay."
-msgstr "？信道保留。"
+msgid "Delete %s? Channels stay."
+msgstr "删除 %s？信道保留。"
 
 #: core/ui/ui_menus.c
 msgctxt "ZONE_TITLE_DELETE"
@@ -2846,18 +2826,13 @@ msgstr "尚未定位。请到室外远离建筑。"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_FIX"
-msgid "Fix, "
-msgstr "定位， "
-
-#: core/ui/ui_menus.c
-msgctxt "POS_UNIT_SATELLITES"
-msgid " satellites"
-msgstr " 颗卫星"
+msgid "Fix, %u satellites"
+msgstr "定位， %u 颗卫星"
 
 #: core/ui/ui_menus.c
 msgctxt "POS_BODY_ALTITUDE"
-msgid "Altitude "
-msgstr "海拔 "
+msgid "Altitude %d m"
+msgstr "海拔 %d m"
 
 #: core/ui/ui_menus.c
 msgctxt "HOTSPOT_BODY_HOW_TO_START"
@@ -2891,13 +2866,13 @@ msgstr "其他固件电台频率：已忽略"
 
 #: core/ui/ui_menus.c
 msgctxt "CPLUG_BODY_ZONES"
-msgid "Zones: "
-msgstr "区域： "
+msgid "Zones: %u"
+msgstr "区域： %u"
 
 #: core/ui/ui_menus.c
 msgctxt "CPLUG_BODY_CHANNELS_UP_TO"
-msgid "Channels: up to "
-msgstr "信道：最多 "
+msgid "Channels: up to %u"
+msgstr "信道：最多 %u"
 
 #: core/ui/ui_menus.c
 msgctxt "USBNET_BODY_IS_NETWORK"
@@ -2975,19 +2950,9 @@ msgid "User of a repeater"
 msgstr "中继台用户"
 
 #: core/ui/ui_menus.c
-msgctxt "SFR_BODY_TALK_ON_TS"
-msgid "Talk on TS"
-msgstr "通话时隙"
-
-#: core/ui/ui_menus.c
-msgctxt "SFR_BODY_HEAR_TS"
-msgid ", hear TS"
-msgstr "，收听时隙"
-
-#: core/ui/ui_menus.c
-msgctxt "SFR_BODY_AND_TS"
-msgid " and TS"
-msgstr " 和时隙"
+msgctxt "SFR_BODY_TALK_HEAR"
+msgid "Talk on TS%1$d, hear TS%1$d and TS%2$d"
+msgstr "通话时隙%1$d，收听时隙%1$d 和时隙%2$d"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_SFR_NOT_IN_BUILD"
@@ -3071,8 +3036,8 @@ msgstr "保存在电台频率中"
 
 #: core/ui/ui_menus.c
 msgctxt "BODY_RADIO"
-msgid "Radio: "
-msgstr "电台： "
+msgid "Radio: %K"
+msgstr "电台： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SAVED"
@@ -3141,8 +3106,8 @@ msgstr "无应答"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_BODY_ARS"
-msgid "ARS: "
-msgstr "ARS： "
+msgid "ARS: %K"
+msgstr "ARS： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "DATA_TITLE"
@@ -3156,8 +3121,8 @@ msgstr "频率微调"
 
 #: core/ui/ui_menus.c
 msgctxt "TRIM_BODY_AT"
-msgid "At "
-msgstr "当前 "
+msgid "At %u MHz"
+msgstr "当前 %u MHz"
 
 #: core/ui/ui_menus.c
 msgctxt "TRIM_BODY_PLUS_RAISES"
@@ -3186,13 +3151,8 @@ msgstr "最大 10.0 ppm"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_LABEL_SOURCE"
-msgid "Source: "
-msgstr "来源： "
-
-#: core/ui/ui_menus.c
-msgctxt "ABOUT_LABEL_IMAGE"
-msgid "Image: "
-msgstr "固件标识： "
+msgid "Source: %K"
+msgstr "来源： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_VALUE_IMAGE_CHECKING"
@@ -3200,29 +3160,39 @@ msgid "checking"
 msgstr "检查中"
 
 #: core/ui/ui_menus.c
+msgctxt "ABOUT_LABEL_IMAGE"
+msgid "Image: %K"
+msgstr "固件标识： %K"
+
+#: core/ui/ui_menus.c
+msgctxt "ABOUT_BODY_HW_LINE"
+msgid "%K: %K"
+msgstr "%1$K： %2$K"
+
+#: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_FIRMWARE"
-msgid "Firmware: "
-msgstr "固件： "
+msgid "Firmware: %K"
+msgstr "固件： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_RELEASE"
-msgid "Release: "
-msgstr "版本： "
+msgid "Release: %K"
+msgstr "版本： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_BUILD"
-msgid "Build: "
-msgstr "构建： "
+msgid "Build: %K"
+msgstr "构建： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_DATE"
-msgid "Date: "
-msgstr "日期： "
+msgid "Date: %K"
+msgstr "日期： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_LICENSE"
-msgid "License: "
-msgstr "许可： "
+msgid "License: %K"
+msgstr "许可： %K"
 
 #: core/ui/ui_menus.c
 msgctxt "ABOUT_BODY_MAINTAINERS"
@@ -3296,18 +3266,18 @@ msgstr "正在搜索站点……"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SITE"
-msgid "Site "
-msgstr "站点 "
+msgid "Site %u of %u: %s"
+msgstr "站点 %1$u / %2$u: %3$s"
+
+#: core/ui/ui_menus.c
+msgctxt "ROAM_BODY_SIGNAL_WEAK"
+msgid "Signal %d dBm, weak"
+msgstr "信号 %d dBm，弱"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_SIGNAL"
-msgid "Signal "
-msgstr "信号 "
-
-#: core/ui/ui_menus.c
-msgctxt "ROAM_BODY_DBM_WEAK"
-msgid " dBm, weak"
-msgstr " dBm，弱"
+msgid "Signal %d dBm"
+msgstr "信号 %d dBm"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_BODY_LOCKED"
@@ -3386,8 +3356,8 @@ msgstr "漫游仅用于信道"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_ON_FOR"
-msgid "Roaming on for "
-msgstr "漫游已开： "
+msgid "Roaming on for %s"
+msgstr "漫游已开： %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_OFF"
@@ -3416,8 +3386,8 @@ msgstr "正在搜索站点"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_LOCKED_TO"
-msgid "Locked to "
-msgstr "已锁定 "
+msgid "Locked to %s"
+msgstr "已锁定 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "ROAM_TOAST_ROAMING_AGAIN"
@@ -3441,8 +3411,8 @@ msgstr "无崩溃记录。"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RESTARTED_SEND_TO"
-msgid "Restarted after a crash. Send the report to "
-msgstr "崩溃后已重启。请把报告发送至 "
+msgid "Restarted after a crash. Send the report to %s?"
+msgstr "崩溃后已重启。请把报告发送至 %s?"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_REPORT_SENT"
@@ -3451,18 +3421,18 @@ msgstr "报告已发送"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_IN_A_ROW"
-msgid " crashes in a row"
-msgstr " 次连续崩溃"
+msgid "%u crashes in a row"
+msgstr "%u 次连续崩溃"
+
+#: core/ui/ui_menus.c
+msgctxt "CRASH_BODY_RAN_FOR_BUILD"
+msgid "Ran for %K, build %K"
+msgstr "运行了 %1$K，构建 %2$K"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_BODY_RAN_FOR"
-msgid "Ran for "
-msgstr "运行了 "
-
-#: core/ui/ui_menus.c
-msgctxt "CRASH_BODY_BUILD"
-msgid ", build "
-msgstr "，构建 "
+msgid "Ran for %K"
+msgstr "运行了 %K"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_ROW_SEND_REPORT"
@@ -3521,8 +3491,8 @@ msgstr "崩溃日志"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_TOAST_REPORTS_TO"
-msgid "Crash reports to "
-msgstr "崩溃报告发至 "
+msgid "Crash reports to %s"
+msgstr "崩溃报告发至 %s"
 
 #: core/ui/ui_menus.c
 msgctxt "CRASH_TOAST_THIS_CONTACT"
@@ -3551,8 +3521,8 @@ msgstr "崩溃报告未发送"
 
 #: core/ui/ui_menus.c
 msgctxt "TOOLS_HINT_OPEN_BACK"
-msgid " open  Back"
-msgstr " 打开  返回"
+msgid "1-%u open  Back"
+msgstr "1-%u 打开  返回"
 
 #: core/ui/ui_menus.c
 msgctxt "TOOLS_ROW_USB_NETWORK"
@@ -4156,13 +4126,13 @@ msgstr "低电量提示"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_KEY_N"
-msgid "Key "
-msgstr "按键 "
+msgid "Key %d"
+msgstr "按键 %d"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_LABEL_KEY_N_HOLD"
-msgid " hold"
-msgstr " 长按"
+msgctxt "SET_LABEL_KEY_HOLD"
+msgid "%K hold"
+msgstr "%K 长按"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_LONG_PRESS_TIME"
@@ -4279,10 +4249,10 @@ msgctxt "HINT_0_9_OPEN_BACK"
 msgid "0-9 open  Back"
 msgstr "0-9 打开  返回"
 
-#: core/ui/ui_menus.c core/ui/ui_screens.c
-msgctxt "HOME_LABEL_STEP"
-msgid "Step "
-msgstr "步进 "
+#: core/ui/ui_menus.c
+msgctxt "SIG_LABEL_STEP_N"
+msgid "Step %u"
+msgstr "步骤 %u"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_STANDARD_SOUND"
@@ -4291,8 +4261,8 @@ msgstr "标准音"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_LABEL_LENGTH"
-msgid "Length: "
-msgstr "长度: "
+msgid "Length: %d / %u ms"
+msgstr "长度: %1$d / %2$u ms"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_TITLE_START_TONE"
@@ -4310,19 +4280,9 @@ msgid "Idle Tone"
 msgstr "空闲音"
 
 #: core/ui/ui_menus.c
-msgctxt "SET_TOAST_NOT_CHANGED"
-msgid "Not changed: "
-msgstr "未改： "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_RANGE_TO"
-msgid " to "
-msgstr " 到 "
-
-#: core/ui/ui_menus.c
-msgctxt "SET_TOAST_STEPS_OF"
-msgid ", steps of "
-msgstr "，步进 "
+msgctxt "SET_TOAST_NOT_CHANGED_STEPS"
+msgid "Not changed: %d to %d, steps of %d"
+msgstr "未改： %1$d 到 %2$d，步进 %3$d"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_HINT_TYPE_OK_NEXT_BACK"
@@ -4336,13 +4296,13 @@ msgstr "标准"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_UNIT_STEP"
-msgid " step"
-msgstr " 步"
+msgid "%u step"
+msgstr "%u 步"
 
 #: core/ui/ui_menus.c
 msgctxt "SIG_UNIT_STEPS"
-msgid " steps"
-msgstr " 步"
+msgid "%u steps"
+msgstr "%u 步"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
@@ -4438,6 +4398,11 @@ msgstr "当前无 GPS 定位"
 msgctxt "SET_TOAST_SAVED_AS_YOU_CHANGE"
 msgid "Settings are saved as you change them"
 msgstr "设置更改即保存"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_TOAST_NOT_CHANGED"
+msgid "Not changed: %d to %d"
+msgstr "未改： %1$d 到 %2$d"
 
 #: core/ui/ui_menus.c core/ui/ui_position.c
 msgctxt "HINT_OK_CHANGE_BACK"
@@ -4765,6 +4730,11 @@ msgid "ROAM"
 msgstr "漫游"
 
 #: core/ui/ui_screens.c
+msgctxt "HOME_LABEL_STEP"
+msgid "Step %K"
+msgstr "步进 %K"
+
+#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_HUNT"
 msgid "Finding system"
 msgstr "搜索中"
@@ -4826,8 +4796,8 @@ msgstr "请重启电台"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_BODY_SET"
-msgid "Set: "
-msgstr "请设置: "
+msgid "Set: %K"
+msgstr "请设置: %K"
 
 #: core/ui/ui_screens.c
 msgctxt "HW_FIX_POWER_CYCLE"
@@ -4846,8 +4816,8 @@ msgstr "本信道仅接收"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_BANDS"
-msgid "Bands "
-msgstr "频段 "
+msgid "Bands %K"
+msgstr "频段 %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TIMEOUT"
@@ -4981,8 +4951,8 @@ msgstr "注册已拒绝"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_UNMAPPED"
-msgid "Unknown channel "
-msgstr "无此信道 "
+msgid "Unknown channel %u"
+msgstr "无此信道 %u"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_NOT_ALLOWED"
@@ -5071,8 +5041,8 @@ msgstr "发给你的个呼"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_VALUE_PRIVATE_TO"
-msgid "Private to "
-msgstr "个呼至 "
+msgid "Private to %s"
+msgstr "个呼至 %s"
 
 #: core/ui/ui_screens.c
 msgctxt "HOME_STATE_SFR_SENDING_ID"
@@ -5211,18 +5181,13 @@ msgstr "巨型"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_HEARD"
-msgid "Heard: "
-msgstr "收到： "
-
-#: core/ui/ui_screens.c
-msgctxt "TRUNK_OTHER_NET"
-msgid ", net "
-msgstr "，网络 "
+msgid "Heard: %K, net %u"
+msgstr "收到： %1$K，网络 %2$u"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_SITE"
-msgid "site "
-msgstr "站点 "
+msgid "site %u"
+msgstr "站点 %u"
 
 #: core/ui/ui_screens.c
 msgctxt "TRUNK_OTHER_CAT_A"
@@ -5236,8 +5201,8 @@ msgstr "，仅 B 类"
 
 #: core/ui/ui_screens.c
 msgctxt "CALL_BODY_PRIVATE_ID"
-msgid "Private "
-msgstr "个呼 "
+msgid "{Private %1$u|Private}"
+msgstr "{个呼 %1$u|个呼}"
 
 #: core/ui/ui_screens.c
 msgctxt "STATE_TALKING"
@@ -5275,6 +5240,11 @@ msgid " Group"
 msgstr " 组呼"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_BODY_TIME_OF"
+msgid "%K of %K"
+msgstr "%1$K / %2$K"
+
+#: core/ui/ui_screens.c
 msgctxt "CALL_HINT_FINISHING"
 msgid "Finishing the call"
 msgstr "正在结束通话"
@@ -5310,6 +5280,11 @@ msgid "MON: digital monitor"
 msgstr "MON：数字监听"
 
 #: core/ui/ui_screens.c
+msgctxt "CALL_VALUE_PRIVATE_TO_ID"
+msgid "Private to %u"
+msgstr "个呼至 %u"
+
+#: core/ui/ui_screens.c
 msgctxt "ACTIVITY_STATE_SQUELCH_OPEN"
 msgid "Squelch open"
 msgstr "静噪打开"
@@ -5326,8 +5301,8 @@ msgstr "发送中"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LEFT_OF"
-msgid " left of "
-msgstr " / "
+msgid "%K left of %K"
+msgstr "%1$K / %2$K"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_NO_TIME_LIMIT"
@@ -5351,8 +5326,8 @@ msgstr "APRS: "
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_BODY_LAST"
-msgid "Last activity "
-msgstr "最近活动 "
+msgid "Last activity %K"
+msgstr "最近活动 %K"
 
 #: core/ui/ui_screens.c
 msgctxt "ACTIVITY_EMPTY"
@@ -5401,8 +5376,8 @@ msgstr "0-9 频率  * 快捷  上下"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_BODY_HEARD"
-msgid "Heard "
-msgstr "收到 "
+msgid "{Heard %1$K|%1$K}"
+msgstr "{收到 %1$K|%1$K}"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_BUSY"
@@ -5411,13 +5386,13 @@ msgstr "忙"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_SENDING_ON"
-msgid "SENDING on "
-msgstr "正在发送于 "
+msgid "SENDING on %K"
+msgstr "正在发送于 %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_TALKING_ON"
-msgid "TALKING on "
-msgstr "正在通话于 "
+msgid "TALKING on %K"
+msgstr "正在通话于 %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_STATE_RECEIVING_ON_BOTH"
@@ -5425,14 +5400,14 @@ msgid "Receiving on A and B"
 msgstr "正在接收 A 和 B"
 
 #: core/ui/ui_screens.c
-msgctxt "DUAL_STATE_RECEIVING_ON"
-msgid "Receiving on "
-msgstr "正在接收 "
+msgctxt "DUAL_STATE_RECEIVING_MUTED"
+msgid "Receiving on %K, muted"
+msgstr "正在接收 %K，已静音"
 
 #: core/ui/ui_screens.c
-msgctxt "DUAL_STATE_MUTED"
-msgid ", muted"
-msgstr "，已静音"
+msgctxt "DUAL_STATE_RECEIVING_ON"
+msgid "Receiving on %K"
+msgstr "正在接收 %K"
 
 #: core/ui/ui_screens.c
 msgctxt "DUAL_HINT_BACK_TO_B"
@@ -5636,8 +5611,8 @@ msgstr "{上下: +/- 偏移  输入: 发射频率|上下 +/- 偏移  0-9 发射�
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_HINT_OK_SETS"
-msgid "  OK sets"
-msgstr "  OK 设定"
+msgid "TX %K  OK sets"
+msgstr "TX %K  OK 设定"
 
 #: core/ui/ui_screens.c
 msgctxt "QUICK_TITLE"

@@ -28,6 +28,7 @@ English:
 | `TR(KEY, "Text")` | In code | Returns the text in the language in use |
 | `TRN(KEY, "Text")` | Where the text is stored now and shown later: an initializer of a `static const` array or struct, a field, an event | A `tr_id_t` for the text (a name for it, not the text); the code that shows it calls `tr()` on it |
 | `TRX(KEY, "Text")` | In the same places, for text never translated (`"RX"`, `"12.5 kHz"`) that sits beside translated text | A `tr_id_t` like `TRN`; no catalog has it |
+| `TRF(&b, KEY, "Text %s", name)` | Text that includes information only known at run time, such as a name or a number | Appends the text in the language in use to an `sbuf_t`, with each placeholder replaced by its argument ([Text with placeholders](#text-with-placeholders)) |
 | `tr(id)` | Where a table entry is shown | The text in the language in use; the English when there is no translation |
 | `tr_en(id)` | Where the English is needed too (Find matches both) | The English |
 
@@ -75,11 +76,11 @@ going stale, and a translator who reads the key in a catalog knows what kind of 
 | `FIX` | What to do about it |
 | `ASK` | A question to confirm |
 | `ERR` | A failure reported by a background job |
-| `UNIT` | A unit joined to a number (` channels`) |
-| `PART` | A piece joined to other text, with no role of its own (` of `) |
+| `UNIT` | A unit joined to a number |
+| `PART` | A piece joined to other text, with no role of its own |
 | `WORD` | A term used as title, label and value alike (`VFO`, `Scan`) |
 
-A piece of a sentence (`"Message from "`) takes the role of the sentence. A number in a name is the number in the
+Text with placeholders (`"Message from %s"`) is named for the whole text. A number in a name is the number in the
 text (`VALUE_10_MIN`, `HINT_1_5_PICK_BACK`), never a counter: two texts that would get the same name differ in
 meaning, so say how.
 
@@ -136,20 +137,19 @@ msgstr "Retroiluminación"
 | Rule | Why |
 |---|---|
 | Keep it short. Most screens are 128 or 160 pixels wide: about 21 characters in the small font, 16 in the list font | A row too long is cut with an ellipsis; a toast or hint is cut |
-| Keep leading and trailing spaces, and the colon at the end | The code glues a number or a name to the text: `"Volume "` + `"5"` |
+| Keep leading and trailing spaces, and the colon at the end | The code may put other text beside it |
+| Keep every placeholder (`%s`, `%u`) and move it where your language needs it | The radio replaces it with a name or a number. Number the placeholders as [Numbering placeholders](#numbering-placeholders) says: `"Site %u of %u: %s"` becomes `"%3$s: sitio %1$u de %2$u"`. Don't drop or add one: `--check` rejects it |
 | Keep `{a\|b}` groups as groups, with the same number of choices | A text alternate: the radio shows the first choice that fits, longest first. Write each choice shorter than the one before |
 | Use only ASCII and Latin-1 letters (á é í ó ú ñ ü ç ß ...) and `… · → ° ⤒ ⤓` | The radio draws one byte a character; `--check` rejects anything else. A CJK catalog is the exception, and says so ([below](#chinese-and-other-cjk-languages)) |
 | Start every hint group that names the Back key with exactly your translation of `"Back"` | Hints keep the Back group at the right edge by matching that word: change it and every Back group must change with it |
 | Status strip words (IDLE, NO TX, SCAN, DUAL, ROAM) and chips (Lock, DMon, Priv) no longer than the English; keep the English when nothing fits | They sit in fixed slots of the status strip |
 | Don't translate the standard abbreviations the source leaves unmarked (TG, TS, CC, RX, TX, VFO, DMR, FM) | Radio operators know them; they aren't in the catalog |
 
-Some strings are joined in English word order, a number or name before or after a piece of text (`"14m"` + `" ago"`).
-Translate the piece so the joined text reads well ("14m atrás"), even when the usual phrase puts the words the other
-way round.
+A few strings are still joined in a fixed order to text beside them: a word in a row of chips (`" late"`), a line
+that continues another (`", from %s"`). They start or end with a space or punctuation; keep it.
 
 To see where a string goes, search for its key (the `msgctxt` line) in the file its `#:` line names: `grep -n
-'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more. A string with a leading or trailing space is
-always such a piece.
+'BACKLIGHT,' core/ui/ui_menus.c`. The comments next to a `TR()` often say more.
 
 ### Chinese and other CJK languages
 
@@ -229,9 +229,10 @@ untranslated, `python3 tools/i18n.py --check --allow-pending` skips them; CI doe
 
 | Text | Mark |
 |---|---|
-| A word or sentence the user reads | `TR(KEY, "...")`, or `TRN(KEY, "...")` in a table and `tr()` where it is shown |
+| A word or phrase the user reads | `TR(KEY, "...")`, or `TRN(KEY, "...")` in a table and `tr()` where it is shown |
 | A screen's title, hint, empty text, a menu row | `TRN()` in the table: `list_draw` and the menus translate them |
 | A hint built when the screen is drawn | `SF_HINT_FN` and `hint_fn` in the screen's definition, returning text already in the language in use |
+| Text that includes information only known at run time, such as a name or a number | `TRF(&b, KEY, "... %s ...", name)`: one string with placeholders, never pieces glued around the information ([below](#text-with-placeholders)) |
 | Names, numbers, units, standard abbreviations | Not marked; in a table of `tr_id_t` beside marked text, `TRX(KEY, "...")` |
 | Debug link names and values, protocol text sent off the radio, log text | Not marked: tools and tests read them |
 | Canned text messages | Marked: the radio sends them in the language in use, so keep them short and plain |
@@ -243,7 +244,7 @@ next to each other. Not a variable, no `\n` (write the line break with `sb_chr`)
 same text where the meaning is the same. `TR_<KEY>` must not be a name the source already uses (the tool says so). `python3 tools/i18n.py --rewrite [FILE]`
 gives a mark written without a key, `TR("...")`, one made from its English (the same English gets the key it already
 has); rename it before the commit (`--rename`, below).
-A text that travels between tasks (an event) travels as its `tr_id_t`, not as text. Build text from pieces
+A text that travels between tasks (an event) travels as its `tr_id_t`, not as text. Build text
 with `sbuf_t`, not `strcpy`/`strcat`: a translation can be longer than the English, and `str_copy` and `sb_str`
 cut it safely. Don't compare shown text with `strcmp`; compare the state it came from. After marking, run
 `--sync` and commit the catalogs.
@@ -261,6 +262,88 @@ cd tests/host && UI_LANG=fr ./uiSim --gallery /tmp/gallery-fr    # contact sheet
 ```
 
 Commit only the English gallery.
+
+#### Text with placeholders
+
+Some text includes information the radio only knows while it runs: a contact's name, a channel number, a signal
+level. Write the whole phrase as one string, put a placeholder where the information goes, and pass the information
+as arguments after the string:
+
+```c
+TRF(&b, MSG_BANNER_FROM, "Message from %s", name);
+TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", site + 1u, sites, ch.name);
+```
+
+`TRF` looks up the text in the language in use, replaces each placeholder with its argument, and adds the result to
+the buffer `b`. A translator sees the whole phrase and can put the placeholders wherever their language needs them.
+Don't build such text from pieces ("Message from " followed by the name): the pieces would be stuck in English word
+order.
+
+##### Placeholders
+
+| Placeholder | Argument | Shows |
+|---|---|---|
+| `%s` | A string | Untrusted text: a contact or channel name, a callsign, a received message ([below](#untrusted-and-trusted-text)) |
+| `%K` | A string | Trusted text the firmware built: a translated word, a time or frequency formatted by a helper. K is for Keep: not sanitized ([below](#untrusted-and-trusted-text)) |
+| `%d` | An `int` | A number that can be negative |
+| `%u` | An `unsigned` | A number that can't be negative |
+| `%03u`, `%03d` | As above | The number with at least 3 digits, zero padded: `007`. Any width from 1 to 9 |
+| `%3u`, `%3d` | As above | **Disabled.** The number padded with spaces to 3 characters. Nothing needs it yet, so it is switched off (`SB_FMT_SPACE_PAD` in `core/text/format.h`) and `--check` rejects it. Turn it on when code needs it |
+| `%%` | None | A percent sign: `"Battery %u%%"` shows "Battery 85%" |
+
+A `%` followed by anything else is an error: `--check` rejects it.
+
+The compiler checks each argument against its placeholder: `%s` and `%K` need a string, and `%d` and `%u` need an
+integer no bigger than an `int`. A wrong type or the wrong number of arguments stops the build. The check adds no
+code to the firmware.
+
+##### Untrusted and trusted text
+
+The radio's text can contain a few invisible control characters that tell the screen what to do. The main one marks
+text alternates: `"{14 min ago|14m}"` tells the screen to show the longest choice that fits.
+
+Only RadioFoundry developers should be able to use the control characters, so any untrusted data (from users, the
+CPS, or over the air) must be sanitized: `%s` will replace any of the argument's control characters with `?`. For
+firmware-built text, which is trusted, `%K` (Keep) retains the argument to support all text features.
+
+- Use `%s` for anything a person typed, a codeplug held, or another radio sent.
+- Use `%K` for text the firmware produced: the result of `tr()`, `sb_age`, `sb_freq` and the other helpers in
+  `core/ui/fmt.h`.
+- When unsure, use `%s`. The worst case is that some text shows a `?`.
+
+##### Numbering placeholders
+
+Each placeholder normally takes the next argument in order. A number (`%1$s`, `%2$u`, counting the arguments from 1)
+says which argument it takes. Use numbers only where they tell the reader something.
+
+In the English (the code):
+
+- Write the placeholders in the same order as the arguments, without numbers: `"Site %u of %u: %s"`.
+- Number every placeholder when the text uses an argument twice, uses the arguments in a different order than they
+  are passed, or has a placeholder inside a text alternate (a choice may leave an argument out):
+  `"{Here, %1$u channels|Here}"`. `--check` rejects numbers that add nothing.
+
+In a translation:
+
+- If the code passes one argument and the translation uses it once, don't number it: `"De %s"`. `--check` rejects
+  `"De %1$s"`.
+- Otherwise number every placeholder, even when the order is the same as the English: `"%3$s: sitio %1$u de %2$u"`.
+  The numbers show a reviewer that the order was checked.
+
+Number all the placeholders in a text or none of them.
+
+##### Other rules
+
+- At most 4 arguments.
+- The English and every translation must use every argument at least once. A translation can't leave one out yet:
+  C passes arguments without their types, so the formatter can't skip past one it doesn't use. This is a planned
+  enhancement.
+- Text with placeholders always uses `TRF`. Text marked with `TR` or `TRN` can't contain placeholders.
+- A plural needs two keys (`"%u channel"`, `"%u channels"`); the code picks one.
+- Two different phrases are two `TRF` calls under an `if`, not one call with a key chosen at run time: the tool
+  finds a key only where it is written at the call.
+- Information a helper formats (a frequency, a time) is built in a small buffer first and passed with `%K`:
+  `SB_LOCAL(f, 12); sb_freq(&f, hz); TRF(&b, FIND_ROW_TUNE_VFO_TO, "Tune VFO to %K", f_text);`
 
 ### Flash cost
 

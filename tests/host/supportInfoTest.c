@@ -189,7 +189,7 @@ static void line_tests(void)
 	CHECK(support_hw_line(6, &l) && l.label == TR_NONE && strcmp(l.label_text, "Board revision") == 0);
 	rev = 1;
 	CHECK(support_hw_line(6, &l) && strcmp(l.value, "V4") == 0);
-	CHECK(support_hw_line(0, &l) && strcmp(tr(l.label), "MCU: ") == 0);
+	CHECK(support_hw_line(0, &l) && strcmp(tr(l.label), "MCU") == 0);
 	// A build without the Makefile's stamp: unknown, no repository
 	CHECK(support_source() == SUPPORT_SRC_UNKNOWN && strcmp(support_source_key(support_source()), "unknown") == 0);
 	CHECK(strcmp(support_repo(), "") == 0);

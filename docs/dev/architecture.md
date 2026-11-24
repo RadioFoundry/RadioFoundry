@@ -86,6 +86,7 @@ state (`radio_view_t`). The UI never calls the RTOS from its behavior code, so t
 | `core/codeplug` | [open-firmware-cps](../spec/open-firmware-cps.md), [codeplug-native](../spec/codeplug-native.md) | Codeplug reading and editing, the DMR ID database |
 | `core/settings`, `core/storage` | [settings-store](../spec/settings-store.md) | The settings ring, the sector journal, the foreign region guard |
 | `core/ui` | [ui](../spec/ui.md), [docs/ux](../ux/) | Drawing, screens, navigation, Find, the services the UI calls |
+| `core/text` | [translating](translating.md) | The text buffer and formatter the UI's translated text and the debug link both use (`format.h`) |
 | `core/input` | [ui](../spec/ui.md) 3 | Gesture engine (press, long, repeat), injected keys |
 | `core/debuglink` | [debuglink](../spec/debuglink.md) | The debug protocol and its view sections |
 | `core/app` | | Start-up and housekeeping |

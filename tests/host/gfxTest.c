@@ -811,6 +811,40 @@ int main(void)
 	sb_init(&b, age, sizeof age); sb_age_long(&b, 30000u);
 	CHECK(strcmp(age, "30s ago") == 0);
 
+	// Formats (sb_fmt): values by number, in any order and more than once, or in order without numbers; %s shows a
+	// marker byte as '?' and %K keeps it; a number's least width, space or zero padded; a '%' that isn't a value is
+	// text; the text is cut at the buffer's end
+	char f[48];
+	const char *at;
+	sb_init(&b, f, sizeof f); at = sb_fmt(&b, "%2$u of %1$s: %2$u%", "Bob", 7u);
+	CHECK(strcmp(f, "7 of Bob: 7%") == 0);
+	CHECK(at == f + 5);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s|%2$K", "a\x1d" "b\x1f", "c\x1d" "d");
+	CHECK(strcmp(f, "a?b?|c\x1d" "d") == 0);
+	sb_init(&b, f, sizeof f); at = sb_fmt(&b, "%1$d %2$02u:%3$02u %4$d", -5, 3u, 12u, 2147483647);
+	CHECK(strcmp(f, "-5 03:12 2147483647") == 0);
+	CHECK(at == NULL);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "[%3d|%03d|%2u|%1u]", -5, -5, 123u, 0u);
+	CHECK(strcmp(f, SB_FMT_SPACE_PAD ? "[ -5|-05|123|0]" : "[-5|-05|123|0]") == 0);
+	sb_init(&b, f, sizeof f); at = sb_fmt(&b, "From %s, %u", "Bob", 4u);
+	CHECK(strcmp(f, "From Bob, 4") == 0);
+	CHECK(at == f + 5);
+	// A format with more values than the bits that track them: in order, as printf would
+	sb_init(&b, f, sizeof f);
+	sb_fmt(&b, "%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u%u",
+		1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u, 9u, 0u, 1u, 2u, 3u, 4u, 5u, 6u,
+		7u, 8u, 9u, 0u, 1u, 2u, 3u, 4u);
+	CHECK(strcmp(f, "1234567890123456789012345678901234") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "100% %5$s %1$ %q %%|%");
+	CHECK(strcmp(f, "100% %5$s %1$ %q %|%") == 0);
+	sb_init(&b, f, 8); sb_fmt(&b, "%1$s and %2$s", "Alpha", "Beta");
+	CHECK(strcmp(f, "Alpha a") == 0);
+	sb_init(&b, f, sizeof f); sb_fmt(&b, "%1$s%2$K.", (const char *)NULL, "");
+	CHECK(strcmp(f, ".") == 0);
+	// TRF: the same through a key (English here), the values checked against the key's prototype
+	sb_init(&b, f, sizeof f); TRF(&b, ROAM_BODY_SITE, "Site %u of %u: %s", 2u, 5u, "North");
+	CHECK(strcmp(f, "Site 2 of 5: North") == 0);
+
 	// Ranges (sb_range, Stations heard and DMR GPS Info), BVA at each unit and rounding step and the compass's edges.
 	// 99950 m and up print 100.0 km: the 0.1 km rounding runs past the step to whole km (as before)
 	static const struct { uint32_t m; uint16_t deg; const char *want; } ranges[] = {
