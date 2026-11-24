@@ -134,6 +134,27 @@ static void test_ramp(void)
 	}
 }
 
+// Without calibration: the lowest level is its fixed drive, 1 W the measured radio's, the levels over it the fallback
+// (1408), and the levels still rise or stay
+static void test_uncalibrated(void)
+{
+	static const uint8_t none[BF_CAL_LEN];
+	bf_cal_set_image(none, false);
+	static const uint32_t hz[] = { 136000000u, 146000000u, 155000000u, 174000000u, 400025000u, 440000000u,
+				       479975000u };
+	for (unsigned i = 0; i < sizeof hz / sizeof hz[0]; i++) {
+		CHECK(dm32_level_drive_at(hz[i], 0) == dm32_floor_drive(hz[i]));
+		for (uint8_t l = 1; l < DM32_POWER_LEVELS; l++) {
+			CHECK(dm32_level_drive_at(hz[i], l) >= dm32_level_drive_at(hz[i], (uint8_t)(l - 1u)));
+			CHECK(dm32_level_drive_at(hz[i], l) <= 1408);
+		}
+		for (uint8_t l = 2; l < DM32_POWER_LEVELS; l++) {
+			CHECK(dm32_level_drive_at(hz[i], l) == 1408);
+		}
+	}
+	CHECK(dm32_level_drive_at(440000000u, 1) == 1217 && dm32_level_drive_at(155000000u, 1) == 1064);
+}
+
 int main(void)
 {
 	test_measured();
@@ -141,11 +162,7 @@ int main(void)
 	test_order();
 	test_scaling();
 	test_ramp();
-	static const uint8_t none[BF_CAL_LEN];
-	bf_cal_set_image(none, false);
-	for (uint8_t l = 0; l < DM32_POWER_LEVELS; l++) {
-		CHECK(dm32_level_drive_at(146000000u, l) == 1408 && dm32_level_drive_at(440000000u, l) == 1408);
-	}
+	test_uncalibrated();
 	if (failures) {
 		printf("dm32PowerTest: %d failure(s)\n", failures);
 		return 1;

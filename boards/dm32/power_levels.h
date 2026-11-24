@@ -49,12 +49,21 @@ static inline uint16_t dm32_level_drive(const bf_cal_power_points_t *rows, uint3
 	return drive > floor ? drive : floor;	// a radio with weak rows: never under the lowest level
 }
 
-// A level's drive at a TX frequency on this radio's held rows (bf_cal_power_held); without calibration every level is
-// the fallback drive (11.3)
+// A level's drive at a TX frequency on this radio's held rows (bf_cal_power_held). Without calibration the lowest level
+// keeps its fixed drive, and the others take the rows of the radio the levels were set on (its held rows at 440 and
+// 155 MHz) but never more than the fallback drive (11.3, about 2 W), the most an uncalibrated radio was given before:
+// 1 W stays under it, 2.5 W and up are the fallback
 static inline uint16_t dm32_level_drive_at(uint32_t hz, uint8_t level)
 {
+	static const bf_cal_power_points_t typical_uhf = { .low = 1389, .mid = 1981, .high = 2912 };
+	static const bf_cal_power_points_t typical_vhf = { .low = 1360, .mid = 1840, .high = 3024 };
 	bf_cal_power_points_t rows;
-	return bf_cal_power_held(hz, &rows) ? dm32_level_drive(&rows, hz, level) : bf_cal_power_level(hz, 0);
+	if (bf_cal_power_held(hz, &rows)) {
+		return dm32_level_drive(&rows, hz, level);
+	}
+	uint16_t drive = dm32_level_drive(hz < DM32_UHF_FROM_HZ ? &typical_vhf : &typical_uhf, hz, level);
+	uint16_t fallback = bf_cal_power_level(hz, 0);
+	return drive < fallback ? drive : fallback;
 }
 
 // The PA ramps (hardware-dm32.md 11.4): DAC B in two parts on the shared APC ramp's curve, with the PA selected. The

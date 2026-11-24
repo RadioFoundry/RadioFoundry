@@ -1344,7 +1344,7 @@ Read three pieces into a 0x175-byte working image:
 | PA drive points for a TX frequency f | VHF table base 136 MHz, step 9.5 MHz (136, 145.5, 155, 164.5, 174); UHF base 400 MHz, step 17.5 MHz (400, 417.5, 435, 452.5, 470). idx = (f − base) / step capped at 4, linear interpolation to the next point; at idx 4 extrapolate with 2·v4 − v3; clamp 0..4096. f < 136 MHz: VHF point 0, no interpolation. UHF is f > 280 MHz |
 | Power levels | low L, mid M, high H from above. Level 0 = 0.90·L; 1 = L; 2, 3 = L + (M − L)·f1, f2; 4 = M; 5, 6, 7 = M + (H − M)·f3, f4, f5; 8 = H; 9 = user value; clamp 4095 |
 | Fractions f0..f5 | VHF 0.90, 0.41, 0.76, 0.34, 0.60, 0.81; 220 MHz 0.90, 0.42, 0.75, 0.31, 0.55, 0.78; UHF 0.90, 0.43, 0.74, 0.27, 0.51, 0.75 |
-| Fallback without calibration | DAC B = 1408 for every level; SIG_CENTER = 0x6D6C0000, RF_MOD_BIAS_CTRL = 0x01F0FFFF  |
+| Fallback without calibration | DAC B = 1408 (the levels without calibration: 11.4); SIG_CENTER = 0x6D6C0000, RF_MOD_BIAS_CTRL = 0x01F0FFFF  |
 
 For a UHF frequency below 400 MHz an unsigned subtraction gives idx 4. Clamp to 0.
 
@@ -1378,7 +1378,10 @@ every level but the lowest, because the factory calibration puts each radio's ro
   and 20-60 on VHF.
 - **UHF on H, VHF on L and M.** On UHF the low row doesn't follow the PA: as places on the rows, 1 W and 2.5 W were
   1.0-1.6 dB off over the band at best; as parts of H, 0.6 dB. On VHF the places are within 0.5 dB.
-- **Without calibration** every level is the fallback drive (1408, about 2 W), as in 11.3.
+- **Without calibration** the 500 mW level keeps its fixed drive, which doesn't depend on the rows. The levels
+  over it take the rows the levels were measured on (H 2912 on UHF; L 1360, M 1840 on VHF) and are capped at the
+  fallback drive (1408, about 2 W, 11.3), the most an uncalibrated radio was given before (`dm32_level_drive_at`):
+  1 W is 1217 at 440 MHz and 1064 at 155 MHz, and 2.5 W, 5 W and the top level are 1408.
 
 Measured on one radio, FM, into a dummy load: a receiver through a 60 dB pad, its readings set by the top level's
 wattmeter reading at each frequency (the path is flat within 0.3 dB against the wattmeter), watts:
