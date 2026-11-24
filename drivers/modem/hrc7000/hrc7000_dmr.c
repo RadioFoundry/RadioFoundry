@@ -1245,6 +1245,14 @@ bool hrc7000_dmr_tx_begin(hrc7000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->t_tick = now(e);	// the stall watchdog counts from here
 		// 6.1 step 1: codec buffers cleared, nothing in the next slot
 		w(e, C7_AUDIO_BUFFER_CLR, 0x03);
+		// Burst F's field for the whole over, set before key-up: our TX RAM 0x29-0x2C (an encrypted over's ALG / key
+		// ID) or the RC encoder's (2.8). Written at the first burst F instead, the chip dropped that burst and the over
+		// slipped 81.6 ms (measured on the SDR bench)
+		if (e->burst_f_set) {
+			for (uint8_t i = 0; i < 4; i++)
+				e->dev->buf[C7_TX_RAM + 0x29u + i] = e->burst_f[i];
+		}
+		w(e, C7_VOICE_EMB_CTRL, e->burst_f_set ? 0x00 : 0x02);
 		// Through a repeater (a CACH on air): the slot from the TC lock. Aligned to a direct mode station, BS sync
 		// too when no CACH came with it: the slot its bursts came in (issue 928: the lock never came, refused)
 		e->tx_bs = timing == DMR_TIMING_ALIGNED && e->rx_bs && ts > 0 && cach_on_air(e);
@@ -1347,6 +1355,15 @@ void hrc7000_dmr_set_embedded_lc(hrc7000_dmr_t *e, const uint8_t lc[9])
 	lock(e);
 	memcpy(e->emb_lc, lc, 9);
 	e->emb_set = true;
+	unlock(e);
+}
+
+void hrc7000_dmr_set_burst_f(hrc7000_dmr_t *e, const uint8_t field[4])
+{
+	lock(e);
+	if (field != NULL)
+		memcpy(e->burst_f, field, 4);
+	e->burst_f_set = field != NULL;
 	unlock(e);
 }
 

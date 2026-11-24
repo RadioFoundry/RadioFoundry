@@ -45,6 +45,10 @@ nearest new level.
 
 ### Programming several radios
 
+Opening a saved file or draft sends its valid settings area, including its channel modes and trunking systems.
+After reading from a radio, edits on that connection merge only the settings you changed, preserving settings
+changed in the radio's menus. A file without a valid settings area leaves the radio's existing area intact.
+
 To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
 connected. A radio swapped on the programming cable is read again before anything is written, so the write is
 compared with that radio's codeplug, not the last one's.

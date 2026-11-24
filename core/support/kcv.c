@@ -39,7 +39,9 @@ bool kcv_hashed(kcv_class_t cls, uint8_t a, uint8_t b, const uint8_t *key, uint1
 	return true;
 }
 
-bool kcv_aes(const uint8_t *key, uint16_t n, uint8_t out[KCV_LEN])
+// noinline: inlined into kcv_traffic, its 240 octets of round keys would sit under the hashed form's SHA-256 too, on the
+// UI task's deepest path (key fill's send; stack-check.md)
+__attribute__((noinline)) bool kcv_aes(const uint8_t *key, uint16_t n, uint8_t out[KCV_LEN])
 {
 #if CONFIG_DMR_AES
 	if (n != DMR_AES_KEY_BYTES)

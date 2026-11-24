@@ -12,12 +12,12 @@ than its sources).
     p25tool.py decode IN.dibits [--expect EXP.json] [--unpacked | --air-jsonl] [--soft FILE] [--nac 293]
     p25tool.py disc IN.raw --rate HZ [--full HZ | --counts-per-khz N] [--invert] [--bits 8 --shift S] [--skip S]
                [--meta IN.json] [--expect EXP.json]
-    p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn BEE00] [--sysid 2F3] [--rfss N] [--site N]
+    p25tool.py cc OUT.dibits --expect EXP.json [--nac 293] [--wacn A4C21] [--sysid 2F3] [--rfss N] [--site N]
                [--units N] [--ch 1004] [--base HZ] [--spacing HZ] [--tx-offset HZ]
                [--grant TG:CH[:SRC[:SVC]] [--grant-at FIRST[:COUNT[:EVERY]]]] [--reg UNIT[:RV] [--reg-at FIRST[:COUNT[:EVERY]]]]
                [--aff UNIT:TG[:GAV] [--aff-at ...]] [--deny UNIT[:REASON[:SVC]] [--deny-at ...]]
                [--queue UNIT[:REASON[:SVC]] [--queue-at ...]]
-    p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn BEE00] [--sysid 2F3]
+    p25tool.py inbound OUT.dibits --expect EXP.json [--nac 293] [--src N] [--tg N] [--wacn A4C21] [--sysid 2F3]
                [--svc N] [--gap SYMS] [--reps N]
     p25tool.py mod IN.dibits OUT.raw [--rate HZ] [--full HZ] [--dev-scale PCT] [--offset HZ] [--noise HZ] [--ppm P]
                [--invert] [--carrier-gap S] [--carrier-lead S] [--seed S]
@@ -633,7 +633,7 @@ def main(argv=None):
     c.add_argument("out")
     c.add_argument("--expect", required=True)
     c.add_argument("--nac", default=None, help="hex (293)")
-    c.add_argument("--wacn", default=None, help="hex (BEE00)")
+    c.add_argument("--wacn", default=None, help="hex (A4C21)")
     c.add_argument("--sysid", default=None, help="hex (2F3)")
     c.add_argument("--rfss", type=int, default=None)
     c.add_argument("--site", type=int, default=None)
@@ -661,7 +661,7 @@ def main(argv=None):
     i.add_argument("--nac", default=None, help="hex (293)")
     i.add_argument("--src", type=int, default=None, help="the unit (1)")
     i.add_argument("--tg", type=int, default=None, help="the talk group (1)")
-    i.add_argument("--wacn", default=None, help="hex (BEE00)")
+    i.add_argument("--wacn", default=None, help="hex (A4C21)")
     i.add_argument("--sysid", default=None, help="hex (2F3)")
     i.add_argument("--svc", type=int, default=None, help="the voice request's service options (0)")
     i.add_argument("--gap", type=int, default=None, help="idle symbols between bursts (480)")

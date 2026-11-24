@@ -4,7 +4,8 @@
 // vectors and across chunk boundaries, soft scaling, the sync flag, gaps and the correlator re-arm, transmit halves per
 // slot interrupt with no stale half, underrun idle, last-chunk padding, the deviation pair set and put back, open /
 // close / open, the slot engine starting again on the memory the session used, a cheap fuzz, and the FM copy: its fit,
-// set-up, halves in order with their times, a missed interrupt, an overrun, the tap, and the registers put back.
+// set-up, halves in order with their times, a missed interrupt, an overrun, the tap, the registers put back, and the
+// watchdog that sets a stopped copy up again.
 // Against a chip simulator: a register file, the receive record RAM, the FM receive RAM, the two TX RAM halves and a
 // fake microsecond clock; the soft modem is a stub that keeps the samples it is given
 #include <stdio.h>
@@ -37,6 +38,7 @@ static uint8_t record[HRC6000_AIR_RAW_BYTES];
 static uint8_t tx_ram[0x48];		// page 2 0x00-0x47: the two halves
 static uint8_t copy_ram[4 * HRC6000_AIR_COPY_HALF];	// page 2 from 0x30 in FM: the two receive halves
 static bool fm_ram;			// page 2 0x30 reads give the FM receive RAM, not a record
+static bool read_fail;			// reads of page 4 0x34 and 0x81 fail (a bus error during the copy set-up)
 static int half_writes[2];
 
 static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const uint8_t *tx, uint8_t *rx, uint16_t len)
@@ -59,6 +61,9 @@ static bool fake_transfer(void *ctx, const uint8_t *hdr, uint8_t hdr_len, const 
 		}
 	}
 	if (read) {
+		if (read_fail && page == 4 && (addr == 0x34 || addr == 0x81)) {
+			return false;
+		}
 		if (page == 2 && fm_ram) {
 			CHECK(addr >= 0x30 && addr - 0x30u + len <= sizeof(copy_ram));
 			memcpy(rx, &copy_ram[addr - 0x30u], len);
@@ -1168,6 +1173,189 @@ static void test_copy(void)
 	fm_ram = false;
 }
 
+// The copy stopped with no interrupt left to take (the set-up undone, the RAM no longer filling): no half for 200 ms
+// while receiving sets the copy up again, and receive comes back at a gap. Not while halves come (even dropped ones),
+// transmitting, suspended, closed, or in a session the correlator receives
+static void copy_setup_check(void)
+{
+	CHECK(AIR->copy && last_write(4, 0x10) == 0x80 && last_write(4, 0x34) == 0x00 && last_write(4, 0x83) == 0xFF);
+}
+
+// The platforms' first-restart record (hal_air.h): kept once, a later restart doesn't overwrite it, a cleared record
+// (stats reset) takes the next one, and the time is never 0 once kept
+static void test_air_lost_note(void)
+{
+	air_lost_rec_t r = { 0 };
+	const uint32_t a[4] = { 1, 2, 3, 4 }, b[4] = { 5, 6, 7, 8 };
+	CHECK(!air_lost_note(&r, 0, a, 100) && r.ms == 0);	// no restart yet
+	CHECK(air_lost_note(&r, 1, a, 0) && r.ms == 1 && r.regs[0] == 1 && r.regs[3] == 4);	// uptime 0 still kept
+	CHECK(!air_lost_note(&r, 1, b, 200) && r.regs[0] == 1);
+	CHECK(air_lost_note(&r, 2, b, 300) && r.ms == 1 && r.regs[0] == 1);	// the first one stays
+	r.ms = 0;	// a stats reset clears the record, not seen
+	memset(r.regs, 0, sizeof r.regs);
+	CHECK(!air_lost_note(&r, 2, b, 400) && r.ms == 0);
+	CHECK(air_lost_note(&r, 3, b, 500) && r.ms == 501 && r.regs[0] == 5 && r.regs[3] == 8);
+	r.seen = 0;	// a new session: its count starts at 0
+	CHECK(air_lost_note(&r, 1, a, 600) && r.ms == 501 && r.regs[0] == 5);
+}
+
+// The registers before the copy are saved once: when the first read failed, neither the watchdog's set-up nor the one
+// after a transmission may save the copy's own values, which the close would write back over DMR receive
+static void test_copy_saved_once(void)
+{
+	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
+	air_profile_t q = p25();
+	q.sync[1].flags = AIR_SYNC_START_ONLY;	// receive through the copy
+
+	fresh();
+	fm_ram = true;
+	copy_next = 0;
+	memset(&smg, 0, sizeof(smg));
+	hrc6000_air_init(AIR, &dev, &ops, BUF, &sm_mem, &tap);
+	read_fail = true;
+	CHECK(hrc6000_air_open(AIR, &q, on_event, NULL) && AIR->rx_copy && !AIR->copy_saved);
+	read_fail = false;
+	regs[4][0x34] = 0x00;	// the copy's own set-up reads back
+	regs[4][0x81] = 0x1B;
+	t_us += AIR_COPY_STALL_US + 1000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1 && !AIR->copy_saved);
+	air_tx_chunk_t c1 = chunk(0x11, 144, 0);
+	CHECK(hrc6000_air_tx_queue(AIR, &c1) && hrc6000_air_tx_begin(AIR) && !AIR->copy);
+	hrc6000_air_tx_abort(AIR);
+	for (int k = 0; k < 4 && hrc6000_air_tx_active(AIR); k++) {
+		tick();
+	}
+	CHECK(!hrc6000_air_tx_active(AIR) && AIR->copy && !AIR->copy_saved);
+	nx = 0;
+	hrc6000_air_close(AIR, true);
+	CHECK(count_writes(4, 0x34, -1) == 0);	// nothing restored from the copy
+	CHECK(count_writes(4, 0x81, -1) == 1 && last_write(4, 0x81) == 0x19);	// the mask without the FM receive interrupt
+	fm_ram = false;
+}
+
+static void test_copy_watchdog(void)
+{
+	static const hal_baseband_t tap = { .rx_rate_hz = HRC6000_AIR_COPY_HZ, .rx_hi_hz = HRC6000_AIR_COPY_HI_HZ };
+	air_profile_t p = p25();
+	air_profile_t q = p;
+	q.sync[1].flags = AIR_SYNC_START_ONLY;	// receive through the copy
+
+	fresh();
+	fm_ram = true;
+	copy_next = 0;
+	memset(&smg, 0, sizeof(smg));
+	hrc6000_air_init(AIR, &dev, &ops, BUF, &sm_mem, &tap);
+	CHECK(hrc6000_air_open(AIR, &q, on_event, NULL) && AIR->rx_copy);
+	for (int k = 0; k < 20; k++) {
+		copy_half(k % 2, true);
+	}
+	CHECK(AIR->st.copy_restarts == 0 && AIR->st.halves == 19 && smg.resets == 1);
+
+	// The flag set, but no interrupt from here on
+	regs[4][0x82] = 0x02;
+	nx = 0;
+	t_us += AIR_COPY_STALL_US;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 0 && count_writes(4, 0x10, -1) == 0);
+	t_us += 1000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1 && AIR->copy_lost_flags == 0x02);
+	copy_setup_check();
+	CHECK(lock_depth == 0 && max_depth == 1);
+	nx = 0;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1 && nx <= 1);	// the timer starts over at the set-up
+
+	// Receive back: the first half finds which one fills, the next is a gap for the soft modem
+	int resets = smg.resets, n = smg.n;
+	copy_half(0, true);
+	copy_half(1, true);
+	CHECK(smg.n == n + HRC6000_AIR_COPY_HALF && smg.resets == resets + 1 && smg.reset_at[resets] == n);
+	CHECK(AIR->st.copy_restarts == 1);
+
+	// The task behind (ring full): halves still come, only dropped, so no restart
+	for (int k = 0; k < 10; k++) {
+		copy_half(k % 2, false);
+	}
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.overruns > 0 && AIR->st.copy_restarts == 1);
+
+	// Transmitting: no copy to watch; the slots keep the transmission alive
+	air_tx_chunk_t c0 = chunk(0x11, 144, 0);
+	CHECK(hrc6000_air_tx_queue(AIR, &c0) && hrc6000_air_tx_queue(AIR, &c0) && hrc6000_air_tx_begin(AIR));
+	for (int k = 0; k < 12; k++) {
+		tick();
+		hrc6000_air_isr_rftx(AIR);
+		if (hrc6000_air_tx_space(AIR) > 0) {
+			hrc6000_air_tx_queue(AIR, &c0);
+		}
+	}
+	CHECK(hrc6000_air_tx_active(AIR) && AIR->st.copy_restarts == 1 && AIR->st.stalls == 0);
+	nx = 0;
+	hrc6000_air_tx_abort(AIR);
+	copy_setup_check();	// receive again after the transmission
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1);
+
+	// Suspended: the board has the chip
+	hrc6000_air_suspend(AIR);
+	nx = 0;
+	t_us += 1000000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1 && count_writes(4, 0x10, -1) == 0);
+	hrc6000_air_rx_restart(AIR);
+	t_us += 150000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1);
+	t_us += 60000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 2);	// nothing came after the mode entry either
+
+	// Closed: nothing
+	hrc6000_air_close(AIR, true);
+	nx = 0;
+	t_us += 1000000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 2 && nx == 0);
+
+	// A session the correlator receives has no copy to watch
+	CHECK(hrc6000_air_open(AIR, &p, on_event, NULL) && !AIR->rx_copy);
+	t_us += 1000000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 0);
+	hrc6000_air_close(AIR, true);
+
+	// The tap too, and its suspend: the board's mode change pauses it, the mode entry sets the copy up again
+	CHECK(hrc6000_air_tap_start(AIR));
+	nx = 0;
+	t_us += AIR_COPY_STALL_US + 1000;
+	hrc6000_air_poll(AIR);
+	CHECK(AIR->st.copy_restarts == 1);
+	copy_setup_check();
+	// A retune (rx_restart with the copy running) leaves the tap's copy alone
+	nx = 0;
+	hrc6000_air_rx_restart(AIR);
+	CHECK(AIR->copy && nx == 0);
+	hrc6000_air_suspend(AIR);
+	CHECK(!AIR->copy);
+	nx = 0;
+	t_us += 1000000;
+	hrc6000_air_poll(AIR);
+	regs[4][0x82] = 0x02;
+	hrc6000_air_isr_sys(AIR);	// a late interrupt: no half taken
+	CHECK(AIR->st.copy_restarts == 1 && count_writes(4, 0x10, -1) == 0);
+	hrc6000_air_rx_restart(AIR);
+	copy_setup_check();
+	copy_half(0, false);
+	copy_half(1, false);
+	int16_t rd[HRC6000_AIR_COPY_HALF];
+	CHECK(hrc6000_air_tap_read(AIR, rd, HRC6000_AIR_COPY_HALF) == HRC6000_AIR_COPY_HALF);
+	hrc6000_air_tap_stop(AIR, true);
+	CHECK(!AIR->copy && lock_depth == 0);
+	fm_ram = false;
+}
+
 static void test_fuzz(void)
 {
 	fuzz_t f;
@@ -1233,6 +1421,9 @@ int main(void)
 	test_abort_stall_suspend();
 	test_open_close();
 	test_copy();
+	test_air_lost_note();
+	test_copy_saved_once();
+	test_copy_watchdog();
 	test_chip_description();
 	test_fuzz();
 	printf("hrc6000AirTest: %d checks, %d failures\n", checks, failures);

@@ -29,6 +29,9 @@
 #if CONFIG_DMR_PRIVACY
 #include "dmr/dmrPrivacy.h"
 #endif
+#if CONFIG_DMR_AES
+#include "radio/radio_aes.h"
+#endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
 #include "radio/sigtone.h"
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
@@ -645,6 +648,8 @@ static bool parked(const channel_t *ch)
 	if (!codeplug_kind_built(ch->kind)) {
 		return true;
 	}
+	if (ch->kind == CODEPLUG_KIND_DMR_AES)
+		return ch->mode != RADIO_MODE_DMR;
 	return ch->kind != CODEPLUG_KIND_DMR_TRUNK && ch->mode != RADIO_MODE_P25 && ch->mode != RADIO_MODE_NXDN;
 }
 
@@ -1491,6 +1496,13 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (parked(ch)) {
 		return TXDENY_MODE;	// before receive only: the record underneath says so, the mode is the reason
 	}
+#if CONFIG_DMR_AES
+	if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+		uint8_t deny = radio_aes_tx_deny(ch);
+		if (deny != TXDENY_NONE)
+			return deny;
+	}
+#endif
 	if (trunk) {
 		// Its tag's receive only, the system's listen only, or no follower with a transmit side (p25-trunking.md 7)
 #if CONFIG_P25_TRUNK
@@ -1802,7 +1814,7 @@ static void dmr_configure(radio_sm_t *sm)
 #endif
 	bool privacy = false;
 #if CONFIG_DMR_PRIVACY
-	privacy = sm->privacy_type != DMR_PRIVACY_OFF;
+	privacy = ch->kind != CODEPLUG_KIND_DMR_AES && sm->privacy_type != DMR_PRIVACY_OFF;
 	if (privacy) {
 		privacy_key.type = (dmrPrivacyType_t)sm->privacy_type;
 		privacy_key.key = sm->privacy_key;
@@ -1811,6 +1823,9 @@ static void dmr_configure(radio_sm_t *sm)
 		cfg.tx_fid = dmrPrivacyFID(privacy_key.type, cfg.tx_fid);
 		cfg.tx_svc = dmrPrivacyServiceOptions(privacy_key.type, cfg.tx_svc);
 	}
+#endif
+#if CONFIG_DMR_AES
+	privacy = radio_aes_configure(ch, &cfg) || privacy;
 #endif
 #if CONFIG_DMR_EMERGENCY
 	// In emergency: every call carries the emergency service option, goes to the emergency target, and doesn't wait
@@ -2157,6 +2172,7 @@ static uint8_t dmr_deny_reason(uint8_t err)
 	case DMR_TX_ERR_STALLED: return TXDENY_REJECTED;	// stalled: the modem never sent a burst
 	case DMR_TX_ERR_TIMEOUT: return TXDENY_TIMEOUT;
 	case DMR_TX_ERR_CEASED: return TXDENY_CEASED;
+	case DMR_TX_ERR_CRYPT: return TXDENY_AES_KEY;
 	default: return TXDENY_NO_DMR;
 	}
 }
@@ -2694,6 +2710,8 @@ static void data_rx(const dmr_burst_t *b, uint32_t now_ms, void *ctx)
 // frequency. An FM VFO is out by the mode
 static bool data_can_send(const radio_sm_t *sm)
 {
+	if (sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
+		return false;
 	bool roaming = false;
 #if CONFIG_DMR_ROAMING
 	roaming = roam_searching(&sm->roam);	// never on a site being looked at
@@ -8217,6 +8235,9 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 #endif
 
 	memset(sm, 0, sizeof(*sm));
+#if CONFIG_DMR_AES
+	radio_aes_start(st.aes_mi_res);
+#endif
 #if CONFIG_SFR
 	direct_sm = sm;
 	if (board.radio->dmr_direct_query != NULL) {
@@ -9586,6 +9607,10 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 	follow_volume(sm);
 	battery_poll(sm, now_ms);
+#if CONFIG_DMR_AES
+	if (!sm->ptt && sm->view.state != RS_TX && !dmr_tx_phase(dmr_call_view()->phase))
+		radio_aes_poll(&sm->view.ch, sm->own_id, now_ms);
+#endif
 #if CONFIG_BEEP
 	bool shared = voice_streaming();
 	if (sm->beep_due != BEEP_NONE && (int32_t)(now_ms - sm->beep_due_ms) >= 0) {
@@ -9902,6 +9927,10 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
+#if CONFIG_DMR_AES
+		if (sm->dmr_running && sm->view.ch.kind == CODEPLUG_KIND_DMR_AES)
+			dmr_configure(sm);
+#endif
 		kv_load(sm, now_ms);	// a key written (menu, debug link): its value only, without a codeplug reload
 #if CONFIG_DMR_TRUNK
 		t3_kv_retry(sm);
