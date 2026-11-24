@@ -119,7 +119,7 @@ Where a request comes from (a browser says so in its headers; tools that send no
 |---|---|
 | `/` and `/<file>` | the static files (below); `/` is `index.html`, the status as a table and the screen, refreshed every 3 s; with `CONFIG_NET_WEBCTL` the front panel page (5.1) |
 | `/ws` | with `CONFIG_NET_WEBCTL`: the WebSocket upgrade (5.1); 400 without a valid key or for HEAD, 403 from another page (`Origin`), 503 while another client has it |
-| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo zone channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
+| `/status` | JSON: `radio version uptime_s state` (idle / rx / tx / tx_denied) `vfo codeplug` (the codeplug's edit count: a change means read the lists again) `zone pos` (the zone's index and the position in it, 0-based) `zone_name channel_number channel rx_hz tx_hz mode` (fm / dmr) `bw` ("12.5" / "25") `power rssi_dbm squelch battery_pct battery_mv` (both left out on a radio without a battery) `hotspot`, on a DMR channel `dmr: {own_id cc ts target private heard}`, `tcp_open`, `led_green led_red` (the radio's LEDs), `backlight` (percent), `draws` (counts screen redraws: fetch the screen when it changes) |
 | `/api/view` | JSON `{"sections": [...]}`: the debug link's view section names (needs `CONFIG_DEBUGLINK`) |
 | `/api/view?section=<name or number>` | the section's key=value lines as one flat JSON object; values that are decimal integers are numbers, the rest strings (hex values such as `net.host_ip` stay strings) |
 | `/api/screen.bmp` | the frame buffer as a BMP, top-down (negative height), at the panel's depth: 1 bpp with two palette entries (the paper and ink of the UI gallery), 4 bpp with the 16-entry palette (`gfx_palette`), both the frame buffer's rows as they are; 16 bpp as BI_BITFIELDS (RGB565 masks). About 10 KB on a 160 x 128 4 bpp screen, 38 KB on 240 x 320, 1 KB on 128 x 64 1 bpp; UI redraws are held while it goes out (as the debug link's screenshot does), so it is one frame; the hold ends with the last byte, so a page that polls it does not slow the UI |
@@ -189,13 +189,16 @@ until it goes. The radio's rules:
 | Binary from the client | close 1003 (nothing takes it yet) |
 | Close | the client's close code is sent back, then the connection closes |
 | Ping | one every 5 s; nothing from the client for 15 s and it is dropped |
-| Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed |
+| Status | `/status`'s JSON as a text frame, rendered every 250 ms and sent when it changed; after `status?changes` only when the zone or channel changed (below) |
+| GPS | after `gps`: the board GPS's fix, one text frame per GPS second (below) |
 | Screen | after `s1`: binary frames of the rows that changed, the first time every row (below). A row goes out when a redraw changed it and only between UI frames, so the copy is never half drawn; rows that don't fit TCP's buffer wait for the next poll |
 | Audio | 20 ms binary frames (`'A'`, a reserved 0, then 160 samples of 8 kHz PCM16 little-endian), while the client asked and the squelch is open; needs `CONFIG_NET_USRP` (the frames USRP reads, `usb-audio.md`); a frame that doesn't fit in TCP's buffer is dropped. Not while PPP carries the link: its 128 kbit/s doesn't fit a 115200 baud UART ([ppp.md](ppp.md) 6), so the hello says `audio:false` and `a1` is refused; keys, status and the screen work as on USB |
 
 The first frame is the hello:
-`{"hello":1,"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
-(the keymap's bits, the PTT key's bit or -1, whether the radio has an encoder). `screen` is the panel's width, height
+`{"hello":1,"proto":1,"caps":["select","step","status","gps"],"control":true,"audio":true,"keys":[0,1,...],"ptt":21,"encoder":true,"screen":[160,128,4,0,0,160,128]}`
+(`proto` the protocol's version, `caps` the requests in words this radio takes, `gps` only on a radio with a GPS: a
+client checks these instead of guessing from the firmware version; then the keymap's bits, the PTT key's bit or -1,
+whether the radio has an encoder). `screen` is the panel's width, height
 and bpp, then the visible part inside the insets: left, top, width, height. It is left out when the frame buffer
 can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Commands are text frames:
 
@@ -206,6 +209,47 @@ can't be sent (as `/api/screen.bmp`'s 404) or a raw row doesn't fit a frame. Com
 | `e<n>` | n encoder detents, -127..127 (forward is positive) |
 | `a1` / `a0` | receive audio on / off |
 | `s1` / `s0` | the screen on / off; `s1` sends every row again |
+| `select?zone=Z[&pos=P]` | to zone Z, its first channel or position P, leaving the VFO: the UDP control's request (8), the same code (`radio_ctl.c`) |
+| `step?channel=N` / `step?zone=N` | N channels or zones on, negative back, as 8 |
+| `gps` / `gps?off` | the board GPS's fixes on / off |
+| `status?changes` / `status` | the status only when the zone or channel changes / whenever it changes (the default) |
+
+Requests in words are the UDP control's (8): the same strings, parsed by the same code, so a client and the spec have
+one table. A text frame whose second byte is a letter is one. Only an error is answered, `{"err":N}`: 400 malformed,
+403 from beyond the host, 409 refused now (transmitting, a hotspot; `gps` on a radio without one). Otherwise the
+status that follows shows the result: it has `zone pos zone_name channel_number codeplug`, so it doubles as the
+change notice. The UDP control's limits apply (steps -100 to 100, a position past the current zone's end refused).
+
+`status?changes` is for a control app, takRF for one: the status the front panel page wants changes with the clock
+and the signal, at least once a second. With it, the status goes only when what a UDP notice is sent on changes (zone,
+position, channel number, VFO, codeplug, frequency, mode, timeslot, talk target), and the radio renders it only then.
+
+A fix, after `gps`:
+
+```
+{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"hdop":0.9,"sats":9,"utc":123519}
+```
+
+| Field | |
+|---|---|
+| `gps` | always 1: a client tells a fix from the status by it (or by `lat`) |
+| `lat lon` | degrees, 7 decimals, south and west negative |
+| `alt_m` | meters above mean sea level (GGA) |
+| `kmh course` | speed over ground, km/h, and course, degrees true (RMC) |
+| `sats` | satellites used |
+| `hdop` | horizontal dilution of precision |
+| `utc` | the fix's UTC time, hhmmss as a number (`5` is 00:00:05). The date isn't sent |
+
+- A field the module didn't send is left out (`alt_m kmh course hdop`). The keys' order isn't fixed: read it as JSON.
+- Sent once per GPS second while the board GPS has a fix under a minute old (`position_gps`); a frame that doesn't fit
+  TCP's buffer is tried again at the next poll while that second lasts.
+- **Host only.** As keys and PTT: `gps` from beyond the host is 403. `/status` never has a position.
+- **Board GPS only.** Never a position the host fed the radio (`POSITION_SRC_HOST`) or the fixed position, so a phone
+  that feeds the radio NMEA never gets its own position back.
+- **Exact.** The ambiguity setting is for reports on the air; the link belongs to the operator.
+- The GPS keeps its own rules ([position.md](position.md)): Settings > Location > GPS off means no fix and nothing sent.
+- `tools/rfoundry_gps.py` prints the fixes, or sends them as NMEA to gpsd; `tools/rfoundry_ws.py` is a /ws client in
+  Python's standard library.
 
 A screen frame is `'S'`, the palette's size n (2 at bpp 1, 16 at bpp 4, 0 at bpp 16), n RGB565 colors (`gfx_palette`,
 little-endian), then rows. The palette comes with every frame and applies to its rows, as the panel shows them. Each
@@ -227,7 +271,8 @@ closes, its TCP ends, or it is dropped. Unknown commands are counted and ignored
 View keys: `webctl.client` (its TCP slot, -1 none) `webctl.control webctl.conns webctl.commands webctl.refused`
 (control from beyond the host, an unknown key) `webctl.busy` (another injected key held) `webctl.errors
 webctl.frames_out webctl.audio_out webctl.audio_dropped webctl.screen` (the client asked for it) `webctl.screen_out`
-(screen frames) `webctl.ptt webctl.ptt_downs`.
+(screen frames) `webctl.ptt webctl.ptt_downs webctl.gps` (fixes on) `webctl.changes` (`status?changes` on). The
+requests in words count in `radio_ctl.*` (`net_svc`, 8.3).
 
 ## 6. rigctld (port 4532)
 
@@ -312,6 +357,9 @@ The replies come back translated to the radio's address and reach it over the ho
 
 ## 8. Zone and channel control over UDP (port 4191)
 
+The requests (`select`, `step`) are `radio_ctl.c`'s, which `/ws` takes too (5.1); this section is their UDP carrier.
+`radio_ctl.c` is built with either `CONFIG_NET_RADIO_UDP` or `CONFIG_NET_WEBCTL`.
+
 For a device or program on the host, over USB network or PPP (takRF's radio controls): know where the radio is, select
 a zone and channel, or step them as a knob would. `CONFIG_NET_RADIO_UDP`, `core/net/radio_udp.c`. It needs only the
 IP gateway: no TCP, no HTTP, no web control. A tight build can leave out `NET_TCP` (about 6 KB of RAM) and still be
@@ -324,7 +372,6 @@ controlled. Each request is one datagram to the radio's port 4191, and each is a
 | `step?channel=N` | N channels on, negative back (-100 to 100, not 0), wrapping in the zone. From the VFO: back to the channel the VFO came from is the first step (VFO from position 5: +1 lands on 5, +3 on 7) |
 | `step?zone=N` | N zones on, wrapping at the ends, to the zone's first channel |
 | `select?notify=0` | no more notices |
-| `gps` / `gps?off` | as `select`, and the board GPS's fixes on or off (8.4) |
 
 - Zones and positions are 0-based indexes, the same in every request and reply.
 - ASCII, at most 40 bytes; a trailing newline is ignored (`echo select | nc -u -w1 <radio> 4191`).
@@ -398,53 +445,9 @@ Notices:
   while a client is subscribed.
 - RAM: no buffer of its own. The request is parsed from a 41 byte copy on the stack; the reply and notices are written
   into the IP gateway's frame buffer. Static state is the subscriber, the pending requests and the counters.
-- Debug link view keys (`net_svc`): `radio_udp.requests bad refused selects steps`, `radio_udp.notify` (the subscriber's
-  port, 0 none), `radio_udp.notices`, `radio_udp.busy` (sends the link refused).
-
-### 8.4 GPS fixes
-
-With `CONFIG_GPS`, a subscriber can also have the board GPS's fix, for takRF (ATAK's location source), a host script
-or gpsd through `tools/rfoundry_gps.py`. No new socket, buffer or setting: the fix goes from port 4191 to the
-subscriber, written into the gateway's frame buffer as the notices are.
-
-| Request | |
-|---|---|
-| `gps` | as `select` (where the radio is, and subscribes the sender), with `"gps":1` in the reply when the radio has a GPS, `"gps":0` when not; then fixes to the subscriber |
-| `gps?off` | as `select`, without fixes |
-
-- **On** with `gps`. The first fix goes at the next check (100 ms), then one per GPS second.
-- **Off** with `gps?off`, `select?notify=0`, a new subscriber, or the lease ending. Any other request from the
-  subscriber renews the lease and keeps the fixes, so a client sends `gps` once and renews with `select` (or `gps`).
-- Without `CONFIG_GPS`, or on a radio without a GPS module, `gps` is answered with `"gps":0` and no fix is sent.
-
-A fix, one datagram:
-
-```
-{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"hdop":0.9,"sats":9,"utc":123519}
-```
-
-| Field | |
-|---|---|
-| `gps` | always 1, first: a client tells a fix from a reply or notice by it (a reply to `gps` has `zone` too) |
-| `lat lon` | degrees, 7 decimals, south and west negative |
-| `alt_m` | meters above mean sea level (GGA) |
-| `kmh course` | speed over ground, km/h, and course, degrees true (RMC) |
-| `sats` | satellites used |
-| `hdop` | horizontal dilution of precision |
-| `utc` | the fix's UTC time, hhmmss as a number (`5` is 00:00:05). The date isn't sent |
-
-- A field the module didn't send is left out (`alt_m kmh course hdop`).
-- The keys' order isn't fixed: read the line as JSON.
-- Sent while all of these hold, checked every 100 ms: the subscriber asked for fixes and its lease is live, the link
-  is up, the board GPS has a fix under a minute old (`position_gps`), and the fix's second differs from the last sent.
-  A send the link refuses is tried again at the next check while that second lasts.
-- **Board GPS only.** Never a position the host fed the radio (`POSITION_SRC_HOST`) or the fixed position, so a phone
-  that feeds the radio NMEA never gets its own position back as a fix.
-- **Exact.** The ambiguity setting is for reports on the air; the link belongs to the operator.
-- The GPS keeps its own rules ([position.md](position.md)): Settings > Location > GPS off means no fix and nothing sent.
-- RAM: none. The on flag and the last second sent fit in the subscriber's padding; the fix is copied to the stack only
-  for the send.
-- Debug link view key (`net_svc`): `radio_udp.gps` (1 while the subscriber has fixes on).
+- Debug link view keys (`net_svc`): `radio_udp.requests bad`, `radio_udp.notify` (the subscriber's port, 0 none),
+  `radio_udp.notices`, `radio_udp.busy` (sends the link refused); `radio_ctl.refused selects steps` count the requests
+  from UDP and `/ws` together.
 
 ## 9. Changes in the IP gateway
 

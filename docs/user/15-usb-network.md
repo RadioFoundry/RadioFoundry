@@ -151,7 +151,6 @@ it is also on firmware built without it. Zones and channels are counted from 0, 
 | `step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
 | `step?zone=1` | One zone on, to its first channel; `-1` one back |
 | `select?notify=0` | Stop the change messages (below) |
-| `gps` | Also send the radio's GPS position once a second, on a radio with a GPS (below); `gps?off` stops it |
 
 The radio answers each message with where it is now. After any message it also sends a short update to the same
 program whenever the zone, channel or talkgroup changes, and every 30 seconds, for two minutes. Send `select` every
@@ -162,22 +161,26 @@ Nothing changes while the radio transmits or is a hotspot. Details: [tcp-service
 
 For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
 
+The same messages also work over the connection the radio's web page uses (`ws://<radio address>/ws`), which a
+browser page can open and UDP can't. There the radio answers only an error, and sends its status instead: send
+`status?changes` to get it only when the zone or channel changes. Zones and channels change only from the computer
+the radio is plugged into. Details: [tcp-services.md](../spec/tcp-services.md) 5.1.
+
 ### The radio's GPS on your computer
 
-On a radio with a GPS, a program can have its position: after `gps`, the radio sends the position once a second
-while it has a fix, with altitude, speed, course, satellites and the time. takRF uses it to give ATAK the radio's
-position. `tools/rfoundry_gps.py` does it from a computer: it prints the positions, or turns them into NMEA sentences
-for gpsd or a mapping program.
+On a radio with a GPS, a program on the computer the radio is plugged into can have its position once a second, with
+altitude, speed, course, satellites and the time: it sends `gps` over the web page's connection (`gps?off` stops it).
+`tools/rfoundry_gps.py` does this for you. It prints the positions, or turns them into NMEA sentences for gpsd or a
+mapping program:
 
 ```
-python3 tools/rfoundry_gps.py                          # the positions, one line each
+python3 tools/rfoundry_gps.py                            # the positions, one line each
 python3 tools/rfoundry_gps.py --nmea-udp 127.0.0.1:4349  # NMEA for gpsd: gpsd -N udp://127.0.0.1:4349
 ```
 
-The radio sends to one program at a time: starting the tool takes the position, and the zone and channel messages,
-from takRF until takRF asks again. The position is the radio's own GPS only, never one your computer or phone gave the
-radio, and it is exact, whatever the position ambiguity setting. Nothing comes while Settings > Location > GPS is off
-or without a fix. Details: [tcp-services.md](../spec/tcp-services.md) 8.4.
+The radio takes one such connection at a time: while the tool runs, the radio's web page shows the status only, and
+takRF can't connect. The position is the radio's own GPS, never one your computer or phone gave the radio, and it is
+exact, whatever the position ambiguity setting. Nothing comes while Settings > Location > GPS is off or without a fix.
 
 > **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
 > as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
