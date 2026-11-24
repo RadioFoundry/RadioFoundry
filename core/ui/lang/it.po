@@ -3798,6 +3798,16 @@ msgid "Dual-path RX"
 msgstr "RX doppia via"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_8_BIT"
+msgid "8-bit (1-255)"
+msgstr "8 bit (1-255)"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_16_BIT"
+msgid "16-bit (0-65535)"
+msgstr "16 bit (0-65535)"
+
+#: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_SPEAKER"
 msgid "Speaker"
 msgstr "Altoparlante"
