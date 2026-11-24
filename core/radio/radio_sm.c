@@ -6127,6 +6127,52 @@ static void aprs_poll(radio_sm_t *sm, uint32_t now_ms)
 }
 #endif
 
+#if CONFIG_DTMF_RX
+// --- DTMF receive (CONFIG_DTMF_RX; radio-features.md 3.7): digits heard on an open FM reception ---
+
+static void dtmf_rx_digit(radio_sm_t *sm, char c, uint32_t now_ms)
+{
+	char *s = sm->view.dtmf_rx;
+	size_t n = strlen(s);
+	if (n == RADIO_DTMF_RX_SHOWN) {
+		memmove(s, s + 1, n);	// the oldest goes (and the terminator moves with the rest)
+		n--;
+	}
+	s[n] = c;
+	s[n + 1] = '\0';
+	sm->view.dtmf_rx_count++;
+	sm->dtmf_rx_ms = now_ms;
+	changed(sm);
+}
+
+static void dtmf_rx_sink(void *ctx, const int16_t *pcm, size_t n, uint32_t now_ms)
+{
+	radio_sm_t *sm = ctx;
+	char got[8];
+	size_t k = dtmf_rx_feed(&sm->dtmf_rx, pcm, n, got, sizeof(got));
+	for (size_t i = 0; i < k; i++) {
+		dtmf_rx_digit(sm, got[i], now_ms);
+	}
+}
+
+// Every poll: the decoder hears an FM reception the squelch, RX tone included, has open. Not the monitor (it opens
+// the squelch without the tone), the air band's AM or a broadcast listen. A new reception starts it fresh: our own transmission, a
+// retune (rx_pcm_release) and the squelch closing all end the one before
+static void dtmf_rx_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	bool want = sm->view.ch.mode == RADIO_MODE_FM && sm->view.state == RS_RX && sm->view.tone_ok &&
+		    !sm->view.am && !sm->view.bcast && !sm->hotspot && rx_pcm_can();
+	if (rx_pcm_want(RX_PCM_DTMF, want, dtmf_rx_sink, sm)) {
+		dtmf_rx_init(&sm->dtmf_rx, rx_pcm_rate());
+	}
+	rx_pcm_service(now_ms);
+	if (sm->view.dtmf_rx[0] != '\0' && now_ms - sm->dtmf_rx_ms >= RADIO_DTMF_RX_HOLD_MS) {
+		sm->view.dtmf_rx[0] = '\0';
+		changed(sm);
+	}
+}
+#endif
+
 // --- DTMF (CONFIG_DTMF; radio-features.md 3.7): a digit key held during an FM transmission sends its pair ---
 
 #if CONFIG_DTMF
@@ -9702,6 +9748,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_APRS
 	aprs_poll(sm, now_ms);	// before battery saving: beacons are due while the receiver sleeps too
+#endif
+#if CONFIG_DTMF_RX
+	dtmf_rx_poll(sm, now_ms);
 #endif
 	// The reference trim changed (RREQ_RETUNE): one tune once it has held still, so stepping it drops a reception once,
 	// not at every step. It waits for an APRS job; while transmitting or a hotspot, for the end of it

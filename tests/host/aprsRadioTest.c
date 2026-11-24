@@ -5,6 +5,7 @@
 // Defaults (nothing sent), the amateur and callsign rules, beacon triggers and the hard minimum, CSMA on a busy
 // channel, PTT cutting a transmission short, return to the channel, KISS frames from the host, NMEA from the host,
 // messages with retries and acks, the station list, the digipeater and the iGate rules.
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "board.h"
@@ -19,6 +20,7 @@
 #include "aprs/kiss.h"
 #include "aprs/afsk.h"
 #include "radio/tx_limit.h"
+#include "hal_dtmf.h"
 #include "codeplug/codeplug_kv.h"	// the settings area fakes
 #include "fuzz.h"
 #include "ui/ui_svc_aprs.h"
@@ -42,6 +44,8 @@ static struct {
 	bool keyed;
 	uint16_t tone_hz;	// the TX tone in force (0 = the microphone)
 	uint8_t noise_on_aprs;	// noise reading on 144.390 (low = a carrier)
+	uint8_t noise_other;	// ... on any other frequency
+	bool tone_bad;		// the channel's RX tone isn't heard
 	// AFSK
 	uint8_t tones[600];
 	uint16_t nbits;
@@ -101,10 +105,10 @@ static void r_tx_off(void)
 }
 static void r_status(radio_status_t *st)
 {
-	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : 120;
+	st->noise = hw.rx_hz == APRS_HZ ? hw.noise_on_aprs : hw.noise_other;
 	st->rssi_dbm = st->noise < 64 ? -80 : -120;	// a signal reads above the floor (a voice peak's noise doesn't drop it)
 	st->carrier = false;
-	st->tone_ok = true;
+	st->tone_ok = !hw.tone_bad;
 }
 static bool spk_on;	// the board's FM speaker path (radio_sm.c outputs)
 static bool spk_muted;	// speaker_mute, when test_mute gives the fake board one
@@ -401,6 +405,7 @@ static void reset(void)
 	memset(&other_rx, 0, sizeof(other_rx));
 #endif
 	hw.noise_on_aprs = 120;
+	hw.noise_other = 120;
 	nframes = 0;
 	memset(frames, 0, sizeof(frames));
 	now = 1000;
@@ -2005,6 +2010,111 @@ static void test_rx_board_only(void)
 }
 #endif
 
+#if CONFIG_DTMF_RX
+// DTMF tones, 100 ms each with 60 ms pauses, at 8 kHz into buf; the samples written
+static size_t dtmf_audio(const char *digits, int16_t *buf, size_t max)
+{
+	size_t n = 0;
+	for (const char *p = digits; *p; p++) {
+		uint16_t lo, hi;
+		CHECK(dtmf_pair(*p, &lo, &hi));
+		for (size_t k = 0; k < 800 && n < max; k++, n++) {
+			double t = (double)k / 8000.0;
+			buf[n] = (int16_t)(4000 * sin(2 * M_PI * lo * t) + 4000 * sin(2 * M_PI * hi * t));
+		}
+		for (size_t k = 0; k < 480 && n < max; k++) {
+			buf[n++] = 0;
+		}
+	}
+	return n;
+}
+
+// DTMF receive through the radio core (radio-features.md 3.7) on the board's receive path, shared with APRS
+// (rx_pcm.h): heard only while the squelch, RX tone included, is open; shown, then cleared after a quiet spell; the
+// path stops when the squelch closes and before a retune; on the APRS frequency one path feeds both decoders
+static void test_dtmf_rx(void)
+{
+	hal_afsk_t saved = fake_afsk;
+	fake_afsk = (hal_afsk_t){ .rx_rate_hz = 8000, .rx_start = b_rx_start, .rx_read = b_rx_read, .rx_stop = b_rx_stop };
+	reset();
+	memset(&brx, 0, sizeof(brx));	// after reset: its start-up lets go of the path the last test left running
+	zone.count = 2;
+	zone.channels[1] = 2;
+	chan.rx_tone = (subtone_t){ TONE_CTCSS, 1000 };	// 100.0 Hz: the squelch needs it
+	strcpy(cp_name, "Q1TST");
+	settings_init();
+	radio_sm_init(&sm, now);
+	static int16_t audio[40000];
+	size_t n = dtmf_audio("*12#", audio, sizeof(audio) / sizeof(audio[0]));
+	brx.s = audio;
+	brx.n = n;
+	// The squelch closed: nothing listens, the audio stays unread
+	run(1000);
+	CHECK(brx.starts == 0 && brx.pos == 0 && sm.view.dtmf_rx[0] == '\0');
+	// A signal opens it: the digits come through
+	hw.noise_other = 30;
+	run(1500);
+	CHECK(sm.view.state == RS_RX && brx.starts == 1);
+	CHECK(strcmp(sm.view.dtmf_rx, "*12#") == 0 && sm.view.dtmf_rx_count == 4);
+	CHECK(!aprs_rx_listening() && brx.stops == 0);	// not the APRS frequency: APRS doesn't want it
+	// Shown until RADIO_DTMF_RX_HOLD_MS without a new digit
+	run(RADIO_DTMF_RX_HOLD_MS - 200u - (now - sm.dtmf_rx_ms));
+	CHECK(strcmp(sm.view.dtmf_rx, "*12#") == 0);
+	run(400);
+	CHECK(sm.view.dtmf_rx[0] == '\0' && sm.view.dtmf_rx_count == 4);
+	// The RX tone goes: the squelch closes, the path stops, digits sent meanwhile aren't heard
+	hw.tone_bad = true;
+	run(1000);
+	CHECK(sm.view.state != RS_RX && brx.stops == 1);
+	brx.pos = 0;
+	run(1500);
+	CHECK(sm.view.dtmf_rx_count == 4 && brx.pos == 0);
+	// The tone back: heard again from a fresh start
+	hw.tone_bad = false;
+	run(1500);
+	CHECK(brx.starts == 2 && strcmp(sm.view.dtmf_rx, "*12#") == 0 && sm.view.dtmf_rx_count == 8);
+	// A retune lets go of the path at once
+	req(RREQ_CH_STEP, 1);
+	CHECK(hw.rx_hz == CH2_HZ && brx.stops == 2);
+	hw.noise_other = 120;
+	run(500);
+	// On the APRS frequency both decoders share the one path: a packet and digits in the same audio
+	chan2.rx_hz = chan2.tx_hz = APRS_HZ;
+	req(RREQ_CH_STEP, 1);
+	req(RREQ_CH_STEP, -1);
+	CHECK(hw.rx_hz == APRS_HZ);
+	static uint8_t tones[256];
+	const char *line = "Q1ABC-9>APRS,WIDE2-1:!4903.50N/07201.75W-Both";
+	ax25_frame_t f;
+	uint8_t frame[AX25_FRAME_MAX];
+	CHECK(ax25_from_tnc2(line, strlen(line), &f));
+	f.dst.h = true;
+	size_t fn = ax25_encode(&f, frame, sizeof(frame));
+	hdlc_enc_t e;
+	hdlc_enc_init(&e, tones, sizeof(tones));
+	CHECK(hdlc_enc_flags(&e, 30) && hdlc_enc_frame(&e, frame, fn) && hdlc_enc_flags(&e, 3));
+	afsk_mod_t m;
+	afsk_mod_init(&m, 8000);
+	memset(audio, 0, sizeof(audio));
+	size_t k = afsk_mod(&m, tones, e.nbits, 8000, audio + 800, 20000);
+	n = 800 + k + 1600;
+	n += dtmf_audio("5", audio + n, sizeof(audio) / sizeof(audio[0]) - n);
+	int starts = brx.starts;
+	brx.n = 0;
+	hw.noise_on_aprs = 30;	// the reception opens and both decoders ask for the path, then the audio comes
+	run(500);
+	brx.s = audio;
+	brx.n = n;
+	brx.pos = 0;
+	run(5000);
+	CHECK(aprs_rx_listening() && brx.starts == starts + 1);
+	aprs_station_t st;
+	CHECK(aprs_station_count() == 1 && aprs_station(0, &st) && strcmp(st.call, "Q1ABC-9") == 0);
+	CHECK(sm.view.dtmf_rx_count == 9);
+	fake_afsk = saved;
+}
+#endif
+
 // ui_svc_aprs_msg_poll: fires UI_EV_APRS_MESSAGE on a new inbound message; does not re-fire for the same message;
 // aprs_view_t carries last_msg_ms and last_msg_from after receipt
 #if CONFIG_APRS_RX
@@ -2111,6 +2221,9 @@ int main(void)
 	test_rx_release_on_retune();
 	test_mute();
 	test_rx_board_only();
+#if CONFIG_DTMF_RX
+	test_dtmf_rx();
+#endif
 	test_station_lookup();
 	test_station_range();
 #endif

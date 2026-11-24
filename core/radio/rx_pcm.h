@@ -19,8 +19,8 @@ enum {
 	RX_PCM_DTMF = 1u << 1,
 };
 
-// A decoder's samples: n at rx_pcm_rate(), from the radio task
-typedef void (*rx_pcm_sink_t)(const int16_t *s, size_t n, uint32_t now_ms);
+// A decoder's samples: n at rx_pcm_rate(), from the radio task; ctx as given to rx_pcm_want
+typedef void (*rx_pcm_sink_t)(void *ctx, const int16_t *s, size_t n, uint32_t now_ms);
 
 // A start the board refused (no memory, its audio path busy) is tried again this much later, not on every poll: each
 // try routes the receiver and back
@@ -35,7 +35,7 @@ bool rx_pcm_can(void);
 uint32_t rx_pcm_rate(void);
 // A decoder wants the audio now (true) or not (false), each poll. True back when it is newly wanted, i.e. the decoder
 // should start fresh: it wasn't wanted on the last call, or rx_pcm_release dropped it since
-bool rx_pcm_want(uint8_t who, bool want, rx_pcm_sink_t sink);
+bool rx_pcm_want(uint8_t who, bool want, rx_pcm_sink_t sink, void *ctx);
 // Start or stop the path for the decoders that want it, and hand them what it received. Any decoder may call it after
 // its rx_pcm_want: each call reads what has come in since the last
 void rx_pcm_service(uint32_t now_ms);

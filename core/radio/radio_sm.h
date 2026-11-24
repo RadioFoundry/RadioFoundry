@@ -14,6 +14,9 @@
 #include "radio/radio_cwid.h"
 #include "radio/beep.h"	// beep_seg_t
 #include "radio/sigtone.h"	// SIG_STEPS
+#if CONFIG_DTMF_RX
+#include "radio/dtmf_rx.h"
+#endif
 #if CONFIG_APRS
 #include "aprs/aprs.h"
 #endif
@@ -405,6 +408,10 @@ typedef struct {
 	bool roger_lead;		// the tone running is the start tone on air (PTT is down): it ends with the microphone live
 	beep_seg_t roger_seg[SIG_STEPS];
 #endif
+#endif
+#if CONFIG_DTMF_RX
+	dtmf_rx_t dtmf_rx;		// the decoder, fed while an FM reception is open (rx_pcm.h)
+	uint32_t dtmf_rx_ms;		// the last digit heard
 #endif
 #if CONFIG_DTMF
 	bool dtmf_held;			// the key of the digit sounding (view.dtmf) is still down

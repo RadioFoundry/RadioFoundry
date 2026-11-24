@@ -154,6 +154,8 @@ typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t
 #define RADIO_DTMF_MIN_MS	100	// shortest tone: a quick tap still decodes
 #define RADIO_DTMF_GAP_MS	60	// shortest pause between two digits: the same digit twice decodes as two
 #define RADIO_DTMF_SHOWN	8	// digits of this transmission the view keeps (the TX screen shows them)
+#define RADIO_DTMF_RX_SHOWN	16	// digits heard the view keeps (CONFIG_DTMF_RX)
+#define RADIO_DTMF_RX_HOLD_MS	3000u	// ... until this long without a new one
 
 #if CONFIG_DMR
 #define RADIO_ALIAS_MAX		31	// talker alias characters (DMR_TA_TEXT_MAX)
@@ -497,6 +499,9 @@ typedef struct {
 	char dtmf;		// the digit sounding, 0 = none
 	char dtmf_digits[RADIO_DTMF_SHOWN + 1];	// the last digits sent in this transmission (oldest first)
 	uint16_t dtmf_sent;	// digits sent since start-up
+	char dtmf_rx[RADIO_DTMF_RX_SHOWN + 1];	// digits heard on FM (CONFIG_DTMF_RX), oldest first; cleared
+						// RADIO_DTMF_RX_HOLD_MS after the last
+	uint16_t dtmf_rx_count;	// digits heard since start-up
 	bool vox_keyed;		// TX keyed by VOX
 	bool vox_on;		// VOX listens on this channel (the settings' vox, the channel, an FM channel)
 	bool rx_sleeping;	// battery save: the receiver is off for now

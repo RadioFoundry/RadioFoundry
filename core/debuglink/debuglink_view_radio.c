@@ -182,6 +182,13 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "dtmf_digits=%s\n", v->dtmf_digits);
 	}
 #endif
+#if CONFIG_DTMF_RX
+	// digits heard on FM (radio-features.md 3.7): the count since start-up, the last ones while the view holds them
+	dl_text(t, "dtmf_rx_count=%u\n", v->dtmf_rx_count);
+	if (v->dtmf_rx[0] != 0) {
+		dl_text(t, "dtmf_rx=%s\n", v->dtmf_rx);
+	}
+#endif
 	bool mic = board.power != NULL && board.power->mic_level != NULL;
 	// The hook itself, not the VOX poll's last reading, so the level reads with VOX off (nothing keys). Only where VOX
 	// could listen (FM, not a hotspot): a meter that starts on demand (the HR_C7000's mic PCM) then runs in the state

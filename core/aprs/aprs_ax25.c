@@ -838,8 +838,9 @@ void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms)
 	afsk_demod(&aprs_s.demod, s, n);
 }
 
-static void rx_sink(const int16_t *s, size_t n, uint32_t now_ms)
+static void rx_sink(void *ctx, const int16_t *s, size_t n, uint32_t now_ms)
 {
+	(void)ctx;
 	aprs_rx_audio(s, n, now_ms);
 }
 
@@ -865,10 +866,10 @@ void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
 	bool want = aprs_s.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&aprs_s.cfg) &&
 		    rx_pcm_can();
-	if (rx_pcm_want(RX_PCM_APRS, want, rx_sink)) {
+	if (rx_pcm_want(RX_PCM_APRS, want, rx_sink, NULL)) {
 		aprs_s.rx_peak = 0;
 		if (!afsk_demod_init(&aprs_s.demod, rx_pcm_rate(), demod_frame, NULL)) {
-			rx_pcm_want(RX_PCM_APRS, false, NULL);	// a rate the demodulator can't take
+			rx_pcm_want(RX_PCM_APRS, false, NULL, NULL);	// a rate the demodulator can't take
 		}
 	}
 	rx_pcm_service(now_ms);

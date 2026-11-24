@@ -15,6 +15,7 @@
 static struct {
 	uint8_t want;			// decoders that want the audio (rx_pcm_want)
 	rx_pcm_sink_t sink[RX_PCM_SINKS];
+	void *ctx[RX_PCM_SINKS];
 	bool running;			// the path is started
 	bool own;			// on the board's own path (board.afsk), else the stream
 	bool retry_wait;		// the last start was refused: wait for retry_ms
@@ -49,12 +50,13 @@ static uint8_t sink_index(uint8_t who)
 	return who == RX_PCM_APRS ? 0u : 1u;
 }
 
-bool rx_pcm_want(uint8_t who, bool want, rx_pcm_sink_t sink)
+bool rx_pcm_want(uint8_t who, bool want, rx_pcm_sink_t sink, void *ctx)
 {
 	bool was = (rx.want & who) != 0;
 	if (want) {
 		rx.want |= who;
 		rx.sink[sink_index(who)] = sink;
+		rx.ctx[sink_index(who)] = ctx;
 	} else {
 		rx.want &= (uint8_t)~who;
 	}
@@ -112,7 +114,7 @@ void rx_pcm_service(uint32_t now_ms)
 	while ((k = rx.own ? board.afsk->rx_read(rx.buf, n) : (uint16_t)audio_mux_aprs_read(rx.buf, n)) != 0) {
 		for (uint8_t i = 0; i < RX_PCM_SINKS; i++) {
 			if ((rx.want & (1u << i)) != 0 && rx.sink[i] != NULL) {
-				rx.sink[i](rx.buf, k, now_ms);
+				rx.sink[i](rx.ctx[i], rx.buf, k, now_ms);
 			}
 		}
 	}
