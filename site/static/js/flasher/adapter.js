@@ -6,8 +6,12 @@
 
 export const CH340_VID = 0x1A86;
 
-// USB vendor id -> the USB-serial chip family the programming cables use
-const CHIPS = new Map([[0x0403, "FTDI"], [CH340_VID, "CH340"], [0x10C4, "CP210x"], [0x067B, "PL2303"]]);
+// USB vendor id -> the USB-serial chip family the programming cables use. RT Systems (2100) puts FTDI chips in its
+// cables under its own vendor id: Windows binds them to FTDI's driver
+const CHIPS = new Map([[0x0403, "FTDI"], [CH340_VID, "CH340"], [0x10C4, "CP210x"], [0x067B, "PL2303"], [0x2100, "FTDI"]]);
+// The vendor ids a port chooser offers for programming cables. One list for every page: a cable a chooser leaves out
+// can't be picked, whatever the other pages do
+export const CABLE_VIDS = [...CHIPS.keys()];
 // the radio's own USB serial port (RadioFoundry, the stub and the open-firmware CPS all enumerate with it)
 const RADIO_USB = { vid: 0x1FC9, pid: 0x0094 };
 
