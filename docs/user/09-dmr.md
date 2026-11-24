@@ -264,6 +264,7 @@ when it differs from the channel's ("TS2 CC7"). To talk to them, set the channel
 - Press **Monitor** on a DMR channel (a short press; it acts when you let go). The radio shows "Digital monitor on" and
   the chips show "DMon". Press it again to turn it off. On an FM channel the same key opens the squelch while you hold it.
 - Or **\***, **5**.
+- Or a key set to **Monitor toggle** in [Settings > Keys](17-settings.md), which does what **\***, **5** does.
 
 Digital monitor stays on until you turn it off, change the channel or the mode, or press **Back** on Home. A
 [scan](12-scan.md) started with it on keeps it on at every channel. While it

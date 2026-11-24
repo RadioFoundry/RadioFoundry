@@ -160,6 +160,9 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "vfo_step_hz=%u\nvfo_drop=%u\n", (unsigned)v->vfo_step_hz, v->vfo_drop);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
+	if (v->hotspot) {
+		dl_text(t, "hs_power=%u\n", v->hs_power);	// the power level the hotspot keys (the host's RF level)
+	}
 	uint32_t handled, dropped;
 	radio_req_stats(&handled, &dropped);
 	dl_text(t, "req_handled=%u\nreq_dropped=%u\nch_read_errors=%u\n", (unsigned)handled, (unsigned)dropped,

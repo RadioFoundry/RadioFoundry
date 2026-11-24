@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // Satellite inventory command protocol. Flash persistence lives in core/satellite/store.c.
+#include <string.h>
 #include "config.h"
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
@@ -16,6 +17,15 @@ static uint16_t get16(const uint8_t *p)
 {
 	return (uint16_t)((uint16_t)p[0] | (uint16_t)((uint16_t)p[1] << 8));
 }
+
+// The command's working arrays. One debug link command runs at a time, on the hostlink task (debuglink.c has one parser
+// and one reply buffer), so they share one static buffer instead of sitting on that task's stack, where the command
+// is among its deepest paths (docs/dev/stack-check.md)
+static union {
+	satellite_record_id_t list_ids[SAT_MAX_RECORDS];
+	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
+	uint32_t ids[SATELLITE_PROFILE_MAX];
+} work;
 
 static uint32_t get32(const uint8_t *p)
 {
@@ -73,7 +83,7 @@ static __attribute__((noinline)) size_t satellite_list(const uint8_t *req, uint1
 {
 	if (len != 3u || cap < 2u)
 		return status(out, DL_ST_BAD_ARG);
-	satellite_record_id_t list_ids[SAT_MAX_RECORDS];
+	satellite_record_id_t *list_ids = work.list_ids;
 	uint8_t count;
 	if (!satellite_store_list_ids(get16(req + 1u), SAT_MAX_RECORDS, list_ids, &count) ||
 	    cap < 2u + (size_t)count * 8u)
@@ -93,7 +103,8 @@ static __attribute__((noinline)) size_t satellite_profile_stage(const uint8_t *r
 	if (len < 4u || req[3] > SATELLITE_PROFILE_MAX ||
 	    len != 4u + (uint16_t)req[3] * 14u)
 		return status(out, DL_ST_BAD_ARG);
-	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX] = { 0 };
+	satellite_frequency_profile_t *profiles = work.profiles;
+	memset(profiles, 0, sizeof(work.profiles));
 	for (uint8_t i = 0u; i < req[3]; i++)
 		read_profile(req + 4u + (uint16_t)i * 14u, &profiles[i]);
 	return status(out, transfer_status(satellite_store_transfer_profiles(
@@ -103,7 +114,7 @@ static __attribute__((noinline)) size_t satellite_profile_stage(const uint8_t *r
 static __attribute__((noinline)) size_t satellite_profile_values_get(uint8_t *out, size_t cap)
 {
 	uint8_t count;
-	satellite_frequency_profile_t profiles[SATELLITE_PROFILE_MAX];
+	satellite_frequency_profile_t *profiles = work.profiles;
 	if (!satellite_store_frequency_profiles_get(&count, profiles))
 		return status(out, DL_ST_REFUSED);
 	if (cap < 2u + (size_t)count * 14u)
@@ -176,7 +187,8 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 		    req[5] == 0u || req[5] > SAT_PROFILE_CHUNK_MAX || len != 6u + (uint16_t)req[5] * 14u ||
 		    req[4] > req[3] || req[5] > req[3] - req[4])
 			return status(out, DL_ST_BAD_ARG);
-		satellite_frequency_profile_t profiles[SAT_PROFILE_CHUNK_MAX] = { 0 };
+		satellite_frequency_profile_t *profiles = work.profiles;
+		memset(profiles, 0, SAT_PROFILE_CHUNK_MAX * sizeof(profiles[0]));
 		for (uint8_t i = 0u; i < req[5]; i++)
 			read_profile(req + 6u + (uint16_t)i * 14u, &profiles[i]);
 		return status(out, transfer_status(satellite_store_transfer_profiles_chunk(
@@ -198,7 +210,7 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 		if (len != 1u || cap < 2u + SATELLITE_PROFILE_MAX * 4u)
 			return status(out, DL_ST_BAD_ARG);
 		uint8_t count;
-		uint32_t ids[SATELLITE_PROFILE_MAX];
+		uint32_t *ids = work.ids;
 		if (!satellite_store_profiles_get(&count, ids))
 			return status(out, DL_ST_REFUSED);
 		out[0] = DL_ST_OK;
@@ -211,7 +223,8 @@ size_t debuglink_cmd_satellite(const uint8_t *req, uint16_t len, uint8_t *out, s
 		if (len < 2u || req[1] > SATELLITE_PROFILE_MAX ||
 		    len != 2u + (uint16_t)req[1] * 4u)
 			return status(out, DL_ST_BAD_ARG);
-		uint32_t ids[SATELLITE_PROFILE_MAX] = { 0 };
+		uint32_t *ids = work.ids;
+		memset(ids, 0, sizeof(work.ids));
 		for (uint8_t i = 0u; i < req[1]; i++)
 			ids[i] = get32(req + 2u + (uint16_t)i * 4u);
 		return status(out, satellite_store_profiles_set(req[1], ids) ? DL_ST_OK : DL_ST_REFUSED);

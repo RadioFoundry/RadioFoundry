@@ -6,7 +6,7 @@
 //
 // Script tokens (separated by spaces):
 //   up down left right ok back quick ctx 0..9 tt mon user1..user4 emerg enc+ enc-   a short press (counted);
-//   powerkey zone+ zone- scankey skipkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
+//   powerkey zone+ zone- scankey skipkey monkey lockkey cbkey homekey dualkey abkey: what a reassigned side key sends
 //   long:<key>          a long press (counted)
 //   ptt / ptt:<ms>      PTT pressed for 1 s / ms (counted); pttdown ... pttup holds it
 //   mondown ... monup   the monitor key held (FM: the squelch held open)
@@ -2594,6 +2594,7 @@ static void step(void)
 		ui_notify(&ev);
 	}
 	view.hotspot = hotspot_on;
+	view.hs_power = view.power;	// as the radio core with the host's RF level at its default (FF)
 	if (ui_app_tick(&view, now_ms))
 		ui_app_draw();
 	if (tick_hook != NULL)
@@ -2824,6 +2825,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "vfokey", ACT_VFO_TOGGLE },		// a VFO/MR key in the board's key map, or a side key set to VFO/Channel
 	{ "labelkey", ACT_TALK_LABEL },
 	{ "skipkey", ACT_SCAN_SKIP },
+	{ "monkey", ACT_MONITOR_TOGGLE },
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2833,7 +2835,7 @@ static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
 	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
-	    action == ACT_SCAN_SKIP)
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;
