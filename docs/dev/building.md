@@ -122,7 +122,9 @@ choice is a build option:
 non-default value is part of the build directory and the image name (`build/<b>-vhf/rfoundry_<b>-vhf.bin`), and of the
 release file (`rfoundry-<b>-vhf-<version>.bin`). `tools/ci.sh` builds every value. The release manifest records the
 values (`build_options`). rfoundry takes them from the board name a running radio reports (`<name> VHF`), or from
-`--option BAND=vhf`, and refuses an image built for other hardware than the radio's.
+`--option BAND=vhf`, and refuses an image built for other hardware than the radio's. A local build has no manifest,
+so nothing says which value it was built for: rfoundry takes the radio's value (from `--option` or the board name) as
+the image's and says so. Give the image of the matching build directory (`build/<b>-vhf/`).
 
 Prefer one image that detects the hardware at run time when that is possible. Build options are separate from release
 variants (`VARIANT=`, [build-config.md](../build-config.md)), which choose features, not hardware.

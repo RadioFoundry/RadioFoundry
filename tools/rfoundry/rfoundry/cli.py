@@ -196,8 +196,14 @@ def resolve_options(args, board, probe, need_all=False):
 
 
 def check_options(board, man, opts):
-    """Refuse an image built for other hardware than the radio's (its manifest's build_options against opts)."""
+    """Refuse an image built for other hardware than the radio's (its manifest's build_options against opts). A local
+    build without a manifest (#941) doesn't say what it was built for: its options are taken to be the radio's
+    (--option, or the board name the radio reports), not the defaults, and the user is told so."""
     if not board.build_options or not opts:
+        return
+    if (man or {}).get("dev_build") and "build_options" not in man:
+        say("options  %s: taken as given; a local build without a manifest doesn't say which it was built for"
+            % ", ".join("%s=%s" % kv for kv in sorted(opts.items())))
         return
     have = board.full_options((man or {}).get("build_options"))
     for k, v in opts.items():

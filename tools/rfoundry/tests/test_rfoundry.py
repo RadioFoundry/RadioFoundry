@@ -150,6 +150,19 @@ class BuildOptions(unittest.TestCase):
         with self.assertRaises(cli.UsageError):
             cli.check_options(self.b, {}, want)		# no build_options: the default build
 
+    def test_a_local_build_without_a_manifest_takes_the_given_options(self):
+        """#941: make BOARD=<b> <OPTION>=<other> writes no manifest, so for_dev_build's stand-in has no build_options;
+        it must not read as the default build and refuse the --option the user gave"""
+        want = {self.o["name"]: self.other["id"]}
+        dev = mf.for_dev_build(self.b, b"\0" * 64)
+        self.assertNotIn("build_options", dev)
+        with mock.patch.object(cli, "say") as said:
+            cli.check_options(self.b, dev, want)
+        self.assertIn("%s=%s" % (self.o["name"], self.other["id"]), said.call_args[0][0])
+        # a release image's manifest still decides
+        with self.assertRaises(cli.UsageError):
+            cli.check_options(self.b, {"build_options": {self.o["name"]: self.default["id"]}}, want)
+
 
 class StockPlacement(unittest.TestCase):
     """The registry's stock-file boards ([codec] stock): tools/boards.py leaves their codec windows to stockfw, so the
