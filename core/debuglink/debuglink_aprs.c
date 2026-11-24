@@ -20,19 +20,11 @@ static const char *word(uint8_t v, const char *const *names, uint8_t n)
 	return v < n ? names[v] : "?";
 }
 
-static unsigned deg_int(int32_t e7)
-{
-	return (unsigned)((e7 < 0 ? -(int64_t)e7 : e7) / 10000000);
-}
-
-static unsigned deg_frac(int32_t e7)
-{
-	return (unsigned)((e7 < 0 ? -(int64_t)e7 : e7) % 10000000);
-}
-
 static void deg(dl_text_t *t, const char *key, int32_t e7)
 {
-	dl_text(t, "%s=%s%u.%07u\n", key, e7 < 0 ? "-" : "", deg_int(e7), deg_frac(e7));
+	dl_text(t, "%s=", key);
+	dl_deg(t, e7);
+	dl_text(t, "\n");
 }
 
 static void view_settings(dl_text_t *t)

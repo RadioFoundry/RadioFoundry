@@ -34,5 +34,7 @@ void dl_text_init(dl_text_t *t, char *buf, size_t cap);
 void dl_text(dl_text_t *t, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 // key=value\n with a string value; control characters and '\n' in the value become '?'
 void dl_text_kv_str(dl_text_t *t, const char *key, const char *value);
+// A 1e-7 degree value, as -12.3456789
+void dl_deg(dl_text_t *t, int32_t e7);
 
 #endif

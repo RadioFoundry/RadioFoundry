@@ -420,7 +420,7 @@ subscriber, written into the gateway's frame buffer as the notices are.
 A fix, one datagram:
 
 ```
-{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"sats":9,"hdop":0.9,"utc":123519}
+{"gps":1,"lat":33.7490000,"lon":-84.3880000,"alt_m":320,"kmh":4,"course":271,"hdop":0.9,"sats":9,"utc":123519}
 ```
 
 | Field | |
@@ -434,6 +434,7 @@ A fix, one datagram:
 | `utc` | the fix's UTC time, hhmmss as a number (`5` is 00:00:05). The date isn't sent |
 
 - A field the module didn't send is left out (`alt_m kmh course hdop`).
+- The keys' order isn't fixed: read the line as JSON.
 - Sent while all of these hold, checked every 100 ms: the subscriber asked for fixes and its lease is live, the link
   is up, the board GPS has a fix under a minute old (`position_gps`), and the fix's second differs from the last sent.
   A send the link refuses is tried again at the next check while that second lasts.

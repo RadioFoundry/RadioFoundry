@@ -1529,7 +1529,7 @@ static void test_radio_udp_gps(void)
 	run_for(150);
 	CHECK(udp_catch.count == c + 1 && udp_catch.from_port == NET_RADIO_UDP_PORT);
 	CHECK(strcmp(last, "{\"gps\":1,\"lat\":33.7490000,\"lon\":-84.3880000,\"alt_m\":320,\"kmh\":4,\"course\":271,"
-		     "\"sats\":9,\"hdop\":0.9,\"utc\":123519}\n") == 0);
+		     "\"hdop\":0.9,\"sats\":9,\"utc\":123519}\n") == 0);
 	// one per GPS second: the same fix isn't sent again
 	run_for(1500);
 	CHECK(udp_catch.count == c + 1);

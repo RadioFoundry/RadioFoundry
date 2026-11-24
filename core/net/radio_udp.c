@@ -255,19 +255,31 @@ static bool step(bool zones, int32_t n, uint32_t now, const radio_view_t *v)
 	return true;
 }
 
-// "select", "select?zone=Z[&pos=P]", "select?notify=0", "step?channel=N" or "step?zone=N": 0, or the error for the reply
-static int request(const char *r, uint32_t now, const radio_view_t *v)
+// "select", "select?zone=Z[&pos=P]", "select?notify=0", "step?channel=N", "step?zone=N", or "gps" and "gps?off"
+// (select's, turning the fixes on or off: *gps 1 or 0): 0, or the error for the reply
+static int request(const char *r, uint32_t now, const radio_view_t *v, int *gps)
 {
 	bool sel = strncmp(r, "select", 6) == 0;
-	const char *q = r + (sel ? 6 : 4);
-	if (!sel && strncmp(r, "step?", 5) != 0) {
+	bool fix = !sel && strncmp(r, "gps", 3) == 0;
+	const char *q = r + (sel ? 6 : fix ? 3 : 4);
+	if (!sel && !fix && strncmp(r, "step?", 5) != 0) {
 		return 400;
 	}
 	if (*q == '\0') {
-		return sel ? 0 : 400;	// where the radio is
+		if (fix) {
+			*gps = 1;
+		}
+		return (sel || fix) ? 0 : 400;	// where the radio is
 	}
 	if (*q++ != '?') {
 		return 400;
+	}
+	if (fix) {
+		if (strcmp(q, "off") != 0) {
+			return 400;
+		}
+		*gps = 0;
+		return 0;
 	}
 	int32_t z, p = -1, n;
 	if (sel) {
@@ -313,13 +325,6 @@ static void notice_key(const radio_view_t *v, notice_key_t *k)
 }
 
 #if CONFIG_GPS
-// A degree value from 1e-7 degree: ,"key":-12.3456789
-static void put_deg(dl_text_t *t, const char *key, int32_t v)
-{
-	uint32_t a = (v < 0) ? 0u - (uint32_t)v : (uint32_t)v;
-	dl_text(t, ",\"%s\":%s%u.%07u", key, (v < 0) ? "-" : "", (unsigned)(a / 10000000u), (unsigned)(a % 10000000u));
-}
-
 // The board GPS's fix to a subscriber that asked for it, once per GPS second. Never a host-fed or fixed position
 // (position_gps is the board GPS alone), and exact: the ambiguity setting is for reports on the air
 static void fix_poll(uint32_t now)
@@ -332,9 +337,11 @@ static void fix_poll(uint32_t now)
 	char *buf = (char *)ipGatewayUdpPayload();
 	dl_text_t t;
 	dl_text_init(&t, buf, IPGW_UDP_PAYLOAD_MAX);
-	dl_text(&t, "{\"gps\":1");
-	put_deg(&t, "lat", g.lat);
-	put_deg(&t, "lon", g.lon);
+	dl_text(&t, "{\"gps\":1,\"lat\":");
+	dl_deg(&t, g.lat);
+	dl_text(&t, ",\"lon\":");
+	dl_deg(&t, g.lon);
+	// the optional fields each in their own piece, then the ones every fix has in one
 	if (g.alt_m != POSITION_ALT_NONE) {
 		dl_text(&t, ",\"alt_m\":%d", (int)g.alt_m);
 	}
@@ -344,11 +351,10 @@ static void fix_poll(uint32_t now)
 	if (g.course != 0xFFFFu) {
 		dl_text(&t, ",\"course\":%u", g.course);
 	}
-	dl_text(&t, ",\"sats\":%u", g.sats);
 	if (g.hdop10 != 0xFFFFu) {
 		dl_text(&t, ",\"hdop\":%u.%u", g.hdop10 / 10u, g.hdop10 % 10u);
 	}
-	dl_text(&t, ",\"utc\":%u}\n", (unsigned)g.utc_hms);
+	dl_text(&t, ",\"sats\":%u,\"utc\":%u}\n", g.sats, (unsigned)g.utc_hms);
 	if (!ipGatewayUdpSend(sub.ip, NET_RADIO_UDP_PORT, sub.port, (const uint8_t *)buf, (int)t.len)) {
 		st.busy++;	// the link was busy: again at the next check, while this second lasts
 		return;
@@ -414,10 +420,10 @@ static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_
 	uint32_t now = hal_millis();
 	const radio_view_t *v = net_radio_view();
 	st.requests++;
-	// "gps" and "gps?off" are select's, turning the fixes on or off
-	bool ask_gps = strcmp(r, "gps") == 0;
-	bool gps_off = strcmp(r, "gps?off") == 0;
-	int err = (n == 0) ? 400 : (ask_gps || gps_off) ? 0 : request(r, now, v);
+	int fix = -1;	// "gps" 1, "gps?off" 0
+	int err = (n == 0) ? 400 : request(r, now, v, &fix);
+	bool ask_gps = fix == 1;
+	bool gps_off = fix == 0;
 	st.bad += err == 400;
 	// The sender subscribes (a new one gets a notice at once), or cancels. Fixes: on with "gps", the first at the
 	// next check; off with "gps?off", notify=0, a new subscriber or the lease ending; any other request renews them

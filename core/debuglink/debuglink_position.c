@@ -15,8 +15,9 @@
 
 static void deg(dl_text_t *t, const char *key, int32_t e7)
 {
-	uint32_t m = e7 < 0 ? 0u - (uint32_t)e7 : (uint32_t)e7;
-	dl_text(t, "%s=%s%u.%07u\n", key, e7 < 0 ? "-" : "", (unsigned)(m / 10000000u), (unsigned)(m % 10000000u));
+	dl_text(t, "%s=", key);
+	dl_deg(t, e7);
+	dl_text(t, "\n");
 }
 
 void debuglink_view_position(uint8_t part, dl_text_t *t)
