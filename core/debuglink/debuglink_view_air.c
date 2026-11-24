@@ -18,6 +18,12 @@
 #include "board.h"
 #if CONFIG_AIR_RX_ADAPT
 #include "air/air_softmodem.h"
+
+// A DCS code's three octal digits (9 bits) as the decimal number that reads the same: the formatter has no %o
+static unsigned dcs_octal(uint16_t c)
+{
+	return ((c >> 6) & 7u) * 100u + ((c >> 3) & 7u) * 10u + (c & 7u);
+}
 #endif
 #endif
 
@@ -56,9 +62,9 @@ void debuglink_view_air(dl_text_t *t)
 		// (x 16384), the tone notched (Hz x 10), the DCS code taken off (octal digits as 9 bits, 0x8000 inverted)
 		air_softmodem_adapt_get(&v);
 		dl_text(t, "airx.opts=%u\nairx.off=%u\nairx.eq_center=%d\nairx.eq_resets=%u\nairx.tone_dhz=%u\n"
-			"airx.tone_blocks=%u\nairx.tone_picks=%u\nairx.dcs=%03o\nairx.dcs_inverted=%u\nairx.dcs_amp=%u\n"
+			"airx.tone_blocks=%u\nairx.tone_picks=%u\nairx.dcs=%03u\nairx.dcs_inverted=%u\nairx.dcs_amp=%u\n"
 			"airx.dcs_locks=%u\n", v.opts, air_softmodem_adapt_off, v.eq_center, v.eq_resets, v.tone_dhz,
-			v.tone_blocks, v.tone_picks, v.dcs_code & 0x1FFu, (v.dcs_code & 0x8000u) != 0, v.dcs_amp, v.dcs_locks);
+			v.tone_blocks, v.tone_picks, dcs_octal(v.dcs_code), (v.dcs_code & 0x8000u) != 0, v.dcs_amp, v.dcs_locks);
 	}
 #endif
 #endif
