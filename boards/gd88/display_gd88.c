@@ -53,7 +53,7 @@ static uint8_t panel_variant(void)
 {
 	panel_id = ili9341_read_id(&panel);
 	if (panel_id == ILI9341_ID_REG) {
-		source = "id";
+		source = "read";
 		return ILI9341_VARIANT_REG;
 	}
 	const volatile uint8_t *r = (const volatile uint8_t *)PANEL_RECORD;

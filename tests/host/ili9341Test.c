@@ -120,6 +120,15 @@ static void test_register_variant(void)
 		}
 	}
 	CHECK(r60);
+	// R03 (entry mode) has AM set: rows go out along x, so the address must step along R21 first, or every partial
+	// update is drawn transposed
+	bool r03 = false;
+	for (uint32_t i = 0; i + 3 < n_words; i++) {
+		if (words[i] == 0x100 && words[i + 1] == 0x103) {
+			r03 = (words[i + 3] & 0x08u) != 0;
+		}
+	}
+	CHECK(r03);
 	// A row write: window registers, then the frame memory index 0x22
 	static uint8_t fb[160 * 240];
 	static const uint16_t pal[16] = { 0x0000, 0xF800 };

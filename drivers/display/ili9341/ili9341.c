@@ -109,8 +109,10 @@ static const uint8_t seq0[] = {
 	0x00,
 };
 
-// The register-style panel. TODO(panel): unknown, needs a radio: the orientation (R03 0x1030 is taken to scan the
-// long side first, so a landscape row runs along R21) and the R00 writes' value
+// The register-style panel. R03 0x1038: AM = 1, so the address steps along R21 (the long side) first and a landscape
+// row goes out in one run, as window() sends it. With AM = 0 a row lands along the short side and every partial
+// update is drawn transposed. I/D = 11 and the window registers keep the same corner, so only the stepping order
+// changes. TODO(panel): unknown, needs a radio: the R00 writes' value
 const uint16_t ili9341_reg_seq[] = {
 	0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000, 0x00, 0x0000,
 	0xA4, 0x0001,
@@ -121,7 +123,7 @@ const uint16_t ili9341_reg_seq[] = {
 	REG_DELAY, 120,
 	0x50, 0, 0x51, 239, 0x52, 0, 0x53, 319,
 	0x61, 0x0001, 0x80, 0, 0x81, 0, 0x82, 0, 0x92, 0x0600, 0x93, 0x0402, 0x6A, 0, 0x0A, 0x0008,
-	0x01, 0x0100, 0x02, 0x0700, 0x03, 0x1030, 0x20, 0, 0x21, 0,
+	0x01, 0x0100, 0x02, 0x0700, 0x03, 0x1038, 0x20, 0, 0x21, 0,
 	REG_DISP_CTRL, 0x0100,
 	REG_DELAY, 40,
 	REG_END,
