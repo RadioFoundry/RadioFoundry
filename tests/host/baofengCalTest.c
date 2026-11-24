@@ -178,8 +178,28 @@ static void test_tx_byte(void)
 	CHECK(bf_cal_tx_byte(145500000u, BF_ROW_MOD) == 0);		// no calibration
 }
 
+// A drive placed on the rows (bf_cal_drive_pos, hardware-dm32.md 11.4): a part of the low row, the rows themselves,
+// past the high row
+static void test_drive_pos(void)
+{
+	static const bf_cal_power_points_t p = { .low = 1000, .mid = 2000, .high = 2500 };
+	CHECK(bf_cal_drive_pos(&p, 0) == 0);
+	CHECK(bf_cal_drive_pos(&p, 500) == 500);
+	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_LOW) == 1000);
+	CHECK(bf_cal_drive_pos(&p, 1500) == 1500);
+	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_MID) == 2000);
+	CHECK(bf_cal_drive_pos(&p, 2500) == 2250);
+	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_HIGH) == 2500);
+	CHECK(bf_cal_drive_pos(&p, 4000) == 2500);
+	static const bf_cal_power_points_t hot = { .low = 3000, .mid = 4000, .high = 4080 };
+	CHECK(bf_cal_drive_pos(&hot, BF_CAL_POS_HIGH) == 4080);
+	static const bf_cal_power_points_t down = { .low = 1000, .mid = 900, .high = 800 };	// rounded either way
+	CHECK(bf_cal_drive_pos(&down, 1505) == 949);
+}
+
 int main(void)
 {
+	test_drive_pos();
 	// Nothing in flash: no calibration, fallbacks
 	CHECK(!bf_cal_load(&flash, COPY_ADDR));
 	CHECK(strcmp(bf_cal_source(), "none") == 0);

@@ -32,24 +32,6 @@ static void test_measured(void)
 	CHECK(level(&uhf, true, DM32_POWER_LEVELS) == 2816);
 }
 
-// The rows' own places: a part of the low row, the rows themselves, past the high row
-static void test_positions(void)
-{
-	static const bf_cal_power_points_t p = { .low = 1000, .mid = 2000, .high = 2500 };
-	CHECK(bf_cal_drive_pos(&p, 0) == 0);
-	CHECK(bf_cal_drive_pos(&p, 500) == 500);
-	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_LOW) == 1000);
-	CHECK(bf_cal_drive_pos(&p, 1500) == 1500);
-	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_MID) == 2000);
-	CHECK(bf_cal_drive_pos(&p, 2500) == 2250);
-	CHECK(bf_cal_drive_pos(&p, BF_CAL_POS_HIGH) == 2500);
-	CHECK(bf_cal_drive_pos(&p, 4000) == 2500);
-	static const bf_cal_power_points_t hot = { .low = 3000, .mid = 4000, .high = 4080 };
-	CHECK(bf_cal_drive_pos(&hot, BF_CAL_POS_HIGH) == 4080);
-	static const bf_cal_power_points_t down = { .low = 1000, .mid = 900, .high = 800 };	// rounded either way
-	CHECK(bf_cal_drive_pos(&down, 1505) == 949);
-}
-
 // A calibration image with each band's low / mid / high rows a fixed step apart over the five frequency points
 static void set_rows(uint8_t uhf_low, uint8_t uhf_mid, uint8_t uhf_high, uint8_t vhf_low, uint8_t vhf_mid,
 		     uint8_t vhf_high)
@@ -137,7 +119,6 @@ static void test_ramp(void)
 int main(void)
 {
 	test_measured();
-	test_positions();
 	test_order();
 	test_scaling();
 	test_ramp();
