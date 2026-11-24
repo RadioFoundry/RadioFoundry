@@ -315,7 +315,7 @@ is the follower's state ("Finding system", "Control channel", "Following TG 201"
 look like a reception fault. The status line marks it with TX struck through (CONFIG_P25_TRUNK): drawn after the mode
 and any word (DUAL, SCAN, ROAM, MON, IP) in the warning color, only when it fits by the same test as those words, so
 it is the first to go on a short strip. It is not drawn in dual watch or during an APRS transmission. PTT still says
-"Blocked system: no TX". The debug link's `p25_trunk` section has the follower's
+"RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.

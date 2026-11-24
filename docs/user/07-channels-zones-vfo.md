@@ -371,7 +371,7 @@ The configured system identity still has to match; receive-only operation never 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".
 - A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
-  says "Blocked system: no TX" until the radio is switched off. The radio still receives the system and follows its
+  says "RX-only system: no TX" until the radio is switched off. The radio still receives the system and follows its
   calls. A P25 conventional channel that announces one of them says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on

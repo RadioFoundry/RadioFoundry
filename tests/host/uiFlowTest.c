@@ -176,7 +176,7 @@ static const flow_t flows[] = {
 	  "screen=home shows=Following_TG_201 shows=TX hides=Blocked_system", 0, false },
 	// PTT on a blocked system: the reason, and nothing to retry (no setting and no second press changes it)
 	{ "P25 trunked: PTT refused on a blocked system", "dlmode:p25", "p25t:2,0,8,1,11",
-	  "shows=Blocked_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
+	  "shows=RX-only_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
 #endif
 #if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
 	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
