@@ -1925,6 +1925,8 @@
  "editor.nxdn.tx_key": "发射密钥",
  "editor.nxdn.tx_clear": "明文",
  "editor.nxdn.tx_key_help": "选择此系统中的密钥 ID。不支持 NXDN 系统密钥的固件可能以明文发射。",
+ "editor.nxdn.alias": "发话者别名",
+ "editor.nxdn.alias_disabled": "禁用",
  "editor.nxdn.rate": "速率",
  "editor.nxdn.rate9600": "9600 bit/s",
  "editor.nxdn.rate4800": "4800 bit/s",

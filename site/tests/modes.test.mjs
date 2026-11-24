@@ -450,15 +450,17 @@ test("NXDN system Radio ID accepts blank or a whole number from 1 to 65519", () 
 });
 
 test("vectors: NXDN conventional block, unit ID record", () => {
-	const conv = (rate, rx, tx, sq) => ({ rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16) });
+	const conv = (rate, rx, tx, sq, alias) => ({
+		rate9600: rate === "1", rxRan: parseInt(rx, 16), txRan: parseInt(tx, 16), squelch: parseInt(sq, 16), aliasEnabled: alias === "1",
+	});
 	assert.ok(vectors("nxdnconv").length >= 10);
 	for (const l of vectors("nxdnconv")) {
 		const [b, ...p] = l.split(" ");
 		assert.deepEqual(nxdn.decodeConv(bytes(b) ?? new Uint8Array(0)), conv(...p), l);
 	}
 	for (const l of vectors("nxdnenc")) {
-		const [rate, rx, tx, sq, b] = l.split(" ");
-		assert.equal(hexOf(nxdn.encodeConv(conv(rate, rx, tx, sq))), b, l);
+		const [rate, rx, tx, sq, b, alias] = l.split(" ");
+		assert.equal(hexOf(nxdn.encodeConv(conv(rate, rx, tx, sq, alias))), b, l);
 	}
 	for (const l of vectors("nxdnunit")) {
 		const [b, dmr, unit] = l.split(" ");
@@ -478,7 +480,7 @@ function nxdnSample() {
 	m.channels.push(a, b);
 	numberAll(m);
 	setKind(m, a, 4);
-	a.params = { ...a.params, rxRan: 9, txRan: 9, squelch: 1 };
+	a.params = { ...a.params, rxRan: 9, txRan: 9, squelch: 1, aliasEnabled: true };
 	setKind(m, b, 4);
 	b.params = { ...b.params, rate9600: false, rxRan: 0, txRan: 2 };
 	m.modeSettings[4] = { unitId: 1234 };
@@ -491,16 +493,16 @@ test("NXDN: channels and the unit ID round-trip; unknown bytes are kept", () => 
 	const d = decode(img);
 	const a = d.channels.find((c) => c.name === "NXDN Ops"), b = d.channels.find((c) => c.name === "NXDN Unit");
 	assert.equal(a.kind, 4);
-	assert.deepEqual(a.params, { rate9600: true, squelch: 1, rxRan: 9, txRan: 9 });
+	assert.deepEqual(a.params, { rate9600: true, squelch: 1, rxRan: 9, txRan: 9, aliasEnabled: true });
 	assert.equal(a.tagTx, true);
 	assert.equal(a.mode, "dmr");
 	assert.equal(a.rxOnly, true, "the record is the safe stand-in");
-	assert.deepEqual(b.params, { rate9600: false, squelch: 0, rxRan: 0, txRan: 2 });
+	assert.deepEqual(b.params, { rate9600: false, squelch: 0, rxRan: 0, txRan: 2, aliasEnabled: false });
 	assert.equal(b.contact.type, "private");
 	assert.deepEqual(d.modeSettings[4], { unitId: 1234 });
 	assert.deepEqual(encode(d).bytes, img.bytes);
 	const e = area(img);
-	assert.equal(hexOf(decodeTag(getValue(e, MODE_KEY.tag + a.number - 1)).params), "010900");
+	assert.equal(hexOf(decodeTag(getValue(e, MODE_KEY.tag + a.number - 1)).params), "090900");
 	assert.equal(hexOf(decodeTag(getValue(e, MODE_KEY.tag + b.number - 1)).params), "040082");
 	assert.equal(hexOf(getValue(e, MODE_KEY.setting + 4)), "D204");
 	// a longer block keeps its tail through an edit
@@ -509,7 +511,7 @@ test("NXDN: channels and the unit ID round-trip; unknown bytes are kept", () => 
 	const d2 = decode(img);
 	d2.channels.find((c) => c.name === "NXDN Ops").params.txRan = 5;
 	const t = decodeTag(getValue(area(encode(d2)), key)).params;
-	assert.equal(hexOf(t), "010985AB");
+	assert.equal(hexOf(t), "090985AB");
 	// a blank unit ID writes no record
 	d2.modeSettings[4] = { unitId: 0 };
 	assert.equal(getValue(area(encode(d2)), MODE_KEY.setting + 4), null);

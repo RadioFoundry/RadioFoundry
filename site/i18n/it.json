@@ -1925,6 +1925,8 @@
  "editor.nxdn.tx_key": "Chiave di trasmissione",
  "editor.nxdn.tx_clear": "In chiaro",
  "editor.nxdn.tx_key_help": "Seleziona un ID chiave di questo sistema. Il firmware privo di supporto per le chiavi di sistema NXDN può trasmettere in chiaro.",
+ "editor.nxdn.alias": "Alias del chiamante",
+ "editor.nxdn.alias_disabled": "Disattivato",
  "editor.nxdn.rate": "Velocità",
  "editor.nxdn.rate9600": "9600 bit/s",
  "editor.nxdn.rate4800": "4800 bit/s",

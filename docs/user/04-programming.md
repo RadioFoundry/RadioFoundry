@@ -154,6 +154,10 @@ channel.
 | Squelch | RAN: every call on the RAN. Selective: the group and calls to this radio |
 | RX RAN | Radio access number heard, 0-63. 0 receives every RAN |
 | TX RAN | RAN sent. Blank: the RX RAN (1 when the RX RAN is 0) |
+| Talker Alias | **Name** sends the radio name with calls on this channel. **Disabled** is the default for existing codeplugs and new NXDN channels |
+
+To send an alias, set **Radio name** on the **Radio** tab, select **Name** on the NXDN channel, and write the
+codeplug to the radio. Existing NXDN channels use **Name** until you choose **Disabled**.
 
 **Radio tab**, per mode:
 

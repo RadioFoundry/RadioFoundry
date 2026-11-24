@@ -59,7 +59,7 @@ p25iden AA1AD62D6A18000080C3C901D43000000102 2DD61AAA 186A 1C9C380 30D4 1 2
 p25iden AA1AD62D6A18000080C3C901D43000000100 2DD61AAA 186A 1C9C380 30D4 1 2
 p25iden 40BDB932 32B9BD40 0 0 0 0 1
 #
-# nxdnconv <block> <9600: 1, 4800: 0> <RX RAN> <TX RAN> <squelch>: decoding an NXDN channel's block
+# nxdnconv <block> <9600: 1, 4800: 0> <RX RAN> <TX RAN> <squelch> [<alias enabled: 1>]: decoding
 nxdnconv - 1 0 1 0
 nxdnconv 000000 1 0 1 0
 nxdnconv 01 1 0 1 1
@@ -73,10 +73,10 @@ nxdnconv 000080 1 0 0 0
 nxdnconv 0040 1 0 1 0
 nxdnconv 00FF 1 0 1 0
 nxdnconv 0007C5 1 7 7 0
-nxdnconv 0D3FBF 0 3F 3F 1
+nxdnconv 0D3FBF 0 3F 3F 1 1
 nxdnconv 0000050A 1 0 1 0
 #
-# nxdnenc <9600> <RX RAN> <TX RAN> <squelch> <block>: encoding
+# nxdnenc <9600> <RX RAN> <TX RAN> <squelch> <block> [<alias enabled: 1>]: encoding
 nxdnenc 1 0 1 0 000000
 nxdnenc 1 0 1 1 010000
 nxdnenc 0 0 1 0 040000
@@ -85,6 +85,7 @@ nxdnenc 1 9 5 0 000985
 nxdnenc 1 0 0 0 000080
 nxdnenc 1 0 2 0 000082
 nxdnenc 0 3F 1 1 053F81
+nxdnenc 0 3F 1 1 0D3F81 1
 #
 # nxdnunit <record> <DMR ID> <unit ID>
 nxdnunit - 2F5C9C 1

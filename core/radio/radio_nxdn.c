@@ -109,6 +109,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		c->rate9600 = cc.conv.rate9600;
 		c->rx_ran = cc.conv.rx_ran;
 		c->tx_ran = cc.conv.tx_ran;
+#if CONFIG_NXDN_OTA_ALIAS
+		c->tx_alias_enabled = cc.conv.alias_enabled;
+#endif
 		if (cc.conv.squelch == NXDN_SQUELCH_SELECTIVE)
 			c->rx_gid = cc.target_unit ? (uint16_t)NXDN_ID_ALL : cc.target;
 		c->unit_id = cc.unit_id;
@@ -127,6 +130,9 @@ static void params(const channel_t *ch, uint16_t number, nxdn_engine_cfg_t *c)
 		}
 		return;
 	}
+#if CONFIG_NXDN_OTA_ALIAS
+	c->tx_alias_enabled = false;	// no stored channel to enable the alias
+#endif
 	c->rate9600 = set.rate9600;
 	c->rx_ran = set.rx_ran;
 	c->tx_ran = set.tx_ran;
@@ -371,6 +377,9 @@ bool radio_nxdn_poll(radio_nxdn_view_t *v)
 		n.ran = ev.rx.ran;
 		n.src = ev.rx.have_vcall ? ev.rx.vcall.src : 0;
 		n.dst = ev.rx.have_vcall ? ev.rx.vcall.dst : 0;
+#if CONFIG_NXDN_OTA_ALIAS
+		memcpy(n.alias, ev.rx.alias, sizeof n.alias);
+#endif
 		n.emergency = ev.rx_active && ev.rx.have_vcall && (ev.rx.vcall.cc_opt & NXDN_CC_EMERGENCY) != 0;
 	}
 	settings_view(&n);
@@ -383,6 +392,16 @@ static bool nxdn_no_tx(void)
 {
 	return eng != NULL && (eng->session.fit & AIR_FIT_TX) == 0;
 }
+
+#if CONFIG_NXDN_OTA_ALIAS
+void radio_nxdn_set_tx_alias(const char *alias)
+{
+	if (eng != NULL) {
+		strncpy(eng->cfg.tx_alias, eng->cfg.tx_alias_enabled ? alias : "", NXDN_ALIAS_LEN);
+		eng->cfg.tx_alias[NXDN_ALIAS_LEN] = '\0';
+	}
+}
+#endif
 
 static bool nxdn_tx_prepare(void)
 {

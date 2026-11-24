@@ -1925,6 +1925,8 @@
  "editor.nxdn.tx_key": "Clave de transmisión",
  "editor.nxdn.tx_clear": "Sin cifrar",
  "editor.nxdn.tx_key_help": "Selecciona un ID de clave de este sistema. El firmware sin compatibilidad con claves de sistema NXDN puede transmitir sin cifrar.",
+ "editor.nxdn.alias": "Alias del interlocutor",
+ "editor.nxdn.alias_disabled": "Desactivado",
  "editor.nxdn.rate": "Velocidad",
  "editor.nxdn.rate9600": "9600 bit/s",
  "editor.nxdn.rate4800": "4800 bit/s",

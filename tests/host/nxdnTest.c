@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "fuzz.h"
 #include "nxdn/nxdn.h"
 #include "air/air_syms.h"
 #include "dmr/ambe/ambeFec.h"
@@ -243,7 +244,7 @@ static const nxdn_call_sink_t sink = { s_start, s_update, s_voice, s_end };
 static uint8_t voice[64][NXDN_EHR_BYTES];
 
 // A call of nvoice voice frames: its symbols to tx_air
-static void make_call(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_t nvoice)
+static void make_call_with_alias(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_t nvoice, const char *alias)
 {
 	static const uint8_t silence[NXDN_EHR_BYTES] = { 0 };
 	nxdn_call_tx_t t;
@@ -251,6 +252,11 @@ static void make_call(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_
 	bool ended = false;
 
 	nxdn_call_tx_begin(&t, v, ran, NXDN_DIR_INBOUND, rate9600);
+#if CONFIG_NXDN_OTA_ALIAS
+	nxdn_call_tx_alias(&t, alias);
+#else
+	(void)alias;
+#endif
 	while (!nxdn_call_tx_done(&t)) {
 		uint16_t first, n = nxdn_call_tx_ready(&t, &first);
 
@@ -261,7 +267,7 @@ static void make_call(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_
 			continue;
 		}
 		if (!n) {
-			nxdn_call_tx_voice(&t, voice[sent_voice++]);
+			nxdn_call_tx_voice(&t, voice[sent_voice++ % (sizeof voice / sizeof voice[0])]);
 			continue;
 		}
 		// Released a few symbols at a time, as a provider's chunks take them
@@ -271,6 +277,11 @@ static void make_call(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_
 			tx_air[tx_n++] = air_sym_get(nxdn_call_tx_syms(&t), (uint16_t)(first + i));
 		nxdn_call_tx_sent(&t, n);
 	}
+}
+
+static void make_call(const nxdn_vcall_t *v, uint8_t ran, bool rate9600, uint16_t nvoice)
+{
+	make_call_with_alias(v, ran, rate9600, nvoice, "");
 }
 
 static void noise_syms(uint16_t n)
@@ -399,6 +410,180 @@ static void testCalls(void)
 	      "9600: starts %u voice %u facch fails %u", got.starts, got.voice, st.facch_fail);
 }
 
+#if CONFIG_NXDN_OTA_ALIAS
+static void fuzz_alias(uint32_t first, uint32_t end)
+{
+	uint8_t frames[2][NXDN_FRAME_BYTES] = { { 0 } };
+	nxdn_fec_work_t alias_work;
+	fuzz_t f;
+
+	for (unsigned i = 0; i < 2; i++)
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			air_sym_put(frames[i], j, tx_air[first + i * NXDN_FRAME_SYMS + j]);
+	fuzz_init(&f, 0x4E58444E);
+	for (long trial = 0; trial < fuzz_iters(1000); trial++) {
+		uint8_t half = (uint8_t)fuzz_below(&f, 2);
+		unsigned i = fuzz_below(&f, 2);
+		uint8_t frame[NXDN_FRAME_BYTES], msg[NXDN_FACCH1_BYTES];
+
+		memcpy(frame, frames[i], sizeof frame);
+		CHECK(nxdn_facch1_get(frame, NULL, half, &alias_work, msg) == 0, "fuzz alias seed");
+		int n = fuzz_mutate(&f, msg, sizeof msg, sizeof msg);
+		memset(msg + n, 0, sizeof msg - (unsigned)n);
+		msg[0] = NXDN_MSG_PROP_FORM;	// exercise the alias parser, including its signature checks
+		nxdn_facch1_put(frame, half, msg);
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[first + i * NXDN_FRAME_SYMS + j] = air_sym_get(frame, j);
+		tx_n = end;
+		receive(&nxdn_air_mode_9600, 7, 0, false);
+		CHECK(got.starts == 1 && got.ends == 1 && got.call.alias[NXDN_ALIAS_LEN] == '\0', "fuzz alias call");
+		for (const unsigned char *ch = (const unsigned char *)got.call.alias; *ch; ch++)
+			CHECK(*ch >= 0x20 && *ch <= 0x7E, "fuzz alias text must be printable");
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[first + i * NXDN_FRAME_SYMS + j] = air_sym_get(frames[i], j);
+	}
+}
+
+static void testAlias(void)
+{
+	// Full-width synthetic alias, with an independent fixture for the observed layout and sum.
+	static const uint8_t expected[4][NXDN_FACCH1_BYTES] = {
+		{ 0x3F, 0x68, 0x82, 0x04, 0x14, 'A', 'B', 'C', 'D', 0 },
+		{ 0x3F, 0x68, 0x82, 0x04, 0x24, 'E', 'F', 'G', 'H', 0 },
+		{ 0x3F, 0x68, 0x82, 0x04, 0x34, 'I', 'J', 'K', 'L', 0 },
+		{ 0x3F, 0x68, 0x82, 0x04, 0x44, 'M', 'N', 0x03, 0xE9, 0 },
+	};
+	const uint32_t first = NXDN_PREAMBLE_SYMS + NXDN_FRAME_SYMS;
+	nxdn_vcall_t v = { NXDN_MSG_VCALL, 0, NXDN_CALL_GROUP, NXDN_VOICE_4800_EHR, 1001, 20, NXDN_CIPHER_NONE, 0 };
+
+	for (int rate9600 = 0; rate9600 <= 1; rate9600++) {
+		const air_mode_t *mode = rate9600 ? &nxdn_air_mode_9600 : &nxdn_air_mode;
+
+		v.voice_opt = rate9600 ? NXDN_VOICE_9600_EHR : NXDN_VOICE_4800_EHR;
+		tx_n = 0;
+		make_call_with_alias(&v, 7, rate9600, 16, "ABCDEFGHIJKLMN");
+		uint32_t first_call_end = tx_n;
+		if (rate9600)
+			fuzz_alias(first, first_call_end);
+		for (uint8_t i = 0; i < 2; i++) {
+			uint8_t frame[NXDN_FRAME_BYTES] = { 0 };
+			nxdn_fec_work_t alias_work;
+			uint8_t msg[NXDN_FACCH1_BYTES];
+
+			for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+				air_sym_put(frame, j, tx_air[first + i * NXDN_FRAME_SYMS + j]);
+			for (uint8_t h = 0; h < 2; h++)
+				CHECK(nxdn_facch1_get(frame, NULL, h, &alias_work, msg) == 0 &&
+				      memcmp(msg, expected[2 * i + h], sizeof msg) == 0, "alias frame %u/%u", i, h);
+		}
+		receive(mode, 7, 0, false);
+		CHECK(strcmp(got.call.alias, "ABCDEFGHIJKLMN") == 0 && got.updates == 2, "full alias at rate %d", rate9600);
+		CHECK(got.voice == 16 && voice_in_order(0, 16), "alias did not consume prepared voice");
+		receive(mode, 7, first, false);
+		CHECK(got.call.late && got.call.have_vcall && strcmp(got.call.alias, "ABCDEFGHIJKLMN") == 0, "late alias");
+
+		// Keep the FACCH1 CRC valid while corrupting the independent checksum.
+		uint32_t second = first + NXDN_FRAME_SYMS;
+		uint8_t frame[NXDN_FRAME_BYTES] = { 0 }, original[NXDN_FRAME_BYTES], bad[NXDN_FACCH1_BYTES];
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			air_sym_put(frame, j, tx_air[second + j]);
+		memcpy(original, frame, sizeof original);
+		memcpy(bad, expected[3], sizeof bad);
+		bad[8]++;
+		nxdn_facch1_put(frame, 1, bad);
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[second + j] = air_sym_get(frame, j);
+		nxdn_call_stats_t st = receive(mode, 7, 0, false);
+		CHECK(st.facch_fail == 0 && got.call.alias[0] == '\0', "alias checksum rejection");
+
+		// Substitute a valid duplicate in place of fragment four.
+		nxdn_facch1_put(frame, 1, expected[2]);
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[second + j] = air_sym_get(frame, j);
+		receive(mode, 7, 0, false);
+		CHECK(got.call.alias[0] == '\0', "duplicate cannot fill a missing fragment");
+
+		for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+			tx_air[second + j] = air_sym_get(original, j);
+		// Join the transmissions at the next header to model a missed release with sync held.
+		uint32_t second_call = first_call_end - NXDN_FRAME_SYMS;
+		tx_n = second_call;
+		make_call(&v, 7, rate9600, 8);
+		memmove(tx_air + second_call, tx_air + second_call + NXDN_PREAMBLE_SYMS,
+			tx_n - second_call - NXDN_PREAMBLE_SYMS);
+		tx_n -= NXDN_PREAMBLE_SYMS;
+		receive(mode, 7, 0, false);
+		CHECK(got.starts == 1 && got.ends == 1 && strcmp(got.call.alias, "ABCDEFGHIJKLMN") == 0,
+		      "same caller after missed release (%u): starts %u, ends %u, alias '%s'",
+		      rate9600, got.starts, got.ends, got.call.alias);
+
+		nxdn_vcall_t other = v;
+		other.src++;
+		tx_n = second_call;
+		make_call(&other, 7, rate9600, 20);
+		memmove(tx_air + second_call, tx_air + second_call + NXDN_PREAMBLE_SYMS,
+			tx_n - second_call - NXDN_PREAMBLE_SYMS);
+		tx_n -= NXDN_PREAMBLE_SYMS;
+		receive(mode, 7, 0, false);
+		CHECK(got.starts == 2 && got.ends == 2 && got.call.vcall.src == other.src && got.call.alias[0] == '\0',
+		      "changed FACCH1 VCALL starts a new call with no stale alias");
+
+		// Drop the header as well so only SACCH identifies the new source.
+		uint32_t second_voice = second_call + NXDN_FRAME_SYMS;
+		memmove(tx_air + second_call, tx_air + second_voice, tx_n - second_voice);
+		tx_n -= second_voice - second_call;
+		receive(mode, 7, 0, false);
+		CHECK(got.starts == 1 && got.ends == 1 && got.call.vcall.src == other.src && got.call.alias[0] == '\0',
+		      "changed SACCH VCALL (%u): starts %u, ends %u, source %u, alias '%s'",
+		      rate9600, got.starts, got.ends, got.call.vcall.src, got.call.alias);
+
+		tx_n = 0;
+		make_call_with_alias(&v, 7, rate9600, 8, "TEST 1");
+		receive(mode, 7, 0, false);
+		CHECK(strcmp(got.call.alias, "TEST 1") == 0, "short padded alias");
+
+		// Check two full rotations independently of the receiver. Each alias superframe replaces only SACCH.
+		tx_n = 0;
+		make_call_with_alias(&v, 7, rate9600, 256, "ABCDEFGHIJKLMN");
+		for (uint8_t sf = 0; sf < 16; sf++) {
+			uint8_t msg[NXDN_SACCH_MSG_BYTES] = { 0 };
+			nxdn_fec_work_t alias_work;
+
+			for (uint8_t part = 0; part < 4; part++) {
+				uint8_t sacch_frame[NXDN_FRAME_BYTES] = { 0 }, sc[NXDN_SACCH_BYTES];
+				uint32_t start = first + (4u * sf + part) * NXDN_FRAME_SYMS;
+
+				for (uint16_t j = 0; j < NXDN_FRAME_SYMS; j++)
+					air_sym_put(sacch_frame, j, tx_air[start + j]);
+				CHECK(nxdn_sacch_get(sacch_frame, NULL, &alias_work, sc) == 0 && NXDN_SR_PART(sc[0]) == part,
+				      "valid SACCH superframe %u part %u", sf, part);
+				for (uint8_t j = 0; j < 18; j++) {
+					uint16_t bit = (uint16_t)(18 * part + j);
+					msg[bit >> 3] |= (uint8_t)(bget(sc, (uint16_t)(8 + j)) << (7 - (bit & 7)));
+				}
+				if (sf & 1) {
+					int lich = nxdn_lich_get(sacch_frame, NULL);
+					CHECK(lich >= 0 && NXDN_LICH_OPT(lich) ==
+					      (rate9600 && (part & 1) ? NXDN_STEAL_BOTH : NXDN_STEAL_NONE),
+					      "SACCH alias adds no voice slot stealing");
+				}
+			}
+			if (sf & 1)
+				CHECK(memcmp(msg, expected[(sf / 2) % 4], sizeof msg) == 0, "SACCH alias fragment %u", sf);
+			else {
+				nxdn_vcall_t decoded;
+				CHECK(nxdn_vcall_parse(msg, &decoded) && memcmp(&v, &decoded, sizeof v) == 0,
+				      "SACCH VCALL between alias fragments");
+			}
+		}
+		receive(mode, 7, first + 4 * NXDN_FRAME_SYMS, false);
+		CHECK(got.call.late && got.call.have_vcall && strcmp(got.call.alias, "ABCDEFGHIJKLMN") == 0,
+		      "late entry gets the SACCH alias without opening FACCH1");
+		CHECK(got.updates == 2, "repeat SACCH aliases do not trigger duplicate call updates");
+	}
+}
+#endif
+
 int main(void)
 {
 	testScrambler();
@@ -408,6 +593,9 @@ int main(void)
 	testVch();
 	testMessages();
 	testCalls();
+#if CONFIG_NXDN_OTA_ALIAS
+	testAlias();
+#endif
 	printf("nxdnTest: %d checks, %d failed\n", checks, failures);
 	return failures ? 1 : 0;
 }

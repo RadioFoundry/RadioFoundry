@@ -35,6 +35,9 @@ static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
 
 static const char features[] =
+#if CONFIG_NXDN_OTA_ALIAS
+	"NXDN_OTA_ALIAS,"
+#endif
 #if CONFIG_NXDN_SCRAMBLER
 	"NXDN_SCRAMBLER,"
 #endif
