@@ -12,7 +12,7 @@
 #include "aprs/kiss.h"
 #include "board.h"
 #if CONFIG_APRS_RX
-#include "usbaudio/audio_mux.h"
+#include "radio/rx_pcm.h"
 #endif
 #include "settings/settings.h"
 
@@ -838,39 +838,15 @@ void aprs_rx_audio(const int16_t *s, size_t n, uint32_t now_ms)
 	afsk_demod(&aprs_s.demod, s, n);
 }
 
-// The receive audio: the board's own AFSK receive path, else FM receive audio on the shared PCM stream (boards whose
-// audio tap has AUDIO_TAP_FM_RX: 8 kHz, audio_mux.h)
-static bool rx_by_board(void)
+static void rx_sink(const int16_t *s, size_t n, uint32_t now_ms)
 {
-	const hal_afsk_t *h = board.afsk;
-	return h != NULL && h->rx_start != NULL && h->rx_read != NULL;
+	aprs_rx_audio(s, n, now_ms);
 }
 
-static bool rx_by_stream(void)
-{
-	return board.audio != NULL && board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_FM_RX) != 0;
-}
-
-// A start the board refused (no memory, its audio path busy) is tried again this much later, not on every tick: each
-// try routes the receiver and back
-#define RX_RETRY_MS	1000u
-
-// Stop the receive path now (radio task). The radio core calls it before it tunes away from the APRS frequency: the
-// path holds the board's FM receive audio (on the HR_C7000 the copy interrupt, which air_take refuses to share), and
-// the service below would only let go of it later in the same poll, after a P25, NXDN or YSF engine's start had failed
+// Stop the receive path now (radio task): rx_pcm_release, before the radio core tunes away from the APRS frequency
 void aprs_rx_release(void)
 {
-	if (!aprs_s.rx_running) {
-		return;
-	}
-	if (rx_by_board()) {
-		if (board.afsk->rx_stop != NULL) {
-			board.afsk->rx_stop();
-		}
-	} else {
-		audio_mux_aprs_rx(false);
-	}
-	aprs_s.rx_running = false;
+	rx_pcm_release();
 }
 
 uint32_t aprs_rx_freq(void)
@@ -883,47 +859,26 @@ uint32_t aprs_mute_hz(void)
 	return aprs_s.cfg.mute ? aprs_cfg_freq(&aprs_s.cfg) : 0u;
 }
 
-// The receive path: on while receiving FM with the setting on (radio task, outside the lock)
+// The receive path (rx_pcm.h): wanted while receiving FM on the APRS frequency with the setting on (radio task,
+// outside the lock). The demodulator starts fresh each time it is newly wanted
 void aprs_ax25_rx_service(const aprs_radio_t *r, uint32_t now_ms)
 {
-	const hal_afsk_t *h = board.afsk;
-	bool own = rx_by_board();
 	bool want = aprs_s.cfg.rx_on && r->fm_rx && r->rx_hz != 0 && r->rx_hz == aprs_cfg_freq(&aprs_s.cfg) &&
-		    (own || rx_by_stream());
-	// The wait only after a refusal: an old rx_retry_ms compared 24.8 days later would read as in the future
-	if (want && !aprs_s.rx_running && (!aprs_s.rx_retry_wait || (int32_t)(now_ms - aprs_s.rx_retry_ms) >= 0)) {
+		    rx_pcm_can();
+	if (rx_pcm_want(RX_PCM_APRS, want, rx_sink)) {
 		aprs_s.rx_peak = 0;
-		aprs_s.rx_running = afsk_demod_init(&aprs_s.demod, own ? h->rx_rate_hz : 8000u, demod_frame, NULL);
-		if (aprs_s.rx_running && own) {
-			aprs_s.rx_running = h->rx_start();
-			aprs_s.rx_retry_wait = !aprs_s.rx_running;
-			if (!aprs_s.rx_running) {
-				aprs_s.rx_start_fails++;
-				aprs_s.rx_retry_ms = now_ms + RX_RETRY_MS;
-			}
-		} else if (aprs_s.rx_running) {
-			audio_mux_aprs_rx(true);
-		}
-	} else if (!want && aprs_s.rx_running) {
-		aprs_rx_release();
-	}
-	if (!want) {
-		aprs_s.rx_retry_wait = false;	// a refusal's wait is for the try it followed, not a later one
-	}
-	if (aprs_s.rx_running) {
-		uint16_t n = (uint16_t)(sizeof(aprs_s.rxbuf) / sizeof(aprs_s.rxbuf[0]));
-		uint16_t k;
-		while ((k = own ? h->rx_read(aprs_s.rxbuf, n) : (uint16_t)audio_mux_aprs_read(aprs_s.rxbuf, n)) != 0) {
-			aprs_rx_audio(aprs_s.rxbuf, k, now_ms);
+		if (!afsk_demod_init(&aprs_s.demod, rx_pcm_rate(), demod_frame, NULL)) {
+			rx_pcm_want(RX_PCM_APRS, false, NULL);	// a rate the demodulator can't take
 		}
 	}
+	rx_pcm_service(now_ms);
 }
 #endif
 
 bool aprs_can_receive(void)
 {
 #if CONFIG_APRS_RX
-	return rx_by_board() || rx_by_stream();
+	return rx_pcm_can();
 #else
 	return false;
 #endif
@@ -937,14 +892,14 @@ void aprs_rx_stats(aprs_rx_stats_t *out)
 	out->frames = aprs_s.demod.frames;
 	out->fcs_errors = afsk_demod_fcs_errors(&aprs_s.demod);
 	out->aborts = afsk_demod_aborts(&aprs_s.demod);
-	out->start_fails = aprs_s.rx_start_fails;
+	out->start_fails = rx_pcm_start_fails();
 }
 #endif
 
 bool aprs_rx_listening(void)
 {
 #if CONFIG_APRS_RX
-	return aprs_s.rx_running;
+	return rx_pcm_feeding(RX_PCM_APRS);
 #else
 	return false;
 #endif

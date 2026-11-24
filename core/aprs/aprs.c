@@ -8,6 +8,9 @@
 #include "aprs/aprs_int.h"
 #include "aprs/aprs_dmr.h"
 #include "board.h"
+#if CONFIG_APRS_RX
+#include "radio/rx_pcm.h"
+#endif
 #include "settings/settings.h"
 
 #define AUTO_MIN_S	30		// hard minimum between automatic beacons
@@ -203,6 +206,9 @@ static bool beacon(uint8_t why, const position_fix_t *f)
 void aprs_init(uint32_t now_ms)
 {
 	memset(&aprs_s, 0, sizeof(aprs_s));
+#if CONFIG_APRS_RX
+	rx_pcm_init();	// the receive path's state with it (rx_pcm.h)
+#endif
 	aprs_s.now = now_ms;
 	aprs_ax25_init(now_ms);
 	reload_cfg();

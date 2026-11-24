@@ -77,11 +77,7 @@ typedef struct {
 	uint8_t nmsg;
 	aprs_dedup_t dedup_gate, dedup_digi, dedup_is;
 	afsk_demod_t demod;
-	bool rx_running;
 	uint16_t rx_peak;
-	uint32_t rx_start_fails, rx_retry_ms;	// starts the board refused; the next try (RX_RETRY_MS later)
-	bool rx_retry_wait;			// the last start was refused: wait for rx_retry_ms
-	int16_t rxbuf[160];
 	char gate[AX25_TNC2_MAX + 20];
 #endif
 #endif

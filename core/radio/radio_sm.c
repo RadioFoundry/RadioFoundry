@@ -48,6 +48,9 @@
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 #include "usbaudio/audio_mux.h"	// the PCM stream shared with a host audio session and APRS
 #endif
+#if CONFIG_APRS_RX
+#include "radio/rx_pcm.h"	// FM receive audio for APRS and DTMF
+#endif
 #if CONFIG_DMR_DATA_CORE
 #include "dmr/dmrDataService.h"
 #include "dmr/dmr_data_api.h"	// dmr_sms_format_t
@@ -889,8 +892,9 @@ static void tune(radio_sm_t *sm, uint32_t now_ms)
 	// Off the APRS frequency (or out of FM): APRS lets go of the FM receive audio before the board changes mode. A
 	// P25, NXDN or YSF engine can't start while it holds it (HR_C7000: air_take), and nothing retries the start until
 	// the next tune: the channel was left with no engine, and PTT refused ("NO TX") until a retune or power cycle
-	if (aprs_rx_listening() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
-		aprs_rx_release();
+	// (rx_pcm.h: the path is shared with the DTMF decoder, which asks again on its next poll after the tune)
+	if (rx_pcm_running() && !(sm->view.ch.mode == RADIO_MODE_FM && sm->view.ch.rx_hz == aprs_rx_freq())) {
+		rx_pcm_release();
 	}
 #endif
 	if (radio_listen_band(sm->view.ch.rx_hz)) {
