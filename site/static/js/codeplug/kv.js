@@ -43,16 +43,21 @@ export const SIG_REC_LEN = 2 + 3 * SIG_STEPS;
 // Byte offsets of step i's frequency and length in a record
 const recHz = (i) => i < SIG_BASE ? 2 + 2 * i : 2 + 3 * SIG_BASE + 2 * (i - SIG_BASE);
 const recMs = (i) => i < SIG_BASE ? 2 + 2 * SIG_BASE + i : 2 + 3 * SIG_BASE + 2 * (SIG_STEPS - SIG_BASE) + (i - SIG_BASE);
-// The fox mode record (3.4; radio-features.md 3.8), kind "fox": the interval (an index into FOX_INTERVALS), whether a
-// cycle sends the message and the jingle, the message (up to 16 characters the radio has Morse for), and a jingle of 32
-// steps in the signaling tones' format (frequencies first, then lengths in 10 ms units, each up to 2550 ms; the whole
-// chain is cut at 10 s). In the model {interval, msg, jingle, text, hz: [32], ms: [32]}, the lengths in ms
+// The fox mode record (3.4; radio-features.md 3.8), kind "fox": the interval (the wait from the end of one cycle to the
+// start of the next, in seconds, FOX_INTERVAL_MIN..FOX_INTERVAL_MAX), whether a cycle sends the message and the jingle,
+// how many times the jingle plays, the message (up to 16 characters the radio has Morse for), and a jingle of 32 steps
+// in the signaling tones' format (frequencies first, then lengths in 10 ms units, each up to 2550 ms; the whole chain
+// is cut at 10 s). In the model {interval (s), repeats, msg, jingle, text, hz: [32], ms: [32]}, the lengths in ms
 export const FOX_STEPS = 32;
 export const FOX_MSG_MAX = 16;
 export const FOX_MS_MAX = 2550;		// a step's length
 export const FOX_CHAIN_MAX = 10000;	// the jingle's: the radio cuts it to this
-export const FOX_INTERVALS = [15, 30, 60, 120, 300, 600];	// seconds
-export const FOX_REC_LEN = 2 + FOX_MSG_MAX + 3 * FOX_STEPS;
+export const FOX_INTERVAL_MIN = 3, FOX_INTERVAL_MAX = 3600;	// seconds
+export const FOX_INTERVALS = [3, 5, 10, 15, 30, 60, 120, 240, 300];	// the radio's presets (ui_menus.c), seconds
+export const FOX_SHORT_WAIT = 15;	// a wait below this keys the radio most of the time: it can get hot
+export const FOX_REPEATS_MAX = 10;
+export const FOX_REC_LEN = 4 + FOX_MSG_MAX + 3 * FOX_STEPS;
+const FOX_MSG = 4, FOX_HZ = FOX_MSG + FOX_MSG_MAX, FOX_MS = FOX_HZ + 2 * FOX_STEPS;	// byte offsets
 export const FOX_CHARS = /^[A-Z0-9 /\-=?.,]*$/;	// what the message may hold (morse.c)
 const FOX_F_MSG = 1, FOX_F_JINGLE = 2;
 export const RECORD_KEYS = [
@@ -153,10 +158,11 @@ export function idValue(id) {
 	return Uint8Array.of(id & 0xFF, (id >>> 8) & 0xFF, (id >>> 16) & 0xFF, (id >>> 24) & 0xFF);
 }
 
-// A fox record's setting the radio takes: an interval it has, a message of Morse characters and spaces, a frequency up
+// A fox record's setting the radio takes: an interval of whole seconds in its range, 1..10 repeats, a message of Morse characters and spaces, a frequency up
 // to 3400 Hz in steps of 10, each length a multiple of 10 ms up to 2550
 export function foxValid(rec) {
-	return !!rec && Number.isInteger(rec.interval) && rec.interval >= 0 && rec.interval < FOX_INTERVALS.length
+	return !!rec && Number.isInteger(rec.interval) && rec.interval >= FOX_INTERVAL_MIN && rec.interval <= FOX_INTERVAL_MAX
+		&& Number.isInteger(rec.repeats) && rec.repeats >= 1 && rec.repeats <= FOX_REPEATS_MAX
 		&& typeof rec.msg === "boolean" && typeof rec.jingle === "boolean"
 		&& typeof rec.text === "string" && rec.text.length <= FOX_MSG_MAX && FOX_CHARS.test(rec.text)
 		&& Array.isArray(rec.hz) && Array.isArray(rec.ms) && rec.hz.length === FOX_STEPS && rec.ms.length === FOX_STEPS
@@ -167,23 +173,23 @@ export function foxValid(rec) {
 // The jingle the radio plays when the record's has no step (radio_fox.c): {hz, ms} steps
 export const FOX_TUNE = [[520, 120], [660, 120], [780, 120], [0, 60], [1050, 240], [0, 80], [780, 120], [1050, 360]];
 
-// The fox record the radio uses when the codeplug has none (radio_fox.c): "FOX", the tune, every minute
+// The fox record the radio uses when the codeplug has none (radio_fox.c): "FOX", the tune once, every minute
 export function foxDefault() {
-	return { interval: 2, msg: true, jingle: true, text: "FOX", hz: Array(FOX_STEPS).fill(0), ms: Array(FOX_STEPS).fill(0) };
+	return { interval: 60, repeats: 1, msg: true, jingle: true, text: "FOX", hz: Array(FOX_STEPS).fill(0), ms: Array(FOX_STEPS).fill(0) };
 }
 
 function getFox(v) {
 	const b = new Uint8Array(FOX_REC_LEN);
 	b.set(v.subarray(0, FOX_REC_LEN));
-	if ((b[1] & ~(FOX_F_MSG | FOX_F_JINGLE)) !== 0) return null;
-	const m = b.subarray(2, 2 + FOX_MSG_MAX);
+	if ((b[2] & ~(FOX_F_MSG | FOX_F_JINGLE)) !== 0) return null;
+	const m = b.subarray(FOX_MSG, FOX_MSG + FOX_MSG_MAX);
 	const end = m.indexOf(0) < 0 ? FOX_MSG_MAX : m.indexOf(0);
 	if (m.subarray(end).some((x) => x !== 0)) return null;	// text after the padding
-	const rec = { interval: b[0], msg: (b[1] & FOX_F_MSG) !== 0, jingle: (b[1] & FOX_F_JINGLE) !== 0,
+	const rec = { interval: u16(b, 0), repeats: b[3] || 1, msg: (b[2] & FOX_F_MSG) !== 0, jingle: (b[2] & FOX_F_JINGLE) !== 0,
 		text: String.fromCharCode(...m.subarray(0, end)).toUpperCase(), hz: [], ms: [] };
 	for (let i = 0; i < FOX_STEPS; i++) {
-		rec.hz.push(u16(b, 2 + FOX_MSG_MAX + 2 * i));
-		rec.ms.push(b[2 + FOX_MSG_MAX + 2 * FOX_STEPS + i] * 10);
+		rec.hz.push(u16(b, FOX_HZ + 2 * i));
+		rec.ms.push(b[FOX_MS + i] * 10);
 	}
 	return foxValid(rec) ? rec : null;
 }
@@ -192,14 +198,16 @@ function getFox(v) {
 export function foxValue(rec, old = null) {
 	const b = new Uint8Array(Math.max(FOX_REC_LEN, old ? old.length : 0));
 	if (old) b.set(old);
-	b[0] = rec.interval;
-	b[1] = (rec.msg ? FOX_F_MSG : 0) | (rec.jingle ? FOX_F_JINGLE : 0);
-	b.fill(0, 2, 2 + FOX_MSG_MAX);
-	for (let i = 0; i < rec.text.length; i++) b[2 + i] = rec.text.charCodeAt(i);
+	b[0] = rec.interval & 0xFF;
+	b[1] = rec.interval >> 8;
+	b[2] = (rec.msg ? FOX_F_MSG : 0) | (rec.jingle ? FOX_F_JINGLE : 0);
+	b[3] = rec.repeats;
+	b.fill(0, FOX_MSG, FOX_MSG + FOX_MSG_MAX);
+	for (let i = 0; i < rec.text.length; i++) b[FOX_MSG + i] = rec.text.charCodeAt(i);
 	for (let i = 0; i < FOX_STEPS; i++) {
-		b[2 + FOX_MSG_MAX + 2 * i] = rec.hz[i] & 0xFF;
-		b[2 + FOX_MSG_MAX + 2 * i + 1] = rec.hz[i] >> 8;
-		b[2 + FOX_MSG_MAX + 2 * FOX_STEPS + i] = rec.ms[i] / 10;
+		b[FOX_HZ + 2 * i] = rec.hz[i] & 0xFF;
+		b[FOX_HZ + 2 * i + 1] = rec.hz[i] >> 8;
+		b[FOX_MS + i] = rec.ms[i] / 10;
 	}
 	return b;
 }

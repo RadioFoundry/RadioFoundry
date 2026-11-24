@@ -16,7 +16,7 @@ import {
 } from "./records.js";
 import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
-import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
+import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS, FOX_INTERVAL_MIN, FOX_INTERVAL_MAX, FOX_REPEATS_MAX } from "./kv.js";
 import { decodeModes, encodeModes, syncModes, removeModes, validateModes, MODE_LIMITS } from "./channelmodes.js";
 
 const REFS = ["contact", "rxList", "aprs"];
@@ -325,7 +325,7 @@ export function validate(m, { bands = null, features = null } = {}) {
 	const recKeys = RECORD_KEYS.filter((row) => g[row.name] != null);
 	for (const row of recKeys) {
 		if (recordValid(row, g[row.name])) continue;
-		if (row.kind === "fox") err("general", null, row.name, "fox_range", { max: 16, hz: 3400, ms: 2550 });
+		if (row.kind === "fox") err("general", null, row.name, "fox_range", { imin: FOX_INTERVAL_MIN, imax: FOX_INTERVAL_MAX, rmax: FOX_REPEATS_MAX, max: 16, hz: 3400, ms: 2550 });
 		else err("general", null, row.name, "sig_range", { hz: 3400, ms: 900 });
 	}
 	// an area of a version the editor doesn't know reads as empty and is never written: a value set here is lost

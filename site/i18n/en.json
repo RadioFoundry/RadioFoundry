@@ -2415,6 +2415,13 @@
  "editor.fox.text_help": "Up to 16 characters, sent in Morse: letters, digits, spaces and / - = ? . ,",
  "editor.fox.text_chars": "Only letters, digits, spaces and / - = ? . , have Morse",
  "editor.fox.jingle": "Play the jingle",
+ "editor.fox.repeats_help": "Times the jingle plays each cycle, with a short gap between plays",
+ "editor.fox.repeats": "Jingle repeats",
+ "editor.fox.short_wait": "A short wait keeps the radio transmitting most of the time: on high power it can get hot.",
+ "editor.fox.custom_range": "A whole number of seconds from {min} to {max}",
+ "editor.fox.custom_help": "seconds, {min} to {max}",
+ "editor.fox.custom_secs": "Interval in seconds",
+ "editor.fox.custom": "Custom…",
  "editor.fox.default_tune": "No steps: the radio's own tune",
  "editor.fox.midi": "Import MIDI…",
  "editor.fox.midi_speed": "Speed",
@@ -2424,5 +2431,5 @@
  "editor.fox.midi_bad": "{name} isn't a MIDI file the editor can read.",
  "editor.fox.midi_empty": "{name} has no notes to play (drums are left out).",
  "editor.field.fox": "fox mode",
- "editor.problem.fox_range": "The {field} has a message over {max} characters or with a character that has no Morse, a frequency over {hz} Hz or not in steps of 10 Hz, or a length over {ms} ms or not in steps of 10 ms."
+ "editor.problem.fox_range": "The {field} has an interval outside {imin} to {imax} s, more than {rmax} jingle repeats, a message over {max} characters or with a character that has no Morse, a frequency over {hz} Hz or not in steps of 10 Hz, or a length over {ms} ms or not in steps of 10 ms."
 }

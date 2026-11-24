@@ -2415,6 +2415,13 @@
  "editor.fox.text_help": "Hasta 16 caracteres, enviados en Morse: letras, cifras, espacios y / - = ? . ,",
  "editor.fox.text_chars": "Solo letras, cifras, espacios y / - = ? . , tienen Morse",
  "editor.fox.jingle": "Tocar la melodía",
+ "editor.fox.repeats_help": "Veces que suena la melodía en cada ciclo, con una pausa corta entre ellas",
+ "editor.fox.repeats": "Repeticiones de la melodía",
+ "editor.fox.short_wait": "Una espera corta mantiene la radio transmitiendo casi todo el tiempo: en potencia alta puede calentarse.",
+ "editor.fox.custom_range": "Un número entero de segundos de {min} a {max}",
+ "editor.fox.custom_help": "segundos, de {min} a {max}",
+ "editor.fox.custom_secs": "Intervalo en segundos",
+ "editor.fox.custom": "Otro…",
  "editor.fox.default_tune": "Sin pasos: la melodía de la radio",
  "editor.fox.midi": "Importar MIDI…",
  "editor.fox.midi_speed": "Velocidad",
@@ -2424,5 +2431,5 @@
  "editor.fox.midi_bad": "{name} no es un archivo MIDI que el editor pueda leer.",
  "editor.fox.midi_empty": "{name} no tiene notas que tocar (la percusión se omite).",
  "editor.field.fox": "modo zorro",
- "editor.problem.fox_range": "El campo {field} tiene un mensaje de más de {max} caracteres o con un carácter sin Morse, una frecuencia de más de {hz} Hz o que no es múltiplo de 10 Hz, o una duración de más de {ms} ms o que no es múltiplo de 10 ms."
+ "editor.problem.fox_range": "El campo {field} tiene un intervalo fuera de {imin} a {imax} s, más de {rmax} repeticiones de la melodía, un mensaje de más de {max} caracteres o con un carácter sin Morse, una frecuencia de más de {hz} Hz o que no es múltiplo de 10 Hz, o una duración de más de {ms} ms o que no es múltiplo de 10 ms."
 }

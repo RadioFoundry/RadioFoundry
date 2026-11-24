@@ -13,7 +13,8 @@ import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
 import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS, FOX_STEPS, FOX_MS_MAX, FOX_CHAIN_MAX,
-	FOX_INTERVALS, FOX_MSG_MAX, FOX_CHARS, FOX_TUNE, foxDefault } from "../codeplug/kv.js";
+	FOX_INTERVALS, FOX_INTERVAL_MIN, FOX_INTERVAL_MAX, FOX_SHORT_WAIT, FOX_REPEATS_MAX, FOX_MSG_MAX, FOX_CHARS, FOX_TUNE,
+	foxDefault } from "../codeplug/kv.js";
 import { midiToJingle, MidiError } from "../codeplug/midi.js";
 import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
@@ -475,7 +476,8 @@ function radioTab() {
 						h("tbody", {}, ...half))))));
 	};
 	// fox mode's record (kv.js, codeplug-settings.md 3.4; radio-features.md 3.8): Not set (the radio's defaults), or the
-	// interval, the message, the jingle on or off and its 32 steps. A value out of range is the Problems tab's to say
+	// interval (one of the radio's presets or any number of seconds), the message, the jingle on or off, its repeats and
+	// its 32 steps. A value out of range is the Problems tab's to say
 	const foxBlock = () => {
 		const rec = g.fox;
 		const put = (next) => change(t("editor.undo.edit"), () => (S.model.general = { ...S.model.general, fox: next }));
@@ -485,10 +487,38 @@ function radioTab() {
 				h("span", { class: "small muted sig-state" }, t("editor.fox.unset")),
 				button(t("editor.sig.customize"), () => put(foxDefault()), { quiet: true })));
 		}
+		const preset = FOX_INTERVALS.includes(rec.interval);
 		const interval = h("select", { id: "g-fox-interval" },
-			...FOX_INTERVALS.map((s, i) => h("option", { value: String(i) }, s < 60 ? t("editor.fox.seconds", { n: s }) : t("editor.fox.minutes", { n: s / 60 }))));
-		interval.value = String(rec.interval);
-		interval.addEventListener("change", () => put({ ...rec, interval: Number(interval.value) }));
+			...FOX_INTERVALS.map((s) => h("option", { value: String(s) }, s < 60 ? t("editor.fox.seconds", { n: s }) : t("editor.fox.minutes", { n: s / 60 }))),
+			h("option", { value: "custom" }, t("editor.fox.custom")));
+		interval.value = preset ? String(rec.interval) : "custom";
+		// Custom: any whole number of seconds; the radio shows it as Custom m:ss and OK there goes to the next preset
+		const secsIn = h("input", { type: "number", id: "g-fox-secs", min: String(FOX_INTERVAL_MIN), max: String(FOX_INTERVAL_MAX), step: "1",
+			value: String(rec.interval), inputmode: "numeric", "aria-label": t("editor.fox.custom_secs"), hidden: preset });
+		const secsNote = h("span", { class: "small muted", hidden: preset }, t("editor.fox.custom_help", { min: FOX_INTERVAL_MIN, max: FOX_INTERVAL_MAX }));
+		const secsErr = h("span", { class: "small ed-err" });
+		interval.addEventListener("change", () => {
+			if (interval.value === "custom") {
+				secsIn.hidden = secsNote.hidden = false;
+				secsIn.focus();
+				return;
+			}
+			put({ ...rec, interval: Number(interval.value) });
+		});
+		secsIn.addEventListener("change", () => {
+			const n = Number(secsIn.value);
+			if (!Number.isInteger(n) || n < FOX_INTERVAL_MIN || n > FOX_INTERVAL_MAX) {
+				secsErr.textContent = t("editor.fox.custom_range", { min: FOX_INTERVAL_MIN, max: FOX_INTERVAL_MAX });
+				return;
+			}
+			secsErr.textContent = "";
+			put({ ...rec, interval: n });
+		});
+		const hot = rec.interval < FOX_SHORT_WAIT ? h("span", { class: "small ed-warn" }, t("editor.fox.short_wait")) : null;
+		const repeats = h("select", { id: "g-fox-repeats" },
+			...Array.from({ length: FOX_REPEATS_MAX }, (_, i) => h("option", { value: String(i + 1) }, String(i + 1))));
+		repeats.value = String(rec.repeats);
+		repeats.addEventListener("change", () => put({ ...rec, repeats: Number(repeats.value) }));
 		const check = (key, label) => {
 			const c = h("input", { type: "checkbox", id: `g-fox-${key}` });
 			c.checked = rec[key];
@@ -579,11 +609,15 @@ function radioTab() {
 			h("div", { class: "sig-body" },
 				h("div", { class: "sig-side" },
 					h("div", { class: "sig-outs" },
-						h("div", { class: "form-row" }, h("label", { for: interval.id }, t("editor.fox.interval")), interval),
+						h("div", { class: "form-row" }, h("label", { for: interval.id }, t("editor.fox.interval")), interval, secsIn,
+							secsNote, secsErr, hot),
 						check("msg", t("editor.fox.msg")),
 						h("div", { class: "form-row" }, h("label", { for: text.id }, t("editor.fox.text")), text,
 							h("span", { class: "small muted" }, t("editor.fox.text_help")), msgErr),
-						check("jingle", t("editor.fox.jingle")), midiRow),
+						check("jingle", t("editor.fox.jingle")),
+						h("div", { class: "form-row" }, h("label", { for: repeats.id }, t("editor.fox.repeats")), repeats,
+							h("span", { class: "small muted" }, t("editor.fox.repeats_help"))),
+						midiRow),
 					roll, sum),
 				h("div", { class: "sig-tables" }, ...[0, 1, 2, 3].map((q) =>
 					h("table", { class: "sig-steps" },

@@ -448,32 +448,34 @@ test("general settings: the signaling tone records, absent until set", () => {
 	assert.equal(bad.sigEnd, null, "a value out of range is not written");
 });
 
-// The fox mode record (codeplug-settings.md 3.4): interval, flags, the message padded with zeros to 16 bytes, 32
-// frequencies (u16), 32 lengths in 10 ms units; what the radio can't take reads as absent
-import { FOX_REC_LEN, FOX_STEPS, foxDefault, foxValue } from "../static/js/codeplug/kv.js";
+// The fox mode record (codeplug-settings.md 3.4): the interval in seconds (u16), flags, the jingle's repeats, the
+// message padded with zeros to 16 bytes, 32 frequencies (u16), 32 lengths in 10 ms units; what the radio can't take
+// reads as absent
+import { FOX_REC_LEN, FOX_STEPS, FOX_INTERVAL_MIN, FOX_INTERVAL_MAX, FOX_REPEATS_MAX, foxDefault, foxValue } from "../static/js/codeplug/kv.js";
 const FOX = RECORD_KEYS.find((r) => r.name === "fox");
 const fox = (over = {}) => ({ ...foxDefault(), ...over });
 const steps = (a) => [...a, ...Array(FOX_STEPS - a.length).fill(0)];
 
 test("fox record: bytes, order and limits", () => {
 	assert.equal(FOX.key, 0x000A);
-	assert.equal(FOX_REC_LEN, 114);
-	const r = fox({ interval: 3, msg: false, text: "CQ FOX/1", hz: steps([520, 0, 3400]), ms: steps([120, 60, 2550]) });
+	assert.equal(FOX_REC_LEN, 116);
+	const r = fox({ interval: 258, repeats: 3, msg: false, text: "CQ FOX/1", hz: steps([520, 0, 3400]), ms: steps([120, 60, 2550]) });
 	const v = foxValue(r);
-	assert.equal(v.length, 114);
-	assert.deepEqual([...v.subarray(0, 2)], [3, 2], "interval, flags: the jingle only");
-	assert.equal(String.fromCharCode(...v.subarray(2, 10)), "CQ FOX/1");
-	assert.ok(v.subarray(10, 18).every((x) => x === 0), "the message padded with zeros");
-	assert.deepEqual([...v.subarray(18, 24)], [520 & 0xFF, 520 >> 8, 0, 0, 3400 & 0xFF, 3400 >> 8]);
-	assert.deepEqual([...v.subarray(82, 85)], [12, 6, 255], "lengths in units of 10 ms");
+	assert.equal(v.length, 116);
+	assert.deepEqual([...v.subarray(0, 4)], [2, 1, 2, 3], "interval (258 s, LE), flags (the jingle only), repeats");
+	assert.equal(String.fromCharCode(...v.subarray(4, 12)), "CQ FOX/1");
+	assert.ok(v.subarray(12, 20).every((x) => x === 0), "the message padded with zeros");
+	assert.deepEqual([...v.subarray(20, 26)], [520 & 0xFF, 520 >> 8, 0, 0, 3400 & 0xFF, 3400 >> 8]);
+	assert.deepEqual([...v.subarray(84, 87)], [12, 6, 255], "lengths in units of 10 ms");
 	assert.deepEqual(getRecord([{ key: FOX.key, value: v }], FOX), r);
 	assert.equal(getRecord([], FOX), null, "absent");
-	// a short value reads with the missing fields zero (no message, no steps); a longer one from the front
-	assert.deepEqual(getRecord([{ key: FOX.key, value: Uint8Array.of(0, 3) }], FOX), fox({ interval: 0, text: "" }));
+	// a short value reads with the missing fields zero (no message, no steps, repeats 0 as once); a longer one from the
+	// front
+	assert.deepEqual(getRecord([{ key: FOX.key, value: Uint8Array.of(30, 0, 3) }], FOX), fox({ interval: 30, text: "" }));
 	assert.deepEqual(getRecord([{ key: FOX.key, value: Uint8Array.from([...v, 7]) }], FOX), r);
 	// lowercase in a record reads as the radio sends it
 	const lower = foxValue(fox({ text: "FOX" }));
-	lower.set([0x66, 0x6F, 0x78], 2);
+	lower.set([0x66, 0x6F, 0x78], 4);
 	assert.equal(getRecord([{ key: FOX.key, value: lower }], FOX).text, "FOX");
 	// what the radio can't take
 	const bad = (patch) => {
@@ -481,14 +483,19 @@ test("fox record: bytes, order and limits", () => {
 		patch(b);
 		return getRecord([{ key: FOX.key, value: b }], FOX);
 	};
-	assert.equal(bad((b) => (b[0] = 6)), null, "an interval the radio doesn't have");
-	assert.equal(bad((b) => (b[1] = 4)), null, "an unknown flag");
-	assert.equal(bad((b) => (b[2] = 0x40)), null, "a character with no Morse");
-	assert.equal(bad((b) => (b[12] = 0x41)), null, "text after the padding");
-	assert.equal(bad((b) => (b[18] = 5)), null, "a frequency off the 10 Hz steps");
+	assert.equal(bad((b) => b.set([FOX_INTERVAL_MIN - 1, 0], 0)), null, "an interval under the shortest");
+	assert.equal(bad((b) => b.set([(FOX_INTERVAL_MAX + 1) & 0xFF, (FOX_INTERVAL_MAX + 1) >> 8], 0)), null, "over the longest");
+	assert.equal(bad((b) => b.set([FOX_INTERVAL_MAX & 0xFF, FOX_INTERVAL_MAX >> 8], 0)).interval, FOX_INTERVAL_MAX);
+	assert.equal(bad((b) => (b[3] = FOX_REPEATS_MAX + 1)), null, "more repeats than the radio plays");
+	assert.equal(bad((b) => (b[2] = 4)), null, "an unknown flag");
+	assert.equal(bad((b) => (b[4] = 0x40)), null, "a character with no Morse");
+	assert.equal(bad((b) => (b[14] = 0x41)), null, "text after the padding");
+	assert.equal(bad((b) => (b[20] = 5)), null, "a frequency off the 10 Hz steps");
 	assert.ok(recordValid(FOX, fox()) && !recordValid(FOX, fox({ text: "TOO LONG A MESSAGE" })) &&
 		!recordValid(FOX, fox({ ms: steps([2560]) })) && !recordValid(FOX, fox({ hz: steps([3410]) })) &&
-		!recordValid(FOX, fox({ text: "fox" })) && !recordValid(FOX, fox({ interval: -1 })));
+		!recordValid(FOX, fox({ text: "fox" })) && !recordValid(FOX, fox({ interval: 2 })) &&
+		!recordValid(FOX, fox({ interval: 4.5 })) && !recordValid(FOX, fox({ repeats: 0 })) &&
+		!recordValid(FOX, fox({ repeats: 11 })) && recordValid(FOX, fox({ interval: 42, repeats: 10 })));
 });
 
 test("general settings: the fox record, absent until set, kept bytes", () => {
@@ -504,7 +511,7 @@ test("general settings: the fox record, absent until set, kept bytes", () => {
 	const img = withArea([{ key: FOX.key, value: Uint8Array.from([...foxValue(fox()), 0xAB]) }]);
 	assert.equal(putKeys(img.bytes, { fox: fox({ interval: 4 }) }), true);
 	const v = getValue(decodeArea(img.bytes).entries, FOX.key);
-	assert.deepEqual([v[0], v[114]], [4, 0xAB]);
+	assert.deepEqual([v[0], v[116]], [4, 0xAB]);
 	assert.equal(putKeys(img.bytes, { fox: null }), true);
 	assert.equal(getValue(decodeArea(img.bytes).entries, FOX.key), null);
 });
