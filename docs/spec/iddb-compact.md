@@ -155,8 +155,9 @@ A database write is not staged (it is larger than any staging area). It never sh
 2. Every other page that changed.
 3. Page 0 written last.
 
-A write cut short leaves no database, never a wrong one. The next write sends it again. The same order applies to
-format N through the fast protocol: the block holding its header goes first with the header erased, and again last.
+A cancellation before the first write leaves the existing database intact. If the write stops after the header is
+erased, the radio has no database until a complete write installs one again. The same order applies to format N
+through the fast protocol: the block holding its header goes first with the header erased, and again last.
 
 ## 5. The radio's lookup
 

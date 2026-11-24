@@ -274,6 +274,9 @@ The page previews the records, and shows the database size against the radio's r
 the codeplug; **Write to Radio** then sends it. **Add as Contacts** adds the users as private-call contacts instead,
 skipping IDs that are already contacts. The editor remembers these choices in the browser.
 
+Stopping before the database write begins keeps the radio's existing database. If you stop after it starts replacing
+that database, use **Write to Radio** again to restore the names.
+
 Keep contacts for what you call: your talkgroups and the few people you make private calls to. The codeplug holds at
 most 1024 contacts, and every one is a row in Contacts and the talk target picker. Let the ID database name everyone
 else: a caller who isn't a contact is shown by the database's name for their ID.
