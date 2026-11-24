@@ -517,7 +517,8 @@ void md9600_c6000_diag(md9600_c6000_diag_t *d)
 
 #if CONFIG_DMR
 // Clock idle high, as on the other HR_C6000 radios (unverified here)
-static const stm32_i2s_pcm_cfg_t i2s_cfg = { .ckpol = true };
+// The prompt FIFO: speaker PCM while the FM copy holds the chip (NXDN)
+static const stm32_i2s_pcm_cfg_t i2s_cfg = { .ckpol = true, .prompt_fifo = true };
 
 #if MD9600_FM_RX_TAP
 static bool audio_start(audio_block_cb_t cb, void *ctx)
@@ -552,6 +553,7 @@ static void audio_stop(void)
 
 static void speaker_pcm(bool on)
 {
+	stm32_i2s_pcm_speaker(on);
 	if (on == pcm_wanted) {
 		return;
 	}

@@ -9,6 +9,36 @@
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
 #include "config.h"
+#if CONFIG_SATELLITE_TLE
+#include "satellite/path.h"
+#include "satellite/store.h"
+typedef enum {
+	RADIO_SAT_SCAN_IDLE,
+	RADIO_SAT_SCAN_RUNNING,
+	RADIO_SAT_SCAN_COMPLETE,
+	RADIO_SAT_SCAN_UNAVAILABLE,
+} radio_satellite_scan_status_t;
+typedef struct {
+	uint8_t record_index;
+	uint16_t aos_minutes;
+	uint8_t maximum_elevation_deg;
+	bool visible_now;
+} radio_satellite_pass_t;
+typedef struct {
+	bool tracking;
+	uint8_t index;
+	uint8_t status;
+	uint32_t nominal_rx_hz, nominal_tx_hz;
+	int64_t rx_offset_hz, tx_offset_hz;
+} radio_satellite_tracking_view_t;
+typedef struct {
+	radio_satellite_tracking_view_t tracking;
+	bool valid, visible_now, los_known, horizon_clipped;
+	uint32_t aos_in_s, los_in_s;
+	uint16_t maximum_elevation_tenths;
+	int16_t elevation_tenths;
+} radio_satellite_view_t;
+#endif
 #include "radio/radio_p25.h"
 #include "radio/radio_nxdn.h"
 
@@ -34,7 +64,8 @@ typedef enum {
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
 	TXDENY_INHIBIT, TXDENY_BATTERY, TXDENY_AM, TXDENY_BCAST, TXDENY_SFR_RPT, TXDENY_HWOPT, TXDENY_REFUSED,
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
-	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX,
+	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
+	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -252,10 +283,14 @@ typedef struct {
 	uint8_t state;		// t3_state_t
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// short data polls from the menus, and those refused or unanswered
+	bool ringing;		// an incoming private call awaits PTT to answer
 	uint16_t other;		// searching: C_SYScode of another system heard (t3_ms_other), 0 none
+	uint8_t other_fid;	// searching: the FID of a non-ETSI trunking system heard (t3_ms_other_fid), 0 none
 	uint8_t why;		// RADIO_TRUNK_WHY_* of the last PTT refused (TXDENY_TRUNK)
+	bool alerting;		// the called radio is ringing
 	bool refused;		// the system refused the registration (t3_ms_reg_refused)
 	uint16_t unmapped;	// the channel (LPCN) of the last grant no plan or row knew, 0 none
+	uint32_t ring_src;	// caller ID while an incoming private call awaits PTT, or zero
 } radio_t3_brief_t;
 
 // ... and all of it, for the debug link: radio_get_t3_view, one copy (the view itself is copied by every task)
@@ -270,6 +305,7 @@ typedef struct {
 	uint8_t reg;		// t3_reg_t
 	uint16_t polls, poll_fails;	// as radio_t3_brief_t's: kept over a restart of the engine
 	uint16_t other;		// as radio_t3_brief_t's
+	uint8_t other_fid;	// as radio_t3_brief_t's
 	uint8_t why;		// as radio_t3_brief_t's
 	bool refused;		// as radio_t3_brief_t's
 	bool ip_gw;		// off-net IP goes to the system's IP gateway (IPI), not the conventional off-net ID
@@ -286,15 +322,17 @@ typedef struct {
 	uint8_t ax_svc, ax_result, ax_reason, ax_state;
 	bool ptt_wait;		// PTT held, waiting for the grant
 	bool can_talk;
+	bool unverified;	// the last PDU taken failed its CRC (the channel's Accept invalid CRC): listen-only
 	uint8_t last_rx_op, last_rx_slot;	// the last CSBK heard: opcode, slot
 	uint8_t last_tx_op;	// the last CSBK sent (0xFF none)
 	uint32_t last_rx_ms, last_tx_ms;
 	uint32_t ticks;		// slot ticks handed to the engine
-	uint32_t csbk, crc_bad, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
+	uint32_t csbk, crc_bad, crc_taken, grants, followed, unmapped, returns, hunts, foreign, learned, sent, ra_tries;
 	uint32_t lent;		// short LCs saying the TSCC's slot is lent to a call (composite TSCC)
 	uint32_t lent_calls;	// call bursts on the TSCC's slot taken as lent, no short LC heard (t3_ms_call_burst)
 	// Roaming (the t3_roam section)
 	uint32_t votes, vote_moves, weak_leaves;	// adjacent TSCCs sampled, moved to; TSCCs left as weak
+	uint32_t weak_hold_ms;		// the hold on leaving a weak TSCC last set (0: none)
 	uint32_t adj_refused;	// adjacent sites announced but not authorized
 	int16_t level_dbm;	// the tuned channel's averaged level (0: none yet)
 	int16_t leave_dbm;	// the threshold in force
@@ -311,9 +349,10 @@ typedef struct {
 	} adj[4];		// T3_ADJ_MAX
 	uint32_t send_fail;	// sends refused or failed and dropped (the engine retries what needs it)
 	// Each reason (8 bits, saturating): a retune held, not on the slot asked for, PTT talking or transmitting, the TX
-	// limit, the radio refused to key, the stack refused the list (send_data_busy: of those, busy with another data
-	// list), the stack took the list but did not send it
-	uint8_t send_held, send_slot, send_talk, send_limit, send_key, send_stack, send_data_busy, send_err;
+	// limit, TX inhibit (or a critical battery, a hardware option pending), the radio refused to key, the stack
+	// refused the list (send_data_busy: of those, busy with another data list), the stack took the list but did not
+	// send it
+	uint8_t send_held, send_slot, send_talk, send_limit, send_inhibit, send_key, send_stack, send_data_busy, send_err;
 	// TX→RX turnaround: from the end of a transmission on the system to the first burst heard after it (the
 	// site's answer to a random access comes 4 slots, 120 ms, after the access began)
 	uint32_t turns;
@@ -412,6 +451,8 @@ typedef struct {
 	bool tone_ok;		// the RX tone or code is heard (debounced; true when the channel has no RX tone)
 	int16_t rssi_dbm;
 	uint8_t noise;
+	uint8_t sql_close;	// polls over the close line the squelch's last close took (1 or 2 as a carrier goes, more
+				// after a voice peak hold); 0 none yet
 	uint32_t tx_elapsed_ms;	// time in TX, while RS_TX
 	bool tx_auto;		// that TX is the radio's own, not the user's: a data list (ARS, an ACK), a roaming probe, an
 				// APRS beacon. It doesn't light the screen (radio_view_wakes)
@@ -426,6 +467,7 @@ typedef struct {
 				// mode instead); 0 none. Set at power-up only
 	codeplug_source_t source;
 	bool hotspot;		// the radio is an MMDVM hotspot: the host link drives the modem, channel keys are off
+	uint8_t hs_power;	// the board power level the hotspot keys, while hotspot
 	// Scan (CONFIG_SCAN; all 0 otherwise)
 	uint8_t scan;		// scan_kind_t: 0 off, 1 zone, 2 VFO, 3 dual watch
 	uint8_t scan_phase;	// scan_phase_t: listen, probe, hold, resume, paused
@@ -506,6 +548,18 @@ typedef struct {
 void radio_core_start(void);
 // A consistent copy of the current state
 void radio_get_view(radio_view_t *v);
+// The current channel settings, with nominal satellite frequencies when Doppler tracking is active
+void radio_get_channel_profile(channel_t *ch);
+#if CONFIG_SATELLITE_TLE
+bool radio_get_satellite_path(satellite_path_view_t *path);
+bool radio_get_satellite_view(radio_satellite_view_t *view);
+void radio_req_satellite_scan(bool enabled);
+void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes);
+bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass);
+bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary);
+bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch);
+uint32_t radio_get_satellite_generation(void);
+#endif
 // Just the view's state, for a caller short of stack (the view is some 0.7 KB)
 radio_state_t radio_get_state(void);
 // Just the view's zone index and position and the zone's size (0 while none is loaded), likewise. False while the
@@ -533,6 +587,10 @@ void radio_req_vfo_tx(uint32_t hz);		// the VFO's TX frequency (split), 0 = simp
 // Copy to VFO: what is in effect on the channel now (temporary changes too) becomes the VFO's own settings and the VFO
 // opens; the channel is unchanged (docs/spec/dmr-voice.md 2.2). Nothing changes when radio_vfo_copy_check refuses
 void radio_req_vfo_copy(void);
+#if CONFIG_SATELLITE_TLE
+bool radio_req_satellite_tracking(bool enabled, uint8_t record_index);
+void radio_req_satellite_arm(void);
+#endif
 typedef enum {
 	VFO_COPY_OK,
 	VFO_COPY_NO_VFO,	// the build has no VFO
@@ -706,6 +764,14 @@ uint8_t radio_volume_stored(uint8_t step);
 // reach the PCM path the beeps play on (volume_pcm false): the volume percent last given to the board, up to the
 // beep_level setting (cap). volume_percent < 0 (none given yet): the cap
 uint8_t radio_beep_level(uint8_t cap, int16_t volume_percent);
+// The volume step above which beeps stop getting louder on a radio whose volume scales the PCM path (volume_pcm with
+// hal_radio_t.volume_db10): higher steps make the voice louder, not the beeps. The speaker's volume itself never
+// changes for a beep
+#define RADIO_BEEP_VOLUME_STEP	7
+// A beep's level on such a radio: level softened by the gain the volume gives over the cap step's (db10_now - db10_cap,
+// in tenths of a dB), so the beep sounds as loud as at the cap step. At or below the cap: level. At least 1 while level
+// isn't 0
+uint8_t radio_beep_pcm_level(uint8_t level, int db10_now, int db10_cap);
 
 // Settings: radio_settings_default() fills the built-in defaults; set copies them in and applies them. get answers
 // with the last ones set until the radio task has taken them in, so a caller that reads, changes one field and sets

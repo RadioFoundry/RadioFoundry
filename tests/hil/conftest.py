@@ -32,8 +32,12 @@ def pytest_addoption(parser):
     g.addoption("--sfr-freq", type=float, default=None,
                 help="MHz: the SFR test channels' frequency (test_sfr_standalone); default --dmr-freq")
     g.addoption("--ambe", default=os.environ.get("RFOUNDRY_HIL_AMBE"),
-                help="a 9-byte-frame .ambe speech recording on this Mac for test_dmr_voice ($RFOUNDRY_HIL_AMBE); never "
-                     "commit recordings")
+                help="AMBE+2 speech, 9-byte frames ($RFOUNDRY_HIL_AMBE), in place of the test voice set "
+                     "(tests/data/voice) in test_dmr_voice, test_dmr_audio_smoke, test_nxdn_rx_speech and "
+                     "test_speaker_ear; test_usrp sends speech only with it. Never commit recordings")
+    g.addoption("--imbe", default=os.environ.get("RFOUNDRY_HIL_IMBE"),
+                help="full-rate speech, 11-byte frames ($RFOUNDRY_HIL_IMBE), in place of the test voice set's "
+                     "(tests/data/voice/test_transmission.imbe) in test_p25_rx_speech")
     g.addoption("--rssi-floor", type=int, default=-115, help="dBm: test_fm passes above this")
     g.addoption("--shots", default=None, help="directory for screenshots taken by the tests")
     g.addoption("--bench-wait-max", type=float, default=float(os.environ.get("RFOUNDRY_SDR_BENCH_WAIT_MAX", "900")),
@@ -60,6 +64,9 @@ def pytest_addoption(parser):
     g.addoption("--codeplug-image", default=os.environ.get("RFOUNDRY_HIL_CODEPLUG_IMAGE"),
                 help="the radio's codeplug as a file (env RFOUNDRY_HIL_CODEPLUG_IMAGE): the codeplug_write tests take it "
                      "as the backup instead of reading the radio, and restore and verify it afterwards")
+    g.addoption("--firmware-image", default=os.environ.get("RFOUNDRY_HIL_FIRMWARE_IMAGE"),
+                help="the .bin the radio was flashed with (env RFOUNDRY_HIL_FIRMWARE_IMAGE; _install.bin for a board with a "
+                     "first stage): test_support_info checks the radio's image hash against its SHA-256")
     g.addoption("--manual", action="store_true",
                 help="a person is at the radio: run the tests that ask for something done by hand (marker manual)")
     g.addoption("--mic-inject", action="store_true",
@@ -148,6 +155,7 @@ def pytest_configure(config):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
                               if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "rf_fallback: the test checks --allow-rf itself if its fallback needs to transmit")
     config.addinivalue_line("markers", "bench_service: uses the bench board's transmitter or receiver through a "
                             "session (needs --bench-api, skips without one)")
     config.addinivalue_line("markers", "sdr_rx: uses the bench board's receiver and no transmitter. With bench_modem "

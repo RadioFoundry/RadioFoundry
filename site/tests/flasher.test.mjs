@@ -13,7 +13,7 @@ import * as stockfw from "../static/js/flasher/stockfw.js";
 import { makePlan, KEEP, MERGE, RESTORE, PlanError } from "../static/js/flasher/plan.js";
 import { verify, segments, ManifestError } from "../static/js/flasher/manifest.js";
 import { Dfu, NormalModeError, WebUsbTransport, dfuRegion, normalMode } from "../static/js/flasher/dfu.js";
-import { Link, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
+import { Link, LinkError, crc16, frame, parseFrames, probe } from "../static/js/flasher/link.js";
 import { FakeRadio, simulation } from "../static/js/flasher/fake.js";
 import { zip, unzip } from "../static/js/flasher/zip.js";
 import * as vendorfile from "../static/js/flasher/vendorfile.js";
@@ -413,6 +413,26 @@ test("every step's nav bar offers Report a Problem", () => {
 	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
 	assert.match(c7, /t\("report\.something_wrong"\), " ", reportButton\(\)/);
 	assert.match(c7, /class: "notice report-offer" \}[^\n]*\n[^\n]*reportButton\(\{ quiet: false \}\)/);
+});
+
+test("verified satellite installs and updates immediately offer the TLE updater", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const done = src.slice(src.indexOf("function doneView()"));
+	const body = done.slice(0, done.indexOf("\n}\n") + 3);
+	assert.match(body, /\(S\.task === "install" \|\| S\.task === "update"\) && !S\.sim/);
+	assert.match(body, /if \(features\.has\("SATELLITE_TLE"\)\)/);
+	assert.doesNotMatch(body, /satelliteTleAvailable/);
+	assert.match(body, /status\.append\(h\("div", \{ class: "notice info" \}, h\("p", \{\}, t\("flash\.done\.satellite_tle_offer"\)\)/);
+	assert.match(body, /await dropSerial\(\);\s*location\.assign\(`\$\{HOME\}tools\/satellite\/index\.html`\)/);
+	assert.match(body, /const channels = \(\) => bringChannels\(status, \{ finish \}\)/);
+	assert.match(body, /if \(!p\) throw await noAnswer/);
+	const c7 = readFileSync(new URL("../static/js/flasher/c7000ui.js", import.meta.url), "utf8");
+	const c7Done = c7.slice(c7.indexOf("export function doneView()"), c7.indexOf("// After an install over the stock firmware"));
+	assert.match(c7Done, /if \(features\.has\("SATELLITE_TLE"\)\)/);
+	assert.doesNotMatch(c7Done, /satelliteTleAvailable/);
+	assert.match(c7Done, /t\("flash\.done\.satellite_tle_offer"\)/);
+	assert.match(c7Done, /status\.append\(h\("div", \{ class: "notice info" \}/);
+	assert.match(c7Done, /location\.assign\(`\$\{HOME\}tools\/satellite\/index\.html`\)/);
 });
 
 // A report with no error and no step verdict is the user's own ("problem", not a failed flash), and a verdict is

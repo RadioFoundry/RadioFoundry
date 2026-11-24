@@ -213,17 +213,25 @@ static void test_rx(void)
 	CHECK(b.kind == DMR_BURST_VOICE && b.voice_index == 5 && b.lc_valid && b.lc[0] == 0xA0 && b.lc[8] == 0xA8);
 	CHECK(eng.st.late_entry == 1);
 
-	// A CSBK with a bad CRC is dropped; a voice burst with a bad EMB is delivered, flagged. (A dropped burst
-	// commits no event, so the array's interrupt list isn't cleared and the ISR's loop sees it up to 4 times)
-	deframe(rti(0, DMR_BURST_CSBK, 3, 0, 0, 0) | (1u << 26));
-	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0 && eng.st.rx_crc_err >= 1);
-	uint32_t crc_errs = eng.st.rx_crc_err;
+	// A voice LC header with a bad RS goes up flagged, its LC not valid and no call started on its slot; a voice burst
+	// with a bad EMB is delivered, flagged
+	uint8_t slots = eng.voice_slots;
+	uint32_t crc_errs = eng.st.rx_crc_err, lc_headers = eng.st.rx_lc_header;
+	deframe(rti(0, DMR_BURST_VOICE_LC_HEADER, 3, 0, 0, 0) | (1u << 25));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && !b.crc_ok && !b.lc_valid && eng.st.rx_crc_err == ++crc_errs);
+	CHECK(eng.voice_slots == slots && eng.st.rx_lc_header == lc_headers);
 	deframe(rti(3, 0, 3, 0, 1, 0) | (1u << 28));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && !b.crc_ok && eng.st.rx_crc_err == crc_errs + 1);
 
+	// Simplex: a BS burst's TC is no slot number until the TC lock (no CACH on air, issue 928)
+	deframe(rti(0, DMR_BURST_IDLE, 3, 1, 0, 1));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 0 && b.sync == DMR_SYNC_BS);
+	CHECK(eng.tc_slot[0] == 0 && eng.tc_slot[1] == 0);
 	// Repeater: BS sync with TC teaches the chip slots their TS numbers
+	eng.cfg.repeater = true;
 	deframe(rti(0, DMR_BURST_IDLE, 3, 1, 0, 1));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 2 && b.sync == DMR_SYNC_BS);
+	eng.cfg.repeater = false;
 	deframe(rti(0, DMR_BURST_IDLE, 3, 0, 1, 0));	// MS sync on the other chip slot: TS 1 learned
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.ts == 1);
 	// TDMA direct mode sync names the slot too, and the voice after it on the same chip slot keeps that number (an SFR
@@ -895,6 +903,74 @@ static void test_polite_after_restart(void)
 	}
 }
 
+// A call that ended with its terminator leaves the channel free: a reply keyed within the busy window, aligned to that
+// call (the call stack does so within DMR_CALL_ALIGN_MS, 300 ms), was refused as busy until 360 ms after the terminator
+static void polite_try(bool admit)
+{
+	count_kind(0xFF, NULL);
+	CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_POLITE_CC) == admit);
+	CHECK(count_kind(DMR_EV_TX_REJECTED, NULL) == (admit ? 0 : 1));
+	if (admit) {
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		CHECK(!hrc7000_dmr_is_transmitting(&eng));
+	}
+	count_kind(0xFF, NULL);
+}
+
+static void test_polite_after_terminator(void)
+{
+	for (int repeater = 0; repeater < 2; repeater++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = repeater };
+		hrc7000_dmr_configure(&eng, &cfg);
+		hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
+		tick(false);
+		deframe(rti(1, 0, 1, 2, 0, 0));	// voice, own color code
+		count_kind(0xFF, NULL);
+		polite_try(false);		// the call is on
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0) | (1u << 25));	// a bad CRC ends nothing
+		polite_try(false);
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));
+		now += 100000u;
+		// Direct mode: the call is over, the reply admitted. A repeater's terminator is its hang: still busy
+		polite_try(!repeater);
+		if (repeater) {
+			continue;
+		}
+		tick(false);
+		deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));
+		tick(false);
+		deframe(rti(1, 0, 1, 2, 0, 0));	// a new call after the terminator: busy again
+		polite_try(false);
+		CHECK(eng.st.tx_rejected == 3);
+	}
+}
+
+// A terminator on one chip slot while the other slot's call runs leaves the channel busy
+static void test_polite_other_slot_terminator(void)
+{
+	setup();
+	hrc7000_dmr_run(&eng);
+	const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_POLITE_CC };
+	hrc7000_dmr_configure(&eng, &cfg);
+	hrc7000_dmr_set_cc_filter(&eng, cfg.cc);
+	tick(false);
+	deframe(rti(1, 0, 1, 2, 0, 0));	// call A: voice on chip slot 0
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 1, 0));	// call B ends on chip slot 1
+	now += 10000u;
+	count_kind(0xFF, NULL);
+	polite_try(false);		// call A is still on
+	tick(false);
+	deframe(rti(0, DMR_BURST_TERMINATOR_LC, 1, 2, 0, 0));	// then A ends too
+	now += 10000u;
+	polite_try(true);
+}
+
 static void test_event_overflow(void)
 {
 	setup();
@@ -1514,6 +1590,63 @@ static void test_tx_repeater_lock(void)
 	CHECK(!hrc7000_dmr_is_transmitting(&eng) && eng.st.tx_rejected == 1 && rf_on_calls == 0 && rejected == 1);
 }
 
+// A direct mode station with BS sync (a simplex hotspot) keys every other slot with no CACH, so the TC the chip reports
+// is junk. Its bursts go up with no slot number (the call layer takes them on any TS) and an aligned reply keys in the
+// other chip slot than theirs, as after MS sync, with no wait for a TC lock that never comes (issue 928). A base
+// station on both slots with the TC alternating gets slot numbers once locked, and a repeater channel always does
+static void test_rx_bs_direct_call(void)
+{
+	for (int tc = 0; tc < 2; tc++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = false };
+		hrc7000_dmr_configure(&eng, &cfg);
+		int bursts = 0, labeled = 0;
+		for (int k = 0; k < 12; k++) {		// a header and voice A-F every other slot, chip slot 1, TC constant
+			tick(false);
+			tick(false);
+			deframe_at(rti(k == 0 ? 0 : (uint8_t)((k - 1) % 6 + 1), k == 0 ? DMR_BURST_VOICE_LC_HEADER : 0, 1, 1,
+				       1, (uint8_t)tc), 25000);
+			dmr_burst_t b = { 0 };
+			bursts += count_kind(DMR_EV_BURST_RX, &b);
+			labeled += b.ts != 0;
+		}
+		CHECK(bursts == 12 && labeled == 0 && eng.st.last_ts == 0);
+		CHECK(eng.tc_slot[0] == 0 && eng.tc_slot[1] == 0);
+		// An aligned reply on TS1 (the station's chip slot counts as TS2, as after MS sync): armed at once, no lock wait
+		REG(C7_LAYER2_SLOTON) = 0;
+		CHECK(hrc7000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+		CHECK(!eng.tx_bs && REG(C7_LAYER2_SLOTON) == 0x25 && eng.tx_chip_slot == 0);
+		dmr_tx_burst_t a = voice(0, 0x11);
+		CHECK(hrc7000_dmr_tx_queue(&eng, &a));
+		for (int i = 0; i < 40; i++) {		// past TC_LOCK_WAIT_TICKS: still sending
+			tick(true);
+		}
+		CHECK(eng.st.tx_rejected == 0 && hrc7000_dmr_is_transmitting(&eng));
+		hrc7000_dmr_tx_abort(&eng);
+		tick(true);
+		count_kind(0xFF, NULL);
+	}
+	// A base station on a simplex channel: both slots, TC alternating. Numbered from the burst that locks, and on
+	// through a missed burst (k == 6): unnumbered there, the other slot's bursts would be taken as ours
+	for (int rpt = 0; rpt < 2; rpt++) {
+		setup();
+		hrc7000_dmr_run(&eng);
+		const dmr_config_t cfg = { .own_id = 1234, .cc = 1, .access = DMR_ACCESS_IMPOLITE, .repeater = rpt != 0 };
+		hrc7000_dmr_configure(&eng, &cfg);
+		for (int k = 0; k < 10; k++) {
+			tick(false);
+			if (k == 6) {
+				continue;
+			}
+			deframe_at(rti(0, 9, 1, 1, (uint8_t)(k & 1), (uint8_t)(k & 1)), 25000);
+			dmr_burst_t b = { 0 };
+			CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1);
+			CHECK(b.ts == (rpt || k >= 3 ? (k & 1) + 1 : 0));
+		}
+	}
+}
+
 // A BS signal on both slots, as a control channel sends. Once the TC lock holds, each slot tick
 // names the TS starting there and carries the AT bit of the last CACH naming it; the short LC is reported when it
 // changes, only from a BS signal, task-side; an MBC continuation is delivered whatever the chip's CRC flag, a CSBK with
@@ -1587,10 +1720,11 @@ static void test_rx_control_channel(void)
 	CHECK(hrc7000_dmr_short_lc(&eng, &ev) && ev.arg == (slc ^ 0x1000000u) && eng.st.slc_reads == 2);
 	count_kind(0xFF, NULL);
 
-	// CRC-16 flag: a CSBK is dropped, an MBC continuation goes up with crc_ok false (its CRC is the MBC's)
-	deframe(rti(0, DMR_BURST_CSBK, 2, 1, 0, 0) | (1u << 26));
-	CHECK(count_kind(DMR_EV_BURST_RX, NULL) == 0);
+	// CRC-16 flag: a CSBK goes up with crc_ok false (the receivers check it; Accept invalid CRC takes it), and so does
+	// an MBC continuation (its CRC is the MBC's)
 	dmr_burst_t b;
+	deframe(rti(0, DMR_BURST_CSBK, 2, 1, 0, 0) | (1u << 26));
+	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_CSBK && !b.crc_ok && b.len == 12);
 	deframe(rti(0, DMR_BURST_MBC_CONT, 2, 1, 0, 0) | (1u << 26));
 	CHECK(count_kind(DMR_EV_BURST_RX, &b) == 1 && b.kind == DMR_BURST_MBC_CONT && !b.crc_ok && b.len == 12);
 }
@@ -1911,6 +2045,7 @@ int main(void)
 	test_tx_listen_rc();
 	test_tx_aligned();
 	test_tx_repeater_lock();
+	test_rx_bs_direct_call();
 	test_rx_control_channel();
 	test_tx_empty_and_fill();
 	test_polite_without_ticks();
@@ -1918,6 +2053,8 @@ int main(void)
 	test_resync_voice_lost();
 	test_polite_and_repeater();
 	test_polite_after_restart();
+	test_polite_after_terminator();
+	test_polite_other_slot_terminator();
 	test_event_overflow();
 	test_fm_rx_keeps_pcm();
 	test_mic_gain();

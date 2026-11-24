@@ -7,6 +7,7 @@
 #include "hrc6000_dmr.h"
 #include "config.h"
 #include "dmr/fec/dmrFec.h"
+#include "hrc_soft.h"
 #if defined(CONFIG_HOTSPOT_SPLIT) && CONFIG_HOTSPOT_SPLIT
 #include "hrc6000_bs.h"	// split duplex TX half: the BS outbound takes the chip over (e->bs)
 #define BS_HOOK(call)	do { if (e->bs != NULL) { call; return; } } while (0)
@@ -37,7 +38,8 @@
 
 // 0x40
 #define L2_PASSIVE	0xC3	// TX + RX enabled, timing follows received bursts
-#define L2_ACTIVE	0xE3	// TX + RX enabled, own timing
+#define L2_MASTER	0x20	// MasterMode: own timing
+#define L2_ACTIVE	(L2_PASSIVE | L2_MASTER)	// TX + RX enabled, own timing
 #define L2_MCU_CRC	0x08	// CRC_MCU_Control
 
 // 0x41
@@ -92,7 +94,10 @@
 #define CC_TICK_QUIET		4u	// ... while no burst was taken for this many ticks
 #define TC_STABLE		4u	// more than this many agreements
 #define TC_RESYNC		3u	// more than this many disagreements
+#define CACH_RUN		4u	// BS-sync bursts in slots in a row with the TC alternating: a CACH on air (the HR_C7000's TC_LOCK)
 #define BS_RECENT_TICKS		40u
+#define HUNT_US			390000u	// bs_by_mode chip, direct channel: dwell in each receive mode while nothing is taken; more
+					// than a superframe, so each BS dwell holds a voice A (sync) the chip can find
 #define ALIGN_TIMEOUT_TICKS	50u	// 1.5 s for a slot to align to
 #define ALIGN_DEAF_TICKS	8u	// an aligned start's wait that hears nothing this long searches again
 #define DONE_FALLBACK_TICKS	4u
@@ -390,6 +395,35 @@ static bool rmo(const hrc6000_dmr_t *e)
 	return e->cfg.repeater || (e->rmo_seen && (uint32_t)(e->tick - e->bs_tick) < BS_RECENT_TICKS);
 }
 
+// A CACH to read the TC and short LC from: a base station keys both slots, so its BS-sync bursts come in slots in a
+// row with the TC alternating. A direct mode sender with BS sync (a simplex hotspot) keys every other slot with no
+// CACH: 0x52 then holds junk, and slot labels taken from it flipped mid-call (issue 910). The chip also reports a
+// burst again in the next slot, and a repeated BS idle is delivered (dedup exempts them), so two slots in a row alone
+// prove nothing: the same TC twice is one burst seen twice. The HR_C7000 driver locks its TC the same way (TC_LOCK)
+static bool cach_on_air(const hrc6000_dmr_t *e)
+{
+	return e->cfg.repeater || (rmo(e) && e->cach_seen);
+}
+
+// 0x10 for receive: the channel's, or on a bs_by_mode chip on a direct channel the mode the hunt is in
+static uint8_t rx_mode(const hrc6000_dmr_t *e)
+{
+	return e->dev->chip->dmr_mode(e->cfg.repeater || e->hunt_bs);
+}
+
+// The channel's 0x10 (on a chip where it differs by channel), and the hunt from the start of a direct mode dwell
+static void mode_reset(hrc6000_dmr_t *e)
+{
+	e->hunt_bs = false;
+	e->hunt_ext = false;
+	e->bs_last = false;
+	e->hunt_tx = false;
+	e->t_hunt = now(e);
+	if (e->dev->chip->mode_per_channel) {
+		w(e->dev, R_MODE, rx_mode(e));
+	}
+}
+
 static void set_ctl(hrc6000_dmr_t *e, uint8_t ctl)
 {
 	w(e->dev, R_SLOT_CTL, ctl);
@@ -405,6 +439,9 @@ static void forget_slots(hrc6000_dmr_t *e)
 	e->tc_disagree = 0;
 	e->at_tick[0] = 0;
 	e->at_tick[1] = 0;
+	e->bs_slot_valid = false;
+	e->bs_run = 0;
+	e->cach_seen = false;
 }
 
 static void do_restart(hrc6000_dmr_t *e, uint8_t why)
@@ -492,7 +529,15 @@ static void setup_burst(hrc6000_dmr_t *e, const dmr_tx_burst_t *b)
 
 	// CRC_MCU_Control only for bursts that carry their own CRC; voice and idle never (gotchas 5.1)
 	bool mcu_crc = !voice && kind != DMR_BURST_IDLE && b->host_crc && e->dev->chip->mcu_crc;
-	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u));
+	// A transmission aligned to a repeater that listens between its bursts (tx_listen) holds the timing it started
+	// with: in passive timing the chip followed the outbound it heard in the listened slots and stepped its own bursts
+	// every few seconds (104 us on the HR_C5000, about 63 us on the HR_C6000), away from the repeater's grid, and the
+	// burst at each step reached the repeater with bit errors (issue 609). Without the listen the chip hears nothing
+	// while it sends, so its timing was held already. An SFR (DMO framing) stays passive: there the timing it follows
+	// is the inbound caller's. Once held, held to the end: rmo() can lapse under the over (a BS heard too long ago)
+	e->tx_master = e->tx_master || (e->tx_listen && e->tx_timing != DMR_TIMING_OWN && rmo(e));
+	uint8_t r40 = (uint8_t)((e->reg40 & (uint8_t)~L2_MCU_CRC) | (mcu_crc ? L2_MCU_CRC : 0u) |
+				(e->tx_master ? L2_MASTER : 0u));
 	if (r40 != e->reg40) {
 		w(e->dev, R_L2_CTL, r40);
 		e->reg40 = r40;
@@ -571,6 +616,7 @@ static void tx_finish(hrc6000_dmr_t *e)
 	}
 	e->tx_state = TXS_IDLE;
 	e->tx_listen = false;
+	e->tx_master = false;
 	e->tap_reports = e->st.rc_reports;	// a report after the last tap read is not the next transmission's
 	e->tx_end_req = false;
 	e->tx_abort_req = false;
@@ -940,9 +986,10 @@ static bool seq_by_count(hrc6000_dmr_t *e, const hrc6000_dmr_vstate_t *vs, hrc60
 		e->st.rx_stale++;
 		return false;
 	}
-	// No count: no timing, no burst taken yet (after a header), the other slot phase, or a count that lands on A (which
-	// comes with its voice sync, never as class 0)
-	if (!e->timing || vs->last == HRC6000_INDEX_UNKNOWN || gap < 2u || (gap & 1u) != 0u || want == 0u) {
+	// A fresh payload one frame after F can still carry F's status when the chip misses the A sync.
+	bool wrap = vs->last == 5u && gap == 2u && sum != vs->sum;
+	// Count across A only on that next frame, never extrapolate it across a gap.
+	if (!e->timing || vs->last == HRC6000_INDEX_UNKNOWN || gap < 2u || (gap & 1u) != 0u || (want == 0u && !wrap)) {
 		if (s->voice_index == HRC6000_INDEX_UNKNOWN) {
 			s->voice_index = vs->next;
 			e->st.rx_seq_fill++;
@@ -1280,10 +1327,29 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 
 	// Slot numbers (see hrc6000_dmr.h): the report is for the slot that just ended
 	uint8_t ph = (uint8_t)((tick - 1u) & 1u);
-	if (s->sync == DMR_SYNC_BS) {
+	bool bs = s->sync == DMR_SYNC_BS;
+	if (bs) {
 		e->bs_tick = e->tick;
 		e->rmo_seen = true;
-	} else if (on_time && !tx && !e->cfg.repeater) {
+		uint32_t gap = tick - 1u - e->bs_slot;
+		if (!e->bs_slot_valid || gap != 0u) {	// a second report of the same slot changes nothing
+			bool next = e->bs_slot_valid && gap == 1u && s->tc != e->bs_tc;
+			e->bs_run = next ? (uint8_t)(e->bs_run < CACH_RUN ? e->bs_run + 1u : CACH_RUN) : 1u;
+		}
+		e->bs_tc = s->tc;
+		if (!e->cach_seen && e->bs_run >= CACH_RUN) {
+			e->cach_seen = true;
+			if (!e->cfg.repeater) {
+				e->phase_ts[0] = 0;	// direct mode guesses (below): the TC numbers the slots from now on
+				e->phase_ts[1] = 0;
+			}
+		}
+		e->bs_slot = tick - 1u;
+		e->bs_slot_valid = true;
+	}
+	// Direct mode (BS sync too while no CACH is on air): number the slot heard, so an aligned reply keys in step with
+	// the sender instead of waiting for a TC that never comes (refused at ALIGN_TIMEOUT_TICKS)
+	if (on_time && !tx && !e->cfg.repeater && !(bs && cach_on_air(e))) {
 		int8_t want = s->sync == DMR_SYNC_TS2 ? 2 : 1;
 		bool tdma = s->sync == DMR_SYNC_TS1 || s->sync == DMR_SYNC_TS2;
 		if (e->phase_ts[ph] == 0 || (tdma && e->phase_ts[ph] != want)) {
@@ -1299,6 +1365,13 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->rx_tick = e->tick;
 	e->rx_any = true;
+	if (e->dev->chip->bs_by_mode) {
+		e->t_hunt = now(e);	// the hunt stays in the mode that heard it
+		if (!tx) {
+			// The family the mode hears (no sync type register: a direct channel's bursts say MS either way)
+			e->bs_last = bs || e->hunt_bs;
+		}
+	}
 	e->tx_hold = false;	// an answer: the reception holds the timing as any does
 	e->idle_restarted = false;
 	if (voice && e->voice_since_start < 255u) {
@@ -1306,7 +1379,9 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	}
 	e->st.last_cc = s->cc;
 	e->st.last_sync = s->sync;
-	e->st.last_ts = e->phase_ts[ph];
+	// A BS-sync burst with no CACH on air has no slot number (dmr-modem.md 2.3: direct mode)
+	int8_t ts_out = bs && !cach_on_air(e) ? 0 : e->phase_ts[ph];
+	e->st.last_ts = ts_out;
 	if (!s->crc_ok) {
 		e->st.rx_crc_err++;
 	}
@@ -1329,7 +1404,7 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	b->voice_index = s->voice_index;
 	b->sync = s->sync;
 	b->cc = s->cc;
-	b->ts = e->phase_ts[ph];
+	b->ts = ts_out;
 	b->crc_ok = s->crc_ok;
 	b->pi = s->pi;
 	b->in_step = in_step && !tx;	// what the chip says while it sends is suspect (7.8)
@@ -1413,6 +1488,11 @@ static void take(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, const dmr_burst
 	slot->ev.arg = tick;	// DMR_EV_BURST_RX: the slot counter of the report (never 0); the stack orders bursts by it
 	slot->ev.burst = NULL;
 	slot->dms = dms;
+	slot->soft_tag = 0;
+#if CONFIG_DMR
+	slot->soft_tag = voice ? 0u : e->soft_pending;
+	e->soft_pending = 0;
+#endif
 	ev_commit(e);
 }
 
@@ -1448,8 +1528,36 @@ static void rc_report(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, uint8_t r5
 	}
 }
 
+#if CONFIG_DMR
+// The soft values of a control burst whose CRC failed, for hrc6000_dmr_pop to combine (dmr-modem.md 2.2.1): read over
+// the bus into the staging buffer and converted in place. Not while we send (the tap then holds what the chip heard
+// between our bursts, if anything)
+static void soft_stage(hrc6000_dmr_t *e, const hrc6000_rx_status_t *s, bool tx)
+{
+	dmrSoftComb_t *c = e->soft;
+	uint16_t at = e->dev->chip->soft_tap;
+	bool control = s->kind == DMR_BURST_CSBK || s->kind == DMR_BURST_MBC_HEADER || s->kind == DMR_BURST_MBC_CONT ||
+		       s->kind == DMR_BURST_DATA_HEADER;
+	if (c == NULL || at == 0u || s->crc_ok || !control || tx) {
+		return;
+	}
+	uint8_t tag;
+	int8_t *v = dmrSoftCombStage(c, &tag);
+	if (!hrc_ram(e->dev, HRC_PAGE_DATA, (uint16_t)(at + HRC_SOFT_INFO_OFS), (uint8_t *)v, DMR_SOFT_BITS, false)) {
+		return;
+	}
+	for (uint16_t i = 0; i < DMR_SOFT_BITS; i++) {
+		v[i] = hrc_soft_value((uint8_t)v[i]);
+	}
+	e->soft_pending = tag;
+}
+#endif
+
 static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 {
+#if CONFIG_DMR
+	e->soft_pending = 0;	// staged for this report's burst only
+#endif
 	uint8_t r51 = r(e->dev, R_RX_TYPE);
 	// The HR_C5000 has no sync type register: the family the channel expects (direct MS, repeater BS)
 	uint8_t r5f = e->dev->chip->sync_reg ? r(e->dev, R_SYNC_TYPE) : (e->cfg.repeater ? 1u : 0u);
@@ -1516,6 +1624,9 @@ static bool rx_report(hrc6000_dmr_t *e, uint32_t t, uint8_t r52, bool at_tick)
 		hrc6000_dmr_voice(e->dev, false, nb.payload);
 	} else {
 		hrc_read_burst(e->dev, HRC_PAGE_DATA, 0x00, nb.payload, nb.len);
+#if CONFIG_DMR
+		soft_stage(e, &s, tx);
+#endif
 	}
 
 	// The same burst reported again at the next timeslot interrupt (bench 2026-10-09: every voice burst came twice,
@@ -1884,7 +1995,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 	bool ended = e->dev->chip->tc_last_rx || !HRC6000_DMR_TC_IS_SLOT_NOW;
 	uint8_t tc_ctl = ended ? ctl_ended : e->ctl_now;
 	uint8_t tc_prev = ended ? ctl_before : ctl_ended;
-	if (idle && (tc_ctl & CTL_RX) != 0 && (tc_prev & CTL_RX) != 0 && rmo(e)) {
+	if (idle && (tc_ctl & CTL_RX) != 0 && (tc_prev & CTL_RX) != 0 && cach_on_air(e)) {
 		track_tc(e);
 	}
 	uint8_t ph = (uint8_t)(e->tick & 1u);
@@ -1892,7 +2003,7 @@ void hrc6000_dmr_isr_timeslot(hrc6000_dmr_t *e)
 		cc_tick_follow(e, ph);
 	}
 	push_tick(e, e->phase_ts[ph]);
-	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && rmo(e)) {
+	if (idle && e->lock_ts == 0 && (ctl_ended & CTL_RX) != 0 && cach_on_air(e)) {
 		slc_read(e);
 	}
 	for (int k = 0; k < 2; k++) {	// a lone burst A whose B (one frame later) did not come
@@ -2082,6 +2193,9 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	e->timing = false;
 	e->pa_on = false;
 	e->rmo_seen = false;
+	e->bs_slot_valid = false;
+	e->bs_run = 0;
+	e->cach_seen = false;
 	e->reg40 = L2_PASSIVE;
 	e->sync_cur = DMR_SYNC_MS;
 	e->cc_held = false;
@@ -2092,10 +2206,8 @@ void hrc6000_dmr_run(hrc6000_dmr_t *e)
 	memset(e->vs, 0, sizeof(e->vs));
 	memset(e->held, 0, sizeof(e->held));
 	slot_lc_forget(e);	// their ticks are from before the tick restarted
-	if (e->dev->chip->mode_per_channel) {
-		// The channel's 0x10 again: whoever held the chip while the engine was halted (an air session) left its own
-		w(e->dev, R_MODE, e->dev->chip->dmr_mode(e->cfg.repeater));
-	}
+	// The channel's 0x10 again: whoever held the chip while the engine was halted (an air session) left its own
+	mode_reset(e);
 	hrc6000_dmr_set_sync(e->dev, DMR_SYNC_MS);
 	if (e->cc_filter >= 0) {
 		e->cc_cur = (uint8_t)e->cc_filter;
@@ -2145,10 +2257,73 @@ bool hrc6000_dmr_pop(hrc6000_dmr_t *e, dmr_event_t *ev, dmr_burst_t *burst)
 		*burst = s->burst;
 		ev->burst = burst;
 		e->pop_dms = s->dms;
+#if CONFIG_DMR
+		dmrSoftComb_t *c = e->soft;
+		if (s->soft_tag != 0 && c != NULL) {
+			(void)dmrSoftCombTake(c, s->soft_tag, burst->ts == 2 ? 1u : 0u, burst->payload);
+		}
+#endif
 	}
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	e->evq_tail = (uint8_t)((e->evq_tail + 1u) % EV_N);
 	return true;
+}
+
+// A chip that hears BS sync only in repeater mode (bs_by_mode), on a direct channel: while nothing is taken, switch
+// 0x10 between the channel's direct mode and repeater mode every HUNT_US, so a direct sender framing its bursts with
+// BS sync (a simplex hotspot: one burst every 60 ms, no CACH) is heard as well as an MS one. The chip finds a BS-framed
+// call's sync only at a header or voice A, once a superframe, so a dwell is longer than a superframe. A burst taken
+// keeps the mode (take() moves t_hunt) until the reception has been over for HUNT_US. The slot numbers stay direct mode's:
+// with no CACH on air a BS-sync burst goes up with ts 0 (cach_on_air). Transmissions key in the channel's own mode; the
+// first dwell after one is in the mode of the last burst taken before it, as the answer comes framed as that sender's
+static void hunt_switch(hrc6000_dmr_t *e, uint32_t t, bool bs)
+{
+	e->t_hunt = t;
+	e->hunt_ext = false;
+	e->hunt_bs = bs;
+	w(e->dev, R_MODE, rx_mode(e));
+	e->st.hunt_flips++;
+	if (e->restart_pending) {
+		// A restart asked for while no timeslot interrupt came to make it (the color code filter set after start,
+		// on a quiet channel): this one makes it, else it stays pending and the hunt with it
+		do_restart(e, e->restart_why);
+		push(e, DMR_EV_SYNC_LOST, 0, e->tick);
+	} else {
+		do_restart(e, HRC6000_RS_COUNT);	// not counted by reason: the hunt's own counter
+	}
+}
+
+static void hunt(hrc6000_dmr_t *e, uint32_t t)
+{
+	if (!e->dev->chip->bs_by_mode || !e->dev->chip->mode_per_channel || e->cfg.repeater) {
+		return;
+	}
+	if (e->tx_state != TXS_IDLE || e->tx_hold ||
+	    (e->rx_any && e->timing && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS)) {
+		// A transmission, its answer slot or a reception is going on: a full dwell once it is over
+		e->t_hunt = t;
+		e->hunt_ext = false;
+		return;
+	}
+	if (e->hunt_tx) {
+		// Over: a BS-framed sender answers in BS sync (a simplex hotspot), anyone else in the channel's mode, which
+		// the transmission keyed in
+		e->hunt_tx = false;
+		if (e->bs_last && !e->hunt_bs) {
+			hunt_switch(e, t, true);
+		}
+		return;
+	}
+	if (e->timing && !e->hunt_ext && (int32_t)(e->t_tick - e->t_hunt) > 0) {
+		// The chip found a sync in this dwell and ticks: a dwell from here, once, so the engine can take the
+		// burst (a find near the end of a dwell was switched away before the first report was taken)
+		e->t_hunt = e->t_tick;
+		e->hunt_ext = true;
+	}
+	if ((uint32_t)(t - e->t_hunt) < HUNT_US) {
+		return;
+	}
+	hunt_switch(e, t, !e->hunt_bs);
 }
 
 void hrc6000_dmr_poll(hrc6000_dmr_t *e)
@@ -2164,6 +2339,7 @@ void hrc6000_dmr_poll(hrc6000_dmr_t *e)
 		    && (uint32_t)(t - e->t_tick) > (e->hold_due ? HOLD_REPORT_US : HOLD_NO_TICK_US)) {
 			do_restart(e, HRC6000_RS_TX_END);	// no answer on our timing: follow whoever talks next
 		}
+		hunt(e, t);
 		if (e->timing && (uint32_t)(t - e->t_tick) > STALL_US) {
 			e->timing = false;
 			bool busy = e->tx_state != TXS_IDLE || (e->rx_any && (uint32_t)(e->tick - e->rx_tick) <= RX_LOST_TICKS);
@@ -2191,9 +2367,7 @@ void hrc6000_dmr_configure(hrc6000_dmr_t *e, const dmr_config_t *cfg)
 	}
 	e->cfg = *cfg;
 	hrc_set_dmr_id(e->dev, cfg->own_id);
-	if (e->dev->chip->mode_per_channel) {
-		w(e->dev, R_MODE, e->dev->chip->dmr_mode(cfg->repeater));	// the HR_C5000's 0x10 differs by channel
-	}
+	mode_reset(e);		// the HR_C5000's 0x10 differs by channel
 	if (e->cc_filter >= 0) {
 		// An any-CC filter (-1) stays: the caller sets the filter after configure
 		e->cc_filter = cfg->cc;
@@ -2251,11 +2425,19 @@ bool hrc6000_dmr_tx_begin(hrc6000_dmr_t *e, dmr_timing_t timing, int8_t ts, dmr_
 		e->tx_end_req = false;
 		e->tx_abort_req = false;
 		e->tx_any_setup = false;
+		// A halt under a transmission leaves both set (tx_finish never ran): this one listens only when asked
+		e->tx_listen = false;
+		e->tx_master = false;
 		e->tx_wait = 0;
 		e->tx_found = false;
 		e->last_kind = KIND_UNSET;
 		e->restart_pending = false;
 		e->tx_state = TXS_START;
+		if (e->hunt_bs) {
+			e->hunt_bs = false;	// a direct transmission keys in the channel's mode, not the hunt's
+			w(e->dev, R_MODE, rx_mode(e));
+		}
+		e->hunt_tx = e->dev->chip->bs_by_mode;	// the first dwell after it: hunt()
 		// modem-hrc6000.md 6.2: access policy and encoder start, then own timing for direct mode
 		if (e->dev->chip->tx_begin != NULL) {
 			e->dev->chip->tx_begin(e->dev, hrc6000_dmr_access_reg(access));

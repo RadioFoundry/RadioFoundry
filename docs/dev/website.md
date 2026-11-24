@@ -16,9 +16,13 @@ python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
 
+Use `--serve` to test the Satellite TLE Update page locally. A plain static server cannot provide its `/api/amsat-tle` proxy.
+
 The generator needs two Python packages, markdown-it-py and resvg_py (`pip install -r site/requirements.txt`, or prefix the
 command with `uv run --no-project --with-requirements site/requirements.txt`). The pages need no build step and no
-npm packages: plain HTML, CSS and ES modules. `tools/ci.sh` builds the site and runs the tests (Python step).
+npm packages: plain HTML, CSS and ES modules. The one outside library, Tom Select (the editor's searchable lists), is
+copied into `site/static/vendor/tom-select/`, whose README gives its version and how to update it.
+`tools/ci.sh` builds the site and runs the tests (Python step).
 
 Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 
@@ -68,6 +72,7 @@ Nothing on the site is copied by hand. Each page reads its source at build time:
 | Screenshots | `docs/ux/screens/<gallery>/` (`make -C tests/host ui-gallery`), six per radio page in two rows of three: the first of `featured` in `site/data/screens.json` the radio has. The Screenshots page (`/screenshots/`) shows every screen each radio's build has, a section per board, under the `groups` headings of `screens.json`, in its order. The home page's carousel lists its screens in `site/templates/home.html`, from every gallery, one height. Every page shows the scaled copies ([Screenshot copies](#screenshot-copies)) |
 | Flash layout, codec profiles, stock files, key hashes | The board registry (`tools/rfoundry/rfoundry/registry.json`, read through `boards.py`) and `stockfw.py`, exported to `data/flash-boards.json` |
 | Documentation | Every Markdown file under `docs/` |
+| Support FAQ (`/support/faq.html`) | `site/faq/<code>.md`: each `## ` line a question, the Markdown under it the answer; a language without its file shows `en.md`. The Support page itself is `site/templates/support.html`, its download `static/js/supportpage.js` ([support-info.md](../spec/support-info.md)) |
 | Firmware images | Release manifests and images (`--firmware`; the workflow downloads the newest release) |
 
 The build fails when a source doesn't parse, and warns (an error with `--strict`) when a feature has no row in the

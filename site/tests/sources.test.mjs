@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseUsers, fromApi, regionsOf, select, format, RadioIdApi, regionUrl, COUNTRIES } from "../static/js/codeplug/sources/radioid.js";
+import { parseUsers, fromApi, regionsOf, select, addRegion, format, RadioIdApi, regionUrl, COUNTRIES } from "../static/js/codeplug/sources/radioid.js";
 import { writeIddb, eraseIddb, addContacts, iddbEnd, iddbSize } from "../static/js/codeplug/sources/output.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { empty, newContact } from "../static/js/codeplug/model.js";
@@ -49,6 +49,21 @@ test("regionsOf and select: countries, states case-insensitively, prefixes, ID r
 	assert.deepEqual(select(u, { prefixes: ["qc3", " "] }).map((x) => x.id), [9991277]);
 	assert.deepEqual(select(u, { idMin: 9991000, idMax: 9991234 }).map((x) => x.id), [9991234]);
 	assert.equal(select(u, {}).length, 4);
+});
+
+test("adding a whole country again keeps the RadioID filter", () => {
+	const regions = addRegion([], "Canada", []);
+	const repeated = addRegion(regions, "Canada", []);
+	assert.deepEqual(repeated, [{ country: "Canada" }]);
+	assert.deepEqual(select(parseUsers(CSV), { regions: repeated }).map((u) => u.id), [9990102]);
+	assert.deepEqual(addRegion(repeated, "canada", ["Ontario"]), regions);
+});
+
+test("a whole country replaces its states and preserves other countries", () => {
+	const regions = [{ country: "united states", state: "Ohio" }, { country: "Canada" }];
+	assert.deepEqual(addRegion(regions, "United States", ["ohio", "Michigan", "michigan"]),
+		[...regions, { country: "United States", state: "Michigan" }]);
+	assert.deepEqual(addRegion(regions, "United States", []), [{ country: "Canada" }, { country: "United States" }]);
 });
 
 test("format: tokens, abbreviations, country codes, empty values drop with their separator", () => {

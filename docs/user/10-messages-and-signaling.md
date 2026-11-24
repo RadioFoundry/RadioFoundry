@@ -91,12 +91,14 @@ configured frequency and any blocking reason. Received APRS messages appear in M
 
 ## Message formats
 
-**Settings > Connections > Message format** picks the encoding of new DMR messages. The radio reads all three DMR
-formats, whatever the setting. A reply to a DMR inbox message uses DMR.
+**Settings > Connections > Message format** picks the encoding of new DMR messages. The setting does not affect
+reception. Canned inbox replies use the received format where available. Text sent from the composer uses the
+selected setting.
 
 | Format | Use it for |
 |---|---|
-| ETSI (default) | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
+| Automatic (default) | Uses Tier III control-channel short data for up to 23 characters on a Tier III channel without data privacy. Longer messages and messages on other channels use ETSI IP text. |
+| ETSI | The standard DMR text message (ETSI IP text). Radios and dispatch software set to "DMR standard" text read it. Delivery to a person is confirmed |
 | ETSI short | Radios that only show ETSI short data messages. Delivery is confirmed |
 | Motorola | MOTOTRBO radios and dispatch software set to Motorola text messages (TMS). Delivery is confirmed. Not in builds made without Motorola TMS support |
 
@@ -132,6 +134,9 @@ range.
 Your radio answers radio checks from others while **Settings > Connections > Answer radio checks** is on, the default.
 An answer is a short transmission the radio makes without you pressing PTT; turn the setting off if you don't want that.
 
+Radio checks work both ways with commercial DMR portables. Radio checks between a newer and an older RadioFoundry
+build get no answer until both radios are updated.
+
 ## Registration (ARS) and location (LRRP)
 
 ARS registers the radio with a presence server at power-up and after a channel change. It is off until a server ID is
@@ -140,4 +145,5 @@ off. The screen shows the registration: Registering, Registered, Refused or No a
 codeplug, so the [Codeplug Editor](04-programming.md) can set it too.
 
 LRRP answers location requests from a dispatcher. A radio without GPS ([Radio reference](23-radios.md)) answers "no
-fix". **Settings > Location > Answer GPS requests** turns the answers off.
+fix". Periodic reports go 30 s to 1 day apart, whatever the dispatcher asks. **Settings > Location > Answer GPS
+requests** turns the answers off.

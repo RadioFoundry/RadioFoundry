@@ -75,6 +75,8 @@ export const nxdnKind = {
 	defaultTx: true,
 	recordFields: ["contact", "dmrId"],
 	flags: {},
+	// in the params only when set: the traffic key the channel transmits with
+	optionalParams: ["txKeyId"],
 	newParams: () => ({ rate9600: true, squelch: 0, rxRan: 0, txRan: TX_RAN_DEFAULT }),
 	decode: decodeConv,
 	encode: encodeConv,
@@ -124,7 +126,7 @@ export const nxdnSystem = {
 		max: 64,
 		columns: [
 			{ key: "id", label: "editor.nxdn.key_id", type: "int", min: 0, max: RAN_MAX },
-			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX },
+			{ key: "seed", label: "editor.nxdn.seed", type: "int", min: 1, max: SEED_MAX, secret: true },
 		],
 		decode(v) {
 			if (v.length !== 7 || v[1] !== SCRAMBLER) return null;

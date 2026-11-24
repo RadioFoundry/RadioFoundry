@@ -9,6 +9,8 @@
 #if CONFIG_DMR
 #include "dmr/call/dmr_call.h"
 #include "dmr/ambe/ambeVoice.h"
+#include "audio/miclimit/miclimit.h"
+#include "radio/mic_gain.h"
 #endif
 
 #if CONFIG_DMR
@@ -74,6 +76,15 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			ambeVoiceGetStats(&a);
 			dl_text(t, "voice.tx_mic_peak=%u\nvoice.tx_test=%u\n", (unsigned)a.tx_mic_peak,
 				ambeVoiceTestSignal() ? 1u : 0u);
+			// The mic gain (DMR's) in force now; after it, the encoder's largest sample and the
+			// limiter's lowest gain in the latest transmission (- before one). Here, not in features: that section
+			// is at a reply's size
+			dl_text(t, "voice.mic_pcm_db=%d\nvoice.tx_enc_peak=%u\n", radio_mic_pcm_db(), (unsigned)a.tx_enc_peak);
+			if (a.tx_mic_low_q8 != 0) {
+				dl_text(t, "voice.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)a.tx_mic_low_q8));
+			} else {
+				dl_text(t, "voice.tx_mic_low_db=-\n");
+			}
 		}
 		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
 		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
@@ -146,8 +157,8 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 			dmr_call_get_stats(&c);
 			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
 				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
-			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\n", (unsigned)c.rx_ts_dropped,
-				(unsigned)c.rx_cc_dropped);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
+				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
 			// The reverse channel heard while sending: here, as dmr_stats fills a reply
 			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
 				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);

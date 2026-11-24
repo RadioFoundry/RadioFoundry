@@ -54,7 +54,9 @@ endif
 # CONFIG_X ?= n beside it (docs/build-config.md). A command-line CONFIG_X=y still builds it
 $(foreach f,$(sort $(BOARD_UNSUPPORTED) $(BOARD_NOT_WRITTEN)),$(eval CONFIG_$(f) ?= n))
 include config/features.mk
+include platform/third_party.mk
 include platform/$(PLATFORM)/platform.mk
+$(TP_CHECK)
 
 # Hardware build options: hardware versions one image can't serve (a radio sold with UHF and VHF boards). board.mk names
 # them in BUILD_OPTIONS and lists each one's values in <NAME>_VALUES, the default first; board.toml [[build_options]]
@@ -126,11 +128,17 @@ endif
 ifeq ($(CONFIG_POSITION),y)
 CORE_DIRS += core/position
 endif
+ifeq ($(CONFIG_SATELLITE_TLE),y)
+CORE_DIRS += core/satellite
+endif
 ifeq ($(CONFIG_SNMP),y)
 CORE_DIRS += core/snmp
 endif
 ifeq ($(CONFIG_CRASH_LOG),y)
 CORE_DIRS += core/crash
+endif
+ifeq ($(CONFIG_SUPPORT_INFO),y)
+CORE_DIRS += core/support
 endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
@@ -143,6 +151,11 @@ APP_ASM := $(foreach d,$(APP_DIRS),$(sort $(wildcard $(d)/*.S)))
 # The stub entry without the debug link: its listener uses the debug link's framing (dl_frame.c, no RTOS or board)
 ifeq ($(CONFIG_STUB_ENTRY)$(CONFIG_DEBUGLINK),yn)
 APP_SRC += core/debuglink/dl_frame.c
+endif
+# Accept invalid CRC's repeat check, shared by the DMR call, Tier III and P25 trunking: core/fec is globbed with the air
+# interface only
+ifeq ($(CONFIG_DMR)$(CONFIG_AIR),yn)
+APP_SRC += core/fec/rx_seen.c
 endif
 # The fast codeplug protocol (core/cps is globbed with CPS_OPENFW): only with its own switch
 ifneq ($(CONFIG_CPS_FAST),y)
@@ -165,6 +178,11 @@ endif
 # Single files of core/dmr, whose other files belong to other features
 ifeq ($(CONFIG_DMR_PRIVACY),y)
 APP_SRC += core/dmr/dmrPrivacy.c
+endif
+ifeq ($(CONFIG_DMR_AES),y)
+APP_SRC += core/dmr/dmrAes.c
+else
+APP_SRC := $(filter-out core/radio/radio_aes.c,$(APP_SRC))
 endif
 # DMR data (SMS, ARS, LRRP, CSBK signaling)
 ifeq ($(CONFIG_DMR_DATA_CORE),y)
@@ -211,6 +229,7 @@ endif
 NET_SRC-$(CONFIG_NET_TCP) += core/net/net.c core/net/tcp.c core/net/http.c core/net/kiss_tcp.c core/net/rigctld.c \
 	core/net/aprsis.c
 NET_SRC-$(CONFIG_NET_WEBCTL) += core/net/ws.c core/net/webctl.c
+NET_SRC-$(CONFIG_NET_RADIO_UDP) += core/net/net.c core/net/radio_udp.c
 NET_SRC-$(CONFIG_MDNS) += core/net/net.c core/net/net_services.c core/net/mdns.c
 NET_SRC-$(CONFIG_TFTP) += core/net/net.c core/net/net_services.c core/net/tftp.c core/net/tftp_codeplug.c
 NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
@@ -228,7 +247,7 @@ APP_SRC += core/debuglink/dl_fmt.c
 endif
 endif
 
-INCLUDES := -Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC)
+INCLUDES := $(call TP_INCLUDES,-Ihal -Icore -Idrivers -Iboards/$(BOARD) -Iplatform/$(PLATFORM) -I$(BUILD)/gen $(PLATFORM_INC))
 
 # Firmware version: the commit, with -dirty when tracked files differ from it or untracked sources sit in the built
 # directories (both end up in the image). Only the files that use RFOUNDRY_GIT or RFOUNDRY_RELEASE get it, through
@@ -267,6 +286,15 @@ else ifneq ($(RELEASE),)
 RFOUNDRY_RELEASE := $(shell python3 tools/release_version.py check '$(RELEASE)' && echo '$(RELEASE)')
 $(if $(RFOUNDRY_RELEASE),,$(error RELEASE=$(RELEASE) is not a release name: vYY.M, vYY.M.N, either with bN (docs/dev/release.md)))
 endif
+# Where the build came from (tools/build_source.py; docs/spec/support-info.md 1): official (our CI: the images the web
+# site installs), service, pr, local, fork or unknown, and the repository it names. About and the debug link show them.
+# BUILD_SOURCE= and BUILD_SOURCE_REPO= set them (the build service passes BUILD_SOURCE=service)
+# (a partial copy of the tree without the tool, as the registry checks make: unknown)
+RFOUNDRY_SOURCE_INFO := $(if $(wildcard tools/build_source.py),$(shell python3 tools/build_source.py \
+	$(if $(BUILD_SOURCE),--source '$(BUILD_SOURCE)') $(if $(BUILD_SOURCE_REPO),--repo '$(BUILD_SOURCE_REPO)')),unknown)
+RFOUNDRY_GIT_SOURCE := $(word 1,$(RFOUNDRY_SOURCE_INFO))
+RFOUNDRY_GIT_REPO := $(word 2,$(RFOUNDRY_SOURCE_INFO))
+$(if $(RFOUNDRY_GIT_SOURCE),,$(error tools/build_source.py failed (above)))
 # RFOUNDRY_BOARD_ID: the board's id (boards/<id>), for platform code that names things after the board (the HR_C7000 codec
 # host's profile ids, "<id>-<stock tag>"); core/ never uses it
 DEFS := $(MCU_DEFS) $(FEATURE_DEFS) -DRFOUNDRY_BOARD_ID=\"$(BOARD)\"
@@ -275,7 +303,7 @@ OPT ?= -Os
 # Every function's frame size and calls, next to each object (or each LTO partition, next to the .elf), for the stack
 # check (make stack-check, tools/stack_check.py). Output files only: the image is the same with or without it
 STACK_INFO := -fcallgraph-info=su
-COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO)
+COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO) $(TP_PREFIX_MAP)
 CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion $(DEFS) $(INCLUDES)
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
@@ -302,7 +330,7 @@ CFLAGS_3P += -flto=auto
 endif
 endif
 # Sections copied into the .bin (one contiguous image from the start of the application)
-BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data
+BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_array .fini_array .data .ccmdata
 
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
@@ -342,7 +370,8 @@ ifeq ($(filter clean test print-config print-cc print-unsupported print-not-writ
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
 	rm -f $(OBJ); })
-$(shell echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' | cmp -s - $(BUILD)/version || { echo '$(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME)' > $(BUILD)/version; \
+VERSION_STAMP := $(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME) $(RFOUNDRY_GIT_SOURCE) $(RFOUNDRY_GIT_REPO)
+$(shell echo '$(VERSION_STAMP)' | cmp -s - $(BUILD)/version || { echo '$(VERSION_STAMP)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
 $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info || { echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' > $(BUILD)/build_info; \
 	rm -f $(BUILD)/core/hostlink/build_info.o; })
@@ -384,7 +413,8 @@ $(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(R
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
-	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\"
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
+	-DRFOUNDRY_GIT_REPO=\"$(RFOUNDRY_GIT_REPO)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto
 endif
@@ -401,9 +431,16 @@ ifneq ($(BOOT_STAGE),)
 include boot/boot.mk
 endif
 
+# Hot code builds $(OPT_HOT) where the rest is $(OPT): DSP and FEC kernels that run per sample or per burst, where
+# unrolling and scheduling pay for their flash. LTO keeps each function's level
+OPT_HOT ?= -O2
+HOT_SRC := core/dmr/fec/dmrFec.c core/dmr/fec/dmrSoftBptc.c
+$(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
+
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
+# A third-party source missing here comes from RFOUNDRY_THIRD_PARTY through vpath (platform/third_party.mk)
 $(BUILD)/third_party/%.o: third_party/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_3P) -c $< -o $@

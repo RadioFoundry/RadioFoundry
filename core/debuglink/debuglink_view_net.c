@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The net view section: the radio's own services, TCP and its services (docs/spec/tcp-services.md); "net.built=0"
-// without any of them. The net_svc section: mDNS and TFTP (mdns.md, tftp.md)
+// without any of them. The net_svc section: mDNS, TFTP and the UDP zone and channel control (mdns.md, tftp.md,
+// tcp-services.md 8)
 #include "config.h"
 #include "debuglink/debuglink.h"
 #if CONFIG_NET_LOCAL
@@ -12,6 +13,9 @@
 #endif
 #if CONFIG_MDNS || CONFIG_TFTP
 #include "net/net_services.h"
+#endif
+#if CONFIG_NET_RADIO_UDP
+#include "net/net_svc.h"
 #endif
 
 void debuglink_view_net(dl_text_t *t)
@@ -39,7 +43,11 @@ void debuglink_view_net_svc(dl_text_t *t)
 {
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_view(t);
-#else
+#endif
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_view(t);
+#endif
+#if !(CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_RADIO_UDP)
 	dl_text(t, "net_svc.built=0\n");
 #endif
 }

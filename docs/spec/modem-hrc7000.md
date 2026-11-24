@@ -212,7 +212,8 @@ releases **both** slot syncs (TXRX b23 and b22) and is also the end of every tra
 the lock, then writes only TXRX (no LAYER2_CONTROL or SLOTON write at the key-up); the first TX tick sends in the next
 slot when the estimate is the other TS's TC. A first TX-vector interrupt less than half a slot after the last receive
 one is the same slot and does not toggle the estimate. Without the lock in 1 s the start is refused (TX_REJECTED,
-nothing sent).
+nothing sent). This path needs a CACH on air (5.3): after BS bursts with no CACH, an aligned start keys as without
+a CACH, in step with the bursts heard.
 
 The same lock numbers the slot ticks on a BS signal: once it holds, each `DMR_EV_SLOT_TICK` carries the TS that the
 estimate gives for the slot starting there, and the AT bit (RX_TYPE_INFO b23) of the last CACH that named that slot,
@@ -313,6 +314,10 @@ embedded LC fragments correctly is unverified; follow the datasheet.
 "CRC good" for a deframed burst = bits 30:24 all zero. Data blocks and MBC continuation blocks have no CRC-16, so do
 not drop them on these flags; check CRC-9/CRC-32 (the MBC's CRC-16 in its last block) in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
 
+b17 (pi) clear on an encrypted call does not mean a misread. AES-256 simplex calls measured on air, recorded on the SDR
+bench and their EMBs decoded in software (270 voice bursts B-F, color code and LCSS all as expected), had PI 0 on every
+burst: the sender marks privacy only in the service options and the PI header.
+
 ### 2.8 Buffer layouts
 
 **TX RAM (0x16000000)**, datasheet table 52: 0x00–0x0B the current control burst (PI header 10 + 2 CRC, LC header / terminator
@@ -342,7 +347,7 @@ discard both. A failed late-entry checksum invalidates only the reporting slot's
 
 Nothing here confirms that b19 at a late-entry interrupt with no deframe names the burst that completed the LC rather
 than the last burst deframed; that needs on-air confirmation with calls on both slots. It does not infer a DMR
-timeslot from the chip slot: BS bursts retain their CACH TC labels.
+timeslot from the chip slot: BS bursts retain their CACH TC labels while a CACH is on air (5.3).
 
 **Voice RAM (0x16000960)**: write 27 bytes before arming a voice burst; read 27 bytes after a voice deframe interrupt
 Burst numbering for privacy keystream purposes is RX_TYPE_INFO's 1–6.
@@ -591,6 +596,7 @@ rising only (gotchas 2.9). TS and RF requests have no readable status, so the dr
 | Every receiver restart (5.2: DMR entry, a color code or framing change, a stale or lost reception, the end of every transmission) | writes INTERP_CLEAR b0-b2 and writes SYS_INTERP_LIST back to SYS_INTERP_CLEAR. Not b3 (RF RX) or the PCM pair: other drivers own them |
 | No timeslot interrupt for 200 ms while sending | the transmission ends (`dmr.tx_error=stalled`), and its receiver restart clears as above. Counted (`dmr.modem_stalls`) |
 | A SYS_INTERP_LIST cause enabled in SYS_INTERP_MASK, pending at the 10 ms polls for 50 ms with no system interrupt taken | written back to SYS_INTERP_CLEAR. Counted (`dmr.modem_stuck`) |
+| An air session or tap receiving (10.1) with no FM copy half for 200 ms (one comes every 32 ms; a copy interrupt with FM_ADDR_SW naming neither half doesn't count, one that finds the ring full does). The halted engine's check above does not run then | SYS_INTERP_LIST written back to SYS_INTERP_CLEAR, the copy set up again and the modem sources unmasked. Counted (`airp.copy_restarts`); the first one's PIC words kept apart from the engine's (`airp.copy_lost_ms`, `airp.copy_lost_regs`) |
 
 For the first stall or stuck request, the glue keeps PIC_MASK, PIC_MASK_1, PIC_INT_ST and PIC_INT_ST_1 as read before
 that poll (`dmr.modem_lost_ms`, `dmr.modem_lost_regs`, [debuglink.md](debuglink.md) 3.7). It then unmasks the modem
@@ -669,7 +675,7 @@ Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled t
 
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
-A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. The own-color-code and all-activity policies retain their existing color-code checks.
+A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. In direct mode a terminator with a good CRC, as the last burst taken, closes the window: the call is over and the channel free, as the call stack's own check has it, so a reply keyed within `DMR_CALL_ALIGN_MS` (300 ms) of the terminator, aligned to that call, is not refused. Any later burst opens the window again. Through a repeater a terminator is part of its hang and keeps the channel busy. The own-color-code and all-activity policies retain their existing color-code checks.
 
 Receive recovery uses wall time too, from both the timeslot handler and the task poll: more than 390 ms without another usable burst, 600 ms of stale activity without a usable burst, or 150 ms after a direct TX hold. A restart clears the pending recovery; subsequent slot interrupts, deframes or abnormal-slot reports schedule it again, and the 600 ms count starts with the first of them, not at the restart (after a long silence, a count from the restart would restart the receiver under the next call's first burst). A silent receiver is not restarted repeatedly. This permits recovery when timeslot interrupts stop but system interrupts continue. Host register-model tests cover stopped timeslot interrupts.
 
@@ -713,7 +719,7 @@ On the SDR bench (an MS simulator answering a confirmed packet with MS sync, 4-6
 | Each TX/RX timeslot interrupt while following one slot | alternate: our slot → TXRX = 0x8040 (receive, voice-access flag) for the next; other slot → 0x00 |
 | RadioFoundry: each RX timeslot interrupt | TXRX = 0x8040 for the coming chip slot when a voice header or voice burst came on it in the last 390 ms (no terminator since), else 0x40. Both slots can have it: an SFR user hears the talker and the repeat. Without the flag the chip leaves the voice RAM as it was, and the burst reads the last one decoded (gotchas 14.15) |
 | Voice deframe | read RX_TYPE_INFO, 27 bytes from the voice RAM; burst number from bits 14:12; LC header / terminator / CSBK / data from the RX RAM |
-| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this |
+| BS sync received (recv_sync_type 1) | the other side is a repeater: track the TC bit (RX_TYPE_INFO b22) to find which slot is ours. Locked after 4 bursts in a row, one per slot, with TC alternating; held while a burst came in the last 390 ms. RX_TYPE_INFO b19 and LAYER2_STATUS b30/b31 are not usable for this. BS sync alone doesn't prove a CACH: a direct mode sender may frame its bursts with BS sync (a simplex hotspot does), one burst every other slot, and the TC then is junk. On a channel that isn't a repeater channel, BS bursts go up with no slot number (`ts` 0) and the short LC isn't read until the first TC lock; an aligned reply keys as after MS sync. The slot numbers then hold while BS bursts come (390 ms), through a missed burst that breaks the lock, until the receiver restarts. Numbered from the junk TC, a TS1 call was labeled TS2 and dropped as the other slot's |
 | Any color code | no CC filter: LOCAL_CC cc_opt = 1 deframes every code, RX_TYPE_INFO b7:4 gives the code heard, and RF_MODE b12 is 0 (fixed sync threshold, as cc_opt 1 requires). The receiver restarts at the end of a reception as with a filter. A scan stepping LOCAL_CC through the codes heard nothing on the SDR bench: it stepped at timeslot interrupts, and they stop while the chip hears a code it doesn't deframe |
 | Late entry (bit 2) | embedded LC is in the RX RAM; voice reception should start at the next burst A |
 | End | terminator (data type 2) or loss of bursts; TXRX_CTRL = 0 |
@@ -728,6 +734,11 @@ In layer 2 mode the RX RAM also holds each burst received as bits, not documente
 |---|---|
 | RX 0x30-0x53, RX 0x60-0x83 | one burst each, 288 hard bits in the HR_C6000 layout ([hrc6000-registers.md](hrc6000-registers.md) 2.2): the CACH (24), then the burst deframed, a voice-layout burst's 48-bit sync / EMB / RC field first. Which area takes which slot follows RX_TYPE_INFO b19, not the CACH TC |
 | RX 0x48, RX 0x1C8 | the soft values of those two bursts without the CACH, one byte per bit, bits 5-0; the hard bit is 32 or more |
+
+The soft values are in the HR_C6000's format ([modem-hrc6000.md](modem-hrc6000.md) 5.8): bits 5-0 in two's
+complement, negative for a 1. Each area holds the 68 bits of the middle field first, then the 196 info bits in burst
+order, so a data burst's info bits start at RX 0x48 + 68. RX 0x48 holds the burst of the report being read, on either
+slot; the engine copies its info bits for soft combining ([dmr-modem.md](dmr-modem.md) 2.2.1).
 
 The first area's soft values overwrite the start of the second area, its CACH and field among them: that burst's
 field is read from its soft values at 0x1C8. The engine reads the tap after a slot it listened to while sending, for a
@@ -1068,7 +1079,7 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 | 15 | Timeslot handler | run it from RAM so flash busy time adds no jitter |
 | 16 | Calibration | SIG_CENTER and RF_MOD_BIAS_CTRL from factory data |
 | 17 | Interrupt masking | PIC_MASK bits 29-31 and PIC_MASK_1 bit 0 (3.2) |
-| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run (3.3) |
+| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run; in an air session, set the copy up again and unmask the modem sources after 200 ms with no half (3.3) |
 
 ---
 
@@ -1098,6 +1109,7 @@ output. Whether 4FSK reaches it whole (de-emphasis, the band's edges, the level)
 | Save | SYS_INTERP_MASK, FM_BANDWIDTH, FM_DEV_COEF |
 | Copy set-up | TXRX 0, SLOTON 0, LAYER2_CONTROL 0xC0, FM_PTT 0, AUDIO_CONTROL FM playback (b6) off, FM_BANDWIDTH 0x00 (band-pass off, 12.5 kHz), FM_DEV_COEF 0x40A25, WORK_MODE 0x80, SYS_INTERP_CLEAR and MASK = bit 14 + bit 12 |
 | Each half | Bit 14: the half FM_ADDR_SW names into a 512-sample ring (two halves), stamped with the interrupt's time less 255 samples. A half that finds the ring full is dropped and the next one is flagged as a gap |
+| Watchdog | No half for 200 ms while receiving, not suspended: SYS_INTERP_LIST to SYS_INTERP_CLEAR, the copy set-up again, the next half a gap; the glue unmasks the modem sources (3.3, `airp.copy_restarts`) |
 | Session | The modem task feeds each half to the soft modem (`core/air/air_softmodem.h`), resetting it at a flagged half; its chunks go out as `AIR_EV_RX` |
 | Undo | Mask, band and coefficient back; TXRX 0, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL 0xC0, TXRX 0xC00000 then 0. A mode change before the undo leaves the band and coefficient to the next FM entry and puts back only the mask (only power-on writes it otherwise) |
 

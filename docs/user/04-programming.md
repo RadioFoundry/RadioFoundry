@@ -45,6 +45,10 @@ nearest new level.
 
 ### Programming several radios
 
+Opening a saved file or draft sends its valid settings area, including its channel modes and trunking systems.
+After reading from a radio, edits on that connection merge only the settings you changed, preserving settings
+changed in the radio's menus. A file without a valid settings area leaves the radio's existing area intact.
+
 To put one codeplug into several radios, write it to each in turn. Before each write the editor checks which radio is
 connected. A radio swapped on the programming cable is read again before anything is written, so the write is
 compared with that radio's codeplug, not the last one's.
@@ -83,7 +87,9 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
 | Problems | Errors and warnings, each with a link to the record |
 
-In a table, double-click a cell or type on it to edit it in place. Click a column heading to sort, and type in the
+In a table, double-click a cell or type on it to edit it in place. The RX Tone and TX Tone fields list the CTCSS tones
+and DCS codes. Typing narrows the list, and the arrow keys and Enter pick a tone. A tone missing from the list, such as
+69.4, is taken as typed, and a short DCS code such as D23 becomes D023N. Click a column heading to sort, and type in the
 filter to narrow the rows. Check rows and choose **Bulk Edit** to set one field on all of them (not on Zones or RX Lists, whose members are
 edited in their own dialog). **Undo** and **Redo**
 cover every change, including an import.
@@ -121,8 +127,9 @@ Per system:
 
 When the codeplug holds keys, **Save** as a codeplug file asks whether to include them;
 they are left out unless you tick **Include the keys in this file**. Anyone with a file that holds them can read them.
-CSV and qdmr files hold neither systems nor channel modes: a channel of another mode goes into them as a receive-only
-DMR channel, and comes back from one as that. Keep a codeplug file for them.
+A qdmr file holds systems and channel modes in a block of its own that qdmr ignores (below), but never keys. CSV files
+hold neither: a channel of another mode goes into one as a receive-only DMR channel, and comes back from one as that.
+Keep a codeplug file for them.
 
 ### P25 and NXDN
 
@@ -228,7 +235,8 @@ saving it again replaces the date and time.
 CSV files have a header row with the column names, and refer to other records by name (a channel's TX contact, a
 zone's channels). Save a table first to see the columns. An import matches rows to existing records by number, then by
 name. A file can hold only some columns; the others keep their values. Records missing from the file are removed.
-Values the editor can't take are listed by row and column after the import.
+Values the editor can't take are listed by row and column after the import. A channel's TX timeout rounds up to the
+next 15 s step, as the radio stores it (100 s becomes 105 s).
 
 A qdmr file replaces the channels, zones, contacts, DTMF contacts, RX group lists, APRS configurations and the Radio
 tab's settings other than the ARS server and IP gateway in one change, so one **Undo** reverses it. The VFOs and the DMR ID database stay as they were.
@@ -236,6 +244,13 @@ Afterwards the editor lists what it changed or left out, such as scan lists, enc
 shortened. Saving as qdmr YAML lists what qdmr's format can't hold: SFR settings, power levels qdmr has no name for,
 and locations, which are rounded to 6-character grid locators (about 5 km). The Tools page converts between qdmr YAML
 and codeplug files too, and converts an original firmware codeplug to either.
+
+Systems, channel modes (Tier III, P25, NXDN) and **Accept Invalid CRC** go into the qdmr file in a `radioFoundry`
+block. qdmr opens the file and ignores the block, and never writes one: save from the Codeplug Editor to keep the block.
+Opening a file with the block replaces the codeplug's systems too. Opening a file without one, such as any file qdmr
+wrote, keeps the systems. Keys are never saved in the file: when the file is opened again in a codeplug that has the
+same system, the system keeps its key; anywhere else, enter the key again on the **Systems** tab. The block's keys are
+in the [qdmr YAML spec](../spec/qdmr-yaml.md#37-the-radiofoundry-block).
 
 ### DMR ID database and contacts from RadioID.net
 

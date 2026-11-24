@@ -229,6 +229,11 @@ tr:last-child > td, tr:last-child > th { border-bottom: 0; }
 .kv th { width: 35%; color: var(--muted); }
 details summary { cursor: pointer; }
 details p { margin: var(--space-2) 0 0; font-weight: 400; }
+/* the Support tab's FAQ (support/faq.html): one question a row, the answer under it */
+.faq-item { border-bottom: 1px solid var(--border); padding: var(--space-3) 0; }
+.faq-item > summary { font-weight: 600; }
+.faq-item > :not(summary) { max-width: 70ch; }
+.faq-item ul { padding-left: var(--space-5); }
 .toc-inline { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-4); }
 .filter-bar input { font: inherit; padding: var(--space-2) var(--space-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); width: min(100%, 360px); margin-bottom: var(--space-3); }
 
@@ -306,6 +311,23 @@ details p { margin: var(--space-2) 0 0; font-weight: 400; }
 /* tools */
 .drop { display: block; border: 2px dashed var(--border); border-radius: var(--radius); padding: var(--space-5); text-align: center; cursor: pointer; color: var(--muted); }
 .drop input { display: block; margin: 0 auto var(--space-2); }
+.tle-selection { border: 0; margin: var(--space-4) 0; padding: 0; }
+.tle-selection legend { font-weight: 600; margin-bottom: var(--space-2); }
+.tle-search { display: grid; gap: var(--space-1); max-width: 42rem; margin: var(--space-3) 0; }
+.tle-search input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+.tle-profile-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: 0 var(--space-4); }
+.tle-profile { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--space-1) var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--border); }
+.tle-profile input { flex: none; margin: 0.2em 0 0; accent-color: var(--accent); }
+.tle-profile-name { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.tle-profile-detail { display: block; grid-column: 2; color: var(--muted); font-size: 0.88em; }
+.tle-submit-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.satellite-tle #satellite-tle-status { margin-top: var(--space-3); }
+.tle-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.tle-browse { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; }
+.tle-browse input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tle-browse:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+.tle-provider { display: grid; gap: var(--space-1); max-width: 42rem; margin-top: var(--space-3); }
+.tle-provider input { width: 100%; min-height: 44px; padding: 0 var(--space-2); color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; }
 
 /* flasher */
 .flasher { display: grid; gap: var(--space-3); }
@@ -568,7 +590,8 @@ th[aria-sort="ascending"] .grid-sort::after { content: " ▲"; }
 th[aria-sort="descending"] .grid-sort::after { content: " ▼"; }
 table.grid td[data-col] { cursor: cell; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
 table.grid td:focus { outline: 2px solid var(--focus); outline-offset: -2px; }
-table.grid td.editing { padding: 0; }
+/* position: Tom Select's hidden original input stays in the cell instead of widening the page */
+table.grid td.editing { padding: 0; position: relative; }
 table.grid td.editing input, table.grid td.editing select { font: inherit; width: 100%; min-width: 7rem; padding: var(--space-1) var(--space-2);
 	border: 2px solid var(--focus); background: var(--surface); color: var(--text); }
 table.grid td.c-num { font-variant-numeric: tabular-nums; }
@@ -631,6 +654,35 @@ dialog.editor-dialog { max-width: 52rem; max-height: calc(100vh - 4rem); overflo
 .form-toggle[aria-expanded="true"]::before { content: "▾ "; }
 .form-toggle:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
 .form-row input:disabled, .form-row select:disabled { opacity: 0.5; }
+/* the searchable lists (Tom Select, editor/combo.js): its layout, the site's colors and the editor inputs' size */
+.ts-control, .ts-wrapper.single.input-active .ts-control, .ts-wrapper.single .ts-control, .full .ts-control {
+	background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: none;
+	padding: var(--space-1) var(--space-2); min-height: 0; }
+.ts-wrapper.single .ts-control { padding-right: 2rem; }
+.ts-dropdown, .ts-control, .ts-control input { color: var(--text); font: inherit; line-height: var(--line); }
+.ts-control input::placeholder { color: var(--muted); }
+.focus .ts-control { box-shadow: none; border-color: var(--focus); outline: 1px solid var(--focus); }
+.ts-wrapper.single .ts-control::after { border-color: var(--muted) transparent transparent transparent; }
+.ts-wrapper.single.dropdown-active .ts-control::after { border-color: transparent transparent var(--muted) transparent; }
+.disabled .ts-control { opacity: 0.5; background: var(--surface); }
+.ts-dropdown { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow);
+	margin-top: 2px; z-index: 50; }
+.ts-dropdown-content { max-height: 16rem; }
+.ts-dropdown .option, .ts-dropdown .create, .ts-dropdown .no-results { padding: var(--space-1) var(--space-2); font-variant-numeric: tabular-nums; }
+.ts-dropdown .active, .ts-dropdown .active.create { background: var(--accent-soft); color: var(--text); }
+.ts-dropdown .create, .ts-dropdown .no-results { color: var(--muted); }
+.ts-dropdown [data-selectable] .highlight { background: none; font-weight: 700; }
+.ts-dropdown .option.selected { font-weight: 600; }
+/* in a table cell: the cell's own edit frame, the list over the page */
+table.grid td.editing .ts-control { border: 2px solid var(--focus); border-radius: 0; outline: none; min-width: 7rem; }
+/* Tom Select parks its input at left: -10000px while a value is shown; focusing it there scrolled the table back to
+   its first column */
+table.grid td.editing .input-hidden .ts-control > input { left: 0; }
+/* one line in a narrow cell: the text box's own 7rem minimum would wrap it under the value */
+table.grid td.editing .ts-control { flex-wrap: nowrap; }
+table.grid td.editing .ts-control > input { min-width: 1rem; }
+.ts-wrapper.single.typing .ts-control > .item { display: none; }
+body > .ts-dropdown { font-size: var(--text-sm); z-index: 60; }
 .form-check > .small { order: 3; grid-column: 1 / -1; }	/* a checkbox's help: under the box and its label */
 /* a table inside the form: cells and inputs sized to their numbers, so it fits without scrolling */
 .form-table .table-wrap { margin: 0; }

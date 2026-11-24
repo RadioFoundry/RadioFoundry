@@ -98,6 +98,8 @@ HWOPT_OP_LIST, HWOPT_OP_SET = range(2)
 AIR = 0x24                          # the air interface on the bench (CONFIG_AIR_RAW; docs/spec/debuglink.md 3.28)
 AIR_OP_STATUS, AIR_OP_TAP_START, AIR_OP_TAP_READ, AIR_OP_TAP_STOP, AIR_OP_OPEN, AIR_OP_CLOSE, AIR_OP_RX_READ, \
     AIR_OP_RX_RESTART, AIR_OP_TX_DATA, AIR_OP_TX_KEY, AIR_OP_TX_END, AIR_OP_TX_ABORT = range(12)
+SUPPORT = 0x25                      # the support info (CONFIG_SUPPORT_INFO; docs/spec/debuglink.md 3.29)
+SUPPORT_OP_INFO, SUPPORT_OP_HASH = range(2)
 AIR_OPEN_SOFT = 0x01
 AIR_TX_LAST = 0x01
 AIR_FIT = {0x1: "rx", 0x2: "tx", 0x4: "soft", 0x8: "shape_approx", 0x10: "dev_approx", 0x20: "rate_doubled",
@@ -152,7 +154,7 @@ SNMP_FLAGS = {"off": 0x01, "rf_off": 0x02, "rf_write": 0x04, "usb_traps_off": 0x
 APRS_FIELDS = {name: i for i, name in enumerate(
     ["tx", "region", "freq_hz", "ssid", "lat", "lon", "pos_src", "interval_s", "smart", "via", "dmr_dst", "level",
      "path", "kiss", "dmr_udt", "after_ptt", "distance_m", "rx", "igate", "igate_tx", "digi", "txdelay",
-     "dmr_gps", "to_is", "power", "ambiguity"])}
+     "dmr_gps", "to_is", "power", "ambiguity", "mute"])}
 APRS_REGIONS = {"na": 0, "eu": 1, "au": 2, "nz": 3, "jp": 4, "cn": 5, "custom": 6}
 APRS_POS_SRCS = {"auto": 0, "gps": 1, "host": 2, "fixed": 3}
 APRS_VIAS = {"rf": 0, "dmr": 1, "both": 2}
@@ -333,7 +335,7 @@ def find_cables():
 
 
 # Commands (and their ops) that only read: everything else restarts the radio or changes it
-READ_ONLY = {"hwopt": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+READ_ONLY = {"hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
              "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
              "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
              "aprobe": ("status", "reg", "samples", "ram", "watch")}
@@ -712,6 +714,24 @@ class DebugLink:
                         "state": kv.get(f"hwopt.{i}.state") or ("ask" if value < 0 else "ok")})
         return out
 
+    def support(self):
+        """The support info: {source, repo, hw.<part>, image.addr, image.size} (docs/spec/support-info.md)"""
+        return parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_INFO]))[1].decode("ascii", "replace"))
+
+    def image_hash(self, progress=None):
+        """The firmware image's SHA-256 as hex, a step of up to 32 KB per request (the radio carries on between them); None
+        where the platform reports no image span. progress(done, size) after each pending step."""
+        for _ in range(4096):
+            kv = parse_kv(self.request(SUPPORT, bytes([SUPPORT_OP_HASH]))[1].decode("ascii", "replace"))
+            state = kv.get("image.state")
+            if state == "done":
+                return kv.get("image.sha256")
+            if state != "pending":
+                return None
+            if progress is not None:
+                progress(int(kv.get("image.done", "0")), int(kv.get("image.size", "0")))
+        raise DebugLinkError("image hash: no end")
+
     def hwopt_set(self, option, choice):
         """Store a choice; raises DebugLinkError (status 7) when the board refuses it or the radio transmits."""
         self.request(HWOPT, bytes([HWOPT_OP_SET, option, choice]))
@@ -1086,8 +1106,9 @@ class DebugLink:
             w, h, bpp, fmt, it, ib, il, ir, total, off, size, frame, drawing = struct.unpack_from("<HHBBBBBBIIIIB", r)
             if off != len(stream):
                 raise DebugLinkError(f"screenshot chunk at {off}, expected {len(stream)}")
+            # Byte 27: bit 0 a frame being drawn, bit 1 the frame buffer holds the safe area only (unpack_frame)
             last = {"width": w, "height": h, "bpp": bpp, "insets": (it, ib, il, ir), "size": size, "stream": total,
-                    "frame": frame, "drawing": bool(drawing)}
+                    "frame": frame, "drawing": bool(drawing & 1), "safe_area": bool(drawing & 2)}
             hdr = SHOT_HDR - 1 + (32 if bpp == 4 else 0)       # r: the payload after the status byte
             if first is None:
                 first = dict(last, palette=struct.unpack_from("<16H", r, SHOT_HDR - 1) if bpp == 4 else None)
@@ -1560,12 +1581,12 @@ class DebugLink:
     def data_settings(self, ars_server=0, radio_check_reply=True, call_alert_ack=True, lrrp_reply=True,
                       sms_etsi=False, radio_check_etsi=False, sms_format=None):
         """The data service settings: ARS server ID (0 off), the answer switches, the ETSI forms. sms_format: the
-        default text message format, "etsi_ip" (the radio's default), "etsi" or "tms"; None: "etsi" when sms_etsi,
+        text message format: "auto", "etsi_ip", "etsi" or "tms"; None: "etsi" when sms_etsi,
         else "etsi_ip"."""
         if sms_format is None:
             sms_format = "etsi" if sms_etsi else "etsi_ip"
         flags = (1 if radio_check_reply else 0) | (2 if call_alert_ack else 0) | (4 if lrrp_reply else 0) | \
-            {"tms": 0, "etsi": 8, "etsi_ip": 32}[sms_format] | (16 if radio_check_etsi else 0)
+            {"tms": 0, "etsi": 8, "etsi_ip": 32, "auto": 40}[sms_format] | (16 if radio_check_etsi else 0)
         self.data_request(DATA_OP_SETTINGS, struct.pack("<IB", int(ars_server) & 0xFFFFFF, flags))
 
     def inbox(self, index=0):
@@ -1578,7 +1599,7 @@ class DebugLink:
             raise
         src, dst, group, flags = struct.unpack_from("<IIBB", r)
         return {"src": src, "dst": dst, "group": bool(group), "unread": bool(flags & 1),
-                "format": "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
+                "format": "t3_udt" if flags & 8 else "etsi_ip" if flags & 4 else "etsi" if flags & 2 else "tms", "text": r[10:].decode("latin-1")}
 
     def mark_read(self, index=0):
         self.data_request(DATA_OP_MARK_READ, bytes([index]))
@@ -1704,14 +1725,27 @@ def lz4_block(src, size):
 
 def unpack_frame(info, fb):
     """(info, bytes) in the RGB565 form's terms from a packed screenshot's frame buffer: a 16-color frame through its
-    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp."""
+    palette, a 1 bpp or RGB565 frame as it is. info keeps the panel's depth as native_bpp. A frame buffer of the safe
+    area only (a 16-color one) is placed inside the insets, which get palette entry 0, the background, as the radio
+    paints them: the whole panel either way."""
     w, h, bpp = info["width"], info["height"], info["bpp"]
     out = {"width": w, "height": h, "insets": info["insets"], "native_bpp": bpp, "packed": True}
     if bpp == 4:
         pal = [struct.pack("<H", c) for c in info["palette"]]
         pair = [pal[b >> 4] + pal[b & 15] for b in range(256)]
-        stride = (w + 1) // 2
-        data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
+        if info.get("safe_area"):
+            t, b, lft, rgt = info["insets"]
+            fw, fh = w - lft - rgt, h - t - b
+            stride = (fw + 1) // 2
+            edge = pal[0] * w
+            rows = [edge] * t
+            for y in range(fh):
+                inner = b"".join(pair[c] for c in fb[y * stride:(y + 1) * stride])[:fw * 2]
+                rows.append(pal[0] * lft + inner + pal[0] * rgt)
+            data = b"".join(rows + [edge] * b)
+        else:
+            stride = (w + 1) // 2
+            data = b"".join(b"".join(pair[b] for b in fb[y * stride:(y + 1) * stride])[:w * 2] for y in range(h))
         bpp = 16
     else:
         data = fb
@@ -2597,6 +2631,14 @@ def cmd_hwopt(link, a):
     return 0
 
 
+def cmd_support(link, a):
+    for k, v in link.support().items():
+        print(f"{k}={v}")
+    h = link.image_hash()
+    print(f"image.sha256={h}" if h else "image.sha256=unavailable")
+    return 0
+
+
 def cmd_air(link, a):
     if a.op == "status":
         st = link.air_status()
@@ -2744,8 +2786,9 @@ def self_test():
         packed form (packed False, or the status it answers). redraw_at: the reply at which a new frame is drawn;
         shrink: that frame is blank, so its stream is shorter."""
 
-        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None):
+        def __init__(self, packed=True, redraw_at=None, drawing=0, shrink=False, fb=None, safe=False):
             self.packed_shots, self.packed, self.redraw_at, self.drawing = None, packed, redraw_at, drawing
+            self.safe = safe        # the frame buffer is the safe area of a panel with 1 px insets all round
             self.shrink, self.replies, self.frame = shrink, 0, 7
             self.fb = fb or bytes([0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0x00])
             self.w = len(self.fb) * 2 // 3
@@ -2766,8 +2809,13 @@ def self_test():
                 chunk = z[off:off + 4]          # small windows: several replies
                 drawing = self.drawing > 0
                 self.drawing -= 1
-                r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb), self.frame,
-                                drawing) + struct.pack("<16H", *self.pal) + chunk
+                if self.safe:
+                    r = struct.pack("<HHBBBBBBIIIIB", self.w + 2, 5, 4, SHOT_LZ4, 1, 1, 1, 1, len(z), off, len(self.fb),
+                                    self.frame, drawing | 2)
+                else:
+                    r = struct.pack("<HHBBBBBBIIIIB", self.w, 3, 4, SHOT_LZ4, 1, 0, 0, 0, len(z), off, len(self.fb),
+                                    self.frame, drawing)
+                r += struct.pack("<16H", *self.pal) + chunk
                 return 0, r
             rgb = b"".join(struct.pack("<H", self.pal[(self.fb[i // 2] >> (0 if i & 1 else 4)) & 15])
                            for i in range(self.w * 3))
@@ -2779,6 +2827,16 @@ def self_test():
     check(stable and info["packed"] and data == want, "packed: 16 colors decode to RGB565 through the palette")
     check((info["bpp"], info["format"], info["total"], info["native_bpp"]) == (16, 1, 36, 4), "packed: info as RGB565")
     check(to_rgb(info, data)[:2] == (6, 3), "packed: to_rgb takes it")
+    # The safe area only: the insets come back in palette entry 0, the frame buffer's rows inside them
+    info, data, stable = FakeRadio(safe=True).screenshot()
+    edge = struct.pack("<H", 0x1000)
+    rows = [want[i * 12:(i + 1) * 12] for i in range(3)]
+    check(stable and (info["width"], info["height"], info["total"]) == (8, 5, 80) and
+          data == edge * 8 + b"".join(edge + r + edge for r in rows) + edge * 8,
+          "packed, safe area only: the insets rebuilt around it")
+    r = FakeRadio(safe=True, drawing=1)
+    info, data, stable = r.screenshot()
+    check(stable and r.packed_shots, "safe area only: the drawing bit read alone (a frame drawn, then a whole one)")
     r = FakeRadio(redraw_at=2)
     info, data, stable = r.screenshot()
     check(stable and r.replies > 2 and data != want, "a frame drawn during a pass: read again")
@@ -2933,6 +2991,7 @@ def main(argv=None):
     p = sub.add_parser("hwopt", help="hardware options: list, or set OPTION CHOICE (docs/spec/debuglink.md 3.25)")
     p.add_argument("option", nargs="?", help="number or name, e.g. 'Board revision'")
     p.add_argument("choice", nargs="?", help="one of the option's choices, e.g. V4A/V5")
+    sub.add_parser("support", help="the support info: build source, hardware, image hash (docs/spec/debuglink.md 3.29)")
     p = sub.add_parser("air", help="the air interface on the bench (CONFIG_AIR_RAW builds; docs/spec/debuglink.md 3.28)")
     p.add_argument("op", choices=["status", "tap", "open", "rx", "tx", "restart", "abort", "close"])
     p.add_argument("--seconds", type=float, default=5.0, help="tap, rx: how long")
@@ -3049,6 +3108,8 @@ def main(argv=None):
                 return cmd_watchdog(link, a)
             elif a.cmd == "hwopt":
                 return cmd_hwopt(link, a)
+            elif a.cmd == "support":
+                return cmd_support(link, a)
             elif a.cmd == "air":
                 return cmd_air(link, a)
             elif a.cmd == "storage":

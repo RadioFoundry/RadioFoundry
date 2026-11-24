@@ -134,6 +134,17 @@ static bool reboot(uint8_t mode)
 	return false;	// not reached
 }
 
+#if CONFIG_SUPPORT_INFO
+// The linker's: the application's base (board.mk APP_BASE) and the end of its .bin (common.ld)
+extern const uint8_t __app_base[], __image_end[];
+
+static void image(uint32_t *addr, uint32_t *len)
+{
+	*addr = (uint32_t)(uintptr_t)__app_base;
+	*len = (uint32_t)(__image_end - __app_base);
+}
+#endif
+
 const hal_system_t stm32_system = {
 	.chip = chip,
 	.read = read,
@@ -142,6 +153,9 @@ const hal_system_t stm32_system = {
 	.irq_stack_free = stm32_irq_stack_free,	// irq_stack.c
 #if CONFIG_DEBUGLINK
 	.reg = reg,
+#endif
+#if CONFIG_SUPPORT_INFO
+	.image = image,
 #endif
 #if CONFIG_STUB_ENTRY
 	.stub_region = stm32_stub_region,	// stub_entry.c

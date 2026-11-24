@@ -8,6 +8,7 @@
 #include "pins.h"
 #include "platform.h"
 #include "cal/baofeng/baofeng_cal.h"
+#include "ui/fmt.h"
 #if CONFIG_BCAST_FM
 #include "bcast/rda5807m/rda5807m_hal.h"
 #include "hrc_bcast.h"
@@ -80,6 +81,18 @@ static const keymap_entry_t keymap[] = {
 static const uint8_t side_keys[] = { KEY_SK1, KEY_SK2, KEY_SOS, KEY_AB, KEY_VFO_MR };
 static const char *const side_key_names[] = { "SK1", "SK2", "SOS", "A/B", "VFO/MR" };
 
+// The support info (docs/spec/support-info.md 2): the RF chip and the set-up this board drives it with; the HR_C7000
+// is the MCU line
+static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
+{
+	if (i != 0) {
+		return false;
+	}
+	*role = BOARD_HW_RF;
+	str_copy(buf, len, "FD6818 set-up B");
+	return true;
+}
+
 const board_t board = {
 	.name = "DM-1801 Pro",
 	.caps = CAP_KEYPAD | (CONFIG_DMR ? CAP_DMR | CAP_BEEP_NOT_ON_AIR : 0) | (CONFIG_BCAST_FM ? CAP_BCAST_FM : 0) |
@@ -123,6 +136,7 @@ const board_t board = {
 	.netif = &hostlink_ppp_netif,	// IPv4 over PPP on the programming cable's UART (docs/spec/ppp.md)
 #endif
 	.system = &hrc_system,
+	.hw_line = hw_line,
 #if CONFIG_BCAST_FM
 	.bcast = &rda5807m_hal,
 #endif
@@ -153,13 +167,16 @@ static void io_init(void)
 
 // Everything the core stores lives above the write floor (hardware-dm1801pro.md 6.1): the data flash holds the radio's
 // own data below 0x700000 (settings, contacts, fonts, voice prompts, recordings), so the open-firmware codeplug's 64 KB
-// "EEPROM" image sits at 0x700000, the settings ring and the sector journal after it, the 1 MB open-firmware "flash"
-// image at 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory
-// calibration is read only, so the open-firmware CPS gets no calibration window
+// "EEPROM" image sits at 0x700000, the settings ring and sector journal after it, optional satellite snapshots at
+// 0x71B000..0x71DFFF, the stub write-test sectors at 0x71E000..0x71FFFF, the 1 MB open-firmware "flash" image at
+// 0x720000 (where the DMR ID database is read too) and the native codeplug in the last 1 MB. The factory calibration is
+// read only, so the open-firmware CPS gets no calibration window
 static const hal_flash_map_t flash_map = {
 	.settings_addr = 0x711000u,
 	.settings_size = 0x008000u,	// 8 sectors
 	.journal_addr = 0x719000u,	// 2 sectors
+	.satellite_addr = CONFIG_SATELLITE_TLE ? 0x71B000u : 0u,
+	.satellite_size = CONFIG_SATELLITE_TLE ? 0x003000u : 0u,	// 3 sectors; 8 KB remains for the stub write test
 	.openfw_eeprom = 0x700000u,
 	.openfw_flash = 0x720000u,
 	.openfw_end = 0xF00000u,

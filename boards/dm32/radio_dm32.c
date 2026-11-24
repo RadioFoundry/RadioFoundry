@@ -116,6 +116,7 @@ static bool afsk_tx;		// APRS tones play through the prompt FIFO into the modula
 #define AMP_PCM		0x02u	// speaker PCM
 #define AMP_SIDE	0x40u	// the transmitted tone's sidetone
 #define AMP_BCAST	0x04u	// the broadcast receiver (dm32_bcast_audio)
+static uint8_t amp_users;	// AMP_* bits (the debug link's board.amp_users)
 
 static void speaker_source(void);
 static void ring_play(void);
@@ -320,10 +321,11 @@ static void dmr_disarm(void)
 static bool afsk_tx_route(bool on);
 static void aprs_listen_route(bool on);
 
-// PCM amplitude per AFSK level step: 50 (nominal) = 2750, about 3 kHz peak. Bench, 25 kHz: 2925 gave 3.3 kHz peak;
-// 5850 and up are limited at 5.1 kHz peak, 4.5 kHz on the tones
+// PCM amplitude per AFSK level step: 50 (nominal) = 450, about 3.2 kHz peak. The tones go out with the microphone on
+// the DMR path (afsk_tx_route), where they come out much hotter than with it on the FM path, with mark about 4 dB
+// under space. Bench, 25 kHz: 435 gave 3.1 kHz peak, 725 4.7 kHz; 1450 and up are limited near 5.2 kHz
 static const hrc_afsk_board_t afsk_board = {
-	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 55,
+	.tx_route = afsk_tx_route, .listen = aprs_listen_route, .amp_per_level = 9,
 };
 #endif
 
@@ -382,6 +384,15 @@ static void wake(void)
 	}
 }
 
+// Set-up B's two receive sub-audio words: CTCSS one pair, DCS and no tone the other
+static void css_words(bool ctcss)
+{
+	if (rf_b) {
+		fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
+		fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
+	}
+}
+
 static void set_mode(radio_mode_t m)
 {
 	wake();
@@ -389,7 +400,8 @@ static void set_mode(radio_mode_t m)
 		return;
 	}
 	if (m == RADIO_MODE_DMR && CONFIG_DMR) {
-		fd6818_set_mode(&fd, FD6818_MODE_DMR);
+		fd6818_set_mode(&fd, FD6818_MODE_DMR);	// the FM channel's receive tone off (0x51 would key it on the 4FSK)
+		css_words(false);
 		hrc_dac_b_power(true);	// FM receive powers DAC B down; DMR needs it (hardware-dm32.md 3.8)
 		hrc7000_dmr_enter(&modem, hrc7000_mod_bias(bf_cal_tx_center(), bf_cal_modcal(rx_hz)), MIC_GAIN_DB);
 		mode = RADIO_MODE_DMR;
@@ -438,12 +450,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
-		if (rf_b) {
-			// CTCSS one pair, DCS and no tone the other
-			bool ctcss = tone != NULL && tone->type == TONE_CTCSS;
-			fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
-			fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
-		}
+		css_words(tone != NULL && tone->type == TONE_CTCSS);
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif
@@ -732,11 +739,15 @@ static void aprs_listen_route(bool on)
 
 static void amp(uint8_t who, bool on)
 {
-	static uint8_t users;
 	uint32_t s = hrc_irq_save();
-	users = on ? (uint8_t)(users | who) : (uint8_t)(users & ~who);
-	hrc_pin_write(PIN_AMP_EN, users != 0);
+	amp_users = on ? (uint8_t)(amp_users | who) : (uint8_t)(amp_users & ~who);
+	hrc_pin_write(PIN_AMP_EN, amp_users != 0);
 	hrc_irq_restore(s);
+}
+
+uint8_t dm32_amp_users(void)
+{
+	return amp_users;
 }
 
 static void audio(bool on)
@@ -785,8 +796,10 @@ void dm32_speaker_pcm(bool on)
 
 #if CONFIG_APRS_AFSK
 // APRS AFSK (hrc_afsk.c): during an FM transmission the prompt FIFO's audio goes to the modulator (the path that put
-// beeps on DMR bursts, modem-hrc7000.md 8.4), so the tones go there with the microphone muted. False when the radio
-// isn't transmitting FM
+// beeps on DMR bursts, modem-hrc7000.md 8.4). In FM TX the microphone takes the analog FM path (0x2E = 1), which
+// muting the codec's microphone doesn't reach, so the voice rode on the tones (#828). While the tones play the
+// microphone goes to the DMR path (0x2E = 0) as well, where the codec mute holds it. The FD6818's own audio input
+// stays on: the tones reach the modulator through it. False when the radio isn't transmitting FM
 static bool afsk_tx_route(bool on)
 {
 	if (on && (!transmitting || mode != RADIO_MODE_FM)) {
@@ -794,6 +807,7 @@ static bool afsk_tx_route(bool on)
 	}
 	afsk_tx = on;
 	hrc7000_codec_mute(&modem, on, false);
+	hrc_pin_write(PIN_MIC_PATH, !on);
 	ring_play();
 	return true;
 }
@@ -807,6 +821,11 @@ void dm32_bcast_audio(bool on)
 	amp(AMP_BCAST, on);
 }
 #endif
+
+char dm32_rf_setup(void)
+{
+	return rf_unlocked ? '-' : rf_b ? 'B' : 'A';
+}
 
 void dm32_radio_diag(dm32_radio_diag_t *d)
 {
@@ -849,7 +868,16 @@ bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool 
 	return true;
 }
 
+// Digital gain on the mic PCM before the AMBE+2 encoder (hal_radio_t.mic_pcm_db, with the core's limiter). Measured
+// off air: speech from this radio's AMBE+2 encoder decoded at -31 dBFS (rms of the loudest 30 % of 100 ms blocks)
+// against -18 dBFS for another maker's handheld decoded the same way, while the encoder itself reaches full scale (a
+// speech clip on DMR). 12 dB brings normal speech to about that radio's level. Digital rather than the codec's
+// analogue gain (GCR_ADCL, 11 dB): that register also feeds the VOX meter and every other use of the mic ADC, and a
+// 16-bit PCM at -31 dBFS still has 60 dB and more over its quantization, so the analogue gain buys nothing audible
+#define MIC_PCM_DB		12
+
 const hal_radio_t dm32_radio = {
+	.mic_pcm_db = MIC_PCM_DB,
 	.init = init,
 	.set_mode = set_mode,
 	.rx = rx,

@@ -298,7 +298,8 @@ export const TABLES = {
 			c("RX Frequency (MHz)", "rxHz", asFreq(), (r) => mhz(r.rxHz), ["RX Frequency", "RX Freq", "Receive Frequency", "RX"]),
 			c("TX Frequency (MHz)", "txHz", asFreq(), (r) => mhz(r.txHz), ["TX Frequency", "TX Freq", "Transmit Frequency", "TX"]),
 			c("Power", "power", asWord(POWER, 0, 0, 10), (r) => powerText(r.power), ["TX Power"]),
-			c("Timeout (s)", "tot", asInt(0, 3825, 0), undefined, ["Timeout", "TOT"]),
+			// the timeout rounds up to the 15 s steps the record stores, as the editor shows it
+			c("Timeout (s)", "tot", (s) => Math.ceil(asInt(0, 3825, 0)(s) / 15) * 15, undefined, ["Timeout", "TOT"]),
 			c("Bandwidth (kHz)", "bw", (s) => {
 				const v = s.trim().replace(",", ".").replace(/\s*khz$/i, "");
 				if (v === "" || v === "12.5") return 12.5;
@@ -322,6 +323,7 @@ export const TABLES = {
 			c("No Beep", "noBeep", asBool, (r) => yesNo(r.noBeep)),
 			c("No Eco", "noEco", asBool, (r) => yesNo(r.noEco)),
 			c("DMO", "dmo", asBool, (r) => yesNo(r.dmo)),
+			c("Accept Invalid CRC", "acceptBadCrc", asBool, (r) => yesNo(r.acceptBadCrc)),
 			c("Roaming", "roam", asBool, (r) => yesNo(r.roam)),
 			c("Talker Alias TS1", "aliasTs1", asInt(0, 3, 0)),
 			c("Talker Alias TS2", "aliasTs2", asInt(0, 3, 0)),

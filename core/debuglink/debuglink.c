@@ -39,6 +39,12 @@
 #ifndef RFOUNDRY_GIT_TIME
 #define RFOUNDRY_GIT_TIME 0u
 #endif
+#ifndef RFOUNDRY_GIT_SOURCE
+#define RFOUNDRY_GIT_SOURCE "unknown"
+#endif
+#ifndef RFOUNDRY_GIT_REPO
+#define RFOUNDRY_GIT_REPO ""
+#endif
 
 #define SHOT_HOLD_MS		1000	// a screen capture freezes UI redraws at most this long
 #define SHOT_TAIL_MS		250	// after the last chunk: long enough for the host's check pass to start
@@ -232,6 +238,10 @@ static size_t cmd_version(uint8_t *out, size_t cap)
 	if (RFOUNDRY_RELEASE[0] != '\0') {
 		dl_text_kv_str(&t, "release", RFOUNDRY_RELEASE);
 	}
+	dl_text_kv_str(&t, "source", RFOUNDRY_GIT_SOURCE);	// where the build came from (support-info.md 1)
+	if (RFOUNDRY_GIT_REPO[0] != '\0') {
+		dl_text_kv_str(&t, "repo", RFOUNDRY_GIT_REPO);
+	}
 	dl_text_kv_str(&t, "board", board.name);
 	dl_text(&t, "features=%s%s\n", build_modes_now(), build_features_now());
 	dl_text_kv_str(&t, "codec", debuglink_codec_id(board.vocoder));
@@ -266,10 +276,12 @@ static void shot_hold(bool last)
 static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
 {
 	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
-	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+	gfx_fb_rect_t r;
 
+	gfx_fb_rect(&r);	// the panel, or its safe area only: sent as it is, the host rebuilds the insets
 	s.fb = gfx_framebuffer();
-	s.size = stride * d->height;
+	s.size = r.stride * r.h;
+	s.safe_area = r.safe_area;
 	if (s.size > 0xFFFFu) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
@@ -342,7 +354,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
-		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+		gfx_read_packed(offset, out + 19, n);	// the whole panel's rows, whatever the frame buffer holds
 	}
 	return 19u + n;
 }
@@ -861,9 +873,17 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 		return debuglink_cmd_chip_reg(req, len, out, cap);
 	case DL_CMD_HWOPT:
 		return debuglink_cmd_hwopt(req, len, out, cap);
+	case DL_CMD_SATELLITE:
+		return debuglink_cmd_satellite(req, len, out, cap);
 #if CONFIG_AIR_RAW
 	case DL_CMD_AIR:
 		return debuglink_cmd_air(req, len, out, cap);
+#endif
+	case DL_CMD_SUPPORT:
+#if CONFIG_SUPPORT_INFO
+		return debuglink_cmd_support(req, len, out, cap);
+#else
+		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST

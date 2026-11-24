@@ -4,6 +4,7 @@
 """tools/cps_client.py against cpsSim (the CPS shim on a simulated DM-1701 flash): info, a qdmr-region read, an edited
 write with save-and-reboot, read back, verify, and the flash dump checked byte for byte. Run by `make -C tests/host`."""
 import os
+import shlex
 import sys
 import subprocess
 import tempfile
@@ -41,10 +42,10 @@ def area_cases(sim, open_fn, read_area, write):
     check(cps_client.area_kept(b"\xff" * 4096, make_area(5)) and not cps_client.area_kept(make_area(6), make_area(5))
           and cps_client.area_kept(make_area(6), bytes(newer)),
           "area_kept: an empty file area or a newer radio area keeps the radio's (verify leaves it out)")
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry cps ") as d:
         dump = os.path.join(d, "flash.bin")
         subprocess.run([sim, "--populate", "--dump", dump], stdin=subprocess.DEVNULL, check=True)
-        link = open_fn(f"{sim} --image {dump} --dump {dump}")
+        link = open_fn(f"{shlex.quote(sim)} --image {shlex.quote(dump)} --dump {shlex.quote(dump)}")
         img = bytearray(read_area(link))
         check(bytes(img[A:B]) == b"\xff" * 4096, "no area on a new radio")
         img[A:B] = make_area(3100111)
@@ -62,7 +63,7 @@ def area_cases(sim, open_fn, read_area, write):
         with open(dump, "r+b") as f:
             f.seek(A + 4)
             f.write(b"\x02")                           # a later firmware's area
-        link = open_fn(f"{sim} --image {dump} --dump {dump}")
+        link = open_fn(f"{shlex.quote(sim)} --image {shlex.quote(dump)} --dump {shlex.quote(dump)}")
         img[A:B] = make_area(3100333)
         write(link, img)
         check(read_area(link)[A + 4] == 2, "a newer area is never written over")
@@ -73,7 +74,7 @@ def test_channels(sim):
     """cps_client.py test-channels: the image it makes, written through the shim into an empty flash, comes up as the
     FM and the DMR channel, the talk group contact and the zone (433.4500 MHz, TG 91, CC 1)"""
     regions = cps_client.REGIONS["qdmr"]
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry cps ") as d:
         path = os.path.join(d, "test.bin")
         dump = os.path.join(d, "flash.bin")
         rc = cps_client.main(["test-channels", path, "--rx", "433.45", "--tg", "91", "--cc", "1", "--id", "9990276",
@@ -92,7 +93,7 @@ def test_channels(sim):
         check(cps_client.decode_channel(moved, 2)["rx_hz"] == 461462500 and
               cps_client.decode_channel(moved, 2)["tx_hz"] == 451875000 and
               cps_client.channel_dmr(moved, 2) == (True, 2, 1), "set_channel_rx / _tx / _cc")
-        cps = cps_client.open_cps(exec_cmd=f"{sim} --dump {dump}")
+        cps = cps_client.open_cps(exec_cmd=f"{shlex.quote(sim)} --dump {shlex.quote(dump)}")
         cps.write_image(img, regions, reboot=False)
         check(not cps_client.compare(img, cps.read_image(regions), regions), "the image reads back")
         cps.close()
@@ -131,9 +132,9 @@ def test_power_byte():
 def main():
     sim = os.path.join(HERE, "cpsSim")
     regions = cps_client.REGIONS["qdmr"]
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory(prefix="rfoundry cps ") as d:
         dump = os.path.join(d, "flash.bin")
-        cps = cps_client.open_cps(exec_cmd=f"{sim} --populate --dump {dump}")
+        cps = cps_client.open_cps(exec_cmd=f"{shlex.quote(sim)} --populate --dump {shlex.quote(dump)}")
         info = cps.info()
         check(info["struct"] == 3 and info["radio_type"] == 8 and info["flash_id"] == 0x4018, f"info {info}")
         img = cps.read_image(regions)
@@ -214,7 +215,7 @@ def main():
         path = os.path.join(d, "img.bin")
         with open(path, "wb") as f:
             f.write(back)
-        rc = cps_client.main(["--exec", f"{sim} --image {dump}", "--quiet", "verify", path])
+        rc = cps_client.main(["--exec", f"{shlex.quote(sim)} --image {shlex.quote(dump)}", "--quiet", "verify", path])
         check(rc == 0, "cps_client verify")
     test_channels(sim)
     test_power_byte()

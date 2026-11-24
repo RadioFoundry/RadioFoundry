@@ -3,6 +3,7 @@
 // HR_C6000 DMR: register sequences, burst status decode, receive de-duplication, and the TX queue / slot scheduling of
 // the slot engine, against a fake config port, voice port and RF switch with a fake microsecond clock
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "modem/hrc_common/hrc6000_dmr.h"
 #include "modem/hrc6000/hrc6000.h"
@@ -958,6 +959,77 @@ static void test_tx_aligned_rmo(void)
 	CHECK(last_write(4, 0x41) == 0x50);	// repeater: back to receiving on its timing, no resync
 }
 
+// An aligned transmission that listens between its bursts (a repeater's, tx_listen): its bursts go out on the timing
+// it started with (0x40 MasterMode), so the outbound heard in the listened slots doesn't move them; passive timing
+// again at its end (issue 609)
+static void test_tx_aligned_listen_holds_timing(void)
+{
+	fresh_engine();
+	pending_burst = false;
+	dmr_config_t cfg = { .own_id = 9990001, .cc = 1, .access = DMR_ACCESS_POLITE_CC, .repeater = true };
+	hrc6000_dmr_configure(&eng, &cfg);
+	hrc6000_dmr_set_cc_filter(&eng, cfg.cc);
+	uint32_t t = 7000000;
+	for (int k = 0; k < 8; k++) {
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		ts_at(t);
+		t += 30000;
+	}
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_listen(&eng);
+	for (int i = 0; i < 4; i++) {
+		dmr_tx_burst_t b = mk(i == 0 ? DMR_BURST_VOICE_LC_HEADER : DMR_BURST_IDLE, 0, false);
+		CHECK(hrc6000_dmr_tx_queue(&eng, &b));
+	}
+	hrc6000_dmr_tx_end(&eng);
+	nev = 0;
+	uint8_t r40[8];
+	int n40 = 0, set_up = 0, before = -1;
+	for (int k = 0; k < 12; k++) {	// the transmission and a few slots after it
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		uint8_t v[4];
+		int n = writes_of(0x40, v, 4);
+		for (int i = 0; i < n && n40 < 8; i++) {
+			r40[n40++] = v[i];
+		}
+		if (r41 == 0x80 && set_up++ == 0) {
+			int at40 = first_write_at(4, 0x40);
+			before = at40 >= 0 && at40 < first_write_at(4, 0x41);	// held before the first burst is sent
+		}
+		drain();
+		t += 30000;
+	}
+	drain();
+	CHECK(set_up == 4 && before == 1);
+	CHECK(count_ev(DMR_EV_TX_DONE) == 1);
+	CHECK(n40 == 2 && r40[0] == 0xE3 && r40[1] == 0xC3);	// held once, passive again at the end
+
+	// A halt under a held, listening transmission: the next one neither listens nor holds unless asked
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	hrc6000_dmr_tx_listen(&eng);
+	dmr_tx_burst_t hb = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+	CHECK(hrc6000_dmr_tx_queue(&eng, &hb));
+	for (int k = 0; k < 4 && !eng.tx_master; k++) {
+		uint32_t next = eng.tick + 1;
+		rd[4][0x52] = (next & 1) ? 0x04 : 0x00;
+		int r50, r41;
+		tx_tick(t, &r50, &r41);
+		drain();
+		t += 30000;
+	}
+	CHECK(eng.tx_master);
+	hrc6000_dmr_halt(&eng);
+	hrc6000_dmr_run(&eng);
+	drain();
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 2, DMR_ACCESS_POLITE_CC));
+	CHECK(!eng.tx_listen && !eng.tx_master);
+	hrc6000_dmr_tx_abort(&eng);
+}
+
 // An aligned start whose receiver hears nothing (issue 524: after the restart that ends a wake-up, the receiver at
 // times raised no interrupts and read a constant 0x52 while the repeater was on the air): it searches again every
 // ALIGN_DEAF_TICKS, and keys once the repeater's timing comes back. A wait that hears bursts doesn't restart
@@ -1087,6 +1159,243 @@ static void test_tc_locked_one_in_two(void)
 	CHECK(closed > 0);	// the lock closed the other slot
 	CHECK(locked > 0);
 	CHECK(wrong == 0);
+}
+
+// An HR_C5000-type chip (bs_by_mode) hears BS sync only with ISRepeater set in 0x10, MS sync only without. On a
+// direct channel a simplex hotspot's call (BS sync, one burst every 60 ms, no CACH) was never heard: 0x10 held the
+// direct mode, no timeslot interrupt came and the call stack saw nothing (SDR bench, issue 736). The
+// engine hunts both modes while nothing is taken, stays in the one that hears the call, and keys in the channel's
+static uint8_t c5_mode;
+static uint8_t fake_c5_dmr_mode(bool repeater) { return repeater ? 0x4F : 0x6B; }
+
+static void c5_mode_track(void)
+{
+	for (int i = 0; i < nx && i < (int)(sizeof(xlog) / sizeof(xlog[0])); i++) {
+		if (!xlog[i].read && xlog[i].page == 4 && xlog[i].reg == 0x10 && xlog[i].n == 1) {
+			c5_mode = xlog[i].data[0];
+		}
+	}
+	log_reset();
+}
+
+// One BS-framed direct call (headers, then voice from A; no headers: a call joined at A) starting lead_us after the
+// engine was configured on a direct channel. The fake chip hears nothing while 0x10 is the direct mode, and in the BS
+// mode only from a burst with a sync (a header, voice A, a terminator) on: after each switch it has to find the sync
+// again, as the radio's does. Returns the voice bursts taken; the engine is left as the call left it
+static int hunt_call(hrc_chip_t *c5, uint32_t lead_us, int headers, int *numbered)
+{
+	fresh_engine();
+	dev.chip = c5;
+	c5_mode = 0;
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	CHECK(c5_mode == 0x6B);
+	drain();
+	nev = 0;
+
+	uint8_t seq[3 + 96 + 3];
+	int n = 0;
+	for (int i = 0; i < headers; i++) {
+		seq[n++] = 0x12;
+	}
+	for (int sf = 0; sf < 16; sf++) {
+		seq[n++] = 0x91;
+		for (int k = 1; k < 6; k++) {
+			seq[n++] = (uint8_t)((((sf + k) & 1 ? 0x8 : 0x0) | (k + 1)) << 4);
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x22;
+	}
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	// The sender's slots every 30 ms (its burst in every other one); the poll runs every 5 ms
+	uint32_t t = t_us + lead_us, junk = 999;
+	for (uint32_t q = t_us; q < t; q += 5000u) {
+		t_us = q;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	bool locked = false;
+	uint8_t mode_was = c5_mode;
+	for (int slot = 0; slot < 2 * n; slot++) {
+		for (int step = 0; step < 6; step++) {
+			t_us = t + (uint32_t)step * 5000u;
+			hrc6000_dmr_poll(&eng);
+			c5_mode_track();
+		}
+		if (c5_mode != mode_was) {
+			locked = false;		// a new mode: the chip searches for the sync again
+			mode_was = c5_mode;
+		}
+		uint8_t b = seq[slot / 2];
+		if ((c5_mode & 0x04) && (slot & 1) == 0 && (b & 3u) != 0) {
+			locked = true;
+		}
+		if (locked) {
+			junk = junk * 1103515245u + 12345u;
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			ts_at(t);
+			c5_mode_track();
+			if ((slot & 1) == 0) {
+				report_at(t + 3500, b, (uint8_t)(0x20 | tc), 0xF1);
+			} else {
+				report_at(t + 3500, (uint8_t)(b & 0x70), (uint8_t)(0x20 | tc), 0xF0);
+			}
+			c5_mode_track();
+			mode_was = c5_mode;
+		}
+		t += 30000;
+		drain();
+	}
+	int voices = 0;
+	*numbered = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].sync == DMR_SYNC_BS) {
+			voices += bursts[i].kind == DMR_BURST_VOICE;
+			*numbered += bursts[i].ts != 0;
+		}
+	}
+	return voices;
+}
+
+// After a transmission (aborted, so no answer slot): the 0x10 of the first dwell, which must last a full HUNT_US
+static uint8_t after_tx_dwell(void)
+{
+	c5_mode_track();
+	uint32_t flips = eng.st.hunt_flips;
+	uint8_t first = 0;
+	for (int k = 0; k < 74; k++) {		// 370 ms: one switch at most, at the start
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+		if (k == 1) {
+			first = c5_mode;
+			flips = eng.st.hunt_flips;
+		}
+	}
+	return eng.st.hunt_flips == flips && c5_mode == first ? first : 0;
+}
+
+// n MS-sync voice headers on a direct channel, one every 60 ms, heard while 0x10 is the direct mode (the hunt
+// stays there once one is taken)
+static void ms_bursts(int n)
+{
+	uint32_t t = t_us + 5000u;
+	for (int slot = 0, got = 0; slot < 60 && got < n; slot++) {
+		for (int step = 0; step < 6; step++) {
+			t_us = t + (uint32_t)step * 5000u;
+			hrc6000_dmr_poll(&eng);
+			c5_mode_track();
+		}
+		if (c5_mode == 0x6B) {
+			ts_at(t);
+			c5_mode_track();
+			if ((slot & 1) == 0) {
+				report_at(t + 3500, 0x12, 0x20, 0xF0);
+				got++;
+			} else {
+				report_at(t + 3500, 0x10, 0x20, 0xF0);
+			}
+			c5_mode_track();
+		}
+		t += 30000;
+		drain();
+	}
+}
+
+static void test_rx_bs_direct_hunt(void)
+{
+	hrc_chip_t c5 = *dev.chip;
+	c5.mode_per_channel = true;
+	c5.bs_by_mode = true;
+	c5.dmr_mode = fake_c5_dmr_mode;
+	const hrc_chip_t *c6 = dev.chip;
+	int numbered;
+
+	// Every phase of the call against the hunt: the chip finds the sync only at a header or voice A (every 360 ms),
+	// so a dwell shorter than a superframe could miss A at every switch and lose a whole call (bench: 4 of 24 calls
+	// with a 120 ms dwell). The first dwell in the direct mode and the wait for A cost at most about 16 bursts
+	for (uint32_t lead = 0; lead < 720000u; lead += 30000u) {
+		int v = hunt_call(&c5, lead, 0, &numbered);
+		if (getenv("HUNT_SHOW") || v < 80 || numbered != 0) {
+			printf("bs direct hunt: lead %u ms voices %d numbered %d\n", (unsigned)(lead / 1000u), v, numbered);
+		}
+		CHECK(v >= 80);
+		CHECK(numbered == 0);
+	}
+	int voices = hunt_call(&c5, 0, 3, &numbered);
+	CHECK(voices >= 80 && numbered == 0);
+	CHECK(c5_mode == 0x4F);		// still in the mode that heard the call
+	uint32_t t = t_us;
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+
+	// Quiet again: the hunt goes on in both modes, and a transmission keys in the channel's (direct) mode
+	uint32_t flips = eng.st.hunt_flips;
+	for (int k = 0; k < 600; k++) {
+		t_us = t + (uint32_t)k * 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	CHECK(eng.st.hunt_flips >= flips + 6);
+	t_us += 5000u;
+	for (int k = 0; k < 200 && !(c5_mode & 0x04); k++) {	// into the BS dwell
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+		c5_mode_track();
+	}
+	CHECK(c5_mode == 0x4F);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	c5_mode_track();
+	CHECK(c5_mode == 0x6B);
+	flips = eng.st.hunt_flips;
+	for (int k = 0; k < 100; k++) {		// half a second keyed: no switch
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	hrc6000_dmr_tx_abort(&eng);
+	// The last burst taken was the BS call's: its sender answers in BS sync, so the first dwell is a full one in BS
+	CHECK(after_tx_dwell() == 0x4F);
+
+	// The color code filter set after start (as the call layer does) on a quiet channel: no timeslot interrupt
+	// comes to make the restart it asks for, and the hunt makes it
+	hrc6000_dmr_set_cc_filter(&eng, 2);
+	CHECK(eng.restart_pending);
+	for (int k = 0; k < 200; k++) {
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(eng.st.hunt_flips >= flips + 2 && !eng.restart_pending);
+
+	// Nothing received since the channel was set: the first dwell after a transmission is the channel's mode
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	t_us += 5000u;
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_abort(&eng);
+	CHECK(after_tx_dwell() == 0x6B);
+
+	// An MS call heard last (after the BS one): the same, the answer comes in MS sync
+	hunt_call(&c5, 0, 3, &numbered);
+	CHECK(c5_mode == 0x4F && eng.bs_last);
+	ms_bursts(4);
+	CHECK(!eng.bs_last);
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	hrc6000_dmr_tx_abort(&eng);
+	CHECK(after_tx_dwell() == 0x6B);
+
+	// A repeater channel never hunts: its 0x10 is the repeater mode throughout
+	cfg.repeater = true;
+	hrc6000_dmr_configure(&eng, &cfg);
+	c5_mode_track();
+	flips = eng.st.hunt_flips;
+	for (int k = 0; k < 100; k++) {
+		t_us += 5000u;
+		hrc6000_dmr_poll(&eng);
+	}
+	c5_mode_track();
+	CHECK(eng.st.hunt_flips == flips && c5_mode == 0x4F);
+	dev.chip = c6;
 }
 
 static void test_tx_rejected_and_stall(void)
@@ -1354,6 +1663,186 @@ static void test_rx_bs_idles(void)
 	CHECK(eng.st.rx_csbk == c0 + 1 && eng.st.rx_dup_repeat == d0 + 1);
 }
 
+// A direct mode call framed with BS sync (a simplex hotspot's, issue 910): one burst every other slot, no CACH, so
+// 0x52's TC bit at the interrupts is junk. The bursts carry no slot number: a TC label that flipped mid-call dropped
+// the rest of the call as the other slot's. A base station on both slots (consecutive BS bursts) still numbers them
+static void test_rx_bs_direct_call(void)
+{
+	fresh_engine();
+	dmr_config_t cfg = { .own_id = 1, .cc = 2, .access = DMR_ACCESS_POLITE_CC, .repeater = false };
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	uint32_t t = 14000000, junk = 4321;
+	uint8_t seq[3 + 96 + 3];
+	int n = 0;
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x12;
+	}
+	for (int sf = 0; sf < 16; sf++) {
+		seq[n++] = 0x91;
+		for (int k = 1; k < 6; k++) {
+			seq[n++] = (uint8_t)((((sf + k) & 1 ? 0x8 : 0x0) | (k + 1)) << 4);
+		}
+	}
+	for (int i = 0; i < 3; i++) {
+		seq[n++] = 0x22;
+	}
+	memcpy(&rd[2][0], (const uint8_t[]){ 0, 0, 0, 0, 0, 201, 0, 0, 7 }, 9);
+	for (int i = 0; i < n; i++) {
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			if (half == 0) {
+				report_at(t + 3500, seq[i], (uint8_t)(0x20 | tc), 0xF1);
+			} else {
+				report_at(t + 3500, (uint8_t)(seq[i] & 0x70), (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	int voices = 0, numbered = 0;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].sync == DMR_SYNC_BS) {
+			voices += bursts[i].kind == DMR_BURST_VOICE;
+			numbered += bursts[i].ts != 0;
+		}
+	}
+	if (!(voices == 96 && numbered == 0)) {
+		printf("bs direct: voices %d numbered %d\n", voices, numbered);
+	}
+	CHECK(voices == 96);
+	CHECK(numbered == 0);
+
+	// A reply in step with that sender (the call stack keys DMO aligned within DMR_CALL_ALIGN_MS, on the channel's
+	// slot 1): the slot heard is the one to key in, as for MS sync, not a wait for a TC that never comes (refused)
+	{
+		dmr_tx_burst_t h = mk(DMR_BURST_VOICE_LC_HEADER, 0, false);
+		int r50, r41, sent = -1;
+		pending_burst = false;
+		CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_ALIGNED, 1, DMR_ACCESS_IMPOLITE));
+		hrc6000_dmr_tx_queue(&eng, &h);
+		hrc6000_dmr_tx_end(&eng);
+		for (int k = 0; k < 60 && sent < 0; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			if (r41 == 0x80) {
+				sent = k;
+			}
+			drain();
+		}
+		CHECK(sent >= 0 && sent < 4);
+		CHECK(count_ev(DMR_EV_TX_REJECTED) == 0 && eng.st.rs_why[HRC6000_RS_ALIGN] == 0);
+		for (int k = 0; k < 6; k++) {
+			tx_tick(t += 30000, &r50, &r41);
+			drain();
+		}
+		CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	}
+
+	// A simplex host's stream: idle bursts with BS data sync, then the call with MS sync, one burst every other slot.
+	// The idles must not let 0x52's junk number the call's bursts (a label change mid-call drops the rest of it)
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int i = 0; i < 6 + n; i++) {
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			uint8_t tc = (uint8_t)((junk >> 20) & 0x04);
+			if (half == 1) {
+				report_at(t + 3500, 0x00, (uint8_t)(0x20 | tc), 0xF0);
+			} else if (i < 6) {
+				report_at(t + 3500, 0x92, (uint8_t)(0x20 | tc), 0xF1);	// idle, BS data sync
+			} else {
+				report_at(t + 3500, seq[i - 6], (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	int ms_voices = 0, changes = 0;
+	int8_t first_ts = -1;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (first_ts < 0) {
+				first_ts = bursts[i].ts;
+			}
+			changes += bursts[i].ts != first_ts;
+			ms_voices++;
+		}
+	}
+	if (!(ms_voices == 96 && changes == 0)) {
+		printf("bs idles then ms call: voices %d label changes %d\n", ms_voices, changes);
+	}
+	CHECK(ms_voices == 96 && changes == 0);
+
+	// The same stream with each idle reported again in the next (empty) slot, as the chip repeats a status report: a
+	// repeated BS idle is delivered (dedup exempts them), so it comes in the slot after its own. Two BS bursts in a row
+	// with the same TC are one burst seen twice, not a CACH: the call's bursts must keep one label
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int i = 0; i < 6 + n; i++) {
+		uint8_t tc = 0;
+		for (int half = 0; half < 2; half++) {
+			junk = junk * 1103515245u + 12345u;
+			rd[4][0x52] = (uint8_t)(0x20 | ((junk >> 16) & 0x04));
+			ts_at(t);
+			if (half == 0) {
+				tc = (uint8_t)((junk >> 20) & 0x04);
+			}
+			if (i < 6) {
+				report_at(t + 3500, 0x92, (uint8_t)(0x20 | tc), 0xF1);	// idle, BS data sync; again in the next slot
+			} else if (half == 1) {
+				report_at(t + 3500, 0x00, (uint8_t)(0x20 | tc), 0xF0);
+			} else {
+				report_at(t + 3500, seq[i - 6], (uint8_t)(0x20 | tc), 0xF0);
+			}
+			t += 30000;
+		}
+		drain();
+	}
+	ms_voices = 0;
+	changes = 0;
+	first_ts = -1;
+	for (int i = 0; i < nev; i++) {
+		if (evs[i].kind == DMR_EV_BURST_RX && bursts[i].kind == DMR_BURST_VOICE) {
+			if (first_ts < 0) {
+				first_ts = bursts[i].ts;
+			}
+			changes += bursts[i].ts != first_ts;
+			ms_voices++;
+		}
+	}
+	if (!(ms_voices == 96 && changes == 0 && !eng.cach_seen)) {
+		printf("repeated bs idles then ms call: voices %d label changes %d cach %d\n", ms_voices, changes,
+		       eng.cach_seen);
+	}
+	CHECK(ms_voices == 96 && changes == 0 && !eng.cach_seen);
+
+	// The same simplex channel hearing a base station on both slots: its idles carry the CACH, so they are numbered
+	fresh_engine();
+	hrc6000_dmr_configure(&eng, &cfg);
+	drain();
+	nev = 0;
+	for (int k = 0; k < 20; k++) {
+		uint8_t tc2 = (uint8_t)(((eng.tick + 1u) & 1u) ? 0x04 : 0x00);
+		rd[4][0x52] = (uint8_t)(0x20 | tc2);
+		ts_at(t);
+		report_at(t + 3000, 0x92, (uint8_t)(0x20 | tc2), 0x01);	// idle, CC 2, BS sync
+		t += 30000;
+		drain();
+	}
+	const dmr_burst_t *b = last_burst();
+	CHECK(b != NULL && b->sync == DMR_SYNC_BS && b->ts != 0);
+}
+
 // The quiet-period restart happens once, not every 20 ticks (each one drops the sync)
 static void test_idle_restart_once(void)
 {
@@ -1527,6 +2016,19 @@ static int feed_numbers(const uint8_t *r51s, const bool *same_voice, int n, uint
 	return feed_numbers_cc(r51s, same_voice, n, got, -1);
 }
 
+// The next A after a complete superframe can carry fresh voice with the preceding F's class-0 status.
+static void test_rx_a_after_f(void)
+{
+	static const uint8_t reports[] = { 0x91, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xE0, 0xA0 };
+	static const bool fresh[8] = { false };
+	static const bool stale[8] = { [6] = true };
+	uint8_t got[8];
+	int n = feed_numbers(reports, fresh, 8, got);
+	CHECK(n == 8 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5, 0, 1 }, 8) == 0);
+	n = feed_numbers(reports, stale, 8, got);
+	CHECK(n == 7 && memcmp(got, (const uint8_t[]){ 0, 1, 2, 3, 4, 5, 1 }, 7) == 0);
+}
+
 // A report with another burst's number, no frame missed (bench: A B F C E F and C D F A): numbered by the frames
 // counted, nothing lost, and a burst whose number repeats the last one's is taken when its voice is new
 static void test_rx_wrong_number(void)
@@ -1600,8 +2102,11 @@ int main(void)
 	test_tx_crc_and_underrun();
 	test_tx_end_hold();
 	test_tx_aligned_rmo();
+	test_tx_aligned_listen_holds_timing();
 	test_tx_aligned_deaf();
 	test_tc_locked_one_in_two();
+	test_rx_bs_direct_call();
+	test_rx_bs_direct_hunt();
 	test_tx_rejected_and_stall();
 	test_rx_stall();
 	test_cc_any_rx();
@@ -1613,6 +2118,7 @@ int main(void)
 	test_rx_bench_call();
 	test_rx_missed_burst();
 	test_rx_wrong_number();
+	test_rx_a_after_f();
 	test_rx_late_entry_stale_number();
 	test_halt();
 	if (failures) {

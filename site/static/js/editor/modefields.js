@@ -72,7 +72,7 @@ export function specField(spec, t, holder, id) {
 	};
 	if (spec.type === "bool") return { ...f, type: "bool", set: (r, v) => on(r) && holder.put(r, spec.key, !!v) };
 	if (spec.type === "select") {
-		return { ...f, type: "select", options: () => spec.options().map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
+		return { ...f, type: "select", options: (r) => spec.options(r).map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
 	}
 	return {
 		...f, type: "text",
