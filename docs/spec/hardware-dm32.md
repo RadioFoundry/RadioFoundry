@@ -825,7 +825,8 @@ earlier lowest level (about 2 W) on the same bench. A plain step to the drive (n
 the PA loop's turn-on: once the output comes up at a low drive, the loop overshoots 2-3 dB and settles in about 1 ms,
 so the first 2 ms from the first symbol read +1.6 to +2.2 dB at 500 mW and +0.8 to +0.9 dB at 1 W (451.875 and 146 MHz),
 while the burst's mean stays within 0.4 dB of the call's median. No boost found puts the PA up by the first symbol at
-500 mW without that overshoot. At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the
+500 mW without that overshoot, and the lift takes the overshoot: a burst that starts strong and settles is decoded,
+while a late or weak start loses the burst's first symbols. At the levels of 11.4, at those frequencies and 432, 475, 144.01 and 147.99 MHz, the
 mean of a burst's first 2 ms from its −3 dB point is −0.25 to +0.38 dB from the burst's level from 2.5 W to 5 W, and
 the first burst is within 0.47 dB of the call's median (bursts spread 0.11 dB at most). The top level is at the cap and creeps: its first 2 ms
 read 0.2-0.9 dB under its level whatever the boost (a longer boost, window 1.58 ms and settle 0.3 ms, moved the top
