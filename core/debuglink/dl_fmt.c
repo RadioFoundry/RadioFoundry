@@ -182,6 +182,12 @@ const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7)
 	return buf;
 }
 
+void dl_text_deg(dl_text_t *t, const char *key, int32_t e7)
+{
+	char d[DL_DEG_LEN];
+	dl_text(t, "%s=%s\n", key, dl_deg(d, e7));
+}
+
 void dl_json_str(dl_text_t *t, const char *s)
 {
 	char tmp[8];

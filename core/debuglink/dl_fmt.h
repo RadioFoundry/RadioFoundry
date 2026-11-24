@@ -38,6 +38,8 @@ void dl_text_kv_str(dl_text_t *t, const char *key, const char *value);
 // stays one piece: a reply that fills drops it whole rather than cutting it after the key
 #define DL_DEG_LEN 13	// "-214.7483648" and its NUL
 const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7);
+// key=<degrees>\n, as dl_deg writes them
+void dl_text_deg(dl_text_t *t, const char *key, int32_t e7);
 // s as a JSON string. Codeplug names are Latin-1 (U+0000-U+00FF): a byte from 0x7F up is written as \u00XX, so the
 // text stays ASCII and valid JSON (RFC 8259 8.1)
 void dl_json_str(dl_text_t *t, const char *s);
