@@ -31,6 +31,7 @@
 #define DMR_APP_PORT_LAST	4099			// chatter (NetBIOS, discovery, LAN sync ...)
 #define DHCP_OPTION_MTU		26				// interface MTU (RFC 2132 5.1)
 #define ICMP_UNREACHABLE	3
+#define ICMP_PORT_UNREACHABLE	3			// with ICMP_UNREACHABLE (RFC 792, RFC 1122 3.2.2.1)
 #define ICMP_FRAG_NEEDED	4				// with ICMP_UNREACHABLE, the next-hop MTU in octets 6-7 (RFC 1191)
 #define IP_DF				0x4000
 #define ICMP_QUOTED_L4		8				// the original datagram's first 64 bits after its header (RFC 792)
@@ -483,23 +484,17 @@ static bool mayAnswerWithError(const uint8_t *ip, const uint8_t *l4, int l4Lengt
 			((fixedLink == 0) || (dst != (fixedLink | ~IPGW_FIXED_NETMASK)));
 }
 
-// A host packet for the air (the IPv4 header at frame[14], layer 4 l4Length octets) fits one transmission: true. Else
-// it is dropped, and with DF set answered with an ICMP destination unreachable, fragmentation needed, next-hop MTU the
-// air's (RFC 792, RFC 1191), from the radio's address, quoting the packet's header and its first 64 bits. Without DF a
-// router would fragment it: there are no fragments on the air (dmr-data.md 12.7), and a receiver couldn't put them
-// together, so it is just dropped. Four arguments, all in registers, and not inlined: see ipGatewayAirLength
-__attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length, bool group, bool offNet)
+// An ICMP destination unreachable for a host packet (the IPv4 header at frame[14], layer 4 l4Length octets), from the
+// radio's address, quoting the packet's header and its first 64 bits (RFC 792); mtu goes in octets 6-7 (RFC 1191, 0
+// for any code but fragmentation needed). Not about an ICMP error, a multicast or a broadcast (RFC 1122 3.2.2). Four
+// arguments, all in registers, and not inlined: see ipGatewayAirLength
+__attribute__((noinline)) static bool sendUnreachable(const uint8_t *frame, int l4Length, uint8_t code, uint16_t mtu)
 {
 	const uint8_t *ip = &frame[ETH_HEADER];
 	int ihl = (ip[0] & 0x0F) * 4;
 	const uint8_t *l4 = &ip[ihl];
 
-	if (ipGatewayAirLength(group, offNet, ip[9], l4, l4Length) <= IPGW_AIR_MTU)
-	{
-		return true;
-	}
-	stats.airTooBig++;
-	if (!(get16(&ip[6]) & IP_DF) || !mayAnswerWithError(ip, l4, l4Length))
+	if (!mayAnswerWithError(ip, l4, l4Length))
 	{
 		return false;
 	}
@@ -508,12 +503,30 @@ __attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length
 
 	memmove(&m[8], ip, quoted);
 	m[0] = ICMP_UNREACHABLE;
-	m[1] = ICMP_FRAG_NEEDED;
+	m[1] = code;
 	put16(&m[2], 0);
 	put16(&m[4], 0);// unused
-	put16(&m[6], IPGW_AIR_MTU);
+	put16(&m[6], mtu);
 	put16(&m[2], checksum(m, 8 + quoted, 0));
-	if (sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted))
+	return sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted);
+}
+
+// A host packet for the air (the IPv4 header at frame[14], layer 4 l4Length octets) fits one transmission: true. Else
+// it is dropped, and with DF set answered with an ICMP destination unreachable, fragmentation needed, next-hop MTU the
+// air's (RFC 792, RFC 1191). Without DF a router would fragment it: there are no fragments on the air (dmr-data.md
+// 12.7), and a receiver couldn't put them together, so it is just dropped. Four arguments, all in registers, and not
+// inlined: see ipGatewayAirLength
+__attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length, bool group, bool offNet)
+{
+	const uint8_t *ip = &frame[ETH_HEADER];
+	int ihl = (ip[0] & 0x0F) * 4;
+
+	if (ipGatewayAirLength(group, offNet, ip[9], &ip[ihl], l4Length) <= IPGW_AIR_MTU)
+	{
+		return true;
+	}
+	stats.airTooBig++;
+	if ((get16(&ip[6]) & IP_DF) && sendUnreachable(frame, l4Length, ICMP_FRAG_NEEDED, IPGW_AIR_MTU))
 	{
 		stats.fragNeeded++;
 	}
@@ -606,6 +619,15 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	{
 		serialPeerPort = get16(&l4[0]);
 		ipGatewaySerialIn(&l4[8], l4Length - 8);
+		return;
+	}
+	if ((ip[9] == IP_PROTO_UDP) && (dst == ipGatewayRadioIP()) && (dst != 0))
+	{
+		// The radio's own address, a port no service has: never over the air. On a /31 or /32 that address is also
+		// the radio with the host's ID xor 1, so a port scan or a client sending to a service the build left out
+		// would key the radio
+		stats.portUnreachable++;
+		sendUnreachable(frame, l4Length, ICMP_PORT_UNREACHABLE, 0);
 		return;
 	}
 

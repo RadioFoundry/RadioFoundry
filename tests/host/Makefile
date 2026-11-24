@@ -1435,8 +1435,9 @@ run-net: mdnsTest tftpTest
 ifneq ($(TSHARK),)
 	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
 	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
-	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
-	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
+	@# the TFTP ERROR packets and the gateway's ICMP port unreachables the tests ask for are expected; anything else
+	@# malformed or bad is not
+	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|ICMP +Type indicates an error|^Errors" | grep -q .; then \
 		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
 endif
 .PHONY: run-net

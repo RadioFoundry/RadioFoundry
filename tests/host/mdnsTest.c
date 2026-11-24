@@ -703,11 +703,11 @@ static void test_gateway_ports(void)
 	CHECK(hits == 2);
 	from_host(HOST_IP, MDNS_GROUP, 5000, 9999, data, 4);	// link local, unbound: dropped, never to the air
 	CHECK(hits == 2 && to_air == 0);
-	from_host(HOST_IP, RADIO_IP, 5000, 70, data, 4);	// unbound on the radio's address: over the air as before
-	CHECK(to_air == 1);
+	from_host(HOST_IP, RADIO_IP, 5000, 70, data, 4);	// unbound on the radio's address: never over the air
+	CHECK(to_air == 0);
 	CHECK(ipGatewayUdpBind(69, NULL));
 	from_host(HOST_IP, RADIO_IP, 5000, 69, data, 4);
-	CHECK(hits == 2 && to_air == 2);
+	CHECK(hits == 2 && to_air == 0);
 	for (int i = 0; i < IPGW_UDP_PORTS - 1; i++) {	// 5353 is bound already
 		CHECK(ipGatewayUdpBind((uint16_t)(1000 + i), count_handler));
 	}

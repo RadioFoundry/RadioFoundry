@@ -427,9 +427,9 @@ int main(void)
 	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 161, hello, sizeof(hello)));
 	CHECK(local.calls == 1 && !local.from_air && local.src == HOST_IP && local.port == 40000 &&
 	      local.len == (int)sizeof(hello) && memcmp(local.data, hello, sizeof(hello)) == 0 && air.ip_calls == ip_before);
-	// Another port of the radio's address still goes over the air (to the radio with that ID)
+	// Another port of the radio's address never goes over the air (though the address is also the radio with that ID)
 	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 162, hello, sizeof(hello)));
-	CHECK(local.calls == 1 && air.ip_calls == ip_before + 1 && air.dst == (RADIO_ID ^ 1u));
+	CHECK(local.calls == 1 && air.ip_calls == ip_before);
 	// UDP over the air (SAP 4) to our ID and port 161: the service, from the radio task, with the link down too;
 	// nothing goes to the host
 	memset(&p, 0, sizeof(p));

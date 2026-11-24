@@ -197,6 +197,17 @@ static bool next_pkt(pkt_t *k)
 	return true;
 }
 
+// The next frame is the gateway's ICMP port unreachable (a datagram to a port no service has)
+static bool next_port_unreachable(void)
+{
+	if (ring_out == ring_in) {
+		return false;
+	}
+	const uint8_t *f = ring[ring_out];
+	ring_out = (ring_out + 1) % RING;
+	return (f[23] == 1) && (f[34] == 3) && (f[35] == 3);
+}
+
 static void drain(void)
 {
 	ring_out = ring_in;
@@ -444,8 +455,8 @@ static void test_refusals(void)
 	tftp_stats_t st;
 	tftpStats(&st);
 	CHECK(st.state == TFTP_IDLE);
-	send_ack(tid, 2);			// the port is closed now: nothing
-	CHECK(!next_pkt(&k));
+	send_ack(tid, 2);			// the port is closed now: an ICMP port unreachable from the gateway
+	CHECK(next_port_unreachable() && !next_pkt(&k));
 }
 
 static void test_writes(void)

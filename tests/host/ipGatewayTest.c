@@ -359,19 +359,9 @@ static void testToAir(void)
 	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_ALL_CALL_IP, 4005, 4005, lrrp, 4));// the top individual address: all call
 	CHECK(air.calls == 5 && air.group && air.dst == 0xFFFFFF);
 
-#if IPGW_POINT_TO_POINT
-	// On a /31 the radio's address is also the radio with the host's ID xor 1, for anything but the serial port
-	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 4001, 4001, lrrp, 4));
-	CHECK(air.calls == 6 && !air.group && air.dst == (RADIO_ID ^ 1));
-	air.calls = 5;
-#endif
-
 	in(f, hostUdp(f, BCAST_MAC, HOST_IP, IPGW_BROADCAST_IP, 137, 137, lrrp, 4));// NetBIOS broadcast: dropped
 	in(f, hostUdp(f, BCAST_MAC, HOST_IP, 0xFFFFFFFF, 17500, 17500, lrrp, 4));// LAN sync broadcast: dropped
 	in(f, hostUdp(f, GW_MAC, HOST_IP, 0x08080808, 53, 53, lrrp, 4));// elsewhere: dropped
-#if !IPGW_POINT_TO_POINT
-	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 4001, 4001, lrrp, 4));// to the radio itself: dropped
-#endif
 	in(f, hostUdp(f, GW_MAC, IPGW_INDIVIDUAL_NET | 235, IPGW_INDIVIDUAL_NET | 236, 4001, 4001, lrrp, 4));// not from the host (forwarded): dropped
 	CHECK(air.calls == 5 && framesSent == 0);
 
@@ -395,16 +385,21 @@ static int ipGatewayStatsDelta(const ipGatewayStats_t *before, int which)
 	return which ? (int)(now.fragNeeded - before->fragNeeded) : (int)(now.airTooBig - before->airTooBig);
 }
 
-// The ICMP reply in lastFrame: checks it against the packet sent (the IP header at f + 14)
-static bool isFragNeeded(const uint8_t *f)
+// The ICMP destination unreachable in lastFrame: checks it against the packet sent (the IP header at f + 14)
+static bool isUnreachable(const uint8_t *f, uint8_t code, uint16_t mtu)
 {
 	const uint8_t *ip = &lastFrame[14], *m = &lastFrame[34];
 	int len = ((ip[2] << 8) | ip[3]) - 20;
 
 	return (lastLength == 14 + 20 + 8 + 20 + 8) && (len == 8 + 20 + 8) && (memcmp(lastFrame, HOST_MAC, 6) == 0) &&
 			(ip[9] == 1) && (sum16(ip, 20, 0) == 0) && (get32(&ip[12]) == RADIO_IP) && (get32(&ip[16]) == HOST_IP) &&
-			(m[0] == 3) && (m[1] == 4) && (m[4] == 0) && (m[5] == 0) && (((m[6] << 8) | m[7]) == IPGW_AIR_MTU) &&
+			(m[0] == 3) && (m[1] == code) && (m[4] == 0) && (m[5] == 0) && (((m[6] << 8) | m[7]) == mtu) &&
 			(sum16(m, len, 0) == 0) && (memcmp(&m[8], f + 14, 28) == 0);
+}
+
+static bool isFragNeeded(const uint8_t *f)
+{
+	return isUnreachable(f, 4, IPGW_AIR_MTU);
 }
 
 static void testFragNeeded(void)
@@ -817,7 +812,88 @@ static void testSerial(void)
 	CHECK(memcmp(&lastFrame[42], reply, sizeof(reply)) == 0);
 
 	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 3335, 4001, getVersion, sizeof(getVersion)));// other ports: not serial
-	CHECK(serial.calls == 1 && framesSent == 0);
+	CHECK(serial.calls == 1 && framesSent == 1 && isUnreachable(f, 3, 0));
+}
+
+static struct
+{
+	int calls;
+	uint16_t dstPort;
+	int length;
+} bound;
+
+static void boundHandler(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort,
+						 const uint8_t *data, int length)
+{
+	(void)fromAir; (void)src; (void)srcPort; (void)dst; (void)data;
+	bound.calls++;
+	bound.dstPort = dstPort;
+	bound.length = length;
+}
+
+static int portUnreachableCount(void)
+{
+	ipGatewayStats_t st;
+
+	ipGatewayGetStats(&st);
+	return (int)st.portUnreachable;
+}
+
+// UDP to the radio's own address on a port no service has never goes over the air (on a /31 or /32 that address is
+// also the radio with the host's ID xor 1): an ICMP port unreachable goes back and it is counted. A bound port still
+// gets it; other radios, talkgroups, the all call and the off-net route still go over the air
+static void testOwnAddress(void)
+{
+	uint8_t f[200];
+	const uint8_t req[] = { 's', 'e', 'l', 'e', 'c', 't' };
+	int airCalls = air.calls, rawCalls = raw.calls, count = portUnreachableCount();
+
+	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));// a service this build left out
+	CHECK(air.calls == airCalls && framesSent == 1 && isUnreachable(f, 3, 0));
+	CHECK(portUnreachableCount() == count + 1);
+	int n = hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 9, req, sizeof(req));// without DF: the same
+	f[20] = 0; fixIpChecksum(f, n);
+	in(f, n);
+	CHECK(air.calls == airCalls && framesSent == 1 && lastFrame[34] == 3 && lastFrame[35] == 3);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4001, req, sizeof(req)));// a DMR application port
+	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, IPGW_RAW_PORT, req, sizeof(req)));// raw data
+	CHECK(air.calls == airCalls && raw.calls == rawCalls && framesSent == 1 && isUnreachable(f, 3, 0));
+	CHECK(portUnreachableCount() == count + 4);
+	in(f, hostUdp(f, GW_MAC, HOST_IP + 2, RADIO_IP, 50000, 4191, req, sizeof(req)));// not from the host: silent
+	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 4);
+
+	// Bound: the service gets it, nothing goes back from the gateway or over the air
+	CHECK(ipGatewayUdpBind(4191, boundHandler));
+	bound.calls = 0;
+	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));
+	CHECK(bound.calls == 1 && bound.dstPort == 4191 && bound.length == sizeof(req));
+	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 4);
+	CHECK(ipGatewayUdpBind(4191, NULL));
+	in(f, hostUdp(f, GW_MAC, HOST_IP, RADIO_IP, 50000, 4191, req, sizeof(req)));// unbound again
+	CHECK(bound.calls == 1 && air.calls == airCalls && framesSent == 1 && isUnreachable(f, 3, 0));
+
+	// TCP to the radio without a TCP: dropped, never over the air
+	uint8_t syn[20] = { 0xC3, 0x50, 0x00, 0x50, 0, 0, 0, 1, 0, 0, 0, 0, 0x50, 0x02, 0xFF, 0xFF };
+	in(f, hostIp(f, GW_MAC, HOST_IP, RADIO_IP, 6, syn, sizeof(syn)));
+	CHECK(air.calls == airCalls && framesSent == 0);
+
+	// Link local multicast, bound or not: never over the air, nothing back
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_LOCAL_MULTICAST | 251, 5353, 5353, req, sizeof(req)));
+	CHECK(air.calls == airCalls && framesSent == 0 && portUnreachableCount() == count + 5);
+
+	// Every other address as before: another radio, a talkgroup, the all call, the off-net route
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_INDIVIDUAL_NET | 235, 50000, 4191, req, sizeof(req)));
+	CHECK(air.calls == airCalls + 1 && !air.group && air.dst == 235 && air.dstPort == 4191 && framesSent == 0);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_MULTICAST_NET | 9, 50000, 4007, req, sizeof(req)));
+	CHECK(air.calls == airCalls + 2 && air.group && air.dst == 9);
+	in(f, hostUdp(f, BCAST_MAC, HOST_IP, IPGW_BROADCAST_IP, 4005, 4005, req, sizeof(req)));
+	CHECK(air.calls == airCalls + 3 && air.group && air.dst == IPGW_ALL_CALL_ID);
+	ipGatewaySetOffNetId(9990500);
+	in(f, hostUdp(f, GW_MAC, HOST_IP, 0xC0A80A05u, 50000, 4191, req, sizeof(req)));// 192.168.10.5, through a gateway
+	CHECK(air.calls == airCalls + 4 && !air.group && air.dst == 9990500 && air.dstIp == 0xC0A80A05u);
+	ipGatewaySetOffNetId(0);
+	CHECK(portUnreachableCount() == count + 5 && raw.calls == rawCalls);
+	air.calls = airCalls;// the tests after count on from the ones before
 }
 
 // Raw DMR data: the payload of a datagram to IPGW_RAW_PORT goes over the air without the IP and UDP headers, and back
@@ -1233,6 +1309,7 @@ int main(void)
 	testDeliver();
 	testOffNet();
 	testSerial();
+	testOwnAddress();
 	testOtherProtocols();
 	testAirMtu();
 	testRaw();

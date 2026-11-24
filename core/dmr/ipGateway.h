@@ -23,9 +23,10 @@
 //                                      individual, multicast (and group) ranges through the radio. Each radio has an
 //                                      address of its own, so several radios can be plugged into one host. The radio
 //                                      answers at that address for ping, DHCP, IPGW_SERIAL_PORT and the UDP ports its
-//                                      own services bind (ipGatewayUdpBind) only, anything else to it goes over the air
-//                                      to the radio with that ID. The radio answers ARP for
-//                                      every address but the host's, in case the host ignores the on link route.
+//                                      own services bind (ipGatewayUdpBind); UDP to another port gets an ICMP port
+//                                      unreachable and never goes over the air, though the address is also the radio
+//                                      with the host's ID xor 1. The radio answers ARP for every address but the
+//                                      host's, in case the host ignores the on link route.
 //                or /31                the same with the host and the radio as a /31 (RFC 3021), the radio answering
 //                                      ARP for its own address only. macOS treats both ends of a /31 as broadcast
 //                                      addresses, so sending to the radio needs SO_BROADCAST there.
@@ -113,6 +114,8 @@ typedef struct
 	uint32_t fragNeeded;					// ICMP "fragmentation needed" sent back for them (DF set)
 	uint32_t upTooBig;						// packets from the air too long for the link (dropped): another
 											// make's, up to 608 octets of user data (dmr-data.md 12.8)
+	uint32_t portUnreachable;				// UDP from the host to the radio's address on a port no service has
+											// (dropped, an ICMP port unreachable back)
 } ipGatewayStats_t;
 void ipGatewayGetStats(ipGatewayStats_t *stats);
 // The octets a host packet (from layer 4 on) takes as the user data of a packet on the air, as the data service will
@@ -183,12 +186,12 @@ bool ipGatewaySerialOut(const uint8_t *data, int length);
 // connected to), go to the one TCP handler, layer 4 on; NULL (the default) drops them. UDP: a datagram from the link to
 // the radio's own address, or to the local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port
 // goes to that port's handler instead of over the air (fromAir false, src / dst the IPv4 addresses); 224.0.0.0/24
-// never goes over the air, bound or not. A port bound with ipGatewayUdpBindAir also takes UDP received over the air
-// for our own DMR ID (the air side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it):
-// fromAir true, src the sender's DMR ID, dst our individual address; such a handler must copy and return, never block,
-// and answers over the air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler
-// NULL unbinds; false if the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air
-// too)
+// and the radio's address never go over the air, bound or not (an unbound port of the radio's address gets an ICMP port
+// unreachable). A port bound with ipGatewayUdpBindAir also takes UDP received over the air for our own DMR ID (the air
+// side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it): fromAir true, src the
+// sender's DMR ID, dst our individual address; such a handler must copy and return, never block, and answers over the
+// air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler NULL unbinds; false if
+// the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air too)
 typedef void (*ipGatewayLocalFn)(uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
