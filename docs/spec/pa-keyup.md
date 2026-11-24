@@ -62,7 +62,7 @@ limit; a step that needs more comes up late, and the window is too short for it.
 `lift_pm` sets a boost's least drive, `ref` × `lift_pm` / 1000. A PA whose output stays dark under a turn-on drive
 and then rises steeply gives the law a problem at a step a few counts over the turn-on: the law sizes the boost from
 the step's own drive, and that boost brings the turn-on in so late that the first symbols go out 10-45 dB low. A
-receiver that hears one burst alone (a repeater's wake-up) loses it. The lift raises such a boost to the drive that
+receiver that hears one burst alone (a repeater's wake-up) loses that burst. The lift raises such a boost to the drive that
 brings the turn-on in the window. `ref` is then a drive just over the turn-on (the board's lowest step), so the lift
 moves with the frequency and from radio to radio as the turn-on does. The steps whose own boost is over the lift
 keep theirs, and the caps above still apply. A step lifted onto its time comes up with the loop's overshoot from the

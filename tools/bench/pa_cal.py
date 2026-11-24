@@ -86,7 +86,7 @@ class Stop(Exception):
 # ---- the rule and the fit (pure) ---------------------------------------------------------------------------------
 
 def plan(c, d, top, ref, max_drive, ahead=0):
-    """pa_keyup_drives(): c the six constants (a dict), all integer math as the firmware's. Returns a dict with
+    """pa_keyup_drives(): c the constants (a dict, NAMES), all integer math as the firmware's. Returns a dict with
     boost (0: none), drive, boost_us, pa_us, drive_us. ahead: the board's earliest point, which bounds an eased
     level's start as pa_keyup_plan() does (0: unbounded, as pa_keyup_drives())."""
     dead = ref * c["dead_pm"] // 1000
@@ -104,9 +104,8 @@ def plan(c, d, top, ref, max_drive, ahead=0):
     if lead > c["window_us"]:
         lead = c["window_us"]
         room = c["window_us"] - c["settle_us"]
-        b = dead + (q + room - 1) // room if room else d
-        if room:
-            b = max(b, ref * c.get("lift_pm", 0) // 1000)    # a boost's least drive
+        # no window, no boost; else at least the lift, a boost's least drive
+        b = max(dead + (q + room - 1) // room, ref * c.get("lift_pm", 0) // 1000) if room else d
         b = min(b, top * BOOST_MAX_PCT // 100, max_drive)
         if ease:
             b = min(b, dead + ease)
@@ -627,8 +626,9 @@ class Radio:
         i = 0
         while i < len(specs):
             c = specs[i][0]
+            most = self.keyrun_max - 1 if c and c.get("lift_pm") else self.keyrun_max    # a lift takes a key's room
             j = i
-            while j < len(specs) and specs[j][0] == c and j - i < self.keyrun_max:
+            while j < len(specs) and specs[j][0] == c and j - i < most:
                 j += 1
             drives = [d for _, d in specs[i:j]]
             if c is None:

@@ -127,7 +127,7 @@ int main(void)
 	b[4] |= PA_KEYRUN_FLAG_LIFT;
 	CHECK(pa_keyrun_parse(b, (uint16_t)(len + 2u), &r) && r.cfg.lift_pm == 2150u && r.cfg.ease_pm == 304 && r.n == 3 &&
 	      r.drives == b + 6 + 16);
-	CHECK(!pa_keyrun_parse(b, len, &r));
+	CHECK(!pa_keyrun_parse(b, len, &r));		// the lift flag, its two bytes not counted
 	CHECK(!pa_keyrun_parse(b, req(b, 0, 350, false, d3, 3), &r));
 	CHECK(!pa_keyrun_parse(b, req(b, PA_KEYRUN_KEY_MS_MAX + 1, 350, false, d3, 3), &r));
 	CHECK(!pa_keyrun_parse(b, req(b, 300, PA_KEYRUN_GAP_MS_MIN - 1, false, d3, 3), &r));

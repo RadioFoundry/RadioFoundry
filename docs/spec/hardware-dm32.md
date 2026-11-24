@@ -817,9 +817,9 @@ window is 1.5 ms on both bands. The constants are fitted over the air on the SDR
 boosts to slope / (window − settle) of its own drive, 1.6 × on UHF (slope 1760 µs) and 1.5 × on VHF (1650 µs), at
 most 1.2 × the top level's, from 1.5 ms to 0.4 ms before the first symbol; the PA at 0.9 ms (UHF) and 0.5 ms (VHF).
 A boost is at least the lift, 2.15 × the 500 mW level's drive (`lift_pm` 2150 on `ref` = `dm32_floor_drive`, a drive
-just over the PA's turn-on, so the lift follows the turn-on over the band). It lifts the 500 mW and 1 W levels only.
-Without it, 1.6 × the 500 mW drive left the PA dark for the first 8-11 symbols of every burst (−42 to −45 dB at the
-first symbol, −1 dB point 1.8-2.3 ms after it; the first 2 ms from the first symbol −7 to −8 dB), and a repeater that
+just over the PA's turn-on, so the lift follows the turn-on over the band). Only the 500 mW and 1 W levels are lifted.
+Without the lift, 1.6 × the 500 mW drive left the PA dark for the first 8-11 symbols of every burst (−42 to −45 dB at the
+first symbol, −1 dB point 1.8-2.3 ms after the first symbol; the first 2 ms from the first symbol −7 to −8 dB), and a repeater that
 heard the radio weakly lost the wake-up CSBK: 0 of 10 decoded, against 30 of 45 with the lift and 6 of 10 with the
 earlier lowest level (about 2 W) on the same bench. A plain step to the drive (no boost) is later still. The lift costs the overshoot of
 the PA loop's turn-on: once the output comes up at a low drive, the loop overshoots 2-3 dB and settles in about 1 ms,
