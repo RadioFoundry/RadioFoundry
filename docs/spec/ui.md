@@ -89,10 +89,10 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   detail line ends in "Private" or "Group". The word is the cue, not a color: the privacy (encryption) marker is
   blue, and a private call is not encrypted.
 - Home names the encryption the channel transmits with in a reverse badge (the text in the background color on a block
-  of the privacy blue) at the right end of the channel name's line: AES256 on an AES channel with its key, BP MOTO or
-  BP ANY with basic privacy. The name keeps its place and shrinks to a smaller font before the badge gives way; where
-  even the small font would not fit beside it, a hand-drawn padlock (7x8, 9x12 or 12x16, by the font) stands in and
-  the chips line names the scheme. A clear channel, or an AES channel with no key bound (it won't transmit), shows
+  of the privacy blue) at the right end of the channel name's line: AES256 on an AES channel with its key, BP8 (the
+  1-255 key) or BP16 (the 16-bit key) with basic privacy. The name keeps its place and shrinks to a smaller font
+  before the badge gives way; where even the small font would not fit beside it, a hand-drawn padlock (7x8, 9x12 or
+  12x16, by the font) stands in and the chips line names the scheme. A clear channel, or an AES channel with no key bound (it won't transmit), shows
   neither.
 - NXDN Home shows an ENC marker with the caller and destination when a scrambled call plays. It shows "Encrypted: not played" when
   the radio receives an encrypted call and holds its audio.

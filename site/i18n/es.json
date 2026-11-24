@@ -317,7 +317,7 @@
  "screen.home_dmr_lastheard": "Inicio, DMR, último escuchado",
  "screen.home_dmr": "Inicio, canal DMR",
  "screen.home_encrypted": "Inicio en un canal AES: su tipo en una insignia en la línea del nombre",
- "screen.home_privacy": "Inicio con privacidad básica: el esquema en la insignia (BP MOTO)",
+ "screen.home_privacy": "Inicio con privacidad básica: el esquema en la insignia (BP8)",
  "screen.home_fm": "Inicio, canal FM",
  "screen.home_gps_off": "Inicio, GPS desactivado: una antena parabólica hueca junto a las barras de señal",
  "screen.home_gps_search": "Inicio, GPS activado, buscando: una antena parabólica rellena",
