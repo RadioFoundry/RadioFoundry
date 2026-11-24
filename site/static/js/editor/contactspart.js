@@ -218,18 +218,19 @@ function update() {
 	const skipped = api.iddbSkipped;
 	// a header the editor can't parse: shown and removable, so a valid database can take its place
 	const unknown = !db && !skipped && unreadable(api.model.base.bytes);
+	// removed without reading it first: a skipped database can be too big or too slow to read
+	const remove = () => button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
+		// a skipped one is erased in the model already: no undo step, as undo couldn't bring the skip back
+		if (!skipped) api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
+		api.markIddb();
+		if (skipped) api.refresh();
+	}), { danger: true });
 	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count }), " ",
-		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }))
+		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }), " ", remove())
 		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t(unknown ? "editor.iddb.unreadable" : "editor.iddb.none")),
 		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
 			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
-		// removed without reading it first: a skipped database can be too big or too slow to read
-		db || skipped || unknown ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
-			// a skipped one is erased in the model already: no undo step, as undo couldn't bring the skip back
-			if (!skipped) api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
-			api.markIddb();
-			if (skipped) api.refresh();
-		}), { danger: true, quiet: true }) : null].filter(Boolean));
+		db || unknown ? remove() : null].filter(Boolean));
 	// source
 	for (const b of P.modes.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === pr.mode));
 	P.fileBox.hidden = pr.mode !== "file";

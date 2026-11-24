@@ -1028,7 +1028,8 @@ async function planWrite() {
 		const summarize = () => {
 			const { bytes } = choice();
 			const text = [t("editor.write_summary", { radio: c.radio.name, bytes: fmtNum(bytes), seconds: estimate(bytes, c.cable, choice().blocks) })];
-			if (iddb) text.push(t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes)?.count ?? 0 }));
+			// no database in the file: its header goes erased, and the radio's database with it
+			if (iddb) text.push(dbHeader(file.bytes) ? t(c.transport.fast ? "editor.write_iddb_fast" : "editor.write_iddb", { n: dbHeader(file.bytes).count }) : t("editor.write_iddb_erase"));
 			if (older) text.push(t("editor.write_iddb_older"));
 			if (older?.dropped) text.push(t("editor.write_iddb_cut", { dropped: fmtNum(older.dropped) }));
 			summary.textContent = text.join(" ");
