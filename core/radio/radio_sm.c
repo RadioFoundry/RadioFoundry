@@ -8234,6 +8234,31 @@ static const hal_audio_t *pcm_audio(void)
 }
 #endif
 
+#if CONFIG_DMR && CONFIG_BEEP
+// The mic gate of the AMBE voice path (ambeVoiceSetMicGate, DMR and NXDN): a beep's echo, unless a host audio
+// session's samples replace the mic (they never hear the speaker), or a board that holds beeps off the speaker while
+// DMR transmits (CAP_BEEP_NOT_ON_AIR) transmits DMR: its speaker sounds nothing the mic could hear. NXDN has no such
+// hold. Audio task
+static bool dmr_mic_gate(void)
+{
+#if CONFIG_NET_USRP
+	if (audio_mux_host_mic()) {
+		return false;
+	}
+#endif
+	if ((board.caps & CAP_BEEP_NOT_ON_AIR) != 0) {
+#if CONFIG_NXDN
+		if (!radio_nxdn_running()) {
+			return false;
+		}
+#else
+		return false;
+#endif
+	}
+	return beep_mic_echo();
+}
+#endif
+
 void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 {
 	settings_t st;
@@ -8332,11 +8357,7 @@ void radio_sm_init(radio_sm_t *sm, uint32_t now_ms)
 	dmr_call_set_voice(ambeVoiceSink(), ambeVoiceSource());
 #if CONFIG_BEEP
 	ambeVoiceSetMixer(beep_mix);	// beeps while the voice stream owns the PCM audio
-	// ... and kept off the air: the mic hears the speaker. A board that holds beeps off the speaker while DMR
-	// transmits (CAP_BEEP_NOT_ON_AIR) plays nothing the mic could hear, so its mic stays open
-	if ((board.caps & CAP_BEEP_NOT_ON_AIR) == 0) {
-		ambeVoiceSetMicGate(beep_mic_echo);
-	}
+	ambeVoiceSetMicGate(dmr_mic_gate);	// ... and kept off the air: the mic hears the speaker
 #endif
 #if CONFIG_DMR_DATA_CORE
 	data_init(sm);

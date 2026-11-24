@@ -567,9 +567,14 @@ static void tx_block(const int16_t *mic)
 	}
 	uint8_t bits[VOCODER_BITS];
 	static int16_t scaled[AUDIO_BLOCK_SAMPLES];	// the audio callback only (off its stack)
-	// A beep on the speaker is in the mic's samples too: the block goes out as silence
+	// A beep on the speaker is in the mic's samples too: the block goes out as silence. Not a block the test signal or
+	// a signaling tone replaces (below): that one isn't the mic's, so it isn't counted either
+	bool replaced = LOAD(test_signal);
+#if CONFIG_SIG_TONES
+	replaced = replaced || tone_active || tone_mute;
+#endif
 	ambe_voice_mic_gate_t gate = LOAD(mic_gate);
-	if (gate != NULL && gate()) {
+	if (!replaced && gate != NULL && gate()) {
 		memset(scaled, 0, sizeof(scaled));
 		mic = scaled;
 		stats.tx_mic_muted++;

@@ -3753,6 +3753,17 @@ static void test_dmr_beeps(void)
 	CHECK(v_enc_first == 1 && v_enc_last == v_enc_blocks);
 	req(RREQ_PTT, 0);
 	run(1000);
+	// A host audio session's samples in place of the mic never hear the speaker: nothing is muted
+	audio_mux_host_tx(true, true);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(600);
+	beep_get_stats(&b1);
+	ambeVoiceGetStats(&vs);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && vs.tx_mic_muted == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	audio_mux_host_tx(false, false);
 	memset(mic, 0, sizeof mic);
 	// No-beep channel
 	chans[6].no_beep = true;

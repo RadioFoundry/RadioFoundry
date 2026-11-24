@@ -409,7 +409,7 @@ def _gate(radio):
 
 
 PERMIT_LEVEL_DB = 1.5     # a header's level against the over's median (a beep on air or a late gate would dent it)
-PERMIT_MUTED_BLOCKS = 6   # the permit's blocks after its first (7 x 20 ms) plus the echo after it, at least
+PERMIT_MUTED_BLOCKS = 6   # the permit's blocks after its first (7 x 20 ms), at least: its echo after it adds 3 more
 
 
 @pytest.mark.feature("beep")

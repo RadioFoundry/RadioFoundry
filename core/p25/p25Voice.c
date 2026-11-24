@@ -217,7 +217,7 @@ static void rx_block(int16_t *spk)
 	}
 }
 
-// One mic block into the transmission g: encoded and queued for the engine
+// One mic block into the transmission g: encoded and queued for the engine. mic NULL: a silent block (the mic gate)
 static void tx_block(uint8_t g, const int16_t *mic)
 {
 	int16_t scaled[AUDIO_BLOCK_SAMPLES];
@@ -225,7 +225,7 @@ static void tx_block(uint8_t g, const int16_t *mic)
 	uint32_t peak = 0;
 
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-		int32_t v = gain == 256 ? mic[i] : ((int32_t)mic[i] * gain) / 256;
+		int32_t v = mic == NULL ? 0 : gain == 256 ? mic[i] : ((int32_t)mic[i] * gain) / 256;
 
 		v = v > 32767 ? 32767 : v < -32768 ? -32768 : v;
 		scaled[i] = (int16_t)v;
@@ -273,8 +273,7 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		}
 		p25_voice_mic_gate_t gate = LOAD(mic_gate);
 		if (gate != NULL && gate()) {
-			static const int16_t quiet[AUDIO_BLOCK_SAMPLES];	// a beep on the speaker is in the mic too
-			mic = quiet;
+			mic = NULL;	// a beep on the speaker is in the mic too: silence (tx_block)
 			stats.tx_mic_muted++;
 		}
 		tx_block(g, mic);
