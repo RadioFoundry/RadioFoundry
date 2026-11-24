@@ -14,6 +14,7 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 | FM voice, 12.5 and 25 kHz, squelch, monitor, repeater reverse | `FM` | [radio-features.md](radio-features.md) |
 | CTCSS and DCS encode and decode, tone scan | `SUBTONE` | [radio-features.md](radio-features.md) |
 | 1750 Hz burst, roger beep; DTMF digits from the keys | `FM_TX_TONES`, `DTMF` | [radio-features.md](radio-features.md) |
+| DTMF digits heard on FM, decoded in software | `DTMF_RX` | [radio-features.md](radio-features.md) 3.7a |
 | VOX | `VOX` | [radio-features.md](radio-features.md) |
 | Air band AM receive, broadcast FM receive | `AM_RX`, `BCAST_FM` | [airband-and-broadcast.md](airband-and-broadcast.md) |
 | APRS: AFSK positions, status, messages, receive, digipeater, iGate, KISS TNC | `APRS`, `APRS_RX`, `APRS_IGATE` | [aprs.md](aprs.md) |
@@ -59,4 +60,4 @@ areas and says nothing about menus, screens or keys: the UI is designed in `docs
 
 - Trunking (Capacity Plus, Connect Plus, Tier III): not built.
 - Encryption beyond Basic Privacy and AES-256 voice (ARC4, AES on data, enhanced privacy).
-- DTMF decode and stored DTMF codes ([radio-features.md](radio-features.md)).
+- Stored DTMF codes ([radio-features.md](radio-features.md)).

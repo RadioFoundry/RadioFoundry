@@ -353,7 +353,7 @@ codec ADC, so on these radios the board's mic gain also moves the VOX level; the
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)
 
-Touch tones on FM while PTT is held (#54, step 1: manual digits). Stored DTMF codes and DTMF decode are not built.
+Touch tones on FM while PTT is held (#54, step 1: manual digits). Stored DTMF codes are not built. Receive is 3.7a.
 
 **Keys.** With PTT held on an FM channel, 0-9, \* and # (the QUICK and CONTEXT keys on keypad radios) send their DTMF
 pair for as long as the key is held. A key map entry names its digit (`keymap_entry_t.dtmf`); a digit key's is its
@@ -416,6 +416,53 @@ pre-emphasis reads 3 to 7 dB higher on the carrier than it is received. Measured
 
 None of them needs a correction in the driver. The HIL test (`test_fm_tx_dtmf`) checks the received twist;
 `test_fm_tx_dtmf_stop` checks on air that a held digit ends with the carrier at PTT release and at the time-out.
+
+### 3.7a DTMF receive (CONFIG_DTMF_RX)
+
+DTMF digits heard on FM, decoded in software from the receive audio (`core/radio/dtmf_rx.c`). The radio shows them;
+nothing acts on them yet.
+
+**Audio.** The FM receive audio APRS receive uses ([aprs.md](aprs.md) 5.3): the board's own receive path, or FM
+receive audio on the PCM stream. `core/radio/rx_pcm.c` owns that path and hands each block to every decoder that
+wants it, so APRS and DTMF both hear the APRS frequency. The switch follows `APRS_RX`. A board without such a path
+lists it in `BOARD_NOT_WRITTEN` ([feature-matrix.md](../feature-matrix.md)).
+
+**When it listens:** while an FM reception is open, with the squelch and the RX tone both passing (state RX,
+`tone_ok`). Not:
+
+| Case | Why |
+|---|---|
+| The monitor holding the squelch open on a quiet channel | it opens without the RX tone; the tone is what lets a channel take digits from one sender only |
+| The air band's AM, a broadcast listen, a hotspot | not FM voice |
+| Our own transmission | the receiver is off |
+
+Some receive paths aren't squelch gated (the HR_C7000's copy of its FM audio), so the gate is the radio core's, not
+the board's: noise between receptions never reaches the decoder. Each new reception starts the decoder fresh: our own
+transmission, a retune (`rx_pcm_release`, before the board changes mode) and the squelch closing all end the one
+before. Battery save doesn't matter here: the receiver doesn't sleep during a reception.
+
+**Decoder.** Integer only, with no libm, since some cores have no FPU. Eight Goertzel filters on the ITU-T Q.23
+frequencies (`hal_dtmf.h`), over Hann-windowed blocks of 25.6 ms (205 samples at 8 kHz, 234 at the 9146 Hz some
+boards sample at). Two banks run half a block apart, giving a result every 12.8 ms. A plain block loses most of a
+1633 Hz tone that is 1.5 % off; the window keeps it within about 1 dB.
+
+| Rule | Value |
+|---|---|
+| Level | each tone at least `DTMF_RX_MIN_AMP` (300 counts, about -41 dBFS) |
+| Group | the strongest low and high tones each 6 dB over the rest of their group |
+| Twist | the two within 8 dB, either way (a receiver's de-emphasis and the sender both tilt them) |
+| Energy | the pair at least `DTMF_RX_SHARE_PCT` (45 %) of the block's energy: speech and noise fail here |
+| Accepted | `DTMF_RX_ON_RESULTS` (3) results in a row with the same digit |
+| Over | `DTMF_RX_OFF_RESULTS` (2) results in a row without it |
+
+The result: 40 ms tones with 40 ms pauses decode, 20 ms tones don't, and the same digit twice with a pause counts
+twice. Tones 1.5 % off (Q.24's acceptance, both tones off the same way as from one clock) decode, and 5 % off don't.
+Noise, single tones and a source-filter vowel model at three pitches give no digits (`dtmfRxTest`).
+
+**Shown.** The view keeps the last `RADIO_DTMF_RX_SHOWN` (16) digits, oldest first, until `RADIO_DTMF_RX_HOLD_MS`
+(3 s) pass without a new one, plus a count since start-up (`dtmf_rx`, `dtmf_rx_count`; the debug link's `features`
+view). The main screen's activity line shows "DTMF" and the digits in place of "Receiving". On a one-line activity
+area they replace the meter. After the reception, the idle line shows them until they are let go.
 
 ## 4. Beeps (CONFIG_BEEP)
 

@@ -187,7 +187,8 @@ section 1).
 
 ### 5.3 Receive
 
-Received FM audio comes from one of two places (`aprs.c`, `rx_service`):
+Received FM audio comes from one of two places (`core/radio/rx_pcm.c`, which hands it to every decoder that wants it:
+APRS here, and the DTMF decoder, `radio-features.md` 3.7a):
 
 1. The board's own AFSK receive path: `hal_afsk_t.rx_start`, `rx_read`, `rx_stop` at `rx_rate_hz`. The HR_C7000 boards
    have one (shared `hrc_afsk`): the modem's FM receive audio at 8 kHz, not squelch gated
@@ -205,14 +206,15 @@ region's, or the custom one) and no APRS transmission is under way. Anywhere els
 repeater channel's audio isn't APRS, and battery saving would be blocked for nothing. While it runs, battery saving
 (`radio-features.md`) stays off: a sleeping receiver misses packets, and the squelch closes only after 300 ms of
 noise readings over the line (`RADIO_SQL_CLOSE_POLLS_APRS`) instead of 50 ms. A start the board's path refuses (no
-memory, its audio busy) is tried again 1 s later (`RX_RETRY_MS`), not on every tick, since each try routes the
+memory, its audio busy) is tried again 1 s later (`RX_PCM_RETRY_MS`), not on every tick, since each try routes the
 receiver and back; `aprs.rx_start_fails` counts them. On air, a packet's tones
 at full deviation pushed the AT1846S noise reading over the line for a poll or two, the squelch closed, and the
 squelch gated audio cut the packet in pieces: the preamble in one opening, the frame in the next. `aprs_rx_listening()`
-says whether the path runs.
+says whether the path runs for APRS. The path also runs while the DTMF decoder wants it (any open FM reception), and
+stops only when neither does.
 
 The radio core stops the path when it tunes away from the APRS frequency or out of FM, before the board changes mode
-(`radio_sm.c` `tune`, `aprs_rx_release()`): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
+(`radio_sm.c` `tune`, `rx_pcm_release()`; the DTMF decoder asks again on its next poll): on the HR_C7000 a P25, NXDN or YSF engine can't start while the path
 holds the FM receive copy interrupt (`dmr_glue.c` `air_take`).
 
 The **mute** setting (`aprs_cfg_t.mute`, the APRS page's "Mute APRS audio", `CONFIG_APRS_RX`) keeps the speaker

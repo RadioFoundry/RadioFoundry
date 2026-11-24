@@ -6,7 +6,8 @@
  *
  *   - USB / network audio (docs/spec/usb-audio.md): a computer hears the receiver and talks through the transmitter
  *   - APRS / AFSK on FM (core/aprs): the 1200 baud demodulator samples receive audio, the modulator sends tones
- *   - later: DTMF / 5-tone decoding in software, voice recording
+ *   - DTMF decoding in software (core/radio/dtmf_rx.c, through core/radio/rx_pcm.c with APRS)
+ *   - later: 5-tone decoding, voice recording
  *
  * Receive audio rides on the board's one PCM stream (hal_audio_t: 8 kHz, 16-bit, 20 ms blocks): with AUDIO_TAP_FM_RX
  * the stream's input carries FM receive audio whenever the radio receives FM (on an HR_C6000 radio the chip puts it on
