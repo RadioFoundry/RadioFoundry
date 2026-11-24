@@ -290,8 +290,9 @@ matrix.
 reads the counters with [gcovr](https://gcovr.com): `build/coverage/index.html` (every file with its source
 annotated), `coverage.xml` (Cobertura), `summary.txt` and `summary.md` (the totals and the files with the most
 uncovered lines; CI adds it to the job summary). It works with GCC (`gcov`) and with clang, Apple's included
-(`xcrun llvm-cov gcov`, picked automatically). Install gcovr with `pip install gcovr`, `pipx install gcovr` or the
-`gcovr` package (Ubuntu 24.04's 7.0 is new enough). `COVERAGE_FAIL_UNDER=85 tools/coverage.sh` also fails below a
+(`xcrun llvm-cov gcov`, picked automatically). Install the CI version with
+`pip install -r tools/coverage-requirements.txt`. CI pins the parser because the older distribution package
+can reject valid block records in gcov output. `COVERAGE_FAIL_UNDER=85 tools/coverage.sh` also fails below a
 line percentage; CI doesn't set a threshold yet.
 
 Counted are the `core/`, `drivers/`, `hal/`, `boards/` and `platform/` sources a host test compiles; the tests,
