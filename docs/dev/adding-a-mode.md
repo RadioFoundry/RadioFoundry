@@ -59,6 +59,7 @@ reports for the mode. A kind module gives:
 | `newParams`, `decode`, `encode` | The parameter block. `encode(params, prev)` keeps the bytes past what it knows |
 | `fields()` | The form's fields, declared (`editor/modefields.js`: int, hex, freq, bool, select, list, hexbytes, text). A select whose options read other fields of the channel, such as its system, sets `dynamic: true`, so the form rebuilds the list as those fields change |
 | `validate`, `settings` | Problems of a channel; the radio-wide record's fields, when it has one |
+| `encryptsTx(c, params)` | Optional: true when the channel transmits encrypted or scrambled. The editor then warns on a channel that may transmit on an amateur frequency (`AMATEUR_HZ` in `channelmodes.js`) |
 
 A system type module gives `id`, `idLen`, `defaultTx`, `newFields`, `decode`, `encode`, `identity` (the text the
 Systems tab shows), `fields()`, `classes` (each entry class: its fields, `decode` and `encode` of the body, whether

@@ -2168,6 +2168,7 @@
  "editor.problem.nxdn_group_range": "An NXDN group is 1 to 65535: this contact's ID calls group 1.",
  "editor.problem.nxdn_missing_tx_key": "The selected NXDN transmit key is missing from this channel’s system.",
  "editor.problem.nxdn_unit_range": "An NXDN unit ID is 1 to {max}: the radio doesn't use this one.",
+ "editor.problem.crypto_amateur": "This channel transmits encrypted or scrambled voice on an amateur frequency. Most countries, including the US, do not allow encrypted messages on amateur bands.",
  "editor.field.name": "name",
  "editor.field.dmrId": "DMR ID",
  "editor.field.radioName": "radio name",

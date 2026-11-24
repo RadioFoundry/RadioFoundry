@@ -2168,6 +2168,7 @@
  "editor.problem.nxdn_group_range": "Un gruppo NXDN va da 1 a 65535: l'ID di questo contatto chiama il gruppo 1.",
  "editor.problem.nxdn_missing_tx_key": "La chiave di trasmissione NXDN selezionata manca nel sistema di questo canale.",
  "editor.problem.nxdn_unit_range": "Un ID unità NXDN va da 1 a {max}: la radio non usa questo.",
+ "editor.problem.crypto_amateur": "Questo canale trasmette voce cifrata o con scrambler su una frequenza radioamatoriale. La maggior parte dei paesi, Stati Uniti compresi, non consente messaggi cifrati sulle bande radioamatoriali.",
  "editor.field.name": "nome",
  "editor.field.dmrId": "ID DMR",
  "editor.field.radioName": "nome radio",

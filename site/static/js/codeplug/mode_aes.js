@@ -28,6 +28,8 @@ export const aesKind = {
 		if (r?.params?.id != null) ids.add(r.params.id);
 		return [[null, "editor.none"], ...[...ids].sort((a, b) => a - b).map((id) => [id, String(id)])];
 	} }],
+	// a key picked: the channel transmits encrypted (None: no AES at all)
+	encryptsTx: (c, p) => p?.id != null,
 	validate(c, p, problem) {
 		if (!c.system?.trafficKeys?.some((k) => k.id === p.id)) problem.warn("system", "mode_no_secret");
 	},
