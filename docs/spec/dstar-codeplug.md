@@ -64,10 +64,10 @@ record (3):
 
 | Header field | From |
 |---|---|
-| Flag 1 | b6 (via a repeater) from the channel's flag bit 0; every other bit 0 (voice, no control, no emergency) |
+| Flag 1 | b6 (via a repeater) set when the channel's flag bit 0 is set or its RPT1 names a repeater (not blank, not `DIRECT`), as an Icom radio sets it whenever it names one; every other bit 0 (voice, no control, no emergency) |
 | Flags 2, 3 | 0 |
-| RPT2 | The channel's RPT2 |
-| RPT1 | The channel's RPT1 |
+| RPT2 | The channel's RPT2; blank = `DIRECT`. A field ending in a space and one letter before the eighth place has the letter moved to the eighth (`Q1RP G` goes as `Q1RP   G`) |
+| RPT1 | The channel's RPT1, the same way |
 | UR | The channel's UR, or for one over the gateway command the user picked (2.3) |
 | MY | The radio-wide MY call; blank = the radio's DMR callsign, cut to 8 characters |
 | MY suffix | The radio-wide suffix |

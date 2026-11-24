@@ -83,6 +83,7 @@ typedef struct {
 	char my[RADIO_DSTAR_CALL + 1], suffix[RADIO_DSTAR_SUFFIX + 1];
 	char ur[RADIO_DSTAR_CALL + 1], rpt1[RADIO_DSTAR_CALL + 1], rpt2[RADIO_DSTAR_CALL + 1];
 	char msg[RADIO_DSTAR_MSG + 1];
+	bool repeater;		// its flag 1 said via a repeater
 	uint32_t heard_ms;	// hal_millis() at the header or the end of that transmission, 0 = none
 	// What PTT sends
 	char tx_my[RADIO_DSTAR_CALL + 1], tx_suffix[RADIO_DSTAR_SUFFIX + 1];

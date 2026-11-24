@@ -181,14 +181,42 @@ static const char *ur_now(uint8_t *mode)
 	return chan.ur;
 }
 
-// RPT1 and RPT2 left blank on a direct channel go out as "DIRECT", what other radios send and show for a simplex over
+// RPT1 and RPT2 left blank on a direct channel go out as "DIRECT", what other radios send and show for a simplex over.
+// A repeater's field carries its module letter in the eighth place ("Q1RP   B"): a gateway or repeater compares the
+// whole eight bytes with its own, so "Q1RP B  ", the callsign and letter as someone types them with one space, is
+// another station's call and the over goes nowhere past the repeater. An Icom radio never sends that: its repeater
+// list keeps call and module apart. So a field ending in a space and one letter, in any place before the eighth, has
+// the letter moved there. Anything else (a seven-character call with its letter run on, "DCS933C", a gateway command)
+// goes as written: there is no telling where its callsign ends
 static void rpt_field(char *dst, const char *src)
 {
 	if (field_blank(src, RADIO_DSTAR_CALL)) {
 		memcpy(dst, "DIRECT  ", RADIO_DSTAR_CALL);
-	} else {
-		memcpy(dst, src, RADIO_DSTAR_CALL);
+		return;
 	}
+	memcpy(dst, src, RADIO_DSTAR_CALL);
+	size_t n = RADIO_DSTAR_CALL;
+	while (n > 0 && (dst[n - 1] == ' ' || dst[n - 1] == '\0')) {
+		n--;
+	}
+	char m = dst[n - 1];
+	if (n >= 3 && n < RADIO_DSTAR_CALL && dst[n - 2] == ' ' && m >= 'A' && m <= 'Z') {
+		memset(&dst[n - 1], ' ', RADIO_DSTAR_CALL - (n - 1));
+		dst[RADIO_DSTAR_CALL - 1] = m;
+	}
+}
+
+// Flag 1 b6 says via a repeater. Set by the channel's flag, or by RPT1 naming one: a channel whose writer filled in the
+// repeater's and gateway's callsigns but left "Via a repeater" off (a new channel in the Codeplug Editor starts with it
+// off) otherwise sends a header that calls itself direct while naming a repeater, which a repeater or gateway may not
+// route (PR #809 field report). An Icom radio has no such separate switch: naming a repeater is going through one.
+// A channel left blank, or with RPT1 written as "DIRECT", stays direct
+static bool via_repeater(void)
+{
+	if ((chan.flags & DSTAR_CP_VIA_RPT) != 0) {
+		return true;
+	}
+	return !field_blank(chan.rpt1, RADIO_DSTAR_CALL) && memcmp(chan.rpt1, "DIRECT  ", RADIO_DSTAR_CALL) != 0;
 }
 
 static void routing_view(void)
@@ -202,7 +230,7 @@ static void routing_view(void)
 	rpt_field(r2, chan.rpt2);
 	dstar_field_text(view.tx_rpt1, r1, sizeof r1);
 	dstar_field_text(view.tx_rpt2, r2, sizeof r2);
-	view.tx_repeater = (chan.flags & DSTAR_CP_VIA_RPT) != 0;
+	view.tx_repeater = via_repeater();
 	dirty();
 }
 
@@ -216,6 +244,7 @@ static void rx_header(void *ctx, const dstar_header_t *h, bool from_slow)
 	dstar_field_text(view.ur, h->ur, sizeof h->ur);
 	dstar_field_text(view.rpt1, h->rpt1, sizeof h->rpt1);
 	dstar_field_text(view.rpt2, h->rpt2, sizeof h->rpt2);
+	view.repeater = (h->flag[0] & DSTAR_FLAG1_REPEATER) != 0;
 	if (!from_slow || view.rx == RDSTAR_RX_IDLE) {
 		view.msg[0] = '\0';	// a new over; a header rebuilt from the slow data mid-over keeps its message
 	}
@@ -768,7 +797,7 @@ bool radio_dstar_tx_start(uint32_t now_ms)
 		r2s[RADIO_DSTAR_CALL] = '\0';
 		strcpy(my, view.no_call ? "NOCALL" : view.tx_my);
 		dstar_header_t h;
-		uint8_t flag1 = view.tx_repeater ? DSTAR_FLAG1_REPEATER : 0;
+		uint8_t flag1 = via_repeater() ? DSTAR_FLAG1_REPEATER : 0;
 		dstar_header_set(&h, flag1, r2s, r1s, urs, my, view.tx_suffix);
 		char msg[RADIO_DSTAR_MSG + 1];
 		memcpy(msg, view_msg_tx, RADIO_DSTAR_MSG);

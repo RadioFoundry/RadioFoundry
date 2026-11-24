@@ -322,6 +322,50 @@ static void test_whole_over(void)
 	CHECK(lends == 1 && !rx_flat_on && stream_cb == NULL);
 }
 
+// A repeater channel as people write one in the Codeplug Editor: RPT1 and RPT2 filled in, "Via a repeater" left as
+// it was (the editor's new channel has it off), and a five-letter repeater callsign typed with one space before the
+// module letter. An Icom radio on that repeater sends flag 1 b6 set, with each module letter eighth; a header saying
+// "direct" or naming "Q1RP G " is one a gateway doesn't route beyond the repeater (field report on PR #809: no
+// reflector with the standard routing). Both must go out as the Icom's would, and the screens must say so
+static void test_repeater_as_typed(void)
+{
+	reset();
+	dstar_chan_t c;
+	memset(&c, ' ', sizeof c);
+	c.flags = 0;
+	memcpy(c.ur, "CQCQCQ  ", 8);
+	memcpy(c.rpt1, "Q1RP B  ", 8);
+	memcpy(c.rpt2, "Q1RP G  ", 8);
+	dstar_chan_encode(&c, chan_block);
+	chan_len = DSTAR_CP_CHAN_LEN;
+	channel_t ch = dstar_channel();
+	CHECK(radio_dstar_start(5, &ch, now_ms));
+	radio_dstar_view_t v;
+	radio_dstar_view(&v);
+	CHECK(v.tx_repeater);
+	CHECK(strcmp(v.tx_rpt1, "Q1RP   B") == 0 && strcmp(v.tx_rpt2, "Q1RP   G") == 0);
+	over(400);
+	hear();
+	radio_dstar_view(&v);
+	CHECK(v.heard && v.repeater);
+	CHECK(strcmp(v.rpt1, "Q1RP   B") == 0 && strcmp(v.rpt2, "Q1RP   G") == 0);
+	radio_dstar_stop();
+
+	// The same channel left direct by its writer: no repeater named, so DIRECT and flag 1 b6 clear, as before
+	reset();
+	memset(&c, ' ', sizeof c);
+	memcpy(c.ur, "CQCQCQ  ", 8);
+	dstar_chan_encode(&c, chan_block);
+	chan_len = DSTAR_CP_CHAN_LEN;
+	ch = dstar_channel();
+	CHECK(radio_dstar_start(5, &ch, now_ms));
+	over(400);
+	hear();
+	radio_dstar_view(&v);
+	CHECK(!v.tx_repeater && v.heard && !v.repeater && strcmp(v.rpt1, "DIRECT") == 0);
+	radio_dstar_stop();
+}
+
 static void test_ur_choices(void)
 {
 	reset();
@@ -604,6 +648,9 @@ int main(void)
 	test_tone_cal_mid_over();
 	test_stalled_route();
 	test_reset_mid_block();
+	// Last: run before test_reset_mid_block, its two overs move the clock's phase and that test then counts 20 played
+	// frames where it asks for more than 20. Its margin is the thing to widen, separately from this fix
+	test_repeater_as_typed();
 	printf("# radioDstarTest: %s\n", failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }
