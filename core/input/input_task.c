@@ -46,6 +46,7 @@ static volatile uint16_t long_now = INPUT_LONG_MS;
 static volatile bool ptt_blocked;	// input_set_ptt_block
 static volatile uint32_t ptt_downs;	// PTT presses seen by the engine (debug link: input.ptt_downs)
 static volatile bool dtmf_blocked;	// input_set_dtmf_block
+static volatile bool switch_menu;	// the UI owns switch detents while a screen covers Home
 static switch_follow_t sw_follow;	// the channel switch (hal_input_t.position), input task only
 static volatile int8_t switch_pos = -1;	// its settled position, for the debug link
 static volatile int32_t switch_hold = -1;	// input_switch_hold's zone, taken by the input task
@@ -129,7 +130,7 @@ static void switch_poll(uint32_t now)
 	uint16_t zone, at, size;
 	bool detached;
 	bool ready = radio_get_zone_pos(&zone, &at, &size, &detached);
-	switch_follow_mode(&sw_follow, detached, pos, zone, size);
+	switch_follow_mode(&sw_follow, detached || switch_menu, pos, zone, size);
 	switch_step_t st = switch_follow_step(&sw_follow, pos, now);
 	if (st == SWITCH_CHECK) {
 		st = switch_follow_check(&sw_follow, zone, at, size, ready) ? SWITCH_ASK : SWITCH_IDLE;
@@ -278,6 +279,11 @@ int32_t input_encoder_total(void)
 void input_switch_hold(uint16_t zone)
 {
 	switch_hold = zone;
+}
+
+void input_switch_menu(bool active)
+{
+	switch_menu = active;
 }
 
 int8_t input_switch_pos(void)

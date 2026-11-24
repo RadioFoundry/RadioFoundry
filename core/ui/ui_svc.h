@@ -196,6 +196,7 @@ void ui_svc_dtmf_block(bool blocked);
 // Keys locked with Settings > Key lock > Knob when locked Off: the radio holds its level and ignores the volume knob; false
 // follows the knob again. Weak no-op without the radio core
 void ui_svc_volume_hold(bool hold);
+void ui_svc_switch_menu(bool active);		// whether an open screen owns the channel switch
 
 // --- Messages and signaling (dmr-data) ---
 #define UI_MSG_TEXT_MAX	143

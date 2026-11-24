@@ -119,6 +119,8 @@ static const flow_t flows[] = {
 	{ "Canceled satellite TLE entry reopens empty", "", "ok 6 9 ok ctx 2 back back ctx",
 	  "screen=satellite-tle-text hides=A_", 19, false },
 #endif
+	{ "menu owns the physical selector until Home returns", "", "ok expect:switchmenu=1 down back",
+	  "screen=home switchmenu=0 pos=3", 3, false },
 	{ "menu entry keeps an available first row", "", "ok", "screen=hub focus=Contacts", 1, false },
 	{ "menu disabled row still explains why", "ok 7 5", "up ok", "focus=Send_position toast=No_GPS_on_this_radio", 2, false },
 	{ "menu return preserves focus", "ok 7 down down ok", "back", "screen=settings focus=Talk_&_listen", 1, false },

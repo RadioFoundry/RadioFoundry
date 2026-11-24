@@ -1762,6 +1762,7 @@ static const hal_hwopt_t sim_hwopts[] = {
 static bool ref_trim;
 // A volume knob the MCU reads (Settings > Key lock > Knob when locked) only with a "knob:<percent>" token
 static bool knob_radio;
+static bool switch_menu;
 static bool vol_held;		// ui_svc_volume_hold: the radio ignores the volume knob
 uint32_t ui_svc_features(void)
 {
@@ -2057,6 +2058,7 @@ void ui_svc_vibrate(uint8_t vibe) { sim_rec.vibes++; sim_rec.last_vibe = vibe; }
 static bool ptt_blocked;	// ui_svc_ptt_block: the input layer keeps PTT presses from the radio
 void ui_svc_ptt_block(bool blocked) { ptt_blocked = blocked; }
 void ui_svc_volume_hold(bool hold) { vol_held = hold; }
+void ui_svc_switch_menu(bool active) { switch_menu = active; }
 void ui_svc_apply(uint8_t id, int32_t value)
 {
 	if (id == UI_SET_LONG_PRESS_MS)
@@ -2954,6 +2956,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "vol") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_VOLUME));
 	else if (strcmp(key, "locked") == 0) snprintf(got, sizeof got, "%u", s.locked);
 	else if (strcmp(key, "gps") == 0) snprintf(got, sizeof got, "%u", s.gps);	// UI_GPS_*: the strip's icon
+	else if (strcmp(key, "switchmenu") == 0) snprintf(got, sizeof got, "%u", switch_menu);
 	else if (strcmp(key, "volhold") == 0) snprintf(got, sizeof got, "%u", vol_held);
 	else if (strcmp(key, "query") == 0) snprintf(got, sizeof got, "%s", s.query);
 	else if (strcmp(key, "banner") == 0) { snprintf(got, sizeof got, "%s", s.banner[0] ? s.banner : "none"); prefix = true; }

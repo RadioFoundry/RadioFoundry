@@ -4260,6 +4260,7 @@ static bool ptt_blocked;
 void input_set_ptt_block(bool b) { ptt_blocked = b; }
 static bool dtmf_blocked;
 void input_set_dtmf_block(bool b) { dtmf_blocked = b; }
+void input_switch_menu(bool active) { (void)active; }
 static keymap_entry_t got_keymap[4];
 static int keymap_sets;
 void input_set_keymap(const keymap_entry_t *map) { memcpy(got_keymap, map, sizeof(got_keymap)); keymap_sets++; }

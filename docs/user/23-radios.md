@@ -311,6 +311,9 @@ Dual Watch shows each channel's position within its zone. Pressing A/B recalls
 each pane's selection. The next knob turn selects the physical slot in the active
 memory pane if that slot can be watched. In a VFO pane, the knob steps the frequency.
 
+Turning the knob in a menu leaves the memory channel alone. On returning to Home,
+the next knob turn selects the physical slot.
+
 There are no **P1**, **P2** or **SK3** keys, so there are no dedicated power level, zone, or emergency keys. Change power with **\***, **1**. Where each key sits in the key matrix hasn't been confirmed on a radio. The bootloader starts when you hold **PTT** and the side key just above it at power-on.
 
 ### MD-380 bands and power levels
