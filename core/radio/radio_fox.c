@@ -18,8 +18,9 @@ static const char s_msg[] = "FOX";
 void fox_rec_default(fox_rec_t *r)
 {
 	memset(r, 0, sizeof(*r));
-	r->interval = FOX_INTERVAL_DEFAULT;
+	r->interval_s = FOX_INTERVAL_DEFAULT_S;
 	r->flags = FOX_F_MSG | FOX_F_JINGLE;
+	r->repeats = 1;
 	memcpy(r->msg, s_msg, sizeof(s_msg) - 1u);
 }
 
@@ -37,8 +38,10 @@ uint8_t fox_msg_len(const fox_rec_t *r)
 	return n;
 }
 
-// Byte offsets in the record: interval, flags, message, the frequencies, the lengths
-#define REC_MSG		2u
+// Byte offsets in the record: interval (2 bytes), flags, repeats, message, the frequencies, the lengths
+#define REC_FLAGS	2u
+#define REC_REPEATS	3u
+#define REC_MSG		4u
 #define REC_HZ		(REC_MSG + FOX_MSG_MAX)
 #define REC_MS		(REC_HZ + 2u * FOX_STEPS)
 
@@ -49,9 +52,11 @@ bool fox_rec_decode(const uint8_t *v, int len, fox_rec_t *r)
 		return false;
 	}
 	memcpy(b, v, (unsigned)len < FOX_REC_LEN ? (unsigned)len : FOX_REC_LEN);
-	r->interval = b[0];
-	r->flags = b[1];
-	if (r->interval >= FOX_INTERVALS || (r->flags & ~FOX_F_MASK) != 0) {
+	r->interval_s = (uint16_t)(b[0] | b[1] << 8);
+	r->flags = b[REC_FLAGS];
+	r->repeats = b[REC_REPEATS] != 0 ? b[REC_REPEATS] : 1u;	// a shorter record
+	if (r->interval_s < FOX_INTERVAL_MIN_S || r->interval_s > FOX_INTERVAL_MAX_S || (r->flags & ~FOX_F_MASK) != 0 ||
+	    r->repeats > FOX_REPEATS_MAX) {
 		return false;
 	}
 	bool end = false;
@@ -76,20 +81,16 @@ bool fox_rec_decode(const uint8_t *v, int len, fox_rec_t *r)
 
 void fox_rec_encode(const fox_rec_t *r, uint8_t out[FOX_REC_LEN])
 {
-	out[0] = r->interval;
-	out[1] = r->flags;
+	out[0] = (uint8_t)(r->interval_s & 0xFFu);
+	out[1] = (uint8_t)(r->interval_s >> 8);
+	out[REC_FLAGS] = r->flags;
+	out[REC_REPEATS] = r->repeats;
 	memcpy(&out[REC_MSG], r->msg, FOX_MSG_MAX);
 	for (unsigned i = 0; i < FOX_STEPS; i++) {
 		out[REC_HZ + 2u * i] = (uint8_t)(r->hz[i] & 0xFFu);
 		out[REC_HZ + 2u * i + 1u] = (uint8_t)(r->hz[i] >> 8);
 		out[REC_MS + i] = r->ms10[i];
 	}
-}
-
-uint32_t fox_interval_ms(uint8_t code)
-{
-	static const uint16_t s[FOX_INTERVALS] = { 15, 30, 60, 120, 300, 600 };
-	return code < FOX_INTERVALS ? s[code] * 1000u : 0;
 }
 
 uint8_t fox_jingle(const fox_rec_t *r, beep_seg_t out[FOX_STEPS])
@@ -116,10 +117,12 @@ uint32_t fox_cycle_ms(const fox_rec_t *r, const char *call, uint8_t call_len, ui
 	if ((r->flags & FOX_F_JINGLE) != 0) {
 		beep_seg_t seg[FOX_STEPS];
 		uint8_t m = fox_jingle(r, seg);
-		t += sent ? FOX_GAP_MS : 0;
+		uint32_t once = 0;
 		for (uint8_t i = 0; i < m; i++) {
-			t += seg[i].ms;
+			once += seg[i].ms;
 		}
+		uint32_t n_play = r->repeats != 0 ? r->repeats : 1u;
+		t += (sent ? FOX_GAP_MS : 0) + n_play * once + (n_play - 1u) * FOX_GAP_MS;
 		sent = true;
 	}
 	t += sent ? FOX_GAP_MS : 0;
@@ -129,10 +132,12 @@ uint32_t fox_cycle_ms(const fox_rec_t *r, const char *call, uint8_t call_len, ui
 
 // --- The schedule ---
 
-void radio_fox_start(radio_fox_t *f, uint8_t parts, uint32_t interval_ms, uint32_t now_ms)
+void radio_fox_start(radio_fox_t *f, uint8_t parts, uint8_t repeats, uint32_t interval_ms, uint32_t now_ms)
 {
 	f->phase = FOX_WAIT;
 	f->parts = parts & FOX_F_MASK;
+	f->repeats = repeats == 0 ? 1u : repeats > FOX_REPEATS_MAX ? FOX_REPEATS_MAX : repeats;
+	f->played = 0;
 	f->interval_ms = interval_ms;
 	f->at = now_ms;
 	f->cycles = 0;
@@ -150,7 +155,7 @@ static bool due(const radio_fox_t *f, uint32_t now_ms)
 }
 
 // The phase after p in this run, skipping the parts it doesn't send (and their gaps): a gap goes before a part only
-// when something was sent before it
+// when something was sent before it. The jingle goes again, after a gap, until it has played repeats times
 static uint8_t next_phase(const radio_fox_t *f, uint8_t p)
 {
 	bool msg = (f->parts & FOX_F_MSG) != 0, jingle = (f->parts & FOX_F_JINGLE) != 0;
@@ -162,7 +167,7 @@ static uint8_t next_phase(const radio_fox_t *f, uint8_t p)
 	case FOX_GAP_JINGLE:
 		return FOX_JINGLE;
 	case FOX_JINGLE:
-		return FOX_GAP_ID;
+		return f->played < f->repeats ? FOX_GAP_JINGLE : FOX_GAP_ID;
 	case FOX_GAP_ID:
 		return FOX_ID;
 	case FOX_ID:
@@ -200,6 +205,7 @@ fox_act_t radio_fox_poll(radio_fox_t *f, bool part_done, uint32_t now_ms)
 	case FOX_MSG:
 		return FOX_ACT_MSG;
 	case FOX_JINGLE:
+		f->played++;
 		return FOX_ACT_JINGLE;
 	case FOX_ID:
 		return FOX_ACT_ID;
@@ -221,6 +227,7 @@ void radio_fox_keyed(radio_fox_t *f, uint32_t now_ms)
 {
 	if (f->phase == FOX_WAIT && due(f, now_ms)) {	// only the key-up FOX_ACT_KEY asked for
 		f->phase = FOX_LEAD;
+		f->played = 0;
 		f->at = now_ms + FOX_LEAD_MS;
 	}
 }

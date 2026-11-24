@@ -4350,6 +4350,11 @@ msgid " steps"
 msgstr " 步"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_CUSTOM"
+msgid "Custom "
+msgstr "自定 "
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_TOAST_NO_MORSE"
 msgid "No Morse for "
 msgstr "CW 无法发送 "
@@ -4380,6 +4385,11 @@ msgid "Jingle"
 msgstr "乐曲"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_REPEATS"
+msgid "Jingle repeats"
+msgstr "乐曲重复"
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_ROW_JINGLE_STEPS"
 msgid "Jingle steps"
 msgstr "乐曲步骤"
@@ -4395,9 +4405,24 @@ msgid "None"
 msgstr "无"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIMES"
+msgid " times"
+msgstr " 次"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIME"
+msgid " time"
+msgstr " 次"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "信标：本版本无"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_SHORT_WAIT"
+msgid "Short wait: the radio may get hot"
+msgstr "间隔太小：电台可能发热"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_WHY_NOT_FM"

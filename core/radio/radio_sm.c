@@ -8606,7 +8606,7 @@ static void fox_start(radio_sm_t *sm, uint32_t now_ms)
 		changed(sm);
 		return;
 	}
-	radio_fox_start(&sm->fox, r->flags, fox_interval_ms(r->interval), now_ms);
+	radio_fox_start(&sm->fox, r->flags, r->repeats, (uint32_t)r->interval_s * 1000u, now_ms);
 	sm->view.fox = true;
 	sm->view.fox_why = RFOX_WHY_NONE;
 	fox_view(sm, now_ms);

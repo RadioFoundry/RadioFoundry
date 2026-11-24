@@ -2034,7 +2034,7 @@ bool ui_svc_fox(uint8_t cmd)
 		view.fox = true;
 		view.fox_why = RFOX_WHY_NONE;
 		view.fox_phase = FOX_WAIT;
-		view.fox_next_s = (uint16_t)(fox_interval_ms(sim_fox.interval) / 1000u);
+		view.fox_next_s = sim_fox.interval_s;
 		view.fox_cycles = view.fox_cut = 0;
 	}
 	changed();
@@ -3137,7 +3137,8 @@ static bool check(const char *kv, char *err, size_t len)
 #if CONFIG_FOX
 	else if (strcmp(key, "fox") == 0) snprintf(got, sizeof got, "%u", view.fox);
 	else if (strcmp(key, "foxwhy") == 0) snprintf(got, sizeof got, "%u", view.fox_why);	// radio_fox_why_t
-	else if (strcmp(key, "foxint") == 0) snprintf(got, sizeof got, "%u", sim_fox.interval);
+	else if (strcmp(key, "foxint") == 0) snprintf(got, sizeof got, "%u", sim_fox.interval_s);	// seconds
+	else if (strcmp(key, "foxrep") == 0) snprintf(got, sizeof got, "%u", sim_fox.repeats);
 	else if (strcmp(key, "foxflags") == 0) snprintf(got, sizeof got, "%u", sim_fox.flags);	// FOX_F_*
 	else if (strcmp(key, "foxmsg") == 0) snprintf(got, sizeof got, "%.*s", (int)fox_msg_len(&sim_fox), sim_fox.msg);
 	else if (strcmp(key, "foxpreviews") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_fox_previews);
@@ -3450,6 +3451,10 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #endif
 #if CONFIG_FOX
+	if (strcmp(t, "foxint") == 0 && arg != NULL) {	// the record's wait, in seconds, as the Codeplug Editor sets it
+		sim_fox.interval_s = (uint16_t)atoi(arg);
+		return true;
+	}
 	if (strcmp(t, "foxair") == 0 && arg != NULL && view.fox) {
 		view.fox_phase = (uint8_t)atoi(arg);
 		if (view.fox_phase == FOX_WAIT)

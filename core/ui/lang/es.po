@@ -4348,6 +4348,11 @@ msgid " steps"
 msgstr " pasos"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_VALUE_CUSTOM"
+msgid "Custom "
+msgstr "Propio "
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_TOAST_NO_MORSE"
 msgid "No Morse for "
 msgstr "Sin Morse para "
@@ -4378,6 +4383,11 @@ msgid "Jingle"
 msgstr "Melodía"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_ROW_JINGLE_REPEATS"
+msgid "Jingle repeats"
+msgstr "Repetir melodía"
+
+#: core/ui/ui_menus.c
 msgctxt "FOX_ROW_JINGLE_STEPS"
 msgid "Jingle steps"
 msgstr "Pasos de melodía"
@@ -4393,9 +4403,24 @@ msgid "None"
 msgstr "Ninguno"
 
 #: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIMES"
+msgid " times"
+msgstr " veces"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_UNIT_TIME"
+msgid " time"
+msgstr " vez"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_FOX_NOT_IN_BUILD"
 msgid "Fox: not in this build"
 msgstr "Zorro: no disponible"
+
+#: core/ui/ui_menus.c
+msgctxt "FOX_TOAST_SHORT_WAIT"
+msgid "Short wait: the radio may get hot"
+msgstr "Espera corta: la radio puede calentarse"
 
 #: core/ui/ui_menus.c
 msgctxt "FOX_WHY_NOT_FM"

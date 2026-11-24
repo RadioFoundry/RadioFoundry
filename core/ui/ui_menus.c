@@ -7426,7 +7426,14 @@ static void sc_summary(char *out, size_t len, uint8_t ev)
 
 static fox_rec_t fox_ui;	// the record as last read or written
 
-enum { FOX_R_RUN, FOX_R_INTERVAL, FOX_R_MSG, FOX_R_TEXT, FOX_R_JINGLE, FOX_R_STEPS, FOX_R_PREVIEW, FOX_R_COUNT };
+enum { FOX_R_RUN, FOX_R_INTERVAL, FOX_R_MSG, FOX_R_TEXT, FOX_R_JINGLE, FOX_R_REPEATS, FOX_R_STEPS, FOX_R_PREVIEW,
+       FOX_R_COUNT };
+
+// The waits OK steps through, in seconds. The Codeplug Editor sets any from FOX_INTERVAL_MIN_S to FOX_INTERVAL_MAX_S;
+// such a one shows as Custom and OK goes on to the next preset above it
+static const uint16_t fox_presets[] = { 3, 5, 10, 15, 30, 60, 120, 240, 300 };
+#define FOX_PRESETS		(sizeof fox_presets / sizeof fox_presets[0])
+#define FOX_SHORT_WAIT_S	15u	// below this the transmitter is keyed most of the time: the radio warns of the heat
 
 static bool fox_write(const fox_rec_t *r)
 {
@@ -7438,13 +7445,32 @@ static bool fox_write(const fox_rec_t *r)
 	return true;
 }
 
-static const char *fox_interval_name(uint8_t code)
+// "3 s", "2 min", or for a wait that isn't a preset "Custom 1:42"
+static void fox_interval_text(sbuf_t *b, uint16_t secs)
 {
-	static const tr_id_t names[FOX_INTERVALS] = { TRX(FOX_VALUE_15_S, "15 s"),
-						      TRX(FOX_VALUE_30_S, "30 s"), TRX(FOX_VALUE_1_MIN, "1 min"),
-						      TRX(FOX_VALUE_2_MIN, "2 min"), TRX(FOX_VALUE_5_MIN, "5 min"),
-						      TRX(FOX_VALUE_10_MIN, "10 min") };
-	return tr(names[code < FOX_INTERVALS ? code : FOX_INTERVAL_DEFAULT]);
+	bool preset = false;
+	for (unsigned k = 0; k < FOX_PRESETS; k++)
+		preset = preset || fox_presets[k] == secs;
+	if (!preset) {
+		sb_str(b, TR(FOX_VALUE_CUSTOM, "Custom "));
+		sb_mmss(b, secs);
+	} else if (secs < 60u) {
+		sb_u32(b, secs, 1);
+		sb_str(b, " s");
+	} else {
+		sb_u32(b, secs / 60u, 1);
+		sb_str(b, " min");
+	}
+}
+
+// The preset after secs (the first above it), back to the shortest after the longest
+static uint16_t fox_interval_next(uint16_t secs)
+{
+	for (unsigned k = 0; k < FOX_PRESETS; k++) {
+		if (fox_presets[k] > secs)
+			return fox_presets[k];
+	}
+	return fox_presets[0];
 }
 
 static uint16_t fox_count(void) { return FOX_R_COUNT; }
@@ -7503,6 +7529,7 @@ static void fox_item(uint16_t i, ui_item_t *it)
 	static const tr_id_t names[FOX_R_COUNT] = { TRN(TITLE_FOX, "Fox"), TRN(FOX_ROW_INTERVAL, "Interval"),
 						    TRN(FOX_ROW_MESSAGE, "Message"),
 						    TRN(FOX_ROW_MESSAGE_TEXT, "Message text"), TRN(FOX_ROW_JINGLE, "Jingle"),
+						    TRN(FOX_ROW_JINGLE_REPEATS, "Jingle repeats"),
 						    TRN(FOX_ROW_JINGLE_STEPS, "Jingle steps"),
 						    TRN(FOX_ROW_PREVIEW_JINGLE, "Preview jingle") };
 	if (i >= FOX_R_COUNT)
@@ -7515,7 +7542,7 @@ static void fox_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, ui_view()->fox ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
 		break;
 	case FOX_R_INTERVAL:
-		sb_str(&b, fox_interval_name(fox_ui.interval));
+		fox_interval_text(&b, fox_ui.interval_s);
 		break;
 	case FOX_R_MSG:
 		sb_str(&b, fox_msg_len(&fox_ui) != 0 && (fox_ui.flags & FOX_F_MSG) != 0 ? TR(VALUE_ON, "On") :
@@ -7533,6 +7560,10 @@ static void fox_item(uint16_t i, ui_item_t *it)
 	}
 	case FOX_R_JINGLE:
 		sb_str(&b, (fox_ui.flags & FOX_F_JINGLE) != 0 ? TR(VALUE_ON, "On") : TR(VALUE_OFF, "Off"));
+		break;
+	case FOX_R_REPEATS:
+		sb_u32(&b, fox_ui.repeats != 0 ? fox_ui.repeats : 1u, 1);
+		sb_str(&b, fox_ui.repeats > 1u ? TR(FOX_UNIT_TIMES, " times") : TR(FOX_UNIT_TIME, " time"));
 		break;
 	case FOX_R_STEPS: {
 		uint8_t n = sc_steps_of(&fox_src);
@@ -7559,8 +7590,9 @@ static void fox_select(uint16_t i, bool hold)
 			ui_toast(TR(WHY_FOX_NOT_IN_BUILD, "Fox: not in this build"));
 		break;
 	case FOX_R_INTERVAL:
-		r.interval = (uint8_t)((r.interval + 1u) % FOX_INTERVALS);
-		(void)fox_write(&r);
+		r.interval_s = fox_interval_next(r.interval_s);
+		if (fox_write(&r) && r.interval_s < FOX_SHORT_WAIT_S)
+			ui_toast(TR(FOX_TOAST_SHORT_WAIT, "Short wait: the radio may get hot"));
 		break;
 	case FOX_R_MSG:
 		if (fox_msg_len(&r) == 0) {
@@ -7575,6 +7607,10 @@ static void fox_select(uint16_t i, bool hold)
 		break;
 	case FOX_R_JINGLE:
 		r.flags ^= FOX_F_JINGLE;
+		(void)fox_write(&r);
+		break;
+	case FOX_R_REPEATS:
+		r.repeats = (uint8_t)(r.repeats >= FOX_REPEATS_MAX ? 1u : r.repeats + 1u);
 		(void)fox_write(&r);
 		break;
 	case FOX_R_STEPS:

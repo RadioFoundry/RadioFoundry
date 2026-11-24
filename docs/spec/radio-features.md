@@ -433,18 +433,22 @@ path the tone's own muting doesn't cover; without it a gap with `tx_tone(0)` car
 | Lead-in | silent carrier, so receivers' squelch opens | `FOX_LEAD_MS` 300 ms |
 | Message | the record's text in Morse at the CW tone and speed (`cw_tone_hz`, `cw_wpm`; 800 Hz and 20 wpm when unset) | up to 16 characters |
 | Gap | silent carrier, only between two parts that are sent | `FOX_GAP_MS` 600 ms |
-| Jingle | the record's steps as an on-air chain (4.3's step format, `chain_tone`) | at most `FOX_MAX_MS` 10 s |
+| Jingle | the record's steps as an on-air chain (4.3's step format, `chain_tone`), played the record's repeats times (1 to `FOX_REPEATS_MAX` 10) with a gap before each further play | at most `FOX_MAX_MS` 10 s a play |
 | Gap | as above | 600 ms |
 | ID | the callsign from the radio name (`radio_cwid_callsign`), in Morse as the message | always sent |
 | Tail | silent carrier | `FOX_TAIL_MS` 300 ms |
 
 The message and the jingle can each be off; the ID can't. A message that is empty sends nothing. The next cycle keys
-the interval after this one unkeyed: 15 s, 30 s, 1, 2, 5 or 10 min. The first keys at once.
+the interval after this one unkeyed, 3 s to 60 min (`FOX_INTERVAL_MIN_S`, `FOX_INTERVAL_MAX_S`). The first keys at
+once. The menu steps through presets: 3, 5, 10, 15 and 30 s, 1, 2, 4 and 5 min (4 min is a 5-fox ARDF cycle's wait).
+The Codeplug Editor sets any whole number of seconds in the range; the menu shows one that isn't a preset as Custom
+m:ss, and OK on it goes to the next preset above. A preset under 15 s shows a warning: the transmitter is keyed most of
+the time, and on high power a radio gets hot.
 
 **The record** is the codeplug's (key 0x000A, [codeplug-settings.md](codeplug-settings.md) 3.4): the interval, the
-two parts' switches, the message and the jingle's 32 steps. Each step is a frequency (0 = a pause, up to 3400 Hz in
+two parts' switches, the jingle's repeats, the message and the jingle's 32 steps. Each step is a frequency (0 = a pause, up to 3400 Hz in
 10 Hz steps) and a length (10 ms units, up to 2550 ms). A step of length 0 ends the chain. A jingle with no step is the
-default tune, written for this. No record, or one the fox can't take, is the defaults: "FOX", the tune, every minute.
+default tune, written for this. No record, or one the fox can't take, is the defaults: "FOX", the tune once, every minute.
 The radio reads it when the fox starts, so a change takes effect at the next start. The radio's menu sets all of it:
 the message in Text entry ([ui.md](ui.md) 2), upper case and only characters with Morse.
 
@@ -474,7 +478,7 @@ the message in Text entry ([ui.md](ui.md) 2), upper case and only characters wit
 A stop in the middle of a cycle unkeys at once. Power is the channel's power level; milliwatt levels for close-range
 hunts need an attenuator or a board's power calibration ([power-calibration.md](../testing/power-calibration.md)).
 
-**Preview.** `RFOX_PREVIEW` plays the jingle on the speaker as a custom beep (`beep_play_custom`, which holds 32 steps
+**Preview.** `RFOX_PREVIEW` plays the jingle once on the speaker as a custom beep (`beep_play_custom`, which holds 32 steps
 in a fox build). It is ignored while a cycle is on air.
 
 **View** (debug link section `fox`, [debuglink.md](debuglink.md)): `fox.on`, `fox.phase` (off, wait, lead, msg, gap,

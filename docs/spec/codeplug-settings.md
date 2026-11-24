@@ -103,7 +103,7 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x0007 | Start tone | record | The signaling tone of a transmission's start: outputs and chain (3.3) | `sig_dmr[0]`, `sig_fm[0]`, `sig_hz[0]`, `sig_ms[0]` | Signaling tones in the build (`CONFIG_SIG_TONES`) |
 | 0x0008 | End tone | record | The same for a transmission's end | `sig_dmr[1]`, `sig_fm[1]`, `sig_hz[1]`, `sig_ms[1]` | `CONFIG_SIG_TONES` |
 | 0x0009 | Idle tone | record | The same for a reception's end (no on-air output) | `sig_dmr[2]`, `sig_fm[2]`, `sig_hz[2]`, `sig_ms[2]` | `CONFIG_SIG_TONES` |
-| 0x000A | Fox | record | Fox mode's interval, parts, message and jingle (3.4) | none: the record is its only home (3.4) | Fox mode in the build (`CONFIG_FOX`) |
+| 0x000A | Fox | record | Fox mode's interval, parts, jingle repeats, message and jingle (3.4) | none: the record is its only home (3.4) | Fox mode in the build (`CONFIG_FOX`) |
 | 0x0100 | Systems | record list | 0x0100-0x01FF: system n's record ([channel-modes.md](channel-modes.md) 7.1) | none (codeplug data) | the system's type built |
 | 0x0200 | System entries | record list | 0x0200-0x02FF: a system's sites, channels and plan rows ([channel-modes.md](channel-modes.md) 7.2) | none | the system's type built |
 | 0x0300 | System secrets | record list | 0x0300-0x03FF: system n's own secret ([channel-modes.md](channel-modes.md) 7.4) | none | the system's type built |
@@ -207,21 +207,22 @@ it had them, and the other five follow):
 
 Fox mode ([radio-features.md](radio-features.md) 3.8) keeps what it sends in one record: the interval, the parts, the
 message and the jingle make one transmission, and the radio checks the length of all of them together against the
-transmit time-out. 114 bytes, little endian:
+transmit time-out. 116 bytes, little endian:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | Interval code: 0 15 s, 1 30 s, 2 1 min, 3 2 min, 4 5 min, 5 10 min, from the end of one transmission to the start of the next |
-| 1 | 1 | Parts: bit 0 the message, bit 1 the jingle. The callsign ID is always sent |
-| 2 | 16 | The message, ASCII, padded with 0 (no terminator when 16 long). Letters, digits, the Morse punctuation and spaces |
-| 18 | 64 | Frequencies of the jingle's 32 steps in Hz, u16 each; 0 is a pause. Multiples of 10, at most 3400 |
-| 82 | 32 | Lengths of the steps in units of 10 ms. A step of length 0 ends the jingle, and a jingle with no step is the radio's own tune. The jingle is cut at 10 s |
+| 0 | 2 | Interval in seconds, 3 to 3600, from the end of one transmission to the start of the next |
+| 2 | 1 | Parts: bit 0 the message, bit 1 the jingle. The callsign ID is always sent |
+| 3 | 1 | Jingle repeats: how many times the jingle plays in a cycle, 1 to 10. 0 reads as 1 |
+| 4 | 16 | The message, ASCII, padded with 0 (no terminator when 16 long). Letters, digits, the Morse punctuation and spaces |
+| 20 | 64 | Frequencies of the jingle's 32 steps in Hz, u16 each; 0 is a pause. Multiples of 10, at most 3400 |
+| 84 | 32 | Lengths of the steps in units of 10 ms. A step of length 0 ends the jingle, and a jingle with no step is the radio's own tune. The jingle is cut at 10 s |
 
-- A record shorter than 114 bytes reads with the missing fields zero. A longer one (a later version) is read from the
+- A record shorter than 116 bytes reads with the missing fields zero. A longer one (a later version) is read from the
   front.
-- The record is absent for the reader when a field is outside what the fox takes: an interval code over 5, a part bit
-  it doesn't know, a character with no Morse, text after the padding, or a frequency over 3400 Hz or not a multiple of
-  10. Nothing is clamped (3.1). Absent, the fox sends "FOX" and its own tune every minute.
+- The record is absent for the reader when a field is outside what the fox takes: an interval under 3 s or over
+  3600 s, more than 10 repeats, a part bit it doesn't know, a character with no Morse, text after the padding, or a frequency over 3400 Hz or not a multiple of
+  10. Nothing is clamped (3.1). Absent, the fox sends "FOX" and its own tune (once) every minute.
 - The record has no copy in the settings store, as the signaling tones' steps have none: the radio core holds it in
   RAM from the codeplug. On a radio whose settings area can't be written (another firmware's codeplug, 4) the fox runs
   with the defaults and the menu can't change them.

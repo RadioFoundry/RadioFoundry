@@ -4940,11 +4940,12 @@ static void test_fox(void)
 	CHECK(!sm.view.fox && sm.view.fox_why == RFOX_WHY_NO_TONE && sm.view.state == RS_IDLE);
 	hw.has_tx_tone = true;
 
-	// The codeplug's record: no message, a two-note jingle, every 30 s
+	// The codeplug's record: no message, a two-note jingle played twice, every 3 s
 	start();
 	board.radio = &radio_key;
 	memset(&r, 0, sizeof r);
-	r.interval = 1;	// 30 s
+	r.interval_s = FOX_INTERVAL_MIN_S;
+	r.repeats = 2;
 	r.flags = FOX_F_MSG | FOX_F_JINGLE;	// the message on but empty: nothing for it
 	r.hz[0] = 1000;
 	r.ms10[0] = 20;
@@ -4960,10 +4961,18 @@ static void test_fox(void)
 	CHECK(hw.tone_hz == 1000);
 	run(200);
 	CHECK(hw.tone_hz == 2000);
-	CHECK(fox_until(FOX_GAP_ID, 400) && !hw.key_down);
-	CHECK(fox_until(FOX_WAIT, 8000) && sm.view.fox_next_s == 30 && sm.view.fox_cycles == 1);
+	// again after a gap, still keyed
+	CHECK(fox_until(FOX_GAP_JINGLE, 400) && sm.view.state == RS_TX);
+	CHECK(fox_until(FOX_JINGLE, 800));
+	run(5);
+	CHECK(hw.tone_hz == 1000);
+	CHECK(fox_until(FOX_GAP_ID, 600) && !hw.key_down);
+	CHECK(fox_until(FOX_WAIT, 8000) && sm.view.fox_next_s == FOX_INTERVAL_MIN_S && sm.view.fox_cycles == 1);
+	int keyed = hw.tx_calls;
+	CHECK(fox_until(FOX_LEAD, FOX_INTERVAL_MIN_S * 1000 + 100) && hw.tx_calls == keyed + 1);	// the next, 3 s on
 	// A record the fox can't take reads as absent: the defaults
-	fox_kv[0] = FOX_INTERVALS;
+	fox_kv[0] = 0;	// a 0 s wait
+	fox_kv[1] = 0;
 	req(RREQ_FOX, 0);
 	req(RREQ_FOX, 1);
 	CHECK(fox_until(FOX_MSG, 400));	// "FOX" again
