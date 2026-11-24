@@ -14,9 +14,6 @@
 #if CONFIG_MDNS || CONFIG_TFTP
 #include "net/net_services.h"
 #endif
-#if CONFIG_NET_RADIO_CTL
-#include "net/net_svc.h"
-#endif
 
 void debuglink_view_net(dl_text_t *t)
 {
@@ -44,13 +41,7 @@ void debuglink_view_net_svc(dl_text_t *t)
 #if CONFIG_MDNS || CONFIG_TFTP
 	net_services_view(t);
 #endif
-#if CONFIG_NET_RADIO_UDP
-	radio_udp_view(t);
-#endif
-#if CONFIG_NET_RADIO_CTL
-	radio_ctl_view(t);
-#endif
-#if !(CONFIG_MDNS || CONFIG_TFTP || CONFIG_NET_RADIO_CTL)
+#if !(CONFIG_MDNS || CONFIG_TFTP)
 	dl_text(t, "net_svc.built=0\n");
 #endif
 }

@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// Zone and channel control, whatever carries it (docs/spec/tcp-services.md 8): the requests "select?zone=Z[&pos=P]"
-// and "step?channel=N" / "step?zone=N" as the UDP control (radio_udp.c) and /ws (webctl.c) receive them. They become
+// Zone and channel control (docs/spec/tcp-services.md 8): the requests "select?zone=Z[&pos=P]" and "step?channel=N" /
+// "step?zone=N" as /ws (webctl.c) receives them, apart from the WebSocket so a carrier is easy to add. They become
 // the radio core's own requests (radio_req_zone, radio_req_zone_pos, radio_req_channel_step), so the UI's refusals
 // apply; a knob's quick turns add up and go out at most every REQ_GAP_MS. Idle, it costs the radio nothing: the
 // radio's view is read only for a request or a pending step.
 #include "config.h"
-#if CONFIG_NET_RADIO_CTL	// the whole file
+#if CONFIG_NET_WEBCTL	// the whole file
 #include <string.h>
 #include "net/net_svc.h"
 #include "codeplug/codeplug.h"
@@ -18,19 +18,15 @@
 
 static struct {
 	int32_t channel_steps;	// channel steps asked for and not yet passed on (a knob's turns add up)
-	bool zone_due;		// a zone (and maybe a position) to go to
 	uint16_t zone_to, pos_to;
+	bool zone_due;		// a zone (and maybe a position) to go to
 	bool pos_due;
+	bool zone_asked;
+	bool vfo_left;
 	uint32_t last_req_ms;
 	uint32_t zone_asked_ms;	// when zone_to was last asked for (zone steps count from it for ZONE_HOLD_MS)
-	bool zone_asked;
 	uint32_t vfo_left_ms;	// when a step asked to leave the VFO (the view shows it a little later)
-	bool vfo_left;
 } pend;
-
-static struct {
-	uint32_t refused, selects, steps;
-} st;
 
 // key=<integer> in a query ("zone=3&pos=0"); false when absent or not a number
 static bool query_int(const char *q, const char *key, int32_t *out)
@@ -60,11 +56,7 @@ static bool query_int(const char *q, const char *key, int32_t *out)
 // As radio_get_zone_pos: not transmitting, not a hotspot
 static bool can(const radio_view_t *v)
 {
-	if (v->state != RS_TX && !v->hotspot) {
-		return true;
-	}
-	st.refused++;
-	return false;
+	return v->state != RS_TX && !v->hotspot;
 }
 
 static void apply(uint32_t now)
@@ -106,7 +98,6 @@ static void apply(uint32_t now)
 // To zone z, its first channel (pos < 0) or position pos, leaving the VFO. A jump replaces steps not yet passed on
 static void select_zone(uint16_t z, int32_t pos, uint32_t now)
 {
-	st.selects++;
 	pend.zone_due = true;
 	pend.zone_to = z;
 	pend.pos_due = pos >= 0;
@@ -120,7 +111,6 @@ static void select_zone(uint16_t z, int32_t pos, uint32_t now)
 // n zones (zones) or channels on, negative back, wrapping; steps add up. False: no zones
 static bool step(bool zones, int32_t n, uint32_t now, const radio_view_t *v)
 {
-	st.steps++;
 	if (zones) {
 		uint16_t count = codeplug_zone_count();
 		if (count == 0) {
@@ -179,32 +169,9 @@ int radio_ctl_request(const char *r, uint32_t now, const radio_view_t *v)
 	return step(zones, n, now, v) ? 0 : 409;
 }
 
-void radio_ctl_key(const radio_view_t *v, radio_ctl_key_t *k)
-{
-	memset(k, 0, sizeof(*k));	// padding too: the key is compared with memcmp
-	k->zone = v->zone_index;
-	k->pos = v->zone_pos;
-	k->number = v->channel_number;
-	k->vfo = v->vfo;
-	k->codeplug = codeplug_serial();
-	k->rx_hz = v->ch.rx_hz;
-	k->mode = v->ch.mode;
-#if CONFIG_DMR
-	k->ts = v->ch.timeslot;
-	k->tg = v->dmr.target_id;
-	k->priv = v->dmr.target_private;
-#endif
-}
-
 void radio_ctl_poll(uint32_t now)
 {
 	apply(now);
 }
 
-void radio_ctl_view(dl_text_t *t)
-{
-	dl_text(t, "radio_ctl.refused=%u\nradio_ctl.selects=%u\nradio_ctl.steps=%u\n", (unsigned)st.refused,
-		(unsigned)st.selects, (unsigned)st.steps);
-}
-
-#endif	// CONFIG_NET_RADIO_CTL
+#endif	// CONFIG_NET_WEBCTL

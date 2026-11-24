@@ -18,6 +18,7 @@
 #include "dmr/ipGateway.h"
 #include "debuglink/dl_fmt.h"
 #include "ui/gfx.h"
+#include "codeplug/codeplug.h"
 #if CONFIG_NET_PPP
 #include "net/ppp.h"
 #endif
@@ -326,7 +327,7 @@ static void screen_poll(void)
 
 // ---- commands ----
 
-// A request in words, as the UDP control's (radio_ctl.c): "select?zone=Z[&pos=P]", "step?channel=N", "step?zone=N";
+// A request in words (radio_ctl.c): "select?zone=Z[&pos=P]", "step?channel=N", "step?zone=N";
 // "gps" / "gps?off" the board GPS's fixes; "status?changes" / "status" the status only on a zone or channel change, or
 // whenever it changes. Zone, channel and GPS only from the host. Only an error is answered: the status shows the rest
 static void request(const char *r, uint32_t now)
@@ -581,6 +582,32 @@ static void fix_poll(uint32_t now)
 }
 #endif
 
+// What the status is sent on with "status?changes": where the radio is and what it is on. rx_hz and mode: the VFO
+// tuned, which no index shows
+typedef struct {
+	uint16_t zone, pos, number;
+	bool vfo, priv;
+	uint8_t ts, mode;
+	uint32_t codeplug, tg, rx_hz;
+} change_key_t;
+
+static void change_key(const radio_view_t *v, change_key_t *k)
+{
+	memset(k, 0, sizeof(*k));	// padding too: the key is hashed whole
+	k->zone = v->zone_index;
+	k->pos = v->zone_pos;
+	k->number = v->channel_number;
+	k->vfo = v->vfo;
+	k->codeplug = codeplug_serial();
+	k->rx_hz = v->ch.rx_hz;
+	k->mode = v->ch.mode;
+#if CONFIG_DMR
+	k->ts = v->ch.timeslot;
+	k->tg = v->dmr.target_id;
+	k->priv = v->dmr.target_private;
+#endif
+}
+
 static uint32_t fnv(const void *p, size_t n)
 {
 	const uint8_t *s = p;
@@ -629,9 +656,9 @@ void webctl_poll(uint32_t now_ms)
 		// With "status?changes" only a zone or channel change sends it (the link is for the user's data): the
 		// change key is checked first, and the status rendered only when it moved
 		if (w.changes) {
-			radio_ctl_key_t k;
+			change_key_t k;
 
-			radio_ctl_key(net_radio_view(), &k);
+			change_key(net_radio_view(), &k);
 			h = fnv(&k, sizeof(k));
 		}
 		if (!w.changes || (h != w.status_hash)) {
