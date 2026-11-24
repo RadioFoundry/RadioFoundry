@@ -194,8 +194,8 @@ Most countries don't allow messages encoded to obscure their meaning on amateur 
 47 CFR 97.113(a)(4). Encryption and scrambling belong in licensed services that permit them.
 
 The Codeplug Editor lists a warning under **Problems** for a channel that transmits with an AES key or an NXDN
-scrambler key on a frequency from 144 to 148 MHz or from 430 to 450 MHz, the edges included. These ranges are the
-common amateur 2 m and 70 cm allocations. A receive-only channel gets no warning. Basic privacy keys are set on the
+scrambler key on a frequency from 144 to 148 MHz, 222 to 225 MHz or 420 to 450 MHz, the edges included. These ranges are the
+common amateur 2 m, 1.25 m and 70 cm allocations. A receive-only channel gets no warning. Basic privacy keys are set on the
 radio, not in the codeplug, so the editor can't check them.
 
 The warning blocks nothing. The codeplug still saves and writes, and the radio doesn't refuse to transmit. Receiving

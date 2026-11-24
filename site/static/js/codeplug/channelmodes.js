@@ -437,10 +437,10 @@ export function removeModes(m, table, gone) {
 
 // --- Validation ---
 
-// The common amateur 2 m and 70 cm allocations, in Hz, edges included. A channel that transmits encrypted or
+// The common amateur 2 m, 1.25 m and 70 cm allocations, in Hz, edges included. A channel that transmits encrypted or
 // scrambled there gets a warning (docs/user/04-programming.md, Encryption on amateur frequencies): most countries
 // don't allow messages encoded to obscure their meaning on amateur frequencies. Nothing is blocked
-export const AMATEUR_HZ = [[144000000, 148000000], [430000000, 450000000]];
+export const AMATEUR_HZ = [[144000000, 148000000], [222000000, 225000000], [420000000, 450000000]];
 export const amateurFreq = (hz) => AMATEUR_HZ.some(([lo, hi]) => hz >= lo && hz <= hi);
 // A channel of a kind may transmit: its tag allows it and its system, when it has one, does too
 const kindTx = (c) => !!c.tagTx && !(c.system && typeof c.system === "object" && c.system.tx === false);

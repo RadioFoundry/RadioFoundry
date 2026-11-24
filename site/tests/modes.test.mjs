@@ -630,8 +630,8 @@ test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque rec
 
 import { AMATEUR_HZ } from "../static/js/codeplug/channelmodes.js";
 
-test("encrypted TX on amateur frequencies: AES and NXDN scrambler channels warn in 144-148 and 430-450 MHz, edges included", () => {
-	assert.deepEqual(AMATEUR_HZ, [[144000000, 148000000], [430000000, 450000000]]);
+test("encrypted TX on amateur frequencies: AES and NXDN scrambler channels warn in 144-148, 222-225 and 420-450 MHz, edges included", () => {
+	assert.deepEqual(AMATEUR_HZ, [[144000000, 148000000], [222000000, 225000000], [420000000, 450000000]]);
 	const m = empty();
 	const aes = newSystem(m, 5, "AES");
 	aes.trafficKeys = [{ id: 1, key: "11".repeat(32) }];
@@ -647,8 +647,8 @@ test("encrypted TX on amateur frequencies: AES and NXDN scrambler channels warn 
 		Object.assign(c.params, params);
 		return c;
 	};
-	const inBand = [144000000, 146520000, 148000000, 430000000, 446006250, 450000000];
-	const outBand = [143999999, 148000001, 429999999, 450000001, 461462500, 222100000];
+	const inBand = [144000000, 146520000, 148000000, 222000000, 223500000, 225000000, 420000000, 426250000, 446006250, 450000000];
+	const outBand = [143999999, 148000001, 221999999, 225000001, 419999999, 450000001, 461462500, 902000000];
 	const aesIn = inBand.map((hz) => chan(5, hz, { id: 1 }));
 	const aesOut = outBand.map((hz) => chan(5, hz, { id: 1 }));
 	const nxIn = inBand.map((hz) => chan(4, hz, { txKeyId: 2 }));
