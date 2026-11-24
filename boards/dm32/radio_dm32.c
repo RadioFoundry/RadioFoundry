@@ -37,18 +37,19 @@
 #define TASK_WAKE_US		420u		// the RF task's latest wake after the interrupt
 // The earliest key-up point: the split's switch still after the task's wake
 #define KEYUP_MAX_AHEAD_US	(RF_TX_LEAD * 100u + HRC_RFBURST_SYMBOL_AFTER_LEAD_US - TASK_WAKE_US - SWITCH_AHEAD_SPLIT_US)
-// The key-up constants (docs/spec/pa-keyup.md), [VHF, UHF]: converted from the constants measured with the rule's
-// earlier form (hardware-dm32.md 8.5) for VHF, and measured with tools/bench/pa_cal.py for UHF, judged by the ramp's
-// shape (every level boosts; the four lower ones within 0.5 dB of their level from the first symbol, the top one's
-// PA creeps its last 2 dB over about 2 ms whatever the drive). The knee goes with pa_us:
-// the control charges less with the PA selected, so a later PA wants a smaller knee (UHF: 1450 with the PA at the
-// boost). The VHF PA comes up about 0.15 ms after it is selected whatever the boost, so its point sets the top
-// level's rise. The dead zone is dead_pm/1000 of the low row's drive
+// The key-up constants (docs/spec/pa-keyup.md), [VHF, UHF], fitted on the SDR bench at the five levels in watts over
+// both bands, edges included (hardware-dm32.md 8.5). No dead zone and no knee: every level boosts to slope / (window -
+// settle) of its own drive (1.6 x on UHF, 1.5 x on VHF), at most PA_KEYUP_BOOST_MAX_PCT of the top level's, from
+// 1.5 ms to 0.4 ms before the first symbol. The dead zone anchored on the low row put the levels under it on one boost,
+// about twice their drive: the two lowest came up 1-3 dB over. The top level is at the cap and creeps its last
+// 0.3-0.9 dB over a few ms whatever the boost (a longer one moved it 0.2 dB and put the lower levels 0.5 dB over)
 #define KEYUP_BOOST_US		1500u
 #define KEYUP_PA_US_VHF		500u
 #define KEYUP_PA_US_UHF		900u
 #define KEYUP_DRIVE_US_VHF	400u
 #define KEYUP_DRIVE_US_UHF	400u
+#define KEYUP_SLOPE_US_VHF	1650u	// 1.5 x (KEYUP_BOOST_US - KEYUP_DRIVE_US_VHF): the boost's part of the drive
+#define KEYUP_SLOPE_US_UHF	1760u	// 1.6 x (KEYUP_BOOST_US - KEYUP_DRIVE_US_UHF)
 _Static_assert(KEYUP_BOOST_US <= KEYUP_MAX_AHEAD_US && KEYUP_PA_US_VHF <= KEYUP_BOOST_US &&
 	       KEYUP_PA_US_UHF <= KEYUP_BOOST_US && KEYUP_DRIVE_US_VHF <= KEYUP_BOOST_US &&
 	       KEYUP_DRIVE_US_UHF <= KEYUP_BOOST_US,
@@ -58,9 +59,9 @@ _Static_assert(SWITCH_AHEAD_US + KEYUP_PA_US_VHF <= SWITCH_AHEAD_SIMPLEX_MAX_US 
 	       "the simplex switch to TX must come after the inbound burst before ours");
 #if CONFIG_DMR
 static const pa_keyup_cfg_t keyup_cfg[2] = {
-	{ .dead_pm = 650, .knee_us = 520, .slope_us = 600, .window_us = KEYUP_BOOST_US,
+	{ .dead_pm = 0, .knee_us = 0, .slope_us = KEYUP_SLOPE_US_VHF, .window_us = KEYUP_BOOST_US,
 	  .settle_us = KEYUP_DRIVE_US_VHF, .pa_us = KEYUP_PA_US_VHF },
-	{ .dead_pm = 793, .knee_us = 500, .slope_us = 1350, .window_us = KEYUP_BOOST_US,	// measured: pa_cal.py, pa_shape.py
+	{ .dead_pm = 0, .knee_us = 0, .slope_us = KEYUP_SLOPE_US_UHF, .window_us = KEYUP_BOOST_US,
 	  .settle_us = KEYUP_DRIVE_US_UHF, .pa_us = KEYUP_PA_US_UHF },
 };
 #endif
@@ -171,14 +172,16 @@ static void pa_key(void)
 	DAC_DATA_B = tx_drive;
 }
 
-// The ramps' lower end at the TX frequency (power_levels.h), set at the key-up
-static uint16_t ramp_edge;
+// The lowest level's drive at the TX frequency, the ramps' knee (power_levels.h), set at the key-up
+static uint16_t ramp_floor;
 
-// DAC B along a ramp between the edge and tx_drive, step_us a step (the PA selected)
-static void pa_ramp(bool up, uint16_t steps, uint16_t step_us)
+// DAC B along the ramp between its start and tx_drive, step_us a step (the PA selected), ending on the drive (up) or
+// the start (down)
+static void pa_ramp(bool up, uint16_t crawl, uint16_t rise, uint16_t step_us)
 {
-	for (uint16_t i = 1u; i <= steps; i++) {
-		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_edge, i, steps, up);
+	uint16_t n = (uint16_t)(crawl + rise);
+	for (uint16_t i = 1u; i <= n; i++) {
+		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_floor, up ? i : (uint16_t)(n - i), crawl, rise);
 		hal_delay_us(step_us);
 	}
 }
@@ -303,7 +306,7 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 // radio hears the other slot (the hotspot listens while keyed)
 static void burst_off(void)
 {
-	pa_ramp(false, DM32_DMR_RAMP_STEPS, DM32_DMR_RAMP_STEP_US);
+	pa_ramp(false, DM32_DMR_CRAWL_STEPS, DM32_DMR_RISE_STEPS, DM32_DMR_RAMP_STEP_US);
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 	lna(rx_hz, true);
@@ -511,7 +514,8 @@ static volatile uint16_t drive_override;
 // hardware-dm32.md 11.4)
 static uint16_t level_drive(uint32_t hz, uint8_t level)
 {
-	return bf_cal_power_pos(hz, dm32_level_pos(hz >= UHF_FROM_HZ, level));
+	bf_cal_power_points_t rows;
+	return bf_cal_power_held(hz, &rows) ? dm32_level_drive(&rows, hz, level) : bf_cal_power_level(hz, 0);
 }
 
 #if CONFIG_DMR
@@ -536,9 +540,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = level_drive(hz, power);
-	// Without calibration the edge is unknown (the fallback drive, about 2 W, would end the ramps on air): from 0
-	bf_cal_power_points_t rows;
-	ramp_edge = bf_cal_power(hz, &rows) ? bf_cal_drive_pos(&rows, DM32_RAMP_EDGE_POS) : 0u;
+	// The floor is a fixed drive, so the ramps start and end dark without calibration too
+	ramp_floor = dm32_floor_drive(hz);
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
 	}
@@ -589,11 +592,11 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
-		// Up on the ramp from the edge: a step of the drive came up in 0.09 ms with 2 dB of overshoot where the PA
+		// Up on the ramp from its start (dark): a step of the drive came up in 0.09 ms with 2 dB of overshoot where the PA
 		// loop is fast (the top of the UHF band)
 		pa_select();
-		DAC_DATA_B = ramp_edge < tx_drive ? ramp_edge : 0u;
-		pa_ramp(true, DM32_RAMP_STEPS, DM32_RAMP_STEP_US);
+		DAC_DATA_B = dm32_ramp_start(tx_drive, ramp_floor);
+		pa_ramp(true, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
 	}
 	ring_play();
 	return true;
@@ -607,7 +610,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	if (transmitting && mode == RADIO_MODE_FM) {
-		pa_ramp(false, DM32_RAMP_STEPS, DM32_RAMP_STEP_US);
+		pa_ramp(false, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
 		DAC_DATA_B = 0;
 		hal_delay_us(RAMP_TAIL_US);
 	}

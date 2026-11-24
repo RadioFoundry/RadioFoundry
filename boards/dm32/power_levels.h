@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The DM-32UV's five power levels (hardware-dm32.md 11.4): where each sits on the radio's own calibration rows, per
-// band. The names are in board.c (power_names, power_names_vhf), in the same order
+// The DM-32UV's five power levels (hardware-dm32.md 11.4): the drive each takes at a TX frequency, from the radio's
+// own calibration rows or, for the lowest, a fixed drive over the PA's turn-on, and the PA ramps. The names are in
+// board.c (power_names, power_names_vhf), in the same order
 #ifndef DM32_POWER_LEVELS_H
 #define DM32_POWER_LEVELS_H
 
@@ -12,36 +13,70 @@
 
 #define DM32_POWER_LEVELS	5u
 
-// bf_cal_drive_pos positions, lowest level first. The lower four are the same power on both bands, the top is the
-// high row: 100 mW, 1 W, 2.5 W, 5 W, 8 W (UHF) / 9 W (VHF)
-static inline uint16_t dm32_level_pos(bool uhf, uint8_t level)
+// The lowest level, 500 mW: a drive over the PA's turn-on, not a place on the rows. Under a drive of about 840-955
+// (both bands) the PA gives nothing or creeps up over tens of milliseconds; that edge moves 2-3 counts per MHz while
+// the low row moves by hundreds, so a place on the rows put it anywhere from 0.55 to 0.70 of the low row. UHF falls
+// with the frequency, VHF is flat
+#define DM32_FLOOR_UHF_400	1085u	// at 400 MHz
+#define DM32_FLOOR_UHF_PER_10MHZ 26u	// less per 10 MHz over 400
+#define DM32_FLOOR_VHF		925u
+
+static inline uint16_t dm32_floor_drive(uint32_t hz)
 {
-	static const uint16_t pos[2][DM32_POWER_LEVELS] = {
-		{ 654, 810, 1058, 2000, BF_CAL_POS_HIGH },	// VHF
-		{ 651, 804, 1050, 2129, BF_CAL_POS_HIGH },	// UHF
-	};
-	return pos[uhf ? 1 : 0][level < DM32_POWER_LEVELS ? level : DM32_POWER_LEVELS - 1u];
+	if (hz < 280000000u) {
+		return DM32_FLOOR_VHF;
+	}
+	uint32_t over = hz > 400000000u ? (hz - 400000000u) / 100000u : 0u;	// 0.1 MHz over 400
+	uint32_t less = over * DM32_FLOOR_UHF_PER_10MHZ / 100u;
+	return (uint16_t)(less < DM32_FLOOR_UHF_400 ? DM32_FLOOR_UHF_400 - less : 0u);
 }
 
-// The PA ramps (hardware-dm32.md 11.4): DAC B between the PA's turn-on edge and the level's drive on the shared APC
-// ramp's curve, with the PA selected. The edge is a place on the rows too, under the 100 mW level's: under it the PA
-// gives nothing, so the whole ramp is on air at every level, and its rate doesn't hang on how fast the PA loop is (at
-// the top of the UHF band the loop rose in 0.09 ms where elsewhere it took 0.4-1.6 ms). A drive at or under the edge
-// ramps from 0. FM keys up and down on the long ramp; a DMR burst ends on the short one
-#define DM32_RAMP_EDGE_POS	600u
-#define DM32_RAMP_STEPS		40u
-#define DM32_RAMP_STEP_US	50u
-#define DM32_DMR_RAMP_STEPS	8u
-#define DM32_DMR_RAMP_STEP_US	25u
-
-// DAC B at step 0..steps: up from the edge (step 0) to the drive (the last), or down from the drive to the edge
-static inline uint16_t dm32_ramp_level(uint16_t drive, uint16_t edge, uint16_t step, uint16_t steps, bool up)
+// The levels over the lowest: 1 W, 2.5 W, 5 W, then the high row (8 W UHF, 9 W VHF). VHF: places on the rows
+// (bf_cal_drive_pos). UHF: parts of the high row in thousandths, because there the low row doesn't follow the PA (it
+// falls from 400 to 435 MHz and rises again) and the levels as places on it were 1-1.6 dB off over the band
+static inline uint16_t dm32_level_drive(const bf_cal_power_points_t *rows, uint32_t hz, uint8_t level)
 {
-	uint16_t base = edge < drive ? edge : 0u;
-	if (step > steps) {
-		step = steps;
+	static const uint16_t vhf_pos[DM32_POWER_LEVELS - 1u] = { 782, 1122, 1985, BF_CAL_POS_HIGH };
+	static const uint16_t uhf_part[DM32_POWER_LEVELS - 1u] = { 418, 584, 754, 1000 };
+	if (level == 0u) {
+		return dm32_floor_drive(hz);
 	}
-	return (uint16_t)(base + apc_ramp_level((uint16_t)(drive - base), up ? step : (uint16_t)(steps - step), steps));
+	uint8_t i = (uint8_t)((level < DM32_POWER_LEVELS ? level : DM32_POWER_LEVELS - 1u) - 1u);
+	if (hz < 280000000u) {
+		return bf_cal_drive_pos(rows, vhf_pos[i]);
+	}
+	return (uint16_t)(((uint32_t)rows->high * uhf_part[i] + 500u) / 1000u);
+}
+
+// The PA ramps (hardware-dm32.md 11.4): DAC B in two parts on the shared APC ramp's curve, with the PA selected. The
+// crawl runs between the start, DM32_RAMP_START_PCT of the knee (dark on every frequency), and the knee, the lowest
+// level's drive or the level's own when lower: the PA's turn-on lies between them, and on a fast PA loop (the top of
+// the UHF band) crossing it in a few steps put the adjacent channel 25-35 dB under the carrier. The rise runs between
+// the knee and the level's drive. Up: the crawl, then the rise; down: backwards. FM keys up and down on the long
+// ramps; a DMR burst ends on the short ones
+#define DM32_RAMP_START_PCT	80u
+#define DM32_RAMP_STEP_US	50u
+#define DM32_CRAWL_STEPS	60u	// 3 ms
+#define DM32_RISE_STEPS		40u	// 2 ms
+#define DM32_DMR_RAMP_STEP_US	25u
+#define DM32_DMR_CRAWL_STEPS	12u	// 0.3 ms
+#define DM32_DMR_RISE_STEPS	8u	// 0.2 ms
+
+static inline uint16_t dm32_ramp_start(uint16_t drive, uint16_t floor)
+{
+	uint16_t knee = floor < drive ? floor : drive;
+	return (uint16_t)((uint32_t)knee * DM32_RAMP_START_PCT / 100u);
+}
+
+// DAC B at step i of crawl + rise steps up from the start (step 0) to the drive (the last)
+static inline uint16_t dm32_ramp_level(uint16_t drive, uint16_t floor, uint16_t i, uint16_t crawl, uint16_t rise)
+{
+	uint16_t knee = floor < drive ? floor : drive;
+	uint16_t start = dm32_ramp_start(drive, floor);
+	if (i <= crawl) {
+		return (uint16_t)(start + apc_ramp_level((uint16_t)(knee - start), i, crawl));
+	}
+	return (uint16_t)(knee + apc_ramp_level((uint16_t)(drive - knee), (uint16_t)(i - crawl), rise));
 }
 
 #endif

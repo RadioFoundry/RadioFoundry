@@ -42,8 +42,8 @@ static const band_t bands[] = {
 
 // The power levels, per band (power_levels.h, hardware-dm32.md 11.4: set with a wattmeter). The lower four are the same
 // on both bands, the top is the high calibration row
-static const char *const power_names[] = { "100mW", "1W", "2.5W", "5W", "8W" };
-static const char *const power_names_vhf[] = { "100mW", "1W", "2.5W", "5W", "9W" };
+static const char *const power_names[] = { "500mW", "1W", "2.5W", "5W", "8W" };
+static const char *const power_names_vhf[] = { "500mW", "1W", "2.5W", "5W", "9W" };
 _Static_assert(sizeof(power_names) / sizeof(power_names[0]) == DM32_POWER_LEVELS &&
 	       sizeof(power_names_vhf) / sizeof(power_names_vhf[0]) == DM32_POWER_LEVELS,
 	       "a name for each level of power_levels.h");

@@ -212,16 +212,16 @@ uint16_t bf_cal_modcal(uint32_t hz)
 	return (uint16_t)(b << 8 | b);
 }
 
-// Point idx of a five-point row, linearly towards the next (at the last point: 2 v4 - v3), clamped 0..4096
-static uint16_t interp(const uint8_t *t, uint32_t idx, uint32_t rem, uint32_t step)
+// Point idx of a five-point row, linearly towards the next (at the last point: 2 v4 - v3, or v4 held), clamped 0..4096
+static uint16_t interp(const uint8_t *t, uint32_t idx, uint32_t rem, uint32_t step, bool hold)
 {
 	int32_t lo = (int32_t)t[idx] << 4;
-	int32_t hi = idx < 4 ? (int32_t)t[idx + 1] << 4 : 2 * lo - ((int32_t)t[idx - 1] << 4);
+	int32_t hi = idx < 4 ? (int32_t)t[idx + 1] << 4 : hold ? lo : 2 * lo - ((int32_t)t[idx - 1] << 4);
 	int32_t v = lo + (hi - lo) * (int32_t)rem / (int32_t)step;
 	return (uint16_t)(v < 0 ? 0 : v > 4096 ? 4096 : v);
 }
 
-bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p)
+static bool power_points(uint32_t hz, bf_cal_power_points_t *p, bool hold)
 {
 	if (!valid) {
 		return false;
@@ -247,12 +247,24 @@ bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p)
 				rem = step;
 			}
 		}
-		p->low = interp(t, idx, rem, step);
-		p->mid = interp(t + 5, idx, rem, step);
-		p->high = interp(t + 10, idx, rem, step);
+		p->low = interp(t, idx, rem, step, hold);
+		p->mid = interp(t + 5, idx, rem, step, hold);
+		p->high = interp(t + 10, idx, rem, step, hold);
 	}
 	p->very_low = (uint16_t)(p->low * 9u / 10u);
 	return true;
+}
+
+bool bf_cal_power(uint32_t hz, bf_cal_power_points_t *p)
+{
+	return power_points(hz, p, false);
+}
+
+// 11.4: past the last point the PA gives less per count, so a row extrapolated down there (2 v4 - v3 on a row that
+// fell from v3 to v4) left the low levels dark; held at v4 they stay lit
+bool bf_cal_power_held(uint32_t hz, bf_cal_power_points_t *p)
+{
+	return power_points(hz, p, true);
 }
 
 // 11.3 fractions f1..f5 in thousandths (f0 = 0.90 is very_low), per band
@@ -309,7 +321,7 @@ uint16_t bf_cal_drive_pos(const bf_cal_power_points_t *p, uint16_t pos)
 uint16_t bf_cal_power_pos(uint32_t hz, uint16_t pos)
 {
 	bf_cal_power_points_t p;
-	return bf_cal_power(hz, &p) ? bf_cal_drive_pos(&p, pos) : FALLBACK_DAC;
+	return bf_cal_power_held(hz, &p) ? bf_cal_drive_pos(&p, pos) : FALLBACK_DAC;
 }
 
 // Band limit in 10 Hz units from a BCD halfword in 100 kHz units (four zero digits below it give the 10 Hz value).

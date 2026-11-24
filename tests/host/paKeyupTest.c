@@ -211,6 +211,21 @@ static void test_ramp_from(void)
 	CHECK(apc_ramp_from(0, 0, 180, &base, &span) == 1 && span == 0);
 }
 
+// No dead zone and no knee, a slope over the window's room: every level boosts to the same part of its own drive,
+// slope / (window - settle), rounded up, the top level at the cap. The drives are five levels of one radio at 440 MHz
+static void test_proportional(void)
+{
+	static const pa_keyup_cfg_t c = { .dead_pm = 0, .knee_us = 0, .slope_us = 1760, .window_us = 1500,
+					  .settle_us = 400, .pa_us = 900 };
+	static const uint16_t d[5] = { 904, 1117, 1419, 2102, 2912 };
+	static const uint16_t b[5] = { 1447, 1788, 2271, 3364, 3494 };	// 1.6 x d; the top at 1.2 x 2912
+	for (int i = 0; i < 5; i++) {
+		pa_keyup_t k = pa_keyup_drives(&c, d[i], 2912, 1389, 4095);
+		CHECK(k.boost == b[i] && k.drive == d[i] && k.boost_us == 1500 && k.pa_us == 900 && k.drive_us == 400);
+	}
+	CHECK(pa_keyup_valid(&c, 1580));
+}
+
 int main(void)
 {
 	// Five levels of a table whose top drive is 1448: each keyed (knee * (top - dead) + slope * (d - dead)) / (d - dead)
@@ -403,6 +418,7 @@ int main(void)
 	CHECK(pa_keyup_step_wait(2489, 500, 1959, 30) == 0 && pa_keyup_step_wait(2489, 500, 1958, 30) == 1989);
 	check_walks();
 	test_ramp_from();
+	test_proportional();
 
 	if (failures == 0) {
 		printf("paKeyupTest: all passed\n");

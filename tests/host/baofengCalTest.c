@@ -111,6 +111,8 @@ static void test_values(void)
 	CHECK(bf_cal_power(426250000u, &p) && p.low == 184);	// halfway between points 1 and 2
 	CHECK(bf_cal_power(470000000u, &p) && p.low == 224);	// the last point
 	CHECK(bf_cal_power(480000000u, &p) && p.low == 233);	// past it: 2 v4 - v3, 10 of 17.5 MHz
+	CHECK(bf_cal_power_held(480000000u, &p) && p.low == 224);	// held at the last point
+	CHECK(bf_cal_power_held(426250000u, &p) && p.low == 184);	// under it: as bf_cal_power
 	CHECK(bf_cal_power(350000000u, &p) && p.low == 160);	// UHF below 400 MHz: the first point, not the last
 	CHECK(bf_cal_power(145500000u, &p) && p.low == 336 && p.high == 1936);
 	CHECK(bf_cal_power(130000000u, &p) && p.low == 320 && p.mid == 960);	// below 136 MHz: VHF point 0
