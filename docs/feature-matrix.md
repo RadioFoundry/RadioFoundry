@@ -408,7 +408,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
-| Web control: the front panel page, keys, status and receive audio over `/ws`; zone and channel select and step, the board GPS's fix | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
+| Web control: the front panel page, keys, status and receive audio over `/ws`; zone and channel select and step, the board GPS's fix | `NET_WEBCTL` | 11,388 | 11,200 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). Off where the host link is the programming cable at 115200 baud (about 11.5 KB/s): received audio alone needs about 17.6 KB/s |
 | APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |
