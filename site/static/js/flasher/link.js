@@ -9,20 +9,20 @@
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
 import { serialApi, usbSerialNeeded, UsbSerialPort } from "./usbserial.js";
-import { usbSerialChip } from "./adapter.js";
+import { usbSerialChip, CABLE_VIDS } from "./adapter.js";
 
 export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
-// USB-serial chips found in programming cables (tools/serial_loader.py USB_SERIAL), for the port chooser on radios
-// that talk over their programming cable
-export const CABLES = [0x0403, 0x1A86, 0x10C4, 0x067B].map((usbVendorId) => ({ usbVendorId }));
+// USB-serial chips found in programming cables (adapter.js CHIPS; tools/serial_loader.py USB_SERIAL has them by
+// product id too), for the port chooser on radios that talk over their programming cable
+export const CABLES = CABLE_VIDS.map((usbVendorId) => ({ usbVendorId }));
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
 // it for the serial port (netmode.js)
 export const RFOUNDRY_NET = { vendorId: 0x1FC9, productId: 0x0096 };
 const SOF1 = 0xA5, SOF2 = 0x5A;
-export const CMD = { PING: 0x01, VERSION: 0x02, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
+export const CMD = { PING: 0x01, VERSION: 0x02, GET_VIEW: 0x09, INFO_CHIP: 0x0B, READ_MEM: 0x0C, STORAGE: 0x0F, HWOPT: 0x21, SUPPORT: 0x25, SATELLITE: 0x26 };
 // The status a command not built in, or with nothing to act on, answers (debuglink.md 2)
 const DL_UNAVAILABLE = 4;
 

@@ -27,7 +27,7 @@ MBE_INLINE int32_t mbe_sin_idx(uint32_t i)
 // FXP_SPLIT16) from the quarter wave unfolded into a 2 KB table: folding it in the oscillators' per-sample loop cost
 // two branches and a third of that loop's instructions there. Elsewhere folded: an Arm core does it in a few
 // conditional instructions, and the table's 2 KB were what an Arm radio's fullest build had no room for (its P25
-// links this synthesis without Fusion). Nothing was measured on Arm either way
+// links this synthesis without YSF). Nothing was measured on Arm either way
 #if defined(__csky__) || defined(FXP_SPLIT16)
 #define MBE_COS_TAB	1
 extern const int16_t mbe_cos_tab[1024];

@@ -372,13 +372,13 @@ static void put_bgr(uint8_t *p, color_t c)
 	p[3] = 0;
 }
 
-// Bytes of the BMP at off: a top-down (negative height) bitmap of the frame buffer. bpp 1 and 4: its rows as they
-// are (both pack the leftmost pixel in the high bits, as BMP does), with gfx_palette. bpp 16: BI_BITFIELDS RGB565
+// Bytes of the BMP at off: a top-down (negative height) bitmap of the panel. bpp 1 and 4: the frame's rows as they
+// are (both pack the leftmost pixel in the high bits, as BMP does; gfx_read_packed), with gfx_palette. bpp 16:
+// BI_BITFIELDS RGB565
 static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 {
 	const hal_display_t *d = board.display;
 	uint32_t head = bmp_header(), row = bmp_row(), raw = ((uint32_t)d->width * d->bpp + 7u) / 8u;
-	const uint8_t *fb = gfx_framebuffer();
 	uint8_t h[BMP_HEADER_MAX];
 
 	if (off < head) {
@@ -416,7 +416,7 @@ static void bmp_bytes(uint32_t off, uint8_t *out, size_t n)
 			} else if (d->bpp == 16) {
 				gfx_read_rgb565(y * raw + x, &out[i], 1);
 			} else {
-				out[i] = fb[y * raw + x];
+				gfx_read_packed(y * raw + x, &out[i], 1);	// the panel's rows, also from a safe-area frame buffer
 			}
 		}
 	}

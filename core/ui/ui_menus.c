@@ -12,6 +12,7 @@
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
+#include "text_edit.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_modes.h"
 #include "codeplug/codeplug_tag.h"
@@ -2326,12 +2327,15 @@ static bool text_key_fn(const input_event_t *ev)
 	if (dir != 0 && ev->gesture != GESTURE_UP) {
 		// Step the last character through the printable ones (the way in without a keypad); down past the space
 		// deletes it
-		if (text_len == 0)
+		if (text_len == 0) {
 			text_append('A');
-		else if (dir < 0 && text_buf[text_len - 1] == ' ')
+		} else if (dir < 0 && text_buf[text_len - 1] == ' ') {
 			text_buf[--text_len] = 0;
-		else
+		} else if ((uint8_t)text_buf[text_len - 1] < 0x80) {
+			// a single-byte character: step it through the printable range
 			text_buf[text_len - 1] = (char)(' ' + (text_buf[text_len - 1] - ' ' + dir + 95) % 95);
+		}
+		// a multi-byte last character (a Chinese name) is left whole: Up/Down does nothing to it
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -2348,8 +2352,12 @@ static bool text_key_fn(const input_event_t *ev)
 	}
 	if (((ev->action == ACT_BACK || ev->action == ACT_NAV_LEFT) && ev->gesture == GESTURE_PRESS) ||
 			(ev->action == ACT_QUICK && press)) {	// a slow * deletes too (it doesn't lock here)
-		if (text_len > 0)
-			text_buf[--text_len] = 0;
+		if (text_len > 0) {
+			// Drop the last character whole: three bytes for a Chinese name, one otherwise (a Latin-1
+			// or font glyph byte is one character too). text_edit_backspace() decides the length.
+			text_len = text_edit_backspace(text_buf, text_len);
+			text_buf[text_len] = 0;
+		}
 		text_key = -1;
 		ui_dirty();
 		return true;
@@ -2585,7 +2593,7 @@ static const ui_scr_def_t chlist_screen = {
 // Without CONFIG_CHANNEL_EDIT the rows are read only and OK goes to the channel
 
 enum { CE_NAME, CE_NUMBER, CE_MODE, CE_CODE, CE_RATE, CE_RX, CE_TX, CE_POWER, CE_RX_ONLY, CE_BW, CE_RX_TONE, CE_TX_TONE, CE_VOX,
-       CE_BURST, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
+       CE_BURST, CE_AES, CE_CC, CE_TS, CE_CONTACT, CE_LIST, CE_ID, CE_DMO, CE_BEEP, CE_ALIAS1, CE_ALIAS2, CE_TOT, CE_SCAN, CE_ECO,
        CE_ZONES, CE_GO, CE_SHARE, CE_SAVE, CE_SAVE_NEW, CE_COUNT, CE_NONE = 0xFF };
 
 static channel_t ced_ch;		// what the screen shows (the working copy when editing)
@@ -2619,6 +2627,7 @@ static void ced_air_default(uint8_t mode)
 	(void)mode;
 }
 #endif
+static bool ced_keys_available;
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
@@ -2774,6 +2783,10 @@ static bool ced_changed(uint8_t r)
 	}
 	if (r >= CE_ZONES)
 		return false;
+#if CONFIG_DMR_AES
+	if (r == CE_AES)
+		return ced_ch.kind != ced_orig.kind || ced_ch.system != ced_orig.system || ced_ch.aes_ref != ced_orig.aes_ref;
+#endif
 #if CONFIG_P25 || CONFIG_NXDN
 	if (r == CE_CODE || r == CE_RATE)
 		return ced_air_changed(r);
@@ -2834,6 +2847,11 @@ static void ced_from_view(void)
 // plain channel in P25 or NXDN, the radio's settings from its view
 static void ced_air_read(uint16_t number, const channel_t *ch)
 {
+#if CONFIG_DMR_AES && CONFIG_CHANNEL_EDIT
+	channel_t first = { 0 };
+	ui_svc_next_aes_key(&first);
+	ced_keys_available = first.kind == CODEPLUG_KIND_DMR_AES;
+#endif
 #if CONFIG_P25 || CONFIG_NXDN
 	const radio_view_t *v = ui_view();
 	bool here = ch->kind == CODEPLUG_KIND_NONE && (v->vfo ? number == 0 : v->channel_number == number);
@@ -2890,6 +2908,8 @@ static void ced_build(void)
 #endif
 	ced_n = 0;
 	for (uint8_t r = 0; r < CE_COUNT; r++) {
+		if (r == CE_AES && (!CONFIG_DMR_AES || (!ced_keys_available && ced_ch.kind != CODEPLUG_KIND_DMR_AES) || !dmr || into || (ced_ch.kind && ced_ch.kind != CODEPLUG_KIND_DMR_AES)))
+			continue;
 		bool fm_only = r == CE_BW || r == CE_RX_TONE || r == CE_TX_TONE || r == CE_VOX || r == CE_BURST;
 		bool dmr_only = r >= CE_CC && r <= CE_ALIAS2;
 		bool tone = r == CE_RX_TONE || r == CE_TX_TONE;
@@ -3091,7 +3111,7 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		TRN(LABEL_MODE, "Mode"), TRX(CHAN_LABEL_NAC, "NAC"), TRN(CHAN_LABEL_RATE, "Rate"), TRX(CHAN_LABEL_RX, "RX"), TRX(CHAN_LABEL_TX, "TX"), TRN(LABEL_POWER, "Power"),
 		TRN(WORD_RX_ONLY, "RX only"), TRN(CHAN_LABEL_BANDWIDTH, "Bandwidth"),
 		TRN(CHAN_LABEL_RX_TONE, "RX CTCSS/DCS"), TRN(CHAN_LABEL_TX_TONE, "TX CTCSS/DCS"), TRX(WORD_VOX, "VOX"),
-		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
+		TRN(WORD_TONE_BURST, "Tone burst"), TRN(CHAN_AES_KEY, "AES key"), TRN(CHAN_LABEL_COLOR_CODE, "Color code"),
 		TRN(LABEL_TIMESLOT, "Timeslot"), TRN(CHAN_LABEL_TX_CONTACT, "TX contact"),
 		TRN(CHAN_LABEL_RX_GROUP_LIST, "RX group list"), TRN(CHAN_LABEL_OWN_ID, "Own ID"),
 		TRN(CHAN_LABEL_DIRECT_MODE, "Direct mode"), TRN(CHAN_LABEL_TALK_PERMIT_BEEPS, "Talk permit beeps"),
@@ -3247,6 +3267,16 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 		else
 			sb_str(&b, TR(CHAN_VALUE_RADIO_DEFAULT, "Radio's"));
 		break;
+#if CONFIG_DMR_AES
+	case CE_AES:
+		if (ch->kind == CODEPLUG_KIND_DMR_AES) {
+			sb_u32(&b, ch->system + 1u, 1);
+			sb_chr(&b, '/');
+			if (ch->aes_ref) sb_u32(&b, ch->aes_ref - 1u, 1);
+			else sb_chr(&b, '?');
+		} else sb_str(&b, TR(VALUE_NONE, "None"));
+		break;
+#endif
 	case CE_DMO:
 		// P25 talkaround: on, or automatic (on where RX = TX; p25-codeplug.md 2.2)
 		if (ced_is_p25(ch) && !ch->dmo)
@@ -3742,6 +3772,12 @@ static void chinfo_select(uint16_t i, bool hold)
 #if CONFIG_DMR
 	case CE_CONTACT: ui_push(SCR_CHPICK, 0); break;
 	case CE_LIST: ui_push(SCR_CHPICK, 1); break;
+#endif
+#if CONFIG_DMR_AES
+	case CE_AES: {
+		ui_svc_next_aes_key(c);
+		break;
+	}
 #endif
 	case CE_DMO: c->dmo = !c->dmo; break;
 	case CE_BEEP: c->no_beep = !c->no_beep; break;
@@ -6579,7 +6615,8 @@ static const tr_id_t n_possend[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_1_MIN, "1 
 // Side keys (core/input/keyassign.h, KEYFN_* values): monitor needs the key held, so it is a press only;
 // emergency is hold to activate, so a long press only
 static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITOR, KEYFN_TALK_TARGET, KEYFN_POWER,
-					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_KEY_LOCK,
+					 KEYFN_ZONE_UP, KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
+					 KEYFN_KEY_LOCK,
 					 KEYFN_HOME_ZONE,
 #if CONFIG_FM_TX_TONES
 					 KEYFN_TONE_BURST,
@@ -6599,6 +6636,7 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 					     TRN(KEYFN_VALUE_POWER_LEVEL, "Power level"),
 					TRN(KEYFN_VALUE_NEXT_ZONE, "Next zone"),
 					TRN(KEYFN_VALUE_PREV_ZONE, "Prev zone"), TRN(WORD_SCAN, "Scan"),
+					     TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"), TRN(KEYFN_VALUE_MONITOR_TOGGLE, "Monitor toggle"),
 					     TRN(WORD_KEY_LOCK, "Key lock"), TRN(KEYFN_VALUE_HOME_ZONE, "Home zone"),
 #if CONFIG_FM_TX_TONES
 					     TRN(WORD_TONE_BURST, "Tone burst"),
@@ -6616,7 +6654,7 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 #endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
-					KEYFN_ZONE_DOWN, KEYFN_SCAN,
+					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
 #if CONFIG_DMR_EMERGENCY
 					KEYFN_EMERGENCY,
 #endif
@@ -6635,6 +6673,7 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 	TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"), TRN(KEYFN_VALUE_POWER_LEVEL, "Power level"),
 					    TRN(KEYFN_VALUE_NEXT_ZONE, "Next zone"),
 					TRN(KEYFN_VALUE_PREV_ZONE, "Prev zone"), TRN(WORD_SCAN, "Scan"),
+					TRN(KEYFN_VALUE_SCAN_SKIP, "Scan skip"), TRN(KEYFN_VALUE_MONITOR_TOGGLE, "Monitor toggle"),
 #if CONFIG_DMR_EMERGENCY
 					    TRN(TITLE_EMERGENCY, "Emergency"),
 #endif
@@ -6685,7 +6724,7 @@ static const tr_id_t n_msgfmt[] = {
 	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
 	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
-	TRX(VALUE_MOTOROLA, "Motorola"),
+	TRX(SET_VALUE_MSGFMT_TMS, "TMS"),
 #endif
 };
 #endif
@@ -6708,9 +6747,12 @@ static const int16_t v_sfrcwid[] = { 0, 1, 2, 3, 4 };	// radio_cwid_interval_ms 
 static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 min"), TRN(VALUE_10_MIN, "10 min"),
 	TRN(VALUE_15_MIN, "15 min"), TRN(VALUE_30_MIN, "30 min") };
 #endif
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
-static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "Motorola"),
-	TRX(SET_VALUE_KEY_TYPE_ANYTONE, "Anytone") };
+// Basic privacy key types, named by key size with the key's range (set_range follows the type)
+static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT, "8-bit (1-255)"),
+	TRN(SET_VALUE_KEY_TYPE_16_BIT, "16-bit (0-65535)") };
+#endif
 
 #if CONFIG_SIG_TONES
 // Signaling tones (core/radio/sigtone.h): where each sounds (sig_out_t). The reception's end and FM's start have no on
@@ -6819,11 +6861,13 @@ static const set_item_t s_talk[] = {
 		UI_SET_SFR_CWID, v_sfrcwid, n_sfrcwid),
 #endif
 };
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const set_item_t s_privacy[] = {
 	LIST(TRN(SET_LABEL_PRIVACY_KEY_TYPE, "Key type"), "privacy encryption", UI_SET_PRIVACY_TYPE, v_ptype, n_ptype),
 	// the range follows the type (set_range)
 	NUMBER(TRN(SET_LABEL_PRIVACY_KEY, "Key"), "privacy BP", UI_SET_PRIVACY_KEY, 1, 255, 1, NULL),
 };
+#endif
 // The key lock's rules: when it locks by itself and what still works while locked
 static const set_item_t s_lock[] = {
 	LIST(TRN(SET_LABEL_AUTO_LOCK, "Auto lock"), "keylock", UI_SET_AUTO_LOCK_S, v_lock, n_lock),
@@ -6965,7 +7009,12 @@ static const set_item_t s_advanced[] = {
 static const set_group_t groups[] = {
 	GROUP(TRN(SET_ROW_SOUND, "Sound"), s_sound), GROUP(TRN(SET_ROW_DISPLAY, "Display"), s_display),
 	GROUP_T(TRN(SET_ROW_TALK_LISTEN, "Talk & listen"), TRN(SET_TITLE_TALK_LISTEN, "Talk & Listen"), s_talk),
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 		GROUP(TRN(SET_ROW_PRIVACY, "Privacy"), s_privacy),
+#else
+		// Privacy compiled out: a row with no settings keeps the groups after it on their keys (settings_select)
+		{ TRN(SET_ROW_PRIVACY, "Privacy"), TRN(SET_ROW_PRIVACY, "Privacy"), NULL, 0 },
+#endif
 	GROUP(TRN(SET_ROW_LOCATION, "Location"), s_location), GROUP(TRN(SET_ROW_CONNECTIONS, "Connections"),
 		s_connections),
 	GROUP_T(TRN(SET_ROW_POWER_SAVING, "Power saving"), TRN(SET_TITLE_POWER_SAVING, "Power Saving"), s_power),
@@ -7081,11 +7130,21 @@ static void settings_item(uint16_t i, ui_item_t *it)
 {
 	str_copy(it->label, sizeof it->label, tr(groups[i].name));
 	item_num(it, (uint16_t)(i + 1u));
+#if !(CONFIG_DMR && CONFIG_DMR_PRIVACY)
+	if (groups[i].items == NULL)
+		it->flags |= UI_ITEM_DIM;	// the Privacy placeholder
+#endif
 }
 
 static void settings_select(uint16_t i, bool hold)
 {
 	(void)hold;
+#if !(CONFIG_DMR && CONFIG_DMR_PRIVACY)
+	if (groups[i].items == NULL) {	// the Privacy placeholder: dimmed, and OK says why instead of opening it
+		ui_toast(TR(WHY_PRIVACY_NOT_IN_BUILD, "Privacy: not in this build"));
+		return;
+	}
+#endif
 	ui_push(SCR_GROUP, i);
 }
 
@@ -7473,7 +7532,7 @@ static const char *set_why_not(const set_item_t *s)
 	}
 }
 
-// A number setting's range: the privacy key's follows its type (Motorola 1-255, Anytone 0-65535)
+// A number setting's range: the privacy key's follows its type (8-bit 1-255, 16-bit 0-65535)
 static void set_range(const set_item_t *s, int32_t *lo, int32_t *hi)
 {
 	*lo = s->min;

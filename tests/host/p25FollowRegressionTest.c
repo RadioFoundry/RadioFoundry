@@ -256,7 +256,7 @@ static void testWarmHuntRegistration(void)
 		      "initial registration uses the complete observed identity");
 		x.now = 1900;
 		p25_follow_tick(&x.f, x.now);
-		CHECK(x.f.view.state == P25_FOLLOW_HUNT && !x.f.view.net_confirmed,
+		CHECK(x.f.view.state == P25_FOLLOW_HUNT && !x.f.view.sys_ok,
 		      "control loss invalidates transmit confirmation");
 		site(&x, cases[i].sysid);
 		CHECK(x.f.view.sysid != cases[i].sysid || cases[i].sysid == 0x123 || x.f.view.wacn == UINT32_MAX,
@@ -265,7 +265,7 @@ static void testWarmHuntRegistration(void)
 		p25_follow_tick(&x.f, x.now);
 		x.now = 2400;
 		p25_follow_tick(&x.f, x.now);
-		CHECK(x.sends == 1 && !x.f.view.net_confirmed,
+		CHECK(x.sends == 1 && !x.f.view.sys_ok,
 		      "RFSS before NET sends neither a stale identity nor a substituted zero");
 		network(&x, cases[i].wacn, cases[i].sysid);
 		site(&x, cases[i].sysid);
@@ -302,7 +302,7 @@ static void testNetworkConfirmation(void)
 	feed(&x, &own);
 	CHECK(x.f.view.req == P25_REQ_TALK, "a confirmed request can take its own grant");
 	p25_follow_talk_end(&x.f, ++x.now);
-	CHECK(x.f.view.state == P25_FOLLOW_CONTROL && x.f.view.net_confirmed,
+	CHECK(x.f.view.state == P25_FOLLOW_CONTROL && x.f.view.sys_ok,
 	      "ordinary voice-channel return retains network confirmation");
 
 	// A matching NET on one candidate cannot authorize another candidate after a wrong NAC.
@@ -316,13 +316,13 @@ static void testNetworkConfirmation(void)
 	p25_tsbk_t net = { .kind = P25_TSBK_NET, .u.net = { .wacn = 0xABCDE, .sysid = 0x123 } };
 	p25_tsbk_make(&net, block);
 	p25_follow_tsbk(&x.f, block, 0x294, ++x.now);
-	CHECK(x.f.view.cc == 1 && !x.f.view.net_confirmed, "candidate changes discard old transmit proof");
+	CHECK(x.f.view.cc == 1 && !x.f.view.sys_ok, "candidate changes discard old transmit proof");
 	network(&x, 0xBCDEF, 0x123);
 	request(&x);
-	CHECK(!x.f.view.net_confirmed && x.sends == 0, "configured WACN mismatch never authorizes access");
+	CHECK(!x.f.view.sys_ok && x.sends == 0, "configured WACN mismatch never authorizes access");
 	network(&x, 0xABCDE, 0x456);
 	request(&x);
-	CHECK(!x.f.view.net_confirmed && x.sends == 0, "configured system mismatch never authorizes access");
+	CHECK(!x.f.view.sys_ok && x.sends == 0, "configured system mismatch never authorizes access");
 }
 
 static void testUnverifiedNetwork(void)
@@ -341,19 +341,19 @@ static void testUnverifiedNetwork(void)
 	p25_rx_unit_t unit = { .duid = P25_DUID_TSDU, .nac = 0x293, .nsyms = 180, .air = air };
 	p25_follow_unit(&x.f, &unit, ++x.now);
 	p25_follow_unit(&x.f, &unit, ++x.now);
-	CHECK(x.f.view.unverified && !x.f.view.net_confirmed && x.f.view.crc_taken == 1,
+	CHECK(x.f.view.unverified && !x.f.view.sys_ok && x.f.view.crc_taken == 1,
 	      "an accepted repeated bad-CRC NET never confirms transmit identity");
 	site(&x, 0x123);
 	p25_tsbk_t own = { .kind = P25_TSBK_GRANT, .opcode = P25_OP_GRP_V_GRANT,
 		.u.grant = { .ch = 0x100A, .tg = 0x2345, .src = 0x123456 } };
 	feed(&x, &own);
-	CHECK(!x.f.view.unverified && !x.f.view.net_confirmed && x.f.view.req != P25_REQ_TALK,
+	CHECK(!x.f.view.unverified && !x.f.view.sys_ok && x.f.view.req != P25_REQ_TALK,
 	      "a good RFSS and our grant cannot revive unverified network proof");
 	request(&x);
 	CHECK(x.sends == 1, "an unrelated good block cannot enable another transmission");
 	network(&x, 0xABCDE, 0x123);
 	request(&x);
-	CHECK(x.f.view.net_confirmed && x.sends == 2, "a good NET restores normal requests");
+	CHECK(x.f.view.sys_ok && x.sends == 2, "a good NET restores normal requests");
 }
 
 static void testRegisteredNetworkChange(void)
@@ -376,7 +376,7 @@ static void testRegisteredNetworkChange(void)
 		p25_follow_tick(&x.f, x.now);
 		site(&x, 0x123);
 		request(&x);
-		CHECK(x.f.view.reg == P25_REG_READY && x.sends == 1 && !x.f.view.net_confirmed,
+		CHECK(x.f.view.reg == P25_REG_READY && x.sends == 1 && !x.f.view.sys_ok,
 		      "retained registration cannot bypass a fresh network check");
 		uint32_t wacn = changed == 1 ? 0xBCDEF : 0xABCDE;
 		uint16_t sysid = changed == 2 ? 0x456 : 0x123;
@@ -390,6 +390,30 @@ static void testRegisteredNetworkChange(void)
 		      x.f.view.reg == P25_REG_WAIT :
 		      x.sends == 1 && x.f.view.reg == P25_REG_READY,
 		      "same network keeps registration; another WACN or NET-first system registers anew");
+	}
+}
+
+static void testBlockedNetworkChange(void)
+{
+	for (unsigned rfss = 0; rfss < 2; rfss++) {
+		fixture_t x;
+		begin(&x, true, 5000000, 438000000, WILDCARD_BOTH);
+		if (rfss)
+			site(&x, P25_SYSID_NO_TX);
+		else
+			network(&x, P25_WACN_NO_TX, 0x123);
+		CHECK(x.f.acc.blocked && x.f.view.reg == P25_REG_BLOCKED && !x.f.view.sys_ok,
+		      "a blocked NET or conflicting RFSS latches the blocked state before hunting");
+		network(&x, 0xBCDEF, 0x456);
+		site(&x, 0x456);
+		request(&x);
+		CHECK(x.sends == 0 && x.f.view.reg == P25_REG_BLOCKED && !x.f.view.sys_ok &&
+		      p25_follow_can_talk(&x.f.view, x.cfg.flags) == P25_TALK_BLOCKED,
+		      "a later NET from another network preserves the block and its PTT reason");
+		network(&x, 0xABCDE, 0x123);
+		request(&x);
+		CHECK(x.sends == 0 && x.f.view.reg == P25_REG_BLOCKED && !x.f.view.sys_ok,
+		      "returning to an allowed network cannot clear the latched block");
 	}
 }
 
@@ -414,6 +438,7 @@ int main(void)
 	testNetworkConfirmation();
 	testUnverifiedNetwork();
 	testRegisteredNetworkChange();
+	testBlockedNetworkChange();
 	testEncryptedLinkControl();
 	printf("P25 follower regressions: %u checks, %u failures\n", checks, failures);
 	return failures != 0;

@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, newChannel, newContact } from "../static/js/codeplug/model.js";
+import { channelAddr } from "../static/js/codeplug/records.js";
 import { parse, stringify, detect, exportTable, importTable, exportAll, importAll, ORDER } from "../static/js/codeplug/csv.js";
 
 const DIR = process.env.RFOUNDRY_SITE_FIXTURES || "build/site-tests";
@@ -166,4 +167,15 @@ test("unknown headers are listed, and a file of no table is refused", () => {
 	assert.deepEqual(r.unknown, ["Favorite Color"]);
 	assert.equal(detect("Foo,Bar\n1,2\n"), null);
 	assert.throws(() => importTable(m, "Foo,Bar\n1,2\n"), { code: "not_a_table" });
+});
+
+test("a CSV TX timeout rounds up to the 15 s steps the record stores (#924)", () => {
+	const m = empty();
+	const r = importTable(m, "Name,RX Frequency (MHz),TX Frequency (MHz),Timeout (s)\nA,446.0,446.0,100\nB,446.0,446.0,3825\nC,446.0,446.0,1\nD,446.0,446.0,\n", "channels");
+	assert.deepEqual(r.problems, []);
+	assert.deepEqual(m.channels.map((c) => c.tot), [105, 3825, 15, 0]);
+	// 100 s is written as 7 units of 15 s, and reads back as the 105 s the editor shows
+	const img = encode(m);
+	assert.equal(img.bytes[channelAddr(1) + 0x1B], 7);
+	assert.deepEqual(decode(img).channels.map((c) => c.tot), [105, 3825, 15, 0]);
 });

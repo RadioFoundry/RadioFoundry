@@ -50,6 +50,10 @@ The scan actions:
 | 2 | Stay here | Stops the scan on this channel |
 | 3 | Always skip | Not built yet. Edit scan lists in qdmr |
 
+A noisy channel takes two presses this way (**#**, then **1**). Set a side key to **Scan skip** in
+[Settings > Keys](17-settings.md), on its press or its long press, and one press does what action 1 does.
+With no scan running the key only says "Not scanning".
+
 ## Dual watch
 
 Dual watch listens on two channels, A and B, and you talk on one of them. Each can be any channel of any zone, or the

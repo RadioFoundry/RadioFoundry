@@ -299,6 +299,24 @@ with the tone debounce (8 polls) that keeps fades from chopping audio.
 The noise squelch shortens the tail itself. It closes after `RADIO_SQL_CLOSE_POLLS` (2) polls over the close line
 (open threshold + `RADIO_SQL_HYST_DB`), 50 ms, but after one poll when the noise is `RADIO_SQL_FAST_CLOSE_DB` (12 dB)
 or more over it: a carrier that goes takes the noise far over the line at once, while a fade crosses it by a little.
+A voice peak doesn't close the squelch. On a 12.5 kHz channel, speech above about 2 kHz (fricatives such as S, SH
+and T) raises some receivers' noise reading over the close line for 100-300 ms, past the fast close line from a sender
+that deviates wide, while the carrier stays as strong as it was. On a 12.5 kHz channel, noise over the line with the
+RX tone still heard and the signal strength within `RADIO_SQL_PEAK_RSSI_DB` (3 dB) of the last poll that held the
+squelch open closes only after `RADIO_SQL_PEAK_POLLS` (16) polls, 400 ms: the longest sibilant plus 100 ms. A carrier
+that goes takes the strength down with the noise up: one poll past the fast close line, two otherwise. If the strength
+reading lags the noise reading by a poll, the second poll sees the drop and closes on schedule. A lost RX tone closes
+as before. Wider channels never hold.
+
+The hold needs a carrier `RADIO_SQL_PEAK_FLOOR_DB` (10 dB) over the receiver's floor, so that a weak carrier's drop
+always moves the strength by more than 3 dB. The core learns the floor from idle polls with the noise over the level
+1 close line: the floor follows a lower reading at once and rises 1 dB every `RADIO_SQL_FLOOR_RISE_POLLS` (4) polls.
+Until the first idle poll there is no floor and no hold. A weaker carrier closes on voice peaks as before.
+
+The core view's `sql_close` gives the number of polls over the line at the last close: 1 or 2 for a carrier that went,
+16 for a hold that ran out. Widening the receive filter also lowered the reading on voice, but raised the reading on
+weak signals by up to 8 dB, so the squelch would open later on a weak station.
+
 Squelch level 0 (always open) and the APRS hold (`RADIO_SQL_CLOSE_POLLS_APRS`) keep their own timing. On one board
 (BK4819 receiver) the tail at the speaker went from 55 ms to 15-35 ms in three calls (measured,
 `test_fm_rx_speaker`); what is left is the poll and the chip's noise reading lag.
@@ -311,12 +329,27 @@ the debug link's SETTING op 29 sets it in RAM only.
 
 | Board | FM | DMR |
 |---|---|---|
-| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the samples to the vocoder are not scaled |
-| without it | not changed | the mic samples are scaled before the vocoder (`ambeVoiceSetMicGain`, with saturation) |
+| with `hal_radio_t.mic_gain` (HR_C7000 boards) | the board's FM level for the channel bandwidth plus (step - 5) x 2 dB, written into the modem's mic gain at each FM transmit start | DMR: the board's DMR level plus the same offset, at each DMR entry and DMR transmit start; the PCM gain is the board's `mic_pcm_db` alone |
+| without it | not changed | the PCM gain is the board's `mic_pcm_db` plus (step - 5) x 2 dB |
 
-The board only stores the offset in the hook; a change takes effect at the next transmission. On an HR_C7000 radio
-the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same codec ADC, so on these radios
-the mic gain also moves the VOX level. Without `CONFIG_DMR` and without the hook the row is dimmed.
+**PCM gain.** The mic samples go to DMR's AMBE+2 encoder and P25's IMBE encoder (`ambeVoiceSetMicGainQ8` and
+`p25VoiceSetMicGainQ8`, both pushed by `radio_set_mic_gain` with the same gain, the DMR column above) through a gain
+with a peak limiter (`core/dsp/miclimit.h`): one gain a
+20 ms block, never more than the set gain, never so much that the block's peak passes 28000 (about -1.4 dBFS). It
+falls at once and recovers by 0.5 dB a block. At 0 dB nothing is applied, so a board at its own level encodes the
+samples as delivered. `hal_radio_t.mic_pcm_db` is a board's gain at step 5 for a mic that reaches the PCM quiet:
+one radio has 12 dB (its digital voice decoded off air at -31 dBFS against another maker's handheld's -18 dBFS,
+2026-11-19; its hardware page has the measurement).
+The debug link shows the gain in force (`voice.mic_pcm_db`, the `dmr` section) and the latest transmission: the mic's
+peak, the encoder's peak after the gain and the limiter's lowest gain in dB (`voice.tx_mic_peak voice.tx_enc_peak
+voice.tx_mic_low_db`). A lowest gain under the set gain means the
+limiter cut: some cut on a shout is expected, a cut on normal speech says the gain is too high.
+P25 has the same pair in its own section: `p25v.tx_mic_peak` (after the gain) and `p25v.tx_mic_low_db`.
+
+The board only stores the offset in the hook; a change takes effect at the next transmission (the PCM gain at the
+next block). On an HR_C7000 radio the register is clamped to 0-42 dB (`hrc7000_mic_db`). The VOX meter reads the same
+codec ADC, so on these radios the board's mic gain also moves the VOX level; the PCM gain doesn't. Without
+`CONFIG_DMR` and without the hook the row is dimmed.
 
 ### 3.7 DTMF transmit (CONFIG_DTMF)
 
@@ -430,7 +463,10 @@ routed; otherwise its tone starts in the first block. Without the voice stream t
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
 block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
 the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
-lead-in. A board with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
+lead-in. When the DMR or P25 voice stream starts while a beep's own stream runs (the first key-up after power-on or an
+FM channel), the voice stream takes the running stream over; its first block sets the speaker route to what the voice
+stream wants, so a route the beep had on doesn't stay on (and keep the amplifier on) after the beep. A board
+with `speaker_hang_s` (a mobile on a supply; 0 on battery radios) keeps its amplifier powered and
 silent (`speaker_warm`) from any key, PTT, reception or beep until that many seconds after the last one, so a key click
 or the DMR talk permit tone plays at once: while it is warm, beeps take the one-block lead-in. If that stream delivers no
 block for 200 ms (8 radio polls), its clock has stopped: the beep stops the stream, gives the speaker route back and

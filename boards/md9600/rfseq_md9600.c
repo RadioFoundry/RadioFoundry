@@ -6,6 +6,7 @@
 #include "config.h"
 #include "radio/apc_ramp.h"
 #include "radio/ref_trim.h"
+#include "rf/ak2365a/ak2365a.h"
 
 // Per band: index md9600_band_t (VHF 0, UHF 1)
 static const uint8_t ln_t5[2] = { MD9600_LN_T5_V, MD9600_LN_T5_U };
@@ -153,6 +154,10 @@ static md9600_rf_err_t pll_reset(const md9600_rf_ops_t *o, md9600_rev_t rev, con
 static md9600_rf_err_t if_setup(const md9600_rf_ops_t *o, const md9600_rev_desc_t *d, uint8_t band, bool wide)
 {
 	if (d->if_chip) {
+		// Keep the unused IF receiver in standby across band changes. Leaving both
+		// enabled can prevent the modem from decoding after switching bands.
+		if (!o->ifw(o->ctx, (uint8_t)(1u - band), ak2365a_word(AK2365A_REG_SRST, AK2365A_SRST_VALUE)))
+			return MD9600_RF_E_BUS;
 		uint16_t w[MD9600_IF_WORDS];
 		uint8_t n = md9600_if_words(wide, w);
 		for (uint8_t i = 0; i < n; i++) {

@@ -71,7 +71,7 @@ static const char *deny_key(uint8_t d)
 	static const char *const names[] = { "none", "rx_only", "band", "timeout", "no_freq", "mode", "no_codec",
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
 					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased", "bench",
-					     "trunk", "air_no_tx" };
+					     "trunk", "air_no_tx", "aes_key", "aes_wait" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
@@ -153,13 +153,16 @@ static void core_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "\n");
 	dl_text(t, "temporary=%u\ntemp=0x%02x\n", v->temporary, v->temp);
 	dl_text(t, "squelch=%u\nmonitor=%u\ntone_ok=%u\n", v->squelch, v->monitor, v->tone_ok);
-	dl_text(t, "rssi_dbm=%d\nnoise=%u\n", v->rssi_dbm, v->noise);
+	dl_text(t, "rssi_dbm=%d\nnoise=%u\nsql_close=%u\n", v->rssi_dbm, v->noise, v->sql_close);
 	dl_text(t, "tx_elapsed_ms=%u\ntot_s=%u\n", (unsigned)v->tx_elapsed_ms, v->tot_s);
 	dl_text(t, "last_rx_ms=%u\nlast_tx_ms=%u\ntx_auto=%u\nwakes=%u\n", (unsigned)v->last_rx_ms,
 		(unsigned)v->last_tx_ms, v->tx_auto, radio_view_wakes(v));
 	dl_text(t, "vfo_step_hz=%u\nvfo_drop=%u\n", (unsigned)v->vfo_step_hz, v->vfo_drop);
 	dl_text(t, "codeplug=%s\n", v->source < 3 ? sources[v->source] : "?");
 	dl_text(t, "hotspot=%u\n", v->hotspot);
+	if (v->hotspot) {
+		dl_text(t, "hs_power=%u\n", v->hs_power);	// the power level the hotspot keys (the host's RF level)
+	}
 	uint32_t handled, dropped;
 	radio_req_stats(&handled, &dropped);
 	dl_text(t, "req_handled=%u\nreq_dropped=%u\nch_read_errors=%u\n", (unsigned)handled, (unsigned)dropped,
@@ -374,7 +377,8 @@ static void link_section(dl_text_t *t)
 		(unsigned)u.draws, u.dual);
 	dl_text(t, "input.idle_ms=%u\nui.backlight=%u\n", (unsigned)input_idle_ms(), ui_backlight());
 	if (board.display != NULL && board.display->panel != NULL) {
-		hal_display_panel_t pi;
+		// A board's hook fills only what it knows: the rest must read as not known, never as stack contents
+		hal_display_panel_t pi = { .factory = -1 };
 		board.display->panel(&pi);
 		if (pi.factory < 0) {
 			dl_text(t, "display.panel_raw=none\n");

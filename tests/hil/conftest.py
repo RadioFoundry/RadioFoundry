@@ -155,6 +155,7 @@ def pytest_configure(config):
         config.args += sorted(d for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))
                               if glob.glob(os.path.join(d, "test_*.py")))
     config.addinivalue_line("markers", "rf: transmits (needs --allow-rf)")
+    config.addinivalue_line("markers", "rf_fallback: the test checks --allow-rf itself if its fallback needs to transmit")
     config.addinivalue_line("markers", "bench_service: uses the bench board's transmitter or receiver through a "
                             "session (needs --bench-api, skips without one)")
     config.addinivalue_line("markers", "sdr_rx: uses the bench board's receiver and no transmitter. With bench_modem "
