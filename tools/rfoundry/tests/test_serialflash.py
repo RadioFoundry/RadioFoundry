@@ -71,6 +71,18 @@ class Tools(unittest.TestCase):
             sys.path.remove(tools)
         self.assertIn(0x2100, rfoundry_debug.CABLE_VIDS)
 
+    def test_aioc_cable_is_a_known_programming_cable(self):
+        # AIOC uses shared pid.codes VID 0x1209, so it is matched by exact (VID, PID)
+        self.assertIn((0x1209, 0x7388), [(v, p) for v, p, _ in sf.tool("serial_loader").USB_SERIAL])
+        tools = os.path.abspath(os.path.join(HERE, "..", ".."))
+        sys.path.insert(0, tools)
+        try:
+            import rfoundry_debug
+        finally:
+            sys.path.remove(tools)
+        self.assertIn((0x1209, 0x7388), rfoundry_debug.CABLE_IDS)
+        self.assertNotIn(0x1209, rfoundry_debug.CABLE_VIDS)
+
     def test_slot_magic_matches_the_tools(self):
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("hrc7000_codec").SLOT_MAGIC)
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("serial_loader").SLOT_MAGIC)
