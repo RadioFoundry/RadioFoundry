@@ -94,7 +94,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x06` | KEY | kind u8 + arguments (3.4) | none |
 | `0x07` | PTT | down u8 [+ max ms u16] | the time-out applied, ms u16 (3.5) |
 | `0x08` | GET_LOG | none | dropped u32, more u8, text lines (3.6) |
-| `0x09` | GET_VIEW | section u8 | ms u32, next section u8, key=value text (3.7) |
+| `0x09` | GET_VIEW | section u8 [+ offset u16 + limit u16 + key prefix] | ms u32, next section u8, key=value text (3.7) |
 | `0x0A` | RADIO | operation u8 + arguments (3.8) | none |
 | `0x0B` | INFO_CHIP | none | chip ID, flash size, UID, option bytes decoded (3.9) |
 | `0x0C` | READ_MEM | address u32 + length u16 | address u32, the bytes (3.10) |
@@ -118,6 +118,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
+| `0x27` | DETOUR | operation u8 + arguments (7.4); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the deadline, the detour's state, or none (7.4) |
+| `0x28` | DMRIP | operation u8 + arguments (7.5); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the transport's state, or none (7.5) |
 
 ### 3.1 VERSION
 
@@ -379,10 +381,21 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 36 | `p25` | P25 conventional on the channel ([p25.md](p25.md) 7.4): `p25.built` (0 without `CONFIG_P25`, and nothing else) `p25.on` (the engine runs on this channel), the call heard now or last `p25.rx played enc unit late nac src dst` (`src` 0: not known yet; `dst` a talk group, or a unit when `unit` is 1) `p25.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `p25.rx_work_us rx_span_us` (while the engine runs, from a provider that counts its receive load, as `air.rx_work_us` in 3.28: work / span is the share of the CPU since P25 started), the settings `p25.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (as op 39), while the engine runs the parameters it runs on `p25.run.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (a stored P25 channel's own, else the settings; talkaround 1 on, 2 off), counters `p25.begins begin_fails mem_lent rx_calls tx_calls tx_filler units voice voice_bad voice_bits lc_fail es_fail rx_chunks tx_underruns tx_syms`; the voice path `p25v.built in frames bad concealed calls underruns underrun_at overflows bit_errors queue_max peak tx_frames tx_encoded tx_dropped tx_silent tx_mic_peak tx_mic_muted tx_mic_low_db` (`tx_mic_peak` after the mic gain and its limiter, `tx_mic_muted` blocks sent as silence while a beep played, `radio-features.md` 4, `tx_mic_low_db` the limiter's lowest gain in the latest transmission, as `voice.tx_mic_low_db` in the `dmr` section; `p25v.built=0` without). RESET_COUNTERS zeroes the counters |
 | 37 | `p25_trunk` | the P25 trunking follower on a trunked channel ([p25-trunking.md](p25-trunking.md) 7): `p25t.built` (0 without `CONFIG_P25_TRUNK`, and nothing else) `p25t.on` (a trunked channel runs), the follower's view `p25t.state` (`P25_FOLLOW_*`: 0 off, 1 hunting, 2 on a control channel, 3 on a voice channel) `cc cc_hz voice_hz nac wacn sysid rfss site` (the control channel tried or held and the system heard; `wacn` 4294967295, `sysid` 65535, `rfss`/`site` 255 until heard), the call followed now or last `tg src dst unit_call enc`, `idens learned refused refused_tg fallback`, counters `blocks crc_fail crc_taken mfr mbt mbt_op pdu_other grants follows enc_skip tdma no_iden wrong_sys hunts cc_lost voice_lost wrong_call` (from the channel's start; `crc_taken` the blocks taken with a failed CRC, the channel's Accept invalid CRC), `p25t.unverified` (1 while the last block taken failed it: the transmit side waits), and the radio core's `retunes untuned skips` (RESET_COUNTERS zeroes these three). The transmit side ([p25-trunking.md](p25-trunking.md) 5): `p25t.tx` (1: on), `reg` (`P25_REG_*`: 0 off, 1 idle, 2 waiting, 3 affiliating, 4 registered and affiliated, 5 denied, 6 retrying, 7 no inbound frequency), `req` (`P25_REQ_*`: 0 idle, 1 waiting, 2 queued, 3 talking on the grant, 4 denied, 5 no answer, 6 unusable channel), `aff_tg` (the group affiliated), `talk_hz` (where it last transmitted on a grant), `deny_svc deny_reason` (the last deny's request opcode and reason), counters `reg_tx reg_ok aff_tx aff_ok req_tx req_grant denials queued timeouts send_fail inb_busy` (8 bits, from the channel's start) and the radio core's `bursts burst_refused` (inbound bursts keyed, and refused by the transmit checks) |
 | 38 | `nxdn` | NXDN conventional on the channel ([nxdn.md](nxdn.md) 6): `nxdn.built` (0 without `CONFIG_NXDN`, and nothing else) `nxdn.on` (the engine runs on this channel), the call heard now or last `nxdn.rx played enc unit late ran src dst emergency` (`src` 0: not known yet; `dst` a group, or a unit when `unit` is 1), `nxdn.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `nxdn.deny` (`tx_deny_t` of the last refusal), the provider's fit (`AIR_FIT_*`, 3.28) at the rate in use and at each rate `nxdn.fit fit4800 fit9600`, the settings `nxdn.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst tx_emergency` (as op 40), while the engine runs the parameters it runs on `nxdn.run.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst` (a stored NXDN channel's own, [nxdn-codeplug.md](nxdn-codeplug.md), else the settings), counters `nxdn.begins begin_fails rx_calls tx_calls tx_filler frames lich_fail sacch_fail facch_fail voice voice_held fec_bits ran_rejects rx_chunks tx_underruns tx_syms`. The voice path is the DMR side's (`ambe.*` in `dmr_stats`). RESET_COUNTERS zeroes the counters |
+| 39 | `dmrip` | the debug link over the air (7), only in builds with `CONFIG_DEBUGLINK_DMRIP` (other builds answer the section number with BAD_ARG, out of range): `dmrip.built` (1) `dmrip.id` (the DMR ID the radio answers to) `dmrip.port dmrip.key` (`uid`, `set` or `none`) `dmrip.session dmrip.counter`, counters `dmrip.rx busy bad_auth not_ours old repeats gone refused answered chunks dropped hello`, and the detour runner `detour.phase` (0 idle, 1 arming, 2 clear, 3 running, 4 returning) `detour.left_ms detour.items detour.failed detour.result detour.runs` |
 
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
 The saved value changes after the Settings write completes; it lets a test restore the assignment through the UI.
+
+A request longer than the section byte asks for a page: offset u16, limit u16 and a key prefix (any length, none for
+every key). The reply keeps the `section=` line and the lines that start with the prefix, skips those before the
+offset (counted in bytes of the matching lines), and stops at whole lines before limit bytes of text (0, or more than
+a reply holds: a whole reply; less than 64: 64). A page's first line goes whole even when longer than the limit. When
+lines are left, the last line is `more=<offset>`, the offset of the next page. The radio renders the section into one
+reply each time, so a page costs the same on the radio and less on the link: over the air (7) a page of 200 bytes fits
+one datagram. Pages cover only what fits one reply: when the section was cut short, the last page also carries
+`truncated=1`, whatever the prefix. Only builds with `CONFIG_DEBUGLINK_DMRIP` page; the others answer every request
+with the whole section, and the host applies the prefix itself.
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -1110,6 +1123,9 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
   what writes flash ([stub-stm32f4.md](stub-stm32f4.md) 6 for the STM32 one's rules).
 - CODEPLUG writes only codeplug blocks of the open-firmware image, never the settings ring, the journal, the native
   area, the staging area or the calibration window, through the journal or a staged commit (3.20).
+- Over the air (7, `CONFIG_DEBUGLINK_DMRIP` builds only, off in every release): only authenticated requests to the
+  radio's own DMR ID are answered; only reads and DETOUR are taken (7.3), never the chip UID or memory; every change
+  a detour makes is undone at its deadline, by the radio, and none of the detour's changes is saved (7.4).
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 
@@ -1127,3 +1143,139 @@ it; a test that resets, waits a moment and then starts its traffic is not affect
 Add the number to `debuglink_proto.h`, a handler in `core/debuglink/debuglink.c` (short, non-blocking, reply at most
 1024 bytes), a row here, and a method in `tools/rfoundry_debug.py`. New view keys need only the renderer and the table
 in 3.7.
+
+## 7. Over the air
+
+`CONFIG_DEBUGLINK_DMRIP` (off by default, never in a release; [build-config.md](../build-config.md)) carries debug link
+frames over the DMR IP data path, the over-the-air UDP path the SNMP agent uses ([snmp.md](snmp.md)). A host reaches a
+radio with no cable through an IP gateway: a radio in USB network mode ([usb-network.md](usb-network.md)) or a bench IP
+gateway. Firmware: `core/debuglink/dl_dmrip.c` (the datagram, key, replay check, policy and detour runner, host tested
+in `tests/host/dlDmripTest.c`) and `core/debuglink/debuglink_dmrip.c` (the glue); the radio core's part of the detour
+is `detour_*` in `core/radio/radio_sm.c` (`CONFIG_RADIO_DETOUR`, `tests/host/radioCoreTest.c`). Host:
+`tools/rfoundry/rfoundry/dmrip.py` and `rfoundry_debug.py --port dmrip:...`.
+
+### 7.1 Transport and addressing
+
+UDP port 3335 at the radio's individual address (`12.x.y.z`, the DMR ID in the low 24 bits), both ways. The radio
+takes only datagrams to its own ID and address, never a group's (a port of the IP gateway's table for services over
+the air, `ipGatewayUdpBindAir`, which also gives the request's IPv4 source), and the radio checks again that the ID inside the authenticated header is its own. A group, the all-call ID or
+another radio's ID gets no answer. An answer goes to the sender's DMR ID, at the request's IPv4 source address and
+port: a gateway radio's own address (12.<ID>), its host's (13.<ID>), or a host on a network a bench gateway routes, so
+the answer goes back the way the request came. A source no answer can reach (0, multicast, broadcast, loopback)
+gives the sender's own address.
+
+| Byte | Field | |
+|---|---|---|
+| 0 | version | `0xD1` |
+| 1 | flags | bit 0 a reply (from the radio), bit 1 HELLO, bit 2 GONE |
+| 2-4 | DMR ID u24 | the radio addressed, or the radio answering |
+| 5-8 | nonce u32 | the session the radio chose (a HELLO request: 0) |
+| 9-12 | counter u32 | the request's (a HELLO reply: the last counter the radio took) |
+| 13 | chunk u8 | request: the reply chunks wanted again, bit i = chunk i, 0 = all; reply: index << 4 \| count |
+| 14.. | body | a request: one debug link frame (section 2, payload at most 64 bytes). A reply: one chunk of the reply frame, at most 224 bytes. HELLO: the host's challenge (up to 16 bytes), echoed |
+| last 8 | tag | SipHash-2-4 of bytes 0 .. n-9 under the radio's key |
+
+A reply frame (up to 1032 bytes) goes in chunks of 224 bytes, at most 5 datagrams, each under 280 bytes of IP. All
+integers are little endian.
+
+Session: the host sends HELLO; the radio answers with its nonce (chosen at the first HELLO since start-up, never 0)
+and the last counter the radio took. Each request then carries the nonce and a higher counter. The same request with
+the last counter again is a repeat: the radio sends its kept reply again, only the chunks the request names. When a
+cable request has used the debug link's reply buffer since, the radio answers GONE instead. The host then sends a
+request that only reads (PING, VERSION, GET_DIAG, SCREENSHOT, GET_VIEW, IDDB, DETOUR STATUS, DMRIP STATUS) as new.
+Any other request is reported as taken with its reply lost and is never sent again: a detour runs once. A lower
+counter, another request on the last counter (a second host in the same session: that request never ran), another
+nonce or a bad tag gets no answer. HELLO is answered once a second at most. One request is handled at a time; one that
+arrives while the radio is busy is dropped (`dmrip.busy`) and the host sends the request again. One host per session:
+two hosts that share a key both start from the same counter, and the second one's requests time out.
+
+### 7.2 Key
+
+16 bytes. By default the radio's key comes from its chip UID: two SipHash-2-4 runs under the fixed key
+`RFoundryDMRIPkey` over a byte 0 or 1 and the 12 UID bytes as INFO_CHIP gives them (3.9), concatenated. Anyone who has
+read the UID over the cable has the key, and a radio whose UID reads all zero has none until one is set. INFO_CHIP is
+refused over the air for that reason. DMRIP KEY (7.5, over the cable only) sets another key until the next start; all
+zero goes back to the UID's. The tag authenticates; nothing is encrypted, and the views read over the air are readable
+by anyone in range.
+
+### 7.3 What the air may ask
+
+| Over the air | Commands |
+|---|---|
+| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS |
+| Only as an item of a detour (7.4) | RADIO (the operations the detour undoes), PTT |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, CHIP_REG, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+
+A refused command answers status 7. Writes no deadline undoes (chip and SoC registers, flash, codeplug, stored keys)
+are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
+the link for good.
+
+### 7.4 Detour
+
+Temporary changes for a test in another mode, on another frequency or with another talk target, where the radio
+can't hear DMR data until the test ends. The radio itself puts everything back at the deadline: the host doesn't need
+to reach the radio again.
+
+| Op | Request after the op | Reply after the status |
+|---|---|---|
+| 1 RUN | seconds u16 (1 to 300), then items: cmd u8, length u8, payload. cmd 0 waits (ms u16) | seconds u16 |
+| 2 EXTEND | seconds u16: the deadline moves to now + seconds (1 to 300) | none |
+| 3 RETURN | none: back now | none |
+| 4 STATUS | none | phase u8, ms left u32, items done u8, failed item u8 (number + 1, 0 none), result u8 (OK, BUSY: not armed, or the failed item's status), RUNs taken u32; then the radio core's last detour: flags u8 (armed, returning, restored), why u8 (1 asked, 2 backstop), count u16, mode u8, rx Hz u32, length ms u32, RX ms u32, TX ms u32, receptions u16, transmissions u16, refused transmissions u16, strongest RSSI i16 dBm |
+
+The deadline is mandatory and kept on the radio. More than 300 s, 0 s or an item not allowed refuses the whole RUN
+(status 2 or 7) and changes nothing. The items run in order after the reply: over the air they wait for the RUN reply
+to leave first (up to 3 s), as a frequency change cuts the link. An item that answers BUSY is tried again for 1 s; an
+item that fails ends the detour at once.
+
+| Event | What happens |
+|---|---|
+| RUN with no detour | the radio core keeps its home state and holds the settings saves (marks). The runner saves changed settings first; the mark is refused, and the run ends BUSY, while a save still waits, while transmitting, or in hotspot mode |
+| RUN while one runs | the new items run and the deadline moves to now + seconds; the home state stays the first one |
+| RETURN | back now (the deadline's own path); RETURN with no detour does nothing |
+| The deadline | PTT released, then back. During a reception: back at once. During a transmission: the PTT is released and the radio comes back when the transmission ends |
+| The debug link's deadline missed | the radio core's own backstop, 10 s after the deadline, puts everything back (`why` 2) |
+| A lost return request | asked again every 500 ms until the core reports the radio back |
+| Power lost | nothing of the detour was saved: the radio starts in its home state |
+
+Back means, as marked: the zone and channel position, or the VFO with both VFOs as stored; the channel's changes for
+now (power, squelch, bandwidth, mode, color code, timeslot, sub-audio tones); the talk target and hear all; monitor;
+the radio settings (`radio_settings_t`, TX inhibit among them); the P25 and NXDN settings; and so the receive and
+transmit frequencies, the mode, the DMR ID and IP address the channel gives. The settings store saves nothing from mark
+to return (`settings_hold`), and the return drops what changed in RAM (`settings_release`), so a change can't outlive
+the detour through a save. `restored` says the position, frequencies and settings came back. A save that must reach
+the flash fails while held (`settings_flush` answers false): a factory reset reports that the settings couldn't be
+saved and erases nothing, and a zone add or delete, whose saved indexes move with the zones, fails and leaves the
+codeplug unchanged.
+
+Items: RADIO operations 1-12 (channel, zone, VFO, frequency, step, power, squelch, bandwidth, tone, monitor, clear the
+changes for now), 15-18 (DMR talk target), 24 SETTING (the `radio_settings_t` ids 1-28, 30, 33, 34), 31 DMR fields
+(mode, color code, timeslot), 32 copy to VFO, 42 P25 and 43 NXDN settings; PTT; and waits. Nothing else, so the return
+undoes every change a detour can make.
+
+Transmitting in a detour keeps every transmit check: the band limits, the radio's TX time-out, TX inhibit, the test TX
+limit (RADIO op 35, which no detour can change) and the PTT's own time-out (10 s at most per item). On the SDR bench a
+detour that transmits takes the frequency's lease first and sets the lowest power level as an item ([tests/hil
+README](../../tests/hil/README.md)).
+
+Host: `rfoundry_debug.py detour run SECONDS STEP...`, each STEP `"radio OP ARG..."` (the radio command's syntax),
+`"wait MS"` or `"ptt S"` (key S seconds, then release). A step can't read the radio, so the power changes by a
+step, `"radio power +N"` or `"-N"` (the radio wraps past either end). `detour status [--wait]` (until back, then
+the summary), `detour extend SECONDS`, `detour return`. Over the air, `detour run` prints the deadline and ends
+(the radio may have left the channel): `--wait` or a later `detour status` asks for the summary again until the
+radio is back, up to the deadline, the backstop and 30 s. RUN's payload holds 61 bytes of items.
+
+### 7.5 DMRIP
+
+| Op | Request after the op | Reply after the status |
+|---|---|---|
+| 0 STATUS | none | port u16, key source u8 (0 none, 1 the chip UID's, 2 set), session u32 (1: a nonce is chosen), datagrams received u32, answered u32, failed the tag u32 |
+| 1 KEY | key, 16 bytes (all zero: the UID's again). Over the cable only | none |
+
+Host: `rfoundry_debug.py dmrip learn` reads the DMR ID (`dmrip.id`) and chip UID over the cable and keeps the key in
+the key file (`dmrip-keys.json` in `$XDG_CONFIG_HOME/rfoundry`, else `~/.config/rfoundry`, mode 600) for that ID.
+Then `rfoundry_debug.py --port dmrip:ID CMD` sends to the radio's individual address by the host's routes (a radio in
+USB network mode routes `12.0.0.0/8`), and `--port dmrip:ID@HOST[:PORT]` sends to a relay at HOST that forwards each
+datagram to the DMR ID in its header and returns the replies. `--dmrip-key HEX` or `$RFOUNDRY_DMRIP_KEY` give the key
+instead. Each datagram is sent up to 4 times, 4 s apart; `view --section S --prefix P` reads a section in 200 byte
+pages.
