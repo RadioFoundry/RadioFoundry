@@ -110,8 +110,9 @@ jobs:
           set -uf   # no globbing: $FLAGS is split into words, never matched against file names
           mkdir -p build/hil/shots
           # the radio is shared with people and agents at the bench: hold its lock for the whole run, the version
-          # query included
-          LOCK=${RFOUNDRY_RADIO_LOCK:-$HOME/.rfoundry-radio.lock}
+          # query included. The file tools/bringup.py run takes ({port} in it becomes the port), as the nightly job does
+          slug=$(printf '%s' "${RFOUNDRY_PORT:-usb}" | sed -E 's/[^A-Za-z0-9.-]+/_/g; s/^[_.]+//; s/[_.]+$//')
+          LOCK=$(printf '%s' "${RFOUNDRY_RADIO_LOCK:-"$HOME/.rfoundry-radio-{port}.lock"}" | sed "s|{port}|${slug:-usb}|g")
           locked() {
             if command -v lockf > /dev/null; then lockf -k "$LOCK" "$@"
             elif command -v flock > /dev/null; then flock "$LOCK" "$@"
