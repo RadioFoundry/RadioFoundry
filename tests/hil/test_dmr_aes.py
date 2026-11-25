@@ -5,7 +5,8 @@
 test_aes_missing_key_refuses_ptt (radio_tx, codeplug_write; no second radio, no bench): the simplex DMR channel on the
 DMR test frequency (--dmr-freq, as the other DMR TX tests use) gets an AES tag (kind 5) bound to a free system of type 5
 (DMR AES) and a key ID no traffic key holds. PTT must be refused with tx_deny=aes_key on the debug link and the state
-must never show tx. The records are taken out again and the channel selected anew. radio_tx only as a guard: were the
+must never show tx; data_deny and packet_deny must say aes_key too (a radio check or text is refused with that
+reason, not sent). The records are taken out again and the channel selected anew. radio_tx only as a guard: were the
 refusal broken, PTT would key --dmr-freq, which the rig may send on, so the run's TX limit never refuses the PTT in the
 key's place.
 """
@@ -68,6 +69,10 @@ def test_aes_missing_key_refuses_ptt(radio, pytestconfig):
         # The refusal must be the key's: PTT goes out only on the run's TX frequency
         tx_hz = as_int(radio.core().get("tx_hz")) or 0
         assert abs(tx_hz - round(freq * 1e6)) < 100, f"TX on {tx_hz / 1e6:.5f} MHz, not --dmr-freq {freq:.5f} MHz"
+        # Data is refused for the same reason, and says so before a send (radio check, text: no "No answer")
+        core = radio.core()
+        assert core.get("data_deny") == "aes_key" and core.get("packet_deny") == "aes_key", \
+            f"data_deny {core.get('data_deny')!r} packet_deny {core.get('packet_deny')!r}, not aes_key"
         L.ptt(True, 3000)
         try:
             end = time.monotonic() + 2.0

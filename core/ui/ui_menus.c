@@ -9,6 +9,7 @@
 #include "ui_nav.h"
 #include "ui_svc.h"
 #include "ui_svc_aprs.h"
+#include "ui_screens.h"
 #include "aprs/aprs_fmt.h"
 #include "font.h"
 #include "fmt.h"
@@ -275,6 +276,18 @@ static void act_item(uint16_t i, ui_item_t *it)
 	}
 }
 
+// The channel can send DMR data now (packet: text, else signaling); otherwise the reason is shown, as PTT shows it, and
+// nothing is sent: never a "No answer" for a send that didn't go. buf: the caller's toast buffer (static)
+static bool data_ready(bool packet, char *buf, size_t len)
+{
+	const radio_view_t *v = ui_view();
+	uint8_t deny = packet ? v->packet_deny : v->data_deny;
+	if (deny == TXDENY_NONE)
+		return true;
+	ui_toast(ui_deny_text(v, deny, buf, len));
+	return false;
+}
+
 static void act_select(uint16_t i, bool hold)
 {
 	static char msg[40];
@@ -301,12 +314,18 @@ static void act_select(uint16_t i, bool hold)
 		ui_talk(&ui_target, true);
 		break;
 	case A_MESSAGE:
-		if (feats() & UI_FEAT_SMS)
-			ui_push(SCR_COMPOSE, 0);
-		else
+		if (!(feats() & UI_FEAT_SMS))
 			ui_toast(TR(WHY_MESSAGES_NOT_IN_BUILD, "Messages: not in this build"));
+		else if (data_ready(true, msg, sizeof msg))
+			ui_push(SCR_COMPOSE, 0);
 		break;
 	case A_CHECK:
+		if (!(feats() & UI_FEAT_SIGNALING)) {
+			ui_toast(TR(WHY_RADIO_CHECK_NOT_IN_BUILD, "Radio check: not in this build"));
+			break;
+		}
+		if (!data_ready(false, msg, sizeof msg))
+			break;
 		if (ui_svc_radio_check(ui_target.id)) {
 			sb_str(&b, TR(ACT_TOAST_CHECKING, "Checking "));
 			sb_str(&b, name);
@@ -314,17 +333,23 @@ static void act_select(uint16_t i, bool hold)
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast(TR(WHY_RADIO_CHECK_NOT_IN_BUILD, "Radio check: not in this build"));
+			ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));	// another one still running
 		}
 		break;
 	case A_ALERT:
+		if (!(feats() & UI_FEAT_SIGNALING)) {
+			ui_toast(TR(WHY_CALL_ALERT_NOT_IN_BUILD, "Call alert: not in this build"));
+			break;
+		}
+		if (!data_ready(false, msg, sizeof msg))
+			break;
 		if (ui_svc_call_alert(ui_target.id)) {
 			sb_str(&b, TR(ACT_TOAST_CALL_ALERT_TO, "Call alert to "));
 			sb_str(&b, name);
 			ui_go_home();
 			ui_toast(msg);
 		} else {
-			ui_toast(TR(WHY_CALL_ALERT_NOT_IN_BUILD, "Call alert: not in this build"));
+			ui_toast(TR(MSG_TOAST_SEND_FAILED, "Couldn't send: try again"));	// another one still running
 		}
 		break;
 	case A_POSITION:
@@ -452,6 +477,8 @@ static void send_text(const char *text, bool aprs, int reply_index)
 	} else {
 		ui_sb_target(name, sizeof name, &ui_target);
 	}
+	if (!aprs && !data_ready(true, msg, sizeof msg))
+		return;	// the channel changed since the message was opened
 	bool sent = aprs ? ui_svc_aprs_send_message(aprs_to, text, aprs_message_flags) :
 		reply_index >= 0 ? ui_svc_msg_reply((uint16_t)reply_index, text) :
 		ui_svc_msg_send(ui_target.id, ui_target.group, text);
