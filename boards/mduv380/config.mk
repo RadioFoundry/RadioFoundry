@@ -17,8 +17,8 @@ MAXIMAL_VARS := LTO=1 CONFIG_ZEROIZE=n CONFIG_KEY_CHECK=n
 # (docs/spec/ppp.md), and this one has the adapter; the APRS iGate is off by default (above); French, off by
 # default, so that the maximal build keeps satellite tracking and still fits the app region; Chinese stays out too
 # (its glyph table does not fit beside the rest); the emergency wipe and key check values (both on by default) too,
-# since beside AES and every other switch the app region is short by about their size, the translations of both
-# staying in (MAXIMAL_VARS turns them off: a skipped switch is only not forced on, and these are on by default)
+# since beside AES and every other switch the app region is about 4 KB short with them (2026-11-25, after #1091)
+# (MAXIMAL_VARS turns them off: a skipped switch is only not forced on, and these are on by default)
 MAXIMAL_SKIP := NET_PPP APRS_IGATE LANG_FR LANG_ZH LANG_DEFAULT_ZH ZEROIZE KEY_CHECK
 
 # What the radio's hardware can't do, one switch per line with the reason (tools/boards.py checks there is one;
