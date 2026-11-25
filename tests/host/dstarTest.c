@@ -558,9 +558,97 @@ static void test_field_text(void)
 	}
 }
 
+// --- against Icom radios on air ---
+
+// Two headers as Icom radios sent them, from the bench's Pluto recordings (its captures directory; decoded by
+// bench/dstar_rx.py, an independent receiver, with no bit errors in the 660): an IC-9700 (ic9700-dv-4-001, 18 Nov
+// 2026) and an ID-51 (dstar-level/gain-21nov-1 at 78.3 s). Each is the 41 header bytes and the 660 bits on air, packed
+// least significant bit first. The vectors file is tools/dstar_ref.py's, written from the standard by us: if the
+// reference and the coder shared a misreading (the CRC's byte order, the interleaver's direction, the scrambler's
+// seed), both would agree and still differ from every Icom radio. A strict receiver - a hotspot's modem - would then
+// drop our headers, while a lenient one shows the call anyway. These pin the coding to what the radios send
+static const struct {
+	const char *what, *hdr, *air;
+} icom[] = {
+	{ "IC-9700", "000000444952454354202044495245435420204351435143512020474D344252492020202020203379",
+	  "38CDF74440BCABA8A05CA71CBBE3B15E276D1BB67206D92293AB724313CC83F35F03E4582A3C9AD8C32DF7A0EBC3EAF8CF9667D71D8ECC"
+	  "EC9DAFC62ED0B951AB2E2E2B071153C901D46A04D44A775FAE49A609" },
+	{ "ID-51", "000000444952454354202044495245435420204351435143512020474D344252492020203531205249",
+	  "38CDF74B40BC5BA8A05CA01CBB63B15E276B1BB69206D9229AAB72C313CC83F35F03E4582A3C9FD8C36DF7A0EBC2EAF8E79667D71D8ECC"
+	  "E49DAF962ED03953AB2E2A2B071153C901D56A04DC4A775FAE49A609" },
+};
+
+static void test_icom_headers(void)
+{
+	for (size_t k = 0; k < sizeof(icom) / sizeof(icom[0]); k++) {
+		uint8_t hdr[DSTAR_HEADER_BYTES], air[DSTAR_HEADER_AIR_BYTES], ours[DSTAR_HEADER_AIR_BYTES];
+		CHECK(unhex(icom[k].hdr, hdr, sizeof hdr) == DSTAR_HEADER_BYTES, "%s header length", icom[k].what);
+		CHECK(unhex(icom[k].air, air, sizeof air) == DSTAR_HEADER_AIR_BYTES, "%s air length", icom[k].what);
+		// The CRC as the radio sent it: the FCS low byte first (byte 39), and a swapped pair is refused
+		CHECK(dstar_header_crc_ok(hdr), "%s CRC", icom[k].what);
+		uint16_t fcs = dstar_crc(hdr, DSTAR_HEADER_BYTES - 2u);
+		CHECK(hdr[39] == (uint8_t)fcs && hdr[40] == (uint8_t)(fcs >> 8), "%s FCS byte order", icom[k].what);
+		uint8_t swapped[DSTAR_HEADER_BYTES];
+		memcpy(swapped, hdr, sizeof swapped);
+		swapped[39] = hdr[40];
+		swapped[40] = hdr[39];
+		CHECK(!dstar_header_crc_ok(swapped), "%s with its FCS bytes swapped passes", icom[k].what);
+		// Our header from the same fields, built as the radio builds one, is the same 41 bytes
+		dstar_header_t h;
+		CHECK(dstar_header_unpack(hdr, &h), "%s unpack", icom[k].what);
+		dstar_header_t mine;
+		char my[9], ur[9], r1[9], r2[9], sfx[5];
+		memcpy(my, h.my, 8), my[8] = 0;
+		memcpy(ur, h.ur, 8), ur[8] = 0;
+		memcpy(r1, h.rpt1, 8), r1[8] = 0;
+		memcpy(r2, h.rpt2, 8), r2[8] = 0;
+		memcpy(sfx, h.suffix, 4), sfx[4] = 0;
+		dstar_header_set(&mine, h.flag[0], r2, r1, ur, my, sfx);
+		uint8_t packed[DSTAR_HEADER_BYTES];
+		dstar_header_pack(&mine, packed);
+		CHECK(memcmp(packed, hdr, DSTAR_HEADER_BYTES) == 0, "%s: our header bytes differ", icom[k].what);
+		// The same 660 bits on air as the radio's: the convolutional code, the interleaver and the scrambler
+		dstar_header_encode(packed, ours);
+		uint32_t diff = 0;
+		for (uint32_t i = 0; i < DSTAR_HEADER_BITS; i++) {
+			diff += dstar_bit(ours, i) != dstar_bit(air, i);
+		}
+		CHECK(diff == 0, "%s: our coded header differs from the radio's in %u of 660 bits", icom[k].what, diff);
+		// And the radio's bits decode to its header with nothing to correct
+		uint8_t soft[DSTAR_HEADER_SOFT_BYTES], back[DSTAR_HEADER_BYTES];
+		to_soft(air, DSTAR_HEADER_BITS, 5, soft);
+		dstar_header_result_t r = dstar_header_decode(soft, back);
+		CHECK(r.crc_ok && r.corrected == 0 && memcmp(back, hdr, DSTAR_HEADER_BYTES) == 0, "%s decode", icom[k].what);
+	}
+}
+
+// The repeated header in the slow data runs for the whole over, between the message's superframes, and is the header
+// sent at the start, byte for byte: a receiver that missed the start (or joins late) has it within two superframes
+static void test_slow_header_whole_over(void)
+{
+	static dstar_rx_t rx;
+	rx_log_t l;
+	const uint32_t frames = 21u * 20u;
+	run(&l, frames, 0, false, 0, 0, 0, 500, &rx);
+	CHECK(l.headers == 1 && l.voices == (int)frames && l.ends == 1, "whole over: %d %d %d", l.headers, l.voices, l.ends);
+	CHECK(rx.slow_headers >= 9u, "slow headers %u in 20 superframes with a message", rx.slow_headers);
+	dstar_header_t h;
+	dstar_header_set(&h, DSTAR_FLAG1_REPEATER, "XX1XX  G", "XX1XX  B", "CQCQCQ", "N0CALL", "TEST");
+	uint8_t sent[DSTAR_HEADER_BYTES];
+	dstar_header_pack(&h, sent);
+	CHECK(memcmp(rx.slow.hdr, sent, DSTAR_HEADER_BYTES) == 0, "the slow data's header is the one sent");
+	// Joined 300 frames in, long after the start: the header from the slow data
+	run(&l, frames, 128 + DSTAR_FRAME_SYNC_BITS + DSTAR_HEADER_BITS + 300u * DSTAR_FRAME_BITS + 7u, false, 0, 0, 0, 500,
+	    &rx);
+	CHECK(l.headers == 0 && l.slow_headers == 1 && memcmp(l.h.ur, "CQCQCQ  ", 8) == 0 &&
+	      memcmp(l.h.rpt2, "XX1XX  G", 8) == 0, "late join: slow headers %d", l.slow_headers);
+}
+
 int main(void)
 {
 	test_vectors();
+	test_icom_headers();
+	test_slow_header_whole_over();
 	test_field_text();
 	test_header_errors();
 	test_slow_rx();
