@@ -62,7 +62,8 @@ class Addressing(unittest.TestCase):
             self.assertEqual(dmrip.load_key(RADIO_ID, path=path), K)
             with self.assertRaises(dmrip.DmripError):
                 dmrip.load_key(RADIO_ID + 1, path=path)
-            self.assertEqual(os.stat(path).st_mode & 0o077, 0)
+            if os.name == "posix":      # Windows keeps no group or other mode bits
+                self.assertEqual(os.stat(path).st_mode & 0o077, 0)
 
 
 class FakeRadio(threading.Thread):

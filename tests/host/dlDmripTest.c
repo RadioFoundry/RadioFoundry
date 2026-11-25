@@ -56,7 +56,9 @@ static void test_siphash(void)
 
 static size_t frame(uint8_t *b, uint8_t cmd, uint8_t seq, const uint8_t *p, uint16_t len)
 {
-	memcpy(b + DL_HDR, p, len);
+	if (len > 0) {
+		memcpy(b + DL_HDR, p, len);	// (p may be NULL with nothing to copy)
+	}
 	return dl_frame(b, cmd, seq, len);
 }
 
