@@ -551,7 +551,7 @@
  "flash.prerelease.text": "RadioFoundry for the {radio} is in development. This is a pre-release build: not every feature may work, and some haven't been tried on a radio yet. Report every bug, and anything that works differently from the manual, as a GitHub issue.",
  "flash.prerelease.link": "Report an issue on GitHub",
  "flash.testbuild.title": "Beta {ref} is available.",
- "flash.testbuild.text": "It has changes that are not in the latest release yet, and it may contain defects that the release does not. Install it only to help test it.",
+ "flash.testbuild.text": "This beta has changes that are not in the latest release yet, and may have defects that the release does not. Install the beta only to help test.",
  "flash.testbuild.link": "Install Beta {ref}",
  "flash.radio.detect": "Detect Radio",
  "flash.radio.openfw_next": "Select the radio above, then choose “Another open firmware” as its current firmware.",
