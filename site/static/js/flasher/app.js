@@ -846,8 +846,8 @@ function betaNotice() {
 	const beta = S.data?.site?.beta, href = betaLink(beta, location.href, VERSION_REF);
 	if (!href) return null;
 	return h("div", { class: "notice info beta-notice", role: "note" },
-		h("p", {}, h("strong", {}, t("flash.beta.title", { ref: beta })), " ", t("flash.beta.text")),
-		h("p", {}, h("a", { href }, t("flash.beta.link", { ref: beta }))));
+		h("p", {}, h("strong", {}, t("flash.testbuild.title", { ref: beta })), " ", t("flash.testbuild.text")),
+		h("p", {}, h("a", { href }, t("flash.testbuild.link", { ref: beta }))));
 }
 
 // A radio still in development (board.toml [status] below supported): on every step after it is picked
