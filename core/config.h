@@ -521,6 +521,9 @@
 #if CONFIG_AIR_RX_ADAPT && !CONFIG_AIR
 #error "CONFIG_AIR_RX_ADAPT needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"
 #endif
+#if CONFIG_AIR_RX_ADAPT && !CONFIG_SUBTONE
+#error "CONFIG_AIR_RX_ADAPT needs CONFIG_SUBTONE (the standard tone and code lists, core/radio/tones.c)"
+#endif
 #if CONFIG_NET_TCP && !CONFIG_DMR_IP_GATEWAY
 #error "CONFIG_NET_TCP needs CONFIG_DMR_IP_GATEWAY"
 #endif

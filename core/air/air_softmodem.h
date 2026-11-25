@@ -29,7 +29,7 @@ typedef void (*air_softmodem_out_t)(const air_chunk_t *c, void *ctx);
 
 #if CONFIG_AIR_RX_ADAPT
 // The adaptive receive options (air_profile_t.rx_opts, docs/spec/air-interface.md 6.1). Their state is memory the
-// mode's engine lends for its session (air_softmodem_lend): about 1.2 KB, none for the modes that don't ask
+// mode's engine lends for its session (air_softmodem_lend): about 1.6 KB, none for the modes that don't ask
 #define AIR_ADAPT_EQ_TAPS	7			// a symbol apart, centered on the symbol
 #define AIR_ADAPT_TONES		50			// the standard CTCSS tones
 #define AIR_ADAPT_PERIOD_MAX	480			// a tone search's frame: the profile's sync spacing, up to this

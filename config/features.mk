@@ -426,6 +426,7 @@ $(if $(and $(call feature_on,P25),$(if $(call feature_on,DMR),,x)),$(error CONFI
 $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONFIG_NXDN=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 $(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_P25=y or CONFIG_NXDN=y (an air-framed mode)))
+$(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,SUBTONE),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_SUBTONE=y (the standard tone and code lists, core/radio/tones.c)))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)

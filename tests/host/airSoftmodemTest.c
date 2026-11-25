@@ -12,6 +12,7 @@
 
 #include "air/air_softmodem.h"
 #include "air/air_syms.h"
+#include "radio/tones.h"
 #include "p25/p25.h"
 
 static int failures, checks;
@@ -873,14 +874,11 @@ static void testAdapt(void)
 	}
 	// Every standard tone, at 0.2 and at 0.4 of a level, found as itself (air-interface.md 6.1)
 	{
-		static const uint16_t all[50] = { 670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000, 1035,
-			1072, 1109, 1148, 1188, 1230, 1273, 1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679, 1713,
-			1738, 1773, 1799, 1835, 1862, 1899, 1928, 1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418,
-			2503, 2541 };
+		const uint16_t *all = tones_ctcss;
 		unsigned found = 0;
 
 		for (unsigned lv = 1; lv <= 2; lv++) {
-			for (unsigned i = 0; i < 50; i++) {
+			for (unsigned i = 0; i < TONES_CTCSS_COUNT; i++) {
 				sample_tap(8000, 17, 3600, 2000, 300, 450);
 				add_tone(all[i] / 10.0, 0.2 * lv * 1800);
 				run_adapt(&tone, true, &ns1);
