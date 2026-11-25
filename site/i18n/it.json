@@ -317,7 +317,7 @@
  "screen.home_dmr_lastheard": "Home, DMR, ultimi sentiti",
  "screen.home_dmr": "Home, canale DMR",
  "screen.home_encrypted": "Home su un canale AES: il tipo in un badge sulla riga del nome",
- "screen.home_privacy": "Home con privacy di base: lo schema nel badge (BP8)",
+ "screen.home_privacy": "Home con privacy di base: lo schema nel badge (BP MOTO)",
  "screen.home_fm": "Home, canale FM",
  "screen.home_gps_off": "Home, GPS spento: una parabola vuota accanto alle barre del segnale",
  "screen.home_gps_search": "Home, GPS acceso, in ricerca: una parabola piena",

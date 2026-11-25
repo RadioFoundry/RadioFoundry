@@ -317,7 +317,7 @@
  "screen.home_dmr_lastheard": "主页，DMR，最近通话记录",
  "screen.home_dmr": "主页，DMR 信道",
  "screen.home_encrypted": "加密信道的主屏幕：AES256",
- "screen.home_privacy": "加密信道的主屏幕：BP8",
+ "screen.home_privacy": "加密信道的主屏幕：BP MOTO",
  "screen.home_fm": "主页，FM 信道",
  "screen.home_gps_off": "主屏幕，GPS 已关闭：信号格旁的空心卫星天线",
  "screen.home_gps_search": "主屏幕，GPS 已开启，正在搜索：实心卫星天线",
