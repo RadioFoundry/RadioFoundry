@@ -459,9 +459,11 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
-	// The LED blink (Settings > Display; radio_settings_t.led_blink): the green LED flashes every 2, 5 or 10 s while
-	// a scan or dual watch runs, or, with RADIO_LED_BLINK_ALWAYS added, whenever the radio is on. 0 = off
-	UI_SET_LED_BLINK,
+	// Scan pulse and Heartbeat (Settings > Display; radio_settings_t.led_scan_pulse, led_heartbeat): the green LED
+	// flashes once every n seconds while a scan or dual watch runs, or twice every n seconds while the radio is idle.
+	// 0 = off
+	UI_SET_LED_SCAN_PULSE,
+	UI_SET_LED_HEARTBEAT,
 	UI_SET_COUNT
 } ui_setting_t;
 

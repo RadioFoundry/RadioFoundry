@@ -2782,8 +2782,8 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
-// The LED blink (radio-features.md 5.7): the green LED flashes every few seconds while a scan runs, or, set to
-// always, whenever the radio is on and quiet; never over a transmission, and not with the setting off
+// Scan pulse and heartbeat (radio-features.md 5.7): the green LED flashes once every few seconds while a scan runs,
+// and twice, close together, while the radio is on and quiet; never over a transmission, and not with both off
 static void blink_count(uint32_t ms, uint32_t *flashes, uint32_t *on_ms)
 {
 	bool was = hw.led[LED_GREEN];
@@ -2805,25 +2805,55 @@ static void test_led_blink(void)
 	setup_codeplug();
 	run(100);
 	// Off by default: a scan and idle time show nothing
-	CHECK(sm.set.led_blink == 0);
+	CHECK(sm.set.led_scan_pulse == 0 && sm.set.led_heartbeat == 0);
 	req(RREQ_SCAN, RSCAN_ZONE);
 	blink_count(6000, &flashes, &on_ms);
 	CHECK(scan_on(&sm.scan) && flashes == 0 && on_ms == 0);
-	// Every 2 s while the scan runs: three flashes in 6 s, each about RADIO_LED_BLINK_MS long
-	sm.set.led_blink = 2;
+	// Scan pulse every 2 s: one flash each, three in 6 s, each about RADIO_LED_BLINK_MS long
+	sm.set.led_scan_pulse = 2;
 	blink_count(6000, &flashes, &on_ms);
 	CHECK(flashes >= 2 && flashes <= 3);
 	CHECK(on_ms >= flashes * RADIO_LED_BLINK_MS && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
-	// A stopped scan doesn't blink
+	// A stopped scan doesn't pulse, and with the heartbeat off the idle radio shows nothing
 	req(RREQ_SCAN, RSCAN_TOGGLE);
 	run(100);
 	CHECK(!scan_on(&sm.scan));
 	blink_count(6000, &flashes, &on_ms);
 	CHECK(flashes == 0 && on_ms == 0 && !hw.led[LED_GREEN]);
-	// Always, every 5 s: the idle radio flashes twice in 10 s
-	sm.set.led_blink = RADIO_LED_BLINK_ALWAYS | 5u;
+	// Heartbeat every 5 s: two flashes per period, so 7 to 9 in 20 s, each flash short
+	sm.set.led_heartbeat = 5;
+	blink_count(20000, &flashes, &on_ms);
+	CHECK(flashes >= 7 && flashes <= 9 && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	// The two flashes are RADIO_LED_BEAT_GAP_MS apart: dark between them, lit again after
+	{
+		uint32_t gap_ms = 0, first_gap = 0;
+		bool was = hw.led[LED_GREEN], seen = false;
+		for (uint32_t t = 0; t < 6000 && first_gap == 0; t += 5) {
+			run(5);
+			bool g = hw.led[LED_GREEN];
+			if (!g && seen) {
+				gap_ms += 5;
+			}
+			if (g && !was && seen) {
+				first_gap = gap_ms;
+			}
+			seen = seen || g;
+			was = g;
+		}
+		CHECK(first_gap >= RADIO_LED_BEAT_GAP_MS - RADIO_POLL_MS && first_gap <= RADIO_LED_BEAT_GAP_MS + RADIO_POLL_MS + 10u);
+	}
+	// A scan with both set pulses once (its own interval), not the heartbeat's two: 5 s pulse, 2 s heartbeat
+	sm.set.led_scan_pulse = 5;
+	sm.set.led_heartbeat = 2;
+	req(RREQ_SCAN, RSCAN_ZONE);
 	blink_count(10000, &flashes, &on_ms);
-	CHECK(flashes >= 1 && flashes <= 3 && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	CHECK(scan_on(&sm.scan) && flashes >= 1 && flashes <= 3);
+	// With only the heartbeat set, a scan keeps the heartbeat: the radio is idle, just looking around
+	sm.set.led_scan_pulse = 0;
+	blink_count(10000, &flashes, &on_ms);
+	CHECK(flashes >= 8);
+	req(RREQ_SCAN, RSCAN_TOGGLE);
+	run(100);
 	// Not during a transmission: red is solid and green stays dark
 	req(RREQ_PTT, 1);
 	bool green_seen = false;
@@ -2835,7 +2865,7 @@ static void test_led_blink(void)
 	req(RREQ_PTT, 0);
 	run(600);
 	// Turned off, the LED is dark again at once
-	sm.set.led_blink = 0;
+	sm.set.led_heartbeat = 0;
 	blink_count(6000, &flashes, &on_ms);
 	CHECK(flashes == 0 && !hw.led[LED_GREEN]);
 	setup_codeplug();
