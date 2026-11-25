@@ -22,7 +22,7 @@ static struct {
 	uint32_t retry_ms;
 	uint32_t start_fails;
 	int16_t buf[160];
-} rx;
+} rx RFOUNDRY_CPU_RAM;	// CPU only: buf is read into by a copy, as when it was APRS's (aprs_s)
 
 static bool by_board(void)
 {
