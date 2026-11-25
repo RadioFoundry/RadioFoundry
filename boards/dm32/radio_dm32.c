@@ -177,9 +177,8 @@ static void pa_key(void)
 	DAC_DATA_B = tx_drive;
 }
 
-// The lowest level's drive at the TX frequency, the ramps' knee (power_levels.h), set at the key-up. The RF task reads
-// it at each burst end, as it does tx_drive
-static volatile uint16_t ramp_floor;
+// The lowest level's drive at the TX frequency, the FM ramps' knee (power_levels.h), set at the key-up
+static uint16_t ramp_floor;
 
 // DAC B along the ramp between its start (pct of the knee) and tx_drive, with the PA selected: the crawl's steps
 // crawl_us apart and the rise's rise_us, ending on the drive (up) or the start (down)
@@ -195,8 +194,8 @@ static void pa_ramp(bool up, uint8_t pct, uint16_t crawl, uint16_t crawl_us, uin
 
 // FM keys down on the ramp (power_levels.h), so the carrier doesn't splatter (a cut at once put the channel next to it
 // 20 dB higher than the key-up's, and a 5 ms ramp 5-15 dB higher than the 10 ms one), then 0 for the PA loop's low-pass
-// to settle; the caller then turns the PA off. Every
-// path out of an FM transmission (tx_end, a retune with the PA up) comes here before pa_off
+// to settle; the caller then turns the PA off. Every path out of an FM transmission (tx_end, a retune with the PA up)
+// comes here before pa_off
 #define RAMP_TAIL_US		300u
 
 static void fm_key_down(void)
@@ -206,7 +205,7 @@ static void fm_key_down(void)
 			DM32_DOWN_RISE_US);
 		uint16_t end = dm32_ramp_start(tx_drive, ramp_floor, DM32_DOWN_END_PCT);
 		for (uint16_t i = 1u; i <= DM32_DOWN_TAIL_STEPS; i++) {
-			DAC_DATA_B = (uint16_t)(end - apc_ramp_level(end, i, DM32_DOWN_TAIL_STEPS));
+			DAC_DATA_B = dm32_tail_level(end, i);
 			hal_delay_us(DM32_DOWN_TAIL_US);
 		}
 		hal_delay_us(RAMP_TAIL_US);
@@ -344,7 +343,7 @@ static void burst_off(void)
 // The fall 300 us after the last symbol's point, inside the guard (hardware-dm32.md 8.5): the drive and the PA cut at
 // once at the point left the carrier 5 dB down 0.2 ms before the last symbol's end, and 300 us later the carrier holds
 // to the end. The PA select goes off DM32_DMR_FALL_US later, 1.1 ms after the point, inside the mask's 1.5 ms
-static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = 300 };
+static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = DM32_DMR_OFF_AFTER_US };
 
 static void dmr_tx_end(void);
 
@@ -569,7 +568,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 	wake();
 	tx_uhf = hz >= UHF_FROM_HZ;
 	tx_drive = level_drive(hz, power);
-	// The floor is a fixed drive, so the ramps start and end dark without calibration too
+	// The floor is a fixed drive, so the ramps take the same shape without calibration too
 	ramp_floor = dm32_floor_drive(hz);
 	if (drive_override != 0u) {
 		tx_drive = drive_override;
@@ -621,8 +620,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
-		// Up on the ramp from its start (dark): a step of the drive came up in 0.09 ms with 2 dB of overshoot where the PA
-		// loop is fast (the top of the UHF band)
+		// Up on the ramp from its start (power_levels.h): a step of the drive came up in 0.09 ms with 2 dB of overshoot
+		// where the PA loop is fast (the top of the UHF band)
 		pa_select();
 		DAC_DATA_B = dm32_ramp_start(tx_drive, ramp_floor, DM32_UP_START_PCT);
 		pa_ramp(true, DM32_UP_START_PCT, DM32_UP_CRAWL_STEPS, DM32_UP_CRAWL_US, DM32_UP_RISE_STEPS, DM32_UP_RISE_US);

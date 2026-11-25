@@ -99,9 +99,9 @@ static void test_scaling(void)
 
 #define RL(d, f, p, i, c, r)	dm32_ramp_level((d), (f), (p), (uint16_t)(i), (c), (r))
 
-// The ramps from every level and at a drive under the floor (one set over the debug link): from the start, dark (under
-// the drive where the measured radio's PA gave 5 mW or less there), through the knee to the drive, never back, with
-// flat ends
+// The ramps from every level and at a drive under the floor (one set over the debug link): from the start through the
+// knee to the drive, never back, with flat ends; the key-down's tail from the crawl's end, dark (under the drive where
+// the measured radio's PA gave 5 mW or less there), to 0
 static void test_ramp(void)
 {
 	static const bf_cal_power_points_t uhf = { .low = 1200, .mid = 1888, .high = 2560 };	// 479.975 MHz, held
@@ -116,8 +116,14 @@ static void test_ramp(void)
 		for (uint8_t l = 0; l <= DM32_POWER_LEVELS; l++) {
 			const bf_cal_power_points_t *rows = hz[h] >= DM32_UHF_FROM_HZ ? &uhf : &vhf;
 			uint16_t d = l < DM32_POWER_LEVELS ? dm32_level_drive(rows, hz[h], l) : 700u;
-			// The key-down ends dark; the key-up starts nearer the knee, where the PA turns on
-			CHECK(dm32_ramp_start(d, fl, DM32_DOWN_END_PCT) < dark[h]);
+			// The key-down's crawl ends dark, and its tail goes on to 0; the key-up starts nearer the knee, where the
+			// PA turns on
+			uint16_t end = dm32_ramp_start(d, fl, DM32_DOWN_END_PCT);
+			CHECK(end < dark[h]);
+			CHECK(dm32_tail_level(end, 0) == end && dm32_tail_level(end, DM32_DOWN_TAIL_STEPS) == 0u);
+			for (uint16_t i = 1; i <= DM32_DOWN_TAIL_STEPS; i++) {
+				CHECK(dm32_tail_level(end, i) <= dm32_tail_level(end, (uint16_t)(i - 1u)));
+			}
 			for (uint8_t r = 0; r < 2; r++) {
 				uint16_t st = dm32_ramp_start(d, fl, pct[r]);
 				CHECK(st <= d);
@@ -129,7 +135,7 @@ static void test_ramp(void)
 				}
 				// The crawl's ends are flat: its first step moves less than its middle ones
 				uint16_t m = (uint16_t)(c / 2u);
-				CHECK(RL(d, fl, pct[r], 1, c, parts[r][1]) - st <=
+				CHECK(RL(d, fl, pct[r], 1, c, parts[r][1]) - st <
 				      RL(d, fl, pct[r], m, c, parts[r][1]) - RL(d, fl, pct[r], m - 1u, c, parts[r][1]));
 			}
 		}
@@ -142,7 +148,7 @@ static void test_ramp(void)
 	      DM32_DOWN_TAIL_STEPS * DM32_DOWN_TAIL_US <= 18000u);
 	CHECK(DM32_UP_START_PCT > DM32_DOWN_END_PCT && DM32_UP_START_PCT < 100u);
 	// The burst's fall ends inside the 1.5 ms of the power mask with the 0.3 ms after the last symbol's point
-	CHECK(300u + DM32_DMR_FALL_US <= 1200u);
+	CHECK(DM32_DMR_OFF_AFTER_US + DM32_DMR_FALL_US <= 1200u);
 }
 
 // Without calibration: the lowest level is its fixed drive, 1 W the measured radio's, the levels over it the fallback

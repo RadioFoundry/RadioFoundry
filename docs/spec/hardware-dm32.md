@@ -989,7 +989,7 @@ burst's interrupt looked early against it. The first burst is now timed from the
 ([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
 drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
 carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
-the delay it holds to within 0.2 dB at the symbol's end. From there the drive goes to 0, the PA loop takes the
+the delay the carrier holds to within 0.2 dB at the symbol's end. From there the drive goes to 0, the PA loop takes the
 carrier down, and the PA select goes off 0.8 ms later (11.4, the PA ramps). The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
@@ -1480,8 +1480,8 @@ and over at 479.975 MHz and the key-down −34 to −45 dBc at 400.025 MHz.
   so the PA select still cuts a carrier 5-12 dB down there. A ramp of the drive in that time left the carrier 1-3 dB
   down, so the cut came from higher. Starting the fall 0.7-1 ms before the last symbol's point, with the PA select
   off 1.6 ms after the point, read −40 to −41 dBc at 8 W and 5 W, −47 at 2.5 W and −56 at 500 mW at 440 MHz: better,
-  but short of −50 at the top levels and with the last symbols up to 3 dB down, so it isn't used. Holding the carrier
-  longer leaves the mask.
+  but short of −50 at the top levels and with the last symbols up to 3 dB down, so that timing isn't used. Holding
+  the carrier longer leaves the mask.
 - **The FD6818's own output level is no second lever.** Under the PA loop's knee the drive has no control, so the
   FD6818's transmit registers were tried as a second one, each written over the debug link during a key-up at
   479.975 MHz. 0x28 (all 16 bits, 0x0000 to 0xFFFF; the radio's value is 0x6B38) and the PA bias word 0x19 (bits 3:0)
