@@ -335,6 +335,8 @@
 哈密
 
 # Common repeater and channel-name words
+模拟
+数字
 中继
 直频
 频道
