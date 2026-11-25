@@ -113,8 +113,10 @@ static void ur_done(uint8_t mode, const char *ref, const char *toast)
 
 static void link_kept(void)
 {
+	// Eight with the closing L ("REF030CL", the command as it is usually written down): the request to the radio task
+	// carries seven, so the L is dropped on the way, and the radio core builds the same command from either
 	size_t n = strlen(edit_text);
-	if (n < 2 || n > 7) {
+	if (n < 2 || n > 8) {
 		ui_toast(TR(DSTAR_TOAST_LINK_FORMAT, "Reflector and module: REF030C"));
 		return;
 	}
@@ -157,7 +159,7 @@ static void ds_select(uint16_t i, bool hold)
 	case DS_LINK:
 		edit_text[0] = '\0';
 		edit_row = DS_LINK;
-		ui_text_field(edit_text, 7, link_kept);
+		ui_text_field(edit_text, 8, link_kept);
 		break;
 	case DS_MY: case DS_SUFFIX: case DS_MSG: {
 		uint8_t field = (uint8_t)(i - DS_MY);

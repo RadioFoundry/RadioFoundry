@@ -43,7 +43,7 @@ typedef enum {
 	RDSTAR_UR_CHANNEL = 0,	// back to the channel's own UR (CQCQCQ unless the codeplug says otherwise)
 	RDSTAR_UR_CQ,		// CQCQCQ for now (until the channel changes)
 	RDSTAR_UR_REPLY,	// the last caller's callsign for now
-	RDSTAR_UR_LINK,		// one over: link to the reflector and module given (7 characters, "REF030C")
+	RDSTAR_UR_LINK,		// one over: link to the reflector and module given ("REF030C", "REF30C")
 	RDSTAR_UR_UNLINK,	// one over: unlink
 	RDSTAR_UR_ECHO,		// one over: the gateway's echo test
 	RDSTAR_UR_INFO,		// one over: the gateway's link information
@@ -170,7 +170,8 @@ void radio_dstar_tx_abort(void);
 void radio_dstar_rx_again(uint32_t now_ms);
 // The audio stream is ours: beeps are mixed into it (beep_play's shared)
 bool radio_dstar_streaming(void);
-// UR for the next over(s); text: the reflector and module for RDSTAR_UR_LINK (7 characters, cut and padded)
+// UR for the next over(s); text: the reflector and module for RDSTAR_UR_LINK, as typed (a closing L, lower case, a
+// short reflector number all taken; see link_ur). Nothing changes when it isn't a name and a module letter
 void radio_dstar_ur(uint8_t mode, const char *text);
 // The temporary UR dropped (BACK on Home, radio_req_clear_temporary)
 void radio_dstar_clear_temporary(void);

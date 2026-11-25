@@ -912,6 +912,72 @@ bool radio_dstar_streaming(void)
 	return running && streaming;
 }
 
+// Three letters and one to three digits: how reflectors are named
+static bool reflector(const char *name, size_t len)
+{
+	if (len < 4 || len > 6) {
+		return false;
+	}
+	for (size_t i = 0; i < len; i++) {
+		if (i < 3 ? name[i] < 'A' || name[i] > 'Z' : name[i] < '0' || name[i] > '9') {
+			return false;
+		}
+	}
+	return true;
+}
+
+// The link command for a reflector and module as typed: the name padded to six, its module letter in the seventh place,
+// 'L' in the eighth ("REF030CL"), the eight bytes a gateway compares. Typed with the L already on ("REF030CL", as the
+// command is usually written down), in lower case, or with a space before the module ("Q1RP C") all mean the same.
+// A reflector's number is three digits (REF001, XRF757, DCS933), so a short one ("REF1C") is filled out with zeros:
+// left as typed (as this did before), "REF1  CL" names a reflector called REF1, which no gateway knows. Only three
+// letters and one or two digits are filled out; anything else (a repeater's callsign) goes as typed. False when text
+// isn't a name and a module
+static bool link_ur(char out[RADIO_DSTAR_CALL], const char *text)
+{
+	char s[RADIO_DSTAR_CALL + 1];
+	dstar_field_set(s, RADIO_DSTAR_CALL, text != NULL ? text : "");
+	s[RADIO_DSTAR_CALL] = '\0';
+	size_t n = RADIO_DSTAR_CALL;
+	while (n > 0 && s[n - 1] == ' ') {
+		n--;
+	}
+	size_t lead = 0;
+	while (lead < n && s[lead] == ' ') {
+		lead++;
+	}
+	if (n == RADIO_DSTAR_CALL && s[n - 1] == 'L' && s[n - 2] != ' ') {
+		n--;		// the closing L typed: the module is the letter before it
+	} else if (n >= lead + 6u && s[n - 1] == 'L' && reflector(&s[lead], n - lead - 2u) && s[n - 2] >= 'A' &&
+		   s[n - 2] <= 'Z') {
+		n--;		// a short one with its L ("REF1CL"): a reflector's name, its module, L
+	}
+	if (n < lead + 2u || s[n - 1] < 'A' || s[n - 1] > 'Z') {
+		return false;
+	}
+	char module = s[n - 1];
+	size_t end = n - 1;
+	while (end > lead && s[end - 1] == ' ') {
+		end--;
+	}
+	size_t len = end - lead;
+	if (len == 0 || len > 6) {
+		return false;
+	}
+	const char *name = &s[lead];
+	memset(out, ' ', RADIO_DSTAR_CALL);
+	if (len < 6 && reflector(name, len)) {
+		memcpy(out, name, 3);
+		memset(&out[3], '0', 3);
+		memcpy(&out[6 - (len - 3)], &name[3], len - 3);
+	} else {
+		memcpy(out, name, len);
+	}
+	out[6] = module;
+	out[7] = 'L';
+	return true;
+}
+
 void radio_dstar_ur(uint8_t mode, const char *text)
 {
 	switch (mode) {
@@ -929,24 +995,12 @@ void radio_dstar_ur(uint8_t mode, const char *text)
 		dstar_field_set(ur_temp, RADIO_DSTAR_CALL, view.my);
 		ur_temp_mode = mode;
 		break;
-	case RDSTAR_UR_LINK: {
-		// the reflector padded to six, its module in the seventh place, 'L' in the eighth ("REF030CL")
-		char ref[RADIO_DSTAR_CALL + 1];
-		dstar_field_set(ref, RADIO_DSTAR_CALL, text != NULL ? text : "");
-		size_t len = strnlen(text != NULL ? text : "", 7);
-		char out[RADIO_DSTAR_CALL];
-		memset(out, ' ', sizeof out);
-		if (len >= 2) {
-			memcpy(out, ref, len - 1u > 6u ? 6u : len - 1u);	// the name: all but the module letter
-			out[6] = ref[len - 1u];
-		} else {
+	case RDSTAR_UR_LINK:
+		if (!link_ur(ur_once, text)) {
 			return;
 		}
-		out[7] = 'L';
-		memcpy(ur_once, out, RADIO_DSTAR_CALL);
 		ur_once_mode = mode;
 		break;
-	}
 	case RDSTAR_UR_UNLINK:
 		memcpy(ur_once, "       U", RADIO_DSTAR_CALL);
 		ur_once_mode = mode;

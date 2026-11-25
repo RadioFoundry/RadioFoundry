@@ -92,6 +92,11 @@ command's letter must be in the eighth place: `I       ` is a call to a station 
 callsign is one character, so a reader and a writer both move a lone letter there (2.1), whether it was typed alone or
 stored by a tool that trimmed the spaces in front of it.
 
+The radio's Link reflector row takes the reflector and module as typed: with or without the closing `L`, in either
+case, with a space before the module, and with a short reflector number (`REF1C`), which is filled out to three digits
+(`REF001CL`): reflectors are named with three letters and three digits, and `REF1  CL` names none. A name that isn't
+three letters and one to three digits (a repeater's callsign) is padded as typed.
+
 ## 3. Radio-wide record (kind 5)
 
 Key 0x0A00 + 4 ([channel-modes.md](channel-modes.md) 5.5):

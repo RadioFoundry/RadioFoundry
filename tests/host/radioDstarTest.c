@@ -397,6 +397,33 @@ static void test_ur_commands(void)
 	}
 }
 
+// Link reflector, typed: with or without the closing L, in lower case, with the number short, with a space before the
+// module. Each must come out as the eight bytes a gateway compares: the name in six, the module seventh, L eighth
+static void test_link_typed(void)
+{
+	static const struct { const char *typed, *sent; } links[] = {
+		{ "REF001C", "REF001CL" }, { "REF001CL", "REF001CL" }, { "ref001c", "REF001CL" }, { "REF1C", "REF001CL" },
+		{ "XRF757A", "XRF757AL" }, { "DCS933C", "DCS933CL" }, { "XLX12B", "XLX012BL" }, { "Q1RP C", "Q1RP  CL" },
+	};
+	reset();
+	channel_t ch = dstar_channel();
+	CHECK(radio_dstar_start(5, &ch, now_ms));
+	for (unsigned i = 0; i < sizeof links / sizeof links[0]; i++) {
+		radio_dstar_ur(RDSTAR_UR_LINK, links[i].typed);
+		radio_dstar_view_t v;
+		radio_dstar_view(&v);
+		CHECK(strcmp(v.tx_ur, links[i].sent) == 0 && v.ur_mode == RDSTAR_UR_LINK);
+		radio_dstar_ur(RDSTAR_UR_CHANNEL, NULL);
+	}
+	radio_dstar_ur(RDSTAR_UR_LINK, "REF1CL");	// short and with its L
+	over(400);
+	hear();
+	radio_dstar_view_t v;
+	radio_dstar_view(&v);
+	CHECK(strcmp(v.ur, "REF001CL") == 0);
+	radio_dstar_stop();
+}
+
 static void test_ur_choices(void)
 {
 	reset();
@@ -411,13 +438,13 @@ static void test_ur_choices(void)
 	CHECK(strcmp(v.tx_ur, "REF030CL") == 0 && v.ur_mode == RDSTAR_UR_LINK);
 	radio_dstar_ur(RDSTAR_UR_LINK, "XRF7A");
 	radio_dstar_view(&v);
-	CHECK(strcmp(v.tx_ur, "XRF7  AL") == 0);	// the name padded to six, the module seventh
+	CHECK(strcmp(v.tx_ur, "XRF007AL") == 0);	// a reflector's number made three digits, the module seventh
 	over(400);
 	radio_dstar_view(&v);
 	CHECK(strcmp(v.tx_ur, "CQCQCQ") == 0 && v.ur_mode == RDSTAR_UR_CHANNEL);	// one over only
 	hear();
 	radio_dstar_view(&v);
-	CHECK(strcmp(v.ur, "XRF7  AL") == 0 && strcmp(v.my, "Q1RAD") == 0 && strcmp(v.rpt1, "DIRECT") == 0);
+	CHECK(strcmp(v.ur, "XRF007AL") == 0 && strcmp(v.my, "Q1RAD") == 0 && strcmp(v.rpt1, "DIRECT") == 0);
 	radio_dstar_ur(RDSTAR_UR_ECHO, NULL);
 	radio_dstar_view(&v);
 	CHECK(strcmp(v.tx_ur, "E") == 0 || strcmp(v.tx_ur, "       E") == 0);
@@ -683,6 +710,7 @@ int main(void)
 	// frames where it asks for more than 20. Its margin is the thing to widen, separately from this fix
 	test_repeater_as_typed();
 	test_ur_commands();
+	test_link_typed();
 	printf("# radioDstarTest: %s\n", failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }
