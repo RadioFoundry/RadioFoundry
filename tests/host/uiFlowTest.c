@@ -331,7 +331,7 @@ static const flow_t flows[] = {
 	{ "8 call alert goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 5", "alerts=1", 2,
 	  false },
 	{ "8 message refused on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 3",
-	  "checks=0 toast=Encrypted_channels_can't_send_text", 2, false },
+	  "screen=actions toast=Encrypted_channels_can't_send_text", 2, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
 	{ "9 squelch 2 steps (FM)", "down", "quick 2 up up back", "sq=7 screen=home", 5, false },
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY

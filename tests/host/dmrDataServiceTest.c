@@ -2710,6 +2710,16 @@ static void testPrivacy(void)
 	CHECK(countCsbk(DMR_CSBKO_CALL_ALERT, RADIO_B) == 1);
 	CHECK(stats.txPrivacyBlocked == blocked);
 
+	// ARS has nothing to register there: no registration is built and refused every tick
+	reset();
+	ch.privacy = block;
+	settings.arsServer = ARS_SERVER;
+	blocked = stats.txPrivacyBlocked;
+	uint32_t arsSent = stats.arsSent;
+	runMainTask(20000);
+	CHECK((stats.txPrivacyBlocked == blocked) && (stats.arsSent == arsSent));
+	settings.arsServer = 0;
+
 	// Encrypted: the privacy header follows the data header, and the receiver with the key reads the text
 	reset();
 	ch.privacy = encrypt;

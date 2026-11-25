@@ -1519,11 +1519,11 @@ static void emergencyTxDone(bool ok)
 
 // --- ARS ---
 
-// What a registration is for: the server, our ID and the channel. 0 when there is nothing to register (ARS off, or
-// a channel we can't send data on)
+// What a registration is for: the server, our ID and the channel. 0 when there is nothing to register (ARS off, a
+// channel we can't send data on, or one whose privacy holds packets back: each try there would be refused)
 static uint32_t arsContext(uint32_t server)
 {
-	if ((server == 0) || !canTransmit())
+	if ((server == 0) || !canTransmit() || (channel.privacy.mode == DMR_DATA_PRIVACY_BLOCK))
 	{
 		return 0;
 	}

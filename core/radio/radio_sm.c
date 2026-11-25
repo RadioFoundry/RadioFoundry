@@ -2729,7 +2729,8 @@ static uint8_t data_deny(const radio_sm_t *sm)
 	// A trunked system: data asks for a channel on the TSCC, or goes on the packet data call the radio is in. Never
 	// while hunting or in a voice call
 	if (sm->t3_on && !(t3m.state == T3_CAMPED || (t3m.state == T3_FOLLOW && t3m.call.data))) {
-		return TXDENY_TRUNK;
+		// In a voice call the channel is busy; TXDENY_TRUNK's text is the last refused PTT's (t3.why)
+		return t3m.state == T3_FOLLOW ? TXDENY_BUSY : TXDENY_TRUNK;
 	}
 #endif
 	return TXDENY_NONE;
@@ -3279,9 +3280,13 @@ static void data_tick(radio_sm_t *sm, uint32_t now_ms)
 #if CONFIG_DMR_AES
 	radio_aes_data_config(ch, &c.privacy);	// an AES channel: its rule, not the basic privacy key's
 #endif
-	sm->view.data_deny = deny;
-	sm->view.packet_deny = deny != TXDENY_NONE ? deny :
+	uint8_t packet = deny != TXDENY_NONE ? deny :
 		c.privacy.mode == DMR_DATA_PRIVACY_BLOCK ? TXDENY_DATA_ENCRYPTED : TXDENY_NONE;
+	if (deny != sm->view.data_deny || packet != sm->view.packet_deny) {
+		sm->view.data_deny = deny;
+		sm->view.packet_deny = packet;
+		changed(sm);	// the UI reads these before a send: a stale copy refuses one that would go, or the reverse
+	}
 #if CONFIG_DMR_IP_GATEWAY
 	// Control station passthrough while the PC can take the packets (docs/spec/usb-network.md 5.2)
 	dmrDataServiceSetPassthrough(hostlink_net_passthrough_active());
