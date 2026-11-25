@@ -161,12 +161,6 @@ function systemDialog(api, s, isNew) {
 					r.tx = v > 0;
 					if (mod.noRegField) r.fields = { ...r.fields, [mod.noRegField]: v === 2 };
 				}, help: mod.conventional ? null : t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
-			// the notice, a callout naming the ID that matched as it is typed
-			mod.noTxNote ? { type: "note", key: "sys.notx", notice: "bad",
-				text: (value, r) => {
-					const n = mod.noTxNote(live(r, value));
-					return n ? t(n.key, n.params) : "";
-				} } : null,
 			systemOwnIdField(mod, t, restricted),
 			mod.secret ? { key: "needsKey", label: t("editor.modes.needs_key"), type: "bool", help: t("editor.modes.needs_key_help") } : null,
 		],
@@ -185,12 +179,19 @@ function systemDialog(api, s, isNew) {
 		const intro = sec.intro ? [{ type: "note", key: `sys.intro.${sec.id}`, text: () => t(sec.intro) }] : [];
 		return [{ group: t(`editor.modes.sec.${sec.id}`), ...(sec.advanced ? { collapsed: true } : {}) }, ...intro, ...items];
 	});
+	// A network the radio never transmits on: a callout naming the ID that matched, as it is typed, right under the
+	// identity fields that trigger it (before the control channels, which can push anything after them out of view)
+	const notice = mod.noTxNote ? [{ type: "note", key: "sys.notx", notice: "bad",
+		text: (value, r) => {
+			const n = mod.noTxNote(live(r, value));
+			return n ? t(n.key, n.params) : "";
+		} }] : [];
 	// the entry tables: control channels right after the identity, the optional ones (sites, plan) before sharing
 	const tables = entryTables(api, s, restricted);
 	const at = (id) => fields.findIndex((f) => f.group === t(`editor.modes.sec.${id}`));
 	const ctl = tables.filter((x) => x.control), opt = tables.filter((x) => !x.control);
 	const radio = at("radio");
-	fields.splice(radio < 0 ? fields.length : radio, 0, ...ctl.flatMap((x) => x.fields));
+	fields.splice(radio < 0 ? fields.length : radio, 0, ...notice, ...ctl.flatMap((x) => x.fields));
 	const share = at("sharing");
 	fields.splice(share < 0 ? fields.length : share, 0, ...opt.flatMap((x) => x.fields));
 	// the key, when the type has one: blank = none

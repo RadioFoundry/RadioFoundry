@@ -208,6 +208,11 @@ test("system form: a blocked network ID, as it is typed, locks Transmit and hide
 	assert.ok(form.note().includes('editor.p25.no_tx_wacn {"id":"BEE5A"}'), "one notice, naming the WACN as typed");
 	assert.ok(!form.note().some((x) => x.includes("editor.p25.no_tx_sysid")));
 	assert.ok(form.dlg.find((e) => e.className === "form-note notice bad" && !e.hidden), "drawn as a callout");
+	// right under the identity fields that trigger it: after the NAC, before the control channel table and Transmit
+	const order = all(form.dlg, (e) => e.id === "f-sys.ccNac" || e.className === "form-note notice bad" || e.tagName === "TABLE" || e.id === "f-transmit")
+		.map((e) => (e.tagName === "TABLE" ? "table" : e.id || "notice"));
+	assert.deepEqual(order.slice(0, 3), ["f-sys.ccNac", "notice", "table"], "the notice sits between the identity and the control channels");
+	assert.ok(order.indexOf("f-transmit") > order.indexOf("notice"));
 	assert.ok(!form.heads().includes("editor.col.tx") && !form.heads().includes("editor.p25.tx_offset"), "the TX columns are left out");
 	assert.ok(form.heads().includes("editor.col.rx"), "receiving is all still there");
 
