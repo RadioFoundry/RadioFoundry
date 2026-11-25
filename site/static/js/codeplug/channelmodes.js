@@ -437,6 +437,14 @@ export function removeModes(m, table, gone) {
 
 // --- Validation ---
 
+// The common amateur 2 m, 1.25 m and 70 cm allocations, in Hz, edges included. A channel that transmits encrypted or
+// scrambled there gets a warning (docs/user/04-programming.md, Encryption on amateur frequencies): most countries
+// don't allow messages encoded to obscure their meaning on amateur frequencies. Nothing is blocked
+export const AMATEUR_HZ = [[144000000, 148000000], [222000000, 225000000], [420000000, 450000000]];
+export const amateurFreq = (hz) => AMATEUR_HZ.some(([lo, hi]) => hz >= lo && hz <= hi);
+// A channel of a kind may transmit: its tag allows it and its system, when it has one, does too
+const kindTx = (c) => !!c.tagTx && !(c.system && typeof c.system === "object" && c.system.tx === false);
+
 // Problems of the modes, in validate()'s terms. features: the connected radio's (null: none)
 export function validateModes(m, err, warn, { features = null, baseNames } = {}) {
 	const systems = m.systems ?? [];
@@ -486,6 +494,8 @@ export function validateModes(m, err, warn, { features = null, baseNames } = {})
 		if (typeof c.fallback === "number") warn("channels", c, "fallback", "mode_fallback_stale", { number: c.fallback });
 		else if (c.fallback?.kind) warn("channels", c, "fallback", "mode_fallback_kind");
 		mod.validate?.(c, c.params, { err: (f, code, p = {}) => err("channels", c, f, code, p), warn: (f, code, p = {}) => warn("channels", c, f, code, p) });
+		// a module says whether the channel transmits encrypted or scrambled (encryptsTx)
+		if (mod.encryptsTx?.(c, c.params) && kindTx(c) && amateurFreq(c.txHz)) warn("channels", c, "txHz", "crypto_amateur");
 	}
 	for (const k of KINDS) {
 		const st = k.module.settings, s = m.modeSettings?.[k.id];

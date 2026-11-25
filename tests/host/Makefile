@@ -32,7 +32,7 @@ RXSEEN  := $(CORE)/fec/rx_seen.c
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
 TESTS   := dmrFecTest dmrSoftBptcTest dmrSoftCombTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
-           ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
+           ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440
 
 all: run
 
@@ -64,19 +64,17 @@ IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
 
-# The same gateway test with a /16 plan: radios 10.250.0.0/16, talkgroups 10.251.0.0/16, multicast 239.250.0.0/16
-IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFB0000u -DIPGW_GROUP_PREFIX=16 \
+# The same gateway test with a /16 plan on a shared /15 link: radios 10.250.0.0/16, their hosts (the peripheral range)
+# 10.251.0.0/16, talkgroups 10.252.0.0/16, multicast 239.250.0.0/16
+IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFC0000u -DIPGW_GROUP_PREFIX=16 \
            -DIPGW_MULTICAST_NET=0xEFFA0000u -DIPGW_MULTICAST_PREFIX=16 -DIPGW_LINK_PREFIX=15 '-DPCAP_NAME="ipGatewayTest16.pcap"'
 
 ipGatewayTest16: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) $(IPGW16) -o $@ $(IPGW)
 
-# The default ranges on a /31 link, and on a shared /8 link, instead of the /32
-ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=31 '-DPCAP_NAME="ipGatewayTest31.pcap"' -o $@ $(IPGW)
-
+# The default ranges on a shared /7 link (12.0.0.0/7: the radios and their hosts) instead of the /32
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
+	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=7 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
 # An air narrower than the link, which no radio has: runs the ICMP fragmentation needed path (usb-network.md 3.2)
 ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
@@ -176,7 +174,7 @@ p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard 
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
-p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
+p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -o $@ p25VoiceTest.c $(CORE)/p25/p25Voice.c $(MBE) -lm
 
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
@@ -186,8 +184,8 @@ fxpTest: fxpTest.c $(CORE)/dsp/fxp.h
 
 # The soft modem's receiver on a modeled tap, alone and under the framer and the P25 receive hooks
 TESTS   += airSoftmodemTest
-airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_AIR_RX_ADAPT=1 -o $@ airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_framer.c $(P25) $(FEC) -lm
+airSoftmodemTest: airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/air/air_softmodem.h $(CORE)/radio/tones.c $(CORE)/dsp/fxp.h $(CORE)/air/air_framer.c $(P25) $(FEC) $(ROOT)/hal/hal_baseband.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_AIR_RX_ADAPT=1 -o $@ airSoftmodemTest.c $(CORE)/air/air_softmodem.c $(CORE)/radio/tones.c $(CORE)/air/air_framer.c $(P25) $(FEC) -lm
 
 airFramerTest: airFramerTest.c $(CORE)/air/air_framer.c $(CORE)/air/air_framer.h $(CORE)/air/air_syms.h $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ airFramerTest.c $(CORE)/air/air_framer.c
@@ -275,7 +273,6 @@ run: $(TESTS)
 	./zoneShareSvcTest
 	./ipGatewayTest
 	./ipGatewayTest16
-	./ipGatewayTest31
 	./ipGatewayTestShared
 	./ipGatewayTestAir440
 	./sfrTest
@@ -283,7 +280,7 @@ run: $(TESTS)
 	$(PYTHON) satelliteTleTest.py
 ifneq ($(TSHARK),)
 	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
-	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
+	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
 	@# The fragmentation needed replies are ICMP errors by type (tshark's note "Type indicates an error"): expected
 	@if grep -v -E "ICMP +Type indicates an error" ipGatewayTest.expert | grep -q -i -E "malformed|bad|incorrect|error"; then echo "# tshark found problems"; cat ipGatewayTest.expert; exit 1; else echo "# tshark: no malformed packets or bad checksums"; fi
 endif
@@ -292,7 +289,7 @@ clean:
 	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin \
 		codec_desc_md9600.bin codec_desc_md9600own.bin
 	rm -rf gen
-	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
+	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
 		ipGatewayTest.expert
 	rm -rf *.dSYM out
 	rm -f *.gcda *.gcno
@@ -496,9 +493,9 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
-# The mic gain and peak limiter before a vocoder's encoder (drivers/audio/miclimit): DMR's
+# The mic gain and peak limiter before a vocoder's encoder (core/dsp/miclimit.h): DMR's
 TESTS   += miclimitTest
-miclimitTest: miclimitTest.c $(ROOT)/drivers/audio/miclimit/miclimit.h
+miclimitTest: miclimitTest.c $(CORE)/dsp/miclimit.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ miclimitTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
@@ -835,11 +832,11 @@ run: run-aes
 run-aes: dmrAesTest
 	./dmrAesTest
 
-# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
+# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's and P25's sample scaling, never both
 TESTS   += micGainTest
 micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
-             $(ROOT)/drivers/audio/miclimit/miclimit.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+             $(CORE)/dsp/miclimit.h $(CORE)/p25/p25Voice.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_IMBE=1 -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
 TESTS   += t3ViewTest
@@ -1453,8 +1450,9 @@ run-net: mdnsTest tftpTest
 ifneq ($(TSHARK),)
 	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
 	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
-	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
-	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
+	@# the TFTP ERROR packets and the gateway's ICMP port unreachables the tests ask for are expected; anything else
+	@# malformed or bad is not
+	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|ICMP +Type indicates an error|^Errors" | grep -q .; then \
 		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
 endif
 .PHONY: run-net

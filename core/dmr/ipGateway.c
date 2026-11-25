@@ -3,9 +3,8 @@
 /*
  * Minimal IPv4 gateway between a USB network link and DMR packet data
  *
- * Ethernet, ARP (on a /31 for the radio's address, on a shared link for every address but the host's), ICMP echo to the
- * radio's address,
- * a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
+ * Ethernet, ARP (on a fixed link for the radio's address, else for every address but the host's), ICMP echo to the
+ * radio's address, a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
  * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
  * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments: a host
@@ -31,6 +30,8 @@
 #define DMR_APP_PORT_LAST	4099			// chatter (NetBIOS, discovery, LAN sync ...)
 #define DHCP_OPTION_MTU		26				// interface MTU (RFC 2132 5.1)
 #define ICMP_UNREACHABLE	3
+#define ICMP_PROTOCOL_UNREACHABLE	2		// with ICMP_UNREACHABLE (RFC 792, RFC 1122 3.2.2.1)
+#define ICMP_PORT_UNREACHABLE	3			// with ICMP_UNREACHABLE (RFC 792, RFC 1122 3.2.2.1)
 #define ICMP_FRAG_NEEDED	4				// with ICMP_UNREACHABLE, the next-hop MTU in octets 6-7 (RFC 1191)
 #define IP_DF				0x4000
 #define ICMP_QUOTED_L4		8				// the original datagram's first 64 bits after its header (RFC 792)
@@ -124,7 +125,7 @@ bool ipGatewaySetFixedLink(uint32_t radioIp)
 {
 	uint8_t last = radioIp & 0xFF;
 	bool usable = (radioIp != 0) && (last >= 1) && (last <= 253) && ((radioIp >> 28) < 0xE) && ((radioIp >> 24) != 127) &&
-			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
+			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(PERIPHERAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
 #if defined(IPGW_GROUP_NET)
 			&& !IN_RANGE(GROUP, radioIp)
 #endif
@@ -149,10 +150,18 @@ uint32_t ipGatewayOffNetId(void)
 	return offNetId;
 }
 
-// The host's broadcast address: on a fixed link the limited broadcast, as on a /31 or /32
+// The host's broadcast address: on a fixed link the limited broadcast, as on a /32
 static uint32_t broadcastIP(void)
 {
 	return (fixedLink != 0) ? 0xFFFFFFFFu : IPGW_BROADCAST_IP;
+}
+
+// The radio's address by DMR ID: 0 when the truncated ID is 0, the all call or IPGW_ANY_RADIO_IP
+static uint32_t idRadioIP(void)
+{
+	uint32_t ip = ADDRESS(INDIVIDUAL, ipGatewayRadioId());
+
+	return ((ip == IPGW_INDIVIDUAL_NET) || (ip >= IPGW_ANY_RADIO_IP)) ? 0 : ip;
 }
 
 uint32_t ipGatewayHostIP(void)
@@ -161,38 +170,28 @@ uint32_t ipGatewayHostIP(void)
 	{
 		return fixedLink + 1;
 	}
+	uint32_t ip = idRadioIP();
 
-	uint32_t id = ipGatewayRadioId();
-
-	uint32_t ip = ADDRESS(INDIVIDUAL, id);
-
-	if ((ip == IPGW_INDIVIDUAL_NET) || (ip >= IPGW_SHARED_RADIO_IP))
-	{
-		return 0;// the truncated ID is 0, the all call, or (on a /31 the pair of) the all call / the shared radio address
-	}
-	return ip;
+	return (ip != 0) ? (ip - IPGW_INDIVIDUAL_NET + IPGW_PERIPHERAL_NET) : 0;// the same ID in the peripheral range
 }
 
 uint32_t ipGatewayRadioIP(void)
 {
-	if (fixedLink != 0)
-	{
-		return fixedLink;
-	}
-#if IPGW_POINT_TO_POINT
-	uint32_t hostIp = ipGatewayHostIP();
-
-	return (hostIp != 0) ? (hostIp ^ 1) : 0;
-#else
-	return IPGW_SHARED_RADIO_IP;
-#endif
+	return (fixedLink != 0) ? fixedLink : idRadioIP();
 }
 
-// An individual address that can be sent to over the air: not the all call, and on a shared link not the radio. On a
-// /31 the radio's address is also radio (host's ID xor 1), for everything but what the radio itself answers
+// An individual address that can be sent to over the air: not the all call, nor IPGW_ANY_RADIO_IP
 static bool isRadioAddress(uint32_t ip)
 {
-	return IN_RANGE(INDIVIDUAL, ip) && (ip != IPGW_ALL_CALL_IP) && (IPGW_POINT_TO_POINT || (ip != IPGW_SHARED_RADIO_IP));
+	return IN_RANGE(INDIVIDUAL, ip) && (ip != IPGW_ALL_CALL_IP) && (ip != IPGW_ANY_RADIO_IP);
+}
+
+// A radio's peripheral network address (the host behind another radio) that can be sent to: the same ID's would be a
+// radio address, and not the host's own
+static bool isPeripheralAddress(uint32_t ip)
+{
+	return IN_RANGE(PERIPHERAL, ip) && isRadioAddress(ip - IPGW_PERIPHERAL_NET + IPGW_INDIVIDUAL_NET) &&
+			(ip != ipGatewayHostIP());
 }
 
 // A unicast address outside the gateway's ranges and off the link: what the off-net route takes (ipGatewaySetOffNetId),
@@ -203,7 +202,7 @@ static bool isOffNet(uint32_t ip)
 	uint32_t top = ip >> 24;
 
 	return (top != 0) && (top != 127) && (top < 224) && ((ip & 0xFFFF0000u) != 0xA9FE0000u) &&
-			!IN_RANGE(INDIVIDUAL, ip) && !IN_RANGE(MULTICAST, ip) &&
+			!IN_RANGE(INDIVIDUAL, ip) && !IN_RANGE(PERIPHERAL, ip) && !IN_RANGE(MULTICAST, ip) &&
 #if defined(IPGW_GROUP_NET)
 			!IN_RANGE(GROUP, ip) &&
 #endif
@@ -251,7 +250,7 @@ static void handleARP(const uint8_t *frame, const uint8_t *arp)
 	{
 		return;
 	}
-	if (((IPGW_LINK_PREFIX == 31) || (fixedLink != 0)) && (targetIp != ipGatewayRadioIP()))
+	if ((fixedLink != 0) && (targetIp != ipGatewayRadioIP()))
 	{
 		return;// everything else is routed through the radio
 	}
@@ -304,9 +303,8 @@ static uint8_t *putRoute(uint8_t *o, uint32_t network, int prefix, uint32_t rout
 }
 
 // Classless static routes (option 121, and 249 for older Windows) through the radio: on a /32 the radio itself on the
-// link (router 0.0.0.0) first, on a /31 or /32 the individual range,
-// the multicast range, so that sending to and joining a talkgroup picks this link, and the group range if it isn't on
-// the link
+// link (router 0.0.0.0) first, on a /32 or a fixed link the individual and peripheral ranges, the multicast range, so
+// that sending to and joining a talkgroup picks this link, and the group range if it isn't on the link
 static uint8_t *putRoutes(uint8_t *o, uint8_t code, uint32_t router)
 {
 	uint8_t *start;
@@ -314,13 +312,14 @@ static uint8_t *putRoutes(uint8_t *o, uint8_t code, uint32_t router)
 	*o++ = code;
 	start = o++;
 	// A fixed link: the radio is on the host's /24, so only the ranges go through it
-	if ((IPGW_LINK_PREFIX == 32) && (fixedLink == 0))
+	if (IPGW_POINT_TO_POINT && (fixedLink == 0))
 	{
 		o = putRoute(o, router, 32, 0);
 	}
 	if (IPGW_POINT_TO_POINT || (fixedLink != 0))
 	{
 		o = putRoute(o, IPGW_INDIVIDUAL_NET, IPGW_INDIVIDUAL_PREFIX, router);
+		o = putRoute(o, IPGW_PERIPHERAL_NET, IPGW_PERIPHERAL_PREFIX, router);
 	}
 	o = putRoute(o, IPGW_MULTICAST_NET, IPGW_MULTICAST_PREFIX, router);
 #if defined(IPGW_GROUP_NET)
@@ -465,7 +464,7 @@ __attribute__((noinline)) int ipGatewayAirLength(bool group, bool offNet, uint8_
 	{
 		uint8_t h[DMR_UDPC_HEADER_MAX];
 
-		return dmrDataCompressUDPHeader(0, group, srcPort, dstPort, h) + length - 8;
+		return dmrDataCompressUDPHeader(0, 0, srcPort, dstPort, h) + length - 8;	// the address IDs take no room
 	}
 	return 20 + length;
 }
@@ -483,23 +482,17 @@ static bool mayAnswerWithError(const uint8_t *ip, const uint8_t *l4, int l4Lengt
 			((fixedLink == 0) || (dst != (fixedLink | ~IPGW_FIXED_NETMASK)));
 }
 
-// A host packet for the air (the IPv4 header at frame[14], layer 4 l4Length octets) fits one transmission: true. Else
-// it is dropped, and with DF set answered with an ICMP destination unreachable, fragmentation needed, next-hop MTU the
-// air's (RFC 792, RFC 1191), from the radio's address, quoting the packet's header and its first 64 bits. Without DF a
-// router would fragment it: there are no fragments on the air (dmr-data.md 12.7), and a receiver couldn't put them
-// together, so it is just dropped. Four arguments, all in registers, and not inlined: see ipGatewayAirLength
-__attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length, bool group, bool offNet)
+// An ICMP destination unreachable for a host packet (the IPv4 header at frame[14], layer 4 l4Length octets), from the
+// radio's address, quoting the packet's header and its first 64 bits (RFC 792); mtu goes in octets 6-7 (RFC 1191, 0
+// for any code but fragmentation needed). Not about an ICMP error, a multicast or a broadcast (RFC 1122 3.2.2). Four
+// arguments, all in registers, and not inlined: see ipGatewayAirLength
+__attribute__((noinline)) static bool sendUnreachable(const uint8_t *frame, int l4Length, uint8_t code, uint16_t mtu)
 {
 	const uint8_t *ip = &frame[ETH_HEADER];
 	int ihl = (ip[0] & 0x0F) * 4;
 	const uint8_t *l4 = &ip[ihl];
 
-	if (ipGatewayAirLength(group, offNet, ip[9], l4, l4Length) <= IPGW_AIR_MTU)
-	{
-		return true;
-	}
-	stats.airTooBig++;
-	if (!(get16(&ip[6]) & IP_DF) || !mayAnswerWithError(ip, l4, l4Length))
+	if (!mayAnswerWithError(ip, l4, l4Length))
 	{
 		return false;
 	}
@@ -508,12 +501,30 @@ __attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length
 
 	memmove(&m[8], ip, quoted);
 	m[0] = ICMP_UNREACHABLE;
-	m[1] = ICMP_FRAG_NEEDED;
+	m[1] = code;
 	put16(&m[2], 0);
 	put16(&m[4], 0);// unused
-	put16(&m[6], IPGW_AIR_MTU);
+	put16(&m[6], mtu);
 	put16(&m[2], checksum(m, 8 + quoted, 0));
-	if (sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted))
+	return sendIPv4(&frame[6], IP_PROTO_ICMP, ipGatewayRadioIP(), get32(&ip[12]), 8 + quoted);
+}
+
+// A host packet for the air (the IPv4 header at frame[14], layer 4 l4Length octets) fits one transmission: true. Else
+// it is dropped, and with DF set answered with an ICMP destination unreachable, fragmentation needed, next-hop MTU the
+// air's (RFC 792, RFC 1191). Without DF a router would fragment it: there are no fragments on the air (dmr-data.md
+// 12.7), and a receiver couldn't put them together, so it is just dropped. Four arguments, all in registers, and not
+// inlined: see ipGatewayAirLength
+__attribute__((noinline)) static bool fitsAir(const uint8_t *frame, int l4Length, bool group, bool offNet)
+{
+	const uint8_t *ip = &frame[ETH_HEADER];
+	int ihl = (ip[0] & 0x0F) * 4;
+
+	if (ipGatewayAirLength(group, offNet, ip[9], &ip[ihl], l4Length) <= IPGW_AIR_MTU)
+	{
+		return true;
+	}
+	stats.airTooBig++;
+	if ((get16(&ip[6]) & IP_DF) && sendUnreachable(frame, l4Length, ICMP_FRAG_NEEDED, IPGW_AIR_MTU))
 	{
 		stats.fragNeeded++;
 	}
@@ -557,7 +568,10 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 	const uint8_t *l4 = &ip[ihl];
 	int l4Length = total - ihl;
 
-	if ((ip[9] == IP_PROTO_ICMP) && (dst == ipGatewayRadioIP()) && (dst != 0))
+	// The radio itself: its address, or the one every radio has (IPGW_ANY_RADIO_IP, no DMR ID's)
+	bool own = ((dst == ipGatewayRadioIP()) && (dst != 0)) || (dst == IPGW_ANY_RADIO_IP);
+
+	if ((ip[9] == IP_PROTO_ICMP) && own)
 	{
 		handleICMP(frame, ip, l4, l4Length);
 		return;
@@ -608,10 +622,18 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		ipGatewaySerialIn(&l4[8], l4Length - 8);
 		return;
 	}
+	if (own && ((ip[9] == IP_PROTO_UDP) || (ip[9] == IP_PROTO_SCTP)))
+	{
+		// To the radio and no service took the packet: the address is the radio's alone, never over the air
+		stats.ownUnreachable++;
+		sendUnreachable(frame, l4Length, (ip[9] == IP_PROTO_UDP) ? ICMP_PORT_UNREACHABLE : ICMP_PROTOCOL_UNREACHABLE, 0);
+		return;
+	}
 
 	bool group = true;
 	bool offNet = false;
 	uint32_t id;
+	uint32_t airIp;// the IP destination on the air
 	uint8_t ttl = ip[8];// the host's, kept: the air is one link of its path
 
 	if (ttl == 0)
@@ -627,21 +649,31 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 			return;
 		}
 		id = IPGW_ALL_CALL_ID;
+		airIp = dmrDataIdAddress(true, id);
 	}
 #if defined(IPGW_GROUP_NET)
 	else if (IN_RANGE(GROUP, dst))
 	{
 		id = ID(GROUP, dst);
+		airIp = dmrDataIdAddress(true, id);
 	}
 #endif
 	else if (IN_RANGE(MULTICAST, dst))
 	{
 		id = ID(MULTICAST, dst);
+		airIp = dmrDataIdAddress(true, id);
 	}
 	else if (isRadioAddress(dst))
 	{
 		group = false;
 		id = ID(INDIVIDUAL, dst);
+		airIp = dmrDataIdAddress(false, id);
+	}
+	else if (isPeripheralAddress(dst))
+	{
+		group = false;// the host behind that radio
+		id = ID(PERIPHERAL, dst);
+		airIp = dmrDataPeripheralAddress(id);
 	}
 	else if ((offNetId != 0) && isOffNet(dst))
 	{
@@ -655,6 +687,7 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		group = false;
 		offNet = true;
 		id = offNetId;
+		airIp = dst;
 	}
 	else
 	{
@@ -675,10 +708,12 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 		return;
 	}
 
-	// On the air the addresses are the IDs' CAI addresses (12.x.y.z, 225.x.y.z), whatever the gateway's ranges, and
-	// only an off-net destination is carried as it is. The host's source becomes ours (IPGW_AIR_SRC_OURS): a fixed link
-	// address means nothing on the air, and the answer must come back to this radio's ID
-	ipGatewayIPToAir(group, id, IPGW_AIR_SRC_OURS, offNet ? dst : dmrDataIdAddress(group, id), ttl, ip[9], l4, l4Length);
+	// On the air the addresses are the IDs' CAI addresses (12.x.y.z, 13.x.y.z, 225.x.y.z), whatever the gateway's
+	// ranges, and only an off-net destination is carried as it is. The host's source is its peripheral network address
+	// under our ID, so the answer comes back to it; on a fixed link the radio's own: a fixed address means nothing on
+	// the air
+	ipGatewayIPToAir(group, id, (fixedLink != 0) ? IPGW_AIR_SRC_OURS : IPGW_AIR_SRC_PERIPHERAL, airIp, ttl, ip[9], l4,
+						l4Length);
 }
 
 // The UDP header and payload at tx[34] (payload may already be in place): the layer 4 length, or -1 when too long
@@ -720,7 +755,9 @@ static void setMulticastMac(uint8_t mac[6], uint32_t ip)
 }
 
 // The destination of a packet whose IP destination isn't the address of its DMR destination (airIp, as on the air):
-// our own ID's address is the host's, as for a packet to our ID; a multicast group or the broadcast goes to its MAC;
+// our own ID's address, radio or peripheral network, is the host's, as for a packet to our ID; another radio's
+// peripheral network address is its in the peripheral range (between other radios); a multicast group or the
+// broadcast goes to its MAC;
 // another unicast address goes to the host when the packet came to our ID (we are the gateway: the host routes it
 // on), else to the monitor MAC (traffic between others). False: never on the link (0/8, loopback)
 static bool literalDestination(bool group, uint32_t dst, uint32_t airIp, uint32_t *dstIp, const uint8_t **dstMac,
@@ -735,10 +772,15 @@ static bool literalDestination(bool group, uint32_t dst, uint32_t airIp, uint32_
 	{
 		return false;
 	}
-	if (((airIp == dmrDataIdAddress(false, own)) || (airIp == ADDRESS(INDIVIDUAL, own))) && (ipGatewayHostIP() != 0))
+	if (((airIp == dmrDataIdAddress(false, own)) || (airIp == ADDRESS(INDIVIDUAL, own)) ||
+			(airIp == dmrDataPeripheralAddress(own)) || (airIp == ADDRESS(PERIPHERAL, own))) && (ipGatewayHostIP() != 0))
 	{
 		*dstIp = ipGatewayHostIP();
 		*dstMac = hostMac;
+	}
+	else if (!group && (airIp == dmrDataPeripheralAddress(dst)))
+	{
+		*dstIp = ADDRESS(PERIPHERAL, dst);
 	}
 	else if ((top >= 224) && (top < 240))
 	{
@@ -773,20 +815,25 @@ static bool deliver(bool group, uint32_t dst, uint32_t src, uint32_t srcAir, uin
 	{
 		return true;
 	}
-	if (!dmrDataIpIsId(srcAir, false, src))
+	if ((srcAir == dmrDataPeripheralAddress(src)) && isRadioAddress(srcIp))
 	{
-		// Another source than the sender's own address is an off-net host's, routed by the sender. One in the radio
-		// range or the CAI radio network would pass for another radio; one of the host, the radio, the link or a group
-		// isn't from the air
+		srcIp = ADDRESS(PERIPHERAL, src);// the host behind the sender
+	}
+	else if (!dmrDataIpIsId(srcAir, false, src))
+	{
+		// Another source than the sender's own addresses is an off-net host's, routed by the sender. One in the
+		// gateway's ranges or the CAI radio and peripheral networks would pass for another radio or its host; one of
+		// the host, the radio, the link or a group isn't from the air
 		srcIp = srcAir;
-		if (!isOffNet(srcIp) || ((srcIp & 0xFF000000u) == dmrDataIdAddress(false, 0)))
+		if (!isOffNet(srcIp) || ((srcIp >> 24) == (dmrDataIdAddress(false, 0) >> 24)) ||
+				((srcIp >> 24) == (dmrDataPeripheralAddress(0) >> 24)))
 		{
 			return true;
 		}
 	}
 	else if (!isRadioAddress(srcIp))
 	{
-		return true;// would look like the radio itself or the all call, dropped
+		return true;// the all call or IPGW_ANY_RADIO_IP: would look like a broadcast or the radio, dropped
 	}
 
 	if (!dmrDataIpIsId(dstAir, group, dst))

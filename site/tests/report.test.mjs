@@ -69,6 +69,7 @@ test("adapter: the chip from the USB vendor id, the radio's own USB, WebUSB's pr
 	assert.equal(s(0x1A86, 0x7523).chip, "CH340");
 	assert.equal(s(0x10C4, 0xEA60).chip, "CP210x");
 	assert.equal(s(0x067B, 0x2303).chip, "PL2303");
+	assert.equal(s(0x2100, 0x9E5D).chip, "FTDI", "RT Systems' USB-K4Y: an FTDI chip under its own vendor id");
 	assert.equal(s(0x1FC9, 0x0094).chip, "radio USB");
 	assert.equal(s(0x1FC9, 0x0095).chip, "other");
 	assert.equal(s(0x2E8A, 0x000A).chip, "other");

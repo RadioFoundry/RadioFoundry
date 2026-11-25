@@ -17,6 +17,9 @@
 
 #include "../dsp/fxp.h"
 #include "air_syms.h"
+#if CONFIG_AIR_RX_ADAPT
+#include "../radio/tones.h"
+#endif
 
 #define SPS		AIR_SOFTMODEM_SPS
 #define LINE		AIR_SOFTMODEM_LINE
@@ -219,18 +222,15 @@ bool air_softmodem_rx_open(air_softmodem_t *m, const air_profile_t *p, uint32_t 
 #define EQ_MID		(AIR_ADAPT_EQ_TAPS / 2)
 #define EQ_MU_SHIFT	6				// the step: 2^-6 of the normalized error
 #define FRESH_SLACK	(2 * AIR_SYNC_SYMS_MAX)
-#define TONE_NONE	0xFF
+#define TONE_UNPICKED	0xFF
 #define TONE_BLOCK	6				// frames per tone block: 1.7 Hz bins on a 100 ms frame (neighbors 2.9 Hz apart)
 #define TONE_RATIO	10				// a tone's power over the mean of the others' (its neighbors left out)
 #define TONE_SURE	30				// ... so far over it that one block is enough
 #define NOTCH_Q		20
 #define Q30		(1LL << 30)
 
-static const uint16_t tone_dhz[AIR_ADAPT_TONES] = {
-	670, 693, 719, 744, 770, 797, 825, 854, 885, 915, 948, 974, 1000, 1035, 1072, 1109, 1148,
-	1188, 1230, 1273, 1318, 1365, 1413, 1462, 1514, 1567, 1598, 1622, 1655, 1679, 1713, 1738, 1773,
-	1799, 1835, 1862, 1899, 1928, 1966, 1995, 2035, 2065, 2107, 2181, 2257, 2291, 2336, 2418, 2503, 2541,
-};
+// The tones searched are the radio's standard CTCSS list (core/radio/tones.h: Hz x 10, ascending)
+_Static_assert(AIR_ADAPT_TONES == TONES_CTCSS_COUNT, "the tone search's filters, one per standard tone");
 
 static air_softmodem_adapt_t *lent;
 volatile uint8_t air_softmodem_adapt_off;
@@ -308,7 +308,7 @@ static void adapt_reset(air_softmodem_adapt_t *a, bool tone)
 	a->n = 0;
 	a->ci1 = a->ci2 = a->cc1 = a->cc2 = 0;
 	a->dn = 0;
-	a->cand = a->sel = TONE_NONE;
+	a->cand = a->sel = TONE_UNPICKED;
 	a->x1 = a->x2 = a->y1 = a->y2 = 0;
 	adapt_view.tone_dhz = 0;
 	memset(a->dcs_avg, 0, sizeof a->dcs_avg);
@@ -338,11 +338,11 @@ static void adapt_open(air_softmodem_t *m)
 	if (!a->period)
 		a->opts &= (uint8_t)~AIR_RX_TONE;	// no frame to difference against
 	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
-		int64_t c = cos_turn(turn_of(tone_dhz[k], m->p->sym_rate, AIR_ADAPT_DECIM));
+		int64_t c = cos_turn(turn_of(tones_ctcss[k], m->p->sym_rate, AIR_ADAPT_DECIM));
 		int64_t gs = AIR_ADAPT_DECIM * Q30;				// the sum's, |sum of e^-jwn|^2 x 2^30
 
 		for (uint8_t j = 1; j < AIR_ADAPT_DECIM; j++)
-			gs += 2 * (AIR_ADAPT_DECIM - j) * cos_turn(turn_of(tone_dhz[k], m->p->sym_rate, j));
+			gs += 2 * (AIR_ADAPT_DECIM - j) * cos_turn(turn_of(tones_ctcss[k], m->p->sym_rate, j));
 		gs /= AIR_ADAPT_DECIM * AIR_ADAPT_DECIM;			// x 2^30, 1 at DC
 		gs = (gs * gs) >> 30;						// the CIC is two such sums
 		a->coef[k] = (int16_t)((2 * c + (1 << 17)) >> 18);		// x 4096
@@ -379,19 +379,19 @@ static void tone_block(air_softmodem_t *m)
 {
 	air_softmodem_adapt_t *a = m->ad;
 	int64_t p[AIR_ADAPT_TONES], sum = 0;
-	uint8_t best = TONE_NONE, nsum = 0;
+	uint8_t best = TONE_UNPICKED, nsum = 0;
 
 	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
 		int64_t s1 = a->s1[k], s2 = a->s2[k];
 		int64_t pw = s1 * s1 + s2 * s2 - ((a->coef[k] * s1) >> 12) * s2;
 
 		p[k] = a->gain[k] && pw > 0 ? (pw << 12) / a->gain[k] : -1;
-		if (p[k] >= 0 && (best == TONE_NONE || p[k] > p[best]))
+		if (p[k] >= 0 && (best == TONE_UNPICKED || p[k] > p[best]))
 			best = k;
 		a->s1[k] = a->s2[k] = 0;
 	}
 	adapt_view.tone_blocks++;
-	if (best == TONE_NONE)
+	if (best == TONE_UNPICKED)
 		return;
 	for (uint8_t k = 0; k < AIR_ADAPT_TONES; k++) {
 		if (p[k] < 0 || k + 1 == best || k == best || k == best + 1)
@@ -405,7 +405,7 @@ static void tone_block(air_softmodem_t *m)
 		// One block is enough for the first pick only, far over the rest and clear of both neighbors: in a first
 		// block the tone's power still spreads into theirs, and once a tone is notched its own power is gone, so a
 		// neighbor would pass both tests on what the notch leaves
-		bool sure = a->sel == TONE_NONE && p[best] * nsum > TONE_SURE * sum
+		bool sure = a->sel == TONE_UNPICKED && p[best] * nsum > TONE_SURE * sum
 			    && (best == 0 || p[best] > 4 * p[best - 1])
 			    && (best + 1 == AIR_ADAPT_TONES || p[best] > 4 * p[best + 1]);
 
@@ -419,13 +419,13 @@ static void tone_block(air_softmodem_t *m)
 	// A neighbor of the tone notched never takes over: what the notch leaves of the right tone shows in the
 	// neighbors (a 67.0 Hz tone notched, 69.3 Hz then won blocks at 170 times the rest), and the first pick is kept
 	// off a neighbor by the two blocks it needs, or by the four times over each neighbor of a pick in one
-	if (a->sel != TONE_NONE && (best + 1 == a->sel || best == a->sel + 1))
+	if (a->sel != TONE_UNPICKED && (best + 1 == a->sel || best == a->sel + 1))
 		return;
 	// The notch: zeros on the unit circle at the tone, poles just inside (Q 20), unity gain at DC
 	{
 		// The tone in radians a sample x 2^30, exact: a phase step in 1/65536 turn put 69.3 Hz at 69.2 Hz, a
 		// twentieth of the notch's width, and the notch then took 26 dB off the tone where it takes 50
-		int64_t w = (int64_t)tone_dhz[best] * 6746518852LL / (10 * (int64_t)m->rate_hz);	// 2 pi x 2^30
+		int64_t w = (int64_t)tones_ctcss[best] * 6746518852LL / (10 * (int64_t)m->rate_hz);	// 2 pi x 2^30
 		int64_t c = cos_rad(w);
 		int64_t r = Q30 - w / (2 * NOTCH_Q);
 		int64_t a1 = -((2 * r * c) >> 30), a2 = (r * r) >> 30;
@@ -438,7 +438,7 @@ static void tone_block(air_softmodem_t *m)
 		a->x1 = a->x2 = a->y1 = a->y2 = 0;
 	}
 	a->sel = best;
-	adapt_view.tone_dhz = tone_dhz[best];
+	adapt_view.tone_dhz = tones_ctcss[best];
 	adapt_view.tone_picks++;
 }
 
@@ -536,22 +536,11 @@ static uint32_t rev23(uint32_t w)
 	return r;
 }
 
-// The standard DCS codes (octal): a codeword read off the average names one of them, whatever its start
-static const uint16_t dcs_codes[104] = {
-	0023, 0025, 0026, 0031, 0032, 0036, 0043, 0047, 0051, 0053, 0054, 0065, 0071,
-	0072, 0073, 0074, 0114, 0115, 0116, 0122, 0125, 0131, 0132, 0134, 0143, 0145,
-	0152, 0155, 0156, 0162, 0165, 0172, 0174, 0205, 0212, 0223, 0225, 0226, 0243,
-	0244, 0245, 0246, 0251, 0252, 0255, 0261, 0263, 0265, 0266, 0271, 0274, 0306,
-	0311, 0315, 0325, 0331, 0332, 0343, 0346, 0351, 0356, 0364, 0365, 0371, 0411,
-	0412, 0413, 0423, 0431, 0432, 0445, 0446, 0452, 0454, 0455, 0462, 0464, 0465,
-	0466, 0503, 0506, 0516, 0523, 0526, 0532, 0546, 0565, 0606, 0612, 0624, 0627,
-	0631, 0632, 0654, 0662, 0664, 0703, 0712, 0723, 0731, 0732, 0734, 0743, 0754,
-};
-
+// A codeword read off the average names one of the radio's standard DCS codes (tones.h), whatever its start
 static bool dcs_standard(uint32_t code)
 {
-	for (unsigned i = 0; i < sizeof dcs_codes / sizeof dcs_codes[0]; i++)
-		if (dcs_codes[i] == code)
+	for (unsigned i = 0; i < TONES_DCS_COUNT; i++)
+		if (tones_dcs[i] == code)
 			return true;
 	return false;
 }
@@ -1081,7 +1070,7 @@ void air_softmodem_rx(air_softmodem_t *m, const int16_t *samples, uint16_t n, ui
 #if CONFIG_AIR_RX_ADAPT
 		if (m->ad && (m->ad->opts & AIR_RX_DCS) && !(air_softmodem_adapt_off & AIR_RX_DCS))
 			x = fxp_sat16(dcs_sample(m->ad, x));
-		if (m->ad && m->ad->sel != TONE_NONE && !(air_softmodem_adapt_off & AIR_RX_TONE))
+		if (m->ad && m->ad->sel != TONE_UNPICKED && !(air_softmodem_adapt_off & AIR_RX_TONE))
 			x = fxp_sat16(notch(m->ad, x));
 #endif
 		v = x - (m->dc >> 10);

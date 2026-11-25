@@ -19,7 +19,7 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= $(CONFIG_FM)
 # DMR Tier II voice: modem driver, call stack, AMBE FEC, vocoder hosting
 CONFIG_DMR ?= y
-# basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
+# basic privacy, 8-bit and 16-bit keys, on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # AES-256 voice encryption, the DMRA scheme (PI header ALG 0x25, docs/spec/dmr-voice.md 5.1): calls with a PI header
 # decrypted, and our overs encrypted, on channels bound to a traffic key in the codeplug. Needs DMR_PRIVACY (its AMBE
@@ -32,7 +32,7 @@ CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
-# Motorola TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
+# TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
 CONFIG_DMR_TMS ?= $(CONFIG_DMR_SMS)
 # ARS registration with a presence server (needs DMR; docs/spec/dmr-data.md)
 CONFIG_DMR_ARS ?= $(CONFIG_DMR)
@@ -342,8 +342,8 @@ CONFIG_MBE := $(CONFIG_IMBE)
 CONFIG_AIR_RAW ?= n
 # the soft modem's adaptive receive options (air_profile_t.rx_opts, docs/spec/air-interface.md 6.1): an equalizer and
 # a CTCSS / DCS remover a mode's profile may ask for, in memory the mode's engine lends. On with YSF, the mode that
-# asks for them (needs an air-framed mode)
-CONFIG_AIR_RX_ADAPT ?= $(CONFIG_YSF)
+# asks for them (needs an air-framed mode, and SUBTONE for the tone and code lists: without it YSF runs without them)
+CONFIG_AIR_RX_ADAPT ?= $(if $(filter y,$(CONFIG_SUBTONE)),$(CONFIG_YSF),n)
 # P25 trunked: the codec of its systems and channels (docs/spec/p25-codeplug.md 3), a control channel decoded and voice
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
@@ -431,6 +431,7 @@ $(if $(and $(call feature_on,NXDN),$(if $(call feature_on,DMR),,x)),$(error CONF
 $(if $(and $(call feature_on,YSF),$(if $(call feature_on,DMR),,x)),$(error CONFIG_YSF=y needs CONFIG_DMR=y (its voice is the DMR vocoder's)))
 $(if $(and $(call feature_on,AIR_RAW),$(if $(call feature_on,DEBUGLINK),,x)),$(error CONFIG_AIR_RAW=y needs CONFIG_DEBUGLINK=y))
 $(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,AIR),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_P25=y, CONFIG_NXDN=y or CONFIG_YSF=y (an air-framed mode)))
+$(if $(and $(call feature_on,AIR_RX_ADAPT),$(if $(call feature_on,SUBTONE),,x)),$(error CONFIG_AIR_RX_ADAPT=y needs CONFIG_SUBTONE=y (the standard tone and code lists, core/radio/tones.c)))
 ifneq ($(call feature_on,DEBUGLINK),)
   ifeq ($(call feature_on,HOSTLINK),)
     $(error CONFIG_DEBUGLINK=y needs CONFIG_HOSTLINK=y)

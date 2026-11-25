@@ -179,7 +179,7 @@ All three are read whatever the setting.
 - Built without `CONFIG_DMR_TMS` (the TMS builder, decoder and ACK are left out): a TMS heard is not decoded, so it
   is neither kept nor acknowledged; as confirmed data it still gets its ETSI response (3), and the IP gateway still
   forwards it to the PC like any datagram. `sms_send(..., TMS)` is refused; a stored default of TMS (a record
-  written by a build with it) sends ETSI IP text instead. The UI's format list has no Motorola entry. Host test:
+  written by a build with it) sends ETSI IP text instead. The UI's format list has no TMS entry. Host test:
   `dmrDataServiceTestNoTms`.
 
 #### 5.1.1 BrandMeister's text service
@@ -367,7 +367,7 @@ The default for messages the radio sends is ETSI IP text. Why this one of the tw
   are sent once and nothing waits for an answer.
 
 Defined short data stays available (Settings > Connections > Message format: "ETSI short") for radios that only show
-that form, and it confirms delivery. Motorola TMS ("Motorola") is the format for MOTOTRBO fleets.
+that form, and it confirms delivery. TMS ("TMS" in the list) is the format for commercial fleets that use TMS.
 
 ## 6. ARS
 
@@ -479,7 +479,7 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 | Octets | Field | Ours |
 |---|---|---|
 | 0-1 | IPv4 identification | the same counter as our SAP 4 packets; a confirmed retry keeps it |
-| 2 | SAID (7-4), DAID (3-0) | SAID 0 (radio network: the source is the source LLID), DAID 0, or 2 (group network) for a talkgroup |
+| 2 | SAID (7-4), DAID (3-0) | the CAI network of each address (TS 102 361-3 5.1.1): 0 the radio network (12.<LLID>), 1 its peripheral network (13.<LLID>: the host on a radio's USB link), 2 the group network (225.<LLID>, DAID only). SAID 1 for the host's packets, 0 for the radio's own and in passthrough ([usb-network.md](usb-network.md) 3.1) |
 | 3 | opcode MSB (7), SPID (6-0) | opcode 00 (the only format defined); SPID 1 = 5016 (UTF-16BE text), 2 = 5017 (LIP), 98 = 4007 (TMS, the manufacturer specific ID MOTOTRBO uses: an over the air capture, `dmrDataTest`), 0 = in an extended header |
 | 4 | opcode LSB (7), DPID (6-0) | the same for the destination port |
 | 5-6 | extended header 1 | the source port when SPID is 0, else the destination port when DPID is 0 |
@@ -487,14 +487,15 @@ The packet is an ordinary data packet with SAP 3 in its header; the first data b
 
 Not sent, rebuilt by the receiver: version, IHL 5, TOS 0, total length, flags 0, fragment offset 0, TTL (64, a
 talkgroup 1), protocol 17,
-both checksums, the UDP length (from the packet length), and both addresses: the source ID's 12.x.y.z and the
-destination ID's 12.x.y.z or, for a talkgroup, 225.x.y.z (the ID's 24 bits under the CAI network octet).
+both checksums, the UDP length (from the packet length), and both addresses: the ID's 24 bits under the CAI network
+octet SAID or DAID names, 12.x.y.z, 13.x.y.z or, for a talkgroup, 225.x.y.z. Any other value reads as the radio
+network (the group network for a talkgroup).
 
 IPv4 addresses are carried apart from the DMR IDs (`dmrDataEncodeIP`, `dmrDataServiceSendIP`, `ipGatewayIPToAir` take a
 source and a destination address and a TTL). The radio's own packets (TMS, ARS, LRRP, text, SNMP answers) use the IDs'
 addresses, so their bytes are as before. A packet from the host may not: the off-net route sends to a gateway radio's
 ID with the real destination address ([usb-network.md](usb-network.md) 3.1). So a UDP packet goes compressed only when
-both of its addresses are exactly the IDs' CAI addresses; any other goes with the full header, whatever `udpCompress`
+both of its addresses are exactly the IDs' CAI addresses (the radio's, its peripheral's or the talkgroup's); any other goes with the full header, whatever `udpCompress`
 says. `dmrDataGetIP` and `dmrDataGetUDP` return the addresses: from the header for SAP 4, rebuilt from the IDs for
 SAP 3. On receive a packet is for an ID itself only when its IP destination is exactly the ID's CAI address: an off-net
 host's address may have the same 24 bits under another first octet. A packet to our DMR ID for another address is

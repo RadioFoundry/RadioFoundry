@@ -203,6 +203,64 @@ class SecondLanguage(unittest.TestCase):
 				used = set(re.findall(r'"([a-z_]+(?:\.[a-z0-9_]+)+)"', f.read())) & known
 			self.assertEqual(sorted(used - set(strings)), [], name)
 
+	def test_every_page_has_the_keys_its_modules_ask_for(self):
+		# A page's script gets the keys under a few prefixes only (build.py). A key a module asks for outside them shows
+		# as the key itself: flash.stay_on_page in the editor (#938). The modules are followed through their imports,
+		# since flasher/dom.js and link.js serve several pages. Only keys written out in a call to t(), tOr() or opt()
+		# are seen; a key built from a variable is not.
+		with open(EN, encoding="utf-8") as f:
+			known = set(json.load(f))
+		root = repo.path("site", "static", "js")
+		call = re.compile(r'\b(?:t|tOr|opt)\(\s*"([a-z][a-z0-9_.]+)"')
+		built = re.compile(r'\b(?:t|tOr|opt)\(\s*`([a-z][a-z0-9_.]*)\$\{')
+		link = re.compile(r'(?:import|export)\s[^;]*?from\s+"(\.[^"]+)"|import\s+"(\.[^"]+)"')
+
+		def modules(path, seen):
+			if path in seen or not os.path.exists(path):
+				return seen
+			seen.add(path)
+			with open(path, encoding="utf-8") as f:
+				for a, b in link.findall(f.read()):
+					modules(os.path.normpath(os.path.join(os.path.dirname(path), a or b)), seen)
+			return seen
+
+		checked = 0
+		for dirpath, dirs, files in os.walk(self.out):
+			if dirpath == self.out:
+				dirs[:] = [d for d in dirs if d != "es" and d != "static"]
+			for name in files:
+				if not name.endswith(".html"):
+					continue
+				with open(os.path.join(dirpath, name), encoding="utf-8") as f:
+					html = f.read()
+				data = re.search(r'<script type="application/json" id="i18n">(.*?)</script>', html, re.S)
+				# the page's own scripts: site.js is on every page and has no catalog of its own
+				entries = [e for e in re.findall(r'<script type="module" src="[^"]*static/js/([^"?]+\.js)', html) if e != "site.js"]
+				if not data or not entries:
+					continue
+				page = os.path.relpath(os.path.join(dirpath, name), self.out)
+				strings = json.loads(data.group(1).replace("<\\/", "</"))
+				asked, prefixes = {}, {}
+				graph = set()
+				for entry in entries:
+					modules(os.path.join(root, entry), graph)
+				for path in graph:
+					with open(path, encoding="utf-8") as f:
+						src = f.read()
+					for key in call.findall(src):
+						# flash.beta.* is left out of the flash page on purpose (its text is in the page itself). The
+						# pre-release notice (betaNotice in flasher/app.js) asks for three of them, two not in the
+						# catalog at all: a gap of its own, shown only while a pre-release newer than the release exists
+						if key in known and not (page == "flash/index.html" and key.startswith("flash.beta.")):
+							asked.setdefault(key, set()).add(os.path.basename(path))
+					for key in built.findall(src):
+						prefixes.setdefault(key, set()).add(os.path.basename(path))
+				self.assertEqual({k: sorted(v) for k, v in asked.items() if k not in strings}, {}, page)
+				self.assertEqual({k: sorted(v) for k, v in prefixes.items()
+						  if any(x.startswith(k) for x in known) and not any(x.startswith(k) for x in strings)}, {}, page)
+				checked += 1
+		self.assertGreaterEqual(checked, 4, "the codeplug, flash, tools and satellite pages at least")
+
 	def test_english_docs_marked(self):
 		page = self.read("es/docs/user/02-installing.html")
 		self.assertIn('<p class="notice">', page)

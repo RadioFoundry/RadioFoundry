@@ -628,11 +628,18 @@ static void ipFinish(uint8_t result)
 	ipx.result = result;
 }
 
+// The source address: ours (DMR_DATA_IP_OURS) and our peripheral's (DMR_DATA_IP_OUR_PERIPHERAL) follow the channel's ID,
+// the one the packet goes from, whenever it was queued
+static uint32_t ipSource(uint32_t srcIp)
+{
+	return (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, channel.ownId) :
+		   (srcIp == DMR_DATA_IP_OUR_PERIPHERAL) ? dmrDataPeripheralAddress(channel.ownId) : srcIp;
+}
+
 static void ipTransmit(void)
 {
 	const uint8_t *pdu;
-	// Our own address follows the channel's ID (sent from the channel's ID, as the gateway's packets are)
-	uint32_t srcIp = (ipx.srcIp != DMR_DATA_IP_OURS) ? ipx.srcIp : dmrDataIdAddress(false, channel.ownId);
+	uint32_t srcIp = ipSource(ipx.srcIp);
 	uint32_t dstIp = (ipx.dstIp != DMR_DATA_IP_OURS) ? ipx.dstIp : dmrDataIdAddress(ipx.group, ipx.dst);
 	int n = dmrDataEncodeIP(ipx.group, ipx.dst, channel.ownId, dstIp, srcIp, ipx.ttl, ipx.protocol, ipx.l4, ipx.length,
 							ipx.compress, ipx.ipId, &pdu, &ipx.sap);
@@ -797,7 +804,7 @@ static int ipPacketBursts(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	uint8_t sap;
 	int n = dmrDataEncodeIP(group, dst, channel.ownId,
 							(dstIp != DMR_DATA_IP_OURS) ? dstIp : dmrDataIdAddress(group, dst),
-							(srcIp != DMR_DATA_IP_OURS) ? srcIp : dmrDataIdAddress(false, channel.ownId), ttl, protocol, l4,
+							ipSource(srcIp), ttl, protocol, l4,
 							length, compress, ipId, &pdu, &sap);
 
 	return (n > 0) ? dmrDataPacketBursts(n, IP_UNCONFIRMED_RATE) : 0;
@@ -2417,7 +2424,8 @@ static void handlePacket(const dmrDataPacket_t *packet)
 	// to: usually the APRS gateway's ID, as FM APRS hears every station. Only this hook sees a packet not for us.
 	// Both ports, not appPort: 10110 isn't one of the well known ports appPort picks, and the radios send from it too.
 	// A compressed header names its destination network: only DAID 0 (radio) or 2 (group) is the ID's own, 1 (USB
-	// network, TS 102 361-3 7.2.4.2) a host behind it (dmrDataGetUDP takes the address from the ID either way)
+	// network, TS 102 361-3 7.2.4.2) a host behind it (dmrDataGetUDP gives a radio's 13.x.y.z then, but a talkgroup's
+	// 225.x.y.z whatever the DAID)
 	uint8_t daid = (isUDP && (packet->sap == DMR_SAP_UDPIP_COMPRESSION)) ? (packet->data[2] & 0x0F) : 0;
 	if (isUDP && (udp.dstPort == DMR_UDP_PORT_NMEA) && (udp.srcPort == DMR_UDP_PORT_NMEA) &&
 			((daid == 0) || (daid == 2)) && dmrDataIpIsId(udp.dstIp, packet->group, packet->dst) &&
