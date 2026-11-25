@@ -175,29 +175,58 @@ the channel is empty (`AIR_CHUNK_NO_SIGNAL`) could stop feeding the modem.
 ### 6.1 Adaptive receive options
 
 A mode may ask the soft modem for more than the plain receiver, in its profile's `rx_opts`. A mode that asks for
-nothing (P25, NXDN) gets the plain receiver, symbol for symbol. They are built only where a build turns on
-`CONFIG_AIR_RX_ADAPT` (a mode that asks for them does), and run in memory the mode's engine lends for its session
-(`air_softmodem_lend`, about 1.6 KB): the soft modem itself, which lives in memory a provider borrows, grows by a
-pointer.
+nothing (P25, NXDN) gets the plain receiver, symbol for symbol.
 
-| Option | What it does |
+| | |
 |---|---|
-| `AIR_RX_EQ` | A 7-tap equalizer, taps a symbol apart around each symbol, on the soft values: the symbols before from its own memory, those after from the line. Decision-directed normalized LMS towards the level decided (step 2^-6), adapted only on fresh timing (within the sync spacing of the last sync). The center tap is held within 0.7-1.2: free, it has a second resting point near 0.4, where the outer levels fall on the inner ones and the decisions hold it there. A side tap past 0.5 sends all of them back to a pass-through. Each new lock starts from a pass-through |
-| `AIR_RX_TONE` | A CTCSS tone under the signal found and notched. Each symbol's slicing error counts only where its neighborhood (it and the two decided symbols around it) differs from the same place a frame (the sync spacing) earlier: what repeats every frame, the sync, a FICH, a transmission of silence, would make a comb at the frame rate, and leaving it out removes the comb at its source. (Differencing against the frame before, the first way, also cancelled every tone near a multiple of the 10 Hz frame rate: 100.0 Hz exactly, 69.3, 79.7, 159.8 Hz and others nearly.) The errors' slow mean comes off first, so the places left out don't make a comb of it; coasting gives zeros. The rest goes through a second-order CIC that keeps one sample in four (1200 Hz at 4800 symbols/s: what folds onto the tones comes from above 940 Hz, held off by over 20 dB), then a Goertzel filter per standard tone (the 50 from 67.0 to 254.1 Hz) over blocks of six frames, 1.7 Hz bins for neighbors 2.9 Hz apart. That is 50 updates every 4 symbols, 60,000 a second at 4800 symbols/s (every symbol, 240,000, without the CIC). The CIC's droop is weighed into each tone's gain. The search takes each symbol's value before the equalizer: adapting on the error, the equalizer follows a low tone in part and hides it (69.3 Hz took 7 s to find behind it, 2 s without). A tone is notched when its power is ten times the mean of the others (its neighbors left out) in two blocks (1.2 s), a block where nothing passes that leaving the count as it was, or in one block when it is thirty times that and four times each neighbor's (the first pick only). The notch is on the input samples: zeros at the tone, poles inside at Q 20, unity gain at DC, worked out from the tone's exact frequency (49 dB off a 69.3 Hz tone) and run as differences from a double zero and a double pole at DC, so its small terms keep 20 bits. A tone switches to another only on the same two blocks, and never to a neighbor of the one notched: what the notch leaves of the right tone shows there. The search and the notch outlast locks and resets and start over only when the session opens: a repeater's tone belongs to the channel. On the modeled channel below every one of the 50 tones is found as itself at 0.2 and at 0.4 of a level; on the radio's recordings, no block without a tone passed 9 |
-| `AIR_RX_DCS` | A DCS code under the signal found and taken off the input samples. A DCS code is a Golay(23,12) codeword sent over and over at 134.4 bit/s, a slow two-level offset under the 4FSK. The receiver's own offset and level tracking half follows it, so it barely shows in the symbol errors; it is taken off the samples instead. A periodic average over one word (184 bins, 8 a bit; each bin x += (in - x) / 16 a visit) keeps what repeats every 171 ms and lets the 4FSK, which doesn't, average out. Once a word (after four), the bins' mean comes off, each bit is summed at the best of its 8 offsets, and the 23 bits are tested as a cyclic Golay codeword (either generator, any rotation, not all zeros or ones). A codeword locks; three words that are not unlock. What comes off each sample while locked is the word read times one bit's shape: at each of the 8 places in a bit, the mean of the 23 bits' bins there, each with its bit's sign (interpolated between bins), before the CTCSS notch. A bin's own average still holds the 4FSK of its last 16 visits, as strong as the code: taking it off as it was added that back, and on the radio's recordings left 1464 corrected FEC bits where the shape leaves 370 (3095 plain). The code is read as a standard code (octal) from any rotation; an inverted code reads as its pair (023 inverted is 047). On the modeled channel, DCS 023 at half a level under a noisy signal: found as 023, the symbol errors fall from 18.7 % to 7.0 %; with only a CTCSS tone, nothing locks |
+| Switch | `CONFIG_AIR_RX_ADAPT`, turned on by a mode that asks; needs an air-framed mode and `CONFIG_SUBTONE` (the tone and code lists, `core/radio/tones.h`) |
+| Boards | HR_C7000 only so far ([feature-matrix.md](../feature-matrix.md)) |
+| State | Lent by the mode's engine for its session (`air_softmodem_lend`, about 1.6 KB). The soft modem grows by a pointer |
+| Per-sample path | 32 bits, no divide (section 6). The equalizer divides once a symbol, the DCS search once a word |
+| Coefficients | Worked out in integers at open and at a pick (a series cosine). No floating point |
+| Code in RAM | The per-sample and per-symbol functions are `RFOUNDRY_HOT_CODE`: in RAM where the platform gives a section for code (about 1.1 KB on HR_C7000) |
+| Bench | `air_softmodem_adapt_off` turns an option off from the next symbol; `air_softmodem_adapt_get` gives what runs |
 
-The coefficients are worked out at open and at a pick in integers (a series cosine): no floating point is built in.
-The per-sample notch and DCS subtraction keep to section 6's rules (32 bits, no divide); the equalizer divides once a
-symbol, the DCS search once a word. The options' per-sample and per-symbol functions are `RFOUNDRY_HOT_CODE`: in RAM
-where the platform gives a section for code (about 1.1 KB on HR_C7000). From the XIP flash, the three together cost
-more than the three apart (34 % of the CPU against 26 % in RAM, on a signal with a tone and a code). The options are
-built on HR_C7000 only so far ([feature-matrix.md](../feature-matrix.md)).
-`air_softmodem_adapt_off` turns an option off from the next symbol, for an A/B on the bench, and
-`air_softmodem_adapt_get` gives what runs: the tone notched, the DCS code locked, the center tap, counters.
+**`AIR_RX_EQ`: equalizer**
 
-On a modeled channel (`airSoftmodemTest`, a C4FM profile at 4800 symbols/s, 8 kHz tap): with the upper band cut to 2.4 kHz, as a
-repeater's chain does, and noise, the symbol errors fall from 3.07 % to 0.02 % with the equalizer (2.2 kHz: 8.6 % to
-1.2 %); with a 127.3 Hz tone of 0.4 of a level under a noisy signal, from 0.62 % to 0.27 % once the tone is notched.
+| | |
+|---|---|
+| Filter | 7 taps a symbol apart, on the soft values: the symbols before from its own memory, those after from the line |
+| Adaptation | Decision-directed normalized LMS towards the level decided, step 2^-6, only within the sync spacing of the last sync |
+| Limits | Center tap held within 0.7-1.2. A side tap past 0.5 resets all taps to a pass-through |
+| Reset | Each new lock starts from a pass-through |
+
+**`AIR_RX_TONE`: CTCSS notch**
+
+| | |
+|---|---|
+| Input | Each symbol's slicing error, before the equalizer, counted only where its neighborhood (the symbol and the two decided around it) differs from the same place a frame (the sync spacing) earlier. The errors' slow mean comes off first; coasting gives zeros |
+| Search | A second-order CIC keeping one sample in four, then a Goertzel filter per standard CTCSS tone (`tones_ctcss`, 67.0-254.1 Hz) over blocks of six frames: 1.7 Hz bins, neighbors 2.9 Hz apart. 50 updates every 4 symbols. The CIC's droop is weighed into each tone's gain |
+| Pick | Power 10 times the mean of the others (neighbors left out) in two blocks; a block where none passes leaves the count. The first pick may take one block at 30 times, if also 4 times each neighbor. Never switches to a neighbor of the tone notched |
+| Notch | On the input samples: zeros at the tone's exact frequency, poles inside at Q 20, unity gain at DC. Run as differences from a double zero and pole at DC, 20 bits each: 49 dB off a 69.3 Hz tone |
+| Reset | The search and the notch start over only when the session opens; locks and resets keep them |
+| Limits | On a radio's recordings without a tone, no block passed 9. What a notch leaves of a tone sent through a receiver is more than of the same tone added after it |
+
+**`AIR_RX_DCS`: DCS remover**
+
+| | |
+|---|---|
+| Average | The input samples averaged by their place in the 23-bit word (184 bins, 8 a bit; each bin x += (in - x) / 16 a visit). The word repeats every 171 ms; the 4FSK doesn't |
+| Read | Once a word, after four: the bins' mean off, each bit summed at the best of 8 offsets, the 23 bits tested as a cyclic Golay(23,12) codeword (either generator, any rotation, not all zeros or ones) |
+| Lock | A codeword locks; three words that are not unlock |
+| Removal | While locked, the word read times one bit's shape (at each of the 8 places in a bit, the mean of the 23 bits' bins, each with its bit's sign), interpolated between bins, off each sample before the CTCSS notch |
+| Code | Read as a standard code (`tones_dcs`) from any rotation; an inverted code reads as its pair (023 inverted is 047) |
+
+**Modeled channel** (`airSoftmodemTest`, a C4FM profile at 4800 symbols/s, 8 kHz tap), symbol errors:
+
+| Channel | Plain | With the option |
+|---|---|---|
+| Upper band cut to 2.4 kHz, noise (equalizer) | 3.07 % | 0.02 % |
+| Upper band cut to 2.2 kHz, noise (equalizer) | 8.6 % | 1.2 % |
+| 127.3 Hz tone, 0.4 of a level, noise (notch) | 0.62 % | 0.27 % |
+| DCS 023, half a level, noise (DCS remover) | 18.7 % | 7.0 % |
+
+Every standard tone is found as itself at 0.2 and at 0.4 of a level. With only a CTCSS tone, no DCS code locks.
 
 ## 7. The session
 
