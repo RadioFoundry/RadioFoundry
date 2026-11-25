@@ -19,7 +19,8 @@ Each switch reaches C as `CONFIG_<NAME>` = 0 or 1, always defined: test it with 
 `core/config.h` holds the same defaults (all on) for host tests and checks the dependencies. Switches can also leave
 whole source directories out of the build (`Makefile`, `platform/*/platform.mk`). A sub-feature follows its parent
 unless it is set: `CONFIG_DMR=n` turns off every DMR feature, and asking for a sub-feature without its parent is an
-error. Changing a switch rebuilds everything (the build keeps the flags in `build/<board>/flags`, checked when make
+error. A switch that is off also leaves its text out of the language tables: the build packs only the strings of the
+code it compiles ([translating.md](dev/translating.md#how-it-works)). Changing a switch rebuilds everything (the build keeps the flags in `build/<board>/flags`, checked when make
 starts). `make BOARD=<b> print-config` lists the resolved switches.
 
 Every feature is on by default wherever the radio has what it needs. A board turns a feature off only for hardware

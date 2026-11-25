@@ -152,6 +152,32 @@ class Generate(unittest.TestCase):
                for code, lang in ((b[0], b) for b in built)}
         self.assertEqual(got, {"xx": [b"Hecho", b"Untranslated"], "yy": [b"Done", b"Non tradotto"]})
 
+    def test_used_keys_only(self):
+        # a build that compiles only some marks (a switch off): the other keys keep their numbers, their text is gone
+        # from every table, and the used ones look up as before
+        ids, translated, english, built = i18n.tables(self.found)
+        uids, utranslated, uenglish, ubuilt = i18n.tables(self.found, used={"DONE", "RX", "NOT_A_KEY"})
+        self.assertEqual((uids, utranslated), (ids, translated))
+        for k in ("DONE", "RX"):
+            self.assertEqual(i18n.tr(uids, utranslated, uenglish, ubuilt[0], k),
+                             i18n.tr(ids, translated, english, built[0], k))
+        for k in ("UNTRANSLATED", "FUZZY", "VOLUME", "BAD"):
+            self.assertEqual(i18n.tr(uids, utranslated, uenglish, ubuilt[0], k), b"")
+        self.assertNotIn(b"Untranslated", uenglish[0])
+        self.assertEqual(len(uenglish[0]), len(b"Done\0RX\0") + len(ids) - 1)
+
+    def test_used_keys_from_scan_files(self):
+        path = os.path.join(self.dir.name, "x.tr")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("TR_DONE\nTR_KEYS\nTR_RX\n")
+        out = os.path.join(self.dir.name, "used.h")
+        i18n.generate(out, self.found, i18n.read_used([path]))
+        with open(out, encoding="utf-8") as f:
+            h = f.read()
+        self.assertIn("6 keys, 2 in this build", h)
+        self.assertIn('"Hecho"', h)
+        self.assertNotIn('"Volume "', h)
+
     def test_default_language_switch(self):
         # an empty language setting is the language whose CONFIG_LANG_DEFAULT_<CODE> is on, else English
         self.assertIn("#if CONFIG_LANG_DEFAULT_XX\n#define LANG_DEFAULT\t1\n#else\n#define LANG_DEFAULT\tLANG_ENGLISH\n#endif",

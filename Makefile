@@ -335,6 +335,11 @@ BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_a
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
+# The text keys each source compiles in this configuration (tools/i18n.py --used): the language tables hold only those
+# keys' strings, so a switch that is off leaves its text out. i18n.c is the tables' own reader. A build without a
+# language has no tables to fill
+TR_USED := $(if $(filter y,$(foreach f,$(filter LANG_%,$(FEATURES)),$(CONFIG_$(f)))),\
+	$(patsubst %.c,$(BUILD)/%.tr,$(filter-out core/ui/i18n.c,$(APP_SRC))))
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
@@ -369,7 +374,7 @@ ifeq ($(filter clean test print-config print-cc print-unsupported print-not-writ
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
-	rm -f $(OBJ); })
+	rm -f $(OBJ) $(TR_USED); })
 VERSION_STAMP := $(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME) $(RFOUNDRY_GIT_SOURCE) $(RFOUNDRY_GIT_REPO)
 $(shell echo '$(VERSION_STAMP)' | cmp -s - $(BUILD)/version || { echo '$(VERSION_STAMP)' > $(BUILD)/version; \
 	rm -f $(VERSION_OBJ); })
@@ -384,15 +389,11 @@ ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
-# The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
-# (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables
-# changed. A failure stops the build: the old tables would link without a word
-I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
-ifneq ($(filter i18n-failed,$(I18N_GEN)),)
-$(error tools/i18n.py --gen failed (above))
-endif
-ifneq ($(filter changed,$(I18N_GEN)),)
-$(shell rm -f $(BUILD)/core/ui/i18n.o)
+# The text keys every file that includes i18n.h needs (tools/i18n.py, tr_keys.h, rewritten only when a key changed:
+# the dependency files rebuild those). A failure stops the build: the old keys would compile without a word. The
+# language tables come after the compile (below)
+ifneq ($(shell python3 tools/i18n.py --keys $(BUILD)/gen || echo i18n-failed),)
+$(error tools/i18n.py --keys failed (above))
 endif
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
@@ -408,7 +409,7 @@ $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)
 	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
 endif
 endif
-$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
+$(APP_OBJ) $(TP_OBJ) $(TR_USED): $(BUILD)/flags
 $(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
 $(VERSION_OBJ): $(BUILD)/version
 $(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
@@ -440,6 +441,21 @@ $(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
+# The TR_<KEY> names a source holds once preprocessed with the build's flags, one a line: the marks its switches keep.
+# -g0 leaves the macro definitions out of the output (only what the code expands counts), and the lines from
+# tr_keys.h, which names every key, are skipped. Piped, not written to a file: the output is large. A failed
+# preprocess leaves no file
+$(TR_USED): $(BUILD)/%.tr: %.c
+	@mkdir -p $(dir $@)
+	@{ $(CC) $(filter-out -MMD -MP,$(CFLAGS_APP)) -g0 -E -MMD -MP -MF $(@:.tr=.tr.d) -MT $@ $< || echo '#failed'; } | \
+		awk '$$0 == "#failed" { exit 1 } /^# [0-9]+ "/ { gen = ($$3 ~ /tr_keys\.h"$$/); next } \
+		!gen { while (match($$0, /TR_[A-Za-z0-9_]+/)) { seen[substr($$0, RSTART, RLENGTH)] = 1; $$0 = substr($$0, RSTART + RLENGTH) } } \
+		END { for (k in seen) print k }' > $@.tmp && mv $@.tmp $@
+# The language tables (core/ui/lang/*.po) with the strings of the keys this build compiles. Written every time a source
+# changed, so i18n.o, which includes them, follows. A failure stops the build
+$(BUILD)/gen/lang_tables.h: $(TR_USED) $(wildcard core/ui/lang/*.po) tools/i18n.py
+	@python3 tools/i18n.py --gen $@ --used $(TR_USED) > /dev/null && touch $@
+$(BUILD)/core/ui/i18n.o: $(BUILD)/gen/lang_tables.h
 # A third-party source missing here comes from RFOUNDRY_THIRD_PARTY through vpath (platform/third_party.mk)
 $(BUILD)/third_party/%.o: third_party/%.c
 	@mkdir -p $(dir $@)
@@ -503,5 +519,5 @@ print-vars:
 clean:
 	rm -rf $(BUILD)
 
--include $(OBJ:.o=.d)
+-include $(OBJ:.o=.d) $(TR_USED:.tr=.tr.d)
 endif
