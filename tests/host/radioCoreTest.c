@@ -11770,6 +11770,197 @@ static void test_t3_stun(void)
 }
 #endif
 
+#if CONFIG_RADIO_DETOUR
+static void detour_req(uint8_t op, uint32_t backstop_ms)
+{
+	radio_req_t r = { RREQ_DETOUR, op, backstop_ms };
+	radio_sm_request(&sm, &r, now);
+}
+
+// A detour (docs/spec/debuglink.md 7.4): every setting the debug link can change while one runs is back after the
+// deadline, and nothing of it was stored, not by the save timer, not by a power-off's flush
+static void test_detour(void)
+{
+	sim_flash_create(0x40000u, &reset_map);
+	CHECK(storage_init());
+	settings_init();
+	dmr_start(true);			// home: zone 0, position 3, DMR, CC 2, TS 1, TG 201
+	settings_poll(now);			// the first save (a fresh area)
+	req(RREQ_POWER, 1);			// a change for now at home: back with the rest
+	run(50);
+	uint8_t home_power = sm.view.power;
+	CHECK(sm.temp_power);
+	CHECK(settings_flush());
+	radio_p25_settings_t p25_home, p25;
+	radio_p25_settings(&p25_home);
+	radio_nxdn_settings_t nx_home, nx;
+	radio_nxdn_settings(&nx_home);
+	uint32_t vfo_home = sm.vfo_ch.rx_hz;
+	uint8_t sq_home = sm.view.squelch;
+	uint8_t *area = &sim_flash_data[reset_map.settings_addr];
+	static uint8_t stored[0x8000u];
+	memcpy(stored, area, sizeof(stored));
+
+	detour_req(RADIO_DETOUR_MARK, 5000);
+	CHECK(sm.view.detour.armed && settings_held());
+	// Every covered setting changed
+	req(RREQ_DMR_CC, 7);
+	req(RREQ_DMR_TS, 2);
+	req(RREQ_DMR_TARGET, 3100);
+	req(RREQ_DMR_HEAR_ALL, 1);
+	req(RREQ_SQUELCH, 2);
+	req(RREQ_POWER, 1);
+	req(RREQ_BANDWIDTH, RADIO_BW_25K);
+	radio_settings_t rs = sm.set;
+	rs.tx_inhibit = true;
+	radio_sm_set_settings(&sm, &rs, now);
+	p25 = p25_home;
+	p25.rx_nac = 0x123;
+	p25.tx_dst = 77;
+	radio_req_p25_settings(&p25);
+	nx = nx_home;
+	nx.rx_ran = 9;
+	nx.tx_ran = 9;
+	radio_req_nxdn_settings(&nx);
+	req(RREQ_ZONE, 1);			// another zone and channel
+	run(50);
+	req(RREQ_VFO, 1);			// the VFO, a frequency, a split, monitor, another mode
+	req(RREQ_VFO_SET, 446100000);
+	req(RREQ_VFO_TX, 446200000);
+	req(RREQ_MONITOR, 1);
+	req(RREQ_MODE, RADIO_MODE_NXDN);
+	run(50);
+	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 446100000 && sm.set.tx_inhibit);
+	// Saves are held: the timer and a power-off's flush write nothing, and the flush says so
+	for (int i = 0; i < 30; i++) {
+		run(100);
+		settings_poll(now);
+	}
+	CHECK(!settings_flush());
+	CHECK(memcmp(area, stored, sizeof(stored)) == 0);
+	CHECK(sm.view.detour.armed);
+	// A zone add or delete moves the saved indexes, which the hold can't store: refused, the codeplug unchanged
+	int zw = zone_writes;
+	uint16_t nz = nzones;
+	CHECK(zone_edit_delete(1) == ZONE_EDIT_FAILED && zone_edit_new("Held", NULL) == ZONE_EDIT_FAILED);
+	CHECK(zone_writes == zw && nzones == nz);
+
+	run(2200);				// the backstop (5 s from the mark) fires
+	const radio_detour_view_t *d = &sm.view.detour;
+	CHECK(!d->armed && !settings_held() && d->why == RADIO_DETOUR_WHY_BACKSTOP && d->restored && d->count == 1);
+	CHECK(d->mode == RADIO_MODE_NXDN && d->rx_hz == 446100000 && d->ms >= 5000 && d->ms < 5200);
+	CHECK(!sm.view.vfo && sm.view.zone_index == 0 && sm.view.zone_pos == 3 && sm.view.channel_number == 4);
+	CHECK(sm.view.ch.rx_hz == 438500000 && sm.view.ch.tx_hz == 438500000 && sm.view.ch.mode == RADIO_MODE_DMR);
+	CHECK(sm.view.ch.color_code == 2 && sm.view.ch.timeslot == 1 && sm.view.ch.bw == chans[4].bw);
+	CHECK(sm.view.power == home_power && sm.temp_power && sm.view.squelch == sq_home && !sm.view.monitor);
+	CHECK(!sm.manual && !sm.hear_all_latch && sm.view.dmr.target_id == 201 && sm.view.dmr.cc == 2);
+	CHECK(!sm.set.tx_inhibit && sm.vfo_ch.rx_hz == vfo_home);
+	radio_p25_settings(&p25);
+	CHECK(p25.rx_nac == p25_home.rx_nac && p25.tx_dst == p25_home.tx_dst);
+	radio_nxdn_settings(&nx);
+	CHECK(nx.rx_ran == nx_home.rx_ran && nx.tx_ran == nx_home.tx_ran);
+	CHECK(sim.started && sim.cc_filter == 2);	// the DMR receiver runs on the home channel again
+	// Nothing to save afterwards either, and a power cycle finds home
+	settings_stats_t ss;
+	settings_get_stats(&ss);
+	CHECK(!ss.dirty);
+	CHECK(settings_flush());
+	CHECK(memcmp(area, stored, sizeof(stored)) == 0);
+	settings_t st;
+	settings_init();
+	settings_read(&st);
+	CHECK(st.zone_index == 0 && st.zone_pos == 3 && !st.vfo && st.vfo_rx_hz == vfo_home);
+
+	// A power cut in the middle: the flash holds home, so the next start comes up there
+	detour_req(RADIO_DETOUR_MARK, 60000);
+	CHECK(sm.view.detour.armed);
+	req(RREQ_VFO, 1);
+	req(RREQ_VFO_SET, 446100000);
+	run(3000);
+	settings_poll(now);
+	CHECK(!settings_flush());
+	settings_release(false);		// the power is gone: what the next boot reads
+	settings_init();
+	settings_read(&st);
+	CHECK(!st.vfo && st.zone_pos == 3 && st.vfo_rx_hz == vfo_home);
+	boot();
+	CHECK(!sm.view.vfo && sm.view.channel_number == 4 && !sm.view.detour.armed);
+
+	// RETURN asked, a second MARK moves the backstop only, a return during a transmission waits for its end
+	detour_req(RADIO_DETOUR_MARK, 3000);
+	CHECK(sm.view.detour.armed);
+	run(2000);
+	detour_req(RADIO_DETOUR_MARK, 3000);	// now + 3 s
+	run(2000);
+	CHECK(sm.view.detour.armed);		// past the first deadline
+	req(RREQ_ZONE, 1);
+	run(50);
+	detour_req(RADIO_DETOUR_RETURN, 0);
+	CHECK(!sm.view.detour.armed && sm.view.detour.why == RADIO_DETOUR_WHY_ASKED && sm.view.channel_number == 4);
+	CHECK(sm.view.detour.restored);
+	detour_req(RADIO_DETOUR_RETURN, 0);	// nothing armed: nothing happens
+	CHECK(sm.view.detour.count == 1);	// (counted since boot)
+
+	// A mark is refused while changes wait for their save, and in a transmission
+	settings_begin()->squelch = 4;
+	settings_end(now);
+	detour_req(RADIO_DETOUR_MARK, 3000);
+	CHECK(!sm.view.detour.armed);
+	settings_poll(now + SETTINGS_SAVE_DELAY_MS);
+	detour_req(RADIO_DETOUR_MARK, 3000);
+	CHECK(sm.view.detour.armed);
+	req(RREQ_ZONE_POS, 0);			// FM simplex, keyed: the return releases the PTT
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX);
+	CHECK(sm.view.detour.armed);
+	detour_req(RADIO_DETOUR_RETURN, 0);
+	run(100);
+	CHECK(!sm.view.detour.armed && !sm.ptt && sm.view.state != RS_TX && sm.view.channel_number == 4);
+	CHECK(sm.view.detour.tx_count == 1 && sm.view.detour.tx_ms >= 50);
+
+	// The backstop during a transmission: the return waits for the transmission's end and is still the backstop's
+	detour_req(RADIO_DETOUR_MARK, 1000);
+	CHECK(sm.view.detour.armed);
+	fake_radio.dmr_tx_end = r_dmr_tx_end;	// DMR: on air after the release until the modem's TX done
+	tx_end_ok = true;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX);
+	bool waited = false;
+	for (int i = 0; i < 110; i++) {
+		run(10);
+		waited |= sm.view.detour.returning;
+	}
+	CHECK(waited);				// the transmission was still going when the backstop came
+	run(1000);
+	fake_radio.dmr_tx_end = NULL;
+	CHECK(!sm.view.detour.armed && !sm.ptt && sm.view.state != RS_TX && sm.view.channel_number == 4);
+	CHECK(sm.view.detour.why == RADIO_DETOUR_WHY_BACKSTOP);
+
+	// A zone scan running at the mark: stopped for the detour, running again from home after the return
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(50);
+	CHECK(sm.scan.kind == SCAN_ZONE);
+	settings_poll(now + SETTINGS_SAVE_DELAY_MS);	// (a mark waits for pending saves)
+	detour_req(RADIO_DETOUR_MARK, 3000);
+	CHECK(sm.view.detour.armed);
+	req(RREQ_ZONE, 1);
+	run(50);
+	CHECK(sm.scan.kind != SCAN_ZONE);
+	detour_req(RADIO_DETOUR_RETURN, 0);
+	CHECK(!sm.view.detour.armed && sm.view.detour.restored && sm.view.zone_index == 0);
+	CHECK(sm.scan.kind == SCAN_ZONE && sm.scan.origin_pos == sm.detour.pos);	// from where the mark found it
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(50);
+
+	sim_flash.map = NULL;
+	storage_init();
+	settings_init();
+	sim_flash_free();
+}
+#endif
+
 int main(void)
 {
 	test_tx_limit_op();
@@ -11906,6 +12097,9 @@ int main(void)
 #endif
 	test_dmr_data_glue();	// (last: the data service's state carries over)
 	test_factory_reset();
+#if CONFIG_RADIO_DETOUR
+	test_detour();
+#endif
 	test_volume_step_of();
 	CHECK(rekeys == 0);	// every keying in every test above was ended before the next
 	printf("# radioCoreTest: %d checks, %s\n", checks, failures ? "FAILED" : "PASSED");

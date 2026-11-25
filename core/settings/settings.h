@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 
 #define SETTINGS_LAYOUT		1	// bumped only when a field changes meaning or moves (old records then reset)
 #define SETTINGS_SAVE_DELAY_MS	2000
@@ -515,8 +516,24 @@ void settings_end(uint32_t now_ms);
 
 // Save once the changes have rested SETTINGS_SAVE_DELAY_MS (call it every 100 ms or so)
 void settings_poll(uint32_t now_ms);
-// Save now if anything changed; true when nothing is left unsaved
+// Save now if anything changed; true when nothing is left unsaved. False while held (settings_hold): nothing is saved,
+// so a caller that needs the change stored (a factory reset, a zone add or delete) doesn't go on
 bool settings_flush(void);
+
+#if CONFIG_RADIO_DETOUR
+// The detour's hold (docs/spec/debuglink.md 7.4): from settings_hold to settings_release nothing is saved, neither by
+// settings_poll nor by settings_flush (a power-off keeps the stored state from before the hold). Hold fails (false)
+// while changes wait for their save. Release with discard puts the live copy back to what is stored, dropping every
+// change made during the hold
+bool settings_hold(void);
+void settings_release(bool discard);
+bool settings_held(void);
+#else
+static inline bool settings_held(void)
+{
+	return false;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s);
 

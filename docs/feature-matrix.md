@@ -109,12 +109,12 @@ is `tools/bringup.py list --radio <id>`.
 | `hostlink` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `hotspot` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run | off |
 | `split_duplex` | pass (seed) | pass (seed) | pass (seed) | not written | not written | not recorded | partial, needs re-run | not written |
-| `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass | partial |
+| `debuglink` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | pass, needs re-run | partial, needs re-run |
 | `task_stacks` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass |
 | `cps_openfw` | not recorded | pass (seed) | not recorded | pass (seed) | pass (seed) | not recorded | pass, needs re-run | pass, needs re-run |
 | `cps_fast` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `stub_entry` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
-| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass |
+| `crash_log` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `crash_screen` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `crash_report` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | ✕ |
 | `watchdog` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass | pass |
@@ -167,6 +167,7 @@ is `tools/bringup.py list --radio <id>`.
 | `nand_storage` | ✕ | ✕ | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ |
 | `codec_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `air_raw` | off | off | off | off | off | off | off | off |
+| `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
 <!-- end generated -->
 
@@ -246,6 +247,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `HOTSPOT` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `HOTSPOT_SPLIT` | ● | ● | ● | … | … | ● | ● | … |
 | `DEBUGLINK` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `DEBUGLINK_DMRIP` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `CPS_OPENFW` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `CPS_FAST` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VFO` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -457,6 +459,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
 | Air interface bench: raw symbols and tap samples (debug link 0x24) | `AIR_RAW` | 3,560* | — | Bench only, never in a release ([debuglink.md](spec/debuglink.md) 3.28) |
+| Debug link over the air (UDP 3335 over DMR IP) and the detour (debug link 0x27, 0x28) | `DEBUGLINK_DMRIP` | 6,836* | 6,524* | Bench only, never in a release. About 0.8 KB RAM ([debuglink.md](spec/debuglink.md) 7) |
 | Voice capture for receive tests: the next 32 voice frames received, read over the debug link | `VOICE_CAPTURE` | 264* | 284* | Bench only, never in a release ([debuglink](spec/debuglink.md)) |
 
 ## Whole images
