@@ -44,7 +44,8 @@ export function releaseKey(name) {
 	return [+m[1], +m[2], +(m[3] || 0), m[4] ? 0 : 1, +(m[4] || 0)];
 }
 
-const newer = (a, b) => {
+// Whether release key a (releaseKey) is newer than b
+export const newer = (a, b) => {
 	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
 	return false;
 };

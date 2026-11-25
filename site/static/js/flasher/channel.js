@@ -9,7 +9,7 @@
 // Any other version link (?version=main, a branch, a commit, an older tag) is a developer's link: built as asked,
 // never listed.
 
-import { defaultRef, releaseKey, updateFor } from "./version.js";
+import { defaultRef, releaseKey, updateFor, newer } from "./version.js";
 
 export const NIGHTLY = "nightly";
 
@@ -20,7 +20,7 @@ function newestRelease(boardReleases) {
 	let best = null, key = null;
 	for (const r of boardReleases || []) {
 		const k = releaseKey(r.version);
-		if (k && (!key || newerKey(k, key))) [best, key] = [r, k];
+		if (k && (!key || newer(k, key))) [best, key] = [r, k];
 	}
 	return best;
 }
@@ -48,7 +48,7 @@ export function resolveChannel({ versionRef = null, site = {}, boardReleases = [
 	}
 	if (running && release) {
 		const now = releaseKey(running.release);
-		if (now?.[3] === 0 && site.beta && releaseKey(site.beta) && !newerKey(now, releaseKey(site.beta)))
+		if (now?.[3] === 0 && site.beta && releaseKey(site.beta) && !newer(now, releaseKey(site.beta)))
 			return { channel: "beta", ref: site.beta, name: site.beta, pinned: false };
 		if (!now && nightly && Number(running.git_time) > (Number(release.git_time) || Infinity)) return asNightly(false);
 	}
@@ -57,11 +57,6 @@ export function resolveChannel({ versionRef = null, site = {}, boardReleases = [
 	const dev = defaultRef(site.branch);
 	if (dev === "main" && nightly) return asNightly(false);
 	return { channel: "dev", ref: dev, name: dev, pinned: false };
-}
-
-function newerKey(a, b) {
-	for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
-	return false;
 }
 
 // The channels the page lists: [{channel, name, version}], the version link each sets ("" drops a link: the
@@ -103,7 +98,7 @@ export function channelOffer(site, releases, board, running, gitTime = 0) {
 	const now = releaseKey(running);
 	if (now) {
 		const beta = releaseKey(site?.beta);
-		if (now[3] === 0 && beta && newerKey(beta, now) && (!rel || newerKey(beta, releaseKey(rel.version))))
+		if (now[3] === 0 && beta && newer(beta, now) && (!rel || newer(beta, releaseKey(rel.version))))
 			return { version: site.beta, channel: "beta" };
 		return rel && { ...rel, channel: releaseKey(rel.version)[3] === 0 ? "beta" : "stable" };
 	}
