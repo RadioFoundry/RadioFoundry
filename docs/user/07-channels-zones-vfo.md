@@ -366,7 +366,6 @@ The configured system identity still has to match; receive-only operation never 
 | TG 201 | Registered. PTT asks the system for a voice channel |
 | Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
 | Denied, Reg. denied | The system refused the request or the registration |
-| (TX struck through, in the top line) | The system's network ID is blocked: the radio never transmits on it. The home line reads as on any listen-only system. The mark is dropped when the top line is short |
 
 - A system set to listen only, a channel set to RX only, or one without a unit ID or talkgroup never transmits: PTT
   says "RX only".

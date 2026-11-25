@@ -398,17 +398,6 @@ static bool strip_fits(const font_t *f, int lx, int rx, const char *word)
 	return lx + gfx_text_width(f, word) + 2 * f->w <= rx;
 }
 
-#if CONFIG_P25_TRUNK
-// A trunked P25 channel on a system the radio never transmits on (a blocked WACN or system ID, p25.h). The follower
-// holds P25_REG_BLOCKED from when it knows (programmed, or once heard) until it restarts: on the control channel,
-// while it follows a call, and while it hunts for a system known to be blocked
-static bool p25t_blocked(const radio_view_t *v)
-{
-	return v->ch.mode == RADIO_MODE_P25 && v->ch.kind == CODEPLUG_KIND_P25_TRUNK &&
-	       v->p25.trunk != RADIO_P25_TRUNK_OFF && v->p25.treg == P25_REG_BLOCKED;
-}
-#endif
-
 // The pill shows st instead of v->state: the hotspot screen shows what the hotspot does without a copy of the whole
 // view on the UI task's stack (the UI task's deepest path, stack check)
 static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t *s, const char *prefix, const char *name)
@@ -588,19 +577,6 @@ static int draw_top_as(const radio_view_t *v, radio_state_t st, const ui_state_t
 				lx += aw;
 			}
 		}
-	}
-#endif
-#if CONFIG_P25_TRUNK
-	// A blocked system (the radio never transmits on it) shows TX struck through after the mode and any word above.
-	// It comes last, so it is the first to go when the strip is short, and the words keep their place
-	bool dual_on = false;
-#if CONFIG_DUAL_WATCH
-	dual_on = s->dual.on;	// the mode on the strip is a pane's, not the view's
-#endif
-	if (p25t_blocked(v) && !dual_on && !v->aprs_tx && strip_fits(f, lx, rx, "TX")) {
-		int tx0 = lx + f->w;
-		int tx1 = gfx_text(f, tx0, ty, "TX", swarn);
-		gfx_hline(tx0 - 1, ty + f->ascent / 2 + 1, tx1 - tx0 + 1, swarn);	// through the middle of the capitals
 	}
 #endif
 	if (!titled)

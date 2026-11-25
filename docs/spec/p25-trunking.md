@@ -312,10 +312,7 @@ until the call's own fields are in) instead of what PTT calls. With the transmit
 registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or "Reg. denied" after a
 refusal. A blocked system (5, BLOCKED) reads as a listen-only one, with the transmit side on or off: the talk line
 is the follower's state ("Finding system", "Control channel", "Following TG 201"), never "Registering", so it does not
-look like a reception fault. The status line marks it with TX struck through (CONFIG_P25_TRUNK): drawn after the mode
-and any word (DUAL, SCAN, ROAM, MON, IP) in the warning color, only when it fits by the same test as those words, so
-it is the first to go on a short strip. It is not drawn in dual watch or during an APRS transmission. PTT still says
-"RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
+look like a reception fault. PTT says "RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.
