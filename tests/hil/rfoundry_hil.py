@@ -991,7 +991,8 @@ class _LineJob:
     terminate = kill
 
 
-INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range (default addressing)
+INDIVIDUAL_NET = 0x0C000000        # 12.0.0.0/8: the IP gateway's individual range, the radios (default addressing)
+PERIPHERAL_NET = 0x0D000000        # 13.0.0.0/8: their peripherals, the host on the radio's link
 
 
 @contextlib.contextmanager
@@ -999,11 +1000,11 @@ def usb_network(radio, own_id, timeout=30.0):
     """The radio as this host's USB network adapter for the duration (docs/spec/usb-network.md; the test needs
     --allow-usb-switch): switched to the network personality, then its debug link over UDP at the radio's address once
     the host has its DHCP lease. Yields (udp, host_ip, radio_ip): the DebugLink over UDP and the addresses as strings,
-    12.<own_id> for the host and that xor 1 for the radio (the default /32 link). Afterwards, also on failure, the radio
+    13.<own_id> for the host and 12.<own_id> for the radio (the default /32 link). Afterwards, also on failure, the radio
     goes back to the serial personality and radio.link is opened again."""
     import ipaddress
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF)))
     radio.link.usb_network(True)
     radio.link.close()
     udp = None
@@ -1053,8 +1054,8 @@ def ppp_network(radio, own_id, timeout=30.0):
     if sudo and subprocess.run(sudo + ["true"], capture_output=True).returncode != 0:
         skip("bench", "pppd needs root: run as root or with passwordless sudo")
     script = os.path.join(ROOT, "tools", "rfoundry_ppp.sh")
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF))
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | (own_id & 0xFFFFFF))
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (own_id & 0xFFFFFF)))
     radio.link.close()
     up, udp = False, None
     try:

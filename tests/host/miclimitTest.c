@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The mic gain and peak limiter before a vocoder's encoder (drivers/audio/miclimit): a quiet voice lifted by the set
+// The mic gain and peak limiter before a vocoder's encoder (core/dsp/miclimit.h): a quiet voice lifted by the set
 // gain with nothing changed in its shape, a loud one held under the ceiling, the recovery's pace, and the dB table
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
-#include "audio/miclimit/miclimit.h"
+#include "dsp/miclimit.h"
 
 static int failures;
 

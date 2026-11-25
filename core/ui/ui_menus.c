@@ -6724,7 +6724,7 @@ static const tr_id_t n_msgfmt[] = {
 	TRN(SET_VALUE_MSGFMT_AUTOMATIC, "Automatic"), TRX(SET_VALUE_MSGFMT_ETSI, "ETSI"),
 	TRN(SET_VALUE_MSGFMT_ETSI_SHORT, "ETSI short"),
 #if CONFIG_DMR_TMS
-	TRX(VALUE_MOTOROLA, "Motorola"),
+	TRX(SET_VALUE_MSGFMT_TMS, "TMS"),
 #endif
 };
 #endif
@@ -6749,8 +6749,9 @@ static const tr_id_t n_sfrcwid[] = { TRN(VALUE_OFF, "Off"), TRN(VALUE_5_MIN, "5 
 #endif
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
 static const int16_t v_ptype[] = { 0, 1, 2 };	// dmrPrivacyType_t
-static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_MOTOROLA, "Motorola"),
-	TRX(SET_VALUE_KEY_TYPE_ANYTONE, "Anytone") };
+// Basic privacy key types, named by key size with the key's range (set_range follows the type)
+static const tr_id_t n_ptype[] = { TRN(VALUE_OFF, "Off"), TRN(SET_VALUE_KEY_TYPE_8_BIT, "8-bit (1-255)"),
+	TRN(SET_VALUE_KEY_TYPE_16_BIT, "16-bit (0-65535)") };
 #endif
 
 #if CONFIG_SIG_TONES
@@ -7531,7 +7532,7 @@ static const char *set_why_not(const set_item_t *s)
 	}
 }
 
-// A number setting's range: the privacy key's follows its type (Motorola 1-255, Anytone 0-65535)
+// A number setting's range: the privacy key's follows its type (8-bit 1-255, 16-bit 0-65535)
 static void set_range(const set_item_t *s, int32_t *lo, int32_t *hi)
 {
 	*lo = s->min;

@@ -17,8 +17,8 @@
 int failures, checks;
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
-#define RADIO_IP	(HOST_IP ^ 1u)
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)	// 13.0.39.21
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
 
 static const uint8_t HOST_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x04 };
 static const uint8_t RADIO_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x05 };
