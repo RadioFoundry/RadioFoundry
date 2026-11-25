@@ -499,9 +499,11 @@ typedef struct {
 	char dtmf;		// the digit sounding, 0 = none
 	char dtmf_digits[RADIO_DTMF_SHOWN + 1];	// the last digits sent in this transmission (oldest first)
 	uint16_t dtmf_sent;	// digits sent since start-up
-	char dtmf_rx[RADIO_DTMF_RX_SHOWN + 1];	// digits heard on FM (CONFIG_DTMF_RX), oldest first; cleared
-						// RADIO_DTMF_RX_HOLD_MS after the last
+#if CONFIG_DTMF_RX
+	char dtmf_rx[RADIO_DTMF_RX_SHOWN + 1];	// digits heard on FM, oldest first; cleared RADIO_DTMF_RX_HOLD_MS after
+						// the last
 	uint16_t dtmf_rx_count;	// digits heard since start-up
+#endif
 	bool vox_keyed;		// TX keyed by VOX
 	bool vox_on;		// VOX listens on this channel (the settings' vox, the channel, an FM channel)
 	bool rx_sleeping;	// battery save: the receiver is off for now

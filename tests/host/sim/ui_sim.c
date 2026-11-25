@@ -3149,6 +3149,7 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#if CONFIG_DTMF_RX
 	if (strcmp(t, "dtmfrx") == 0 && arg != NULL) {
 		const char *d = arg;
 		size_t n = strlen(d);
@@ -3162,6 +3163,7 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(200);
 		return true;
 	}
+#endif
 	if (strcmp(t, "dtmf") == 0 && arg != NULL) {
 		const char *d = arg;
 		size_t n = strlen(d);
