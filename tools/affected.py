@@ -174,19 +174,23 @@ def changed(root, base, head):
     rng = [f"{base}...{head}"] if head else [base]
     out = {}
     cur = None
+    # inside a hunk, "--- x" and "+++ x" are a removed "-- x" and an added "++ x", never a file's header
+    in_hunk = False
     for ln in git(root, "diff", "-U0", "--no-color", "--no-renames", "--ignore-submodules=all", *rng).splitlines():
         if ln.startswith("diff --git "):
             cur = None
-        elif ln.startswith("+++ "):
+            in_hunk = False
+        elif not in_hunk and ln.startswith("+++ "):
             path = ln[4:]
             if path == "/dev/null":
                 continue
             cur = out.setdefault(path[2:], {"new": set(), "old": set(), "added": [], "removed": []})
-        elif ln.startswith("--- "):
+        elif not in_hunk and ln.startswith("--- "):
             path = ln[4:]
             if path != "/dev/null":
                 cur = out.setdefault(path[2:], {"new": set(), "old": set(), "added": [], "removed": []})
         elif ln.startswith("@@") and cur is not None:
+            in_hunk = True
             m = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", ln)
             os_, oc, ns, nc = int(m.group(1)), int(m.group(2) or 1), int(m.group(3)), int(m.group(4) or 1)
             cur["old"].update(range(os_, os_ + oc))
@@ -728,6 +732,13 @@ def self_test():
             finally:
                 undo()
 
+        def diff_of(edits):
+            undo = edit(edits)
+            try:
+                return {f: d["added"] for f, d in changed(t, "HEAD", None).items()}
+            finally:
+                undo()
+
         def feats(edits):
             undo = edit(edits)
             try:
@@ -791,6 +802,9 @@ def self_test():
             ("platform file", names({"platform/p2/system.c": "int s2;\n"}), {("c", "fm-minimal")}),
             ("boot stage", names({"boot/c/boot.c": "int s2;\n"}), {("c", "fm-minimal")}),
             ("docs only", names({"docs/x.md": "y\n"}), set()),
+            # an added "++ a" shows as "+++ a" in its hunk: a line of the same file, not the next file's header
+            ("a changed line that looks like a header", diff_of({"docs/x.md": "x\n++ a\n", "core/gps/gps.c": "int g2;\n"}),
+             {"docs/x.md": ["++ a"], "core/gps/gps.c": ["int g2;"]}),
             ("--board", names({"core/gps/gps.c": "int g2;\n"}, only={"b"}), set()),
             # the fallbacks: a source no board uses, a board make fails on
             ("a file that maps to no board: every board's matrix", names({"platform/p9/x.c": "int x;\n"}), full),
