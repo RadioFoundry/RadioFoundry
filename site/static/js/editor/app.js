@@ -15,7 +15,6 @@ import { FastError } from "../codeplug/fastlink.js";
 import { areaForWrite, KEYS, RECORD_KEYS, SIG_HZ_MAX, SIG_HZ_UNIT, SIG_MS_MAX, SIG_STEPS, FOX_STEPS, FOX_MS_MAX, FOX_CHAIN_MAX,
 	FOX_INTERVALS, FOX_INTERVAL_MIN, FOX_INTERVAL_MAX, FOX_SHORT_WAIT, FOX_REPEATS_MAX, FOX_MSG_MAX, FOX_CHARS, FOX_TUNE,
 	foxDefault } from "../codeplug/kv.js";
-import { midiToJingle, MidiError } from "../codeplug/midi.js";
 import { toSerial, CLICK_WAIT_MS } from "../flasher/netmode.js";
 import { convert as convertDb, readHeader as dbHeader } from "../codeplug/iddb.js";
 import { convertIddb, iddbEnd } from "../codeplug/sources/output.js";
@@ -566,43 +565,6 @@ function radioTab() {
 		const roll = h("div", { class: "sig-roll", role: "img", "aria-label": t("editor.sig.roll", { ms: total }) });
 		roll.innerHTML = sigRollSvg(heard, heard.ms.length, FOX_CHAIN_MAX);
 		const play = button(t("editor.sig.play"), () => sigPlay(heard, play, t, heard.ms.length, FOX_CHAIN_MAX), { quiet: true });
-		// A MIDI file as the jingle (midi.js): its top voice, moved into the radio's range, cut to the jingle's limits.
-		// What was imported and the speed stay for the next render (the change redraws the tab), so a new speed
-		// imports the same file again
-		const secs = (ms) => new Intl.NumberFormat(document.documentElement.lang || undefined,
-			{ minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(ms / 1000);
-		const midiNote = h("p", { class: "small " + (foxMidi.error ? "ed-err" : "muted"), role: "status" },
-			foxMidi.note || t("editor.fox.midi_help"));
-		const importMidi = (name, bytes) => {
-			try {
-				const j = midiToJingle(bytes, { speed: foxMidi.speed });
-				foxMidi = { ...foxMidi, name, bytes, error: false, note: j.cutMs === null
-					? t("editor.fox.midi_done", { name, n: j.steps, s: secs(j.totalMs) })
-					: t("editor.fox.midi_cut", { name, n: j.steps, s: secs(j.cutMs) }) };
-				put({ ...rec, jingle: true, hz: j.hz, ms: j.ms });
-			} catch (e) {
-				if (!(e instanceof MidiError)) throw e;
-				foxMidi = { ...foxMidi, name: null, bytes: null, error: true,
-					note: t(e.code === "no_notes" ? "editor.fox.midi_empty" : "editor.fox.midi_bad", { name }) };
-				midiNote.className = "small ed-err";
-				midiNote.textContent = foxMidi.note;
-			}
-		};
-		const picker = h("input", { type: "file", accept: ".mid,.midi,audio/midi,audio/x-midi", hidden: true, onchange: async () => {
-			const f = picker.files && picker.files[0];
-			picker.value = "";
-			if (f) importMidi(f.name, new Uint8Array(await f.arrayBuffer()));
-		} });
-		const speed = h("select", { id: "g-fox-midi-speed" },
-			...FOX_MIDI_SPEEDS.map((x) => h("option", { value: String(x) }, `${Math.round(x * 100)} %`)));
-		speed.value = String(foxMidi.speed);
-		speed.addEventListener("change", () => {
-			foxMidi = { ...foxMidi, speed: Number(speed.value) };
-			if (foxMidi.bytes) importMidi(foxMidi.name, foxMidi.bytes);
-		});
-		const midiRow = h("div", { class: "form-row" },
-			button(t("editor.fox.midi"), () => picker.click(), { quiet: true }), picker,
-			h("label", { for: speed.id }, t("editor.fox.midi_speed")), speed, midiNote);
 		const quarter = FOX_STEPS / 4;
 		return h("section", { class: "sig-card" },
 			h("div", { class: "sig-head" }, title, play, button(t("editor.sig.reset"), () => put(null), { quiet: true })),
@@ -616,8 +578,7 @@ function radioTab() {
 							h("span", { class: "small muted" }, t("editor.fox.text_help")), msgErr),
 						check("jingle", t("editor.fox.jingle")),
 						h("div", { class: "form-row" }, h("label", { for: repeats.id }, t("editor.fox.repeats")), repeats,
-							h("span", { class: "small muted" }, t("editor.fox.repeats_help"))),
-						midiRow),
+							h("span", { class: "small muted" }, t("editor.fox.repeats_help")))),
 					roll, sum),
 				h("div", { class: "sig-tables" }, ...[0, 1, 2, 3].map((q) =>
 					h("table", { class: "sig-steps" },
@@ -679,9 +640,6 @@ function sigRollSvg(rec, steps, max) {
 }
 
 let sigAudio = null;
-// The MIDI file last imported as the fox jingle (foxBlock) and the speed it was taken at
-const FOX_MIDI_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
-let foxMidi = { name: null, bytes: null, speed: 1, note: "", error: false };
 // Plays the chain on the browser's speaker: a sine a step with 2 ms fades, as the radio makes it (sigtone.c), cut at
 // max ms as the radio cuts it
 function sigPlay(rec, btn, t, steps, max) {

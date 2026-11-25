@@ -2423,13 +2423,6 @@
  "editor.fox.custom_secs": "Intervalo en segundos",
  "editor.fox.custom": "Otro…",
  "editor.fox.default_tune": "Sin pasos: la melodía de la radio",
- "editor.fox.midi": "Importar MIDI…",
- "editor.fox.midi_speed": "Velocidad",
- "editor.fox.midi_help": "Un archivo MIDI como melodía: la nota más aguda en cada momento, llevada al rango de la radio, sin la percusión. Hasta 32 pasos y 10 s.",
- "editor.fox.midi_done": "{name}: {n} de 32 pasos, {s} s.",
- "editor.fox.midi_cut": "{name}: {n} de 32 pasos, cortada a los {s} s (la melodía admite 32 pasos y 10 s). Con más velocidad cabe más.",
- "editor.fox.midi_bad": "{name} no es un archivo MIDI que el editor pueda leer.",
- "editor.fox.midi_empty": "{name} no tiene notas que tocar (la percusión se omite).",
  "editor.field.fox": "modo zorro",
  "editor.problem.fox_range": "El campo {field} tiene un intervalo fuera de {imin} a {imax} s, más de {rmax} repeticiones de la melodía, un mensaje de más de {max} caracteres o con un carácter sin Morse, una frecuencia de más de {hz} Hz o que no es múltiplo de 10 Hz, o una duración de más de {ms} ms o que no es múltiplo de 10 ms."
 }
