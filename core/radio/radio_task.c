@@ -721,6 +721,17 @@ bool radio_detour_armed(void)
 	xSemaphoreGive(view_lock);
 	return armed;
 }
+
+void radio_get_detour(radio_detour_view_t *d)
+{
+	if (view_lock == NULL) {
+		memset(d, 0, sizeof(*d));
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*d = shared_view.detour;
+	xSemaphoreGive(view_lock);
+}
 #endif
 #if CONFIG_P25
 void radio_req_p25_settings(const radio_p25_settings_t *s)

@@ -556,6 +556,16 @@ static void test_view_page(void)
 	memcpy(t, lng, sizeof(lng));
 	n = dl_view_page(t, sizeof(lng) - 1, "a.", 2, 48, 10 + 20 + DL_VIEW_MORE_MAX);
 	CHECK(memcmp(t, "section=x\na.next=1\n", n) == 0, "after the long line: %.*s", (int)n, t);
+
+	// The same on a later page: lines skipped below the offset don't count as sent
+	static const char lng2[] = "section=x\na.s=1\na.long=0123456789012345678901234567890123456789\nb.x=2\nb.y=3\n";
+	memcpy(t, lng2, sizeof(lng2));
+	n = dl_view_page(t, sizeof(lng2) - 1, "a.", 2, 0, 10 + 20 + DL_VIEW_MORE_MAX);
+	CHECK(memcmp(t, "section=x\na.s=1\nmore=6\n", n) == 0, "page 1 before the long line: %.*s", (int)n, t);
+	memcpy(t, lng2, sizeof(lng2));
+	n = dl_view_page(t, sizeof(lng2) - 1, "a.", 2, 6, 10 + 20 + DL_VIEW_MORE_MAX);
+	CHECK(memcmp(t, "section=x\na.long=0123456789012345678901234567890123456789\n", n) == 0,
+	      "the long line whole on page 2: %.*s", (int)n, t);
 }
 
 int main(void)

@@ -57,24 +57,6 @@ void hostlink_net_init(hostlink_net_serial_fn serial_in)
 	started = true;
 }
 
-#if CONFIG_DEBUGLINK_DMRIP
-#include "debuglink/debuglink.h"
-#include "debuglink/dl_dmrip.h"
-
-// The debug link over the air takes its port ahead of the gateway's table: its answer goes back to the request's IPv4
-// source (a host the sender routes for), which the table's handlers aren't given (docs/spec/debuglink.md 7.1)
-static bool from_air(uint32_t id, uint32_t src_ip, uint16_t sport, uint16_t dport, const uint8_t *d, int n)
-{
-	if (dport == DL_DMRIP_PORT) {
-		debuglink_dmrip_air(id, src_ip, sport, d, n);
-		return true;
-	}
-	return ipGatewayUdpFromAir(id, sport, dport, d, n);
-}
-#else
-#define from_air(id, src_ip, sport, dport, d, n)	ipGatewayUdpFromAir(id, sport, dport, d, n)
-#endif
-
 // UDP over the air to our own DMR ID, for a local service of the gateway (ipGatewayUdpBindAir): taken here, in the
 // radio task, whether or not the network link is up; true when a service took it. Only with our ID's IP address too:
 // a packet to our ID for another address is for a host we route to (the off-net route), never the radio's services
@@ -95,12 +77,12 @@ static bool local_udp(const dmrDataPacket_t *p)
 		if ((n < 8) || (n > ip.length)) {
 			return false;
 		}
-		return from_air(p->src, ip.srcIp, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
+		return ipGatewayUdpFromAir(p->src, ip.srcIp, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
 				u + 8, n - 8);
 	}
 	// The compressed header's DAID may name our peripheral network (13.<our ID>, the host): only our own address counts
 	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp) && dmrDataIpIsId(udp.dstIp, false, own)) {
-		return from_air(p->src, udp.srcIp, udp.srcPort, udp.dstPort, udp.payload, udp.length);
+		return ipGatewayUdpFromAir(p->src, udp.srcIp, udp.srcPort, udp.dstPort, udp.payload, udp.length);
 	}
 	return false;
 }

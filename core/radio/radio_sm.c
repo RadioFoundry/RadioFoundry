@@ -8270,6 +8270,16 @@ static void detour_mark(radio_sm_t *sm, uint32_t backstop_ms, uint32_t now_ms)
 	h->pos = sm->view.zone_pos;
 	h->rx_hz = sm->view.ch.rx_hz;
 	h->tx_hz = sm->view.ch.tx_hz;
+#if CONFIG_SCAN
+	if (scan_on(&sm->scan)) {
+		h->scan_kind = (uint8_t)sm->scan.kind;
+		h->scan_lo_hz = sm->scan.lo_hz;
+		h->scan_hi_hz = sm->scan.hi_hz;
+		h->dual[0] = sm->dual[0];
+		h->dual[1] = sm->dual[1];
+		h->dual_sel = sm->dual_sel;
+	}
+#endif
 #if CONFIG_P25
 	radio_p25_settings(&h->p25);
 #endif
@@ -8373,6 +8383,14 @@ static bool detour_return(radio_sm_t *sm, uint8_t why, uint32_t now_ms)
 	d->restored = !ss.dirty && sm->view.vfo == h->vfo && sm->view.ch.rx_hz == h->rx_hz &&
 		      sm->view.ch.tx_hz == h->tx_hz && (h->vfo || (sm->view.zone_index == h->zone &&
 							     sm->view.zone_pos == h->pos));
+#if CONFIG_SCAN
+	// The scan or dual watch the detour stopped, started again from home once the check above saw home
+	if (h->scan_kind == SCAN_DUAL) {
+		dual_start(sm, h->dual, h->dual_sel, now_ms);
+	} else if (h->scan_kind != SCAN_OFF) {
+		scan_start(sm, h->scan_kind, h->scan_lo_hz, h->scan_hi_hz, now_ms);
+	}
+#endif
 	d->armed = false;
 	d->returning = false;
 	d->why = sm->detour_why;

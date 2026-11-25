@@ -513,7 +513,7 @@ static void hostlink_task(void *arg)
 	snmp_agent_init();	// binds UDP 161 in the gateway (docs/spec/snmp.md)
 #endif
 #if CONFIG_DEBUGLINK_DMRIP
-	debuglink_dmrip_init();	// the key and the detour (UDP 3335 comes through hostlink_net.c; debuglink.md 7)
+	debuglink_dmrip_init();	// the key, the detour, UDP 3335 from the air in the gateway (debuglink.md 7)
 #endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);

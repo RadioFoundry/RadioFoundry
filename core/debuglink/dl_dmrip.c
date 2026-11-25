@@ -68,19 +68,6 @@ static void put64(uint8_t *p, uint64_t v)
 	}
 }
 
-static void put32(uint8_t *p, uint32_t v)
-{
-	p[0] = (uint8_t)v;
-	p[1] = (uint8_t)(v >> 8);
-	p[2] = (uint8_t)(v >> 16);
-	p[3] = (uint8_t)(v >> 24);
-}
-
-static uint32_t get32(const uint8_t *p)
-{
-	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
 static uint16_t get16(const uint8_t *p)
 {
 	return (uint16_t)(p[0] | (p[1] << 8));
@@ -113,8 +100,8 @@ size_t dl_dmrip_seal(const uint8_t key[DL_DMRIP_KEY], const dl_dmrip_msg_t *m, u
 	out[2] = (uint8_t)m->id;
 	out[3] = (uint8_t)(m->id >> 8);
 	out[4] = (uint8_t)(m->id >> 16);
-	put32(out + 5, m->nonce);
-	put32(out + 9, m->counter);
+	dl_put32(out + 5, m->nonce);
+	dl_put32(out + 9, m->counter);
 	out[13] = m->chunk;
 	size_t n = DL_DMRIP_HDR + m->body_len;
 	put64(out + n, dl_siphash(key, out, n));
@@ -138,8 +125,8 @@ bool dl_dmrip_open(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, 
 	}
 	m->flags = d[1];
 	m->id = (uint32_t)d[2] | ((uint32_t)d[3] << 8) | ((uint32_t)d[4] << 16);
-	m->nonce = get32(d + 5);
-	m->counter = get32(d + 9);
+	m->nonce = dl_get32(d + 5);
+	m->counter = dl_get32(d + 9);
 	m->chunk = d[13];
 	m->body = d + DL_DMRIP_HDR;
 	m->body_len = (uint16_t)body;
@@ -398,11 +385,11 @@ size_t dl_detour_request(dl_detour_t *d, const dl_detour_ops_t *o, const uint8_t
 		}
 		out[0] = DL_ST_OK;
 		out[1] = d->phase;
-		put32(out + 2, left);
+		dl_put32(out + 2, left);
 		out[6] = d->index;
 		out[7] = d->failed;
 		out[8] = d->result;
-		put32(out + 9, d->runs);
+		dl_put32(out + 9, d->runs);
 		return 13;
 	}
 	default:

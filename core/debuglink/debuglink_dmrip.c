@@ -18,7 +18,6 @@
 #include "dmr/ipGateway.h"
 #include "dmr/dmrAirQueue.h"
 #include "dmr/dmrDataService.h"
-#include "hostlink/hostlink_view.h"
 
 #define UDP_PROTO	17u
 #define UDP_HDR		8u
@@ -55,19 +54,6 @@ static struct {
 	uint32_t rx, busy, bad_auth, not_ours, old, repeats, gone, refused, answered, chunks, dropped, hello;
 } cnt;
 
-static uint32_t get32(const uint8_t *p)
-{
-	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
-}
-
-static void put32(uint8_t *p, uint32_t v)
-{
-	p[0] = (uint8_t)v;
-	p[1] = (uint8_t)(v >> 8);
-	p[2] = (uint8_t)(v >> 16);
-	p[3] = (uint8_t)(v >> 24);
-}
-
 static void uid_key(void)
 {
 	hal_chip_t c;
@@ -77,7 +63,7 @@ static void uid_key(void)
 		return;
 	}
 	for (unsigned i = 0; i < 3; i++) {
-		put32(uid + 4 * i, c.uid[i]);
+		dl_put32(uid + 4 * i, c.uid[i]);
 	}
 	static const uint8_t zero[12];
 	if (memcmp(uid, zero, sizeof(uid)) == 0) {
@@ -282,8 +268,8 @@ static void handle(uint32_t now_ms)
 			// Once a start: the host's challenge, the time and our ID under the key; never 0
 			uint8_t seed[8 + DL_DMRIP_HELLO_MAX];
 			uint16_t b = m.body_len > DL_DMRIP_HELLO_MAX ? DL_DMRIP_HELLO_MAX : m.body_len;
-			put32(seed, now_ms);
-			put32(seed + 4, m.id);
+			dl_put32(seed, now_ms);
+			dl_put32(seed + 4, m.id);
 			memcpy(seed + 8, m.body, b);
 			replay.nonce = (uint32_t)dl_siphash(key, seed, 8u + b) | 1u;
 			replay.last = 0;
@@ -318,8 +304,21 @@ static void handle(uint32_t now_ms)
 	}
 }
 
+// UDP 3335 over the air to our own ID and address, in the gateway's table of air services (ipGatewayUdpBindAir):
+// the answer goes to the request's IPv4 source (debuglink.md 7.1). From the link: not ours, dropped
+static void air_udp(bool air, uint32_t src, uint16_t src_port, uint32_t dst, uint16_t dst_port, const uint8_t *p,
+		    int len)
+{
+	(void)dst;
+	(void)dst_port;
+	if (air) {
+		debuglink_dmrip_air(src, ipGatewayUdpAirSource(), src_port, p, len);
+	}
+}
+
 void debuglink_dmrip_init(void)
 {
+	ipGatewayUdpBindAir(DL_DMRIP_PORT, air_udp);
 	uid_key();
 	dl_detour_init(&detour);
 }
@@ -344,19 +343,19 @@ size_t debuglink_cmd_detour(const uint8_t *req, uint16_t len, uint8_t *o, size_t
 	size_t n = dl_detour_request(&detour, &ops, req, len, from_air, o, cap, now);
 	if (len >= 1 && req[0] == DL_DETOUR_STATUS && n == 13 && cap >= 13 + 32) {
 		// The radio core's summary of the last detour (radio_detour_view_t)
-		radio_view_t *v = &hostlink_view;
-		radio_get_view(v);
-		const radio_detour_view_t *d = &v->detour;
+		radio_detour_view_t dv;
+		radio_get_detour(&dv);
+		const radio_detour_view_t *d = &dv;
 		uint8_t *q = o + n;
 		q[0] = (uint8_t)(d->armed | (d->returning << 1) | (d->restored << 2));
 		q[1] = d->why;
 		q[2] = (uint8_t)d->count;
 		q[3] = (uint8_t)(d->count >> 8);
 		q[4] = d->mode;
-		put32(q + 5, d->rx_hz);
-		put32(q + 9, d->ms);
-		put32(q + 13, d->rx_ms);
-		put32(q + 17, d->tx_ms);
+		dl_put32(q + 5, d->rx_hz);
+		dl_put32(q + 9, d->ms);
+		dl_put32(q + 13, d->rx_ms);
+		dl_put32(q + 17, d->tx_ms);
 		q[21] = (uint8_t)d->rx_count;
 		q[22] = (uint8_t)(d->rx_count >> 8);
 		q[23] = (uint8_t)d->tx_count;
@@ -383,10 +382,10 @@ size_t debuglink_cmd_dmrip(const uint8_t *req, uint16_t len, uint8_t *o, size_t 
 		o[1] = (uint8_t)DL_DMRIP_PORT;
 		o[2] = (uint8_t)(DL_DMRIP_PORT >> 8);
 		o[3] = key_src;
-		put32(o + 4, replay.nonce != 0);
-		put32(o + 8, cnt.rx);
-		put32(o + 12, cnt.answered);
-		put32(o + 16, cnt.bad_auth);
+		dl_put32(o + 4, replay.nonce != 0);
+		dl_put32(o + 8, cnt.rx);
+		dl_put32(o + 12, cnt.answered);
+		dl_put32(o + 16, cnt.bad_auth);
 		return 20;
 	case DL_DMRIP_OP_KEY: {
 		if (from_air) {
@@ -430,7 +429,7 @@ void debuglink_view_dmrip(dl_text_t *t)
 	static const uint8_t q = DL_DETOUR_STATUS;
 	(void)dl_detour_request(&detour, &ops, &q, 1, false, st, sizeof(st), now);
 	dl_text(t, "detour.phase=%u\ndetour.left_ms=%u\ndetour.items=%u\ndetour.failed=%u\ndetour.result=%u\n"
-		"detour.runs=%u\n", st[1], (unsigned)get32(st + 2), st[6], st[7], st[8], (unsigned)get32(st + 9));
+		"detour.runs=%u\n", st[1], (unsigned)dl_get32(st + 2), st[6], st[7], st[8], (unsigned)dl_get32(st + 9));
 }
 
 #endif

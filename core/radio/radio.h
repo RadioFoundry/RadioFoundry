@@ -621,6 +621,7 @@ void radio_req_stats(uint32_t *handled, uint32_t *dropped);
 bool radio_req_detour(uint8_t op, uint32_t backstop_ms);
 // The published view.detour.armed, without copying the view
 bool radio_detour_armed(void);
+void radio_get_detour(radio_detour_view_t *d);	// just the view's detour, for a caller short of stack
 #endif
 
 // Requests (queued, handled by the radio task)

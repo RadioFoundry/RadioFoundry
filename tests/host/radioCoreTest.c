@@ -11938,6 +11938,22 @@ static void test_detour(void)
 	CHECK(!sm.view.detour.armed && !sm.ptt && sm.view.state != RS_TX && sm.view.channel_number == 4);
 	CHECK(sm.view.detour.why == RADIO_DETOUR_WHY_BACKSTOP);
 
+	// A zone scan running at the mark: stopped for the detour, running again from home after the return
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(50);
+	CHECK(sm.scan.kind == SCAN_ZONE);
+	settings_poll(now + SETTINGS_SAVE_DELAY_MS);	// (a mark waits for pending saves)
+	detour_req(RADIO_DETOUR_MARK, 3000);
+	CHECK(sm.view.detour.armed);
+	req(RREQ_ZONE, 1);
+	run(50);
+	CHECK(sm.scan.kind != SCAN_ZONE);
+	detour_req(RADIO_DETOUR_RETURN, 0);
+	CHECK(!sm.view.detour.armed && sm.view.detour.restored && sm.view.zone_index == 0);
+	CHECK(sm.scan.kind == SCAN_ZONE && sm.scan.origin_pos == sm.detour.pos);	// from where the mark found it
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(50);
+
 	sim_flash.map = NULL;
 	storage_init();
 	settings_init();

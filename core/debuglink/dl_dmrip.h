@@ -21,6 +21,20 @@
 #include <stdint.h>
 #include "debuglink/debuglink_proto.h"
 
+// Little-endian fields of the datagrams and the detour's replies
+static inline uint32_t dl_get32(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static inline void dl_put32(uint8_t *p, uint32_t v)
+{
+	p[0] = (uint8_t)v;
+	p[1] = (uint8_t)(v >> 8);
+	p[2] = (uint8_t)(v >> 16);
+	p[3] = (uint8_t)(v >> 24);
+}
+
 #define DL_DMRIP_PORT		3335u
 #define DL_DMRIP_VERSION	0xD1u
 #define DL_DMRIP_HDR		14u

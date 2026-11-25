@@ -193,13 +193,14 @@ size_t dl_view_page(char *text, size_t len, const char *prefix, size_t plen, uin
 		bool keep = head || plen == 0 || (n >= plen && memcmp(text + at, prefix, plen) == 0);
 		if (keep && !head) {
 			if (pos < offset) {
-				keep = false;
+				keep = false;	// an earlier page's: counted, not sent
 			} else if (out + n > room && (sent || out + n + DL_VIEW_MORE_MAX > len)) {
 				cut = true;	// (a page's first line goes whole even when longer, where the text has room)
 				break;
+			} else {
+				sent = true;
 			}
 			pos += n;
-			sent = true;
 		}
 		if (keep) {
 			memmove(text + out, text + at, n);	// out <= at: compaction only moves left

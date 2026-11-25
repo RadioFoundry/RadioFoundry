@@ -168,7 +168,7 @@ size_t debuglink_cmd_detour(const uint8_t *req, uint16_t len, uint8_t *out, size
 size_t debuglink_cmd_dmrip(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
 void debuglink_dmrip_init(void);
 void debuglink_dmrip_poll(uint32_t now_ms);
-// A datagram over the air to our own DMR ID and address on DL_DMRIP_PORT (radio task, from hostlink_net.c): copied,
+// A datagram over the air to our own DMR ID and address on DL_DMRIP_PORT (radio task, the gateway's air port table): copied,
 // answered later from debuglink_dmrip_poll to src_id at src_ip (dl_dmrip_reply_ip)
 void debuglink_dmrip_air(uint32_t src_id, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len);
 // One request through the debug link's dispatcher, as from the cable (the over-the-air transport checks first)

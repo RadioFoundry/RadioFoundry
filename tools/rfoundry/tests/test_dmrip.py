@@ -77,7 +77,13 @@ class FakeRadio(threading.Thread):
         self.radio_id, self.drop, self.reply_len = radio_id, set(drop), reply_len
         self.nonce, self.last, self.kept, self.sent = 0, 0, None, 0
         self.requests, self.repeats, self.lose_kept = 0, 0, False
+        self.boot = 0x5EED
         self.running = True
+
+    def restart(self):
+        """A new boot: a new nonce, nothing kept; requests of the old session are dropped unanswered"""
+        self.boot += 1
+        self.nonce, self.last, self.kept = self.boot, 0, None
 
     def send(self, to, flags, counter, chunk, body):
         self.sent += 1
@@ -103,7 +109,7 @@ class FakeRadio(threading.Thread):
                 continue
             flags, _, nonce, counter, chunk, body = m
             if flags & dmrip.F_HELLO:
-                self.nonce = self.nonce or 0x5EED
+                self.nonce = self.nonce or self.boot
                 self.send(src, dmrip.F_HELLO, self.last, 0, body)
                 continue
             if nonce != self.nonce:
@@ -193,6 +199,18 @@ class Transport(unittest.TestCase):
             self.assertTrue(dmrip.only_reads(frame(cmd, 1, payload)), hex(cmd))
         for cmd, payload in changes:
             self.assertFalse(dmrip.only_reads(frame(cmd, 1, payload)), (hex(cmd), payload[:1]))
+
+    def test_a_restarted_radio_gets_a_new_session(self):
+        r = self.radio()
+        p = self.port(r)
+        self.request(p)
+        r.restart()
+        self.assertEqual(self.request(p, 2)[1], 2)      # a read: sent again in the new session
+        self.assertEqual(p.nonce, r.nonce)
+        r.restart()
+        with self.assertRaises(dmrip.ReplyLost):        # a change: may have run before the restart, never resent
+            p.write(frame(dmrip.CMD_DETOUR, 3, dmrip.detour_run(3, [(0, 100)])))
+        self.assertEqual(r.requests, 2)
 
     def test_counters_go_up(self):
         r = self.radio()

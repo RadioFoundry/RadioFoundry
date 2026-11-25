@@ -17,27 +17,6 @@
 #include "dmr/ipGateway.h"
 #include "dmr/dmrData.h"
 #include "net/tcp.h"
-#if CONFIG_DEBUGLINK_DMRIP
-#include "debuglink/debuglink.h"
-#include "debuglink/dl_dmrip.h"
-
-// The debug link over the air (debuglink_dmrip.c): what hostlink_net.c handed over
-static struct {
-	int calls;
-	uint32_t id, ip;
-	uint16_t port;
-	int len;
-} dlair;
-void debuglink_dmrip_air(uint32_t src_id, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len)
-{
-	(void)p;
-	dlair.calls++;
-	dlair.id = src_id;
-	dlair.ip = src_ip;
-	dlair.port = src_port;
-	dlair.len = len;
-}
-#endif
 
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
@@ -149,6 +128,7 @@ static struct {
 	uint16_t port;
 	uint8_t data[64];
 	int len;
+	uint32_t src_ip;	// ipGatewayUdpAirSource in the call
 } local;
 static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, uint16_t dport, const uint8_t *p, int len)
 {
@@ -159,6 +139,7 @@ static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, 
 	local.src = src;
 	local.port = port;
 	local.len = len;
+	local.src_ip = ipGatewayUdpAirSource();
 	memcpy(local.data, p, (size_t)len);
 }
 
@@ -477,21 +458,17 @@ int main(void)
 	link_up = true;
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && local.from_air && local.src == 9991234 && local.port == 4321 &&
-	      local.len == (int)sizeof(hello) && sent_count == 0);
-#if CONFIG_DEBUGLINK_DMRIP
-	// The debug link's port goes to its transport, with the request's IPv4 source (a host the sender routes for)
+	      local.len == (int)sizeof(hello) && sent_count == 0 && local.src_ip == (IPGW_INDIVIDUAL_NET | 9991234u));
+	CHECK(ipGatewayUdpAirSource() == 0);	// only during the handler's call
+	// The handler also gets the IPv4 source when the sender routes for a host (the reply goes there)
 	put32(pip + 12, 0xC0A80105u);
-	put16(pip + 22, DL_DMRIP_PORT);
 	put16(pip + 10, 0);
 	put16(pip + 10, ip_checksum(pip, 20));
 	hostlink_net_packet(&p);
-	CHECK(dlair.calls == 1 && dlair.id == 9991234 && dlair.ip == 0xC0A80105u && dlair.port == 4321 &&
-	      dlair.len == (int)sizeof(hello) && local.calls == 2);
+	CHECK(local.calls == 3 && local.src == 9991234 && local.src_ip == 0xC0A80105u);
 	put32(pip + 12, IPGW_INDIVIDUAL_NET | 9991234u);
-	put16(pip + 22, 161);
 	put16(pip + 10, 0);
 	put16(pip + 10, ip_checksum(pip, 20));
-#endif
 	// ... but compressed (SAP 3) with DAID 1, our peripheral network 13.<our ID>, it is the host's, not the service's
 	{
 		dmrDataPacket_t c;
@@ -506,7 +483,7 @@ int main(void)
 		sent_count = 0;
 		hostlink_net_packet(&c);
 		hostlink_net_poll(now_ms);
-		CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+		CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 		      get32(sent[0] + 14 + 16) == HOST_IP);
 		sent_count = 0;
 	}
@@ -518,7 +495,7 @@ int main(void)
 	p.dst = RADIO_ID + 1;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 2);
+	CHECK(local.calls == 3 && sent_count == 2);
 	// ... nor when its IP destination is another address (we are the gateway to it): to the host, the address kept
 	p.dst = RADIO_ID;
 	put32(pip + 16, 0xC0A80A05u);
@@ -527,7 +504,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
 	// ... also an off-net address with our ID's 24 bits under another first octet (10.x.y.z), with its TTL kept
 	put32(pip + 16, 0x0A000000u | RADIO_ID);
@@ -537,7 +514,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == (0x0A000000u | RADIO_ID) && sent[0][14 + 8] == 9);
 	pip[8] = 64;
 	put32(pip + 16, 0xC0A80A05u);
@@ -556,7 +533,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u && memcmp(sent[0] + 34, echo, sizeof(echo)) == 0);
 	memcpy(pip, saved, sizeof(saved));
 	p.length = (uint16_t)(28 + sizeof(hello));
@@ -570,9 +547,9 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1);
+	CHECK(local.calls == 3 && sent_count == 1);
 	from_host(f, host_udp(f, RADIO_IP, 40000, 69, hello, sizeof(hello)));	// from the link it does
-	CHECK(local.calls == 3 && !local.from_air);
+	CHECK(local.calls == 4 && !local.from_air);
 	CHECK(ipGatewayUdpBind(69, NULL));
 	put16(pip + 22, 161);
 	// The service's answer to the host: from the radio's address and port 161

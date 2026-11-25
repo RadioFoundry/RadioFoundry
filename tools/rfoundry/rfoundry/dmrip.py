@@ -247,9 +247,30 @@ class DmripPort:
                          "the radio's channel?)")
 
     def transact(self, frame_bytes):
-        """One request frame out, its reply frame back (bytes)"""
+        """One request frame out, its reply frame back (bytes). A radio that restarted (a new nonce per boot) drops
+        every request of the old session unanswered: after a request gets no reply, a HELLO tells; a read is then sent
+        again in the new session, anything else is reported (the radio may have run it before the restart)"""
         if not self.nonce:
             self.hello()
+        try:
+            return self._transact(frame_bytes)
+        except ReplyLost:
+            raise
+        except DmripError:
+            old = self.nonce
+            try:
+                self.hello()
+            except DmripError:
+                self.nonce = old
+                raise
+            if self.nonce == old:
+                raise
+            if not only_reads(frame_bytes):
+                raise ReplyLost(f"DMR ID {self.radio_id} restarted (new session): request (command "
+                                f"0x{frame_bytes[2]:02X}) may or may not have run before; not sent again")
+            return self._transact(frame_bytes)
+
+    def _transact(self, frame_bytes):
         self.counter = (self.counter + 1) & 0xFFFFFFFF
         counter = self.counter
         parts, count, mask = {}, 0, 0

@@ -1393,17 +1393,9 @@ TESTS   += hostlinkNetTest
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -o $@ $(HLNET)
 
-# The same with the debug link over the air: its port goes to its own transport (docs/spec/debuglink.md 7.1)
-TESTS   += hostlinkNetTestDmrip
-hostlinkNetTestDmrip: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h \
-		      $(ROOT)/hal/hal_netif.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/dl_dmrip.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -DCONFIG_DEBUGLINK=1 -DCONFIG_DMR_IP_GATEWAY=1 \
-		-DCONFIG_DEBUGLINK_DMRIP=1 -o $@ $(HLNET)
-
 run: run-hlnet
-run-hlnet: hostlinkNetTest hostlinkNetTestDmrip
+run-hlnet: hostlinkNetTest
 	./hostlinkNetTest
-	./hostlinkNetTestDmrip
 	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
 .PHONY: run-hlnet
 
@@ -1462,7 +1454,7 @@ STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
 TESTS   += settingsTest
 
 settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ settingsTest.c $(STORE)
 
 run: run-settings
 run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
@@ -1609,7 +1601,7 @@ ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/co
 TESTS   += zoneEditTest
 
 zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ zoneEditTest.c $(ZEDIT)
 
 run: run-zedit
 run-zedit: zoneEditTest

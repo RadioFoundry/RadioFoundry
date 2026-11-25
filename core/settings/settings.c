@@ -459,7 +459,11 @@ static void attach(uint32_t now_ms)
 	stats.slot = 0;
 	stats.skipped = 0;
 	stats.load = SETTINGS_DEFAULTS;
-	memset(&saved, 0xFF, sizeof(saved));	// nothing stored: unlike anything live holds, so the first poll saves
+	// Nothing stored: unlike anything live holds, so the first poll saves. Under a hold, saved is the state the
+	// release goes back to: kept, and the release leaves the blank area to be saved (settings_release)
+	if (!held) {
+		memset(&saved, 0xFF, sizeof(saved));
+	}
 	dirty = true;
 	changed_ms = now_ms - SETTINGS_SAVE_DELAY_MS;
 	have_flash = true;
@@ -508,7 +512,7 @@ void settings_release(bool discard)
 	storage_quick_lock();
 	if (held && discard) {
 		live = saved;
-		dirty = false;
+		dirty = have_flash && !have_newest;	// an area claimed during the hold holds no record yet
 	}
 	held = false;
 	storage_quick_unlock();

@@ -90,9 +90,13 @@ static zone_edit_result_t load(uint16_t zone)
 }
 
 // Room for one more zone. Without stored zones the radio shows one virtual zone ("All channels"): it is stored first,
-// so the user keeps the zone they saw and the new one comes after it
+// so the user keeps the zone they saw and the new one comes after it. Refused while a detour holds the settings (before
+// anything is written): the saved indexes couldn't move with the zones
 static zone_edit_result_t make_room(void)
 {
+	if (settings_held()) {
+		return ZONE_EDIT_FAILED;
+	}
 	if (!codeplug_zones_stored()) {
 		if (load(0) != ZONE_EDIT_OK || work.count == 0) {
 			return ZONE_EDIT_OK;	// nothing to keep (no channels): the new zone is the first
@@ -107,9 +111,6 @@ static zone_edit_result_t make_room(void)
 // work, written as a new zone after make_room; logged as a shift unless it is the first zone (nothing moves)
 static zone_edit_result_t create_locked(uint16_t *index)
 {
-	if (settings_held()) {
-		return ZONE_EDIT_FAILED;	// a detour holds the settings: the saved indexes couldn't move with the zones
-	}
 	if (work.name[0] == '\0') {
 		return ZONE_EDIT_NO_NAME;
 	}

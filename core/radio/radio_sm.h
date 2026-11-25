@@ -275,6 +275,12 @@ typedef struct {
 	bool vfo;			// where it was: the VFO, or zone / position
 	uint16_t zone, pos;
 	uint32_t rx_hz, tx_hz;		// for the restored check
+#if CONFIG_SCAN
+	uint8_t scan_kind;		// the scan or dual watch running (scan_kind_t), started again on the return
+	uint8_t dual_sel;
+	uint32_t scan_lo_hz, scan_hi_hz;	// SCAN_VFO: its range
+	radio_dual_ref_t dual[2];	// SCAN_DUAL: its pair
+#endif
 #if CONFIG_P25
 	radio_p25_settings_t p25;
 #endif
