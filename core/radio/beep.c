@@ -107,6 +107,7 @@ static uint32_t seen_blocks;
 static uint8_t stall_polls;
 static uint8_t cb_lead;		// lead-in blocks played since the route turned on
 static uint8_t mix_lead;	// the voice stream's lead-in blocks for the pending pattern (beep_mix)
+static uint8_t mix_echo;	// blocks the mic may still hear the last mixed one (beep_mic_echo)
 
 void beep_init(const hal_audio_t *audio)
 {
@@ -395,7 +396,7 @@ static bool tone_mix(int16_t *spk)
 	return true;
 }
 
-bool beep_mix(int16_t *spk)
+static bool mix_block(int16_t *spk)
 {
 	// A pattern the amplifier isn't ready for (cold, or only just powered): its lead-in in silence with the speaker
 	// routed, as on the own stream. A DMR call leaves the voice stream running until the radio leaves DMR, so most
@@ -411,6 +412,22 @@ bool beep_mix(int16_t *spk)
 		}
 	}
 	return tone_mix(spk);
+}
+
+bool beep_mix(int16_t *spk)
+{
+	bool on = mix_block(spk);
+	if (on) {
+		mix_echo = BEEP_ECHO_BLOCKS;
+	} else if (mix_echo != 0) {
+		mix_echo--;
+	}
+	return on;
+}
+
+bool beep_mic_echo(void)
+{
+	return mix_echo != 0;
 }
 
 void beep_audio_block(const int16_t *mic, int16_t *spk, void *ctx)

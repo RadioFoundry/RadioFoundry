@@ -62,6 +62,8 @@ void audio_mux_host_push(const int16_t *pcm, uint32_t n);
 // The host transmits (true) or stopped (false): resets the jitter buffer at the start; dmr: replace the microphone in
 // the stream's blocks while it lasts
 void audio_mux_host_tx(bool on, bool dmr);
+// Whether the host's samples replace the microphone in DMR now (any task)
+bool audio_mux_host_mic(void);
 uint32_t audio_mux_host_tx_fill(void);
 // Host transmit pushes so far: the radio task unkeys a host transmission whose audio stopped coming
 uint32_t audio_mux_host_pushes(void);

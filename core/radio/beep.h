@@ -99,6 +99,13 @@ void beep_warm(uint32_t now_ms);
 bool beep_warm_on(void);
 // From an audio block callback: add the beep to the block (saturating). True while the beep sounds
 bool beep_mix(int16_t *spk);
+// The speaker's sound reaches the microphone (a handheld's speaker sits next to it): true from the block after
+// beep_mix first returned true until BEEP_ECHO_BLOCKS after it last did, the stream's delay from the speaker block to
+// the mic block that hears it, plus one. A voice layer that transmits while beeps mix into its stream mutes the mic
+// for these blocks (its mic gate, ambeVoiceSetMicGate), so a beep never goes on air with the voice. The same audio
+// task as beep_mix, before it in the block
+bool beep_mic_echo(void);
+#define BEEP_ECHO_BLOCKS	3	// 60 ms: the speaker's block is heard in the mic's two blocks later (I2S, on the radio)
 // Whether a pattern is still playing (as last seen by the audio side)
 bool beep_busy(void);
 // The pattern's segments (for tests and docs); count returned
