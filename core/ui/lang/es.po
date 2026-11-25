@@ -3773,6 +3773,36 @@ msgid "Channel"
 msgstr "Canal"
 
 #: core/ui/ui_menus.c
+msgctxt "VALUE_SCAN_2_S"
+msgid "Scan 2 s"
+msgstr "Escaneo 2 s"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_SCAN_5_S"
+msgid "Scan 5 s"
+msgstr "Escaneo 5 s"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_SCAN_10_S"
+msgid "Scan 10 s"
+msgstr "Escaneo 10 s"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_ALWAYS_2_S"
+msgid "Always 2 s"
+msgstr "Siempre 2 s"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_ALWAYS_5_S"
+msgid "Always 5 s"
+msgstr "Siempre 5 s"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_ALWAYS_10_S"
+msgid "Always 10 s"
+msgstr "Siempre 10 s"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_MSGFMT_AUTOMATIC"
 msgid "Automatic"
 msgstr "Automático"
@@ -3941,6 +3971,11 @@ msgstr "Brillo"
 msgctxt "SET_LABEL_BACKLIGHT_DIM_OFF"
 msgid "Backlight Dim/Off"
 msgstr "Luz tenue/apagada"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_LED_BLINK"
+msgid "LED blink"
+msgstr "Parpadeo del LED"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_LABEL_THEME"

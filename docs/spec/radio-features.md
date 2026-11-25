@@ -728,6 +728,16 @@ over that (`radio_sm.c` `led_signals`, the times in `radio_sm.h`), for radios wi
 Once the repeater answers and the voice goes out, red is solid as for any transmission. The tick and the poll keep
 calling `outputs()` while a signal runs, so it keeps time when nothing else changes.
 
+**LED blink** (`radio_settings_t.led_blink`, Settings > Display > LED blink, off by default): a flash of the green
+LED, `RADIO_LED_BLINK_MS` (50 ms) long, every 2, 5 or 10 s, so a radio with its backlight off still shows it is on.
+The low bits hold the interval in seconds (`RADIO_LED_BLINK_SECS`); `RADIO_LED_BLINK_ALWAYS` adds the idle radio, else
+the flash runs only while a scan or dual watch does (`CONFIG_SCAN`). It shows only where no other signal lights an
+LED: a reception (green), a transmission (red), a stuck PTT line, a TX deny and a repeater wake-up always win, and it
+never runs during a transmission. The flash is taken from the clock (`now` modulo the interval), and
+`led_blink_due()` keeps `outputs()` running around it, as for the timed signals above. A board whose `led` does
+nothing (no status LED) shows nothing. Stored in `settings_t.led_blink` (`reserved11[0]`, settings-store.md 3; an
+older record reads 0 = off). Debug link setting 38. Host test `radioCoreTest` `test_led_blink`.
+
 The green state before the timed signals also goes to the board as `hal_radio_t.rx_open` (optional, sent on change):
 receive audio from a signal is open, P25 and NXDN calls included. A board whose own noise reaches the audio only with
 a carrier present uses this state: backlight PWM that reaches the synthesizer, for one.

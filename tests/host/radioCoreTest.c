@@ -2782,6 +2782,65 @@ static void test_dmr_wake_leds(void)
 	setup_codeplug();
 }
 
+// The LED blink (radio-features.md 5.7): the green LED flashes every few seconds while a scan runs, or, set to
+// always, whenever the radio is on and quiet; never over a transmission, and not with the setting off
+static void blink_count(uint32_t ms, uint32_t *flashes, uint32_t *on_ms)
+{
+	bool was = hw.led[LED_GREEN];
+	*flashes = *on_ms = 0;
+	for (uint32_t t = 0; t < ms; t += 5) {
+		run(5);
+		bool g = hw.led[LED_GREEN];
+		CHECK(g == ((sm.view.leds & RADIO_LED_GREEN) != 0));	// the view says what is driven
+		CHECK(!hw.led[LED_RED]);
+		*flashes += (g && !was) ? 1u : 0u;
+		*on_ms += g ? 5u : 0u;
+		was = g;
+	}
+}
+
+static void test_led_blink(void)
+{
+	uint32_t flashes, on_ms;
+	setup_codeplug();
+	run(100);
+	// Off by default: a scan and idle time show nothing
+	CHECK(sm.set.led_blink == 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(scan_on(&sm.scan) && flashes == 0 && on_ms == 0);
+	// Every 2 s while the scan runs: three flashes in 6 s, each about RADIO_LED_BLINK_MS long
+	sm.set.led_blink = 2;
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes >= 2 && flashes <= 3);
+	CHECK(on_ms >= flashes * RADIO_LED_BLINK_MS && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	// A stopped scan doesn't blink
+	req(RREQ_SCAN, RSCAN_TOGGLE);
+	run(100);
+	CHECK(!scan_on(&sm.scan));
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes == 0 && on_ms == 0 && !hw.led[LED_GREEN]);
+	// Always, every 5 s: the idle radio flashes twice in 10 s
+	sm.set.led_blink = RADIO_LED_BLINK_ALWAYS | 5u;
+	blink_count(10000, &flashes, &on_ms);
+	CHECK(flashes >= 1 && flashes <= 3 && on_ms <= flashes * (RADIO_LED_BLINK_MS + RADIO_POLL_MS + 10u));
+	// Not during a transmission: red is solid and green stays dark
+	req(RREQ_PTT, 1);
+	bool green_seen = false;
+	for (uint32_t t = 0; t < 6000; t += 5) {
+		run(5);
+		green_seen = green_seen || hw.led[LED_GREEN];
+	}
+	CHECK(!green_seen);
+	req(RREQ_PTT, 0);
+	run(600);
+	// Turned off, the LED is dark again at once
+	sm.set.led_blink = 0;
+	blink_count(6000, &flashes, &on_ms);
+	CHECK(flashes == 0 && !hw.led[LED_GREEN]);
+	setup_codeplug();
+}
+
 // A stand-in for the hotspot's SFR engine (hotspot_alt_t): only its active flag matters here
 static bool fake_alt_on;
 static bool fa_active(void) { return fake_alt_on; }
@@ -11842,6 +11901,7 @@ int main(void)
 	test_dmr_denied();
 	test_dmr_rpt_ticks_alone();
 	test_dmr_wake_leds();
+	test_led_blink();
 	test_dmr_voice_features();
 	test_dmr_contact_added();
 	test_ui_requests();

@@ -592,10 +592,44 @@ static bool ptt_line_stuck(void)
 // A deny flashes red, green, ... once: a radio without a screen has no other way to say PTT was refused. While the
 // radio waits for a repeater to wake, red shows each wake-up burst going out, not the whole wait, which is mostly
 // listening
+// The LED blink (radio_settings_t.led_blink): a short flash of the green LED every few seconds while a scan or dual
+// watch runs, or, with RADIO_LED_BLINK_ALWAYS, whenever the radio is on, so a dark screen still says it is on. It
+// shows only where nothing else lights an LED: a reception or a transmission always wins
+static uint32_t led_blink_period_ms(const radio_sm_t *sm)
+{
+	return (uint32_t)(sm->set.led_blink & RADIO_LED_BLINK_SECS) * 1000u;
+}
+
+static bool led_blink_wanted(const radio_sm_t *sm)
+{
+	if (led_blink_period_ms(sm) == 0 || sm->view.state == RS_TX || sm->ptt) {
+		return false;
+	}
+	if ((sm->set.led_blink & RADIO_LED_BLINK_ALWAYS) != 0) {
+		return true;
+	}
+#if CONFIG_SCAN
+	return scan_on(&sm->scan);
+#else
+	return false;
+#endif
+}
+
+// A flash is starting, on or just over: outputs() runs on time, as for the other timed signals
+static bool led_blink_due(const radio_sm_t *sm)
+{
+	if (sm->led_blink_on) {
+		return true;
+	}
+	uint32_t period = led_blink_period_ms(sm);
+	return period != 0 && led_blink_wanted(sm) && sm->led_now % period < RADIO_LED_BLINK_MS + RADIO_POLL_MS;
+}
+
 static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 {
 	uint32_t now = sm->led_now;
 	bool timed = false;
+	sm->led_blink_on = false;
 	if (ptt_line_stuck()) {
 		*red = ((now / RADIO_LED_STUCK_STEP_MS) & 1u) == 0;	// until the power cycle that releases it
 		*green = !*red;
@@ -624,6 +658,10 @@ static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 		timed = sm->wake_led;
 	}
 #endif
+	if (!*red && !*green && led_blink_wanted(sm)) {
+		sm->led_blink_on = sm->led_now % led_blink_period_ms(sm) < RADIO_LED_BLINK_MS;
+		*green = sm->led_blink_on;
+	}
 	sm->led_timed = timed;
 }
 
@@ -7884,6 +7922,9 @@ static void clamp_settings(radio_settings_t *s)
 	if (s->reply_s > 30 && s->reply_s != RADIO_REPLY_CODEPLUG) {
 		s->reply_s = 30;
 	}
+	if ((s->led_blink & RADIO_LED_BLINK_SECS) > 60u) {
+		s->led_blink = (uint8_t)((s->led_blink & RADIO_LED_BLINK_ALWAYS) | 10u);
+	}
 	if (s->dual_delay_ms > RADIO_DUAL_DELAY_MAX_MS) {
 		s->dual_delay_ms = RADIO_DUAL_DELAY_MAX_MS;
 	}
@@ -7958,6 +7999,7 @@ static void settings_to_radio(const settings_t *st, radio_settings_t *s)
 		s->bcast_step = (uint8_t)(st->rs_bcast_step - 1u);
 		clamp_settings(s);
 	}
+	s->led_blink = st->led_blink;	// 0, off, in a record from before it; clamp_settings checks
 	s->tones_off = settings_tones_off(st) & RADIO_TONES_MASK;	// 0, all on, in a record from before it
 #if CONFIG_SIG_TONES
 	for (int i = 0; i < SIG_EV_COUNT; i++) {
@@ -8020,6 +8062,7 @@ static void radio_to_settings(const radio_settings_t *s, uint32_t now_ms)
 	st->rs_reply_s = s->reply_s;
 	st->rs_dual_delay = (uint8_t)(s->dual_delay_ms / 100u + 1u);
 	st->rs_bcast_step = (uint8_t)(s->bcast_step + 1u);
+	st->led_blink = s->led_blink;
 	settings_set_tones_off(st, s->tones_off);
 #if CONFIG_SIG_TONES
 	for (int i = 0; i < SIG_EV_COUNT; i++) {
@@ -9605,7 +9648,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_due(sm)) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
@@ -9988,7 +10031,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 		bench_tick(sm, now_ms);
 	}
 #endif
-	if (sm->led_timed || sm->deny_led || ptt_line_stuck()) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_due(sm)) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
 #if CONFIG_SATELLITE_TLE

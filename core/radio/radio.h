@@ -91,6 +91,7 @@ typedef struct {
 	bool scan_beep;		// a short beep when the scan stops on a signal
 	uint16_t dual_delay_ms;	// dual watch on one receiver: after a signal ends, stay on its channel this long (the
 				// reply), looking at the other one in between
+	uint8_t led_blink;	// a short flash of the green LED every few seconds while nothing is heard (RADIO_LED_BLINK_*)
 	// Beeps (CONFIG_BEEP)
 	uint8_t beep_level;	// 0 = silent .. 100: the loudest a beep gets (it follows the volume up to this)
 	bool key_beep;		// radio_req_beep(BEEP_KEY) sounds
@@ -144,6 +145,11 @@ typedef struct {
 // scan dwell after each dwell back on the signal's
 #define RADIO_DUAL_DELAY_MS	1000u
 #define RADIO_DUAL_DELAY_MAX_MS	10000u
+
+// radio_settings_t.led_blink: the interval in seconds in the low bits (0 = off; 2, 5 or 10), RADIO_LED_BLINK_ALWAYS
+// set: also while the radio is idle, not only while a scan or dual watch runs
+#define RADIO_LED_BLINK_ALWAYS	0x80u
+#define RADIO_LED_BLINK_SECS	0x7Fu
 
 typedef enum { RADIO_BATT_OK, RADIO_BATT_LOW, RADIO_BATT_CRITICAL } radio_batt_t;	// = batt_level_t
 

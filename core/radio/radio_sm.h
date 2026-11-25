@@ -35,6 +35,7 @@
 #define RADIO_LED_WAKE_MS	100
 #define RADIO_LED_STUCK_STEP_MS	125	// a stuck PTT line: red and green in turn, to ask for a power cycle
 #define RADIO_LED_DENY_STEP_MS	100
+#define RADIO_LED_BLINK_MS	50	// the LED blink: how long the green LED is on (settings.led_blink)
 #define RADIO_LED_DENY_STEPS	6
 #define RADIO_TOT_DEFAULT_S	180	// TX time-out
 #define RADIO_SQUELCH_DEFAULT	5
@@ -336,6 +337,7 @@ typedef struct {
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
+	bool led_blink_on;		// the green LED is on for the LED blink: outputs() runs once more to turn it off
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
 #if CONFIG_AIR

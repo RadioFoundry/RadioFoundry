@@ -471,6 +471,9 @@ void ui_svc_apply(uint8_t id, int32_t value)
 	case UI_SET_TONE_VOLUME:		// 0..10
 		rs.beep_level = (uint8_t)(v16 > 10 ? 100 : v16 * 10u);
 		break;
+	case UI_SET_LED_BLINK:		// the radio core clamps
+		rs.led_blink = (uint8_t)(v16 > 0xFFu ? 0u : v16);
+		break;
 	case UI_SET_TOT_S:
 		rs.tot_s = v16;
 		break;
