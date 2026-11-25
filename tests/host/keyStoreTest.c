@@ -178,7 +178,7 @@ static void test_window(void)
 {
 	fresh();
 	put_system(3, TYPE_A, "Wide");
-	const uint8_t k[4] = { 1, 2, 3, 4 };
+	const uint8_t k[6] = { 1, 2, 3, 4, 5, 6 };	// the longest record's key below
 	for (uint16_t i = 0; i < 6; i++)
 		put_traffic((uint16_t)(i * 2u), 3, (uint16_t)(i + 1u), k, (uint8_t)(i + 1u));
 	put_traffic(1, 4, 0x0099, k, 4);	// no system 4: skipped, in the middle
