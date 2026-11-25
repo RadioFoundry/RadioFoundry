@@ -7318,9 +7318,18 @@ static void test_p25_permit(void)
 	run(600);
 	CHECK(sm.view.state == RS_IDLE && !hw.keyed);
 
-	// The switch off, then a no-beep channel: none
+	// The switch off, then a no-beep channel: none. The debug link's audio section says which (beep.talk_permit), so
+	// a bench test can tell "off" from "didn't play"
+	static char dl[1024];
+	dl_text_t t;
+	dl_text_init(&t, dl, sizeof dl);
+	debuglink_view_audio(&t);
+	CHECK(strstr(dl, "beep.talk_permit=1\n") != NULL);
 	ui_svc_apply(UI_SET_TALK_PERMIT, 0);
 	run(20);
+	dl_text_init(&t, dl, sizeof dl);
+	debuglink_view_audio(&t);
+	CHECK(strstr(dl, "beep.talk_permit=0\n") != NULL);
 	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	run(300);
