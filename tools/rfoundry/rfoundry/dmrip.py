@@ -5,7 +5,9 @@ IP data path, through an IP gateway (a radio in USB network mode, or a bench IP 
 
 DmripPort looks enough like a pyserial port for a debug link client: write() takes one request frame and sends it
 in a datagram, read() gives the reply frame's bytes once every chunk came. Lost datagrams are asked for again (the
-same counter: the radio sends its kept reply, or only the chunks still missing).
+same counter: the radio sends its kept reply, or only the chunks still missing). A request the radio took is never
+sent as new again unless it only reads: when the radio no longer holds its reply (GONE), a read goes again under a new
+counter and anything else raises ReplyLost, so a detour never runs twice.
 
 Port syntax: dmrip:RADIOID sends to the radio's individual address (12.x.y.z from its DMR ID) by the host's routes;
 dmrip:RADIOID@HOST[:PORT] sends to a relay at HOST:PORT (default 3335) that forwards each datagram to the DMR ID in
@@ -38,6 +40,19 @@ M64 = (1 << 64) - 1
 
 class DmripError(Exception):
     pass
+
+
+class ReplyLost(DmripError):
+    """The radio took the request but no longer holds its reply (GONE), and the request changes the radio: it is not
+    sent again. Read the state the request changed (DETOUR STATUS, the view) to learn what happened"""
+
+
+# Requests that only read, by command (and first payload byte where the command also changes things): safe to send
+# again as new after GONE. GET_LOG is missing on purpose: it hands each line over once
+CMD_PING, CMD_VERSION, CMD_GET_DIAG, CMD_SCREENSHOT, CMD_GET_VIEW, CMD_INFO_CHIP, CMD_READ_MEM, CMD_IDDB = \
+    0x01, 0x02, 0x03, 0x05, 0x09, 0x0B, 0x0C, 0x1F
+READS = {CMD_PING: None, CMD_VERSION: None, CMD_GET_DIAG: None, CMD_SCREENSHOT: None, CMD_GET_VIEW: None,
+         CMD_INFO_CHIP: None, CMD_READ_MEM: None, CMD_IDDB: None, CMD_DETOUR: (DETOUR_STATUS,), CMD_DMRIP: (DMRIP_STATUS,)}
 
 
 def _rotl(x, b):
@@ -164,6 +179,14 @@ def save_key(radio_id, key, path=None):
     return path
 
 
+def only_reads(frame_bytes):
+    """A debug link request frame that only reads (READS): the radio may run it twice"""
+    if len(frame_bytes) < 6 or frame_bytes[2] not in READS:
+        return False
+    ops = READS[frame_bytes[2]]
+    return ops is None or (len(frame_bytes) > 6 + 2 and frame_bytes[6] in ops)
+
+
 class DmripPort:
     """A debug link port over the air. timeout: how long one datagram's answer is waited for before it is sent again;
     tries: how often"""
@@ -178,7 +201,7 @@ class DmripPort:
         self.nonce = 0
         self.counter = 0
         self.pending = bytearray()
-        self.stats = {"sent": 0, "resent": 0, "chunks": 0, "dropped": 0}
+        self.stats = {"sent": 0, "resent": 0, "chunks": 0, "dropped": 0, "gone": 0}
 
     # -- the datagrams --
     def _send(self, flags, counter, chunk, body):
@@ -244,7 +267,12 @@ class DmripPort:
                 if nonce != self.nonce or rcounter != counter:
                     continue
                 if flags & F_GONE:
-                    # The radio no longer holds the reply (the cable used its buffer): the request goes again as new
+                    # The radio took the request, then the cable used its reply buffer. Only a read goes again, as
+                    # new: anything else (a detour RUN) already ran once and must not run twice
+                    self.stats["gone"] += 1
+                    if not only_reads(frame_bytes):
+                        raise ReplyLost(f"DMR ID {self.radio_id} took request {counter} (command "
+                                        f"0x{frame_bytes[2]:02X}) but lost its reply: not sent again")
                     self.counter = (self.counter + 1) & 0xFFFFFFFF
                     counter = self.counter
                     parts, count, mask = {}, 0, 0

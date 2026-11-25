@@ -166,6 +166,33 @@ class Transport(unittest.TestCase):
         self.assertEqual(len(self.request(p)[2]), 601)
         self.assertEqual(r.requests, 2)
 
+    def test_a_change_whose_reply_is_lost_runs_once(self):
+        # A detour RUN the radio took, its reply lost twice over (the datagram, then the buffer): never sent as new
+        r = self.radio(drop={2})
+        r.lose_kept = True
+        p = self.port(r)
+        with self.assertRaises(dmrip.ReplyLost):
+            p.write(frame(dmrip.CMD_DETOUR, 1, dmrip.detour_run(3, [(0, 100)])))
+        self.assertEqual((r.requests, r.repeats, p.stats["gone"]), (1, 1, 1))
+
+    def test_detour_status_is_a_read(self):
+        r = self.radio(drop={2})
+        r.lose_kept = True
+        p = self.port(r)
+        p.write(frame(dmrip.CMD_DETOUR, 1, bytes([dmrip.DETOUR_STATUS])))
+        self.assertEqual(r.requests, 2)
+
+    def test_which_requests_only_read(self):
+        reads = [(0x01, b"x"), (0x09, bytes(5)), (dmrip.CMD_DETOUR, bytes([dmrip.DETOUR_STATUS])),
+                 (dmrip.CMD_DMRIP, bytes([dmrip.DMRIP_STATUS]))]
+        changes = [(0x04, b""), (0x08, b""), (0x20, bytes(3)), (dmrip.CMD_DETOUR, dmrip.detour_run(5, [])),
+                   (dmrip.CMD_DETOUR, bytes([dmrip.DETOUR_RETURN])), (dmrip.CMD_DETOUR, b""),
+                   (dmrip.CMD_DMRIP, bytes([dmrip.DMRIP_KEY]) + bytes(16))]
+        for cmd, payload in reads:
+            self.assertTrue(dmrip.only_reads(frame(cmd, 1, payload)), hex(cmd))
+        for cmd, payload in changes:
+            self.assertFalse(dmrip.only_reads(frame(cmd, 1, payload)), (hex(cmd), payload[:1]))
+
     def test_counters_go_up(self):
         r = self.radio()
         p = self.port(r)

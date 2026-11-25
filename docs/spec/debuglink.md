@@ -1175,7 +1175,9 @@ integers are little endian.
 Session: the host sends HELLO; the radio answers with its nonce (chosen at the first HELLO since start-up, never 0)
 and the last counter it took. Each request then carries the nonce and a higher counter. A request with the last
 counter again is a repeat: the radio sends its kept reply again, only the chunks the request names; when the debug
-link's reply buffer was used since (a cable request), it answers GONE and the host sends the request as new. A lower
+link's reply buffer was used since (a cable request), it answers GONE. The host then sends a request that only reads
+(PING, VERSION, GET_DIAG, SCREENSHOT, GET_VIEW, INFO_CHIP, READ_MEM, IDDB, DETOUR STATUS, DMRIP STATUS) as new, and
+reports any other request as taken with its reply lost, never sending it again: a detour runs once. A lower
 counter, another nonce or a bad tag gets no answer. HELLO is answered once a second at most. One request is handled at
 a time; one that arrives while the radio is busy is dropped (`dmrip.busy`) and the host sends it again.
 
