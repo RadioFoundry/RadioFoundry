@@ -58,6 +58,10 @@ static void test_mi(void)
 	dmrAesIv(0xCD6554E0, 2, iv);
 	hex("899C283D2190A62282D6E6E1170A8391", ivw, 16);
 	CHECK(memcmp(iv, ivw, 16) == 0, "IV of superframe 2");
+	// A second black-box decoder trace: the PI header's 32-bit MI expanded to the AES-256 IV.
+	dmrAesIv(0x185BEE71, 0, iv);
+	hex("185BEE71F2583A20C39B97538A68A1F8", ivw, 16);
+	CHECK(memcmp(iv, ivw, 16) == 0, "short ALG sender's IV");
 }
 
 // A captured AES-256 test call of our own (key ID 1, a throwaway test key we set, MI CD6554E0), the talker silent: 28
@@ -132,6 +136,18 @@ static void test_capture(void)
 
 		hex(BCAP1[n], v, 27);
 		CHECK(dmrAesCallHook(v, &pos, false, &st), "hook");
+		// Some senders put the short ALG value in the PI header. It must select the same provisioned AES key
+		// and produce the captured plaintext, without accepting arbitrary algorithms or another key ID.
+		uint8_t short_alg[27];
+		hex(BCAP1[n], short_alg, 27);
+		pos.alg = 0x05;
+		CHECK(dmrAesCallHook(short_alg, &pos, false, &st), "short ALG RX hook");
+		CHECK(memcmp(v, short_alg, sizeof v) == 0, "short ALG plaintext burst %u", n);
+		pos.key_id = 2;
+		CHECK(!dmrAesCallHook(short_alg, &pos, false, &st), "short ALG wrong key ID");
+		pos.key_id = 1;
+		pos.alg = 0x45;
+		CHECK(!dmrAesCallHook(short_alg, &pos, false, &st), "unrecognized ALG is not an alias");
 		for (int f = 0; f < 3; f++) {
 			uint64_t b = frame_bits(&v[f * 9]);
 
@@ -193,6 +209,10 @@ static void test_roundtrip(void)
 	dmrAesStateInit(&st);
 	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 1, key);
 	tx_over(&st, 0x12345678);
+	uint8_t untouched[27] = { 0 }, wrong_alg[27] = { 0 };
+	struct dmr_crypt_pos short_tx = { .alg = 0x05, .key_id = 1, .mi = 0x12345678 };
+	CHECK(!dmrAesCallHook(wrong_alg, &short_tx, true, &st), "short ALG is RX only");
+	CHECK(memcmp(wrong_alg, untouched, sizeof wrong_alg) == 0, "unsupported TX leaves voice intact");
 	for (uint8_t i = 0; i < 6; i++) {
 		uint8_t clear[27], v[27];
 		struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 1, .mi = 0x12345678, .superframe = 3,

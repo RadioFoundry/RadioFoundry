@@ -109,6 +109,11 @@ then the zones. Pick a zone to see its channels, or **VFO** to watch a VFO frequ
 Each channel has a letter, its name, what **PTT** talks to (the talkgroup, or the frequency on FM), its frequency and
 its zone. The selected channel has an arrow under its letter.
 
+DMR AES-256 channels show **DMR**, with their timeslot and color code. When caller details are not available, an
+incoming call says **DMR call**. For AES reception, the radio must hear the opening privacy header; alternating
+between channels can miss the header. If AES calls remain silent, stop dual watch and stay on the AES channel before
+the next call ([DMR privacy](09-dmr.md#privacy)).
+
 | You see | It means |
 |---|---|
 | **PTT**, a filled letter and an arrow | This is the selected channel: **PTT** talks here |

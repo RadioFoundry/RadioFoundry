@@ -84,6 +84,8 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
 - While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
   places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
   a digit; OK or # tunes the selected pane.
+- Dual watch derives P25 and NXDN pane modes from their channel kinds. DMR AES and Tier III retain the record's DMR
+  mode. An AES pane keeps its talk target, timeslot and color code; a call without caller details says "DMR call".
 - The RX and TX screens put the number in the title ("TG 91") and the talkgroup's or contact's name on a line of its
   own; a talker alias takes two lines when it needs them. A private call's title says "Private" where a group call's
   says "TG": "Private 9991234" while transmitting (just "Private" where that doesn't fit), "Private to you" or
