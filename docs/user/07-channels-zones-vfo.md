@@ -360,8 +360,9 @@ The configured system identity still has to match; receive-only operation never 
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
-| Control channel | On the control channel, waiting for a call to the channel's talkgroup |
+| RX only | On the control channel of a system the radio can't transmit on (set to listen only, or a blocked network ID), waiting for a call to the channel's talkgroup |
 | Following TG 201 | On the voice channel of a call. It goes back to the control channel when the call ends |
+| Control channel | Transmit is on, but this control channel has no inbound frequency: the radio waits for a call |
 | Registering | Transmit is on: registering with the system and joining the talkgroup |
 | TG 201 | Registered. PTT asks the system for a voice channel |
 | Wait, Queued | PTT is held and the request is with the system. Talk when home shows the transmission |
@@ -371,7 +372,7 @@ The configured system identity still has to match; receive-only operation never 
   says "RX only".
 - A system whose network ID (WACN) is BEE00 through BEEFF, or whose system ID is 00A, never gets a transmission: PTT
   says "RX-only system: no TX" until the radio is switched off. The radio still receives the system and follows its
-  calls. A P25 conventional channel that announces one of them says "This mode: receive only".
+  calls; home says "RX only" between them. A P25 conventional channel that announces one of them says "This mode: receive only".
 - Calls to other talkgroups are followed only when the channel is set to follow every group of the system.
 - A system whose control messages fail their checksum is heard with the channel's **Accept Invalid CRC** on
   ([Accept invalid CRC](09-dmr.md#accept-invalid-crc)).
