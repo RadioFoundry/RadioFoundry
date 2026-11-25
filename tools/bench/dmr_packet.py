@@ -130,9 +130,13 @@ def ip_addresses(p, user):
     addresses, only the CAI network of each in SAID / DAID (TS 102 361-3 5.1.1, Table 7.15: 0 the radio network
     12.<ID>, 1 the peripheral network 13.<ID>, 2 the group network 225.<ID>, destination only) with the data
     header's IDs, so they are built from those; SAP 4 has them in the IPv4 header. Returns said / daid (SAP 3) and
-    src_ip / dst_ip (dotted, None for a network ID the table doesn't list)."""
+    src_ip / dst_ip (dotted, None for a network ID the table doesn't list); {} for user data too short to hold them."""
     if p["sap"] == SAP_IP:
+        if len(user) < 20:
+            return {}
         return {"src_ip": ".".join(str(b) for b in user[12:16]), "dst_ip": ".".join(str(b) for b in user[16:20])}
+    if p["sap"] != SAP_UDPIP_COMPRESSION or len(user) < 3:
+        return {}
     said, daid = user[2] >> 4, user[2] & 0x0F
 
     def addr(net, llid):
@@ -186,6 +190,10 @@ def _self_test():
     # A host's packet (SAID 1) to a talkgroup (DAID 2)
     assert ip_addresses({"sap": 3, "src": 0x989530, "dst": 9}, bytes.fromhex("0001120000")) == \
         {"said": 1, "daid": 2, "src_ip": "13.152.149.48", "dst_ip": "225.0.0.9"}
+    # SAP 4: the addresses from the IPv4 header
+    ip4 = bytes.fromhex("4500002c00004000401100000c0027150c000064")
+    assert ip_addresses({"sap": 4}, ip4) == {"src_ip": "12.0.39.21", "dst_ip": "12.0.0.100"}
+    assert ip_addresses({"sap": 3}, b"\x00\x01") == {} and ip_addresses({"sap": 4}, ip4[:19]) == {}
     print("dmr_packet: self test passed")
 
 

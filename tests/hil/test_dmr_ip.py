@@ -169,11 +169,16 @@ def test_gateway_has_netif(radio):
     assert v["net.netif"] == "1", "the board sets no netif: the gateway can't answer the host"
 
 
-def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3, dst_ip=None):
+def _udp_until_heard(radio, sdr_bench, freq, cc, own, want_sap, what, tries=3, dst_ip=None, send_listen=None):
+    """The first of up to tries sends the bench heard whole: (packet, before, after). send_listen() makes one send and
+    returns (dmr_ip view before, after, packets heard); by default the debug link's IP_SEND."""
+    if send_listen is None:
+        def send_listen():
+            return _send_and_listen(radio, sdr_bench, freq, cc,
+                                    lambda: radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, PAYLOAD, dst_ip=dst_ip),
+                                    12)[:3]
     for attempt in range(1, tries + 1):
-        before, after, pkts, _ = _send_and_listen(
-            radio, sdr_bench, freq, cc,
-            lambda: radio.link.ip_send(BENCH_ID, SRC_PORT, DST_PORT, PAYLOAD, dst_ip=dst_ip), 12)
+        before, after, pkts = send_listen()
         assert after["ip.result"] == "ok" and after["ip.sent"] - before["ip.sent"] == 1, (before, after)
         key, other = ("ip.sap3", "ip.sap4") if want_sap == dmr_packet.SAP_UDPIP_COMPRESSION else ("ip.sap4", "ip.sap3")
         assert after[key] - before[key] == 1 and after[other] == before[other], (key, before, after)
@@ -393,31 +398,20 @@ def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("auto", "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
-    tries = 3
     with host_network(radio, own) as (udp, host_ip, _):
-        for attempt in range(1, tries + 1):
-            before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
+        def send_listen():
+            before = _ip_view(udp)
             with sdr_bench.lease():
                 lis = sdr_bench.listen_start(freq, cc, seconds=10)
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                     s.bind((host_ip, SRC_PORT))
                     s.sendto(PAYLOAD, (bench_ip, DST_PORT))
                 time.sleep(4)
-                heard_pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
-            after = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
-            assert after["ip.sap3"] - before["ip.sap3"] == 1 and after["ip.sent"] - before["ip.sent"] == 1, \
-                (before, after)
-            mine = _ours(heard_pkts, own)
-            assert all(p["sap"] == dmr_packet.SAP_UDPIP_COMPRESSION for p in mine), mine
-            whole = [p for p in mine if p.get("complete") and p.get("crc_ok")]
-            if whole:
-                break
-            print(f"send {attempt}: the bench heard {len(mine)} header(s) from us, no whole packet")
-        else:
-            raise AssertionError(f"the bench modem heard none of {tries} sends whole (the radio counted each as sent)")
-    if attempt > 1:
-        warnings.warn(f"heard whole by the bench modem on send {attempt} of {tries}")
-    p = whole[0]
+                pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
+            return before, _ip_view(udp), pkts
+
+        p, _, _ = _udp_until_heard(radio, sdr_bench, freq, cc, own, dmr_packet.SAP_UDPIP_COMPRESSION, "USB network",
+                                   send_listen=send_listen)
     print(f"on air: {p['src']} -> {p['dst']}, SAID {p['said']} ({p['src_ip']}), DAID {p['daid']} ({p['dst_ip']}), "
           f"ports {p['src_port']} -> {p['dst_port']}")
     assert p["said"] == 1 and p["src_ip"] == host_ip, f"not the host's address (13.<ID>, SAID 1): {p}"
