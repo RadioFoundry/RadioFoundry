@@ -146,7 +146,9 @@ def tests_by_feature(found):
 def default_source(switch):
     """A feature's source paths when features.toml gives none (tools/boards.py default_source(), which
     tools/affected.py uses too): what the Makefile builds for the switch, else the files that name it."""
-    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    tools = os.path.join(ROOT, "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
     import boards as registry
     return registry.default_source(ROOT, switch)
 

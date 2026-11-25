@@ -363,12 +363,22 @@ def make_vars(root, board, names, args=()):
 CONFIG_RE = re.compile(r"\bCONFIG_([A-Z0-9_]+)\b")
 FEATURE_SOURCE_TOPS = ("core", "drivers", "platform", "hal")
 _SOURCE_TEXTS = {}
+_MAKEFILE_PATHS = {}
 
 
 def makefile_switch_paths(root):
     """path -> switches the Makefile builds it for: inside an ifeq / ifneq / ifdef on the switch, or on a -$(CONFIG_X)
-    line (continued lines joined). Only paths that exist. tools/affected.py and tools/bringup.py both read it."""
-    with open(os.path.join(root, "Makefile"), encoding="utf-8", errors="replace") as f:
+    line (continued lines joined). Only paths that exist. tools/affected.py and tools/bringup.py both read it, once per
+    feature: parsed once per root and Makefile version."""
+    mk = os.path.join(root, "Makefile")
+    key = (root, os.stat(mk).st_mtime_ns)
+    if key not in _MAKEFILE_PATHS:
+        _MAKEFILE_PATHS[key] = _makefile_switch_paths(root, mk)
+    return {p: set(s) for p, s in _MAKEFILE_PATHS[key].items()}
+
+
+def _makefile_switch_paths(root, mk):
+    with open(mk, encoding="utf-8", errors="replace") as f:
         text = f.read().replace("\\\n", " ")
     out = {}
     stack = []
