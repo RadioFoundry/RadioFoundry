@@ -131,12 +131,14 @@ build() {
 	local cmd=(make -C "$1" -s -j"$JOBS" BOARD="$2" BUILD="$1/build/$2")
 	if [ "$RUN" = 1 ]; then submodules "$1" && "${cmd[@]}"; else show "${cmd[@]}"; fi
 }
-# hil DIR BOARD PORT RECORD PYTEST_ARGS...: flash DIR's build of BOARD and run pytest in DIR, under the radio's lock
+# hil DIR BOARD PORT RECORD PYTEST_ARGS...: flash DIR's build of BOARD and run pytest in DIR, under the radio's lock.
+# PYTEST_ARGS name the tests (tests/hil, or the failed tests' ids alone: with the directory too, pytest would run all of
+# it, every tier)
 hil() {
 	local dir=$1 b=$2 port=$3 rec=$4 lock; shift 4
 	lock=$(lock_file "$port")
 	local flash=("$ROOT/tools/hil_flash.sh" "$b" "$dir/build/$b" "$port")
-	local test=("$PY" -m pytest tests/hil -v -rs -p no:cacheprovider --hil-board "$b" ${port:+--radio-port "$port"}
+	local test=("$PY" -m pytest -v -rs -p no:cacheprovider --hil-board "$b" ${port:+--radio-port "$port"}
 		--hil-record "$rec" --junitxml "${rec%.json}.xml" "$@")
 	if [ "$RUN" != 1 ]; then
 		echo "  under the lock $lock:"
@@ -172,7 +174,7 @@ for r in "${PICK[@]}"; do
 	say "$b: build, flash, test (--affected main)"
 	build "$TREE" "$b"
 	rc=0
-	hil "$TREE" "$b" "$port" "$rec" --affected "$BASE" ${PYARGS[@]+"${PYARGS[@]}"} || rc=$?
+	hil "$TREE" "$b" "$port" "$rec" tests/hil --affected "$BASE" ${PYARGS[@]+"${PYARGS[@]}"} || rc=$?
 	if [ "$RUN" != 1 ]; then
 		[ ${#PRS[@]} -lt 2 ] || echo "  on a failure, per PR: main + the PR alone in $OUT/pr<n>, built, flashed and" \
 			"the failed tests run again"
