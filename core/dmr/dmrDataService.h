@@ -100,6 +100,7 @@ typedef enum
 	DMR_DATA_EV_ZONE_SENT,					// id: the destination; our zone went out whole
 	DMR_DATA_EV_ZONE_FAILED,				// id: the destination; it couldn't be sent
 	DMR_DATA_EV_ZONE_REFUSED,				// id: the directory service; it answered our request with a refusal
+	DMR_DATA_EV_SMS_BLOCKED,				// id: the destination; not sent: the channel's privacy has no data form
 } dmrDataEventKind_t;
 
 typedef struct
