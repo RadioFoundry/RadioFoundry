@@ -479,7 +479,7 @@ void settings_poll(uint32_t now_ms)
 bool settings_flush(void)
 {
 	if (held) {
-		return true;	// what is stored is the state before the hold, the one the radio returns to
+		return false;	// nothing is saved: what is stored is the state before the hold, the one the radio returns to
 	}
 	return save_now() && !dirty;
 }

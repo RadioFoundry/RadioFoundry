@@ -1484,11 +1484,11 @@ static void factory_reset_job(void *ctx)
 	settings_end(hal_millis());
 	codeplug_accept(false);
 	bool saved = settings_flush();
-	storage_native_t n = storage_native_erase();
-	if (!saved && storage_ready()) {
+	if (!saved && storage_ready()) {	// before the erase: never half a reset (a detour's hold saves nothing)
 		save_failed(TRN(STORE_ERR_RESET_SETTINGS, "Reset: the settings couldn't be saved"));
 		return;
 	}
+	storage_native_t n = storage_native_erase();
 	if (n == STORAGE_NATIVE_FAILED && storage_ready()) {
 		save_failed(TRN(STORE_ERR_RESET_ERASE, "Reset: native area couldn't be erased"));
 		return;

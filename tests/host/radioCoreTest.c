@@ -11831,14 +11831,19 @@ static void test_detour(void)
 	req(RREQ_MODE, RADIO_MODE_NXDN);
 	run(50);
 	CHECK(sm.view.vfo && sm.view.ch.rx_hz == 446100000 && sm.set.tx_inhibit);
-	// Saves are held: the timer and a power-off's flush write nothing
+	// Saves are held: the timer and a power-off's flush write nothing, and the flush says so
 	for (int i = 0; i < 30; i++) {
 		run(100);
 		settings_poll(now);
 	}
-	CHECK(settings_flush());
+	CHECK(!settings_flush());
 	CHECK(memcmp(area, stored, sizeof(stored)) == 0);
 	CHECK(sm.view.detour.armed);
+	// A zone add or delete moves the saved indexes, which the hold can't store: refused, the codeplug unchanged
+	int zw = zone_writes;
+	uint16_t nz = nzones;
+	CHECK(zone_edit_delete(1) == ZONE_EDIT_FAILED && zone_edit_new("Held", NULL) == ZONE_EDIT_FAILED);
+	CHECK(zone_writes == zw && nzones == nz);
 
 	run(2200);				// the backstop (5 s from the mark) fires
 	const radio_detour_view_t *d = &sm.view.detour;
@@ -11873,7 +11878,7 @@ static void test_detour(void)
 	req(RREQ_VFO_SET, 446100000);
 	run(3000);
 	settings_poll(now);
-	CHECK(settings_flush());
+	CHECK(!settings_flush());
 	settings_release(false);		// the power is gone: what the next boot reads
 	settings_init();
 	settings_read(&st);
@@ -11913,6 +11918,25 @@ static void test_detour(void)
 	run(100);
 	CHECK(!sm.view.detour.armed && !sm.ptt && sm.view.state != RS_TX && sm.view.channel_number == 4);
 	CHECK(sm.view.detour.tx_count == 1 && sm.view.detour.tx_ms >= 50);
+
+	// The backstop during a transmission: the return waits for the transmission's end and is still the backstop's
+	detour_req(RADIO_DETOUR_MARK, 1000);
+	CHECK(sm.view.detour.armed);
+	fake_radio.dmr_tx_end = r_dmr_tx_end;	// DMR: on air after the release until the modem's TX done
+	tx_end_ok = true;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX);
+	bool waited = false;
+	for (int i = 0; i < 110; i++) {
+		run(10);
+		waited |= sm.view.detour.returning;
+	}
+	CHECK(waited);				// the transmission was still going when the backstop came
+	run(1000);
+	fake_radio.dmr_tx_end = NULL;
+	CHECK(!sm.view.detour.armed && !sm.ptt && sm.view.state != RS_TX && sm.view.channel_number == 4);
+	CHECK(sm.view.detour.why == RADIO_DETOUR_WHY_BACKSTOP);
 
 	sim_flash.map = NULL;
 	storage_init();

@@ -8298,7 +8298,7 @@ static bool detour_return(radio_sm_t *sm, uint8_t why, uint32_t now_ms)
 	if (!d->armed) {
 		return true;
 	}
-	if (d->why == 0 || why == RADIO_DETOUR_WHY_BACKSTOP) {
+	if (sm->detour_why == 0 || why == RADIO_DETOUR_WHY_BACKSTOP) {	// the first reason, or the backstop's
 		sm->detour_why = why;
 	}
 	ptt_release(sm, false, now_ms);

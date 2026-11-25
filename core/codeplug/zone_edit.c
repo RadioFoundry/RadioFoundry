@@ -5,6 +5,7 @@
 #include <string.h>
 #include "codeplug/zone_edit.h"
 #include "codeplug/codeplug_tag.h"
+#include "settings/settings.h"
 #include "storage/storage.h"
 
 int zone_list_find(const zone_t *z, uint16_t channel)
@@ -106,6 +107,9 @@ static zone_edit_result_t make_room(void)
 // work, written as a new zone after make_room; logged as a shift unless it is the first zone (nothing moves)
 static zone_edit_result_t create_locked(uint16_t *index)
 {
+	if (settings_held()) {
+		return ZONE_EDIT_FAILED;	// a detour holds the settings: the saved indexes couldn't move with the zones
+	}
 	if (work.name[0] == '\0') {
 		return ZONE_EDIT_NO_NAME;
 	}
@@ -294,6 +298,9 @@ zone_edit_result_t zone_edit_delete(uint16_t zone)
 	storage_lock();
 	zone_shift_busy(true);
 	zone_edit_result_t r = zone < codeplug_zone_count() && codeplug_zones_stored() ? ZONE_EDIT_OK : ZONE_EDIT_NO_ZONE;
+	if (r == ZONE_EDIT_OK && settings_held()) {
+		r = ZONE_EDIT_FAILED;	// a detour holds the settings: the saved indexes couldn't move with the zones
+	}
 	if (r == ZONE_EDIT_OK) {
 		zone_settle_begin(true, zone);
 		if (!codeplug_delete_zone(zone)) {

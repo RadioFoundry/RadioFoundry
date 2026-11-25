@@ -516,7 +516,8 @@ void settings_end(uint32_t now_ms);
 
 // Save once the changes have rested SETTINGS_SAVE_DELAY_MS (call it every 100 ms or so)
 void settings_poll(uint32_t now_ms);
-// Save now if anything changed; true when nothing is left unsaved (and while held: nothing of the hold is saved)
+// Save now if anything changed; true when nothing is left unsaved. False while held (settings_hold): nothing is saved,
+// so a caller that needs the change stored (a factory reset, a zone add or delete) doesn't go on
 bool settings_flush(void);
 
 #if CONFIG_RADIO_DETOUR
@@ -527,6 +528,11 @@ bool settings_flush(void);
 bool settings_hold(void);
 void settings_release(bool discard);
 bool settings_held(void);
+#else
+static inline bool settings_held(void)
+{
+	return false;
+}
 #endif
 
 void settings_get_stats(settings_stats_t *s);
