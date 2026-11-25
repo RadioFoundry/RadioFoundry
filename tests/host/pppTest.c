@@ -20,8 +20,8 @@ static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
-#define RADIO_IP	(HOST_IP ^ 1u)
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)	// 13.0.39.21
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
 
 enum { CONF_REQ = 1, CONF_ACK, CONF_NAK, CONF_REJ, TERM_REQ, TERM_ACK, CODE_REJ, PROTO_REJ, ECHO_REQ, ECHO_REP };
 #define LCP	0xC021
@@ -662,10 +662,14 @@ static void test_accm(void)
 	// Line noise: bare XON / XOFF in the frame are dropped by the radio
 	uint8_t e[400], noisy[420];
 	int en = encode(e, IP, pkt, n, 0xFFFFFFFFu), m = 0;
+	int at = en / 2;
 
+	while (e[at] == 0x7D) {
+		at++;	// noise between an escape and its octet is a broken escape, not noise
+	}
 	for (int i = 0; i < en; i++) {
 		noisy[m++] = e[i];
-		if (i == en / 2) {
+		if (i == at) {
 			noisy[m++] = 0x11;
 			noisy[m++] = 0x13;
 		}

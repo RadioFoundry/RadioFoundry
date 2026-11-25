@@ -11,8 +11,8 @@
 static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
-#define RADIO_IP	0x0C002714u	// 12.0.39.20
-#define HOST_IP		0x0C002715u	// 12.0.39.21
+#define RADIO_IP	0x0C002715u	// 12.0.39.21
+#define HOST_IP		0x0D002715u	// 13.0.39.21
 #define PEER_PORT	40000
 
 #define FIN	0x01
