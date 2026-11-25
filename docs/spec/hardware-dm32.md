@@ -1248,8 +1248,8 @@ speaker plays FM through the HR_C7000 instead of straight from the FD6818. A fla
 For the USB audio design ([usb-audio.md](usb-audio.md) 2). Not measured.
 
 - **Host port**: the SoC's USB controller has no connector (3.11), so the host port is the programming cable's UART0
-  at 115200 baud (3.1). USB audio and the network personality are out; serial audio (USRP in SLIP frames) is the
-  transport.
+  at 115200 baud (3.1). USB audio and the network personality are out. Serial audio (USRP over the link) would be the
+  transport, but its PCM needs more than 115200 baud carries: `NET_USRP` is not written for this radio.
 - **DMR**: the SoC's mic and speaker PCM buffers feed the CPU's AMBE codec, as on the STM32 radios
   ([modem-hrc7000.md](modem-hrc7000.md) 1, 6.2).
 - **FM**: the C7000's FM block demodulates receive audio and plays it through the codec DAC (AUDIO_CONTROL bit 6), and

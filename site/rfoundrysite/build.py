@@ -769,7 +769,7 @@ class Site:
 			  "tools", scripts=scripts, nav="tools")
 
 	def satellite_tle_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.satellite.")), ensure_ascii=False).replace("</", "<\\/")
+		strings = json.dumps(self.i18n.subset(lang, ("tools.title", "tools.satellite.", "flash.err.no_serial")), ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/tletool.js?v=%s"></script>' % (strings, self.asset_version))
 		self.page(lang, "tools/satellite/index.html", self.t(lang, "tools.satellite.title"),
@@ -778,7 +778,7 @@ class Site:
 	def support_pages(self, lang):
 		"""Support: the FAQ, the reminder to update, and the support download (static/js/supportpage.js) with the About
 		page as the way without a computer (docs/spec/support-info.md)."""
-		strings = json.dumps(self.i18n.subset(lang, ("support.dl.", "flash.err.", "flash.net.")),
+		strings = json.dumps(self.i18n.subset(lang, ("support.dl.", "flash.err.", "flash.net.", "flash.part.incomplete", "flash.progress.", "flash.stay_on_page")),
 				     ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   '<script type="module" src="{{root}}static/js/supportpage.js?v=%s"></script>' % (strings, self.asset_version))
@@ -820,7 +820,7 @@ class Site:
 		return href
 
 	def codeplug_page(self, lang):
-		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.")), ensure_ascii=False).replace("</", "<\\/")
+		strings = json.dumps(self.i18n.subset(lang, ("editor.", "flash.part.", "flash.net.", "report.", "flash.progress.", "flash.stay_on_page")), ensure_ascii=False).replace("</", "<\\/")
 		scripts = ('<script type="application/json" id="i18n">%s</script>'
 			   # the searchable lists (editor/combo.js): a classic script, ahead of the editor's module
 			   '<script src="{{root}}static/vendor/tom-select/tom-select.complete.min.js?v=%s"></script>'

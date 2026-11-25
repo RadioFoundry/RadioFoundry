@@ -19,7 +19,7 @@ CONFIG_FM ?= y
 CONFIG_SUBTONE ?= $(CONFIG_FM)
 # DMR Tier II voice: modem driver, call stack, AMBE FEC, vocoder hosting
 CONFIG_DMR ?= y
-# basic privacy (Motorola / Anytone BP) on the voice path (needs DMR)
+# basic privacy, 8-bit and 16-bit keys, on the voice path (needs DMR)
 CONFIG_DMR_PRIVACY ?= $(CONFIG_DMR)
 # AES-256 voice encryption, the DMRA scheme (PI header ALG 0x25, docs/spec/dmr-voice.md 5.1): calls with a PI header
 # decrypted, and our overs encrypted, on channels bound to a traffic key in the codeplug. Needs DMR_PRIVACY (its AMBE
@@ -32,7 +32,7 @@ CONFIG_DMR_TALKER_ALIAS ?= $(CONFIG_DMR)
 CONFIG_DMR_GPS ?= $(CONFIG_DMR)
 # DMR text messages (SMS; needs DMR): ETSI IP text and ETSI defined short data, sent and received (docs/spec/dmr-data.md 5)
 CONFIG_DMR_SMS ?= $(CONFIG_DMR)
-# Motorola TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
+# TMS format support for text messages: send, receive, the TMS ACK (needs DMR_SMS; docs/spec/dmr-data.md 5.1)
 CONFIG_DMR_TMS ?= $(CONFIG_DMR_SMS)
 # ARS registration with a presence server (needs DMR; docs/spec/dmr-data.md)
 CONFIG_DMR_ARS ?= $(CONFIG_DMR)

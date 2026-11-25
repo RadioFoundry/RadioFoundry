@@ -208,7 +208,7 @@ and the events don't. Both requests carry `adapter`, and the PATCH carries `trai
 | Field | Content |
 |---|---|
 | `languages` | The browser's language preferences (`navigator.languages`, the first 5; else `navigator.language`), such as `["en-US", "en"]`. The backend keeps at most 10 tags of 35 characters and an older one ignores the field |
-| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
+| `adapter` | `{vid, pid, chip, product}` of the USB device in use (`adapter.js`). `chip` from the vendor id: `FTDI` (0403, and 2100 for RT Systems cables), `CH340` (1a86), `CP210x` (10c4), `PL2303` (067b), `radio USB` (the radio's own port), `DFU bootloader`, else `other`. `product` only from WebUSB. Never a serial number |
 | `trail` | The newest 200 breadcrumbs (`diag.trail()`, scrubbed, 300 characters each), the oldest dropped to keep the keepalive request under 64 KB |
 
 ### Breadcrumbs

@@ -31,8 +31,8 @@ void storage_lock(void) {}
 void storage_unlock(void) {}
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)
-#define RADIO_IP	(HOST_IP ^ 1u)
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)
 #define CPORT		50000		// the client's port
 
 static const uint8_t HOST_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x04 };
@@ -195,6 +195,17 @@ static bool next_pkt(pkt_t *k)
 	memcpy(k->p, f + 42, (size_t)k->len);
 	ring_out = (ring_out + 1) % RING;
 	return true;
+}
+
+// The next frame is the gateway's ICMP port unreachable (a datagram to a port no service has)
+static bool next_port_unreachable(void)
+{
+	if (ring_out == ring_in) {
+		return false;
+	}
+	const uint8_t *f = ring[ring_out];
+	ring_out = (ring_out + 1) % RING;
+	return (f[23] == 1) && (f[34] == 3) && (f[35] == 3);
 }
 
 static void drain(void)
@@ -444,8 +455,8 @@ static void test_refusals(void)
 	tftp_stats_t st;
 	tftpStats(&st);
 	CHECK(st.state == TFTP_IDLE);
-	send_ack(tid, 2);			// the port is closed now: nothing
-	CHECK(!next_pkt(&k));
+	send_ack(tid, 2);			// the port is closed now: an ICMP port unreachable from the gateway
+	CHECK(next_port_unreachable() && !next_pkt(&k));
 }
 
 static void test_writes(void)

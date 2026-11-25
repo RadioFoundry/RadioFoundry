@@ -80,7 +80,8 @@ static bool local_udp(const dmrDataPacket_t *p)
 		return ipGatewayUdpFromAir(p->src, (uint16_t)((u[0] << 8) | u[1]), (uint16_t)((u[2] << 8) | u[3]),
 					 u + 8, n - 8);
 	}
-	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp)) {	// the addresses are the IDs'
+	// The compressed header's DAID may name our peripheral network (13.<our ID>, the host): only our own address counts
+	if ((p->sap == DMR_SAP_UDPIP_COMPRESSION) && dmrDataGetUDP(p, &udp) && dmrDataIpIsId(udp.dstIp, false, own)) {
 		return ipGatewayUdpFromAir(p->src, udp.srcPort, udp.dstPort, udp.payload, udp.length);
 	}
 	return false;
@@ -238,6 +239,12 @@ void ipGatewaySerialIn(const uint8_t *data, int length)
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
 		      const uint8_t *l4, int length)
 {
+	// Control station passthrough: the PC answers for the radio's own DMR ID, so it sends as the radio (12.<ID>, not
+	// its peripheral network address): to the fleet the answers come from the control station
+	// (docs/spec/usb-network.md 5.2)
+	if (hostlink_net_passthrough_active() && (src_ip == IPGW_AIR_SRC_PERIPHERAL)) {
+		src_ip = IPGW_AIR_SRC_OURS;
+	}
 	bool ok = (air != NULL) && (air->ip_to_air != NULL) &&
 		  air->ip_to_air(group, dst, src_ip, dst_ip, ttl, protocol, l4, length);
 

@@ -2,11 +2,13 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // The mic gain setting (core/radio/mic_gain.c, docs/spec/radio-features.md 3.6): a step 0..10 goes to the board's
 // hal_radio_t.mic_gain as a dB offset with the PCM gain before the encoders left at unity, or, without the hook, to the
-// PCM gain alone; a board's hal_radio_t.mic_pcm_db adds to the PCM gain at every step
+// PCM gain alone; a board's hal_radio_t.mic_pcm_db adds to the PCM gain at every step. DMR and P25 get the same
+// PCM gain
 #include <stdio.h>
 #include "radio/mic_gain.h"
 #include "dmr/ambe/ambeVoice.h"
-#include "audio/miclimit/miclimit.h"
+#include "p25/p25Voice.h"
+#include "dsp/miclimit.h"
 
 static int failures;
 
@@ -15,9 +17,9 @@ static int failures;
 static hal_radio_t radio;
 const board_t board = { .radio = &radio };
 
-static int hook_calls, ambe_calls;
+static int hook_calls, ambe_calls, p25_calls;
 static int8_t hook_db;
-static uint16_t ambe_q8;
+static uint16_t ambe_q8, p25_q8;
 
 static void hook(int8_t db)
 {
@@ -29,6 +31,12 @@ void ambeVoiceSetMicGainQ8(uint16_t q8)
 {
 	ambe_calls++;
 	ambe_q8 = q8;
+}
+
+void p25VoiceSetMicGainQ8(uint16_t q8)
+{
+	p25_calls++;
+	p25_q8 = q8;
 }
 
 int main(void)
@@ -70,6 +78,12 @@ int main(void)
 	radio_set_mic_gain(8);
 	CHECK(hook_db == 6 && radio_mic_pcm_db() == 4 && ambe_q8 == miclimit_db_q8(4));
 	CHECK(ambe_calls == 9);
+	// P25 was given what DMR was at every call: a quiet board's mic_pcm_db reaches its encoder too
+	CHECK(p25_calls == ambe_calls && p25_q8 == ambe_q8);
+	radio.mic_gain = NULL;
+	radio.mic_pcm_db = 12;
+	radio_set_mic_gain(MIC_GAIN_UNITY);
+	CHECK(p25_q8 == miclimit_db_q8(12) && p25_q8 == ambe_q8);
 
 	if (failures) {
 		printf("micGainTest: %d failures\n", failures);
