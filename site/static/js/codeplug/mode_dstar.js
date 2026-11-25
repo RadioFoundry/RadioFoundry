@@ -35,8 +35,26 @@ function putText(v, o, n, text, clean) {
 
 // --- Channel (2.1) ---
 
+// A UR of one letter and nothing else is a gateway command (U unlink, I information, E echo), which a gateway reads
+// only from the eighth place, after seven spaces. Typed alone ("I"), or stored by an editor that trimmed the spaces
+// in front of it, the letter would go out first and call a station named I; no callsign is one character, so it is
+// moved where the gateway looks, as the firmware does when it reads the block (dstar_codeplug.c ur_command)
+const LONE = /^ *([A-Za-z]) *$/;
+export function urCommand(text) {
+	const m = LONE.exec(String(text ?? ""));
+	return m ? " ".repeat(CALL_LEN - 1) + m[1].toUpperCase() : text;
+}
+
+// What the form keeps of a UR as typed. The form trims what it is given, which turned "       I" into "I" and stored
+// it as "I       ", a call nobody answers; a command keeps its spaces, anything else is trimmed as before, and is
+// checked as typed (checkCall)
+const urTyped = (raw) => {
+	const s = String(raw ?? "");
+	return LONE.test(s) ? urCommand(s) : s.trim();
+};
+
 export function decodeChan(b) {
-	const ur = readText(b, 0, CALL_LEN, callChar);
+	const ur = urCommand(readText(b, 0, CALL_LEN, callChar)).trimEnd();
 	const f = u8(b, 24);
 	return {
 		ur: ur.trim() === "" ? UR_CQ : ur,
@@ -48,7 +66,7 @@ export function decodeChan(b) {
 
 export function encodeChan(p, prev = null) {
 	const v = grow(prev, CHAN_LEN);
-	putText(v, 0, CALL_LEN, p.ur, callChar);
+	putText(v, 0, CALL_LEN, urCommand(p.ur), callChar);
 	putText(v, 8, CALL_LEN, p.rpt1, callChar);
 	putText(v, 16, CALL_LEN, p.rpt2, callChar);
 	// an erased flags byte read as 0: writing it starts the reserved bits at 0 too
@@ -101,7 +119,7 @@ export const dstarKind = {
 	decode: decodeChan,
 	encode: encodeChan,
 	fields: () => [
-		callField("ur", "editor.dstar.ur", "editor.dstar.ur_help"),
+		{ ...callField("ur", "editor.dstar.ur", "editor.dstar.ur_help"), keep: urTyped },
 		callField("rpt1", "editor.dstar.rpt1", "editor.dstar.rpt1_help"),
 		callField("rpt2", "editor.dstar.rpt2", "editor.dstar.rpt2_help"),
 		{ key: "viaRepeater", label: "editor.dstar.via", type: "bool" },

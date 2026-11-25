@@ -107,7 +107,8 @@ whose firmware doesn't run a channel's mode shows the mode's short name, receive
 The [feature matrix](../feature-matrix.md) lists which builds run which mode.
 
 A **D-STAR** channel (short name `DV`) has three callsign fields and a switch. **UR** is the station called: blank
-calls CQ, and a reflector link such as `REF030CL` goes here too. **RPT1** is the repeater's callsign with its module
+calls CQ, and a reflector link such as `REF030CL` goes here too. A one-letter gateway command (`U` unlink, `I`
+information, `E` echo) may be typed alone: it is stored after seven spaces, where gateways read it. **RPT1** is the repeater's callsign with its module
 letter in the 8th place, **RPT2** the same callsign with `G` there to go beyond the repeater; tick **Via a repeater**
 for a repeater channel and leave both blank for a direct one. Callsign fields take `A`-`Z`, `0`-`9`, spaces and `/`, up
 to 8 characters; lower case is stored as upper case. The radio-wide fields are on the **Radio** tab: your **D-STAR

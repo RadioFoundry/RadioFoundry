@@ -509,6 +509,35 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 	assert.equal(f.parse({}, f.key, "9"), undefined);
 });
 
+// The UR a D-STAR gateway acts on is all eight bytes: a one-letter command sits in the eighth after seven spaces. The
+// form trimmed what was typed, so "       I" was stored as "I       ", a call to a station named I that no gateway
+// answers. Typed through the channel form as a user would, then encoded as the radio reads it
+test("channel form: D-STAR UR gateway commands reach the stored block as a gateway reads them", () => {
+	const m = empty();
+	const c = newChannel({ name: "DV", rxOnly: false });
+	m.channels.push(c);
+	numberAll(m);
+	setKind(m, c, 5);
+	const form = channelForm(m, t, { features: "FM,DMR,DSTAR" });
+	const ur = form.find((x) => x.key === "k5.ur");
+	const cases = [
+		["       I", "       I"], ["I", "       I"], ["i", "       I"], ["U", "       U"], ["       U", "       U"],
+		["E", "       E"], ["  e", "       E"], ["REF001CL", "REF001CL"], ["ref001cl", "REF001CL"], ["XRF757AL", "XRF757AL"],
+		["DCS933CL", "DCS933CL"], ["CQCQCQ", "CQCQCQ  "], ["Q1ABC", "Q1ABC   "],
+	];
+	for (const [typed, air] of cases) {
+		const work = { ...c, params: { ...c.params } };
+		assert.equal(ur.parse(work, ur.key, typed), undefined, typed);
+		const b = encodeChan(work.params);
+		assert.equal(String.fromCharCode(...b.subarray(0, 8)), air, typed);
+		// the form shows what goes on air (lower case is stored upper-cased, as in every callsign field)
+		assert.equal(ur.format(ur.get(work)).toUpperCase(), air.trimEnd(), typed);
+		const out = [];
+		dstarKind.validate(work, work.params, { err: (f, code) => out.push(code), warn: (f, code) => out.push(code) });
+		assert.deepEqual(out, [], typed);
+	}
+});
+
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
 
 import * as nxdn from "../static/js/codeplug/mode_nxdn.js";

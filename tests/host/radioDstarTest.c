@@ -366,6 +366,37 @@ static void test_repeater_as_typed(void)
 	radio_dstar_stop();
 }
 
+// A gateway command as a channel's UR, through to the header that goes on air. The UR a gateway acts on is all eight
+// bytes: "       I" (a letter in the eighth place after seven spaces) asks for information, "I       " is a call to a
+// station named I and goes nowhere. The channels here are stored the way the Codeplug Editor stored a UR typed as
+// "       I" before it stopped trimming, and a letter typed alone
+static void test_ur_commands(void)
+{
+	static const struct { const char *stored, *sent; } chans[] = {
+		{ "I       ", "       I" }, { "       I", "       I" }, { "u       ", "       U" }, { "   E    ", "       E" },
+		{ "REF001CL", "REF001CL" }, { "CQCQCQ  ", "CQCQCQ" }, { "Q1ABC   ", "Q1ABC" },
+	};
+	for (unsigned i = 0; i < sizeof chans / sizeof chans[0]; i++) {
+		reset();
+		uint8_t b[DSTAR_CP_CHAN_LEN];
+		memset(b, ' ', sizeof b);
+		memcpy(b, chans[i].stored, 8);
+		b[DSTAR_CP_CHAN_LEN - 1u] = 0;
+		memcpy(chan_block, b, sizeof b);
+		chan_len = DSTAR_CP_CHAN_LEN;
+		channel_t ch = dstar_channel();
+		CHECK(radio_dstar_start(5, &ch, now_ms));
+		radio_dstar_view_t v;
+		radio_dstar_view(&v);
+		CHECK(strcmp(v.tx_ur, chans[i].sent) == 0);
+		over(400);
+		hear();
+		radio_dstar_view(&v);
+		CHECK(v.heard && strcmp(v.ur, chans[i].sent) == 0);
+		radio_dstar_stop();
+	}
+}
+
 static void test_ur_choices(void)
 {
 	reset();
@@ -651,6 +682,7 @@ int main(void)
 	// Last: run before test_reset_mid_block, its two overs move the clock's phase and that test then counts 20 played
 	// frames where it asks for more than 20. Its margin is the thing to widen, separately from this fix
 	test_repeater_as_typed();
+	test_ur_commands();
 	printf("# radioDstarTest: %s\n", failures ? "FAILED" : "PASSED");
 	return failures ? 1 : 0;
 }

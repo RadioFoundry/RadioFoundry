@@ -52,9 +52,32 @@ static bool blank(const char *f, unsigned n)
 	return true;
 }
 
+// A UR holding one letter and nothing else is a gateway command (2.3: U unlink, I information, E echo), and a gateway
+// reads the command only from the eighth place, after seven spaces. Typed alone, or written by a tool that trimmed the
+// spaces in front of it (the Codeplug Editor's forms did, so "       I" was stored "I       "), the letter is
+// elsewhere and the header calls a station named I: the gateway takes it for a callsign and the over goes nowhere,
+// while the audio still reaches every radio in range. No callsign is one character, so moving it loses nothing, and an
+// Icom radio's own reflector commands send the letter in the eighth place. Called on a cleaned field
+static void ur_command(char ur[DSTAR_CALL_LEN])
+{
+	unsigned n = 0, at = 0;
+	for (unsigned i = 0; i < DSTAR_CALL_LEN; i++) {
+		if (ur[i] != ' ') {
+			n++;
+			at = i;
+		}
+	}
+	if (n == 1 && ur[at] >= 'A' && ur[at] <= 'Z') {
+		char c = ur[at];
+		memset(ur, ' ', DSTAR_CALL_LEN);
+		ur[DSTAR_CALL_LEN - 1u] = c;
+	}
+}
+
 void dstar_chan_decode(const uint8_t *b, int len, dstar_chan_t *out)
 {
 	field_read(out->ur, b, len, 0, DSTAR_CALL_LEN, call_char);
+	ur_command(out->ur);
 	field_read(out->rpt1, b, len, DSTAR_CALL_LEN, DSTAR_CALL_LEN, call_char);
 	field_read(out->rpt2, b, len, 2 * DSTAR_CALL_LEN, DSTAR_CALL_LEN, call_char);
 	if (blank(out->ur, DSTAR_CALL_LEN)) {
@@ -67,7 +90,12 @@ void dstar_chan_decode(const uint8_t *b, int len, dstar_chan_t *out)
 
 void dstar_chan_encode(const dstar_chan_t *c, uint8_t out[DSTAR_CP_CHAN_LEN])
 {
-	field_write(&out[0], c->ur, DSTAR_CALL_LEN, call_char);
+	char ur[DSTAR_CALL_LEN];
+	for (unsigned i = 0; i < DSTAR_CALL_LEN; i++) {
+		ur[i] = call_char((uint8_t)c->ur[i]);
+	}
+	ur_command(ur);
+	memcpy(&out[0], ur, DSTAR_CALL_LEN);
 	field_write(&out[DSTAR_CALL_LEN], c->rpt1, DSTAR_CALL_LEN, call_char);
 	field_write(&out[2 * DSTAR_CALL_LEN], c->rpt2, DSTAR_CALL_LEN, call_char);
 	out[DSTAR_CP_CHAN_LEN - 1u] = (uint8_t)(c->flags & DSTAR_CP_VIA_RPT);

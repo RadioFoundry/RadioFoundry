@@ -41,7 +41,7 @@ is the safe stand-in (DMR, receive only, the channel's frequencies), written bef
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 8 | UR: the station called. Blank (all spaces once cleaned) reads as `CQCQCQ  ` |
+| 0 | 8 | UR: the station called. Blank (all spaces once cleaned) reads as `CQCQCQ  `. One letter and nothing else, in any place, reads as that letter in the eighth after seven spaces (a gateway command, 2.3) |
 | 8 | 8 | RPT1: the departure repeater. Blank on a direct channel |
 | 16 | 8 | RPT2: the destination repeater (the gateway, to go beyond the repeater). Blank on a direct channel |
 | 24 | 1 | Flags: bit 0 via a repeater (clear: direct between radios). Bits 1-7 reserved: written 0, kept as found. 0xFF (an erased byte) reads as 0 |
@@ -87,7 +87,10 @@ and a gateway may answer some, all or none of them:
 | `       E` | Echo test: the gateway plays the over back |
 | `       I` | Information: the gateway says what it is linked to |
 
-A channel may also store such a UR, which then goes with every over on it.
+A channel may also store such a UR, which then goes with every over on it. A gateway reads all eight bytes, so a
+command's letter must be in the eighth place: `I       ` is a call to a station named I, which no gateway answers. No
+callsign is one character, so a reader and a writer both move a lone letter there (2.1), whether it was typed alone or
+stored by a tool that trimmed the spaces in front of it.
 
 ## 3. Radio-wide record (kind 5)
 
