@@ -834,6 +834,9 @@ entry.
 | Off, or no valid key | clear |
 | Motorola BP | encrypted: privacy header, algorithm 0 |
 | Anytone BP | no data form: every data list is refused |
+| AES-256 (an AES channel) | no data form yet: every data list is refused |
+
+An AES channel's rule comes from `radio_aes_data_config` (`core/radio/radio_aes.c`), not from the basic privacy key.
 
 ### 13.1 Privacy header
 
@@ -865,8 +868,12 @@ computed over the ciphertext, so a receiver without the key still checks and ack
 - TX: `queueTx` is the one place every list passes (`dmrDataPrivacyAllows`). With an encrypting scheme every data
   header except responses and proprietary headers must be followed by a privacy header. With a blocking scheme any
   data header is refused. ETSI defined short data (5.2) has no privacy header, so it is refused under an encrypting
-  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go. A refused SMS
-  fails at once; other requests fail or time out as when the channel is busy.
+  scheme. CSBKs (call alert, radio check, emergency alarm) and responses still go: they carry only the IDs, which an
+  encrypted call sends in the clear too. A refused SMS fails at once with `DMR_DATA_EV_SMS_BLOCKED`, not
+  `DMR_DATA_EV_SMS_FAILED`; other requests fail or time out as when the channel is busy.
+- Before a send the UI reads why the channel can't send now (`radio_view_t` `data_deny` for signaling,
+  `packet_deny` for packet data, which also gives `TXDENY_DATA_ENCRYPTED` under a blocking scheme) and shows the
+  reason as PTT does, so a send that never went out is never shown as "No answer".
 - Confirmed IP sends one preamble fewer with the privacy header, so the air MTU (12.8) still fits in 64 bursts.
 - RX: a packet with a privacy header is decrypted when the key's scheme takes its algorithm. Otherwise (no key, an
   MI-based algorithm) it is dropped and never shown; confirmed data is still acknowledged. A wrong BP key gives

@@ -232,6 +232,8 @@ static void mic_block(int16_t *mic, int amp)
 	}
 }
 
+static bool gate_on(void) { return true; }
+
 // One block while transmitting: the speaker must stay silent
 static void tx_blocks(int n, int amp)
 {
@@ -302,6 +304,16 @@ static void testTransmit(void)
 	CHECK(hk->tx_voice(f, NULL) && memcmp(f, imbe_silence, sizeof f) == 0, "a zero block is not a silence frame");
 	p25VoiceGetStats(&s);
 	CHECK(s.tx_silent == 1, "silent frames %u", (unsigned)s.tx_silent);
+	// The mic gate on (a beep on the speaker): the mic's block goes out as a silence frame, and is counted
+	p25VoiceSetMicGate(gate_on);
+	tx_blocks(1, 6000);
+	p25VoiceSetMicGate(NULL);
+	CHECK(hk->tx_voice(f, NULL) && memcmp(f, imbe_silence, sizeof f) == 0, "a gated block is not a silence frame");
+	p25VoiceGetStats(&s);
+	CHECK(s.tx_silent == 2 && s.tx_mic_muted == 1, "gated: silent %u, muted %u", (unsigned)s.tx_silent,
+	      (unsigned)s.tx_mic_muted);
+	tx_blocks(1, 6000);
+	CHECK(hk->tx_voice(f, NULL) && memcmp(f, imbe_silence, sizeof f) != 0, "the gate held after it went off");
 	// The mic gain: 6 dB up doubles what the encoder sees
 	p25VoiceTx(false);
 	p25VoiceTx(true);

@@ -323,6 +323,15 @@ static const flow_t flows[] = {
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
+	// A channel that can't send data says why instead of sending; an encrypted one holds back text only
+	{ "8 radio check refused says why", "datadeny:aes_key " CALLER, "ctx 4", "checks=0 toast=AES_key_or_TX_disabled",
+	  2, false },
+	{ "8 radio check goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 4", "checks=1", 2,
+	  false },
+	{ "8 call alert goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 5", "alerts=1", 2,
+	  false },
+	{ "8 message refused on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 3",
+	  "screen=actions toast=Encrypted_channels_can't_send_text", 2, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
 	{ "9 squelch 2 steps (FM)", "down", "quick 2 up up back", "sq=7 screen=home", 5, false },
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY

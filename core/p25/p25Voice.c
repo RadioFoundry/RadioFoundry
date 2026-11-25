@@ -53,6 +53,7 @@ static miclimit_t cb_limit;		// the mic gain's limiter, for the transmission cb_
 
 static p25_voice_stats_t stats;
 static p25_voice_mixer_t mixer;
+static p25_voice_mic_gate_t mic_gate;
 
 // --- hooks (provider's task) ---
 
@@ -218,7 +219,7 @@ static void rx_block(int16_t *spk)
 	}
 }
 
-// One mic block into the transmission g: encoded and queued for the engine
+// One mic block into the transmission g: encoded and queued for the engine. mic NULL: a silent block (the mic gate)
 static void tx_block(uint8_t g, const int16_t *mic)
 {
 	int16_t scaled[AUDIO_BLOCK_SAMPLES];
@@ -228,7 +229,9 @@ static void tx_block(uint8_t g, const int16_t *mic)
 	// The gain with its limiter (as DMR's, ambeVoice.c): a gain that lifts a quiet mic must not clip a loud one, and
 	// IMBE codes a clipped edge as a buzz just as AMBE+2 does. Skipped at unity: a board at its own level encodes the
 	// samples as delivered
-	if (gain != MICLIMIT_UNITY) {
+	if (mic == NULL) {
+		memset(scaled, 0, sizeof scaled);	// the mic gate: silence, and the limiter holds its state
+	} else if (gain != MICLIMIT_UNITY) {
 		miclimit_block(&cb_limit, gain, mic, scaled, AUDIO_BLOCK_SAMPLES);
 		stats.tx_mic_low_q8 = cb_limit.low_q8;
 	} else {
@@ -275,9 +278,15 @@ void p25VoiceAudioBlock(const int16_t *mic, int16_t *spk, void *ctx)
 		if (g != cb_tx_gen) {
 			cb_tx_gen = g;
 			stats.tx_mic_peak = 0;
+			stats.tx_mic_muted = 0;
 			miclimit_reset(&cb_limit, LOAD(mic_gain_q8));
 			stats.tx_mic_low_q8 = cb_limit.low_q8;
 			imbe_enc_init(&enc);
+		}
+		p25_voice_mic_gate_t gate = LOAD(mic_gate);
+		if (gate != NULL && gate()) {
+			mic = NULL;	// a beep on the speaker is in the mic too: silence (tx_block)
+			stats.tx_mic_muted++;
 		}
 		tx_block(g, mic);
 		silence(spk);
@@ -383,6 +392,11 @@ bool p25VoiceStreaming(void)
 void p25VoiceSetMixer(p25_voice_mixer_t m)
 {
 	STORE(mixer, m);
+}
+
+void p25VoiceSetMicGate(p25_voice_mic_gate_t g)
+{
+	STORE(mic_gate, g);
 }
 
 const p25_engine_hooks_t *p25VoiceHooks(void)

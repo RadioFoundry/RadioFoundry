@@ -298,6 +298,8 @@ uint32_t ui_freq_entry_hz(const char *digits, uint8_t len);
 uint32_t ui_freq_parse(const char *digits, uint8_t len);
 // Text for the board's bands ("136-174 400-480"), for hints; only the ones that may transmit when tx
 void ui_bands_text(char *out, size_t len, bool tx);
+// Why the radio can't send (why: tx_deny_t), as the user reads it; buf is returned
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len);
 // The board's power level name
 const char *ui_power_name(uint8_t level, uint32_t tx_hz);
 // A call from a dialing gateway on the trunked system in use (CONFIG_DMR_TRUNK_GW): the caller's number it gave

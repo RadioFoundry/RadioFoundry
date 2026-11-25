@@ -50,6 +50,8 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
+//   datadeny:<d>[,<p>]  why the channel can't send data now: view.data_deny d, packet_deny p (default d), each none,
+//                       aes_key, not_dmr or data_encrypted
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2964,6 +2966,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "temporary") == 0) snprintf(got, sizeof got, "%u", view.temporary);
 	else if (strcmp(key, "writes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.codeplug_writes);
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
+	else if (strcmp(key, "alerts") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.call_alerts);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
 	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
@@ -3725,6 +3728,32 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+	if (strcmp(t, "datadeny") == 0 && arg != NULL) {
+		static const struct { const char *name; uint8_t code; } codes[] = {
+			{ "none", TXDENY_NONE }, { "aes_key", TXDENY_AES_KEY }, { "not_dmr", TXDENY_NOT_DMR },
+			{ "data_encrypted", TXDENY_DATA_ENCRYPTED },
+		};
+		char *packet = strchr(arg, ',');
+		if (packet != NULL)
+			*packet++ = 0;
+		bool known = false;
+		for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(arg, codes[i].name) == 0) {
+				view.data_deny = view.packet_deny = codes[i].code;
+				known = true;
+			}
+		}
+		for (size_t i = 0; packet != NULL && i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(packet, codes[i].name) == 0)
+				view.packet_deny = codes[i].code;
+		}
+		if (!known) {
+			snprintf(err, len, "unknown datadeny %s", arg);
+			return false;
+		}
+		changed();
+		return true;
+	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;

@@ -7,16 +7,16 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
 
 - **Bytes** = default image minus the image with that switch off (`tools/ci.sh` builds each switch off), flash bytes.
   A parent switch's figure includes its children (turning `FM` off also drops VOX, APRS, ...).
-- Figures from tools/ci.sh at 3ec14e3 (2026-10-11).
-  - DM-1701: plain build (LTO off), default image 340,680 B of 344,064 B (3,384 free). Since USRP (2026-10-13) the
-    default build uses link time optimization: 330,824 B (13,240 free). Both figures are from the 336 KB app region
-    the radio had before the codec moved; its app region is now sectors 3-9, 720 KB. The per-feature figures stay the
-    plain ones.
-  - MD-380: link time optimization on (`LTO=1 LTO_3P=1`, its default), default image 279,444 B of 281,668 B, the
-    region it had then. With LTO a switch also changes what gets inlined elsewhere, so small MD-380 figures are
-    approximate. Since the codec moved the region is 464 KB, and since every codec window moved into sector 11
-    848 KB; the switches that were off for flash are on. The per-feature figures stay the 2026-10-11 ones.
-  - `*` = off by default; measured by turning it on in the DM-1701 build (main c0022b4).
+- Figures from `tools/ci.sh` at 7ba8949c, GCC 15, each radio's default build: link time optimization on (`LTO=1`;
+  the MD-380 also `LTO_3P=1`) and Spanish on. With LTO a switch also changes what gets inlined elsewhere, so small
+  figures are approximate.
+  - DM-1701: default image 704,632 B of its 720 KB app region (sectors 3-9).
+  - MD-380: default image 575,736 B of its 848 KB app region (sectors 3-10).
+  - A switch's figure includes its text in every language the image carries: the language tables hold only the
+    strings of the code a build compiles ([translating.md](dev/translating.md)).
+  - `*` = off by default; measured by turning it on in that radio's default build.
+  - The figures for switches these two radios don't build now (`AM_RX`, `BCAST_FM`, `VIBRATE`, `FONT_XL`; `P25` on the
+    MD-380) and for `AUDIO_PROBE` are older, from before the language tables held only the compiled strings.
 - **Radios:** which switches each radio builds by default is in
   [Built by default on each radio](#built-by-default-on-each-radio), generated from the build. A — in a bytes column
   means not built there, so not measured.
@@ -101,7 +101,7 @@ is `tools/bringup.py list --radio <id>`.
 | `aprs` | pass (seed) | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `aprs_afsk` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
 | `aprs_dmr` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | partial, needs re-run |
-| `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass | partial |
+| `aprs_rx` | pass (seed) | not recorded | not recorded | not written | not written | not recorded | pass, needs re-run | partial, needs re-run |
 | `aprs_mute` | not recorded | not recorded | not recorded | not written | not written | not recorded | not recorded | not recorded |
 | `aprs_igate` | not recorded | off | not recorded | not written | not written | off | pass, needs re-run | partial, needs re-run |
 | `gps_sky` | not recorded | not recorded | ✕ | not recorded | not recorded | not recorded | not recorded | ✕ |
@@ -316,130 +316,130 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| Analog FM receive and transmit | `FM` | 29,296 | 28,056 | Includes its children (tones, VOX, APRS, FM VFO) |
-| CTCSS / DCS encode and decode | `SUBTONE` | 904 | 3,292* | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways (2026-10-19), DCS not yet checked |
-| FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 568 | — | MD-380: TX tone path not written |
-| DTMF transmit from the keys | `DTMF` | 920 | — | MD-380: TX tone path not written |
-| FM VOX | `VOX` | 496 | 1,064 |  |
-| Receiver battery saver | `BATTERY_SAVE` | 296 | 740 |  |
-| Frequency trim, Settings > Advanced | `REF_TRIM` | 2,156 | 2,232 | Figures from tools/ci.sh (2026-10-30); the hook on each radio, the page and the setting |
+| Analog FM receive and transmit | `FM` | 36,252 | 24,324 | Includes its children (tones, VOX, APRS, FM VFO) |
+| CTCSS / DCS encode and decode | `SUBTONE` | 1,104 | 3,724 | MD-380: software decode (ADC) and PWM encode; CTCSS 100.0 Hz works on air both ways, DCS not yet checked |
+| FM TX tones: roger beep, 1750 Hz burst | `FM_TX_TONES` | 1,616 | — | MD-380: TX tone path not written |
+| DTMF transmit from the keys | `DTMF` | 916 | — | MD-380: TX tone path not written |
+| FM VOX | `VOX` | 352 | 356 |  |
+| Receiver battery saver | `BATTERY_SAVE` | 272 | 228 |  |
+| Frequency trim, Settings > Advanced | `REF_TRIM` | 2,012 | 2,356 | The hook on each radio, the page and the setting |
 | Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
-| Receive past the rated bands, Settings > Advanced | `RX_EXT` | 484 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
-| DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 175,856 | 134,308 | Includes every DMR feature and everything on IP over DMR |
-| P25 Phase 1 conventional: the air interface (framer, soft modem, shared FEC), the engine, the P25 channel mode and the full-rate voice decoder on the MBE core | `P25` | 43,300* | 24,640* | Needs a board with an air interface provider (`board.air`); without one nothing runs ([air-interface.md](spec/air-interface.md)). Off on the MD-380 until receive is written ([hardware-md380.md](spec/hardware-md380.md) 4.11). Receive and transmit checked on air against the SDR bench on the DM-32UV and the DM-1701, receive, zone scan and dual watch on the MD-9600; the VFO's mode tile, the debug link or a stored P25 channel sets it ([p25.md](spec/p25.md)). RAM: 6,640 B on the DM-1701, 424 B on the MD-380 |
-| NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 27,300* | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 and the DM-32UV transmit is checked off air at both rates and receive with a bench transmitter, speech frames through the vocoder included (DM-1701); on the HR_C6000 radios the speaker plays NXDN speech through the chip's prompt tone FIFO, checked by ear on the DM-1701 and the MD-9600 ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.6). RAM: 2,184 B on the DM-1701; with `P25` also on it shares P25's engine memory (9,464 B flash, 256 B RAM on top of P25) |
-| NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 468 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
-| Basic privacy, 8-bit and 16-bit keys | `DMR_PRIVACY` | 1,936 | 1,992 |  |
-| AES-256 DMR voice, PI header and late-entry signaling | `DMR_AES` | 3,992 | — | Requires `DMR_PRIVACY`. DM-1701: 3,992 B flash and 480 B RAM with `DMR_AES` on versus off. TX to a receiver of another make needs the modem driver's burst F field (`set_burst_f`, [dmr-voice.md](spec/dmr-voice.md) 5.1): only the HR_C7000 driver has it (DM-32UV); on the HR_C6000 and other radios our AES overs reach radios running RadioFoundry only (#864). |
-| Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
-| ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
-| DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |
-| Repeater roaming | `DMR_ROAMING` | 11,952 | 12,380 |  |
-| CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 592 | 752 |  |
-| Tier III trunked systems: control channel, registration, following calls | `DMR_TRUNK` | 37,540 | 38,176 | Includes its children. Off, a trunked channel is shown as a mode not in this build ([dmr-trunking](spec/dmr-trunking.md)). The four trunking figures are from the default builds they were added to |
-| Trunked calls and services: voice, status, short data, packet data, authentication | `DMR_TRUNK_TX` | 11,548 | 11,876 | Needs `DMR_TRUNK`. Includes its children. Off, the radio follows a system and never transmits there |
-| Trunked supplementary data and the short data poll | `DMR_TRUNK_SUPL` | 724 | 684 | Needs `DMR_TRUNK_TX` |
-| Trunked calls through a system's telephone, line and dispatcher gateways: dialed digits sent with the call | `DMR_TRUNK_GW` | 1,552 | 1,732 | Needs `DMR_TRUNK_TX` |
+| Receive past the rated bands, Settings > Advanced | `RX_EXT` | 560 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
+| DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 377,332 | 275,716 | Includes every DMR feature and everything on IP over DMR |
+| P25 Phase 1 conventional: the air interface (framer, soft modem, shared FEC), the engine, the P25 channel mode and the full-rate voice decoder on the MBE core | `P25` | 40,588 | 24,640* | Needs a board with an air interface provider (`board.air`); without one nothing runs ([air-interface.md](spec/air-interface.md)). Off on the MD-380 until receive is written ([hardware-md380.md](spec/hardware-md380.md) 4.11). Receive and transmit checked on air against the SDR bench on the DM-32UV and the DM-1701, receive, zone scan and dual watch on the MD-9600; the VFO's mode tile, the debug link or a stored P25 channel sets it ([p25.md](spec/p25.md)). RAM: 6,640 B on the DM-1701, 424 B on the MD-380 |
+| NXDN conventional voice, 4800 and 9600 bit/s: the frame codec, receive, the call layer, the engine and the NXDN mode in the radio core | `NXDN` | 10,512 | — | Needs `DMR` (its voice goes through the DMR vocoder path) and a board with an air interface provider (`board.air`); where the provider only receives a rate, PTT is refused at that rate. The VFO's mode tile, the debug link or a stored NXDN channel sets it ([nxdn.md](spec/nxdn.md) 6, [nxdn-codeplug.md](spec/nxdn-codeplug.md)). On the DM-1701 and the DM-32UV transmit is checked off air at both rates and receive with a bench transmitter, speech frames through the vocoder included (DM-1701); on the HR_C6000 radios the speaker plays NXDN speech through the chip's prompt tone FIFO, checked by ear on the DM-1701 and the MD-9600 ([modem-hrc6000.md](spec/modem-hrc6000.md) 10.6). RAM: 2,184 B on the DM-1701; with `P25` also on it shares P25's engine memory (9,464 B flash, 256 B RAM on top of P25) |
+| NXDN Scrambler (15-bit) | `NXDN_SCRAMBLER` | 448 | — | Needs `NXDN`; supports conventional voice calls. The NXDN air interface must support the requested direction. Checked on air against another radio running RadioFoundry and a commercial portable ([bring-up record](testing/dm32-bringup.md#nxdn-scrambler-interoperability)). |
+| Basic privacy, 8-bit and 16-bit keys | `DMR_PRIVACY` | 6,260 | 7,340 |  |
+| AES-256 DMR voice, PI header and late-entry signaling | `DMR_AES` | 3,484 | 4,692 | Requires `DMR_PRIVACY`. DM-1701: 480 B RAM. TX to a receiver of another make needs the modem driver's burst F field (`set_burst_f`, [dmr-voice.md](spec/dmr-voice.md) 5.1): only the HR_C7000 driver has it (DM-32UV); on the HR_C6000 and other radios our AES overs reach radios running RadioFoundry only (#864). |
+| Talker alias receive and send | `DMR_TALKER_ALIAS` | 1,088 | 1,068 |  |
+| ETSI GPS Info in the embedded LC | `DMR_GPS` | 992 | 892 |  |
+| DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,564 | 3,456 |  |
+| Repeater roaming | `DMR_ROAMING` | 12,136 | 12,196 |  |
+| CSBK signaling: call alert, radio check | `DMR_SIGNALING` | 1,044 | 988 |  |
+| Tier III trunked systems: control channel, registration, following calls | `DMR_TRUNK` | 37,800 | 42,208 | Includes its children. Off, a trunked channel is shown as a mode not in this build ([dmr-trunking](spec/dmr-trunking.md)). |
+| Trunked calls and services: voice, status, short data, packet data, authentication | `DMR_TRUNK_TX` | 12,456 | 11,948 | Needs `DMR_TRUNK`. Includes its children. Off, the radio follows a system and never transmits there |
+| Trunked supplementary data and the short data poll | `DMR_TRUNK_SUPL` | 708 | 808 | Needs `DMR_TRUNK_TX` |
+| Trunked calls through a system's telephone, line and dispatcher gateways: dialed digits sent with the call | `DMR_TRUNK_GW` | 1,400 | 720 | Needs `DMR_TRUNK_TX` |
 | P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). A stored P25 channel runs on its own parameters ([p25.md](spec/p25.md) 7) |
-| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,300* | — | Needs `P25`; on top of it. Off on the MD-380 with `P25`. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
-| VFO (hand-tuned frequency) | `VFO` | 656 | 516 | Includes the DMR VFO; `VFO` and `VFO_DMR` re-measured 2026-10-17 (DM-1701 plain build, MD-380 with LTO). Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2) is on top of that figure, behind the same switch: about 630 B on the DM-1701 and 730 B on the MD-380 (default builds, LTO as each has it), 750 B on the C-SKY radios |
-| FM VFO | `VFO_FM` | 504 | 452 |  |
-| DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 144 | 104 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
-| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 1,536 | 2,140 |  |
-| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 4,656 | 4,252 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only. Measured 2026-10-17 |
-| Zone editor: move, add, copy and remove channels in a zone; rename, copy and delete a zone | `ZONE_EDIT` | 6,580 | 6,928 | Needs `CHANNEL_EDIT`. Measured 2026-10-24 on the default builds, LTO as each has it; also about 1.3 KB of RAM |
-| Contact editor: a new contact from Find or a call's actions (name, ID, type, timeslot) | `CONTACT_EDIT` | 1,580 | 1,580 | Needs `CHANNEL_EDIT` and `DMR`. Measured 2026-10-30 on the default builds |
-| Volume bar when a knob the MCU reads turns (#354) | `VOLUME_BAR` | 496 | 428 | Measured 2026-11-08 on the default builds; shows only on a radio with such a knob. Off, the volume screen keeps the segment drawing it now shares (about 90 bytes) |
-| Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,120 | 2,188 | Up to 9 keys. Measured 2026-10-24 |
-| Scan, band scan, dual watch, nuisance delete | `SCAN` | 2,576 | 3,032 |  |
-| Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 10,864 | 11,456 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). Measured 2026-10-21 on the dual watch branch, default builds |
-| Beeps and alert tones | `BEEP` | 1,552 | 1,800 |  |
-| Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | — | — | Needs `BEEP`. Not measured yet: no C-SKY or ARM compiler in the session that wrote it |
-| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured 2026-10-16 with `CONFIG_SNMP=n`; 236 B with LTO |
-| GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | — | 1,196 | Needs a GPS receiver. Off, DMR GPS Info, LRRP and APRS send the fixed position when one is set ([position](spec/position.md)). MD-380 measured 2026-10-22 (LTO, 58f2cebe). The DM-1701 has none from the factory but listens for an owner-fitted one (1,308 B, LTO) |
+| P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,888 | — | Needs `P25`; on top of it. Off on the MD-380 with `P25`. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
+| VFO (hand-tuned frequency) | `VFO` | 2,424 | 1,344 | Includes the DMR VFO and Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2), which is about 750 B on the C-SKY radios |
+| FM VFO | `VFO_FM` | 0 | -28 |  |
+| DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 1,072 | 276 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |
+| Channels list: every channel by number, a channel's settings (hub 5) | `CHANNEL_LIST` | 18,320 | 16,580 |  |
+| Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 14,532 | 13,368 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only |
+| Zone editor: move, add, copy and remove channels in a zone; rename, copy and delete a zone | `ZONE_EDIT` | 5,188 | 5,480 | Needs `CHANNEL_EDIT`. Also about 1.3 KB of RAM |
+| Contact editor: a new contact from Find or a call's actions (name, ID, type, timeslot) | `CONTACT_EDIT` | 1,728 | 1,892 | Needs `CHANNEL_EDIT` and `DMR` |
+| Volume bar when a knob the MCU reads turns (#354) | `VOLUME_BAR` | 520 | 492 | Shows only on a radio with such a knob. Off, the volume screen keeps the segment drawing it now shares (about 90 bytes) |
+| Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,468 | 2,224 | Up to 9 keys |
+| Scan, band scan, dual watch, nuisance delete | `SCAN` | 25,640 | 24,204 |  |
+| Dual watch: A and B in any zone or the VFO, PTT on the selected one, its screens, talk back | `DUAL_WATCH` | 20,876 | 20,640 | Needs `SCAN`. Without it, only the debug link's dual watch (two channels of one zone). |
+| Beeps and alert tones | `BEEP` | 8,036 | 2,700 |  |
+| Signaling tone chains (Settings > Signaling tones) | `SIG_TONES` | 5,340 | 5,748* | Needs `BEEP` |
+| Vibration alerts (Settings > Sound > Vibrate) | `VIBRATE` | 520* | — | Needs a vibration motor (`hal_power_t.vibrate`): none of these radios has one RadioFoundry drives. On for the DM-1801 Pro. Measured with `CONFIG_SNMP=n`; 236 B with LTO |
+| GPS receiver: the module driver and its NMEA input (Settings > Location > GPS) | `GPS` | 9,568 | 9,556 | Needs a GPS receiver. Off, DMR GPS Info, LRRP and APRS send the fixed position when one is set ([position](spec/position.md)). The DM-1701 has none from the factory but listens for an owner-fitted one |
 
 ## DMR data
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| Text messages (ETSI IP text by default) | `DMR_SMS` | 2,640 | 5,072 | Includes the TMS format. Individual ETSI IP texts go confirmed ("Delivered to") |
-| TMS text format | `DMR_TMS` | 784 | 740 | Optional format next to ETSI IP text |
-| ARS registration | `DMR_ARS` | 1,112 | 1,324 |  |
-| LRRP location | `DMR_LRRP` | 8,548 | 2,048 |  |
-| Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 408 | 356 | Auto: not for ports 4000-4099 or ETSI IP text |
-| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 12,240 | 12,388 | Includes its screens and the import; about 4 KB of RAM. Received shares are offered by default, imported only when the user says so ([zone-share.md](spec/zone-share.md)). Measured 2026-10-24 with LTO, on the zone share branch |
-| Single frequency repeater: MMDVM SFR, and the standalone SFR (experimental) | `SFR` | 6,884 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
-| Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 696 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
-| Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 900 | — | Needs `SFR`. DM-1701 figure with LTO (2026-10-22) |
-| APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 26,568 | 26,628 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
-| APRS on FM: AX.25 / AFSK packets, messages, KISS TNC | `APRS_AFSK` | 21,876 | 11,872 | Needs APRS and FM. Includes APRS receive, KISS over TCP and APRS-IS where built. Off, APRS sends positions over DMR only. Measured with LTO |
-| APRS over DMR: LRRP or UDT positions to a gateway ID | `APRS_DMR` | 692 | 1,380 | Needs APRS and DMR. Off, APRS is FM only. Measured with LTO |
-| APRS receive: demodulator, station list, digipeater | `APRS_RX` | 8,892 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
-| GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | — | 5,244 | Needs GPS. 176 B of RAM. MD-380 measured 2026-10-29 (LTO) |
-| APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,820* | — | Needs APRS receive. DM-1701: off by default |
+| Text messages (ETSI IP text by default) | `DMR_SMS` | 3,076 | 2,892 | Includes the TMS format. Individual ETSI IP texts go confirmed ("Delivered to") |
+| TMS text format | `DMR_TMS` | 1,080 | 1,264 | Optional format next to ETSI IP text |
+| ARS registration | `DMR_ARS` | 1,300 | 1,576 |  |
+| LRRP location | `DMR_LRRP` | 2,496 | 2,044 |  |
+| Compressed UDP/IP headers on transmit (SAP 3) | `DMR_UDP_COMPRESS` | 752 | 756 | Auto: not for ports 4000-4099 or ETSI IP text |
+| Zone and channel sharing: send a zone or a channel, import an offered one | `ZONE_SHARE` | 17,276 | 16,860 | Includes its screens and the import; about 4 KB of RAM. Received shares are offered by default, imported only when the user says so ([zone-share.md](spec/zone-share.md)). |
+| Single frequency repeater: MMDVM SFR, and the standalone SFR (experimental) | `SFR` | 12,232 | — | MD-380: HR_C5000 lacks what the SFR glue uses |
+| Experimental: SFR user receive "dual-path RX": a voice frame whose FEC failed comes from the other copy | `SFR_DUALPATH_RX` | 624 | — | Needs `SFR` |
+| Experimental: standalone SFR repeater's periodic CW ID (callsign in Morse, FM) | `SFR_CWID` | 808 | — | Needs `SFR` |
+| APRS: AFSK positions, status, messages; DMR positions; KISS TNC | `APRS` | 31,872 | 19,664 | Includes APRS receive, KISS over TCP and APRS-IS where built. MD-380: AFSK TX needs the tone path (not written), DMR positions work |
+| APRS on FM: AX.25 / AFSK packets, messages, KISS TNC | `APRS_AFSK` | 23,956 | 12,124 | Needs APRS and FM. Includes APRS receive, KISS over TCP and APRS-IS where built. Off, APRS sends positions over DMR only |
+| APRS over DMR: LRRP or UDT positions to a gateway ID | `APRS_DMR` | 728 | 104 | Needs APRS and DMR. Off, APRS is FM only |
+| APRS receive: demodulator, station list, digipeater | `APRS_RX` | 10,012 | — | DM-1701: FM receive audio on the I2S stream, squelch gated ([aprs](spec/aprs.md) 5.3). MD-380: not written |
+| GPS screen: sky plot, signal bars, grid locator (Tools > Position) | `GPS_SKY` | 6,200 | 5,332 | Needs GPS. 176 B of RAM |
+| APRS iGate rules (with tools/aprs_gate.py) | `APRS_IGATE` | 1,420* | — | Needs APRS receive. DM-1701: off by default |
 
 ## Host link and USB
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| USB device | `USB` | 127,300 | 87,848 | DM-32 has no USB (host link on the programming cable's UART). Includes everything on USB |
-| Host link: hotspot, CPS, debug link on the host port | `HOSTLINK` | 115,640 | 77,644 | Includes its children |
-| MMDVM hotspot | `HOTSPOT` | 34,196 | ~12,400 | Includes split duplex and MMDVM SFR where built. MD-380: size estimated |
-| Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 12,584 | — | MD-380: HR_C6000-only glue. DM-1701, DM-32UV, DM-1801 Pro: each half checked alone on the SDR bench; one pair (DM-1801 Pro TX, DM-32UV RX) with a subscriber: 29 of 31 calls on the right slot |
-| Debug link | `DEBUGLINK` | 32,376 | 29,084 |  |
-| Task stacks in the debug link view | `TASK_STACKS` | 536 | 560 | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
-| Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 3,064 | 3,008 |  |
-| Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,732 | 3,948* | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). DM-1701 figure with LTO (2026-10-18) |
-| Loader hand-over (stub entry, command 0x1A) | `STUB_ENTRY` | 768* | — | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on every radio, with or without the debug link ([stub-entry.md](spec/stub-entry.md)); on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)) (the DM-1701's RAM is 95 % used with it on) |
-| Crash log | `CRASH_LOG` | 1,572 | 1,756 | A fault, stack overflow, heap exhaustion or failed assertion keeps a record across the restart; the debug link shows it ([crash-log.md](spec/crash-log.md)) |
-| Hardware watchdog | `WATCHDOG` | 932 | 856 | Fed by the idle task; a hang or a starved system resets the radio. Timeout about 5 s on the STM32 radios, 4 s on the HR_C7000 radios ([watchdog.md](spec/watchdog.md)) |
+| USB device | `USB` | 212,740 | 182,860 | DM-32 has no USB (host link on the programming cable's UART). Includes everything on USB |
+| Host link: hotspot, CPS, debug link on the host port | `HOSTLINK` | 199,640 | 171,960 | Includes its children |
+| MMDVM hotspot | `HOTSPOT` | 33,868 | 12,700 | Includes split duplex and MMDVM SFR where built. MD-380: size estimated |
+| Split duplex repeater (two radios, one duplex modem) | `HOTSPOT_SPLIT` | 18,356 | — | MD-380: HR_C6000-only glue. DM-1701, DM-32UV, DM-1801 Pro: each half checked alone on the SDR bench; one pair (DM-1801 Pro TX, DM-32UV RX) with a subscriber: 29 of 31 calls on the right slot |
+| Debug link | `DEBUGLINK` | 88,944 | 80,128 |  |
+| Task stacks in the debug link view | `TASK_STACKS` | 976 | 944 | Each task's least free stack, the `tasks` view section ([debuglink](spec/debuglink.md) 3.7) |
+| Open-firmware CPS protocol (qdmr) | `CPS_OPENFW` | 6,696 | 6,840 |  |
+| Fast codeplug protocol (debug link CODEPLUG) | `CPS_FAST` | 3,348 | 3,428 | Changed 4 KB blocks only, LZ4 both ways, staged commit ([cps-fast.md](spec/cps-fast.md)). |
+| Loader hand-over (stub entry, command 0x1A) | `STUB_ENTRY` | 1,224 | 392 | Updates and backups over the radio's own link without the bootloader key press: the web flasher and `stub/stubtool.py`. On by default on every radio, with or without the debug link ([stub-entry.md](spec/stub-entry.md)); on the STM32 radios a RAM flash stub that also takes 8 KB of RAM ([stub-stm32f4.md](spec/stub-stm32f4.md)) (the DM-1701's RAM is 95 % used with it on) |
+| Crash log | `CRASH_LOG` | 6,240 | 5,928 | A fault, stack overflow, heap exhaustion or failed assertion keeps a record across the restart; the debug link shows it ([crash-log.md](spec/crash-log.md)) |
+| Hardware watchdog | `WATCHDOG` | 1,248 | 572 | Fed by the idle task; a hang or a starved system resets the radio. Timeout about 5 s on the STM32 radios, 4 s on the HR_C7000 radios ([watchdog.md](spec/watchdog.md)) |
 | Fault trace on the host UART | `FAULT_TRACE` | — | — | A CPU fault's registers in three framed lines before the restart, about 600 B ([crash-log.md](spec/crash-log.md) 2.3). The STM32 radios' host port is USB |
-| Crash log screen | `CRASH_SCREEN` | 1,024 | 1,408* | Settings > Advanced > Crash log: the record's summary and Clear |
-| Crash report over DMR | `CRASH_REPORT` | 1,440 | 1,712* | Sends the crash record as one UDP datagram to a codeplug contact, from the menu or after the restart (Off, Ask, Auto) ([crash-log.md](spec/crash-log.md) 5). Needs the screen |
+| Crash log screen | `CRASH_SCREEN` | 3,384 | 3,176 | Settings > Advanced > Crash log: the record's summary and Clear |
+| Crash report over DMR | `CRASH_REPORT` | 1,564 | 1,268 | Sends the crash record as one UDP datagram to a codeplug contact, from the menu or after the restart (Off, Ask, Auto) ([crash-log.md](spec/crash-log.md) 5). Needs the screen |
 
 ## Network (USB network adapter and IP over DMR)
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| USB network adapter (CDC-NCM) | `USB_NETWORK` | 48,344 | 47,468 | Includes everything below |
-| Leave network mode from a web page | `USB_SERIAL_REQUEST` | 644 | 696 | The web flasher and editor take a radio in USB network mode back to serial mode, with no key press on the radio (endpoint 0 request, `/api/usb`, TCP at 12.255.255.254). Follows `USB_NETWORK` |
-| IP over DMR gateway | `DMR_IP_GATEWAY` | 44,128 | 43,220 | Includes the radio's own services below |
-| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 288 | 484 |  |
-| Minimal TCP | `NET_TCP` | 16,240 | 15,656 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
-| KISS over TCP, port 8001 | `NET_KISS` | 700 | 752 |  |
-| HTTP status page and JSON, port 80 | `NET_HTTP` | 4,796 | 4,860 |  |
-| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | -18,572 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
-| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 9,620 | 9,332 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
-| Zone and channel control over UDP, port 4191: where the radio is, select and step, change notices | `NET_RADIO_UDP` | 2,296 | 2,292 | 112-120 B RAM; needs no TCP or HTTP; DM-32UV 2,392 ([tcp-services.md](spec/tcp-services.md) 8) |
-| rigctld, port 4532 | `NET_RIGCTL` | 3,852 | 3,728 |  |
-| Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 4,552 | 4,888 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). Off where the host link is the programming cable at 115200 baud (about 11.5 KB/s): received audio alone needs about 17.6 KB/s |
-| APRS-IS client | `NET_APRSIS` | 2,856 | 2,720 | Needs NAT on the host |
-| mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,744 | 6,504 |  |
-| TFTP codeplug read / write | `TFTP` | 6,356 | 6,412 | Without the ID database below |
-| DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,184 | 2,264 | Follows `TFTP` |
-| Compact DMR ID database (format C) read beside format N | `IDDB_COMPACT` | 988 | 992 | Follows `DMR` ([iddb-compact.md](spec/iddb-compact.md)) |
-| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 8,460 | 8,036 |  |
-| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 4,368* | 3,816* | Interop tested with pppd; checked on the DB25-D PRO and the DM-1801 Pro (`docs/spec/ppp.md` 8). Fits neither default image as it is when measured (DM-1701 688 B short, MD-380 1,588 B short of its 275 KB then; DM-1701 with LTO: +3,948, fits). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
+| USB network adapter (CDC-NCM) | `USB_NETWORK` | 72,808 | 72,804 | Includes everything below |
+| Leave network mode from a web page | `USB_SERIAL_REQUEST` | 588 | 588 | The web flasher and editor take a radio in USB network mode back to serial mode, with no key press on the radio (endpoint 0 request, `/api/usb`, TCP at 12.255.255.254). Follows `USB_NETWORK` |
+| IP over DMR gateway | `DMR_IP_GATEWAY` | 67,784 | 67,976 | Includes the radio's own services below |
+| Control station mode (boot as network, PC answers data, fixed link) | `DMR_CONTROL_STATION` | 316 | 468 |  |
+| Minimal TCP | `NET_TCP` | 31,552 | 31,188 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
+| KISS over TCP, port 8001 | `NET_KISS` | 776 | 664 |  |
+| HTTP status page and JSON, port 80 | `NET_HTTP` | 20,304 | 19,548 |  |
+| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | 12,616 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
+| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 12,944 | 12,788 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
+| Zone and channel control over UDP, port 4191: where the radio is, select and step, change notices | `NET_RADIO_UDP` | 2,364 | 2,412 | 112-120 B RAM; needs no TCP or HTTP; DM-32UV 2,392 ([tcp-services.md](spec/tcp-services.md) 8) |
+| rigctld, port 4532 | `NET_RIGCTL` | 3,856 | 3,872 |  |
+| Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 3,112 | 3,660 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). Off where the host link is the programming cable at 115200 baud (about 11.5 KB/s): received audio alone needs about 17.6 KB/s |
+| APRS-IS client | `NET_APRSIS` | 2,824 | 2,816 | Needs NAT on the host |
+| mDNS / DNS-SD (rfoundry-<id>.local) | `MDNS` | 6,656 | 6,728 |  |
+| TFTP codeplug read / write | `TFTP` | 8,248 | 8,208 | Without the ID database below |
+| DMR ID database over TFTP (`iddb.bin`, combined `codeplug.bin`) | `TFTP_IDDB` | 2,096 | 2,036 | Follows `TFTP` |
+| Compact DMR ID database (format C) read beside format N | `IDDB_COMPACT` | 848 | 1,028 | Follows `DMR` ([iddb-compact.md](spec/iddb-compact.md)) |
+| SNMP v2c agent and traps (USB and over the air) | `SNMP` | 7,824 | 7,728 |  |
+| PPP on the serial host port (IPv4 into the gateway) | `NET_PPP` | 5,308* | 4,832* | Interop tested with pppd; checked on the DB25-D PRO and the DM-1801 Pro (`docs/spec/ppp.md` 8). DM-32: its only IP link, on by default with the gateway and every service (Whole images, DM-32UV) |
 
 ## User interface
 
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
-| Settings menu on the radio | `UI_SETTINGS` | 5,304 | 5,640 |  |
-| Diagnostics page | `DIAG` | 3,752 | 3,532 |  |
-| Satellite TLE catalog, pass prediction and Doppler compensation | `SATELLITE_TLE` | 26,332 | 26,620 | Needs `DEBUGLINK`. RAM: 1,280 B on DM-1701 (656 B linked, 624 B from the existing heap), 1,272 B on MD-380 (648 B linked, 624 B heap), and 1,264 B on DM-32UV (656 B linked, 608 B heap). Heap figures include allocation overhead and are already reserved in linked RAM. The DM-1701 and MD-UV380 maximal builds keep it on; the MD-9600 maximal build leaves it off to fit app flash. Default builds keep it on ([satellite.md](spec/satellite.md)). |
-| Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 2,496 | 3,016 | About 515 bytes of RAM, most of it About's longer text. Read only when About opens or a host asks ([support-info.md](spec/support-info.md)) |
-| Backlight test pages | `BACKLIGHT_TEST` | 1,536 | 1,552 | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
-| Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 672 | 608 | Off on the DM-1801 Pro (monochrome screen; 628 B there). Measured 2026-10-17; DM-1701 with LTO 612 B |
+| Settings menu on the radio | `UI_SETTINGS` | 13,984 | 11,000 |  |
+| Diagnostics page | `DIAG` | 4,216 | 4,556 |  |
+| Satellite TLE catalog, pass prediction and Doppler compensation | `SATELLITE_TLE` | 28,184 | 27,724 | Needs `DEBUGLINK`. RAM: 1,280 B on DM-1701 (656 B linked, 624 B from the existing heap), 1,272 B on MD-380 (648 B linked, 624 B heap), and 1,264 B on DM-32UV (656 B linked, 608 B heap). Heap figures include allocation overhead and are already reserved in linked RAM. The DM-1701 and MD-UV380 maximal builds keep it on; the MD-9600 maximal build leaves it off to fit app flash. Default builds keep it on ([satellite.md](spec/satellite.md)). |
+| Support info on About and the debug link (build source, chips, image hash) | `SUPPORT_INFO` | 3,016 | 2,572 | About 515 bytes of RAM, most of it About's longer text. Read only when About opens or a host asks ([support-info.md](spec/support-info.md)) |
+| Backlight test pages | `BACKLIGHT_TEST` | 1,320* | 1,196* | Off by default; bench work ([backlight-curve.md](testing/backlight-curve.md)) |
+| Color screen settings (theme, highlight color, filled status bar) | `UI_COLOR` | 1,088 | 1,040 | Off on the DM-1801 Pro (monochrome screen) |
 | 16x32 font | `FONT_XL` | 6,352* | — | Only useful at 240 px and wider (MD-380 is 160 px). Anti-aliased on the DM-32 (7.4 KB of glyphs) |
-| Anti-aliased fonts | `FONT_AA` | 3,004* | — | Smooth text on color panels (measured 2026-10-17); the DM-32's image grew 9.5 KB with it and `FONT_XL` |
-| Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 (measured 2026-10-17) |
-| Spanish on the radio | `LANG_ES` | 28,456 | 28,348 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text. Measured 2026-10-31 |
-| Italian on the radio | `LANG_IT` | 17,304 | 17,304 | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
-| French on the radio | `LANG_FR` | 15,540 | 15,528 | Off by default; measured with Spanish on, as Italian |
-| Chinese on the radio | `LANG_ZH` | 44,358 | — | Off by default. Not the text alone: 25,664 B of 16x16 glyph bitmaps plus 1,604 B of code points (802 characters, `core/ui/cjk_font_data.c`: the catalog's characters plus a reviewed list of province/city names and repeater words in `tools/cjk_names_zh.txt`) and about 17 KB of UTF-8 text, with the text layer's decoder. Channel names that use a character outside the list draw a box. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, the 160 px class moves its words up to 8x16 while a wide language is in use (2 rows fewer on a 160x120 panel, Home without its zone line), and a 128x64 panel has no room for it and must not build it. A board without room leaves `LANG_ZH` off in its `config.mk`. Measured with Spanish on |
-| Chinese glyph table for channel names | `CJK_GLYPHS` | 27,268 | — | The 802 16x16 glyph bitmaps and code points (25,664 + 1,604 B) in `LANG_ZH`'s figure, split out so a board too small for Chinese keeps its translated menus without the table (Chinese then draws as boxes). Defaults to `LANG_ZH`, which it needs |
+| Anti-aliased fonts | `FONT_AA` | 6,040* | 6,032* | Smooth text on color panels; the DM-32's image grew 9.5 KB with it and `FONT_XL` |
+| Larger text | `FONT_BIG` | — | — | 9x18 lists and labels on 240 px color panels (needs `FONT_AA`); 3,588 B on the DM-32 |
+| Spanish on the radio | `LANG_ES` | 28,616 | 27,068 | The first language brings the lookup and the accented letters of every font (about 7.5 KB); the rest is its text, only the strings the build compiles (a switch that is off takes its strings out of every language) |
+| Italian on the radio | `LANG_IT` | 21,376* | 20,216* | Off by default; measured with Spanish on (its text, and the hashes of strings Spanish leaves untranslated). Alone it costs about as much as Spanish |
+| French on the radio | `LANG_FR` | 18,088* | 17,024* | Off by default; measured with Spanish on, as Italian |
+| Chinese on the radio | `LANG_ZH` | 48,052* | — | Off by default. Not the text alone: 25,664 B of 16x16 glyph bitmaps plus 1,604 B of code points (802 characters, `core/ui/cjk_font_data.c`: the catalog's characters plus a reviewed list of province/city names and repeater words in `tools/cjk_names_zh.txt`) and about 17 KB of UTF-8 text, with the text layer's decoder. Channel names that use a character outside the list draw a box. Needs a 16 px line height: a 240 px color radio draws its words in 8x16 and shows Chinese on every screen, the 160 px class moves its words up to 8x16 while a wide language is in use (2 rows fewer on a 160x120 panel, Home without its zone line), and a 128x64 panel has no room for it and must not build it. A board without room leaves `LANG_ZH` off in its `config.mk`. Measured with Spanish on |
+| Chinese glyph table for channel names | `CJK_GLYPHS` | 27,336 | — | The 802 16x16 glyph bitmaps and code points (25,664 + 1,604 B) in `LANG_ZH`'s figure, split out so a board too small for Chinese keeps its translated menus without the table (Chinese then draws as boxes). Defaults to `LANG_ZH`, which it needs |
 | Start in Spanish | `LANG_DEFAULT_ES` | 0 | 0 | The language the radio starts in until the user picks one (needs `LANG_ES`); the web flasher sets it from its Radio language choice |
 | Start in Italian | `LANG_DEFAULT_IT` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_IT`) |
 | Start in French | `LANG_DEFAULT_FR` | 0 | 0 | As `LANG_DEFAULT_ES` (needs `LANG_FR`) |
@@ -456,8 +456,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Feature | Switch | Bytes DM-1701 | Bytes MD-380 | Notes |
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
-| Air interface bench: raw symbols and tap samples (debug link 0x24) | `AIR_RAW` | 2,780* | — | Bench only, never in a release ([debuglink.md](spec/debuglink.md) 3.28) |
-| Voice capture for receive tests: the next 32 voice frames received, read over the debug link | `VOICE_CAPTURE` | 256* | 344* | Bench only, never in a release ([debuglink](spec/debuglink.md)) |
+| Air interface bench: raw symbols and tap samples (debug link 0x24) | `AIR_RAW` | 3,560* | — | Bench only, never in a release ([debuglink.md](spec/debuglink.md) 3.28) |
+| Voice capture for receive tests: the next 32 voice frames received, read over the debug link | `VOICE_CAPTURE` | 264* | 284* | Bench only, never in a release ([debuglink](spec/debuglink.md)) |
 
 ## Whole images
 
@@ -465,20 +465,20 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 
 | Build | DM-1701 | MD-380 |
 |---|---:|---:|
-| Default | 332,532 (LTO on) | 320,236 (2026-10-19) |
-| Maximal (every compatible switch on) | 340,396 (LTO on) | 327,064 (2026-10-19) |
-| FM only, minimal | 123,300 | 109,488 |
+| Default | 704,632 | 575,736 |
+| Maximal (every compatible switch on) | 733,604 | 631,656 |
+| FM only, minimal | 240,436 | 213,428 |
 
-Link time optimization is on by default on both radios. The DM-1701 has run with it since 2026-10-13 (the HIL suite
-passed); `LTO_3P=1` would take another 3 KB or so off by optimizing the third-party code too.
+Link time optimization is on by default on both radios. On the DM-1701 `LTO_3P=1` would take another 3 KB or so off
+by optimizing the third-party code too.
 
 The MD-380's app region is sectors 3-10, 0x0800C000..0x080DFFFF, 868,352 bytes (848 KB). The codec runs in place in
 sector 11 ([codec-md380.md](spec/codec-md380.md)). With link time optimization, its default:
 
 | MD-380 build | Flash | Free |
 |---|---:|---:|
-| Default (UHF) | 472,036 | 396,316 |
-| Maximal (every switch it supports, PPP and Italian included) | 500,956 | 367,396 |
+| Default (UHF) | 575,736 | 292,616 |
+| Maximal (every switch it supports, PPP and Italian included) | 631,656 | 236,696 |
 
 Until the codec first moved, the region was 281,668 bytes and the default image fit only with link time optimization
 and the hotspot off. Until every codec window moved into sector 11 it was 475,136 bytes (sectors 3-7).

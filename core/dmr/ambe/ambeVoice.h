@@ -69,6 +69,7 @@ typedef struct {
 	uint32_t tx_mic_spread_db;	// that minus the 10th percentile block's level, dB
 	uint32_t tx_mic_zc;		// the median block's zero crossings (of 160): speech 5-40, white noise about 80
 	uint32_t tx_mic_blocks;		// blocks counted
+	uint32_t tx_mic_muted;		// blocks sent as silence in the latest transmission: the mic gate was on (a beep)
 } ambe_voice_stats_t;
 
 // audio and vocoder from the board; vocoder->present() false: frames are still queued and counted, but play silence
@@ -87,6 +88,12 @@ bool ambeVoiceStreaming(void);
 // block, adds into it and returns true while it sounds (the speaker route is kept on for it). NULL = none
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
+// While transmitting, asked before each mic block is encoded: true sends the block as silence. The speaker's sound
+// reaches the mic, so a beep the mixer plays during a transmission would go on air with the voice (issue 532); the
+// gate (radio/beep.h beep_mic_echo) covers the beep and its way back. The test signal and signaling tones go out as
+// they are. NULL = none
+typedef bool (*ambe_voice_mic_gate_t)(void);
+void ambeVoiceSetMicGate(ambe_voice_mic_gate_t gate);
 // Microphone gain for DMR transmissions, Q8 (256 = as the board delivers it): the samples go through a peak limiter
 // (core/dsp/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
 // a transmission starts at the gain set then and follows a change from its next block. Set through radio_set_mic_gain

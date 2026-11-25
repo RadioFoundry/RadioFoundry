@@ -163,6 +163,11 @@ msgid "Delivered to "
 msgstr "Entregado a "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_NOT_SENT_TO"
+msgid "Not sent to "
+msgstr "No enviado a "
+
+#: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
 msgid "No answer from "
 msgstr "Sin respuesta de "
@@ -242,12 +247,7 @@ msgctxt "SHARE_BANNER_ZONE_FROM"
 msgid "⤓ Zone from "
 msgstr "⤓ Zona de "
 
-#: core/ui/ui_app.c
-msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "No enviado a "
-
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
 msgid "Try again on a DMR channel"
 msgstr "Reintenta en un canal DMR"
@@ -1633,24 +1633,29 @@ msgid "Messages: not in this build"
 msgstr "Mensajes: no disponible"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "Probando "
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
 msgid "Radio check: not in this build"
 msgstr "Prueba radio: no disponible"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "Alerta a "
+msgctxt "ACT_TOAST_CHECKING"
+msgid "Checking "
+msgstr "Probando "
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_TOAST_SEND_FAILED"
+msgid "Couldn't send: try again"
+msgstr "No se envió: reintenta"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
 msgid "Call alert: not in this build"
 msgstr "Alerta: no disponible"
+
+#: core/ui/ui_menus.c
+msgctxt "ACT_TOAST_CALL_ALERT_TO"
+msgid "Call alert to "
+msgstr "Alerta a "
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_POS_REQUESTS_NOT_IN_BUILD"
@@ -1721,11 +1726,6 @@ msgstr "Pedir confirmación"
 msgctxt "MSG_LABEL_INCLUDE_POSITION"
 msgid "Include position"
 msgstr "Incluir posición"
-
-#: core/ui/ui_menus.c
-msgctxt "MSG_TOAST_SEND_FAILED"
-msgid "Couldn't send: try again"
-msgstr "No se envió: reintenta"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SENDING_TO"
@@ -4941,6 +4941,11 @@ msgstr "Banco de aire: sin PTT"
 msgctxt "DENY_WHY_AIR_NO_TX"
 msgid "This mode: receive only"
 msgstr "Este modo: solo recibe"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_WHY_DATA_ENCRYPTED"
+msgid "Encrypted channels can't send text"
+msgstr "Sin texto en canales cifrados"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"
