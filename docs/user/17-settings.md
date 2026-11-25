@@ -88,8 +88,8 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 
 | Setting | Values | Default | What it does | Status |
 |---|---|---|---|---|
-| Key type | Off, Motorola, Anytone | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
-| Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
+| Key type | Off, 8-bit (1-255), 16-bit (0-65535) | Off | The kind of basic privacy key ([DMR](09-dmr.md#privacy)). Off removes the key | Works |
+| Key | 8-bit 1 to 255, 16-bit 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
 | Key check | Six hex digits, read only | | The key's check value ([DMR](09-dmr.md#checking-that-two-radios-have-the-same-key)). Two radios with the same key show the same digits. Dimmed until a type is chosen | Untested on a radio |
 | Stored keys | A list | | Every key the radio holds, with its check value: the privacy key slots, then the traffic keys of the codeplug's systems (NXDN scrambler keys, and others where the build has them). Missing from builds with neither | Untested on a radio |
 | Wipe code | Set, Off | Off | The 4 digits that, with **#**, wipe the radio ([Emergency wipe](#emergency-wipe)). **OK** opens it: type the code twice. When a code is set, Clear code removes it. Dimmed on radios without number keys | Untested on a radio |
@@ -151,7 +151,7 @@ and by APRS. None of them needs the others: a radio without APRS still reports i
 | Answer radio checks | On, Off | On | Answer radio checks from other radios ([Radio check](10-messages-and-signaling.md#radio-check)) | Works |
 | Answer call alerts | On, Off | On | Acknowledge call alerts, so the caller knows the page arrived | Works |
 | TFTP codeplug write | On, Off | On | Lets a computer write the codeplug over TFTP in USB network mode ([USB network](15-usb-network.md#programming-over-the-network)). Reading is always possible | Works |
-| Message format | Automatic, ETSI, ETSI short, Motorola (where built) | Automatic | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
+| Message format | Automatic, ETSI, ETSI short, TMS (where built) | Automatic | The encoding of new DMR text messages ([Messages](10-messages-and-signaling.md#message-formats)) | Works |
 | Accept zone shares | On, Off | On | On shows a zone or channel another radio sends you, to import or reject ([Sharing a zone](07-channels-zones-vfo.md#sharing-a-zone)). Off ignores them | Works |
 | USB network at start | On, Off | Off | The radio starts as a USB network adapter instead of a serial port ([USB network](15-usb-network.md#starting-in-network-mode)) | Works |
 | PC answers data | On, Off | Off | Control station mode: while the computer is connected in USB network mode, it answers the data sent to your radio instead of the radio ([USB network](15-usb-network.md#control-station-for-dispatch-software)) | Works |

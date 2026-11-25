@@ -18,7 +18,7 @@ set -e
 cd "$(dirname "$0")/.."
 ACTIVE=
 [ "$1" = "--active" ] && ACTIVE=--active
-RADIO=12.0.39.20			# pppPeer's DMR ID 10005: the host gets 12.0.39.21
+RADIO=12.0.39.21			# pppPeer's DMR ID 10005: the host gets 13.0.39.21
 OUT=${TMPDIR:-/tmp}/rfoundry_ppp_interop.$$
 mkdir -p "$OUT"
 make -s -C tests/host pppPeer

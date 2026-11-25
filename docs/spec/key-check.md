@@ -47,7 +47,7 @@ values.
 ### 2.1 A privacy key slot
 
 A slot of the settings store ([settings-store.md](settings-store.md) 3.1): a = its type (`dmrPrivacyType_t`: 1
-Motorola BP, 2 Anytone BP), b = 0, the key = its value as 4 octets, big endian. Motorola key 1 is `9507A7`.
+8-bit BP, 2 16-bit BP), b = 0, the key = its value as 4 octets, big endian. 8-bit key 1 is `9507A7`.
 
 ### 2.2 A traffic key
 
@@ -68,12 +68,12 @@ with `traffic.kcv = "aes"`.
 | Where | What |
 |---|---|
 | Settings > Privacy > Key check | Slot 1's KCV, `-` with no key. OK says how to use it. Dimmed until a key type is picked |
-| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 Moto` or the system's name and `#` key ID, its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
+| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 8-bit` or the system's name and `#` key ID, its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
 | Codeplug Editor, a system's traffic keys | A Key check column, computed from the row as typed, `-` while a field doesn't parse. Shown when the key itself is hidden |
 
 ## 5. What a KCV gives away
 
-A KCV of a key with few possible values names the key: Motorola BP has 255, Anytone BP and NXDN seeds 65,536 and
+A KCV of a key with few possible values names the key: 8-bit BP has 255, 16-bit BP and NXDN seeds 65,536 and
 32,767, and anyone can try them all. For these keys the KCV is a convenience, not a secret; the radio shows the key
 itself in Settings anyway. For a 256-bit key, three octets narrow nothing an attacker can use: about one key in 16.7
 million shares a KCV, and finding one still means searching the whole key space. Two different keys can share a KCV

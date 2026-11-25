@@ -105,7 +105,7 @@ static void test_privacy(void)
 	key_entry_t e;
 	uint8_t key[KEY_STORE_MAX_LEN], want[KCV_LEN];
 	CHECK(key_store_count() == 0 && !key_store_get(0, &e, NULL));
-	// Slot 1 off, slot 2 a key its type doesn't take (Motorola's are 1..255), slot 3 past 16 bits: none listed
+	// Slot 1 off, slot 2 a key its type doesn't take (8-bit keys are 1..255), slot 3 past 16 bits: none listed
 	settings.privacy_type[0] = DMR_PRIVACY_OFF;
 	settings.privacy_key[0] = 5;
 	settings.privacy_type[1] = DMR_PRIVACY_MOTOROLA_BP;

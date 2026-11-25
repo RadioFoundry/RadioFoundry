@@ -569,7 +569,7 @@ def test_updown_changes_the_zone(home):
 @pytest.mark.feature("dmr_privacy")
 @pytest.mark.needs_switch("UI_SETTINGS")
 def test_privacy_key_entry(home):
-    """Settings > Privacy: key type Motorola, key typed 123 (slot 1); type Off again removes it."""
+    """Settings > Privacy: key type 8-bit, key typed 123 (slot 1); type Off again removes it."""
     r = home
     if "DMR_PRIVACY" not in r.features():
         skip("not_built", "built without CONFIG_DMR_PRIVACY")
@@ -582,7 +582,7 @@ def test_privacy_key_entry(home):
         skip("state", "a privacy key is set already: not overwriting it")
     settings_keys(r, "ok 7 4 ok down ok 1 2 3 ok")
     try:
-        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type Motorola")
+        r.wait_for(lambda x: x.get("settings.privacy_type") == "1", sections=("storage",), what="key type 8-bit")
         if r.core().get("mode") == "dmr":
             r.press("quick")
             wait_screen(r, "quick")
@@ -591,7 +591,7 @@ def test_privacy_key_entry(home):
             leave_quick(r)
             r.press("back")
     finally:
-        settings_keys(r, "ok 7 4 ok ok")	# Motorola -> Anytone -> Off
+        settings_keys(r, "ok 7 4 ok ok")	# 8-bit -> 16-bit -> Off
     r.wait_for(lambda x: x.get("settings.privacy_type") == "0", sections=("storage",), what="the key removed")
 
 
