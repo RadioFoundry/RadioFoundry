@@ -7,15 +7,18 @@
 # tree (peak about 4 GB) stays in WORK. Linux x86_64 or arm64, or a Mac, with Docker; the image is for the host's
 # architecture, so the one CI pulls (x86_64 runners) is built on an x86_64 host.
 #   tools/docker/csky-toolchain/build.sh [WORK] [TAG]
-# Defaults: /scratch/rfoundry-csky ($TMPDIR/rfoundry-csky without /scratch, as on a Mac), rfoundry/csky-gcc14:<date>.
-# The image is also tagged :latest in TAG's repository.
+# Defaults: /scratch/rfoundry-csky ($TMPDIR/rfoundry-csky without /scratch, as on a Mac), rfoundry/csky-gcc14:<date>,
+# with -arm64 on an arm64 host. The image is also tagged :latest in TAG's repository (:latest-arm64 on an arm64 host),
+# so an arm64 image never takes the tags push.sh and the x86_64 runners use by default.
 # KEEP=1 leaves WORK (the downloaded sources and the installed tree) and the builder image in place.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
 TMP=${TMPDIR:-/tmp}
+# The image is for the host's architecture: arm64 tags end in -arm64, as in ../toolchains/common.sh
+case $(uname -m) in arm64|aarch64) SUFFIX=-arm64 ;; *) SUFFIX= ;; esac
 WORK=${1:-$([ -d /scratch ] && echo /scratch || echo "${TMP%/}")/rfoundry-csky}
-TAG=${2:-rfoundry/csky-gcc14:$(date +%Y%m%d)}
+TAG=${2:-rfoundry/csky-gcc14:$(date +%Y%m%d)$SUFFIX}
 MIN_FREE_GB=${MIN_FREE_GB:-1}
 
 mkdir -p "$WORK/src"
@@ -50,13 +53,14 @@ docker run --rm --name "$NAME" --user "$(id -u):$(id -g)" -v "$WORK:/work" -e GV
 	-v "$ROOT/tools/build-csky-toolchain.sh:/build.sh:ro" rfoundry/csky-builder
 
 docker build -t "$TAG" -f "$HERE/Dockerfile" "$WORK"
-# :latest too, which push.sh (its default SRC), stub/build_db25d_stubs.sh and the CI runner image start from. The
-# repository is TAG up to its last ':', unless that ':' is a registry port (registry:5000/name, no tag)
+# :latest too (:latest-arm64 on an arm64 host), which push.sh (its default SRC), stub/build_db25d_stubs.sh and the CI
+# runner image start from. The repository is TAG up to its last ':', unless that ':' is a registry port
+# (registry:5000/name, no tag)
 REPO=${TAG%:*}
 case ${TAG##*:} in */*) REPO=$TAG ;; esac
-docker tag "$TAG" "${REPO}:latest"
+docker tag "$TAG" "${REPO}:latest$SUFFIX"
 docker run --rm "$TAG" csky-elf-gcc --version | head -1
-echo "build.sh: image $TAG and ${REPO}:latest"
+echo "build.sh: image $TAG and ${REPO}:latest$SUFFIX"
 if [ "${KEEP:-0}" != 1 ]; then
 	rm -rf "${WORK:?}/csky-elf" "${WORK:?}/src" "${WORK:?}/.dockerignore"
 	rmdir "$WORK" 2>/dev/null || true
