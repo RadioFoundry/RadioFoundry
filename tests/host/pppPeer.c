@@ -32,7 +32,7 @@
 #include "snmp/snmp.h"
 #include "snmp/snmpMib.h"
 
-#define RADIO_ID	10005u		// the host gets 12.0.39.21, the radio is 12.0.39.20
+#define RADIO_ID	10005u		// the host gets 13.0.39.21, the radio is 12.0.39.21
 
 static int master = -1;
 static uint32_t t0;

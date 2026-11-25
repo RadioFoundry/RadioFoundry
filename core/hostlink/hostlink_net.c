@@ -238,6 +238,12 @@ void ipGatewaySerialIn(const uint8_t *data, int length)
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t src_ip, uint32_t dst_ip, uint8_t ttl, uint8_t protocol,
 		      const uint8_t *l4, int length)
 {
+	// Control station passthrough: the PC answers for the radio's own DMR ID, so it sends as the radio (12.<ID>, not
+	// its peripheral network address): to the fleet the answers come from the control station
+	// (docs/spec/usb-network.md 5.2)
+	if (hostlink_net_passthrough_active() && (src_ip == dmrDataPeripheralAddress(ipGatewayRadioId()))) {
+		src_ip = IPGW_AIR_SRC_OURS;
+	}
 	bool ok = (air != NULL) && (air->ip_to_air != NULL) &&
 		  air->ip_to_air(group, dst, src_ip, dst_ip, ttl, protocol, l4, length);
 

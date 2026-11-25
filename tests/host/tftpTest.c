@@ -31,8 +31,8 @@ void storage_lock(void) {}
 void storage_unlock(void) {}
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)
-#define RADIO_IP	(HOST_IP ^ 1u)
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)
 #define CPORT		50000		// the client's port
 
 static const uint8_t HOST_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x04 };
