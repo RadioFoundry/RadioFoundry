@@ -23,6 +23,7 @@ import rfoundry_snmp  # noqa: E402
 from hil_config import rig
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
+PERIPHERAL_NET = 0x0D000000      # 13.0.0.0/8, IPGW_PERIPHERAL_NET
 TEST_COMMUNITY = "rfoundry-hil-rw"
 TRAP_PORT = 16162
 
@@ -65,8 +66,8 @@ def test_snmp_usb(radio, pytestconfig):
     if not had_write:
         radio.link.snmp_community(True, TEST_COMMUNITY)
     radio.link.snmp_set("trap_port", TRAP_PORT)
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | own_id)
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | own_id))
     radio.link.usb_network(True)
     radio.link.close()
     udp = None
