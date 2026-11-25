@@ -67,30 +67,46 @@ static inline uint16_t dm32_level_drive_at(uint32_t hz, uint8_t level)
 }
 
 // The PA ramps (hardware-dm32.md 11.4): DAC B in two parts on the shared APC ramp's curve, with the PA selected. The
-// crawl runs between the start, DM32_RAMP_START_PCT of the knee (dark on every frequency), and the knee, the lowest
-// level's drive or the level's own when lower: the PA's turn-on lies between them, and on a fast PA loop (the top of
-// the UHF band) crossing it in a few steps put the adjacent channel 25-35 dB under the carrier. The rise runs between
-// the knee and the level's drive. Up: the crawl, then the rise; down: backwards. FM keys up and down on the long
-// ramps; a DMR burst ends on the short ones
-#define DM32_RAMP_START_PCT	80u
-#define DM32_RAMP_STEP_US	50u
-#define DM32_CRAWL_STEPS	60u	// 3 ms
-#define DM32_RISE_STEPS		40u	// 2 ms
-#define DM32_DMR_RAMP_STEP_US	25u
-#define DM32_DMR_CRAWL_STEPS	12u	// 0.3 ms
-#define DM32_DMR_RISE_STEPS	8u	// 0.2 ms
+// crawl runs between a part of the knee and the knee, the lowest level's drive or the level's own when lower: the
+// PA's turn-on lies between them. The rise runs between the knee and the level's drive. Under about 0.5 W the PA loop
+// follows the drive over milliseconds: on a shorter crawl the control winds up while the PA is dark and the carrier
+// then comes up in 0.1-0.2 ms, which put the adjacent channel 20-30 dB under the carrier at the top of the UHF band.
+// The key-up crawls 15 ms from 90 % of the knee (from 80 % the first part is dark and the edge came later and harder),
+// then rises in 3 ms: 18 ms in all, under the 25 ms attack time of ETSI EN 300 113 clause 7.7.3. The key-down rises
+// down in 4 ms and crawls down in 6 ms to 80 % of the knee, then goes on to 0 in 2 ms: at the bottom of the UHF band
+// 80 % of the knee still gave about 1/6 of the 2.5 W level's output there, and a step to 0 from it put the adjacent
+// channel 45 dB under the carrier. 12 ms in all, under the 20 ms release time of clause 7.8.3
+#define DM32_UP_START_PCT	90u
+#define DM32_UP_CRAWL_STEPS	60u
+#define DM32_UP_CRAWL_US	250u	// 15 ms
+#define DM32_UP_RISE_STEPS	30u
+#define DM32_UP_RISE_US		100u	// 3 ms
+#define DM32_DOWN_END_PCT	80u
+#define DM32_DOWN_RISE_STEPS	40u
+#define DM32_DOWN_RISE_US	100u	// 4 ms
+#define DM32_DOWN_CRAWL_STEPS	60u
+#define DM32_DOWN_CRAWL_US	100u	// 6 ms
+#define DM32_DOWN_TAIL_STEPS	20u
+#define DM32_DOWN_TAIL_US	100u	// 2 ms
+// A DMR burst ends inside the 1.5 ms the burst's power mask (ETSI TS 102 361-1 clause 10.2.3.1.1) leaves, too short
+// for the loop to follow a ramp. The drive goes to 0 with the PA still selected, and the loop takes the carrier down
+// on its own, about 40 dB in the first 0.6 ms; then the PA select goes off. A ramp of the drive in that time left the
+// carrier 1-3 dB down, and the PA select's cut then fell 60 dB in 20 us
+#define DM32_DMR_FALL_US	800u
 
-static inline uint16_t dm32_ramp_start(uint16_t drive, uint16_t floor)
+// The ramp's start: pct of the knee
+static inline uint16_t dm32_ramp_start(uint16_t drive, uint16_t floor, uint8_t pct)
 {
 	uint16_t knee = floor < drive ? floor : drive;
-	return (uint16_t)((uint32_t)knee * DM32_RAMP_START_PCT / 100u);
+	return (uint16_t)((uint32_t)knee * pct / 100u);
 }
 
-// DAC B at step i of crawl + rise steps up from the start (step 0) to the drive (the last)
-static inline uint16_t dm32_ramp_level(uint16_t drive, uint16_t floor, uint16_t i, uint16_t crawl, uint16_t rise)
+// DAC B at step i of crawl + rise steps up from the start (step 0, pct of the knee) to the drive (the last)
+static inline uint16_t dm32_ramp_level(uint16_t drive, uint16_t floor, uint8_t pct, uint16_t i, uint16_t crawl,
+				       uint16_t rise)
 {
 	uint16_t knee = floor < drive ? floor : drive;
-	uint16_t start = dm32_ramp_start(drive, floor);
+	uint16_t start = dm32_ramp_start(drive, floor, pct);
 	if (i <= crawl) {
 		return (uint16_t)(start + apc_ramp_level((uint16_t)(knee - start), i, crawl));
 	}

@@ -989,9 +989,8 @@ burst's interrupt looked early against it. The first burst is now timed from the
 ([modem-hrc7000.md](modem-hrc7000.md) 3.1a); the `up` line's `f` is by how much. The PA
 drops at once, so it is switched off 0.3 ms after the last symbol's point (`off_after_us`): off at the point, the
 carrier was 5 dB down 0.2 ms before the last symbol's end and 10 to 28 dB down at its end, at every level. With
-the delay it holds to within 0.2 dB at the symbol's end and is off the air 0.17 to 0.44 ms after it. From there the
-drive ramps down over 0.5 ms (the rise down in 0.2 ms, the crawl in 0.3 ms) before the PA select goes off (11.4, the
-PA ramps). The switch moved earlier only
+the delay it holds to within 0.2 dB at the symbol's end. From there the drive goes to 0, the PA loop takes the
+carrier down, and the PA select goes off 0.8 ms later (11.4, the PA ramps). The switch moved earlier only
 on a split channel, where no inbound burst is heard on the TX frequency. On a simplex channel it is at 1.2 ms, after
 the inbound burst before ours, as an SFR needs (8.5, the simplex switch and SFR).
 
@@ -1420,45 +1419,69 @@ sit closer to the creep. The UHF 2.5 W part is 0.563 · H; at 0.584 the level re
 read the same as FM within 0.1 dB, and spread 0.11 dB at most.
 
 **The PA ramps.** DAC B moves in two parts on the shared APC ramp's curve (`core/radio/apc_ramp.h`), with the PA
-selected. The crawl runs between the start, 80 % of the knee, and the knee, which is the lowest level's drive (or the
-level's own, when lower): the PA's turn-on lies between them. The rise runs between the knee and the level's drive.
-The ramps start and end dark at every frequency, with or without calibration.
+selected. The crawl runs between a part of the knee and the knee, which is the lowest level's drive (or the level's
+own, when lower): the PA's turn-on lies between them. The rise runs between the knee and the level's drive. The
+constants are in `boards/dm32/power_levels.h`.
 
-| Edge | Ramp | Then |
-|---|---|---|
-| FM key-up | the PA select, the start, the crawl in 60 steps of 50 µs, the rise in 40 | the level's drive |
-| FM key-down | the rise down in 40 steps of 50 µs, the crawl down in 60 | 0, 0.3 ms for the PA loop's low-pass, the PA select off |
-| DMR burst end | 0.3 ms after the last symbol's point (8.5), the rise down in 8 steps of 25 µs, the crawl in 12 | the PA select off |
-
-Adjacent channel power (12.5 kHz away, 8.5 kHz wide, the worse side, over 3.3 ms around the edge), dBc, at the five
-levels:
-
-| MHz | FM key-up | FM key-down | DMR burst start |
+| Edge | Ramp | Then | Time |
 |---|---|---|---|
-| 400.025 | −47 to −61 | −38 to −47 | −51 to −58 |
-| 432 | −42 to −50 | −36 to −47 | −50 to −53 |
-| 440 | −47 to −58 | −36 to −45 | −47 to −52 |
-| 449.9 | −44 to −49 | −34 to −48 | −44 to −53 |
-| 470 | −42 to −54 | −37 to −50 | −35 to −50 |
-| 475 | −39 to −52 | −36 to −51 | −33 to −50 |
-| 479.975 | −30 to −49 | −36 to −46 | −30 to −47 |
-| 137 | −44 to −56 | −40 to −50 | −51 to −65 |
-| 144.01 | −45 to −49 | −35 to −46 | −52 to −64 |
-| 147.99 | −46 to −54 | −36 to −44 | −50 to −62 |
-| 155 | −43 to −53 | −37 to −48 | −50 to −58 |
-| 173.975 | −45 to −52 | −33 to −37 | −51 to −58 |
+| FM key-up | the PA select, 90 % of the knee, the crawl in 60 steps of 250 µs, the rise in 30 of 100 µs | the level's drive | 18 ms |
+| FM key-down | the rise down in 40 steps of 100 µs, the crawl down in 60 of 100 µs to 80 % of the knee, then to 0 in 20 of 100 µs | 0.3 ms for the PA loop's low-pass, the PA select off | 12.3 ms |
+| DMR burst end | 0.3 ms after the last symbol's point (8.5): the drive to 0, the PA select still on | the PA select off 0.8 ms later | 1.1 ms |
 
+The limits are those of ETSI EN 300 113 V3.1.1: the adjacent channel transient power at most 50 dB under the carrier
+for 12.5 kHz channels and 60 dB for 20 and 25 kHz (clauses 7.9.4.2.1 and 7.9.4.2.2, without the need to be under
+−27 dBm, which every level is above), an attack time of at most 25 ms (7.7.3) and a release time of at most 20 ms
+(7.8.3). A DMR burst's edges also sit in the 1.5 ms ramp regions of the burst's power mask (ETSI TS 102 361-1 clause
+10.2.3.1.1, figure 10.3). The measurement follows clause 7.9.3: the SDR bench's receiver behind a 60 dB pad, the
+adjacent channel filter of annex C in software (−6 dB 4.25 kHz from the adjacent channel's center, −26 dB at 5.25 kHz,
+−90 dB from 6.6 kHz; 8 kHz for 25 kHz channels), the peak of 20 µs averages over each edge against the carrier
+through the same filter, the worse side, at least 4 key-ups (FM) or 16 bursts (DMR) a level. The carrier is
+unmodulated for FM. DMR can't be, so the DMR figures include the modulation. Worst edge at the five levels, dBc:
 
-Steady FM is −56 to −71 dBc. The FM key-up overshoots 0.4-0.8 dB at 500 mW and 1.6-1.9 dB at 1 W and 2.5 W at
-479.975 MHz, under 0.1 dB elsewhere at the upper levels. The PA loop sets the edges more than the ramp does: on a
-key-up nothing is on air through the crawl, then the carrier comes up from −20 dB to −11 to −4 dB inside 0.5 ms; on a
-key-down the carrier holds about the 500 mW level through the crawl and falls when the drive goes to 0. The loop has
-an offset and slows as the output falls, so the loop can't follow a drive under about 0.5 W. The 3 ms crawl gave no better
-adjacent channel power than a 2 ms ramp from 0.6 · L. Before the ramps (a step of the drive at the key-up, the drive
-and the PA select cut at once at the key-down and a burst's end) the key-down read −25 to −38 dBc.
+| MHz | FM key-up | FM key-down | FM 25 kHz key-up | FM 25 kHz key-down | DMR burst start | DMR burst end |
+|---|---|---|---|---|---|---|
+| 400.025 | −54.4 to −57.6 | −57.2 to −60.4 | | | −38.9 to −44.7 | −30.6 to −54.8 |
+| 440 | −56.0 to −60.7 | −55.5 to −61.2 | −53.9 to −57.4 | −55.5 to −57.7 | −29.6 to −42.4 | −33.4 to −43.1 |
+| 470 | −55.9 to −59.9 | −55.5 to −59.4 | | | −15.0 to −34.2 | −24.5 to −50.3 |
+| 475 | −57.2 to −58.7 | −57.7 to −60.7 | | | −13.4 to −30.4 | −27.7 to −50.9 |
+| 479.975 | −52.6 to −55.8 | −56.7 to −60.1 | −52.7 to −56.1 | −53.1 to −57.0 | −13.0 to −18.8 | −27.0 to −51.3 |
+| 137 | −59.6 to −62.1 | −59.2 to −61.0 | | | −37.1 to −45.2 | −30.8 to −50.0 |
+| 155 | −59.0 to −61.5 | −59.6 to −62.0 | −56.3 to −57.9 | −56.7 to −57.9 | −32.5 to −44.7 | −27.1 to −53.2 |
+| 173.975 | −55.9 to −59.9 | −58.5 to −61.8 | | | −31.5 to −43.1 | −19.7 to −45.3 |
 
-- **The top of the UHF band.** The PA loop is fast from about 470 MHz up: the key-up and a DMR burst's start read
-  −30 to −40 dBc at 2.5 W and over at 479.975 MHz (8.5).
+In each DMR range the low figure is the top level, the high one 500 mW.
+
+Every 12.5 kHz FM edge meets −50 dBc. At 25 kHz the edges read −53 to −58 dBc, against −60. The steady carrier
+reads −50 to −54 dBc on the same peak measure there (−51 to −57 dBc at 12.5 kHz): the edges are no higher than the
+carrier's own adjacent channel noise, and the average adjacent channel power of the steady carrier is −59 to −70
+dBc. Before these ramps (crawl and rise in 50 µs steps, 5 ms each way) the FM key-up read −17 to −30 dBc at 2.5 W
+and over at 479.975 MHz and the key-down −34 to −45 dBc at 400.025 MHz.
+
+- **Why the crawl is long.** DAC B is the PA loop's set point. Under about 0.5 W the loop barely sees the output, so
+  through a short crawl the loop's control winds up while the PA is dark, and when the PA turns on the carrier comes up
+  in 0.1-0.2 ms. A 2 ms wait for the synthesizer before the PA select changed nothing. Lengthening the crawl is what
+  helps: with 200 µs steps a 12 ms crawl read −49 to −53 dBc at 479.975 MHz and a 3 ms one −25 to −50; the rise's
+  length matters little. Starting the crawl at 90 % of the knee instead of 80 % gained 2-3 dB.
+- **Why the key-down goes on to 0.** At 400.025 MHz 80 % of the knee still gave about −12 dB of the 2.5 W level's
+  output, and the step to 0 from there put the adjacent channel 45 dB under the carrier at every level.
+- **A DMR burst's start** misses −50 dBc at every frequency and level (table): −13 dBc at the top levels at the top of
+  the UHF band, −30 to −45 dBc elsewhere. The PA comes up within 40 µs of its turn-on (the loop has
+  wound up while dark), with the carrier pulled up to 13 kHz at 479.975 MHz. Each lever was tried at 479.975 MHz, all
+  within the mask's 1.5 ms: no boost with a 0.8 ms raised-cosine drive ramp from 0 (−8 to −21 dBc); the PA selected
+  between bursts with the drive parked at 80 % or 95 % of the knee (−10 to −27; the output stays dark through the ramp,
+  then rises 44 dB in 40 µs); raised-cosine boost and drive points over 0.3-0.6 ms (−9 to −24); the FD6818 to TX 0.5 ms
+  earlier (−10 to −29); the FD6818's 0x36 level up its 17 values from 0x38 (−4 to −19, with 9.5 dB of overshoot at
+  500 mW). None reached −50 dBc: the PA loop's response to its turn-on is faster than the mask's ramp region allows to
+  shape, and the loop has no input but DAC B. The burst's start stays as 8.5 describes.
+- **A DMR burst's end** meets −50 dBc at 500 mW at most frequencies and misses at 1 W and over (table; the old ramp,
+  0.5 ms of drive down and then the PA select off, read −14 to −36). The loop's own fall with the drive at 0 is fast
+  at 1 W and under (about 40 dB a millisecond) and slow at the top levels (5-12 dB in 0.8-1.3 ms at 8 W, 440 MHz),
+  so the PA select still cuts a carrier 5-12 dB down there. A ramp of the drive in that time left the carrier 1-3 dB
+  down, so the cut came from higher. Starting the fall 0.7-1 ms before the last symbol's point, with the PA select
+  off 1.6 ms after the point, read −40 to −41 dBc at 8 W and 5 W, −47 at 2.5 W and −56 at 500 mW at 440 MHz: better,
+  but short of −50 at the top levels and with the last symbols up to 3 dB down, so it isn't used. Holding the carrier
+  longer leaves the mask.
 - **The FD6818's own output level is no second lever.** Under the PA loop's knee the drive has no control, so the
   FD6818's transmit registers were tried as a second one, each written over the debug link during a key-up at
   479.975 MHz. 0x28 (all 16 bits, 0x0000 to 0xFFFF; the radio's value is 0x6B38) and the PA bias word 0x19 (bits 3:0)
@@ -1466,14 +1489,9 @@ and the PA select cut at once at the key-down and a burst's end) the key-down re
   0x30 bit 3 (0xC1FE to 0xC1F6), cuts the carrier by 49 dB. 0x36 (0x003F after power-on) sets the level that reaches
   the PA: at the top level its bits 2:0 take the output down 11.6 dB in steps of 0.3 to 3.8 dB. At 500 mW the output
   falls off a cliff, as for the drive: 0x3C reads −0.5 dB, 0x27 −1.5 dB, 0x34 −3.6 dB, 0x26 −5.1 dB, 0x2C −13.9 dB,
-  0x1E −22.7 dB, 0x38 −43.8 dB. A ramp of 0x36 through those 17 values with the drive at the knee (FM: 150 µs a
-  step after the crawl at the key-up and before the drive goes to 0 at the key-down) made the edges worse: at
-  479.975 MHz the key-up read −21 to −28 dBc instead of −32 to −50 and overshot 9.7 dB at 500 mW (the loop winds up
-  while the PA gets little), and the key-down read −8 to −26 dBc instead of −35 to −48. At 800 µs a step the key-down
-  still read −25 to −27 dBc. At a DMR burst's end the same ramp over 0.1 ms made the fall shorter, not longer. The
-  steps are several dB each where the PA turns on, so the 0x36 ramp splatters, and the loop fights the ramp. The ramps
-  stay on DAC B alone, and 0x36 stays 0x003F.
-- **The other slot.** A DMR burst now ends 0.5 ms later than with a cut at once, so the receiver comes back 0.5 ms
+  0x1E −22.7 dB, 0x38 −43.8 dB. Each write of 0x36 also moves the carrier about 1.7 kHz. A ramp of 0x36 through
+  those 17 values made every edge worse, FM and DMR. The ramps stay on DAC B alone, and 0x36 stays 0x003F.
+- **The other slot.** A DMR burst now ends 0.8 ms later than with a cut at once, so the receiver comes back 0.8 ms
   later. With the simplex repeater (SFR) and split duplex HIL tests on a bench hotspot (`test_sfr_standalone`,
   `test_hotspot_sfr`, `test_split_duplex`), the radio repeated 32 bursts with none lost and decoded both slots in
   each receive mode, and the split tests that time the other half (`test_split_align`, `test_split_rx_half_labels`,

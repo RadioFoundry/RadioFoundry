@@ -181,27 +181,34 @@ static void pa_key(void)
 // it at each burst end, as it does tx_drive
 static volatile uint16_t ramp_floor;
 
-// DAC B along the ramp between its start and tx_drive, step_us a step (the PA selected), ending on the drive (up) or
-// the start (down)
-static void pa_ramp(bool up, uint16_t crawl, uint16_t rise, uint16_t step_us)
+// DAC B along the ramp between its start (pct of the knee) and tx_drive, with the PA selected: the crawl's steps
+// crawl_us apart and the rise's rise_us, ending on the drive (up) or the start (down)
+static void pa_ramp(bool up, uint8_t pct, uint16_t crawl, uint16_t crawl_us, uint16_t rise, uint16_t rise_us)
 {
 	uint16_t n = (uint16_t)(crawl + rise);
 	for (uint16_t i = 1u; i <= n; i++) {
-		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_floor, up ? i : (uint16_t)(n - i), crawl, rise);
-		hal_delay_us(step_us);
+		uint16_t j = up ? i : (uint16_t)(n - i);
+		DAC_DATA_B = dm32_ramp_level(tx_drive, ramp_floor, pct, j, crawl, rise);
+		hal_delay_us((up ? j <= crawl : j < crawl) ? crawl_us : rise_us);	// the step lands in the crawl
 	}
 }
 
 // FM keys down on the ramp (power_levels.h), so the carrier doesn't splatter (a cut at once put the channel next to it
-// 20 dB higher than the key-up's), then 0 for the PA loop's low-pass to settle; the caller then turns the PA off. Every
+// 20 dB higher than the key-up's, and a 5 ms ramp 5-15 dB higher than the 10 ms one), then 0 for the PA loop's low-pass
+// to settle; the caller then turns the PA off. Every
 // path out of an FM transmission (tx_end, a retune with the PA up) comes here before pa_off
 #define RAMP_TAIL_US		300u
 
 static void fm_key_down(void)
 {
 	if (transmitting && mode == RADIO_MODE_FM) {
-		pa_ramp(false, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
-		DAC_DATA_B = 0;
+		pa_ramp(false, DM32_DOWN_END_PCT, DM32_DOWN_CRAWL_STEPS, DM32_DOWN_CRAWL_US, DM32_DOWN_RISE_STEPS,
+			DM32_DOWN_RISE_US);
+		uint16_t end = dm32_ramp_start(tx_drive, ramp_floor, DM32_DOWN_END_PCT);
+		for (uint16_t i = 1u; i <= DM32_DOWN_TAIL_STEPS; i++) {
+			DAC_DATA_B = (uint16_t)(end - apc_ramp_level(end, i, DM32_DOWN_TAIL_STEPS));
+			hal_delay_us(DM32_DOWN_TAIL_US);
+		}
 		hal_delay_us(RAMP_TAIL_US);
 	}
 }
@@ -322,20 +329,21 @@ static void burst_on(hrc_rfburst_wait_fn at, hrc_rfburst_wait_fn wait)
 	}
 }
 
-// The burst's TX off, after the task's hold to its last symbol: PA off, the FD6818 and the LNA back to RX, so the
-// radio hears the other slot (the hotspot listens while keyed)
+// The burst's TX off, after the task's hold to its last symbol: the drive to 0 and the loop's own fall (power_levels.h),
+// then the PA off, the FD6818 and the LNA back to RX, so the radio hears the other slot (the hotspot listens while
+// keyed)
 static void burst_off(void)
 {
-	pa_ramp(false, DM32_DMR_CRAWL_STEPS, DM32_DMR_RISE_STEPS, DM32_DMR_RAMP_STEP_US);
+	DAC_DATA_B = 0;
+	hal_delay_us(DM32_DMR_FALL_US);
 	pa_off();
 	fd6818_dmr_burst_at(&fd, false, fd.variant->bw_dmr, synth_hz(rx_hz));
 	lna(rx_hz, true);
 }
 
-// The ramp down 300 us after the last symbol's point, inside the guard (hardware-dm32.md 8.5): the drive and the PA cut
-// at once at the point left the carrier 5 dB down 0.2 ms before the last symbol's end, and 300 us later the carrier
-// holds to the end. The cut at once then fell in 0.03 ms at the top of the UHF band, where the PA loop is fast, so the
-// drive ramps down over 500 us (DM32_DMR_RISE_STEPS, then DM32_DMR_CRAWL_STEPS) before the PA goes off
+// The fall 300 us after the last symbol's point, inside the guard (hardware-dm32.md 8.5): the drive and the PA cut at
+// once at the point left the carrier 5 dB down 0.2 ms before the last symbol's end, and 300 us later the carrier holds
+// to the end. The PA select goes off DM32_DMR_FALL_US later, 1.1 ms after the point, inside the mask's 1.5 ms
 static const hrc_rfburst_board_t rf_board = { .on = burst_on, .off = burst_off, .off_after_us = 300 };
 
 static void dmr_tx_end(void);
@@ -616,8 +624,8 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		// Up on the ramp from its start (dark): a step of the drive came up in 0.09 ms with 2 dB of overshoot where the PA
 		// loop is fast (the top of the UHF band)
 		pa_select();
-		DAC_DATA_B = dm32_ramp_start(tx_drive, ramp_floor);
-		pa_ramp(true, DM32_CRAWL_STEPS, DM32_RISE_STEPS, DM32_RAMP_STEP_US);
+		DAC_DATA_B = dm32_ramp_start(tx_drive, ramp_floor, DM32_UP_START_PCT);
+		pa_ramp(true, DM32_UP_START_PCT, DM32_UP_CRAWL_STEPS, DM32_UP_CRAWL_US, DM32_UP_RISE_STEPS, DM32_UP_RISE_US);
 	}
 	ring_play();
 	return true;
