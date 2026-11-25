@@ -89,7 +89,19 @@ the generated `tr_keys.h`), and `tr()` reads it from a table: no search. With ev
 English text itself and costs nothing. Code compiles the same either way.
 
 `tools/i18n.py` reads the marks, keeps the catalogs in step and turns them into the tables the build links in: the
-English of every key, and each language's translations by key.
+English of each key, and each language's translations by key.
+
+Each build packs only the strings of the code the build compiles. Make preprocesses each source with the build's
+flags and collects the `TR_<KEY>` names left in the output (a `.tr` file beside the object); `tools/i18n.py --gen
+--used` then leaves every other key's text out of the tables. A mark under a switch that is off costs no text:
+
+| | Comes from |
+|---|---|
+| Key numbers (`tr_keys.h`) | Every key in the source: a key has the same number in every build |
+| Text in the tables | The keys this build compiles. Any other key costs 1 byte per table (its empty string) |
+
+The host tests and the simulator build the full tables (`--gen` without `--used`). The catalogs and `--sync`/`--check`
+read the whole source as before: a translator translates every string, built in or not.
 
 ### Adding a language
 
@@ -264,9 +276,10 @@ Commit only the English gallery.
 
 ### Flash cost
 
-The first language costs the most: the lookup, the English of every key in one table (the literals it replaces, plus
-an offset per 8 keys) and the Latin-1 glyphs of every font. Each further language adds only its text, about the size
-of the catalog's translations, and an offset per 8 keys. Measure a language like any switch
+The first language costs the most: the lookup, the English of every key the build compiles in one table (the literals
+it replaces, plus an offset per 8 keys) and the Latin-1 glyphs of every font. Each further language adds only its
+text, about the size of the catalog's translations of those keys, and an offset per 8 keys. A string under a switch
+that is off costs 1 byte per table. Measure a language like any switch
 ([building.md](building.md)) and put the bytes in the feature matrix.
 
 ## Translating the web site

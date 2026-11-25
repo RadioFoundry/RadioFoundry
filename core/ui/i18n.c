@@ -3,8 +3,9 @@
 // The language tables (built by tools/i18n.py from the marks in core/ and core/ui/lang/*.po into the build's gen
 // directory) and the lookup. A tr_id_t is a key's number (tr_keys.h): the keys the catalogs translate first, then the
 // ones they never do (TRX). Each table keeps its strings in key order, NUL-terminated, "" for none, and where every
-// LANG_STRIDE-th one starts: a lookup steps over at most LANG_STRIDE - 1 strings. The English table has every key; a
-// language's only the translated ones, and one without a translation shows the English
+// LANG_STRIDE-th one starts: a lookup steps over at most LANG_STRIDE - 1 strings. The English table has every key the
+// build compiles (the others are "": a switch that is off leaves its text out); a language's only the translated ones,
+// and one without a translation shows the English
 #include <stddef.h>
 #include <string.h>
 #include "i18n.h"
