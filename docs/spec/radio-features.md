@@ -459,7 +459,17 @@ FM and DMR beeps alike. On a radio where the MCU sets the volume somewhere the P
 volume percent last given to the board, capped at `beep_level` (`radio_beep_level`): volume 0 gives no beep. When the DMR voice stream runs, the beep is mixed into it (`ambeVoiceSetMixer`). A DMR call
 leaves that stream running until the radio leaves DMR, so most beeps on a DMR channel are mixed. A mixed beep the
 amplifier isn't ready for (more than one lead-in block, below) gets the same lead-in as silence mixed in with the speaker
-routed; otherwise its tone starts in the first block. Without the voice stream the beep
+routed; otherwise its tone starts in the first block. A beep mixed while the radio transmits (the talk permit, which
+sounds once the voice is on air) reaches the microphone through the air: a handheld's speaker sits next to the mic. The
+voice layer mutes the mic for those blocks (`ambeVoiceSetMicGate`, `p25VoiceSetMicGate`, with `beep_mic_echo`): from
+the block after the first mixed one until `BEEP_ECHO_BLOCKS` (3, 60 ms) after the last, the encoder gets silence, so
+the beep never goes on air with the voice. The stream's delay from a speaker block to the mic block that hears it is
+two blocks. `voice.tx_mic_muted` (DMR, `dmr` section) and `p25v.tx_mic_muted` count the muted blocks of the latest
+transmission. Signaling tones sent on air and the test signal replace the mic and are not muted, nor is a host audio
+session's DMR audio ([usb-audio.md](usb-audio.md)), which never hears the speaker. DMR on a board with
+`CAP_BEEP_NOT_ON_AIR` has no gate: its speaker sounds nothing while DMR transmits. NXDN, which shares the DMR voice
+path, has the gate on every board. A mixed beep's silent lead-in (a cold amplifier) mutes the mic too, which keeps the
+amplifier's turn-on click off the air. Without the voice stream the beep
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
 block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
 the route for four silent blocks after the pattern, and then stops the stream. A beep in that hold plays at once, with no
