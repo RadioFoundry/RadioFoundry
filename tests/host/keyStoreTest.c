@@ -187,18 +187,51 @@ static void test_window(void)
 	settings.privacy_type[3] = DMR_PRIVACY_MOTOROLA_BP;
 	settings.privacy_key[3] = 9;
 	uint16_t total = 0, n = key_store_count();
-	key_entry_t page[4], one;
+	key_row_t page[4];
+	key_names_t names;
+	key_entry_t one;
+	char name[CODEPLUG_NAME_LEN + 1];
 	CHECK(n == 8);
+	CHECK(sizeof(key_row_t) == 8);
 	for (uint16_t first = 0; first <= n; first++) {
 		for (uint16_t max = 0; max <= 4; max++) {
-			uint16_t got = key_store_window(first, page, max, &total);
+			uint16_t got = key_store_window(first, page, max, &total, &names);
 			CHECK(total == n && got == (uint16_t)(first + max <= n ? max : n - first));
 			for (uint16_t i = 0; i < got; i++) {
+				const key_row_t *r = &page[i];
 				CHECK(key_store_get((uint16_t)(first + i), &one, NULL));
-				CHECK(memcmp(&one, &page[i], sizeof one) == 0);
+				CHECK(r->cls == one.cls && r->type == one.type && r->kcv_ok == one.kcv_ok &&
+				      r->key_id == one.key_id && memcmp(r->kcv, one.kcv, KCV_LEN) == 0 &&
+				      r->num == (one.cls == KCV_CLASS_PRIVACY ? one.slot : one.system));
+				if (one.cls == KCV_CLASS_TRAFFIC)	// one system on this page: its name is kept
+					CHECK(key_names_get(&names, r->num, name) && strcmp(name, one.name) == 0);
 			}
 		}
 	}
+}
+
+// A page keeps the names of its first KEY_NAMES systems; a row of another system finds none (drawn by its type)
+static void test_names(void)
+{
+	fresh();
+	put_system(1, TYPE_A, "One");
+	put_system(2, TYPE_A, "SixteenCharsName");	// a full name, not terminated in the page
+	put_system(3, TYPE_B, "Three");
+	const uint8_t k[4] = { 9, 8, 7, 6 };
+	put_traffic(0, 1, 1, k, sizeof k);
+	put_traffic(1, 2, 2, k, sizeof k);
+	put_traffic(2, 3, 3, k, sizeof k);
+	put_traffic(3, 1, 4, k, sizeof k);
+	key_row_t page[4];
+	key_names_t names;
+	char name[CODEPLUG_NAME_LEN + 1];
+	uint16_t total = 0;
+	CHECK(key_store_window(0, page, 4, &total, &names) == 4 && total == 4 && names.n == KEY_NAMES);
+	CHECK(key_names_get(&names, 1, name) && strcmp(name, "One") == 0);
+	CHECK(key_names_get(&names, 2, name) && strcmp(name, "SixteenCharsName") == 0);
+	CHECK(!key_names_get(&names, 3, name));
+	CHECK(key_store_window(2, page, 2, &total, &names) == 2 && names.n == 2);	// a later page: its own systems
+	CHECK(key_names_get(&names, 3, name) && strcmp(name, "Three") == 0);
 }
 
 int main(void)
@@ -206,6 +239,7 @@ int main(void)
 	test_privacy();
 	test_traffic();
 	test_window();
+	test_names();
 	if (failures != 0) {
 		printf("keyStoreTest: %d failure(s)\n", failures);
 		return 1;

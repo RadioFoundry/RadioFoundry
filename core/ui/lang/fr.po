@@ -4444,8 +4444,8 @@ msgstr "Diag. non supporté"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
-msgid "The same check on both radios: the same key"
-msgstr "Même contrôle sur les deux radios : même clé"
+msgid "Radios that show the same check value hold the same key"
+msgstr "Les radios qui affichent la même valeur de contrôle ont la même clé"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"

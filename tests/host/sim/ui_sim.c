@@ -2007,27 +2007,26 @@ uint16_t ui_svc_keys_count(void)
 {
 	return ui_svc_setting_get(UI_SET_PRIVACY_TYPE) != 0 ? 2 : 1;
 }
-bool ui_svc_key(uint16_t i, struct key_entry_s *e)
+bool ui_svc_key(uint16_t i, struct key_row_s *e, char name[17])
 {
 	static const uint8_t seed[2] = { 0x34, 0x12 };
 	char t[KCV_TEXT];
 	memset(e, 0, sizeof *e);
+	name[0] = 0;
 	if (i == 0 && ui_svc_privacy_kcv(t)) {
 		e->cls = KCV_CLASS_PRIVACY;
-		e->slot = 1;
+		e->num = 1;
 		e->type = (uint8_t)ui_svc_setting_get(UI_SET_PRIVACY_TYPE);
-		e->len = 4;
 		e->kcv_ok = kcv_privacy(e->type, (uint32_t)ui_svc_setting_get(UI_SET_PRIVACY_KEY), e->kcv);
 		return true;
 	}
 	if (i != ui_svc_keys_count() - 1u)
 		return false;
 	e->cls = KCV_CLASS_TRAFFIC;
+	e->num = 2;
 	e->type = 4;
-	e->alg = 1;
 	e->key_id = 5;
-	e->len = sizeof seed;
-	strcpy(e->name, "NXDN Ops");
+	strcpy(name, "NXDN Ops");
 	e->kcv_ok = kcv_traffic(4, 1, seed, sizeof seed, e->kcv);
 	return true;
 }

@@ -80,6 +80,24 @@ static int cached_system(sys_cache_t *c, uint8_t id)
 #endif
 
 #if CODEPLUG_MODE_RECORDS
+// Entry *e from traffic record k (its value v, len octets, read whole up to KEY_STORE_MAX_LEN of key) of the system in
+// cache slot si: the one fill for a single entry and for a page
+static void traffic_fill(key_entry_t *e, const sys_cache_t *sc, int si, const uint8_t *v, int len, uint16_t k)
+{
+	memset(e, 0, sizeof *e);
+	e->cls = KCV_CLASS_TRAFFIC;
+	e->type = sc->type[si];
+	e->system = v[0];
+	e->alg = v[1];
+	e->key_id = (uint16_t)(v[2] | v[3] << 8);
+	e->flags = v[4];
+	e->record = k;
+	e->len = (uint16_t)(len - (int)CODEPLUG_TRAFFIC_HDR);
+	memcpy(e->name, sc->name[si], sizeof e->name);
+	// A key longer than the walk copied has no check value here (none in this tree is)
+	e->kcv_ok = e->len <= KEY_STORE_MAX_LEN && kcv_traffic(e->type, e->alg, &v[CODEPLUG_TRAFFIC_HDR], e->len, e->kcv);
+}
+
 // Traffic key entry n, in the area's order, counting only records whose system exists: as privacy_entry
 static bool traffic_entry(uint16_t n, key_entry_t *e, uint8_t *key, uint16_t *count)
 {
@@ -97,19 +115,7 @@ static bool traffic_entry(uint16_t n, key_entry_t *e, uint8_t *key, uint16_t *co
 			continue;
 		if (seen++ != n)
 			continue;
-		memset(e, 0, sizeof *e);
-		e->cls = KCV_CLASS_TRAFFIC;
-		e->type = sc.type[si];
-		e->system = v[0];
-		e->alg = v[1];
-		e->key_id = (uint16_t)(v[2] | v[3] << 8);
-		e->flags = v[4];
-		e->record = k;
-		e->len = (uint16_t)(len - (int)CODEPLUG_TRAFFIC_HDR);
-		memcpy(e->name, sc.name[si], sizeof e->name);
-		// A key longer than the walk copied has no check value here (none in this tree is)
-		e->kcv_ok = e->len <= KEY_STORE_MAX_LEN &&
-			kcv_traffic(sc.type[si], e->alg, &v[CODEPLUG_TRAFFIC_HDR], e->len, e->kcv);
+		traffic_fill(e, &sc, si, v, len, k);
 		if (key != NULL)
 			memcpy(key, &v[CODEPLUG_TRAFFIC_HDR], e->len < KEY_STORE_MAX_LEN ? e->len : KEY_STORE_MAX_LEN);
 		found = true;
@@ -137,16 +143,52 @@ bool key_store_get(uint16_t i, key_entry_t *e, uint8_t *key)
 }
 
 
-uint16_t key_store_window(uint16_t first, key_entry_t *out, uint16_t max, uint16_t *total)
+// Entry *e cut to row *r, its system's name kept in *names while there is room
+static void row_from(key_row_t *r, const key_entry_t *e, key_names_t *names)
+{
+	memset(r, 0, sizeof *r);
+	r->cls = e->cls;
+	r->kcv_ok = e->kcv_ok;
+	r->num = e->cls == KCV_CLASS_PRIVACY ? e->slot : e->system;
+	r->type = e->type;
+	memcpy(r->kcv, e->kcv, KCV_LEN);
+	r->key_id = e->key_id;
+	if (e->cls != KCV_CLASS_TRAFFIC || e->name[0] == 0)
+		return;
+	for (uint8_t i = 0; i < names->n; i++) {
+		if (names->system[i] == e->system)
+			return;
+	}
+	if (names->n < KEY_NAMES) {
+		names->system[names->n] = e->system;
+		memcpy(names->name[names->n++], e->name, CODEPLUG_NAME_LEN);
+	}
+}
+
+bool key_names_get(const key_names_t *names, uint8_t system, char out[CODEPLUG_NAME_LEN + 1])
+{
+	for (uint8_t i = 0; i < names->n; i++) {
+		if (names->system[i] == system) {
+			memcpy(out, names->name[i], CODEPLUG_NAME_LEN);
+			out[CODEPLUG_NAME_LEN] = 0;
+			return true;
+		}
+	}
+	return false;
+}
+
+uint16_t key_store_window(uint16_t first, key_row_t *out, uint16_t max, uint16_t *total, key_names_t *names)
 {
 	uint16_t filled = 0, at = 0;
+	key_entry_t e;	// one entry at a time, cut to a row
+	names->n = 0;
 #if CONFIG_DMR_PRIVACY
 	uint16_t np = 0;
-	key_entry_t pe;
-	(void)privacy_entry(0xFFFFu, &pe, NULL, &np);
-	for (uint16_t i = first; i < np && filled < max; i++)
-		if (privacy_entry(i, &out[filled], NULL, &at))
-			filled++;
+	(void)privacy_entry(0xFFFFu, &e, NULL, &np);
+	for (uint16_t i = first; i < np && filled < max; i++) {
+		if (privacy_entry(i, &e, NULL, &at))
+			row_from(&out[filled++], &e, names);
+	}
 	at = np;
 #endif
 #if CODEPLUG_MODE_RECORDS
@@ -164,22 +206,12 @@ uint16_t key_store_window(uint16_t first, key_entry_t *out, uint16_t max, uint16
 		uint16_t n = at++;
 		if (n < first || filled >= max)
 			continue;
-		key_entry_t *e = &out[filled++];
-		memset(e, 0, sizeof *e);
-		e->cls = KCV_CLASS_TRAFFIC;
-		e->type = sc.type[si];
-		e->system = v[0];
-		e->alg = v[1];
-		e->key_id = (uint16_t)(v[2] | v[3] << 8);
-		e->flags = v[4];
-		e->record = k;
-		e->len = (uint16_t)(len - (int)CODEPLUG_TRAFFIC_HDR);
-		memcpy(e->name, sc.name[si], sizeof e->name);
-		e->kcv_ok = e->len <= KEY_STORE_MAX_LEN &&
-			kcv_traffic(sc.type[si], e->alg, &v[CODEPLUG_TRAFFIC_HDR], e->len, e->kcv);
+		traffic_fill(&e, &sc, si, v, len, k);
+		row_from(&out[filled++], &e, names);
 	}
 	crypto_wipe(v, sizeof v);
 #endif
+	(void)e;
 	*total = at;
 	return filled;
 }
