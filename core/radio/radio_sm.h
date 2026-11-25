@@ -200,7 +200,9 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
-	RREQ_FOX,		// fox mode (CONFIG_FOX): arg RFOX_START, RFOX_STOP or RFOX_PREVIEW
+#if CONFIG_FOX
+	RREQ_FOX,		// fox mode: arg RFOX_START, RFOX_STOP or RFOX_PREVIEW
+#endif
 	// New request types go above
 
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)

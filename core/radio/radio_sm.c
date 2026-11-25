@@ -8817,7 +8817,9 @@ static const uint8_t req_flags[RREQ_COUNT] = {
 	[RREQ_DMR_CALL_BACK] = RQ_SELECTED,
 	[RREQ_DMR_TARGET_CLEAR] = RQ_SELECTED,
 	[RREQ_DMR_HEAR_ALL] = RQ_SELECTED,
+#if CONFIG_FOX
 	[RREQ_FOX] = RQ_RETUNES,	// the fox keys the channel: a scan or dual watch ends first
+#endif
 };
 
 // --- The requests' own work (radio_sm_request). busy: transmitting, a hotspot or the air bench has the radio ---
@@ -9561,8 +9563,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	case RREQ_AIR_BENCH:
 	case RREQ_AIR_TX: bench_request(sm, req, now_ms); break;
 #endif
-	case RREQ_FOX:
 #if CONFIG_FOX
+	case RREQ_FOX:
 		if (req->arg == RFOX_PREVIEW) {
 			fox_preview(sm);
 		} else if (req->arg != RFOX_STOP) {
@@ -9570,11 +9572,8 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 		} else if (sm->fox.phase != FOX_OFF) {
 			fox_end(sm, RFOX_WHY_STOPPED, now_ms);
 		}
-#else
-		sm->view.fox_why = RFOX_WHY_UNAVAILABLE;
-		changed(sm);
-#endif
 		break;
+#endif
 	default:
 		break;
 	}

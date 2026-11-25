@@ -6379,7 +6379,10 @@ void ui_crash_tick(uint32_t now_ms)
 // Every tool keeps its number on every radio and build, so a key path (OK 6 7: Diagnostics; tests/hil/test_ui.py and the
 // user guide) is the same everywhere. A build without diagnostics skips 7, and one without satellite skips 9. Fox, the
 // eleventh, has no digit: it is reached by moving to it
-enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER, T_FOX,
+enum { T_SCAN, T_POSITION, T_HOTSPOT, T_USB_NET, T_SFR, T_ROAM, T_DIAG, T_APRS, T_SATELLITE, T_ZONE_OFFER,
+#if UI_FOX
+       T_FOX,
+#endif
        T_COUNT };
 
 // A tool this build doesn't have is left out of the list
@@ -6389,8 +6392,7 @@ static bool tool_shown(uint16_t i)
 	if (i == T_ZONE_OFFER)
 		return offer_waiting();	// 0 on the keypad: only while another radio's zone waits
 #endif
-	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE) &&
-	       (i != T_FOX || UI_FOX);
+	return (i != T_DIAG || CONFIG_DIAG) && i != T_ZONE_OFFER && (i != T_SATELLITE || CONFIG_SATELLITE_TLE);
 }
 
 static uint16_t tools_last;	// the highest tool's number, found on each count (the list counts before the hint)
@@ -6437,7 +6439,10 @@ static void tools_item(uint16_t row, ui_item_t *it)
 					 TRN(TOOLS_ROW_USB_NETWORK, "USB network"), TRN(TOOLS_ROW_SFR, "Single-freq repeater"),
 					 TRN(TITLE_ROAMING, "Roaming"), TRN(TITLE_DIAGNOSTICS, "Diagnostics"), TRX(WORD_APRS, "APRS"),
 					 TRN(SATELLITE_2, "Satellite"), TRN(TOOLS_ROW_SHARES_RECEIVED, "Zones/Chs Received"),
-					 TRN(TITLE_FOX, "Fox") };
+#if UI_FOX
+					 TRN(TITLE_FOX, "Fox"),
+#endif
+	};
 	uint16_t i = tools_row(row);
 	if (i >= T_COUNT)
 		return;
@@ -7639,7 +7644,6 @@ static const char *fox_body(void)
 			[RFOX_WHY_NO_TONE] = TRN(FOX_WHY_NO_TONE, "This radio can't send the tone"),
 			[RFOX_WHY_BUSY] = TRN(FOX_WHY_BUSY, "Radio busy"),
 			[RFOX_WHY_DENIED] = TRN(FOX_WHY_DENIED, "Transmit refused"),
-			[RFOX_WHY_UNAVAILABLE] = TRN(WHY_FOX_NOT_IN_BUILD, "Fox: not in this build"),
 		};
 		if (v->fox_why < sizeof why / sizeof why[0] && why[v->fox_why] != TR_NONE) {
 			sb_str(&b, tr(why[v->fox_why]));

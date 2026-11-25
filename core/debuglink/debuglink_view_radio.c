@@ -56,9 +56,9 @@ void debuglink_view_fox(const radio_view_t *v, dl_text_t *t)
 #if CONFIG_FOX
 	static const char *const phases[] = { "off", "wait", "lead", "msg", "gap", "jingle", "gap", "id", "tail" };
 	static const char *const whys[] = { "none", "stopped", "not_fm", "no_call", "too_long", "no_tone", "busy",
-					    "denied", "unavailable" };
+					    "denied" };
 	dl_text(t, "fox.on=%u\nfox.phase=%s\nfox.next_s=%u\nfox.cycles=%u\nfox.cut=%u\nfox.why=%s\nfox.deny=%u\n",
-		v->fox, word(v->fox_phase, phases, 9), v->fox_next_s, v->fox_cycles, v->fox_cut, word(v->fox_why, whys, 9),
+		v->fox, word(v->fox_phase, phases, 9), v->fox_next_s, v->fox_cycles, v->fox_cut, word(v->fox_why, whys, 8),
 		v->fox_deny);
 #else
 	(void)v;
@@ -534,10 +534,10 @@ uint8_t debuglink_radio_feature_op(uint8_t op, const uint8_t *a, uint16_t len)
 	case DL_OP_FOX:
 		// cmd u8: RFOX_STOP, RFOX_START on the channel in use, RFOX_PREVIEW (the jingle on the speaker). The fox keys
 		// through the transmitter's rules as PTT does; the fox section says whether it runs and why not
+#if CONFIG_FOX
 		if (len < 1 || a[0] > RFOX_PREVIEW) {
 			return DL_ST_BAD_ARG;
 		}
-#if CONFIG_FOX
 		radio_req_fox(a[0]);
 		return DL_ST_OK;
 #else
