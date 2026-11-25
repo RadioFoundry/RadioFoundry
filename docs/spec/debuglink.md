@@ -118,6 +118,7 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
+| `0x27` | RTC | operation u8 (0 GET; 1 SET + unix u32) (3.31) | GET: valid u8, unix u32; SET: none (3.31) |
 
 ### 3.1 VERSION
 
@@ -1078,6 +1079,21 @@ board map has a dedicated satellite area. It has no raw-address access. The oper
 capacity and atomic commit behavior are specified in [satellite.md](satellite.md) 6. The command returns
 `DL_ST_UNAVAILABLE` when the feature or usable area is absent.
 
+### 3.31 RTC
+
+`DL_CMD_RTC` (`0x27`) reads or sets the board's hardware clock (`board.rtc`, `hal/hal_rtc.h`; `CONFIG_RTC`). The time
+is UTC seconds since 1970-01-01, a `u32` (little endian). The reply to an unknown operation or a wrong length is
+`DL_ST_BAD_ARG`; a board with no clock driver, or a build without `CONFIG_RTC`, answers `DL_ST_UNAVAILABLE`.
+
+| Operation | Request | Reply |
+|---|---|---|
+| `0` GET | none | `valid` u8, `unix` u32. `valid` 0: the clock holds no time (never set, or its backup lost it), or its bus did not answer; `unix` is 0 |
+| `1` SET | `unix` u32 | none. `DL_ST_REFUSED` when the clock cannot hold that time or its bus did not answer. The clock takes the new time within a second, so a GET right after reads 00:00:00 |
+
+The debug link task is the only caller of the clock's bus. A SET is logged (`debuglink: rtc set N`). It writes nothing
+else: no setting, no codeplug. Host side: `rfoundry_debug.py rtc [get]`, `rfoundry_debug.py rtc set now|UNIX_SECONDS`
+(`now` is this computer's UTC time), `DebugLink.rtc_get()` and `rtc_set()`, `tests/hil/test_rtc.py`.
+
 ## 4. Safety
 
 - PTT: a firmware time-out on every injected PTT (10 s maximum); the host tool refuses longer holds; the radio
@@ -1094,6 +1110,7 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
 - RX2 BRIDGE and RESTART need their token and are refused while transmitting. The bridge keeps the transmitter off
   and ends in a restart (3.22).
 - HWOPT SET is refused while transmitting (3.25).
+- RTC SET changes only the hardware clock; GET only reads (3.31).
 - SUPPORT only reads, and HASH reads at most 32 KB of program flash per request (3.29).
 - AIR (bench builds only) keys the transmitter only through the radio core, which applies its transmit checks and the
   lowest power level; without the core's hook TX_KEY is unavailable (3.28).

@@ -210,6 +210,18 @@ DATA_CMD.
 Datasheet first-power-up order: reset the RTC I2C interface, soft-reset the RTC (RTC_SOFT_RST_N = 0, wait 25 ms, = 1),
 optionally set the match (alarm) registers, load time, CCR.
 
+RadioFoundry's driver (`boards/dm32/rtc_dm32.c`, `CONFIG_RTC`, [radio-features.md](radio-features.md) 5.6) skips the
+soft reset and loads in this order: LOAD_VSTAT 0, the load seconds, minutes, hours and day count (low, high), CCR 0x07,
+LOAD_VSTAT 1. Time is binary (not BCD), the day count is days since 1970-01-01. A read needs LOAD_VSTAT bit 0 set and
+CCR bit 1 (run) set, else the clock holds no time. The seconds are read again after the other four registers, and the
+read repeats when they moved. After a load the registers read 00:00:00 for up to a second, so a read right after a set
+shows zeros.
+
+Measured on one radio (2026-11-25): an empty RTC (all registers 0, CCR 0, LOAD_VSTAT 0) reads without error; after a
+load it counted in step with the radio's millisecond counter, kept the time through a reboot and kept it for about 3 h
+with the main battery out (read afterward: the same offset from UTC as before, to 4 s). Not measured: longer than
+3 h, or the cell's age.
+
 ### 3.4 Timers
 
 DesignWare-style, clocked from APB 84 MHz. Per timer: LOADCOUNT +0x00, CURRENTVALUE +0x04, CONTROLREG +0x08, EOI

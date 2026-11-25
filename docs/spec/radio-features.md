@@ -720,8 +720,13 @@ LRRP reports. A fixed position carries none, and the reports leave the time out 
 
 Some radios have a real-time clock, and some keep it running through power-off. `board.toml` `[hardware] clock`
 records which, with its source (`backed`, `unbacked`, `none`, or `unknown`), and the feature matrix and the site show
-it. A clock driver arrives behind a hardware switch (`CONFIG_RTC`, `hardware` in `tests/hil/features.toml`). Until GPS,
-the network or the user sets it, the radio shows "no time", and records keep using uptime or mark the time unknown.
+it. A board with a clock that keeps time while off gives the core a `hal_rtc_t` (`board.rtc`, `hal/hal_rtc.h`: `read`
+the UTC Unix time, or false when it holds none; `set` it), behind `CONFIG_RTC` (needs `CONFIG_DEBUGLINK`; `hardware` in
+`tests/hil/features.toml`). Today nothing else in the firmware reads it: the debug link reads and sets it
+([debuglink.md](debuglink.md) 3.31, `rfoundry_debug.py rtc`), so a host can put the right time in and a later feature
+can take the time at power-on. Which radios have a driver is in [feature-matrix.md](../feature-matrix.md) (the `RTC`
+switch); a radio's clock is on its hardware page. Until GPS, the network or the user sets it, the radio shows "no time",
+and records keep using uptime or mark the time unknown.
 
 ### 5.7 LEDs
 
