@@ -386,27 +386,40 @@ def test_confirmed_tx_link_ack(radio, sdr_bench, pytestconfig, ip_settings, ars_
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_usb_network_udp_to_air(radio, sdr_bench, pytestconfig, ip_settings, ars_off):
-    """The real host path: the radio as a USB network adapter, a UDP datagram from this host to the bench's address
-    (12.x.y.z) goes on air as a SAP 3 packet the bench decodes; then back to the serial port."""
+    """The real host path: the radio as a USB network adapter, a UDP datagram from this host (13.<ID>) to the bench's
+    address (12.x.y.z) goes on air as a SAP 3 packet the bench decodes: from our ID to the bench's, SAID 1 (the
+    host's peripheral network, docs/spec/dmr-data.md 11.1) and DAID 0 (the radio network), the ports and the payload.
+    A send the bench didn't hear whole is sent again, up to 3 times; then back to the serial port."""
     freq, cc, own, _ = _setup(radio, pytestconfig)
     radio.link.ip_settings("auto", "rules", 0, [])
     bench_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | (BENCH_ID & 0xFFFFFF)))
+    tries = 3
     with host_network(radio, own) as (udp, host_ip, _):
-        before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
-        heard_pkts = []
-        with sdr_bench.lease():
-            lis = sdr_bench.listen_start(freq, cc, seconds=10)
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.bind((host_ip, SRC_PORT))
-                s.sendto(PAYLOAD, (bench_ip, DST_PORT))
-            time.sleep(4)
-            heard_pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
-        after = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
-        assert after["ip.sap3"] - before["ip.sap3"] == 1 and after["ip.sent"] - before["ip.sent"] == 1, (before, after)
-        mine = _ours(heard_pkts, own)
-        assert all(p["sap"] == dmr_packet.SAP_UDPIP_COMPRESSION for p in mine), mine
-        whole = [p for p in mine if p.get("complete") and p.get("crc_ok")]
-        if whole:
-            assert whole[0]["dst_port"] == DST_PORT and bytes.fromhex(whole[0]["payload"]) == PAYLOAD, whole[0]
+        for attempt in range(1, tries + 1):
+            before = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
+            with sdr_bench.lease():
+                lis = sdr_bench.listen_start(freq, cc, seconds=10)
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    s.bind((host_ip, SRC_PORT))
+                    s.sendto(PAYLOAD, (bench_ip, DST_PORT))
+                time.sleep(4)
+                heard_pkts = dmr_packet.packets(sdr_bench.listen_result(lis))
+            after = {k: int(v) for k, v in udp.view(["dmr_ip"]).items() if str(v).isdigit()}
+            assert after["ip.sap3"] - before["ip.sap3"] == 1 and after["ip.sent"] - before["ip.sent"] == 1, \
+                (before, after)
+            mine = _ours(heard_pkts, own)
+            assert all(p["sap"] == dmr_packet.SAP_UDPIP_COMPRESSION for p in mine), mine
+            whole = [p for p in mine if p.get("complete") and p.get("crc_ok")]
+            if whole:
+                break
+            print(f"send {attempt}: the bench heard {len(mine)} header(s) from us, no whole packet")
         else:
-            warnings.warn("the bench modem didn't hear the packet whole")
+            raise AssertionError(f"the bench modem heard none of {tries} sends whole (the radio counted each as sent)")
+    if attempt > 1:
+        warnings.warn(f"heard whole by the bench modem on send {attempt} of {tries}")
+    p = whole[0]
+    print(f"on air: {p['src']} -> {p['dst']}, SAID {p['said']} ({p['src_ip']}), DAID {p['daid']} ({p['dst_ip']}), "
+          f"ports {p['src_port']} -> {p['dst_port']}")
+    assert p["said"] == 1 and p["src_ip"] == host_ip, f"not the host's address (13.<ID>, SAID 1): {p}"
+    assert p["daid"] == 0 and p["dst_ip"] == bench_ip, f"not the bench's address (12.<ID>, DAID 0): {p}"
+    assert p["src_port"] == SRC_PORT and p["dst_port"] == DST_PORT and bytes.fromhex(p["payload"]) == PAYLOAD, p
