@@ -851,7 +851,7 @@ def test_aprs_igate_on_air(radio, sdr_bench, pytestconfig, to):
         if to == "aprsis":
             srv = AprsIsServer()
             stack.callback(srv.close)
-            host = ".".join(ip.split(".")[:3] + [str(int(ip.split(".")[3]) ^ 1)])     # the host's address
+            host = "13." + ip.split(".", 1)[1]     # the host's address: 13.<DMR ID>, the radio's 12.<DMR ID>
             c0 = _n(L.view(["net"]), "aprsis.connects")
             st, _, body = _get(ip, f"/api/aprsis?server={host}:{srv.port}")
             assert st == 200, body

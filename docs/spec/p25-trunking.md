@@ -15,17 +15,18 @@ State:
 
 | Part | Written | Host tested | Run on a radio |
 |---|---|---|---|
-| Trunking signaling units (TSDU) and the header of a multi-block trunking packet: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
+| Trunking signaling units (TSDU) and explicit multi-block network/RFSS status: receive, FEC, CRC | yes | yes | the bench's control channel (8): 152 blocks with 1 CRC failure while only listening; one or two blocks lost around each of its own bursts |
 | Outbound messages a listener needs (2) | yes | yes | the bench's: network and RFSS status, the identifier, grants |
 | The follower: hunt, hold, follow, return (4) | yes | yes, also through the soft modem with noise | `test_p25_trunk_rx`: a grant to another unit's call followed to a second bench transmitter, its voice received and played, back on the control channel after the terminator |
 | The radio core: a trunked channel, its retunes, the UI (7) | yes | yes | yes, a channel written over CPS |
 | Inbound requests and their answers (2.1) | yes | yes | the three requests decoded off air by `p25tool.py`; the bench's answers taken |
 | Registration, affiliation, voice request, transmit on the grant, return (5) | yes | yes (`radioCoreTestP25T`, a fake site) | `test_p25_trunk_tx` |
 | Bench control channel and inbound decode (`tools/bench/p25tool.py`, 8) | yes | `p25tool.py selftest` | yes |
-| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, multi-block message bodies | no | | |
+| Unit to unit calls out, emergency, deregistration, location registration, acknowledgements, roaming by signal level, TDMA (Phase 2) voice channels, other multi-block message bodies | no | | |
 
 The radio runs are against a control channel `p25tool.py` writes from the same descriptions as the firmware, so they
-check the radio's timing, retunes and transmissions, not the layouts: no live system has been heard or answered.
+check the radio's timing, retunes and transmissions, not the layouts. Explicit network/RFSS status acquisition has
+also been checked by passive reception on a live system, without registration or affiliation.
 Every message layout of the transmit side comes from published descriptions, not a capture: 9 lists them.
 
 Sources: published descriptions of TIA-102.AABB (trunking control channel formats), TIA-102.AABC (trunking messages)
@@ -94,7 +95,11 @@ opcode of the request it answers.
 Not decoded, counted by opcode in the view and skipped: every other opcode of the standard table; any block with a
 MFID other than `0x00` or `0x01` (a manufacturer's own message, whatever its opcode); any protected block (its
 arguments are encrypted). A multi-block trunking packet's header is recognized (format `0x15` or `0x17`, service
-access point 61 or 63) and its opcode kept in the view; its data blocks are not decoded.
+access point 61 or 63) and its opcode kept in the view. One-block outbound AMBTC (`0x17`) network status (`0x3B`)
+and RFSS status (`0x3A`) bodies are decoded for standard MFIDs. Header CRC-16 and body CRC-32 must both pass.
+Their receive fields enter the same identity checks as TSBK status; configured NAC, system ID and WACN still apply.
+Other multi-block bodies remain unsupported. The layouts follow figures 5 and 6 of Aeroflex's
+[Understanding Advanced P25 Control Channel Functions](https://www.viavisolutions.com/en-us/literature/understanding-advanced-p25-control-channel-functions-discontinued-application-notes-en.pdf).
 
 ### 2.1 Inbound requests
 
@@ -374,4 +379,4 @@ of a live control channel settles them.
 | The explicit secondary control channel form's layout | only its channel (T) is read |
 | The system service broadcast's layout | view only |
 | The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
-| The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | used to recognize the header and count it only |
+| The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | recognized and counted; one-block explicit network/RFSS bodies also validated and decoded |

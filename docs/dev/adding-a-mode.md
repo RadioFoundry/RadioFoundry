@@ -57,8 +57,9 @@ reports for the mode. A kind module gives:
 | `ownFreqs` | Whether the channel keeps its own frequencies (false: the system gives them) |
 | `defaultTx`, `fallback`, `flags` | Transmit on a new channel; whether it has a fallback channel; its flag bits 4-7 by name |
 | `newParams`, `decode`, `encode` | The parameter block. `encode(params, prev)` keeps the bytes past what it knows |
-| `fields()` | The form's fields, declared (`editor/modefields.js`: int, hex, freq, bool, select, list, hexbytes, text) |
+| `fields()` | The form's fields, declared (`editor/modefields.js`: int, hex, freq, bool, select, list, hexbytes, text). A select whose options read other fields of the channel, such as its system, sets `dynamic: true`, so the form rebuilds the list as those fields change |
 | `validate`, `settings` | Problems of a channel; the radio-wide record's fields, when it has one |
+| `encryptsTx(c, params)` | Optional: true when the channel transmits encrypted or scrambled. The editor then warns on a channel that may transmit on an amateur frequency (`AMATEUR_HZ` in `channelmodes.js`) |
 
 A system type module gives `id`, `idLen`, `defaultTx`, `newFields`, `decode`, `encode`, `identity` (the text the
 Systems tab shows), `fields()`, `classes` (each entry class: its fields, `decode` and `encode` of the body, whether

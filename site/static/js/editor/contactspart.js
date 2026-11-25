@@ -10,7 +10,7 @@ import * as diag from "../diag.js";
 import { h, button, progressBar, num as fmtNum } from "../flasher/dom.js";
 import * as radioid from "../codeplug/sources/radioid.js";
 import { writeIddb, eraseIddb, convertIddb, addContacts, iddbEnd, iddbSize, iddbRecords } from "../codeplug/sources/output.js";
-import { TEXT_LENGTHS } from "../codeplug/iddb.js";
+import { TEXT_LENGTHS, unreadable } from "../codeplug/iddb.js";
 
 const PREFS = "rfoundry-editor-radioid";
 const KEY = "rfoundry-radioid-api-key";
@@ -216,15 +216,21 @@ function update() {
 	const upgrade = db?.format === "N" && api.compact === true;
 	// a read that skipped the radio's database: it stays on the radio as it is, until read here or replaced
 	const skipped = api.iddbSkipped;
+	// a header the editor can't parse: shown and removable, so a valid database can take its place
+	const unknown = !db && !skipped && unreadable(api.model.base.bytes);
+	// removed without reading it first: a skipped database can be too big or too slow to read
+	const remove = () => button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
+		// a skipped one is erased in the model already: no undo step, as undo couldn't bring the skip back
+		if (!skipped) api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
+		api.markIddb();
+		if (skipped) api.refresh();
+	}), { danger: true });
 	P.current.replaceChildren(...[skipped ? h("p", { class: "notice" }, t("editor.iddb_read.skipped", { n: skipped.count }), " ",
-		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }))
-		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t("editor.iddb.none")),
+		button(t("editor.iddb_read.read"), () => api.readSkippedIddb(), { primary: true }), " ", remove())
+		: h("p", {}, db ? t(present, { n: db.count, len: db.textLen }) : t(unknown ? "editor.iddb.unreadable" : "editor.iddb.none")),
 		upgrade ? h("p", { class: "notice" }, t("editor.iddb.upgrade", { radio: api.radio.name }), " ",
 			button(t("editor.iddb.convert"), () => api.upgradeIddb(), { primary: true })) : null,
-		db ? button(t("editor.rid.remove_db"), () => api.confirmDialog(t("editor.rid.remove_confirm"), t("editor.rid.remove_db"), () => {
-			api.change(t("editor.rid.undo_remove"), () => eraseIddb(api.model));
-			api.markIddb();
-		}), { danger: true, quiet: true }) : null].filter(Boolean));
+		db || unknown ? remove() : null].filter(Boolean));
 	// source
 	for (const b of P.modes.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === pr.mode));
 	P.fileBox.hidden = pr.mode !== "file";

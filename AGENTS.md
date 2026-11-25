@@ -40,6 +40,11 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    bug on one radio is fixed in the shared layer for all, after checking every board on that path. If a board needs
    to differ, extend the shared interface, don't fork the logic.
 
+   **One way to do a thing.** Use the existing core service or interface for the job: the `/ws` and HTTP API for host
+   control, `position_*` for location, the settings store (`core/settings`) for settings, `dl_text_t`/`sbuf_t` for
+   text. A second mechanism for the same job (another transport, store, format or parser) needs the maintainers'
+   agreement in an issue first; extend the existing one instead.
+
    **Generic docs** never name a radio or its pins. They are `docs/spec/*` other than `hardware-*`, `docs/user/*`
    other than `23-radios.md`, `docs/build-config.md` and `docs/dev/*`. Describe what a board provides (`CAP_*`,
    `board_t` fields) and link [docs/feature-matrix.md](docs/feature-matrix.md) for which radios have it. A radio's

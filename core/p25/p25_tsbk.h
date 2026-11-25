@@ -183,12 +183,15 @@ bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m);
 uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BYTES]);
 
 // The header block of a multi-block trunking packet (a PDU of the alternate or unconfirmed trunking format). False:
-// another packet. The data blocks are not decoded
+// another packet. Explicit network and RFSS status bodies are decoded separately.
 #define P25_PDU_FMT_UMBTC	0x15
 #define P25_PDU_FMT_AMBTC	0x17
 typedef struct {
 	uint8_t format, sap, mfid, blocks, opcode;
 } p25_mbt_t;
+// Validate a one-block AMBTC status body and normalize its receive fields to a sealed TSBK.
+// False for unsupported, truncated, or CRC-invalid packets.
+bool p25_mbt_status(const p25_rx_unit_t *u, uint8_t normalized[P25_TSBK_BYTES]);
 bool p25_mbt_parse(const uint8_t hdr[P25_TSBK_BYTES], p25_mbt_t *h);
 void p25_mbt_make(const p25_mbt_t *h, uint8_t hdr[P25_TSBK_BYTES]);
 // The packet CRC of an unconfirmed packet's n data octets (TIA-102.BAAA-A 6.3.3), sent in its last four octets

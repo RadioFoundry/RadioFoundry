@@ -65,7 +65,7 @@ RXSEEN  := $(CORE)/fec/rx_seen.c
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
 TESTS   := dmrFecTest dmrSoftBptcTest dmrSoftCombTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
-           ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
+           ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440
 
 all: run
 
@@ -97,19 +97,17 @@ IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
 
-# The same gateway test with a /16 plan: radios 10.250.0.0/16, talkgroups 10.251.0.0/16, multicast 239.250.0.0/16
-IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFB0000u -DIPGW_GROUP_PREFIX=16 \
+# The same gateway test with a /16 plan on a shared /15 link: radios 10.250.0.0/16, their hosts (the peripheral range)
+# 10.251.0.0/16, talkgroups 10.252.0.0/16, multicast 239.250.0.0/16
+IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFC0000u -DIPGW_GROUP_PREFIX=16 \
            -DIPGW_MULTICAST_NET=0xEFFA0000u -DIPGW_MULTICAST_PREFIX=16 -DIPGW_LINK_PREFIX=15 '-DPCAP_NAME="ipGatewayTest16.pcap"'
 
 ipGatewayTest16: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) $(IPGW16) -o $@ $(IPGW)
 
-# The default ranges on a /31 link, and on a shared /8 link, instead of the /32
-ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=31 '-DPCAP_NAME="ipGatewayTest31.pcap"' -o $@ $(IPGW)
-
+# The default ranges on a shared /7 link (12.0.0.0/7: the radios and their hosts) instead of the /32
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
+	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=7 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
 # An air narrower than the link, which no radio has: runs the ICMP fragmentation needed path (usb-network.md 3.2)
 ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
@@ -203,7 +201,7 @@ p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard 
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
-p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
+p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -o $@ p25VoiceTest.c $(CORE)/p25/p25Voice.c $(MBE) -lm
 
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
@@ -274,7 +272,7 @@ run-main: $(call suites,dmrFecTest dmrSoftBptcTest dmrSoftCombTest dmrDataTest d
 	hotspotDataTest hotspotUplinkTest dmrPrivacyTest lrrpTest airQueueTest fecTest airFramerTest p25Test fxpTest mbeTest \
 	imbeEncTest imbeVoiceGen airSoftmodemTest p25EngineTest nxdnTest nxdnEngineTest p25TrunkTest p25VoiceTest \
 	hrc6000AirTest radioKeysTest zoneShareTest zoneShareModesTest zoneShareSvcTest ipGatewayTest ipGatewayTest16 \
-	ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440 sfrTest aprsTest satelliteTle)
+	ipGatewayTestShared ipGatewayTestAir440 sfrTest aprsTest satelliteTle)
 .PHONY: run-main
 run/imbeVoiceGen: imbeVoiceGen
 	@$(SUITE) run $(@F) 'for v in $(VOICE_SETS); do ./imbeVoiceGen --check $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe || exit 1; done'
@@ -282,7 +280,7 @@ run/satelliteTle: satelliteTleTest.py
 	@$(SUITE) run $(@F) '$(PYTHON) satelliteTleTest.py'
 # Independent check of the frames the gateway sent. The fragmentation needed replies are ICMP errors by type (tshark's
 # note "Type indicates an error"): expected
-IPGW_RUNS := ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
+IPGW_RUNS := ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440
 $(addprefix run/,$(IPGW_RUNS)): run/%: %
 	@$(SUITE) run $* ./$* $(call PCAP_CHECK,udp,$*.pcap,ICMP +Type indicates an error)
 
@@ -482,6 +480,10 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
+# The mic gain and peak limiter before a vocoder's encoder (core/dsp/miclimit.h): DMR's
+TESTS   += miclimitTest
+miclimitTest: miclimitTest.c $(CORE)/dsp/miclimit.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclimitTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -771,10 +773,11 @@ run: run-aes
 run-aes: $(call suites,dmrAesTest)
 .PHONY: run-aes
 
-# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
+# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's and P25's sample scaling, never both
 TESTS   += micGainTest
-micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
+             $(CORE)/dsp/miclimit.h $(CORE)/p25/p25Voice.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_IMBE=1 -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
 TESTS   += t3ViewTest
@@ -852,7 +855,7 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: $(call suites,ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest)
+run-ambe: $(call suites,ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest miclimitTest refTrimTest paKeyupTest paSweepTest paKeyrunTest)
 .PHONY: run-ambe
 
 # The DMR voice call stack (core/dmr/call) against a simulated modem; LC coding cross-checked with sfr.c and dmrData.c
@@ -1319,9 +1322,10 @@ tftpTest: $(TFTPT) $(CORE)/net/tftp.h $(CORE)/net/tftp_codeplug.h $(CORE)/net/tf
 
 run: run-net
 run-net: $(call suites,mdnsTest tftpTest)
-# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
+# the TFTP ERROR packets and the gateway's ICMP port unreachables the tests ask for are expected; anything else
+# malformed or bad is not
 run/mdnsTest run/tftpTest: run/%: %
-	@$(SUITE) run $* ./$* $(call PCAP_CHECK,udp,$*.pcap,TFTP ERROR packet|^Errors)
+	@$(SUITE) run $* ./$* $(call PCAP_CHECK,udp,$*.pcap,TFTP ERROR packet|ICMP +Type indicates an error|^Errors)
 .PHONY: run-net
 
 # The sector journal and the settings store on a simulated NOR flash, with power cuts at every point of a write

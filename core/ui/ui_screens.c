@@ -1120,10 +1120,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 #endif
 	const ui_layout_t *L = &ui_layout;
 	const font_t *f = L->medium;
-	char buf[40];
+	char buf[60];	// a channel's three forms: up to 57 bytes ("1296.94375 MHz +300.125M" ...)
 	sbuf_t b;
 	sb_init(&b, buf, sizeof buf);
 	color_t c = ui_col.fg;
+	bool arrow = true;
 	if (v->ch.mode == RADIO_MODE_DMR) {
 		sb_str(&b, TR(WHY_DMR_NOT_IN_BUILD, "DMR: not in this build"));
 		c = ui_col.warn;
@@ -1188,15 +1189,29 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		sb_u32(&b, v->nxdn.talk, 1);
 #endif
 	} else {
-		// " MHz" goes before the frequency is cut (font.h alternates)
+		// A channel shows the frequency it listens on, as dual watch does, and a repeater's offset after it: no
+		// other row has either (#1031). Where PTT goes, with the arrow, only while PTT is held (transmitting, or
+		// refused: an out-of-band refusal needs the TX frequency in view) and in the VFO, whose receive frequency
+		// is the large one above. " MHz", then the offset, go before the frequency is cut (font.h alternates)
+		arrow = v->vfo || v->state == RS_TX || v->state == RS_TX_DENIED;
+		uint32_t hz = arrow ? v->ch.tx_hz : v->ch.rx_hz;
 		sb_str(&b, TEXT_ALT_OPEN);
-		sb_freq(&b, v->ch.tx_hz);
-		sb_str(&b, " MHz" TEXT_ALT_NEXT);
-		sb_freq(&b, v->ch.tx_hz);
+		sb_freq(&b, hz);
+		sb_str(&b, " MHz");
+		if (!arrow && v->ch.tx_hz != v->ch.rx_hz) {
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+			sb_str(&b, TEXT_ALT_NEXT);
+			sb_freq(&b, hz);
+			sb_chr(&b, ' ');
+			sb_split(&b, v->ch.rx_hz, v->ch.tx_hz);
+		}
+		sb_str(&b, TEXT_ALT_NEXT);
+		sb_freq(&b, hz);
 		sb_str(&b, TEXT_ALT_CLOSE);
 	}
 	// Too wide: shorter text, never a smaller font
-	int x = gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim);	// no space, on purpose: as on DMR's talk line
+	int x = arrow ? gfx_text(f, 0, L->talk_y, GLYPH_ARROW, ui_col.dim) : 0;	// no space, on purpose: as on DMR's talk line
 	char fit[40];
 	gfx_text_fit(f, buf, gfx_width() - x, fit, sizeof fit);
 	gfx_text(f, x, L->talk_y, fit, c);
@@ -1367,11 +1382,11 @@ static uint8_t trunk_why(const radio_view_t *v)
 }
 #endif
 
-static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
+const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t len)
 {
 	sbuf_t b;
 	sb_init(&b, buf, len);
-	switch (v->tx_deny) {
+	switch (why) {
 	case TXDENY_RX_ONLY: sb_str(&b, TR(DENY_WHY_RX_ONLY, "This channel is RX only")); break;
 	case TXDENY_BAND: {
 		char bands[32];
@@ -1400,6 +1415,10 @@ static const char *deny_reason(const radio_view_t *v, char *buf, size_t len)
 	case TXDENY_REFUSED: sb_str(&b, TR(DENY_WHY_RADIO_REFUSED, "Radio refused to send")); break;
 	case TXDENY_BENCH: sb_str(&b, TR(DENY_WHY_AIR_BENCH, "Air bench: PTT off")); break;
 	case TXDENY_AIR_NO_TX: sb_str(&b, TR(DENY_WHY_AIR_NO_TX, "This mode: receive only")); break;
+	case TXDENY_NOT_DMR: sb_str(&b, TR(SHARE_BANNER_TRY_ON_DMR, "Try again on a DMR channel")); break;
+	case TXDENY_DATA_ENCRYPTED:
+		sb_str(&b, TR(DENY_WHY_DATA_ENCRYPTED, "Encrypted channels can't send text"));
+		break;
 #if CONFIG_P25_TRUNK || CONFIG_DMR_TRUNK
 	case TXDENY_TRUNK:
 		switch (trunk_why(v)) {
@@ -2272,7 +2291,7 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 	}
 	case RS_TX_DENIED:
 		// One line only: the pill already says NO TX, so the line gives the reason
-		gfx_text_fit(sm, deny_reason(v, buf, sizeof buf), w, fit, sizeof fit);
+		gfx_text_fit(sm, ui_deny_text(v, v->tx_deny, buf, sizeof buf), w, fit, sizeof fit);
 		if (two) {
 			gfx_text(big, 0, y, TR(ACTIVITY_STATE_CANT_TRANSMIT, "Can't transmit"), ui_col.warn);
 			gfx_text(sm, 0, y2, fit, ui_col.fg);

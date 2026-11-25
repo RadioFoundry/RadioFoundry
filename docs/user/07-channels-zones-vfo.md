@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 The RadioFoundry Authors -->
 
 # Channels, Zones and the VFO
 
@@ -353,6 +354,9 @@ On a radio that runs P25 trunking, a channel can belong to a P25 trunked system 
 (its control channels, its identity, your unit ID) and its channels (one talkgroup each) come from a codeplug written
 on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A new system is listen only. The channel's settings show "P25T" as the mode.
 
+Control-channel acquisition accepts both ordinary status broadcasts and explicit multi-block network/site status.
+The configured system identity still has to match; receive-only operation never registers with the system.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |
@@ -376,7 +380,7 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
-- This has run against a test control channel only, not yet on a working system.
+- Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
 
 For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
 control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with

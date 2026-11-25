@@ -50,7 +50,7 @@ def net(radio, request):
         skip("not_built", "built without CONFIG_NET_TCP")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
-    radio_ip = str(ipaddress.IPv4Address((INDIVIDUAL_NET | own_id) ^ 1))
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | own_id))
     radio.link.usb_network(True)
     radio.link.close()
     udp = _udp_link(radio_ip, 30)

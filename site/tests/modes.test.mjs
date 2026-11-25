@@ -407,6 +407,10 @@ test("declared fields: hex with any, lists, keys, frequencies", () => {
 	// a field of another mode neither sets nor complains
 	const f = specField({ key: "x", label: "editor.x", type: "int", min: 0, max: 1 }, t, { on: () => false, get: (r) => r.p, put: () => assert.fail() }, "k");
 	assert.equal(f.parse({}, f.key, "9"), undefined);
+	// a select that reads other fields rebuilds its list in the form (#1042); a fixed one doesn't
+	const sel = (x) => specField({ key: "s", label: "editor.s", type: "select", options: () => [], ...x }, t, { get: () => ({}), put() {} }, "k");
+	assert.equal(sel({ dynamic: true }).dynamicOptions, true);
+	assert.equal(sel({}).dynamicOptions, false);
 });
 
 // --- NXDN conventional (docs/spec/nxdn-codeplug.md) ---
@@ -620,6 +624,66 @@ test("NXDN: traffic keys round-trip, resolve per system, and preserve opaque rec
 	assert.equal(first.system, null);
 	assert.ok(has(validate(decoded), "nxdn_missing_tx_key", first));
 	assert.equal(countSecrets(encode(decoded).bytes), 0);
+});
+
+// --- Encrypted TX on amateur frequencies (docs/user/04-programming.md) ---
+
+import { AMATEUR_HZ } from "../static/js/codeplug/channelmodes.js";
+
+test("encrypted TX on amateur frequencies: AES and NXDN scrambler channels warn in 144-148, 222-225 and 420-450 MHz, edges included", () => {
+	assert.deepEqual(AMATEUR_HZ, [[144000000, 148000000], [222000000, 225000000], [420000000, 450000000]]);
+	const m = empty();
+	const aes = newSystem(m, 5, "AES");
+	aes.trafficKeys = [{ id: 1, key: "11".repeat(32) }];
+	const nx = newSystem(m, 4, "NXDN");
+	nx.trafficKeys = [{ id: 2, seed: 100 }];
+	m.systems.push(aes, nx);
+	numberAll(m);
+	const chan = (kind, hz, params, extra = {}) => {
+		const c = newChannel({ name: `C${m.channels.length}`, rxHz: hz, txHz: hz, contact: null, ...extra });
+		m.channels.push(c);
+		setKind(m, c, kind);
+		c.system = kind === 5 ? aes : nx;
+		Object.assign(c.params, params);
+		return c;
+	};
+	const inBand = [144000000, 146520000, 148000000, 222000000, 223500000, 225000000, 420000000, 426250000, 446006250, 450000000];
+	const outBand = [143999999, 148000001, 221999999, 225000001, 419999999, 450000001, 461462500, 902000000];
+	const aesIn = inBand.map((hz) => chan(5, hz, { id: 1 }));
+	const aesOut = outBand.map((hz) => chan(5, hz, { id: 1 }));
+	const nxIn = inBand.map((hz) => chan(4, hz, { txKeyId: 2 }));
+	const nxOut = outBand.map((hz) => chan(4, hz, { txKeyId: 2 }));
+	const aesNone = chan(5, 146520000, { id: null });
+	const nxClear = chan(4, 446006250, {});
+	const rxOnly = chan(5, 146520000, { id: 1 });
+	rxOnly.tagTx = false;
+	const nxRxOnly = chan(4, 446006250, { txKeyId: 2 });
+	nxRxOnly.tagTx = false;
+	// RX in the band, TX outside it: only the TX frequency counts
+	const splitOut = chan(5, 146520000, { id: 1 }, {});
+	splitOut.txHz = 461462500;
+	const splitIn = chan(4, 461462500, { txKeyId: 2 });
+	splitIn.txHz = 446006250;
+	const plain = newChannel({ name: "Plain", mode: "dmr", rxHz: 146520000, txHz: 146520000 });
+	m.channels.push(plain);
+	numberAll(m);
+	const p = validate(m);
+	const warned = (c) => p.some((x) => x.code === "crypto_amateur" && x.item === c && x.level === "warning" && x.field === "txHz");
+	for (const c of [...aesIn, ...nxIn, splitIn]) assert.ok(warned(c), `${c.kind === 5 ? "AES" : "NXDN"} at ${c.txHz} warns`);
+	for (const c of [...aesOut, ...nxOut, splitOut]) assert.ok(!warned(c), `${c.txHz} is outside the bands`);
+	assert.ok(!warned(aesNone), "AES channel with no key: clear");
+	assert.ok(!warned(nxClear), "NXDN channel with a Clear transmit key");
+	assert.ok(!warned(rxOnly) && !warned(nxRxOnly), "receive only: no warning");
+	assert.ok(!warned(plain), "a plain DMR channel");
+	assert.ok(!p.some((x) => x.code === "crypto_amateur" && x.level !== "warning"), "a warning, never an error");
+	// a system that may not transmit makes its channels receive only too
+	aes.tx = false;
+	assert.ok(!validate(m).some((x) => x.code === "crypto_amateur" && x.item.kind === 5));
+	// nothing is blocked: the codeplug still encodes, keys and all
+	aes.tx = true;
+	const back = decode(encode(m));
+	assert.equal(back.channels.find((c) => c.name === aesIn[1].name).params.id, 1);
+	assert.ok(validate(back).some((x) => x.code === "crypto_amateur"));
 });
 
 test("Tier III: follow every talk group and learning the system are option bits 0x0008 and 0x0010; others kept", () => {
