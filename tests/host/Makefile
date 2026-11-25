@@ -402,6 +402,12 @@ radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CO
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
+# A volume potentiometer read on an ADC, as a position
+TESTS   += volumePotTest
+
+volumePotTest: volumePotTest.c $(CORE)/radio/volume_pot.c $(CORE)/radio/volume_pot.h $(CORE)/radio/cal_curve.h
+	$(CC) $(CFLAGS) -o $@ volumePotTest.c $(CORE)/radio/volume_pot.c
+
 # The volume knob power switch read from the battery sense line
 TESTS   += powerSwitchTest
 
@@ -492,7 +498,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 
 run: run-core
 run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
-          rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
+          rx2LinkTest keyassignTest volumePotTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
 	./radioCoreTestNoVfoDmr
@@ -514,6 +520,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T
 	./resampleTest
 	./rx2LinkTest
 	./keyassignTest
+	./volumePotTest
 	./powerSwitchTest
 	./powerKeyTest
 	./boardBandTest
