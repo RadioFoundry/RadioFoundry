@@ -6,6 +6,7 @@
 #include "board.h"
 #include "codeplug/codeplug_records.h"
 #include "dmr/dmrAes.h"
+#include "dmr/dmrData.h"
 #include "dmr/dmrPrivacy.h"
 #include "radio/radio.h"
 #include "radio/radio_aes.h"
@@ -77,6 +78,15 @@ void radio_aes_wipe(void)
 	channel_key_ref = 0;
 	channel_key_system = 0;
 	channel_tx_allowed = false;
+}
+
+bool radio_aes_data_config(const channel_t *ch, dmrDataPrivacy_t *out)
+{
+	if (ch->kind != CODEPLUG_KIND_DMR_AES)
+		return false;
+	memset(out, 0, sizeof(*out));
+	out->mode = DMR_DATA_PRIVACY_BLOCK;
+	return true;
 }
 
 void radio_aes_poll(const channel_t *ch, uint32_t own_id, uint32_t now_ms)

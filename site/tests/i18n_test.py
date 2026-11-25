@@ -248,10 +248,7 @@ class SecondLanguage(unittest.TestCase):
 					with open(path, encoding="utf-8") as f:
 						src = f.read()
 					for key in call.findall(src):
-						# flash.beta.* is left out of the flash page on purpose (its text is in the page itself). The
-						# pre-release notice (betaNotice in flasher/app.js) asks for three of them, two not in the
-						# catalog at all: a gap of its own, shown only while a pre-release newer than the release exists
-						if key in known and not (page == "flash/index.html" and key.startswith("flash.beta.")):
+						if key in known:
 							asked.setdefault(key, set()).add(os.path.basename(path))
 					for key in built.findall(src):
 						prefixes.setdefault(key, set()).add(os.path.basename(path))

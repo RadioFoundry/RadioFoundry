@@ -58,7 +58,9 @@ typedef enum {
 // key in band: HWOPT while a hardware option still needs a person's answer (board_hwopt_pending, hal_hwopt.h),
 // otherwise REFUSED. BENCH: the debug link's air interface bench holds the modem (CONFIG_AIR_RAW). TRUNK: a trunked
 // channel gave no voice channel (RADIO_TRUNK_WHY_* in radio_p25_view_t.twhy or radio_t3_brief_t.why says why). AIR_NO_TX: the board's air interface receives this
-// mode's profile but can't transmit it (NXDN at a rate the provider only receives)
+// mode's profile but can't transmit it (NXDN at a rate the provider only receives). Data only (radio_view_t data_deny,
+// packet_deny), never PTT: NOT_DMR the channel isn't DMR, DATA_ENCRYPTED the channel's encryption has no form for
+// packet data (text, positions), so none is sent; signaling still goes
 typedef enum {
 	TXDENY_NONE, TXDENY_RX_ONLY, TXDENY_BAND, TXDENY_TIMEOUT, TXDENY_NO_FREQ, TXDENY_MODE,
 	TXDENY_NO_CODEC, TXDENY_NO_DMR, TXDENY_BUSY, TXDENY_NO_REPEATER, TXDENY_REJECTED, TXDENY_HOTSPOT, TXDENY_NO_ID,
@@ -66,6 +68,7 @@ typedef enum {
 	TXDENY_CEASED,	// the system stopped the over (DMR reverse channel)
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
 	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
+	TXDENY_NOT_DMR, TXDENY_DATA_ENCRYPTED,
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a
@@ -434,6 +437,11 @@ typedef struct {
 typedef struct {
 	radio_state_t state;
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
+	// Why the channel can't send DMR data now (tx_deny_t, TXDENY_NONE: it can), asked before a send so the user sees
+	// the reason instead of a send that never went: data_deny for signaling (radio check, call alert), packet_deny for
+	// packet data (text, positions), which the channel's encryption can also hold back
+	uint8_t data_deny;
+	uint8_t packet_deny;
 	uint8_t leds;		// RADIO_LED_* bits: what the radio core drives its LEDs to (board.power->led)
 	bool vfo;		// tuning a frequency by hand rather than a channel
 	uint8_t vfo_index;	// which VFO: 0, or 1 the second (dual watch gives each channel its own)
