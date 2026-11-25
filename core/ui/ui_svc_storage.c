@@ -1697,27 +1697,30 @@ static bool key_set(uint8_t id, int32_t value)
 #if KEY_STORE
 // Stored keys draws a page of rows on every frame: one walk of the codeplug fills a page and the count, kept until the
 // codeplug changes (its serial) or a second goes by (a privacy slot changed in the settings). Each walk checks the whole
-// area, so a row each would be seconds for a page (a watchdog restart, seen on a radio with 34 keys)
+// area, so a row each would be seconds for a page (a watchdog restart, seen on a radio with 34 keys). Rows, not whole
+// entries, and the few system names they use: 126 B of .bss on every radio (key_store.h)
 #define KEYS_PAGE	10u
 static struct {
 	bool ok;
 	uint8_t serial;
-	uint32_t at_ms;
-	uint16_t first, n, total;
-	key_entry_t e[KEYS_PAGE];
+	uint8_t n;
+	uint16_t at_ms;		// the low 16 bits of hal_millis(): only ages under a second are compared
+	uint16_t first, total;
+	key_row_t e[KEYS_PAGE];
+	key_names_t names;
 } keys_page;
 
 static bool keys_fresh(void)
 {
-	return keys_page.ok && keys_page.serial == codeplug_kv_serial() && (uint32_t)(hal_millis() - keys_page.at_ms) < 1000u;
+	return keys_page.ok && keys_page.serial == codeplug_kv_serial() && (uint16_t)((uint16_t)hal_millis() - keys_page.at_ms) < 1000u;
 }
 
 static void keys_fill(uint16_t first)
 {
 	keys_page.first = first;
-	keys_page.n = key_store_window(first, keys_page.e, KEYS_PAGE, &keys_page.total);
+	keys_page.n = (uint8_t)key_store_window(first, keys_page.e, KEYS_PAGE, &keys_page.total, &keys_page.names);
 	keys_page.serial = codeplug_kv_serial();
-	keys_page.at_ms = hal_millis();
+	keys_page.at_ms = (uint16_t)hal_millis();
 	keys_page.ok = true;
 }
 
@@ -1728,13 +1731,15 @@ uint16_t ui_svc_keys_count(void)
 	return keys_page.total;
 }
 
-bool ui_svc_key(uint16_t i, struct key_entry_s *e)
+bool ui_svc_key(uint16_t i, struct key_row_s *row, char name[CODEPLUG_NAME_LEN + 1])
 {
 	if (!keys_fresh() || i < keys_page.first || i >= keys_page.first + keys_page.n)
 		keys_fill(i >= KEYS_PAGE / 2u ? (uint16_t)(i - KEYS_PAGE / 2u) : 0);
 	if (i < keys_page.first || i >= keys_page.first + keys_page.n)
 		return false;
-	*e = keys_page.e[i - keys_page.first];
+	*row = keys_page.e[i - keys_page.first];
+	if (row->cls != KCV_CLASS_TRAFFIC || !key_names_get(&keys_page.names, row->num, name))
+		name[0] = 0;
 	return true;
 }
 #endif

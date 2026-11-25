@@ -4504,8 +4504,8 @@ msgstr "Diagnostica: non in questa build"
 
 #: core/ui/ui_menus.c
 msgctxt "SET_TOAST_KEY_CHECK_COMPARE"
-msgid "The same check on both radios: the same key"
-msgstr "Stessa verifica su entrambe le radio: stessa chiave"
+msgid "Radios that show the same check value hold the same key"
+msgstr "Le radio che mostrano lo stesso valore di verifica hanno la stessa chiave"
 
 #: core/ui/ui_menus.c
 msgctxt "GPS_POSITION_SAVED"

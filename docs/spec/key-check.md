@@ -21,7 +21,7 @@ a block cipher key. The hashed form is ours.
 | Codeplug Editor | `site/static/js/codeplug/kcv.js`; the Key check column of a system's traffic key table (`site/static/js/editor/modesview.js`) |
 | Vectors | `tests/vectors/key-check.txt`, read by the C and the JS tests |
 
-No switch: the code is about 0.6 KB of flash and no RAM, and SHA-256 is in the image already (support info).
+Switch: `CONFIG_KEY_CHECK`, on by default (`config/features.mk`). SHA-256 is in the image already (support info); Stored keys keeps a page of rows and the names of the first two systems they use, 126 B of RAM.
 
 ## 2. The hashed check value
 
@@ -68,7 +68,7 @@ with `traffic.kcv = "aes"`.
 | Where | What |
 |---|---|
 | Settings > Privacy > Key check | Slot 1's KCV, `-` with no key. OK says how to use it. Dimmed until a key type is picked |
-| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 8-bit` or the system's name and `#` key ID, its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
+| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 8-bit` (the Key type setting's name for the type, without its key range) or the system's name and `#` key ID (the system's type for a third system on a page), its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
 | Codeplug Editor, a system's traffic keys | A Key check column, computed from the row as typed, `-` while a field doesn't parse. Shown when the key itself is hidden |
 
 ## 5. What a KCV gives away

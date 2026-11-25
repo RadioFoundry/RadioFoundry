@@ -38,7 +38,7 @@ WEAK bool ui_svc_hear_all(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy(bool on) { (void)on; return false; }
 WEAK bool ui_svc_privacy_kcv(char out[7]) { (void)out; return false; }
 WEAK uint16_t ui_svc_keys_count(void) { return 0; }
-WEAK bool ui_svc_key(uint16_t i, struct key_entry_s *e) { (void)i; (void)e; return false; }
+WEAK bool ui_svc_key(uint16_t i, struct key_row_s *row, char name[17]) { (void)i; (void)row; (void)name; return false; }
 WEAK bool ui_svc_monitor(bool on) { (void)on; return false; }
 WEAK bool ui_svc_vox(bool on) { (void)on; return false; }
 WEAK bool ui_svc_save_channel(void) { return false; }

@@ -7718,7 +7718,7 @@ static void group_select(uint16_t i, bool hold)
 		case SA_LANGUAGE: ui_push(SCR_LANGUAGE, 0); break;
 #if CONFIG_KEY_CHECK
 		case SA_KEY_CHECK:
-			ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+			ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "Radios that show the same check value hold the same key"));
 			break;
 #endif
 #if KEY_STORE
@@ -8204,19 +8204,27 @@ static uint16_t keys_count(void) { return ui_svc_keys_count(); }
 
 static void keys_item(uint16_t i, ui_item_t *it)
 {
-	key_entry_t e;
-	if (!ui_svc_key(i, &e))
+	key_row_t e;
+	char name[CODEPLUG_NAME_LEN + 1];
+	if (!ui_svc_key(i, &e, name))
 		return;
 	sbuf_t b;
 	sb_init(&b, it->label, sizeof it->label);
 	if (e.cls == KCV_CLASS_PRIVACY) {
 		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
 		sb_chr(&b, ' ');
-		sb_u32(&b, e.slot, 1);
-		sb_chr(&b, ' ');
-		sb_str(&b, e.type == 1 ? "8-bit" : e.type == 2 ? "16-bit" : "?");
+		sb_u32(&b, e.num, 1);
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+		if (e.type < sizeof n_ptype / sizeof n_ptype[0]) {
+			// The Key type setting's name, one name per type, without its key range in brackets: a row is
+			// too narrow for both beside the check value (every catalog writes the range as " (...)")
+			sb_chr(&b, ' ');
+			for (const char *c = tr(n_ptype[e.type]); *c != 0 && !(c[0] == ' ' && c[1] == '('); c++)
+				sb_chr(&b, *c);
+		}
+#endif
 	} else {
-		sb_str(&b, e.name[0] ? e.name : codeplug_systype_name(e.type));
+		sb_str(&b, name[0] ? name : codeplug_systype_name(e.type));
 		sb_str(&b, " #");
 		sb_u32(&b, e.key_id, 1);
 	}
@@ -8230,7 +8238,7 @@ static void keys_select(uint16_t i, bool hold)
 {
 	(void)hold;
 	(void)i;
-	ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "The same check on both radios: the same key"));
+	ui_toast(TR(SET_TOAST_KEY_CHECK_COMPARE, "Radios that show the same check value hold the same key"));
 }
 
 static const ui_scr_def_t keys_screen = {

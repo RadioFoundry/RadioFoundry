@@ -5,6 +5,7 @@
 #include "config.h"
 #include "support/kcv.h"
 #include "support/sha256.h"
+#include "codeplug/codeplug_modes.h"
 #if CONFIG_DMR_AES
 #include "dmr/dmrAes.h"
 #endif
@@ -17,7 +18,7 @@ static const uint8_t LABEL[6] = { 'R', 'F', 'K', 'C', 'V', '1' };
 // when it claims its ids (channel-modes.md 4); every other key gets the hashed form
 static const struct { uint8_t sys_type, alg; } AES_ALGS[] = {
 #if CONFIG_DMR_AES
-	{ 5, DMR_AES_ALG_AES256 },	// conventional DMR AES-256
+	{ CODEPLUG_SYSTYPE_DMR_AES, DMR_AES_ALG_AES256 },	// conventional DMR AES-256
 #endif
 	{ 0, 0 },			// none: no system type is 0
 };
