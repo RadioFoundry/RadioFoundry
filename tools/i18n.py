@@ -270,13 +270,21 @@ def scan(rel, src, old_ok=False):
     return out
 
 
+# The file that includes the tables: the Makefile never scans it for the keys a build uses
+TABLES_READER = "core/ui/i18n.c"
+
+
 def marks(old_ok=False, files=None):
     out = []
     for rel in files if files is not None else source_files():
         with open(os.path.join(ROOT, rel), encoding="utf-8", errors="replace") as f:
             src = f.read()
         if "TR" in src:
-            out += scan(rel, src, old_ok)
+            found = scan(rel, src, old_ok)
+            if found and rel == TABLES_READER:
+                raise I18nError("%s: no marks in the tables' reader: make leaves it out of the scan of the keys a "
+                                "build uses (it includes the tables)" % found[0].where())
+            out += found
     return out
 
 

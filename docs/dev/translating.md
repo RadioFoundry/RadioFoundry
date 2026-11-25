@@ -91,9 +91,9 @@ English text itself and costs nothing. Code compiles the same either way.
 `tools/i18n.py` reads the marks, keeps the catalogs in step and turns them into the tables the build links in: the
 English of each key, and each language's translations by key.
 
-Each build packs only the strings of the code it compiles. Make preprocesses each source with the build's flags and
-collects the `TR_<KEY>` names left in it (a `.tr` file beside the object); `tools/i18n.py --gen --used` then leaves
-every other key's text out of the tables. A mark under a switch that is off costs no text:
+Each build packs only the strings of the code the build compiles. Make preprocesses each source with the build's
+flags and collects the `TR_<KEY>` names left in the output (a `.tr` file beside the object); `tools/i18n.py --gen
+--used` then leaves every other key's text out of the tables. A mark under a switch that is off costs no text:
 
 | | Comes from |
 |---|---|

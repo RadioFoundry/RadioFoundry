@@ -66,6 +66,19 @@ class Marks(unittest.TestCase):
                      'TEXT_ALT_CLOSE);\n')
         self.assertEqual([m.text for m in found], ["More…", "{Power|Pwr}"])
 
+    def test_no_marks_in_the_tables_reader(self):
+        with tempfile.TemporaryDirectory() as d:
+            saved = i18n.ROOT
+            i18n.ROOT = d
+            try:
+                os.makedirs(os.path.join(d, "core", "ui"))
+                with open(os.path.join(d, "core", "ui", "i18n.c"), "w", encoding="utf-8") as f:
+                    f.write('x = TR(ZONE, "Zone");\n')
+                with self.assertRaisesRegex(i18n.I18nError, "tables' reader"):
+                    i18n.marks(files=["core/ui/i18n.c"])
+            finally:
+                i18n.ROOT = saved
+
     def test_old_form_is_an_error(self):
         with self.assertRaisesRegex(i18n.I18nError, "takes a key"):
             scan('x = TR("Zone");\n')
