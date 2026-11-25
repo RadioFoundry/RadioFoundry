@@ -236,6 +236,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FAILED: ${{ contains(needs.*.result, 'failure') }}
+          # a pass is mark's success: a cancelled or skipped job neither fails the night nor closes the issue
+          PASSED: ${{ needs.mark.result == 'success' }}
           LAST: ${{ needs.changes.outputs.last }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -248,6 +250,6 @@ jobs:
             if [ -n "$n" ]; then gh issue comment "$n" -R "$GITHUB_REPOSITORY" --body "$body"
             else gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --label regression --body "$body" ||
                  gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"; fi
-          elif [ -n "$n" ]; then
+          elif [ "$PASSED" = true ] && [ -n "$n" ]; then
             gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "The nightly run passed on ${GITHUB_SHA::8}: $RUN_URL."
           fi
