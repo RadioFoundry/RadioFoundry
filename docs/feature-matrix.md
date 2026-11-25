@@ -273,6 +273,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DUAL_WATCH` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `BEEP` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `SPEAKER_AUX` | ○ | ○ | ○ | ○ | ● | ○ | ○ | ○ |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |

@@ -33,6 +33,7 @@
 #include "radio/radio_aes.h"
 #endif
 #include "radio/beep.h"	// beep_t (beep_play only with CONFIG_BEEP)
+#include "radio/spk_aux.h"
 #include "radio/sigtone.h"
 #include "radio/vibe.h"	// vibe_t (vibe_play only with CONFIG_VIBRATE)
 #include "radio/tx_limit.h"	// the test TX limit (radio-features.md 3.1)
@@ -8455,23 +8456,24 @@ static void host_audio_watch(radio_sm_t *sm, uint32_t now_ms)
 
 #endif
 #if CONFIG_BEEP || CONFIG_DMR || CONFIG_P25   // its only users; without them, it would be unused (a warning)
-// The PCM stream the radio's own users (beeps, DMR voice) take: the board's, shared with a host audio session
+// The PCM stream the radio's own users (beeps, DMR voice) take: the board's, its speaker blocks sent to the board's
+// second output while the stream's can't be heard (spk_aux.h), shared with a host audio session
 static const hal_audio_t *pcm_audio(void)
 {
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
-	return audio_mux_wrap(board.audio);
+	return audio_mux_wrap(board.audio);	// the mux runs the second output's step itself
 #else
-	return board.audio;
+	return spk_aux_wrap(board.audio);
 #endif
 }
 #endif
 
 #if CONFIG_DMR && CONFIG_BEEP
-// The mic gate of the AMBE voice path (ambeVoiceSetMicGate, DMR and NXDN): a beep's echo, unless a host audio
-// session's samples replace the mic (they never hear the speaker), or a board whose audio path drops the speaker
-// audio while DMR is on air (hal_audio_t.speaker_blocked) transmits DMR: its speaker sounds nothing the mic could
-// hear. Not CAP_BEEP_NOT_ON_AIR: a board may set that for a speaker that is only quiet in DMR transmit. NXDN has no
-// such hold. Audio task
+// The mic gate of the AMBE voice path (ambeVoiceSetMicGate, DMR and NXDN): a beep's echo, or a sound on the speaker's
+// second output (it plays later than the stream's), unless a host audio session's samples replace the mic (they never
+// hear the speaker), or a board whose audio path drops the speaker audio while DMR is on air
+// (hal_audio_t.speaker_blocked) transmits DMR: its speaker sounds nothing the mic could hear. NXDN has no such hold.
+// Audio task
 static bool dmr_mic_gate(void)
 {
 #if CONFIG_NET_USRP
@@ -8488,7 +8490,7 @@ static bool dmr_mic_gate(void)
 		return false;
 #endif
 	}
-	return beep_mic_echo();
+	return beep_mic_echo() || spk_aux_pending();
 }
 #endif
 

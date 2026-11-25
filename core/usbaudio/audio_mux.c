@@ -3,6 +3,7 @@
 // The PCM stream shared between the radio's users and a host audio session (audio_mux.h)
 #include "config.h"
 #include "usbaudio/audio_mux.h"
+#include "radio/spk_aux.h"
 
 #include <string.h>
 
@@ -86,6 +87,13 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 	} else if (src != AUDIO_MUX_RX_OFF) {
 		rx_put(src == AUDIO_MUX_RX_OUTPUT ? spk : mic, AUDIO_BLOCK_SAMPLES);
 	}
+#if CONFIG_SPEAKER_AUX
+	// Last, after the host's copy of the output: the speaker's second output while the stream's can't be heard. Not
+	// after a stop from the callback: no block would follow to turn the output off
+	if (hw->spk_aux != NULL && running) {
+		spk_aux_block(hw->spk_aux, spk);
+	}
+#endif
 }
 
 static bool hw_start(void)
@@ -117,6 +125,11 @@ static void w_stop(void)
 	if (!stream_wanted) {
 		running = false;
 		hw->stop();
+#if CONFIG_SPEAKER_AUX
+		if (hw->spk_aux != NULL) {
+			spk_aux_reset(hw->spk_aux);
+		}
+#endif
 	}
 }
 

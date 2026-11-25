@@ -468,9 +468,9 @@ two blocks. `voice.tx_mic_muted` (DMR, `dmr` section) and `p25v.tx_mic_muted` co
 transmission. Signaling tones sent on air and the test signal replace the mic and are not muted, nor is a host audio
 session's DMR audio ([usb-audio.md](usb-audio.md)), which never hears the speaker. DMR on a board whose
 audio path drops the speaker's audio while DMR is on air (`hal_audio_t.speaker_blocked`) has no gate: its speaker
-sounds nothing while DMR transmits. A board with `CAP_BEEP_NOT_ON_AIR` but no such drop (a speaker that is only quiet
-in DMR transmit) keeps the gate. NXDN, which shares the DMR voice
-path, has the gate on every board. A mixed beep's silent lead-in (a cold amplifier) mutes the mic too, which keeps the
+sounds nothing while DMR transmits. A board with a second speaker output (4.4) keeps the gate, held also while that
+output is powered (`spk_aux_pending`): its sound reaches the speaker later than the stream's would. NXDN, which shares
+the DMR voice path, has the gate on every board. A mixed beep's silent lead-in (a cold amplifier) mutes the mic too, which keeps the
 amplifier's turn-on click off the air. Without the voice stream the beep
 starts the board's PCM audio stream itself, routes the speaker for silent lead-in blocks before the tone (one 20 ms
 block, or `hal_audio_t.speaker_lead_ms` rounded up to blocks, at most 200 ms, for an amplifier that unmutes slowly), holds
@@ -625,6 +625,30 @@ tone plays once the transmitter is off, and on a board whose audio path is close
 (`hal_audio_t.speaker_blocked`) a little after that: audio queued while the path is closed is dropped when it opens, so the
 core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.
 
+
+### 4.4 The speaker's second output (CONFIG_SPEAKER_AUX)
+
+Some speakers have no level while DMR is on air: the codec output that feeds the amplifier loses its supply in
+transmit. A board with another path to the amplifier (a PWM pin) gives that path as `hal_audio_t.spk_aux`
+(`hal_spk_aux_t`), and the core sends the speaker's sound there while the board says the stream's output can't be
+heard (`active`). The users of the stream don't change: beeps, DMR and P25 voice take the stream from `pcm_audio()`,
+which wraps the board's (`spk_aux_wrap`, `core/radio/spk_aux.c`), and every block they fill passes through
+`spk_aux_block`:
+
+| Step | When | What |
+|---|---|---|
+| Lead | the first block with sound | `power(SPK_AUX_ARMED)`: the amplifier on, the speaker muted; the block is queued (`write`) |
+| Open | `lead_ms` of blocks queued | `power(SPK_AUX_OPEN)`: the output plays its queue, so the sound starts `lead_ms` late and whole |
+| Mute | only silence left in the queue | `power(SPK_AUX_ARMED)` |
+| Off | `tail_ms` later | `power(SPK_AUX_OFF)` |
+
+Each block moved to the output goes down the stream as silence. A sound in the tail is queued again with the
+amplifier still on. When `active` turns false (the radio stops transmitting), the output goes off at once and the
+stream's own output plays from the next block. The mic gate (4) holds from the first queued block until the output is
+off, so the beep's echo stays off the air. Measured on the radio: a 60 ms lead keeps the amplifier's turn-on step out
+of the tone (20 ms gave a 2-4.5 dB overshoot), and with the gate the permit leaves no tone in the decoded audio.
+`tests/host/spkAuxTest.c` checks the sequence. [Feature matrix](../feature-matrix.md): the radios with
+`CONFIG_SPEAKER_AUX`.
 
 ## 5. Power
 

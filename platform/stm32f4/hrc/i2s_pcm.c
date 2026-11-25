@@ -67,8 +67,6 @@ static volatile uint8_t pending;	// bit 0: half 0 received, bit 1: half 1
 static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
-static volatile uint8_t spk_loud;	// bit 0: half 0 holds speaker audio other than silence, bit 1: half 1
-static volatile uint32_t spk_loud_ms;	// when a half was last written with sound (hal_millis)
 static const stm32_i2s_pcm_cfg_t *cfg;
 
 // The FIFO path: the FM copy (an air interface) and beeps in FM receive use it
@@ -287,19 +285,9 @@ static void process(uint8_t half)
 	}
 #endif
 	// This half has just gone out (TX runs in step with RX), so it is free until the DMA comes back in 20 ms
-	bool loud = false;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		out[2 * i] = spk[i];
 		out[2 * i + 1] = spk[i];
-		loud |= spk[i] != 0;
-	}
-	// Not after a stop from the callback itself: the next start's DMA halves are silence
-	uint8_t bit = (uint8_t)(1u << half);
-	if (loud && running) {
-		spk_loud |= bit;
-		spk_loud_ms = hal_millis();
-	} else {
-		spk_loud &= (uint8_t)~bit;
 	}
 }
 
@@ -496,7 +484,6 @@ void stm32_i2s_pcm_stop(void)
 	fifo_off();
 	hw_stop();
 	pending = 0;
-	spk_loud = 0;
 	block_cb = NULL;
 	clock(false);
 }
@@ -504,15 +491,6 @@ void stm32_i2s_pcm_stop(void)
 bool stm32_i2s_pcm_running(void)
 {
 	return running;
-}
-
-// A half written with sound plays out within the next 40 ms; its flag clears when the half is written again, which is
-// only after it has gone out. A clock that stopped writes no half again: past SPK_PLAY_MS the sound is taken as gone.
-// The prompt FIFO's ring is not counted (the boards with cfg->prompt_fifo don't use this)
-#define SPK_PLAY_MS	60u
-bool stm32_i2s_pcm_spk_pending(void)
-{
-	return running && spk_loud != 0 && hal_millis() - spk_loud_ms < SPK_PLAY_MS;
 }
 
 void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out)
