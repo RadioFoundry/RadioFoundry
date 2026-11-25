@@ -143,49 +143,14 @@ def tests_by_feature(found):
     return out
 
 
-_TREE = None
-
-
-def _tree_texts():
-    """Source text of core/, drivers/, platform/ and hal/ once (default source lookup)."""
-    global _TREE
-    if _TREE is None:
-        _TREE = {}
-        for top in ("core", "drivers", "platform", "hal"):
-            for dp, _, fns in os.walk(os.path.join(ROOT, top)):
-                for fn in fns:
-                    if fn.endswith((".c", ".h", ".S", ".mk")):
-                        p = os.path.join(dp, fn)
-                        _TREE[os.path.relpath(p, ROOT)] = open(p, errors="replace").read()
-    return _TREE
-
-
 def default_source(switch):
-    """What the Makefile builds for the switch (inside an ifeq / ifneq on it, or a -$(CONFIG_X) line), else the files
-    that test CONFIG_<switch> (core/config.h, which names them all, left out)."""
-    if not switch:
-        return []
-    found = []
-    stack = []
-    cont = False
-    for line in open(os.path.join(ROOT, "Makefile")).read().splitlines():
-        s = line.strip()
-        if re.match(r"if(n?eq|n?def)\b", s):
-            stack.append(f"$(CONFIG_{switch})" in s)
-            continue
-        if s == "endif" and stack:
-            stack.pop()
-            continue
-        mine = any(stack) or f"-$(CONFIG_{switch})" in s or cont
-        cont = mine and s.endswith("\\") and not any(stack)
-        if mine:
-            for tok in re.findall(r"[A-Za-z0-9_./-]+", s):
-                if "/" in tok and os.path.exists(os.path.join(ROOT, tok)) and tok not in found:
-                    found.append(tok)
-    if found:
-        return found
-    pat = re.compile(rf"\bCONFIG_{switch}\b")
-    return sorted(p for p, t in _tree_texts().items() if p != os.path.join("core", "config.h") and pat.search(t))
+    """A feature's source paths when features.toml gives none (tools/boards.py default_source(), which
+    tools/affected.py uses too): what the Makefile builds for the switch, else the files that name it."""
+    tools = os.path.join(ROOT, "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import boards as registry
+    return registry.default_source(ROOT, switch)
 
 
 def feature_paths(e):

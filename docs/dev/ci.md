@@ -11,14 +11,16 @@ so one set serves the self-hosted Gitea runner and GitHub.
 | Workflow | Runs on | When | What |
 |---|---|---|---|
 | `ci.yml` | `ubuntu-24.04` | every push to `main` that changes source (below); by hand on any branch | the unit tests (once, with coverage and sanitizers), Python and license checks, every board's default build |
-| `pr-tests.yml` | `ubuntu-24.04` | every pull request; a fork's after a maintainer approves the run | `ci.yml`'s jobs and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
-| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board, `reuse lint` |
+| `pr-tests.yml` | `ubuntu-24.04` | every pull request (drafts: `checks` only); a fork's after a maintainer approves the run; every merge queue group | `ci.yml`'s jobs, the affected builds and the manual check, for the files the pull request changes; `PR checks` gates the merge. A branch's only CI |
+| `nightly.yml` | `ubuntu-24.04` | 07:17 UTC daily when a file the firmware builds read changed since the last pass; by hand | the feature matrix of every board (a job each), the full host tests, `reuse lint`; the `nightly-ci` tag on a pass, a "Nightly failing" issue on a failure |
 | `site.yml` | `ubuntu-24.04` | a published release; by hand | asks Cloudflare Pages to build `main` again, for the new release's images. Pages itself builds every push ([website.md](website.md)); pull requests also build the site in the unit tests job |
-| `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true` | `tests/hil` against the radio and the SDR bench |
+| `hil.yml` | `rfoundry-hil` (the bench Mac) | by hand; nightly only when `RFOUNDRY_HIL_SCHEDULE=true`, or the `nightly-ci` commit flashed and tested when `RFOUNDRY_HIL_NIGHTLY=true` | `tests/hil` against the radio and the SDR bench |
 | `ui-gallery.yml` | `ubuntu-24.04` | a pull request that changes the UI (`core/ui/`, the simulator, `uiSim`) | renders the screen gallery at the base and at the pull request, and makes the side-by-side artifact |
 | `ui-gallery-comment.yml` | `ubuntu-24.04` | when `ui-gallery.yml` finishes on a pull request | posts the pull request's gallery comment with the changed screens attached |
 | `beep-reel.yml` | `ubuntu-24.04` | a pull request that changes the beeps (`core/radio/beep.c`, `beep.h`, the reel) | makes the beep reel with the base's beeps and with the pull request's, and uploads both videos and the changed beeps |
 | `manual.yml` | `ubuntu-24.04` | docs changes pushed to `main`, `v*` tags | the user manual PDF ([manual-pdf.md](manual-pdf.md)) |
+| `backport.yml` | `ubuntu-24.04` | a merged pull request labeled `backport` | the cherry-pick pull request to the newest `release/*` branch ([release.md](release.md#backports)) |
+| `labeler.yml` | `ubuntu-24.04` | every pull request | `area:*`, `risk:low` and `needs-hil` labels by path (`.github/labeler.yml`) |
 | `release.yml` | `ubuntu-24.04`, and for rfoundry the hosted macOS / Windows runners | `v*` tags; pull requests that change rfoundry or this workflow (no release gate; `pr-tests.yml` runs the firmware packaging) | release images and rfoundry ([release.md](release.md)) |
 
 On GitHub, `ci.yml` and `nightly.yml` run only when the repository variable `RFOUNDRY_CI_GITHUB` is `true` (on a
@@ -86,6 +88,90 @@ would ([release.md](release.md)). `checks` runs on every pull request: the Pytho
 among them) always, and the PDF manual build (as `manual.yml` does) when docs change (`manual.yml`'s paths). The last
 job, `PR checks`, always runs and fails when any job failed or was canceled. It is the one check the `main` ruleset
 requires, so a skipped job never holds a pull request up, and a new job only has to be added to its `needs` list.
+
+**Drafts.** A draft pull request runs only `changes` and `checks`. The unit tests and firmware builds start when it
+is marked ready for review (`ready_for_review`) and on every push after that. A draft pushed often then doesn't
+hold the hosted-runner queue for everyone else.
+
+### Speed budgets
+
+A slow gate gets skipped by hand, and a skipped gate catches nothing. Each gate has a wall-time target; a test that
+pushes its gate over the target moves to a later gate (or gets a faster form), and a pull request that changes a
+gate reports its time before and after.
+
+| Gate | Target |
+|---|---|
+| Pull request checks | 10 min per job |
+| Merge queue | 20 min per group of up to 5 |
+| Host tests | 2 min on a developer machine, 4 min in CI |
+| HIL for a batch of pull requests | 15 min per radio (`tests/hil/README.md`) |
+| Nightly CI and nightly HIL | overnight |
+
+### Merge queue
+
+Pull requests merge through GitHub's merge queue on `main` (the ruleset: merge queue on, groups of up to 5, all
+entries must pass, `PR checks` required). **Merge when ready** adds an approved pull request to the queue. The queue
+makes a temporary branch with `main` plus every pull request ahead of it and runs `pr-tests.yml` on it
+(`merge_group`): the same jobs, with the affected builds taken against the group's base over the whole group's diff,
+broad scope, up to 30 per toolchain. When a group fails, the queue drops the failing entry and retests the rest. Two
+changes that each passed on their own (both appending to `settings_t`, a guard one removes and the other uses) are
+caught here instead of on `main`.
+
+### Budgets
+
+Each board's `board.toml` may set `[ci.budget]`: what its default build must leave free, in bytes.
+
+| Key | Build | Means |
+|---|---|---|
+| `flash_free_min` | default | the app region's free bytes |
+| `ram_free_min` | default | RAM the linker reports free (`.data` and `.bss`, the RTOS heap and task stacks among them) |
+| `stack_free_min` | default and maximal | the least stack any task has left (the stack check) |
+
+`tools/ci.sh` writes every build's sizes to `build/ci/sizes.tsv`, and `tools/size_budget.py check` fails the
+firmware step when a build is below its board's budget. In a pull request the firmware job also downloads `main`'s
+`sizes.tsv` from the newest passing `ci.yml` run (`RFOUNDRY_SIZE_BASE`) and appends a table of the change against it to
+the size report in the job summary; a RAM drop of more than 256 bytes is a warning on the pull request. Set a budget
+at the floor below which the radio stops working (a task stack, the heap a feature allocates at run time) or the
+headroom a release needs, not at today's figure, so ordinary growth doesn't fail unrelated pull requests.
+
+### Affected builds
+
+A pull request's firmware jobs build more than `ci.yml`'s: `tools/ci.sh --affected HEAD^1` is `--quick` (default and
+maximal) plus the switch-off and fm-minimal builds the change reaches, from `tools/affected.py`. The full matrix
+builds about a hundred switches off on every board; a change can only break the switches its code sits under, so the
+tool reads them from the diff:
+
+The boards' facts come from make (`make print-vars`, as `tools/boards.py` reads them), so `config.mk` and its
+conditionals count: a driver a board adds with `BOARD_DIRS += $(if ...)` is that board's. One make per board, none
+for a change without firmware sources.
+
+| From | Switches | Boards |
+|---|---|---|
+| A changed line | Every `CONFIG_<X>` it names (a guard added, moved or removed), and the `#if` guards around it, in the new and the old file. A guard counts through a macro defined from a switch or under one (`#if HAS_FOO`) | |
+| An added line | The switches of the declarations it uses that the headers it reaches have only under a guard (the unguarded `contact_t` that broke `CONFIG_DMR=n`): its quoted includes and theirs, each resolved as the compiler does (the file's directory, then the board's `-I` directories in order) | |
+| The Makefile | The switch the Makefile builds the changed file for | |
+| A board's own switch (not in `config/features.mk`) | The board's `[ci] extra` configuration that turns it off | |
+| A file under a directory a board builds (`BOARD_DIRS` and the other lists, the deepest listed directory deciding), `boards/<b>/`, `boot/<stage>/` | | Those boards |
+| `platform/<p>/`, a linker script, a `.mk`, a boot stage | fm-minimal | Every board on the platform, or the board |
+| Other firmware sources (`core/`, `hal/`, `config/`, a driver no board lists, the Makefile) | | One board per platform: the one with the most switches on |
+
+Only switches on by default and not required by the board are built off, as in the matrix. `RFOUNDRY_AFFECTED_LIMIT`
+caps the list (12 per firmware job on a pull request, about 6 minutes), most relevant first: a board's own switches,
+fm-minimal for a platform, linker or boot change, shared switches by how many changed files name them, then
+fm-minimal for DMR. `RFOUNDRY_AFFECTED_SCOPE=broad` takes every switch a changed file or its own includes name. The
+nightly matrix stays the backstop for what the selection misses.
+
+When the tool can't tell, it builds more, never less. A firmware file that maps to no board (a platform no board
+uses, a board or boot directory no `board.mk` names) selects every board's whole matrix, and a board make fails on
+gets its own; each prints a warning that `tools/ci.sh` lists at the end (`ci: warnings:`). The limit never cuts these.
+
+The C side is a heuristic over the source text, not a compiler: the selection runs before any build, and on the HIL
+host (`pytest --affected`, `tools/hil_batch.sh`) without the boards' cross compilers or `third_party/`. It misses a
+guard through a macro defined in another `.c` file, a conditional include and a name built by token pasting. The
+module's docstring lists what it reads.
+
+`tools/affected.py summary --base origin/main` prints the list with the files behind each build, so a local
+`tools/ci.sh --affected origin/main --board <b>` runs the same builds before a push.
 
 The workflow is a plain `pull_request` run: the pull request's own copy of it, on its merge commit, on GitHub's
 hosted runners, with a read-only token that isn't stored in the checkout and no secrets. A fork's run waits until a
@@ -180,9 +266,11 @@ The job summary lists the changed beeps. A video is about 240 KB; a beep's WAV 2
 
 | Job | Command |
 |---|---|
-| `matrix (Arm)` | `tools/ci.sh --matrix --steps firmware --toolchain arm`: for each board, each switch off alone, fm-minimal, maximal |
-| `matrix (C-SKY)` | the same for every board built with csky-elf GCC, in the csky-elf image unless the runner has csky-elf GCC |
+| `matrix (<board>)` | one job per board in the registry: `tools/ci.sh --matrix --steps firmware --board <board>`: each switch off alone, fm-minimal, maximal. C-SKY boards in the csky-elf image unless the runner has csky-elf GCC |
+| `host` | `tools/ci.sh --steps host`: the host tests at full length (pull requests run the short form) |
 | `reuse` | `reuse lint`, a warning (the `checks` job fails on it once `RFOUNDRY_CI_REUSE` is `true`) |
+| `mark` | after the matrix and the host tests passed: saves the `nightly-ok-*` entry (below) and moves the `nightly-ci` tag to the commit. The nightly HIL run takes that tag ([tests/hil/README.md](../../tests/hil/README.md)) |
+| `report` | a scheduled run that failed opens one "Nightly failing" issue (or comments on the open one) with the run and the commits since the last pass; the next pass closes the issue |
 
 The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (the hardware can't),
 `BOARD_NOT_WRITTEN` (the code isn't written for the radio yet) and `MAXIMAL_SKIP` lists, and `CONFIG_AUDIO_PROBE`
@@ -190,9 +278,9 @@ The maximal build turns on every switch except the board's `BOARD_UNSUPPORTED` (
 they add code that doesn't run on the radio but still takes its flash and RAM, so a shared addition could push one
 radio over and fail CI on unrelated pull requests.
 
-One job per toolchain runs its boards one after another (artifacts `matrix-arm`, `matrix-csky`). A job per board would finish each board sooner, but it
-repeats the checkout, the submodules and the toolchain set-up for every board, and a 4-core runner is kept busy by
-one board's builds anyway. Nobody waits on the nightly, so the fewer jobs win.
+One job per board (artifacts `matrix-<board>`), side by side on the free hosted runners: the night's wall time is one
+board's matrix, about 5 minutes, not all boards in turn. Each job repeats the checkout and the toolchain set-up, a
+minute of the job's time, which the free runners' concurrency pays for.
 
 `--matrix` leaves out the default builds the per-push run already made. Each build tree is removed once its size is
 recorded and it built clean (the logs and images stay; a configuration that failed keeps its tree), so a run holds one
@@ -213,13 +301,52 @@ the next night still diffs against the last pass and builds again until the fail
 an entry, or holds only entries from before this scheme, the cost is one repeated run. A manual run (Actions,
 Nightly, Run workflow, or `gh workflow run nightly.yml`) always builds.
 
+## Workflow checks
+
+`pr-tests.yml`'s `checks` job installs pinned [actionlint](https://github.com/rhysd/actionlint) (the release archive,
+checked against its SHA-256) and [zizmor](https://docs.zizmor.sh/) and runs `tools/ci.sh --steps workflows`. actionlint
+checks each workflow's syntax, expressions and `run` scripts (shellcheck); zizmor checks them for security mistakes:
+template injection, credentials left in the checkout, risky triggers, unpinned actions. With the job's read-only token
+it also runs its online audits (impostor commits, actions with known vulnerabilities).
+
+| Rule | How the workflows meet it |
+|---|---|
+| No `${{ }}` in a `run` script | Every value a script reads comes through `env:` |
+| Checkout without credentials | `persist-credentials: false`, except in the two jobs that push a tag (`nightly-ci`, `nightly`), which say so at the line |
+| Dangerous triggers | `labeler.yml` and `backport.yml` (`pull_request_target`) and `ui-gallery-comment.yml` (`workflow_run`) never run the pull request's code; each says so at the trigger |
+| Dependabot cooldown | A new release waits 7 days |
+
+A finding that stays is ignored at its line with `# zizmor: ignore[<rule>]` and the reason. `.github/zizmor.yml` turns
+off only `self-repository`: Gitea runs the same workflows and has no `$/` syntax.
+
+## Repository settings
+
+The workflows rely on settings only the owner can change (Settings on GitHub). They are not in the tree, so this table
+is what to check after a fork, a transfer or a settings change.
+
+| Setting | Where | Value |
+|---|---|---|
+| `main` ruleset | Rules, Rulesets | Require a pull request, code owner review (`.github/CODEOWNERS`), the `PR checks` status check, the merge queue (groups of up to 5, all entries must pass); no force-push, no deletion |
+| Release tags | Rules, Rulesets, new tag ruleset | Target `refs/tags/v*`. Restrict creations, restrict updates, restrict deletions. Bypass list: the Maintain and Admin repository roles, the people who serve as release manager ([release.md](release.md)); no App, no GitHub Actions. Nothing in CI creates a `v*` tag; `release.yml` and `manual.yml` only read one |
+| `nightly-ci` tag | Rules, Rulesets, new tag ruleset | Target `refs/tags/nightly-ci`. Restrict creations, updates and deletions. Bypass list: GitHub Actions only (`nightly.yml`'s `mark` job moves the tag with the job's token), no role. Check after saving that the next nightly's `mark` job still pushes; if the bypass list doesn't offer GitHub Actions, add the GitHub App whose token the job is given instead |
+| `nightly` tag | Rules, Rulesets, new tag ruleset | Target `refs/tags/nightly`. Restrict creations, updates and deletions. Bypass list: GitHub Actions (`hil.yml`'s `nightly` job moves the tag) and whoever else may move it by hand (`site.yml`: a person or an App), by name |
+| `hil-rf` environment | Environments | Required reviewers: the people who may let a HIL run transmit. Deployment branches: `main` only. `hil.yml` sends a run with `rf` ticked through it, so the run waits for a reviewer |
+| `site` environment | Environments | Secret `CLOUDFLARE_DEPLOY_HOOK`; deployment branches and tags: `main`, `v*`, `nightly` (`site.yml`, [website.md](website.md)) |
+| Fork runs | Actions, General | Approval for running fork pull request workflows: all external contributors |
+| Allowed actions | Actions, General | GitHub's own actions only, full-length commit SHAs required |
+
+On Gitea (the HIL runner's primary, [ci-runners.md](ci-runners.md#hil-runner)) there are no environments with
+reviewers: there the `rf` checkbox and the refusal of `--allow-*` in free-text flags are the gate, and dispatching a
+run takes write access to the repository.
+
 ## Running the pieces locally
 
 ```
 tools/ci.sh                                   # everything (the release gate)
 tools/ci.sh --quick                           # what CI runs, without coverage and sanitizers
 SANITIZE=1 tools/coverage.sh                  # the unit tests job's test run
-tools/ci.sh --steps registry,python,licenses  # the checks job
+tools/ci.sh --steps registry,python,licenses  # the checks job of ci.yml
+tools/ci.sh --steps workflows                 # actionlint and zizmor (pr-tests.yml's checks job adds this step)
 tools/ci.sh --quick --steps firmware --board <id>
 tools/ci.sh --quick --steps firmware --toolchain arm         # a firmware CI job: every board on the toolchain
 tools/ci.sh --quick --steps firmware --platform stm32f4      # every board on one platform
@@ -234,11 +361,12 @@ tools/docker/csky-toolchain/run.sh tools/ci.sh --quick --steps firmware --board 
 | Step | What it checks |
 |---|---|
 | `registry` | Every `board.toml` and `platform.toml` is well formed and agrees with `board.mk`, the linker scripts and `board_t`; `tools/rfoundry/rfoundry/registry.json` is current; the loader's self-test (`tools/boards.py`) |
-| `host` | `make -C tests/host`, with each board's own tests (`boards/<b>/tests/host.mk`) |
+| `host` | `make -C tests/host -j"$JOBS"`, with each board's own tests (`boards/<b>/tests/host.mk`); `HOST_SHORT=1` in the environment runs fewer random cases ([Host tests](#host-tests)) |
 | `bench` | Each bench tool with a Makefile under `tools/bench/*/` (built from the `core/` sources, such as the P25 and NXDN tools), with zero warnings |
 | `python` | Every Python file parses, the HIL test collection, rfoundry's tests, every tool's `--self-test` (found by searching `tools/` and `stub/`, so a new tool needs no ci.sh change), doc links, the glossary, the web site build and the flasher's tests |
 | `firmware` | Every board whose compiler is installed: the default build, each build option value (`board.toml` `[[build_options]]`, such as a band), each `[ci] extra` configuration, the feature matrix, and the flash stubs of each built platform (`platform.toml` `stubs`) |
 | `licenses` | `tools/license_grep.sh` and `reuse lint` |
+| `workflows` | `actionlint` and `zizmor` over `.github/` ([Workflow checks](#workflow-checks)); each is skipped when not installed |
 | `similarity` | `tools/similarity_scan.py`, only with `RFOUNDRY_SIMILARITY_REFS` set |
 
 Every step but `host` and `bench` needs Python 3.11 or later for the registry's TOML. `tools/rfoundry_python.sh` finds it:
@@ -284,6 +412,25 @@ No workflow builds csky-elf GCC from source. The image is built by `tools/docker
 and the release job fails. A new toolchain gets a branch in the action's first step and an entry in each firmware
 matrix.
 
+## Host tests
+
+`make -C tests/host -j<n>` runs the suites in parallel, each with its own log in `tests/host/out/run/`, and ends with a
+summary ([Testing, Host tests](testing.md#host-tests)). CI runs them through `tools/coverage.sh` with `JOBS` set to the
+runner's CPU count.
+
+| Where | Command | Random cases |
+|---|---|---|
+| Pull requests (`pr-tests.yml`, `unit tests`) | `SANITIZE=1 HOST_SHORT=1 tools/coverage.sh` | Short: fuzz loops cut to a tenth (at least 100), the `test_short()` loops to their short count |
+| `main` (`ci.yml`, `unit tests`) | `SANITIZE=1 tools/coverage.sh` | Full |
+| `tools/ci.sh` host step | `make -C tests/host -j"$JOBS"` | Full; `HOST_SHORT=1 tools/ci.sh` for short |
+
+`HOST_SHORT=1` changes only how many random inputs a loop tries. Every check and every exhaustive test still runs. A
+new long random loop takes its count from `test_short(full, short)` (`tests/host/test_run.h`) or, for a fuzz loop,
+`fuzz_iters()`.
+
+`make -C tests/host times` builds and runs from clean and prints the slowest suites. A test that dominates the wall
+time can run in parts ([Testing](testing.md#host-tests)).
+
 ## Coverage
 
 `tools/coverage.sh` rebuilds the host tests with `--coverage` (`make -C tests/host COVERAGE=1`), runs them and
@@ -317,5 +464,5 @@ switch on extern inline and fortified functions, which don't build with the host
 The parsers of untrusted input (SNMP, TFTP, mDNS, the gateway's Ethernet
 input, KISS / HTTP / rigctld, LRRP, AX.25 / APRS, DMR data) have seeded mutation fuzz loops (`tests/host/fuzz.h`)
 that feed exact-size heap buffers, so a read past the end is an ASan report; `RFOUNDRY_FUZZ_ITERS=<n>` replaces the small
-default counts and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
+default counts (`HOST_SHORT=1` cuts them to a tenth) and `RFOUNDRY_FUZZ_SEED=<n>` varies the seed, e.g. `RFOUNDRY_FUZZ_ITERS=1000000 make -C tests/host SANITIZE=1`
 for a long run by hand.

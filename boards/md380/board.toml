@@ -143,3 +143,10 @@ radio_types = [7]
 dmrconf = "md380"
 span = [0x2000, 0x40000]
 pages = "linear"
+
+# What the default build must leave free, in bytes (tools/size_budget.py, docs/dev/ci.md#budgets): floors well
+# under today's figures, so ordinary growth passes and a large jump fails
+[ci.budget]
+flash_free_min = 8192
+ram_free_min = 8192
+stack_free_min = 16

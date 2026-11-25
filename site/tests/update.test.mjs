@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DROP_OK, START_KEEP, currentBuild, planUpdate, releaseOf, sameVariant } from "../static/js/flasher/update.js";
+import { DROP_OK, START_KEEP, currentBuild, planUpdate, releaseOf, sameVariant, throughHistory } from "../static/js/flasher/update.js";
 import { Selection } from "../static/js/flasher/select.js";
 import { START_SINCE } from "../static/js/flasher/langsuggest.js";
 import { readFileSync } from "node:fs";
@@ -145,6 +145,56 @@ test("from a release without off lists, a switch on in no variant is asked about
 	// one features= names is known
 	const named = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "C" }, "A,B,D"), RADIO, RELEASES, REPORTED);
 	assert.deepEqual(planUpdate(named, sel()).ask, ["NEW"]);
+});
+
+test("an off= name that is no longer a switch (folded in, always on now) is passed over, not asked or built", () => {
+	for (const preset of ["full", "custom"]) {
+		const cur = currentBuild(probe({ git: "aaaa111", preset, off: preset === "full" ? "D,GONE" : "C,GONE" }), RADIO, WITH_OFF, REPORTED);
+		const s = sel();
+		const plan = planUpdate(cur, s, { NEW: true });
+		assert.equal(plan.ready, true);
+		assert.ok(![...plan.ask, ...plan.added, ...plan.needed, ...plan.dropped].includes("GONE"));
+		assert.ok(!s.on.has("GONE"));
+	}
+});
+
+// config/switch-history.toml: names a build from before a removal carries. v26.9 called C "OLDC" and had a sub-switch
+// "B_SUB" that is part of B now
+const HISTORY = { OLDC: { renamed: "C" }, B_SUB: { into: "B" }, GZ: { always: true } };
+const OLD_NAMES = WITH_OFF.map((e) => e.version !== "v26.9" ? e
+	: { ...e, features: e.features.replace("C", "OLDC") + (e.features.includes("B") ? ",B_SUB" : ""), off: e.off.replace("C", "OLDC") + ",GZ" });
+
+test("history: a renamed switch keeps its state, one folded in or always on is never asked", () => {
+	assert.deepEqual(throughHistory(["A", "OLDC", "B_SUB", "GZ"], HISTORY), ["A", "C"]);
+	// a custom build with OLDC off: C stays off, and C is no new feature to ask about
+	let cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "OLDC,GZ" }), RADIO, OLD_NAMES, REPORTED, null, HISTORY);
+	let s = sel();
+	let plan = planUpdate(cur, s, { NEW: true });
+	assert.deepEqual([plan.ask, plan.ready], [["NEW"], true]);
+	assert.ok(!s.on.has("C"));
+	assert.ok(!plan.added.includes("C") && !plan.needed.includes("C"));
+	// only the sub-switch off: its parent B stays on (off only where the parent was off)
+	cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "B_SUB" }), RADIO, OLD_NAMES, REPORTED, null, HISTORY);
+	s = sel();
+	plan = planUpdate(cur, s, { NEW: false });
+	assert.ok(s.on.has("B") && s.on.has("C"));
+	assert.deepEqual(plan.ask, ["NEW"]);
+	// the parent off as well: B stays off
+	cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "B,B_SUB" }), RADIO, OLD_NAMES, REPORTED, null, HISTORY);
+	s = sel();
+	planUpdate(cur, s, { NEW: false });
+	assert.ok(!s.on.has("B"));
+	// without the history the rename reads as a new switch: the reason the file exists
+	cur = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "OLDC" }), RADIO, OLD_NAMES, REPORTED);
+	assert.ok(planUpdate(cur, sel()).ask.includes("C"));
+});
+
+test("history: older firmware's features= list and the service's record are mapped too", () => {
+	const old = currentBuild(probe({ git: "aaaa111" }, "A,B,OLDC,B_SUB"), RADIO, OLD_NAMES, [...REPORTED, "OLDC", "B_SUB"], null, HISTORY);
+	assert.deepEqual([old.kind, old.preset], ["preset", "full"]);
+	const rec = currentBuild(probe({ git: "aaaa111", preset: "custom", off: "D,GZ" }), RADIO, OLD_NAMES, REPORTED,
+		{ features: ["A", "B", "B_SUB", "OLDC"] }, HISTORY);
+	assert.deepEqual([rec.kind, rec.preset], ["preset", "full"]);
 });
 
 test("a build the service called custom that equals a variant is that variant", () => {

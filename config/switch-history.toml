@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+#
+# Switches that left config/features.mk. A radio's build still names them (VERSION off= and features=, a release's
+# manifest, a build service record), so each one says what its name means now:
+#
+#   renamed = "NEW"     the switch goes on as NEW: a build that had it off has NEW off
+#   into = "PARENT"     part of PARENT now: on wherever PARENT is (a build that had only this one off gets it back)
+#   always = true       part of every build
+#
+# Web Update (site/static/js/flasher/update.js), the build service and tools/release.py map an old name through this
+# file before they use it, and never fail on one. tools/boards.py check fails when a switch leaves features.mk without an
+# entry here. Entries stay: a radio can run a build from before the removal for years.
+
+[removed.NET_HTTP_GZIP]
+always = true

@@ -41,17 +41,37 @@ what each level is for and where a new test goes.
 
 The Makefile groups the tests into `run-*` targets (`run-core`, `run-ui`, `run-call`, `run-mmdvm`, `run-settings`,
 `run-cps`, ...); `make -C tests/host` runs them all. Each test compiles the firmware's own sources with the host
-compiler, so a test exercises the code that ships. Test vectors come from the standards or are recorded from real
+compiler, so a test exercises the code that ships.
+
+| Command | What it does |
+|---|---|
+| `make -C tests/host -j8` | Builds and runs every suite in parallel. Each suite's output goes to `tests/host/out/run/<suite>.log` and is printed only when the suite fails (`HOST_VERBOSE=1`: always). A summary in the Makefile's order ends the run, and the exit status is 1 when a suite failed |
+| `make -C tests/host run-ui` | One group |
+| `make -C tests/host HOST_SHORT=1` | Fewer random cases: `fuzz_iters()` counts cut to a tenth (at least 100), `test_short()` counts to their short value. Pull request CI runs this way; CI on `main` runs the full counts |
+| `make -C tests/host times` | Builds and runs from clean, then prints the 15 slowest suites to build and to run |
+| `HOSTCC_DIRECT=1 make -C tests/host` | Calls the compiler directly, without the shared objects below |
+
+The build compiles each source once. `tests/host/hostcc.py` stands in for the compiler: it compiles every source of a
+test to `out/obj/` and links the objects. Two tests share an object when their flags match and the `-D` switches that
+differ change no line the compiler gets from that source or its headers. A source that tests a switch, or a macro
+`core/config.h` derives from it, gets its own object for each value. The tool checks this from the source text and the
+compiler's dependency list.
+
+A long test runs in parts, so the parts run side by side: `$(call parts,TEST,$(PARTS10))` makes the suites `TEST-0` to
+`TEST-9`, each running `./TEST K/10`. The test reads `K/N` with `test_parts()` (`tests/host/test_run.h`) and wraps each
+independent unit of work in `if (test_part())`. Without an argument it runs every unit, as before. Test vectors come from the standards or are recorded from real
 radios and the stock codec, never from other firmware.
 
-To add a test: write `tests/host/<area>Test.c`, add its rule and a `run-<area>` target to `tests/host/Makefile`, and
-hook it into `run` (`run: run-<area>`). Groups are named by the area or directory they test, never by a radio or
-platform. `make -C tests/host check-run` (part of `run`) fails when a test in `TESTS` has no `./<test>` line in any
-group; a program a test script drives (a simulated peer) goes in `HELPERS` instead. Build without warnings; ci.sh
+To add a test: write `tests/host/<area>Test.c`, add its rule to `tests/host/Makefile`, and list it in a group:
+`run-<area>: $(call suites,<area>Test)`, with the group hooked into `run` (`run: run-<area>`). A suite runs
+`./<test>`; one that needs other commands gets its own `run/<test>` rule calling `$(SUITE) run`. Groups are named by
+the area or directory they test, never by a radio or platform. `make -C tests/host check-run` (part of `run`) fails
+when a test in `TESTS` isn't a suite of any group; a program a test script drives (a simulated peer) goes in `HELPERS`
+instead. Build without warnings; ci.sh
 fails on any. A parser of bytes from outside (USB, the air, the network) also gets a fuzz loop with `fuzz.h`.
 
 A test of one board's own code (its calibration reader, its pin tables, its first stage) lives with the board, in
-`boards/<b>/tests/`. Its `host.mk` adds the test to `TESTS` and to the `run-boards::` target. `tests/host` includes
+`boards/<b>/tests/`. Its `host.mk` adds the test to `TESTS` and lists it in the `run-boards::` target (`run-boards:: $(call suites,...)`). `tests/host` includes
 every `boards/*/tests/host.mk`; a fragment names its own files through `HERE := $(dir $(lastword $(MAKEFILE_LIST)))`
 in its prerequisites, and its recipes use `$<` and `$^`, since `HERE` changes with the next fragment. The binaries are built in `tests/host/` like the rest.
 The firmware build only compiles the `*.c` directly in a board's directory, so these never reach an image. A driver

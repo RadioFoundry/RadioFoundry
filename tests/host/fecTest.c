@@ -18,6 +18,7 @@
 #include "fec/bch63.h"
 #include "fec/trellis.h"
 #include "fec/conv.h"
+#include "test_run.h"
 
 static int g_checks;
 static int g_fail;
@@ -483,7 +484,7 @@ static void test_golay(void)
 		}
 	}
 	// 4 errors: never fails, lands on a valid word (within 3 of the received word)
-	for (unsigned it = 0; it < 20000; it++) {
+	for (unsigned it = 0; it < test_short(20000, 2000); it++) {
 		uint16_t d = (uint16_t)rndn(4096);
 		uint32_t e = 0;
 		unsigned w = 4 + rndn(10);
@@ -522,7 +523,7 @@ static void test_golay(void)
 			}
 		}
 	}
-	for (unsigned it = 0; it < 20000; it++) {
+	for (unsigned it = 0; it < test_short(20000, 2000); it++) {
 		uint16_t d = (uint16_t)rndn(4096);
 		uint32_t m = 0;
 		unsigned w = 5 + rndn(12);
@@ -718,7 +719,7 @@ static void test_bch(void)
 		}
 	}
 	// weight 0..11 against the brute-force reference
-	for (unsigned it = 0; it < 24000; it++) {
+	for (unsigned it = 0; it < test_short(24000, 2400); it++) {
 		uint16_t d = (uint16_t)rndn(65536);
 		unsigned w = it % 12;
 		uint64_t rx = flip_bits(bch_cw[d], w);
@@ -730,7 +731,7 @@ static void test_bch(void)
 		within++;
 	}
 	// weight 12 and more: decoder must agree with the reference (reject, or the same far word)
-	for (unsigned it = 0; it < 3000; it++) {
+	for (unsigned it = 0; it < test_short(3000, 300); it++) {
 		uint16_t d = (uint16_t)rndn(65536);
 		unsigned w = 12 + it % 20;
 		uint64_t rx = flip_bits(bch_cw[d], w);

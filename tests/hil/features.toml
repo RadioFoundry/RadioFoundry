@@ -433,10 +433,6 @@ spec = "docs/spec/tcp-services.md"
 switch = "NET_HTTP"
 spec = "docs/spec/tcp-services.md"
 
-[feature.net_http_gzip]
-switch = "NET_HTTP_GZIP"
-spec = "docs/spec/tcp-services.md"
-
 [feature.net_webctl]
 switch = "NET_WEBCTL"
 spec = "docs/spec/tcp-services.md"

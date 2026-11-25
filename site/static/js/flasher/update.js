@@ -3,7 +3,7 @@
 // Updating a radio that runs RadioFoundry: which build it runs (the debug link's preset= and off=, or on older firmware
 // its features= list matched against the releases), the build the update installs, and the features that came after it.
 //
-//   currentBuild(probe, radio, releases, reported, match)   what runs: {kind: "preset" | "custom" | "unknown", ...}
+//   currentBuild(probe, radio, releases, reported, match, history)   what runs: {kind: "preset" | "custom" | "unknown", ...}
 //   planUpdate(cur, sel, decided)                           the update's selection, and what it adds or must ask
 //
 // An update never moves a radio off its variant, and never changes the language it starts in unless the user picks
@@ -13,6 +13,29 @@
 import { START_SINCE, startCode, startKnownAt } from "./langsuggest.js";
 
 const split = (s) => String(s || "").split(",").filter(Boolean);
+
+// The names a build carries, as they are now: config/switch-history.toml (features.json history, {NAME: {renamed} |
+// {into} | {always}}). A renamed switch is its new name; one folded into its parent, or now in every build, leaves the
+// list: the parent decides (off only where the parent was off), or nothing does
+export function throughHistory(names, history) {
+	const out = [];
+	for (let n of names) {
+		for (let hops = 0; history?.[n]?.renamed && hops < 8; hops++) n = history[n].renamed;
+		if (!history?.[n]) out.push(n);
+	}
+	return [...new Set(out)];
+}
+
+// The probe, its releases and the service's record with every removed switch's name mapped through history
+function current(probe, releases, match, history) {
+	if (!history || !Object.keys(history).length) return [probe, releases, match];
+	const m = (s) => throughHistory(split(s), history).join(",");
+	const v = probe.version || {};
+	return [{ ...probe, ...(probe.features !== undefined ? { features: m(probe.features) } : {}),
+		...(probe.version ? { version: { ...v, ...(v.off !== undefined ? { off: m(v.off) } : {}) } } : {}) },
+	releases.map((e) => ({ ...e, ...(e.features !== undefined ? { features: m(e.features) } : {}), ...(e.off !== undefined ? { off: m(e.off) } : {}) })),
+	match ? { ...match, features: throughHistory(match.features || [], history) } : match];
+}
 
 // The release entries (releases.json, this board's) of the build on the radio: its commit's, else the newest release
 // made before it (a development build between two releases). [] when none is older
@@ -36,8 +59,9 @@ export function releaseOf(probe, releases) {
 // known: with match, every switch the build knew (its features and off=), exactly
 // old: the release entries it came from (releaseOf); each also carries the probe. reported: the names features= can
 // carry (features.json reported). match: the build service's record of the radio's build, {features, from_update}
-// (GET /v1/builds/match), or null
-export function currentBuild(probe, radio, releases, reported, match = null) {
+// (GET /v1/builds/match), or null. history: features.json history (throughHistory)
+export function currentBuild(probe, radio, releases, reported, match = null, history = null) {
+	[probe, releases, match] = current(probe, releases, match, history);
 	const v = probe.version || {};
 	const old = releaseOf(probe, releases);
 	const said = { probe };

@@ -14,6 +14,7 @@ import hrc7000_codec  # noqa: E402
 
 
 @pytest.mark.feature("codec_check")
+@pytest.mark.smoke
 def test_version_reports_codec(radio):
     v = radio.version(fresh=True)
     assert "codec" in v, "firmware without the codec= key (older than the release tooling)"
@@ -27,6 +28,7 @@ def test_version_reports_codec(radio):
 
 
 @pytest.mark.feature("codec_check")
+@pytest.mark.smoke
 def test_codec_key_agrees_with_dmr_view(radio):
     """codec= and the dmr section's dmr.codec come from the same board check."""
     v = radio.version(fresh=True)

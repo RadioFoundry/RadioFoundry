@@ -1,9 +1,17 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """The HIL tests' hooks and fixtures (README.md): the radio and the SDR bench, the radio restored after every test,
-opt-in skips, skip kinds on the reports, and the boards' own tests (boards/<id>/hil) skipped on other radios.
-conftest.py registers this module as a plugin, so all of it reaches tests outside tests/hil too."""
+opt-in skips, skip kinds on the reports, the boards' own tests (boards/<id>/hil) skipped on other radios, the tiers
+and --affected selection, and the run's record (build/hil/). conftest.py registers this module as a plugin, so all of
+it reaches tests outside tests/hil too."""
+import datetime
+import glob
+import json
 import os
+import re
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -11,7 +19,10 @@ import bringup_plugin
 from rfoundry_hil import (DebugLinkError, Radio, SdrBench, board_id, find_network_radios, find_ports, need_radio_tx,
                           skip, skip_kind, skip_mark)
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
+TIERS = ("smoke", "standard", "bringup")
+RECORD_FORMAT = 1
 
 
 def own_board(path):
@@ -20,7 +31,84 @@ def own_board(path):
     return parts[1] if len(parts) == 4 and parts[0] == "boards" and parts[2] == "hil" else None
 
 
+def tier_of(item):
+    """A test's tier: smoke, bringup (its markers), else standard."""
+    if item.get_closest_marker("smoke"):
+        return "smoke"
+    return "bringup" if item.get_closest_marker("bringup") else "standard"
+
+
+def whole_directory(config):
+    """Whether the command line names only the test directories (tests/hil and the boards' own), no file or node."""
+    dirs = {HERE} | {os.path.abspath(d) for d in glob.glob(os.path.join(ROOT, "boards", "*", "hil"))}
+    return all("::" not in str(a) and os.path.abspath(str(a)) in dirs for a in config.args)
+
+
+def run_tier(config):
+    """The tier the run selects, or None for no tier filter. A run of the whole directory defaults to standard, so the
+    bring-up tier is opt-in; a command that picks its tests (files, nodes, -k, -m), bring-up mode (which picks by
+    feature) and tools/bringup.py's collection (--bringup-collect) get what they asked for, as before the tiers."""
+    t = config.getoption("--tier", default=None)
+    if t:
+        return t
+    if config.getoption("--affected", default=None):
+        return "standard"
+    if (config.getoption("--bringup", default=None) or config.getoption("--bringup-collect", default=None)
+            or config.option.keyword or config.option.markexpr):
+        return None
+    return "standard" if whole_directory(config) else None
+
+
+def affected_selection(config, base):
+    """({feature: [why]}, changed paths) of the change from base's merge base with HEAD to the working tree."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import affected
+    try:
+        mb = affected.git(ROOT, "merge-base", base, "HEAD").strip()
+        diff = affected.changed(ROOT, mb, None)
+        return affected.affected_features(ROOT, mb, None, diff), set(diff)
+    except subprocess.CalledProcessError as e:
+        raise pytest.UsageError(f"--affected {base}: {' '.join(e.cmd)}: {e.stderr.strip()}")
+    except affected.registry.RegistryError as e:
+        raise pytest.UsageError(f"--affected {base}: {e}")
+
+
+def item_path(item):
+    return os.path.relpath(str(item.path), ROOT).replace(os.sep, "/")
+
+
+def select(config, items):
+    """Drop the tests outside the run's tier and, with --affected, those the change doesn't reach."""
+    tier = run_tier(config)
+    base = config.getoption("--affected", default=None)
+    keep, drop, note = [], [], []
+    if tier:
+        allowed = TIERS[:TIERS.index(tier) + 1]
+        for item in items:
+            (keep if tier_of(item) in allowed else drop).append(item)
+        note.append(f"tier {tier}: {len(keep)} tests, {len(drop)} deselected")
+        items[:], keep = keep, []
+    if base:
+        feats, paths = affected_selection(config, base)
+        before = len(drop)
+        for item in items:
+            mine = {f for m in item.iter_markers("feature") for f in m.args}
+            hit = tier_of(item) == "smoke" or (mine & set(feats)) or item_path(item) in paths
+            (keep if hit else drop).append(item)
+        items[:] = keep
+        note.append(f"affected since {base}: {len(keep)} tests ({len(drop) - before} deselected); features: "
+                    + (", ".join(sorted(feats)) or "none, smoke only"))
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    tr = config.pluginmanager.get_plugin("terminalreporter")
+    for n in note:
+        if tr:
+            tr.write_line(f"rfoundry-hil: {n}")
+    config._rfoundry_selection = {"tier": tier, "affected": base}
+
+
 def pytest_collection_modifyitems(config, items):
+    select(config, items)
     for item in items:
         if ("rf" in item.keywords or "radio_tx" in item.keywords) and not config.getoption("--allow-rf"):
             if "audio_smoke" in item.keywords:
@@ -71,6 +159,10 @@ def radio(pytestconfig):
         bringup_plugin.no_radio(pytestconfig, f"the radio doesn't answer the debug link (firmware without "
                                               f"CONFIG_DEBUGLINK?): {e}")
     bringup_plugin.remember_firmware(pytestconfig, r)
+    try:
+        pytestconfig._rfoundry_hil_version = dict(r.version())    # for the run's record
+    except DebugLinkError:
+        pass
     if r.auto_lock_off():
         print("rfoundry-hil: auto lock was on (a run cut short in test_auto_lock?): set back to Off")
     lang = r.language_english()
@@ -182,3 +274,80 @@ def shots(pytestconfig, tmp_path):
 def backup_dir(pytestconfig, tmp_path):
     """Where codeplug_write tests keep their codeplug backups (--codeplug-backup-dir, else the test's tmp dir)."""
     return pytestconfig.getoption("--codeplug-backup-dir") or str(tmp_path)
+
+
+# ── the run's record ──
+
+_RUN = None     # the session's run: start time and each test's result (pytest_runtest_logreport gets no config)
+
+
+def pytest_sessionstart(session):
+    global _RUN
+    _RUN = {"t0": time.time(), "tests": {}}
+    session.config._rfoundry_hil_run = _RUN
+
+
+def pytest_runtest_logreport(report):
+    """Each test's outcome (a failure in any phase, else a skip, else passed), its skip kind and its time over all
+    phases."""
+    if _RUN is None:
+        return
+    t = _RUN["tests"].setdefault(report.nodeid, {"id": report.nodeid, "outcome": "passed", "duration_s": 0.0})
+    t["duration_s"] = round(t["duration_s"] + (report.duration or 0.0), 3)
+    if report.failed:
+        t["outcome"] = "failed"
+        t.pop("skip_kind", None)
+    elif report.skipped and t["outcome"] == "passed":
+        t["outcome"] = "xfailed" if hasattr(report, "wasxfail") else "skipped"
+        if getattr(report, "skip_kind", None):
+            t["skip_kind"] = report.skip_kind
+
+
+def slug(text):
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("_.") or "unknown"
+
+
+def tree_commit():
+    try:
+        return subprocess.run(["git", "-C", ROOT, "rev-parse", "--short=12", "HEAD"], capture_output=True, text=True,
+                              check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """build/hil/<board>-<firmware commit>.json (or --hil-record): what ran on which firmware and how long each test
+    took, to find the slow ones. Written when the run used the radio or was given a file; never a port or a host."""
+    config = session.config
+    run = getattr(config, "_rfoundry_hil_run", None)
+    out = config.getoption("--hil-record", default=None)
+    fw = getattr(config, "_rfoundry_hil_version", None)
+    if run is None or config.option.collectonly or out == "none" or not (out or fw):
+        return
+    fw = fw or {}
+    board = (board_id(fw.get("board", "")) if fw.get("board") else None) or fw.get("board") or "unknown"
+    tree = tree_commit()
+    fw_git = fw.get("git") or tree or "unknown"
+    if not out:
+        out = os.path.join(ROOT, "build", "hil", f"{slug(board)}-{slug(fw_git)}.json")
+    sel = getattr(config, "_rfoundry_selection", {})
+    doc = {
+        "format": RECORD_FORMAT,
+        "board": board,
+        "firmware": {k: fw[k] for k in bringup_plugin.FIRMWARE_KEYS if k in fw},
+        "tree": tree,
+        "tier": sel.get("tier"),
+        "affected": sel.get("affected"),
+        "started": datetime.datetime.fromtimestamp(run["t0"], datetime.timezone.utc).isoformat(timespec="seconds"),
+        "duration_s": round(time.time() - run["t0"], 1),
+        "exitstatus": int(exitstatus),
+        "tests": sorted(run["tests"].values(), key=lambda t: t["id"]),
+    }
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "w") as f:
+        json.dump(doc, f, indent=1, sort_keys=True)
+        f.write("\n")
+    tr = config.pluginmanager.get_plugin("terminalreporter")
+    if tr:
+        tr.ensure_newline()
+        tr.write_line(f"rfoundry-hil: record {os.path.relpath(out)}")

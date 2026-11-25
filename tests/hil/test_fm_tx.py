@@ -134,6 +134,7 @@ def key_and_check(radio, sdr_bench, pytestconfig, bw_khz, ctcss=None, dcs=None, 
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.needs_switch("VFO_FM")
+@pytest.mark.smoke
 def test_fm_tx_ctcss(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "ctcss", 1000)
     r = key_and_check(fm_vfo, sdr_bench, pytestconfig, 12.5, ctcss=100.0)
@@ -512,6 +513,7 @@ def _power_levels_wattmeter(radio, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.sdr_rx
 @pytest.mark.needs_switch("VFO_FM")
+@pytest.mark.bringup   # a sweep over the power levels: power calibration
 def test_fm_tx_power_levels(fm_vfo, sdr_bench, pytestconfig):
     set_fm(fm_vfo, False, "none", 0)
     if pytestconfig.getoption("--manual"):

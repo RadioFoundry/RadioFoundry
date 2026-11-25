@@ -129,7 +129,6 @@ is `tools/bringup.py list --radio <id>`.
 | `net_tcp` | not recorded | not recorded | pass (seed) | pass (seed) | not recorded | not recorded | pass, needs re-run | off |
 | `net_kiss` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
-| `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_radio_udp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -223,7 +222,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_TCP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_KISS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_RADIO_UDP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
@@ -409,7 +407,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Minimal TCP | `NET_TCP` | 31,552 | 31,188 | Includes KISS, HTTP, rigctld, APRS-IS. About 4.5 KB RAM |
 | KISS over TCP, port 8001 | `NET_KISS` | 776 | 664 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 20,304 | 19,548 |  |
-| HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | 12,616 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
 | Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 12,944 | 12,788 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | Zone and channel control over UDP, port 4191: where the radio is, select and step, change notices | `NET_RADIO_UDP` | 2,364 | 2,412 | 112-120 B RAM; needs no TCP or HTTP; DM-32UV 2,392 ([tcp-services.md](spec/tcp-services.md) 8) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,856 | 3,872 |  |

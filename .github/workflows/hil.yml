@@ -2,13 +2,21 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 #
 # Hardware-in-the-loop tests (tests/hil/README.md, docs/dev/ci-runners.md "HIL runner"): pytest against the radio on USB and
-# the SDR bench, on a self-hosted runner with the label rfoundry-hil (the bench Mac). Nothing is flashed: the run tests
-# the firmware already on the radio (entering its bootloader takes a person), and prints that firmware's version
-# first. Everything beyond the radio-only tests is opt-in through the run's inputs, like the pytest flags.
-#
-# A scheduled run happens only when the repository variable RFOUNDRY_HIL_SCHEDULE is "true", with the radio-only tests
-# plus RFOUNDRY_HIL_SCHEDULE_FLAGS (for example "--allow-rf --allow-service-stop"). The runner's own environment gives
-# RFOUNDRY_BENCH_API, RFOUNDRY_PORT, RFOUNDRY_HIL_AMBE and RFOUNDRY_RADIO_LOCK (docs/dev/ci.md); never put them in this file.
+# the SDR bench, on a self-hosted runner with the label rfoundry-hil (the bench Mac).
+#   hil       by hand, or scheduled: tests the firmware already on the radio and prints its version first. Everything
+#             beyond the radio-only tests is opt-in through the run's inputs, like the pytest flags. A scheduled run
+#             happens only when the repository variable RFOUNDRY_HIL_SCHEDULE is "true" (and the nightly below is off),
+#             with RFOUNDRY_HIL_SCHEDULE_FLAGS (for example "--tier smoke")
+#   Permissions (--allow-*) come only from the inputs' checkboxes: the scheduled and nightly flags and the extra input
+#   may not hold one, so neither a repository variable nor free text can add --allow-rf past the rf checkbox. A run with
+#   rf ticked waits for the hil-rf environment (on GitHub: a required reviewer; docs/dev/ci-runners.md "HIL runner")
+#   nightly   scheduled, only when the repository variable RFOUNDRY_HIL_NIGHTLY is "true" (tests/hil/README.md,
+#             "Nightly"): the commit tagged nightly-ci (the CI nightly moves the tag when it passes) is built, flashed
+#             through the site's flash command (RFOUNDRY_HIL_FLASH_CMD, tools/hil_flash.sh) and run with --tier standard
+#             plus RFOUNDRY_HIL_NIGHTLY_FLAGS on each bench radio; when every radio passes, the tag nightly moves to it
+# The runner's own environment gives RFOUNDRY_BENCH_API, RFOUNDRY_PORT, RFOUNDRY_HIL_AMBE, RFOUNDRY_RADIO_LOCK, and for
+# the nightly RFOUNDRY_HIL_FLASH_CMD and RFOUNDRY_HIL_RADIOS or RFOUNDRY_HIL_BOARD (docs/dev/ci-runners.md); never put
+# them in this file.
 name: HIL
 
 on:
@@ -30,8 +38,13 @@ on:
         description: "--allow-reboot"
         type: boolean
         default: false
+      tier:
+        description: "--tier: smoke (about 5 minutes), standard (all but the bring-up tier) or bringup (every test)"
+        type: choice
+        options: [standard, smoke, bringup]
+        default: standard
       select:
-        description: "pytest -k expression (empty: every test)"
+        description: "pytest -k expression (empty: every test of the tier)"
         type: string
         default: ""
       extra:
@@ -50,12 +63,15 @@ concurrency:
 
 jobs:
   hil:
-    if: github.event_name == 'workflow_dispatch' || vars.RFOUNDRY_HIL_SCHEDULE == 'true'
+    if: github.event_name == 'workflow_dispatch' || (vars.RFOUNDRY_HIL_SCHEDULE == 'true' && vars.RFOUNDRY_HIL_NIGHTLY != 'true')
     runs-on: rfoundry-hil
+    # a run that transmits waits for the environment's reviewer; any other run takes no environment
+    environment: ${{ inputs.rf && 'hil-rf' || '' }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
 
       - name: Pytest options
@@ -66,13 +82,17 @@ jobs:
           CPW: ${{ inputs.codeplug_write }}
           REBOOT: ${{ inputs.reboot }}
           EXTRA: ${{ inputs.extra }}
+          TIER: ${{ inputs.tier }}
           SCHEDULED: ${{ vars.RFOUNDRY_HIL_SCHEDULE_FLAGS }}
         run: |
           set -eu
+          python3 tools/hil_flags.py "RFOUNDRY_HIL_SCHEDULE_FLAGS" "$SCHEDULED"
+          python3 tools/hil_flags.py "the extra input" "$EXTRA"
           o=""
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
             o="$SCHEDULED"
           else
+            o="--tier ${TIER:-standard}"
             [ "$RF" = true ] && o="$o --allow-rf --allow-service-stop"
             [ "$USB" = true ] && o="$o --allow-usb-switch"
             [ "$CPW" = true ] && o="$o --allow-codeplug-write --codeplug-backup-dir $RUNNER_TEMP/codeplug-backup"
@@ -87,11 +107,12 @@ jobs:
           FLAGS: ${{ steps.opts.outputs.flags }}
           SELECT: ${{ inputs.select }}
         run: |
-          set -u
+          set -uf   # no globbing: $FLAGS is split into words, never matched against file names
           mkdir -p build/hil/shots
           # the radio is shared with people and agents at the bench: hold its lock for the whole run, the version
-          # query included
-          LOCK=${RFOUNDRY_RADIO_LOCK:-$HOME/.rfoundry-radio.lock}
+          # query included. The file tools/bringup.py run takes ({port} in it becomes the port), as the nightly job does
+          slug=$(printf '%s' "${RFOUNDRY_PORT:-usb}" | sed -E 's/[^A-Za-z0-9.-]+/_/g; s/^[_.]+//; s/[_.]+$//')
+          LOCK=$(printf '%s' "${RFOUNDRY_RADIO_LOCK:-"$HOME/.rfoundry-radio-{port}.lock"}" | sed "s|{port}|${slug:-usb}|g")
           locked() {
             if command -v lockf > /dev/null; then lockf -k "$LOCK" "$@"
             elif command -v flock > /dev/null; then flock "$LOCK" "$@"
@@ -108,5 +129,98 @@ jobs:
         if: always()
         with:
           name: hil-results
+          path: build/hil/
+          if-no-files-found: ignore
+
+  nightly:
+    if: github.event_name == 'schedule' && vars.RFOUNDRY_HIL_NIGHTLY == 'true'
+    runs-on: rfoundry-hil
+    timeout-minutes: 480   # overnight: the standard tier on every bench radio, one after another
+    permissions:
+      contents: write   # moves the tag nightly
+      actions: write    # asks site.yml to rebuild the site for it
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:   # zizmor: ignore[artipacked] pushes the tag nightly; the artifact is build/hil/ only
+          fetch-depth: 0
+          submodules: false
+
+      - name: The commit tagged nightly-ci
+        id: pick
+        run: |
+          set -eu
+          git fetch -q --force --tags --no-recurse-submodules origin
+          sha=$(git rev-parse -q --verify 'refs/tags/nightly-ci^{commit}' || true)
+          if [ -z "$sha" ]; then
+            echo "::notice::no nightly-ci tag yet: nothing to test"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$sha" = "$(git rev-parse -q --verify 'refs/tags/nightly^{commit}' || true)" ]; then
+            echo "::notice::${sha::8} already passed a nightly HIL run"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          git checkout -q --detach "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "nightly HIL of ${sha::8}"
+
+      - name: third_party submodules
+        if: steps.pick.outputs.run == 'true'
+        run: tools/checkout-submodules.sh
+
+      - name: Build, flash and test each radio
+        if: steps.pick.outputs.run == 'true'
+        env:
+          FLAGS: ${{ vars.RFOUNDRY_HIL_NIGHTLY_FLAGS }}
+        run: |
+          set -uf   # no globbing: $FLAGS is split into words, never matched against file names
+          python3 tools/hil_flags.py "RFOUNDRY_HIL_NIGHTLY_FLAGS" "$FLAGS" || exit 1
+          radios=${RFOUNDRY_HIL_RADIOS:-${RFOUNDRY_HIL_BOARD:+$RFOUNDRY_HIL_BOARD=${RFOUNDRY_PORT:-}}}
+          [ -n "$radios" ] || { echo "::error::set RFOUNDRY_HIL_RADIOS or RFOUNDRY_HIL_BOARD in the runner's environment"; exit 1; }
+          mkdir -p build/hil
+          rc=0
+          for r in $radios; do
+            b=${r%%=*} port=${r#*=}
+            [ "$port" = "$r" ] && port=""
+            # the radio's lock: the file tools/bringup.py run takes ({port} in it becomes the port)
+            slug=$(printf '%s' "${port:-usb}" | sed -E 's/[^A-Za-z0-9.-]+/_/g; s/^[_.]+//; s/[_.]+$//')
+            LOCK=$(printf '%s' "${RFOUNDRY_RADIO_LOCK:-"$HOME/.rfoundry-radio-{port}.lock"}" | sed "s|{port}|${slug:-usb}|g")
+            locked() {
+              if command -v lockf > /dev/null; then lockf -k "$LOCK" "$@"
+              elif command -v flock > /dev/null; then flock "$LOCK" "$@"
+              else "$@"; fi
+            }
+            echo "::group::$b"
+            if make -s -j8 BOARD="$b" BUILD="build/hil-nightly/$b"; then
+              # shellcheck disable=SC2086,SC2016
+              locked sh -c 'img=$(tools/hil_flash.sh "$1" "build/hil-nightly/$1" "$2") || exit 1
+                b=$1 port=$2; shift 2
+                exec python3 -m pytest tests/hil -v -rs -p no:cacheprovider --tier standard --hil-board "$b" \
+                  ${port:+--radio-port "$port"} --firmware-image "$img" --junitxml "build/hil/nightly-$b.xml" \
+                  --hil-record "build/hil/nightly-$b.json" "$@"' sh "$b" "$port" $FLAGS || rc=1
+            else
+              echo "::error::$b does not build"; rc=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: Move the tag nightly
+        if: steps.pick.outputs.run == 'true'
+        env:
+          SHA: ${{ steps.pick.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f nightly "$SHA"
+          git push -q --force origin refs/tags/nightly   # a tag that follows the last pass, as nightly-ci does
+          echo "::notice::nightly -> ${SHA::8}"
+          # a tag pushed with this job's token starts no workflow, so site.yml's tag trigger won't fire: a
+          # workflow_dispatch is the one event the token may start
+          curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/site.yml/dispatches" -d '{"ref":"main"}' ||
+            echo "::warning::could not ask site.yml to rebuild: the site shows the new nightly after its next build"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
+        if: always()
+        with:
+          name: hil-nightly
           path: build/hil/
           if-no-files-found: ignore

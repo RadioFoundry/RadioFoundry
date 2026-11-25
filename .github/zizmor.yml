@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# zizmor (docs/dev/ci.md "Workflow checks"). A finding that stays is ignored at its line with the reason; only rules
+# that don't fit the repository at all are off here.
+rules:
+  self-repository:
+    # "uses: ./.github/actions/..." on purpose: Gitea runs the same workflows (docs/dev/ci-runners.md), and its runner
+    # has no "$/" self-repository syntax
+    disable: true

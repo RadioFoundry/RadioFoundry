@@ -50,6 +50,7 @@ def home(radio):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.smoke
 def test_keys_move_the_channel(home):
     r = home
     v = r.core()
@@ -64,6 +65,7 @@ def test_keys_move_the_channel(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.smoke
 def test_hub_and_back(home):
     """OK opens the Hub (seven destinations, numbered); a digit opens one; BACK goes up one level; long BACK goes Home
     from any depth (information-architecture.md, key meanings). A radio without a CONTEXT key has Last caller first,
@@ -92,6 +94,7 @@ def test_hub_and_back(home):
 
 
 @pytest.mark.feature("ui_navigation")
+@pytest.mark.smoke
 def test_quick_settings_open_and_close(home, shots):
     """QUICK opens the tile grid, a second QUICK or BACK closes it. Screenshots go through Radio.shot_until: a capture
     freezes the UI's redraws for a moment, so one taken right after a key can still show the old screen."""
@@ -210,6 +213,7 @@ def test_diagnostics_page(home):
 
 
 @pytest.mark.feature("debuglink")
+@pytest.mark.smoke
 def test_screenshot_sanity(home):
     info, data = home.shot_until(lambda d: True, what="a picture")
     # a 16-bit screen drawn in two colors (text on a plain background) holds exactly two pixel values

@@ -75,7 +75,7 @@ def net(radio, request):
 def _get(ip, path, timeout=10):
     with urllib.request.urlopen(f"http://{ip}{path}", timeout=timeout) as r:
         body = r.read()
-        if r.headers.get("Content-Encoding", "") == "gzip":     # the static files (CONFIG_NET_HTTP_GZIP)
+        if r.headers.get("Content-Encoding", "") == "gzip":     # the static files
             body = gzip.decompress(body)
         return r.status, r.headers.get("Content-Type", ""), body
 

@@ -13,6 +13,8 @@ import pytest
 
 from rfoundry_hil import board_hil, board_id, diag_lines, find, skip
 
+pytestmark = pytest.mark.smoke   # every check is a few debug link reads
+
 
 class Board:
     """The radio and its board's expectations."""

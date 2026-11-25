@@ -9,8 +9,14 @@ the forms in `.github/ISSUE_TEMPLATE/` (bug, feature, new radio), and pull reque
 
 ## Branches and pull requests
 
-All changes reach `main` through a pull request. Nobody pushes to `main` directly. For now every pull request goes
-from a feature branch into `main`; there are no release or develop branches.
+All changes reach `main` through a pull request and the merge queue. Nobody pushes to `main` directly. Every pull
+request goes from a feature branch into `main`. Release branches (`release/vYY.M`) take only cherry-picked fixes,
+which the backport workflow opens ([release.md](release.md#backports)); never open a feature pull request against
+one.
+
+**The monthly cycle.** Main is open all month. About the 20th the release branch is cut and the beta tagged; about the
+1st the final ships ([release.md](release.md#schedule)). A feature merged after the cut goes into the next month's
+release. During beta week, a fix that release users need gets the `backport` label.
 
 ### Repository members
 
@@ -62,7 +68,9 @@ subject: `<Area>: <what changed>`, in the present tense, no trailing period.
   the tests. A change the host tests can't reach (a register write, a board's wiring) says so, covers the logic
   around it with a host test, and adds a HIL test when one can be scripted. Pull requests that change only
   documentation are the only exception.
-- `JOBS=8 tools/ci.sh` ending with "all checks passed".
+- `tools/ci.sh --affected origin/main` ending with "all checks passed" (the builds and tests the change reaches;
+  [ci.md](ci.md)). The full `JOBS=8 tools/ci.sh` is the nightly's job; run it for a change to the build itself.
+- A bug fix for a regression says "Caused by #N" when the cause is known.
 - One topic. Split unrelated changes into separate pull requests.
 - The filled-in template (`.github/PULL_REQUEST_TEMPLATE.md`).
 
@@ -174,10 +182,30 @@ and the code works when its translation is missing: the English shows.
 ## Before you open a pull request
 
 ```
-JOBS=8 tools/ci.sh
+tools/ci.sh --affected origin/main
 ```
 
-It must end with "all checks passed". Skips (a missing compiler, `reuse` not installed) are reported; install what you
-can. CI runs the quick part on every push and the feature matrix nightly ([CI](ci.md)); run the whole gate before you
-open the pull request. Commit in small steps with messages that say what changed and why. Then open the pull request
+It must end with "all checks passed". It builds default and maximal for each radio plus every switch-off build the
+change reaches, and runs the host tests. Skips (a missing compiler, `reuse` not installed) are reported; install what
+you can. CI runs the same on every push, more in the merge queue and the whole feature matrix nightly
+([CI](ci.md)). Commit in small steps with messages that say what changed and why. Then open the pull request
 into `main` as [Branches and pull requests](#branches-and-pull-requests) describes.
+
+## Maintainers
+
+A pull request is merged by adding it to the merge queue (**Merge when ready**), never by a direct merge. The queue
+tests the pull request together with the others ahead of it ([ci.md](ci.md#merge-queue)), so two changes that each
+pass can't break `main` together.
+
+The daily rhythm:
+
+| Step | What |
+|---|---|
+| Review | Every pull request with new commits. Labels by path come from the labeler (`area:*`, `risk:low`, `needs-hil`) |
+| HIL batch | Approved pull requests labeled `needs-hil` run together on the bench: `tools/hil_batch.sh` ([tests/hil/README.md](../../tests/hil/README.md)). A pass labels each `hil-passed` |
+| Queue | Approved pull requests that are `risk:low` or `hil-passed` go into the merge queue |
+| Next morning | The nightly CI and nightly HIL results. A failure opens the "Nightly failing" issue with the commit range |
+
+Labels a maintainer sets: one `changelog:` label per pull request ([release.md](release.md#release-notes)),
+`backport` for a fix release users need, `regression` on a bug or fix whose cause was an earlier pull request.
+`.github/CODEOWNERS` names who must review which paths.

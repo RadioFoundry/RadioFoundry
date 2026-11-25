@@ -2,9 +2,9 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 #
 # The web site (docs/dev/website.md) is built and deployed by Cloudflare Pages on each push to main
-# (site/cloudflare-build.sh). This workflow only covers what a push doesn't: a published release changes the flasher's
-# firmware images, so it asks Pages to build main again through the project's deploy hook. Run by hand, it does the
-# same.
+# (site/cloudflare-build.sh). This workflow only covers what a push to main doesn't: a published release changes the
+# flasher's firmware images and the manual at /docs/, and a move of the `nightly` tag changes the Nightly channel, so
+# each asks Pages to build main again through the project's deploy hook. Run by hand, it does the same.
 #
 # Needs the site environment's CLOUDFLARE_DEPLOY_HOOK secret.
 name: Web site
@@ -12,6 +12,8 @@ name: Web site
 on:
   release:
     types: [published]
+  push:
+    tags: [nightly]   # a push by a person or an App; the nightly HIL job dispatches this workflow instead
   workflow_dispatch:
 
 permissions:
@@ -19,7 +21,8 @@ permissions:
 
 jobs:
   rebuild:
-    # the hook URL is a secret: GitHub's runners only. The site environment hands it only to main and release tags
+    # the hook URL is a secret: GitHub's runners only. The site environment hands it only to main, release tags
+    # and the nightly tag
     runs-on: ubuntu-24.04
     environment: site
     steps:

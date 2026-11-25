@@ -91,3 +91,10 @@ shape = "handheld-tall"
 body = "#22252a"
 accent = "#e0a526"
 lens = [24, 34]
+
+# What the default build must leave free, in bytes (tools/size_budget.py, docs/dev/ci.md#budgets): floors well
+# under today's figures, so ordinary growth passes and a large jump fails
+[ci.budget]
+flash_free_min = 8192
+ram_free_min = 8192
+stack_free_min = 16

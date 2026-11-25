@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# GitHub's generated release notes, grouped by each merged pull request's changelog: label (docs/dev/release.md
+# "Release notes")
+changelog:
+  exclude:
+    labels: ["changelog:none"]
+  categories:
+    - title: New radios and radio support
+      labels: ["changelog:radio"]
+    - title: New features
+      labels: ["changelog:feature"]
+    - title: Fixes
+      labels: ["changelog:fix"]
+    - title: Other changes
+      labels: ["*"]

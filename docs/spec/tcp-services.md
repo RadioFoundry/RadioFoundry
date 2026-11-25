@@ -132,13 +132,12 @@ Static files: every file in `core/net/http_assets/` (html, css, js, svg, ...: ad
 into the build's `gen/http_assets_gen.h`: path, Content-Type, bytes, length, gzip flag). The script minifies each file
 first: comments and the whitespace between tags go, and so does the whitespace in CSS and scripts that the syntax
 doesn't need. Strings, templates and regular expressions are kept as they are, and names are not shortened (that
-would save about 9% of the page's script, at the cost of a node toolchain in the build). With `CONFIG_NET_HTTP_GZIP`
-(the default with `CONFIG_NET_HTTP`) the files are stored gzip compressed (level 9, mtime 0: the same bytes on every
-build machine) and served with `Content-Encoding: gzip`; off, stored and served as they are. A gzip response goes
-whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110 12.5.3),
-every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl` needs
-`--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 19.7 KB, 6.9 KB
-minified and compressed. Host test: `httpAssetsTest` (the table, gzip and plain, and the web control set decompress to
+would save about 9% of the page's script, at the cost of a node toolchain in the build). The files are then stored gzip
+compressed (level 9, mtime 0: the same bytes on every build machine) and served with `Content-Encoding: gzip`. A gzip
+response goes whatever the request's `Accept-Encoding` says: a request without the header accepts any coding (RFC 9110
+12.5.3), every browser takes gzip, and keeping a plain copy too would cost the flash the compression saves; `curl`
+needs `--compressed`. `index.html` today: 498 bytes, 360 gzip compressed; the web control page (5.1) 19.7 KB, 6.9 KB
+minified and compressed. Host test: `httpAssetsTest` (the table and the web control set decompress to
 the minified sources; with node on the PATH, every minified script still parses), `netSvcTest` (the bytes and headers
 served).
 

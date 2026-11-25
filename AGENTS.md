@@ -51,9 +51,12 @@ line, add the user's copyright below ours, never in place of it, and tell the us
    facts go only on its own hardware, bring-up or radio-reference page, and those pages link to the shared spec, not
    to another radio's page. `tools/check_generic.py` checks this. Its allowlist names the generic docs not yet
    rewritten, one path each; don't add one.
-5. **Flash costs go behind a switch.** A feature that adds real code size gets a `CONFIG_` switch in
-   `config/features.mk` and `core/config.h` ([docs/build-config.md](docs/build-config.md)). The build must stay
-   clean with the switch off. `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is
+5. **Flash costs go behind a switch, and only those.** A feature gets a `CONFIG_` switch in `config/features.mk` and
+   `core/config.h` ([docs/build-config.md](docs/build-config.md)) when it costs at least 2 KB of flash, real RAM, or
+   hardware some radios lack, **and** a user could want it off. A sub-switch needs its own user reason; otherwise the
+   code is part of its parent. Every switch is a build per board in CI and a question in web Update. The build must
+   stay clean with the switch off. Removing or renaming a switch needs an entry in `config/switch-history.toml`
+   (`tools/boards.py check` fails without one). `BOARD_UNSUPPORTED` only for what the hardware can't do; code not written yet is
    `BOARD_NOT_WRITTEN`. Written but not yet checked on the radio stays on and in neither list: say "untested" in the
    bring-up records and PRs, never in `config.mk` ([the rule](docs/build-config.md#unsupported-not-written-unconfirmed)).
 6. **Zero warnings** in every configuration `tools/ci.sh` builds.
@@ -69,7 +72,8 @@ make BOARD=dm1701                    # build/dm1701/rfoundry_dm1701.bin (+ _code
 make BOARD=dm1701 CONFIG_X=n BUILD=build/t-x   # a configuration with a switch off
 make -C tests/host                   # host unit and SIL tests
 make -C tests/host ui-gallery        # re-render docs/ux/screens after a UI change
-JOBS=8 tools/ci.sh                   # everything a pull request must pass; ends with "all checks passed"
+tools/ci.sh --affected origin/main   # what a pull request must pass: checks, host tests, the builds the diff reaches
+JOBS=8 tools/ci.sh                   # everything; ends with "all checks passed"
 python3 -m pytest tests/hil -v -rs   # HIL, radio only; every test skips without a radio
 ```
 
@@ -96,9 +100,9 @@ The source tree is in [README.md, Layout](README.md#layout). The layers and the 
   needs `count` and `item`.
 - Guard a definition with the same condition as its callers, not a narrower one. Some switches are turned on by more
   than one feature (`CONFIG_ZONE_WRITE` is zone editing or zone sharing), so a caller under one can outlive the block a
-  definition sits in, and the build fails only with one switch off. After touching guarded code, build each switch you
-  touched off: `make BOARD=<b> CONFIG_X=n BUILD=build/t-x` (its sub-features follow it, as in `tools/ci.sh`), or
-  `tools/ci.sh --board <b> --matrix --steps firmware` for all of them. Remove the `build/t-*` trees afterwards.
+  definition sits in, and the build fails only with one switch off. `tools/ci.sh --affected origin/main` builds every switch
+  your diff touches off, on the boards it reaches (the pull request gate runs the same); `--board <b> --matrix` builds
+  them all.
 - Match the file you're editing: tabs, naming, comment density. Comments say why.
 - Keep RTOS calls and blocking waits out of protocol engines and UI behavior code, so the host tests can run them.
 - **Languages.** The radio and the site are translated ([docs/dev/translating.md](docs/dev/translating.md)). Mark text

@@ -49,6 +49,8 @@ import fm_measure
 from rfoundry_hil import skip
 from hil_config import rig
 
+pytestmark = pytest.mark.bringup   # feasibility measurements that print tables, not regression tests
+
 PAGE = 4
 TONE_HZ = 1000
 TONE_AMP = 8000          # about -12 dBFS

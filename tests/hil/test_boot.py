@@ -10,6 +10,7 @@ from rfoundry_hil import DebugLinkError, as_int
 
 
 @pytest.mark.feature("debuglink")
+@pytest.mark.smoke
 def test_version_and_features(radio):
     v = radio.version(fresh=True)
     assert v.get("proto") == "1"
@@ -21,6 +22,7 @@ def test_version_and_features(radio):
 
 
 @pytest.mark.feature("debuglink")
+@pytest.mark.smoke
 def test_ping_latency(radio):
     times = [radio.ping() for _ in range(20)]
     assert max(times) < 0.15, f"slowest ping {max(times) * 1000:.0f} ms"
@@ -41,6 +43,7 @@ def test_screenshot_geometry(radio, shots):
 
 
 @pytest.mark.feature("debuglink")
+@pytest.mark.smoke
 def test_no_stalls(radio):
     """The firmware clock advances with wall time, the link answers throughout, nothing timed out."""
     link0 = radio.view(["link"])
@@ -57,6 +60,7 @@ def test_no_stalls(radio):
 
 
 @pytest.mark.feature("debuglink")
+@pytest.mark.smoke
 def test_view_sections(radio):
     v = radio.view()
     for k in ("view", "state", "rx_hz", "ch.name", "dmr.built", "hostlink", "ui.screen", "input.idle_ms"):

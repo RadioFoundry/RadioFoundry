@@ -9,5 +9,4 @@ TESTS   += dm1801proPinsTest
 dm1801proPinsTest: $(HERE)dm1801proPinsTest.c $(HERE)../boot_pins.h $(HERE)../pins.h $(HERE)../audio_route.h
 	$(CC) $(CFLAGS) -I$(dir $<).. -Wshadow -o $@ $<
 
-run-boards:: dm1801proPinsTest
-	./dm1801proPinsTest
+run-boards:: $(call suites,dm1801proPinsTest)

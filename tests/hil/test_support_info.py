@@ -64,6 +64,7 @@ def test_image_hash_steps_and_is_kept(radio):
 
 
 @pytest.mark.feature("support_info")
+@pytest.mark.smoke
 def test_image_hash_matches_the_flashed_image(radio, pytestconfig):
     """The digest is the flashed .bin's SHA-256 (support-info.md 3), the comparison a support report makes against
     releases.json: the same bytes, the same span. Needs --firmware-image."""

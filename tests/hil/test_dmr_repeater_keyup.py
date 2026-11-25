@@ -34,6 +34,8 @@ from rfoundry_hil import skip
 from hil_config import rig
 from test_dmr_audio_smoke import find_dmr_channel
 
+pytestmark = pytest.mark.bringup   # 16 key-ups timed around a real repeater's hang
+
 KEY_S = 1.5             # each key-up's length
 HANG_MAX_S = 20.0       # a repeater that holds its output longer is never down between key-ups here
 OFFSETS = (-0.4, -0.15, 0.05, 0.25, 0.6, None, 3.0)    # s from the hang's end; None: 1 s after the release

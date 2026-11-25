@@ -18,6 +18,7 @@
 #include "settings/settings.h"
 #include "cps/cps_openfw.h"
 #include "codeplug/codeplug.h"
+#include "test_run.h"
 
 static int failures;
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } } while (0)
@@ -857,24 +858,31 @@ static bool cut_everywhere(const char *name, step_fn prep, step_fn step, uint16_
 
 static void test_power_cuts(void)
 {
+	// Each step below is a part of its own (test_run.h), from its own seed
 	// A sector filled, a small write, an erase, in a quiet region
-	step_sector = 3;
-	cut_everywhere("fill", prep_erased, step_fill, 8, 16, 10, 0);
-	cut_everywhere("small write", prep_half, step_small, 8, 16, 10, 0);
-	cut_everywhere("erase", prep_none, step_erase, 8, 16, 10, 0);
+	if (test_part()) {
+		rng = 7u;
+		step_sector = 3;
+		cut_everywhere("fill", prep_erased, step_fill, 8, 16, 10, 0);
+		cut_everywhere("small write", prep_half, step_small, 8, 16, 10, 0);
+		cut_everywhere("erase", prep_none, step_erase, 8, 16, 10, 0);
+	}
 	// The same in a region so full that steps run garbage collection first (copies, then the victim's erase)
 	// Several random histories: one of them once left the mount's torn-record fix-up taking the last free block, and
 	// the next write found no block to collect into
-	bool gc = false;
 	static const uint32_t seeds[] = { 12345u, 1u };
 	for (unsigned k = 0; k < sizeof(seeds) / sizeof(seeds[0]); k++) {
+		if (!test_part())
+			continue;
+		bool gc = false;
 		rng = seeds[k];
+		step_sector = 3;
 		for (uint32_t w = 30; w < 40; w++) {
 			gc = cut_everywhere("fill, full region", prep_erased, step_fill, 6, 8, 12, w) || gc;
 			gc = cut_everywhere("erase, full region", prep_none, step_erase, 6, 8, 12, w) || gc;
 		}
+		CHECK(gc);
 	}
-	CHECK(gc);
 }
 
 // --- core/storage and core/settings on the layer, through a hal_flash_t ---
@@ -1338,16 +1346,23 @@ static void test_cps(void)
 	CHECK(nand.violations == 0);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
-	test_basic();
-	test_busy_hook();
-	test_gc_and_wear();
-	test_bad_blocks();
-	test_foreign();
-	test_power_cuts();
-	test_settings();
-	test_cps();
+	if (!test_parts(argc, argv))
+		return 2;
+	// Five parts (test_run.h); the first five tests share the random sequence, so they stay together
+	if (test_part()) {
+		test_basic();
+		test_busy_hook();
+		test_gc_and_wear();
+		test_bad_blocks();
+		test_foreign();
+	}
+	test_power_cuts();	// three parts
+	if (test_part()) {
+		test_settings();
+		test_cps();
+	}
 	if (failures) {
 		printf("nandSectorsTest: %d failure(s)\n", failures);
 		return 1;

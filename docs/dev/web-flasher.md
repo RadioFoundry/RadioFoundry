@@ -825,10 +825,33 @@ linker's region, flash first). The build step shows it as a notice, not an error
 the program memory (or the RAM), to turn features off in Custom or pick a smaller build, and, when the Radio language
 added a pack, that English leaves it out again (`flasher/buildfit.js`; strings `flash.build.too_big*`).
 
+## Channels
+
+The flasher offers three channels (`flasher/channel.js`). The site build names them in `data/site.json`
+([website.md](website.md#channels)):
+
+| Channel | Build | Picked by |
+|---|---|---|
+| Stable | The radio's newest release (`releases.json`; before a radio is picked, `site.json` `release`) | The default |
+| Beta | A pre-release newer than Stable (`site.json` `beta`) | `?version=<beta tag>` |
+| Nightly | The commit of the git tag `nightly` (`site.json` `nightly.sha`), which the nightly radio tests move when main passes them. The build service gets the full hash | `?version=nightly`; the default of a radio with no release |
+
+| Behavior | Detail |
+|---|---|
+| The choice | The first step of an install or an update lists the channels the site has, when there is more than one: "**Version** Stable v26.12 · Beta v27.1b1 · Nightly Nov 21, 2026". The one in use is marked, with a line on what it means (`flash.channel.*`). Picking one sets the version link without a reload. Stable drops the link |
+| Later steps | A Beta or Nightly link shows an information banner with the same line and "Install Latest Release Instead". There is no confirmation dialog: the channel was picked on the page |
+| An update | Without a link, an update stays on the radio's channel: a radio that runs a beta gets the site's beta when that is not older, a build that isn't a release and is newer than the radio's newest release (`git_time`) gets the nightly. Any other radio gets Stable |
+| No release | A radio with no release builds the nightly, with the pre-release notice. Without a nightly tag it builds `main`, and a preview builds its own branch (below) |
+| No nightly tag | `?version=nightly` builds `main` and is handled as a developer's link |
+
+`site/tests/channel.test.mjs` checks the resolution: no tag, only a nightly tag, a release with a beta and a nightly,
+the links `nightly`, `main` and a beta, the update's channel and the editor's offer.
+
 ## Version links
 
 To have someone install a version that isn't a release (a commit to try out), send them the flasher with
-`?version=`:
+`?version=`. These links are for developers and testers, and the page never lists them. `?version=main` builds main
+as it is, without the nightly radio tests:
 
 ```
 https://<site>/flash/?version=<full 40-character commit hash>
@@ -841,12 +864,12 @@ https://<site>/flash/?version=feature/my_radio
 |---|---|
 | What it builds | The build request sends that ref in place of the newest release tag. The build service takes a release tag, a branch of the main repository (`main` included) or a full commit hash, and the commit has to be pushed. A branch name passes the service's rule: up to four `/`-separated parts of letters, digits, `_`, `.` and `-`, no `..`, no part ending in `.lock` (`version.js`). A short hash shows a "can't find" banner and builds nothing. |
 | How long it lasts | The tab keeps it in `sessionStorage` for the session: reloads and visits to other pages keep it, a new browser session doesn't. `?version=` (empty) drops it. |
-| On every step | A banner names the version and has "Install the latest release instead", which drops it. |
+| On every step | A warning banner names the version and has "Install the latest release instead", which drops it. |
 | Before the build | The build step's button says "Get version <hash>", and a dialog asks for confirmation. The dialog can also switch to the latest release and continue with it. |
 | `#radio=` | Picks the radio, as on any flasher link. |
-| A beta | When the site offers a newer pre-release (`site.json` `beta`), the start page and the first install step link to `?version=<beta tag>` ([release.md](release.md#release-names)). The beta is never installed without that link. |
+| Beta and Nightly | `?version=<beta tag>` and `?version=nightly` are the channels above, without the warning banner and the dialog. |
 
-Without a link, a radio with no release is built from `main`. On a preview of another branch (`data/site.json` `branch`, from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only there can be tried.
+Without a link, a radio with no release is built from the nightly commit, else from `main`. On a preview of another branch (`data/site.json` `branch`, from `CF_PAGES_BRANCH` or the checked-out branch), it is built from that branch instead, so a radio that exists only there can be tried.
 
 The feature list comes from the site's own release data. A commit with other feature names makes the build fail with
 the service's error.

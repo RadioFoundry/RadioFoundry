@@ -12,6 +12,8 @@ a codeplug ([Installing](../user/02-installing.md)); this page is for people who
 python3 site/build.py                       # build/site/
 python3 site/build.py --serve               # build, then http://localhost:8000 (WebUSB needs localhost or https)
 python3 site/build.py --firmware build/dist # with release images for the flasher (tools/release.py --out)
+python3 site/build.py --firmware build/dist --docs-release DIR --nightly SHA --nightly-date ISO
+                                            # the channels, as site/cloudflare-build.sh passes them (Channels)
 python3 site/build.py --strict              # any warning fails (CI)
 site/tests/run.sh                           # the flasher's and the editor's tests (Node 20+)
 ```
@@ -31,6 +33,7 @@ Cloudflare Pages builds and deploys it (see [Hosting](#hosting)):
 | Push to `main` | Builds the site with `site/cloudflare-build.sh` and deploys it to radiofoundry.org |
 | Push to another branch of this repository | Builds a preview at its own `*.radiofoundry.pages.dev` address; a pull request shows the link. Pull requests from forks get no preview |
 | Release published | `.github/workflows/site.yml` calls the project's deploy hook, so `main` is built again with the new release's images for the flasher |
+| `nightly` tag moved | The same workflow on a push of the tag, so the Nightly channel names the new commit |
 | By hand | Actions > Web site > Run workflow (the same deploy hook), or Retry deployment in the Pages project |
 
 The pull request's unit tests job also builds the site (`--strict`) and runs the flasher's tests (`tools/ci.sh`'s
@@ -44,11 +47,11 @@ a new deployment in one step, so a deployment has no downtime.
 
 | Part | Setup |
 |---|---|
-| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, lists the releases through the GitHub API, fetches the `rfoundry-*` images of the newest one that is not a pre-release, passes the newest pre-release (a `bN` tag) when it is newer than that (`--beta`), and runs `site/build.py --strict`. A failed build leaves the last deployment up |
+| Build | Command `site/cloudflare-build.sh`, output directory `build/site`, root directory the repository root. The script installs `site/requirements.txt`, picks the channels ([Channels](#channels)) through the GitHub API, fetches the `rfoundry-*` images of the Stable release, exports that release's `docs/` from its tag, and runs `site/build.py --strict`. A failed build leaves the last deployment up |
 | Branches | Production branch `main`; every other branch of this repository builds a preview |
 | Variables | `PYTHON_VERSION` `3.12` (both environments). `RFOUNDRY_SENTRY_DSN` in production only, so previews send no error reports. `GITHUB_TOKEN` (encrypted, both environments): a fine-grained token with read-only access to public repositories. Without it the release lookup shares the builders' 60 requests an hour, and a build can fail with 403 "rate limit exceeded" after a minute of retries |
 | Custom domain | `radiofoundry.org` on the project (Custom domains). The `www` name redirects to it |
-| Release rebuild | The project's deploy hook, as `CLOUDFLARE_DEPLOY_HOOK` in the `site` environment (main and release tags only), which `site.yml` calls |
+| Release rebuild | The project's deploy hook, as `CLOUDFLARE_DEPLOY_HOOK` in the `site` environment (main, release tags and the `nightly` tag), which `site.yml` calls |
 | Analytics | Cloudflare Web Analytics, turned on in the project's Metrics tab. Pages adds the beacon to each deployment; it sets no cookies |
 | 404 | Pages serves the build's `404.html` for a missing page |
 | Roll back | The project's Deployments list: Rollback on an earlier production deployment |
@@ -158,9 +161,11 @@ Every page's footer has two help cards: the community group (`COMMUNITY_URL` in 
 color.
 
 Every page's footer ends with a faint build stamp: the firmware release the flasher installs (linked to its GitHub
-release; left out before the first release), a Changelog link to the GitHub releases, the commit the site was built from
+release; left out before the first release), the Nightly date (linked to its commit; left out without a `nightly`
+tag), a Changelog link to the GitHub releases, the commit the site was built from
 (`-dirty` with uncommitted changes, linked to the commit) and the build time in UTC. `data/site.json` has the same
-commit and the date, the release (`release`) and the pre-release offered (`beta`, below).
+commit and the date, the release (`release`), the pre-release offered (`beta`) and the nightly commit (`nightly`:
+`sha`, `date`), below.
 
 All visual decisions are variables in `tokens.css`: colors for light and dark, type sizes, spacing, radii.
 `site.css` only uses them. A redesign replaces `tokens.css`, then `site.css` and the templates; the generator doesn't
@@ -340,10 +345,39 @@ Two notices show on every step of the web flasher once a radio is picked, above 
 | Pre-release | The radio's `[status] level` is below `supported`. Says the build is in development, that not every feature may work or has been tried on a radio, and links to the project's GitHub issues to report a bug | The `flash.prerelease.*` strings of `site/i18n/<code>.json` |
 | Board | The board sets `[flash] notice`: a warning for a choice the radio can't check itself | board.toml ([board-registry.md](board-registry.md)) |
 
-One more shows on the start page and the first install step: **Beta**, when `site.json` names a pre-release newer
-than the release (`--beta`, from `site/cloudflare-build.sh`). It links to the same page with `?version=<beta>`, so the
-user opts in through a version link and the build service builds the tag; the default install stays the release. It is
-hidden while a version link is in use. Text: the `flash.beta.*` strings.
+The first step of an install or an update shows the channel choice (Stable, Beta, Nightly) when the site has more than
+one ([Channels](#channels), [web-flasher.md](web-flasher.md#channels)). Text: the `flash.channel.*` strings.
+
+## Channels
+
+The site offers firmware in three channels. `site/cloudflare-build.sh` picks them on every build, with the rules in
+`site/rfoundrysite/channels.py` (`site/tests/channels_test.py`):
+
+| Channel | From | Passed to `site/build.py` | In `data/site.json` |
+|---|---|---|---|
+| Stable | The newest release that is not a pre-release, by release name (`tools/release_version.py`) | `--firmware` (its images) and `--docs-release` (its `docs/`, from the tag) | `release` |
+| Beta | The newest pre-release (a `bN` tag), when it is newer than Stable | `--beta` | `beta` |
+| Nightly | The git tag `nightly` (lightweight or annotated), which the nightly radio tests move when main passes them | `--nightly` (the full hash) and `--nightly-date` (the commit's date) | `nightly`: `sha`, `date` |
+
+No release and no `nightly` tag is a valid state: the build leaves the channel out.
+
+The user manual follows the channels. With `--docs-release`, the build makes three trees of the docs
+(`site/rfoundrysite/docs.py`, one `Docs` each):
+
+| Address | Holds | From |
+|---|---|---|
+| `/docs/user/` | The Stable release's user manual | The release's tag |
+| `/nightly/docs/user/` | main's user manual | main |
+| `/docs/` (every other section) | The developer guide, specifications and the rest | main |
+
+Each manual page opens with a banner naming its channel and a link to the same page in the other one
+(`docs.channel.*`). A link from one tree to a section another tree builds goes to that tree, so the developer guide
+links main's manual under `/nightly/`. A Stable page's link to a section no tree builds from the release (a
+specification) goes to the file at the tag on GitHub. A file a Stable page shows from such a section (a screenshot) is
+copied under `/stable/docs/`. A manual page main has and the release lacks gets a short page at its Stable address
+that links the Nightly one, so every link to `/docs/user/` finds a page. Before the first release (no
+`--docs-release`), `/docs/` holds main's docs and there is no `/nightly/`. A clone that can't fetch the release's tag
+does the same, with a warning in the build log.
 
 ## Error logging and bug reports
 

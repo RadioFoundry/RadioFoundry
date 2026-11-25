@@ -129,7 +129,6 @@ below are for an STM32F4 radio.
 | `CONFIG_NET_TCP` | = DMR_IP_GATEWAY | a minimal TCP for the radio's own services on the USB network link, never over RF (`core/net`, `docs/spec/tcp-services.md`). About 4.6 KB RAM (4 connections) |
 | `CONFIG_NET_KISS` | = NET_TCP and APRS | KISS over TCP on port 8001 for APRS programs, bridged to the APRS KISS TNC (`docs/spec/tcp-services.md` 4). About 0.8 KB RAM |
 | `CONFIG_NET_HTTP` | = NET_TCP | the HTTP status server on port 80: a page, the status and the debug link's view sections as JSON, the screen as a BMP (`docs/spec/tcp-services.md` 5). About 3.2 KB RAM |
-| `CONFIG_NET_HTTP_GZIP` | = NET_HTTP | the status server's static files (`core/net/http_assets/`) stored gzip compressed at build time and served with `Content-Encoding: gzip` (`tools/gen_http_assets.py`, `docs/spec/tcp-services.md` 5); off: stored and served as they are, about 19 KB more flash with `CONFIG_NET_WEBCTL` |
 | `CONFIG_NET_WEBCTL` | = NET_HTTP | web control on the status server: `/ws` (WebSocket, RFC 6455) for the radio's front panel page, keys, status and receive audio (`docs/spec/tcp-services.md` 5.1). About 13 KB flash with the page, 1 KB RAM |
 | `CONFIG_NET_RADIO_UDP` | = DMR_IP_GATEWAY | zone and channel control over UDP, port 4191, from the computer only (`docs/spec/tcp-services.md` 8): where the radio is, select or step a zone and channel as a knob would, and change notices to the sender, one datagram each way. What takRF's radio controls use. Needs no TCP or HTTP, so a radio short of RAM can turn `NET_TCP` off and keep it. About 2.3 KB flash, 120 B RAM (no buffer of its own: the IP gateway's frame buffer) |
 | `CONFIG_NET_RIGCTL` | = NET_TCP | Hamlib rigctld on port 4532: frequency, mode, PTT (from the host only, rate limited), S meter for loggers and SDR programs (`docs/spec/tcp-services.md` 6). About 0.8 KB RAM |
@@ -254,6 +253,10 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
 
 ## Adding a feature
 
+A feature gets its own switch when it costs at least 2 KB of flash, real RAM, or hardware some radios lack, and a
+user could want it off. A sub-feature needs its own user reason. Otherwise its code is part of the parent feature
+and needs no switch: each switch is a build per board in CI and a question in web Update.
+
 1. Add the switch with a comment and its default to `config/features.mk`, to `FEATURES`, and to the dependency checks.
 2. Add the default and the checks to `core/config.h`.
 3. Guard the code, and leave a directory out in the Makefile when the whole directory belongs to the feature.
@@ -267,3 +270,18 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+## Removing or renaming a switch
+
+A radio's build names its switches (VERSION `off=` and `features=`, a release's manifest, the build service's record)
+long after a switch is gone. Every switch that leaves `FEATURES` gets an entry in `config/switch-history.toml`:
+
+| Entry | Means | Web Update |
+|---|---|---|
+| `renamed = "NEW"` | the switch goes on as `NEW` | a build that had it off has `NEW` off |
+| `into = "PARENT"` | part of `PARENT` now | on wherever `PARENT` is on: a build that had only this one off gets it back |
+| `always = true` | part of every build | nothing to ask |
+
+`tools/boards.py check` fails when a switch leaves `config/features.mk` (against the parent commit and `origin/main`)
+without an entry, or when an entry names a switch that is still there. The site carries the entries in
+`features.json` (`history`). Entries stay: a radio can run a build from before the removal for years.

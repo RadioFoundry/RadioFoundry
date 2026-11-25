@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The refs a /flash/?version= link may name (version.js), the default build ref of a preview site, the beta opt-in
-// link, how a radio's firmware is named, and which release a radio is offered.
+// The refs a /flash/?version= link may name (version.js), the default build ref of a preview site, how a radio's
+// firmware is named, and which release a radio is offered.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { validRef, refShort, defaultRef, firmwareName, betaLink, releaseKey, updateFor } from "../static/js/flasher/version.js";
+import { validRef, refShort, defaultRef, firmwareName, releaseKey, updateFor } from "../static/js/flasher/version.js";
 
 test("tags, full hashes and branch names are valid refs", () => {
 	for (const ok of ["v0.3.0", "v1.2.3-rc1", "a".repeat(40), "main", "feature/mduv380_bringup", "fix-1.2", "a/b/c/d"])
@@ -33,13 +33,6 @@ test("a preview builds its own branch, main and an unset branch build main", () 
 test("a release names the radio's firmware with its commit, a plain build by its commit", () => {
 	assert.equal(firmwareName({ git: "a1b2c3d4", release: "v26.11" }), "v26.11 (a1b2c3d4)");
 	assert.equal(firmwareName({ git: "a1b2c3d4-dirty" }), "a1b2c3d4-dirty");
-});
-
-test("a beta is offered as a version link on this page, never over one in use", () => {
-	assert.equal(betaLink("v26.12b1", "https://radiofoundry.org/flash/?reporting=0#radio=x", null),
-		"/flash/?reporting=0&version=v26.12b1#radio=x");
-	assert.equal(betaLink("v26.12b1", "https://radiofoundry.org/flash/", "main"), null);
-	for (const none of ["", null, undefined, "bad tag"]) assert.equal(betaLink(none, "https://radiofoundry.org/flash/", null), null);
 });
 
 const NAMES = ["v26.11", "v26.1", "v26.11.1", "v26.12b1", "v26.12b2", "v26.12", "v27.3.2b10", "v27.3.2", "v26.11.12"];

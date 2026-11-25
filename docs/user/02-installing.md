@@ -32,6 +32,21 @@ Back up the radio's current codeplug before you flash, with the program you use 
 RadioFoundry uses a different codeplug layout from the stock firmware. If you go back to stock later, you need that
 backup. The web installer's own backup (below) holds it too.
 
+## Which version should I install?
+
+The web installer offers up to three versions, under **Version** on the first step:
+
+| Version | What you get | For |
+|---|---|---|
+| **Stable** | The newest release. The installer picks Stable by default | Most users |
+| **Beta** | The next release, before its final version. Shown only while a beta is being tested | Users who want to help test a release |
+| **Nightly** | The newest build of the development branch that passed the automatic radio tests overnight, with no beta test yet | Users who want a fix or a feature that no release has yet |
+
+A radio with no release yet gets Nightly. An update stays on the version the radio runs: a radio on a beta gets the
+newer beta, and a radio on a Nightly build gets the newer Nightly build. Report problems with Beta and Nightly
+builds on [GitHub](https://github.com/radiofoundry/radiofoundry/issues). The manual on the web site describes Stable.
+A banner at the top of each page links the Nightly manual.
+
 ## Install with the web installer
 
 Open the [web installer](https://radiofoundry.org/flash/index.html), choose **Install**, and follow the steps (a radio

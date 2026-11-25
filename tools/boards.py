@@ -188,7 +188,11 @@ BOARD_SCHEMA = {
     "build_options": _opt(("list", {"name": _req(str), "title": _req(str), "help": _req(str),
                                     "values": _req(("list", {"id": _req(str), "title": _req(str), "text": _req(str),
                                                              "board_name": _req(str)}))})),
-    "ci": _opt({"extra": _req(("list", {"name": _req(str), "make": _req(STR_LIST)}))}),
+    # extra: configurations only this board builds in ci.sh. budget: what the default build must leave free (bytes):
+    # flash_free_min in the app region, ram_free_min in RAM, stack_free_min the least of any task (the maximal build
+    # too); tools/size_budget.py checks them on every ci.sh firmware run
+    "ci": _opt({"extra": _opt(("list", {"name": _req(str), "make": _req(STR_LIST)})),
+                "budget": _opt({"flash_free_min": _opt(int), "ram_free_min": _opt(int), "stack_free_min": _opt(int)})}),
     "flash": _req({
         "family": _req(tuple(FAMILIES)),
         "keep_codec": _req(bool),
@@ -354,6 +358,76 @@ def make_vars(root, board, names, args=()):
         if sep and k in names:
             out[k] = " ".join(v.split())
     return out
+
+
+CONFIG_RE = re.compile(r"\bCONFIG_([A-Z0-9_]+)\b")
+FEATURE_SOURCE_TOPS = ("core", "drivers", "platform", "hal")
+_SOURCE_TEXTS = {}
+_MAKEFILE_PATHS = {}
+
+
+def makefile_switch_paths(root):
+    """path -> switches the Makefile builds it for: inside an ifeq / ifneq / ifdef on the switch, or on a -$(CONFIG_X)
+    line (continued lines joined). Only paths that exist. tools/affected.py and tools/bringup.py both read it, once per
+    feature: parsed once per root and Makefile version."""
+    mk = os.path.join(root, "Makefile")
+    key = (root, os.stat(mk).st_mtime_ns)
+    if key not in _MAKEFILE_PATHS:
+        _MAKEFILE_PATHS[key] = _makefile_switch_paths(root, mk)
+    return {p: set(s) for p, s in _MAKEFILE_PATHS[key].items()}
+
+
+def _makefile_switch_paths(root, mk):
+    with open(mk, encoding="utf-8", errors="replace") as f:
+        text = f.read().replace("\\\n", " ")
+    out = {}
+    stack = []
+    for line in text.splitlines():
+        s = line.strip()
+        if re.match(r"if(n?eq|n?def)\b", s):
+            stack.append(CONFIG_RE.findall(s))
+            continue
+        if s == "endif" and stack:
+            stack.pop()
+            continue
+        sws = [x for frame in stack for x in frame] + re.findall(r"-\$\(CONFIG_([A-Z0-9_]+)\)", s)
+        if not sws:
+            continue
+        for tok in re.findall(r"[A-Za-z0-9_./-]+", s):
+            if "/" in tok and os.path.exists(os.path.join(root, tok)):
+                out.setdefault(tok.rstrip("/"), set()).update(sws)
+    return out
+
+
+def source_texts(root):
+    """path -> text of every C source, header and .mk under core/, drivers/, platform/ and hal/ (read once per root)."""
+    if root not in _SOURCE_TEXTS:
+        out = {}
+        for top in FEATURE_SOURCE_TOPS:
+            for dp, _, fns in os.walk(os.path.join(root, top)):
+                for fn in fns:
+                    if fn.endswith((".c", ".h", ".S", ".mk")):
+                        p = os.path.join(dp, fn)
+                        with open(p, encoding="utf-8", errors="replace") as f:
+                            out[os.path.relpath(p, root)] = f.read()
+        _SOURCE_TEXTS[root] = out
+    return _SOURCE_TEXTS[root]
+
+
+def default_source(root, switch):
+    """A checklist feature's source paths when tests/hil/features.toml gives none: what the Makefile builds for its
+    switch, else the files that name CONFIG_<switch> (core/config.h, which names them all, left out). One rule for
+    both readers: tools/bringup.py hashes these paths to tell when a record needs a re-run, and tools/affected.py
+    selects the feature's HIL tests when one of them changes, so a change that makes a record stale also selects the
+    tests that renew it."""
+    if not switch:
+        return []
+    found = [p for p, s in makefile_switch_paths(root).items() if switch in s]
+    if found:
+        return found
+    texts = source_texts(root)
+    pat = re.compile(r"\bCONFIG_%s\b" % re.escape(switch))
+    return sorted(p for p, t in texts.items() if p != os.path.join("core", "config.h") and pat.search(t))
 
 
 def ld_expr(text, names=None):
@@ -582,6 +656,55 @@ def _listed_reasons(config_mk, line_re):
             for s in sws:
                 out[s] = (m.group(2) or "").strip() if len(sws) == 1 else ""
     return out
+
+
+def _feature_list(text):
+    m = re.search(r"^FEATURES\s*:=\s*((?:.*\\\n)*.*)$", text, re.M)
+    return set(m.group(1).replace("\\\n", " ").split()) if m else set()
+
+
+def switch_history_problems(root, before=None):
+    """config/switch-history.toml against config/features.mk: every switch that left FEATURES has an entry (a radio's
+    build still names it, and web Update must know what it means now), no entry names a switch that is still there,
+    and a renamed or into target is a switch (or itself in the history). before: the FEATURES lists to compare with;
+    by default the parent commit's and origin/main's, where git has them."""
+    import subprocess
+    problems = []
+    where = "config/switch-history.toml"
+    with open(os.path.join(root, "config", "features.mk"), encoding="utf-8") as f:
+        now = _feature_list(f.read())
+    try:
+        with open(os.path.join(root, where), "rb") as f:
+            removed = _tomllib().load(f).get("removed", {})
+    except OSError:
+        removed = {}
+    except Exception as e:
+        return ["%s: %s" % (where, e)]
+    for n, e in sorted(removed.items()):
+        kinds = [k for k in ("renamed", "into", "always") if k in e]
+        if len(kinds) != 1:
+            problems.append("%s: removed.%s needs exactly one of renamed, into, always" % (where, n))
+        if n in now:
+            problems.append("%s: removed.%s is still in FEATURES (config/features.mk)" % (where, n))
+        for k in ("renamed", "into"):
+            t = e.get(k)
+            if t is not None and t not in now and t not in removed:
+                problems.append("%s: removed.%s %s = %r is not a switch" % (where, n, k, t))
+    if before is None:
+        before = []
+        for ref in ("HEAD^1", "origin/main"):
+            try:
+                r = subprocess.run(["git", "-C", root, "show", ref + ":config/features.mk"], capture_output=True,
+                                   text=True, timeout=20)
+            except (OSError, subprocess.TimeoutExpired):
+                break
+            if r.returncode == 0:
+                before.append(_feature_list(r.stdout))
+    for old in before:
+        for n in sorted(old - now - set(removed)):
+            problems.append("config/features.mk: switch %s was removed without an entry in %s (renamed, into or "
+                            "always: what the name means to a radio whose build still has it)" % (n, where))
+    return sorted(set(problems))
 
 
 def not_written_problems(bid, b):
@@ -1430,6 +1553,7 @@ def check(root=ROOT):
             problems += registry_docs.survey(root, boards)[1]
         except registry_docs.DocsError as e:
             problems.append(str(e))
+    problems += switch_history_problems(root)
     if not problems:
         path = os.path.join(root, RFOUNDRY_JSON)
         try:

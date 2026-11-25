@@ -12,6 +12,9 @@
 #   tools/ci.sh --platform stm32f4   every board on that platform (or a comma separated list); with --toolchain,
 #                               the boards both select
 #   tools/ci.sh --matrix        only the feature matrix (no default builds; what the nightly CI adds per push)
+#   tools/ci.sh --affected origin/main   --quick plus the switch-off and fm-minimal builds the change since that commit
+#                               reaches (tools/affected.py; what pull requests run). RFOUNDRY_AFFECTED_SCOPE=broad takes
+#                               every switch a changed file names (the merge queue), RFOUNDRY_AFFECTED_LIMIT=N at most N
 #   tools/ci.sh --steps host,python   only these steps (registry, host, bench, python, firmware, licenses,
 #                                     similarity; default all)
 #   JOBS=8 tools/ci.sh          parallel make jobs (default: the CPU count)
@@ -20,7 +23,7 @@
 #                               removed once its size is in the report and it built clean (the log and the .bin stay;
 #                               a configuration that failed keeps its tree to debug)
 #
-# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses`, the host tests and
+# The CI workflows (docs/dev/ci.md) run pieces of it: per push `--steps registry,python,licenses,workflows`, the host tests and
 # `--steps bench`, `--quick --steps firmware --toolchain <t>` for each toolchain; nightly `--matrix --steps firmware --toolchain <t>`.
 #
 # Every step but host and bench needs a Python 3.11 or later (tools/rfoundry_python.sh): the board registry is TOML. Steps, each
@@ -63,6 +66,8 @@
 #      maximal configuration must pass the static stack check (make stack-check, docs/dev/stack-check.md): each task's
 #      deepest call chain fits its stack with the margin.
 #   4. tools/license_grep.sh, and `reuse lint` (skipped with a notice when reuse isn't installed: pipx install reuse)
+#   4b. workflows: actionlint (.github/actionlint.yaml) and zizmor (.github/zizmor.yml) over .github/, each skipped with
+#      a notice when not installed. zizmor runs its online audits too when GH_TOKEN is set
 #   5. tools/similarity_scan.py against the trees in $RFOUNDRY_SIMILARITY_REFS (space separated), only when it is set:
 #      the reference trees are never part of this repository or of public CI
 #
@@ -74,27 +79,29 @@ cd "$(dirname "$0")/.." || exit 2
 
 QUICK=0
 MATRIX=0
+AFFECTED=""
 ONLY=""
 PLATFORMS=""
 TOOLCHAINS=""
-STEPS="registry,host,bench,python,firmware,licenses,similarity"
+STEPS="registry,host,bench,python,firmware,licenses,workflows,similarity"
 while [ $# -gt 0 ]; do
 	case "$1" in
 	--quick) QUICK=1 ;;
 	--matrix) MATRIX=1 ;;
+	--affected) AFFECTED="$2"; QUICK=1; shift ;;
 	--board) ONLY="$2"; shift ;;
 	--platform) PLATFORMS="$2"; shift ;;
 	--toolchain) TOOLCHAINS="$2"; shift ;;
 	--steps) STEPS="$2"; shift ;;
-	-h|--help) sed -n '5,69p' "$0"; exit 0 ;;
+	-h|--help) sed -n '5,74p' "$0"; exit 0 ;;
 	*) echo "ci: unknown option $1" >&2; exit 2 ;;
 	esac
 	shift
 done
 for s in $(echo "$STEPS" | tr ',' ' '); do
-	case "$s" in registry|host|bench|python|firmware|licenses|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
+	case "$s" in registry|host|bench|python|firmware|licenses|workflows|similarity) ;; *) echo "ci: unknown step $s" >&2; exit 2 ;; esac
 done
-[ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick and --matrix exclude each other" >&2; exit 2; }
+[ "$QUICK" = 1 ] && [ "$MATRIX" = 1 ] && { echo "ci: --quick (or --affected) and --matrix exclude each other" >&2; exit 2; }
 [ -n "$ONLY" ] && [ -n "$PLATFORMS$TOOLCHAINS" ] && { echo "ci: --board excludes --platform and --toolchain" >&2; exit 2; }
 step() { case ",$STEPS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)}
@@ -165,11 +172,13 @@ fi
 # ── 1. host tests ────────────────────────────────────────────────────────────
 if step host; then
 echo "== host tests"
-if make -C tests/host > "$OUT/host-tests.log" 2>&1; then
-	ok "host tests ($(grep -cE 'PASS|passed' "$OUT/host-tests.log") suites reported passing)"
+# The suites in parallel; a failed one's log is in host-tests.log, the summary line last (HOST_SHORT=1 in the
+# environment: fewer random cases, as pull request CI runs them)
+if make -C tests/host -j"$JOBS" > "$OUT/host-tests.log" 2>&1; then
+	ok "host tests ($(grep '^# host tests:' "$OUT/host-tests.log" | sed 's/^# host tests: //; s/ (.*//'))"
 else
-	tail -30 "$OUT/host-tests.log"
-	bad "host tests (see $OUT/host-tests.log)"
+	grep -A3 '^# host tests:' "$OUT/host-tests.log" || tail -30 "$OUT/host-tests.log"
+	bad "host tests (see $OUT/host-tests.log; each suite's log in tests/host/out/run)"
 fi
 if grep -q 'warning:' "$OUT/host-tests.log"; then
 	grep 'warning:' "$OUT/host-tests.log" | sort -u | head -20
@@ -487,6 +496,14 @@ build() {
 		# the app region's fit: the linker fails on an overflow; this catches a log it couldn't be read from
 		[ -n "$size" ] && [ -n "$used" ] && bad "$b $name: $used bytes used in a $size byte app region"
 	fi
+	# the RAM region the same way: what .data and .bss (the RTOS heap and task stacks among them) leave free
+	set -- $(grep -E '^ *RAM:' "$log" | head -1)
+	ram_used=$(tobytes "${2:-}" "${3:-}"); ram_size=$(tobytes "${4:-}" "${5:-}")
+	ram_free="?"
+	[ -n "$ram_size" ] && [ -n "$ram_used" ] && ram_free=$((ram_size - ram_used))
+	# the least stack any task has left (the stack check, default and maximal only)
+	stack_free=$(sed -n 's/.*the least free: [^ ]* \([0-9]*\) bytes.*/\1/p' "$dir.stack.log" 2>/dev/null | head -1)
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$b" "$name" "$bytes" "$free" "$ram_free" "${stack_free:-?}" >> "$OUT/sizes.tsv"
 	delta=""
 	if [ "$name" = default ]; then
 		default_bytes=$bytes
@@ -523,6 +540,27 @@ if step firmware; then
 	echo "| Board | Config | Image bytes | Delta | Free | Used |"
 	echo "|---|---|---|---|---|---|"
 } > "$REPORT"
+# one row per build for tools/size_budget.py: board, config, image bytes, app region free, RAM free, least stack free
+printf 'board\tconfig\tbytes\tflash_free\tram_free\tstack_free\n' > "$OUT/sizes.tsv"
+# --affected: the builds the change reaches, from the working tree against that commit, for the selected boards
+if [ -n "$AFFECTED" ]; then
+	if [ -n "$REG_PY" ] && $REG_PY tools/affected.py builds --base "$AFFECTED" ${ONLY:+--board "$ONLY"} \
+		--scope "${RFOUNDRY_AFFECTED_SCOPE:-precise}" --limit "${RFOUNDRY_AFFECTED_LIMIT:-0}" \
+		> "$OUT/affected.builds" 2> "$OUT/affected.log"; then
+		ok "affected builds: $(wc -l < "$OUT/affected.builds" | tr -d ' ') since $AFFECTED$(grep -v '^affected: warning: ' "$OUT/affected.log" | sed -n 's/^affected: /, /p')"
+		# what the tool couldn't map (a file no board uses, a board make fails on): it fell back to that board's
+		# whole matrix, and says so here
+		grep '^affected: warning: ' "$OUT/affected.log" > "$OUT/affected.warn"
+		while read -r wline <&3; do
+			warn "affected builds: ${wline#affected: warning: }"
+		done 3< "$OUT/affected.warn"
+		rm -f "$OUT/affected.warn"
+	else
+		cat "$OUT/affected.log"
+		bad "affected builds: tools/affected.py failed (see $OUT/affected.log)"
+		: > "$OUT/affected.builds"
+	fi
+fi
 
 for bm in boards/*/board.mk boards/*/; do
 	case "$bm" in
@@ -545,6 +583,9 @@ for bm in boards/*/board.mk boards/*/; do
 		# Each build option value besides the default (a band): its image, default config
 		builds "$b"
 	fi
+	# --affected falls back to the board's whole matrix when it can't tell what the change reaches ("<b> matrix")
+	bquick=$QUICK
+	[ -n "$AFFECTED" ] && grep -q "^$b matrix *\$" "$OUT/affected.builds" && bquick=0
 	features=$(make -s BOARD="$b" print-config 2>/dev/null)
 	all_on=""
 	unsupported=" $(make -s BOARD="$b" print-unsupported 2>/dev/null) $(make -s BOARD="$b" print-not-written 2>/dev/null)"
@@ -553,11 +594,11 @@ for bm in boards/*/board.mk boards/*/; do
 	for kv in $features; do
 		f=${kv%%=*}
 		case "$unsupported" in *" $f "*) ;; *) all_on="$all_on CONFIG_$f=y" ;; esac
-		[ "$QUICK" = 1 ] && continue
+		[ "$bquick" = 1 ] && continue
 		case "$required" in *" $f "*) continue ;; esac
 		[ "${kv#*=}" = y ] && build "$b" "no-$f" "CONFIG_$f=n"
 	done
-	if [ "$QUICK" = 0 ]; then
+	if [ "$bquick" = 0 ]; then
 		# The board's [ci] extra configurations (a diagnostic only one board carries, with what it needs to fit)
 		builds "$b" --extra
 		build "$b" fm-minimal CONFIG_DMR=n CONFIG_USB=n CONFIG_VFO=n CONFIG_DIAG=n CONFIG_SUBTONE=n CONFIG_FONT_XL=n
@@ -578,6 +619,17 @@ for bm in boards/*/board.mk boards/*/; do
 	# Maximal with --quick too: its flash and the stack check's deepest chains are where a pull request runs out first
 	# shellcheck disable=SC2086
 	build "$b" maximal $all_on $maximal_vars
+	if [ -n "$AFFECTED" ]; then
+		grep "^$b " "$OUT/affected.builds" | while read -r _ aname aargs; do
+			# a board on its whole matrix built every one of these above
+			[ "$bquick" = 0 ] || [ "$aname" = matrix ] || echo "$aname $aargs"
+		done > "$OUT/$b.affected"
+		while read -r aname aargs <&3; do
+			# shellcheck disable=SC2086
+			build "$b" "$aname" $aargs
+		done 3< "$OUT/$b.affected"
+		rm -f "$OUT/$b.affected"
+	fi
 done
 # Each platform's flash stubs (platform.toml stubs), once, when any board on the platform was built: one image serves
 # every board on it. Built with that platform's compiler (the first board's print-cc), then the stub's own check target
@@ -602,6 +654,18 @@ for p in $(for x in ${SELECTED_PLATFORMS:-}; do echo "$x"; done | sort -u); do
 		fi
 	done
 done
+# each board's [ci.budget] (board.toml): what the default and maximal builds must leave free. With
+# RFOUNDRY_SIZE_BASE (another run's sizes.tsv, main's in PR CI) the change against it goes in the report too
+if [ -n "$REG_PY" ]; then
+	if $REG_PY tools/size_budget.py check "$OUT/sizes.tsv" ${RFOUNDRY_SIZE_BASE:+--base "$RFOUNDRY_SIZE_BASE"} \
+		> "$OUT/budget.log" 2>&1; then
+		ok "budgets: $(tail -1 "$OUT/budget.log")"
+	else
+		grep -v '^|' "$OUT/budget.log" | head -20
+		bad "budgets (see $OUT/budget.log)"
+	fi
+	grep '^|' "$OUT/budget.log" > "$OUT/budget.md" && { echo; cat "$OUT/budget.md"; } >> "$REPORT"
+fi
 # A worktree that reads third_party/ from another checkout (platform/third_party.mk, tools/worktree.sh): a scratch
 # worktree of HEAD without submodules of its own must parse a build against this tree's copies, stop without them and
 # on a moved pin, answer the query targets, and stay clean through a checkout with submodule.recurse. make -n is
@@ -656,6 +720,25 @@ if command -v reuse > /dev/null; then
 	if reuse lint > "$OUT/reuse.log" 2>&1; then ok "reuse lint"; else tail -30 "$OUT/reuse.log"; bad "reuse lint (see $OUT/reuse.log)"; fi
 else
 	skip "reuse lint: reuse not installed (pipx install reuse, or pip install --user reuse)"
+fi
+fi
+
+# ── 4b. workflow checks ──────────────────────────────────────────────────────
+if step workflows; then
+echo "== workflows"
+if command -v actionlint > /dev/null; then
+	if actionlint > "$OUT/actionlint.log" 2>&1; then ok "actionlint"
+	else tail -30 "$OUT/actionlint.log"; bad "actionlint (see $OUT/actionlint.log)"; fi
+else
+	skip "actionlint: not installed (https://github.com/rhysd/actionlint, the version pr-tests.yml pins)"
+fi
+if command -v zizmor > /dev/null; then
+	zo=""; [ -n "${GH_TOKEN:-}" ] || zo="--offline"
+	# shellcheck disable=SC2086
+	if zizmor $zo --no-progress .github/ > "$OUT/zizmor.log" 2>&1; then ok "zizmor${zo:+ (offline)}"
+	else tail -40 "$OUT/zizmor.log"; bad "zizmor (see $OUT/zizmor.log)"; fi
+else
+	skip "zizmor: not installed (pipx install zizmor, the version pr-tests.yml pins)"
 fi
 fi
 

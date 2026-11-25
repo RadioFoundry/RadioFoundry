@@ -52,7 +52,7 @@ runs:
       env:
         TOOLCHAIN: ${{ inputs.toolchain }}
         IMAGE: ${{ inputs.image }}
-      run: |
+      run: |   # zizmor: ignore[github-env] writes one variable, an image reference checked below
         set -euo pipefail
         # tools/platform_toolchain.sh's reading, inline: a quoted value on a "key = value" line of [toolchain]
         pin() { awk -v k="$1" '/^\[/ { t = ($0 == "[toolchain]") } t && $1 == k && $2 == "=" { v = $3; gsub(/"/, "", v); print v; exit }' "$2"; }
@@ -72,6 +72,10 @@ runs:
           else
             mode=image
             run=tools/docker/csky-toolchain/run.sh
+            # an image reference only: no white space or line break can add another variable to the job's environment
+            case "$image" in
+            ''|*[!A-Za-z0-9._/:@-]*) echo "::error::not an image reference: $image"; exit 1 ;;
+            esac
             echo "RFOUNDRY_CSKY_IMAGE=$image" >> "$GITHUB_ENV"   # run.sh's image
           fi ;;
         *) echo "::error::no set-up for toolchain $TOOLCHAIN in .github/actions/toolchain"; exit 1 ;;

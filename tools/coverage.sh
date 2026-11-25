@@ -8,6 +8,8 @@
 #   COVERAGE_FAIL_UNDER=85 tools/coverage.sh    also fail when line coverage is under 85 %
 #   SANITIZE=1 tools/coverage.sh      the same build also under ASan and UBSan (any report fails the test): CI's one run
 #                                     of the unit tests gives pass / fail, coverage and the sanitizers at once
+#   HOST_SHORT=1 tools/coverage.sh    fewer random cases (make -C tests/host HOST_SHORT=1), as pull request CI runs it
+#   JOBS=8 tools/coverage.sh          parallel make jobs (default: the CPU count)
 #
 # Needs gcovr (pip install gcovr, or pipx install gcovr). With GCC it reads the data with gcov; with clang
 # (Apple's included) with `llvm-cov gcov` (`xcrun llvm-cov gcov` on macOS). GCOV=... overrides the choice.
@@ -24,6 +26,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 2
 OUT=build/coverage
 HOST=tests/host
+JOBS=${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)}
 
 if ! command -v gcovr > /dev/null 2>&1; then
 	echo "coverage: gcovr not installed (pip install gcovr, or pipx install gcovr)" >&2
@@ -42,7 +45,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT"
 make -C "$HOST" clean > /dev/null
 echo "== coverage: host tests built with --coverage${SANITIZE:+ and ASan / UBSan} ($CC, read with $GCOV)"
-make -C "$HOST" -j "${JOBS:-4}" COVERAGE=1 ${SANITIZE:+SANITIZE=$SANITIZE} CC="$CC" > "$OUT/host-tests.log" 2>&1
+make -C "$HOST" -j "$JOBS" COVERAGE=1 ${SANITIZE:+SANITIZE=$SANITIZE} CC="$CC" > "$OUT/host-tests.log" 2>&1
 status=$?
 if [ $status -ne 0 ]; then
 	tail -30 "$OUT/host-tests.log"
@@ -64,7 +67,7 @@ gcovr --root . --object-directory "$HOST" --gcov-executable "$GCOV" $compat \
 	--merge-mode-functions=separate \
 	--filter 'core/' --filter 'drivers/' --filter 'hal/' --filter 'boards/' --filter 'platform/' \
 	--exclude '.*/gen/' --exclude 'tests/' --exclude 'third_party/' \
-	-j "${JOBS:-4}" \
+	-j "$JOBS" \
 	--txt "$OUT/summary.txt" --html-details "$OUT/index.html" --cobertura "$OUT/coverage.xml" \
 	--json-summary "$OUT/summary.json" --print-summary > "$OUT/gcovr.log" 2>&1
 gstatus=$?

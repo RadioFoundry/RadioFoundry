@@ -25,7 +25,8 @@ import { pickProblem, errorProblem, vendorContext, supportedFiles, foldSupported
 import { confirmNoCodec } from "./nocodec.js";
 import { makePlan, KEEP, MERGE } from "./plan.js";
 import { radioPicture, holdKeys, hasNoScreen } from "./radiotop.js";
-import { validRef, refShort, defaultRef, firmwareName, betaLink } from "./version.js";
+import { validRef, refShort, firmwareName } from "./version.js";
+import { resolveChannel, channelChoices, channelLink } from "./channel.js";
 import { verify, segments, forDevBuild } from "./manifest.js";
 import { Dfu, DfuError, NormalModeError, WebUsbTransport, checkKey, usbSupported } from "./dfu.js";
 import { Link, LinkError, CableError, SerialStream, RFOUNDRY_USB, RFOUNDRY_NET, CABLES, probe, whyNoAnswer, noAnswerKey, serialSupported, serialApi, browserErrorKey, noDeviceChosen, knownRadioPort } from "./link.js";
@@ -38,7 +39,7 @@ import { suggestPack, packCode, startCode, startLanguages, startLanguage, setSta
 import { readBootKey } from "./bootkey.js";
 import { codecSegments, loadCodec, readCodec, saveCodec } from "./codecsave.js";
 import { FakeRadio, simulation, randomBytes, rng } from "./fake.js";
-import { t, tOr, num, LANG, ROOT, HOME, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
+import { t, tOr, num, date, LANG, ROOT, HOME, h, download, filePicker, progressBar, stopBars, logBox, notice, button, spinner, panel, localTime, partNames, barsRunning } from "./dom.js";
 import { stepHistory } from "./stephistory.js";
 import * as c7ui from "./c7000ui.js";
 import { variantWarning, variantVerdict } from "./iapui.js";
@@ -167,6 +168,34 @@ let VERSION_REF = (() => {
 })();
 const versionShort = () => refShort(VERSION_REF);
 
+// The channel the build comes from (channel.js): Stable, Beta, Nightly, or a developer's version link. An update
+// starts from the radio's own channel
+const boardReleases = () => (S.radio ? S.data.releases.filter((x) => x.board === S.radio.id) : []);
+const channelNow = () => resolveChannel({ versionRef: VERSION_REF, site: S.data.site, boardReleases: boardReleases(),
+	running: S.task === "update" ? S.now?.probe?.version || null : null });
+const nightlyDate = () => {
+	const d = new Date(S.data.site.nightly?.date || "");
+	return isNaN(d) ? S.data.site.nightly?.sha?.slice(0, 7) || "" : date(d, { dateStyle: "medium" });
+};
+// what the page calls a channel's build: "Stable v26.12", "Nightly Nov 21, 2026"; a version link by its ref
+function channelLabel(c) {
+	if (c.channel === "nightly") return t("flash.channel.nightly", { date: nightlyDate() });
+	if (c.channel === "stable" || c.channel === "beta") return t(`flash.channel.${c.channel}`, { version: c.name });
+	return refShort(c.ref);
+}
+
+// A channel picked on the page: the same as its version link, without a reload ("" drops the link: the default)
+function useVersion(version) {
+	if (!version) return dropVersion();
+	VERSION_REF = version;
+	try { sessionStorage.setItem(VERSION_STORE, version); } catch (e) { /* kept for this page only */ }
+	const u = new URL(location.href);
+	u.searchParams.set("version", version);
+	history.replaceState(history.state, "", u);
+	S.firmware = null;
+	render();
+}
+
 // redraw = false: the caller keeps its view (a build about to start), only the banner goes
 function dropVersion(redraw = true) {
 	VERSION_REF = null;
@@ -196,10 +225,16 @@ function confirmVersion() {
 	});
 }
 
-// on every step while a version link is in use: what gets built, and the way back to the release
+// on every step while a version link is in use: what gets built, and the way back to the release. A Beta or Nightly
+// link says which channel it is, without the warning a developer's link gets
 function versionBanner() {
 	if (!VERSION_REF) return null;
-	const ok = validRef(VERSION_REF);
+	const ok = validRef(VERSION_REF), ch = ok ? channelNow() : null;
+	if (ch && (ch.channel === "beta" || ch.channel === "nightly"))
+		return h("div", { class: "notice info version-banner" },
+			h("p", {}, h("b", {}, channelLabel(ch) + "."), " ", t(`flash.channel.${ch.channel}_text`)),
+			channelChoices(S.data.site, S.radio ? boardReleases() : null).length
+				? h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); dropVersion(); } }, t("flash.version.use_release"))) : null);
 	return h("div", { class: `notice ${ok ? "warn" : "bad"} version-banner` },
 		h("p", {}, ok ? [h("b", {}, t("flash.version.title", { ref: versionShort() })), " ", t("flash.version.text")] : t("flash.version.bad", { ref: VERSION_REF })),
 		h("p", {}, h("a", { href: "#", onclick: (e) => { e.preventDefault(); dropVersion(); } }, t("flash.version.use_release"))));
@@ -393,7 +428,7 @@ async function loadData() {
 	// repository texts in the page's language where the catalog overrides them (feature.<SWITCH>.*, variant.<id>.*)
 	const feats = features.features.map((f) => ({ ...f, title: tOr(`feature.${f.name}.title`, f.title), help: tOr(`feature.${f.name}.help`, f.help) }));
 	const vars = variants.variants.map((v) => ({ ...v, title: tOr(`variant.${v.id}.title`, v.title), summary: tOr(`variant.${v.id}.summary`, v.summary) }));
-	return { radios: radios.radios, features: feats, groups: features.groups, reported: features.reported || [],
+	return { radios: radios.radios, features: feats, groups: features.groups, reported: features.reported || [], history: features.history || {},
 		variants: vars, fb, releases: releases.releases, site };
 }
 
@@ -795,7 +830,7 @@ function render() {
 	trail.sync(S.task ? `${S.task}/${S.step}` : "");
 	app.replaceChildren();
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
-	if (!S.task) return app.append(...[versionBanner() || betaNotice(), startView()].filter(Boolean));
+	if (!S.task) return app.append(...[versionBanner(), startView()].filter(Boolean));
 	const steps = stepsFor();
 	const label = (s) => (S.radio && backend().stepLabel?.(s, S.task)) || s;
 	const stepper = () => h("ol", { class: "stepper" }, stepsFor().map((s, i) =>
@@ -804,8 +839,11 @@ function render() {
 	app.append(shown);
 	render.stepper = () => { const n = stepper(); shown.replaceWith(n); shown = n; };
 	if (S.sim) app.append(h("p", { class: "small muted sim-line" }, t("flash.sim.banner")));
-	if (VERSION_REF && S.task === "install") app.append(versionBanner());
-	else if (S.task === "install" && S.step === 0) app.append(...[betaNotice()].filter(Boolean));
+	// the channel choice where the version is picked (the first step of an install or an update), the banner on the
+	// steps after it
+	const choice = (S.task === "install" || S.task === "update") && S.step === 0 ? channelChoice() : null;
+	if (choice) app.append(choice);
+	else if (VERSION_REF && S.task === "install") app.append(versionBanner());
 	if (S.radio && S.radio.status !== "supported" && S.step > 0) app.append(prereleaseNotice());
 	// a hardware variant in development, once the page read it or the user picked it (board.toml [hardware] variants)
 	if (S.radio && S.variant && S.step > 0) app.append(...[variantWarning(variantVerdict(S, S.radio.flash.board))].filter(Boolean));
@@ -840,14 +878,19 @@ function render() {
 		info, fwd));
 }
 
-// A pre-release newer than the release (site.json beta, site/cloudflare-build.sh): offered as a version link, never
-// installed by default. Not while a version link is in use
-function betaNotice() {
-	const beta = S.data?.site?.beta, href = betaLink(beta, location.href, VERSION_REF);
-	if (!href) return null;
-	return h("div", { class: "notice info beta-notice", role: "note" },
-		h("p", {}, h("strong", {}, t("flash.testbuild.title", { ref: beta })), " ", t("flash.testbuild.text")),
-		h("p", {}, h("a", { href }, t("flash.testbuild.link", { ref: beta }))));
+// Stable, Beta and Nightly (site.json, channel.js), when there is more than one: each a version link the page follows
+// without a reload, the one in use marked, with what it means. Not while a developer's version link is in use (its
+// banner says what gets built); null when there is nothing to choose
+function channelChoice() {
+	const list = channelChoices(S.data.site, S.radio ? boardReleases() : null);
+	const ch = channelNow();
+	if (!list.length || (VERSION_REF && ch.channel === "link")) return null;
+	const items = list.map((c, i) => [i ? " · " : "", c.channel === ch.channel
+		? h("strong", { "aria-current": "true" }, channelLabel(c))
+		: h("a", { href: channelLink(location.href, c.version), onclick: (e) => { e.preventDefault(); useVersion(c.version); } }, channelLabel(c))]);
+	const text = ["stable", "beta", "nightly"].includes(ch.channel) ? h("p", { class: "small" }, t(`flash.channel.${ch.channel}_text`)) : null;
+	return h("div", { class: "notice info channel-choice", role: "group", "aria-label": t("flash.channel.title") },
+		h("p", {}, h("strong", {}, t("flash.channel.title")), " ", ...items.flat()), text);
 }
 
 // A radio still in development (board.toml [status] below supported): on every step after it is picked
@@ -911,8 +954,7 @@ function simLinks() {
 // update: a radio that runs RadioFoundry, reached once, its build kept
 
 // The newest release of the radio (or the version link's): what the update installs
-const updateVersion = () => VERSION_REF ? versionShort()
-	: S.data.releases.filter((x) => x.board === S.radio.id).at(-1)?.version || defaultRef(S.data.site.branch);
+const updateVersion = () => channelLabel(channelNow());
 
 // One port chooser for every radio: RadioFoundry's USB port or a programming cable. Whatever answers names the radio, and
 // the radio's backend takes the connection from there (c7000ui.js adoptCable: no second chooser)
@@ -956,7 +998,7 @@ async function connectForUpdate(status) {
 		await codecFromRadio(S.link, p, status);
 	}
 	const record = await buildRecord(p, r);
-	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record);
+	S.current = currentBuild(p, r, S.data.releases.filter((x) => x.board === r.id), S.data.reported, record, S.data.history);
 	S.decided = {};
 	planUpdate(S.current, S.selection, S.decided);
 	// a build the radio doesn't say: the build step, starting from the closest variant
@@ -1186,7 +1228,7 @@ function buildView() {
 	};
 	// Continue gets the image first: built on request, then on to the next step
 	const go = async () => {
-		if (!S.firmware && VERSION_REF && validRef(VERSION_REF)) {
+		if (!S.firmware && VERSION_REF && validRef(VERSION_REF) && channelNow().channel === "link") {
 			const yes = await confirmVersion();
 			if (!yes) return;
 			if (yes === "release") dropVersion(false);	// and go on with the release
@@ -1310,14 +1352,14 @@ function buildView() {
 		const busy = building && !S.build.error;
 		const missing = buildOptions().find((o) => !S.buildOptions?.[o.name]);
 		forward(button(busy ? [spinner(), t("flash.nav.building")] : t(missing ? "flash.nav.choose" : S.firmware || S.sim ? `flash.nav.to_${stepsFor()[S.step + 1]}`
-			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && versionShort() }), go, { primary: true, disabled: busy || !!missing }), summary);
+			: VERSION_REF ? "flash.nav.build_version" : "flash.nav.build", { what: missing?.title.toLowerCase(), ref: VERSION_REF && channelLabel(channelNow()) }), go, { primary: true, disabled: busy || !!missing }), summary);
 		// every image, prebuilt choice or not, comes from the build service (or is the user's own)
 		// the image's state, then building it yourself: one line and a fold under the features, not a card of its own
 		const image = h("div", { class: "build-image" },
 			S.firmware ? notice(t("flash.build.image_ready", { what: S.firmware.source }), "ok")
 				: building && S.build.error ? buildErrorNotice(S.build.error)
 				: building ? h("p", { class: "muted", role: "status" }, spinner(), S.build.text)
-				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: versionShort() })),
+				: h("p", { class: "small muted" }, t(S.sim ? "flash.sim.image" : VERSION_REF ? "flash.build.version_on_request" : "flash.build.on_request", { ref: VERSION_REF && channelLabel(channelNow()) })),
 			h("details", { class: "small" }, h("summary", {}, t("flash.build.self_title")),
 				h("p", {}, t("flash.build.self_text")), h("pre", {}, h("code", {}, sel.makeCommand(S.buildOptions))),
 				filePicker(t("flash.build.own_image"), ".bin", (f) => loadOwnImage(f, draw)),
@@ -1424,10 +1466,9 @@ async function requestBuild(redraw) {
 	S.build = { selection: key, text: t("flash.build.sending") };
 	redraw();
 	try {
-		const rels = S.data.releases.filter((x) => x.board === S.radio.id);
 		if (VERSION_REF && !validRef(VERSION_REF)) throw new Error(t("flash.version.bad", { ref: VERSION_REF }));
 		const id = useId();
-		let b = await api("POST", "builds", { board: S.radio.id, ref: VERSION_REF || (rels.length ? rels[rels.length - 1].version : defaultRef(S.data.site.branch)), features: [...sel.on].sort(),
+		let b = await api("POST", "builds", { board: S.radio.id, ref: channelNow().ref, features: [...sel.on].sort(),
 			options: S.buildOptions || {}, tool: "web", tool_version: S.data.site.version || "", task: "install", id, ...(id ? { languages: browserLanguages() } : {}) });
 		while (b.status === "queued" || b.status === "running") {
 			if (!current()) return;

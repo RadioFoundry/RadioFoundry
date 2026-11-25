@@ -2,10 +2,14 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 #
 # Nightly CI (docs/dev/ci.md): the long builds the per-push workflow leaves out, on the default branch.
-#   matrix       one job per toolchain (Arm, C-SKY), every board built with it from the registry: a build per feature
-#                switch turned off alone, fm-minimal and maximal, each with zero warnings and its size (tools/ci.sh
-#                --matrix --toolchain; about 4-5 minutes per board on the runner). C-SKY in the csky-elf image unless
-#                the runner has csky-elf GCC (skipped where the image isn't available)
+#   matrix       one job per board, from the registry, so the boards build side by side on the free runners: a build
+#                per feature switch turned off alone, fm-minimal and maximal, each with zero warnings and its size
+#                (tools/ci.sh --matrix --board; about 4-5 minutes per board). C-SKY in the csky-elf image unless the
+#                runner has csky-elf GCC (skipped where the image isn't available)
+#   host         the host tests in full (the long fuzz and audio runs pull requests shorten)
+#   mark         after every job passed: the nightly-ok cache entry (below) and the nightly-ci tag on this commit,
+#                which the nightly HIL run takes (tests/hil/README.md). On a failure, report opens or updates one
+#                "Nightly failing" issue naming the commits since the last pass
 #   reuse        `reuse lint`, reported as a warning until the tree passes it
 # A scheduled run builds only what changed since the last commit that passed: a successful run saves a cache entry
 # named after its commit (nightly-ok-<sha>, holding the sha), and the next scheduled run restores the newest one and
@@ -35,9 +39,12 @@ jobs:
     outputs:
       run: ${{ steps.decide.outputs.run }}
       reuse: ${{ steps.decide.outputs.reuse }}
+      boards: ${{ steps.boards.outputs.boards }}
+      last: ${{ steps.decide.outputs.last }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0   # the last passed commit must be here to diff against
           submodules: false
       # the newest nightly-ok-* entry: this commit's (an exact hit) or the last commit that passed (a prefix match)
@@ -50,12 +57,15 @@ jobs:
           key: nightly-ok-${{ github.sha }}
           restore-keys: nightly-ok-
       - id: decide
+        env:
+          CACHE_HIT: ${{ steps.tested.outputs.cache-hit }}
         run: |
           set -u
           decide() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "reuse=$2" >> "$GITHUB_OUTPUT"; echo "::notice::$3"; exit 0; }
-          [ "${{ github.event_name }}" = schedule ] || decide true true "run by hand"
-          [ "${{ steps.tested.outputs.cache-hit }}" = true ] && decide false false "${GITHUB_SHA::8} already passed a nightly run"
+          [ "$GITHUB_EVENT_NAME" = schedule ] || decide true true "run by hand"
+          [ "$CACHE_HIT" = true ] && decide false false "${GITHUB_SHA::8} already passed a nightly run"
           last=$(cat .nightly-ok/sha 2> /dev/null || true)
+          echo "last=$last" >> "$GITHUB_OUTPUT"
           [ -n "$last" ] || decide true true "no earlier nightly pass to compare with"
           git cat-file -e "$last^{commit}" 2> /dev/null || decide true true "last passed commit $last not in the history"
           git diff --name-only "$last" HEAD > "$RUNNER_TEMP/files"
@@ -67,6 +77,19 @@ jobs:
           fi
           { echo "run=false"; echo "reuse=true"; echo "mark=true"; } >> "$GITHUB_OUTPUT"
           echo "::notice::no firmware input changed since ${last::8} passed: matrix skipped, this commit counts as passed"
+      # every board in the registry with its toolchain: the matrix job's list
+      - name: Boards
+        id: boards
+        run: |
+          set -eu
+          list=""
+          for tc in arm csky; do
+            name=Arm; [ "$tc" = csky ] && name=C-SKY
+            for b in $(python3 tools/boards.py list --toolchain "$tc"); do
+              list="$list{\"toolchain\":\"$tc\",\"name\":\"$name\",\"board\":\"$b\"},"
+            done
+          done
+          echo "boards=[${list%,}]" >> "$GITHUB_OUTPUT"
       # nothing the builds read changed, so this commit's matrix would be the last pass's: record it as passed here,
       # without the mark job, so later nights diff against it
       - name: Remember that this commit passed
@@ -79,9 +102,9 @@ jobs:
           key: nightly-ok-${{ github.sha }}
 
   matrix:
-    # one job per toolchain: every board built with it in turn (tools/ci.sh --toolchain, from the registry), so the
-    # checkout, submodules and compiler are set up once per toolchain, not once per radio
-    name: matrix (${{ matrix.name }})
+    # one job per board (the registry's list from changes): side by side on the free runners, so the night's wall
+    # time is one board's matrix, not all of them in turn
+    name: matrix (${{ matrix.board }})
     needs: changes
     if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
     runs-on: ubuntu-24.04
@@ -89,17 +112,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # the [toolchain] ids of platform/*/platform.toml, with their names; a new platform on a toolchain listed here
-        # needs no edit, a new toolchain gets an entry here and its set-up in .github/actions/toolchain
-        include:
-          - { toolchain: arm, name: Arm }
-          - { toolchain: csky, name: C-SKY }
+        # a new board joins with no edit here; a new toolchain gets its id in the Boards step and its set-up in
+        # .github/actions/toolchain
+        include: ${{ fromJSON(needs.changes.outputs.boards) }}
     permissions:
       contents: read
       packages: read   # pulling a private ghcr.io csky-elf image with the job token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false   # tools/checkout-submodules.sh: the runner image's copies, then the network
       - name: third_party submodules
         run: tools/checkout-submodules.sh
@@ -114,14 +136,15 @@ jobs:
           # own token (packages: read)
           registry-user: ${{ vars.RFOUNDRY_CSKY_REGISTRY_USER || github.actor }}
           registry-token: ${{ secrets.RFOUNDRY_CSKY_REGISTRY_TOKEN || github.token }}
-      - name: Feature matrix of every board on the toolchain
+      - name: Feature matrix of the board
         env:
           RUN: ${{ steps.tc.outputs.run }}   # empty, or the csky-elf image's run.sh
           TOOLCHAIN: ${{ matrix.toolchain }}
+          BOARD: ${{ matrix.board }}
         run: |
           set -u
           rc=0
-          $RUN tools/ci.sh --matrix --steps firmware --toolchain "$TOOLCHAIN" || rc=$?
+          $RUN tools/ci.sh --matrix --steps firmware --board "$BOARD" || rc=$?
           if [ "$rc" = 3 ]; then
             echo "::notice::$TOOLCHAIN matrix skipped: the image ${RFOUNDRY_CSKY_IMAGE:-} isn't available on this runner (docs/dev/ci.md)"
             exit 0
@@ -131,9 +154,10 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9   # v7.0.2
         if: always()
         with:
-          name: matrix-${{ matrix.toolchain }}
+          name: matrix-${{ matrix.board }}
           path: |
             build/ci/size-report.md
+            build/ci/sizes.tsv
             build/ci/*.log
           if-no-files-found: ignore
 
@@ -145,6 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
         with:
+          persist-credentials: false
           submodules: false
       - name: reuse lint (a warning until the tree passes)
         run: |
@@ -155,15 +180,76 @@ jobs:
             echo "::warning::reuse lint does not pass yet (see the log; docs/dev/ci.md)"
           fi
 
+  host:
+    # the host tests in full: every fuzz iteration and the long audio runs (tests/host, HOST_SHORT unset)
+    needs: changes
+    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && (needs.changes.outputs.run == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Install tshark, numpy, pytest, pyserial
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            tshark python3-numpy python3-pytest python3-serial
+      - name: Host tests, full length
+        run: JOBS="$(nproc)" tools/ci.sh --steps host
+
   mark:
-    needs: [matrix]
-    if: (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true')
+    needs: [matrix, host]
+    if: always() && (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && needs.matrix.result == 'success' && needs.host.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: write   # the nightly-ci tag
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+        with:   # zizmor: ignore[artipacked] the next step pushes the tag nightly-ci; the job uploads no artifact
+          submodules: false
+          fetch-depth: 1
+      - name: Move nightly-ci to this commit (the nightly HIL run takes it)
+        run: |
+          git tag -f nightly-ci "$GITHUB_SHA"
+          git push -f origin refs/tags/nightly-ci
       - name: Remember that this commit passed
         run: mkdir -p .nightly-ok && echo "$GITHUB_SHA" > .nightly-ok/sha   # the next run diffs against it
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9   # v6.1.0
         with:
           path: .nightly-ok
           key: nightly-ok-${{ github.sha }}
+
+  report:
+    # one open "Nightly failing" issue: opened on the first failing night, a comment on each further one, closed by the
+    # next pass. Names the commits since the last pass, where the culprit is
+    needs: [changes, matrix, host, mark]
+    if: always() && (github.server_url != 'https://github.com' || vars.RFOUNDRY_CI_GITHUB == 'true') && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILED: ${{ contains(needs.*.result, 'failure') }}
+          # a pass is mark's success: a cancelled or skipped job neither fails the night nor closes the issue
+          PASSED: ${{ needs.mark.result == 'success' }}
+          LAST: ${{ needs.changes.outputs.last }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -eu
+          title="Nightly failing"
+          n=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number -q '.[0].number')
+          range="${LAST:-the start}..${GITHUB_SHA::8}"
+          if [ "$FAILED" = true ]; then
+            body="The nightly run failed on ${GITHUB_SHA::8}: $RUN_URL. Commits since the last pass: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/${LAST:-main}...$GITHUB_SHA ($range)."
+            if [ -n "$n" ]; then gh issue comment "$n" -R "$GITHUB_REPOSITORY" --body "$body"
+            else gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --label regression --body "$body" ||
+                 gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"; fi
+          elif [ "$PASSED" = true ] && [ -n "$n" ]; then
+            gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "The nightly run passed on ${GITHUB_SHA::8}: $RUN_URL."
+          fi
