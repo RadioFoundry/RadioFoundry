@@ -141,6 +141,7 @@ static AIR_ISR void copy_on(hrc7000_air_t *a)
 	w(a, C7_SYS_INTERP_CLEAR, C7_SYS_FM_RX | SYS_PHY_RDY);
 	w(a, C7_SYS_INTERP_MASK, C7_SYS_FM_RX | SYS_PHY_RDY);
 	a->gap = true;		// the next half does not follow what the ring holds
+	a->t_copy = now(a);
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	a->copy = true;
 }
@@ -180,6 +181,7 @@ static AIR_ISR void take_half(hrc7000_air_t *a, uint32_t t)
 	if (h - a->tail > HRC7000_AIR_RING - HALF) {
 		a->st.overruns++;
 		a->gap = true;		// the samples after the ring's are not the next ones
+		a->t_copy = t;		// a half came: the reader, not the copy, is behind (a tap nobody reads for a while)
 		return;
 	}
 	if (hrc7000_fm_rx_audio(a->dev, &a->buf->ring[h % HRC7000_AIR_RING]) == 0) {
@@ -189,6 +191,7 @@ static AIR_ISR void take_half(hrc7000_air_t *a, uint32_t t)
 	a->t_half[(h / HALF) % 2u] = t - (HALF - 1u) * SAMPLE_US;
 	a->gap_half[(h / HALF) % 2u] = a->gap;	// the task's receiver starts over at this half
 	a->gap = false;
+	a->t_copy = t;		// a half taken holds the watchdog off; an interrupt with no half (no_half) does not
 	__atomic_thread_fence(__ATOMIC_RELEASE);
 	a->head = h + HALF;
 	a->st.halves++;
@@ -586,6 +589,15 @@ void hrc7000_air_poll(hrc7000_air_t *a)
 			a->st.stalls++;		// no slot clock or no RF TX interrupt: never leave the PA up without them
 			tx_stop(a, t, true);
 		}
+	}
+	// A copy request lost for good (modem-hrc7000.md 3.3): a request line still high after the interrupt took the
+	// request never interrupts again, and receive goes deaf. No half for 200 ms: the request cleared, the copy set up
+	// again. The halted slot engine's own check (dmr.modem_stuck) does not run in a session
+	if ((a->open || a->tap) && a->copy && a->tx == HRC7000_AIR_RX && !a->suspended &&
+	    (uint32_t)(now(a) - a->t_copy) > AIR_COPY_STALL_US) {
+		a->st.copy_restarts++;
+		w(a, C7_SYS_INTERP_CLEAR, r(a, C7_SYS_INTERP_LIST));
+		copy_on(a);
 	}
 	unlock(a);
 	if (a->open && !a->tap && (a->fit & AIR_FIT_RX) != 0) {

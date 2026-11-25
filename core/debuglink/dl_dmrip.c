@@ -217,7 +217,7 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 		// RADIO, PTT, KEY: only inside a detour. CHIP_REG, AUDIO_PROBE (register writes no deadline undoes),
 		// CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
 		// restart or the radio handed over), DMR_DATA, APRS, SNMP, SPLIT, AIR (transmissions or modes outside the
-		// radio core's checks): never
+		// radio core's checks), SATELLITE (stored records), and SUPPORT and anything newer until listed here: never
 		return false;
 	}
 }

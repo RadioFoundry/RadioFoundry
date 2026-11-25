@@ -23,10 +23,7 @@ extern uint32_t SystemCoreClock;
 #else
 #define configMINIMAL_STACK_SIZE		128
 #endif
-#define configAPPLICATION_ALLOCATED_HEAP	1		// ucHeap in the CCM (board.c): every task stack is there
-#ifndef configTOTAL_HEAP_SIZE
-#define configTOTAL_HEAP_SIZE			(28 * 1024)	// task stacks (about 20 KB with DMR: audio 5 KB, radio 3 KB), queues
-#endif
+// No configTOTAL_HEAP_SIZE: the heap (heap_5) is the rest of the CCM, from the linker (ccm.c, common.ld)
 #define configMAX_TASK_NAME_LEN			12
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1

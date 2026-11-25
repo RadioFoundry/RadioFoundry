@@ -160,11 +160,12 @@ static void test_air_policy(void)
 	static const uint8_t refused[] = { DL_CMD_RADIO, DL_CMD_PTT, DL_CMD_KEY, DL_CMD_CHIP_REG, DL_CMD_AUDIO_PROBE,
 					   DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3, DL_CMD_STORAGE, DL_CMD_HWOPT,
 					   DL_CMD_REBOOT, DL_CMD_STUB, DL_CMD_CRASH, DL_CMD_WATCHDOG, DL_CMD_RX2,
-					   DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP };
+					   DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP, DL_CMD_SPLIT, DL_CMD_AIR,
+					   DL_CMD_SUPPORT, DL_CMD_SATELLITE };
 	for (unsigned i = 0; i < sizeof(refused); i++) {
 		CHECK(!dl_dmrip_air_allowed(refused[i], z, 1), "0x%02x refused", refused[i]);
 	}
-	for (unsigned c = 0x27; c < 0x80; c++) {
+	for (unsigned c = DL_CMD_DMRIP + 1u; c < 0x80; c++) {
 		CHECK(!dl_dmrip_air_allowed((uint8_t)c, z, 1), "unknown 0x%02x refused", c);
 	}
 	const uint8_t st = DL_DMRIP_OP_STATUS, key = DL_DMRIP_OP_KEY;

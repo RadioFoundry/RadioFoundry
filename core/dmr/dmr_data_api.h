@@ -35,7 +35,8 @@ typedef enum {
 	DMR_SMS_FORMAT_TMS = 0,		// Motorola TMS (IP / UDP 4007; CONFIG_DMR_TMS)
 	DMR_SMS_FORMAT_ETSI = 1,	// ETSI defined short data, ISO 8859-1 text (docs/spec/dmr-data.md 5.2)
 	DMR_SMS_FORMAT_ETSI_IP = 2,	// ETSI IP text, UTF-16BE on UDP 5016 (docs/spec/dmr-data.md 5.3): the default
-	DMR_SMS_FORMAT_DEFAULT = 0xFF,	// sms_send only: the radio's setting (dmrDataSettings_t.smsFormat)
+	DMR_SMS_FORMAT_T3_UDT = 3,	// Tier III control-channel short data with UTF-16BE text
+	DMR_SMS_FORMAT_DEFAULT = 0xFF,	// send: use the radio setting; setting: choose the format from the channel
 } dmr_sms_format_t;
 
 // One UDP datagram on the current DMR channel (its only user so far: the crash report, CONFIG_CRASH_REPORT)

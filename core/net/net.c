@@ -15,15 +15,13 @@
 #include "usbaudio/usrp_net.h"
 #endif
 
+#if CONFIG_NET_TCP || CONFIG_NET_RADIO_UDP
+#include "net/net_svc.h"
+#endif
+
 static bool was_up;
 
-#if CONFIG_NET_TCP
-#include "net/tcp.h"
-#include "net/net_svc.h"
-
-#define IP_PROTO_TCP	6
-
-#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL
+#if CONFIG_NET_HTTP || CONFIG_NET_RIGCTL || CONFIG_NET_RADIO_UDP
 #include "hostlink/hostlink_view.h"
 
 const radio_view_t *net_radio_view(void)
@@ -32,6 +30,11 @@ const radio_view_t *net_radio_view(void)
 	return &hostlink_view;
 }
 #endif
+
+#if CONFIG_NET_TCP
+#include "net/tcp.h"
+
+#define IP_PROTO_TCP	6
 
 #if CONFIG_NET_KISS || CONFIG_NET_APRSIS
 #include "aprs/aprs.h"
@@ -158,6 +161,9 @@ void net_start(uint32_t salt)
 #if CONFIG_NET_USRP
 	usrp_net_start();
 #endif
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_start();
+#endif
 #if CONFIG_NET_TCP
 	tcp_init(&io, salt);
 	ipGatewaySetTCP(tcp_in);
@@ -199,6 +205,9 @@ void net_poll(uint32_t now_ms, bool link_up)
 		return;
 	}
 	was_up = true;
+#if CONFIG_NET_RADIO_UDP
+	radio_udp_poll(now_ms);	// requests held back by the rate limit, and the change notices
+#endif
 #if CONFIG_NET_APRSIS
 	aprsis_poll(now_ms);
 #endif

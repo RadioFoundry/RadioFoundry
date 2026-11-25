@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 
 import { CodeplugImage, CODEPLUG_SPAN } from "../static/js/codeplug/image.js";
 import { decode, encode, empty, remove, validate, newChannel, newContact, refNumber, listenBand } from "../static/js/codeplug/model.js";
-import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes } from "../static/js/codeplug/fields.js";
+import { getTone, putTone, parseTone, parseFreq, mhz, getCoord, coordBytes, putName, getName, nameBytes } from "../static/js/codeplug/fields.js";
 import * as iddb from "../static/js/codeplug/iddb.js";
 import { blankChannel, decodeChannel, encodeChannel } from "../static/js/codeplug/records.js";
 import { targets } from "../static/js/flasher/restore.js";
@@ -173,7 +173,7 @@ test("a channel's tone burst byte filled with 0xFF is not set, and is never writ
 	r[0x2A] = 0xFF;
 	const c = decodeChannel(r);
 	assert.equal(c.toneBurst, false);
-	assert.equal(encodeChannel(c, r.slice())[0x2A], 0xBF);
+	assert.equal(encodeChannel(c, r.slice())[0x2A], 0x8F);
 	c.toneBurst = true;
 	const on = encodeChannel(c, r.slice());
 	assert.equal(on[0x2A], 0xCF);
@@ -181,6 +181,26 @@ test("a channel's tone burst byte filled with 0xFF is not set, and is never writ
 	// a byte with other bits clear is as before
 	r[0x2A] = 0x40;
 	assert.equal(decodeChannel(r).toneBurst, true);
+});
+
+test("a channel's Accept invalid CRC is bits 5-4 of byte 0x2A = 2; 0xFF and 0xBF read as off", () => {
+	// open-firmware-cps.md 7.3.3: 0xBF is what earlier writers left with the tone burst off
+	const m = empty();
+	m.channels.push(newChannel({ name: "Site", rxHz: 461462500, txHz: 461462500, mode: "dmr" }));
+	const r = encodeChannel(m.channels[0], blankChannel());
+	for (const b of [0xFF, 0xBF, 0x30, 0x10, 0x00]) {
+		r[0x2A] = b;
+		assert.equal(decodeChannel(r).acceptBadCrc, false, b.toString(16));
+	}
+	r[0x2A] = 0xBF;
+	const c = decodeChannel(r);
+	c.acceptBadCrc = true;
+	const on = encodeChannel(c, r.slice());
+	assert.equal(on[0x2A], 0xAF);
+	assert.equal(decodeChannel(on).acceptBadCrc, true);
+	assert.equal(decodeChannel(on).toneBurst, false);
+	c.acceptBadCrc = false;
+	assert.equal(encodeChannel(c, on.slice())[0x2A], 0x8F);
 });
 
 test("an edit rewrites only what changed", () => {
@@ -217,13 +237,26 @@ test("validation finds the problems the radio would refuse", () => {
 	assert.deepEqual(codes, ["bad_freq", "bad_tone", "id_range", "too_many"]);
 });
 
-test("the air band and broadcast FM are receive only: a TX frequency there without RX Only, or a DMR channel, is warned", () => {
+test("the air band and broadcast FM are receive only: a DMR channel there is warned", () => {
 	assert.deepEqual([64990000, 65000000, 107990000, 108000000, 136990000, 137000000].map(listenBand), [null, "bcast", "bcast", "air", "air", null]);
 	const m = empty();
 	const ch = (name, rxHz, mode, rxOnly) => newChannel({ name, rxHz, txHz: rxHz, mode, rxOnly });
 	m.channels.push(ch("c0", 118100000, "fm", true), ch("c1", 98500000, "fm", false), ch("c2", 121500000, "dmr", true), ch("c3", 146520000, "fm", false));
 	const warned = validate(m).filter((p) => p.code.startsWith("listen_")).map((p) => [p.item.name, p.code]);
-	assert.deepEqual(warned, [["c1", "listen_tx_bcast"], ["c2", "listen_dmr_air"]]);
+	assert.deepEqual(warned, [["c2", "listen_dmr_air"]]);
+});
+
+test("a channel read with RX in a listen band and another TX frequency gets RX Only and TX on RX (#924)", () => {
+	const m = empty();
+	// as a radio or an older editor stored it: RX in the air band, TX left on 446.00625, not RX only
+	m.channels.push(newChannel({ name: "Air", rxHz: 122950000, txHz: 446006250, rxOnly: false }),
+		newChannel({ name: "Split", rxHz: 146520000, txHz: 446006250, rxOnly: false }),
+		newChannel({ name: "TxAir", rxHz: 146520000, txHz: 121500000, rxOnly: false }));
+	const back = decode(encode(m));
+	assert.deepEqual(back.channels.map((c) => [c.name, c.txHz, c.rxOnly]),
+		[["Air", 122950000, true], ["Split", 446006250, false], ["TxAir", 121500000, true]]);
+	// and the image saved or written from it says the same
+	assert.deepEqual(decode(encode(back)).channels.map((c) => c.txHz), [122950000, 446006250, 121500000]);
 });
 
 test("the DMR ID database is found by the radio across both areas", () => {
@@ -277,6 +310,50 @@ test("longer database text is kept up to 48 characters", () => {
 	iddb.write(img, [{ id: 9991234, text: "Q0TST Charlie Lawson Atlanta Georgia United States" }], { textLen: 48 });
 	const got = simDetail(img, [9991234]).split("\n").filter((l) => l.startsWith("iddb 9"));
 	assert.deepEqual(got, ['iddb 9991234 "Q0TST Charlie Lawson Atlanta Georgia United Stat"']);
+});
+
+test("a name keeps Latin-1 middot and degree bytes, not the font glyph bytes", () => {
+	// "·" (U+00B7) and "°" (U+00B0) are Latin-1 bytes B7 and B0; putName must keep them as such (TEXT_TO_BYTE no longer
+	// maps them), and getName must read them back as the characters
+	const n = new Uint8Array(16).fill(0xFF);
+	putName(n, 0, n.length, "A·B°C");
+	assert.equal(n[1], 0xB7);
+	assert.equal(n[3], 0xB0);
+	assert.equal(getName(n, 0, n.length), "A·B°C");
+});
+
+test("a Chinese name round-trips as UTF-8 and nameBytes counts it in bytes", () => {
+	// 中 = E4 B8 AD, 道 = E9 81 93
+	assert.equal(nameBytes("中道"), 6);
+	assert.equal(nameBytes("A·B"), 3);	// the middot kept as one Latin-1 byte
+	const n = new Uint8Array(16).fill(0xFF);
+	putName(n, 0, n.length, "中道");
+	assert.deepEqual([...n.slice(0, 6)], [0xE4, 0xB8, 0xAD, 0xE9, 0x81, 0x93]);
+	assert.equal(getName(n, 0, n.length), "中道");
+	// a mixed Latin-1 and UTF-8 name round-trips too
+	const m = new Uint8Array(16).fill(0xFF);
+	putName(m, 0, m.length, "A中");
+	assert.deepEqual([...m.slice(0, 4)], [0x41, 0xE4, 0xB8, 0xAD]);
+	assert.equal(getName(m, 0, m.length), "A中");
+});
+
+test("font glyph bytes 0x80-0x85 round-trip, a name's 0xFF terminator stops reading", () => {
+	// 0x80-0x85 are the font's extra glyphs with no Latin-1 byte (…, middle dot, →, degree, ⤒, ⤓). A codeplug that
+	// already holds them must decode and save back to the same bytes, not turn them into '?'
+	for (const b of [0x80, 0x81, 0x82, 0x83, 0x84, 0x85]) {
+		const field = new Uint8Array(16).fill(0xFF);
+		field[0] = b;
+		const text = getName(field, 0, field.length);
+		const saved = new Uint8Array(16).fill(0xFF);
+		putName(saved, 0, saved.length, text);
+		assert.equal(saved[0], b, `glyph byte 0x${b.toString(16)} round-trips`);
+	}
+	// ÿ (U+00FF) is the name terminator, not a Latin-1 letter the field can hold: putName writes '?' for it
+	const y = new Uint8Array(16).fill(0xFF);
+	putName(y, 0, y.length, "ÿ");
+	assert.equal(y[0], 0x3F);
+	assert.equal(getName(y, 0, y.length), "?");
+	assert.equal(nameBytes("ÿ"), 1);
 });
 
 // --- Reaching the radio (transport.js) against a simulated radio ---

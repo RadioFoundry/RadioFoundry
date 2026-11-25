@@ -29,6 +29,9 @@
 #if CONFIG_POSITION
 #include "position/position.h"
 #endif
+#if CONFIG_SATELLITE_TLE
+#include "satellite/service.h"
+#endif
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #endif
@@ -57,6 +60,14 @@ static radio_settings_t shared_settings;	// the published copy, under view_lock
 // settings are the ones in force soon, so radio_get_settings answers with them
 static uint32_t settings_sent, settings_taken, settings_published;
 static radio_view_t shared_view;	// the published copy, under view_lock
+#if CONFIG_SATELLITE_TLE
+static radio_satellite_view_t shared_satellite_view;
+// A static for now, not pvPortMalloc: the RTOS heap holds every task stack and, where it is only the CPU RAM the statics
+// leave, has no room for this. Zeroed at start-up like any .bss
+static satellite_service_t satellite_service_state;
+static satellite_service_t *const satellite_service = &satellite_service_state;
+static SemaphoreHandle_t satellite_lock;
+#endif
 #if CONFIG_P25
 static radio_p25_settings_t pending_p25;	// radio_req_p25_settings -> the radio task, under view_lock
 #endif
@@ -90,11 +101,13 @@ static QueueHandle_t requests;
 
 static volatile uint32_t req_handled, req_dropped;
 
-static void send(const radio_req_t *req, TickType_t wait)
+static bool send(const radio_req_t *req, TickType_t wait)
 {
 	if (xQueueSend(requests, req, wait) != pdTRUE) {
 		req_dropped++;	// the queue was full: the request is lost
+		return false;
 	}
+	return true;
 }
 
 #if CONFIG_DMR
@@ -128,12 +141,28 @@ static void hs_post(const radio_req_t *req, bool must)
 
 static void publish(void)
 {
+#if CONFIG_SATELLITE_TLE
+	satellite_service_live_view_t satellite_live;
+	satellite_service_live_view(satellite_service, &satellite_live);
+#endif
 	xSemaphoreTake(view_lock, portMAX_DELAY);
 #if CONFIG_DMR_TRUNK
 	radio_sm_t3_brief(&sm);
 	shared_t3 = radio_t3v;
 #endif
 	shared_view = sm.view;
+#if CONFIG_SATELLITE_TLE
+	shared_satellite_view.tracking = sm.satellite_view;
+	shared_satellite_view.valid = sm.satellite_view.tracking && satellite_live.pass_valid;
+	shared_satellite_view.visible_now = shared_satellite_view.valid && satellite_live.pass_visible_now;
+	shared_satellite_view.los_known = shared_satellite_view.valid && satellite_live.pass_los_known;
+	shared_satellite_view.horizon_clipped =
+		shared_satellite_view.valid && satellite_live.pass_horizon_clipped;
+	shared_satellite_view.aos_in_s = satellite_live.aos_in_s;
+	shared_satellite_view.los_in_s = satellite_live.los_in_s;
+	shared_satellite_view.maximum_elevation_tenths = satellite_live.maximum_elevation_tenths;
+	shared_satellite_view.elevation_tenths = satellite_live.elevation_tenths;
+#endif
 	dtmf_ready = sm.view.dtmf_ready;
 	radio_sm_shown_view(&sm, &shared_view);	// a roaming survey visit: the screens keep the site it left
 	shared_serial = sm.serial;
@@ -166,11 +195,73 @@ static void publish(void)
 	bench_ack = sm.bench_seq;
 #endif
 }
+static void apply_pending_settings(void)
+{
+	radio_settings_t set;
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	set = pending_settings;
+	settings_taken = settings_sent;
+	xSemaphoreGive(view_lock);
+	radio_sm_set_settings(&sm, &set, hal_millis());
+}
+
+
+#if CONFIG_SATELLITE_TLE
+static satellite_service_channel_t satellite_channel(void)
+{
+	return (satellite_service_channel_t){
+		.vfo = sm.view.vfo,
+		.vfo_index = sm.view.vfo_index,
+		.zone_index = sm.view.zone_index,
+		.zone_pos = sm.view.zone_pos,
+		.channel_number = sm.view.channel_number,
+		.hotspot = sm.view.hotspot,
+		.scan = sm.view.scan,
+	};
+}
+
+static void satellite_apply_update(const satellite_service_update_t *update, uint32_t now_ms)
+{
+	radio_sm_satellite_update(&sm, update->tracking, update->record_index, update->status,
+				  update->nominal_rx_hz, update->nominal_tx_hz, update->tx_tone_tenths,
+				  update->override_active, update->targets.rx_hz, update->targets.tx_hz,
+				  update->targets.rx_offset_hz, update->targets.tx_offset_hz, now_ms);
+}
+
+static void satellite_request(bool enabled, uint8_t record_index, uint32_t now_ms)
+{
+	satellite_service_update_t update;
+	satellite_service_channel_t channel = satellite_channel();
+	satellite_service_tracking_request(satellite_service, enabled, record_index, now_ms, &channel, &update);
+	satellite_apply_update(&update, now_ms);
+}
+
+static void satellite_scan_request(bool enabled, uint32_t now_ms)
+{
+	satellite_service_update_t update;
+	bool changed = satellite_service_scan_request(satellite_service, enabled, now_ms, &update);
+	if (changed)
+		satellite_apply_update(&update, now_ms);
+}
+
+static void satellite_run(uint32_t now_ms)
+{
+	satellite_service_channel_t channel = satellite_channel();
+	satellite_service_update_t update;
+	satellite_service_scan_step(satellite_service, now_ms);
+	bool changed = satellite_service_tick(satellite_service, now_ms, &channel, &update);
+	if (changed)
+		satellite_apply_update(&update, now_ms);
+}
+#endif
 
 
 static void radio_task(void *arg)
 {
 	(void)arg;
+#if CONFIG_SATELLITE_TLE
+	satellite_service_init(satellite_service);
+#endif
 	TickType_t period = pdMS_TO_TICKS(RADIO_POLL_MS);
 	TickType_t tick_period = pdMS_TO_TICKS(RADIO_TICK_MS);
 	TickType_t next_poll = xTaskGetTickCount() + period;
@@ -208,13 +299,17 @@ static void radio_task(void *arg)
 					radio_sm_request(&sm, &req, hal_millis());
 #endif
 				} else if (req.type == RREQ_SETTINGS) {
-					radio_settings_t set;
-					xSemaphoreTake(view_lock, portMAX_DELAY);
-					set = pending_settings;
-					settings_taken = settings_sent;
-					xSemaphoreGive(view_lock);
-					radio_sm_set_settings(&sm, &set, hal_millis());
-				} else {
+					apply_pending_settings();
+				}
+#if CONFIG_SATELLITE_TLE
+				else if (req.type == RREQ_SATELLITE_TRACK) {
+					satellite_request(req.arg != 0, (uint8_t)req.arg2, hal_millis());
+				}
+				else if (req.type == RREQ_SATELLITE_SCAN) {
+					satellite_scan_request(req.arg != 0, hal_millis());
+				}
+#endif
+				else {
 					radio_sm_request(&sm, &req, hal_millis());
 				}
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
@@ -227,6 +322,9 @@ static void radio_task(void *arg)
 				next_tick = now + tick_period;	// a wake's tick counts as the next one
 			}
 		}
+		#if CONFIG_SATELLITE_TLE
+		satellite_run(hal_millis());
+		#endif
 		if ((int32_t)(now - next_poll) >= 0) {
 			radio_sm_poll(&sm, hal_millis());
 #if CONFIG_HOTSPOT
@@ -254,6 +352,16 @@ static void copy_lock(void) { vTaskSuspendAll(); }
 static void copy_unlock(void) { (void)xTaskResumeAll(); }
 #endif
 
+#if CONFIG_SATELLITE_TLE
+static void satellite_set_locked(bool locked)
+{
+	if (locked)
+		xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	else
+		xSemaphoreGive(satellite_lock);
+}
+#endif
+
 void radio_core_start(void)
 {
 #if CONFIG_APRS
@@ -271,6 +379,11 @@ void radio_core_start(void)
 	view_lock = xSemaphoreCreateMutex();
 	requests = xQueueCreate(RADIO_QUEUE_LEN, sizeof(radio_req_t));
 	configASSERT(view_lock != NULL && requests != NULL);
+#if CONFIG_SATELLITE_TLE
+	satellite_lock = xSemaphoreCreateMutex();
+	configASSERT(satellite_lock != NULL);
+	satellite_service_set_lock(satellite_set_locked);
+#endif
 #if CONFIG_ZONE_WRITE
 	// A zone add or delete a power cut interrupted: the saved zone indexes match the zones before the radio core reads
 	// them. Here, not in radio_sm_init: its frame isn't live under the settings save down to the flash driver
@@ -309,6 +422,134 @@ void radio_get_view(radio_view_t *v)
 	*v = shared_view;
 	xSemaphoreGive(view_lock);
 }
+
+void radio_get_channel_profile(channel_t *ch)
+{
+	if (ch == NULL)
+		return;
+	if (view_lock == NULL) {
+		memset(ch, 0, sizeof(*ch));
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*ch = shared_view.ch;
+#if CONFIG_SATELLITE_TLE
+	if (shared_satellite_view.tracking.tracking) {
+		if (shared_satellite_view.tracking.nominal_rx_hz != 0u)
+			ch->rx_hz = shared_satellite_view.tracking.nominal_rx_hz;
+		if (shared_satellite_view.tracking.nominal_tx_hz != 0u)
+			ch->tx_hz = shared_satellite_view.tracking.nominal_tx_hz;
+	}
+#endif
+	xSemaphoreGive(view_lock);
+}
+
+#if CONFIG_SATELLITE_TLE
+bool radio_get_satellite_path(satellite_path_view_t *path)
+{
+	if (path == NULL)
+		return false;
+	if (satellite_lock == NULL) {
+		memset(path, 0, sizeof(*path));
+		return false;
+	}
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	satellite_service_path_view(satellite_service, path);
+	xSemaphoreGive(satellite_lock);
+	return true;
+}
+
+bool radio_get_satellite_view(radio_satellite_view_t *view)
+{
+	if (view == NULL)
+		return false;
+	if (view_lock == NULL) {
+		memset(view, 0, sizeof(*view));
+		return false;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*view = shared_satellite_view;
+	xSemaphoreGive(view_lock);
+	return true;
+}
+
+void radio_req_satellite_scan(bool enabled)
+{
+	if (requests == NULL)
+		return;
+	radio_req_t req = { .type = RREQ_SATELLITE_SCAN, .arg = enabled };
+	send(&req, 0);
+}
+
+void radio_get_satellite_scan(uint8_t *status, uint8_t *completed, uint8_t *total, uint8_t *passes)
+{
+	if (satellite_lock == NULL) {
+		if (status != NULL) *status = RADIO_SAT_SCAN_IDLE;
+		if (completed != NULL) *completed = 0u;
+		if (total != NULL) *total = 0u;
+		if (passes != NULL) *passes = 0u;
+		return;
+	}
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	satellite_service_scan_state(satellite_service, status, completed, total, passes, NULL, NULL);
+	xSemaphoreGive(satellite_lock);
+}
+
+bool radio_get_satellite_pass(uint8_t rank, radio_satellite_pass_t *pass)
+{
+	if (pass == NULL || satellite_lock == NULL)
+		return false;
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	uint32_t packed;
+	int64_t aos_s;
+	int64_t scan_start_utc_s;
+	uint32_t scan_start_ms;
+	satellite_service_scan_state(satellite_service, NULL, NULL, NULL, NULL,
+				    &scan_start_utc_s, &scan_start_ms);
+	if (!satellite_service_scan_result(satellite_service, rank, &packed, &aos_s)) {
+		xSemaphoreGive(satellite_lock);
+		return false;
+	}
+	uint32_t now_ms = hal_millis();
+	int64_t now_utc_s = scan_start_utc_s + (uint32_t)(now_ms - scan_start_ms) / 1000u;
+	pass->record_index = satellite_pass_summary_index(packed);
+	pass->aos_minutes = satellite_pass_eta_minutes(aos_s, now_utc_s);
+	pass->maximum_elevation_deg = satellite_pass_summary_maximum_elevation(packed);
+	pass->visible_now = satellite_pass_summary_visible_now(packed);
+	xSemaphoreGive(satellite_lock);
+	return true;
+}
+
+bool radio_get_satellite_pass_summary(uint8_t record_index, satellite_record_brief_t *summary)
+{
+	if (summary == NULL || satellite_lock == NULL)
+		return false;
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	bool valid = satellite_service_summary(satellite_service, record_index, summary);
+	xSemaphoreGive(satellite_lock);
+	return valid;
+}
+
+bool radio_get_satellite_oldest_tle_epoch(uint32_t *epoch)
+{
+	if (epoch == NULL || satellite_lock == NULL)
+		return false;
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	bool valid = satellite_service_oldest_tle_epoch(satellite_service, epoch);
+	xSemaphoreGive(satellite_lock);
+	return valid;
+}
+
+uint32_t radio_get_satellite_generation(void)
+{
+	if (satellite_lock == NULL)
+		return satellite_store_generation();
+	xSemaphoreTake(satellite_lock, portMAX_DELAY);
+	uint32_t generation = satellite_service->store_generation;
+	xSemaphoreGive(satellite_lock);
+	return generation;
+}
+#endif
 
 #if CONFIG_DMR_TRUNK
 void radio_with_t3_view(void (*fn)(const radio_t3_view_t *x, void *ctx), void *ctx)
@@ -378,6 +619,16 @@ void radio_req_zone(uint16_t index) { post(RREQ_ZONE, index, 0); }
 void radio_req_vfo(bool on) { post(RREQ_VFO, on, 0); }
 void radio_req_vfo_step(int8_t dir) { post(RREQ_VFO_STEP, dir, 0); }
 void radio_req_vfo_copy(void) { post(RREQ_VFO_COPY, 0, 0); }
+#if CONFIG_SATELLITE_TLE
+bool radio_req_satellite_tracking(bool enabled, uint8_t record_index)
+{
+	if (requests == NULL)
+		return false;
+	radio_req_t req = { .type = RREQ_SATELLITE_TRACK, .arg = enabled, .arg2 = record_index };
+	return send(&req, 0);
+}
+void radio_req_satellite_arm(void) { post(RREQ_SATELLITE_ARM, 0, 0); }
+#endif
 
 radio_vfo_copy_t radio_req_vfo_copy_checked(void)
 {

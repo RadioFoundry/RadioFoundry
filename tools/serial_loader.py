@@ -89,12 +89,17 @@ ACK, NAK, CRC_REQ, SOH, STX, EOT = 0x06, 0x15, 0x43, 0x01, 0x02, 0x04
 STEP_TIMEOUT = 2.0                      # steps 1-6 and every 1 KB block
 ERASE_TIMEOUT = 30.0                    # step 7: the radio erases the application area (up to about 15 s)
 RETRIES = 4                             # resends of a block the radio refuses (NAK) or doesn't answer
+OPEN_SETTLE = 0.5                       # after opening the port, before step 1 (SerialPort)
+STRAY_MAX = 8                           # bytes read past at step 1 before 0x52 is sent again
+STRAY_WAIT = 0.3                        # for each further byte after a stray one
+LATE_ACK_WAIT = 0.2                     # after step 1, for late answers to a repeated 0x52, which are dropped
 
 # USB-serial bridges used in programming cables: (VID, PID, name)
 USB_SERIAL = [
     (0x1A86, 0x7523, "CH340"), (0x1A86, 0x5523, "CH341"), (0x1A86, 0x55D4, "CH9102"),
     (0x0403, 0x6001, "FTDI FT232R"), (0x0403, 0x6015, "FTDI FT231X"), (0x0403, 0x6010, "FTDI FT2232"),
     (0x0403, 0x6014, "FTDI FT232H"), (0x10C4, 0xEA60, "CP210x"), (0x067B, 0x2303, "PL2303"),
+    (0x2100, 0x9E5D, "FTDI (RT Systems USB-K4Y)"),
 ]
 
 def update_mode_hint(model=None):
@@ -244,16 +249,32 @@ class Flasher:
     def handshake(self):
         self.port.reset_input_buffer()
         # step 1, a few times: the radio may still be starting when the user presses Enter
+        # A byte other than 06 at step 1 used to end the flash at once. On a PL2303 programming cable a stray byte has
+        # answered step 1 even after the open's settle (00 three times, then 10, after the radio's own firmware had
+        # been talking on the line): line noise, not the loader, and since the loader answers only once per power-on
+        # each such stop cost a power cycle. So a few stray bytes are read past and 0x52 is sent again, within the
+        # same three tries; nothing in the radio changes before the erase at step 7, so a repeat costs nothing. A
+        # radio that answers only with other bytes (its firmware is running) still gets the hint below
+        stray = b""
         for attempt in range(3):
             self.port.write(bytes([0x52]))
             got = self.read_exact(1, self.step_timeout)
+            n = 0
+            while got and got != bytes([ACK]) and n < STRAY_MAX:
+                stray += got
+                n += 1
+                got = self.read_exact(1, STRAY_WAIT)
             if got == bytes([ACK]):
                 break
-            if got:
-                raise FlashError("step 1: the radio answered %s, expected 06. If the screen is on, the radio runs "
-                                 "its firmware, not the bootloader: %s" % (hexs(got), update_mode_hint(self.model)))
         else:
+            if stray:
+                raise FlashError("step 1: the radio answered %s, never 06. If the screen is on, the radio runs its "
+                                 "firmware, not the bootloader: %s" % (hexs(stray[:16]), update_mode_hint(self.model)))
             raise FlashError("step 1: no answer: " + update_mode_hint(self.model))
+        # A repeated 0x52 can be answered late, and that 06 would be read as step 2's answer (seen: 06 06 06 where
+        # 4D 01 09 was due, and the power-on lost). Wait for any late answers and drop them
+        time.sleep(LATE_ACK_WAIT)
+        self.port.reset_input_buffer()
         self.exchange(2, bytes([0x4D, 0, 0, 0, 1]), bytes([0x4D, 0x01, 0x09]))
         self.exchange(3, bytes([ACK]), self.model.magic, what=" (model)")
         self.exchange(4, bytes([0x45, 0, 0, 0, 0]), bytes([ACK]))
@@ -369,6 +390,12 @@ class SerialPort:
             self.s.set_low_latency_mode(True)
         except (AttributeError, NotImplementedError, OSError, ValueError):
             pass
+        # Let the line settle before step 1. On a PL2303 programming cable a 0x52 sent straight after the open was
+        # answered 00 twice, and the loader answers only once per power-on, so each try cost a power cycle; the same
+        # 0x52 sent 0.5 s after the open was answered 06. Opening the port most likely glitches the line into a byte
+        # the loader takes as step 1. Whatever arrived meanwhile is not an answer to anything we sent
+        time.sleep(OPEN_SETTLE)
+        self.s.reset_input_buffer()
 
     def write(self, b):
         self.s.write(b)

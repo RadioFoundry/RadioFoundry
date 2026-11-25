@@ -56,6 +56,11 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define CH_DMR_ID	0x27u
 #define CH_SFR_B	0x2Au	// SFR byte B (ours); bit 6 the FM tone burst, read without the SFR flag
 #define SFRB_TONE_BURST	0x40u
+// Bits 5-4: 2 = accept a failed CRC on control messages and LC (channel_t.accept_bad_crc); any other value is off.
+// A pattern, not one bit, so the 0xFF a writer fills unknown bytes with, and the 0xBF earlier versions of ours left
+// there, read as off
+#define SFRB_BAD_CRC_MASK	0x30u
+#define SFRB_BAD_CRC_ON		0x20u
 #define CH_RX_GROUP	0x2Bu
 #define CH_CC		0x2Cu
 #define CH_CONTACT	0x2Eu
@@ -277,14 +282,15 @@ static void copy_name(char *dst, const uint8_t *src, unsigned len)
 	dst[n] = '\0';
 }
 
-// A name field: the text, then 0xFF padding
+// A name field: the text, then 0xFF padding. A 0xFF byte in the text would end the field there, so it is written as '?',
+// the byte the CPS writes for a character a name can't hold (U+00FF): the name is never cut where it stood
 static void put_name(uint8_t *dst, const char *src, unsigned len)
 {
 	unsigned n = 0;
 	memset(dst, 0xFF, len);
 	while (n < len && src[n] != '\0') {
-		dst[n] = (uint8_t)src[n];
-		n++;
+		uint8_t c = (uint8_t)src[n];
+		dst[n++] = c == 0xFFu ? '?' : c;
 	}
 }
 
@@ -314,15 +320,32 @@ static void set_used(uint16_t number, bool on)
 	}
 }
 
-// A Latin-1 name field (codeplug-stock-tyt.md 2): printable text (0x20-0x7E, 0xA0-0xFE) up to the first 0x00 or
-// 0xFF, only 0x00 or 0xFF after it. A UTF-16 name fails: its second byte is 0x00 and printable bytes follow
-static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
+// A single byte of a name field: printable ASCII, a Latin-1 byte (U+00A0..U+00FE, one byte), or a font.h glyph byte
+// (0x80..0x85). Control bytes (0x01-0x1F) and 0x7F-0x9F are invalid, except the glyph bytes 0x80-0x85 that sit in
+// that range
+static bool name_byte_ok(uint8_t c)
+{
+	if (c >= 0x20u && c <= 0x7Eu) {
+		return true;				// printable ASCII
+	}
+	if (c >= 0x80u && c <= 0x85u) {
+		return true;				// font.h's glyph bytes
+	}
+	if (c >= 0xA0u && c <= 0xFEu) {
+		return true;				// Latin-1 printable
+	}
+	return false;					// 0x00, 0xFF, 0x01-0x1F, 0x7F, 0x86-0x9F
+}
+
+// A name field: printable text up to the first 0x00 or 0xFF, only 0x00 or 0xFF after it. The text the CPS or the radio
+// writes is ASCII and Latin-1 (U+00A0..U+00FF) one byte each, font.h's glyph bytes (0x80..0x85) too, and 3-byte UTF-8
+// sequences for the rest (a Chinese name). Latin-1 and UTF-8 mix freely: a valid UTF-8 sequence where there is one and a
+// Latin-1 byte where there isn't. A 3-byte lead (0xE0-0xEF) without its two continuation bytes is a Latin-1 byte (à, ï, …),
+// so "Café" or "à la" stays valid; a control byte (0x01-0x1F, 0x7F) or a stray continuation byte (0x86-0x9F) is invalid
+bool name_field_ok(const uint8_t *p, unsigned len, bool *empty)
 {
 	unsigned n = 0;
 	while (n < len && p[n] != 0x00 && p[n] != 0xFF) {
-		if (p[n] < 0x20u || (p[n] > 0x7Eu && p[n] < 0xA0u)) {
-			return false;
-		}
 		n++;
 	}
 	*empty = n == 0;
@@ -331,6 +354,27 @@ static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 			return false;
 		}
 	}
+	if (n == 0) {
+		return true;
+	}
+	for (unsigned i = 0; i < n; ) {
+		uint8_t c = p[i];
+		// A 3-byte UTF-8 sequence (the face covers the BMP only): a lead 0xE0-0xEF with two
+		// continuation bytes. Without two continuations it is a Latin-1 byte, accepted below.
+		if ((c & 0xF0u) == 0xE0u && i + 2 < n &&
+				(p[i + 1] & 0xC0u) == 0x80u && (p[i + 2] & 0xC0u) == 0x80u) {
+			uint32_t cp = ((uint32_t)(c & 0x0Fu) << 12) | ((uint32_t)(p[i + 1] & 0x3Fu) << 6) | (p[i + 2] & 0x3Fu);
+			if (cp >= 0x800u) {		// not overlong
+				i += 3;
+				continue;
+			}
+		}
+		// a single byte: ASCII, a Latin-1 byte, or a font glyph byte (0x80-0x85); invalid otherwise
+		if (!name_byte_ok(c)) {
+			return false;
+		}
+		i += 1;
+	}
 	return true;
 }
 
@@ -338,7 +382,7 @@ static bool latin_name(const uint8_t *p, unsigned len, bool *empty)
 static void named(const uint8_t *p)
 {
 	bool empty;
-	if (latin_name(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
+	if (name_field_ok(p, CODEPLUG_NAME_LEN, &empty) && !empty) {
 		ev_good++;
 	} else {
 		ev_bad++;
@@ -670,6 +714,7 @@ bool codeplug_openfw_decode(const uint8_t *r, channel_t *out)
 	out->no_eco = (r[CH_LFLAG1] & LFLAG1_NO_ECO) != 0;
 	out->roam = (r[CH_LFLAG1] & LFLAG1_ROAM) != 0;
 	out->tone_burst = r[CH_SFR_B] != 0xFFu && (r[CH_SFR_B] & SFRB_TONE_BURST) != 0;	// 0xFF: a writer that fills unknown bytes
+	out->accept_bad_crc = (r[CH_SFR_B] & SFRB_BAD_CRC_MASK) == SFRB_BAD_CRC_ON;
 	if (r[CH_LFLAG1] & LFLAG1_SFR) {
 		out->sfr_flag1 = LFLAG1_SFR;
 		out->sfr_a = r[CH_SFR_A];
@@ -715,12 +760,10 @@ void codeplug_openfw_encode(const channel_t *ch, uint8_t *r)
 	r[CH_LFLAG1] = (uint8_t)((r[CH_LFLAG1] & ~(LFLAG1_ID | LFLAG1_NO_BEEP | LFLAG1_NO_ECO | LFLAG1_DMO)) |
 				 (ch->dmr_id != 0 ? LFLAG1_ID : 0) | (ch->no_beep ? LFLAG1_NO_BEEP : 0) |
 				 (ch->no_eco ? LFLAG1_NO_ECO : 0) | (ch->dmo ? LFLAG1_DMO : 0));
-	// The rest of SFR byte B is kept as read (the SFR fields are read only here). Never 0xFF, which reads as "not
-	// set": with the burst on over a byte a writer filled, the unused bits 5-4 are cleared
-	r[CH_SFR_B] = (uint8_t)((r[CH_SFR_B] & ~SFRB_TONE_BURST) | (ch->tone_burst ? SFRB_TONE_BURST : 0));
-	if (r[CH_SFR_B] == 0xFFu) {
-		r[CH_SFR_B] = 0xCFu;
-	}
+	// The rest of SFR byte B is kept as read (the SFR fields are read only here). Bits 5-4 are always written, so the
+	// byte is never 0xFF, which reads as "not set"
+	r[CH_SFR_B] = (uint8_t)((r[CH_SFR_B] & ~(SFRB_TONE_BURST | SFRB_BAD_CRC_MASK)) |
+				(ch->tone_burst ? SFRB_TONE_BURST : 0) | (ch->accept_bad_crc ? SFRB_BAD_CRC_ON : 0));
 	uint32_t tot = (ch->tot_s + 14u) / 15u;
 	r[CH_TOT] = (uint8_t)(tot > 255u ? 255u : tot);
 	// Each timeslot's talker alias field: its text bit and its position (APRS) bit

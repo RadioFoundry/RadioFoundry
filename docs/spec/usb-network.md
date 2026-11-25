@@ -29,13 +29,14 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   apply (there is no DTR); the 20 s idle timeout does.
 - The tools find a radio in network mode by themselves when no serial port (1FC9:0094) is there
   (`tools/rfoundry/rfoundry/debuglink.py` `find_network_radios`): from each of the host's addresses the radio's is
-  worked out (individual addressing: the host's address xor 1; a fixed link: the host's address - 1, section 5.3) and
+  worked out (individual addressing: the host has 13.<DMR ID>, the radio 12.<DMR ID>; a fixed link: the host's
+  address - 1, section 5.3) and
   the one that answers the debug link's VERSION on UDP 3334 is used as `udp:<address>`. `rfoundry_debug.py`,
   `cps_client.py`, the `rfoundry` installer and the HIL take it without `--port`. `stubtool.py --rfoundry-enter` with no
   port loads the stub over UDP; the stub enumerates as the serial port, and the write ends with a reset, after which
   the radio starts in the personality its stored setting says. Nothing is changed or restored in the settings.
   A host without a radio in network mode is not probed: on Linux only the addresses of an adapter with the radio's
-  USB identity (1FC9:0096) count; elsewhere only a host address in 12.0.0.0/8, so a fixed link there needs
+  USB identity (1FC9:0096) count; elsewhere only a host address in 13.0.0.0/8, so a fixed link there needs
   `--port udp:<address>`. With a serial radio plugged in the search doesn't run at all.
 - A web page can send neither UDP nor, from an https page, plain http requests, and the OS network driver holds the
   adapter's interfaces. Two requests (switch `CONFIG_USB_SERIAL_REQUEST`, on with `CONFIG_USB_NETWORK`; the TCP address
@@ -52,8 +53,9 @@ adapter (`pid_network`), with their own descriptors. Switching drops the D+ pull
   is the radio's own, answered from that address. A page can't know the radio's own address, and a sandboxed browser
   (Flatpak, Snap) resolves no `.local` name. It is reached by the route to the individual range the radio's DHCP
   gives (option 121 / 249, section 5.3), so not from a host that ignores that option or routes the address
-  elsewhere: the tab then shows the browser's error and nothing changes. Only TCP: UDP and ICMP to the address go
-  the way they always did. No DMR ID has it (it is the radio's address on a shared link, section 3.1).
+  elsewhere: the tab then shows the browser's error and nothing changes. TCP is answered, as is ping; UDP and SCTP
+  get an ICMP error and never go over the air (section 3). No radio has the address: DMR ID 0xFFFFFE is in the
+  all unit range 0xFFFFF0-0xFFFFFF (TS 102 361-1 Annex A), and 12.255.255.255 next to it stays the all call (3.1).
 
   After the job a page sends op 25 (network) over the serial port, or leaves it: a restart, as at the end of a
   firmware update, puts the radio back in network mode when the stored setting is on.
@@ -89,9 +91,10 @@ iMACAddress) ends in an even byte, the radio's side of the link is the same addr
 
 ## 3. The gateway (core/dmr/ipGateway.c, core/hostlink/hostlink_net.c)
 
-Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGateway.h` describes: the host gets
-12.<DMR ID>/32 by DHCP, the radio is that address xor 1, radios are 12.x.y.z and talkgroups 225.x.y.z. Control station
-mode can replace the link pair with a fixed one (5.3).
+Addressing, ARP, DHCP, ping and the raw and monitor ports are as `core/dmr/ipGateway.h` describes. They follow the
+CAI networks of TS 102 361-3 5.1.1: the radio is 12.<DMR ID> (the radio network), the host gets 13.<DMR ID>/32 by
+DHCP (the radio's peripheral network: the host is the radio's peripheral), other radios are 12.x.y.z, their
+peripherals 13.x.y.z and talkgroups 225.x.y.z. Control station mode can replace the link pair with a fixed one (5.3).
 
 - Host to air: IP for a radio ID or talkgroup, with a gateway ID any other unicast address (3.1), and datagrams to
   the raw port, go to the air ops registered with `hostlink_net_set_air()` (radio ID, IP to air, raw data as SAP 10).
@@ -121,7 +124,15 @@ mode can replace the link pair with a fixed one (5.3).
   the radio's address go to the one TCP handler (`ipGatewaySetTCP`, [tcp-services.md](tcp-services.md)); UDP
   datagrams to the radio's address, or to the link-local block 224.0.0.0/24, on a port in the gateway's one table
   (`ipGatewayUdpBind`, at most `IPGW_UDP_PORTS` = 8) go to that service, from any source address on the link.
-  224.0.0.0/24 never goes over the air, bound or not. A port bound with `ipGatewayUdpBindAir` also takes UDP received
+  224.0.0.0/24 never goes over the air, bound or not. Nor does anything to the radio's address 12.<DMR ID> or to
+  12.255.255.254 (`IPGW_ANY_RADIO_IP`, section 1): both are the radio. UDP from the host to a port there that no
+  service has (and not the serial port 3334), and SCTP, get an ICMP destination unreachable, port or protocol
+  unreachable (RFC 792, RFC 1122 3.2.2.1), from the radio's address, quoting the IP header and 8 octets, counted as
+  `net_svc.unreachable`. The services answer UDP at the radio's address only, so at 12.255.255.254 every UDP port is
+  unreachable. 12.<DMR ID + 1> or any other radio's address is another radio and goes over the air.
+  TCP to the radio goes to the radio's TCP (a RST for a port the TCP doesn't serve,
+  `tcp-services.md` 2), or is dropped without `CONFIG_NET_TCP`.
+  A port bound with `ipGatewayUdpBindAir` also takes UDP received
   over the air for our own DMR ID and its address (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
   radio task, link up or not) instead of the host, with the sender's DMR ID and `fromAir` set; the service answers
   over the air itself. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`), SNMP on
@@ -148,8 +159,9 @@ not built yet.
 
 A data packet carries DMR IDs, and with the full IPv4 header (SAP 4) also IPv4 addresses. The two need not agree:
 a packet to a gateway radio's DMR ID may carry the address of a host behind that radio. The compressed header (SAP 3)
-has no addresses, so a receiver rebuilds them from the IDs as 12.x.y.z (radio) and 225.x.y.z (talkgroup). A packet
-goes compressed only when both of its addresses are these ([dmr-data.md](dmr-data.md) 11.1).
+has no addresses, so a receiver rebuilds them from the IDs and the header's SAID and DAID (TS 102 361-3 5.1.1,
+[dmr-data.md](dmr-data.md) 11.1): 12.x.y.z for the radio (ID 0), 13.x.y.z for its peripheral (ID 1, the host on the
+USB link) and 225.x.y.z for a talkgroup (ID 2). A packet goes compressed only when both of its addresses are these.
 
 Host to air, by the IPv4 destination, first match:
 
@@ -158,13 +170,17 @@ Host to air, by the IPv4 destination, first match:
 | the all call, 255.255.255.255, the link broadcast (UDP to 4000-4099 or the raw port only) | all call 16777215, group | 225.255.255.255 | 1 |
 | the group range, the multicast range | the talkgroup | 225.x.y.z | 1 |
 | the individual range | the radio | 12.x.y.z | the host's |
+| the peripheral range (13.x.y.z, not the host's own) | the radio with that ID | 13.x.y.z | the host's |
 | any other unicast address, with a gateway ID set | the gateway ID, individual | the address as sent | the host's less 1; dropped at 1 or 0 |
 | anything else | not sent | | |
 
-- The IP source on the air is always our own ID's address (12.x.y.z of the channel's DMR ID): the host's link
-  address means nothing on the air, and an answer must come back to this radio.
+- The IP source on the air is the host's address 13.<our DMR ID> (SAID 1 in the compressed header): an answer comes
+  back to this radio, which gives it to the host. Two cases send as the radio itself, 12.<our DMR ID> (SAID 0):
+  passthrough (5.2), where the PC answers for the radio, and a fixed link (5.3), whose 192.168.10.x addresses mean
+  nothing on the air. The radio's own services send from 12.<our DMR ID> too.
 - "Any other unicast address" excludes 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 224.0.0.0 and up, the gateway's own
-  ranges, the radio's and the host's addresses, and on a fixed link the link's /24. Datagrams to the raw port never
+  ranges (12/8, 13/8, 225/8 and the group range), the radio's and the host's addresses, and on a fixed link the
+  link's /24. Datagrams to the raw port never
   take the off-net route: raw data has no header to carry the address.
 - No ICMP time exceeded goes back for a packet dropped at TTL 1. A packet with TTL 0 is dropped on every route.
 - Group packets always go with TTL 1: the air is the group's one hop, so no gateway that hears one routes it on.
@@ -180,14 +196,18 @@ Air to host: the IP addresses come from the header (SAP 4) or from the IDs (SAP 
 |---|---|
 | the CAI address of the DMR destination (exactly 12.x.y.z / 225.x.y.z) | as before: our ID's to the host's address and MAC, a talkgroup's to its multicast group, the all call to the broadcast, another radio's to its address in the individual range at the monitor MAC |
 | our own ID's address in another form (12.x.y.z or the individual range) | the host's address and MAC |
+| our own ID's peripheral address 13.<ID> (DAID 1 in the compressed header) | the host's address and MAC; never the radio's own services |
+| another radio's peripheral address 13.x.y.z | the monitor MAC, the address in the peripheral range |
 | a multicast group, 255.255.255.255 | its multicast MAC, the broadcast |
 | another unicast address, in a packet to our DMR ID | the host's MAC, the address kept: we are the gateway, the host routes it on |
 | another unicast address, between other radios | the monitor MAC, the address kept |
 | 0.0.0.0/8, 127.0.0.0/8 | dropped |
 
-The source is the sender's address in the individual range when it is the sender ID's CAI address, else kept as it is.
-A kept source must be an off-net address: one in the individual range or 12.0.0.0/8 would pass for another radio, and
-the host's, the radio's, the link's or a group's isn't from the air. The packet is dropped otherwise.
+The source is the sender's address in the individual range when it is the sender ID's CAI address, the sender's
+address in the peripheral range when it is the sender ID's 13.x.y.z (SAID 1), else kept as it is. A kept source must
+be an off-net address: one in the individual or peripheral range, 12.0.0.0/8 or 13.0.0.0/8 would pass for another
+radio or its host, and the host's, the radio's, the link's or a group's isn't from the air. The packet is dropped
+otherwise.
 
 The packet reaches the host with the TTL it had on the air (TTL 1 for a talkgroup, 64 for SAP 3 to a radio), so a
 packet that goes round a loop of gateway radios runs out. One with TTL 0 is dropped.
@@ -281,8 +301,11 @@ PC can't send it.
 | call alert, radio check, emergency alarm (CSBK) | answered by the radio per its settings | unchanged |
 | the TMS ACK of a message the radio's own user sent | completes it | still completes it (nothing is sent) |
 
-The PC's replies (and anything else it sends to a radio ID or talkgroup) go out as now: built by the radio with its own
-DMR ID as the source, so to the fleet they come from the control station. The data service counts what it left to the
+The PC's replies (and anything else it sends to a radio ID or talkgroup) are built by the radio with its own DMR ID
+as the source. In passthrough the IP source is the radio's own address 12.<ID> (SAID 0), not the PC's 13.<ID>: the
+PC answers for the radio, so to the fleet they come from the control station itself, and the fleet's answers come
+back to the radio's address, which belongs to the PC. Without passthrough the PC sends as the radio's peripheral,
+13.<ID> (3.1). A packet to 13.<ID> (DAID 1) reaches the PC in either mode. The data service counts what it left to the
 PC in `data.pt_yielded` and shows `data.pt_active` (debug link section `dmr_ext`). Spec of the data side:
 `dmr-data.md` 10.
 
@@ -295,24 +318,25 @@ depend on them:
 
 | | By DMR ID (default) | Fixed link |
 |---|---|---|
-| radio | 12.<ID> xor 1 | `net_link_ip`, default 192.168.10.1 |
-| host (DHCP) | 12.<ID>/32 | the next address, 192.168.10.2, netmask 255.255.255.0 |
-| option 121 / 249 | the radio on the link, 12/8 and 225/8 via the radio | 12/8 and 225/8 (and the group range) via the radio |
+| radio | 12.<ID> | `net_link_ip`, default 192.168.10.1 |
+| host (DHCP) | 13.<ID>/32 | the next address, 192.168.10.2, netmask 255.255.255.0 |
+| option 121 / 249 | the radio on the link, 12/8, 13/8 and 225/8 (and the group range) via the radio | 12/8, 13/8 and 225/8 (and the group range) via the radio |
+| IP source on the air for the host's packets | 13.<ID> (SAID 1); 12.<ID> in passthrough | 12.<ID> (SAID 0) |
 | ARP answered | every address but the host's | the radio's address only |
-| packets to the radio's own ID from the air | to 12.<ID> (the host's address) | rewritten to the host's fixed address |
+| packets to the radio's own ID from the air | rewritten to 13.<ID> (the host's address) | rewritten to the host's fixed address |
 | broadcasts to the host (all call, monitor) | 255.255.255.255 | 255.255.255.255 |
 | host to air broadcast | 255.255.255.255, the all call address | also the link's 192.168.10.255 |
 | radios per host | several (each has its own pair) | one (every radio has the same pair) |
 
-`net_link_ip` must be a unicast address outside the 12/8, 225/8 (and group) ranges with a last octet of 1-253;
+`net_link_ip` must be a unicast address outside the 12/8, 13/8, 225/8 (and group) ranges with a last octet of 1-253;
 anything else (or 0) means the default 192.168.10.1 when set from the UI, or the DMR ID addressing when the debug link
 stores an unusable address (`ipGatewaySetFixedLink` refuses it; `net.link_in_force` shows what is used). A change
 applies at once on the radio's side; the PC picks it up at its next DHCP exchange (the radio refuses the renewal of
 the old address, so at the latest when the 10 min lease runs out; unplugging the cable is quicker).
 
 What the dispatch application must be told, in either mode: the control station's IP address (the radio's link
-address: 192.168.10.1 or 12.<ID> xor 1), the radio network 12.0.0.0/8 for radio IDs and 225.0.0.0/8 for talkgroups
-(already routed through the radio by DHCP), the radio's own DMR ID, the data ports (ARS 4005, TMS 4007, LRRP 4001,
+address: 192.168.10.1 or 12.<ID>), the radio network 12.0.0.0/8 for radio IDs, 13.0.0.0/8 for their peripherals and
+225.0.0.0/8 for talkgroups (already routed through the radio by DHCP), the radio's own DMR ID, the data ports (ARS 4005, TMS 4007, LRRP 4001,
 ETSI text 5016). Headers on the air follow the radio's compression setting (`dmr-data.md` 11: by default UDP
 outside 4000-4099, ETSI text 5016 among them, goes with the SAP 3 compressed header; set `ip.compress` off for
 full IPv4 headers). An application that expects to talk to

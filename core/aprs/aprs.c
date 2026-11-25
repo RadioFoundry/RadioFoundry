@@ -62,6 +62,7 @@ static void cfg_from_settings(const settings_t *s, aprs_cfg_t *c)
 	c->messaging = (f2 & SETTINGS_APRS2_MESSAGING) != 0;
 	c->dmr_udt = (f2 & SETTINGS_APRS2_DMR_UDT) != 0;
 	c->to_is = (f2 & SETTINGS_APRS2_TO_IS) != 0;
+	c->mute = (f2 & SETTINGS_APRS2_MUTE) != 0;
 	c->region = s->aprs_region < APRS_REGION_COUNT ? s->aprs_region : APRS_REGION_NA;
 	c->ssid = s->aprs_ssid <= 15 ? s->aprs_ssid : APRS_SSID_DEFAULT;
 	c->freq_hz = s->aprs_freq_hz;
@@ -97,6 +98,7 @@ static void cfg_to_settings(const aprs_cfg_t *c, settings_t *s)
 	s->aprs_flags2 = (uint8_t)((c->igate ? SETTINGS_APRS2_IGATE : 0) | (c->igate_tx ? SETTINGS_APRS2_IGATE_TX : 0) |
 				   (c->messaging ? SETTINGS_APRS2_MESSAGING : 0) |
 				   (c->dmr_udt ? SETTINGS_APRS2_DMR_UDT : 0) | (c->to_is ? SETTINGS_APRS2_TO_IS : 0) |
+				   (c->mute ? SETTINGS_APRS2_MUTE : 0) |
 				   (s->aprs_flags2 & SETTINGS_APRS2_DMR_GPS));
 	s->aprs_region = c->region;
 	s->aprs_ssid = c->ssid;
@@ -144,7 +146,9 @@ static void apply_cfg(void)
 	b->min_s = AUTO_MIN_S;
 }
 
-static void reload_cfg(void)
+// noinline: inlined, its settings copy stays in reload_cfg's frame under aprs_ax25_identity's own copy and codeplug
+// read, the radio task's deepest path on an FM-only build (docs/dev/stack-check.md)
+static void __attribute__((noinline)) load_cfg(void)
 {
 	settings_t st;
 	aprs_cfg_t c;
@@ -154,6 +158,11 @@ static void reload_cfg(void)
 	aprs_s.cfg = c;
 	apply_cfg();
 	UNLOCK();
+}
+
+static void reload_cfg(void)
+{
+	load_cfg();
 	aprs_ax25_identity();
 }
 

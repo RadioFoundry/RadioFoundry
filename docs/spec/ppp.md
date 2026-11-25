@@ -73,8 +73,8 @@ timer 3 s, Max-Configure 10, Max-Terminate 2, Max-Failure 5 (then Nak'd options 
 ## 3. IPCP (RFC 1332)
 
 Only option 3, IP-Address. The radio knows both ends, the same pair the USB network adapter's DHCP hands out
-(`core/dmr/ipGateway.h`): the radio is `ipGatewayRadioIP()`, the host `ipGatewayHostIP()` (12.<DMR ID>, or the
-control station's fixed link, `usb-network.md` 5.3). So the gateway, the services and the addressing rules behave
+(`core/dmr/ipGateway.h`): the radio is `ipGatewayRadioIP()` (12.<DMR ID>), the host `ipGatewayHostIP()` (13.<DMR ID>,
+or the control station's fixed link, `usb-network.md` 5.3). So the gateway, the services and the addressing rules behave
 exactly as on the adapter.
 
 - Our request carries our address. The peer's request is Ack'd when it carries the host's address and Nak'd to it
@@ -82,7 +82,8 @@ exactly as on the adapter.
 - VJ compression (option 2), the old IP-Addresses (1), the DNS and NBNS options are rejected.
 - We don't adopt a Nak of our own address: don't give pppd a remote address.
 
-pppd installs a host route to the radio only. The radio IDs (12.0.0.0/8) and talkgroups (225.0.0.0/8) need routes
+pppd installs a host route to the radio only. The radio IDs (12.0.0.0/8), their peripherals (13.0.0.0/8) and
+talkgroups (225.0.0.0/8) need routes
 through the PPP interface, as the adapter's DHCP option 121 gives: `tools/rfoundry_ppp.sh` adds them.
 
 ## 4. PPP as a personality of the host port
@@ -140,17 +141,17 @@ It runs, in effect:
 ```
 pppd PORT 115200 noauth local nocrtscts noipdefault nodefaultroute novj noccp \
      lcp-echo-interval 10 lcp-echo-failure 3 unit 7 updetach
-route: 12.0.0.0/8 and 225.0.0.0/8 through ppp7
+route: 12.0.0.0/8, 13.0.0.0/8 and 225.0.0.0/8 through ppp7
 ```
 
 `local` and `nocrtscts`: the programming cable has no modem lines. `noccp`, `novj`: we refuse them anyway (pppd
-copes with the rejects; the options save a round trip). Then, with the radio at 12.0.39.20 (DMR ID 10005):
+copes with the rejects; the options save a round trip). Then, with the radio at 12.0.39.21 (DMR ID 10005):
 
 ```
-ping 12.0.39.20
-tools/rfoundry_debug.py --port udp:12.0.39.20 view
-curl http://12.0.39.20/
-python3 tools/rfoundry_snmp.py get 12.0.39.20 sysName.0
+ping 12.0.39.21
+tools/rfoundry_debug.py --port udp:12.0.39.21 view
+curl http://12.0.39.21/
+python3 tools/rfoundry_snmp.py get 12.0.39.21 sysName.0
 python3 tools/tftp_client.py ...                     # tftp.md
 ```
 
@@ -218,7 +219,7 @@ PPP itself is about 3.9 KB flash (`ppp.o` 3,386, `hostlink_ppp.o` 480) and 90 B 
   One board first set no `board.netif`. LCP and IPCP still opened, but nothing the gateway sent reached
   the host (no ping reply). This test catches that without root or pppd.
 - `test_ppp_link` (`tests/hil/test_ppp_link.py`, radio only): a PPP peer in user space (`tests/hil/ppp_client.py`, no
-  pppd, no root) on the debug link's serial port. LCP and IPCP open with the host at 12.<DMR ID>, a 56 and a 500 byte
+  pppd, no root) on the debug link's serial port. LCP and IPCP open with the host at 13.<DMR ID> and the radio at 12.<DMR ID>, a 56 and a 500 byte
   ping (every byte value, so the escapes both ways) come back, the debug link answers over UDP 3334 through the link
   with `ppp.lcp` and `ppp.ipcp` at 9, `usb.net_up=1` and no `ppp.rx_errors`, and after LCP Terminate the serial debug
   link answers again with `ppp.running=0`. Over the same link: HTTP `/status` and a 404 (the client's own minimal

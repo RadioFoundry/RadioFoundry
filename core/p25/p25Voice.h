@@ -76,7 +76,10 @@ typedef struct {
 	uint32_t tx_encoded;	// mic blocks encoded
 	uint32_t tx_dropped;	// encoded frames dropped, queue full (the engine took none in time)
 	uint32_t tx_silent;	// of tx_encoded, the frames the encoder made silence frames (no signal at all)
-	uint32_t tx_mic_peak;	// largest mic sample (absolute, after the gain) in the latest transmission
+	uint32_t tx_mic_peak;	// largest mic sample (absolute, after the gain and its limiter) in the latest transmission
+	// The mic gain's limiter in the latest transmission (core/dsp/miclimit.h): the lowest gain it used, Q8 (the set
+	// gain when it never cut; 256 at unity, which skips it)
+	uint32_t tx_mic_low_q8;
 } p25_voice_stats_t;
 
 // The board's PCM audio (NULL: frames are counted, nothing plays). Once, at start-up
@@ -88,8 +91,11 @@ void p25VoicePoll(void);
 // A transmission starts (the stream starts if it was not running; from the next block the mic is encoded) or ends.
 // Radio task, around the engine's transmit calls
 void p25VoiceTx(bool on);
-// The mic samples' gain step, as ambeVoiceSetMicGain (radio/mic_gain.h). Any task
-void p25VoiceSetMicGain(uint8_t step);
+// Microphone gain for P25 transmissions, Q8 (256 = as the board delivers it), through the same peak limiter as DMR's
+// (core/dsp/miclimit.h). Any task; a transmission starts at the gain set then and follows a change from its next
+// block. Set through radio_set_mic_gain (radio/mic_gain.h), with the same gain DMR gets: the Mic gain step where the
+// board doesn't take it, plus the board's hal_radio_t.mic_pcm_db
+void p25VoiceSetMicGainQ8(uint16_t q8);
 // Stop (radio task, after p25_engine_end): the stream stops and mem is free again
 void p25VoiceEnd(void);
 // Whether the voice stream runs (its callback owns hal_audio_t). Radio task only

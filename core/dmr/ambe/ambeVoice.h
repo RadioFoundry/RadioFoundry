@@ -54,6 +54,10 @@ typedef struct {
 	uint32_t rx_repeats;	// good frames whose parameter bits equal the call's previous good frame
 	uint32_t tx_repeats;	// encoded frames whose parameter bits equal the transmission's previous frame
 	uint32_t tx_mic_peak;	// largest mic sample (absolute) the board delivered in the latest transmission: 0 = no mic
+	// The mic gain's limiter in the latest transmission (core/dsp/miclimit.h): the lowest gain it used, Q8 (the
+	// set gain when it never cut; 256 at unity, which skips it), and the largest sample the encoder got after the gain
+	uint32_t tx_mic_low_q8;
+	uint32_t tx_enc_peak;
 	uint32_t tx_frames;	// frames encoded
 	uint32_t tx_overflows;	// encoded frames dropped, queue full (the stack didn't pull)
 	// What the mic delivered in the latest transmission, block by block (20 ms), to tell speech from a cut or
@@ -83,10 +87,11 @@ bool ambeVoiceStreaming(void);
 // block, adds into it and returns true while it sounds (the speaker route is kept on for it). NULL = none
 typedef bool (*ambe_voice_mixer_t)(int16_t *spk);
 void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
-// Microphone gain for DMR transmissions (Settings > Talk & listen > Mic gain): step 0..10, 2 dB a step, 5 = as the
-// board delivers it (the samples are scaled, with saturation, before the vocoder). Any task. Set through
-// radio_set_mic_gain (radio/mic_gain.h), which keeps it at 5 when the board applies the gain itself
-void ambeVoiceSetMicGain(uint8_t step);
+// Microphone gain for DMR transmissions, Q8 (256 = as the board delivers it): the samples go through a peak limiter
+// (core/dsp/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
+// a transmission starts at the gain set then and follows a change from its next block. Set through radio_set_mic_gain
+// (radio/mic_gain.h): the Mic gain step where the board doesn't take it, plus the board's hal_radio_t.mic_pcm_db
+void ambeVoiceSetMicGainQ8(uint16_t q8);
 // Test signal for DMR transmissions (the debug link's RADIO op 33, RAM only): on, the encoder gets a generated tone
 // that changes pitch every 60 ms in place of the mic, so an over carries known, varying audio whatever the mic hears
 // (the HIL audio smoke test). Any task
