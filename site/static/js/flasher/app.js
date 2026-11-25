@@ -830,7 +830,7 @@ function render() {
 	trail.sync(S.task ? `${S.task}/${S.step}` : "");
 	app.replaceChildren();
 	document.querySelector(".page-head")?.classList.toggle("compact", !!S.task);
-	if (!S.task) return app.append(...[versionBanner() || betaNotice(), startView()].filter(Boolean));
+	if (!S.task) return app.append(...[versionBanner(), startView()].filter(Boolean));
 	const steps = stepsFor();
 	const label = (s) => (S.radio && backend().stepLabel?.(s, S.task)) || s;
 	const stepper = () => h("ol", { class: "stepper" }, stepsFor().map((s, i) =>

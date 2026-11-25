@@ -1080,3 +1080,20 @@ test("the backup after a first install reads through the loader the new build of
 	const done = src.slice(src.indexOf("function doneView()"));
 	assert.match(done.slice(0, done.indexOf("backupNow(")), /afterOffer: f4Board\(\) \? await Stub\.rfoundryOffer\(link\) : null/);
 });
+
+// app.js needs the DOM, so its source is checked: every function render() calls by name is one app.js declares or
+// imports. A call to one that was removed throws only on the page, and render() draws every step (the start page too)
+test("render() calls only functions app.js declares or imports", () => {
+	const src = readFileSync(new URL("../static/js/flasher/app.js", import.meta.url), "utf8");
+	const start = src.indexOf("\nfunction render() {");
+	assert.ok(start > 0, "render() found");
+	const body = src.slice(start, src.indexOf("\n}\n", start)).replace(/"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""')
+		.replace(/\/\/.*$/gm, "");
+	const known = new Set(["if", "for", "while", "switch", "return", "typeof", "function"]);
+	for (const m of src.matchAll(/^(?:async\s+)?(?:function\s*\*?|class|const|let)\s+([\w$]+)/gm)) known.add(m[1]);
+	for (const m of src.matchAll(/^import\s*\{([^}]*)\}/gm)) for (const n of m[1].split(",")) known.add(n.trim().split(/\s+as\s+/).pop());
+	for (const m of body.matchAll(/\b(?:const|let)\s+([\w$]+)/g)) known.add(m[1]);
+	for (const m of body.matchAll(/\(([\w$, ]*)\)\s*=>|([\w$]+)\s*=>/g)) for (const n of (m[1] ?? m[2]).split(",")) known.add(n.trim());
+	const called = [...body.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(/g)].map((m) => m[1]);
+	assert.deepEqual([...new Set(called)].filter((n) => !known.has(n) && !(n in globalThis)), []);
+});
