@@ -122,6 +122,9 @@ def test_dmrip_over_the_air(radio, pytestconfig):
         with pytest.raises(DebugLinkError) as e:
             air.request(CHIP_REG, struct.pack("<BBB", 0, 0, 0))
         assert e.value.status == ST_REFUSED
+        with pytest.raises(DebugLinkError) as e:
+            air.chip()          # the UID gives the default key: never sent on the air
+        assert e.value.status == ST_REFUSED
 
     with DebugLink(spec, dmrip_key=bytes(range(16)).hex()) as wrong:
         wrong.s.timeout, wrong.s.tries = 3.0, 1

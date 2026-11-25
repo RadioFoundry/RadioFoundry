@@ -47,12 +47,11 @@ class ReplyLost(DmripError):
     sent again. Read the state the request changed (DETOUR STATUS, the view) to learn what happened"""
 
 
-# Requests that only read, by command (and first payload byte where the command also changes things): safe to send
-# again as new after GONE. GET_LOG is missing on purpose: it hands each line over once
-CMD_PING, CMD_VERSION, CMD_GET_DIAG, CMD_SCREENSHOT, CMD_GET_VIEW, CMD_INFO_CHIP, CMD_READ_MEM, CMD_IDDB = \
-    0x01, 0x02, 0x03, 0x05, 0x09, 0x0B, 0x0C, 0x1F
+# Requests the air takes that only read, by command (and first payload byte where the command also changes things):
+# safe to send again as new after GONE. GET_LOG is missing on purpose: it hands each line over once
+CMD_PING, CMD_VERSION, CMD_GET_DIAG, CMD_SCREENSHOT, CMD_GET_VIEW, CMD_IDDB = 0x01, 0x02, 0x03, 0x05, 0x09, 0x1F
 READS = {CMD_PING: None, CMD_VERSION: None, CMD_GET_DIAG: None, CMD_SCREENSHOT: None, CMD_GET_VIEW: None,
-         CMD_INFO_CHIP: None, CMD_READ_MEM: None, CMD_IDDB: None, CMD_DETOUR: (DETOUR_STATUS,), CMD_DMRIP: (DMRIP_STATUS,)}
+         CMD_IDDB: None, CMD_DETOUR: (DETOUR_STATUS,), CMD_DMRIP: (DMRIP_STATUS,)}
 
 
 def _rotl(x, b):

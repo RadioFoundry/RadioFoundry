@@ -118,50 +118,54 @@ static void test_addressing(void)
 	size_t fl = frame(f, DL_CMD_PING, 0, NULL, 0);
 	dl_dmrip_msg_t m;
 	size_t n = request(d, K, 0, 3101276, 1, 1, f, (uint16_t)fl);
-	CHECK(dl_dmrip_check(K, d, n, 3101276, 3101276, &m) == DL_DMRIP_ACCEPT, "ours");
-	CHECK(dl_dmrip_check(K, d, n, 3101277, 3101277, &m) == DL_DMRIP_NOT_OURS, "another radio's ID inside");
-	CHECK(dl_dmrip_check(K, d, n, 3101276, 0xFFFFFF, &m) == DL_DMRIP_NOT_OURS, "to the all-call");
-	CHECK(dl_dmrip_check(K, d, n, 3101276, 91, &m) == DL_DMRIP_NOT_OURS, "to a group's ID");
-	CHECK(dl_dmrip_check(K, d, n, 0, 0, &m) == DL_DMRIP_NOT_OURS, "no ID of our own");
+	CHECK(dl_dmrip_check(K, d, n, 3101276, &m) == DL_DMRIP_ACCEPT, "ours");
+	CHECK(dl_dmrip_check(K, d, n, 3101277, &m) == DL_DMRIP_NOT_OURS, "another radio's ID inside");
+	CHECK(dl_dmrip_check(K, d, n, 0, &m) == DL_DMRIP_NOT_OURS, "no ID of our own");
 	n = request(d, K, 0, 0xFFFFFF, 1, 1, f, (uint16_t)fl);
-	CHECK(dl_dmrip_check(K, d, n, 0xFFFFFF, 0xFFFFFF, &m) == DL_DMRIP_NOT_OURS, "all-call ID");
+	CHECK(dl_dmrip_check(K, d, n, 0xFFFFFF, &m) == DL_DMRIP_NOT_OURS, "all-call ID");
 	n = request(d, K, DL_DMRIP_F_REPLY, 3101276, 1, 1, f, (uint16_t)fl);
-	CHECK(dl_dmrip_check(K, d, n, 3101276, 3101276, &m) == DL_DMRIP_BAD, "a reply is no request");
+	CHECK(dl_dmrip_check(K, d, n, 3101276, &m) == DL_DMRIP_BAD, "a reply is no request");
 	n = request(d, K, 0, 3101276, 1, 1, f, (uint16_t)fl);
 	d[n - 1] ^= 1;
-	CHECK(dl_dmrip_check(K, d, n, 3101276, 3101276, &m) == DL_DMRIP_BAD, "tag");
+	CHECK(dl_dmrip_check(K, d, n, 3101276, &m) == DL_DMRIP_BAD, "tag");
 }
 
 static void test_replay(void)
 {
-	dl_dmrip_replay_t r = { 0, 0 };
-	CHECK(dl_dmrip_replay(&r, 0, 1) == DL_DMRIP_OLD, "no session");
+	dl_dmrip_replay_t r = { 0, 0, 0 };
+	CHECK(dl_dmrip_replay(&r, 0, 1, 5) == DL_DMRIP_OLD, "no session");
 	r.nonce = 77;
-	CHECK(dl_dmrip_replay(&r, 76, 1) == DL_DMRIP_OLD, "another session");
-	CHECK(dl_dmrip_replay(&r, 77, 1) == DL_DMRIP_NEW && r.last == 1, "new");
-	CHECK(dl_dmrip_replay(&r, 77, 1) == DL_DMRIP_REPEAT, "repeat");
-	CHECK(dl_dmrip_replay(&r, 77, 0) == DL_DMRIP_OLD, "older");
-	CHECK(dl_dmrip_replay(&r, 77, 10) == DL_DMRIP_NEW && r.last == 10, "a gap is fine");
-	CHECK(dl_dmrip_replay(&r, 77, 5) == DL_DMRIP_OLD && r.last == 10, "behind");
+	CHECK(dl_dmrip_replay(&r, 76, 1, 5) == DL_DMRIP_OLD, "another session");
+	CHECK(dl_dmrip_replay(&r, 77, 1, 5) == DL_DMRIP_NEW && r.last == 1, "new");
+	CHECK(dl_dmrip_replay(&r, 77, 1, 5) == DL_DMRIP_REPEAT, "repeat");
+	// A second host on the same counter with another request: that request never ran, and the first one's reply
+	// isn't the second's
+	CHECK(dl_dmrip_replay(&r, 77, 1, 6) == DL_DMRIP_OLD, "another request on the last counter");
+	CHECK(dl_dmrip_replay(&r, 77, 1, 5) == DL_DMRIP_REPEAT, "the first one's repeat still");
+	CHECK(dl_dmrip_replay(&r, 77, 0, 5) == DL_DMRIP_OLD, "older");
+	CHECK(dl_dmrip_replay(&r, 77, 10, 7) == DL_DMRIP_NEW && r.last == 10, "a gap is fine");
+	CHECK(dl_dmrip_replay(&r, 77, 10, 7) == DL_DMRIP_REPEAT, "the new request kept");
+	CHECK(dl_dmrip_replay(&r, 77, 5, 7) == DL_DMRIP_OLD && r.last == 10, "behind");
 	r.last = 0xFFFFFFFFu;
-	CHECK(dl_dmrip_replay(&r, 77, 2) == DL_DMRIP_NEW, "wraps");
+	CHECK(dl_dmrip_replay(&r, 77, 2, 8) == DL_DMRIP_NEW, "wraps");
 }
 
 static void test_air_policy(void)
 {
 	static const uint8_t allowed[] = { DL_CMD_PING, DL_CMD_VERSION, DL_CMD_GET_DIAG, DL_CMD_RESET_COUNTERS,
-					   DL_CMD_SCREENSHOT, DL_CMD_GET_LOG, DL_CMD_GET_VIEW, DL_CMD_INFO_CHIP,
-					   DL_CMD_READ_MEM, DL_CMD_IDDB, DL_CMD_DETOUR };
+					   DL_CMD_SCREENSHOT, DL_CMD_GET_LOG, DL_CMD_GET_VIEW, DL_CMD_IDDB,
+					   DL_CMD_DETOUR };
 	const uint8_t z[2] = { 0, 0 };
 	for (unsigned i = 0; i < sizeof(allowed); i++) {
 		CHECK(dl_dmrip_air_allowed(allowed[i], z, 1), "0x%02x allowed", allowed[i]);
 	}
-	// Link-cutting and stored changes: never alone over the air
-	static const uint8_t refused[] = { DL_CMD_RADIO, DL_CMD_PTT, DL_CMD_KEY, DL_CMD_CHIP_REG, DL_CMD_AUDIO_PROBE,
-					   DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3, DL_CMD_STORAGE, DL_CMD_HWOPT,
-					   DL_CMD_REBOOT, DL_CMD_STUB, DL_CMD_CRASH, DL_CMD_WATCHDOG, DL_CMD_RX2,
-					   DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP, DL_CMD_SPLIT, DL_CMD_AIR,
-					   DL_CMD_SUPPORT, DL_CMD_SATELLITE };
+	// Link-cutting and stored changes: never alone over the air. The chip UID (the default key) and memory (the
+	// codec on a codec-merged image): never over the air
+	static const uint8_t refused[] = { DL_CMD_INFO_CHIP, DL_CMD_READ_MEM, DL_CMD_RADIO, DL_CMD_PTT, DL_CMD_KEY,
+					   DL_CMD_CHIP_REG, DL_CMD_AUDIO_PROBE, DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3,
+					   DL_CMD_STORAGE, DL_CMD_HWOPT, DL_CMD_REBOOT, DL_CMD_STUB, DL_CMD_CRASH,
+					   DL_CMD_WATCHDOG, DL_CMD_RX2, DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP,
+					   DL_CMD_SPLIT, DL_CMD_AIR, DL_CMD_SUPPORT, DL_CMD_SATELLITE };
 	for (unsigned i = 0; i < sizeof(refused); i++) {
 		CHECK(!dl_dmrip_air_allowed(refused[i], z, 1), "0x%02x refused", refused[i]);
 	}
@@ -520,6 +524,22 @@ static void test_view_page(void)
 	memcpy(t, text, sizeof(text));
 	n = dl_view_page(t, sizeof(text) - 1, "zz", 2, 0, 1000);
 	CHECK(n == 10, "no match: the section line");
+
+	// The reply buffer cut the section: truncated=1 stays on the last page, whatever the prefix
+	static const char cut[] = "section=x\na.one=1\nb.two=2\ntruncated=1\n";
+	memcpy(t, cut, sizeof(cut));
+	n = dl_view_page(t, sizeof(cut) - 1, "a.", 2, 0, 1000);
+	CHECK(memcmp(t, "section=x\na.one=1\ntruncated=1\n", n) == 0, "truncated kept: %.*s", (int)n, t);
+
+	// A line longer than the page goes whole on a page of its own, so the next offset moves on
+	static const char lng[] = "section=x\na.long=0123456789012345678901234567890123456789\na.next=1\nb.x=2\nb.y=3\n";
+	memcpy(t, lng, sizeof(lng));
+	n = dl_view_page(t, sizeof(lng) - 1, "a.", 2, 0, 10 + 20 + DL_VIEW_MORE_MAX);
+	CHECK(memcmp(t, "section=x\na.long=0123456789012345678901234567890123456789\nmore=48\n", n) == 0, "long: %.*s",
+	      (int)n, t);
+	memcpy(t, lng, sizeof(lng));
+	n = dl_view_page(t, sizeof(lng) - 1, "a.", 2, 48, 10 + 20 + DL_VIEW_MORE_MAX);
+	CHECK(memcmp(t, "section=x\na.next=1\n", n) == 0, "after the long line: %.*s", (int)n, t);
 }
 
 int main(void)

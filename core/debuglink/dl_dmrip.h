@@ -62,27 +62,29 @@ size_t dl_dmrip_seal(const uint8_t key[DL_DMRIP_KEY], const dl_dmrip_msg_t *m, u
 // A datagram checked: version, length, tag. m->body points into d
 bool dl_dmrip_open(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, dl_dmrip_msg_t *m);
 
-// A request as it came in, for this radio (my_id) at the DMR ID it was sent to (dst: the IP destination's): the tag
-// holds, it is a request, and both the ID it names and dst are this radio's. A group, a broadcast or another radio's ID
-// is DL_DMRIP_NOT_OURS. m filled when DL_DMRIP_ACCEPT
+// A request as it came in, for this radio (my_id): the tag holds, it is a request, and the ID it names is this radio's.
+// A group, a broadcast or another radio's ID is DL_DMRIP_NOT_OURS. The IP destination was checked before: the gateway
+// hands over only datagrams to the radio's own ID and address (ipGatewayUdpBindAir). m filled when DL_DMRIP_ACCEPT
 enum { DL_DMRIP_ACCEPT, DL_DMRIP_BAD, DL_DMRIP_NOT_OURS };
-int dl_dmrip_check(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, uint32_t my_id, uint32_t dst,
-		   dl_dmrip_msg_t *m);
+int dl_dmrip_check(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, uint32_t my_id, dl_dmrip_msg_t *m);
 
-// Replay check: a counter above the last one taken is new (and taken), the last one again a repeat (the host lost
-// the reply), anything else old. The nonce must be the session's
+// Replay check: a counter above the last one taken is new (and taken), the last one again with the same request a
+// repeat (the host lost the reply), anything else old: another request on the last counter is a second host in the
+// session, whose request never ran and gets no answer. The nonce must be the session's. body: the request's
+// fingerprint (dl_siphash of the body)
 typedef struct {
 	uint32_t nonce;		// 0: no session yet (only HELLO is answered)
 	uint32_t last;
+	uint64_t body;		// the last request taken
 } dl_dmrip_replay_t;
 
 enum { DL_DMRIP_NEW, DL_DMRIP_REPEAT, DL_DMRIP_OLD };
-int dl_dmrip_replay(dl_dmrip_replay_t *r, uint32_t nonce, uint32_t counter);
+int dl_dmrip_replay(dl_dmrip_replay_t *r, uint32_t nonce, uint32_t counter, uint64_t body);
 
 // A debug link frame in a body: true when whole and its CRC holds
 bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, const uint8_t **payload, uint16_t *len);
 
-// Whether a request may come over the air (7.3). Reads and the detour pass; a command that can cut the link (RADIO,
+// Whether a request may come over the air (7.3). Reads (not the chip UID or memory) and the detour pass; a command that can cut the link (RADIO,
 // PTT, KEY) only as an item of a detour; writes that no deadline undoes (registers, flash, codeplug, stored keys) and
 // everything that restarts or hands the radio over never
 bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len);

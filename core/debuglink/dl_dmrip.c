@@ -146,29 +146,29 @@ bool dl_dmrip_open(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, 
 	return true;
 }
 
-int dl_dmrip_check(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, uint32_t my_id, uint32_t dst,
-		   dl_dmrip_msg_t *m)
+int dl_dmrip_check(const uint8_t key[DL_DMRIP_KEY], const uint8_t *d, size_t n, uint32_t my_id, dl_dmrip_msg_t *m)
 {
 	if (!dl_dmrip_open(key, d, n, m) || (m->flags & DL_DMRIP_F_REPLY) != 0) {
 		return DL_DMRIP_BAD;
 	}
 	// DMR IDs are unique: one radio answers, never a group or the all-call (0xFFFFFF and the like are not ours)
-	if (my_id == 0 || my_id > 0xFFFFFEu || m->id != my_id || dst != my_id) {
+	if (my_id == 0 || my_id > 0xFFFFFEu || m->id != my_id) {
 		return DL_DMRIP_NOT_OURS;
 	}
 	return DL_DMRIP_ACCEPT;
 }
 
-int dl_dmrip_replay(dl_dmrip_replay_t *r, uint32_t nonce, uint32_t counter)
+int dl_dmrip_replay(dl_dmrip_replay_t *r, uint32_t nonce, uint32_t counter, uint64_t body)
 {
 	if (r->nonce == 0 || nonce != r->nonce) {
 		return DL_DMRIP_OLD;
 	}
 	if (counter == r->last) {
-		return DL_DMRIP_REPEAT;
+		return body == r->body ? DL_DMRIP_REPEAT : DL_DMRIP_OLD;
 	}
 	if ((int32_t)(counter - r->last) > 0) {
 		r->last = counter;
+		r->body = body;
 		return DL_DMRIP_NEW;
 	}
 	return DL_DMRIP_OLD;
@@ -206,15 +206,14 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 	case DL_CMD_SCREENSHOT:
 	case DL_CMD_GET_LOG:
 	case DL_CMD_GET_VIEW:
-	case DL_CMD_INFO_CHIP:
-	case DL_CMD_READ_MEM:		// reads only, in the platform's windows (3.10)
 	case DL_CMD_IDDB:		// read only
 	case DL_CMD_DETOUR:		// the link-cutting changes, under its deadline
 		return true;
 	case DL_CMD_DMRIP:
 		return len >= 1 && req[0] == DL_DMRIP_OP_STATUS;	// the key is set over the cable only
 	default:
-		// RADIO, PTT, KEY: only inside a detour. CHIP_REG, AUDIO_PROBE (register writes no deadline undoes),
+		// RADIO, PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key: 7.2) and READ_MEM (its
+		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. CHIP_REG, AUDIO_PROBE (register writes no deadline undoes),
 		// CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
 		// restart or the radio handed over), DMR_DATA, APRS, SNMP, SPLIT, AIR (transmissions or modes outside the
 		// radio core's checks), SATELLITE (stored records), and SUPPORT and anything newer until listed here: never

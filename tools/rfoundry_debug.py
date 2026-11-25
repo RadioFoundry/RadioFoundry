@@ -1099,9 +1099,12 @@ class DebugLink:
             kv = parse_kv(r[5:].decode("ascii", "replace"))
             kv.pop("section", None)
             more = kv.pop("more", None)
-            out.update(kv)
-            if more is None or int(more) <= offset:
+            out.update(kv)      # truncated=1 among them when the radio's reply buffer cut the section
+            if more is None:
                 return out
+            if int(more) <= offset:
+                raise DebugLinkError(f"GET_VIEW {section} {prefix!r}: no progress past offset {offset} "
+                                     f"(a line longer than the page)")
             offset = int(more)
 
     # ── over the air: the detour and the transport (CONFIG_DEBUGLINK_DMRIP, debuglink.md 7.4, 7.5) ──
@@ -2047,20 +2050,37 @@ def detour_steps(steps):
     return rec.items
 
 
+def detour_status_until(link, until):
+    """DETOUR STATUS, asked again until the monotonic time until: over the air the radio doesn't hear the request
+    while a detour has it off the channel"""
+    while True:
+        try:
+            return link.detour_status()
+        except DebugLinkError:
+            if time.monotonic() >= until:
+                raise
+
+
 def cmd_detour(link, a):
+    s = 0
     if a.op == "run":
         if len(a.args) < 1:
             raise DebugLinkError("detour run SECONDS STEP...")
         s = link.detour_run(int(a.args[0]), detour_steps(a.args[1:]))
         print(f"detour: back in {s} s at the latest")
+        if link.air and not a.wait:
+            return 0    # the radio may be off the channel now: `detour status` reads the summary once it is back
     elif a.op == "extend":
         link.detour_extend(int(a.args[0]))
+        s = int(a.args[0])
     elif a.op == "return":
         link.detour_return()
-    st = link.detour_status()
+    # Over the air: until the deadline, the backstop and a margin (the longest detour when the deadline is unknown)
+    until = time.monotonic() + (s or 300) + 10 + 30 if link.air else 0
+    st = detour_status_until(link, until)
     while a.wait and st["phase"] != "idle":
         time.sleep(1.0)
-        st = link.detour_status()
+        st = detour_status_until(link, until)
     for k, v in st.items():
         if isinstance(v, dict):
             for k2, v2 in v.items():

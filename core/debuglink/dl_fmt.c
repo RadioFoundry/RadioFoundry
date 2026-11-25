@@ -180,23 +180,26 @@ size_t dl_view_page(char *text, size_t len, const char *prefix, size_t plen, uin
 {
 	size_t out = 0, pos = 0, at = 0;
 	size_t room = limit > DL_VIEW_MORE_MAX ? limit - DL_VIEW_MORE_MAX : 0;
-	bool cut = false;
+	bool cut = false, sent = false;
 	while (at < len) {
 		size_t end = at;
 		while (end < len && text[end] != '\n') {
 			end++;
 		}
 		size_t n = (end < len ? end + 1 : end) - at;	// the line with its newline
-		bool head = n >= 8 && memcmp(text + at, "section=", 8) == 0;
+		// The section= line on every page, and truncated=1 (the reply buffer cut the section) on the last
+		bool head = (n >= 8 && memcmp(text + at, "section=", 8) == 0) ||
+			    (n >= 10 && memcmp(text + at, "truncated=", 10) == 0);
 		bool keep = head || plen == 0 || (n >= plen && memcmp(text + at, prefix, plen) == 0);
 		if (keep && !head) {
 			if (pos < offset) {
 				keep = false;
-			} else if (out + n > room) {
-				cut = true;
+			} else if (out + n > room && (sent || out + n + DL_VIEW_MORE_MAX > len)) {
+				cut = true;	// (a page's first line goes whole even when longer, where the text has room)
 				break;
 			}
 			pos += n;
+			sent = true;
 		}
 		if (keep) {
 			memmove(text + out, text + at, n);	// out <= at: compaction only moves left

@@ -117,10 +117,12 @@ static void ptt_release(void)
 	(void)input_inject_ptt(false, 0);
 }
 
-// The RUN reply is on the air and gone: nothing of ours queued, the radio not transmitting
+// The RUN reply is on the air and gone: nothing of ours queued, none taken by the data service and waiting for the
+// channel (listen before talk, the slot), the radio not transmitting
 static bool reply_clear(void)
 {
-	return io_state != IO_SEND && airqCount(AIRQ_OWNER_GATEWAY) == 0 && radio_get_state() != RS_TX;
+	return io_state != IO_SEND && airqCount(AIRQ_OWNER_GATEWAY) == 0 && !dmrDataServiceIsBusy() &&
+	       !dmrDataServiceIpBusy() && radio_get_state() != RS_TX;
 }
 
 static const dl_detour_ops_t ops = {
@@ -259,7 +261,7 @@ static void handle(uint32_t now_ms)
 {
 	dl_dmrip_msg_t m;
 	uint8_t *d = io + UDP_HDR;
-	int v = key_src == 0 ? DL_DMRIP_BAD : dl_dmrip_check(key, d, io_len, ipGatewayRadioId(), ipGatewayRadioId(), &m);
+	int v = key_src == 0 ? DL_DMRIP_BAD : dl_dmrip_check(key, d, io_len, ipGatewayRadioId(), &m);
 	if (v != DL_DMRIP_ACCEPT) {
 		if (v == DL_DMRIP_BAD) {
 			cnt.bad_auth++;
@@ -292,7 +294,7 @@ static void handle(uint32_t now_ms)
 		io_state = IO_FREE;
 		return;
 	}
-	switch (dl_dmrip_replay(&replay, m.nonce, m.counter)) {
+	switch (dl_dmrip_replay(&replay, m.nonce, m.counter, dl_siphash(key, m.body, m.body_len))) {
 	case DL_DMRIP_NEW:
 		handle_new(&m, now_ms);
 		return;

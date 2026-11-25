@@ -390,9 +390,11 @@ The saved value changes after the Settings write completes; it lets a test resto
 A request longer than the section byte asks for a page: offset u16, limit u16 and a key prefix (any length, none for
 every key). The reply keeps the `section=` line and the lines that start with the prefix, skips those before the
 offset (counted in bytes of the matching lines), and stops at whole lines before limit bytes of text (0, or more than
-a reply holds: a whole reply; less than 64: 64). When lines are left, the last line is `more=<offset>`, the offset of
-the next page. The radio renders the whole section each time, so a page costs the same on the radio and less on the
-link: over the air (7) a page of 200 bytes fits one datagram.
+a reply holds: a whole reply; less than 64: 64). A page's first line goes whole even when longer than the limit. When
+lines are left, the last line is `more=<offset>`, the offset of the next page. The radio renders the section into one
+reply each time, so a page costs the same on the radio and less on the link: over the air (7) a page of 200 bytes fits
+one datagram. Pages cover only what fits one reply: when the section was cut short, the last page also carries
+`truncated=1`, whatever the prefix.
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -1121,8 +1123,8 @@ capacity and atomic commit behavior are specified in [satellite.md](satellite.md
 - CODEPLUG writes only codeplug blocks of the open-firmware image, never the settings ring, the journal, the native
   area, the staging area or the calibration window, through the journal or a staged commit (3.20).
 - Over the air (7, `CONFIG_DEBUGLINK_DMRIP` builds only, off in every release): only authenticated requests to the
-  radio's own DMR ID are answered; only reads and DETOUR are taken (7.3); every change a detour makes is undone at
-  its deadline, by the radio, and nothing it changes is saved (7.4).
+  radio's own DMR ID are answered; only reads and DETOUR are taken (7.3), never the chip UID or memory; every change
+  a detour makes is undone at its deadline, by the radio, and none of the detour's changes is saved (7.4).
 - The debug link never enters hotspot or CPS mode, and never takes bytes that belong to an MMDVM frame or a CPS
   request (section 1).
 
@@ -1175,33 +1177,36 @@ A reply frame (up to 1032 bytes) goes in chunks of 224 bytes, at most 5 datagram
 integers are little endian.
 
 Session: the host sends HELLO; the radio answers with its nonce (chosen at the first HELLO since start-up, never 0)
-and the last counter it took. Each request then carries the nonce and a higher counter. A request with the last
-counter again is a repeat: the radio sends its kept reply again, only the chunks the request names; when the debug
-link's reply buffer was used since (a cable request), it answers GONE. The host then sends a request that only reads
-(PING, VERSION, GET_DIAG, SCREENSHOT, GET_VIEW, INFO_CHIP, READ_MEM, IDDB, DETOUR STATUS, DMRIP STATUS) as new, and
-reports any other request as taken with its reply lost, never sending it again: a detour runs once. A lower
-counter, another nonce or a bad tag gets no answer. HELLO is answered once a second at most. One request is handled at
-a time; one that arrives while the radio is busy is dropped (`dmrip.busy`) and the host sends it again.
+and the last counter the radio took. Each request then carries the nonce and a higher counter. The same request with
+the last counter again is a repeat: the radio sends its kept reply again, only the chunks the request names. When a
+cable request has used the debug link's reply buffer since, the radio answers GONE instead. The host then sends a
+request that only reads (PING, VERSION, GET_DIAG, SCREENSHOT, GET_VIEW, IDDB, DETOUR STATUS, DMRIP STATUS) as new.
+Any other request is reported as taken with its reply lost and is never sent again: a detour runs once. A lower
+counter, another request on the last counter (a second host in the same session: that request never ran), another
+nonce or a bad tag gets no answer. HELLO is answered once a second at most. One request is handled at a time; one that
+arrives while the radio is busy is dropped (`dmrip.busy`) and the host sends the request again. One host per session:
+two hosts that share a key both start from the same counter, and the second one's requests time out.
 
 ### 7.2 Key
 
 16 bytes. By default the radio's key comes from its chip UID: two SipHash-2-4 runs under the fixed key
 `RFoundryDMRIPkey` over a byte 0 or 1 and the 12 UID bytes as INFO_CHIP gives them (3.9), concatenated. Anyone who has
-read the UID over the cable has the key, and a radio whose UID reads all zero has none until one is set. DMRIP KEY
-(7.5, over the cable only) sets another key until the next start; all zero goes back to the UID's. The tag
-authenticates; nothing is encrypted, and the views read over the air are readable by anyone in range.
+read the UID over the cable has the key, and a radio whose UID reads all zero has none until one is set. INFO_CHIP is
+refused over the air for that reason. DMRIP KEY (7.5, over the cable only) sets another key until the next start; all
+zero goes back to the UID's. The tag authenticates; nothing is encrypted, and the views read over the air are readable
+by anyone in range.
 
 ### 7.3 What the air may ask
 
 | Over the air | Commands |
 |---|---|
-| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, INFO_CHIP, READ_MEM (its windows, 3.10), IDDB, DETOUR, DMRIP STATUS |
+| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS |
 | Only as an item of a detour (7.4) | RADIO (the operations the detour undoes), PTT |
-| Never | KEY, DMRIP KEY, CHIP_REG, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, CHIP_REG, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
 
 A refused command answers status 7. Writes no deadline undoes (chip and SoC registers, flash, codeplug, stored keys)
-are refused even inside a detour, and so is anything that restarts the radio or hands it over: a poke can cut the link
-for good.
+are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
+the link for good.
 
 ### 7.4 Detour
 
@@ -1228,7 +1233,7 @@ item that fails ends the detour at once.
 | RETURN | back now (the deadline's own path); RETURN with no detour does nothing |
 | The deadline | PTT released, then back. During a reception: back at once. During a transmission: the PTT is released and the radio comes back when the transmission ends |
 | The debug link's deadline missed | the radio core's own backstop, 10 s after the deadline, puts everything back (`why` 2) |
-| A lost return request | asked again every 500 ms until the core reports it back |
+| A lost return request | asked again every 500 ms until the core reports the radio back |
 | Power lost | nothing of the detour was saved: the radio starts in its home state |
 
 Back means, as marked: the zone and channel position, or the VFO with both VFOs as stored; the channel's changes for
@@ -1236,7 +1241,10 @@ now (power, squelch, bandwidth, mode, color code, timeslot, sub-audio tones); th
 the radio settings (`radio_settings_t`, TX inhibit among them); the P25 and NXDN settings; and so the receive and
 transmit frequencies, the mode, the DMR ID and IP address the channel gives. The settings store saves nothing from mark
 to return (`settings_hold`), and the return drops what changed in RAM (`settings_release`), so a change can't outlive
-the detour through a save. `restored` says the position, frequencies and settings came back.
+the detour through a save. `restored` says the position, frequencies and settings came back. A save that must reach
+the flash fails while held (`settings_flush` answers false): a factory reset reports that the settings couldn't be
+saved and erases nothing, and a zone add or delete, whose saved indexes move with the zones, fails and leaves the
+codeplug unchanged.
 
 Items: RADIO operations 1-12 (channel, zone, VFO, frequency, step, power, squelch, bandwidth, tone, monitor, clear the
 changes for now), 15-18 (DMR talk target), 24 SETTING (the `radio_settings_t` ids 1-28, 30, 33, 34), 31 DMR fields
@@ -1251,7 +1259,9 @@ README](../../tests/hil/README.md)).
 Host: `rfoundry_debug.py detour run SECONDS STEP...`, each STEP `"radio OP ARG..."` (the radio command's syntax),
 `"wait MS"` or `"ptt S"` (key S seconds, then release). A step can't read the radio, so the power changes by a
 step, `"radio power +N"` or `"-N"` (the radio wraps past either end). `detour status [--wait]` (until back, then
-the summary), `detour extend SECONDS`, `detour return`. RUN's payload holds 61 bytes of items.
+the summary), `detour extend SECONDS`, `detour return`. Over the air, `detour run` prints the deadline and ends
+(the radio may have left the channel): `--wait` or a later `detour status` asks for the summary again until the
+radio is back, up to the deadline, the backstop and 30 s. RUN's payload holds 61 bytes of items.
 
 ### 7.5 DMRIP
 
