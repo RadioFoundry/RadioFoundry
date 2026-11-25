@@ -43,3 +43,5 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 #
 # board.toml's "chinese" ci extra builds exactly that. The web flasher offers Chinese to a browser that asks for it
 # (docs/user/02-installing.md); the build fits without dropping Spanish (docs/user/23-radios.md)
+
+BOARD_NOT_WRITTEN += RTC	# no hal_rtc_t driver for its RTC yet (docs/spec/radio-features.md 5.6)

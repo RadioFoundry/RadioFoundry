@@ -27,6 +27,9 @@ extern const hal_radio_t dm32_radio;
 // The debug link's CHIP_REG for the FD6818 (board.chip_reg)
 bool dm32_chip_reg(uint8_t chip, uint8_t page, uint8_t reg, uint32_t *val, bool write);
 extern const hal_power_t dm32_power;
+#if CONFIG_RTC
+extern const hal_rtc_t dm32_rtc;	// the SoC RTC on I2C2 with its coin cell (rtc_dm32.c)
+#endif
 
 // Physical key bits returned by dm32_input.scan() (matrix in docs/spec/hardware-dm32.md 6.1, 6.2)
 enum {

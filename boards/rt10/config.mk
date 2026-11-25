@@ -92,3 +92,5 @@ endif
 ifneq ($(RT10_DMR_MIC_DB),)
 MCU_DEFS += -DRT10_DMR_MIC_DB=$(RT10_DMR_MIC_DB)u
 endif
+
+BOARD_UNSUPPORTED += RTC	# its RTC has no coin cell or backup capacitor, so it loses the time at power-off (hardware-rt10.md 1)

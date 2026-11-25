@@ -124,6 +124,8 @@ RX2_OP_INFO, RX2_OP_BRIDGE, RX2_OP_RESTART = range(3)
 RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
+RTC = 0x27                          # the board's hardware clock: read, set (docs/spec/debuglink.md 3.31)
+RTC_OP_GET, RTC_OP_SET = range(2)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
@@ -335,7 +337,7 @@ def find_cables():
 
 
 # Commands (and their ops) that only read: everything else restarts the radio or changes it
-READ_ONLY = {"hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+READ_ONLY = {"rtc": ("get",), "hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
              "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
              "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
              "aprobe": ("status", "reg", "samples", "ram", "watch")}
@@ -1018,6 +1020,18 @@ class DebugLink:
         """An RF chip register (the board's chip and page numbering): writes value when given, returns the read-back"""
         req = struct.pack("<BBB", chip, page, reg) + (b"" if value is None else struct.pack("<I", value))
         return struct.unpack_from("<I", self.request(CHIP_REG, req)[1])[0]
+
+    def rtc_get(self):
+        """The board's hardware clock: (valid, unix seconds UTC); valid False when it holds no time (never set, or its
+        backup cell lost it). DebugLinkError with ST_UNAVAILABLE on a board without a driver"""
+        r = self.request(RTC, bytes([RTC_OP_GET]))[1]
+        valid, unix = struct.unpack_from("<BI", r)
+        return bool(valid), unix
+
+    def rtc_set(self, unix):
+        """Set the board's hardware clock to a UTC Unix time (seconds) and mark it valid. It takes the time within a
+        second, so read it back after that"""
+        self.request(RTC, bytes([RTC_OP_SET]) + struct.pack("<I", unix))
 
     def soc_reg(self, addr, value=None):
         """A 32-bit SoC register inside the platform's register windows: writes value when given, returns the read-back
@@ -2369,6 +2383,33 @@ def peek_spec(text):
     return addr, n
 
 
+def cmd_rtc(link, a):
+    import datetime
+    try:
+        if a.op == "set":
+            if a.when is None:
+                print("rfoundry_debug: rtc set needs now or UTC Unix seconds", file=sys.stderr)
+                return 2
+            unix = int(time.time()) if a.when == "now" else int(a.when, 0)
+            link.rtc_set(unix)
+            print(f"rtc set to {datetime.datetime.fromtimestamp(unix, datetime.timezone.utc):%Y-%m-%d %H:%M:%S} UTC")
+            return 0
+        valid, unix = link.rtc_get()
+    except DebugLinkError as e:
+        if e.status == ST_UNAVAILABLE:
+            print("rfoundry_debug: this radio has no hardware clock driver", file=sys.stderr)
+        elif e.status == ST_REFUSED:
+            print("rfoundry_debug: the clock refused that time (out of its range, or its bus did not answer)", file=sys.stderr)
+        else:
+            print(f"rfoundry_debug: rtc failed: {e}", file=sys.stderr)
+        return 1
+    if not valid:
+        print("rtc holds no time (never set, or its backup cell lost it)")
+    else:
+        print(f"rtc {datetime.datetime.fromtimestamp(unix, datetime.timezone.utc):%Y-%m-%d %H:%M:%S} UTC ({unix})")
+    return 0
+
+
 def cmd_peek(link, a):
     addr, n = a.where
     why = mem_precheck(link, addr, n)
@@ -2969,6 +3010,10 @@ def main(argv=None):
     p = sub.add_parser("log")
     p.add_argument("--follow", action="store_true")
     sub.add_parser("chip")
+    p = sub.add_parser("rtc", help="the board's hardware clock: get (UTC time it holds), set now|UNIX_SECONDS "
+                       "(docs/spec/debuglink.md 3.31)")
+    p.add_argument("op", choices=["get", "set"], nargs="?", default="get")
+    p.add_argument("when", nargs="?", help="set: now (this computer's UTC time) or UTC Unix seconds")
     p = sub.add_parser("dump")
     p.add_argument("--addr", required=True)
     p.add_argument("--len", required=True)
@@ -3096,6 +3141,8 @@ def main(argv=None):
                 return cmd_snmp(link, a)
             elif a.cmd == "chip":
                 print_chip(link.chip())
+            elif a.cmd == "rtc":
+                return cmd_rtc(link, a)
             elif a.cmd == "dump":
                 return cmd_dump(link, a)
             elif a.cmd == "peek":
