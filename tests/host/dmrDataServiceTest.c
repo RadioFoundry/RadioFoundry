@@ -1584,6 +1584,16 @@ static void testIpAddresses(void)
 	p = txPacket();
 	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION);
 	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.dstIp == dmrDataIdAddress(false, RADIO_A));
+	// From the host behind us (usb-network.md 3.1): our peripheral network address, SAID 1, under the ID the packet
+	// goes from, also when the channel's ID changed after it was queued
+	CHECK(dmrDataServiceSendIP(false, RADIO_A, DMR_DATA_IP_OUR_PERIPHERAL, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT,
+							   DMR_IP_PROTO_UDP, ipL4, 8 + 20));
+	ch.ownId = OUR_ID + 1;
+	runMainTask(SEND_MS);
+	p = txPacket();
+	CHECK(p != NULL && p->sap == DMR_SAP_UDPIP_COMPRESSION && p->src == OUR_ID + 1 && p->data[2] == 0x10);
+	CHECK(p != NULL && dmrDataGetUDP(p, &udp) && udp.srcIp == dmrDataPeripheralAddress(OUR_ID + 1));
+	ch.ownId = OUR_ID;
 	ipSettings(DMR_UDPC_AUTO, DMR_IPC_RULES, 0, 0, 0);
 	decodeTx = true;
 

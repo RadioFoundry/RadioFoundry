@@ -195,6 +195,9 @@ int dmrDataBuildPreambles(bool group, uint32_t dst, uint32_t src, int count, int
 // The CAI address of a DMR ID: 12.x.y.z for a radio, 225.x.y.z for a talkgroup (the ID's 24 bits). The compressed
 // header (SAP 3) has no addresses: a receiver rebuilds these from the source and destination IDs
 uint32_t dmrDataIdAddress(bool group, uint32_t id);
+// A radio's peripheral network address, 13.x.y.z (TS 102 361-3 5.1.1): the host behind the radio with that ID (its
+// 24 bits under 13). The compressed header names it with address ID 1 (DMR_UDPC_ID_PERIPHERAL)
+uint32_t dmrDataPeripheralAddress(uint32_t id);
 // On receive: true when an address is the ID's CAI address (dmrDataIdAddress), so a packet with it is for the ID
 // itself, not for a host the ID routes to. Exact: an off-net address may have the same 24 bits under another first
 // octet
@@ -254,16 +257,22 @@ uint8_t dmrDataGetUdpCompression(void);
 // The mode decides by the ports only: a packet whose addresses aren't its IDs' CAI addresses still goes with the full
 // header, whatever the mode, all included (dmrDataEncodeIP)
 bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort);
-// The compressed header (Table 7.14) into out: IPv4 identification, SAID 0 (radio network: the source is the source
-// LLID), DAID 0 or 2 (group network), opcode 00, the port IDs (1 = 5016, 2 = 5017, 98 = 4007 as MOTOTRBO uses it) and
-// the ports without an ID in extended headers 1 / 2. Returns its length: 5, 7 or 9
+// The compressed header (Table 7.14) into out: IPv4 identification, ids (the SAID and DAID octet, DMR_UDPC_IDS: the
+// source's and the destination's network), opcode 00, the port IDs (1 = 5016, 2 = 5017, 98 = 4007 as commercial
+// radios use it) and the ports without an ID in extended headers 1 / 2. Returns its length: 5, 7 or 9
 #define DMR_UDPC_HEADER_MAX			9
-int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX]);
+// IP address IDs (Tables 7.15 / 7.16): the radio network (the address is the LLID's 12.x.y.z), a radio's peripheral
+// network (13.x.y.z, dmrDataPeripheralAddress), the group network (225.x.y.z, a destination only)
+#define DMR_UDPC_ID_RADIO			0
+#define DMR_UDPC_ID_PERIPHERAL		1
+#define DMR_UDPC_ID_GROUP			2
+#define DMR_UDPC_IDS(said, daid)	((uint8_t)(((said) << 4) | (daid)))
+int dmrDataCompressUDPHeader(uint16_t ipId, uint8_t ids, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX]);
 // The user data of an IP packet (layer 4 from l4) in the module's IP buffer, from DMR ID src to dst (group: a
 // talkgroup) with the IP addresses srcIp and dstIp. With the compressed header (SAP 3) when compress is set, it is UDP
-// with a consistent length, and both addresses are the IDs' CAI addresses (dmrDataIdAddress(false, src) and
-// dmrDataIdAddress(group, dst): what a receiver rebuilds); else with the full IPv4 header (SAP 4) and the addresses as
-// given. ttl: the IPv4 TTL, DMR_IP_TTL_DEFAULT for the radio's own. ipId: the IPv4 identification (a retry keeps it;
+// with a consistent length, and both addresses are ones a receiver rebuilds from the IDs (dmrDataIdAddress(false, src)
+// or dmrDataPeripheralAddress(src); dmrDataIdAddress(group, dst) or, to a radio, dmrDataPeripheralAddress(dst)); else
+// with the full IPv4 header (SAP 4) and the addresses as given. ttl: the IPv4 TTL, DMR_IP_TTL_DEFAULT for the radio's own. ipId: the IPv4 identification (a retry keeps it;
 // dmrDataNextIpId() for a new packet). Returns the length (0: too long or malformed), *pdu points at it (valid until
 // the next build) and *sap says which
 int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint8_t protocol,

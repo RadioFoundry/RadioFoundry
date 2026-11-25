@@ -14,6 +14,7 @@
 #include "debuglink/dlog.h"
 
 _Static_assert(IPGW_AIR_SRC_OURS == DMR_DATA_IP_OURS, "the gateway's source goes to the service as is");
+_Static_assert(IPGW_AIR_SRC_PERIPHERAL == DMR_DATA_IP_OUR_PERIPHERAL, "the gateway's source goes to the service as is");
 
 #define MAX_AGE_MS	10000U	// a packet still queued after this is dropped: what it was for has likely moved on
 

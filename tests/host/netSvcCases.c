@@ -233,7 +233,7 @@ static void test_http(void)
 
 	// The page: the asset table's bytes as they are, gzip compressed with Content-Encoding (httpAssetsTest checks the
 	// table against core/net/http_assets)
-	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n") > 0);
+	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n") > 0);
 	CHECK(strncmp((char *)a.rx, "HTTP/1.0 200 OK\r\n", 17) == 0 && strstr((char *)a.rx, "Content-Type: text/html"));
 	CHECK(strcmp(http_assets[0].path, "/") == 0 && http_assets[0].gzip &&
 	      strstr((char *)a.rx, "\r\nContent-Encoding: gzip\r\n"));
@@ -323,7 +323,7 @@ static void test_http(void)
 	CHECK(http_get(&a, 51134, "GET /api/view HTTP/1.1\r\nhost: radio.example.com:80\r\n\r\n") > 0 &&
 	      strstr((char *)a.rx, " 403 "));
 	CHECK(http_get(&a, 51135, "GET / HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
-	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.20:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.21:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
 	CHECK(http_get(&a, 51137, "GET /status HTTP/1.1\r\nHost: 1.2.3\r\n\r\n") > 0 && strstr((char *)a.rx, " 403 "));
 
 	// The screen as a BMP, straight from the frame buffer
@@ -778,7 +778,7 @@ static void test_fuzz(void)
 
 	// HTTP
 	static const char *const hseeds[] = {
-		"GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n",
+		"GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n",
 		"GET /status HTTP/1.0\r\n\r\n",
 		"GET /api/view?section=core&x=1 HTTP/1.0\r\n\r\n",
 		"HEAD /api/view?section=1 HTTP/1.0\r\nX: y\r\n\r\n",
