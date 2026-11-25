@@ -113,9 +113,9 @@ A call alert pages another radio. It rings there, even when that radio's user is
 2. Press **5** (Call alert). The radio shows "Call alert to ..." and returns to Home.
 3. The radio tries up to 3 times. The result is a banner: "... answered the alert" or "No answer from ...".
 
-When someone sends you a call alert, the radio rings twice and shows "Call alert from ..." with "PTT replies". On a
-radio with a vibration motor it also vibrates once, unless **Settings > Sound > Vibrate** is off. The ring has no
-setting of its own; **Settings > Sound > Tone volume** sets its loudness, and 0 silences every tone. Press **#** while
+When someone sends you a call alert, the radio rings twice and shows "Call alert from ..." with "PTT replies". A
+radio with a vibration motor also vibrates once, unless **Settings > Sound > Vibrate** is off. The ring has no setting
+of its own: **Settings > Sound > Tone volume** sets the ring's loudness, and 0 silences every tone. Press **#** while
 the banner is up for the caller's actions. Your radio acknowledges the alert unless **Settings > Connections > Answer call
 alerts** is off.
 
