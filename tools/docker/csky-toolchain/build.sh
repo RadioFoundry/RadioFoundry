@@ -4,20 +4,23 @@
 # Builds the C-SKY CI image: the builder image (Dockerfile.build) runs tools/build-csky-toolchain.sh (CLEAN=1) with
 # WORK on the host as its work directory, then the CI image (Dockerfile) is made from the installed tree.
 # Docker's own storage only grows by the base image, the build tools and the final image (about 0.6 GB); the build
-# tree (peak about 4 GB) stays in WORK. Linux x86_64 or arm64 with Docker.
-#   tools/docker/csky-toolchain/build.sh [WORK] [TAG]      (defaults: /scratch/rfoundry-csky, rfoundry/csky-gcc14:<date>)
+# tree (peak about 4 GB) stays in WORK. Linux x86_64 or arm64, or a Mac, with Docker; the image is for the host's
+# architecture, so the one CI pulls (x86_64 runners) is built on an x86_64 host.
+#   tools/docker/csky-toolchain/build.sh [WORK] [TAG]
+# Defaults: /scratch/rfoundry-csky ($TMPDIR/rfoundry-csky without /scratch, as on a Mac), rfoundry/csky-gcc14:<date>.
 # KEEP=1 leaves WORK (the downloaded sources and the installed tree) and the builder image in place.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../../.." && pwd)
-WORK=${1:-/scratch/rfoundry-csky}
+TMP=${TMPDIR:-/tmp}
+WORK=${1:-$([ -d /scratch ] && echo /scratch || echo "${TMP%/}")/rfoundry-csky}
 TAG=${2:-rfoundry/csky-gcc14:$(date +%Y%m%d)}
 MIN_FREE_GB=${MIN_FREE_GB:-1}
 
 mkdir -p "$WORK/src"
 printf 'src\n' > "$WORK/.dockerignore"	# the image takes only csky-elf/
 DOCKER_FS=$(dirname "$(docker info -f '{{.DockerRootDir}}')")	# its parent: the root dir itself is root-only
-free_gb() { df -BG --output=avail "$1" | tail -1 | tr -dc 0-9; }
+free_gb() { df -Pk "$1" | awk 'NR == 2 { print int($4 / 1048576) }'; }	# POSIX df: GNU's -BG isn't on macOS
 for d in "$WORK" "$DOCKER_FS"; do
 	[ -d "$d" ] || continue
 	f=$(free_gb "$d")
