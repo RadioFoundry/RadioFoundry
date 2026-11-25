@@ -65,7 +65,7 @@ schematic "is known to be not correct" in places. Where the notes are unclear th
 
 | Pin | Function | Notes |
 |---|---|---|
-| PA0 | ADC1 IN0: volume knob position | (unverified) |
+| PA0 | ADC1 IN0: volume knob position | Follows the knob: "vol" in the diagnostics reads 2 to 2012 (measured) |
 | PA1 | ADC1 IN1: battery voltage | (unverified) |
 | PA2 | ADC1 IN2: QT_DQT_IN, sub-audio tone input | (unverified); RadioFoundry decodes CTCSS / DCS in software, sampling it with `CONFIG_SUBTONE` (section 6.4) |
 | PA3 | ADC1 IN3: VOX, mic level | (unverified) |
@@ -796,6 +796,9 @@ synthesizer unpowered, PS floating) and 0 with SAVE high (powered, not yet progr
 
 ### 6.1 Paths
 
+The USB programming cable plugs into the accessory jack, and the speaker is off while it is in. Nothing can be heard
+during a debug link session: unplug to listen, and read values from Diagnostics on the radio meanwhile.
+
 FM receive audio and DMR voice both reach the amplifier through the HR_C5000 in RadioFoundry's model: FM through its
 feed-through (0x36) behind FM_MUTE (PE13), DMR through its codec DAC; SPK_C (PB8) mutes the speaker, AFCO (PB9) turns
 the amplifier on (the routing (unverified)). Measured on RadioFoundry with a pin scan (the 16 levels of FM_MUTE, FM_SW, SPK_C and AFCO,
@@ -805,9 +808,12 @@ RadioFoundry doesn't use.
 Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
 FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
-The volume knob sets the level in the analog path; the MCU only sees its position on PA0. The board therefore has no
-`CAP_VOLUME_POT` and `hal_power_t.volume()` returns -1. There is no `hal_radio_t.volume` either: the MCU has no way to set
-the speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's
+The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
+that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
+2012 (100 %) (measured). No mute zone is applied: with the knob against the bottom stop a very faint audio is still
+heard (tested). It answers -1 until the ADC readings settle, and holds the last position while the battery line reads
+off (10.1). The board has no `CAP_VOLUME_POT`, and there is no `hal_radio_t.volume`: the MCU has no way to set the
+speaker level (the HR_C5000's feed-through gain isn't used for it, and the knob acts after it), so the debug link's
 volume operation (RADIO op 30) answers "unavailable" (`radio-features.md` 4.2).
 
 ### 6.2 I2S PCM
@@ -974,7 +980,7 @@ PTT on PE11 and the accessory jack's PTT on PE12, both active low with pull-ups 
 The volume knob carries the power switch. It doesn't switch the supply: POW_C (PA7) is a latch the firmware holds (unverified),
 and the switch breaks the battery sense line (and the volume pot's supply). Measured on a UHF MD-380 with
 the radio on USB: the raw battery reading (ADC1 IN1) is 3341-3351 (8.3 V) with the knob on and 3-4 with it off, at once;
-the volume reading falls from about 130-155 to 2-4. The radio stays on with the knob off, and with `switch_on()` always
+the volume reading falls from about 130-155 (where the knob was set then) to 2-4. The radio stays on with the knob off, and with `switch_on()` always
 on it only showed the battery running down. `switch_on()` now reads the knob from the battery line (`radio-features.md`
 5.5, `core/radio/power_switch.c`, as on the DM-1701), and power-off drops the latch.
 
@@ -1186,7 +1192,7 @@ Each with how to settle it; the stage numbers are [md380-bringup.md](../testing/
 | 2 | Display controller, orientation, colors | Stage 2: the type is detected (section 7); if the boot screen is wrong, note the `display.panel_*` keys and try `MD380_PANEL_TYPE` / `MD380_PANEL_MADCTL_XOR` |
 | 3 | Key matrix positions, side keys on K3 | Stage 3: press each key, read "keys" on the diagnostics page, correct section 9.1 and `input_md380.c` |
 | 4 | Channel switch code polarity and order | Settled 2026-10-16: a Gray code, table in 9.2 |
-| 5 | Volume knob on PA0 vs the TX LED | Stage 3: "vol" on the diagnostics page follows the knob, and the red LED lights on PE1 |
+| 5 | Volume knob on PA0 vs the TX LED | The knob is on PA0 (measured). Open: stage 3, the red LED lights on PE1 |
 | 6 | Battery divider | Stage 3: compare "bat raw" against a meter; set `MD380_BATT_COUNTS_X10` |
 | 7 | Power switch wiring (direct or sensed) | Stage 3: switch off with the knob: does the radio die at once? |
 | 8 | Flash size and JEDEC ID | Stage 3: "flash" line |

@@ -61,6 +61,9 @@ pass ([features.toml](../../tests/hil/features.toml)).
 
 ## 0. Before anything
 
+**The speaker is off while the programming cable is plugged in.** Every check that needs ears is done with the cable out;
+read values from Diagnostics on the radio then.
+
 1. **Back up the radio** with the stock CPS (or `tools/md380_migrate.py backup`, [md380-migration.md](../spec/md380-migration.md)): the codeplug (RadioFoundry's open-firmware layout overwrites it, hardware-md380.md 12.2)
    and, if the CPS offers it, the calibration view (RadioFoundry only reads the calibration, never writes it).
 2. Check that the bootloader works with the stock firmware: hold **PTT and the upper side key** while switching on;
@@ -129,7 +132,8 @@ Open Diagnostics (Menu > Settings > Diagnostics, or `rfoundry_debug.py diag`). T
 | SK1 = monitor, SK2 = talk target | the K3 row's columns |
 | "ch x" changes by one per detent across all 16 positions, the channel steps the right way | Settled: the Gray code table in `input_md380.c` (hardware-md380.md 9.2) |
 | PTT (and the accessory PTT) key the PTT bit | PE11 / PE12 pulls in `input_md380.c` |
-| "vol" follows the knob; the red LED lights on TX later | PA0 / PE1 (the sources disagree). Unknown 5 |
+| "vol" follows the knob (2 to 2012, 2026-11-24); the red LED lights on TX later | PA0 / PE1 (the sources disagree). Unknown 5 |
+| The volume bar follows the knob: step 8 near mid-rotation ("vol" 327 there, 2026-11-24), nothing at power-up or switch-off; the lowest step is 1 (the bottom stop is not silent: faint audio, 2026-11-24) | `volume()` in `power_md380.c` (the midpoint 327) |
 | "bat raw R NNNNmV" matches a meter within 2 % | `MD380_BATT_COUNTS_X10` in `power_md380.c`. Unknown 6 |
 | Switching off with the knob: the radio dies at once | if it stays on, the switch is sensed, not direct: `switch_on()` in `power_md380.c`. Unknown 7 |
 | "flash EF4018 16384K" (W25Q128) or a 1 MB part | `flash_md380.c` accepts any JEDEC type 0x40. Unknown 8 |

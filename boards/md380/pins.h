@@ -9,7 +9,7 @@
 #include "platform.h"
 
 // Analog (ADC1)
-#define PIN_VOLUME		GPIOA, GPIO_PIN_0	// ADC IN0, volume knob position (?: one source has the TX LED here)
+#define PIN_VOLUME		GPIOA, GPIO_PIN_0	// ADC IN0, volume knob position
 #define PIN_BATTERY		GPIOA, GPIO_PIN_1	// ADC IN1
 #define PIN_QT_IN		GPIOA, GPIO_PIN_2	// ADC IN2, sub-audio tone input (stock decodes CTCSS / DCS from it)
 #define PIN_MIC_LEVEL		GPIOA, GPIO_PIN_3	// ADC IN3, VOX
