@@ -912,5 +912,8 @@ steps ([installing](../user/02-installing.md#windows-the-bootloader-driver)), op
 bootloader once, and again with any failed connect: without the driver Chrome either doesn't list the bootloader or
 can't open it. The device name comes from `[flash.dfu] product` in the board's `board.toml`.
 
-Other browsers (Safari, Firefox) can still choose and build the firmware; the step that needs the radio then offers
-the [manual install kit](#the-manual-install-kit).
+Firefox has Web Serial but no WebUSB: radios that install over the programming cable install as in Chrome, and the
+start page warns (`flash.support.usb`, a warning, not an error) that radios installing over USB (DFU) need another
+browser. Safari has neither. Without the API a step needs, the browser can still choose and build the firmware, and
+that step offers the [manual install kit](#the-manual-install-kit). The banner comes from `supportNotices` in
+`manual.js`; each step checks its own API with `missingApi`.
