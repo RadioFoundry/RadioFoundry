@@ -328,7 +328,7 @@ depend on them:
 | host to air broadcast | 255.255.255.255, the all call address | also the link's 192.168.10.255 |
 | radios per host | several (each has its own pair) | one (every radio has the same pair) |
 
-`net_link_ip` must be a unicast address outside the 12/8, 225/8 (and group) ranges with a last octet of 1-253;
+`net_link_ip` must be a unicast address outside the 12/8, 13/8, 225/8 (and group) ranges with a last octet of 1-253;
 anything else (or 0) means the default 192.168.10.1 when set from the UI, or the DMR ID addressing when the debug link
 stores an unusable address (`ipGatewaySetFixedLink` refuses it; `net.link_in_force` shows what is used). A change
 applies at once on the radio's side; the PC picks it up at its next DHCP exchange (the radio refuses the renewal of
