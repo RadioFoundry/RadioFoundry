@@ -95,9 +95,14 @@ def test_usb_network_own_address(radio):
             s.bind((host_ip, 0))
             s.connect((radio_ip, UNBOUND_PORT))
             s.settimeout(2.0)
-            refused = 0
+            refused = sent = 0
             for _ in range(3):
-                s.send(b"probe")
+                try:
+                    s.send(b"probe")
+                except ConnectionRefusedError:      # the try before's ICMP error, after its recv timed out
+                    refused += 1
+                    continue
+                sent += 1
                 try:
                     s.recv(64)
                 except ConnectionRefusedError:      # the ICMP port unreachable, on a connected socket
@@ -109,6 +114,6 @@ def test_usb_network_own_address(radio):
         time.sleep(0.5)
         after = udp.view(["hotspot", "net_svc"])
     assert refused >= 1, "no ICMP port unreachable back"
-    assert int(after["net_svc.unreachable"]) - int(before["net_svc.unreachable"]) == 3, after
+    assert int(after["net_svc.unreachable"]) - int(before["net_svc.unreachable"]) == sent, after
     for k in ("net.to_air", "net.to_air_refused"):     # never handed to the air
         assert after[k] == before[k], (k, before, after)

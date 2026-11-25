@@ -89,6 +89,14 @@ _Static_assert((IPGW_LINK_PREFIX == 32) || ((IPGW_LINK_PREFIX >= 1) && (IPGW_LIN
 				((IPGW_PERIPHERAL_NET & IPGW_NETMASK) == (IPGW_INDIVIDUAL_NET & IPGW_NETMASK))),
 				"the link must be a /32 or hold the individual and peripheral ranges");
 _Static_assert((IPGW_MULTICAST_NET >> 28) == 0xE, "the multicast range must be in 224.0.0.0/4");
+// The peripheral range follows the individual range: it must be unicast and not another range of the gateway's
+_Static_assert((IPGW_PERIPHERAL_NET > IPGW_INDIVIDUAL_NET) && ((IPGW_PERIPHERAL_NET >> 28) < 0xE),
+				"the peripheral range must be unicast, after the individual range");
+#if defined(IPGW_GROUP_NET)
+_Static_assert(((IPGW_GROUP_NET & IPGW_MASK(IPGW_PERIPHERAL_PREFIX)) != IPGW_PERIPHERAL_NET) &&
+				((IPGW_PERIPHERAL_NET & IPGW_MASK(IPGW_GROUP_PREFIX)) != IPGW_GROUP_NET),
+				"the group range must not overlap the peripheral range (the one after the individual range)");
+#endif
 
 // Every data burst received over the air also goes to the host, as a UDP broadcast from the radio to this port:
 // version (1), timeslot (1-2), color code, DT, flags (dmrBurst_t), length, payload.
@@ -240,14 +248,16 @@ bool ipGatewaySendFrame(const uint8_t *frame, int length);
 uint32_t ipGatewayRadioId(void);
 void ipGatewaySerialIn(const uint8_t *data, int length);
 // ICMP, UDP or SCTP from the host to a radio ID or talkgroup, from layer 4 on (UDP: header and payload, UDP length bytes).
-// srcIp / dstIp: the IPv4 addresses for the air (host byte order). srcIp is the host's peripheral network address on
-// the air, 13.<the ID it sends from> (dmrDataPeripheralAddress), so that answers come back to the host; on a fixed
-// link IPGW_AIR_SRC_OURS, the radio's own (12.<the ID>): a fixed address means nothing on the air. The user may send
+// srcIp / dstIp: the IPv4 addresses for the air (host byte order). srcIp IPGW_AIR_SRC_PERIPHERAL is the host's
+// peripheral network address on the air, 13.<the ID it goes from> (dmrDataPeripheralAddress), so that answers come
+// back to the host; on a fixed link IPGW_AIR_SRC_OURS, the radio's own (12.<the ID>): a fixed address means nothing on
+// the air. Both are resolved when the packet goes, with the channel's ID then. The user may send
 // the host's as its radio's own too (control station passthrough: the PC answers for the radio). dstIp is the
 // destination ID's CAI address (dmrDataIdAddress), a radio's peripheral network address, or an off-net address for
 // the off-net route. ttl: the IPv4 TTL
 // on the air (the host's; 0: the radio's own default; a talkgroup always gets 1)
 #define IPGW_AIR_SRC_OURS		0u
+#define IPGW_AIR_SRC_PERIPHERAL	1u
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 					  const uint8_t *l4, int length);
 // The payload of a datagram from the host to IPGW_RAW_PORT, to go over the air as the user data of a packet

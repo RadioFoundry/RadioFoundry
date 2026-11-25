@@ -685,7 +685,7 @@ static void testOffNet(void)
 	setTtl(f, 9);
 	in(f, n);
 	CHECK(air.calls == 1 && !air.group && air.dst == 235 && air.ttl == 9);
-	CHECK(air.srcIp == dmrDataPeripheralAddress(RADIO_ID) && air.dstIp == dmrDataIdAddress(false, 235));
+	CHECK(air.srcIp == IPGW_AIR_SRC_PERIPHERAL && air.dstIp == dmrDataIdAddress(false, 235));
 	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_MULTICAST_NET | 9, 5016, 5016, text, sizeof(text)));
 	CHECK(air.calls == 2 && air.group && air.dst == 9 && air.ttl == 64 && air.dstIp == dmrDataIdAddress(true, 9));
 
@@ -698,7 +698,7 @@ static void testOffNet(void)
 	CHECK(ipGatewayOffNetId() == GATEWAY);
 	in(f, hostUdp(f, GW_MAC, HOST_IP, OFF_NET, 5000, 161, text, sizeof(text)));
 	CHECK(air.calls == 3 && !air.group && air.dst == GATEWAY && air.dstIp == OFF_NET && air.ttl == 63);
-	CHECK(air.srcIp == dmrDataPeripheralAddress(RADIO_ID) && air.protocol == 17 && air.dstPort == 161 &&
+	CHECK(air.srcIp == IPGW_AIR_SRC_PERIPHERAL && air.protocol == 17 && air.dstPort == 161 &&
 		  air.length == sizeof(text));
 	uint8_t echo[8] = { 8, 0, 0, 0, 0, 1, 0, 1 };
 	uint16_t c = sum16(echo, sizeof(echo), 0); echo[2] = c >> 8; echo[3] = c;
@@ -955,7 +955,7 @@ static void testPeripheral(void)
 
 	in(f, hostUdp(f, GW_MAC, HOST_IP, PC_IP(235), 50000, 4191, req, sizeof(req)));
 	CHECK(air.calls == airCalls + 1 && !air.group && air.dst == 235 && framesSent == 0);
-	CHECK(air.srcIp == dmrDataPeripheralAddress(RADIO_ID) && air.dstIp == dmrDataPeripheralAddress(235));
+	CHECK(air.srcIp == IPGW_AIR_SRC_PERIPHERAL && air.dstIp == dmrDataPeripheralAddress(235));
 	// The host itself, the all unit range's top two: not sent
 	in(f, hostUdp(f, GW_MAC, HOST_IP, HOST_IP, 50000, 4191, req, sizeof(req)));
 	in(f, hostUdp(f, GW_MAC, HOST_IP, IPGW_ANY_RADIO_IP - IPGW_INDIVIDUAL_NET + IPGW_PERIPHERAL_NET, 50000, 4191, req,
@@ -1072,6 +1072,7 @@ static void testFixedLink(void)
 
 	// Addresses that can't be used: refused, the DMR ID addressing stays
 	CHECK(!ipGatewaySetFixedLink(0xE0000001u) && !ipGatewaySetFixedLink(IPGW_INDIVIDUAL_NET | 5) &&
+		  !ipGatewaySetFixedLink(IPGW_PERIPHERAL_NET | 5) &&
 		  !ipGatewaySetFixedLink(0xC0A80AFEu) && !ipGatewaySetFixedLink(0xC0A80A00u) && !ipGatewaySetFixedLink(0x7F000001u));
 	CHECK((ipGatewayFixedLink() == 0) && (ipGatewayHostIP() == HOST_IP));
 

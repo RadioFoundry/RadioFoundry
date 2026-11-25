@@ -174,7 +174,8 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	if (service_busy) {
 		return false;
 	}
-	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) : srcIp;
+	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) :
+			(srcIp == DMR_DATA_IP_OUR_PERIPHERAL) ? dmrDataPeripheralAddress(RADIO_ID) : srcIp;
 	dstIp = (dstIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(group, dst) : dstIp;
 	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
 	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
@@ -456,6 +457,24 @@ int main(void)
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && local.from_air && local.src == 9991234 && local.port == 4321 &&
 	      local.len == (int)sizeof(hello) && sent_count == 0);
+	// ... but compressed (SAP 3) with DAID 1, our peripheral network 13.<our ID>, it is the host's, not the service's
+	{
+		dmrDataPacket_t c;
+
+		memset(&c, 0, sizeof(c));
+		c.sap = DMR_SAP_UDPIP_COMPRESSION;
+		c.dst = RADIO_ID;
+		c.src = 9991234;
+		int n = dmrDataCompressUDPHeader(1, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_PERIPHERAL), 4321, 161, c.data);
+		memcpy(c.data + n, hello, sizeof(hello));
+		c.length = (uint16_t)(n + sizeof(hello));
+		sent_count = 0;
+		hostlink_net_packet(&c);
+		hostlink_net_poll(now_ms);
+		CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+		      get32(sent[0] + 14 + 16) == HOST_IP);
+		sent_count = 0;
+	}
 	// ... but not when it is for a talkgroup, or for another ID: those go to the host as before
 	p.group = true;
 	hostlink_net_packet(&p);

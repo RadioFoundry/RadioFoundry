@@ -125,7 +125,7 @@ bool ipGatewaySetFixedLink(uint32_t radioIp)
 {
 	uint8_t last = radioIp & 0xFF;
 	bool usable = (radioIp != 0) && (last >= 1) && (last <= 253) && ((radioIp >> 28) < 0xE) && ((radioIp >> 24) != 127) &&
-			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
+			!IN_RANGE(INDIVIDUAL, radioIp) && !IN_RANGE(PERIPHERAL, radioIp) && !IN_RANGE(MULTICAST, radioIp)
 #if defined(IPGW_GROUP_NET)
 			&& !IN_RANGE(GROUP, radioIp)
 #endif
@@ -710,10 +710,10 @@ void ipGatewayEthernetIn(const uint8_t *frame, int length)
 
 	// On the air the addresses are the IDs' CAI addresses (12.x.y.z, 13.x.y.z, 225.x.y.z), whatever the gateway's
 	// ranges, and only an off-net destination is carried as it is. The host's source is its peripheral network address
-	// under our ID, so the answer comes back to it; on a fixed link the radio's own (IPGW_AIR_SRC_OURS): a fixed
-	// address means nothing on the air
-	ipGatewayIPToAir(group, id, (fixedLink != 0) ? IPGW_AIR_SRC_OURS : dmrDataPeripheralAddress(ipGatewayRadioId()),
-						airIp, ttl, ip[9], l4, l4Length);
+	// under our ID, so the answer comes back to it; on a fixed link the radio's own: a fixed address means nothing on
+	// the air
+	ipGatewayIPToAir(group, id, (fixedLink != 0) ? IPGW_AIR_SRC_OURS : IPGW_AIR_SRC_PERIPHERAL, airIp, ttl, ip[9], l4,
+						l4Length);
 }
 
 // The UDP header and payload at tx[34] (payload may already be in place): the layer 4 length, or -1 when too long
