@@ -6,7 +6,7 @@
  * Ethernet, ARP (on a fixed link for the radio's address, else for every address but the host's), ICMP echo to the
  * radio's address, a DHCP server with a single lease, ICMP, UDP and SCTP between the host and DMR IDs / talkgroups (addressing in
  * ipGateway.h), raw DMR data on IPGW_RAW_PORT, and the radio's own services (core/net): TCP to the radio's address
- * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; over the air ipGatewayUdpBindAir,
+ * (ipGatewaySetTCP) and a port table for its UDP services (ipGatewayUdpBind; SNMP also from the air,
  * ipGatewayUdpFromAir), all sending to the link through ipGatewaySendLocal. No other protocols, no fragments: a host
  * packet too long for one transmission is dropped, with an ICMP "fragmentation needed" back when it has DF set.
  */
@@ -55,9 +55,9 @@ static volatile uint32_t offNetId = 0;	// the DMR ID off-net unicast goes to, 0 
 static ipGatewayLocalFn localTCP;			// the radio's own TCP, NULL without it
 static struct {
 	uint16_t port;
-	ipGatewayUdpHandler link;				// from the link
-	ipGatewayUdpAirHandler air;				// over the air to our own DMR ID
-} udpPorts[IPGW_UDP_PORTS];				// the radio's own UDP services; a slot with neither handler is free
+	bool air;						// also over the air to our own DMR ID
+	ipGatewayUdpHandler handler;
+} udpPorts[IPGW_UDP_PORTS];				// the radio's own UDP services
 static uint8_t txTtl = 64;				// IP TTL of the next sendIPv4 (the radio's own packets: 255)
 static ipGatewayStats_t stats;
 static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uint8_t *l4, int length);
@@ -955,65 +955,54 @@ void ipGatewaySetTCP(ipGatewayLocalFn fn)
 	localTCP = fn;
 }
 
-// The slot of port (either handler set), else a free one; -1 when the table is full
-static int portSlot(uint16_t port)
+static bool bindPort(uint16_t port, ipGatewayUdpHandler handler, bool air)
 {
 	int free = -1;
 
 	for (int i = 0; i < IPGW_UDP_PORTS; i++)
 	{
-		bool bound = (udpPorts[i].link != NULL) || (udpPorts[i].air != NULL);
-
-		if (bound && (udpPorts[i].port == port))
+		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == port))
 		{
-			return i;
+			udpPorts[i].handler = handler;// rebound, or unbound with NULL
+			udpPorts[i].air = air;
+			return true;
 		}
-		if (!bound && (free < 0))
+		if ((udpPorts[i].handler == NULL) && (free < 0))
 		{
 			free = i;
 		}
 	}
-	return free;
+	if (handler == NULL)
+	{
+		return true;
+	}
+	if (free < 0)
+	{
+		return false;
+	}
+	udpPorts[free].port = port;
+	udpPorts[free].air = air;
+	udpPorts[free].handler = handler;
+	return true;
 }
 
 bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler)
 {
-	int i = portSlot(port);
-
-	if (i < 0)
-	{
-		return handler == NULL;
-	}
-	udpPorts[i].port = port;
-	udpPorts[i].link = handler;// bound, rebound, or unbound with NULL
-	return true;
+	return bindPort(port, handler, false);
 }
 
-bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpAirHandler handler)
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler)
 {
-	int i = portSlot(port);
-
-	if (i < 0)
-	{
-		return handler == NULL;
-	}
-	udpPorts[i].port = port;
-	udpPorts[i].air = handler;
-	return true;
+	return bindPort(port, handler, true);
 }
 
-bool ipGatewayUdpFromAir(uint32_t srcId, uint32_t srcIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *data,
-						 int length)
+bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length)
 {
-	if ((srcIp == 0) || (srcIp >= 0xE0000000u) || ((srcIp >> 24) == 127))
-	{
-		srcIp = dmrDataIdAddress(false, srcId);// no answer can go there: the sender's own address
-	}
 	for (int i = 0; i < IPGW_UDP_PORTS; i++)
 	{
-		if ((udpPorts[i].air != NULL) && (udpPorts[i].port == dstPort))
+		if ((udpPorts[i].handler != NULL) && udpPorts[i].air && (udpPorts[i].port == dstPort))
 		{
-			udpPorts[i].air(srcId, srcIp, srcPort, data, length);
+			udpPorts[i].handler(true, srcId, srcPort, ADDRESS(INDIVIDUAL, ipGatewayRadioId()), dstPort, data, length);
 			return true;
 		}
 	}
@@ -1044,9 +1033,9 @@ static bool deliverLocal(uint8_t protocol, uint32_t src, uint32_t dst, const uin
 	uint16_t dstPort = get16(&l4[2]);
 	for (int i = 0; i < IPGW_UDP_PORTS; i++)
 	{
-		if ((udpPorts[i].link != NULL) && (udpPorts[i].port == dstPort))
+		if ((udpPorts[i].handler != NULL) && (udpPorts[i].port == dstPort))
 		{
-			udpPorts[i].link(src, get16(&l4[0]), dst, dstPort, &l4[8], length - 8);
+			udpPorts[i].handler(false, src, get16(&l4[0]), dst, dstPort, &l4[8], length - 8);
 			return true;
 		}
 	}

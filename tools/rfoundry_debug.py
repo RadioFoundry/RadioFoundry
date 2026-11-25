@@ -1099,7 +1099,9 @@ class DebugLink:
             kv = parse_kv(r[5:].decode("ascii", "replace"))
             kv.pop("section", None)
             more = kv.pop("more", None)
-            out.update(kv)      # truncated=1 among them when the radio's reply buffer cut the section
+            # truncated=1 among them when the radio's reply buffer cut the section. A build without paging
+            # (CONFIG_DEBUGLINK_DMRIP off) sends the whole section: the prefix is applied here too
+            out.update({k: v for k, v in kv.items() if k.startswith(prefix) or k == "truncated"})
             if more is None:
                 return out
             if int(more) <= offset:

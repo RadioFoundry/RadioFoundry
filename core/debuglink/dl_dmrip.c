@@ -221,6 +221,14 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 	}
 }
 
+uint32_t dl_dmrip_reply_ip(uint32_t id, uint32_t src_ip)
+{
+	if (src_ip == 0 || src_ip >= 0xE0000000u || (src_ip >> 24) == 127) {
+		return 0x0C000000u | (id & 0xFFFFFFu);	// 12.<ID>
+	}
+	return src_ip;
+}
+
 // --- the detour (7.4) ---
 
 // RADIO's operations a detour may run: the changes its return undoes

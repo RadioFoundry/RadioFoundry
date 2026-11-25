@@ -118,8 +118,8 @@ All multi-byte numbers are little endian. Text is ASCII, lines end with `\n`.
 | `0x24` | AIR | operation u8 + arguments (3.28); `CONFIG_AIR_RAW` builds, else status 1 | samples, receive chunks, the session's fit, or none (3.28) |
 | `0x25` | SUPPORT | operation u8 (3.29); `CONFIG_SUPPORT_INFO` builds, else status 4 | key=value text (3.29) |
 | `0x26` | SATELLITE | operation u8 + arguments (3.30); `CONFIG_SATELLITE_TLE` builds only | capability, inventory, or transaction result (3.30) |
-| `0x27` | DETOUR | operation u8 + arguments (7.4); `CONFIG_DEBUGLINK_DMRIP` builds, else status 4 | the deadline, the detour's state, or none (7.4) |
-| `0x28` | DMRIP | operation u8 + arguments (7.5); `CONFIG_DEBUGLINK_DMRIP` builds, else status 4 | the transport's state, or none (7.5) |
+| `0x27` | DETOUR | operation u8 + arguments (7.4); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the deadline, the detour's state, or none (7.4) |
+| `0x28` | DMRIP | operation u8 + arguments (7.5); `CONFIG_DEBUGLINK_DMRIP` builds, else unknown command | the transport's state, or none (7.5) |
 
 ### 3.1 VERSION
 
@@ -381,7 +381,7 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 36 | `p25` | P25 conventional on the channel ([p25.md](p25.md) 7.4): `p25.built` (0 without `CONFIG_P25`, and nothing else) `p25.on` (the engine runs on this channel), the call heard now or last `p25.rx played enc unit late nac src dst` (`src` 0: not known yet; `dst` a talk group, or a unit when `unit` is 1) `p25.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `p25.rx_work_us rx_span_us` (while the engine runs, from a provider that counts its receive load, as `air.rx_work_us` in 3.28: work / span is the share of the CPU since P25 started), the settings `p25.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (as op 39), while the engine runs the parameters it runs on `p25.run.rx_nac tx_nac rx_tgid talkaround unit_call tx_dst unit_id` (a stored P25 channel's own, else the settings; talkaround 1 on, 2 off), counters `p25.begins begin_fails mem_lent rx_calls tx_calls tx_filler units voice voice_bad voice_bits lc_fail es_fail rx_chunks tx_underruns tx_syms`; the voice path `p25v.built in frames bad concealed calls underruns underrun_at overflows bit_errors queue_max peak tx_frames tx_encoded tx_dropped tx_silent tx_mic_peak tx_mic_muted tx_mic_low_db` (`tx_mic_peak` after the mic gain and its limiter, `tx_mic_muted` blocks sent as silence while a beep played, `radio-features.md` 4, `tx_mic_low_db` the limiter's lowest gain in the latest transmission, as `voice.tx_mic_low_db` in the `dmr` section; `p25v.built=0` without). RESET_COUNTERS zeroes the counters |
 | 37 | `p25_trunk` | the P25 trunking follower on a trunked channel ([p25-trunking.md](p25-trunking.md) 7): `p25t.built` (0 without `CONFIG_P25_TRUNK`, and nothing else) `p25t.on` (a trunked channel runs), the follower's view `p25t.state` (`P25_FOLLOW_*`: 0 off, 1 hunting, 2 on a control channel, 3 on a voice channel) `cc cc_hz voice_hz nac wacn sysid rfss site` (the control channel tried or held and the system heard; `wacn` 4294967295, `sysid` 65535, `rfss`/`site` 255 until heard), the call followed now or last `tg src dst unit_call enc`, `idens learned refused refused_tg fallback`, counters `blocks crc_fail crc_taken mfr mbt mbt_op pdu_other grants follows enc_skip tdma no_iden wrong_sys hunts cc_lost voice_lost wrong_call` (from the channel's start; `crc_taken` the blocks taken with a failed CRC, the channel's Accept invalid CRC), `p25t.unverified` (1 while the last block taken failed it: the transmit side waits), and the radio core's `retunes untuned skips` (RESET_COUNTERS zeroes these three). The transmit side ([p25-trunking.md](p25-trunking.md) 5): `p25t.tx` (1: on), `reg` (`P25_REG_*`: 0 off, 1 idle, 2 waiting, 3 affiliating, 4 registered and affiliated, 5 denied, 6 retrying, 7 no inbound frequency), `req` (`P25_REQ_*`: 0 idle, 1 waiting, 2 queued, 3 talking on the grant, 4 denied, 5 no answer, 6 unusable channel), `aff_tg` (the group affiliated), `talk_hz` (where it last transmitted on a grant), `deny_svc deny_reason` (the last deny's request opcode and reason), counters `reg_tx reg_ok aff_tx aff_ok req_tx req_grant denials queued timeouts send_fail inb_busy` (8 bits, from the channel's start) and the radio core's `bursts burst_refused` (inbound bursts keyed, and refused by the transmit checks) |
 | 38 | `nxdn` | NXDN conventional on the channel ([nxdn.md](nxdn.md) 6): `nxdn.built` (0 without `CONFIG_NXDN`, and nothing else) `nxdn.on` (the engine runs on this channel), the call heard now or last `nxdn.rx played enc unit late ran src dst emergency` (`src` 0: not known yet; `dst` a group, or a unit when `unit` is 1), `nxdn.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `nxdn.deny` (`tx_deny_t` of the last refusal), the provider's fit (`AIR_FIT_*`, 3.28) at the rate in use and at each rate `nxdn.fit fit4800 fit9600`, the settings `nxdn.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst tx_emergency` (as op 40), while the engine runs the parameters it runs on `nxdn.run.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst` (a stored NXDN channel's own, [nxdn-codeplug.md](nxdn-codeplug.md), else the settings), counters `nxdn.begins begin_fails rx_calls tx_calls tx_filler frames lich_fail sacch_fail facch_fail voice voice_held fec_bits ran_rejects rx_chunks tx_underruns tx_syms`. The voice path is the DMR side's (`ambe.*` in `dmr_stats`). RESET_COUNTERS zeroes the counters |
-| 39 | `dmrip` | the debug link over the air (7): `dmrip.built` (0 without `CONFIG_DEBUGLINK_DMRIP`, and nothing else) `dmrip.id` (the DMR ID the radio answers to) `dmrip.port dmrip.key` (`uid`, `set` or `none`) `dmrip.session dmrip.counter`, counters `dmrip.rx busy bad_auth not_ours old repeats gone refused answered chunks dropped hello`, and the detour runner `detour.phase` (0 idle, 1 arming, 2 clear, 3 running, 4 returning) `detour.left_ms detour.items detour.failed detour.result detour.runs` |
+| 39 | `dmrip` | the debug link over the air (7), only in builds with `CONFIG_DEBUGLINK_DMRIP` (without it the section number is out of range: BAD_ARG): `dmrip.built` (1) `dmrip.id` (the DMR ID the radio answers to) `dmrip.port dmrip.key` (`uid`, `set` or `none`) `dmrip.session dmrip.counter`, counters `dmrip.rx busy bad_auth not_ours old repeats gone refused answered chunks dropped hello`, and the detour runner `detour.phase` (0 idle, 1 arming, 2 clear, 3 running, 4 returning) `detour.left_ms detour.items detour.failed detour.result detour.runs` |
 
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
@@ -394,7 +394,8 @@ a reply holds: a whole reply; less than 64: 64). A page's first line goes whole 
 lines are left, the last line is `more=<offset>`, the offset of the next page. The radio renders the section into one
 reply each time, so a page costs the same on the radio and less on the link: over the air (7) a page of 200 bytes fits
 one datagram. Pages cover only what fits one reply: when the section was cut short, the last page also carries
-`truncated=1`, whatever the prefix.
+`truncated=1`, whatever the prefix. Only builds with `CONFIG_DEBUGLINK_DMRIP` page; the others answer every request
+with the whole section, and the host applies the prefix itself.
 
 Value forms: numbers in decimal (`temp`, `input.*keys` in hex with `0x`), states as lower-case words, tones as
 `type:value` (`ctcss:1000` = 100.0 Hz, `dcs:19` = D023), strings as they are with control characters replaced by
@@ -1155,12 +1156,13 @@ is `detour_*` in `core/radio/radio_sm.c` (`CONFIG_RADIO_DETOUR`, `tests/host/rad
 
 ### 7.1 Transport and addressing
 
-UDP port 3335 at the radio's individual address (`12.x.y.z`, the DMR ID in the low 24 bits), both ways. The gateway
-hands the radio only datagrams to its own ID and address, never a group's (`ipGatewayUdpBindAir`), and the radio
-checks again that the ID inside the authenticated header is its own. A group, the all-call ID or
+UDP port 3335 at the radio's individual address (`12.x.y.z`, the DMR ID in the low 24 bits), both ways. The radio
+takes only datagrams to its own ID and address, never a group's (`hostlink_net.c`, ahead of the IP gateway's port
+table, which doesn't give a service the request's IPv4 source), and the radio checks again that the ID inside the authenticated header is its own. A group, the all-call ID or
 another radio's ID gets no answer. An answer goes to the sender's DMR ID, at the request's IPv4 source address and
 port: a gateway radio's own address (12.<ID>), its host's (13.<ID>), or a host on a network a bench gateway routes, so
-the answer goes back the way the request came.
+the answer goes back the way the request came. A source no answer can reach (0, multicast, broadcast, loopback)
+gives the sender's own address.
 
 | Byte | Field | |
 |---|---|---|

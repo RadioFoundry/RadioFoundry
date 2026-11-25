@@ -88,6 +88,10 @@ bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, cons
 // PTT, KEY) only as an item of a detour; writes that no deadline undoes (registers, flash, codeplug, stored keys) and
 // everything that restarts or hands the radio over never
 bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len);
+// Where the answer to a request from DMR ID id with IPv4 source src_ip goes: src_ip (the sender's own address
+// 12.<ID>, its host's 13.<ID>, or a host on a network the sender routes), so the answer takes the way back the request
+// came; a source no answer can reach (0, multicast, broadcast, loopback) gives the sender's own address
+uint32_t dl_dmrip_reply_ip(uint32_t id, uint32_t src_ip);
 
 // --- the detour (7.4) ---
 

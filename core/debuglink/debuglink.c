@@ -447,6 +447,7 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		t.full = false;
 		dl_text(&t, "truncated=1\n");
 	}
+#if CONFIG_DEBUGLINK_DMRIP
 	if (len >= 3) {
 		// A page: offset u16, limit u16 (0 or none: the whole reply), a key prefix (3.7). Small replies over the air
 		uint16_t limit = len >= 5 ? (uint16_t)(req[3] | (req[4] << 8)) : 0;
@@ -458,6 +459,7 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		t.len = dl_view_page((char *)out + 6, t.len, len > 5 ? (const char *)req + 5 : "", len > 5 ? len - 5u : 0,
 				     (uint16_t)(req[1] | (req[2] << 8)), limit);
 	}
+#endif
 	return 6 + t.len;
 }
 
@@ -896,10 +898,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
+#if CONFIG_DEBUGLINK_DMRIP
 	case DL_CMD_DETOUR:
 		return debuglink_cmd_detour(req, len, out, cap);
 	case DL_CMD_DMRIP:
 		return debuglink_cmd_dmrip(req, len, out, cap);
+#endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());

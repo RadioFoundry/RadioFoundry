@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
-// The debug link over the air (docs/spec/debuglink.md 7), its glue: UDP DL_DMRIP_PORT bound in the IP gateway for the
-// air, a one-datagram mailbox the radio task fills and the host link task empties (as the SNMP agent's), the replies
+// The debug link over the air (docs/spec/debuglink.md 7), its glue: UDP DL_DMRIP_PORT over the air to our own DMR ID
+// (handed over by hostlink_net.c), a one-datagram mailbox the radio task fills and the host link task empties (as the SNMP agent's), the replies
 // in chunks from the debug link's own reply buffer, the DETOUR and DMRIP commands and the dmrip view section. The
 // pure parts (datagram, key, replay, policy, the detour runner) are dl_dmrip.c.
 #include <string.h>
@@ -136,8 +136,8 @@ static const dl_detour_ops_t ops = {
 
 // --- the air ---
 
-// The radio task: copy and return (ipGateway.h). The gateway hands over only datagrams to our own ID and address
-static void udp_in(uint32_t src, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len)
+// The radio task: copy and return. hostlink_net.c hands over only datagrams to our own ID and address
+void debuglink_dmrip_air(uint32_t src, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len)
 {
 	cnt.rx++;
 	if (io_state != IO_FREE || len <= 0 || (size_t)len > DL_DMRIP_DGRAM_MAX) {
@@ -147,7 +147,7 @@ static void udp_in(uint32_t src, uint32_t src_ip, uint16_t src_port, const uint8
 	memcpy(io + UDP_HDR, p, (size_t)len);
 	io_len = (uint16_t)len;
 	io_src = src;
-	io_ip = src_ip;
+	io_ip = dl_dmrip_reply_ip(src, src_ip);
 	io_port = src_port;
 	__sync_synchronize();	// complete before the flag says so
 	io_state = IO_REQ;
@@ -322,7 +322,6 @@ void debuglink_dmrip_init(void)
 {
 	uid_key();
 	dl_detour_init(&detour);
-	(void)ipGatewayUdpBindAir(DL_DMRIP_PORT, udp_in);
 }
 
 void debuglink_dmrip_poll(uint32_t now_ms)
@@ -432,31 +431,6 @@ void debuglink_view_dmrip(dl_text_t *t)
 	(void)dl_detour_request(&detour, &ops, &q, 1, false, st, sizeof(st), now);
 	dl_text(t, "detour.phase=%u\ndetour.left_ms=%u\ndetour.items=%u\ndetour.failed=%u\ndetour.result=%u\n"
 		"detour.runs=%u\n", st[1], (unsigned)get32(st + 2), st[6], st[7], st[8], (unsigned)get32(st + 9));
-}
-
-#else
-
-void debuglink_view_dmrip(dl_text_t *t)
-{
-	dl_text(t, "dmrip.built=0\n");
-}
-
-size_t debuglink_cmd_detour(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
-{
-	(void)req;
-	(void)len;
-	(void)cap;
-	out[0] = DL_ST_UNAVAILABLE;
-	return 1;
-}
-
-size_t debuglink_cmd_dmrip(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
-{
-	(void)req;
-	(void)len;
-	(void)cap;
-	out[0] = DL_ST_UNAVAILABLE;
-	return 1;
 }
 
 #endif

@@ -154,7 +154,7 @@ static void peer_frame(uint32_t ip, bool keyup, uint32_t seq, int16_t level)
 	}
 	usrp_header_t h = { .seq = seq, .keyup = keyup, .type = USRP_TYPE_VOICE };
 	size_t n = usrp_pack(buf, sizeof buf, &h, pcm);
-	bound(ip, 32001, 0x0A000001u, USRP_PORT, buf, (int)n);
+	bound(false, ip, 32001, 0x0A000001u, USRP_PORT, buf, (int)n);
 }
 
 // ---- tests ----
@@ -443,7 +443,7 @@ static void test_usrp_tx(void)
 
 	// Garbage counts as bad and doesn't change the peer
 	static const uint8_t junk[8] = "NOTUSRP";
-	bound(0x0A0000AAu, 1, 0, USRP_PORT, junk, sizeof junk);
+	bound(false, 0x0A0000AAu, 1, 0, USRP_PORT, junk, sizeof junk);
 	char buf[1500];
 	dl_text_t t;
 	dl_text_init(&t, buf, sizeof buf);

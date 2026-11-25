@@ -208,27 +208,21 @@ bool ipGatewaySerialOut(const uint8_t *data, int length);
 // the radio's own address, or to the local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port
 // goes to that port's handler instead of over the air (fromAir false, src / dst the IPv4 addresses); 224.0.0.0/24
 // and the radio's address never go over the air, bound or not (an unbound port of the radio's address gets an ICMP port
-// unreachable). UDP received over the air for our own DMR ID goes to the port's air handler (ipGatewayUdpBindAir; the
-// air side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it): srcId the sender's DMR
-// ID, srcIp the packet's IPv4 source. The answer goes over the air (ipGatewayIPToAir) to srcId at srcIp: the sender's
-// own address (12.<ID>), its host's (13.<ID>) or a host on a network the sender routes, so the answer takes the way
-// back the request came. A source no answer can reach (0, multicast, broadcast, loopback) is given as srcId's own
-// address. An air handler must copy and return, never block, and answers itself. One small table for every service:
-// bind at start-up (handler NULL unbinds; false if the table is full; a port bound both ways takes one slot). In use:
-// mDNS 5353, TFTP 69 and its transfer port, SNMP 161; over the air SNMP 161 and the debug link 3335
+// unreachable). A port bound with ipGatewayUdpBindAir also takes UDP received over the air for our own DMR ID (the air
+// side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it): fromAir true, src the
+// sender's DMR ID, dst our individual address; such a handler must copy and return, never block, and answers over the
+// air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler NULL unbinds; false if
+// the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air too)
 typedef void (*ipGatewayLocalFn)(uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
 #define IPGW_LOCAL_MULTICAST	0xE0000000u		// 224.0.0.0/24, link local: never forwarded (RFC 5771)
-typedef void (*ipGatewayUdpHandler)(uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort, const uint8_t *data,
-									int length);
-typedef void (*ipGatewayUdpAirHandler)(uint32_t srcId, uint32_t srcIp, uint16_t srcPort, const uint8_t *data,
-									   int length);
-bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);			// from the link
-bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpAirHandler handler);	// from the air
+typedef void (*ipGatewayUdpHandler)(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort,
+									const uint8_t *data, int length);
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);	// from the link only
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler);	// from the link and the air
 // A datagram over the air to our own DMR ID: true when a port bound for the air took it
-bool ipGatewayUdpFromAir(uint32_t srcId, uint32_t srcIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *data,
-						 int length);
+bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length);
 //
 // Send to the link. One buffer and one path for TCP and UDP: build layer 4 (at most IPGW_LOCAL_MAX bytes) at
 // ipGatewayLocalPayload(), in the gateway's frame buffer, then ipGatewaySendLocal it with nothing else sent in

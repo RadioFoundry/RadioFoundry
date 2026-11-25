@@ -1393,9 +1393,17 @@ TESTS   += hostlinkNetTest
 hostlinkNetTest: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h $(ROOT)/hal/hal_netif.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -o $@ $(HLNET)
 
+# The same with the debug link over the air: its port goes to its own transport (docs/spec/debuglink.md 7.1)
+TESTS   += hostlinkNetTestDmrip
+hostlinkNetTestDmrip: $(HLNET) $(CORE)/hostlink/hostlink_net.h $(CORE)/hostlink/hostlink_net_air.h $(CORE)/dmr/ipGateway.h \
+		      $(ROOT)/hal/hal_netif.h $(CORE)/debuglink/debuglink.h $(CORE)/debuglink/dl_dmrip.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow $(HLNET_OFF) -DCONFIG_DEBUGLINK=1 -DCONFIG_DMR_IP_GATEWAY=1 \
+		-DCONFIG_DEBUGLINK_DMRIP=1 -o $@ $(HLNET)
+
 run: run-hlnet
-run-hlnet: hostlinkNetTest
+run-hlnet: hostlinkNetTest hostlinkNetTestDmrip
 	./hostlinkNetTest
+	./hostlinkNetTestDmrip
 	python3 -I $(ROOT)/tools/bench/dmr_packet.py --self-test
 .PHONY: run-hlnet
 

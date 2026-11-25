@@ -132,6 +132,20 @@ static void test_addressing(void)
 	CHECK(dl_dmrip_check(K, d, n, 3101276, &m) == DL_DMRIP_BAD, "tag");
 }
 
+// The answer's address: the request's source, the way back it came; one no answer can reach gives 12.<ID>
+static void test_reply_ip(void)
+{
+	static const uint32_t ok[] = { 0x0C000000u | 9991234u, 0x0D000000u | 9991234u, 0xC0A80105u };
+	for (unsigned k = 0; k < 3; k++) {
+		CHECK(dl_dmrip_reply_ip(9991234u, ok[k]) == ok[k], "reply to %08x", (unsigned)ok[k]);
+	}
+	static const uint32_t unusable[] = { 0, 0xE1000009u, 0xFFFFFFFFu, 0x7F000001u };
+	for (unsigned k = 0; k < 4; k++) {
+		CHECK(dl_dmrip_reply_ip(9991234u, unusable[k]) == (0x0C000000u | 9991234u), "unusable %08x",
+		      (unsigned)unusable[k]);
+	}
+}
+
 static void test_replay(void)
 {
 	dl_dmrip_replay_t r = { 0, 0, 0 };
@@ -549,6 +563,7 @@ int main(void)
 	test_siphash();
 	test_datagram();
 	test_addressing();
+	test_reply_ip();
 	test_replay();
 	test_air_policy();
 	test_items();

@@ -525,8 +525,9 @@ static bool clear_temporary(radio_sm_t *sm)
 }
 
 #if (CONFIG_SCAN && CONFIG_DUAL_WATCH) || CONFIG_RADIO_DETOUR
-// The channel's changes for now, as they are while the receiver is on it
-static void keep_save(radio_sm_t *sm, radio_dual_keep_t *k)
+// The channel's changes for now, as they are while the receiver is on it. Always inlined: dual watch's callers then
+// build as they would with the body written in them, so the detour costs nothing in a build without it
+static inline __attribute__((always_inline)) void keep_save(radio_sm_t *sm, radio_dual_keep_t *k)
 {
 	const channel_t *ch = &sm->view.ch;
 	k->valid = true;
@@ -552,7 +553,7 @@ static void keep_save(radio_sm_t *sm, radio_dual_keep_t *k)
 }
 
 // ... and back on it (the channel or the VFO just loaded, not tuned yet)
-static void keep_load(radio_sm_t *sm, const radio_dual_keep_t *k)
+static inline __attribute__((always_inline)) void keep_load(radio_sm_t *sm, const radio_dual_keep_t *k)
 {
 	if (!k->valid) {
 		return;
@@ -4686,8 +4687,16 @@ static bool dual_ok(const radio_sm_t *sm, const radio_dual_ref_t *r)
 }
 
 #if CONFIG_DUAL_WATCH
-static void dual_keep_save(radio_sm_t *sm, uint8_t i) { keep_save(sm, &sm->dual_keep[i]); }
-static void dual_keep_load(radio_sm_t *sm, uint8_t i) { keep_load(sm, &sm->dual_keep[i]); }
+// Channel i's changes for now: saved while the receiver is on it, and back on it
+static void dual_keep_save(radio_sm_t *sm, uint8_t i)
+{
+	keep_save(sm, &sm->dual_keep[i]);
+}
+
+static void dual_keep_load(radio_sm_t *sm, uint8_t i)
+{
+	keep_load(sm, &sm->dual_keep[i]);
+}
 #endif
 
 // Tune channel i (the VFO with its own settings), with its changes for now. False when it can't be read now (the

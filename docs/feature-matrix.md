@@ -459,7 +459,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 |---|---|---:|---:|---|
 | Audio path probe (debug link 0x10) | `AUDIO_PROBE` | 1,176* | — | Bench only, never in a release |
 | Air interface bench: raw symbols and tap samples (debug link 0x24) | `AIR_RAW` | 3,560* | — | Bench only, never in a release ([debuglink.md](spec/debuglink.md) 3.28) |
-| Debug link over the air (UDP 3335 over DMR IP) and the detour (debug link 0x27, 0x28) | `DEBUGLINK_DMRIP` | 6,152* | 6,444* | Bench only, never in a release. About 0.8 KB RAM ([debuglink.md](spec/debuglink.md) 7) |
+| Debug link over the air (UDP 3335 over DMR IP) and the detour (debug link 0x27, 0x28) | `DEBUGLINK_DMRIP` | 6,836* | 6,524* | Bench only, never in a release. About 0.8 KB RAM ([debuglink.md](spec/debuglink.md) 7) |
 | Voice capture for receive tests: the next 32 voice frames received, read over the debug link | `VOICE_CAPTURE` | 264* | 284* | Bench only, never in a release ([debuglink](spec/debuglink.md)) |
 
 ## Whole images

@@ -117,7 +117,7 @@ static uint32_t mdns_random(void)
 
 static const mdns_io_t mdns_io = { .identity = mdns_identity, .buffer = payload, .send = mdns_send, .random = mdns_random };
 
-static void mdns_udp(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void mdns_udp(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	mdnsReceive(src, sport, data, length, hal_millis());
 }
@@ -217,7 +217,7 @@ static const tftp_file_t *const files[] = {
 #endif
 };
 
-static void tftp_udp(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void tftp_udp(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	tftpReceive(src, sport, dport, data, length, hal_millis());
 }

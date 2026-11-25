@@ -23,8 +23,11 @@ from hil_config import rig
 
 
 def _setup(radio):
-    # VERSION's features= lists only some switches: the view says whether the build has the transport
-    v = radio.view(["dmrip"])
+    # VERSION's features= lists only some switches: a build without the transport has no dmrip view section
+    try:
+        v = radio.view(["dmrip"])
+    except DebugLinkError:
+        v = {}
     if v.get("dmrip.built") != "1":
         skip("not_built", "built without CONFIG_DEBUGLINK_DMRIP")
     return v

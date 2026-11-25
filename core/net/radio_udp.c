@@ -335,11 +335,11 @@ static void notify_poll(uint32_t now)
 	sub.sent_ms = now;
 }
 
-static void udp_in(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void udp_in(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	(void)dst;
 	(void)dport;
-	if (length <= 0 || sport == 0) {
+	if (air || length <= 0 || sport == 0) {
 		return;
 	}
 	char r[REQ_MAX + 1] = "";

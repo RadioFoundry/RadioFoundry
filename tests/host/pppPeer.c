@@ -170,7 +170,7 @@ static snmpStats_t stats;
 static snmpMibCtx_t ctx;
 static snmpMib_t mib;
 
-static void snmp_udp(uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort, const uint8_t *in,
+static void snmp_udp(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort, const uint8_t *in,
 		     int length)
 {
 	uint8_t out[IPGW_UDP_PAYLOAD_MAX];
@@ -178,7 +178,7 @@ static void snmp_udp(uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstP
 				.maxRepetitions = 16, .stats = &stats };
 	bool auth;
 
-	(void)dst; (void)dstPort;
+	(void)fromAir; (void)dst; (void)dstPort;
 	data.uptimeMs = now_ms();
 	int m = snmpProcess(&rc, in, length, out, (int)sizeof(out), &auth);
 
