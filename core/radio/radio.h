@@ -502,7 +502,7 @@ typedef struct {
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
-	int8_t volume_knob;	// the volume knob's position 0..100 % in force or not, -1 = none read
+	int8_t volume_knob;	// where the volume knob is, 0..100 %, even when it isn't setting the volume; -1 = not read
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -731,7 +731,7 @@ bool radio_dtmf_ready(void);
 #define RADIO_VOLUME_DEFAULT	8
 #define RADIO_VOLUME_KNOB	0xFF	// the debug link's "back to the knob" (and, with no knob, back to the default)
 typedef enum {
-	RVOL_NONE,		// the board has no hook: the volume works in analog hardware (the MCU can't set it)
+	RVOL_NONE,		// no hook: an analog volume the MCU can't set (it may still read the knob)
 	RVOL_KNOB,		// the MCU reads the knob and passes it on
 	RVOL_SOFT,		// no knob: the stored step
 	RVOL_OVERRIDE,		// a knob radio with the debug link's level in force
@@ -743,8 +743,8 @@ void radio_req_volume_override(int8_t step);
 // Hold the level in force and ignore the knob (the keys are locked), or follow the knob again: it takes the knob's
 // level at once. RAM only. Does nothing without a knob
 void radio_req_volume_hold(bool hold);
-// Whether the MCU reads a volume knob (the level follows it): Settings > Key lock > Knob when locked is shown only then
-bool radio_volume_knob(void);
+// Whether the level follows a volume knob the MCU reads: Settings > Key lock > Knob when locked is shown only then
+bool radio_volume_follows_knob(void);
 bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);

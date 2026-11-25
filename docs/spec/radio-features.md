@@ -517,7 +517,7 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 
 | `volume.src` | Board | Level in force |
 |---|---|---|
-| `none` | No hook (the volume control works in analog hardware, after the chip) | Not set by RadioFoundry. The debug link operation answers "unavailable" |
+| `none` | No hook (the volume control works in analog hardware, after the chip) | Not set by RadioFoundry. The debug link operation answers "unavailable". A board may still report the knob's position (below) |
 | `knob` | A hook and a knob the MCU reads | The knob's 0..100 % |
 | `soft` | A hook and no knob (`hal_power_t.volume()` = -1); `radio_volume_soft()`, reported to the UI as `UI_FEAT_VOLUME` | The stored step |
 | `override` | As `knob`, with the debug link's level in force | The step the debug link set, whatever the knob does |
@@ -532,14 +532,15 @@ hook; `hal_power_t.volume()` says where the level comes from (`radio_volume_src_
 | A change | `ui_svc_setting_set(UI_SET_VOLUME)` saves the step and posts `RREQ_VOLUME` (`radio_req_volume`), so it is in force at once. The request counts as neither user activity nor an interruption: a transmission or a roaming search goes on |
 | Override | `radio_req_volume_override(step)` (`RREQ_VOLUME_OVERRIDE`) holds a level over the knob until `-1`; RAM only, so a restart gives the knob back. Without a knob there is nothing to override, and the request changes nothing |
 | Hold | `radio_req_volume_hold(true)` (`RREQ_VOLUME_HOLD`, from the UI's key lock through `ui_svc_volume_hold`) keeps the level in force and ignores the knob; `false` follows the knob again, and its level goes out at once. RAM only; ignored without a knob or under an override |
-| Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. While held, a change shows the unlock hint, as a key does. `radio_volume_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the board has such a knob; Settings > Key lock > Knob when locked (`UI_SET_KNOB_WHEN_LOCKED`) is shown only then |
+| Knob position | `radio_view_t.volume_knob`: the knob's 0..100 % with the same 2 % filter, in force or not (also while held), -1 without a knob the MCU reads. It needs no hook: a board whose `hal_power_t.volume()` reports the position of a knob that sets the level itself has it too. While held, a change shows the unlock hint, as a key does. `radio_volume_follows_knob()` (`UI_FEAT_VOLUME_KNOB`) says whether the level follows such a knob (a hook and a knob); Settings > Key lock > Knob when locked (`UI_SET_KNOB_WHEN_LOCKED`) is shown only then, and a radio without the feature shows no unlock hint for a turn: it can't hold the level |
+| Potentiometer mapping | `core/radio/volume_pot.c` for a board that reads the volume potentiometer on an ADC: two linear segments (min..mid is 0..50 %, mid..max 50..100 %, where mid is the reading at mid-rotation), an optional mute zone at the bottom with 5 counts of hysteresis; without it the position never reads 0. Test: `volumePotTest` |
 | Beeps | Key and status tones keep their own level (Tone volume, 4) and are mixed at the board's speaker path as before |
 
 **Debug link.** RADIO op 30 (`debuglink.md` 3.8) sets a step 0..16, or `0xFF` for "back to the knob". On a `soft` radio
 it stores the step as the UI does (`0xFF` stores the default); on a `knob` radio it sets the override; on a radio with
 `volume.src=none` it answers unavailable. The `features` view shows `volume.src`, `volume.max`, `volume.step` (the
-stored step), `volume.override` (-1 = none), `volume.sent` (the percent last given to the board, -1 = none yet) and
-`volume.soft`. `rfoundry_debug.py volume [N|knob]` prints them and sets.
+stored step), `volume.override` (-1 = none), `volume.sent` (the percent last given to the board, -1 = none yet),
+`volume.soft`, and on a `none` radio that reads its knob `volume.knob` (the position). `rfoundry_debug.py volume [N|knob]` prints them and sets.
 
 The volume screen (`SCR_VOLUME`) opens on `ACT_VOLUME`, a board key map entry (a radio with a knob answers with a
 toast). Up, Down and the encoder change the step by one and save it on each step; OK, Back or the same key close it,
@@ -547,7 +548,8 @@ and so does 3 s without a key. The screen shows the step as a large number over 
 the smallest display, 5 px filled). On the radio without the feature the setting is left out of Settings.
 
 **The knob's bar** (#354). On a `knob` radio, when the level the radio core passed on changes (`radio_view_t.volume`,
-with `volume_src` `knob` before and after), the UI shows the same 16-segment bar, the label and the step over whatever
+with `volume_src` `knob` before and after), or on a `none` radio when the position it reads changes
+(`radio_view_t.volume_knob`), the UI shows the same 16-segment bar, the label and the step over whatever
 screen is open, for 3 s after the last change (`VOLUME_MS`); no screen is pushed, so a call or a menu goes on. It
 takes a row no screen puts its content in: the hint row's place when the frame drew a hint row (`ui_hint_draws`),
 else the status strip's (Quick's tiles at 160x128, a list with the hint row off), so nothing is cut. The step is `radio_volume_step_of(percent)`: 0 only at 0 %, at least 1 above it, 100 % is 16. The
