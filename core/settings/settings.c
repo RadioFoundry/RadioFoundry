@@ -28,7 +28,7 @@ _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pag
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
 _Static_assert(offsetof(settings_t, ref_trim_ppb) % 2 == 0, "ref_trim_ppb is aligned");
-_Static_assert(sizeof(settings_t) == 408, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
+_Static_assert(sizeof(settings_t) == 412, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
 
 static settings_t live;			// under the quick lock
 static settings_t saved;		// what the newest record holds (or the defaults)
@@ -63,6 +63,7 @@ void settings_defaults(settings_t *s)
 	s->vfo2_power = SETTINGS_UNSET8;
 	s->vfo2_cc = 1;
 	s->vfo2_ts = 1;
+	s->satellite_index = SETTINGS_UNSET8;
 	s->power_levels = board.power_count;
 }
 
@@ -130,9 +131,10 @@ static bool have_newest;		// stats.sector / stats.slot point at the newest valid
 static uint32_t valid_mask, save_mask;
 #define SECTORS_MAX	32u
 static uint32_t next_seq;		// the next record's sequence number: past every record in the ring
-// Slot buffers, used only under the storage lock (kept off the small housekeeping and start-up task stacks)
+// The slot buffer, used only under the storage lock (kept off the small housekeeping and start-up task stacks). One is
+// enough: next_slot's scan is over before put_record reads its record back, and settings_init calls neither. The
+// record put_record builds has its own
 static uint8_t slot_buf[SLOT_SIZE];
-static uint8_t slot_buf2[SLOT_SIZE];
 
 static uint16_t rec_page(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) >> SETTINGS_PAGE_SHIFT); }
 static uint16_t rec_layout(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) & 0x0FFFu); }
@@ -254,6 +256,42 @@ void settings_read(settings_t *out)
 	storage_quick_unlock();
 }
 
+uint32_t settings_read_field(size_t offset, size_t size)
+{
+	uint32_t v = 0;
+	if ((size != 1 && size != 2 && size != 4) || offset > sizeof(live) || size > sizeof(live) - offset) {
+		return 0;
+	}
+	storage_quick_lock();
+	ensure();
+	const uint8_t *p = (const uint8_t *)&live + offset;
+	if (size == 1) {
+		v = *p;
+	} else if (size == 2) {
+		uint16_t h;
+		memcpy(&h, p, sizeof h);
+		v = h;
+	} else {
+		memcpy(&v, p, sizeof v);
+	}
+	storage_quick_unlock();
+	return v;
+}
+
+bool settings_u32_is_saved(size_t offset, uint32_t value)
+{
+	if (offset > sizeof(live) - sizeof(value)) {
+		return false;
+	}
+	storage_quick_lock();
+	ensure();
+	bool match = have_flash &&
+		memcmp((const uint8_t *)&live + offset, &value, sizeof(value)) == 0 &&
+		memcmp((const uint8_t *)&saved + offset, &value, sizeof(value)) == 0;
+	storage_quick_unlock();
+	return match;
+}
+
 settings_t *settings_begin(void)
 {
 	storage_quick_lock();
@@ -275,7 +313,7 @@ void settings_end(uint32_t now_ms)
 // that holds no page of the set in force or of this save (erased first). False when every sector does
 static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 {
-	uint8_t *r = slot_buf2;
+	uint8_t *r = slot_buf;
 	uint16_t sec = have_newest ? stats.sector : 0;
 	uint16_t sl = have_newest ? (uint16_t)(stats.slot + 1u) : 0;
 

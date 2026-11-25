@@ -5,6 +5,7 @@
 
     tools/check_doc_links.py              every *.md file git tracks or would track
     tools/check_doc_links.py FILE...      only these files
+    tools/check_doc_links.py --self-test  check the mapping on Windows and POSIX paths
 
 For each Markdown link [text](target), image ![alt](target) and HTML <img src="..."> / <a href="..."> outside code:
   - a relative path must name a file or directory that exists in the working tree;
@@ -76,8 +77,9 @@ def mirror(path):
     """The English page a translated one stands for: the site builds docs/i18n/<lang>/x.md at the URL of docs/x.md and
     keeps that page's heading ids (site/rfoundrysite/docs.py), so a translation's links and anchors are the English
     ones, and one that isn't written yet falls back to the English page."""
-    m = re.match(r"^(" + re.escape(ROOT) + r"/docs/i18n/[a-z]{2,3}(?:-[A-Za-z0-9]+)?)/(.+)$", path)
-    return os.path.join(ROOT, "docs", m.group(2)) if m else path
+    rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+    m = re.fullmatch(r"docs/i18n/[a-z]{2,3}(?:-[A-Za-z0-9]+)?/(.+)", rel)
+    return os.path.normpath(os.path.join(ROOT, "docs", m[1])) if m else path
 
 
 def check(path):
@@ -112,7 +114,25 @@ def tracked_markdown():
     return [f for f in files if os.path.isfile(f) and not os.path.relpath(f, ROOT).startswith("third_party/")]
 
 
+def self_test():
+    import ntpath
+    import posixpath
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    for path, root in ((ntpath, r"C:\RadioFoundry"), (posixpath, "/RadioFoundry")):
+        original = path.join(root, "docs", "user", "start.md")
+        translated = path.join(root, "docs/i18n/zh-Hant/user/start.md")
+        with patch.multiple(sys.modules[__name__], ROOT=root, os=SimpleNamespace(path=path, sep=path.sep)):
+            assert mirror(translated) == original
+            assert mirror(original) == original
+    print("check_doc_links: Windows and POSIX path checks passed")
+    return 0
+
+
 def main(argv):
+    if argv == ["--self-test"]:
+        return self_test()
     files = [os.path.abspath(f) for f in argv] if argv else tracked_markdown()
     errors = []
     for f in files:

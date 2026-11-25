@@ -170,6 +170,12 @@ void gfx_read_rgb565(uint32_t off, uint8_t *out, size_t n)
 	for (size_t i = 0; i < n; i++, off++)
 		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
 }
+// The panel's rows at its own depth: here the frame buffer is the whole panel, as gfx's is without fb_safe_area
+void gfx_read_packed(uint32_t off, uint8_t *out, size_t n)
+{
+	for (size_t i = 0; i < n; i++, off++)
+		out[i] = off < sizeof fb ? ((const uint8_t *)fb)[off] : 0;
+}
 const char *debuglink_view_name(uint8_t s) { return s == 0 ? "core" : (s == 1 ? "net" : NULL); }
 void debuglink_view_section(uint8_t s, const radio_view_t *v, dl_text_t *t)
 {
@@ -227,7 +233,7 @@ static void test_http(void)
 
 	// The page: the asset table's bytes as they are, gzip compressed with Content-Encoding (httpAssetsTest checks the
 	// table against core/net/http_assets)
-	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n") > 0);
+	CHECK(http_get(&a, 51000, "GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n") > 0);
 	CHECK(strncmp((char *)a.rx, "HTTP/1.0 200 OK\r\n", 17) == 0 && strstr((char *)a.rx, "Content-Type: text/html"));
 	CHECK(strcmp(http_assets[0].path, "/") == 0 && http_assets[0].gzip &&
 	      strstr((char *)a.rx, "\r\nContent-Encoding: gzip\r\n"));
@@ -317,7 +323,7 @@ static void test_http(void)
 	CHECK(http_get(&a, 51134, "GET /api/view HTTP/1.1\r\nhost: radio.example.com:80\r\n\r\n") > 0 &&
 	      strstr((char *)a.rx, " 403 "));
 	CHECK(http_get(&a, 51135, "GET / HTTP/1.1\r\nHost: radio.example.com\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
-	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.20:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
+	CHECK(http_get(&a, 51136, "GET /status HTTP/1.1\r\nHost: 12.0.39.21:80\r\n\r\n") > 0 && strstr((char *)a.rx, " 200 "));
 	CHECK(http_get(&a, 51137, "GET /status HTTP/1.1\r\nHost: 1.2.3\r\n\r\n") > 0 && strstr((char *)a.rx, " 403 "));
 
 	// The screen as a BMP, straight from the frame buffer
@@ -554,8 +560,16 @@ static void test_rigctl(void)
 	CHECK(strcmp(rig(&a, "\\get_info\n"), "RadioFoundry fake\n") == 0);
 	CHECK(strcmp(rig(&a, "\\chk_vfo\n"), "0\n") == 0);
 	const char *ds = rig(&a, "\\dump_state\n");
-	CHECK(strncmp(ds, "0\n2\n2\n136000000.000000 174000000.000000 0x20 -1 -1", 49) == 0);
+	CHECK(strncmp(ds, "0\n2\n2\n136000000 174000000 0x20 -1 -1", 35) == 0);
 	CHECK(strstr(ds, "0x40000000\n0x0\n0x0\n0x0\n") != NULL);
+	{	// every band listed, and the answer ends with its last line
+		static const char tail[] = "0x0\n0x0\n0x40000000\n0x0\n0x0\n0x0\n";
+		size_t n = strlen(ds), t = sizeof(tail) - 1u;
+		CHECK(n > t && strcmp(ds + n - t, tail) == 0);
+		CHECK(strstr(ds, "65000000 108000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "480000000 520000000 0x20 -1 -1") != NULL);
+		CHECK(strstr(ds, "400000000 480000000 0x20 1000 5000") != NULL);	// the second TX range too
+	}
 	CHECK(strcmp(rig(&a, "xyz\n"), "RPRT -4\n") == 0);
 
 	// A line longer than the line buffer is refused whole, never run cut short: 4.4652 GHz cut by a digit would be
@@ -764,7 +778,7 @@ static void test_fuzz(void)
 
 	// HTTP
 	static const char *const hseeds[] = {
-		"GET / HTTP/1.1\r\nHost: 12.0.39.20\r\nAccept: */*\r\n\r\n",
+		"GET / HTTP/1.1\r\nHost: 12.0.39.21\r\nAccept: */*\r\n\r\n",
 		"GET /status HTTP/1.0\r\n\r\n",
 		"GET /api/view?section=core&x=1 HTTP/1.0\r\n\r\n",
 		"HEAD /api/view?section=1 HTTP/1.0\r\nX: y\r\n\r\n",

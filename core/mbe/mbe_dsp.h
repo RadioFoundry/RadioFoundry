@@ -11,16 +11,32 @@ extern const int16_t mbe_sin_tab[257];		// sin(pi/2 * i / 256), Q15, one quarter
 extern const uint16_t mbe_exp2_tab[65];		// 2^(14 + i/64)
 extern const uint16_t mbe_log2_tab[65];		// 32768 * log2(1 + i/64)
 
+// Always inlined: -Os otherwise makes both calls, and the oscillators' per-sample loop then spilled its registers
+// around them (a third of that loop's instructions on the C-SKY build)
+#define MBE_INLINE static inline __attribute__((always_inline))
+
 // sin(2 pi i / 1024), Q15, from the quarter wave
-static inline int32_t mbe_sin_idx(uint32_t i)
+MBE_INLINE int32_t mbe_sin_idx(uint32_t i)
 {
 	uint32_t q = i & 255u;
 	int32_t v = mbe_sin_tab[(i & 256u) ? 256u - q : q];
 
 	return (i & 512u) ? -v : v;
 }
+// cos(2 pi i / 1024), Q15, i < 1024: always mbe_sin_idx(i + 256). On C-SKY (and the host's build as C-SKY runs,
+// FXP_SPLIT16) from the quarter wave unfolded into a 2 KB table: folding it in the oscillators' per-sample loop cost
+// two branches and a third of that loop's instructions there. Elsewhere folded: an Arm core does it in a few
+// conditional instructions, and the table's 2 KB were what an Arm radio's fullest build had no room for (its P25
+// links this synthesis without YSF). Nothing was measured on Arm either way
+#if defined(__csky__) || defined(FXP_SPLIT16)
+#define MBE_COS_TAB	1
+extern const int16_t mbe_cos_tab[1024];
+MBE_INLINE int32_t mbe_cos_idx(uint32_t i) { return mbe_cos_tab[i]; }
+#else
+MBE_INLINE int32_t mbe_cos_idx(uint32_t i) { return mbe_sin_idx(i + 256u); }
+#endif
 // cos of a phase, 2^32 = one turn, Q15, nearest of 1024 steps (the oscillators' per-sample lookup)
-static inline int32_t mbe_cos(uint32_t ph) { return mbe_sin_idx(((ph + 0x200000u) >> 22) + 256u); }
+MBE_INLINE int32_t mbe_cos(uint32_t ph) { return mbe_cos_idx((ph + 0x200000u) >> 22); }
 // the same with linear interpolation, for the dequantizers and windows (a few hundred calls per frame)
 int32_t mbe_cos_i(uint32_t ph);
 

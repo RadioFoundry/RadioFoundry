@@ -174,32 +174,43 @@ static void test_tx_lead(void)
 	rd[0][0x12] = 0xC5;	// bits 7-6 kept; the configuration page is 0 on the wire
 
 	nx = 0;
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25));
-	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 25));
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && nx == 2);	// already on: no traffic
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off
+	// Half symbols over the value read (0x05 here), not 100 us from 0: 15 steps = 1563 us (issue 609)
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15));
+	CHECK(count_reads(0, 0x12) == 1 && last_write(0, 0x12) == (0xC0 | 20));
+	CHECK(hrc5000_tx_lead_us(&l) == 1563u);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && nx == 2);	// already on: no traffic
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5 && !l.on && !l.kept);
+	CHECK(hrc5000_tx_lead_us(&l) == 0u);	// off again
 	nx = 0;
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && nx == 0);	// nothing to put back
+
+	// A lead past what bits 5-0 hold over the value read stops at 63
+	rd[0][0x12] = 0xCA;
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 60) && last_write(0, 0x12) == 0xFF);
+	CHECK(hrc5000_tx_lead_us(&l) == 5521u);	// 53 steps
+	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xCA);
+	rd[0][0x12] = 0xC5;
 
 	// The read fails: nothing written then, and nothing at the end (it once wrote 0 back there)
 	nx = 0;
 	fail_reads = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && !l.kept);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && !l.kept);
 	CHECK(count_writes(0, 0x12) == 0);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && count_writes(0, 0x12) == 0);
 
 	// The write fails: not on, the value read kept; the next call writes again without reading, the end puts it back
 	nx = 0;
 	fail_writes = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && !l.on && l.kept);
-	CHECK(hrc5000_tx_lead_on(&c5, &l, 25) && l.on);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && !l.on && l.kept);
+	CHECK(hrc5000_tx_lead_on(&c5, &l, 15) && l.on);
 	CHECK(count_reads(0, 0x12) == 1 && count_writes(0, 0x12) == 2);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && last_write(0, 0x12) == 0xC5);
 
 	// The lead's write fails and so does the first restore: the end tries again
 	nx = 0;
 	fail_writes = 1;
-	CHECK(!hrc5000_tx_lead_on(&c5, &l, 25) && l.kept);
+	CHECK(!hrc5000_tx_lead_on(&c5, &l, 15) && l.kept);
 	fail_writes = 1;
 	CHECK(!hrc5000_tx_lead_off(&c5, &l) && l.kept && !l.on);
 	CHECK(hrc5000_tx_lead_off(&c5, &l) && !l.kept && last_write(0, 0x12) == 0xC5);
@@ -1453,6 +1464,68 @@ static void test_two_slots(void)
 	TWO_CHECK("headers, a mix that stays", r, r.lc_mix[1] == 0 && r.heard[1] == r.sent[1]);
 }
 
+// A BS-framed direct call (a simplex hotspot), heard in the hunt's BS dwell: the chip reports the header, the voice
+// comes from the port. Neither carries its sync family (no 0x5F), and both stay labeled MS; the family is the one
+// 0x10 finds. Our answer keys in direct mode; the first dwell after it is in BS mode, where the chip finds the
+// sender's answer. Taken by the label, the call left the radio in direct mode for a whole dwell after the answer,
+// deaf to the hotspot for about 0.85 s (SDR bench)
+static void test_bs_direct_answer_dwell(void)
+{
+	tr_setup();
+	nx = 0;
+	for (int k = 0; k < 200 && last_write(0, 0x10) != 0x4F; k++) {	// into the BS dwell
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(last_write(0, 0x10) == 0x4F);
+	int ms = 0, voice = 0;
+	for (int k = 0; k < 42; k++) {		// three headers, then 18 voice bursts from the port (the other slot noise)
+		if (k >= 6) {
+			burst((uint8_t)k, (k & 1) == 1);
+		}
+		t_us += 30000;
+		hrc6000_dmr_isr_timeslot(&eng);
+		hrc6000_dmr_poll(&eng);
+		if (k < 6 && (k & 1) == 0) {
+			tr_report(0x08, 0x12);	// the voice LC header
+		}
+		dmr_event_t ev;
+		dmr_burst_t bu;
+		while (hrc6000_dmr_pop(&eng, &ev, &bu)) {
+			if (ev.kind == DMR_EV_BURST_RX) {
+				ms += bu.sync == DMR_SYNC_MS;
+				voice += bu.kind == DMR_BURST_VOICE;
+			}
+		}
+	}
+	CHECK(voice >= 12 && ms >= voice);	// the slot numbers stay direct mode's (no CACH, no slot filter)
+	CHECK(eng.bs_last);
+
+	t_us += 2000000;			// the call over, the hunt running
+	for (int k = 0; k < 20; k++) {
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(hrc6000_dmr_tx_begin(&eng, DMR_TIMING_OWN, 1, DMR_ACCESS_IMPOLITE));
+	CHECK(last_write(0, 0x10) == 0x6B);	// keyed in the channel's mode
+	hrc6000_dmr_tx_abort(&eng);
+	for (int k = 0; k < 100 && hrc6000_dmr_is_transmitting(&eng); k++) {	// no ticks: ended by the stall check
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(!hrc6000_dmr_is_transmitting(&eng));
+	nx = 0;
+	t_us += 5000;
+	hrc6000_dmr_poll(&eng);
+	CHECK(last_write(0, 0x10) == 0x4F);	// BS mode at once
+	nx = 0;
+	for (int k = 0; k < 74; k++) {		// and for a whole dwell (370 ms)
+		t_us += 5000;
+		hrc6000_dmr_poll(&eng);
+	}
+	CHECK(count_writes(0, 0x10) == 0);
+}
+
 int main(void)
 {
 	test_chip();
@@ -1460,6 +1533,7 @@ int main(void)
 	test_modes();
 	test_engine();
 	test_tick_rx();
+	test_bs_direct_answer_dwell();
 	test_tick_rx_stale_headers();
 	test_tick_rx_same_bursts();
 	test_tick_rx_resume();

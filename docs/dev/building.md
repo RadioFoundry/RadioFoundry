@@ -16,6 +16,54 @@ pinned version of each toolchain is in `platform/<p>/platform.toml` `[toolchain]
 You also need make, git and Python 3. Clone with submodules: `git submodule update --init` fetches FreeRTOS, TinyUSB
 and ST's HAL and CMSIS into `third_party/`.
 
+## Worktrees
+
+A `git worktree` does not need its own copy of the submodules (about 100 MB of files). Leave them uninitialized and
+set `RFOUNDRY_THIRD_PARTY` to the `third_party/` of a checkout that has them, as an absolute path.
+`tools/worktree.sh` creates such a worktree:
+
+```
+export RFOUNDRY_THIRD_PARTY=$HOME/src/RadioFoundry/third_party    # once, in the shell profile
+tools/worktree.sh add ../rf-topic -b topic origin/main
+make -C ../rf-topic BOARD=<b>
+```
+
+| Command | Does |
+|---|---|
+| `tools/worktree.sh add <path> [options] [commit]` | `git worktree add`, then `setup` in the new worktree |
+| `tools/worktree.sh setup` | In the current worktree, marks each submodule not checked out inactive for this worktree only, and turns symlinks to another checkout back into empty directories |
+| `tools/worktree.sh own <name>...` | Checks out these submodules in the current worktree, with the objects borrowed from the main checkout's clone |
+
+`setup` matters with `submodule.recurse=true`. Without it, `git checkout` and `git reset` try to update the
+submodules the main checkout marks active, and they leave a `.git` file in the empty directory that breaks every git
+command there.
+
+`platform/third_party.mk` picks, for each submodule, the directory a build reads:
+
+| The submodule in this tree | `RFOUNDRY_THIRD_PARTY` | The build reads |
+|---|---|---|
+| Checked out | Any | This tree's copy, as before |
+| Empty | Set | The copy in that directory, after the pin check |
+| Empty | Not set | Nothing: make stops and says what to do |
+
+- The pin check stops a build when the shared copy is at another commit than this tree pins or has local changes.
+  A branch that moves a submodule runs `tools/worktree.sh own <name>`: this tree's copy then wins, and the others
+  still come from the shared checkout.
+- Git sees an uninitialized submodule as unchanged. `git status` stays clean, nothing under `third_party/` can be
+  staged by accident, and `git worktree remove` works without `--force` (a worktree that owns a submodule still
+  needs it).
+- The image is the same as one built from this tree's copies. `-ffile-prefix-map` records the shared files as
+  `third_party/...` in debug info and `__FILE__`, and `make stack-check` reads them by those names too.
+- `RFOUNDRY_THIRD_PARTY` must be an absolute path that ends in `third_party`. Makefiles name third-party files by
+  their path in this tree: sources are found through `vpath`, and the `-I` flags in `INCLUDES` are mapped.
+  `$(wildcard)` sees only this tree's copies.
+- `tools/docker/toolchains/run.sh` and `tools/docker/csky-toolchain/run.sh` mount the other checkout and its git
+  directory, and pass the variable into the container.
+- The query targets (`print-config`, `print-vars` and the rest) need no submodules.
+- A worktree whose `third_party/*` are symlinks to another checkout still builds: the links count as checked out.
+  Git trips on them, though: `tools/worktree.sh setup` switches one over.
+- `tools/ci.sh` builds from a scratch worktree of this kind in the firmware step.
+
 ## Make targets
 
 `<b>` is the board directory under `boards/` (`tools/boards.py list` lists them).

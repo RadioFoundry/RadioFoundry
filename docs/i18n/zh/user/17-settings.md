@@ -75,8 +75,8 @@
 
 | 设置 | 取值 | 默认 | 作用 | 状态 |
 |---|---|---|---|---|
-| 密钥类型 | 关、Motorola、Anytone | 关 | 基础加密密钥的种类（[DMR](09-dmr.md#privacy)）。关会移除密钥 | 有效 |
-| 密钥 | Motorola 1 到 255，Anytone 0 到 65535 | | 密钥值，用数字键输入。选择类型前变暗 | 有效 |
+| 密钥类型 | 关、8 位 (1-255)、16 位 (0-65535) | 关 | 基础加密密钥的种类（[DMR](09-dmr.md#privacy)）。关会移除密钥 | 有效 |
+| 密钥 | 8 位 1 到 255，16 位 0 到 65535 | | 密钥值，用数字键输入。选择类型前变暗 | 有效 |
 | 自动锁键 | 关、30 秒、1 分钟、5 分钟 | 关 | 一段时间无按键后锁定按键 | 有效 |
 | 锁定时 PTT | 开、关 | 开 | 按键锁定时 **PTT** 是否可用。关：解锁前 **PTT** 无效 | 有效 |
 
@@ -97,7 +97,7 @@
 | 应答电台检查 | 开、关 | 开 | 应答其他电台的电台检查（[电台检查](10-messages-and-signaling.md#radio-check)） | 有效 |
 | 应答呼叫提示 | 开、关 | 开 | 确认呼叫提示，使呼叫者知道寻呼已到达 | 有效 |
 | TFTP 写入电台频率 | 开、关 | 开 | 允许电脑在 USB 网络模式下经 TFTP 写入电台频率（[USB 网络](15-usb-network.md#programming-over-the-network)）。读取始终可用 | 有效 |
-| 消息格式 | ETSI、ETSI 短、Motorola | ETSI | 你发送的文本消息格式（[消息](10-messages-and-signaling.md#message-formats)）。任何格式的消息都能接收 | 有效 |
+| 消息格式 | ETSI、ETSI 短、TMS | ETSI | 你发送的文本消息格式（[消息](10-messages-and-signaling.md#message-formats)）。任何格式的消息都能接收 | 有效 |
 | 接受区域共享 | 开、关 | 开 | 开：显示其他电台发来的区域或信道，供导入或拒绝（[共享区域](07-channels-zones-vfo.md#sharing-a-zone)）。关：忽略 | 有效 |
 | 启动时 USB 网络 | 开、关 | 关 | 电台以 USB 网卡而不是串口启动（[USB 网络](15-usb-network.md#starting-in-network-mode)） | 有效 |
 | PC 应答数据 | 开、关 | 关 | 控制站模式：电脑在 USB 网络模式下连接时，由它应答发往电台的数据，而不是电台（[USB 网络](15-usb-network.md#control-station-for-dispatch-software)） | 有效 |

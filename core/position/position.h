@@ -68,6 +68,12 @@ void position_nmea(const char *s, size_t n, bool gps, uint32_t now_ms);
 
 // The position in use now, exact (APRS applies its own ambiguity as it formats). POSITION_SRC_NONE: there is none
 uint8_t position_fix(position_fix_t *out, uint32_t now_ms);
+#if CONFIG_SATELLITE_TLE
+// For satellite prediction: use the selected source, falling back to an altitude-bearing fixed position
+uint8_t position_fix_for_satellite(position_fix_t *out, uint32_t now_ms);
+// Current date and UTC from a fresh GPS or host NMEA stream, independent of the selected coordinate source
+bool position_utc_fields(uint32_t *date_ddmmyy, uint32_t *utc_hms, uint32_t now_ms);
+#endif
 // The same for a DMR report (LRRP), with the ambiguity setting applied; err_m the error estimate in meters, the blur
 // included
 uint8_t position_report(position_fix_t *out, uint32_t *err_m, uint32_t now_ms);
@@ -80,6 +86,10 @@ bool position_now(int32_t *lat, int32_t *lon, uint32_t *err_m, bool *dmr_gps, ui
 #if CONFIG_GPS
 // Settings > Location > GPS: off drops the board GPS fix and ignores its sentences, so the position falls back at once
 void position_gps_enable(bool on);
+#if CONFIG_SATELLITE_TLE
+// Copy the current fresh board GPS fix into the fixed-position settings for later Auto fallback
+bool position_save_gps(uint32_t now_ms);
+#endif
 // Settings > Location > GPS as last applied, by whichever path (the menu, the debug link, start-up)
 bool position_gps_enabled(void);
 // The board GPS as it is now, for the Position screen: false when it is off or has sent nothing for a minute

@@ -17,6 +17,7 @@ import functools
 import http.server
 import os
 import sys
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,6 +36,7 @@ def main(argv=None):
 	ap.add_argument("--beta", default="", help="a pre-release newer than those images, offered as an opt-in version link")
 	ap.add_argument("--strict", action="store_true", help="exit 1 when the build warns")
 	ap.add_argument("--serve", action="store_true", help="serve the result on localhost")
+	ap.add_argument("--host", default="localhost", help="address for --serve (default: localhost)")
 	ap.add_argument("--port", type=int, default=8000)
 	args = ap.parse_args(argv)
 	try:
@@ -54,10 +56,32 @@ def main(argv=None):
 	if warnings and args.strict:
 		return 1
 	if args.serve:
-		handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=args.out)
-		print("serving http://localhost:%d/ (Ctrl-C stops)" % args.port)
+		class SiteHandler(http.server.SimpleHTTPRequestHandler):
+			def do_GET(self):
+				if self.path.partition("?")[0] != "/api/amsat-tle":
+					return super().do_GET()
+				try:
+					request = urllib.request.Request("https://www.amsat.org/tle/daily-bulletin.txt",
+										 headers={"Accept": "text/plain", "User-Agent": "RadioFoundry site TLE updater"})
+					with urllib.request.urlopen(request, timeout=20) as response:
+						body = response.read(1000001)
+						if len(body) > 1000000:
+							self.send_error(502, "AMSAT bulletin exceeds the size limit")
+							return
+				except Exception:
+					self.send_error(502, "AMSAT bulletin is temporarily unavailable")
+					return
+				self.send_response(200)
+				self.send_header("Content-Type", "text/plain; charset=utf-8")
+				self.send_header("Cache-Control", "public, max-age=3600")
+				self.send_header("Content-Length", str(len(body)))
+				self.end_headers()
+				self.wfile.write(body)
+
+		handler = functools.partial(SiteHandler, directory=os.path.abspath(args.out))
+		print("serving http://%s:%d/ (Ctrl-C stops)" % (args.host, args.port))
 		try:
-			http.server.ThreadingHTTPServer(("localhost", args.port), handler).serve_forever()
+			http.server.ThreadingHTTPServer((args.host, args.port), handler).serve_forever()
 		except KeyboardInterrupt:
 			pass
 	return 0

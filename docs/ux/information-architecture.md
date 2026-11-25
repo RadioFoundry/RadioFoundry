@@ -73,7 +73,7 @@ Regions, top to bottom, the same on every display class (sizes differ):
 
 1. **Status strip**: state pill (TX red / RX green / scan / hotspot / idle), USB network word (IP, with link arrows once the computer has it up), RSSI, battery %, GPS fix, unread messages, lock, privacy. Drawn on every screen; on small displays a page's title takes the strip's place and the battery is left to Home.
 2. **Place**: zone name (small) and channel number + name (large). In VFO: the frequency (large) and "VFO".
-3. **Talk target**: "PTT →" + TG or contact name and number (large), with chips: mode, TS, CC (DMR) or tone and bandwidth (FM), power. Temporary fields have a dot; reply window shows a countdown.
+3. **Talk target**: "PTT →" + TG or contact name and number (large); on an FM channel, the RX frequency and a repeater's offset, without the arrow, until PTT (the VFO: → the TX frequency), with chips: mode, TS, CC (DMR) or tone and bandwidth (FM), power. Temporary fields have a dot; reply window shows a countdown.
 4. **Activity**: idle = the last heard station (name, callsign, TG, time ago). RX = the current caller big (name, callsign, ID, TG, talker alias, RSSI bar, distance if a position is known). TX = timer and target.
 5. **Hint row**: what the nearest keys do here, for example `OK Menu · * Quick · # Last caller`. Hidden in large-text mode and after the user turns hints off.
 

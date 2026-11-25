@@ -11,6 +11,7 @@
 #include "ui/fmt.h"
 #include "ui/ui_screens.h"
 #include "ui/ui_svc.h"
+#include "ui/i18n.h"
 #include "ui/cjk_font.h"
 
 static int fails;
@@ -313,6 +314,146 @@ static void test_indexed(void)
 	gfx_init(&disp);
 }
 
+// A frame buffer of the safe area only (hal_display_t fb_safe_area): the same screens as with the whole panel's, to the
+// pixel, on the panel (what flush_indexed and fill_insets sent) and in the RGB565 and the packed captures, and a copy
+// elsewhere that takes only the rows marked for it (the web control's) stays whole; the insets are painted only when
+// the background changes. An odd left inset puts the
+// safe area's pixels in the other nibble of the panel's bytes
+#define SA_W	160
+#define SA_H	120
+static color_t panel_img[SA_H][SA_W];
+static const hal_display_t *panel_d;
+static int inset_fills;
+static void sa_flush(const void *fb, const uint16_t *pal, uint16_t y0, uint16_t y1)
+{
+	const hal_display_t *d = panel_d;
+	int x0 = d->fb_safe_area ? d->inset_left : 0, yo = d->fb_safe_area ? d->inset_top : 0;
+	int w = d->fb_safe_area ? d->width - d->inset_left - d->inset_right : d->width, stride = (w + 1) / 2;
+	for (int y = y0; y < y1; y++)
+		for (int x = 0; x < w; x++)
+			panel_img[yo + y][x0 + x] = pal[(((const uint8_t *)fb)[y * stride + x / 2] >> ((x & 1) ? 0 : 4)) & 15];
+}
+static void sa_fill_insets(uint16_t c)
+{
+	const hal_display_t *d = panel_d;
+	inset_fills++;
+	for (int y = 0; y < SA_H; y++)
+		for (int x = 0; x < SA_W; x++)
+			if (x < d->inset_left || x >= SA_W - d->inset_right || y < d->inset_top || y >= SA_H - d->inset_bottom)
+				panel_img[y][x] = c;
+}
+
+#define SA_STEPS	4
+typedef struct {
+	color_t panel[SA_H][SA_W];
+	uint8_t rgb[SA_W * SA_H * 2];
+	uint8_t packed[SA_W / 2 * SA_H];
+	bool copy_whole;	// the copy, given the rows marked for it, equals the packed capture
+	int fills;
+} sa_shot_t;
+static sa_shot_t sa_shots[2][SA_STEPS];
+static uint8_t sa_copy[SA_W / 2 * SA_H];
+
+static void sa_take(sa_shot_t *t)
+{
+	memcpy(t->panel, panel_img, sizeof panel_img);
+	gfx_read_rgb565(0, t->rgb, sizeof t->rgb);
+	gfx_read_packed(0, t->packed, sizeof t->packed);
+	t->copy_whole = true;
+#if CONFIG_NET_WEBCTL
+	for (int y = gfx_row_next(0); y >= 0; y = gfx_row_next(y + 1))
+		gfx_read_packed((uint32_t)y * (SA_W / 2), sa_copy + y * (SA_W / 2), SA_W / 2);
+	gfx_rows_take(0, SA_H - 1);
+	t->copy_whole = memcmp(sa_copy, t->packed, sizeof sa_copy) == 0;
+#endif
+	t->fills = inset_fills;
+}
+
+static void test_safe_area(void)
+{
+	static hal_display_t sd;	// gfx keeps the pointer
+	for (int safe = 0; safe < 2; safe++) {
+		sd = disp;
+		sd.width = SA_W; sd.height = SA_H; sd.bpp = 4;
+		sd.inset_left = 5; sd.inset_right = 4; sd.inset_top = 3; sd.inset_bottom = 2;
+		sd.flush_indexed = sa_flush;
+		sd.fb_safe_area = safe;
+		sd.fill_insets = sa_fill_insets;
+		panel_d = &sd;
+		inset_fills = 0;
+		memset(panel_img, 0, sizeof panel_img);
+		memset(sa_copy, 0xEE, sizeof sa_copy);
+		CHECK(gfx_init(&sd) && gfx_width() == 151 && gfx_height() == 115);
+		gfx_fb_rect_t r;
+		gfx_fb_rect(&r);
+		CHECK(safe ? r.safe_area && r.x == 5 && r.y == 3 && r.w == 151 && r.h == 115 && r.stride == 76 :
+			     !r.safe_area && r.x == 0 && r.y == 0 && r.w == 160 && r.h == 120 && r.stride == 80);
+		ui_layout_init();
+		radio_view_t v;
+		ui_state_t st;
+		memset(&st, 0, sizeof st);
+		st.battery_pct = 84; st.brightness = 100; st.now_ms = 5000;
+		base_view(&v);
+		// 1: a whole screen, the first frame
+		ui_draw_home(&v, &st);
+		gfx_flush();
+		sa_take(&sa_shots[safe][0]);
+		// 2: a change to part of it
+		v.state = RS_TX; v.tx_elapsed_ms = 7400; v.power = 7;
+		ui_draw_home(&v, &st);
+		gfx_flush();
+		sa_take(&sa_shots[safe][1]);
+		// 3: another background, drawing reaching for the edges (clipped to the safe area)
+		gfx_clear(RGB565(0, 64, 128));
+		gfx_fill(-10, -10, 400, 4, RGB565(255, 255, 0));
+		gfx_text(&font_8x16, -3, 50, "EDGE TEXT WIDER THAN THE SCREEN", RGB565(255, 255, 255));
+		gfx_pixel(150, 114, RGB565(255, 0, 0));
+		gfx_pixel(151, 114, RGB565(0, 255, 0));	// outside: nothing
+		gfx_flush();
+		sa_take(&sa_shots[safe][2]);
+		// 4: a narrow band changed on the same background
+		gfx_fill(0, 90, 151, 1, RGB565(255, 0, 255));
+		gfx_fill(0, 95, 151, 2, RGB565(0, 255, 255));
+		gfx_flush();
+		sa_take(&sa_shots[safe][3]);
+	}
+	for (int k = 0; k < SA_STEPS; k++) {
+		const sa_shot_t *a = &sa_shots[0][k], *b = &sa_shots[1][k];
+		CHECK(memcmp(a->panel, b->panel, sizeof a->panel) == 0);
+		CHECK(memcmp(a->rgb, b->rgb, sizeof a->rgb) == 0);
+		CHECK(memcmp(a->packed, b->packed, sizeof a->packed) == 0);
+		CHECK(a->copy_whole && b->copy_whole);
+	}
+	CHECK(sa_shots[1][0].panel[0][0] == sa_shots[1][0].panel[3][5] && sa_shots[1][2].panel[119][159] == RGB565(0, 64, 128));
+	CHECK(sa_shots[1][2].panel[3 + 114][5 + 150] == RGB565(255, 0, 0) && sa_shots[1][2].panel[117][156] == RGB565(0, 64, 128));
+	// The insets painted with the first frame, then only when the background changed (the panel's corner tells)
+	CHECK(sa_shots[1][0].fills == 1 && sa_shots[1][3].fills == sa_shots[1][2].fills);
+	for (int k = 1; k < SA_STEPS; k++)
+		CHECK(sa_shots[1][k].fills - sa_shots[1][k - 1].fills ==
+		      (sa_shots[1][k].panel[0][0] != sa_shots[1][k - 1].panel[0][0]));
+	CHECK(sa_shots[0][3].fills == 0);
+	// gfx_invalidate (the panel may have lost its memory): the insets again with the next frame, once
+	gfx_invalidate();
+	gfx_flush();
+	CHECK(inset_fills == sa_shots[1][3].fills + 1);
+	gfx_flush();
+	CHECK(inset_fills == sa_shots[1][3].fills + 1);
+	// Not for a depth without a palette entry for the background, nor without the board's fill: the whole panel then
+	sd = disp;
+	sd.width = SA_W; sd.height = SA_H; sd.bpp = 16; sd.inset_left = 5; sd.fb_safe_area = true;
+	sd.fill_insets = sa_fill_insets;
+	gfx_fb_rect_t r;
+	CHECK(gfx_init(&sd));
+	gfx_fb_rect(&r);
+	CHECK(!r.safe_area && r.w == SA_W);
+	sd.bpp = 4; sd.flush_indexed = sa_flush; sd.fill_insets = NULL;
+	CHECK(gfx_init(&sd));
+	gfx_fb_rect(&r);
+	CHECK(!r.safe_area && r.w == SA_W);
+	gfx_init(&disp);
+	ui_layout_init();
+}
+
 // High contrast: the idle pill is white, so its word must be dark (white on white showed a blank pill on the radio)
 static void test_idle_pill_contrast(void)
 {
@@ -505,7 +646,7 @@ static void test_cjk_text(void)
 {
 	const font_t *f = &font_6x12;
 	char buf[24];
-	// 信 is E4 BF A1, 道 is E9 81 93
+	// E4 BF A1 and E9 81 93: two 3-byte UTF-8 characters
 	CHECK(gfx_text_width(f, "A") == f->w);
 	CHECK(gfx_text_width(f, "\xE4\xBF\xA1\xE9\x81\x93") == 2 * CJK_FONT_W);
 	CHECK(gfx_text_width(f, "A\xE4\xBF\xA1") == f->w + CJK_FONT_W);
@@ -534,11 +675,96 @@ static void test_cjk_text(void)
 	str_copy(cut, sizeof cut, "\xE4\xBF\xA1\xE9\x81\x93");
 	CHECK(strcmp(cut, "\xE4\xBF\xA1") == 0);
 }
+
+// The 160 px class in a wide language: a CJK character is 16 px tall, so the class's words move up from the 6x12 font to
+// the 8x16 one and no line clips one; English and Spanish keep the tighter layout in the same build (ui_screens.c,
+// docs/spec/ui.md 2.5)
+static void test_cjk_layout(void)
+{
+	hal_display_t d = disp;
+	d.width = 160; d.height = 120; d.bpp = 16;
+	d.inset_top = d.inset_bottom = d.inset_left = d.inset_right = 0;
+	CHECK(gfx_init(&d));
+	uint8_t zh = lang_find('z' << 8 | 'h');
+	CHECK(lang_built(zh) && lang_wide(zh) && lang_set(zh));
+	ui_layout_init();
+	CHECK(ui_layout.small->h == CJK_FONT_H && ui_layout.tiny->h == CJK_FONT_H);
+	CHECK(ui_layout.small->w == 8 && ui_layout.row_h == CJK_FONT_H + 1);
+	// Home gives up its zone line for the 16 px rows, and its activity region still holds one
+	CHECK(ui_layout.zone_y < 0 && ui_layout.hint_y - ui_layout.activity_y >= CJK_FONT_H);
+	// A list row is one 16 px line and a pixel: 5 rows where the 6x12 font fits 7
+	CHECK((ui_layout.hint_y - ui_layout.strip_h) / ui_layout.row_h == 5);
+	CHECK(lang_set(LANG_ENGLISH));
+	ui_layout_init();
+	CHECK(ui_layout.small->w == 6 && ui_layout.small->h == 12 && ui_layout.tiny->w == 5 && ui_layout.zone_y >= 0);
+	gfx_init(&disp);
+	ui_layout_init();
+}
 #endif
+
+#if CONFIG_LANG_ZH
+// ui_text_cells and sb_cut_text with a CJK catalog: a CJK character is two display cells, and a cut never splits one.
+// A Chinese name the talk line must truncate stays whole or drops whole
+static void test_text_cells(void)
+{
+	char out[64];
+	sbuf_t b;
+	// a CJK character is two cells, ASCII and a Latin-1 glyph byte are one
+	CHECK(ui_text_cells("AB") == 2);
+	CHECK(ui_text_cells("\xE4\xB8\xAD") == 2);		// a 3-byte UTF-8 character
+	CHECK(ui_text_cells("A\xE4\xB8\xAD" "B") == 4);
+	CHECK(ui_text_cells("\xB7") == 1);		// a Latin-1 middot: one byte, one cell (a UTF-8 · is two bytes)
+	// a cut leaves a CJK character whole: room for 3 cells fits "A" and the character, but not the "B" after it
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "A\xE4\xB8\xAD" "B", 3);
+	CHECK(strcmp(out, "A\xE4\xB8\xAD") == 0);
+	// a shorter cut drops a CJK character whole rather than splitting it
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "\xE4\xB8\xAD\xE9\x81\x93", 3);
+	CHECK(strcmp(out, "\xE4\xB8\xAD") == 0);
+	// no cut when there is room
+	sb_init(&b, out, sizeof out);
+	sb_cut_text(&b, "AB", 4);
+	CHECK(strcmp(out, "AB") == 0);
+}
+#endif
+
+// A round trip of the text layer's two halves: a name cut to the cells it measures comes back whole, whatever scripts it
+// mixes. A narrower cut leaves a prefix of it and never half a character, so the cells it reports are the characters kept
+static void test_text_cut_round_trip(void)
+{
+	char out[64];
+	sbuf_t b;
+	static const char *const names[] = {
+		"AB", "A\xF1" "B", "Se\xF1" "al",			// ASCII and Latin-1, one cell a letter
+		"\xE4\xB8\xAD\xE9\x81\x93", "A\xE4\xB8\xAD" "B",		// two 3-byte UTF-8 characters, then one among ASCII
+		"Caf\xE9\xE4\xB8\xAD" "\x81", "A\xFF" "B",		// a Latin-1 letter, a 3-byte character, a glyph byte; 0xFF too
+	};
+	for (size_t i = 0; i < sizeof names / sizeof names[0]; i++) {
+		size_t cells = ui_text_cells(names[i]);
+		sb_init(&b, out, sizeof out);
+		sb_cut_text(&b, names[i], cells);
+		CHECK(strcmp(out, names[i]) == 0);
+		for (size_t room = 0; room < cells; room++) {
+			sb_init(&b, out, sizeof out);
+			sb_cut_text(&b, names[i], room);
+			CHECK(strncmp(out, names[i], strlen(out)) == 0);	// a prefix, never half a character
+			CHECK(ui_text_cells(out) <= room);		// and never over the room it was given
+			CHECK(room - ui_text_cells(out) < (size_t)(1 + CONFIG_LANG_ZH));	// the dropped character's own width
+		}
+	}
+}
 
 int main(void)
 {
 	mkdir("out", 0755);
+#if CONFIG_LANG_ZH
+	test_text_cells();
+#else
+	// without a CJK catalog the text layer draws each UTF-8 byte as one Latin-1 character: a 3-byte one is three cells
+	CHECK(ui_text_cells("\xE4\xB8\xAD") == 3);
+#endif
+	test_text_cut_round_trip();
 
 	char buf[32];
 	sbuf_t b;
@@ -685,6 +911,7 @@ int main(void)
 	render_set("128x64");
 #if CONFIG_LANG_ZH
 	test_cjk_text();
+	test_cjk_layout();
 #endif
 
 	// 240x320 color doesn't fit the frame buffer: gfx refuses it instead of overrunning
@@ -697,6 +924,7 @@ int main(void)
 	CHECK(gfx_init(&disp) == (GFX_MAX_ROWS >= 320));
 
 	test_indexed();
+	test_safe_area();
 	test_aa_text();
 	test_splash_footer();
 	test_pass_wait();

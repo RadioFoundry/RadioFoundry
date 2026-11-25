@@ -52,6 +52,17 @@
 // far above the close line (open threshold + RADIO_SQL_HYST_DB) closes after one poll, which halves the squelch tail
 // (radio-features.md 3.5)
 #define RADIO_SQL_FAST_CLOSE_DB	12
+// A voice peak: on a 12.5 kHz channel, speech above about 2 kHz (fricatives) raises the noise reading over the close
+// line for 100-300 ms, past the fast close line when the sender deviates wide, while the carrier stays as strong as it
+// was (#906). Noise over the line with the signal strength within RADIO_SQL_PEAK_RSSI_DB of the last poll the squelch
+// held closes only after RADIO_SQL_PEAK_POLLS polls (400 ms: the longest sibilant plus 100 ms; radio-features.md 3.5).
+// Only for a carrier RADIO_SQL_PEAK_FLOOR_DB or more over the receiver's floor (sql_floor, learned on idle polls,
+// rising RADIO_SQL_FLOOR_RISE_POLLS polls a dB): when that carrier goes or fades, its strength falls by more than
+// RADIO_SQL_PEAK_RSSI_DB in the same poll or the next, and the squelch closes as before
+#define RADIO_SQL_PEAK_RSSI_DB	3
+#define RADIO_SQL_PEAK_POLLS	16
+#define RADIO_SQL_PEAK_FLOOR_DB	10
+#define RADIO_SQL_FLOOR_RISE_POLLS	4
 // DMR scan: a stop also hears a carrier by its signal strength, as the squelch levels do on noise: level 1 above
 // RADIO_DMR_SQL_L1_DBM, RADIO_SQL_DB_PER_STEP more a level (5, the default, above -100 dBm). Some receivers' noise
 // reading doesn't follow a DMR signal (gotchas 17.3)
@@ -147,7 +158,7 @@ typedef enum {
 	RREQ_DMR_PRIVACY,	// DMR: arg = type << 16 | key
 	RREQ_HS_ENTER,		// hotspot: arg = RX Hz (0 = stay)
 	RREQ_HS_FREQ,		// hotspot: arg = RX Hz, arg2 = TX Hz
-	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-255
+	RREQ_HS_POWER,		// hotspot: arg = MMDVM RF level 0-254, RADIO_HS_RF_OWN = the radio's own power
 	RREQ_HS_LEAVE,		// hotspot: back to the channel
 	RREQ_SCAN,		// arg: radio_scan_cmd_t, arg2: dual watch position
 	RREQ_SCAN_VFO,		// arg: low Hz, arg2: high Hz (both 0: the VFO's band)
@@ -176,6 +187,11 @@ typedef enum {
 	RREQ_WAKE,		// radio_task.c: tick now (a DMR transmission ended: dmr_call_set_wake); never radio_sm_request
 	RREQ_VOLUME_HOLD,	// arg: 1 hold the level and ignore the knob (keys locked), 0 follow it again
 	RREQ_VFO_SFR,		// the VFO's SFR role (CONFIG_SFR): arg = byte A, as a channel's (sfr.h); VFO only
+	RREQ_SATELLITE_TRACK,	// satellite mode: arg = enabled, arg2 = installed TLE record index
+	RREQ_SATELLITE_SCAN,	// satellite pass picker: arg = start/cancel
+#if CONFIG_SATELLITE_TLE
+	RREQ_SATELLITE_ARM,	// SO-50: explicitly transmit the two-second timer-arm tone
+#endif
 	RREQ_T3,		// a trunked system (CONFIG_DMR_TRUNK): arg = radio_t3_cmd_t
 	RREQ_T3_POLL,		// poll MS arg2 for its short data, as the system's poll setting says (CONFIG_DMR_TRUNK_TX)
 	RREQ_T3_DIAL,		// the digits a call through a gateway sends (CONFIG_DMR_TRUNK_GW): radio_req_t3_dial()
@@ -183,6 +199,9 @@ typedef enum {
 	RREQ_AIR_BENCH,		// the air interface bench (CONFIG_AIR_RAW): arg 1 take the modem, 0 give it back
 	RREQ_AIR_TX,		// ... arg 1 key (arg2: the longest time in ms), 0 unkey
 	RREQ_NXDN_SET,		// radio_task.c: the pending NXDN settings were copied (radio_nxdn_set_settings); applied here
+	// New request types go above
+
+	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
 } radio_req_type_t;
 
 // RREQ_TONE's argument: which (RADIO_TONE_*) in bits 25:24, the tone type in 23:16, the value in 15:0
@@ -289,12 +308,17 @@ typedef struct {
 	uint8_t close_count;		// polls in a row above the close threshold
 	uint8_t tone_count;		// polls in a row disagreeing with view.tone_ok (debounce)
 	int16_t rssi_published;
+	int16_t sql_rssi;		// the signal strength on the last poll the squelch held (close_need)
+	int16_t sql_floor;		// the receiver's floor, from idle polls (track_floor); INT16_MAX not known
 #if CONFIG_DMR
 	int16_t rssi_ring[RADIO_RSSI_HOLD_POLLS];	// the last polls' readings while the DMR path runs (peak hold)
 	uint8_t rssi_ring_n;		// readings in the ring (0 outside DMR)
 	uint8_t rssi_ring_pos;
 #endif
 	int8_t audio_out;		// last speaker / LED settings sent to the board, -1 = not yet
+#if CONFIG_APRS_RX
+	int8_t speaker_mute_out;	// last speaker_mute sent to the board, -1 = not yet
+#endif
 #if CONFIG_BCAST_FM
 	bool bcast_on;			// the broadcast receiver is powered (radio_bcast.h)
 	int8_t bcast_audio_out;		// last board.bcast audio / volume sent, -1 = not yet
@@ -466,6 +490,7 @@ typedef struct {
 	uint16_t group_hang_ms, private_hang_ms;	// codeplug hang times, 0 = the stack's default reply window
 	uint32_t hs_rx_hz, hs_tx_hz;	// hotspot frequencies
 	uint8_t hs_power;		// hotspot board power level
+	uint8_t hs_rf_level;		// hotspot: the host's RF level, RADIO_HS_RF_OWN = the radio's own power
 	bool hs_power_due;		// hotspot: hs_power came while the modem transmitted; keyed again at its end
 	bool hs_carrier;		// hotspot: the receiver hears a carrier
 #if RADIO_SM_CW
@@ -552,6 +577,26 @@ typedef struct {
 	aprs_rf_job_t aprs_job;
 #endif
 	bool tx_no_ptt;		// on the air without PTT (a DMR data burst list): not the user's transmission, no "after PTT"
+#if CONFIG_SATELLITE_TLE
+	bool satellite_session;
+	bool satellite_pending;
+	bool satellite_config_pending;
+	bool satellite_restore_config_pending;
+	bool satellite_saved_vfo;
+	uint8_t satellite_saved_vfo_index;
+	uint16_t satellite_saved_zone, satellite_saved_pos, satellite_saved_channel;
+	uint8_t satellite_saved_mode, satellite_saved_bw;
+	subtone_t satellite_saved_rx_tone, satellite_saved_tx_tone;
+	uint16_t satellite_profile_tx_tone_tenths;
+	uint32_t satellite_restore_rx_hz, satellite_restore_tx_hz;
+	radio_satellite_tracking_view_t satellite_view;
+	uint32_t satellite_applied_rx_hz, satellite_applied_tx_hz;
+	uint32_t satellite_pending_rx_hz, satellite_pending_tx_hz;
+#if CONFIG_FM_TX_TONES
+	bool satellite_arm_active;
+	uint32_t satellite_arm_end_ms;
+#endif
+#endif
 } radio_sm_t;
 
 // Start-up: the codeplug and the settings (core/settings): the saved zone, channel or VFO, else zone 0 and its
@@ -573,11 +618,19 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms);
 // Hotspot frequencies the board can use: RX in a band, TX in a band that allows transmit (the amateur band plan does
 // not apply, docs/spec/gotchas.md 8.7)
 bool radio_sm_hotspot_freq_ok(uint32_t rx_hz, uint32_t tx_hz);
-// MMDVM RF level 0-255 -> board power level
-uint8_t radio_sm_hotspot_power(uint8_t rf_level);
+// MMDVM RF level 0-254 -> board power level; RADIO_HS_RF_OWN (the host's default, never set by the user) -> own,
+// the radio's own power (docs/spec/mmdvm-protocol.md)
+#define RADIO_HS_RF_OWN	255u
+uint8_t radio_sm_hotspot_power(uint8_t rf_level, uint8_t own);
 
 // Settings in effect from now on (radio_task.c calls it for RREQ_SETTINGS; the tests call it directly)
 void radio_sm_set_settings(radio_sm_t *sm, const radio_settings_t *s, uint32_t now_ms);
+#if CONFIG_SATELLITE_TLE
+void radio_sm_satellite_update(radio_sm_t *sm, bool enabled, uint8_t record_index, uint8_t status,
+			       uint32_t nominal_rx_hz, uint32_t nominal_tx_hz, uint16_t tx_tone_tenths,
+			       bool targets_valid, uint32_t rx_hz, uint32_t tx_hz,
+			       int64_t rx_offset_hz, int64_t tx_offset_hz, uint32_t now_ms);
+#endif
 
 // The view as the screens and the debug link get it: during a roaming survey visit (a few hundred ms on another
 // site, docs/spec/dmr-roaming.md 4.9) it still shows the site the radio returns to. radio_task.c applies it when it

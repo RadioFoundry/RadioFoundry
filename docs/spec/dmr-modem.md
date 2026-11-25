@@ -277,8 +277,7 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 
 - Send a BS_Dwn_Act CSBK (CSBKO 0x38, LB=1, FID 0, BS address 0 = any, source = own ID). Octets: B8 00 00 00 00 00 00
   + source (3). HR_C7000 practice: in two consecutive slots with the PA keyed; HR_C6000 practice: one burst.
-- Then listen: the repeater is up when its outbound is heard with the slot number toggling correctly more than 3 times
-  in a row.
+- Then listen: the repeater is up when a burst of its outbound (BS sync, our color code) is heard after the CSBK went.
 - No answer within 600 ms: send again, up to the configured number of attempts; then report failure to the user.
 - The CSBK goes on our own timing (`DMR_TIMING_OWN`): no repeater is heard, so there is nothing to align to. On the
   timing the modem last had, from a repeater that had just dropped, the HR_C6000 sent nothing: its passive timing had
@@ -296,6 +295,11 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - Where the modem reports the repeater's bursts (received, or heard between ours), only those say it is up; its slot
   numbers don't. They run on from the timing it last had, so a repeater that had dropped counted as up for a key-up
   0.6 s later, and a second wake-up counted as answered by them.
+- Slot numbers never bring a repeater up on their own, on any channel: only its bursts (BS sync, our color code) do.
+  The slot numbers only hold a repeater its bursts showed up through our own over, when nothing is heard between our
+  bursts. The HR_C6000 labels slots from its CACH TC reads, which noise gives too: on a duplex channel with nothing
+  on its output, a repeater no burst had shown counted as up 7 to 19 s after the channel was selected, and a key-up
+  skipped its wake-up (issue 721). A neighbor's repeater of another color code doesn't count either.
 - Our own ID as the source while a key-up lasts is our echo: the repeater replays an over it heard while down once a
   wake-up starts it. It never makes the channel busy.
 - A start through a repeater that never gets a slot (no timing at all, so the modem's own wait never runs out) is cut
@@ -365,11 +369,14 @@ The CC fields are defined by TS 102 361-1 9.1.2 (EMB), 9.1.3 (slot type) and 9.3
 - **Basic privacy** (Motorola-style, Anytone 16-bit): the voice LC carries the privacy bit (service options bit 6)
   and a manufacturer FID; the AMBE bits of each burst are XORed with a key-derived pattern that depends on the burst
   position (A-F). The modem must give the stack the raw 27-byte AMBE before decoding and take raw AMBE for
-  transmission, with the burst position. The EMB PI bit is set on voice bursts of an encrypted call.
+  transmission, with the burst position. The EMB PI bit is clear on the voice bursts of the AES-256 calls measured on
+  air: privacy is told by the service options and PI headers.
 - **Receivers without the key**: drop bursts with PI set (do not play them).
-- **Enhanced / AES schemes**: need a PI header (DT 0) before the voice and the per-superframe privacy information in
-  burst F. The modem must let the stack send a PI header burst and set the burst F embedded content, or at least
-  pass them through. Late entry needs the IV from burst F (not supported by the HR_C6000 path today).
+- **Enhanced / AES schemes**: need a PI header (DT 0) before the voice and the algorithm / key ID in burst F's
+  embedded field ([dmr-voice.md](dmr-voice.md) 5.1). The modem must let the stack send a PI header burst (a host CRC
+  burst, mask 0x6969) and set burst F's field before key-up (`set_burst_f`; the HR_C7000 driver has it, the
+  HR_C6000's is #864). A late entry's MI is carried in the voice frames' late-entry bits, not in burst F; our RX
+  doesn't read it yet (#863).
 - The HR_C6000 has its own "end-to-end encryption" interrupts (TX-start sub-status bit 5); not used.
 
 ---
@@ -492,4 +499,5 @@ interrupt.
 - RF TX interrupt lead on the HR_C6000 has not been measured.
 - Whether the C7000 has the double voice report and the stale LC behavior (assumed, as it derives from the C6000).
 - ETSI hang time and wake-up retry timings are configuration in practice; the 600 ms retry is a common vendor value.
-- Enhanced privacy (PI header, burst F IV) is not exercised by any of our drivers.
+- AES-256 (PI header, burst F field) is sent through the HR_C7000 driver only; the HR_C6000 driver has no
+  `set_burst_f` yet (#864).

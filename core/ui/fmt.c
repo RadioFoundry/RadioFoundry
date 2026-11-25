@@ -4,6 +4,7 @@
 #include "fmt.h"
 #include "font.h"
 #include "i18n.h"
+#include "gfx.h"
 
 void sb_init(sbuf_t *b, char *buf, size_t len)
 {
@@ -230,4 +231,47 @@ void sb_range(sbuf_t *b, uint32_t meters, uint16_t bearing)
 		sb_str(b, " km ");
 	}
 	sb_compass(b, bearing);
+}
+
+// A string's display width in cells, for truncation that never splits a character: a CJK glyph (code point > 0xFF) is
+// two cells, matching the room math ((w - x) / f->w) the talk line uses; ASCII, Latin-1 and font glyph bytes are one
+size_t ui_text_cells(const char *s)
+{
+	size_t cells = 0;
+	for (const char *p = s; *p; ) {
+		int seq;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cells += (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cells += 1;
+#endif
+		p += seq;
+	}
+	return cells;
+}
+
+// Append up to max_cells of s to b, stopping at a character boundary (a CJK character is two cells); the caller adds the
+// ellipsis. Never writes a cut-off character, so a Chinese name stays whole or drops whole
+void sb_cut_text(sbuf_t *b, const char *s, size_t max_cells)
+{
+	size_t cells = 0;
+	for (const char *p = s; *p; ) {
+		int seq;
+		size_t cw;
+#if CONFIG_LANG_ZH
+		uint32_t cp = gfx_utf8_next(p, &seq);
+		cw = (cp > 0xFF) ? 2 : seq;
+#else
+		seq = 1;
+		cw = 1;
+#endif
+		if (cells + cw > max_cells)
+			break;
+		cells += cw;
+		for (size_t k = 0; k < (size_t)seq; k++)
+			sb_chr(b, p[k]);
+		p += seq;
+	}
 }

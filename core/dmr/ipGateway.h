@@ -10,38 +10,44 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Addressing, chosen at compile time. Each range is a base address and a prefix length of 8 to 24 bits, and maps the
-// low bits of the address to a DMR ID. Bigger IDs are truncated: in a /16 radio 0x010203 is x.y.2.3, and its host also
-// gets the data sent to radio 0x0203. Sending from the host to x.y.2.3 reaches 0x0203 only.
-//   individual   12.0.0.0/8 (default)  DMR IDs. The host gets its own radio's ID by DHCP, so radio 10005 gives it
-//                                      12.0.39.21 (or 10.250.39.21 with 10.250.0.0/16). Over the air the packets keep
-//                                      the Motorola CAI addresses (12.x.y.z, 225.x.y.z), see dmrData.c
+// Addressing, chosen at compile time, as TS 102 361-3 5.1.1 has it: a radio network for the radios, and a peripheral
+// network for the host behind each radio. Each range is a base address and a prefix length of 8 to 24 bits, and maps
+// the low bits of the address to a DMR ID. Bigger IDs are truncated: in a /16 radio 0x010203 is x.y.2.3, and its host
+// also gets the data sent to radio 0x0203. Sending from the host to x.y.2.3 reaches 0x0203 only.
+//   individual   12.0.0.0/8 (default)  the radio network, DMR IDs. The radio itself is its own ID's address: radio
+//                                      10005 is 12.0.39.21 (or 10.250.39.21 with 10.250.0.0/16). Over the air the
+//                                      packets keep the CAI addresses (12.x.y.z, 13.x.y.z, 225.x.y.z), see
+//                                      dmrData.c
+//   peripheral   the next range        the radios' peripheral networks: the host behind each radio, by its DMR ID.
+//                (13.0.0.0/8)          The host gets its own radio's by DHCP: 13.0.39.21 for radio 10005 (10.251.39.21
+//                                      with 10.250.0.0/16). On the air its packets carry 13.x.y.z, address ID 1 in the
+//                                      compressed header (dmrData.h), and packets to 13.<our ID> come to the host
 //   multicast    225.0.0.0/8           talkgroups, both ways: send to 225.x.y.z for talkgroup x.y.z, and group data
 //                                      received over the air arrives there (join the group on the radio's interface)
-//   link         /32 (default)         the host alone: the host is 12.<ID>/32, the radio is 12.<ID> xor 1, and option
-//                                      121 has a route to the radio on the link (router 0.0.0.0) and routes the
-//                                      individual, multicast (and group) ranges through the radio. Each radio has an
-//                                      address of its own, so several radios can be plugged into one host. The radio
-//                                      answers at that address for ping, DHCP, IPGW_SERIAL_PORT and the UDP ports its
-//                                      own services bind (ipGatewayUdpBind) only, anything else to it goes over the air
-//                                      to the radio with that ID. The radio answers ARP for
-//                                      every address but the host's, in case the host ignores the on link route.
-//                or /31                the same with the host and the radio as a /31 (RFC 3021), the radio answering
-//                                      ARP for its own address only. macOS treats both ends of a /31 as broadcast
-//                                      addresses, so sending to the radio needs SO_BROADCAST there.
-//                or /1 to the individual prefix, holding the individual range (e.g. IPGW_LINK_PREFIX 8), for hosts
-//                                      that can't use a /31: every radio is on the link and the radio itself is the
-//                                      top individual address but one (12.255.255.254), so that ID can't be used. One
-//                                      radio per host. Option 121 routes the multicast range (and the group range when
-//                                      it is off the link).
+//   link         /32 (default)         the host alone: the host is 13.<ID>/32, the radio 12.<ID>, and option 121 has a
+//                                      route to the radio on the link (router 0.0.0.0) and routes the individual,
+//                                      peripheral, multicast (and group) ranges through the radio. Each radio has
+//                                      addresses of its own, so several radios can be plugged into one host. The
+//                                      radio answers ARP for every address but the host's, in case the host ignores
+//                                      the on link route.
+//                or /1 to the individual prefix less 1, holding the individual and peripheral ranges (e.g.
+//                                      IPGW_LINK_PREFIX 7: 12.0.0.0/7), for hosts that can't use a /32 with a route on
+//                                      the link: the same addresses, the host 13.<ID>/7, every radio and every radio's
+//                                      host on the link (the radio answers ARP for all but the host). One radio per
+//                                      host. Option 121 routes the multicast range (and the group range when it is
+//                                      off the link).
 //   group        none (optional)       a unicast range for sending to talkgroups, for hosts or apps that can't use the
-//                                      multicast route, e.g. 10.251.0.0/16 next to 10.250.0.0/16.
+//                                      multicast route, e.g. 10.252.0.0/16 next to 10.250.0.0/16.
 //                                      Define IPGW_GROUP_NET and IPGW_GROUP_PREFIX to have it.
 //   off-net      none (run time)       any other unicast address, through a gateway radio's DMR ID when one is set
 //                                      (ipGatewaySetOffNetId); dropped without one
+// Everything to the radio's own address is the radio's: ping, DHCP, IPGW_SERIAL_PORT, TCP (ipGatewaySetTCP) and the
+// UDP ports its services bind (ipGatewayUdpBind). UDP to another port gets an ICMP port unreachable, SCTP an ICMP
+// protocol unreachable; nothing to it goes over the air.
 // The top individual address (12.255.255.255) is the all call (16777215), for the DMR application ports 4000-4099
 // only; as are 255.255.255.255 and, on a shared link, the subnet broadcast. Received all calls and monitor records go
-// to the host's broadcast address: the subnet broadcast on a shared link, 255.255.255.255 on a /31 or /32.
+// to the host's broadcast address: the subnet broadcast on a shared link, 255.255.255.255 on a /32. The one below it is
+// IPGW_ANY_RADIO_IP. Both are in the all unit range (FFFFF0-FFFFFF, TS 102 361-1 Annex A): no radio has them.
 #ifndef IPGW_INDIVIDUAL_NET
 #define IPGW_INDIVIDUAL_NET		0x0C000000u		// 12.0.0.0
 #define IPGW_INDIVIDUAL_PREFIX	8
@@ -50,20 +56,23 @@
 #define IPGW_MULTICAST_NET		0xE1000000u		// 225.0.0.0
 #define IPGW_MULTICAST_PREFIX	8
 #endif
+#ifndef IPGW_PERIPHERAL_NET
+#define IPGW_PERIPHERAL_NET		(IPGW_INDIVIDUAL_NET + (1u << (32 - IPGW_INDIVIDUAL_PREFIX)))	// the next range: 13.0.0.0
+#endif
+#define IPGW_PERIPHERAL_PREFIX	IPGW_INDIVIDUAL_PREFIX
 #ifndef IPGW_LINK_PREFIX
 #define IPGW_LINK_PREFIX		32
 #endif
 
 #define IPGW_MASK(prefix)		(0xFFFFFFFFu << (32 - (prefix)))
 #define IPGW_NETMASK			IPGW_MASK(IPGW_LINK_PREFIX)
-#define IPGW_POINT_TO_POINT		(IPGW_LINK_PREFIX >= 31)
+#define IPGW_POINT_TO_POINT		(IPGW_LINK_PREFIX == 32)
 #define IPGW_ALL_CALL_IP		(IPGW_INDIVIDUAL_NET | ~IPGW_MASK(IPGW_INDIVIDUAL_PREFIX))
-#define IPGW_SHARED_RADIO_IP	(IPGW_ALL_CALL_IP - 1)	// the radio on a shared link
 // The radio on this link, whatever its DMR ID or link addressing: TCP to it is the radio's own (the host routes the
 // individual range through the radio, DHCP option 121), so a host that can't know the radio's address or resolve its
-// mDNS name reaches its services (a web page: docs/spec/usb-network.md 1). The shared link's radio address, which
-// no DMR ID maps to on any link
-#define IPGW_ANY_RADIO_IP		IPGW_SHARED_RADIO_IP
+// mDNS name reaches its services (a web page: docs/spec/usb-network.md 1). Ping is answered; UDP and SCTP get an ICMP
+// error. Never over the air: no DMR ID is it
+#define IPGW_ANY_RADIO_IP		(IPGW_ALL_CALL_IP - 1)
 #if IPGW_POINT_TO_POINT
 #define IPGW_BROADCAST_IP		0xFFFFFFFFu
 #else
@@ -76,9 +85,18 @@ _Static_assert((IPGW_INDIVIDUAL_PREFIX >= 8) && (IPGW_INDIVIDUAL_PREFIX <= 24) &
 #if defined(IPGW_GROUP_NET)
 _Static_assert((IPGW_GROUP_PREFIX >= 8) && (IPGW_GROUP_PREFIX <= 24), "address ranges must be /8 to /24");
 #endif
-_Static_assert(((IPGW_LINK_PREFIX <= 32) && IPGW_POINT_TO_POINT) || ((IPGW_LINK_PREFIX >= 1) && (IPGW_LINK_PREFIX <= IPGW_INDIVIDUAL_PREFIX) &&
-				((IPGW_SHARED_RADIO_IP & IPGW_NETMASK) == (IPGW_INDIVIDUAL_NET & IPGW_NETMASK))), "the link must be a /31, a /32 or hold the individual range");
+_Static_assert((IPGW_LINK_PREFIX == 32) || ((IPGW_LINK_PREFIX >= 1) && (IPGW_LINK_PREFIX < IPGW_INDIVIDUAL_PREFIX) &&
+				((IPGW_PERIPHERAL_NET & IPGW_NETMASK) == (IPGW_INDIVIDUAL_NET & IPGW_NETMASK))),
+				"the link must be a /32 or hold the individual and peripheral ranges");
 _Static_assert((IPGW_MULTICAST_NET >> 28) == 0xE, "the multicast range must be in 224.0.0.0/4");
+// The peripheral range follows the individual range: it must be unicast and not another range of the gateway's
+_Static_assert((IPGW_PERIPHERAL_NET > IPGW_INDIVIDUAL_NET) && ((IPGW_PERIPHERAL_NET >> 28) < 0xE),
+				"the peripheral range must be unicast, after the individual range");
+#if defined(IPGW_GROUP_NET)
+_Static_assert(((IPGW_GROUP_NET & IPGW_MASK(IPGW_PERIPHERAL_PREFIX)) != IPGW_PERIPHERAL_NET) &&
+				((IPGW_PERIPHERAL_NET & IPGW_MASK(IPGW_GROUP_PREFIX)) != IPGW_GROUP_NET),
+				"the group range must not overlap the peripheral range (the one after the individual range)");
+#endif
 
 // Every data burst received over the air also goes to the host, as a UDP broadcast from the radio to this port:
 // version (1), timeslot (1-2), color code, DT, flags (dmrBurst_t), length, payload.
@@ -113,6 +131,9 @@ typedef struct
 	uint32_t fragNeeded;					// ICMP "fragmentation needed" sent back for them (DF set)
 	uint32_t upTooBig;						// packets from the air too long for the link (dropped): another
 											// make's, up to 608 octets of user data (dmr-data.md 12.8)
+	uint32_t ownUnreachable;				// from the host to the radio's address or IPGW_ANY_RADIO_IP that no
+											// service took: UDP to an unbound port, SCTP (dropped, an ICMP port or
+											// protocol unreachable back)
 } ipGatewayStats_t;
 void ipGatewayGetStats(ipGatewayStats_t *stats);
 // The octets a host packet (from layer 4 on) takes as the user data of a packet on the air, as the data service will
@@ -126,16 +147,18 @@ void ipGatewayInit(const uint8_t gatewayMac[6], const uint8_t hostMac[6]);
 // An Ethernet frame from the host
 void ipGatewayEthernetIn(const uint8_t *frame, int length);
 
-// The host's address, from the radio's DMR ID (or the fixed link's), 0 if the ID can't be used
+// The host's address: its radio's peripheral network address, 13.<DMR ID> (or the fixed link's), 0 if the ID can't be
+// used (0, or in the all unit range's top two: IPGW_ANY_RADIO_IP, the all call)
 uint32_t ipGatewayHostIP(void);
 
-// The radio's own address (the host's router, DHCP server, ping and IPGW_SERIAL_PORT), 0 if the ID can't be used
+// The radio's own address, 12.<DMR ID> (or the fixed link's): the host's router, DHCP server, ping, IPGW_SERIAL_PORT
+// and the radio's own services. 0 if the ID can't be used
 uint32_t ipGatewayRadioIP(void);
 
 // A fixed link (control station mode, docs/spec/usb-network.md 5.3), chosen at run time: the radio is radioIp, the
 // host the next address, both in a /24 (IPGW_FIXED_NETMASK). DHCP gives the host that address with the same option
-// 121 routes through the radio (the individual, multicast and group ranges), the radio answers ARP for its own address
-// only, and packets over the air to the radio's own DMR ID reach the host at its fixed address (the destination is
+// 121 routes through the radio (the individual, peripheral, multicast and group ranges), the radio answers ARP for its
+// own address only, and packets over the air to the radio's own DMR ID reach the host at its fixed address (the destination is
 // rewritten, as a NAT would). One radio per host. 0 (or an address that can't be used: not unicast, a range of the
 // gateway's own, or a last octet outside 1-253) goes back to the addressing by DMR ID; false then if it wasn't 0
 #define IPGW_FIXED_LINK_DEFAULT	0xC0A80A01u		// 192.168.10.1, the host 192.168.10.2
@@ -153,8 +176,9 @@ uint32_t ipGatewayOffNetId(void);
 // A UDP datagram received over the air, to the host from the source's individual address. Private data to another radio
 // is sent to a MAC address the host doesn't use, so the host ignores it but a packet capture shows it. Group data goes
 // to the multicast range. srcIp / dstIp: the IPv4 addresses on the air (host byte order; dmrDataGetUDP gives them).
-// Addresses that are the IDs' CAI addresses (dmrDataIdAddress) are delivered as above; another one (an off-net host's
-// through a gateway radio) is kept: a destination that isn't our ID's address comes to the host when the packet came
+// Addresses that are the IDs' CAI addresses (dmrDataIdAddress) are delivered as above, and so are a radio's peripheral
+// network address (dmrDataPeripheralAddress: the peripheral range; our own ID's is the host's); another one (an
+// off-net host's through a gateway radio) is kept: a destination that isn't our ID's address comes to the host when the packet came
 // to our ID (we are the gateway; the host routes it on), else to the monitor MAC; a multicast destination to its
 // group. Another source must be off-net (not the radio range, the link, the host or the radio), else it is dropped.
 // ttl: the TTL on the air, kept for the host (0: dropped). False if the USB IN endpoint is busy.
@@ -183,12 +207,12 @@ bool ipGatewaySerialOut(const uint8_t *data, int length);
 // connected to), go to the one TCP handler, layer 4 on; NULL (the default) drops them. UDP: a datagram from the link to
 // the radio's own address, or to the local network control block 224.0.0.0/24 (mDNS: 224.0.0.251), on a bound port
 // goes to that port's handler instead of over the air (fromAir false, src / dst the IPv4 addresses); 224.0.0.0/24
-// never goes over the air, bound or not. A port bound with ipGatewayUdpBindAir also takes UDP received over the air
-// for our own DMR ID (the air side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it):
-// fromAir true, src the sender's DMR ID, dst our individual address; such a handler must copy and return, never block,
-// and answers over the air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler
-// NULL unbinds; false if the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air
-// too)
+// and the radio's address never go over the air, bound or not (an unbound port of the radio's address gets an ICMP port
+// unreachable). A port bound with ipGatewayUdpBindAir also takes UDP received over the air for our own DMR ID (the air
+// side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it): fromAir true, src the
+// sender's DMR ID, dst our individual address; such a handler must copy and return, never block, and answers over the
+// air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler NULL unbinds; false if
+// the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air too)
 typedef void (*ipGatewayLocalFn)(uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
@@ -224,11 +248,16 @@ bool ipGatewaySendFrame(const uint8_t *frame, int length);
 uint32_t ipGatewayRadioId(void);
 void ipGatewaySerialIn(const uint8_t *data, int length);
 // ICMP, UDP or SCTP from the host to a radio ID or talkgroup, from layer 4 on (UDP: header and payload, UDP length bytes).
-// srcIp / dstIp: the IPv4 addresses for the air (host byte order). srcIp is IPGW_AIR_SRC_OURS: the host's source is
-// always rewritten to the radio's own on the air (12.<the ID it sends from>), so that answers come back to it. dstIp is
-// the destination ID's CAI address (dmrDataIdAddress), or an off-net address for the off-net route. ttl: the IPv4 TTL
+// srcIp / dstIp: the IPv4 addresses for the air (host byte order). srcIp IPGW_AIR_SRC_PERIPHERAL is the host's
+// peripheral network address on the air, 13.<the ID it goes from> (dmrDataPeripheralAddress), so that answers come
+// back to the host; on a fixed link IPGW_AIR_SRC_OURS, the radio's own (12.<the ID>): a fixed address means nothing on
+// the air. Both are resolved when the packet goes, with the channel's ID then. The user may send
+// the host's as its radio's own too (control station passthrough: the PC answers for the radio). dstIp is the
+// destination ID's CAI address (dmrDataIdAddress), a radio's peripheral network address, or an off-net address for
+// the off-net route. ttl: the IPv4 TTL
 // on the air (the host's; 0: the radio's own default; a talkgroup always gets 1)
 #define IPGW_AIR_SRC_OURS		0u
+#define IPGW_AIR_SRC_PERIPHERAL	1u
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 					  const uint8_t *l4, int length);
 // The payload of a datagram from the host to IPGW_RAW_PORT, to go over the air as the user data of a packet

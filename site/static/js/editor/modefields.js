@@ -6,6 +6,8 @@
 // Field types: "int" (min..max; blank: the field's blank value, or "any" (null) with any), "hex" (the same in hex),
 // "freq" (MHz to Hz; zero: blank is 0), "bool", "select" (options: [value, label or i18n key]), "list" (whole numbers
 // split on spaces or commas, at most count), "hexbytes" (bytes octets in hex, or blank), "text".
+// A select whose options(r) read other fields of the record (a key list from the channel's system) sets dynamic: the
+// form then rebuilds its list as those fields change, instead of keeping the one built when the form opened.
 
 import { parseFreq, mhz } from "../codeplug/fields.js";
 
@@ -72,7 +74,7 @@ export function specField(spec, t, holder, id) {
 	};
 	if (spec.type === "bool") return { ...f, type: "bool", set: (r, v) => on(r) && holder.put(r, spec.key, !!v) };
 	if (spec.type === "select") {
-		return { ...f, type: "select", options: () => spec.options().map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
+		return { ...f, type: "select", dynamicOptions: !!spec.dynamic, options: (r) => spec.options(r).map(([v, l]) => [v, label(t, l)]), set: (r, v) => on(r) && holder.put(r, spec.key, v) };
 	}
 	return {
 		...f, type: "text",
