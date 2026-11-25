@@ -212,7 +212,7 @@ bool ipGatewaySerialOut(const uint8_t *data, int length);
 // side hands it to ipGatewayUdpFromAir, in the radio task, before the host would get it): fromAir true, src the
 // sender's DMR ID, dst our individual address; such a handler must copy and return, never block, and answers over the
 // air itself (ipGatewayIPToAir). One small table for every service: bind at start-up (handler NULL unbinds; false if
-// the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 (from the air too)
+// the table is full). In use: mDNS 5353, TFTP 69 and its transfer port, SNMP 161 and the debug link 3335 (from the air too)
 typedef void (*ipGatewayLocalFn)(uint32_t src, uint32_t dst, const uint8_t *l4, int length);
 void ipGatewaySetTCP(ipGatewayLocalFn fn);
 #define IPGW_UDP_PORTS			8
@@ -221,8 +221,11 @@ typedef void (*ipGatewayUdpHandler)(bool fromAir, uint32_t src, uint16_t srcPort
 									const uint8_t *data, int length);
 bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler handler);	// from the link only
 bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler handler);	// from the link and the air
-// A datagram over the air to our own DMR ID: true when a port bound for the air took it
-bool ipGatewayUdpFromAir(uint32_t srcId, uint16_t srcPort, uint16_t dstPort, const uint8_t *data, int length);
+// A datagram over the air to our own DMR ID: true when a port bound for the air took it. srcIp: its IPv4 source (the
+// sender's 12.<ID>, or a host the sender routes for), which the handler reads with ipGatewayUdpAirSource while it runs
+bool ipGatewayUdpFromAir(uint32_t srcId, uint32_t srcIp, uint16_t srcPort, uint16_t dstPort, const uint8_t *data,
+						 int length);
+uint32_t ipGatewayUdpAirSource(void);	// in an air handler's call (fromAir true): the datagram's IPv4 source
 //
 // Send to the link. One buffer and one path for TCP and UDP: build layer 4 (at most IPGW_LOCAL_MAX bytes) at
 // ipGatewayLocalPayload(), in the gateway's frame buffer, then ipGatewaySendLocal it with nothing else sent in

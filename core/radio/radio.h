@@ -431,6 +431,30 @@ typedef struct {
 } radio_t3_view_t;
 #endif
 
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4): temporary settings the radio reverts by itself at a deadline. armed while one
+// runs; the rest is the last detour's summary, taken at its return
+typedef struct {
+	bool armed;		// the home state is kept, settings saves are held, the backstop runs
+	bool returning;		// the return waits for a transmission to end
+	bool restored;		// the last return found the home position, frequencies and settings back
+	uint8_t why;		// RADIO_DETOUR_WHY_*: what ended the last detour
+	uint16_t count;		// detours ended since start
+	uint8_t mode;		// radio_mode_t in force just before the last return
+	uint32_t rx_hz;		// ... and the receive frequency
+	uint32_t ms;		// the last detour's length
+	uint32_t rx_ms;		// ... its time receiving (RS_RX), and the receptions
+	uint16_t rx_count;
+	uint16_t tx_count;	// ... transmissions (RS_TX), refused ones (RS_TX_DENIED)
+	uint16_t tx_denied;
+	uint32_t tx_ms;
+	int16_t rssi_max;	// ... the strongest RSSI while receiving, dBm (0 = none)
+} radio_detour_view_t;
+
+#define RADIO_DETOUR_WHY_ASKED		1	// the debug link's deadline or its RETURN
+#define RADIO_DETOUR_WHY_BACKSTOP	2	// the radio core's own deadline: the debug link didn't end it in time
+#endif
+
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
 
@@ -536,6 +560,9 @@ typedef struct {
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
 #endif
+#if CONFIG_RADIO_DETOUR
+	radio_detour_view_t detour;
+#endif
 } radio_view_t;
 
 // view.temp bits
@@ -583,6 +610,19 @@ uint32_t radio_view_serial(void);
 
 // Requests taken by the radio task, and lost to a full queue, since start-up
 void radio_req_stats(uint32_t *handled, uint32_t *dropped);
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4). Mark: keep the home state (position, temporaries, talk target, the P25 and
+// NXDN settings), hold the settings saves and arm the backstop backstop_ms from now (a detour already armed: only the
+// backstop moves). Refused, so view.detour.armed stays false, while settings wait for their save or in hotspot mode.
+// Return: everything back as marked, the held settings changes dropped; while transmitting, at the transmission's end
+// (the PTT is released first). Both posted with a wait: a dropped return would leave the deadline to the backstop
+#define RADIO_DETOUR_MARK	1
+#define RADIO_DETOUR_RETURN	2
+bool radio_req_detour(uint8_t op, uint32_t backstop_ms);
+// The published view.detour.armed, without copying the view
+bool radio_detour_armed(void);
+void radio_get_detour(radio_detour_view_t *d);	// just the view's detour, for a caller short of stack
+#endif
 
 // Requests (queued, handled by the radio task)
 void radio_req_channel_step(int8_t dir);	// next / previous channel in the zone, wraps
