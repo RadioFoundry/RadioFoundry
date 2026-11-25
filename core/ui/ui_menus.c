@@ -6514,6 +6514,20 @@ static void tools_item(uint16_t row, ui_item_t *it)
 	}
 }
 
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+// A side key set to Scan lists (keyassign.h): Home, then the lists to pick from (docs/spec/ui.md 2.7), on any screen.
+// Nothing to pick from when the radio has no scan list area: it says so, and starts nothing
+void ui_scan_lists_key(void)
+{
+	if (!(feats() & UI_FEAT_SCAN) || ui_svc_scanlist_slots() == 0) {
+		ui_toast(TR(KEYFN_WHY_NO_SCAN_LISTS, "Scan lists: not on this radio"));
+		return;
+	}
+	ui_go_home();
+	ui_push(SCR_SLISTS, 0);
+}
+#endif
+
 static void tools_select(uint16_t row, bool hold)
 {
 	(void)hold;
@@ -6645,6 +6659,9 @@ static const int16_t v_keyfn_press[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_MONITO
 #if CONFIG_DUAL_WATCH
 					 KEYFN_AB, KEYFN_DUAL_WATCH,
 #endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					 KEYFN_SCAN_LISTS,
+#endif
 };
 static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
 	TRN(KEYFN_VALUE_MONITOR, "Monitor"), TRN(KEYFN_VALUE_TALK_TARGET, "Talk target"),
@@ -6667,6 +6684,9 @@ static const tr_id_t n_keyfn_press[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYF
 #if CONFIG_DUAL_WATCH
 					     TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
 #endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					     TRN(KEYFN_VALUE_SCAN_LISTS, "Scan lists"),
+#endif
 };
 static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TARGET, KEYFN_POWER, KEYFN_ZONE_UP,
 					KEYFN_ZONE_DOWN, KEYFN_SCAN, KEYFN_SCAN_SKIP, KEYFN_MONITOR_TOGGLE,
@@ -6682,6 +6702,9 @@ static const int16_t v_keyfn_hold[] = { KEYFN_DEFAULT, KEYFN_NONE, KEYFN_TALK_TA
 #endif
 #if CONFIG_DUAL_WATCH
 					KEYFN_AB, KEYFN_DUAL_WATCH,
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					KEYFN_SCAN_LISTS,
 #endif
 };
 static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN_VALUE_NOTHING, "Nothing"),
@@ -6703,6 +6726,9 @@ static const tr_id_t n_keyfn_hold[] = { TRN(VALUE_DEFAULT, "Default"), TRN(KEYFN
 #endif
 #if CONFIG_DUAL_WATCH
 					    TRX(KEYFN_VALUE_A_B, "A/B"), TRN(WORD_DUAL_WATCH, "Dual watch"),
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+					    TRN(KEYFN_VALUE_SCAN_LISTS, "Scan lists"),
 #endif
 };
 #endif

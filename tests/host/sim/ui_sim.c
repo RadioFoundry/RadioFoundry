@@ -2912,6 +2912,7 @@ static const struct { const char *name; uint8_t action; } keys[] = {
 	{ "labelkey", ACT_TALK_LABEL },
 	{ "skipkey", ACT_SCAN_SKIP },
 	{ "monkey", ACT_MONITOR_TOGGLE },
+	{ "listskey", ACT_SCAN_LISTS },		// a side key set to Scan lists
 	{ "volkey", ACT_VOLUME },
 	{ "0", ACT_DIGIT_0 }, { "1", ACT_DIGIT_1 }, { "2", ACT_DIGIT_2 }, { "3", ACT_DIGIT_3 }, { "4", ACT_DIGIT_4 },
 	{ "5", ACT_DIGIT_5 }, { "6", ACT_DIGIT_6 }, { "7", ACT_DIGIT_7 }, { "8", ACT_DIGIT_8 }, { "9", ACT_DIGIT_9 },
@@ -2921,7 +2922,8 @@ static bool on_map(uint8_t action, bool lng)
 {
 	if ((action >= ACT_POWER && action <= ACT_VOLUME) || action == ACT_VFO_TOGGLE || action == ACT_DUAL_WATCH ||
 	    action == ACT_AB || action == ACT_TALK_TARGET || action == ACT_TALK_LABEL ||
-	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE)
+	    action == ACT_SCAN_SKIP || action == ACT_MONITOR_TOGGLE ||
+	    action == ACT_SCAN_LISTS)
 		// any side key can be set to send these; the few-key map has none, but a radio with side keys and no QUICK key
 		// is the case the key lock needs on it
 		return board.side_key_count != 0 || cur_map == SIM_MAP_F;

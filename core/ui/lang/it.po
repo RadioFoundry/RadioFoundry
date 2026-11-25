@@ -3588,6 +3588,11 @@ msgid "Serial"
 msgstr "Seriale"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_WHY_NO_SCAN_LISTS"
+msgid "Scan lists: not on this radio"
+msgstr "Liste di scansione: non su questa radio"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_BACKLIGHT_10S_DIM"
 msgid "10s/dim"
 msgstr "10s/fioca"
@@ -3761,6 +3766,11 @@ msgstr "Richiama"
 msgctxt "KEYFN_VALUE_TG_NAME_NUMBER"
 msgid "TG name / number"
 msgstr "Nome / numero TG"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_LISTS"
+msgid "Scan lists"
+msgstr "Liste di scansione"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "TITLE_EMERGENCY"

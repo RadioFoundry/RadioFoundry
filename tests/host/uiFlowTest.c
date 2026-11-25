@@ -1367,8 +1367,15 @@ static const flow_t flows_k[] = {
 	  "set47=17 shows=VFO/Channel", 1, false },
 	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT
+	{ "K top key hold: Scan lists is the last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	  "set47=22 shows=Scan_lists", 1, false },
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	  false },
+#else
 	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
+#endif
 	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
@@ -1382,6 +1389,14 @@ static const flow_t flows_k[] = {
 	  false },
 	{ "K a key set to scan skip, long, scanning", "scankey", "long:skipkey",
 	  "scanning=1 toast=Skipped_until_the_scan_stops", 1, false },
+	// Scan lists (KEYFN_SCAN_LISTS): the lists to pick from, on a press or a long press, from any screen
+#if CONFIG_SCAN_LIST
+	{ "K a key set to scan lists", "scanlists:seed", "listskey", "screen=scan-lists scanning=0", 1, false },
+	{ "K a key set to scan lists, long", "scanlists:seed", "long:listskey", "screen=scan-lists", 1, false },
+	{ "K a key set to scan lists, from a menu", "scanlists:seed ok 7", "listskey", "screen=scan-lists", 1, false },
+	{ "K a key set to scan lists, scanning", "scanlists:seed scankey", "listskey", "screen=scan-lists scanning=1", 1, false },
+	{ "K a key set to scan lists, no lists", "", "listskey", "screen=home toast=Scan_lists:_not_on_this_radio", 1, false },
+#endif
 	// VFO/Channel (KEYFN_VFO_TOGGLE) sends what a VFO/MR key does, on a press or a long press, on any screen
 	{ "K a key set to VFO/Channel", "", "vfokey", "vfo=1 toast=VFO", 1, false },
 	{ "K a key set to VFO/Channel, back", "vfokey", "vfokey", "vfo=0 toast=Back_to_channels", 1, false },

@@ -3590,6 +3590,11 @@ msgid "Serial"
 msgstr "串口"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYFN_WHY_NO_SCAN_LISTS"
+msgid "Scan lists: not on this radio"
+msgstr "扫描列表：此电台不支持"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_VALUE_BACKLIGHT_10S_DIM"
 msgid "10s/dim"
 msgstr "10秒/暗"
@@ -3763,6 +3768,11 @@ msgstr "回呼"
 msgctxt "KEYFN_VALUE_TG_NAME_NUMBER"
 msgid "TG name / number"
 msgstr "TG 名称/号码"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYFN_VALUE_SCAN_LISTS"
+msgid "Scan lists"
+msgstr "扫描列表"
 
 #: core/ui/ui_menus.c core/ui/ui_screens.c
 msgctxt "TITLE_EMERGENCY"

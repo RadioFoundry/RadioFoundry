@@ -165,6 +165,9 @@ void ui_apply_setting(uint8_t id, int32_t v);
 void ui_scan_toggle(void);
 void ui_monitor_toggle(void);	// a side key set to Monitor toggle: what quick tile 5 does
 void ui_scan_skip(void);	// a side key set to Scan skip: skip the channel that stopped the scan
+#if CONFIG_SCAN_LIST
+void ui_scan_lists_key(void);	// a side key set to Scan lists (ui_menus.c): Home and then the lists
+#endif
 // A channel row's value (ui_menus.c): its RX frequency and what it talks to; false for a trunked channel whose system
 // isn't set up (the caller dims the row)
 bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch);
