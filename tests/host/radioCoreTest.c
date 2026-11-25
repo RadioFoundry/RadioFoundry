@@ -8496,13 +8496,58 @@ static void test_p25_trunk_tx(void)
 	CHECK(st.tx_calls == 1);
 	run(1500);
 
+	// A board whose beeps would go on air (CAP_BEEP_NOT_ON_AIR): the grant plays the short permit while the radio still
+	// receives on the voice channel, and keys there once it is over, as a conventional channel's PTT does
+	uint32_t caps = board_rw.caps;
+	board_rw.caps |= CAP_BEEP_NOT_ON_AIR;
+	int reqs = site.req_rx;
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	int waited = 0;
+	while (sm.p25_req && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT_SHORT && !hw.keyed && hw.rx_hz == TS_VOICE);
+	waited = 0;
+	while (!hw.keyed && waited < 2000) {
+		run(10);
+		waited += 10;
+	}
+	CHECK(hw.keyed && sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && waited < 400);
+	CHECK(site.req_rx == reqs + 1);
+	run(1000);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && far_heard.starts == 2);	// once: none again as it keys
+	req(RREQ_PTT, 0);
+	run(600);
+	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL && v->treq == P25_REQ_IDLE);
+	run(1500);
+	// Let go during that permit: it never keys on the voice channel, and the grant is given back (the control channel)
+	int heard = far_heard.starts;
+	req(RREQ_PTT, 1);
+	waited = 0;
+	while (sm.p25_req && waited < 2000) {
+		run(1);
+		waited += 1;
+	}
+	CHECK(!hw.keyed && beep_busy());
+	req(RREQ_PTT, 0);
+	run(1500);
+	CHECK(!hw.keyed && far_heard.starts == heard && sm.view.state != RS_TX && hw.rx_hz == TS_CC1);
+	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
+	board_rw.caps = caps;
+	run(1500);
+
 	// Queued, then granted
+	reqs = site.req_rx;
 	site.ans_req = SITE_ANS_QUEUE;
 	req(RREQ_PTT, 1);
 	run(800);
 	CHECK(v->treq == P25_REQ_QUEUED && sm.view.state == RS_IDLE && !hw.keyed);
 	run(2500);
-	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == 2);
+	CHECK(sm.view.state == RS_TX && hw.tx_hz == TS_VOICE + TS_OFFSET && site.req_rx == reqs + 1);
 	req(RREQ_PTT, 0);
 	run(1500);
 	CHECK(!hw.keyed && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);

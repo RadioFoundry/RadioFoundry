@@ -344,6 +344,7 @@ typedef struct {
 	bool air_keyed;			// board.radio->tx() keyed for it (until tx_off)
 	uint32_t air_permit_ms;		// PTT held, the talk permit playing before keying (CAP_BEEP_NOT_ON_AIR): since
 					// when, 0 none
+	uint32_t air_permit_hz;		// where that key-up keys: the channel's TX frequency, or a trunked grant's
 #endif
 #if CONFIG_P25
 #if CONFIG_P25_TRUNK
