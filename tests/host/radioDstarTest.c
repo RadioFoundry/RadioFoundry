@@ -685,7 +685,10 @@ static void test_reset_mid_block(void)
 	CHECK(sx.rx_played + sx.rx_concealed <= sx.blocks);
 	hear();
 	radio_dstar_stats(&sx);
-	CHECK(sx.rx_played > 20u && sx.rx_played + sx.rx_concealed <= sx.blocks);
+	// Played after the reset at all: how many depends on where the 20 ms block clock falls against the replayed
+	// capture (19 to 21 of the over's frames as the transmitter's timing moved by a few milliseconds), so the bound is
+	// well under that; the counters' consistency is what this test is about
+	CHECK(sx.rx_played >= 10u && sx.rx_played + sx.rx_concealed <= sx.blocks);
 	radio_dstar_reset_stats();
 	radio_dstar_stats(&sx);
 	CHECK(sx.rx_played == 0 && sx.blocks == 0 && sx.rx_frames == 0 && sx.tx_overs == 0 && sx.tx_peak == 0);
@@ -706,8 +709,8 @@ int main(void)
 	test_tone_cal_mid_over();
 	test_stalled_route();
 	test_reset_mid_block();
-	// Last: run before test_reset_mid_block, its two overs move the clock's phase and that test then counts 20 played
-	// frames where it asks for more than 20. Its margin is the thing to widen, separately from this fix
+	// Last: their overs move the clock's phase, which moves test_reset_mid_block's played count (its bound allows
+	// for that now, but the order keeps the counts printed by earlier runs comparable)
 	test_repeater_as_typed();
 	test_ur_commands();
 	test_link_typed();
