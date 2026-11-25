@@ -132,7 +132,8 @@ function systemDialog(api, s, isNew) {
 	const specs = mod.fields();
 	// Whether the radio never transmits on this system as the identity fields stand now (typed, not yet saved): the
 	// module's rule over the stored fields with what is typed laid over them
-	const restricted = (r, value) => !!mod.noTx?.(value ? liveSystemFields(mod, r.fields, value, t) : r.fields);
+	const live = (r, value) => (value ? liveSystemFields(mod, r.fields, value, t) : r.fields);
+	const restricted = (r, value) => !!mod.noTx?.(live(r, value));
 	// The editor's own fields, by section; the type's fields follow them in each
 	const own = {
 		identity: [
@@ -150,7 +151,7 @@ function systemDialog(api, s, isNew) {
 			// (channelmodes.js systemTx), so a blocked system read back from a file or the radio is listen only
 			{ key: "transmit", label: t("editor.modes.transmit"), type: "select", dynamicOptions: true,
 				options: (r, value) => {
-					if (restricted(r, value)) return [[txChoice(mod, r.tx, r.fields), t("editor.modes.enforced")]];
+					if (restricted(r, value)) return [[txChoice(mod, r.tx, r.fields), t("editor.modes.tx0")]];
 					return [[0, t("editor.modes.tx0")], [1, t(mod.conventional ? "editor.modes.tx1_short" : "editor.modes.tx1")], ...(mod.noRegField ? [[2, t("editor.modes.tx2")]] : [])];
 				},
 				get: (r) => txChoice(mod, r.tx, r.fields),
@@ -160,8 +161,12 @@ function systemDialog(api, s, isNew) {
 					r.tx = v > 0;
 					if (mod.noRegField) r.fields = { ...r.fields, [mod.noRegField]: v === 2 };
 				}, help: mod.conventional ? null : t(mod.noRegField ? "editor.modes.transmit_help_noreg" : "editor.modes.transmit_help") },
-			// the notice, in two paragraphs
-			...(mod.noTx ? ["editor.modes.no_tx_note", "editor.modes.no_tx_note2"].map((key) => ({ type: "note", key, text: (value, r) => (restricted(r, value) ? t(key) : "") })) : []),
+			// the notice, a callout naming the ID that matched as it is typed
+			mod.noTxNote ? { type: "note", key: "sys.notx", notice: "bad",
+				text: (value, r) => {
+					const n = mod.noTxNote(live(r, value));
+					return n ? t(n.key, n.params) : "";
+				} } : null,
 			systemOwnIdField(mod, t, restricted),
 			mod.secret ? { key: "needsKey", label: t("editor.modes.needs_key"), type: "bool", help: t("editor.modes.needs_key_help") } : null,
 		],

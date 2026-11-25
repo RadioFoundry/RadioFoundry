@@ -199,13 +199,15 @@ test("system form: a blocked network ID, as it is typed, locks Transmit and hide
 	assert.deepEqual(form.choices("transmit"), open);
 	assert.equal(form.row("ownId").hidden, false);
 	assert.ok(form.heads().includes("editor.col.tx") && form.heads().includes("editor.p25.tx_offset"));
-	assert.ok(!form.note().includes("editor.modes.no_tx_note"));
+	assert.ok(!form.note().some((x) => x.includes("editor.p25.no_tx_")));
 
 	form.type("sys.wacn", "bee5a");
-	assert.deepEqual(form.choices("transmit"), ["editor.modes.enforced"], "one choice, and it says so");
+	assert.deepEqual(form.choices("transmit"), ["editor.modes.tx0"], "one choice, listen only");
 	assert.equal(form.input("transmit").disabled, true);
 	assert.equal(form.row("ownId").hidden, true);
-	assert.ok(form.note().includes("editor.modes.no_tx_note") && form.note().includes("editor.modes.no_tx_note2"), "both paragraphs");
+	assert.ok(form.note().includes('editor.p25.no_tx_wacn {"id":"BEE5A"}'), "one notice, naming the WACN as typed");
+	assert.ok(!form.note().some((x) => x.includes("editor.p25.no_tx_sysid")));
+	assert.ok(form.dlg.find((e) => e.className === "form-note notice bad" && !e.hidden), "drawn as a callout");
 	assert.ok(!form.heads().includes("editor.col.tx") && !form.heads().includes("editor.p25.tx_offset"), "the TX columns are left out");
 	assert.ok(form.heads().includes("editor.col.rx"), "receiving is all still there");
 
@@ -220,7 +222,12 @@ test("system form: a blocked network ID, as it is typed, locks Transmit and hide
 
 	// the system ID alone blocks too
 	form.type("sys.sysid", "00a");
-	assert.deepEqual(form.choices("transmit"), ["editor.modes.enforced"]);
+	assert.deepEqual(form.choices("transmit"), ["editor.modes.tx0"]);
+	assert.ok(form.note().includes('editor.p25.no_tx_sysid {"id":"00A"}'), "the notice names the system ID");
+
+	// both match: the WACN is named
+	form.type("sys.wacn", "beeff");
+	assert.ok(form.note().includes('editor.p25.no_tx_wacn {"id":"BEEFF"}'));
 });
 
 test("system form: a blocked system saves as listen only, its transmit values kept; a TX cell left out can't refuse the save", () => {

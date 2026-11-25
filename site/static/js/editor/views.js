@@ -472,8 +472,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "note") {
-			// a line of text from the inputs as they are typed
-			const row = h("p", { class: "form-note small muted", hidden: true });
+			// a line of text from the inputs as they are typed; f.notice (a .notice kind: "bad") draws it as a callout
+			const row = h("p", { class: f.notice ? `form-note notice ${f.notice}` : "form-note small muted", hidden: true });
 			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "pair") {

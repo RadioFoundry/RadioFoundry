@@ -382,10 +382,10 @@ The configured system identity still has to match; receive-only operation never 
 - Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
 - Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
 - The editor treats a system with a blocked network ID as listen only as soon as its WACN or system ID is typed.
-  **Transmit** locks to "Never (listen only) · Enforced" with a note, the radio ID, the control channels' TX column and
-  the plan's TX offset column are hidden, and saving writes the system's transmit flag off. The radio ID, TX
-  frequencies and TX offsets you entered stay in the file and come back if you change the ID. **Transmit** stays off
-  until you set it again.
+  **Transmit** locks to "Never (listen only)" with a notice naming the WACN or system ID that matched. The radio ID,
+  the control channels' TX column and the plan's TX offset column are hidden, and saving writes the system's transmit
+  flag off. The radio ID, TX frequencies and TX offsets you entered stay in the file and come back if you change the
+  ID. **Transmit** stays off until you set it again.
 
 For a ham P25 trunked system, RadioFoundry recommends one identity: WACN 0x32350, any system ID, and NAC 0x293 on the
 control channel. **Add Recommended Ham System** on the editor's **Systems** tab fills a P25 trunked system in with

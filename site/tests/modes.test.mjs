@@ -761,6 +761,14 @@ test("P25 noTx: the blocked WACN range and system ID, by their boundaries", () =
 	assert.equal(no(null, null), false);
 });
 
+test("P25 noTxNote: names the ID that matched, the WACN first, in the field's digits", () => {
+	const note = (wacn, sysid) => p25System.noTxNote({ wacn, sysid });
+	assert.deepEqual(note(0xBEE00, null), { key: "editor.p25.no_tx_wacn", params: { id: "BEE00" } });
+	assert.deepEqual(note(0xBEE5A, 0x00A), { key: "editor.p25.no_tx_wacn", params: { id: "BEE5A" } });
+	assert.deepEqual(note(0x12345, 0x00A), { key: "editor.p25.no_tx_sysid", params: { id: "00A" } });
+	assert.equal(note(0x12345, 0x00B), null);
+});
+
 test("P25 noTx: the constants are the firmware's", () => {
 	const h = readFileSync(new URL("../../core/p25/p25.h", import.meta.url), "utf8");
 	const def = (name) => parseInt(h.match(new RegExp(`#define\\s+${name}\\s+(0x[0-9A-Fa-f]+)`))[1], 16);

@@ -16,6 +16,16 @@ export const WACN_ANY = 0xFFFFFF, SYSID_ANY = 0xFFFF, P25_UNKNOWN = 0xFF;
 // source, and a test compares the two.
 export const WACN_NO_TX = 0xBEE00, WACN_NO_TX_MASK = 0xFFF00, SYSID_NO_TX = 0x00A;
 
+const hex = (v, digits) => v.toString(16).toUpperCase().padStart(digits, "0");
+
+// The editor's notice for a system the radio never transmits on, { key, params }, or null when it may: it names the ID
+// that matched as it is in the fields, the WACN when that is in the blocked range, else the system ID
+function noTxNote(f) {
+	if (f.wacn != null && (f.wacn & WACN_NO_TX_MASK) === WACN_NO_TX) return { key: "editor.p25.no_tx_wacn", params: { id: hex(f.wacn, 5) } };
+	if (f.sysid === SYSID_NO_TX) return { key: "editor.p25.no_tx_sysid", params: { id: hex(f.sysid, 3) } };
+	return null;
+}
+
 // A NAC field: its value when set, else dflt; a value the field can't hold reads as dflt too
 const nacField = (f, dflt) => ((f & NAC_SET) && !(f & 0x7000) ? f & 0x0FFF : dflt);
 const nacOut = (v, dflt) => (v === dflt ? 0 : NAC_SET | (v & 0x0FFF));
@@ -125,7 +135,7 @@ export function encodeTsys(s, prev = null) {
 	return v;
 }
 
-const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => v.toString(16).toUpperCase().padStart(digits, "0") });
+const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => hex(v, digits) });
 const byteOrUnknown = (key, label) => ({ key, label, type: "int", min: 0, max: 254, any: true });
 
 // The recommended ham system (docs/spec/ham-trunking.md 3): WACN 0x32350 (HAM in the Radix-50 code, shifted as WACN
@@ -159,7 +169,9 @@ export const p25System = {
 	// the fallback channel is stored, not used yet (p25-trunking.md)
 	fallbackHelp: "editor.p25.fallback_help",
 	// whether the radio refuses to transmit on a system with these fields, whatever its transmit setting says
-	noTx: (f) => (f.wacn != null && (f.wacn & WACN_NO_TX_MASK) === WACN_NO_TX) || f.sysid === SYSID_NO_TX,
+	noTx: (f) => noTxNote(f) != null,
+	// the notice the system form shows for such a system: { key, params }, or null
+	noTxNote,
 	// a third transmit choice in the system form: transmit without registering (the field set while the radio transmits)
 	noRegField: "noReg",
 	fields: () => [
