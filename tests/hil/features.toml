@@ -599,6 +599,12 @@ switch = "AIR_RAW"
 spec = "docs/spec/debuglink.md"
 source = ["core/debuglink/debuglink_air.c", "core/debuglink/debuglink_air.h"]
 
+[feature.debuglink_dmrip]
+switch = "DEBUGLINK_DMRIP"
+spec = "docs/spec/debuglink.md"
+source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core/debuglink/dl_dmrip.h",
+          "tools/rfoundry/rfoundry/dmrip.py"]
+
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
