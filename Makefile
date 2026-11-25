@@ -272,9 +272,12 @@ RFOUNDRY_GIT_DIRTY := $(if $(findstring -dirty,$(RFOUNDRY_VERSION)),1,0)
 # every make). Empty without git (a tree copied elsewhere: pass it as RFOUNDRY_GIT_TIME=), and then left out
 RFOUNDRY_GIT_TIME := $(if $(filter unknown,$(GITVERSION)),,$(if $(GITDIRTY),$(shell date +%s),$(shell git log -1 --format=%ct HEAD \
 	2>/dev/null)))
-# Its UTC date, YYYY-MM-DD, for the About page
-RFOUNDRY_GIT_DATE := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; print(time.strftime("%Y-%m-%d", \
-	time.gmtime(int(sys.argv[1]))))' '$(RFOUNDRY_GIT_TIME)'))
+# Its UTC date, YYYY-MM-DD, for the About page, and date and time, YYYYMMDDhhmmss, for the CPS radio info
+# (docs/spec/open-firmware-cps.md 4). Never __DATE__ or __TIME__ (-Werror=date-time): they'd make each build differ
+RFOUNDRY_GIT_DATES := $(if $(RFOUNDRY_GIT_TIME),$(shell python3 -c 'import sys, time; t = time.gmtime(int(sys.argv[1])); \
+	print(time.strftime("%Y-%m-%d %Y%m%d%H%M%S", t))' '$(RFOUNDRY_GIT_TIME)'))
+RFOUNDRY_GIT_DATE := $(word 1,$(RFOUNDRY_GIT_DATES))
+RFOUNDRY_GIT_STAMP := $(word 2,$(RFOUNDRY_GIT_DATES))
 # The release name the radio shows (splash, About, the debug link's release=): the newest release tag on this commit
 # (tools/release_version.py: vYY.M[.N][bN]), none for a dirty tree or an untagged commit. RELEASE= sets it
 # (tools/release_build.sh passes the tag) and RELEASE= alone leaves it out. RFOUNDRY_GIT stays the commit: the crash
@@ -304,7 +307,8 @@ OPT ?= -Os
 # check (make stack-check, tools/stack_check.py). Output files only: the image is the same with or without it
 STACK_INFO := -fcallgraph-info=su
 COMMON := $(CPUFLAGS) $(OPT) -g3 -ffunction-sections -fdata-sections -fno-common -MMD -MP $(STACK_INFO) $(TP_PREFIX_MAP)
-CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion $(DEFS) $(INCLUDES)
+CFLAGS_APP := $(COMMON) -std=gnu11 -Wall -Wextra -Wno-unused-parameter -Wshadow -Wdouble-promotion -Werror=date-time \
+	$(DEFS) $(INCLUDES)
 CFLAGS_3P := $(COMMON) -std=gnu11 -w $(DEFS) $(INCLUDES)
 # The C library flavor and linker extras come from the platform (platform.mk); these are the arm-none-eabi ones
 LDSPECS ?= --specs=nano.specs --specs=nosys.specs -Wl,--no-warn-rwx-segments
@@ -417,7 +421,8 @@ $(BUILD)/core/hostlink/build_info.o $(BUILD_INFO_TR): CFLAGS_APP += -DRFOUNDRY_F
 $(VERSION_OBJ) $(VERSION_TR): $(BUILD)/version
 $(VERSION_OBJ) $(VERSION_TR): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
-	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
+	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_STAMP=\"$(RFOUNDRY_GIT_STAMP)\" \
+	-DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
 	-DRFOUNDRY_GIT_REPO=\"$(RFOUNDRY_GIT_REPO)\"
 ifeq ($(LTO),1)
 $(patsubst %.c,$(BUILD)/%.o,$(filter $(LTO_EXCLUDE),$(APP_SRC))): CFLAGS_APP += -fno-lto

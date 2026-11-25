@@ -1639,7 +1639,7 @@ CPS     := $(CORE)/cps/cps_openfw.c $(CORE)/codeplug/codeplug.c $(CORE)/codeplug
 TESTS   += cpsTest
 
 cpsTest: cpsTest.c $(CPS) $(wildcard $(CORE)/cps/*.h $(CORE)/codeplug/*.h $(CORE)/settings/*.h $(CORE)/storage/*.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ cpsTest.c $(CPS)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DRFOUNDRY_GIT_STAMP='"20261125093007"' -o $@ cpsTest.c $(CPS)
 
 run: run-cps
 run-cps: cpsTest
