@@ -67,6 +67,7 @@ static volatile uint8_t pending;	// bit 0: half 0 received, bit 1: half 1
 static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
+static volatile uint8_t spk_loud;	// bit 0: half 0 holds speaker audio other than silence, bit 1: half 1
 static const stm32_i2s_pcm_cfg_t *cfg;
 
 // The FIFO path: the FM copy (an air interface) and beeps in FM receive use it
@@ -285,10 +286,14 @@ static void process(uint8_t half)
 	}
 #endif
 	// This half has just gone out (TX runs in step with RX), so it is free until the DMA comes back in 20 ms
+	bool loud = false;
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
 		out[2 * i] = spk[i];
 		out[2 * i + 1] = spk[i];
+		loud |= spk[i] != 0;
 	}
+	uint8_t bit = (uint8_t)(1u << half);
+	spk_loud = loud ? (uint8_t)(spk_loud | bit) : (uint8_t)(spk_loud & ~bit);
 }
 
 #if I2S_FIFO
@@ -484,6 +489,7 @@ void stm32_i2s_pcm_stop(void)
 	fifo_off();
 	hw_stop();
 	pending = 0;
+	spk_loud = 0;
 	block_cb = NULL;
 	clock(false);
 }
@@ -491,6 +497,13 @@ void stm32_i2s_pcm_stop(void)
 bool stm32_i2s_pcm_running(void)
 {
 	return running;
+}
+
+// A half written with sound plays out within the next 40 ms; its flag clears when the half is written again, which is
+// only after it has gone out
+bool stm32_i2s_pcm_spk_pending(void)
+{
+	return running && spk_loud != 0;
 }
 
 void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out)

@@ -38,7 +38,9 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	return stm32_i2s_pcm_start(&i2s_cfg, cb, ctx);
 }
 
+// spk_pending: the talk permit plays before keying (CAP_BEEP_NOT_ON_AIR), and the first burst drops the receive supply
+// the speaker needs to be loud; the key-up waits until the DMA halves have played the permit's tail
 const hal_audio_t md380_audio = { .start = start, .stop = stm32_i2s_pcm_stop, .speaker_pcm = speaker_pcm,
-				  .stream_stats = stm32_i2s_pcm_stream_stats };
+				  .spk_pending = stm32_i2s_pcm_spk_pending, .stream_stats = stm32_i2s_pcm_stream_stats };
 
 #endif	// CONFIG_DMR
