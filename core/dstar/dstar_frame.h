@@ -124,7 +124,7 @@ typedef struct {
 	uint32_t bit;			// bit within the state
 	uint32_t frames;		// voice frames sent
 	uint16_t preamble;		// bits of 1010 before the frame sync
-	uint8_t air[DSTAR_HEADER_AIR_BYTES];	// the coded header, then the current voice and data frame
+	uint8_t air[DSTAR_HEADER_AIR_BYTES];	// the coded header; then the voice and data frame, the next voice
 	dstar_slow_tx_t slow;
 	dstar_voice_pull_t pull;
 	void *ctx;
@@ -133,7 +133,8 @@ typedef struct {
 // preamble_bits below DSTAR_PREAMBLE_MIN is raised to it. msg may be NULL
 void dstar_tx_init(dstar_tx_t *t, const dstar_header_t *h, const char *msg, uint16_t preamble_bits,
 		   dstar_voice_pull_t pull, void *ctx);
-// The next air bit: 0 or 1, or -1 once the end pattern has gone
+// The next air bit: 0 or 1, or -1 once the end pattern has gone. The voice source is asked for a frame once the frame
+// before it has sent its voice bits: a false then puts the end pattern in that frame's data place
 int dstar_tx_bit(dstar_tx_t *t);
 
 // --- receive ---

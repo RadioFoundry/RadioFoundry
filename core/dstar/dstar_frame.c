@@ -212,17 +212,27 @@ void dstar_tx_init(dstar_tx_t *t, const dstar_header_t *h, const char *msg, uint
 	dstar_header_encode(hdr, t->air);
 }
 
-// The next frame into t->air (voice then data); false when the speaker is done
-static bool next_frame(dstar_tx_t *t)
+// The voice frame after the current one, into its place behind the current frame in t->air; false when the speaker
+// is done. Asked for once the current frame's voice has gone, so that a frame is known to be the last before its data
+// part goes out: the end pattern takes that frame's data place (standard 4.1.2 g), as Icom radios send it
+#define TX_NEXT		(DSTAR_FRAME_BITS / 8u)
+_Static_assert(TX_NEXT + DSTAR_VOICE_BYTES <= DSTAR_HEADER_AIR_BYTES, "the next voice frame fits behind this one");
+
+static bool pull_next(dstar_tx_t *t)
+{
+	uint8_t *v = &t->air[TX_NEXT];
+	if (t->pull) {
+		return t->pull(t->ctx, v);
+	}
+	memcpy(v, dstar_voice_silence, DSTAR_VOICE_BYTES);
+	return true;
+}
+
+// The pulled voice frame becomes the current one, with its data frame
+static void next_frame(dstar_tx_t *t)
 {
 	uint8_t *v = t->air, *d = &t->air[DSTAR_VOICE_BYTES];
-	if (t->pull) {
-		if (!t->pull(t->ctx, v)) {
-			return false;
-		}
-	} else {
-		memcpy(v, dstar_voice_silence, DSTAR_VOICE_BYTES);
-	}
+	memcpy(v, &t->air[TX_NEXT], DSTAR_VOICE_BYTES);
 	uint8_t frame = (uint8_t)(t->frames % DSTAR_SUPERFRAME);
 	if (frame == 0) {
 		memcpy(d, dstar_resync, 3);	// the resync pattern isn't scrambled (appendix 1.3)
@@ -231,7 +241,6 @@ static bool next_frame(dstar_tx_t *t)
 		dstar_data_scramble(d);
 	}
 	t->frames++;
-	return true;
 }
 
 int dstar_tx_bit(dstar_tx_t *t)
@@ -258,17 +267,22 @@ int dstar_tx_bit(dstar_tx_t *t)
 			if (t->bit < DSTAR_HEADER_BITS) {
 				return dstar_bit(t->air, t->bit++);
 			}
-			t->state = DSTAR_TX_VOICE;
+			// An over with no voice at all has no frame to carry the end pattern: it follows the header
+			t->state = pull_next(t) ? DSTAR_TX_VOICE : DSTAR_TX_END;
 			t->bit = DSTAR_FRAME_BITS;
+			if (t->state == DSTAR_TX_END) {
+				t->bit = 0;
+			}
 			break;
 		case DSTAR_TX_VOICE:
 			if (t->bit >= DSTAR_FRAME_BITS) {
-				if (!next_frame(t)) {
-					t->state = DSTAR_TX_END;
-					t->bit = 0;
-					break;
-				}
+				next_frame(t);
 				t->bit = 0;
+			}
+			if (t->bit == DSTAR_VOICE_BITS && !pull_next(t)) {
+				t->state = DSTAR_TX_END;	// this frame was the last: the end pattern in its data place
+				t->bit = 0;
+				break;
 			}
 			return dstar_bit(t->air, t->bit++);
 		case DSTAR_TX_END:

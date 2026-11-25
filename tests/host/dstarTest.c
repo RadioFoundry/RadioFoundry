@@ -622,6 +622,48 @@ static void test_icom_headers(void)
 	}
 }
 
+// The end of an over. The standard puts the end pattern on the last data frame (4.1.2 g, h): the last voice frame's
+// 72 bits, then the 48-bit pattern where its 24 data bits would go. Both Icom radios on the bench do exactly that
+// (gain-21nov-1: the ID-51's two overs end with voice, then 1010... from bit 72 of the frame). We sent a whole last
+// frame and the pattern after it, in the next frame's voice place: a receiver that looks for the pattern where the
+// standard puts it, after a frame's voice, never finds ours and holds the over open until the signal has gone
+static void test_end_place(void)
+{
+	dstar_header_t h;
+	dstar_header_set(&h, 0, "DIRECT", "DIRECT", "CQCQCQ", "N0CALL", "");
+	for (uint32_t n = 1; n <= 23; n += 11) {
+		voice_src_t src = { 0, n };
+		static dstar_tx_t tx;
+		dstar_tx_init(&tx, &h, "Ending test", 64, pull_voice, &src);
+		static uint8_t bits[(64 + 15 + 660 + 30 * 96 + 64) / 8 + 1];
+		memset(bits, 0, sizeof bits);
+		uint32_t total = 0;
+		int b;
+		while ((b = dstar_tx_bit(&tx)) >= 0 && total < sizeof bits * 8u) {
+			dstar_bit_put(bits, total++, b != 0);
+		}
+		const uint32_t voice_at = 64 + DSTAR_FRAME_SYNC_BITS + DSTAR_HEADER_BITS;
+		// Every voice frame in its place, the last one included
+		uint32_t bad = 0;
+		for (uint32_t k = 0; k < n; k++) {
+			uint8_t v[DSTAR_VOICE_BYTES];
+			for (uint32_t i = 0; i < DSTAR_VOICE_BITS; i++) {
+				dstar_bit_put(v, i, dstar_bit(bits, voice_at + k * DSTAR_FRAME_BITS + i));
+			}
+			bad += v[0] != (uint8_t)k || v[8] != (uint8_t)~k;
+		}
+		CHECK(bad == 0 && src.sent == n, "%u frames: %u voice frames out of place, %u pulled", n, bad, src.sent);
+		// The end pattern straight after the last frame's voice, and nothing after it
+		uint32_t end_at = voice_at + (n - 1u) * DSTAR_FRAME_BITS + DSTAR_VOICE_BITS;
+		uint32_t errs = 0;
+		for (uint32_t i = 0; i < DSTAR_END_BITS; i++) {
+			errs += dstar_bit(bits, end_at + i) != dstar_bit(dstar_end, i);
+		}
+		CHECK(errs == 0 && total == end_at + DSTAR_END_BITS, "%u frames: end pattern %u bits off at %u, %u bits sent",
+		      n, errs, end_at, total);
+	}
+}
+
 // The repeated header in the slow data runs for the whole over, between the message's superframes, and is the header
 // sent at the start, byte for byte: a receiver that missed the start (or joins late) has it within two superframes
 static void test_slow_header_whole_over(void)
@@ -648,6 +690,7 @@ int main(void)
 {
 	test_vectors();
 	test_icom_headers();
+	test_end_place();
 	test_slow_header_whole_over();
 	test_field_text();
 	test_header_errors();

@@ -292,7 +292,7 @@ the bits erased still decodes.
 | Frame sync | 15 | 111011001010000 |
 | Header | 660 | 3.2 |
 | Frames, every 20 ms | 72 + 24 | the voice frame, then the data frame |
-| End | 48 | 32 bits of 1010..., 000100110101111, 0 (JARL 4.1.2 h), in place of the next frame; not scrambled |
+| End | 48 | 32 bits of 1010..., 000100110101111, 0 (JARL 4.1.2 h), in the last frame's data place, straight after its voice (4.1.2 g; the ID-51 recorded on the bench does the same); not scrambled |
 
 Frame 0, the first after the header and every 21st after it (420 ms), carries the resync pattern in its data frame:
 1010101010 1101000 1101000, unscrambled. The other data frames carry slow data, each scrambled on its own with the
