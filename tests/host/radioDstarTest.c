@@ -366,6 +366,51 @@ static void test_repeater_as_typed(void)
 	radio_dstar_stop();
 }
 
+// The key-up. A carrier is not usable for the first part of an over when FM transmit keys without waiting for the
+// synthesizer and the PA: on our Pluto recordings of the first board, its frequency swings up to +770 Hz for the first
+// 80-100 ms (gain-21nov-1) and its power starts 15-30 dB under its level and climbs for 100-200 ms (19 Nov capture).
+// Icom radios cover that with about 130 ms of preamble: the IC-9700 and the ID-51 recorded on the same bench send
+// 620-650 bits of 1010 before the frame sync, which comes 136-147 ms after their carrier. We sent 128 bits, so our
+// frame sync and the first half of the header went out inside the transient: our own Pluto decoder still read them,
+// a hotspot's modem missed them, ran the over as a late entry and kept the routing of the last header it had (field
+// report on PR #809). Here a receiver can't use the first 100 ms of the over at all (noise in their place, as a
+// modem hears a carrier still moving): the header must still come from the header itself, not the slow data
+static void test_keyup_settle(void)
+{
+	reset();
+	dstar_chan_t c;
+	memset(&c, ' ', sizeof c);
+	memcpy(c.ur, "       I", 8);
+	memcpy(c.rpt1, "Q1RPT  B", 8);
+	memcpy(c.rpt2, "Q1RPT  G", 8);
+	dstar_chan_encode(&c, chan_block);
+	chan_len = DSTAR_CP_CHAN_LEN;
+	channel_t ch = dstar_channel();
+	CHECK(radio_dstar_start(5, &ch, now_ms));
+	over(1500);
+	radio_dstar_stats_t sx;
+	radio_dstar_stats(&sx);
+	CHECK(sx.tx_overflows == 0);	// the microphone's frames still fit the queue while the longer start goes out
+	int16_t peak = 0;
+	for (uint32_t i = 0; i < captured; i++) {
+		int16_t a = (int16_t)(capture[i] < 0 ? -capture[i] : capture[i]);
+		peak = a > peak ? a : peak;
+	}
+	uint32_t x = 0x2545F491u;
+	for (uint32_t i = 0; i < 8u * 100u && i < captured; i++) {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		capture[i] = (int16_t)((int32_t)(x % (2u * (uint32_t)peak + 1u)) - peak);
+	}
+	hear();
+	radio_dstar_view_t v;
+	radio_dstar_view(&v);
+	CHECK(v.heard && !v.heard_slow);
+	CHECK(strcmp(v.ur, "       I") == 0 && strcmp(v.rpt1, "Q1RPT  B") == 0 && strcmp(v.rpt2, "Q1RPT  G") == 0);
+	radio_dstar_stop();
+}
+
 // A gateway command as a channel's UR, through to the header that goes on air. The UR a gateway acts on is all eight
 // bytes: "       I" (a letter in the eighth place after seven spaces) asks for information, "I       " is a call to a
 // station named I and goes nowhere. The channels here are stored the way the Codeplug Editor stored a UR typed as
@@ -709,6 +754,7 @@ int main(void)
 	test_tone_cal_mid_over();
 	test_stalled_route();
 	test_reset_mid_block();
+	test_keyup_settle();
 	// Last: their overs move the clock's phase, which moves test_reset_mid_block's played count (its bound allows
 	// for that now, but the order keeps the counts printed by earlier runs comparable)
 	test_repeater_as_typed();

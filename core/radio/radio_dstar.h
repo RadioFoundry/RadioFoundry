@@ -30,8 +30,14 @@
 #define RADIO_DSTAR_CALL	8u	// a callsign field as on air
 #define RADIO_DSTAR_SUFFIX	4u
 #define RADIO_DSTAR_MSG		20u
-#define RADIO_DSTAR_PREAMBLE	128u	// bits of 1010 before the frame sync (26.7 ms): key-up of the RF chain and the
-					// receiver's DC and clock loops; twice the standard's minimum (dstar-modem.md 3.3)
+// Bits of 1010 before the frame sync: 640, 133 ms, about what Icom radios send (the IC-9700 and ID-51 recorded on the
+// bench: 620-650 bits, the frame sync 136-147 ms after their carrier). The standard's 64 are a minimum for a carrier
+// already steady. A radio whose FM transmit keys without waiting for its synthesizer and PA has none: on the bench
+// the first board's frequency swung up to +770 Hz for 80-100 ms and its power climbed for 100-200 ms (dstar-modem.md
+// 5.3). With 128 bits the frame sync and half the header went out inside that, and an MMDVM hotspot ran our overs as
+// late entries with the last header it had heard (PR #809's field report). 640 puts the header after the transient
+// with 30 ms of steady preamble for the receiver's DC and clock loops
+#define RADIO_DSTAR_PREAMBLE	640u
 #define RADIO_DSTAR_VOICE_Q	16u	// voice frames each way (320 ms), a power of two
 #define RADIO_DSTAR_DRAIN_MS	(RADIO_DSTAR_VOICE_Q * 20u + 1000u)	// after PTT release, the longest the queue and
 					// the end pattern may take before tx_done says done anyway (the board's latency on top)

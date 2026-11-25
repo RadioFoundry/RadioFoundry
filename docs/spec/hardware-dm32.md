@@ -1281,7 +1281,7 @@ no high-pass to compensate either way (the 290 Hz another project measured was t
 |---|---|---|
 | The TX RAM route reaches the modulator | documented as an FM transmit source; another project's 4FSK went through it, on which radio not known | none: a tone through `pull` on the SDR |
 | Which half to fill | FM_ADDR_SW "names the half": in use, or wanted? | `tx_half`; `tx_misses` counts requests naming neither |
-| The order of the first two halves after b0 sets | unknown; both are primed, so at worst the first 64 ms swap halves (preamble only) | none |
+| The order of the first two halves after b0 sets | unknown; both are primed, so at worst the first 64 ms swap halves (inside D-STAR's 133 ms preamble) | none |
 | The transmit frequency response with 0x2B = 0xC007 and b6, b4 clear | the prompt FIFO route kept a 290 Hz high-pass; this route is unmeasured | `rf_tx_2b`, `tx_bw_clr`, then `tx_hpf_hz` |
 | The deviation scale (`tx_1khz`) | a guess from another route | `set_flat_cal` |
 | FM_DEV_COEF's TX coefficient and limiter on the TX RAM route | the limiter doesn't cap ring play ([modem-hrc7000.md](modem-hrc7000.md) 8.4); for the TX RAM unknown | `dev_coef` |
@@ -1290,7 +1290,7 @@ no high-pass to compensate either way (the 290 Hz another project measured was t
 | The speaker with 0x2F = 0 and b6 off plays only the CPU's PCM | the codec line out carries the prompt FIFO; FM leaking through is not ruled out | `fm_play` |
 | Polarity each way, on each RF set-up | RF_MODE b15 (RX IQ invert) is set on set-up A and clear on B (8.10); whether the RX RAM copy and the modulator follow it is unknown | `set_flat_cal` (`rx_invert`, `tx_invert`); the D-STAR receiver finds the polarity from the sync either way |
 | The microphone in the mic PCM during an FM transmission with 0x2E = 0 | the PCM interrupt runs in FM (FM beeps are paced by it), but whether its samples carry the microphone in FM work mode is unchecked (VOX on this radio is not written for the same reason) | none |
-| Turnaround: key-up to the first sample on air, the last sample to the unkey | 64 ms of buffers plus the modulator's own delay, unmeasured | `set_flat_cal` (`tx_latency_ms`) |
+| Turnaround: key-up to the first sample on air, the last sample to the unkey | 64 ms of buffers plus the modulator's own delay, unmeasured. The carrier itself, measured on the Pluto (captures dm32-tx-001, 19 Nov, and gain-21nov-1): FM's `tx()` keys without waiting for the FD6818's lock or the PA loop, so the frequency swings up to +770 Hz for 80-100 ms and the power starts 15-30 dB under its level and climbs for 100-200 ms; the first D-STAR sample is on air with the carrier. D-STAR's 640-bit preamble (133 ms, Icom's figure) covers it | `set_flat_cal` (`tx_latency_ms`) |
 | Every row on set-up B | nothing has been tried there | |
 
 ---
