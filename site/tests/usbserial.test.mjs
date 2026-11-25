@@ -76,6 +76,8 @@ test("layout: CDC-ACM and FTDI are serial ports, CDC-NCM is not", () => {
 	const ftdi = serialLayout({ vendorId: FTDI, configuration: FTDI_CONFIG });
 	assert.equal(ftdi.kind, "ftdi");
 	assert.equal(ftdi.out.endpointNumber, 2);
+	// RT Systems' cable has FTDI's chip under vendor id 0x2100 (#371): driven as FTDI, not looked up as CDC-ACM
+	assert.equal(serialLayout({ vendorId: 0x2100, configuration: FTDI_CONFIG })?.kind, "ftdi");
 	assert.equal(serialLayout({ vendorId: 0x1FC9, configuration: NCM_CONFIG }), null);
 });
 
