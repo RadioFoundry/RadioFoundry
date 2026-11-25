@@ -66,7 +66,7 @@ static const mdns_service_t services[] = {
 	{ "_rfoundry-debug._udp", 3334 }, { "_mmdvm._udp", 3334 }, { "_tftp._udp", 69 },
 };
 
-static void handler(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void handler(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	mdnsReceive(src, sport, data, length, now);
 }
@@ -684,7 +684,7 @@ static void test_malformed(void)
 static int hits;
 static uint32_t hit_dst;
 static uint16_t hit_port;
-static void count_handler(bool air, uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
+static void count_handler(uint32_t src, uint16_t sport, uint32_t dst, uint16_t dport, const uint8_t *data, int length)
 {
 	hits++;
 	hit_dst = dst;

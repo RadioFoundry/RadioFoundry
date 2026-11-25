@@ -38,13 +38,13 @@ static volatile uint8_t io_state;
 static uint8_t io[UDP_HDR + DL_DMRIP_DGRAM_MAX];
 static uint16_t io_len;
 static uint32_t io_src;			// the sender's DMR ID
-static uint32_t io_dst;			// the DMR ID it was sent to
+static uint32_t io_ip;			// the request's IPv4 source: where the answer goes (ipGateway.h)
 static uint16_t io_port;
 
 // The last reply, in the debug link's reply buffer while no cable request came since (reply_gen)
 static struct {
 	bool ok;
-	uint32_t counter, gen, dst, since;
+	uint32_t counter, gen, dst, ip, since;
 	uint16_t port, len;
 	uint8_t mask;			// chunks still to send
 	uint8_t flags;
@@ -134,14 +134,9 @@ static const dl_detour_ops_t ops = {
 
 // --- the air ---
 
-// The radio task: copy and return (ipGateway.h)
-static void udp_in(bool air, uint32_t src, uint16_t src_port, uint32_t dst, uint16_t dst_port, const uint8_t *p,
-		   int len)
+// The radio task: copy and return (ipGateway.h). The gateway hands over only datagrams to our own ID and address
+static void udp_in(uint32_t src, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len)
 {
-	(void)dst_port;
-	if (!air) {
-		return;		// the cable has the serial debug link
-	}
 	cnt.rx++;
 	if (io_state != IO_FREE || len <= 0 || (size_t)len > DL_DMRIP_DGRAM_MAX) {
 		cnt.busy++;
@@ -150,7 +145,7 @@ static void udp_in(bool air, uint32_t src, uint16_t src_port, uint32_t dst, uint
 	memcpy(io + UDP_HDR, p, (size_t)len);
 	io_len = (uint16_t)len;
 	io_src = src;
-	io_dst = dst & 0xFFFFFFu;	// the gateway gives our individual IP address: its low 24 bits are the ID
+	io_ip = src_ip;
 	io_port = src_port;
 	__sync_synchronize();	// complete before the flag says so
 	io_state = IO_REQ;
@@ -168,8 +163,7 @@ static bool send_io(size_t n)
 	u[4] = (uint8_t)(l >> 8);
 	u[5] = (uint8_t)l;
 	u[6] = u[7] = 0;	// the checksum: dmrDataBuildIP works it out
-	return ipGatewayIPToAir(false, out.dst, IPGW_AIR_SRC_OURS, dmrDataIdAddress(false, out.dst), DMR_IP_TTL_DEFAULT,
-				UDP_PROTO, io, (int)l);
+	return ipGatewayIPToAir(false, out.dst, IPGW_AIR_SRC_OURS, out.ip, DMR_IP_TTL_DEFAULT, UDP_PROTO, io, (int)l);
 }
 
 // A reply with no frame in it (HELLO, GONE): body already at io + UDP_HDR + DL_DMRIP_HDR
@@ -179,6 +173,7 @@ static void send_short(uint8_t flags, uint32_t counter, uint16_t body)
 			     body };
 	size_t n = dl_dmrip_seal(key, &m, io + UDP_HDR);
 	out.dst = io_src;
+	out.ip = io_ip;
 	out.port = io_port;
 	if (!send_io(n)) {
 		cnt.dropped++;
@@ -253,6 +248,7 @@ static void handle_new(const dl_dmrip_msg_t *m, uint32_t now_ms)
 	out.gen = debuglink_reply_gen();
 	out.counter = m->counter;
 	out.dst = io_src;
+	out.ip = io_ip;
 	out.port = io_port;
 	out.flags = 0;
 	cnt.answered++;
@@ -263,7 +259,7 @@ static void handle(uint32_t now_ms)
 {
 	dl_dmrip_msg_t m;
 	uint8_t *d = io + UDP_HDR;
-	int v = key_src == 0 ? DL_DMRIP_BAD : dl_dmrip_check(key, d, io_len, ipGatewayRadioId(), io_dst, &m);
+	int v = key_src == 0 ? DL_DMRIP_BAD : dl_dmrip_check(key, d, io_len, ipGatewayRadioId(), ipGatewayRadioId(), &m);
 	if (v != DL_DMRIP_ACCEPT) {
 		if (v == DL_DMRIP_BAD) {
 			cnt.bad_auth++;
@@ -304,6 +300,7 @@ static void handle(uint32_t now_ms)
 		cnt.repeats++;
 		if (out.ok && out.counter == m.counter && out.gen == debuglink_reply_gen()) {
 			out.dst = io_src;
+			out.ip = io_ip;
 			out.port = io_port;
 			start_send(m.chunk != 0 ? m.chunk : 0xFF, now_ms);
 		} else {

@@ -36,7 +36,9 @@ Both use UDP port 161 at an address of the radio; the IP gateway's local port ta
 | SET | with the write community | refused (noAccess) unless `rfoundryAgentRfWrite` is true |
 
 The RF path transmits only when the data service may (a DMR channel we may transmit on, not receive only, not a
-hotspot, the channel clear; [dmr-data.md](dmr-data.md) 8). Answers go to the requester's ID and source port.
+hotspot, the channel clear; [dmr-data.md](dmr-data.md) 8). Answers go to the requester's DMR ID, at the request's
+IPv4 source address and port: a gateway radio's host (13.<ID>) or a host on a network the gateway routes gets its
+answer the way the request came.
 Because the radio consumes UDP 161 for its own ID, a host behind the radio can't run its own agent reachable over
 the air on that port.
 

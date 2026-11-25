@@ -59,10 +59,12 @@ static bool net_mode = true;
 bool hostlink_network_mode(void) { return net_mode; }
 void hostlink_net_stats(hostlink_net_stats_t *s) { memset(s, 0, sizeof(*s)); }
 
-// The gateway: the bound handler, what went to the host, what went to the air
+// The gateway: the bound handlers, what went to the host, what went to the air
 static ipGatewayUdpHandler handler;
-static uint16_t bound_port;
-bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpHandler h) { bound_port = port; handler = h; return true; }
+static ipGatewayUdpAirHandler air_handler;
+static uint16_t bound_port, bound_air_port;
+bool ipGatewayUdpBind(uint16_t port, ipGatewayUdpHandler h) { bound_port = port; handler = h; return true; }
+bool ipGatewayUdpBindAir(uint16_t port, ipGatewayUdpAirHandler h) { bound_air_port = port; air_handler = h; return true; }
 static int usb_busy;			// ipGatewayUdpSend refuses this many times
 static int usb_sent, usb_len;
 static uint32_t usb_ip;
@@ -86,7 +88,7 @@ static uint32_t host_ip = 0x0A000001u;
 uint32_t ipGatewayHostIP(void) { return host_ip; }
 static bool air_busy;
 static int air_sent, air_len;
-static uint32_t air_dst;
+static uint32_t air_dst, air_dst_ip;
 static uint8_t air_buf[1600];
 bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t proto, const uint8_t *l4, int n)
 {
@@ -95,6 +97,7 @@ bool ipGatewayIPToAir(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, 
 	}
 	air_sent++;
 	air_dst = dst;
+	air_dst_ip = dstIp;
 	air_len = n;
 	memcpy(air_buf, l4, (size_t)n);
 	(void)group;
@@ -199,7 +202,7 @@ static int answer(const uint8_t *p, int n, char *text, int *bindings)
 
 static void from_host(const uint8_t *p, int n)
 {
-	handler(false, host_ip, 40000, 0x0A000002u, 161, p, n);
+	handler(host_ip, 40000, 0x0A000002u, 161, p, n);
 }
 
 // The host link task's passes: the first answers a waiting request into the staging buffer, the next hands it to the air
@@ -209,9 +212,15 @@ static void air_poll(void)
 	snmp_agent_poll(now_ms);
 }
 
+// From radio src (its own address), or from a host at ip that src routes for
+static void from_air_ip(uint32_t src, uint32_t ip, const uint8_t *p, int n)
+{
+	air_handler(src, ip, 41000, p, n);
+}
+
 static void from_air(uint32_t src, const uint8_t *p, int n)
 {
-	handler(true, src, 41000, 9990001, 161, p, n);
+	from_air_ip(src, 0x0C000000u | src, p, n);
 }
 
 static void reset_io(void)
@@ -230,7 +239,7 @@ static void test_usb(void)
 	char text[64];
 	int nb;
 
-	CHECK(bound_port == 161 && handler != NULL);
+	CHECK(bound_port == 161 && handler != NULL && bound_air_port == 161 && air_handler != NULL);
 	// sysName: the codeplug's callsign while the settings have none, then the settings' name
 	int qn = request(q, "public", 0xA0, 0, 0, SYS_NAME, sizeof(SYS_NAME), 1, 0x05, NULL, 0);
 	reset_io();
@@ -348,7 +357,7 @@ static void test_rf(void)
 	CHECK(air_sent == 0);	// waits for the host link task
 	from_air(9990010, q, qn);	// the mailbox is full: dropped
 	air_poll();
-	CHECK(air_sent == 1 && air_dst == 9990009);
+	CHECK(air_sent == 1 && air_dst == 9990009 && air_dst_ip == (0x0C000000u | 9990009u));
 	// the UDP header: 161 -> the requester's port, its length; the message after it within SNMP_RF_MAX
 	CHECK(air_len > 8 && air_len <= 8 + SNMP_RF_MAX && air_buf[0] == 0 && air_buf[1] == 161 && air_buf[2] == (41000 >> 8) &&
 	      air_buf[3] == (41000 & 0xFF) && ((air_buf[4] << 8) | air_buf[5]) == air_len);
@@ -427,6 +436,11 @@ static void test_rf(void)
 	air_busy = false;
 	air_poll();	// the waiting request (the gap since the last answer has passed)
 	CHECK(air_sent == 7 && air_dst == 9990011);
+	// From a host a gateway radio routes: the answer to the gateway's ID, at the host's address
+	now_ms += 1100;
+	from_air_ip(9990012, 0xC0A80105u, q, qn);
+	air_poll();
+	CHECK(air_sent == 8 && air_dst == 9990012 && air_dst_ip == 0xC0A80105u);
 
 	// RF answers off: requests over the air dropped; the host still answered
 	snmp_agent_get_config(&c);
@@ -435,7 +449,7 @@ static void test_rf(void)
 	now_ms += 1100;
 	from_air(9990009, q, qn);
 	air_poll();
-	CHECK(air_sent == 7);
+	CHECK(air_sent == 8);
 	reset_io();
 	from_host(q, qn);
 	CHECK(usb_sent == 1);

@@ -4,11 +4,11 @@
 // (snmp.c, snmpMib.c) and the radio. Runs in the host link task:
 //
 //   USB   requests to UDP 161 of the radio's link address come from the IP gateway's local port table
-//         (ipGatewayUdpBindAir) inside hostlink_net_poll and are answered at once; notifications go to the host's
+//         (ipGatewayUdpBind) inside hostlink_net_poll and are answered at once; notifications go to the host's
 //         address, port 162 (debug link: another port), while the network personality is up
 //   RF    requests over the air to our DMR ID, port 161, arrive in the radio task (hostlink_net_packet) and wait in a
-//         one-request mailbox for snmp_agent_poll; the answer goes back through the gateway's air side (SAP 4, the
-//         data service's listen before talk), at most one per SNMP_RF_ANSWER_GAP_MS. Notifications to the RF manager
+//         one-request mailbox for snmp_agent_poll (ipGatewayUdpBindAir); the answer goes back through the gateway's
+//         air side to the sender's ID at the request's IPv4 source (SAP 4, the data service's listen before talk), at most one per SNMP_RF_ANSWER_GAP_MS. Notifications to the RF manager
 //         ID, rate limited (snmpEvents_*)
 //
 // Settings (communities as hashes, the RF manager, flags) live in settings_t snmp_*; SET (USB, or RF when allowed)

@@ -53,7 +53,8 @@ static snmp_agent_stats_t counts;
 // One request over the air, from the radio task to the host link task
 static struct {
 	volatile uint8_t full;
-	uint32_t src;
+	uint32_t src;		// the sender's DMR ID
+	uint32_t ip;		// and the IPv4 address the answer goes to
 	uint16_t port;
 	uint16_t len;
 	uint8_t data[SNMP_RF_REQ_MAX];
@@ -63,6 +64,7 @@ static struct {
 static struct {
 	bool pending;
 	uint32_t dst;
+	uint32_t dst_ip;
 	uint32_t since;
 	int len;
 	uint8_t data[8 + SNMP_RF_MAX];
@@ -249,26 +251,12 @@ static bool usb_send(uint32_t ip, uint16_t dst_port, const uint8_t *p, int n)
 	return true;
 }
 
-// The gateway's local port 161: from the host (host link task) or the air (radio task)
-static void udp_in(bool from_air, uint32_t src, uint16_t src_port, uint32_t dst, uint16_t dst_port, const uint8_t *p, int len)
+// The gateway's local port 161 from the host (host link task)
+static void udp_in(uint32_t src, uint16_t src_port, uint32_t dst, uint16_t dst_port, const uint8_t *p, int len)
 {
 	(void)dst;
 	(void)dst_port;
 	if (cfg.flags & SNMP_CFG_OFF) {
-		return;
-	}
-	if (from_air) {
-		counts.rf_requests++;
-		if ((cfg.flags & SNMP_CFG_RF_OFF) || rf_req.full || (len <= 0) || (len > SNMP_RF_REQ_MAX)) {
-			counts.rf_dropped++;
-			return;
-		}
-		rf_req.src = src;
-		rf_req.port = src_port;
-		rf_req.len = (uint16_t)len;
-		memcpy(rf_req.data, p, (size_t)len);
-		__sync_synchronize();	// complete before the flag says so
-		rf_req.full = 1;
 		return;
 	}
 	int n = process(false, p, len, out, sizeof(out));
@@ -278,8 +266,28 @@ static void udp_in(bool from_air, uint32_t src, uint16_t src_port, uint32_t dst,
 	}
 }
 
-// A message (already at rf_out.data + 8) to dst's port over the air
-static void rf_stage(uint32_t dst, uint16_t dst_port, int n, uint32_t now)
+// Port 161 over the air (radio task): into the mailbox; the answer goes to src_id at src_ip (ipGatewayUdpBindAir)
+static void air_in(uint32_t src_id, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len)
+{
+	if (cfg.flags & SNMP_CFG_OFF) {
+		return;
+	}
+	counts.rf_requests++;
+	if ((cfg.flags & SNMP_CFG_RF_OFF) || rf_req.full || (len <= 0) || (len > SNMP_RF_REQ_MAX)) {
+		counts.rf_dropped++;
+		return;
+	}
+	rf_req.src = src_id;
+	rf_req.ip = src_ip;
+	rf_req.port = src_port;
+	rf_req.len = (uint16_t)len;
+	memcpy(rf_req.data, p, (size_t)len);
+	__sync_synchronize();	// complete before the flag says so
+	rf_req.full = 1;
+}
+
+// A message (already at rf_out.data + 8) to DMR ID dst, at dst_ip's port, over the air
+static void rf_stage(uint32_t dst, uint32_t dst_ip, uint16_t dst_port, int n, uint32_t now)
 {
 	uint8_t *u = rf_out.data;
 
@@ -291,6 +299,7 @@ static void rf_stage(uint32_t dst, uint16_t dst_port, int n, uint32_t now)
 	u[5] = (uint8_t)(8 + n);
 	u[6] = u[7] = 0;	// the checksum: worked out when the IP packet is built (dmrDataBuildIP)
 	rf_out.dst = dst;
+	rf_out.dst_ip = dst_ip;
 	rf_out.len = 8 + n;
 	rf_out.since = now;
 	rf_out.pending = true;
@@ -299,7 +308,7 @@ static void rf_stage(uint32_t dst, uint16_t dst_port, int n, uint32_t now)
 static void rf_poll(uint32_t now)
 {
 	if (rf_out.pending) {
-		if (ipGatewayIPToAir(false, rf_out.dst, IPGW_AIR_SRC_OURS, dmrDataIdAddress(false, rf_out.dst),
+		if (ipGatewayIPToAir(false, rf_out.dst, IPGW_AIR_SRC_OURS, rf_out.dst_ip,
 				     DMR_IP_TTL_DEFAULT, UDP_PROTO, rf_out.data, rf_out.len)) {
 			rf_out.pending = false;
 		} else if ((now - rf_out.since) >= SNMP_RF_GIVE_UP_MS) {
@@ -314,7 +323,7 @@ static void rf_poll(uint32_t now)
 		int n = gap ? 0 : process(true, rf_req.data, rf_req.len, rf_out.data + 8, SNMP_RF_MAX);
 
 		if (n > 0) {
-			rf_stage(rf_req.src, rf_req.port, n, now);
+			rf_stage(rf_req.src, rf_req.ip, rf_req.port, n, now);
 			last_rf_answer = (now != 0) ? now : 1;
 			counts.rf_answers++;
 		} else if (gap) {
@@ -335,7 +344,7 @@ static void rf_poll(uint32_t now)
 	int n = snmpEventEncode(ev, (int32_t)++request_id, rf_out.data + 8, SNMP_RF_MAX);
 
 	if (n > 0) {
-		rf_stage(cfg.rfManager, SNMP_TRAP_PORT, n, now);
+		rf_stage(cfg.rfManager, dmrDataIdAddress(false, cfg.rfManager), SNMP_TRAP_PORT, n, now);
 		snmpEventsRfSent(&events, now);
 		counts.traps_rf++;
 	}
@@ -374,7 +383,8 @@ void snmp_agent_init(void)
 	ctx.stats = &stats;
 	snmpMibInit(&mib, &ctx);
 	snmpEventsInit(&events);
-	ipGatewayUdpBindAir(SNMP_PORT, udp_in);	// the link and the air (read-only, rate limited there)
+	ipGatewayUdpBind(SNMP_PORT, udp_in);
+	ipGatewayUdpBindAir(SNMP_PORT, air_in);	// read-only, rate limited
 	started = true;
 }
 

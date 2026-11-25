@@ -840,10 +840,10 @@ static struct
 	int length;
 } bound;
 
-static void boundHandler(bool fromAir, uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort,
+static void boundHandler(uint32_t src, uint16_t srcPort, uint32_t dst, uint16_t dstPort,
 						 const uint8_t *data, int length)
 {
-	(void)fromAir; (void)src; (void)srcPort; (void)dst; (void)data;
+	(void)src; (void)srcPort; (void)dst; (void)data;
 	bound.calls++;
 	bound.dstPort = dstPort;
 	bound.length = length;

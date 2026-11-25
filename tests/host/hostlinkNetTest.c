@@ -120,22 +120,35 @@ static void serial_in(const uint8_t *buf, size_t len)
 	serial_len = (int)len;
 }
 
-// ---- a local UDP service (ipGatewayUdpBindAir) ----
+// ---- a local UDP service (ipGatewayUdpBind, ipGatewayUdpBindAir) ----
 static struct {
 	int calls;
 	bool from_air;
-	uint32_t src;
+	uint32_t src;		// the link: the IPv4 source; the air: the sender's DMR ID
+	uint32_t src_ip;	// the air: the IPv4 source the answer goes to
 	uint16_t port;
 	uint8_t data[64];
 	int len;
 } local;
-static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, uint16_t dport, const uint8_t *p, int len)
+static void local_udp(uint32_t src, uint16_t port, uint32_t dst, uint16_t dport, const uint8_t *p, int len)
 {
 	(void)dst;
 	(void)dport;
 	local.calls++;
-	local.from_air = from_air;
+	local.from_air = false;
 	local.src = src;
+	local.src_ip = 0;
+	local.port = port;
+	local.len = len;
+	memcpy(local.data, p, (size_t)len);
+}
+
+static void local_air(uint32_t src_id, uint32_t src_ip, uint16_t port, const uint8_t *p, int len)
+{
+	local.calls++;
+	local.from_air = true;
+	local.src = src_id;
+	local.src_ip = src_ip;
 	local.port = port;
 	local.len = len;
 	memcpy(local.data, p, (size_t)len);
@@ -424,7 +437,7 @@ int main(void)
 	CHECK(sent_count == 0 && st.packets_dropped == 1 && st.packets_up == 2 && st.packets_air == 3);
 
 	// Local UDP services: port 161 on the radio's own address from the host goes to the bound service, not to the air
-	CHECK(ipGatewayUdpBindAir(161, local_udp));
+	CHECK(ipGatewayUdpBind(161, local_udp) && ipGatewayUdpBindAir(161, local_air));
 	int ip_before = air.ip_calls;
 	from_host(f, host_udp(f, RADIO_IP, 40000, 161, hello, sizeof(hello)));
 	CHECK(local.calls == 1 && !local.from_air && local.src == HOST_IP && local.port == 40000 &&
@@ -456,7 +469,30 @@ int main(void)
 	link_up = true;
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && local.from_air && local.src == 9991234 && local.port == 4321 &&
-	      local.len == (int)sizeof(hello) && sent_count == 0);
+	      local.src_ip == (IPGW_INDIVIDUAL_NET | 9991234u) && local.len == (int)sizeof(hello) && sent_count == 0);
+	// The answer goes where the request came from: a gateway radio's host (13.<its ID>), or a host on a network the
+	// gateway routes (its own address, the DMR source still the gateway's ID)
+	static const uint32_t sources[] = { 0x0D000000u | 9991234u, 0xC0A80105u };
+	for (unsigned k = 0; k < 2; k++) {
+		put32(pip + 12, sources[k]);
+		put16(pip + 10, 0);
+		put16(pip + 10, ip_checksum(pip, 20));
+		hostlink_net_packet(&p);
+		CHECK(local.calls == 3 + (int)k && local.from_air && local.src == 9991234 && local.src_ip == sources[k]);
+	}
+	// A source no answer can reach (0, multicast, loopback): the sender's own address
+	static const uint32_t unusable[] = { 0, 0xE1000009u, 0xFFFFFFFFu, 0x7F000001u };
+	for (unsigned k = 0; k < 4; k++) {
+		put32(pip + 12, unusable[k]);
+		put16(pip + 10, 0);
+		put16(pip + 10, ip_checksum(pip, 20));
+		hostlink_net_packet(&p);
+		CHECK(local.calls == 5 + (int)k && local.src_ip == (IPGW_INDIVIDUAL_NET | 9991234u));
+	}
+	local.calls = 2;
+	put32(pip + 12, IPGW_INDIVIDUAL_NET | 9991234u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
 	// ... but compressed (SAP 3) with DAID 1, our peripheral network 13.<our ID>, it is the host's, not the service's
 	{
 		dmrDataPacket_t c;

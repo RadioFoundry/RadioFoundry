@@ -1154,9 +1154,11 @@ is `detour_*` in `core/radio/radio_sm.c` (`CONFIG_RADIO_DETOUR`, `tests/host/rad
 ### 7.1 Transport and addressing
 
 UDP port 3335 at the radio's individual address (`12.x.y.z`, the DMR ID in the low 24 bits), both ways. The gateway
-hands the radio only datagrams to its own ID, never a group's (`ipGatewayUdpBindAir`), and the radio checks again: the
-ID inside the authenticated header and the address it came to must both be its own. A group, the all-call ID or
-another radio's ID gets no answer, and an answer goes only to the sender's individual address.
+hands the radio only datagrams to its own ID and address, never a group's (`ipGatewayUdpBindAir`), and the radio
+checks again that the ID inside the authenticated header is its own. A group, the all-call ID or
+another radio's ID gets no answer. An answer goes to the sender's DMR ID, at the request's IPv4 source address and
+port: a gateway radio's own address (12.<ID>), its host's (13.<ID>), or a host on a network a bench gateway routes, so
+the answer goes back the way the request came.
 
 | Byte | Field | |
 |---|---|---|
