@@ -1893,7 +1893,7 @@
  "editor.p25.wacn": "WACN (hex)",
  "editor.p25.sysid": "System ID (hex)",
  "editor.p25.no_tx_wacn": "WACN {id} is widely used by public safety systems. RadioFoundry is not approved to transmit on public safety systems, and does not register or transmit on systems with this WACN. This system will be listen-only.",
- "editor.p25.no_tx_sysid": "System ID {id} is widely used by public safety systems. RadioFoundry is not approved to transmit on public safety systems, and does not register or transmit on systems with this system ID.",
+ "editor.p25.no_tx_sysid": "System ID {id} is widely used by public safety systems. RadioFoundry is not approved to transmit on public safety systems, and does not register or transmit on systems with this system ID. This system will be listen-only.",
  "editor.p25.cc_nac": "Control channel NAC (hex)",
  "editor.p25.any_help": "Leave blank to accept any.",
  "editor.p25.skip_enc": "Skip encrypted calls",
