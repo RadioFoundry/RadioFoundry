@@ -364,7 +364,7 @@ void ui_svc_beep(uint8_t beep)
 {
 	static const uint8_t map[] = {
 		[UI_BEEP_KEY] = BEEP_KEY, [UI_BEEP_ERROR] = BEEP_ERROR, [UI_BEEP_MESSAGE] = BEEP_MESSAGE,
-		[UI_BEEP_BATTERY_LOW] = BEEP_BATTERY_LOW,
+		[UI_BEEP_BATTERY_LOW] = BEEP_BATTERY_LOW, [UI_BEEP_CALL_ALERT] = BEEP_CALL_ALERT,
 	};
 	radio_req_beep(beep < sizeof map ? map[beep] : BEEP_KEY);
 }

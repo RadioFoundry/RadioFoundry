@@ -264,11 +264,15 @@ def test_sms_rx(radio, sdr_bench, pytestconfig):
 @pytest.mark.bench_service
 @pytest.mark.bench_modem
 def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
-    """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench) and, with the ack setting
-    on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9 us) goes back."""
+    """A call alert CSBK to our ID: the user is alerted (event call_alert from the bench, and the call alert tone,
+    counted by beep.played) and, with the ack setting on, a call alert ack (opcode 0x20, octets 4-6 the caller, 7-9
+    us) goes back."""
     freq, cc, own, feats = _setup(radio, pytestconfig)
     _need(feats, "DMR_SIGNALING")
     radio.link.data_settings(0, radio_check_reply=False, call_alert_ack=True)
+    f = radio.view(["features"])
+    tone = f.get("beep.built") == "1" and f.get("set.beep_level", "0") != "0"     # tone volume 0 mutes every tone
+    played = int(f.get("beep.played", 0))
     before = radio.data_view()
     with sdr_bench.lease():
         heard = sdr_bench.csbk(freq, cc, own, opcode=CSBK_CALL_ALERT, fid=0, src=BENCH_SRC, listen_after=3)
@@ -278,6 +282,9 @@ def test_call_alert_rx(radio, sdr_bench, pytestconfig, data_settings):
     print("radio deltas:", d)
     assert d["data.call_alerts_received"] == 1, d
     assert after["data.event"] in ("call_alert",) and after["data.event_id"] == BENCH_SRC, after
+    if tone:
+        rang = int(radio.view(["features"])["beep.played"]) - played
+        assert rang >= 1, "no call alert tone"
     need_radio_tx(radio)
     assert d["data.csbk_answers_sent"] == 1 and d["data.tx_ok"] >= 1, d
     _soft(any(a == BENCH_SRC and b == own for _o3, a, b in _heard_csbks(heard, CSBK_CALL_ALERT_ACK)),

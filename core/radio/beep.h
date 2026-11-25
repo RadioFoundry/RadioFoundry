@@ -33,6 +33,7 @@ typedef enum {
 	BEEP_TX_PERMIT_SHORT,	// DMR: talk now, played before keying (CAP_BEEP_NOT_ON_AIR): one short tone
 	BEEP_SWEEP,		// speaker test (debug link only): a 4 s sweep, BEEP_SWEEP_LO_HZ to BEEP_SWEEP_HI_HZ
 	BEEP_SYSTEM_BACK,	// a trunked system found again, the radio back on it from its fallback channel
+	BEEP_CALL_ALERT,	// DMR: a call alert paged this radio (the UI asks for it)
 	BEEP_COUNT
 } beep_t;
 
@@ -61,7 +62,7 @@ typedef struct {
 	uint8_t last;		// the last pattern asked for (beep_t), played or dropped
 } beep_stats_t;
 
-#define BEEP_SEGS_MAX	6
+#define BEEP_SEGS_MAX	13	// steps of a fixed pattern (the call alert ring is the longest)
 #define BEEP_CUSTOM_MAX	10	// steps of a custom pattern (SIG_STEPS)
 
 // audio NULL: beeps are counted as dropped
