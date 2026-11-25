@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 Sandro Kalatozishvili
 version = 1
 
 [[annotations]]
@@ -28,6 +31,13 @@ path = ["tests/data/voice/**", "tests/host/data/**", "tools/rfoundry/rfoundry/co
         "tools/rfoundry/rfoundry/registry.json", "tools/rfoundry/tests/*.json", "tools/ci-runner/proxy/allow",
         "core/net/http_assets/index.html"]
 SPDX-FileCopyrightText = "2026 The RadioFoundry Authors"
+SPDX-License-Identifier = "MIT"
+
+# Spectrum gallery metadata and translated captions keep the shared notices above.
+[[annotations]]
+path = ["site/data/screens.json", "site/i18n/en.json", "site/i18n/es.json", "site/i18n/it.json", "site/i18n/zh.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Sandro Kalatozishvili"
 SPDX-License-Identifier = "MIT"
 
 # Tom Select, copied unchanged from its npm package (site/static/vendor/tom-select/README.md)

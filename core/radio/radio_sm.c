@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's state machine: channel / zone / VFO selection, software squelch, PTT checks and the TX timer,
 // and the everyday features around them (docs/spec/radio-features.md): scan, busy channel lockout, roger beep and
 // 1750 Hz burst, VOX, beeps, the battery monitor and receiver battery saving.
@@ -740,6 +741,12 @@ static void outputs(radio_sm_t *sm)
 	bool tx = sm->view.state == RS_TX;
 	bool fm = sm->view.ch.mode == RADIO_MODE_FM && !sm->hotspot && !parked(&sm->view.ch);
 	bool open = !tx && fm && (sm->view.monitor || sm->view.state == RS_RX || (sm->view.state == RS_TX_DENIED && sm->deny_rx));
+#if CONFIG_SPECTRUM
+	if (sm->view.spectrum.active) {
+		fm = true;
+		open = !tx && sm->view.spectrum.listening && sm->view.spectrum.audio_open;
+	}
+#endif
 	bool green = open;
 #if CONFIG_P25
 	if (sm->view.ch.mode == RADIO_MODE_P25 && !tx && sm->view.state == RS_RX &&
@@ -793,6 +800,9 @@ static void outputs(radio_sm_t *sm)
 	// path open for its decoder; otherwise the path closes. The board's mute follows the frequency, not the squelch, so
 	// the amplifier never opens for a moment when the squelch closes, before audio(false)
 	bool on_aprs = !sm->view.monitor && fm && sm->view.ch.rx_hz == aprs_mute_hz();
+#if CONFIG_SPECTRUM
+	on_aprs = on_aprs && !sm->view.spectrum.active;
+#endif
 	muted = spk && on_aprs;
 	if (board.radio->speaker_mute != NULL) {
 		if (sm->speaker_mute_out != (int8_t)on_aprs) {
@@ -9319,8 +9329,237 @@ static void bench_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_m
 }
 #endif
 
+#if CONFIG_SPECTRUM
+static void spectrum_stop(radio_sm_t *sm, uint32_t now_ms)
+{
+	if (!sm->view.spectrum.active)
+		return;
+	sm->view.spectrum.active = false;
+	tune(sm, now_ms);
+#if CONFIG_SCAN
+	if (dual_running(sm)) {
+		scan_tuned(&sm->scan, now_ms);
+#if CONFIG_DUAL_WATCH
+		if (board.rx2 != NULL)
+			rx2_engage(sm, now_ms);
+#endif
+		scan_publish(sm);
+	}
+#endif
+	outputs(sm);
+	changed(sm);
+}
+
+static bool spectrum_tune(radio_sm_t *sm)
+{
+	static const subtone_t none = { TONE_NONE, 0 };
+	outputs(sm);
+	const spectrum_t *s = &sm->view.spectrum;
+	uint32_t hz = spectrum_receiver_hz(s);
+	radio_bw_t bw = s->narrow ? RADIO_BW_12K5 : RADIO_BW_25K;
+#if CONFIG_AM_RX
+	sm->view.am = radio_am_tx_refused(hz) && board.radio->rx_am(hz, bw);
+	if (sm->view.am)
+		return true;
+#endif
+	return board.radio->rx(hz, bw, &none);
+}
+
+static const band_t *spectrum_band(uint32_t hz)
+{
+	if (!board_in_band(hz, false) || (radio_listen_band(hz) && !radio_am_tx_refused(hz)))
+		return NULL;
+	for (uint8_t i = 0; i < board.band_count; i++)
+		if (hz >= board.bands[i].lo_hz && hz <= board.bands[i].hi_hz)
+			return &board.bands[i];
+	return NULL;
+}
+
+static void spectrum_persist(const spectrum_t *s, uint8_t cmd, uint32_t now_ms)
+{
+	settings_t *st = settings_begin();
+	st->spectrum_center_hz = s->center_hz;
+	st->spectrum_step_hz = s->step_hz;
+	st->spectrum_bins = s->bins;
+	st->spectrum_squelch_dbm = s->squelch_dbm;
+	// A downgrade gets the closest level its narrower legacy scale can represent.
+	unsigned legacy = (unsigned)(spectrum_threshold_dbm(s) + 160);
+	st->spectrum_squelch = legacy > 100 ? 100 : (uint8_t)legacy;
+	st->spectrum_dwell_ms = s->dwell_ms;
+	st->spectrum_no_peak = s->auto_peak == SPECTRUM_AUTO_OFF;
+	st->spectrum_peak_immediate = s->auto_peak == SPECTRUM_AUTO_IMMEDIATE;
+	st->spectrum_scale_db = s->scale_db;
+	st->spectrum_narrow = s->narrow;
+	// Automatic capture must not replace the owner's tuning preference or keep postponing the flash save.
+	if (cmd == SPECTRUM_TUNER || cmd == SPECTRUM_CENTER || cmd == SPECTRUM_STEP || cmd == SPECTRUM_BANDWIDTH)
+		st->spectrum_tuner_hz = spectrum_frequency(s, s->tuner);
+	settings_end(now_ms);
+}
+
+static void spectrum_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
+{
+	spectrum_t *s = &sm->view.spectrum;
+	if (req->arg == SPECTRUM_STOP) {
+		spectrum_stop(sm, now_ms);
+		return;
+	}
+	if (req->arg != SPECTRUM_START) {
+		bool adjusted;
+		if (s->active && req->arg == SPECTRUM_CENTER) {
+			const band_t *band = spectrum_band(req->arg2);
+			adjusted = band != NULL && spectrum_recenter(s, req->arg2, band->lo_hz, band->hi_hz, now_ms);
+		} else {
+			adjusted = spectrum_adjust(s, (uint8_t)req->arg, (int32_t)req->arg2, now_ms);
+		}
+		if (adjusted) {
+			bool tune_needed = req->arg != SPECTRUM_DWELL && req->arg != SPECTRUM_AUTO_PEAK && req->arg != SPECTRUM_SCALE;
+			if (tune_needed && !spectrum_tune(sm)) spectrum_stop(sm, now_ms);
+			else spectrum_persist(s, (uint8_t)req->arg, now_ms);
+			changed(sm);
+		}
+		return;
+	}
+#if CONFIG_DMR
+	if (sm->dmr_keyed || dmr_tx_phase(dmr_call_view()->phase))
+		return;
+#endif
+#if RADIO_SM_CW
+	if (sm->cw_phase != 0)
+		return;
+#endif
+#if CONFIG_RADIO_DETOUR
+	if (sm->view.detour.armed)
+		return; // the detour's deadline owns the return to the home channel
+#endif
+	if (s->active || sm->ptt || sm->view.state == RS_TX || sm->view.state == RS_TX_DENIED || sm->hotspot ||
+	    BENCH_HELD(sm) || codeplug_kind_trunked(sm->view.ch.kind) ||
+	    (radio_listen_band(sm->view.ch.rx_hz) && !radio_am_tx_refused(sm->view.ch.rx_hz)))
+		return;
+#if CONFIG_SATELLITE_TLE
+	if (sm->satellite_session)
+		return;
+#endif
+	// Borrow the selected pane without discarding the pair or its changes for now.
+#if CONFIG_SCAN
+	if (dual_running(sm)) {
+		if (!dual_here(sm, sm->dual_sel)) {
+			if (!dual_tune(sm, sm->dual_sel, now_ms)) {
+				scan_stop(sm, false, now_ms);
+				return;
+			}
+			scan_tuned(&sm->scan, now_ms);
+			scan_publish(sm);
+		}
+#if CONFIG_DUAL_WATCH
+		sm->dual_peek = false;
+#endif
+	} else
+#endif
+		scan_stop(sm, true, now_ms);
+	if (codeplug_kind_trunked(sm->view.ch.kind) ||
+	    (radio_listen_band(sm->view.ch.rx_hz) && !radio_am_tx_refused(sm->view.ch.rx_hz)))
+		return;
+	uint32_t center = SETTINGS_FIELD(spectrum_center_hz);
+	const band_t *band = spectrum_band(center);
+	if (band == NULL) {
+		center = sm->view.ch.rx_hz;
+		band = spectrum_band(center);
+	}
+	if (band == NULL)
+		return;
+	if (!spectrum_start(s, center, band->lo_hz, band->hi_hz, SETTINGS_FIELD(spectrum_step_hz),
+			    SETTINGS_FIELD(spectrum_bins), now_ms) &&
+	    !spectrum_start(s, center, band->lo_hz, band->hi_hz, 12500, SPECTRUM_BINS, now_ms))
+		return;
+#if CONFIG_SCAN
+	if (dual_running(sm)) {
+		rx2_release(sm);
+		dual_busy_set(sm, 0);
+		scan_pause(&sm->scan, true, now_ms);
+		scan_publish(sm);
+	}
+#endif
+	int16_t squelch_dbm = SETTINGS_FIELD(spectrum_squelch_dbm);
+	if (squelch_dbm < -160 || squelch_dbm > 0) {
+		uint8_t legacy = SETTINGS_FIELD(spectrum_squelch);
+		if (legacy > 100) legacy = 80;
+		squelch_dbm = (int16_t)((int)legacy - 160);
+	}
+	s->squelch_dbm = squelch_dbm;
+	uint16_t dwell_ms = SETTINGS_FIELD(spectrum_dwell_ms);
+	s->dwell_ms = dwell_ms >= SPECTRUM_SETTLE_MS && dwell_ms <= SPECTRUM_DWELL_MAX_MS ? dwell_ms : SPECTRUM_SETTLE_MS;
+	s->auto_peak = SETTINGS_FIELD(spectrum_no_peak) == 1 ? SPECTRUM_AUTO_OFF :
+		SETTINGS_FIELD(spectrum_peak_immediate) == 1 ? SPECTRUM_AUTO_IMMEDIATE : SPECTRUM_AUTO_SWEEP;
+	int8_t scale_db = SETTINGS_FIELD(spectrum_scale_db);
+	s->scale_db = scale_db >= -40 && scale_db <= 40 && scale_db % 20 == 0 ? scale_db : 0;
+	s->narrow = SETTINGS_FIELD(spectrum_narrow) == 1;
+	uint32_t tuner = SETTINGS_FIELD(spectrum_tuner_hz);
+	uint32_t first = spectrum_frequency(s, 0), last = spectrum_frequency(s, s->bins - 1);
+	if (tuner >= first && tuner <= last)
+		s->tuner = (uint8_t)(((uint64_t)tuner - first + s->step_hz / 2) / s->step_hz);
+#if CONFIG_APRS_RX
+	aprs_rx_release();
+#endif
+#if CONFIG_DMR
+	bool manual = sm->manual, hear_all = sm->hear_all_latch;
+#endif
+	dmr_end(sm);
+#if CONFIG_DMR
+	// The receiver is borrowed; the channel and its chosen talk target stay.
+	sm->manual = manual;
+	sm->hear_all_latch = hear_all;
+	sm->view.dmr.target_manual = manual;
+	sm->view.dmr.hear_all_latch = hear_all;
+	sm->view.dmr.hear_all = hear_all || sm->view.monitor;
+#endif
+	sm->view.state = RS_IDLE;
+	if (sm->board_mode != RADIO_MODE_FM) {
+		sm->board_mode = RADIO_MODE_FM;
+		board.radio->set_mode(RADIO_MODE_FM);
+	}
+#if CONFIG_BATTERY_SAVE
+	if (sm->save_asleep && board.radio->rx_sleep != NULL)
+		board.radio->rx_sleep(false);
+	sm->save_on = sm->save_asleep = false;
+	sm->view.rx_sleeping = false;
+#endif
+	if (!spectrum_tune(sm)) spectrum_stop(sm, now_ms);
+	outputs(sm);
+	changed(sm);
+}
+
+static void spectrum_poll(radio_sm_t *sm, uint32_t now_ms)
+{
+	spectrum_t *s = &sm->view.spectrum;
+	if ((int32_t)(now_ms - s->due_ms) < 0)
+		return;
+	radio_status_t st;
+	board.radio->status(&st);
+	uint32_t before = spectrum_receiver_hz(s);
+	bool listening = s->listening;
+	if (spectrum_sample(s, st.rssi_dbm, now_ms)) {
+		if (listening || s->audio_open) {
+			sm->view.rssi_dbm = st.rssi_dbm;
+			sm->view.noise = st.noise;
+		}
+		if (before != spectrum_receiver_hz(s) && !spectrum_tune(sm)) spectrum_stop(sm, now_ms);
+		outputs(sm);
+		changed(sm);
+	}
+}
+#endif
+
 void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 {
+#if CONFIG_SPECTRUM
+	if (sm->view.spectrum.active && req->type != RREQ_SPECTRUM) {
+		if (req->type == RREQ_PTT || req->type == RREQ_MONITOR || req->type == RREQ_DMR_FOCUS)
+			return;
+		if (req->type != RREQ_BEEP && req->type != RREQ_VOLUME && req->type != RREQ_VOLUME_OVERRIDE &&
+		    req->type != RREQ_VOLUME_HOLD)
+			spectrum_stop(sm, now_ms);
+	}
+#endif
 	sm->led_now = now_ms;
 	uint8_t flags = req->type < RREQ_COUNT ? req_flags[req->type] : 0;
 	if ((flags & (RQ_ALERT | RQ_KEEP_APRS)) == 0) {
@@ -9358,6 +9597,9 @@ void radio_sm_request(radio_sm_t *sm, const radio_req_t *req, uint32_t now_ms)
 	}
 #endif
 	switch (req->type) {
+#if CONFIG_SPECTRUM
+	case RREQ_SPECTRUM: spectrum_request(sm, req, now_ms); break;
+#endif
 	case RREQ_CH_STEP: ch_step_request(sm, req, busy, now_ms); break;
 	case RREQ_VFO_STEP: vfo_step_request(sm, req, busy, now_ms); break;
 	case RREQ_ZONE_POS: zone_pos_request(sm, req, busy, now_ms); break;
@@ -9880,6 +10122,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
 	if ((sm->reload_pending || codeplug_serial() != sm->codeplug_serial || ZONES_MOVED(sm)) && !ZONE_WRITE_BUSY() &&
 	    !sm->hotspot && !BENCH_HELD(sm) && !sm->ptt && sm->view.state != RS_TX) {
+#if CONFIG_SPECTRUM
+		spectrum_stop(sm, now_ms);
+#endif
 		reload(sm, now_ms);
 		persist(sm, now_ms);
 	}
@@ -9889,7 +10134,11 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	detour_poll(sm, now_ms);
 #endif
 #if CONFIG_DMR_AES
-	if (!sm->ptt && sm->view.state != RS_TX && !dmr_tx_phase(dmr_call_view()->phase))
+	if (!sm->ptt && sm->view.state != RS_TX && !dmr_tx_phase(dmr_call_view()->phase)
+#if CONFIG_SPECTRUM
+	    && !sm->view.spectrum.active
+#endif
+	   )
 		radio_aes_poll(&sm->view.ch, sm->own_id, now_ms);
 #endif
 #if CONFIG_BEEP
@@ -9903,6 +10152,13 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 #endif
 #if CONFIG_VIBRATE
 	vibe_service(now_ms, board.power != NULL ? board.power->vibrate : NULL);
+#endif
+#if CONFIG_SPECTRUM
+	// Local feedback must finish even while the analyzer borrows the receiver and suspends normal radio work.
+	if (sm->view.spectrum.active) {
+		spectrum_poll(sm, now_ms);
+		return;
+	}
 #endif
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 	audio_mux_service(now_ms);	// the stream for a host audio session or APRS (after the beep: it may have stopped it)
@@ -10206,6 +10462,12 @@ static void t3_kv_retry(radio_sm_t *sm)
 
 void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 {
+#if CONFIG_SPECTRUM
+	if (sm->view.spectrum.active) {
+		spectrum_poll(sm, now_ms);
+		return;
+	}
+#endif
 	sm->led_now = now_ms;
 	if (codeplug_kv_serial() != kv_seen) {
 #if CONFIG_DMR_AES

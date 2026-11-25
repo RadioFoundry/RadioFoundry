@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // Weak stand-ins for everything in ui_svc.h that another package owns. Each reports "not available", except the
 // settings store, which keeps values in RAM so the Settings screens work before storage-cps lands. A package that
 // owns one of these defines it without the weak attribute and the linker takes that one.
@@ -10,6 +11,10 @@
 #include "settings/settings.h"
 
 #define WEAK __attribute__((weak))
+
+#if CONFIG_SPECTRUM
+WEAK void ui_svc_spectrum(uint8_t cmd, int32_t value) { (void)cmd; (void)value; }
+#endif
 
 // What each package provides, ORed; a package defines its own ui_svc_feat_* when it connects its calls
 WEAK uint32_t ui_svc_feat_voice(void) { return 0; }

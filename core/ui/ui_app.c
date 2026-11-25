@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The UI's behavior (docs/ux/information-architecture.md, docs/spec/ui.md): the navigation stack, the keys with
 // one meaning everywhere (P3), Home, quick settings, banners and interruptions, key lock, Recent. No RTOS: ui.c
 // runs it in the UI task and the host simulator runs it on a PC.
@@ -147,7 +148,7 @@ static void update_focus_target(void)
 		ui_svc_focus_target(0, false);
 }
 
-#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE || CONFIG_SPECTRUM
 // Screens from the top down to stack level `from` leave the stack: each runs its leave hook (the backlight tests give
 // the light back)
 static void left(uint8_t from)
@@ -2195,6 +2196,9 @@ void ui_app_key(const input_event_t *ev)
 	// is a delete. It unlocks from anywhere (auto lock can lock with a menu open)
 	bool typing = stack[sp].scr == SCR_TEXT || stack[sp].scr == SCR_APRS_TO ||
 		stack[sp].scr == SCR_MESSAGE_TEXT;
+#if CONFIG_SPECTRUM
+	typing = typing || ui_spectrum_typing();
+#endif
 	bool lock_key = has_quick_key ? (ev->action == ACT_QUICK && ev->gesture == GESTURE_LONG && (sp == 0 || ui_st.locked)) :
 		(ev->action == ACT_BACK && ev->gesture == GESTURE_LONG && ui_st.locked);
 	// A side key set to key lock (keyassign.h) locks and unlocks on a press or a long press, as long QUICK does

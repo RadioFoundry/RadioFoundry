@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
 
 # Specifications
 
@@ -14,6 +15,7 @@ Past bugs, by subsystem: [gotchas.md](gotchas.md). Contributors read [docs/dev](
 |---|---|
 | [capabilities.md](capabilities.md) | What a radio can do, by area, with the switch and spec behind each |
 | [radio-features.md](radio-features.md) | Scan, the FM transmit extras (tones, burst, roger beep), beeps, battery and power management |
+| [spectrum.md](spectrum.md) | Receive-only RSSI sweeps, peak hold, and receiver restoration |
 | [airband-and-broadcast.md](airband-and-broadcast.md) | Air band AM receive and broadcast FM receive, chosen by the frequency |
 | [aprs.md](aprs.md) | APRS on FM and over DMR |
 | [position.md](position.md) | The radio's position: sources, settings, who reads it |

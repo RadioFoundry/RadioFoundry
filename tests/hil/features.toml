@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 Sandro Kalatozishvili
 #
 # The feature checklist (tests/hil/README.md, "Bring-up mode"): one table per feature, never a column per radio. The
 # tests say which feature they check (@pytest.mark.feature("<id>")), so this file lists no tests. A radio's state for
@@ -608,3 +609,8 @@ source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
+
+[feature.spectrum]
+switch = "SPECTRUM"
+spec = "docs/spec/spectrum.md"
+manual = ["Open Tools > Spectrum analyzer; type center directly and confirm OK. Open Spectrum Settings with OK; edit squelch, spacing and dwell (digits on a keypad; arrow/encoder preview with OK save and Back cancel otherwise), and use the extra Center row without a keypad. Check key beeps finish and reception remains audible. Cycle BW counts and Auto peak (After sweep / Immediate / Off), and check scanning continues. On the graph, Up/Down shift dBm labels without moving frequency. Feed two FM carriers away from the tuner: Immediate holds the first above squelch, After sweep holds the strongest after completing the window, and Off keeps the manual tuner. Check continuous audio, resuming at the following bin after Immediate, peak expiry, Back restoration and saved mode after power-off. On a radio with AM receive, enter an air-band center and check AM scanning and audio, cross 137 MHz to check FM, then exit and check the original demodulator is restored. With dual watch on and B selected, enter the analyzer and its settings, then leave by Back and Home: the same A/B pair, selection and changes for now must resume; an inactive watch must stay off."]

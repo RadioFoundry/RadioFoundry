@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's task: a request queue in front of the state machine (radio_sm.c), a status poll every
 // RADIO_POLL_MS, the DMR call stack every RADIO_TICK_MS, and a snapshot of the view that other tasks copy under a
 // mutex. It also implements the hotspot's radio operations (hotspot_radio_ops_t): they post requests and never wait,
@@ -693,6 +694,10 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 	radio_req_t req = { .type = type, .arg = arg, .arg2 = arg2 };
 	send(&req, wait);
 }
+
+#if CONFIG_SPECTRUM
+void radio_req_spectrum(uint8_t cmd, int32_t value) { post_pair(RREQ_SPECTRUM, cmd, (uint32_t)value, pdMS_TO_TICKS(50)); }
+#endif
 
 #if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }

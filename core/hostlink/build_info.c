@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // What this build is, for VERSION in either listener (see build_info.h)
 #include "config.h"
 #include "hostlink/build_info.h"
@@ -35,6 +36,9 @@ static const char modes_both[] = P25_FEATURES "NXDN,";
 #endif
 
 static const char features[] =
+#if CONFIG_SPECTRUM
+	"SPECTRUM,"
+#endif
 #if CONFIG_NXDN_SCRAMBLER
 	"NXDN_SCRAMBLER,"
 #endif

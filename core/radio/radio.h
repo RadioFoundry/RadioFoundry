@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core: owns the channel / VFO state, squelch, PTT and the TX timer, and drives board.radio.
 // It runs in its own task. The UI reads a snapshot and posts requests; it never touches the hardware.
 #ifndef RADIO_CORE_H
@@ -9,6 +10,9 @@
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
 #include "config.h"
+#if CONFIG_SPECTRUM
+#include "radio/spectrum.h"
+#endif
 #if CONFIG_SATELLITE_TLE
 #include "satellite/path.h"
 #include "satellite/store.h"
@@ -460,6 +464,9 @@ typedef struct {
 
 typedef struct {
 	radio_state_t state;
+#if CONFIG_SPECTRUM
+	spectrum_t spectrum;
+#endif
 	uint8_t tx_deny;	// tx_deny_t, while RS_TX_DENIED
 	// Why the channel can't send DMR data now (tx_deny_t, TXDENY_NONE: it can), asked before a send so the user sees
 	// the reason instead of a send that never went: data_deny for signaling (radio check, call alert), packet_deny for
@@ -664,6 +671,9 @@ void radio_req_monitor_held_up(void);
 void radio_req_power(int8_t dir);		// temporary change of power level, wraps
 void radio_req_squelch(int8_t dir);
 void radio_req_clear_temporary(void);		// BACK on Home: revert temporary changes
+#if CONFIG_SPECTRUM
+void radio_req_spectrum(uint8_t cmd, int32_t value);
+#endif
 void radio_req_retune(void);			// tune again now, or after the transmission (the reference trim changed)
 void radio_req_reload(void);			// the settings' preferences changed (squelch, master power, DMR ID)
 // FM bandwidth and sub-audio. On a channel these are temporary changes (P7); in the VFO they change the VFO itself.

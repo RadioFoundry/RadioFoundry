@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's everyday features (docs/spec/radio-features.md): the scan, beep and battery modules on their own,
 // then scan, TX time-out warning, busy channel lockout, roger beep, 1750 Hz burst, VOX, battery monitor, receiver
 // battery saving and the DMR beeps through radio_sm.c, against a fake board whose receiver hears signals per frequency
@@ -2480,14 +2481,26 @@ static void test_dual_rx2(void)
 	CHECK(sm.view.scan == SCAN_DUAL && sm.view.rx2 && on_ref(home) && r2.on && r2.tunes == 1);
 	CHECK(r2.t.rx_hz == 146940000 && r2.t.mode == RADIO_MODE_FM && r2.t.rx_tone.type == TONE_CTCSS &&
 	      r2.t.rx_tone.value == 1000 && r2.t.squelch == sm.view.squelch);
+#if CONFIG_SPECTRUM
+	int stopped = r2.stops;
+	req2(RREQ_SPECTRUM, SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && !sm.view.rx2 && !r2.on && !r2.audio);
+	CHECK(r2.stops == stopped + 1);
+	run(500);
+	CHECK(!sm.view.rx2 && !r2.on && sm.view.scan_phase == SCAN_PH_PAUSED);
+	req2(RREQ_SPECTRUM, SPECTRUM_STOP, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && sm.view.rx2 && r2.on && on_ref(home));
+	CHECK(r2.t.rx_hz == 146940000);
+#endif
 	int rx = hw.rx_calls;
+	int initial_tunes = r2.tunes;
 	bool moved = false;
 	for (int i = 0; i < 200; i++) {
 		run(25);
 		moved |= !on_ref(home);
 	}
 	CHECK(!moved && hw.rx_calls == rx && sm.view.scan == SCAN_DUAL);
-	CHECK(r2.tunes == 1);		// sent again every 2 s, but nothing changed
+	CHECK(r2.tunes == initial_tunes);	// sent again every 2 s, but nothing changed
 
 	// Audio: the second receiver has the speaker while the selected channel is quiet; a signal there takes it
 	r2.active = true;
@@ -2584,6 +2597,12 @@ static void test_dual_watch(void)
 		run(25);
 	}
 	CHECK(sm.view.zone_pos == 4);
+#if CONFIG_SPECTRUM
+	req2(RREQ_SPECTRUM, SPECTRUM_START, 0);
+	CHECK(sm.view.spectrum.active && sm.view.scan == SCAN_DUAL && sm.view.zone_pos == 0);
+	req2(RREQ_SPECTRUM, SPECTRUM_STOP, 0);
+	CHECK(!sm.view.spectrum.active && sm.view.scan == SCAN_DUAL);
+#endif
 	req(RREQ_PTT, 1);		// still searching: back to the start channel, the watch ends
 	CHECK(sm.view.scan == SCAN_OFF && sm.view.zone_pos == 0 && hw.tx_hz == 146520000);
 	req(RREQ_PTT, 0);

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // Screen drawing (docs/ux/wireframes): layout from the display size, no task or input code, so host tests and the
 // host simulator can render any screen at any geometry
 #ifndef UI_SCREENS_H
@@ -206,10 +207,12 @@ extern uint32_t ui_strip_draws;
 // Hint rows drawn (keys or a toast): a frame that drew one left the row free of the screen's own content
 extern uint32_t ui_hint_draws;
 int ui_draw_top(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name);
+int ui_draw_top_font(const radio_view_t *v, const ui_state_t *s, const char *prefix, const char *name, const font_t *font);
 void ui_draw_title(const font_t *f, int x, int y, int max_w, const char *prefix, const char *name, color_t c);
 void ui_draw_hint(const char *text, bool toast);
 // The bottom row: the toast if there is one, else the hint (unless hints are off)
 void ui_draw_bottom(const ui_state_t *s, const char *hint);
+void ui_draw_bottom_font(const ui_state_t *s, const char *hint, const font_t *font);
 // The banner, if one is up, over the lower part of the screen
 void ui_draw_banner(const ui_state_t *s);
 
@@ -224,7 +227,7 @@ void ui_draw_banner(const ui_state_t *s);
 typedef struct {
 	char label[36];
 	char value[44];		// may hold text alternates (font.h); an empty last alternate leaves the value out
-	char num;		// key shown before the label ('1'..'9', '0'), 0 = none
+	char num;		// shortcut shown before the label ('1'..'9', '0', '#'), 0 = none
 	uint8_t flags;
 } ui_item_t;
 

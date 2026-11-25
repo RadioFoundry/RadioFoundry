@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
 
 # Air band AM receive and broadcast FM receive
 
@@ -55,6 +56,7 @@ channel; the channel form also grays the TX timeout, VOX and the tone burst. The
 |---|---|
 | When | `CONFIG_AM_RX`, the board has `CAP_AM_RX` and `board.radio->rx_am`, and the channel's or the VFO's RX frequency is in [108, 137) MHz, whatever its stored mode (3.1) |
 | Tuning | `tune()` calls `rx_am(hz, bw)` instead of `rx()`; if the board refuses, FM as before. `view.am` says AM is on |
+| Spectrum analyzer | Each scan/listening retune uses AM in the air band and FM outside it, including windows across the upper boundary. Both automatic capture modes use the same receiver and dBm threshold. Leaving restores the original channel ([spectrum.md](spectrum.md)) |
 | Transmit | refused with `TXDENY_AM` whenever `view.am`, and for any TX frequency in the air band on an AM radio (split channels, DMR channels, the VFO, the data service, the hotspot's frequencies) |
 | Squelch | in AM the board's `status()` gives `noise` on the FM noise scale (larger = weaker) from the reading that tells a carrier from an empty channel in AM, so the levels and hysteresis are the FM ones (3.3). `view.noise` holds that value in AM. Scan uses the same value |
 | Sub-audio | ignored in AM (`tone_needed()` is false, the tone counts as heard) |

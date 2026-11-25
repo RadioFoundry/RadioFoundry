@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 <!-- Copyright (c) 2026 The RadioFoundry Authors -->
+<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
 
 # Channels, Zones and the VFO
 
@@ -98,7 +99,7 @@ say so. Set it to **Off** to ignore what others send.
 
 <img src="../ux/screens/160x120i5/zone_offer.png" width="200" alt="Zone Share Received: Import, Preview, Reject">
 
-1. A banner says "Zone from ...". It stays until you press **#** to open it or **Back** to hide it. The offer also waits under **Tools > Zones/Chs Received** for 10 minutes. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
+1. A banner says "Zone from ...". It stays until you press **#** to open it or **Back** to hide it. The offer also waits under **Tools > Zones/Chs Received** for 10 minutes: press **#** in Tools to open it, or **0** in a build without Spectrum. The screen is titled **Zone Share Received**, or **Channel Share Received** for one channel.
 2. The offer shows the zone's name, its channels, the sender and how many channels are outside your radio's bands.
 3. Pick **Preview** to see the channels, **Import** to add them, or **Reject**.
 

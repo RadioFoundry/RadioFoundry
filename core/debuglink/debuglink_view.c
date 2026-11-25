@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio view as key=value text for GET_VIEW (docs/spec/debuglink.md 3.7). One key per line; keys are stable
 // (DL_VIEW_VERSION is bumped when one changes meaning or goes away); new keys may appear anywhere in a section.
 #include "config.h"
@@ -195,6 +196,25 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 	dl_text(t, "ch.tone_burst=%u\n", c->tone_burst);
 	// The SFR bytes A and B as stored (sfr.h; 0,0 = none); dmr.sfr_role is the role in force
 	dl_text(t, "ch.sfr=%u,%u\n", c->sfr_flag1 ? c->sfr_a : 0u, c->sfr_flag1 ? c->sfr_b : 0u);
+#if CONFIG_SPECTRUM
+	const spectrum_t *s = &v->spectrum;
+	dl_text(t, "spectrum.active=%u\nspectrum.listening=%u\nspectrum.audio=%u\nspectrum.center_hz=%u\nspectrum.step_hz=%u\n"
+		"spectrum.index=%u\nspectrum.tuner_hz=%u\nspectrum.squelch=%d\nspectrum.sweeps=%u\n", s->active,
+		s->listening, s->audio_open, (unsigned)s->center_hz, (unsigned)s->step_hz, s->index,
+		(unsigned)spectrum_frequency(s, s->tuner), (int)s->squelch_dbm, (unsigned)s->sweeps);
+	dl_text(t, "spectrum.threshold_dbm=%d\n", (int)spectrum_threshold_dbm(s));
+	dl_text(t, "spectrum.am=%u\n", s->active && v->am);
+	dl_text(t, "spectrum.bins=%u\n", s->bins);
+	dl_text(t, "spectrum.dwell_ms=%u\nspectrum.auto_peak=%u\nspectrum.scale_db=%d\n", s->dwell_ms,
+		s->auto_peak != SPECTRUM_AUTO_OFF, (int)s->scale_db);
+	dl_text(t, "spectrum.auto_peak_mode=%s\n", s->auto_peak == SPECTRUM_AUTO_IMMEDIATE ? "immediate" :
+		s->auto_peak == SPECTRUM_AUTO_SWEEP ? "after_sweep" : "off");
+	dl_text(t, "spectrum.filter=%s\n", s->narrow ? "narrow" : "wide");
+	unsigned peak = spectrum_strongest(s);
+	uint8_t level = spectrum_peak_level(s, peak);
+	dl_text(t, "spectrum.peak_hz=%u\nspectrum.peak_dbm=%d\n",
+		level == SPECTRUM_EMPTY ? 0u : (unsigned)spectrum_frequency(s, peak), (int)spectrum_level_dbm(level));
+#endif
 }
 
 // mtu_lines and ppp_lines are not inlined: net_link_section is, into debuglink_view_section, which is on the host

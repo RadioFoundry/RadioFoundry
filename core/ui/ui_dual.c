@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // Dual watch (docs/ux/dual-watch.md): two channels on Home, A and B, each a channel of any zone or the VFO. One of
 // them is selected: PTT transmits on it and the watch goes on after, and Home's keys (Up / Down, the knob, digits,
 // quick settings) act on it as they act on the one channel of the single Home. The A/B key, Left / Right or # 1
@@ -400,6 +401,10 @@ const radio_view_t *ui_dual_view(const radio_view_t *v)
 {
 	static radio_view_t mixed;	// static: too big for the UI task's stack
 	const ui_dual_t *d = dual();
+#if CONFIG_SPECTRUM
+	if (v->spectrum.active)
+		return v; // the analyzer's demodulator and readings are not a pane's settings
+#endif
 	if (!d->on)
 		return v;
 	uint8_t t = tuned_pane(v);
@@ -1064,6 +1069,20 @@ bool ui_dual_vfo_key(void)
 __attribute__((noinline)) bool ui_dual_tick(const radio_view_t *v, uint32_t now)
 {
 	ui_dual_t *d = dual();
+#if CONFIG_SPECTRUM
+	if (v->spectrum.active) {
+		bool dirty = d->rx != UI_DUAL_NONE;
+		for (uint8_t i = 0; i < 2; i++) {
+			ui_dual_pane_t *p = &d->pane[i];
+			if (p->rx)
+				call_ended(d, i, now);
+			dirty |= p->rx || p->heard || p->busy;
+			p->rx = p->heard = p->busy = false;
+		}
+		d->rx = UI_DUAL_NONE;
+		return dirty; // close the old call without talk back competing for the borrowed receiver
+	}
+#endif
 	// Another task (the debug link) stopped the watch or selected the other channel: asked for, as a key would be
 	bool stop_asked = seen_ok && v->dual_stops != stops_seen;
 	bool sel_asked = seen_ok && v->dual_sel != sel_seen;

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
+# Copyright (c) 2026 Sandro Kalatozishvili
 # Copyright (c) 2026 Open25-DM32 Authors
 ## Host unit tests for the hardware independent parts of the firmware
 ##
@@ -299,7 +300,7 @@ T3RADIO := $(CORE)/radio/radio_trunk.c $(CORE)/radio/radio_trunk_cp.c $(CORE)/co
            $(CORE)/dmr/trunk/t3_ms.c $(CORE)/dmr/trunk/t3_pdu.c $(CORE)/dmr/trunk/t3_sys.c \
            $(CORE)/dmr/trunk/t3_plan.c sim/codeplug_copy_stub.c $(RXSEEN)
 # With the DMR call stack, the AMBE voice glue and the simulated modem behind board.dmr
-RFEAT   := $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
+RFEAT   := $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c $(CORE)/radio/battery.c $(CORE)/radio/roam.c $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c \
            $(CORE)/radio/vibe.c $(CORE)/radio/mic_gain.c $(CORE)/radio/ref_trim.c $(CORE)/radio/pa_keyup.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/radio_sfr.c $(CORE)/radio/radio_cwid.c $(CORE)/radio/tx_limit.c $(T3RADIO)
@@ -425,7 +426,7 @@ roamTest: $(ROAMT) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h
 TESTS   += aprsRadioTest
 FMONLY  := -DCONFIG_DMR=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_DMR_SMS=0 -DCONFIG_DMR_ARS=0 \
            -DCONFIG_DMR_LRRP=0 -DCONFIG_DMR_SIGNALING=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=0 -DCONFIG_HOTSPOT=0
-APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c \
+APRSRT  := aprsRadioTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_keys.c $(CORE)/radio/tones.c $(CORE)/radio/tx_limit.c $(CORE)/radio/spectrum.c $(CORE)/radio/scan.c $(CORE)/radio/beep.c $(CORE)/radio/sigtone.c \
            $(CORE)/radio/vibe.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_shift.c $(CORE)/codeplug/zone_settle.c \
            $(CORE)/radio/battery.c $(CORE)/radio/morse.c $(CORE)/settings/settings.c $(CORE)/storage/storage.c \
            $(CORE)/radio/radio_am.c $(CORE)/radio/radio_bcast.c $(CORE)/aprs/aprs.c $(CORE)/aprs/aprs_ax25.c $(CORE)/aprs/aprs_dmr.c $(CORE)/aprs/aprs_host.c $(APRSLIB) \
@@ -708,7 +709,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # the long-press rules; uiSim renders screens to PNG (make ui-gallery: docs/ux/screens/, contact sheets in
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
-UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
+UIAPP   := $(CORE)/ui/ui_spectrum.c $(CORE)/radio/spectrum.c $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
            $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
@@ -720,6 +721,7 @@ UIFLAGS := -std=gnu99 -Wall -Wextra -Wno-unused-parameter -Wshadow -g $(COVFLAGS
 UIDEPS  := $(UIAPP) $(ABOUT_H) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc sim/ui_sim.h)
 TESTS   += uiFlowTest uiFlowTestNoColor uiSim
 TESTS   += uiFlowTestSatellite
+TESTS   += uiFlowTestNoSpectrum
 
 uiFlowTest: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_NXDN=1 -o $@ uiFlowTest.c $(UIAPP) -lz
@@ -735,6 +737,10 @@ uiFlowTestNoColor: uiFlowTest.c $(UIDEPS)
 
 uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 	$(CC) $(UIFLAGS) -DCONFIG_SATELLITE_TLE=1 -o $@ uiFlowTest.c $(UIAPP) -lz
+
+# Spectrum owns Tools 0 when built; without it a waiting received zone keeps that shortcut.
+uiFlowTestNoSpectrum: uiFlowTest.c $(UIDEPS)
+	$(CC) $(UIFLAGS) -DCONFIG_SPECTRUM=0 -o $@ uiFlowTest.c $(UIAPP) -lz
 
 # UI_LANG=<code> also builds that language in (CONFIG_LANG_<CODE>=1), so a gallery can render in a language that is
 # off by default: make -B uiSim UI_LANG=fr (docs/dev/translating.md). The CJK face compiles to nothing without Chinese
@@ -776,7 +782,7 @@ ui-sheets: uiSim
 	UI_GALLERY_COLORS="$(UI_GALLERY_COLORS)" ./uiSim --sheets out/sheets $(GEOM)
 
 run: run-ui
-run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiSim beepReel
+run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault uiFlowTest uiFlowTestNoColor uiFlowTestSatellite uiFlowTestNoSpectrum uiSim beepReel
 	./gfxTest
 	./gfxTestZh
 	./gfxFbEdgeTest
@@ -786,6 +792,7 @@ run-ui: gfxTest gfxTestZh gfxFbEdgeTest i18nTest i18nTestNoLang i18nTestDefault 
 	./uiFlowTest
 	./uiFlowTestNoColor
 	./uiFlowTestSatellite
+	./uiFlowTestNoSpectrum
 	./uiSim --layout
 	./beepReel --out out/beep-reel --no-frames > /dev/null	# checks every beep has a scene and the scenes still run
 .PHONY: run-ui ui-gallery ui-sheets
@@ -1939,3 +1946,12 @@ run: run-hrc-pcm
 run-hrc-pcm: hrc7000PcmTest
 	./hrc7000PcmTest
 .PHONY: run-hrc-pcm
+
+# Receive-only spectrum sweep: bounds, timing, squelch, capture and recent peaks.
+TESTS += spectrumTest
+spectrumTest: spectrumTest.c $(CORE)/radio/spectrum.c $(CORE)/radio/spectrum.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ spectrumTest.c $(CORE)/radio/spectrum.c
+run: run-spectrum
+run-spectrum: spectrumTest
+	./spectrumTest
+.PHONY: run-spectrum

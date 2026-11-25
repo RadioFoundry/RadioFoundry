@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The radio core's state machine, without the RTOS: it takes requests and the time, polls board.radio and keeps
 // the view. radio_task.c runs it in a task; the host tests run it against a fake board.
 #ifndef RADIO_SM_H
@@ -204,6 +205,7 @@ typedef enum {
 #endif
 	// New request types go above
 
+	RREQ_SPECTRUM,		// arg: spectrum command; arg2: command value
 	RREQ_COUNT		// KEEP LAST: sizes req_flags[] (radio_sm.c)
 } radio_req_type_t;
 

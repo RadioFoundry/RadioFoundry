@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // Inside the UI: the navigation stack, the screen table and the helpers the screens share (ui_app.c, ui_menus.c,
 // ui_find.c). Not for other packages.
 #ifndef UI_NAV_H
@@ -49,6 +50,8 @@ typedef enum {
 #if CONFIG_BACKLIGHT_TEST
 	SCR_BL_TEST,			// Settings > Advanced > Backlight tests
 #endif
+	SCR_SPECTRUM,			// Tools > Spectrum analyzer (CONFIG_SPECTRUM)
+	SCR_SPECTRUM_SETTINGS,		// analyzer's OK menu (CONFIG_SPECTRUM)
 	SCR_COUNT
 } ui_scr_t;
 
@@ -117,7 +120,7 @@ typedef struct {
 	bool (*key)(const input_event_t *ev);		// screen keys before the list's own (true: used)
 	void (*draw)(void);				// own drawing instead of the list
 	void (*enter)(void);				// on push
-#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE
+#if CONFIG_BACKLIGHT_TEST || CONFIG_SATELLITE_TLE || CONFIG_SPECTRUM
 	void (*leave)(void);				// on leaving the stack (BACK, Home, replaced)
 #endif
 	const ui_filter_def_t *filter;			// SF_FILTER: the rows before filtering (NULL: not a filtered list)
@@ -128,6 +131,9 @@ extern ui_state_t ui_st;
 extern ui_target_t ui_target;		// the target of SCR_ACTIONS / SCR_COMPOSE
 
 const radio_view_t *ui_view(void);
+#if CONFIG_SPECTRUM
+bool ui_spectrum_typing(void);
+#endif
 ui_frame_t *ui_frame(void);
 uint8_t ui_depth(void);
 void ui_push(uint8_t scr, uint16_t arg);

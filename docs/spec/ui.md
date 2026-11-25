@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Sandro Kalatozishvili -->
 
 # The user interface
 
@@ -148,9 +149,11 @@ without its label, for the cursor's steps. With 1024 channels a key took 0.34 s 
 | List picker | `chpick` | OK on a channel's TX contact or RX group list row: "None", then every stored contact or list, T9 filtered |
 | Talk target picker | `picker` | long CONTEXT on a DMR channel (else "Talk target: DMR channels only"), TALK_TARGET (a side key set to it), Quick 8. Its last rows: "Type a number..." (Find) and "Select contact..." (Contacts, whose keys are the picker's) |
 | Diagnostics | `diag` | Tools 7, Settings > Advanced |
+| Spectrum analyzer | `spectrum` | Tools 0 (the tenth entry), `CONFIG_SPECTRUM`: 65/97/129-point RSSI sweep, recent peaks, tiny text and five-decimal center/tuner frequencies; digits enter center, OK confirms; OK outside entry opens settings; Up/Down shift the dBm window by 20 dB; Back restores reception ([spectrum.md](spectrum.md)) |
+| Spectrum settings | `spectrum-settings` | OK in Spectrum: squelch (-160..0 dBm, with an automatic minus while typing), spacing, bandwidth point-count cycle, dwell time, Auto peak (After sweep / Immediate / Off) and Wide/Narrow receive filter; changes persist; Back returns to the running graph; Home closes the analyzer |
 | Share | `zone_share` | without `CONFIG_ZONE_EDIT`: CONTEXT in a zone's channels (`zone`): Share zone to..., Share channel to... ([zone-share.md](zone-share.md) 7). With the zone editor these are rows of Zone options and Channel actions (2.2) |
 | Share To | `zone_share_to` | a pick in Share, Channel actions, Zone options or the channel editor: the contacts, T9 filtered. Digits that make an ID add "Private ID 9991234" and "TG 9991234" after the contacts ("Not saved"), so a station that isn't a contact can be sent to. OK sends and returns to the zone's list (to the channel editor from there) |
-| Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits; titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
+| Zone Share Received | `zone_offer` | CONTEXT on the offer's banner, or Tools > Zones/Chs Received while one waits (Context / #; 0 without Spectrum); titled Channel Share Received (shorter where it doesn't fit) for one channel: the offer's text, then Import, Preview, Reject ([zone-share.md](zone-share.md) 5.2) |
 | Offer preview | `zone_offer_preview` | Preview in Zone Share Received: the offered channels, "Not in band" dimmed |
 | Add to zone | `zone_offer_zone` | Import of a one-channel offer: the zone it goes in |
 | Roaming | `roaming` | Tools 8 (7 without diagnostics): roaming on for this zone, roam now, lock to this site ([dmr-roaming.md](dmr-roaming.md) 6.2) |

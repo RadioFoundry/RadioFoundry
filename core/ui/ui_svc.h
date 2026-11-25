@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // What the UI needs from packages it doesn't own, as thin calls. ui_svc_stub.c defines every one weakly with a
 // harmless "not in this build" behavior, so the UI builds and runs alone; the owning package defines the real one
 // (a strong definition replaces the weak one at link time). docs/spec/ui.md lists who owns what.
@@ -12,6 +13,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "config.h"
+#if CONFIG_SPECTRUM
+void ui_svc_spectrum(uint8_t cmd, int32_t value);
+#endif
 #include "i18n.h"
 #include "radio/radio.h"
 #include "codeplug/zone_edit.h"

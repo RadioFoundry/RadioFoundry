@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // Feature switches (config/features.mk sets them for firmware builds; everything defaults on here, e.g. for host
 // tests). Always defined to 0 or 1: test with #if CONFIG_X, never #ifdef. See docs/build-config.md.
 #ifndef RFOUNDRY_CONFIG_H
 #define RFOUNDRY_CONFIG_H
 
+#ifndef CONFIG_SPECTRUM
+#define CONFIG_SPECTRUM			CONFIG_FM
+#endif
 #ifndef CONFIG_FM
 #define CONFIG_FM			1
 #endif

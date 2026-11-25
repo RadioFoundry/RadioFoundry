@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Sandro Kalatozishvili
 // The UI host simulator's command line (docs/spec/ui.md 7):
 //
 //   uiSim [--geom 160x120i5|160x128|128x64|240x320|WxH[iN|m]] [--map K|M|V|F|P] [--scale N] [--out FILE.png]
@@ -40,6 +41,24 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "boot", "splash" },
 	{ "stub_entry", "splash:loader" },	// while the flashing tools have the radio (web flasher)
 	{ "home_dmr", "" },
+#if CONFIG_SPECTRUM
+	{ "tools_spectrum", "ok 6 up" },
+	{ "tools_spectrum_unfocused", "ok 6 up up" },
+	{ "tools_spectrum_offer", "zoneoffer:9991234 back ok 6 up" },
+	{ "spectrum", "ok 6 up ok" },
+	{ "spectrum_captured", "ok 6 up ok spectrumrx:72,-65" },
+	{ "spectrum_edit", "ok 6 0 4 3 8 2 5" },
+	{ "spectrum_settings", "ok 6 0 ok" },
+	{ "spectrum_settings_keys", "keypad:0 ok 6 0 ok ok up" },
+	{ "spectrum_center_keys", "keypad:0 ok 6 0 ok up ok enc+" },
+	{ "spectrum_immediate", "ok 6 0 ok up up ok" },
+	{ "spectrum_air", "am ok 6 0 1 1 8 1 0 0 ok" },
+	{ "spectrum_dual", "quick 7 ok 6 0" },
+	{ "spectrum_filter", "ok 6 0 ok up" },
+	{ "spectrum_scale", "ok 6 0 down" },
+	{ "spectrum_precision", "dlvfo:145062500 ok 6 0" },
+	{ "spectrum_bandwidth", "ok 6 0 ok down down ok" },
+#endif
 	{ "home_dmr_lastheard", "call:9991234,91,g wait:11000" },
 	{ "home_reply", "call:9991234,91,g" },
 	{ "home_fm", "down" },
@@ -129,7 +148,7 @@ static const struct { const char *name, *script; } gallery[] = {
 	{ "zone_offer", "zoneoffer:9991234 ctx" },
 	{ "zone_offer_preview", "zoneoffer:9991234 ctx 2" },
 	{ "zone_offer_ch", "zoneoffer:9991234,c ctx" },
-	{ "tools_zone_offer", "zoneoffer:9991234 back ok 6 down down down down down down down down down" },	// Tools > Zones/Chs Received
+	{ "tools_zone_offer", "zoneoffer:9991234 back ok 6 up" },	// Tools > Zones/Chs Received
 	{ "zone_offer_channel", "zoneoffer:9991234,c ctx 1" },
 	{ "zone_imported", "zoneoffer:9991234 ctx 1 wait:300" },
 #if CONFIG_ZONE_EDIT
