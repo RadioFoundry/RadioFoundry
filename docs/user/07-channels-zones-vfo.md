@@ -347,6 +347,10 @@ silent.
   a slip costs nothing. Saving the channel as another mode removes its P25 settings: the radio asks first ("Save as
   FM?", "Save as DMR?", or "Unsaved Changes" for NXDN), and "No, keep editing" is the default. **Save as new channel** leaves the P25 channel as it is.
 - Scan stops on P25 channels and holds on a call you would hear there. Dual watch takes one as A or B.
+- **PTT** plays the talk permit tone as on DMR ([The talk permit tone](09-dmr.md#the-talk-permit-tone)), in the VFO
+  too: the same **Settings > Sound > Talk permit tone** switch and **Tone volume**, and the channel's **Talk permit
+  beeps** field. A DMR start tone you set in [Signaling tones](17-settings.md#signaling-tones) plays instead, on the
+  speaker. NXDN does the same.
 
 ### P25 trunked channels
 
@@ -417,6 +421,7 @@ squelch and the group (when a contact has that group; else group 1).
   your unit ID (**Own ID**, up to 65519). RAN 0 receives every RAN. The squelch can be changed only from a computer.
 - Scan stops on NXDN channels and holds on a call you would hear there, at a rate the radio can receive. Dual watch
   takes one as A or B.
+- **PTT** plays the talk permit tone as on DMR and P25 ([P25 channels](#p25-channels)).
 
 ### Leaving the VFO
 
