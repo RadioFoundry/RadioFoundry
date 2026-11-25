@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
 """USB network personality (opt-in: --allow-usb-switch; firmware built with CONFIG_DMR_IP_GATEWAY): the radio
-re-enumerates as a CDC-NCM adapter, gives the host its address by DHCP (12.<DMR ID>), answers ping at the host's
-address xor 1, and its debug link answers over UDP port 3334 there; then it switches back to the serial port.
+re-enumerates as a CDC-NCM adapter, gives the host its address by DHCP (13.<DMR ID>), answers ping at its own
+address 12.<DMR ID>, and its debug link answers over UDP port 3334 there; then it switches back to the serial port.
 test_usb_network_own_address: UDP to the radio's address on a port no service has gets an ICMP port unreachable and
 never goes over the air (usb-network.md 3).
 
@@ -21,6 +21,7 @@ import pytest
 from rfoundry_hil import DebugLink, DebugLinkError, skip, usb_network
 
 INDIVIDUAL_NET = 0x0C000000      # 12.0.0.0/8, IPGW_INDIVIDUAL_NET
+PERIPHERAL_NET = 0x0D000000      # 13.0.0.0/8, IPGW_PERIPHERAL_NET
 
 
 def _udp_link(ip, timeout):
@@ -45,8 +46,8 @@ def test_usb_network_roundtrip(radio):
         skip("not_built", "built without CONFIG_USB_NETWORK (PPP is test_net_services' and the others')")
     own_id = int(radio.view(["dmr"]).get("dmr.own_id", "0"))
     assert 0 < own_id < (1 << 24), "no DMR ID: the gateway can't make an address"
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
-    radio_ip = ipaddress.IPv4Address(int(host_ip) ^ 1)
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | own_id)
+    radio_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
     radio.link.usb_network(True)
     radio.link.close()
     udp = None

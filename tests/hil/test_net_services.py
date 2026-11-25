@@ -30,7 +30,7 @@ from rfoundry_hil import as_int, host_network_kind, ppp_network, skip
 import cps_client
 import tftp_client
 
-from test_usb_network import INDIVIDUAL_NET, _udp_link
+from test_usb_network import INDIVIDUAL_NET, PERIPHERAL_NET, _udp_link
 
 QDMR = cps_client.REGIONS["qdmr"]
 IMAGE = 0xAEE60
@@ -47,8 +47,8 @@ def network_mode(radio):
         with ppp_network(radio, own_id) as (udp, _, radio_ip):
             yield udp, radio_ip, own_id
         return
-    host_ip = ipaddress.IPv4Address(INDIVIDUAL_NET | own_id)
-    radio_ip = str(ipaddress.IPv4Address(int(host_ip) ^ 1))
+    host_ip = ipaddress.IPv4Address(PERIPHERAL_NET | own_id)
+    radio_ip = str(ipaddress.IPv4Address(INDIVIDUAL_NET | own_id))
     radio.link.usb_network(True)
     radio.link.close()
     udp = None
