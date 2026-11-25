@@ -140,6 +140,9 @@ endif
 ifeq ($(CONFIG_SUPPORT_INFO),y)
 CORE_DIRS += core/support
 endif
+ifeq ($(CONFIG_ZEROIZE),y)
+CORE_DIRS += core/zeroize
+endif
 # The storage layer over SPI NAND, for the boards that list it (BOARD_NAND_DIRS in their board.mk)
 ifeq ($(CONFIG_NAND_STORAGE),y)
 BOARD_DIRS += $(BOARD_NAND_DIRS)
@@ -211,6 +214,10 @@ endif
 # Key check values (core/support is globbed with SUPPORT_INFO): their files with their own switch, once
 ifeq ($(CONFIG_KEY_CHECK),y)
 APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c core/support/kcv.c)
+endif
+# The emergency wipe's code hash (core/support is globbed with SUPPORT_INFO): SHA-256 with its own switch, once
+ifeq ($(CONFIG_ZEROIZE),y)
+APP_SRC += $(filter-out $(APP_SRC),core/support/sha256.c)
 endif
 # Zone sharing over DMR data: the record, the sender and the offers (its codeplug side is core/codeplug/zone_import.c)
 ifeq ($(CONFIG_ZONE_SHARE),y)

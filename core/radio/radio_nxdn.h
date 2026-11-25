@@ -68,6 +68,8 @@ typedef struct {
 extern const radio_air_ops_t radio_nxdn_air;
 
 void radio_nxdn_init(void);
+// The emergency wipe: the running engine's scramble keys zeroed (radio task, RREQ_ZEROIZE)
+void radio_nxdn_wipe(void);
 // The board's provider gives NXDN something (receive or transmit) at either rate (any task): what the UI and the
 // mode request offer NXDN on
 bool radio_nxdn_fits(void);

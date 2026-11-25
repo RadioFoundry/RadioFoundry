@@ -92,6 +92,32 @@ If the firmware was built without privacy, the Privacy row is dimmed and OK on i
 | Key | Motorola 1 to 255, Anytone 0 to 65535 | | The key value, typed with the number keys. Dimmed until a type is chosen | Works |
 | Key check | Six hex digits, read only | | The key's check value ([DMR](09-dmr.md#checking-that-two-radios-have-the-same-key)). Two radios with the same key show the same digits. Dimmed until a type is chosen | Untested on a radio |
 | Stored keys | A list | | Every key the radio holds, with its check value: the privacy key slots, then the traffic keys of the codeplug's systems (NXDN scrambler keys, and others where the build has them). Missing from builds with neither | Untested on a radio |
+| Wipe code | Set, Off | Off | The 4 digits that, with **#**, wipe the radio ([Emergency wipe](#emergency-wipe)). **OK** opens it: type the code twice. When a code is set, Clear code removes it. Dimmed on radios without number keys | Untested on a radio |
+| Wipe what | Keys+codeplug, Keys only | Keys+codeplug | What the wipe erases. Keys+codeplug also puts every setting back to its default, as a factory reset, the wipe code included | Untested on a radio |
+| Wipe confirm | On, Off | On | On: after the code, **OK** wipes and any other key goes back. Off: the wipe starts at **#** | Untested on a radio |
+| Wipe after | Off, 3 wrong, 5 wrong, 10 wrong | Off | Wipe after this many wrong codes typed while the keys are locked, with no confirmation. Unlocking the keys or a restart starts the count again | Untested on a radio |
+| Clear all keys | - | - | Erases every key on the radio now (privacy keys, AES and the other modes' keys) and keeps the channels, then restarts. Always asks first: **OK** clears, any other key goes back. Needs no wipe code. Backups and CPS files on a PC still hold the keys | Untested on a radio |
+
+#### Emergency wipe
+
+For a radio that is about to be lost or taken. Set a wipe code first (Settings > Privacy > Wipe code). Then, on Home,
+or on any screen while the keys are locked, type the 4 digits and **#**. With Wipe confirm on, **OK** wipes.
+
+The radio erases its keys from its memory: the privacy keys, the traffic keys and system secrets of the codeplug, and
+every old copy the radio kept of them. With Keys+codeplug it also erases the codeplug (channels, zones, contacts, RX
+group lists) and resets the settings. Then it restarts, on the built-in channels after Keys+codeplug. The firmware,
+the calibration, the DMR ID database and the voice prompts stay. If a part couldn't be erased, the screen says which
+and doesn't restart: press **OK** to try again.
+
+Other digits work as before: they open Find, or type a frequency in the VFO. Only the code followed by **#** wipes.
+While you hold **PTT** on FM the digits are DTMF tones on the air, so the code doesn't work then: release **PTT**
+first.
+
+The wipe only reaches this radio. **Your codeplug files, flash backups, the Codeplug Editor's autosave in your
+computer's browser and the other radios of your group still hold the keys.** A group whose radio was lost or taken
+must change its keys all the same. The radio keeps only a hash of the wipe code, but someone who reads its flash can
+find a 4-digit code in moments: it only keeps the code from being read at a glance. How it works:
+[zeroize.md](../spec/zeroize.md).
 
 ### Location (key 5)
 

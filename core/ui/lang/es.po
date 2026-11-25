@@ -3673,6 +3673,31 @@ msgid "Pink"
 msgstr "Rosa"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_CODEPLUG"
+msgid "Keys+codeplug"
+msgstr "Claves+codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_KEYS_ONLY"
+msgid "Keys only"
+msgstr "Solo claves"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_3_WRONG"
+msgid "3 wrong"
+msgstr "3 errores"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_5_WRONG"
+msgid "5 wrong"
+msgstr "5 errores"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_WIPE_10_WRONG"
+msgid "10 wrong"
+msgstr "10 errores"
+
+#: core/ui/ui_menus.c
 msgctxt "VALUE_3_MIN"
 msgid "3 min"
 msgstr "3 min"
@@ -4053,6 +4078,31 @@ msgid "Stored keys"
 msgstr "Claves guardadas"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CODE"
+msgid "Wipe code"
+msgstr "Código borrado"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_WHAT"
+msgid "Wipe what"
+msgstr "Qué borrar"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_CONFIRM"
+msgid "Wipe confirm"
+msgstr "Confirmar borrado"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_WIPE_AFTER"
+msgid "Wipe after"
+msgstr "Borrar tras"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_LABEL_CLEAR_KEYS"
+msgid "Clear all keys"
+msgstr "Borrar claves"
+
+#: core/ui/ui_menus.c
 msgctxt "SET_LABEL_AUTO_LOCK"
 msgid "Auto lock"
 msgstr "Bloqueo auto"
@@ -4358,6 +4408,11 @@ msgid "Pick a key type first"
 msgstr "Elige un tipo de clave antes"
 
 #: core/ui/ui_menus.c
+msgctxt "WHY_NEEDS_NUMBER_KEYS"
+msgid "Needs number keys"
+msgstr "Necesita teclas numéricas"
+
+#: core/ui/ui_menus.c
 msgctxt "WHY_PERMIT_TONE_NOT_IN_BUILD"
 msgid "Talk permit tone: not in this build"
 msgstr "Tono de permiso: no disponible"
@@ -4426,6 +4481,11 @@ msgstr "Sin GPS en esta radio"
 msgctxt "WHY_DMR_POSITION_NOT_IN_BUILD"
 msgid "DMR position: not in this build"
 msgstr "Posición DMR: no disponible"
+
+#: core/ui/ui_menus.c
+msgctxt "VALUE_SET"
+msgid "Set"
+msgstr "Fijado"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_DIAGNOSTICS_NOT_IN_BUILD"
@@ -4561,6 +4621,156 @@ msgstr "Privacidad"
 msgctxt "KEYS_EMPTY"
 msgid "No keys stored"
 msgstr "No hay claves"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR"
+msgid "Clear code"
+msgstr "Quitar código"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_NEW_CODE"
+msgid "New code"
+msgstr "Código nuevo"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_LABEL_AGAIN"
+msgid "Again"
+msgstr "Otra vez"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_TYPE"
+msgid "Type 4 digits. Then on Home, or while locked, they and # wipe the radio"
+msgstr "Escribe 4 dígitos. Luego en Inicio, o con las teclas bloqueadas, ellos y # borran la radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_AGAIN"
+msgid "Type the 4 digits again"
+msgstr "Escribe los 4 dígitos otra vez"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_CLEARED"
+msgid "Wipe code cleared"
+msgstr "Código de borrado quitado"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_DIFFER"
+msgid "Not the same: type the code again"
+msgstr "No coinciden: escribe el código otra vez"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TOAST_SET"
+msgid "Wipe code set"
+msgstr "Código de borrado fijado"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE_CODE"
+msgid "Wipe Code"
+msgstr "Código de Borrado"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CODE"
+msgid "0-9 type  Back"
+msgstr "0-9 escribir  Atrás"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_AGAIN"
+msgid "Try again"
+msgstr "Reintentar"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_CLEAR_KEYS"
+msgid "Clear keys"
+msgstr "Borrar claves"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ROW_NOW"
+msgid "Wipe now"
+msgstr "Borrar ahora"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_CLEAR_KEYS"
+msgid "Erase every key now? Channels stay"
+msgstr "¿Borrar todas las claves? Los canales quedan"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_KEYS"
+msgid "Erase the keys now?"
+msgstr "¿Borrar las claves ahora?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_ASK_ALL"
+msgid "Erase the keys and the codeplug now?"
+msgstr "¿Borrar las claves y el codeplug ahora?"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_KEYS"
+msgid "keys area"
+msgstr "área de claves"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_SETTINGS"
+msgid "settings"
+msgstr "ajustes"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_CODEPLUG"
+msgid "codeplug"
+msgstr "codeplug"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_NATIVE"
+msgid "native area"
+msgstr "área nativa"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_PURGE"
+msgid "old copies"
+msgstr "copias viejas"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_PART_RADIO"
+msgid "radio RAM"
+msgstr "RAM de la radio"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_INCOMPLETE"
+msgid "Wipe incomplete:"
+msgstr "Borrado incompleto:"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_KEYS_DONE"
+msgid "Keys cleared. Restarting"
+msgstr "Claves borradas. Reiniciando"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_DONE"
+msgid "Wiped. Restarting"
+msgstr "Borrada. Reiniciando"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_BODY_RUNNING"
+msgid "Wiping. Don't switch off"
+msgstr "Borrando. No apagues"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CLEAR"
+msgid "OK clears  Other keys cancel"
+msgstr "OK borra  Otras teclas cancelan"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_CONFIRM"
+msgid "OK wipes  Other keys cancel"
+msgstr "OK borra  Otras teclas cancelan"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_HINT_FAILED"
+msgid "OK again  Back"
+msgstr "OK reintentar  Atrás"
+
+#: core/ui/ui_menus.c
+msgctxt "WIPE_TITLE"
+msgid "Emergency Wipe"
+msgstr "Borrado de Emergencia"
 
 #: core/ui/ui_menus.c
 msgctxt "LANG_VALUE_IN_USE"

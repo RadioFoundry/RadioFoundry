@@ -431,6 +431,11 @@ static __attribute__((noinline)) int32_t setting_get_flash(uint8_t id)
 
 int32_t ui_svc_setting_get(uint8_t id)
 {
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_get(id);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {	// not under setting_get_flash's frame: key_apply is deep
 		return key_get(id);
@@ -443,6 +448,11 @@ int32_t ui_svc_setting_get(uint8_t id)
 bool ui_svc_setting_set(uint8_t id, int32_t value)
 {
 	settings_t *st;
+#if CONFIG_ZEROIZE
+	if (id >= UI_SET_WIPE_CODE && id <= UI_SET_WIPE_TRIES) {
+		return ui_svc_wipe_set(id, value);
+	}
+#endif
 #if CONFIG_KEY_ASSIGN
 	if (id >= UI_SET_KEY_FIRST && id <= UI_SET_KEY_LAST) {
 		return key_set(id, value);

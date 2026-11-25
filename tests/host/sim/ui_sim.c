@@ -50,6 +50,8 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
+//   wipecode:<dddd>     the emergency wipe's code is set to these four digits (CONFIG_ZEROIZE)
+//   wipefail:<bits>     the next emergency wipe fails with these UI_WIPE_FAIL_* bits (0: it works)
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2525,6 +2527,40 @@ bool ui_svc_emergency(bool on) { emergency_on = on; return true; }
 bool ui_svc_emergency_active(void) { return emergency_on; }
 bool ui_svc_factory_reset(void) { return true; }
 
+// The emergency wipe (ui_svc.h, docs/spec/zeroize.md): the code kept as typed (the firmware keeps a salted hash), a
+// wipe counted and done at once, or failed with the bits wipefail: set
+static char sim_wipe_code[4];
+static uint32_t sim_wipes;
+static uint8_t sim_wipe_state, sim_wipe_fail;
+bool ui_svc_wipe_code_set(const char code[4])
+{
+	memcpy(sim_wipe_code, code, sizeof sim_wipe_code);
+	sim_late[UI_SET_WIPE_CODE - UI_SET_RAM_COUNT] = 1;
+	return true;
+}
+bool ui_svc_wipe_code_check(const char code[4])
+{
+	return ui_svc_setting_get(UI_SET_WIPE_CODE) != 0 && memcmp(code, sim_wipe_code, sizeof sim_wipe_code) == 0;
+}
+static uint32_t sim_key_clears;
+bool ui_svc_clear_keys_start(void)
+{
+	sim_key_clears++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+bool ui_svc_wipe_start(void)
+{
+	sim_wipes++;
+	sim_wipe_state = sim_wipe_fail != 0 ? UI_WIPE_FAILED : UI_WIPE_DONE;
+	return true;
+}
+uint8_t ui_svc_wipe_state(uint8_t *failed)
+{
+	*failed = sim_wipe_state == UI_WIPE_FAILED ? sim_wipe_fail : 0;
+	return sim_wipe_state;
+}
+
 // The crash log (ui_svc.h): "crash:on" a record from before this start nobody has seen, "crash:ask" / "crash:auto"
 // the same with the report's mode and the first contact (USA, TG 3100) as its target. A report goes at once;
 // "crashtx:refuse" makes the next sends fail to start (one still going), "crashtx:fail" makes them end failed
@@ -2677,6 +2713,11 @@ void ui_svc_next_aes_key(channel_t *c)
 void sim_reset(const sim_geom_t *g, sim_map_t map)
 {
 	emergency_on = false;
+	memset(sim_wipe_code, 0, sizeof sim_wipe_code);
+	sim_wipes = 0;
+	sim_key_clears = 0;
+	sim_wipe_state = UI_WIPE_IDLE;
+	sim_wipe_fail = 0;
 	sim_foreign = sim_held = false;
 	disp.width = g->w;
 	disp.height = g->h;
@@ -2810,6 +2851,10 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_ARS_SERVER, 0);
 	ui_svc_setting_set(UI_SET_IP_GATEWAY, 0);
 	ui_svc_setting_set(UI_SET_PTT_LOCKED, 1);
+	ui_svc_setting_set(UI_SET_WIPE_CODE, 0);	// the emergency wipe as on a new radio: no code, keys and codeplug,
+	ui_svc_setting_set(UI_SET_WIPE_SCOPE, 0);	// the confirmation press on, no count of wrong codes
+	ui_svc_setting_set(UI_SET_WIPE_CONFIRM, 1);
+	ui_svc_setting_set(UI_SET_WIPE_TRIES, 0);
 	for (uint8_t id = UI_SET_CALL_END_TONE; id <= UI_SET_EMERGENCY_TONE; id++)
 		ui_svc_setting_set(id, id != UI_SET_SCAN_TONE);	// as on a new radio: the scan stop tone off, the rest on
 	ui_svc_setting_set(UI_SET_HEAR_ALL_DEFAULT, 0);
@@ -3094,6 +3139,9 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "volbar_at") == 0) snprintf(got, sizeof got, "%s", s.volbar_top ? "top" : "bottom");
 	else if (strcmp(key, "volbar") == 0) snprintf(got, sizeof got, "%d", s.volbar);	// the knob's bar, -1 = none
 	else if (strcmp(key, "pttblock") == 0) snprintf(got, sizeof got, "%u", ptt_blocked);
+	else if (strcmp(key, "wipes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_wipes);	// emergency wipes started
+	else if (strcmp(key, "keyclears") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_key_clears);	// Clear all keys
+	else if (strcmp(key, "wipecode") == 0) snprintf(got, sizeof got, "%d", (int)ui_svc_setting_get(UI_SET_WIPE_CODE));
 	else if (strcmp(key, "poweroff") == 0) snprintf(got, sizeof got, "%u", ui_app_power_off_due());
 	else if (strcmp(key, "wake") == 0) snprintf(got, sizeof got, "%u", ui_app_take_wake());	// the backlight asked for
 	else if (strncmp(key, "set", 3) == 0 && key[3] >= '0' && key[3] <= '9')	// set<N>: ui_setting_t N's value
@@ -3750,6 +3798,14 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+	if (strcmp(t, "wipecode") == 0 && arg != NULL && strlen(arg) == 4) {
+		ui_svc_wipe_code_set(arg);
+		return true;
+	}
+	if (strcmp(t, "wipefail") == 0 && arg != NULL) {
+		sim_wipe_fail = (uint8_t)atoi(arg);
+		return true;
+	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;

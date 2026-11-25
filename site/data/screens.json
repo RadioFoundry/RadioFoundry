@@ -527,6 +527,36 @@
     "ZONE_SHARE"
    ]
   },
+  "settings_privacy_wipe": {
+   "group": "settings",
+   "needs": [
+    "ZEROIZE"
+   ]
+  },
+  "wipe_code": {
+   "group": "settings",
+   "needs": [
+    "ZEROIZE"
+   ]
+  },
+  "wipe_confirm": {
+   "group": "settings",
+   "needs": [
+    "ZEROIZE"
+   ]
+  },
+  "wipe_failed": {
+   "group": "settings",
+   "needs": [
+    "ZEROIZE"
+   ]
+  },
+  "clear_keys_confirm": {
+   "group": "settings",
+   "needs": [
+    "ZEROIZE"
+   ]
+  },
   "find_channel": {
    "group": "channels",
    "needs": []

@@ -71,6 +71,14 @@ bool radio_aes_configure(const channel_t *ch, dmr_call_config_t *cfg)
 	return true;
 }
 
+void radio_aes_wipe(void)
+{
+	dmrAesClearKeys(&channel_keys);	// keeps the MI sequence: positions already sent stay used
+	channel_key_ref = 0;
+	channel_key_system = 0;
+	channel_tx_allowed = false;
+}
+
 void radio_aes_poll(const channel_t *ch, uint32_t own_id, uint32_t now_ms)
 {
 	dmrAesSeqSettle(&aes_seq);

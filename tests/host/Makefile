@@ -319,7 +319,8 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/debuglink/debuglink_view_radio.c $(CORE)/debuglink/dl_fmt.c $(CORE)/codeplug/zone_edit.c \
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c \
-           $(CORE)/support/sha256.c $(CORE)/support/kcv.c $(CORE)/codeplug/key_store.c
+           $(CORE)/support/sha256.c $(CORE)/support/kcv.c $(CORE)/codeplug/key_store.c \
+           $(CORE)/ui/ui_svc_zeroize.c $(CORE)/zeroize/zeroize.c
 
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
@@ -1555,6 +1556,21 @@ run: run-cpedit
 run-cpedit: codeplugEditTest
 	./codeplugEditTest
 .PHONY: run-cpedit
+
+# The emergency wipe (core/zeroize, docs/spec/zeroize.md) on a simulated NOR flash with the real storage, settings store
+# and codeplug: the code's hash, the key sequence, whole wipes in both scopes (no copy of a key left, exactly the
+# expected sectors erased, the calibration and the rest byte for byte), failures reported
+ZEROIZE := $(CORE)/zeroize/zeroize.c $(CORE)/support/sha256.c $(CORE)/settings/settings.c $(CPEDIT)
+TESTS   += zeroizeTest
+
+# Built without the __attribute__ override: the test's zeroize_ram_hook takes the weak default's place, as key fill's will
+zeroizeTest: zeroizeTest.c $(ZEROIZE) $(wildcard $(CORE)/zeroize/*.h $(CORE)/codeplug/*.h $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
+	$(CC) -std=gnu99 -Wall -Wextra -Wno-unused-parameter -g $(COVFLAGS) $(SANFLAGS) -I$(CORE) -I$(ROOT)/drivers -Iout/gen 		-I$(ROOT)/hal -I. -Wshadow -o $@ zeroizeTest.c $(ZEROIZE)
+
+run: run-zeroize
+run-zeroize: zeroizeTest
+	./zeroizeTest
+.PHONY: run-zeroize
 
 # The codeplug settings area: keyed values, unknown keys kept, invalid and newer areas, power cuts during a write
 TESTS   += codeplugKvTest

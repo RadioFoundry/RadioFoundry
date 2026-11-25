@@ -306,6 +306,30 @@ bool ui_svc_factory_reset(void);
 enum { UI_CP_CANCEL, UI_CP_NEW, UI_CP_USE };
 bool ui_svc_codeplug_answer(uint8_t answer);
 
+// --- The emergency wipe (CONFIG_ZEROIZE; ui_svc_zeroize.c, docs/spec/zeroize.md). Weak stubs: not in this build ---
+// Store a new wipe code (four digits, '0'..'9'), as a salted hash; false when not stored
+bool ui_svc_wipe_code_set(const char code[4]);
+// The digits typed are the wipe code (false with none set)
+bool ui_svc_wipe_code_check(const char code[4]);
+// Start the wipe (a storage job; posted as soon as the job slot is free, so a save going on delays it, never stops
+// it). False: not in this build
+bool ui_svc_wipe_start(void);
+// Start a wipe of the keys only, whatever Wipe what says (Settings > Privacy > Clear all keys, zeroize.md 3.2): the
+// same steps and restart as the emergency wipe's keys only scope. False: not in this build
+bool ui_svc_clear_keys_start(void);
+// Where it is, UI_WIPE_*; *failed the zeroize.h ZEROIZE_FAIL_* bits of a wipe that didn't finish
+enum { UI_WIPE_IDLE, UI_WIPE_RUNNING, UI_WIPE_DONE, UI_WIPE_FAILED };
+uint8_t ui_svc_wipe_state(uint8_t *failed);
+// The UI_SET_WIPE_* settings, for ui_svc_setting_get / _set in the firmware (ui_svc_zeroize.c)
+int32_t ui_svc_wipe_get(uint8_t id);
+bool ui_svc_wipe_set(uint8_t id, int32_t value);
+#define UI_WIPE_FAIL_KEYS	0x01u	// the zeroize.h bits, for the screen's text
+#define UI_WIPE_FAIL_SETTINGS	0x02u
+#define UI_WIPE_FAIL_CODEPLUG	0x04u
+#define UI_WIPE_FAIL_NATIVE	0x08u
+#define UI_WIPE_FAIL_PURGE	0x10u
+#define UI_WIPE_FAIL_RADIO	0x20u
+
 // --- The crash log (CONFIG_CRASH_LOG) and its report (CONFIG_CRASH_REPORT; ui_svc_crash.c, docs/spec/crash-log.md) ---
 typedef struct {
 	bool seen;		// shown or answered before (no prompt after the restart)
@@ -466,6 +490,10 @@ typedef enum {
 	// One step of a chain, set whole (its frequency and length in one write of the settings area): the value is
 	// UI_SIG_STEP(event, step, Hz, ms). Write only
 	UI_SET_SIG_STEP,
+	// The emergency wipe (Settings > Privacy, CONFIG_ZEROIZE; docs/spec/zeroize.md 3.1, settings_t.zz_*): a wipe code
+	// is set (1; 0 clears it; ui_svc_wipe_code_set sets one), keys only (1) or keys and codeplug (0), the confirmation
+	// press (1 on), the wrong codes typed while locked before a wipe (0 off, else 3, 5 or 10)
+	UI_SET_WIPE_CODE, UI_SET_WIPE_SCOPE, UI_SET_WIPE_CONFIRM, UI_SET_WIPE_TRIES,
 	UI_SET_COUNT
 } ui_setting_t;
 

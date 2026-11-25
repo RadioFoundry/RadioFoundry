@@ -59,6 +59,7 @@ is `tools/bringup.py list --radio <id>`.
 | `dmr_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `dmr_aes` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `key_check` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
+| `zeroize` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `dmr_data_privacy` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded |
 | `dmr_talker_alias` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | pass, needs re-run |
 | `dmr_gps` | not recorded | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -205,6 +206,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `DMR_PRIVACY` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_AES` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `KEY_CHECK` | ● | ● | ● | ● | ● | ● | ● | ● |
+| `ZEROIZE` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_TALKER_ALIAS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `DMR_GPS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `DMR_SMS` | ● | ● | ● | ● | ● | ● | ● | ✕ |
@@ -335,6 +337,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Basic privacy (Motorola / Anytone BP) | `DMR_PRIVACY` | 1,936 | 1,992 |  |
 | AES-256 DMR voice, PI header and late-entry signaling | `DMR_AES` | 3,992 | — | Requires `DMR_PRIVACY`. DM-1701: 3,992 B flash and 480 B RAM with `DMR_AES` on versus off. TX to a receiver of another make needs the modem driver's burst F field (`set_burst_f`, [dmr-voice.md](spec/dmr-voice.md) 5.1): only the HR_C7000 driver has it (DM-32UV); on the HR_C6000 and other radios our AES overs reach radios running RadioFoundry only (#864). |
 | Key check values: Settings > Privacy > Key check and Stored keys | `KEY_CHECK` | — | — | 1,676 B flash and no RAM on the DM-32UV default build (2026-11-20); the ARM figures are still to be measured. Untested on a radio |
+| Emergency wipe: a wipe code and `#` erase the keys (and the codeplug) from the flash and RAM | `ZEROIZE` | — | — | 4,480 B flash and 120 B RAM on the DM-32UV default build (2026-11-21, measured on and off); the ARM figures are still to be measured. Needs `UI_SETTINGS`. Untested on a radio |
 | Talker alias receive and send | `DMR_TALKER_ALIAS` | 984 | 1,300 |  |
 | ETSI GPS Info in the embedded LC | `DMR_GPS` | 2,208 | 2,152 |  |
 | DMR emergency (alarm, emergency call, hot mic) | `DMR_EMERGENCY` | 3,296 | 3,188 |  |

@@ -117,6 +117,11 @@ switch = "KEY_CHECK"
 spec = "docs/spec/key-check.md"
 source = ["core/support/kcv.c", "core/codeplug/key_store.c"]
 
+[feature.zeroize]
+switch = "ZEROIZE"
+spec = "docs/spec/zeroize.md"
+source = ["core/zeroize/zeroize.c", "core/ui/ui_svc_zeroize.c"]
+
 [feature.dmr_data_privacy]
 requires = "DMR_PRIVACY"
 # Packet data under a privacy key: the privacy header, the user data encrypted, or held back

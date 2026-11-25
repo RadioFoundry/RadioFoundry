@@ -225,6 +225,9 @@
 #ifndef CONFIG_UI_SETTINGS
 #define CONFIG_UI_SETTINGS		1
 #endif
+#ifndef CONFIG_ZEROIZE
+#define CONFIG_ZEROIZE			CONFIG_UI_SETTINGS
+#endif
 #ifndef CONFIG_SCAN
 #define CONFIG_SCAN			1
 #endif
@@ -502,6 +505,9 @@
 #endif
 #if CONFIG_NET_PPP && !(CONFIG_HOSTLINK && CONFIG_DMR_IP_GATEWAY)
 #error "CONFIG_NET_PPP needs CONFIG_HOSTLINK and CONFIG_DMR_IP_GATEWAY"
+#endif
+#if CONFIG_ZEROIZE && !CONFIG_UI_SETTINGS
+#error "CONFIG_ZEROIZE needs CONFIG_UI_SETTINGS (the wipe code is set there)"
 #endif
 #if CONFIG_AIR_RAW && !CONFIG_AIR
 #error "CONFIG_AIR_RAW needs CONFIG_P25 or CONFIG_NXDN (an air-framed mode)"

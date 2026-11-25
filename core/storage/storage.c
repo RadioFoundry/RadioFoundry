@@ -657,3 +657,71 @@ void storage_get_stats(storage_stats_t *s)
 	*s = stats;
 	s->claim_pending = claim_pending;
 }
+
+#if CONFIG_ZEROIZE
+// Every sector of [addr, addr + len): erased unless blank, then read back blank. Every sector is tried
+static bool erase_all(uint32_t addr, uint32_t len)
+{
+	bool ok = true;
+	for (uint32_t a = addr; a < addr + len; a += STORAGE_SECTOR) {
+		ok = (blank(a, STORAGE_SECTOR) || (er(a) && blank(a, STORAGE_SECTOR))) && ok;
+	}
+	return ok;
+}
+
+bool storage_erase(uint32_t addr, uint32_t len)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (!storage_ready() || len == 0 || addr % STORAGE_SECTOR != 0 || len % STORAGE_SECTOR != 0 || addr + len < addr ||
+	    addr + len > board.flash->size) {
+		return refused();
+	}
+	bool area = inside(addr, len, m->openfw_eeprom, 0x10000u) ||
+		    (m->openfw_end > m->openfw_flash && inside(addr, len, m->openfw_flash, m->openfw_end - m->openfw_flash)) ||
+		    inside(addr, len, m->native_addr, m->native_size) || inside(addr, len, m->staging_addr, storage_staging_size());
+	// The calibration window may sit inside an image's range on some map: it is never erased, whatever asks
+	if (!area || overlaps(addr, len, m->calibration_addr, m->calibration_size) ||
+	    overlaps(addr, len, m->settings_addr, m->settings_size) || overlaps(addr, len, m->journal_addr, 2u * STORAGE_SECTOR)) {
+		return false;
+	}
+	storage_lock();
+	bool ok = erase_all(addr, len);
+	storage_unlock();
+	return ok;
+}
+
+bool storage_scrub(void)
+{
+	const hal_flash_map_t *m = storage_map();
+	if (!storage_ready()) {
+		return refused();
+	}
+	storage_lock();
+	bool ok = erase_all(m->settings_addr, m->settings_size - m->settings_size % STORAGE_SECTOR);
+	ok = erase_all(m->journal_addr, 2u * STORAGE_SECTOR) && ok;
+	ok = erase_all(m->staging_addr, storage_staging_size()) && ok;
+	// RAM: the shared buffer held the last sector merged (the settings area too), the slot buffer a settings record
+	memset(buffer, 0, sizeof(buffer));
+	memset(region_slot, 0, sizeof(region_slot));
+	mark(m);
+	storage_unlock();
+	return ok;
+}
+
+bool storage_purge(void)
+{
+	if (!storage_ready()) {
+		return refused();
+	}
+	if (board.flash->purge == NULL) {
+		return true;
+	}
+	storage_lock();
+	bool ok = board.flash->purge();
+	if (!ok) {
+		stats.errors++;
+	}
+	storage_unlock();
+	return ok;
+}
+#endif

@@ -101,5 +101,8 @@ void nxdn_engine_tx_clear(nxdn_engine_t *e);
 
 // A copy of the state for the radio core's task
 void nxdn_engine_view(const nxdn_engine_t *e, nxdn_engine_view_t *out);
+// The emergency wipe (docs/spec/zeroize.md 4.2): the scramble keys the call in hand uses, zeroed (the next call looks
+// its key up again, in a codeplug that has none left)
+void nxdn_engine_wipe_keys(nxdn_engine_t *e);
 
 #endif

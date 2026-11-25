@@ -94,6 +94,11 @@ typedef struct {
 	// Optional (NULL: not known): the chip's ID as init read it, manufacturer << 16 | device (SPI NOR: memory type << 8
 	// | capacity code; SPI NAND: the device byte), 0 when nothing answered. No bus transfer: the support info reads it
 	uint32_t (*jedec)(void);
+	// Optional (NULL: the flash erases in place, as SPI NOR): erase every copy of a sector that a copy on write flash
+	// still keeps after the sector was rewritten or erased (NAND behind a sector layer keeps the old record in its block
+	// until garbage collection), the current content kept. The emergency wipe's last flash step (docs/spec/zeroize.md
+	// 4.4). Slow: every block holding data is emptied and erased. False when a block couldn't be emptied or erased
+	bool (*purge)(void);
 } hal_flash_t;
 
 #endif

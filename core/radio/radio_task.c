@@ -94,6 +94,9 @@ static uint8_t shared_dual_sel, shared_dual_at;
 static bool shared_dual_on;
 #endif
 static volatile uint32_t shared_serial;
+#if CONFIG_ZEROIZE
+static volatile bool zeroize_busy;	// radio_req_zeroize until the radio task has done it
+#endif
 static volatile bool power_off_busy;	// radio_req_power_off until the radio core is done
 static volatile bool power_off_wanted;	// published view.power_off
 static SemaphoreHandle_t view_lock;
@@ -311,6 +314,11 @@ static void radio_task(void *arg)
 #endif
 				else {
 					radio_sm_request(&sm, &req, hal_millis());
+#if CONFIG_ZEROIZE
+					if (req.type == RREQ_ZEROIZE) {
+						zeroize_busy = false;
+					}
+#endif
 				}
 			} while (xQueueReceive(requests, &req, 0) == pdTRUE);
 		}
@@ -873,6 +881,19 @@ void radio_get_sfr_settings(uint8_t *rx, uint8_t *cwid)
 	*cwid = p->sfr_cwid;
 	xSemaphoreGive(view_lock);
 }
+
+#if CONFIG_ZEROIZE
+void radio_req_zeroize(void)
+{
+	zeroize_busy = true;
+	post(RREQ_ZEROIZE, 0, pdMS_TO_TICKS(50));
+}
+
+bool radio_zeroize_busy(void)
+{
+	return zeroize_busy;
+}
+#endif
 
 void radio_req_power_off(void)
 {

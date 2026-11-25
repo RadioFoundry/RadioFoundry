@@ -37,6 +37,7 @@
 #define F_OURS		0x08u	// the mount found records of ours in it
 #define F_DONE		0x10u	// the mount has scanned it
 #define F_FOREIGN	0x20u	// holds data the layer didn't write: never touched
+#define F_PURGE		0x40u	// nand_sectors_purge: still to be emptied and erased
 
 #define CHUNK		128u
 #define ATTEMPTS	3u
@@ -924,6 +925,41 @@ static bool put_erased(nand_sectors_t *ns, uint16_t s, bool may_collect)
 		failed(ns, r);
 	}
 	return false;
+}
+
+bool nand_sectors_purge(nand_sectors_t *ns)
+{
+	if (!ns->mounted) {
+		return false;
+	}
+	close_block(ns);	// it may hold superseded pages too: the copies go to a fresh block
+	for (uint16_t b = 0; b < ns->dev->blocks; b++) {
+		if (usable(ns, b) && !(ns->flags[b] & F_CLEAN)) {
+			ns->flags[b] |= F_PURGE;
+		}
+	}
+	bool ok = true;
+	for (uint16_t b = 0; b < ns->dev->blocks; b++) {
+		// A block opened for the copies was erased first (release clears the flag): nothing old in it
+		if (!(ns->flags[b] & F_PURGE)) {
+			continue;
+		}
+		ns->flags[b] &= (uint8_t)~F_PURGE;
+		busy(ns);
+		if (ns->live[b] == 0) {
+			if (!(ns->flags[b] & F_OURS) && block_kind(ns, b) == BLOCK_FOREIGN) {
+				found_foreign(ns, b);	// not ours to erase, and none of our records in it
+				continue;
+			}
+			release(ns, b);
+		} else if (!evacuate(ns, b)) {
+			ok = false;
+			continue;
+		}
+		// Erased, or retired (a block the chip reported failing can't be erased: what it held stays, spec 4.4)
+		ok = ok && (ns->flags[b] & (F_CLEAN | F_BAD)) != 0;
+	}
+	return ok;
 }
 
 void nand_sectors_get_stats(const nand_sectors_t *ns, nand_sectors_stats_t *out)
