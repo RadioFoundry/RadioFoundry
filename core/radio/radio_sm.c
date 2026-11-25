@@ -8267,9 +8267,10 @@ static const hal_audio_t *pcm_audio(void)
 
 #if CONFIG_DMR && CONFIG_BEEP
 // The mic gate of the AMBE voice path (ambeVoiceSetMicGate, DMR and NXDN): a beep's echo, unless a host audio
-// session's samples replace the mic (they never hear the speaker), or a board that holds beeps off the speaker while
-// DMR transmits (CAP_BEEP_NOT_ON_AIR) transmits DMR: its speaker sounds nothing the mic could hear. NXDN has no such
-// hold. Audio task
+// session's samples replace the mic (they never hear the speaker), or a board whose audio path drops the speaker
+// audio while DMR is on air (hal_audio_t.speaker_blocked) transmits DMR: its speaker sounds nothing the mic could
+// hear. Not CAP_BEEP_NOT_ON_AIR: a board may set that for a speaker that is only quiet in DMR transmit. NXDN has no
+// such hold. Audio task
 static bool dmr_mic_gate(void)
 {
 #if CONFIG_NET_USRP
@@ -8277,7 +8278,7 @@ static bool dmr_mic_gate(void)
 		return false;
 	}
 #endif
-	if ((board.caps & CAP_BEEP_NOT_ON_AIR) != 0) {
+	if (board.audio != NULL && board.audio->speaker_blocked != NULL) {
 #if CONFIG_NXDN
 		if (!radio_nxdn_running()) {
 			return false;

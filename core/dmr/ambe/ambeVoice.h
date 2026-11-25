@@ -94,6 +94,7 @@ void ambeVoiceSetMixer(ambe_voice_mixer_t mixer);
 // they are. NULL = none
 typedef bool (*ambe_voice_mic_gate_t)(void);
 void ambeVoiceSetMicGate(ambe_voice_mic_gate_t gate);
+ambe_voice_mic_gate_t ambeVoiceMicGate(void);	// the gate set, for the host tests
 // Microphone gain for DMR transmissions, Q8 (256 = as the board delivers it): the samples go through a peak limiter
 // (core/dsp/miclimit.h) before the vocoder, so a gain that lifts a quiet mic doesn't clip a loud one. Any task;
 // a transmission starts at the gain set then and follows a change from its next block. Set through radio_set_mic_gain

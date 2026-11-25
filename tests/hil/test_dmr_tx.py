@@ -419,11 +419,13 @@ PERMIT_MUTED_BLOCKS = 6   # the permit's blocks after its first (7 x 20 ms), at 
 def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
     """The talk permit plays for the over, and the over is whole from its first burst: three voice LC headers from us
     that decode, each at the over's level (within PERMIT_LEVEL_DB of the median burst), and no burst more than 2 dB
-    below it. A board that holds its beeps off the air (CAP_BEEP_NOT_ON_AIR, the HR_C7000 TX gate) plays it before it
-    keys (docs/spec/dmr-modem.md): the gate closes once and never finds the beep still sounding or ring play on. A
-    board without the gate (no "pg" line) plays it with the voice on air, the mic muted meanwhile (the speaker
+    below it. A board with CAP_BEEP_NOT_ON_AIR (beep.before_key=1) plays it before it keys
+    (docs/spec/dmr-modem.md); with the HR_C7000 TX gate, the gate closes once and never finds the beep still sounding
+    or ring play on. A board without the cap plays it with the voice on air, the mic muted meanwhile (the speaker
     reaches the mic): voice.tx_mic_muted counts the blocks sent as silence."""
     gate = _gate(radio)
+    # Older firmware has no beep.before_key: only the gate line tells then
+    early = gate is not None or int(radio.view(["audio"]).get("beep.before_key", 0)) == 1
     freq, cc, _, d = _dmr_tx_setup(radio, pytestconfig)
     own = int(d["dmr.own_id"])
     played = int(radio.view().get("beep.played", 0))
@@ -436,7 +438,7 @@ def test_dmr_tx_permit_before_key(radio, sdr_bench, pytestconfig):
         assert after["g"] - gate["g"] >= 1, "the TX gate never closed for the over"
         assert after["l"] == gate["l"], f"the key-up found the beep still sounding ({gate['l']} -> {after['l']})"
         assert after["ra"] == gate["ra"], f"ring play was on while the gate was closed ({gate['ra']} -> {after['ra']})"
-    else:
+    elif not early:
         muted = radio.view(["dmr"]).get("voice.tx_mic_muted")
         print(f"voice.tx_mic_muted {muted}")
         if muted is None:

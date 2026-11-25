@@ -61,6 +61,7 @@ void debuglink_view_audio(dl_text_t *t)
 	radio_settings_t rs;	// the features section is full: the Sound tones' switches go here
 	radio_get_settings(&rs);
 	dl_text(t, "beep.tones_off=%u\n", rs.tones_off);
+	dl_text(t, "beep.before_key=%u\n", (board.caps & CAP_BEEP_NOT_ON_AIR) != 0 ? 1u : 0u);
 #endif
 	const hal_audio_t *a = board.audio;
 	if (a != NULL && a->stream_stats != NULL) {

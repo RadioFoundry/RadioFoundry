@@ -68,6 +68,7 @@ static volatile uint32_t overruns;	// blocks the task did not get to in time
 static volatile uint32_t blocks;	// blocks processed (one per 20 ms while streaming)
 static volatile uint32_t dropped;	// blocks skipped: both halves pending, the older one overwritten
 static volatile uint8_t spk_loud;	// bit 0: half 0 holds speaker audio other than silence, bit 1: half 1
+static volatile uint32_t spk_loud_ms;	// when a half was last written with sound (hal_millis)
 static const stm32_i2s_pcm_cfg_t *cfg;
 
 // The FIFO path: the FM copy (an air interface) and beeps in FM receive use it
@@ -292,8 +293,14 @@ static void process(uint8_t half)
 		out[2 * i + 1] = spk[i];
 		loud |= spk[i] != 0;
 	}
+	// Not after a stop from the callback itself: the next start's DMA halves are silence
 	uint8_t bit = (uint8_t)(1u << half);
-	spk_loud = loud ? (uint8_t)(spk_loud | bit) : (uint8_t)(spk_loud & ~bit);
+	if (loud && running) {
+		spk_loud |= bit;
+		spk_loud_ms = hal_millis();
+	} else {
+		spk_loud &= (uint8_t)~bit;
+	}
 }
 
 #if I2S_FIFO
@@ -500,10 +507,12 @@ bool stm32_i2s_pcm_running(void)
 }
 
 // A half written with sound plays out within the next 40 ms; its flag clears when the half is written again, which is
-// only after it has gone out
+// only after it has gone out. A clock that stopped writes no half again: past SPK_PLAY_MS the sound is taken as gone.
+// The prompt FIFO's ring is not counted (the boards with cfg->prompt_fifo don't use this)
+#define SPK_PLAY_MS	60u
 bool stm32_i2s_pcm_spk_pending(void)
 {
-	return running && spk_loud != 0;
+	return running && spk_loud != 0 && hal_millis() - spk_loud_ms < SPK_PLAY_MS;
 }
 
 void stm32_i2s_pcm_stats(stm32_i2s_pcm_stats_t *out)

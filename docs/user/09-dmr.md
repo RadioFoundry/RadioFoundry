@@ -242,8 +242,9 @@ The talk permit tone tells you the radio has the channel and you can talk. Turn 
 **Settings > Sound > Talk permit tone**, or for one channel with the channel's **Talk permit beeps** field.
 
 Most radios play two short beeps as your voice goes on air. The radio mutes the microphone while the beeps play, so
-other stations don't hear them. Start talking after the beeps. A radio whose beeps would be transmitted plays one short
-beep just before it transmits instead ([the radio's notes](23-radios.md)):
+other stations don't hear them. Start talking after the beeps. A radio whose beeps would be transmitted, or would be too
+quiet to hear while the radio transmits, plays one short beep just before it transmits instead
+([the radio's notes](23-radios.md)):
 
 | Screen | What happens |
 |---|---|
