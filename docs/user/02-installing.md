@@ -38,7 +38,7 @@ The web installer offers up to three versions, under **Version** on the first st
 
 | Version | What you get | For |
 |---|---|---|
-| **Stable** | The newest release. The installer picks it by default | Most users |
+| **Stable** | The newest release. The installer picks Stable by default | Most users |
 | **Beta** | The next release, before its final version. Shown only while a beta is being tested | Users who want to help test a release |
 | **Nightly** | The newest build of the development branch that passed the automatic radio tests overnight, with no beta test yet | Users who want a fix or a feature that no release has yet |
 
