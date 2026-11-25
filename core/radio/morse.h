@@ -14,6 +14,8 @@
 #define MORSE_WPM_MIN		5
 #define MORSE_WPM_MAX		40
 #define MORSE_TONE_HZ_DEFAULT	800
+#define MORSE_TONE_HZ_MIN	300	// the tone setting's range: one outside it keys the default
+#define MORSE_TONE_HZ_MAX	3000
 #define MORSE_TEXT_MAX		40	// characters keyed; a longer ID is cut (the SDR bench sends up to 40, MMDVMHost a callsign)
 
 typedef struct {

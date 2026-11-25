@@ -7142,6 +7142,28 @@ uint8_t radio_sm_hotspot_power(uint8_t rf_level, uint8_t own)
 	return (uint8_t)(((uint32_t)rf_level * (board.power_count - 1u) + 127u) / 255u);
 }
 
+#if (CONFIG_DMR && RADIO_SM_CW) || CONFIG_FOX	// their callers: cw_key and cw_begin (in the DMR part), fox_key and fox_start
+// The Morse keyers' (the CW ID's and the fox's) speed and tone from the settings, each checked against its range
+static void morse_settings(const settings_t *st, uint8_t *wpm, uint16_t *tone_hz)
+{
+	uint8_t w = st->cw_wpm != 0 ? st->cw_wpm : MORSE_WPM_DEFAULT;
+	*wpm = w >= MORSE_WPM_MIN && w <= MORSE_WPM_MAX ? w : MORSE_WPM_DEFAULT;
+	uint16_t hz = st->cw_tone_hz;
+	*tone_hz = hz >= MORSE_TONE_HZ_MIN && hz <= MORSE_TONE_HZ_MAX ? hz : MORSE_TONE_HZ_DEFAULT;
+}
+
+// The tone hz keyed down or up, *keyed following it. Up is a silent carrier; a board without tx_tone_key stops the tone
+// instead, which lets the microphone through between elements
+static void morse_key(bool *keyed, uint16_t hz, bool down)
+{
+	*keyed = down;
+	if (board.radio->tx_tone_key != NULL && board.radio->tx_tone_key(down)) {
+		return;
+	}
+	board.radio->tx_tone(down ? hz : 0);
+}
+#endif
+
 #if CONFIG_DMR
 // Per-burst keying stays armed on the hotspot's TX frequency: the modem keys each burst the host sends
 static void hotspot_arm(radio_sm_t *sm)
@@ -7195,17 +7217,11 @@ static void hotspot_follow_power(radio_sm_t *sm)
 
 #define CW_LEAD_MS		150	// carrier up before the first element
 #define CW_TAIL_MS		150	// and after the last
-#define CW_TONE_MIN_HZ		300
-#define CW_TONE_MAX_HZ		3000
 enum { CW_OFF = 0, CW_KEYING, CW_TAIL };
 
 static void cw_key(radio_sm_t *sm, bool down)
 {
-	sm->cw_key = down;
-	if (board.radio->tx_tone_key != NULL && board.radio->tx_tone_key(down)) {
-		return;
-	}
-	board.radio->tx_tone(down ? sm->cw_tone_hz : 0);
+	morse_key(&sm->cw_key, sm->cw_tone_hz, down);
 }
 
 static void cw_ended(radio_sm_t *sm, bool sent, uint32_t ms)
@@ -7261,12 +7277,8 @@ static uint8_t cw_begin(radio_sm_t *sm, uint32_t hz, uint8_t power, const char *
 	static const subtone_t none = { TONE_NONE, 0 };
 	settings_t *st = &st_copy;
 	settings_read(st);
-	uint8_t wpm = st->cw_wpm != 0 ? st->cw_wpm : MORSE_WPM_DEFAULT;
-	if (wpm < MORSE_WPM_MIN || wpm > MORSE_WPM_MAX) {
-		wpm = MORSE_WPM_DEFAULT;
-	}
-	uint16_t tone_hz = st->cw_tone_hz;
-	sm->cw_tone_hz = (tone_hz >= CW_TONE_MIN_HZ && tone_hz <= CW_TONE_MAX_HZ) ? tone_hz : MORSE_TONE_HZ_DEFAULT;
+	uint8_t wpm;
+	morse_settings(st, &wpm, &sm->cw_tone_hz);
 
 	if (sm->dmr_keyed) {
 		sm->dmr_keyed = false;
@@ -8446,18 +8458,10 @@ static void channel_burst(radio_sm_t *sm, uint32_t now_ms)
 
 enum { FOX_PART_NONE, FOX_PART_MORSE, FOX_PART_CHAIN };
 
-#define FOX_TONE_MIN_HZ		300	// the Morse tone, as the CW keyer's (cw_begin)
-#define FOX_TONE_MAX_HZ		3000
-
-// The Morse tone keyed down or up. Up is a silent carrier; a board without tx_tone_key stops the tone instead, which
-// lets the microphone through between elements (the CW keyer does the same)
+// The Morse tone keyed down or up, as the CW keyer keys it
 static void fox_key(radio_sm_t *sm, bool down)
 {
-	sm->fox_down = down;
-	if (board.radio->tx_tone_key != NULL && board.radio->tx_tone_key(down)) {
-		return;
-	}
-	board.radio->tx_tone(down ? sm->fox_tone_hz : 0);
+	morse_key(&sm->fox_down, sm->fox_tone_hz, down);
 }
 
 static void fox_view(radio_sm_t *sm, uint32_t now_ms)
@@ -8592,10 +8596,7 @@ static void fox_start(radio_sm_t *sm, uint32_t now_ms)
 	if ((r->flags & FOX_F_MSG) != 0 && fox_msg_len(r) == 0) {
 		r->flags &= (uint8_t)~FOX_F_MSG;	// nothing to send
 	}
-	uint8_t wpm = st_copy.cw_wpm != 0 ? st_copy.cw_wpm : MORSE_WPM_DEFAULT;
-	sm->fox_wpm = wpm >= MORSE_WPM_MIN && wpm <= MORSE_WPM_MAX ? wpm : MORSE_WPM_DEFAULT;
-	uint16_t hz = st_copy.cw_tone_hz;
-	sm->fox_tone_hz = hz >= FOX_TONE_MIN_HZ && hz <= FOX_TONE_MAX_HZ ? hz : MORSE_TONE_HZ_DEFAULT;
+	morse_settings(&st_copy, &sm->fox_wpm, &sm->fox_tone_hz);
 	uint32_t limit = sm->view.tot_s != 0 ? (uint32_t)sm->view.tot_s * 1000u : FOX_CYCLE_MAX_MS;
 	if (why == RFOX_WHY_NONE && fox_cycle_ms(r, sm->fox_call, sm->fox_call_len, sm->fox_wpm) > limit) {
 		why = RFOX_WHY_TOO_LONG;
