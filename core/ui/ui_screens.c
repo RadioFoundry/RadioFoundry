@@ -1133,7 +1133,9 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
 		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
 		// talk group once PTT can ask for it, a request's state
-		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering"
+		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering". Idle on
+		// the control channel, a system that can't transmit (blocked, or set to listen only) says "RX only", as a
+		// conventional RX-only channel does; a call still reads "Following TG n"
 		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0 && v->p25.treg != P25_REG_BLOCKED;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
@@ -1155,7 +1157,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
 			sb_str(&b, "TG ");
 			sb_u32(&b, v->p25.talk, 1);
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && !txs) {
+			sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			// the transmit side is on but this control channel has no inbound frequency
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
 		} else if (v->p25.treq == P25_REQ_TALK) {
 			sb_str(&b, "TG ");
