@@ -8459,18 +8459,28 @@ static void test_p25_trunk_tx(void)
 	radio_p25_stats(&st);
 	CHECK(st.trunk_bursts == site.reg_rx + site.aff_rx && st.trunk_burst_refused == 0 && st.tx_calls == 0);
 
-	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back
+	// PTT: the request, the grant, the call on the voice channel's transmit frequency, then back. The talk permit
+	// sounds once, at the grant (air_key on the voice channel), not at the request: a beep at PTT would promise a
+	// channel the site may still queue or deny
+	beep_stats_t b0, b1;
 	site.ans_req = SITE_ANS_ACCEPT;
+	beep_get_stats(&b0);
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.state == RS_IDLE && sm.p25_req);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played);
 	run(600);
 	CHECK(site.req_rx == 1 && site.last.opcode == P25_ISP_GRP_V_REQ && site.last.tg == 201 && site.last.src == 4321);
 	CHECK(sm.view.state == RS_TX && hw.keyed && hw.tx_hz == TS_VOICE + TS_OFFSET && hw.rx_hz == TS_VOICE);
 	CHECK(v->trunk == RADIO_P25_TRUNK_VOICE && v->treq == P25_REQ_TALK);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1 && b1.last == BEEP_TX_PERMIT);
 	run(1500);
 	CHECK(sm.view.state == RS_TX && far_heard.starts == 1 && far_heard.call.lc.tgid == 201 && far_heard.call.lc.src == 4321);
 	req(RREQ_PTT, 0);
 	run(600);
+	beep_get_stats(&b1);
+	CHECK(b1.played == b0.played + 1);	// once for the over: none again on the voice channel or the way back
 	CHECK(!hw.keyed && sm.view.state != RS_TX && far_heard.ends == 1 && hw.rx_hz == TS_CC1 && v->trunk == RADIO_P25_TRUNK_CONTROL);
 	CHECK(v->treq == P25_REQ_IDLE && fair[0].keyed_violations == 0);
 	radio_p25_stats(&st);
