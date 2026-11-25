@@ -584,6 +584,9 @@ CONFIG_DMR_AIR_QUEUE_BYTES ?= 2048
 # docs/spec/dmr-data.md 12.6). A workaround: receivers lost a packet that came in a new transmission right after
 # ours ended, cause not yet known; packets to the same destination go in one transmission instead, with no gap
 CONFIG_DMR_DATA_TX_GUARD_MS ?= 250
+# The traffic keys an AES channel holds (docs/spec/dmr-voice.md 5.1): its TX key and up to this many less one more
+# of its system's, so calls on any of them play, chosen by the PI header's key ID. 34 bytes of RAM each, 1 to 16
+CONFIG_DMR_AES_KEYS ?= 4
 VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSET_RIGHT DMR_AIR_QUEUE_BYTES \
-	  DMR_DATA_TX_GUARD_MS
+	  DMR_DATA_TX_GUARD_MS DMR_AES_KEYS
 FEATURE_DEFS += $(foreach v,$(VALUES),-DCONFIG_$(v)=$(strip $(CONFIG_$(v))))

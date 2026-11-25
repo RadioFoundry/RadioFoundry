@@ -17,10 +17,14 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "config.h"
 
 #define DMR_AES_ALG_AES256		0x25	// PI header algorithm ID
 #define DMR_AES_KEY_BYTES		32
-#define DMR_AES_KEY_SLOTS		1	// a channel's key
+// The keys of a channel's system it holds: its TX key and the others its calls may be heard with, chosen by the PI
+// header's key ID (CONFIG_DMR_AES_KEYS, 34 bytes each)
+#define DMR_AES_KEY_SLOTS		CONFIG_DMR_AES_KEYS
+_Static_assert(DMR_AES_KEY_SLOTS >= 1 && DMR_AES_KEY_SLOTS <= 16, "CONFIG_DMR_AES_KEYS: 1 to 16");
 #define DMR_AES_SF_FRAMES		18	// vocoder frames in a superframe
 #define DMR_AES_FRAME_KS_BYTES		7	// keystream bytes a frame takes (49 bits used)
 #define DMR_AES_SF_SKIP_BYTES		16	// keystream bytes skipped at the start of each superframe
@@ -96,8 +100,9 @@ typedef struct {
 	uint8_t key[DMR_AES_KEY_BYTES];
 } dmrAesKey_t;
 
-// The hook's context: the keys, the one in use expanded, and the IV of the superframe in use. Words first, then
-// bytes: no padding (a radio with little RAM holds two of these)
+// The hook's context: the keys, the one in use expanded, and the IV of the superframe in use. Received calls use the
+// key their PI header names; our overs only tx_slot's. One expanded key: a call with another key expands its own
+// (aes256Init) at its first burst. Words first, then bytes: no padding (a radio with little RAM holds two of these)
 typedef struct {
 	dmrAesSeq_t *seq;	// the radio's MI sequence (TX), NULL = our overs can't be encrypted
 	uint32_t iv_mi, iv_sf;
@@ -125,8 +130,9 @@ uint32_t dmrAesNewMi(uint32_t now_ms, void *ctx);
 // Clear the keys, the expanded key and the IV (wiped), keeping the sequence
 void dmrAesClearKeys(dmrAesState_t *st);
 
-// The call stack's crypt hook (dmr_crypt_fn, core/dmr/call/dmr_call.h): ctx is a dmrAesState_t. False: no key for the
-// call's algorithm and key ID (the burst is not played), a superframe past DMR_AES_SF_MAX, or (TX) a burst of another
+// The call stack's crypt hook (dmr_crypt_fn, core/dmr/call/dmr_call.h): ctx is a dmrAesState_t. RX takes whichever slot
+// holds the call's algorithm and key ID, TX only the TX slot. False: no key for the call's algorithm and key ID (the
+// burst is not played), a superframe past DMR_AES_SF_MAX, or (TX) another key than the TX slot's, a burst of another
 // MI than the over's or past its reservation (the burst is not sent encrypted)
 struct dmr_crypt_pos;
 bool dmrAesCallHook(uint8_t ambe27[27], const struct dmr_crypt_pos *pos, bool tx, void *ctx);

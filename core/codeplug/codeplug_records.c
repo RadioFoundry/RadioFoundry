@@ -140,22 +140,53 @@ int codeplug_system_secret(uint8_t n, uint8_t *buf, uint16_t cap)
 	return n == CODEPLUG_SYSTEM_NONE ? -1 : codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYS_KEY + n), buf, cap);
 }
 
+// Key octets read onto the stack: overwritten through a volatile pointer, a wipe the compiler can't drop
+static void wipe(void *p, unsigned n)
+{
+	volatile uint8_t *v = (volatile uint8_t *)p;
+	while (n--) {
+		*v++ = 0;
+	}
+}
+
 int codeplug_traffic_key(uint8_t system, uint8_t alg, uint16_t key_id, uint8_t *key, uint16_t cap)
 {
 	// A walk over the family: keys are few, and only a call that needs one looks
 	uint8_t v[CODEPLUG_TRAFFIC_HDR + 64u];
 	codeplug_kv_cursor_t c;
 	uint16_t k;
-	int len;
+	int len, found = -1;
 	codeplug_kv_begin(&c, CODEPLUG_KEY_TRAFFIC, (uint16_t)(CODEPLUG_KEY_TRAFFIC + TRAFFIC_MAX - 1u));
 	while ((len = codeplug_kv_next(&c, &k, v, sizeof v)) >= 0) {
 		if (len >= (int)CODEPLUG_TRAFFIC_HDR && v[0] == system && v[1] == alg && rec_rd16(&v[2]) == key_id) {
 			int n = len - (int)CODEPLUG_TRAFFIC_HDR;
 			int fit = n < (int)(sizeof v - CODEPLUG_TRAFFIC_HDR) ? n : (int)(sizeof v - CODEPLUG_TRAFFIC_HDR);
 			memcpy(key, &v[CODEPLUG_TRAFFIC_HDR], (size_t)(fit < (int)cap ? fit : (int)cap));
-			return n;
+			found = n;
+			break;
 		}
 	}
-	return -1;
+	wipe(v, sizeof v);
+	return found;
+}
+
+int codeplug_traffic_keys(uint8_t system, uint8_t alg, codeplug_traffic_fn fn, void *ctx)
+{
+	uint8_t v[CODEPLUG_TRAFFIC_HDR + 64u];
+	codeplug_kv_cursor_t c;
+	uint16_t k;
+	int len, seen = 0;
+	codeplug_kv_begin(&c, CODEPLUG_KEY_TRAFFIC, (uint16_t)(CODEPLUG_KEY_TRAFFIC + TRAFFIC_MAX - 1u));
+	while ((len = codeplug_kv_next(&c, &k, v, sizeof v)) >= 0) {
+		if (len < (int)CODEPLUG_TRAFFIC_HDR || v[0] != system || v[1] != alg) {
+			continue;
+		}
+		seen++;
+		if (!fn(rec_rd16(&v[2]), &v[CODEPLUG_TRAFFIC_HDR], len - (int)CODEPLUG_TRAFFIC_HDR, ctx)) {
+			break;
+		}
+	}
+	wipe(v, sizeof v);
+	return seen;
 }
 #endif

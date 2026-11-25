@@ -265,6 +265,18 @@ header was missed has no MI and is not played until the next over (reading the M
 A conventional AES channel selects its own persistent system and PI key ID
 ([channel-modes.md](channel-modes.md) section 4). A missing or invalid traffic key inhibits transmit (`aes_key`).
 
+Keys on RX (#1086): the channel holds the AES-256 traffic keys of its system ([channel-modes.md](channel-modes.md)
+5.4), not only the one it selects. A heard call is played with the key whose key ID its PI header carries; a key ID
+the channel doesn't hold is dropped as `rx_enc_dropped`, as before. Our overs use only the selected key: the hook
+refuses a TX burst for any other, so a system key never reaches the air by mistake. `radio_aes_configure()` loads
+them when the channel is selected, in one walk of the traffic keys (`codeplug_traffic_keys`): the selected key in slot
+0, the rest in record order into the others. A channel holds `CONFIG_DMR_AES_KEYS` (default 4, 34 bytes of RAM
+each): a system with more keys than that is heard on its first ones, the selected key always among them. Keys with
+an ID past 255 (the PI header has 8 bits) or of another length are skipped. A channel whose selected key is missing
+still plays the system's other keys and refuses PTT. One AES key schedule is kept: a call on another key than the
+last expands its own at its first burst. Changing keys on air thus needs no flag day: load the new key beside the old
+one, move each radio's channel to it, then remove the old key.
+
 TX: on an AES channel whose key is present, our overs carry FID 0x10 and the privacy option in the voice LC, one PI
 header after the voice LC headers, and every voice burst encrypted from burst A of superframe 0
 (`dmr_call_config_t.tx_crypt_alg`, `tx_crypt_key_id`, `crypt_mi`). The PI header goes to the modem with its CRC

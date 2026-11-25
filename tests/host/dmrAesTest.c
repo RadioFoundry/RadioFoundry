@@ -181,6 +181,8 @@ static void tx_over(dmrAesState_t *st, uint32_t mi)
 	tx_seq.tx_mi = mi;
 	tx_seq.left = DMR_AES_SF_MAX;
 	st->seq = &tx_seq;
+	if (st->tx_slot < 0)
+		dmrAesSetTx(st, 0);
 }
 
 // TX then RX: the keystream round-trips through the FEC encode
@@ -299,12 +301,102 @@ static void test_tx_key(void)
 	dmrAesStateInit(&st);
 	CHECK(!dmrAesTxKey(&st, &alg, &key_id), "no TX key");
 	CHECK(!dmrAesSetTx(&st, 0), "empty slot");
-	CHECK(!dmrAesSetTx(&st, 1), "bad slot");
+	CHECK(!dmrAesSetTx(&st, DMR_AES_KEY_SLOTS), "bad slot");
 	dmrAesSetKey(&st, 0, DMR_AES_ALG_AES256, 7, key);
 	CHECK(dmrAesSetTx(&st, 0) && dmrAesTxKey(&st, &alg, &key_id) && alg == 0x25 && key_id == 7, "TX key");
 	dmrAesSetKey(&st, 0, 0, 0, NULL);
 	CHECK(!dmrAesTxKey(&st, &alg, &key_id), "TX key cleared with its slot");
 	CHECK(dmrAesSetTx(&st, -1), "TX clear");
+}
+
+// A clear burst, the frames' parameter bits set from i
+static void clear_burst(uint8_t i, uint8_t out[27])
+{
+	for (int f = 0; f < 3; f++) {
+		uint8_t bits[AMBE_PARAM_BITS];
+
+		for (int k = 0; k < AMBE_PARAM_BITS; k++)
+			bits[k] = (uint8_t)(((k * 5 + f * 11 + i) >> 1) & 1);
+		ambeFecEncode(bits, &out[f * 9]);
+	}
+}
+
+// Equal but for the embedded MI's four uncoded bits per frame
+static bool same_speech(const uint8_t a[27], const uint8_t b[27])
+{
+	for (int j = 0; j < 27; j++)
+		if ((a[j] ^ b[j]) & (j % 9 >= 7 ? 0xee : 0xff))
+			return false;
+	return true;
+}
+
+// Multi-key RX (#1086): a channel holds its system's keys. Calls on any of them play, chosen by the PI header's key
+// ID; an unknown key ID doesn't; our overs use only the TX key, whatever key ID they are asked for
+static void test_rx_any_key(void)
+{
+	uint8_t key[3][32];
+	dmrAesState_t tx[3], rx;
+	static const uint8_t ids[3] = { 5, 6, 7 };
+
+	for (int k = 0; k < 3; k++) {
+		hex(KEY_A, key[k], 32);
+		key[k][0] ^= (uint8_t)(k * 0x5A);
+		key[k][31] ^= (uint8_t)k;
+		dmrAesStateInit(&tx[k]);
+		dmrAesSetKey(&tx[k], 0, DMR_AES_ALG_AES256, ids[k], key[k]);
+	}
+	dmrAesStateInit(&rx);
+	dmrAesSetKey(&rx, 0, DMR_AES_ALG_AES256, 5, key[0]);
+	CHECK(dmrAesSetTx(&rx, 0), "TX key 5");
+#if DMR_AES_KEY_SLOTS >= 2
+	CHECK(dmrAesSetKey(&rx, 1, DMR_AES_ALG_AES256, 6, key[1]), "RX key 6");
+	CHECK(dmrAesFindKey(&rx, DMR_AES_ALG_AES256, 6) == 1 && dmrAesFindKey(&rx, DMR_AES_ALG_AES256, 7) == -1,
+	      "find by key ID");
+#endif
+	// Calls with keys 5, 6, 5 again (the expanded key changes back) and 7
+	static const int order[4] = { 0, 1, 0, 2 };
+
+	for (int c = 0; c < 4; c++) {
+		int k = order[c];
+		uint32_t mi = 0x1000u + (uint32_t)c;
+
+		tx_over(&tx[k], mi);
+		for (uint8_t i = 0; i < 6; i++) {
+			uint8_t clear[27], v[27];
+			struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = ids[k], .mi = mi,
+						     .superframe = 1, .voice_index = i };
+
+			clear_burst(i, clear);
+			memcpy(v, clear, 27);
+			CHECK(dmrAesCallHook(v, &pos, true, &tx[k]), "key %u sends", ids[k]);
+			bool played = dmrAesCallHook(v, &pos, false, &rx);
+
+			if (k == 2 || (k == 1 && DMR_AES_KEY_SLOTS < 2))
+				CHECK(!played, "key %u not held: not played", ids[k]);
+			else
+				CHECK(played && same_speech(v, clear), "key %u plays, burst %u", ids[k], i);
+		}
+	}
+	// TX: only the TX key, even when asked for another key ID the radio holds
+	uint8_t a[27], b[27];
+	struct dmr_crypt_pos pos = { .alg = DMR_AES_ALG_AES256, .key_id = 6, .mi = 0x2000u, .superframe = 0,
+				     .voice_index = 2 };
+
+	clear_burst(2, a);
+	tx_over(&rx, 0x2000u);
+	CHECK(!dmrAesCallHook(a, &pos, true, &rx), "TX refuses another key ID");
+	pos.key_id = 5;
+	memcpy(b, a, 27);
+	tx_over(&tx[0], 0x2000u);
+	CHECK(dmrAesCallHook(a, &pos, true, &rx) && dmrAesCallHook(b, &pos, true, &tx[0]) && memcmp(a, b, 27) == 0,
+	      "TX with key 5");
+	// Clearing wipes every slot, the expanded key and the IV, and keeps the sequence
+	dmrAesClearKeys(&rx);
+	CHECK(!dmrAesHasKeys(&rx) && rx.tx_slot == -1 && rx.aes_slot == -1 && rx.seq == &tx_seq, "cleared");
+	static const uint8_t zero[sizeof rx.keys + sizeof rx.aes] = { 0 };
+
+	CHECK(memcmp(rx.keys, zero, sizeof rx.keys) == 0 && memcmp(&rx.aes, zero, sizeof rx.aes) == 0,
+	      "key bytes wiped");
 }
 
 // One LFSR step, written out again: shift left, the new LSB the parity of state & 0x80200003
@@ -503,6 +595,7 @@ int main(void)
 	test_tx_matches_capture();
 	test_tx_late_entry();
 	test_tx_key();
+	test_rx_any_key();
 	test_mi_sequence();
 	if (failures)
 		printf("dmrAesTest: %d FAILED\n", failures);
