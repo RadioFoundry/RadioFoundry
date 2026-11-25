@@ -7,8 +7,10 @@
 #include <string.h>
 #include "dmr/dmrData.h"
 
-// Motorola CAI network: individual IDs are 12.x.y.z, groups 225.x.y.z
+// CAI networks (TS 102 361-3 5.1.1): individual IDs are 12.x.y.z, groups 225.x.y.z; a radio's peripheral network
+// (the host behind it) the next one, 13.x.y.z
 #define CAI_NETWORK_INDIVIDUAL		0x0C
+#define CAI_NETWORK_PERIPHERAL		0x0D
 #define CAI_NETWORK_GROUP			0xE1
 
 // Compressed UDP/IP (TS 102 361-3) port IDs
@@ -16,9 +18,6 @@
 #define UDPC_PORT_ID_LIP			2
 #define UDPC_PORT_ID_MOTOROLA_TMS	98
 #define DMR_UDP_PORT_LIP			5017
-// IP address IDs (Tables 7.15 / 7.16)
-#define UDPC_ID_RADIO_NETWORK		0
-#define UDPC_ID_GROUP_NETWORK		2
 
 DMR_DATA_BUFFER dmrDataPacket_t dmrDataRxPacket;
 
@@ -62,6 +61,11 @@ static uint32_t getU32(const uint8_t *p)
 uint32_t dmrDataIdAddress(bool group, uint32_t id)
 {
 	return ((uint32_t)(group ? CAI_NETWORK_GROUP : CAI_NETWORK_INDIVIDUAL) << 24) | (id & 0xFFFFFF);
+}
+
+uint32_t dmrDataPeripheralAddress(uint32_t id)
+{
+	return ((uint32_t)CAI_NETWORK_PERIPHERAL << 24) | (id & 0xFFFFFF);
 }
 
 bool dmrDataIpIsId(uint32_t ip, bool group, uint32_t id)
@@ -664,14 +668,14 @@ bool dmrDataUdpCompress(uint16_t srcPort, uint16_t dstPort)
 	}
 }
 
-int dmrDataCompressUDPHeader(uint16_t ipId, bool group, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX])
+int dmrDataCompressUDPHeader(uint16_t ipId, uint8_t ids, uint16_t srcPort, uint16_t dstPort, uint8_t out[DMR_UDPC_HEADER_MAX])
 {
 	uint8_t spid = udpcPortId(srcPort);
 	uint8_t dpid = udpcPortId(dstPort);
 	int n = 5;
 
 	putU16(&out[0], ipId);
-	out[2] = (UDPC_ID_RADIO_NETWORK << 4) | (group ? UDPC_ID_GROUP_NETWORK : UDPC_ID_RADIO_NETWORK);// SAID, DAID
+	out[2] = ids;// SAID, DAID
 	out[3] = spid;// opcode 00: its MSB here, its LSB in the next octet
 	out[4] = dpid;
 	// Extended header 1 holds the source port when it has no ID, else the destination port; extended header 2 the
@@ -694,12 +698,17 @@ uint16_t dmrDataNextIpId(void)
 	return ipIdentification++;
 }
 
-// The compressed header has no addresses, the receiver rebuilds the IDs' CAI addresses: only a packet that has those
-// may go compressed. Another address (an off-net destination behind a gateway radio) needs the full header, in every
-// compression mode
-static bool addressesFromIds(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp)
+// The compressed header has no addresses, the receiver rebuilds them from the IDs and the address IDs: the SAID and
+// DAID octet when both addresses are ones it names (an ID's CAI address, or a radio's peripheral network address), else
+// -1. Another address (an off-net destination behind a gateway radio) needs the full header, in every compression mode
+static int addressIds(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp)
 {
-	return (dstIp == dmrDataIdAddress(group, dst)) && (srcIp == dmrDataIdAddress(false, src));
+	int said = (srcIp == dmrDataIdAddress(false, src)) ? DMR_UDPC_ID_RADIO :
+			((srcIp == dmrDataPeripheralAddress(src)) ? DMR_UDPC_ID_PERIPHERAL : -1);
+	int daid = (dstIp == dmrDataIdAddress(group, dst)) ? (group ? DMR_UDPC_ID_GROUP : DMR_UDPC_ID_RADIO) :
+			((!group && (dstIp == dmrDataPeripheralAddress(dst))) ? DMR_UDPC_ID_PERIPHERAL : -1);
+
+	return ((said < 0) || (daid < 0)) ? -1 : DMR_UDPC_IDS(said, daid);
 }
 
 // UDP into ipPacket: compressed header and payload, or the IPv4 and UDP headers and payload. payload may not be in
@@ -707,10 +716,12 @@ static bool addressesFromIds(bool group, uint32_t dst, uint32_t src, uint32_t ds
 static int encodeUDP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint32_t srcIp, uint8_t ttl, uint16_t srcPort,
 						uint16_t dstPort, const uint8_t *payload, int length, bool compress, uint16_t ipId, uint8_t *sap)
 {
-	if (CONFIG_DMR_UDP_COMPRESS && compress && addressesFromIds(group, dst, src, dstIp, srcIp))
+	int ids = addressIds(group, dst, src, dstIp, srcIp);
+
+	if (CONFIG_DMR_UDP_COMPRESS && compress && (ids >= 0))
 	{
 		uint8_t h[DMR_UDPC_HEADER_MAX];
-		int n = dmrDataCompressUDPHeader(ipId, group, srcPort, dstPort, h);
+		int n = dmrDataCompressUDPHeader(ipId, (uint8_t)ids, srcPort, dstPort, h);
 
 		if ((n + length) > IP_PDU_MAX)
 		{
@@ -749,7 +760,7 @@ int dmrDataEncodeIP(bool group, uint32_t dst, uint32_t src, uint32_t dstIp, uint
 		// The compressed header has no length: the receiver takes it from the packet, so only a datagram whose UDP
 		// length agrees with what we have goes compressed (octets past the UDP length are dropped, as padding)
 		bool fits = CONFIG_DMR_UDP_COMPRESS && compress && (udpLength >= 8) && (udpLength <= length) &&
-				addressesFromIds(group, dst, src, dstIp, srcIp);
+				(addressIds(group, dst, src, dstIp, srcIp) >= 0);
 
 		return encodeUDP(group, dst, src, dstIp, srcIp, ttl, getU16(&l4[0]), getU16(&l4[2]), &l4[8],
 							fits ? (udpLength - 8) : (length - 8), fits, ipId, sap);
@@ -1895,9 +1906,12 @@ bool dmrDataGetUDP(const dmrDataPacket_t *packet, dmrDataUDP_t *udp)
 		const uint8_t *ptr = &d[5];
 		udp->srcPort = compressedPort(d[3] & 0x7F, &ptr);
 		udp->dstPort = compressedPort(d[4] & 0x7F, &ptr);
-		// No addresses in the header: SAID 0 / DAID 0 or 2, the source and destination IDs' (TS 102 361-3 7.2)
-		udp->srcIp = dmrDataIdAddress(false, packet->src);
-		udp->dstIp = dmrDataIdAddress(packet->group, packet->dst);
+		// No addresses in the header: the source and destination IDs' (TS 102 361-3 7.2), in the radio network
+		// (SAID 0, DAID 0 or 2) or, ID 1, a radio's peripheral network (the host behind it). Other IDs are reserved
+		udp->srcIp = ((d[2] >> 4) == DMR_UDPC_ID_PERIPHERAL) ? dmrDataPeripheralAddress(packet->src) :
+						dmrDataIdAddress(false, packet->src);
+		udp->dstIp = (((d[2] & 0x0F) == DMR_UDPC_ID_PERIPHERAL) && !packet->group) ?
+						dmrDataPeripheralAddress(packet->dst) : dmrDataIdAddress(packet->group, packet->dst);
 		udp->ttl = ipTtl(packet->group, DMR_IP_TTL_DEFAULT);
 		udp->payload = ptr;
 		udp->length = len - (ptr - d);

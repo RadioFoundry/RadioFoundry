@@ -577,7 +577,7 @@ still open (needs a USB capture).
 counted datagrams dropped everything after the eighth. Guard against NDP chain loops by counting NDPs.
 
 **9.5 macOS treats both ends of a /31 as broadcast.** Plain sends to the radio failed (EACCES without SO_BROADCAST). Use a
-/32 host address with an option 121 route to the radio (host xor 1).
+/32 host address with an option 121 route to the radio (the host 13.<DMR ID>, the radio 12.<DMR ID>).
 
 **9.9 STM32 OTG_FS FIFO budget for NCM.** The 0x140-word FIFO RAM needs a split like RX 0x80, TX0 0x30, TX1 0x80 and
 0x10 for the notification endpoint; NCM needs two interfaces and the iMACAddress string (MAC from the MCU unique ID).
