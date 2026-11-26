@@ -2,6 +2,16 @@
 
 # Radio Reference
 
+The MD-9600's optional receive-envelope diagnostic image extends tuning down to 118 MHz and sends the VHF RSSI
+waveform as host PCM for AM experiments. Airband channels remain receive-only, including split channels with
+an in-band TX frequency. Normal supported bands retain FM/DMR transmit and their existing checks. These images play
+filtered envelope audio directly through the speaker without a computer audio stream; the volume knob works normally.
+Leave Monitor off to use menu squelch. Level zero stays open for weak signals; scanning needs a nonzero level, which
+may miss weak AM because its detector still uses FM noise. Speaker filtering reduces out-of-band hiss without a
+signal-level gate, but does not remove noise overlapping speech. Airband channels show AM on the display;
+ordinary analog channels retain FM. This remains experimental VHF reception. See the
+[hardware notes](../spec/hardware-md9600.md#receive-envelope-diagnostic-2026-11-26).
+
 The rest of this manual describes what RadioFoundry does on every radio. This chapter lists what differs from radio to radio:
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.

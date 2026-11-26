@@ -648,7 +648,7 @@ static void set_mode(radio_mode_t mode)
 static void audio(bool on)
 {
 	uint8_t band = MD9600_UHF;
-	(void)md9600_band_of(rf.rx_hz, &band);
+	(void)md9600_rx_band_of(rf.rx_hz, &band);
 	md9600_speaker_fm(on, band == MD9600_VHF);	// with the PCM requests (c6000_md9600.c)
 }
 
@@ -679,6 +679,9 @@ static bool rx(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone)
 	if (!md9600_cal_squelch(hz, &sql_l1, &sql_l9)) {
 		sql_l1 = sql_l9 = 0;	// once per retune, not per status poll
 	}
+#if MD9600_DISC
+	md9600_disc_envelope(!dmr_mode && hz >= 118000000u && hz < 136000000u);
+#endif
 	md9600_c6000_retune(hz);
 	return true;
 }
@@ -818,7 +821,7 @@ static void rx_sleep(bool sleep)
 static void status(radio_status_t *st)
 {
 	uint8_t band = MD9600_UHF;
-	(void)md9600_band_of(rf.rx_hz, &band);
+	(void)md9600_rx_band_of(rf.rx_hz, &band);
 	uint16_t rssi = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_RSSI_V : MD9600_ADC_RSSI_U);
 	uint16_t noise = md9600_adc_raw(band == MD9600_VHF ? MD9600_ADC_NOISE_V : MD9600_ADC_NOISE_U);
 	st->rssi_dbm = md9600_rf_rssi_dbm(rf.rev, band, rssi);

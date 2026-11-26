@@ -5,6 +5,8 @@
 #ifndef CONFIG_MD9600_H
 #define CONFIG_MD9600_H
 
+#include "config.h"
+
 // The synthesizer driver per board revision: V1-V3 (SKY72310 and the AK2365A IF receivers), V4 (the 24-bit "PLL1590"
 // part and the AK2365A), V4A / V5 (LMX2571)
 #ifndef CONFIG_MD9600_V1V3

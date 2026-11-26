@@ -2,6 +2,11 @@
 
 # Build configuration
 
+`CONFIG_RX_ENVELOPE_DIAG=n` by default: the opt-in, receive-only
+[RSSI envelope capture experiment](spec/receive-envelope-diagnostic.md). A supporting board replaces its FM PCM
+input on experimental airband channels, which remain receive-only. Normal-band transmit retains the board's
+existing checks. It is an experimental image, not native AM receiver support.
+
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
 `config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
 in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file

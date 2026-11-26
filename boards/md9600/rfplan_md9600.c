@@ -37,6 +37,17 @@ bool md9600_band_of(uint32_t hz, uint8_t *band)
 	return false;
 }
 
+bool md9600_rx_band_of(uint32_t hz, uint8_t *band)
+{
+#if CONFIG_RX_ENVELOPE_DIAG
+	if (hz >= 118000000u && hz < VHF_LO_HZ) {
+		*band = MD9600_VHF;
+		return true;
+	}
+#endif
+	return md9600_band_of(hz, band);
+}
+
 #if CONFIG_MD9600_V1V3
 // SKY72310: R 6 on VHF (2.8 MHz), 4 on UHF (4.2 MHz); phase detector gain 31; register 7 = 0x3D0
 #define SKY_R_VHF	6u
@@ -124,7 +135,8 @@ bool md9600_pll_plan(md9600_rev_t rev, uint32_t hz, bool tx, md9600_pll_plan_t *
 {
 	const md9600_rev_desc_t *d = md9600_rev_desc(rev);
 	uint8_t band;
-	if (d == NULL || !md9600_rev_built(rev) || !md9600_band_of(hz, &band)) {
+	if (d == NULL || !md9600_rev_built(rev) ||
+	    !(tx ? md9600_band_of(hz, &band) : md9600_rx_band_of(hz, &band))) {
 		return false;
 	}
 	p->band = band;

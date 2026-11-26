@@ -5,6 +5,9 @@
 #include "usbaudio/audio_mux.h"
 
 #include <string.h>
+#if CONFIG_RX_ENVELOPE_DIAG
+#include "usbaudio/envelope_filter.h"
+#endif
 
 #define RX_MASK		(AUDIO_MUX_RX_CAP - 1u)
 
@@ -28,9 +31,17 @@ static int16_t host_mic[AUDIO_BLOCK_SAMPLES];
 static volatile bool aprs_on;
 static int16_t aprs_ring[AUDIO_MUX_APRS_CAP];
 static volatile uint32_t aprs_wr, aprs_rd;	// the audio task writes, the radio task reads
-#define stream_wanted	(host_rx_on || aprs_on)
+#define external_wanted	(host_rx_on || aprs_on)
 #else
-#define stream_wanted	host_rx_on
+#define external_wanted	host_rx_on
+#endif
+#if CONFIG_RX_ENVELOPE_DIAG
+static volatile bool envelope_on, primary_speaker;
+static bool monitor_active;
+static envelope_filter_t monitor_filter;
+#define stream_wanted (external_wanted || envelope_on)
+#else
+#define stream_wanted external_wanted
 #endif
 static audio_mux_stats_t st;
 
@@ -66,6 +77,22 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 	} else {
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof *spk);
 	}
+#if CONFIG_RX_ENVELOPE_DIAG
+	if (envelope_on && !host_tx_dmr) {
+		if (!monitor_active) {
+			memset(&monitor_filter, 0, sizeof monitor_filter);
+		}
+		monitor_active = true;
+		for (uint32_t i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+			int16_t v = envelope_filter_sample(&monitor_filter, mic[i]);
+			if (!primary_speaker) {
+				spk[i] = v;
+			}
+		}
+	} else {
+		monitor_active = false;
+	}
+#endif
 #if CONFIG_APRS_RX
 	if (aprs_on) {
 		// Too late a reader loses the newest block whole: the demodulator sees one gap, not a torn block
@@ -122,9 +149,28 @@ static void w_stop(void)
 
 static void w_speaker_pcm(bool on)
 {
+#if CONFIG_RX_ENVELOPE_DIAG
+	primary_speaker = on;
+	on = on || envelope_on;
+#endif
 	if (hw->speaker_pcm != NULL) {
 		hw->speaker_pcm(on);
 	}
+}
+
+void audio_mux_envelope_monitor(bool on)
+{
+#if CONFIG_RX_ENVELOPE_DIAG
+	if (envelope_on == on) {
+		return;
+	}
+	envelope_on = on;
+	if (hw != NULL && hw->speaker_pcm != NULL) {
+		hw->speaker_pcm(on || primary_speaker);
+	}
+#else
+	(void)on;
+#endif
 }
 
 const hal_audio_t *audio_mux_wrap(const hal_audio_t *board_audio)
@@ -287,6 +333,10 @@ void audio_mux_reset(void)
 	running = false;
 	host_rx = AUDIO_MUX_RX_OFF;
 	host_tx_dmr = false;
+#if CONFIG_RX_ENVELOPE_DIAG
+	envelope_on = primary_speaker = monitor_active = false;
+	memset(&monitor_filter, 0, sizeof monitor_filter);
+#endif
 	retry_armed = false;
 	rx_wr = rx_rd = 0;
 #if CONFIG_APRS_RX

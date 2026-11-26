@@ -189,7 +189,27 @@ bool md9600_view_line(uint8_t i, char *buf, uint8_t len)
 		dl_fmt(buf, len, "adc.%s=%u", adc_names[a], md9600_adc_raw(a));
 		return true;
 	}
-	return audio_line((uint8_t)(a - MD9600_ADC_COUNT), buf, len);
+	a = (uint8_t)(a - MD9600_ADC_COUNT);
+	if (a == 0) {
+		dl_fmt(buf, len, "tx_built=%u", CONFIG_MD9600_TX || CONFIG_MD9600_DMR_TX);
+		return true;
+	}
+	if (a == 1) {
+		dl_fmt(buf, len, "envelope_diag=%u", CONFIG_RX_ENVELOPE_DIAG);
+		return true;
+	}
+#if CONFIG_RX_ENVELOPE_DIAG && MD9600_DISC
+	if (a == 2) {
+		dl_fmt(buf, len, "envelope_samples=%u", (unsigned)md9600_disc_head());
+		return true;
+	}
+	if (a == 3) {
+		dl_fmt(buf, len, "pin.af_vhf=%u", PIN_READ(PIN_AF_BAND) ? 1u : 0u);
+		return true;
+	}
+	a -= 2u;
+#endif
+	return audio_line((uint8_t)(a - 2u), buf, len);
 }
 
 #endif	// CONFIG_DEBUGLINK

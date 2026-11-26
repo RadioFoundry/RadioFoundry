@@ -118,6 +118,7 @@ extern const hal_afsk_t md9600_afsk;
 #define MD9600_DISC_RATE_HZ	((72000000u / 8u / 492u + 1u) / 2u)	// 9146 Hz
 #define MD9600_DISC_RING	1024u					// 112 ms, a power of two
 enum { MD9600_DISC_APRS = 1u << 0, MD9600_DISC_STREAM = 1u << 1 };
+void md9600_disc_envelope(bool on); // radio task: select RSSI only for the experimental airband
 void md9600_disc_start(uint8_t user);
 void md9600_disc_stop(uint8_t user);
 bool md9600_disc_running(void);

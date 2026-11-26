@@ -78,6 +78,10 @@ uint32_t audio_mux_aprs_read(int16_t *pcm, uint32_t n);
 // Radio task: start or stop the board's stream as the host side needs (every poll)
 void audio_mux_service(uint32_t now_ms);
 
+// Radio task: play diagnostic receive-envelope input locally, independently of a host connection.
+// Only enable on a board advertising AUDIO_TAP_RX_ENVELOPE, while receiving with audio open.
+void audio_mux_envelope_monitor(bool on);
+
 // FM transmit audio for hal_audio_tap_t.fm_tx_inject (the board's interrupt)
 void audio_mux_fm_pull(int16_t *pcm, uint16_t n);
 

@@ -23,7 +23,7 @@
 #define HALF_OUT		32u				// samples a half buffer: an interrupt every 3.5 ms
 #define HALF_RAW		(HALF_OUT * DECIM)
 #define IRQ_PRIORITY		7				// no RTOS calls in the handler
-#define ADC_CH			13u				// IN13, PC3
+static bool envelope_input;
 #define GAIN			4				// the summed 13-bit swing to most of 16 bits
 #define DC_SHIFT		10				// DC tracker: about 0.11 s, far below the voice band
 
@@ -67,7 +67,11 @@ void DMA2_Stream1_IRQHandler(void)
 
 static void capture_start(void)
 {
-	stm32_pin_analog(PIN_PORT(PIN_DISC_AF), PIN_MASK(PIN_DISC_AF));
+	if (envelope_input) {
+		stm32_pin_analog(PIN_PORT(PIN_RSSI_V), PIN_MASK(PIN_RSSI_V));
+	} else {
+		stm32_pin_analog(PIN_PORT(PIN_DISC_AF), PIN_MASK(PIN_DISC_AF));
+	}
 	RCC->APB2ENR |= RCC_APB2ENR_ADC3EN;
 	RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
 	(void)RCC->APB2ENR;
@@ -92,9 +96,10 @@ static void capture_start(void)
 	ADC3->CR2 = 0;
 	ADC3->SR = 0;
 	ADC3->CR1 = 0;		// 12-bit, one channel
-	ADC3->SMPR1 = 7u << ADC_SMPR1_SMP13_Pos;	// 480 cycles
+	ADC3->SMPR1 = 0x07FFFFFFu;	// 480 cycles, including the diagnostic input on IN0
+	ADC3->SMPR2 = 0x3FFFFFFFu;
 	ADC3->SQR1 = 0;
-	ADC3->SQR3 = ADC_CH;
+	ADC3->SQR3 = envelope_input ? 0u : 13u;
 	ADC3->CR2 = ADC_CR2_CONT | ADC_CR2_DMA | ADC_CR2_DDS | ADC_CR2_ADON;
 	hal_delay_us(5);	// ADC stabilization time
 	ADC3->CR2 |= ADC_CR2_SWSTART;
@@ -109,6 +114,25 @@ static void capture_stop(void)
 	}
 	// md9600_adc3_qt sets ADC3 up again for its one-off readings
 	RCC->APB2ENR &= ~RCC_APB2ENR_ADC3EN;
+}
+
+void md9600_disc_envelope(bool on)
+{
+	on = CONFIG_RX_ENVELOPE_DIAG && on;
+	if (envelope_input == on) {
+		return;
+	}
+	if (users != 0) {
+		capture_stop();
+	}
+	envelope_input = on;
+	// Discard the previous source without moving the readers' sample counters.
+	for (unsigned i = 0; i < MD9600_DISC_RING; i++) {
+		ring[i] = 0;
+	}
+	if (users != 0) {
+		capture_start();
+	}
 }
 
 void md9600_disc_start(uint8_t user)

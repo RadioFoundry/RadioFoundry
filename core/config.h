@@ -318,6 +318,9 @@
 #ifndef CONFIG_BCAST_FM
 #define CONFIG_BCAST_FM			1
 #endif
+#ifndef CONFIG_RX_ENVELOPE_DIAG
+#define CONFIG_RX_ENVELOPE_DIAG		0
+#endif
 #ifndef CONFIG_RX_EXT
 #define CONFIG_RX_EXT			1
 #endif

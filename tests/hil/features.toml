@@ -604,3 +604,7 @@ source = ["core/debuglink/debuglink_dmrip.c", "core/debuglink/dl_dmrip.c", "core
 [feature.audio_probe]
 switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
+
+[feature.rx_envelope_diag]
+switch = "RX_ENVELOPE_DIAG"
+spec = "docs/spec/receive-envelope-diagnostic.md"

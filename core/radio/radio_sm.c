@@ -808,6 +808,10 @@ static void outputs(radio_sm_t *sm)
 		sm->audio_out = (int8_t)spk;
 		board.radio->audio(spk);
 	}
+#if CONFIG_RX_ENVELOPE_DIAG
+	audio_mux_envelope_monitor(spk && !tx && radio_am_display_channel(&sm->view.ch) &&
+		board.audio_tap != NULL && (board.audio_tap->caps & AUDIO_TAP_RX_ENVELOPE) != 0);
+#endif
 	if (rx_open_change && !green) {
 		sm->rx_open_out = 0;
 		board.radio->rx_open(false);
@@ -1544,8 +1548,8 @@ static uint8_t tx_check(const radio_sm_t *sm)
 	if (sm->set.tx_inhibit || (!trunk && !tx_limit_allows(ch->tx_hz))) {
 		return TXDENY_INHIBIT;		// the test TX limit denies PTT as the inhibit does
 	}
-#if CONFIG_AM_RX
-	if (sm->view.am || radio_am_tx_refused(ch->tx_hz)) {
+#if CONFIG_AM_RX || CONFIG_RX_ENVELOPE_DIAG
+	if (radio_am_display_channel(ch) || radio_am_tx_refused(ch->tx_hz)) {
 		return TXDENY_AM;	// the air band is receive only, whatever the codeplug says
 	}
 #endif

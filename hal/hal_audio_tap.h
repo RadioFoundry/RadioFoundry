@@ -29,6 +29,7 @@ enum {
 	AUDIO_TAP_DMR		= 1u << 2,	// DMR voice as PCM both ways: always there with a vocoder (the stream itself)
 	AUDIO_TAP_FM_RX_RAW	= 1u << 3,	// FM receive audio before de-emphasis and the voice filter (better for AFSK)
 	AUDIO_TAP_FM_TX_FLAT	= 1u << 4,	// the modulator without pre-emphasis, compressor and voice filter
+	AUDIO_TAP_RX_ENVELOPE	= 1u << 5,	// diagnostic: FM stream input is receive envelope audio, not a microphone
 };
 
 // What the FM taps carry (usb-audio.md 5.5): voice audio, or the flat signal for data modems with their own waveform

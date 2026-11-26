@@ -670,7 +670,7 @@ $(error tools/i18n.py --gen failed (above))
 endif
 # UI drawing: text helpers, changed-row flushing, Home and quick settings at each display class (out/*.ppm to look at)
 UI      := $(CORE)/ui/gfx.c $(CORE)/ui/fonts.c $(CORE)/ui/fmt.c $(CORE)/ui/i18n.c $(CORE)/ui/ui_screens.c $(CORE)/ui/ui_svc_stub.c \
-           $(CORE)/dmr/trunk/t3_sys.c
+           $(CORE)/dmr/trunk/t3_sys.c $(CORE)/radio/radio_am.c
 TESTS   += gfxTest
 
 gfxTest: gfxTest.c $(UI) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/ui/fonts/*.inc)
@@ -709,7 +709,7 @@ i18nTestDefault: i18nTest.c $(I18N) $(LANG_H) $(wildcard $(CORE)/ui/*.h $(CORE)/
 # docs/ux/screens/sheets/). Built without the __attribute__ override above so the weak service stubs
 # (ui_svc_stub.c) give way to the simulator's.
 UIAPP   := $(UI) $(CORE)/ui/ui_app.c $(CORE)/ui/ui_menus.c $(CORE)/ui/ui_find.c $(CORE)/ui/ui_aprs.c $(CORE)/ui/ui_position.c $(CORE)/ui/ui_gps.c $(CORE)/ui/ui_satellite.c $(CORE)/ui/ui_dual.c $(CORE)/radio/tones.c \
-           $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/radio/radio_am.c \
+           $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c \
            $(CORE)/radio/radio_bcast.c $(CORE)/support/sha256.c $(CORE)/support/image_hash.c \
            $(CORE)/support/support_info.c sim/ui_sim.c sim/ui_png.c
 # The About page's data header, as the firmware build makes it (tools/gen_about.py; the STM32F4 list stands in)
@@ -741,6 +741,17 @@ uiFlowTestSatellite: uiFlowTest.c $(UIDEPS)
 UI_LANG_FLAG := $(if $(UI_LANG),-DCONFIG_LANG_$(shell echo '$(UI_LANG)' | tr a-z A-Z)=1)
 uiSim: uiSim.c $(UIDEPS) $(CJK)
 	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+
+TESTS += uiSimEnvelope
+uiSimEnvelope: uiSim.c $(UIDEPS) $(CJK)
+	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+
+run: run-envelope-ui
+.PHONY: run-envelope-ui
+run-envelope-ui: uiSimEnvelope
+	./uiSimEnvelope --geom 128x64 --map P --script 'envelope dlvfo:133475000 fmrx expect:shows=AM expect:hides=FM'
+	./uiSimEnvelope --geom 128x64 --map P --script 'envelope dlvfo:145500000 fmrx expect:shows=FM expect:hides=AM'
+	./uiSimEnvelope --geom 128x64 --map K --script 'envelope dlvfo:133475000 quick 7 expect:shows=VFO_AM expect:hides=VFO_FM'
 
 # The beep reel (tools/beep_reel.py). BEEP_DIR picks the beep.c and beep.h to build with, so CI can build the base
 # commit's beeps for a before and after comparison. We copy that beep.h into out/beep/radio/ and put out/beep first on
@@ -1748,14 +1759,28 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += usrpNetTest
+TESTS   += envelopeMonitorTest
+TESTS   += envelopeLabelTest envelopeLabelTestOff
+
+envelopeLabelTest: envelopeLabelTest.c $(CORE)/radio/radio_am.c
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ $^
+
+envelopeLabelTestOff: envelopeLabelTest.c $(CORE)/radio/radio_am.c
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=0 -o $@ $^
+
+envelopeMonitorTest: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c -lm
 
 usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
 
 run: run-usbaudio
-run-usbaudio: usrpTest usrpNetTest
+run-usbaudio: usrpTest usrpNetTest envelopeMonitorTest envelopeLabelTest envelopeLabelTestOff
 	./usrpTest
 	./usrpNetTest
+	./envelopeMonitorTest
+	./envelopeLabelTest
+	./envelopeLabelTestOff
 .PHONY: run-usbaudio
 
 # The minimal TCP (core/net/tcp.c) against a scripted peer; tshark checks the segments it wrote to tcpTest.pcap

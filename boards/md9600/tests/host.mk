@@ -14,6 +14,10 @@ MD9600_RF_H := $(MD9600)/rfplan_md9600.h $(ROOT)/drivers/rf/sky72310/sky72310.h 
 	$(ROOT)/drivers/rf/lmx2571/lmx2571.h $(ROOT)/drivers/rf/ak2365a/ak2365a.h $(ROOT)/drivers/bus/wire3.h
 MD9600_ALL := -DCONFIG_MD9600_V1V3=1 -DCONFIG_MD9600_V4=1 -DCONFIG_MD9600_V5=1
 TESTS   += md9600RfTest md9600RfTestV5
+TESTS   += md9600RfTestEnvelope md9600RfSeqTestEnvelope md9600RfSeqTestEnvelopeNoTx
+
+md9600RfTestEnvelope: $(MD9600_RF) $(MD9600_RF_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ $(MD9600_RF)
 
 md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
 	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow $(MD9600_ALL) -o $@ $(MD9600_RF)
@@ -25,6 +29,11 @@ md9600RfTestV5: $(MD9600_RF) $(MD9600_RF_H)
 MD9600_SEQ := $(MD9600_T)/md9600RfSeqTest.c $(MD9600)/rfseq_md9600.c $(MD9600)/cal_md9600.c $(MD9600)/rfcal_md9600.c \
 	$(MD9600)/hwopt_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c $(filter-out $(MD9600_T)/md9600RfTest.c,$(MD9600_RF))
 MD9600_SEQ_H := $(MD9600_RF_H) $(MD9600)/rfseq_md9600.h $(MD9600)/md9600.h
+md9600RfSeqTestEnvelope: $(MD9600_SEQ) $(MD9600_SEQ_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
+
+md9600RfSeqTestEnvelopeNoTx: $(MD9600_SEQ) $(MD9600_SEQ_H)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -DCONFIG_MD9600_TX=0 -o $@ $(MD9600_SEQ)
 TESTS   += md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5
 
 md9600RfSeqTest: $(MD9600_SEQ) $(MD9600_SEQ_H)
@@ -69,3 +78,8 @@ run-boards:: md9600RfTest md9600RfTestV5 md9600RfSeqTest md9600RfSeqTestNoTx md9
 	./md9600RfSeqTestV5
 	./md9600AudioTest
 	./md9600StoreTest
+
+run-boards:: md9600RfTestEnvelope md9600RfSeqTestEnvelope md9600RfSeqTestEnvelopeNoTx
+	./md9600RfTestEnvelope
+	./md9600RfSeqTestEnvelope
+	./md9600RfSeqTestEnvelopeNoTx

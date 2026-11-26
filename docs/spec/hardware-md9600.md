@@ -3,6 +3,37 @@
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
+## Receive-envelope diagnostic (2026-11-26)
+
+`CONFIG_RX_ENVELOPE_DIAG=y` adds experimental 118.000000–135.999999 MHz reception. These channels are receive-only,
+including split channels with a normal-band TX frequency. The receive classifier accepts the additional range;
+the transmit classifier remains 136–174 and 400–480 MHz. Normal-band FM/DMR transmit retains the existing board
+revision, calibration, channel and settings checks. The switch is off by default.
+
+On airband FM selections, ADC3 samples PA0 (VHF RSSI, IN0), instead of PC3 (FM discriminator, IN13). The existing
+DMA path produces about 9146 samples/s, removes DC and resamples to 8 kHz. The speaker plays voice-filtered PCM
+through the HR_C6000 with no network client required. Outside this range, capture returns to the discriminator
+and normal speaker routing. Source changes restart capture and clear old ring samples. The volume knob works.
+See [receive-envelope-diagnostic.md](receive-envelope-diagnostic.md) for filtering, squelch and AM labels.
+
+Receive audio routing, RSSI/noise status and modem bookkeeping use the receive classifier. Both RF receivers
+remain powered: using the rated-band classifier below 136 MHz would retain a UHF default and could play the
+previous UHF control channel. `board.pin.af_vhf` reads the audio selection GPIO (1 = VHF); it does not prove PLL lock.
+
+The factory front-end tuning curve clamps below its first 136 MHz calibration point. Below-band sensitivity and
+PLL lock have not been measured. RSSI filtering, logarithmic response and AGC can limit audio fidelity. IF gain and
+AGC registers are unchanged. V4/V5 behavior is host-tested, not checked on hardware.
+
+Build example (one shell line): `make BOARD=md9600 CONFIG_RX_ENVELOPE_DIAG=y CONFIG_NET_USRP=y CONFIG_NET_HTTP=n
+CONFIG_STUB_ENTRY=y MD9600_REV_DEFAULT=v1v3 BUILD=build/envelope`. HTTP is disabled in the tested configuration
+to keep the host task within its stack budget. No native `CAP_AM_RX` or `rx_am` driver is advertised.
+
+On one V1–V3/HW V2.1 radio on 2026-11-26, the owner reported intelligible speech ("okay, thank you") in a filtered
+133.475 MHz RSSI-envelope recording. This is listener-confirmed speech recovery, not station identification or
+calibrated performance. Live PCM routing without a network audio client, speaker hiss and the AM/RX-only label
+were checked. Monitor off allowed squelch 1 to close noise and squelch 0 to reopen it; the detector still measures
+FM noise and can miss weak AM. Application updates preserved the codec and bootloader byte-for-byte.
+
 The TYT MD-9600 and the Retevis RT90 are one dual-band mobile radio: an STM32F405VGT6 MCU, an HR_C6000 DMR baseband
 and codec chip, **two complete RF chains (one VHF, one UHF)**, each with its own synthesizer, its own RX and TX VCOs,
 its own IF receiver chip and its own PA supply switch, a 49.95 MHz first IF, a 128 x 64 monochrome LCD (ST7567) on

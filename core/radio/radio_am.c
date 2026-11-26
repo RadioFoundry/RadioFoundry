@@ -20,6 +20,17 @@ bool radio_am_channel(const channel_t *ch)
 	return radio_am_capable() && ch->mode == RADIO_MODE_FM && radio_am_band(ch->rx_hz);
 }
 
+bool radio_am_display_channel(const channel_t *ch)
+{
+#if CONFIG_RX_ENVELOPE_DIAG
+	if (ch->mode == RADIO_MODE_FM && ch->rx_hz >= 118000000u && ch->rx_hz < 136000000u && board.audio_tap != NULL &&
+	    (board.audio_tap->caps & AUDIO_TAP_RX_ENVELOPE) != 0) {
+		return true;
+	}
+#endif
+	return radio_am_channel(ch);
+}
+
 bool radio_am_tx_refused(uint32_t hz)
 {
 	return radio_am_capable() && radio_am_band(hz);
