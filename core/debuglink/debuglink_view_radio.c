@@ -200,6 +200,11 @@ void debuglink_view_radio(const radio_view_t *v, dl_text_t *t)
 	static const char *const vsrc[] = { "none", "knob", "soft", "override", "hold" };
 	dl_text(t, "volume.soft=%u\nvolume.sent=%d\nvolume.src=%s\nvolume.max=%u\nvolume.step=%u\nvolume.override=%d\n",
 		radio_volume_soft(), v->volume, word(v->volume_src, vsrc, 5), RADIO_VOLUME_MAX, v->volume_step, v->volume_override);
+	// Sent only for a radio that can't set its volume: elsewhere volume.sent already shows the level, and this reply has
+	// little room left
+	if (v->volume_src == RVOL_NONE && v->volume_knob >= 0) {
+		dl_text(t, "volume.knob=%d\n", v->volume_knob);
+	}
 #if CONFIG_BEEP
 	beep_stats_t b;
 	beep_get_stats(&b);

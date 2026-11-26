@@ -2006,7 +2006,8 @@ def cmd_volume(link, a):
             raise
         time.sleep(0.3)         # the radio core applies it on its next poll
     v = link.view(["features"])
-    for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft"):
+    for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft",
+              "volume.knob"):
         if k in v:
             print(f"{k}={v[k]}")
     return 0

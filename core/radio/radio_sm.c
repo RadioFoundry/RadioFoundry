@@ -9498,7 +9498,7 @@ bool radio_volume_soft(void)
 	       board.power->volume != NULL && board.power->volume() < 0;
 }
 
-bool radio_volume_knob(void)
+bool radio_volume_follows_knob(void)
 {
 	return board.radio != NULL && board.radio->volume != NULL && board.power != NULL &&
 	       board.power->volume != NULL && board.power->volume() >= 0;
@@ -9570,15 +9570,14 @@ uint8_t radio_volume_stored(uint8_t step)
 }
 
 // Follow a volume knob the MCU reads (soft volume): pass changes of 2 % or more, and the ends exactly. A radio with
-// no knob (volume() = -1) gets the stored step instead, and a knob radio the debug link's override
-// (radio-features.md 4.2)
+// no knob (volume() = -1) gets the stored step instead, and a knob radio the debug link's override. A radio that can
+// read its knob but can't set the volume only records where the knob is (radio-features.md 4.2)
 static void follow_volume(radio_sm_t *sm)
 {
-	if (board.radio->volume == NULL || board.power == NULL || board.power->volume == NULL) {
+	if (board.power == NULL || board.power->volume == NULL) {
 		return;
 	}
 	int v = board.power->volume();
-	uint8_t src = RVOL_KNOB;
 	if (v >= 0) {
 		// The knob's own position, with the same 2 % filter as the level below, in force or not: the UI shows the
 		// unlock hint when a held knob turns
@@ -9589,6 +9588,10 @@ static void follow_volume(radio_sm_t *sm)
 			changed(sm);
 		}
 	}
+	if (board.radio->volume == NULL) {
+		return;		// the firmware can't set the volume here: nothing more to do
+	}
+	uint8_t src = RVOL_KNOB;
 	if (v < 0) {
 		v = radio_volume_percent(sm->vol_step);
 		src = RVOL_SOFT;
