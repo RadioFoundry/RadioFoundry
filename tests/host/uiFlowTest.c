@@ -199,9 +199,10 @@ static const flow_t flows[] = {
 	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
 	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
 #if CONFIG_DUAL_WATCH
-	// #1066: an AES channel in dual watch is DMR, named AES as Home names it out of dual watch (it showed P25)
-	{ "AES channel in dual watch: named AES, not P25", "aeskeys chkind:3,aes dlpos:2 dlpos:3", "quick 7",
-	  "dual=1 sel=A shows=AES hides=P25 shows=TG_3100", 2, false },
+	// #1066: a DMR channel with AES in dual watch runs and shows as DMR, with its talk group (it showed P25). AES is an
+	// option on a DMR channel, not a mode of its own, so the mode word is DMR
+	{ "DMR channel with AES in dual watch: DMR, not P25", "aeskeys chkind:3,aes dlpos:2 dlpos:3", "quick 7",
+	  "dual=1 sel=A shows=DMR hides=P25 shows=TG_3100", 2, false },
 #endif
 #endif
 #if CONFIG_CHANNEL_EDIT

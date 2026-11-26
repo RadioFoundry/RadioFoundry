@@ -223,7 +223,6 @@ static void pane_fill(uint8_t i)
 	if (radio_listen_band(ch.rx_hz))
 		ch.mode = RADIO_MODE_FM;	// the radio core receives FM (or AM) there, whatever the record says
 	p->mode = shown_mode(&ch);
-	p->kind = p->mode == RADIO_MODE_FM ? CODEPLUG_KIND_NONE : ch.kind;	// the mode word names it, as Home does
 	p->am = p->mode == RADIO_MODE_FM && radio_am_channel(&ch);	// as the receiver hears it (Home's mode word)
 	p->rx_hz = ch.rx_hz;
 	if (p->mode == RADIO_MODE_P25 || p->mode == RADIO_MODE_NXDN)
