@@ -3,6 +3,7 @@
 // The PCM stream shared between the radio's users and a host audio session (audio_mux.h)
 #include "config.h"
 #include "usbaudio/audio_mux.h"
+#include "radio/spk_aux.h"
 
 #include <string.h>
 
@@ -86,6 +87,11 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 	} else if (src != AUDIO_MUX_RX_OFF) {
 		rx_put(src == AUDIO_MUX_RX_OUTPUT ? spk : mic, AUDIO_BLOCK_SAMPLES);
 	}
+	// Last, after the host's copy of the output: the speaker's second output while the stream's can't be heard. Not
+	// after a stop from the callback: no block would follow to turn the output off
+	if (hw->spk_aux != NULL && running) {
+		hw->spk_aux->core->block(hw->spk_aux, spk);
+	}
 }
 
 static bool hw_start(void)
@@ -110,13 +116,22 @@ static bool w_start(audio_block_cb_t cb, void *ctx)
 	return true;
 }
 
+// The board's stream stopped, and the speaker's second output with it: no block runs its sequence out after this
+static void hw_stop(void)
+{
+	running = false;
+	hw->stop();
+	if (hw->spk_aux != NULL) {
+		hw->spk_aux->core->reset(hw->spk_aux);
+	}
+}
+
 // Also called from the callback itself (the DMR voice ends its stream there): the board's stop is safe there
 static void w_stop(void)
 {
 	prim_cb = NULL;
 	if (!stream_wanted) {
-		running = false;
-		hw->stop();
+		hw_stop();
 	}
 }
 
@@ -193,6 +208,11 @@ void audio_mux_host_tx(bool on, bool dmr)
 	}
 }
 
+bool audio_mux_host_mic(void)
+{
+	return host_tx_dmr;
+}
+
 uint32_t audio_mux_host_pushes(void)
 {
 	return st.tx_pushes;
@@ -250,8 +270,7 @@ void audio_mux_service(uint32_t now_ms)
 			retry_armed = false;
 		}
 	} else if (!stream_wanted && running && prim_cb == NULL) {
-		running = false;
-		hw->stop();
+		hw_stop();
 	}
 }
 

@@ -375,6 +375,37 @@ static bool boot_any(void)
 	return ok;
 }
 
+// A detour's hold while the settings area is claimed: the release goes back to the state before the hold, and the
+// claimed area then gets that state saved (not the "nothing stored" filler the claim puts in saved)
+static void test_hold_claim(void)
+{
+	settings_stats_t st;
+	settings_t s;
+
+	sim_flash_create(FLASH_SIZE, &map);
+	junk(map.settings_addr + 2 * STORAGE_SECTOR, 3000, 7);
+	CHECK(!boot_any() && storage_region() == STORAGE_REGION_FOREIGN);
+	settings_begin()->squelch = 5;
+	settings_end(100);
+	CHECK(settings_hold());
+	settings_begin()->squelch = 9;		// the detour's change
+	settings_end(200);
+	CHECK(storage_claim_request());
+	settings_poll(6000);			// claimed during the hold: nothing saved yet
+	settings_get_stats(&st);
+	CHECK(st.saves == 0);
+	settings_release(true);
+	settings_read(&s);
+	CHECK(s.squelch == 5 && s.vfo_ts == 1);	// home, not 0xFF
+	settings_get_stats(&st);
+	CHECK(st.dirty);
+	settings_poll(20000);
+	CHECK(boot_any());
+	settings_read(&s);
+	CHECK(s.squelch == 5);
+	CHECK(sim_flash_violations() == 0);
+}
+
 static void test_foreign(void)
 {
 	uint8_t a[STORAGE_SECTOR];
@@ -1258,6 +1289,7 @@ int main(void)
 	test_settings_cuts();
 	test_settings_versions();
 	test_foreign();
+	test_hold_claim();
 	test_native_and_jobs();
 	test_settings_layout();
 	test_crash_bits();

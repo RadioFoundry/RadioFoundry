@@ -697,6 +697,42 @@ static void post_pair(uint8_t type, int32_t arg, uint32_t arg2, TickType_t wait)
 #if CONFIG_DMR || CONFIG_P25 || CONFIG_NXDN
 void radio_req_mode(uint8_t mode) { post(RREQ_MODE, mode, 0); }
 #endif
+#if CONFIG_RADIO_DETOUR
+bool radio_req_detour(uint8_t op, uint32_t backstop_ms)
+{
+	if (requests == NULL) {
+		return false;
+	}
+	radio_req_t req = { .type = RREQ_DETOUR, .arg = op, .arg2 = backstop_ms };
+	if (xQueueSend(requests, &req, pdMS_TO_TICKS(50)) != pdTRUE) {
+		req_dropped++;
+		return false;	// the caller tries again
+	}
+	return true;
+}
+
+bool radio_detour_armed(void)
+{
+	if (view_lock == NULL) {
+		return false;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	bool armed = shared_view.detour.armed;
+	xSemaphoreGive(view_lock);
+	return armed;
+}
+
+void radio_get_detour(radio_detour_view_t *d)
+{
+	if (view_lock == NULL) {
+		memset(d, 0, sizeof(*d));
+		return;
+	}
+	xSemaphoreTake(view_lock, portMAX_DELAY);
+	*d = shared_view.detour;
+	xSemaphoreGive(view_lock);
+}
+#endif
 #if CONFIG_P25
 void radio_req_p25_settings(const radio_p25_settings_t *s)
 {

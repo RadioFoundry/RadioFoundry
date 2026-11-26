@@ -70,6 +70,25 @@ static void init(void)
 #endif
 }
 
+// AT1846S 0x05 at the channels where the radio's own clocks put a spur on the receiver, on top of the 26 MHz
+// reference rule (hardware-mduv380.md 2): 0x8543 as at the reference harmonics, 0x8643 (the data sheet's 26 MHz word near
+// 445 MHz) at 405.4, 439.6 and beside 455 MHz, 0x8443 at 407.1 MHz. Exact channel frequencies; the same on the 5 W and
+// 10 W builds
+static const at1846s_spur_t rf_spurs[] = {
+	{ 405400000u, 0x8643u }, { 407100000u, 0x8443u }, { 408100000u, 0x8543u },
+	{ 409400000u, 0x8543u }, { 409600000u, 0x8543u }, { 411900000u, 0x8543u },
+	{ 413600000u, 0x8543u }, { 416800000u, 0x8543u }, { 418400000u, 0x8543u },
+	{ 420875000u, 0x8543u }, { 424600000u, 0x8543u }, { 424900000u, 0x8543u },
+	{ 428200000u, 0x8543u }, { 430600000u, 0x8543u }, { 431400000u, 0x8543u },
+	{ 431500000u, 0x8543u }, { 432200000u, 0x8543u }, { 432250000u, 0x8543u },
+	{ 432300000u, 0x8543u }, { 432400000u, 0x8543u }, { 433000000u, 0x8543u },
+	{ 433100000u, 0x8543u }, { 434700000u, 0x8543u }, { 439600000u, 0x8643u },
+	{ 443625000u, 0x8543u }, { 446100000u, 0x8543u }, { 450900000u, 0x8543u },
+	{ 452600000u, 0x8543u }, { 454900000u, 0x8643u }, { 455100000u, 0x8643u },
+	{ 466375000u, 0x8543u }, { 467600000u, 0x8543u }, { 467700000u, 0x8543u },
+	{ 467800000u, 0x8543u }, { 468200000u, 0x8543u }, { 468300000u, 0x8543u },
+};
+
 // hardware-mduv380.md: 4 (every factory type kept, always RGB order), 6 (raw / 40.3 per 0.1 V; the volume pot ends of
 // the MD-UV380 22..2070 and the RT3S 23..2020, break 309 / 317, which one image can't tell apart: the higher bottom plus
 // 7 counts of margin, where the RT3S reads unsteadily, the lower top so both reach 100 %, the break between), 7 and 8
@@ -87,6 +106,9 @@ const uvf_variant_t uvf_variant = {
 	.frac = { { 350, 700, 340, 610 }, { 400, 700, 250, 550 } },
 	.cal_k = { { 630, 1000, 1000, 1100 }, { 720, 1000, 1050, 1250 } },
 #endif
+	.rf_spur_step_hz = 6500000u,	// 26 MHz reference / 4
+	.rf_spurs = rf_spurs,
+	.rf_spurs_n = sizeof rf_spurs / sizeof rf_spurs[0],
 	.init = init,
 	.hw_line = hw_line,
 };

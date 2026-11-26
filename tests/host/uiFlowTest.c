@@ -163,10 +163,26 @@ static const flow_t flows[] = {
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
-	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	// Idle on the control channel, a system that can't transmit says "RX only" (listen only here); a call on it
+	// still reads "Following TG n"
+	{ "P25 trunked home: control channel, listen only", "dlmode:p25", "p25t:2",
+	  "screen=home shows=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201 hides=RX_only",
 	  0, false },
-	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
-	  false },
+	// Transmit on, registered: what PTT calls. Transmit on, no inbound frequency (reg 7, NO_TX): "Control channel"
+	{ "P25 trunked home: control channel, transmit on", "dlmode:p25", "p25t:2,0,4,1",
+	  "screen=home shows=TG_1 hides=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: control channel, no inbound frequency", "dlmode:p25", "p25t:2,0,7,1",
+	  "screen=home shows=Control_channel hides=RX_only", 0, false },
+	// A blocked system (reg 8) reads as a listen-only one even with the transmit side on: "RX only" idle, never
+	// "Registering", and "Following TG n" during a call
+	{ "P25 trunked home: blocked, control channel, transmit on", "dlmode:p25", "p25t:2,0,8,1",
+	  "screen=home shows=RX_only hides=Blocked_system hides=Registering hides=Control_channel", 0, false },
+	{ "P25 trunked home: blocked, following a call", "dlmode:p25", "p25t:3,201,8",
+	  "screen=home shows=Following_TG_201 hides=RX_only hides=Blocked_system", 0, false },
+	// PTT on a blocked system: the reason, and nothing to retry (no setting and no second press changes it)
+	{ "P25 trunked: PTT refused on a blocked system", "dlmode:p25", "p25t:2,0,8,1,11",
+	  "shows=RX-only_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
 #endif
 #if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
 	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
@@ -323,6 +339,15 @@ static const flow_t flows[] = {
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
+	// A channel that can't send data says why instead of sending; an encrypted one holds back text only
+	{ "8 radio check refused says why", "datadeny:aes_key " CALLER, "ctx 4", "checks=0 toast=AES_key_or_TX_disabled",
+	  2, false },
+	{ "8 radio check goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 4", "checks=1", 2,
+	  false },
+	{ "8 call alert goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 5", "alerts=1", 2,
+	  false },
+	{ "8 message refused on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 3",
+	  "screen=actions toast=Encrypted_channels_can't_send_text", 2, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
 	{ "9 squelch 2 steps (FM)", "down", "quick 2 up up back", "sq=7 screen=home", 5, false },
 #if CONFIG_DMR && CONFIG_DMR_PRIVACY
@@ -477,6 +502,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
+	// #1013: the receiver hops to A's channel between the UI's passes, just before a digit: the digit still goes to
+	// B's VFO entry, not to Find
+	{ "11 dual watch: a digit just after a hop to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1",
+	  "dual=1 sel=B bvfo=1 screen=home entry=1", 1, false },
+	{ "11 dual watch: digits across hops to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1 hop:b 4 hop:a 6",
+	  "dual=1 sel=B bvfo=1 screen=home entry=146", 3, false },
 	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey", "1 4 6 tune:a 5", "dual=1 sel=B bvfo=1 entry=1465",
 	  4, false },
 	{ "11 dual watch: set B VFO frequency while A is tuned", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 5 0 0 ok wait:1000",
@@ -2080,8 +2111,9 @@ static void dark_key_checks(void)
 }
 
 // The volume bar when the knob turns (#354): over whatever screen is open, 3 s after the last change; never at
-// power-up, for an unchanged level, a radio without a knob or the debug link taking over. EP and BVA cases, then a
-// seeded property run: the bar shows exactly when the knob's level changed in the last 3 s, at that level
+// power-up, for an unchanged level, a radio without a knob or the debug link taking over. A radio that only reads the
+// knob's position ("knobpos") shows it too. EP and BVA cases, then a seeded property run: the bar shows exactly when the
+// knob's level changed in the last 3 s, at that level
 #if CONFIG_VOLUME_BAR
 static bool vol_run(const sim_geom_t *g, const char *script, const char *expect, char *err, size_t len)
 {
@@ -2118,6 +2150,9 @@ static void volume_bar_checks(void)
 		{ "a turn at 2 s keeps it", "knob:50 knob:60 wait:2000 knob:70 wait:2900", "volbar=11" },
 		{ "over a menu, which stays", "ok knob:50 knob:60", "volbar=10 screen=hub" },
 		{ "no knob: none", "softvol knob:50 knob:75", "volbar=-1" },
+		{ "position only: a turn shows it", "knobpos:50 knobpos:75", "volbar=12 shows=Vol wake=1 screen=home" },
+		{ "position only, power-up: none", "knobpos:50", "volbar=-1" },
+		{ "position only, down to the stop", "knobpos:50 knobpos:1", "volbar=1" },
 		{ "the debug link takes over: none", "knob:50 override:80", "volbar=-1" },
 		{ "and gives it back: none", "knob:50 override:80 knob:30", "volbar=-1" },
 		{ "a turn after it gave back", "knob:50 override:80 knob:30 knob:40", "volbar=6" },
