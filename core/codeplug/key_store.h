@@ -33,7 +33,7 @@ typedef struct key_entry_s {
 } key_entry_t;
 
 // One row of a page (key_store_window): what a list row draws, 8 octets against key_entry_t's 34. A page that keeps
-// rows for a screen most radios never open costs RAM on every radio (DM-1701 RAM is nearly full)
+// rows for a screen most radios never open costs RAM on every radio, and the smallest boards have little left
 typedef struct key_row_s {
 	uint8_t cls : 7;	// KCV_CLASS_PRIVACY or KCV_CLASS_TRAFFIC
 	uint8_t kcv_ok : 1;	// kcv holds the check value
