@@ -48,14 +48,14 @@ A System's catalog is the view of contacts scoped to it. Refresh derived catalog
 and name caches on the existing codeplug-change notification. All target loading,
 RX-list filtering, name lookup, import and export must use the same scope rule.
 
-The wire encoding requires coordination with PR 844 before implementation. Its
-24-byte records have reserved bytes, but those bytes do not yet define a System
-reference or a scope-presence marker. Agree on that encoding, deletion/reuse and
-reordering rules, treatment of legacy unscoped and conventional P25 contacts, and
-the firmware capability token. Preserve old records and unknown bytes. Older
-readers ignore new scope information, so their existing `p25contacts` token alone
-cannot promise System-qualified lookup or enforce a contact/System match. Do not
-silently write a scoped profile as though an older reader supported it.
+The candidate System-scope encoding and compatibility rules are defined in
+[air-contacts.md](../spec/air-contacts.md), through the existing contact and System
+owners. They cover presence, identity guards, deletion/reuse, reordering, legacy
+unscoped contacts and conventional P25. The proposed extension still needs review
+with PR 844 before merging; its existing `p25contacts` token alone does not promise
+System-qualified lookup. `P25_SYSTEM_CONTACTS` identifies that behavior. Preserve
+old records and unknown bytes, and report the older-reader boundary when writing
+a scoped profile. The compact identity guard is not collision-free.
 
 ### Public PR dependencies and overlap
 
