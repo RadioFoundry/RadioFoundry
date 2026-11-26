@@ -187,6 +187,43 @@ static void test_fill_class1_sender_first(void)
 	CHECK(S.state == KF_ST_DONE && S.kcv[2] == 3);
 }
 
+// Two users at two radios: R's user answers first and S's a minute later, and the first READY never gets to S (the
+// order of the two OKs must not matter, found on air). R sends READY again until KEY comes; S takes one, drops the rest
+static void test_fill_receiver_first_slow_sender(void)
+{
+	uint8_t m[KF_MSG_MAX];
+	uint32_t dst;
+	start(payload_class2);
+	uint32_t t0 = now;
+	kf_confirm(&R, true, t0);
+	CHECK(kf_tx(&R, m, &dst) == KF_HEADER + KF_TAG_LEN && m[1] == KF_READY);	// lost on the air
+	kf_tick(&R, t0 + KF_READY_REPEAT_MS - 1);
+	CHECK(R.state == KF_ST_SENT_READY && kf_tx(&R, m, &dst) == 0);
+	kf_tick(&S, t0 + 60000u);
+	kf_confirm(&S, true, t0 + 60000u);
+	CHECK(S.state == KF_ST_WAIT_READY && !S.peer_ready);
+	kf_tick(&R, t0 + 60000u);	// the repeat
+	CHECK(R.state == KF_ST_SENT_READY);
+	pump(&S, &R);
+	CHECK(S.state == KF_ST_SENT_KEY && R.state == KF_ST_STORING);
+	kf_stored(&R, KF_STORED, (const uint8_t[3]){ 4, 5, 6 }, t0 + 61000u);
+	pump(&S, &R);
+	CHECK(R.state == KF_ST_DONE && S.state == KF_ST_DONE && S.kcv_ok);
+	// No loss: READY waits at S for its user, and a repeat that crosses KEY is dropped
+	start(payload_class2);
+	t0 = now;
+	kf_confirm(&R, true, t0);
+	pump(&S, &R);
+	CHECK(S.state == KF_ST_COMPARE && S.peer_ready);
+	kf_tick(&R, t0 + KF_READY_REPEAT_MS);
+	kf_confirm(&S, true, t0 + 60000u);
+	pump(&S, &R);
+	CHECK(S.state == KF_ST_SENT_KEY && R.state == KF_ST_STORING);
+	kf_stored(&R, KF_STORED, (const uint8_t[3]){ 7, 8, 9 }, t0 + 61000u);
+	pump(&S, &R);
+	CHECK(R.state == KF_ST_DONE && S.state == KF_ST_DONE);
+}
+
 // A radio in the middle: it plays the receiver to S (M1) and the sender to R (M2), with its own keys. It can't make
 // the codes agree but by chance (1 in a million); here they differ, and the users say no
 static void test_middle(void)
@@ -530,6 +567,7 @@ int main(void)
 	now = 1000;
 	test_fill_class2();
 	test_fill_class1_sender_first();
+	test_fill_receiver_first_slow_sender();
 	test_middle();
 	test_tamper();
 	test_replay();

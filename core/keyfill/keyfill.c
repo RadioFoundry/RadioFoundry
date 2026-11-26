@@ -171,6 +171,15 @@ static void keystream(const kf_session_t *s, uint8_t *ks, int n)
 }
 
 // S: the user and READY both said yes: the payload from the store, encrypted, tagged, to R
+// R: READY, again every KF_READY_REPEAT_MS until KEY comes (5). S takes the first one it gets and drops the rest
+static void send_ready(kf_session_t *s, uint32_t now)
+{
+	int n = header(s->sid, KF_READY, s->tx);
+	tag(s, s->tx, n, &s->tx[n]);
+	queue(s, READY_LEN, s->peer_id);
+	enter(s, KF_ST_SENT_READY, now);
+}
+
 static void send_key(kf_session_t *s, uint32_t now)
 {
 	uint8_t pt[KF_PAYLOAD_MAX], ks[KF_PAYLOAD_MAX];
@@ -373,10 +382,7 @@ void kf_confirm(kf_session_t *s, bool same, uint32_t now)
 		return;
 	}
 	if (s->role == 1) {
-		int n = header(s->sid, KF_READY, s->tx);
-		tag(s, s->tx, n, &s->tx[n]);
-		queue(s, READY_LEN, s->peer_id);
-		enter(s, KF_ST_SENT_READY, now);
+		send_ready(s, now);
 		return;
 	}
 	s->own_ok = true;
@@ -402,7 +408,13 @@ void kf_tick(kf_session_t *s, uint32_t now)
 	case KF_ST_SENT_KEY: until = s->state_at + KF_STEP_MS; break;
 	case KF_ST_COMPARE:
 	case KF_ST_WAIT_READY: until = s->compare_at + KF_COMPARE_MS; break;
-	case KF_ST_SENT_READY: until = s->compare_at + KF_COMPARE_MS + KF_STEP_MS; break;	// the sender's user may be slow
+	case KF_ST_SENT_READY:	// the sender's user may be slow, and a READY may not get there
+		until = s->compare_at + KF_COMPARE_MS + KF_STEP_MS;
+		if ((int32_t)(now - until) < 0 && now - s->state_at >= KF_READY_REPEAT_MS && s->tx_len == 0) {
+			send_ready(s, now);
+			return;
+		}
+		break;
 	default: return;
 	}
 	if ((int32_t)(now - until) >= 0)

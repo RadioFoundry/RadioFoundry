@@ -69,6 +69,7 @@ typedef enum {
 #define KF_LISTEN_MS		(5u * 60u * 1000u)
 #define KF_STEP_MS		30000u
 #define KF_COMPARE_MS		(2u * 60u * 1000u)
+#define KF_READY_REPEAT_MS	15000u	// R sends READY again this often until KEY: a lost READY would stall both sides
 
 // The sender's payload, asked for only when KEY is built (5: the key leaves the store as late as it can): its length,
 // at most cap octets into out; 0 or less fails the session

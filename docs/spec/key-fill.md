@@ -173,7 +173,7 @@ DONE carries the check value the receiver computed from the stored key, or zeros
 | Sent RPUB | R | SPUB | 30 s |
 | Compare | both | the user's OK or Back | 2 min |
 | Confirmed, waiting | S | READY | 2 min from Compare |
-| Sent READY | R | KEY | 30 s |
+| Sent READY | R | KEY | 2 min 30 s from Compare; READY again every 15 s |
 | Sent KEY | S | DONE | 30 s |
 | Storing | R | the storage job | none: a job always ends |
 | Done, Failed | both | Back | |
@@ -181,6 +181,9 @@ DONE carries the check value the receiver computed from the stored key, or zeros
 - A time-out, Back, or a failed check sends ABORT with its reason (except to nobody: in Listening) and wipes the
   session. ABORT from the other radio ends the session at once and the screen says why. ABORT carries no tag: anyone
   on the channel can end a session. That only stops a fill; it can never make a radio store a key.
+- Either user may answer first: READY waits at S until its user answers, and R waits for KEY as long as S's user
+  may take plus a step. R sends READY again every 15 s until KEY comes, so one lost READY doesn't leave S waiting
+  until its time-out (found on air with R's user first); S acts on the first READY and drops the rest.
 - Only one session at a time. A COMMIT from a third radio during a session gets ABORT "busy".
 - The session ID, the private key and every derived secret are in the session, which lives on the RTOS heap while the
   Key fill screen is open and is wiped (`crypto_wipe`) before it is freed, on every way out. The engine wipes each
