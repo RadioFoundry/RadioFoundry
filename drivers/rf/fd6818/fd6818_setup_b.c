@@ -53,7 +53,8 @@ static const fd6818_regval_t tx_seq[] = { { 0x37, 0x9D1F }, { 0x52, 0x028F }, { 
 static const fd6818_regval_t burst_rx[] = { { 0x30, 0xBFF1 } };
 static const fd6818_regval_t burst_tx[] = { { 0x52, 0x028F }, { 0x30, 0xC1FE } };
 
-// 5.2: no 0x1A word; 0x40 is 0x3480 plus a calibration byte (the power-on value, 0x70, until the calibration is read)
+// 5.2: no 0x1A word. 0x40 is 0x3480 plus a calibration byte: the power-on 0x70 here, the band's byte in FM transmit
+// (r40_tx, fd6818_fm_tx_cal)
 static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 {
 	(void)freq_10hz;
@@ -74,7 +75,8 @@ static bool band_words(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40)
 	.bw_fm_25k = 0x3028u, .bw_fm_12k5 = 0x3048u, .bw_dmr = 0x3048u, \
 	/* hardware-dm32.md 8.10: the receiver's sleep words */ \
 	.sleep_fm = 0x9D17u, .sleep_dmr = 0x9D00u, .sleep_wake = 0x9D1Fu, \
-	.band_words = band_words
+	.band_words = band_words, \
+	.r40_tx = 0x3480u
 
 const fd6818_variant_t fd6818_variant_b = { SETUP_B(dmr_table) };
 const fd6818_variant_t fd6818_variant_b_dmr6943 = { SETUP_B(dmr_table_6943) };

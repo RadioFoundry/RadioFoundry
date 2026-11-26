@@ -103,8 +103,10 @@ The Anytone AT-D578UV is the radio the two-receiver case is for: its hardware ha
 On a radio whose volume knob RadioFoundry reads, turning the knob shows the volume at the bottom of the screen (at the
 top on a screen that uses its bottom row, such as Quick settings): a bar of 16 steps and the step number. It goes away 3 s after you stop turning, and the screen under it carries on (a call,
 a menu). It also turns the backlight on. On a radio without a knob, the **Volume** key opens the volume screen
-instead. A radio whose volume control works after the radio chip (`volume.src` none) can't know the level, and shows
-nothing.
+instead. A radio whose volume control works after the radio chip (`volume.src` none) shows the bar only where
+RadioFoundry can read the knob's position. The knob alone sets the loudness there, so **Knob when locked** is not shown
+and a PC can't set the volume. The bar goes down to 0 only where the bottom of the knob's travel is known to be silent;
+otherwise its lowest step is 1.
 
 <img src="../ux/screens/160x128/volume_bar.png" width="200" alt="The volume bar at the bottom of Home after turning the knob">
 
@@ -316,6 +318,11 @@ steps through 100 mW, 1 W and 5 W. The radio refuses to transmit without a valid
 
 A 2-cell Li-ion pack, with the same percentage curve and the same thresholds as the DM-1701: low below 6.2 V,
 critical below 6.0 V. The voltage scale is assumed, not measured.
+
+### MD-380 speaker and programming cable
+
+The USB programming cable plugs into the speaker and microphone jack. The speaker is off while it is in: unplug it to
+hear the radio.
 
 ### MD-380 power switch
 

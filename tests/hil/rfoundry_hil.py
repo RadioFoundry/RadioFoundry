@@ -5,6 +5,7 @@ bench board (SdrBench). See README.md."""
 import collections
 import contextlib
 import json
+import math
 import os
 import re
 import shlex
@@ -128,10 +129,26 @@ def tx_freqs(link, where):
         afsk = int(a.get("aprs.freq_hz") or 0) / 1e6 if a.get("aprs.block") == "ok" else 0     # else no AFSK goes out
         out += [afsk] if afsk else []
     if via != "rf":
-        core = link.view(["core"])
+        core = _core_for_guard(link)
         if where == "channel" or core.get("mode") == "dmr":   # positions over DMR go on the DMR channel
             out.append(int(core.get("tx_hz") or 0) / 1e6)
     return out
+
+
+# Over the air each read is a data burst each way (seconds): the guard reuses a core view read this recently, so a
+# test can read the TX frequency before it starts a timed recording and the run's check costs nothing. A RADIO or
+# DETOUR request may move the radio, so each one drops the reading (_guarded_request)
+AIR_CORE_FRESH_S = 10.0
+
+
+def _core_for_guard(link):
+    if not getattr(link, "air", False):
+        return link.view(["core"])
+    at, core = getattr(link, "_guard_core", (None, None))
+    if at is None or time.monotonic() - at > AIR_CORE_FRESH_S:
+        core = link.view(["core"])
+        link._guard_core = (time.monotonic(), core)
+    return core
 
 
 _request = DebugLink.request
@@ -159,10 +176,64 @@ def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
                 if not hil_config.tx_allowed(None, mhz):
                     raise RuntimeError(f"TX refused: this request keys on {mhz:.5f} MHz, not one of the rig's "
                                        f"transmit frequencies (tx_mhz)")
+    if cmd in (RADIO, DETOUR):
+        self.__dict__.pop("_guard_core", None)      # checked above; the radio may be elsewhere after this
     return _request(self, cmd, payload, *args, **kwargs)
 
 
 DebugLink.request = _guarded_request
+
+
+
+# ── detour plans: many steps for three round trips ────────────────────────────
+# A test that keys and plays sounds over the air (the debug link over DMR IP, debuglink.md 7.4) can't afford a round
+# trip per step: each is a data burst each way on the channel. A plan records the steps as one DETOUR RUN, which the
+# radio runs on its own clock: the guard's read of the TX frequency, the run and one DETOUR STATUS once the plan's time
+# is up. The plan's marks give each step's time from the run's reply, for a recording made around it.
+
+class DetourPlan:
+    """Steps for one detour: any DebugLink call that makes RADIO or PTT requests (beep, ptt, setting, ...) is recorded
+    as an item; wait(ms) adds a pause; mark(name) notes the time (s) the next step starts"""
+
+    def __init__(self):
+        from rfoundry_debug import ItemRecorder
+        self._rec = ItemRecorder()
+        self.ms = 0
+        self.marks = {}
+
+    def wait(self, ms):
+        self._rec.items.append((0, int(ms)))
+        self.ms += int(ms)
+
+    def mark(self, name):
+        self.marks[name] = self.ms / 1000
+
+    @property
+    def items(self):
+        return self._rec.items
+
+    def __getattr__(self, name):
+        return getattr(self._rec, name)
+
+
+def run_detour(link, plan, slack_s=5.0, on_start=None):
+    """Runs plan as one detour and waits it out without asking the radio while it runs (over the air the radio can't
+    answer while keyed). on_start(t0) is called with the monotonic time the run's reply came back, which the plan's
+    marks count from (the radio starts the items as it sends the reply, so they run a little before t0). Returns
+    (t0, the detour's status once idle)"""
+    from rfoundry_debug import detour_status_until
+    seconds = math.ceil(plan.ms / 1000 + slack_s)
+    link.detour_run(seconds, plan.items)
+    t0 = time.monotonic()
+    if on_start is not None:
+        on_start(t0)
+    time.sleep(plan.ms / 1000)
+    end = t0 + seconds + 10
+    st = detour_status_until(link, end)
+    while st["phase"] != "idle" and time.monotonic() < end:
+        time.sleep(0.5)
+        st = detour_status_until(link, end)
+    return t0, st
 
 
 # ── skips ───────────────────────────────────────────────────────────────────
@@ -434,6 +505,12 @@ class Radio:
         what the radio sends by itself (data replies, registration, beacons, roaming probes) can't go out either. The
         firmware sets it before it answers. False: firmware without the limit (no txlim in the core view)."""
         import hil_config
+        if self._txlim is None and getattr(self.link, "air", False):
+            # Over the air (debuglink.md 7.3) the radio takes reads and detours only: the limit can't be set, so the
+            # request check (layer 1) guards each detour's keying alone, and every write a test makes is refused
+            print("rfoundry-hil: debug link over the air: the test TX limit can't be set; only the request check "
+                  "guards TX")
+            self._txlim = False
         if self._txlim is None:
             self._txlim = "txlim" in self.view(["core"])
             if not self._txlim:
