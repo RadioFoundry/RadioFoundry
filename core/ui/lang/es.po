@@ -4778,11 +4778,6 @@ msgid "Finding system"
 msgstr "Buscando sistema"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "Sistema bloqueado"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Espere"
@@ -4974,8 +4969,8 @@ msgstr "Canal de voz inválido"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "Sistema bloqueado: sin TX"
+msgid "RX-only system: no TX"
+msgstr "Sistema solo RX: sin TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

@@ -742,3 +742,88 @@ test("Systems tab: the recommended ham system's button is there for a type that 
 	// the type list starts on Tier III, which has one
 	assert.deepEqual(labels.find(([x]) => x === "editor.modes.add_ham"), ["editor.modes.add_ham", false]);
 });
+
+// --- Systems the radio never transmits on (core/p25/p25.h: P25_WACN_NO_TX, P25_SYSID_NO_TX) ---
+
+import { systemTx } from "../static/js/codeplug/channelmodes.js";
+import { exportModes } from "../static/js/codeplug/qdmrmodes.js";
+import { liveSystemFields } from "../static/js/editor/modefields.js";
+import { WACN_NO_TX, WACN_NO_TX_MASK, SYSID_NO_TX } from "../static/js/codeplug/mode_p25.js";
+
+test("P25 noTx: the blocked WACN range and system ID, by their boundaries", () => {
+	const no = (wacn, sysid) => p25System.noTx({ wacn, sysid });
+	assert.equal(no(0xBEDFF, null), false);
+	assert.equal(no(0xBEE00, null), true);
+	assert.equal(no(0xBEEFF, null), true);
+	assert.equal(no(0xBEF00, null), false);
+	assert.equal(no(null, 0x00A), true, "system ID 00A with the WACN left blank");
+	assert.equal(no(null, 0x00B), false);
+	assert.equal(no(null, null), false);
+});
+
+test("P25 noTxNote: names the ID that matched, the WACN first, in the field's digits", () => {
+	const note = (wacn, sysid) => p25System.noTxNote({ wacn, sysid });
+	assert.deepEqual(note(0xBEE00, null), { key: "editor.p25.no_tx_wacn", params: { id: "BEE00" } });
+	assert.deepEqual(note(0xBEE5A, 0x00A), { key: "editor.p25.no_tx_wacn", params: { id: "BEE5A" } });
+	assert.deepEqual(note(0x12345, 0x00A), { key: "editor.p25.no_tx_sysid", params: { id: "00A" } });
+	assert.equal(note(0x12345, 0x00B), null);
+});
+
+test("P25 noTx: the constants are the firmware's", () => {
+	const h = readFileSync(new URL("../../core/p25/p25.h", import.meta.url), "utf8");
+	const def = (name) => parseInt(h.match(new RegExp(`#define\\s+${name}\\s+(0x[0-9A-Fa-f]+)`))[1], 16);
+	assert.equal(WACN_NO_TX, def("P25_WACN_NO_TX"));
+	assert.equal(WACN_NO_TX_MASK, def("P25_WACN_NO_TX_MASK"));
+	assert.equal(SYSID_NO_TX, def("P25_SYSID_NO_TX"));
+});
+
+function blockedSystem(fields) {
+	const m = empty();
+	const s = newSystem(m, 3, "Blocked");
+	s.fields = { ...s.fields, ...fields };
+	s.tx = true;
+	s.ownId = 1234;
+	s.entries.push({ cls: 0, group: 0, control: true, flags: 0, iden: 1, chanNo: 0x123, chan: 0, rxHz: 851012500, txHz: 806012500 });
+	s.entries.push({ cls: 2, group: 1, control: false, flags: 0, baseHz: 851006250, spacingHz: 6250, txOffsetHz: -45000000, bwHz: 12500, tdma: false, slots: 2 });
+	m.systems.push(s);
+	numberAll(m);
+	return { m, s };
+}
+
+test("saving a system on a blocked network ID writes the transmit flag off and keeps the rest", () => {
+	for (const [fields, blocked] of [[{ wacn: 0xBEE5A }, true], [{ wacn: 0x12345, sysid: 0x00A }, true], [{ wacn: 0xBEF00, sysid: 0x00B }, false]]) {
+		const { m } = blockedSystem({ noReg: true, ...fields });
+		const back = round(m).systems[0];
+		assert.equal(back.tx, !blocked);
+		assert.equal(back.ownId, 1234, "own ID kept");
+		assert.equal(back.fields.noReg, true, "no-registration bit kept");
+		assert.equal(back.entries.find((e) => e.cls === 0).txHz, 806012500, "control TX kept");
+		assert.equal(back.entries.find((e) => e.cls === 2).txOffsetHz, -45000000, "plan TX offset kept");
+	}
+});
+
+test("systemTx: the system's flag, unless its module says the radio never transmits on it", () => {
+	assert.equal(systemTx(blockedSystem({ wacn: 0xBEE5A }).s), false);
+	assert.equal(systemTx(blockedSystem({ wacn: 0x32350 }).s), true);
+	assert.equal(systemTx({ type: 99, tx: true, fields: {} }), true, "a type with no rule");
+	assert.equal(systemTx({ type: 99, tx: false, fields: {} }), false);
+});
+
+test("qdmr export of a blocked system says transmit: false", () => {
+	const out = (fields) => exportModes(blockedSystem(fields).m, () => null, () => {}, String).top.systems[0].transmit;
+	assert.equal(out({ wacn: 0xBEE5A }), false);
+	assert.equal(out({ wacn: 0x32350 }), true);
+});
+
+test("liveSystemFields: the identity as typed over the stored fields", () => {
+	const stored = { wacn: 0x32350, sysid: null, ccNac: 0x293, skipEnc: true };
+	const live = (typed) => liveSystemFields(p25System, stored, (k) => typed[k], t);
+	assert.equal(p25System.noTx(live({ "sys.wacn": "bee5a" })), true, "typed over a stored WACN that isn't blocked");
+	assert.equal(live({ "sys.wacn": "bee5a" }).wacn, 0xBEE5A);
+	assert.equal(live({ "sys.wacn": "bee5a" }).skipEnc, true, "other fields stay as stored");
+	assert.equal(live({ "sys.wacn": "zz" }).wacn, 0x32350, "text that doesn't parse keeps the stored value");
+	assert.equal(live({}).wacn, 0x32350, "nothing typed yet (first render)");
+	assert.equal(live({ "sys.wacn": "" }).wacn, null, "a cleared field reads as blank");
+	assert.equal(p25System.noTx(live({ "sys.sysid": "00a", "sys.wacn": "" })), true);
+	assert.equal(p25System.noTx(live({ "sys.wacn": "" })), false);
+});

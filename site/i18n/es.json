@@ -1897,6 +1897,8 @@
  "editor.p25.unit_id_help": "Déjelo en blanco para usar el ID DMR. Un ID del canal o del sistema tiene prioridad.",
  "editor.p25.wacn": "WACN (hex)",
  "editor.p25.sysid": "ID de sistema (hex)",
+ "editor.p25.no_tx_wacn": "El WACN {id} es muy usado por sistemas de seguridad pública. RadioFoundry no está aprobado para transmitir en sistemas de seguridad pública, y no se registra ni transmite en sistemas con este WACN. Este sistema será solo de escucha.",
+ "editor.p25.no_tx_sysid": "El ID de sistema {id} es muy usado por sistemas de seguridad pública. RadioFoundry no está aprobado para transmitir en sistemas de seguridad pública, y no se registra ni transmite en sistemas con este ID de sistema. Este sistema será solo de escucha.",
  "editor.p25.cc_nac": "NAC del canal de control (hex)",
  "editor.p25.any_help": "Déjelo en blanco para aceptar cualquiera.",
  "editor.p25.skip_enc": "Omitir llamadas cifradas",

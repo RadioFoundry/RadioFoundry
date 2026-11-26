@@ -1279,13 +1279,13 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		   v->p25.trunk != RADIO_P25_TRUNK_OFF) {
 		// What the follower does, and with the transmit side on, how far it is from talking: registering, the
 		// talk group once PTT can ask for it, a request's state
-		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0;
+		// A blocked system is listen only whatever the flag says: it reads as one, never as "Registering". Idle on
+		// the control channel, a system that can't transmit (blocked, or set to listen only) says "RX only", as a
+		// conventional RX-only channel does; a call still reads "Following TG n"
+		bool txs = (v->p25.flags & RADIO_P25_TRUNK_TX) != 0 && v->p25.treg != P25_REG_BLOCKED;
 		if (v->p25.trunk == RADIO_P25_TRUNK_HUNT) {
 			sb_str(&b, TR(HOME_STATE_P25T_HUNT, "Finding system"));
 			c = ui_col.dim;
-		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && v->p25.treg == P25_REG_BLOCKED) {
-			sb_str(&b, TR(HOME_STATE_P25T_BLOCKED, "Blocked system"));
-			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_WAIT) {
 			sb_str(&b, TR(HOME_STATE_P25T_WAIT, "Wait"));
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treq == P25_REQ_QUEUED) {
@@ -1303,7 +1303,11 @@ static void draw_talk(const radio_view_t *v, bool label_first)
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && txs && v->p25.treg != P25_REG_NO_TX) {
 			sb_str(&b, "TG ");
 			sb_u32(&b, v->p25.talk, 1);
+		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL && !txs) {
+			sb_str(&b, TR(WORD_RX_ONLY, "RX only"));
+			c = ui_col.warn;
 		} else if (v->p25.trunk == RADIO_P25_TRUNK_CONTROL) {
+			// the transmit side is on but this control channel has no inbound frequency
 			sb_str(&b, TR(HOME_STATE_P25T_CONTROL, "Control channel"));
 		} else if (v->p25.treq == P25_REQ_TALK) {
 			sb_str(&b, "TG ");
@@ -1573,7 +1577,7 @@ const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t l
 		case RADIO_TRUNK_WHY_DENIED: sb_str(&b, TR(DENY_WHY_P25T_DENIED, "System denied the call")); break;
 		case RADIO_TRUNK_WHY_NO_ANSWER: sb_str(&b, TR(DENY_WHY_P25T_NO_ANSWER, "No answer from system")); break;
 		case RADIO_TRUNK_WHY_NO_CHAN: sb_str(&b, TR(DENY_WHY_P25T_NO_CHAN, "Voice channel unusable")); break;
-		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "Blocked system: no TX")); break;
+		case RADIO_TRUNK_WHY_BLOCKED: sb_str(&b, TR(DENY_WHY_P25T_WACN_BLOCKED, "RX-only system: no TX")); break;
 		case RADIO_TRUNK_WHY_OTHER_SYS: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_SYS, "Another system heard")); break;
 		case RADIO_TRUNK_WHY_OTHER_KIND: sb_str(&b, TR(DENY_WHY_TRUNK_OTHER_KIND, "Incompatible system")); break;
 		case RADIO_TRUNK_WHY_REG_REFUSED: sb_str(&b, TR(DENY_WHY_TRUNK_REG_REFUSED, "Registration refused")); break;
@@ -1620,8 +1624,8 @@ static const char *deny_action(const radio_view_t *v)
 			return TR(DENY_FIX_CHECK_SYSTEM, "Check system settings");
 		if (trunk_why(v) == RADIO_TRUNK_WHY_REG_REFUSED)
 			return TR(DENY_FIX_ASK_TO_ADD_ID, "Ask to add your ID");	// the system doesn't know it
-		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND)
-			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps
+		if (trunk_why(v) == RADIO_TRUNK_WHY_OTHER_KIND || trunk_why(v) == RADIO_TRUNK_WHY_BLOCKED)
+			return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");	// no setting helps, nor a retry
 		return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 #endif
 	default: return TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");

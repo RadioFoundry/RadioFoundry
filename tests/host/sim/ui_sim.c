@@ -31,8 +31,10 @@
 //                       (both not played); p25rxend ends it
 //   nxdnrx:<src>,<dst>[,e|p]    an NXDN call: e scrambled and muted, p scrambled and played
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
-//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
-//                       1 finding the system, 2 on the control channel, 3 following talk group tg
+//   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
+//                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
+//                       tg; reg the registration state (p25_reg_t, 8 blocked); tx 1 turns the transmit side on; why
+//                       a PTT the radio just refused, for that reason (RADIO_TRUNK_WHY_*, 11 blocked)
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -3536,17 +3538,24 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #if CONFIG_P25_TRUNK
 	if (strcmp(t, "p25t") == 0) {
-		unsigned st = 0, tg = 0;
-		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+		unsigned st = 0, tg = 0, reg = 0, tx = 0, why = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u,%u,%u,%u", &st, &tg, &reg, &tx, &why) < 1 ||
+		    st > RADIO_P25_TRUNK_VOICE) {
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
 		view.ch.mode = RADIO_MODE_P25;
 		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
 		view.ch.rx_only = true;
-		view.p25.flags = RADIO_P25_ON;
+		view.p25.flags = RADIO_P25_ON | (tx ? RADIO_P25_TRUNK_TX : 0);
 		view.p25.trunk = (uint8_t)st;
+		view.p25.treg = (uint8_t)reg;
 		view.p25.dst = tg;
+		if (why) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.p25.twhy = (uint8_t)why;
+		}
 		changed();
 		advance(100);
 		return true;
