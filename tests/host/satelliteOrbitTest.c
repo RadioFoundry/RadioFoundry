@@ -269,6 +269,44 @@ static void test_invalid_decimal_field(void)
 	CHECK(!satellite_orbit_init(&orbit, &record));
 }
 
+static void with_catalog(satellite_record_t *record, const char field[6], uint32_t catalog_id)
+{
+	memcpy(record->line1 + 2, field, 5u);
+	memcpy(record->line2 + 2, field, 5u);
+	set_checksum(record->line1);
+	set_checksum(record->line2);
+	record->catalog_id = catalog_id;
+}
+
+// #1158: Alpha-5 catalog numbers, a letter for the first two digits (A = 10 .. Z = 33, without I and O)
+static void test_alpha5_catalog(void)
+{
+	satellite_orbit_t orbit;
+	satellite_record_t record = test_record();
+	with_catalog(&record, "A1101", 101101u);
+	CHECK(satellite_orbit_init(&orbit, &record) && orbit.catalog_id == 101101u);
+	with_catalog(&record, "J0000", 180000u);
+	CHECK(satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "P1234", 231234u);
+	CHECK(satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "Z9999", 339999u);
+	CHECK(satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "A1101", 101102u);	// the record's ID must match the lines
+	CHECK(!satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "I1101", 181101u);	// I and O are not used
+	CHECK(!satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "O1101", 241101u);
+	CHECK(!satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "a1101", 101101u);	// capitals only
+	CHECK(!satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "AA101", 101101u);
+	CHECK(!satellite_orbit_init(&orbit, &record));
+	with_catalog(&record, "99999", 99999u);	// the last five-digit number
+	CHECK(satellite_orbit_init(&orbit, &record));
+	record.catalog_id = 340000u;			// past Z9999
+	CHECK(!satellite_orbit_init(&orbit, &record));
+}
+
 static void test_orbit_parser_fuzz_loop(void)
 {
 	satellite_record_t base = test_record();
@@ -505,6 +543,7 @@ int main(void)
 	test_keplerian_propagation();
 	test_circular_kepler_orbit();
 	test_invalid_decimal_field();
+	test_alpha5_catalog();
 	test_orbit_parser_fuzz_loop();
 	test_pass_summary_order();
 	test_pass_cache_age();

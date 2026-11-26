@@ -25,12 +25,16 @@
 #define SAT_PENDING		(SAT_COMMIT | 0x80000000u)
 #define SAT_STAGE_MAGIC		0x31475453u
 #define SAT_VERSION		4u
-#define SAT_ENTRY_ID_MASK	0x1FFFFu
-#define SAT_ENTRY_OFFSET_SHIFT	17u
-#define SAT_ENTRY_OFFSET_MASK	0x3FFFu
+// An entry's word: the catalog ID in bits 0-18 (Alpha-5 reaches 339999), the record's offset in 19-30, NEEDS_ARM in 31
+#define SAT_ENTRY_ID_MASK	0x7FFFFu
+#define SAT_ENTRY_OFFSET_SHIFT	19u
+#define SAT_ENTRY_OFFSET_MASK	0xFFFu
 #define SAT_ENTRY_NEEDS_ARM	0x80000000u
 #if SAT_MAX_DATA > (SAT_ENTRY_OFFSET_MASK + 1u)
 #error "Satellite store offsets exceed the compact entry format"
+#endif
+#if SATELLITE_CATALOG_ID_MAX > SAT_ENTRY_ID_MASK
+#error "Satellite catalog IDs exceed the compact entry format"
 #endif
 typedef struct {
 	uint32_t catalog_offset;
@@ -205,7 +209,7 @@ static bool validate_record(const uint8_t *p, uint16_t len, sat_entry_t *entry)
 	uint32_t id = get32(p);
 	uint8_t name_len = p[4];
 	uint16_t expected = (uint16_t)(5u + name_len + 2u * SAT_TLE_LINE);
-	if (id == 0u || id > 99999u || name_len == 0u || name_len > SAT_MAX_NAME || len != expected ||
+	if (id == 0u || id > SATELLITE_CATALOG_ID_MAX || name_len == 0u || name_len > SAT_MAX_NAME || len != expected ||
 	    !utf8_name(p + 5, name_len)) {
 		return false;
 	}

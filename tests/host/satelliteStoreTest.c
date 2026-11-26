@@ -94,7 +94,10 @@ static void make_line(uint8_t *line, char number, uint32_t id, const char *epoch
 	memset(line, ' ', 69);
 	line[0] = (uint8_t)number;
 	line[1] = ' ';
-	line[2] = (uint8_t)('0' + id / 10000u);
+	if (id > 99999u)	// Alpha-5: a letter for the first two digits (A = 10 .. Z = 33, without I and O)
+		line[2] = (uint8_t)"ABCDEFGHJKLMNPQRSTUVWXYZ"[id / 10000u - 10u];
+	else
+		line[2] = (uint8_t)('0' + id / 10000u);
 	line[3] = (uint8_t)('0' + id / 1000u % 10u);
 	line[4] = (uint8_t)('0' + id / 100u % 10u);
 	line[5] = (uint8_t)('0' + id / 10u % 10u);
@@ -622,6 +625,31 @@ static void test_custom_frequency_profiles(void)
 
 // The command's working arrays are one static buffer (debuglink_satellite.c: one debug link command runs at a time): what
 // an earlier command left in it, longer or of another kind, never reaches the next
+// #1158: Alpha-5 catalog numbers up to Z9999 = 339999, kept beside each record's offset in the compact entry
+static void test_alpha5_ids(void)
+{
+	sim_flash_create(FLASH_SIZE, &map);
+	CHECK(storage_init());
+	static const uint32_t ids[] = { 25544u, 101101u, 339999u };
+	static const char *const names[] = { "ISS", "NEW", "LAST" };
+	uint8_t data[3 * TEST_RECORD_MAX];
+	uint16_t len = 0u, starts[3];
+	for (uint8_t i = 0u; i < 3u; i++) {
+		starts[i] = len;
+		len = (uint16_t)(len + make_record(data + len, ids[i], names[i], "26315.50000000"));
+	}
+	CHECK(data[starts[1] + 5u + 3u + 2u] == 'A' && data[starts[2] + 5u + 4u + 2u] == 'Z');
+	CHECK(install(data, len, 3, false, false, false));
+	CHECK(satellite_store_count() == 3u);
+	for (uint8_t i = 0u; i < 3u; i++) {
+		satellite_record_t satellite;
+		uint8_t name_len = (uint8_t)strlen(names[i]);
+		CHECK(satellite_store_get(i, &satellite) && satellite.catalog_id == ids[i] &&
+		      strcmp(satellite.name, names[i]) == 0 &&
+		      memcmp(satellite.line1, data + starts[i] + 5u + name_len, 69u) == 0);
+	}
+}
+
 static void test_working_buffer_reuse(void)
 {
 	sim_flash_create(FLASH_SIZE, &map);
@@ -754,6 +782,7 @@ int main(void)
 	test_replace_power_cuts();
 	test_custom_frequency_profiles();
 	test_working_buffer_reuse();
+	test_alpha5_ids();
 	test_arm_capability();
 	test_first_install_recovery();
 	test_cross_band_profiles_install();

@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { buildTleBundle, DEFAULT_SELECTED_IDS, filterFmSatellites, MAX_SELECTED_PROFILES,
-	parseTleCatalog, SATELLITES } from "../static/js/satellite-tle.js";
+import { buildTleBundle, catalogField, catalogNumber, DEFAULT_SELECTED_IDS, filterFmSatellites,
+	MAX_SELECTED_PROFILES, parseTleCatalog, SATELLITES } from "../static/js/satellite-tle.js";
 
 const SAMPLE = `ISS (ZARYA)\n1 25544U 98067A   26317.20662175  .00008559  00000+0  16132-3 0  9990\n2 25544  51.6325 282.6584 0007349  20.2588 339.8690 15.49346920594859\nSO-50\n1 27607U 02058C   26316.49281663  .00001582  00000+0  20311-3 0  9999\n2 27607  64.5539  30.0380 0068124 235.0518 124.4178 14.83333417286454\nAO-91\n1 43017U 17073E   26317.60524444  .00008151  00000+0  33970-3 0  9990\n2 43017  97.4443 181.7665 0144887 171.0350 189.3523 15.14807395487992\n`;
 
@@ -237,6 +237,29 @@ test("rejects malformed, stale, and unselected catalog data", () => {
 	assert.throws(() => buildTleBundle(badChecksum, [25544], { now: new Date("2026-11-14T00:00:00Z") }), /checksum/);
 	assert.throws(() => buildTleBundle(catalog, [25544], { now: new Date("2027-01-01T00:00:00Z") }), /30-day age limit/);
 	assert.throws(() => parseTleCatalog("Name\n1 25544\n"), /incomplete TLE pair/);
+});
+
+// #1158: past 99999 a letter stands for the first two digits (A = 10 .. Z = 33, without I and O)
+test("reads and writes Alpha-5 catalog numbers", () => {
+	for (const [field, id] of [["25544", 25544], ["A1101", 101101], ["J0000", 180000], ["Z9999", 339999]]) {
+		assert.equal(catalogNumber(field), id);
+		assert.equal(catalogField(id), field);
+	}
+	for (const field of ["I1101", "O1101", "a1101", "AA101", "A110", ""]) assert.equal(catalogNumber(field), null);
+	const withChecksum = (body) => {
+		let sum = 0;
+		for (const ch of body.slice(0, 68)) sum += /[0-9]/.test(ch) ? Number(ch) : ch === "-" ? 1 : 0;
+		return body.slice(0, 68) + (sum % 10);
+	};
+	const line1 = withChecksum("1 A1101U 26001A   26317.20662175  .00008559  00000+0  16132-3 0  999");
+	const line2 = withChecksum("2 A1101  51.6325 282.6584 0007349  20.2588 339.8690 15.4934692059485");
+	const catalog = parseTleCatalog(`New satellite\n${line1}\n${line2}\n`);
+	assert.equal(catalog[0].catalog_id, 101101);
+	const profile = { catalog_id: 101101, rx_hz: 145900000, tx_hz: 435100000, tx_tone_tenths: 885 };
+	const bundle = buildTleBundle(catalog, [101101], { now: new Date("2026-11-14T00:00:00Z"), profiles: [profile] });
+	assert.deepEqual(bundle.records.map(({ catalog_id }) => catalog_id), [101101]);
+	assert.throws(() => buildTleBundle([{ ...catalog[0], catalog_id: 101102 }], [101102],
+		{ now: new Date("2026-11-14T00:00:00Z"), profiles: [{ ...profile, catalog_id: 101102 }] }), /catalog IDs do not match/);
 });
 
 test("accepts bulletin satellites with manually supplied frequency profiles", () => {

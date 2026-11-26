@@ -57,6 +57,25 @@ class SatelliteTleTest(unittest.TestCase):
         with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "incomplete"):
             satellite_tle._parse_provider_text("ISS\n%s\n" % self.line1)
 
+    def test_alpha5_catalog_numbers(self):
+        # #1158: past 99999 a letter stands for the first two digits (A = 10 .. Z = 33, without I and O)
+        for field, number in (("25544", 25544), ("A1101", 101101), ("J0000", 180000), ("Z9999", 339999)):
+            self.assertEqual(satellite_tle.catalog_number(field), number)
+            self.assertEqual(satellite_tle.catalog_field(number), field)
+        for field in ("I1101", "O1101", "a1101", "AA101", "A110", ""):
+            self.assertIsNone(satellite_tle.catalog_number(field))
+        self.assertEqual(satellite_tle.parse_catalog_ids(["25544,A1101", "101102"]), [25544, 101101, 101102])
+        with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "1..339999"):
+            satellite_tle.parse_catalog_ids(["340000"])
+        line1 = tle_line("1 A1101" + self.line1[7:68])
+        line2 = tle_line("2 A1101" + self.line2[7:68])
+        records = satellite_tle._parse_provider_text("NEW SAT\n%s\n%s\n" % (line1, line2))
+        self.assertEqual([(row["catalog_id"], row["name"]) for row in records], [(101101, "NEW SAT")])
+        checked = satellite_tle.validate_record(records[0], now=self.now)
+        self.assertEqual(checked["catalog_id"], 101101)
+        with self.assertRaisesRegex(satellite_tle.SatelliteTleError, "catalog IDs"):
+            satellite_tle.validate_record(dict(records[0], catalog_id=101102), now=self.now)
+
     def test_accepts_space_padded_four_digit_revolution_number(self):
         line2 = tle_line(self.line2[:63] + " 7540")
         checked = satellite_tle.validate_record(dict(self.iss, line2=line2), now=self.now)

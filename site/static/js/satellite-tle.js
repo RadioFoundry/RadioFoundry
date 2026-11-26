@@ -33,6 +33,25 @@ export function filterFmSatellites(records) {
 const DAY_MS = 86400000;
 const MAX_AGE_DAYS = 30;
 
+// NORAD catalog numbers: 1..99999 as five digits, then Alpha-5 up to 339999, where a letter stands for the first two
+// digits (A = 10 .. Z = 33, without I and O: A1101 = 101101; docs/spec/satellite.md)
+export const CATALOG_ID_MAX = 339999;
+const ALPHA5_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+// The catalog number in a TLE line's columns 3-7, or null when the field is neither five digits nor Alpha-5
+export function catalogNumber(field) {
+	if (typeof field !== "string" || !/^[0-9A-Z][0-9]{4}$/.test(field)) return null;
+	if (/[0-9]/.test(field[0])) return Number(field);
+	const lead = ALPHA5_LETTERS.indexOf(field[0]);
+	return lead < 0 ? null : (10 + lead) * 10000 + Number(field.slice(1));
+}
+
+// The five TLE columns of a catalog number: Alpha-5 above 99999
+export function catalogField(id) {
+	if (id <= 99999) return String(id).padStart(5, "0");
+	return ALPHA5_LETTERS[Math.floor(id / 10000) - 10] + String(id % 10000).padStart(4, "0");
+}
+
 export function parseTleCatalog(text) {
 	if (typeof text !== "string") throw new Error("TLE catalog must be text");
 	const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
@@ -55,9 +74,8 @@ export function parseTleCatalog(text) {
 		while (line2Index < lines.length && !lines[line2Index].trim()) line2Index++;
 		const line2 = lines[line2Index];
 		if (!line2?.startsWith("2 ")) throw new Error("Catalog contains an incomplete TLE pair");
-		const idText = line.slice(2, 7);
-		if (!/^\d{5}$/.test(idText)) throw new Error("Catalog contains an invalid NORAD catalog ID");
-		const catalogId = Number(idText);
+		const catalogId = catalogNumber(line.slice(2, 7));
+		if (!catalogId) throw new Error("Catalog contains an invalid NORAD catalog ID");
 		if (seen.has(catalogId)) throw new Error(`Catalog contains duplicate ID ${catalogId}`);
 		if (!name) throw new Error(`Catalog ID ${catalogId} has no satellite name`);
 		records.push({ catalog_id: catalogId, name, line1: line, line2 });
@@ -92,11 +110,11 @@ export function tleEpochMilliseconds(line1, id) {
 
 function validateRecord(record, now) {
 	const { catalog_id: id, name, line1, line2 } = record;
-	if (!Number.isInteger(id) || id < 1 || id > 99999 || !name || /[\x00-\x1f\x7f]/.test(name) ||
+	if (!Number.isInteger(id) || id < 1 || id > CATALOG_ID_MAX || !name || /[\x00-\x1f\x7f]/.test(name) ||
 		new TextEncoder().encode(name).length > 48) throw new Error("Invalid satellite ID or name");
 	if (line1.length !== 69 || line2.length !== 69 || !line1.startsWith("1 ") || !line2.startsWith("2 ") ||
 		!checksumValid(line1) || !checksumValid(line2)) throw new Error(`NORAD ${id}: invalid TLE length or checksum`);
-	if (line1.slice(2, 7) !== String(id).padStart(5, "0") || line2.slice(2, 7) !== String(id).padStart(5, "0"))
+	if (catalogNumber(line1.slice(2, 7)) !== id || catalogNumber(line2.slice(2, 7)) !== id)
 		throw new Error(`NORAD ${id}: TLE catalog IDs do not match`);
 	if (!"UCS".includes(line1[7]) || line1[8] !== " " || line1[17] !== " " || line1[32] !== " " ||
 		!/^[ 0-9A-Za-z]{8}$/.test(line1.slice(9, 17)) || !/^[ +-]\.\d{8}$/.test(line1.slice(33, 43)) ||

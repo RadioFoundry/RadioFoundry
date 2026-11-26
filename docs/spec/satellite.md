@@ -193,7 +193,10 @@ with `catalog_id`, `rx_hz`, `tx_hz`, and `tx_tone_tenths`. Each record has `cata
 caller-selected limit. Older elements are shown and require explicit acceptance (or the command is cancelled); a
 future epoch more than one day ahead of the PC's UTC clock is invalid.
 
-TLE text is exactly the two 69-character lines, without line endings. Validation checks the standard line number,
+TLE text is exactly the two 69-character lines, without line endings. The catalog ID in columns 3-7 is five digits
+(1-99999) or, for the newer six-digit NORAD numbers, Alpha-5: a capital letter stands for the first two digits, A = 10
+to Z = 33 without I and O, so `A1101` is 101101 and `Z9999` (339999) is the highest. The firmware, the PC utility and
+the site read both forms and use the number everywhere else. Validation checks the standard line number,
 catalog-ID columns, checksum column, epoch syntax and calendar day, and finite/ranged orbital fields used by propagation.
 Every entry is validated before any install begins. Duplicate IDs, malformed entries, or a provider response that
 omits or adds an ID reject the complete batch.

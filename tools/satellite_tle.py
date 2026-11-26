@@ -38,6 +38,35 @@ OP_PROFILE_GET, OP_PROFILE_SET = 7, 8
 OP_REPLACE_BEGIN = 9
 OP_PROFILE_STAGE, OP_PROFILE_VALUES_GET, OP_PROFILE_STAGE_CHUNK = 10, 11, 12
 DEFAULT_PROFILE_IDS = (25544, 27607, 43017)
+# NORAD catalog numbers: 1..99999 as five digits, then Alpha-5 up to 339999 (Z9999; docs/spec/satellite.md)
+CATALOG_ID_MAX = 339999
+_ALPHA5_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"  # A = 10 .. Z = 33, without I and O
+
+
+def catalog_number(field):
+    """The catalog number in a TLE line's columns 3-7: five digits, or Alpha-5, where a letter stands for the first two
+    digits (A1101 = 101101). None when the field is neither."""
+    if not isinstance(field, str) or not re.fullmatch(r"[0-9A-Z][0-9]{4}", field):
+        return None
+    if field[0].isdigit():
+        return int(field)
+    lead = _ALPHA5_LETTERS.find(field[0])
+    return None if lead < 0 else (10 + lead) * 10000 + int(field[1:])
+
+
+def catalog_field(catalog_id):
+    """The five TLE columns of a catalog number: Alpha-5 above 99999."""
+    if catalog_id <= 99999:
+        return f"{catalog_id:05d}"
+    return _ALPHA5_LETTERS[catalog_id // 10000 - 10] + f"{catalog_id % 10000:04d}"
+
+
+def _catalog_id_arg(item):
+    """A catalog ID typed by the user: its number, or its Alpha-5 form."""
+    item = item.strip()
+    if re.fullmatch(r"[0-9]+", item):
+        return int(item, 10)
+    return catalog_number(item.upper())
 PROFILE_FREQUENCIES = {
     25544: (437800000, 145990000), 27607: (436795000, 145850000),
     40908: (437200000, 144350000), 40931: (435880000, 145880000),
@@ -70,12 +99,11 @@ def parse_catalog_ids(values):
     ids = []
     for value in values:
         for item in value.split(","):
-            try:
-                catalog_id = int(item, 10)
-            except ValueError as exc:
-                raise SatelliteTleError(f"invalid catalog ID {item!r}") from exc
-            if not 1 <= catalog_id <= 99999:
-                raise SatelliteTleError(f"catalog ID must be in 1..99999: {catalog_id}")
+            catalog_id = _catalog_id_arg(item)
+            if catalog_id is None:
+                raise SatelliteTleError(f"invalid catalog ID {item!r}")
+            if not 1 <= catalog_id <= CATALOG_ID_MAX:
+                raise SatelliteTleError(f"catalog ID must be in 1..{CATALOG_ID_MAX}: {catalog_id}")
             if catalog_id in ids:
                 raise SatelliteTleError(f"duplicate catalog ID: {catalog_id}")
             ids.append(catalog_id)
@@ -153,8 +181,8 @@ def validate_record(record, now=None, max_age_days=DEFAULT_MAX_AGE_DAYS):
     if not isinstance(record, dict) or set(record) != {"catalog_id", "name", "line1", "line2"}:
         raise SatelliteTleError("each TLE record must contain catalog_id, name, line1, and line2 only")
     catalog_id = record["catalog_id"]
-    if isinstance(catalog_id, bool) or not isinstance(catalog_id, int) or not 1 <= catalog_id <= 99999:
-        raise SatelliteTleError("catalog_id must be an integer in 1..99999")
+    if isinstance(catalog_id, bool) or not isinstance(catalog_id, int) or not 1 <= catalog_id <= CATALOG_ID_MAX:
+        raise SatelliteTleError(f"catalog_id must be an integer in 1..{CATALOG_ID_MAX}")
     name = record["name"]
     if not isinstance(name, str) or not name or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
         raise SatelliteTleError(f"catalog {catalog_id}: name must be nonempty printable text")
@@ -177,8 +205,7 @@ def validate_record(record, now=None, max_age_days=DEFAULT_MAX_AGE_DAYS):
         raise SatelliteTleError(f"catalog {catalog_id}: expected two 69-character TLE lines numbered 1 and 2")
     if not _checksum(line1) or not _checksum(line2):
         raise SatelliteTleError(f"catalog {catalog_id}: TLE checksum mismatch")
-    if not line1[2:7].isdigit() or not line2[2:7].isdigit() or \
-            int(line1[2:7]) != catalog_id or int(line2[2:7]) != catalog_id:
+    if catalog_number(line1[2:7]) != catalog_id or catalog_number(line2[2:7]) != catalog_id:
         raise SatelliteTleError(f"catalog {catalog_id}: TLE catalog IDs do not match the record")
     if line1[7] not in "UCS" or line1[8] != " " or line1[17] != " " or line1[32] != " ":
         raise SatelliteTleError(f"catalog {catalog_id}: malformed line 1 fixed-format fields")
@@ -308,7 +335,7 @@ def validate_profile_ids(profile_ids):
 def validate_catalog_profile_ids(profile_ids):
     if not isinstance(profile_ids, list) or not profile_ids or len(profile_ids) > MAX_PROFILES:
         raise SatelliteTleError(f"profile_ids must contain 1..{MAX_PROFILES} catalog IDs")
-    if any(type(catalog_id) is not int or not 1 <= catalog_id <= 99999 for catalog_id in profile_ids):
+    if any(type(catalog_id) is not int or not 1 <= catalog_id <= CATALOG_ID_MAX for catalog_id in profile_ids):
         raise SatelliteTleError("profile_ids contains an invalid catalog ID")
     if len(set(profile_ids)) != len(profile_ids):
         raise SatelliteTleError("profile_ids contains duplicate IDs")
@@ -323,7 +350,7 @@ def validate_frequency_profiles(profiles):
     for profile in profiles:
         if not isinstance(profile, dict) or set(profile) != required:
             raise SatelliteTleError("each frequency profile must contain catalog_id, rx_hz, tx_hz, and tx_tone_tenths")
-        if type(profile["catalog_id"]) is not int or not 1 <= profile["catalog_id"] <= 99999 or \
+        if type(profile["catalog_id"]) is not int or not 1 <= profile["catalog_id"] <= CATALOG_ID_MAX or \
                 type(profile["rx_hz"]) is not int or not 0 < profile["rx_hz"] < 1_000_000_000 or \
                 type(profile["tx_hz"]) is not int or not 0 < profile["tx_hz"] < 1_000_000_000 or \
                 type(profile["tx_tone_tenths"]) is not int or \
@@ -425,7 +452,7 @@ def _load_inventory_cache(path):
         for record in radio["records"]:
             if not isinstance(record, dict) or isinstance(record.get("catalog_id"), bool) or \
                     not isinstance(record.get("catalog_id"), int) or \
-                    not 1 <= record["catalog_id"] <= 99999 or isinstance(record.get("epoch"), bool) or \
+                    not 1 <= record["catalog_id"] <= CATALOG_ID_MAX or isinstance(record.get("epoch"), bool) or \
                     not isinstance(record.get("epoch"), int) or not isinstance(record.get("name"), str):
                 raise SatelliteTleError("local satellite inventory cache has a malformed record")
     return data
@@ -503,10 +530,10 @@ def _parse_provider_text(text, strict=False):
             if strict:
                 if i + 2 >= len(lines) or not lines[i + 1].startswith("1 ") or not lines[i + 2].startswith("2 "):
                     raise SatelliteTleError("provider response is not a complete name, line 1, line 2 sequence")
-                if not lines[i + 1][2:7].isdigit():
+                if catalog_number(lines[i + 1][2:7]) is None:
                     raise SatelliteTleError("provider response contains an invalid catalog ID")
                 name = line[2:].strip() if line.startswith("0 ") else line.strip()
-                records.append({"catalog_id": int(lines[i + 1][2:7]), "name": name,
+                records.append({"catalog_id": catalog_number(lines[i + 1][2:7]), "name": name,
                                 "line1": lines[i + 1], "line2": lines[i + 2]})
                 i += 3
                 continue
@@ -514,7 +541,7 @@ def _parse_provider_text(text, strict=False):
             continue
         if strict:
             raise SatelliteTleError("provider response contains a TLE pair without its satellite name")
-        if not line[2:7].isdigit() or i + 1 >= len(lines) or not lines[i + 1].startswith("2 "):
+        if catalog_number(line[2:7]) is None or i + 1 >= len(lines) or not lines[i + 1].startswith("2 "):
             raise SatelliteTleError("provider response contains an incomplete TLE pair")
         name_index = i - 1
         while name_index >= 0 and not lines[name_index].strip():
@@ -523,7 +550,7 @@ def _parse_provider_text(text, strict=False):
             raise SatelliteTleError("provider TLE entry is missing its satellite name")
         name_line = lines[name_index].strip()
         name = name_line[2:].strip() if name_line.startswith("0 ") else name_line
-        records.append({"catalog_id": int(line[2:7]), "name": name,
+        records.append({"catalog_id": catalog_number(line[2:7]), "name": name,
                         "line1": line, "line2": lines[i + 1]})
         i += 2
     if not records:
@@ -994,7 +1021,6 @@ from urllib.request import Request, urlopen
 LEGACY_SCHEMA_VERSION = 1
 DEFAULT_PROVIDER = DEFAULT_PROVIDER_URL
 DEFAULT_MAX_AGE_DAYS = 30
-CATALOG_ID = re.compile(r"^[0-9]{1,5}$")
 
 
 class TleError(ValueError):
@@ -1038,8 +1064,9 @@ def validate_pair(name, line1, line2):
         raise TleError("TLE lines must begin with 1 and 2")
     _legacy_checksum(line1, 1)
     _legacy_checksum(line2, 2)
-    catalog1, catalog2 = line1[2:7].strip(), line2[2:7].strip()
-    if not CATALOG_ID.fullmatch(catalog1) or catalog1 != catalog2:
+    catalog1 = catalog_number(line1[2:7].replace(" ", "0"))
+    catalog2 = catalog_number(line2[2:7].replace(" ", "0"))
+    if not catalog1 or catalog1 != catalog2:
         raise TleError("TLE catalog IDs are invalid or do not match")
     if line1[7] not in "UCS" or not line1[18:32].strip():
         raise TleError("invalid TLE classification or epoch")
@@ -1056,7 +1083,7 @@ def validate_pair(name, line1, line2):
     if not (0 <= inclination <= 180 and 0 <= raan < 360 and 0 <= eccentricity < 1 and
             0 <= arg_perigee < 360 and 0 <= mean_anomaly < 360 and 0 < mean_motion < 20):
         raise TleError("TLE orbital fields are outside supported ranges")
-    return {"catalog_id": int(catalog1), "name": name, "line1": line1, "line2": line2,
+    return {"catalog_id": catalog1, "name": name, "line1": line1, "line2": line2,
             "epoch": epoch.isoformat().replace("+00:00", "Z")}
 
 
@@ -1136,9 +1163,10 @@ def _ids(values):
     result = set()
     for value in values:
         for token in value.split(","):
-            if not CATALOG_ID.fullmatch(token.strip()):
+            catalog_id = _catalog_id_arg(token)
+            if catalog_id is None or not 1 <= catalog_id <= CATALOG_ID_MAX:
                 raise TleError("invalid catalog ID: %s" % token)
-            result.add(int(token))
+            result.add(catalog_id)
     if not result:
         raise TleError("select at least one catalog ID with --id")
     return result

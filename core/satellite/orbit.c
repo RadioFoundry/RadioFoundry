@@ -50,6 +50,22 @@ static uint32_t number(const char *p, size_t n)
 	return value;
 }
 
+// The catalog number in TLE columns 3-7: five digits, or Alpha-5, where a letter stands for the first two digits
+// (A = 10 .. Z = 33, without I and O: A1101 = 101101). 0 when the field is neither
+static uint32_t catalog_number(const char *p)
+{
+	if (!digits(p + 1, 4u))
+		return 0u;
+	uint32_t lead;
+	if (p[0] >= '0' && p[0] <= '9')
+		lead = (uint32_t)(p[0] - '0');
+	else if (p[0] >= 'A' && p[0] <= 'Z' && p[0] != 'I' && p[0] != 'O')
+		lead = 10u + (uint32_t)(p[0] - 'A') - (p[0] > 'I' ? 1u : 0u) - (p[0] > 'O' ? 1u : 0u);
+	else
+		return 0u;
+	return lead * 10000u + number(p + 1, 4u);
+}
+
 static bool checksum(const char *line)
 {
 	if (line[68] < '0' || line[68] > '9')
@@ -407,8 +423,8 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 	const char *line2 = record->line2;
 	if (line1[SATELLITE_TLE_LINE_LENGTH] != 0 || line2[SATELLITE_TLE_LINE_LENGTH] != 0 ||
 	    line1[0] != '1' || line1[1] != ' ' ||
-	    line2[0] != '2' || line2[1] != ' ' || !digits(line1 + 2, 5u) || !digits(line2 + 2, 5u) ||
-	    number(line1 + 2, 5u) != record->catalog_id || number(line2 + 2, 5u) != record->catalog_id ||
+	    line2[0] != '2' || line2[1] != ' ' ||
+	    catalog_number(line1 + 2) != record->catalog_id || catalog_number(line2 + 2) != record->catalog_id ||
 	    !checksum(line1) || !checksum(line2) || !digits(line1 + 18, 5u) || line1[23] != '.' ||
 	    !digits(line1 + 24, 8u) || line1[32] != ' ' || line1[43] != ' ' || line1[52] != ' ' ||
 	    line1[61] != ' ' || line1[63] != ' ' || line2[7] != ' ' || line2[16] != ' ' ||
@@ -481,7 +497,7 @@ static bool parse_elements(satellite_orbit_t *orbit, const satellite_record_t *r
 
 bool satellite_orbit_init(satellite_orbit_t *orbit, const satellite_record_t *record)
 {
-	if (orbit == NULL || record == NULL || record->catalog_id == 0u || record->catalog_id > 99999u)
+	if (orbit == NULL || record == NULL || record->catalog_id == 0u || record->catalog_id > SATELLITE_CATALOG_ID_MAX)
 		return false;
 	memset(orbit, 0, sizeof(*orbit));
 	if (!parse_elements(orbit, record))

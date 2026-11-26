@@ -22,7 +22,8 @@ TLEs and verifies their epochs. The page can push directly over USB/serial or cr
 Direct push requires a supported browser and a secure context (HTTPS or localhost).
 After an install or update, the web flasher offers this page when the installed build reports satellite support.
 
-Install only the catalog IDs you choose. Repeat `--id` or separate IDs with commas:
+Install only the catalog IDs you choose. Repeat `--id` or separate IDs with commas. Newer satellites have six-digit
+numbers, which TLE files write in the Alpha-5 form (`A1101` for 101101); either form works with `--id`:
 
 ```sh
 python tools/satellite_tle.py sync --source amsat --id 25544,43017
