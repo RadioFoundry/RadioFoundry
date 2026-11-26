@@ -10,6 +10,7 @@ import { parseFreq, parseTone, mhz } from "./fields.js";
 import { LIMITS, POWER_NAMES, validDtmf } from "./records.js";
 import { newChannel, newContact, remove, numberTable, p25Room } from "./model.js";
 import { isDmr, isP25, contactModeOf, channelContactMode, typeFor, allCallId, contactIdMax } from "./contactmode.js";
+import { CONV_TYPE } from "./mode_conv.js";
 
 // --- RFC 4180 ---
 
@@ -184,6 +185,15 @@ function findRef(text, list, contacts = false) {
 
 const SEP = "|";
 
+// A contact's list in a file: the list's name, or "#n" when the name can't stand for it (another list has it, or it looks
+// like "#n"); a list number no list has is "#n" too; none is blank
+function listText(n, m) {
+	if (n == null) return "";
+	const lists = m.contactLists ?? [], l = lists.find((x) => x.number === n);
+	if (!l) return `#${n}`;
+	return !/^#\d+$/.test(l.name.trim()) && lists.filter((y) => y.name === l.name).length === 1 ? l.name : `#${l.number}`;
+}
+
 function refsText(list, pool) {
 	return list.map((x) => refText(x, pool)).join(SEP);
 }
@@ -253,6 +263,13 @@ export const TABLES = {
 			c("ID", "id", asInt(1, 0xFFFFFF), undefined, ["DMR ID", "Call ID", "Radio ID", "TG", "Talkgroup", "Unit", "Unit ID", "Talk Group"]),
 			c("Call Type", "type", asWord(TYPES, "group"), (r) => TYPES[r.type], ["Type"]),
 			c("Timeslot", "timeslot", asInt(0, 2, 0), (r) => (isP25(r) ? "" : r.timeslot || ""), ["TS", "Timeslot Override"]),
+			// the contact list the contact is in (contact-lists.md); blank is none. A list the file names assigns the
+			// contacts again after a codeplug's lists went void (3.3)
+			{ header: "List", aliases: ["Contact List"], key: "list", get: (r, m) => listText(r.list, m), set: (r, s, m) => {
+				const list = findRef(s, m.contactLists ?? []);
+				r.list = list ? list.number : null;
+				if (list && m.contactListsVoid) m.contactListsVoid = false;
+			} },
 		],
 		create: () => newContact(),
 		required: ["name", "id"],
@@ -355,6 +372,8 @@ export const TABLES = {
 			ref("TX Contact", "contact", "contacts", ["Contact"], channelContacts),
 			ref("RX Group List", "rxList", "rxLists", ["Group List", "RX List"]),
 			ref("APRS", "aprs", "aprs", ["APRS Configuration"]),
+			// the network (a Conventional system) a plain channel's calls are named through (contact-lists.md 5.1)
+			ref("Network", "network", "systems", ["Contact Network"], (r, m) => m.systems.filter((x) => x.type === CONV_TYPE)),
 			c("DMR ID", "dmrId", asId, (r) => r.dmrId || "", ["Channel DMR ID"]),
 			c("RX Only", "rxOnly", asBool, (r) => yesNo(r.rxOnly)),
 			c("All Skip", "allSkip", asBool, (r) => yesNo(r.allSkip), ["Scan Skip"]),

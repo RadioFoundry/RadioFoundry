@@ -19,11 +19,13 @@ export const REGIONS = [
 ];
 // The codeplug settings area (docs/spec/codeplug-settings.md, kv.js): one sector qdmr leaves alone
 export const SETTINGS_AREA = [EE + 0x0E000, EE + 0x0F000];
+// Its first continuation (2.4), the contact lists' keys (docs/spec/contact-lists.md): the next sector, qdmr's neither
+export const CONTINUATION_AREA = [EE + 0x0F000, EE + 0x10000];
 // The air mode contact table (docs/spec/air-contacts.md): two sectors qdmr leaves alone, the P25 talk group and unit names
 export const AIR_CONTACTS_AREA = [EE + 0x0C000, EE + 0x0E000];
 // What the Codeplug Editor reads from and writes to a radio: qdmr's ranges, the air mode contact table and the
-// settings area, in address order
-export const EDITOR_REGIONS = [...REGIONS, AIR_CONTACTS_AREA, SETTINGS_AREA].sort((x, y) => x[0] - y[0]);
+// settings area with its continuation, in address order
+export const EDITOR_REGIONS = [...REGIONS, AIR_CONTACTS_AREA, SETTINGS_AREA, CONTINUATION_AREA].sort((x, y) => x[0] - y[0]);
 // The DMR ID database header (7.5; format C's is 32 bytes, iddb-compact.md 3.1): enough to tell whether one is there,
 // its format and how big it is
 export const IDDB_HEADER = [FL + 0x30000, FL + 0x30020];

@@ -9,6 +9,12 @@ import { crc32 } from "../flasher/bytes.js";
 
 export const KV_ADDR = EE + 0x0E000;
 export const KV_SIZE = 0x1000;
+// The first continuation (2.4): the contact lists' keys live there and nowhere else, every other key in the first sector
+export const KV_CONT_ADDR = EE + 0x0F000;
+export const KV_CONT_LO = 0x1E00;
+export const KV_CONT_HI = 0x20FF;
+export const KV_CHAIN_MAX = 8;	// sectors a reader follows in all
+export const inContinuation = (key) => key >= KV_CONT_LO && key <= KV_CONT_HI;
 export const KV_VERSION = 1;
 export const KV_HDR = 16;	// the header length this version writes
 const MAGIC = [0x52, 0x46, 0x4B, 0x56];	// "RFKV"
@@ -55,8 +61,8 @@ const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 
 
 // The area in an image's bytes: {state, entries}. state: "valid"; "empty" (an erased sector); "bad" (anything else
 // that isn't a valid area, version 0 too); "newer" (our magic with a later version). Only a valid area has entries
-export function decodeArea(bytes) {
-	const s = bytes.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
+export function decodeArea(bytes, addr = KV_ADDR) {
+	const s = bytes.subarray(addr, addr + KV_SIZE);
 	if (s.length < KV_SIZE) return { state: "empty", entries: [] };
 	if (!MAGIC.every((x, i) => s[i] === x)) return { state: s.every((x) => x === 0xFF) ? "empty" : "bad", entries: [] };
 	// no version 0 was ever written: a damaged byte, not a later version's area that must be left alone
@@ -74,6 +80,51 @@ export function decodeArea(bytes) {
 		o += 4 + n;
 	}
 	return { state: "valid", entries };
+}
+
+// The sector a pointer in a header names, or 0 when it names none a reader follows: a multiple of 4096 inside the
+// EEPROM image, not the first sector itself
+function pointerOf(bytes, addr) {
+	const p = u32(bytes, addr + 12);
+	return p !== 0 && p % KV_SIZE === 0 && p < 0x10000 && p + KV_SIZE <= bytes.length && p !== KV_ADDR ? p : 0;
+}
+
+// The area as a reader sees it (2.4): the first sector, then each continuation the pointers name, up to KV_CHAIN_MAX
+// sectors in all. entries: every sector's, the first of a key in the earlier sector winning; sectors: {addr, state,
+// entries} for each sector read. A sector that is not valid, or a pointer that leads nowhere, ends the chain; the
+// sectors before it still read. state is the first sector's
+export function decodeChain(bytes) {
+	const first = decodeArea(bytes);
+	const sectors = [{ addr: KV_ADDR, state: first.state, entries: first.entries }];
+	const entries = dedupe(first.entries);
+	const seen = new Set([KV_ADDR]);
+	let from = KV_ADDR;
+	while (first.state === "valid" && sectors.length < KV_CHAIN_MAX) {
+		const next = pointerOf(bytes, from);
+		if (!next || seen.has(next)) break;
+		seen.add(next);
+		const d = decodeArea(bytes, next);
+		sectors.push({ addr: next, state: d.state, entries: d.entries });
+		if (d.state !== "valid") break;
+		for (const e of dedupe(d.entries)) if (!entries.some((x) => x.key === e.key)) entries.push(e);
+		from = next;
+	}
+	return { state: first.state, entries, sectors };
+}
+
+// The first continuation a writer uses (2.4): the sector the first sector names when that is a valid area, otherwise
+// KV_CONT_ADDR, started from an erased sector so the keys an old unlinked one held don't come back. {addr, state,
+// linked}: the sector, its state ("valid", "newer", or "empty" for one started new) and whether the first sector
+// already names it
+export function continuationOf(bytes) {
+	const p = decodeArea(bytes).state === "valid" ? pointerOf(bytes, KV_ADDR) : 0;
+	if (p) {
+		const state = decodeArea(bytes, p).state;
+		if (state === "valid" || state === "newer") return { addr: p, state, linked: true };
+	}
+	// an unlinked continuation of a newer version is left alone too
+	const state = decodeArea(bytes, KV_CONT_ADDR).state;
+	return { addr: KV_CONT_ADDR, state: state === "newer" ? state : "empty", linked: p === KV_CONT_ADDR };
 }
 
 // A key's value: the first entry's (4, "one entry per key"), or null when absent
@@ -214,12 +265,36 @@ export function encodeArea(entries, prev = null) {
 
 // Write entries into an image's bytes as the area, only when the sector's bytes change. Refuses (returns false,
 // writes nothing) over an area of a newer version. True when the sector holds the entries afterwards
-export function putArea(bytes, entries) {
-	const state = decodeArea(bytes).state;
+export function putArea(bytes, entries, addr = KV_ADDR) {
+	const state = decodeArea(bytes, addr).state;
 	if (state === "newer") return false;
-	const have = bytes.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
+	const have = bytes.subarray(addr, addr + KV_SIZE);
 	const s = encodeArea(entries, state === "valid" ? have : null);
 	if (!s.every((x, i) => x === have[i])) have.set(s);
+	return true;
+}
+
+// Entries as the continuation holds them for a write: entries is every key of the contact lists' range to store (the
+// other keys in the continuation, a later version's, are kept as found). The continuation is made when there is
+// something to store: its sector first, then the first sector named to it (2.4). Nothing is written when the entries
+// are none and there is no continuation. Returns false, writing nothing, when the first sector or the continuation
+// is of a newer version; throws RangeError when they don't fit
+export function putContinuation(bytes, entries) {
+	entries = entries.filter((e) => inContinuation(e.key));
+	if (decodeArea(bytes).state === "newer") return false;
+	const cont = continuationOf(bytes);
+	if (cont.state === "newer") return false;
+	if (cont.state !== "valid" && !entries.length) return true;
+	const have = cont.state === "valid" ? decodeArea(bytes, cont.addr).entries : [];
+	const want = [...dedupe(have).filter((e) => !inContinuation(e.key)), ...entries];
+	const sector = bytes.subarray(cont.addr, cont.addr + KV_SIZE);
+	const s = encodeArea(want, cont.state === "valid" ? sector : null);
+	if (!s.every((x, i) => x === sector[i])) sector.set(s);
+	if (!cont.linked) {
+		// the first sector, started new when it isn't a valid area, names it after the continuation is there
+		if (decodeArea(bytes).state !== "valid") putArea(bytes, []);
+		bytes.subarray(KV_ADDR + 12, KV_ADDR + 16).set(idValue(cont.addr));
+	}
 	return true;
 }
 
@@ -246,24 +321,24 @@ export function putKeys(bytes, vals) {
 
 const sameBytes = (a, b) => a === b || (a != null && b != null && a.length === b.length && a.every((x, i) => x === b[i]));
 
-// The area a write to a radio sends (6, 7), put into file's bytes. base is the image the editor opened.
-// - The radio's area is of a newer version: the radio's, as it is.
-// - The edit didn't change the area from base, or the file's isn't valid: the radio's. A file without an area
+// One sector of the area a write to a radio sends (6, 7), put into file's bytes. base is the image the editor opened.
+// - The radio's sector is of a newer version: the radio's, as it is.
+// - The edit didn't change the sector from base, or the file's isn't valid: the radio's. A file without an area
 //   (another tool's, 0xFF there) never erases the keys.
-// - The edit changed it and the radio has a valid area: the radio's area with only the keys the edit changed, set or
+// - The edit changed it and the radio has a valid sector: the radio's sector with only the keys the edit changed, set or
 //   removed. A key the radio's menu or debug link changed since the file was read keeps the radio's value.
-// - The radio has no valid area, or no base is given (a file sent as it is): the file's.
+// - The radio has no valid sector, or no base is given (a file sent as it is): the file's.
 // Throws RangeError when the radio's keys and the edit's don't fit together
-export function areaForWrite(file, radio, base = null) {
-	const sector = (b) => b.subarray(KV_ADDR, KV_ADDR + KV_SIZE);
-	const f = decodeArea(file), r = decodeArea(radio);
+function sectorForWrite(file, radio, base, addr) {
+	const sector = (b) => b.subarray(addr, addr + KV_SIZE);
+	const f = decodeArea(file, addr), r = decodeArea(radio, addr);
 	const edited = !base || !sector(file).every((x, i) => x === sector(base)[i]);
 	if (r.state === "newer" || !edited || f.state !== "valid") {
 		sector(file).set(sector(radio));
 		return;
 	}
 	if (!base || r.state !== "valid") return;
-	const was = decodeArea(base).entries;
+	const was = decodeArea(base, addr).entries;
 	let entries = dedupe(r.entries);
 	for (const key of new Set([...was, ...f.entries].map((e) => e.key))) {
 		const now = getValue(f.entries, key);
@@ -271,4 +346,20 @@ export function areaForWrite(file, radio, base = null) {
 		entries = now == null ? deleteValue(entries, key) : setValue(entries, key, now);
 	}
 	sector(file).set(encodeArea(entries, sector(radio)));
+}
+
+// The area a write to a radio sends: the first sector and the continuation at KV_CONT_ADDR, each judged for itself
+// (sectorForWrite). A first sector of the radio of a newer version keeps both of the radio's. A continuation the file
+// holds that no pointer reaches gets named: a first sector whose pointer leads to no valid sector gets KV_CONT_ADDR
+export function areaForWrite(file, radio, base = null) {
+	if (decodeArea(radio).state === "newer") {
+		file.subarray(KV_ADDR, KV_CONT_ADDR + KV_SIZE).set(radio.subarray(KV_ADDR, KV_CONT_ADDR + KV_SIZE));
+		return;
+	}
+	sectorForWrite(file, radio, base, KV_ADDR);
+	sectorForWrite(file, radio, base, KV_CONT_ADDR);
+	if (decodeArea(file).state === "valid" && decodeArea(file, KV_CONT_ADDR).state === "valid") {
+		const p = pointerOf(file, KV_ADDR);
+		if (!p || decodeArea(file, p).state !== "valid") file.subarray(KV_ADDR + 12, KV_ADDR + 16).set(idValue(KV_CONT_ADDR));
+	}
 }

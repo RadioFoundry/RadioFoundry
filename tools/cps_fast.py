@@ -291,9 +291,9 @@ class FastLink:
         addrs = blocks_of(regions)
         sums = self.sums(addrs)
         jobs = []
-        area = cps_client.SETTINGS_AREA[0]
+        areas = [r[0] for r in cps_client.SETTINGS_AREAS]
         for a in addrs:
-            if a == area and (cps_client.area_state(img[a:a + BLOCK]) != "valid" or
+            if a in areas and (cps_client.area_state(img[a:a + BLOCK]) != "valid" or
                               (not sums[a][1] and cps_client.area_state(self.read_block(a)) == "newer")):
                 continue        # the radio keeps its settings area (codeplug-settings.md 4)
             if covers(regions, a):
@@ -336,13 +336,13 @@ class FastLink:
         """Block addresses whose bytes inside the regions differ from img (the VFO A record aside)"""
         bad = []
         sums = self.sums(blocks_of(regions))
-        area = cps_client.SETTINGS_AREA[0]
+        areas = [r[0] for r in cps_client.SETTINGS_AREAS]
         for a, (crc, blank) in sums.items():
             want = bytes(img[a:a + BLOCK])
             if crc32(want) == crc:
                 continue
             got = BLANK if blank else self.read_block(a)
-            if a == area and cps_client.area_kept(want, got):
+            if a in areas and cps_client.area_kept(want, got):
                 continue        # a write leaves the radio's settings area, so verify does too
             for s, e in regions:
                 lo, hi = max(s, a), min(e, a + BLOCK)

@@ -59,6 +59,15 @@ def area_cases(sim, open_fn, read_area, write):
         img[A:B] = bad
         write(link, img)
         check(bytes(read_area(link)[A:B]) == make_area(3100111), "a damaged area in the file keeps the radio's")
+        # the continuation (codeplug-settings.md 2.4) travels the same way, judged for its own sector
+        C, D = cps_client.CONTINUATION_AREA
+        img[A:B] = make_area(3100111)
+        img[C:D] = make_area(77)
+        write(link, img)
+        check(bytes(read_area(link)[C:D]) == make_area(77), "a valid continuation is written")
+        img[C:D] = b"\xff" * 4096
+        write(link, img)
+        check(bytes(read_area(link)[C:D]) == make_area(77), "an erased continuation in the file keeps the radio's")
         link.close()
         with open(dump, "r+b") as f:
             f.seek(A + 4)

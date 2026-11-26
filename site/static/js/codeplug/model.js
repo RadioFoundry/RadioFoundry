@@ -22,6 +22,7 @@ import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
 import { decodeModes, encodeModes, syncModes, removeModes, validateModes, MODE_LIMITS } from "./channelmodes.js";
+import { decodeContactLists, encodeContactLists, validateContactLists } from "./contactlists.js";
 
 const REFS = ["contact", "rxList", "aprs"];
 
@@ -63,6 +64,7 @@ export function decode(image) {
 	}
 	decodeModes(m, b);
 	linkContacts(m);
+	decodeContactLists(m, b);
 	for (const a of VFO) {
 		const c = decodeChannel(b.subarray(a, a + CH_SIZE));
 		m.vfo.push(c ? linkRefs(m, c) : null);
@@ -308,6 +310,8 @@ export function encode(m) {
 	encodeGeneral(m.general, b);
 	// the modes' records after the records they name (channel-modes.md 2.4: the record first, then its tag)
 	encodeModes(m, b, () => channelNames(m.base.bytes));
+	// the contact lists after the contacts they hold, which their check covers (contact-lists.md 3.3)
+	encodeContactLists(m, b);
 	fixLucz(b, m);
 	return img;
 }
@@ -333,13 +337,13 @@ export function newChannel(fields = {}) {
 		txTone: "", bw: 12.5, rxOnly: false, allSkip: false, zoneSkip: false, vox: false, squelch: 0, colorCode: 1,
 		timeslot: 1, contact: null, rxList: null, aprs: null, dmrId: 0, noBeep: false, noEco: false, dmo: false,
 		roam: false, aliasTs1: 0, aliasTs2: 0, useLocation: false, lat: 0, lon: 0, sfr: false, sfrA: 0, sfrB: 0,
-		toneBurst: false, acceptBadCrc: false, kind: 0, ...fields,
+		toneBurst: false, acceptBadCrc: false, kind: 0, network: null, ...fields,
 	};
 }
 
-// A contact of the contact list; mode: null for one whose mode is still to be chosen
+// A contact of the contact list (list: the contact list it is in, a number, or null for none); mode: null for one whose mode is still to be chosen
 export function newContact(fields = {}) {
-	return { number: null, mode: "dmr", name: "", id: 0, type: "group", timeslot: 0, ...fields };
+	return { number: null, mode: "dmr", name: "", id: 0, type: "group", timeslot: 0, list: null, ...fields };
 }
 
 // A new contact for a table whose column filters (editor/grid.js newRowDefaults) say what it is: with no mode filtered
@@ -363,6 +367,9 @@ export function remove(m, table, items) {
 	} else if (table === "contacts") {
 		for (const c of [...m.channels, ...m.vfo]) if (c && gone.has(c.contact)) c.contact = null;
 		for (const l of m.rxLists) l.contacts = l.contacts.filter((c) => !gone.has(c));
+	} else if (table === "systems") {
+		// a channel's network that was removed: the channel has none
+		for (const c of m.channels) if (gone.has(c.network)) c.network = null;
 	} else if (table === "rxLists") {
 		for (const c of [...m.channels, ...m.vfo]) if (c && gone.has(c.rxList)) c.rxList = null;
 	} else if (table === "aprs") {
@@ -485,5 +492,6 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (nameBytes(a.comment) > LIMITS.aprsComment) err("aprs", a, "comment", "too_long", { max: LIMITS.aprsComment });
 	}
 	validateModes(m, err, warn, { features, baseNames: () => (m.base ? channelNames(m.base.bytes) : new Map()) });
+	validateContactLists(m, err, warn);
 	return out;
 }

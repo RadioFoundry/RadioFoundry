@@ -22,7 +22,8 @@ its data flash (boards/dm32/flash_dm32.c, open-firmware-cps.md 7.4) and its shim
 needs --offset 0x700000; image files keep the STM32 addresses either way.
 
 Regions (wire addresses = flash addresses on the STM32 radios):
-  radio     qdmr's regions and the codeplug settings area 0xE000-0xF000 (default): the TFTP codeplug.bin's regions
+  radio     qdmr's regions and the codeplug settings area 0xE000-0x10000, its sector and the continuation's (default):
+            the TFTP codeplug.bin's regions
   qdmr      what qdmr transfers: EEPROM image 0x80-0x6060 and 0x7500-0xB000, custom data 0x20000-0x211A0,
             codeplug 0x9B000-0xAEE60
   codeplug  the EEPROM image 0x0-0x10000 and the flash image's codeplug 0x9B000-0xAEE60
@@ -30,7 +31,7 @@ Regions (wire addresses = flash addresses on the STM32 radios):
             included; slow)
 Writes never touch bytes outside the regions; the radio refuses its own areas. The codeplug settings area
 (docs/spec/codeplug-settings.md) is written only when the file holds a valid one and the radio's isn't of a newer
-version, in every region set: a file from a tool that doesn't carry it (0xFF there) leaves the radio's keys. Area 1 addresses on the wire are the
+version, in every region set, each of its two sectors (0xE000 and the continuation 0xF000) judged for itself: a file from a tool that doesn't carry it (0xFF there) leaves the radio's keys. Area 1 addresses on the wire are the
 data flash's physical ones, so a write is also checked against the board's protected regions (board.toml
 [[flash.protect]], mem "data") before anything is sent: the board comes from --board, or from the radio type info
 reports.
@@ -52,10 +53,12 @@ IMAGE_SIZE = 0x120000
 SECTOR = 4096
 BLOCK = 32                      # qdmr's block size for reads and writes
 
-SETTINGS_AREA = (0x0E000, 0x0F000)   # the codeplug settings area, one sector (docs/spec/codeplug-settings.md)
+SETTINGS_AREA = (0x0E000, 0x0F000)   # the codeplug settings area's first sector (docs/spec/codeplug-settings.md)
+CONTINUATION_AREA = (0x0F000, 0x10000)   # its first continuation (2.4): the contact lists' keys (contact-lists.md)
+SETTINGS_AREAS = (SETTINGS_AREA, CONTINUATION_AREA)   # each sector is judged on its own
 
 REGIONS = {
-    "radio": [(0x00080, 0x06060), (0x07500, 0x0B000), SETTINGS_AREA, (0x20000, 0x211A0), (0x9B000, 0xAEE60)],
+    "radio": [(0x00080, 0x06060), (0x07500, 0x0B000), SETTINGS_AREA, CONTINUATION_AREA, (0x20000, 0x211A0), (0x9B000, 0xAEE60)],
     "qdmr": [(0x00080, 0x06060), (0x07500, 0x0B000), (0x20000, 0x211A0), (0x9B000, 0xAEE60)],
     "codeplug": [(0x00000, 0x10000), (0x9B000, 0xAEE60)],
     "all": [(0x00000, 0x10000), (0x20000, 0x120000)],
@@ -296,11 +299,12 @@ class Cps:
         board's protected regions; a sector on the wire that overlaps one refuses the whole write before anything is
         sent."""
         jobs = plan_write(img, regions, base)
-        area = SETTINGS_AREA[0] // SECTOR
-        lo, hi = SETTINGS_AREA
-        if any(s == area for s, _, _ in jobs) and (
-                area_state(img[lo:hi]) != "valid" or area_kept(img[lo:hi], self.read_image([SETTINGS_AREA])[lo:hi])):
-            jobs = [j for j in jobs if j[0] != area]     # the radio keeps its settings area
+        for area_range in SETTINGS_AREAS:
+            area = area_range[0] // SECTOR
+            lo, hi = area_range
+            if any(s == area for s, _, _ in jobs) and (
+                    area_state(img[lo:hi]) != "valid" or area_kept(img[lo:hi], self.read_image([area_range])[lo:hi])):
+                jobs = [j for j in jobs if j[0] != area]     # the radio keeps this sector of its settings area
         for sector, _, _ in jobs:
             wire = sector * SECTOR + self.offset
             try:
@@ -652,8 +656,7 @@ def main(argv=None):
         elif a.cmd == "verify":
             img = load_image(a.image)
             back = cps.read_image(regions, block=a.block, progress=progress)
-            lo, hi = SETTINGS_AREA
-            d = compare(img, back, regions, skip=[SETTINGS_AREA] if area_kept(img[lo:hi], back[lo:hi]) else ())
+            d = compare(img, back, regions, skip=[r for r in SETTINGS_AREAS if area_kept(img[r[0]:r[1]], back[r[0]:r[1]])])
             for addr, x, y in d[:20]:
                 print(f"{addr:#08x}: file {x:#04x} radio {y:#04x}")
             print("match" if not d else f"{len(d)} bytes differ")

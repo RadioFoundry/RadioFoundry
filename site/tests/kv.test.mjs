@@ -7,9 +7,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CodeplugImage, REGIONS, EDITOR_REGIONS, SETTINGS_AREA } from "../static/js/codeplug/image.js";
+import { CodeplugImage, REGIONS, EDITOR_REGIONS, SETTINGS_AREA, CONTINUATION_AREA } from "../static/js/codeplug/image.js";
 import {
-	KV_ADDR, KV_SIZE, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getKey, keyValue, keyValid, idValue, putArea, putKeys, areaForWrite, KEYS,
+	KV_ADDR, KV_SIZE, KV_CONT_ADDR, KEY, ID_MAX, decodeArea, encodeArea, getValue, setValue, deleteValue, getKey, keyValue, keyValid, idValue, putArea, putKeys, areaForWrite, KEYS,
+	decodeChain, continuationOf, putContinuation,
 } from "../static/js/codeplug/kv.js";
 import { decode, encode, empty, validate } from "../static/js/codeplug/model.js";
 import { CpsSerial, writeRanges } from "../static/js/codeplug/transport.js";
@@ -446,4 +447,202 @@ test("general settings: the signaling tone records, absent until set", () => {
 	assert.equal(validate(m).filter((p) => p.code === "sig_range" && p.field === "sigEnd").length, 1);
 	const bad = decode(encode(m)).general;
 	assert.equal(bad.sigEnd, null, "a value out of range is not written");
+});
+
+// --- The continuation (codeplug-settings.md 2.4) ---
+
+const CONT = KV_CONT_ADDR;
+const contSector = (img) => img.bytes.subarray(CONT, CONT + KV_SIZE);
+const pointer = (img) => [...img.bytes.subarray(KV_ADDR + 12, KV_ADDR + 16)];
+
+// An image whose first sector holds first and names ptr, and whose continuation sector holds cont (null: erased)
+function withChain(first, cont, ptr = CONT) {
+	const img = withArea(first);
+	img.bytes.set(idValue(ptr), KV_ADDR + 12);
+	if (cont) contSector(img).set(encodeArea(cont));
+	return img;
+}
+
+test("continuation: the editor moves 0xF000 with the settings area, and qdmr's ranges stay qdmr's", () => {
+	assert.deepEqual(CONTINUATION_AREA, [0xF000, 0x10000]);
+	assert.ok(!REGIONS.some(([a, b]) => a < 0x10000 && b > 0xF000));
+	assert.ok(EDITOR_REGIONS.some(([a, b]) => a === 0xF000 && b === 0x10000));
+	assert.ok(EDITOR_REGIONS.every(([a], i) => i === 0 || EDITOR_REGIONS[i - 1][1] <= a), "in address order");
+	assert.ok(writeRanges().some(([a, b]) => a === 0xF000 && b === 0x10000));
+});
+
+test("continuation: read order, the first sector's key wins, the chain follows pointers", () => {
+	const img = withChain([e(KEY.arsServer, 1, 0, 0, 0), e(0x1E00, 0x41)], [e(0x1E00, 0x42), e(0x1E01, 0x43)]);
+	const c = decodeChain(img.bytes);
+	assert.equal(c.state, "valid");
+	assert.deepEqual(c.sectors.map((x) => [x.addr, x.state]), [[KV_ADDR, "valid"], [CONT, "valid"]]);
+	assert.deepEqual(c.entries, [e(KEY.arsServer, 1, 0, 0, 0), e(0x1E00, 0x41), e(0x1E01, 0x43)]);
+	// decodeArea still reads one sector, the first
+	assert.deepEqual(decodeArea(img.bytes).entries, [e(KEY.arsServer, 1, 0, 0, 0), e(0x1E00, 0x41)]);
+	assert.deepEqual(decodeArea(img.bytes, CONT).entries, [e(0x1E00, 0x42), e(0x1E01, 0x43)]);
+	// the cap: eight sectors in all, however long the chain
+	const long = withChain([e(1, 1)], [e(0x1E00, 0)]);
+	const hops = [CONT, 0x1000, 0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0x7000];
+	hops.forEach((a, i) => {
+		const sector = i === 0 ? contSector(long) : long.bytes.subarray(a, a + KV_SIZE);
+		sector.set(encodeArea([e(0x1E00 + i, i)]));
+		if (i + 1 < hops.length) sector.set(idValue(hops[i + 1]), 12);
+	});
+	assert.equal(decodeChain(long.bytes).sectors.length, 8);
+});
+
+test("continuation: a missing, bad, newer or unreachable continuation reads as no keys", () => {
+	const keys = (img) => decodeChain(img.bytes).entries.map((x) => x.key);
+	const good = () => withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41)]);
+	assert.deepEqual(keys(good()), [1, 0x1E00]);
+	// the pointer 0: no continuation
+	assert.deepEqual(keys(withChain([e(1, 1)], [e(0x1E00, 1)], 0)), [1]);
+	// erased
+	assert.deepEqual(keys(withChain([e(1, 1)], null)), [1]);
+	// damaged (its CRC), and of a newer version
+	const bad = good();
+	bad.bytes[CONT + 16] ^= 1;
+	assert.deepEqual(keys(bad), [1]);
+	assert.equal(decodeChain(bad.bytes).sectors[1].state, "bad");
+	const newer = good();
+	newer.bytes[CONT + 4] = 9;
+	assert.deepEqual(keys(newer), [1]);
+	assert.equal(decodeChain(newer.bytes).sectors[1].state, "newer");
+	// a pointer that is not a multiple of 4096, past the image, or at the first sector itself
+	for (const p of [CONT + 16, 0x10000, 0x20000, KV_ADDR]) assert.deepEqual(keys(withChain([e(1, 1)], [e(0x1E00, 1)], p)), [1], `0x${p.toString(16)}`);
+	// a first sector that isn't valid names nothing, whatever its bytes 12-15 hold
+	const noFirst = CodeplugImage.blank();
+	noFirst.bytes.set(idValue(CONT), KV_ADDR + 12);
+	contSector(noFirst).set(encodeArea([e(0x1E00, 1)]));
+	assert.deepEqual(keys(noFirst), []);
+	// a loop ends at the sector already read
+	const loop = good();
+	contSector(loop).set(idValue(CONT), 12);
+	assert.equal(decodeChain(loop.bytes).sectors.length, 2);
+});
+
+test("continuation: a writer uses the sector the first names, else 0xF000 from an erased start", () => {
+	const linked = withChain([e(1, 1)], [e(0x1E00, 1)]);
+	assert.deepEqual(continuationOf(linked.bytes), { addr: CONT, state: "valid", linked: true });
+	const other = withChain([e(1, 1)], null, 0xD000);
+	other.bytes.subarray(0xD000, 0xD000 + KV_SIZE).set(encodeArea([e(0x1E05, 5)]));
+	assert.deepEqual(continuationOf(other.bytes), { addr: 0xD000, state: "valid", linked: true });
+	// the named sector isn't a valid area: 0xF000, started erased, and the first sector isn't linked to it yet
+	const dead = withChain([e(1, 1)], [e(0x1E00, 1)], 0xD000);
+	assert.deepEqual(continuationOf(dead.bytes), { addr: CONT, state: "empty", linked: false });
+	// no pointer: the same
+	assert.deepEqual(continuationOf(withArea([e(1, 1)]).bytes), { addr: CONT, state: "empty", linked: false });
+});
+
+test("continuation: writing makes the sector, then names it; the first sector's keys stay", () => {
+	const img = withArea([e(KEY.arsServer, 1, 0, 0, 0)]);
+	assert.equal(putContinuation(img.bytes, [e(0x1E00, 0x41), e(0x2003, 1, 2, 3, 4)]), true);
+	assert.deepEqual(pointer(img), [0, 0xF0, 0, 0]);
+	assert.deepEqual(decodeArea(img.bytes).entries, [e(KEY.arsServer, 1, 0, 0, 0)]);
+	assert.deepEqual(decodeArea(img.bytes, CONT).entries, [e(0x1E00, 0x41), e(0x2003, 1, 2, 3, 4)]);
+	assert.deepEqual(decodeChain(img.bytes).entries.map((x) => x.key), [1, 0x1E00, 0x2003]);
+	// a first sector that isn't a valid area is started new with the pointer
+	const fresh = CodeplugImage.blank();
+	assert.equal(putContinuation(fresh.bytes, [e(0x1E00, 0x41)]), true);
+	assert.deepEqual(decodeArea(fresh.bytes), { state: "valid", entries: [] });
+	assert.deepEqual(pointer(fresh), [0, 0xF0, 0, 0]);
+	assert.deepEqual(decodeChain(fresh.bytes).entries, [e(0x1E00, 0x41)]);
+	// nothing to store and no continuation: nothing is written, none is made
+	const none = withArea([e(1, 1)]);
+	const before = none.bytes.slice();
+	assert.equal(putContinuation(none.bytes, []), true);
+	assert.deepEqual(none.bytes, before);
+	// only keys outside the contact lists' range are not the continuation's
+	assert.equal(putContinuation(none.bytes, [e(KEY.arsServer, 9, 0, 0, 0)]), true);
+	assert.deepEqual(none.bytes, before);
+});
+
+test("continuation: keys outside the lists' range and the header's bytes 12-15 are kept as found", () => {
+	// a later version's key in the continuation, and a pointer on to a next sector
+	const img = withChain([e(1, 1)], [e(0x7001, 9), e(0x1E00, 0x41)]);
+	contSector(img).set(idValue(0xD000), 12);
+	assert.equal(putContinuation(img.bytes, [e(0x1E01, 0x42)]), true);
+	assert.deepEqual(decodeArea(img.bytes, CONT).entries, [e(0x7001, 9), e(0x1E01, 0x42)]);
+	assert.deepEqual([...contSector(img).subarray(12, 16)], [0x00, 0xD0, 0, 0]);
+	// the first sector is not rewritten: its pointer and entries as they were
+	assert.deepEqual(pointer(img), [0, 0xF0, 0, 0]);
+	// no entries: the range's keys go, the others stay
+	assert.equal(putContinuation(img.bytes, []), true);
+	assert.deepEqual(decodeArea(img.bytes, CONT).entries, [e(0x7001, 9)]);
+});
+
+test("continuation: a newer first sector or continuation is never written; no room changes nothing", () => {
+	const newFirst = withChain([e(1, 1)], [e(0x1E00, 1)]);
+	newFirst.bytes[KV_ADDR + 4] = 9;
+	let before = newFirst.bytes.slice();
+	assert.equal(putContinuation(newFirst.bytes, [e(0x1E00, 2)]), false);
+	assert.deepEqual(newFirst.bytes, before);
+	const newCont = withChain([e(1, 1)], [e(0x1E00, 1)]);
+	newCont.bytes[CONT + 4] = 9;
+	before = newCont.bytes.slice();
+	assert.equal(putContinuation(newCont.bytes, [e(0x1E00, 2)]), false);
+	assert.deepEqual(newCont.bytes, before);
+	// an unlinked newer sector at 0xF000 is left alone too
+	const unlinked = withArea([e(1, 1)]);
+	contSector(unlinked).set(encodeArea([e(0x1E00, 1)]));
+	unlinked.bytes[CONT + 4] = 9;
+	before = unlinked.bytes.slice();
+	assert.equal(putContinuation(unlinked.bytes, [e(0x1E00, 2)]), false);
+	assert.deepEqual(unlinked.bytes, before);
+	// entries that don't fit: RangeError, nothing written
+	const small = withChain([e(1, 1)], [e(0x1E00, 1)]);
+	before = small.bytes.slice();
+	assert.throws(() => putContinuation(small.bytes, [{ key: 0x1E01, value: new Uint8Array(KV_SIZE) }]), RangeError);
+	assert.deepEqual(small.bytes, before);
+});
+
+test("continuation: a write merges each sector for itself and names a continuation the radio doesn't", () => {
+	// a list key edited in the continuation; the radio's menu changed a key of the first sector meanwhile
+	const base = withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41)]);
+	const radio = base.clone();
+	putKeys(radio.bytes, { arsServer: 9 });
+	const file = base.clone();
+	assert.ok(putContinuation(file.bytes, [e(0x1E00, 0x41), e(0x1E01, 0x42)]));
+	areaForWrite(file.bytes, radio.bytes, base.bytes);
+	assert.equal(getKey(decodeArea(file.bytes).entries, ARS), 9, "the first sector is the radio's");
+	assert.deepEqual(decodeArea(file.bytes, CONT).entries, [e(0x1E00, 0x41), e(0x1E01, 0x42)]);
+	assert.deepEqual(pointer(file), [0, 0xF0, 0, 0]);
+
+	// the radio has no continuation (its first sector names none): the file's is kept and named
+	const plain = withArea([e(KEY.arsServer, 1, 0, 0, 0)]);
+	const made = plain.clone();
+	assert.ok(putContinuation(made.bytes, [e(0x1E00, 0x41)]));
+	areaForWrite(made.bytes, plain.bytes, plain.bytes);
+	assert.deepEqual(decodeArea(made.bytes, CONT).entries, [e(0x1E00, 0x41)]);
+	assert.deepEqual(pointer(made), [0, 0xF0, 0, 0]);
+
+	// a file without a continuation (another tool's) keeps the radio's, and names it
+	const other = withArea([e(KEY.arsServer, 2, 0, 0, 0)]);
+	const have = withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41)]);
+	areaForWrite(other.bytes, have.bytes);
+	assert.deepEqual(contSector(other), contSector(have));
+	assert.deepEqual(pointer(other), [0, 0xF0, 0, 0]);
+	assert.equal(getKey(decodeArea(other.bytes).entries, ARS), 2, "the first sector is the file's: no base to merge from");
+
+	// a radio whose first sector is newer keeps both of its sectors
+	const newer = have.clone();
+	newer.bytes[KV_ADDR + 4] = 9;
+	const sent = withChain([e(KEY.arsServer, 3, 0, 0, 0)], [e(0x1E00, 0x43)]);
+	areaForWrite(sent.bytes, newer.bytes, null);
+	assert.deepEqual(sent.bytes.subarray(KV_ADDR, CONT + KV_SIZE), newer.bytes.subarray(KV_ADDR, CONT + KV_SIZE));
+});
+
+test("continuation: the editor writes it to a radio and reads it back", async () => {
+	const start = withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41)]);
+	const radio = new FakeCpsRadio({ board: "TEST-RADIO", image: start.bytes });
+	const tr = new CpsSerial(radio.stream());
+	await tr.identify([{ id: "test", codeplug: { base: 0, end: 0xE00000, names: ["TEST-RADIO"] } }]);
+	const read = await tr.read({ iddb: false });
+	assert.deepEqual(contSector(read), contSector(start));
+	const want = read.clone();
+	assert.ok(putContinuation(want.bytes, [e(0x1E00, 0x41), e(0x1E01, 0x42)]));
+	const res = await tr.write(want, read);
+	await tr.verify(want, res.plan);
+	assert.deepEqual(radio.spi.subarray(CONT, CONT + KV_SIZE), contSector(want));
+	assert.deepEqual(decodeArea(radio.spi, CONT).entries, [e(0x1E00, 0x41), e(0x1E01, 0x42)]);
 });
