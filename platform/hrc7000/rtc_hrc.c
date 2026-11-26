@@ -156,7 +156,8 @@ static bool rtc_read(int64_t *unix_s)
 }
 
 // The load order of the hardware notes: valid 0, the time into the load registers, CCR (run, load), valid 1. The
-// interrupt enable bit stays clear: nothing handles the RTC interrupt. The soft reset the datasheet lists for a first power-up is left out: it was not needed on the radio
+// interrupt enable bit stays clear: nothing handles the RTC interrupt. The soft reset the datasheet lists for a first
+// power-up is left out: it was not needed on the radio
 static bool rtc_set(int64_t unix_s)
 {
 	if (unix_s < 0 || unix_s / 86400 > 0xFFFF) {
