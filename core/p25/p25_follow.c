@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 tylerwatt12
 // The P25 trunking follower (p25_follow.h, docs/spec/p25-trunking.md 4) and its transmit side (5).
 #include "../config.h"
 #if CONFIG_P25_TRUNK	// the whole file
@@ -15,6 +16,7 @@ _Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its
 #define IDEN_TDMA	0x04
 #define IDEN_OFF	0x08	// the transmit offset is known
 #define IDEN_OFF_STEP	0x10	// ... in channel spacings, else in 250 kHz units
+#define IDEN_OFF_PROG	0x20	// the offset itself is programmed, not learned for a programmed receive plan
 
 #define NO_OP		0xFF	// acc.pend: nothing waiting
 
@@ -81,9 +83,11 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 		return;
 	if (i->flags & IDEN_PROG) {
 		// A programmed identifier without a transmit offset takes the one off air (only that)
-		if (!(i->flags & IDEN_OFF)) {
+		if (!(i->flags & IDEN_OFF_PROG)) {
 			i->tx_off = a->tx_off;
-			i->flags |= (uint8_t)(IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP));
+			i->flags &= (uint8_t)~(IDEN_OFF | IDEN_OFF_STEP);
+			i->flags |= (uint8_t)((a->no_tx_offset ? 0 : IDEN_OFF) |
+					     (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP));
 		}
 		return;
 	}
@@ -96,7 +100,8 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 	// The transmit offset: the general form's unit is 250 kHz, the VHF/UHF and TDMA forms' the channel spacing
 	// (unconfirmed, docs/spec/p25-trunking.md 9)
 	i->tx_off = a->tx_off;
-	i->flags = (uint8_t)(IDEN_VALID | IDEN_OFF | (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
+	i->flags = (uint8_t)(IDEN_VALID | (a->no_tx_offset ? 0 : IDEN_OFF) |
+			     (a->form == P25_OP_IDEN_UP ? 0 : IDEN_OFF_STEP) |
 			     (a->tdma ? IDEN_TDMA : 0));
 	f->view.idens |= (uint16_t)(1u << (a->id & 15));
 }
@@ -524,10 +529,10 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 
-	if (!tx_on(f) || f->acc.blocked)
+	if (!tx_on(f) || f->acc.blocked || !f->view.sys_ok)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
-		if (f->view.reg == P25_REG_IDLE && f->view.sys_ok && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
+		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
 			reg_start(f, now);
 		} else if (f->view.reg == P25_REG_RETRY && elapsed(now, a->t_sent, a->backoff)) {
 			a->backoff = a->backoff * 2 > P25_ACC_RETRY_MAX ? P25_ACC_RETRY_MAX : a->backoff * 2;
@@ -643,7 +648,8 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 	const p25_follow_cfg_t *c = f->cfg;
 	uint32_t rx, tx;
 
-	if ((f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
+	if (!tx_on(f) || !f->view.sys_ok ||
+	    (f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
 	    g->src != c->unit_id || g->tg != c->talk_group || !acc_asked(f, P25_ISP_GRP_V_REQ))
 		return false;
 	acc_drop(f);
@@ -693,8 +699,27 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	} else if (f->view.op[m.opcode] != UINT8_MAX) {
 		f->view.op[m.opcode]++;
 	}
+	if (known && m.kind == P25_TSBK_RFSS &&
+	    ((!any_sysid(c) && m.u.site.sysid != c->sysid) ||
+	     (st == P25_FOLLOW_CONTROL && f->view.wacn != UINT32_MAX && m.u.site.sysid != f->view.sysid))) {
+		// A conflicting site advertisement invalidates prior proof, including wildcard selections. A grant
+		// cannot immediately reacquire this channel: wait for a fresh matching network identity first. In HUNT
+		// the view still holds the last system's identity, so only the configured one is compared there.
+		count(&f->view.wrong_sys);
+		if (p25_sysid_no_tx(m.u.site.sysid))
+			sys_block(f);
+		f->identity_conflict = true;
+		if (st == P25_FOLLOW_HUNT) {
+			if (f->phase != PH_BACKOFF)
+				hunt_next(f, now);
+		} else {
+			f->good = (uint8_t)(f->view.cc + 1 >= cc_count(f) ? 0 : f->view.cc + 1);
+			hunt_start(f, now);
+		}
+		return;
+	}
 	if (st == P25_FOLLOW_HUNT) {
-		bool need = !any_wacn(c) || !any_sysid(c);
+		bool need = !any_wacn(c) || !any_sysid(c) || f->identity_conflict;
 
 		// A system identity: it decides the candidate
 		if (known && (m.kind == P25_TSBK_NET || (m.kind == P25_TSBK_RFSS && any_wacn(c)))) {
@@ -707,7 +732,12 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 					hunt_next(f, now);
 				return;
 			}
-			f->have_id = true;
+			if (m.kind == P25_TSBK_NET) {
+				f->identity_conflict = false;
+				f->have_id = true;
+			} else if (!f->identity_conflict) {
+				f->have_id = true;
+			}
 		}
 		if (need && !f->have_id) {
 			if (f->phase == PH_DWELL) {
@@ -725,6 +755,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	switch (m.kind) {
 	case P25_TSBK_IDEN:
 		iden_learn(f, &m.u.iden);
+		if (f->view.reg == P25_REG_NO_TX && cc_tx_hz(f, f->view.cc))
+			f->view.reg = c->flags & P25_FOLLOW_NO_REG ? P25_REG_OFF : P25_REG_IDLE;
 		break;
 	case P25_TSBK_NET:
 		if ((!any_wacn(c) && m.u.net.wacn != c->wacn) || (!any_sysid(c) && m.u.net.sysid != c->sysid)) {
@@ -736,9 +768,16 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
 			sys_block(f);
-		else if (!f->acc.blocked) {
+		if ((f->view.wacn <= 0xFFFFFu && f->view.wacn != m.u.net.wacn) ||
+		    (f->view.sysid <= 0xFFFu && f->view.sysid != m.u.net.sysid)) {
+			// A different network cannot reuse this registration, even if its site numbers match.
+			acc_lost(f);
+			if (!f->acc.blocked && f->view.reg != P25_REG_OFF && f->view.reg != P25_REG_NO_TX)
+				f->view.reg = P25_REG_IDLE;
+		}
+		if (!f->acc.blocked) {
 			f->view.nac = nac;
-			f->view.sys_ok = true;
+			f->view.sys_ok = !f->view.unverified;
 		}
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
@@ -747,6 +786,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	case P25_TSBK_RFSS:
 		if (p25_sysid_no_tx(m.u.site.sysid))
 			sys_block(f);
+		if (m.u.site.sysid != f->view.sysid)
+			f->view.wacn = UINT32_MAX;
 		f->view.sysid = m.u.site.sysid;
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
@@ -815,11 +856,11 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 		if (p->tx_off_hz && p->tx_off_hz % 250000 == 0 && p->tx_off_hz / 250000 <= INT16_MAX &&
 		    p->tx_off_hz / 250000 >= -INT16_MAX) {
 			i->tx_off = (int16_t)(p->tx_off_hz / 250000);
-			i->flags |= IDEN_OFF;
+			i->flags |= IDEN_OFF | IDEN_OFF_PROG;
 		} else if (p->tx_off_hz && p->tx_off_hz % (int32_t)p->spacing_hz == 0 &&
 			   p->tx_off_hz / (int32_t)p->spacing_hz <= INT16_MAX && p->tx_off_hz / (int32_t)p->spacing_hz >= -INT16_MAX) {
 			i->tx_off = (int16_t)(p->tx_off_hz / (int32_t)p->spacing_hz);
-			i->flags |= IDEN_OFF | IDEN_OFF_STEP;
+			i->flags |= IDEN_OFF | IDEN_OFF_STEP | IDEN_OFF_PROG;
 		}
 		f->view.idens |= (uint16_t)(1u << n);
 	}
@@ -948,7 +989,7 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 		// Not the call granted (the channel was given to another one meanwhile)
 		count(&f->view.wrong_call);
 		leave(f, LEAVE_OTHER, now);
-	} else if (c->have_alg && c->algid != P25_ALGID_CLEAR) {
+	} else if ((c->have_alg && c->algid != P25_ALGID_CLEAR) || (c->have_lc && c->lc.encrypted)) {
 		f->view.enc = true;
 		if (f->cfg->flags & P25_FOLLOW_SKIP_ENC) {
 			count(&f->view.enc_skip);

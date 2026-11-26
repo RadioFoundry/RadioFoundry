@@ -25,7 +25,7 @@ static bool is_blocks(uint8_t duid)
 }
 
 // The length of a unit of trunking blocks, which its NID does not give: a TSDU's blocks are read one at a time until
-// one says it is the last (a block whose CRC fails still gives its best guess of that flag), a packet's header block
+// a CRC-valid block says it is the last, or the maximum is reached. A packet's header block
 // says how many follow. Asked again (AIR_HEAD_AGAIN) as each block comes in
 static uint16_t blocks_head(const air_frame_t *f, uint8_t duid)
 {
@@ -44,7 +44,7 @@ static uint16_t blocks_head(const air_frame_t *f, uint8_t duid)
 		// A header that fails, or a packet longer than the unit buffer: not placed (the next unit's sync is)
 		return r < 0 || n > P25_PDU_BLOCKS_MAX ? 0 : p25_blocks_syms(n);
 	}
-	if ((blk[0] & P25_TSBK_LB) || k == P25_TSDU_BLOCKS_MAX - 1)
+	if ((r >= 0 && (blk[0] & P25_TSBK_LB)) || k == P25_TSDU_BLOCKS_MAX - 1)
 		return p25_blocks_syms((uint8_t)(k + 1));
 	return (uint16_t)(AIR_HEAD_AGAIN | p25_block_end_sym((uint8_t)(k + 1)));
 }

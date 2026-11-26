@@ -357,6 +357,10 @@ on a computer ([P25 and NXDN in the editor](04-programming.md#p25-and-nxdn)). A 
 Control-channel acquisition accepts both ordinary status broadcasts and explicit multi-block network/site status.
 The configured system identity still has to match; receive-only operation never registers with the system.
 
+After losing a control channel, the radio can resume listening before it has confirmed the network's full identity.
+Registration and transmit requests wait for a valid Network Status Broadcast on the recovered channel, including
+when WACN or system ID is set to Any. This can briefly delay transmitting after reception returns.
+
 | Home says | What the radio is doing |
 |---|---|
 | Finding system | Trying the system's control channels in turn |

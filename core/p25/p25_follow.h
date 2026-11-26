@@ -231,6 +231,7 @@ typedef struct {
 	p25_follow_acc_t acc;
 	rx_seen_t seen;		// P25_FOLLOW_BAD_CRC: blocks that failed their CRC lately
 	volatile uint8_t seq;	// odd while view is written
+	bool identity_conflict;	// conflicting NET/RFSS proof: a fresh matching NET is required before reacquisition
 	p25_follow_iden_e iden[P25_FOLLOW_IDENS];
 	p25_follow_view_t view;
 } p25_follow_t;
