@@ -3567,10 +3567,10 @@ static void test_dmr_voice_features(void)
 	uint32_t res0 = sv.aes_mi_res;
 	settings_t older = sv;
 	CHECK(res0 != 0);
-	// Data (#1109): AES has no data form yet, so text is held back with its reason; signaling carries only the IDs,
-	// which the voice LC sends in the clear too, so a radio check goes on air
+	// Data: with the key, packets go encrypted with it (tested below, dmr-data.md 13.4), so nothing is refused; signaling
+	// carries only the IDs, which the voice LC sends in the clear too, so a radio check goes on air (#1110)
 	run(100);
-	CHECK(sm.view.data_deny == TXDENY_NONE && sm.view.packet_deny == TXDENY_DATA_ENCRYPTED);
+	CHECK(sm.view.data_deny == TXDENY_NONE && sm.view.packet_deny == TXDENY_NONE);
 	first = sim.air_count;
 	CHECK(dmr_signal_radio_check(9990001));
 	run(500);
@@ -3579,10 +3579,6 @@ static void test_dmr_voice_features(void)
 		rc += sim.air[i].kind == DMR_BURST_CSBK && (sim.air[i].payload[0] & 0x3F) == DMR_CSBKO_RADIO_CHECK;
 	CHECK(rc == 1);
 	run(10000);		// no answer here: its tries end
-	first = sim.air_count;
-	sms_send(9990001, false, "clear text", false, DMR_SMS_FORMAT_DEFAULT);
-	run(500);
-	CHECK(sim.air_count == first && dmr_data_last_event().kind == DMR_DATA_EV_SMS_BLOCKED);
 	first = sim.air_count;
 	tx_once();
 	air_lc(first, &l);
@@ -3633,6 +3629,29 @@ static void test_dmr_voice_features(void)
 			mi3 = ((uint32_t)sim.air[i].payload[3] << 24) | ((uint32_t)sim.air[i].payload[4] << 16) |
 			      ((uint32_t)sim.air[i].payload[5] << 8) | sim.air[i].payload[6];
 	CHECK(mi3 == res0);
+	// Data on the AES channel goes encrypted with its key (docs/spec/dmr-data.md 13.4): every first data header is
+	// followed by a privacy header naming algorithm 5 and the key ID, with an MI of the radio's sequence
+	static const uint8_t l4a[12] = { 0x13, 0x88, 0x13, 0x88, 0, 12, 0, 0, 'd', 'a', 't', 'a' };
+	unsigned dh = 0, ph = 0;
+	uint32_t dmi = 0;
+	first = sim.air_count;
+	CHECK(dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP,
+				   l4a, sizeof(l4a)));
+	run(3000);
+	for (unsigned i = first; i < sim.air_count; i++) {
+		if (sim.air[i].kind != DMR_BURST_DATA_HEADER)
+			continue;
+		const uint8_t *h = sim.air[i].payload;
+		if ((h[0] & 0x0F) == 0x0F && h[1] == 0x10) {
+			ph++;
+			CHECK(h[2] == 0x51 && h[3] == 0);	// AES-256 encrypted, key ID 0
+			dmi = ((uint32_t)h[6] << 24) | ((uint32_t)h[7] << 16) | ((uint32_t)h[8] << 8) | h[9];
+		} else {
+			dh++;
+		}
+	}
+	CHECK(dh >= 1 && ph == dh && dmi != 0 && dmi != mi3);
+	CHECK(!dmrDataServiceIpBusy() && dmrDataServiceIpResult() == DMR_REQ_OK);
 	// Restore a settings record that was saved before this over, then let the radio repair it between overs.
 	uint32_t res1 = sv.aes_mi_res;
 	*settings_begin() = older;
@@ -3667,6 +3686,16 @@ static void test_dmr_voice_features(void)
 	req(RREQ_PTT, 1);
 	CHECK(sm.view.tx_deny == TXDENY_AES_KEY && sim.air_count == first);
 	req(RREQ_PTT, 0);
+	// Without the key no data goes at all, encrypted or clear
+	first = sim.air_count;
+	dmrDataServiceSendIP(false, 9991234, DMR_DATA_IP_OURS, DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4a,
+			     sizeof(l4a));
+	run(3000);
+	dh = 0;
+	for (unsigned i = first; i < sim.air_count; i++)
+		dh += sim.air[i].kind == DMR_BURST_DATA_HEADER;
+	CHECK(dh == 0);
+	run(30000);
 	kv_t3_clear();
 	chans[4].rx_only = false;
 	reload_channel();

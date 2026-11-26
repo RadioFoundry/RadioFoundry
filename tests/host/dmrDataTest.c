@@ -1226,7 +1226,7 @@ static void testFuzz(void)
 // without a scheme's code
 static int cryptCalls;
 
-static bool testCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+static bool testCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length)
 {
 	uint16_t k = *(const uint16_t *)ctx;
 
@@ -1242,12 +1242,109 @@ static bool testCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, 
 	return true;
 }
 
+// --- An MI scheme (AES, docs/spec/dmr-data.md 13.4) through the data layer: its key ID and a new MI in each packet's
+// privacy header, a packet that can't have an MI not built at all, a confirmed retry under the first try's MI ---
+static uint32_t fakeMiNext, fakeMiCalls;
+static uint8_t lastCryptKeyId;
+static uint32_t lastCryptMi;
+
+static uint32_t fakeNewMi(const void *ctx)
+{
+	(void)ctx;
+	fakeMiCalls++;
+	return fakeMiNext ? fakeMiNext++ : 0;
+}
+
+// A stand-in keystream that depends on the MI: octet i ^= mi's low octet + i
+static bool fakeMiCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length)
+{
+	(void)ctx;
+	if ((alg != DMR_DATA_ALG_AES256) || (mi == 0) || (keyId != 7))
+	{
+		return false;
+	}
+	lastCryptKeyId = keyId;
+	lastCryptMi = mi;
+	for (int i = 0; i < length; i++)
+	{
+		data[i] ^= (uint8_t)(mi + i);
+	}
+	return true;
+}
+
+static void testAesPrivacy(void)
+{
+	static const uint8_t ctx = 0;
+	dmrDataPrivacy_t aes = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_AES256, fakeMiCrypt, &ctx, 7, fakeNewMi };
+	dmrBurst_t b[DMR_DATA_MAX_BURSTS];
+	uint8_t pdu[40], want[12];
+
+	for (int i = 0; i < (int)sizeof(pdu); i++) pdu[i] = (uint8_t)(0x45 + i * 7);
+	dmrDataSetPrivacy(&aes);
+
+	// Unconfirmed: algorithm 5 encrypted, key ID 7, the MI big-endian; each packet a new MI
+	fakeMiNext = 0x12345678u;
+	fakeMiCalls = 0;
+	int n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+								b, DMR_DATA_MAX_BURSTS);
+	CHECK(n > 0 && fakeMiCalls == 1);
+	hex("4f1051070000123456780000", want);
+	addHeaderCRC(want);
+	want[10] ^= 0xCC;
+	want[11] ^= 0xCC;
+	CHECK(b[2].dataType == DMR_TYPE_DATA_HEADER && memcmp(b[2].payload, want, 12) == 0);
+	CHECK(b[3].payload[0] == (uint8_t)(0x45 ^ 0x78) && b[3].payload[1] == (uint8_t)(0x4C ^ 0x79));
+	CHECK(dmrDataPrivacyAllows(b, n) && dmrDataPrivacyEncrypted(b, n));
+	// Received: the header's key ID and MI reach the crypt, the data comes back
+	lastCryptMi = 0;
+	CHECK(feed(b, n) == DMR_DATA_RX_PACKET);
+	CHECK(dmrDataRxPacket.privacy.alg == DMR_DATA_ALG_AES256 && dmrDataRxPacket.privacy.keyId == 7 &&
+	      dmrDataRxPacket.privacy.mi == 0x12345678u && dmrDataRxPacket.decrypted);
+	CHECK(lastCryptKeyId == 7 && lastCryptMi == 0x12345678u && memcmp(dmrDataRxPacket.data, pdu, sizeof(pdu)) == 0);
+	n = dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+							b, DMR_DATA_MAX_BURSTS);
+	CHECK(n > 0 && fakeMiCalls == 2 && b[2].payload[9] == 0x79);// the next MI
+
+	// No MI usable (no saved reservation): nothing is built, so nothing goes in the clear
+	fakeMiNext = 0;
+	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+							 b, DMR_DATA_MAX_BURSTS) == 0);
+	// Nor when the crypt can't (the key gone)
+	fakeMiNext = 0x100u;
+	aes.keyId = 8;
+	dmrDataSetPrivacy(&aes);
+	CHECK(dmrDataBuildPacket(DMR_DPF_UNCONFIRMED, DMR_SAP_IP, false, 100, 10005, pdu, sizeof(pdu), DMR_TYPE_RATE_1_2, 1,
+							 b, DMR_DATA_MAX_BURSTS) == 0);
+	aes.keyId = 7;
+	dmrDataSetPrivacy(&aes);
+
+	// Confirmed: the first try takes an MI; a selective retry sends its blocks under the same MI (the receiver keeps
+	// the first try's header), the same ciphertext; the next packet a new MI
+	uint8_t big[100];
+	for (int i = 0; i < (int)sizeof(big); i++) big[i] = (uint8_t)(i * 13 + 1);
+	fakeMiNext = 0x0A0B0C0Du;
+	fakeMiCalls = 0;
+	dmrBurst_t first[DMR_DATA_MAX_BURSTS], retry[DMR_DATA_MAX_BURSTS];
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, true, 0, 0, first,
+							  DMR_DATA_MAX_BURSTS);
+	CHECK(n > 3 && fakeMiCalls == 1 && first[1].payload[9] == 0x0D);
+	int r = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 0, false, 0x2, 0, retry,
+								  DMR_DATA_MAX_BURSTS);
+	CHECK(r == 3 && fakeMiCalls == 1 && memcmp(retry[1].payload, first[1].payload, 12) == 0);
+	CHECK(memcmp(retry[2].payload, first[3].payload, first[3].length) == 0);// block 1, as first sent
+	n = dmrDataBuildConfirmed(DMR_SAP_IP, 100, 10005, big, sizeof(big), DMR_TYPE_RATE_3_4, 1, true, 0, 0, first,
+							  DMR_DATA_MAX_BURSTS);
+	CHECK(n > 3 && fakeMiCalls == 2 && first[1].payload[9] == 0x0E);
+
+	dmrDataSetPrivacy(NULL);
+}
+
 static void testPrivacy(void)
 {
 	static const uint16_t key = 0x2503, otherKey = 0x1F00;
-	dmrDataPrivacy_t on = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &key };
-	dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
-	dmrDataPrivacy_t other = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &otherKey };
+	dmrDataPrivacy_t on = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &key, 0, NULL };
+	dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL, 0, NULL };
+	dmrDataPrivacy_t other = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, testCrypt, &otherKey, 0, NULL };
 	dmrBurst_t b[DMR_DATA_MAX_BURSTS], plain[DMR_DATA_MAX_BURSTS];
 	uint8_t pdu[40], want[12];
 
@@ -1406,6 +1503,7 @@ int main(void)
 	testCodedFrames();
 	testShortPayloads();
 	testPrivacy();
+	testAesPrivacy();
 	testFuzz();
 
 	printf("# %s (%d failures)\n", failures ? "FAILED" : "PASSED", failures);

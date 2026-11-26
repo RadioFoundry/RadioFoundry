@@ -2658,7 +2658,7 @@ static void testNoRate34(void)
 
 #if CONFIG_DMR_TMS && CONFIG_DMR_PRIVACY
 // A 16-bit XOR keystream over the user data, as a static key scheme gives (core/dmr/dmrPrivacy.c has the real ones)
-static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length)
+static bool serviceCrypt(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length)
 {
 	uint16_t k = *(const uint16_t *)ctx;
 
@@ -2677,9 +2677,9 @@ static bool serviceCrypt(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *dat
 static void testPrivacy(void)
 {
 	static const uint16_t key = 0x2503;
-	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL };
-	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key };
-	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL };
+	static const dmrDataPrivacy_t clear = { DMR_DATA_PRIVACY_CLEAR, 0, NULL, NULL, 0, NULL };
+	const dmrDataPrivacy_t encrypt = { DMR_DATA_PRIVACY_ENCRYPT, DMR_DATA_ALG_BASIC, serviceCrypt, &key, 0, NULL };
+	const dmrDataPrivacy_t block = { DMR_DATA_PRIVACY_BLOCK, 0, NULL, NULL, 0, NULL };
 	dmrBurst_t bursts[DMR_DATA_MAX_BURSTS];
 	int count, heard;
 

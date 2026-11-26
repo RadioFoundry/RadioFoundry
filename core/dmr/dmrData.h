@@ -234,10 +234,14 @@ typedef struct dmrDataPrivacy_s
 {
 	uint8_t mode;							// DMR_DATA_PRIVACY_*
 	uint8_t alg;							// ENCRYPT: the privacy header's algorithm (DMR_DATA_ALG_*)
-	// XORs the keystream of algorithm alg with message indicator mi onto a packet's user data (encrypts or decrypts):
-	// false when the scheme can't (another algorithm), the data left as it is
-	bool (*crypt)(const void *ctx, uint8_t alg, uint32_t mi, uint8_t *data, int length);
+	// XORs the keystream of algorithm alg, key keyId and message indicator mi onto a packet's user data (encrypts or
+	// decrypts): false when the scheme can't (another algorithm, no such key), the data left as it is
+	bool (*crypt)(const void *ctx, uint8_t alg, uint8_t keyId, uint32_t mi, uint8_t *data, int length);
 	const void *ctx;						// the scheme's key, for crypt
+	uint8_t keyId;							// ENCRYPT: the privacy header's key ID (0: a scheme that names none)
+	// ENCRYPT: the message indicator of the next packet we build, each one never used before with the key; NULL for a
+	// scheme without one (0 in the header). 0 = none usable now: the packet is not built (never sent in the clear)
+	uint32_t (*newMi)(const void *ctx);
 } dmrDataPrivacy_t;
 
 // The channel's data privacy (copied; NULL or mode CLEAR: off). With ENCRYPT every unconfirmed and confirmed packet we
