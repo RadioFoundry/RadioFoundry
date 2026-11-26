@@ -189,7 +189,7 @@ static uint8_t battery_pct(void)
 //   leaves the speaker faintly audible there, and the bottom of the knob means silent.
 static int8_t volume(void)
 {
-	static const volume_pot_cal_t cal = { 2, 327, 1970, 8 };
+	static const volume_pot_cal_t cal = { MD380_VOL_MIN, MD380_VOL_MID, MD380_VOL_MAX, 8 };
 	if (settled() && battery_now_mv() >= PWRSW_OFF_MV) {
 		vol_pct = volume_pot_percent(&vol_pot, &cal, adc_read(CH_VOLUME));
 		md380_speaker_knob_mute(vol_pct == 0);

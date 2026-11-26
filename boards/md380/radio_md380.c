@@ -1122,6 +1122,7 @@ static void rx_sleep(bool sleep)
 // from the top. PA0 reads the wiper of the potentiometer that sets the level; at the speaker the knob gives about 0.79
 // of the wiper's dB (the reading over the top reading, from the position's two lines in power_md380.c volume()),
 // measured with a 1 kHz beep between a quarter turn, mid-rotation and the top (hardware-md380.md 6.1)
+_Static_assert(MD380_VOL_MIN == 2 && MD380_VOL_MID == 327 && MD380_VOL_MAX == 1970, "knob_db10 needs computing again");
 static const int16_t knob_db10[21] = {
 	-474, -279, -233, -206, -187, -172, -159, -149, -140, -132, -125,
 	-96, -76, -61, -48, -37, -28, -20, -13, -6, 0,

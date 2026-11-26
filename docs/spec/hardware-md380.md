@@ -815,9 +815,12 @@ BEEP (PC8, TIM8 CH3) instead: the board's second speaker output (`spkaux_md380.c
 runs at 40 kHz, the backlight's period on the same timer (1800 timer clocks; the backlight's CH1 keeps its 100
 steps), and plays the 8 kHz speaker PCM interpolated over five periods. AFCO (PB9) brings the amplifier up 60 ms before
 SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. A 60 ms lead keeps the amplifier's turn-on step out of the
-tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio. Full-scale PCM is twice the PWM half swing: the default beep
-level plays at half swing, about as loud at the speaker as decoded voice at the same knob position, with harmonics
-40 dB down. Above about 70 % of the swing the harmonics rise to 30 dB down.
+tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio.
+
+At twice the PWM half swing for full-scale PCM, the default beep level played at half swing, about as loud at the
+speaker as decoded voice with the DAC gain at 0xC2, with harmonics 40 dB down (above about 70 % of the swing they
+rose to 30 dB down). With the DAC gain at 0x93 (below), decoded voice and the codec's beeps play about 7.6 dB lower,
+so the PWM path is scaled down by as much (`GAIN_Q7`). That level is derived from the DAC steps, not measured.
 
 The DAC gain (0x37) sets the level ahead of the knob: 0x80, 0x40 for a positive step, and the step in bits 4-0. A
 step of 0 (0x80, 0xC0) mutes the output. Measured with a microphone at the speaker, a 1 kHz beep and decoded DMR voice:

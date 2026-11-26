@@ -2,6 +2,7 @@
 # Copyright (c) 2026 The RadioFoundry Authors
 """Helpers for the hardware-in-the-loop tests: the radio over its USB debug link (Radio), and the SDR bench with its
 bench board (SdrBench). See README.md."""
+import array
 import collections
 import contextlib
 import json
@@ -1410,7 +1411,7 @@ class SdrBench:
         data = None
         if audio is not None:
             rate, samples = audio
-            data = bytes(samples) if isinstance(samples, (bytes, bytearray)) else struct.pack(f"<{len(samples)}h", *samples)
+            data = bytes(samples) if isinstance(samples, (bytes, bytearray)) else array.array("h", samples).tobytes()
             req["pcm"] = {"rate": int(rate), "samples": len(data) // 2}
         if self.api_level is not None:
             req["power"] = self.api_level

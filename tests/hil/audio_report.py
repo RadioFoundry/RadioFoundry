@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 The RadioFoundry Authors
-"""A level and quality report of any speaker recording, for audio level calibration (docs/testing/audio-levels.md):
+"""A level and quality report of any speaker recording, for audio level calibration:
 
     python3 tests/hil/audio_report.py REC.wav... [--ref SOURCE.wav [--ref-s S]] [--ambient ROOM.json]
     python3 tests/hil/audio_report.py --learn-ambient ROOM.json ROOM.wav
@@ -83,6 +83,8 @@ def hum(x, fs):
     each, over the first 8 s; a mains frequency is found when one of its lines is louder than HUM_FOUND_DBFS and
     HUM_OVER_DB over the noise 3-10 Hz from it (a sound's edges spread energy over the low bins, a line stands out)"""
     n = min(len(x), fs * 8)
+    if n < fs // 2:     # bins over 2 Hz: a line can't be told from the noise 3-10 Hz from it
+        return {m: [float("nan")] * 4 for m in MAINS}, []
     w = np.hanning(n)
     F = np.abs(np.fft.rfft(x[:n] * w)) * 2 / w.sum()
     f = np.fft.rfftfreq(n, 1 / fs)
@@ -295,11 +297,12 @@ def band_frames(x, fs, ms, hop_ms):
     """[frames, len(MATCH_BANDS) + 1] mean-square levels in dB: each band, then 300-3400 Hz in all; ms-long Hann
     frames every hop_ms"""
     n = int(fs * ms / 1000)
-    hop = max(1, int(fs * hop_ms / 1000))
+    hop = max(1.0, fs * hop_ms / 1000)     # fractional at 44.1 kHz: frame k starts at k * hop_ms exactly, no drift
     if len(x) < n:
         return np.zeros((0, len(MATCH_BANDS) + 1))
     w = np.hanning(n)
-    idx = np.arange(0, len(x) - n + 1, hop)
+    idx = np.round(np.arange(0, (len(x) - n) / hop + 1) * hop).astype(int)
+    idx = idx[idx <= len(x) - n]
     X = np.abs(np.fft.rfft(np.stack([x[i:i + n] for i in idx]) * w, axis=1)) ** 2 * 2 / (n * (w ** 2).sum())
     f = np.fft.rfftfreq(n, 1 / fs)
     cols = [X[:, (f >= lo) & (f < hi)].sum(axis=1) for lo, hi in MATCH_BANDS]
