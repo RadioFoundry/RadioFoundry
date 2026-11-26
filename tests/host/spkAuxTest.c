@@ -21,7 +21,7 @@ static void a_power(uint8_t s) { pw = s; powers++; }
 static void a_write(const int16_t *pcm) { memcpy(last, pcm, sizeof last); writes++; }
 
 static const hal_spk_aux_t aux = { .active = a_active, .power = a_power, .write = a_write, .lead_ms = 60,
-				   .tail_ms = 40 };
+				   .tail_ms = 40, .core = SPK_AUX_CORE };
 
 static int16_t blk[AUDIO_BLOCK_SAMPLES];
 
@@ -127,7 +127,7 @@ static void user(const int16_t *mic, int16_t *spk, void *ctx)
 #include "usbaudio/audio_mux.h"
 #define WRAP(a)	audio_mux_wrap(a)	// the audio mux runs the second output's step in its own wrapper
 #else
-#define WRAP(a)	spk_aux_wrap(a)
+#define WRAP(a)	spk_aux_stream(a)
 #endif
 
 static void test_wrap(void)
@@ -135,8 +135,8 @@ static void test_wrap(void)
 	static const hal_audio_t plain = { .start = hw_start, .stop = hw_stop };
 	static const hal_audio_t board = { .start = hw_start, .stop = hw_stop, .spk_aux = &aux };
 #ifndef SPK_AUX_MUX
-	CHECK(spk_aux_wrap(&plain) == &plain);	// no second output: the board's stream as it is
-	CHECK(spk_aux_wrap(NULL) == NULL);
+	CHECK(spk_aux_stream(&plain) == &plain);	// no second output: the board's stream as it is
+	CHECK(spk_aux_stream(NULL) == NULL);
 #else
 	(void)plain;
 #endif

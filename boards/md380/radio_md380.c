@@ -638,7 +638,7 @@ static void dmr_enter(void)
 static bool audio_wanted;
 static bool pcm_wanted;
 static SemaphoreHandle_t speaker_lock;
-#if CONFIG_SPEAKER_AUX && CONFIG_DMR
+#if CONFIG_BEEP && CONFIG_DMR
 static uint8_t aux_state;	// SPK_AUX_*: the PC8 PWM path's (spkaux_md380.c) hold on the amplifier
 #endif
 
@@ -650,7 +650,7 @@ static void speaker_apply(void)
 	}
 	bool pcm = pcm_wanted;
 	bool fm = audio_wanted && !pcm;
-#if CONFIG_SPEAKER_AUX && CONFIG_DMR
+#if CONFIG_BEEP && CONFIG_DMR
 	if (aux_state != SPK_AUX_OFF) {
 		// The PWM path while DMR is on air: the amplifier up, the speaker open only while it plays
 		PIN_WRITE(PIN_FM_MUTE, false);
@@ -672,7 +672,7 @@ static void speaker_apply(void)
 	}
 }
 
-#if CONFIG_SPEAKER_AUX && CONFIG_DMR
+#if CONFIG_BEEP && CONFIG_DMR
 bool md380_speaker_aux_active(void)
 {
 	return r.tx_on && r.mode == RADIO_MODE_DMR;

@@ -8463,7 +8463,7 @@ static const hal_audio_t *pcm_audio(void)
 #if CONFIG_NET_USRP || CONFIG_APRS_RX
 	return audio_mux_wrap(board.audio);	// the mux runs the second output's step itself
 #else
-	return spk_aux_wrap(board.audio);
+	return spk_aux_stream(board.audio);
 #endif
 }
 #endif
@@ -8490,7 +8490,7 @@ static bool dmr_mic_gate(void)
 		return false;
 #endif
 	}
-	return beep_mic_echo() || spk_aux_pending();
+	return beep_mic_echo() || spk_aux_busy(board.audio);
 }
 #endif
 

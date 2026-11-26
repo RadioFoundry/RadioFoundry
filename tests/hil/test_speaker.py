@@ -236,7 +236,6 @@ ON_AIR_REPLY_S = 15.0
 
 
 @pytest.mark.feature("beep")
-@pytest.mark.feature("speaker_aux")
 @pytest.mark.radio_tx
 def test_speaker_beeps_on_air(radio, microphone):
     """The talk permit and other beeps while the radio is on air in DMR, heard at the speaker: on a board whose

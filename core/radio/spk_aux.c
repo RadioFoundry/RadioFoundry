@@ -9,8 +9,6 @@
 #include "config.h"
 #include <string.h>
 
-#if CONFIG_SPEAKER_AUX
-
 enum { ST_OFF, ST_LEAD, ST_OPEN, ST_TAIL };
 
 static volatile uint8_t st = ST_OFF;
@@ -120,36 +118,18 @@ static void stop(void)
 	spk_aux_reset(hw->spk_aux);
 }
 
-const hal_audio_t *spk_aux_wrap(const hal_audio_t *a)
+static const hal_audio_t *wrap(const hal_audio_t *a)
 {
-	if (a == NULL || a->spk_aux == NULL) {
-		return a;
-	}
 	hw = a;
 	wrapped = *a;
 	wrapped.start = start;
 	wrapped.stop = stop;
 	return &wrapped;
 }
+#define WRAP	wrap
+#else
+#define WRAP	NULL	// the audio mux runs the step
 #endif
 
-#endif
-#if !CONFIG_SPEAKER_AUX || CONFIG_NET_USRP || CONFIG_APRS_RX
-
-const hal_audio_t *spk_aux_wrap(const hal_audio_t *hw)
-{
-	return hw;
-}
-
-#endif
-#if !CONFIG_SPEAKER_AUX
-bool spk_aux_pending(void)
-{
-	return false;
-}
-
-uint32_t spk_aux_sounds(void)
-{
-	return 0;
-}
-#endif
+const struct spk_aux_core spk_aux_core = { .wrap = WRAP, .block = spk_aux_block, .reset = spk_aux_reset,
+					   .pending = spk_aux_pending, .sounds = spk_aux_sounds };

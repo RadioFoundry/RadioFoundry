@@ -63,11 +63,11 @@ IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 
 # The speaker's second output (core/radio/spk_aux.c)
 spkAuxTest: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(ROOT)/hal/hal_audio.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_SPEAKER_AUX=1 -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -o $@ spkAuxTest.c \
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=0 -DCONFIG_APRS_RX=0 -o $@ spkAuxTest.c \
 	      $(CORE)/radio/spk_aux.c
 # ... with the audio mux, whose wrapper runs the step instead of spk_aux's own
 spkAuxTestMux: spkAuxTest.c $(CORE)/radio/spk_aux.c $(CORE)/radio/spk_aux.h $(CORE)/usbaudio/audio_mux.c $(ROOT)/hal/hal_audio.h
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_SPEAKER_AUX=1 -DCONFIG_NET_USRP=1 -DSPK_AUX_MUX -o $@ spkAuxTest.c \
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -DSPK_AUX_MUX -o $@ spkAuxTest.c \
 	      $(CORE)/radio/spk_aux.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c
 
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h

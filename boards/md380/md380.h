@@ -20,7 +20,7 @@ void md380_lcd_pins_fsmc(void);
 
 // DMR voice PCM to the speaker (radio_md380.c; audio_md380.c's hal_audio_t.speaker_pcm calls it)
 void md380_speaker_pcm(bool on);
-// The speaker's second output (spkaux_md380.c, CONFIG_SPEAKER_AUX): whether DMR is on air (the codec output has no
+// The speaker's second output (spkaux_md380.c, with CONFIG_BEEP): whether DMR is on air (the codec output has no
 // level), and the amplifier and speaker mute for it (SPK_AUX_*, radio_md380.c)
 bool md380_speaker_aux_active(void);
 void md380_speaker_aux(uint8_t state);

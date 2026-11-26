@@ -626,13 +626,13 @@ tone plays once the transmitter is off, and on a board whose audio path is close
 core waits for it, at most `DMR_END_WAIT_MS` (400 ms), and then plays it whole.
 
 
-### 4.4 The speaker's second output (CONFIG_SPEAKER_AUX)
+### 4.4 The speaker's second output
 
 Some speakers have no level while DMR is on air: the codec output that feeds the amplifier loses its supply in
 transmit. A board with another path to the amplifier (a PWM pin) gives that path as `hal_audio_t.spk_aux`
 (`hal_spk_aux_t`), and the core sends the speaker's sound there while the board says the stream's output can't be
 heard (`active`). The users of the stream don't change: beeps, DMR and P25 voice take the stream from `pcm_audio()`,
-which wraps the board's (`spk_aux_wrap`, `core/radio/spk_aux.c`), and every block they fill passes through
+which wraps the board's (`spk_aux_stream`, `core/radio/spk_aux.c`), and every block they fill passes through
 `spk_aux_block`:
 
 | Step | When | What |
@@ -647,8 +647,8 @@ amplifier still on. When `active` turns false (the radio stops transmitting), th
 stream's own output plays from the next block. The mic gate (4) holds from the first queued block until the output is
 off, so the beep's echo stays off the air. Measured on the radio: a 60 ms lead keeps the amplifier's turn-on step out
 of the tone (20 ms gave a 2-4.5 dB overshoot), and with the gate the permit leaves no tone in the decoded audio.
-`tests/host/spkAuxTest.c` checks the sequence. [Feature matrix](../feature-matrix.md): the radios with
-`CONFIG_SPEAKER_AUX`.
+`tests/host/spkAuxTest.c` checks the sequence. There is no build switch: the core reaches its step only through the table the board
+names (`hal_spk_aux_t.core = SPK_AUX_CORE`), so a board without the output links none of it.
 
 ## 5. Power
 

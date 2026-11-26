@@ -15,9 +15,6 @@ CONFIG_DTMF ?= n
 # The signaling tones (user-defined start, end and idle tone chains, about 6.4 KB) don't fit: the default build has
 # about 3 KB left. The plain beeps stay. Supported, so not in BOARD_NOT_WRITTEN: a leaner build can turn it on
 CONFIG_SIG_TONES ?= n
-# The beeps while DMR is on air go through the PC8 PWM to the amplifier: the HR_C5000's codec output has no level then
-# (hardware-md380.md 6.1)
-CONFIG_SPEAKER_AUX ?= $(CONFIG_BEEP)
 CONFIG_APRS_RX ?= n
 # SFR needs CRC_MCU_Control, which the HR_C5000 lacks (docs/spec/sfr.md); the split duplex glue is written for the
 # HR_C6000 and HR_C7000 only

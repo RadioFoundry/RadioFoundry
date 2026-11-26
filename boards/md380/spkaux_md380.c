@@ -7,8 +7,9 @@
 #include "md380.h"
 #include "config.h"
 #include "pins.h"
+#include "radio/spk_aux.h"
 
-#if CONFIG_SPEAKER_AUX && CONFIG_DMR
+#if CONFIG_BEEP && CONFIG_DMR
 #include <string.h>
 
 #define RING		6u	// blocks (120 ms, 5 usable): the lead's 3 and a block either way for the stream's jitter
@@ -110,6 +111,6 @@ static void write(const int16_t *pcm)
 }
 
 const hal_spk_aux_t md380_spk_aux = { .active = md380_speaker_aux_active, .power = power, .write = write,
-				      .lead_ms = 60, .tail_ms = 60 };
+				      .lead_ms = 60, .tail_ms = 60, .core = SPK_AUX_CORE };
 
 #endif
