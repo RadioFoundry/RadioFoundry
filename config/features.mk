@@ -260,7 +260,7 @@ CONFIG_BCAST_FM ?= y
 # receive past the band table: a range in board.bands (rx_ext_count) that receives only while Settings > Advanced says
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
-# AM envelope reception: board-specific RSSI capture, never a release feature.
+# Optional AM envelope reception through board-provided RSSI capture; off by default.
 CONFIG_AM_ENVELOPE ?= n
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
