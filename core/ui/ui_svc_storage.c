@@ -1346,7 +1346,7 @@ static void write_contact_job(void *ctx)
 #if CONFIG_CONTACT_LISTS
 	// A new contact (a free slot) is in no list; the lists' check follows the table (contact-lists.md 4)
 	uint16_t slot = job.channel;
-	codeplug_contact_lists_end(&edit, false, &slot, 1, CONTACT_LIST_NONE);
+	codeplug_contact_lists_end(&edit, &slot, 1);
 #endif
 }
 

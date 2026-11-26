@@ -21,7 +21,6 @@
 // List bytes, for membership and selection (contact-lists.md 1)
 #define CONTACT_LIST_NONE	0xFFu	// no list
 #define CONTACT_LIST_IDDB	0xFEu	// the DMR ID database: a selection only, never a membership
-#define CONTACT_LIST_KEEP	0xFDu	// not a list byte: an edit that leaves the membership as it is
 
 // The mode of a call named by codeplug_name_lookup: DMR, or the air mode (a CODEPLUG_KIND_*) whose contact table holds
 // the names
@@ -44,23 +43,23 @@ void codeplug_system_lists(uint8_t sys, uint8_t out[2]);
 uint8_t codeplug_channel_system(uint16_t ch);
 
 // List n's name (CONTACT_LIST_NAME_LEN bytes at most): false when the list doesn't exist (no name, an empty one, one
-// over 16 bytes or with a control character). Set with an empty name (or NULL) to take the list away; false when the
-// name is invalid or the area can't be written. The radio edits no list name yet: the Codeplug Editor does
+// over 16 bytes or with a control character). The radio edits no list name: the Codeplug Editor does
 bool codeplug_list_name(uint8_t n, char out[CONTACT_LIST_NAME_LEN + 1]);
-bool codeplug_list_set_name(uint8_t n, const char *name);
 
 // A radio-side edit of contacts keeps membership and the table check consistent (contact-lists.md 4). Around the writes of
 // the contact records: begin before the first, end after the last. A write that fails needs no end
 typedef struct {
 	uint8_t state;		// what membership was before the edit: nothing, live or void
+	bool has_check;		// the table check key as begin found it (4 bytes), and its value
+	uint32_t check;
 } codeplug_contact_edit_t;
 void codeplug_contact_lists_begin(codeplug_contact_edit_t *e);
-// The keys after the edit of n slots (1-based, of the air table when air): each takes the list byte list (a list number,
-// CONTACT_LIST_NONE for a deleted or new contact, or CONTACT_LIST_KEEP for one that stays where it is), and the check is
-// made again from the tables as they are now. Void membership is left alone, and so is a codeplug with no membership
-// when list names none (there is nothing to keep consistent). False when a key could not be written: the contact edit
-// stands, and membership is void until the Codeplug Editor assigns again
-bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, const uint16_t *slots, unsigned n, uint8_t list);
+// After the edit of n DMR contact slots (1-based), each a deleted or new contact that is in no list: their membership
+// bytes become 0xFF, and the check is made again from the tables as they are now, in one rewrite. Void membership is
+// left alone, and so is a codeplug with no membership (there is nothing to keep consistent). False when the keys could
+// not be written, or when the check key is not what begin found (another writer got in between, which this check
+// would vouch for): the contact edit stands, and membership is void until the Codeplug Editor assigns again
+bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, const uint16_t *slots, unsigned n);
 
 #endif
 
@@ -71,8 +70,9 @@ bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, cons
 // rather than a private/unit ID. The first name found goes into out (len bytes with the terminator, cut to fit) and
 // the result is true; false (out empty) when nothing names the call or sel is NULL.
 // Block reads and static buffers only: no large stack buffers. It scans the table (up to 24 KB of flash for DMR): cache
-// the answer, per selection. With CONFIG_CONTACT_LISTS off sel is ignored and the answer is the first contact with the
-// ID and call type, then the ID database, as before the lists
+// the answer, per selection. With CONFIG_CONTACT_LISTS off, or in a codeplug that holds no contact list key at all (not
+// migrated, contact-lists.md 6), sel is ignored and the answer is the first contact with the ID and call type, then the
+// ID database, as before the lists
 bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool group, char *out, size_t len);
 
 #endif

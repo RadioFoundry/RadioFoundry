@@ -156,7 +156,8 @@ it permanent. **#** opens its actions.
 
 **OK**, **1** lists the codeplug's contacts and talkgroups, all of them. Type letters of the name, or digits of the ID,
 to filter. Contacts are for the talkgroups and people you call; the [ID database](04-programming.md#dmr-id-database-and-contacts-from-radioidnet)
-names everyone else. With contact lists, a received call is named from the lists of its channel's network or system
+names everyone else. With contact lists, a received call is named from the lists of its channel's network or system; a
+codeplug with no lists is named the old way, from all contacts
 ([Contact lists and networks](04-programming.md#contact-lists-and-networks)).
 **OK** talks to the focused entry for now. Holding **OK** makes it the channel's default. **PTT** talks to it once.
 **#** opens its actions.

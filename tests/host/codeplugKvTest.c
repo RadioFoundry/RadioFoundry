@@ -803,6 +803,27 @@ static void test_cont_batch(void)
 	CHECK(codeplug_kv_write(twice, 2));
 	CHECK(sector_has(AREA, 0x7001) && !sector_has(CONT, 0x7001) && sector_has(CONT, CODEPLUG_KEY_LIST_NAME));
 	CHECK(codeplug_kv_get(0x7001, v, sizeof(v)) == 2 && memcmp(v, "ZZ", 2) == 0);
+	// A copy of a continuation key in the first sector would be read before the continuation's own: a set or a remove of
+	// the key takes it out, also when the continuation itself doesn't change (the value it holds is set again)
+	for (unsigned k = 0; k < 3; k++) {
+		fresh();
+		uint8_t s1[24], c1[8];
+		uint16_t ls = entry(s1, 0x7001, "AA", 2), lc = entry(c1, CODEPLUG_KEY_LIST_NAME, "C", 1);
+		ls = (uint16_t)(ls + entry(s1 + ls, CODEPLUG_KEY_LIST_NAME, "S", 1));
+		raw_sector(AREA, s1, ls, CODEPLUG_KV_VERSION, CODEPLUG_KV_CONT_ADDR);
+		raw_sector(CONT, c1, lc, CODEPLUG_KV_VERSION, 0);
+		CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v)) == 1 && v[0] == 'S');	// the first sector's copy wins
+		codeplug_kv_op_t op = { CODEPLUG_KEY_LIST_NAME, 1, k == 0 ? "N" : "C" };
+		if (k == 2) {
+			op.len = CODEPLUG_KV_REMOVE;
+			op.value = NULL;
+		}
+		CHECK(codeplug_kv_write(&op, 1));
+		CHECK(!sector_has(AREA, CODEPLUG_KEY_LIST_NAME) && sector_has(AREA, 0x7001) && sector_has(CONT, 0x7001) == false);
+		int got = codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v));
+		CHECK(k == 2 ? got == -1 : got == 1 && v[0] == (k == 0 ? 'N' : 'C'));
+		CHECK(codeplug_kv_check(&sim_flash_data[AREA]) == CODEPLUG_KV_VALID && codeplug_kv_check(&sim_flash_data[CONT]) == CODEPLUG_KV_VALID);
+	}
 	// A first sector of a later version: nothing is written, the continuation included
 	fresh();
 	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));

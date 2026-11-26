@@ -105,7 +105,7 @@ static void undo(void)
 		codeplug_delete_contact(added_ct[--added_ct_count]);
 	}
 #if CONFIG_CONTACT_LISTS
-	codeplug_contact_lists_end(&edit, false, added_ct, removed, CONTACT_LIST_NONE);	// the slots were added, so not in a list
+	codeplug_contact_lists_end(&edit, added_ct, removed);	// the slots were added, so not in a list
 #endif
 #if CONFIG_ZONE_SHARE_MODES
 	while (added_key_count > 0) {
@@ -234,7 +234,7 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 	uint8_t first = added_ct_count;
 	codeplug_contact_lists_begin(&edit);
 	zone_import_status_t st = map_contacts_run(res);
-	codeplug_contact_lists_end(&edit, false, &added_ct[first], (unsigned)(added_ct_count - first), CONTACT_LIST_NONE);
+	codeplug_contact_lists_end(&edit, &added_ct[first], (unsigned)(added_ct_count - first));
 	return st;
 #else
 	return map_contacts_run(res);

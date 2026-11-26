@@ -14,6 +14,13 @@
 
 #if CONFIG_DMR
 
+// A name copied into out (len bytes with the terminator), cut to fit
+static void copy_name(char *out, size_t len, const char *name)
+{
+	strncpy(out, name, len - 1u);
+	out[len - 1u] = '\0';
+}
+
 #if CONFIG_CONTACT_LISTS
 
 #define CH_MAX		1024u	// channels 1-1024, the channel network key's bytes
@@ -39,13 +46,38 @@ static uint8_t select_byte(uint8_t b)
 	return b < CONTACT_LIST_MAX || b == CONTACT_LIST_IDDB ? b : CONTACT_LIST_NONE;
 }
 
-// What was read of the keys for this state of them. The one serial that moves for every change of the keys or the codeplug
-// (codeplug_kv_serial) drops it, as the contact tables' own edits do. Under storage_lock
+// Whether the n bytes at v are a list name: 1-16 bytes, no control character
+static bool name_ok(const uint8_t *v, int n)
+{
+	if (n < 1 || n > (int)CONTACT_LIST_NAME_LEN) {
+		return false;
+	}
+	for (int i = 0; i < n; i++) {
+		if (v[i] < 0x20u) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// What was read of the contact list keys for this state of them, in one walk over their range. The one serial that
+// moves for every change of the keys or the codeplug (codeplug_kv_serial) drops it all, as the contact tables' own edits
+// do. Under storage_lock
 static struct {
 	uint8_t serial;
 	bool valid;
+	bool any;		// a key of 0x1E00-0x20FF is stored in any sector: the lists are in use (contact-lists.md 5.2)
 	bool present;		// a membership key (DMR or air) is stored
-	bool voided;		// ... and the check key doesn't match the tables (3.3)
+	bool has_check;		// the check key is stored, 4 bytes
+	uint32_t check;
+	uint32_t names;		// bit n: list n exists (a valid name is stored)
+	bool void_known;	// voided is worked out (once per serial, by the first thing that needs it)
+	bool voided;		// membership is stored and the check key doesn't match the tables (3.3)
+	bool sel_ok;		// the last system asked and its selection
+	uint8_t sel_sys;
+	uint8_t sel[2];
+	uint16_t net_ch;	// the last channel asked (0: none) and its network
+	uint8_t net_sys;
 } cache;
 
 // The CRC-32 of the contact tables as stored (3.3): the DMR slots, then the air slots
@@ -59,24 +91,49 @@ static bool tables_check(uint32_t *crc)
 	return true;
 }
 
-// Read the keys again if they or the codeplug changed. Void when a membership key is stored and the check key is absent,
-// not 4 bytes, or not the tables' check; tables that can't be read are void too (a name is never wrong). Under
-// storage_lock
+// Read the keys again if they or the codeplug changed: one walk of the range gives the lists that exist, whether any
+// key is there, and what membership and its check are. Under storage_lock
 static void refresh(void)
 {
 	uint8_t serial = codeplug_kv_serial();
 	if (cache.valid && cache.serial == serial) {
 		return;
 	}
+	memset(&cache, 0, sizeof(cache));
 	cache.serial = serial;
-	cache.present = codeplug_kv_get(CODEPLUG_KEY_LIST_DMR, NULL, 0) >= 0 || codeplug_kv_get(CODEPLUG_KEY_LIST_AIR, NULL, 0) >= 0;
-	cache.voided = false;
-	if (cache.present) {
-		uint8_t v[5];
-		uint32_t have;
-		cache.voided = codeplug_kv_get(CODEPLUG_KEY_LIST_CHECK, v, sizeof(v)) != 4 || !tables_check(&have) || have != get32(v);
-	}
 	cache.valid = true;
+	codeplug_kv_cursor_t cur;
+	uint8_t v[CONTACT_LIST_NAME_LEN + 1u];	// a name and one byte more, to see one that is too long
+	uint16_t key;
+	int n;
+	codeplug_kv_begin(&cur, CODEPLUG_KV_CONT_LO, CODEPLUG_KV_CONT_HI);
+	while ((n = codeplug_kv_next(&cur, &key, v, sizeof(v))) >= 0) {
+		cache.any = true;
+		if (key >= CODEPLUG_KEY_LIST_NAME && key < CODEPLUG_KEY_LIST_NAME + CONTACT_LIST_MAX) {
+			if (name_ok(v, n)) {
+				cache.names |= 1u << (key - CODEPLUG_KEY_LIST_NAME);
+			}
+		} else if (key == CODEPLUG_KEY_LIST_DMR || key == CODEPLUG_KEY_LIST_AIR) {
+			cache.present = true;
+		} else if (key == CODEPLUG_KEY_LIST_CHECK && n == 4) {
+			cache.has_check = true;
+			cache.check = get32(v);
+		}
+	}
+}
+
+// Whether membership is live: stored, and the tables are what its check says (3.3). Void when the check key is absent,
+// not 4 bytes or not the tables' check; tables that can't be read are void too (a name is never wrong). The tables are
+// read once per state of the keys. Under storage_lock
+static bool members_live(void)
+{
+	refresh();
+	if (!cache.void_known) {
+		uint32_t have;
+		cache.voided = cache.present && (!cache.has_check || !tables_check(&have) || have != cache.check);
+		cache.void_known = true;
+	}
+	return cache.present && !cache.voided;
 }
 
 // The membership byte of slot (1-based) in the table of key, of count slots: none when there is no live membership
@@ -87,8 +144,7 @@ static uint8_t member_of(uint16_t key, uint16_t slot, uint16_t count)
 		return CONTACT_LIST_NONE;
 	}
 	storage_lock();
-	refresh();
-	if (cache.present && !cache.voided) {
+	if (members_live()) {
 		codeplug_kv_read(key, (uint16_t)(slot - 1u), &b, 1);	// a value that ends before the slot: its 0xFF
 	}
 	storage_unlock();
@@ -107,18 +163,25 @@ uint8_t codeplug_air_contact_list_of(uint16_t slot)
 
 void codeplug_system_lists(uint8_t sys, uint8_t out[2])
 {
-	uint8_t v[2] = { CONTACT_LIST_NONE, CONTACT_LIST_NONE };
 	out[0] = out[1] = CONTACT_LIST_NONE;
 	if (sys == 0xFFu) {
 		return;
 	}
-	int n = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYS_LISTS + sys), v, sizeof(v));
-	if (n >= 1) {
-		out[0] = select_byte(v[0]);
+	storage_lock();
+	refresh();
+	if (cache.any && (!cache.sel_ok || cache.sel_sys != sys)) {
+		uint8_t v[2] = { CONTACT_LIST_NONE, CONTACT_LIST_NONE };
+		int n = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYS_LISTS + sys), v, sizeof(v));
+		cache.sel[0] = n >= 1 ? select_byte(v[0]) : CONTACT_LIST_NONE;
+		cache.sel[1] = n >= 2 ? select_byte(v[1]) : CONTACT_LIST_NONE;
+		cache.sel_sys = sys;
+		cache.sel_ok = true;
 	}
-	if (n >= 2) {
-		out[1] = select_byte(v[1]);
+	if (cache.any) {
+		out[0] = cache.sel[0];
+		out[1] = cache.sel[1];
 	}
+	storage_unlock();
 }
 
 // Whether system sys is a record of the Conventional type (channel-modes.md 7.5)
@@ -136,8 +199,15 @@ uint8_t codeplug_channel_system(uint16_t ch)
 		return CODEPLUG_SYSTEM_NONE;
 	}
 	storage_lock();
-	codeplug_kv_read(CODEPLUG_KEY_CH_NET, (uint16_t)(ch - 1u), &b, 1);
-	b = is_network(b) ? b : CODEPLUG_SYSTEM_NONE;
+	refresh();
+	if (cache.any) {
+		if (cache.net_ch != ch) {
+			codeplug_kv_read(CODEPLUG_KEY_CH_NET, (uint16_t)(ch - 1u), &b, 1);
+			cache.net_ch = ch;
+			cache.net_sys = is_network(b) ? b : CODEPLUG_SYSTEM_NONE;
+		}
+		b = cache.net_sys;
+	}
 	storage_unlock();
 	return b;
 }
@@ -149,56 +219,44 @@ bool codeplug_list_name(uint8_t n, char out[CONTACT_LIST_NAME_LEN + 1])
 		return false;
 	}
 	int len = codeplug_kv_get((uint16_t)(CODEPLUG_KEY_LIST_NAME + n), v, sizeof(v));
-	if (len < 1 || len > (int)CONTACT_LIST_NAME_LEN) {
+	if (!name_ok(v, len)) {
 		return false;
-	}
-	for (int i = 0; i < len; i++) {
-		if (v[i] < 0x20u) {
-			return false;
-		}
 	}
 	memcpy(out, v, (size_t)len);
 	out[len] = '\0';
 	return true;
 }
 
-bool codeplug_list_set_name(uint8_t n, const char *name)
+static bool read_check(uint32_t *crc)
 {
-	size_t len = name != NULL ? strlen(name) : 0;
-	if (n >= CONTACT_LIST_MAX || len > CONTACT_LIST_NAME_LEN) {
+	uint8_t v[5];
+	if (codeplug_kv_get(CODEPLUG_KEY_LIST_CHECK, v, sizeof(v)) != 4) {
 		return false;
 	}
-	for (size_t i = 0; i < len; i++) {
-		if ((uint8_t)name[i] < 0x20u) {
-			return false;
-		}
-	}
-	uint16_t key = (uint16_t)(CODEPLUG_KEY_LIST_NAME + n);
-	return len == 0 ? codeplug_kv_remove(key) : codeplug_kv_set(key, name, (uint16_t)len);
+	*crc = get32(v);
+	return true;
 }
 
 void codeplug_contact_lists_begin(codeplug_contact_edit_t *e)
 {
 	storage_lock();
-	refresh();
+	members_live();
 	e->state = !cache.present ? EDIT_NONE : cache.voided ? EDIT_VOID : EDIT_LIVE;
+	e->has_check = read_check(&e->check);
 	storage_unlock();
 }
 
-bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, const uint16_t *slots, unsigned n, uint8_t list)
+bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, const uint16_t *slots, unsigned n)
 {
-	uint16_t key = air ? CODEPLUG_KEY_LIST_AIR : CODEPLUG_KEY_LIST_DMR, count = air ? CODEPLUG_AIR_CONTACTS_MAX : CODEPLUG_CONTACTS_MAX;
-	bool named = list < CONTACT_LIST_MAX;
-	if (list >= CONTACT_LIST_MAX && list != CONTACT_LIST_NONE && list != CONTACT_LIST_KEEP) {
-		return false;
+	if (e->state != EDIT_LIVE) {
+		return true;	// void: left as found; no membership: no contact is in a list and nothing is kept
 	}
-	if (e->state == EDIT_VOID || (e->state == EDIT_NONE && !named)) {
-		return true;	// void: left as found; no membership and none named: nothing to keep consistent
-	}
-	uint32_t crc;
+	uint32_t crc, now;
 	bool ok = false;
 	storage_lock();
-	if (tables_check(&crc)) {
+	// The check key as begin found it, or someone else (another task, a CPS write) changed membership meanwhile: then
+	// this check would vouch for a state it never saw, so nothing is written and membership stays void
+	if (read_check(&now) == e->has_check && (!e->has_check || now == e->check) && tables_check(&crc)) {
 		uint8_t check[4] = { (uint8_t)crc, (uint8_t)(crc >> 8), (uint8_t)(crc >> 16), (uint8_t)(crc >> 24) };
 		unsigned i = 0;
 		ok = true;
@@ -209,13 +267,13 @@ bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, cons
 			uint8_t bytes[EDIT_SLOTS][3];
 			uint8_t cnt = 0;
 			for (; i < n && cnt < EDIT_SLOTS; i++) {
-				if (list == CONTACT_LIST_KEEP || slots[i] < 1u || slots[i] > count) {
+				if (slots[i] < 1u || slots[i] > CODEPLUG_CONTACTS_MAX) {
 					continue;
 				}
 				bytes[cnt][0] = (uint8_t)(slots[i] - 1u);
 				bytes[cnt][1] = (uint8_t)((slots[i] - 1u) >> 8);
-				bytes[cnt][2] = list;
-				ops[cnt] = (codeplug_kv_op_t){ key, 1u | CODEPLUG_KV_TABLE, bytes[cnt] };
+				bytes[cnt][2] = CONTACT_LIST_NONE;
+				ops[cnt] = (codeplug_kv_op_t){ CODEPLUG_KEY_LIST_DMR, 1u | CODEPLUG_KV_TABLE, bytes[cnt] };
 				cnt++;
 			}
 			ops[cnt++] = (codeplug_kv_op_t){ CODEPLUG_KEY_LIST_CHECK, sizeof(check), check };
@@ -247,15 +305,38 @@ static bool list_name(uint8_t l, uint8_t mode, uint32_t id, bool group, char *ou
 		if (codeplug_contact_find_index_if(id, group, in_list, &l, &c) == 0 || c.name[0] == '\0') {
 			return false;
 		}
-		strncpy(out, c.name, len - 1u);
-		out[len - 1u] = '\0';
+		copy_name(out, len, c.name);
 		return true;
 	}
 #if CONFIG_AIR
 	air_contact_t a;
 	if (codeplug_air_contact_find_if(mode, id, group, air_in_list, &l, &a)) {
-		strncpy(out, a.name, len - 1u);
-		out[len - 1u] = '\0';
+		copy_name(out, len, a.name);
+		return true;
+	}
+#endif
+	return false;
+}
+
+#endif
+
+// A codeplug with no contact list key (or with the lists switched off): the contacts as before the lists, the first
+// with the ID and call type, then for a private ID the ID database. A contact found stops the database, name or not
+static bool legacy_lookup(uint8_t mode, uint32_t id, bool group, char *out, size_t len)
+{
+	out[0] = '\0';
+	if (mode == CODEPLUG_NAME_DMR) {
+		contact_t c;
+		if (codeplug_contact_find(id, group, &c)) {
+			copy_name(out, len, c.name);
+			return out[0] != '\0';
+		}
+		return !group && dmr_iddb_lookup(id, out, len) && out[0] != '\0';
+	}
+#if CONFIG_AIR
+	air_contact_t a;
+	if (codeplug_air_contact_find(mode, id, group, &a)) {
+		copy_name(out, len, a.name);
 		return true;
 	}
 #endif
@@ -264,11 +345,20 @@ static bool list_name(uint8_t l, uint8_t mode, uint32_t id, bool group, char *ou
 
 bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool group, char *out, size_t len)
 {
-	char name[CONTACT_LIST_NAME_LEN + 1];
 	if (len == 0) {
 		return false;
 	}
 	out[0] = '\0';
+#if CONFIG_CONTACT_LISTS
+	storage_lock();
+	refresh();
+	bool legacy = !cache.any;
+	uint32_t exist = cache.names;
+	bool live = !legacy && members_live();
+	storage_unlock();
+	if (legacy) {
+		return legacy_lookup(mode, id, group, out, len);	// not migrated: every contact names a call (5.2)
+	}
 	for (unsigned i = 0; sel != NULL && i < 2u; i++) {
 		uint8_t l = sel[i];
 		if (i == 1u && l == sel[0]) {
@@ -280,43 +370,16 @@ bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool 
 				return true;
 			}
 			out[0] = '\0';
-		} else if (l < CONTACT_LIST_MAX && codeplug_list_name(l, name) && list_name(l, mode, id, group, out, len)) {
-			return true;
+		} else if (l < CONTACT_LIST_MAX && live && (exist & (1u << l)) != 0 && list_name(l, mode, id, group, out, len)) {
+			return true;	// without live membership no contact is in a list: nothing to scan
 		}
 	}
 	out[0] = '\0';
 	return false;
-}
-
 #else
-
-bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool group, char *out, size_t len)
-{
 	(void)sel;
-	if (len == 0) {
-		return false;
-	}
-	out[0] = '\0';
-	if (mode == CODEPLUG_NAME_DMR) {
-		contact_t c;
-		if (codeplug_contact_find(id, group, &c)) {
-			strncpy(out, c.name, len - 1u);
-			out[len - 1u] = '\0';
-			return out[0] != '\0';
-		}
-		return !group && dmr_iddb_lookup(id, out, len) && out[0] != '\0';
-	}
-#if CONFIG_AIR
-	air_contact_t a;
-	if (codeplug_air_contact_find(mode, id, group, &a)) {
-		strncpy(out, a.name, len - 1u);
-		out[len - 1u] = '\0';
-		return true;
-	}
+	return legacy_lookup(mode, id, group, out, len);
 #endif
-	return false;
 }
-
-#endif
 
 #endif

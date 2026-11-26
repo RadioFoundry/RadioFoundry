@@ -274,14 +274,22 @@ How a call is named:
 3. The ID database answers for a private caller only. A talkgroup, an all call and any P25 ID it doesn't name.
 4. The first list that names the call wins.
 
-A channel with no network and no system of its own, and the VFO, have no lists: a received call shows its raw ID, with
-no name. Received calls are all this changes: the talk target picker and the Contacts list on the radio still show
-every contact.
+Once a codeplug uses lists, a channel with no network and no system of its own, and the VFO, have no lists: a received
+call shows its raw ID, with no name. A channel's own TX contact and the contacts of its RX group list still name their
+calls first, in a list or not. Received calls are all this changes: the talk target picker and the Contacts list on the
+radio still show every contact.
 
-**Default network.** Opening a codeplug that has contacts and plain channels but no lists, the editor offers **Create
-Default network**: one list holding every contact, a network that selects it first and the ID database second, and
-every plain channel set to that network. Names then work as they did before lists. Nothing changes until you accept,
-and **Undo** reverses it. **Not now** keeps the codeplug as it is, and calls then show no names from the lists.
+A codeplug with no list at all, no list selected by a system and no network on a channel is **not migrated**: the radio
+names calls the old way. Every channel searches all contacts for the ID and call type, then a private ID goes to the
+ID database, whatever the channel's network. The editor tells you, below.
+
+**Migrating an older codeplug.** A codeplug that has contacts or plain channels but no list data shows a notice at the
+top of the editor: it uses the old contact system, and every channel searches all contacts. Press **Migrate** to make
+the **Default** network: one list holding every contact, a network that selects it first and the ID database second,
+and every plain channel set to that network. Names then work as they did before lists, and you can split the contacts
+into more lists and networks from there. Nothing changes until you press the button, and **Undo** reverses it. The
+notice stays, and returns each time you open the codeplug, until the codeplug holds any list data; the radio
+itself shows nothing.
 
 **Contacts changed elsewhere.** The radio and the editor check that the contacts are the ones the lists were made for.
 After other software edits the contacts, no contact counts as being in a list
@@ -290,7 +298,7 @@ never repairs the lists itself.
 
 The lists are kept in a part of the codeplug that other programming software doesn't know and leaves alone, so qdmr
 and old firmware ignore them. A radio on older firmware names calls as it did before lists: the first contact with the
-ID, then the ID database. `contacts.csv` has a **List** column and `channels.csv` a **Network** column, both by name;
+ID, then the ID database. So does a radio running the lists on a codeplug that isn't migrated. `contacts.csv` has a **List** column and `channels.csv` a **Network** column, both by name;
 a file without them imports with no list and no network. The radio can't edit lists: use the editor.
 
 ### Files

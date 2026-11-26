@@ -10,7 +10,7 @@ import { parseFreq, parseTone, mhz } from "./fields.js";
 import { LIMITS, POWER_NAMES, validDtmf } from "./records.js";
 import { newChannel, newContact, remove, numberTable, p25Room } from "./model.js";
 import { isDmr, isP25, contactModeOf, channelContactMode, typeFor, allCallId, contactIdMax } from "./contactmode.js";
-import { CONV_TYPE } from "./mode_conv.js";
+import { isNetwork, resolveVoid } from "./contactlists.js";
 
 // --- RFC 4180 ---
 
@@ -268,7 +268,7 @@ export const TABLES = {
 			{ header: "List", aliases: ["Contact List"], key: "list", get: (r, m) => listText(r.list, m), set: (r, s, m) => {
 				const list = findRef(s, m.contactLists ?? []);
 				r.list = list ? list.number : null;
-				if (list && m.contactListsVoid) m.contactListsVoid = false;
+				if (list) resolveVoid(m);
 			} },
 		],
 		create: () => newContact(),
@@ -373,7 +373,7 @@ export const TABLES = {
 			ref("RX Group List", "rxList", "rxLists", ["Group List", "RX List"]),
 			ref("APRS", "aprs", "aprs", ["APRS Configuration"]),
 			// the network (a Conventional system) a plain channel's calls are named through (contact-lists.md 5.1)
-			ref("Network", "network", "systems", ["Contact Network"], (r, m) => m.systems.filter((x) => x.type === CONV_TYPE)),
+			ref("Network", "network", "systems", ["Contact Network"], (r, m) => m.systems.filter(isNetwork)),
 			c("DMR ID", "dmrId", asId, (r) => r.dmrId || "", ["Channel DMR ID"]),
 			c("RX Only", "rxOnly", asBool, (r) => yesNo(r.rxOnly)),
 			c("All Skip", "allSkip", asBool, (r) => yesNo(r.allSkip), ["Scan Skip"]),

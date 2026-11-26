@@ -632,6 +632,36 @@ test("continuation: a write merges each sector for itself and names a continuati
 	assert.deepEqual(sent.bytes.subarray(KV_ADDR, CONT + KV_SIZE), newer.bytes.subarray(KV_ADDR, CONT + KV_SIZE));
 });
 
+test("continuation: the membership tables and their check are merged as one unit", () => {
+	const unit = (img) => [0x2000, 0x2001, 0x2003].map((k) => { const v = getValue(decodeArea(img.bytes, CONT).entries, k); return v ? [...v] : null; });
+	const base = withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41), e(0x2000, 1, 2), e(0x2003, 1, 1, 1, 1)]);
+	// the radio edited a contact meanwhile: its DMR table and the check moved
+	const radio = base.clone();
+	assert.ok(putContinuation(radio.bytes, [e(0x1E00, 0x41), e(0x2000, 1, 0xFF), e(0x2003, 2, 2, 2, 2)]));
+	// the editor changed the P25 table and the check: all three come from the file, the radio's DMR byte is gone with
+	// the check it moved (a check never vouches for tables it didn't see)
+	const file = base.clone();
+	assert.ok(putContinuation(file.bytes, [e(0x1E00, 0x41), e(0x2000, 1, 2), e(0x2001, 5), e(0x2003, 3, 3, 3, 3)]));
+	areaForWrite(file.bytes, radio.bytes, base.bytes);
+	assert.deepEqual(unit(file), [[1, 2], [5], [3, 3, 3, 3]]);
+	// the editor changed only a list name: the three stay the radio's
+	const named = base.clone();
+	assert.ok(putContinuation(named.bytes, [e(0x1E00, 0x42), e(0x2000, 1, 2), e(0x2003, 1, 1, 1, 1)]));
+	areaForWrite(named.bytes, radio.bytes, base.bytes);
+	assert.deepEqual(unit(named), [[1, 0xFF], null, [2, 2, 2, 2]]);
+	assert.deepEqual([...getValue(decodeArea(named.bytes, CONT).entries, 0x1E00)], [0x42]);
+	// the editor removed the tables and the check: all three removed, though the radio changed two of them
+	const gone = base.clone();
+	assert.ok(putContinuation(gone.bytes, [e(0x1E00, 0x41)]));
+	areaForWrite(gone.bytes, radio.bytes, base.bytes);
+	assert.deepEqual(unit(gone), [null, null, null]);
+	// the editor changed only the check (it sets it again for the tables it has): the tables come from the file too
+	const check = base.clone();
+	assert.ok(putContinuation(check.bytes, [e(0x1E00, 0x41), e(0x2000, 1, 2), e(0x2003, 4, 4, 4, 4)]));
+	areaForWrite(check.bytes, radio.bytes, base.bytes);
+	assert.deepEqual(unit(check), [[1, 2], null, [4, 4, 4, 4]]);
+});
+
 test("continuation: the editor writes it to a radio and reads it back", async () => {
 	const start = withChain([e(KEY.arsServer, 1, 0, 0, 0)], [e(0x1E00, 0x41)]);
 	const radio = new FakeCpsRadio({ board: "TEST-RADIO", image: start.bytes });

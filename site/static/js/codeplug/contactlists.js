@@ -35,7 +35,7 @@ const DMR_IDENT_AT = 0x10;
 
 const utf8 = (s) => new TextEncoder().encode(s);
 const u32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
-const isNetwork = (s) => !!s && typeof s === "object" && s.type === CONV_TYPE;
+export const isNetwork = (s) => !!s && typeof s === "object" && s.type === CONV_TYPE;
 
 // --- The table check (3.3) ---
 
@@ -59,11 +59,17 @@ export function decodeListName(v) {
 	return new TextDecoder().decode(v);
 }
 
-// Whether a name can be stored
-export const listNameValid = (name) => {
+// What is wrong with a name as typed: "no_name", "too_long" (over 16 bytes), "list_name_chars" (a byte below 0x20), or
+// null when it can be stored
+export function listNameProblem(name) {
 	const b = utf8(name ?? "");
-	return b.length >= 1 && b.length <= LIST_NAME_MAX && b.every((x) => x >= 0x20);
-};
+	if (!b.length) return "no_name";
+	if (b.length > LIST_NAME_MAX) return "too_long";
+	return b.some((x) => x < 0x20) ? "list_name_chars" : null;
+}
+
+// Whether a name can be stored
+export const listNameValid = (name) => listNameProblem(name) === null;
 
 // A selection byte: a list number, LIST_IDDB, or null (0xFF and every other value read as none)
 const selOf = (x) => (x < LIST_MAX || x === LIST_IDDB ? x : null);
@@ -260,11 +266,16 @@ export function newNetwork(m, name, lists = [null, null]) {
 
 // --- Migration (6) ---
 
-// Whether a codeplug from before contact lists should be offered the Default network: it has contacts or channels that
-// would take one and neither a list nor a network
+// Whether the model writes any contact list key (3): a list, a selection, a contact in a list, a channel's network, or a
+// void membership kept as found. A codeplug that writes none is not migrated: the radio names calls the old way (6)
+const writesListKeys = (m) => m.contactListsVoid || (m.contactLists ?? []).length > 0 || m.contacts.some((c) => c.list != null) ||
+	(m.systems ?? []).some((s) => (s.lists ?? []).some((x) => x != null)) || m.channels.some((c) => c.network);
+
+// Whether a codeplug is not migrated to contact lists and has contacts or channels that would use them: the radio then
+// searches every contact for the name of every call (6). The editor says so, with a button that runs makeDefaultNetwork,
+// until the codeplug has a key
 export function needsContactListMigration(m) {
-	if (m.contactLists === undefined || m.contactListsVoid) return false;
-	if (m.contactLists.length || (m.systems ?? []).some(isNetwork)) return false;
+	if (m.contactLists === undefined || writesListKeys(m)) return false;
 	return m.contacts.some((c) => isDmr(c) || isP25(c)) || m.channels.some(takesNetwork);
 }
 
@@ -288,7 +299,7 @@ export function makeDefaultNetwork(m, name = "Default") {
 		c.network = system;
 		channels++;
 	}
-	m.contactListsVoid = false;
+	resolveVoid(m);
 	return { list, system, contacts, channels };
 }
 
@@ -303,10 +314,8 @@ export function validateContactLists(m, err, warn) {
 	for (const l of lists) {
 		if (!Number.isInteger(l.number) || l.number < 0 || l.number >= LIST_MAX || numbers.has(l.number)) err("contactLists", l, "number", "range", { min: 0, max: LIST_MAX - 1 });
 		numbers.add(l.number);
-		const bytes = utf8(l.name ?? "");
-		if (!l.name) err("contactLists", l, "name", "no_name");
-		else if (bytes.length > LIST_NAME_MAX) err("contactLists", l, "name", "too_long", { max: LIST_NAME_MAX });
-		else if (bytes.some((x) => x < 0x20)) err("contactLists", l, "name", "list_name_chars");
+		const bad = listNameProblem(l.name);
+		if (bad) err("contactLists", l, "name", bad, bad === "too_long" ? { max: LIST_NAME_MAX } : undefined);
 		seen.set(l.name, (seen.get(l.name) || 0) + 1);
 	}
 	for (const l of lists) if (l.name && seen.get(l.name) > 1) warn("contactLists", l, "name", "list_name_duplicate");

@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Named contact lists (docs/spec/contact-lists.md, core/codeplug/codeplug_contact_lists.c) on a simulated NOR flash: the
 // keys (list names, a system's selection, a channel's network), membership and the void rule, the name lookup in the
-// order of a selection (list, then the ID database; no selection, no name), the table check and the radio-side edit
-// that keeps it, the Conventional system type, and with CONFIG_CONTACT_LISTS off the lookup as it was before the lists
+// order of a selection (list, then the ID database; once a list key exists no selection means no name, and a codeplug
+// with none keeps the old lookup), the table check and the radio-side edit that keeps it, the Conventional system
+// type, and with CONFIG_CONTACT_LISTS off the lookup as it was before the lists
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -103,6 +104,13 @@ static uint32_t table_check(void)
 	return crc;
 }
 
+// List n's name key set (an empty name or NULL takes the list away): the editor's job, here for the tests
+static void set_name(uint8_t n, const char *name)
+{
+	uint16_t key = (uint16_t)(CODEPLUG_KEY_LIST_NAME + n);
+	CHECK(name == NULL || name[0] == '\0' ? codeplug_kv_remove(key) : codeplug_kv_set(key, name, (uint16_t)strlen(name)));
+}
+
 static void put_check(uint32_t crc)
 {
 	uint8_t v[4] = { (uint8_t)crc, (uint8_t)(crc >> 8), (uint8_t)(crc >> 16), (uint8_t)(crc >> 24) };
@@ -142,8 +150,8 @@ static void build(void)
 	contact(4, "Alicia", 5000, CONTACT_PRIVATE);
 	contact(5, "Loose", 400, CONTACT_GROUP);
 	contact(6, "Nameless", 300, CONTACT_GROUP);
-	CHECK(codeplug_list_set_name(0, "Local"));
-	CHECK(codeplug_list_set_name(1, "County"));
+	set_name(0, "Local");
+	set_name(1, "County");
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_DMR, (const uint8_t[]){ 0, 1, 0, 1, 0xFF, 5 }, 6));
 	put_check(table_check());
 }
@@ -168,20 +176,22 @@ static void test_names(void)
 	char n[CONTACT_LIST_NAME_LEN + 1];
 	fresh();
 	CHECK(!codeplug_list_name(0, n));
-	CHECK(codeplug_list_set_name(0, "Local TGs") && codeplug_list_name(0, n) && strcmp(n, "Local TGs") == 0);
-	CHECK(codeplug_list_set_name(31, "0123456789ABCDEF") && codeplug_list_name(31, n) && strcmp(n, "0123456789ABCDEF") == 0);
-	CHECK(!codeplug_list_name(32, n) && !codeplug_list_set_name(32, "x"));
-	CHECK(!codeplug_list_set_name(1, "0123456789ABCDEFG"));				// 17 bytes
-	CHECK(!codeplug_list_set_name(1, "bad\tname") && !codeplug_list_name(1, n));	// a control character
+	set_name(0, "Local TGs");
+	CHECK(codeplug_list_name(0, n) && strcmp(n, "Local TGs") == 0);
+	set_name(31, "0123456789ABCDEF");
+	CHECK(codeplug_list_name(31, n) && strcmp(n, "0123456789ABCDEF") == 0);
+	CHECK(!codeplug_list_name(32, n));
 	// What another tool stored: a name over 16 bytes, one with a control byte, an empty one: not lists
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 2, "0123456789ABCDEFG", 17));
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 3, "a\x01", 2));
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 4, "", 0));
 	CHECK(!codeplug_list_name(2, n) && !codeplug_list_name(3, n) && !codeplug_list_name(4, n));
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 5, "\xC3\xA9t\xC3\xA9", 5) && codeplug_list_name(5, n) && strlen(n) == 5);	// UTF-8
-	// An empty name (or NULL) takes the list away
-	CHECK(codeplug_list_set_name(0, "") && !codeplug_list_name(0, n));
-	CHECK(codeplug_list_set_name(31, NULL) && !codeplug_list_name(31, n));
+	// Taking the key away takes the list away
+	set_name(0, "");
+	CHECK(!codeplug_list_name(0, n));
+	set_name(31, NULL);
+	CHECK(!codeplug_list_name(31, n));
 	// They live in the continuation, none in the first sector
 	CHECK(codeplug_kv_check(&sim_flash_data[CONT]) == CODEPLUG_KV_VALID);
 	CHECK(sim_flash_violations() == 0);
@@ -213,6 +223,15 @@ static void test_selection(void)
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_LISTS + 254, (const uint8_t[]){ 1, 2 }, 2));	// the last system number
 	codeplug_system_lists(254, s);
 	CHECK(s[0] == 1 && s[1] == 2);
+	// The last answer is kept until the keys move: an edit of the same system is seen
+	codeplug_system_lists(254, s);
+	CHECK(s[0] == 1 && s[1] == 2);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_LISTS + 254, (const uint8_t[]){ 3, CONTACT_LIST_IDDB }, 2));
+	codeplug_system_lists(254, s);
+	CHECK(s[0] == 3 && s[1] == CONTACT_LIST_IDDB);
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_SYS_LISTS + 254));
+	codeplug_system_lists(254, s);
+	CHECK(s[0] == CONTACT_LIST_NONE && s[1] == CONTACT_LIST_NONE);
 }
 
 // A system record: type, then zeros to its 28-byte header
@@ -245,8 +264,48 @@ static void test_channel_network(void)
 	codeplug_kv_op_t last = { CODEPLUG_KEY_CH_NET, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 0xFF, 0x03, 254 } };
 	CHECK(codeplug_kv_write(&last, 1) && codeplug_channel_system(1024) == 254);
 	CHECK(codeplug_channel_system(5) == 8);
+	// The last answer is kept until the keys move: a change of the channel's byte, or of its system's record, is seen
+	CHECK(codeplug_channel_system(5) == 8);
+	codeplug_kv_op_t clear = { CODEPLUG_KEY_CH_NET, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 4, 0, 0xFF } };
+	CHECK(codeplug_kv_write(&clear, 1) && codeplug_channel_system(5) == CODEPLUG_SYSTEM_NONE);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_CH_NET, t, sizeof(t)) && codeplug_channel_system(5) == 8);
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_SYSTEM + 8) && codeplug_channel_system(5) == CODEPLUG_SYSTEM_NONE);
+	system_record(8, CODEPLUG_SYSTYPE_CONVENTIONAL, CODEPLUG_SYS_HDR);
+	CHECK(codeplug_channel_system(5) == 8);
 	// The key that holds it is in the continuation
 	CHECK(codeplug_kv_check(&sim_flash_data[CONT]) == CODEPLUG_KV_VALID);
+}
+
+// A channel's network goes with the channel: one written at the number later has none (contact-lists.md 3.2)
+static void test_delete_channel(void)
+{
+	channel_t ch;
+	memset(&ch, 0, sizeof(ch));
+	strcpy(ch.name, "Net one");
+	ch.rx_hz = ch.tx_hz = 451000000;
+	ch.mode = RADIO_MODE_DMR;
+	ch.bw = RADIO_BW_12K5;
+	ch.power = CODEPLUG_POWER_DEFAULT;
+	ch.color_code = 1;
+	ch.timeslot = 1;
+	ch.system = CODEPLUG_SYSTEM_NONE;
+	fresh();
+	CHECK(codeplug_set_channel(5, &ch) && codeplug_delete_channel(5));		// no networks stored at all: nothing to clear
+	CHECK(sim_flash_data[CONT] == 0xFF);
+	CHECK(codeplug_set_channel(5, &ch) && codeplug_set_channel(6, &ch));
+	system_record(8, CODEPLUG_SYSTYPE_CONVENTIONAL, CODEPLUG_SYS_HDR);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_CH_NET, (const uint8_t[]){ 0xFF, 0xFF, 0xFF, 0xFF, 8, 8 }, 6));
+	CHECK(codeplug_channel_system(5) == 8 && codeplug_channel_system(6) == 8);
+	CHECK(codeplug_delete_channel(5));
+	CHECK(codeplug_set_channel(5, &ch));
+	CHECK(codeplug_channel_system(5) == CODEPLUG_SYSTEM_NONE);			// the new channel has no network
+	CHECK(codeplug_channel_system(6) == 8);						// the next one keeps its own
+	// The last network taken away leaves the key out (the codeplug is not migrated again by it)
+	CHECK(codeplug_delete_channel(6) && codeplug_kv_get(CODEPLUG_KEY_CH_NET, NULL, 0) < 0);
+	// A channel past the value (a short table) deletes without a write of the key
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_CH_NET, (const uint8_t[]){ 8 }, 1));
+	CHECK(codeplug_set_channel(7, &ch) && codeplug_delete_channel(7) && codeplug_channel_system(1) == 8);
+	CHECK(sim_flash_violations() == 0);
 }
 
 static void test_membership(void)
@@ -307,7 +366,8 @@ static void test_void(void)
 	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));			// something that moves the serial: the keys read again
 	CHECK(codeplug_contact_list_of(1) == CONTACT_LIST_NONE);
 	// Nothing else is void: the selection, the lists and the channel network
-	CHECK(codeplug_list_set_name(7, "Still") && codeplug_kv_set(CODEPLUG_KEY_SYS_LISTS + 2, (const uint8_t[]){ 1 }, 1));
+	set_name(7, "Still");
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_SYS_LISTS + 2, (const uint8_t[]){ 1 }, 1));
 	codeplug_system_lists(2, s);
 	CHECK(s[0] == 1);
 	char n[CONTACT_LIST_NAME_LEN + 1];
@@ -382,7 +442,8 @@ static void test_lookup_air(void)
 	air_slot(4, AIR_CONTACT_GROUP, 2000, "Unlisted");
 	air_slot(5, AIR_CONTACT_ALL, 0, "Everyone");
 	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_AIR, (const uint8_t[]){ 2, 3, 2, 0xFF, 2 }, 5));
-	CHECK(codeplug_list_set_name(2, "Fire") && codeplug_list_set_name(3, "PD"));
+	set_name(2, "Fire");
+	set_name(3, "PD");
 	put_check(table_check());
 	CHECK(codeplug_air_contact_list_of(1) == 2 && codeplug_air_contact_list_of(2) == 3 && codeplug_air_contact_list_of(4) == CONTACT_LIST_NONE);
 	CHECK(codeplug_air_contact_list_of(0) == CONTACT_LIST_NONE && codeplug_air_contact_list_of(CODEPLUG_AIR_CONTACTS_MAX + 1u) == CONTACT_LIST_NONE);
@@ -407,6 +468,19 @@ static void test_lookup_air(void)
 }
 #endif
 
+// Membership bytes of slots first..first+n-1 set to list l, as the Codeplug Editor would have stored them (the tables
+// don't change, so the check stays right)
+static void members(uint16_t first, unsigned n, uint8_t l)
+{
+	uint8_t v[2 + 64];
+	CHECK(n <= 64);
+	v[0] = (uint8_t)(first - 1u);
+	v[1] = (uint8_t)((first - 1u) >> 8);
+	memset(&v[2], l, n);
+	codeplug_kv_op_t op = { CODEPLUG_KEY_LIST_DMR, (uint16_t)(n | CODEPLUG_KV_TABLE), v };
+	CHECK(codeplug_kv_write(&op, 1));
+}
+
 static void test_update(void)
 {
 	codeplug_contact_edit_t e;
@@ -416,36 +490,36 @@ static void test_update(void)
 	codeplug_contact_lists_begin(&e);
 	contact(8, "New800", 800, CONTACT_GROUP);
 	slot = 8;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, CONTACT_LIST_NONE));
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
 	CHECK(stored_check() == table_check());
 	CHECK(codeplug_contact_list_of(8) == CONTACT_LIST_NONE && codeplug_contact_list_of(1) == 0 && codeplug_contact_list_of(2) == 1);
 	CHECK(strcmp(look(SEL(0, 1), DMR, 100, true), "Local100") == 0);		// not void
-	// A new contact that names a list
+	// A new contact in a slot that had a stale byte: it is in no list
+	members(9, 1, 1);
 	codeplug_contact_lists_begin(&e);
-	contact(9, "Joined900", 900, CONTACT_GROUP);
+	contact(9, "Fresh900", 900, CONTACT_GROUP);
 	slot = 9;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, 1));
-	CHECK(codeplug_contact_list_of(9) == 1 && strcmp(look(SEL(1, CONTACT_LIST_NONE), DMR, 900, true), "Joined900") == 0);
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
+	CHECK(codeplug_contact_list_of(9) == CONTACT_LIST_NONE && look(SEL(1, CONTACT_LIST_NONE), DMR, 900, true)[0] == '\0');
 	CHECK(stored_check() == table_check());
-	// An edit that keeps the slot's list (a rename, a timeslot)
+	// An edit that keeps the slot's list (a rename, a timeslot) needs no end: the check doesn't cover them
 	contact_t c;
-	codeplug_contact_lists_begin(&e);
 	CHECK(codeplug_contact(2, &c));
 	strcpy(c.name, "County100b");
 	CHECK(codeplug_set_contact(2, &c));
-	slot = 2;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, CONTACT_LIST_KEEP));
 	CHECK(codeplug_contact_list_of(2) == 1 && strcmp(look(SEL(1, CONTACT_LIST_NONE), DMR, 100, true), "County100b") == 0);
 	// A delete: the slot's byte is 0xFF and its successor in the table is not given the list
 	codeplug_contact_lists_begin(&e);
 	CHECK(codeplug_delete_contact(1));
 	slot = 1;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, CONTACT_LIST_NONE));
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
 	CHECK(codeplug_contact_list_of(1) == CONTACT_LIST_NONE && codeplug_contact_list_of(2) == 1);
 	CHECK(look(SEL(0, CONTACT_LIST_NONE), DMR, 100, true)[0] == '\0');		// the Local100 contact is gone
 	CHECK(stored_check() == table_check());
-	// Several slots in one call, more than a batch holds
+	// Several slots in one call, more than a batch holds: all become 0xFF
 	uint16_t many[20];
+	members(20, 20, 2);
+	CHECK(codeplug_contact_list_of(20) == 2 && codeplug_contact_list_of(39) == 2);
 	codeplug_contact_lists_begin(&e);
 	for (unsigned i = 0; i < 20; i++) {
 		many[i] = (uint16_t)(20 + i);
@@ -453,27 +527,57 @@ static void test_update(void)
 		snprintf(name, sizeof(name), "M%u", i);
 		contact(many[i], name, 2000 + i, CONTACT_GROUP);
 	}
-	CHECK(codeplug_contact_lists_end(&e, false, many, 20, 2));
-	CHECK(codeplug_contact_list_of(20) == 2 && codeplug_contact_list_of(39) == 2 && codeplug_contact_list_of(40) == CONTACT_LIST_NONE);
+	CHECK(codeplug_contact_lists_end(&e, many, 20));
+	CHECK(codeplug_contact_list_of(20) == CONTACT_LIST_NONE && codeplug_contact_list_of(39) == CONTACT_LIST_NONE);
 	CHECK(codeplug_contact_list_of(2) == 1 && stored_check() == table_check());
-	// Every slot out of range or a bad list byte is left out or refused, and nothing is written for the refusal
+	// A slot out of range is left out
 	uint16_t odd[3] = { 0, 1025, 41 };
-	CHECK(codeplug_contact_lists_end(&e, false, odd, 3, 3) && codeplug_contact_list_of(41) == 3 && codeplug_contact_list_of(1) == CONTACT_LIST_NONE);
-	uint32_t w = sim_flash_units();
-	CHECK(!codeplug_contact_lists_end(&e, false, odd, 3, 0x40) && sim_flash_units() == w);
-	// The air table: its slot's byte and the one check over both tables
+	members(41, 1, 3);
+	CHECK(codeplug_contact_list_of(41) == 3);
+	codeplug_contact_lists_begin(&e);
+	CHECK(codeplug_contact_lists_end(&e, odd, 3) && codeplug_contact_list_of(41) == CONTACT_LIST_NONE);
+	// The one check covers the air table too: an air slot filled before an edit is in the check the edit writes
 	air_slot(3, AIR_CONTACT_GROUP, 1310, "A P25 TG");
 	codeplug_contact_lists_begin(&e);
-	slot = 3;
-	CHECK(codeplug_contact_lists_end(&e, true, &slot, 1, 4));
+	contact(50, "Another", 5050, CONTACT_GROUP);
+	slot = 50;
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
 	CHECK(stored_check() == table_check());
-	CHECK(codeplug_air_contact_list_of(3) == 4 && codeplug_air_contact_list_of(2) == CONTACT_LIST_NONE);
-	CHECK(codeplug_contact_list_of(2) == 1);
+	CHECK(codeplug_contact_list_of(2) == 1 && codeplug_air_contact_list_of(3) == CONTACT_LIST_NONE);
 	CHECK(sim_flash_violations() == 0);
 }
 
-// A codeplug whose membership is void is left as found by a radio-side edit, and one with none gets nothing unless an
-// edit names a list
+// The check key as begin found it: another writer that changed it since (a CPS write, a second task) leaves the end
+// writing nothing, so membership stays void and the new check is never vouched for
+static void test_update_race(void)
+{
+	codeplug_contact_edit_t e;
+	uint16_t slot = 8;
+	build();
+	codeplug_contact_lists_begin(&e);
+	contact(8, "Racing", 801, CONTACT_GROUP);
+	put_check(table_check() ^ 0x55u);						// somebody else's write between
+	uint32_t other = stored_check();
+	uint32_t w = sim_flash_units();
+	CHECK(!codeplug_contact_lists_end(&e, &slot, 1));
+	CHECK(stored_check() == other && sim_flash_units() == w);
+	CHECK(codeplug_contact_list_of(1) == CONTACT_LIST_NONE);				// void
+	// The check key gone meanwhile, or made after begin saw none: the same
+	build();
+	codeplug_contact_lists_begin(&e);
+	contact(8, "Racing", 801, CONTACT_GROUP);
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_LIST_CHECK));
+	CHECK(!codeplug_contact_lists_end(&e, &slot, 1) && codeplug_kv_get(CODEPLUG_KEY_LIST_CHECK, NULL, 0) < 0);
+	// A check written again with the value begin saw (an editor save that changed nothing) is not a race
+	build();
+	codeplug_contact_lists_begin(&e);
+	put_check(stored_check());
+	contact(8, "Quiet", 802, CONTACT_GROUP);
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1) && stored_check() == table_check());
+	CHECK(sim_flash_violations() == 0);
+}
+
+// A codeplug whose membership is void is left as found by a radio-side edit, and one with none gets nothing
 static void test_update_states(void)
 {
 	codeplug_contact_edit_t e;
@@ -485,28 +589,20 @@ static void test_update_states(void)
 	uint32_t check = stored_check();
 	codeplug_contact_lists_begin(&e);
 	contact(10, "While void", 1000, CONTACT_GROUP);
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, 1));			// even naming a list
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
 	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_DMR, after, sizeof(after)) == n && memcmp(before, after, sizeof(before)) == 0);
 	CHECK(stored_check() == check);
 	CHECK(codeplug_contact_list_of(1) == CONTACT_LIST_NONE);				// still void
-	// No membership at all: an edit that names none writes nothing and makes no continuation
+	// No membership at all: an edit writes nothing and makes no continuation
 	fresh();
 	codeplug_contact_lists_begin(&e);
 	contact(1, "Plain", 55, CONTACT_GROUP);
 	slot = 1;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, CONTACT_LIST_NONE));
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, CONTACT_LIST_KEEP));
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));
 	CHECK(sim_flash_data[CONT] == 0xFF && sim_flash_data[EE + CODEPLUG_KV_ADDR] == 0xFF);
-	// ... one that names a list makes the membership and its check
-	codeplug_contact_lists_begin(&e);
-	contact(2, "Listed", 56, CONTACT_GROUP);
-	slot = 2;
-	CHECK(codeplug_contact_lists_end(&e, false, &slot, 1, 6));
-	CHECK(codeplug_contact_list_of(2) == 6 && codeplug_contact_list_of(1) == CONTACT_LIST_NONE && stored_check() == table_check());
-	CHECK(codeplug_kv_check(&sim_flash_data[CONT]) == CODEPLUG_KV_VALID);
 }
 
-// With the area unwritable (a later version's first sector) the contact edit stands and the end says so
+// With the area unwritable (a later version's first sector) the contact edit stands and the area is left as it was
 static void test_update_unwritable(void)
 {
 	codeplug_contact_edit_t e;
@@ -517,9 +613,51 @@ static void test_update_unwritable(void)
 	codeplug_reload();
 	codeplug_contact_lists_begin(&e);
 	contact(11, "Edited", 301, CONTACT_GROUP);
-	CHECK(!codeplug_contact_lists_end(&e, false, &slot, 1, 1));			// the keys can't be written
-	CHECK(codeplug_contact(11, &c) && c.id == 301);					// the contact is
+	CHECK(codeplug_contact_lists_end(&e, &slot, 1));				// no keys are read, so nothing to keep
+	CHECK(codeplug_contact(11, &c) && c.id == 301);					// the contact is edited
 	CHECK(sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] == CODEPLUG_KV_VERSION + 1);	// and the area as it was
+}
+
+// A codeplug with no contact list key is not migrated: the lookup is the old one (first contact, then the ID database)
+// whatever the selection says. Any key of the range, in any sector, ends that; taking the last one away brings it back
+static void test_legacy(void)
+{
+	fresh();
+	contact(1, "Local100", 100, CONTACT_GROUP);
+	contact(2, "County100", 100, CONTACT_GROUP);
+	contact(3, "Alice", 5000, CONTACT_PRIVATE);
+	CHECK(strcmp(look(SEL(CONTACT_LIST_NONE, CONTACT_LIST_NONE), DMR, 100, true), "Local100") == 0);	// no selection: still named
+	CHECK(strcmp(look(NULL, DMR, 100, true), "Local100") == 0);
+	CHECK(strcmp(look(SEL(1, 2), DMR, 5000, false), "Alice") == 0);				// the selection is ignored
+	CHECK(strcmp(look(NULL, DMR, 7777, false), "DB7777 Carol") == 0);			// no contact: the ID database
+	iddb_asked = 0;
+	CHECK(look(NULL, DMR, 7777, true)[0] == '\0' && iddb_asked == 0);			// not for a group
+	CHECK(strcmp(look(NULL, DMR, 5000, false), "Alice") == 0 && iddb_asked == 0);	// the contact wins over the database
+	CHECK(look(NULL, DMR, 4242, false)[0] == '\0');
+	// Nothing in the lists' range is read as a selection or a network either
+	uint8_t s[2];
+	codeplug_system_lists(3, s);
+	CHECK(s[0] == CONTACT_LIST_NONE && s[1] == CONTACT_LIST_NONE);
+	CHECK(codeplug_channel_system(5) == CODEPLUG_SYSTEM_NONE);
+#if CONFIG_AIR
+	air_slot(1, AIR_CONTACT_GROUP, 1310, "Fire TG");
+	CHECK(strcmp(look(NULL, P25, 1310, true), "Fire TG") == 0 && look(NULL, P25, 1311, true)[0] == '\0');
+#endif
+	// Any key of the range ends it: a list name, a selection, a network, a membership, the check alone
+	static const uint16_t keys[] = { CODEPLUG_KEY_LIST_NAME + 20, CODEPLUG_KEY_SYS_LISTS + 9, CODEPLUG_KEY_CH_NET,
+					 CODEPLUG_KEY_LIST_DMR, CODEPLUG_KEY_LIST_AIR, CODEPLUG_KEY_LIST_CHECK };
+	for (unsigned i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+		CHECK(codeplug_kv_set(keys[i], (const uint8_t[]){ 3, 3, 3, 3 }, 4));
+		CHECK(look(SEL(CONTACT_LIST_NONE, CONTACT_LIST_NONE), DMR, 100, true)[0] == '\0');	// strict: no selection, no name
+		CHECK(look(NULL, DMR, 5000, false)[0] == '\0');
+		CHECK(strcmp(look(SEL(CONTACT_LIST_IDDB, CONTACT_LIST_NONE), DMR, 7777, false), "DB7777 Carol") == 0);
+		CHECK(codeplug_kv_remove(keys[i]));
+		CHECK(strcmp(look(NULL, DMR, 100, true), "Local100") == 0);			// the last one gone: legacy again
+	}
+	// A key that is empty or invalid is still a key
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 1, "", 0));
+	CHECK(look(NULL, DMR, 100, true)[0] == '\0');
+	CHECK(sim_flash_violations() == 0);
 }
 
 #else
@@ -556,6 +694,7 @@ int main(void)
 	test_names();
 	test_selection();
 	test_channel_network();
+	test_delete_channel();
 	test_membership();
 	test_void();
 	test_lookup();
@@ -563,8 +702,10 @@ int main(void)
 	test_lookup_air();
 #endif
 	test_update();
+	test_update_race();
 	test_update_states();
 	test_update_unwritable();
+	test_legacy();
 #else
 	test_fallback();
 #endif

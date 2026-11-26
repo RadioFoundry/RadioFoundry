@@ -199,7 +199,7 @@ static bool advance(codeplug_kv_cursor_t *c, uint32_t *data)
 		reached += v & 1u;
 	}
 	uint16_t bit = (uint16_t)(1u << (c->next / STORAGE_SECTOR));
-	if (c->next == 0 || c->next % STORAGE_SECTOR != 0 || (c->visited & bit) != 0 || reached >= CODEPLUG_KV_CHAIN_MAX ||
+	if (c->next == 0 || (c->visited & bit) != 0 || reached >= CODEPLUG_KV_CHAIN_MAX ||
 	    !sector_addr(c->next, &a) || check_flash(a, &s) != CODEPLUG_KV_VALID) {
 		return false;
 	}
@@ -503,9 +503,9 @@ static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op
 
 // Apply the ops of the sector in b (a whole sector; cont: the continuation) with *changed, b is the new sector: later
 // entries of any key dropped (no reader sees them), the rest 0xFF, the header and CRC made. A sector that isn't a valid
-// area starts a new one. Ops for the other sector aren't applied; when this sector changes anyway, a set or remove of
-// a key that belongs to an earlier sector, or a remove of one that belongs to a later, also takes the key out here:
-// a key present in two sectors is read from the earlier (2.4), so the copy a writer didn't set mustn't survive. link
+// area starts a new one. Ops for the other sector aren't applied; a set or remove of a key that belongs to the other
+// sector also takes the key out here (in the continuation only when it changes anyway): a key present in two sectors
+// is read from the earlier (2.4), so the copy a writer didn't set mustn't survive. link
 // (not below 0) is the continuation's offset for header bytes 12-15, set when it differs. False if an op doesn't fit
 // or the sector is a newer version
 static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool cont, int32_t link, bool *changed)
@@ -529,8 +529,11 @@ static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool cont, 
 			return false;
 		}
 	}
-	for (uint8_t i = 0; i < n && *changed; i++) {
-		if (in_cont(ops[i].key) != cont && (cont || ops[i].len == CODEPLUG_KV_REMOVE)) {
+	for (uint8_t i = 0; i < n; i++) {
+		// A key of the other sector (set or removed): a copy here must not stay. In the first sector it would be read
+		// before the continuation's own, so it goes whether or not anything else changed; in the continuation it is only
+		// a later copy no reader sees, and goes when the sector is written anyway
+		if (in_cont(ops[i].key) != cont && (!cont || *changed)) {
 			codeplug_kv_op_t drop = { ops[i].key, CODEPLUG_KV_REMOVE, NULL };
 			apply(d, &len, room, &drop, changed);
 		}
@@ -593,8 +596,7 @@ static bool continuation(uint32_t main_a, uint32_t *off, bool *fresh)
 	if (st == CODEPLUG_KV_NEWER) {
 		return false;
 	}
-	if (st == CODEPLUG_KV_VALID && s.next != 0 && s.next % STORAGE_SECTOR == 0 && s.next < IMAGE_SIZE &&
-	    s.next != CODEPLUG_KV_ADDR && sector_addr(s.next, &pa)) {
+	if (st == CODEPLUG_KV_VALID && s.next != 0 && s.next != CODEPLUG_KV_ADDR && sector_addr(s.next, &pa)) {
 		st = check_flash(pa, &t);
 		if (st == CODEPLUG_KV_NEWER) {
 			return false;
@@ -626,7 +628,8 @@ static bool write_sectors(uint32_t a, const codeplug_kv_op_t *ops, uint8_t n, bo
 	}
 	// A continuation just written is linked from the first sector, which keeps a link it has already
 	bool link = c_changed;
-	if ((main || link) && !sector_edit(a, false, ops, n, link ? (int32_t)off : -1, false, true, &m_changed)) {
+	// The first sector is edited for a continuation batch too: a copy of a continuation key in it would be read first
+	if ((main || cont) && !sector_edit(a, false, ops, n, link ? (int32_t)off : -1, false, true, &m_changed)) {
 		return false;
 	}
 	*changed = c_changed || m_changed;

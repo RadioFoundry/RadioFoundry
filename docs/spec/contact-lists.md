@@ -40,6 +40,8 @@ never a membership byte; a writer never stores it there, and a reader takes it a
 
 Rules that follow from the model:
 
+- A codeplug with no contact list key at all (3) is **not migrated**: the radio names calls the old way, and the rules
+  below don't apply to it (6). They apply from the first key on.
 - Many systems may select one list. A system selects at most two.
 - A system with no selection, or whose lists name nothing the call matches, gives no name: the radio shows the raw ID.
 - A channel with no system (5.1) gives no names.
@@ -75,6 +77,9 @@ All keys are in the continuation and nowhere else ([codeplug-settings.md](codepl
 
 The ranges 0x1E00-0x1EFF, 0x1F00-0x1FFF and 0x2000-0x20FF are reserved whole (the unused numbers are for later list
 features). Numbers 0x1E20-0x1EFF and 0x2004-0x20FF are unassigned.
+
+**Any key present.** A key of 0x1E00-0x20FF that is stored in any sector of the area counts as present, whatever its
+value: an empty or invalid value is a key too. A codeplug with none of them is not migrated (6).
 
 ### 3.1 Encodings
 
@@ -125,26 +130,32 @@ and the lists together, writes a new check: it flags the codeplug, and the user 
 ## 4. Edit rules
 
 Every write of a contact by the radio (`codeplug_set_contact`, `codeplug_delete_contact`, and the contacts a zone
-import adds) is bracketed by `codeplug_contact_lists_begin`, which judges membership as the tables are before the write,
-and `codeplug_contact_lists_end`, which then changes the membership and the check together:
+import adds) is bracketed by `codeplug_contact_lists_begin`, which judges membership as the tables are before the write
+and notes the check key as it is, and `codeplug_contact_lists_end`, which then changes the membership and the check
+together. The radio edits no list: the contacts it adds or deletes are in no list (byte 0xFF).
 
 | Edit | Membership | Check |
 |---|---|---|
-| A contact is set in an empty slot | 0xFF, unless the edit names a list | Recomputed |
-| A contact is set in a used slot (an edit of it) | Kept, unless the edit names a list | Recomputed |
+| A contact is set in an empty slot | 0xFF | Recomputed |
 | A contact is deleted | The slot's byte becomes 0xFF | Recomputed |
 | A zone import adds contacts | 0xFF for each new contact; a contact found by name and ID is kept as it is | Recomputed once |
+| A contact is renamed, or its timeslot changes | Not changed | Not changed: neither is in the check (3.3) |
 | An edit while membership is void (3.3) | Not changed | Not changed |
-| An edit that names no list in a codeplug with no membership key | Not changed | Not written: there is nothing to keep consistent, and no continuation is made for it |
+| An edit in a codeplug with no membership key | Not changed | Not written: there is nothing to keep consistent, and no continuation is made for it |
 
 - The contact record is written first, then the keys in one batch (one journaled sector rewrite, codeplug-settings.md
   4). A power cut between the two leaves a check that doesn't match: the membership is void and names disappear. They
   are never wrong.
+- **Compare and swap.** `end` writes only if the check key is still what `begin` found (present with the same 4 bytes,
+  or absent). If another writer changed it in between (a CPS write, another task), the new check would vouch for a state
+  this edit never saw, so nothing is written, `end` reports failure and membership stays void.
 - When the area can't be written (another firmware's codeplug, a newer area, a CPS session in progress) the contact edit
   proceeds as before and membership is left, which voids it if a check exists. The radio edits no list name, selection
   or channel network in this version: those come from the Codeplug Editor.
-- The air mode contact table isn't written by the radio yet (air-contacts.md 5). When it is, its edits use the same
-  function.
+- The air mode contact table isn't written by the radio yet (air-contacts.md 5). When it is, its edits need the same
+  bracket for that table.
+- Deleting a channel (`codeplug_delete_channel`) takes its tag and its channel network byte with it, so a channel
+  written at the number later has no network. The byte is written over only when it is set.
 - The Codeplug Editor writes membership and the check together on every save that has contacts and lists. Deleting or
   reordering contacts there moves membership with them.
 
@@ -163,9 +174,12 @@ The radio names a received call (the caller and the talk group on the display) t
 | No channel record (the VFO) | None: no names |
 
 A tag's system wins over the network key. The channel network key is read for channels without a tagged system only.
+"None: no names" holds in a codeplug that holds a list key. With none the lookup is the old one for every channel (6).
 
 ### 5.2 Walk
 
+0. A codeplug with no contact list key at all (3) skips the walk: the first contact of the call's table with the ID and
+   call type names the call, and for a DMR private ID the ID database is asked when no contact has the ID (6).
 1. Take the primary list byte, then the secondary. A byte of 0xFF, or a list that doesn't exist, is skipped.
 2. For a list number 0-31: search the contacts of the call's table (the DMR contact table for a DMR call, the air mode
    table for the call's mode) whose membership byte equals the number, by call type (group or private/unit) and ID.
@@ -183,6 +197,12 @@ Lists scope the names of received calls only: the caller and the talk group on t
 Tier III) and P25. The radio's contact browser, the dial picker and find still show every contact in both tables, in
 every list and none. A contact in no list is still dialed and found, and it names no call.
 
+The channel's own contacts come before the lists. The radio keeps the names of the contacts a channel uses itself, its
+TX contact (the talk target) and the members of its RX group list, and names a call with one of them first. That holds
+for a contact in no list and in a list the channel's system doesn't select, and it applies to DMR calls (the contacts of
+a P25 channel's air mode table aren't kept this way). The lists name every other ID. This is kept as it was before the
+lists: a talk group the channel talks to or listens on always shows its own name.
+
 ### 5.4 Caches
 
 An answer is cached while the channel's selection is the same. A change of channel to one with another selection, a
@@ -192,7 +212,7 @@ network to another.
 The debug link shows the selection of the channel in use as `dmr.names_sel` ([debuglink.md](debuglink.md) 3.2): the
 primary and secondary list byte, `255` none, `254` the ID database.
 
-## 6. Feature switch
+## 6. Feature switch and migration
 
 `CONFIG_CONTACT_LISTS` ([build-config.md](../build-config.md)). Off:
 
@@ -201,9 +221,16 @@ primary and secondary list byte, `255` none, `254` the ID database.
 - The Conventional system type isn't built: a channel's network is ignored, and a system of that type is kept as any
   type the build doesn't know.
 
-On, with a codeplug that has no list key, nothing is named: no selection, no names. The Codeplug Editor offers a
-migration on opening such a codeplug: a Default network and list holding every contact, with every plain channel
-assigned to it.
+**Not migrated.** On, a codeplug that holds no contact list key at all (none of 0x1E00-0x20FF in any sector, 3) is
+named the old way, whatever its channels and systems: the first contact with the call's ID and call type, then for a
+DMR private ID the ID database, exactly as with the switch off. The radio shows no notice. Once any key exists the rules
+of 5 apply and a system or channel with no list selected shows no names.
+
+The Codeplug Editor shows a **persistent notice** for such a codeplug (one that has contacts or channels that would
+use lists): it uses the old contact system, every channel searches all contacts. The notice has a **Migrate** button,
+which makes a Default list holding every contact, a Default network that selects it and then the ID database, and
+every plain channel assigned to it. It comes back at every open and stays until the codeplug holds a key; Undo reverses
+the migration. A codeplug whose lists went void (3.3) isn't shown it: its keys exist.
 
 ## 7. Open
 

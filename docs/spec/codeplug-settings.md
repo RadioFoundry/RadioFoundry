@@ -120,7 +120,10 @@ version change.
   started from an erased sector, so that the keys an old continuation nothing points to held don't come back. A
   continuation of a newer version is never written, and a write that needs it fails.
 - A key present in two sectors is read from the earlier. A writer that sets it drops the later copy, in the same
-  batch if the sector is written anyway; it takes a key of the other sector out of the sector it writes the same way.
+  batch if the sector is written anyway. A copy of a continuation key in the first sector (set or removed by a batch) is
+  read before the continuation's own, so a writer takes it out of the first sector whether or not anything else in that
+  sector changes, and writes the first sector for that alone. A first sector key in the continuation is only a later
+  copy, taken out when the continuation is written anyway.
 - A part of a batch that doesn't fit its sector stops the batch before any sector is written.
 
 A version 1 reader of today ignores the pointer, so it sees only the first sector: keys that live only in a
@@ -405,7 +408,7 @@ to a radio it sends (`areaForWrite`):
 | The radio's area is of a newer version | The radio's own, untouched |
 | A file or draft was opened, or the destination radio changed | The file's valid area, including its channel tags and systems |
 | The codeplug was read from or successfully written to this connection, and the edit changed no key | The radio's own. An unchanged key doesn't put an old menu value back |
-| The edit changed keys and the radio has a valid area | The radio's area with only those keys set or removed. Every other key keeps the radio's value |
+| The edit changed keys and the radio has a valid area | The radio's area with only those keys set or removed. Every other key keeps the radio's value. The contact lists' membership tables and their check (0x2000, 0x2001, 0x2003) go as one unit: if the edit changed any of the three, all three come from the file, else all three stay the radio's (contact-lists.md 3.3) |
 | The edit changed keys and the radio has no valid area | The file's area |
 
 The merge baseline applies only to the radio connection that supplied it. Opening a file or draft clears that

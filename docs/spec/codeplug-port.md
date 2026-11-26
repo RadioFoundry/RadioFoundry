@@ -94,9 +94,9 @@ database with `openuv380`, as the migration tools do.
 
 qdmr YAML has no contact lists: a ported codeplug holds no list, selection or membership. The migration writes only the
 regions of 4, and the settings area's continuation (0xF000, [codeplug-settings.md](codeplug-settings.md) 2.4, proposed)
-is not among them, so the radio keeps its own. A radio with no lists names nothing through a system until the user
-builds them in the Codeplug Editor; its first save of a codeplug with contacts offers the Default list
-([contact-lists.md](contact-lists.md) 6). The editor, the fast protocol and TFTP carry the sector; qdmr never does.
+is not among them, so the radio keeps its own. A codeplug with no list key keeps the old lookup (every contact, then
+the ID database) until the user migrates it in the Codeplug Editor, which shows a notice with a Migrate button for as long
+as it is not migrated ([contact-lists.md](contact-lists.md) 6). The editor, the fast protocol and TFTP carry the sector; qdmr never does.
 
 ## 5. Codeplugs from a backup
 

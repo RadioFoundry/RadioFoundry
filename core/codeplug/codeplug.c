@@ -1160,7 +1160,21 @@ bool codeplug_delete_channel(uint16_t number)
 	}
 	storage_unlock();
 	// Its tag goes too: a channel written at this number later is a new one. Nothing is written when there is none
-	return ok && codeplug_tag_remove(number);
+	ok = ok && codeplug_tag_remove(number);
+#if CONFIG_CONTACT_LISTS
+	// ... and its network, for the same reason (docs/spec/contact-lists.md 3.2). Only a byte that is set is written
+	// over: a codeplug without networks (or an area a later firmware wrote) still deletes its channels
+	uint8_t net = 0xFFu;
+	if (ok) {
+		codeplug_kv_read(CODEPLUG_KEY_CH_NET, (uint16_t)(number - 1u), &net, 1);	// a value that ends before it: 0xFF
+	}
+	if (ok && net != 0xFFu) {
+		const uint8_t clear[3] = { (uint8_t)(number - 1u), (uint8_t)((number - 1u) >> 8), 0xFFu };
+		codeplug_kv_op_t op = { CODEPLUG_KEY_CH_NET, 1u | CODEPLUG_KV_TABLE, clear };
+		ok = codeplug_kv_write(&op, 1);
+	}
+#endif
+	return ok;
 }
 
 static bool write_zone_bitmap(uint8_t slot, bool on)

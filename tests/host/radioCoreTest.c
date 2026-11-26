@@ -802,13 +802,11 @@ void codeplug_contact_lists_begin(codeplug_contact_edit_t *e)
 {
 	e->state = 0;
 }
-bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, const uint16_t *slots, unsigned n, uint8_t list)
+bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, const uint16_t *slots, unsigned n)
 {
 	(void)e;
-	(void)air;
 	(void)slots;
 	(void)n;
-	(void)list;
 	return true;
 }
 #endif
@@ -851,6 +849,7 @@ bool dmr_iddb_lookup(uint32_t id, char *out, size_t len)
 // tests above keep their answers; a test of the lists turns scoped on
 #if CONFIG_CONTACT_LISTS
 static bool scoped;
+static bool scoped_keys = true;		// the codeplug holds a contact list key: false is a codeplug not migrated, the old lookup (6)
 static uint8_t scoped_net[64];		// channel number -> its network system + 1 (0 = none)
 static uint8_t scoped_sel[4][2];	// system -> its list bytes
 typedef struct {
@@ -887,7 +886,7 @@ bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool 
 {
 	out[0] = '\0';
 #if CONFIG_CONTACT_LISTS
-	if (scoped) {
+	if (scoped && scoped_keys) {
 		scoped_lookups++;
 		for (unsigned k = 0; sel != NULL && k < 2; k++) {
 			if (sel[k] == CONTACT_LIST_IDDB && mode == CODEPLUG_NAME_DMR && !group) {
@@ -3560,6 +3559,18 @@ static void test_dmr_list_names(void)
 	hear_call(true, 5000, 9995555, 2, 1, false);
 	CHECK(d->call.dst_name[0] == '\0' && d->call.src_name[0] == '\0');
 	CHECK(sm.view.names_sel[0] == CONTACT_LIST_NONE && sm.view.names_sel[1] == CONTACT_LIST_NONE);
+	run(2000);
+
+	// A codeplug with no list key at all is not migrated: the old lookup names the call, a channel with no network too
+	scoped_keys = false;
+	kv_serial++;
+	hear_call(true, 3100, 9995555, 2, 1, false);
+	CHECK(strcmp(d->call.dst_name, "TG USA") == 0 && strcmp(d->call.src_name, "QD9XYZ Robert Lo") == 0);
+	run(2000);
+	scoped_keys = true;
+	kv_serial++;
+	hear_call(true, 3100, 9995555, 2, 1, false);
+	CHECK(d->call.dst_name[0] == '\0' && d->call.src_name[0] == '\0');		// the first key made: strict again
 	run(2000);
 
 	// The VFO has no channel record: no names

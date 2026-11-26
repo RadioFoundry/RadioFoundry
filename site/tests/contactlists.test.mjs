@@ -15,7 +15,7 @@ import { CONTACTS, CONTACT_SIZE, AIR_CONTACTS, AIR_CONTACT_SIZE, encodeContact }
 import { crc32 } from "../static/js/flasher/bytes.js";
 import { exportTable, importTable, parse } from "../static/js/codeplug/csv.js";
 import {
-	LIST_KEY, LIST_IDDB, contactTablesCheck, decodeListName, listNameValid, newNetwork, freeNetworkNumber, makeDefaultNetwork,
+	LIST_KEY, LIST_IDDB, contactTablesCheck, decodeListName, listNameValid, listNameProblem, isNetwork, newNetwork, freeNetworkNumber, makeDefaultNetwork,
 	needsContactListMigration, removeLists, listUsers, resolveVoid, takesNetwork,
 } from "../static/js/codeplug/contactlists.js";
 
@@ -260,6 +260,8 @@ test("list names: a key holds 1 to 16 bytes with none below 0x20", () => {
 	assert.equal(decodeListName(new TextEncoder().encode("Équipe")), "Équipe");
 	assert.equal(listNameValid("Équipe"), true);
 	assert.equal(listNameValid("é".repeat(9)), false, "16 bytes, not 16 letters");
+	assert.deepEqual([null, "", "a".repeat(17), "a\tb", "Club", "a".repeat(16)].map(listNameProblem),
+		["no_name", "no_name", "too_long", "list_name_chars", null, null]);
 });
 
 test("shortened values read 0xFF for what is missing, and unknown bytes read as none", () => {
@@ -387,6 +389,43 @@ test("migration: a codeplug with contacts and plain channels and no lists is off
 	assert.equal(d.channels.find((c) => c.name === "F").network, null);
 	assert.equal(d.channels.find((c) => c.name === "P").network, dn);
 	assert.equal(needsContactListMigration(d), false);
+});
+
+test("migration: a codeplug that writes no contact list key is on the old system, as the radio sees it", () => {
+	const keys = (m) => keysOf(encode(m)).filter((e) => e.key >= 0x1E00 && e.key <= 0x20FF);
+	const m = empty();
+	m.contacts.push(newContact({ name: "A", id: 1 }));
+	assert.equal(needsContactListMigration(m), true);
+	assert.equal(keys(m).length, 0, "no key: the radio uses the old lookup");
+	// a network that selects nothing and no channel uses writes no key: still the old system
+	const net = newNetwork(m, "Idle");
+	m.systems.push(net);
+	assert.equal(isNetwork(net), true);
+	assert.equal(needsContactListMigration(m), true);
+	assert.equal(keys(m).length, 0);
+	// any key ends it: a selection, a channel's network, a contact in a list, a list
+	net.lists = [LIST_IDDB, null];
+	assert.equal(needsContactListMigration(m), false);
+	assert.ok(keys(m).length > 0);
+	net.lists = [null, null];
+	const ch = newChannel({ name: "C", mode: "dmr", network: net });
+	m.channels.push(ch);
+	assert.equal(needsContactListMigration(m), false);
+	assert.ok(keys(m).length > 0);
+	ch.network = null;
+	m.contactLists = [{ number: 3, name: "Club" }];
+	assert.equal(needsContactListMigration(m), false);
+	assert.ok(keys(m).length > 0);
+	m.contactLists = [];
+	m.contacts[0].list = 3;
+	assert.equal(needsContactListMigration(m), false);
+	assert.ok(keys(m).length > 0);
+	// a void membership keeps its keys
+	m.contacts[0].list = null;
+	m.contactListsVoid = true;
+	assert.equal(needsContactListMigration(m), false);
+	// nothing to name, nothing to migrate
+	assert.equal(needsContactListMigration(empty()), false);
 });
 
 test("migration: a network takes a free number, and nothing changes when no list number is left", () => {

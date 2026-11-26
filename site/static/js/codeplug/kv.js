@@ -15,6 +15,9 @@ export const KV_CONT_LO = 0x1E00;
 export const KV_CONT_HI = 0x20FF;
 export const KV_CHAIN_MAX = 8;	// sectors a reader follows in all
 export const inContinuation = (key) => key >= KV_CONT_LO && key <= KV_CONT_HI;
+// The DMR and P25 membership tables and the check that vouches for them (contact-lists.md 3.3): a write takes the three
+// from one writer, never one from each
+export const KV_MEMBERSHIP = [0x2000, 0x2001, 0x2003];
 export const KV_VERSION = 1;
 export const KV_HDR = 16;	// the header length this version writes
 const MAGIC = [0x52, 0x46, 0x4B, 0x56];	// "RFKV"
@@ -265,11 +268,12 @@ export function encodeArea(entries, prev = null) {
 
 // Write entries into an image's bytes as the area, only when the sector's bytes change. Refuses (returns false,
 // writes nothing) over an area of a newer version. True when the sector holds the entries afterwards
-export function putArea(bytes, entries, addr = KV_ADDR) {
+// fresh starts the sector new when it holds a valid area (what it had is dropped, its header bytes too)
+export function putArea(bytes, entries, addr = KV_ADDR, fresh = false) {
 	const state = decodeArea(bytes, addr).state;
 	if (state === "newer") return false;
 	const have = bytes.subarray(addr, addr + KV_SIZE);
-	const s = encodeArea(entries, state === "valid" ? have : null);
+	const s = encodeArea(entries, state === "valid" && !fresh ? have : null);
 	if (!s.every((x, i) => x === have[i])) have.set(s);
 	return true;
 }
@@ -287,9 +291,7 @@ export function putContinuation(bytes, entries) {
 	if (cont.state !== "valid" && !entries.length) return true;
 	const have = cont.state === "valid" ? decodeArea(bytes, cont.addr).entries : [];
 	const want = [...dedupe(have).filter((e) => !inContinuation(e.key)), ...entries];
-	const sector = bytes.subarray(cont.addr, cont.addr + KV_SIZE);
-	const s = encodeArea(want, cont.state === "valid" ? sector : null);
-	if (!s.every((x, i) => x === sector[i])) sector.set(s);
+	putArea(bytes, want, cont.addr, cont.state !== "valid");
 	if (!cont.linked) {
 		// the first sector, started new when it isn't a valid area, names it after the continuation is there
 		if (decodeArea(bytes).state !== "valid") putArea(bytes, []);
@@ -326,7 +328,10 @@ const sameBytes = (a, b) => a === b || (a != null && b != null && a.length === b
 // - The edit didn't change the sector from base, or the file's isn't valid: the radio's. A file without an area
 //   (another tool's, 0xFF there) never erases the keys.
 // - The edit changed it and the radio has a valid sector: the radio's sector with only the keys the edit changed, set or
-//   removed. A key the radio's menu or debug link changed since the file was read keeps the radio's value.
+//   removed. A key the radio's menu or debug link changed since the file was read keeps the radio's value. The
+//   membership tables and their check (KV_MEMBERSHIP) go together: if the edit changed any of the three, all three
+//   come from the file, else all three stay the radio's (a radio edit of one while the editor changed another would
+//   leave a check that vouches for tables it never saw).
 // - The radio has no valid sector, or no base is given (a file sent as it is): the file's.
 // Throws RangeError when the radio's keys and the edit's don't fit together
 function sectorForWrite(file, radio, base, addr) {
@@ -340,9 +345,12 @@ function sectorForWrite(file, radio, base, addr) {
 	if (!base || r.state !== "valid") return;
 	const was = decodeArea(base, addr).entries;
 	let entries = dedupe(r.entries);
-	for (const key of new Set([...was, ...f.entries].map((e) => e.key))) {
+	const unit = KV_MEMBERSHIP.some((key) => !sameBytes(getValue(was, key), getValue(f.entries, key)));
+	const keys = new Set([...was, ...f.entries].map((e) => e.key));
+	if (unit) for (const key of KV_MEMBERSHIP) keys.add(key);
+	for (const key of keys) {
 		const now = getValue(f.entries, key);
-		if (sameBytes(getValue(was, key), now)) continue;
+		if (KV_MEMBERSHIP.includes(key) ? !unit : sameBytes(getValue(was, key), now)) continue;
 		entries = now == null ? deleteValue(entries, key) : setValue(entries, key, now);
 	}
 	sector(file).set(encodeArea(entries, sector(radio)));

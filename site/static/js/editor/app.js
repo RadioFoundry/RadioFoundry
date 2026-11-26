@@ -52,7 +52,6 @@ const S = {
 	filter: {},
 	colFilters: {},		// each table's column filters (grid.js), kept while the page is open
 	offerConvert: false,	// a codeplug was just opened: offer to convert its P25 channels (p25convert.js)
-	offerLists: false,	// ... and the Default network for a codeplug from before contact lists (contactlists.js)
 	noteVoid: false,	// ... and say its contact lists were cleared by a change outside the editor
 };
 
@@ -75,7 +74,6 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.iddbChanged = false;
 	S.iddbSkipped = null;
 	S.offerConvert = true;
-	S.offerLists = true;
 	S.noteVoid = true;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
@@ -172,8 +170,9 @@ function show(tab) {
 
 // The offer to convert P25 channels that name DMR contacts (p25convert.js): shown after a codeplug is opened, until it is
 // taken or put off. Nothing changes until the user takes it
-// The offers below it: the Default network for a codeplug from before contact lists, and the notice that its lists were
-// cleared. The same rule: nothing changes until the user takes the offer
+// Below it, two notices about contact lists: a codeplug from before them is on the old contact system, with a button to
+// migrate (shown for as long as it is, so it comes back at every open; nothing changes until the button is pressed),
+// and one that its lists were cleared by a change outside the editor
 function renderConvert() {
 	const bars = [];
 	const n = S.offerConvert ? p25ChannelsToConvert(S.model).length : 0;
@@ -186,14 +185,10 @@ function renderConvert() {
 					refresh();
 				}, { quiet: true }))));
 	}
-	if (S.offerLists && listsOffered(S.model, features()) && needsContactListMigration(S.model)) {
-		bars.push(h("div", { class: "notice info action" },
-			h("p", {}, t("editor.lists.offer_text")),
-			h("div", { class: "ed-actions" }, button(t("editor.lists.offer_go"), createDefaultNetwork, { primary: true }),
-				button(t("editor.convert.later"), () => {
-					S.offerLists = false;
-					refresh();
-				}, { quiet: true }))));
+	if (listsOffered(S.model, features()) && needsContactListMigration(S.model)) {
+		bars.push(h("div", { class: "notice warn action", id: "lists-migrate" },
+			h("p", {}, t("editor.lists.old_text")),
+			h("div", { class: "ed-actions" }, button(t("editor.lists.migrate"), createDefaultNetwork, { primary: true }))));
 	}
 	if (S.noteVoid && S.model.contactListsVoid) {
 		const close = button(t("editor.dismiss"), () => {
@@ -206,7 +201,6 @@ function renderConvert() {
 }
 
 function createDefaultNetwork() {
-	S.offerLists = false;
 	let r = null;
 	change(t("editor.lists.offer_undo"), () => {
 		r = makeDefaultNetwork(S.model);

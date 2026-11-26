@@ -6683,14 +6683,14 @@ static void air_name(radio_sm_t *sm, uint32_t id, bool group, uint32_t *have_id,
 	air_find_name(sm, id, group, name);
 }
 
-// The P25 view's IDs named: the caller, the call's talk group or unit, and what PTT calls. NXDN has no entries in the
-// table yet, so its IDs stay numbers (and an NXDN-only build has none of this)
+// The P25 view's IDs named: the caller, the call's talk group or unit, and what PTT calls. Only changed() calls it, after
+// names_refresh has dropped the names of another network. NXDN has no entries in the table yet, so its IDs stay numbers
+// (and an NXDN-only build has none of this)
 static void air_names(radio_sm_t *sm)
 {
 	if (sm->view.ch.mode != RADIO_MODE_P25) {
 		return;
 	}
-	names_refresh(sm);	// before the names it flushes are looked up
 	const radio_p25_view_t *v = &sm->view.p25;
 	radio_air_names_t *a = &sm->view.air_names;
 	air_name(sm, v->src, false, &a->src_id, NULL, a->src);
