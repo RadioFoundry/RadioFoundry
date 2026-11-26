@@ -2440,6 +2440,21 @@ static int check_scan_hit_name(void)
 			return 1;
 		}
 	}
+	// The same slot is renamed by its owner while the scan-hit number stays unchanged.
+	channel_t ch;
+	if (!codeplug_channel(1, &ch))
+		return 1;
+	strcpy(ch.name, "Renamed hit");
+	if (!codeplug_set_channel(1, &ch))
+		return 1;
+	for (int large = 0; large < 2; large++) {
+		s.large_text = large != 0;
+		ui_draw_home(&v, &s);
+		if (!sim_text_bounds("Renamed hit", &x, &y, &w, &h) || strcmp(v.ch.name, "Priority")) {
+			printf("FAIL scan hit name after codeplug change (large=%d)\n", large);
+			return 1;
+		}
+	}
 	v.p25.scan_channel = 0;
 	v.p25.trunk = RADIO_P25_TRUNK_CONTROL;
 	s.large_text = false;

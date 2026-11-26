@@ -7737,11 +7737,32 @@ static void test_p25_invalid_target(void)
 	memset(stored_p25, 0, sizeof stored_p25);
 }
 uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
-// No stored channel here has P25 contact slots: the talk target reads as one without the flag
+#if CONFIG_P25_TRUNK && CONFIG_P25_ZONE_SCAN
+static p25_talk_t stored_scan_talk[NCH + 1];
+#endif
+// The target owner's side; its real qualified decoding is exercised in p25CodeplugTest.
 bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
 {
 	(void)number;
 	(void)rx_list;
+#if CONFIG_P25_TRUNK
+	if (ch->kind == CODEPLUG_KIND_P25_TRUNK) {
+#if CONFIG_P25_ZONE_SCAN
+		if (number <= NCH && stored_scan_talk[number].air) {
+			*out = stored_scan_talk[number];
+			return true;
+		}
+#endif
+		contact_t c;
+		memset(out, 0, sizeof *out);
+		if (codeplug_contact(ch->contact, &c)) {
+			out->id = c.type == CONTACT_ALL_CALL ? P25_CP_TG_ALL : c.id;
+			out->unit = c.type == CONTACT_PRIVATE;
+			out->set = true;
+		}
+		return true;
+	}
+#endif
 	if (ch->kind != CODEPLUG_KIND_P25)
 		return false;
 	memset(out, 0, sizeof *out);
@@ -8554,6 +8575,11 @@ static void test_p25_zone_scan(void)
 	run(30);
 	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF);
 	CHECK(sm.view.p25.scan_channel == 0);
+	site.grant_tg = 77;
+	run(400);
+	CHECK(hw.rx_hz == TS_VOICE); // the original follow-all flag was restored too
+	site.grant_tg = 0;
+	run(1700);
 	chans[4].scan_skip = true;
 	req(RREQ_SCAN, RSCAN_ZONE);
 	run(30);
@@ -8568,6 +8594,141 @@ static void test_p25_zone_scan(void)
 	run(30);
 	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF && !radio_p25_trunked());
 	CHECK(site.reg_rx == 0 && site.aff_rx == 0 && site.req_rx == 0);
+}
+
+static void test_p25_subscriber_monitoring(void)
+{
+	setup_codeplug_p25();
+	add(3, "Selected group", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	chans[3].contact = 1;
+	chans[4] = chans[3];
+	chans[5] = chans[3];
+	chans[5].system = 1;
+	chans[6] = chans[3];
+	chans[7] = chans[3];
+	zones[0].channels[zones[0].count++] = 6;
+	zones[0].channels[zones[0].count++] = 7;
+	// The same numeric contact in the legacy table means 201. Only the qualified owner yields group 9.
+	stored_scan_talk[4] = (p25_talk_t){ .id = 9, .set = true, .air = true, .scoped = true };
+	stored_scan_talk[5] = stored_scan_talk[4];
+	stored_scan_talk[6] = (p25_talk_t){ .id = 12, .set = true, .air = true, .unit = true };
+	stored_scan_talk[7] = (p25_talk_t){ .air = true, .scoped = true }; // unresolved qualified reference
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.iden_set = 2;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500,
+		.tx_offset_hz = TS_OFFSET, .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	stored_trunk.group_count = 1;
+	stored_trunk.groups[0] = 77;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.ans_reg = site.ans_aff = SITE_ANS_NONE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	run(1000);
+	// Receiving through the overlay never grants transmit readiness while registration is unanswered.
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	CHECK(radio_p25_zone_scanning() && radio_p25_trunk_tx());
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && sm.view.p25.twhy == RADIO_TRUNK_WHY_NOT_REG);
+	CHECK(site.req_rx == 0 && !radio_p25_zone_scanning());
+	req(RREQ_PTT, 0);
+	site.ans_reg = site.ans_aff = SITE_ANS_ACCEPT;
+	run(P25_ACC_RETRY_MS + 1000);
+	CHECK(sm.view.p25.treg == P25_REG_READY && radio_p25_trunk_tx());
+	radio_p25_trunk_view_t v;
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.aff_tg == 201 && site.aff_rx == 1);
+	uint16_t registrations = site.reg_rx, affiliations = site.aff_rx;
+	// Configured RX-list monitoring works without zone scan and after its staging memory became voice memory.
+	site.grant_tg = 77; site.grant_ch = 0x100A;
+	far_begin(TS_NAC, 1001, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(700);
+	CHECK(sm.view.p25.dst == 77 && sm.view.p25.talk == 201 && (sm.view.p25.flags & RADIO_P25_PLAYED));
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(1700);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	CHECK(radio_p25_zone_scanning() && radio_p25_zone_scan_count() == 2);
+	site.grant_tg = 77;
+	run(400);
+	CHECK(hw.rx_hz == TS_CC1); // the zone overlay excludes the configured list's other group
+	site.grant_tg = 9;
+	far_begin(TS_NAC, 1002, false, 9);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(700);
+	CHECK(hw.rx_hz == TS_VOICE && sm.view.p25.scan_channel == 4 && sm.view.p25.talk == 201);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.aff_tg == 201 && site.aff_rx == affiliations && site.reg_rx == registrations && site.req_rx == 0);
+	// PTT during a hit stops the overlay and requests the selected group, never the received group.
+	req(RREQ_PTT, 1);
+	run(700);
+	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF);
+	CHECK(site.req_rx == 1 && site.last.tg == 201 && sm.view.state == RS_TX && hw.keyed);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.aff_tg == 201 && site.aff_rx == affiliations && site.reg_rx == registrations);
+	req(RREQ_PTT, 0);
+	p25_engine_tx_stop(&far_eng);
+	far_tx = false;
+	site.grant_tg = 0;
+	run(1800);
+	// Stop restored the original count and stable base array, rather than an empty or overwritten list.
+	site.grant_tg = 77;
+	far_begin(TS_NAC, 1001, false, 77);
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(700);
+	CHECK(sm.view.p25.dst == 77 && (sm.view.p25.flags & RADIO_P25_PLAYED));
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(1700);
+	site.grant_tg = 9;
+	run(400);
+	CHECK(hw.rx_hz == TS_CC1); // the temporary group's membership was removed
+	// A codeplug owner change ends the overlay and drops its channel/group map.
+	site.grant_tg = 0;
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	CHECK(radio_p25_zone_scanning());
+	cp_serial++;
+	run(30);
+	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF && sm.view.p25.scan_channel == 0);
+	// Registration denial and later loss of control remain authoritative while monitoring is available.
+	site.ans_reg = SITE_ANS_DENY;
+	cp_serial++;
+	run(2000);
+	CHECK(sm.view.p25.treg == P25_REG_DENIED);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	CHECK(radio_p25_zone_scanning());
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && sm.view.p25.twhy == RADIO_TRUNK_WHY_NOT_REG && !hw.keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_SCAN, RSCAN_ZONE);
+	site.on = false;
+	run(P25_FOLLOW_CC_LOST_MS + 500);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.tx_deny == TXDENY_TRUNK && sm.view.p25.twhy == RADIO_TRUNK_WHY_NO_CC && !hw.keyed);
+	req(RREQ_PTT, 0);
+	memset(stored_scan_talk, 0, sizeof stored_scan_talk);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
 }
 #endif
 
@@ -9085,6 +9246,7 @@ static void test_p25(void)
 	test_p25_trunk();
 #if CONFIG_P25_ZONE_SCAN
 	test_p25_zone_scan();
+	test_p25_subscriber_monitoring();
 #endif
 	test_p25_trunk_tx();
 	test_p25_system_names();

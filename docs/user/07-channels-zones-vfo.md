@@ -385,7 +385,9 @@ when WACN or system ID is set to Any. This can briefly delay transmitting after 
 - Calls to one unit and emergency are not there yet.
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
-- On radios with zone scan, start **Scan** while on a receive-only P25 trunked channel to follow the current
+- A P25 channel's configured **RX group list** monitors eligible groups from that channel's System without
+  starting Scan. It uses the System-qualified contact catalog; unresolved and other-System entries do not match.
+- On radios with zone scan, start **Scan** while on a P25 trunked channel to follow the current
   zone's groups on that channel's system. The receiver stays on the control channel between calls; it does not
   cycle through frequencies. Channels on other systems, conventional channels, private contacts and zone-skip
   entries are excluded. The selected channel is always included and is the priority group.
@@ -395,7 +397,10 @@ when WACN or system ID is set to Any. This can briefly delay transmitting after 
 - Starting zone scan temporarily overrides **Follow every group of the system**. Stopping scan restores that
   channel's normal filter. Changing channel or zone stops scan; start it again to use the new selection as priority.
   Nuisance deletion and conventional scan resume timing do not apply here.
-  This feature does not change the codeplug or enable transmission or registration.
+  The configured RX group list and follow-all/unit-call settings return when scan stops. No codeplug bytes change.
+  Transmit-capable profiles keep their normal registration behavior while scanning. Receiving another group
+  never changes your selected transmit group or affiliates you to that group. PTT stops scanning and requests your
+  selected group; registration, affiliation and current-site transmit checks still apply.
 - During a scan hit, the main name and number show the programmed channel for the group being followed.
   They return to your selected channel when the radio goes back to control. Your selected group remains priority.
   **Scan** can be assigned to a key press or hold in **Settings > Keys** or the codeplug editor.

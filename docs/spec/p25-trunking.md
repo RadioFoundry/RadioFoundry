@@ -494,12 +494,21 @@ the voice path does not search the codeplug. The selected channel and priority
 group do not change. On returning to control, Home shows the selected channel
 again. The same rule applies to the large-text view.
 
-`CONFIG_P25_ZONE_SCAN` uses the normal Scan action on a receive-only trunked
-channel. It follows only group contacts from the current zone whose channels
-refer to the selected system record. It excludes conventional channels, other
-systems, private contacts and zone-skip entries, removes duplicate groups, and
-keeps at most 80 groups. The selected channel is always included as priority.
-Starting on a transmit-enabled follower is refused. No codeplug bytes change.
+The channel's configured RX group list is the normal receive filter, read through
+the existing System-qualified P25 contact owner. It does not require zone scan.
+Only eligible group entries for the selected System are included; unresolved or
+other-System entries never become global group matches. The selected transmit
+group remains separate from this receive membership.
+
+`CONFIG_P25_ZONE_SCAN` uses the normal Scan action on a trunked channel, including
+a transmit-capable subscriber profile. It temporarily follows group contacts from
+the current zone whose channels refer to the selected System record. Targets are
+read through `p25_channel_talk`, including its qualified contact and RX-list
+validation. Conventional channels, other Systems, unresolved targets, unit
+contacts and zone-skip entries are excluded. Duplicate groups are removed, with
+at most 80 groups. The selected channel is always included as priority. No
+codeplug bytes change; no generic named channel-scan list or cross-System
+scheduler is added.
 
 The follower stays on the control channel between calls. Zone scanning overrides
 the channel's follow-all flag and excludes unit calls. A selected-group grant
@@ -514,12 +523,33 @@ Active voice is never interrupted for priority checks. The single receiver
 cannot detect grants on control while receiving another voice channel; a short
 priority call can be missed. Existing terminator handling remains unchanged.
 
-Stop restores the selected channel's original filter, returning to control if
-the current call no longer qualifies. Changing channel or zone ends scanning.
+Stop restores the selected channel's original RX-list count, membership and
+follow-all/unit-call flags, returning to control if the current call no longer
+qualifies. The loaded base array and temporary zone arrays live in the trunk
+runtime, outside the staging/voice union. The overlay borrows only the follower's
+receive-list pointer; stopping restores that pointer to the loaded base array.
+Changing channel, zone or the codeplug owner serial ends scanning and reloads
+configuration. The displayed scan-hit name cache also follows that serial.
+
+Receive hits never change the selected transmit group or accepted affiliation,
+and never affiliate the monitored groups. PTT stops the overlay and requests the
+selected group through the existing subscriber path. Registration, affiliation,
+current serving-site proof and normal transmit admission still apply; receiving
+a monitored call grants no readiness. A queued PTT is admitted against that
+context before restoring a filter can return an excluded receive call to control.
+The control return and subsequent grant must complete before voice transmission.
+
 Start again on the new selected channel to change priority. Conventional dwell,
 timed-resume, nuisance-delete and frequency-sweep behavior do not apply to this
 mode. The normal scan indicator is used; the selected channel remains selected.
 The debug view exposes `p25t.zone_scan` and `p25t.scan_groups` for verification.
 
-Host tests exercise filtering, pending-grant priority, uninterrupted voice,
-reply-hold priority, cancellation, channel changes and no outbound signaling.
+Host tests exercise qualified filtering, base-list restoration after voice
+memory use, pending-grant priority, uninterrupted voice, reply-hold priority,
+cancellation, codeplug changes, selected-group PTT and unchanged affiliation.
+Readiness refusals cover unanswered and denied registration and loss of control.
+Receive-only scanning emits no outbound signaling; a transmit-capable profile
+retains its ordinary subscriber registration behavior.
+The read-only scripted HIL diagnostics require an RX-only profile. Transmit-capable
+monitoring is host-tested and remains hardware-unqualified; that script does not
+opt into subscriber registration or retries on hardware.

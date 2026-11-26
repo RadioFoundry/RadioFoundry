@@ -781,6 +781,7 @@ static struct {
 #endif
 } sim_edits[SIM_EDITS];
 static uint8_t n_edits;
+static uint32_t sim_cp_serial;
 
 static const channel_t *sim_edit(uint16_t number)
 {
@@ -805,6 +806,7 @@ static int sim_write(uint16_t number, const channel_t *ch)
 	sim_edits[i].air_set = false;
 #endif
 	sim_rec.codeplug_writes++;
+	sim_cp_serial++;
 	return i;
 }
 
@@ -1000,7 +1002,6 @@ static bool sim_zone_builtin(uint16_t index, zone_t *out);
 uint16_t codeplug_zone_count(void) { return sim_zones_edited ? sim_zn : 3; }
 
 // A codeplug written while the radio runs (cpwrite, cpdel:N, zonesize:Z,N): codeplug_serial() moves on
-static uint32_t sim_cp_serial;
 static bool sim_cp_insert;		// cpwrite: zone 0 starts with channel 40, its other channels one position down
 static uint16_t sim_cp_deleted;		// cpdel:N: channel N is in no zone
 static uint8_t sim_zone_size[3];	// zonesize:Z,N: zone Z has its first N channels only (0: all)

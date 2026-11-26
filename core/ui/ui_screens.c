@@ -1044,9 +1044,12 @@ static const char *home_channel_name(const radio_view_t *v, uint16_t *number)
 	    v->p25.trunk == RADIO_P25_TRUNK_VOICE && v->p25.scan_channel) {
 		static char name[CODEPLUG_NAME_LEN + 1];
 		static uint16_t last_number;
+		static uint32_t last_serial;
 		static bool valid;
-		if (last_number != v->p25.scan_channel) {
+		uint32_t serial = codeplug_serial();
+		if (last_number != v->p25.scan_channel || last_serial != serial) {
 			last_number = v->p25.scan_channel;
+			last_serial = serial;
 			valid = codeplug_channel_name(last_number, name);
 		}
 		if (valid) {

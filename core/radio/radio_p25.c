@@ -50,7 +50,7 @@ typedef struct {
 	uint16_t scan_groups[CODEPLUG_ZONE_MAX];
 	uint16_t scan_channels[CODEPLUG_ZONE_MAX];
 	bool scan_applied;
-	uint8_t scan_flags;
+	uint8_t scan_flags, base_ngroups;
 #endif
 	bool nogo_kept;			// this system's control channels are in nogo_hz
 } p25_trunk_t;
@@ -112,7 +112,7 @@ static bool scan_want;
 
 bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, uint16_t selected_number)
 {
-	if (!radio_p25_trunked() || ttx || mem->trunk.scan_applied || !zone || !selected ||
+	if (!radio_p25_trunked() || mem->trunk.scan_applied || !zone || !selected ||
 	    selected->kind != CODEPLUG_KIND_P25_TRUNK || !mem->trunk.cfg.talk_group)
 		return false;
 	scan_count = 1;
@@ -120,18 +120,13 @@ bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, ui
 	mem->trunk.scan_channels[0] = selected_number;
 	for (uint16_t pos = 0; pos < zone->count && pos < CODEPLUG_ZONE_MAX; pos++) {
 		channel_t ch;
-		contact_t contact;
+		p25_talk_t target;
 		if (!codeplug_channel(zone->channels[pos], &ch) || ch.kind != CODEPLUG_KIND_P25_TRUNK ||
 		    ch.system != selected->system || ch.scan_skip)
 			continue;
-#if CONFIG_DMR
-		uint16_t index = codeplug_channel_talk_contact(&ch);
-#else
-		uint16_t index = ch.contact;
-#endif
-		if (!index || !codeplug_contact(index, &contact) || contact.type == CONTACT_PRIVATE)
+		if (!p25_channel_talk(zone->channels[pos], &ch, true, &target) || !target.set || target.unit)
 			continue;
-		uint32_t tg = contact.type == CONTACT_ALL_CALL ? P25_CP_TG_ALL : contact.id;
+		uint32_t tg = target.id;
 		if (!tg || tg > 0xFFFFu)
 			continue;
 		bool duplicate = false;
@@ -432,6 +427,11 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 	c->talk_group = l->talk_group;
 	// The RX list's groups, when the channel names P25 contacts (p25-codeplug.md 3)
 	c->ngroups = l->group_count;
+#if CONFIG_P25_ZONE_SCAN
+	// The loaded list lives here, outside the staging/voice union. The zone overlay only borrows cfg.groups.
+	t->base_ngroups = l->group_count;
+	t->scan_applied = false;
+#endif
 	if (l->group_count != 0) {
 		memcpy(t->groups, l->groups, l->group_count * sizeof(t->groups[0]));
 		c->groups = t->groups;
@@ -505,32 +505,35 @@ static void trunk_service(p25_mem_t *m)
 		}
 		p25_follow_retuned(&t->f, now, ok);
 	}
+	if (t->talk_end) {
+		t->talk_end = false;
+		p25_follow_talk_end(&t->f, now);
+	}
+	// Admit queued PTT with the ready subscriber context before a filter change can return an excluded call
+	// to control. The follower's selected talk group is unchanged by either receive filter.
+	if (t->ptt_done != t->ptt_seq) {
+		t->ptt_done = t->ptt_seq;
+		p25_follow_ptt(&t->f, t->ptt, now);
+	}
 #if CONFIG_P25_ZONE_SCAN
 	if (scan_want != t->scan_applied) {
+		const uint8_t mask = P25_FOLLOW_ALL_GROUPS | P25_FOLLOW_NO_UNIT;
 		if (scan_want) {
-			t->scan_flags = t->cfg.flags;
+			t->scan_flags = t->cfg.flags & mask;
 			t->cfg.flags = (uint8_t)((t->cfg.flags & ~P25_FOLLOW_ALL_GROUPS) | P25_FOLLOW_NO_UNIT);
 			t->cfg.zone_scan = true;
-			t->cfg.groups = mem->trunk.scan_groups;
+			t->cfg.groups = t->scan_groups;
 			t->cfg.ngroups = scan_count;
 		} else {
 			t->cfg.zone_scan = false;
-			t->cfg.flags = t->scan_flags;
-			t->cfg.groups = NULL;
-			t->cfg.ngroups = 0;
+			t->cfg.flags = (uint8_t)((t->cfg.flags & ~mask) | t->scan_flags);
+			t->cfg.groups = t->base_ngroups ? t->groups : NULL;
+			t->cfg.ngroups = t->base_ngroups;
 		}
 		t->scan_applied = scan_want;
 		p25_follow_groups_changed(&t->f, now);
 	}
 #endif
-	if (t->talk_end) {
-		t->talk_end = false;
-		p25_follow_talk_end(&t->f, now);
-	}
-	if (t->ptt_done != t->ptt_seq) {
-		t->ptt_done = t->ptt_seq;
-		p25_follow_ptt(&t->f, t->ptt, now);
-	}
 #if CONFIG_P25_ROAM
 	if (t->cfg.roam_dbm < 0 && t->signal_pending) {
 		t->signal_pending = false;
