@@ -66,10 +66,10 @@ extern const ui_scr_def_t ui_satellite_passes_screen;	// ui_satellite.c
 #endif
 #if CONFIG_DUAL_WATCH
 extern const ui_scr_def_t ui_dual_screen, ui_dual_pick_screen, ui_dual_zone_screen;	// ui_dual.c
-#if CONFIG_SCAN_LIST
+#endif
+#if CONFIG_SCAN_LIST && CONFIG_CHANNEL_EDIT	// the same condition as ui_scr[]
 extern const ui_scr_def_t ui_scanlists_screen, ui_scanlist_options_screen, ui_scanlist_delete_screen,
 	ui_scanlist_edit_screen, ui_scanlist_pick_screen, ui_scanlist_zone_screen;	// ui_scanlist.c
-#endif
 #endif
 
 static void item_num(ui_item_t *it, uint16_t n)

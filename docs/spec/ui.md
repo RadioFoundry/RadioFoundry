@@ -107,7 +107,7 @@ into logical actions (`hal_input.h`).
 
 ## 2. Screens and the stack
 
-The stack holds up to 8 frames (`UI_STACK_MAX`); Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
+The stack holds up to 6 frames, 8 with `CONFIG_SCAN_LIST` (`UI_STACK_MAX`); Home is frame 0. Each screen is a `ui_scr_def_t` (`ui_nav.h`): a name (the debug
 link's `ui.screen`), flags, and callbacks for list rows, SELECT, CONTEXT, the talk target of the focused row, a title,
 a body, raw keys, drawing and entry. List screens need only `count` and `item`; the generic list code does focus,
 scrolling, numbered shortcuts (`SF_NUMBERED`: 1-9, then 0 for the 10th row; later rows have none), T9 filtering (`SF_FILTER`), and the long-press target.
@@ -414,7 +414,7 @@ With `CONFIG_SCAN_LIST` and a usable scan list area ([scan-list.md](scan-list.md
 | Zone (`scan-list-zone`) | Every zone; OK returns to the picker on it |
 
 Changes are saved by a job for the housekeeping task, one at a time: a second change before it finishes says "Busy saving:
-try again" and is not made. The stack is 8 deep (`UI_STACK_MAX`): Home, hub, Tools, Scan, the options, Channels, Add to,
+try again" and is not made. With `CONFIG_SCAN_LIST` the stack is 8 deep (`UI_STACK_MAX`): Home, hub, Tools, Scan, the options, Channels, Add to,
 Zone. Only Scan is a field-use screen.
 
 ## 3. Key meanings
