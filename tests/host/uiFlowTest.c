@@ -179,6 +179,11 @@ static const flow_t flows[] = {
 	// Recent: a YSF call by its callsign and DG-ID; no DMR actions for it
 	{ "R YSF call in Recent", "dlmode:ysf ysfrx:N1ABC,12", "ok 3", "screen=recent shows=N1ABC shows=DG-ID_12", 2, false },
 	{ "YSF home: a room data transmission", "dlmode:ysf", "ysfrx:N0RPT,0,d", "screen=home shows=N0RPT shows=Data hides=Not_DN", 0, false },
+	// No YSF callsign set (ysf.md 5.2): Home says so, and PTT is refused with its own reason and where to set it
+	{ "YSF home: no callsign", "ysf dlmode:ysf long:ok", "noysfcall wait:500", "screen=home shows=No_callsign",
+	  0, false },
+	{ "YSF PTT: no callsign set", "ysf dlmode:ysf long:ok noysfcall wait:500", "pttdown",
+	  "screen=home shows=NO_TX shows=No_callsign hides=TALKING tx=0", 1, false },
 	{ "R YSF data transmission in Recent", "dlmode:ysf ysfrx:N0RPT,0,d ysfend", "ok 3", "screen=recent shows=N0RPT", 2, false },
 	{ "H YSF idle: the last call heard", "dlmode:ysf ysfrx:N1ABC,12 ysfend", "", "screen=home shows=N1ABC shows=DG-ID_12", 0, false },
 	{ "R YSF: our own call echoed stays out", "dlmode:ysf ysfrx:N0CALL,0", "ok 3", "screen=recent hides=N0CALL", 2, false },

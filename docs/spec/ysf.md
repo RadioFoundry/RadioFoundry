@@ -224,8 +224,8 @@ from its callsign ("N0RPT > Data") and goes into Recent, with nothing to play.
 
 The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), and only that: it is never
 taken from the radio name, which is a label, so nothing goes on air under a callsign nobody set. Without one, Home says
-"No callsign", and PTT and a room command are refused with `TXDENY_NO_CALLSIGN` ("No callsign set", "Set YSF callsign
-in My radio"). Settings > My radio > YSF callsign writes the record on the radio (text
+"No callsign", and PTT and a room command are refused with `TXDENY_NO_CALLSIGN` ("No callsign set", "Set callsign in
+My radio"). Settings > My radio > YSF callsign writes the record on the radio (text
 entry, letters, digits, `-` and `/`, folded to upper case); saved empty, it removes the record.
 
 ### 5.3 Debug link

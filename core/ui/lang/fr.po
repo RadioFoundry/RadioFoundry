@@ -5194,8 +5194,8 @@ msgstr "Régler ID DMR qdmr"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
-msgid "Set YSF callsign in My radio"
-msgstr "Régler indicatif YSF Ma radio"
+msgid "Set callsign in My radio"
+msgstr "Régler indicatif Ma radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

@@ -981,10 +981,12 @@ void ui_svc_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 	if (weak)
 		*weak = false;
 }
+// The codeplug's YSF callsign: "N0CALL" in the simulated codeplug, none after the noysfcall token
+static bool sim_no_ysf_call;
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
-	// The typed one (My radio), else the radio name's
-	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : "N0CALL");
+	// The typed one (My radio), else the codeplug's. Never the radio name's (ysf.md 5.2)
+	strcpy(out, sim_names[UI_NAME_YSF_CALL][0] ? sim_names[UI_NAME_YSF_CALL] : sim_no_ysf_call ? "" : "N0CALL");
 }
 static radio_view_t view;	// (defined again below: one object)
 // The DG-ID set (quick settings, the Rooms page): the view shows it at once; dgid / dgchan in the results
@@ -1730,6 +1732,14 @@ static void ptt(bool down)
 			changed();
 			return;
 		}
+#if CONFIG_YSF
+		if (view.ch.mode == RADIO_MODE_YSF && (view.ysf.flags & RADIO_YSF_NO_CALL) != 0) {
+			view.state = RS_TX_DENIED;	// as the radio core: no YSF callsign set (ysf.md 5.2)
+			view.tx_deny = TXDENY_NO_CALLSIGN;
+			changed();
+			return;
+		}
+#endif
 		view.state = RS_TX;
 		view.tx_elapsed_ms = 0;
 		if (view.scan != 3)
@@ -2815,6 +2825,9 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	p25_radio = false;
 	nxdn_radio = false;
 	ysf_radio = false;
+#if CONFIG_YSF
+	sim_no_ysf_call = false;
+#endif
 #if CONFIG_YSF
 	memset(&sim_wx, 0, sizeof sim_wx);
 	sim_wx.asked_cmd = YSF_WX_NONE;
@@ -4028,6 +4041,14 @@ static bool run_token(char *t, char *err, size_t len)
 		ysf_radio = true;
 		return true;
 	}
+#if CONFIG_YSF
+	if (strcmp(t, "noysfcall") == 0) {	// no YSF callsign set: Home says so, PTT on YSF is refused
+		sim_no_ysf_call = true;
+		view.ysf.flags |= RADIO_YSF_NO_CALL;
+		changed();
+		return true;
+	}
+#endif
 
 	if (strcmp(t, "hwopt") == 0) {		// this radio has hardware options (sim_hwopts)
 		board.hwopts = sim_hwopts;

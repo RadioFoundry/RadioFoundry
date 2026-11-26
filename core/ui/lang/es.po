@@ -5194,8 +5194,8 @@ msgstr "Fija tu ID DMR en qdmr"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
-msgid "Set YSF callsign in My radio"
-msgstr "Fija el indicativo YSF en Mi radio"
+msgid "Set callsign in My radio"
+msgstr "Fija el indicativo en Mi radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

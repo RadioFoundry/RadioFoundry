@@ -5196,8 +5196,8 @@ msgstr "在 qdmr 中设置 DMR ID"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
-msgid "Set YSF callsign in My radio"
-msgstr "在“我的电台”中设置 YSF 呼号"
+msgid "Set callsign in My radio"
+msgstr "在“我的电台”中设置呼号"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

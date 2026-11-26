@@ -1489,7 +1489,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_DMR: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	case TXDENY_HOTSPOT: return TR(HOTSPOT_HINT_OK_STOPS, "OK stop hotspot");
 	case TXDENY_NO_ID: return TR(DENY_FIX_SET_DMR_ID, "Set your DMR ID in qdmr");
-	case TXDENY_NO_CALLSIGN: return TR(DENY_FIX_SET_YSF_CALLSIGN, "Set YSF callsign in My radio");
+	case TXDENY_NO_CALLSIGN: return TR(DENY_FIX_SET_YSF_CALLSIGN, "Set callsign in My radio");
 	case TXDENY_AM:
 	case TXDENY_BCAST: return v->vfo ? TR(DENY_FIX_TUNE_OUT_OF_BAND, "Tune out of the band") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");
