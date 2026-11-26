@@ -132,6 +132,11 @@ enum {
 // register. The board's RF chips are numbered below it
 #define DL_CHIP_SOC		0xFFu
 
+// DL_CMD_AUDIO_PROBE's first operations (the rest in debuglink_audio_probe.c): the ones the air may ask (7.3)
+#define DL_PROBE_OP_STATUS	0u
+#define DL_PROBE_OP_REG_READ	1u
+#define DL_PROBE_OP_REG_WRITE	2u
+
 // DL_CMD_RX2 operations (first payload byte; docs/spec/debuglink.md 3.22). The token is u32 little endian
 enum {
 	DL_RX2_OP_INFO = 0,	// -> status, flags u8 (DL_RX2_F_*)

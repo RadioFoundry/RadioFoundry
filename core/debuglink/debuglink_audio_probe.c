@@ -25,9 +25,9 @@
 #if CONFIG_AUDIO_PROBE
 
 enum {
-	PROBE_OP_STATUS		= 0,	// -> running u8, blocks u32, then per channel L, R: peak u16, rms u16, peak_max u16
-	PROBE_OP_REG_READ	= 1,	// page u8, reg u8 -> value u8
-	PROBE_OP_REG_WRITE	= 2,	// page u8, reg u8, value u8 -> value read back u8
+	PROBE_OP_STATUS		= DL_PROBE_OP_STATUS,	// -> running u8, blocks u32, then per channel L, R: peak u16, rms u16, peak_max u16
+	PROBE_OP_REG_READ	= DL_PROBE_OP_REG_READ,	// page u8, reg u8 -> value u8
+	PROBE_OP_REG_WRITE	= DL_PROBE_OP_REG_WRITE,	// page u8, reg u8, value u8 -> value read back u8
 	PROBE_OP_START		= 3,	// tone_hz u16, amplitude u16 (0 = silence out), flags u8 (bit 0: speaker PCM route)
 	PROBE_OP_STOP		= 4,
 	PROBE_OP_SAMPLES	= 5,	// -> blocks u32, 160 left then 160 right samples (i16 little endian)
