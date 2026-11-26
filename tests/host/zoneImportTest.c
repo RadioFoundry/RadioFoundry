@@ -14,6 +14,10 @@
 #include "codeplug/codeplug_records.h"
 #include "storage/storage.h"
 #include "sim/sim_flash.h"
+#if CONFIG_P25
+#include "p25/p25_codeplug.h"
+#include "codeplug/codeplug_air_contacts.h"
+#endif
 
 static int failures, checks;
 
@@ -692,7 +696,7 @@ static void put_system(uint8_t n, uint8_t type, uint8_t flags, uint8_t level, co
 // Channel number of kind on system (CODEPLUG_SYSTEM_NONE: none), its stand-in record DMR and receive only
 static void put_kind(uint16_t number, const char *name, uint32_t rx, uint8_t kind, uint8_t system, uint8_t flags)
 {
-	static const uint8_t params[] = { 0x7B, 0x01, 0x00 };
+	static const uint8_t params[] = { 0x79, 0x01, 0x00 };
 	channel_t ch = make(name, rx, rx, true);
 	codeplug_tag_t t;
 
@@ -756,7 +760,7 @@ static void test_modes(void)
 	CHECK(zsEntryAt(&rec, &s, 1, &e) && e.group == 0xFF && e.flags == 1 && e.len == 3 && e.body[2] == 0x2A);
 	CHECK(zsSystemAt(&rec, 1, &s) && s.type == 1 && s.level == ZS_LEVEL_IDENTITY && s.blockLen == 3 && s.entries == 0);
 	CHECK(zsTagAt(&rec, 0, &t) && t.channel == 2 && t.kind == 3 && t.system == 1 && t.flags == (CODEPLUG_TAG_TX | 0x10) &&
-	      t.len == 3 && t.params[0] == 0x7B);
+	      t.len == 3 && t.params[0] == 0x79);
 	CHECK(zsTagAt(&rec, 1, &t) && t.channel == 3 && t.system == 2);
 	CHECK(zsTagAt(&rec, 2, &t) && t.channel == 4 && t.system == ZS_SYSTEM_WITHHELD);
 	memcpy(sent, recbuf, (size_t)len);
@@ -787,7 +791,7 @@ static void test_modes(void)
 	CHECK(codeplug_channel(z.channels[0], &ch) && ch.kind == 0 && ch.rx_only);
 	CHECK(codeplug_channel(z.channels[1], &ch) && ch.kind == 3 && ch.system == 0 && !ch.rx_only);
 	uint8_t params[16];
-	CHECK(codeplug_tag_params(z.channels[1], &ch, params, 8) == 3 && params[0] == 0x7B);
+	CHECK(codeplug_tag_params(z.channels[1], &ch, params, 8) == 3 && params[0] == 0x79);
 	CHECK(codeplug_channel(z.channels[2], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
 	CHECK(codeplug_channel(z.channels[3], &ch) && ch.kind == 1 && ch.system == CODEPLUG_SYSTEM_NONE && ch.rx_only);
 
@@ -904,6 +908,110 @@ static void test_modes_p25_conv(void)
 	share_conv(CODEPLUG_KIND_P25, blk, (int)sizeof(blk));
 }
 
+#if CONFIG_P25
+// Slot n of the air mode contact table as the Codeplug Editor writes it (air-contacts.md 3)
+static void air_put(uint16_t n, uint8_t type, uint32_t id, const char *name)
+{
+	uint8_t *r = &sim_flash_data[CODEPLUG_AIR_CONTACTS_ADDR + (n - 1u) * CODEPLUG_AIR_CONTACT_SIZE];
+
+	memset(r, 0xFF, CODEPLUG_AIR_CONTACT_SIZE);
+	r[0] = CODEPLUG_KIND_P25;
+	r[1] = type;
+	r[2] = (uint8_t)id;
+	r[3] = (uint8_t)(id >> 8);
+	r[4] = (uint8_t)(id >> 16);
+	memcpy(&r[8], name, strlen(name));
+}
+
+// A P25 channel of kind whose contact is a P25 contact slot (p25-codeplug.md 2.4) is shared as a legacy channel: the
+// flag clear in its block and its talk target as a DMR contact by value, the slot's group, unit or all call; the DMR
+// contact with the slot's number is not sent. A channel without the flag goes as before
+static void share_air(uint8_t kind, uint8_t flag, int blk_len)
+{
+	static const struct { uint16_t contact; uint8_t type; uint32_t id; const char *name; } want[] = {
+		{ 1, ZS_CONTACT_GROUP, 3100, "1 SB DPS" }, { 2, ZS_CONTACT_PRIVATE, 4242, "Unit" },
+		{ 3, ZS_CONTACT_ALL_CALL, 0xFFFFFF, "All" },
+	};
+	uint8_t blk[P25_CP_CONV_LEN] = { flag, 0, 0, 0, 0 };
+	uint8_t included = 0;
+	zone_import_result_t res;
+	zsRecord_t rec;
+	zsChannel_t zc;
+	zsContact_t zk;
+	zsTag_t t;
+	zone_t z;
+	channel_t ch;
+	codeplug_tag_t tag = { .kind = kind, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
+	static uint8_t sent[ZS_RECORD_MAX];
+
+	fresh();
+	contact_t dmr = contact("DMR 91", 91, CONTACT_GROUP);
+	CHECK(codeplug_set_contact(1, &dmr));		// contact 1 is not slot 1
+	air_put(1, AIR_CONTACT_GROUP, 3100, "1 SB DPS");
+	air_put(2, AIR_CONTACT_UNIT, 4242, "Unit");
+	air_put(3, AIR_CONTACT_ALL, 0, "All");
+	memset(&z, 0, sizeof(z));
+	strcpy(z.name, "Air");
+	// Channels 1-3: the slots; 4: a slot with nothing in it; 5: no flag, the DMR contact 1
+	for (uint16_t n = 1; n <= 5; n++) {
+		char name[17];
+
+		snprintf(name, sizeof(name), "Air %u", n);
+		ch = make(name, 451500000u + n * 12500u, 456500000u + n * 12500u, true);
+		ch.rx_only = true;
+		ch.contact = n <= 3 ? want[n - 1].contact : n == 4 ? 9 : 1;
+		CHECK(codeplug_set_channel(n, &ch));
+		blk[0] = n == 5 ? 0 : flag;
+		CHECK(codeplug_tag_write(n, name, &tag, blk, blk_len));
+		z.channels[z.count++] = n;
+	}
+	CHECK(codeplug_set_zone(0, &z));
+	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
+
+	CHECK(len > 0 && included == 5 && zsParse(recbuf, len, &rec) && rec.channels == 5 && rec.tags == 5);
+	// Three slots by value and the DMR contact; every tag has the flag clear and its other bits
+	CHECK(rec.contacts == 4);
+	for (int i = 0; i < 3; i++) {
+		CHECK(zsChannelAt(&rec, i, &zc) && zc.contact != 0 && zsContactAt(&rec, zc.contact - 1, &zk));
+		CHECK(zk.type == want[i].type && zk.id == want[i].id && strcmp(zk.name, want[i].name) == 0);
+	}
+	CHECK(zsChannelAt(&rec, 3, &zc) && zc.contact == 0);		// an empty slot: no contact, not the DMR one
+	CHECK(zsChannelAt(&rec, 4, &zc) && zc.contact != 0 && zsContactAt(&rec, zc.contact - 1, &zk) && zk.id == 91);
+	for (int i = 0; i < 5; i++) {
+		CHECK(zsTagAt(&rec, i, &t) && t.kind == kind && t.len == (uint8_t)blk_len && (t.params[0] & flag) == 0);
+	}
+	memcpy(sent, recbuf, (size_t)len);
+
+	// What the receiver reads: legacy channels, the right talk group on a DMR contact of its own, the flag clear
+	fresh();
+	with_zones();
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 5);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 5);
+	for (int i = 0; i < 5; i++) {
+		p25_talk_t tk;
+
+		CHECK(codeplug_channel(z.channels[i], &ch) && ch.kind == kind);
+		CHECK(p25_channel_talk(z.channels[i], &ch, true, &tk) && !tk.air);
+		if (i < 3) {
+			CHECK(tk.set && tk.unit == (want[i].type == ZS_CONTACT_PRIVATE) && strcmp(tk.name, want[i].name) == 0 &&
+			      tk.id == (want[i].type == ZS_CONTACT_ALL_CALL ? P25_CP_TG_ALL : want[i].id));
+		} else if (i == 3) {
+			CHECK(!tk.set && ch.contact == 0);
+		} else {
+			CHECK(tk.set && tk.id == 91 && !tk.unit);
+		}
+	}
+}
+
+static void test_modes_p25_air(void)
+{
+	share_air(CODEPLUG_KIND_P25, P25_CONV_AIR_CONTACTS, (int)P25_CP_CONV_LEN);
+#if CONFIG_P25_TRUNK
+	share_air(CODEPLUG_KIND_P25_TRUNK, P25_TCH_AIR_CONTACTS, 1);
+#endif
+}
+#endif
+
 // NXDN conventional (kind 4; nxdn-codeplug.md 3): 4800 bit/s, selective, RX RAN 9, TX RAN 5
 static void test_modes_nxdn_conv(void)
 {
@@ -963,6 +1071,9 @@ int main(void)
 	test_modes();
 #if CONFIG_ZONE_SHARE_MODES
 	test_modes_p25_conv();
+#if CONFIG_P25
+	test_modes_p25_air();
+#endif
 	test_modes_nxdn_conv();
 #if CONFIG_NXDN
 	test_identityless_nxdn_system();

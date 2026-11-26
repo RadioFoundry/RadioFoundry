@@ -11,8 +11,10 @@
 #include "settings/settings.h"
 #include "config.h"
 #include "hal_dtmf.h"
+#include "hal_time.h"
 #include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
 #include "codeplug/codeplug_tag.h"	// CODEPLUG_SYSTEM_NONE
+#include "codeplug/codeplug_air_contacts.h"	// P25 names (docs/spec/air-contacts.md)
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
@@ -171,9 +173,16 @@ static void step_update(radio_sm_t *sm)
 	sm->view.vfo_step_auto = sm->vfo_step_set == 0;
 }
 
+#if CONFIG_P25
+static void air_names(radio_sm_t *sm);
+#endif
+
 static void changed(radio_sm_t *sm)
 {
 	step_update(sm);	// every change that can move the width comes here
+#if CONFIG_P25
+	air_names(sm);		// and every change of a P25 ID (a lookup only when one changed)
+#endif
 	sm->serial++;
 }
 
@@ -6585,6 +6594,72 @@ static bool air_running(void)
 	return on;
 }
 
+#if CONFIG_P25
+// A P25 ID's name from the air mode contact table (docs/spec/air-contacts.md 3.2), never from the DMR contacts: they
+// carry no mode, and a DMR talk group with the same number would name it. The answer is cached, "" too
+static void air_find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
+{
+	out[0] = '\0';
+	if (id == 0) {
+		return;
+	}
+	for (uint8_t i = 0; i < RADIO_AIR_LOOKUPS; i++) {
+		const radio_air_name_t *n = &sm->air_lookups[i];
+		if (n->id == id && n->group == group) {
+			memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
+			return;
+		}
+	}
+	radio_air_name_t *n = &sm->air_lookups[sm->air_lookup_next];
+	sm->air_lookup_next = (uint8_t)((sm->air_lookup_next + 1u) % RADIO_AIR_LOOKUPS);
+	n->id = id;
+	n->group = group;
+	n->name[0] = '\0';
+	air_contact_t c;
+	// The scan runs here, on the radio task: its cost is kept for the debug link (radio_air_scan_t)
+	uint32_t t0 = hal_micros();
+	bool found = codeplug_air_contact_find(CODEPLUG_KIND_P25, id, group, &c);
+	uint32_t us = hal_micros() - t0;
+	radio_air_scan_t *st = &sm->view.air_scan;
+	st->scans++;
+	st->last_us = us;
+	if (us > st->max_us) {
+		st->max_us = us;
+	}
+	if (found) {
+		memcpy(n->name, c.name, sizeof(n->name));
+	}
+	memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
+}
+
+// One name of radio_air_names_t, looked up again only when its ID (or group) changed
+static void air_name(radio_sm_t *sm, uint32_t id, bool group, uint32_t *have_id, bool *have_group, char *name)
+{
+	if (*have_id == id && (have_group == NULL || *have_group == group)) {
+		return;
+	}
+	*have_id = id;
+	if (have_group != NULL) {
+		*have_group = group;
+	}
+	air_find_name(sm, id, group, name);
+}
+
+// The P25 view's IDs named: the caller, the call's talk group or unit, and what PTT calls. NXDN has no entries in the
+// table yet, so its IDs stay numbers (and an NXDN-only build has none of this)
+static void air_names(radio_sm_t *sm)
+{
+	if (sm->view.ch.mode != RADIO_MODE_P25) {
+		return;
+	}
+	const radio_p25_view_t *v = &sm->view.p25;
+	radio_air_names_t *a = &sm->view.air_names;
+	air_name(sm, v->src, false, &a->src_id, NULL, a->src);
+	air_name(sm, v->dst, (v->flags & RADIO_P25_UNIT) == 0, &a->dst_id, &a->dst_group, a->dst);
+	air_name(sm, v->talk, (v->flags & RADIO_P25_TALK_UNIT) == 0, &a->talk_id, &a->talk_group, a->talk);
+}
+#endif
+
 // The engine's view into the radio view. True when it changed
 static bool air_poll(radio_sm_t *sm)
 {
@@ -8193,6 +8268,12 @@ static void reload(radio_sm_t *sm, uint32_t now_ms)
 	// would otherwise stay a bare ID on the screens until it fell out of the cache
 	memset(sm->lookups, 0, sizeof(sm->lookups));
 	sm->lookup_next = 0;
+#endif
+#if CONFIG_P25
+	// The same for the P25 names: the cache and the view's names, looked up again at the next change
+	memset(sm->air_lookups, 0, sizeof(sm->air_lookups));
+	sm->air_lookup_next = 0;
+	memset(&sm->view.air_names, 0, sizeof(sm->view.air_names));
 #endif
 	uint16_t number = sm->have_channels && sm->view.zone_pos < sm->zone.count ? sm->zone.channels[sm->view.zone_pos] : 0;
 	bool vfo = sm->view.vfo;

@@ -38,7 +38,7 @@ test("vectors: name check", () => {
 test("vectors: P25 conventional block, unit ID record", () => {
 	for (const l of vectors("p25conv")) {
 		const [b, rx, tx, sq] = l.split(" ");
-		assert.deepEqual(decodeConv(bytes(b)), { squelch: parseInt(sq, 16), rxNac: parseInt(rx, 16), txNac: parseInt(tx, 16) }, l);
+		assert.deepEqual(decodeConv(bytes(b)), { squelch: parseInt(sq, 16), rxNac: parseInt(rx, 16), txNac: parseInt(tx, 16), p25Contacts: false }, l);
 	}
 	for (const l of vectors("p25enc")) {
 		const [rx, tx, sq, b] = l.split(" ");
@@ -122,7 +122,7 @@ test("model: channels of every kind, systems, entries, the key and the unit ID r
 	assert.equal(by("Plain FM").kind, 0);
 	const conv = by("P25 Ops"), t3 = by("T3 Ops"), p25t = by("P25 Trunk");
 	assert.equal(conv.kind, 2);
-	assert.deepEqual(conv.params, { squelch: 1, rxNac: 0x34, txNac: 0x293 });
+	assert.deepEqual(conv.params, { squelch: 1, rxNac: 0x34, txNac: 0x293, p25Contacts: false });
 	assert.equal(conv.tagTx, true);
 	assert.equal(conv.mode, "dmr");
 	assert.equal(conv.rxOnly, true);
@@ -134,7 +134,7 @@ test("model: channels of every kind, systems, entries, the key and the unit ID r
 	assert.equal(t3.rxHz, 451000000, "the record holds the control channel");
 	assert.equal(p25t.kind, 3);
 	assert.equal(p25t.tagTx, false, "P25 trunked: receive only by default");
-	assert.deepEqual(p25t.params, { followAll: true });
+	assert.deepEqual(p25t.params, { followAll: true, p25Contacts: false });
 	assert.equal(p25t.rxHz, 851012500);
 	assert.equal(p25t.txHz, 851012500);
 	const s1 = d.systems.find((s) => s.type === 1), s3 = d.systems.find((s) => s.type === 3);

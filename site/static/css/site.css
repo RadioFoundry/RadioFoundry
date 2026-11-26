@@ -586,6 +586,17 @@ table.grid { font-size: var(--text-sm); }
 table.grid th, table.grid td { padding: var(--space-1) var(--space-2); white-space: nowrap; vertical-align: middle; }
 table.grid thead th { position: sticky; top: 0; z-index: 1; padding: 0; }
 .grid-sort { font: inherit; font-weight: 600; background: none; border: 0; color: var(--text); padding: var(--space-2); width: 100%; text-align: left; cursor: pointer; }
+.grid-th { display: flex; align-items: center; }
+.grid-th .grid-sort { width: auto; flex: 1 1 auto; }
+.grid-filter-btn { flex: none; display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem; margin-right: var(--space-1); padding: 0; background: none;
+	border: 1px solid transparent; border-radius: var(--radius-sm); color: var(--muted); cursor: pointer; }
+.grid-filter-btn:hover { color: var(--text); border-color: var(--border); }
+.grid-filter-btn.active { color: var(--accent); }
+.grid-filter-btn .funnel { width: 0.95rem; height: 0.95rem; max-width: none; }
+.grid-filter-pop { position: fixed; z-index: 30; min-width: 11rem; max-width: 20rem; max-height: 60vh; overflow: auto; display: grid; gap: var(--space-1);
+	background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2); box-shadow: var(--shadow); }
+.gf-item { display: flex; align-items: center; gap: var(--space-2); padding: 0.1rem var(--space-1); font-size: var(--text-sm); cursor: pointer; }
+.gf-all { border-bottom: 1px solid var(--border); padding-bottom: var(--space-1); margin-bottom: var(--space-1); font-weight: 600; }
 th[aria-sort="ascending"] .grid-sort::after { content: " ▲"; }
 th[aria-sort="descending"] .grid-sort::after { content: " ▼"; }
 table.grid td[data-col] { cursor: cell; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
@@ -597,7 +608,7 @@ table.grid td.editing input, table.grid td.editing select { font: inherit; width
 table.grid td.c-num { font-variant-numeric: tabular-nums; }
 table.grid td.c-bool { text-align: center; }
 table.grid td.c-ro { color: var(--muted); }
-table.grid td.c-na { background: repeating-linear-gradient(45deg, transparent 0 5px, var(--border) 5px 6px), repeating-linear-gradient(-45deg, transparent 0 5px, var(--border) 5px 6px); cursor: not-allowed; }
+table.grid td.c-na { background: repeating-linear-gradient(45deg, transparent 0 5px, var(--border) 5px 6px), repeating-linear-gradient(-45deg, transparent 0 5px, var(--border) 5px 6px); cursor: not-allowed; color: var(--muted); }
 table.grid tr.selected td { background: var(--accent-soft); }
 .grid-check { width: 2rem; text-align: center; }
 .grid-open { width: 2rem; }

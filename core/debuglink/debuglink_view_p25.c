@@ -46,6 +46,10 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 		dl_text(t, "p25.run.unit_call=%u\np25.run.tx_dst=%u\np25.run.unit_id=%u\n", s.unit_call,
 			(unsigned)s.tx_dst, (unsigned)s.unit_id);
 	}
+	// What the air mode contact table's scans cost the radio task (a name not in the cache is one): count, the last, the
+	// longest, in microseconds
+	dl_text(t, "p25.air_scans=%u\np25.air_scan_last_us=%u\np25.air_scan_max_us=%u\n", (unsigned)v->air_scan.scans,
+		(unsigned)v->air_scan.last_us, (unsigned)v->air_scan.max_us);
 	radio_p25_stats(&c);
 	dl_text(t, "p25.begins=%u\np25.begin_fails=%u\np25.mem_lent=%u\np25.rx_calls=%u\np25.tx_calls=%u\n",
 		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.mem_lent, (unsigned)c.rx_calls,

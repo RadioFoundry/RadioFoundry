@@ -53,5 +53,12 @@ export function offeredTypes(m, features) {
 		(m.systems ?? []).some((x) => x.type === s.id));
 }
 
+// Whether P25 contacts are offered (air-contacts.md): a P25 channel kind is
+export const p25Offered = (m, features) => offeredKinds(m, features).some((k) => k.module === p25Kind || k.module === p25TrunkKind);
+
+// Whether the radio's firmware reports a feature token (case does not matter: the build's tokens are upper case, and
+// "p25contacts" is not); null features: no radio to ask
+export const hasFeature = (features, token) => featureList(features).some((f) => f.trim().toLowerCase() === token.toLowerCase());
+
 // Whether a radio with these features runs a kind (null features: no radio to ask)
 export const radioRuns = (features, id) => features == null || featureList(features).includes(kindRow(id)?.feature);
