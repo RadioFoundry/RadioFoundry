@@ -160,10 +160,6 @@ one lock).
 | CONTROL | reads every block; learns identifiers and control channels; follows grants it wants | a grant followed: VOICE. Nothing decoded for 1 s, or the network status names another system: HUNT |
 | VOICE | the conventional call layer plays the call | a terminator, no voice for 1 s, the longest call, another call on the channel, an encrypted call skipped: CONTROL |
 
-With `CONFIG_P25_ALIAS`, valid TDULCs can carry a metadata hang instead of a
-channel release. The bounded wait and immediate-release conditions are described
-in [alias reception](p25-alias-provenance.md). Plain TDUs still return immediately.
-
 Hunting:
 
 | Step | Time | Then |
@@ -210,6 +206,46 @@ WACN, system, RFSS, site, the call followed (group, source, target, encrypted), 
 learned, the last grant refused and why, whether the last block taken failed its CRC, and counters: blocks, CRC
 failures, blocks taken with a failed CRC, manufacturer's blocks, packets, grants,
 follows, refusals by reason, wrong system, hunts, control channel losses, voice losses, and blocks by opcode.
+
+### 4.1 Transmission end and call termination
+
+A TDU, or a TDULC carrying group voice channel user LC during message-trunking hang time,
+ends a transmission without releasing the call's channel (TIA-102.AABD 4.2.1.2).
+A listener may stay during hang time or return to control (4.2.1.2.2). Grant updates
+continue during hang time. A standard TDULC carrying `LC_CALL_TRM_CAN` (LCO 15,
+implicit format byte `0x4F`) ends the call and releases the channel (TIA-102.AABF 7.3.8); the follower
+leaves immediately, including during alias collection (AABD 3.5.1). Protected or
+manufacturer-specific opcodes are not interpreted as standard call termination.
+
+With `CONFIG_P25_ALIAS`, other terminators start a short receive-only window:
+
+- `P25_FOLLOW_ALIAS_HEADER_MS`: 150 ms from the first terminator for a valid MFID
+  0x90 alias header matching the followed group. Data without a header does not extend it.
+- `P25_FOLLOW_ALIAS_MAX_MS`: 500 ms total from that first terminator if a header
+  arrived in time. Return sooner when a validated alias completes. An alias header
+  received without a preceding terminator starts the same total limit at its arrival.
+
+These durations are receiver policy choices, not values mandated by the standard.
+Repeated terminators, headers and data do not restart either deadline. New voice
+cancels the window. Existing wrong-call and encrypted-call handling still applies.
+Without alias support, all terminators return immediately as before.
+
+A received, eligible grant update for another call preempts the window through the
+normal group, NAC, channel-plan and encryption checks. A same-call update does not
+restart it. The follower accepts the two channel/group pairs of an unprotected
+implicit-format group voice channel update LC (LCO 2, format byte `0x42`, AABF 7.3.2)
+in a TDULC during the window, as well as received control-channel grant updates.
+This applies to signaling actually delivered to the receiver: a single
+receiver tuned to voice cannot simultaneously hear a separate control channel.
+After returning, it can receive the control channel's repeated updates.
+
+The LC formats follow [TIA-102.AABF-A](https://lists.osmocom.org/pipermail/op25-dev/attachments/20130712/b3accd32/attachment.pdf),
+7.1, 7.3.2 and 7.3.8.
+
+Host tests cover late-header decoding after both transmission-end formats, immediate
+LCO 15 release, missing/invalid headers, both deadlines, repeated headers, new voice,
+tick wraparound, and grant-update preemption. Radio/bench validation is still pending.
+
 
 ## 5. The transmit side
 
@@ -311,11 +347,13 @@ path's part, which it needs only until the voice path starts. The radio task kee
 other tasks (about 150 bytes).
 
 What the user sees: `p25.trunk` in the radio view (`RADIO_P25_TRUNK_*`: finding the system, on the control channel,
-following a call). Home's talk line says "Finding system", "Control channel" or "Following TG 201" (the grant's group
-until the call's own fields are in) instead of what PTT calls. With the transmit side on it says "Registering" until
-registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or "Reg. denied" after a
-refusal. On the control channel of a blocked system (5, BLOCKED) it says "Blocked system", with the transmit side on
-or off. The debug link's `p25_trunk` section has the follower's
+following a call). Home's talk line says "Finding system" or "Following TG 201" (the grant's group until the call's
+own fields are in) instead of what PTT calls. Idle on the control channel, a system that can't transmit (the transmit
+side off, or a blocked system, 5 BLOCKED, whatever the flag says) says "RX only" in the warning color, as a
+conventional RX-only channel does; a blocked system never reads "Registering". With the transmit side on it says
+"Registering" until registered, "TG 201" when PTT can ask, "Wait" or "Queued" while a request waits, "Denied" or
+"Reg. denied" after a refusal, and "Control channel" when the control channel held has no inbound frequency (NO_TX).
+PTT on a blocked system says "RX-only system: no TX". The debug link's `p25_trunk` section has the follower's
 view and the retune counters ([debuglink.md](debuglink.md) 3.7).
 
 Not used yet: the fallback channel, an RX group list (`groups`), the system's `roam_dbm`.

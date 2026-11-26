@@ -241,7 +241,8 @@ enough: let go of **PTT** and the radio keeps trying, up to the usual number of 
 The talk permit tone tells you the radio has the channel and you can talk. Turn it off for every channel in
 **Settings > Sound > Talk permit tone**, or for one channel with the channel's **Talk permit beeps** field.
 
-Most radios play two short beeps as your voice goes on air. A radio whose beeps would be transmitted plays one short
+Most radios play two short beeps as your voice goes on air. The radio mutes the microphone while the beeps play, so
+other stations don't hear them. Start talking after the beeps. A radio whose beeps would be transmitted plays one short
 beep just before it transmits instead ([the radio's notes](23-radios.md)):
 
 | Screen | What happens |
@@ -278,16 +279,16 @@ only the channel's RX group list. It still plays only the system's calls, on the
 
 ## Privacy
 
-RadioFoundry has two kinds of basic privacy: Motorola basic privacy (keys 1 to 255) and Anytone 16-bit basic privacy. Basic
+RadioFoundry has two kinds of basic privacy, named by key size: 8-bit (keys 1 to 255) and 16-bit (keys 0 to 65535). Basic
 privacy is a fixed scrambling of the voice. It keeps casual listeners out but isn't encryption. The scrambling hasn't
 been checked against another radio yet ([Radio reference](23-radios.md)).
 
 - The radio plays an encrypted call only when it has the matching key. Without the key the call shows as
   "Encrypted: not played".
 - On builds with AES-256 enabled, the radio can play a call when it receives the opening privacy header and has the matching AES key. AES transmissions repeat the message indicator during the call for receivers joining late.
-- Text messages and other data follow the key too. With a Motorola key they are scrambled the same way, and the
+- Text messages and other data follow the key too. With an 8-bit key they are scrambled the same way, and the
   radio reads scrambled data sent with its key. Messages in the **ETSI short** format can't be scrambled, so they
-  fail with a Motorola key: use **ETSI** or **Motorola** ([Messages](10-messages-and-signaling.md)). Anytone basic privacy has no form for data, so with an Anytone key
+  fail with an 8-bit key: use **ETSI** or **TMS** ([Messages](10-messages-and-signaling.md)). 16-bit basic privacy has no form for data, so with a 16-bit key
   the radio sends no text messages or other data: a message you send fails. Scrambled data the radio can't read is
   not shown.
 - **\***, **6** turns privacy on for your calls ("Privacy on for now"). Home shows "Priv". **Back** on Home turns it
@@ -305,8 +306,9 @@ to the radio. Both radios must have the same key bytes and ID. The system and ch
 
 On the handset, open the DMR channel editor and press **OK** on **AES key** to cycle through the provisioned
 system number/key ID pairs. **None** removes channel AES. Save the channel to keep the choice across restarts.
-A protected channel without its key refuses PTT ("AES key or TX disabled"). Text and packet data transmission are
-disabled on these channels, and your GPS position is not sent on them. The editor's image export omits key bytes by
+A protected channel without its key refuses PTT ("AES key or TX disabled"). Text messages and packet data aren't
+sent on these channels yet ("Encrypted channels can't send text"), and your GPS position is not sent on them. Radio
+check, call alert and emergency alarms work as on any DMR channel. The editor's image export omits key bytes by
 default. Including keys produces a file that contains the keys.
 
 For a couple of seconds after power-up, PTT on an AES channel shows "AES: saving, try again": the radio first saves
@@ -330,16 +332,16 @@ What AES does not do:
 
 To set a basic privacy key on the radio, open **Settings > Privacy** (**OK**, **7**, **4**).
 
-1. On **Key type**, press **OK** until it shows Motorola or Anytone.
-2. On **Key**, press **OK**. Type the key in decimal with the number keys (Motorola 1 to 255, Anytone 0 to 65535).
+1. On **Key type**, press **OK** until the screen shows **8-bit (1-255)** or **16-bit (0-65535)**.
+2. On **Key**, press **OK**. Type the key in decimal with the number keys (8-bit 1 to 255, 16-bit 0 to 65535).
    Press **OK** again.
 
 The radio keeps the key across restarts. Setting the type back to Off removes the key and turns privacy off. The codeplug
 doesn't store these basic privacy keys. Developers can also load a key over USB with the debug tool:
 
 ```
-tools/rfoundry_debug.py radio privacy moto 5          # Motorola basic privacy, key 5
-tools/rfoundry_debug.py radio privacy anytone 4660    # Anytone basic privacy, key 4660
+tools/rfoundry_debug.py radio privacy moto 5          # 8-bit basic privacy, key 5
+tools/rfoundry_debug.py radio privacy anytone 4660    # 16-bit basic privacy, key 4660
 tools/rfoundry_debug.py radio privacy off
 ```
 

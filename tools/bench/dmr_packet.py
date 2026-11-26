@@ -121,14 +121,36 @@ def _finish(p, blocks):
     u = decode_udp(p["sap"], user) if p["crc_ok"] else None
     if u is not None:
         p.update(src_port=u[0], dst_port=u[1], payload=u[2].hex(), header_octets=u[3])
+        p.update(ip_addresses(p, user))
     return p
+
+
+def ip_addresses(p, user):
+    """The IPv4 source and destination of a UDP packet (p: its header fields, user: its user data). SAP 3 carries no
+    addresses, only the CAI network of each in SAID / DAID (TS 102 361-3 5.1.1, Table 7.15: 0 the radio network
+    12.<ID>, 1 the peripheral network 13.<ID>, 2 the group network 225.<ID>, destination only) with the data
+    header's IDs, so they are built from those; SAP 4 has them in the IPv4 header. Returns said / daid (SAP 3) and
+    src_ip / dst_ip (dotted, None for a network ID the table doesn't list); {} for user data too short to hold them."""
+    if p["sap"] == SAP_IP:
+        if len(user) < 20:
+            return {}
+        return {"src_ip": ".".join(str(b) for b in user[12:16]), "dst_ip": ".".join(str(b) for b in user[16:20])}
+    if p["sap"] != SAP_UDPIP_COMPRESSION or len(user) < 3:
+        return {}
+    said, daid = user[2] >> 4, user[2] & 0x0F
+
+    def addr(net, llid):
+        return None if net is None else f"{net}.{llid >> 16 & 0xFF}.{llid >> 8 & 0xFF}.{llid & 0xFF}"
+
+    return {"said": said, "daid": daid, "src_ip": addr({0: 12, 1: 13}.get(said), p["src"]),
+            "dst_ip": addr({0: 12, 1: 13, 2: 225}.get(daid), p["dst"])}
 
 
 def packets(lines):
     """Every packet in the listen JSON records (dicts, in order): a data header with a good CRC starts one, the rate
     1/2 blocks after it fill it. Returns dicts: the header fields, "complete", "crc_ok", "user" (hex), and for UDP
-    "src_port dst_port payload header_octets"; confirmed ones also "serials" (blocks with a good CRC-9) and
-    "bad_blocks"."""
+    "src_port dst_port payload header_octets src_ip dst_ip" (SAP 3 also "said daid", ip_addresses()); confirmed ones
+    also "serials" (blocks with a good CRC-9) and "bad_blocks"."""
     out, cur, blocks = [], None, []
     for r in lines:
         dt, info = r.get("dt"), r.get("info")
@@ -163,7 +185,15 @@ def _self_test():
     assert p["complete"] and p["crc_ok"] and p["dpf"] == DPF_CONFIRMED and p["ns"] == 5, p
     assert p["sap"] == SAP_UDPIP_COMPRESSION and p["src_port"] == 5016 and p["dst_port"] == 5016, p
     assert bytes.fromhex(p["payload"]) == bytes.fromhex("4f4452") and p["header_octets"] == 5, p
+    assert p["said"] == 0 and p["daid"] == 0 and p["src_ip"] == "12.0.39.21" and p["dst_ip"] == "12.0.0.100", p
     assert decode_udp(3, bytes.fromhex("1234000000c35000a1") + b"x") == (50000, 161, b"x", 9)
+    # A host's packet (SAID 1) to a talkgroup (DAID 2)
+    assert ip_addresses({"sap": 3, "src": 0x989530, "dst": 9}, bytes.fromhex("0001120000")) == \
+        {"said": 1, "daid": 2, "src_ip": "13.152.149.48", "dst_ip": "225.0.0.9"}
+    # SAP 4: the addresses from the IPv4 header
+    ip4 = bytes.fromhex("4500002c00004000401100000c0027150c000064")
+    assert ip_addresses({"sap": 4}, ip4) == {"src_ip": "12.0.39.21", "dst_ip": "12.0.0.100"}
+    assert ip_addresses({"sap": 3}, b"\x00\x01") == {} and ip_addresses({"sap": 4}, ip4[:19]) == {}
     print("dmr_packet: self test passed")
 
 

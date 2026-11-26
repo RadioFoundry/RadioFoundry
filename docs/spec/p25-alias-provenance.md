@@ -23,9 +23,11 @@ payload must still match the newly known source and pass its checksum; learning
 an identity never authorizes a partial name. Incomplete data expires after 80 received units without an
 alias fragment. No transmit, affiliation, registration or query is added.
 
-Only MFID 0x90 alias words keep the receiver on the voice channel after speech.
-The assembly window is capped at two seconds from the first alias TDULC.
-Ordinary terminators return to control immediately. New voice cancels the tail.
+After a transmission-end terminator, the trunk follower waits up to 150 ms for a
+valid alias header, then at most 500 ms total from that terminator for completion.
+Standard call termination (LCO 15) releases immediately. New voice cancels the wait.
+These are receiver policy choices; [trunking termination](p25-trunking.md#41-transmission-end-and-call-termination)
+describes the distinction and bounds.
 Completed names are retained as events for caller history; metadata never unmutes voice.
 
 ## Attribution

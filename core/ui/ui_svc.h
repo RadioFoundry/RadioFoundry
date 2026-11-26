@@ -485,7 +485,7 @@ int32_t ui_svc_reply_shown(const radio_settings_t *s);
 typedef enum {
 	UI_EV_MESSAGE,		// a message arrived: index (inbox), id, name, text
 	UI_EV_MESSAGE_SENT,	// ok = delivered (confirmed; index 1: sent, the format or a group has no confirmation) /
-				// failed after retries
+				// failed after retries (index 2: not sent, the channel's encryption has no form for text)
 	UI_EV_CALL_ALERT,	// call alert received from id
 	UI_EV_RADIO_CHECK,	// answer to our radio check: ok, ms
 	UI_EV_PRIVATE_CALL,	// a private call to us from id started

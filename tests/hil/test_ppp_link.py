@@ -58,9 +58,9 @@ def ppp(radio):
 @pytest.mark.feature("net_ppp")
 def test_ppp_link(ppp):
     c, own = ppp["ppp"], ppp["own"]
-    want = f"12.{(own >> 16) & 0xFF}.{(own >> 8) & 0xFF}.{own & 0xFF}"
-    assert c.local_ip == want, f"IPCP gave the host {c.local_ip}, expected 12.<DMR ID> = {want}"
-    assert c.peer_ip and c.peer_ip != c.local_ip
+    tail = f"{(own >> 16) & 0xFF}.{(own >> 8) & 0xFF}.{own & 0xFF}"
+    assert c.local_ip == "13." + tail, f"IPCP gave the host {c.local_ip}, expected 13.<DMR ID> = 13.{tail}"
+    assert c.peer_ip == "12." + tail, f"the radio is at {c.peer_ip}, expected 12.<DMR ID> = 12.{tail}"
 
     rtts = [c.ping(56, seq=1), c.ping(500, seq=2), c.ping(56, seq=3)]
     print("ping round trips (s):", rtts)

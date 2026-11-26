@@ -28,6 +28,14 @@ export function missingApi(radio, task, step, { usb, serial, stub = false }) {
 	return null;
 }
 
+// The start page's banner, as [i18n key, notice level] pairs: nothing with both APIs, one line with neither. Without
+// WebUSB alone (Firefox has Web Serial) radios on a programming cable still install here, so it is a warning, not a
+// stop: only the radios that install over USB (DFU) need another browser
+export function supportNotices({ usb, serial }) {
+	if (!usb && !serial) return [["flash.support.none", "bad"]];
+	return [!usb && ["flash.support.usb", "warn"], !serial && ["flash.support.serial", "bad"]].filter(Boolean);
+}
+
 // The image's file name without .bin: the manifest's, else rfoundry_<board> (a local build's manifest says "local")
 export function kitBase(manifest, boardId) {
 	const f = manifest?.image?.file || "";

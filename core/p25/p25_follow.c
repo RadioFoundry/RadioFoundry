@@ -255,6 +255,12 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 	bool update = op != P25_OP_GRP_V_GRANT && op != P25_OP_UU_V_GRANT;
 	uint32_t hz;
 
+#if CONFIG_P25_ALIAS
+	// A repeated update for this call must not restart the alias window or retune.
+	if (f->view.state == P25_FOLLOW_VOICE && f->alias_tail && ch == f->left_ch &&
+	    unit == f->view.unit_call && (unit ? dst == f->view.dst : tg == f->view.tg))
+		return false;
+#endif
 	if (unit) {
 		if ((c->flags & P25_FOLLOW_NO_UNIT) || !c->unit_id || (dst != c->unit_id && src != c->unit_id))
 			return false;
@@ -662,6 +668,17 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	p25_tsbk_t m;
 	bool known = p25_tsbk_parse(blk, &m);
 
+#if CONFIG_P25_ALIAS
+	bool alias_wait = st == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK && f->alias_tail;
+	if (alias_wait) {
+		if (!known || m.kind != P25_TSBK_GRANT)
+			return;
+		if (nac != f->view.nac) {
+			count(&f->view.wrong_sys);
+			return;
+		}
+	} else
+#endif
 	if (st != P25_FOLLOW_HUNT && st != P25_FOLLOW_CONTROL)
 		return;
 	if (c->nac != P25_NAC_ANY && nac != c->nac) {
@@ -701,8 +718,13 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		accept(f, nac, now);
 	}
-	f->t_good = now;
-	f->acc.heard = true;
+#if CONFIG_P25_ALIAS
+	if (!alias_wait)
+#endif
+	{
+		f->t_good = now;
+		f->acc.heard = true;
+	}
 	if (!known)
 		return;
 	switch (m.kind) {
@@ -833,6 +855,7 @@ void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 #if CONFIG_P25_ALIAS
 	if (f->view.state == P25_FOLLOW_VOICE) {
 		f->alias_tail = false;
+		f->alias_header = false;
 		f->alias_done = false;
 	}
 #endif
@@ -864,10 +887,20 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
+
 	// A voice channel's link control may carry the network or RFSS status broadcast: a blocked system there blocks
 	// as it does here
 	if (p25_unit_sys_no_tx(u))
 		sys_block(f);
+#if CONFIG_P25_ALIAS
+	if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK && f->alias_tail &&
+	    elapsed(now, f->t_alias_tail,
+		    f->alias_header ? P25_FOLLOW_ALIAS_MAX_MS : P25_FOLLOW_ALIAS_HEADER_MS)) {
+		leave(f, LEAVE_TERM, now);
+		view_end(f);
+		return;
+	}
+#endif
 	switch (u->duid) {
 	case P25_DUID_TSDU: {
 		uint8_t n = u->nsyms <= p25_blocks_syms(1) ? 1 : u->nsyms <= p25_blocks_syms(2) ? 2 : 3;
@@ -916,6 +949,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 #if CONFIG_P25_ALIAS
 		if (f->view.state == P25_FOLLOW_VOICE) {
 			f->alias_tail = false;
+			f->alias_header = false;
 			f->alias_done = false;
 		}
 #endif
@@ -928,34 +962,52 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		    u->air && u->nsyms >= P25_TDULC_SYMS) {
 			uint8_t raw[P25_LC_BYTES];
 			if (p25_tdulc_get(u->air, raw) >= 0) {
-				p25_lc_t lc;
-				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP && !lc.tgid) {
+				// TIA-102.AABF 7.3.8 / AABD 3.5.1: this releases the channel.
+				// Do not interpret a protected or manufacturer-specific opcode as standard LC.
+				if (raw[0] == P25_LCF_CALL_TRM_CAN) {
 					leave(f, LEAVE_TERM, now);
 					break;
 				}
+				// AABF 7.3.2: implicit-standard group channel updates on the voice channel.
+				// Each pair is channel then group; use the same selection checks as CC grants.
+				if (f->alias_tail && raw[0] == 0x42 && u->nac == f->view.nac) {
+					for (unsigned k = 1; k <= 5; k += 4) {
+						uint16_t ch = (uint16_t)(raw[k] << 8 | raw[k + 1]);
+						uint16_t tg = (uint16_t)(raw[k + 2] << 8 | raw[k + 3]);
+						if (ch && tg && consider(f, P25_OP_GRP_V_UPDT, false, ch, tg, 0, 0, false, 0, now))
+							break;
+					}
+					if (f->tuning)
+						break;
+				}
+				p25_lc_t lc;
 				if (p25_lc_parse(raw, &lc) && lc.lcf == P25_LCF_GROUP &&
 				    (f->view.unit_call || lc.tgid != f->view.tg)) {
 					count(&f->view.wrong_call);
 					leave(f, LEAVE_OTHER, now);
 					break;
 				}
-				if (p25_alias90_word(raw)) {
-					if (!f->alias_tail) {
-						f->alias_tail = true;
-						f->t_alias_tail = now;
-					}
-					f->t_good = now;
-					break;
-				}
+				if (p25_alias90_word(raw) && raw[0] == 0x15 && raw[4] && raw[4] <= 16 &&
+				    raw[5] == 1 && !f->view.unit_call && f->view.tg &&
+				    (uint16_t)(raw[2] << 8 | raw[3]) == f->view.tg)
+					f->alias_header = true;
 			}
 		}
 #endif
-		// An ordinary terminator still returns immediately.
 		// fall through
 	case P25_DUID_TDU:
-		// (on our own voice channel the caller ends it: p25_follow_talk_end)
-		if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK)
+		// On our own voice channel the caller ends it: p25_follow_talk_end.
+		if (f->view.state == P25_FOLLOW_VOICE && f->view.req != P25_REQ_TALK) {
+#if CONFIG_P25_ALIAS
+			// Transmission end can precede the alias. Repeated terminators never extend the window.
+			if (!f->alias_tail) {
+				f->alias_tail = true;
+				f->t_alias_tail = now;
+			}
+#else
 			leave(f, LEAVE_TERM, now);
+#endif
+		}
 		break;
 	default:
 		break;
@@ -985,7 +1037,6 @@ void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 #if CONFIG_P25_ALIAS
 	if (f->view.state == P25_FOLLOW_VOICE && f->alias_tail && c->alias[0] && !f->alias_done) {
 		f->alias_done = true;
-		f->t_alias_done = now;
 	}
 #endif
 	view_end(f);
@@ -1035,8 +1086,8 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 #if CONFIG_P25_ALIAS
 		// The retained alias event survives retuning; no UI wait belongs on RF.
 		else if (f->alias_tail) {
-			if (elapsed(now, f->t_alias_tail, 2000) || f->alias_done ||
-			    elapsed(now, f->t_good, 2500))
+			if (f->alias_done || elapsed(now, f->t_alias_tail,
+			    f->alias_header ? P25_FOLLOW_ALIAS_MAX_MS : P25_FOLLOW_ALIAS_HEADER_MS))
 				leave(f, LEAVE_TERM, now);
 		}
 #endif
