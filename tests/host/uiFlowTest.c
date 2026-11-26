@@ -502,6 +502,12 @@ static const flow_t flows[] = {
 	{ "11 dual watch: changes kept over hops", "quick 7 ctx 3 5 ok quick 2 back", "tune:b tune:a", "pos=3 temporary=1", 0,
 	  false },
 	{ "11 dual watch: talk target for the selected", "quick 7 tune:b", "tt", "dual=1 screen=picker", 1, false },
+	// #1013: the receiver hops to A's channel between the UI's passes, just before a digit: the digit still goes to
+	// B's VFO entry, not to Find
+	{ "11 dual watch: a digit just after a hop to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1",
+	  "dual=1 sel=B bvfo=1 screen=home entry=1", 1, false },
+	{ "11 dual watch: digits across hops to the channel", "quick 7 ctx 1 vfokey tune:b", "hop:a 1 hop:b 4 hop:a 6",
+	  "dual=1 sel=B bvfo=1 screen=home entry=146", 3, false },
 	{ "11 dual watch: VFO entry over a hop", "quick 7 ctx 1 vfokey", "1 4 6 tune:a 5", "dual=1 sel=B bvfo=1 entry=1465",
 	  4, false },
 	{ "11 dual watch: set B VFO frequency while A is tuned", "quick 7 ctx 1 vfokey tune:a", "1 4 6 5 5 0 0 ok wait:1000",
