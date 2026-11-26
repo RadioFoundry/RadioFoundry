@@ -746,6 +746,11 @@ void ambeVoiceSetMicGate(ambe_voice_mic_gate_t g)
 	STORE(mic_gate, g);
 }
 
+ambe_voice_mic_gate_t ambeVoiceMicGate(void)
+{
+	return LOAD(mic_gate);
+}
+
 #if CONFIG_SIG_TONES
 void ambeVoiceTxTone(const beep_seg_t *steps, uint8_t n, bool final)
 {

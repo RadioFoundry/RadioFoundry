@@ -808,6 +808,17 @@ RadioFoundry doesn't use.
 Our tests (2026-10-19, not authoritative) found the HR_C5000's codec output reaching the speaker with FM_SW and
 FM_MUTE low; DMR voice through it doesn't work yet (4.10).
 
+The speaker is loud only with the receiver up: 5RC (PC9) and DMR_SW (PA10) high (5.4). Both are low during DMR
+transmit, so the HR_C5000 codec output is nearly silent there, and 5RC on during DMR transmit breaks the bursts (no LC
+header decodes, the burst on-time is off). Beeps while DMR is on air (the talk permit, the time-out warning) go through
+BEEP (PC8, TIM8 CH3) instead: the board's second speaker output (`spkaux_md380.c`, radio-features.md 4.4). The PWM
+runs at 40 kHz, the backlight's period on the same timer (1800 timer clocks; the backlight's CH1 keeps its 100
+steps), and plays the 8 kHz speaker PCM interpolated over five periods. AFCO (PB9) brings the amplifier up 60 ms before
+SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. A 60 ms lead keeps the amplifier's turn-on step out of the
+tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio. Full-scale PCM is twice the PWM half swing: the default beep
+level plays at half swing, about as loud at the speaker as decoded voice at the same knob position, with harmonics
+40 dB down. Above about 70 % of the swing the harmonics rise to 30 dB down.
+
 The volume knob sets the level in the analog path; the MCU only sees its position on PA0. `hal_power_t.volume()` reports
 that position for the volume bar (`radio-features.md` 4.2), on a scale from raw 2 through 327 at mid-rotation (50 %) to
 1970 (100 %) (measured: units top out between about 1970 and 2019). No mute zone is applied: with the knob against the

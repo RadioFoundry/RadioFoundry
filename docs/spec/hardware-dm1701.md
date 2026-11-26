@@ -374,7 +374,7 @@ generate false PTT events when their bias is removed, so keep PA13 high during r
 | Read | address+W, register, then repeated transaction address+R, 2 bytes (high first). A stop between the two works |
 | Retries | the bus occasionally NAKs; retry up to 3 times with 1 ms between |
 | Bus clear | a transfer cut short in a read leaves the chip holding SDA low; the peripheral then reports busy and its reset doesn't help. After the third failed try: SCL clocked by hand until SDA is released (9 pulses at most), a stop, then the peripheral set up again. Diagnostics line 4 counts them (`clr`) |
-| Reference | 26 MHz assumed (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz, i.e. 26 MHz). Unverified on the board |
+| Reference | 26 MHz (reg 0x04 bit0 = 0 and reg 0x30 bit14 = 1 select 25.6/26 MHz and 26/13 MHz; the DTMF tone values match the 13/26 MHz column of the chip's table) |
 | Paging | reg 0x7F selects the register page (0 or 1); page 1 holds the AGC table |
 
 Caching the last value written per register and page avoids redundant I2C traffic (writes that do not change a value
@@ -415,7 +415,7 @@ skip the action rather than block).
 | 25 | 0x5A = 0x06DB | unknown |
 | 26 | 0x63 = 0x16AD | pre-emphasis bypass threshold |
 | 27 | 0x0F = 0x8A24 | unknown |
-| 28 | 0x05 = 0x8763 | unknown (also written before every frequency change) |
+| 28 | 0x05 = 0x8763 | synthesizer mode, normal (5.6; written again before every frequency change) |
 | 29 | 0x30 = 0x40A4 | prepare calibration |
 | 30 | 0x30 = 0x40A6 | calibration enable |
 | 31 | wait 100 ms | |
@@ -560,12 +560,29 @@ Write sequence (RX or TX frequency):
 | Step | Action |
 |---|---|
 | 1 | 0x30 = idle value (5.3) |
-| 2 | 0x05 = 0x8763 ("normal" frequency mode) |
+| 2 | 0x05 = the mode word for the channel (below) |
 | 3 | 0x29 = high word |
 | 4 | 0x2A = low word |
 | 5 | 0x49 = 0x0C15 (squelch open/shut thresholds; see 5.9) |
 | 6 | 0x30 = RX on value |
 | 7 | set the PA DAC: the TX drive value when this was the TX frequency, 0 when RX |
+
+Reg 0x05 is the synthesizer mode. The chip's register table gives a normal word and a special word for channels on a
+harmonic of the reference clock, at the multiples of the reference / 4:
+
+| Reference | Special word | Special channels |
+|---|---|---|
+| 25.6 or 26 MHz | 0x8543 | multiples of 6.4 or 6.5 MHz |
+| 12.8 or 13 MHz | 0x86D3 | multiples of 3.2 or 3.25 MHz |
+| any | 0x8763 | every other channel (normal) |
+
+The word must be written with the receiver and transmitter off, before 0x29/0x2A (steps 1-4), and the normal word goes
+back on the next channel. A UV380-family board picks the 26 MHz rule (0x8543 at 136.5, 143 ... 169, 403, 409.5 ...
+474.5 MHz) with `uvf_variant_t.rf_spur_step_hz` and adds its own channels where its other clocks put a spur
+(`uvf_variant_t.rf_spurs`, checked first). The DM-1701 keeps 0x8763 on every channel: on the bench no word showed a
+spur at 136.5, 409.5, 448 or 455 MHz, and a special word below 455 MHz (0x8643) cut FM deviation by 1.1 dB. The
+word follows the channel frequency, not the synthesizer word with the TX or DMR receive offset. The driver API is
+`at1846s_set_spurs` and `at1846s_r05`.
 
 TX frequency offset (empirical): with the normal TX sequence (RX frequency written, then TX frequency written with RX
 on, then TX on) the carrier is about 3 kHz low; RadioFoundry adds +3.00 kHz (12.5 kHz) or +6.15 kHz (25 kHz FM) to
