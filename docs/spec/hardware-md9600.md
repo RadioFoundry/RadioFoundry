@@ -17,9 +17,14 @@ through the HR_C6000 with no network client required. Outside this range, captur
 and normal speaker routing. Source changes restart capture and clear old ring samples. The volume knob works.
 See [am-envelope.md](am-envelope.md) for filtering, squelch and AM labels.
 
-Receive audio routing, RSSI/noise status and modem bookkeeping use the receive classifier. Both RF receivers
-remain powered: using the rated-band classifier below 136 MHz would retain a UHF default and could play the
-previous UHF control channel.
+Receive audio routing, RSSI/noise status and modem bookkeeping use the receive classifier. Using the rated-band
+classifier below 136 MHz would retain a UHF default and could play the previous UHF control channel.
+
+On AK2365A revisions, digital reception powers only the selected band's receiver. Leaving the unused receiver
+powered after VHF reception prevented UHF P25 control-channel decoding; powering it down restored decoding
+without a reboot. FM keeps both receivers powered. On V1–V3/HW V2.1, returns from 133.475 MHz AM, 145.110 MHz FM
+and 118.250 MHz AM reacquired the 453.3875 MHz P25 control channel within three seconds. V4/V5 transitions are
+host-tested only; V5 keeps its existing IF routing.
 
 The factory front-end tuning curve clamps below its first 136 MHz calibration point. Below-band sensitivity and
 PLL lock have not been measured. RSSI filtering, logarithmic response and AGC can limit audio fidelity. IF gain and
@@ -27,7 +32,7 @@ AGC registers are unchanged. V4/V5 behavior is host-tested, not checked on hardw
 
 Build example (one shell line): `make BOARD=md9600 CONFIG_AM_ENVELOPE=y CONFIG_NET_USRP=n CONFIG_DEBUGLINK=n MD9600_REV_DEFAULT=v1v3 BUILD=build/envelope`. No debug link, network stream or stub loader is required by the feature. No native `CAP_AM_RX` or `rx_am` driver is advertised.
 
-On one V1–V3/HW V2.1 radio on 2026-11-26, the owner reported intelligible speech ("okay, thank you") in a filtered
+On V1–V3/HW V2.1 on 2026-11-26, intelligible speech ("okay, thank you") was heard in a filtered
 133.475 MHz RSSI-envelope recording. This is listener-confirmed speech recovery, not station identification or
 calibrated performance. Live PCM routing without a network audio client, speaker hiss and the AM/RX-only label
 were checked. Monitor off allowed squelch 1 to close noise and squelch 0 to reopen it; the detector still measures
@@ -342,7 +347,8 @@ identified (?); the firmware doesn't name it.
 
 ### 5.5 Receive and transmit switching
 
-RX: Power_Control on, both R5 and both C5 on, T5 off, RF_APC_SW off; synthesizer to the LO with VCO_VCC high for the
+RX: Power_Control on, both C5 on, T5 off, RF_APC_SW off. Both R5 are on in FM; digital reception on AK2365A
+revisions turns off the unused band's R5 to isolate the shared IF input. Synthesizer to the LO with VCO_VCC high for the
 band; DAC1 (UHF) or DAC2 (VHF) = the calibrated front-end tuning voltage; IF set up for the band and bandwidth;
 U_V_AF_SW to the band.
 

@@ -267,6 +267,10 @@ md9600_rf_err_t md9600_rf_rx(md9600_rf_t *rf, uint32_t hz, bool wide)
 
 	// Supplies and the RX VCOs before the words, so the loop locks onto the VCO it will use
 	receivers_on(o);
+	if (rf->dmr && rf->desc->if_chip) {
+		// Once tuned, the unused IF receiver can interfere with the shared digital input.
+		set(o, p.band == MD9600_VHF ? MD9600_LN_R5_U : MD9600_LN_R5_V, false);
+	}
 	md9600_rf_err_t e = pll_program(o, rf->desc, &p);
 	if (e != MD9600_RF_OK) {
 		md9600_rf_pa_safe(rf);
