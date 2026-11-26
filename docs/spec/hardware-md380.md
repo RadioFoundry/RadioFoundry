@@ -814,7 +814,8 @@ header decodes, the burst on-time is off). Beeps while DMR is on air (the talk p
 BEEP (PC8, TIM8 CH3) instead: the board's second speaker output (`spkaux_md380.c`, radio-features.md 4.4). The PWM
 runs at 40 kHz, the backlight's period on the same timer (1800 timer clocks; the backlight's CH1 keeps its 100
 steps), and plays the 8 kHz speaker PCM interpolated over five periods. AFCO (PB9) brings the amplifier up 60 ms before
-SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. Full-scale PCM is twice the PWM half swing: the default beep
+SPK_C (PB8) opens; SPK_C mutes 60 ms before AFCO drops. A 60 ms lead keeps the amplifier's turn-on step out of the
+tone (20 ms gave a 2-4.5 dB overshoot). With the mic gate, the permit leaves no tone in the decoded audio. Full-scale PCM is twice the PWM half swing: the default beep
 level plays at half swing, about as loud at the speaker as decoded voice at the same knob position, with harmonics
 40 dB down. Above about 70 % of the swing the harmonics rise to 30 dB down.
 

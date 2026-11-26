@@ -136,7 +136,8 @@ def tx_freqs(link, where):
 
 
 # Over the air each read is a data burst each way (seconds): the guard reuses a core view read this recently, so a
-# test can read the TX frequency before it starts a timed recording and the run's check costs nothing
+# test can read the TX frequency before it starts a timed recording and the run's check costs nothing. A RADIO or
+# DETOUR request may move the radio, so each one drops the reading (_guarded_request)
 AIR_CORE_FRESH_S = 10.0
 
 
@@ -175,6 +176,8 @@ def _guarded_request(self, cmd, payload=b"", *args, **kwargs):
                 if not hil_config.tx_allowed(None, mhz):
                     raise RuntimeError(f"TX refused: this request keys on {mhz:.5f} MHz, not one of the rig's "
                                        f"transmit frequencies (tx_mhz)")
+    if cmd in (RADIO, DETOUR):
+        self.__dict__.pop("_guard_core", None)      # checked above; the radio may be elsewhere after this
     return _request(self, cmd, payload, *args, **kwargs)
 
 

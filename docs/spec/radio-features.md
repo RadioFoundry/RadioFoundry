@@ -647,10 +647,10 @@ which wraps the board's (`spk_aux_stream`, `core/radio/spk_aux.c`), and every bl
 Each block moved to the output goes down the stream as silence. A sound in the tail is queued again with the
 amplifier still on. When `active` turns false (the radio stops transmitting), the output goes off at once and the
 stream's own output plays from the next block. The mic gate (4) holds from the first queued block until the output is
-off, so the beep's echo stays off the air. Measured on the radio: a 60 ms lead keeps the amplifier's turn-on step out
-of the tone (20 ms gave a 2-4.5 dB overshoot), and with the gate the permit leaves no tone in the decoded audio.
-`tests/host/spkAuxTest.c` checks the sequence. There is no build switch: the core reaches its step only through the table the board
-names (`hal_spk_aux_t.core = SPK_AUX_CORE`), so a board without the output links none of it.
+off, so the beep's echo stays off the air. A board picks `lead_ms` long enough to keep its amplifier's turn-on step
+out of the sound. `tests/host/spkAuxTest.c` checks the sequence. There is no build switch: the core reaches its step
+only through the table the board names (`hal_spk_aux_t.core = SPK_AUX_CORE`), so a board without the output links no
+step code.
 
 ## 5. Power
 

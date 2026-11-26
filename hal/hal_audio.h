@@ -70,7 +70,8 @@ typedef struct {
 	// NULL: none is held past the block callback
 	bool (*spk_pending)(void);
 	// Optional: the speaker audio queued now is thrown away (the DMR engine is on air and the audio path is gated).
-	// A sound that must be heard whole waits until this is false. NULL: never
+	// A sound that must be heard whole waits until this is false. NULL: never. Set only where the path drops all
+	// speaker audio for the whole of a DMR transmission: the DMR mic gate lifts on such a board (radio_sm.c)
 	bool (*speaker_blocked)(void);
 	// Optional: a second output to the speaker for while the stream's can't be heard. NULL: none
 	const hal_spk_aux_t *spk_aux;

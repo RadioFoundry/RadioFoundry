@@ -116,16 +116,22 @@ static bool w_start(audio_block_cb_t cb, void *ctx)
 	return true;
 }
 
+// The board's stream stopped, and the speaker's second output with it: no block runs its sequence out after this
+static void hw_stop(void)
+{
+	running = false;
+	hw->stop();
+	if (hw->spk_aux != NULL) {
+		hw->spk_aux->core->reset(hw->spk_aux);
+	}
+}
+
 // Also called from the callback itself (the DMR voice ends its stream there): the board's stop is safe there
 static void w_stop(void)
 {
 	prim_cb = NULL;
 	if (!stream_wanted) {
-		running = false;
-		hw->stop();
-		if (hw->spk_aux != NULL) {
-			hw->spk_aux->core->reset(hw->spk_aux);
-		}
+		hw_stop();
 	}
 }
 
@@ -264,8 +270,7 @@ void audio_mux_service(uint32_t now_ms)
 			retry_armed = false;
 		}
 	} else if (!stream_wanted && running && prim_cb == NULL) {
-		running = false;
-		hw->stop();
+		hw_stop();
 	}
 }
 

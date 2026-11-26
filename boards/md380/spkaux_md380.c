@@ -84,18 +84,17 @@ static void power(uint8_t state)
 		sub = 0;
 		playing = true;
 	} else {
-		playing = false;
+		playing = false;	// the interrupt leaves rd from here
+		rd = wr;		// what is left is silence (spk_aux.c mutes after it): a new lead starts empty
 	}
 	if (now_state == SPK_AUX_OFF) {
-		wr = 0;
-		rd = 0;
 		md380_speaker_aux(SPK_AUX_ARMED);	// the amplifier first, the PWM's step to its midpoint muted
 		pwm_on();
 	}
-	if (state == SPK_AUX_OFF) {
-		pwm_off();
-	}
 	md380_speaker_aux(state);
+	if (state == SPK_AUX_OFF) {
+		pwm_off();		// after the mute and the amplifier: the step to low makes no click
+	}
 	now_state = state;
 }
 

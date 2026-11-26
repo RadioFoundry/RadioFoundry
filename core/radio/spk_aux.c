@@ -111,6 +111,7 @@ static bool start(audio_block_cb_t cb, void *ctx)
 	return hw->start(block, NULL);
 }
 
+// The callers (the radio task) run below the audio task, so no block is inside spk_aux_block while this resets
 static void stop(void)
 {
 	live = false;
