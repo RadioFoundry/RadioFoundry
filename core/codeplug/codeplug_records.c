@@ -138,14 +138,15 @@ int codeplug_sys_entry_next(int *at, uint8_t system, uint8_t cls, codeplug_sys_e
 bool codeplug_system_identity_check(uint8_t n, uint8_t type, uint16_t *check)
 {
 	uint8_t b[CODEPLUG_SYS_HDR + 5];
-	codeplug_system_t s;
-	if (type != CODEPLUG_SYSTYPE_P25_TRUNK || codeplug_system(n, &s, b, 5) < 5 || s.type != type ||
-	    s.id_len != 5 || (b[2] & 0xF0u) != 0 || (b[4] & 0xF0u) != 0)
+	// Read only the identity prefix: decoding a name and operating settings needlessly grows nested UI reads.
+	if (n == CODEPLUG_SYSTEM_NONE || type != CODEPLUG_SYSTYPE_P25_TRUNK ||
+	    codeplug_kv_get((uint16_t)(CODEPLUG_KEY_SYSTEM + n), b, sizeof b) < (int)sizeof b || b[0] != type ||
+	    b[3] != 5 || (b[CODEPLUG_SYS_HDR + 2] & 0xF0u) != 0 || (b[CODEPLUG_SYS_HDR + 4] & 0xF0u) != 0)
 		return false;
 	uint32_t h = (2166136261u ^ type) * 16777619u;
-	h = (h ^ s.id_len) * 16777619u;
+	h = (h ^ b[3]) * 16777619u;
 	for (unsigned i = 0; i < 5; i++)
-		h = (h ^ b[i]) * 16777619u;
+		h = (h ^ b[CODEPLUG_SYS_HDR + i]) * 16777619u;
 	*check = (uint16_t)(h ^ (h >> 16));
 	return true;
 }

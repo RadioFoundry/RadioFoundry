@@ -163,6 +163,22 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out)
 	return true;
 }
 
+// A separate frame keeps this list off talk_target's nested reads on the UI's zone-export path.
+static bool __attribute__((noinline)) scoped_rx(const channel_t *ch)
+{
+	listen_list_t list;
+	air_contact_t a;
+	if (codeplug_listen_list(ch->listen_list, &list)) {
+		for (uint8_t i = 0; i < list.count; i++) {
+			codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25,
+				ch->kind == CODEPLUG_KIND_P25_TRUNK ? ch->system : CODEPLUG_SYSTEM_NONE, &a);
+			if (a.scoped)
+				return true;
+		}
+	}
+	return false;
+}
+
 bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
 {
 	bool air = false;
@@ -181,17 +197,8 @@ bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_ta
 		return false;
 	}
 	talk_target(ch, air, rx_list, out);
-	if (air && rx_list && ch->listen_list != 0u) {
-		listen_list_t list;
-		air_contact_t a;
-		if (codeplug_listen_list(ch->listen_list, &list)) {
-			for (uint8_t i = 0; i < list.count; i++) {
-				codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25,
-					ch->kind == CODEPLUG_KIND_P25_TRUNK ? ch->system : CODEPLUG_SYSTEM_NONE, &a);
-				out->scoped_rx |= a.scoped;
-			}
-		}
-	}
+	if (air && rx_list && ch->listen_list != 0u)
+		out->scoped_rx = scoped_rx(ch);
 	return true;
 }
 
