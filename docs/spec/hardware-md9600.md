@@ -312,7 +312,9 @@ identified (?); the firmware doesn't name it.
 
 ### 5.5 Receive and transmit switching
 
-RX: Power_Control on, both R5 and both C5 on, T5 off, RF_APC_SW off; synthesizer to the LO with VCO_VCC high for the
+RX: Power_Control on, both C5 on, T5 off, RF_APC_SW off. On AK2365A revisions, digital reception powers only the
+selected receiver; FM powers both. An unused receiver left active after a band change can interfere with the shared
+digital IF input. V1–V3 transitions were checked on hardware; V4 is host-tested only. V5 retains its existing IF routing. Tune the synthesizer to the LO with VCO_VCC high for the
 band; DAC1 (UHF) or DAC2 (VHF) = the calibrated front-end tuning voltage; IF set up for the band and bandwidth;
 U_V_AF_SW to the band.
 
