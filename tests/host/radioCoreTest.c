@@ -5769,9 +5769,28 @@ static void test_soft_volume(void)
 	start();
 	run(100);
 	CHECK(!radio_volume_soft() && vol_calls == 0 && !(ui_svc_feat_radio() & UI_FEAT_VOLUME));
+	// A knob the MCU reads on a radio that can't set the level (no hook): the position is tracked, the source stays
+	// none, there is no knob lock to offer and the debug link's operation is unavailable
+	fake_power.volume = p_volume;
+	vol_knob = 64;
+	boot();
+	run(100);
+	CHECK(vol_calls == 0 && sm.view.volume_knob == 64 && sm.view.volume_src == RVOL_NONE && sm.view.volume == -1);
+	CHECK(!radio_volume_follows_knob() && !radio_volume_soft() && !radio_volume_settable());
+	CHECK(!(ui_svc_feat_radio() & (UI_FEAT_VOLUME | UI_FEAT_VOLUME_KNOB)));
+	CHECK(debuglink_radio_feature_op(DL_OP_VOLUME, (const uint8_t[]){ 4 }, 1) == DL_ST_UNAVAILABLE);
+	vol_knob = 20;
+	run(100);
+	CHECK(vol_calls == 0 && sm.view.volume_knob == 20);
+	{
+		static char buf[2048];
+		dl_text_t t;
+		dl_text_init(&t, buf, sizeof buf);
+		debuglink_view_radio(&sm.view, &t);
+		CHECK(strstr(buf, "volume.src=none") != NULL && strstr(buf, "volume.knob=20") != NULL);
+	}
 	fake_radio.volume = r_volume;
 	// No knob (-1): the default step goes out at start-up as 50 %
-	fake_power.volume = p_volume;
 	vol_knob = -1;
 	start();
 	run(100);
@@ -5857,7 +5876,7 @@ static void test_soft_volume(void)
 	CHECK(vol_last == 90 && sm.view.volume_src == RVOL_KNOB && sm.view.volume_override == -1);
 	// The knob lock (keys locked, Settings > Key lock > Knob when locked Off): the level stays while the knob moves, the view
 	// still tracks the knob, and letting go takes the knob's level at once
-	CHECK(radio_volume_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
+	CHECK(radio_volume_follows_knob() && (ui_svc_feat_radio() & UI_FEAT_VOLUME_KNOB) && sm.view.volume_knob == 90);
 	radio_req_volume_hold(true);
 	run(100);
 	vol_calls = 0;

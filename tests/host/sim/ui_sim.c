@@ -3832,6 +3832,15 @@ static bool run_token(char *t, char *err, size_t len)
 		step();
 		return true;
 	}
+	if (strcmp(t, "knobpos") == 0 && arg != NULL) {
+		// A knob the MCU reads on a radio that can't set the level: only the position, volume_src RVOL_NONE
+		view.volume_knob = (int8_t)atoi(arg);
+		view.volume = -1;
+		view.volume_src = RVOL_NONE;
+		changed();
+		step();
+		return true;
+	}
 	if (strcmp(t, "softvol") == 0) {	// this radio has no volume knob: the board sets the speaker volume
 		soft_volume = true;
 		advance(200);

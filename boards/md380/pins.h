@@ -9,7 +9,7 @@
 #include "platform.h"
 
 // Analog (ADC1)
-#define PIN_VOLUME		GPIOA, GPIO_PIN_0	// ADC IN0, volume knob position (?: one source has the TX LED here)
+#define PIN_VOLUME		GPIOA, GPIO_PIN_0	// ADC IN0, volume knob position
 #define PIN_BATTERY		GPIOA, GPIO_PIN_1	// ADC IN1
 #define PIN_QT_IN		GPIOA, GPIO_PIN_2	// ADC IN2, sub-audio tone input (stock decodes CTCSS / DCS from it)
 #define PIN_MIC_LEVEL		GPIOA, GPIO_PIN_3	// ADC IN3, VOX
@@ -51,7 +51,7 @@
 #define PIN_LED_GREEN		GPIOE, GPIO_PIN_0	// RX LED
 #define PIN_LED_RED		GPIOE, GPIO_PIN_1	// TX LED
 #define PIN_CTCSS_PWM		GPIOC, GPIO_PIN_7	// CTC/DCS_OUT, TIM3_CH2 (AF2) PWM while a sub-audio tone is sent (subtone_md380.c), else released
-#define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3 (unused: beeps go through the HR_C5000)
+#define PIN_BEEP_PWM		GPIOC, GPIO_PIN_8	// BEEP, TIM8_CH3: the speaker's second output while DMR is on air (spkaux_md380.c)
 #define PIN_LCD_BACKLIGHT	GPIOC, GPIO_PIN_6	// LAMP, TIM8_CH1 PWM
 
 // HR_C5000: bit-banged configuration port, voice port on SPI2, three interrupt lines (as the HR_C6000 radios, but MOSI and
