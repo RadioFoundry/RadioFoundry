@@ -2470,6 +2470,11 @@ msgid "Tones: not in this build"
 msgstr "亚音：本版本无"
 
 #: core/ui/ui_menus.c
+msgctxt "CHAN_TOAST_P25_CONTACTS_USE_EDITOR"
+msgid "P25 contacts: use the Codeplug Editor"
+msgstr "P25 联系人：请用编辑器"
+
+#: core/ui/ui_menus.c
 msgctxt "CHAN_TOAST_NUMBER_IS_FIXED"
 msgid "Save as new channel to use another number"
 msgstr "存为新信道可用其他编号"
@@ -5713,6 +5718,11 @@ msgstr "该信道已不存在"
 msgctxt "STORE_ERR_TARGET_CHANNEL_READ"
 msgid "Couldn't read the channel: for now only"
 msgstr "信道读取失败：仅临时"
+
+#: core/ui/ui_svc_storage.c
+msgctxt "STORE_ERR_TARGET_P25_SLOTS"
+msgid "P25 contacts: for now only"
+msgstr "P25 联系人：仅临时"
 
 #: core/ui/ui_svc_storage.c
 msgctxt "STORE_ERR_TARGET_NOT_STORED"

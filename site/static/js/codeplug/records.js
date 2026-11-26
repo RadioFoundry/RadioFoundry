@@ -13,7 +13,7 @@ import { decodeArea, getKey, getRecord, sameRecord, recordValid, putKeys, keyVal
 
 export const LIMITS = {
 	channels: 1024, zones: 68, zoneChannels: 80, contacts: 1024, rxLists: 76, rxListContacts: 32,
-	dtmfContacts: 63, aprs: 8, name: 16, radioName: 8, bootText: 16, aprsName: 8, aprsComment: 23, dtmfCode: 16,
+	dtmfContacts: 63, p25Contacts: 341, aprs: 8, name: 16, radioName: 8, bootText: 16, aprsName: 8, aprsComment: 23, dtmfCode: 16,
 };
 
 // --- Layout ---
@@ -43,6 +43,8 @@ export const CONTACT_SIZE = 24;
 export const LIST_COUNTS = FL + 0x8D620;
 export const LISTS = FL + 0x8D6A0;
 export const LIST_SIZE = 80;
+export const AIR_CONTACTS = EE + 0xC000;
+export const AIR_CONTACT_SIZE = 24;
 
 // --- Channels (7.3.3) ---
 
@@ -197,6 +199,48 @@ export function encodeContact(c, r) {
 		r[0x16] = 0;
 	}
 	if (!was || was.timeslot !== c.timeslot) r[0x17] = c.timeslot ? (c.timeslot - 1) << 1 : 0x01;
+	return r;
+}
+
+// --- Air mode contacts (air-contacts.md) ---
+
+// The stored call type 0-2 (3 is reserved). A P25 all call names talk group 0xFFFF and ignores the stored ID
+export const AIR_CALL_TYPES = ["unit", "group", "all"];
+export const AIR_MODE_P25 = 2;
+export const P25_ALL_CALL = 0xFFFF;
+export const P25_ID_MAX = { group: 0xFFFF, unit: 0xFFFFFE, all: P25_ALL_CALL };
+
+// A slot of the table: its P25 entry, or null for an empty slot, another mode's entry and anything invalid (3.1)
+export function decodeAirContact(r) {
+	const t = r[1] & 0x03;
+	if (r[0] !== AIR_MODE_P25 || t > 2) return null;
+	const type = AIR_CALL_TYPES[t];
+	const id = r[2] | (r[3] << 8) | (r[4] << 16);
+	if (type !== "all" && (id < 1 || id > P25_ID_MAX[type])) return null;
+	return { name: getName(r, 8, 16), type, id: type === "all" ? P25_ALL_CALL : id };
+}
+
+// Whether a slot holds something that is neither empty nor a P25 entry: kept byte for byte, and not a free slot
+export const airKept = (r) => r[0] !== 0xFF && !decodeAirContact(r);
+
+// Write an entry's fields onto its slot r. Over a P25 entry the reserved bits and bytes stay as found; any other slot
+// is written whole (reserved bytes 0xFF, the reserved flag bits 0)
+export function encodeAirContact(c, r) {
+	const was = decodeAirContact(r);
+	const type = AIR_CALL_TYPES.indexOf(c.type);
+	const id = c.type === "all" ? P25_ALL_CALL : c.id;
+	if (!was) {
+		r.fill(0xFF, 0, AIR_CONTACT_SIZE);
+		r[0] = AIR_MODE_P25;
+		r[1] = 0;
+	}
+	r[1] = (r[1] & ~0x03) | type;
+	if (!was || was.type !== c.type || was.id !== id) {
+		r[2] = id & 0xFF;
+		r[3] = (id >> 8) & 0xFF;
+		r[4] = (id >> 16) & 0xFF;
+	}
+	if (!was || was.name !== c.name) putName(r, 8, 16, c.name);
 	return r;
 }
 

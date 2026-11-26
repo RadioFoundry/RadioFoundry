@@ -31,7 +31,7 @@ The tag ([channel-modes.md](channel-modes.md) 2): no system, flag bit 0 transmit
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | Bits 0-1 squelch: 0 normal (every call of the RX NAC), 1 selective (2.1); 2 and 3 read as normal. Bits 2-7: 0 |
+| 0 | 1 | Bits 0-1 squelch: 0 normal (every call of the RX NAC), 1 selective (2.1); 2 and 3 read as normal. Bit 2: P25 contacts (2.4). Bits 3-7: 0 |
 | 1 | 2 | RX NAC: bit 15 set = bits 11-0 hold the NAC, 0xF7E = any NAC; clear = 0x293. Bits 12-14: 0 |
 | 3 | 2 | TX NAC: the same encoding; clear = the RX NAC, 0x293 when the RX NAC is any |
 
@@ -44,8 +44,8 @@ The base record carries:
 | Record field | Use |
 |---|---|
 | Name, RX and TX frequency, power, TX time-out, scan skip | As any channel |
-| Contact | The talk target: a group contact = talk group (1-65535), a private contact = a unit call, the all-call contact = talk group 65535, none = talk group 1 |
-| RX group list | Kept; for several receive talk groups later |
+| Contact | The talk target: a group contact = talk group (1-65535), a private contact = a unit call, the all-call contact = talk group 65535, none = talk group 1. Its name isn't shown for P25: names come from the P25 contacts (5). With the P25 contacts bit (2.4) set, a slot of the P25 contacts instead |
+| RX group list | Kept; for several receive talk groups later. With the P25 contacts bit set, its entries are slots of the P25 contacts |
 | Per-channel DMR ID | This radio's unit ID on the channel; unset = the radio-wide one (1) |
 | Direct mode | Talkaround (2.2) |
 | Mode, receive only | DMR, receive only, always (the safe stand-in) |
@@ -88,6 +88,45 @@ stay, and under a tag with the base-record flag the record keeps its own mode. A
 edited NACs in place of the settings'. A channel the editor's Mode row made P25 is written the same way with a new
 tag and block: NAC 0x293 both ways (unless edited), squelch normal, its talk target and talkaround as the editor shows
 them.
+
+### 2.4 P25 contacts
+
+Byte 0 bit 2 of the block says which contact list the record's contact and RX group list index:
+
+| Bit 2 | The contact (16 bits) and the list's entries are |
+|---|---|
+| Clear | DMR contact indices (1-1024), as above |
+| Set | slots 1-341 of the P25 contacts, the mode 2 entries of the air mode contact table ([air-contacts.md](air-contacts.md)) |
+
+A slot is read as the talk target of a DMR contact is, from its own entry:
+
+| Slot | Talk target |
+|---|---|
+| Group | that talk group (1-65535) |
+| Unit | a unit call to that unit ID |
+| All call | talk group 65535 |
+| Empty, invalid, or an entry of another mode | none: talk group 1 (the DMR contact with that number is not used) |
+
+With no contact (0), the target is the first group slot of the RX group list, as with DMR contacts; unit, all call,
+empty and invalid entries are passed over. A list entry that is not a valid group slot is skipped.
+
+The radio never sets the bit: a channel it saves keeps the bit it had, and a channel made P25 on the radio is
+unflagged, so its contact is a DMR one. Only the Codeplug Editor sets it. A firmware without this feature ignores the
+bit (the block's bits 2-7 were reserved) and reads the slot number as a DMR contact index, so it picks the wrong talk
+group. The Codeplug Editor tells a radio that has it by the `p25contacts` token of `features=`
+([debuglink.md](debuglink.md) 3.1) and warns before writing a flagged channel to one that lacks it.
+
+The record's contact means two things, so the radio reads it in one place, `p25_channel_talk` (`core/p25/p25_codeplug.c`):
+the talk target with its name, whichever list the flag says. The call set-up, the channel list row, the channel editor
+and zone sharing all go through it. What each does with a flagged channel:
+
+| Where | A channel with the bit set |
+|---|---|
+| Call set-up | the slot's target, 2.4 above |
+| Channel list row | the slot's target ("P25 TG3100"); the contact slot only, not the RX group list (a row is drawn often) |
+| Channel editor | the TX contact row shows the target (the P25 contact's name, else "TG 3100", "ID 4242", "All call"), dimmed; the RX group list row is dimmed too. OK on either says to use the Codeplug Editor: the radio doesn't edit P25 contacts yet. Stepping the Mode row off P25 clears the contact and the list (they are slots, not DMR contacts) and stepping back restores them. Save keeps the bit |
+| Save talk target | refused: a DMR contact has no place in a slot field ("P25 contacts: for now only"); the target stays temporary |
+| Zone sharing | sent as a legacy channel, [zone-share.md](zone-share.md) 4.2 |
 
 ## 3. Trunked system (type 3)
 
@@ -153,7 +192,19 @@ channel's own fallback, else the system's; kind bit 4: no fallback on this chann
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 1 | Bit 0: follow every group of the system; clear: the talk group and the RX group list only. Bits 1-7: 0 |
+| 0 | 1 | Bit 0: follow every group of the system; clear: the talk group and the RX group list only. Bit 1: P25 contacts (below). Bits 2-7: 0 |
 
 The talk group is the record's contact, the groups followed its RX group list (group IDs 1-65535). Following every
 group is the channel's choice, so one system can have a channel that follows all and others that follow a few.
+
+Bit 1 is the P25 contacts bit of 2.4: set, the contact is a slot of the P25 contacts (its talk group, as in 2.4; a unit
+slot is no talk group, so 1) and the RX group list's entries are slots, of which the valid group ones (at most 32) are
+the groups followed besides the talk group. Clear, the contact is a DMR contact index and the RX group list is not
+followed. Firmware without the feature ignores the bit (2.4).
+
+## 5. P25 contacts
+
+The names of P25 talk groups and units are entries of mode 2 in the air mode contact table
+([air-contacts.md](air-contacts.md)), read by conventional and trunked channels alike. The screens name a P25 ID only
+from there; the contact list's names are never shown for a P25 ID ([channel-modes.md](channel-modes.md) 5.2, Names).
+An ID without an entry shows as its number.

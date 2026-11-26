@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "codeplug/codeplug.h"
+#include "codeplug/codeplug_air_contacts.h"
 
 #ifndef P25_NAC_DEFAULT
 #define P25_NAC_DEFAULT		0x293
@@ -26,11 +27,13 @@
 
 // A conventional channel's parameter block (2)
 #define P25_CP_CONV_LEN		5u
+#define P25_CONV_AIR_CONTACTS	0x04u	// byte 0: the record's contact and RX group list name P25 contact slots
 enum { P25_SQUELCH_NORMAL, P25_SQUELCH_SELECTIVE };
 typedef struct {
 	uint16_t rx_nac;	// P25_NAC_ANY: every NAC
 	uint16_t tx_nac;
 	uint8_t squelch;	// P25_SQUELCH_*
+	bool air_contacts;	// the contact and RX group list are slots of the air mode contact table, not DMR contacts
 } p25_conv_t;
 
 // Decode len bytes of a block (a short one, or none, takes the defaults); never fails: a value out of range is read as
@@ -56,6 +59,20 @@ typedef struct {
 bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out);
 // The parameter block alone, without the contact and the unit ID (a list row, channel info): false as p25_conv_load
 bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out);
+// A P25 channel's talk target. The record's contact means two things (p25-codeplug.md 2.4): a DMR contact, or with the
+// block's air-contacts flag a slot of the P25 contact table. Everything that shows, sends or edits a channel's contact
+// reads it through p25_channel_talk, never from channel_t.contact
+typedef struct {
+	uint32_t id;		// the talk group or unit; P25_CP_TG_ALL for the all call
+	bool unit;		// id is a unit (a private contact)
+	bool set;		// a contact (or, with rx_list, the RX list's first group) chose it; else talk group 1
+	bool air;		// the flag: the record's contact and RX list are P25 contact slots
+	char name[CODEPLUG_NAME_LEN + 1];	// the contact's name, "" when it has none or none is set
+} p25_talk_t;
+// The talk target of channel number (ch is its record, read by codeplug_channel), as p25_conv_load and p25_trunk_load
+// read it; false when it isn't a P25 channel (a trunked one only in a CONFIG_P25_TRUNK build). rx_list: with no contact,
+// the first group of the RX group list (it reads the list: not for a list row); a flagged channel's list holds P25 slots
+bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out);
 // Write ch at number as a P25 conventional channel (channel-modes.md 2.4): the base record in its safe stand-in shape,
 // then the tag with conv's block, transmit allowed unless ch->rx_only. A channel that is P25 already keeps its tag's
 // system, fallback, other flags and what its block holds after conv's (codeplug_tag_rewrite), and under a base-own
@@ -108,10 +125,11 @@ void p25_iden_encode(const p25_iden_t *i, uint8_t out[P25_CP_IDEN_LEN]);
 
 // A trunked channel's parameter block (4)
 #define P25_TCH_FOLLOW_ALL	0x01u
+#define P25_TCH_AIR_CONTACTS	0x02u	// the record's contact and RX group list name P25 contact slots
 #define P25_TAG_NO_FALLBACK	0x10u	// tag flag (a kind bit): no fallback on this channel
 
 // What following a system needs: the system, its sites' control channels in hunt order, the plan; the channel's
-// talk group, whether it follows every group, the fallback
+// talk group, whether it follows every group, the groups of its RX list (P25 contact slots only), the fallback
 #define P25_CP_CTL_MAX		16u
 #define P25_CP_IDEN_MAX		16u
 typedef struct {
@@ -125,6 +143,8 @@ typedef struct {
 	p25_iden_t iden[P25_CP_IDEN_MAX];
 	uint16_t talk_group;
 	bool follow_all;
+	uint8_t group_count;		// more groups followed: the RX list's group slots; none for a DMR contact list
+	uint16_t groups[CODEPLUG_LIST_LEN];
 	uint16_t fallback;		// channel number, 0 = none
 } p25_trunk_cfg_t;
 // Channel number's set-up from its tag, its system and its record ch; false when it isn't a live P25 trunked channel

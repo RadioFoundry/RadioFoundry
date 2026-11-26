@@ -1374,15 +1374,30 @@ static bool sb_channel_row(sbuf_t *b, uint16_t num, const channel_t *ch)
 	} else
 #if CONFIG_DMR
 	if (p25 || ch->mode == RADIO_MODE_DMR) {
-		// DMR: TG 9 when the contact can't be read; P25: TG 1 with no contact (p25-codeplug.md 2)
+		// DMR: TG 9 when the contact can't be read; P25: TG 1 with no contact (p25-codeplug.md 2). A stored P25
+		// channel's target is read through p25_channel_talk: its contact may be a P25 contact slot (no RX list
+		// fallback here: a row is drawn often)
 		static contact_t c;
-		uint16_t talk = p25 ? ch->contact : codeplug_channel_talk_contact(ch);
-		bool known = talk != 0 && codeplug_contact(talk, &c);
+		uint32_t id;
+		bool priv;
+#if CONFIG_P25
+		p25_talk_t t;
+		if (p25 && p25_channel_talk(num, ch, false, &t)) {
+			id = t.id;
+			priv = t.unit;
+		} else
+#endif
+		{
+			uint16_t talk = p25 ? ch->contact : codeplug_channel_talk_contact(ch);
+			bool known = talk != 0 && codeplug_contact(talk, &c);
+			id = known ? c.id : p25 ? 1u : 9u;
+			priv = known && c.type == CONTACT_PRIVATE;
+		}
 		if (p25)
 			sb_str(&wb, "P25 ");
-		sb_str(&wb, known && c.type == CONTACT_PRIVATE ? "ID" : "TG");
+		sb_str(&wb, priv ? "ID" : "TG");
 		mid = 2;
-		sb_u32(&wb, known ? c.id : p25 ? 1u : 9u, 1);
+		sb_u32(&wb, id, 1);
 	} else
 #endif
 	if (p25) {
@@ -2658,6 +2673,26 @@ static bool ced_keys_available;
 static uint8_t ced_rows[CE_COUNT];
 static uint8_t ced_n;
 
+#if CONFIG_P25
+// A stored P25 channel whose contact and RX list are P25 contact slots (p25-codeplug.md 2.4): the radio shows its talk
+// target, read once on entry, and doesn't edit them yet, so the contact and list rows are locked (a DMR contact picked
+// there would be read as a slot)
+static bool ced_slots_set;	// in force: the Mode row can take a channel out of P25 (its contact is then cleared)
+static p25_talk_t ced_talk;
+#if CONFIG_CHANNEL_EDIT
+static bool ced_slots_orig;	// as stored
+#endif
+#endif
+
+static bool ced_slots(void)
+{
+#if CONFIG_P25
+	return ced_slots_set;
+#else
+	return false;
+#endif
+}
+
 #if CONFIG_CHANNEL_EDIT
 #define CE_TOT_MAX	495
 #define CE_TOT_STEP	15
@@ -2752,10 +2787,24 @@ static void ced_step_set(channel_t *c, uint8_t s)
 #if CONFIG_P25 || CONFIG_NXDN
 		ced_air = ced_air_orig;
 #endif
+#if CONFIG_P25
+		if (ced_slots_orig) {
+			c->contact = ced_orig.contact;		// the P25 slots, as stored
+			c->listen_list = ced_orig.listen_list;
+			ced_slots_set = true;
+		}
+#endif
 		return;
 	}
 	c->kind = CODEPLUG_KIND_NONE;
 	c->system = CODEPLUG_SYSTEM_NONE;
+#if CONFIG_P25
+	if (ced_slots_orig) {
+		c->contact = 0;		// slots of the P25 table: no DMR contact in another mode
+		c->listen_list = 0;
+		ced_slots_set = false;
+	}
+#endif
 	c->mode = s == CED_DMR ? RADIO_MODE_DMR : RADIO_MODE_FM;
 #if CONFIG_P25
 	if (s == CED_P25) {
@@ -2883,6 +2932,12 @@ static void ced_air_read(uint16_t number, const channel_t *ch)
 	const radio_view_t *v = ui_view();
 	bool here = ch->kind == CODEPLUG_KIND_NONE && (v->vfo ? number == 0 : v->channel_number == number);
 	memset(&ced_air, 0, sizeof ced_air);
+#if CONFIG_P25
+	ced_slots_set = number != 0 && p25_channel_talk(number, ch, false, &ced_talk) && ced_talk.air;
+#if CONFIG_CHANNEL_EDIT
+	ced_slots_orig = ced_slots_set;
+#endif
+#endif
 #if CONFIG_P25
 	if (ced_is_p25(ch)) {
 		p25_conv_t *c = &ced_air.p25;
@@ -3165,6 +3220,8 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 	if (r == CE_SHARE && !(feats() & UI_FEAT_ZONE_SHARE))
 		it->flags |= UI_ITEM_DIM;
 #endif
+	if ((r == CE_CONTACT || r == CE_LIST) && ced_slots())
+		it->flags |= UI_ITEM_DIM;	// P25 contact slots: not edited here
 	sbuf_t b;
 	sb_init(&b, it->value, sizeof it->value);
 #if CONFIG_CHANNEL_EDIT
@@ -3273,6 +3330,24 @@ static void chinfo_item(uint16_t i, ui_item_t *it)
 #if CONFIG_DMR
 	case CE_CONTACT: {
 		static contact_t c;
+#if CONFIG_P25
+		if (ced_slots_set) {
+			// A P25 contact slot: its name, else "TG 3100", "ID 1004" or "All call"
+			if (!ced_talk.set)
+				sb_str(&b, TR(VALUE_NONE, "None"));
+			else if (ced_talk.name[0] != '\0')
+				sb_str(&b, ced_talk.name);
+			else if (ced_talk.unit)
+				sb_u32(&b, ced_talk.id, 1);
+			else if (ced_talk.id == P25_CP_TG_ALL)
+				sb_str(&b, TR(VALUE_ALL_CALL, "All call"));
+			else {
+				sb_str(&b, "TG ");
+				sb_u32(&b, ced_talk.id, 1);
+			}
+			break;
+		}
+#endif
 		if (ch->contact != 0 && codeplug_contact(ch->contact, &c))
 			sb_str(&b, c.name);
 		else
@@ -3797,8 +3872,13 @@ static void chinfo_select(uint16_t i, bool hold)
 #endif
 	case CE_TS: c->timeslot = c->timeslot == 2 ? 1 : 2; break;
 #if CONFIG_DMR
-	case CE_CONTACT: ui_push(SCR_CHPICK, 0); break;
-	case CE_LIST: ui_push(SCR_CHPICK, 1); break;
+	case CE_CONTACT:
+	case CE_LIST:
+		if (ced_slots())
+			ui_toast(TR(CHAN_TOAST_P25_CONTACTS_USE_EDITOR, "P25 contacts: use the Codeplug Editor"));
+		else
+			ui_push(SCR_CHPICK, r == CE_CONTACT ? 0 : 1);
+		break;
 #endif
 #if CONFIG_DMR_AES
 	case CE_AES: {

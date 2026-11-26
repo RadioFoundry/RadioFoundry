@@ -8,7 +8,9 @@ import { h, t, ROOT, HOME, button, notice, download, progressBar, num as fmtNum,
 import { equal } from "../flasher/bytes.js";
 import { SerialStream, serialSupported, serialApi, RFOUNDRY_USB, CABLES, browserErrorKey, noDeviceChosen, knownRadioPort } from "../flasher/link.js";
 import { CodeplugImage, IDDB_HEADER, EDITOR_REGIONS } from "../codeplug/image.js";
-import { decode, encode, empty, remove, validate, newChannel, newContact, numberAll, assignNumbers, followListen } from "../codeplug/model.js";
+import { decode, encode, empty, remove, validate, newChannel, contactFromFilters, numberAll, numberTable, followListen } from "../codeplug/model.js";
+import { isDmr, isP25, clearP25Timeslots } from "../codeplug/contactmode.js";
+import { p25ChannelsToConvert, convertP25Channels, unreadFlagged } from "../codeplug/p25convert.js";
 import { LIMITS, decodeGeneral } from "../codeplug/records.js";
 import { CpsSerial, TransportError, estimate, keepIdentity, IDENTITY, iddbRanges, idDbEnd } from "../codeplug/transport.js";
 import { FastError } from "../codeplug/fastlink.js";
@@ -30,7 +32,7 @@ import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
 const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
-const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
+const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts + LIMITS.p25Contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
 const S = {
 	model: null,
@@ -46,6 +48,8 @@ const S = {
 	iddbChanged: false,
 	sim: location.hash.startsWith("#sim"),		// #sim-foreign: a radio still holding stock data in its settings area
 	filter: {},
+	colFilters: {},		// each table's column filters (grid.js), kept while the page is open
+	offerConvert: false,	// a codeplug was just opened: offer to convert its P25 channels (p25convert.js)
 };
 
 const root = document.getElementById("editor");
@@ -54,6 +58,7 @@ const status = h("div", { class: "ed-status small muted", "aria-live": "polite" 
 const tabs = h("nav", { class: "ed-tabs", role: "tablist", "aria-label": t("editor.tabs") });
 const view = h("div", { class: "ed-view" });
 const messages = h("div", { class: "ed-messages", "aria-live": "polite" });
+const convertBar = h("div", { class: "ed-messages" });
 
 // --- Model changes ---
 
@@ -65,6 +70,7 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.dirty = false;
 	S.iddbChanged = false;
 	S.iddbSkipped = null;
+	S.offerConvert = true;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
@@ -128,26 +134,59 @@ function refresh() {
 	const p = problems();
 	const errors = p.filter((x) => x.level === "error").length;
 	renderToolbar(errors);
+	const nP25 = S.model.contacts.filter(isP25).length;
+	// the contacts' tab says how many are in each list when there are P25 ones, or ones with no mode yet
+	const nDmr = S.model.contacts.filter(isDmr).length;
 	const counts = {
-		channels: S.model.channels.length, zones: S.model.zones.length, contacts: S.model.contacts.length,
+		channels: S.model.channels.length, zones: S.model.zones.length,
+		contacts: nP25 || nDmr + nP25 !== S.model.contacts.length ? t("editor.contacts_count", { dmr: nDmr, p25: nP25 }) : String(nDmr),
 		rxLists: S.model.rxLists.length, dtmfContacts: S.model.dtmfContacts.length, aprs: S.model.aprs.length,
 		systems: S.model.systems?.length || 0, iddb: S.model.iddb?.count || 0, problems: p.length,
 	};
 	// the Systems tab only where a mode that has systems is offered, or the codeplug has systems
-	tabs.replaceChildren(...TABS.filter((k) => k !== "systems" || systemsShown(S.model, features())).map((k) => {
+	const shown = (k) => (k !== "systems" || systemsShown(S.model, features()));
+	tabs.replaceChildren(...TABS.filter(shown).map((k) => {
 		const b = h("button", { type: "button", role: "tab", "aria-selected": String(S.tab === k), class: k === "problems" && errors ? "has-errors" : "",
 			onclick: () => show(k) }, t(`editor.tab.${k}`), k in counts && k !== "radio" ? h("span", { class: "ed-count" }, String(counts[k])) : null);
 		return b;
 	}));
 	const conn = S.conn ? t("editor.status.connected", { radio: S.conn.radio.name }) : "";
 	status.textContent = [S.fileName, S.dirty ? t("editor.status.unsaved") : t("editor.status.saved"), conn].filter(Boolean).join(" · ");
+	renderConvert();
 	renderView(p);
 }
 
 function show(tab) {
+	S.grid?.g.closeFilter();
 	S.tab = tab;
 	S.grid = null;
 	refresh();
+}
+
+// The offer to convert P25 channels that name DMR contacts (p25convert.js): shown after a codeplug is opened, until it is
+// taken or put off. Nothing changes until the user takes it
+function renderConvert() {
+	const n = S.offerConvert ? p25ChannelsToConvert(S.model).length : 0;
+	if (!n) return convertBar.replaceChildren();
+	convertBar.replaceChildren(h("div", { class: "notice info action" },
+		h("p", {}, t("editor.convert.text", { n })),
+		h("div", { class: "ed-actions" }, button(t("editor.convert.go"), convertP25, { primary: true }),
+			button(t("editor.convert.later"), () => {
+				S.offerConvert = false;
+				refresh();
+			}, { quiet: true }))));
+}
+
+function convertP25() {
+	S.offerConvert = false;
+	let r = null;
+	change(t("editor.convert.undo"), () => {
+		r = convertP25Channels(S.model);
+	});
+	const left = [];
+	if (r.left) left.push(t("editor.convert.left", { n: r.left }));
+	if (r.full) left.push(t("editor.convert.full", { max: LIMITS.rxLists }));
+	say([t("editor.convert.done", { channels: r.channels, contacts: r.contacts, lists: r.lists, copies: r.copies }), ...left].join(" "), left.length ? "warn" : "ok");
 }
 
 function renderToolbar(errors) {
@@ -192,6 +231,7 @@ function renderView(p) {
 	}
 	const g = new Grid({
 		columns: columns(tab, S.model, t, { features: features() }), rows: S.model[tab], t, empty: t(`editor.empty.${tab}`),
+		filters: (S.colFilters[tab] ??= {}),
 		onChange: (row, col, value) => {
 			let err = null;
 			change(t("editor.undo.edit"), () => {
@@ -237,7 +277,8 @@ function tableActions(tab, g) {
 
 // --- Table actions ---
 
-function blank(tab) {
+// d: what the table's column filters give a new row (grid.js newRowDefaults)
+function blank(tab, d = {}) {
 	const n = (base) => {
 		const names = new Set(S.model[tab].map((x) => x.name));
 		let i = S.model[tab].length + 1;
@@ -246,7 +287,7 @@ function blank(tab) {
 	};
 	switch (tab) {
 	case "channels": return newChannel({ name: n(t("editor.new.channel")) });
-	case "contacts": return newContact({ name: n(t("editor.new.contact")), id: 9 });
+	case "contacts": return contactFromFilters({ name: n(t("editor.new.contact")), id: 9 }, d);
 	case "zones": return { name: n(t("editor.new.zone")), channels: [] };
 	case "rxLists": return { number: null, name: n(t("editor.new.rx_list")), contacts: [] };
 	case "dtmfContacts": return { number: null, name: n(t("editor.new.dtmf")), code: "0" };
@@ -255,10 +296,10 @@ function blank(tab) {
 }
 
 function addRecord(tab, g) {
-	const r = blank(tab);
+	const r = blank(tab, g.newRowDefaults());
 	change(t("editor.undo.add"), () => {
 		S.model[tab].push(r);
-		if (tab !== "zones") assignNumbers(S.model[tab], TABLE_MAX[tab]);
+		numberTable(S.model, tab);
 	});
 	g.focusRow(r);
 	if (tab === "zones" || tab === "rxLists") openRecord(tab, r);
@@ -273,7 +314,7 @@ function duplicate(tab, g) {
 			for (const k of Object.keys(c)) if (Array.isArray(c[k])) c[k] = c[k].slice();
 			S.model[tab].push(c);
 		}
-		if (tab !== "zones") assignNumbers(S.model[tab], TABLE_MAX[tab]);
+		numberTable(S.model, tab);
 	});
 }
 
@@ -298,26 +339,41 @@ function move(tab, g, d) {
 			}
 			return;
 		}
-		// numbered records swap numbers with their neighbor in number order
-		const list = [...S.model[tab]].sort((a, b) => a.number - b.number);
-		const idx = items.map((x) => list.indexOf(x)).sort((a, b) => (d < 0 ? a - b : b - a));
-		for (const i of idx) {
-			const j = i + d;
-			if (j < 0 || j >= list.length || items.includes(list[j])) continue;
-			[list[i].number, list[j].number] = [list[j].number, list[i].number];
-			[list[i], list[j]] = [list[j], list[i]];
+		// numbered records swap numbers with their neighbor in number order (a contact's, in its mode's list)
+		for (const group of numberGroups(tab)) {
+			const list = [...group].sort((a, b) => a.number - b.number);
+			const idx = items.map((x) => list.indexOf(x)).filter((i) => i >= 0).sort((a, b) => (d < 0 ? a - b : b - a));
+			for (const i of idx) {
+				const j = i + d;
+				if (j < 0 || j >= list.length || items.includes(list[j])) continue;
+				[list[i].number, list[j].number] = [list[j].number, list[i].number];
+				[list[i], list[j]] = [list[j], list[i]];
+			}
 		}
-		S.model[tab].sort((a, b) => a.number - b.number);
+		S.model[tab] = byNumber(tab, S.model[tab]);
 	});
 	g.sort = null;
 	g.render();
 }
 
+// The records of a table that are numbered together: a table's, or the contacts of each mode (a number is a slot of its
+// mode's list). A contact with no mode has no number
+function numberGroups(tab) {
+	return tab === "contacts" ? [S.model.contacts.filter(isDmr), S.model.contacts.filter(isP25)] : [S.model[tab]];
+}
+
+// A table's records in number order; the contacts DMR first, then P25, then those with no mode
+function byNumber(tab, rows) {
+	const rank = (r) => (tab !== "contacts" ? 0 : isDmr(r) ? 0 : isP25(r) ? 1 : 2);
+	return [...rows].sort((a, b) => rank(a) - rank(b) || (a.number ?? Infinity) - (b.number ?? Infinity));
+}
+
 function renumber(tab) {
 	change(t("editor.undo.renumber"), () => {
-		const list = [...S.model[tab]].sort((a, b) => a.number - b.number);
-		list.forEach((r, i) => (r.number = i + 1));
-		S.model[tab] = list;
+		// in number order, then numbered again from 1 (numberTable skips the air slots held by entries the editor doesn't show)
+		S.model[tab] = byNumber(tab, S.model[tab]);
+		for (const r of S.model[tab]) r.number = null;
+		numberTable(S.model, tab);
 	});
 }
 
@@ -372,8 +428,9 @@ function openRecord(tab, r) {
 		membersDialog(t("editor.zone_title", { name: r.name }), r.channels, [...S.model.channels].sort((a, b) => a.number - b.number), LIMITS.zoneChannels, t,
 			(c) => `${c.number} · ${c.name}`, (list) => change(t("editor.undo.edit"), () => (r.channels = list)));
 	} else if (tab === "rxLists") {
-		membersDialog(t("editor.rx_list_title", { name: r.name }), r.contacts, S.model.contacts.filter((c) => c.type === "group"), LIMITS.rxListContacts, t,
-			(c) => `${c.name} (${c.id})`, (list) => change(t("editor.undo.edit"), () => (r.contacts = list)));
+		// groups of either mode (a list holds one mode's: Problems says when it mixes them); P25 ones are marked
+		membersDialog(t("editor.rx_list_title", { name: r.name }), r.contacts, S.model.contacts.filter((c) => c.type === "group" && (isDmr(c) || isP25(c))), LIMITS.rxListContacts, t,
+			(c) => `${c.name} (${c.id})${isP25(c) ? " · P25" : ""}`, (list) => change(t("editor.undo.edit"), () => (r.contacts = list)));
 	}
 }
 
@@ -604,6 +661,7 @@ async function openPicked(name, bytes) {
 function saveFile(kind) {
 	const errors = problems().filter((p) => p.level === "error");
 	if (errors.length) return say(t("editor.err.fix_first", { n: errors.length }), "bad");
+	dropP25Timeslots();
 	const img = encode(S.model);
 	// keys (channel-modes.md 8) go into a file only when the user turns them on for this export
 	const n = countSecrets(img.bytes);
@@ -616,6 +674,13 @@ function saveFile(kind) {
 		if (!box.checked) withoutSecrets(img.bytes);
 		saveImage(kind, img);
 	});
+}
+
+// A P25 contact has no timeslot override, so a save leaves it out and the rows lose the value they kept
+function dropP25Timeslots() {
+	if (!clearP25Timeslots(S.model)) return;
+	S.dirty = true;
+	refresh();
 }
 
 function saveImage(kind, img) {
@@ -988,7 +1053,11 @@ async function planWrite() {
 		if (!c) return;
 		stage = "prepare radio";
 		if (!await ensureStorage(c)) return;
+		// channels written with the contact flag talk to the wrong talk group on firmware that doesn't read it
+		const unread = unreadFlagged(S.model, features());
+		if (unread && !await askOldFirmware(unread)) return;
 		stage = "encode codeplug";
+		dropP25Timeslots();
 		const file = encode(S.model);
 		stage = "check radio";
 		await onLine(c);
@@ -1054,6 +1123,17 @@ async function planWrite() {
 	} catch (e) {
 		await fail(stage, e);
 	}
+}
+
+function askOldFirmware(n) {
+	return new Promise((done) => {
+		let go = false;
+		dialog(t("editor.p25fw.title"), [h("p", {}, t("editor.p25fw.text", { n })), h("p", { class: "small muted" }, t("editor.p25fw.help"))],
+			t("editor.p25fw.write"), (close) => {
+				go = true;
+				close();
+			}, () => done(go), { primary: false });
+	});
 }
 
 // The ID database rewritten in format C for a radio that reads it, as one undoable change; Write to Radio sends it
@@ -1247,7 +1327,7 @@ function reportFiles() {
 
 async function start() {
 	initReporting({ tool: "editor", context: reportContext, attachments: reportFiles });
-	root.replaceChildren(h("div", { class: "ed-head" }, toolbar, status), messages, tabs, view);
+	root.replaceChildren(h("div", { class: "ed-head" }, toolbar, status), messages, convertBar, tabs, view);
 	try {
 		const r = await fetch(`${ROOT}data/radios.json`);
 		S.radios = (await r.json()).radios || [];
