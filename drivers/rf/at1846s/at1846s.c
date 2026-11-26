@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // AT1846S RF transceiver driver (docs/spec/hardware-dm1701.md section 5; AT1846S datasheet and programming guide)
 #include "at1846s.h"
+#include <stddef.h>
 #include "rf/subaudio/subaudio.h"
 
 #define REG_PAGE	0x7F

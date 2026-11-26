@@ -72,7 +72,8 @@ static void init(void)
 
 // AT1846S 0x05 at the channels where the radio's own clocks put a spur on the receiver, on top of the family's 26 MHz
 // rule (hardware-mduv380.md 2): 0x8543 as at the reference harmonics, 0x8643 (the data sheet's 26 MHz word near
-// 445 MHz) beside 455 MHz, 0x8443 at 407.1 MHz. Exact channel frequencies; the same on the 5 W and 10 W builds
+// 445 MHz) at 405.4, 439.6 and beside 455 MHz, 0x8443 at 407.1 MHz. Exact channel frequencies; the same on the 5 W and
+// 10 W builds
 static const at1846s_spur_t rf_spurs[] = {
 	{ 405400000u, 0x8643u }, { 407100000u, 0x8443u }, { 408100000u, 0x8543u },
 	{ 409400000u, 0x8543u }, { 409600000u, 0x8543u }, { 411900000u, 0x8543u },

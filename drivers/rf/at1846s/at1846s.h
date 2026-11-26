@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 
 typedef struct {
 	bool (*write)(void *ctx, uint8_t reg, uint16_t val);
@@ -91,7 +90,8 @@ bool at1846s_tone_match(uint16_t flags, at1846s_tone_t type);
 // --- Register access ---
 
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus);
-// The board's special frequencies for reg 0x05 (NULL: none), before at1846s_init
+// The board's special frequencies for reg 0x05 (NULL: none): after at1846s_attach, which clears them, and before
+// at1846s_init
 void at1846s_set_spurs(at1846s_t *dev, const at1846s_spur_cfg_t *cfg);
 // Cached write: skipped when the cache already holds the value
 bool at1846s_write(at1846s_t *dev, uint8_t page, uint8_t reg, uint16_t val);
