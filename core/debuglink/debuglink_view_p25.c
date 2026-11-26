@@ -3,6 +3,8 @@
 // The p25 section: P25 conventional on the channel (docs/spec/p25.md 7, core/radio/radio_p25.h): the call heard, the
 // settings in force, the engine's and the voice path's counters. "p25.built=0" without CONFIG_P25
 #include "config.h"
+#include <stddef.h>
+#include <string.h>
 #include "debuglink/debuglink.h"
 #if CONFIG_P25
 #include "board.h"
@@ -13,64 +15,254 @@
 #endif
 #endif
 
+#if CONFIG_P25
+// One readonly field/key list replaces repeated format strings. Each END_GROUP is one original dl_text call;
+// rollback stays in the formatter owner, preserving all-or-drop groups even with a byte-sized reply buffer.
+typedef struct { uint8_t offset, type; } p25_field_t;
+typedef struct { const p25_field_t *field; const char *key; } p25_fields_t;
+typedef struct { uint32_t work, span; } p25_load_t;
+#define END_GROUP 0x80u
+#define MASK(mask) ((__builtin_ctz(mask) + 1u) << 3)
+#define OFF(type, member) offsetof(type, member)
+#define WIDTH(type, member) (sizeof(((type *)0)->member) + 0u * sizeof(char[ \
+	(sizeof(((type *)0)->member) == 1 || sizeof(((type *)0)->member) == 2 || \
+	 sizeof(((type *)0)->member) == 4) ? 1 : -1]))
+_Static_assert(sizeof(radio_p25_view_t) <= 256 && sizeof(radio_p25_settings_t) <= 256 &&
+	       sizeof(radio_p25_stats_t) <= 256, "P25 view field offsets need one byte");
+#define CONVENTIONAL_FIELDS(X) \
+	X("built", 1, 0) \
+	X("on", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_ON)) \
+	X("rx", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_RX)) \
+	X("played", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_PLAYED)) \
+	X("enc", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_ENC)) \
+	X("unit", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_UNIT)) \
+	X("late", OFF(radio_p25_view_t, flags), WIDTH(radio_p25_view_t, flags) | MASK(RADIO_P25_LATE) | END_GROUP) \
+	X("nac", OFF(radio_p25_view_t, nac), WIDTH(radio_p25_view_t, nac)) \
+	X("src", OFF(radio_p25_view_t, src), WIDTH(radio_p25_view_t, src)) \
+	X("dst", OFF(radio_p25_view_t, dst), WIDTH(radio_p25_view_t, dst)) \
+	X("tx", OFF(radio_p25_view_t, tx), WIDTH(radio_p25_view_t, tx) | END_GROUP) \
+	X("rx_work_us", OFF(p25_load_t, work), WIDTH(p25_load_t, work)) \
+	X("rx_span_us", OFF(p25_load_t, span), WIDTH(p25_load_t, span) | END_GROUP) \
+	X("rx_nac", OFF(radio_p25_settings_t, rx_nac), WIDTH(radio_p25_settings_t, rx_nac)) \
+	X("tx_nac", OFF(radio_p25_settings_t, tx_nac), WIDTH(radio_p25_settings_t, tx_nac)) \
+	X("rx_tgid", OFF(radio_p25_settings_t, rx_tgid), WIDTH(radio_p25_settings_t, rx_tgid)) \
+	X("talkaround", OFF(radio_p25_settings_t, talkaround), WIDTH(radio_p25_settings_t, talkaround)) \
+	X("unit_call", OFF(radio_p25_settings_t, unit_call), WIDTH(radio_p25_settings_t, unit_call) | END_GROUP) \
+	X("tx_dst", OFF(radio_p25_settings_t, tx_dst), WIDTH(radio_p25_settings_t, tx_dst)) \
+	X("unit_id", OFF(radio_p25_settings_t, unit_id), WIDTH(radio_p25_settings_t, unit_id) | END_GROUP) \
+	X("rx_nac", OFF(radio_p25_settings_t, rx_nac), WIDTH(radio_p25_settings_t, rx_nac)) \
+	X("tx_nac", OFF(radio_p25_settings_t, tx_nac), WIDTH(radio_p25_settings_t, tx_nac)) \
+	X("rx_tgid", OFF(radio_p25_settings_t, rx_tgid), WIDTH(radio_p25_settings_t, rx_tgid)) \
+	X("talkaround", OFF(radio_p25_settings_t, talkaround), WIDTH(radio_p25_settings_t, talkaround) | END_GROUP) \
+	X("unit_call", OFF(radio_p25_settings_t, unit_call), WIDTH(radio_p25_settings_t, unit_call)) \
+	X("tx_dst", OFF(radio_p25_settings_t, tx_dst), WIDTH(radio_p25_settings_t, tx_dst)) \
+	X("unit_id", OFF(radio_p25_settings_t, unit_id), WIDTH(radio_p25_settings_t, unit_id) | END_GROUP) \
+	X("begins", OFF(radio_p25_stats_t, begins), WIDTH(radio_p25_stats_t, begins)) \
+	X("begin_fails", OFF(radio_p25_stats_t, begin_fails), WIDTH(radio_p25_stats_t, begin_fails)) \
+	X("mem_lent", OFF(radio_p25_stats_t, mem_lent), WIDTH(radio_p25_stats_t, mem_lent)) \
+	X("rx_calls", OFF(radio_p25_stats_t, rx_calls), WIDTH(radio_p25_stats_t, rx_calls)) \
+	X("tx_calls", OFF(radio_p25_stats_t, tx_calls), WIDTH(radio_p25_stats_t, tx_calls) | END_GROUP) \
+	X("tx_filler", OFF(radio_p25_stats_t, tx_filler), WIDTH(radio_p25_stats_t, tx_filler)) \
+	X("units", OFF(radio_p25_stats_t, units), WIDTH(radio_p25_stats_t, units)) \
+	X("voice", OFF(radio_p25_stats_t, voice), WIDTH(radio_p25_stats_t, voice)) \
+	X("voice_bad", OFF(radio_p25_stats_t, voice_bad), WIDTH(radio_p25_stats_t, voice_bad)) \
+	X("voice_bits", OFF(radio_p25_stats_t, voice_bits), WIDTH(radio_p25_stats_t, voice_bits) | END_GROUP) \
+	X("lc_fail", OFF(radio_p25_stats_t, lc_fail), WIDTH(radio_p25_stats_t, lc_fail)) \
+	X("es_fail", OFF(radio_p25_stats_t, es_fail), WIDTH(radio_p25_stats_t, es_fail)) \
+	X("rx_chunks", OFF(radio_p25_stats_t, rx_chunks), WIDTH(radio_p25_stats_t, rx_chunks)) \
+	X("tx_underruns", OFF(radio_p25_stats_t, tx_underruns), WIDTH(radio_p25_stats_t, tx_underruns)) \
+	X("tx_syms", OFF(radio_p25_stats_t, tx_syms), WIDTH(radio_p25_stats_t, tx_syms) | END_GROUP)
+#if CONFIG_IMBE
+_Static_assert(sizeof(p25_voice_stats_t) <= 256, "P25 voice field offsets need one byte");
+#define VOICE_FIELDS(X) \
+	X("built", 1, 0) \
+	X("in", OFF(p25_voice_stats_t, rx_in), WIDTH(p25_voice_stats_t, rx_in)) \
+	X("frames", OFF(p25_voice_stats_t, rx_frames), WIDTH(p25_voice_stats_t, rx_frames)) \
+	X("bad", OFF(p25_voice_stats_t, rx_bad), WIDTH(p25_voice_stats_t, rx_bad)) \
+	X("concealed", OFF(p25_voice_stats_t, rx_concealed), WIDTH(p25_voice_stats_t, rx_concealed)) \
+	X("calls", OFF(p25_voice_stats_t, rx_calls), WIDTH(p25_voice_stats_t, rx_calls) | END_GROUP) \
+	X("underruns", OFF(p25_voice_stats_t, rx_underruns), WIDTH(p25_voice_stats_t, rx_underruns)) \
+	X("underrun_at", OFF(p25_voice_stats_t, rx_underrun_at), WIDTH(p25_voice_stats_t, rx_underrun_at)) \
+	X("overflows", OFF(p25_voice_stats_t, rx_overflows), WIDTH(p25_voice_stats_t, rx_overflows)) \
+	X("bit_errors", OFF(p25_voice_stats_t, rx_bit_errors), WIDTH(p25_voice_stats_t, rx_bit_errors) | END_GROUP) \
+	X("queue_max", OFF(p25_voice_stats_t, rx_queue_max), WIDTH(p25_voice_stats_t, rx_queue_max)) \
+	X("peak", OFF(p25_voice_stats_t, rx_peak), WIDTH(p25_voice_stats_t, rx_peak)) \
+	X("tx_frames", OFF(p25_voice_stats_t, tx_frames), WIDTH(p25_voice_stats_t, tx_frames) | END_GROUP) \
+	X("tx_encoded", OFF(p25_voice_stats_t, tx_encoded), WIDTH(p25_voice_stats_t, tx_encoded)) \
+	X("tx_dropped", OFF(p25_voice_stats_t, tx_dropped), WIDTH(p25_voice_stats_t, tx_dropped)) \
+	X("tx_silent", OFF(p25_voice_stats_t, tx_silent), WIDTH(p25_voice_stats_t, tx_silent)) \
+	X("tx_mic_peak", OFF(p25_voice_stats_t, tx_mic_peak), WIDTH(p25_voice_stats_t, tx_mic_peak)) \
+	X("tx_mic_muted", OFF(p25_voice_stats_t, tx_mic_muted), WIDTH(p25_voice_stats_t, tx_mic_muted) | END_GROUP)
+#else
+#define VOICE_FIELDS(X)
+#endif
+#if CONFIG_P25_TRUNK
+_Static_assert(sizeof(radio_p25_trunk_view_t) <= 256, "P25 trunk field offsets need one byte");
+#define TRUNK_FIELDS(X) \
+	X("built", 1, 0) \
+	X("on", OFF(radio_p25_trunk_view_t, on), WIDTH(radio_p25_trunk_view_t, on)) \
+	X("state", OFF(radio_p25_trunk_view_t, v.state), WIDTH(radio_p25_trunk_view_t, v.state)) \
+	X("cc", OFF(radio_p25_trunk_view_t, v.cc), WIDTH(radio_p25_trunk_view_t, v.cc)) \
+	X("cc_hz", OFF(radio_p25_trunk_view_t, v.cc_hz), WIDTH(radio_p25_trunk_view_t, v.cc_hz)) \
+	X("voice_hz", OFF(radio_p25_trunk_view_t, v.voice_hz), WIDTH(radio_p25_trunk_view_t, v.voice_hz) | END_GROUP) \
+	X("nac", OFF(radio_p25_trunk_view_t, v.nac), WIDTH(radio_p25_trunk_view_t, v.nac)) \
+	X("wacn", OFF(radio_p25_trunk_view_t, v.wacn), WIDTH(radio_p25_trunk_view_t, v.wacn)) \
+	X("sysid", OFF(radio_p25_trunk_view_t, v.sysid), WIDTH(radio_p25_trunk_view_t, v.sysid)) \
+	X("rfss", OFF(radio_p25_trunk_view_t, v.rfss), WIDTH(radio_p25_trunk_view_t, v.rfss)) \
+	X("site", OFF(radio_p25_trunk_view_t, v.site), WIDTH(radio_p25_trunk_view_t, v.site) | END_GROUP) \
+	X("expected_nac", OFF(radio_p25_trunk_view_t, v.expected_nac), WIDTH(radio_p25_trunk_view_t, v.expected_nac)) \
+	X("sys_ok", OFF(radio_p25_trunk_view_t, v.sys_ok), WIDTH(radio_p25_trunk_view_t, v.sys_ok)) \
+	X("tuning", OFF(radio_p25_trunk_view_t, v.tuning), WIDTH(radio_p25_trunk_view_t, v.tuning) | END_GROUP) \
+	X("tg", OFF(radio_p25_trunk_view_t, v.tg), WIDTH(radio_p25_trunk_view_t, v.tg)) \
+	X("src", OFF(radio_p25_trunk_view_t, v.src), WIDTH(radio_p25_trunk_view_t, v.src)) \
+	X("dst", OFF(radio_p25_trunk_view_t, v.dst), WIDTH(radio_p25_trunk_view_t, v.dst)) \
+	X("unit_call", OFF(radio_p25_trunk_view_t, v.unit_call), WIDTH(radio_p25_trunk_view_t, v.unit_call)) \
+	X("enc", OFF(radio_p25_trunk_view_t, v.enc), WIDTH(radio_p25_trunk_view_t, v.enc) | END_GROUP) \
+	X("idens", OFF(radio_p25_trunk_view_t, v.idens), WIDTH(radio_p25_trunk_view_t, v.idens)) \
+	X("learned", OFF(radio_p25_trunk_view_t, v.learned), WIDTH(radio_p25_trunk_view_t, v.learned)) \
+	X("refused", OFF(radio_p25_trunk_view_t, v.refused), WIDTH(radio_p25_trunk_view_t, v.refused)) \
+	X("refused_tg", OFF(radio_p25_trunk_view_t, v.refused_tg), WIDTH(radio_p25_trunk_view_t, v.refused_tg)) \
+	X("fallback", OFF(radio_p25_trunk_view_t, v.fallback), WIDTH(radio_p25_trunk_view_t, v.fallback) | END_GROUP) \
+	X("blocks", OFF(radio_p25_trunk_view_t, v.blocks), WIDTH(radio_p25_trunk_view_t, v.blocks)) \
+	X("crc_fail", OFF(radio_p25_trunk_view_t, v.crc_fail), WIDTH(radio_p25_trunk_view_t, v.crc_fail)) \
+	X("crc_taken", OFF(radio_p25_trunk_view_t, v.crc_taken), WIDTH(radio_p25_trunk_view_t, v.crc_taken)) \
+	X("unverified", OFF(radio_p25_trunk_view_t, v.unverified), WIDTH(radio_p25_trunk_view_t, v.unverified)) \
+	X("mfr", OFF(radio_p25_trunk_view_t, v.mfr), WIDTH(radio_p25_trunk_view_t, v.mfr)) \
+	X("mbt", OFF(radio_p25_trunk_view_t, v.mbt), WIDTH(radio_p25_trunk_view_t, v.mbt)) \
+	X("mbt_op", OFF(radio_p25_trunk_view_t, v.mbt_op), WIDTH(radio_p25_trunk_view_t, v.mbt_op)) \
+	X("pdu_other", OFF(radio_p25_trunk_view_t, v.pdu_other), WIDTH(radio_p25_trunk_view_t, v.pdu_other) | END_GROUP) \
+	X("grants", OFF(radio_p25_trunk_view_t, v.grants), WIDTH(radio_p25_trunk_view_t, v.grants)) \
+	X("follows", OFF(radio_p25_trunk_view_t, v.follows), WIDTH(radio_p25_trunk_view_t, v.follows)) \
+	X("enc_skip", OFF(radio_p25_trunk_view_t, v.enc_skip), WIDTH(radio_p25_trunk_view_t, v.enc_skip)) \
+	X("tdma", OFF(radio_p25_trunk_view_t, v.tdma), WIDTH(radio_p25_trunk_view_t, v.tdma)) \
+	X("no_iden", OFF(radio_p25_trunk_view_t, v.no_iden), WIDTH(radio_p25_trunk_view_t, v.no_iden) | END_GROUP) \
+	X("wrong_sys", OFF(radio_p25_trunk_view_t, v.wrong_sys), WIDTH(radio_p25_trunk_view_t, v.wrong_sys)) \
+	X("hunts", OFF(radio_p25_trunk_view_t, v.hunts), WIDTH(radio_p25_trunk_view_t, v.hunts)) \
+	X("cc_lost", OFF(radio_p25_trunk_view_t, v.cc_lost), WIDTH(radio_p25_trunk_view_t, v.cc_lost)) \
+	X("voice_lost", OFF(radio_p25_trunk_view_t, v.voice_lost), WIDTH(radio_p25_trunk_view_t, v.voice_lost)) \
+	X("wrong_call", OFF(radio_p25_trunk_view_t, v.wrong_call), WIDTH(radio_p25_trunk_view_t, v.wrong_call) | END_GROUP) \
+	X("retunes", OFF(radio_p25_trunk_view_t, retunes), WIDTH(radio_p25_trunk_view_t, retunes)) \
+	X("untuned", OFF(radio_p25_trunk_view_t, untuned), WIDTH(radio_p25_trunk_view_t, untuned)) \
+	X("skips", OFF(radio_p25_trunk_view_t, skips), WIDTH(radio_p25_trunk_view_t, skips) | END_GROUP) \
+	X("tx", OFF(radio_p25_trunk_view_t, tx), WIDTH(radio_p25_trunk_view_t, tx)) \
+	X("reg", OFF(radio_p25_trunk_view_t, v.reg), WIDTH(radio_p25_trunk_view_t, v.reg)) \
+	X("req", OFF(radio_p25_trunk_view_t, v.req), WIDTH(radio_p25_trunk_view_t, v.req)) \
+	X("aff_tg", OFF(radio_p25_trunk_view_t, v.aff_tg), WIDTH(radio_p25_trunk_view_t, v.aff_tg)) \
+	X("talk_hz", OFF(radio_p25_trunk_view_t, v.talk_hz), WIDTH(radio_p25_trunk_view_t, v.talk_hz)) \
+	X("deny_svc", OFF(radio_p25_trunk_view_t, v.deny_svc), WIDTH(radio_p25_trunk_view_t, v.deny_svc)) \
+	X("deny_reason", OFF(radio_p25_trunk_view_t, v.deny_reason), WIDTH(radio_p25_trunk_view_t, v.deny_reason) | END_GROUP) \
+	X("reg_tx", OFF(radio_p25_trunk_view_t, v.reg_tx), WIDTH(radio_p25_trunk_view_t, v.reg_tx)) \
+	X("reg_ok", OFF(radio_p25_trunk_view_t, v.reg_ok), WIDTH(radio_p25_trunk_view_t, v.reg_ok)) \
+	X("aff_tx", OFF(radio_p25_trunk_view_t, v.aff_tx), WIDTH(radio_p25_trunk_view_t, v.aff_tx)) \
+	X("aff_ok", OFF(radio_p25_trunk_view_t, v.aff_ok), WIDTH(radio_p25_trunk_view_t, v.aff_ok)) \
+	X("req_tx", OFF(radio_p25_trunk_view_t, v.req_tx), WIDTH(radio_p25_trunk_view_t, v.req_tx)) \
+	X("req_grant", OFF(radio_p25_trunk_view_t, v.req_grant), WIDTH(radio_p25_trunk_view_t, v.req_grant) | END_GROUP) \
+	X("denials", OFF(radio_p25_trunk_view_t, v.denials), WIDTH(radio_p25_trunk_view_t, v.denials)) \
+	X("queued", OFF(radio_p25_trunk_view_t, v.queued), WIDTH(radio_p25_trunk_view_t, v.queued)) \
+	X("timeouts", OFF(radio_p25_trunk_view_t, v.timeouts), WIDTH(radio_p25_trunk_view_t, v.timeouts)) \
+	X("send_fail", OFF(radio_p25_trunk_view_t, v.send_fail), WIDTH(radio_p25_trunk_view_t, v.send_fail)) \
+	X("inb_busy", OFF(radio_p25_trunk_view_t, v.inb_busy), WIDTH(radio_p25_trunk_view_t, v.inb_busy) | END_GROUP) \
+	X("bursts", OFF(radio_p25_trunk_view_t, bursts), WIDTH(radio_p25_trunk_view_t, bursts)) \
+	X("burst_refused", OFF(radio_p25_trunk_view_t, burst_refused), WIDTH(radio_p25_trunk_view_t, burst_refused) | END_GROUP)
+#if CONFIG_P25_ROAM
+#define ROAM_FIELDS(X) \
+	X("wuid", OFF(radio_p25_trunk_view_t, v.wuid), WIDTH(radio_p25_trunk_view_t, v.wuid)) \
+	X("agid", OFF(radio_p25_trunk_view_t, v.agid), WIDTH(radio_p25_trunk_view_t, v.agid)) \
+	X("lra", OFF(radio_p25_trunk_view_t, v.lra), WIDTH(radio_p25_trunk_view_t, v.lra)) \
+	X("isolated", OFF(radio_p25_trunk_view_t, v.isolated), WIDTH(radio_p25_trunk_view_t, v.isolated)) \
+	X("location_ok", OFF(radio_p25_trunk_view_t, v.location_ok), WIDTH(radio_p25_trunk_view_t, v.location_ok) | END_GROUP) \
+	X("mobility", OFF(radio_p25_trunk_view_t, v.mobility), WIDTH(radio_p25_trunk_view_t, v.mobility)) \
+	X("loc_tx", OFF(radio_p25_trunk_view_t, v.loc_tx), WIDTH(radio_p25_trunk_view_t, v.loc_tx)) \
+	X("loc_ok", OFF(radio_p25_trunk_view_t, v.loc_ok), WIDTH(radio_p25_trunk_view_t, v.loc_ok)) \
+	X("ack_wait", OFF(radio_p25_trunk_view_t, v.ack_wait), WIDTH(radio_p25_trunk_view_t, v.ack_wait) | END_GROUP)
+#else
+#define ROAM_FIELDS(X)
+#endif
+#else
+#define TRUNK_FIELDS(X)
+#define ROAM_FIELDS(X)
+#endif
+#define FIELD(key, offset, type) { (uint8_t)(offset), (uint8_t)(type) },
+#define KEY(key, offset, type) key "\0"
+static const p25_field_t p25_fields[] = {
+	CONVENTIONAL_FIELDS(FIELD) VOICE_FIELDS(FIELD) TRUNK_FIELDS(FIELD) ROAM_FIELDS(FIELD)
+};
+static const char p25_keys[] = CONVENTIONAL_FIELDS(KEY) VOICE_FIELDS(KEY) TRUNK_FIELDS(KEY) ROAM_FIELDS(KEY);
+#if CONFIG_P25_TRUNK
+enum { CONVENTIONAL_COUNT = sizeof((p25_field_t[]){ CONVENTIONAL_FIELDS(FIELD) VOICE_FIELDS(FIELD) }) /
+			   sizeof(p25_field_t),
+       CONVENTIONAL_KEY_BYTES = sizeof(CONVENTIONAL_FIELDS(KEY) VOICE_FIELDS(KEY)) - 1 };
+#endif
+#undef KEY
+#undef FIELD
+#undef CONVENTIONAL_FIELDS
+#undef VOICE_FIELDS
+#undef TRUNK_FIELDS
+#undef ROAM_FIELDS
+#undef WIDTH
+#undef OFF
+#undef MASK
+
+// NULL text advances over an optional group without observing uninitialized snapshot fields.
+static void p25_group(dl_text_t *t, p25_fields_t *at, const void *base, const char *prefix)
+{
+	size_t mark = t ? t->len : 0;
+	const p25_field_t *field;
+	do {
+		field = at->field++;
+		const char *key = at->key;
+		at->key += strlen(key) + 1;
+		if (t && !t->full) {
+			const uint8_t *p = (const uint8_t *)base + field->offset;
+			uint32_t value = field->offset;
+			switch (field->type & 7u) {
+			case 1: value = *p; break;
+			case 2: { uint16_t n; memcpy(&n, p, sizeof n); value = n; break; }
+			case 4: memcpy(&value, p, sizeof value); break;
+			default: break; // a literal, such as built=1
+			}
+			unsigned mask = (field->type >> 3) & 7u;
+			if (mask)
+				value = (value & (1u << (mask - 1))) != 0;
+			dl_text(t, "%s.%s=%u\n", prefix, key, (unsigned)value);
+		}
+	} while (!(field->type & END_GROUP));
+	if (t && t->full)
+		dl_text_rollback(t, mark);
+}
+#undef END_GROUP
+#endif
+
 void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 {
 #if CONFIG_P25
 	const radio_p25_view_t *p = &v->p25;
+	p25_fields_t at = { p25_fields, p25_keys };
 	radio_p25_settings_t s;
 	radio_p25_stats_t c;
-
-	// The call heard now, or the last one (on=0: the engine is not running on this channel)
-	dl_text(t, "p25.built=1\np25.on=%u\np25.rx=%u\np25.played=%u\np25.enc=%u\np25.unit=%u\np25.late=%u\n",
-		(p->flags & RADIO_P25_ON) != 0, (p->flags & RADIO_P25_RX) != 0, (p->flags & RADIO_P25_PLAYED) != 0,
-		(p->flags & RADIO_P25_ENC) != 0, (p->flags & RADIO_P25_UNIT) != 0, (p->flags & RADIO_P25_LATE) != 0);
-	dl_text(t, "p25.nac=%u\np25.src=%u\np25.dst=%u\np25.tx=%u\n", p->nac, (unsigned)p->src, (unsigned)p->dst,
-		p->tx);
-	if ((p->flags & RADIO_P25_ON) != 0 && board.air != NULL && board.air->rx_load != NULL) {
-		uint32_t work, span;
-
-		// What receive costs the MCU since the engine opened the provider: work / span is the share of the CPU.
-		// Early in the section: a reply cut short loses counters, not this
-		if (board.air->rx_load(&work, &span)) {
-			dl_text(t, "p25.rx_work_us=%u\np25.rx_span_us=%u\n", (unsigned)work, (unsigned)span);
-		}
-	}
+	p25_load_t load;
+	p25_group(t, &at, p, "p25");
+	p25_group(t, &at, p, "p25");
+	bool measured = (p->flags & RADIO_P25_ON) != 0 && board.air != NULL && board.air->rx_load != NULL &&
+		board.air->rx_load(&load.work, &load.span);
+	p25_group(measured ? t : NULL, &at, &load, "p25");
 	radio_p25_settings(&s);
-	dl_text(t, "p25.rx_nac=%u\np25.tx_nac=%u\np25.rx_tgid=%u\np25.talkaround=%u\np25.unit_call=%u\n", s.rx_nac,
-		s.tx_nac, s.rx_tgid, s.talkaround, s.unit_call);
-	dl_text(t, "p25.tx_dst=%u\np25.unit_id=%u\n", (unsigned)s.tx_dst, (unsigned)s.unit_id);
-	if (radio_p25_in_force(&s)) {
-		// What the engine runs on: a stored P25 channel's own, else the settings above (talkaround 1 on, 2 off)
-		dl_text(t, "p25.run.rx_nac=%u\np25.run.tx_nac=%u\np25.run.rx_tgid=%u\np25.run.talkaround=%u\n", s.rx_nac,
-			s.tx_nac, s.rx_tgid, s.talkaround);
-		dl_text(t, "p25.run.unit_call=%u\np25.run.tx_dst=%u\np25.run.unit_id=%u\n", s.unit_call,
-			(unsigned)s.tx_dst, (unsigned)s.unit_id);
-	}
+	p25_group(t, &at, &s, "p25");
+	p25_group(t, &at, &s, "p25");
+	bool running = radio_p25_in_force(&s);
+	p25_group(running ? t : NULL, &at, &s, "p25.run");
+	p25_group(running ? t : NULL, &at, &s, "p25.run");
 	radio_p25_stats(&c);
-	dl_text(t, "p25.begins=%u\np25.begin_fails=%u\np25.mem_lent=%u\np25.rx_calls=%u\np25.tx_calls=%u\n",
-		(unsigned)c.begins, (unsigned)c.begin_fails, (unsigned)c.mem_lent, (unsigned)c.rx_calls,
-		(unsigned)c.tx_calls);
-	dl_text(t, "p25.tx_filler=%u\np25.units=%u\np25.voice=%u\np25.voice_bad=%u\np25.voice_bits=%u\n",
-		(unsigned)c.tx_filler, (unsigned)c.units, (unsigned)c.voice, (unsigned)c.voice_bad,
-		(unsigned)c.voice_bits);
-	dl_text(t, "p25.lc_fail=%u\np25.es_fail=%u\np25.rx_chunks=%u\np25.tx_underruns=%u\np25.tx_syms=%u\n",
-		(unsigned)c.lc_fail, (unsigned)c.es_fail, (unsigned)c.rx_chunks, (unsigned)c.tx_underruns,
-		(unsigned)c.tx_syms);
+	p25_group(t, &at, &c, "p25");
+	p25_group(t, &at, &c, "p25");
+	p25_group(t, &at, &c, "p25");
 #if CONFIG_IMBE
 	p25_voice_stats_t vs;
-
 	p25VoiceGetStats(&vs);
-	dl_text(t, "p25v.built=1\np25v.in=%u\np25v.frames=%u\np25v.bad=%u\np25v.concealed=%u\np25v.calls=%u\n",
-		(unsigned)vs.rx_in, (unsigned)vs.rx_frames, (unsigned)vs.rx_bad, (unsigned)vs.rx_concealed,
-		(unsigned)vs.rx_calls);
-	dl_text(t, "p25v.underruns=%u\np25v.underrun_at=%u\np25v.overflows=%u\np25v.bit_errors=%u\n",
-		(unsigned)vs.rx_underruns, (unsigned)vs.rx_underrun_at, (unsigned)vs.rx_overflows,
-		(unsigned)vs.rx_bit_errors);
-	dl_text(t, "p25v.queue_max=%u\np25v.peak=%u\np25v.tx_frames=%u\n", (unsigned)vs.rx_queue_max,
-		(unsigned)vs.rx_peak, (unsigned)vs.tx_frames);
-	dl_text(t, "p25v.tx_encoded=%u\np25v.tx_dropped=%u\np25v.tx_silent=%u\np25v.tx_mic_peak=%u\np25v.tx_mic_muted=%u\n",
-		(unsigned)vs.tx_encoded, (unsigned)vs.tx_dropped, (unsigned)vs.tx_silent, (unsigned)vs.tx_mic_peak,
-		(unsigned)vs.tx_mic_muted);
+	p25_group(t, &at, &vs, "p25v");
+	p25_group(t, &at, &vs, "p25v");
+	p25_group(t, &at, &vs, "p25v");
+	p25_group(t, &at, &vs, "p25v");
 	dl_text(t, "p25v.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)vs.tx_mic_low_q8));
 #else
 	dl_text(t, "p25v.built=0\n");
@@ -81,48 +273,15 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 #endif
 }
 
-// noinline: its copy of the view would otherwise sit in the section dispatcher's frame, under every section's path
+// noinline: its snapshot must not sit in the section dispatcher's frame under every section's path.
 __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 {
 #if CONFIG_P25_TRUNK
 	radio_p25_trunk_view_t tv;
-	const p25_follow_view_t *f = &tv.v;
-
-	// The follower as the radio task last saw it (p25-trunking.md 4): on=0 when no trunked channel runs, the rest
-	// then the last one's. wacn, sysid, rfss, site all ones until heard; cc 255 none
+	p25_fields_t at = { p25_fields + CONVENTIONAL_COUNT, p25_keys + CONVENTIONAL_KEY_BYTES };
 	radio_p25_trunk_view(&tv);
-	dl_text(t, "p25t.built=1\np25t.on=%u\np25t.state=%u\np25t.cc=%u\np25t.cc_hz=%u\np25t.voice_hz=%u\n", tv.on,
-		f->state, f->cc, (unsigned)f->cc_hz, (unsigned)f->voice_hz);
-	dl_text(t, "p25t.nac=%u\np25t.wacn=%u\np25t.sysid=%u\np25t.rfss=%u\np25t.site=%u\n", f->nac,
-		(unsigned)f->wacn, f->sysid, f->rfss, f->site);
-	dl_text(t, "p25t.expected_nac=%u\np25t.sys_ok=%u\np25t.tuning=%u\n", f->expected_nac, f->sys_ok, f->tuning);
-	dl_text(t, "p25t.tg=%u\np25t.src=%u\np25t.dst=%u\np25t.unit_call=%u\np25t.enc=%u\n", f->tg,
-		(unsigned)f->src, (unsigned)f->dst, f->unit_call, f->enc);
-	dl_text(t, "p25t.idens=%u\np25t.learned=%u\np25t.refused=%u\np25t.refused_tg=%u\np25t.fallback=%u\n",
-		f->idens, f->learned, f->refused, f->refused_tg, f->fallback);
-	dl_text(t, "p25t.blocks=%u\np25t.crc_fail=%u\np25t.crc_taken=%u\np25t.unverified=%u\np25t.mfr=%u\np25t.mbt=%u\n"
-		"p25t.mbt_op=%u\np25t.pdu_other=%u\n", (unsigned)f->blocks, (unsigned)f->crc_fail, f->crc_taken, f->unverified,
-		f->mfr, f->mbt, f->mbt_op, f->pdu_other);
-	dl_text(t, "p25t.grants=%u\np25t.follows=%u\np25t.enc_skip=%u\np25t.tdma=%u\np25t.no_iden=%u\n", f->grants,
-		f->follows, f->enc_skip, f->tdma, f->no_iden);
-	dl_text(t, "p25t.wrong_sys=%u\np25t.hunts=%u\np25t.cc_lost=%u\np25t.voice_lost=%u\np25t.wrong_call=%u\n",
-		f->wrong_sys, f->hunts, f->cc_lost, f->voice_lost, f->wrong_call);
-	dl_text(t, "p25t.retunes=%u\np25t.untuned=%u\np25t.skips=%u\n", (unsigned)tv.retunes, (unsigned)tv.untuned,
-		(unsigned)tv.skips);
-	// The transmit side (p25-trunking.md 5)
-	dl_text(t, "p25t.tx=%u\np25t.reg=%u\np25t.req=%u\np25t.aff_tg=%u\np25t.talk_hz=%u\np25t.deny_svc=%u\np25t.deny_reason=%u\n",
-		(unsigned)tv.tx, f->reg, f->req, f->aff_tg, (unsigned)f->talk_hz, f->deny_svc, f->deny_reason);
-	dl_text(t, "p25t.reg_tx=%u\np25t.reg_ok=%u\np25t.aff_tx=%u\np25t.aff_ok=%u\np25t.req_tx=%u\np25t.req_grant=%u\n",
-		f->reg_tx, f->reg_ok, f->aff_tx, f->aff_ok, f->req_tx, f->req_grant);
-	dl_text(t, "p25t.denials=%u\np25t.queued=%u\np25t.timeouts=%u\np25t.send_fail=%u\np25t.inb_busy=%u\n",
-		f->denials, f->queued, f->timeouts, f->send_fail, f->inb_busy);
-	dl_text(t, "p25t.bursts=%u\np25t.burst_refused=%u\n", (unsigned)tv.bursts, (unsigned)tv.burst_refused);
-#if CONFIG_P25_ROAM
-	dl_text(t, "p25t.wuid=%u\np25t.agid=%u\np25t.lra=%u\np25t.isolated=%u\np25t.location_ok=%u\n",
-		(unsigned)f->wuid, f->agid, f->lra, f->isolated, f->location_ok);
-	dl_text(t, "p25t.mobility=%u\np25t.loc_tx=%u\np25t.loc_ok=%u\np25t.ack_wait=%u\n",
-		f->mobility, f->loc_tx, f->loc_ok, f->ack_wait);
-#endif
+	while (at.field < p25_fields + sizeof p25_fields / sizeof p25_fields[0])
+		p25_group(t, &at, &tv, "p25t");
 #else
 	dl_text(t, "p25t.built=0\n");
 #endif

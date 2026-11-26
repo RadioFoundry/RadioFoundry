@@ -1084,6 +1084,27 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
 # (core/debuglink)
+P25DEBUG := p25DebugViewTest.c $(CORE)/debuglink/debuglink_view_p25.c $(CORE)/debuglink/dl_fmt.c
+TESTS += p25DebugViewTest p25DebugViewNoTrunkTest p25DebugViewNoVoiceTest p25DebugViewNoRoamTest p25DebugViewOffTest
+p25DebugViewTest: $(P25DEBUG) p25DebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ $(P25DEBUG)
+p25DebugViewNoTrunkTest: $(P25DEBUG) p25DebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ $(P25DEBUG)
+p25DebugViewNoVoiceTest: $(P25DEBUG) p25DebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_IMBE=0 -o $@ $(P25DEBUG)
+p25DebugViewNoRoamTest: $(P25DEBUG) p25DebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ROAM=0 -o $@ $(P25DEBUG)
+p25DebugViewOffTest: $(P25DEBUG) p25DebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_P25=0 -DCONFIG_P25_TRUNK=0 -o $@ $(P25DEBUG)
+run: run-p25-debug-view
+run-p25-debug-view: p25DebugViewTest p25DebugViewNoTrunkTest p25DebugViewNoVoiceTest p25DebugViewNoRoamTest p25DebugViewOffTest
+	./p25DebugViewTest
+	./p25DebugViewNoTrunkTest
+	./p25DebugViewNoVoiceTest
+	./p25DebugViewNoRoamTest
+	./p25DebugViewOffTest
+.PHONY: run-p25-debug-view
+
 DLINK   := debuglinkTest.c $(CORE)/debuglink/dl_frame.c $(CORE)/debuglink/dl_fmt.c $(CORE)/debuglink/dlog.c \
 	$(CORE)/debuglink/dl_chip.c $(CORE)/debuglink/dl_shot.c $(CORE)/cps/cps_lz4.c
 TESTS   += debuglinkTest

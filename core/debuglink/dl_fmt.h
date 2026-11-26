@@ -32,6 +32,9 @@ typedef struct {
 void dl_text_init(dl_text_t *t, char *buf, size_t cap);
 // Append one formatted piece; a piece that does not fit whole is dropped and full set
 void dl_text(dl_text_t *t, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+// Restore an earlier cursor so several appends can retain one original atomic group. Preserve full/error state;
+// invalid marks (past the current cursor or buffer) leave the text unchanged. No buffer byte is written.
+void dl_text_rollback(dl_text_t *t, size_t mark);
 // key=value\n with a string value; control characters and '\n' in the value become '?'
 void dl_text_kv_str(dl_text_t *t, const char *key, const char *value);
 
