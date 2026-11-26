@@ -46,6 +46,12 @@ typedef struct {
 	uint32_t signal_ms;
 	bool signal_pending;
 #endif
+#if CONFIG_P25_ZONE_SCAN
+	uint16_t scan_groups[CODEPLUG_ZONE_MAX];
+	uint16_t scan_channels[CODEPLUG_ZONE_MAX];
+	bool scan_applied;
+	uint8_t scan_flags;
+#endif
 	bool nogo_kept;			// this system's control channels are in nogo_hz
 } p25_trunk_t;
 _Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
@@ -100,6 +106,49 @@ static bool trunk;			// the engine runs a trunked channel
 static radio_p25_trunk_view_t tview;	// the radio task's copy, for any task
 static uint8_t twhy;			// RADIO_TRUNK_WHY_* of the last PTT refused or request failed
 static bool ttx;			// the follower's transmit side is on
+#if CONFIG_P25_ZONE_SCAN
+static uint8_t scan_count;
+static bool scan_want;
+
+bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, uint16_t selected_number)
+{
+	if (!radio_p25_trunked() || ttx || mem->trunk.scan_applied || !zone || !selected ||
+	    selected->kind != CODEPLUG_KIND_P25_TRUNK || !mem->trunk.cfg.talk_group)
+		return false;
+	scan_count = 1;
+	mem->trunk.scan_groups[0] = mem->trunk.cfg.talk_group;	// selected channel is always the priority, even if scan-skipped
+	mem->trunk.scan_channels[0] = selected_number;
+	for (uint16_t pos = 0; pos < zone->count && pos < CODEPLUG_ZONE_MAX; pos++) {
+		channel_t ch;
+		contact_t contact;
+		if (!codeplug_channel(zone->channels[pos], &ch) || ch.kind != CODEPLUG_KIND_P25_TRUNK ||
+		    ch.system != selected->system || ch.scan_skip)
+			continue;
+#if CONFIG_DMR
+		uint16_t index = codeplug_channel_talk_contact(&ch);
+#else
+		uint16_t index = ch.contact;
+#endif
+		if (!index || !codeplug_contact(index, &contact) || contact.type == CONTACT_PRIVATE)
+			continue;
+		uint32_t tg = contact.type == CONTACT_ALL_CALL ? P25_CP_TG_ALL : contact.id;
+		if (!tg || tg > 0xFFFFu)
+			continue;
+		bool duplicate = false;
+		for (uint8_t i = 0; i < scan_count; i++)
+			duplicate |= mem->trunk.scan_groups[i] == tg;
+		if (!duplicate && scan_count < CODEPLUG_ZONE_MAX) {
+			mem->trunk.scan_channels[scan_count] = zone->channels[pos];
+			mem->trunk.scan_groups[scan_count++] = (uint16_t)tg;
+		}
+	}
+	scan_want = true;
+	return true;
+}
+void radio_p25_zone_scan_stop(void) { scan_want = false; }
+bool radio_p25_zone_scanning(void) { return scan_want && radio_p25_trunked(); }
+uint8_t radio_p25_zone_scan_count(void) { return radio_p25_zone_scanning() ? scan_count : 0; }
+#endif
 #endif
 
 // Frequencies of systems heard naming a blocked WACN or system ID since power on (RAM only, cleared by
@@ -162,6 +211,10 @@ void radio_p25_init(const hal_audio_t *audio)
 {
 	set = defaults;
 	mem = NULL;
+#if CONFIG_P25_ZONE_SCAN
+	scan_want = false;
+	scan_count = 0;
+#endif
 	nogo_n = 0;
 	nogo_full = false;
 #if CONFIG_IMBE
@@ -452,6 +505,24 @@ static void trunk_service(p25_mem_t *m)
 		}
 		p25_follow_retuned(&t->f, now, ok);
 	}
+#if CONFIG_P25_ZONE_SCAN
+	if (scan_want != t->scan_applied) {
+		if (scan_want) {
+			t->scan_flags = t->cfg.flags;
+			t->cfg.flags = (uint8_t)((t->cfg.flags & ~P25_FOLLOW_ALL_GROUPS) | P25_FOLLOW_NO_UNIT);
+			t->cfg.zone_scan = true;
+			t->cfg.groups = mem->trunk.scan_groups;
+			t->cfg.ngroups = scan_count;
+		} else {
+			t->cfg.zone_scan = false;
+			t->cfg.flags = t->scan_flags;
+			t->cfg.groups = NULL;
+			t->cfg.ngroups = 0;
+		}
+		t->scan_applied = scan_want;
+		p25_follow_groups_changed(&t->f, now);
+	}
+#endif
 	if (t->talk_end) {
 		t->talk_end = false;
 		p25_follow_talk_end(&t->f, now);
@@ -757,6 +828,10 @@ static void count(const p25_engine_view_t *ev)
 void radio_p25_end(void)
 {
 	p25_engine_view_t ev;
+#if CONFIG_P25_ZONE_SCAN
+	scan_want = false;
+	scan_count = 0;
+#endif
 
 	if (mem == NULL) {
 		return;
@@ -828,6 +903,9 @@ bool radio_p25_poll(radio_p25_view_t *v)
 		n.flags = 0;
 		n.tx = AIR_TX_IDLE;
 		n.trunk = RADIO_P25_TRUNK_OFF;
+#if CONFIG_P25_ZONE_SCAN
+		n.scan_channel = 0;
+#endif
 		settings_view(&n);
 		bool changed = memcmp(&n, v, sizeof(n)) != 0;
 		*v = n;
@@ -875,6 +953,18 @@ bool radio_p25_poll(radio_p25_view_t *v)
 			if (tview.v.unit_call)
 				n.flags |= RADIO_P25_UNIT;
 		}
+#if CONFIG_P25_ZONE_SCAN
+		// Resolve from the grant's group, including before voice metadata arrives.
+		// The map was built at scan start: no codeplug reads in the voice path.
+		if (scan_want && n.trunk == RADIO_P25_TRUNK_VOICE && !tview.v.unit_call) {
+			for (uint8_t i = 0; i < scan_count; i++) {
+				if (mem->trunk.scan_groups[i] == tview.v.tg) {
+					n.scan_channel = mem->trunk.scan_channels[i];
+					break;
+				}
+			}
+		}
+#endif
 	}
 #endif
 	settings_view(&n);

@@ -485,3 +485,41 @@ tests cover strong corrupt and weaker clean candidates, coverage gaps, ranking,
 stale RSSI, recovered bad CRCs, hysteresis, bounded return, disabled roaming,
 and no survey during voice or on a transmit-enabled system. Live road behavior
 and degraded-simulcast performance remain unverified.
+
+## Zone talkgroup scanning
+
+While following a scanned group, Home displays that group's programmed channel
+name and number. The display uses a channel-number map built when scan starts;
+the voice path does not search the codeplug. The selected channel and priority
+group do not change. On returning to control, Home shows the selected channel
+again. The same rule applies to the large-text view.
+
+`CONFIG_P25_ZONE_SCAN` uses the normal Scan action on a receive-only trunked
+channel. It follows only group contacts from the current zone whose channels
+refer to the selected system record. It excludes conventional channels, other
+systems, private contacts and zone-skip entries, removes duplicate groups, and
+keeps at most 80 groups. The selected channel is always included as priority.
+Starting on a transmit-enabled follower is refused. No codeplug bytes change.
+
+The follower stays on the control channel between calls. Zone scanning overrides
+the channel's follow-all flag and excludes unit calls. A selected-group grant
+is followed immediately, including during another group's reply hold. A valid
+nonpriority grant waits up to 150 ms on control before being followed, allowing
+a priority grant decoded in that interval to win. Encrypted calls still obey
+the system's skip-encrypted setting. A later encryption indication cancels a
+matching pending grant. Retuning or changing the group filter discards pending
+grants. Normal site identity, band-plan, channel and CRC validation still apply.
+
+Active voice is never interrupted for priority checks. The single receiver
+cannot detect grants on control while receiving another voice channel; a short
+priority call can be missed. Existing terminator handling remains unchanged.
+
+Stop restores the selected channel's original filter, returning to control if
+the current call no longer qualifies. Changing channel or zone ends scanning.
+Start again on the new selected channel to change priority. Conventional dwell,
+timed-resume, nuisance-delete and frequency-sweep behavior do not apply to this
+mode. The normal scan indicator is used; the selected channel remains selected.
+The debug view exposes `p25t.zone_scan` and `p25t.scan_groups` for verification.
+
+Host tests exercise filtering, pending-grant priority, uninterrupted voice,
+reply-hold priority, cancellation, channel changes and no outbound signaling.

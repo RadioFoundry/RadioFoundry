@@ -55,6 +55,7 @@ is `tools/bringup.py list --radio <id>`.
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25_site_nac` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25_roam` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `p25_zone_scan` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |
@@ -310,6 +311,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `P25` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_TRUNK` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_ROAM` | ● | ● | ● | ● | ○ | ● | ● | ● |
+| `P25_ZONE_SCAN` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `NXDN` | ● | ● | ● | ● | … | ● | ● | ● |
 | `NXDN_SCRAMBLER` | ● | ● | ● | ● | … | ● | ● | ● |
 | `AIR_RAW` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
@@ -349,6 +351,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | P25 channels in the codeplug: the conventional codec | `P25` | 56 | — | The codec only: a P25 channel is shown as a mode not in this build ([p25-codeplug.md](spec/p25-codeplug.md)). A stored P25 channel runs on its own parameters ([p25.md](spec/p25.md) 7) |
 | P25 trunked systems in the codeplug: the codec | `P25_TRUNK` | 13,888 | — | Needs `P25`; on top of it. Off on the MD-380 with `P25`. A trunked channel hunts its system's control channel and follows voice grants for its talk group; where the system allows transmit it registers, affiliates, asks for a voice channel on PTT and transmits on the grant ([p25-trunking.md](spec/p25-trunking.md)). Run on the DM-1701 and the DM-32UV against a control channel the SDR bench plays, not on a live system. RAM: 1,232 B on the DM-1701 |
 | P25 receive-only site roaming | `P25_ROAM` | — | — | Quality and signal comparison between matching sites; needs `P25_TRUNK`. |
+| P25 zone talkgroup scan | `P25_ZONE_SCAN` | — | — | Needs `P25_TRUNK` and `SCAN`; receive-only group list with selected-group priority between calls. No mid-call priority peeks. See [P25 trunking](spec/p25-trunking.md). |
 | VFO (hand-tuned frequency) | `VFO` | 2,424 | 1,344 | Includes the DMR VFO and Copy to VFO ([dmr-voice.md](spec/dmr-voice.md) 2.2), which is about 750 B on the C-SKY radios |
 | FM VFO | `VFO_FM` | 0 | -28 |  |
 | DMR VFO (color code, slot, talk target typed in; mode change FM / DMR) | `VFO_DMR` | 1,072 | 276 | The VFO's mode, color code, slot and talk target are settings of the VFO, kept across power cycles ([dmr-voice.md](spec/dmr-voice.md) 2.1) |

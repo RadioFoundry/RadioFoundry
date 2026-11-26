@@ -385,7 +385,21 @@ when WACN or system ID is set to Any. This can briefly delay transmitting after 
 - Calls to one unit and emergency are not there yet.
 - Phase 2 (TDMA) voice channels are not followed, and are unlikely ever to be: the radios' RF transceiver components
   can't send or receive Phase 2's modulation (H-CPM, H-DQPSK).
-- Scan skips these channels and dual watch doesn't take them: a trunked channel follows its system instead.
+- On radios with zone scan, start **Scan** while on a receive-only P25 trunked channel to follow the current
+  zone's groups on that channel's system. The receiver stays on the control channel between calls; it does not
+  cycle through frequencies. Channels on other systems, conventional channels, private contacts and zone-skip
+  entries are excluded. The selected channel is always included and is the priority group.
+- Priority is checked between calls. An active call plays through without control-channel peeks. Other groups'
+  grants wait up to 150 ms for a priority grant; the priority group also overrides another group's reply hold.
+  This cannot guarantee a priority call will be heard if it ends while another call is playing.
+- Starting zone scan temporarily overrides **Follow every group of the system**. Stopping scan restores that
+  channel's normal filter. Changing channel or zone stops scan; start it again to use the new selection as priority.
+  Nuisance deletion and conventional scan resume timing do not apply here.
+  This feature does not change the codeplug or enable transmission or registration.
+- During a scan hit, the main name and number show the programmed channel for the group being followed.
+  They return to your selected channel when the radio goes back to control. Your selected group remains priority.
+  **Scan** can be assigned to a key press or hold in **Settings > Keys** or the codeplug editor.
+- Other zone scans skip trunked channels, and dual watch does not take them.
 - Explicit network/site status acquisition has also been checked on a live system in receive-only mode.
 - The editor treats a system with a blocked network ID as listen only as soon as its WACN or system ID is typed. A
   notice under the identity fields names the WACN or system ID that matched, and **Transmit** locks to "Never (listen

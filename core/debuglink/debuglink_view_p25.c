@@ -17,6 +17,9 @@ void debuglink_view_p25(const radio_view_t *v, dl_text_t *t)
 {
 #if CONFIG_P25
 	const radio_p25_view_t *p = &v->p25;
+#if CONFIG_P25_ZONE_SCAN
+	dl_text(t, "p25.scan_channel=%u\n", p->scan_channel);
+#endif
 	radio_p25_settings_t s;
 	radio_p25_stats_t c;
 
@@ -121,6 +124,9 @@ __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 	dl_text(t, "p25t.denials=%u\np25t.queued=%u\np25t.timeouts=%u\np25t.send_fail=%u\np25t.inb_busy=%u\n",
 		f->denials, f->queued, f->timeouts, f->send_fail, f->inb_busy);
 	dl_text(t, "p25t.bursts=%u\np25t.burst_refused=%u\n", (unsigned)tv.bursts, (unsigned)tv.burst_refused);
+#if CONFIG_P25_ZONE_SCAN
+	dl_text(t, "p25t.zone_scan=%u\np25t.scan_groups=%u\n", radio_p25_zone_scanning(), radio_p25_zone_scan_count());
+#endif
 #else
 	dl_text(t, "p25t.built=0\n");
 #endif

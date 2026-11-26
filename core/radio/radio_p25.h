@@ -75,6 +75,9 @@ typedef struct {
 	uint32_t src;		// the caller's unit ID, 0 not known yet
 	uint32_t dst;		// the talk group or the unit called
 	uint32_t talk;		// what PTT calls (the settings' tx_dst): a talk group, or a unit with RADIO_P25_TALK_UNIT
+#if CONFIG_P25_ZONE_SCAN
+	uint16_t scan_channel;	// displayed scan hit; never changes the selected/priority channel, 0 while idle
+#endif
 } radio_p25_view_t;
 
 // Counters for the debug link (any task reads them; the radio task writes them while P25 runs)
@@ -113,6 +116,13 @@ void radio_p25_trunk_view(radio_p25_trunk_view_t *out);
 
 // Transmitting on a trunked channel (radio task; docs/spec/p25-trunking.md 7). The follower's transmit side is on
 bool radio_p25_trunk_tx(void);
+#if CONFIG_P25_ZONE_SCAN
+// Receive-only scan on this system. Stored channels are never edited; stop restores the selected channel's filter.
+bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, uint16_t selected_number);
+void radio_p25_zone_scan_stop(void);
+bool radio_p25_zone_scanning(void);
+uint8_t radio_p25_zone_scan_count(void);
+#endif
 // PTT pressed or released: pressed, RADIO_TRUNK_WHY_NONE when a voice request goes out, else why not
 uint8_t radio_p25_trunk_ptt(bool down);
 // After PTT: RADIO_P25T_WAIT while the request waits, GO when the grant is in and the receiver on the voice channel

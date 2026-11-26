@@ -38,6 +38,9 @@ static const char features[] =
 #if CONFIG_P25_TRUNK
 	"P25_SITE_NAC,"
 #endif
+#if CONFIG_P25_ZONE_SCAN
+	"P25_ZONE_SCAN,"
+#endif
 #if CONFIG_NXDN_SCRAMBLER
 	"NXDN_SCRAMBLER,"
 #endif

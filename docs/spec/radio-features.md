@@ -62,6 +62,7 @@ tuned channel or frequency is the core view's as usual.
   channels marked "zone skip" in the codeplug. FM, DMR, P25 and NXDN channels mix freely: each stop tunes the
   channel as a channel change would (P25, NXDN: the engine starts there). Left out: parked channels, P25 trunked
   channels, and NXDN channels at a rate the board can't receive ([p25.md](p25.md) 7.1, [nxdn.md](nxdn.md) 6.4).
+- **P25 zone talkgroup scan** (`CONFIG_P25_ZONE_SCAN`): started on a receive-only P25 trunked channel, follows the current zone's groups on its system without sweeping frequencies. The selected channel is priority between calls; active audio is uninterrupted. See [P25 trunking](p25-trunking.md#zone-talkgroup-scanning).
 - **VFO scan** steps the VFO frequency by its step from `lo` to `hi` and wraps. Without a range it sweeps the board
   band the VFO frequency is in. Both ends must be in one band, at least one step apart.
 - **Dual watch** alternates between two channels, skip flags ignored (2.1). `radio_req_scan_dual(pos)` (the debug

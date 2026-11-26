@@ -13,6 +13,11 @@
 #include "sim/ui_sim.h"
 #include "ui/ui_app.h"
 #include "ui/ui_screens.h"
+#include "ui/ui_svc.h"
+#include "ui/ui_nav.h"
+#include "input/keyassign.h"
+#include "radio/scan.h"
+#include "codeplug/codeplug_modes.h"
 #include "ui/gfx.h"
 #include "ui/i18n.h"
 #include "ui/gfx.h"
@@ -2411,8 +2416,46 @@ static int check_satellite_path_endpoint_colors(void)
 }
 #endif
 
+static int check_scan_hit_name(void)
+{
+#if CONFIG_P25_ZONE_SCAN
+	sim_reset(sim_geom_find("128x64"), SIM_MAP_P);
+	radio_view_t v = *ui_view();
+	ui_state_t s = ui_st;
+	char name[CODEPLUG_NAME_LEN + 1];
+	int x, y, w, h;
+	if (!codeplug_channel_name(1, name))
+		return 1;
+	strcpy(v.ch.name, "Priority");
+	v.ch.kind = CODEPLUG_KIND_P25_TRUNK;
+	v.ch.mode = RADIO_MODE_P25;
+	v.scan = SCAN_ZONE;
+	v.p25.trunk = RADIO_P25_TRUNK_VOICE;
+	v.p25.scan_channel = 1;
+	for (int large = 0; large < 2; large++) {
+		s.large_text = large != 0;
+		ui_draw_home(&v, &s);
+		if (!sim_text_bounds(name, &x, &y, &w, &h) || strcmp(v.ch.name, "Priority")) {
+			printf("FAIL scan hit channel name (large=%d)\n", large);
+			return 1;
+		}
+	}
+	v.p25.scan_channel = 0;
+	v.p25.trunk = RADIO_P25_TRUNK_CONTROL;
+	s.large_text = false;
+	ui_draw_home(&v, &s);
+	if (!sim_text_bounds("Priority", &x, &y, &w, &h)) {
+		printf("FAIL scan idle priority name\n");
+		return 1;
+	}
+#endif
+	return 0;
+}
+
 int main(void)
 {
+	if (check_scan_hit_name() != 0)
+		return 1;
 	if (check_name_is_id() != 0)
 		return 1;
 #if CONFIG_SATELLITE_TLE

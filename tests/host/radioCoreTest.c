@@ -8479,6 +8479,98 @@ static void test_p25_trunk(void)
 // site's inbound receiver, PTT's request, the grant, the call on the voice channel heard by the far radio, the return;
 // queued, denied and unanswered requests
 #define TS_OFFSET	5000000		// identifier 1's transmit offset
+#if CONFIG_P25_ZONE_SCAN
+static void test_p25_zone_scan(void)
+{
+	setup_codeplug_p25();
+	add(3, "Selected group", TS_CC1, RADIO_MODE_DMR, true, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	chans[3].contact = 1;
+	chans[4] = chans[3];
+	chans[4].contact = 3;	// another group of the same system
+	chans[5] = chans[4];
+	chans[5].system = 1;	// another system is never scanned
+	chans[6] = chans[3];
+	chans[6].contact = 2;	// private contacts are not group scan entries
+	zones[0].channels[zones[0].count++] = 6;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC,
+		.options = P25_TSYS_NO_REG };
+	stored_trunk.listen_only = true;
+	stored_trunk.follow_all = true;	// zone scan must override this broader filter
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.iden_set = 2;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .type = P25_IDEN_FDMA };
+	stored_trunk.talk_group = 201;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	run(1500);
+	req(RREQ_SCAN, RSCAN_TOGGLE);
+	run(30);
+	CHECK(sm.view.scan == SCAN_ZONE && radio_p25_zone_scanning() && radio_p25_zone_scan_count() == 2);
+	CHECK(sm.view.channel_number == 3 && hw.rx_hz == TS_CC1);
+	CHECK(sm.view.p25.scan_channel == 0);
+	site.grant_tg = 77;
+	site.grant_ch = 0x100A;
+	run(400);
+	CHECK(hw.rx_hz == TS_CC1 && sm.view.p25.trunk == RADIO_P25_TRUNK_CONTROL);
+	far_begin(TS_NAC, 1001, false, 9);
+	site.grant_tg = 9;
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(700);
+	CHECK(hw.rx_hz == TS_VOICE && sm.view.p25.dst == 9 && (sm.view.p25.flags & RADIO_P25_PLAYED));
+	CHECK(sm.view.p25.scan_channel == 4 && sm.view.channel_number == 3);
+	site.grant_tg = 201;
+	run(400);
+	CHECK(sm.view.p25.dst == 9 && hw.rx_hz == TS_VOICE && sm.view.channel_number == 3);
+	CHECK(sm.view.p25.scan_channel == 4);
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(1200);
+	far_tx = false;
+	CHECK(hw.rx_hz == TS_CC1);
+	CHECK(sm.view.p25.scan_channel == 0);
+	far_begin(TS_NAC, 1002, false, 201);
+	site.grant_tg = 201;
+	CHECK(p25_engine_tx_prepare(&far_eng) && p25_engine_tx_go(&far_eng));
+	far_tx = true;
+	run(700);
+	CHECK(sm.view.p25.dst == 201 && (sm.view.p25.flags & RADIO_P25_PLAYED));
+	CHECK(sm.view.p25.scan_channel == 3 && sm.view.channel_number == 3);
+	p25_engine_tx_stop(&far_eng);
+	site.grant_tg = 0;
+	run(1200);
+	far_tx = false;
+	req(RREQ_SCAN, RSCAN_STOP);
+	run(30);
+	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF);
+	CHECK(sm.view.p25.scan_channel == 0);
+	chans[4].scan_skip = true;
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	CHECK(radio_p25_zone_scan_count() == 1);
+	req(RREQ_PTT, 1);
+	CHECK(!hw.keyed && sm.view.tx_deny == TXDENY_RX_ONLY);
+	req(RREQ_PTT, 0);
+	CHECK(!radio_p25_zone_scanning());
+	req(RREQ_SCAN, RSCAN_ZONE);
+	run(30);
+	req(RREQ_ZONE_POS, 0);
+	run(30);
+	CHECK(!radio_p25_zone_scanning() && sm.view.scan == SCAN_OFF && !radio_p25_trunked());
+	CHECK(site.reg_rx == 0 && site.aff_rx == 0 && site.req_rx == 0);
+}
+#endif
+
 static void test_p25_system_names(void)
 {
 	setup_codeplug_p25();
@@ -8991,6 +9083,9 @@ static void test_p25(void)
 {
 #if CONFIG_P25_TRUNK
 	test_p25_trunk();
+#if CONFIG_P25_ZONE_SCAN
+	test_p25_zone_scan();
+#endif
 	test_p25_trunk_tx();
 	test_p25_system_names();
 	test_p25_trunk_auto_nac();

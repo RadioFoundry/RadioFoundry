@@ -403,6 +403,9 @@ typedef struct {
 	bool tot_warned;		// the time-out warning sounded for this transmission
 #if CONFIG_SCAN
 	scan_t scan;
+#if CONFIG_P25_ZONE_SCAN
+	bool scan_p25;	// one control channel, a zone's talkgroups; no frequency sweep
+#endif
 	radio_dual_ref_t dual[2];	// SCAN_DUAL: the two channels
 	uint8_t dual_sel;		// ... the selected one (PTT)
 	uint8_t dual_at;		// ... the one the receiver is on
