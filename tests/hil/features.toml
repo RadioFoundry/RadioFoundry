@@ -97,6 +97,13 @@ switch = "P25_ROAM"
 spec = "docs/spec/p25-trunking.md"
 source = ["core/p25/p25_follow.c", "core/radio/radio_p25.c"]
 
+[feature.p25_registered_roam]
+requires = "P25_ROAM"
+spec = "docs/spec/p25-trunking.md"
+source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c",
+          "core/debuglink/debuglink_view_p25.c", "core/hostlink/build_info.c"]
+planned_tests = ["tests/hil/test_p25.py::test_p25_registered_roam"]
+
 [feature.nxdn]
 switch = "NXDN"
 spec = "docs/spec/nxdn.md"

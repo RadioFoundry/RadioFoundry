@@ -392,6 +392,17 @@ After confirmation, `p25.run.rx_nac` and `p25.run.tx_nac` show the serving NAC, 
 only transmit check. Firmware consuming optional Site NAC fields advertises `P25_SITE_NAC` through the existing
 feature probe; older firmware ignores those fields ([p25-codeplug.md](p25-codeplug.md) 3.1).
 
+Firmware with `CONFIG_P25_ROAM` advertises semantic capability `P25_LOCATION_REG` through the existing feature
+probe. Older receive-only roaming firmware lacks that capability. The CPS help states the distinction; editing the
+threshold is not capability-gated. `p25_trunk` additionally reports `wuid` (accepted working unit ID), `agid`
+(announcement group), `lra` (current site's LRA, including valid zero), `isolated`, `location_ok` (fresh site procedure
+complete), `loc_tx loc_ok` (location requests sent/accepted), `ack_wait`, and `mobility`. Registration states append
+9 LOCATION, 10 REFUSED, 11 UNSUPPORTED; state 8 remains BLOCKED. `mobility`: 0 normal, 1 no supported home identity,
+2 unsupported local-only service/mapping, 3 site-deny list full, 4 invalid home working-address mapping. LOCATION,
+REFUSED and UNSUPPORTED block user transmit. `sys_ok=1` alone does not mean registered or located. Runtime voice
+`p25.run.unit_id` and `p25.run.tx_dst` consume accepted working addresses; stored programming remains unchanged.
+See [the bounded home-System procedure](p25-trunking.md#51-home-system-location-registration).
+
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
 The saved value changes after the Settings write completes; it lets a test restore the assignment through the UI.

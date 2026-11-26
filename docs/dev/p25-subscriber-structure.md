@@ -82,6 +82,19 @@ combined branch needs a combined resource check and feature-off builds. Their
 reported combined-image radio tests do not qualify an independently stacked
 subscriber implementation. No dependency above supplies location registration.
 
+The registered-roaming follow-up extends the existing follower and `P25_ROAM`
+switch with a bounded home-System location procedure. It retains accepted IDs,
+affiliation and learned identifiers only across the same confirmed actual System;
+unconfirmed candidates cannot update that System's learned namespace. A fresh
+NET and RFSS, either order, and the required location outcome gate user transmit.
+Wildcard home identity, visited/extended procedures and local-only service are
+explicit unsupported outcomes, not successful roaming. The exact protocol
+references, working-ID bounds, timers and observable outcomes are in
+[the trunking specification](../spec/p25-trunking.md#51-home-system-location-registration).
+The planned `p25_registered_roam` HIL entry remains unqualified: a two-control-channel
+bench needs opt-in DUT registration bursts and an external rig that decodes and
+answers location requests. Host coverage does not replace that qualification.
+
 ## Bandplans
 
 RadioFoundry already stores identifier rows as System entries of class 2, with

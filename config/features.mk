@@ -344,7 +344,7 @@ CONFIG_AIR_RAW ?= n
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
 CONFIG_P25_TRUNK ?= $(CONFIG_P25)
-# Passive weak-signal site search on receive-only trunked systems.
+# Control-channel quality surveys and bounded home-System location registration.
 CONFIG_P25_ROAM ?= $(CONFIG_P25_TRUNK)
 # the GPS status screen: satellites on a sky plot and signal bars, fix quality, grid locator (core/position/nmea_sky.c,
 # core/ui/ui_gps.c, docs/spec/position.md 3). Needs GPS; off, Tools > Position is a page of text

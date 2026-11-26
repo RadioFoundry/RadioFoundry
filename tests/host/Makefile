@@ -161,11 +161,14 @@ voice-data: imbeVoiceGen
 	for v in $(VOICE_SETS); do ./imbeVoiceGen $(VOICE)/$$v.pcm $(VOICE)/$$v.imbe $(VOICE)/$${v}_imbe_decoded.wav || exit 1; done
 .PHONY: voice-data
 # The receive-only P25 trunking follower (CONFIG_P25_TRUNK): its signaling, and whole systems through the soft modem
-TESTS   += p25TrunkTest
+TESTS   += p25TrunkTest p25TrunkNoRoamTest
 P25TRUNK := $(CORE)/p25/p25_tsbk.c $(CORE)/p25/p25_follow.c $(CORE)/p25/p25_engine.c $(CORE)/air/air_session.c \
             $(CORE)/air/air_framer.c $(CORE)/air/air_softmodem.c $(P25) $(FEC) $(RXSEEN)
 p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
+
+p25TrunkNoRoamTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ROAM=0 -o $@ p25TrunkTest.c $(P25TRUNK) -lm
 
 TESTS   += p25FollowRegressionTest p25RxRegressionTest
 p25FollowRegressionTest: p25FollowRegressionTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) $(ROOT)/hal/hal_air.h
@@ -265,6 +268,7 @@ run: $(TESTS)
 	./nxdnTest | tail -1
 	./nxdnEngineTest | tail -1
 	./p25TrunkTest
+	./p25TrunkNoRoamTest
 	./p25FollowRegressionTest
 	./p25RxRegressionTest
 	./p25VoiceTest
@@ -353,6 +357,13 @@ radioCoreTestP25T: $(RCP25T) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
                    $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_AIR_RAW=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ $(RCP25T) -lm
+
+# Include production radio_p25.c once inside the test translation unit to exercise queued/prepared races.
+TESTS   += p25AccessContextTest
+P25ACCESS := $(filter-out radioCoreTest.c $(CORE)/radio/radio_p25.c,$(RCP25T))
+p25AccessContextTest: p25AccessContextTest.c $(RCP25T) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/radio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -I. -Wshadow -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
+		-DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_AIR_RAW=1 -DHAL_VOCODER_LEND_BYTES=0x4000 -o $@ p25AccessContextTest.c $(P25ACCESS) -lm
 
 # The same with NXDN conventional (CONFIG_NXDN): the far end is an NXDN engine on the fake board.air; the voice goes
 # through the DMR side's vocoder path. No vocoder lends memory (as on the STM32 platform)
@@ -500,7 +511,7 @@ boardBandTest: boardBandTest.c $(ROOT)/hal/board.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ boardBandTest.c
 
 run: run-core
-run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
+run-core: p25AccessContextTest radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprs radioCoreTestAprsDmr radioFeaturesTest radioFeaturesTestNoDual roamTest radioListenBandsTest inputTest switchFollowTest aprsRadioTest quadratureTest serialmicTest miclevelTest resampleTest \
           rx2LinkTest keyassignTest powerSwitchTest powerKeyTest boardBandTest batteryTest
 	./aprsRadioTest
 	./radioCoreTest
@@ -509,6 +520,7 @@ run-core: radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T
 	./radioCoreTestNxdn
 	./radioCoreTestP25Nxdn
 	./radioCoreTestP25T
+	./p25AccessContextTest
 	./radioCoreTestAprs
 	./radioCoreTestAprsDmr
 	./radioFeaturesTest

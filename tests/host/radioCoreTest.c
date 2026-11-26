@@ -341,6 +341,10 @@ static struct {
 	uint32_t wacn;			// the WACN its network status names, 0: TS_WACN
 	uint32_t lc_wacn;		// not 0: a conventional repeater instead, its terminators' link control naming it
 	uint16_t lc_sysid;		// ... and this system ID (0: TS_SYSID)
+	uint32_t wuid;			// nonzero: assign a different working unit ID
+	uint16_t wgid, agid, loc_rx;
+	uint8_t site_id, lra;
+	bool isolated;
 } site;
 enum { SITE_ANS_ACCEPT, SITE_ANS_DENY, SITE_ANS_NONE, SITE_ANS_QUEUE };
 static void site_chunk(uint8_t *syms);
@@ -8013,17 +8017,18 @@ static void site_unit(void)
 		switch (site.rot++ % 4) {
 		case 0:
 			m.kind = P25_TSBK_NET;
-			m.u.net.lra = 1;
+			m.u.net.lra = site.lra;
 			m.u.net.wacn = site.wacn != 0 ? site.wacn : TS_WACN;
 			m.u.net.sysid = TS_SYSID;
 			m.u.net.ch = 0x1001;
 			break;
 		case 1:
 			m.kind = P25_TSBK_RFSS;
-			m.u.site.lra = 1;
+			m.u.site.lra = site.lra;
+			m.u.site.flags = site.isolated ? 0 : 1;
 			m.u.site.sysid = TS_SYSID;
 			m.u.site.rfss = 1;
-			m.u.site.site = 7;
+			m.u.site.site = site.site_id ? site.site_id : 7;
 			m.u.site.ch = 0x1001;
 			break;
 		case 2:
@@ -8090,15 +8095,22 @@ static void site_inbound(const uint8_t *syms, uint16_t n, bool last)
 		}
 		m.kind = P25_TSBK_REG_RSP;
 		m.u.reg = (typeof(m.u.reg)){ .rv = site.ans_reg == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .sysid = TS_SYSID,
-					     .id = q.src, .addr = q.src };
+					     .id = q.src, .addr = site.wuid ? site.wuid : q.src };
 	} else if (q.opcode == P25_ISP_GRP_AFF_REQ) {
 		site.aff_rx++;
 		if (site.ans_aff == SITE_ANS_NONE) {
 			return;
 		}
 		m.kind = P25_TSBK_AFF_RSP;
-		m.u.aff = (typeof(m.u.aff)){ .gav = site.ans_aff == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT, .ann = q.tg,
-					     .tg = q.tg, .dst = q.src };
+		m.u.aff = (typeof(m.u.aff)){ .gav = site.ans_aff == SITE_ANS_DENY ? P25_RV_DENY : P25_RV_ACCEPT,
+			.ann = site.agid ? site.agid : q.tg, .tg = site.wgid ? site.wgid : q.tg, .dst = q.src };
+#if CONFIG_P25_ROAM
+	} else if (q.opcode == P25_ISP_LOC_REG_REQ) {
+		site.loc_rx++;
+		m.kind = P25_TSBK_LOC_RSP;
+		m.u.loc = (typeof(m.u.loc)){ .rv = P25_RV_ACCEPT, .tg = q.tg, .rfss = 1,
+			.site = site.site_id ? site.site_id : 7, .dst = q.src };
+#endif
 	} else {
 		site.req_rx++;
 		if (site.ans_req == SITE_ANS_NONE) {
@@ -8551,6 +8563,57 @@ static void test_p25_trunk_tx(void)
 
 // A refused tune leaves the receiver hearing a valid old frequency. Its same-System/NAC broadcasts must not prove
 // that the requested candidate was reached; only the next successful physical tune may resume access.
+#if CONFIG_P25_ROAM
+static void test_p25_trunk_assigned_mobility(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25T mobility", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK; chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = P25_FOLLOW_WACN_ANY, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321; stored_trunk.talk_group = 201; stored_trunk.ctl_count = 2;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .rx_hz = TS_CC1, .tx_hz = TS_CC1 + TS_OFFSET, .chan = 0x1001 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .rx_hz = TS_CC2, .tx_hz = TS_CC1 + TS_OFFSET, .chan = 0x1002 };
+	stored_trunk.iden_set = 2;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1; site.cc_in_hz = TS_CC1 + TS_OFFSET; site.voice_hz = TS_VOICE;
+	site.wuid = 0x123456; site.wgid = 301; site.agid = 401; site.on = true;
+	start(); p25_defaults(); aud.feed = true; far_begin(TS_NAC, 1001, false, 301);
+	req(RREQ_ZONE_POS, 2); run(2000);
+	radio_p25_trunk_view_t tv;
+	radio_p25_trunk_view(&tv);
+	CHECK(tv.v.reg == P25_REG_READY && tv.v.wuid == 0x123456 && tv.v.aff_tg == 301 && tv.v.agid == 401);
+	CHECK(site.aff_rx == 1 && site.last.src == 0x123456 && site.last.tg == 201);
+	radio_p25_settings_t live;
+	CHECK(radio_p25_in_force(&live) && live.unit_id == 0x123456 && live.tx_dst == 301);
+	// The legacy wildcard initial-registration path consumes returned working addresses at this site only.
+	req(RREQ_PTT, 1); run(2000);
+	CHECK(sm.view.state == RS_TX && far_heard.starts == 1 && far_heard.call.lc.src == 0x123456 && far_heard.call.lc.tgid == 301);
+	req(RREQ_PTT, 0); run(600);
+	// A fully specified home System has home UID/GID working addresses and can use abbreviated location updates.
+	req(RREQ_ZONE_POS, 0); far_stop();
+	stored_trunk.sys.wacn = TS_WACN;
+	site.wuid = site.wgid = 0; site.agid = 401; site.out_reps = 0; site.unit_at = site.unit_syms;
+	far_begin(TS_NAC, 1001, false, 201);
+	req(RREQ_ZONE_POS, 2); run(2000); radio_p25_trunk_view(&tv);
+	CHECK(tv.v.reg == P25_REG_READY && tv.v.wuid == 4321 && tv.v.aff_tg == 201);
+	unsigned reg = site.reg_rx, aff = site.aff_rx;
+	// Same actual System, different serving site: preserve assigned IDs and accepted affiliation.
+	site.cc_hz = TS_CC2; site.site_id = 8; site.unit_at = site.unit_syms; site.out_reps = 0;
+	run(4000); radio_p25_trunk_view(&tv);
+	CHECK(tv.v.reg == P25_REG_READY && tv.v.location_ok && tv.v.site == 8 && tv.v.cc_hz == TS_CC2);
+	CHECK(site.loc_rx == 1 && site.reg_rx == reg && site.aff_rx == aff && site.last.lra == 0 &&
+	      site.last.src == 4321 && site.last.tg == 201);
+	req(RREQ_PTT, 1); run(2000);
+	CHECK(sm.view.state == RS_TX && hw.keyed && site.last.opcode == P25_ISP_GRP_V_REQ &&
+	      site.last.src == 4321 && site.last.tg == 201);
+	CHECK(far_heard.starts == 1 && far_heard.call.lc.src == 4321 && far_heard.call.lc.tgid == 201);
+	req(RREQ_PTT, 0); run(600); CHECK(!hw.keyed && fair[0].keyed_violations == 0);
+	req(RREQ_ZONE_POS, 0); far_stop(); site.on = false;
+}
+#endif
+
 static void test_p25_trunk_failed_retune(void)
 {
 	setup_codeplug_p25();
@@ -8750,6 +8813,9 @@ static void test_p25(void)
 	test_p25_trunk_tx();
 	test_p25_trunk_auto_nac();
 	test_p25_trunk_failed_retune();
+#if CONFIG_P25_ROAM
+	test_p25_trunk_assigned_mobility();
+#endif
 	test_p25_trunk_wacn_nogo();
 	test_p25_conv_wacn_nogo();
 #endif

@@ -33,6 +33,8 @@ typedef struct {
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
 	uint32_t burst_hz;
+	uint32_t burst_access;	// derived tag of the follower access request that owns these bytes
+	uint32_t burst_prepared;	// frozen when the engine accepts the queued burst
 	uint8_t burst_tune;
 	uint16_t burst_nac;
 	bool burst_active;
@@ -347,6 +349,7 @@ static bool trunk_send(uint32_t hz, const uint8_t blk[P25_TSBK_BYTES], void *ctx
 	t->burst_hz = hz;
 	t->burst_tune = t->want;
 	t->burst_nac = t->f.view.nac;
+	t->burst_access = t->f.acc.generation;
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	t->burst_want++;
 	return true;
@@ -463,14 +466,27 @@ static void trunk_service(p25_mem_t *m)
 	// context under the same exclusion as its retune, and refresh both directions, including NAC 000.
 	if (t->done == t->want && !t->f.view.tuning) {
 		uint16_t nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
-		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac) {
+		uint32_t unit = t->cfg.unit_id;
+		uint16_t group = t->cfg.talk_group;
+#if CONFIG_P25_ROAM
+		if (t->f.acc.registered) {
+			unit = t->f.view.wuid;
+			group = t->f.view.aff_tg;
+		}
+#endif
+		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac || m->eng.cfg.unit_id != unit ||
+		    m->eng.cfg.tx_lc.tgid != group) {
 			p25_engine_cfg_t c = m->eng.cfg;
 
 			c.rx_nac = c.tx_nac = nac;
+			c.unit_id = unit;
+			talk_lc(&c.tx_lc, false, group);
 			p25_engine_set(&m->eng, &c);
 		}
 	}
 	if (t->burst_tune != t->want || !t->f.view.sys_ok || t->burst_nac != t->f.view.nac)
+		t->burst_done = t->burst_want;
+	if (t->burst_access != t->f.acc.generation)
 		t->burst_done = t->burst_want;
 	leave(&t->in_radio);
 	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which
@@ -621,8 +637,11 @@ bool radio_p25_trunk_burst_start(void)
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	bool ok = want != t->burst_done && trunk_confirmed(mem) && t->f.view.state == P25_FOLLOW_CONTROL &&
 		  t->burst_tune == t->want && t->burst_nac == t->f.view.nac &&
+		  t->burst_access == t->f.acc.generation &&
 		  p25_engine_tx_burst(&mem->eng, t->burst);
 	t->burst_active = ok;
+	if (ok)
+		t->burst_prepared = t->burst_access;
 	t->burst_done = want;
 	leave(&t->in_radio);
 	if (ok)
@@ -931,7 +950,8 @@ bool radio_p25_tx_go(void)
 			return false;
 		}
 		bool ok = trunk_confirmed(mem) && (t->burst_active ?
-			  t->burst_tune == t->want && t->burst_nac == t->f.view.nac : t->f.view.req == P25_REQ_TALK) &&
+			  t->burst_tune == t->want && t->burst_nac == t->f.view.nac &&
+			  t->burst_prepared == t->f.acc.generation : t->f.view.req == P25_REQ_TALK) &&
 			  p25_engine_tx_go(&mem->eng);
 		leave(&t->in_radio);
 		if (!ok)

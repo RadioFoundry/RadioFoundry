@@ -212,7 +212,16 @@ transmit.
 | Skip encrypted calls | Don't follow a grant for an encrypted call |
 | Hold after a call | Seconds on the voice channel after a call ends. 0: back to the control channel at once |
 | Use only the channel plan entered here (sites and roaming) | Ignore the plan the control channel sends |
-| Change site below (sites and roaming) | With receive-only roaming firmware, a negative value enables searches on weak signal or unreliable control decoding; 0 disables them |
+| Change site below (sites and roaming) | A negative value enables searches on weak signal or unreliable control decoding; 0 disables them. Registered searches require the supported home-System procedure below |
+
+With registered-roaming firmware (feature `P25_LOCATION_REG`; older receive-only roaming builds do not provide it),
+a fully specified WACN/System ID is the home-System identity. Ordinary moves
+within that actual System retain registration and accepted affiliation while a location update completes. PTT waits
+for the new site to accept that update. Blank/Any acquisition can receive and use the legacy initial registration
+path, but does not establish a supported home identity for later location updates. Visited-System registration,
+local-only service and unsupported identity mappings keep PTT blocked; the debug view reports the reason. Changing
+the selected group still needs its own accepted affiliation. Quality surveys wait for idle receive and pause while
+access requests or voice calls are active. These paths have host tests; road and hardware qualification remain open.
 
 **Sites** and **Channel plan** (per identifier: base frequency, spacing, TX offset, bandwidth) are optional. Without a
 plan entry the radio uses the plan the control channel sends.

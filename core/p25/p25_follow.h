@@ -54,6 +54,7 @@
 #define P25_ACC_RETRY_MS	10000	// registration unanswered: the wait before the next round, doubled each round
 #define P25_ACC_RETRY_MAX	60000
 #define P25_ACC_QUEUE_MS	10000	// a queued voice request: the longest wait for its grant
+#define P25_ACC_ACK_MS 10000 // implementation limit after ACK; random retransmissions stop
 #define P25_ACC_TALK_MAX_MS	(P25_FOLLOW_CALL_MAX_MS + 10000)	// on our voice channel at most without the end
 
 // A control channel to hunt: its receive frequency, or its channel number through the identifier table
@@ -85,7 +86,8 @@ typedef struct {
 	uint16_t talk_group;	// 0 none
 	uint8_t ngroups;	// more talk groups followed
 	const uint16_t *groups;
-	int8_t roam_dbm;	// negative: receive-only quality/signal survey; 0 disables
+	int8_t roam_dbm;	// negative: quality/signal survey; 0 disables
+	uint16_t adjacent_ms; // registered total departure limit (TADJ_SITE); 0: 150 ms
 	uint8_t ncc;		// control channels in hunt order, the first the primary
 	const p25_follow_cc_t *cc;
 	uint16_t iden_set;	// bit n: iden[n] is programmed
@@ -131,7 +133,11 @@ enum {
 	P25_REG_RETRY,		// no answer, or a failure: tried again later
 	P25_REG_NO_TX,		// no inbound frequency for this control channel
 	P25_REG_BLOCKED,	// a blocked WACN or system ID: nothing is sent until the follower restarts
+	P25_REG_LOCATION,	// an accepted System context is being located at another site
+	P25_REG_REFUSED,	// refusal on this actual System; user selection/restart is required
+	P25_REG_UNSUPPORTED,	// required home/extended or local-registration behavior is not supported
 };
+enum { P25_MOBILITY_OK, P25_MOBILITY_HOME_UNKNOWN, P25_MOBILITY_LOCAL, P25_MOBILITY_DENY_FULL, P25_MOBILITY_MAPPING };
 // A voice request (view.req)
 enum {
 	P25_REQ_IDLE,
@@ -179,6 +185,14 @@ typedef struct {
 	uint8_t reg_tx, reg_ok, aff_tx, aff_ok, req_tx, req_grant, denials, queued, timeouts, send_fail, inb_busy;
 	bool tuning;		// the receiver has not confirmed the most recent tune
 	uint16_t expected_nac;	// of the candidate, before any observed/confirmed NAC
+#if CONFIG_P25_ROAM
+	uint32_t wuid;		// assigned working unit address; cfg.unit_id remains the provisioned identity
+	uint16_t agid;		// assigned announcement group; aff_tg is the working group
+	uint8_t lra;		// current site's LRA, not the previous registered LRA
+	uint8_t mobility;	// P25_MOBILITY_*, explicit supported-scope outcome
+	uint8_t loc_tx, loc_ok;
+	bool ack_wait, isolated, location_ok;
+#endif
 } p25_follow_view_t;
 
 typedef struct {
@@ -196,6 +210,7 @@ typedef struct {
 	uint32_t t_cc;		// the control channel was taken
 	uint32_t backoff;	// registration rounds, ms
 	uint32_t rng;
+	uint32_t generation;	// existing access owner: changes when a request is queued or retired
 	uint8_t pend;		// the inbound opcode waiting to go or for its answer, 0xFF none
 	uint8_t tries;
 	bool sent;		// pend went: waiting for its answer
@@ -208,6 +223,14 @@ typedef struct {
 	uint16_t cc_chan;	// the control channel's own number, from its broadcasts
 	uint8_t reg_rfss, reg_site;	// where registration was accepted
 	uint16_t reg_sysid;
+#if CONFIG_P25_ROAM
+	uint32_t reg_wacn;	// actual System owning assigned IDs, affiliation and denial state
+	uint16_t selected_tg;	// provisioned group that the accepted working group represents
+	uint16_t denied_site[P25_FOLLOW_LEARN];	// RFSS << 8 | Site, within reg_wacn/reg_sysid
+	uint16_t site_nac; // fresh RFSS and NET must use the same candidate NAC
+	uint8_t reg_lra, ndenied;
+	bool registered, reg_isolated;
+#endif
 } p25_follow_acc_t;
 
 typedef struct {
@@ -225,6 +248,7 @@ typedef struct {
 	uint32_t t_signal, t_weak, t_roam, t_quality;
 	int16_t signal_dbm, origin_dbm, best_dbm;
 	uint8_t roam_origin, best_cc, origin_quality, best_quality;
+	uint8_t survey_cc;	// registered surveys rotate one adjacent candidate per departure
 	uint8_t quality_good, quality_bad, quality_bins, quality;
 	bool signal_valid, weak, roaming, quality_ready;
 #endif

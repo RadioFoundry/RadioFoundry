@@ -44,10 +44,13 @@ void p25_tsbk_seal(uint8_t blk[P25_TSBK_BYTES]);
 #define P25_OP_GRP_V_UPDT_EXP	0x03
 #define P25_OP_UU_V_GRANT	0x04
 #define P25_OP_UU_V_UPDT	0x06
+#define P25_OP_ACK_RSP_FNE	0x20
 #define P25_OP_QUE_RSP		0x21
 #define P25_OP_DENY_RSP		0x27
 #define P25_OP_GRP_AFF_RSP	0x28
 #define P25_OP_U_REG_RSP	0x2C
+#define P25_OP_LOC_REG_RSP	0x2B
+#define P25_OP_U_REG_CMD	0x2D
 #define P25_OP_SCCB_EXP		0x29
 #define P25_OP_IDEN_UP_TDMA	0x33
 #define P25_OP_IDEN_UP_VU	0x34
@@ -78,6 +81,9 @@ enum {
 	P25_TSBK_AFF_RSP,	// group affiliation response: aff
 	P25_TSBK_DENY,		// deny response: rsp
 	P25_TSBK_QUEUED,	// queued response: rsp
+	P25_TSBK_ACK,		// acknowledged request: rsp (info is 32 bits)
+	P25_TSBK_LOC_RSP,	// location registration response: loc
+	P25_TSBK_REG_CMD,	// forced full registration: cmd
 };
 
 // The answer values of a registration and an affiliation response
@@ -154,6 +160,12 @@ typedef struct {
 			uint8_t reason;
 			uint32_t info, dst;
 		} rsp;
+		struct {
+			uint8_t rv, rfss, site;
+			uint16_t tg;
+			uint32_t dst;
+		} loc;
+		struct { uint32_t dst, src; } cmd;
 	} u;
 } p25_tsbk_t;
 
@@ -168,10 +180,12 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES]);
 #define P25_ISP_GRP_V_REQ	0x00	// group voice service request
 #define P25_ISP_GRP_AFF_REQ	0x28	// group affiliation request
 #define P25_ISP_U_REG_REQ	0x2C	// unit registration request
+#define P25_ISP_LOC_REG_REQ	0x2D	// location registration request, abbreviated
 typedef struct {
 	uint8_t opcode, mfid;
 	bool known;		// a layout decoded here (the three above, MFID 0)
 	uint8_t svc;		// voice request: service options
+	uint8_t lra, capabilities;	// location request: previous LRA, non-emergency capabilities
 	uint32_t wacn;		// registration request
 	uint16_t sysid;		// registration and affiliation requests
 	uint16_t tg;		// voice and affiliation requests
