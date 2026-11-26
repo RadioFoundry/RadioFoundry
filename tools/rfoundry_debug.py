@@ -50,6 +50,14 @@
     rfoundry_debug.py air open --profile p25 [--dev HZ] [--hard-only]  a session on the board's provider
     rfoundry_debug.py air rx --seconds S --out F.jsonl                 its receive chunks
     rfoundry_debug.py air tx --syms F [--max-ms MS]                    send the file's symbols (the radio core keys)
+    rfoundry_debug.py --port dmrip:ID[@HOST[:PORT]] CMD   the debug link over the air (CONFIG_DEBUGLINK_DMRIP;
+                                                debuglink.md 7): reads, and changes only in a detour
+    rfoundry_debug.py view --section S --prefix P    only the keys that start with P, in small pages (over the air)
+    rfoundry_debug.py detour run SECONDS STEP...     temporary changes the radio reverts by itself after SECONDS
+                                                (1..300): STEP is "radio OP ARG...", "wait MS" or "ptt S"
+    rfoundry_debug.py detour status [--wait]|extend SECONDS|return
+    rfoundry_debug.py dmrip status|learn|key HEX|key uid   the over-the-air transport; learn (over the cable)
+                                                keeps the radio's key for its DMR ID in the key file
     rfoundry_debug.py split view                     the split duplex view (role, epoch, offset, buffers, underruns, CACH)
     rfoundry_debug.py split variant N [REG=VAL ...]  the BS framing experiment's variant for the next TX half key-up
                                                 (docs/spec/split-duplex.md 10.1; raw page 4 pairs with N = 255)
@@ -125,6 +133,8 @@ RX2_TOKEN = 0x47445242              # 'BRDG'
 RX2_FLAGS = {1: "present", 2: "up", 4: "bridge", 8: "restart"}
 IDDB = 0x1F                         # the DMR ID database: format, records, an ID looked up (docs/spec/debuglink.md 3.23)
 CHIP_REG = 0x20                     # an RF chip or SoC register read or written (docs/spec/debuglink.md 3.24)
+DETOUR = 0x27                       # temporary changes under a deadline (CONFIG_DEBUGLINK_DMRIP; debuglink.md 7.4)
+DMRIP = 0x28                        # the over-the-air transport: status, key (debuglink.md 7.5)
 T3 = 0x22                           # a Tier III trunked system: stage, select, leave (docs/spec/debuglink.md 3.26)
 T3_RESET, T3_SYSTEM, T3_CTRL, T3_CHAN, T3_TG, T3_SITE, T3_PLAN, T3_START, T3_STOP, T3_DEREG, T3_END, \
     T3_STATUS, T3_SDATA, T3_AUTH, T3_PS, T3_DIVERT, T3_ALS, T3_INTERRUPT, T3_SDPOLL, T3_POLL_REPLY, T3_LOAD, T3_SUPL, \
@@ -203,7 +213,8 @@ PRESS, LONG, REPEAT, DOWN, UP = range(5)
 VIEW_SECTIONS = ["core", "channel", "dmr", "dmr_call", "dmr_stats", "hotspot", "link", "features", "dmr_data",
                  "storage", "dmr_ext", "dmr_data_stats", "roam", "aprs", "aprs_set", "dmr_ip", "net", "snmp", "usrp",
                  "sfr", "tasks", "crash", "watchdog", "reset", "air", "net_svc", "net_link", "cps", "board", "audio", "t3",
-                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn"]
+                 "t3_svc", "t3_roam", "voice_cap", "t3_msg", "t3_ra", "p25", "p25_trunk", "nxdn",
+                 "dmrip"]
 
 OP_CHANNEL_STEP, OP_ZONE_POS, OP_ZONE, OP_VFO, OP_VFO_SET, OP_VFO_STEP, OP_POWER, OP_SQUELCH, OP_BANDWIDTH, \
     OP_TONE, OP_MONITOR, OP_CLEAR_TEMP, OP_REPLY_CANCEL, OP_HOTSPOT_EXIT, OP_DMR_TARGET, OP_DMR_CONTACT, \
@@ -307,6 +318,15 @@ def find_network_radios():
     return find()
 
 
+def dmrip_module():
+    """The over-the-air transport (tools/rfoundry/rfoundry/dmrip.py)"""
+    pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rfoundry")
+    if pkg not in sys.path:
+        sys.path.insert(0, pkg)
+    from rfoundry import dmrip
+    return dmrip
+
+
 def low_latency(s):
     """A USB-serial cable's FTDI chip holds received bytes for its latency timer (16 ms) before passing them on; 1 ms
     halves a request's round trip on a radio linked by the programming cable. Linux only; elsewhere, and on ports
@@ -335,7 +355,7 @@ def find_cables():
 
 
 # Commands (and their ops) that only read: everything else restarts the radio or changes it
-READ_ONLY = {"hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
+READ_ONLY = {"detour": ("status",), "dmrip": ("status", "learn"), "hwopt": None, "support": None, "reg": None, "ping": None, "version": None, "diag": None, "view": None, "screenshot": None, "log": None, "chip": None,
              "dump": None, "peek": None, "iddb": None, "crash": ("show",), "watchdog": ("show",), "rx2": ("info",),
              "air": ("status", "tap", "rx"), "storage": ("info", "dump"), "split": ("view",),
              "aprobe": ("status", "reg", "samples", "ram", "watch")}
@@ -410,14 +430,25 @@ class UdpPort:
 class DebugLink:
     """One open debug link. All methods raise DebugLinkError on an error status or a time-out."""
 
-    def __init__(self, port=None, timeout=1.0, s=None):
-        """s: an open port-like object (read, write, in_waiting, close) instead of opening one: tests."""
+    def __init__(self, port=None, timeout=1.0, s=None, dmrip_key=None):
+        """s: an open port-like object (read, write, in_waiting, close) instead of opening one: tests. dmrip_key: the
+        key (hex) for a dmrip: port"""
         self.timeout = timeout
         self.seq = 0
         self.buf = bytearray()
         self.packed_shots = None                # packed screenshots: None until the firmware says
+        self.air = False
         if s is not None:
             self.port, self.s = str(port or "test"), s
+            return
+        if str(port or "").startswith("dmrip:"):    # dmrip:ID[@HOST[:PORT]]: over the air (debuglink.md 7)
+            m = dmrip_module()
+            try:
+                rid = m.parse_spec(port)[0]
+                self.s = m.DmripPort(port, m.load_key(rid, dmrip_key))
+            except m.DmripError as e:
+                raise DebugLinkError(str(e))
+            self.port, self.air = port, True
             return
         if serial is None and not str(port or "").startswith("udp:"):
             raise DebugLinkError("needs pyserial: pip install pyserial")
@@ -478,7 +509,12 @@ class DebugLink:
         while True:
             self.seq = (self.seq + 1) & 0xFF
             seq = self.seq
-            self.s.write(frame(cmd, seq, payload))
+            try:
+                self.s.write(frame(cmd, seq, payload))
+            except Exception as e:
+                if not self.air:
+                    raise
+                raise DebugLinkError(str(e))    # the transport's own: no answer, no key
             deadline = time.monotonic() + timeout
             while True:
                 r = self._read_frame(deadline)
@@ -498,7 +534,8 @@ class DebugLink:
                 time.sleep(0.03)
                 continue
             if st != ST_OK:
-                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}", st, bytes(data[1:]))
+                hint = " (over the air: reads and detours only, debuglink.md 7.3)" if self.air and st == ST_REFUSED else ""
+                raise DebugLinkError(f"command 0x{cmd:02X}: {STATUS.get(st, st)}{hint}", st, bytes(data[1:]))
             return st, data[1:]
 
     # ── commands ──
@@ -1051,6 +1088,52 @@ class DebugLink:
         _, r = self.request(GET_VIEW, bytes([idx]))
         ms, nxt = struct.unpack_from("<IB", r)
         return ms, nxt, parse_kv(r[5:].decode("ascii", "replace"))
+
+    def view_prefix(self, section, prefix="", limit=200):
+        """The keys of one section that start with prefix, a page of at most limit bytes at a time (3.7): small
+        replies, for the air"""
+        idx = VIEW_SECTIONS.index(section) if isinstance(section, str) else section
+        out, offset = {}, 0
+        while True:
+            _, r = self.request(GET_VIEW, bytes([idx]) + struct.pack("<HH", offset, limit) + prefix.encode())
+            kv = parse_kv(r[5:].decode("ascii", "replace"))
+            kv.pop("section", None)
+            more = kv.pop("more", None)
+            # truncated=1 among them when the radio's reply buffer cut the section. A build without paging
+            # (CONFIG_DEBUGLINK_DMRIP off) sends the whole section: the prefix is applied here too
+            out.update({k: v for k, v in kv.items() if k.startswith(prefix) or k == "truncated"})
+            if more is None:
+                return out
+            if int(more) <= offset:
+                raise DebugLinkError(f"GET_VIEW {section} {prefix!r}: no progress past offset {offset} "
+                                     f"(a line longer than the page)")
+            offset = int(more)
+
+    # ── over the air: the detour and the transport (CONFIG_DEBUGLINK_DMRIP, debuglink.md 7.4, 7.5) ──
+    def detour_run(self, seconds, items):
+        """items: (cmd, payload) pairs, cmd 0 a wait (payload: ms). Returns the deadline in seconds"""
+        _, r = self.request(DETOUR, dmrip_module().detour_run(seconds, items))
+        return struct.unpack_from("<H", r)[0]
+
+    def detour_extend(self, seconds):
+        self.request(DETOUR, struct.pack("<BH", 2, seconds))
+
+    def detour_return(self):
+        self.request(DETOUR, bytes([3]))
+
+    def detour_status(self):
+        _, r = self.request(DETOUR, bytes([4]))
+        return dmrip_module().decode_detour_status(r)
+
+    def dmrip_status(self):
+        _, r = self.request(DMRIP, bytes([0]))
+        port, key, session, rx, answered, bad = struct.unpack_from("<HBIIII", r)
+        return {"port": port, "key": {0: "none", 1: "uid", 2: "set"}.get(key, key), "session": bool(session),
+                "rx": rx, "answered": answered, "bad_auth": bad}
+
+    def dmrip_set_key(self, key):
+        """A 16-byte key, or 16 zero bytes for the chip UID's again (over the cable only)"""
+        self.request(DMRIP, bytes([1]) + bytes(key))
 
     def view(self, sections=None):
         """All sections (or the named ones) merged into one dict; 'section' keys dropped, 'ms' added."""
@@ -1924,6 +2007,121 @@ def cmd_volume(link, a):
     for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft"):
         if k in v:
             print(f"{k}={v[k]}")
+    return 0
+
+
+class ItemRecorder(DebugLink):
+    """Runs a radio command's code against nothing, keeping the requests it makes: a detour's items"""
+
+    def __init__(self):
+        super().__init__("items", s=object())
+        self.items = []
+
+    def request(self, cmd, payload=b"", timeout=None, busy_wait=2.0):
+        if cmd not in (RADIO, PTT):
+            raise DebugLinkError(f"command 0x{cmd:02X} can't be a detour step (only RADIO, PTT and waits)")
+        self.items.append((cmd, bytes(payload)))
+        return ST_OK, bytes(64)
+
+
+def detour_steps(steps):
+    """A detour's items from the command line: "radio OP ARG...", "wait MS", "ptt S" (key S seconds, then release)"""
+    rec = ItemRecorder()
+    for step in steps:
+        w = step.split()
+        if not w:
+            continue
+        if w[0] == "wait" and len(w) == 2:
+            rec.items.append((0, int(w[1])))
+        elif w[0] == "ptt" and len(w) == 2:
+            ms = round(float(w[1]) * 1000)
+            if not 0 < ms <= INJECT_MAX_S * 1000:
+                raise DebugLinkError(f"detour step {step!r}: 0 < S <= {INJECT_MAX_S:g}")
+            rec.ptt(True, min(ms + 300, 10000))
+            rec.items.append((0, ms))
+            rec.ptt(False, 0)
+        elif w[0] == "radio" and w[1:2] == ["power"]:
+            # The radio's level can't be read while the items are recorded: a step, which the radio wraps
+            if len(w) != 3 or w[2][:1] not in "+-" or not w[2][1:].isdigit():
+                raise DebugLinkError(f"detour step {step!r}: \"radio power +N\" or \"radio power -N\"")
+            rec.power_step(int(w[2]))
+        elif w[0] == "radio" and len(w) >= 2:
+            cmd_radio(rec, argparse.Namespace(op=w[1], args=w[2:]))
+        else:
+            raise DebugLinkError(f"detour step {step!r}: \"radio OP ARG...\", \"wait MS\" or \"ptt S\"")
+    return rec.items
+
+
+def detour_status_until(link, until):
+    """DETOUR STATUS, asked again until the monotonic time until: over the air the radio doesn't hear the request
+    while a detour has it off the channel"""
+    while True:
+        try:
+            return link.detour_status()
+        except DebugLinkError:
+            if time.monotonic() >= until:
+                raise
+
+
+def cmd_detour(link, a):
+    s = 0
+    if a.op == "run":
+        if len(a.args) < 1:
+            raise DebugLinkError("detour run SECONDS STEP...")
+        s = link.detour_run(int(a.args[0]), detour_steps(a.args[1:]))
+        print(f"detour: back in {s} s at the latest")
+        if link.air and not a.wait:
+            return 0    # the radio may be off the channel now: `detour status` reads the summary once it is back
+    elif a.op == "extend":
+        link.detour_extend(int(a.args[0]))
+        s = int(a.args[0])
+    elif a.op == "return":
+        link.detour_return()
+    # Over the air: until the deadline, the backstop and a margin (the longest detour when the deadline is unknown)
+    until = time.monotonic() + (s or 300) + 10 + 30 if link.air else 0
+    st = detour_status_until(link, until)
+    while a.wait and st["phase"] != "idle":
+        time.sleep(1.0)
+        st = detour_status_until(link, until)
+    for k, v in st.items():
+        if isinstance(v, dict):
+            for k2, v2 in v.items():
+                print(f"{k}.{k2}={v2}")
+        else:
+            print(f"{k}={v}")
+    return 0 if st["failed_item"] == 0 else 1
+
+
+def cmd_dmrip(link, a):
+    m = dmrip_module()
+    if a.op == "status":
+        for k, v in link.dmrip_status().items():
+            print(f"dmrip.{k}={v}")
+    elif a.op == "learn":
+        if link.air:
+            raise DebugLinkError("dmrip learn reads the radio over the cable")
+        v = link.view(["dmrip"])
+        if v.get("dmrip.built") != "1":
+            raise DebugLinkError("this firmware has no over-the-air debug link (CONFIG_DEBUGLINK_DMRIP)")
+        rid = int(v.get("dmrip.id", "0"))
+        if not rid:
+            raise DebugLinkError("the radio has no DMR ID for the air yet")
+        if v.get("dmrip.key") != "uid":
+            raise DebugLinkError(f"the radio's key is {v.get('dmrip.key')}: give it with --dmrip-key instead")
+        c = link.chip()
+        uid = b"".join(struct.pack("<I", u) for u in c["uid"])
+        print(f"DMR ID {rid}: key kept in {m.save_key(rid, m.kdf(uid))}")
+    elif a.op == "key":
+        if not a.args:
+            raise DebugLinkError("dmrip key HEX|uid")
+        if a.args[0] == "uid":
+            link.dmrip_set_key(bytes(16))
+        else:
+            k = bytes.fromhex(a.args[0])
+            if len(k) != 16 or k == bytes(16):
+                raise DebugLinkError("a key is 32 hex digits, not all zero")
+            link.dmrip_set_key(k)
+        print("key set (until the radio restarts)")
     return 0
 
 
@@ -2896,6 +3094,18 @@ def self_test():
         g["find_ports"], g["find_cables"], g["find_network_radios"] = saved[:3]
         if saved[3] is not None:
             os.environ["RFOUNDRY_PORT"] = saved[3]
+
+    # A detour's steps (debuglink.md 7.4): the RADIO and PTT requests the radio command would make, and waits
+    items = detour_steps(["radio freq 461.0875", "wait 500", "ptt 2"])
+    check(items == [(RADIO, bytes([5]) + struct.pack("<I", 461087500)), (0, 500), (PTT, struct.pack("<BH", 1, 2300)),
+                    (0, 2000), (PTT, struct.pack("<BH", 0, 0))], "detour steps: frequency, wait, PTT for 2 s")
+    try:
+        detour_steps(["reg 0 1"])
+        refused = False
+    except DebugLinkError:
+        refused = True
+    check(refused, "detour steps: only radio, wait and ptt")
+    check(detour_steps(["radio power -2"]) == [(RADIO, bytes([OP_POWER, 0xFE]))], "detour steps: a power step")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -2906,6 +3116,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="serial port (default: the radio with USB ID 1FC9:0094, or $RFOUNDRY_PORT)")
     ap.add_argument("--timeout", type=float, default=1.0, help="seconds to wait for each answer")
+    ap.add_argument("--dmrip-key", help="the key (32 hex digits) for a dmrip: port; default $RFOUNDRY_DMRIP_KEY or "
+                    "the key file `dmrip learn` fills")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("ping")
     sub.add_parser("version")
@@ -2914,6 +3126,7 @@ def main(argv=None):
     p.add_argument("--raw", action="store_true", help="the lines only")
     p = sub.add_parser("view")
     p.add_argument("--section", choices=VIEW_SECTIONS, action="append")
+    p.add_argument("--prefix", help="only the keys that start with this, paged (one --section)")
     p.add_argument("--json", action="store_true")
     sub.add_parser("reset")
     p = sub.add_parser("screenshot")
@@ -3056,13 +3269,20 @@ def main(argv=None):
                                      "mod"])
     p.add_argument("args", nargs="*")
     p.add_argument("-o", "--output", help="samples: also write the block as raw 16-bit stereo; ram: the bytes")
+    p = sub.add_parser("detour", help="temporary changes the radio reverts by itself (debuglink.md 7.4)")
+    p.add_argument("op", choices=["run", "extend", "return", "status"])
+    p.add_argument("args", nargs="*", help="run: SECONDS STEP...; extend: SECONDS")
+    p.add_argument("--wait", action="store_true", help="until the radio is back, then the summary")
+    p = sub.add_parser("dmrip", help="the debug link over the air: status, learn (the key file), key HEX|uid")
+    p.add_argument("op", choices=["status", "learn", "key"])
+    p.add_argument("args", nargs="*")
     a = ap.parse_args(argv)
 
     if a.cmd == "ptt" and not 0 < a.seconds <= INJECT_MAX_S:
         ap.error(f"--seconds must be > 0 and <= {INJECT_MAX_S:g}")
     try:
         port = a.port if a.port else pick_port(None, changes_radio(a))
-        with DebugLink(port, a.timeout) as link:
+        with DebugLink(port, a.timeout, dmrip_key=a.dmrip_key) as link:
             if a.cmd == "ping":
                 print(f"{link.port}: pong in {link.ping() * 1000:.1f} ms")
             elif a.cmd == "version":
@@ -3070,6 +3290,15 @@ def main(argv=None):
                     print(f"{k}={v}")
             elif a.cmd == "diag":
                 return cmd_diag(link, a)
+            elif a.cmd == "view" and a.prefix is not None:
+                if not a.section or len(a.section) != 1:
+                    ap.error("view --prefix needs one --section")
+                v = link.view_prefix(a.section[0], a.prefix)
+                print(json.dumps(v, indent=1) if a.json else "\n".join(f"{k}={x}" for k, x in v.items()))
+            elif a.cmd == "detour":
+                return cmd_detour(link, a)
+            elif a.cmd == "dmrip":
+                return cmd_dmrip(link, a)
             elif a.cmd == "view":
                 v = link.view(a.section)
                 print(json.dumps(v, indent=1) if a.json else "\n".join(f"{k}={x}" for k, x in v.items()))

@@ -58,6 +58,10 @@ enum {
 	DL_VIEW_P25,		// P25 on the channel: the call, settings, engine and voice counters (debuglink_view_p25.c)
 	DL_VIEW_P25_TRUNK,	// a trunked P25 channel's follower: system, channels, call followed, counters (the same file)
 	DL_VIEW_NXDN,		// NXDN on the channel: the call, settings, the provider's fit, engine counters (debuglink_view_nxdn.c)
+	// New sections go above: dmrip, only in builds with the switch, stays last so no other section's number moves
+#if CONFIG_DEBUGLINK_DMRIP
+	DL_VIEW_DMRIP,		// the debug link over the air: its counters and the detour (debuglink_dmrip.c)
+#endif
 	DL_VIEW_COUNT
 };
 #define DL_VIEW_VERSION		5	// bumped when a key changes meaning or goes away (new keys don't bump it)
@@ -155,6 +159,25 @@ void debuglink_view_air(dl_text_t *t);
 // unavailable
 void debuglink_view_snmp(dl_text_t *t);
 size_t debuglink_cmd_snmp(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+#if CONFIG_DEBUGLINK_DMRIP
+// The debug link over the air (debuglink_dmrip.c, docs/spec/debuglink.md 7): the dmrip section, DL_CMD_DETOUR and
+// DL_CMD_DMRIP, and the host link task's hooks. Without the switch none of them is built: the commands are unknown and
+// the section isn't there
+void debuglink_view_dmrip(dl_text_t *t);
+size_t debuglink_cmd_detour(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+size_t debuglink_cmd_dmrip(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+void debuglink_dmrip_init(void);
+void debuglink_dmrip_poll(uint32_t now_ms);
+// A datagram over the air to our own DMR ID and address on DL_DMRIP_PORT (radio task, the gateway's air port table): copied,
+// answered later from debuglink_dmrip_poll to src_id at src_ip (dl_dmrip_reply_ip)
+void debuglink_dmrip_air(uint32_t src_id, uint32_t src_ip, uint16_t src_port, const uint8_t *p, int len);
+// One request through the debug link's dispatcher, as from the cable (the over-the-air transport checks first)
+size_t debuglink_dispatch(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap);
+// The reply buffer (DL_HDR + DL_REPLY_MAX + 2 bytes) the cable's replies are framed in, shared by the over-the-air
+// transport, and its generation: it changes whenever the cable used the buffer
+uint8_t *debuglink_reply_buffer(void);
+uint32_t debuglink_reply_gen(void);
+#endif
 // The tasks section (debuglink_view_tasks.c): each task's least free stack in bytes. The formatting takes the table
 // apart from the snapshot (task_stack_snapshot) so the host tests can feed it
 void debuglink_view_tasks(dl_text_t *t);

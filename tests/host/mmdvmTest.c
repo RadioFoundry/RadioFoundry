@@ -1463,7 +1463,31 @@ static void test_morse(void)
 	CHECK(mo.key);
 	CHECK(!morse_poll(&mo, 70) && mo.until == 240);
 	CHECK(morse_poll(&mo, 240) && mo.until == 300);
-	CHECK(!morse_poll(&mo, 1000) && mo.done);
+	// More than a dot late (the caller held up): the schedule goes on from the late poll, nothing is skipped. The
+	// third E's character gap starts at 1000 and its dot at 1180
+	CHECK(!morse_poll(&mo, 1000) && !mo.done && mo.until == 1180);
+	CHECK(morse_poll(&mo, 1180) && mo.until == 1240);
+	CHECK(!morse_poll(&mo, 1240) && mo.done && mo.units == 9);
+	// A stall mid-text, polled every 5 ms otherwise: "EE" at 20 wpm with no poll from 30 to 200. The first dot is
+	// stretched to 200, then the character gap (180 ms) and the second dot (60 ms) at their lengths, not rushed
+	morse_start(&mo, "EE", 2, 20, 0);
+	n = 0;
+	key = false;
+	for (uint32_t t = 0; t < 1000 && n < 8; t += 5) {
+		if (t > 30 && t < 200) {
+			continue;
+		}
+		bool k = morse_poll(&mo, t);
+		if (k != key) {
+			edges[n++] = t;
+			key = k;
+		}
+	}
+	CHECK(n == 4);
+	if (n == 4) {
+		CHECK(edges[0] == 0 && edges[1] == 200 && edges[2] == 380 && edges[3] == 440);
+	}
+	CHECK(mo.done && mo.units == 5);
 }
 
 int main(void)

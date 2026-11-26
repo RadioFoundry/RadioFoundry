@@ -231,6 +231,10 @@ function fallbackOut(ref, wasChan, wasCheck) {
 	return { chan: ref, check: ref === wasChan ? wasCheck : 0 };
 }
 
+// Whether system s transmits: its flag, unless its type's module says the radio never transmits on it (noTx). What
+// is written and what is shown
+export const systemTx = (s) => !!s.tx && !typeRow(s.type)?.module.noTx?.(s.fields);
+
 function encodeSystem(s, prev) {
 	const was = decodeSystemRecord(prev);
 	const row = typeRow(s.type);
@@ -240,7 +244,7 @@ function encodeSystem(s, prev) {
 	const block = old && sameValue(mod.decode(old), s.fields) ? old : mod.encode(s.fields, old);
 	const v = new Uint8Array(SYS_HDR + block.length);
 	v[0] = s.type;
-	v[1] = ((was ? was.flags : 0) & ~(SYS.tx | SYS.needsKey)) | (s.tx ? SYS.tx : 0) | (s.needsKey ? SYS.needsKey : 0);
+	v[1] = ((was ? was.flags : 0) & ~(SYS.tx | SYS.needsKey)) | (systemTx(s) ? SYS.tx : 0) | (s.needsKey ? SYS.needsKey : 0);
 	v[2] = s.sharing & 0xFF;
 	v[3] = mod.idLen;
 	put32(v, 4, s.ownId || 0);
