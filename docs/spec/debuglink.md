@@ -1202,12 +1202,12 @@ by anyone in range.
 
 | Over the air | Commands |
 |---|---|
-| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS; RADIO BEEP, VIBRATE, VOLUME and SETTING other than TX inhibit (the radio stays on the channel and can answer); CHIP_REG (for tuning a chip's levels; a restart undoes a write) |
-| Only as an item of a detour (7.4) | RADIO (the operations the detour undoes; BEEP too, for a beep while the radio is keyed and can't hear the link), PTT |
-| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS; the RADIO operations that leave the radio on the link's channel, mode, color code and slot, able to answer: power (7), squelch (8), FM tones (10), monitor (11), reply cancel (13), hotspot exit (14), the talk target (15-18), BEEP, the USB personality and settings (25, 27), PPP (28), VIBRATE, VOLUME, the voice test signal (33), voice capture (41), and SETTING other than TX inhibit; CHIP_REG and AUDIO_PROBE (for tuning levels; a restart undoes a write) |
+| Only as an item of a detour (7.4) | The RADIO operations that move the link and that the detour undoes (channel, zone, VFO, frequency, step, bandwidth, clear, the DMR fields, VFO copy, P25 and NXDN settings), BEEP too (a beep while the radio is keyed and can't hear the link), PTT. CHIP_REG and AUDIO_PROBE are taken both ways: as an item they tune a level in the detour's mode, which entering that mode sets again. The deadline doesn't undo a register write; a restart or the next mode change does |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, the RADIO operations that move the radio by themselves, transmit or set the PA (scan, roaming, tone burst, DTMF, privacy, the test TX limit, PA drive and key-up), CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
 
-A refused command answers status 7. Writes no deadline undoes (chip and SoC registers, flash, codeplug, stored keys)
-are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
+A refused command answers status 7. Writes no deadline undoes (flash, codeplug, stored keys; chip registers only
+through CHIP_REG and AUDIO_PROBE, which a restart undoes) are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
 the link for good.
 
 ### 7.4 Detour
@@ -1259,7 +1259,7 @@ detour that transmits takes the frequency's lease first and sets the lowest powe
 README](../../tests/hil/README.md)).
 
 Host: `rfoundry_debug.py detour run SECONDS STEP...`, each STEP `"radio OP ARG..."` (the radio command's syntax),
-`"wait MS"` or `"ptt S"` (key S seconds, then release). A step can't read the radio, so the power changes by a
+`"wait MS"`, `"ptt S"` (key S seconds, then release) or `"reg CHIP REG VALUE [PAGE]"` (a register write in the detour's mode). A step can't read the radio, so the power changes by a
 step, `"radio power +N"` or `"-N"` (the radio wraps past either end). `detour status [--wait]` (until back, then
 the summary), `detour extend SECONDS`, `detour return`. Over the air, `detour run` prints the deadline and ends
 (the radio may have left the channel): `--wait` or a later `detour status` asks for the summary again until the

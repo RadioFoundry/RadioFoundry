@@ -188,10 +188,26 @@ bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, cons
 // would cut the link: a detour's items (7.4) or the cable
 static bool radio_op_direct(const uint8_t *p, uint16_t len)
 {
+	// Everything that leaves the link where it is: the same channel, frequency, mode, color code and slot, and the
+	// radio still free to answer. Channel, zone, VFO, frequency, bandwidth, clear and the DMR fields move it (a
+	// detour's items); scan and roaming move it by themselves; the tone burst, DTMF and the PA operations transmit
+	// or set the drive; the test TX limit and privacy (which holds packet data back) stop the replies
 	switch (p[0]) {
+	case 7:				// power
+	case 8:				// squelch
+	case 10:			// FM tones
+	case 11:			// monitor
+	case 13:			// end the reply hang
+	case 14:			// leave hotspot mode
+	case 15: case 16: case 17: case 18:	// the DMR talk target: voice calls, not the link's packets
 	case DL_OP_BEEP:		// a sound that ends by itself
+	case 25:			// the USB personality
+	case 27:			// the USB network settings
+	case 28:			// PPP on the serial port
 	case DL_OP_VIBRATE:
 	case DL_OP_VOLUME:		// the speaker's level, for tuning it against a microphone
+	case DL_OP_VOICE_TEST:		// the encoder's input for the next transmission
+	case DL_OP_VOICE_CAPTURE:
 		return true;
 	case DL_OP_SETTING:
 		return len >= 2 && p[1] != 5u;	// 5: TX inhibit would stop the replies
@@ -218,11 +234,11 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 	case DL_CMD_RADIO:
 		return len >= 1 && radio_op_direct(req, len);
 	case DL_CMD_CHIP_REG:		// a register read or written, for tuning a chip's levels; a restart undoes a write
+	case DL_CMD_AUDIO_PROBE:	// the same for the audio path's levels and registers
 		return true;
 	default:
 		// RADIO (but radio_op_direct's), PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key: 7.2) and READ_MEM (its
-		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. AUDIO_PROBE (register writes no deadline undoes),
-		// CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
+		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
 		// restart or the radio handed over), DMR_DATA, APRS, SNMP, SPLIT, AIR (transmissions or modes outside the
 		// radio core's checks), SATELLITE (stored records), and SUPPORT and anything newer until listed here: never
 		return false;
@@ -281,6 +297,9 @@ bool dl_detour_item_allowed(uint8_t cmd, const uint8_t *p, uint8_t len)
 		return len >= 1;
 	case DL_CMD_RADIO:
 		return radio_op_allowed(p, len);
+	case DL_CMD_CHIP_REG:		// as direct requests: a level tuned in the detour's mode, which entering the mode
+	case DL_CMD_AUDIO_PROBE:	// sets again, so a write before the detour wouldn't stay
+		return len >= 1;
 	default:
 		return false;
 	}

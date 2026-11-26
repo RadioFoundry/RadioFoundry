@@ -2020,14 +2020,16 @@ class ItemRecorder(DebugLink):
         self.items = []
 
     def request(self, cmd, payload=b"", timeout=None, busy_wait=2.0):
-        if cmd not in (RADIO, PTT):
-            raise DebugLinkError(f"command 0x{cmd:02X} can't be a detour step (only RADIO, PTT and waits)")
+        if cmd not in (RADIO, PTT, CHIP_REG, AUDIO_PROBE):
+            raise DebugLinkError(f"command 0x{cmd:02X} can't be a detour step (only RADIO, PTT, CHIP_REG, AUDIO_PROBE "
+                                 "and waits)")
         self.items.append((cmd, bytes(payload)))
         return ST_OK, bytes(64)
 
 
 def detour_steps(steps):
-    """A detour's items from the command line: "radio OP ARG...", "wait MS", "ptt S" (key S seconds, then release)"""
+    """A detour's items from the command line: "radio OP ARG...", "wait MS", "ptt S" (key S seconds, then release),
+    "reg CHIP REG VALUE [PAGE]" (a register written in the detour's mode)"""
     rec = ItemRecorder()
     for step in steps:
         w = step.split()
@@ -2049,8 +2051,11 @@ def detour_steps(steps):
             rec.power_step(int(w[2]))
         elif w[0] == "radio" and len(w) >= 2:
             cmd_radio(rec, argparse.Namespace(op=w[1], args=w[2:]))
+        elif w[0] == "reg" and len(w) in (4, 5):
+            rec.chip_reg(int(w[1], 0), int(w[2], 0), int(w[3], 0), int(w[4], 0) if len(w) == 5 else 0)
         else:
-            raise DebugLinkError(f"detour step {step!r}: \"radio OP ARG...\", \"wait MS\" or \"ptt S\"")
+            raise DebugLinkError(f"detour step {step!r}: \"radio OP ARG...\", \"wait MS\", \"ptt S\" or "
+                                 "\"reg CHIP REG VALUE [PAGE]\"")
     return rec.items
 
 

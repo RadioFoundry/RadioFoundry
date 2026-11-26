@@ -178,7 +178,7 @@ static void test_air_policy(void)
 	// Link-cutting and stored changes: never alone over the air. The chip UID (the default key) and memory (the
 	// codec on a codec-merged image): never over the air
 	static const uint8_t refused[] = { DL_CMD_INFO_CHIP, DL_CMD_READ_MEM, DL_CMD_RADIO, DL_CMD_PTT, DL_CMD_KEY,
-					   DL_CMD_AUDIO_PROBE, DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3,
+					   DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3,
 					   DL_CMD_STORAGE, DL_CMD_HWOPT, DL_CMD_REBOOT, DL_CMD_STUB, DL_CMD_CRASH,
 					   DL_CMD_WATCHDOG, DL_CMD_RX2, DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP,
 					   DL_CMD_SPLIT, DL_CMD_AIR, DL_CMD_SUPPORT, DL_CMD_SATELLITE };
@@ -191,9 +191,24 @@ static void test_air_policy(void)
 	const uint8_t st = DL_DMRIP_OP_STATUS, key = DL_DMRIP_OP_KEY;
 	CHECK(dl_dmrip_air_allowed(DL_CMD_DMRIP, &st, 1), "DMRIP status");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_DMRIP, &key, 1), "DMRIP key: the cable only");
-	const uint8_t beep[2] = { DL_OP_BEEP, 1 }, power[2] = { 5, 0 };
+	const uint8_t beep[2] = { DL_OP_BEEP, 1 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 2), "RADIO BEEP: a sound, taken directly");
-	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, power, 2), "other RADIO ops: a detour's items only");
+	static const uint8_t direct_ops[] = { 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, DL_OP_BEEP, 25, 27, 28, DL_OP_VIBRATE,
+					      DL_OP_VOLUME, DL_OP_VOICE_TEST, DL_OP_VOICE_CAPTURE };
+	for (unsigned i = 0; i < sizeof direct_ops; i++) {
+		uint8_t p[2] = { direct_ops[i], 0 };
+		CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, p, 2), "RADIO op %u directly", direct_ops[i]);
+	}
+	// The ones that move the link (a detour's), move it by themselves, transmit, or stop the replies
+	static const uint8_t detour_ops[] = { 1, 2, 3, 4, 5, 6, 9, 12, 19, DL_OP_SCAN, DL_OP_SCAN_VFO, DL_OP_TONE_BURST,
+					      DL_OP_ROAM, DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, DL_OP_DTMF, DL_OP_TX_DRIVE,
+					      DL_OP_PA_KEYUP, DL_OP_VFO_SFR, DL_OP_PA_SWEEP, DL_OP_PA_KEYRUN, DL_OP_P25,
+					      DL_OP_NXDN };
+	for (unsigned i = 0; i < sizeof detour_ops; i++) {
+		uint8_t p[2] = { detour_ops[i], 0 };
+		CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, p, 2), "RADIO op %u not directly", detour_ops[i]);
+	}
+	CHECK(dl_dmrip_air_allowed(DL_CMD_AUDIO_PROBE, z, 1), "AUDIO_PROBE directly");
 	const uint8_t vol[2] = { DL_OP_VOLUME, 8 }, set_beep[4] = { DL_OP_SETTING, 11, 50, 0 },
 		      set_inhibit[4] = { DL_OP_SETTING, 5, 1, 0 }, txlim[2] = { DL_OP_TX_LIMIT, 0 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, vol, 2), "RADIO VOLUME directly");
@@ -240,7 +255,9 @@ static void test_items(void)
 	CHECK(dl_detour_item_allowed(DL_DETOUR_ITEM_WAIT, w, 2), "wait");
 	CHECK(!dl_detour_item_allowed(DL_DETOUR_ITEM_WAIT, w, 1), "wait short");
 	CHECK(dl_detour_item_allowed(DL_CMD_PTT, ptt, 1), "PTT");
-	CHECK(!dl_detour_item_allowed(DL_CMD_CHIP_REG, ptt, 1), "registers: never");
+	CHECK(dl_detour_item_allowed(DL_CMD_CHIP_REG, ptt, 1), "registers: in the detour's mode");
+	CHECK(dl_detour_item_allowed(DL_CMD_AUDIO_PROBE, ptt, 1), "audio probe");
+	CHECK(!dl_detour_item_allowed(DL_CMD_CHIP_REG, ptt, 0), "register request empty");
 	CHECK(!dl_detour_item_allowed(DL_CMD_READ_MEM, ptt, 1), "no reads as items");
 	CHECK(!dl_detour_item_allowed(DL_CMD_DETOUR, ptt, 1), "no detour in a detour");
 
@@ -253,7 +270,7 @@ static void test_items(void)
 	CHECK(dl_detour_items_check(b, (uint16_t)(n - 1)) == DL_ST_BAD_ARG, "cut");
 	CHECK(dl_detour_items_check(b, 1) == DL_ST_BAD_ARG, "one byte");
 	const uint8_t reg[3] = { 0, 0, 0 };
-	n += item(b + n, DL_CMD_CHIP_REG, reg, 3);
+	n += item(b + n, DL_CMD_READ_MEM, reg, 3);
 	CHECK(dl_detour_items_check(b, n) == DL_ST_REFUSED, "one bad item refuses the whole run");
 	CHECK(dl_detour_items_check(b, 0) == DL_ST_OK, "none");
 }
@@ -393,8 +410,8 @@ static void test_runner(void)
 	CHECK(core.marks == 0 && d.phase == DL_DETOUR_IDLE, "nothing marked");
 	uint8_t bad[8];
 	const uint8_t reg[3] = { 0, 0, 0 };
-	uint16_t bn = item(bad, DL_CMD_CHIP_REG, reg, 3);
-	CHECK(run_req(&d, 10, bad, bn, false, now) == DL_ST_REFUSED && core.marks == 0, "a poke refused");
+	uint16_t bn = item(bad, DL_CMD_READ_MEM, reg, 3);
+	CHECK(run_req(&d, 10, bad, bn, false, now) == DL_ST_REFUSED && core.marks == 0, "a memory read refused");
 	CHECK(op_req(&d, DL_DETOUR_EXTEND, 10, now) == DL_ST_UNAVAILABLE, "extend with none");
 
 	// Extend: capped the same way; return now
