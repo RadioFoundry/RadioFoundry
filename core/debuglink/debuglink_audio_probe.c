@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
+// Copyright (c) 2026 Open25-DM32 Authors
 // The audio probe (CONFIG_AUDIO_PROBE; docs/spec/debuglink.md 3.14, docs/spec/hardware-dm1701.md 21.3): a bench tool to find
 // out which audio-chip settings put FM receive audio on the PCM stream and PCM into the FM modulator. It reads and
 // writes the audio chip's registers (board.audio_tap->modem_reg), runs the board's PCM stream with its own callback
@@ -68,7 +69,6 @@ static int16_t amplitude;
 static chan_level_t level[2];
 static int16_t blk_l[AUDIO_BLOCK_SAMPLES], blk_r[AUDIO_BLOCK_SAMPLES];
 static float osc_cos_w, osc_sin_w;
-static int16_t scr_l[AUDIO_BLOCK_SAMPLES], scr_r[AUDIO_BLOCK_SAMPLES];	// the debug link task's copies
 
 static void put16(uint8_t *p, uint16_t v)
 {
@@ -466,19 +466,11 @@ static size_t probe_ramfeed(const uint8_t *req, uint8_t *out)
 	return 8;
 }
 
-size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+// Host snapshots last only for one command. A separate frame keeps their storage off other debug-link paths.
+static size_t __attribute__((noinline)) probe_snapshot(const hal_audio_tap_t *tap, bool status, uint8_t *out, size_t cap)
 {
-	const hal_audio_tap_t *tap = board.audio_tap;
-	if (len < 1) {
-		out[0] = DL_ST_BAD_ARG;
-		return 1;
-	}
-	if (tap == NULL) {
-		out[0] = DL_ST_UNAVAILABLE;
-		return 1;
-	}
-	switch (req[0]) {
-	case PROBE_OP_STATUS: {
+	int16_t scr_l[AUDIO_BLOCK_SAMPLES], scr_r[AUDIO_BLOCK_SAMPLES];
+	if (status) {
 		uint32_t blocks = 0;
 		bool running = tap->last_block != NULL && tap->last_block(scr_l, scr_r, &blocks);
 		out[0] = DL_ST_OK;
@@ -494,6 +486,39 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 		}
 		return 18;
 	}
+	if (cap < 5 + 4 * AUDIO_BLOCK_SAMPLES || tap->last_block == NULL) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	uint32_t blocks;
+	if (!tap->last_block(scr_l, scr_r, &blocks)) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	out[0] = DL_ST_OK;
+	put32(out + 1, blocks);
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		put16(out + 5 + 2 * i, (uint16_t)scr_l[i]);
+		put16(out + 5 + 2 * (AUDIO_BLOCK_SAMPLES + i), (uint16_t)scr_r[i]);
+	}
+	return 5 + 4 * AUDIO_BLOCK_SAMPLES;
+}
+
+size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	const hal_audio_tap_t *tap = board.audio_tap;
+	if (len < 1) {
+		out[0] = DL_ST_BAD_ARG;
+		return 1;
+	}
+	if (tap == NULL) {
+		out[0] = DL_ST_UNAVAILABLE;
+		return 1;
+	}
+	switch (req[0]) {
+	case PROBE_OP_STATUS:
+	case PROBE_OP_SAMPLES:
+		return probe_snapshot(tap, req[0] == PROBE_OP_STATUS, out, cap);
 	case PROBE_OP_REG_READ:
 	case PROBE_OP_REG_WRITE: {
 		bool write = req[0] == PROBE_OP_REG_WRITE;
@@ -522,24 +547,6 @@ size_t debuglink_cmd_audio_probe(const uint8_t *req, uint16_t len, uint8_t *out,
 		probe_stop();
 		out[0] = DL_ST_OK;
 		return 1;
-	case PROBE_OP_SAMPLES: {
-		if (cap < 5 + 4 * AUDIO_BLOCK_SAMPLES || tap->last_block == NULL) {
-			out[0] = DL_ST_UNAVAILABLE;
-			return 1;
-		}
-		uint32_t blocks;
-		if (!tap->last_block(scr_l, scr_r, &blocks)) {
-			out[0] = DL_ST_UNAVAILABLE;
-			return 1;
-		}
-		out[0] = DL_ST_OK;
-		put32(out + 1, blocks);
-		for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
-			put16(out + 5 + 2 * i, (uint16_t)scr_l[i]);
-			put16(out + 5 + 2 * (AUDIO_BLOCK_SAMPLES + i), (uint16_t)scr_r[i]);
-		}
-		return 5 + 4 * AUDIO_BLOCK_SAMPLES;
-	}
 	case PROBE_OP_RAM_READ: {
 		uint16_t n = len == 6 ? get16(req + 4) : 0;
 		if (tap->modem_ram == NULL || n == 0 || n > cap - 1u || len != 6) {

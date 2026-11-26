@@ -1088,6 +1088,18 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
 # (core/debuglink)
+AUDIOPROBE := audioProbeTest.c $(CORE)/debuglink/debuglink_audio_probe.c
+TESTS += audioProbeTest audioProbeOffTest
+audioProbeTest: $(AUDIOPROBE)
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AUDIO_PROBE=1 -DCONFIG_P25=1 -o $@ $(AUDIOPROBE) -lm
+audioProbeOffTest: $(AUDIOPROBE)
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AUDIO_PROBE=0 -o $@ $(AUDIOPROBE) -lm
+run: run-audio-probe
+run-audio-probe: audioProbeTest audioProbeOffTest
+	./audioProbeTest
+	./audioProbeOffTest
+.PHONY: run-audio-probe
+
 DMRDEBUG := dmrDebugViewTest.c $(CORE)/debuglink/debuglink_view_dmr.c $(CORE)/debuglink/dl_fmt.c
 TESTS += dmrDebugViewTest dmrDebugViewMinimalTest dmrDebugViewOffTest
 dmrDebugViewTest: $(DMRDEBUG) dmrDebugViewGolden.h
