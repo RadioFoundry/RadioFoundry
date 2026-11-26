@@ -34,6 +34,15 @@ void dl_text_init(dl_text_t *t, char *buf, size_t cap);
 void dl_text(dl_text_t *t, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
 // key=value\n with a string value; control characters and '\n' in the value become '?'
 void dl_text_kv_str(dl_text_t *t, const char *key, const char *value);
+// A 1e-7 degree value as text, -12.3456789, into buf; returns buf. Text, not a dl_text piece, so a caller's line
+// stays one piece: a reply that fills drops it whole rather than cutting it after the key
+#define DL_DEG_LEN 13	// "-214.7483648" and its NUL
+const char *dl_deg(char buf[DL_DEG_LEN], int32_t e7);
+// key=<degrees>\n, as dl_deg writes them
+void dl_text_deg(dl_text_t *t, const char *key, int32_t e7);
+// s as a JSON string. Codeplug names are Latin-1 (U+0000-U+00FF): a byte from 0x7F up is written as \u00XX, so the
+// text stays ASCII and valid JSON (RFC 8259 8.1)
+void dl_json_str(dl_text_t *t, const char *s);
 
 // GET_VIEW's filter and page (docs/spec/debuglink.md 3.7), in place on text of whole lines: the section= line (and a
 // truncated= line), then the lines that start with prefix (plen 0: every line), less the first offset bytes of those

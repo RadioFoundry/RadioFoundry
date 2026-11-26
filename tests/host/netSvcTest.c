@@ -79,7 +79,10 @@ static int8_t fake_encoder(void)
 }
 
 static const hal_input_t fake_input = { .encoder = fake_encoder };	// the web control's hello says it has one
-const board_t board = { .name = "fake", .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
+bool fake_gps_fitted = true;
+static bool fake_gps_present(void) { return fake_gps_fitted; }
+static const hal_gps_t fake_gps_hal = { .present = fake_gps_present };	// the web control's fixes (webctl.c)
+const board_t board = { .name = "fake", .caps = CAP_GPS, .gps = &fake_gps_hal, .input = &fake_input, .netif = &fake_netif, .display = &fake_display, .power_count = 2,
 			.power_names = power_names, .bands = bands, .band_count = 6, .keymap = keymap, .keymap_len = 2 };
 
 // ---- what the gateway needs from its user ----
