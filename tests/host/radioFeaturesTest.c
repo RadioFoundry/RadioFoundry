@@ -350,11 +350,25 @@ bool codeplug_zone(uint16_t i, zone_t *out)
 }
 static const contact_t contacts[] = { { "Local", 9, CONTACT_GROUP, 0 } };
 uint32_t codeplug_dmr_id(void) { return 9996543; }
-// The settings area holds only the Settings > Sound tone keys here: one-byte bools, -1 absent (kv_tone_set)
+// The settings area holds only the Settings > Sound tone keys here, one-byte bools, -1 absent (kv_tone_set), and the
+// signaling tones' records, as a CPS writes them (kv_sig_set)
 static int16_t kv_tone[CODEPLUG_KEY_TX_DENY_TONE - CODEPLUG_KEY_CALL_END_TONE + 1] = { -1, -1, -1, -1 };
+static bool kv_sig_on[SIG_EV_COUNT];
+static uint8_t kv_sig[SIG_EV_COUNT][SIG_REC_LEN];
 static uint8_t kv_serial;
-int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+_Static_assert(CODEPLUG_KEY_SIG_BEGIN == CODEPLUG_KEY_TX_DENY_TONE + 1, "the stub walks the tone and record keys as one range");
+#define KV_STUB_LAST	(CODEPLUG_KEY_SIG_BEGIN + SIG_EV_COUNT - 1)
+// The value of a key the stub holds, into buf (up to max); its length, -1 absent
+static int kv_stub_get(uint16_t key, void *buf, uint16_t max)
 {
+	if (key >= CODEPLUG_KEY_SIG_BEGIN && key <= KV_STUB_LAST) {
+		unsigned e = key - CODEPLUG_KEY_SIG_BEGIN;
+		if (!kv_sig_on[e]) {
+			return -1;
+		}
+		memcpy(buf, kv_sig[e], max < SIG_REC_LEN ? max : SIG_REC_LEN);
+		return SIG_REC_LEN;
+	}
 	if (key < CODEPLUG_KEY_CALL_END_TONE || key > CODEPLUG_KEY_TX_DENY_TONE || kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] < 0) {
 		return -1;
 	}
@@ -363,16 +377,26 @@ int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
 	}
 	return 1;
 }
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max) { return kv_stub_get(key, buf, max); }
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n) { (void)ops; (void)n; return false; }
 static void kv_tone_set(uint16_t key, int16_t v)
 {
 	kv_tone[key - CODEPLUG_KEY_CALL_END_TONE] = v;
 	kv_serial++;	// as codeplug_kv_write: the radio core reads the keys again
 }
+// A record as a CPS writes it (sigtone.h): the outputs and the chain, n steps of hz[] and ms[]; NULL removes it
+static void kv_sig_set(sig_event_t ev, const sig_rec_t *r)
+{
+	kv_sig_on[ev] = r != NULL;
+	if (r != NULL) {
+		sig_rec_encode(r, kv_sig[ev]);
+	}
+	kv_serial++;
+}
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 {
 	c->at = lo < CODEPLUG_KEY_CALL_END_TONE ? CODEPLUG_KEY_CALL_END_TONE : lo;
-	c->hi = hi > CODEPLUG_KEY_TX_DENY_TONE ? CODEPLUG_KEY_TX_DENY_TONE : hi;
+	c->hi = hi > KV_STUB_LAST ? KV_STUB_LAST : hi;
 }
 // No settings area to write: the radio core writes no tag
 bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len) { (void)key; (void)value; (void)len; return false; }
@@ -380,13 +404,10 @@ bool codeplug_kv_remove(uint16_t key) { (void)key; return false; }
 int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
 {
 	for (; c->at <= c->hi; c->at++) {
-		int16_t v = kv_tone[c->at - CODEPLUG_KEY_CALL_END_TONE];
-		if (v >= 0) {
+		int n = kv_stub_get(c->at, buf, max);
+		if (n >= 0) {
 			*key = c->at++;
-			if (max > 0) {
-				*(uint8_t *)buf = (uint8_t)v;
-			}
-			return 1;
+			return n;
 		}
 	}
 	return -1;
@@ -4326,6 +4347,79 @@ static void test_sig_dmr_end_gate(void)
 	board.audio = saved;
 }
 
+// Issue 839: a start tone from the codeplug editor (the settings area's record, not the menu), speaker + air in DMR
+// and FM, on a board whose DMR beeps can't sound on air and which has an FM sidetone
+static void test_sig_begin_from_cps(void)
+{
+	sig_rec_t r = { .dmr = SIG_OUT_BOTH, .fm = SIG_OUT_BOTH };
+	static const uint16_t hz[] = { 910, 0, 910, 0, 910 }, ms[] = { 60, 40, 60, 40, 60 };
+	for (int k = 0; k < 5; k++) {
+		r.hz[k] = hz[k];
+		r.ms10[k] = (uint8_t)(ms[k] / SIG_MS_UNIT);
+	}
+	uint32_t caps = board.caps;
+	board.caps |= CAP_BEEP_NOT_ON_AIR;
+	hal_radio_t radio_side = fake_radio;
+	radio_side.tx_tone_side = r_tx_tone_side;
+	board.radio = &radio_side;
+	beep_stats_t b0, b1;
+	for (int permit = 1; permit >= 0; permit--) {
+		start();
+		if (!permit) {
+			settings(set_no_permit);	// the radio's own talk permit off before the record arrives
+		}
+		req(RREQ_ZONE_POS, 5);
+		run(50);
+		kv_sig_set(SIG_EV_BEGIN, &r);
+		run(50);
+		CHECK(sm.set.sig_dmr[SIG_EV_BEGIN] == SIG_OUT_BOTH && sm.set.sig_hz[SIG_EV_BEGIN][0] == 910);
+		// DMR: the tone on the speaker in the hold before keying
+		beep_get_stats(&b0);
+		req(RREQ_PTT, 1);
+		run(10);
+		beep_get_stats(&b1);
+		CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && b1.played == b0.played + 1);
+		run(700);
+		CHECK(sm.view.dmr.state == RDMR_TX);
+		req(RREQ_PTT, 0);
+		run(1500);
+		// FM: the tone on air with the sidetone on
+		req(RREQ_ZONE_POS, 0);
+		run(50);
+		hw.side = false;
+		hw.tone_calls = 0;
+		req(RREQ_PTT, 1);
+		run(20);
+		CHECK(sm.view.state == RS_TX && hw.side && hw.tone_hz == 910);
+		req(RREQ_PTT, 0);
+		run(300);
+		kv_sig_set(SIG_EV_BEGIN, NULL);
+	}
+	// A chain of the longest a record holds (SIG_MAX_MS): the hold lasts while it plays, so none of it is dropped when
+	// the engine closes the audio path to key. The hold's cap was the short permit's (400 ms), which cut it
+	sig_rec_t lng = { .dmr = SIG_OUT_LOCAL };
+	for (int k = 0; k < 9; k++) {
+		lng.hz[k] = (uint16_t)(k % 2 == 0 ? 910 : 0);
+		lng.ms10[k] = 100u / SIG_MS_UNIT;
+	}
+	start();
+	req(RREQ_ZONE_POS, 5);
+	run(50);
+	kv_sig_set(SIG_EV_BEGIN, &lng);
+	run(50);
+	unsigned begins = sim.tx_begins;
+	req(RREQ_PTT, 1);
+	run(800);
+	CHECK(sm.view.dmr.state == RDMR_TX_PERMIT && sim.tx_begins == begins);
+	run(600);
+	CHECK(sm.view.dmr.state == RDMR_TX && sim.tx_begins == begins + 1);
+	req(RREQ_PTT, 0);
+	run(1500);
+	kv_sig_set(SIG_EV_BEGIN, NULL);
+	board.radio = &fake_radio;
+	board.caps = caps;
+}
+
 // Signaling tones on air in DMR: the start tone is the first voice of the transmission, the end tone goes after the last
 // and holds the over open until the call stack has it all (the mic in this test is silent: a block that isn't is a tone)
 static void set_sig_dmr_begin_air_blip(radio_settings_t *s)
@@ -4855,6 +4949,7 @@ int main(void)
 	test_sig_fm();
 	test_sig_dmr();
 	test_sig_dmr_end_gate();
+	test_sig_begin_from_cps();
 	test_sig_dmr_air();
 	test_tone_keys();
 	test_dmr_short_press_wake();

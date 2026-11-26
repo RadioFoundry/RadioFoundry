@@ -48,7 +48,10 @@
 #define DMR_CALL_LBT_DMO_MS		120	// machine traffic: quiet needed before sending (gotcha 3.6)
 #define DMR_CALL_LBT_RMO_MS		180
 #define DMR_CALL_RMO_HANG_MS		3000	// machine traffic waits this long after a call through a repeater
-#define DMR_CALL_PERMIT_MAX_MS		400	// the talk permit hold keys after this long whatever permit_busy says
+#define DMR_CALL_PERMIT_MAX_MS		1200	// the talk permit hold keys after this long whatever permit_busy says: long
+					// enough for the longest start tone (900 ms) and an amplifier's lead (up to 200 ms).
+					// It was 400, the short permit's, and cut a longer start tone where the engine closes
+					// the audio path to key (issue 839)
 // SFR user: which copies of a call are heard (dmr_call_config_t.sfr_rx)
 typedef enum {
 	DMR_SFR_RX_REPEATER,	// the repeat only: the talker's own copy is dropped
