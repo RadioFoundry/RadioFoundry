@@ -8,6 +8,7 @@
 #include "codeplug/zone_edit.h"
 #include "board.h"
 #include "codeplug/codeplug_modes.h"	// CODEPLUG_KIND_NONE: a share leaves channels of a kind out without the modes part
+#include "codeplug/codeplug_contact_lists.h"	// the contacts added or undone keep the lists' check right
 #if CONFIG_ZONE_SHARE_MODES
 #include "codeplug/codeplug_kv.h"
 #include "codeplug/codeplug_tag.h"
@@ -95,9 +96,17 @@ static void undo(void)
 	while (added_ch_count > 0) {
 		codeplug_delete_channel(added_ch[--added_ch_count]);
 	}
+#if CONFIG_CONTACT_LISTS
+	codeplug_contact_edit_t edit;
+	uint8_t removed = added_ct_count;
+	codeplug_contact_lists_begin(&edit);
+#endif
 	while (added_ct_count > 0) {
 		codeplug_delete_contact(added_ct[--added_ct_count]);
 	}
+#if CONFIG_CONTACT_LISTS
+	codeplug_contact_lists_end(&edit, false, added_ct, removed, CONTACT_LIST_NONE);	// the slots were added, so not in a list
+#endif
 #if CONFIG_ZONE_SHARE_MODES
 	while (added_key_count > 0) {
 		codeplug_kv_remove(added_key[--added_key_count]);
@@ -151,7 +160,7 @@ static bool map_one(uint16_t index, const contact_t *have, void *ctx)
 
 // Every contact the imported channels need mapped to one here: matched by ID and type (the user's name kept), else
 // added in the lowest free slots. One pass over the contact records (up to 24 KB of flash)
-static zone_import_status_t map_contacts(zone_import_result_t *res)
+static zone_import_status_t map_contacts_run(zone_import_result_t *res)
 {
 	memset(contact_index, 0, sizeof(contact_index));
 	if (rec.contacts == 0 || mark_needed() == 0) {
@@ -214,6 +223,22 @@ static zone_import_status_t map_contacts(zone_import_result_t *res)
 		res->contacts_added++;
 	}
 	return ZI_OK;
+}
+
+// The contacts added keep the contact lists' check right: in no list, and the check made once for all of them
+// (contact-lists.md 4)
+static zone_import_status_t map_contacts(zone_import_result_t *res)
+{
+#if CONFIG_CONTACT_LISTS
+	codeplug_contact_edit_t edit;
+	uint8_t first = added_ct_count;
+	codeplug_contact_lists_begin(&edit);
+	zone_import_status_t st = map_contacts_run(res);
+	codeplug_contact_lists_end(&edit, false, &added_ct[first], (unsigned)(added_ct_count - first), CONTACT_LIST_NONE);
+	return st;
+#else
+	return map_contacts_run(res);
+#endif
 }
 
 // --- Channels ---

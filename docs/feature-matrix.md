@@ -304,6 +304,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `CHANNEL_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `ZONE_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
 | `CONTACT_EDIT` | ● | ● | ● | ● | ● | ● | ● | ✕ |
+| `CONTACT_LISTS` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `VOLUME_BAR` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `P25` | ● | ● | ● | ● | … | ● | ● | ● |
 | `P25_TRUNK` | ● | ● | ● | ● | … | ● | ● | ● |

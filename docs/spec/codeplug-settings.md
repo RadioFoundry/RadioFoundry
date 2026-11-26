@@ -116,8 +116,12 @@ version change.
 - **An older writer** that doesn't know the continuation keeps bytes 12-15 and the header length as it found them (4),
   so it doesn't unlink it, and it writes the first sector only.
 - A first sector of a newer version is never written, and so no continuation is.
+- **Which continuation.** The one the first sector names when that is a valid area; otherwise the first one (0xF000),
+  started from an erased sector, so that the keys an old continuation nothing points to held don't come back. A
+  continuation of a newer version is never written, and a write that needs it fails.
 - A key present in two sectors is read from the earlier. A writer that sets it drops the later copy, in the same
-  batch if the sector is written anyway.
+  batch if the sector is written anyway; it takes a key of the other sector out of the sector it writes the same way.
+- A part of a batch that doesn't fit its sector stops the batch before any sector is written.
 
 A version 1 reader of today ignores the pointer, so it sees only the first sector: keys that live only in a
 continuation read as absent, and the radio keeps its own values (4). For the contact lists that means the radio names
@@ -267,6 +271,9 @@ it had them, and the other five follow):
   (`CODEPLUG_KV_HEAD`), so an older tool doesn't cut off a later version's fields.
 - **One entry per key.** A reader takes the first. A writer drops later ones.
 - **Order.** A writer replaces a value in place, appends a new key at the end and closes the gap when it removes one.
+- **A byte table** is a value whose missing bytes read 0xFF (the contact lists' membership, [contact-lists.md](contact-lists.md)
+  3.1). A writer sets bytes at an offset: the value grows with 0xFF bytes to reach them, loses its trailing 0xFF bytes
+  after, and a value that is then empty is removed, so a table with nothing set is an absent key.
 - **Removing** takes out every entry of the key. Removing a key that is absent changes nothing and writes nothing. A
   set to the value the key already has writes nothing either.
 - **Several changes, one rewrite.** A writer applies all the sets and removes it has in one rewrite of the sector, all
@@ -282,7 +289,8 @@ it had them, and the other five follow):
 | `codeplug_kv_get(key, buf, max)` | The value's length (copies at most `max` bytes), or -1 when the key is absent or the area invalid. Checks the whole area (its CRC) each call |
 | `codeplug_kv_begin(&c, lo, hi)`, `codeplug_kv_next(&c, &key, buf, max)` | A walk over the keys `lo`..`hi` in the area's order, a later entry of a key skipped. The area is checked once, at the first `next`; each later one reads the header again and ends the walk if the area changed. The cursor is on the caller's stack |
 | `codeplug_kv_uint`, `codeplug_kv_int`, `codeplug_kv_id` | A scalar from a value already read (3.1); false for one the reader can't take |
-| `codeplug_kv_write(ops, n)` | Applies `n` sets and removes (`len` = `CODEPLUG_KV_REMOVE`) in order, then one journaled rewrite through the shared sector buffer. `len \| CODEPLUG_KV_HEAD` sets a record from the front (4). All or nothing. Moves `codeplug_kv_serial()` when a byte changed, not `codeplug_serial()`, so a key written doesn't reload the whole codeplug; a batch that changes nothing writes nothing |
+| `codeplug_kv_read(key, off, buf, max)` | `codeplug_kv_get` from byte `off` of the value: for one byte of a table that holds a kilobyte (contact-lists.md 3) |
+| `codeplug_kv_write(ops, n)` | Applies `n` sets and removes (`len` = `CODEPLUG_KV_REMOVE`) in order, then one journaled rewrite through the shared sector buffer. `len \| CODEPLUG_KV_HEAD` sets a record from the front (4). `len \| CODEPLUG_KV_TABLE` sets bytes of a byte table at an offset (4). All or nothing within a sector: a key goes to the sector its number says (2.4), a batch of both is written sector by sector. Moves `codeplug_kv_serial()` when a byte changed, not `codeplug_serial()`, so a key written doesn't reload the whole codeplug; a batch that changes nothing writes nothing |
 | `codeplug_kv_set(key, value, len)`, `codeplug_kv_remove(key)` | One op through `codeplug_kv_write` |
 | `codeplug_kv_commit(addr, sector)` | A raw sector write at flash address `addr` under the transfer rule (6): the sector is written unless the radio's must stay (`codeplug_kv_keep`), which counts as written |
 | `codeplug_kv_serial()` | Moves whenever the keys may read differently: a key written, and every change of `codeplug_serial()` (a CPS commit, a TFTP write, another firmware's codeplug found, accepted or replaced). The one thing an owner of keyed settings watches |

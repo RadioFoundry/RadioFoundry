@@ -1579,6 +1579,24 @@ run-cpair: codeplugAirContactsTest
 	./codeplugAirContactsTest
 .PHONY: run-cpair
 
+# Named contact lists (core/codeplug/codeplug_contact_lists.c, docs/spec/contact-lists.md): the keys, membership and the void
+# rule, the name lookup in the order of a selection, the table check and the radio-side edit that keeps it; and with the
+# switch off the lookup as it was before the lists
+TESTS   += codeplugContactListsTest codeplugContactListsOffTest
+CPLISTS := $(CPEDIT) $(CORE)/codeplug/codeplug_air_contacts.c $(CORE)/codeplug/codeplug_contact_lists.c
+
+codeplugContactListsTest: codeplugContactListsTest.c $(CPLISTS) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ codeplugContactListsTest.c $(CPLISTS)
+
+codeplugContactListsOffTest: codeplugContactListsTest.c $(CPLISTS) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_CONTACT_LISTS=0 -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ codeplugContactListsTest.c $(CPLISTS)
+
+run: run-cplists
+run-cplists: codeplugContactListsTest codeplugContactListsOffTest
+	./codeplugContactListsTest
+	./codeplugContactListsOffTest
+.PHONY: run-cplists
+
 # P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
 # trunked part off as well
 TESTS   += p25CodeplugTest p25CodeplugConvTest
@@ -1624,12 +1642,15 @@ run-zedit: zoneEditTest
 
 # Zone sharing's codeplug side: import (band limits, receive only, contacts by ID, update, undo; new zones through the
 # zone write layer) and export
-ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(ZEDIT)
+# (the contacts it adds keep the contact lists' check right: codeplug_contact_lists.c, with the ID database it names from)
+ZIMPORT := $(CORE)/codeplug/zone_import.c $(CORE)/codeplug/codeplug_talk.c $(CORE)/dmr/zoneShare.c $(ZEDIT) \
+           $(CORE)/codeplug/codeplug_contact_lists.c $(CORE)/codeplug/dmr_iddb.c
+ZIPLAIN := $(CORE)/codeplug/codeplug_air_contacts.c	# the lists' table check reads the air table in every build (the others have it in ZIAIR)
 TESTS   += zoneImportTest
 
 # (without a mode that has systems: no modes part)
 zoneImportTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DMR_TRUNK=0 -o $@ zoneImportTest.c $(ZIMPORT)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_DMR_TRUNK=0 -o $@ zoneImportTest.c $(ZIMPORT) $(ZIPLAIN)
 # The same with the modes part: channels of a kind and their systems sent and taken (CONFIG_ZONE_SHARE_MODES)
 TESTS   += zoneImportModesTest
 ZIAIR   := $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c $(CORE)/p25/p25_codeplug.c
@@ -1644,7 +1665,7 @@ zoneImportP25TrunkTest: zoneImportTest.c $(ZIMPORT) $(ZIAIR) $(CORE)/codeplug/zo
 # The modes part with NXDN alone on (CONFIG_ZONE_SHARE_MODES follows either mode)
 TESTS   += zoneImportNxdnTest
 zoneImportNxdnTest: zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/zone_import.h $(CORE)/dmr/zoneShare.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ zoneImportTest.c $(ZIMPORT) $(CORE)/codeplug/codeplug_records.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_NXDN=1 -o $@ zoneImportTest.c $(ZIMPORT) $(ZIPLAIN) $(CORE)/codeplug/codeplug_records.c
 
 run: run-zimport
 run-zimport: zoneImportTest zoneImportModesTest zoneImportP25TrunkTest zoneImportNxdnTest

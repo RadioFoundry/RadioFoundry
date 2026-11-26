@@ -242,6 +242,7 @@ uint16_t codeplug_channel_talk_contact(const channel_t *ch);
 bool codeplug_set_dmr_id(uint32_t id);		// 1..CODEPLUG_DMR_ID_MAX, 0 = none
 bool codeplug_set_contact(uint16_t index, const contact_t *c);
 bool codeplug_delete_contact(uint16_t index);
+bool codeplug_contacts_check(uint32_t *crc);
 bool codeplug_set_listen_list(uint16_t index, const listen_list_t *l);
 bool codeplug_delete_listen_list(uint16_t index);
 // The first contact with this ID: group true finds a talkgroup (or all call for 0xFFFFFF), false a private contact.
@@ -249,6 +250,13 @@ bool codeplug_delete_listen_list(uint16_t index);
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out);
 // The same, its index (0: none, or a contact record that couldn't be read); out may be NULL
 uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out);
+// The same among the contacts pred accepts (a NULL pred accepts all): it gets the contact's slot, under the storage
+// lock, as codeplug_contacts_each's callback does. Contact lists take the members of one list with it
+typedef bool (*codeplug_contact_pred_fn)(uint16_t index, void *ctx);
+uint16_t codeplug_contact_find_index_if(uint32_t id, bool group, codeplug_contact_pred_fn pred, void *pred_ctx, contact_t *out);
+// *crc continued (storage_crc32) over the ID and call type bytes of every contact slot in order, 5 bytes at offset 0x10
+// of each as stored, empty slots too: what the contact lists' table check covers (docs/spec/contact-lists.md 3.3). False,
+// *crc unchanged, when the contacts can't be read
 
 // General DMR settings (open-firmware general settings, docs/spec/open-firmware-cps.md 7.3.2)
 typedef struct {

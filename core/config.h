@@ -255,6 +255,10 @@
 #ifndef CONFIG_CONTACT_EDIT
 #define CONFIG_CONTACT_EDIT		(CONFIG_CHANNEL_EDIT && CONFIG_DMR)
 #endif
+// Named contact lists (core/codeplug/codeplug_contact_lists.c, docs/spec/contact-lists.md): needs DMR
+#ifndef CONFIG_CONTACT_LISTS
+#define CONFIG_CONTACT_LISTS		CONFIG_DMR
+#endif
 // Zone writes that move zone indexes (core/codeplug/zone_edit.h): the zone editor's, and zone sharing's import of a
 // new zone. Whoever keeps a zone index (the radio core, dual watch, the open zone screens) follows them
 #define CONFIG_ZONE_WRITE		(CONFIG_ZONE_EDIT || CONFIG_ZONE_SHARE)
@@ -583,6 +587,9 @@
 #endif
 #if CONFIG_NXDN && !CONFIG_DMR
 #error "CONFIG_NXDN needs CONFIG_DMR (its voice is the DMR vocoder's)"
+#endif
+#if CONFIG_CONTACT_LISTS && !CONFIG_DMR
+#error "CONFIG_CONTACT_LISTS needs CONFIG_DMR (the contacts it filters are the DMR contact table's)"
 #endif
 #if (CONFIG_APRS_RX && !CONFIG_APRS_AFSK) || (CONFIG_APRS_IGATE && !(CONFIG_APRS_RX && CONFIG_HOSTLINK))
 #error "an APRS sub-feature is on without its parent (APRS_RX needs APRS_AFSK; APRS_IGATE needs APRS_RX and HOSTLINK)"

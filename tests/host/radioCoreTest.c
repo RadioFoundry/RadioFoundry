@@ -45,6 +45,7 @@
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 #include "codeplug/codeplug_air_contacts.h"
+#include "codeplug/codeplug_contact_lists.h"
 #include "dmr/fec/dmrCach.h"
 #include "dmr/trunk/t3_pdu.h"
 #include "dmr/trunk/t3_sys.h"
@@ -792,6 +793,22 @@ bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contac
 		}
 	}
 	return false;
+}
+#endif
+// The contact lists' hooks around a contact write (ui_svc_storage.c): the fake codeplug has no lists to keep right
+#if CONFIG_CONTACT_LISTS
+void codeplug_contact_lists_begin(codeplug_contact_edit_t *e)
+{
+	e->state = 0;
+}
+bool codeplug_contact_lists_end(const codeplug_contact_edit_t *e, bool air, const uint16_t *slots, unsigned n, uint8_t list)
+{
+	(void)e;
+	(void)air;
+	(void)slots;
+	(void)n;
+	(void)list;
+	return true;
 }
 #endif
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)

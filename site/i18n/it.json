@@ -1754,6 +1754,7 @@
  "editor.aes.generate": "Genera",
  "editor.aes.sharing_help": "La condivisione delle zone può includere il record del sistema. Le chiavi AES restano locali.",
  "editor.mode_name.NXDN": "NXDN",
+ "editor.mode_name.CONVENTIONAL": "Rete convenzionale",
  "editor.modes.add": "Aggiungi sistema",
  "editor.modes.add_title": "Nuovo sistema {type}",
  "editor.modes.add_ham": "Aggiungi sistema radioamatoriale consigliato",

@@ -552,7 +552,7 @@ static band_t bands[] = { { 136000000, 174000000, true }, { 400000000, 480000000
 const board_t board = { .name = "test", .bands = bands, .band_count = 2, .power_count = 9, .flash = &sim_flash };
 
 static const struct { uint32_t start, end; } regions[] = {
-	{ 0x00080u, 0x06060u }, { 0x07500u, 0x0B000u }, { 0x0E000u, 0x0F000u }, { 0x20000u, 0x211A0u },
+	{ 0x00080u, 0x06060u }, { 0x07500u, 0x0B000u }, { 0x0E000u, 0x10000u }, { 0x20000u, 0x211A0u },
 	{ 0x9B000u, 0xAEE60u },
 };
 
@@ -710,6 +710,40 @@ static void test_settings_area(void)
 	sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] = CODEPLUG_KV_VERSION + 1;	// a later firmware's area
 	CHECK(put("codeplug.bin", NULL, img, sizeof(img), 512) == 0);
 	CHECK(sim_flash_data[EE + CODEPLUG_KV_ADDR + 4] == CODEPLUG_KV_VERSION + 1);
+	CHECK(sim_flash_violations() == 0);
+	capture = true;
+}
+
+// The settings area's continuation (codeplug-settings.md 2.4), 0xF000 in the file: read as stored, and judged for
+// itself on a write, as the first sector is
+static void test_continuation(void)
+{
+	static uint8_t img[TFTP_CODEPLUG_SIZE], other[TFTP_CODEPLUG_SIZE];
+	char name[8];
+	capture = false;
+	populate();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Local", 5));
+	CHECK(get("codeplug.bin", NULL, img, sizeof(img), 512) == (long)TFTP_CODEPLUG_SIZE);
+	CHECK(codeplug_kv_check(img + CODEPLUG_KV_CONT_ADDR) == CODEPLUG_KV_VALID);
+	CHECK(img[CODEPLUG_KV_ADDR + 12] == 0x00 && img[CODEPLUG_KV_ADDR + 13] == 0xF0);	// the first sector names it
+
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Other", 5));
+	CHECK(put("codeplug.bin", NULL, img, sizeof(img), 512) == 0);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, name, 5) == 5 && memcmp(name, "Local", 5) == 0);	// the file's
+
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Other", 5));
+	memcpy(other, img, sizeof(other));
+	memset(other + CODEPLUG_KV_CONT_ADDR, 0xFF, 0x1000);			// a file from before the continuation
+	CHECK(put("codeplug.bin", NULL, other, sizeof(other), 512) == 0);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, name, 5) == 5 && memcmp(name, "Other", 5) == 0);	// the radio's stays
+	memcpy(other, img, sizeof(other));
+	other[CODEPLUG_KV_CONT_ADDR + CODEPLUG_KV_HDR + 4] ^= 1;			// a value byte: the CRC fails
+	CHECK(put("codeplug.bin", NULL, other, sizeof(other), 512) == 0);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, name, 5) == 5 && memcmp(name, "Other", 5) == 0);
+
+	sim_flash_data[EE + CODEPLUG_KV_CONT_ADDR + 4] = CODEPLUG_KV_VERSION + 1;	// a later firmware's continuation
+	CHECK(put("codeplug.bin", NULL, img, sizeof(img), 512) == 0);
+	CHECK(sim_flash_data[EE + CODEPLUG_KV_CONT_ADDR + 4] == CODEPLUG_KV_VERSION + 1);
 	CHECK(sim_flash_violations() == 0);
 	capture = true;
 }
@@ -1159,6 +1193,7 @@ int main(void)
 	test_writes();
 	test_codeplug();
 	test_settings_area();
+	test_continuation();
 	test_power_cuts();
 	test_codeplug_edges();
 	test_iddb();

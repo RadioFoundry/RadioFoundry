@@ -22,6 +22,7 @@
 #include "storage/storage.h"
 #include "codeplug/codeplug.h"
 #include "codeplug/codeplug_kv.h"
+#include "codeplug/codeplug_contact_lists.h"
 #include "radio/radio_keys.h"
 #include "dmr/dmr_emergency.h"	// the emergency tone (Settings > Sound); stubs without CONFIG_DMR_EMERGENCY
 #include "hal_time.h"
@@ -1334,9 +1335,19 @@ bool ui_svc_write_channel_air(uint16_t number, const channel_t *ch, uint16_t fro
 static void write_contact_job(void *ctx)
 {
 	(void)ctx;
+#if CONFIG_CONTACT_LISTS
+	codeplug_contact_edit_t edit;
+	codeplug_contact_lists_begin(&edit);	// before the record: it is judged against the tables as they were
+#endif
 	if (!codeplug_set_contact(job.channel, &job.contact)) {
 		save_failed(TRN(STORE_ERR_CODEPLUG_WRITE, "Couldn't write the codeplug: not saved"));
+		return;
 	}
+#if CONFIG_CONTACT_LISTS
+	// A new contact (a free slot) is in no list; the lists' check follows the table (contact-lists.md 4)
+	uint16_t slot = job.channel;
+	codeplug_contact_lists_end(&edit, false, &slot, 1, CONTACT_LIST_NONE);
+#endif
 }
 
 bool ui_svc_write_contact(uint16_t index, const contact_t *c)

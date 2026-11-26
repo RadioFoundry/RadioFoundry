@@ -162,7 +162,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional system | NXDN | `CONFIG_NXDN` | [nxdn-codeplug.md](nxdn-codeplug.md) |
 | 5 | Conventional DMR AES-256 | AES | `CONFIG_DMR_AES` | See below |
-| 6 | Reserved: Conventional system (a network for contact lists, 7.5) | | | [contact-lists.md](contact-lists.md) |
+| 6 | Conventional system (a network for contact lists, 7.5) | NET | `CONFIG_CONTACT_LISTS` | [contact-lists.md](contact-lists.md) |
 
 A conventional AES channel uses the normal DMR frequencies, contact, color code and timeslot. Its base record is receive-only.
 The type 5 system block starts with one identity byte. Provision each traffic key in the traffic-key family with its
@@ -338,8 +338,8 @@ Key 0x0300 + n: system n's own secret (an authentication key), the type's layout
 
 **Proposed.** System type 6, the Conventional system, shown as a **network**. It carries no radio behavior: it is the
 thing a plain channel points at so the radio knows which contact lists name its calls
-([contact-lists.md](contact-lists.md)). Its type id is reserved in 4 until the contact lists are built; then the row
-takes the short name `NET` and `CONFIG_CONTACT_LISTS`.
+([contact-lists.md](contact-lists.md)). Its row in 4 has the short name `NET` and is built with `CONFIG_CONTACT_LISTS`.
+The Tier III and P25 trunking code reads systems of its own types only, so it never sees one.
 
 | Field | Value |
 |---|---|

@@ -8,8 +8,6 @@
 #include "board.h"
 #include "storage/storage.h"
 
-#if CONFIG_AIR
-
 #define PER_READ	8u	// entries per flash read in a scan: 192 bytes of stack
 
 // None while the open-firmware area holds another firmware's codeplug (codeplug_foreign), as the settings area: its
@@ -24,6 +22,32 @@ static bool table_addr(uint32_t *addr)
 	*addr = m->openfw_eeprom + CODEPLUG_AIR_CONTACTS_ADDR;
 	return true;
 }
+
+// *crc continued over the first 5 bytes (mode, call type and ID) of every slot, empty ones too: the contact lists'
+// table check (contact-lists.md 3.3). Read in every build, whether it names from the table or not
+bool codeplug_air_contacts_check(uint32_t *crc)
+{
+	uint8_t blk[PER_READ * CODEPLUG_AIR_CONTACT_SIZE];
+	uint32_t c = *crc;
+	for (unsigned first = 0; first < CODEPLUG_AIR_CONTACTS_MAX; first += PER_READ) {
+		unsigned n = CODEPLUG_AIR_CONTACTS_MAX - first < PER_READ ? CODEPLUG_AIR_CONTACTS_MAX - first : PER_READ;
+		uint32_t a;
+		storage_lock();
+		bool ok = table_addr(&a) && board.flash->read(a + first * CODEPLUG_AIR_CONTACT_SIZE, blk,
+							     n * CODEPLUG_AIR_CONTACT_SIZE);
+		storage_unlock();
+		if (!ok) {
+			return false;
+		}
+		for (unsigned i = 0; i < n; i++) {
+			c = storage_crc32(c, &blk[i * CODEPLUG_AIR_CONTACT_SIZE], CODEPLUG_AIR_CONTACT_IDENT);
+		}
+	}
+	*crc = c;
+	return true;
+}
+
+#if CONFIG_AIR
 
 // The IDs a mode's call type takes (3); a mode this build doesn't know takes none, so its entries are skipped
 static bool id_ok(uint8_t mode, uint8_t type, uint32_t id)
@@ -74,7 +98,8 @@ bool codeplug_air_contact(uint16_t index, uint8_t mode, air_contact_t *out)
 	return ok && decode(r, mode, out);
 }
 
-bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contact_t *out)
+bool codeplug_air_contact_find_if(uint8_t mode, uint32_t id, bool group, codeplug_air_pred_fn pred, void *pred_ctx,
+				  air_contact_t *out)
 {
 	uint8_t blk[PER_READ * CODEPLUG_AIR_CONTACT_SIZE];
 	air_contact_t c;
@@ -91,7 +116,8 @@ bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contac
 		}
 		for (unsigned i = 0; i < n; i++) {
 			if (!decode(&blk[i * CODEPLUG_AIR_CONTACT_SIZE], mode, &c) || c.id != id || c.name[0] == '\0' ||
-			    (c.type != AIR_CONTACT_UNIT) != group) {
+			    (c.type != AIR_CONTACT_UNIT) != group ||
+			    (pred != NULL && !pred((uint16_t)(first + i + 1u), pred_ctx))) {
 				continue;
 			}
 			*out = c;
@@ -99,6 +125,11 @@ bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contac
 		}
 	}
 	return false;
+}
+
+bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contact_t *out)
+{
+	return codeplug_air_contact_find_if(mode, id, group, NULL, NULL, out);
 }
 
 #endif

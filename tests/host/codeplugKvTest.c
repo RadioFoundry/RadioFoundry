@@ -4,7 +4,9 @@
 // reads of a blank, valid, invalid and newer area, writes that keep unknown keys and drop duplicates, values longer
 // than a reader knows, scalars of every width, a record's fields set from the front, a full area, batches of sets and
 // removes, walks over a key range, the raw write rule (codeplug_kv_keep, codeplug_kv_commit), the serial, and power
-// cuts during a write
+// cuts during a write; the continuation (docs/spec/codeplug-settings.md 2.4): the read order across sectors, a missing,
+// erased, bad, newer or looping one, the header an older writer keeps, a batch that spans sectors, the byte table op,
+// the raw write rule for its sector, and a power cut while it is made
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +26,7 @@ void storage_unlock(void) {}
 #define EE		0x000000u
 #define FL		0x020000u
 #define AREA		(EE + CODEPLUG_KV_ADDR)
+#define CONT		(EE + CODEPLUG_KV_CONT_ADDR)
 
 static const hal_flash_map_t map = {
 	.settings_addr = 0x11000u, .settings_size = 0x8000u, .journal_addr = 0x19000u,
@@ -586,6 +589,348 @@ static void test_power_cut(void)
 	CHECK(o > 0 && nw > 0);
 }
 
+static uint32_t get32le(const uint8_t *p)
+{
+	return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+// A sector of the area as another tool would write it, at flash address at: header length 16, the pointer next
+static void raw_sector(uint32_t at, const uint8_t *data, uint16_t len, uint8_t version, uint32_t next)
+{
+	uint8_t *s = &sim_flash_data[at];
+	memset(s, 0xFF, STORAGE_SECTOR);
+	put32(&s[0], CODEPLUG_KV_MAGIC);
+	s[4] = version;
+	s[5] = 16;
+	put16(&s[6], len);
+	put32(&s[8], storage_crc32(0, data, len));
+	put32(&s[12], next);
+	memcpy(&s[16], data, len);
+}
+
+// The keys of 0x7000-0x7FFF in the order a walk gives them: how many, into keys
+static unsigned walk_keys(uint16_t *keys, unsigned max)
+{
+	codeplug_kv_cursor_t c;
+	uint16_t k;
+	uint8_t v[8];
+	unsigned n = 0;
+	codeplug_kv_begin(&c, 0x7000, 0x7FFF);
+	while (codeplug_kv_next(&c, &k, v, sizeof(v)) >= 0 && n < max) {
+		keys[n++] = k;
+	}
+	return n;
+}
+
+// Whether the sector at flash address at holds an entry with this key
+static bool sector_has(uint32_t at, uint16_t key)
+{
+	const uint8_t *s = &sim_flash_data[at];
+	uint16_t len = (uint16_t)(s[6] | (s[7] << 8));
+	for (uint32_t e = 0; e < len; e += 4u + (uint32_t)(s[16 + e + 2] | (s[16 + e + 3] << 8))) {
+		if ((uint16_t)(s[16 + e] | (s[16 + e + 1] << 8)) == key) {
+			return true;
+		}
+	}
+	return false;
+}
+
+// The first write to the continuation makes it and then links it from the first sector; later ones are one rewrite
+static void test_cont_create(void)
+{
+	fresh();
+	uint8_t name[4];
+	uint32_t id;
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1234));
+	const uint8_t *m = &sim_flash_data[AREA], *c = &sim_flash_data[CONT];
+	CHECK(get32le(&m[12]) == 0);
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Club", 4));
+	CHECK(sector_writes() == w + 2);					// the continuation, then the first sector's link
+	CHECK(get32le(&m[12]) == CODEPLUG_KV_CONT_ADDR && m[6] == 8 && m[7] == 0);	// the pointer set, its entries as they were
+	CHECK(codeplug_kv_check(m) == CODEPLUG_KV_VALID && codeplug_kv_check(c) == CODEPLUG_KV_VALID);
+	CHECK(c[5] == 16 && c[6] == 8 && get32le(&c[12]) == 0 && c[16] == 0x00 && c[17] == 0x1E && c[18] == 4);
+	CHECK(!sector_has(AREA, CODEPLUG_KEY_LIST_NAME) && !sector_has(CONT, CODEPLUG_KEY_ARS_SERVER));	// each in its own
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, name, sizeof(name)) == 4 && memcmp(name, "Club", 4) == 0);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1234);
+	// A later continuation key: one rewrite of the continuation, the link as it is
+	w = sector_writes();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 1, "Net", 3) && sector_writes() == w + 1);
+	// A first sector key: one rewrite of it, the pointer kept (an older writer's too), the continuation untouched
+	uint8_t kept[STORAGE_SECTOR];
+	memcpy(kept, c, sizeof(kept));
+	w = sector_writes();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_IP_GATEWAY, 7) && sector_writes() == w + 1);
+	CHECK(get32le(&m[12]) == CODEPLUG_KV_CONT_ADDR && memcmp(kept, c, sizeof(kept)) == 0);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME + 1, name, sizeof(name)) == 3);
+	// The same value, and a remove of an absent key: nothing written
+	w = sector_writes();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Club", 4) && codeplug_kv_remove(CODEPLUG_KEY_LIST_NAME + 9) && sector_writes() == w);
+	// A remove of a key of the continuation before there is one makes none
+	fresh();
+	w = sector_writes();
+	CHECK(codeplug_kv_remove(CODEPLUG_KEY_LIST_NAME) && sector_writes() == w);
+	CHECK(sim_flash_data[CONT] == 0xFF && sim_flash_data[AREA] == 0xFF);
+	CHECK(sim_flash_violations() == 0);
+}
+
+// Reads take the first sector's keys before the continuation's; a key in both is the first's
+static void test_cont_read(void)
+{
+	fresh();
+	uint8_t a[32], b[32], v[8];
+	uint16_t la = entry(a, 0x7001, "AA", 2), lb = entry(b, 0x7001, "BB", 2), keys[8];
+	la = (uint16_t)(la + entry(a + la, 0x7003, "CC", 2));
+	lb = (uint16_t)(lb + entry(b + lb, 0x7002, "DD", 2));
+	raw_sector(AREA, a, la, CODEPLUG_KV_VERSION, CODEPLUG_KV_CONT_ADDR);
+	raw_sector(CONT, b, lb, CODEPLUG_KV_VERSION, 0);
+	CHECK(codeplug_kv_get(0x7001, v, sizeof(v)) == 2 && memcmp(v, "AA", 2) == 0);
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == 2 && memcmp(v, "DD", 2) == 0);	// only in the continuation
+	CHECK(codeplug_kv_get(0x7003, v, sizeof(v)) == 2 && memcmp(v, "CC", 2) == 0);
+	CHECK(walk_keys(keys, 8) == 3 && keys[0] == 0x7001 && keys[1] == 0x7003 && keys[2] == 0x7002);	// the duplicate skipped
+	// A walk over only the continuation's range or key finds the same
+	CHECK(codeplug_kv_read(0x7002, 1, v, 1) == 2 && v[0] == 'D');	// from byte 1 of the value
+	CHECK(codeplug_kv_read(0x7002, 2, v, 1) == 2);				// off at the end: the length, nothing copied
+	// The pointer: none, not a multiple of the sector, outside the image, to itself, to an erased sector
+	static const uint32_t unreached[] = { 0, 0xF001, 0x10000, 0x20000, CODEPLUG_KV_ADDR, 0xB000 };
+	for (unsigned i = 0; i < sizeof(unreached) / sizeof(unreached[0]); i++) {
+		put32(&sim_flash_data[AREA + 12], unreached[i]);
+		CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == -1);
+		CHECK(codeplug_kv_get(0x7001, v, sizeof(v)) == 2 && memcmp(v, "AA", 2) == 0);
+	}
+	put32(&sim_flash_data[AREA + 12], CODEPLUG_KV_CONT_ADDR);
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == 2);
+	// A continuation that is erased, damaged (the CRC), of a later version or without a valid first sector: no keys
+	raw_sector(CONT, b, lb, CODEPLUG_KV_VERSION, 0);
+	sim_flash_data[CONT + 17] ^= 1;
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == -1 && walk_keys(keys, 8) == 2);
+	raw_sector(CONT, b, lb, CODEPLUG_KV_VERSION + 1, 0);
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == -1 && codeplug_kv_get(0x7001, v, sizeof(v)) == 2);
+	memset(&sim_flash_data[CONT], 0xFF, STORAGE_SECTOR);
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == -1 && walk_keys(keys, 8) == 2);
+	raw_sector(CONT, b, lb, CODEPLUG_KV_VERSION, 0);
+	memset(&sim_flash_data[AREA], 0xFF, STORAGE_SECTOR);		// the first sector erased: nothing points to it
+	CHECK(codeplug_kv_get(0x7002, v, sizeof(v)) == -1 && walk_keys(keys, 8) == 0);
+}
+
+// The chain a continuation can name: at most 8 sectors in all, and a loop ends at the sector it came back to
+static void test_cont_chain(void)
+{
+	fresh();
+	static const uint32_t order[] = { CODEPLUG_KV_ADDR, CODEPLUG_KV_CONT_ADDR, 0xB000, 0xC000, 0xD000, 0xA000, 0x9000, 0x8000, 0x7000 };
+	uint8_t d[8], v[8];
+	uint16_t keys[16];
+	for (unsigned i = 0; i < 9; i++) {
+		uint16_t len = entry(d, (uint16_t)(0x7100 + i), "x", 1);
+		raw_sector(EE + order[i], d, len, CODEPLUG_KV_VERSION, i < 8 ? order[i + 1] : 0);
+	}
+	CHECK(walk_keys(keys, 16) == 8 && keys[0] == 0x7100 && keys[7] == 0x7107);	// the eighth is read, the ninth is not
+	CHECK(codeplug_kv_get(0x7107, v, sizeof(v)) == 1 && codeplug_kv_get(0x7108, v, sizeof(v)) == -1);
+	// A loop back to the first sector or to one in the chain
+	put32(&sim_flash_data[EE + 0xB000 + 12], CODEPLUG_KV_ADDR);
+	CHECK(walk_keys(keys, 16) == 3);
+	put32(&sim_flash_data[EE + 0xB000 + 12], CODEPLUG_KV_CONT_ADDR);
+	CHECK(walk_keys(keys, 16) == 3);
+	// A sector in the chain that is bad ends it
+	put32(&sim_flash_data[EE + 0xB000 + 12], 0xC000);
+	sim_flash_data[EE + 0xC000 + 17] ^= 1;
+	CHECK(walk_keys(keys, 16) == 3 && codeplug_kv_get(0x7103, v, sizeof(v)) == -1);
+}
+
+// The continuation's header is kept as found by a rewrite (an older or later writer's fields), and the first sector's
+// pointer by a write of a first sector key
+static void test_cont_header_kept(void)
+{
+	fresh();
+	uint8_t d[16], hdr_extra[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+	uint16_t len = entry(d, CODEPLUG_KEY_LIST_NAME, "Old", 3);
+	raw_sector(CONT, d, len, CODEPLUG_KV_VERSION, 0x0B000);			// another sector named: kept as found
+	// Header length 24: the entries start at 24
+	uint8_t *c = &sim_flash_data[CONT];
+	memmove(&c[24], &c[16], len);
+	memcpy(&c[16], hdr_extra, 8);
+	c[5] = 24;
+	put32(&c[8], storage_crc32(0, &c[24], len));
+	raw_sector(AREA, (const uint8_t[]){ 0 }, 0, CODEPLUG_KV_VERSION, CODEPLUG_KV_CONT_ADDR);
+	CHECK(codeplug_kv_check(c) == CODEPLUG_KV_VALID);
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME + 1, "New", 3));
+	CHECK(c[5] == 24 && get32le(&c[12]) == 0xB000 && memcmp(&c[16], hdr_extra, 8) == 0);
+	uint8_t v[8];
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v)) == 3 && memcmp(v, "Old", 3) == 0);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME + 1, v, sizeof(v)) == 3 && memcmp(v, "New", 3) == 0);
+	CHECK(get32le(&sim_flash_data[AREA + 12]) == CODEPLUG_KV_CONT_ADDR);
+}
+
+// A batch of keys of both sectors is written sector by sector; what doesn't fit stops it before any is written, a
+// copy of a key a writer sets in the sector after is dropped when that sector is written anyway
+static void test_cont_batch(void)
+{
+	static uint8_t big[STORAGE_SECTOR];
+	uint8_t v4[4] = { 1, 0, 0, 0 }, v[8];
+	uint32_t id;
+	uint16_t room = STORAGE_SECTOR - CODEPLUG_KV_HDR;
+	memset(big, 0x5A, sizeof(big));
+	fresh();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "A", 1));
+	// Both fit: both written, the continuation first
+	codeplug_kv_op_t both[] = { { CODEPLUG_KEY_ARS_SERVER, 4, v4 }, { CODEPLUG_KEY_LIST_NAME + 1, 1, "B" } };
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_write(both, 2) && sector_writes() == w + 2);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1 && codeplug_kv_get(CODEPLUG_KEY_LIST_NAME + 1, v, sizeof(v)) == 1);
+	// The continuation's part too big: nothing written, not even the first sector's
+	codeplug_kv_op_t big_cont[] = { { CODEPLUG_KEY_ARS_SERVER, 4, "\x02\0\0\0" }, { CODEPLUG_KEY_LIST_NAME + 2, (uint16_t)(room - 3), big } };
+	w = sector_writes();
+	CHECK(!codeplug_kv_write(big_cont, 2) && sector_writes() == w);
+	CHECK(codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) && id == 1 && codeplug_kv_get(CODEPLUG_KEY_LIST_NAME + 2, v, sizeof(v)) == -1);
+	// The first sector's part too big: the continuation isn't written either
+	CHECK(codeplug_kv_set(0x7000, big, (uint16_t)(room - 4u - 8u)));
+	codeplug_kv_op_t big_main[] = { { 0x7001, 16, big }, { CODEPLUG_KEY_LIST_NAME + 3, 1, "D" } };
+	w = sector_writes();
+	CHECK(!codeplug_kv_write(big_main, 2) && sector_writes() == w);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME + 3, v, sizeof(v)) == -1 && codeplug_kv_get(0x7001, v, sizeof(v)) == -1);
+	// Without the continuation, a batch of its keys alone that doesn't fit changes nothing and makes none
+	fresh();
+	codeplug_kv_op_t lone[] = { { CODEPLUG_KEY_LIST_NAME, (uint16_t)(room - 3), big } };
+	CHECK(!codeplug_kv_write(lone, 1) && sim_flash_data[CONT] == 0xFF && sim_flash_data[AREA] == 0xFF);
+	// A key in both sectors: the writer's set drops the later copy when the continuation is written anyway
+	fresh();
+	uint8_t a[16], b[16];
+	uint16_t la = entry(a, 0x7001, "AA", 2), lb = entry(b, 0x7001, "BB", 2);
+	lb = (uint16_t)(lb + entry(b + lb, CODEPLUG_KEY_LIST_NAME, "L", 1));
+	raw_sector(AREA, a, la, CODEPLUG_KV_VERSION, CODEPLUG_KV_CONT_ADDR);
+	raw_sector(CONT, b, lb, CODEPLUG_KV_VERSION, 0);
+	codeplug_kv_op_t twice[] = { { 0x7001, 2, "ZZ" }, { CODEPLUG_KEY_LIST_NAME + 1, 1, "M" } };
+	CHECK(codeplug_kv_write(twice, 2));
+	CHECK(sector_has(AREA, 0x7001) && !sector_has(CONT, 0x7001) && sector_has(CONT, CODEPLUG_KEY_LIST_NAME));
+	CHECK(codeplug_kv_get(0x7001, v, sizeof(v)) == 2 && memcmp(v, "ZZ", 2) == 0);
+	// A first sector of a later version: nothing is written, the continuation included
+	fresh();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 1));
+	sim_flash_data[AREA + 4] = CODEPLUG_KV_VERSION + 1;
+	CHECK(!codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "A", 1) && sim_flash_data[CONT] == 0xFF);
+}
+
+// A byte table (CODEPLUG_KV_TABLE): bytes set at an offset, the value grown with 0xFF and cut of trailing 0xFF
+static void test_table(void)
+{
+	uint8_t v[16];
+	fresh();
+	codeplug_kv_op_t at5 = { 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 5, 0, 7 } };
+	CHECK(codeplug_kv_write(&at5, 1));
+	CHECK(codeplug_kv_get(0x2000, v, sizeof(v)) == 6 && v[0] == 0xFF && v[4] == 0xFF && v[5] == 7);
+	codeplug_kv_op_t three = { 0x2000, 3 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 1, 0, 1, 2, 3 } };
+	CHECK(codeplug_kv_write(&three, 1));
+	CHECK(codeplug_kv_get(0x2000, v, sizeof(v)) == 6 && v[0] == 0xFF && v[1] == 1 && v[2] == 2 && v[3] == 3 && v[5] == 7);
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_write(&three, 1) && sector_writes() == w);			// the same bytes: nothing written
+	codeplug_kv_op_t clear5 = { 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 5, 0, 0xFF } };
+	CHECK(codeplug_kv_write(&clear5, 1) && codeplug_kv_get(0x2000, v, sizeof(v)) == 4);	// 0xFF at the end: cut
+	codeplug_kv_op_t far = { 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 20, 0, 0xFF } };
+	w = sector_writes();
+	CHECK(codeplug_kv_write(&far, 1) && sector_writes() == w);			// a 0xFF past the end: still nothing
+	codeplug_kv_op_t clear123 = { 0x2000, 3 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 1, 0, 0xFF, 0xFF, 0xFF } };
+	CHECK(codeplug_kv_write(&clear123, 1) && codeplug_kv_get(0x2000, v, sizeof(v)) == -1);	// all 0xFF: removed
+	codeplug_kv_op_t absent = { 0x2001, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 0, 0, 0xFF } };
+	w = sector_writes();
+	CHECK(codeplug_kv_write(&absent, 1) && sector_writes() == w && codeplug_kv_get(0x2001, v, sizeof(v)) == -1);
+	// Malformed: no bytes, none to read, past the sector, with the head flag
+	codeplug_kv_op_t none = { 0x2000, CODEPLUG_KV_TABLE, (const uint8_t[]){ 0, 0 } };
+	codeplug_kv_op_t late = { 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 0xFF, 0x0F, 1 } };
+	codeplug_kv_op_t both = { 0x2000, 1 | CODEPLUG_KV_TABLE | CODEPLUG_KV_HEAD, (const uint8_t[]){ 0, 0, 1 } };
+	codeplug_kv_op_t null = { 0x2000, 1 | CODEPLUG_KV_TABLE, NULL };
+	CHECK(!codeplug_kv_write(&none, 1) && !codeplug_kv_write(&late, 1) && !codeplug_kv_write(&both, 1) && !codeplug_kv_write(&null, 1));
+	// Two tables and a scalar in one batch of the continuation: one rewrite
+	codeplug_kv_op_t mix[] = {
+		{ 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 3, 0, 4 } },
+		{ 0x2001, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 0, 0, 5 } },
+		{ 0x2003, 4, "\x01\x02\x03\x04" },
+	};
+	w = sector_writes();
+	CHECK(codeplug_kv_write(mix, 3) && sector_writes() == w + 1);
+	CHECK(codeplug_kv_get(0x2000, v, sizeof(v)) == 4 && codeplug_kv_get(0x2001, v, sizeof(v)) == 1 && codeplug_kv_get(0x2003, v, sizeof(v)) == 4);
+	// A table that grows past the room changes nothing
+	static uint8_t big[STORAGE_SECTOR];
+	memset(big, 0x5A, sizeof(big));
+	uint16_t used = 8u + 5u + 8u;							// the three keys set above, with their framing
+	CHECK(codeplug_kv_set(0x2004, big, (uint16_t)(STORAGE_SECTOR - CODEPLUG_KV_HDR - used - 4u - 8u)));	// 8 bytes of room left
+	codeplug_kv_op_t grow = { 0x2000, 1 | CODEPLUG_KV_TABLE, (const uint8_t[]){ 0xE8, 0x03, 1 } };
+	w = sector_writes();
+	CHECK(!codeplug_kv_write(&grow, 1) && sector_writes() == w && codeplug_kv_get(0x2000, v, sizeof(v)) == 4);
+}
+
+// The raw write rule for the continuation's sector, judged for itself (codeplug-settings.md 6)
+static void test_cont_keep(void)
+{
+	static uint8_t file[STORAGE_SECTOR];
+	uint8_t v[8];
+	fresh();
+	memset(file, 0xFF, sizeof(file));
+	CHECK(!codeplug_kv_keep(CONT, file));			// nothing to keep: the radio's continuation is erased
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Mine", 4));
+	CHECK(codeplug_kv_keep(CONT, file));			// erased over valid: kept
+	uint32_t w = sector_writes();
+	CHECK(codeplug_kv_commit(CONT, file) && sector_writes() == w);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v)) == 4 && memcmp(v, "Mine", 4) == 0);
+	// The first sector is judged on its own: a valid file one goes in while the continuation stays
+	static uint8_t first[STORAGE_SECTOR];
+	memcpy(first, &sim_flash_data[AREA], sizeof(first));
+	CHECK(!codeplug_kv_keep(AREA, first) && codeplug_kv_keep(CONT, file));
+	// A valid continuation in the file: taken
+	memcpy(file, &sim_flash_data[CONT], sizeof(file));
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Else", 4));
+	CHECK(!codeplug_kv_keep(CONT, file));
+	w = sector_writes();
+	CHECK(codeplug_kv_commit(CONT, file) && sector_writes() == w + 1);
+	CHECK(codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v)) == 4 && memcmp(v, "Mine", 4) == 0);
+	// A damaged file continuation or a newer one over a valid one: kept
+	file[16] ^= 1;
+	CHECK(codeplug_kv_keep(CONT, file));
+	memcpy(file, &sim_flash_data[CONT], sizeof(file));
+	file[4] = CODEPLUG_KV_VERSION + 1;
+	CHECK(codeplug_kv_keep(CONT, file));
+	// The radio's continuation of a later version: kept whatever comes
+	sim_flash_data[CONT + 4] = CODEPLUG_KV_VERSION + 1;
+	memset(file, 0xFF, sizeof(file));
+	CHECK(codeplug_kv_keep(CONT, file));
+	// A damaged radio continuation: the file's bytes go in
+	sim_flash_data[CONT + 4] = CODEPLUG_KV_VERSION;
+	sim_flash_data[CONT + 17] ^= 1;
+	CHECK(!codeplug_kv_keep(CONT, file));
+}
+
+// A power cut anywhere while the first continuation is made (its sector, then the link): the first sector's keys stay,
+// the list name is absent or whole, and the next write goes through
+static void test_cont_power_cut(void)
+{
+	fresh();
+	CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 111));
+	uint32_t start = sim_flash_units();
+	CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Club", 4));
+	uint32_t total = sim_flash_units() - start;
+	CHECK(total > 0);
+	unsigned absent = 0, whole = 0;
+	for (uint32_t cut = 1; cut <= total; cut += total > 400 ? 37u : 1u) {
+		fresh();
+		CHECK(codeplug_kv_set_u32(CODEPLUG_KEY_ARS_SERVER, 111));
+		sim_flash_cut_after(cut);
+		codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Club", 4);
+		sim_flash_power_on();
+		storage_init();
+		codeplug_init();
+		uint32_t id = 0;
+		uint8_t v[8];
+		int n = codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v));
+		if (!codeplug_kv_get_id(CODEPLUG_KEY_ARS_SERVER, &id) || id != 111 || (n != -1 && (n != 4 || memcmp(v, "Club", 4) != 0))) {
+			printf("FAIL continuation cut after %u of %u units: id %u name length %d\n", cut, total, id, n);
+			failures++;
+		}
+		absent += n == -1;
+		whole += n == 4;
+		CHECK(codeplug_kv_set(CODEPLUG_KEY_LIST_NAME, "Club", 4) && codeplug_kv_get(CODEPLUG_KEY_LIST_NAME, v, sizeof(v)) == 4);
+	}
+	CHECK(absent > 0 && whole > 0);
+}
+
 int main(void)
 {
 	test_blank();
@@ -603,6 +948,14 @@ int main(void)
 	test_head();
 	test_serial_commit();
 	test_power_cut();
+	test_cont_create();
+	test_cont_read();
+	test_cont_chain();
+	test_cont_header_kept();
+	test_cont_batch();
+	test_table();
+	test_cont_keep();
+	test_cont_power_cut();
 	sim_flash_free();
 	if (failures) {
 		printf("codeplugKvTest: %d failure(s)\n", failures);

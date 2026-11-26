@@ -1754,6 +1754,7 @@
  "editor.aes.generate": "Generate",
  "editor.aes.sharing_help": "Zone sharing can include the system record. AES keys stay local.",
  "editor.mode_name.NXDN": "NXDN",
+ "editor.mode_name.CONVENTIONAL": "Conventional network",
  "editor.modes.add": "Add System",
  "editor.modes.add_title": "New {type} system",
  "editor.modes.add_ham": "Add Recommended Ham System",

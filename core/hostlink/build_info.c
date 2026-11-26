@@ -98,6 +98,9 @@ static const char features[] =
 #if CONFIG_DMR_AES
 	"DMR_AES,"
 #endif
+#if CONFIG_CONTACT_LISTS
+	"CONTACT_LISTS,"
+#endif
 #if CONFIG_DMR_TRUNK
 	"DMR_TRUNK,"
 #endif

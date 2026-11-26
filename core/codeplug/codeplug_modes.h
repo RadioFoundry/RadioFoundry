@@ -44,7 +44,8 @@ bool radio_nxdn_fits(void);
 	X(1, DMR_TRUNK, "T3", CONFIG_DMR_TRUNK)	/* a DMR Tier III system */ \
 	X(3, P25_TRUNK, "P25T", CONFIG_P25_TRUNK)	/* a P25 trunked system (2 is reserved for a P25 conventional one) */ \
 	X(4, NXDN, "NXDN", CODEPLUG_RUNS_NXDN) /* NXDN conventional identity and traffic keys */ \
-	X(5, DMR_AES, "AES", CONFIG_DMR_AES)
+	X(5, DMR_AES, "AES", CONFIG_DMR_AES) \
+	X(6, CONVENTIONAL, "NET", CONFIG_CONTACT_LISTS)	/* the network a plain channel names for contact lists: no block, no radio behavior */
 
 // A test (or a build that adds a mode out of tree) may append rows of its own, defined before this header
 #ifndef CODEPLUG_KINDS_EXTRA

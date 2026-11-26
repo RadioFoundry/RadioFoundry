@@ -125,7 +125,8 @@ and the lists together, writes a new check: it flags the codeplug, and the user 
 ## 4. Edit rules
 
 Every write of a contact by the radio (`codeplug_set_contact`, `codeplug_delete_contact`, and the contacts a zone
-import adds) goes through one function that changes the tables, the membership and the check together:
+import adds) is bracketed by `codeplug_contact_lists_begin`, which judges membership as the tables are before the write,
+and `codeplug_contact_lists_end`, which then changes the membership and the check together:
 
 | Edit | Membership | Check |
 |---|---|---|
@@ -134,6 +135,7 @@ import adds) goes through one function that changes the tables, the membership a
 | A contact is deleted | The slot's byte becomes 0xFF | Recomputed |
 | A zone import adds contacts | 0xFF for each new contact; a contact found by name and ID is kept as it is | Recomputed once |
 | An edit while membership is void (3.3) | Not changed | Not changed |
+| An edit that names no list in a codeplug with no membership key | Not changed | Not written: there is nothing to keep consistent, and no continuation is made for it |
 
 - The contact record is written first, then the keys in one batch (one journaled sector rewrite, codeplug-settings.md
   4). A power cut between the two leaves a check that doesn't match: the membership is void and names disappear. They
@@ -149,7 +151,7 @@ import adds) goes through one function that changes the tables, the membership a
 ## 5. Lookup
 
 The radio names a received call (the caller and the talk group on the display) through one entry point,
-`codeplug_name_lookup(selection, mode, id, group, out)`.
+`codeplug_name_lookup(selection, mode, id, group, out, len)`.
 
 ### 5.1 The selection
 

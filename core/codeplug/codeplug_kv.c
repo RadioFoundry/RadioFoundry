@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 The RadioFoundry Authors
 // The codeplug settings area (docs/spec/codeplug-settings.md). Reads walk the flash a few bytes at a time (no sector
-// in RAM, and nothing of the area kept between calls); a write applies a batch of sets and removes to the sector in
-// the storage's shared buffer and rewrites it through the journal in one step, so a power cut leaves the old area or
-// the new one
+// in RAM, and nothing of the area kept between calls), the first sector and then the continuation it names (2.4); a
+// write applies a batch of sets and removes to a sector in the storage's shared buffer and rewrites it through the
+// journal in one step, so a power cut leaves the old sector or the new one
 #include <string.h>
 #include "codeplug.h"
 #include "codeplug_kv.h"
@@ -11,22 +11,44 @@
 #include "storage/storage.h"
 
 #define ENTRY_HDR	4u	// key, length
+#define IMAGE_SIZE	0x10000u	// the EEPROM image: a continuation's offset is inside it (2.4)
 
 static uint16_t get16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t get32(const uint8_t *p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void put32(uint8_t *p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
 
-// None while the open-firmware area holds another firmware's codeplug (codeplug_foreign): that is shown as no
-// codeplug, so its bytes at 0xE000 aren't read as our keys nor written over before the user has answered
-static bool area_addr(uint32_t *addr)
+// A checked sector of the area: where its entries start, their length, count and CRC, and the continuation its header
+// names (bytes 12-15, 0 = none)
+typedef struct {
+	uint32_t data;
+	uint32_t crc;
+	uint32_t next;
+	uint16_t len, count;
+} sector_t;
+
+static bool in_cont(uint16_t key)
+{
+	return key >= CODEPLUG_KV_CONT_LO && key <= CODEPLUG_KV_CONT_HI;
+}
+
+// The flash address of the sector at off in the EEPROM image. None while the open-firmware area holds another
+// firmware's codeplug (codeplug_foreign): that is shown as no codeplug, so its bytes at 0xE000 aren't read as our keys
+// nor written over before the user has answered
+static bool sector_addr(uint32_t off, uint32_t *addr)
 {
 	const hal_flash_map_t *m = storage_map();
-	if (m == NULL || codeplug_foreign() || board.flash->size == 0 || m->openfw_eeprom + CODEPLUG_KV_ADDR + STORAGE_SECTOR > board.flash->size) {
+	if (m == NULL || codeplug_foreign() || board.flash->size == 0 || off % STORAGE_SECTOR != 0 || off + STORAGE_SECTOR > IMAGE_SIZE ||
+	    m->openfw_eeprom + off + STORAGE_SECTOR > board.flash->size) {
 		return false;
 	}
-	*addr = m->openfw_eeprom + CODEPLUG_KV_ADDR;
+	*addr = m->openfw_eeprom + off;
 	return true;
+}
+
+static bool area_addr(uint32_t *addr)
+{
+	return sector_addr(CODEPLUG_KV_ADDR, addr);
 }
 
 // The header's state; on CODEPLUG_KV_VALID the header length, data length and CRC it names (the entries unchecked)
@@ -65,41 +87,42 @@ static bool walk_ok(const uint8_t *data, uint16_t len, uint16_t *count)
 	return true;
 }
 
-// The area in flash, checked (magic, version, bounds, CRC, every entry inside the data). On CODEPLUG_KV_VALID: where
-// the data starts, its length and its CRC. Under storage_lock
-static codeplug_kv_state_t check_flash(uint32_t *data, uint16_t *len, uint16_t *count, uint32_t *crc)
+// The sector at flash address a, checked (magic, version, bounds, CRC, every entry inside the data). On
+// CODEPLUG_KV_VALID s describes it. Under storage_lock
+static codeplug_kv_state_t check_flash(uint32_t a, sector_t *s)
 {
 	uint8_t b[CODEPLUG_KV_HDR];	// small chunks: no RAM of its own, little stack (the debug link's view runs deep)
-	uint32_t a;
 	uint16_t hdr;
-	*count = 0;
-	if (!area_addr(&a) || !board.flash->read(a, b, CODEPLUG_KV_HDR)) {
+	s->count = 0;
+	s->len = 0;
+	if (!board.flash->read(a, b, CODEPLUG_KV_HDR)) {
 		return CODEPLUG_KV_EMPTY;
 	}
-	codeplug_kv_state_t s = header(b, &hdr, len, crc);
-	if (s != CODEPLUG_KV_VALID) {
-		return s;
+	codeplug_kv_state_t st = header(b, &hdr, &s->len, &s->crc);
+	if (st != CODEPLUG_KV_VALID) {
+		return st;
 	}
-	*data = a + hdr;
+	s->next = get32(&b[12]);
+	s->data = a + hdr;
 	uint32_t c = 0, at = 0, entry = 0;
-	while (at < *len) {
-		uint32_t n = *len - at < sizeof(b) ? *len - at : sizeof(b);
-		if (!board.flash->read(*data + at, b, n)) {
+	while (at < s->len) {
+		uint32_t n = s->len - at < sizeof(b) ? s->len - at : sizeof(b);
+		if (!board.flash->read(s->data + at, b, n)) {
 			return CODEPLUG_KV_BAD;
 		}
 		c = storage_crc32(c, b, n);
 		at += n;
 	}
-	if (c != *crc) {
+	if (c != s->crc) {
 		return CODEPLUG_KV_BAD;
 	}
-	while (entry < *len) {	// the entries' framing, a header at a time
-		if (*len - entry < ENTRY_HDR || !board.flash->read(*data + entry, b, ENTRY_HDR) ||
-		    get16(&b[2]) > *len - entry - ENTRY_HDR) {
+	while (entry < s->len) {	// the entries' framing, a header at a time
+		if (s->len - entry < ENTRY_HDR || !board.flash->read(s->data + entry, b, ENTRY_HDR) ||
+		    get16(&b[2]) > s->len - entry - ENTRY_HDR) {
 			return CODEPLUG_KV_BAD;
 		}
 		entry += ENTRY_HDR + get16(&b[2]);
-		(*count)++;
+		s->count++;
 	}
 	return CODEPLUG_KV_VALID;
 }
@@ -125,28 +148,68 @@ void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi)
 	c->done = c->lo > c->hi;
 }
 
-// Where the walk's data starts: the area checked whole at the first call, its header compared at each later one (a
-// rewrite gives it a new CRC or length), so a walk never reads entries at offsets of an area that is gone. Under
-// storage_lock
+// The walk takes sector s (at flash address a): its header as checked, and the sector it names. A pointer past the
+// image can't be followed
+static void enter(codeplug_kv_cursor_t *c, uint32_t a, const sector_t *s)
+{
+	c->crc = s->crc;
+	c->len = s->len;
+	c->hdr = (uint8_t)(s->data - a);
+	c->next = s->next < IMAGE_SIZE ? (uint16_t)s->next : 0;
+	c->at = 0;
+	c->first = CODEPLUG_KV_NONE;
+}
+
+// Where the current sector's data starts: the first sector checked whole at the first call, its header compared at each
+// later one (a rewrite gives it a new CRC or length), so a walk never reads entries at offsets of a sector that is
+// gone. Under storage_lock
 static bool walk_data(codeplug_kv_cursor_t *c, uint32_t *data)
 {
 	uint32_t a, crc;
-	uint16_t len, count, hdr;
+	uint16_t len, hdr;
 	if (c->hdr == 0) {
-		if (check_flash(data, &len, &count, &crc) != CODEPLUG_KV_VALID || !area_addr(&a)) {
+		sector_t s;
+		if (!area_addr(&a) || check_flash(a, &s) != CODEPLUG_KV_VALID) {
 			return false;
 		}
-		c->crc = crc;
-		c->len = len;
-		c->hdr = (uint8_t)(*data - a);
+		c->sector = CODEPLUG_KV_ADDR;
+		c->visited = (uint16_t)(1u << (CODEPLUG_KV_ADDR / STORAGE_SECTOR));
+		enter(c, a, &s);
+		*data = s.data;
 		return true;
 	}
 	uint8_t h[CODEPLUG_KV_HDR];
-	if (!area_addr(&a) || !board.flash->read(a, h, sizeof(h)) || header(h, &hdr, &len, &crc) != CODEPLUG_KV_VALID ||
+	if (!sector_addr(c->sector, &a) || !board.flash->read(a, h, sizeof(h)) || header(h, &hdr, &len, &crc) != CODEPLUG_KV_VALID ||
 	    hdr != c->hdr || len != c->len || crc != c->crc) {
 		return false;
 	}
 	*data = a + hdr;
+	return true;
+}
+
+// Move on to the sector the current one names (2.4): a multiple of the sector size inside the image, not reached
+// already, a valid area, and at most CODEPLUG_KV_CHAIN_MAX in all. False ends the walk: the chain stops at the first
+// sector that is missing, erased, bad or newer. Under storage_lock
+static bool advance(codeplug_kv_cursor_t *c, uint32_t *data)
+{
+	uint32_t a;
+	sector_t s;
+	unsigned reached = 0;
+	for (unsigned v = c->visited; v != 0; v >>= 1) {
+		reached += v & 1u;
+	}
+	uint16_t bit = (uint16_t)(1u << (c->next / STORAGE_SECTOR));
+	if (c->next == 0 || c->next % STORAGE_SECTOR != 0 || (c->visited & bit) != 0 || reached >= CODEPLUG_KV_CHAIN_MAX ||
+	    !sector_addr(c->next, &a) || check_flash(a, &s) != CODEPLUG_KV_VALID) {
+		return false;
+	}
+	if (c->first != CODEPLUG_KV_NONE) {
+		c->earlier = 1;
+	}
+	c->visited |= bit;
+	c->sector = c->next;
+	enter(c, a, &s);
+	*data = s.data;
 	return true;
 }
 
@@ -162,31 +225,69 @@ static bool seen_flash(uint32_t data, uint32_t from, uint32_t end, uint16_t k)
 	return false;
 }
 
-int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+// Whether a sector before the walk's current one has an entry with key k: the key is read from the earlier (2.4)
+static bool seen_earlier(const codeplug_kv_cursor_t *c, uint16_t k)
+{
+	uint32_t off = CODEPLUG_KV_ADDR;
+	for (unsigned i = 0; i < CODEPLUG_KV_CHAIN_MAX && off != c->sector; i++) {
+		uint32_t a, crc;
+		uint16_t hdr, len;
+		uint8_t h[CODEPLUG_KV_HDR];
+		if (!sector_addr(off, &a) || !board.flash->read(a, h, sizeof(h)) || header(h, &hdr, &len, &crc) != CODEPLUG_KV_VALID ||
+		    seen_flash(a + hdr, 0, len, k)) {
+			return true;	// gone under the walk: skip, as a failed read does
+		}
+		off = get32(&h[12]);
+	}
+	return false;
+}
+
+// The walk's next entry in range: its key, the flash address of its value and its length; -1 at the end. Under
+// storage_lock
+static int next_entry(codeplug_kv_cursor_t *c, uint16_t *key, uint32_t *value)
 {
 	uint32_t data;
-	int found = -1;
-	storage_lock();
-	if (!c->done && walk_data(c, &data)) {
-		uint8_t e[ENTRY_HDR];
-		while (found < 0 && c->at < c->len && board.flash->read(data + c->at, e, ENTRY_HDR)) {
-			uint16_t k = get16(e), n = get16(&e[2]);
-			uint32_t at = c->at;
-			c->at = (uint16_t)(at + ENTRY_HDR + n);
-			if (k < c->lo || k > c->hi) {
-				continue;
+	if (c->done || !walk_data(c, &data)) {
+		return -1;
+	}
+	uint8_t e[ENTRY_HDR];
+	for (;;) {
+		if (c->at >= c->len) {
+			if (!advance(c, &data)) {
+				return -1;
 			}
-			if (c->first == CODEPLUG_KV_NONE) {
-				c->first = (uint16_t)at;
-			} else if (seen_flash(data, c->first, at, k)) {
-				continue;	// a later entry of a key: no reader takes it (docs/spec/codeplug-settings.md 4)
-			}
-			if (max != 0 && !board.flash->read(data + at + ENTRY_HDR, buf, n < max ? n : max)) {
-				break;
-			}
-			*key = k;
-			found = n;
+			continue;
 		}
+		if (!board.flash->read(data + c->at, e, ENTRY_HDR)) {
+			return -1;
+		}
+		uint16_t k = get16(e), n = get16(&e[2]);
+		uint32_t at = c->at;
+		c->at = (uint16_t)(at + ENTRY_HDR + n);
+		if (k < c->lo || k > c->hi) {
+			continue;
+		}
+		if (c->first == CODEPLUG_KV_NONE) {
+			c->first = (uint16_t)at;
+		} else if (seen_flash(data, c->first, at, k)) {
+			continue;	// a later entry of a key: no reader takes it (docs/spec/codeplug-settings.md 4)
+		}
+		if (c->earlier != 0 && seen_earlier(c, k)) {
+			continue;	// the key is in an earlier sector, which wins (2.4)
+		}
+		*key = k;
+		*value = data + at + ENTRY_HDR;
+		return n;
+	}
+}
+
+int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t max)
+{
+	uint32_t at;
+	storage_lock();
+	int found = next_entry(c, key, &at);
+	if (found >= 0 && max != 0 && !board.flash->read(at, buf, found < max ? (uint16_t)found : max)) {
+		found = -1;
 	}
 	c->done = found < 0;
 	storage_unlock();
@@ -200,12 +301,27 @@ uint8_t codeplug_kv_serial(void)
 	return (uint8_t)(kv_serial + codeplug_serial());	// both only go up: the sum moves when either does
 }
 
-int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+int codeplug_kv_read(uint16_t key, uint16_t off, void *buf, uint16_t max)
 {
 	codeplug_kv_cursor_t c;
 	uint16_t k;
+	uint32_t at;
 	codeplug_kv_begin(&c, key, key);
-	return codeplug_kv_next(&c, &k, buf, max);
+	storage_lock();
+	int n = next_entry(&c, &k, &at);
+	if (n >= 0 && max != 0 && off < n) {
+		uint16_t cnt = (uint16_t)(n - off) < max ? (uint16_t)(n - off) : max;
+		if (!board.flash->read(at + off, buf, cnt)) {
+			n = -1;
+		}
+	}
+	storage_unlock();
+	return n;
+}
+
+int codeplug_kv_get(uint16_t key, void *buf, uint16_t max)
+{
+	return codeplug_kv_read(key, 0, buf, max);
 }
 
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
@@ -216,27 +332,28 @@ bool codeplug_kv_get_id(uint16_t key, uint32_t *id)
 
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries)
 {
-	uint32_t data, crc;
-	uint16_t len = 0, count = 0;
+	uint32_t a;
+	sector_t s;
 	storage_lock();
-	codeplug_kv_state_t s = check_flash(&data, &len, &count, &crc);
+	codeplug_kv_state_t st = area_addr(&a) ? check_flash(a, &s) : CODEPLUG_KV_EMPTY;
 	storage_unlock();
-	*length = s == CODEPLUG_KV_VALID ? len : 0;
-	*entries = s == CODEPLUG_KV_VALID ? count : 0;
-	return s;
+	*length = st == CODEPLUG_KV_VALID ? s.len : 0;
+	*entries = st == CODEPLUG_KV_VALID ? s.count : 0;
+	return st;
 }
 
 bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector)
 {
-	uint32_t a, data, crc;
-	uint16_t len, count;
-	if (!area_addr(&a) || addr != a) {
+	uint32_t a, c;
+	sector_t s;
+	// The area's sector and its continuation's, each judged for itself (docs/spec/codeplug-settings.md 6)
+	if (!(area_addr(&a) && addr == a) && !(sector_addr(CODEPLUG_KV_CONT_ADDR, &c) && addr == c)) {
 		return false;	// another sector, or a foreign codeplug's bytes: written as they come
 	}
 	storage_lock();
-	codeplug_kv_state_t s = check_flash(&data, &len, &count, &crc);
+	codeplug_kv_state_t st = check_flash(addr, &s);
 	storage_unlock();
-	return s == CODEPLUG_KV_NEWER || (s == CODEPLUG_KV_VALID && codeplug_kv_check(sector) != CODEPLUG_KV_VALID);
+	return st == CODEPLUG_KV_NEWER || (st == CODEPLUG_KV_VALID && codeplug_kv_check(sector) != CODEPLUG_KV_VALID);
 }
 
 bool codeplug_kv_commit(uint32_t addr, const uint8_t *sector)
@@ -262,11 +379,72 @@ static uint32_t cut(uint8_t *d, uint32_t len, uint32_t at, uint32_t next)
 	return len - (next - at);
 }
 
+// A byte table op (CODEPLUG_KV_TABLE) on the entries d[0..*len): the bytes it names set, the value grown with 0xFF to
+// reach them and cut of its trailing 0xFF after, an empty value removed. False if the growth doesn't fit in room
+static bool apply_table(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op_t *o, bool *changed)
+{
+	const uint8_t *v = o->value;
+	uint32_t l = *len, at = 0, cnt = o->len & ~CODEPLUG_KV_TABLE, off = get16(v), n = 0;
+	v += 2;
+	while (at < l && get16(&d[at]) != o->key) {
+		at += ENTRY_HDR + get16(&d[at + 2]);
+	}
+	bool have = at < l;
+	if (have) {
+		n = get16(&d[at + 2]);
+	}
+	bool diff = false;
+	for (uint32_t i = 0; i < cnt; i++) {
+		diff = diff || (off + i < n ? d[at + ENTRY_HDR + off + i] : 0xFFu) != v[i];
+	}
+	if (!diff) {
+		return true;
+	}
+	uint32_t grown = off + cnt > n ? off + cnt : n;
+	if (!have) {
+		if (l + ENTRY_HDR + grown > room) {
+			return false;
+		}
+		at = l;
+		put16(&d[at], o->key);
+		put16(&d[at + 2], 0);
+		l += ENTRY_HDR;
+	} else if (grown > n && l + (grown - n) > room) {
+		return false;
+	}
+	if (grown > n) {
+		uint32_t tail = at + ENTRY_HDR + n;
+		memmove(&d[at + ENTRY_HDR + grown], &d[tail], l - tail);
+		memset(&d[tail], 0xFF, grown - n);
+		l += grown - n;
+		put16(&d[at + 2], grown);
+	}
+	memcpy(&d[at + ENTRY_HDR + off], v, cnt);
+	uint32_t keep = grown;
+	while (keep > 0 && d[at + ENTRY_HDR + keep - 1] == 0xFFu) {
+		keep--;
+	}
+	uint32_t after = at + ENTRY_HDR + grown;
+	if (keep == 0) {
+		l = cut(d, l, at, after);
+	} else if (keep < grown) {
+		memmove(&d[at + ENTRY_HDR + keep], &d[after], l - after);
+		l -= grown - keep;
+		put16(&d[at + 2], keep);
+	}
+	*len = (uint16_t)l;
+	*changed = true;
+	return true;
+}
+
 // One op on the entries d[0..*len): a set replaces the key's first entry in place or appends one (with
 // CODEPLUG_KV_HEAD only its first bytes, the stored value's later ones kept), a remove takes out every entry of the
 // key. *changed when a byte changed. False if a set doesn't fit in room
 static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op_t *o, bool *changed)
 {
+	if (o->len != CODEPLUG_KV_REMOVE && (o->len & CODEPLUG_KV_TABLE) != 0) {
+		return apply_table(d, len, room, o, changed);
+	}
 	uint32_t l = *len, at = 0;
 	codeplug_kv_op_t set = *o;
 	const codeplug_kv_op_t *op = &set;
@@ -323,10 +501,14 @@ static bool apply(uint8_t *d, uint16_t *len, uint32_t room, const codeplug_kv_op
 	return true;
 }
 
-// Apply the ops to the area in b (a whole sector); with *changed, b is the new area: later entries of any key dropped
-// (no reader sees them), the rest 0xFF, the header and CRC made. A sector that isn't a valid area starts a new one.
-// False if an op doesn't fit or the area is a newer version
-static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool *changed)
+// Apply the ops of the sector in b (a whole sector; cont: the continuation) with *changed, b is the new sector: later
+// entries of any key dropped (no reader sees them), the rest 0xFF, the header and CRC made. A sector that isn't a valid
+// area starts a new one. Ops for the other sector aren't applied; when this sector changes anyway, a set or remove of
+// a key that belongs to an earlier sector, or a remove of one that belongs to a later, also takes the key out here:
+// a key present in two sectors is read from the earlier (2.4), so the copy a writer didn't set mustn't survive. link
+// (not below 0) is the continuation's offset for header bytes 12-15, set when it differs. False if an op doesn't fit
+// or the sector is a newer version
+static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool cont, int32_t link, bool *changed)
 {
 	uint16_t hdr = CODEPLUG_KV_HDR, len = 0;
 	uint32_t crc;
@@ -343,9 +525,19 @@ static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool *chang
 	uint32_t room = STORAGE_SECTOR - hdr;
 	*changed = false;
 	for (uint8_t i = 0; i < n; i++) {
-		if (!apply(d, &len, room, &ops[i], changed)) {
+		if (in_cont(ops[i].key) == cont && !apply(d, &len, room, &ops[i], changed)) {
 			return false;
 		}
+	}
+	for (uint8_t i = 0; i < n && *changed; i++) {
+		if (in_cont(ops[i].key) != cont && (cont || ops[i].len == CODEPLUG_KV_REMOVE)) {
+			codeplug_kv_op_t drop = { ops[i].key, CODEPLUG_KV_REMOVE, NULL };
+			apply(d, &len, room, &drop, changed);
+		}
+	}
+	if (link >= 0 && get32(&b[12]) != (uint32_t)link) {
+		put32(&b[12], (uint32_t)link);
+		*changed = true;
 	}
 	if (!*changed) {
 		return true;
@@ -368,26 +560,114 @@ static bool edit(uint8_t *b, const codeplug_kv_op_t *ops, uint8_t n, bool *chang
 	return true;
 }
 
+// Edit the sector at flash address a in the shared buffer: fresh starts it from an erased one (what was there is
+// dropped), write puts it through the journal when something changed (false: only whether the ops fit)
+static bool sector_edit(uint32_t a, bool cont, const codeplug_kv_op_t *ops, uint8_t n, int32_t link, bool fresh, bool write,
+			bool *changed)
+{
+	uint8_t *b = storage_buffer_acquire();
+	bool ok = b != NULL;
+	*changed = false;
+	if (ok && fresh) {
+		memset(b, 0xFF, STORAGE_SECTOR);
+	} else if (ok) {
+		ok = board.flash->read(a, b, STORAGE_SECTOR);
+	}
+	ok = ok && edit(b, ops, n, cont, link, changed) && (!write || !*changed || storage_sector_write(a, b));
+	if (b != NULL) {
+		storage_buffer_release();
+	}
+	return ok;
+}
+
+// The continuation to write (2.4): the one the first sector names when that is a valid area of ours, else the first
+// one, 0xF000, started from an erased sector so that what an old unlinked continuation held doesn't come back. False
+// when a sector there is of a later version (never written)
+static bool continuation(uint32_t main_a, uint32_t *off, bool *fresh)
+{
+	sector_t s, t;
+	uint32_t pa;
+	*off = CODEPLUG_KV_CONT_ADDR;
+	*fresh = true;
+	codeplug_kv_state_t st = check_flash(main_a, &s);
+	if (st == CODEPLUG_KV_NEWER) {
+		return false;
+	}
+	if (st == CODEPLUG_KV_VALID && s.next != 0 && s.next % STORAGE_SECTOR == 0 && s.next < IMAGE_SIZE &&
+	    s.next != CODEPLUG_KV_ADDR && sector_addr(s.next, &pa)) {
+		st = check_flash(pa, &t);
+		if (st == CODEPLUG_KV_NEWER) {
+			return false;
+		}
+		if (st == CODEPLUG_KV_VALID) {
+			*off = s.next;
+			*fresh = false;
+			return true;
+		}
+	}
+	return !(sector_addr(CODEPLUG_KV_CONT_ADDR, &pa) && check_flash(pa, &t) == CODEPLUG_KV_NEWER);
+}
+
+// The ops of a batch, sector by sector: the continuation first (created and linked on its first write), then the first
+// sector. Under storage_lock
+static bool write_sectors(uint32_t a, const codeplug_kv_op_t *ops, uint8_t n, bool main, bool cont, bool *changed)
+{
+	uint32_t off = 0, ca = 0;
+	bool fresh = false, c_changed = false, m_changed = false;
+	if (cont && (!continuation(a, &off, &fresh) || !sector_addr(off, &ca))) {
+		return false;
+	}
+	// What doesn't fit stops the batch before anything is written
+	if (main && cont && !sector_edit(a, false, ops, n, -1, false, false, &m_changed)) {
+		return false;
+	}
+	if (cont && !sector_edit(ca, true, ops, n, -1, fresh, true, &c_changed)) {
+		return false;
+	}
+	// A continuation just written is linked from the first sector, which keeps a link it has already
+	bool link = c_changed;
+	if ((main || link) && !sector_edit(a, false, ops, n, link ? (int32_t)off : -1, false, true, &m_changed)) {
+		return false;
+	}
+	*changed = c_changed || m_changed;
+	return true;
+}
+
+// Whether an op is well formed: a key, a value when it has bytes, and a table op's offset and bytes inside a sector
+static bool op_ok(const codeplug_kv_op_t *o)
+{
+	uint16_t len = o->len != CODEPLUG_KV_REMOVE ? (uint16_t)(o->len & ~CODEPLUG_KV_HEAD) : 0;
+	if (o->key == 0 || o->key == 0xFFFFu || (len != 0 && o->value == NULL)) {
+		return false;
+	}
+	if (o->len != CODEPLUG_KV_REMOVE && (o->len & CODEPLUG_KV_TABLE) != 0) {
+		uint16_t cnt = o->len & ~CODEPLUG_KV_TABLE;
+		return (o->len & CODEPLUG_KV_HEAD) == 0 && cnt != 0 && o->value != NULL &&
+		       (uint32_t)get16(o->value) + cnt <= STORAGE_SECTOR - CODEPLUG_KV_HDR;
+	}
+	return true;
+}
+
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n)
 {
 	uint32_t a;
+	bool main = false, cont = false;
 	for (uint8_t i = 0; i < n; i++) {
-		uint16_t len = ops[i].len != CODEPLUG_KV_REMOVE ? (uint16_t)(ops[i].len & ~CODEPLUG_KV_HEAD) : 0;
-		if (ops[i].key == 0 || ops[i].key == 0xFFFFu || (len != 0 && ops[i].value == NULL)) {
+		if (!op_ok(&ops[i])) {
 			return false;
+		}
+		if (in_cont(ops[i].key)) {
+			cont = true;
+		} else {
+			main = true;
 		}
 	}
 	if (!area_addr(&a)) {
 		return false;
 	}
 	storage_lock();
-	uint8_t *b = storage_buffer_acquire();
 	bool changed = false;
-	bool ok = b != NULL && board.flash->read(a, b, STORAGE_SECTOR) && edit(b, ops, n, &changed) &&
-		  (!changed || storage_sector_write(a, b));
-	if (b != NULL) {
-		storage_buffer_release();
-	}
+	bool ok = write_sectors(a, ops, n, main, cont, &changed);
 	if (ok && changed) {
 		kv_serial++;	// the radio core takes the new values when it sees it move: no codeplug reload
 	}

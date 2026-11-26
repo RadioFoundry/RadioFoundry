@@ -99,6 +99,8 @@ static uint32_t fl_base = DEFAULT_FLASH_BASE;
 #define LIST_COUNTS	FL(0x8D620u)
 #define LIST_BASE	FL(0x8D6A0u)
 #define LIST_SIZE	80u
+#define CONTACT_IDENT	0x10u	// the ID (BCD, as stored) and the call type: what codeplug_contacts_check covers
+#define CONTACT_IDENT_LEN 5u
 #define CONTACT_COUNT	1024u	// CODEPLUG_CONTACTS_MAX, CODEPLUG_LISTS_MAX: the layout's, built with DMR or not
 #define LIST_COUNT	76u
 
@@ -1032,9 +1034,10 @@ bool codeplug_start_new(void)
 		ok = flash_write(GEN_BASE, NULL, GEN_CLEAR) && flash_write(BOOT_TEXT, NULL, 2u * CODEPLUG_NAME_LEN) &&
 		     flash_write(QUICK_KEYS, zero, CODEPLUG_QUICK_KEYS * 2u) &&
 		     flash_write(CONTACT_BASE, NULL, CONTACT_COUNT * CONTACT_SIZE) &&
-		     // The settings area: keys from before the other firmware (it never wrote there) would come back to
-		     // life in a codeplug meant to be clean (docs/spec/codeplug-settings.md 5)
+		     // The settings area and its continuation: keys from before the other firmware (it never wrote there)
+		     // would come back to life in a codeplug meant to be clean (docs/spec/codeplug-settings.md 5)
 		     flash_write(EE(CODEPLUG_KV_ADDR), NULL, STORAGE_SECTOR) &&
+		     flash_write(EE(CODEPLUG_KV_CONT_ADDR), NULL, STORAGE_SECTOR) &&
 		     // The air mode contact table, for the same reason (docs/spec/air-contacts.md 2)
 		     flash_write(EE(CODEPLUG_AIR_CONTACTS_ADDR), NULL, CODEPLUG_AIR_CONTACTS_LEN);
 		ev_bad = 0;	// cleared: ours from now on (a failure re-reads it, materialize)
@@ -1593,6 +1596,38 @@ bool codeplug_contacts_each(codeplug_contact_fn fn, void *ctx)
 	return ok;
 }
 
+bool codeplug_contacts_check(uint32_t *crc)
+{
+	if (source != CODEPLUG_OPENFW) {
+		return false;
+	}
+	uint32_t c = *crc;
+	bool ok = true;
+	for (unsigned first = 0; first < CODEPLUG_CONTACTS_MAX && ok; first += CONTACTS_PER_READ) {
+		unsigned n = CODEPLUG_CONTACTS_MAX - first < CONTACTS_PER_READ ? CODEPLUG_CONTACTS_MAX - first
+									  : CONTACTS_PER_READ;
+		storage_lock();
+		bool nested = in_scan;	// the block is in use by a scan this task is inside of: record by record then
+		in_scan = true;
+		ok = nested || flash_read(CONTACT_BASE + first * CONTACT_SIZE, scan_blk, n * CONTACT_SIZE);
+		for (unsigned i = 0; i < n && ok; i++) {
+			uint8_t id[CONTACT_IDENT_LEN];
+			if (nested) {
+				ok = flash_read(CONTACT_BASE + (first + i) * CONTACT_SIZE + CONTACT_IDENT, id, sizeof(id));
+			} else {
+				memcpy(id, &scan_blk[i * CONTACT_SIZE + CONTACT_IDENT], sizeof(id));
+			}
+			c = ok ? storage_crc32(c, id, sizeof(id)) : c;
+		}
+		in_scan = nested;
+		storage_unlock();
+	}
+	if (ok) {
+		*crc = c;
+	}
+	return ok;
+}
+
 bool codeplug_set_contact(uint16_t index, const contact_t *c)
 {
 	uint8_t r[CONTACT_SIZE];
@@ -1704,13 +1739,16 @@ typedef struct {
 	uint32_t id;
 	bool group;
 	contact_t *out;
+	codeplug_contact_pred_fn pred;
+	void *pred_ctx;
 	uint16_t index;
 } find_t;
 
 static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 {
 	find_t *f = ctx;
-	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group) {
+	if (c == NULL || c->id != f->id || (c->type == CONTACT_PRIVATE) == f->group ||
+	    (f->pred != NULL && !f->pred(index, f->pred_ctx))) {
 		return true;
 	}
 	if (f->out != NULL) {
@@ -1720,15 +1758,20 @@ static bool find_one(uint16_t index, const contact_t *c, void *ctx)
 	return false;
 }
 
-uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+uint16_t codeplug_contact_find_index_if(uint32_t id, bool group, codeplug_contact_pred_fn pred, void *pred_ctx, contact_t *out)
 {
 	if (id == 0 || id > 0xFFFFFFu) {
 		return 0;
 	}
 	// Locked like every other reader: the radio task and the UI task both search, and an edit may be writing
-	find_t f = { .id = id, .group = group, .out = out };
+	find_t f = { .id = id, .group = group, .out = out, .pred = pred, .pred_ctx = pred_ctx };
 	codeplug_contacts_each(find_one, &f);
 	return f.index;
+}
+
+uint16_t codeplug_contact_find_index(uint32_t id, bool group, contact_t *out)
+{
+	return codeplug_contact_find_index_if(id, group, NULL, NULL, out);
 }
 
 bool codeplug_contact_find(uint32_t id, bool group, contact_t *out)

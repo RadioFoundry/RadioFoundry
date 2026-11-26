@@ -13,6 +13,12 @@
 #define CODEPLUG_KV_MAGIC	0x564B4652u	// bytes 52 46 4B 56, "RFKV"
 #define CODEPLUG_KV_VERSION	1u
 #define CODEPLUG_KV_HDR		16u		// the header length this version writes
+// The first continuation (docs/spec/codeplug-settings.md 2.4, proposed): a second sector of the same format that the
+// first one's header names. The keys of CODEPLUG_KV_CONT_LO..HI live only there, every other key only in the first
+#define CODEPLUG_KV_CONT_ADDR	0xF000u		// in the EEPROM image: one STORAGE_SECTOR
+#define CODEPLUG_KV_CONT_LO	0x1E00u
+#define CODEPLUG_KV_CONT_HI	0x20FFu
+#define CODEPLUG_KV_CHAIN_MAX	8u		// sectors a reader follows in all
 
 // Keys (docs/spec/codeplug-settings.md 3): a key's meaning never changes, a new meaning gets a new key
 #define CODEPLUG_KEY_ARS_SERVER	0x0001u		// u32: the ARS presence server's DMR ID, 0 = ARS off
@@ -68,8 +74,12 @@ typedef enum {
 } codeplug_kv_state_t;
 
 // The value's length (at most max bytes are copied to buf), or -1 when the key is absent or the area isn't valid. Each
-// call checks the whole area: to read several keys, walk them with codeplug_kv_next
+// call checks the whole area (the first sector, and each continuation it reaches): to read several keys, walk them with
+// codeplug_kv_next
 int codeplug_kv_get(uint16_t key, void *buf, uint16_t max);
+// The same from byte off of the value: at most max bytes of it are copied to buf (none when off is past its end), and
+// its whole length returned. For a byte table (contact-lists.md 3) whose one byte is wanted, not the 1 KB around it
+int codeplug_kv_read(uint16_t key, uint16_t off, void *buf, uint16_t max);
 // A value that is a DMR ID: false when absent, empty, not a scalar or above CODEPLUG_DMR_ID_MAX (as if absent)
 bool codeplug_kv_get_id(uint16_t key, uint32_t *id);
 
@@ -130,17 +140,22 @@ static inline bool codeplug_kv_id(const uint8_t *v, int n, uint32_t *id)
 	return true;
 }
 
-// A walk over the entries with keys lo..hi, in the area's order, a later entry of a key skipped (the first counts). The
-// area is checked whole once, at the first codeplug_kv_next; each later call reads only its header again, and the walk
-// ends if the area changed under it. On the caller's stack, set up by codeplug_kv_begin
+// A walk over the entries with keys lo..hi, in the area's order, a later entry of a key skipped (the first counts):
+// the first sector's entries, then the continuation's (2.4), a key in two sectors taken from the earlier. Each sector is
+// checked whole when the walk reaches it; each later call reads only its header again, and the walk ends if the sector
+// changed under it. On the caller's stack, set up by codeplug_kv_begin
 typedef struct {
-	uint32_t crc;		// the header as checked: data CRC, data length, header length (0 until checked)
+	uint32_t crc;		// the sector's header as checked: data CRC, data length, header length (0 until checked)
 	uint16_t len;
 	uint8_t hdr;
 	uint8_t done;
 	uint16_t at;		// the next entry, from the data's start
 	uint16_t first;		// the first entry in range (CODEPLUG_KV_NONE: none yet), where a duplicate check starts
 	uint16_t lo, hi;
+	uint16_t sector;	// the sector being walked: its offset in the EEPROM image
+	uint16_t next;		// the sector it names (header bytes 12-15), 0: none
+	uint16_t visited;	// the sectors reached, a bit each (offset / STORAGE_SECTOR)
+	uint8_t earlier;	// an earlier sector had an entry in range: a later one's keys are checked against it
 } codeplug_kv_cursor_t;
 #define CODEPLUG_KV_NONE	0xFFFFu
 void codeplug_kv_begin(codeplug_kv_cursor_t *c, uint16_t lo, uint16_t hi);
@@ -150,9 +165,14 @@ int codeplug_kv_next(codeplug_kv_cursor_t *c, uint16_t *key, void *buf, uint16_t
 
 // One change of a batch (codeplug_kv_write): set key to len bytes at value, or with len CODEPLUG_KV_REMOVE remove it.
 // len | CODEPLUG_KV_HEAD sets the first len bytes and keeps what the stored value has after them: a record's fields
-// from a writer that knows fewer than the value holds (docs/spec/codeplug-settings.md 4). A scalar is set whole
+// from a writer that knows fewer than the value holds (docs/spec/codeplug-settings.md 4). A scalar is set whole.
+// len | CODEPLUG_KV_TABLE sets bytes of a byte table (a value whose missing bytes read 0xFF, as the contact lists'
+// membership, docs/spec/contact-lists.md 3.1): value is the offset of the first byte (u16, little endian) followed by
+// len bytes. The value grows with 0xFF bytes to hold them and loses its trailing 0xFF bytes after, and a value that is
+// then empty is removed. The stored bytes the op doesn't name stay
 #define CODEPLUG_KV_REMOVE	0xFFFFu		// longer than any value can be
 #define CODEPLUG_KV_HEAD	0x8000u		// a flag in len; a value is at most a sector
+#define CODEPLUG_KV_TABLE	0x4000u		// a flag in len, never with CODEPLUG_KV_HEAD
 typedef struct {
 	uint16_t key;
 	uint16_t len;
@@ -161,7 +181,12 @@ typedef struct {
 // Apply n sets and removes in order, then write the area in one journaled sector rewrite (through the shared sector
 // buffer) and bump codeplug_kv_serial(). All or nothing: false, and nothing written, if any op doesn't fit, names key 0 or
 // 0xFFFF, while a CPS session holds the buffer, when the storage region isn't ours or the area is CODEPLUG_KV_NEWER.
-// A batch that changes nothing (a key set to the value it has, an absent key removed) is true with no write
+// A batch that changes nothing (a key set to the value it has, an absent key removed) is true with no write.
+// A key goes to the sector its number says (CODEPLUG_KV_CONT_LO..HI the continuation, the rest the first sector), so a
+// batch of keys that live in one sector is one rewrite and atomic. A batch that has both is written sector by sector,
+// the continuation first, each atomic on its own; the firmware's own writers never mix them. The first write to the
+// continuation creates it and then links it from the first sector (2.4); an op that doesn't fit its sector stops the
+// batch before any sector is written
 bool codeplug_kv_write(const codeplug_kv_op_t *ops, uint8_t n);
 bool codeplug_kv_set(uint16_t key, const void *value, uint16_t len);
 bool codeplug_kv_set_u32(uint16_t key, uint32_t value);
@@ -173,8 +198,9 @@ codeplug_kv_state_t codeplug_kv_check(const uint8_t *sector);
 // radio's stays, which counts as written. False only when the write failed
 bool codeplug_kv_commit(uint32_t addr, const uint8_t *sector);
 // Whether a raw write of sector (STORAGE_SECTOR bytes) at flash address addr must leave the radio's sector as it is
-// (docs/spec/codeplug-settings.md 6): addr is the area's sector and the radio's area is CODEPLUG_KV_NEWER, or
-// CODEPLUG_KV_VALID while sector isn't, so a file without the area never erases the radio's keys
+// (docs/spec/codeplug-settings.md 6): addr is the area's sector or its continuation's (CODEPLUG_KV_CONT_ADDR), each
+// judged for itself, and the radio's is CODEPLUG_KV_NEWER, or CODEPLUG_KV_VALID while sector isn't, so a file without
+// the area never erases the radio's keys
 bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector);
 // Moves on whenever the keys may read differently: a write through codeplug_kv_write, and every change of
 // codeplug_serial() (a raw write of the sector by a CPS or TFTP commit, another firmware's codeplug found, accepted or
@@ -182,7 +208,7 @@ bool codeplug_kv_keep(uint32_t addr, const uint8_t *sector);
 // takes the new values without the whole codeplug's reload
 uint8_t codeplug_kv_serial(void);
 
-// For the debug link: the area's state, its data length and how many entries it holds (0 unless valid)
+// For the debug link: the first sector's state, its data length and how many entries it holds (0 unless valid)
 codeplug_kv_state_t codeplug_kv_info(uint16_t *length, uint16_t *entries);
 
 #endif
