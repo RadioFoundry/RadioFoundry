@@ -53,23 +53,25 @@ static void test_sequence(void)
 	act = true;
 	spk_aux_reset(&aux);
 	powers = writes = 0;
+	uint32_t n0 = spk_aux_sounds();
 	step(false);
 	CHECK(powers == 0 && writes == 0 && !spk_aux_pending());	// silence: nothing powered
 	step(true);
+	CHECK(spk_aux_sounds() == n0 + 1);				// counted once per power-up
 	CHECK(pw == SPK_AUX_ARMED && writes == 1 && zero());		// the amplifier up, the block queued, the stream silent
 	CHECK(last[1] == 1000 && spk_aux_pending());
 	step(true);
 	CHECK(pw == SPK_AUX_ARMED);
 	step(false);
 	CHECK(pw == SPK_AUX_OPEN && writes == 3);			// 60 ms queued: the speaker opens
-	for (int i = 0; i < 2; i++) {
+	for (int i = 0; i < 3; i++) {
 		step(false);
-		CHECK(pw == SPK_AUX_OPEN);				// the queue still plays the sound
+		CHECK(pw == SPK_AUX_OPEN);				// the queue (lead + 1, a block early) still plays the sound
 	}
 	step(false);
-	CHECK(pw == SPK_AUX_ARMED && writes == 6);			// only silence left: muted
+	CHECK(pw == SPK_AUX_ARMED && writes == 7);			// only silence left: muted
 	step(false);
-	CHECK(pw == SPK_AUX_ARMED && writes == 6 && spk_aux_pending());	// the tail: nothing more queued
+	CHECK(pw == SPK_AUX_ARMED && writes == 7 && spk_aux_pending());	// the tail: nothing more queued
 	step(false);
 	CHECK(pw == SPK_AUX_OFF && !spk_aux_pending());		// 40 ms: the amplifier off
 }
@@ -79,7 +81,7 @@ static void test_back_in_tail(void)
 	act = true;
 	spk_aux_reset(&aux);
 	step(true);
-	for (int i = 0; i < 5; i++) {
+	for (int i = 0; i < 6; i++) {
 		step(false);
 	}
 	CHECK(pw == SPK_AUX_ARMED && spk_aux_pending());	// in the tail

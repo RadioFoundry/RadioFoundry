@@ -121,6 +121,12 @@ def restore_radio(request):
         yield
         return
     r = request.getfixturevalue("radio")
+    if getattr(r.link, "air", False):
+        # Over the air the radio refuses every write (debuglink.md 7.3), so a test can only change it in a detour,
+        # which the radio puts back itself: nothing to snapshot, and each read would be a burst on the channel
+        r.tx_gate(False)
+        yield
+        return
     may_transmit = "radio_tx" in request.keywords
     r.tx_gate(may_transmit)
     snap = r.snapshot()

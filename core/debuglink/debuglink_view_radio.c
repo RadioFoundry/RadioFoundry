@@ -8,6 +8,7 @@
 #include "debuglink/debuglink.h"
 #include "debuglink/debuglink_proto.h"
 #include "radio/beep.h"
+#include "radio/spk_aux.h"
 #include "radio/vibe.h"
 #include "radio/mic_gain.h"
 #include "radio/ref_trim.h"
@@ -73,6 +74,12 @@ void debuglink_view_audio(dl_text_t *t)
 				(unsigned)s.fifo_chunks, (unsigned)s.fifo_gaps, (unsigned)s.fifo_full, s.fifo_fm ? 1u : 0u);
 		}
 	}
+#if CONFIG_SPEAKER_AUX
+	if (a != NULL && a->spk_aux != NULL) {	// the speaker's second output (radio-features.md 4.4)
+		dl_text(t, "audio.spk_aux=1\naudio.spk_aux_on=%u\naudio.spk_aux_sounds=%u\n", spk_aux_pending() ? 1u : 0u,
+			(unsigned)spk_aux_sounds());
+	}
+#endif
 	// Settings > Display > Brightness as stored (the UI saves each change), the backlight's level while lit: a board
 	// may drive the backlight differently while transmitting or receiving a signal. Here, as the features section is
 	// full

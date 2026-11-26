@@ -16,6 +16,8 @@
 const hal_audio_t *spk_aux_wrap(const hal_audio_t *hw);
 // The second output is powered: a sound is queued, playing or in its tail, which the mic may hear. Audio task
 bool spk_aux_pending(void);
+// Sounds the second output played since boot (each power-up from off): debug link view audio.spk_aux_sounds
+uint32_t spk_aux_sounds(void);
 
 // The block step, after the users filled spk (exposed for the host tests): moves the block to the second output while
 // that is active, with the power sequence around the sound, and silences the stream's copy

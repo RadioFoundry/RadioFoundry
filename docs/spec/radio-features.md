@@ -639,7 +639,7 @@ which wraps the board's (`spk_aux_wrap`, `core/radio/spk_aux.c`), and every bloc
 |---|---|---|
 | Lead | the first block with sound | `power(SPK_AUX_ARMED)`: the amplifier on, the speaker muted; the block is queued (`write`) |
 | Open | `lead_ms` of blocks queued | `power(SPK_AUX_OPEN)`: the output plays its queue, so the sound starts `lead_ms` late and whole |
-| Mute | only silence left in the queue | `power(SPK_AUX_ARMED)` |
+| Mute | `lead_ms` and one block of silence queued after the sound (a block the stream hands over early makes the queue a block deeper) | `power(SPK_AUX_ARMED)` |
 | Off | `tail_ms` later | `power(SPK_AUX_OFF)` |
 
 Each block moved to the output goes down the stream as silence. A sound in the tail is queued again with the

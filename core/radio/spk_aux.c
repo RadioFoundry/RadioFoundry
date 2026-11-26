@@ -16,6 +16,12 @@ enum { ST_OFF, ST_LEAD, ST_OPEN, ST_TAIL };
 static volatile uint8_t st = ST_OFF;
 static uint8_t blocks;	// ST_LEAD: blocks queued; ST_TAIL: blocks since the speaker muted
 static uint8_t quiet;	// ST_OPEN: silent blocks queued since the last sound
+static uint32_t sounds;
+
+uint32_t spk_aux_sounds(void)
+{
+	return sounds;
+}
 
 static uint8_t ms_blocks(uint8_t ms)
 {
@@ -56,6 +62,7 @@ void spk_aux_block(const hal_spk_aux_t *aux, int16_t *spk)
 		}
 		if (st == ST_OFF) {
 			aux->power(SPK_AUX_ARMED);
+			sounds++;
 		}
 		st = ST_LEAD;
 		blocks = 0;
@@ -68,8 +75,9 @@ void spk_aux_block(const hal_spk_aux_t *aux, int16_t *spk)
 		aux->power(SPK_AUX_OPEN);
 		st = ST_OPEN;
 	}
-	// The output plays lead blocks behind the stream: once that many silent ones follow the sound, it has played out
-	if (st == ST_OPEN && quiet > lead) {
+	// The output plays lead blocks behind the stream, and a block more when the stream hands one over early (the
+	// queue holds lead + 1 then): once that many silent ones follow the sound, it has played out
+	if (st == ST_OPEN && quiet > lead + 1u) {
 		aux->power(SPK_AUX_ARMED);
 		st = ST_TAIL;
 		blocks = 0;
@@ -138,5 +146,10 @@ const hal_audio_t *spk_aux_wrap(const hal_audio_t *hw)
 bool spk_aux_pending(void)
 {
 	return false;
+}
+
+uint32_t spk_aux_sounds(void)
+{
+	return 0;
 }
 #endif
