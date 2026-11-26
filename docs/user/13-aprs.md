@@ -104,6 +104,10 @@ stations go into **Stations heard**, messages to your callsign appear in **Messa
 turned it on) passes packets on. Messages from internet stations (an APRS messaging service, for example) reach you
 through a nearby iGate. They appear under the sender's callsign, and the acknowledgment goes back to that sender.
 
+When a message arrives, a banner ("APRS message from &lt;callsign&gt;") appears on the home screen for about 8 seconds.
+The home screen's last-activity area also shows the sender's callsign and how long ago the message came in, in place
+of the usual "Last activity Xm ago".
+
 - It listens only on the APRS frequency, in FM, and the tuned frequency must equal the APRS **Frequency** exactly.
   On other FM channels nothing is decoded.
 - The volume knob doesn't matter: a radio turned all the way down still decodes.

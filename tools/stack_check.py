@@ -12,7 +12,9 @@ and follows the deepest call chain from each task's entry function:
 
 It fails when the need exceeds the task's stack. A platform whose interrupts run one at a time on a stack of their
 own (--irq-stack, or --irq-stack-symbols for its ends in the ELF) names the function that installs a handler (--irq-register): every function passed to it is a root,
-and the deepest of them plus the margin must fit that stack. Calls through function pointers are resolved from the sources: a
+and the deepest of them plus the margin must fit that stack. A platform whose start-up code (main() until the scheduler
+runs) has a stack of a fixed size names its ends in the ELF (--startup-stack-symbols): main() is then a root too, with
+the port overhead (a fault's frame) and the margin. Calls through function pointers are resolved from the sources: a
 function stored into a struct field (a designated or positional initializer, an assignment) is a target of the calls
 through that field of that struct type; a function stored into a variable or passed as an argument is a target of
 the calls through that variable or parameter. What the sources can't show comes from tools/stack_check_edges.txt.
@@ -91,6 +93,10 @@ def parse_label(label):
 
 def parse_ci(text, funcs, edges):
     """Add one .ci (VCG) file's nodes and edges. funcs: title -> Func, edges: title -> [(target title, call site)]"""
+    # gcc names a source by the path it was given, the shared copy's for one read from RFOUNDRY_THIRD_PARTY: back to
+    # its tree name, in function locations and call sites alike
+    if SHARED_TP:
+        text = text.replace(SHARED_TP + "/", "third_party/")
     for line in text.splitlines():
         line = line.strip()
         kind = line.split(":", 1)[0]
@@ -492,7 +498,7 @@ class CModel:
 
     def read(self, path):
         try:
-            with open(os.path.join(self.root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(self.root, path), encoding="utf-8", errors="replace") as fh:
                 return fh.read()
         except OSError:
             return None
@@ -944,6 +950,28 @@ class CModel:
             keys.extend(sub_keys)
 
 
+# A worktree may read third_party/ from another checkout (RFOUNDRY_THIRD_PARTY, platform/third_party.mk): a submodule
+# missing here is read there, and its files keep their tree names (third_party/<name>/...) in the report
+SHARED_TP = os.environ.get("RFOUNDRY_THIRD_PARTY", "").rstrip("/")
+
+
+def src_path(root, rel):
+    """Where a source named by its tree path is read: the tree, else the shared third_party/"""
+    p = os.path.join(root, rel)
+    if SHARED_TP and rel.startswith("third_party/") and not os.path.exists(p):
+        q = os.path.join(SHARED_TP, rel[len("third_party/"):])
+        if os.path.exists(q):
+            return q
+    return p
+
+
+def tree_path(path):
+    """A dependency file's path back to its tree name when the build read it from the shared third_party/"""
+    if SHARED_TP and path.startswith(SHARED_TP + "/"):
+        return "third_party/" + path[len(SHARED_TP) + 1:]
+    return path
+
+
 def compiled_sources(build, root):
     """Source files of the objects in a build directory (build/x/core/ui/ui.o or .d -> core/ui/ui.c), and the headers
     their dependency files list"""
@@ -954,13 +982,15 @@ def compiled_sources(build, root):
             if ext not in (".o", ".d"):
                 continue
             rel = os.path.relpath(os.path.join(r, stem + ".c"), build)
-            if os.path.isfile(os.path.join(root, rel)):
+            if os.path.isfile(src_path(root, rel)):
                 srcs.add(rel)
             if ext == ".d":
                 with open(os.path.join(r, fn), encoding="utf-8", errors="replace") as fh:
                     for w in fh.read().replace("\\\n", " ").split():
-                        if w.endswith(".h") and not os.path.isabs(w):
-                            headers.add(os.path.normpath(w))
+                        if w.endswith(".h"):
+                            w = tree_path(w)
+                            if not os.path.isabs(w):
+                                headers.add(os.path.normpath(w))
     return sorted(srcs), sorted(headers)
 
 
@@ -989,7 +1019,8 @@ def preprocessor_macros(cc, cflags, root, path):
     drop = ("-MMD", "-MP", "-MD", "-fstack-usage")
     flags = [f for f in shlex.split(cflags) if f not in drop and not f.startswith("-fcallgraph-info") and
              not f.startswith("-flto")]
-    out = subprocess.run(shlex.split(cc) + flags + ["-E", "-dM", path], cwd=root, capture_output=True, text=True)
+    out = subprocess.run(shlex.split(cc) + flags + ["-E", "-dM", src_path(root, path)], cwd=root, capture_output=True,
+                         text=True)
     if out.returncode != 0:
         raise SystemExit("stack_check: the preprocessor failed on %s:\n%s" % (path, out.stderr[-2000:]))
     macros = {}
@@ -1017,7 +1048,7 @@ def find_tasks(graph, root, files, table, cc, cflags, word):
     seen = {}
     for path in files:
         try:
-            with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(root, path), encoding="utf-8", errors="replace") as fh:
                 t = fh.read()
         except OSError:
             continue
@@ -1056,7 +1087,7 @@ def find_irqs(graph, root, files, registers):
     out, seen = [], set()
     for path in files:
         try:
-            with open(os.path.join(root, path), encoding="utf-8", errors="replace") as fh:
+            with open(src_path(root, path), encoding="utf-8", errors="replace") as fh:
                 t = fh.read()
         except OSError:
             continue
@@ -1356,6 +1387,15 @@ def run(args):
                   args.irq_stack_symbols, file=sys.stderr)
             return 2
         args.irq_stack = disasm.syms[names[1]] - disasm.syms[names[0]]
+    startup = 0
+    if args.startup_stack_symbols:
+        # The start-up stack as linked, like the interrupt stack's
+        names = args.startup_stack_symbols.split(",")
+        if disasm is None or len(names) != 2 or any(n not in disasm.syms for n in names):
+            print("stack_check: --startup-stack-symbols %s: not in the ELF (needs --objdump and --elf)" %
+                  args.startup_stack_symbols, file=sys.stderr)
+            return 2
+        startup = disasm.syms[names[1]] - disasm.syms[names[0]]
     an = Analysis(graph, model, table, args.lib_default, disasm)
     label = args.label or os.path.basename(os.path.normpath(args.build))
     fails = 0
@@ -1395,6 +1435,23 @@ def run(args):
         else:
             print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
                   (" > ..." if len(path) > args.path_len else ""))
+    if startup:
+        entry = [t for t in graph.lookup(args.startup_entry) if graph.defined(t)]
+        if len(entry) != 1:
+            print("  %-8s ?    no single definition of %s with a call graph" % ("start-up", args.startup_entry))
+            fails += 1
+        else:
+            worst, path = an.depth(entry[0])
+            reach |= an.reachable(entry[0])
+            free = startup - (worst + args.overhead + args.margin)
+            status = "ok" if free >= 0 else "OVER"
+            fails += free < 0
+            print("  %-8s %-4s stack %5d  deepest %5d  free %5d  (%s, before the scheduler)" %
+                  ("start-up", status, startup, worst, free, graph.display(entry[0])))
+            print("      " + " > ".join(graph.display(t) for t, _l in path[:args.path_len]) +
+                  (" > ..." if len(path) > args.path_len else ""))
+            if least is None or free < least[0]:
+                least = (free, "start-up")
     if args.irq_stack:
         irqs = find_irqs(graph, root, files, args.irq_register)
         if not irqs:
@@ -1670,6 +1727,9 @@ def main():
                     help="that stack's size from two ELF symbols, its ends (instead of --irq-stack)")
     ap.add_argument("--irq-register", action="append",
                     help="function whose last argument is an interrupt handler (repeatable)")
+    ap.add_argument("--startup-stack-symbols", metavar="BOTTOM,TOP",
+                    help="the start-up stack's ends in the ELF: check --startup-entry against it (0: not checked)")
+    ap.add_argument("--startup-entry", default="main", help="the code that runs on the start-up stack (default main)")
     ap.add_argument("--label", help="name in the report (default: the build directory's)")
     ap.add_argument("--report-only", action="store_true", help="report tasks over their stack, exit 0")
     ap.add_argument("--path-len", type=int, default=40)

@@ -276,10 +276,12 @@ static void shot_hold(bool last)
 static size_t shot_packed(const hal_display_t *d, uint32_t offset, uint8_t *out, size_t cap)
 {
 	static dl_shot_t s;	// static: the host link task's stack also holds the encoder's hash table
-	uint32_t stride = d->bpp == 1 ? (d->width + 7u) / 8u : d->bpp == 4 ? (d->width + 1u) / 2u : d->width * 2u;
+	gfx_fb_rect_t r;
 
+	gfx_fb_rect(&r);	// the panel, or its safe area only: sent as it is, the host rebuilds the insets
 	s.fb = gfx_framebuffer();
-	s.size = stride * d->height;
+	s.size = r.stride * r.h;
+	s.safe_area = r.safe_area;
 	if (s.size > 0xFFFFu) {
 		return status_only(out, DL_ST_UNAVAILABLE);
 	}
@@ -352,7 +354,7 @@ static size_t cmd_screenshot(const uint8_t *req, uint16_t len, uint8_t *out, siz
 	if (indexed) {
 		gfx_read_rgb565(offset, out + 19, n);
 	} else {
-		memcpy(out + 19, (const uint8_t *)gfx_framebuffer() + offset, n);
+		gfx_read_packed(offset, out + 19, n);	// the whole panel's rows, whatever the frame buffer holds
 	}
 	return 19u + n;
 }
@@ -445,6 +447,19 @@ static size_t cmd_get_view(const uint8_t *req, uint16_t len, uint8_t *out, size_
 		t.full = false;
 		dl_text(&t, "truncated=1\n");
 	}
+#if CONFIG_DEBUGLINK_DMRIP
+	if (len >= 3) {
+		// A page: offset u16, limit u16 (0 or none: the whole reply), a key prefix (3.7). Small replies over the air
+		uint16_t limit = len >= 5 ? (uint16_t)(req[3] | (req[4] << 8)) : 0;
+		if (limit == 0 || limit > cap - 6) {
+			limit = (uint16_t)(cap - 6);
+		} else if (limit < DL_VIEW_PAGE_MIN) {
+			limit = DL_VIEW_PAGE_MIN;	// the section= line and the more= line always fit
+		}
+		t.len = dl_view_page((char *)out + 6, t.len, len > 5 ? (const char *)req + 5 : "", len > 5 ? len - 5u : 0,
+				     (uint16_t)(req[1] | (req[2] << 8)), limit);
+	}
+#endif
 	return 6 + t.len;
 }
 
@@ -883,6 +898,12 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 #else
 		return status_only(out, DL_ST_UNAVAILABLE);
 #endif
+#if CONFIG_DEBUGLINK_DMRIP
+	case DL_CMD_DETOUR:
+		return debuglink_cmd_detour(req, len, out, cap);
+	case DL_CMD_DMRIP:
+		return debuglink_cmd_dmrip(req, len, out, cap);
+#endif
 	case DL_CMD_CODEPLUG:
 #if CONFIG_CPS_FAST
 		return cps_fast_cmd(req, len, out, cap, hal_millis());
@@ -894,6 +915,25 @@ static size_t handle(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out
 	}
 }
 
+#if CONFIG_DEBUGLINK_DMRIP
+size_t debuglink_dispatch(uint8_t cmd, const uint8_t *req, uint16_t len, uint8_t *out, size_t cap)
+{
+	return handle(cmd, req, len, out, cap);
+}
+
+static uint32_t reply_gen;
+
+uint8_t *debuglink_reply_buffer(void)
+{
+	return reply;
+}
+
+uint32_t debuglink_reply_gen(void)
+{
+	return reply_gen;
+}
+#endif
+
 static void write_out(const uint8_t *buf, size_t len)
 {
 	hostlink_write(buf, len);
@@ -901,6 +941,9 @@ static void write_out(const uint8_t *buf, size_t len)
 
 static size_t side_feed(const uint8_t *buf, size_t len, uint32_t now_ms)
 {
+#if CONFIG_DEBUGLINK_DMRIP
+	reply_gen++;		// the over-the-air transport's last reply in reply[] may go
+#endif
 	size_t took = dl_parser_feed(&parser, buf, len, now_ms, handle, write_out, reply);
 	if (reboot_pending) {
 		reboot_now();

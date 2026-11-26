@@ -55,8 +55,19 @@ StackType_t *pxPortInitialiseStack(StackType_t *pxTopOfStack, TaskFunction_t pxC
 	return stk;
 }
 
+// The start-up stack's ends: the top of the RTOS heap (common.ld, main.c ucHeap)
+extern uint8_t __startup_stack_bottom[], __rtos_heap_end[];
+
 BaseType_t xPortStartScheduler(void)
 {
+	// main() ran on the heap's top, and the tasks made so far (start, idle, timer) took their stacks from its bottom.
+	// heap_4 hands out the lowest free block first and nothing was freed yet, so the heap's least free is the room
+	// from the last block (and the header heap_4 writes after it) to the end: it must still reach below the start-up
+	// stack, or a block was written over it. Every boot passes here once, so a heap or a start-up grown into the
+	// stack stops the first boot with a crash record instead of corrupting it. Past this point nothing runs on that
+	// stack again: vPortStartTask moves to the first task's, interrupts save on the task's and run on the interrupt
+	// stack, faults on their own (portasm.S), so the heap may hand its bytes out
+	configASSERT(xPortGetMinimumEverFreeHeapSize() >= (size_t)(__rtos_heap_end - __startup_stack_bottom));
 	hrc_tick_start(configTICK_RATE_HZ);
 	ulCriticalNesting = 0;
 	vPortStartTask();

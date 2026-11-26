@@ -57,7 +57,10 @@
 // or two from build to build (three words)
 #define HOSTLINK_TASK_STACK	752
 #else
-#define HOSTLINK_TASK_STACK	512	// words: MMDVM frames are built on the stack
+// words: MMDVM frames are built on the stack. The deepest chain without the debug link is a CPS write through the stub
+// entry's listener into the VFO record, which copies the settings: 1768 bytes on the deepest board with the CI's
+// toolchain, and stack-check.md's overhead and margin come on top
+#define HOSTLINK_TASK_STACK	544
 #endif
 #define POLL_MS			5	// hotspot housekeeping while nothing arrives
 #define READ_CHUNK		64
@@ -509,6 +512,9 @@ static void hostlink_task(void *arg)
 #if CONFIG_SNMP
 	snmp_agent_init();	// binds UDP 161 in the gateway (docs/spec/snmp.md)
 #endif
+#if CONFIG_DEBUGLINK_DMRIP
+	debuglink_dmrip_init();	// the key, the detour, UDP 3335 from the air in the gateway (debuglink.md 7)
+#endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);
 		return;
@@ -558,6 +564,9 @@ static void hostlink_task(void *arg)
 #endif
 #if CONFIG_SNMP
 		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
+#endif
+#if CONFIG_DEBUGLINK_DMRIP
+		debuglink_dmrip_poll(now);	// the debug link over the air, and a detour's items and deadline
 #endif
 #if CONFIG_CPS_FAST
 		cps_fast_tick(now);		// the fast codeplug protocol: session time-out, a commit's next sector

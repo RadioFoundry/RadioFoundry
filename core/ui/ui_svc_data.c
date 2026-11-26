@@ -108,6 +108,9 @@ void ui_svc_poll(void)
 #if CONFIG_DMR_EMERGENCY
 	ui_svc_emergency_poll();
 #endif
+#if CONFIG_APRS_RX
+	ui_svc_aprs_msg_poll();
+#endif
 	// The event's own serial, not dmr_data_serial(): that one also moves when a message is read or deleted, and the
 	// last event would come again ("Message from" over "Message deleted", with its tone)
 	static uint32_t seen;
@@ -133,6 +136,10 @@ void ui_svc_poll(void)
 		ev.kind = UI_EV_MESSAGE_SENT;
 		ev.ok = d.kind == DMR_DATA_EV_SMS_SENT;
 		ev.index = (ev.ok && !sms_send_confirmed()) ? 1 : 0;	// on air, but nothing confirms delivery
+		break;
+	case DMR_DATA_EV_SMS_BLOCKED:
+		ev.kind = UI_EV_MESSAGE_SENT;
+		ev.index = 2;	// never on air: not "no answer"
 		break;
 	case DMR_DATA_EV_CALL_ALERT:
 		ev.kind = UI_EV_CALL_ALERT;

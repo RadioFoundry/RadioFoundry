@@ -314,6 +314,10 @@ embedded LC fragments correctly is unverified; follow the datasheet.
 "CRC good" for a deframed burst = bits 30:24 all zero. Data blocks and MBC continuation blocks have no CRC-16, so do
 not drop them on these flags; check CRC-9/CRC-32 (the MBC's CRC-16 in its last block) in software. RX_INFO (0x394): b24:16 trunking multiframe number, b10:0 received RC.
 
+b17 (pi) clear on an encrypted call does not mean a misread. AES-256 simplex calls measured on air, recorded on the SDR
+bench and their EMBs decoded in software (270 voice bursts B-F, color code and LCSS all as expected), had PI 0 on every
+burst: the sender marks privacy only in the service options and the PI header.
+
 ### 2.8 Buffer layouts
 
 **TX RAM (0x16000000)**, datasheet table 52: 0x00–0x0B the current control burst (PI header 10 + 2 CRC, LC header / terminator
@@ -592,6 +596,7 @@ rising only (gotchas 2.9). TS and RF requests have no readable status, so the dr
 | Every receiver restart (5.2: DMR entry, a color code or framing change, a stale or lost reception, the end of every transmission) | writes INTERP_CLEAR b0-b2 and writes SYS_INTERP_LIST back to SYS_INTERP_CLEAR. Not b3 (RF RX) or the PCM pair: other drivers own them |
 | No timeslot interrupt for 200 ms while sending | the transmission ends (`dmr.tx_error=stalled`), and its receiver restart clears as above. Counted (`dmr.modem_stalls`) |
 | A SYS_INTERP_LIST cause enabled in SYS_INTERP_MASK, pending at the 10 ms polls for 50 ms with no system interrupt taken | written back to SYS_INTERP_CLEAR. Counted (`dmr.modem_stuck`) |
+| An air session or tap receiving (10.1) with no FM copy half for 200 ms (one comes every 32 ms; a copy interrupt with FM_ADDR_SW naming neither half doesn't count, one that finds the ring full does). The halted engine's check above does not run then | SYS_INTERP_LIST written back to SYS_INTERP_CLEAR, the copy set up again and the modem sources unmasked. Counted (`airp.copy_restarts`); the first one's PIC words kept apart from the engine's (`airp.copy_lost_ms`, `airp.copy_lost_regs`) |
 
 For the first stall or stuck request, the glue keeps PIC_MASK, PIC_MASK_1, PIC_INT_ST and PIC_INT_ST_1 as read before
 that poll (`dmr.modem_lost_ms`, `dmr.modem_lost_regs`, [debuglink.md](debuglink.md) 3.7). It then unmasks the modem
@@ -670,7 +675,7 @@ Used at DMR entry, after TX through a repeater (direct: 5.2a), after a stalled t
 
 A sequence of TXRX 0xC00000, 0, 0xC00000, 0x8040 with no SLOTON writes, or a busy wait in the color code probe, does not acquire sync reliably. Use this one everywhere.
 
-A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. The own-color-code and all-activity policies retain their existing color-code checks.
+A restart also forgets what was heard: the polite-access busy window (`dmr-modem.md`) starts again with the next burst taken. Polite access ages the last decoded activity by `now_us`, with a 360 ms window, independently of timeslot interrupts. Every usable burst refreshes the window, including one later dropped by the slot or CRC filter; unusable deframes do not. In direct mode a terminator with a good CRC, as the last burst taken, closes the window: the call is over and the channel free, as the call stack's own check has it, so a reply keyed within `DMR_CALL_ALIGN_MS` (300 ms) of the terminator, aligned to that call, is not refused. Any later burst opens the window again. Through a repeater a terminator is part of its hang and keeps the channel busy. The own-color-code and all-activity policies retain their existing color-code checks.
 
 Receive recovery uses wall time too, from both the timeslot handler and the task poll: more than 390 ms without another usable burst, 600 ms of stale activity without a usable burst, or 150 ms after a direct TX hold. A restart clears the pending recovery; subsequent slot interrupts, deframes or abnormal-slot reports schedule it again, and the 600 ms count starts with the first of them, not at the restart (after a long silence, a count from the restart would restart the receiver under the next call's first burst). A silent receiver is not restarted repeatedly. This permits recovery when timeslot interrupts stop but system interrupts continue. Host register-model tests cover stopped timeslot interrupts.
 
@@ -1074,7 +1079,7 @@ What a working DMR driver does that a first attempt tends to miss. Details are i
 | 15 | Timeslot handler | run it from RAM so flash busy time adds no jitter |
 | 16 | Calibration | SIG_CENTER and RF_MOD_BIAS_CTRL from factory data |
 | 17 | Interrupt masking | PIC_MASK bits 29-31 and PIC_MASK_1 bit 0 (3.2) |
-| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run (3.3) |
+| 18 | Lost requests | clear every pending modem request at each receiver restart; drop a system request pending with no handler run; in an air session, set the copy up again and unmask the modem sources after 200 ms with no half (3.3) |
 
 ---
 
@@ -1104,6 +1109,7 @@ output. Whether 4FSK reaches it whole (de-emphasis, the band's edges, the level)
 | Save | SYS_INTERP_MASK, FM_BANDWIDTH, FM_DEV_COEF |
 | Copy set-up | TXRX 0, SLOTON 0, LAYER2_CONTROL 0xC0, FM_PTT 0, AUDIO_CONTROL FM playback (b6) off, FM_BANDWIDTH 0x00 (band-pass off, 12.5 kHz), FM_DEV_COEF 0x40A25, WORK_MODE 0x80, SYS_INTERP_CLEAR and MASK = bit 14 + bit 12 |
 | Each half | Bit 14: the half FM_ADDR_SW names into a 512-sample ring (two halves), stamped with the interrupt's time less 255 samples. A half that finds the ring full is dropped and the next one is flagged as a gap |
+| Watchdog | No half for 200 ms while receiving, not suspended: SYS_INTERP_LIST to SYS_INTERP_CLEAR, the copy set-up again, the next half a gap; the glue unmasks the modem sources (3.3, `airp.copy_restarts`) |
 | Session | The modem task feeds each half to the soft modem (`core/air/air_softmodem.h`), resetting it at a flagged half; its chunks go out as `AIR_EV_RX` |
 | Undo | Mask, band and coefficient back; TXRX 0, WORK_MODE 0x80 then 0x6E, LAYER2_CONTROL 0xC0, TXRX 0xC00000 then 0. A mode change before the undo leaves the band and coefficient to the next FM entry and puts back only the mask (only power-on writes it otherwise) |
 

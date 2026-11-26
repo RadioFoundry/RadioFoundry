@@ -179,12 +179,43 @@ static const flow_t flows[] = {
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
-	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	// Idle on the control channel, a system that can't transmit says "RX only" (listen only here); a call on it
+	// still reads "Following TG n"
+	{ "P25 trunked home: control channel, listen only", "dlmode:p25", "p25t:2",
+	  "screen=home shows=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201 hides=RX_only",
 	  0, false },
-	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
-	  false },
 	{ "P25 trunked home: the followed group by name", "dlmode:p25 p25name:g,7,F", "p25t:3,7",
 	  "screen=home shows=Following_TG_7_F", 0, false },
+	// Transmit on, registered: what PTT calls. Transmit on, no inbound frequency (reg 7, NO_TX): "Control channel"
+	{ "P25 trunked home: control channel, transmit on", "dlmode:p25", "p25t:2,0,4,1",
+	  "screen=home shows=TG_1 hides=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: control channel, no inbound frequency", "dlmode:p25", "p25t:2,0,7,1",
+	  "screen=home shows=Control_channel hides=RX_only", 0, false },
+	// A blocked system (reg 8) reads as a listen-only one even with the transmit side on: "RX only" idle, never
+	// "Registering", and "Following TG n" during a call
+	{ "P25 trunked home: blocked, control channel, transmit on", "dlmode:p25", "p25t:2,0,8,1",
+	  "screen=home shows=RX_only hides=Blocked_system hides=Registering hides=Control_channel", 0, false },
+	{ "P25 trunked home: blocked, following a call", "dlmode:p25", "p25t:3,201,8",
+	  "screen=home shows=Following_TG_201 hides=RX_only hides=Blocked_system", 0, false },
+	// PTT on a blocked system: the reason, and nothing to retry (no setting and no second press changes it)
+	{ "P25 trunked: PTT refused on a blocked system", "dlmode:p25", "p25t:2,0,8,1,11",
+	  "shows=RX-only_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
+#endif
+#if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
+	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
+	// them (system / key ID) and None, Save keeps the choice
+	{ "AES key row: hidden without keys", "", "ok 5 ok", "screen=channel hides=AES_key", 3, false },
+	{ "AES key row: none set", "aeskeys", "ok 5 ok down down down down down down down",
+	  "screen=channel focus=AES_key shows=None", 10, false },
+	{ "AES key row: steps the keys", "aeskeys ok 5 ok down down down down down down down", "ok",
+	  "focus=AES_key shows=3/0", 1, false },
+	{ "AES key row: the next key", "aeskeys ok 5 ok down down down down down down down", "ok ok",
+	  "focus=AES_key shows=3/7", 2, false },
+	{ "AES key row: back to none", "aeskeys ok 5 ok down down down down down down down", "ok ok ok",
+	  "focus=AES_key shows=None", 3, false },
+	{ "AES key row: saved with the channel", "aeskeys ok 5 ok down down down down down down down ok", "long:ok",
+	  "writes=1 toast=Saved_channel_3 focus=AES_key shows=3/0", 1, true },
 #endif
 #if CONFIG_CHANNEL_EDIT
 	// A channel saved from P25 (New from current): P25 and its NAC, no FM or DMR-only rows, talkaround automatic
@@ -339,9 +370,20 @@ static const flow_t flows[] = {
 #endif
 	{ "8 radio check last caller", CALLER, "ctx 4", "checks=1", 2, false },
 	{ "8 radio check by name", "", "5 6 3 ctx 4", "checks=1", 5, false },
+	// A channel that can't send data says why instead of sending; an encrypted one holds back text only
+	{ "8 radio check refused says why", "datadeny:aes_key " CALLER, "ctx 4", "checks=0 toast=AES_key_or_TX_disabled",
+	  2, false },
+	{ "8 radio check goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 4", "checks=1", 2,
+	  false },
+	{ "8 call alert goes on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 5", "alerts=1", 2,
+	  false },
+	{ "8 message refused on an encrypted channel", "datadeny:none,data_encrypted " CALLER, "ctx 3",
+	  "screen=actions toast=Encrypted_channels_can't_send_text", 2, false },
 	{ "9 power one step", "", "quick 1 back", "power=8 screen=home", 3, false },
 	{ "9 squelch 2 steps (FM)", "down", "quick 2 up up back", "sq=7 screen=home", 5, false },
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	{ "10 privacy", "", "quick 6 back", "privacy=1 screen=home", 3, false },
+#endif
 	{ "11 scan start (Tools > Scan)", "", "ok 6 1", "scanning=1", 3, false },
 	{ "11 nuisance skip", "ok 6 1", "ctx 1", "pos=4 scanning=1", 2, false },
 	{ "11 scan stop", "ok 6 1", "back", "scanning=0", 1, false },
@@ -901,9 +943,11 @@ static const flow_t flows[] = {
 	{ "S a private call lights the screen", "", "privcall:91", "wake=1", 0, false },
 	{ "S an emergency lights the screen", "", "emergency:91", "wake=1", 0, false },
 	{ "S nothing new, no wake", "", "wait:1000", "wake=0", 0, false },
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
 	{ "S privacy key typed", "", "ok 7 4 ok down ok 1 2 3 ok", "set31=1 set32=123", 10, false },
 	{ "S privacy key out of range", "ok 7 4 ok down", "ok 3 0 0 ok", "toast=Not_changed set32=0", 5, false },
 	{ "S privacy key needs a type", "ok 7 4 down", "ok", "toast=Pick_a_key", 1, false },
+#endif
 	{ "S number typed", "", "ok 7 3 down down ok 3 ok", "sq=5 set12=3", 8, false },
 	{ "S voice prompts not built", "ok 7 1 down down down down down down down down down", "ok", "toast=Voice_prompts", 1, false },
 	{ "S mode tile in the VFO", "ok 4 up ok", "quick 4", "toast=VFO:_DMR mode=dmr temporary=0 vfo=1", 2, false },
@@ -924,6 +968,15 @@ static const flow_t flows[] = {
 	// Page titles are in Title Case; the row that opens the page keeps its sentence case (ui.md 1)
 	{ "S a group's title in Title Case", "", "ok 7 3", "screen=group shows=Talk_&_Listen hides=Talk_&_listen", 3, false },
 	{ "S the group's row as it was", "", "ok 7", "screen=settings shows=Talk_&_listen", 2, false },
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+	{ "S Privacy opens", "ok 7", "4", "screen=group shows=Key_type", 1, false },
+#else
+	// Privacy compiled out (uiFlowTestNoColor): Settings > Privacy is dimmed and OK says why instead of opening it
+	{ "S Privacy compiled out: its key", "ok 7", "4", "screen=settings toast=Privacy:_not_in_this_build", 1, false },
+	{ "S Privacy compiled out: OK on the row", "ok 7 4", "ok", "screen=settings toast=Privacy:_not_in_this_build", 1,
+	  false },
+	{ "S Privacy compiled out: Location keeps key 5", "ok 7", "5", "screen=group", 1, false },
+#endif
 	// Quick settings in the FM VFO: tile 8 is Width, as on a channel
 	{ "Q FM VFO: Width on 8", "vfokey", "quick 8", "toast=Bandwidth", 2, false },
 	{ "S VFO mode back to FM", "ok 4 up ok quick 4 back", "quick 4", "toast=VFO:_FM mode=fm temporary=0", 2, false },
@@ -1335,30 +1388,36 @@ static const flow_t flows_k[] = {
 	  "screen=group shows=SK1 shows=SK1_hold shows=SK2", 3, false },
 	{ "K side key 1: the next choice", "ok 7 8", "down down down ok", "set42=1 shows=Nothing", 4, false },
 #if CONFIG_FM_TX_TONES
-	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K side key 1: tone burst", "ok 7 8 down down down ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set42=18 shows=Tone_burst", 1, false },
 #endif
 	{ "K side key 1: monitor", "ok 7 8 down down down ok", "ok", "set42=2", 1, false },
 	{ "K side key 1 hold while it monitors (DMR)", "ok 7 8", "down down down down ok", "set43=1", 5, false },
 	{ "K side key 1 hold once it doesn't", "ok 7 8 down down down ok down", "ok", "set43=1", 1, false },
 	{ "K side key 2 hold", "ok 7 8", "down down down down down down ok", "set45=1", 7, false },
-	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
+	{ "K top key hold: emergency after scan", "ok 7 8 up ok ok ok ok ok ok ok ok", "ok", "set47=8 shows=Emergency", 1,
 	  false },
-	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
+	{ "K top key hold: copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=14 shows=Copy_to_VFO", 1,
 	  false },
-	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: VFO/Channel after copy to VFO", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=17 shows=VFO/Channel", 1, false },
-	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
+	{ "K top key hold: call back last", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=12 shows=Call_back",
 	  1, false },
-	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
+	{ "K top key hold wraps to default", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok", "set47=0", 1,
 	  false },
-	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
+	{ "K top key hold: TG name / number after call back", "ok 7 8 up ok ok ok ok ok ok ok ok ok ok ok ok ok ok", "ok",
 	  "set47=19 shows=TG_name", 1, false },
 	{ "K a key set to power", "", "powerkey", "power=5", 1, false },
 	{ "K a key set to power, long", "", "long:powerkey", "power=5", 1, false },
 	{ "K a key set to the next zone", "", "zone+", "zone=1", 1, false },
 	{ "K a key set to the previous zone", "", "zone-", "zone=2", 1, false },
 	{ "K a key set to scan, from a menu", "ok 7", "scankey", "scanning=1", 1, false },
+	// Scan skip (KEYFN_SCAN_SKIP): "Skip channel for now" on a key, a press or a long press, only while scanning
+	{ "K a key set to scan skip, not scanning", "", "skipkey", "scanning=0 toast=Not_scanning", 1, false },
+	{ "K a key set to scan skip, scanning", "scankey", "skipkey", "scanning=1 toast=Skipped_until_the_scan_stops", 1,
+	  false },
+	{ "K a key set to scan skip, long, scanning", "scankey", "long:skipkey",
+	  "scanning=1 toast=Skipped_until_the_scan_stops", 1, false },
 	// VFO/Channel (KEYFN_VFO_TOGGLE) sends what a VFO/MR key does, on a press or a long press, on any screen
 	{ "K a key set to VFO/Channel", "", "vfokey", "vfo=1 toast=VFO", 1, false },
 	{ "K a key set to VFO/Channel, back", "vfokey", "vfokey", "vfo=0 toast=Back_to_channels", 1, false },
@@ -1394,6 +1453,13 @@ static const flow_t flows_k[] = {
 	  false },
 	{ "K monitor key on DMR: digital monitor", "", "mon", "hearall=1 toast=Digital_monitor_on", 1, false },
 	{ "K monitor key on DMR, again: off", "mon", "mon", "hearall=0 toast=Digital_monitor_off", 1, false },
+	// Monitor toggle (KEYFN_MONITOR_TOGGLE) does what quick tile 5 does: FM latches the squelch open, DMR digital monitor
+	{ "K a key set to monitor toggle, FM: latched", "down", "monkey", "monitor=1", 1, false },
+	{ "K a key set to monitor toggle, FM: again closes it", "down monkey", "monkey", "monitor=0", 1, false },
+	{ "K a key set to monitor toggle, FM, long press", "down", "long:monkey", "monitor=1", 1, false },
+	{ "K a key set to monitor toggle, DMR: digital monitor", "", "monkey", "hearall=1 toast=Digital_monitor_on", 1, false },
+	{ "K a key set to monitor toggle, DMR: again off", "monkey", "monkey", "hearall=0 toast=Digital_monitor_off", 1, false },
+	{ "K a key set to monitor toggle, DMR, long press", "", "long:monkey", "hearall=1", 1, false },
 	{ "K a key set to key lock", "", "lockkey", "locked=1", 1, false },
 	{ "K key lock unlocks too", "lockkey", "lockkey", "locked=0", 1, false },
 	{ "K call back: the last talkgroup", CALLER, "cbkey ptt", "txid=91 txpriv=0", 2, false },
@@ -1982,6 +2048,29 @@ static void vfo_split_dmr_checks(void)
 	}
 }
 
+// A duplex FM channel on Home shows the frequency it listens on, not its TX frequency, on every display (#1031). The
+// sim's channel 2 is a repeater: RX 147.060, TX 147.660
+static void fm_duplex_home_checks(void)
+{
+	char err[300];
+	for (int g = 0; g < sim_geom_count; g++) {
+		sim_reset(&sim_geoms[g], SIM_MAP_K);
+		// Idle and receiving: RX and the offset. PTT held, transmitting or refused (the timeout): where PTT goes,
+		// the TX frequency
+		bool ok = sim_run("dlpos:2 expect:screen=home expect:shows=147.060 expect:hides=147.660 "
+				  "fmrx expect:shows=147.060 expect:hides=147.660 fmrxend "
+				  "pttdown expect:shows=147.660 expect:hides=147.060 "
+				  "timeout expect:shows=147.660 expect:hides=147.060 pttup", err, sizeof err);
+		// The offset where the row has room for it
+		if (ok && sim_geoms[g].w >= 160)
+			ok = sim_run("expect:shows=147.060_MHz_+600k", err, sizeof err);
+		if (!ok) {
+			printf("FAIL FM duplex channel on Home [%s]: %s\n", sim_geoms[g].name, err);
+			fails++;
+		}
+	}
+}
+
 static void no_battery_checks(void)
 {
 	static const struct { const char *name, *script, *expect; } cases[] = {
@@ -2371,6 +2460,7 @@ int main(void)
 	heard_checks();
 	station_checks();
 	vfo_split_dmr_checks();
+	fm_duplex_home_checks();
 	no_battery_checks();
 	dark_key_checks();
 #if CONFIG_VOLUME_BAR

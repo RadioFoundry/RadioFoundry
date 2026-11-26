@@ -49,9 +49,18 @@ if [ $status -ne 0 ]; then
 	echo "coverage: host tests FAILED (see $OUT/host-tests.log); the report covers what ran"
 fi
 
+# gcovr before 8 (7.0 is the CI runner's package) can't read gcov's block lines past source line 9999: it expects a
+# space after the colon ("32086:10003-block 2" has none) and stops. Those lines are only block data, the line counts
+# are read anyway, so it skips them there. A newer gcovr reads them.
+compat=
+case "$(gcovr --version 2>/dev/null | head -n 1)" in
+"gcovr "[1-7].*) compat=--gcov-ignore-parse-errors=all ;;
+esac
+
 # The same source built into several tests with different switches has different functions at the same lines:
 # --merge-mode-functions=separate keeps them apart instead of stopping.
-gcovr --root . --object-directory "$HOST" --gcov-executable "$GCOV" \
+# shellcheck disable=SC2086	# $compat is one option or nothing
+gcovr --root . --object-directory "$HOST" --gcov-executable "$GCOV" $compat \
 	--merge-mode-functions=separate \
 	--filter 'core/' --filter 'drivers/' --filter 'hal/' --filter 'boards/' --filter 'platform/' \
 	--exclude '.*/gen/' --exclude 'tests/' --exclude 'third_party/' \

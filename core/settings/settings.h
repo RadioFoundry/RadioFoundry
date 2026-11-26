@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "config.h"
 
 #define SETTINGS_LAYOUT		1	// bumped only when a field changes meaning or moves (old records then reset)
 #define SETTINGS_SAVE_DELAY_MS	2000
@@ -254,6 +255,9 @@ typedef struct {
 	uint8_t sig_dmr[3];
 	uint8_t sig_fm[3];
 	uint8_t reserved11[2];		// 0
+	// DMR AES: the end of the MI positions reserved for our overs (dmrAesSeq_t, dmr-voice.md 5.1; appended: an older
+	// record reads 0, no position yet). A restart starts here, past every position sent
+	uint32_t aes_mi_res;
 } settings_t;
 
 // Pages: settings_t is stored as records of SETTINGS_PAGE_BYTES each (settings-store.md 2.1). Only the pages its size
@@ -413,7 +417,7 @@ static inline void settings_set_tones_off(settings_t *s, uint8_t off)
 // settings_t.net_flags (the USB network personality; 0 = as before)
 #define SETTINGS_NET_TFTP_NO_WRITE	0x01u	// TFTP refuses codeplug writes (0: allowed, as the CPS over USB; docs/spec/tftp.md)
 #define SETTINGS_NET_PASSTHROUGH	0x02u	// the PC is the endpoint of the radio's own IP data (docs/spec/usb-network.md 5.2)
-#define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID>/32 (5.3)
+#define SETTINGS_NET_FIXED_LINK		0x04u	// the link is a fixed private pair (net_link_ip), not 12.<ID> / 13.<ID>/32 (5.3)
 // settings_t.rs_flags
 #define SETTINGS_RS_ROGER_BEEP		0x01u
 #define SETTINGS_RS_TX_INHIBIT		0x02u
@@ -504,14 +508,32 @@ void settings_read(settings_t *out);
 uint32_t settings_read_field(size_t offset, size_t size);
 #define SETTINGS_FIELD(f) ((__typeof__(((settings_t *)0)->f))settings_read_field(offsetof(settings_t, f), \
 							      sizeof(((settings_t *)0)->f)))
+// A 32-bit field equals value both in force and in the last saved record, checked under one lock.
+bool settings_u32_is_saved(size_t offset, uint32_t value);
 // Change: begin returns the live copy (under a short lock), end releases it and notes the time if anything changed
 settings_t *settings_begin(void);
 void settings_end(uint32_t now_ms);
 
 // Save once the changes have rested SETTINGS_SAVE_DELAY_MS (call it every 100 ms or so)
 void settings_poll(uint32_t now_ms);
-// Save now if anything changed; true when nothing is left unsaved
+// Save now if anything changed; true when nothing is left unsaved. False while held (settings_hold): nothing is saved,
+// so a caller that needs the change stored (a factory reset, a zone add or delete) doesn't go on
 bool settings_flush(void);
+
+#if CONFIG_RADIO_DETOUR
+// The detour's hold (docs/spec/debuglink.md 7.4): from settings_hold to settings_release nothing is saved, neither by
+// settings_poll nor by settings_flush (a power-off keeps the stored state from before the hold). Hold fails (false)
+// while changes wait for their save. Release with discard puts the live copy back to what is stored, dropping every
+// change made during the hold
+bool settings_hold(void);
+void settings_release(bool discard);
+bool settings_held(void);
+#else
+static inline bool settings_held(void)
+{
+	return false;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s);
 

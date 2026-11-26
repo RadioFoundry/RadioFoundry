@@ -12,6 +12,7 @@
 // when its sector is full, the next sector of the ring is erased and used (it only holds older records).
 #include <stddef.h>
 #include <string.h>
+#include "config.h"
 #include "settings/settings.h"
 #include "storage/storage.h"
 
@@ -28,7 +29,7 @@ _Static_assert(SETTINGS_PAGES <= SETTINGS_PAGES_MAX, "settings_t outgrew its pag
 _Static_assert(sizeof(settings_t) % 4 == 0, "settings_t has tail padding");
 _Static_assert(offsetof(settings_t, dual_b) == SETTINGS_PAGE_BYTES, "page 1 starts at its first field");
 _Static_assert(offsetof(settings_t, ref_trim_ppb) % 2 == 0, "ref_trim_ppb is aligned");
-_Static_assert(sizeof(settings_t) == 408, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
+_Static_assert(sizeof(settings_t) == 412, "settings_t changed size: update docs/spec/settings-store.md 3 and this");
 
 static settings_t live;			// under the quick lock
 static settings_t saved;		// what the newest record holds (or the defaults)
@@ -39,6 +40,11 @@ static uint32_t changed_ms;
 static settings_stats_t stats;
 static bool inited;			// live holds the defaults or a loaded record
 static uint16_t sectors;		// ring length
+#if CONFIG_RADIO_DETOUR
+static bool held;			// settings_hold: nothing is saved until settings_release
+#else
+#define held	false
+#endif
 
 void settings_defaults(settings_t *s)
 {
@@ -131,9 +137,10 @@ static bool have_newest;		// stats.sector / stats.slot point at the newest valid
 static uint32_t valid_mask, save_mask;
 #define SECTORS_MAX	32u
 static uint32_t next_seq;		// the next record's sequence number: past every record in the ring
-// Slot buffers, used only under the storage lock (kept off the small housekeeping and start-up task stacks)
+// The slot buffer, used only under the storage lock (kept off the small housekeeping and start-up task stacks). One is
+// enough: next_slot's scan is over before put_record reads its record back, and settings_init calls neither. The
+// record put_record builds has its own
 static uint8_t slot_buf[SLOT_SIZE];
-static uint8_t slot_buf2[SLOT_SIZE];
 
 static uint16_t rec_page(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) >> SETTINGS_PAGE_SHIFT); }
 static uint16_t rec_layout(const uint8_t *r) { return (uint16_t)((r[8] | (r[9] << 8)) & 0x0FFFu); }
@@ -277,6 +284,20 @@ uint32_t settings_read_field(size_t offset, size_t size)
 	return v;
 }
 
+bool settings_u32_is_saved(size_t offset, uint32_t value)
+{
+	if (offset > sizeof(live) - sizeof(value)) {
+		return false;
+	}
+	storage_quick_lock();
+	ensure();
+	bool match = have_flash &&
+		memcmp((const uint8_t *)&live + offset, &value, sizeof(value)) == 0 &&
+		memcmp((const uint8_t *)&saved + offset, &value, sizeof(value)) == 0;
+	storage_quick_unlock();
+	return match;
+}
+
 settings_t *settings_begin(void)
 {
 	storage_quick_lock();
@@ -298,7 +319,7 @@ void settings_end(uint32_t now_ms)
 // that holds no page of the set in force or of this save (erased first). False when every sector does
 static bool next_slot(uint16_t *sector, uint16_t *slot, bool *erase)
 {
-	uint8_t *r = slot_buf2;
+	uint8_t *r = slot_buf;
 	uint16_t sec = have_newest ? stats.sector : 0;
 	uint16_t sl = have_newest ? (uint16_t)(stats.slot + 1u) : 0;
 
@@ -438,7 +459,11 @@ static void attach(uint32_t now_ms)
 	stats.slot = 0;
 	stats.skipped = 0;
 	stats.load = SETTINGS_DEFAULTS;
-	memset(&saved, 0xFF, sizeof(saved));	// nothing stored: unlike anything live holds, so the first poll saves
+	// Nothing stored: unlike anything live holds, so the first poll saves. Under a hold, saved is the state the
+	// release goes back to: kept, and the release leaves the blank area to be saved (settings_release)
+	if (!held) {
+		memset(&saved, 0xFF, sizeof(saved));
+	}
 	dirty = true;
 	changed_ms = now_ms - SETTINGS_SAVE_DELAY_MS;
 	have_flash = true;
@@ -450,15 +475,54 @@ void settings_poll(uint32_t now_ms)
 	if (storage_claim_pending() && storage_claim()) {
 		attach(now_ms);
 	}
-	if (dirty && have_flash && (now_ms - changed_ms) >= SETTINGS_SAVE_DELAY_MS) {
+	if (dirty && have_flash && !held && (now_ms - changed_ms) >= SETTINGS_SAVE_DELAY_MS) {
 		save_now();
 	}
 }
 
 bool settings_flush(void)
 {
+	if (held) {
+		return false;	// nothing is saved: what is stored is the state before the hold, the one the radio returns to
+	}
 	return save_now() && !dirty;
 }
+
+#if CONFIG_RADIO_DETOUR
+bool settings_hold(void)
+{
+	storage_quick_lock();
+	ensure();
+	// Unsaved changes would be dropped with the hold's: the caller waits for the save. Without a flash nothing is
+	// ever saved: the hold's start is the state a release goes back to
+	bool ok = !dirty || !have_flash;
+	if (ok) {
+		if (!have_flash) {
+			saved = live;
+			dirty = false;
+		}
+		held = true;
+	}
+	storage_quick_unlock();
+	return ok;
+}
+
+void settings_release(bool discard)
+{
+	storage_quick_lock();
+	if (held && discard) {
+		live = saved;
+		dirty = have_flash && !have_newest;	// an area claimed during the hold holds no record yet
+	}
+	held = false;
+	storage_quick_unlock();
+}
+
+bool settings_held(void)
+{
+	return held;
+}
+#endif
 
 void settings_get_stats(settings_stats_t *s)
 {

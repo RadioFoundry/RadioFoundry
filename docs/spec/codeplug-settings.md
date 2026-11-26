@@ -338,9 +338,13 @@ to a radio it sends (`areaForWrite`):
 | Case | What goes to the radio |
 |---|---|
 | The radio's area is of a newer version | The radio's own, untouched |
-| The edit changed no key | The radio's own. A file opened before the radio's menu changed a key doesn't put the old value back |
+| A file or draft was opened, or the destination radio changed | The file's valid area, including its channel tags and systems |
+| The codeplug was read from or successfully written to this connection, and the edit changed no key | The radio's own. An unchanged key doesn't put an old menu value back |
 | The edit changed keys and the radio has a valid area | The radio's area with only those keys set or removed. Every other key keeps the radio's value |
 | The edit changed keys and the radio has no valid area | The file's area |
+
+The merge baseline applies only to the radio connection that supplied it. Opening a file or draft clears that
+association. A successful write establishes a new baseline; a different or unknown chip UID clears it.
 
 ## 8. The native codeplug
 

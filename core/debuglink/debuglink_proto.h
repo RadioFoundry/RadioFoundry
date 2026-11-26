@@ -40,7 +40,13 @@ enum {
 	DL_CMD_AIR		= 0x24,	// the air interface on the bench: tap, session, RX, TX (CONFIG_AIR_RAW; debuglink_air.c, 3.28)
 	DL_CMD_SUPPORT		= 0x25,	// the support info: source, hardware, image hash (CONFIG_SUPPORT_INFO; debuglink_support.c, 3.29)
 	DL_CMD_SATELLITE	= 0x26,	// selected satellite TLE records (debuglink_satellite.c; CONFIG_SATELLITE_TLE, 3.30)
+	DL_CMD_DETOUR		= 0x27,	// temporary settings a deadline reverts (CONFIG_DEBUGLINK_DMRIP; dl_dmrip.h, 7.4)
+	DL_CMD_DMRIP		= 0x28,	// the debug link over the air: status, key (CONFIG_DEBUGLINK_DMRIP; 7.5)
 };
+
+// DL_CMD_DMRIP operations (first payload byte; docs/spec/debuglink.md 7.5)
+#define DL_DMRIP_OP_STATUS	0u	// -> port u16, key source u8 (0 none, 1 chip UID, 2 set), counters ( 7.5)
+#define DL_DMRIP_OP_KEY		1u	// key[16] (all zero: back to the chip UID's) -> none. Over the cable only
 
 // DL_CMD_T3 operations (first payload byte; docs/spec/debuglink.md 3.26). Little endian
 enum {

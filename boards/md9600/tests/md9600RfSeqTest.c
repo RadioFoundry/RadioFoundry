@@ -355,7 +355,9 @@ static void check_rx_order(md9600_rev_t r, uint32_t hz, bool wide)
 		uint16_t w[MD9600_IF_WORDS];
 		uint8_t n = md9600_if_words(wide, w);
 		int i0 = find(0, EV_IF, p.band, w[0]);
-		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 0);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) > tune);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) < i0);
+		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 1);
 		CHECK(find(i0, EV_IF, p.band, w[1]) == i0 + 1);
 		CHECK(count(EV_LINE, MD9600_LN_V5_BW_V) == 0);
 	} else {

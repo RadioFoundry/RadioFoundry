@@ -166,6 +166,9 @@ typedef struct {
 	void (*tx_end)(void);		// send what is queued, then DMR_EV_TX_DONE
 	void (*tx_abort)(void);
 	void (*set_embedded_lc)(const uint8_t lc[9]);	// spread over B-E from the next superframe
+	// Optional (NULL: the driver can't): voice burst F's 32-bit embedded field from the next tx_begin on, TX(31) first
+	// in field[0] bit 7 (an encrypted over's late-entry ALG / key ID, dmrFecPrivacyField); NULL: the chip's own filler
+	void (*set_burst_f)(const uint8_t field[4]);
 	// The receive filter: -1 = any, else the configured code (the call layer passes nothing else, so a driver that
 	// writes it to the chip's one CC register leaves the TX code as configured). configure() keeps any-CC listening:
 	// callers set the filter after start() and configure()

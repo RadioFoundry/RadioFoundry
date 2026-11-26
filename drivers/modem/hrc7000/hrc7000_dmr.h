@@ -153,6 +153,7 @@ typedef struct {
 	uint32_t rx_tick;	// tick of the last burst taken
 	uint32_t t_rx;		// wall time of the last burst taken (polite access and receive recovery)
 	bool rx_any;
+	bool rx_call_end;	// the last burst taken was a call's terminator: polite access sees a free channel
 	uint32_t t_resync;	// wall time of the last receiver restart or post-TX hold
 	bool resync_pending;	// modem activity or a post-TX hold needs quiet-time recovery
 	uint8_t idle_ticks;	// quiet ticks before the stale restart: RX_IDLE_TICKS, POST_TX_HOLD_TICKS after a hold
@@ -205,6 +206,8 @@ typedef struct {
 	uint8_t next_voice;
 	uint8_t emb_lc[9];
 	bool emb_set;
+	uint8_t burst_f[4];	// burst F's embedded field when burst_f_set, else the chip's RC encoder fills it
+	bool burst_f_set;
 	uint8_t call_lc[9];	// LC of the last voice header sent (embedded LC when none was set)
 	// RF / PA
 	bool rf_tx;
@@ -259,6 +262,8 @@ int8_t hrc7000_dmr_tx_fill(hrc7000_dmr_t *e, const dmr_tx_burst_t *b);
 void hrc7000_dmr_tx_end(hrc7000_dmr_t *e);
 void hrc7000_dmr_tx_abort(hrc7000_dmr_t *e);
 void hrc7000_dmr_set_embedded_lc(hrc7000_dmr_t *e, const uint8_t lc[9]);
+// Burst F's 32-bit embedded field (TX RAM 0x29-0x2C, VOICE_EMB_CTRL b1 off) from the next tx_begin; NULL: the chip's RC filler again
+void hrc7000_dmr_set_burst_f(hrc7000_dmr_t *e, const uint8_t field[4]);
 void hrc7000_dmr_set_cc_filter(hrc7000_dmr_t *e, int8_t cc);
 bool hrc7000_dmr_is_transmitting(const hrc7000_dmr_t *e);
 // The latest slot boundary (hal_dmr_modem_t.slot_clock): its tick and time; ts the outbound slot that started there

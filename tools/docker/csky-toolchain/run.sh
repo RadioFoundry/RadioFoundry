@@ -46,9 +46,13 @@ if [ -n "$SELF" ]; then
 else
 	MOUNT="-v $ROOT:$ROOT"
 	USER_OPT="--user $(id -u):$(id -g)"
+	# RFOUNDRY_THIRD_PARTY: the other checkout and the git directories its pin check reads
+	. "$ROOT/tools/docker/third_party_opts.sh"
+	MOUNT="$MOUNT $(tp_opts "$ROOT")"
 fi
 echo "csky run: $IMG ($(docker image inspect -f '{{.Id}}' "$IMG" | cut -c1-19)) in $ROOT"
-# safe.directory: the tree may belong to another user than the container's (git only reads it for version strings)
+# safe.directory: the tree may belong to another user than the container's (git only reads it, for version strings
+# and the third_party pin check)
 # shellcheck disable=SC2086
 exec docker run --rm $MOUNT $USER_OPT -w "$ROOT" -e HOME=/tmp \
 	-e JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}" -e RFOUNDRY_CI_PRUNE="${RFOUNDRY_CI_PRUNE:-1}" \
