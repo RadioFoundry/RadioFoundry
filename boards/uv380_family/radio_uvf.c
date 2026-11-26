@@ -667,7 +667,7 @@ static void rf_resync(void)
 		count(hrc_write(&r.modem, 4, 0x04, (uint8_t)r.rf_ref));
 	}
 	if (r.rx_valid) {
-		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));	// forced writes of 0x30 (idle), 0x29, 0x2A
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz, r.rx_hz));	// forced writes of 0x30 (idle), 0x05, 0x29, 0x2A
 		r.rf_tuned_hz = r.rx_tune_hz;
 	}
 	count(at1846s_set_state(&r.rf, r.rx_valid ? AT1846S_STATE_RX : AT1846S_STATE_IDLE));	// forced
@@ -790,6 +790,10 @@ static void init(void)
 	uint32_t pwd_ms = hal_millis();
 
 	at1846s_attach(&r.rf, &rf_bus);
+	static at1846s_spur_cfg_t spur = { .step_hz = 6500000u, .step_r05 = AT1846S_R05_26M };
+	spur.spurs = uvf_variant.rf_spurs;
+	spur.spurs_n = uvf_variant.rf_spurs_n;
+	at1846s_set_spurs(&r.rf, &spur);
 	count(at1846s_init(&r.rf));
 
 	while ((uint32_t)(hal_millis() - pwd_ms) < C6000_PWD_WAIT_MS) {
@@ -822,7 +826,7 @@ static uint32_t rx_tune(uint32_t hz)
 static void rx_retune(void)
 {
 	if (r.rx_valid && !r.tx_on && !r.asleep && r.rf_tuned_hz != r.rx_tune_hz) {
-		count(at1846s_set_freq(&r.rf, r.rx_tune_hz));
+		count(at1846s_set_freq(&r.rf, r.rx_tune_hz, r.rx_hz));
 		count(at1846s_set_state(&r.rf, AT1846S_STATE_RX));
 		r.rf_tuned_hz = r.rx_tune_hz;
 	}
@@ -964,7 +968,7 @@ static bool rx_set(uint32_t hz, radio_bw_t bw, const subtone_t *rx_tone, bool ke
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, r.mode == RADIO_MODE_DMR ? AT1846S_MODE_DMR : AT1846S_MODE_FM));
 	if (!back) {
-		count(at1846s_set_freq(&r.rf, tune));
+		count(at1846s_set_freq(&r.rf, tune, hz));
 	}
 	apply_rx_tone();
 	if (!back) {
@@ -1069,7 +1073,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tx_to
 	count(at1846s_set_bandwidth(&r.rf, rf_bw(bw)));
 	count(at1846s_set_mode(&r.rf, AT1846S_MODE_FM));
 	count(at1846s_set_tx_tone(&r.rf, tone, tone_value));
-	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset)));
+	count(at1846s_set_freq(&r.rf, (uint32_t)((int32_t)hz + offset), hz));
 	count(at1846s_set_state(&r.rf, AT1846S_STATE_FM_TX));
 
 	uvf_backlight_tx(true);	// the TX rate before the PA comes on
