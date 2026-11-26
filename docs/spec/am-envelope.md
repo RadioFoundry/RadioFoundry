@@ -3,9 +3,9 @@
 
 # AM envelope reception
 
-`CONFIG_AM_ENVELOPE` is an optional receive feature, off by default. It provides experimental AM audio and does not set
-`CAP_AM_RX`. A supporting board substitutes its analog RSSI signal for the FM PCM input and may expose an
-experimental receive range. Channels in this range must refuse transmit independently of saved settings, PTT,
+`CONFIG_AM_ENVELOPE` is built by default on boards with an implemented envelope capture path and its prerequisites. It provides experimental AM audio and does not set
+`CAP_AM_RX`. A supporting board substitutes its analog RSSI signal for the FM PCM input and may expose a
+receive range through `CONFIG_RX_EXT`, enabled at runtime by **Settings > Advanced > RX past bands** (off by default). Channels in this range must refuse transmit independently of saved settings, PTT,
 or network clients, even with an in-band transmit offset. Normal supported channels retain their existing transmit
 checks and audio source. See the board's hardware page for wiring and range.
 
@@ -13,16 +13,14 @@ The capture retains the existing DC removal, sample-rate conversion and PCM tran
 filtered, or changed by AGC: nonzero samples or a tuning-state update do not prove demodulation, sensitivity or PLL
 lock. Establish reception with recognizable speech from a known station, and compare an adjacent frequency.
 
-Use FM mode, wide bandwidth, squelch zero and monitor on. Monitor opens the local audio path but does not force
-the receive state used by the network audio gate; squelch zero is needed for continuous host recordings.
-The PCM is available through the receive side of
-[USRP](usb-audio.md#91-usrp-on-the-network-config_net_usrp) and the live speaker monitor below.
-The current experiment does not change IF gain or AGC registers.
+Use an analog channel with wide bandwidth. Enable RX past bands before tuning the extended range. For weak
+signals, set squelch to zero or use Monitor. The PCM speaker path works independently of a host connection.
+Existing [USRP audio](usb-audio.md#91-usrp-on-the-network-config_net_usrp) can record the unfiltered input when built.
 
 The host RF tests verify the experimental range, unchanged transmit frequency plan, and refusal of normal and
 direct PA requests on experimental channels even with the board revision confirmed, plus normal-band transmit
 in the mocked sequencer. Both transmit-enabled and globally receive-only builds are tested. Hardware reception
-and speaker quality require an owner-observed signal test.
+and speaker quality require a listening test.
 
 ## Live speaker monitor
 

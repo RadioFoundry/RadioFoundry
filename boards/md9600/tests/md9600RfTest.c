@@ -12,6 +12,7 @@
 #include "rf/ak2365a/ak2365a.h"
 #include "rfplan_md9600.h"
 #include "config.h"
+#include "board.h"
 
 static int failures;
 
@@ -160,14 +161,18 @@ static void test_bands(void)
 	CHECK(md9600_band_of(400000000u, &b) && b == MD9600_UHF);
 	CHECK(md9600_band_of(480000000u, &b) && b == MD9600_UHF);
 	CHECK(!md9600_band_of(135999999u, &b));
+	board_rx_ext_set(false);
+	CHECK(!md9600_rx_band_of(118000000u, &b));
+	CHECK(!md9600_rx_band_of(135999999u, &b));
+	board_rx_ext_set(true);
 	CHECK(!md9600_rx_band_of(117999999u, &b));
-	CHECK(md9600_rx_band_of(118000000u, &b) == (CONFIG_AM_ENVELOPE != 0));
-	CHECK(md9600_rx_band_of(135999999u, &b) == (CONFIG_AM_ENVELOPE != 0));
+	CHECK(md9600_rx_band_of(118000000u, &b) == (CONFIG_RX_EXT != 0));
+	CHECK(md9600_rx_band_of(135999999u, &b) == (CONFIG_RX_EXT != 0));
 	const uint32_t air[] = { 118250000u, 118800000u, 119500000u, 124100000u, 124775000u, 124800000u,
 				133475000u, 134950000u };
 	for (unsigned i = 0; i < sizeof(air) / sizeof(air[0]); i++) {
 		CHECK(!md9600_band_of(air[i], &b));
-#if CONFIG_AM_ENVELOPE
+#if CONFIG_RX_EXT
 		// Receive audio/status must select VHF even when a prior UHF channel left this default.
 		b = MD9600_UHF;
 		CHECK(md9600_rx_band_of(air[i], &b) && b == MD9600_VHF);
@@ -178,12 +183,14 @@ static void test_bands(void)
 			}
 			md9600_pll_plan_t p;
 			CHECK(!md9600_pll_plan((md9600_rev_t)r, air[i], true, &p));
-			CHECK(md9600_pll_plan((md9600_rev_t)r, air[i], false, &p) == (CONFIG_AM_ENVELOPE != 0));
-#if CONFIG_AM_ENVELOPE
+			CHECK(md9600_pll_plan((md9600_rev_t)r, air[i], false, &p) == (CONFIG_RX_EXT != 0));
+#if CONFIG_RX_EXT
 			CHECK(p.band == MD9600_VHF && p.lo_hz == air[i] + MD9600_IF_HZ && p.count != 0);
 #endif
 		}
 	}
+	board_rx_ext_set(false);
+	CHECK(!md9600_rx_band_of(124100000u, &b));
 	CHECK(!md9600_band_of(300000000u, &b));
 	CHECK(!md9600_band_of(480000001u, &b));
 	CHECK(md9600_if_lines_v5(MD9600_VHF, true) == 0x07);

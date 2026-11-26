@@ -35,3 +35,5 @@ BOARD_NOT_WRITTEN += NET_USRP	# USRP's 8 kHz PCM both ways needs more than the h
 # gap, not a build-switch or flash one
 BOARD_UNSUPPORTED += LANG_ZH	# a Chinese line needs 16 px; this layout draws its words in a smaller font
 BOARD_UNSUPPORTED += LANG_DEFAULT_ZH	# needs LANG_ZH
+
+BOARD_NOT_WRITTEN += AM_ENVELOPE	# no RSSI-envelope capture implementation

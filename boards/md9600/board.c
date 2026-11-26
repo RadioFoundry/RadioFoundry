@@ -23,12 +23,16 @@
 
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
-static const band_t bands[] = {
-#if CONFIG_AM_ENVELOPE
-	{ 118000000, 135999999, false }, // experimental: tuning and sensitivity unverified
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
 #endif
+
+static const band_t bands[] = {
 	{ 136000000, 174000000, CONFIG_MD9600_TX != 0 },
 	{ 400000000, 480000000, CONFIG_MD9600_TX != 0 },
+#if CONFIG_RX_EXT
+	{ 118000000, 135999999, false }, // receive only; sensitivity below the rated band is unmeasured
+#endif
 };
 
 // The power levels, per band (hardware-md9600.md 5.6: measured with a wattmeter). The same steps on both bands, the
@@ -122,6 +126,10 @@ const board_t board = {
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 1,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_bands = power_bands,

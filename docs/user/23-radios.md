@@ -2,16 +2,6 @@
 
 # Radio Reference
 
-The MD-9600's optional AM envelope feature extends tuning down to 118 MHz and sends the VHF RSSI
-waveform as host PCM for AM experiments. Airband channels remain receive-only, including split channels with
-an in-band TX frequency. Normal supported bands retain FM/DMR transmit and their existing checks. It plays
-filtered envelope audio directly through the speaker without a computer audio stream; the volume knob works normally.
-Leave Monitor off to use menu squelch. Level zero stays open for weak signals; scanning needs a nonzero level, which
-may miss weak AM because its detector still uses FM noise. Speaker filtering reduces out-of-band hiss without a
-signal-level gate, but does not remove noise overlapping speech. Airband channels show AM on the display;
-ordinary analog channels retain FM. This remains experimental VHF reception. See the
-[hardware notes](../spec/hardware-md9600.md#airband-am-reception).
-
 The rest of this manual describes what RadioFoundry does on every radio. This chapter lists what differs from radio to radio:
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
@@ -753,6 +743,14 @@ A programming cable can hold the line low by itself. Then the flash starts whene
 - The battery scale.
 
 ## TYT MD-9600
+
+Airband AM reception is included when its audio prerequisites are built. Enable **Settings > Advanced > RX past
+bands** to tune 118–136 MHz; the setting starts off. Airband channels show AM and remain receive-only, even with
+an in-band transmit offset. Audio plays through the speaker without a computer connection. Use squelch zero for
+weak signals; nonzero squelch allows scanning but can miss weak AM because it measures FM noise. Monitor overrides
+squelch. The voice filter reduces hiss outside the speech band without a signal-level gate. Sensitivity below the
+rated band is unmeasured. See the [hardware notes](../spec/hardware-md9600.md#airband-am-reception).
+
 
 Covers the TYT MD-9600 and the Retevis RT90, a mobile radio. **In testing.** One image serves every board revision. V1-V3 boards
 (original firmware V06.xx) have been tested on a radio: FM and DMR receive and transmit on both bands. V4 (V16.xx)

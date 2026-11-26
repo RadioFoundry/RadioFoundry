@@ -317,6 +317,9 @@ RCORE   := radioCoreTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplug_ke
            $(CORE)/radio/pa_sweep.c $(CORE)/radio/pa_keyrun.c \
            $(POSLIB) $(CORE)/ui/ui_svc_position.c $(CORE)/ui/i18n.c
 
+# These state-machine fixtures omit the PCM capture service; envelope audio has separate tests.
+radioCoreTest radioCoreTestNoVfoDmr radioCoreTestP25 radioCoreTestP25T radioCoreTestNxdn radioCoreTestP25Nxdn radioCoreTestAprsDmr: CFLAGS += -DCONFIG_AM_ENVELOPE=0
+
 radioCoreTest: $(RCORE) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                $(CORE)/ui/ui_svc.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
@@ -393,13 +396,13 @@ RFTEST  := radioFeaturesTest.c $(CORE)/radio/radio_sm.c $(CORE)/codeplug/codeplu
 
 # CONFIG_NET_USRP without the gateway: only the radio core's half (host audio PTT, the shared stream) is tested here;
 # the network half is usrpNetTest
-radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+radioFeaturesTest: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -o $@ $(RFTEST) -lm
 
 # The same without CONFIG_DUAL_WATCH: only the debug link's dual watch, two channels of one zone, ended by PTT
 TESTS   += radioFeaturesTestNoDual
-radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h)
+radioFeaturesTestNoDual: $(RFTEST) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_HOTSPOT=0 -DCONFIG_APRS=0 \
 		-DCONFIG_NET_USRP=1 -DCONFIG_DUAL_WATCH=0 -o $@ $(RFTEST) -lm
 
@@ -1758,7 +1761,7 @@ run-t3replay: t3ReplayTest
 UAUDIO  := usrpTest.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c
 TESTS   += usrpTest
 
-usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
+usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ $(UAUDIO) -lm
 
 # The shared PCM stream and USRP on the network address (core/usbaudio/audio_mux.c, usrp_net.c) against fake
@@ -1775,13 +1778,13 @@ envelopeLabelTest: envelopeLabelTest.c $(CORE)/radio/radio_am.c
 envelopeLabelTestOff: envelopeLabelTest.c $(CORE)/radio/radio_am.c
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=0 -o $@ $^
 
-envelopeMonitorTestStandalone: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(wildcard $(CORE)/usbaudio/*.h)
+envelopeMonitorTestStandalone: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=0 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c -lm
 
-envelopeMonitorTest: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(wildcard $(CORE)/usbaudio/*.h)
+envelopeMonitorTest: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=1 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c -lm
 
-usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
+usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h) $(CORE)/dsp/envelope_filter.h
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
 
 run: run-usbaudio

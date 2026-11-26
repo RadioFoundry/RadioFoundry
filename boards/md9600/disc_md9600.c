@@ -96,8 +96,10 @@ static void capture_start(void)
 	ADC3->CR2 = 0;
 	ADC3->SR = 0;
 	ADC3->CR1 = 0;		// 12-bit, one channel
-	ADC3->SMPR1 = 0x07FFFFFFu;	// 480 cycles, including the diagnostic input on IN0
-	ADC3->SMPR2 = 0x3FFFFFFFu;
+	ADC3->SMPR1 = 7u << ADC_SMPR1_SMP13_Pos;	// 480 cycles on the discriminator input
+#if CONFIG_AM_ENVELOPE
+	ADC3->SMPR2 = 7u;	// 480 cycles on the RSSI envelope input, IN0
+#endif
 	ADC3->SQR1 = 0;
 	ADC3->SQR3 = envelope_input ? 0u : 13u;
 	ADC3->CR2 = ADC_CR2_CONT | ADC_CR2_DMA | ADC_CR2_DDS | ADC_CR2_ADON;

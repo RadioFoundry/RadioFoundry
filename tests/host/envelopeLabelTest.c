@@ -5,12 +5,16 @@
 #include "config.h"
 #include "radio/radio_am.h"
 static const hal_audio_tap_t tap = { .caps = AUDIO_TAP_RX_ENVELOPE };
-const board_t board = { .audio_tap = &tap };
+static bool extended;
+static const band_t bands[] = { {136000000u,174000000u,true}, {118000000u,135999999u,false} };
+const board_t board = { .audio_tap = &tap, .bands = bands, .band_count = 2, .rx_ext_count = 1, .rx_ext_on = &extended };
 int main(void)
 {
 	int failures = 0;
 	channel_t ch = { .mode = RADIO_MODE_FM, .rx_hz = 133475000u };
 #define CHECK(c) do { if (!(c)) { printf("FAIL %d: %s\n", __LINE__, #c); failures++; } } while (0)
+	CHECK(!radio_am_display_channel(&ch));
+	board_rx_ext_set(true);
 	CHECK(radio_am_display_channel(&ch) == (CONFIG_AM_ENVELOPE != 0));
 	CHECK(!radio_am_capable() && !radio_am_channel(&ch)); // label must not select a missing native AM driver
 	ch.rx_hz = 117999999u; CHECK(!radio_am_display_channel(&ch));

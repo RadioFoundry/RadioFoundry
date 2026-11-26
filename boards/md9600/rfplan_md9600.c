@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include "rfplan_md9600.h"
 #include "config.h"
+#include "board.h"
 #if CONFIG_MD9600_V1V3
 #include "rf/sky72310/sky72310.h"
 #endif
@@ -39,8 +40,8 @@ bool md9600_band_of(uint32_t hz, uint8_t *band)
 
 bool md9600_rx_band_of(uint32_t hz, uint8_t *band)
 {
-#if CONFIG_AM_ENVELOPE
-	if (hz >= 118000000u && hz < VHF_LO_HZ) {
+#if CONFIG_RX_EXT
+	if (hz < VHF_LO_HZ && board_in_band(hz, false)) {
 		*band = MD9600_VHF;
 		return true;
 	}

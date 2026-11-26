@@ -319,7 +319,7 @@
 #define CONFIG_BCAST_FM			1
 #endif
 #ifndef CONFIG_AM_ENVELOPE
-#define CONFIG_AM_ENVELOPE		0
+#define CONFIG_AM_ENVELOPE		(CONFIG_FM && CONFIG_DMR && CONFIG_RX_EXT)
 #endif
 #ifndef CONFIG_RX_EXT
 #define CONFIG_RX_EXT			1

@@ -606,5 +606,6 @@ switch = "AUDIO_PROBE"
 spec = "docs/spec/usb-audio.md"
 
 [feature.am_envelope]
+hardware = "RSSI envelope sampled as PCM receive audio"
 switch = "AM_ENVELOPE"
 spec = "docs/spec/am-envelope.md"

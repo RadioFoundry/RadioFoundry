@@ -27,10 +27,6 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   at the end.
 
 
-The opt-in `AM_ENVELOPE` feature provides local RSSI-envelope AM audio on supporting boards. It is off by
-default and does not require network or debug tools. See the [AM envelope specification](spec/am-envelope.md)
-and the board hardware record.
-
 ## Checked on each radio
 
 Generated from the bring-up records in [testing/results/](testing/results/README.md), by the status rule of
@@ -54,7 +50,7 @@ is `tools/bringup.py list --radio <id>`.
 | `battery_save` | pass (seed) | pass (seed) | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | partial, needs re-run |
 | `am_rx` | not recorded | ✕ | not recorded | ✕ | ✕ | ✕ | ✕ | ✕ |
 | `bcast_fm` | not recorded | ✕ | not recorded | not written | ✕ | ✕ | ✕ | ✕ |
-| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not written | not recorded |
+| `rx_ext` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `p25_trunk` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
@@ -172,7 +168,7 @@ is `tools/bringup.py list --radio <id>`.
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
-| `am_envelope` | off | off | off | off | off | off | off | off |
+| `am_envelope` | not written | not written | not written | not written | not written | not written | not recorded | not written |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -278,8 +274,8 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `SIG_TONES` | ● | ● | ● | ● | ○ | ● | ● | ● |
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
-| `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
-| `AM_ENVELOPE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `RX_EXT` | ● | ● | ● | ● | … | ● | ● | ● |
+| `AM_ENVELOPE` | … | … | … | … | … | … | ● | … |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |

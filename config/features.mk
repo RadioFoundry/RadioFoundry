@@ -260,8 +260,8 @@ CONFIG_BCAST_FM ?= y
 # receive past the band table: a range in board.bands (rx_ext_count) that receives only while Settings > Advanced says
 # so, off by default, never transmit (docs/spec/radio-features.md). Off where the chip documents give no range
 CONFIG_RX_EXT ?= y
-# Optional AM envelope reception through board-provided RSSI capture; off by default.
-CONFIG_AM_ENVELOPE ?= n
+# AM voice from a board-provided RSSI envelope, using the PCM stream and the receive extension.
+CONFIG_AM_ENVELOPE ?= $(if $(filter n,$(CONFIG_FM) $(CONFIG_DMR) $(CONFIG_RX_EXT)),n,y)
 # audio path probe: debug link command 0x10 to read / write the audio chip's registers and watch the PCM stream's
 # levels, for the USB audio feasibility tests on the bench (docs/spec/hardware-dm1701.md 21.3; needs DEBUGLINK and DMR, whose
 # PCM stream it borrows). A diagnostic, never for a release
@@ -595,4 +595,4 @@ VALUES := DISPLAY_INSET_TOP DISPLAY_INSET_BOTTOM DISPLAY_INSET_LEFT DISPLAY_INSE
 	  DMR_DATA_TX_GUARD_MS
 FEATURE_DEFS += $(foreach v,$(VALUES),-DCONFIG_$(v)=$(strip $(CONFIG_$(v))))
 
-$(foreach f,FM DMR,$(if $(and $(call feature_on,AM_ENVELOPE),$(if $(call feature_on,$(f)),,x)),$(error CONFIG_AM_ENVELOPE=y needs CONFIG_$(f)=y)))
+$(foreach f,FM DMR RX_EXT,$(if $(and $(call feature_on,AM_ENVELOPE),$(if $(call feature_on,$(f)),,x)),$(error CONFIG_AM_ENVELOPE=y needs CONFIG_$(f)=y)))

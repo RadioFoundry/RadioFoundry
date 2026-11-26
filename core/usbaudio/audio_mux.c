@@ -6,7 +6,7 @@
 
 #include <string.h>
 #if CONFIG_AM_ENVELOPE
-#include "usbaudio/envelope_filter.h"
+#include "dsp/envelope_filter.h"
 #endif
 
 #define RX_MASK		(AUDIO_MUX_RX_CAP - 1u)

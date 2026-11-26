@@ -23,9 +23,14 @@ bool radio_am_channel(const channel_t *ch)
 bool radio_am_display_channel(const channel_t *ch)
 {
 #if CONFIG_AM_ENVELOPE
-	if (ch->mode == RADIO_MODE_FM && ch->rx_hz >= 118000000u && ch->rx_hz < 136000000u && board.audio_tap != NULL &&
+	if (ch->mode == RADIO_MODE_FM && radio_am_band(ch->rx_hz) && board.audio_tap != NULL &&
 	    (board.audio_tap->caps & AUDIO_TAP_RX_ENVELOPE) != 0) {
-		return true;
+		// The board's enabled receive extension supplies its envelope range, not the generic airband limits.
+		for (uint8_t i = (uint8_t)(board.band_count - board.rx_ext_count); i < board_band_count(); i++) {
+			if (ch->rx_hz >= board.bands[i].lo_hz && ch->rx_hz <= board.bands[i].hi_hz) {
+				return true;
+			}
+		}
 	}
 #endif
 	return radio_am_channel(ch);

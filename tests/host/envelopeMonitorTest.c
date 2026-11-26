@@ -6,7 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include "usbaudio/audio_mux.h"
-#include "usbaudio/envelope_filter.h"
+#include "dsp/envelope_filter.h"
 
 static int failures, starts, stops;
 static bool speaker;

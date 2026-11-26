@@ -26,7 +26,7 @@ static inline int16_t envelope_filter_sample(envelope_filter_t *f, int16_t sampl
 		s->x2 = s->x1; s->x1 = x; s->y2 = s->y1; s->y1 = y;
 		x = y;
 	}
-	int32_t out = x / 128; // same nominal 2x gain as the first local monitor
+	int32_t out = x / 128; // nominal 2x voice gain
 	return (int16_t)(out > 32767 ? 32767 : out < -32768 ? -32768 : out);
 }
 #endif

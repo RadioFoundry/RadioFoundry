@@ -2,10 +2,6 @@
 
 # Build configuration
 
-`CONFIG_AM_ENVELOPE=n` by default: [AM reception from an RSSI envelope](spec/am-envelope.md), with local speaker
-playback on supporting boards. Needs FM and DMR PCM audio, but no network, debug link or host connection.
-Airband channels remain receive-only; normal supported bands retain their existing transmit checks.
-
 Features that cost flash, and values that differ per radio, are chosen at build time. Defaults live in
 `config/features.mk`. A platform changes them for every radio on it in `platform/<p>/config.mk`, a board changes them
 in `boards/<board>/config.mk`, and the make command line overrides all of them. The Makefile reads the board's file
@@ -273,3 +269,10 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+## AM envelope reception
+
+`CONFIG_AM_ENVELOPE` enables [AM audio from an RSSI envelope](spec/am-envelope.md) on boards with an implemented
+capture path. It follows FM, DMR PCM and `CONFIG_RX_EXT`; boards without the capture implementation mark it not
+written. It requires no network or debug features. Enable RX past bands in Settings > Advanced to use the extended
+receive range. The setting starts off; out-of-band channels remain receive-only.

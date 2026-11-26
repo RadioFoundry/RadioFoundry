@@ -35,3 +35,5 @@ BOARD_UNSUPPORTED += FAULT_TRACE	# needs a host UART: the host port is USB, and 
 # a wide language is in use (core/ui/ui_screens.c, docs/spec/ui.md 2.5), so a 16 px CJK glyph fits; Home then has no
 # zone line and a list shows 5 rows instead of 7. Off by default like on every radio. Its glyph table (about 27 KB,
 # docs/feature-matrix.md) is far smaller than the old GB2312 one: the `chinese` CI extra builds it beside the default build
+
+BOARD_NOT_WRITTEN += AM_ENVELOPE	# no RSSI-envelope capture implementation
