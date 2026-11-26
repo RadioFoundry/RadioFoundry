@@ -192,6 +192,26 @@ function trunked() {
 	return { m, s };
 }
 
+test("Systems Talkgroups opens the existing catalog before personalities; incomplete identity disables it", () => {
+	const { m, s } = trunked();
+	assert.equal(m.channels.length, 0);
+	let selected = null, action = null;
+	const api = { model: m, t, h, change: (label, fn) => fn(), showContacts: (system) => (selected = system),
+		button: (label, fn, options) => {
+			const b = button(label, fn, options);
+			if (label === "editor.contact.talkgroups") action = b;
+			return b;
+		} };
+	systemsTab(api, null);
+	assert.equal(action.getAttribute("disabled"), "", "System ID is still a wildcard");
+	s.fields.sysid = 0x321;
+	systemsTab(api, null);
+	assert.equal(action.getAttribute("disabled"), null);
+	action.click();
+	assert.equal(selected, s);
+	assert.equal(m.channels.length, 0);
+});
+
 test("system form: a blocked network ID, as it is typed, locks Transmit and hides what only a transmitter reads (#1062)", () => {
 	const { m, s } = trunked();
 	const form = openSystem(m, s);

@@ -7,7 +7,7 @@
 
 import { LIMITS, P25_ALL_CALL } from "./records.js";
 import { numberTable } from "./model.js";
-import { isDmr, isP25, channelContactMode, wantsP25Contacts, flaggedChannels } from "./contactmode.js";
+import { isDmr, isP25, channelContactMode, wantsP25Contacts, flaggedChannels, scopedContact } from "./contactmode.js";
 import { hasFeature } from "./modes.js";
 
 // The firmware feature token of a radio that reads the contact flag (build_features_now)
@@ -43,7 +43,7 @@ export function convertP25Channels(m) {
 	const out = { channels: 0, contacts: 0, lists: 0, copies: 0, left: 0, full: false };
 	const made = new Map();
 	const key = (x) => `${x.type}:${x.id}`;
-	const have = new Map(m.contacts.filter(isP25).map((x) => [key(x), x]));
+	const have = new Map(m.contacts.filter((c) => isP25(c) && !scopedContact(c)).map((x) => [key(x), x]));
 	const toP25 = (d) => {
 		if (made.has(d)) return made.get(d);
 		const p = asP25(d);

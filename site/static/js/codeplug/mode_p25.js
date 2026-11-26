@@ -164,6 +164,8 @@ export const p25System = {
 	decode: decodeTsys,
 	encode: encodeTsys,
 	identity: (s) => `WACN ${s.wacn == null ? "*" : s.wacn.toString(16).toUpperCase()} · SYS ${s.sysid == null ? "*" : s.sysid.toString(16).toUpperCase()}`,
+	identityComplete: (s) => Number.isInteger(s?.wacn) && s.wacn >= 0 && s.wacn <= 0xFFFFF && Number.isInteger(s?.sysid) && s.sysid >= 0 && s.sysid <= 0xFFF,
+	identityBytesValid: (b) => b.length === 5 && b[2] < 0x10 && b[4] < 0x10,
 	sections: [
 		{ id: "identity", intro: "editor.p25.intro.identity" },
 		{ id: "radio" },

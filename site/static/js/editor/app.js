@@ -287,7 +287,7 @@ function blank(tab, d = {}) {
 	};
 	switch (tab) {
 	case "channels": return newChannel({ name: n(t("editor.new.channel")) });
-	case "contacts": return contactFromFilters({ name: n(t("editor.new.contact")), id: 9 }, d);
+	case "contacts": return contactFromFilters({ name: n(t("editor.new.contact")), id: 9, ...(d.system != null ? { system: S.model.systems.find((s) => s.number === d.system) ?? d.system } : {}) }, d);
 	case "zones": return { name: n(t("editor.new.zone")), channels: [] };
 	case "rxLists": return { number: null, name: n(t("editor.new.rx_list")), contacts: [] };
 	case "dtmfContacts": return { number: null, name: n(t("editor.new.dtmf")), code: "0" };
@@ -430,7 +430,7 @@ function openRecord(tab, r) {
 	} else if (tab === "rxLists") {
 		// groups of either mode (a list holds one mode's: Problems says when it mixes them); P25 ones are marked
 		membersDialog(t("editor.rx_list_title", { name: r.name }), r.contacts, S.model.contacts.filter((c) => c.type === "group" && (isDmr(c) || isP25(c))), LIMITS.rxListContacts, t,
-			(c) => `${c.name} (${c.id})${isP25(c) ? " · P25" : ""}`, (list) => change(t("editor.undo.edit"), () => (r.contacts = list)));
+			(c) => `${c.name} (${c.id})${isP25(c) ? ` · P25${c.system ? ` · ${typeof c.system === "object" ? c.system.name : t("editor.contact.unresolved")}` : ""}` : ""}`, (list) => change(t("editor.undo.edit"), () => (r.contacts = list)));
 	}
 }
 
@@ -721,7 +721,7 @@ async function connect() {
 		const hash = location.hash;
 		S.fake = S.fake || new FakeCpsRadio({ board: "DM-1701", image: CodeplugImage.blank().bytes, foreign: hash === "#sim-foreign",
 			// #sim-modes: firmware that runs every channel mode the editor knows (modes.js)
-			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
+			features: hash.startsWith("#sim-compact") ? "FM,DMR,IDDB_COMPACT" : hash.startsWith("#sim-modes") ? "FM,DMR,DMR_TRUNK,P25,P25_TRUNK,p25contacts,P25_SYSTEM_CONTACTS,NXDN" : "FM,DMR", release: hash.match(/[#&]release=([\w.]+)/)?.[1],
 			gitTime: Number(hash.match(/[#&]git_time=(\d+)/)?.[1]) || 0 });
 		stream = S.fake.stream();
 	} else {
@@ -1278,6 +1278,12 @@ function api() {
 		get fileName() { return S.fileName; },
 		get tab() { return S.tab; },
 		show,
+		showContacts(system) {
+			S.colFilters.contacts = { mode: new Set(["p25"]), type: new Set(["group"]), system: new Set([system.number]) };
+			S.filter.contacts = "";
+			S.grid = null;
+			show("contacts");
+		},
 		get radio() { return S.conn?.radio || null; },
 		// whether the connected radio reads a format C ID database; null without a radio
 		get compact() { return S.conn ? S.conn.transport.compact : null; },

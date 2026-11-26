@@ -774,16 +774,27 @@ static uint32_t fake_us;	// the microsecond clock: only the air table scans move
 // The air mode contact table (docs/spec/air-contacts.md): P25 names apart from the contacts above. TG 3100 is also
 // the DMR contact "TG USA", and 9991234 the private contact "Joe": a P25 lookup must never answer with those
 static const air_contact_t air_contacts[] = {
-	{ AIR_CONTACT_GROUP, 3100, "1 SB DPS" },
-	{ AIR_CONTACT_UNIT, 9991234, "Engine 7" },
-	{ AIR_CONTACT_GROUP, 77, "Seventy" },
+	{ .type = AIR_CONTACT_GROUP, .id = 3100, .name = "1 SB DPS" },
+	{ .type = AIR_CONTACT_UNIT, .id = 9991234, .name = "Engine 7" },
+	{ .type = AIR_CONTACT_GROUP, .id = 77, .name = "Seventy" },
 };
 static uint32_t air_finds;
 static uint32_t air_find_cost_us;	// what each scan costs on the fake microsecond clock
-bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contact_t *out)
+static char system_a_name[CODEPLUG_NAME_LEN + 1] = "A Dispatch";
+bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, uint8_t system, air_contact_t *out)
 {
 	air_finds++;
 	fake_us += air_find_cost_us;
+	// Qualified catalog fixture; the real reader and identity checks run on simulated flash in its own tests.
+	if (mode == CODEPLUG_KIND_P25 && id == 1001 && group && system <= 1) {
+		memset(out, 0, sizeof *out);
+		out->id = id;
+		out->type = AIR_CONTACT_GROUP;
+		out->scoped = true;
+		out->system = system;
+		strcpy(out->name, system == 0 ? system_a_name : "B Dispatch");
+		return true;
+	}
 	for (unsigned i = 0; i < sizeof(air_contacts) / sizeof(air_contacts[0]); i++) {
 		const air_contact_t *c = &air_contacts[i];
 		if (mode == CODEPLUG_KIND_P25 && c->id == id && (c->type != AIR_CONTACT_UNIT) == group) {
@@ -7693,6 +7704,25 @@ bool p25_conv_load(uint16_t number, const channel_t *ch, p25_conv_cfg_t *out)
 	*out = stored_p25[number];
 	return true;
 }
+
+static void test_p25_invalid_target(void)
+{
+	setup_codeplug_p25();
+	chans[3].kind = CODEPLUG_KIND_P25;
+	chans[3].system = CODEPLUG_SYSTEM_NONE;
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { P25_NAC_DEFAULT, P25_NAC_DEFAULT, P25_SQUELCH_NORMAL, true },
+		.unit_id = 1234567, .target = 0 };
+	start();
+	p25_defaults();
+	req(RREQ_ZONE_POS, 2);
+	CHECK(sm.view.p25.talk == 0 && !radio_p25_tx_prepare());
+	int keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.tx_calls == keyed && !hw.keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	memset(stored_p25, 0, sizeof stored_p25);
+}
 uint32_t p25_radio_unit_id(uint32_t dmr_id) { return p25_radio_id != 0 ? p25_radio_id : dmr_id; }
 // No stored channel here has P25 contact slots: the talk target reads as one without the flag
 bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_talk_t *out)
@@ -7727,7 +7757,7 @@ static void test_p25_scan(void)
 	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
 	chans[3].kind = CODEPLUG_KIND_P25;
 	chans[3].system = 0xFF;
-	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE, false }, .unit_id = 1234567,
 					  .target = 201, .target_unit = false, .talkaround = true };
 	start();
 	p25_defaults();
@@ -7803,7 +7833,7 @@ static void test_p25_dual(void)
 	add(3, "P25 rptr", 446100000, RADIO_MODE_DMR, false, 2);	// zone Local, position 2
 	chans[3].kind = CODEPLUG_KIND_P25;
 	chans[3].system = 0xFF;
-	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A0, P25_SQUELCH_SELECTIVE, false }, .unit_id = 1234567,
 					  .target = 201, .target_unit = false, .talkaround = true };
 	start();
 	p25_defaults();
@@ -7868,7 +7898,7 @@ static void test_p25_stored(void)
 	chans[3].tx_hz = 451100000;
 	chans[3].kind = CODEPLUG_KIND_P25;
 	chans[3].system = 0xFF;	// no system
-	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567,
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { 0x2A0, 0x2A1, P25_SQUELCH_SELECTIVE, false }, .unit_id = 1234567,
 					  .target = 201, .target_unit = false, .talkaround = false };
 	start();
 	p25_defaults();
@@ -8030,7 +8060,7 @@ static void test_p25_stored(void)
 	// The channel editor's NAC (ui_svc_write_channel_air): the stored channel written again with its block, in place
 	// or as a copy, which takes the source's tag first; a plain channel in P25 takes the block given and the rest
 	// from the P25 settings
-	ui_air_conv_t air = { .p25 = { 0x1A5, 0x1A6, P25_SQUELCH_SELECTIVE } };
+	ui_air_conv_t air = { .p25 = { 0x1A5, 0x1A6, P25_SQUELCH_SELECTIVE, false } };
 	CHECK(ui_svc_write_channel_air(3, &ed, 3, &air));
 	storage_job_poll();
 	CHECK(p25_saved.number == 3 && p25_saved.conv.rx_nac == 0x1A5 && p25_saved.conv.tx_nac == 0x1A6 &&
@@ -8231,15 +8261,17 @@ static void site_chunk(uint8_t *syms)
 
 // The codec's side (p25_codeplug.c, tested in p25CodeplugTest): channel 3's system
 static p25_trunk_cfg_t stored_trunk;
+static p25_trunk_cfg_t stored_trunk_second;
+static bool trunk_second_on;
 static int trunk_loads;
 static bool trunk_load_fails;
 bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
 {
-	if (ch->kind != CODEPLUG_KIND_P25_TRUNK || number != 3 || trunk_load_fails) {
+	if (ch->kind != CODEPLUG_KIND_P25_TRUNK || (number != 3 && !(trunk_second_on && number == 4)) || trunk_load_fails) {
 		return false;
 	}
 	trunk_loads++;
-	*out = stored_trunk;
+	*out = number == 4 ? stored_trunk_second : stored_trunk;
 	return true;
 }
 
@@ -8428,6 +8460,92 @@ static void test_p25_trunk(void)
 // site's inbound receiver, PTT's request, the grant, the call on the voice channel heard by the far radio, the return;
 // queued, denied and unanswered requests
 #define TS_OFFSET	5000000		// identifier 1's transmit offset
+static void test_p25_system_names(void)
+{
+	setup_codeplug_p25();
+	add(3, "System A", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	add(4, "System B", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[4].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[4].system = 1;
+	add(5, "Other network", 446100000, RADIO_MODE_P25, false, 2);
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.listen_only = true;
+	stored_trunk.talk_group = 1001;
+	stored_trunk.ctl_count = 1;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500 };
+	stored_trunk_second = stored_trunk;
+	stored_trunk_second.sys.wacn = TS_WACN + 1;
+	trunk_second_on = true;
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	req(RREQ_ZONE_POS, 2);
+	run(700);
+	CHECK(strcmp(sm.view.air_names.talk, "A Dispatch") == 0);
+	site.grant_tg = 1001; site.grant_ch = 0x100A;
+	far_begin(TS_NAC, 1001, false, 1001);
+	far_call(600);
+	CHECK(sm.view.air_names.dst_id == 1001 && strcmp(sm.view.air_names.dst, "A Dispatch") == 0);
+	site.grant_tg = 0;
+	// Another fully specified System uses the same NAC and group number. Both cached and displayed names change.
+	site.wacn = TS_WACN + 1;
+	uint32_t finds = air_finds;
+	req(RREQ_ZONE_POS, 3);
+	run(1000);
+	CHECK(sm.view.p25.talk == 1001 && strcmp(sm.view.air_names.talk, "B Dispatch") == 0 && air_finds > finds);
+	site.grant_tg = 1001;
+	far_begin(TS_NAC, 1001, false, 1001);
+	far_call(600);
+	CHECK(strcmp(sm.view.air_names.dst, "B Dispatch") == 0);
+	site.grant_tg = 0;
+	site.wacn = TS_WACN;
+	finds = air_finds;
+	req(RREQ_ZONE_POS, 2);
+	run(700);
+	CHECK(strcmp(sm.view.air_names.talk, "A Dispatch") == 0 && air_finds == finds);
+	// A codeplug mutation invalidates names at the same System/index/group, including cached answers.
+	strcpy(system_a_name, "A Updated");
+	cp_serial++;
+	run(700);
+	CHECK(strcmp(sm.view.air_names.talk, "A Updated") == 0);
+	strcpy(system_a_name, "A Dispatch");
+	// An invalid selected target cannot enable this otherwise transmit-capable System.
+	stored_trunk.listen_only = false;
+	stored_trunk.talk_group = 0;
+	cp_serial++;
+	run(700);
+	int keyed = hw.tx_calls;
+	CHECK(!radio_p25_trunk_tx() && sm.view.p25.talk == 0);
+	req(RREQ_PTT, 1);
+	CHECK(sm.view.state == RS_TX_DENIED && hw.tx_calls == keyed && !hw.keyed);
+	req(RREQ_PTT, 0);
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+	far_stop();
+	// A conventional call on that same NAC has no serving System and cannot inherit either cached scoped alias.
+	radio_p25_settings_t settings = { .rx_nac = TS_NAC, .tx_nac = TS_NAC, .tx_dst = 1001 };
+	radio_req_p25_settings(&settings);
+	req(RREQ_ZONE_POS, 4);
+	far_begin(TS_NAC, 1001, false, 1001);
+	far_call(600);
+	CHECK(sm.view.air_names.dst_id == 1001 && sm.view.air_names.dst[0] == '\0');
+	CHECK(strstr(build_features_now(), "P25_SYSTEM_CONTACTS,") != NULL);
+	far_stop();
+	req(RREQ_ZONE_POS, 0);
+	trunk_second_on = false;
+	p25_defaults();
+}
+
 static void test_p25_trunk_tx(void)
 {
 	static char buf[4096];
@@ -8632,7 +8750,7 @@ static void test_p25_conv_wacn_nogo(void)
 {
 	setup_codeplug_p25();
 	add(3, "P25 rpt", TS_CC1, RADIO_MODE_P25, false, 2);
-	stored_p25[3] = (p25_conv_cfg_t){ .conv = { TS_NAC, TS_NAC, P25_SQUELCH_SELECTIVE }, .unit_id = 1234567 };
+	stored_p25[3] = (p25_conv_cfg_t){ .conv = { TS_NAC, TS_NAC, P25_SQUELCH_SELECTIVE, false }, .unit_id = 1234567, .target = 201 };
 	memset(&site, 0, sizeof site);
 	site.cc_hz = TS_CC1;
 	site.voice_hz = TS_VOICE;
@@ -8699,11 +8817,13 @@ static void test_p25(void)
 #if CONFIG_P25_TRUNK
 	test_p25_trunk();
 	test_p25_trunk_tx();
+	test_p25_system_names();
 	test_p25_trunk_wacn_nogo();
 	test_p25_conv_wacn_nogo();
 #endif
 	test_p25_rx();
 	test_p25_names();
+	test_p25_invalid_target();
 	test_p25_stored();
 #if CONFIG_SCAN
 	test_p25_scan();

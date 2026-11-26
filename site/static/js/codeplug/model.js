@@ -17,7 +17,7 @@ import {
 	decodeAprs, encodeAprs, decodeGeneral, encodeGeneral, VFO, LUCZ, AIR_CONTACTS, AIR_CONTACT_SIZE, decodeAirContact,
 	encodeAirContact, airKept, P25_ALL_CALL,
 } from "./records.js";
-import { isDmr, isP25, contactModeOf, channelContactMode, syncContactFlags, validateContactLinks, typeFor, allCallId, contactIdMax } from "./contactmode.js";
+import { isDmr, isP25, contactModeOf, channelContactMode, syncContactFlags, validateContactLinks, typeFor, allCallId, contactIdMax, scopedContact, contactScope, resolveContactSystems, wantsP25Contacts } from "./contactmode.js";
 import { parseTone, nameBytes } from "./fields.js";
 import { readHeader } from "./iddb.js";
 import { decodeArea, keyValid, recordValid, KEYS, RECORD_KEYS } from "./kv.js";
@@ -62,6 +62,7 @@ export function decode(image) {
 		if (c) m.channels.push(followListen(linkRefs(m, { number: n, ...c })));
 	}
 	decodeModes(m, b);
+	resolveContactSystems(m);
 	linkContacts(m);
 	for (const a of VFO) {
 		const c = decodeChannel(b.subarray(a, a + CH_SIZE));
@@ -283,7 +284,8 @@ export function encode(m) {
 		if (kept.has(n)) continue;
 		const r = b.subarray(AIR_CONTACTS + (n - 1) * AIR_CONTACT_SIZE, AIR_CONTACTS + n * AIR_CONTACT_SIZE);
 		const c = air.get(n), have = decodeAirContact(r);
-		if (c && !same(have, c.type === "all" ? { ...c, id: P25_ALL_CALL } : c, ["name", "type", "id"])) encodeAirContact(c, r);
+		const flat = c ? { ...c, id: c.type === "all" ? P25_ALL_CALL : c.id, system: null, systemCheck: 0, ...contactScope(c) } : null;
+		if (c && !same(have && { system: null, systemCheck: 0, ...have }, flat, ["name", "type", "id", "system", "systemCheck"])) encodeAirContact(flat, r);
 		else if (!c && have) r.fill(0xFF);
 	}
 
@@ -350,6 +352,7 @@ export function contactFromFilters(fields, d = {}) {
 	if (d.type) c.type = typeFor(d.type, c.mode);
 	if (c.type === "all") c.id = allCallId(c.mode);
 	if (d.timeslot != null && !isP25(c)) c.timeslot = d.timeslot;
+	if (isP25(c) && d.system != null) c.system = fields.system ?? d.system;
 	return c;
 }
 
@@ -358,6 +361,12 @@ export function remove(m, table, items) {
 	const gone = new Set(items);
 	m[table] = m[table].filter((x) => !gone.has(x));
 	removeModes(m, table, gone);
+	if (table === "systems") {
+		for (const c of m.contacts.filter(scopedContact)) if (gone.has(c.system)) {
+			c.systemCheck = contactScope(c).systemCheck;
+			c.system = 256;
+		}
+	}
 	if (table === "channels") {
 		for (const z of m.zones) z.channels = z.channels.filter((c) => !gone.has(c));
 	} else if (table === "contacts") {
@@ -438,7 +447,10 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (c.mode === "dmr" && !c.kind && !c.contact && !c.rxOnly) warn("channels", c, "contact", "no_contact");
 		const band = listenBand(c.rxHz);
 		if (band && c.mode === "dmr") warn("channels", c, "mode", `listen_dmr_${band}`);
-		for (const k of REFS) if (typeof c[k] === "number") warn("channels", c, k, "dangling", { number: c[k] });
+		for (const k of REFS) if (typeof c[k] === "number") {
+			const report = k === "contact" && wantsP25Contacts(c) ? err : warn;
+			report("channels", c, k, "dangling", { number: c[k] });
+		}
 		if (c.dmrId > 0xFFFFFF) err("channels", c, "dmrId", "id_range");
 	}
 	const names = new Map();
@@ -465,7 +477,8 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (c.type !== "all" && !(c.id >= 1 && c.id <= max)) {
 			err("contacts", c, "id", c.type === "unit" ? "p25_unit_range" : "p25_group_range", { max });
 		} else if (c.name) {
-			const key = `${c.type === "unit" ? "unit" : "group"}:${c.type === "all" ? P25_ALL_CALL : c.id}`;
+			const scope = contactScope(c);
+			const key = `${scope.system ?? 0}:${scope.systemCheck ?? 0}:${c.type === "unit" ? "unit" : "group"}:${c.type === "all" ? P25_ALL_CALL : c.id}`;
 			if (named.has(key)) warn("contacts", c, "id", "p25_duplicate");
 			named.add(key);
 		}
@@ -474,7 +487,7 @@ export function validate(m, { bands = null, features = null } = {}) {
 		if (!l.name) err("rxLists", l, "name", "no_name");
 		if (l.contacts.length > LIMITS.rxListContacts) err("rxLists", l, "contacts", "too_many", { max: LIMITS.rxListContacts, count: l.contacts.length });
 	}
-	validateContactLinks(m, err, warn);
+	validateContactLinks(m, err, warn, features);
 	for (const d of m.dtmfContacts) {
 		if (!d.name) err("dtmfContacts", d, "name", "no_name");
 		if (!validDtmf(d.code)) err("dtmfContacts", d, "code", "bad_dtmf");

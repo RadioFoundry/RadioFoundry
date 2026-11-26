@@ -500,15 +500,15 @@ static void test_conv_air(void)
 	c = air_channel(11, 3, 0, true, false);
 	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_ALL && !cfg.target_unit);
 	CHECK(p25_channel_talk(11, &c, false, &tk) && tk.air && tk.id == P25_CP_TG_ALL && !tk.unit && strcmp(tk.name, "All") == 0);
-	// Empty, another mode's, invalid, out of range, past the table: talk group 1, whatever the DMR contact is
+	// An explicit empty, wrong-mode, invalid or dangling slot has no target, whatever the DMR contact is.
 	static const uint16_t none[] = { 4, 5, 6, 7, 9, 341, 342, 1000 };
 	for (unsigned i = 0; i < sizeof none / sizeof none[0]; i++) {
 		c = air_channel(11, none[i], 0, true, false);
-		CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_DEFAULT && !cfg.target_unit);
-		CHECK(p25_channel_talk(11, &c, true, &tk) && tk.air && !tk.set && tk.id == P25_CP_TG_DEFAULT && tk.name[0] == '\0');
+		CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 0 && !cfg.target_unit);
+		CHECK(p25_channel_talk(11, &c, true, &tk) && tk.air && !tk.set && tk.id == 0 && tk.name[0] == '\0');
 	}
 	// No contact: the RX list's first group slot, as a DMR channel's first talk group; its unit slots and empty
-	// slots are passed over. None there: talk group 1
+	// slots are passed over. A nonempty list without a usable group has no target.
 	static const uint16_t l1[] = { 4, 2, 5, 8, 1 };
 	air_list(1, 5, l1);
 	c = air_channel(11, 0, 1, true, false);
@@ -518,7 +518,7 @@ static void test_conv_air(void)
 	static const uint16_t l2[] = { 4, 2, 6 };
 	air_list(2, 3, l2);
 	c = air_channel(11, 0, 2, true, false);
-	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == P25_CP_TG_DEFAULT);
+	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 0);
 	// The contact wins over the list
 	c = air_channel(11, 1, 1, true, false);
 	CHECK(p25_conv_load(11, &c, &cfg) && cfg.target == 301);
@@ -583,12 +583,12 @@ static void test_trunk_air(void)
 	p25_talk_t tk;
 	CHECK(p25_channel_talk(21, &c, true, &tk) && tk.air && tk.id == 301 && strcmp(tk.name, "G301") == 0);
 	CHECK(cfg.group_count == 3 && cfg.groups[0] == 305 && cfg.groups[1] == 301 && cfg.groups[2] == 301);
-	// With follow all besides; a unit slot as the talk target is no talk group: 1
+	// With follow all besides; a unit slot is no supported trunked group target.
 	p = P25_TCH_AIR_CONTACTS | P25_TCH_FOLLOW_ALL;
 	c.contact = 2;
 	CHECK(codeplug_set_channel(21, &c));
 	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
-	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT && cfg.follow_all && cfg.group_count == 3);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.follow_all && cfg.group_count == 3);
 	// All call slot: talk group 65535; an empty slot and no list: talk group 1, nothing followed
 	c.contact = 3;
 	c.listen_list = 0;
@@ -602,7 +602,7 @@ static void test_trunk_air(void)
 	c.contact = 4;
 	c.listen_list = 0;
 	CHECK(codeplug_set_channel(21, &c));
-	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT && cfg.group_count == 0);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.group_count == 0);
 	// The block's other bits stay: bit 0 alone is follow all on DMR contacts (index 2 = 5000)
 	p = P25_TCH_FOLLOW_ALL;
 	CHECK(codeplug_tag_write(21, "County TG", &t, &p, 1));
@@ -610,6 +610,88 @@ static void test_trunk_air(void)
 	CHECK(codeplug_set_channel(21, &c));
 	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 5000 && cfg.follow_all && cfg.group_count == 0);
 	CHECK(p25_channel_talk(21, &c, false, &tk) && !tk.air && tk.id == 5000 && strcmp(tk.name, "DMR 5000") == 0);
+}
+
+static void test_wrong_system_contact(void)
+{
+	fresh();
+	air_fill();
+	uint8_t hd[CODEPLUG_SYS_HDR] = { CODEPLUG_SYSTYPE_P25_TRUNK, CODEPLUG_SYS_TX, 0, 5 };
+	static const uint8_t sys1[] = { 0x45, 0x23, 1, 0x34, 2 };
+	static const uint8_t sys2[] = { 0x56, 0x34, 2, 0x45, 3 };
+	put(CODEPLUG_KEY_SYSTEM + 1, hd, sizeof hd, sys1, sizeof sys1);
+	put(CODEPLUG_KEY_SYSTEM + 2, hd, sizeof hd, sys2, sizeof sys2);
+	air_put(20, CODEPLUG_KIND_P25, 0x05, 1001, "System 1 TG");
+	uint8_t *row = &sim_flash_data[CODEPLUG_AIR_CONTACTS_ADDR + 19 * CODEPLUG_AIR_CONTACT_SIZE];
+	row[5] = 1;
+	row[6] = 0xB6; row[7] = 0x8D;	// independent guard for 03 05 45 23 01 34 02
+	static const uint16_t refs[] = { 20, 8 };
+	air_list(1, 2, refs);
+	channel_t c = make("System 2 TG", 453100000, 458100000);
+	c.contact = 20;
+	c.listen_list = 1;
+	CHECK(codeplug_set_channel(21, &c));
+	codeplug_tag_t t = { .kind = CODEPLUG_KIND_P25_TRUNK, .system = 2, .flags = CODEPLUG_TAG_TX };
+	uint8_t p = P25_TCH_AIR_CONTACTS;
+	CHECK(codeplug_tag_write(21, c.name, &t, &p, 1) && codeplug_channel(21, &c));
+	p25_talk_t target;
+	p25_trunk_cfg_t cfg;
+	CHECK(p25_channel_talk(21, &c, true, &target) && !target.set && target.id == 0 && target.name[0] == '\0');
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.group_count == 1 && cfg.groups[0] == 305);
+	// A valid own-System reference resolves first; erasing its row still leaves an explicit dangling slot.
+	row[5] = 2; row[6] = 0x8E; row[7] = 0xCD;
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 1001 && cfg.group_count == 2);
+	memset(row, 0xFF, CODEPLUG_AIR_CONTACT_SIZE);
+	CHECK(p25_channel_talk(21, &c, true, &target) && !target.set && target.id == 0);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.group_count == 1);
+	c.contact = 0xFFFF;
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0);
+	// Clearing the scope flag explicitly restores legacy semantics; the old scope bytes stay opaque.
+	air_put(20, CODEPLUG_KIND_P25, AIR_CONTACT_GROUP, 1001, "Legacy 1001");
+	c.contact = 20;
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 1001);
+	// A missing portable RX member is still an explicit selection attempt, even if no scope marker survives.
+	static const uint16_t missing[] = { 341 };
+	air_list(2, 1, missing);
+	// Literal external record bytes bypass the ordinary writer's valid-index checks.
+	sim_flash_data[map.openfw_flash + 0x8D6A0u + 80u + CODEPLUG_NAME_LEN] = 0xFF;
+	sim_flash_data[map.openfw_flash + 0x8D6A0u + 80u + CODEPLUG_NAME_LEN + 1u] = 0xFF;
+	listen_list_t decoded;
+	CHECK(codeplug_listen_list(2, &decoded) && decoded.count == 0 && decoded.malformed);
+	uint16_t full[CODEPLUG_LIST_LEN];
+	for (unsigned i = 0; i < CODEPLUG_LIST_LEN; i++) full[i] = 8;
+	air_list(3, CODEPLUG_LIST_LEN, full);
+	sim_flash_data[map.openfw_flash + 0x8D620u + 2u] = CODEPLUG_LIST_LEN + 2;
+	CHECK(codeplug_listen_list(3, &decoded) && decoded.count == CODEPLUG_LIST_LEN && decoded.malformed);
+	c.contact = 0;
+	c.listen_list = 2;
+	CHECK(codeplug_set_channel(21, &c) && codeplug_channel(21, &c));
+	CHECK(p25_channel_talk(21, &c, true, &target) && !target.set && target.id == 0);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.group_count == 0);
+	// The portable typed tombstone stays in the generic list but remains outside the 341-slot air table.
+	static const uint16_t portable_missing[] = { 1024 };
+	air_list(2, 1, portable_missing);
+	CHECK(codeplug_listen_list(2, &decoded) && decoded.count == 1 && !decoded.malformed);
+	CHECK(p25_channel_talk(21, &c, true, &target) && target.id == 0 && !target.set);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0 && cfg.group_count == 0);
+	// The list owner reports an I/O failure separately; it cannot invent the legacy default either.
+	sim_flash_bad_read(map.openfw_flash + 0x8D6A0u + 80u, 80u);
+	CHECK(p25_channel_talk(21, &c, true, &target) && target.id == 0 && !target.set);
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == 0);
+	sim_flash_bad_read(0, 0);
+	// Truly empty and absent lists still retain the unspecified-target legacy default.
+	air_list(4, 0, full);
+	c.listen_list = 4;
+	CHECK(codeplug_set_channel(21, &c) && codeplug_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT);
+	c.listen_list = 0;
+	CHECK(codeplug_set_channel(21, &c) && codeplug_channel(21, &c));
+	CHECK(p25_trunk_load(21, &c, &cfg) && cfg.talk_group == P25_CP_TG_DEFAULT);
+	// A conventional personality cannot select a System-qualified slot, even on the same NAC.
+	row[1] |= AIR_CONTACT_SYSTEM; row[5] = 2; row[6] = 0x8E; row[7] = 0xCD;
+	c = air_channel(22, 20, 0, true, false);
+	p25_conv_cfg_t conv;
+	CHECK(p25_conv_load(22, &c, &conv) && conv.target == 0);
 }
 #endif
 
@@ -622,6 +704,7 @@ int main(void)
 #if CONFIG_P25_TRUNK
 	test_trunk_load();
 	test_trunk_air();
+	test_wrong_system_contact();
 #endif
 	sim_flash_free();
 	if (failures) {

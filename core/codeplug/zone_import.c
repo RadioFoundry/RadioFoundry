@@ -932,7 +932,7 @@ static bool talk_contact_on_air(uint16_t number, const channel_t *ch, zsContact_
 
 	if ((ch->kind == CODEPLUG_KIND_P25 || ch->kind == CODEPLUG_KIND_P25_TRUNK) &&
 	    p25_channel_talk(number, ch, true, &t) && t.air) {
-		if (!t.set) {
+		if (!t.set || t.scoped || t.scoped_rx) {
 			return false;
 		}
 		memset(c, 0, sizeof(*c));
@@ -1152,6 +1152,12 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (!codeplug_channel(list[i], &ch)) {
 			continue;
 		}
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
+		p25_talk_t target;
+		if (p25_channel_talk(list[i], &ch, true, &target) &&
+		    (target.scoped || target.scoped_rx || (target.air && target.id == 0)))
+			continue;	// the transport cannot preserve this scope; included/total reports the omission
+#endif
 		int need = 0;
 		bool add_sys = false;
 		uint8_t sys_entries = 0;
@@ -1251,6 +1257,12 @@ static int export_list(const char *name, uint8_t flags, const uint16_t *list, ui
 		if (!codeplug_channel(ch_num[i], &ch)) {
 			return 0;
 		}
+#if CONFIG_P25 && CONFIG_ZONE_SHARE_MODES
+		p25_talk_t target;
+		if (p25_channel_talk(ch_num[i], &ch, true, &target) &&
+		    (target.scoped || target.scoped_rx || (target.air && target.id == 0)))
+			return 0;	// changed after selection: no unscoped or implicit-default target is sent
+#endif
 		channel_on_air(&ch, &z);
 		z.contact = ch_ct[i];
 		zsWriterChannel(&w, &z);

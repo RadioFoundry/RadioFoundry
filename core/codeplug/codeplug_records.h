@@ -80,6 +80,9 @@ typedef struct {
 // System n: its header in *s and the type's block into block (at most cap octets; block needs CODEPLUG_SYS_HDR more).
 // The block's stored length, -1 when there is no system n
 int codeplug_system(uint8_t n, codeplug_system_t *s, uint8_t *block, uint16_t cap);
+// An identity-only compact check for System n of type. P25 trunked Systems require exactly five complete identity
+// bytes with fully specified WACN/System ID. Names and operating settings are excluded; false never means global.
+bool codeplug_system_identity_check(uint8_t n, uint8_t type, uint16_t *check);
 // The next entry of system with class cls, after entry number *at (start with *at = -1): its header in *e, its body into
 // body (at most cap octets, up to 64). Its entry number, -1 at the end
 int codeplug_sys_entry_next(int *at, uint8_t system, uint8_t cls, codeplug_sys_entry_t *e, uint8_t *body,

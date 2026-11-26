@@ -8,10 +8,10 @@ import { h, button } from "../flasher/dom.js";
 import { parseFreq, parseTone, mhz, TONES } from "../codeplug/fields.js";
 import { LIMITS, POWER_NAMES, P25_ALL_CALL } from "../codeplug/records.js";
 import { refNumber, listenBand, numberTable, followListen } from "../codeplug/model.js";
-import { isP25, contactModeOf, channelContactMode, setContactMode, CALL_TYPES_OF, allCallId, contactIdMax } from "../codeplug/contactmode.js";
+import { isP25, contactModeOf, channelContactMode, setContactMode, CALL_TYPES_OF, allCallId, contactIdMax, contactOnChannel } from "../codeplug/contactmode.js";
 import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds, p25Offered } from "../codeplug/modes.js";
-import { setKind } from "../codeplug/channelmodes.js";
+import { setKind, systemIdentityCheck } from "../codeplug/channelmodes.js";
 import { specField } from "./modefields.js";
 import { combo, comboText } from "./combo.js";
 
@@ -158,7 +158,7 @@ const refLabel = (v, t) => (v == null ? "" : typeof v === "number" ? t("editor.m
 // already names stays listed (an older codeplug's P25 channel names a DMR contact)
 function contactOptions(m, t, r) {
 	const mode = channelContactMode(r ?? {});
-	const out = refOptions(m.contacts.filter((x) => contactModeOf(x) === mode), t);
+	const out = refOptions(m.contacts.filter((x) => contactModeOf(x) === mode && contactOnChannel(x, r ?? {})), t);
 	if (r?.contact && typeof r.contact === "object" && !out.some(([x]) => x === r.contact)) out.push([r.contact, r.contact.name]);
 	else if (typeof r?.contact === "number") out.push([r.contact, t("editor.missing", { n: r.contact })]);
 	return out;
@@ -245,6 +245,18 @@ export function columns(table, m, t, { features = null } = {}) {
 				setContactMode(r, v);
 				numberTable(m, "contacts");
 			}, { options: modes, filter: true, filterOptions: () => [["dmr", "DMR"], ["p25", "P25"]], filterKey: contactModeOf }),
+			col("system", "editor.contact.system", "select", (r, k, v) => {
+				r.system = v;
+				delete r.systemCheck;
+			}, {
+				readOnly: (r) => !isP25(r), filter: true,
+				get: (r) => isP25(r) ? r.system ?? null : null,
+				options: (r) => [[null, t("editor.contact.unscoped")], ...m.systems.filter((s) => s.type === 3 && systemIdentityCheck(s) != null).map((s) => [s, s.name]),
+					...(r?.system != null && (typeof r.system !== "object" || systemIdentityCheck(r.system) == null) ? [[r.system, t("editor.contact.unresolved")]] : [])],
+				format: (v, r) => !isP25(r) ? "" : v == null ? t("editor.contact.unscoped") : typeof v === "object" && systemIdentityCheck(v) != null ? v.name : t("editor.contact.unresolved"),
+				filterKey: (r) => isP25(r) ? typeof r.system === "object" && r.system ? r.system.number : r.system ?? null : null,
+				filterOptions: () => [[null, t("editor.contact.unscoped")], ...m.systems.filter((s) => s.type === 3).map((s) => [s.number, s.name])],
+			}),
 			col("id", "editor.col.id", "text", (r, k, v) => {
 				const n = Number(String(v).trim());
 				const max = contactIdMax(r);

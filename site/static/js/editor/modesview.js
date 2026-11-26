@@ -8,7 +8,7 @@
 import { formDialog, fallbackOptions } from "./views.js";
 import { specField, parseSpec, formatSpec, label, liveSystemFields } from "./modefields.js";
 import { SYSTEM_TYPES, typeRow, typeName, offeredTypes, offeredKinds } from "../codeplug/modes.js";
-import { newSystem, newHamSystem, syncModes, systemTx, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
+import { newSystem, newHamSystem, syncModes, systemTx, systemIdentityCheck, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
 import { remove, assignNumbers } from "../codeplug/model.js";
 
 const SHARE_LEVELS = [SHARE.off, SHARE.identity, SHARE.whole];
@@ -32,6 +32,7 @@ export function systemsTab(api, features) {
 	pick.addEventListener?.("change", () => (ham.disabled = full || !hamOf()));
 	const parts = [
 		h("p", { class: "small muted" }, t("editor.modes.intro")),
+		systems.some((s) => s.type === 3) ? h("p", { class: "small muted" }, t("editor.contact.catalog_help")) : null,
 		types.length ? h("div", { class: "ed-bar" }, h("div", { class: "ed-actions" }, pick,
 			button(t("editor.modes.add"), () => {
 				const s = newSystem(m, Number(pick.value), newName(m, t));
@@ -47,6 +48,7 @@ export function systemsTab(api, features) {
 			const used = m.channels.filter((c) => c.system === s).length;
 			const actions = mod ? [
 				button(t("editor.modes.edit"), () => systemDialog(api, s, false), { quiet: true }),
+				s.type === 3 ? button(t("editor.contact.talkgroups"), () => api.showContacts(s), { quiet: true, disabled: systemIdentityCheck(s) == null }) : null,
 			] : [];
 			return h("tr", {},
 				h("td", {}, String(s.number)), h("td", {}, s.name), h("td", {}, row ? t(mod.label ?? `editor.mode_name.${row.token}`) : typeName(s.type)),

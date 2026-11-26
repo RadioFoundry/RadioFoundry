@@ -105,7 +105,7 @@ A slot is read as the talk target of a DMR contact is, from its own entry:
 | Group | that talk group (1-65535) |
 | Unit | a unit call to that unit ID |
 | All call | talk group 65535 |
-| Empty, invalid, or an entry of another mode | none: talk group 1 (the DMR contact with that number is not used) |
+| Explicitly selected empty, invalid, other-mode or wrong/unresolved System slot | invalid target: no transmission (the DMR contact with that number is not used) |
 
 With no contact (0), the target is the first group slot of the RX group list, as with DMR contacts; unit, all call,
 empty and invalid entries are passed over. A list entry that is not a valid group slot is skipped.
@@ -198,7 +198,8 @@ The talk group is the record's contact, the groups followed its RX group list (g
 group is the channel's choice, so one system can have a channel that follows all and others that follow a few.
 
 Bit 1 is the P25 contacts bit of 2.4: set, the contact is a slot of the P25 contacts (its talk group, as in 2.4; a unit
-slot is no talk group, so 1) and the RX group list's entries are slots, of which the valid group ones (at most 32) are
+slot is not a supported trunked group target and cannot authorize transmission) and the RX group list's entries are
+slots, of which the valid group ones for this System (at most 32) are
 the groups followed besides the talk group. Clear, the contact is a DMR contact index and the RX group list is not
 followed. Firmware without the feature ignores the bit (2.4).
 
@@ -208,3 +209,9 @@ The names of P25 talk groups and units are entries of mode 2 in the air mode con
 ([air-contacts.md](air-contacts.md)), read by conventional and trunked channels alike. The screens name a P25 ID only
 from there; the contact list's names are never shown for a P25 ID ([channel-modes.md](channel-modes.md) 5.2, Names).
 An ID without an entry shows as its number.
+
+Trunked personalities qualify contact slots and RX-list membership against their existing System record
+([air-contacts.md](air-contacts.md#33-system-qualified-catalog)). Another System's contact, an unresolved scoped
+contact or an explicitly selected invalid slot is not the default talkgroup and cannot authorize transmission.
+Names use the current System's catalog first, with unscoped legacy labels as a fallback. Conventional channels use
+unscoped entries. System scope does not change the existing blocked-system or transmit-admission policies.

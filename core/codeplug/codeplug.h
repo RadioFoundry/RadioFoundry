@@ -221,6 +221,7 @@ typedef struct {
 	char name[CODEPLUG_NAME_LEN + 1];
 	uint8_t count;
 	uint16_t contacts[CODEPLUG_LIST_LEN];	// contact indices, 1-based
+	bool malformed;		// reader stopped at an invalid stored reference; the valid prefix/count is retained
 } listen_list_t;
 
 // The radio's own DMR ID from the general settings, 0 if none is stored

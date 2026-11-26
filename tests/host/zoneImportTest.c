@@ -968,16 +968,16 @@ static void share_air(uint8_t kind, uint8_t flag, int blk_len)
 	CHECK(codeplug_set_zone(0, &z));
 	int len = zone_export_zone(0, recbuf, sizeof(recbuf), &included);
 
-	CHECK(len > 0 && included == 5 && zsParse(recbuf, len, &rec) && rec.channels == 5 && rec.tags == 5);
+	CHECK(len > 0 && included == 4 && zsParse(recbuf, len, &rec) && rec.channels == 4 && rec.tags == 4);
 	// Three slots by value and the DMR contact; every tag has the flag clear and its other bits
 	CHECK(rec.contacts == 4);
 	for (int i = 0; i < 3; i++) {
 		CHECK(zsChannelAt(&rec, i, &zc) && zc.contact != 0 && zsContactAt(&rec, zc.contact - 1, &zk));
 		CHECK(zk.type == want[i].type && zk.id == want[i].id && strcmp(zk.name, want[i].name) == 0);
 	}
-	CHECK(zsChannelAt(&rec, 3, &zc) && zc.contact == 0);		// an empty slot: no contact, not the DMR one
-	CHECK(zsChannelAt(&rec, 4, &zc) && zc.contact != 0 && zsContactAt(&rec, zc.contact - 1, &zk) && zk.id == 91);
-	for (int i = 0; i < 5; i++) {
+	CHECK(zsChannelAt(&rec, 3, &zc) && zc.contact != 0 && zsContactAt(&rec, zc.contact - 1, &zk) && zk.id == 91);
+	CHECK(zone_export_channel(4, sent, sizeof sent) == 0);	// explicit dangling target: never implicit TG1
+	for (int i = 0; i < 4; i++) {
 		CHECK(zsTagAt(&rec, i, &t) && t.kind == kind && t.len == (uint8_t)blk_len && (t.params[0] & flag) == 0);
 	}
 	memcpy(sent, recbuf, (size_t)len);
@@ -985,9 +985,9 @@ static void share_air(uint8_t kind, uint8_t flag, int blk_len)
 	// What the receiver reads: legacy channels, the right talk group on a DMR contact of its own, the flag clear
 	fresh();
 	with_zones();
-	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 5);
-	CHECK(codeplug_zone(res.zone, &z) && z.count == 5);
-	for (int i = 0; i < 5; i++) {
+	CHECK(zone_import_zone(sent, len, 77, imports, &res) == ZI_OK && res.channels == 4);
+	CHECK(codeplug_zone(res.zone, &z) && z.count == 4);
+	for (int i = 0; i < 4; i++) {
 		p25_talk_t tk;
 
 		CHECK(codeplug_channel(z.channels[i], &ch) && ch.kind == kind);
@@ -995,12 +995,80 @@ static void share_air(uint8_t kind, uint8_t flag, int blk_len)
 		if (i < 3) {
 			CHECK(tk.set && tk.unit == (want[i].type == ZS_CONTACT_PRIVATE) && strcmp(tk.name, want[i].name) == 0 &&
 			      tk.id == (want[i].type == ZS_CONTACT_ALL_CALL ? P25_CP_TG_ALL : want[i].id));
-		} else if (i == 3) {
-			CHECK(!tk.set && ch.contact == 0);
 		} else {
 			CHECK(tk.set && tk.id == 91 && !tk.unit);
 		}
 	}
+}
+
+static bool (*scope_base_read)(uint32_t, void *, uint32_t);
+static unsigned scope_reads;
+static bool scope_change_on_read(uint32_t addr, void *buf, uint32_t len)
+{
+	bool ok = scope_base_read(addr, buf, len);
+	if (ok && addr == CODEPLUG_AIR_CONTACTS_ADDR + 2 * CODEPLUG_AIR_CONTACT_SIZE && len == CODEPLUG_AIR_CONTACT_SIZE &&
+	    ++scope_reads == 2) {
+		// Change the row after selection's second read returned its old bytes, before the writer rereads it.
+		uint8_t *r = sim_flash_data + addr;
+		r[1] |= AIR_CONTACT_SYSTEM;
+		r[5] = CODEPLUG_SYSTEM_NONE;
+	}
+	return ok;
+}
+
+static void test_scoped_contacts_not_shared(void)
+{
+	fresh();
+	static const uint8_t identity[] = { 0x45, 0x23, 1, 0x34, 2 };
+	put_system(0, CODEPLUG_SYSTYPE_P25_TRUNK, CODEPLUG_SYS_TX, CODEPLUG_SHARE_IDENTITY, "Scope", identity, 5, 5);
+	air_put(1, AIR_CONTACT_GROUP, 1001, "Scoped");
+	air_put(2, AIR_CONTACT_GROUP, 1001, "Dangling");
+	air_put(3, AIR_CONTACT_GROUP, 1002, "Legacy");
+	for (unsigned i = 0; i < 2; i++) {
+		uint8_t *r = sim_flash_data + CODEPLUG_AIR_CONTACTS_ADDR + i * CODEPLUG_AIR_CONTACT_SIZE;
+		r[1] |= AIR_CONTACT_SYSTEM;
+		r[5] = i == 0 ? 0 : CODEPLUG_SYSTEM_NONE;
+		r[6] = 0xB6; r[7] = 0x8D;
+	}
+	listen_list_t l = { .name = "Scoped RX", .count = 1, .contacts = { 1 } };
+	CHECK(codeplug_set_listen_list(1, &l));
+	zone_t z = { .name = "Scope transport", .count = 5, .channels = { 1, 2, 3, 4, 5 } };
+	uint8_t block[P25_CP_CONV_LEN] = { P25_CONV_AIR_CONTACTS };
+	codeplug_tag_t tag = { .kind = CODEPLUG_KIND_P25, .system = CODEPLUG_SYSTEM_NONE, .flags = CODEPLUG_TAG_TX };
+	int block_len = sizeof block;
+#if CONFIG_P25_TRUNK
+	tag.kind = CODEPLUG_KIND_P25_TRUNK;
+	tag.system = 0;
+	block[0] = P25_TCH_AIR_CONTACTS;
+	block_len = 1;
+#endif
+	for (uint16_t i = 1; i <= 5; i++) {
+		channel_t c = make("Scope channel", 451000000u + i * 12500u, 456000000u + i * 12500u, true);
+		c.rx_only = true;	// the tag owns transmit permission; the base record is the safe stand-in
+		c.contact = i <= 3 ? i : i == 4 ? 3 : 9;
+		c.listen_list = i == 4 ? 1 : 0;
+		CHECK(codeplug_set_channel(i, &c) && codeplug_tag_write(i, c.name, &tag, block, block_len));
+		CHECK(codeplug_channel(i, &c) && c.kind == tag.kind);
+	}
+	CHECK(codeplug_set_zone(0, &z));
+	uint8_t included = 0;
+	zsRecord_t rec;
+	int len = zone_export_zone(0, recbuf, sizeof recbuf, &included);
+	CHECK(len > 0 && included == 1 && zsParse(recbuf, len, &rec) && rec.channels == 1);
+	CHECK(zone_export_channel(1, recbuf, sizeof recbuf) == 0);
+	CHECK(zone_export_channel(2, recbuf, sizeof recbuf) == 0);
+	CHECK(zone_export_channel(4, recbuf, sizeof recbuf) == 0);
+	CHECK(zone_export_channel(5, recbuf, sizeof recbuf) == 0);
+	z.count = 2;
+	CHECK(codeplug_set_zone(0, &z));
+	CHECK(zone_export_zone(0, recbuf, sizeof recbuf, &included) == 0 && included == 0);
+	// A row which becomes scoped after the selection snapshot must abort the entire affected export.
+	scope_reads = 0;
+	scope_base_read = sim_flash.read;
+	sim_flash.read = scope_change_on_read;
+	len = zone_export_channel(3, recbuf, sizeof recbuf);
+	sim_flash.read = scope_base_read;
+	CHECK(scope_reads >= 2 && len == 0);
 }
 
 static void test_modes_p25_air(void)
@@ -1073,6 +1141,7 @@ int main(void)
 	test_modes_p25_conv();
 #if CONFIG_P25
 	test_modes_p25_air();
+	test_scoped_contacts_not_shared();
 #endif
 	test_modes_nxdn_conv();
 #if CONFIG_NXDN

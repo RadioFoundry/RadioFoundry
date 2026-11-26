@@ -136,7 +136,8 @@ static bool p25_no_tx(void)
 	if (mem == NULL || radio_p25_trunked())
 		return false;
 	conv_keep();
-	return nogo_full || nogo_has(conv_hz);
+	return nogo_full || nogo_has(conv_hz) ||
+	       (mem->eng.cfg.tx_lc.lcf == P25_LCF_GROUP && mem->eng.cfg.tx_lc.tgid == 0);
 }
 
 #if CONFIG_P25_TRUNK
@@ -857,6 +858,9 @@ bool radio_p25_tx_prepare(void)
 	if (mem == NULL) {
 		return false;
 	}
+	// An invalid System-qualified contact has no target; it must never become the legacy talk group 1.
+	if (mem->eng.cfg.tx_lc.lcf == P25_LCF_GROUP && mem->eng.cfg.tx_lc.tgid == 0)
+		return false;
 #if CONFIG_P25_TRUNK
 	// On a trunked channel only on the voice channel granted to us
 	if (trunk) {

@@ -146,23 +146,44 @@ contacts are kept in separate lists: a DMR contact never names a P25 talk group,
 | # | Slot in the DMR list (up to 1024) | Slot in the P25 list (up to 341) |
 | ID | 1-16777215 | Group 1-65535, unit 1-16777214; All call is talk group 65535 |
 | Call Type | Group, Private, All call | Group, Unit, All call |
+| System scope | Doesn't apply | An existing P25 System, or Unscoped for legacy/conventional use |
 | Timeslot Override | As before | Doesn't apply: grayed out. A value kept from DMR returns if you switch back, and is removed when you save or write |
 
-- The funnel in the headers of Mode, Call Type and Timeslot Override filters the table. When a column is filtered to
+- The funnel in the headers of Mode, System scope, Call Type and Timeslot Override filters the table. When a column is filtered to
   one value, a new contact takes that value.
 - The radio shows a P25 contact's name after the number ("TG 1310 1 SB DPS") on the talk line, the trunk follow line
   and incoming calls, and the number alone for an ID with no P25 contact. When two P25 contacts have the same call
-  type and ID, the radio uses the first and the editor warns.
+  type, ID and System scope, the radio uses the first and the editor warns. Different Systems may use the same
+  talkgroup number with different names.
 - A P25 channel's **TX contact** and RX group list take P25 contacts, a DMR channel's DMR contacts. An RX group list
   can't mix modes, or serve both a DMR and a P25 channel. The radio shows them but doesn't change them: edit them here.
-  Sharing such a channel to another radio sends it as an ordinary channel whose contact is the talk group by value, so
-  the other radio makes it a DMR contact.
+  Unscoped targets can be shared by value. Scoped targets cannot be shared by the current transport; excluded
+  channels are reported by the included/total count, or the share fails when none can be sent.
 - **Older codeplugs:** a P25 channel that calls a DMR contact still works and is marked with a warning. The editor
   offers **Convert P25 channels to P25 contacts**: it makes P25 contacts from those talk groups (same ID, call type
   and name), relinks the channels and gives them P25 RX group lists. Undo reverts it.
 - **Firmware:** P25 channels with P25 contacts need firmware that has this feature. **Write** warns when the radio's
   firmware is older; an older radio would call the wrong talk group on those channels.
 - `contacts.csv` has a **Mode** column. A file without it imports as DMR contacts.
+
+**A System's talkgroup catalog:** create the P25 System, set both its WACN and System ID, then choose **Talkgroups**
+on its row. This opens **Contacts** filtered to P25 groups of that System. Add and edit its catalog before creating
+any channels. Then choose those same contacts as personalities' **TX contact** and RX-list members. A zone holds
+ordered references to channel personalities; it does not own talkgroups.
+
+Renaming or reordering the System keeps these references. An explicit identity edit updates the references through
+that System. Deleting it leaves **Unresolved System** contacts, which must be reassigned or deleted; a replacement
+in the old slot never adopts them. A contact or RX-list member from another System is an error, and an invalid
+explicit target cannot transmit as the default talkgroup.
+
+Qualified catalogs require firmware reporting `P25_SYSTEM_CONTACTS`, in addition to `p25contacts`. **Problems** warns
+when the connected firmware ignores System scope. Unscoped contacts keep legacy/conventional behavior and can
+provide fallback labels on trunked Systems; they never make an invalid scoped target valid.
+
+Binary files and the Codeplug Editor's `radioFoundry` YAML block preserve the catalog and its System references.
+qdmr ignores this block and removes it when saving. CSV adds **System**, referencing an existing System by name or
+`#number`; open/create those Systems first, because CSV does not export Systems or channel modes. Unresolved scopes
+use `#scope:number:check` and stay unresolved. Keep a binary file to preserve opaque future bytes.
 
 **P25 channel:**
 

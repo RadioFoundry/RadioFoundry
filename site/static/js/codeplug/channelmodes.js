@@ -79,6 +79,19 @@ export function identityKey(s) {
 	return `${s.type}:${[...b].join(",")}`;
 }
 
+// A compact stale-reference check of a complete System identity, independent of its name and slot. This is not a
+// unique identity: the record reference still names the System, and a 16-bit check can collide (air-contacts.md).
+export function systemIdentityCheck(s) {
+	const mod = typeRow(s?.type)?.module;
+	if (!mod?.identityComplete?.(s.fields)) return null;
+	const stored = encodeSystem(s, s.raw);
+	const b = stored.subarray(SYS_HDR, SYS_HDR + mod.idLen);
+	if (stored[3] !== mod.idLen || !mod.identityBytesValid(b)) return null;
+	let h = 0x811C9DC5;
+	for (const v of [s.type, mod.idLen, ...b]) h = Math.imul(h ^ v, 0x01000193) >>> 0;
+	return (h ^ (h >>> 16)) & 0xFFFF;
+}
+
 // --- Decoding ---
 
 // The channel a fallback names: the channel when the check matches its name, else the number as stored; null for none

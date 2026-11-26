@@ -63,10 +63,12 @@ bool p25_conv_params(uint16_t number, const channel_t *ch, p25_conv_t *out);
 // block's air-contacts flag a slot of the P25 contact table. Everything that shows, sends or edits a channel's contact
 // reads it through p25_channel_talk, never from channel_t.contact
 typedef struct {
-	uint32_t id;		// the talk group or unit; P25_CP_TG_ALL for the all call
+	uint32_t id;		// the talk group or unit; P25_CP_TG_ALL for all call, 0 for an invalid explicit target/list
 	bool unit;		// id is a unit (a private contact)
-	bool set;		// a contact (or, with rx_list, the RX list's first group) chose it; else talk group 1
+	bool set;		// a valid contact or RX group chose it; unspecified defaults to 1, invalid explicit refs to 0
 	bool air;		// the flag: the record's contact and RX list are P25 contact slots
+	bool scoped;		// this target is System-qualified; sharing cannot discard that association
+	bool scoped_rx;		// an RX-list slot is scoped too (when rx_list was requested)
 	char name[CODEPLUG_NAME_LEN + 1];	// the contact's name, "" when it has none or none is set
 } p25_talk_t;
 // The talk target of channel number (ch is its record, read by codeplug_channel), as p25_conv_load and p25_trunk_load

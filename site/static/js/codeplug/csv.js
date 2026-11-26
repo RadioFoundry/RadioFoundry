@@ -9,6 +9,7 @@
 import { parseFreq, parseTone, mhz } from "./fields.js";
 import { LIMITS, POWER_NAMES, validDtmf } from "./records.js";
 import { newChannel, newContact, remove, numberTable, p25Room } from "./model.js";
+import { contactScope, resolveContactSystems } from "./contactmode.js";
 import { isDmr, isP25, contactModeOf, channelContactMode, typeFor, allCallId, contactIdMax } from "./contactmode.js";
 
 // --- RFC 4180 ---
@@ -249,6 +250,24 @@ export const TABLES = {
 				if (!mode) throw new Bad("bad_value", { value: s.trim(), allowed: Object.values(CONTACT_MODES).join(", ") });
 				r.mode = mode;
 			} },
+			{ header: "System", aliases: [], key: "system", get: (r, m) => {
+				if (!isP25(r) || r.system == null) return "";
+				if (typeof r.system === "object") return refText(r.system, m.systems);
+				const scope = contactScope(r);
+				return `#scope:${scope.system}:${scope.systemCheck.toString(16).toUpperCase().padStart(4, "0")}`;
+			}, set: (r, s, m) => {
+				const dangling = /^#scope:(\d+):([0-9A-F]{4})$/i.exec(s.trim());
+				if (dangling) {
+					r.system = asInt(1, 256)(dangling[1]);
+					r.systemCheck = parseInt(dangling[2], 16);
+					resolveContactSystems({ contacts: [r], systems: m.systems });
+				} else {
+					r.system = 256;
+					r.systemCheck = 0xFFFF;
+					r.system = findRef(s, m.systems.filter((x) => x.type === 3));
+					delete r.systemCheck;
+				}
+			} },
 			// the range by mode and call type is the editor's check (a column may come before the Mode's)
 			c("ID", "id", asInt(1, 0xFFFFFF), undefined, ["DMR ID", "Call ID", "Radio ID", "TG", "Talkgroup", "Unit", "Unit ID", "Talk Group"]),
 			c("Call Type", "type", asWord(TYPES, "group"), (r) => TYPES[r.type], ["Type"]),
@@ -267,7 +286,8 @@ export const TABLES = {
 		},
 		// once every column is read: the call type as the contact's mode names it, an all call's ID the mode's, and the ID in
 		// the range of its mode and call type (the ID's column may come before the Mode's)
-		finish: (r) => {
+		finish: (r, m) => {
+			resolveContactSystems({ contacts: [r], systems: m.systems });
 			r.type = typeFor(r.type, r.mode);
 			if (r.type === "all" && isP25(r)) r.id = allCallId(r.mode);
 			const max = contactIdMax(r);
@@ -499,7 +519,7 @@ export function importTable(m, text, table = detect(text)) {
 			}
 		}
 		try {
-			if (!skip) spec.finish?.(work);
+			if (!skip) spec.finish?.(work, m);
 		} catch (e) {
 			if (!(e instanceof Bad)) throw e;
 			problems.push({ row: i + 1, column: spec.finishColumn ?? "", code: e.code, params: e.params, skipped: fresh });

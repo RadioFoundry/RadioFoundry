@@ -6599,13 +6599,14 @@ static bool air_running(void)
 // carry no mode, and a DMR talk group with the same number would name it. The answer is cached, "" too
 static void air_find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 {
+	uint8_t system = sm->air_name_system;
 	out[0] = '\0';
 	if (id == 0) {
 		return;
 	}
 	for (uint8_t i = 0; i < RADIO_AIR_LOOKUPS; i++) {
 		const radio_air_name_t *n = &sm->air_lookups[i];
-		if (n->id == id && n->group == group) {
+		if (n->id == id && n->group == group && n->system == system) {
 			memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
 			return;
 		}
@@ -6614,11 +6615,12 @@ static void air_find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 	sm->air_lookup_next = (uint8_t)((sm->air_lookup_next + 1u) % RADIO_AIR_LOOKUPS);
 	n->id = id;
 	n->group = group;
+	n->system = system;
 	n->name[0] = '\0';
 	air_contact_t c;
 	// The scan runs here, on the radio task: its cost is kept for the debug link (radio_air_scan_t)
 	uint32_t t0 = hal_micros();
-	bool found = codeplug_air_contact_find(CODEPLUG_KIND_P25, id, group, &c);
+	bool found = codeplug_air_contact_find(CODEPLUG_KIND_P25, id, group, system, &c);
 	uint32_t us = hal_micros() - t0;
 	radio_air_scan_t *st = &sm->view.air_scan;
 	st->scans++;
@@ -6654,6 +6656,11 @@ static void air_names(radio_sm_t *sm)
 	}
 	const radio_p25_view_t *v = &sm->view.p25;
 	radio_air_names_t *a = &sm->view.air_names;
+	uint8_t system = sm->view.ch.kind == CODEPLUG_KIND_P25_TRUNK ? sm->view.ch.system : CODEPLUG_SYSTEM_NONE;
+	if (sm->air_name_system != system) {
+		sm->air_name_system = system;
+		memset(a, 0, sizeof *a);
+	}
 	air_name(sm, v->src, false, &a->src_id, NULL, a->src);
 	air_name(sm, v->dst, (v->flags & RADIO_P25_UNIT) == 0, &a->dst_id, &a->dst_group, a->dst);
 	air_name(sm, v->talk, (v->flags & RADIO_P25_TALK_UNIT) == 0, &a->talk_id, &a->talk_group, a->talk);

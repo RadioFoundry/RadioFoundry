@@ -249,6 +249,7 @@ typedef struct {
 typedef struct {
 	uint32_t id;
 	bool group;		// with id: 0 = an unused cache entry
+	uint8_t system;		// CODEPLUG_SYSTEM_NONE: conventional/unscoped names only
 	char name[CODEPLUG_NAME_LEN + 1];
 } radio_air_name_t;
 #endif
@@ -555,6 +556,7 @@ typedef struct {
 #if CONFIG_P25
 	radio_air_name_t air_lookups[RADIO_AIR_LOOKUPS];	// codeplug_air_contact_find answers ("" = none)
 	uint8_t air_lookup_next;
+	uint8_t air_name_system;		// the scope of the names currently displayed
 #endif
 #if CONFIG_DMR_TRUNK
 	// A Tier III trunked system (radio_trunk.h): the engine drives the channel the radio is on

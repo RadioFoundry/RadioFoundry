@@ -233,6 +233,23 @@ new system, entry or channel of that kind, so a hand-written file names only wha
 |---|---|
 | `systems` | The systems, in table order, each a map (below) |
 | `modeSettings` | The kinds' radio-wide records ([channel-modes.md](channel-modes.md) 5.5) by the kind's short name: `P25: {unitId: 9990123}`, `NXDN: {unitId: 1234}`. The export writes a record only when it differs from its defaults |
+| `airContacts` | The existing P25 contact catalog, including System scope, as the records below. Present empty list replaces the catalog with none; absent in an older file keeps the open codeplug's P25 contacts |
+| `rxLists` | Full membership of RX lists that include P25 contacts: `{list: grp1, contacts: [p25c1, cont2]}`. References use the catalog or ordinary qdmr contact IDs; order is preserved |
+
+**An air contact.** `ref` is its file-local reference (`p25c1`); `slot` optionally retains its slot in the existing air
+contact table. `mode: P25`, `name`, `type` (`group`, `unit`, `all`) and numeric `id` are the contact's ordinary fields.
+`system: sys1` references a System in this block, without duplicating its identity or owning a separate catalog.
+The System must have a complete WACN/System ID. Omitted scope is a legacy/conventional unscoped contact.
+
+An unresolved scope is preserved as `systemIndex` (zero based, 255 explicitly unresolved) and `systemCheck` (hex),
+instead of `system`. It remains scoped and fails validation until repaired. These are the same bytes defined in
+[air-contacts.md](air-contacts.md#33-system-qualified-catalog), not a second identity store. Catalog entries can exist
+without any channels. Binary files preserve opaque future bytes; this text block carries declared editable fields.
+An unresolved RX member stays a typed `#p25:slot` reference rather than disappearing. Unknown portable references use
+`#p25:1024`: this fits the existing generic list's slot range but cannot resolve in the 341-slot P25 table. Values
+past the generic list range normalize to that invalid P25 slot, preserving nonempty intent on a binary round trip. Portable
+P25 RX lists retain P25 interpretation on their P25 channel users even when every referenced catalog row is missing.
+Such members fail validation. Repeated export/import preserves the error instead of creating a default target.
 
 **A system.**
 
@@ -280,6 +297,8 @@ bits, only when set), then the class's fields:
 | `fallback` | The channel's own fallback | A channel id |
 | `settings` | The kind's parameter block | P25: `squelch`, `rxNac`, `txNac`. P25 trunked: `followAll`. NXDN: `rate9600`, `squelch`, `rxRan`, `txRan`, and `txKeyId` when set. Tier III: none |
 | `acceptInvalidCrc` | Accept Invalid CRC | A DMR channel's, plain or of a kind. Ignored on an FM channel |
+| `p25Contact` | Contact reference | An `airContacts` file-local `ref`; the base qdmr contact remains absent |
+| `p25ContactSlot` | Unresolved contact slot | Preserves an explicit slot that has no contact; it must not become the default target |
 
 The channel element around the block is the channel's record. A channel of a kind without frequencies of its own
 (Tier III, P25 trunked) is the stand-in of [channel-modes.md](channel-modes.md) 2.3: a receive-only DMR channel on
@@ -295,6 +314,11 @@ one.
 and radio-wide records as they are. Its channels are plain, and a system's fallback to a replaced channel is cleared.
 A file with a block anywhere replaces the systems and the radio-wide records; a kind that `modeSettings` leaves out
 takes its defaults.
+
+P25 contacts retained from a file without `airContacts` follow replacement Systems only when the same complete
+identity resolves uniquely. Otherwise their scope becomes explicitly unresolved. A file without the whole block
+keeps the existing Systems and P25 contacts. qdmr itself ignores this catalog and its references and drops the block
+when saving; save through the Codeplug Editor for a portable P25 profile.
 
 **Unknown names.** A system type, channel mode or entry class the editor doesn't know is left out, and so is a
 channel's reference to a system the file doesn't define (note `mode_unknown`). A channel of an unknown mode is

@@ -182,6 +182,9 @@ static const char features[] =
 #if CONFIG_P25
 	"p25contacts,"		// a P25 channel can take its contacts from the P25 contacts (p25-codeplug.md 2)
 #endif
+#if CONFIG_P25_TRUNK
+	"P25_SYSTEM_CONTACTS,"
+#endif
 #if CONFIG_BCAST_FM
 	"BCAST_FM,"
 #endif

@@ -5,6 +5,7 @@
 #include <string.h>
 #include "codeplug/codeplug_air_contacts.h"
 #include "codeplug/codeplug_modes.h"
+#include "codeplug/codeplug_records.h"
 #include "board.h"
 #include "storage/storage.h"
 
@@ -45,6 +46,9 @@ static uint32_t all_call_id(uint8_t mode)
 // An entry's bytes as a valid entry of mode (3.1)
 static bool decode(const uint8_t *r, uint8_t mode, air_contact_t *out)
 {
+	out->scoped = r[0] == mode && (r[1] & AIR_CONTACT_SYSTEM) != 0;
+	out->system = out->scoped ? r[5] : CODEPLUG_SYSTEM_NONE;
+	out->system_check = out->scoped ? (uint16_t)(r[6] | (r[7] << 8)) : 0;
 	uint8_t type = r[1] & 0x03u;
 	uint32_t id = (uint32_t)r[2] | ((uint32_t)r[3] << 8) | ((uint32_t)r[4] << 16);
 	if (r[0] != mode || type > AIR_CONTACT_ALL || !id_ok(mode, type, id)) {
@@ -61,23 +65,32 @@ static bool decode(const uint8_t *r, uint8_t mode, air_contact_t *out)
 	return true;
 }
 
-bool codeplug_air_contact(uint16_t index, uint8_t mode, air_contact_t *out)
+static bool scope_ok(uint8_t mode, uint8_t system, const air_contact_t *c)
+{
+	uint16_t check;
+	return !c->scoped || (mode == CODEPLUG_KIND_P25 && system != CODEPLUG_SYSTEM_NONE && c->system == system &&
+		codeplug_system_identity_check(system, CODEPLUG_SYSTYPE_P25_TRUNK, &check) && check == c->system_check);
+}
+
+bool codeplug_air_contact(uint16_t index, uint8_t mode, uint8_t system, air_contact_t *out)
 {
 	uint8_t r[CODEPLUG_AIR_CONTACT_SIZE];
 	uint32_t a;
+	memset(out, 0, sizeof *out);
 	if (index < 1u || index > CODEPLUG_AIR_CONTACTS_MAX) {
 		return false;
 	}
 	storage_lock();
 	bool ok = table_addr(&a) && board.flash->read(a + (index - 1u) * CODEPLUG_AIR_CONTACT_SIZE, r, sizeof(r));
 	storage_unlock();
-	return ok && decode(r, mode, out);
+	return ok && decode(r, mode, out) && scope_ok(mode, system, out);
 }
 
-bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contact_t *out)
+bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, uint8_t system, air_contact_t *out)
 {
 	uint8_t blk[PER_READ * CODEPLUG_AIR_CONTACT_SIZE];
 	air_contact_t c;
+	bool fallback = false;
 	// The lock is taken per read, so the radio task's own reads wait for one block at most
 	for (unsigned first = 0; first < CODEPLUG_AIR_CONTACTS_MAX; first += PER_READ) {
 		unsigned n = CODEPLUG_AIR_CONTACTS_MAX - first < PER_READ ? CODEPLUG_AIR_CONTACTS_MAX - first : PER_READ;
@@ -91,14 +104,20 @@ bool codeplug_air_contact_find(uint8_t mode, uint32_t id, bool group, air_contac
 		}
 		for (unsigned i = 0; i < n; i++) {
 			if (!decode(&blk[i * CODEPLUG_AIR_CONTACT_SIZE], mode, &c) || c.id != id || c.name[0] == '\0' ||
-			    (c.type != AIR_CONTACT_UNIT) != group) {
+			    (c.type != AIR_CONTACT_UNIT) != group || !scope_ok(mode, system, &c)) {
 				continue;
 			}
-			*out = c;
-			return true;
+			if (c.scoped || system == CODEPLUG_SYSTEM_NONE) {
+				*out = c;
+				return true;
+			}
+			if (!fallback) {
+				*out = c;
+				fallback = true;
+			}
 		}
 	}
-	return false;
+	return fallback;
 }
 
 #endif

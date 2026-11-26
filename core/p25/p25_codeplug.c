@@ -89,27 +89,40 @@ static void talk_target(const channel_t *ch, bool air, bool rx_list, p25_talk_t 
 	t->unit = false;
 	t->set = false;
 	t->air = air;
+	t->scoped = false;
+	t->scoped_rx = false;
 	t->name[0] = '\0';
 	if (air) {
 		// A slot of the air mode contact table (air-contacts.md): a group, a unit, all call. One that is empty, invalid
 		// or of another mode is no target
 		air_contact_t a;
 		bool ok = false;
+		bool invalid_scope = false;
+		uint8_t system = ch->kind == CODEPLUG_KIND_P25_TRUNK ? ch->system : CODEPLUG_SYSTEM_NONE;
 		if (ch->contact != 0u) {
-			ok = codeplug_air_contact(ch->contact, CODEPLUG_KIND_P25, &a);
+			t->id = 0;	// an explicit dangling slot cannot silently select the legacy default
+			ok = codeplug_air_contact(ch->contact, CODEPLUG_KIND_P25, system, &a);
+			invalid_scope = !ok && a.scoped;
 		} else if (rx_list && ch->listen_list != 0u) {
 			listen_list_t list;	// on the stack: the radio and UI tasks both call this
 			if (codeplug_listen_list(ch->listen_list, &list)) {
+				if (list.count != 0 || list.malformed)
+					t->id = 0;	// an explicit list with no usable matching group is not an unspecified target
 				for (uint8_t i = 0; i < list.count && !ok; i++) {
-					ok = codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, &a) && a.type == AIR_CONTACT_GROUP;
+					ok = codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, system, &a) && a.type == AIR_CONTACT_GROUP;
+					invalid_scope |= !ok && a.scoped;
 				}
-			}
+			} else t->id = 0;
 		}
 		if (ok) {
 			t->unit = a.type == AIR_CONTACT_UNIT;
 			t->id = a.type == AIR_CONTACT_ALL ? P25_CP_TG_ALL : a.id;
 			t->set = true;
+			t->scoped = a.scoped;
 			memcpy(t->name, a.name, sizeof t->name);
+		} else if (invalid_scope) {
+			t->id = 0;
+			t->scoped = true;
 		}
 		return;
 	}
@@ -168,6 +181,17 @@ bool p25_channel_talk(uint16_t number, const channel_t *ch, bool rx_list, p25_ta
 		return false;
 	}
 	talk_target(ch, air, rx_list, out);
+	if (air && rx_list && ch->listen_list != 0u) {
+		listen_list_t list;
+		air_contact_t a;
+		if (codeplug_listen_list(ch->listen_list, &list)) {
+			for (uint8_t i = 0; i < list.count; i++) {
+				codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25,
+					ch->kind == CODEPLUG_KIND_P25_TRUNK ? ch->system : CODEPLUG_SYSTEM_NONE, &a);
+				out->scoped_rx |= a.scoped;
+			}
+		}
+	}
 	return true;
 }
 
@@ -311,21 +335,16 @@ bool p25_trunk_load(uint16_t number, const channel_t *ch, p25_trunk_cfg_t *out)
 		air_contact_t a;
 		if (codeplug_listen_list(ch->listen_list, &list)) {
 			for (uint8_t i = 0; i < list.count && out->group_count < CODEPLUG_LIST_LEN; i++) {
-				if (codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, &a) && a.type == AIR_CONTACT_GROUP) {
+				if (codeplug_air_contact(list.contacts[i], CODEPLUG_KIND_P25, ch->system, &a) && a.type == AIR_CONTACT_GROUP) {
 					out->groups[out->group_count++] = (uint16_t)a.id;
 				}
 			}
 		}
 	}
-	// The talk group: the contact's, else (as for a DMR channel) the RX list's first group: for P25 contact slots the
-	// one read above
+	// The existing target reader owns fallback selection too, including invalid/nonempty RX lists.
 	p25_talk_t tk;
-	talk_target(ch, air, !air, &tk);
-	if (!tk.set && ch->contact == 0u && out->group_count > 0) {
-		tk.id = out->groups[0];
-		tk.unit = false;
-	}
-	out->talk_group = tk.unit ? (uint16_t)P25_CP_TG_DEFAULT : (uint16_t)tk.id;
+	talk_target(ch, air, true, &tk);
+	out->talk_group = tk.unit ? (tk.air ? 0u : (uint16_t)P25_CP_TG_DEFAULT) : (uint16_t)tk.id;
 	if ((t.flags & P25_TAG_NO_FALLBACK) == 0) {
 		bool own = (t.flags & CODEPLUG_TAG_FALLBACK) != 0;
 		uint16_t fb = own ? t.fb_chan : sy.fb_chan;

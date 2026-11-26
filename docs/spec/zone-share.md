@@ -131,12 +131,17 @@ Never carried: the radio's own ID on a system, a system's or a channel's fallbac
 ([channel-modes.md](channel-modes.md) 5.2) are not carried yet: no kind in this tree refers to them.
 
 A P25 channel whose block has the P25 contacts bit set ([p25-codeplug.md](p25-codeplug.md) 2.4) is sent as a legacy
-channel: its tag's block goes with that bit clear (the trunked block's bit too), and its contact in the record's contact
+channel only when its selected target and RX list contain no System-scoped contacts. Scoped or invalid explicit
+targets are excluded: the existing included/total count reports a partial zone, and a zero-channel or individual
+share fails visibly. A second read before writing rejects a target that became scoped after selection. The transport
+does not turn a qualified reference into a global contact or an implicit default. An eligible unscoped channel's
+tag's block goes with the P25 contacts bit clear (the trunked block's bit too), and its contact in the record's contact
 list is the slot's target by value, a group, a unit or the all call with its ID and name, as a DMR contact. The receiver
 has no table of P25 contacts to put a slot in, and a slot number sent as it is would be read there as a DMR contact. The
 receiver maps the contact to one of its own DMR contacts, as for any channel, and the channel reads it from there. With
-no contact, the target is the RX group list's first group slot, as on the sender. An empty or invalid slot sends no
-contact. The RX group lists are not sent (4.1), so a flagged channel's list and the groups a trunked channel follows
+no contact, the target is the RX group list's first eligible group slot, as on the sender. An explicit empty or invalid
+slot is excluded rather than becoming the default target. The RX group lists are not sent (4.1), so a flagged
+channel's list and the groups a trunked channel follows
 besides its talk group are not carried. Two channels with the same target share one contact in the record. A build
 without P25 trunking sends a trunked channel's block as it is stored.
 

@@ -7,8 +7,10 @@
 
 import { flow, Raw } from "./yaml.js";
 import { KINDS, SYSTEM_TYPES, kindRow, typeRow } from "./modes.js";
-import { newSystem, identityKey, systemTx, SHARE } from "./channelmodes.js";
+import { newSystem, identityKey, systemTx, systemIdentityCheck, SHARE } from "./channelmodes.js";
 import { sameValue } from "./modebytes.js";
+import { isDmr, isP25, scopedContact, contactScope, resolveContactSystems, wantsP25Contacts } from "./contactmode.js";
+import { LIMITS } from "./records.js";
 
 const SHARING = Object.fromEntries(Object.entries(SHARE).map(([k, v]) => [v, k]));
 const list = (f) => (typeof f === "function" ? f() : f ?? []);
@@ -70,13 +72,23 @@ const freshEntry = (cls) => ({ cls: cls.cls, group: 0xFF, flags: 0, control: fal
 
 // The block's parts for model m: {top (or undefined), channel(c) (a channel's block or undefined)}. chRef names a
 // channel by its id in the file (null for none)
-export function exportModes(m, chRef, note, frequencyText) {
+export function exportModes(m, chRef, note, frequencyText, { contactRef = () => undefined, listRef = () => undefined } = {}) {
 	const systems = (m.systems ?? []).filter((s) => {
 		if (typeRow(s.type) && s.fields) return true;
 		note("mode_unknown");
 		return false;
 	});
 	const sysId = new Map(systems.map((s, i) => [s, `sys${i + 1}`]));
+	const air = m.contacts.filter(isP25), airIds = new Map(air.map((c, i) => [c, `p25c${i + 1}`]));
+	const airContacts = air.map((c) => {
+		const system = typeof c.system === "object" ? sysId.get(c.system) : undefined;
+		const scope = contactScope(c);
+		return flow({ ref: airIds.get(c), slot: c.number ?? undefined, mode: "P25", name: c.name, type: c.type, id: c.id, system,
+			...(scopedContact(c) && !system ? { systemIndex: typeof c.system === "object" ? 255 : scope.system - 1, systemCheck: new Raw(`0x${scope.systemCheck.toString(16).toUpperCase().padStart(4, "0")}`) } : {}) });
+	});
+	const p25Lists = new Set(m.channels.filter(wantsP25Contacts).map((c) => c.rxList));
+	const rxLists = m.rxLists.filter((l) => l.contacts.some(isP25) || p25Lists.has(l)).map((l) => flow({ list: listRef(l),
+		contacts: flow(l.contacts.map((c) => typeof c === "number" ? `#p25:${c}` : isP25(c) ? airIds.get(c) : contactRef(c)).filter(Boolean)) }));
 	const ref = (r) => (r && typeof r === "object" && chRef(r)) || undefined;
 	const keys = systems.filter((s) => (s.secret && (s.secret.key || s.secret.raw)) || s.trafficKeys?.length).length;
 	if (keys) note("mode_keys", keys);
@@ -104,7 +116,8 @@ export function exportModes(m, chRef, note, frequencyText) {
 		if (set && v && !sameValue(v, set.decode(null))) settings[k.short] = fieldsOut(v, set.decode(null), set.fields, frequencyText);
 	}
 	const has = Object.keys(settings).length;
-	const top = out.length || has ? { systems: out.length ? out : undefined, modeSettings: has ? settings : undefined } : undefined;
+	const top = out.length || has || air.length || rxLists.length ? { systems: out.length ? out : undefined, modeSettings: has ? settings : undefined,
+		airContacts, rxLists: rxLists.length ? rxLists : undefined } : undefined;
 
 	const channel = (c) => {
 		const b = {};
@@ -122,6 +135,8 @@ export function exportModes(m, chRef, note, frequencyText) {
 			}
 		}
 		if (c.acceptBadCrc) b.acceptInvalidCrc = true;
+		if (isP25(c.contact)) b.p25Contact = airIds.get(c.contact);
+		else if (c.params?.p25Contacts && typeof c.contact === "number") b.p25ContactSlot = c.contact;
 		return Object.keys(b).length ? flow(b) : undefined;
 	};
 	return { top, channel };
@@ -181,6 +196,47 @@ export function importModes(m, top, chans, chById, note, values) {
 	systems.forEach((s, i) => (s.number = i + 1));
 	m.systems = systems;
 	m.orphanEntries = [];
+	// An older YAML file can replace Systems without carrying contacts. Retained contacts follow the same complete
+	// identity, never a newly occupied slot; a deleted or ambiguous owner becomes explicitly unresolved.
+	for (const c of m.contacts.filter(scopedContact)) if (typeof c.system === "object") {
+		const scope = contactScope(c), matches = systems.filter((s) => s.type === 3 && systemIdentityCheck(s) != null && systemIdentityCheck(c.system) != null && identityKey(s) === identityKey(c.system));
+		c.system = matches.length === 1 ? matches[0] : 256;
+		c.systemCheck = scope.systemCheck;
+	}
+	const airByRef = new Map();
+	if (Array.isArray(top?.airContacts)) {
+		m.contacts = m.contacts.filter(isDmr);
+		for (const x of top.airContacts) {
+			if (!x || x.mode !== "P25" || !["group", "unit", "all"].includes(x.type)) { note("mode_unknown"); continue; }
+			const slot = Number(untag(x.slot));
+			const c = { number: Number.isInteger(slot) && slot >= 1 && slot <= LIMITS.p25Contacts ? slot : null, mode: "p25", timeslot: 0,
+				name: String(untag(x.name) ?? "").slice(0, LIMITS.name), type: x.type, id: Number(untag(x.id)) };
+			if (x.system != null) c.system = sysById.get(String(untag(x.system))) ?? 256;
+			else if (x.systemIndex != null) {
+				const index = Number(untag(x.systemIndex));
+				const check = hexIn(untag(x.systemCheck));
+				const valid = check != null && check >= 0 && check <= 0xFFFF;
+				c.system = Number.isInteger(index) && index >= 0 && index <= 255 && valid ? index + 1 : 256;
+				c.systemCheck = valid ? check : 0xFFFF;
+			}
+			m.contacts.push(c);
+			airByRef.set(String(untag(x.ref)), c);
+		}
+		resolveContactSystems(m);
+	}
+	const p25Lists = new Set();
+	for (const x of Array.isArray(top?.rxLists) ? top.rxLists : []) {
+		const l = values.listById?.get(String(untag(x?.list)));
+		if (!l) { note("mode_unknown"); continue; }
+		l.contacts = (Array.isArray(x.contacts) ? x.contacts : []).map((id) => {
+			const ref = String(untag(id)), slot = /^#p25:(\d+)$/i.exec(ref);
+			// The generic list owner holds slots1..1024, while P25 has341. Its last slot is a durable invalid P25
+			// reference; FFFF would be discarded as a malformed generic list terminator on the next binary read.
+			if (slot) { const n = Number(slot[1]); return n >= 1 && n <= LIMITS.contacts ? n : LIMITS.contacts; }
+			return airByRef.get(ref) ?? values.contactById?.get(ref) ?? LIMITS.contacts;
+		}).slice(0, LIMITS.rxListContacts);
+		p25Lists.add(l);
+	}
 
 	// the radio-wide records: a kind the block leaves out takes its defaults
 	m.modeSettings = {};
@@ -205,6 +261,13 @@ export function importModes(m, top, chans, chById, note, values) {
 			fallback: ref(b.fallback), params: fieldsIn(mod.newParams(), b.settings, mod.fields, values, mod.optionalParams), tagRaw: null,
 		});
 		for (const k of Object.keys(mod.flags ?? {})) c[k] = b[k] === true;
+		if (mod.contactMode === "p25" && p25Lists.has(c.rxList)) c.params.p25Contacts = true;
+		if (b.p25Contact != null || b.p25ContactSlot != null) {
+			const slot = Number(untag(b.p25ContactSlot));
+			c.contact = b.p25Contact != null ? airByRef.get(String(untag(b.p25Contact))) ?? 0xFFFF : Number.isInteger(slot) && slot >= 1 && slot <= 0xFFFF ? slot : 0xFFFF;
+			// The reference's mode survives even when its row is missing: it must not become a legacy DMR slot.
+			c.params.p25Contacts = true;
+		}
 		if (b.system != null && !c.system) note("mode_unknown");
 	}
 	return true;

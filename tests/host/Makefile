@@ -1569,10 +1569,10 @@ run-cptag: codeplugTagTest
 # call type and ID, the entries skipped, a foreign codeplug, Start new
 TESTS   += codeplugAirContactsTest
 
-codeplugAirContactsTest: codeplugAirContactsTest.c $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_air_contacts.c \
+codeplugAirContactsTest: codeplugAirContactsTest.c $(CPTAG) $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c \
                          $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -o $@ codeplugAirContactsTest.c $(CPTAG) \
-		$(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_air_contacts.c
+		$(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/codeplug/codeplug_air_contacts.c
 
 run: run-cpair
 run-cpair: codeplugAirContactsTest

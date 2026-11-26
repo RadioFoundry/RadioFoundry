@@ -330,7 +330,7 @@ test("the contacts table: Mode, ID, call types and ID ranges follow the mode", (
 	m.contacts.push(d, p, fresh);
 	numberTable(m, "contacts");
 	const cols = columns("contacts", m, t);
-	assert.deepEqual(cols.map((c) => c.key), ["number", "name", "mode", "id", "type", "timeslot"]);
+	assert.deepEqual(cols.map((c) => c.key), ["number", "name", "mode", "system", "id", "type", "timeslot"]);
 	assert.equal(cols.find((c) => c.key === "id").label, "editor.col.id");
 	const type = cols.find((c) => c.key === "type"), mode = cols.find((c) => c.key === "mode"), id = cols.find((c) => c.key === "id");
 	assert.deepEqual(type.options(d).map(([k]) => k), ["group", "private", "all"]);
@@ -690,9 +690,9 @@ function filterSample() {
 
 const names = (g) => g.shown().map((r) => r.name);
 
-test("filters: Mode, Call Type and Timeslot Override have a filter; the others don't", () => {
+test("filters: Mode, System, Call Type and Timeslot Override have a filter; the others don't", () => {
 	const cols = columns("contacts", empty(), t);
-	assert.deepEqual(cols.filter((c) => c.filter).map((c) => c.key), ["mode", "type", "timeslot"]);
+	assert.deepEqual(cols.filter((c) => c.filter).map((c) => c.key), ["mode", "system", "type", "timeslot"]);
 });
 
 test("filters: a column shows the rows whose value is checked; the columns' filters and the text filter combine", () => {
@@ -785,9 +785,9 @@ test("CSV: one contacts file with a Mode column; export and import round trip", 
 	m.contacts.unshift(dmrContact("Local", 9, { number: 1, timeslot: 2 }));
 	const before = encode(m).bytes;
 	const text = exportTable(m, "contacts");
-	assert.match(text, /^Number,Name,Mode,ID,Call Type,Timeslot\r\n/);
-	assert.match(text, /\r\n1,Local,DMR,9,Group,2\r\n/);
-	assert.match(text, /\r\n1,"Fire, Dispatch",P25,1310,Group,\r\n3,Chief,P25,4000,Unit,\r\n4,Everyone,P25,65535,All,\r\n$/);
+	assert.match(text, /^Number,Name,Mode,System,ID,Call Type,Timeslot\r\n/);
+	assert.match(text, /\r\n1,Local,DMR,,9,Group,2\r\n/);
+	assert.match(text, /\r\n1,"Fire, Dispatch",P25,,1310,Group,\r\n3,Chief,P25,,4000,Unit,\r\n4,Everyone,P25,,65535,All,\r\n$/);
 	assert.equal(detect(text), "contacts");
 	assert.equal(detect("Number,Name,Mode,Call Type,ID\r\n1,A,P25,Group,5\r\n"), "contacts");
 	const r = importTable(m, text);
@@ -868,7 +868,7 @@ test("CSV: a channel's talk target is looked up among the contacts of the mode i
 	assert.equal(dc.contact, d);
 });
 
-test("qdmr export: a note counts the channels whose link to a P25 contact is not saved", () => {
+test("qdmr export: a note counts channels whose portable P25 links qdmr itself ignores", () => {
 	const m = empty();
 	const tg = p25Contact("P25 TG", 1310), dtg = dmrContact("DMR TG", 91);
 	m.contacts.push(dtg, tg);

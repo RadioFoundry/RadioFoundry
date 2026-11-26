@@ -1647,11 +1647,13 @@ bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 	copy_name(out->name, r, CODEPLUG_NAME_LEN);
 	unsigned members = n - 1u;
 	if (members > CODEPLUG_LIST_LEN) {
+		out->malformed = true;
 		members = CODEPLUG_LIST_LEN;
 	}
 	for (unsigned i = 0; i < members; i++) {
 		uint16_t c = le16(&r[ZONE_NAME_LEN + 2u * i]);
 		if (c == 0 || c > CODEPLUG_CONTACTS_MAX) {
+			out->malformed = true;
 			break;
 		}
 		out->contacts[out->count++] = c;

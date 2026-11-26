@@ -352,7 +352,7 @@ export function importQdmr(m, yamlText) {
 	Object.assign(m, tables);
 	m.contacts.push(...p25);
 	// the radioFoundry block: systems and channel modes, once every channel has its number
-	if (importModes(m, doc.radioFoundry, chanBlocks, chById, note, { parseFrequency, untag })) syncModes(m);
+	if (importModes(m, doc.radioFoundry, chanBlocks, chById, note, { parseFrequency, untag, contactById, listById })) syncModes(m);
 	// the VFOs keep their frequencies; references into the old tables can't stay
 	for (const v of m.vfo) if (v) Object.assign(v, { contact: null, rxList: null, aprs: null });
 	const g = m.general;
@@ -372,6 +372,7 @@ export function importQdmr(m, yamlText) {
 	g.privateHang = hang(dmrSet.privateCallHangTime) ?? g.privateHang;
 
 	const counts = Object.fromEntries(Object.entries(tables).map(([t, rows]) => [t, rows.length]));
+	if (Array.isArray(doc.radioFoundry?.airContacts)) counts.contacts = m.contacts.length;
 	return { counts, notes: [...notes].map(([code, n]) => ({ code, n })) };
 }
 
@@ -416,7 +417,7 @@ export function exportQdmr(m) {
 	const chn = num(m.channels);
 	const chRef = (c) => `ch${chn.get(c)}`;
 
-	const modes = exportModes(m, (c) => (chn.has(c) ? chRef(c) : null), note, frequencyText);
+	const modes = exportModes(m, (c) => (chn.has(c) ? chRef(c) : null), note, frequencyText, { contactRef: cref, listRef: (l) => ln.has(l) ? `grp${ln.get(l)}` : undefined });
 	const channels = m.channels.map((c) => {
 		const og = {
 			scanZoneSkip: c.zoneSkip, scanAllSkip: c.allSkip, beep: !c.noBeep, powerSave: !c.noEco,
@@ -426,7 +427,7 @@ export function exportQdmr(m) {
 		if (c.useLocation) note("location_rounded");
 		if (c.sfr || c.sfrA || c.sfrB) note("sfr");
 		if (c.toneBurst && c.mode !== "dmr") note("tone_burst");
-		// qdmr has no P25 contacts: a channel's link to one, as its contact or in its RX group list, is not saved
+		// qdmr ignores the portable P25 contacts and references carried in the radioFoundry block.
 		if (isP25Link(c.contact) || (c.rxList && typeof c.rxList === "object" && c.rxList.contacts.some(isP25Link))) note("p25_contacts");
 		const powerName = Object.keys(POWER).find((k) => POWER[k] === c.power);
 		if (c.power && !powerName) note("power_level");

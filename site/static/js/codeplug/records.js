@@ -207,6 +207,7 @@ export function encodeContact(c, r) {
 // The stored call type 0-2 (3 is reserved). A P25 all call names talk group 0xFFFF and ignores the stored ID
 export const AIR_CALL_TYPES = ["unit", "group", "all"];
 export const AIR_MODE_P25 = 2;
+export const AIR_CONTACT_SCOPED = 0x04;
 export const P25_ALL_CALL = 0xFFFF;
 export const P25_ID_MAX = { group: 0xFFFF, unit: 0xFFFFFE, all: P25_ALL_CALL };
 
@@ -217,7 +218,8 @@ export function decodeAirContact(r) {
 	const type = AIR_CALL_TYPES[t];
 	const id = r[2] | (r[3] << 8) | (r[4] << 16);
 	if (type !== "all" && (id < 1 || id > P25_ID_MAX[type])) return null;
-	return { name: getName(r, 8, 16), type, id: type === "all" ? P25_ALL_CALL : id };
+	const scope = r[1] & AIR_CONTACT_SCOPED ? { system: r[5] + 1, systemCheck: r[6] | (r[7] << 8) } : {};
+	return { name: getName(r, 8, 16), type, id: type === "all" ? P25_ALL_CALL : id, ...scope };
 }
 
 // Whether a slot holds something that is neither empty nor a P25 entry: kept byte for byte, and not a free slot
@@ -235,6 +237,16 @@ export function encodeAirContact(c, r) {
 		r[1] = 0;
 	}
 	r[1] = (r[1] & ~0x03) | type;
+	const system = c.system === undefined ? was?.system : c.system;
+	const check = c.system === undefined ? was?.systemCheck : c.systemCheck;
+	const scoped = system != null;
+	if (scoped) {
+		r[1] |= AIR_CONTACT_SCOPED;
+		const valid = Number.isInteger(system) && system >= 1 && system <= 255 && Number.isInteger(check) && check >= 0 && check <= 0xFFFF;
+		r[5] = valid ? system - 1 : 0xFF;
+		r[6] = check & 0xFF;
+		r[7] = (check >> 8) & 0xFF;
+	} else r[1] &= ~AIR_CONTACT_SCOPED;
 	if (!was || was.type !== c.type || was.id !== id) {
 		r[2] = id & 0xFF;
 		r[3] = (id >> 8) & 0xFF;
