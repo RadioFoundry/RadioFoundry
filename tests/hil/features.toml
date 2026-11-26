@@ -476,6 +476,14 @@ requires = "DMR"
 spec = "docs/spec/open-firmware-cps.md"
 source = ["core/codeplug/dmr_iddb.c", "core/codeplug/dmr_iddb.h", "core/debuglink/debuglink_iddb.c"]
 
+[feature.contact_lists]
+switch = "CONTACT_LISTS"
+# Named contact lists per network or system: the names a received call gets come from the lists the channel's system
+# selects, then optionally the ID database
+spec = "docs/spec/contact-lists.md"
+source = ["core/codeplug/codeplug_contact_lists.c", "core/codeplug/codeplug_contact_lists.h", "core/codeplug/codeplug_kv.c",
+          "core/radio/radio_sm.c", "core/debuglink/debuglink_view_dmr.c"]
+
 [feature.iddb_compact]
 switch = "IDDB_COMPACT"
 spec = "docs/spec/iddb-compact.md"

@@ -82,6 +82,7 @@ TFTP ([USB network](15-usb-network.md#programming-over-the-network)).
 | Zones | Zones and their channels |
 | Contacts | Talkgroups and private-call contacts |
 | RX Group Lists | The talkgroups each channel listens to |
+| Contact Lists | Named groups of contacts and which of them name a received call ([below](#contact-lists-and-networks)). Shown when the radio reports the feature, or the codeplug already has lists |
 | DTMF Contacts, APRS | DTMF contacts and APRS configurations |
 | Systems | Trunked systems and the identity of other digital modes: sites, control channels, channel plans and keys. Shown when the radio reports such a mode, or the codeplug has one ([below](#digital-modes-and-systems)) |
 | DMR ID Database | Names for DMR IDs that aren't contacts, built from RadioID.net ([below](#dmr-id-database-and-contacts-from-radioidnet)) |
@@ -247,6 +248,51 @@ plan entry the radio uses the plan the control channel sends.
 follows calls to every talk group, not just the channel's. **Fallback channel** is kept in the codeplug; the radio
 doesn't use it yet and keeps hunting for a control channel. A trunked channel has no frequencies of its own.
 
+### Contact lists and networks
+
+A contact list is a named group of contacts. Lists keep the names of different networks apart: the same talkgroup
+number can be a different group on a DMR network, a club net and a county P25 system. The radio names a received call
+(the caller and the talkgroup) from the lists of the network or system its channel uses. Lists change names only, not
+which contacts you can call.
+
+| Where | What you set |
+|---|---|
+| **Contact Lists** tab | The lists: **Add** one (up to 32), rename it, or **Delete** it. A list a system still selects can't be deleted; the editor names the systems. The last row is the **ID database**, fixed: it is a list you pick, not one you edit |
+| **Contacts** tab, **List** column | The list each contact is in: one list or none. A contact in no list is never named by a list. Bulk Edit sets it on several rows |
+| **Systems** tab, **Contact lists** section | **Primary** and **Secondary**: the lists the system's calls are named from, tried in that order. Pick the ID database as either to name private callers from the RadioID.net database |
+| **Channels** tab, **Network** column | For a plain DMR or P25 channel, the network it belongs to |
+
+A **network** is a system of the type **Network** (a conventional system). It has a name and the two list selects, and
+nothing else: no control channel and no key. Add one on the **Systems** tab like any other system, then set the
+**Network** of each conventional channel. A trunked, encrypted or other channel with a system of its own uses that
+system's lists, not a network.
+
+How a call is named:
+
+1. The radio takes the channel's system lists: the system of a trunked or similar channel, else the channel's network.
+2. It looks for a contact with the call's ID and type in the primary list, then in the secondary.
+3. The ID database answers for a private caller only. A talkgroup, an all call and any P25 ID it doesn't name.
+4. The first list that names the call wins.
+
+A channel with no network and no system of its own, and the VFO, have no lists: a received call shows its raw ID, with
+no name. Received calls are all this changes: the talk target picker and the Contacts list on the radio still show
+every contact.
+
+**Default network.** Opening a codeplug that has contacts and plain channels but no lists, the editor offers **Create
+Default network**: one list holding every contact, a network that selects it first and the ID database second, and
+every plain channel set to that network. Names then work as they did before lists. Nothing changes until you accept,
+and **Undo** reverses it. **Not now** keeps the codeplug as it is, and calls then show no names from the lists.
+
+**Contacts changed elsewhere.** The radio and the editor check that the contacts are the ones the lists were made for.
+After other software edits the contacts, no contact counts as being in a list
+until you assign them again, and the editor shows a notice. The ID database still names private callers. The radio
+never repairs the lists itself.
+
+The lists are kept in a part of the codeplug that other programming software doesn't know and leaves alone, so qdmr
+and old firmware ignore them. A radio on older firmware names calls as it did before lists: the first contact with the
+ID, then the ID database. `contacts.csv` has a **List** column and `channels.csv` a **Network** column, both by name;
+a file without them imports with no list and no network. The radio can't edit lists: use the editor.
+
 ### Files
 
 **Open File** takes:
@@ -342,7 +388,8 @@ TFTP (USB network mode) and other CPS programs use the older format.
 | General settings | Your DMR ID. The callsign (radio name, 8 characters, sent as talker alias). The group and private call hang times (the reply window). The ARS server and IP gateway, when set |
 | Channels (up to 1024) | Name, receive and transmit frequency, mode (FM or DMR), bandwidth, receive and transmit tones, power, receive only, color code, timeslot, talk target contact, RX group list (listen list), a per-channel DMR ID, force direct mode, transmit timeout (Radio Default: the radio's own, [TX timeout](08-fm.md#transmit-timeout)), talker alias, zone scan skip, VOX allowed, 1750 Hz tone burst, no beep, no battery saving |
 | Zones | Name and channel list. Without zones, the radio shows one zone with all channels |
-| Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override |
+| Contacts (up to 1024) | Name, DMR ID or talkgroup, private or group, timeslot override, contact list |
+| Contact lists (up to 32) | Names, and for each system or network the primary and secondary list ([above](#contact-lists-and-networks)) |
 | RX group lists | The talkgroups each channel listens to |
 | P25 contacts (up to 341) | Names of P25 talk groups and units, and the talk groups of P25 channels that use them |
 | Trunked systems (up to 8) | Every field of the **Systems** tab, and which channels are trunked |
