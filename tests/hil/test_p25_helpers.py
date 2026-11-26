@@ -4,6 +4,7 @@
 import json
 
 import pytest
+from _pytest.outcomes import Skipped
 
 import cps_client
 import test_cps
@@ -70,7 +71,7 @@ def test_two_site_fixture_reserves_every_entry_before_writing(tmp_path, monkeypa
         def core(self):
             return {"vfo": "0", "channel_number": "1"}
 
-    with pytest.raises(pytest.skip.Exception, match="holds a system or this channel's tag"):
+    with pytest.raises(Skipped, match="holds a system or this channel's tag"):
         P.trunk_slot(Radio(), tmp_path, entry_count=5)
 
 
