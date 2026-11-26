@@ -174,7 +174,7 @@ When the keys lock by themselves and what still works while they are locked ([Ke
 |---|---|---|---|---|
 | Auto lock | Off, 30 s, 1 min, 5 min | Off | Locks the keys after this time without a key press | Works |
 | PTT when locked | On, Off | On | Whether **PTT** works while the keys are locked. Off: **PTT** does nothing until you unlock | Works |
-| Knob when locked | On, Off | On | On radios whose firmware reads the volume knob only (the row is not shown on the others; see the [feature matrix](../feature-matrix.md)). Whether the volume knob works while the keys are locked. Off: turning it does nothing and shows the unlock hint, and when you unlock, the volume goes straight to where the knob is | Works |
+| Knob when locked | On, Off | On | On radios whose volume follows a knob the firmware reads only (the row is not shown on the others; see the [feature matrix](../feature-matrix.md)). Whether the volume knob works while the keys are locked. Off: turning it does nothing and shows the unlock hint, and when you unlock, the volume goes straight to where the knob is | Works |
 
 ### My radio (key 0)
 

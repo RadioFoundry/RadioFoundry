@@ -143,9 +143,18 @@ static void test_codeplug(void)
 	CHECK(codeplug_set_channel(21, &c));
 	CHECK(!codeplug_zones_stored() && codeplug_zone_count() == 1);
 
-	// The first zone made keeps the virtual one: "All channels" is stored first, the new one after it
+	// A detour holds the settings: refused before the virtual zone is stored (the codeplug stays as it was)
 	zone_t z = zone_of("Local", (const uint16_t[]){ 20, 1, 3 }, 3);
 	uint16_t at = 99;
+#if CONFIG_RADIO_DETOUR
+	CHECK(settings_hold());
+	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_FAILED && zone_edit_new("Held", NULL) == ZONE_EDIT_FAILED &&
+	      zone_edit_copy(0, NULL) == ZONE_EDIT_FAILED);
+	CHECK(!codeplug_zones_stored() && codeplug_zone_count() == 1 && at == 99);
+	settings_release(true);
+#endif
+
+	// The first zone made keeps the virtual one: "All channels" is stored first, the new one after it
 	CHECK(zone_edit_create(&z, &at) == ZONE_EDIT_OK && at == 1);
 	CHECK(codeplug_zones_stored() && codeplug_zone_count() == 2);
 	CHECK(named(0, "All channels") && holds(0, (const uint16_t[]){ 1, 2, 3, 4, 5, 6, 20, 21 }, 8));

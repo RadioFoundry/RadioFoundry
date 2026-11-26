@@ -18,6 +18,8 @@
 //   receivers:2         a receiver per dual watch channel; rxa:/rxb:<src>,<dst>,g|p a call on A's / B's own,
 //                       rxaend / rxbend its end
 //   tune:a|b            dual watch: the receiver moves to channel A or B (a call there holds it)
+//   hop:a|b             the same just before the next key, with no UI pass between: the key reads the view as the
+//                       radio left it
 //   busy:a|b|none       dual watch: the radio's mark for a signal found on A / B in the wait after a call
 //   dlpos:<n>           another task (the debug link) asks the radio for position n of the zone
 //   dldual:<n>          the debug link's scan dual: the radio watches the channel it is on (A) and position n
@@ -34,8 +36,10 @@
 //                               transmission (room data: shown, no voice)
 //   ysfend                      the YSF call heard ends
 //   chkind:<n>,p25|nxdn[,<name>]  a stored P25 or NXDN channel, with an optional name (_ = space)
-//   p25t:<state>[,<tg>] the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds), its follower in state
-//                       1 finding the system, 2 on the control channel, 3 following talk group tg
+//   p25t:<state>[,<tg>[,<reg>[,<tx>[,<why>]]]]  the channel on view is a trunked P25 one (CONFIG_P25_TRUNK builds),
+//                       its follower in state 1 finding the system, 2 on the control channel, 3 following talk group
+//                       tg; reg the registration state (p25_reg_t, 8 blocked); tx 1 turns the transmit side on; why
+//                       a PTT the radio just refused, for that reason (RADIO_TRUNK_WHY_*, 11 blocked)
 //   rx:<src>,<dst>,g|p[,name]   a DMR call starts (g = group, p = private to us); rxend ends it
 //   call:<src>,<dst>,g|p        a 2 s call, then 1 s of quiet
 //   msg:<src>,<text>    a text message arrives (_ = space); alert:<src>; emergency:<src>; privcall:<src>
@@ -53,6 +57,8 @@
 //   battery:<pct>       the battery reads pct; offfailed: auto power off couldn't switch off
 //   foreign             the codeplug is another firmware's: a channel write asks first (codeplug-foreign)
 //   aeskeys             system 3 is a DMR AES one holding traffic keys 0 and 7 (the channel editor's AES key row)
+//   datadeny:<d>[,<p>]  why the channel can't send data now: view.data_deny d, packet_deny p (default d), each none,
+//                       aes_key, not_dmr or data_encrypted
 //   nobattery           the board has no battery (CAP_NO_BATTERY), until the next reset
 //   variant             the board suspects the image is for another hardware version, until the next reset
 //   supply:<mv>         no battery, and the board measures its DC input, which reads mv (hal_power_t.supply_mv)
@@ -2150,6 +2156,8 @@ bool ui_svc_scan_skip(void) { radio_req_channel_step(1); return true; }
 // keys act on it); `tune:a` / `tune:b` move it to a channel, as the alternating receiver does when a call holds it
 // Each channel keeps its changes for now while the receiver is on the other (as radio_sm.c's dual_keep)
 static uint8_t sim_at = 0xFF;		// the pane the receiver is on
+static int8_t hop_next = -1;		// hop:a|b: the pane the receiver moves to just before the next key (-1: none)
+static void sim_tune(int pane);
 static radio_view_t sim_keep[2];
 static uint32_t sim_keep_target[2];
 static bool sim_keep_ok[2];
@@ -2885,6 +2893,7 @@ void sim_reset(const sim_geom_t *g, sim_map_t map)
 	ui_svc_setting_set(UI_SET_DUAL_B, 0);
 	memset(sim_dual, 0, sizeof sim_dual);
 	sim_at = 0xFF;
+	hop_next = -1;
 	sim_keep_ok[0] = sim_keep_ok[1] = false;
 #endif
 	memset(&crash_sim, 0, sizeof crash_sim);
@@ -2984,6 +2993,10 @@ static bool press(const char *name, bool lng, char *err, size_t len)
 		}
 		input_event_t ev = { a, (uint8_t)(lng ? GESTURE_LONG : GESTURE_PRESS), 0 };
 		advance(lng ? LONG_MS : PRESS_MS / 2);
+		if (hop_next >= 0) {	// the radio moved while the UI task waited: the view it reads first (ui.c)
+			sim_tune(hop_next);
+			hop_next = -1;
+		}
 		ui_app_key(&ev);
 		advance(PRESS_MS / 2);
 		return true;
@@ -3054,6 +3067,7 @@ static bool check(const char *kv, char *err, size_t len)
 	else if (strcmp(key, "temporary") == 0) snprintf(got, sizeof got, "%u", view.temporary);
 	else if (strcmp(key, "writes") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.codeplug_writes);
 	else if (strcmp(key, "checks") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.radio_checks);
+	else if (strcmp(key, "alerts") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.call_alerts);
 	else if (strcmp(key, "sent") == 0) snprintf(got, sizeof got, "%u", (unsigned)sim_rec.messages_sent);
 	else if (strcmp(key, "text") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_text);
 	else if (strcmp(key, "aprs_to") == 0) snprintf(got, sizeof got, "%s", sim_rec.last_aprs_to);
@@ -3513,6 +3527,10 @@ static bool run_token(char *t, char *err, size_t len)
 		advance(100);
 		return true;
 	}
+	if (strcmp(t, "hop") == 0 && arg != NULL && (arg[0] == 'a' || arg[0] == 'b')) {	// the same, just before the
+		hop_next = arg[0] == 'b';	// next key: the UI reads the view the radio left, with no pass between (ui.c)
+		return true;
+	}
 	if (strcmp(t, "busy") == 0 && arg != NULL) {	// dual watch: the looks in the wait found a signal there
 		view.dual_busy = arg[0] == 'a' ? 1 : arg[0] == 'b' ? 2 : 0;
 		changed();
@@ -3679,17 +3697,24 @@ static bool run_token(char *t, char *err, size_t len)
 	}
 #if CONFIG_P25_TRUNK
 	if (strcmp(t, "p25t") == 0) {
-		unsigned st = 0, tg = 0;
-		if (arg == NULL || sscanf(arg, "%u,%u", &st, &tg) < 1 || st > RADIO_P25_TRUNK_VOICE) {
+		unsigned st = 0, tg = 0, reg = 0, tx = 0, why = 0;
+		if (arg == NULL || sscanf(arg, "%u,%u,%u,%u,%u", &st, &tg, &reg, &tx, &why) < 1 ||
+		    st > RADIO_P25_TRUNK_VOICE) {
 			snprintf(err, len, "bad %s", t);
 			return false;
 		}
 		view.ch.mode = RADIO_MODE_P25;
 		view.ch.kind = CODEPLUG_KIND_P25_TRUNK;
 		view.ch.rx_only = true;
-		view.p25.flags = RADIO_P25_ON;
+		view.p25.flags = RADIO_P25_ON | (tx ? RADIO_P25_TRUNK_TX : 0);
 		view.p25.trunk = (uint8_t)st;
+		view.p25.treg = (uint8_t)reg;
 		view.p25.dst = tg;
+		if (why) {
+			view.state = RS_TX_DENIED;
+			view.tx_deny = TXDENY_TRUNK;
+			view.p25.twhy = (uint8_t)why;
+		}
 		changed();
 		advance(100);
 		return true;
@@ -3855,6 +3880,32 @@ static bool run_token(char *t, char *err, size_t len)
 		return true;
 	}
 #endif
+	if (strcmp(t, "datadeny") == 0 && arg != NULL) {
+		static const struct { const char *name; uint8_t code; } codes[] = {
+			{ "none", TXDENY_NONE }, { "aes_key", TXDENY_AES_KEY }, { "not_dmr", TXDENY_NOT_DMR },
+			{ "data_encrypted", TXDENY_DATA_ENCRYPTED },
+		};
+		char *packet = strchr(arg, ',');
+		if (packet != NULL)
+			*packet++ = 0;
+		bool known = false;
+		for (size_t i = 0; i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(arg, codes[i].name) == 0) {
+				view.data_deny = view.packet_deny = codes[i].code;
+				known = true;
+			}
+		}
+		for (size_t i = 0; packet != NULL && i < sizeof codes / sizeof codes[0]; i++) {
+			if (strcmp(packet, codes[i].name) == 0)
+				view.packet_deny = codes[i].code;
+		}
+		if (!known) {
+			snprintf(err, len, "unknown datadeny %s", arg);
+			return false;
+		}
+		changed();
+		return true;
+	}
 	if (strcmp(t, "foreign") == 0) {	// the codeplug is another firmware's: the first edit asks
 		sim_foreign = true;
 		return true;
@@ -3938,6 +3989,15 @@ static bool run_token(char *t, char *err, size_t len)
 			view.volume = level;
 			view.volume_src = soft_volume ? RVOL_SOFT : t[0] == 'k' ? RVOL_KNOB : RVOL_OVERRIDE;
 		}
+		changed();
+		step();
+		return true;
+	}
+	if (strcmp(t, "knobpos") == 0 && arg != NULL) {
+		// A knob the MCU reads on a radio that can't set the level: only the position, volume_src RVOL_NONE
+		view.volume_knob = (int8_t)atoi(arg);
+		view.volume = -1;
+		view.volume_src = RVOL_NONE;
 		changed();
 		step();
 		return true;

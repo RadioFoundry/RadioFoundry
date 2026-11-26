@@ -95,8 +95,8 @@ static bool hw_line(uint8_t i, uint8_t *role, char *buf, uint8_t len)
 const board_t board = {
 	.name = BOARD_NAME,
 	// CAP_GPS: the G models; board_t.gps says whether this one has the module (hardware-md380.md 13). No
-	// CAP_VOLUME_POT: the knob sets the volume in the analog path, the MCU only sees its position. CAP_ENCODER: the
-	// channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
+	// CAP_VOLUME_POT: the knob sets the volume in the analog path; hal volume() only reports its position. CAP_ENCODER:
+	// the channel knob is a 16-position switch, reported to the core as steps (input_md380.c)
 	.caps = CAP_KEYPAD | CAP_ENCODER | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),

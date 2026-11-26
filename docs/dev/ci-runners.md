@@ -57,8 +57,9 @@ The C-SKY jobs use the image `platform/hrc7000/platform.toml` `[toolchain] image
 `ghcr.io/radiofoundry/rfoundry-csky-gcc14:<date>`, a public package: anyone can pull it, with no login. The repository
 variable `RFOUNDRY_CSKY_IMAGE` overrides it in `ci.yml`, `nightly.yml` and `release.yml` (`pr-tests.yml` reads no
 variable). `tools/docker/csky-toolchain/build.sh` builds the image (local tag `rfoundry/csky-gcc14:<date>` and
-`:latest`) and `push.sh` publishes it. `run.sh` uses an image already on the Docker host, and pulls one only when the
-name starts with a registry host (`ghcr.io/...`, `docker.io/...`), never a bare name from Docker Hub. When the image
+`:latest`; `<date>-arm64` and `:latest-arm64` on an arm64 host) and `push.sh` publishes it. `run.sh` uses an image
+already on the Docker host, and pulls one only when the name starts with a registry host (`ghcr.io/...`,
+`docker.io/...`), never a bare name from Docker Hub. When the image
 can't be had, a CI or nightly job ends with a notice instead of failing; the release job fails.
 
 ### Publishing it to GitHub Packages (ghcr.io)
@@ -75,7 +76,8 @@ gh auth refresh -h github.com -r write:packages          # optional: drop the sc
 ```
 
 `push.sh REPO [TAG...]` tags the local image (`SRC`, default `rfoundry/csky-gcc14:latest`) as `REPO:<its dated tag>`
-and `REPO:latest`, pushes both and prints the digest. It never handles a credential: log in before and out after.
+and `REPO:latest` (`REPO:latest-arm64` for an `-arm64` image), pushes both and prints the digest. It never handles a
+credential: log in before and out after.
 The same script pushes to Docker Hub (`push.sh docker.io/<user>/rfoundry-csky-gcc14` after `docker login`).
 
 A new package on ghcr.io is **private**: make it public (the package's settings, "Change visibility"), then set

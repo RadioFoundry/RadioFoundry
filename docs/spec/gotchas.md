@@ -680,7 +680,9 @@ GITVERSION explicitly where there is no .git.
 built-in suffix rules. Build note.
 
 **13.4 Reproducible images.** Pinning the version string and build date made byte-for-byte comparisons of refactors
-possible (build_all --compare). Keep that ability.
+possible (build_all --compare). Keep that ability. A date or time in the image comes from the commit's time
+(`RFOUNDRY_GIT_TIME` and the strings the Makefile makes from it), never `__DATE__` or `__TIME__`: those made two builds
+of one commit differ in size, not just in the date. The firmware builds with `-Werror=date-time`.
 
 **13.5 One hardware version needed main.c unoptimized** in one configuration; one image per board version;
 the wrong build is harmless but deaf.
