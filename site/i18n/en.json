@@ -2424,5 +2424,6 @@
  "editor.sig.no_audio": "No audio here",
  "editor.sig.empty": "No steps: the standard sound",
  "screen.spectrum_center_tuner": "Centered spectrum tuner",
- "screen.spectrum_panned": "Panning the spectrum window"
+ "screen.spectrum_panned": "Panning the spectrum window",
+ "screen.spectrum_shortcuts": "Configurable spectrum shortcut keys"
 }

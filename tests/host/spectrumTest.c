@@ -7,6 +7,32 @@
 static unsigned failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %d: %s\n", __LINE__, #c); } } while (0)
 
+static void test_key_assignments(void)
+{
+	spectrum_t s;
+	CHECK(spectrum_start(&s, 446000000, 400000000, 480000000, 12500, 129, 0));
+	CHECK(s.hash_key == SPECTRUM_KEY_BANDWIDTH && s.star_key == SPECTRUM_KEY_CENTER_TUNER);
+	CHECK(spectrum_sample(&s, -55, 10) && s.audio_open);
+	for (unsigned action = 0; action < SPECTRUM_KEY_COUNT; action++) {
+		CHECK(spectrum_adjust(&s, SPECTRUM_HASH_KEY, (int32_t)action, 20));
+		CHECK(spectrum_adjust(&s, SPECTRUM_STAR_KEY, (int32_t)action, 20));
+		CHECK(s.hash_key == action && s.star_key == action);
+		CHECK(s.audio_open && s.listening && s.due_ms == 20 && spectrum_receiver_hz(&s) == 446000000);
+		CHECK(spectrum_level_dbm(spectrum_peak_level(&s, 64)) == -55);
+	}
+	spectrum_t before = s;
+	CHECK(!spectrum_adjust(&s, SPECTRUM_HASH_KEY, SPECTRUM_KEY_COUNT, 20));
+	CHECK(!spectrum_adjust(&s, SPECTRUM_STAR_KEY, -1, 20));
+	CHECK(memcmp(&s, &before, sizeof s) == 0);
+	CHECK(spectrum_adjust(&s, SPECTRUM_HASH_KEY, SPECTRUM_KEY_FILTER, 20));
+	CHECK(spectrum_adjust(&s, SPECTRUM_STAR_KEY, SPECTRUM_KEY_AUTO_PEAK, 20));
+	CHECK(spectrum_adjust(&s, SPECTRUM_STEP, 6250, 30));
+	CHECK(spectrum_adjust(&s, SPECTRUM_BANDWIDTH, 97, 40));
+	CHECK(spectrum_adjust(&s, SPECTRUM_FILTER, 1, 50));
+	CHECK(spectrum_recenter(&s, 145062500, 136000000, 174000000, 60));
+	CHECK(s.hash_key == SPECTRUM_KEY_FILTER && s.star_key == SPECTRUM_KEY_AUTO_PEAK);
+}
+
 static void test_edge_pan(void)
 {
 	static const unsigned counts[] = { 65, 97, 129 };
@@ -139,6 +165,7 @@ static void test_center_tuner(void)
 
 int main(void)
 {
+	test_key_assignments();
 	test_edge_pan();
 	test_center_tuner();
 	_Static_assert(sizeof(spectrum_t) <= 824, "recent peaks must stay within their RAM budget");

@@ -2424,5 +2424,6 @@
  "editor.sig.no_audio": "此处无法播放",
  "editor.sig.empty": "无步骤:使用标准声音",
  "screen.spectrum_center_tuner": "频谱调谐器居中",
- "screen.spectrum_panned": "平移频谱窗口"
+ "screen.spectrum_panned": "平移频谱窗口",
+ "screen.spectrum_shortcuts": "频谱快捷键设置"
 }

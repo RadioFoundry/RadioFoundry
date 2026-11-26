@@ -222,6 +222,12 @@ changing the graph's frequency range while it is inside the window. With **Cente
 either edge scrolls the whole window by one **Sweeping** step. The tuner stays at that edge and listens to the next
 frequency. Reverse direction to move it back inside the window; scrolling stops at the receiver band limits.
 
+On the graph, `#` runs **Bandwidth** and `*` runs **Center tuner** by default. Change either assignment in
+Spectrum Settings with `# key` and `* key`. **OK** cycles **Bandwidth / Auto peak / Filter / Center tuner**;
+both keys may use the same action. Choosing an assignment does not change that parameter until you press the key
+on the graph. A toast shows the result. Assignments and parameter values are remembered. While typing a number,
+# remains the separator and * does not run its assigned action.
+
 Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** choose a row:
 
 | Setting | How to change it |
@@ -230,9 +236,11 @@ Press **OK** outside frequency entry for **Spectrum Settings**. **Up / Down** ch
 | Sweeping | OK, type spacing in kHz, OK. **#** is the decimal point: `6 # 2 5` means 6.25 kHz. Range 1.00..100.00 kHz. |
 | Bandwidth | OK cycles 65 / 97 / 129 points. MHz is calculated from count and spacing. |
 | Dwell time | OK, type milliseconds per scanned frequency, OK. Range 10..1000 ms; default 10. Higher is slower. |
-| Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
 | Filter | OK switches **Wide (25 kHz)** / **Narrow (12.5 kHz)**. Wide by default. It applies to scanning and listening. |
+| Auto peak | OK cycles **After sweep** (default) / **Immediate** / **Off**. |
 | Center tuner | OK switches **Off** (default) / **On**. On keeps the tuner centered and moves the window with Left / Right or the knob. |
+| # key | OK cycles the action for #. Default **Bandwidth**. |
+| * key | OK cycles the action for *. Default **Center tuner**. |
 
 Back in an editor deletes, then cancels. Back in the menu returns to the running graph. The menu leaves reception
 and scanning running. Back on the graph closes the analyzer; long Back returns Home from either screen.
@@ -241,7 +249,7 @@ Without a keypad, OK opens a numeric editor at its current value. Use **Up / Dow
 then **OK** to save or **Back** to cancel. Squelch steps by 1 dB, Sweeping by 0.01 kHz and Dwell time by 1 ms.
 These radios also have **Center** (center frequency) at the end of Spectrum Settings. Its preview moves by the sweep
 spacing and skips gaps between available receiver bands. Reception changes only after OK. If a microphone provides
-digits, typing starts direct numeric entry instead. Keypad radios keep the seven-row menu and digit entry above.
+digits, typing starts direct numeric entry instead. Keypad radios keep the nine-row menu and digit entry above.
 
 With **Center tuner** on, **Left / Right** and the knob move the whole window by the **Sweeping** step.
 The tuner normally stays in the middle and listens at the new center frequency. The graph's overlapping

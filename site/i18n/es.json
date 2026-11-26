@@ -2424,5 +2424,6 @@
  "editor.sig.no_audio": "Sin audio aquí",
  "editor.sig.empty": "Sin pasos: el sonido estándar",
  "screen.spectrum_center_tuner": "Cursor del espectro centrado",
- "screen.spectrum_panned": "Desplazamiento de la ventana del espectro"
+ "screen.spectrum_panned": "Desplazamiento de la ventana del espectro",
+ "screen.spectrum_shortcuts": "Teclas de acceso del espectro"
 }

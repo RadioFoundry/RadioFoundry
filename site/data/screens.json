@@ -1044,6 +1044,12 @@
    "needs": [
     "SPECTRUM"
    ]
+  },
+  "spectrum_shortcuts": {
+   "group": "tools",
+   "needs": [
+    "SPECTRUM"
+   ]
   }
  }
 }

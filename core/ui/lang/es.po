@@ -5693,6 +5693,26 @@ msgid "After sweep"
 msgstr "Tras barrido"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_BANDWIDTH"
+msgid "Bandwidth"
+msgstr "Ancho de banda"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_AUTO_PEAK"
+msgid "Auto peak"
+msgstr "Pico automático"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_FILTER"
+msgid "Filter"
+msgstr "Filtro"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER_TUNER"
+msgid "Center tuner"
+msgstr "Fijar al centro"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_VALUE_NARROW"
 msgid "Narrow"
 msgstr "Estrecho"
@@ -5748,29 +5768,19 @@ msgid "Sweeping"
 msgstr "Barrido"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_BANDWIDTH"
-msgid "Bandwidth"
-msgstr "Ancho de banda"
-
-#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_DWELL"
 msgid "Dwell time"
 msgstr "Tiempo de espera"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_AUTO_PEAK"
-msgid "Auto peak"
-msgstr "Pico automático"
+msgctxt "SPECTRUM_ROW_HASH_KEY"
+msgid "# key"
+msgstr "Tecla #"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_FILTER"
-msgid "Filter"
-msgstr "Filtro"
-
-#: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_CENTER_TUNER"
-msgid "Center tuner"
-msgstr "Fijar al centro"
+msgctxt "SPECTRUM_ROW_STAR_KEY"
+msgid "* key"
+msgstr "Tecla *"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER"

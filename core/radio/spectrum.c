@@ -19,6 +19,7 @@ bool spectrum_start(spectrum_t *s, uint32_t center, uint32_t lo, uint32_t hi, ui
 	memset(s, 0, sizeof *s);
 	s->active = s->listening = true;
 	s->auto_peak = SPECTRUM_AUTO_SWEEP;
+	s->star_key = SPECTRUM_KEY_CENTER_TUNER;
 	s->dwell_ms = SPECTRUM_SETTLE_MS;
 	s->bins = (uint8_t)bins;
 	s->tuner = s->bins / 2;
@@ -40,6 +41,7 @@ static bool restart(spectrum_t *s, uint32_t center, uint32_t lo, uint32_t hi, ui
 	int16_t squelch_dbm = s->squelch_dbm;
 	uint16_t dwell_ms = s->dwell_ms;
 	uint8_t auto_peak = s->auto_peak;
+	uint8_t hash_key = s->hash_key, star_key = s->star_key;
 	bool narrow = s->narrow, center_tuner = s->center_tuner;
 	int8_t scale_db = s->scale_db;
 	if (!spectrum_start(s, center, lo, hi, step, bins, now))
@@ -47,6 +49,8 @@ static bool restart(spectrum_t *s, uint32_t center, uint32_t lo, uint32_t hi, ui
 	s->squelch_dbm = squelch_dbm;
 	s->dwell_ms = dwell_ms;
 	s->auto_peak = auto_peak;
+	s->hash_key = hash_key;
+	s->star_key = star_key;
 	s->narrow = narrow;
 	s->center_tuner = center_tuner;
 	s->scale_db = scale_db;
@@ -183,6 +187,13 @@ bool spectrum_adjust(spectrum_t *s, uint8_t cmd, int32_t value, uint32_t now)
 {
 	if (!s->active)
 		return false;
+	if (cmd == SPECTRUM_HASH_KEY || cmd == SPECTRUM_STAR_KEY) {
+		if (value < 0 || value >= SPECTRUM_KEY_COUNT)
+			return false;
+		if (cmd == SPECTRUM_HASH_KEY) s->hash_key = (uint8_t)value;
+		else s->star_key = (uint8_t)value;
+		return true;
+	}
 	if (cmd == SPECTRUM_CENTER_TUNER) {
 		if (value != 0 && value != 1)
 			return false;

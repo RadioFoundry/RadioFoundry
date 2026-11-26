@@ -108,6 +108,13 @@ Typing a digit starts center-frequency entry immediately. Reception and the wind
 confirms it. Entry uses the VFO's positional MHz digits; # is an optional separator after three digits. Back deletes
 one digit, then cancels an empty editor. Back outside entry closes the analyzer; long Back returns Home.
 
+On the graph, short `#` and `*` run their assigned actions. Defaults are Bandwidth for `#` and Center tuner
+for `*`. Each key can independently control Bandwidth, Auto peak, Filter or Center tuner, including the same
+action on both keys. A press cycles or toggles the selected parameter and shows its new value in a toast. It uses
+the same range check and radio request as that parameter's menu row. The graph owns these short keys ahead of
+quick settings and message banners. During numeric entry, # keeps its separator role and * does not run its
+action. Long-key actions retain their normal meanings.
+
 OK outside entry opens **Spectrum Settings** (`screen=spectrum-settings`), a standard list with these rows:
 
 | Row | OK | Value |
@@ -116,9 +123,11 @@ OK outside entry opens **Spectrum Settings** (`screen=spectrum-settings`), a sta
 | Sweeping | Empty numeric editor; # for decimal, OK confirms | 1.00..100.00 kHz |
 | Bandwidth | Cycle 65 / 97 / 129 points | MHz computed from point count and spacing |
 | Dwell time | Empty numeric editor, digits then OK | 10..1000 ms |
-| Auto peak | Cycle | After sweep (default) / Immediate / Off |
 | Filter | Toggle | Wide (25 kHz, default) / Narrow (12.5 kHz) |
+| Auto peak | Cycle | After sweep (default) / Immediate / Off |
 | Center tuner | Toggle | Off (default) / On |
+| # key | Cycle the assigned action | Bandwidth (default) / Auto peak / Filter / Center tuner |
+| * key | Cycle the assigned action | Bandwidth / Auto peak / Filter / Center tuner (default) |
 
 Up/down navigate that menu. Squelch entry accepts magnitude 0..160 and adds a minus to every nonzero value, including while editing. Zero displays as `0 dBm`, never `-0 dBm`. Numeric values outside their ranges are refused, never wrapped. Back in an editor
 deletes, then cancels; Back in the menu returns to the running graph. Long Back closes both. Global quick settings
@@ -127,11 +136,11 @@ and banner actions do not consume numeric-editor keys.
 Without `CAP_KEYPAD`, numeric editors start at the current value. Up/Down or encoder steps change the preview;
 OK applies it and Back cancels it without changing reception or stored preferences. Squelch moves by 1 dB,
 spacing by 10 Hz (0.01 kHz), and dwell by 1 ms; all clamp to their supported ranges. Spacing also respects the
-current band's room for the selected point count. The seven shared rows keep their order. Only these radios gain
+current band's room for the selected point count. The nine shared rows keep their order. Only these radios gain
 a final **Center** (center frequency) row: the preview moves by the selected sweep spacing and crosses gaps to the next
 active board band that can hold the window, excluding the separate broadcast receiver. It stops at the outer
 limits. Optional mic digits switch the editor to direct numeric entry. Radios with a keypad retain their empty
-digit editors and the seven-row settings menu.
+digit editors and the nine-row settings menu.
 
 With **Center tuner** off (default), left/right and the encoder move the tuner one bin inside the window. At an
 endpoint, the next outward step pans the window by one sweep spacing and leaves the tuner at that same endpoint,
@@ -181,7 +190,11 @@ An invalid legacy value uses old 80. Manual edits save the direct threshold and 
 to the older build's 0..100 range, for a downgrade. `spectrum_peak_immediate` uses the former reserved byte at
 offset 433: zero retains After sweep, one selects Immediate. `spectrum_no_peak == 1` takes precedence and keeps
 Off. `spectrum_center_tuner` uses the zeroed byte at offset 426 (formerly `reserved12[0]`): only 1 enables it;
-zero and invalid values retain the independent tuner. Earlier records and existing Off preferences retain their
+zero and invalid values retain the independent tuner. `spectrum_keys` uses offset 427 (formerly `reserved12[1]`).
+Bits 0..1 store the # action (0 Bandwidth, 1 Auto peak, 2 Filter, 3 Center tuner). Bits 2..3 store the * action
+with 0 Center tuner, 1 Bandwidth, 2 Auto peak and 3 Filter, so an old zero byte restores both defaults. Upper bits
+are reserved; a nonzero upper bit restores both defaults. Assignment edits do not retune, mute, or activate the
+chosen action. Center, spacing, point-count and filter changes preserve the assignments. Earlier records and existing Off preferences retain their
 behavior; the record size stays 436 bytes.
 
 Invalid frequencies fall back to the current channel; invalid spacing or count to 12.50 kHz / 129 points; invalid
@@ -190,7 +203,7 @@ inside the restored window, otherwise starts at the center. Existing -40, 0 and 
 
 GET_VIEW `channel` exposes `spectrum.active`, `listening`, `audio`, `center_hz`, `step_hz`, `index`, `tuner_hz`,
 `squelch`, `threshold_dbm`, `am` (the active analyzer receiver is in AM), `bins`, `sweeps`, `dwell_ms`, `auto_peak` (0 Off, 1 either enabled mode),
-`auto_peak_mode` (`after_sweep` / `immediate` / `off`), `scale_db`, `filter` (`wide` / `narrow`), `center_tuner` (0 / 1), `peak_hz` and `peak_dbm`
+`auto_peak_mode` (`after_sweep` / `immediate` / `off`), `scale_db`, `filter` (`wide` / `narrow`), `center_tuner` (0 / 1), `hash_key` and `star_key` (`bandwidth` / `auto_peak` / `filter` / `center_tuner`), `peak_hz` and `peak_dbm`
 (0 Hz / `INT16_MIN` for an empty peak).
 
 `spectrumTest` covers geometry, timing, dwell, full-sweep selection and confirmation, immediate capture and resume,

@@ -265,7 +265,7 @@ typedef struct {
 	uint8_t spectrum_bins;		// 65, 97 or 129
 	uint8_t spectrum_squelch;	// legacy level: threshold + 160, 0..100; imported if spectrum_squelch_dbm is unset
 	uint8_t spectrum_center_tuner;	// reserved12[0]: 0 = move tuner, 1 = keep it centered and pan the window
-	uint8_t reserved12[1];		// 0
+	uint8_t spectrum_keys;		// reserved12[1]: hash action in bits 0..1, star action + 1 in bits 2..3
 	uint16_t spectrum_dwell_ms;	// scan reading delay, 10..1000 ms
 	uint8_t spectrum_no_peak;	// 0 = automatic peak tuning on (including older records), 1 = off
 	int8_t spectrum_scale_db;	// graph offset: -40..40 dB in 20 dB increments

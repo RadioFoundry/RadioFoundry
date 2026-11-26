@@ -210,6 +210,8 @@ static void channel_section(const radio_view_t *v, dl_text_t *t)
 		s->auto_peak == SPECTRUM_AUTO_SWEEP ? "after_sweep" : "off");
 	dl_text(t, "spectrum.filter=%s\n", s->narrow ? "narrow" : "wide");
 	dl_text(t, "spectrum.center_tuner=%u\n", s->center_tuner);
+	static const char *const key_actions[] = { "bandwidth", "auto_peak", "filter", "center_tuner" };
+	dl_text(t, "spectrum.hash_key=%s\nspectrum.star_key=%s\n", key_actions[s->hash_key], key_actions[s->star_key]);
 	unsigned peak = spectrum_strongest(s);
 	uint8_t level = spectrum_peak_level(s, peak);
 	dl_text(t, "spectrum.peak_hz=%u\nspectrum.peak_dbm=%d\n",

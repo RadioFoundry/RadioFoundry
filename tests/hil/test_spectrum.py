@@ -77,17 +77,17 @@ def test_spectrum_tuner_edit_and_restore(radio):
         radio.wait_for(lambda v: v.get("spectrum.dwell_ms") == "50", sections=("channel",),
                        what="scan dwell setting")
         radio.press("down")
+        radio.press("ok")
+        receive_filter = "narrow" if value["spectrum.filter"] == "wide" else "wide"
+        radio.wait_for(lambda v: v.get("spectrum.filter") == receive_filter, sections=("channel",),
+                       what="receive filter toggle")
+        radio.press("down")
         mode = {"off": "after_sweep", "after_sweep": "immediate", "immediate": "off"}[value["spectrum.auto_peak_mode"]]
         auto = "0" if mode == "off" else "1"
         radio.press("ok")
         changed = radio.wait_for(lambda v: v.get("spectrum.auto_peak_mode") == mode, sections=("channel",),
                                  what="automatic peak mode cycle")
         assert changed["spectrum.auto_peak"] == auto
-        radio.press("down")
-        radio.press("ok")
-        receive_filter = "narrow" if value["spectrum.filter"] == "wide" else "wide"
-        radio.wait_for(lambda v: v.get("spectrum.filter") == receive_filter, sections=("channel",),
-                       what="receive filter toggle")
         radio.press("back")
         scale = int(value["spectrum.scale_db"])
         scale += 20 if scale == -40 else -20
@@ -118,6 +118,49 @@ def test_spectrum_tuner_edit_and_restore(radio):
 
 @pytest.mark.feature("spectrum")
 @pytest.mark.needs_switch("SPECTRUM")
+def test_spectrum_shortcut_assignments(radio):
+    radio.go_home()
+    before = radio.view(["channel"])
+    if before.get("ch.mode") not in ("fm", "dmr") or before.get("ch.sfr") != "0,0":
+        skip("state", "select a conventional RF channel without an SFR role")
+    try:
+        for key in ("ok", "6", "0", "ok"):
+            radio.press(key)
+        radio.wait_for(lambda v: v.get("ui.screen") == "spectrum-settings" and v.get("spectrum.active") == "1",
+                       sections=("link", "channel"), what="spectrum settings")
+        for _ in range(7):
+            radio.press("down")
+        for _ in range(4):
+            if radio.view(["channel"])["spectrum.hash_key"] == "auto_peak":
+                break
+            radio.press("ok")
+        radio.press("down")
+        for _ in range(4):
+            if radio.view(["channel"])["spectrum.star_key"] == "filter":
+                break
+            radio.press("ok")
+        assigned = radio.view(["channel"])
+        assert assigned["spectrum.hash_key"] == "auto_peak" and assigned["spectrum.star_key"] == "filter"
+        radio.press("back")
+        radio.press("context")
+        next_mode = {"after_sweep": "immediate", "immediate": "off", "off": "after_sweep"}[assigned["spectrum.auto_peak_mode"]]
+        radio.wait_for(lambda v: v.get("spectrum.auto_peak_mode") == next_mode and v.get("ui.screen") == "spectrum",
+                       sections=("channel", "link"), what="# running its assigned action")
+        radio.press("quick")
+        next_filter = "wide" if assigned["spectrum.filter"] == "narrow" else "narrow"
+        radio.wait_for(lambda v: v.get("spectrum.filter") == next_filter and v.get("ui.screen") == "spectrum",
+                       sections=("channel", "link"), what="* running its assigned action")
+        radio.press("back")
+        radio.press("0")
+        restored = radio.wait_for(lambda v: v.get("spectrum.active") == "1", sections=("channel",),
+                                  what="remembered shortcut assignments")
+        assert restored["spectrum.hash_key"] == "auto_peak" and restored["spectrum.star_key"] == "filter"
+    finally:
+        radio.press("back", LONG)
+
+
+@pytest.mark.feature("spectrum")
+@pytest.mark.needs_switch("SPECTRUM")
 def test_spectrum_numeric_controls_without_keypad(radio):
     radio.go_home()
     try:
@@ -125,7 +168,7 @@ def test_spectrum_numeric_controls_without_keypad(radio):
             radio.press(key)
         before = radio.wait_for(lambda v: v.get("ui.screen") == "spectrum-settings",
                                 sections=("link", "channel"), what="spectrum settings")
-        if before.get("ui.count") != "8":
+        if before.get("ui.count") != "10":
             skip("no_hw", "the board has an onboard keypad; numeric fallback is not used")
         original = int(before["spectrum.squelch"])
         key = "up" if original < 0 else "down"
@@ -144,7 +187,7 @@ def test_spectrum_numeric_controls_without_keypad(radio):
                        what="original squelch restored")
         radio.press("up")
         last = radio.view(["link"])
-        assert last["ui.focus"] == "7"  # Center is the last row only without a keypad.
+        assert last["ui.focus"] == "9"  # Center is the last row only without a keypad.
     finally:
         radio.press("back", LONG)
 
@@ -290,8 +333,8 @@ def test_spectrum_auto_capture_and_resume(radio, mode, center_tuner):
             radio.press("down")
         _numeric(radio, 10)
         radio.press("down")
-        _auto_mode(radio, mode)
         radio.press("down")
+        _auto_mode(radio, mode)
         radio.press("down")
         if (radio.view(["channel"])["spectrum.center_tuner"] == "1") != center_tuner:
             radio.press("ok")

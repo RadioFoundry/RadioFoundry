@@ -2397,6 +2397,44 @@ static void test_spectrum_edge_pan(void)
 	CHECK(SETTINGS_FIELD(spectrum_center_hz) == 446000000 && SETTINGS_FIELD(spectrum_tuner_hz) == 446800000);
 	spectrum_cmd(SPECTRUM_STOP, 0);
 }
+
+static void test_spectrum_key_preferences(void)
+{
+	dmr_start(true);
+	spectrum_cmd(SPECTRUM_START, 0);
+	spectrum_t *s = &sm.view.spectrum;
+	CHECK(s->hash_key == SPECTRUM_KEY_BANDWIDTH && s->star_key == SPECTRUM_KEY_CENTER_TUNER);
+	spectrum_cmd(SPECTRUM_CENTER, 446000000);
+	spectrum_cmd(SPECTRUM_SQUELCH, -160);
+	run(20);
+	CHECK(hw.audio && s->audio_open);
+	int retunes = hw.rx_calls;
+	spectrum_cmd(SPECTRUM_HASH_KEY, SPECTRUM_KEY_FILTER);
+	spectrum_cmd(SPECTRUM_STAR_KEY, SPECTRUM_KEY_AUTO_PEAK);
+	CHECK(hw.audio && s->audio_open && hw.rx_calls == retunes);
+	CHECK(!s->narrow && s->auto_peak == SPECTRUM_AUTO_SWEEP);
+	CHECK(SETTINGS_FIELD(spectrum_keys) == 0x0a);
+	boot();
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_FILTER && s->star_key == SPECTRUM_KEY_AUTO_PEAK);
+	CHECK(!s->narrow && s->auto_peak == SPECTRUM_AUTO_SWEEP && s->center_hz == 446000000);
+	for (unsigned hash = 0; hash < SPECTRUM_KEY_COUNT; hash++) {
+		for (unsigned star = 0; star < SPECTRUM_KEY_COUNT; star++) {
+			spectrum_cmd(SPECTRUM_HASH_KEY, (int32_t)hash);
+			spectrum_cmd(SPECTRUM_STAR_KEY, (int32_t)star);
+			spectrum_cmd(SPECTRUM_STOP, 0);
+			spectrum_cmd(SPECTRUM_START, 0);
+			CHECK(s->hash_key == hash && s->star_key == star);
+		}
+	}
+	spectrum_cmd(SPECTRUM_STOP, 0);
+	settings_t *st = settings_begin();
+	st->spectrum_keys = 0xff;
+	settings_end(now);
+	spectrum_cmd(SPECTRUM_START, 0);
+	CHECK(s->hash_key == SPECTRUM_KEY_BANDWIDTH && s->star_key == SPECTRUM_KEY_CENTER_TUNER);
+	spectrum_cmd(SPECTRUM_STOP, 0);
+}
 #endif
 
 static void test_dmr_rx(void)
@@ -12469,6 +12507,7 @@ int main(void)
 	test_spectrum_persist();
 	test_spectrum_center_tuner();
 	test_spectrum_edge_pan();
+	test_spectrum_key_preferences();
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	test_spectrum_dual_restore();
 #endif

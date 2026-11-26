@@ -2331,6 +2331,12 @@ void ui_app_key(const input_event_t *ev)
 		ui_toast(TR(WHY_VOICE_PROMPTS_NOT_IN_BUILD, "Voice prompts: not in this build"));
 		return;
 	}
+#if CONFIG_SPECTRUM
+	// Short * and # on the analyzer belong to its receiver controls, ahead of quick settings and banners.
+	if (stack[sp].scr == SCR_SPECTRUM && ev->gesture == GESTURE_PRESS &&
+	    (ev->action == ACT_QUICK || ev->action == ACT_CONTEXT) && ui_scr[SCR_SPECTRUM]->key(ev))
+		return;
+#endif
 	// In text entry * and # are the typewriter's keys, not quick settings or a banner's
 	// A banner up: CONTEXT opens what it is about (not while a VFO frequency is typed: # tunes it, as OK)
 	if (!typing && !ui_st.entry && ui_st.banner.kind != UI_BANNER_NONE && ev->action == ACT_CONTEXT && ev->gesture == GESTURE_PRESS &&

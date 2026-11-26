@@ -16,8 +16,12 @@
 #define SPECTRUM_PEAK_BUCKET_MS 1000u
 
 enum { SPECTRUM_STOP, SPECTRUM_START, SPECTRUM_TUNER, SPECTRUM_CENTER, SPECTRUM_STEP, SPECTRUM_SQUELCH,
-	SPECTRUM_BANDWIDTH, SPECTRUM_DWELL, SPECTRUM_AUTO_PEAK, SPECTRUM_SCALE, SPECTRUM_FILTER, SPECTRUM_CENTER_TUNER };
+	SPECTRUM_BANDWIDTH, SPECTRUM_DWELL, SPECTRUM_AUTO_PEAK, SPECTRUM_SCALE, SPECTRUM_FILTER, SPECTRUM_CENTER_TUNER,
+	SPECTRUM_HASH_KEY, SPECTRUM_STAR_KEY };
 enum { SPECTRUM_AUTO_OFF, SPECTRUM_AUTO_SWEEP, SPECTRUM_AUTO_IMMEDIATE, SPECTRUM_AUTO_COUNT };
+// Stored key action IDs; keep their order when adding UI options.
+enum { SPECTRUM_KEY_BANDWIDTH, SPECTRUM_KEY_AUTO_PEAK, SPECTRUM_KEY_FILTER, SPECTRUM_KEY_CENTER_TUNER,
+	SPECTRUM_KEY_COUNT };
 
 // One narrowband RSSI reading per bin, not an FFT. The radio task owns this; other tasks read its view copy.
 typedef struct {
@@ -31,9 +35,11 @@ typedef struct {
 	uint32_t center_hz, step_hz, lo_hz, hi_hz, due_ms, release_ms, sweeps;
 	uint32_t peak_ms;
 	uint8_t level[SPECTRUM_BINS], peak[SPECTRUM_PEAK_BUCKETS][SPECTRUM_BINS]; // dBm + 160; 255 means unread
+	uint8_t hash_key, star_key;	// use the former tail padding; SPECTRUM_KEY_*
 } spectrum_t;
 
 _Static_assert(SPECTRUM_BINS <= UINT8_MAX && SPECTRUM_BINS % 2 == 1, "spectrum bin indices fit and have a center");
+_Static_assert(SPECTRUM_KEY_COUNT == 4, "settings key actions occupy two bits each");
 
 static inline int16_t spectrum_level_dbm(uint8_t level)
 {

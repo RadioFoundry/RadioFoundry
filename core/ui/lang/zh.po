@@ -5695,6 +5695,26 @@ msgid "After sweep"
 msgstr "扫描后"
 
 #: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_BANDWIDTH"
+msgid "Bandwidth"
+msgstr "带宽"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_AUTO_PEAK"
+msgid "Auto peak"
+msgstr "自动峰值"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_FILTER"
+msgid "Filter"
+msgstr "滤波器"
+
+#: core/ui/ui_spectrum.c
+msgctxt "SPECTRUM_ROW_CENTER_TUNER"
+msgid "Center tuner"
+msgstr "中心锁定"
+
+#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_VALUE_NARROW"
 msgid "Narrow"
 msgstr "窄"
@@ -5750,29 +5770,19 @@ msgid "Sweeping"
 msgstr "扫描中"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_BANDWIDTH"
-msgid "Bandwidth"
-msgstr "带宽"
-
-#: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_DWELL"
 msgid "Dwell time"
 msgstr "停留时间"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_AUTO_PEAK"
-msgid "Auto peak"
-msgstr "自动峰值"
+msgctxt "SPECTRUM_ROW_HASH_KEY"
+msgid "# key"
+msgstr "#键"
 
 #: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_FILTER"
-msgid "Filter"
-msgstr "滤波器"
-
-#: core/ui/ui_spectrum.c
-msgctxt "SPECTRUM_ROW_CENTER_TUNER"
-msgid "Center tuner"
-msgstr "中心锁定"
+msgctxt "SPECTRUM_ROW_STAR_KEY"
+msgid "* key"
+msgstr "*键"
 
 #: core/ui/ui_spectrum.c
 msgctxt "SPECTRUM_ROW_CENTER"
