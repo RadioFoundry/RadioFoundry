@@ -77,17 +77,8 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 // with these writes on top. Which one the radio has is found at start-up (rf_detect)
 #define RF_PROBE_HZ		145000000u	// in band on both sections
 #define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
-// 0x50 TX audio (hardware-dm32.md 8.10): b15 mute, b9:0 the limit. Both sections: unmuted after each switch to TX,
-// muted when the transmission ends
-#define FD_REG_TX_AUX		0x50u
-#define FD_TX_AUX_ON		0x3B18u
-#define FD_TX_AUX_MUTED		0xBB18u
 #define FD_REG_CSS_A		0x2Eu		// set-up B: two words by the receive sub-audio type
 #define FD_REG_CSS_B		0x2Fu
-// FM transmit, 0x40 from the band's calibration byte (BF_ROW_REG40): set-up A this | the byte, set-up B this + the byte
-#define FD_REG40_A		0x3400u
-#define FD_REG40_B		0x3480u
-#define FD_REG_DEC_IN		0x24u		// the FD6818 tone decoders' input selects: 0 on FM transmit (both sections)
 // Set-up B on this board, on top of the shared tables: 0x7D (b12:8 receive digital gain 9, the low byte the analog
 // mic step; the step set-up A's 0xE35E uses), FD6818 GPIO 5 as function 1 (0x33 b9 and b1 clear, 0x34 b7:4), and
 // 0x28 b8 set while the squelch is open
@@ -243,7 +234,7 @@ static void burst_switch(void)
 {
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
-	fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_ON);
+	fd6818_tx_audio(&fd, true);
 }
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
@@ -571,12 +562,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
-		fd6818_write(&fd, FD_REG_DEC_IN, 0u);
 		if (bf_cal_valid()) {
 			// The band's calibration byte; without calibration the variant's word stays. The next rx() puts the
 			// band word back (fd6818_set_freq)
-			uint8_t b = bf_cal_tx_byte(hz, BF_ROW_REG40);
-			fd6818_write(&fd, FD6818_REG_BAND_B, rf_b ? (uint16_t)(FD_REG40_B + b) : (uint16_t)(FD_REG40_A | b));
+			fd6818_fm_tx_cal(&fd, bf_cal_tx_byte(hz, BF_ROW_REG40));
 		}
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
@@ -585,7 +574,7 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
 		fd6818_set_state(&fd, FD6818_STATE_TX);
-		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_ON);
+		fd6818_tx_audio(&fd, true);
 		if (rf_b) {
 			hal_delay_ms(1);
 		}
@@ -599,7 +588,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	pa_off();
-	fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_MUTED);
+	fd6818_tx_audio(&fd, false);
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net

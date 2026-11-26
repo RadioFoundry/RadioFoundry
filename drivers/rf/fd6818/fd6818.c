@@ -86,6 +86,7 @@ const fd6818_variant_t fd6818_variant_default = {
 	.bw_fm_25k = FD6818_BW_FM_25K, .bw_fm_12k5 = FD6818_BW_FM_12K5, .bw_dmr = FD6818_BW_DMR,
 	.band_words = fd6818_band_words,
 	.park_10hz = 14400000u,
+	.r40_tx = 0x3400u,
 };
 
 #define RSSI_CAL_BAND_GAP_MHZ	100u
@@ -279,6 +280,20 @@ void fd6818_set_state(fd6818_t *dev, uint16_t state)
 void fd6818_fm_tx_prepare(fd6818_t *dev)
 {
 	write_table(dev, dev->variant->fm_tx_prepare, dev->variant->fm_tx_prepare_n);
+	fd6818_write(dev, FD6818_REG_DEC_IN, 0x0000);
+}
+
+void fd6818_fm_tx_cal(fd6818_t *dev, uint8_t cal)
+{
+	fd6818_write(dev, FD6818_REG_BAND_B, (uint16_t)(dev->variant->r40_tx + cal));
+}
+
+#define TX_AUDIO_ON	0x3B18u
+#define TX_AUDIO_MUTED	0xBB18u
+
+void fd6818_tx_audio(fd6818_t *dev, bool on)
+{
+	fd6818_write(dev, FD6818_REG_TX_AUDIO, on ? TX_AUDIO_ON : TX_AUDIO_MUTED);
 }
 
 void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10)
