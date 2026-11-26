@@ -7,7 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { bulkColumns, channelForm, columns, parseAreaKey } from "../static/js/editor/views.js";
-import { empty } from "../static/js/codeplug/model.js";
+import { empty, newChannel, newContact } from "../static/js/codeplug/model.js";
+import { History } from "../static/js/editor/undo.js";
+import { newContactList, newNetwork, makeDefaultNetwork } from "../static/js/codeplug/contactlists.js";
 import { KEYS } from "../static/js/codeplug/kv.js";
 import { Grid } from "../static/js/editor/grid.js";
 import { comboText } from "../static/js/editor/combo.js";
@@ -262,4 +264,86 @@ test("Radio tab ARS server and IP gateway: empty is an absent key, 0 is off", ()
 	assert.deepEqual(typed(" 3100500 "), { value: 3100500 });
 	assert.deepEqual(typed("16776415"), { value: 16776415 });
 	for (const s of ["16776416", "-1", "1.5", "abc"]) assert.deepEqual(typed(s), { error: "editor.err.range 0-16776415" }, s);
+});
+
+test("Contacts table: a List column of None and each list, which sets the list and settles a void", () => {
+	const m = empty();
+	const club = newContactList(m, "Club");
+	const col = columns("contacts", m, t).find((c) => c.key === "list");
+	assert.ok(col, "the column");
+	assert.equal(col.readOnly, false);
+	assert.deepEqual(col.options({ list: null }), [[null, "editor.none"], [club.number, "Club"]]);
+	assert.equal(col.format(club.number), "Club");
+	assert.equal(col.format(null), "editor.none");
+	assert.deepEqual(col.options({ list: 9 }).at(-1)[0], 9, "a number with no list stays listed");
+
+	const c = { list: null };
+	m.contactListsVoid = true;
+	assert.equal(col.set(c, club.number), undefined);
+	assert.equal(c.list, club.number);
+	assert.equal(m.contactListsVoid, false, "the contacts assigned again, the lists apply");
+	col.set(c, null);
+	assert.equal(c.list, null);
+	assert.ok(bulkColumns("contacts", m, t).some((x) => x.key === "list"), "Bulk Edit can set it");
+});
+
+test("Contacts table: no List column where the radio doesn't run contact lists and the codeplug has none", () => {
+	const m = empty();
+	assert.ok(!columns("contacts", m, t, { features: "FM,DMR" }).some((c) => c.key === "list"));
+	assert.ok(columns("contacts", m, t, { features: "FM,DMR,CONTACT_LISTS" }).some((c) => c.key === "list"));
+	assert.ok(columns("contacts", m, t, { features: null }).some((c) => c.key === "list"), "no radio: offered");
+	newContactList(m, "Club");
+	assert.ok(columns("contacts", m, t, { features: "FM,DMR" }).some((c) => c.key === "list"), "a codeplug with lists keeps them editable");
+});
+
+test("Channels table: a Network column of None and the networks, blank on a channel that doesn't take one", () => {
+	const m = empty();
+	const home = newNetwork(m, "Home");
+	m.systems.push(home);
+	const col = columns("channels", m, t).find((c) => c.key === "network");
+	assert.ok(col, "the column");
+	const dmr = newChannel({ name: "Net", mode: "dmr" }), fm = newChannel({ name: "Simplex" });
+	assert.equal(col.readOnly(dmr), false);
+	assert.equal(col.readOnly(fm), true);
+	assert.deepEqual(col.options(dmr), [[null, "editor.none"], [home, "Home"]]);
+	assert.equal(col.format(home, dmr), "Home");
+	assert.equal(col.format(home, fm), "", "blank, its value kept");
+	// a channel of a kind with a system of its own uses that system's lists
+	const tagged = newChannel({ name: "Tag", mode: "dmr" });
+	tagged.system = { name: "County" };
+	assert.equal(col.readOnly(tagged), true);
+	assert.equal(col.set(dmr, home), undefined);
+	assert.equal(dmr.network, home);
+	assert.ok(!columns("channels", empty(), t, { features: "FM,DMR" }).some((c) => c.key === "network"));
+});
+
+test("Channel form: a Network select for a channel that takes one", () => {
+	const m = empty();
+	const f = channelForm(m, t).find((x) => x.key === "network");
+	assert.ok(f, "the field");
+	assert.equal(f.show(newChannel({ mode: "dmr" })), true);
+	assert.equal(f.show(newChannel({ mode: "fm" })), false);
+});
+
+test("undo takes back the Default network and a list change, void flag included", () => {
+	const m = empty();
+	m.contacts.push(newContact({ name: "A", id: 1 }));
+	m.channels.push(newChannel({ name: "Net", mode: "dmr" }));
+	const h = new History();
+	h.record(m, "Create Default network");
+	const r = makeDefaultNetwork(m);
+	assert.ok(r && m.contactLists.length === 1 && m.systems.length === 1 && m.contacts[0].list === r.list.number);
+	h.undo(m);
+	assert.equal(m.contactLists.length, 0, "the list is gone");
+	assert.equal(m.contacts[0].list, null, "the contact is in none");
+	assert.equal(m.channels[0].network, null);
+
+	const club = newContactList(m, "Club");
+	m.contactListsVoid = true;
+	h.record(m, "Rename");
+	club.name = "Net";
+	m.contactListsVoid = false;
+	h.undo(m);
+	assert.equal(club.name, "Club");
+	assert.equal(m.contactListsVoid, true);
 });

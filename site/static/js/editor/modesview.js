@@ -5,11 +5,13 @@
 // channels, plan rows) in a table per class, and its secret behind a button. What a type holds comes from its mode
 // module (codeplug/mode_*.js); no mode is named here.
 
-import { formDialog, fallbackOptions } from "./views.js";
+import { formDialog, fallbackOptions, systemListOptions } from "./views.js";
 import { specField, parseSpec, formatSpec, label, liveSystemFields } from "./modefields.js";
 import { SYSTEM_TYPES, typeRow, typeName, offeredTypes, offeredKinds } from "../codeplug/modes.js";
 import { newSystem, newHamSystem, syncModes, systemTx, SHARE, MODE_LIMITS } from "../codeplug/channelmodes.js";
 import { remove, assignNumbers } from "../codeplug/model.js";
+import { CONV_TYPE } from "../codeplug/mode_conv.js";
+import { newNetwork, listsOffered } from "../codeplug/contactlists.js";
 
 const SHARE_LEVELS = [SHARE.off, SHARE.identity, SHARE.whole];
 // A system's transmit choice from its flag and fields: 0 never, 1 yes, 2 yes without registering (a module with noRegField)
@@ -28,14 +30,16 @@ export function systemsTab(api, features) {
 	// the type's recommended ham setup, when it has one (docs/spec/ham-trunking.md)
 	const picked = () => Number(pick.value || types[0]?.id);
 	const hamOf = () => typeRow(picked())?.module.ham ?? null;
-	const ham = types.length ? button(t("editor.modes.add_ham"), () => hamDialog(api, picked()), { disabled: full || !hamOf() }) : null;
+	const ham = types.length ? button(t("editor.modes.add_ham"), () => hamDialog(api, picked(), features), { disabled: full || !hamOf() }) : null;
 	pick.addEventListener?.("change", () => (ham.disabled = full || !hamOf()));
 	const parts = [
 		h("p", { class: "small muted" }, t("editor.modes.intro")),
 		types.length ? h("div", { class: "ed-bar" }, h("div", { class: "ed-actions" }, pick,
 			button(t("editor.modes.add"), () => {
-				const s = newSystem(m, Number(pick.value), newName(m, t));
-				systemDialog(api, s, true);
+				const type = Number(pick.value);
+				// a network takes a number above the Tier III systems' (contactlists.js)
+				const s = type === CONV_TYPE ? newNetwork(m, newName(m, t)) : newSystem(m, type, newName(m, t));
+				systemDialog(api, s, true, features);
 			}, { disabled: full }), ham)) : null,
 	];
 	if (!systems.length) parts.push(h("p", { class: "grid-empty muted" }, t("editor.empty.systems")));
@@ -46,7 +50,7 @@ export function systemsTab(api, features) {
 			const row = typeRow(s.type), mod = row?.module;
 			const used = m.channels.filter((c) => c.system === s).length;
 			const actions = mod ? [
-				button(t("editor.modes.edit"), () => systemDialog(api, s, false), { quiet: true }),
+				button(t("editor.modes.edit"), () => systemDialog(api, s, false, features), { quiet: true }),
 			] : [];
 			return h("tr", {},
 				h("td", {}, String(s.number)), h("td", {}, s.name), h("td", {}, row ? t(mod.label ?? `editor.mode_name.${row.token}`) : typeName(s.type)),
@@ -77,14 +81,16 @@ function newName(m, t) {
 
 function deleteSystem(api, s) {
 	const { t, model: m } = api;
-	const used = m.channels.filter((c) => c.system === s).length;
-	api.confirmDialog(t("editor.modes.delete_confirm", { name: s.name, n: used }), t("editor.delete"),
+	const used = m.channels.filter((c) => c.system === s || c.network === s).length;
+	// a network's channels only lose the network; a trunked system's become plain channels
+	const text = typeRow(s.type)?.module.conventional ? "editor.lists.network_delete_confirm" : "editor.modes.delete_confirm";
+	api.confirmDialog(t(text, { name: s.name, n: used }), t("editor.delete"),
 		() => api.change(t("editor.undo.delete"), () => remove(m, "systems", [s])));
 }
 
 // The recommended ham system of a type: its name, its control channel and what else the setup asks, then the system
 // form, filled in, to check and save
-function hamDialog(api, type) {
+function hamDialog(api, type, features) {
 	const { model: m, t } = api;
 	const row = typeRow(type), ham = row.module.ham;
 	const freq = (key, zero) => ({ key, type: "freq", zero });
@@ -103,7 +109,7 @@ function hamDialog(api, type) {
 	const start = { name: ham.name, rxHz: 0, txHz: 0, ...Object.fromEntries(ham.asks.map((x) => [x.key, x.min ?? 0])) };
 	formDialog(t("editor.modes.ham_title", { type: t(row.module.label ?? `editor.mode_name.${row.token}`) }), fields, start, t,
 		// the system form opens once this one has closed
-		(work) => setTimeout(() => systemDialog(api, newHamSystem(m, type, work), true)));
+		(work) => setTimeout(() => systemDialog(api, newHamSystem(m, type, work), true, features)));
 }
 // The recommended setup's answers sit on the form's record itself
 const HOLD = { get: (r) => r, put: (r, k, v) => (r[k] = v) };
@@ -125,7 +131,7 @@ export function systemOwnIdField(mod, t, restricted = () => false) {
 	};
 }
 
-function systemDialog(api, s, isNew) {
+function systemDialog(api, s, isNew, features) {
 	const { model: m, t } = api;
 	const row = typeRow(s.type), mod = row.module;
 	const holder = { get: (r) => r.fields, put: (r, key, v) => (r.fields = { ...r.fields, [key]: v }) };
@@ -143,6 +149,21 @@ function systemDialog(api, s, isNew) {
 				if (v.length > MODE_LIMITS.name) return t("editor.err.too_long", { max: MODE_LIMITS.name });
 				r.name = v;
 			} },
+			// a network has no transmit choice to hang its own ID on (contact-lists.md); the ID is its own
+			...(mod.conventional ? [{ ...systemOwnIdField(mod, t), disabled: undefined }] : []),
+		],
+		// the lists that name the calls received on a channel of this system (contact-lists.md): each system picks up to
+		// two, tried in order. One list can't be both: the secondary doesn't offer the primary's list, so choosing the
+		// secondary's list as the primary clears the secondary (the form's selects are set in order)
+		lists: [
+			{ key: "lists.primary", label: t("editor.lists.primary"), type: "select",
+				options: (r) => systemListOptions(m, t, r.lists?.[0] ?? null),
+				get: (r) => r.lists?.[0] ?? null, set: (r, v) => (r.lists = [v, r.lists?.[1] ?? null]),
+				help: t("editor.lists.primary_help") },
+			{ key: "lists.secondary", label: t("editor.lists.secondary"), type: "select", dynamicOptions: true,
+				options: (r) => systemListOptions(m, t, r.lists?.[1] ?? null, r.lists?.[0] ?? null),
+				get: (r) => r.lists?.[1] ?? null, set: (r, v) => (r.lists = [r.lists?.[0] ?? null, v]),
+				help: t("editor.lists.secondary_help") },
 		],
 		radio: [
 			// listen only is the user's per-system choice (7.1): never forced by sharing. The one exception is a network
@@ -172,7 +193,10 @@ function systemDialog(api, s, isNew) {
 			{ key: "sharing", label: t("editor.modes.share_what"), type: "select", options: () => SHARE_LEVELS.map((n) => [n, t(shareLabel(mod, n))]), help: t(mod.sharingHelp ?? (mod.conventional ? "editor.nxdn.sharing_help" : "editor.modes.sharing_help")) },
 		],
 	};
-	const sections = mod.sections ?? [{ id: "identity" }, { id: "radio" }, { id: "fallback" }, { id: "sharing" }];
+	// the lists come before sharing; a network is only a name, its own ID and its lists
+	const lists = mod.conventional || listsOffered(m, features);
+	const base = mod.conventional ? [{ id: "identity" }] : mod.sections ?? [{ id: "identity" }, { id: "radio" }, { id: "fallback" }, { id: "sharing" }];
+	const sections = !lists ? base : [...base.flatMap((x) => (x.id === "sharing" ? [{ id: "lists" }, x] : [x])), ...(base.some((x) => x.id === "sharing") ? [] : [{ id: "lists" }])];
 	const fields = sections.flatMap((sec) => {
 		const items = [...(own[sec.id] ?? []), ...specs.filter((x) => (x.section ?? "identity") === sec.id).map((x) => specField(x, t, holder, "sys"))].filter(Boolean);
 		if (!items.length) return [];

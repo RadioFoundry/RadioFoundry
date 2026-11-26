@@ -23,6 +23,8 @@ import { Grid } from "./grid.js";
 import { History } from "./undo.js";
 import { bulkColumns, columns, channelForm, formDialog, membersDialog, refLabel, parseAreaKey } from "./views.js";
 import { systemsTab, systemsShown, modeSettingsPart } from "./modesview.js";
+import { contactListsTab } from "./listsview.js";
+import { listsOffered, needsContactListMigration, makeDefaultNetwork } from "../codeplug/contactlists.js";
 import { syncModes, countSecrets, withoutSecrets } from "../codeplug/channelmodes.js";
 import { openFile, saveBytes, tftpBytes, datedName, FileError, imageFrom, saveDraft, loadDraft, clearDraft } from "./files.js";
 import { extensions } from "./extensions.js";
@@ -31,7 +33,7 @@ import * as diag from "../diag.js";
 import { initReporting, reportedLine } from "../report.js";
 import { updateFor } from "../flasher/version.js";
 
-const TABS = ["radio", "channels", "zones", "contacts", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
+const TABS = ["radio", "channels", "zones", "contacts", "contactLists", "rxLists", "dtmfContacts", "aprs", "systems", "iddb", "problems"];
 const TABLE_MAX = { channels: LIMITS.channels, zones: LIMITS.zones, contacts: LIMITS.contacts + LIMITS.p25Contacts, rxLists: LIMITS.rxLists, dtmfContacts: LIMITS.dtmfContacts, aprs: LIMITS.aprs };
 
 const S = {
@@ -50,6 +52,8 @@ const S = {
 	filter: {},
 	colFilters: {},		// each table's column filters (grid.js), kept while the page is open
 	offerConvert: false,	// a codeplug was just opened: offer to convert its P25 channels (p25convert.js)
+	offerLists: false,	// ... and the Default network for a codeplug from before contact lists (contactlists.js)
+	noteVoid: false,	// ... and say its contact lists were cleared by a change outside the editor
 };
 
 const root = document.getElementById("editor");
@@ -71,6 +75,8 @@ function load(model, name, { fromRadio = false } = {}) {
 	S.iddbChanged = false;
 	S.iddbSkipped = null;
 	S.offerConvert = true;
+	S.offerLists = true;
+	S.noteVoid = true;
 	if (!fromRadio && S.conn) S.conn.dbKnown = false;
 	refresh();
 	draftSoon();
@@ -140,11 +146,12 @@ function refresh() {
 	const counts = {
 		channels: S.model.channels.length, zones: S.model.zones.length,
 		contacts: nP25 || nDmr + nP25 !== S.model.contacts.length ? t("editor.contacts_count", { dmr: nDmr, p25: nP25 }) : String(nDmr),
+		contactLists: S.model.contactLists?.length || 0,
 		rxLists: S.model.rxLists.length, dtmfContacts: S.model.dtmfContacts.length, aprs: S.model.aprs.length,
 		systems: S.model.systems?.length || 0, iddb: S.model.iddb?.count || 0, problems: p.length,
 	};
 	// the Systems tab only where a mode that has systems is offered, or the codeplug has systems
-	const shown = (k) => (k !== "systems" || systemsShown(S.model, features()));
+	const shown = (k) => (k !== "systems" || systemsShown(S.model, features())) && (k !== "contactLists" || listsOffered(S.model, features()));
 	tabs.replaceChildren(...TABS.filter(shown).map((k) => {
 		const b = h("button", { type: "button", role: "tab", "aria-selected": String(S.tab === k), class: k === "problems" && errors ? "has-errors" : "",
 			onclick: () => show(k) }, t(`editor.tab.${k}`), k in counts && k !== "radio" ? h("span", { class: "ed-count" }, String(counts[k])) : null);
@@ -165,16 +172,48 @@ function show(tab) {
 
 // The offer to convert P25 channels that name DMR contacts (p25convert.js): shown after a codeplug is opened, until it is
 // taken or put off. Nothing changes until the user takes it
+// The offers below it: the Default network for a codeplug from before contact lists, and the notice that its lists were
+// cleared. The same rule: nothing changes until the user takes the offer
 function renderConvert() {
+	const bars = [];
 	const n = S.offerConvert ? p25ChannelsToConvert(S.model).length : 0;
-	if (!n) return convertBar.replaceChildren();
-	convertBar.replaceChildren(h("div", { class: "notice info action" },
-		h("p", {}, t("editor.convert.text", { n })),
-		h("div", { class: "ed-actions" }, button(t("editor.convert.go"), convertP25, { primary: true }),
-			button(t("editor.convert.later"), () => {
-				S.offerConvert = false;
-				refresh();
-			}, { quiet: true }))));
+	if (n) {
+		bars.push(h("div", { class: "notice info action" },
+			h("p", {}, t("editor.convert.text", { n })),
+			h("div", { class: "ed-actions" }, button(t("editor.convert.go"), convertP25, { primary: true }),
+				button(t("editor.convert.later"), () => {
+					S.offerConvert = false;
+					refresh();
+				}, { quiet: true }))));
+	}
+	if (S.offerLists && listsOffered(S.model, features()) && needsContactListMigration(S.model)) {
+		bars.push(h("div", { class: "notice info action" },
+			h("p", {}, t("editor.lists.offer_text")),
+			h("div", { class: "ed-actions" }, button(t("editor.lists.offer_go"), createDefaultNetwork, { primary: true }),
+				button(t("editor.convert.later"), () => {
+					S.offerLists = false;
+					refresh();
+				}, { quiet: true }))));
+	}
+	if (S.noteVoid && S.model.contactListsVoid) {
+		const close = button(t("editor.dismiss"), () => {
+			S.noteVoid = false;
+			refresh();
+		}, { quiet: true });
+		bars.push(h("div", { class: "notice warn action" }, h("p", {}, t("editor.lists.void_text")), h("div", { class: "ed-actions" }, close)));
+	}
+	convertBar.replaceChildren(...bars);
+}
+
+function createDefaultNetwork() {
+	S.offerLists = false;
+	let r = null;
+	change(t("editor.lists.offer_undo"), () => {
+		r = makeDefaultNetwork(S.model);
+		return r ? undefined : false;
+	});
+	if (!r) return say(t("editor.lists.offer_full"), "bad");
+	say(t("editor.lists.offer_done", { contacts: r.contacts, channels: r.channels }), "ok");
 }
 
 function convertP25() {
@@ -222,6 +261,7 @@ function renderView(p) {
 	if (tab === "radio") return view.replaceChildren(radioTab());
 	if (tab === "iddb") return view.replaceChildren(extensions.iddbTab(api()));
 	if (tab === "systems") return view.replaceChildren(systemsTab(api(), features()));
+	if (tab === "contactLists") return view.replaceChildren(contactListsTab(api()));
 	if (tab === "problems") return view.replaceChildren(problemsTab(p));
 	// a table: keep the grid (focus, sort, selection) when only its rows changed
 	if (S.grid && S.grid.table === tab) {
@@ -615,7 +655,7 @@ function sigPlay(rec, btn, t) {
 function problemsTab(p) {
 	if (!p.length) return notice(t("editor.problems.none"), "ok");
 	const rows = p.map((x) => {
-		const what = x.item ? (x.item.number ? `${t(`editor.tab.${x.table}`)} ${x.item.number} · ${x.item.name}` : `${t(`editor.tab.${x.table}`)} · ${x.item.name}`) : t(`editor.tab.${x.table === "general" ? "radio" : x.table}`);
+		const what = x.item ? (x.item.number && x.table !== "contactLists" ? `${t(`editor.tab.${x.table}`)} ${x.item.number} · ${x.item.name}` : `${t(`editor.tab.${x.table}`)} · ${x.item.name}`) : t(`editor.tab.${x.table === "general" ? "radio" : x.table}`);
 		const go = x.item ? button(t("editor.problems.show"), () => {
 			show(x.table);
 			S.grid?.g.focusRow(x.item);

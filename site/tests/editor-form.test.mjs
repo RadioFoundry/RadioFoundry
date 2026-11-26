@@ -177,7 +177,14 @@ function openSystem(m, s) {
 	};
 	const note = () => all(dlg, (e) => String(e.className).startsWith("form-note") && !e.hidden).map((e) => e.textContent);
 	const save = () => dlg.find((e) => e.tagName === "BUTTON" && e.textContent === t("editor.save_record")).click();
-	return { dlg, input, type, row, heads, typeCell, note, save, choices: (key) => input(key).children.map((o) => o.textContent) };
+	const choices = (key) => input(key).children.map((o) => o.textContent);
+	const pick = (key, label) => {
+		const i = choices(key).indexOf(label);
+		assert.ok(i >= 0, `${key} offers ${label} (offers ${choices(key).join(", ")})`);
+		input(key).selectedIndex = i;
+		body.dispatch("change");
+	};
+	return { dlg, input, type, row, heads, typeCell, note, save, choices, pick };
 }
 
 function trunked() {
@@ -251,4 +258,178 @@ test("system form: a blocked system saves as listen only, its transmit values ke
 	assert.equal(back.ownId, 1234567);
 	assert.equal(back.entries.find((e) => e.cls === 0).txHz, 806012500, "the stored TX frequency, not the text that didn't parse");
 	assert.equal(back.entries.find((e) => e.cls === 2).txOffsetHz, -45000000);
+});
+
+// ---- Contact lists (docs/spec/contact-lists.md): the system form's selects and the Contact Lists tab
+
+const { contactListsTab } = await import("../static/js/editor/listsview.js");
+const { newContactList, newNetwork, LIST_IDDB } = await import("../static/js/codeplug/contactlists.js");
+
+test("system form: the primary and secondary list offer None, the lists and the ID database, and never one list twice", () => {
+	const { m, s } = trunked();
+	const club = newContactList(m, "Club"), county = newContactList(m, "County");
+	const form = openSystem(m, s);
+	const all4 = ["editor.none", "Club", "County", "editor.lists.iddb"];
+	assert.deepEqual(form.choices("lists.primary"), all4);
+	assert.deepEqual(form.choices("lists.secondary"), all4);
+
+	form.pick("lists.primary", "Club");
+	assert.deepEqual(form.choices("lists.secondary"), ["editor.none", "County", "editor.lists.iddb"], "the primary is not offered again");
+	form.pick("lists.secondary", "County");
+	assert.deepEqual(form.choices("lists.primary"), all4);
+
+	// the secondary's list made the primary: the secondary can't keep it, and is cleared
+	form.pick("lists.primary", "County");
+	assert.equal(form.input("lists.secondary").selectedIndex, 0, "None");
+	assert.deepEqual(form.choices("lists.secondary"), ["editor.none", "Club", "editor.lists.iddb"]);
+
+	// the ID database can be one of the two, not both
+	form.pick("lists.secondary", "editor.lists.iddb");
+	form.save();
+	assert.equal(form.dlg.open, false, "saved");
+	assert.deepEqual(s.lists, [county.number, LIST_IDDB]);
+	assert.deepEqual(decode(encode(m)).systems[0].lists, [county.number, LIST_IDDB], "and the radio's bytes hold them");
+	assert.notEqual(county.number, club.number);
+});
+
+test("system form: choosing the ID database as the primary leaves it out of the secondary's choices", () => {
+	const { m, s } = trunked();
+	newContactList(m, "Club");
+	const form = openSystem(m, s);
+	form.pick("lists.primary", "editor.lists.iddb");
+	assert.deepEqual(form.choices("lists.secondary"), ["editor.none", "Club"]);
+});
+
+test("system form: a stored secondary list is shown, and made the primary it clears the secondary", () => {
+	const { m, s } = trunked();
+	const club = newContactList(m, "Club");
+	s.lists = [null, club.number];
+	const form = openSystem(m, s);
+	assert.equal(form.input("lists.secondary").selectedIndex, 1, "the stored secondary is shown");
+	form.pick("lists.primary", "Club");
+	assert.equal(form.input("lists.secondary").selectedIndex, 0);
+	form.save();
+	assert.deepEqual(s.lists, [club.number, null]);
+});
+
+test("system form: a network is its name, its own ID and its two lists, and nothing else", () => {
+	const m = empty();
+	const club = newContactList(m, "Club");
+	const net = newNetwork(m, "Home");
+	m.systems.push(net);
+	numberAll(m);
+	assert.ok(net.number >= 9, "a number above the Tier III systems'");
+	const form = openSystem(m, net);
+	for (const key of ["name", "ownId", "lists.primary", "lists.secondary"]) assert.ok(form.input(key), `${key} is in the form`);
+	for (const key of ["transmit", "sharing", "fallback"]) assert.equal(form.input(key), null, `${key} is not`);
+	assert.equal(form.input("ownId").disabled, false, "the ID isn't tied to a transmit choice a network doesn't have");
+	form.type("ownId", "4321");
+	form.pick("lists.primary", "Club");
+	form.save();
+	assert.equal(form.dlg.open, false);
+	assert.equal(net.ownId, 4321);
+	assert.deepEqual(net.lists, [club.number, null]);
+	const back = decode(encode(m)).systems.find((x) => x.name === "Home");
+	assert.equal(back.type, 6);
+	assert.deepEqual(back.lists, [club.number, null]);
+});
+
+test("system form: where lists are not offered the form has no list selects", () => {
+	const { m, s } = trunked();
+	let edit = null;
+	const api = { model: m, t, h, change: (name, fn) => fn(), confirmDialog() {},
+		button: (text, fn, opts) => {
+			if (text === t("editor.modes.edit")) edit = fn;
+			return button(text, fn, opts);
+		} };
+	systemsTab(api, "FM,DMR,P25_TRUNK");
+	edit();
+	const dlg = document.body.children.at(-1);
+	assert.equal(dlg.find((e) => e.id === "f-lists.primary"), null);
+	dlg.find((e) => e.tagName === "BUTTON" && e.textContent === t("editor.cancel")).click();
+	assert.ok(s, "the system is still there");
+});
+
+// The tab: its rows, the buttons by their text
+function openLists(m) {
+	const log = { said: [], confirmed: [] };
+	const api = { model: m, t, h, button, change: (name, fn) => fn() !== false,
+		say: (text, kind) => log.said.push([text, kind]),
+		confirmDialog: (text, ok, fn) => log.confirmed.push({ text, fn }) };
+	const el = contactListsTab(api);
+	const buttons = (label) => all(el, (e) => e.tagName === "BUTTON" && e.textContent === label);
+	const names = () => all(el, (e) => e.tagName === "INPUT").map((e) => e.value);
+	return { el, log, buttons, names, text: el.textContent };
+}
+
+test("Contact Lists tab: a row per list with its contact count, then the fixed ID database row", () => {
+	const m = empty();
+	const club = newContactList(m, "Club");
+	newContactList(m, "County");
+	m.contacts.push({ name: "A", list: club.number }, { name: "B", list: club.number }, { name: "C", list: null });
+	const tab = openLists(m);
+	assert.deepEqual(tab.names(), ["Club", "County"], "each list's name is an input, the ID database's is not");
+	const rows = all(tab.el, (e) => e.tagName === "TR" && !e.find((x) => x.tagName === "TH"));
+	assert.equal(rows.length, 2 + 1, "two lists and the ID database");
+	assert.ok(all(tab.el, (e) => e.tagName === "TD").some((e) => e.textContent === "2"), "Club holds two contacts");
+	const last = all(tab.el, (e) => e.tagName === "TR").at(-1);
+	assert.ok(last.textContent.startsWith("editor.lists.iddb"), "the ID database row is last");
+	assert.ok(last.textContent.includes("editor.lists.iddb_note"));
+	assert.equal(all(last, (e) => e.tagName === "INPUT" || e.tagName === "BUTTON").length, 0, "with nothing to edit");
+});
+
+test("Contact Lists tab: Add makes a list with a free name, up to 32", () => {
+	const m = empty();
+	const tab = openLists(m);
+	assert.ok(tab.text.includes("editor.empty.contactLists"));
+	tab.buttons("editor.add")[0].click();
+	assert.equal(m.contactLists.length, 1);
+	assert.equal(m.contactLists[0].name, "editor.lists.new_name 1");
+	for (let i = 1; i < 32; i++) newContactList(m, `L${i}`);
+	assert.equal(m.contactLists.length, 32);
+	const full = openLists(m);
+	assert.notEqual(full.buttons("editor.add")[0].getAttribute("disabled"), null, "no 33rd list");
+	assert.ok(full.text.includes("editor.lists.full"));
+});
+
+test("Contact Lists tab: renaming takes a good name and refuses an empty or too long one", () => {
+	const m = empty();
+	const club = newContactList(m, "Club");
+	const tab = openLists(m);
+	const input = all(tab.el, (e) => e.tagName === "INPUT")[0];
+	assert.equal(input.getAttribute("aria-label"), "editor.lists.name");
+	input.value = "Net 2";
+	input.dispatch("change");
+	assert.equal(club.name, "Net 2");
+	input.value = "A name over sixteen bytes";
+	input.dispatch("change");
+	assert.equal(club.name, "Net 2", "kept");
+	assert.ok(tab.el.textContent.includes("editor.err.too_long"));
+	input.value = "  ";
+	input.dispatch("change");
+	assert.equal(club.name, "Net 2");
+	assert.ok(tab.el.textContent.includes("editor.err.no_name"));
+});
+
+test("Contact Lists tab: a list a system selects can't be deleted, and the message names the system", () => {
+	const { m, s } = trunked();
+	const club = newContactList(m, "Club");
+	const spare = newContactList(m, "Spare");
+	m.contacts.push({ name: "A", list: spare.number });
+	s.lists = [club.number, null];
+	const tab = openLists(m);
+	const [delClub, delSpare] = tab.buttons("editor.delete");
+	delClub.click();
+	assert.equal(tab.log.confirmed.length, 0, "no confirmation for what can't happen");
+	assert.equal(tab.log.said.length, 1);
+	assert.ok(tab.log.said[0][0].includes("County"), "the system is named");
+	assert.equal(tab.log.said[0][1], "warn");
+	assert.equal(m.contactLists.length, 2);
+
+	delSpare.click();
+	assert.equal(tab.log.confirmed.length, 1);
+	assert.ok(tab.log.confirmed[0].text.includes('"n":1'), "it says how many contacts it holds");
+	tab.log.confirmed[0].fn();
+	assert.deepEqual(m.contactLists.map((l) => l.name), ["Club"]);
+	assert.equal(m.contacts[0].list, null, "the contact stays, in no list");
 });

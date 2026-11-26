@@ -12,6 +12,8 @@ import { isP25, contactModeOf, channelContactMode, setContactMode, CALL_TYPES_OF
 import { keyValid } from "../codeplug/kv.js";
 import { kindRow, kindName, offeredKinds, p25Offered } from "../codeplug/modes.js";
 import { setKind } from "../codeplug/channelmodes.js";
+import { CONV_TYPE } from "../codeplug/mode_conv.js";
+import { listsOffered, takesNetwork, resolveVoid, LIST_IDDB } from "../codeplug/contactlists.js";
 import { specField } from "./modefields.js";
 import { combo, comboText } from "./combo.js";
 
@@ -164,6 +166,23 @@ function contactOptions(m, t, r) {
 	return out;
 }
 
+// The contact lists a contact may be in: None, then each list; a number with no list stays listed as missing
+export function contactListOptions(m, t, current) {
+	const out = [[null, t("editor.none")], ...(m.contactLists ?? []).map((l) => [l.number, l.name])];
+	if (current != null && !out.some(([v]) => v === current)) out.push([current, t("editor.missing", { n: current })]);
+	return out;
+}
+
+// What a system selects: None, each list, then the ID database (RadioID, uploaded on the DMR ID Database tab). avoid:
+// the list the other selection holds, which can't be chosen twice
+export function systemListOptions(m, t, current, avoid = null) {
+	const out = contactListOptions(m, t, current === LIST_IDDB ? null : current).filter(([v]) => v === null || v !== avoid);
+	if (avoid !== LIST_IDDB) out.push([LIST_IDDB, t("editor.lists.iddb")]);
+	return out;
+}
+
+const listName = (m, t, v) => contactListOptions(m, t, v).find(([k]) => k === v)?.[1] ?? "";
+
 const CALL_LABELS = { group: "editor.call.group", private: "editor.call.private", unit: "editor.call.unit", all: "editor.call.all" };
 
 // --- Columns per table ---
@@ -222,6 +241,7 @@ export function columns(table, m, t, { features = null } = {}) {
 			only("dmr", col("timeslot", "editor.col.ts", "select", pick, { options: () => [[1, "1"], [2, "2"]] })),
 			only("dmr", col("contact", "editor.col.contact", "select", pick, { options: (r) => contactOptions(m, t, r), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.contact, t) })),
 			only("dmr", col("rxList", "editor.col.rx_list", "select", pick, { options: () => refOptions(m.rxLists, t), format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.rxList, t) })),
+			...(listsOffered(m, features) ? [networkColumn(col, m, t)] : []),
 			{ ...col("rxOnly", "editor.col.rx_only", "bool", bool), get: rxOnlyGet, set: (r, v) => rxOnlySet(r, v) },
 			col("zoneSkip", "editor.col.zone_skip", "bool", bool),
 		];
@@ -260,6 +280,15 @@ export function columns(table, m, t, { features = null } = {}) {
 				options: () => slots, readOnly: isP25, filter: true, filterOptions: () => slots, filterKey: (r) => (isP25(r) ? null : r.timeslot),
 				format: (v) => slots.find(([k]) => k === v)?.[1] ?? String(v ?? ""),
 			}),
+			// a contact is in one list; the names a call gets come from the lists its channel's network selects
+			...(listsOffered(m, features) ? [col("list", "editor.col.list", "select", (r, k, v) => {
+				r[k] = v;
+				// the user assigned the contacts again, so the lists apply once more
+				resolveVoid(m);
+			}, {
+				options: (r) => contactListOptions(m, t, r?.list), format: (v) => listName(m, t, v), sortValue: (r) => listName(m, t, r.list),
+				filter: true, filterOptions: () => contactListOptions(m, t, null), filterKey: (r) => r.list,
+			})] : []),
 		];
 	}
 	case "rxLists":
@@ -301,6 +330,16 @@ export function columns(table, m, t, { features = null } = {}) {
 		];
 	}
 	return [];
+}
+
+// A plain DMR or P25 channel's network, the system whose lists name its calls. A channel of a kind with a system of its
+// own uses that system's lists: its cell is blank and locked, the value kept
+function networkColumn(col, m, t) {
+	const c = col("network", "editor.col.network", "select", pick, {
+		options: (r) => systemOptions(m, t, CONV_TYPE, r?.network, true),
+		format: (v) => refLabel(v, t), sortValue: (r) => refLabel(r.network, t),
+	});
+	return { ...c, readOnly: (r) => !takesNetwork(r), format: (v, r) => (takesNetwork(r) ? refLabel(v, t) : "") };
 }
 
 function setPath(r, k, v, t) {
@@ -418,6 +457,10 @@ export function channelForm(m, t, { features = null } = {}) {
 		dmr(sel("aliasTs1", "editor.col.alias_ts1", () => aliasOptions(t))),
 		dmr(sel("aliasTs2", "editor.col.alias_ts2", () => aliasOptions(t))),
 		dmr(chk("noBeep", "editor.col.no_beep")),
+		...(listsOffered(m, features) ? [
+			{ group: t("editor.col.network"), show: takesNetwork },
+			{ ...sel("network", "editor.col.network", (r) => systemOptions(m, t, CONV_TYPE, r.network, true)), show: takesNetwork, help: t("editor.lists.network_help") },
+		] : []),
 		{ group: t("editor.form.scan") },
 		chk("zoneSkip", "editor.col.zone_skip"),
 		chk("allSkip", "editor.col.all_skip"),

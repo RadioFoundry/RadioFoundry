@@ -16,7 +16,7 @@ import { crc32 } from "../flasher/bytes.js";
 import { decodeChain, putContinuation, putArea, getValue, dedupe, inContinuation, decodeArea, KV_SIZE, KV_HDR } from "./kv.js";
 import { CONTACTS, CONTACT_SIZE, AIR_CONTACTS, AIR_CONTACT_SIZE, LIMITS } from "./records.js";
 import { isDmr, isP25 } from "./contactmode.js";
-import { kindRow } from "./modes.js";
+import { kindRow, hasFeature } from "./modes.js";
 import { CONV_TYPE } from "./mode_conv.js";
 import { newSystem } from "./channelmodes.js";
 
@@ -228,6 +228,11 @@ export function removeLists(m, lists) {
 	for (const c of m.contacts) if (gone.has(c.list)) c.list = null;
 	return true;
 }
+
+// Whether the editor offers contact lists: no radio to ask (features null), a radio running the feature, or a codeplug
+// that already has lists or networks (which stay editable)
+export const listsOffered = (m, features) => features == null || hasFeature(features, "CONTACT_LISTS") ||
+	(m.contactLists ?? []).length > 0 || (m.systems ?? []).some(isNetwork);
 
 // Whether a channel points at a network: a plain DMR channel, or a P25 channel with no system of its own (the modes
 // the radio names calls in). Other channels keep the field but nothing reads it for them
