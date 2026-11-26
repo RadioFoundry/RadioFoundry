@@ -41,8 +41,27 @@ typedef enum { AT1846S_TONE_NONE, AT1846S_TONE_CTCSS, AT1846S_TONE_DCS, AT1846S_
 // The CTCSS register value used to send DCS (134.4 Hz, the DCS bit rate)
 #define AT1846S_DCS_TONE_REG	13440u
 
+// Reg 0x05, the synthesizer's mode (5.6): the normal word, or a special one where a clock harmonic falls on the
+// channel. The chip's register table gives the special words by reference clock (0x8543 for 25.6 or 26 MHz, 0x86D3 for
+// 12.8 or 13 MHz) and its special frequencies as multiples of the clock / 4. A board can name more frequencies with
+// their own words (spurs from its other clocks)
+#define AT1846S_R05_NORMAL	0x8763u
+#define AT1846S_R05_26M		0x8543u		// 25.6 or 26 MHz reference
+#define AT1846S_R05_13M		0x86D3u		// 12.8 or 13 MHz reference
+typedef struct {
+	uint32_t hz;
+	uint16_t r05;
+} at1846s_spur_t;
+typedef struct {
+	uint32_t step_hz;	// the reference clock / 4 (6.5 MHz for 26 MHz); 0: no harmonic rule
+	uint16_t step_r05;	// the special word at the step's multiples
+	const at1846s_spur_t *spurs;	// the board's own frequencies, checked first; exact match
+	uint8_t spurs_n;
+} at1846s_spur_cfg_t;
+
 typedef struct {
 	const at1846s_bus_t *bus;
+	const at1846s_spur_cfg_t *spur;	// NULL: 0x05 stays normal at every frequency
 	uint16_t cache[2][128];
 	uint32_t valid[2][4];	// one bit per cached register
 	int8_t page;		// selected page, -1 unknown
@@ -56,6 +75,9 @@ typedef struct {
 
 // Synthesizer word for a frequency: 1/16 kHz units, rounded (5.6). 0x29 takes bits 29:16, 0x2A bits 15:0
 uint32_t at1846s_freq_word(uint32_t hz);
+// Reg 0x05 word for a channel (cfg NULL: the normal word). Exact frequencies: a channel 2.5 kHz off a harmonic is
+// a normal one
+uint16_t at1846s_r05(const at1846s_spur_cfg_t *cfg, uint32_t hz);
 // Reg 0x30 value for a state at a bandwidth (5.3)
 uint16_t at1846s_state_value(at1846s_bw_t bw, at1846s_state_t state);
 // Reg 0x5B match / unmatch threshold byte for a CTCSS register value (Hz x 100)
@@ -68,6 +90,9 @@ bool at1846s_tone_match(uint16_t flags, at1846s_tone_t type);
 // --- Register access ---
 
 void at1846s_attach(at1846s_t *dev, const at1846s_bus_t *bus);
+// The board's special frequencies for reg 0x05 (NULL: none): after at1846s_attach, which clears them, and before
+// at1846s_init
+void at1846s_set_spurs(at1846s_t *dev, const at1846s_spur_cfg_t *cfg);
 // Cached write: skipped when the cache already holds the value
 bool at1846s_write(at1846s_t *dev, uint8_t page, uint8_t reg, uint16_t val);
 // Always written
@@ -90,8 +115,10 @@ bool at1846s_set_bandwidth(at1846s_t *dev, at1846s_bw_t bw);
 // FM or DMR mode table (5.5); no-op when already applied. Bandwidth and mode tables both reset reg 0x3A, so set the
 // RX tone again after either
 bool at1846s_set_mode(at1846s_t *dev, at1846s_mode_t mode);
-// Tune with the receiver off (5.6 steps 1-5). Leaves the chip idle; set the state after
-bool at1846s_set_freq(at1846s_t *dev, uint32_t hz);
+// Tune with the receiver off (5.6 steps 1-5): idle, 0x05 for the channel (at1846s_r05 of ch_hz), then hz. hz is the
+// synthesizer's frequency, ch_hz the channel's (they differ by the board's offsets). Leaves the chip idle; set the
+// state after
+bool at1846s_set_freq(at1846s_t *dev, uint32_t hz, uint32_t ch_hz);
 bool at1846s_set_state(at1846s_t *dev, at1846s_state_t state);
 // Sub-audio (5.7). value: CTCSS Hz x 10, DCS the 9-bit code (octal digits as 3-bit groups, 023 -> 0x13)
 bool at1846s_set_tx_tone(at1846s_t *dev, at1846s_tone_t type, uint16_t value);

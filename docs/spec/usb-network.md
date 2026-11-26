@@ -136,7 +136,8 @@ peripherals 13.x.y.z and talkgroups 225.x.y.z. Control station mode can replace 
   over the air for our own DMR ID and its address (SAP 4 UDP or SAP 3, handed to `ipGatewayUdpFromAir` by `hostlink_net_packet` in the
   radio task, link up or not) instead of the host, with the sender's DMR ID and `fromAir` set; the service answers
   over the air itself. Bound now: mDNS on 5353 (`mdns.md`), TFTP on 69 and its transfer's own port (`tftp.md`), SNMP on
-  161, from the air too ([snmp.md](snmp.md)). Send to the link: one buffer and one path for TCP and UDP, layer 4 built
+  161, from the air too ([snmp.md](snmp.md)). With `CONFIG_DEBUGLINK_DMRIP`, UDP 3335 over the air to our own ID
+goes to the debug link ahead of the table, with the request's IPv4 source ([debuglink.md](debuglink.md) 7.1). Send to the link: one buffer and one path for TCP and UDP, layer 4 built
   at `ipGatewayLocalPayload()` and sent with `ipGatewaySendLocal` (`ipGatewayUdpSend` adds the UDP header first): from
   the radio's address, IP TTL 255, to the host's MAC, the broadcast MAC or a group's multicast MAC.
 - Debug link view, section `hotspot`: `usb.network usb.net_up usb.boot_network net.passthrough net.passthrough_active
