@@ -134,6 +134,9 @@ never renumbers:
 | 0x1800-0x18FF | Target lists | list n | 5.3 |
 | 0x1900-0x1CFF | Traffic keys | entry n | 5.4 |
 | 0x1D00-0x1DFF | Reserved: per-zone records | zone n | 5.6 |
+| 0x1E00-0x1EFF | Contact list names | list n | [contact-lists.md](contact-lists.md) 3 |
+| 0x1F00-0x1FFF | System contact lists | system n | contact-lists.md 3 |
+| 0x2000-0x20FF | Contact list tables (membership, channel network, check) | | contact-lists.md 3 |
 
 Every family keeps unknown bytes: a writer that changes a record it doesn't fully know changes only the fields it
 knows and keeps the rest, and a record of a kind or type it doesn't know is kept whole.
@@ -159,6 +162,7 @@ Ids are only appended and never reused. A kind and a system type that belong tog
 | 3 | P25 trunked system | P25T | `CONFIG_P25_TRUNK` | [p25-codeplug.md](p25-codeplug.md) |
 | 4 | NXDN conventional system | NXDN | `CONFIG_NXDN` | [nxdn-codeplug.md](nxdn-codeplug.md) |
 | 5 | Conventional DMR AES-256 | AES | `CONFIG_DMR_AES` | See below |
+| 6 | Reserved: Conventional system (a network for contact lists, 7.5) | | | [contact-lists.md](contact-lists.md) |
 
 A conventional AES channel uses the normal DMR frequencies, contact, color code and timeslot. Its base record is receive-only.
 The type 5 system block starts with one identity byte. Provision each traffic key in the traffic-key family with its
@@ -329,6 +333,28 @@ overrides the system's (7.1). A fallback channel is an ordinary channel the radi
 
 Key 0x0300 + n: system n's own secret (an authentication key), the type's layout. Traffic keys are in their own family
 (5.4).
+
+### 7.5 Conventional system
+
+**Proposed.** System type 6, the Conventional system, shown as a **network**. It carries no radio behavior: it is the
+thing a plain channel points at so the radio knows which contact lists name its calls
+([contact-lists.md](contact-lists.md)). Its type id is reserved in 4 until the contact lists are built; then the row
+takes the short name `NET` and `CONFIG_CONTACT_LISTS`.
+
+| Field | Value |
+|---|---|
+| Record | The header of 7.1 only: type 6, flags 0, sharing 0, identity length 0, the name, the check of the name. The type's block is empty: no identity, sites, entries or secret |
+| This radio's ID | Kept as found. Using it on conventional transmit is not specified |
+| Sharing | 0. The system isn't shared |
+| Selection | The system's contact lists are chosen by the key 0x1F00 + n, like any system's, not by a field of the record |
+
+A plain channel (a DMR or P25 conventional channel, which has no tagged system) names its network in the channel network
+key (contact-lists.md 3), not in a tag: no tag is written for it, and a channel that has one is read by the tag. A
+new network prefers a number from 8 upward: `CODEPLUG_SYSTEMS_RUN` (8) is the runtime and stun limit of Tier III
+systems ([dmr-trunking-codeplug.md](dmr-trunking-codeplug.md)), so a network there doesn't use up a slot that limit
+counts. A network below 8 is valid and works, but it takes a number a Tier III system could use.
+
+A system of type 6 is kept whole by a build without the type, as any type it doesn't know.
 
 ## 8. Secrets
 

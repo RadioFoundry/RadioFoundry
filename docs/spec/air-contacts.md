@@ -61,6 +61,11 @@ An ID is named by the first valid entry, in slot order, of the same mode and cal
 A later duplicate is never used; the Codeplug Editor warns about one. Reading the table is a scan of up to 8 KB, so
 the radio caches each answer, an empty one included, until the codeplug changes.
 
+With `CONFIG_CONTACT_LISTS` the lookup is scoped: an entry names a call only when its list is one the current channel's
+system selects, searched in order ([contact-lists.md](contact-lists.md) 5). Membership is a byte for each slot kept
+outside the table, and the table's slot order and the rule above are unchanged. Without the switch the lookup is as
+above.
+
 ## 4. Talk targets
 
 A P25 channel whose parameter block has the P25 contacts bit set ([p25-codeplug.md](p25-codeplug.md) 2.4, 4) takes its

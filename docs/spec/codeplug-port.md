@@ -90,6 +90,14 @@ The placement covers codeplug files only. An ID database encoded with `opengd77`
 0x30000 and has a different record size from the `openuv380` one, so moving it would not make it valid. Encode the
 database with `openuv380`, as the migration tools do.
 
+### 4.2 What the port doesn't carry
+
+qdmr YAML has no contact lists: a ported codeplug holds no list, selection or membership. The migration writes only the
+regions of 4, and the settings area's continuation (0xF000, [codeplug-settings.md](codeplug-settings.md) 2.4, proposed)
+is not among them, so the radio keeps its own. A radio with no lists names nothing through a system until the user
+builds them in the Codeplug Editor; its first save of a codeplug with contacts offers the Default list
+([contact-lists.md](contact-lists.md) 6). The editor, the fast protocol and TFTP carry the sector; qdmr never does.
+
 ## 5. Codeplugs from a backup
 
 `tools/backup_codeplug.py` turns the data flash in a backup into qdmr YAML, offline. It takes a web installer backup

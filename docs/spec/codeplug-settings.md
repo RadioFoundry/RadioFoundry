@@ -15,6 +15,7 @@ Code: `core/codeplug/codeplug_kv.c` (the area), `core/codeplug/codeplug_keys.c` 
 | | |
 |---|---|
 | EEPROM image | 0xE000-0xEFFF: one 4 KB sector, the erase unit (`STORAGE_SECTOR`) |
+| First continuation (2.4, proposed) | 0xF000-0xFFFF: a second sector of the same format |
 | On the wire | as the EEPROM image ([open-firmware-cps.md](open-firmware-cps.md) 7.1): the same address on the STM32 mapping |
 
 Why there:
@@ -24,14 +25,15 @@ Why there:
   reads or writes the area.
 - Room on both sides. The open-firmware layout, if it grows, grows up from the zone table: 0xB000-0xBFFF (4 KB) is
   left for that. 0xC000-0xDFFF holds the air mode contact table ([air-contacts.md](air-contacts.md)), so the area
-  isn't the first thing a longer zone table meets. 0xF000-0xFFFF is left for the area's first continuation (2.4).
+  isn't the first thing a longer zone table meets. 0xF000-0xFFFF is the area's first continuation (2.4).
 - The settings store, the journal, the calibration and the native area are elsewhere on every board.
 - Factory reset doesn't touch the open-firmware image, so it keeps the area too.
 - One sector: an edit is one journaled sector rewrite ([settings-store.md](settings-store.md) 4). A power cut leaves
   the old area or the new one, never a mix.
 
 The area sits at a fixed address and starts with a magic. Nothing else points to it. A pointer would be a second
-thing a foreign write can wipe apart from the data.
+thing a foreign write can wipe apart from the data. The one pointer there is, the continuation's (2.4), lives inside
+the area: a foreign write that wipes it wipes the keys it points to as well.
 
 ## 2. Format
 
@@ -46,7 +48,7 @@ All values are little endian.
 | 5 | 1 | Header length: 16. Entries start here, so a later version can add header fields that older readers skip |
 | 6 | 2 | Data length: the bytes of entries after the header, at most 4096 minus the header length |
 | 8 | 4 | CRC-32 of the entries (IEEE 802.3, reflected, as `storage_crc32`) |
-| 12 | 4 | Reserved for the continuation (2.4): 0 in a new area, kept as found by a rewrite, not checked by version 1 |
+| 12 | 4 | The continuation's offset (2.4): 0 in a new area, kept as found by a rewrite, not checked by version 1 |
 
 The version changes only if the entry framing changes so that a version 1 reader would misread it. A reader that
 finds a later version reads the area as empty and refuses to write it, so it never destroys a newer area. Version 0
@@ -78,17 +80,54 @@ tool's bytes, a write cut short outside the journal) reads as an empty area. No 
 | bad | anything else, version 0 included | no key | yes: a new area, the old bytes dropped |
 | newer | our magic and a version above 1 | no key | never, by the radio or a tool (6) |
 
-### 2.4 Continuation (reserved, not built)
+### 2.4 Continuation
 
-When 4 KB isn't enough, the reserved header bytes 12-15 will name a continuation: another sector with the same
-header and entry format, holding more entries. The bytes give the continuation's offset in the EEPROM image (u32, a
-multiple of 4096; 0 = none), not a fixed address. The first continuation is meant for 0xF000. A continuation's own
-bytes 12-15 name the next one, so later sectors can go wherever the image map has room, with no version change.
+**Proposed (pending maintainer review).** When 4 KB isn't enough, header bytes 12-15 name a continuation: another
+sector with the same header and entry format, holding more entries. The bytes give the continuation's offset in the
+EEPROM image (u32, a multiple of 4096; 0 = none), not a fixed address. The first continuation is at 0xF000. A
+continuation's own bytes 12-15 name the next one, so later sectors can go wherever the image map has room, with no
+version change.
 
-A reader takes a key from the first sector before any continuation, and from a continuation before the one it
-names. A version 1 reader of today ignores the reserved bytes, so it sees only the first sector: keys that live only
-in a continuation read as absent, and the radio keeps its own values (4). A writer that doesn't know the
-continuation keeps the reserved bytes and the header length as it found them.
+**Reading.**
+
+- A reader takes a key from the first sector before any continuation, and from a continuation before the one it
+  names (the first entry of a key found wins, across sectors too).
+- It follows the pointers while each is a multiple of 4096, lies inside the EEPROM image (below 0x10000), isn't a sector
+  already read and the sector is valid (2.3), and stops after 8 sectors in all. Anything else ends the chain.
+- A continuation that is missing (the pointer 0), erased, bad or of a newer version reads as no keys, and the chain
+  ends there. The keys of the sectors before it are unaffected.
+- A continuation whose first sector is empty or bad (so no pointer can be read) isn't reached at all: its keys read as
+  absent.
+- The check (2.3) is per sector. Each sector's CRC covers its own entries.
+
+**Writing.**
+
+- **Where a key goes.** The keys of the contact lists (0x1E00-0x20FF, [contact-lists.md](contact-lists.md) 3) live
+  only in a continuation, and every other key only in the first sector. A writer never puts a key where this says it
+  doesn't belong. The main sector keeps its room, and a list edit is one sector rewrite.
+- **A sector's commit.** Each sector is committed on its own through the journal ([settings-store.md](settings-store.md)
+  4): a power cut leaves the old sector or the new one. A batch (4) whose keys are all in one sector is all or none
+  as before. A batch that spans sectors is applied sector by sector, the continuation first, so a write never leaves
+  a pointer to a sector that isn't there. The firmware's own writers never mix the two in one batch.
+- **Creating the first continuation.** Write the continuation sector (a valid header with pointer 0, then the
+  entries), then rewrite the first sector with bytes 12-15 set to 0xF000 and its entries unchanged. A power cut between
+  the two leaves a continuation nothing points to: harmless, replaced by the next write. If the first sector isn't a
+  valid area, it is started new (4) with the pointer set, in the same way.
+- **An older writer** that doesn't know the continuation keeps bytes 12-15 and the header length as it found them (4),
+  so it doesn't unlink it, and it writes the first sector only.
+- A first sector of a newer version is never written, and so no continuation is.
+- A key present in two sectors is read from the earlier. A writer that sets it drops the later copy, in the same
+  batch if the sector is written anyway.
+
+A version 1 reader of today ignores the pointer, so it sees only the first sector: keys that live only in a
+continuation read as absent, and the radio keeps its own values (4). For the contact lists that means the radio names
+calls as it does today.
+
+**Transfers.** A continuation at 0xF000 is part of the codeplug image, carried by the paths of section 6 and by the
+Codeplug Editor, the fast protocol and TFTP. qdmr doesn't transfer it. Its transfer rule is the main sector's, judged
+for the sector on its own: the radio keeps its sector when its is valid and the one sent isn't, or when its is of a
+newer version. A valid first sector with the pointer 0 replaces one that has a pointer. The continuation then isn't
+reached, and its keys read as absent: a tool that sends a valid area chooses its keys.
 
 ## 3. Keys
 
@@ -114,6 +153,15 @@ continuation keeps the reserved bytes and the header length as it found them.
 | 0x1800 | Target lists | record list | 0x1800-0x18FF: receive lists of targets ([channel-modes.md](channel-modes.md) 5.3) | none | a kind that uses them built |
 | 0x1900 | Traffic keys | record list | 0x1900-0x1CFF: keys that encrypt traffic, each a system's ([channel-modes.md](channel-modes.md) 5.4) | none | a type that uses them built |
 | 0x1D00 | Zone tags | record list | 0x1D00-0x1DFF: reserved for per-zone mode records ([channel-modes.md](channel-modes.md) 5.6) | none | none yet |
+| 0x1E00 | Contact list names | record list | 0x1E00-0x1EFF: list n's name, n = 0-31 ([contact-lists.md](contact-lists.md) 3). Proposed: lives in the continuation (2.4) | none (codeplug data) | contact lists in the build (`CONFIG_CONTACT_LISTS`) |
+| 0x1F00 | System lists | record list | 0x1F00-0x1FFF: system n's primary and secondary contact list (contact-lists.md 3). Continuation | none | `CONFIG_CONTACT_LISTS` |
+| 0x2000 | DMR contact membership | record | One list byte for each DMR contact slot (contact-lists.md 3). Continuation | none | `CONFIG_CONTACT_LISTS` |
+| 0x2001 | P25 contact membership | record | One list byte for each air mode contact slot (contact-lists.md 3). Continuation | none | `CONFIG_CONTACT_LISTS` |
+| 0x2002 | Channel network | record | One byte for each channel: its network system (contact-lists.md 3). Continuation | none | `CONFIG_CONTACT_LISTS` |
+| 0x2003 | Contact table check | record | A CRC-32 of the contact tables, which voids membership when it doesn't match (contact-lists.md 3.3). Continuation | none | `CONFIG_CONTACT_LISTS` |
+
+The keys from 0x1E00 up are codeplug data with no second copy, as a key family (3.2), and live only in a continuation
+(2.4). A reader in a build without the feature keeps them like any key it doesn't know.
 
 **Radio's own copy** is the setting's field in the settings store ([settings-store.md](settings-store.md) 3). Every
 scalar key has one (3.2).
@@ -173,6 +221,10 @@ A new key is added to this table in the same change that first writes it.
 key range: one key per instance, record n at base + n. The range is assigned here as one row (base, size, value
 format) in the same change that first writes it. Each instance is then an ordinary key: absent, present, grown and
 kept by the rules in 4, and a reader walks the range (`codeplug_kv_next`, 5) rather than looking up each key.
+
+A fixed table that is data, not a setting (a byte for each contact slot, say) is one key of type record with no radio's
+own copy, with the same reasoning: the data lives in the codeplug only. The contact list tables (0x2000-0x2003) are such
+keys.
 
 A list that belongs to a radio's controls is a family too: the keypad buttons, one key per button, each value the
 button's action. Ranges are assigned in blocks of 256 from 0x0100 up (0x0100-0x01FF the first), so a family can grow
@@ -315,8 +367,12 @@ including CPS software that knows nothing of the area:
 | Open-firmware CPS shim (`X` 3, [open-firmware-cps.md](open-firmware-cps.md) 2.2) | yes | at the sector's commit. The data writes may come in pieces of any size: the pending sector holds the stored bytes with the data over them, and that whole sector is judged. A write of part of a valid area leaves it invalid, so it is kept |
 | Fast protocol ([cps-fast.md](cps-fast.md) 3.4) | yes | at END (direct), at the slot's copy (staged, and the boot's resume) |
 | TFTP `codeplug.bin` ([tftp.md](tftp.md) 3) | yes | at the sector's copy in the commit |
-| qdmr | no | never writes it |
+| qdmr | no | never writes it, and never reads or writes the continuation |
 | A whole data flash backup and restore | yes | not applied: raw flash |
+
+The continuation (2.4, 0xF000-0xFFFF) is one more sector with the same rule, judged for itself, on every path of the
+table: the open-firmware CPS shim, the fast protocol ([cps-fast.md](cps-fast.md) 3.4) and TFTP. A file from before the
+continuation holds 0xFF there and so leaves the radio's. A tool that leaves 0xF000 out of what it sends keeps the radio's lists, as long as the main sector's pointer stays.
 
 A kept sector is acknowledged as written, so the CPS doesn't fail. A CPS that reads the sector back to verify it
 sees the radio's bytes.
@@ -332,7 +388,8 @@ The editor's keys are one table, `KEYS` in `kv.js`: the model's field, the key, 
 the range. Decoding, encoding and validation follow the row. The Radio tab shows each key as a field. A field left
 empty is an absent key. Typing a value writes the key; for an ID, 0 turns the setting off.
 
-The editor reads and writes the sector with the other EEPROM regions and keeps entries it doesn't know. On a write
+The editor reads and writes the sector, and the continuation (2.4) after it, with the other EEPROM regions and keeps
+entries it doesn't know, in each sector. A key's sector follows 2.4. On a write
 to a radio it sends (`areaForWrite`):
 
 | Case | What goes to the radio |
@@ -362,6 +419,7 @@ conversion copies the entries as they are. There is one key space for both forma
   to it. A way to replace the area on purpose (a tool's "Replace the settings area", after a confirmation, which the
   radio accepts) is not built.
 - The header is outside the CRC. A damaged version byte reads as an invalid area (version 0) or as a newer one.
+- The continuation (2.4) and the contact list keys are proposed, pending maintainer review of the location.
 - Per-channel settings: a key whose value starts with a channel number, or a table key. Not needed yet.
 - The signaling tone records (3.3) are the first record keys: the firmware sets them from the front
   (`CODEPLUG_KV_HEAD`, `codeplug_keys_store_record`) and so does the Codeplug Editor (`putKeys`).

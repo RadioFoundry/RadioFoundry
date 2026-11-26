@@ -625,6 +625,13 @@ key, and fast typing kept the idle task out for 1.8 s. Scans read blocks (`codep
 `codeplug_channel_names_each`), a search by name reads the name alone (`codeplug_channel_name`, `codeplug_zone_name`),
 and a scan per drawn row is a scan per frame ([ui.md](ui.md) 2, [watchdog.md](watchdog.md) 4).
 
+**10.6 Contact lists point at slots, so a foreign reorder voids them.**
+Membership is one byte per contact slot ([contact-lists.md](contact-lists.md) 3). A tool that sorts, compacts or
+deletes contacts in place leaves every byte pointing at a different contact, so a name would show on the wrong ID.
+Rule: a CRC-32 over each slot's ID and call type is stored with the lists; when it differs from the tables as stored
+the membership is void and no list names a call, so a name goes missing and is never wrong. The radio doesn't repair it
+(only the Codeplug Editor assigns again), and a radio-side edit while void leaves the keys alone.
+
 ## 11. Calibration
 
 **11.1 Reference oscillator sign (HR_C5000 board).** regs 0x47 / 0x48 / 0x04 = 0x7F minus the calibration value, DAC2 =

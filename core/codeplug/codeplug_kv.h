@@ -39,6 +39,13 @@
 #define CODEPLUG_KEY_TLIST	0x1800u		// receive lists of call targets (0x1800-0x18FF)
 #define CODEPLUG_KEY_TRAFFIC	0x1900u		// traffic keys, each a system's (0x1900-0x1CFF)
 #define CODEPLUG_KEY_ZONE_TAG	0x1D00u		// reserved: per-zone mode records, 0x1D00 + zone (0x1D00-0x1DFF)
+// Contact lists (docs/spec/contact-lists.md 3): they live only in the settings area's continuation
+#define CODEPLUG_KEY_LIST_NAME	0x1E00u		// list n's name, 0x1E00 + n (0x1E00-0x1EFF)
+#define CODEPLUG_KEY_SYS_LISTS	0x1F00u		// system s's primary and secondary list, 0x1F00 + s (0x1F00-0x1FFF)
+#define CODEPLUG_KEY_LIST_DMR	0x2000u		// a list byte for each DMR contact slot
+#define CODEPLUG_KEY_LIST_AIR	0x2001u		// a list byte for each air mode contact slot
+#define CODEPLUG_KEY_CH_NET	0x2002u		// a network system number for each channel
+#define CODEPLUG_KEY_LIST_CHECK	0x2003u		// CRC-32 of the contact tables; a mismatch voids membership
 
 // How a key's value is encoded (docs/spec/codeplug-settings.md 3.1): the encoding, never a width. A type is never
 // redefined, only grown by appending bytes

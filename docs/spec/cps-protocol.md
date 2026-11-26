@@ -134,6 +134,11 @@ data service in RadioFoundry yet.
 
 ### 2.5 qdmr
 
+The EEPROM image also holds RadioFoundry's own regions, which qdmr never transfers: the air mode contact table
+(0xC000), the settings area (0xE000) and its continuation (0xF000, proposed: the contact lists,
+[codeplug-settings.md](codeplug-settings.md) 2.4). The editor, the fast protocol and TFTP carry all of them; qdmr
+carries none, so a codeplug that went through qdmr alone has no continuation of its own and keeps the radio's.
+
 qdmr's open-firmware driver opens with `C 0`, `C 1`, `C 2` text, `C 3`, `C 6 3/4` and `C 6 2`. It reads area 9,
 then area 1 in 32-byte blocks over its regions: EEPROM 0x80-0x6060 and 0x7500-0xB000, custom data 0x20000-0x211A0,
 codeplug 0x9B000-0xAEE60. It writes with `X 1/2/3` per sector and ends with `C 5` and, for a write, `C 6 0`.

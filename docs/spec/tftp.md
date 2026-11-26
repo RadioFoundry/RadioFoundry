@@ -37,7 +37,7 @@ out over a read (`cps-protocol.md` 2.7 has the same open question for the CPS's 
 
 **Format: the flat image `tools/cps_client.py` reads and writes**, 716,384 bytes (0xAEE60): file offset = the
 open-firmware CPS's STM32 wire address. Bytes 0x00000-0x0FFFF are the EEPROM image, 0x20000 on the flash image
-(`open-firmware-cps.md` 7.1). On a read, the regions qdmr transfers and the codeplug settings area hold the stored
+(`open-firmware-cps.md` 7.1). On a read, the regions qdmr transfers and the codeplug settings area (with its continuation) hold the stored
 bytes and everything else is 0xFF:
 
 | File range | Content |
@@ -45,6 +45,7 @@ bytes and everything else is 0xFF:
 | 0x00080-0x0605F | EEPROM image part 1: device info, general settings (call sign, DMR ID), APRS, DTMF, channels 1-128 |
 | 0x07500-0x0AFFF | EEPROM image part 2: boot screen, quick-key slots (the side keys), VFOs, zones |
 | 0x0E000-0x0EFFF | the codeplug settings area ([codeplug-settings.md](codeplug-settings.md)): the radio keeps its own when it is valid and the file's isn't, or when it is newer (section 6 there) |
+| 0x0F000-0x0FFFF | the settings area's continuation (proposed, codeplug-settings.md 2.4): the contact lists ([contact-lists.md](contact-lists.md)). The same rule, judged for the sector on its own |
 | 0x20000-0x2119F | custom data |
 | 0x9B000-0xAEE5F | flash codeplug: channels 129-1024, contacts, RX group lists |
 
