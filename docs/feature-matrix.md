@@ -353,6 +353,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | Channel editor: edit a channel, New channel from current settings, text entry | `CHANNEL_EDIT` | 14,532 | 13,368 | Needs `CHANNEL_LIST`. Without it a channel's settings are read only |
 | Zone editor: move, add, copy and remove channels in a zone; rename, copy and delete a zone | `ZONE_EDIT` | 5,188 | 5,480 | Needs `CHANNEL_EDIT`. Also about 1.3 KB of RAM |
 | Contact editor: a new contact from Find or a call's actions (name, ID, type, timeslot) | `CONTACT_EDIT` | 1,728 | 1,892 | Needs `CHANNEL_EDIT` and `DMR` |
+| Contact lists: names scoped per system; conventional channels on a network | `CONTACT_LISTS` | 1,868 | 1,868 | Follows `DMR`. A codeplug with no list key keeps the old lookup ([contact-lists.md](spec/contact-lists.md)) |
 | Volume bar when a knob the MCU reads turns (#354) | `VOLUME_BAR` | 520 | 492 | Shows only on a radio with such a knob. Off, the volume screen keeps the segment drawing it now shares (about 90 bytes) |
 | Key assignment (Settings > Keys, codeplug) | `KEY_ASSIGN` | 2,468 | 2,224 | Up to 9 keys |
 | Scan, band scan, dual watch, nuisance delete | `SCAN` | 25,640 | 24,204 |  |
