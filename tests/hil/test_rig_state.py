@@ -18,7 +18,7 @@ class FakeConfig:
                                             allow_reboot=False)
         for k, v in given.items():
             setattr(self.option, k, v)
-        self._opts = {"--hil-config": str(path), "--hil-board": board, "--allow-rf": False}
+        self._opts = {"--hil-config": str(path), "--hil-board": board, "--allow-rf": False, "--manual": False}
 
     def getoption(self, name):
         if name in self._opts:
@@ -80,3 +80,16 @@ def test_board_table_refuses_flags_ports_and_unknown_keys(tmp_path, line):
     c = FakeConfig(rig_file(tmp_path, f"[board.radio_a]\n{line}\n"), "radio_a")
     with pytest.raises(pytest.UsageError):
         hil_config.configure(c)
+
+
+@needs_toml
+def test_p25_second_control_frequency_requires_tx_allowlist(tmp_path):
+    assert "p25-cc-alt-mhz" in hil_config.TX_OPTIONS
+    c = FakeConfig(rig_file(tmp_path, "p25_cc_alt_mhz = 446.1125\ntx_mhz = [446.1]\n"))
+    c._opts["--allow-rf"] = True
+    with pytest.raises(pytest.UsageError, match="p25-cc-alt-mhz"):
+        hil_config.configure(c)
+    c = FakeConfig(rig_file(tmp_path, "p25_cc_alt_mhz = 446.1125\ntx_mhz = [446.1125]\n"))
+    c._opts["--allow-rf"] = True
+    hil_config.configure(c)
+    assert c.option.p25_cc_alt_mhz == 446.1125 and hil_config.run_tx_mhz(c) == [446.1125]

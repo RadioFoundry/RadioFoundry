@@ -226,6 +226,9 @@ Do not describe a data-model-only patch as implementing subscriber roaming.
   retune or failed NAC confirmation cannot authorize an inbound request or voice
   transmission.
 - A return to the control channel restores the current site's configuration.
+- A rejected band or HAL tune cannot confirm old-frequency input or retain TALK.
+  Failed candidates still honor existing dwell/backoff/fallback timing, and a
+  later accepted tune can recover without resetting valid System identifiers.
 - Identifier updates replace the matching learned row; two Systems with the same
   identifier number remain isolated; same-System mobility preserves valid context.
 - Reference editing, deletion and reordering preserve two Systems' distinct groups

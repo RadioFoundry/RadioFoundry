@@ -198,6 +198,14 @@ and an unrelated good block cannot authorize inbound requests or our voice grant
 An accepted bad-CRC NET clears confirmation even when a later unrelated block passes its CRC. Normal returns from
 a voice channel retain confirmation; control-channel loss and a new hunt do not.
 
+The System's NAC is the default for configured candidates without a site override
+([p25-codeplug.md](p25-codeplug.md) 3.1). Each candidate can instead require a fixed NAC, including 000, or use
+automatic acquisition independently of that default. The generic site group links the records; programmed RFSS
+and Site ID remain legacy metadata, not strict site locks. The follower exposes the candidate's `expected_nac`
+separately from the received `nac` and `sys_ok` confirmation. A confirmed control channel accepts its current NAC
+only; changing candidates invalidates that NAC proof. Configured and learned identifiers retain their existing
+System owner; adding site NACs does not clear the identifier table on each site change.
+
 Following a grant (group: `talk_group`, the `groups` list, or every group with `P25_FOLLOW_ALL_GROUPS`; unit to unit:
 to or from `unit_id`, unless `P25_FOLLOW_NO_UNIT`):
 
@@ -223,7 +231,8 @@ voice lost 1 s (`cfg.voice_lost_ms`), longest call 120 s (`cfg.call_max_ms`).
 invalid CRC) it is taken when the same 12 octets failed among the last four failures (`core/fec/rx_seen.h`): a system
 whose control channel fails the check repeats its blocks, and a block damaged on the air rarely decodes the same twice.
 While the last block taken failed (`view.unverified`) the transmit side waits: nothing is sent, and
-`p25_follow_can_talk` says `P25_TALK_OFF`. The next block that passes ends that. A packet header is not taken that way.
+`p25_follow_can_talk` says `P25_TALK_OFF`. The next admitted block that passes ends that; a good block on a rejected
+NAC cannot clear it. Network confirmation still requires its own CRC-valid NET. A packet header is not taken that way.
 
 The view (`p25_follow_view`, a consistent copy for another task): state, the control channel tried or held, its NAC,
 WACN, system, RFSS, site, the call followed (group, source, target, encrypted), identifiers known, control channels
@@ -297,7 +306,8 @@ caller refused, and waits on a busy inbound channel.
 | `flags`: `TX` | the tag allows transmit, not `listen_only`, `unit_id` and `talk_group` set |
 | `flags`: `BAD_CRC` | the channel record's Accept invalid CRC ([open-firmware-cps.md](open-firmware-cps.md) 7.3.3) |
 | `unit_id`, `talk_group` | `unit_id` (the P25 settings' `unit_id` first, as on a conventional channel), `talk_group` |
-| `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` |
+| `cc[]`: `hz`, `tx_hz`, `chan`, `site` | `ctl[]`: `rx_hz`, `tx_hz`, `chan`; `ctl_site[]` (generic group) |
+| `cc[]`: `rfss`, `site_id`, `nac_set`, `nac` | `ctl_identity[]`: the linked Site record's metadata and optional NAC |
 | `iden_set`, `iden[]`: base, spacing, slots, TDMA, transmit offset | `iden_set`, `iden[]` (bandwidth is not used) |
 | `hold_ms` | `sys.hold_s` x 1000 (0: no hold) |
 | `fallback_ms` | none yet: 0, never (the fallback channel is read, not used) |
@@ -317,9 +327,9 @@ differences:
 | Begin | `radio_p25_begin` reads the system (`p25_trunk_load`) into the part of the P25 memory the voice path takes next, and makes the follower's configuration (6) and the engine's: `cfg.trunk` set, both NACs the control channel's (or any), our unit ID, the channel's talk group. Then the voice path, the follower (its first tune), the engine. A system that doesn't load: no engine (`p25.begin_fails`) |
 | Units | The engine's `rx_unit` and `rx_call` hooks hand every unit and every call's fields to the follower, in the provider's task |
 | Timers | The radio task ticks the follower at its own tick (10 ms), so its timers run whether the provider delivers or not (a provider that receives only at a sync delivers nothing on a dead channel) |
-| Retune | The `tune` hook only records the request. The radio task carries it out at its next tick: the receiver to the frequency (12.5 kHz, no tone), the engine's selective squelch (`rx_tgid`) to the group for a group call and 0 otherwise (`p25_engine_set`), `p25_engine_retuned`, then `p25_follow_retuned`. A frequency outside the board's receive bands, or in a listen-only band, is not tuned (`p25t.untuned`): the follower hears nothing there and goes back |
+| Retune | The `tune` hook records a request. Under the follower's task exclusion, the radio task checks its band policy and the receiver's `rx` result. Only acceptance commits the engine's NAC and selective squelch and resets its framer. `p25_follow_retuned(..., ok)` reports that result. A rejected frequency or HAL refusal counts `p25t.untuned`, revokes confirmation and keeps old-frequency units gated; the existing hunt dwell/backoff/fallback timers continue. Failed voice tunes cancel TALK, and failed returns require fresh control-channel proof |
 | PTT, transmit side off | Refused with "RX only" (`TXDENY_RX_ONLY`): the tag is receive only, the system listen only, or no unit ID or talk group |
-| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the control channel's NAC (the one heard when the system's NAC is any). A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable, system blocked |
+| PTT, transmit side on | `tx_check` as for any channel except the frequency checks, which wait for the grant. `radio_p25_trunk_ptt` asks the follower; while it waits, home says "Wait" or "Queued" and nothing keys. On the grant (`radio_p25_trunk_talk`: GO) the radio core checks the granted transmit frequency against the board's bands and listen-only bands, then keys as a conventional P25 call there (`p25_key`): the channel's power, the TX timer, the engine's call with our unit ID and talk group and the confirmed serving site's NAC, including 000. A refusal says why (`TXDENY_TRUNK`, the view's `p25.twhy`): no control channel, not registered, denied, no answer, voice channel unusable, system blocked |
 | Release | the terminator goes out (`AIR_TX_DONE`), then `radio_p25_trunk_talk_end` sends the follower back. Released before the grant: the request is dropped |
 | Inbound bursts | between calls, a block the follower asked to send is keyed alone on the inbound frequency (`p25t_burst`): the same checks as PTT (inhibit, battery, the band), lowest of nothing, the channel's power; `p25_engine_tx_burst` sends the one TSDU and the transmitter drops at its end. The view stays idle (no red LED, no TX timer). A refused burst counts `p25t.burst_refused` and the follower's `send_fail` |
 | Leave | Another channel, the scan, the bench or anything else that takes the modem ends the engine, then the follower |
@@ -329,6 +339,18 @@ One task at a time runs the follower, without a lock: each task sets its own fla
 that finds the other's flag set clears its own and leaves. On one core the task that runs second always sees the
 first one's flag, so the two are never inside together. The provider's task then drops that unit or call
 (`p25t.skips`; the control channel repeats itself), the radio task tries again at its next tick.
+
+The radio consumes the follower's current context for both RX and TX, rather than a diagnostic snapshot. Automatic
+acquisition narrows the engine to the confirmed NAC without needing a frequency change. A burst is tied to the tune
+request and NAC that queued it. Preparation and the final transmit start require the current confirmed context; a
+late rejection aborts the prepared session so the existing radio owner unkeys it. Returning from voice restores the
+serving site's configuration in both directions.
+
+An accepted HAL `rx` call means the board driver accepted that tune. It is not a universal measurement of synthesizer
+lock; individual drivers may only record some chip errors diagnostically. A failed call never supplies success proof.
+Neither that call nor `sys_ok` alone grants permission to transmit: existing registration, blocked-System, receive-only,
+band and transmit-admission checks still apply. Per-site NAC support does not add location registration, quality-based
+roaming or complete subscriber conformance.
 
 Memory: the follower, its configuration and its control channel and identifier tables sit beside the engine in the
 memory the board places for P25 (the vocoder's, where it lends it); the system read from the codeplug shares the voice
@@ -363,6 +385,14 @@ the bench and the radio transmit) against a control channel the bench plays (8);
 bench transmitters, the radio only receives on a listen-only system): the control channel grants another unit's call
 while a second transmitter plays that call on the voice channel. The last two have run on a radio; the first needs a
 live system.
+
+`test_p25_site_nac` adds an opt-in receive-only acquisition check for `P25_SITE_NAC`: one bench transmitter plays
+two configured control channels sequentially, first with explicit Auto and then fixed NAC 000. It checks expected
+and confirmed NAC, network/site identity, tune completion, engine RX/TX configuration, loss of prior confirmation
+and stable DUT transmit counters. It backs up, restores and verifies the codeplug. The second play can span the
+existing 30-second hunt backoff; the bench must permit a 33-second keying budget. It checks configuration and
+acquisition, not location registration, signal-quality roaming or actual transmitted NAC. This test has not been
+run on hardware for this change.
 
 ## 8. Bench tools
 

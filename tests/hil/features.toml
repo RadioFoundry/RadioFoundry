@@ -87,6 +87,12 @@ switch = "P25_TRUNK"
 spec = "docs/spec/p25-trunking.md"
 source = ["core/p25/p25_follow.c", "core/p25/p25_tsbk.c", "core/radio/radio_p25.c"]
 
+[feature.p25_site_nac]
+requires = "P25_TRUNK"
+spec = "docs/spec/p25-codeplug.md"
+source = ["core/p25/p25_codeplug.c", "core/p25/p25_codeplug.h", "core/p25/p25_follow.c", "core/p25/p25_follow.h",
+          "core/radio/radio_p25.c", "core/debuglink/debuglink_view_p25.c", "core/hostlink/build_info.c"]
+
 [feature.nxdn]
 switch = "NXDN"
 spec = "docs/spec/nxdn.md"

@@ -383,6 +383,15 @@ short. View 5: the `cps.*` and `cpsf.*` keys moved from `storage` to `cps` (27),
 | 38 | `nxdn` | NXDN conventional on the channel ([nxdn.md](nxdn.md) 6): `nxdn.built` (0 without `CONFIG_NXDN`, and nothing else) `nxdn.on` (the engine runs on this channel), the call heard now or last `nxdn.rx played enc unit late ran src dst emergency` (`src` 0: not known yet; `dst` a group, or a unit when `unit` is 1), `nxdn.tx` (`air_tx_state_t`: 0 idle, then priming, on, ending, done), `nxdn.deny` (`tx_deny_t` of the last refusal), the provider's fit (`AIR_FIT_*`, 3.28) at the rate in use and at each rate `nxdn.fit fit4800 fit9600`, the settings `nxdn.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst tx_emergency` (as op 40), while the engine runs the parameters it runs on `nxdn.run.rate rx_ran tx_ran rx_gid unit_id unit_call tx_dst` (a stored NXDN channel's own, [nxdn-codeplug.md](nxdn-codeplug.md), else the settings), counters `nxdn.begins begin_fails rx_calls tx_calls tx_filler frames lich_fail sacch_fail facch_fail voice voice_held fec_bits ran_rejects rx_chunks tx_underruns tx_syms`. The voice path is the DMR side's (`ambe.*` in `dmr_stats`). RESET_COUNTERS zeroes the counters |
 | 39 | `dmrip` | the debug link over the air (7), only in builds with `CONFIG_DEBUGLINK_DMRIP` (other builds answer the section number with BAD_ARG, out of range): `dmrip.built` (1) `dmrip.id` (the DMR ID the radio answers to) `dmrip.port dmrip.key` (`uid`, `set` or `none`) `dmrip.session dmrip.counter`, counters `dmrip.rx busy bad_auth not_ours old repeats gone refused answered chunks dropped hello`, and the detour runner `detour.phase` (0 idle, 1 arming, 2 clear, 3 running, 4 returning) `detour.left_ms detour.items detour.failed detour.result detour.runs` |
 
+The `p25_trunk` section also reports `p25t.expected_nac` (the current candidate's configured expectation; 3966/F7E
+means automatic), `p25t.sys_ok` (a matching CRC-valid NET confirms the current control channel) and `p25t.tuning`
+(the most recent requested receiver tune has not succeeded). Hunting or a failed tune clears confirmed `p25t.nac`
+to 3966/F7E; expected and observed values are separate. A failed band/HAL tune keeps `tuning=1` while the follower's
+existing hunt timers progress. HAL success means driver acceptance, not measured synthesizer-lock qualification.
+After confirmation, `p25.run.rx_nac` and `p25.run.tx_nac` show the serving NAC, including 000. `sys_ok` is not the
+only transmit check. Firmware consuming optional Site NAC fields advertises `P25_SITE_NAC` through the existing
+feature probe; older firmware ignores those fields ([p25-codeplug.md](p25-codeplug.md) 3.1).
+
 With `CONFIG_KEY_ASSIGN` and at least one assignable key, `link` also reports `key.first.bit` (the first
 `board.side_keys` entry, for KEY kind 1) and `key.first.press` (its saved `keyfn_t`, [ui.md](ui.md#31-key-assignment)).
 The saved value changes after the Settings write completes; it lets a test restore the assignment through the UI.
