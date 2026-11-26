@@ -559,15 +559,15 @@ static void testSap3(void)
 	dmrDataIP_t ip;
 
 	// SNMP GET from an ephemeral port: no IDs, both ports in the extended headers (9 octets)
-	CHECK(dmrDataCompressUDPHeader(0x1234, false, 50000, 161, h) == 9);
+	CHECK(dmrDataCompressUDPHeader(0x1234, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_RADIO), 50000, 161, h) == 9);
 	hex("1234000000c35000a1", want);
 	CHECK(memcmp(h, want, 9) == 0);
 	// ETSI text both ways to a group: IDs 1, DAID 2 (5 octets)
-	CHECK(dmrDataCompressUDPHeader(7, true, 5016, 5016, h) == 5);
+	CHECK(dmrDataCompressUDPHeader(7, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_GROUP), 5016, 5016, h) == 5);
 	hex("0007020101", want);
 	CHECK(memcmp(h, want, 5) == 0);
 	// LIP source (ID 2), destination without an ID: in extended header 1 (7 octets)
-	CHECK(dmrDataCompressUDPHeader(7, false, 5017, 6000, h) == 7);
+	CHECK(dmrDataCompressUDPHeader(7, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_RADIO), 5017, 6000, h) == 7);
 	hex("00070002001770", want);
 	CHECK(memcmp(h, want, 7) == 0);
 
@@ -621,8 +621,41 @@ static void testSap3(void)
 	CHECK(dmrDataGetUDP(&dmrDataRxPacket, &udp) && udp.length == 20);
 	l4[5] = sizeof(l4);
 
-	// A reserved opcode isn't read
 	static dmrDataPacket_t p;
+
+	// The peripheral network (13.x.y.z, the host behind a radio, TS 102 361-3 5.1.1): address ID 1 in the compressed
+	// header, SAID and DAID, and read back as those addresses. A group destination has none: the source alone
+	static const struct
+	{
+		bool group;
+		bool srcPc, dstPc;
+		int ids;					// the SAID and DAID octet, -1: the full header
+	} pcs[] = {
+		{ false, true, false, 0x10 }, { false, false, true, 0x01 }, { false, true, true, 0x11 }, { true, true, false, 0x12 },
+		{ true, true, true, -1 },
+	};
+	for (unsigned i = 0; i < sizeof(pcs) / sizeof(pcs[0]); i++)
+	{
+		const uint8_t *pdu;
+		uint8_t sap;
+		uint32_t srcIp = pcs[i].srcPc ? dmrDataPeripheralAddress(10005) : dmrDataIdAddress(false, 10005);
+		uint32_t dstIp = pcs[i].dstPc ? dmrDataPeripheralAddress(100) : dmrDataIdAddress(pcs[i].group, 100);
+		int len = dmrDataEncodeIP(pcs[i].group, 100, 10005, dstIp, srcIp, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4,
+									sizeof(l4), true, 9, &pdu, &sap);
+
+		CHECK((len > 0) && (sap == ((pcs[i].ids < 0) ? DMR_SAP_IP : DMR_SAP_UDPIP_COMPRESSION)));
+		p.sap = sap;
+		p.group = pcs[i].group;
+		p.dst = 100;
+		p.src = 10005;
+		memcpy(p.data, pdu, len);
+		p.length = len;
+		CHECK((pcs[i].ids < 0) || (p.data[2] == pcs[i].ids));
+		CHECK(dmrDataGetUDP(&p, &udp) && (udp.srcIp == srcIp) && (udp.dstIp == dstIp) && (udp.length == 60));
+	}
+	CHECK(dmrDataPeripheralAddress(0x01002715) == 0x0D002715u);
+
+	// A reserved opcode isn't read
 	p.sap = DMR_SAP_UDPIP_COMPRESSION;
 	hex("0001000101", p.data);
 	p.data[3] |= 0x80;
@@ -724,8 +757,9 @@ static void testIpAddresses(void)
 	n = dmrDataEncodeIP(false, 100, 10005, CAI_DST, OFF_NET, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4), true,
 						1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP && validIp(pdu, n) && be32(&pdu[12]) == OFF_NET);
-	// ... or the ID's 24 bits under another first octet: not what a receiver of SAP 3 rebuilds
-	n = dmrDataEncodeIP(false, 100, 10005, 0x0D000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
+	// ... or the ID's 24 bits under another first octet (not 12 or 13, the radio and peripheral networks): not what a
+	// receiver of SAP 3 rebuilds
+	n = dmrDataEncodeIP(false, 100, 10005, 0x0E000064u, CAI_SRC, DMR_IP_TTL_DEFAULT, DMR_IP_PROTO_UDP, l4, sizeof(l4),
 						true, 1, &pdu, &sap);
 	CHECK(sap == DMR_SAP_IP);
 

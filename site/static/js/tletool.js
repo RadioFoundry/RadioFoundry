@@ -7,7 +7,7 @@ import {
 } from "./satellite-tle.js";
 import { pushSatelliteBundle } from "./satellite-radio.js";
 import {
-	Link, SerialStream, RFOUNDRY_USB, browserErrorKey, probe, serialApi, serialSupported,
+	Link, SerialStream, RFOUNDRY_USB, CABLES, browserErrorKey, probe, serialApi, serialSupported,
 } from "./flasher/link.js";
 import { page } from "./i18n.js";
 
@@ -21,8 +21,7 @@ const status = document.getElementById("satellite-tle-status");
 const providerInput = document.getElementById("tle-provider");
 const searchInput = document.getElementById("satellite-tle-search");
 const profileById = new Map(SATELLITES.map((satellite) => [satellite.id, satellite]));
-const RADIO_PORT_FILTERS = [RFOUNDRY_USB, ...[0x0403, 0x1A86, 0x10C4, 0x067B]
-	.map((usbVendorId) => ({ usbVendorId }))];
+const RADIO_PORT_FILTERS = [RFOUNDRY_USB, ...CABLES];
 let catalog = null;
 let usingAmsat = false;
 const selected = new Set(DEFAULT_SELECTED_IDS);

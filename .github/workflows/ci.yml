@@ -66,10 +66,8 @@ jobs:
           set -eu
           if [ "${RFOUNDRY_CI_IMAGE:-}" != 1 ]; then   # the self-hosted runner's image has these already
             sudo apt-get update -qq
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends tshark
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends gcovr tshark
           fi
-          python3 -m pip install --user --break-system-packages -r tools/coverage-requirements.txt
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Unit tests, once, with coverage and under ASan and UBSan
         env:

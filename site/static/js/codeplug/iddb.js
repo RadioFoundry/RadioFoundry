@@ -35,6 +35,12 @@ export function capacity(rec, end) {
 	return per1 + Math.max(0, Math.floor((end - AREA2) / rec));
 }
 
+// A database header the editor can't parse (its tag, but a format, record size or count readHeader() doesn't take):
+// the editor can't read or rebuild it, only remove it
+export function unreadable(b) {
+	return b[AREA1] === 0x49 && b[AREA1 + 1] === 0x64 && !readHeader(b);
+}
+
 // The header as stored, or null without a database
 export function readHeader(b) {
 	const h = b.subarray(AREA1, AREA1 + HEADER);

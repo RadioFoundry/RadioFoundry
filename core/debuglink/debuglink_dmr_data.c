@@ -35,7 +35,8 @@ static const char *event_key(uint8_t e)
 	static const char *const names[] = { "none", "sms_received", "sms_sent", "sms_failed", "call_alert",
 					     "call_alert_acked", "call_alert_failed", "radio_check_ok",
 					     "radio_check_failed", "radio_check_answered", "ars_changed",
-					     "emergency_alarm", "emergency_sent", "emergency_failed" };
+					     "emergency_alarm", "emergency_sent", "emergency_failed", "zone_offer",
+					     "zone_sent", "zone_failed", "zone_refused", "sms_blocked" };
 	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
 }
 

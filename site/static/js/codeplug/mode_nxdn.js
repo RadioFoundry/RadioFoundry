@@ -87,6 +87,8 @@ export const nxdnKind = {
 		// blank: the RX RAN, RAN 1 when that is every RAN
 		ranField("txRan", "editor.nxdn.tx_ran", { blank: (p) => txDefault(p.rxRan) }),
 	],
+	// a transmit key picked: the channel transmits scrambled (Clear: not)
+	encryptsTx: (c, p) => p?.txKeyId != null,
 	validate(c, p, problem) {
 		targetRange(c, problem);
 		if (p?.txKeyId != null && !this.txKeyOptions(c).includes(p.txKeyId))

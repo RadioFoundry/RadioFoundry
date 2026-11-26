@@ -2,8 +2,9 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Microphone gain (Settings > Talk & listen > Mic gain; docs/spec/radio-features.md 3.6): a step 0..10, 2 dB a step,
 // 5 = the board's own levels. A board with hal_radio_t.mic_gain gets the step as a dB offset for FM and DMR (the
-// modem's microphone gain); otherwise DMR scales the mic samples before the vocoder (ambeVoiceSetMicGain) and FM
-// isn't changed.
+// modem's microphone gain); otherwise the step scales the mic PCM before DMR's and P25's encoders and FM isn't
+// changed. A board whose PCM is quiet (hal_radio_t.mic_pcm_db) has that much more gain on the PCM at every step; the
+// PCM gain always goes through a peak limiter (core/dsp/miclimit.h). DMR and P25 get the same PCM gain.
 //
 // Threading: any task. Both paths only store a value; the next transmission takes it. RAM only: the UI stores the
 // setting (settings_t.mic_gain) and applies it at start-up.
@@ -38,6 +39,19 @@ static inline bool mic_gain_available(void)
 }
 
 void radio_set_mic_gain(uint8_t step);
+
+// The board's extra PCM gain, dB (hal_radio_t.mic_pcm_db; 0 without one)
+static inline int8_t mic_gain_board_pcm_db(void)
+{
+	return board.radio != NULL ? board.radio->mic_pcm_db : 0;
+}
+
+// The gain on the mic PCM before a vocoder's encoder now, dB and Q8 (with the step in force): the board's
+// mic_pcm_db, plus the step's offset when the board doesn't take the step in its audio path. DMR and P25 have it
+// pushed by radio_set_mic_gain (ambeVoiceSetMicGainQ8, p25VoiceSetMicGainQ8); another encoder can read it at each
+// block
+int radio_mic_pcm_db(void);
+uint16_t radio_mic_pcm_q8(void);
 // The step last set (MIC_GAIN_UNITY until the first call)
 uint8_t radio_mic_gain(void);
 

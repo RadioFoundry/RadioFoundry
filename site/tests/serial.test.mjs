@@ -6,9 +6,10 @@
 
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 
 import * as diag from "../static/js/diag.js";
-import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, noDeviceChosen, grantedPorts, knownRadioPort } from "../static/js/flasher/link.js";
+import { SerialStream, CableError, limits, Link, probe, silence, whyNoAnswer, noAnswerKey, writtenWithoutLink, parseRadioInfo, flashBytes, browserErrorKey, noDeviceChosen, grantedPorts, knownRadioPort, CABLES, RFOUNDRY_USB } from "../static/js/flasher/link.js";
 import { CpsSerial, TransportError } from "../static/js/codeplug/transport.js";
 import { Stub, limits as stubLimits } from "../static/js/flasher/stub.js";
 import { openFile, FileError } from "../static/js/editor/files.js";
@@ -265,6 +266,30 @@ test("a cable picked before that sends nothing is reported, not passed over as a
 	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [dead] } }, configurable: true });
 	await assert.rejects(knownRadioPort([{ usbVendorId: 0x067B }]), (e) => e instanceof CableError && e.code === "stalled");
 	assert.equal(dead.opens, 1, "checked once");
+});
+
+// Field (#371): an RT Systems USB-K4Y cable (FTDI chip, vendor id 2100) worked for flashing but the editor's chooser
+// left it out, because each page kept its own list of cable vendor ids
+test("a cable under RT Systems' vendor id is offered by the chooser filters and found among the granted ports", async (t) => {
+	assert.ok(CABLES.some((f) => f.usbVendorId === 0x2100 && f.usbProductId === undefined), "the vendor id, any product");
+	const nav = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+	t.after(() => { nav ? Object.defineProperty(globalThis, "navigator", nav) : delete globalThis.navigator; });
+	class RtCable extends FakePort {
+		getInfo() { return { usbVendorId: 0x2100, usbProductId: 0x9E5D }; }
+	}
+	const rt = new RtCable();
+	Object.defineProperty(globalThis, "navigator", { value: { serial: { getPorts: async () => [rt] } }, configurable: true });
+	assert.deepEqual(await grantedPorts([RFOUNDRY_USB, ...CABLES]), [rt]);
+});
+
+test("the cable vendor ids are listed once: no page keeps a copy of its own", () => {
+	// a list typed out in a page is how one chooser came to miss a cable the others offered
+	const root = new URL("../static/js/", import.meta.url).pathname;
+	const files = [];
+	const walk = (dir) => readdirSync(dir, { withFileTypes: true }).forEach((e) => (e.isDirectory() ? walk(`${dir}${e.name}/`) : e.name.endsWith(".js") && files.push(`${dir}${e.name}`)));
+	walk(root);
+	const copies = files.filter((f) => /0x0403\s*,\s*0x1A86/i.test(readFileSync(f, "utf8"))).map((f) => f.slice(root.length));
+	assert.deepEqual(copies, [], "the list lives in flasher/adapter.js (CHIPS), as an ordered Map");
 });
 
 test("a port that never opens ends as a cable fault", async (t) => {

@@ -22,7 +22,8 @@ static int failures, checks;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); } } while (0)
 
 #define RADIO_ID	10005u
-#define HOST_IP		(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
+#define HOST_IP		(IPGW_PERIPHERAL_NET | RADIO_ID)	// 13.0.39.21
+#define RADIO_IP	(IPGW_INDIVIDUAL_NET | RADIO_ID)	// 12.0.39.21
 
 static const uint8_t HOST_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x04 };
 static const uint8_t RADIO_MAC[6] = { 0x02, 0x44, 0x01, 0x02, 0x03, 0x05 };
@@ -127,6 +128,7 @@ static struct {
 	uint16_t port;
 	uint8_t data[64];
 	int len;
+	uint32_t src_ip;	// ipGatewayUdpAirSource in the call
 } local;
 static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, uint16_t dport, const uint8_t *p, int len)
 {
@@ -137,6 +139,7 @@ static void local_udp(bool from_air, uint32_t src, uint16_t port, uint32_t dst, 
 	local.src = src;
 	local.port = port;
 	local.len = len;
+	local.src_ip = ipGatewayUdpAirSource();
 	memcpy(local.data, p, (size_t)len);
 }
 
@@ -173,7 +176,8 @@ bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dst
 	if (service_busy) {
 		return false;
 	}
-	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) : srcIp;
+	srcIp = (srcIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(false, RADIO_ID) :
+			(srcIp == DMR_DATA_IP_OUR_PERIPHERAL) ? dmrDataPeripheralAddress(RADIO_ID) : srcIp;
 	dstIp = (dstIp == DMR_DATA_IP_OURS) ? dmrDataIdAddress(group, dst) : dstIp;
 	bool compress = (protocol == DMR_IP_PROTO_UDP) && (length >= 8) && dmrDataUdpCompress(get16(&l4[0]), get16(&l4[2]));
 	int n = dmrDataEncodeIP(group, dst, RADIO_ID, dstIp, srcIp, ttl, protocol, l4, length, compress, dmrDataNextIpId(),
@@ -320,7 +324,7 @@ int main(void)
 
 	hostlink_net_set_air(&air_ops);
 	hostlink_net_init(serial_in);
-	CHECK(ipGatewayHostIP() == HOST_IP && ipGatewayRadioIP() == (HOST_IP ^ 1u));
+	CHECK(ipGatewayHostIP() == HOST_IP && ipGatewayRadioIP() == RADIO_IP);
 
 	// UDP from the host to radio 100's address: the air op gets it as IP (layer 4 on)
 	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 5000, 5001, hello, sizeof(hello)));
@@ -345,7 +349,7 @@ int main(void)
 
 	// UDP serial: bytes to the radio's own address on 3334 reach the host link's dispatch ...
 	static const uint8_t version_req[] = { 0xE0, 0x03, 0x00 };
-	from_host(f, host_udp(f, HOST_IP ^ 1u, 40123, IPGW_SERIAL_PORT, version_req, sizeof(version_req)));
+	from_host(f, host_udp(f, RADIO_IP, 40123, IPGW_SERIAL_PORT, version_req, sizeof(version_req)));
 	CHECK(serial_len == 3 && memcmp(serial_got, version_req, 3) == 0);
 	// ... and replies go back to that host port as datagrams of at most 512 bytes, waiting out a busy IN endpoint
 	static uint8_t reply[1100];
@@ -357,7 +361,7 @@ int main(void)
 	CHECK(hostlink_net_write(reply, sizeof(reply)) == sizeof(reply));
 	CHECK(sent_count == 3);
 	const uint8_t *ip = sent[0] + 14, *udp = ip + 20;
-	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 16) == HOST_IP && get32(ip + 12) == (HOST_IP ^ 1u));
+	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 16) == HOST_IP && get32(ip + 12) == RADIO_IP);
 	CHECK(get16(udp) == IPGW_SERIAL_PORT && get16(udp + 2) == 40123 && get16(udp + 4) == 8 + 512);
 	CHECK(memcmp(udp + 8, reply, 512) == 0);
 	CHECK(get16(sent[2] + 14 + 20 + 4) == 8 + (1100 - 1024) && memcmp(sent[2] + 42, reply + 1024, 76) == 0);
@@ -424,12 +428,12 @@ int main(void)
 	// Local UDP services: port 161 on the radio's own address from the host goes to the bound service, not to the air
 	CHECK(ipGatewayUdpBindAir(161, local_udp));
 	int ip_before = air.ip_calls;
-	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 161, hello, sizeof(hello)));
+	from_host(f, host_udp(f, RADIO_IP, 40000, 161, hello, sizeof(hello)));
 	CHECK(local.calls == 1 && !local.from_air && local.src == HOST_IP && local.port == 40000 &&
 	      local.len == (int)sizeof(hello) && memcmp(local.data, hello, sizeof(hello)) == 0 && air.ip_calls == ip_before);
-	// Another port of the radio's address still goes over the air (to the radio with that ID)
-	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 162, hello, sizeof(hello)));
-	CHECK(local.calls == 1 && air.ip_calls == ip_before + 1 && air.dst == (RADIO_ID ^ 1u));
+	// Another port of the radio's address never goes over the air (though the address is also the radio with that ID)
+	from_host(f, host_udp(f, RADIO_IP, 40000, 162, hello, sizeof(hello)));
+	CHECK(local.calls == 1 && air.ip_calls == ip_before);
 	// UDP over the air (SAP 4) to our ID and port 161: the service, from the radio task, with the link down too;
 	// nothing goes to the host
 	memset(&p, 0, sizeof(p));
@@ -454,7 +458,35 @@ int main(void)
 	link_up = true;
 	hostlink_net_poll(now_ms);
 	CHECK(local.calls == 2 && local.from_air && local.src == 9991234 && local.port == 4321 &&
-	      local.len == (int)sizeof(hello) && sent_count == 0);
+	      local.len == (int)sizeof(hello) && sent_count == 0 && local.src_ip == (IPGW_INDIVIDUAL_NET | 9991234u));
+	CHECK(ipGatewayUdpAirSource() == 0);	// only during the handler's call
+	// The handler also gets the IPv4 source when the sender routes for a host (the reply goes there)
+	put32(pip + 12, 0xC0A80105u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	hostlink_net_packet(&p);
+	CHECK(local.calls == 3 && local.src == 9991234 && local.src_ip == 0xC0A80105u);
+	put32(pip + 12, IPGW_INDIVIDUAL_NET | 9991234u);
+	put16(pip + 10, 0);
+	put16(pip + 10, ip_checksum(pip, 20));
+	// ... but compressed (SAP 3) with DAID 1, our peripheral network 13.<our ID>, it is the host's, not the service's
+	{
+		dmrDataPacket_t c;
+
+		memset(&c, 0, sizeof(c));
+		c.sap = DMR_SAP_UDPIP_COMPRESSION;
+		c.dst = RADIO_ID;
+		c.src = 9991234;
+		int n = dmrDataCompressUDPHeader(1, DMR_UDPC_IDS(DMR_UDPC_ID_RADIO, DMR_UDPC_ID_PERIPHERAL), 4321, 161, c.data);
+		memcpy(c.data + n, hello, sizeof(hello));
+		c.length = (uint16_t)(n + sizeof(hello));
+		sent_count = 0;
+		hostlink_net_packet(&c);
+		hostlink_net_poll(now_ms);
+		CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+		      get32(sent[0] + 14 + 16) == HOST_IP);
+		sent_count = 0;
+	}
 	// ... but not when it is for a talkgroup, or for another ID: those go to the host as before
 	p.group = true;
 	hostlink_net_packet(&p);
@@ -463,7 +495,7 @@ int main(void)
 	p.dst = RADIO_ID + 1;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 2);
+	CHECK(local.calls == 3 && sent_count == 2);
 	// ... nor when its IP destination is another address (we are the gateway to it): to the host, the address kept
 	p.dst = RADIO_ID;
 	put32(pip + 16, 0xC0A80A05u);
@@ -472,7 +504,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u);
 	// ... also an off-net address with our ID's 24 bits under another first octet (10.x.y.z), with its TTL kept
 	put32(pip + 16, 0x0A000000u | RADIO_ID);
@@ -482,7 +514,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 &&
 	      get32(sent[0] + 14 + 16) == (0x0A000000u | RADIO_ID) && sent[0][14 + 8] == 9);
 	pip[8] = 64;
 	put32(pip + 16, 0xC0A80A05u);
@@ -501,7 +533,7 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
+	CHECK(local.calls == 3 && sent_count == 1 && memcmp(sent[0], HOST_MAC, 6) == 0 && sent[0][14 + 9] == 1 &&
 	      get32(sent[0] + 14 + 16) == 0xC0A80A05u && memcmp(sent[0] + 34, echo, sizeof(echo)) == 0);
 	memcpy(pip, saved, sizeof(saved));
 	p.length = (uint16_t)(28 + sizeof(hello));
@@ -515,9 +547,9 @@ int main(void)
 	sent_count = 0;
 	hostlink_net_packet(&p);
 	hostlink_net_poll(now_ms);
-	CHECK(local.calls == 2 && sent_count == 1);
-	from_host(f, host_udp(f, HOST_IP ^ 1u, 40000, 69, hello, sizeof(hello)));	// from the link it does
-	CHECK(local.calls == 3 && !local.from_air);
+	CHECK(local.calls == 3 && sent_count == 1);
+	from_host(f, host_udp(f, RADIO_IP, 40000, 69, hello, sizeof(hello)));	// from the link it does
+	CHECK(local.calls == 4 && !local.from_air);
 	CHECK(ipGatewayUdpBind(69, NULL));
 	put16(pip + 22, 161);
 	// The service's answer to the host: from the radio's address and port 161
@@ -525,7 +557,7 @@ int main(void)
 	CHECK(ipGatewayUdpSend(HOST_IP, 161, 40000, hello, sizeof(hello)) && sent_count == 1);
 	ip = sent[0] + 14;
 	udp = ip + 20;
-	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 12) == (HOST_IP ^ 1u) && get32(ip + 16) == HOST_IP &&
+	CHECK(memcmp(sent[0], HOST_MAC, 6) == 0 && get32(ip + 12) == RADIO_IP && get32(ip + 16) == HOST_IP &&
 	      get16(udp) == 161 && get16(udp + 2) == 40000 && memcmp(udp + 8, hello, sizeof(hello)) == 0);
 
 	// The default air side (hostlink_net_air.c): the host link task's packets go into the air queue, whose tick
@@ -549,6 +581,9 @@ int main(void)
 	CHECK(pk != NULL && pk->sap == DMR_SAP_UDPIP_COMPRESSION && pk->dst == 100 && pk->src == RADIO_ID && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.srcPort == 5000 && u.dstPort == 5001 &&
 	      u.length == (int)sizeof(hello) && memcmp(u.payload, hello, sizeof(hello)) == 0);
+	// ... from the host's address, 13.<our ID>: the peripheral network, SAID 1 (TS 102 361-3 5.1.1)
+	CHECK(pk != NULL && pk->data[2] == 0x10 && u.srcIp == dmrDataPeripheralAddress(RADIO_ID) &&
+	      u.dstIp == dmrDataIdAddress(false, 100));
 	air_tick(now_ms);		// the service is done with the first: the second goes
 	CHECK(svc_lists == 2);
 	pk = svc_packet();
@@ -645,7 +680,7 @@ int main(void)
 	CHECK(qs.depth == 0);
 
 	// Off-net through the gateway ID: the queue carries the real destination and the TTL to the service, which sends
-	// the full header to the gateway radio from our ID's address
+	// the full header to the gateway radio from the host's address (13.<our ID>)
 	ipGatewaySetOffNetId(9990500);
 	int lists0 = svc_lists;
 	from_host(f, host_udp(f, 0xC0A80A05u, 5000, 5001, hello, sizeof(hello)));
@@ -653,7 +688,7 @@ int main(void)
 	CHECK(svc_lists == lists0 + 1);
 	pk = svc_packet();
 	CHECK(pk != NULL && pk->sap == DMR_SAP_IP && pk->dst == 9990500 && !pk->group && pk->data[8] == 63);
-	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstIp == 0xC0A80A05u && u.srcIp == dmrDataIdAddress(false, RADIO_ID));
+	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstIp == 0xC0A80A05u && u.srcIp == dmrDataPeripheralAddress(RADIO_ID));
 	ipGatewaySetOffNetId(0);
 	air_tick(now_ms);
 	svc_lists = 1;
@@ -671,7 +706,7 @@ int main(void)
 
 	// TCP to the radio itself (CONFIG_NET_TCP): a port nobody listens on is refused with a RST from the radio's
 	// address, also from a source beyond the host (the radio's own connections get their replies that way)
-	uint32_t radio_ip = HOST_IP ^ 1u;
+	uint32_t radio_ip = RADIO_IP;
 	sent_count = 0;
 	from_host(f, host_tcp(f, HOST_IP, radio_ip, 40000, 9, 1000, 0, 0x02));
 	CHECK(sent_count == 1 && sent[0][14 + 9] == 6 && get32(sent[0] + 14 + 12) == radio_ip);
@@ -702,6 +737,16 @@ int main(void)
 	CHECK(!hostlink_net_passthrough_active());
 	hostlink_net_set_control(true, 0);
 	CHECK(hostlink_net_passthrough_active() == (bool)CONFIG_DMR_CONTROL_STATION);
+	// ... in force, the PC answers for the radio, so it sends as the radio: 12.<our ID> on the air (SAID 0)
+	svc_lists = 0;
+	from_host(f, host_udp(f, IPGW_INDIVIDUAL_NET | 100u, 5000, 5001, hello, sizeof(hello)));
+	air_tick(now_ms);
+	pk = svc_packet();
+	CHECK(svc_lists == 1 && pk != NULL && pk->sap == DMR_SAP_UDPIP_COMPRESSION &&
+	      pk->data[2] == (CONFIG_DMR_CONTROL_STATION ? 0x00 : 0x10));
+	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) &&
+	      u.srcIp == (CONFIG_DMR_CONTROL_STATION ? dmrDataIdAddress(false, RADIO_ID) : dmrDataPeripheralAddress(RADIO_ID)));
+	air_tick(now_ms);
 	link_up = false;
 	CHECK(!hostlink_net_passthrough_active());
 	link_up = true;
@@ -739,7 +784,7 @@ int main(void)
 	pk = svc_packet();
 	CHECK(svc_lists == 1 && pk != NULL && pk->src == RADIO_ID && pk->dst == 9991234 && !pk->group);
 	CHECK(pk != NULL && dmrDataGetUDP(pk, &u) && u.dstPort == DMR_UDP_PORT_ETSI_TEXT && u.length == 4 &&
-	      memcmp(u.payload, answer, 4) == 0);
+	      memcmp(u.payload, answer, 4) == 0 && u.srcIp == dmrDataIdAddress(false, RADIO_ID));
 	// The serial protocols at the fixed address
 	serial_len = 0;
 	from_host(f, host_udp(f, IPGW_FIXED_LINK_DEFAULT, 40123, IPGW_SERIAL_PORT, version_req, sizeof(version_req)));
