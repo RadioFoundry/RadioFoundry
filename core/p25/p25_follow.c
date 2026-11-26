@@ -21,6 +21,7 @@ _Static_assert(sizeof(p25_follow_t) <= 480, "the trunking follower grew past its
 #define NO_OP		0xFF	// acc.pend: nothing waiting
 
 enum { PH_DWELL, PH_IDENT, PH_BACKOFF };
+#define PH_FAILED	0x80u	// tune refused: keep units gated while the existing hunt timers advance
 // Why a voice channel is left
 enum { LEAVE_TERM, LEAVE_ENC, LEAVE_OTHER };
 
@@ -44,6 +45,7 @@ static void count8(uint8_t *c)
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
 	f->view.tuning = true;
+	f->phase &= (uint8_t)~PH_FAILED;
 	f->acc.heard = false;
 	if (f->hooks->tune)
 		f->hooks->tune(hz, what, id, f->ctx);
@@ -887,9 +889,23 @@ void p25_follow_end(p25_follow_t *f)
 	view_end(f);
 }
 
-void p25_follow_retuned(p25_follow_t *f, uint32_t now)
+void p25_follow_retuned(p25_follow_t *f, uint32_t now, bool ok)
 {
 	view_begin(f);
+	if (!ok) {
+		// A refused tune can leave the receiver on the old frequency. Its units cannot confirm this candidate.
+		acc_lost(f);
+		f->have_id = false;
+		f->view.nac = P25_NAC_ANY;
+		f->view.tuning = true;
+		if (f->view.req == P25_REQ_TALK)
+			f->view.req = P25_REQ_IDLE;
+		f->phase |= PH_FAILED;
+		f->t_state = now;
+		view_end(f);
+		return;
+	}
+	f->phase &= (uint8_t)~PH_FAILED;
 	f->view.tuning = false;
 	// Timers run from the moment the receiver is there
 	f->t_state = now;
@@ -1006,9 +1022,17 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
 
-	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
+	if ((f->view.tuning && !(f->phase & PH_FAILED)) || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
+	if ((f->phase & PH_FAILED) && f->view.state != P25_FOLLOW_HUNT) {
+		// A failed voice tune or control-channel return needs fresh control-channel proof. The next tune is
+		// requested from this tick, so even a caller completing it inside its hook cannot recurse through hunt.
+		hunt_start(f, now);
+		view_end(f);
+		return;
+	}
+	uint8_t phase = (uint8_t)(f->phase & ~PH_FAILED);
 	switch (f->view.state) {
 	case P25_FOLLOW_HUNT:
 		if (c->fallback_ms && !f->view.fallback && elapsed(now, f->t_nocc, c->fallback_ms)) {
@@ -1016,11 +1040,11 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 			if (f->hooks->fallback)
 				f->hooks->fallback(f->ctx);
 		}
-		if (f->phase == PH_DWELL && elapsed(now, f->t_state, P25_FOLLOW_DWELL_MS)) {
+		if (phase == PH_DWELL && elapsed(now, f->t_state, P25_FOLLOW_DWELL_MS)) {
 			hunt_next(f, now);
-		} else if (f->phase == PH_IDENT && elapsed(now, f->t_state, P25_FOLLOW_ID_MS)) {
+		} else if (phase == PH_IDENT && elapsed(now, f->t_state, P25_FOLLOW_ID_MS)) {
 			hunt_next(f, now);
-		} else if (f->phase == PH_BACKOFF && elapsed(now, f->t_state, f->backoff)) {
+		} else if (phase == PH_BACKOFF && elapsed(now, f->t_state, f->backoff)) {
 			f->backoff = f->backoff * 2 > P25_FOLLOW_BACKOFF_MAX ? P25_FOLLOW_BACKOFF_MAX : f->backoff * 2;
 			f->tried = 0;
 			hunt_try(f, now);

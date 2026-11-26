@@ -25,11 +25,10 @@ typedef struct {
 	p25_follow_cc_t cc[P25_CP_CTL_MAX];
 	p25_follow_iden_t iden[P25_FOLLOW_IDENS];
 	// The last retune the follower asked (its tune hook, from either task): want moves past done until the radio
-	// task has carried it out
+	// task has attempted it; the follower separately records whether that tune succeeded
 	volatile uint8_t want, done;
 	uint8_t what;
 	uint32_t hz, id;
-	bool owed;			// the receiver is on the new frequency, the follower not told yet
 	volatile uint8_t in_prov, in_radio;	// which task is inside the follower
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
@@ -424,20 +423,16 @@ static void trunk_service(p25_mem_t *m)
 		c.rx_nac = c.tx_nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
 		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP || t->what == P25_FOLLOW_TUNE_TALK ? (uint16_t)t->id : 0u;
 		t->done = want;
-		// A frequency the radio can't receive stays untuned: the follower hears nothing there and moves on
-		if (hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz)) {
-			board.radio->rx(hz, RADIO_BW_12K5, &no_tone);
-		} else {
+		bool ok = hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz) &&
+			  board.radio->rx(hz, RADIO_BW_12K5, &no_tone);
+		if (!ok)
 			stats.trunk_untuned++;
-		}
 		stats.trunk_retunes++;
-		p25_engine_set(&m->eng, &c);
-		p25_engine_retuned(&m->eng);
-		t->owed = true;
-	}
-	if (t->owed) {
-		t->owed = false;
-		p25_follow_retuned(&t->f, now);
+		if (ok) {
+			p25_engine_set(&m->eng, &c);
+			p25_engine_retuned(&m->eng);
+		}
+		p25_follow_retuned(&t->f, now, ok);
 	}
 	if (t->talk_end) {
 		t->talk_end = false;
@@ -450,7 +445,7 @@ static void trunk_service(p25_mem_t *m)
 	p25_follow_tick(&t->f, now);
 	// Acquisition may confirm a wildcard without asking for a frequency change. Consume one current follower
 	// context under the same exclusion as its retune, and refresh both directions, including NAC 000.
-	if (t->done == t->want) {
+	if (t->done == t->want && !t->f.view.tuning) {
 		uint16_t nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
 		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac) {
 			p25_engine_cfg_t c = m->eng.cfg;
@@ -535,7 +530,7 @@ uint8_t radio_p25_trunk_talk(uint32_t *hz)
 	case P25_REQ_QUEUED:
 		return RADIO_P25T_WAIT;
 	case P25_REQ_TALK:
-		if (t->done != t->want || t->owed)
+		if (t->done != t->want || tview.v.tuning)
 			return RADIO_P25T_WAIT;	// the receiver not yet on the voice channel
 		*hz = tview.v.talk_hz;
 		return RADIO_P25T_GO;
@@ -581,7 +576,7 @@ static bool trunk_confirmed(const p25_mem_t *m)
 	const p25_follow_view_t *v = &t->f.view;
 
 	return v->sys_ok && !v->unverified && !v->tuning && v->reg != P25_REG_BLOCKED &&
-	       v->nac != P25_NAC_ANY && v->nac != P25_NAC_REPEAT_ANY && t->done == t->want && !t->owed &&
+	       v->nac != P25_NAC_ANY && v->nac != P25_NAC_REPEAT_ANY && t->done == t->want &&
 	       m->eng.cfg.rx_nac == v->nac && m->eng.cfg.tx_nac == v->nac;
 }
 
@@ -669,7 +664,6 @@ bool radio_p25_begin(const channel_t *ch, uint16_t number, uint32_t own_id)
 		t->ptt = t->talk_end = false;
 		t->ptt_seq = t->ptt_done = 0;
 		twhy = RADIO_TRUNK_WHY_NONE;
-		t->owed = false;
 		t->in_prov = t->in_radio = 0;
 		memset(&tview, 0, sizeof(tview));
 		// Before the engine: its first unit may come at once. Its first tune is carried out below

@@ -26,7 +26,7 @@ static void tuned(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
 	fixture_t *x = ctx;
 	(void)hz; (void)what; (void)id;
 	x->tunes++;
-	p25_follow_retuned(&x->f, x->now);
+	p25_follow_retuned(&x->f, x->now, true);
 }
 
 static bool sent(uint32_t hz, const uint8_t *block, void *ctx)

@@ -225,7 +225,7 @@ typedef struct {
 	uint8_t nlearn;
 	uint8_t good;		// the last control channel that answered, 0xFF none
 	uint8_t tried;		// candidates tried in this pass
-	uint8_t phase;		// in a hunt: dwell, identity wait, backoff
+	uint8_t phase;		// hunt dwell, identity wait or backoff, plus the failed-tune flag
 	bool left_enc;		// left_ch / left_tg is an encrypted call skipped
 	bool have_id;		// the candidate's system identity matched
 	p25_follow_acc_t acc;
@@ -240,8 +240,9 @@ typedef struct {
 void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_follow_hooks_t *hooks, void *ctx,
 		      uint32_t now);
 void p25_follow_end(p25_follow_t *f);
-// The receiver is on the frequency of the last tune
-void p25_follow_retuned(p25_follow_t *f, uint32_t now);
+// Tune completion: ok means the HAL accepted RX. False discards proof and keeps units gated while the existing hunt
+// timers choose the next candidate (or reacquire control after a failed voice tune).
+void p25_follow_retuned(p25_follow_t *f, uint32_t now, bool ok);
 // A unit the receiver took (p25_engine_hooks_t.rx_unit), and a call's fields (rx_call)
 void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now);
 void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now);

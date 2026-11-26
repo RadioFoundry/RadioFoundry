@@ -78,10 +78,16 @@ static struct {
 
 static void r_init(void) {}
 static radio_mode_t hw_mode;
+static uint32_t rx_refuse_hz;
+static unsigned rx_refused;
 // As on the DM-1701: the modem starts only with the board in DMR mode (dm1701_dmr_enter)
 static void r_set_mode(radio_mode_t m) { hw_mode = m; hw.set_mode_calls++; sim.refuse_start = m != RADIO_MODE_DMR; }
 static bool r_rx(uint32_t hz, radio_bw_t bw, const subtone_t *t)
 {
+	if (rx_refuse_hz != 0 && hz == rx_refuse_hz) {
+		rx_refused++;
+		return false;
+	}
 	hw.rx_hz = hz;
 	hw.rx_bw = bw;
 	hw.rx_tone = *t;
@@ -8247,7 +8253,7 @@ static void test_p25_trunk(void)
 	site.grant_enc = false;
 	stored_trunk.sys.options = 0;
 
-	// A grant on a channel the radio can't receive: not tuned; with no voice there the follower comes back
+	// A grant on a channel the radio can't receive: the failed tune reacquires control without claiming voice RX.
 	site.iden2 = true;
 	site.grant_ch = 0x200A;
 	req(RREQ_ZONE_POS, 0);
@@ -8257,7 +8263,7 @@ static void test_p25_trunk(void)
 	radio_p25_stats(&st);
 	CHECK(st.trunk_untuned >= 1 && hw.rx_hz == TS_CC1);
 	p25t_view_text(buf, sizeof buf);
-	CHECK(strstr(buf, "p25t.voice_lost=0\n") == NULL);
+	CHECK(strstr(buf, "p25t.voice_lost=0\n") != NULL);
 	site.grant_tg = 0;
 	site.iden2 = false;
 	run(1500);
@@ -8537,6 +8543,69 @@ static void test_p25_trunk_tx(void)
 	site.on = false;
 }
 
+// A refused tune leaves the receiver hearing a valid old frequency. Its same-System/NAC broadcasts must not prove
+// that the requested candidate was reached; only the next successful physical tune may resume access.
+static void test_p25_trunk_failed_retune(void)
+{
+	setup_codeplug_p25();
+	add(3, "P25T tune", TS_CC1, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_P25_TRUNK;
+	chans[3].system = 0;
+	memset(&stored_trunk, 0, sizeof stored_trunk);
+	stored_trunk.sys = (p25_tsys_t){ .wacn = TS_WACN, .sysid = TS_SYSID, .cc_nac = TS_NAC };
+	stored_trunk.unit_id = 4321;
+	stored_trunk.talk_group = 201;
+	stored_trunk.ctl_count = 3;
+	stored_trunk.ctl[0] = (p25_ctl_t){ .chan = 0x1002, .rx_hz = TS_CC2 };
+	stored_trunk.ctl[1] = (p25_ctl_t){ .rx_hz = TS_FAR_VOICE };
+	stored_trunk.ctl_identity[1] = (p25_site_t){ .nac_set = true, .nac = 0x456 };
+	stored_trunk.ctl[2] = (p25_ctl_t){ .chan = 0x1001, .rx_hz = TS_CC1 };
+	stored_trunk.iden_set = 1u << 1;
+	stored_trunk.iden[1] = (p25_iden_t){ .base_hz = TS_BASE, .spacing_hz = 12500, .tx_offset_hz = TS_OFFSET };
+	memset(&site, 0, sizeof site);
+	site.cc_hz = TS_CC1;
+	site.cc_in_hz = TS_CC1 + TS_OFFSET;
+	site.voice_hz = TS_VOICE;
+	site.on = true;
+	start();
+	p25_defaults();
+	aud.feed = true;
+	rx_refuse_hz = TS_CC2;
+	rx_refused = 0;
+	int keyed = hw.tx_calls;
+	req(RREQ_ZONE_POS, 2);
+	run(500);
+	radio_p25_trunk_view_t v;
+	radio_p25_trunk_view(&v);
+	CHECK(rx_refused == 1 && hw.rx_hz == TS_CC1 && v.v.cc == 0);
+	CHECK(v.v.state == P25_FOLLOW_HUNT && v.v.tuning && !v.v.sys_ok && v.v.nac == P25_NAC_ANY);
+	CHECK(hw.tx_calls == keyed && site.reg_rx == 0 && !hw.keyed && fair[0].qn == 0);
+	// The next candidate is rejected by the radio's band policy; it also cannot consume the old site's proof.
+	run(200);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.cc == 1 && v.v.tuning && !v.v.sys_ok && hw.rx_hz == TS_CC1 && hw.tx_calls == keyed);
+	CHECK(v.untuned >= 2);
+	radio_p25_settings_t in_force;
+	CHECK(radio_p25_in_force(&in_force) && in_force.rx_nac == TS_NAC && in_force.tx_nac == TS_NAC);
+	// The follower's ordinary dwell advances to a usable candidate without recursion or a stuck tune.
+	run(1600);
+	radio_p25_trunk_view(&v);
+	CHECK(v.v.cc == 2 && v.v.state == P25_FOLLOW_CONTROL && !v.v.tuning && v.v.sys_ok);
+	CHECK(v.v.reg == P25_REG_READY && site.reg_rx != 0 && site.bad_rx == 0);
+	// A granted voice tune that the HAL refuses revokes TALK before keying; the existing hunt can recover.
+	rx_refuse_hz = TS_VOICE;
+	site.ans_req = SITE_ANS_ACCEPT;
+	keyed = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(1000);
+	CHECK(rx_refused == 2 && hw.tx_calls == keyed + 1 && hw.rx_hz == TS_CC1 && sm.view.state != RS_TX);
+	CHECK(!hw.keyed && !sm.air_keyed && radio_p25_tx_state() != AIR_TX_PRIMING && fair[0].qn == 0);
+	req(RREQ_PTT, 0);
+	rx_refuse_hz = 0;
+	req(RREQ_ZONE_POS, 0);
+	site.on = false;
+}
+
 // A system heard naming WACN $BEEFF (blocked as $BEE00 is) gets nothing from the radio until power off: not on this visit, not when the
 // channel is left and taken again, not when the site later names another WACN. Power on again forgets it
 static void test_p25_trunk_wacn_nogo(void)
@@ -8674,6 +8743,7 @@ static void test_p25(void)
 	test_p25_trunk();
 	test_p25_trunk_tx();
 	test_p25_trunk_auto_nac();
+	test_p25_trunk_failed_retune();
 	test_p25_trunk_wacn_nogo();
 	test_p25_conv_wacn_nogo();
 #endif

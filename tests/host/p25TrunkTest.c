@@ -451,7 +451,7 @@ static void mk_sccb(uint8_t b[P25_TSBK_BYTES], uint16_t ch)
 static void retune(p25_follow_t *f)
 {
 	tune_pending = false;
-	p25_follow_retuned(f, now_ms);
+	p25_follow_retuned(f, now_ms, true);
 }
 static void unit_duid(p25_follow_t *f, uint8_t duid)
 {
@@ -2098,7 +2098,7 @@ static void air_run(uint32_t end_ms, double cpk, double sigma)
 			rig.ecfg.rx_tgid = w->what == P25_FOLLOW_TUNE_GROUP ? (uint16_t)w->id : 0;
 			p25_engine_set(&rig.eng, &rig.ecfg);
 			p25_engine_retuned(&rig.eng);
-			p25_follow_retuned(&rig.fol, now_ms);
+			p25_follow_retuned(&rig.fol, now_ms, true);
 		}
 	}
 }
@@ -2119,7 +2119,7 @@ static void rig_begin(const p25_follow_cfg_t *cfg, uint16_t told)
 	tune_pending = false;
 	tuned_hz = tunes[0].hz;
 	p25_engine_retuned(&rig.eng);
-	p25_follow_retuned(&rig.fol, now_ms);
+	p25_follow_retuned(&rig.fol, now_ms, true);
 }
 
 static void rig_end(void)
@@ -2524,6 +2524,72 @@ static void testCandidateNac(void)
 	retune(&f);
 	v = view(&f);
 	CHECK(v.state == P25_FOLLOW_CONTROL && v.sys_ok && v.nac == 0, "return retains confirmed000");
+	// A failed control-channel return must revoke even a previously confirmed zero NAC.
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	retune(&f);
+	p25_follow_talk_end(&f, now_ms);
+	p25_follow_retuned(&f, now_ms, false);
+	v = view(&f);
+	CHECK(v.tuning && !v.sys_ok && v.nac == P25_NAC_ANY && v.req == P25_REQ_IDLE,
+	      "failed control return revokes prior proof and TALK");
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	CHECK(!view(&f).sys_ok, "old-frequency NET cannot repair a failed tune");
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	CHECK(view(&f).sys_ok && view(&f).nac == 0, "successful control retune can confirm again");
+	p25_follow_end(&f);
+}
+
+static void h_failed_tune(uint32_t hz, uint8_t what, uint32_t id, void *ctx)
+{
+	h_tune(hz, what, id, ctx);
+	p25_follow_retuned(ctx, now_ms, false);
+}
+
+static void testFailedRetuneBackoff(void)
+{
+	static const p25_follow_cc_t cc[] = {
+		{ .hz = HZ_CC1, .tx_hz = HZ_CC1 - 45000000 },
+		{ .hz = HZ_CC2, .tx_hz = HZ_CC2 - 45000000 },
+	};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC, .ncc = 2, .cc = cc,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG, .unit_id = OUR_UNIT, .talk_group = 100, .fallback_ms = 1000 };
+	p25_follow_hooks_t hooks = { h_failed_tune, h_fallback, h_send };
+	p25_follow_t f;
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 400000;
+	ntunes = nfallback = nsends = 0;
+	p25_follow_begin(&f, &cfg, &hooks, &f, now_ms);
+	mk_net(b, WACN, SYSID);
+	for (unsigned i = 0; i < 80; i++) {
+		now_ms += 100;
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		p25_follow_ptt(&f, true, now_ms);
+		p25_follow_tick(&f, now_ms);
+	}
+	CHECK(ntunes >= 4 && ntunes <= 10 && nfallback == 1 && f.t_nocc == 400000,
+	      "all failures retain dwell, backoff and fallback without recursive retries (%u tunes, %u fallback)", ntunes, nfallback);
+	CHECK(view(&f).tuning && !view(&f).sys_ok && nsends == 0, "all failed candidates remain inadmissible");
+	// A later successful completion leaves that wait normally and can acquire fresh network proof.
+	hooks.tune = h_tune;
+	now_ms += P25_FOLLOW_BACKOFF_MAX;
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	p25_follow_ptt(&f, false, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	CHECK(view(&f).sys_ok && !view(&f).tuning && nsends == 1, "valid retune after repeated failures recovers");
 	p25_follow_end(&f);
 }
 
@@ -2547,6 +2613,7 @@ int main(void)
 	testWacnNeighbor();
 	testSysidBlocked();
 	testCandidateNac();
+	testFailedRetuneBackoff();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
