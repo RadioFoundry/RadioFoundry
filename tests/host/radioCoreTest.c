@@ -9674,9 +9674,56 @@ bool ysf_chan_save(uint16_t number, const channel_t *ch, const ysf_chan_t *c)
 	stored_ysf[number] = *c;
 	return codeplug_set_channel(number, ch);
 }
-void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, "N0CALL"); }
+static char stored_ysf_call[YSF_CP_CALL_LEN + 1] = "N0CALL";	// the radio-wide record's callsign ("" none)
+void ysf_radio_load(ysf_radio_t *out) { strcpy(out->callsign, stored_ysf_call); }
 void ysf_radio_encode(const ysf_radio_t *r, uint8_t out[YSF_CP_CALL_LEN]) { memcpy(out, r->callsign, YSF_CP_CALL_LEN); }
-void ysf_callsign_from_name(const char *name, char out[YSF_CP_CALL_LEN + 1]) { (void)name; out[0] = '\0'; }
+
+// No YSF callsign set (ysf.md 5.2): PTT and a room command are refused with TXDENY_NO_CALLSIGN, not the DMR ID's
+// reason, and nothing keys. The radio name (a callsign-like "N0CALL" in this codeplug) is never used instead
+static void test_ysf_no_callsign(void)
+{
+	radio_ysf_wx_t w;
+	int keyed0;
+
+	setup_codeplug();
+	add(3, "YSF rptr", 446100000, RADIO_MODE_DMR, false, 2);
+	chans[3].kind = CODEPLUG_KIND_YSF;
+	chans[3].system = 0xFF;
+	stored_ysf[3] = (ysf_chan_t){ .tx_dgid = 0, .rx_dgid = 0 };
+	air_nofit = false;
+	memset(fair, 0, sizeof(fair));
+	stored_ysf_call[0] = '\0';
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	CHECK(sm.view.ch.mode == RADIO_MODE_YSF && radio_ysf_running());
+	CHECK((sm.view.ysf.flags & RADIO_YSF_NO_CALL) != 0);
+	keyed0 = hw.tx_calls;
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX_DENIED && sm.view.tx_deny == TXDENY_NO_CALLSIGN && hw.tx_calls == keyed0);
+	req(RREQ_PTT, 0);
+	run(100);
+	radio_req_ysf_wx(YSF_WX_DX, 0, NULL);
+	CHECK(hw.tx_calls == keyed0 && sm.view.tx_deny == TXDENY_NO_CALLSIGN && sm.view.state != RS_TX_DENIED);
+	radio_ysf_wx(&w);
+	(void)w;
+	// Set: the same channel keys
+	strcpy(stored_ysf_call, "N0CALL");
+	start();
+	req(RREQ_ZONE_POS, 2);
+	run(200);
+	CHECK((sm.view.ysf.flags & RADIO_YSF_NO_CALL) == 0);
+	req(RREQ_PTT, 1);
+	run(100);
+	CHECK(sm.view.state == RS_TX && hw.tx_calls == keyed0 + 1);
+	req(RREQ_PTT, 0);
+	for (int i = 0; i < 200 && sm.view.state == RS_TX; i++)
+		run(10);
+	setup_codeplug();
+	req(RREQ_RELOAD, 0);
+	run(50);
+}
 
 // Rooms (ysf.md 9): a command keys the radio for a short data transmission the far radio hears as one, and the
 // radio unkeys by itself; refused as PTT is (RX only), without the refusal state PTT's release would clear
@@ -12437,6 +12484,7 @@ int main(void)
 #endif
 #if CONFIG_YSF
 	test_ysf_wx();
+	test_ysf_no_callsign();
 #if CONFIG_SCAN && CONFIG_DUAL_WATCH
 	test_ysf_dual();
 #endif

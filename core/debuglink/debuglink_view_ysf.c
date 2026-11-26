@@ -20,7 +20,7 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 	const radio_ysf_view_t *y = &v->ysf;
 	radio_ysf_settings_t s;
 	radio_ysf_stats_t c;
-	char rid[RADIO_YSF_RID_LEN + 1], call[RADIO_YSF_CALL_LEN + 1], name[CODEPLUG_NAME_LEN + 1];
+	char rid[RADIO_YSF_RID_LEN + 1], call[RADIO_YSF_CALL_LEN + 1];
 	bool weak;
 
 	// The call heard now, or the last one (on=0: the engine is not running on this channel)
@@ -31,8 +31,7 @@ void debuglink_view_ysf(const radio_view_t *v, dl_text_t *t)
 		v->tx_deny);
 	// Who we are on air. rid_weak=1: no usable MCU unique ID, the RID is the fallback and may not be unique
 	radio_ysf_rid(rid, &weak);
-	codeplug_radio_name(name);
-	radio_ysf_callsign(name, call);
+	radio_ysf_callsign(call);
 	dl_text(t, "ysf.rid=%s\nysf.rid_weak=%u\nysf.callsign=%s\n", rid, weak, call);
 	// What the board's provider gives YSF (AIR_FIT_*: 1 receive, 2 transmit, 4 soft values, 32768 untested)
 	dl_text(t, "ysf.fit=%u\n", (unsigned)radio_ysf_fit());

@@ -1945,7 +1945,7 @@
  "editor.ysf.rx_dgid": "接收 DG-ID",
  "editor.ysf.dgid_any": "接收 DG-ID 为 0 时接收所有 DG-ID。",
  "editor.ysf.callsign": "YSF 呼号",
- "editor.ysf.callsign_help": "最多 10 个字符：字母、数字、- 和 /。留空则使用电台名称中的呼号。电台 ID 不在此设置：每台电台由其芯片生成自己的 ID。",
+ "editor.ysf.callsign_help": "最多 10 个字符：字母、数字、- 和 /。YSF 发射必需：留空则电台不会在 YSF 上发射。电台 ID 不在此设置：每台电台由其芯片生成自己的 ID。",
  "editor.sfr.role": "角色",
  "editor.sfr.role0": "关闭",
  "editor.sfr.role1": "标准中继台的用户",

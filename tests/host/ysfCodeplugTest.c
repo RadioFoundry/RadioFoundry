@@ -166,23 +166,6 @@ static void test_radio_record(void)
 	CHECK(strcmp(r.callsign, "N0CALL") == 0);
 }
 
-// The callsign from the radio name, when the record has none (ysf.md 5.2)
-static void test_callsign_from_name(void)
-{
-	static const struct { const char *name, *call; } v[] = {
-		{ "N0CALL", "N0CALL" }, { "n0call Jamie", "N0CALL" }, { "N1ABC-7", "N1ABC" }, { "N1ABC/P", "N1ABC" },
-		{ "K1A", "K1A" }, { "Base", "" }, { "12345", "" }, { "", "" }, { "N0CALL12345", "" }, { "SQ5_FOX", "" },
-	};
-	char out[YSF_CP_CALL_LEN + 1];
-
-	for (unsigned i = 0; i < sizeof v / sizeof v[0]; i++) {
-		ysf_callsign_from_name(v[i].name, out);
-		CHECK(strcmp(out, v[i].call) == 0);
-	}
-	ysf_callsign_from_name(NULL, out);
-	CHECK(out[0] == '\0');
-}
-
 static void test_save(void)
 {
 	ysf_chan_t yc = { .tx_dgid = 5, .rx_dgid = 0 }, back;
@@ -212,7 +195,6 @@ int main(void)
 	test_vectors();
 	test_load();
 	test_radio_record();
-	test_callsign_from_name();
 	test_save();
 	printf("# ysfCodeplugTest %s (%d vectors, %d failures)\n", failures ? "FAILED" : "PASSED", counted, failures);
 	return failures != 0;

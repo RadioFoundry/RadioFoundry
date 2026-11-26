@@ -5063,6 +5063,11 @@ msgid "No DMR ID in codeplug"
 msgstr "Nessun ID DMR nel codeplug"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "Nessun nominativo impostato"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
 msgid "Repeater channel: PTT off"
 msgstr "Canale ripetitore: PTT off"
@@ -5186,6 +5191,11 @@ msgstr "OK ferma hotspot"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "Imposta il tuo ID DMR in qdmr"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
+msgid "Set YSF callsign in My radio"
+msgstr "Imposta nominativo YSF in Mia radio"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

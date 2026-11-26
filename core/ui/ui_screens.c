@@ -1435,6 +1435,7 @@ const char *ui_deny_text(const radio_view_t *v, uint8_t why, char *buf, size_t l
 	case TXDENY_REJECTED: sb_str(&b, TR(DENY_WHY_MODEM_REFUSED, "Modem refused to send")); break;
 	case TXDENY_HOTSPOT: sb_str(&b, TR(DENY_WHY_HOTSPOT_MODE, "Hotspot mode: PTT off")); break;
 	case TXDENY_NO_ID: sb_str(&b, TR(DENY_WHY_NO_DMR_ID, "No DMR ID in codeplug")); break;
+	case TXDENY_NO_CALLSIGN: sb_str(&b, TR(DENY_WHY_NO_CALLSIGN, "No callsign set")); break;
 	case TXDENY_AM: sb_str(&b, TR(WHY_AIR_BAND_RX_ONLY, "Air band: receive only")); break;
 	case TXDENY_BCAST: sb_str(&b, TR(WHY_BROADCAST_RX_ONLY, "Broadcast: receive only")); break;
 	case TXDENY_SFR_RPT: sb_str(&b, TR(DENY_WHY_REPEATER_CHANNEL, "Repeater channel: PTT off")); break;
@@ -1488,6 +1489,7 @@ static const char *deny_action(const radio_view_t *v)
 	case TXDENY_NO_DMR: return TR(DENY_FIX_RELEASE_AND_RETRY, "Release PTT, try again");
 	case TXDENY_HOTSPOT: return TR(HOTSPOT_HINT_OK_STOPS, "OK stop hotspot");
 	case TXDENY_NO_ID: return TR(DENY_FIX_SET_DMR_ID, "Set your DMR ID in qdmr");
+	case TXDENY_NO_CALLSIGN: return TR(DENY_FIX_SET_YSF_CALLSIGN, "Set YSF callsign in My radio");
 	case TXDENY_AM:
 	case TXDENY_BCAST: return v->vfo ? TR(DENY_FIX_TUNE_OUT_OF_BAND, "Tune out of the band") :
 		TR(DENY_FIX_PICK_ANOTHER_CHANNEL, "Pick another channel");

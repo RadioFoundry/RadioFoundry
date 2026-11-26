@@ -70,6 +70,7 @@ typedef enum {
 	TXDENY_BENCH, TXDENY_TRUNK, TXDENY_AIR_NO_TX, TXDENY_AES_KEY,
 	TXDENY_AES_WAIT,	// AES: the MI reservation is not saved yet (dmrAesSeq_t)
 	TXDENY_NOT_DMR, TXDENY_DATA_ENCRYPTED,
+	TXDENY_NO_CALLSIGN,	// YSF: no callsign set (Settings > My radio > YSF callsign)
 } tx_deny_t;
 
 // Busy channel lockout (FM): CARRIER refuses PTT while anything is heard on the channel; WRONG_TONE only while a

@@ -237,7 +237,7 @@ Pick **YSF** in the channel form's **Mode** for YSF (C4FM DN voice). Using it on
 
 | Field | Meaning |
 |---|---|
-| YSF callsign | The callsign YSF sends, up to 10 letters, digits, - and /. Blank: the radio name's first word |
+| YSF callsign | The callsign YSF sends, up to 10 letters, digits, - and /. Blank: none, and the radio won't transmit on YSF |
 
 There is no radio ID field, on purpose: every radio makes its own from its chip, so a codeplug copied to many radios
 never gives two of them the same one ([Your radio ID](07-channels-zones-vfo.md#your-radio-id)).

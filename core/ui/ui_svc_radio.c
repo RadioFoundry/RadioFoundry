@@ -201,10 +201,7 @@ bool ui_svc_ysf_dgid(uint8_t dgid, uint16_t chan)
 
 void ui_svc_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
-	char name[CODEPLUG_NAME_LEN + 1];
-
-	ui_svc_name_get(UI_NAME_RADIO, name);
-	radio_ysf_callsign(name, out);
+	radio_ysf_callsign(out);
 }
 #endif
 

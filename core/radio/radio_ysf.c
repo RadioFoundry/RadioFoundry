@@ -122,21 +122,18 @@ void radio_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak)
 		*weak = w;
 }
 
-void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1])
+void radio_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1])
 {
 	ysf_radio_t r;
 
+	// Only the one set for YSF: a radio name is a label, and a callsign guessed from it would go on air unasked
 	ysf_radio_load(&r);
-	if (r.callsign[0] != '\0') {
-		memcpy(out, r.callsign, sizeof r.callsign);
-		return;
-	}
-	ysf_callsign_from_name(radio_name, out);
+	memcpy(out, r.callsign, sizeof r.callsign);
 }
 
 // The engine's configuration for channel ch at number (0: the VFO): a live stored YSF channel's tag gives the
 // DG-IDs (or the quick settings' DG-ID for it, for now), else the settings
-static void params(const channel_t *ch, uint16_t number, const char *radio_name, ysf_engine_cfg_t *c)
+static void params(const channel_t *ch, uint16_t number, ysf_engine_cfg_t *c)
 {
 	ysf_chan_t yc;
 	bool weak;
@@ -156,7 +153,7 @@ static void params(const channel_t *ch, uint16_t number, const char *radio_name,
 		c->tx.dgid = set.tx_dgid;
 	}
 	c->tx.mr = YSF_MR_DIRECT;
-	radio_ysf_callsign(radio_name, c->tx.callsign);
+	radio_ysf_callsign(c->tx.callsign);
 	radio_ysf_rid(c->tx.radio_id, &weak);
 	c->tx_inhibit = c->tx.callsign[0] == '\0';
 }
@@ -229,7 +226,7 @@ bool radio_ysf_wx_room(uint8_t i, ysf_wx_room_t *out)
 	return ok;
 }
 
-bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_name)
+bool radio_ysf_begin(const channel_t *ch, uint16_t number)
 {
 	ysf_engine_cfg_t cfg;
 
@@ -237,7 +234,7 @@ bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_nam
 	stats.begins++;
 	if (rid_weak)
 		rid_update();	// the fallback follows the codeplug
-	params(ch, number, radio_name, &cfg);
+	params(ch, number, &cfg);
 	eng = radio_air_engine_get(sizeof(ysf_engine_t));
 	if (eng == NULL || board.air == NULL || ysf_engine_fit(board.air) == 0) {
 		eng = NULL;
@@ -279,13 +276,13 @@ void radio_ysf_retuned(void)
 		ysf_engine_retuned(eng);
 }
 
-void radio_ysf_apply(const channel_t *ch, uint16_t number, const char *radio_name)
+void radio_ysf_apply(const channel_t *ch, uint16_t number)
 {
 	ysf_engine_cfg_t cfg;
 
 	if (eng == NULL || ysf_engine_tx_state(eng) != AIR_TX_IDLE)
 		return;
-	params(ch, number, radio_name, &cfg);
+	params(ch, number, &cfg);
 	ysf_engine_set(eng, &cfg);
 }
 

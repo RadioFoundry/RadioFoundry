@@ -431,9 +431,9 @@ and room nodes hear it as they hear a commercial portable.
 
 - It hears DN voice calls with every DG-ID. A call in VW (full rate) or data mode shows on Home but stays silent
   ("Not DN voice: not played").
-- PTT sends with DG-ID 0, your callsign and your radio ID. The callsign is the codeplug's YSF callsign, else the first
-  word of the radio name when it reads as a callsign. Set it in **Settings > My radio > YSF callsign**. Without one,
-  Home says "No callsign" and PTT is refused.
+- PTT sends with DG-ID 0, your callsign and your radio ID. The callsign is the one set for YSF, in **Settings > My radio > YSF
+  callsign** or the Codeplug Editor. The radio name isn't used. Without one, Home says "No callsign", and PTT shows
+  "No callsign set".
 - Home shows "YSF", the DG-ID PTT sends ("DG-ID 00") and the DG-ID heard ("RX DG-ID 00"). During a
   call it shows the caller's callsign and the call's DG-ID, or why the call isn't played. Calls heard go into
   **Recent** with the callsign and DG-ID, and while idle Home shows the last one ("N1ABC", "DG-ID 12 11s ago"). Your

@@ -6727,7 +6727,7 @@ static void air_begin(radio_sm_t *sm)
 {
 #if CONFIG_YSF
 	if (sm->view.ch.mode == RADIO_MODE_YSF) {
-		radio_ysf_begin(&sm->view.ch, air_number(sm), sm->radio_name);
+		radio_ysf_begin(&sm->view.ch, air_number(sm));
 		radio_ysf_poll(&sm->view.ysf);
 		return;
 	}
@@ -6830,7 +6830,7 @@ static void air_apply(radio_sm_t *sm)
 {
 #if CONFIG_YSF
 	if (ysf_now(sm)) {
-		radio_ysf_apply(&sm->view.ch, air_number(sm), sm->radio_name);
+		radio_ysf_apply(&sm->view.ch, air_number(sm));
 		return;
 	}
 #endif
@@ -7102,7 +7102,7 @@ static void ptt_down(radio_sm_t *sm, uint32_t now_ms)
 		return;
 	}
 	if (sm->view.ch.mode == RADIO_MODE_YSF && (sm->view.ysf.flags & RADIO_YSF_NO_CALL) != 0) {
-		deny(sm, TXDENY_NO_ID);		// no callsign to send (docs/spec/ysf.md 5)
+		deny(sm, TXDENY_NO_CALLSIGN);	// no callsign set for YSF (docs/spec/ysf.md 5.2)
 		return;
 	}
 #endif
@@ -9420,7 +9420,7 @@ static void nxdn_set_request(radio_sm_t *sm)
 static void ysf_set_request(radio_sm_t *sm)
 {
 	if (radio_ysf_running()) {
-		radio_ysf_apply(&sm->view.ch, air_number(sm), sm->radio_name);
+		radio_ysf_apply(&sm->view.ch, air_number(sm));
 	} else if (sm->view.ch.mode == RADIO_MODE_YSF && sm->board_mode == RADIO_MODE_DMR && !BENCH_HELD(sm) &&
 		   radio_ysf_fits()) {
 		air_begin(sm);
@@ -9443,7 +9443,7 @@ static void ysf_wx_request(radio_sm_t *sm, uint32_t now_ms)
 	end_reception(sm, now_ms);
 	reason = tx_check(sm);
 	if (reason == TXDENY_NONE && (sm->view.ysf.flags & RADIO_YSF_NO_CALL) != 0)
-		reason = TXDENY_NO_ID;
+		reason = TXDENY_NO_CALLSIGN;
 	if (reason != TXDENY_NONE) {
 		radio_ysf_wx_disarm();
 		sm->view.tx_deny = reason;

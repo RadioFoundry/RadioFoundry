@@ -5044,7 +5044,7 @@ static void dmr_id_item(uint16_t i, ui_item_t *it)
 	if (i == MY_YSF_CALL) {
 		char call[RADIO_YSF_CALL_LEN + 1];
 
-		// What YSF sends: the one typed here, else the radio name's (shown until a typed one is in the codeplug)
+		// What YSF sends: the one typed here (shown until it is in the codeplug); None: PTT refused on YSF
 		str_copy(it->label, sizeof it->label, TR(MYID_LABEL_YSF_CALLSIGN, "YSF callsign"));
 		if (my_text_row == i && codeplug_serial() == my_text_serial)
 			strcpy(call, my_text);

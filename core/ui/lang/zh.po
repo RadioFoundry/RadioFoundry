@@ -5065,6 +5065,11 @@ msgid "No DMR ID in codeplug"
 msgstr "电台频率中无 DMR ID"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_NO_CALLSIGN"
+msgid "No callsign set"
+msgstr "未设置呼号"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_REPEATER_CHANNEL"
 msgid "Repeater channel: PTT off"
 msgstr "中继信道：PTT 关闭"
@@ -5188,6 +5193,11 @@ msgstr "OK 停止热点"
 msgctxt "DENY_FIX_SET_DMR_ID"
 msgid "Set your DMR ID in qdmr"
 msgstr "在 qdmr 中设置 DMR ID"
+
+#: core/ui/ui_screens.c
+msgctxt "DENY_FIX_SET_YSF_CALLSIGN"
+msgid "Set YSF callsign in My radio"
+msgstr "在“我的电台”中设置 YSF 呼号"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_FIX_TUNE_OUT_OF_BAND"

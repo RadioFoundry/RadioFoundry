@@ -24,7 +24,7 @@ export function encodeChan(p, prev = null) {
 	return v;
 }
 
-// --- The radio-wide record (1): the callsign, "" = the radio name's ---
+// --- The radio-wide record (1): the callsign, "" = none (no YSF transmit) ---
 
 export function decodeRadio(b) {
 	let s = "";

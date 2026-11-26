@@ -200,7 +200,7 @@ remarks 3-4, whichever arrives first; five characters that aren't all 0-9 or A-Z
 | Mode | `RADIO_MODE_YSF`, a channel's mode only: the board stays in its digital mode, its DMR stack stopped, as for P25 and NXDN. Offered where the board's air interface fits the profile (`radio_ysf_fits`) |
 | Channels | A stored channel of kind 103 runs in YSF with its own DG-IDs ([ysf-codeplug.md](ysf-codeplug.md)); the VFO and a channel in YSF for now take the RAM settings (DG-ID 0 both ways until the debug link sets others) |
 | Memory | The engine runs in P25's memory where P25's isn't lent to the vocoder, else in one block it shares with NXDN (`radio_air_mem.c`): one air mode runs at a time |
-| PTT | Refused without a callsign (`TXDENY_NO_ID`), without the vocoder (`TXDENY_NO_CODEC`), and where the provider can't transmit the profile |
+| PTT | Refused without a callsign (`TXDENY_NO_CALLSIGN`, 5.2), without the vocoder (`TXDENY_NO_CODEC`), and where the provider can't transmit the profile |
 | Scan, dual watch | As NXDN: a stop holds on a call it would play. Dual watch pairs a YSF channel with any other mode's (FM, DMR, P25, NXDN, YSF): one receiver alternates, each look starts that channel's engine or the DMR stack and stops the other first, never two at once (`radioCoreTestAir`); a radio with a second receiver gives it the FM or DMR channel and alternates the main one only between two air channels |
 
 ### 5.1 The DG-ID squelch
@@ -222,9 +222,10 @@ from its callsign ("N0RPT > Data") and goes into Recent, with nothing to play.
 
 ### 5.2 Callsign
 
-The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), else the radio name's first
-word when it reads as a callsign (3-10 letters and digits, at least one of each; `ysf_callsign_from_name`). With neither,
-Home says "No callsign" and PTT is refused. Settings > My radio > YSF callsign writes the record on the radio (text
+The callsign sent is the codeplug's YSF callsign ([ysf-codeplug.md](ysf-codeplug.md) 1), and only that: it is never
+taken from the radio name, which is a label, so nothing goes on air under a callsign nobody set. Without one, Home says
+"No callsign", and PTT and a room command are refused with `TXDENY_NO_CALLSIGN` ("No callsign set", "Set YSF callsign
+in My radio"). Settings > My radio > YSF callsign writes the record on the radio (text
 entry, letters, digits, `-` and `/`, folded to upper case); saved empty, it removes the record.
 
 ### 5.3 Debug link

@@ -99,16 +99,17 @@ void radio_ysf_set_settings(const radio_ysf_settings_t *s);	// radio task (RREQ_
 // This radio's RID, a copy (any task; the radio task works it out at init). weak: it comes from the fallback (no
 // usable MCU unique ID); may be NULL
 void radio_ysf_rid(char out[RADIO_YSF_RID_LEN + 1], bool *weak);
-// The callsign we send: the codeplug's YSF record, else the radio name's callsign; "" = none (PTT refused)
-void radio_ysf_callsign(const char *radio_name, char out[RADIO_YSF_CALL_LEN + 1]);
+// The callsign we send: the codeplug's YSF record, never guessed from the radio name; "" = none (PTT refused with
+// TXDENY_NO_CALLSIGN)
+void radio_ysf_callsign(char out[RADIO_YSF_CALL_LEN + 1]);
 
 // Radio task. begin: the board tuned in its digital mode, its DMR stack stopped. number: the stored channel ch is
-// (0: the VFO). radio_name: the radio name (the callsign's fallback). False: no memory, no provider or no fit
-bool radio_ysf_begin(const channel_t *ch, uint16_t number, const char *radio_name);
+// (0: the VFO). False: no memory, no provider or no fit
+bool radio_ysf_begin(const channel_t *ch, uint16_t number);
 void radio_ysf_end(void);
 bool radio_ysf_running(void);
 void radio_ysf_retuned(void);
-void radio_ysf_apply(const channel_t *ch, uint16_t number, const char *radio_name);
+void radio_ysf_apply(const channel_t *ch, uint16_t number);
 // Every tick: the view and the counters. True when the view changed
 bool radio_ysf_poll(radio_ysf_view_t *v);
 

@@ -1945,7 +1945,7 @@
  "editor.ysf.rx_dgid": "DG-ID RX",
  "editor.ysf.dgid_any": "DG-ID RX 0 recibe todos los DG-ID.",
  "editor.ysf.callsign": "Indicativo YSF",
- "editor.ysf.callsign_help": "Hasta 10 caracteres: letras, números, - y /. Déjelo vacío para usar el indicativo del nombre de la radio. El ID de radio no se define aquí: cada radio crea el suyo a partir de su chip.",
+ "editor.ysf.callsign_help": "Hasta 10 caracteres: letras, números, - y /. Necesario para transmitir en YSF: si queda vacío, la radio no transmite en YSF. El ID de radio no se define aquí: cada radio crea el suyo a partir de su chip.",
  "editor.sfr.role": "Función",
  "editor.sfr.role0": "Desactivado",
  "editor.sfr.role1": "Usuario de un repetidor estándar",

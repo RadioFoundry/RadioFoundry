@@ -18,7 +18,7 @@ Key 0x0A00 + 103 = 0x0A67 ([channel-modes.md](channel-modes.md) 5.5):
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 10 | Callsign, ASCII: 0-9, A-Z, `-` and `/`, padded with NUL or spaces. Empty, absent or with another character: the radio name's callsign ([ysf.md](ysf.md) 5.2). Written by the editor or by Settings > My radio > YSF callsign |
+| 0 | 10 | Callsign, ASCII: 0-9, A-Z, `-` and `/`, padded with NUL or spaces. Empty, absent or with another character: no callsign, and YSF doesn't transmit ([ysf.md](ysf.md) 5.2). Written by the editor or by Settings > My radio > YSF callsign |
 
 The record holds no radio ID, and no record ever will: the radio ID is made from the radio's chip and is never stored,
 because a codeplug is copied between radios ([ysf.md](ysf.md) 6). A reader that finds bytes past offset 10 keeps them.

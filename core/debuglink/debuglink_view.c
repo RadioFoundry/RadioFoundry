@@ -72,7 +72,7 @@ static const char *deny_key(uint8_t d)
 					     "no_dmr", "busy", "no_repeater", "rejected", "hotspot", "no_id", "inhibit",
 					     "battery", "am", "bcast", "sfr_rpt", "hwopt", "refused", "ceased", "bench",
 					     "trunk", "air_no_tx", "aes_key", "aes_wait", "not_dmr",
-					     "data_encrypted" };
+					     "data_encrypted", "no_callsign" };
 	return d < sizeof(names) / sizeof(names[0]) ? names[d] : "?";
 }
 
