@@ -382,10 +382,10 @@ static void test_rx(void)
 		check_rx_order((md9600_rev_t)r, 145500000u, true);
 		check_rx_order((md9600_rev_t)r, 446006250u, false);
 #if CONFIG_RX_EXT
-		check_rx_order((md9600_rev_t)r, 500437500u, false);
+		check_rx_order((md9600_rev_t)r, 501000000u, false);
 		fresh((md9600_rev_t)r, true);
-		CHECK(md9600_rf_tx_check(&rf, 500437500u, 0) != MD9600_RF_OK);
-		CHECK(md9600_rf_tx(&rf, 500437500u, false, 0) != MD9600_RF_OK);
+		CHECK(md9600_rf_tx_check(&rf, 501000000u, 0) != MD9600_RF_OK);
+		CHECK(md9600_rf_tx(&rf, 501000000u, false, 0) != MD9600_RF_OK);
 		CHECK(pa_off_now() && count(EV_PLL, -1) == 0);
 #endif
 	}

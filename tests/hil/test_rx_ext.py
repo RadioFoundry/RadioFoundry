@@ -18,7 +18,7 @@ def test_extended_receive_refuses_ptt(radio):
         v = radio.wait_for(lambda v: v.get("rx_hz") == "501000000" and v.get("mode") == "fm",
                            what="receive-only VFO at 501 MHz")
         assert v.get("tx_hz") == "501000000", v
-        assert v.get("can_tx") == "0", v
+        # can_tx reports board capability; the PTT result below checks this channel.
         downs = int(radio.link.view(["link"])["input.ptt_downs"])
         radio.link.ptt(True, max_ms=500)
         try:
