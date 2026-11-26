@@ -256,6 +256,8 @@ export const TABLES = {
 				const scope = contactScope(r);
 				return `#scope:${scope.system}:${scope.systemCheck.toString(16).toUpperCase().padStart(4, "0")}`;
 			}, set: (r, s, m) => {
+				// An empty exported column does not add scope metadata to a legacy or unscoped contact.
+				if (!s.trim() && r.system == null) return;
 				const dangling = /^#scope:(\d+):([0-9A-F]{4})$/i.exec(s.trim());
 				if (dangling) {
 					r.system = asInt(1, 256)(dangling[1]);

@@ -83,6 +83,18 @@ test("rows match records by number, then name; a renamed contact keeps its chann
 	assert.equal(m.contacts[2].type, "private");
 });
 
+test("an empty System column keeps new DMR and unscoped P25 contacts free of scope metadata", () => {
+	for (const mode of ["dmr", "p25"]) {
+		const source = empty(), target = empty();
+		const contact = newContact({ number: 1, name: "Local", id: 100, mode });
+		source.contacts.push(contact);
+		assert.deepEqual(importTable(target, exportTable(source, "contacts")).problems, []);
+		assert.deepEqual(target.contacts, [contact]);
+		assert.equal(Object.hasOwn(target.contacts[0], "system"), false);
+		assert.equal(Object.hasOwn(target.contacts[0], "systemCheck"), false);
+	}
+});
+
 test("records missing from the file are removed and their references cleared", () => {
 	const m = empty();
 	const a = newContact({ number: 1, name: "A", id: 1 }), b = newContact({ number: 2, name: "B", id: 2 });
