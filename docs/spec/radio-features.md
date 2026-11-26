@@ -737,7 +737,7 @@ apart, while the radio is on and not transmitting; it also covers a scan when th
 the pulse is set, the pulse is what shows. Either shows only where no other signal lights an LED: a reception (green), a
 transmission (red), a stuck PTT line, a TX deny and a repeater wake-up always win, and neither runs during a
 transmission. The pattern is taken from the clock (`now` modulo the interval, from the start of the first flash), and
-`led_blink_due()` keeps `outputs()` running across it, as for the timed signals above. A board whose `led` does nothing
+While either setting is on, `outputs()` runs on every tick, as during a deny flash; with both off nothing is added. A board whose `led` does nothing
 (no status LED) shows nothing. Stored in `settings_t.led_scan_pulse` and `led_heartbeat` (`reserved11`, settings-store.md
 3; an older record reads 0 = off). Debug link settings 38 and 39. Host test `radioCoreTest` `test_led_blink`.
 

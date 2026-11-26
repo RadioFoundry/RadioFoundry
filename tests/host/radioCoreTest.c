@@ -2868,6 +2868,14 @@ static void test_led_blink(void)
 	sm.set.led_heartbeat = 0;
 	blink_count(6000, &flashes, &on_ms);
 	CHECK(flashes == 0 && !hw.led[LED_GREEN]);
+	// A stored byte past the limit reads as off, not as some interval
+	{
+		radio_settings_t bad = sm.set;
+		bad.led_scan_pulse = 200;
+		bad.led_heartbeat = 61;
+		radio_sm_set_settings(&sm, &bad, 0);
+		CHECK(sm.set.led_scan_pulse == 0 && sm.set.led_heartbeat == 0);
+	}
 	setup_codeplug();
 }
 

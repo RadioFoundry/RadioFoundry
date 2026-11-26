@@ -338,7 +338,6 @@ typedef struct {
 	uint32_t wake_led_ms;		// a repeater wake-up burst went out here: red for RADIO_LED_WAKE_MS
 	bool wake_led;
 	uint8_t wake_seen;		// dmr_call_view_t.wake_sent last seen
-	bool led_blink_on;		// the green LED is on for a pulse or heartbeat flash: outputs() runs once more to turn it off
 	bool led_timed;			// a timed signal was showing at the last outputs(): the tick keeps calling it
 	bool hotspot;			// hotspot mode: the host link owns the modem
 #if CONFIG_AIR

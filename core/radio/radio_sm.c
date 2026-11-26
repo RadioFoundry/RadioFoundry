@@ -625,22 +625,17 @@ static bool led_blink_lit(uint32_t phase_ms, bool beat)
 	       (beat && phase_ms >= RADIO_LED_BLINK_MS + RADIO_LED_BEAT_GAP_MS && phase_ms < led_blink_span_ms(true));
 }
 
-// A pattern is starting or running, or just over: outputs() runs on time, as for the other timed signals
-static bool led_blink_due(const radio_sm_t *sm)
+// With either one on, outputs() runs on every tick, as it does during a deny flash; with both off (the default)
+// nothing is added
+static bool led_blink_enabled(const radio_sm_t *sm)
 {
-	if (sm->led_blink_on) {
-		return true;
-	}
-	uint32_t period;
-	bool beat;
-	return led_blink_pattern(sm, &period, &beat) && sm->led_now % period < led_blink_span_ms(beat) + RADIO_POLL_MS;
+	return (sm->set.led_scan_pulse | sm->set.led_heartbeat) != 0;
 }
 
 static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 {
 	uint32_t now = sm->led_now;
 	bool timed = false;
-	sm->led_blink_on = false;
 	if (ptt_line_stuck()) {
 		*red = ((now / RADIO_LED_STUCK_STEP_MS) & 1u) == 0;	// until the power cycle that releases it
 		*green = !*red;
@@ -672,8 +667,7 @@ static void led_signals(radio_sm_t *sm, bool *red, bool *green)
 	uint32_t period;
 	bool beat;
 	if (!*red && !*green && led_blink_pattern(sm, &period, &beat)) {
-		sm->led_blink_on = led_blink_lit(sm->led_now % period, beat);
-		*green = sm->led_blink_on;
+		*green = led_blink_lit(sm->led_now % period, beat);
 	}
 	sm->led_timed = timed;
 }
@@ -7936,10 +7930,10 @@ static void clamp_settings(radio_settings_t *s)
 		s->reply_s = 30;
 	}
 	if (s->led_scan_pulse > RADIO_LED_PERIOD_MAX_S) {
-		s->led_scan_pulse = 10;
+		s->led_scan_pulse = 0;	// a byte we can't trust: off
 	}
 	if (s->led_heartbeat > RADIO_LED_PERIOD_MAX_S) {
-		s->led_heartbeat = 10;
+		s->led_heartbeat = 0;
 	}
 	if (s->dual_delay_ms > RADIO_DUAL_DELAY_MAX_MS) {
 		s->dual_delay_ms = RADIO_DUAL_DELAY_MAX_MS;
@@ -9666,7 +9660,7 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 {
 	radio_status_t st;
 	sm->led_now = now_ms;
-	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_due(sm)) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_enabled(sm)) {
 		outputs(sm);	// as in radio_sm_tick: some paths below return before their outputs()
 	}
 	// codeplug_serial() before zone_edit_busy(): a zone write that moved indexes has its log entry by then
@@ -10049,7 +10043,7 @@ void radio_sm_tick(radio_sm_t *sm, uint32_t now_ms)
 		bench_tick(sm, now_ms);
 	}
 #endif
-	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_due(sm)) {
+	if (sm->led_timed || sm->deny_led || ptt_line_stuck() || led_blink_enabled(sm)) {
 		outputs(sm);	// a blink or the deny flash runs on time, not only when the state changes
 	}
 #if CONFIG_SATELLITE_TLE

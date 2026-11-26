@@ -6711,9 +6711,11 @@ static const tr_id_t n_dual_wait[] = { TRX(VALUE_0_5_S, "0.5 s"), TRX(VALUE_1_S,
 	TRX(VALUE_2_S, "2 s"), TRX(VALUE_3_S, "3 s"), TRX(VALUE_5_S, "5 s") };
 #endif
 // Scan pulse and Heartbeat: the interval in seconds
+#if CONFIG_SCAN
 static const int16_t v_led_scan[] = { 0, 2, 5, 10 };
 static const tr_id_t n_led_scan[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_2_S, "2 s"), TRX(VALUE_5_S, "5 s"),
 	TRX(VALUE_10_S, "10 s") };
+#endif
 static const int16_t v_led_beat[] = { 0, 5, 10, 30, 60 };
 static const tr_id_t n_led_beat[] = { TRN(VALUE_OFF, "Off"), TRX(VALUE_5_S, "5 s"), TRX(VALUE_10_S, "10 s"),
 	TRX(VALUE_30_S, "30 s"), TRX(VALUE_60_S, "60 s") };
@@ -6832,9 +6834,11 @@ static const set_item_t s_display[] = {
 	TOGGLE(TRN(SET_LABEL_TG_NAME_FIRST, "Talkgroup name first"), "talk line label TG number Home",
 		UI_SET_LABEL_FIRST),
 #endif
-	LIST(TRN(SET_LABEL_LED_SCAN_PULSE, "Scan pulse"), "led flash blink scan dual watch light", UI_SET_LED_SCAN_PULSE,
+#if CONFIG_SCAN
+	LIST(TRN(SET_LABEL_LED_SCAN_PULSE, "Scan pulse"), "led blink", UI_SET_LED_SCAN_PULSE,
 		v_led_scan, n_led_scan),
-	LIST(TRN(SET_LABEL_LED_HEARTBEAT, "Heartbeat"), "led flash blink idle on light double", UI_SET_LED_HEARTBEAT,
+#endif
+	LIST(TRN(SET_LABEL_LED_HEARTBEAT, "Heartbeat"), "led blink", UI_SET_LED_HEARTBEAT,
 		v_led_beat, n_led_beat),
 	// Last, so the rows above keep their places; its search words are "language" in other languages, for a user who
 	// can't read the English
