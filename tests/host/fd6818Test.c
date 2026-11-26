@@ -676,8 +676,12 @@ static void test_setup_b(void)
 	chip.regs[0x0C] = 0x0200;
 	CHECK(fd6818_pll_locked(&dev, 3));
 
+	// 0x48's AF level nibble at its top: at B2FD a hotspot's MS bursts gave the modem no sync (fd6818_setup_b.c)
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
-	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2FD);
+	CHECK(chip.regs[0x47] == 0x6943 && chip.regs[0x48] == 0xB2FF);
+	// Back to FM: the FM table's own 0x48, so the DMR level never reaches FM receive
+	fd6818_set_mode(&dev, FD6818_MODE_FM);
+	CHECK(chip.regs[0x48] == 0xB386);
 	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
 	fd6818_set_mode(&dev, FD6818_MODE_DMR);
 	CHECK(chip.regs[0x47] == 0x0140 && chip.regs[0x48] == 0xB2F5);
