@@ -194,13 +194,15 @@ static void test_air_policy(void)
 	const uint8_t beep[2] = { DL_OP_BEEP, 1 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 2), "RADIO BEEP: a sound, taken directly");
 	static const uint8_t direct_ops[] = { 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, DL_OP_BEEP, DL_OP_VIBRATE, DL_OP_VOLUME,
-					      DL_OP_VOICE_TEST, DL_OP_VOICE_CAPTURE };
+					      DL_OP_VOICE_CAPTURE };
 	for (unsigned i = 0; i < sizeof direct_ops; i++) {
 		uint8_t p[2] = { direct_ops[i], 0 };
 		CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, p, 2), "RADIO op %u directly", direct_ops[i]);
 	}
-	// The ones that move the link (a detour's), move it by themselves, transmit, stop the replies, or store settings
+	// The ones that move the link (a detour's), move it by themselves, transmit, stop the replies, store settings, or
+	// change later transmissions until a restart (the voice test signal)
 	static const uint8_t detour_ops[] = { 1, 2, 3, 4, 5, 6, 9, 12, 19, 25, 27, 28, DL_OP_SCAN, DL_OP_SCAN_VFO,
+					      DL_OP_VOICE_TEST,
 					      DL_OP_TONE_BURST, DL_OP_ROAM, DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, DL_OP_DTMF, DL_OP_TX_DRIVE,
 					      DL_OP_PA_KEYUP, DL_OP_VFO_SFR, DL_OP_PA_SWEEP, DL_OP_PA_KEYRUN, DL_OP_P25,
 					      DL_OP_NXDN };
@@ -208,7 +210,25 @@ static void test_air_policy(void)
 		uint8_t p[2] = { detour_ops[i], 0 };
 		CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, p, 2), "RADIO op %u not directly", detour_ops[i]);
 	}
-	CHECK(dl_dmrip_air_allowed(DL_CMD_AUDIO_PROBE, z, 1), "AUDIO_PROBE directly");
+	// Registers: reads directly, never the SoC's; RF chip writes and the audio path's register writes only as items
+	const uint8_t rd[3] = { 0, 0, 0x41 }, wr[7] = { 0, 0, 0x41, 1, 0, 0, 0 }, soc_rd[5] = { DL_CHIP_SOC, 0, 0x3C, 2, 0x40 };
+	const uint8_t soc_wr[9] = { DL_CHIP_SOC, 0x10, 0x3C, 2, 0x40, 0, 0, 0, 0 };
+	CHECK(dl_dmrip_air_allowed(DL_CMD_CHIP_REG, rd, 3), "CHIP_REG read directly");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_CHIP_REG, wr, 7), "CHIP_REG write: a detour's");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_CHIP_REG, soc_rd, 5), "SoC register read: never");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_CHIP_REG, soc_wr, 9), "SoC register write: never");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_CHIP_REG, z, 0), "CHIP_REG empty");
+	for (unsigned op = 0; op < 16; op++) {
+		uint8_t p[4] = { (uint8_t)op, 0, 0, 0 };
+		bool want = op == DL_PROBE_OP_STATUS || op == DL_PROBE_OP_REG_READ;
+		CHECK(dl_dmrip_air_allowed(DL_CMD_AUDIO_PROBE, p, sizeof(p)) == want, "AUDIO_PROBE op %u directly", op);
+		want = want || op == DL_PROBE_OP_REG_WRITE;
+		CHECK(dl_detour_item_allowed(DL_CMD_AUDIO_PROBE, p, sizeof(p)) == want, "AUDIO_PROBE op %u as an item", op);
+	}
+	CHECK(dl_detour_item_allowed(DL_CMD_CHIP_REG, rd, 3), "CHIP_REG read as an item");
+	CHECK(dl_detour_item_allowed(DL_CMD_CHIP_REG, wr, 7), "CHIP_REG write as an item");
+	CHECK(!dl_detour_item_allowed(DL_CMD_CHIP_REG, soc_rd, 5), "SoC register read: not as an item");
+	CHECK(!dl_detour_item_allowed(DL_CMD_CHIP_REG, soc_wr, 9), "SoC register write: not as an item");
 	const uint8_t vol[2] = { DL_OP_VOLUME, 8 }, set_beep[4] = { DL_OP_SETTING, 11, 50, 0 },
 		      set_inhibit[4] = { DL_OP_SETTING, 5, 1, 0 }, txlim[2] = { DL_OP_TX_LIMIT, 0 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, vol, 2), "RADIO VOLUME directly");
@@ -216,11 +236,11 @@ static void test_air_policy(void)
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, set_inhibit, 4), "SETTING TX inhibit: would stop the replies");
 	for (unsigned id = 0; id < 40; id++) {
 		uint8_t p[4] = { DL_OP_SETTING, (uint8_t)id, 0, 0 };
-		bool want = id == 29 || id == 31 || id == 32 || id == 35;	// held in RAM only
+		// Zone share offers only: the mic gain, encode options and trim change later transmissions until a restart
+		bool want = id == DL_SETTING_ZS_OFFERS;
 		CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, p, sizeof(p)) == want, "SETTING %u directly", id);
 	}
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, txlim, 2), "TX limit: would stop the replies");
-	CHECK(dl_dmrip_air_allowed(DL_CMD_CHIP_REG, z, 1), "CHIP_REG directly");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 0), "RADIO without an op");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_DMRIP, &st, 0), "DMRIP empty");
 }
@@ -260,8 +280,6 @@ static void test_items(void)
 	CHECK(dl_detour_item_allowed(DL_DETOUR_ITEM_WAIT, w, 2), "wait");
 	CHECK(!dl_detour_item_allowed(DL_DETOUR_ITEM_WAIT, w, 1), "wait short");
 	CHECK(dl_detour_item_allowed(DL_CMD_PTT, ptt, 1), "PTT");
-	CHECK(dl_detour_item_allowed(DL_CMD_CHIP_REG, ptt, 1), "registers: in the detour's mode");
-	CHECK(dl_detour_item_allowed(DL_CMD_AUDIO_PROBE, ptt, 1), "audio probe");
 	CHECK(!dl_detour_item_allowed(DL_CMD_CHIP_REG, ptt, 0), "register request empty");
 	CHECK(!dl_detour_item_allowed(DL_CMD_READ_MEM, ptt, 1), "no reads as items");
 	CHECK(!dl_detour_item_allowed(DL_CMD_DETOUR, ptt, 1), "no detour in a detour");

@@ -122,7 +122,7 @@ def test_dmrip_over_the_air(radio, pytestconfig):
         page = air.view_prefix("core", "rx_hz")
         assert int(page["rx_hz"]) == int(radio.core()["rx_hz"])
         with pytest.raises(DebugLinkError) as e:
-            air.request(RADIO, bytes([OP_TX_LIMIT, 0]))   # would stop the replies: the cable or a detour only
+            air.request(RADIO, bytes([OP_TX_LIMIT, 0]))   # would stop the replies: the cable only
         assert e.value.status == ST_REFUSED
         with pytest.raises(DebugLinkError) as e:
             air.chip()          # the UID gives the default key: never sent on the air

@@ -184,35 +184,54 @@ bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, cons
 // --- what the air may ask (7.3) ---
 
 // RADIO's operations the air may ask directly: those that leave the radio on the link's channel, mode, color code and
-// slot, still able to answer, and that store nothing but the speaker volume (a radio without a knob keeps the step, as
-// from its UI; the next VOLUME sets it back). Channel, zone, VFO, frequency, bandwidth, clear
-// and the DMR fields move the radio (a detour's items, which it undoes); scan and roaming move it by themselves; the
-// tone burst, DTMF and the PA operations transmit or set the drive; privacy holds packet data back and the test TX
-// limit stops the replies; the USB and PPP operations have nothing to do with the air and store settings
+// slot, still able to answer, change nothing the owner's own transmissions carry, and store nothing but the speaker
+// volume (a radio without a knob keeps the step, as from its UI; the next VOLUME sets it back). Channel, zone, VFO,
+// frequency, bandwidth, clear and the DMR fields move the radio (a detour's items, which it undoes); scan and roaming
+// move it by themselves; the tone burst, DTMF and the PA operations transmit or set the drive; privacy holds packet
+// data back and the test TX limit stops the replies; the USB and PPP operations have nothing to do with the air and
+// store settings. The voice test signal, the mic gain, the encode options and the reference trim stay until a restart,
+// which the air can't ask, and change every later transmission (the trim also moves the link's channel): cable only
 static bool radio_op_direct(const uint8_t *p, uint16_t len)
 {
 	switch (p[0]) {
-	case 7:				// power
-	case 8:				// squelch
-	case 10:			// FM tones
-	case 11:			// monitor
-	case 13:			// end the reply hang
-	case 14:			// leave hotspot mode
-	case 15: case 16: case 17: case 18:	// the DMR talk target: voice calls, not the link's packets
+	case DL_OP_POWER:
+	case DL_OP_SQUELCH:
+	case DL_OP_TONE:
+	case DL_OP_MONITOR:
+	case DL_OP_REPLY_CANCEL:
+	case DL_OP_HOTSPOT_EXIT:
+	case DL_OP_DMR_TARGET:		// the DMR talk target: voice calls, not the link's packets
+	case DL_OP_DMR_CONTACT:
+	case DL_OP_DMR_CALL_BACK:
+	case DL_OP_DMR_TARGET_CLEAR:
 	case DL_OP_BEEP:		// a sound that ends by itself
 	case DL_OP_VIBRATE:
 	case DL_OP_VOLUME:		// the speaker's level, for tuning it against a microphone
-	case DL_OP_VOICE_TEST:		// the encoder's input for the next transmission
-	case DL_OP_VOICE_CAPTURE:
+	case DL_OP_VOICE_CAPTURE:	// a recording of what the radio hears
 		return true;
 	case DL_OP_SETTING:
-		// Only the settings held in RAM (mic gain 29, encode options 31, zone share offers 32, reference trim 35):
-		// the stored ones (TX inhibit, battery save, the time-out among them) could cut the link for good, so they
-		// go in a detour, which puts them back
-		return len >= 2 && (p[1] == 29u || p[1] == 31u || p[1] == 32u || p[1] == 35u);
+		// Zone share offers only. The stored settings (TX inhibit, battery save, the time-out among them) could cut
+		// the link for good, so they go in a detour, which puts them back
+		return len >= 2 && p[1] == DL_SETTING_ZS_OFFERS;
 	default:
 		return false;
 	}
+}
+
+// A chip register request the air may send: never the SoC's (its windows hold the flash controller and the reset
+// register), and on the RF chips a write only as a detour item, whose return sets the mode's registers again. A wrong
+// write outside a detour could leave the radio deaf to the link until someone restarts it by hand
+static bool chip_reg_air(const uint8_t *p, uint16_t len, bool detour)
+{
+	return len >= 1 && p[0] != DL_CHIP_SOC && (len == 3 || (detour && len == 7));
+}
+
+// AUDIO_PROBE: its status and the audio path's level registers (a write as a detour item, as chip_reg_air). Not the
+// stream it can take over, the modem RAM or the pins
+static bool audio_probe_air(const uint8_t *p, uint16_t len, bool detour)
+{
+	return len >= 1 && (p[0] == DL_PROBE_OP_STATUS || p[0] == DL_PROBE_OP_REG_READ ||
+			    (detour && p[0] == DL_PROBE_OP_REG_WRITE));
 }
 
 bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
@@ -232,9 +251,10 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 		return len >= 1 && req[0] == DL_DMRIP_OP_STATUS;	// the key is set over the cable only
 	case DL_CMD_RADIO:
 		return len >= 1 && radio_op_direct(req, len);
-	case DL_CMD_CHIP_REG:		// a register read or written, for tuning a chip's levels; a restart undoes a write
-	case DL_CMD_AUDIO_PROBE:	// the same for the audio path's levels and registers
-		return true;
+	case DL_CMD_CHIP_REG:		// a register read; a write only inside a detour
+		return chip_reg_air(req, len, false);
+	case DL_CMD_AUDIO_PROBE:
+		return audio_probe_air(req, len, false);
 	default:
 		// RADIO (but radio_op_direct's), PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key:
 		// 7.2) and READ_MEM (its windows hold the codec on a codec-merged image), nothing being encrypted on the air.
@@ -262,11 +282,11 @@ static bool radio_op_allowed(const uint8_t *p, uint8_t len)
 		return false;
 	}
 	uint8_t op = p[0];
-	if (op >= 1 && op <= 12) {	// channel, zone, VFO, frequency, power, squelch, bandwidth, tone, monitor, clear
-		return true;
+	if (op >= DL_OP_CHANNEL_STEP && op <= DL_OP_CLEAR_TEMP) {	// channel, zone, VFO, frequency, power, squelch,
+		return true;							// bandwidth, tone, monitor, clear
 	}
-	if (op >= 15 && op <= 18) {	// DMR talk target: an ID, a contact, call back, clear
-		return true;
+	if (op >= DL_OP_DMR_TARGET && op <= DL_OP_DMR_TARGET_CLEAR) {	// DMR talk target: an ID, a contact, call back,
+		return true;							// clear
 	}
 	switch (op) {
 	case DL_OP_DMR_FIELDS:		// mode, color code, timeslot
@@ -297,9 +317,10 @@ bool dl_detour_item_allowed(uint8_t cmd, const uint8_t *p, uint8_t len)
 		return len >= 1;
 	case DL_CMD_RADIO:
 		return radio_op_allowed(p, len);
-	case DL_CMD_CHIP_REG:		// as direct requests: a level tuned in the detour's mode, which entering the mode
-	case DL_CMD_AUDIO_PROBE:	// sets again, so a write before the detour wouldn't stay
-		return len >= 1;
+	case DL_CMD_CHIP_REG:		// a level tuned in the detour's mode, which entering the mode sets again, so a
+		return chip_reg_air(p, len, true);	// write before the detour wouldn't stay
+	case DL_CMD_AUDIO_PROBE:
+		return audio_probe_air(p, len, true);
 	default:
 		return false;
 	}
