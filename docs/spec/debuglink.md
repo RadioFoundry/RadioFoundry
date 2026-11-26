@@ -1202,13 +1202,16 @@ by anyone in range.
 
 | Over the air | Commands |
 |---|---|
-| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS |
-| Only as an item of a detour (7.4) | RADIO (the operations the detour undoes), PTT |
-| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, CHIP_REG, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS; the RADIO operations that leave the radio on the link's channel, mode, color code and slot, able to answer, change nothing later transmissions carry, and store nothing but the volume: power (7), squelch (8), FM tones (10), monitor (11), reply cancel (13), hotspot exit (14), the talk target (15-18), BEEP, VIBRATE, VOLUME (on a radio without a knob the step is stored, as from the UI), voice capture (41), and SETTING 32 (zone share offers); a CHIP_REG read of an RF chip; AUDIO_PROBE status and register read |
+| Only as an item of a detour (7.4) | The RADIO operations that move the link and that the detour undoes (channel, zone, VFO, frequency, step, bandwidth, clear, the DMR fields, VFO copy, P25 and NXDN settings), BEEP too (a beep while the radio is keyed and can't hear the link), PTT; a CHIP_REG write of an RF chip and an AUDIO_PROBE register write, for a level in the detour's mode: the return enters the home mode, which sets its registers again |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, the RADIO operations that move the radio by themselves, transmit or set the PA (scan, roaming, tone burst, DTMF, privacy, the test TX limit, PA drive and key-up), the voice test signal (33), the USB and PPP operations (25-28), SETTING 29, 31 and 35 (mic gain, encode options, reference trim: they last until a restart and change later transmissions), SETTING for a stored id outside a detour, CHIP_REG for the SoC (DL_CHIP_SOC), the other AUDIO_PROBE operations, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
 
-A refused command answers status 7. Writes no deadline undoes (chip and SoC registers, flash, codeplug, stored keys)
-are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
-the link for good.
+A refused command answers status 7. The air can't restart the radio, so nothing it asks may last until a restart:
+writes no deadline undoes (flash, codeplug, stored keys, the SoC's registers) are refused even inside a detour, and
+so is anything that restarts the radio or hands the radio over. A poke can cut the link for good.
+
+`rfoundry_debug.py detour run` puts a 300 ms wait before a `reg` step that follows a `radio` step: the radio core
+applies a radio step after the item, and entering the mode would overwrite the register.
 
 ### 7.4 Detour
 
@@ -1259,7 +1262,7 @@ detour that transmits takes the frequency's lease first and sets the lowest powe
 README](../../tests/hil/README.md)).
 
 Host: `rfoundry_debug.py detour run SECONDS STEP...`, each STEP `"radio OP ARG..."` (the radio command's syntax),
-`"wait MS"` or `"ptt S"` (key S seconds, then release). A step can't read the radio, so the power changes by a
+`"wait MS"`, `"ptt S"` (key S seconds, then release) or `"reg CHIP REG VALUE [PAGE]"` (a register write in the detour's mode). A step can't read the radio, so the power changes by a
 step, `"radio power +N"` or `"-N"` (the radio wraps past either end). `detour status [--wait]` (until back, then
 the summary), `detour extend SECONDS`, `detour return`. Over the air, `detour run` prints the deadline and ends
 (the radio may have left the channel): `--wait` or a later `detour status` asks for the summary again until the
