@@ -68,7 +68,7 @@ with `traffic.kcv = "aes"`.
 | Where | What |
 |---|---|
 | Settings > Privacy > Key check | Slot 1's KCV, `-` with no key. OK says how to use it. Dimmed until a key type is picked |
-| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 8-bit` (the Key type setting's name for the type, without its key range) or the system's name and `#` key ID (the system's type for a third system on a page), its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
+| Settings > Privacy > Stored keys | Every stored key, one row each: `Privacy 1 8-bit` (the type's short name, 8-bit or 16-bit) or the system's name and `#` key ID (the system's type for a third system on a page), its KCV as the value. The privacy slots that hold a valid key first, then the traffic keys whose system exists, in the area's order. A key with no KCV in this build shows `-` |
 | Codeplug Editor, a system's traffic keys | A Key check column, computed from the row as typed, `-` while a field doesn't parse. Shown when the key itself is hidden |
 
 ## 5. What a KCV gives away

@@ -4568,6 +4568,16 @@ msgid "Privacy"
 msgstr "Privacidad"
 
 #: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_8_BIT"
+msgid "8-bit"
+msgstr "8 bits"
+
+#: core/ui/ui_menus.c
+msgctxt "KEYS_TYPE_16_BIT"
+msgid "16-bit"
+msgstr "16 bits"
+
+#: core/ui/ui_menus.c
 msgctxt "KEYS_EMPTY"
 msgid "No keys stored"
 msgstr "No hay claves"

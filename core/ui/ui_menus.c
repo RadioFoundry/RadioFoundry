@@ -8178,13 +8178,13 @@ static void keys_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
 		sb_chr(&b, ' ');
 		sb_u32(&b, e.num, 1);
-#if CONFIG_UI_SETTINGS && CONFIG_DMR && CONFIG_DMR_PRIVACY	// n_ptype is the Settings table's (none on a radio without a display)
-		if (e.type < sizeof n_ptype / sizeof n_ptype[0]) {
-			// The Key type setting's name, one name per type, without its key range in brackets: a row is
-			// too narrow for both beside the check value (every catalog writes the range as " (...)")
+#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+		// The type by its short name: the Key type setting's names carry the key range, too wide beside the
+		// check value (index = the privacy type, as n_ptype)
+		static const tr_id_t types[] = { TR_NONE, TRN(KEYS_TYPE_8_BIT, "8-bit"), TRN(KEYS_TYPE_16_BIT, "16-bit") };
+		if (e.type < sizeof types / sizeof types[0] && types[e.type] != TR_NONE) {
 			sb_chr(&b, ' ');
-			for (const char *c = tr(n_ptype[e.type]); *c != 0 && !(c[0] == ' ' && c[1] == '('); c++)
-				sb_chr(&b, *c);
+			sb_str(&b, tr(types[e.type]));
 		}
 #endif
 	} else {
