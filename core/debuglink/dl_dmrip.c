@@ -183,15 +183,14 @@ bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, cons
 
 // --- what the air may ask (7.3) ---
 
-// RADIO's operations the air may ask directly: those that leave the radio on the link's channel, receiving, and able
-// to answer. A change of channel, mode or talk target, a transmission, TX inhibit (SETTING 5) and the test TX limit
-// would cut the link: a detour's items (7.4) or the cable
+// RADIO's operations the air may ask directly: those that leave the radio on the link's channel, mode, color code and
+// slot, still able to answer, and that store nothing but the speaker volume (a radio without a knob keeps the step, as
+// from its UI; the next VOLUME sets it back). Channel, zone, VFO, frequency, bandwidth, clear
+// and the DMR fields move the radio (a detour's items, which it undoes); scan and roaming move it by themselves; the
+// tone burst, DTMF and the PA operations transmit or set the drive; privacy holds packet data back and the test TX
+// limit stops the replies; the USB and PPP operations have nothing to do with the air and store settings
 static bool radio_op_direct(const uint8_t *p, uint16_t len)
 {
-	// Everything that leaves the link where it is: the same channel, frequency, mode, color code and slot, and the
-	// radio still free to answer. Channel, zone, VFO, frequency, bandwidth, clear and the DMR fields move it (a
-	// detour's items); scan and roaming move it by themselves; the tone burst, DTMF and the PA operations transmit
-	// or set the drive; the test TX limit and privacy (which holds packet data back) stop the replies
 	switch (p[0]) {
 	case 7:				// power
 	case 8:				// squelch
@@ -201,16 +200,16 @@ static bool radio_op_direct(const uint8_t *p, uint16_t len)
 	case 14:			// leave hotspot mode
 	case 15: case 16: case 17: case 18:	// the DMR talk target: voice calls, not the link's packets
 	case DL_OP_BEEP:		// a sound that ends by itself
-	case 25:			// the USB personality
-	case 27:			// the USB network settings
-	case 28:			// PPP on the serial port
 	case DL_OP_VIBRATE:
 	case DL_OP_VOLUME:		// the speaker's level, for tuning it against a microphone
 	case DL_OP_VOICE_TEST:		// the encoder's input for the next transmission
 	case DL_OP_VOICE_CAPTURE:
 		return true;
 	case DL_OP_SETTING:
-		return len >= 2 && p[1] != 5u;	// 5: TX inhibit would stop the replies
+		// Only the settings held in RAM (mic gain 29, encode options 31, zone share offers 32, reference trim 35):
+		// the stored ones (TX inhibit, battery save, the time-out among them) could cut the link for good, so they
+		// go in a detour, which puts them back
+		return len >= 2 && (p[1] == 29u || p[1] == 31u || p[1] == 32u || p[1] == 35u);
 	default:
 		return false;
 	}
@@ -237,8 +236,9 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 	case DL_CMD_AUDIO_PROBE:	// the same for the audio path's levels and registers
 		return true;
 	default:
-		// RADIO (but radio_op_direct's), PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key: 7.2) and READ_MEM (its
-		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
+		// RADIO (but radio_op_direct's), PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key:
+		// 7.2) and READ_MEM (its windows hold the codec on a codec-merged image), nothing being encrypted on the air.
+		// CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
 		// restart or the radio handed over), DMR_DATA, APRS, SNMP, SPLIT, AIR (transmissions or modes outside the
 		// radio core's checks), SATELLITE (stored records), and SUPPORT and anything newer until listed here: never
 		return false;

@@ -193,15 +193,15 @@ static void test_air_policy(void)
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_DMRIP, &key, 1), "DMRIP key: the cable only");
 	const uint8_t beep[2] = { DL_OP_BEEP, 1 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 2), "RADIO BEEP: a sound, taken directly");
-	static const uint8_t direct_ops[] = { 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, DL_OP_BEEP, 25, 27, 28, DL_OP_VIBRATE,
-					      DL_OP_VOLUME, DL_OP_VOICE_TEST, DL_OP_VOICE_CAPTURE };
+	static const uint8_t direct_ops[] = { 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, DL_OP_BEEP, DL_OP_VIBRATE, DL_OP_VOLUME,
+					      DL_OP_VOICE_TEST, DL_OP_VOICE_CAPTURE };
 	for (unsigned i = 0; i < sizeof direct_ops; i++) {
 		uint8_t p[2] = { direct_ops[i], 0 };
 		CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, p, 2), "RADIO op %u directly", direct_ops[i]);
 	}
-	// The ones that move the link (a detour's), move it by themselves, transmit, or stop the replies
-	static const uint8_t detour_ops[] = { 1, 2, 3, 4, 5, 6, 9, 12, 19, DL_OP_SCAN, DL_OP_SCAN_VFO, DL_OP_TONE_BURST,
-					      DL_OP_ROAM, DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, DL_OP_DTMF, DL_OP_TX_DRIVE,
+	// The ones that move the link (a detour's), move it by themselves, transmit, stop the replies, or store settings
+	static const uint8_t detour_ops[] = { 1, 2, 3, 4, 5, 6, 9, 12, 19, 25, 27, 28, DL_OP_SCAN, DL_OP_SCAN_VFO,
+					      DL_OP_TONE_BURST, DL_OP_ROAM, DL_OP_DMR_FIELDS, DL_OP_VFO_COPY, DL_OP_DTMF, DL_OP_TX_DRIVE,
 					      DL_OP_PA_KEYUP, DL_OP_VFO_SFR, DL_OP_PA_SWEEP, DL_OP_PA_KEYRUN, DL_OP_P25,
 					      DL_OP_NXDN };
 	for (unsigned i = 0; i < sizeof detour_ops; i++) {
@@ -212,8 +212,13 @@ static void test_air_policy(void)
 	const uint8_t vol[2] = { DL_OP_VOLUME, 8 }, set_beep[4] = { DL_OP_SETTING, 11, 50, 0 },
 		      set_inhibit[4] = { DL_OP_SETTING, 5, 1, 0 }, txlim[2] = { DL_OP_TX_LIMIT, 0 };
 	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, vol, 2), "RADIO VOLUME directly");
-	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, set_beep, 4), "SETTING beep level directly");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, set_beep, 4), "SETTING beep level: stored, a detour's");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, set_inhibit, 4), "SETTING TX inhibit: would stop the replies");
+	for (unsigned id = 0; id < 40; id++) {
+		uint8_t p[4] = { DL_OP_SETTING, (uint8_t)id, 0, 0 };
+		bool want = id == 29 || id == 31 || id == 32 || id == 35;	// held in RAM only
+		CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, p, sizeof(p)) == want, "SETTING %u directly", id);
+	}
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, txlim, 2), "TX limit: would stop the replies");
 	CHECK(dl_dmrip_air_allowed(DL_CMD_CHIP_REG, z, 1), "CHIP_REG directly");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 0), "RADIO without an op");
