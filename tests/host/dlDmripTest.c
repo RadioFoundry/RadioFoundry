@@ -178,7 +178,7 @@ static void test_air_policy(void)
 	// Link-cutting and stored changes: never alone over the air. The chip UID (the default key) and memory (the
 	// codec on a codec-merged image): never over the air
 	static const uint8_t refused[] = { DL_CMD_INFO_CHIP, DL_CMD_READ_MEM, DL_CMD_RADIO, DL_CMD_PTT, DL_CMD_KEY,
-					   DL_CMD_CHIP_REG, DL_CMD_AUDIO_PROBE, DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3,
+					   DL_CMD_AUDIO_PROBE, DL_CMD_CODEPLUG, DL_CMD_CPKV, DL_CMD_T3,
 					   DL_CMD_STORAGE, DL_CMD_HWOPT, DL_CMD_REBOOT, DL_CMD_STUB, DL_CMD_CRASH,
 					   DL_CMD_WATCHDOG, DL_CMD_RX2, DL_CMD_DMR_DATA, DL_CMD_APRS, DL_CMD_SNMP,
 					   DL_CMD_SPLIT, DL_CMD_AIR, DL_CMD_SUPPORT, DL_CMD_SATELLITE };
@@ -191,6 +191,17 @@ static void test_air_policy(void)
 	const uint8_t st = DL_DMRIP_OP_STATUS, key = DL_DMRIP_OP_KEY;
 	CHECK(dl_dmrip_air_allowed(DL_CMD_DMRIP, &st, 1), "DMRIP status");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_DMRIP, &key, 1), "DMRIP key: the cable only");
+	const uint8_t beep[2] = { DL_OP_BEEP, 1 }, power[2] = { 5, 0 };
+	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 2), "RADIO BEEP: a sound, taken directly");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, power, 2), "other RADIO ops: a detour's items only");
+	const uint8_t vol[2] = { DL_OP_VOLUME, 8 }, set_beep[4] = { DL_OP_SETTING, 11, 50, 0 },
+		      set_inhibit[4] = { DL_OP_SETTING, 5, 1, 0 }, txlim[2] = { DL_OP_TX_LIMIT, 0 };
+	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, vol, 2), "RADIO VOLUME directly");
+	CHECK(dl_dmrip_air_allowed(DL_CMD_RADIO, set_beep, 4), "SETTING beep level directly");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, set_inhibit, 4), "SETTING TX inhibit: would stop the replies");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, txlim, 2), "TX limit: would stop the replies");
+	CHECK(dl_dmrip_air_allowed(DL_CMD_CHIP_REG, z, 1), "CHIP_REG directly");
+	CHECK(!dl_dmrip_air_allowed(DL_CMD_RADIO, beep, 0), "RADIO without an op");
 	CHECK(!dl_dmrip_air_allowed(DL_CMD_DMRIP, &st, 0), "DMRIP empty");
 }
 
@@ -208,13 +219,13 @@ static void test_items(void)
 {
 	// What the return undoes (7.4)
 	static const uint8_t ok_ops[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16, 17, 18, DL_OP_DMR_FIELDS,
-					  DL_OP_VFO_COPY, DL_OP_P25, DL_OP_NXDN };
+					  DL_OP_VFO_COPY, DL_OP_P25, DL_OP_NXDN, DL_OP_BEEP };
 	for (unsigned i = 0; i < sizeof(ok_ops); i++) {
 		uint8_t p[4] = { ok_ops[i], 0, 0, 0 };
 		CHECK(dl_detour_item_allowed(DL_CMD_RADIO, p, sizeof(p)), "RADIO op %u", ok_ops[i]);
 	}
 	// What it cannot undo, or what hands the radio over: refused
-	static const uint8_t bad_ops[] = { 0, 13, 14, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 33, 34, 35, 36, 37, 38,
+	static const uint8_t bad_ops[] = { 0, 13, 14, 19, 20, 21, 23, 25, 26, 27, 28, 29, 30, 33, 34, 35, 36, 37, 38,
 					   39, 40, 41, 44, 255 };
 	for (unsigned i = 0; i < sizeof(bad_ops); i++) {
 		uint8_t p[4] = { bad_ops[i], 0, 0, 0 };

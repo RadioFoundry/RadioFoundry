@@ -183,6 +183,23 @@ bool dl_dmrip_frame(const uint8_t *b, size_t n, uint8_t *cmd, uint8_t *seq, cons
 
 // --- what the air may ask (7.3) ---
 
+// RADIO's operations the air may ask directly: those that leave the radio on the link's channel, receiving, and able
+// to answer. A change of channel, mode or talk target, a transmission, TX inhibit (SETTING 5) and the test TX limit
+// would cut the link: a detour's items (7.4) or the cable
+static bool radio_op_direct(const uint8_t *p, uint16_t len)
+{
+	switch (p[0]) {
+	case DL_OP_BEEP:		// a sound that ends by itself
+	case DL_OP_VIBRATE:
+	case DL_OP_VOLUME:		// the speaker's level, for tuning it against a microphone
+		return true;
+	case DL_OP_SETTING:
+		return len >= 2 && p[1] != 5u;	// 5: TX inhibit would stop the replies
+	default:
+		return false;
+	}
+}
+
 bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 {
 	switch (cmd) {
@@ -198,9 +215,13 @@ bool dl_dmrip_air_allowed(uint8_t cmd, const uint8_t *req, uint16_t len)
 		return true;
 	case DL_CMD_DMRIP:
 		return len >= 1 && req[0] == DL_DMRIP_OP_STATUS;	// the key is set over the cable only
+	case DL_CMD_RADIO:
+		return len >= 1 && radio_op_direct(req, len);
+	case DL_CMD_CHIP_REG:		// a register read or written, for tuning a chip's levels; a restart undoes a write
+		return true;
 	default:
-		// RADIO, PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key: 7.2) and READ_MEM (its
-		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. CHIP_REG, AUDIO_PROBE (register writes no deadline undoes),
+		// RADIO (but radio_op_direct's), PTT, KEY: only inside a detour. INFO_CHIP (the UID gives the default key: 7.2) and READ_MEM (its
+		// windows hold the codec on a codec-merged image), nothing being encrypted on the air. AUDIO_PROBE (register writes no deadline undoes),
 		// CODEPLUG, CPKV, T3, STORAGE, HWOPT (flash and stored keys), REBOOT, STUB, CRASH, WATCHDOG, RX2 (a
 		// restart or the radio handed over), DMR_DATA, APRS, SNMP, SPLIT, AIR (transmissions or modes outside the
 		// radio core's checks), SATELLITE (stored records), and SUPPORT and anything newer until listed here: never
@@ -218,7 +239,7 @@ uint32_t dl_dmrip_reply_ip(uint32_t id, uint32_t src_ip)
 
 // --- the detour (7.4) ---
 
-// RADIO's operations a detour may run: the changes its return undoes
+// RADIO's operations a detour may run: the changes its return undoes, and beeps
 static bool radio_op_allowed(const uint8_t *p, uint8_t len)
 {
 	if (len < 1) {
@@ -236,6 +257,8 @@ static bool radio_op_allowed(const uint8_t *p, uint8_t len)
 	case DL_OP_VFO_COPY:
 	case DL_OP_P25:			// RAM settings, kept and put back
 	case DL_OP_NXDN:
+		return true;
+	case DL_OP_BEEP:		// a sound, which ends by itself: nothing to undo (the speaker tests on air)
 		return true;
 	case DL_OP_SETTING: {		// radio_settings_t's fields only (TX inhibit among them): the settings come back
 		if (len < 2) {

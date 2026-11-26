@@ -1202,9 +1202,9 @@ by anyone in range.
 
 | Over the air | Commands |
 |---|---|
-| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS |
-| Only as an item of a detour (7.4) | RADIO (the operations the detour undoes), PTT |
-| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, CHIP_REG, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
+| Taken | PING, VERSION, GET_DIAG, RESET_COUNTERS, SCREENSHOT, GET_LOG, GET_VIEW, IDDB, DETOUR, DMRIP STATUS; RADIO BEEP, VIBRATE, VOLUME and SETTING other than TX inhibit (the radio stays on the channel and can answer); CHIP_REG (for tuning a chip's levels; a restart undoes a write) |
+| Only as an item of a detour (7.4) | RADIO (the operations the detour undoes; BEEP too, for a beep while the radio is keyed and can't hear the link), PTT |
+| Never | INFO_CHIP (the UID gives the default key, 7.2), READ_MEM (the windows hold the codec on a codec-merged image), KEY, DMRIP KEY, AUDIO_PROBE, CODEPLUG, CPKV, STORAGE, HWOPT, T3, DMR_DATA, APRS, SNMP, SPLIT, AIR, REBOOT, STUB, CRASH, WATCHDOG, RX2, and any command not listed |
 
 A refused command answers status 7. Writes no deadline undoes (chip and SoC registers, flash, codeplug, stored keys)
 are refused even inside a detour, and so is anything that restarts the radio or hands the radio over: a poke can cut
