@@ -8178,7 +8178,7 @@ static void keys_item(uint16_t i, ui_item_t *it)
 		sb_str(&b, TR(KEYS_LABEL_PRIVACY, "Privacy"));
 		sb_chr(&b, ' ');
 		sb_u32(&b, e.num, 1);
-#if CONFIG_DMR && CONFIG_DMR_PRIVACY
+#if CONFIG_UI_SETTINGS && CONFIG_DMR && CONFIG_DMR_PRIVACY	// n_ptype is the Settings table's (none on a radio without a display)
 		if (e.type < sizeof n_ptype / sizeof n_ptype[0]) {
 			// The Key type setting's name, one name per type, without its key range in brackets: a row is
 			// too narrow for both beside the check value (every catalog writes the range as " (...)")
