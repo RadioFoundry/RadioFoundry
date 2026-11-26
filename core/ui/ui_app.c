@@ -51,6 +51,9 @@ ui_state_t ui_st;
 ui_target_t ui_target;
 static const radio_view_t *view;
 static const radio_view_t view_none;	// until the first tick (const: flash, not RAM)
+#if CONFIG_DUAL_WATCH
+static const radio_view_t *radio_view;	// the radio's view as the last tick had it (the UI task refreshes it in place)
+#endif
 static ui_frame_t stack[UI_STACK_MAX];
 static uint8_t sp;			// stack[sp] is on screen; stack[0] is Home
 static uint32_t toast_until, entry_last, last_refresh, now;
@@ -1956,6 +1959,9 @@ void ui_app_init(void)
 	roams_known = false;
 #endif
 	view = &view_none;
+#if CONFIG_DUAL_WATCH
+	radio_view = NULL;
+#endif
 	memset(&ui_st, 0, sizeof ui_st);
 	ui_st.volbar = -1;
 #if CONFIG_VOLUME_BAR
@@ -2142,6 +2148,13 @@ static void call_back_key(void)
 
 void ui_app_key(const input_event_t *ev)
 {
+#if CONFIG_DUAL_WATCH
+	// The UI task refreshes the radio's view before a key, in place: where the last tick left the view on it (the
+	// receiver was on the selected channel), the receiver may be on the other one now. The selected channel's
+	// settings again, so VFO digits typed on B don't open Find while the receiver is on A's channel (#1013)
+	if (radio_view != NULL)
+		view = ui_dual_view(radio_view);
+#endif
 	// A programmed home key (P1, P2: board.home_keys): its function on Home, its arrow everywhere else. Home is the
 	// bottom of the stack, not while a frequency is typed there
 	input_event_t home_ev;
@@ -2494,6 +2507,7 @@ bool ui_app_tick(const radio_view_t *v, uint32_t now_ms)
 	static uint32_t serial_seen;
 	static uint8_t battery_seen;
 #if CONFIG_DUAL_WATCH
+	radio_view = v;
 	view = ui_dual_view(v);	// in dual watch, the selected channel's settings wherever the receiver is
 #else
 	view = v;
