@@ -270,3 +270,5 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    RAM), and any shared addition would then fail CI on unrelated pull requests.
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
+
+`CONFIG_P25_ROAM` (default: `CONFIG_P25_TRUNK`) adds receive-only weak-signal site search. A negative system roaming threshold enables it; 0 disables it. See [P25 trunking](spec/p25-trunking.md).

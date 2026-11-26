@@ -1575,7 +1575,7 @@ run-cptag: codeplugTagTest
 
 # P25 in the codeplug (core/p25/p25_codeplug.c): the shared vectors, conventional and trunked set-ups; built with the
 # trunked part off as well
-TESTS   += p25CodeplugTest p25CodeplugConvTest
+TESTS   += p25CodeplugTest p25CodeplugConvTest p25CodeplugNoRoamTest
 P25CP   := $(CPTAG) $(CORE)/codeplug/codeplug_talk.c $(CORE)/codeplug/codeplug_tag.c $(CORE)/codeplug/codeplug_records.c $(CORE)/p25/p25_codeplug.c
 
 p25CodeplugTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
@@ -1585,10 +1585,14 @@ p25CodeplugConvTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h 
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 run: run-p25cp
-run-p25cp: p25CodeplugTest p25CodeplugConvTest
+run-p25cp: p25CodeplugTest p25CodeplugConvTest p25CodeplugNoRoamTest
 	./p25CodeplugTest
 	./p25CodeplugConvTest
+	./p25CodeplugNoRoamTest
 .PHONY: run-p25cp
+
+p25CodeplugNoRoamTest: p25CodeplugTest.c $(P25CP) $(wildcard $(CORE)/codeplug/*.h $(CORE)/p25/*.h) ../vectors/channel-modes.txt
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_AIR=1 -DCONFIG_P25=1 -DCONFIG_P25_TRUNK=1 -DCONFIG_P25_ROAM=0 -o $@ p25CodeplugTest.c $(P25CP)
 
 # NXDN in the codeplug (core/nxdn/nxdn_codeplug.c): the shared vectors, a channel's set-up, a channel saved from the radio
 TESTS   += nxdnCodeplugTest

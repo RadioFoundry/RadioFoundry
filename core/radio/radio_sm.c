@@ -9957,6 +9957,9 @@ void radio_sm_poll(radio_sm_t *sm, uint32_t now_ms)
 	}
 #endif
 	sm->view.rssi_dbm = rssi_held(sm, st.rssi_dbm);
+#if CONFIG_P25_ROAM
+	radio_p25_signal(sm->view.rssi_dbm);
+#endif
 	sm->view.noise = st.noise;
 #if CONFIG_DMR
 	// The modem may not report a level per burst: then the call's level is the held one while a call is heard. A

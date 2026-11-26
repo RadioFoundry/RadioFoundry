@@ -40,6 +40,11 @@ typedef struct {
 	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
 	bool ptt, talk_end;
 	uint8_t ptt_seq, ptt_done;
+#if CONFIG_P25_ROAM
+	int16_t signal_dbm;
+	uint32_t signal_ms;
+	bool signal_pending;
+#endif
 	bool nogo_kept;			// this system's control channels are in nogo_hz
 } p25_trunk_t;
 _Static_assert(P25_CP_IDEN_MAX == P25_FOLLOW_IDENS, "one identifier plan size");
@@ -374,6 +379,7 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 		c->flags |= P25_FOLLOW_TX;
 	if (l->sys.options & P25_TSYS_NO_REG)
 		c->flags |= P25_FOLLOW_NO_REG;
+	c->roam_dbm = l->sys.roam_dbm;
 	c->ncc = l->ctl_count;
 	for (uint8_t i = 0; i < l->ctl_count; i++)
 		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .tx_hz = l->ctl[i].tx_hz, .chan = l->ctl[i].chan,
@@ -423,6 +429,10 @@ static void trunk_service(p25_mem_t *m)
 		c.rx_nac = c.tx_nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
 		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP || t->what == P25_FOLLOW_TUNE_TALK ? (uint16_t)t->id : 0u;
 		t->done = want;
+#if CONFIG_P25_ROAM
+		// The last status sample belongs to the frequency we are leaving.
+		t->signal_pending = false;
+#endif
 		bool ok = hz != 0 && board_in_band(hz, false) && !radio_listen_band(hz) &&
 			  board.radio->rx(hz, RADIO_BW_12K5, &no_tone);
 		if (!ok)
@@ -442,6 +452,12 @@ static void trunk_service(p25_mem_t *m)
 		t->ptt_done = t->ptt_seq;
 		p25_follow_ptt(&t->f, t->ptt, now);
 	}
+#if CONFIG_P25_ROAM
+	if (t->cfg.roam_dbm < 0 && t->signal_pending) {
+		t->signal_pending = false;
+		p25_follow_signal(&t->f, t->signal_dbm, t->signal_ms);
+	}
+#endif
 	p25_follow_tick(&t->f, now);
 	// Acquisition may confirm a wildcard without asking for a frequency change. Consume one current follower
 	// context under the same exclusion as its retune, and refresh both directions, including NAC 000.
@@ -467,6 +483,17 @@ static void trunk_service(p25_mem_t *m)
 	if (tview.v.reg == P25_REG_BLOCKED && !t->nogo_kept)
 		nogo_keep(t);
 }
+
+#if CONFIG_P25_ROAM
+void radio_p25_signal(int16_t rssi_dbm)
+{
+	if (mem != NULL && trunk && mem->trunk.cfg.roam_dbm < 0) {
+		mem->trunk.signal_dbm = rssi_dbm;
+		mem->trunk.signal_ms = hal_millis();
+		mem->trunk.signal_pending = true;
+	}
+}
+#endif
 
 void radio_p25_trunk_view(radio_p25_trunk_view_t *out)
 {

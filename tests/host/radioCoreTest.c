@@ -125,8 +125,10 @@ static void r_tx_off(void) { hw.tx_off_calls++; hw.keyed = false; }
 // (0: on every frequency, no carrier of its own)
 static uint32_t far_hz;
 static bool far_on_air(void);
+static unsigned status_reads;
 static void r_status(radio_status_t *st)
 {
+	status_reads++;
 	*st = hw.st;
 	if (far_hz != 0) {
 		bool here = hw.rx_hz == far_hz && far_on_air();
@@ -8186,6 +8188,10 @@ static void test_p25_trunk(void)
 	CHECK(hw.rx_hz == TS_CC1 && hw.rx_bw == RADIO_BW_12K5);
 	run(1500);
 	CHECK(v->trunk == RADIO_P25_TRUNK_CONTROL && hw.rx_hz == TS_CC1 && sm.view.state == RS_IDLE);
+	unsigned reads = status_reads;
+	radio_p25_view_t polled;
+	radio_p25_poll(&polled);
+	CHECK(status_reads == reads); // Polling the follower must not read the radio bus, even with roaming off.
 	p25t_view_text(buf, sizeof buf);
 	CHECK(strstr(buf, "p25t.built=1\np25t.on=1\np25t.state=2\np25t.cc=0\n") != NULL);
 	CHECK(strstr(buf, "p25t.nac=659\np25t.wacn=674849\np25t.sysid=755\np25t.rfss=1\np25t.site=7\n") != NULL);
