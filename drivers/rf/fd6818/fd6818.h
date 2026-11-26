@@ -48,6 +48,7 @@ typedef struct {
 	uint16_t sleep_fm, sleep_dmr, sleep_wake;
 	// Band words for a frequency in 10 Hz units: *r1a == 0 leaves 0x1A alone; false writes neither
 	bool (*band_words)(uint32_t freq_10hz, uint16_t *r1a, uint16_t *r40);
+	uint16_t r40_tx;			// FM transmit 0x40: this plus the band's calibration byte (fd6818_fm_tx_cal)
 } fd6818_variant_t;
 
 extern const fd6818_variant_t fd6818_variant_default;
@@ -70,6 +71,8 @@ typedef struct {
 	uint32_t freq_10hz;	// last frequency written, 10 Hz units (0 = none)
 	uint16_t bw_reg;	// last 0x43 value
 	uint16_t state;		// last 0x30 value
+	uint16_t r24;		// 0x24 as it was before FM transmit cleared it, written back at the next RX state
+	bool r24_held;		// 0x24 is cleared and r24 holds the receive word
 #if CONFIG_AM_RX
 	bool am;		// the AM set-up is on (fd6818_set_am)
 	uint8_t am_noise_off;	// fd6818_am_noise's offset, from the variant's 0x4F
@@ -89,12 +92,14 @@ typedef struct {
 #define FD6818_REG_POWER	0x37	// block enables: 0x1F0F receive, 0x1D11 / 0x1D00 receiver asleep (FM / DMR)
 #define FD6818_REG_FREQ_LO	0x38	// 10 Hz units, low 16 bits
 #define FD6818_REG_FREQ_HI	0x39
+#define FD6818_REG_DEC_IN	0x24	// the chip's tone decoders' input selects; 0 while transmitting FM, back at RX
 #define FD6818_REG_BAND_B	0x40
 #define FD6818_REG_BANDWIDTH	0x43
 #define FD6818_REG_AF		0x47	// AF output: 0x6042 = muted in FM, FD6818_AF_FM / FD6818_AF_AM below
 #define FD6818_REG_VOLUME	0x48
 #define FD6818_REG_AM_4A	0x4A	// FD6818_AM_4A in AM, else the variant's init word (if any); meaning not known
 #define FD6818_REG_SQ_NOISE	0x4F	// squelch noise thresholds: noise_sq_th_out 14:8, noise_sq_th_in 6:0 (guide, squelch)
+#define FD6818_REG_TX_AUDIO	0x50	// TX audio: b15 mute, b9:0 the limit (fd6818_tx_audio)
 #define FD6818_REG_SUBAUDIO	0x51
 #define FD6818_REG_CSS_THRESH	0x52
 #define FD6818_REG_NOISE	0x65
@@ -191,8 +196,13 @@ bool fd6818_pll_locked(fd6818_t *dev, uint32_t timeout_ms);
 #define FD6818_DETECT_RETRY	3u
 uint8_t fd6818_detect(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *const *v, uint8_t n, uint32_t hz,
 		      uint32_t timeout_ms);
-// Analog TX preparation writes (0x3F, 0x40, 0x37) before switching to TX (8.3, FM only)
+// Analog TX preparation writes before switching to TX (the variant's table, then 0x24 = 0; FM only). The next
+// fd6818_set_state(RX) puts 0x24 back, so the receive tone detector hears the demodulated audio again
 void fd6818_fm_tx_prepare(fd6818_t *dev);
+// FM transmit 0x40: the variant's r40_tx plus the band's calibration byte, after fd6818_fm_tx_prepare
+void fd6818_fm_tx_cal(fd6818_t *dev, uint8_t cal);
+// 0x50 TX audio: unmuted after each switch to TX (FM and every DMR burst), muted when the transmission ends
+void fd6818_tx_audio(fd6818_t *dev, bool on);
 // TX CTCSS from the FD6818 (hz_x10 = 0: sub-audio off)
 void fd6818_set_tx_ctcss(fd6818_t *dev, uint16_t hz_x10);
 // Sub-audio detect for receive: CTCSS (value = Hz x 10), DCS normal or inverted (value = the 9-bit code), or off.

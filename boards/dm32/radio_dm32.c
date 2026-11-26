@@ -77,13 +77,21 @@ static const pa_keyup_cfg_t keyup_cfg[2] = {
 // with these writes on top. Which one the radio has is found at start-up (rf_detect)
 #define RF_PROBE_HZ		145000000u	// in band on both sections
 #define RF_LOCK_MS		20u		// the probe's wait for the lock bit after the tune
-#define FD_REG_TX_AUX		0x50u		// set-up B: around each switch to TX
-#define FD_TX_AUX_FM_PRE	0xBB20u		// FM, before the switch
-#define FD_TX_AUX_FM		0x3B20u		// FM, after
-#define FD_TX_AUX_DMR		0x3B18u		// DMR burst, after
 #define FD_REG_CSS_A		0x2Eu		// set-up B: two words by the receive sub-audio type
 #define FD_REG_CSS_B		0x2Fu
-#define FD_REG40_BASE		0x3480u		// set-up B, FM transmit: 0x40 = this + the calibration byte
+// Set-up B on this board, on top of the shared tables: 0x7D (b12:8 receive digital gain 9, the low byte the analog
+// mic step; the step set-up A's 0xE35E uses), FD6818 GPIO 5 as function 1 (0x33 b9 and b1 clear, 0x34 b7:4), and
+// 0x28 b8 set while the squelch is open
+#define FD_REG_7D		0x7Du
+#define FD_7D_B			0xE92Cu
+#define FD_REG_GPIO_DIR		0x33u
+#define FD_REG_GPIO_FN		0x34u
+#define FD_GPIO5_DIR		0x0202u
+#define FD_GPIO5_FN_MASK	0x00F0u
+#define FD_GPIO5_FN		0x0010u
+#define FD_REG_RX_GATE		0x28u
+#define FD_RX_GATE_CLOSED	0x0A40u
+#define FD_RX_GATE_OPEN		0x0B40u
 #define C7_RF_MODE_RX_INVERT	(1u << 15)	// HR_C7000 RF_MODE: RX IQ invert, off on the newer section
 
 static fd6818_t fd;
@@ -226,9 +234,7 @@ static void burst_switch(void)
 {
 	lna(tx_hz, false);
 	fd6818_dmr_burst_at(&fd, true, fd.variant->bw_dmr, synth_hz(tx_hz));
-	if (rf_b) {
-		fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_DMR);
-	}
+	fd6818_tx_audio(&fd, true);
 }
 
 // One burst's TX on, from the RF task (dmr_rfburst.h): the key-up's points in time order (the boost, the PA on, the
@@ -342,6 +348,10 @@ static void rf_detect(void)
 	rf_unlocked = i == 2;
 	fd6818_set_state(&fd, FD6818_STATE_IDLE);
 	if (rf_b) {
+		fd6818_write(&fd, FD_REG_7D, FD_7D_B);
+		fd6818_write(&fd, FD_REG_GPIO_DIR, (uint16_t)(fd6818_read(&fd, FD_REG_GPIO_DIR) & ~FD_GPIO5_DIR));
+		fd6818_write(&fd, FD_REG_GPIO_FN,
+			(uint16_t)((fd6818_read(&fd, FD_REG_GPIO_FN) & ~FD_GPIO5_FN_MASK) | FD_GPIO5_FN));
 		hrc7000_wr(&modem, C7_RF_MODE, hrc7000_rd(&modem, C7_RF_MODE) & ~C7_RF_MODE_RX_INVERT);
 	}
 }
@@ -384,12 +394,12 @@ static void wake(void)
 	}
 }
 
-// Set-up B's two receive sub-audio words: CTCSS one pair, DCS and no tone the other
-static void css_words(bool ctcss)
+// Set-up B's two receive sub-audio words: DCS one pair, CTCSS and no tone the other
+static void css_words(bool dcs)
 {
 	if (rf_b) {
-		fd6818_write(&fd, FD_REG_CSS_A, ctcss ? 0x8608u : 0x9608u);
-		fd6818_write(&fd, FD_REG_CSS_B, ctcss ? 0x1890u : 0x9890u);
+		fd6818_write(&fd, FD_REG_CSS_A, dcs ? 0x9608u : 0x8608u);
+		fd6818_write(&fd, FD_REG_CSS_B, dcs ? 0x9890u : 0x1890u);
 	}
 }
 
@@ -421,7 +431,7 @@ static void set_mode(radio_mode_t m)
 // transmission, dmr_tx_end): the burst switch already put the FD6818 in RX; on the same channel it stays as it is
 static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, bool keep)
 {
-	if (!board_in_band(hz, false) || (am && (mode != RADIO_MODE_FM || rf_b))) {	// AM: not worked out on set-up B
+	if (!board_in_band(hz, false) || (am && mode != RADIO_MODE_FM)) {
 		return false;
 	}
 	dmr_disarm();	// a retune ends DMR TX (the hotspot's rx() disarms too)
@@ -450,7 +460,7 @@ static bool rx_tune(uint32_t hz, radio_bw_t bw, const subtone_t *tone, bool am, 
 		// The FD6818 detects the tone on its own demodulated audio: the C7000's detector gets no audio while the
 		// FD6818 plays FM to the speaker (hardware-dm32.md 8.4)
 		fd6818_set_rx_tone(&fd, fd_tone(tone != NULL ? tone->type : TONE_NONE), tone != NULL ? tone->value : 0);
-		css_words(tone != NULL && tone->type == TONE_CTCSS);
+		css_words(tone != NULL && (tone->type == TONE_DCS || tone->type == TONE_DCS_INV));
 #if CONFIG_AM_RX
 		fd6818_set_am(&fd, am);	// every AM tune: full gain again for the new channel; FM: AM off
 #endif
@@ -552,10 +562,10 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		lna(hz, false);
 		fd6818_set_rx_tone(&fd, FD6818_TONE_NONE, 0);	// 0x51's enable would add the FD6818's tone to the C7000's
 		fd6818_fm_tx_prepare(&fd);
-		if (rf_b && bf_cal_valid()) {
-			// The band's calibration byte; without calibration the power-on word stays. The next rx() puts the
+		if (bf_cal_valid()) {
+			// The band's calibration byte; without calibration the variant's word stays. The next rx() puts the
 			// band word back (fd6818_set_freq)
-			fd6818_write(&fd, FD6818_REG_BAND_B, (uint16_t)(FD_REG40_BASE + bf_cal_tx_byte(hz, BF_ROW_REG40)));
+			fd6818_fm_tx_cal(&fd, bf_cal_tx_byte(hz, BF_ROW_REG40));
 		}
 		tx_wide = bw == RADIO_BW_25K;
 		hrc7000_set_subtone(&modem, true, c7_tone(tone != NULL ? tone->type : TONE_NONE),
@@ -563,12 +573,9 @@ static bool tx(uint32_t hz, radio_bw_t bw, uint8_t power, const subtone_t *tone)
 		hrc7000_fm_tx(&modem, tx_wide);
 		hrc_pin_write(PIN_MIC_PATH, true);
 		fd6818_set_bandwidth(&fd, fm_bw_reg(bw));
-		if (rf_b) {
-			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM_PRE);
-		}
 		fd6818_set_state(&fd, FD6818_STATE_TX);
+		fd6818_tx_audio(&fd, true);
 		if (rf_b) {
-			fd6818_write(&fd, FD_REG_TX_AUX, FD_TX_AUX_FM);
 			hal_delay_ms(1);
 		}
 		pa_key();
@@ -581,6 +588,7 @@ static void tx_end(bool keep)
 {
 	dmr_disarm();
 	pa_off();
+	fd6818_tx_audio(&fd, false);
 #if CONFIG_APRS_AFSK
 	if (afsk_tx) {
 		hrc_afsk.tx_stop();	// the core stops the tones first; this is the safety net
@@ -753,6 +761,11 @@ uint8_t dm32_amp_users(void)
 static void audio(bool on)
 {
 	rx_audio = on;
+	// Closed during a transmission too: a speaker closed while transmitting would leave 0x28 open through the receive
+	// that follows, until the squelch opens and closes again
+	if (rf_b && mode == RADIO_MODE_FM && (!on || !transmitting)) {
+		fd6818_write(&fd, FD_REG_RX_GATE, on ? FD_RX_GATE_OPEN : FD_RX_GATE_CLOSED);
+	}
 	if (!on) {
 		amp(AMP_RADIO, false);	// before the source switch, so the switch doesn't click
 	}

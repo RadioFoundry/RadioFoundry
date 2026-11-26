@@ -154,6 +154,7 @@ KIND_DMR_TRUNK = SYSTYPE_DMR_TRUNK = 1
 T3_TAG_NO_FALLBACK = 0x10                   # a trunked channel's tag: never fall back
 T3_SYS_STUN = 0x0400                        # a Tier III system's option: accept a stun
 CHIP_SOC = 0xFF                     # CHIP_REG's chip number for the SoC's own registers
+REG_SETTLE_MS = 300                 # a detour's reg step after a radio step: the radio core's change applied first
 SNMP = 0x19                         # the SNMP agent (CONFIG_SNMP; docs/spec/debuglink.md 3.17, docs/spec/snmp.md)
 SNMP_OP_SET, SNMP_OP_COMMUNITY, SNMP_OP_TEST_TRAP = range(3)
 SNMP_FIELDS = {"flags": 0, "rf_manager": 1, "rf_gap_s": 2, "trap_port": 3}
@@ -2006,7 +2007,8 @@ def cmd_volume(link, a):
             raise
         time.sleep(0.3)         # the radio core applies it on its next poll
     v = link.view(["features"])
-    for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft"):
+    for k in ("volume.src", "volume.step", "volume.max", "volume.override", "volume.sent", "volume.soft",
+              "volume.knob"):
         if k in v:
             print(f"{k}={v[k]}")
     return 0
@@ -2020,19 +2022,27 @@ class ItemRecorder(DebugLink):
         self.items = []
 
     def request(self, cmd, payload=b"", timeout=None, busy_wait=2.0):
-        if cmd not in (RADIO, PTT):
-            raise DebugLinkError(f"command 0x{cmd:02X} can't be a detour step (only RADIO, PTT and waits)")
+        if cmd not in (RADIO, PTT, CHIP_REG, AUDIO_PROBE):
+            raise DebugLinkError(f"command 0x{cmd:02X} can't be a detour step (only RADIO, PTT, CHIP_REG, AUDIO_PROBE "
+                                 "and waits)")
         self.items.append((cmd, bytes(payload)))
         return ST_OK, bytes(64)
 
 
 def detour_steps(steps):
-    """A detour's items from the command line: "radio OP ARG...", "wait MS", "ptt S" (key S seconds, then release)"""
+    """A detour's items from the command line: "radio OP ARG...", "wait MS", "ptt S" (key S seconds, then release),
+    "reg CHIP REG VALUE [PAGE]" (an RF chip register written in the detour's mode, never the SoC's). A reg step right
+    after a radio step waits REG_SETTLE_MS first: the radio core applies a radio step later, and entering the mode
+    would overwrite the register"""
     rec = ItemRecorder()
+    last = None
     for step in steps:
         w = step.split()
         if not w:
             continue
+        if w[0] == "reg" and last == "radio":
+            rec.items.append((0, REG_SETTLE_MS))
+        last = w[0]
         if w[0] == "wait" and len(w) == 2:
             rec.items.append((0, int(w[1])))
         elif w[0] == "ptt" and len(w) == 2:
@@ -2049,8 +2059,13 @@ def detour_steps(steps):
             rec.power_step(int(w[2]))
         elif w[0] == "radio" and len(w) >= 2:
             cmd_radio(rec, argparse.Namespace(op=w[1], args=w[2:]))
+        elif w[0] == "reg" and len(w) in (4, 5):
+            if int(w[1], 0) == CHIP_SOC:
+                raise DebugLinkError(f"detour step {step!r}: the SoC's registers aren't taken in a detour")
+            rec.chip_reg(int(w[1], 0), int(w[2], 0), int(w[3], 0), int(w[4], 0) if len(w) == 5 else 0)
         else:
-            raise DebugLinkError(f"detour step {step!r}: \"radio OP ARG...\", \"wait MS\" or \"ptt S\"")
+            raise DebugLinkError(f"detour step {step!r}: \"radio OP ARG...\", \"wait MS\", \"ptt S\" or "
+                                 "\"reg CHIP REG VALUE [PAGE]\"")
     return rec.items
 
 
@@ -3106,7 +3121,18 @@ def self_test():
         refused = False
     except DebugLinkError:
         refused = True
-    check(refused, "detour steps: only radio, wait and ptt")
+    check(refused, "detour steps: radio, wait, ptt and a full reg step only")
+    check(detour_steps(["reg 1 0x41 0x30 2"]) == [(CHIP_REG, bytes([1, 2, 0x41]) + struct.pack("<I", 0x30))],
+          "detour steps: an RF chip register write")
+    check(detour_steps(["radio freq 461.0875", "reg 1 0x41 0x30"]) ==
+          [(RADIO, bytes([5]) + struct.pack("<I", 461087500)), (0, REG_SETTLE_MS),
+           (CHIP_REG, bytes([1, 0, 0x41]) + struct.pack("<I", 0x30))], "detour steps: reg waits after a radio step")
+    try:
+        detour_steps(["reg 0xFF 0x40 1"])
+        refused = False
+    except DebugLinkError:
+        refused = True
+    check(refused, "detour steps: no SoC register")
     check(detour_steps(["radio power -2"]) == [(RADIO, bytes([OP_POWER, 0xFE]))], "detour steps: a power step")
     print("rfoundry_debug self-test:", "ok" if ok else "FAILED")
     return 0 if ok else 1

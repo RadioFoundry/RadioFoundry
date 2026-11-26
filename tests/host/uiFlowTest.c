@@ -2155,8 +2155,9 @@ static void dark_key_checks(void)
 }
 
 // The volume bar when the knob turns (#354): over whatever screen is open, 3 s after the last change; never at
-// power-up, for an unchanged level, a radio without a knob or the debug link taking over. EP and BVA cases, then a
-// seeded property run: the bar shows exactly when the knob's level changed in the last 3 s, at that level
+// power-up, for an unchanged level, a radio without a knob or the debug link taking over. A radio that only reads the
+// knob's position ("knobpos") shows it too. EP and BVA cases, then a seeded property run: the bar shows exactly when the
+// knob's level changed in the last 3 s, at that level
 #if CONFIG_VOLUME_BAR
 static bool vol_run(const sim_geom_t *g, const char *script, const char *expect, char *err, size_t len)
 {
@@ -2193,6 +2194,9 @@ static void volume_bar_checks(void)
 		{ "a turn at 2 s keeps it", "knob:50 knob:60 wait:2000 knob:70 wait:2900", "volbar=11" },
 		{ "over a menu, which stays", "ok knob:50 knob:60", "volbar=10 screen=hub" },
 		{ "no knob: none", "softvol knob:50 knob:75", "volbar=-1" },
+		{ "position only: a turn shows it", "knobpos:50 knobpos:75", "volbar=12 shows=Vol wake=1 screen=home" },
+		{ "position only, power-up: none", "knobpos:50", "volbar=-1" },
+		{ "position only, down to the stop", "knobpos:50 knobpos:1", "volbar=1" },
 		{ "the debug link takes over: none", "knob:50 override:80", "volbar=-1" },
 		{ "and gives it back: none", "knob:50 override:80 knob:30", "volbar=-1" },
 		{ "a turn after it gave back", "knob:50 override:80 knob:30 knob:40", "volbar=6" },

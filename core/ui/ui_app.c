@@ -2627,19 +2627,21 @@ static void knob_moved(const radio_view_t *v)
 	}
 	bool first = knob_last < 0;
 	knob_last = k;
-	if (!first && ui_st.locked && ui_st.knob_lock) {
+	// Turning the knob while locked shows how to unlock, because the radio is ignoring the knob. A radio that can only
+	// watch its knob can't ignore it (the volume still changes), so it shows nothing
+	if (!first && ui_st.locked && ui_st.knob_lock && (ui_svc_features() & UI_FEAT_VOLUME_KNOB)) {
 		ui_toast(locked_text(has_quick_key));
 	}
 }
 
-// The knob turned (#354): the level the radio core passed on changed, from the knob both times. Read from the radio's
-// own view, not dual watch's per-side one. The first level (power-up) and a change of source (the debug link taking
-// over or giving back) set the reference without a bar. The bar wakes the backlight: turning the knob is using the
-// radio
+// Shows the volume bar after the knob is turned (#354). The level is the one the radio core applied from the knob; on a
+// radio that can't set the level (RVOL_NONE) it is the knob's position, or -1 if the knob isn't read. The level is taken
+// from the radio's own view, not dual watch's per-side one. No bar for the first level after power-up, or when the debug
+// link takes over the volume or gives it back. The bar also turns the backlight on, since the user is using the radio
 #if CONFIG_VOLUME_BAR
 __attribute__((noinline)) static void knob_tick(const radio_view_t *v)
 {
-	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : -1;
+	int8_t lvl = v->volume_src == RVOL_KNOB ? v->volume : v->volume_src == RVOL_NONE ? v->volume_knob : -1;
 	if (lvl >= 0 && knob_seen >= 0 && lvl != knob_seen) {
 		ui_st.volbar = (int8_t)radio_volume_step_of((uint8_t)lvl);
 		volbar_until = now + VOLUME_MS;

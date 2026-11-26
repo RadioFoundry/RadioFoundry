@@ -97,6 +97,23 @@ void debuglink_p25_reset(void);
 void debuglink_view_nxdn(const radio_view_t *v, dl_text_t *t);
 void debuglink_nxdn_reset(void);
 void debuglink_view_keys(dl_text_t *t);
+// RADIO operations (DL_CMD_RADIO, first payload byte; docs/spec/debuglink.md 3.6): 1-19, 25, 27, 28 in debuglink.c,
+// the rest in debuglink_view_radio.c
+enum {
+	DL_OP_CHANNEL_STEP = 1, DL_OP_ZONE_POS, DL_OP_ZONE, DL_OP_VFO, DL_OP_VFO_SET, DL_OP_VFO_STEP, DL_OP_POWER,
+	DL_OP_SQUELCH, DL_OP_BANDWIDTH, DL_OP_TONE, DL_OP_MONITOR, DL_OP_CLEAR_TEMP, DL_OP_REPLY_CANCEL, DL_OP_HOTSPOT_EXIT,
+	DL_OP_DMR_TARGET, DL_OP_DMR_CONTACT, DL_OP_DMR_CALL_BACK, DL_OP_DMR_TARGET_CLEAR, DL_OP_DMR_PRIVACY,
+	DL_OP_USB_NETWORK = 25,
+	DL_OP_USB_NET_SETTINGS = 27,	// flags u8, link IP u32 (stored; docs/spec/usb-network.md 5)
+	DL_OP_PPP = 28,			// on u8: PPP on the serial host port (docs/spec/ppp.md; CONFIG_NET_PPP builds)
+};
+// SETTING ids outside radio_settings_t (debuglink_view_radio.c)
+#define DL_SETTING_MIC_GAIN	29u	// the mic gain step (radio/mic_gain.h), RAM only
+#define DL_SETTING_ENC_OPTIONS	31u	// the vocoder's encode options (VOCODER_OPT_*), RAM only
+#define DL_SETTING_ZS_OFFERS	32u	// zone share offers (zone_share_api.h), RAM only
+#define DL_SETTING_REF_TRIM	35u	// the reference trim, ppb two's complement (radio/ref_trim.h), RAM only
+#define DL_SETTING_TONES_OFF	36u	// Settings > Sound tones (radio_settings_t.tones_off)
+#define DL_SETTING_GPS		37u	// Settings > Location > GPS (settings_t.gps, board_t.gps)
 enum {
 	DL_OP_SCAN = 20, DL_OP_SCAN_VFO = 21, DL_OP_BEEP = 22, DL_OP_TONE_BURST = 23, DL_OP_SETTING = 24,
 	DL_OP_ROAM = 26, DL_OP_VIBRATE = 29, DL_OP_VOLUME = 30, DL_OP_DMR_FIELDS = 31, DL_OP_VFO_COPY = 32,
