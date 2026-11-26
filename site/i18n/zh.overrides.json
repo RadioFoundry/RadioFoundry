@@ -235,7 +235,5 @@
  "flash.bootloader.Turn the radio off and connect the programming cable.": "关闭电台，连接编程线。",
  "flash.bootloader.Hold PTT and SK1.": "按住 PTT 和 SK1。",
  "flash.bootloader.Turn the radio on while you hold both keys. The green LED lights.": "保持按住两个键的同时开机。绿色 LED 亮起。",
- "flash.bootloader.Release the keys.": "松开按键。",
- "feature.NET_RADIO_UDP.title": "通过 UDP 控制信道组与信道（端口 4191）",
- "feature.NET_RADIO_UDP.help": "通过 UDP（端口 4191，只接受电脑发来的：USB 网络或 PPP）控制信道组与信道，无需 TCP 或 HTTP：读取电台当前位置，像旋钮一样选择或步进信道组和信道，每个请求以一个数据报应答，并向发送方发送变化通知；takRF 的电台控制使用它（需要 DMR_IP_GATEWAY；core/net/radio_udp.c，docs/spec/tcp-services.md 8）"
+ "flash.bootloader.Release the keys.": "松开按键。"
 }
