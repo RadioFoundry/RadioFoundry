@@ -62,6 +62,9 @@ typedef struct {
 	uint32_t tx_hz;		// the inbound frequency; 0: hz (or chan's) plus the identifier's transmit offset
 	uint16_t chan;		// identifier << 12 | channel; 0 none
 	uint8_t site;		// for the view (0xFF none)
+	uint8_t rfss, site_id;	// programmed metadata, not the generic site group or a site lock
+	bool nac_set;		// false: cfg.nac; true: this candidate's expected NAC
+	uint16_t nac;		// P25_NAC_ANY: automatic
 } p25_follow_cc_t;
 
 // A programmed channel identifier
@@ -173,6 +176,8 @@ typedef struct {
 	uint16_t aff_tg;	// the talk group affiliated, 0 none
 	uint32_t talk_hz;	// our voice channel's transmit frequency
 	uint8_t reg_tx, reg_ok, aff_tx, aff_ok, req_tx, req_grant, denials, queued, timeouts, send_fail, inb_busy;
+	bool tuning;		// the receiver has not confirmed the most recent tune
+	uint16_t expected_nac;	// of the candidate, before any observed/confirmed NAC
 } p25_follow_view_t;
 
 typedef struct {
@@ -222,11 +227,10 @@ typedef struct {
 	uint8_t tried;		// candidates tried in this pass
 	uint8_t phase;		// in a hunt: dwell, identity wait, backoff
 	bool left_enc;		// left_ch / left_tg is an encrypted call skipped
-	bool tuning;		// a tune was asked: units are of the old channel until p25_follow_retuned
 	bool have_id;		// the candidate's system identity matched
-	volatile uint8_t seq;	// odd while view is written
 	p25_follow_acc_t acc;
 	rx_seen_t seen;		// P25_FOLLOW_BAD_CRC: blocks that failed their CRC lately
+	volatile uint8_t seq;	// odd while view is written
 	p25_follow_iden_e iden[P25_FOLLOW_IDENS];
 	p25_follow_view_t view;
 } p25_follow_t;

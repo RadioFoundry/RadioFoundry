@@ -135,6 +135,30 @@ export function encodeTsys(s, prev = null) {
 	return v;
 }
 
+// A short site's NAC inherits the System default. A complete extension distinguishes explicit Auto from fixed 000.
+export function decodeSite(body) {
+	const n = u16(body, 2), complete = body && body.length >= 4;
+	const fixed = complete && (n & 0xF000) === NAC_SET && n !== (NAC_SET | NAC_ANY) && n !== (NAC_SET | NAC_REPEAT_ANY);
+	return {
+		rfss: !body?.length || u8(body, 0) === P25_UNKNOWN ? null : body[0],
+		site: !body || body.length < 2 || u8(body, 1) === P25_UNKNOWN ? null : body[1],
+		nacMode: fixed ? "fixed" : complete && (n === 0 || n === (NAC_SET | NAC_ANY)) ? "auto" : "system",
+		expectedNac: fixed ? n & 0x0FFF : 0,
+	};
+}
+
+export function encodeSite(e, body = null) {
+	const mode = e.nacMode ?? "system", prev = decodeSite(body);
+	const changed = mode !== prev.nacMode || (mode === "fixed" && e.expectedNac !== prev.expectedNac);
+	const v = grow(body, changed ? 4 : 2);
+	v[0] = e.rfss ?? P25_UNKNOWN;
+	v[1] = e.site ?? P25_UNKNOWN;
+	// Keep short legacy records and uninterpreted bytes when only their metadata changes. FFFF allows reverting an
+	// extended record to inheritance without shifting or deleting a future suffix.
+	if (changed) put16(v, 2, mode === "fixed" ? NAC_SET | (e.expectedNac & 0x0FFF) : mode === "auto" ? 0 : 0xFFFF);
+	return v;
+}
+
 const optHex = (key, label, max, digits) => ({ key, label, type: "hex", min: 0, max, digits, any: true, format: (v) => hex(v, digits) });
 const byteOrUnknown = (key, label) => ({ key, label, type: "int", min: 0, max: 254, any: true });
 
@@ -177,7 +201,7 @@ export const p25System = {
 	fields: () => [
 		{ ...optHex("wacn", "editor.p25.wacn", 0xFFFFF, 5), help: "editor.p25.wacn_help", section: "identity" },
 		{ ...optHex("sysid", "editor.p25.sysid", 0xFFF, 3), help: "editor.p25.any_help", section: "identity" },
-		{ ...optHex("ccNac", "editor.p25.cc_nac", 0xFFF, 3), help: "editor.p25.any_help", section: "identity" },
+		{ ...optHex("ccNac", "editor.p25.cc_nac", 0xFFF, 3), help: "editor.p25.cc_nac_help", section: "identity" },
 		{ key: "skipEnc", label: "editor.p25.skip_enc", type: "bool", section: "calls", help: "editor.p25.skip_enc_help" },
 		{ key: "holdS", label: "editor.p25.hold", type: "int", min: 0, max: 255, section: "calls", help: "editor.p25.hold_help" },
 		{ key: "planOnly", label: "editor.p25.plan_only", type: "bool", section: "roaming", help: "editor.p25.plan_only_help" },
@@ -186,15 +210,16 @@ export const p25System = {
 	classes: [
 		{
 			cls: 1, name: "sites", group: true, groupLabel: "editor.p25.site_no", groupMax: 254,
-			newEntry: (list) => ({ group: Math.min(254, list.reduce((n, e) => Math.max(n, e.group + 1), 0)), rfss: null, site: null }),
-			decode: (body) => ({ rfss: u8(body, 0) === P25_UNKNOWN || !body.length ? null : body[0], site: u8(body, 1) === P25_UNKNOWN || body.length < 2 ? null : body[1] }),
-			encode: (e, body) => {
-				const v = grow(body, 2);
-				v[0] = e.rfss ?? P25_UNKNOWN;
-				v[1] = e.site ?? P25_UNKNOWN;
-				return v;
-			},
-			fields: [{ ...byteOrUnknown("rfss", "editor.p25.rfss"), help: "editor.p25.unknown_help" }, { ...byteOrUnknown("site", "editor.p25.site"), help: "editor.p25.unknown_help" }],
+			help: "editor.p25.sites_help",
+			newEntry: (list) => ({ group: Math.min(254, list.reduce((n, e) => Math.max(n, e.group + 1), 0)), rfss: null, site: null, nacMode: "system", expectedNac: 0 }),
+			decode: decodeSite,
+			encode: encodeSite,
+			fields: [
+				{ ...byteOrUnknown("rfss", "editor.p25.rfss"), help: "editor.p25.unknown_help" },
+				{ ...byteOrUnknown("site", "editor.p25.site"), help: "editor.p25.unknown_help" },
+				{ key: "nacMode", label: "editor.p25.nac_mode", type: "select", options: () => [["system", "editor.p25.nac_system"], ["auto", "editor.p25.nac_auto"], ["fixed", "editor.p25.nac_fixed"]] },
+				nacFieldDef("expectedNac", "editor.p25.expected_nac"),
+			],
 		},
 		{
 			cls: 0, name: "control", group: true, groupLabel: "editor.p25.site_no", groupMax: 254, control: true,
@@ -241,8 +266,13 @@ export const p25System = {
 	],
 	secret: null,
 	ownedKeys: () => [],
-	validate(s, f, entries, problem) {
+	validate(s, f, entries, problem, { features = null } = {}) {
 		const sites = entries.filter((e) => e.cls === 1);
+		const have = Array.isArray(features) ? features : String(features ?? "").split(",");
+		if (features != null && !have.includes("P25_SITE_NAC") && sites.some((e) => e.nacMode === "auto" || e.nacMode === "fixed"))
+			problem.warn("entries", "p25_site_nac_not_in_radio");
+		if (sites.some((e) => e.nacMode === "fixed" && (e.expectedNac === NAC_ANY || e.expectedNac === NAC_REPEAT_ANY)))
+			problem.err("entries", "p25_site_nac_special");
 		const groups = new Set(sites.map((e) => e.group));
 		if (groups.size !== sites.length) problem.err("entries", "p25_site_twice");
 		const plan = entries.filter((e) => e.cls === 2);

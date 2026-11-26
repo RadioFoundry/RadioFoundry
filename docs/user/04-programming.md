@@ -207,7 +207,7 @@ transmit.
 | Field | Meaning |
 |---|---|
 | WACN, System ID | The system's identity, hex. Blank: any |
-| Control channel NAC | Blank: any |
+| Default NAC | Used by sites set to System default. Blank: Auto |
 | Control channels | RX in MHz, tried top to bottom. TX, identifier and channel number can stay 0 when the control channel announces them |
 | Skip encrypted calls | Don't follow a grant for an encrypted call |
 | Hold after a call | Seconds on the voice channel after a call ends. 0: back to the control channel at once |
@@ -216,6 +216,25 @@ transmit.
 
 **Sites** and **Channel plan** (per identifier: base frequency, spacing, TX offset, bandwidth) are optional. Without a
 plan entry the radio uses the plan the control channel sends.
+
+Each site's **Expected NAC** has three choices:
+
+| Choice | Meaning |
+|---|---|
+| System default | Use the System's Default NAC. This is the default for new sites and legacy records |
+| Auto | Learn this site's NAC, independently of the System default |
+| Fixed | Use **Fixed NAC (hex)** for this site, including 000 |
+
+Use Auto for automatic acquisition. F7E accepts any NAC and F7F is a repeater special value; neither is accepted
+as a fixed subscriber expectation.
+
+These fields are programmed expectations, not live site status. After the control channel is confirmed, the radio
+uses the serving site's NAC for its control and voice channels in both directions. A different site's NAC does not
+change the System default. RFSS and Site ID remain metadata; they are not new strict identity locks.
+
+Per-site NACs require firmware that reports `P25_SITE_NAC`. Older firmware ignores them and uses the System default.
+The editor lists this under **Problems** when such firmware is connected. Update the firmware before relying on
+per-site settings. The signal-level roaming threshold is still stored for later; per-site NACs do not add that feature.
 
 **P25 trunked channel:** pick the **System** and the talk group (**TX contact**). **Follow every group of the system**
 follows calls to every talk group, not just the channel's. **Fallback channel** is kept in the codeplug; the radio

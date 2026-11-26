@@ -34,6 +34,9 @@ typedef struct {
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
 	uint32_t burst_hz;
+	uint8_t burst_tune;
+	uint16_t burst_nac;
+	bool burst_active;
 	uint8_t burst[P25_TSBK_BYTES];
 	// PTT and the end of our transmission, for the follower at the radio task's next turn inside it
 	bool ptt, talk_end;
@@ -338,6 +341,8 @@ static bool trunk_send(uint32_t hz, const uint8_t blk[P25_TSBK_BYTES], void *ctx
 
 	memcpy(t->burst, blk, P25_TSBK_BYTES);
 	t->burst_hz = hz;
+	t->burst_tune = t->want;
+	t->burst_nac = t->f.view.nac;
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	t->burst_want++;
 	return true;
@@ -373,7 +378,9 @@ static void trunk_params(p25_trunk_t *t, const p25_trunk_cfg_t *l, bool tx, bool
 	c->ncc = l->ctl_count;
 	for (uint8_t i = 0; i < l->ctl_count; i++)
 		t->cc[i] = (p25_follow_cc_t){ .hz = l->ctl[i].rx_hz, .tx_hz = l->ctl[i].tx_hz, .chan = l->ctl[i].chan,
-					      .site = l->ctl_site[i] };
+					      .site = l->ctl_site[i], .rfss = l->ctl_identity[i].rfss,
+					      .site_id = l->ctl_identity[i].site, .nac_set = l->ctl_identity[i].nac_set,
+					      .nac = l->ctl_identity[i].nac };
 	c->cc = t->cc;
 	c->iden_set = l->iden_set;
 	for (uint8_t i = 0; i < P25_FOLLOW_IDENS; i++)
@@ -405,6 +412,8 @@ static void trunk_service(p25_mem_t *m)
 	p25_trunk_t *t = &m->trunk;
 	uint32_t now = hal_millis();
 
+	if (!enter(&t->in_radio, &t->in_prov))
+		return;
 	if (t->done != t->want) {
 		uint8_t want = t->want;
 
@@ -412,6 +421,7 @@ static void trunk_service(p25_mem_t *m)
 		uint32_t hz = t->hz;
 		p25_engine_cfg_t c = m->eng.cfg;
 
+		c.rx_nac = c.tx_nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
 		c.rx_tgid = t->what == P25_FOLLOW_TUNE_GROUP || t->what == P25_FOLLOW_TUNE_TALK ? (uint16_t)t->id : 0u;
 		t->done = want;
 		// A frequency the radio can't receive stays untuned: the follower hears nothing there and moves on
@@ -425,8 +435,6 @@ static void trunk_service(p25_mem_t *m)
 		p25_engine_retuned(&m->eng);
 		t->owed = true;
 	}
-	if (!enter(&t->in_radio, &t->in_prov))
-		return;
 	if (t->owed) {
 		t->owed = false;
 		p25_follow_retuned(&t->f, now);
@@ -440,6 +448,19 @@ static void trunk_service(p25_mem_t *m)
 		p25_follow_ptt(&t->f, t->ptt, now);
 	}
 	p25_follow_tick(&t->f, now);
+	// Acquisition may confirm a wildcard without asking for a frequency change. Consume one current follower
+	// context under the same exclusion as its retune, and refresh both directions, including NAC 000.
+	if (t->done == t->want) {
+		uint16_t nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
+		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac) {
+			p25_engine_cfg_t c = m->eng.cfg;
+
+			c.rx_nac = c.tx_nac = nac;
+			p25_engine_set(&m->eng, &c);
+		}
+	}
+	if (t->burst_tune != t->want || !t->f.view.sys_ok || t->burst_nac != t->f.view.nac)
+		t->burst_done = t->burst_want;
 	leave(&t->in_radio);
 	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which
 	// p25_follow_view waits out
@@ -552,15 +573,16 @@ uint32_t radio_p25_trunk_burst_hz(void)
 	return t->burst_done != t->burst_want ? t->burst_hz : 0;
 }
 
-// The NAC we send: the system's, or the one the control channel was heard on where the system's is any
-static void trunk_tx_nac(p25_mem_t *m)
+// TX consumes the confirmed context for the receiver's completed tune, never the diagnostic view cached by poll.
+// Called inside the follower's existing task exclusion.
+static bool trunk_confirmed(const p25_mem_t *m)
 {
-	if (m->eng.cfg.tx_nac == P25_NAC_ANY && tview.v.nac != 0 && tview.v.nac != P25_NAC_ANY) {
-		p25_engine_cfg_t c = m->eng.cfg;
+	const p25_trunk_t *t = &m->trunk;
+	const p25_follow_view_t *v = &t->f.view;
 
-		c.tx_nac = tview.v.nac;
-		p25_engine_set(&m->eng, &c);
-	}
+	return v->sys_ok && !v->unverified && !v->tuning && v->reg != P25_REG_BLOCKED &&
+	       v->nac != P25_NAC_ANY && v->nac != P25_NAC_REPEAT_ANY && t->done == t->want && !t->owed &&
+	       m->eng.cfg.rx_nac == v->nac && m->eng.cfg.tx_nac == v->nac;
 }
 
 bool radio_p25_trunk_burst_start(void)
@@ -571,11 +593,16 @@ bool radio_p25_trunk_burst_start(void)
 	if (!radio_p25_trunked())
 		return false;
 	t = &mem->trunk;
+	if (!enter(&t->in_radio, &t->in_prov))
+		return false;
 	want = t->burst_want;
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
-	trunk_tx_nac(mem);
-	bool ok = p25_engine_tx_burst(&mem->eng, t->burst);
+	bool ok = want != t->burst_done && trunk_confirmed(mem) && t->f.view.state == P25_FOLLOW_CONTROL &&
+		  t->burst_tune == t->want && t->burst_nac == t->f.view.nac &&
+		  p25_engine_tx_burst(&mem->eng, t->burst);
+	t->burst_active = ok;
 	t->burst_done = want;
+	leave(&t->in_radio);
 	if (ok)
 		stats.trunk_bursts++;
 	else
@@ -853,10 +880,16 @@ bool radio_p25_tx_prepare(void)
 #if CONFIG_P25_TRUNK
 	// On a trunked channel only on the voice channel granted to us
 	if (trunk) {
-		if (tview.v.req != P25_REQ_TALK || tview.v.reg == P25_REG_BLOCKED) {
+		p25_trunk_t *t = &mem->trunk;
+		if (!enter(&t->in_radio, &t->in_prov))
 			return false;
-		}
-		trunk_tx_nac(mem);
+		bool ok = trunk_confirmed(mem) && t->f.view.req == P25_REQ_TALK &&
+			  t->f.view.state == P25_FOLLOW_VOICE && p25_engine_tx_prepare(&mem->eng);
+		t->burst_active = false;
+		leave(&t->in_radio);
+		if (ok)
+			voice_tx(true);
+		return ok;
 	}
 #endif
 	if (!p25_engine_tx_prepare(&mem->eng)) {
@@ -868,6 +901,22 @@ bool radio_p25_tx_prepare(void)
 
 bool radio_p25_tx_go(void)
 {
+#if CONFIG_P25_TRUNK
+	if (radio_p25_trunked()) {
+		p25_trunk_t *t = &mem->trunk;
+		if (!enter(&t->in_radio, &t->in_prov)) {
+			p25_engine_tx_abort(&mem->eng);
+			return false;
+		}
+		bool ok = trunk_confirmed(mem) && (t->burst_active ?
+			  t->burst_tune == t->want && t->burst_nac == t->f.view.nac : t->f.view.req == P25_REQ_TALK) &&
+			  p25_engine_tx_go(&mem->eng);
+		leave(&t->in_radio);
+		if (!ok)
+			p25_engine_tx_abort(&mem->eng);
+		return ok;
+	}
+#endif
 	return mem != NULL && p25_engine_tx_go(&mem->eng);
 }
 

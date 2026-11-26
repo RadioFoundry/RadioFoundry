@@ -86,6 +86,8 @@ void p25_tsys_encode(const p25_tsys_t *s, uint8_t out[P25_CP_TSYS_LEN]);
 #define P25_CP_UNKNOWN		0xFFu
 typedef struct {
 	uint8_t rfss, site;	// P25_CP_UNKNOWN: not known
+	bool nac_set;		// false: inherit the System's NAC; true: the optional site field
+	uint16_t nac;		// P25_NAC_ANY: automatic, including an explicit site override
 } p25_site_t;
 typedef struct {
 	uint16_t chan;		// identifier << 12 | channel, 0 = by frequency only
@@ -120,6 +122,7 @@ typedef struct {
 	bool listen_only;		// the system's transmit side off (channel-modes.md 7.1)
 	uint8_t ctl_count;
 	uint8_t ctl_site[P25_CP_CTL_MAX];	// each control channel's site group
+	p25_site_t ctl_identity[P25_CP_CTL_MAX];	// that group's Site record, separate from its group number
 	p25_ctl_t ctl[P25_CP_CTL_MAX];
 	uint16_t iden_set;		// bit n: identifier n programmed
 	p25_iden_t iden[P25_CP_IDEN_MAX];

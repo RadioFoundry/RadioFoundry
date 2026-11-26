@@ -358,7 +358,7 @@ function entryTables(api, s, restricted) {
 			control: !!c.control,
 			fields: [
 				{ group: t(`editor.modes.class.${c.name}`), ...(c.control ? {} : { collapsed: !rows.length }) },
-				{ type: "note", key: `sys.cls${c.cls}`, text: () => t(`editor.modes.class.${c.name}_help`) },
+				{ type: "note", key: `sys.cls${c.cls}`, text: () => t(c.help ?? `editor.modes.class.${c.name}_help`) },
 				// one parse covers every table: the first table's field does it
 				{ type: "custom", key: `sys.tbl${c.cls}`, render: () => table, parse: (form) => (n === 0 ? parseAll(form) : []),
 					sync: (form, value) => {

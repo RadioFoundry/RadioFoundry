@@ -109,7 +109,7 @@ The type's block:
 |---|---|---|
 | 0 | 3 | WACN, bits 19-0; 0xFFFFFF = any |
 | 3 | 2 | System ID, bits 11-0; 0xFFFF = any |
-| 5 | 2 | Control channel NAC: bit 15 set = bits 11-0 hold it; clear = any |
+| 5 | 2 | Default NAC for sites without an override: bit 15 set = bits 11-0 hold it; clear = any |
 | 7 | 1 | Options: bit 0 skip encrypted calls; bit 1 use only the programmed channel plan (don't learn it from the control channel); bit 2 don't register or affiliate (PTT asks for a voice channel at once). Bits 3-7: 0 |
 | 8 | 1 | Hold time on the voice channel after a call in seconds, 0 = none (back to the control channel at once) |
 | 9 | 1 | Change site below this dBm (signed; 0 = the radio's roaming threshold) |
@@ -120,7 +120,40 @@ Authentication and traffic keys are appended later; keys use the traffic key fam
 ### 3.1 Sites
 
 Generic entries ([channel-modes.md](channel-modes.md) 7.2) of class 1, one per site; the group is the site's number
-in the system (0-254). Body: RFSS (1), site (1), 0xFF = not known. Both are for display and roaming only.
+in the system (0-254). Body:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 1 | RFSS, 0xFF = not known |
+| 1 | 1 | Site ID, 0xFF = not known |
+| 2 | 2 | Optional expected NAC, encoded below |
+
+RFSS and Site ID remain display and roaming metadata. Adding a NAC does not turn these legacy fields into strict
+site-identity constraints. The group links the site's control-channel entries; it is not the over-the-air Site ID.
+
+The optional little-endian NAC field distinguishes inheritance, automatic acquisition and fixed NAC 000:
+
+| Field | Meaning |
+|---|---|
+| Body shorter than 4 bytes | Inherit the System's default NAC; legacy behavior |
+| 0x0000 or 0x8F7E | Explicit Auto, independent of the System default |
+| 0x8000 through 0x8FFF, except 0x8F7E and 0x8F7F | Explicit NAC in bits 11-0, including fixed NAC 000 |
+| 0xFFFF | Inherit the System's default NAC |
+| Any other complete value | Malformed; inherit the System's default NAC |
+
+The editor refuses F7E (any NAC) and F7F (repeater special) in a site's Fixed field. Use Auto for automatic
+acquisition. The stored Auto alias 0x8F7E and malformed value 0x8F7F retain their original bytes while unedited;
+0x8F7F inherits the System default. This does not change the legacy System field's interpretation. Auto acquires
+the candidate's NAC; the confirmed serving NAC configures that site's control and traffic reception and transmission.
+An expectation is stored configuration, not proof that a candidate is confirmed or authorized to transmit.
+
+The editor keeps short legacy bodies short when editing RFSS or Site ID alone. Changing an extended record back to
+System default writes 0xFFFF so unknown bytes after offset 3 stay at their original offsets. Unedited records and
+unknown suffixes are preserved. A one-byte partial extension is ignored until a complete NAC is explicitly written.
+
+Firmware advertises `P25_SITE_NAC` through the existing CPS feature probe when it consumes this field. The editor's
+Problems list warns when a connected firmware lacks that capability and a site has an explicit override. Older
+firmware ignores the extension and uses the System NAC. Legacy inherited sites do not require the new capability.
 
 ### 3.2 Control channels
 

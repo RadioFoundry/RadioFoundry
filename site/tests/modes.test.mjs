@@ -14,7 +14,7 @@ import { decode, encode, empty, newChannel, newContact, remove, validate, number
 import { MODE_KEY, decodeTag, encodeTag, newSystem, setKind, syncModes, decodeSystemRecord, identityKey, countSecrets, withoutSecrets } from "../static/js/codeplug/channelmodes.js";
 import { KINDS, SYSTEM_TYPES, offeredKinds, offeredTypes, kindName } from "../static/js/codeplug/modes.js";
 import { nameCheck } from "../static/js/codeplug/modebytes.js";
-import { decodeConv, encodeConv, decodeUnit, decodeTsys, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
+import { decodeConv, encodeConv, decodeUnit, decodeTsys, decodeSite, encodeSite, p25System, NAC_ANY } from "../static/js/codeplug/mode_p25.js";
 import { t3System, OPTS as T3_OPTS } from "../static/js/codeplug/mode_t3.js";
 import { aesSystem, randomAesKey } from "../static/js/codeplug/mode_aes.js";
 
@@ -68,6 +68,101 @@ test("vectors: P25 trunked system block and identifier plan rows", () => {
 		const e = plan.decode(bytes(b));
 		assert.deepEqual([e.baseHz, e.spacingHz, e.txOffsetHz >>> 0, e.bwHz, e.tdma ? 1 : 0, e.tdma ? e.slots : 1], [base, sp, off, bw, type, slots], l);
 	}
+});
+
+test("P25 site vectors: legacy inheritance, explicit Auto, fixed 000 and independent site NACs", () => {
+	// Hand-written bodies, independently specified alongside the C host fixtures. Expected bytes never come from
+	// the encoder. Incomplete or malformed NAC fields inherit; their bytes remain available for future readers.
+	const cases = [
+		["", null, null, "system", 0],
+		["01", 1, null, "system", 0],
+		["0102", 1, 2, "system", 0],
+		["0102AA", 1, 2, "system", 0],
+		["01020000", 1, 2, "auto", 0],
+		["01020080", 1, 2, "fixed", 0],
+		["01022381", 1, 2, "fixed", 0x123],
+		["0102BC8A", 1, 2, "fixed", 0xABC],
+		["0102FFFF", 1, 2, "system", 0],
+		["01020010", 1, 2, "system", 0],
+		["01020100", 1, 2, "system", 0],
+		["01027E8F", 1, 2, "auto", 0],
+		["01027F8F", 1, 2, "system", 0],
+		["01022381DEAD", 1, 2, "fixed", 0x123],
+	];
+	for (const [hex, rfss, site, nacMode, expectedNac] of cases) {
+		const body = bytes(hex), expected = { rfss, site, nacMode, expectedNac };
+		assert.deepEqual(decodeSite(body), expected, hex);
+		if (body.length >= 2) assert.deepEqual(encodeSite(expected, body), body, hex);
+	}
+	assert.equal(hexOf(encodeSite({ rfss: 1, site: 2, nacMode: "auto", expectedNac: 0 })), "01020000");
+	assert.equal(hexOf(encodeSite({ rfss: 1, site: 2, nacMode: "fixed", expectedNac: 0 })), "01020080");
+	assert.equal(hexOf(encodeSite({ rfss: 1, site: 2, nacMode: "fixed", expectedNac: 0xABC })), "0102BC8A");
+	assert.equal(hexOf(encodeSite({ rfss: 3, site: 2, nacMode: "system", expectedNac: 0 }, bytes("0102AA"))), "0302AA");
+});
+
+test("P25 sites: edits preserve legacy records and unknown suffixes through every NAC selection", () => {
+	const m = empty(), s = newSystem(m, 3, "County");
+	s.fields.ccNac = 0x293;
+	m.systems.push(s);
+	numberAll(m);
+	const img = encode(m);
+	let entries = area(img);
+	entries = setValue(entries, MODE_KEY.entry, bytes("0001000001022381DEAD"));
+	entries = setValue(entries, MODE_KEY.entry + 1, bytes("000101000304BC8ABEEF"));
+	entries = setValue(entries, MODE_KEY.entry + 2, bytes("000102000506"));
+	putArea(img.bytes, entries);
+	let d = decode(img);
+	assert.deepEqual(d.systems[0].entries.map((e) => [e.group, e.nacMode, e.expectedNac]), [[0, "fixed", 0x123], [1, "fixed", 0xABC], [2, "system", 0]]);
+	assert.deepEqual(encode(d).bytes, img.bytes, "unedited extended and legacy records are byte-identical");
+	const stored = (model, at) => hexOf(getValue(area(encode(model)), MODE_KEY.entry + at));
+	const site = d.systems[0].entries[0];
+	site.nacMode = "system";
+	assert.equal(stored(d, 0), "000100000102FFFFDEAD", "inheritance preserves the unknown suffix");
+	d = round(d);
+	Object.assign(d.systems[0].entries[0], { nacMode: "auto" });
+	assert.equal(stored(d, 0), "0001000001020000DEAD");
+	d = round(d);
+	Object.assign(d.systems[0].entries[0], { nacMode: "fixed", expectedNac: 0 });
+	assert.equal(stored(d, 0), "0001000001020080DEAD", "fixed 000 differs from Auto");
+	Object.assign(d.systems[0].entries[2], { rfss: 7 });
+	assert.equal(stored(d, 2), "000102000706", "editing legacy metadata does not introduce a NAC override");
+	d.systems[0].entries.reverse();
+	d = round(d);
+	assert.deepEqual(d.systems[0].entries.map((e) => [e.group, e.nacMode, e.expectedNac]), [[2, "system", 0], [1, "fixed", 0xABC], [0, "fixed", 0]]);
+	assert.equal(stored(d, 1), "000101000304BC8ABEEF", "reordering keeps the other site's NAC and suffix");
+	assert.equal(d.systems[0].fields.ccNac, 0x293, "site edits do not rewrite the System default");
+});
+
+test("P25 site capability: existing Problems warns for overrides on older firmware, not legacy inheritance", () => {
+	const m = empty(), s = newSystem(m, 3, "County");
+	s.entries.push({ cls: 1, group: 0, control: false, flags: 0, rfss: 1, site: 2, nacMode: "system", expectedNac: 0 });
+	m.systems.push(s);
+	numberAll(m);
+	const warning = (features) => validate(m, { features }).some((p) => p.code === "p25_site_nac_not_in_radio");
+	assert.equal(warning("P25_TRUNK"), false);
+	for (const nacMode of ["auto", "fixed"]) {
+		s.entries[0].nacMode = nacMode;
+		assert.equal(warning("P25_TRUNK"), true, nacMode);
+		assert.equal(warning("P25_TRUNK,P25_SITE_NAC"), false);
+		assert.equal(warning(["P25_TRUNK", "P25_SITE_NAC"]), false);
+		assert.equal(warning(null), false, "offline files have a static compatibility note instead");
+	}
+});
+
+test("P25 sites: Fixed rejects special NAC values; existing encoded bytes retain their defined semantics", () => {
+	const m = empty(), s = newSystem(m, 3, "County");
+	m.systems.push(s);
+	numberAll(m);
+	for (const [expectedNac, encoded] of [[0xF7E, "01027E8F"], [0xF7F, "01027F8F"]]) {
+		const fields = { rfss: 1, site: 2, nacMode: "fixed", expectedNac };
+		const decoded = decodeSite(bytes(encoded));
+		assert.deepEqual(decoded, { rfss: 1, site: 2, nacMode: expectedNac === NAC_ANY ? "auto" : "system", expectedNac: 0 });
+		assert.equal(hexOf(encodeSite(decoded, bytes(encoded))), encoded, "unedited bytes remain intact");
+		s.entries = [{ cls: 1, group: 0, control: false, flags: 0, ...fields }];
+		assert.equal(validate(m).find((p) => p.code === "p25_site_nac_special")?.level, "error");
+	}
+	s.entries[0].expectedNac = 0;
+	assert.ok(!validate(m).some((p) => p.code === "p25_site_nac_special"));
 });
 
 test("registry: unique ids, names, a module each", () => {

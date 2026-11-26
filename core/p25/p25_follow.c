@@ -41,7 +41,7 @@ static void count8(uint8_t *c)
 
 static void tune(p25_follow_t *f, uint32_t hz, uint8_t what, uint32_t id)
 {
-	f->tuning = true;
+	f->view.tuning = true;
 	f->acc.heard = false;
 	if (f->hooks->tune)
 		f->hooks->tune(hz, what, id, f->ctx);
@@ -152,6 +152,7 @@ static void cc_learn(p25_follow_t *f, uint16_t ch)
 }
 
 // ── Hunt ──
+static uint16_t cc_nac(const p25_follow_t *f);
 static void hunt_try(p25_follow_t *f, uint32_t now);
 
 static void hunt_next(p25_follow_t *f, uint32_t now)
@@ -172,6 +173,11 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	uint8_t n = cc_count(f);
 
 	f->have_id = false;
+	f->view.sys_ok = false;
+	f->view.nac = P25_NAC_ANY;
+	f->view.rfss = f->view.site = 0xFF;
+	f->acc.site_heard = false;
+	f->acc.cc_chan = 0;
 	f->t_state = now;
 	while (f->tried < n) {
 		uint32_t hz = cc_hz(f, f->view.cc);
@@ -179,6 +185,7 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 		if (hz) {
 			f->phase = PH_DWELL;
 			f->view.cc_hz = hz;
+			f->view.expected_nac = cc_nac(f);
 			tune(f, hz, P25_FOLLOW_TUNE_CONTROL, 0);
 			return;
 		}
@@ -189,8 +196,16 @@ static void hunt_try(p25_follow_t *f, uint32_t now)
 	f->tried = 0;
 	f->view.cc = f->good < n ? f->good : 0;
 	f->view.cc_hz = n ? cc_hz(f, f->view.cc) : 0;
+	f->view.expected_nac = cc_nac(f);
 	if (f->view.cc_hz)
 		tune(f, f->view.cc_hz, P25_FOLLOW_TUNE_CONTROL, 0);
+}
+
+static uint16_t cc_nac(const p25_follow_t *f)
+{
+	uint8_t i = f->view.cc;
+
+	return i < f->cfg->ncc && f->cfg->cc[i].nac_set ? f->cfg->cc[i].nac : f->cfg->nac;
 }
 
 static void acc_lost(p25_follow_t *f);
@@ -655,7 +670,7 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 }
 
 // ── Blocks ──
-static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now)
+static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, bool verified, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
 	uint8_t st = f->view.state;
@@ -664,13 +679,15 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 
 	if (st != P25_FOLLOW_HUNT && st != P25_FOLLOW_CONTROL)
 		return;
-	if (c->nac != P25_NAC_ANY && nac != c->nac) {
+	uint16_t expected = f->view.sys_ok ? f->view.nac : f->view.expected_nac;
+	if (expected != P25_NAC_ANY && nac != expected) {
 		// Another system on the frequency
 		count(&f->view.wrong_sys);
 		if (st == P25_FOLLOW_HUNT && f->phase != PH_BACKOFF)
 			hunt_next(f, now);
 		return;
 	}
+	f->view.unverified = !verified;
 	if (m.kind == P25_TSBK_MFR) {
 		count(&f->view.mfr);
 	} else if (f->view.op[m.opcode] != UINT8_MAX) {
@@ -719,8 +736,10 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
 			sys_block(f);
-		else if (!f->acc.blocked)
+		else if (!f->acc.blocked) {
+			f->view.nac = nac;
 			f->view.sys_ok = true;
+		}
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
 		f->acc.cc_chan = m.u.net.ch;
@@ -830,7 +849,7 @@ void p25_follow_end(p25_follow_t *f)
 void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 {
 	view_begin(f);
-	f->tuning = false;
+	f->view.tuning = false;
 	// Timers run from the moment the receiver is there
 	f->t_state = now;
 	if (f->view.state == P25_FOLLOW_VOICE)
@@ -842,12 +861,11 @@ void p25_follow_retuned(p25_follow_t *f, uint32_t now)
 
 void p25_follow_tsbk(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_t nac, uint32_t now)
 {
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
 	f->view.blocks++;
-	f->view.unverified = false;	// a block that passed its CRC
-	on_block(f, blk, nac, now);
+	on_block(f, blk, nac, true, now);
 	view_end(f);
 }
 
@@ -855,7 +873,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 {
 	uint8_t blk[P25_TSBK_BYTES];
 
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
 	// A voice channel's link control may carry the network or RFSS status broadcast: a blocked system there blocks
@@ -871,16 +889,15 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 		if (nss)
 			f->acc.busy = p25_status_get(u->air, (uint16_t)(nss - 1)) == P25_SS_BUSY;
 
-		for (uint8_t k = 0; k < n && !f->tuning; k++) {
+		for (uint8_t k = 0; k < n && !f->view.tuning; k++) {
 			bool good = p25_block_get(u->air, k, blk) >= 0;
 			if (!good && !((f->cfg->flags & P25_FOLLOW_BAD_CRC) && rx_seen(&f->seen, blk, P25_TSBK_BYTES))) {
 				f->view.crc_fail++;
 				continue;
 			}
 			f->view.crc_taken += !good;
-			f->view.unverified = !good;
 			f->view.blocks++;
-			on_block(f, blk, u->nac, now);
+			on_block(f, blk, u->nac, good, now);
 		}
 		break;
 	}
@@ -897,7 +914,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 			f->view.mbt_op = h.opcode;
 			if (p25_mbt_status(u, blk)) {
 				f->view.blocks++;
-				on_block(f, blk, u->nac, now);
+				on_block(f, blk, u->nac, true, now);
 			}
 		} else {
 			count(&f->view.pdu_other);
@@ -924,7 +941,7 @@ void p25_follow_unit(p25_follow_t *f, const p25_rx_unit_t *u, uint32_t now)
 
 void p25_follow_call(p25_follow_t *f, const p25_call_t *c, uint32_t now)
 {
-	if (f->tuning || f->view.state != P25_FOLLOW_VOICE || f->view.req == P25_REQ_TALK)
+	if (f->view.tuning || f->view.state != P25_FOLLOW_VOICE || f->view.req == P25_REQ_TALK)
 		return;
 	view_begin(f);
 	if (c->have_lc && c->lc.lcf == P25_LCF_GROUP && !f->view.unit_call && c->lc.tgid != f->view.tg) {
@@ -948,7 +965,7 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
 
-	if (f->tuning || f->view.state == P25_FOLLOW_OFF)
+	if (f->view.tuning || f->view.state == P25_FOLLOW_OFF)
 		return;
 	view_begin(f);
 	switch (f->view.state) {
@@ -1012,7 +1029,7 @@ uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 		return P25_TALK_OFF;
 	if (v->reg == P25_REG_BLOCKED)
 		return P25_TALK_BLOCKED;
-	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->sys_ok)
+	if ((v->state != P25_FOLLOW_CONTROL && v->state != P25_FOLLOW_VOICE) || !v->sys_ok || v->tuning)
 		return P25_TALK_NO_CC;
 	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
 		return P25_TALK_NOT_REG;

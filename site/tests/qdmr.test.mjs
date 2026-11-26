@@ -464,6 +464,26 @@ test("radioFoundry block: every mode's systems and channels read, save and read 
 	assert.deepEqual(d.systems.map((s) => [s.name, s.fields, s.entries.length]), m.systems.map((s) => [s.name, s.fields, s.entries.length]));
 });
 
+test("radioFoundry block: P25 sites keep System default, Auto, fixed 000 and distinct fixed NACs", () => {
+	const m = empty();
+	importQdmr(m, MODES);
+	const s = m.systems.find((x) => x.type === 3);
+	const legacy = s.entries.find((e) => e.cls === 1);
+	assert.deepEqual([legacy.nacMode, legacy.expectedNac], ["system", 0], "older YAML entries inherit");
+	s.entries.push(...[
+		[1, "auto", 0], [2, "fixed", 0], [3, "fixed", 0x123], [4, "fixed", 0xABC],
+	].map(([group, nacMode, expectedNac]) => ({ ...legacy, group, nacMode, expectedNac })));
+	const out = exportQdmr(m);
+	assert.deepEqual(out.notes, []);
+	assert.match(out.text, /nacMode: auto, expectedNac: 0x000/);
+	assert.match(out.text, /nacMode: fixed, expectedNac: 0xABC/);
+	const back = empty();
+	assert.deepEqual(importQdmr(back, out.text).notes, []);
+	const imageBack = decode(encode(back));
+	assert.deepEqual(imageBack.systems.find((x) => x.type === 3).entries.filter((e) => e.cls === 1).map((e) => [e.group, e.nacMode, e.expectedNac]),
+		[[0, "system", 0], [1, "auto", 0], [2, "fixed", 0], [3, "fixed", 0x123], [4, "fixed", 0xABC]]);
+});
+
 test("radioFoundry block: keys are never written; a system read back keeps the keys the model had", () => {
 	const m = empty();
 	importQdmr(m, MODES);

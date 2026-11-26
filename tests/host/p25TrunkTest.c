@@ -742,7 +742,7 @@ static void testFollowHand(void)
 
 		while (view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 40000) {
 			run_ms(&f, 100);
-			if (!f.tuning && f.view.cc_hz == HZ_CC1)
+			if (!f.view.tuning && f.view.cc_hz == HZ_CC1)
 				p25_follow_tsbk(&f, b, NAC, now_ms);
 		}
 		CHECK(view(&f).state == P25_FOLLOW_CONTROL && !view(&f).fallback, "found again after %u ms", now_ms - t0);
@@ -939,6 +939,10 @@ static void testAcceptBadCrc(void)
 		CHECK(!on || (v.state == P25_FOLLOW_CONTROL && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_OFF),
 		      "the control channel held on it, PTT off: %u", v.state);
 		if (on) {
+			uint8_t b[P25_TSBK_BYTES];
+			mk_net(b, WACN, SYSID);
+			p25_follow_tsbk(&f, b, NAC + 1, now_ms);
+			CHECK(view(&f).unverified, "a rejected NAC cannot verify the serving context");
 			run_ms(&f, 3000);
 			CHECK(nsends == 0, "unverified: nothing sent (%u)", nsends);
 			site_ident(&f, 3);
@@ -1537,7 +1541,7 @@ static void testWacnNeighbor(void)
 	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 20);
 	for (uint32_t t0 = now_ms; view(&f).state != P25_FOLLOW_CONTROL && now_ms - t0 < 20000;) {
 		run_ms(&f, 100);
-		if (!f.tuning && f.view.cc_hz == hz_adj)
+		if (!f.view.tuning && f.view.cc_hz == hz_adj)
 			site_ident_w(&f, 0xBEE42, 4);
 	}
 	cc_wacn = 0xBEE42;
@@ -2406,6 +2410,75 @@ static void testSysidBlocked(void)
 	cc_alive = false;
 }
 
+static void testCandidateNac(void)
+{
+	static const p25_follow_cc_t cc[] = {
+		{ .hz = HZ_CC1, .tx_hz = HZ_CC1 - 45000000, .site = 9, .rfss = 7, .site_id = 44, .nac_set = true, .nac = 0 },
+		{ .hz = HZ_CC2, .tx_hz = HZ_CC2 - 45000000, .site = 10, .nac_set = true, .nac = 0x456 },
+	};
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250, .spacing_hz = 6250, .tx_off_hz = -45000000 },
+	};
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG, .unit_id = OUR_UNIT, .talk_group = 100,
+		.ncc = 2, .cc = cc, .iden_set = 1u << 1, .iden = iden };
+	p25_follow_t f;
+	uint8_t b[P25_TSBK_BYTES];
+	p25_follow_view_t v;
+	now_ms = 300000;
+	ntunes = nsends = 0;
+	cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms);
+	retune(&f);
+	CHECK(view(&f).expected_nac == 0 && !view(&f).sys_ok, "site000 expectation reaches candidate");
+	mk_net(b, WACN, SYSID);
+	p25_follow_tsbk(&f, b, NAC, now_ms);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_HUNT && v.cc == 1 && v.expected_nac == 0x456 && !v.sys_ok,
+	      "candidate mismatch changes expectation without confirming");
+	// In-flight units from the old tune cannot confirm the next candidate or authorize a request.
+	p25_follow_tsbk(&f, b, 0x456, now_ms);
+	p25_follow_ptt(&f, true, now_ms);
+	CHECK(!view(&f).sys_ok && view(&f).req == P25_REQ_IDLE && nsends == 0, "stale tune is silent");
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0x456, now_ms);
+	v = view(&f);
+	CHECK(v.sys_ok && v.nac == 0x456 && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_OK,
+	      "second site's NAC verified");
+	// A control-channel loss revokes the old NAC and authorization before a new candidate is acquired.
+	now_ms += P25_FOLLOW_CC_LOST_MS;
+	p25_follow_tick(&f, now_ms);
+	v = view(&f);
+	CHECK(!v.sys_ok && v.nac == P25_NAC_ANY && p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NO_CC,
+	      "old NAC confirmation invalidated");
+	retune(&f);
+	now_ms += P25_FOLLOW_DWELL_MS;
+	p25_follow_tick(&f, now_ms);
+	retune(&f);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	mk_rfss(b, P25_TSBK_RFSS, SYSID, 3, 0x1004);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	v = view(&f);
+	CHECK(v.cc == 0 && v.sys_ok && v.nac == 0 && v.rfss == 1 && v.site == 3,
+	      "fixed000 works; generic group and legacy metadata are not site locks");
+	p25_follow_ptt(&f, true, now_ms);
+	now_ms += 200;
+	p25_follow_tick(&f, now_ms);
+	CHECK(nsends == 1, "verified000 sends request");
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 100, OUR_UNIT);
+	p25_follow_tsbk(&f, b, 0, now_ms);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_VOICE && v.req == P25_REQ_TALK && v.nac == 0 && v.tuning,
+	      "grant retains000 across voice retune");
+	CHECK(p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NO_CC, "incomplete retune not admitted");
+	retune(&f);
+	p25_follow_talk_end(&f, now_ms);
+	retune(&f);
+	v = view(&f);
+	CHECK(v.state == P25_FOLLOW_CONTROL && v.sys_ok && v.nac == 0, "return retains confirmed000");
+	p25_follow_end(&f);
+}
+
 int main(void)
 {
 	pulse_init();
@@ -2424,6 +2497,7 @@ int main(void)
 	testWacnLinkControl();
 	testWacnNeighbor();
 	testSysidBlocked();
+	testCandidateNac();
 	testFuzz();
 	testAirSystem();
 	testAirLoss();
