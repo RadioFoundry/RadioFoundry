@@ -579,6 +579,9 @@ typedef struct {
 #if CONFIG_NXDN
 	radio_nxdn_view_t nxdn;	// NXDN conventional (docs/spec/nxdn.md 6): the same
 #endif
+#if CONFIG_CONTACT_LISTS
+	uint8_t names_sel[2];	// the lists that name a received call on this channel (primary, secondary: a CONTACT_LIST_*)
+#endif
 #if CONFIG_P25
 	radio_air_names_t air_names;	// the names of the P25 IDs in use
 	radio_air_scan_t air_scan;	// the cost of the table scans behind them

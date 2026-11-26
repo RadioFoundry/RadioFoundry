@@ -15,6 +15,7 @@
 #include "codeplug/codeplug_modes.h"	// channel kinds (docs/spec/channel-modes.md): parked channels, in every build
 #include "codeplug/codeplug_tag.h"	// CODEPLUG_SYSTEM_NONE
 #include "codeplug/codeplug_air_contacts.h"	// P25 names (docs/spec/air-contacts.md)
+#include "codeplug/codeplug_contact_lists.h"	// codeplug_name_lookup (docs/spec/contact-lists.md)
 #if CONFIG_ZONE_WRITE
 #include "codeplug/zone_edit.h"
 #define ZONE_WRITE_BUSY()	zone_edit_busy()
@@ -176,10 +177,16 @@ static void step_update(radio_sm_t *sm)
 #if CONFIG_P25
 static void air_names(radio_sm_t *sm);
 #endif
+#if CONFIG_CONTACT_LISTS
+static void names_refresh(radio_sm_t *sm);
+#endif
 
 static void changed(radio_sm_t *sm)
 {
 	step_update(sm);	// every change that can move the width comes here
+#if CONFIG_CONTACT_LISTS
+	names_refresh(sm);	// the selection the debug link shows follows the channel, call or no call
+#endif
 #if CONFIG_P25
 	air_names(sm);		// and every change of a P25 ID (a lookup only when one changed)
 #endif
@@ -1667,8 +1674,50 @@ static void add_name(radio_sm_t *sm, const contact_t *c)
 	memcpy(n->name, c->name, sizeof(n->name));
 }
 
-// A name for an ID: the channel's contacts (talk target, listen list), then the lookup cache, then every codeplug
-// contact and, for a private ID, the DMR ID database (both read from flash once per ID, the answer cached, "" too)
+#if CONFIG_CONTACT_LISTS
+// What the channel in use is named through (contact-lists.md 5.1): the system of its tag, else the network of a plain
+// channel, then that system's two list bytes; none in the VFO. Worked out again only when the channel, its tag or the
+// settings changed, and every cached answer goes with it so a name never carries over to another network
+static void names_refresh(radio_sm_t *sm)
+{
+	const channel_t *ch = &sm->view.ch;
+	uint16_t number = sm->view.vfo ? 0u : sm->view.channel_number;
+	uint32_t serial = codeplug_kv_serial();
+	if (sm->sel_valid && sm->sel_number == number && sm->sel_kind == ch->kind && sm->sel_tag_system == ch->system &&
+	    sm->sel_serial == serial) {
+		return;
+	}
+	sm->sel_valid = true;
+	sm->sel_number = number;
+	sm->sel_kind = ch->kind;
+	sm->sel_tag_system = ch->system;
+	sm->sel_serial = serial;
+	uint8_t sys = ch->kind != 0 && ch->system != CODEPLUG_SYSTEM_NONE ? ch->system :
+		      number != 0 ? codeplug_channel_system(number) : CODEPLUG_SYSTEM_NONE;
+	sm->view.names_sel[0] = sm->view.names_sel[1] = CONTACT_LIST_NONE;
+	if (sys != CODEPLUG_SYSTEM_NONE) {
+		codeplug_system_lists(sys, sm->view.names_sel);
+	}
+	memset(sm->lookups, 0, sizeof(sm->lookups));
+	sm->lookup_next = 0;
+#if CONFIG_P25
+	memset(sm->air_lookups, 0, sizeof(sm->air_lookups));
+	sm->air_lookup_next = 0;
+	memset(&sm->view.air_names, 0, sizeof(sm->view.air_names));
+#endif
+}
+#define NAMES_SEL(sm)	((sm)->view.names_sel)
+#else
+static inline void names_refresh(radio_sm_t *sm)
+{
+	(void)sm;
+}
+#define NAMES_SEL(sm)	((const uint8_t *)NULL)
+#endif
+
+// A name for an ID: the channel's contacts (talk target, listen list), then the lookup cache, then the lists the
+// channel's system selects, and for a private ID the DMR ID database where they say so (read from flash once per ID,
+// the answer cached, "" too)
 static void find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 {
 	out[0] = '\0';
@@ -1681,6 +1730,7 @@ static void find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 			return;
 		}
 	}
+	names_refresh(sm);
 	for (uint8_t i = 0; i < RADIO_LOOKUPS; i++) {
 		if (sm->lookups[i].id == id && sm->lookups[i].group == group) {
 			memcpy(out, sm->lookups[i].name, CODEPLUG_NAME_LEN + 1);
@@ -1692,16 +1742,7 @@ static void find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 	n->id = id;
 	n->group = group;
 	n->name[0] = '\0';
-	contact_t c;
-	if (codeplug_contact_find(id, group, &c)) {
-		memcpy(n->name, c.name, sizeof(n->name));
-	} else if (!group) {
-		char text[DMR_IDDB_TEXT_MAX + 1];
-		if (dmr_iddb_lookup(id, text, sizeof(text))) {
-			memcpy(n->name, text, CODEPLUG_NAME_LEN);
-			n->name[CODEPLUG_NAME_LEN] = '\0';
-		}
-	}
+	(void)codeplug_name_lookup(NAMES_SEL(sm), CODEPLUG_NAME_DMR, id, group, n->name, sizeof(n->name));
 	memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
 }
 
@@ -6595,8 +6636,9 @@ static bool air_running(void)
 }
 
 #if CONFIG_P25
-// A P25 ID's name from the air mode contact table (docs/spec/air-contacts.md 3.2), never from the DMR contacts: they
-// carry no mode, and a DMR talk group with the same number would name it. The answer is cached, "" too
+// A P25 ID's name from the air mode contact table (docs/spec/air-contacts.md 3.2) through the channel's lists, never
+// from the DMR contacts: they carry no mode, and a DMR talk group with the same number would name it. The answer is
+// cached, "" too
 static void air_find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 {
 	out[0] = '\0';
@@ -6615,19 +6657,15 @@ static void air_find_name(radio_sm_t *sm, uint32_t id, bool group, char *out)
 	n->id = id;
 	n->group = group;
 	n->name[0] = '\0';
-	air_contact_t c;
 	// The scan runs here, on the radio task: its cost is kept for the debug link (radio_air_scan_t)
 	uint32_t t0 = hal_micros();
-	bool found = codeplug_air_contact_find(CODEPLUG_KIND_P25, id, group, &c);
+	(void)codeplug_name_lookup(NAMES_SEL(sm), CODEPLUG_KIND_P25, id, group, n->name, sizeof(n->name));
 	uint32_t us = hal_micros() - t0;
 	radio_air_scan_t *st = &sm->view.air_scan;
 	st->scans++;
 	st->last_us = us;
 	if (us > st->max_us) {
 		st->max_us = us;
-	}
-	if (found) {
-		memcpy(n->name, c.name, sizeof(n->name));
 	}
 	memcpy(out, n->name, CODEPLUG_NAME_LEN + 1);
 }
@@ -6652,6 +6690,7 @@ static void air_names(radio_sm_t *sm)
 	if (sm->view.ch.mode != RADIO_MODE_P25) {
 		return;
 	}
+	names_refresh(sm);	// before the names it flushes are looked up
 	const radio_p25_view_t *v = &sm->view.p25;
 	radio_air_names_t *a = &sm->view.air_names;
 	air_name(sm, v->src, false, &a->src_id, NULL, a->src);

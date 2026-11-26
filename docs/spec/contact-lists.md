@@ -189,6 +189,9 @@ An answer is cached while the channel's selection is the same. A change of chann
 change of the codeplug and a change of the keys drops the cached answers, so a name never carries over from one
 network to another.
 
+The debug link shows the selection of the channel in use as `dmr.names_sel` ([debuglink.md](debuglink.md) 3.2): the
+primary and secondary list byte, `255` none, `254` the ID database.
+
 ## 6. Feature switch
 
 `CONFIG_CONTACT_LISTS` ([build-config.md](../build-config.md)). Off:

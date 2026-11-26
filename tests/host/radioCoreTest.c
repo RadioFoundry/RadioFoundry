@@ -42,6 +42,7 @@
 #include "radio/battery.h"
 #if CONFIG_DMR_TRUNK_TX
 #include "radio/radio_trunk.h"
+#include "codeplug/dmr_iddb.h"
 #include "codeplug/codeplug_tag.h"
 #include "codeplug/codeplug_records.h"
 #include "codeplug/codeplug_air_contacts.h"
@@ -844,6 +845,91 @@ bool dmr_iddb_lookup(uint32_t id, char *out, size_t len)
 	}
 	snprintf(out, len, "QD9XYZ Robert Longname Springfield");
 	return true;
+}
+// The contact lists (docs/spec/contact-lists.md) as the radio core sees them: the selection of a channel and the lookup
+// through it. Off (scoped = false) the lookup is the first contact then the ID database, as before the lists, so the
+// tests above keep their answers; a test of the lists turns scoped on
+#if CONFIG_CONTACT_LISTS
+static bool scoped;
+static uint8_t scoped_net[64];		// channel number -> its network system + 1 (0 = none)
+static uint8_t scoped_sel[4][2];	// system -> its list bytes
+typedef struct {
+	uint8_t list;
+	uint8_t mode;			// CODEPLUG_NAME_DMR or CODEPLUG_KIND_P25
+	uint32_t id;
+	bool group;
+	const char *name;
+} scoped_name_t;
+// TG 5000 is a different contact in each list, in both tables
+static const scoped_name_t scoped_names[] = {
+	{ 0, CODEPLUG_NAME_DMR, 5000, true, "Alpha TG" },
+	{ 1, CODEPLUG_NAME_DMR, 5000, true, "Bravo TG" },
+	{ 0, CODEPLUG_KIND_P25, 5000, true, "Alpha P25" },
+	{ 1, CODEPLUG_KIND_P25, 5000, true, "Bravo P25" },
+};
+static uint32_t scoped_lookups;
+void codeplug_system_lists(uint8_t sys, uint8_t out[2])
+{
+	out[0] = scoped_sel[sys & 3][0];
+	out[1] = scoped_sel[sys & 3][1];
+}
+uint8_t codeplug_channel_system(uint16_t ch)
+{
+	return ch < sizeof(scoped_net) && scoped_net[ch] != 0 ? (uint8_t)(scoped_net[ch] - 1u) : CODEPLUG_SYSTEM_NONE;
+}
+static void scoped_system(uint8_t sys, uint8_t primary, uint8_t secondary)
+{
+	scoped_sel[sys][0] = primary;
+	scoped_sel[sys][1] = secondary;
+}
+#endif
+bool codeplug_name_lookup(const uint8_t sel[2], uint8_t mode, uint32_t id, bool group, char *out, size_t len)
+{
+	out[0] = '\0';
+#if CONFIG_CONTACT_LISTS
+	if (scoped) {
+		scoped_lookups++;
+		for (unsigned k = 0; sel != NULL && k < 2; k++) {
+			if (sel[k] == CONTACT_LIST_IDDB && mode == CODEPLUG_NAME_DMR && !group) {
+				char text[DMR_IDDB_TEXT_MAX + 1];
+				if (dmr_iddb_lookup(id, text, sizeof(text))) {
+					snprintf(out, len, "%s", text);
+					return true;
+				}
+			}
+			for (unsigned i = 0; sel[k] < CONTACT_LIST_MAX && i < sizeof(scoped_names) / sizeof(scoped_names[0]); i++) {
+				const scoped_name_t *n = &scoped_names[i];
+				if (n->list == sel[k] && n->mode == mode && n->id == id && n->group == group) {
+					snprintf(out, len, "%s", n->name);
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+#endif
+	(void)sel;
+	if (mode == CODEPLUG_NAME_DMR) {
+		contact_t c;
+		if (codeplug_contact_find(id, group, &c)) {
+			snprintf(out, len, "%s", c.name);
+			return true;
+		}
+		char text[DMR_IDDB_TEXT_MAX + 1];
+		if (!group && dmr_iddb_lookup(id, text, sizeof(text))) {
+			snprintf(out, len, "%s", text);
+			return true;
+		}
+		return false;
+	}
+#if CONFIG_AIR
+	air_contact_t a;
+	if (codeplug_air_contact_find(mode, id, group, &a)) {
+		snprintf(out, len, "%s", a.name);
+		return true;
+	}
+#endif
+	return false;
 }
 bool codeplug_listen_list(uint16_t index, listen_list_t *out)
 {
@@ -3432,6 +3518,61 @@ static void tx_once(void)
 	req(RREQ_PTT, 0);
 	run(1000);
 }
+
+#if CONFIG_CONTACT_LISTS
+// A received call is named through the lists of the channel's system (contact-lists.md 5): the same TG number in two
+// lists on two systems, the ID database as a secondary list for a private ID, none on a channel without a network,
+// and a change of the keys or of the network is never answered from the old cache
+static void test_dmr_list_names(void)
+{
+	const radio_dmr_view_t *d = &sm.view.dmr;
+
+	dmr_start(true);
+	scoped = true;
+	scoped_system(0, 0, CONTACT_LIST_NONE);
+	scoped_system(1, 1, CONTACT_LIST_IDDB);
+	scoped_net[4] = 1;	// channel 4's network: system 0
+	kv_serial++;
+	hear_call(true, 5000, 9995555, 2, 1, false);
+	CHECK(d->call.dst == 5000 && strcmp(d->call.dst_name, "Alpha TG") == 0);
+	CHECK(d->call.src_name[0] == '\0');		// the ID database is not in system 0's lists
+	CHECK(sm.view.names_sel[0] == 0 && sm.view.names_sel[1] == CONTACT_LIST_NONE);
+	run(2000);
+
+	// Another system: its list 1 names the TG differently, and its ID database names the caller
+	scoped_net[4] = 2;
+	kv_serial++;
+	hear_call(true, 5000, 9995555, 2, 1, false);
+	CHECK(strcmp(d->call.dst_name, "Bravo TG") == 0 && strcmp(d->call.src_name, "QD9XYZ Robert Lo") == 0);
+	CHECK(sm.view.names_sel[0] == 1 && sm.view.names_sel[1] == CONTACT_LIST_IDDB);
+	run(2000);
+
+	// A change of the system's lists drops the cached answers
+	scoped_system(1, 0, CONTACT_LIST_IDDB);
+	kv_serial++;
+	hear_call(true, 5000, 9995555, 2, 1, false);
+	CHECK(strcmp(d->call.dst_name, "Alpha TG") == 0);
+	run(2000);
+
+	// A conventional channel with no network (or one of another type) names nothing, in no list or database
+	scoped_net[4] = 0;
+	kv_serial++;
+	hear_call(true, 5000, 9995555, 2, 1, false);
+	CHECK(d->call.dst_name[0] == '\0' && d->call.src_name[0] == '\0');
+	CHECK(sm.view.names_sel[0] == CONTACT_LIST_NONE && sm.view.names_sel[1] == CONTACT_LIST_NONE);
+	run(2000);
+
+	// The VFO has no channel record: no names
+	scoped_net[4] = 1;
+	kv_serial++;
+	req(RREQ_VFO, 1);
+	run(50);
+	CHECK(sm.view.names_sel[0] == CONTACT_LIST_NONE);
+	scoped = false;
+	memset(scoped_net, 0, sizeof(scoped_net));
+	memset(scoped_sel, 0, sizeof(scoped_sel));
+}
+#endif
 
 static void test_dmr_voice_features(void)
 {
@@ -7338,6 +7479,50 @@ static void test_p25_names(void)
 	p25_defaults();
 }
 
+#if CONFIG_CONTACT_LISTS
+// The same through the lists for P25: the air mode table's names are scoped by the channel's system, and a channel
+// without a network names nothing (contact-lists.md 5)
+static void test_p25_list_names(void)
+{
+	const radio_air_names_t *a = &sm.view.air_names;
+
+	setup_codeplug_p25();
+	start();
+	radio_p25_settings_t s = { .rx_nac = P25_NAC_DEFAULT, .tx_nac = P25_NAC_DEFAULT, .talkaround = RADIO_P25_TA_AUTO,
+				   .tx_dst = 201 };
+	radio_req_p25_settings(&s);
+	req(RREQ_ZONE_POS, 2);
+	run(50);
+	scoped = true;
+	scoped_system(0, 0, CONTACT_LIST_NONE);
+	scoped_system(1, 1, CONTACT_LIST_NONE);
+	scoped_net[sm.view.channel_number] = 1;
+	kv_serial++;
+	far_begin(P25_NAC_DEFAULT, 1001, false, 5000);
+	far_call(600);
+	CHECK(a->dst_id == 5000 && strcmp(a->dst, "Alpha P25") == 0);
+	far_stop();
+
+	scoped_net[sm.view.channel_number] = 2;
+	kv_serial++;
+	far_begin(P25_NAC_DEFAULT, 1002, false, 5000);
+	far_call(600);
+	CHECK(a->dst_id == 5000 && strcmp(a->dst, "Bravo P25") == 0);
+	far_stop();
+
+	scoped_net[sm.view.channel_number] = 0;
+	kv_serial++;
+	far_begin(P25_NAC_DEFAULT, 1003, false, 5000);
+	far_call(600);
+	CHECK(a->dst_id == 5000 && a->dst[0] == '\0');
+	far_stop();
+	scoped = false;
+	memset(scoped_net, 0, sizeof(scoped_net));
+	memset(scoped_sel, 0, sizeof(scoped_sel));
+	p25_defaults();
+}
+#endif
+
 static void test_p25_tx(void)
 {
 	radio_p25_stats_t st;
@@ -8721,6 +8906,9 @@ static void test_p25(void)
 #endif
 	test_p25_rx();
 	test_p25_names();
+#if CONFIG_CONTACT_LISTS
+	test_p25_list_names();
+#endif
 	test_p25_stored();
 #if CONFIG_SCAN
 	test_p25_scan();
@@ -12197,6 +12385,9 @@ int main(void)
 	test_dmr_rpt_ticks_alone();
 	test_dmr_wake_leds();
 	test_dmr_voice_features();
+#if CONFIG_CONTACT_LISTS
+	test_dmr_list_names();
+#endif
 	test_dmr_contact_added();
 	test_ui_requests();
 	test_ui_glue();

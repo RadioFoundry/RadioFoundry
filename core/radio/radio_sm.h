@@ -508,6 +508,13 @@ typedef struct {
 	uint8_t name_count;
 	radio_name_t lookups[RADIO_LOOKUPS];	// cache of codeplug_contact_find / dmr_iddb_lookup answers ("" = none)
 	uint8_t lookup_next;
+#if CONFIG_CONTACT_LISTS
+	// What the lists that name a received call on this channel (view.names_sel, contact-lists.md 5) were worked out from
+	bool sel_valid;
+	uint16_t sel_number;
+	uint8_t sel_kind, sel_tag_system;
+	uint32_t sel_serial;
+#endif
 	// A talk target chosen for now (RREQ_DMR_TARGET / _CONTACT / _CALL_BACK), on channel manual_ch
 	bool manual;
 	uint32_t manual_id;

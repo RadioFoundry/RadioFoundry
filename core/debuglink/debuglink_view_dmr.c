@@ -117,6 +117,10 @@ void debuglink_view_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
 		}
 		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
 		dl_text_kv_str(t, "dmr.target_name", d->target_name);
+#if CONFIG_CONTACT_LISTS
+		// The lists that name a received call on this channel (255 none, 254 the DMR ID database; contact-lists.md 5)
+		dl_text(t, "dmr.names_sel=%u,%u\n", v->names_sel[0], v->names_sel[1]);
+#endif
 		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);
 		dl_text(t, "dmr.hear_all=%u\ndmr.hear_all_latch=%u\n", d->hear_all, d->hear_all_latch);
 		dl_text(t, "dmr.focus_id=%u\ndmr.focus_private=%u\ndmr.one_shot=%u\n", (unsigned)d->focus_id,
