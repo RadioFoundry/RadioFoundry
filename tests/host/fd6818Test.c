@@ -748,8 +748,49 @@ static void test_detect(void)
 	chip.css = NULL;
 }
 
+// FM transmit on both set-ups: 0x24 = 0 after the variant's table, 0x40 from the set-up's base plus the calibration
+// byte, and the 0x50 TX audio words
+static void test_fm_tx(void)
+{
+	fd6818_t dev;
+	reset_chip();
+	fd6818_attach(&dev, bus());
+	chip.regs[0x24] = 0x8C7E;
+	fd6818_fm_tx_prepare(&dev);
+	CHECK(chip.log[chip.n - 1].reg == 0x24 && chip.regs[0x24] == 0);
+	fd6818_fm_tx_cal(&dev, 0xE9);
+	CHECK(chip.regs[0x40] == 0x34E9);
+	fd6818_tx_audio(&dev, true);
+	CHECK(chip.regs[0x50] == 0x3B18);
+	fd6818_tx_audio(&dev, false);
+	CHECK(chip.regs[0x50] == 0xBB18);
+
+	reset_chip();
+	fd6818_attach_variant(&dev, bus(), &fd6818_variant_b);
+	chip.regs[0x24] = 0x8C7E;
+	fd6818_fm_tx_prepare(&dev);
+	CHECK(chip.n == 1 && chip.regs[0x24] == 0);	// set-up B has no table of its own
+	fd6818_fm_tx_cal(&dev, 0x90);
+	CHECK(chip.regs[0x40] == 0x3510);		// 0x3480 + 0x90: a sum, the carry reaches bit 8
+	CHECK(fd6818_variant_b_dmr6943.r40_tx == fd6818_variant_b.r40_tx);
+	// A second key-up before any receive keeps the receive word; the RX state puts it back, once
+	fd6818_set_state(&dev, FD6818_STATE_TX);
+	fd6818_fm_tx_prepare(&dev);
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	CHECK(chip.regs[0x24] == 0x8C7E);
+	int n = chip.n;
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	bool rewritten = false;
+	for (int i = n; i < chip.n; i++) {
+		rewritten |= chip.log[i].reg == 0x24;
+	}
+	CHECK(!rewritten);
+	CHECK(chip.protocol_errors == 0);
+}
+
 int main(void)
 {
+	test_fm_tx();
 	test_setup_b();
 	test_detect();
 	test_burst_split();

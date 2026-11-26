@@ -9,14 +9,14 @@
 import { be32, concat, le32, sleep, u16be, u16le, u32le, toHex } from "./bytes.js";
 import { wire, note } from "../diag.js";
 import { serialApi, usbSerialNeeded, UsbSerialPort } from "./usbserial.js";
-import { usbSerialChip, CABLE_VIDS } from "./adapter.js";
+import { usbSerialChip, CABLE_FILTERS } from "./adapter.js";
 
 export { serialApi };
 
 export const RFOUNDRY_USB = { usbVendorId: 0x1FC9, usbProductId: 0x0094 };
-// USB-serial chips found in programming cables (adapter.js CHIPS; tools/serial_loader.py USB_SERIAL has them by
+// USB-serial chips found in programming cables (adapter.js CHIPS + AIOC; tools/serial_loader.py USB_SERIAL has them by
 // product id too), for the port chooser on radios that talk over their programming cable
-export const CABLES = CABLE_VIDS.map((usbVendorId) => ({ usbVendorId }));
+export const CABLES = CABLE_FILTERS;
 // The same radio as a USB network adapter (CDC-NCM, docs/spec/usb-network.md 1): no serial port, and the OS network
 // driver owns the interfaces, so a page can only see that it is there (WebUSB lists it without claiming it) and ask
 // it for the serial port (netmode.js)
