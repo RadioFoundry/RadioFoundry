@@ -2344,6 +2344,15 @@ static void draw_activity(const radio_view_t *v, const ui_state_t *s)
 			}
 			break;
 		}
+#if CONFIG_P25_ALIAS
+		const p25_alias_event_t *held = ui_p25_held_alias(v);
+		if (held != NULL) {
+			air_call_t previous = { .played = true, .unit = held->unit,
+				.src = held->src, .dst = held->dst, .alias = held->name, .remembered = true };
+			air_call_line(&previous, sm, y + (L->activity_h - sm->h) / 2);
+			break;
+		}
+#endif
 #if CONFIG_DMR_TRUNK
 		if (v->t3.on && v->t3.state == T3_HUNT && (v->t3.other != 0 || v->t3.other_fid != 0)) {
 			draw_t3_other(v, y);

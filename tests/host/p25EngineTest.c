@@ -377,18 +377,18 @@ static void testAliasEvent(void)
 {
 	p25_engine_cfg_t cfg = { .rx_nac = 0x293, .rx_tgid = 77 };
 	p25_call_t c = { .have_lc = true, .algid = P25_ALGID_CLEAR,
-		.lc = { .lcf = P25_LCF_GROUP, .src = 3004, .tgid = 77 } };
+		.lc = { .lcf = P25_LCF_GROUP, .src = 7654321, .tgid = 77 } };
 	p25_engine_view_t v;
 	begin(0, &cfg, &hooks);
 	p25_engine_t *e = &r[0].e;
 	e->rx.sink->start(&c, e->rx.ctx);
-	strcpy(c.alias, "EMS-MEDIC");
+	strcpy(c.alias, "TEST-UNIT");
 	e->rx.sink->update(&c, e->rx.ctx);
 	e->rx.sink->end(e->rx.ctx);
 	p25_engine_retuned(e);
 	p25_engine_view(e, &v);
 	CHECK(!v.rx_active && v.alias_event.serial == 1 && v.alias_event.call == 1 &&
-	      v.alias_event.src == 3004 && v.alias_event.dst == 77 && !strcmp(v.alias_event.name, "EMS-MEDIC"),
+	      v.alias_event.src == 7654321 && v.alias_event.dst == 77 && !strcmp(v.alias_event.name, "TEST-UNIT"),
 	      "completed alias survives call end and retune without a UI poll");
 	c.alias[0] = 0;
 	e->rx.sink->start(&c, e->rx.ctx);
@@ -404,7 +404,7 @@ static void testAliasEvent(void)
 	e->rx.sink->update(&c, e->rx.ctx);
 	p25_engine_view(e, &v);
 	CHECK(v.alias_event.serial == 2 && v.rx_selected && !v.rx_played &&
-	      v.alias_event.src == 3004, "encrypted selected alias publishes without voice");
+	      v.alias_event.src == 7654321, "encrypted selected alias publishes without voice");
 	unsigned starts = r[0].starts;
 	e->rx.sink->end(e->rx.ctx);
 	p25_engine_retuned(e);

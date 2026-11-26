@@ -2247,7 +2247,7 @@ static void alias_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, uin
 	p25_follow_retuned(f, now);
 	f->view.tg = cfg->talk_group;
 	f->view.nac = cfg->nac;
-	f->view.src = 3004;
+	f->view.src = 7654321;
 	f->left_ch = 0x100A;
 	f->good = f->view.cc = 0;
 }
@@ -2257,19 +2257,19 @@ static void testAliasTail(void)
 	const p25_follow_cc_t cc = { .hz = HZ_CC1 };
 	const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
 		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
-	p25_follow_cfg_t cfg = { .ncc = 1, .cc = &cc, .nac = NAC, .talk_group = 0x7919,
+	p25_follow_cfg_t cfg = { .ncc = 1, .cc = &cc, .nac = NAC, .talk_group = 0x03e9,
 		.iden_set = 1u << 1, .iden = iden };
 	p25_follow_t f;
 	uint8_t air[P25_UNIT_BYTES_MAX] = { 0 };
-	const uint8_t hang[9] = { 0, 0, 0, 0, 0x79, 0x19, 0, 0x0b, 0xbc };
-	const uint8_t head[9] = { 0x15, 0x90, 0x79, 0x19, 5, 1, 0, 0x80, 0 };
-	// The independent, checksum-validated MEDIC12 fixture also used by p25Test.
+	const uint8_t hang[9] = { 0, 0, 0, 0, 0x03, 0xe9, 0x74, 0xcb, 0xb1 };
+	const uint8_t head[9] = { 0x15, 0x90, 0x03, 0xe9, 5, 1, 0, 0x80, 0 };
+	// The synthetic, checksum-validated UNIT001 fixture also used by p25Test.
 	const uint8_t block[5][9] = {
-		{ 0x17, 0x90, 0x01, 0x8b, 0xee, 0x00, 0x1e, 0x80, 0x00 },
-		{ 0x17, 0x90, 0x02, 0x8b, 0xbc, 0xb5, 0x4c, 0x37, 0xbf },
-		{ 0x17, 0x90, 0x03, 0x8e, 0xbe, 0xcf, 0x79, 0xf5, 0xf4 },
-		{ 0x17, 0x90, 0x04, 0x89, 0x67, 0xa7, 0x0e, 0xd1, 0xd0 },
-		{ 0x17, 0x90, 0x05, 0x8f, 0x40, 0x00, 0x00, 0x00, 0x00 }
+		{ 0x17, 0x90, 0x01, 0x8a, 0xbc, 0xde, 0x12, 0x37, 0x4c },
+		{ 0x17, 0x90, 0x02, 0x8b, 0xb1, 0xb5, 0x06, 0xc2, 0xe8 },
+		{ 0x17, 0x90, 0x03, 0x87, 0xee, 0x05, 0x1a, 0xeb, 0xf2 },
+		{ 0x17, 0x90, 0x04, 0x8e, 0xd2, 0x8b, 0xbe, 0xd2, 0x73 },
+		{ 0x17, 0x90, 0x05, 0x89, 0xb0, 0x00, 0x00, 0x00, 0x00 }
 	};
 	p25_rx_unit_t u = { .duid = P25_DUID_TDULC, .nac = NAC, .air = air, .nsyms = P25_TDULC_SYMS };
 	// Both transmission-end formats allow a late header; include tick wraparound.
@@ -2299,7 +2299,7 @@ static void testAliasTail(void)
 			p25_follow_call(&f, &call.call, now);
 			p25_follow_tick(&f, now);
 		}
-		CHECK(!strcmp(call.call.alias, "MEDIC12") && call.call.lc.src == 3004 &&
+		CHECK(!strcmp(call.call.alias, "UNIT001") && call.call.lc.src == 7654321 &&
 		      f.view.state == P25_FOLLOW_CONTROL, "late alias decoded, then immediate return");
 		CHECK(f.view.reg_tx == 0 && f.view.aff_tx == 0 && f.view.req_tx == 0,
 		      "alias wait sends no registration, affiliation or request");
@@ -2378,7 +2378,7 @@ static void testAliasTail(void)
 	// A decoded voice-channel LC update: the first pair repeats this call, the
 	// second announces another one. No second receiver or CC injection is needed.
 	for (unsigned pass = 0; pass < 2; pass++) {
-		uint8_t update[9] = { 0x42, 0x10, 0x0A, 0x79, 0x19, 0x10, 0x0B, 0x79, 0x19 };
+		uint8_t update[9] = { 0x42, 0x10, 0x0A, 0x03, 0xe9, 0x10, 0x0B, 0x03, 0xe9 };
 		alias_follow_begin(&f, &cfg, 100);
 		p25_tdulc_put(air, pass ? head : hang);
 		p25_follow_unit(&f, &u, 200);

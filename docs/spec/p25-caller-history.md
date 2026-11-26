@@ -33,3 +33,8 @@ Names reused from Recent are dimmed on Home to distinguish them from this call's
 alias. A name store shared by modes is outside this feature.
 Filtered calls do not publish alias events. Event storage survives an
 engine restart, but its session prevents use on the new channel's live display.
+
+On idle Home, a completed P25 alias remains dimmed for three seconds after the call
+ends, then the activity-age display returns. A late alias gets the same reading
+time. New calls and channel changes dismiss it. This display hold does not delay
+returning to the control channel or keep audio open.

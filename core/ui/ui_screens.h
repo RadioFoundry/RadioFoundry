@@ -15,6 +15,8 @@
 #if CONFIG_P25_ALIAS
 // Current caller's validated alias, falling back to session-scoped Recent history.
 const char *ui_p25_caller_alias(const radio_view_t *v);
+// A completed caller shown briefly on idle Home; invalid after a new call or receiver session.
+const p25_alias_event_t *ui_p25_held_alias(const radio_view_t *v);
 #endif
 #if CONFIG_HOTSPOT
 #include "hotspot/hotspot.h"

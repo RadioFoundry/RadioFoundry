@@ -651,22 +651,22 @@ static void testAlias90Long(void)
 static void testAlias90(void)
 {
 	p25_call_rx_t c;
-	const uint8_t who[9] = { 0, 0, 0, 0, 0x79, 0x19, 0, 0x0b, 0xbc };
-	const uint8_t head[9] = { 0x15, 0x90, 0x79, 0x19, 5, 1, 0, 0x80, 0 };
-	// Independent encoded MEDIC12 fixture from GopherTrunk's recovered-cipher tests.
-	// SUID BEE00/1E8/3004; CRC-16/GSM is checked before any name is accepted.
+	const uint8_t who[9] = { 0, 0, 0, 0, 0x03, 0xe9, 0x74, 0xcb, 0xb1 };
+	const uint8_t head[9] = { 0x15, 0x90, 0x03, 0xe9, 5, 1, 0, 0x80, 0 };
+	// Synthetic UNIT001 fixture: SUID ABCDE/123/7654321, group 1001.
+	// CRC-16/GSM is checked before any name is accepted.
 	const uint8_t block[5][9] = {
-		{ 0x17, 0x90, 0x01, 0x8b, 0xee, 0x00, 0x1e, 0x80, 0x00 },
-		{ 0x17, 0x90, 0x02, 0x8b, 0xbc, 0xb5, 0x4c, 0x37, 0xbf },
-		{ 0x17, 0x90, 0x03, 0x8e, 0xbe, 0xcf, 0x79, 0xf5, 0xf4 },
-		{ 0x17, 0x90, 0x04, 0x89, 0x67, 0xa7, 0x0e, 0xd1, 0xd0 },
-		{ 0x17, 0x90, 0x05, 0x8f, 0x40, 0x00, 0x00, 0x00, 0x00 }
+		{ 0x17, 0x90, 0x01, 0x8a, 0xbc, 0xde, 0x12, 0x37, 0x4c },
+		{ 0x17, 0x90, 0x02, 0x8b, 0xb1, 0xb5, 0x06, 0xc2, 0xe8 },
+		{ 0x17, 0x90, 0x03, 0x87, 0xee, 0x05, 0x1a, 0xeb, 0xf2 },
+		{ 0x17, 0x90, 0x04, 0x8e, 0xd2, 0x8b, 0xbe, 0xd2, 0x73 },
+		{ 0x17, 0x90, 0x05, 0x89, 0xb0, 0x00, 0x00, 0x00, 0x00 }
 	};
-	// Received group-voice trace: group-voice TDULCs repeat during the channel hang,
+	// Synthetic group-voice sequence: group-voice TDULCs repeat during the channel hang,
 	// then an alias tail can arrive without any LDU1 in this acquisition.
 	{
 		uint8_t tail_air[P25_UNIT_BYTES_MAX] = { 0 }, hang[9];
-		p25_rx_unit_t u = { .duid = P25_DUID_TDULC, .nac = 0x1e0,
+		p25_rx_unit_t u = { .duid = P25_DUID_TDULC, .nac = 0x293,
 			.air = tail_air, .nsyms = P25_TDULC_SYMS };
 		p25_call_rx_init(&c, P25_NAC_ANY, &cs_sink, &c);
 		memcpy(hang, who, 9); hang[2] = 0x44;
@@ -680,7 +680,7 @@ static void testAlias90(void)
 		for (unsigned i = 0; i < 5; i++) {
 			p25_tdulc_put(tail_air, block[i]); c.rx.unit(&u, c.rx.ctx);
 		}
-		CHECK(!strcmp(c.call.alias, "MEDIC12") && c.call.algid != P25_ALGID_CLEAR,
+		CHECK(!strcmp(c.call.alias, "UNIT001") && c.call.algid != P25_ALGID_CLEAR,
 		      "encrypted group TDULC hang preserves metadata without playing voice");
 		c.rx.lost(c.rx.ctx);
 		p25_tdulc_put(tail_air, head); c.rx.unit(&u, c.rx.ctx);
@@ -688,112 +688,112 @@ static void testAlias90(void)
 		for (unsigned i = 0; i < 5; i++) {
 			p25_tdulc_put(tail_air, block[i]); c.rx.unit(&u, c.rx.ctx);
 		}
-		CHECK(c.active && c.call.lc.src == 3004 && !strcmp(c.call.alias, "MEDIC12") &&
+		CHECK(c.active && c.call.lc.src == 7654321 && !strcmp(c.call.alias, "UNIT001") &&
 		      c.call.algid != P25_ALGID_CLEAR, "complete alias-only TDULCs recover a muted identity");
 	}
 	p25_call_rx_init(&c, P25_NAC_ANY, &cs_sink, &c);
-	alias_unit(&c, who, 0x1e0);
-	alias_unit(&c, head, 0x1e0);
-	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x1e0);
+	alias_unit(&c, who, 0x293);
+	alias_unit(&c, head, 0x293);
+	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.alias[0], "vendor alias cannot display an incomplete name");
-	alias_unit(&c, block[4], 0x1e0);
-	CHECK(!strcmp(c.call.alias, "MEDIC12"), "vendor alias CRC and cipher fixture");
+	alias_unit(&c, block[4], 0x293);
+	CHECK(!strcmp(c.call.alias, "UNIT001"), "vendor alias CRC and cipher fixture");
 	c.rx.lost(c.rx.ctx);
 	CHECK(!c.call.alias[0] && !c.alias90.count, "vendor alias cleared at call boundary");
-	CHECK(c.stats.alias.decoded_src == 3004 && !strcmp(c.stats.alias.last_name, "MEDIC12"),
+	CHECK(c.stats.alias.decoded_src == 7654321 && !strcmp(c.stats.alias.last_name, "UNIT001"),
 	      "diagnostics retain completed vendor alias after the call");
-	alias_unit(&c, who, 0x1e0);
-	alias_unit(&c, head, 0x1e0);
+	alias_unit(&c, who, 0x293);
+	alias_unit(&c, head, 0x293);
 	uint8_t bad[9];
 	memcpy(bad, block[0], 9); bad[3] ^= 0x10;
-	alias_unit(&c, bad, 0x1e0);
-	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
+	alias_unit(&c, bad, 0x293);
+	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.alias[0], "vendor alias mismatched sequence rejected");
 	CHECK(c.stats.alias.rejected > 0, "vendor sequence failures are counted");
 	memcpy(bad, block[0], 9); bad[4] ^= 1; // corrupt checksum-covered WACN, not the bound source
-	alias_unit(&c, bad, 0x1e0);
+	alias_unit(&c, bad, 0x293);
 	CHECK(!c.call.alias[0], "vendor alias corrupted CRC rejected");
 	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_BAD_CRC && c.stats.alias.mfid90_seen == 31,
 	      "complete corrupt payload distinguishes CRC failure from missing fragments");
-	alias_unit(&c, block[0], 0x1e0);
-	CHECK(!strcmp(c.call.alias, "MEDIC12"), "correct retransmitted block repairs vendor alias");
+	alias_unit(&c, block[0], 0x293);
+	CHECK(!strcmp(c.call.alias, "UNIT001"), "correct retransmitted block repairs vendor alias");
 	c.rx.lost(c.rx.ctx);
 	uint8_t other[9]; memcpy(other, who, 9); other[8]++;
-	alias_unit(&c, other, 0x1e0);
-	alias_unit(&c, head, 0x1e0);
-	for (unsigned i = 0; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
+	alias_unit(&c, other, 0x293);
+	alias_unit(&c, head, 0x293);
+	for (unsigned i = 0; i < 5; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.alias[0], "vendor alias must name the actual caller");
 	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_WRONG_SOURCE,
 	      "vendor source mismatch is observable");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, who, 0x1e0);
-	alias_unit(&c, head, 0x1e0);
+	alias_unit(&c, who, 0x293);
+	alias_unit(&c, head, 0x293);
 	uint32_t voices = c.stats.voice;
 	for (unsigned i = 0; i < 5; i++) {
 		uint8_t tail_air[P25_UNIT_BYTES_MAX] = { 0 };
 		p25_tdulc_put(tail_air, block[i]);
-		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x1e0, .air = tail_air, .nsyms = P25_TDULC_SYMS };
+		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x293, .air = tail_air, .nsyms = P25_TDULC_SYMS };
 		c.rx.unit(&tail, c.rx.ctx);
 	}
-	CHECK(c.active && !strcmp(c.call.alias, "MEDIC12"), "alias completes across TDULC tail fragments");
+	CHECK(c.active && !strcmp(c.call.alias, "UNIT001"), "alias completes across TDULC tail fragments");
 	CHECK(c.stats.voice == voices, "TDULC alias never feeds fictitious voice frames");
-	p25_rx_unit_t end = { .duid = P25_DUID_TDU, .nac = 0x1e0 };
+	p25_rx_unit_t end = { .duid = P25_DUID_TDU, .nac = 0x293 };
 	c.rx.unit(&end, c.rx.ctx);
 	CHECK(!c.active, "normal terminator still ends the alias-bearing call");
 	// Late entry can miss every group-voice LC while receiving the complete alias.
-	alias_unit(&c, head, 0x1e0);
-	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x1e0);
+	alias_unit(&c, head, 0x293);
+	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.have_lc && !c.call.lc.src && !c.call.alias[0],
 	      "partial alias cannot supply a late-entry caller ID");
 	memcpy(bad, block[4], 9); bad[4] ^= 1;
-	alias_unit(&c, bad, 0x1e0);
+	alias_unit(&c, bad, 0x293);
 	CHECK(!c.call.have_lc && !c.call.alias[0], "bad alias CRC cannot recover identity");
-	alias_unit(&c, block[4], 0x1e0);
-	CHECK(c.call.have_lc && c.call.lc.src == 3004 && c.call.lc.tgid == 31001 &&
-	      !strcmp(c.call.alias, "MEDIC12"), "validated alias recovers late-entry source and group");
+	alias_unit(&c, block[4], 0x293);
+	CHECK(c.call.have_lc && c.call.lc.src == 7654321 && c.call.lc.tgid == 1001 &&
+	      !strcmp(c.call.alias, "UNIT001"), "validated alias recovers late-entry source and group");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
-	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x1e0);
-	alias_unit(&c, block[4], 0x1e1);
+	alias_unit(&c, head, 0x293);
+	for (unsigned i = 0; i < 4; i++) alias_unit(&c, block[i], 0x293);
+	alias_unit(&c, block[4], 0x294);
 	CHECK(!c.call.have_lc && !c.call.alias[0], "NAC change discards unidentified alias fragments");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
+	alias_unit(&c, head, 0x293);
 	c.call.lc.tgid = 77; // Group already supplied by a valid HDU.
-	for (unsigned i = 0; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
+	for (unsigned i = 0; i < 5; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.have_lc && !c.call.alias[0], "alias must match a known HDU group without a source");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
+	alias_unit(&c, head, 0x293);
 	for (unsigned i = 0; i < 5; i++) {
 		uint8_t tail_air[P25_UNIT_BYTES_MAX] = { 0 };
 		p25_tdulc_put(tail_air, block[i]);
-		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x1e0, .air = tail_air, .nsyms = P25_TDULC_SYMS };
+		p25_rx_unit_t tail = { .duid = P25_DUID_TDULC, .nac = 0x293, .air = tail_air, .nsyms = P25_TDULC_SYMS };
 		c.rx.unit(&tail, c.rx.ctx);
 	}
-	CHECK(c.call.have_lc && c.call.lc.src == 3004 && !strcmp(c.call.alias, "MEDIC12"),
+	CHECK(c.call.have_lc && c.call.lc.src == 7654321 && !strcmp(c.call.alias, "UNIT001"),
 	      "late-entry identity and alias recovered from TDULC tail");
 	// The first group-voice LC can arrive between alias fragments on late entry.
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
-	alias_unit(&c, block[0], 0x1e0);
-	alias_unit(&c, who, 0x1e0);
-	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
-	CHECK(c.call.lc.src == 3004 && !strcmp(c.call.alias, "MEDIC12"),
+	alias_unit(&c, head, 0x293);
+	alias_unit(&c, block[0], 0x293);
+	alias_unit(&c, who, 0x293);
+	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x293);
+	CHECK(c.call.lc.src == 7654321 && !strcmp(c.call.alias, "UNIT001"),
 	      "first matching voice LC preserves pending manufacturer-specific alias (MFID 0x90)");
-	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_COMPLETE && c.stats.alias.mfid90_src == 3004,
+	CHECK(c.stats.alias.mfid90_result == P25_ALIAS90_COMPLETE && c.stats.alias.mfid90_src == 7654321,
 	      "completed late-source sequence retains diagnostic source");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
-	alias_unit(&c, block[0], 0x1e0);
-	alias_unit(&c, other, 0x1e0);
-	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
+	alias_unit(&c, head, 0x293);
+	alias_unit(&c, block[0], 0x293);
+	alias_unit(&c, other, 0x293);
+	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.alias[0], "late voice identity still rejects another unit's alias payload");
 	c.rx.lost(c.rx.ctx);
-	alias_unit(&c, head, 0x1e0);
-	alias_unit(&c, block[0], 0x1e0);
+	alias_unit(&c, head, 0x293);
+	alias_unit(&c, block[0], 0x293);
 	memcpy(other, who, sizeof other); other[5]++;
-	alias_unit(&c, other, 0x1e0);
+	alias_unit(&c, other, 0x293);
 	CHECK(!c.alias90.count, "first voice LC for another group discards pending alias");
-	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x1e0);
+	for (unsigned i = 1; i < 5; i++) alias_unit(&c, block[i], 0x293);
 	CHECK(!c.call.alias[0] && c.stats.alias.mfid90_result == P25_ALIAS90_NO_HEADER,
 	      "orphan alias fragments cannot name a different group call");
 
@@ -803,9 +803,9 @@ static void testAlias(void)
 {
 	p25_call_rx_t c;
 	// Independently specified A/B wire vectors: MFID A4, odd 32/33, even 34/35.
-	uint8_t a[9] = { 0x32, 0xA4, 'E', 'M', 'S', '-', 'M', 'E', 'D' };
-	uint8_t b[9] = { 0x33, 0xA4, 'I', 'C', '-', '1', '2', '3', '4' };
-	uint8_t who[9] = { 0, 0, 0, 0, 0x79, 0x19, 0, 0x0B, 0xBC }; // TG31001, source3004
+	uint8_t a[9] = { 0x32, 0xA4, 'T', 'E', 'S', 'T', '-', 'U', 'N' };
+	uint8_t b[9] = { 0x33, 0xA4, 'I', 'T', '-', '0', '0', '0', '1' };
+	uint8_t who[9] = { 0, 0, 0, 0, 0x03, 0xe9, 0x74, 0xcb, 0xb1 }; // TG1001, source7654321
 	memset(&cs, 0, sizeof cs);
 	p25_call_rx_init(&c, P25_NAC_ANY, &cs_sink, &c);
 	alias_unit(&c, a, 0x293);
@@ -818,12 +818,12 @@ static void testAlias(void)
 	CHECK(!c.call.alias[0], "no partial alias displayed");
 	alias_unit(&c, who, 0x293); // unchanged voice LC between parts is allowed
 	alias_unit(&c, b, 0x293);
-	CHECK(!strcmp(c.call.alias, "EMS-MEDIC-1234") && c.call.lc.src == 3004,
+	CHECK(!strcmp(c.call.alias, "TEST-UNIT-0001") && c.call.lc.src == 7654321,
 	      "full alias and caller association");
 	CHECK(!strcmp(cs.call.alias, c.call.alias), "completed alias reaches update sink");
 	CHECK(c.stats.alias.complete == 1 && c.stats.alias.no_source == 2 && c.stats.alias.unpaired == 1,
 	      "alias diagnostics distinguish completed, missing-source and unpaired messages");
-	CHECK(c.stats.alias.last_src == 3004,
+	CHECK(c.stats.alias.last_src == 7654321,
 	      "alias diagnostics retain the known source");
 	who[8]++;
 	alias_unit(&c, who, 0x293);
@@ -835,7 +835,7 @@ static void testAlias(void)
 	a[0] = 0x34;
 	alias_unit(&c, a, 0x293);
 	alias_unit(&c, b, 0x293);
-	CHECK(!strcmp(c.call.alias, "EMS-MEDIC-1234"), "even conveyance accepted");
+	CHECK(!strcmp(c.call.alias, "TEST-UNIT-0001"), "even conveyance accepted");
 	c.rx.lost(c.rx.ctx);
 	CHECK(!c.call.alias[0] && !c.alias_opcode, "signal loss clears name and pending part");
 	alias_unit(&c, who, 0x293);

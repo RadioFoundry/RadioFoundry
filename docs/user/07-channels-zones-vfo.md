@@ -362,6 +362,11 @@ Select a received call to inspect its unit ID, talkgroup and completed alias. Th
 P25 details are read-only and never send a callback or registration.
 The Recent list omits the P25 prefix so more of the caller's name fits on each row.
 
+On idle Home, a completed P25 alias remains dimmed for three seconds after the call
+ends, then the activity-age display returns. A late alias gets the same reading
+time. New calls and channel changes dismiss it. This display hold does not delay
+returning to the control channel or keep audio open.
+
 ### P25 trunked channels
 
 P25 calls you hear appear in Recent. Open it from the menu;

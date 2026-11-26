@@ -451,6 +451,21 @@ static void recent_update(const radio_view_t *v)
 
 #if CONFIG_P25_ALIAS
 static uint32_t p25_alias_seen;
+static uint32_t p25_alias_last_ms;
+// Readability on Home only; never extends a voice-channel or audio hold.
+#define P25_ALIAS_DISPLAY_MS 3000u
+
+const p25_alias_event_t *ui_p25_held_alias(const radio_view_t *v)
+{
+	const radio_p25_view_t *p = &v->p25;
+	const p25_alias_event_t *a = &p->alias_event;
+	if (v->state != RS_IDLE || v->ch.mode != RADIO_MODE_P25 || !(p->flags & RADIO_P25_ON) ||
+	    (p->flags & RADIO_P25_RX) || !a->serial || !a->name[0] ||
+	    p->call_session != p->alias_session || p->call_number != a->call ||
+	    now - p25_alias_last_ms >= P25_ALIAS_DISPLAY_MS)
+		return NULL;
+	return a;
+}
 
 const char *ui_p25_caller_alias(const radio_view_t *v)
 {
@@ -478,6 +493,7 @@ static void recent_p25_alias(const radio_view_t *v)
 	const p25_alias_event_t *a = &p->alias_event;
 	if (a->serial && a->serial != p25_alias_seen) {
 		p25_alias_seen = a->serial;
+		p25_alias_last_ms = now;
 		bool found = false;
 		for (uint8_t i = 0; i < recent_n; i++) {
 			ui_recent_t *r = &recent[i];
@@ -510,6 +526,10 @@ static void recent_p25_alias(const radio_view_t *v)
 			strcpy(ui_target.name, a->name);
 		dirty = true;
 	}
+	// Keep the name readable after this call ends, even if it was decoded early.
+	if ((p->flags & RADIO_P25_RX) && p->selected && a->serial &&
+	    p->call_session == p->alias_session && p->call_number == a->call)
+		p25_alias_last_ms = now;
 }
 #endif
 
@@ -2111,6 +2131,7 @@ void ui_app_init(void)
 	recent_n = 0;
 #if CONFIG_P25_ALIAS
 	p25_alias_seen = 0;
+	p25_alias_last_ms = 0;
 #endif
 #if CONFIG_DMR
 	recent_seen_ms = 0;
