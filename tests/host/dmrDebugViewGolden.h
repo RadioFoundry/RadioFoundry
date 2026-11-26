@@ -1,0 +1,259 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 The RadioFoundry Authors
+// The DMR parts of the debug link: the GET_VIEW sections dmr, dmr_call and dmr_stats, the voice path diagnostics
+// lines and their counter reset. Kept apart from debuglink_view.c so DMR work can extend it on its own: add keys
+// freely (new keys don't bump DL_VIEW_VERSION), keep the existing ones.
+#include "config.h"
+#include "board.h"
+#include "debuglink/debuglink.h"
+#if CONFIG_DMR
+#include "dmr/call/dmr_call.h"
+#include "dmr/ambe/ambeVoice.h"
+#include "dsp/miclimit.h"
+#include "radio/mic_gain.h"
+#endif
+
+#if CONFIG_DMR
+
+static const char *dmr_state_key(uint8_t s)
+{
+	static const char *const names[] = { "idle", "rx", "rx_other", "tx_wait", "tx", "tx_ending",
+					     "tx_data", "tx_permit" };
+	return s < sizeof(names) / sizeof(names[0]) ? names[s] : "?";
+}
+
+static const char *phase_key(uint8_t p)
+{
+	static const char *const names[] = { "idle", "rx_voice", "rx_busy", "tx_access", "tx_wakeup", "tx_voice",
+					     "tx_ending", "tx_denied", "tx_data", "tx_permit" };
+	return p < sizeof(names) / sizeof(names[0]) ? names[p] : "?";
+}
+
+static const char *tx_error_key(uint8_t e)
+{
+	static const char *const names[] = { "ok", "no_modem", "busy", "no_repeater", "rejected", "timeout",
+					     "stalled" };
+	return e < sizeof(names) / sizeof(names[0]) ? names[e] : "?";
+}
+
+static void call(dl_text_t *t, const char *p, const radio_dmr_call_t *c)
+{
+	char k[24];
+
+	dl_text(t, "%s.src=%u\n%s.dst=%u\n", p, (unsigned)c->src, p, (unsigned)c->dst);
+	dl_text(t, "%s.group=%u\n%s.to_us=%u\n%s.encrypted=%u\n", p, c->group, p, c->to_us, p, c->encrypted);
+	dl_text(t, "%s.emergency=%u\n%s.pi_header=%u\n", p, c->emergency, p, c->pi_header);
+	dl_fmt(k, sizeof(k), "%s.src_name", p);
+	dl_text_kv_str(t, k, c->src_name);
+	dl_fmt(k, sizeof(k), "%s.dst_name", p);
+	dl_text_kv_str(t, k, c->dst_name);
+	// ETSI GPS Info (CONFIG_DMR_GPS): degrees with 7 decimals, the error code, range and bearing from us
+	dl_text(t, "%s.gps_valid=%u\n", p, c->gps_valid);
+	if (c->gps_valid) {
+		uint32_t la = (uint32_t)(c->gps_lat < 0 ? -(int64_t)c->gps_lat : c->gps_lat);
+		uint32_t lo = (uint32_t)(c->gps_lon < 0 ? -(int64_t)c->gps_lon : c->gps_lon);
+
+		dl_text(t, "%s.gps_lat=%s%u.%07u\n%s.gps_lon=%s%u.%07u\n%s.gps_err=%u\n", p, c->gps_lat < 0 ? "-" : "",
+			(unsigned)(la / 10000000u), (unsigned)(la % 10000000u), p, c->gps_lon < 0 ? "-" : "",
+			(unsigned)(lo / 10000000u), (unsigned)(lo % 10000000u), p, c->gps_err);
+		if (c->gps_range)
+			dl_text(t, "%s.gps_dist_m=%u\n%s.gps_bearing=%u\n", p, (unsigned)c->gps_dist_m, p, c->gps_bearing);
+	}
+}
+
+static void golden_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
+{
+	const radio_dmr_view_t *d = &v->dmr;
+	const dmr_call_view_t *cv = dmr_call_view();	// single bytes only (the stack's task writes it)
+
+	switch (part) {
+	case 0:
+		dl_text(t, "dmr.built=1\n");
+		dl_text(t, "dmr.active=%u\ndmr.codec=%u\ndmr.killed=%u\n", d->active, d->codec, d->killed);
+		// The vocoder's TX state: here, as dmr_stats (the counters) fills most of a reply
+		{
+			ambe_voice_stats_t a;
+			ambeVoiceGetStats(&a);
+			dl_text(t, "voice.tx_mic_peak=%u\nvoice.tx_test=%u\n", (unsigned)a.tx_mic_peak,
+				ambeVoiceTestSignal() ? 1u : 0u);
+			// The mic gain (DMR's) in force now; after it, the encoder's largest sample and the
+			// limiter's lowest gain in the latest transmission (- before one). Here, not in features: that section
+			// is at a reply's size
+			dl_text(t, "voice.mic_pcm_db=%d\nvoice.tx_enc_peak=%u\n", radio_mic_pcm_db(), (unsigned)a.tx_enc_peak);
+			// Blocks sent as silence while a beep played (the mic gate)
+			dl_text(t, "voice.tx_mic_muted=%u\n", (unsigned)a.tx_mic_muted);
+			if (a.tx_mic_low_q8 != 0) {
+				dl_text(t, "voice.tx_mic_low_db=%d\n", miclimit_q8_db((uint16_t)a.tx_mic_low_q8));
+			} else {
+				dl_text(t, "voice.tx_mic_low_db=-\n");
+			}
+		}
+		// Encode options (VOCODER_OPT_*): in force and supported; the codec's own word when the board reports it
+		dl_text(t, "voice.enc_options=0x%X\nvoice.enc_supported=0x%X\n", (unsigned)ambeVoiceEncodeOptions(),
+			(unsigned)ambeVoiceEncodeOptionsSupported());
+		if (board.vocoder != NULL && board.vocoder->encode_flags != NULL) {
+			dl_text(t, "voice.enc_flags=0x%X\n", (unsigned)board.vocoder->encode_flags());
+		}
+		dl_text(t, "dmr.state=%s\n", dmr_state_key(d->state));
+		dl_text(t, "dmr.phase=%s\n", phase_key(cv->phase));
+		dl_text(t, "dmr.tx_error=%s\n", tx_error_key(cv->tx_error));
+		dl_text(t, "dmr.own_id=%u\ndmr.cc=%u\ndmr.ts=%u\n", (unsigned)d->own_id, d->cc, d->ts);
+		dl_text(t, "dmr.rx_cc=%u\ndmr.rx_ts=%u\n", d->rx_cc, d->rx_ts);
+		char alias[DMR_TA_TEXT_MAX + 1];
+		dmr_call_tx_alias(alias);
+		dl_text(t, "dmr.tx_alias=%s\n", alias);
+		dl_text(t, "dmr.rmo=%u\ndmr.repeater_up=%u\n", d->rmo, d->repeater_up);
+		// The channel's SFR role (sfrRole_t; sfr.md 4) and whether its repeater role has the modem
+		uint8_t sfr_rx, sfr_cwid;
+		radio_get_sfr_settings(&sfr_rx, &sfr_cwid);
+		dl_text(t, "dmr.sfr_role=%u\ndmr.sfr_rpt=%u\ndmr.sfr_rx=%u\n", d->sfr_role, d->sfr_rpt, sfr_rx);
+		dl_text(t, "dmr.sfr_cwid=%u\ndmr.sfr_cw=%u\ndmr.sfr_cwid_sent=%u\ndmr.sfr_cwid_cut=%u\n", sfr_cwid, d->sfr_cw,
+			d->sfr_cwid_sent, d->sfr_cwid_cut);
+		if (board.radio->dmr_keying != NULL) {	// how the board keyed DMR bursts (hal_radio_t)
+			hal_dmr_keying_t k;
+			board.radio->dmr_keying(&k);
+			dl_text(t, "dmr.keyed_direct=%u\ndmr.keyed_direct_n=%u\ndmr.keyed_idle_n=%u\n", k.last_direct ? 1u : 0u,
+				(unsigned)k.direct, (unsigned)k.idle);
+		}
+		dl_text(t, "dmr.target_id=%u\ndmr.target_private=%u\n", (unsigned)d->target_id, d->target_private);
+		dl_text_kv_str(t, "dmr.target_name", d->target_name);
+		dl_text(t, "dmr.reply_active=%u\ndmr.reply_s=%u\n", d->reply_active, d->reply_s);
+		dl_text(t, "dmr.hear_all=%u\ndmr.hear_all_latch=%u\n", d->hear_all, d->hear_all_latch);
+		dl_text(t, "dmr.focus_id=%u\ndmr.focus_private=%u\ndmr.one_shot=%u\n", (unsigned)d->focus_id,
+			d->focus_private, d->one_shot);
+		dl_text(t, "dmr.target_manual=%u\ndmr.privacy=%u\ndmr.alias_tx=%u\ndmr.gps_tx_channel=%u\n",
+			d->target_manual, d->privacy, d->alias_tx, d->gps_tx_channel);
+		dl_text(t, "dmr.underruns=%u\n", (unsigned)d->underruns);
+		if (board.dmr != NULL && board.dmr->health != NULL) {
+			// Modem interrupts the driver found lost and recovered from; the first one's controller words
+			dmr_modem_health_t h;
+			board.dmr->health(&h);
+			dl_text(t, "dmr.modem_stalls=%u\ndmr.modem_stuck=%u\n", (unsigned)h.stalls, (unsigned)h.stuck);
+			if (h.first_ms != 0) {
+				dl_text(t, "dmr.modem_lost_ms=%u\ndmr.modem_lost_regs=%x,%x,%x,%x\n", (unsigned)h.first_ms,
+					(unsigned)h.first_regs[0], (unsigned)h.first_regs[1], (unsigned)h.first_regs[2],
+					(unsigned)h.first_regs[3]);
+			}
+		}
+		// The mic content of the latest transmission: here, not in dmr_stats, which is near the reply size
+		{
+			ambe_voice_stats_t a;
+			ambeVoiceGetStats(&a);
+			dl_text(t, "voice.tx_mic_level_db=%u\nvoice.tx_mic_spread_db=%u\nvoice.tx_mic_zc=%u\n"
+				"voice.tx_mic_blocks=%u\n", (unsigned)a.tx_mic_level_db, (unsigned)a.tx_mic_spread_db,
+				(unsigned)a.tx_mic_zc, (unsigned)a.tx_mic_blocks);
+		}
+		break;
+	case 1:
+		call(t, "call", &d->call);
+		dl_text(t, "call.late_entry=%u\n", d->late_entry);
+		dl_text(t, "call.alias_complete=%u\n", cv->caller.alias_complete);
+		dl_text(t, "call.fid=%u\ncall.svc=%u\ncall.pi_alg=%u\ncall.pi_key=%u\n", cv->caller.fid, cv->caller.svc,
+			cv->caller.pi_alg, cv->caller.pi_key);
+		dl_text_kv_str(t, "call.alias", d->alias);
+		dl_text(t, "call.rssi_dbm=%d\ncall.ms=%u\n", d->rssi_dbm, (unsigned)d->call_ms);
+		call(t, "last", &d->last);
+		{
+			// Why received calls ended, and what the filters dropped: a call cut short shows here
+			dmr_call_stats_t c;
+			dmr_call_get_stats(&c);
+			dl_text(t, "call.rx_end_term=%u\ncall.rx_end_sync=%u\ncall.rx_end_fade=%u\n", (unsigned)c.rx_end_term,
+				(unsigned)c.rx_end_sync, (unsigned)c.rx_end_fade);
+			dl_text(t, "call.rx_ts_dropped=%u\ncall.rx_cc_dropped=%u\ncall.rx_lc_taken=%u\n",
+				(unsigned)c.rx_ts_dropped, (unsigned)c.rx_cc_dropped, (unsigned)c.rx_lc_taken);
+			// The reverse channel heard while sending: here, as dmr_stats fills a reply
+			dl_text(t, "call.rc_good=%u\ncall.rc_bad=%u\ncall.rc_ceased=%u\ncall.rc_last=%u\n", (unsigned)c.rc_good,
+				(unsigned)c.rc_bad, (unsigned)c.rc_ceased, (unsigned)c.rc_last);
+		}
+		dl_text(t, "last.ms=%u\n", (unsigned)d->last_ms);
+		break;
+	case 2: {
+		dmr_call_stats_t c;
+		ambe_voice_stats_t a;
+
+		dmr_call_get_stats(&c);
+		ambeVoiceGetStats(&a);
+		dl_text(t, "call.rx_calls=%u\ncall.rx_calls_played=%u\ncall.rx_late_entries=%u\n", (unsigned)c.rx_calls,
+			(unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries);
+		dl_text(t, "call.rx_calls_resumed=%u\n", (unsigned)c.rx_calls_resumed);
+		dl_text(t, "call.rx_voice_bursts=%u\ncall.rx_lost_frames=%u\n", (unsigned)c.rx_voice_bursts,
+			(unsigned)c.rx_lost_frames);
+		dl_text(t, "call.rx_dup_dropped=%u\ncall.rx_enc_dropped=%u\ncall.rx_term_dropped=%u\n",
+			(unsigned)c.rx_dup_dropped, (unsigned)c.rx_enc_dropped, (unsigned)c.rx_term_dropped);
+		// SFR user: the other copy of a burst played, the talker's copy dropped, dual-path RX's held bursts and fixed frames
+		dl_text(t, "call.rx_sfr_dup=%u\ncall.rx_sfr_direct=%u\ncall.rx_sfr_held=%u\ncall.rx_sfr_fixed=%u\n",
+			(unsigned)c.rx_sfr_dup, (unsigned)c.rx_sfr_direct, (unsigned)c.rx_sfr_held, (unsigned)c.rx_sfr_fixed);
+		dl_text(t, "call.tx_calls=%u\ncall.tx_denied=%u\ncall.tx_underruns=%u\ncall.evq_overflows=%u\n",
+			(unsigned)c.tx_calls, (unsigned)c.tx_denied, (unsigned)c.tx_underruns, (unsigned)c.evq_overflows);
+		dl_text(t, "call.rx_private_calls=%u\ncall.rx_emergency_calls=%u\ncall.rx_encrypted_calls=%u\n",
+			(unsigned)c.rx_private_calls, (unsigned)c.rx_emergency_calls, (unsigned)c.rx_encrypted_calls);
+		dl_text(t, "call.rx_pi_headers=%u\ncall.rx_alias_complete=%u\ncall.tx_alias_lcs=%u\n",
+			(unsigned)c.rx_pi_headers, (unsigned)c.rx_alias_complete, (unsigned)c.tx_alias_lcs);
+		dl_text(t, "call.rx_gps=%u\ncall.tx_gps_lcs=%u\n", (unsigned)c.rx_gps, (unsigned)c.tx_gps_lcs);
+		dl_text(t, "call.rx_in_tx=%u\ncall.rx_bs_in_tx=%u\ncall.tx_rpt_drops=%u\ncall.tx_wake_lost=%u\n",
+			(unsigned)c.rx_in_tx, (unsigned)c.rx_bs_in_tx, (unsigned)c.tx_rpt_drops, (unsigned)c.tx_wake_lost);
+		dl_text(t, "voice.rx_in=%u\nvoice.rx_frames=%u\nvoice.rx_concealed=%u\nvoice.rx_silence=%u\n",
+			(unsigned)a.rx_in, (unsigned)a.rx_frames, (unsigned)a.rx_concealed, (unsigned)a.rx_silence);
+		dl_text(t, "voice.rx_calls=%u\nvoice.rx_queue_max=%u\nvoice.rx_bad=%u\nvoice.rx_lost=%u\n",
+			(unsigned)a.rx_calls, (unsigned)a.rx_queue_max, (unsigned)a.rx_bad, (unsigned)a.rx_lost);
+		dl_text(t, "voice.rx_underruns=%u\nvoice.rx_underrun_at=%u\nvoice.rx_overflows=%u\nvoice.rx_bit_errors=%u\n",
+			(unsigned)a.rx_underruns, (unsigned)a.rx_underrun_at, (unsigned)a.rx_overflows, (unsigned)a.rx_bit_errors);
+		dl_text(t, "voice.rx_bad_at=%u,%u,%u\n", (unsigned)a.rx_bad_at[0], (unsigned)a.rx_bad_at[1],
+			(unsigned)a.rx_bad_at[2]);
+		dl_text(t, "voice.tx_frames=%u\nvoice.tx_overflows=%u\nvoice.rx_peak=%u\n", (unsigned)a.tx_frames,
+			(unsigned)a.tx_overflows, (unsigned)a.rx_peak);
+		dl_text(t, "voice.rx_repeats=%u\nvoice.tx_repeats=%u\n", (unsigned)a.rx_repeats, (unsigned)a.tx_repeats);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static bool golden_dmr_diag_line(uint8_t i, char *buf, uint8_t len)
+{
+	dmr_call_stats_t c;
+	ambe_voice_stats_t a;
+
+	dmr_call_get_stats(&c);
+	ambeVoiceGetStats(&a);
+	switch (i) {
+	case 0:
+		dl_fmt(buf, len, "call rx=%u play=%u late=%u tx=%u deny=%u", (unsigned)c.rx_calls,
+		       (unsigned)c.rx_calls_played, (unsigned)c.rx_late_entries, (unsigned)c.tx_calls, (unsigned)c.tx_denied);
+		return true;
+	case 1:
+		dl_fmt(buf, len, "call vb=%u lost=%u dup=%u enc=%u txu=%u evq=%u", (unsigned)c.rx_voice_bursts,
+		       (unsigned)c.rx_lost_frames, (unsigned)c.rx_dup_dropped, (unsigned)c.rx_enc_dropped,
+		       (unsigned)c.tx_underruns, (unsigned)c.evq_overflows);
+		return true;
+	case 2:
+		dl_fmt(buf, len, "voice in=%u play=%u conc=%u sil=%u und=%u", (unsigned)a.rx_in, (unsigned)a.rx_frames,
+		       (unsigned)a.rx_concealed, (unsigned)a.rx_silence, (unsigned)a.rx_underruns);
+		return true;
+	case 3:
+		dl_fmt(buf, len, "voice ovf=%u bad=%u lost=%u bits=%u q=%u calls=%u", (unsigned)a.rx_overflows,
+		       (unsigned)a.rx_bad, (unsigned)a.rx_lost, (unsigned)a.rx_bit_errors, (unsigned)a.rx_queue_max,
+		       (unsigned)a.rx_calls);
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void golden_dmr_reset(void)
+{
+	dmr_call_reset_stats();
+	ambeVoiceResetStats();
+}
+
+#else	// built without DMR
+
+static void golden_dmr(uint8_t part, const radio_view_t *v, dl_text_t *t)
+{
+	(void)part;
+	(void)v;
+	dl_text(t, "dmr.built=0\n");
+}
+
+#endif

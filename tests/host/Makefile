@@ -1088,6 +1088,21 @@ run-split: splitDuplexTest mmdvmTestSplit hotspotSfrTestSplit hrc6000BsTest hrc6
 
 # The debug link's portable parts: printf subset, CRC, frame parser / dispatcher, dlog ring, packed screenshots
 # (core/debuglink)
+DMRDEBUG := dmrDebugViewTest.c $(CORE)/debuglink/debuglink_view_dmr.c $(CORE)/debuglink/dl_fmt.c
+TESTS += dmrDebugViewTest dmrDebugViewMinimalTest dmrDebugViewOffTest
+dmrDebugViewTest: $(DMRDEBUG) dmrDebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_DMR=1 -o $@ $(DMRDEBUG)
+dmrDebugViewMinimalTest: $(DMRDEBUG) dmrDebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_DMR=1 -DCONFIG_DMR_GPS=0 -DCONFIG_DMR_PRIVACY=0 -DCONFIG_DMR_TALKER_ALIAS=0 -DCONFIG_SFR=0 -o $@ $(DMRDEBUG)
+dmrDebugViewOffTest: $(DMRDEBUG) dmrDebugViewGolden.h
+	$(CC) $(CFLAGS) $(CORE_HAL) $(FMONLY) -o $@ $(DMRDEBUG)
+run: run-dmr-debug-view
+run-dmr-debug-view: dmrDebugViewTest dmrDebugViewMinimalTest dmrDebugViewOffTest
+	./dmrDebugViewTest
+	./dmrDebugViewMinimalTest
+	./dmrDebugViewOffTest
+.PHONY: run-dmr-debug-view
+
 P25DEBUG := p25DebugViewTest.c $(CORE)/debuglink/debuglink_view_p25.c $(CORE)/debuglink/dl_fmt.c
 TESTS += p25DebugViewTest p25DebugViewNoTrunkTest p25DebugViewNoVoiceTest p25DebugViewNoRoamTest p25DebugViewNoZoneScanTest p25DebugViewOffTest
 p25DebugViewTest: $(P25DEBUG) p25DebugViewGolden.h
