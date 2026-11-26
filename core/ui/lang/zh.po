@@ -4780,11 +4780,6 @@ msgid "Finding system"
 msgstr "搜索中"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "系统已禁用"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "请等待"
@@ -4976,8 +4971,8 @@ msgstr "话音信道不可用"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "系统已禁用：禁止发射"
+msgid "RX-only system: no TX"
+msgstr "仅接收系统：禁止发射"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

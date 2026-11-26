@@ -198,7 +198,7 @@ export function cableBanner(a = S().adapter) {
 const fill = (el, ...parts) => el.replaceChildren(...parts.filter(Boolean));
 
 // the chips a programming cable has: the boot ROM errors name the cable by it (never "radio USB")
-const USB_SERIAL = new Set(["FTDI", "CH340", "CP210x", "PL2303"]);
+const USB_SERIAL = new Set(["FTDI", "CH340", "CP210x", "PL2303", "AIOC"]);
 
 // A loader for the next way in. The session holds it only once it answered (connectPanel ready()): a stub made for a
 // boot ROM load that failed was taken for a running one, and the backup step then asked it seven times for every

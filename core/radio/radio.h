@@ -431,6 +431,30 @@ typedef struct {
 } radio_t3_view_t;
 #endif
 
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4): temporary settings the radio reverts by itself at a deadline. armed while one
+// runs; the rest is the last detour's summary, taken at its return
+typedef struct {
+	bool armed;		// the home state is kept, settings saves are held, the backstop runs
+	bool returning;		// the return waits for a transmission to end
+	bool restored;		// the last return found the home position, frequencies and settings back
+	uint8_t why;		// RADIO_DETOUR_WHY_*: what ended the last detour
+	uint16_t count;		// detours ended since start
+	uint8_t mode;		// radio_mode_t in force just before the last return
+	uint32_t rx_hz;		// ... and the receive frequency
+	uint32_t ms;		// the last detour's length
+	uint32_t rx_ms;		// ... its time receiving (RS_RX), and the receptions
+	uint16_t rx_count;
+	uint16_t tx_count;	// ... transmissions (RS_TX), refused ones (RS_TX_DENIED)
+	uint16_t tx_denied;
+	uint32_t tx_ms;
+	int16_t rssi_max;	// ... the strongest RSSI while receiving, dBm (0 = none)
+} radio_detour_view_t;
+
+#define RADIO_DETOUR_WHY_ASKED		1	// the debug link's deadline or its RETURN
+#define RADIO_DETOUR_WHY_BACKSTOP	2	// the radio core's own deadline: the debug link didn't end it in time
+#endif
+
 #define RADIO_LED_GREEN		0x01u	// radio_view_t.leds
 #define RADIO_LED_RED		0x02u
 
@@ -510,7 +534,7 @@ typedef struct {
 	uint8_t volume_src;	// radio_volume_src_t: where that level comes from
 	uint8_t volume_step;	// the stored step (0..RADIO_VOLUME_MAX); in force when volume_src is RVOL_SOFT
 	int8_t volume_override;	// the debug link's step in force over the knob (RVOL_OVERRIDE), -1 = none
-	int8_t volume_knob;	// the volume knob's position 0..100 % in force or not, -1 = none read
+	int8_t volume_knob;	// where the volume knob is, 0..100 %, even when it isn't setting the volume; -1 = not read
 	// Air band (CONFIG_AM_RX; docs/spec/airband-and-broadcast.md 3): the receiver demodulates AM on this channel or
 	// VFO frequency (an FM channel in 108-137 MHz on a radio that can); receive only. noise then holds the AM
 	// squelch's value from the RSSI (radio/radio_am.h)
@@ -535,6 +559,9 @@ typedef struct {
 #endif
 #if CONFIG_DMR_TRUNK
 	radio_t3_brief_t t3;
+#endif
+#if CONFIG_RADIO_DETOUR
+	radio_detour_view_t detour;
 #endif
 } radio_view_t;
 
@@ -583,6 +610,19 @@ uint32_t radio_view_serial(void);
 
 // Requests taken by the radio task, and lost to a full queue, since start-up
 void radio_req_stats(uint32_t *handled, uint32_t *dropped);
+#if CONFIG_RADIO_DETOUR
+// A detour (docs/spec/debuglink.md 7.4). Mark: keep the home state (position, temporaries, talk target, the P25 and
+// NXDN settings), hold the settings saves and arm the backstop backstop_ms from now (a detour already armed: only the
+// backstop moves). Refused, so view.detour.armed stays false, while settings wait for their save or in hotspot mode.
+// Return: everything back as marked, the held settings changes dropped; while transmitting, at the transmission's end
+// (the PTT is released first). Both posted with a wait: a dropped return would leave the deadline to the backstop
+#define RADIO_DETOUR_MARK	1
+#define RADIO_DETOUR_RETURN	2
+bool radio_req_detour(uint8_t op, uint32_t backstop_ms);
+// The published view.detour.armed, without copying the view
+bool radio_detour_armed(void);
+void radio_get_detour(radio_detour_view_t *d);	// just the view's detour, for a caller short of stack
+#endif
 
 // Requests (queued, handled by the radio task)
 void radio_req_channel_step(int8_t dir);	// next / previous channel in the zone, wraps
@@ -739,7 +779,7 @@ bool radio_dtmf_ready(void);
 #define RADIO_VOLUME_DEFAULT	8
 #define RADIO_VOLUME_KNOB	0xFF	// the debug link's "back to the knob" (and, with no knob, back to the default)
 typedef enum {
-	RVOL_NONE,		// the board has no hook: the volume works in analog hardware (the MCU can't set it)
+	RVOL_NONE,		// no hook: an analog volume the MCU can't set (it may still read the knob)
 	RVOL_KNOB,		// the MCU reads the knob and passes it on
 	RVOL_SOFT,		// no knob: the stored step
 	RVOL_OVERRIDE,		// a knob radio with the debug link's level in force
@@ -751,8 +791,8 @@ void radio_req_volume_override(int8_t step);
 // Hold the level in force and ignore the knob (the keys are locked), or follow the knob again: it takes the knob's
 // level at once. RAM only. Does nothing without a knob
 void radio_req_volume_hold(bool hold);
-// Whether the MCU reads a volume knob (the level follows it): Settings > Key lock > Knob when locked is shown only then
-bool radio_volume_knob(void);
+// Whether the level follows a volume knob the MCU reads: Settings > Key lock > Knob when locked is shown only then
+bool radio_volume_follows_knob(void);
 bool radio_volume_soft(void);
 // Whether the MCU can set the speaker level at all (the board has the hook): knob radios accept an override
 bool radio_volume_settable(void);
