@@ -266,6 +266,30 @@ bool p25_tsbk_parse(const uint8_t blk[P25_TSBK_BYTES], p25_tsbk_t *m)
 		m->u.rsp.info = arg(blk, 16, 24);
 		m->u.rsp.dst = arg(blk, 40, 24);
 		return true;
+#if CONFIG_P25_ROAM
+	// AABC-E 6.2.1.1, 6.2.20 and 6.2.23; original diagrams and literal vectors: p25-trunking.md 5.1.
+	case P25_OP_ACK_RSP_FNE:
+		m->kind = P25_TSBK_ACK;
+		m->u.rsp.aiv = arg(blk, 0, 1) != 0;
+		m->u.rsp.ex = arg(blk, 1, 1) != 0;
+		m->u.rsp.svc = (uint8_t)arg(blk, 2, 6);
+		m->u.rsp.info = arg(blk, 8, 32);
+		m->u.rsp.dst = arg(blk, 40, 24);
+		return true;
+	case P25_OP_LOC_REG_RSP:
+		m->kind = P25_TSBK_LOC_RSP;
+		m->u.loc.rv = (uint8_t)arg(blk, 6, 2);
+		m->u.loc.tg = (uint16_t)arg(blk, 8, 16);
+		m->u.loc.rfss = (uint8_t)arg(blk, 24, 8);
+		m->u.loc.site = (uint8_t)arg(blk, 32, 8);
+		m->u.loc.dst = arg(blk, 40, 24);
+		return true;
+	case P25_OP_U_REG_CMD:
+		m->kind = P25_TSBK_REG_CMD;
+		m->u.cmd.dst = arg(blk, 16, 24);
+		m->u.cmd.src = arg(blk, 40, 24);
+		return true;
+#endif
 	default:
 		m->kind = P25_TSBK_OTHER;
 		return false;
@@ -372,6 +396,29 @@ void p25_tsbk_make(const p25_tsbk_t *m, uint8_t blk[P25_TSBK_BYTES])
 		arg_put(blk, 24, 16, m->u.aff.tg);
 		arg_put(blk, 40, 24, m->u.aff.dst);
 		break;
+#if CONFIG_P25_ROAM
+	case P25_TSBK_ACK:
+		op = P25_OP_ACK_RSP_FNE;
+		arg_put(blk, 0, 1, m->u.rsp.aiv);
+		arg_put(blk, 1, 1, m->u.rsp.ex);
+		arg_put(blk, 2, 6, m->u.rsp.svc);
+		arg_put(blk, 8, 32, m->u.rsp.info);
+		arg_put(blk, 40, 24, m->u.rsp.dst);
+		break;
+	case P25_TSBK_LOC_RSP:
+		op = P25_OP_LOC_REG_RSP;
+		arg_put(blk, 6, 2, m->u.loc.rv);
+		arg_put(blk, 8, 16, m->u.loc.tg);
+		arg_put(blk, 24, 8, m->u.loc.rfss);
+		arg_put(blk, 32, 8, m->u.loc.site);
+		arg_put(blk, 40, 24, m->u.loc.dst);
+		break;
+	case P25_TSBK_REG_CMD:
+		op = P25_OP_U_REG_CMD;
+		arg_put(blk, 16, 24, m->u.cmd.dst);
+		arg_put(blk, 40, 24, m->u.cmd.src);
+		break;
+#endif
 	case P25_TSBK_DENY:
 	case P25_TSBK_QUEUED:
 		op = m->kind == P25_TSBK_DENY ? P25_OP_DENY_RSP : P25_OP_QUE_RSP;
@@ -412,6 +459,14 @@ void p25_isp_make(const p25_isp_t *m, uint8_t blk[P25_TSBK_BYTES])
 		arg_put(blk, 28, 12, m->sysid);
 		arg_put(blk, 40, 24, m->src);
 		break;
+#if CONFIG_P25_ROAM
+	case P25_ISP_LOC_REG_REQ:
+		arg_put(blk, 0, 8, m->capabilities & 0x7Fu);
+		arg_put(blk, 16, 8, m->lra);
+		arg_put(blk, 24, 16, m->tg);
+		arg_put(blk, 40, 24, m->src);
+		break;
+#endif
 	default:
 		break;
 	}
@@ -441,6 +496,14 @@ bool p25_isp_parse(const uint8_t blk[P25_TSBK_BYTES], p25_isp_t *m)
 		m->sysid = (uint16_t)arg(blk, 28, 12);
 		m->src = arg(blk, 40, 24);
 		break;
+#if CONFIG_P25_ROAM
+	case P25_ISP_LOC_REG_REQ:
+		m->capabilities = (uint8_t)arg(blk, 0, 8);
+		m->lra = (uint8_t)arg(blk, 16, 8);
+		m->tg = (uint16_t)arg(blk, 24, 16);
+		m->src = arg(blk, 40, 24);
+		break;
+#endif
 	default:
 		return false;
 	}

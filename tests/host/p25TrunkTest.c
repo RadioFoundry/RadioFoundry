@@ -1037,8 +1037,11 @@ static void testAccess(void)
 	m = last_isp();
 	CHECK(nsends == 5 && m.opcode == P25_ISP_GRP_AFF_REQ && m.tg == 100 && m.src == OUR_UNIT && m.sysid == SYSID &&
 	      view(&f).reg == P25_REG_AFF, "affiliation request");
-	answer_aff(&f, P25_RV_ACCEPT, 300);	// another group's answer: not ours
-	CHECK(view(&f).reg == P25_REG_AFF, "another group's affiliation ignored");
+	{
+		p25_tsbk_t other = { .kind = P25_TSBK_AFF_RSP, .u.aff = { .gav = P25_RV_ACCEPT, .tg = 100, .dst = OUR_UNIT + 1 } };
+		answer(&f, &other);
+		CHECK(view(&f).reg == P25_REG_AFF, "another unit's affiliation ignored");
+	}
 	answer_aff(&f, P25_RV_ACCEPT, 100);
 	v = view(&f);
 	CHECK(v.reg == P25_REG_READY && v.aff_tg == 100 && v.reg_ok == 1 && v.aff_ok == 1 &&
@@ -1162,7 +1165,7 @@ static void testAccess(void)
 
 	// The control channel lost and found on the same site: still registered. On another site: registers again
 	run_ms(&f, P25_FOLLOW_CC_LOST_MS + 50);
-	CHECK(view(&f).state == P25_FOLLOW_HUNT && view(&f).reg == P25_REG_READY, "lost: registration stands");
+	CHECK(view(&f).state == P25_FOLLOW_HUNT && (view(&f).reg == P25_REG_READY || view(&f).reg == P25_REG_LOCATION), "lost: registration retained but site proof expires");
 	retune(&f);
 	n = nsends;
 	site_ident(&f, 3);
@@ -1175,16 +1178,26 @@ static void testAccess(void)
 	site_ident(&f, 4);
 	cc_alive = true;
 	run_ms(&f, 500);
+#if CONFIG_P25_ROAM
+	CHECK(view(&f).reg == P25_REG_LOCATION && nsends == n + 1 && last_isp().opcode == P25_ISP_LOC_REG_REQ,
+	      "another site: location request retains registration");
+	{
+		p25_tsbk_t loc = { .kind = P25_TSBK_LOC_RSP,
+			.u.loc = { .rv = P25_RV_REFUSED, .tg = 100, .rfss = 1, .site = 4, .dst = OUR_UNIT } };
+		answer(&f, &loc);
+	}
+	CHECK(view(&f).reg == P25_REG_REFUSED, "location refused: explicit System wait");
+#else
 	CHECK(view(&f).reg == P25_REG_WAIT && nsends == n + 1 && last_isp().opcode == P25_ISP_U_REG_REQ, "another site: registers");
-	// Denied there: no talking, no more sends
 	answer_reg(&f, P25_RV_DENY);
 	v = view(&f);
 	CHECK(v.reg == P25_REG_DENIED && v.deny_svc == P25_ISP_U_REG_REQ && v.deny_reason == P25_RV_DENY &&
 	      p25_follow_can_talk(&v, cfg.flags) == P25_TALK_NOT_REG, "registration denied");
+#endif
 	n = nsends;
 	p25_follow_ptt(&f, true, now_ms);
 	run_ms(&f, 15000);
-	CHECK(nsends == n && view(&f).req == P25_REQ_IDLE, "denied: silent");
+	CHECK(nsends == n && view(&f).req == P25_REQ_IDLE, "refusal: silent");
 	p25_follow_ptt(&f, false, now_ms);
 	p25_follow_end(&f);
 
@@ -2795,16 +2808,374 @@ static void testFailedRetuneBackoff(void)
 	p25_follow_end(&f);
 }
 
+// Payloads transcribed independently from AABC-E figures cited in p25-trunking.md 5.1. The codec only seals CRC.
+static void literal(p25_follow_t *f, const char *hex)
+{
+	uint8_t b[P25_TSBK_BYTES] = { 0 };
+	for (unsigned n = 0; n < 10; n++) {
+		unsigned v;
+		sscanf(hex + n * 2, "%2x", &v);
+		b[n] = (uint8_t)v;
+	}
+	p25_tsbk_seal(b);
+	p25_follow_tsbk(f, b, NAC, now_ms);
+}
+
+#if CONFIG_P25_ZONE_SCAN
+static void testZoneAccessContext(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .tx_hz = HZ_CC1_IN } };
+	static const p25_follow_iden_t ids[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	static const uint16_t groups[] = { 200 };
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_BAD_CRC, .unit_id = OUR_UNIT, .talk_group = 100,
+		.zone_scan = true, .groups = groups, .ngroups = 1, .cc = cc, .ncc = 1, .iden = ids, .iden_set = 2 };
+	p25_follow_t f, ready;
+	uint8_t b[P25_TSBK_BYTES];
+	now_ms = 5000; nsends = ntunes = 0; cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms); retune(&f); site_ident(&f, 3); run_ms(&f, 300);
+	answer_reg(&f, P25_RV_ACCEPT); run_ms(&f, 200); answer_aff(&f, P25_RV_ACCEPT, 100);
+	CHECK(f.view.reg == P25_REG_READY, "zone access context fixture ready");
+	ready = f;
+	uint32_t base = now_ms;
+	for (unsigned fault = 0; fault < 6; fault++) {
+#if !CONFIG_P25_ROAM
+		if (fault == 1 || fault == 3) continue; // forced registration and selected-group affiliation are ROAM procedures
+#endif
+		f = ready; now_ms = base; nsends = 0; cfg.talk_group = 100;
+		mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 4444);
+		p25_follow_tsbk(&f, b, NAC, now_ms);
+		CHECK(f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "context %u buffers nonselected grant", fault);
+		if (fault == 0) {
+			mk_rfss(b, P25_TSBK_RFSS, SYSID, 4, 0x1004);
+			p25_follow_tsbk(&f, b, NAC, ++now_ms);
+		} else if (fault == 1) {
+#if CONFIG_P25_ROAM
+			p25_tsbk_t cmd = { .kind = P25_TSBK_REG_CMD, .last = true };
+			cmd.u.cmd.dst = OUR_UNIT;
+			p25_tsbk_make(&cmd, b); p25_follow_tsbk(&f, b, NAC, ++now_ms);
+#endif
+		} else if (fault == 3) {
+			cfg.talk_group = 101;
+			p25_follow_tick(&f, ++now_ms);
+		} else if (fault == 4) {
+			p25_follow_ptt(&f, true, ++now_ms);
+		} else {
+			if (fault == 2) mk_net(b, WACN, SYSID);
+			else mk_rfss(b, P25_TSBK_RFSS, SYSID, 4, 0x1004);
+			b[11] ^= 1;
+			uint8_t air[P25_UNIT_BYTES_MAX];
+			p25_unit_begin(air, p25_blocks_syms(1), NAC, P25_DUID_TSDU, P25_SS_IDLE); p25_block_put(air, 0, b);
+			p25_rx_unit_t u = { .duid = P25_DUID_TSDU, .nac = NAC, .nsyms = p25_blocks_syms(1), .air = air };
+			p25_follow_unit(&f, &u, ++now_ms); p25_follow_unit(&f, &u, ++now_ms);
+		}
+		CHECK(!f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "context %u discards buffered metadata without tuning", fault);
+		// A fresh grant during required access/proof cannot bypass the same admission used by replay.
+		mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 4444);
+		p25_follow_tsbk(&f, b, NAC, ++now_ms);
+		CHECK(!f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "context %u also gates fresh grant", fault);
+		if (fault == 2) {
+			// Fresh NET can restore this same System's proof, but cannot resurrect the retired old grant.
+			mk_net(b, WACN, SYSID); p25_follow_tsbk(&f, b, NAC, ++now_ms);
+		}
+		run_ms(&f, P25_FOLLOW_PRIORITY_MS + 10);
+		CHECK(!f.pending.valid && f.view.state == P25_FOLLOW_CONTROL, "context %u cannot replay after access tick", fault);
+		if (fault == 0) {
+#if CONFIG_P25_ROAM
+			CHECK(f.view.reg == P25_REG_LOCATION && last_isp().opcode == P25_ISP_LOC_REG_REQ,
+			      "same-CC site change performs location instead of following old grant");
+#else
+			run_ms(&f, 200); // full registration's random wait can be longer than the priority interval
+			CHECK(f.view.reg == P25_REG_WAIT && last_isp().opcode == P25_ISP_U_REG_REQ,
+			      "feature-off site change requires full registration before receive grants");
+#endif
+		}
+	}
+	// RX-only scanning retains best-effort receive admission without subscriber registration.
+	cfg.flags = P25_FOLLOW_BAD_CRC; cfg.talk_group = 100;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, ++now_ms); retune(&f); site_ident(&f, 3);
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 200, 4444); p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.pending.valid, "RX-only monitoring has no registration prerequisite");
+	run_ms(&f, P25_FOLLOW_PRIORITY_MS + 10);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 200, "RX-only buffered grant follows normally");
+#if CONFIG_P25_ROAM
+	// The existing current-site assigned WGID is the selected on-air group, without rewriting programming.
+	cfg.flags = P25_FOLLOW_TX; f = ready; now_ms = base; cfg.wacn = P25_FOLLOW_WACN_ANY;
+	f.view.aff_tg = 300; f.acc.selected_tg = 100;
+	mk_grant(b, P25_OP_GRP_V_GRANT, 0, 0x100A, 300, 4444); p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.state == P25_FOLLOW_VOICE && f.view.tg == 300 && !f.pending.valid && cfg.talk_group == 100 &&
+	      f.view.aff_tg == 300, "assigned selected working group gets immediate priority without changing selection");
+#endif
+}
+#endif
+
+static void testPlanProof(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .tx_hz = HZ_CC1_IN } };
+	p25_follow_cfg_t cfg = { .wacn = P25_FOLLOW_WACN_ANY, .sysid = SYSID, .nac = NAC,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_NO_REG, .unit_id = OUR_UNIT, .talk_group = 100, .cc = cc, .ncc = 1 };
+	p25_follow_t f;
+	uint8_t b[P25_TSBK_BYTES];
+	nsends = ntunes = 0; now_ms = 5000; cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms); retune(&f); site_ident(&f, 3);
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 762000000, 100); p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, 1100);
+	literal(&f, "BA000012F30102100470");
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 136000000, 20); p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.iden[2].base_hz == 762000000 && !f.view.sys_ok, "TX plan cannot be overwritten by pre-NET candidate in any build");
+	site_ident(&f, 3);
+	CHECK(f.iden[2].base_hz == 762000000, "returning origin retains its valid System plan");
+	cfg.flags |= P25_FOLLOW_BAD_CRC;
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 136000000, 20); b[11] ^= 1;
+	uint8_t air[P25_UNIT_BYTES_MAX];
+	p25_unit_begin(air, p25_blocks_syms(1), NAC, P25_DUID_TSDU, P25_SS_IDLE); p25_block_put(air, 0, b);
+	p25_rx_unit_t u = { .duid = P25_DUID_TSDU, .nac = NAC, .nsyms = p25_blocks_syms(1), .air = air };
+	p25_follow_unit(&f, &u, ++now_ms); p25_follow_unit(&f, &u, ++now_ms);
+	literal(&f, "B8000000000000000000");
+	CHECK(f.iden[2].base_hz == 762000000 && !f.view.unverified,
+	      "unrelated good block cannot rehabilitate a recovered bad-CRC TX plan in any build");
+	literal(&f, "BB0000A4C222F3100400");
+	CHECK(!(f.view.idens & 4), "changed actual System clears learned TX namespace in every build");
+	cfg.flags = 0;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, ++now_ms); retune(&f);
+	literal(&f, "BA000012F30102100470");
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 136000000, 20); p25_follow_tsbk(&f, b, NAC, now_ms);
+#if CONFIG_P25_ROAM
+	CHECK(!(f.view.idens & 4), "ROAM receive-only namespace waits for actual NET");
+#else
+	CHECK(f.iden[2].base_hz == 136000000, "legacy receive-only feature-off best-effort plan policy remains explicit");
+#endif
+}
+
+static void testFreshSiteProof(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1, .tx_hz = HZ_CC1_IN } };
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC,
+		.flags = P25_FOLLOW_TX | P25_FOLLOW_BAD_CRC, .unit_id = OUR_UNIT, .talk_group = 100, .cc = cc, .ncc = 1 };
+	p25_follow_t f;
+	nsends = ntunes = 0; now_ms = 5000; cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms); retune(&f); site_ident(&f, 3); run_ms(&f, 300);
+	answer_reg(&f, P25_RV_ACCEPT); run_ms(&f, 200); answer_aff(&f, P25_RV_ACCEPT, 100);
+	CHECK(f.view.reg == P25_REG_READY, "fresh-site proof fixture is registered");
+	uint8_t b[P25_TSBK_BYTES] = { 0xBA,0,0x78,0x12,0xF3,1,2,0x10,4,0x70 };
+	p25_tsbk_seal(b); b[11] ^= 1;
+	uint8_t air[P25_UNIT_BYTES_MAX];
+	p25_unit_begin(air, p25_blocks_syms(1), NAC, P25_DUID_TSDU, P25_SS_IDLE); p25_block_put(air, 0, b);
+	p25_rx_unit_t u = { .duid = P25_DUID_TSDU, .nac = NAC, .nsyms = p25_blocks_syms(1), .air = air };
+	p25_follow_unit(&f, &u, ++now_ms); p25_follow_unit(&f, &u, ++now_ms);
+	literal(&f, "B8000000000000000000");
+	unsigned before = nsends;
+	p25_follow_ptt(&f, true, now_ms); run_ms(&f, 200);
+	CHECK(f.view.crc_taken == 1 && !f.view.unverified && f.view.site == 3 &&
+	      p25_follow_can_talk(&f.view, cfg.flags) != P25_TALK_OK && nsends == before,
+	      "bad-CRC RFSS cannot mutate accepted site or let unrelated good block reopen TX");
+#if CONFIG_P25_ROAM
+	CHECK(!f.view.location_ok && f.view.reg == P25_REG_LOCATION && f.acc.reg_lra == 1,
+	      "location proof requires its own new valid RFSS, preserving previous LRA");
+#endif
+}
+
+#if CONFIG_P25_ROAM
+static void testMobility(void)
+{
+	static const p25_follow_cc_t cc[] = {
+		{ .hz = HZ_CC1, .tx_hz = HZ_CC1_IN }, { .hz = HZ_CC2, .tx_hz = HZ_CC1_IN },
+		{ .hz = HZ_CC2 + 12500, .tx_hz = HZ_CC1_IN } };
+	static const p25_follow_iden_t iden[P25_FOLLOW_IDENS] = {
+		[1] = { .base_hz = 851006250u, .spacing_hz = 6250, .tx_off_hz = -45000000 } };
+	p25_follow_cfg_t cfg = { .wacn = WACN, .sysid = SYSID, .nac = NAC, .flags = P25_FOLLOW_TX,
+		.unit_id = 0x123456, .talk_group = 0x2345, .cc = cc, .ncc = 3, .iden = iden, .iden_set = 2, .roam_dbm = -100 };
+	p25_follow_t f, ready;
+	uint8_t b[P25_TSBK_BYTES];
+	p25_isp_t isp;
+	p25_tsbk_t parsed;
+	uint32_t base;
+	unsigned n;
+
+	// Independent nonzero previous-LRA/capabilities encoding vector (AABC-E 6.1.18.1).
+	isp = (p25_isp_t){ .opcode = P25_ISP_LOC_REG_REQ, .capabilities = 5, .lra = 0x78, .tg = 0x2345, .src = 0x123456 };
+	p25_isp_make(&isp, b);
+	CHECK(!memcmp(b, (uint8_t[]){ 0xAD,0,5,0,0x78,0x23,0x45,0x12,0x34,0x56 }, 10), "literal LOC request layout");
+	CHECK(p25_isp_parse(b, &isp) && isp.lra == 0x78 && isp.capabilities == 5, "LOC request parse");
+	memcpy(b, (uint8_t[]){ 0xAB,0,0,0x23,0x45,1,2,0x12,0x34,0x56 }, 10);
+	CHECK(p25_tsbk_parse(b, &parsed) && parsed.kind == P25_TSBK_LOC_RSP && parsed.u.loc.dst == 0x123456 &&
+	      parsed.u.loc.tg == 0x2345 && parsed.u.loc.site == 2, "literal LOC response layout");
+
+	nsends = ntunes = 0;
+	now_ms = 5000; cc_alive = false;
+	p25_follow_begin(&f, &cfg, &ahooks, NULL, now_ms); retune(&f);
+	literal(&f, "BB0000A4C212F3100400"); // NET: WACN A4C21, SYS 2F3
+	literal(&f, "BA000012F30101100470"); // RFSS1 Site1, active, LRA 0 is valid
+	run_ms(&f, 300);
+	{
+		p25_follow_t pending = f;
+		literal(&f, "AC0002F3123456654321");
+		CHECK(f.view.reg == P25_REG_UNSUPPORTED && f.view.mobility == P25_MOBILITY_MAPPING && !f.view.wuid,
+		      "home WUID remapping is explicit unsupported, never silently adopted");
+		f = pending;
+	}
+	literal(&f, "AC0002F3123456123456"); // home UID123456 -> working WUID123456
+	run_ms(&f, 200);
+	CHECK(last_isp().src == 0x123456 && last_isp().tg == 0x2345, "affiliation uses assigned WUID, selected group remains provisioned");
+	literal(&f, "A8000034562345123456"); // assigned WGID2345, AGID3456
+	CHECK(f.view.reg == P25_REG_READY && f.view.wuid == 0x123456 && f.view.aff_tg == 0x2345 &&
+	      f.view.agid == 0x3456 && f.view.location_ok && cfg.unit_id == 0x123456 && cfg.talk_group == 0x2345,
+	      "accepted working IDs have one runtime owner, programming unchanged");
+	ready = f; base = now_ms;
+
+	for (unsigned order = 0; order < 2; order++) {
+		f = ready; now_ms = base; nsends = 0;
+		run_ms(&f, 1100);
+		CHECK(f.view.reg == P25_REG_LOCATION && f.acc.registered && !f.view.location_ok &&
+		      p25_follow_can_talk(&f.view, cfg.flags) == P25_TALK_NO_CC, "loss retains context, expires location proof");
+		if (order == 0)
+			literal(&f, "BB0000A4C212F3100400");
+		else
+			literal(&f, "BA007812F30102100470");
+		p25_follow_ptt(&f, true, now_ms);
+		CHECK(p25_follow_can_talk(&f.view, cfg.flags) != P25_TALK_OK && nsends == 0,
+		      "split NET/RFSS order %u cannot open TX", order);
+		p25_follow_ptt(&f, false, now_ms);
+		literal(&f, order ? "BB0078A4C212F3100400" : "BA000012F30102100470");
+		run_ms(&f, 200);
+		isp = last_isp();
+		CHECK(isp.opcode == P25_ISP_LOC_REG_REQ && isp.src == 0x123456 && isp.tg == 0x2345 && isp.lra == 0 &&
+		      f.view.wuid == 0x123456 && f.view.agid == 0x3456 && f.acc.registered,
+		      "same System move uses previous LRA zero and retained assigned IDs");
+		literal(&f, "A000EDA4C222F3123456");
+		CHECK(!f.view.ack_wait, "ACK with another home identity is ignored");
+		literal(&f, "A000EDA4C212F3123456");
+		CHECK(f.view.ack_wait, "literal extended ACK validates known home identity");
+		literal(&f, "A0002D00000000123456");
+		n = nsends; cc_alive = true; run_ms(&f, 2000); cc_alive = false;
+		CHECK(f.view.ack_wait && nsends == n && f.view.reg == P25_REG_LOCATION, "ACK stops random location retries");
+		literal(&f, "AB000023450102123456");
+		CHECK(f.view.reg == P25_REG_READY && f.view.location_ok && f.view.loc_ok == 1 &&
+		      f.view.wuid == 0x123456 && f.view.agid == 0x3456 && f.view.aff_tg == 0x2345 && f.acc.reg_lra == (order ? 0x78 : 0),
+		      "location accept restores TX with original affiliation");
+		p25_follow_ptt(&f, true, now_ms); run_ms(&f, 200);
+		CHECK(last_isp().src == 0x123456 && last_isp().tg == 0x2345, "voice request uses assigned WUID/WGID");
+		literal(&f, "800000100A2345123456");
+		CHECK(f.view.req == P25_REQ_TALK && f.view.src == 0x123456 && f.view.tg == 0x2345,
+		      "grant matching and voice tune use assigned IDs");
+	}
+
+	// Location has the normal bounded random retry round before reacquisition.
+	f = ready; now_ms = base; nsends = 0; run_ms(&f, 1100);
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470");
+	literal(&f, "AB000023450102123456");
+	CHECK(f.view.reg == P25_REG_LOCATION && !f.view.location_ok, "location response before request send is ignored");
+	cc_alive = true; run_ms(&f, 5000); cc_alive = false;
+	CHECK(nsends == P25_ACC_TRIES && f.view.timeouts == 1 && f.view.state == P25_FOLLOW_HUNT && f.acc.registered,
+	      "unanswered location exhausts bounded retry round, retaining context without TX");
+
+	// No response after ACK is bounded, without any random retransmission during the wait.
+	f = ready; now_ms = base; nsends = 0; run_ms(&f, 1100);
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470"); run_ms(&f, 200);
+	literal(&f, "A0002D00000000123456"); n = nsends;
+	cc_alive = true; run_ms(&f, P25_ACC_ACK_MS + 10); cc_alive = false;
+	CHECK(nsends == n && !f.view.ack_wait && f.view.timeouts && f.view.state == P25_FOLLOW_HUNT && f.acc.registered,
+	      "ACK response timer expires into reacquisition with retained System context");
+
+	// The selected group can change before the next tick; PTT must affiliate first, never use the old acceptance.
+	f = ready; now_ms = base; nsends = 0; cfg.talk_group = 0x2346;
+	p25_follow_ptt(&f, true, now_ms); run_ms(&f, 200);
+	CHECK(f.view.reg == P25_REG_AFF && f.view.req == P25_REQ_IDLE && last_isp().opcode == P25_ISP_GRP_AFF_REQ &&
+	      last_isp().tg == 0x2346 && last_isp().src == 0x123456, "new selected group requires its own accepted affiliation");
+	literal(&f, "A8000034572346123456");
+	CHECK(f.view.reg == P25_REG_READY && f.acc.selected_tg == 0x2346 && f.view.aff_tg == 0x2346,
+	      "new affiliation records assigned group independently of selected group");
+	cfg.talk_group = 0x2345;
+
+	// Registered quality surveys have a short configured visit and cannot interrupt an access request or voice.
+	f = ready; now_ms = base + 31000; f.t_good = now_ms; f.weak = true; f.t_weak = now_ms - 3001;
+	p25_follow_ptt(&f, true, now_ms); p25_follow_signal(&f, -130, now_ms);
+	CHECK(!f.roaming && f.view.req == P25_REQ_WAIT, "pending voice request inhibits surveys");
+	f = ready; f.view.state = P25_FOLLOW_VOICE; f.weak = true; f.t_weak = now_ms - 3001;
+	p25_follow_signal(&f, -130, now_ms);
+	CHECK(!f.roaming, "active voice inhibits registered surveys");
+	f = ready; f.t_good = now_ms; f.weak = true; f.t_weak = now_ms - 3001;
+	p25_follow_signal(&f, -130, now_ms); retune(&f);
+	CHECK(f.roaming && f.view.reg == P25_REG_LOCATION && f.acc.registered, "idle home subscriber may survey with context retained");
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470");
+	now_ms += 100; p25_follow_signal(&f, -80, now_ms);
+	p25_follow_tick(&f, now_ms);
+	CHECK(!f.roaming && f.best_cc == 1 && f.view.tuning && !f.view.location_ok,
+	      "registered departure with three candidates returns below total TADJ_SITE, without accumulating visits");
+
+	// Refusal, denial, local service, forced registration and isolated exit are distinct.
+	for (unsigned rv = 1; rv <= 3; rv++) {
+		f = ready; now_ms = base; nsends = 0; run_ms(&f, 1100);
+		literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470"); run_ms(&f, 200);
+		literal(&f, rv == 1 ? "AB000123450102123456" : rv == 2 ? "AB000223450102123456" : "AB000323450102123456");
+		CHECK(p25_follow_can_talk(&f.view, cfg.flags) != P25_TALK_OK &&
+		      (rv == 1 ? f.view.reg == P25_REG_UNSUPPORTED : rv == 2 ? f.view.state == P25_FOLLOW_HUNT && f.acc.ndenied == 1 :
+		       f.view.reg == P25_REG_REFUSED), "location outcome %u is distinct and blocks TX", rv);
+		if (rv == 2) {
+			uint32_t loss = f.t_nocc;
+			n = nsends;
+			for (unsigned retry = 0; retry < 4; retry++) {
+				retune(&f);
+				literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470");
+			}
+			CHECK(nsends == n && f.t_nocc == loss && f.view.state == P25_FOLLOW_HUNT,
+			      "denied candidate cannot send or reset hunt loss/backoff lifetime");
+		}
+	}
+	f = ready; now_ms = base; literal(&f, "AD000000123457654321");
+	CHECK(f.view.reg == P25_REG_READY, "forced registration for another WUID is ignored");
+	f = ready; now_ms = base; literal(&f, "AD000000123456654321");
+	CHECK(f.view.reg == P25_REG_WAIT && !f.acc.registered && !f.view.wuid && !f.view.aff_tg,
+	      "forced registration discards assigned mappings and affiliates again");
+	f = ready; now_ms = base; f.acc.reg_isolated = true; run_ms(&f, 1100);
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470");
+	CHECK(f.view.reg == P25_REG_WAIT && !f.acc.registered, "leaving isolated site forces full registration");
+
+	// Unconfirmed foreign candidates never own the serving System's learned namespace, even if NET never arrives.
+	f = ready; now_ms = base;
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 762000000, 100); p25_follow_tsbk(&f, b, NAC, now_ms);
+	run_ms(&f, 1100);
+	literal(&f, "BA000012F30102100470");
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 136000000, 20); p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.iden[2].base_hz == 762000000 && !f.view.sys_ok, "RFSS+foreign IDEN before NET cannot poison retained plan");
+	// The candidate times out. Origin then supplies its own current NET and RFSS.
+	run_ms(&f, P25_FOLLOW_ID_MS + 100);
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30101100470");
+	CHECK(f.iden[2].base_hz == 762000000 && f.view.reg == P25_REG_READY && f.view.location_ok,
+	      "origin reacquisition retains its own valid learned plan after unconfirmed candidate");
+
+	// Wildcard acquisition cannot establish a home SUID for abbreviated location registration.
+	cfg.wacn = P25_FOLLOW_WACN_ANY;
+	f = ready; now_ms = base; run_ms(&f, 1100);
+	literal(&f, "BB0000A4C212F3100400"); literal(&f, "BA000012F30102100470");
+	CHECK(f.view.reg == P25_REG_UNSUPPORTED && f.view.mobility == P25_MOBILITY_HOME_UNKNOWN,
+	      "wildcard same-System move has explicit unsupported home identity");
+	f = ready; now_ms = base;
+	mk_iden(b, P25_OP_IDEN_UP, 2, 0, 762000000, 100); p25_follow_tsbk(&f, b, NAC, now_ms);
+	CHECK(f.view.idens & 4, "old actual System has learned identifier");
+	run_ms(&f, 1100);
+	literal(&f, "BB0000A4C222F3100400"); // changed actual WACN under Any
+	CHECK(!f.acc.registered && !f.view.wuid && !f.view.aff_tg && !f.view.agid && !(f.view.idens & 4) && (f.view.idens & 2),
+	      "changed actual System isolates IDs, affiliation and learned namespace, retains programmed plan");
+	cfg.wacn = WACN;
+}
+#endif
+
 int main(void)
 {
 	pulse_init();
 #if CONFIG_P25_ZONE_SCAN
 	testZoneScan();
+	testZoneAccessContext();
 #endif
 	testExplicitStatus();
 #if CONFIG_P25_ROAM
 	testRoam();
+	testMobility();
 #endif
+	testFreshSiteProof();
+	testPlanProof();
 	testLayouts();
 	testIdentifierOffsets();
 	testInbound();

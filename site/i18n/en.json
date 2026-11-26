@@ -1923,7 +1923,7 @@
  "editor.p25.hold": "Hold after a call (s)",
  "editor.p25.hold_help": "How long the radio stays on the voice channel after a call, for a reply. 0: back to the control channel at once.",
  "editor.p25.roam_dbm": "Change site below (dBm)",
- "editor.p25.roam_dbm_help": "With quality-aware receive-only roaming firmware: search after 3 seconds of weak signal or poor control decoding. Prefer better decoding; use signal strength for close comparisons. 0 disables both triggers.",
+ "editor.p25.roam_dbm_help": "A negative value searches after 3 seconds of weak signal or poor control decoding; 0 disables both triggers. Prefer better decoding, then signal strength for close comparisons. Registered home-System moves also require location-registration firmware, specified WACN/System ID, and idle receive. Older receive-only roaming firmware does not support registered moves.",
  "editor.p25.site_no": "Site",
  "editor.p25.rfss": "RFSS",
  "editor.p25.site": "Site ID",

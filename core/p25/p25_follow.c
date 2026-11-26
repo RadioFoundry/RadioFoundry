@@ -9,7 +9,7 @@
 #include <string.h>
 
 // It sits in memory the caller places, with the engine; the tightest radio lends both from its vocoder
-_Static_assert(sizeof(p25_follow_t) <= 480 + (CONFIG_P25_ROAM ? 48 : 0) + (CONFIG_P25_ZONE_SCAN ? 24 : 0),
+_Static_assert(sizeof(p25_follow_t) <= 488 + (CONFIG_P25_ROAM ? 96 : 0) + (CONFIG_P25_ZONE_SCAN ? 24 : 0),
 	       "the trunking follower grew past its budget");
 
 #define IDEN_VALID	0x01
@@ -165,6 +165,25 @@ static void iden_learn(p25_follow_t *f, const p25_iden_air_t *a)
 	f->view.idens |= (uint16_t)(1u << (a->id & 15));
 }
 
+// Preserve programmed seeds; learned rows and offsets belong to one confirmed actual System.
+static void iden_reset_system(p25_follow_t *f)
+{
+	f->view.idens = 0;
+	for (unsigned n = 0; n < P25_FOLLOW_IDENS; n++) {
+		p25_follow_iden_e *i = &f->iden[n];
+		if (!(i->flags & IDEN_PROG))
+			memset(i, 0, sizeof *i);
+		else {
+			if (!(i->flags & IDEN_OFF_PROG)) {
+				i->tx_off = 0;
+				i->flags &= (uint8_t)~(IDEN_OFF | IDEN_OFF_STEP);
+			}
+			f->view.idens |= (uint16_t)(1u << n);
+		}
+	}
+	f->nlearn = f->view.learned = 0;
+}
+
 // ── The control channel list: the programmed ones, then the ones learned off air ──
 static uint8_t cc_count(const p25_follow_t *f)
 {
@@ -218,6 +237,9 @@ static void cc_learn(p25_follow_t *f, uint16_t ch)
 // ── Hunt ──
 static uint16_t cc_nac(const p25_follow_t *f);
 static void hunt_try(p25_follow_t *f, uint32_t now);
+#if CONFIG_P25_ROAM
+static bool home_system(const p25_follow_t *f);
+#endif
 
 #if CONFIG_P25_ROAM
 static void roam_finish(p25_follow_t *f, uint32_t now)
@@ -296,6 +318,15 @@ static uint16_t cc_nac(const p25_follow_t *f)
 static void roam_sample(p25_follow_t *f, uint32_t now)
 {
 	uint8_t score = quality_score(f);
+#if CONFIG_P25_ROAM
+	if (f->acc.registered) {
+		// A registered visit is bounded by TADJ_SITE. Its short CRC sample is only a selection heuristic;
+		// reacquisition and location registration still have to succeed before user TX.
+		unsigned total = (unsigned)f->quality_good + f->quality_bad;
+		score = f->have_id && f->acc.site_heard && f->quality_good >= 2 && total ?
+			(uint8_t)((unsigned)f->quality_good * 100 / total) : 0;
+	}
+#endif
 	bool fresh = f->signal_valid && !elapsed(now, f->t_signal, 500);
 	// A clearly cleaner site may be weaker. RSSI still supplies a floor; a
 	// stronger site with essentially equal decoding must clear a 6 dB margin.
@@ -309,6 +340,10 @@ static void roam_sample(p25_follow_t *f, uint32_t now)
 		f->best_cc = f->view.cc;
 		f->best_quality = score;
 		f->best_dbm = f->signal_dbm;
+	}
+	if (f->acc.registered) {
+		roam_finish(f, now); // one adjacent candidate per registered departure, within the total scan budget
+		return;
 	}
 	hunt_next(f, now);
 }
@@ -348,6 +383,24 @@ static void accept(p25_follow_t *f, uint16_t nac, uint32_t now)
 static bool any_wacn(const p25_follow_cfg_t *c) { return c->wacn > 0xFFFFFu; }
 static bool any_sysid(const p25_follow_cfg_t *c) { return c->sysid > 0xFFFu; }
 
+static uint32_t working_unit(const p25_follow_t *f)
+{
+#if CONFIG_P25_ROAM
+	if (f->acc.registered)
+		return f->view.wuid;
+#endif
+	return f->cfg->unit_id;
+}
+
+static uint16_t working_group(const p25_follow_t *f)
+{
+#if CONFIG_P25_ROAM
+	if (f->acc.registered && f->acc.selected_tg == f->cfg->talk_group)
+		return f->view.aff_tg;
+#endif
+	return f->cfg->talk_group;
+}
+
 // ── Following ──
 static bool group_wanted(const p25_follow_t *f, uint16_t tg, uint32_t now)
 {
@@ -356,8 +409,12 @@ static bool group_wanted(const p25_follow_t *f, uint16_t tg, uint32_t now)
 	if (!tg)
 		return false;
 #if CONFIG_P25_ZONE_SCAN
-	if (c->zone_scan && tg == c->talk_group)
+	if (c->zone_scan && tg == working_group(f))
 		return true;	// the selected group wins even during another group's reply hold
+#endif
+#if CONFIG_P25_ROAM
+	if (f->acc.registered && (tg == f->view.aff_tg || (f->view.agid && tg == f->view.agid)))
+		return true;
 #endif
 	if (f->hold_tg && c->hold_ms && !elapsed(now, f->t_hold, c->hold_ms))
 		return tg == f->hold_tg;
@@ -375,6 +432,27 @@ static void refuse(p25_follow_t *f, uint8_t why, uint16_t tg)
 	f->view.refused_tg = tg;
 }
 
+// Fresh and buffered receive grants share the subscriber's current serving/access context. A configured TX
+// profile does not become an RX-only profile merely because a recovered block temporarily disables tx_on.
+static bool receive_grant_ok(const p25_follow_t *f)
+{
+	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+		return false;
+	if ((f->cfg->flags & P25_FOLLOW_TX) && f->cfg->unit_id && !f->acc.blocked) {
+		if (f->view.unverified || !f->view.sys_ok)
+			return false;
+		if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
+			if (f->view.reg != P25_REG_READY)
+				return false;
+#if CONFIG_P25_ROAM
+			if (!f->view.location_ok)
+				return false;
+#endif
+		}
+	}
+	return true;
+}
+
 // One grant (a group's or a unit to unit call's) on channel ch: followed if wanted and playable. True if followed
 static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16_t tg, uint32_t dst, uint32_t src,
 		     bool has_svc, uint8_t svc, uint32_t now)
@@ -384,12 +462,14 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 	bool update = op != P25_OP_GRP_V_GRANT && op != P25_OP_UU_V_GRANT;
 	uint32_t hz;
 
+	if (!receive_grant_ok(f))
+		return false;
 	if (unit) {
-		if ((c->flags & P25_FOLLOW_NO_UNIT) || !c->unit_id || (dst != c->unit_id && src != c->unit_id))
+		if ((c->flags & P25_FOLLOW_NO_UNIT) || !working_unit(f) || (dst != working_unit(f) && src != working_unit(f)))
 			return false;
 	} else if (!group_wanted(f, tg, now)) {
 		return false;
-	} else if (src && src == c->unit_id) {
+	} else if (src && src == working_unit(f)) {
 		// A group call that names us as its talker is not one to listen to: the site repeating the grant of a call
 		// we don't hold (its answer to our request is acc_grant's), or another unit with our identity
 		return false;
@@ -397,7 +477,7 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 	// The call just left on its terminator: its updates go on a little while, and so do the grants of our own call
 	// (we talked, the site repeats them). An encrypted call skipped: its grants repeated and its updates (which carry
 	// no service options) are skipped for as long as they come
-	if ((update || f->left_enc || (src && src == c->unit_id)) && ch == f->left_ch && tg == f->left_tg && !elapsed(now, f->t_left, P25_FOLLOW_REJOIN_MS)) {
+	if ((update || f->left_enc || (src && src == working_unit(f))) && ch == f->left_ch && tg == f->left_tg && !elapsed(now, f->t_left, P25_FOLLOW_REJOIN_MS)) {
 		if (f->left_enc)
 			f->t_left = now;
 		return false;
@@ -426,7 +506,7 @@ static bool consider(p25_follow_t *f, uint8_t op, bool unit, uint16_t ch, uint16
 		return false;
 	}
 #if CONFIG_P25_ZONE_SCAN
-	if (c->zone_scan && !unit && tg != c->talk_group && !f->pending.release) {
+	if (c->zone_scan && !unit && tg != working_group(f) && !f->pending.release) {
 		if (!f->pending.valid) {
 			f->pending.since = now;
 			f->pending.src = src;
@@ -500,6 +580,13 @@ static uint32_t acc_rand(p25_follow_t *f, uint32_t span)
 
 static void acc_queue(p25_follow_t *f, uint8_t op, uint32_t now, uint32_t wait)
 {
+#if CONFIG_P25_ZONE_SCAN
+	f->pending.valid = false;
+#endif
+	f->acc.generation++;
+#if CONFIG_P25_ROAM
+	f->view.ack_wait = false;
+#endif
 	f->acc.pend = op;
 	f->acc.tries = 0;
 	f->acc.sent = false;
@@ -508,6 +595,13 @@ static void acc_queue(p25_follow_t *f, uint8_t op, uint32_t now, uint32_t wait)
 
 static void acc_drop(p25_follow_t *f)
 {
+#if CONFIG_P25_ZONE_SCAN
+	f->pending.valid = false;
+#endif
+	f->acc.generation++;
+#if CONFIG_P25_ROAM
+	f->view.ack_wait = false;
+#endif
 	f->acc.pend = NO_OP;
 	f->acc.sent = false;
 }
@@ -539,6 +633,13 @@ static void reg_start(p25_follow_t *f, uint32_t now)
 		f->view.req = P25_REQ_TIMEOUT;	// (registration takes the inbound side: a request in hand is dropped)
 	f->view.reg = P25_REG_WAIT;
 	f->view.aff_tg = 0;
+#if CONFIG_P25_ROAM
+	a->registered = false;
+	f->view.wuid = 0;
+	f->view.agid = 0;
+	f->view.location_ok = false;
+	f->view.mobility = P25_MOBILITY_OK;
+#endif
 	a->reg_sysid = f->view.sysid;
 	a->reg_rfss = f->view.rfss;
 	a->reg_site = f->view.site;
@@ -548,6 +649,11 @@ static void reg_start(p25_follow_t *f, uint32_t now)
 static void aff_start(p25_follow_t *f, uint32_t now)
 {
 	if (!f->cfg->talk_group) {
+		f->view.aff_tg = 0;
+#if CONFIG_P25_ROAM
+		f->view.agid = 0;
+		f->acc.selected_tg = 0;
+#endif
 		f->view.reg = P25_REG_READY;	// nothing to affiliate to
 		acc_drop(f);
 		return;
@@ -555,6 +661,79 @@ static void aff_start(p25_follow_t *f, uint32_t now)
 	f->view.reg = P25_REG_AFF;
 	acc_queue(f, P25_ISP_GRP_AFF_REQ, now, acc_rand(f, P25_ACC_GAP_MS));
 }
+
+#if CONFIG_P25_ROAM
+static bool home_system(const p25_follow_t *f)
+{
+	return !any_wacn(f->cfg) && !any_sysid(f->cfg) && f->cfg->wacn == f->acc.reg_wacn &&
+		f->cfg->sysid == f->acc.reg_sysid;
+}
+
+static void unsupported(p25_follow_t *f, uint8_t why)
+{
+	f->view.reg = P25_REG_UNSUPPORTED;
+	f->view.mobility = why;
+	f->view.location_ok = false;
+	acc_drop(f);
+}
+
+// Learned identifiers belong to the actual System, never merely the programmed wildcard. Programmed seeds remain.
+static void system_changed(p25_follow_t *f, uint32_t wacn, uint16_t sysid)
+{
+	p25_follow_acc_t *a = &f->acc;
+	if (a->reg_wacn == wacn && a->reg_sysid == sysid)
+		return;
+	a->reg_wacn = wacn;
+	a->reg_sysid = sysid;
+	a->registered = false;
+	a->ndenied = 0;
+	f->view.wuid = f->view.agid = f->view.aff_tg = 0;
+	f->view.location_ok = false;
+	f->view.mobility = P25_MOBILITY_OK;
+	f->view.req = P25_REQ_IDLE;
+	iden_reset_system(f);
+	acc_drop(f);
+	if (!a->blocked && !(f->cfg->flags & P25_FOLLOW_NO_REG) && tx_on(f))
+		f->view.reg = P25_REG_IDLE;
+}
+
+static bool site_denied(const p25_follow_t *f)
+{
+	uint16_t site = (uint16_t)(f->view.rfss << 8 | f->view.site);
+	for (unsigned n = 0; n < f->acc.ndenied; n++)
+		if (f->acc.denied_site[n] == site)
+			return true;
+	return false;
+}
+
+static void deny_site(p25_follow_t *f, uint32_t now)
+{
+	if (!site_denied(f)) {
+		if (f->acc.ndenied == P25_FOLLOW_LEARN) {
+			unsupported(f, P25_MOBILITY_DENY_FULL);
+			return;
+		}
+		f->acc.denied_site[f->acc.ndenied++] = (uint16_t)(f->view.rfss << 8 | f->view.site);
+	}
+	f->view.reg = P25_REG_DENIED;
+	f->good = (uint8_t)((f->view.cc + 1) % cc_count(f));
+	hunt_start(f, now);
+}
+
+static void located(p25_follow_t *f, uint32_t now)
+{
+	p25_follow_acc_t *a = &f->acc;
+	a->reg_rfss = f->view.rfss;
+	a->reg_site = f->view.site;
+	a->reg_lra = f->view.lra;
+	a->reg_isolated = f->view.isolated;
+	f->view.location_ok = true;
+	f->view.reg = P25_REG_READY;
+	acc_drop(f);
+	if (a->selected_tg != f->cfg->talk_group)
+		aff_start(f, now);
+}
+#endif
 
 // The control channel was lost: what waited for it ends. A registration that was accepted stands; one under way
 // starts again on the next control channel
@@ -566,6 +745,11 @@ static void acc_lost(p25_follow_t *f)
 	a->cc_chan = 0;
 	f->view.sys_ok = false;	// (the next control channel is verified again)
 	f->view.rfss = f->view.site = 0xFF;
+#if CONFIG_P25_ROAM
+	f->view.location_ok = false;
+	if (a->registered && !a->blocked && f->view.reg != P25_REG_REFUSED && f->view.reg != P25_REG_UNSUPPORTED)
+		f->view.reg = P25_REG_LOCATION; // fresh NET and RFSS must resolve this before user TX
+#endif
 	if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
 		f->view.req = P25_REQ_TIMEOUT;
 	if (f->view.reg == P25_REG_WAIT || f->view.reg == P25_REG_AFF)
@@ -574,12 +758,52 @@ static void acc_lost(p25_follow_t *f)
 }
 
 // The site's identity heard: registered elsewhere, register here
-static void acc_site(p25_follow_t *f)
+static void acc_site(p25_follow_t *f, uint32_t now)
 {
 	p25_follow_acc_t *a = &f->acc;
 	uint8_t r = f->view.reg;
 
+#if CONFIG_P25_ROAM
+	if (f->view.unverified)
+		return;
+#endif
 	a->site_heard = true;
+#if CONFIG_P25_ROAM
+	if (!f->view.sys_ok || f->view.nac != a->site_nac || a->blocked || r == P25_REG_OFF)
+		return;
+	if (site_denied(f)) {
+		f->view.reg = P25_REG_DENIED;
+		acc_drop(f);
+		f->view.state = P25_FOLLOW_HUNT;
+		hunt_next(f, now); // already denied: preserve this hunt pass, backoff and no-control timer
+		return;
+	}
+	if (r == P25_REG_REFUSED || r == P25_REG_UNSUPPORTED)
+		return;
+	if (a->registered) {
+		if (a->reg_rfss == f->view.rfss && a->reg_site == f->view.site &&
+		    !(a->reg_isolated && !f->view.isolated)) {
+			if (r == P25_REG_LOCATION && a->pend == NO_OP)
+				located(f, now);
+			return;
+		}
+		if (a->reg_isolated && !f->view.isolated) {
+			reg_start(f, now); // leaving isolated operation requires full registration
+			return;
+		}
+		if (!home_system(f)) {
+			unsupported(f, P25_MOBILITY_HOME_UNKNOWN);
+			return;
+		}
+		f->view.location_ok = false;
+		f->view.reg = P25_REG_LOCATION;
+		if (a->pend != P25_ISP_LOC_REG_REQ)
+			acc_queue(f, P25_ISP_LOC_REG_REQ, now, acc_rand(f, P25_ACC_GAP_MS));
+		return;
+	}
+#else
+	(void)now;
+#endif
 	if (f->acc.blocked || r == P25_REG_OFF || r == P25_REG_IDLE || r == P25_REG_NO_TX)
 		return;
 	if (a->reg_site == 0xFF) {
@@ -622,6 +846,16 @@ static void acc_send(p25_follow_t *f, uint32_t now)
 	m.opcode = a->pend;
 	m.src = c->unit_id;
 	m.tg = c->talk_group;
+#if CONFIG_P25_ROAM
+	if (a->pend != P25_ISP_U_REG_REQ)
+		m.src = working_unit(f);
+	if (a->pend == P25_ISP_LOC_REG_REQ) {
+		m.tg = f->view.aff_tg;
+		m.lra = a->reg_lra; // zero is a valid LRA, never an unknown sentinel
+	} else if (a->pend == P25_ISP_GRP_V_REQ) {
+		m.tg = working_group(f);
+	}
+#endif
 	m.wacn = f->view.wacn <= 0xFFFFFu ? f->view.wacn : any_wacn(c) ? 0 : c->wacn;
 	m.sysid = f->view.sysid <= 0xFFFu ? f->view.sysid : any_sysid(c) ? 0 : c->sysid;
 	p25_isp_make(&m, blk);
@@ -631,6 +865,10 @@ static void acc_send(p25_follow_t *f, uint32_t now)
 		count8(&f->view.reg_tx);
 	else if (a->pend == P25_ISP_GRP_AFF_REQ)
 		count8(&f->view.aff_tx);
+#if CONFIG_P25_ROAM
+	else if (a->pend == P25_ISP_LOC_REG_REQ)
+		count8(&f->view.loc_tx);
+#endif
 	else
 		count8(&f->view.req_tx);
 	a->sent = true;
@@ -646,6 +884,12 @@ static void acc_no_answer(p25_follow_t *f, uint32_t now)
 	count8(&f->view.timeouts);
 	if (op == P25_ISP_GRP_V_REQ) {
 		f->view.req = P25_REQ_TIMEOUT;
+	#if CONFIG_P25_ROAM
+	} else if (op == P25_ISP_LOC_REG_REQ) {
+		f->view.reg = P25_REG_LOCATION;
+		f->good = (uint8_t)((f->view.cc + 1) % cc_count(f));
+		hunt_start(f, now); // exhausted location attempts may leave this control channel
+#endif
 	} else {
 		f->view.reg = P25_REG_RETRY;
 		f->acc.t_sent = now;
@@ -660,6 +904,10 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 	if (!tx_on(f) || f->acc.blocked || !f->view.sys_ok)
 		return;
 	if (!(f->cfg->flags & P25_FOLLOW_NO_REG)) {
+#if CONFIG_P25_ROAM
+		if (f->view.reg == P25_REG_READY && a->registered && a->selected_tg != f->cfg->talk_group)
+			aff_start(f, now);
+#endif
 		if (f->view.reg == P25_REG_IDLE && (a->site_heard || elapsed(now, a->t_cc, P25_ACC_SITE_MS))) {
 			reg_start(f, now);
 		} else if (f->view.reg == P25_REG_RETRY && elapsed(now, a->t_sent, a->backoff)) {
@@ -671,6 +919,13 @@ static void acc_tick(p25_follow_t *f, uint32_t now)
 		return;
 	if (a->sent) {
 		bool queued = f->view.req == P25_REQ_QUEUED;
+#if CONFIG_P25_ROAM
+		if (f->view.ack_wait) {
+			if (elapsed(now, a->t_sent, P25_ACC_ACK_MS))
+				acc_no_answer(f, now);
+			return;
+		}
+#endif
 
 		if (!elapsed(now, a->t_sent, queued ? P25_ACC_QUEUE_MS : P25_ACC_ANSWER_MS))
 			return;
@@ -710,47 +965,140 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 	if (f->acc.blocked)
 		return;
 	switch (m->kind) {
+#if CONFIG_P25_ROAM
+	case P25_TSBK_REG_CMD:
+		if (m->u.cmd.dst == working_unit(f) && f->view.sys_ok)
+			reg_start(f, now);
+		break;
+	case P25_TSBK_ACK:
+		if (f->view.ack_wait || m->u.rsp.dst != working_unit(f) || !acc_asked(f, m->u.rsp.svc))
+			return;
+		if (m->u.rsp.aiv && m->u.rsp.ex &&
+		    (!home_system(f) || (m->u.rsp.info >> 12) != c->wacn || (m->u.rsp.info & 0xFFFu) != c->sysid))
+			return;
+		f->view.ack_wait = true;
+		a->generation++; // an ACK retires any queued/prepared random-access retry, while the response still waits
+		a->sent = true;
+		a->t_sent = now;
+		break;
+	case P25_TSBK_LOC_RSP:
+		if (f->view.reg != P25_REG_LOCATION || !acc_asked(f, P25_ISP_LOC_REG_REQ) ||
+		    m->u.loc.dst != working_unit(f) || m->u.loc.rfss != f->view.rfss || m->u.loc.site != f->view.site)
+			return;
+		acc_drop(f);
+		if (m->u.loc.rv == P25_RV_ACCEPT) {
+			// This home-only abbreviated path does not accept an uncorrelated new WUID or group mapping.
+			if (m->u.loc.tg != f->view.aff_tg) {
+				unsupported(f, P25_MOBILITY_LOCAL);
+				return;
+			}
+			count8(&f->view.loc_ok);
+			located(f, now);
+		} else if (m->u.loc.rv == P25_RV_FAIL) {
+			unsupported(f, P25_MOBILITY_LOCAL);
+		} else {
+			denied(f, P25_ISP_LOC_REG_REQ, m->u.loc.rv);
+			if (m->u.loc.rv == P25_RV_DENY)
+				deny_site(f, now);
+			else
+				f->view.reg = P25_REG_REFUSED;
+		}
+		break;
+#endif
 	case P25_TSBK_REG_RSP:
 		if (m->u.reg.id != c->unit_id || f->view.reg != P25_REG_WAIT || !acc_asked(f, P25_ISP_U_REG_REQ))
 			return;
 		if (m->u.reg.rv == P25_RV_ACCEPT) {
+#if CONFIG_P25_ROAM
+			if (!m->u.reg.addr || m->u.reg.sysid != f->view.sysid)
+				return;
+			if (home_system(f) && m->u.reg.addr != c->unit_id) {
+				unsupported(f, P25_MOBILITY_MAPPING);
+				return; // AABD-B 6.2: home WUID is the SUID's UID, not an arbitrary remap
+			}
+			a->registered = true;
+			a->reg_wacn = f->view.wacn;
+			a->reg_sysid = f->view.sysid;
+			a->reg_lra = f->view.lra;
+			a->reg_isolated = f->view.isolated;
+			f->view.wuid = m->u.reg.addr;
+			f->view.location_ok = a->site_heard;
+#endif
 			count8(&f->view.reg_ok);
 			a->backoff = P25_ACC_RETRY_MS;
 			aff_start(f, now);
 		} else if (m->u.reg.rv == P25_RV_FAIL) {
+#if CONFIG_P25_ROAM
+			unsupported(f, P25_MOBILITY_LOCAL);
+#else
 			acc_drop(f);
 			f->view.reg = P25_REG_RETRY;
 			a->t_sent = now;
+#endif
 		} else {
 			acc_drop(f);
 			f->view.reg = P25_REG_DENIED;
 			denied(f, P25_ISP_U_REG_REQ, m->u.reg.rv);
+#if CONFIG_P25_ROAM
+			if (m->u.reg.rv == P25_RV_DENY)
+				deny_site(f, now);
+			else
+				f->view.reg = P25_REG_REFUSED;
+#endif
 		}
 		break;
 	case P25_TSBK_AFF_RSP:
-		if (m->u.aff.dst != c->unit_id || f->view.reg != P25_REG_AFF || m->u.aff.tg != c->talk_group ||
+		if (m->u.aff.dst != working_unit(f) || f->view.reg != P25_REG_AFF ||
+#if !CONFIG_P25_ROAM
+		    m->u.aff.tg != c->talk_group ||
+#endif
 		    !acc_asked(f, P25_ISP_GRP_AFF_REQ))
 			return;
 		acc_drop(f);
 		if (m->u.aff.gav == P25_RV_ACCEPT) {
+#if CONFIG_P25_ROAM
+			if (home_system(f) && m->u.aff.tg != c->talk_group) {
+				f->view.aff_tg = f->view.agid = 0;
+				unsupported(f, P25_MOBILITY_MAPPING);
+				return; // AABD-B 6.7.1: a home group's WGID is its provisioned GID
+			}
+#endif
 			count8(&f->view.aff_ok);
 			f->view.reg = P25_REG_READY;
 			f->view.aff_tg = m->u.aff.tg;
+#if CONFIG_P25_ROAM
+			f->view.agid = m->u.aff.ann;
+			a->selected_tg = c->talk_group;
+#endif
 		} else if (m->u.aff.gav == P25_RV_FAIL) {
+#if CONFIG_P25_ROAM
+			f->view.aff_tg = f->view.agid = 0;
+			unsupported(f, P25_MOBILITY_LOCAL);
+#else
 			f->view.reg = P25_REG_RETRY;
 			a->t_sent = now;
+#endif
 		} else {
+			f->view.aff_tg = 0;
 			f->view.reg = P25_REG_DENIED;
 			denied(f, P25_ISP_GRP_AFF_REQ, m->u.aff.gav);
+#if CONFIG_P25_ROAM
+			f->view.agid = 0;
+			if (m->u.aff.gav == P25_RV_DENY)
+				deny_site(f, now);
+			else
+				f->view.reg = P25_REG_REFUSED;
+#endif
 		}
 		break;
 	case P25_TSBK_DENY:
 	case P25_TSBK_QUEUED:
 		// The answer names the request by its opcode
-		if (m->u.rsp.dst != c->unit_id || a->pend == NO_OP || !acc_asked(f, m->u.rsp.svc))
+		if (m->u.rsp.dst != working_unit(f) || a->pend == NO_OP || !acc_asked(f, m->u.rsp.svc))
 			return;
 		if (m->kind == P25_TSBK_QUEUED) {
 			if (a->pend == P25_ISP_GRP_V_REQ) {
+				a->generation++;
 				count8(&f->view.queued);
 				f->view.req = P25_REQ_QUEUED;
 				a->sent = true;
@@ -759,6 +1107,13 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 			return;
 		}
 		denied(f, m->u.rsp.svc, m->u.rsp.reason);
+#if CONFIG_P25_ROAM
+		if (a->pend == P25_ISP_LOC_REG_REQ) {
+			acc_drop(f);
+			deny_site(f, now);
+			return;
+		}
+#endif
 		if (a->pend == P25_ISP_GRP_V_REQ)
 			f->view.req = P25_REQ_DENIED;
 		else
@@ -773,12 +1128,11 @@ static void acc_block(p25_follow_t *f, const p25_tsbk_t *m, uint32_t now)
 // A grant: true when it is ours (the answer to our voice request), which tunes our voice channel
 static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_t now)
 {
-	const p25_follow_cfg_t *c = f->cfg;
 	uint32_t rx, tx;
 
 	if (!tx_on(f) || !f->view.sys_ok ||
 	    (f->view.req != P25_REQ_WAIT && f->view.req != P25_REQ_QUEUED) || op != P25_OP_GRP_V_GRANT ||
-	    g->src != c->unit_id || g->tg != c->talk_group || !acc_asked(f, P25_ISP_GRP_V_REQ))
+	    g->src != working_unit(f) || g->tg != working_group(f) || !acc_asked(f, P25_ISP_GRP_V_REQ))
 		return false;
 	acc_drop(f);
 	count8(&f->view.req_grant);
@@ -795,7 +1149,7 @@ static bool acc_grant(p25_follow_t *f, uint8_t op, const p25_grant_t *g, uint32_
 	f->view.unit_call = false;
 	f->view.enc = false;
 	f->view.tg = g->tg;
-	f->view.src = c->unit_id;
+	f->view.src = working_unit(f);
 	f->view.dst = 0;
 	f->left_ch = f->acc.talk_ch = g->ch;
 	f->t_call = f->t_good = now;
@@ -822,6 +1176,29 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		return;
 	}
 	f->view.unverified = !verified;
+#if CONFIG_P25_ZONE_SCAN
+	if (known && m.kind == P25_TSBK_NET && !verified)
+		f->pending.valid = false;
+#endif
+	if (known && m.kind == P25_TSBK_RFSS && !verified && (c->flags & P25_FOLLOW_TX)) {
+		// Recovered CRC-invalid observations are not fresh serving-site proof. An unrelated good block must
+		// not reopen user TX; wait for the relevant valid RFSS (or legacy full registration).
+		f->acc.site_heard = false;
+#if CONFIG_P25_ROAM
+		f->view.location_ok = false;
+		if (f->acc.registered && !f->acc.blocked && f->view.reg != P25_REG_REFUSED &&
+		    f->view.reg != P25_REG_UNSUPPORTED)
+			f->view.reg = P25_REG_LOCATION;
+#else
+		f->view.sys_ok = false;
+		if (!f->acc.blocked && f->view.reg != P25_REG_OFF)
+			f->view.reg = P25_REG_IDLE;
+#endif
+		if (f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+			f->view.req = P25_REQ_TIMEOUT;
+		acc_drop(f);
+		return;
+	}
 	if (m.kind == P25_TSBK_MFR) {
 		count(&f->view.mfr);
 	} else if (f->view.op[m.opcode] != UINT8_MAX) {
@@ -848,6 +1225,19 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	}
 	if (st == P25_FOLLOW_HUNT) {
 		bool need = !any_wacn(c) || !any_sysid(c) || f->identity_conflict;
+#if CONFIG_P25_ROAM
+		if (verified && known && m.kind == P25_TSBK_RFSS) {
+			f->acc.site_heard = true;
+			f->acc.site_nac = nac;
+			if (f->view.sysid != m.u.site.sysid)
+				f->view.wacn = UINT32_MAX;
+			f->view.sysid = m.u.site.sysid;
+			f->view.rfss = m.u.site.rfss;
+			f->view.site = m.u.site.site;
+			f->view.lra = m.u.site.lra;
+			f->view.isolated = !(m.u.site.flags & 1u);
+		}
+#endif
 
 		// A system identity: it decides the candidate
 		if (known && (m.kind == P25_TSBK_NET || (m.kind == P25_TSBK_RFSS && any_wacn(c)))) {
@@ -861,8 +1251,12 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 				return;
 			}
 			if (m.kind == P25_TSBK_NET) {
-				f->identity_conflict = false;
-				f->have_id = true;
+				if (verified)
+					f->identity_conflict = false;
+#if CONFIG_P25_ROAM
+				if (!f->roaming || !f->acc.registered || verified)
+#endif
+					f->have_id = true;
 			} else if (!f->identity_conflict) {
 				f->have_id = true;
 			}
@@ -876,6 +1270,8 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 #if CONFIG_P25_ROAM
 		if (f->roaming) {
+			if (f->acc.registered && f->acc.site_heard && f->acc.site_nac != nac)
+				f->acc.site_heard = false;
 			// Identity matched, but one good block is not enough to rank a site.
 			// Grants during the bounded survey are deliberately not followed.
 			f->phase = PH_SAMPLE;
@@ -890,9 +1286,24 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		return;
 	switch (m.kind) {
 	case P25_TSBK_IDEN:
+#if CONFIG_P25_ROAM
+		if (!f->view.sys_ok || !verified)
+#else
+		if ((c->flags & P25_FOLLOW_TX) && (!f->view.sys_ok || !verified))
+#endif
+			break; // candidate broadcasts cannot overwrite the retained actual System's namespace
 		iden_learn(f, &m.u.iden);
-		if (f->view.reg == P25_REG_NO_TX && cc_tx_hz(f, f->view.cc))
+		if (f->view.reg == P25_REG_NO_TX && cc_tx_hz(f, f->view.cc)) {
+#if CONFIG_P25_ROAM
+			if (f->acc.registered) {
+				f->view.reg = P25_REG_LOCATION;
+				if (f->acc.site_heard)
+					acc_site(f, now);
+				break;
+			}
+#endif
 			f->view.reg = c->flags & P25_FOLLOW_NO_REG ? P25_REG_OFF : P25_REG_IDLE;
+		}
 		break;
 	case P25_TSBK_NET:
 		if ((!any_wacn(c) && m.u.net.wacn != c->wacn) || (!any_sysid(c) && m.u.net.sysid != c->sysid)) {
@@ -904,13 +1315,25 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		}
 		if (p25_wacn_no_tx(m.u.net.wacn) || p25_sysid_no_tx(m.u.net.sysid))
 			sys_block(f);
+#if CONFIG_P25_ROAM
+		if (f->acc.site_heard && (f->view.sysid != m.u.net.sysid || f->acc.site_nac != nac ||
+		    (f->view.sys_ok && f->view.wacn != m.u.net.wacn))) {
+			f->acc.site_heard = false;
+			f->view.rfss = f->view.site = 0xFF;
+		}
+		if (verified)
+			system_changed(f, m.u.net.wacn, m.u.net.sysid);
+#else
 		if ((f->view.wacn <= 0xFFFFFu && f->view.wacn != m.u.net.wacn) ||
 		    (f->view.sysid <= 0xFFFu && f->view.sysid != m.u.net.sysid)) {
 			// A different network cannot reuse this registration, even if its site numbers match.
+			if (verified && (c->flags & P25_FOLLOW_TX))
+				iden_reset_system(f);
 			acc_lost(f);
 			if (!f->acc.blocked && f->view.reg != P25_REG_OFF && f->view.reg != P25_REG_NO_TX)
 				f->view.reg = P25_REG_IDLE;
 		}
+#endif
 		if (!f->acc.blocked) {
 			f->view.nac = nac;
 			f->view.sys_ok = !f->view.unverified;
@@ -918,6 +1341,10 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		f->view.wacn = m.u.net.wacn;
 		f->view.sysid = m.u.net.sysid;
 		f->acc.cc_chan = m.u.net.ch;
+#if CONFIG_P25_ROAM
+		if (f->acc.site_heard)
+			acc_site(f, now);
+#endif
 		break;
 	case P25_TSBK_RFSS:
 		if (p25_sysid_no_tx(m.u.site.sysid))
@@ -928,13 +1355,30 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 		f->view.rfss = m.u.site.rfss;
 		f->view.site = m.u.site.site;
 		f->acc.cc_chan = m.u.site.ch;
-		acc_site(f);
+#if CONFIG_P25_ROAM
+		f->view.lra = m.u.site.lra;
+		f->view.isolated = !(m.u.site.flags & 1u); // RFSS active-network connection A
+		f->acc.site_nac = nac;
+#endif
+		acc_site(f, now);
 		break;
 	case P25_TSBK_ADJ:
+#if CONFIG_P25_ROAM
+		if (!f->view.sys_ok || !verified)
+#else
+		if ((c->flags & P25_FOLLOW_TX) && (!f->view.sys_ok || !verified))
+#endif
+			break;
 		if (any_sysid(c) || m.u.site.sysid == c->sysid)
 			cc_learn(f, m.u.site.ch);
 		break;
 	case P25_TSBK_SCCB:
+#if CONFIG_P25_ROAM
+		if (!f->view.sys_ok || !verified)
+#else
+		if ((c->flags & P25_FOLLOW_TX) && (!f->view.sys_ok || !verified))
+#endif
+			break;
 		cc_learn(f, m.u.sccb.ch[0]);
 		cc_learn(f, m.u.sccb.ch[1]);
 		break;
@@ -943,7 +1387,7 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 
 		count(&f->view.grants);
 		// While we ask for a channel, nothing else is followed
-		if (acc_grant(f, m.opcode, g, now) || f->view.req == P25_REQ_WAIT || f->view.req == P25_REQ_QUEUED)
+		if (acc_grant(f, m.opcode, g, now))
 			break;
 		if (!consider(f, m.opcode, g->unit, g->ch, g->tg, g->dst, g->src, g->has_svc, g->svc, now) && g->ch2 &&
 		    m.opcode == P25_OP_GRP_V_UPDT)
@@ -954,6 +1398,11 @@ static void on_block(p25_follow_t *f, const uint8_t blk[P25_TSBK_BYTES], uint16_
 	case P25_TSBK_AFF_RSP:
 	case P25_TSBK_DENY:
 	case P25_TSBK_QUEUED:
+#if CONFIG_P25_ROAM
+	case P25_TSBK_ACK:
+	case P25_TSBK_LOC_RSP:
+	case P25_TSBK_REG_CMD:
+#endif
 		if (tx_on(f))
 			acc_block(f, &m, now);
 		break;
@@ -989,6 +1438,8 @@ void p25_follow_begin(p25_follow_t *f, const p25_follow_cfg_t *cfg, const p25_fo
 	f->ctx = ctx;
 #if CONFIG_P25_ROAM
 	f->t_roam = now;
+	f->acc.reg_wacn = UINT32_MAX;
+	f->acc.reg_sysid = UINT16_MAX;
 #endif
 	f->good = 0xFF;
 	f->view.wacn = UINT32_MAX;
@@ -1192,8 +1643,12 @@ void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
 	f->signal_valid = true;
 	quality_update(f, now);
 	bool poor = f->quality_ready && f->quality < 90;
+	bool registered = (f->cfg->flags & P25_FOLLOW_TX) != 0;
+	bool ready = !registered || (f->acc.registered && home_system(f) && f->view.location_ok &&
+		f->view.reg == P25_REG_READY && f->view.req == P25_REQ_IDLE && !f->acc.ptt &&
+		f->acc.pend == NO_OP && f->view.sys_ok && !f->view.unverified);
 	if (f->view.state != P25_FOLLOW_CONTROL || f->cfg->roam_dbm >= 0 ||
-	    (f->cfg->flags & P25_FOLLOW_TX) || f->cfg->ncc < 2 || (dbm >= f->cfg->roam_dbm && !poor)) {
+	    !ready || f->cfg->ncc < 2 || (dbm >= f->cfg->roam_dbm && !poor)) {
 		f->weak = false;
 		return;
 	}
@@ -1218,7 +1673,14 @@ void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
 	f->t_nocc = now;
 	f->tried = 0;
 	f->backoff = P25_FOLLOW_BACKOFF_MS;
-	f->view.cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+	if (registered) {
+		if (f->survey_cc >= cc_count(f) || f->survey_cc == f->roam_origin)
+			f->survey_cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+		f->view.cc = f->survey_cc;
+		f->survey_cc = (uint8_t)((f->survey_cc + 1) % cc_count(f));
+	} else {
+		f->view.cc = (uint8_t)((f->roam_origin + 1) % cc_count(f));
+	}
 	hunt_try(f, now);
 	view_end(f);
 }
@@ -1227,6 +1689,9 @@ void p25_follow_signal(p25_follow_t *f, int16_t dbm, uint32_t now)
 void p25_follow_tick(p25_follow_t *f, uint32_t now)
 {
 	const p25_follow_cfg_t *c = f->cfg;
+#if CONFIG_P25_ROAM
+	uint32_t limit = c->adjacent_ms ? c->adjacent_ms : 150;
+#endif
 
 	if ((f->view.tuning && !(f->phase & PH_FAILED)) || f->view.state == P25_FOLLOW_OFF)
 		return;
@@ -1242,6 +1707,17 @@ void p25_follow_tick(p25_follow_t *f, uint32_t now)
 	switch (f->view.state) {
 	case P25_FOLLOW_HUNT:
 #if CONFIG_P25_ROAM
+		// TADJ_SITE bounds the whole departure, not each candidate. Reserve 50ms for the return request.
+		if (f->roaming && f->acc.registered && (f->acc.ptt ||
+		    elapsed(now, f->t_roam, limit > 50 ? limit - 50 : 0))) {
+			if (f->acc.ptt) {
+				f->best_cc = f->roam_origin;
+				roam_finish(f, now);
+			} else {
+				roam_sample(f, now);
+			}
+			break;
+		}
 		if (f->roaming && elapsed(now, f->t_roam, 20000)) {
 			roam_finish(f, now);
 			break;
@@ -1323,6 +1799,10 @@ uint8_t p25_follow_can_talk(const p25_follow_view_t *v, uint8_t flags)
 		return P25_TALK_NO_CC;
 	if (!(flags & P25_FOLLOW_NO_REG) && v->reg != P25_REG_READY)
 		return P25_TALK_NOT_REG;
+#if CONFIG_P25_ROAM
+	if (!(flags & P25_FOLLOW_NO_REG) && !v->location_ok)
+		return P25_TALK_NOT_REG;
+#endif
 	return P25_TALK_OK;
 }
 
@@ -1332,6 +1812,11 @@ void p25_follow_ptt(p25_follow_t *f, bool down, uint32_t now)
 		return;
 	view_begin(f);
 	f->acc.ptt = down;
+#if CONFIG_P25_ROAM
+	if (down && f->acc.registered && f->view.reg == P25_REG_READY &&
+	    f->acc.selected_tg != f->cfg->talk_group)
+		aff_start(f, now);
+#endif
 	if (!down) {
 		// Released before the grant: the request is dropped (a grant that comes later is not taken)
 		if (f->view.req != P25_REQ_TALK) {

@@ -56,6 +56,7 @@ is `tools/bringup.py list --radio <id>`.
 | `p25_site_nac` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `p25_roam` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `p25_zone_scan` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
+| `p25_registered_roam` | not recorded | not recorded | not recorded | not recorded | off | not recorded | not recorded | not recorded |
 | `nxdn` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | partial, needs re-run |
 | `nxdn_scrambler` | not recorded | not recorded | not recorded | not recorded | not written | not recorded | not recorded | not recorded |
 | `dmr_voice` | pass (seed) | pass (seed) | pass (seed) | pass (seed) | pass (seed) | not recorded | partial, needs re-run | partial, needs re-run |

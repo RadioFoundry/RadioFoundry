@@ -344,7 +344,7 @@ CONFIG_AIR_RAW ?= n
 # channel grants followed, and where the system allows it registration, voice requests and transmit on the grant
 # (core/p25/p25_follow.c, docs/spec/p25-trunking.md). Needs P25
 CONFIG_P25_TRUNK ?= $(CONFIG_P25)
-# Passive weak-signal site search on receive-only trunked systems.
+# Control-channel quality surveys and bounded home-System location registration.
 CONFIG_P25_ROAM ?= $(CONFIG_P25_TRUNK)
 # Receive-only P25 trunked zone scan, with selected-group priority between calls.
 CONFIG_P25_ZONE_SCAN ?= $(if $(and $(filter y,$(CONFIG_P25_TRUNK)),$(filter y,$(CONFIG_SCAN))),y,n)

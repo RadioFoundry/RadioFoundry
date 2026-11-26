@@ -376,7 +376,8 @@ static void testRegisteredNetworkChange(void)
 		p25_follow_tick(&x.f, x.now);
 		site(&x, 0x123);
 		request(&x);
-		CHECK(x.f.view.reg == P25_REG_READY && x.sends == 1 && !x.f.view.sys_ok,
+		CHECK((x.f.view.reg == P25_REG_READY || x.f.view.reg == P25_REG_LOCATION) && x.sends == 1 && !x.f.view.sys_ok &&
+		      p25_follow_can_talk(&x.f.view, x.cfg.flags) != P25_TALK_OK,
 		      "retained registration cannot bypass a fresh network check");
 		uint32_t wacn = changed == 1 ? 0xBCDEF : 0xABCDE;
 		uint16_t sysid = changed == 2 ? 0x456 : 0x123;

@@ -34,6 +34,8 @@ typedef struct {
 	// The inbound burst the follower asked last (its send hook, from either task), as want / done above
 	volatile uint8_t burst_want, burst_done;
 	uint32_t burst_hz;
+	uint32_t burst_access;	// derived tag of the follower access request that owns these bytes
+	uint32_t burst_prepared;	// frozen when the engine accepts the queued burst
 	uint8_t burst_tune;
 	uint16_t burst_nac;
 	bool burst_active;
@@ -48,7 +50,8 @@ typedef struct {
 #endif
 #if CONFIG_P25_ZONE_SCAN
 	uint16_t scan_groups[CODEPLUG_ZONE_MAX];
-	uint16_t scan_channels[CODEPLUG_ZONE_MAX];
+	uint8_t scan_channels[CODEPLUG_ZONE_MAX];
+	uint8_t scan_channel_hi[(CODEPLUG_ZONE_MAX + 3u) / 4u];
 	bool scan_applied;
 	uint8_t scan_flags, base_ngroups;
 #endif
@@ -109,19 +112,39 @@ static bool ttx;			// the follower's transmit side is on
 #if CONFIG_P25_ZONE_SCAN
 static uint8_t scan_count;
 static bool scan_want;
+_Static_assert(CODEPLUG_CHANNELS_MAX <= 1024u, "zone map needs ten bits per channel");
+
+// Zero-based channel refs need ten bits. Keep the full zone map in stable trunk memory without borrowing voice
+// staging or exceeding the vocoder's lend on the tightest platform.
+static void scan_channel_set(p25_trunk_t *t, uint8_t pos, uint16_t number)
+{
+	uint16_t ref = (uint16_t)(number - 1u);
+	uint8_t shift = (uint8_t)((pos % 4u) * 2u);
+	t->scan_channels[pos] = (uint8_t)ref;
+	t->scan_channel_hi[pos / 4u] = (uint8_t)((t->scan_channel_hi[pos / 4u] & ~(3u << shift)) |
+					      ((ref >> 8) << shift));
+}
+
+static uint16_t scan_channel(const p25_trunk_t *t, uint8_t pos)
+{
+	uint16_t high = (uint16_t)((t->scan_channel_hi[pos / 4u] >> ((pos % 4u) * 2u)) & 3u);
+	return (uint16_t)(1u + t->scan_channels[pos] + (high << 8));
+}
 
 bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, uint16_t selected_number)
 {
 	if (!radio_p25_trunked() || mem->trunk.scan_applied || !zone || !selected ||
-	    selected->kind != CODEPLUG_KIND_P25_TRUNK || !mem->trunk.cfg.talk_group)
+	    selected->kind != CODEPLUG_KIND_P25_TRUNK || !mem->trunk.cfg.talk_group ||
+	    !selected_number || selected_number > CODEPLUG_CHANNELS_MAX)
 		return false;
 	scan_count = 1;
 	mem->trunk.scan_groups[0] = mem->trunk.cfg.talk_group;	// selected channel is always the priority, even if scan-skipped
-	mem->trunk.scan_channels[0] = selected_number;
+	scan_channel_set(&mem->trunk, 0, selected_number);
 	for (uint16_t pos = 0; pos < zone->count && pos < CODEPLUG_ZONE_MAX; pos++) {
 		channel_t ch;
 		p25_talk_t target;
-		if (!codeplug_channel(zone->channels[pos], &ch) || ch.kind != CODEPLUG_KIND_P25_TRUNK ||
+		if (!zone->channels[pos] || zone->channels[pos] > CODEPLUG_CHANNELS_MAX ||
+		    !codeplug_channel(zone->channels[pos], &ch) || ch.kind != CODEPLUG_KIND_P25_TRUNK ||
 		    ch.system != selected->system || ch.scan_skip)
 			continue;
 		if (!p25_channel_talk(zone->channels[pos], &ch, true, &target) || !target.set || target.unit)
@@ -133,7 +156,7 @@ bool radio_p25_zone_scan_start(const zone_t *zone, const channel_t *selected, ui
 		for (uint8_t i = 0; i < scan_count; i++)
 			duplicate |= mem->trunk.scan_groups[i] == tg;
 		if (!duplicate && scan_count < CODEPLUG_ZONE_MAX) {
-			mem->trunk.scan_channels[scan_count] = zone->channels[pos];
+			scan_channel_set(&mem->trunk, scan_count, zone->channels[pos]);
 			mem->trunk.scan_groups[scan_count++] = (uint16_t)tg;
 		}
 	}
@@ -397,6 +420,7 @@ static bool trunk_send(uint32_t hz, const uint8_t blk[P25_TSBK_BYTES], void *ctx
 	t->burst_hz = hz;
 	t->burst_tune = t->want;
 	t->burst_nac = t->f.view.nac;
+	t->burst_access = t->f.acc.generation;
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	t->burst_want++;
 	return true;
@@ -545,14 +569,27 @@ static void trunk_service(p25_mem_t *m)
 	// context under the same exclusion as its retune, and refresh both directions, including NAC 000.
 	if (t->done == t->want && !t->f.view.tuning) {
 		uint16_t nac = t->f.view.sys_ok ? t->f.view.nac : t->f.view.expected_nac;
-		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac) {
+		uint32_t unit = t->cfg.unit_id;
+		uint16_t group = t->cfg.talk_group;
+#if CONFIG_P25_ROAM
+		if (t->f.acc.registered) {
+			unit = t->f.view.wuid;
+			group = t->f.view.aff_tg;
+		}
+#endif
+		if (m->eng.cfg.rx_nac != nac || m->eng.cfg.tx_nac != nac || m->eng.cfg.unit_id != unit ||
+		    m->eng.cfg.tx_lc.tgid != group) {
 			p25_engine_cfg_t c = m->eng.cfg;
 
 			c.rx_nac = c.tx_nac = nac;
+			c.unit_id = unit;
+			talk_lc(&c.tx_lc, false, group);
 			p25_engine_set(&m->eng, &c);
 		}
 	}
 	if (t->burst_tune != t->want || !t->f.view.sys_ok || t->burst_nac != t->f.view.nac)
+		t->burst_done = t->burst_want;
+	if (t->burst_access != t->f.acc.generation)
 		t->burst_done = t->burst_want;
 	leave(&t->in_radio);
 	// The copy other tasks read (radio_p25_trunk_view); the provider's task may be writing the follower's view, which
@@ -703,8 +740,11 @@ bool radio_p25_trunk_burst_start(void)
 	__atomic_signal_fence(__ATOMIC_SEQ_CST);
 	bool ok = want != t->burst_done && trunk_confirmed(mem) && t->f.view.state == P25_FOLLOW_CONTROL &&
 		  t->burst_tune == t->want && t->burst_nac == t->f.view.nac &&
+		  t->burst_access == t->f.acc.generation &&
 		  p25_engine_tx_burst(&mem->eng, t->burst);
 	t->burst_active = ok;
+	if (ok)
+		t->burst_prepared = t->burst_access;
 	t->burst_done = want;
 	leave(&t->in_radio);
 	if (ok)
@@ -960,9 +1000,14 @@ bool radio_p25_poll(radio_p25_view_t *v)
 		// Resolve from the grant's group, including before voice metadata arrives.
 		// The map was built at scan start: no codeplug reads in the voice path.
 		if (scan_want && n.trunk == RADIO_P25_TRUNK_VOICE && !tview.v.unit_call) {
+#if CONFIG_P25_ROAM
+			// A current-site assigned working group still belongs to the selected personality.
+			if (tview.v.aff_tg && tview.v.tg == tview.v.aff_tg)
+				n.scan_channel = scan_channel(&mem->trunk, 0);
+#endif
 			for (uint8_t i = 0; i < scan_count; i++) {
-				if (mem->trunk.scan_groups[i] == tview.v.tg) {
-					n.scan_channel = mem->trunk.scan_channels[i];
+				if (!n.scan_channel && mem->trunk.scan_groups[i] == tview.v.tg) {
+					n.scan_channel = scan_channel(&mem->trunk, i);
 					break;
 				}
 			}
@@ -1035,7 +1080,8 @@ bool radio_p25_tx_go(void)
 			return false;
 		}
 		bool ok = trunk_confirmed(mem) && (t->burst_active ?
-			  t->burst_tune == t->want && t->burst_nac == t->f.view.nac : t->f.view.req == P25_REQ_TALK) &&
+			  t->burst_tune == t->want && t->burst_nac == t->f.view.nac &&
+			  t->burst_prepared == t->f.acc.generation : t->f.view.req == P25_REQ_TALK) &&
 			  p25_engine_tx_go(&mem->eng);
 		leave(&t->in_radio);
 		if (!ok)

@@ -127,6 +127,12 @@ __attribute__((noinline)) void debuglink_view_p25_trunk(dl_text_t *t)
 #if CONFIG_P25_ZONE_SCAN
 	dl_text(t, "p25t.zone_scan=%u\np25t.scan_groups=%u\n", radio_p25_zone_scanning(), radio_p25_zone_scan_count());
 #endif
+#if CONFIG_P25_ROAM
+	dl_text(t, "p25t.wuid=%u\np25t.agid=%u\np25t.lra=%u\np25t.isolated=%u\np25t.location_ok=%u\n",
+		(unsigned)f->wuid, f->agid, f->lra, f->isolated, f->location_ok);
+	dl_text(t, "p25t.mobility=%u\np25t.loc_tx=%u\np25t.loc_ok=%u\np25t.ack_wait=%u\n",
+		f->mobility, f->loc_tx, f->loc_ok, f->ack_wait);
+#endif
 #else
 	dl_text(t, "p25t.built=0\n");
 #endif

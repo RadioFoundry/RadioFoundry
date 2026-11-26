@@ -161,9 +161,9 @@ frequency is not transmitted on.
 
 ## 4. The follower
 
-`p25_follow_t`, 452 bytes on an Arm target (332 without the transmit side's state, which is always compiled in with
-the switch), placed by the caller. Flash: about 3.7 KB for the follower and the
-messages, 0.8 KB for the receive side's trunking units (the trellis decoder among them). Pure: time comes in as a
+`p25_follow_t` is placed by the caller. The current compile-time allocation ceilings are 488 bytes with
+`CONFIG_P25_ROAM=0`, and 584 bytes with it (host pointer alignment included); the target ABI determines actual size.
+The historical flash estimates predate registered mobility and are not a measurement of this change. Pure: time comes in as a
 millisecond tick on every call, retunes go out through `p25_follow_hooks_t.tune`. All calls come from one task (or
 one lock).
 
@@ -246,7 +246,7 @@ On with `P25_FOLLOW_TX` (the channel's tag allows transmit, the system is not li
 are set). The follower builds every inbound block and hands it to the `send` hook with the inbound frequency; the
 caller keys for it (7). It keeps one request in hand at a time.
 
-Registration (`view.reg`, `P25_REG_*`):
+The baseline access states (`view.reg`, `P25_REG_*`), extended by 5.1 when `CONFIG_P25_ROAM` is on:
 
 | State | What it does | Leaves |
 |---|---|---|
@@ -294,6 +294,65 @@ Timers (`p25_follow.h`, `P25_ACC_*`): site 2 s, answer 1 s, three sends, resend 
 View additions: `reg`, `req`, `deny_svc`, `deny_reason`, `aff_tg`, `talk_hz`, and counters of registrations sent and
 accepted, affiliations sent and accepted, requests sent and granted, denials, queued responses, timeouts, sends the
 caller refused, and waits on a busy inbound channel.
+
+### 5.1 Home-System location registration
+
+This is a bounded home-System mobility path, not inter-System roaming or a full subscriber conformance claim.
+A fully specified programmed WACN and System ID identify the subscriber's home System for this path. Programmed
+RFSS/Site fields remain metadata, not site locks. Actual CRC-valid NET and fresh RFSS broadcasts establish the
+serving System, site, LRA and active-network connection. NET and RFSS may arrive in either order; they must belong
+to the current candidate and NAC. A tune, loss, or failed HAL tune expires location proof. NET alone cannot restore
+user transmit after a move.
+
+The follower owns the accepted System context: actual WACN/System ID, WUID, working group (`aff_tg`), announcement
+group (`agid`) and accepted selected-group membership. The programmed unit ID and selected group remain unchanged.
+Requests, grant matching and the radio engine's outgoing voice source/target consume the accepted working IDs.
+Home WUID must equal the programmed UID, and a home group's WGID must equal its programmed GID. An inconsistent
+home mapping enters UNSUPPORTED rather than transmitting an unverified substitute. A wildcard's legacy initial
+registration can consume returned working addresses at its current site; it does not establish a home identity or
+support a successful home location move.
+
+| Event or outcome | Behavior |
+|---|---|
+| Ordinary move, same actual WACN/System ID and known home identity | Retain WUID/WGID/AGID, affiliation and System parameters. Send abbreviated `LOC_REG_REQ` with the previous LRA and working addresses. User transmit waits in LOCATION |
+| Same site reacquired | Fresh matching NET and RFSS restore location proof; no registration transaction |
+| Location accepted | Store the new site/LRA; resume READY with the existing affiliation. A later selected-group change requires a separate accepted affiliation |
+| ACK for the sent request | Stop random retransmissions; await its response for an implementation limit of 10 s. Repeated ACKs do not restart that limit |
+| Location unanswered or ACK response wait exhausted | Count a timeout and hunt again, retaining the same-System context and keeping user transmit blocked |
+| Location or registration denied | Record the current site in a System-owned deny list and hunt another candidate. Four remembered sites are supported; overflow enters UNSUPPORTED. No automatic expiry |
+| Registration/location/affiliation refused | REFUSED: wait for user System/channel selection or restart; no automatic retry on that actual System |
+| Local registration failure, unsupported location mapping | UNSUPPORTED: local-only service and remapping recovery are not implemented; user transmit remains blocked |
+| Forced registration command or leaving an isolated site | Full registration, followed by affiliation. Old working IDs and accepted affiliation are invalidated |
+| Newly confirmed actual WACN or System ID differs, including under Any acquisition | Full registration with a new runtime namespace. Discard assigned IDs, accepted affiliation, deny state, learned identifiers and learned candidates; keep programmed plan seeds |
+| Same-System move without a specified home identity | UNSUPPORTED with `mobility=1`; a wildcard acquisition is not evidence of home identity |
+
+`lra=0` is valid: freshness is represented separately, never by testing whether the LRA is nonzero. Ordinary
+same-System moves retain learned identifiers. For transmit-capable profiles in every configuration, and receive-only profiles with `P25_ROAM`, only broadcasts admitted after fresh CRC-valid actual-System
+confirmation can update that namespace; an unconfirmed candidate cannot overwrite it and poison a later return
+to the origin. Valid later identifier broadcasts replace earlier learned values.
+
+The scope omits visited-System/extended registration identities, authentication, emergency registration, local-only
+service, extended-identity ACK validation without a known home identity, WUID-validity provision timers and traffic-channel registration commands. A changed actual System can
+use the pre-existing initial full-registration behavior; this does not claim visited-System registration support.
+Unsupported cases are observable and fail closed for user transmit. With `CONFIG_P25_ROAM=0`, the existing full
+registration on site change remains in use.
+
+Protocol decisions were checked against the original diagrams and clauses below. PDF pages count from one;
+printed pages are the document's page labels. The private reference PDFs are not distributed with this repository.
+
+| Source | Clauses/figures and verified pages | Decision |
+|---|---|---|
+| TIA-102.AABD-B, November 2014, corpus ID `p25_a48ebc16b125fb93`, `8 10 TIA 102 AABD B Final Published Document 2014 11 05.pdf` | 6.2, PDF 52 / printed 47; 6.4–6.4.2, PDF 53–56 / 48–51 | Actual System boundary, home WUID, fresh/forced/isolated full registration |
+| Same | 6.5–6.5.1.3, PDF 56–59 / 51–54; 6.7.1–6.7.2, PDF 60–63 / 55–58 | Retained assigned IDs and System parameters, abbreviated home location, ACK/outcomes, home WGID and affiliation |
+| Same | 3.6.1, PDF 28–29 / 23–24; Table 17-1, PDF 139 / 134 | Adjacent visit timer and pending-service scan inhibition |
+| TIA-102.AABC-E, April 2019, corpus ID `p25_89a3b878eee70a14`, `8.10_TIA-102-AABC-E_Final Published Document_2019_04_231.pdf` | 2.3.20, PDF 35 / 16; 6.1.18.1, Figure 6.1.18-1, PDF 122 / 103 | LRA has no reserved-zero rule; previous-LRA/working-address request layout |
+| Same | 6.2.1.1, Figure 6.2.1-1, PDF 150–151 / 131–132; 6.2.20, Figure 6.2.20-1, PDF 192 / 173; 6.2.23, Figure 6.2.23-1, PDF 196 / 177 | ACK service/identity, forced-registration command and location-response layouts |
+
+Applicable AABD-B addenda B-1/B-2/B-3 and AABC-E addenda E-1/E-3 were checked for scope; location-on-PTT,
+user alias and remote emergency additions do not replace these basic layouts. AABC-E-2 is incorporated into E-3.
+The overview AABA-C is absent from the authorized corpus; the implementation is limited to the cited available
+procedures. Host tests use independently transcribed message payloads, not encoder-generated expected layouts;
+no hardware or road qualification has been performed.
 
 ## 6. Configuration
 
@@ -372,8 +431,11 @@ Not used yet: the fallback channel. The RX group list (`groups`) is followed onl
 whose contacts are P25 contacts ([p25-codeplug.md](p25-codeplug.md) 2.4, 4); the groups are in the follower's memory
 (`p25_trunk_t`, 64 bytes, lent with it).
 
-Memory: the transmit side adds 120 bytes to the follower (lent with it) and 28 bytes to the radio task's copy of the
-view, plus the radio core's request state (`p25_trunk_t`: the burst in hand, 12 bytes, and a few flags).
+Memory is lent with the engine as before. The existing access owner adds a 32-bit request generation; the radio
+keeps queued/prepared copies of that tag (8 bytes) so forced registration, ACK and completed requests invalidate
+stale bytes even when frequency and NAC stay unchanged. Rejection at GO uses the existing engine abort cleanup.
+Registered mobility also extends the follower/view with assigned addresses, location outcome and bounded site-deny
+state, behind `P25_ROAM`. Exact board image/RAM costs require the build measurements.
 
 Tests: `radioCoreTestP25T` (host) runs the radio core against a trunked site on the fake air interface: it finds the
 system on the primary control channel, refuses PTT on a listen-only system, follows a grant for its talk group to the voice channel and plays
@@ -439,17 +501,17 @@ of a live control channel settles them.
 | When a subscriber may send on the inbound channel: after an idle status symbol, how long after it, and the random wait | after a block heard since the tune, not while the last status symbol says busy; waits as in 5 |
 | The response timer, resend count and registration backoff a site expects | 1 s, three sends, 10 s to 60 s |
 | A one-block inbound TSDU's status symbols: "unknown" | as stated |
-| Whether a site needs the affiliation's announcement group, or a registration's address, kept for later requests | not kept |
+| Working/announcement IDs and home/visited identity scope | kept and consumed as described in 5.1; extended visited-System procedures remain outside this implementation |
 | The explicit secondary control channel form's layout | only its channel (T) is read |
 | The system service broadcast's layout | view only |
-| The four flag bits ahead of the system ID in RFSS and adjacent site status | kept as sent, not used |
+| The RFSS active-network connection flag | used to detect leaving isolated operation (5.1); other flags remain diagnostic |
 | The multi-block packet header: format in octet 0, SAP in octet 1, MFID in octet 2, blocks to follow in octet 6, opcode in octet 7 | recognized and counted; one-block explicit network/RFSS bodies also validated and decoded |
 
 ### Receive-only quality and signal roaming
 
 `CONFIG_P25_ROAM` enables optional control-channel surveys. A negative system
 `roam_dbm` enables both decode-quality and signal triggers; 0 disables both.
-The transmit side must be disabled and at least two control channels programmed.
+At least two control channels must be programmed. Receive-only surveys retain the behavior below. A registered home subscriber can also survey only while READY, with current location proof, no held PTT, no pending access request and no active voice call.
 
 Quality is measured over one second of control traffic. The score is the lower
 of the CRC-valid TSDU block percentage and the percentage of five 200 ms intervals
@@ -483,8 +545,24 @@ roaming compiled in, or 16 without it. RSSI reuses the radio task's status sampl
 the follower never reads the radio bus to measure signal. Host
 tests cover strong corrupt and weaker clean candidates, coverage gaps, ranking,
 stale RSSI, recovered bad CRCs, hysteresis, bounded return, disabled roaming,
-and no survey during voice or on a transmit-enabled system. Live road behavior
+and no survey during voice or pending subscriber access. Live road behavior
 and degraded-simulcast performance remain unverified.
+
+Registered surveys sample one adjacent candidate per departure and rotate candidates across later surveys.
+`cfg.adjacent_ms` bounds the total requested departure (default 150 ms, the standard's default TADJ_SITE), including
+identity acquisition time. Sampling stops 50 ms before that limit to reserve a return request; physical HAL/tuning
+latency remains unqualified. This is a configurable total scan limit, not a universal 150 ms maximum or a per-site
+budget that can accumulate across many candidates. The short sample requires fresh matching NET and RFSS, at least
+two valid blocks, and fresh RSSI; its score is the CRC-valid block percentage. The same ranking thresholds apply.
+This short score is a product selection heuristic with less coverage evidence than the receive-only one-second
+score. Every chosen candidate is reacquired normally and must complete location registration before user transmit.
+Pressing PTT during a survey returns to the origin for fresh confirmation. A single receiver can miss grants during
+these visits; multi-receiver ranking and road performance are not claimed.
+
+Receive-only profiles with `P25_ROAM=0` retain the earlier best-effort pre-NET/recovered-CRC plan policy. Transmit
+profiles reject such critical updates in every build. This difference is covered explicitly by the feature-off host
+suite. `P25_LOCATION_REG` in the existing firmware feature probe identifies this bounded subscriber procedure;
+older `P25_ROAM` builds provide receive-only selection and must not be assumed to support registered mobility.
 
 ## Zone talkgroup scanning
 
@@ -517,7 +595,14 @@ nonpriority grant waits up to 150 ms on control before being followed, allowing
 a priority grant decoded in that interval to win. Encrypted calls still obey
 the system's skip-encrypted setting. A later encryption indication cancels a
 matching pending grant. Retuning or changing the group filter discards pending
-grants. Normal site identity, band-plan, channel and CRC validation still apply.
+grants. Serving/access-context invalidation also discards them, including required
+registration, location or affiliation work and invalid NET/RFSS proof on the same
+control frequency. Fresh and replayed receive grants use the same admission in
+the follower. A configured transmit subscriber waits for verified System proof,
+registration and current location acceptance even when a recovered bad CRC has
+temporarily disabled transmitting. A later valid NET cannot revive an old buffered
+grant. RX-only profiles retain their existing receive admission. Normal site
+identity, band-plan, channel and CRC validation still apply.
 
 Active voice is never interrupted for priority checks. The single receiver
 cannot detect grants on control while receiving another voice channel; a short
@@ -528,6 +613,11 @@ follow-all/unit-call flags, returning to control if the current call no longer
 qualifies. The loaded base array and temporary zone arrays live in the trunk
 runtime, outside the staging/voice union. The overlay borrows only the follower's
 receive-list pointer; stopping restores that pointer to the loaded base array.
+The derived channel-number map stores zero-based references in ten bits (one low
+byte and two packed high bits), covering channels 1..1024 at all 80 zone positions.
+This saves 60 bytes without lowering capacity, borrowing mutable zone storage or
+raising the vocoder lend budget. Independent boundary vectors cover 1, 256, 257,
+1024, neighboring packed fields and the final map position.
 Changing channel, zone or the codeplug owner serial ends scanning and reloads
 configuration. The displayed scan-hit name cache also follows that serial.
 
@@ -538,6 +628,10 @@ current serving-site proof and normal transmit admission still apply; receiving
 a monitored call grants no readiness. A queued PTT is admitted against that
 context before restoring a filter can return an excluded receive call to control.
 The control return and subsequent grant must complete before voice transmission.
+Where the existing current-site procedure has assigned a working group different
+from the provisioned group, that working group receives selected-group priority
+and maps to the selected personality on Home. This does not rewrite the provisioned
+selection or broaden the supported home-System roaming scope.
 
 Start again on the new selected channel to change priority. Conventional dwell,
 timed-resume, nuisance-delete and frequency-sweep behavior do not apply to this

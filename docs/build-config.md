@@ -271,8 +271,8 @@ most boards are `CONFIG_AUDIO_PROBE` (a bench diagnostic) and the ones that need
    A switch that needs a left-out one is off too: `tools/ci.sh` drops each switch the checks in `config/features.mk`
    name until the set passes them (DMR not written takes all of DMR's family with it).
 
-`CONFIG_P25_ROAM` (default: `CONFIG_P25_TRUNK`) adds receive-only weak-signal site search. A negative system roaming threshold enables it; 0 disables it. See [P25 trunking](spec/p25-trunking.md).
+`CONFIG_P25_ROAM` (default: `CONFIG_P25_TRUNK`) adds weak-signal site search and bounded home-System location registration. A negative system roaming threshold enables it; 0 disables it. See [P25 trunking](spec/p25-trunking.md).
 
-`CONFIG_P25_ZONE_SCAN` (default: `CONFIG_P25_TRUNK` and `CONFIG_SCAN`) adds receive-only talkgroup scanning from the
+`CONFIG_P25_ZONE_SCAN` (default: `CONFIG_P25_TRUNK` and `CONFIG_SCAN`) adds passive talkgroup monitoring from the
 current zone on the selected P25 system. Selected-group priority is checked between calls without interrupting
 audio. It adds a RAM list of up to 80 talkgroups and a pending-grant record; no new codeplug fields are used.
