@@ -132,7 +132,6 @@ is `tools/bringup.py list --radio <id>`.
 | `net_http` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_http_gzip` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_webctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
-| `net_radio_udp` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | off |
 | `net_rigctl` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
 | `net_usrp` | not written | not recorded | not written | not written | not recorded | not recorded | pass, needs re-run | not written |
 | `net_aprsis` | not recorded | not recorded | not recorded | not recorded | not recorded | not recorded | pass, needs re-run | off |
@@ -228,7 +227,6 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `NET_HTTP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_HTTP_GZIP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_WEBCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
-| `NET_RADIO_UDP` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_RIGCTL` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_APRSIS` | ● | ● | ● | ● | ● | ● | ● | ○ |
 | `NET_USRP` | … | ● | … | … | ● | ● | ● | … |
@@ -327,7 +325,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | FM VOX | `VOX` | 352 | 356 |  |
 | Receiver battery saver | `BATTERY_SAVE` | 272 | 228 |  |
 | Frequency trim, Settings > Advanced | `REF_TRIM` | 2,012 | 2,356 | The hook on each radio, the page and the setting |
-| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM; DM-32 board glue not written yet, so nothing runs |
+| Air band AM receive (108-137 MHz) | `AM_RX` | 408* | — | Needs a receiver that does AM |
 | Broadcast FM receiver | `BCAST_FM` | ~0* | — | Needs a second receiver chip (DM-32's RDA5807M); glue not written yet |
 | Receive past the rated bands, Settings > Advanced | `RX_EXT` | 560 | — | Receive only, FM, off by default; ranges from each receiver chip's documents. MD-380: no receiver range in its chip documents |
 | DMR Tier II voice (modem, call stack, AMBE FEC, vocoder) | `DMR` | 377,332 | 275,716 | Includes every DMR feature and everything on IP over DMR |
@@ -415,8 +413,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | KISS over TCP, port 8001 | `NET_KISS` | 776 | 664 |  |
 | HTTP status page and JSON, port 80 | `NET_HTTP` | 20,304 | 19,548 |  |
 | HTTP static files stored and served gzip compressed | `NET_HTTP_GZIP` | -19,456 | 12,616 | Negative: saves flash, nearly all of it on web control's files. MD-380: web control follows this switch ([hardware-md380.md](spec/hardware-md380.md) 19) |
-| Web control: the front panel page, keys, status and receive audio over `/ws` | `NET_WEBCTL` | 12,944 | 12,788 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
-| Zone and channel control over UDP, port 4191: where the radio is, select and step, change notices | `NET_RADIO_UDP` | 2,364 | 2,412 | 112-120 B RAM; needs no TCP or HTTP; DM-32UV 2,392 ([tcp-services.md](spec/tcp-services.md) 8) |
+| Web control: the front panel page, keys, status and receive audio over `/ws`; zone and channel select and step, the board GPS's fix | `NET_WEBCTL` | 14,908 | 14,732 | The page and the radio's drawing included (about 6 KB gzip compressed); 1 KB RAM ([tcp-services.md](spec/tcp-services.md) 5.1) |
 | rigctld, port 4532 | `NET_RIGCTL` | 3,856 | 3,872 |  |
 | Audio linking (USRP over UDP, port 34001) | `NET_USRP` | 3,112 | 3,660 | DM-1701: DMR and FM both ways. MD-380: DMR only (FM audio doesn't reach the processor yet). Off where the host link is the programming cable at 115200 baud (about 11.5 KB/s): received audio alone needs about 17.6 KB/s |
 | APRS-IS client | `NET_APRSIS` | 2,824 | 2,816 | Needs NAT on the host |
