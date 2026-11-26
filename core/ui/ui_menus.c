@@ -8463,8 +8463,14 @@ static bool wipe_key(const input_event_t *ev)
 	return true;		// nothing else while it runs, nor leaves its result unread
 }
 
+// Clear all keys is named for itself: "Emergency Wipe" over it read as if the channels went too
+static const char *wipe_title(void)
+{
+	return wipe_keys_only() ? TR(SET_LABEL_CLEAR_KEYS, "Clear all keys") : TR(WIPE_TITLE, "Emergency Wipe");
+}
+
 static const ui_scr_def_t wipe_screen = {
-	.name = "wipe", .flags = SF_LIST | SF_HINT_FN, .prefix = TRN(WIPE_TITLE, "Emergency Wipe"),
+	.name = "wipe", .flags = SF_LIST | SF_HINT_FN, .prefix = TR_NONE, .title = wipe_title,
 	.hint_fn = wipe_hint,
 	.count = wipe_count, .item = wipe_item, .key = wipe_key, .body = wipe_body,
 };
