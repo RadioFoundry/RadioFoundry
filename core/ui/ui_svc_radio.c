@@ -212,7 +212,7 @@ bool ui_svc_roam(uint8_t cmd)
 uint32_t ui_svc_feat_radio(void)
 {
 	bool motor = CONFIG_VIBRATE && board.power != NULL && board.power->vibrate != NULL;
-	bool knob = radio_volume_knob();
+	bool knob = radio_volume_follows_knob();
 	return (CONFIG_SCAN ? UI_FEAT_SCAN : 0) | (CONFIG_DMR_ROAMING ? UI_FEAT_ROAMING : 0) |
 	       (motor ? UI_FEAT_VIBRATE : 0) | (radio_volume_soft() ? UI_FEAT_VOLUME : 0) |
 	       (knob ? UI_FEAT_VOLUME_KNOB : 0) |
