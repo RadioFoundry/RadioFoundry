@@ -472,8 +472,8 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "note") {
-			// a line of text from the inputs as they are typed
-			const row = h("p", { class: "form-note small muted", hidden: true });
+			// a line of text from the inputs as they are typed; f.notice (a .notice kind: "bad") draws it as a callout
+			const row = h("p", { class: f.notice ? `form-note notice ${f.notice}` : "form-note small muted", hidden: true });
 			rows.push({ f, input: null, row });
 			body.append(row);
 		} else if (f.type === "pair") {
@@ -498,18 +498,20 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 	const byKey = (k) => rows.find((r) => r.f.key === k);
 	// a row inside a closed section is hidden whatever its own show says
 	const shut = (r) => r.section && !r.section.open;
-	const value = (k) => byKey(k).input.value;
+	const value = (k) => byKey(k)?.input?.value;
 	const checked = (k) => !!byKey(k)?.input?.checked;
 	const sync = () => {
 		for (const r of rows) if (r.section) r.row.hidden = false;
 		for (const { f, input, row, label, tools } of rows) {
 			if (f.type === "pair") {
 				for (const b of tools) b.disabled = !!f.disabled?.(work, value, checked);
-				if (f.show && row) row.hidden = !f.show(work);
+				if (f.show && row) row.hidden = !f.show(work, value);
 				continue;
 			}
 			if (f.type === "group" || f.type === "custom") {
-				if (f.show) row.hidden = !f.show(work);
+				// a custom part may redraw itself from the inputs as they are typed
+				if (f.type === "custom") f.sync?.(work, value);
+				if (f.show) row.hidden = !f.show(work, value);
 				continue;
 			}
 			if (f.type === "note") {
@@ -520,7 +522,7 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 			if (f.type === "select") {
 				if (f.dynamicOptions) {
 					const current = input._opts[input.selectedIndex]?.[0];
-					const options = f.options(work);
+					const options = f.options(work, value);
 					if (options.length !== input._opts.length || options.some(([v, l], i) => v !== input._opts[i][0] || l !== input._opts[i][1])) {
 						input.replaceChildren(...options.map(([, l], i) => h("option", { value: String(i) }, l)));
 						input.selectedIndex = Math.max(0, options.findIndex(([v]) => v === current));
@@ -536,7 +538,7 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 				input.disabled = on;
 			}
 			if (f.type === "bool") (f.set ? f.set(work, input.checked) : (work[f.key] = input.checked));
-			if (f.show) row.hidden = !f.show(work);
+			if (f.show) row.hidden = !f.show(work, value);
 			if (typeof f.label === "function") label.textContent = f.label(work);
 			if (f.disabled) {
 				input.disabled = f.disabled(work, value, checked);
@@ -555,7 +557,7 @@ export function formDialog(title, fields, record, t, onSave, opts = {}) {
 		const bad = [];
 		for (const { f, input } of rows) {
 			if (f.type === "custom") {
-				if (!f.show || f.show(work)) bad.push(...(f.parse(work) ?? []));
+				if (!f.show || f.show(work, value)) bad.push(...(f.parse(work) ?? []));
 				continue;
 			}
 			if (f.type === "bool" || f.type === "pair" || f.type === "group" || f.type === "note") continue;

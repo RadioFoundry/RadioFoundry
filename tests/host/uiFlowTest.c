@@ -163,10 +163,26 @@ static const flow_t flows[] = {
 	// A trunked channel: the talk line says what the follower does, never what PTT calls (it is receive only)
 	{ "P25 trunked home: finding the system", "dlmode:p25", "p25t:1", "screen=home shows=Finding_system hides=TG_1",
 	  0, false },
-	{ "P25 trunked home: control channel", "dlmode:p25", "p25t:2", "screen=home shows=Control_channel hides=RX_only",
+	// Idle on the control channel, a system that can't transmit says "RX only" (listen only here); a call on it
+	// still reads "Following TG n"
+	{ "P25 trunked home: control channel, listen only", "dlmode:p25", "p25t:2",
+	  "screen=home shows=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201 hides=RX_only",
 	  0, false },
-	{ "P25 trunked home: following a call", "dlmode:p25", "p25t:3,201", "screen=home shows=Following_TG_201", 0,
-	  false },
+	// Transmit on, registered: what PTT calls. Transmit on, no inbound frequency (reg 7, NO_TX): "Control channel"
+	{ "P25 trunked home: control channel, transmit on", "dlmode:p25", "p25t:2,0,4,1",
+	  "screen=home shows=TG_1 hides=RX_only hides=Control_channel", 0, false },
+	{ "P25 trunked home: control channel, no inbound frequency", "dlmode:p25", "p25t:2,0,7,1",
+	  "screen=home shows=Control_channel hides=RX_only", 0, false },
+	// A blocked system (reg 8) reads as a listen-only one even with the transmit side on: "RX only" idle, never
+	// "Registering", and "Following TG n" during a call
+	{ "P25 trunked home: blocked, control channel, transmit on", "dlmode:p25", "p25t:2,0,8,1",
+	  "screen=home shows=RX_only hides=Blocked_system hides=Registering hides=Control_channel", 0, false },
+	{ "P25 trunked home: blocked, following a call", "dlmode:p25", "p25t:3,201,8",
+	  "screen=home shows=Following_TG_201 hides=RX_only hides=Blocked_system", 0, false },
+	// PTT on a blocked system: the reason, and nothing to retry (no setting and no second press changes it)
+	{ "P25 trunked: PTT refused on a blocked system", "dlmode:p25", "p25t:2,0,8,1,11",
+	  "shows=RX-only_system:_no_TX shows=Pick_another_channel hides=Release_PTT", 0, false },
 #endif
 #if CONFIG_CHANNEL_EDIT && CONFIG_DMR_AES
 	// The AES key row (dmr-voice.md 5.1): shown on a DMR channel once the codeplug holds AES keys; OK steps through
