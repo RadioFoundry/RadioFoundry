@@ -3,28 +3,6 @@
 
 # TYT MD-9600 / Retevis RT90 hardware (mobile)
 
-## Experimental 500–503 MHz reception
-
-`CONFIG_RX_TBAND=y` adds only 500–503 MHz as a receive-only board band. The
-receive planner accepts this window; the rated-band classifier, TX planner and
-RF TX admission still refuse it. Host tests check receive sequencing and rejected
-TX calls with the PA off. The default build leaves this window disabled.
-
-On V1–V3, the receive LO uses the existing low-side first-IF calculation.
-The SKY72310 divider can represent the experimental window, but this does not
-establish the external RX VCO's tuning range or the front-end sensitivity.
-Factory receive-tuning curves are extrapolated and bounded to the DAC range;
-no factory calibration is changed. There is no known board lock-detect feedback:
-a successful programming command is not measured PLL lock.
-
-One HW V2 decoded valid control signaling during a 45-second passive test,
-with 1,787 decoded blocks and 4 CRC failures. A separate simulcast test was
-intermittent, and another test produced no decode. Reception after leaving the
-experimental window for a learned neighbor was excluded. Identity, transmit
-and registration counters remained zero. This verifies reception under those
-test conditions, not calibrated sensitivity, the whole window, or reliable
-simulcast voice decoding. Test systems and frequencies are intentionally omitted.
-
 The TYT MD-9600 and the Retevis RT90 are one dual-band mobile radio: an STM32F405VGT6 MCU, an HR_C6000 DMR baseband
 and codec chip, **two complete RF chains (one VHF, one UHF)**, each with its own synthesizer, its own RX and TX VCOs,
 its own IF receiver chip and its own PA supply switch, a 49.95 MHz first IF, a 128 x 64 monochrome LCD (ST7567) on
@@ -1084,7 +1062,7 @@ times are unverified on a radio; the V4A / V5 transmit settle and reset wait are
 | 3 | both VCO_VCC high (RX VCOs) | the band's C5 on; the other band's C5 off on V4 and V4A / V5, on for V1-V3; U_V_MOD_SW to the band; the band's VCO_VCC low (TX VCO); V4A / V5: both IF routes off |
 | 4 | the band's synthesizer words for the LO (5.2), then 2 ms | the words for the carrier, then 2 ms (12 ms on V4A / V5) |
 | 5 | front-end tuning: DAC1 (UHF) or DAC2 (VHF) from calibration | the band's T5 on, 1 ms |
-| 6 | the IF: AK2365A set-up and 2 ms for its calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
+| 6 | the IF: reset the unused AK2365A to standby, set up the selected chip and wait 2 ms for calibration (V1-V4), or the filter and route lines (V4A / V5) | RF_APC_SW on |
 | 7 | U_V_AF_SW to the band, FM_SW on in FM, off in DMR; 3 ms | APC reference (DAC2) up to the calibrated level in 8 steps of 250 us |
 
 Return to receive ramps the APC reference down in the same steps, opens the loop, drops both T5, then runs the receive
@@ -1250,3 +1228,15 @@ UHF, against the SDR bench:
 
 Not checked: P25 and NXDN transmit (the provider reports both as untested), sensitivity on the FM copy, VHF (the
 receive I/Q swap there inverts the copy's spectrum), and trunking.
+
+## Experimental 500–503 MHz reception
+
+Settings > Advanced > RX past bands enables the 500–503 MHz receive-only range.
+It is off by default. The transmit band table and RF sequencing refuse transmission
+throughout this window. `CONFIG_RX_EXT=n` removes the extension from the build.
+
+The synthesizer planners represent this window using the existing UHF receive path.
+On V1–V3 the first LO is 49.95 MHz below the receive frequency. Factory receive-tuning
+curves are extrapolated and bounded to the DAC range; factory calibration is unchanged.
+There is no known board PLL-lock feedback. Sensitivity across this window has not
+been measured; successful synthesizer programming alone does not establish PLL lock.

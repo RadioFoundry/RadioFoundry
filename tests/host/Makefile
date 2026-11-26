@@ -32,7 +32,7 @@ RXSEEN  := $(CORE)/fec/rx_seen.c
 TSHARK  ?= $(firstword $(wildcard /Applications/Wireshark*.app/Contents/MacOS/tshark) $(shell command -v tshark))
 
 TESTS   := dmrFecTest dmrSoftBptcTest dmrSoftCombTest sfrTest dmrDataTest dmrDataServiceTest hotspotDataTest hotspotUplinkTest dmrPrivacyTest \
-           ipGatewayTest ipGatewayTest16 ipGatewayTest31 ipGatewayTestShared ipGatewayTestAir440
+           ipGatewayTest ipGatewayTest16 ipGatewayTestShared ipGatewayTestAir440
 
 all: run
 
@@ -64,19 +64,17 @@ IPGW    := ipGatewayTest.c $(CORE)/dmr/ipGateway.c $(DATA)
 ipGatewayTest: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) -o $@ $(IPGW)
 
-# The same gateway test with a /16 plan: radios 10.250.0.0/16, talkgroups 10.251.0.0/16, multicast 239.250.0.0/16
-IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFB0000u -DIPGW_GROUP_PREFIX=16 \
+# The same gateway test with a /16 plan on a shared /15 link: radios 10.250.0.0/16, their hosts (the peripheral range)
+# 10.251.0.0/16, talkgroups 10.252.0.0/16, multicast 239.250.0.0/16
+IPGW16  := -DIPGW_INDIVIDUAL_NET=0x0AFA0000u -DIPGW_INDIVIDUAL_PREFIX=16 -DIPGW_GROUP_NET=0x0AFC0000u -DIPGW_GROUP_PREFIX=16 \
            -DIPGW_MULTICAST_NET=0xEFFA0000u -DIPGW_MULTICAST_PREFIX=16 -DIPGW_LINK_PREFIX=15 '-DPCAP_NAME="ipGatewayTest16.pcap"'
 
 ipGatewayTest16: $(IPGW) $(CORE)/dmr/ipGateway.h
 	$(CC) $(CFLAGS) $(IPGW16) -o $@ $(IPGW)
 
-# The default ranges on a /31 link, and on a shared /8 link, instead of the /32
-ipGatewayTest31: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=31 '-DPCAP_NAME="ipGatewayTest31.pcap"' -o $@ $(IPGW)
-
+# The default ranges on a shared /7 link (12.0.0.0/7: the radios and their hosts) instead of the /32
 ipGatewayTestShared: $(IPGW) $(CORE)/dmr/ipGateway.h
-	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=8 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
+	$(CC) $(CFLAGS) -DIPGW_LINK_PREFIX=7 '-DPCAP_NAME="ipGatewayTestShared.pcap"' -o $@ $(IPGW)
 
 # An air narrower than the link, which no radio has: runs the ICMP fragmentation needed path (usb-network.md 3.2)
 ipGatewayTestAir440: $(IPGW) $(CORE)/dmr/ipGateway.h
@@ -171,7 +169,7 @@ p25TrunkTest: p25TrunkTest.c $(P25TRUNK) $(wildcard $(CORE)/p25/*.h) $(wildcard 
 
 # The P25 voice path: engine frames through the full-rate decoder to PCM blocks (core/p25/p25Voice.c)
 TESTS   += p25VoiceTest
-p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h)
+p25VoiceTest: p25VoiceTest.c $(CORE)/p25/p25Voice.c $(CORE)/p25/p25Voice.h $(MBE) $(wildcard $(CORE)/mbe/*.h) $(CORE)/dsp/miclimit.h
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -o $@ p25VoiceTest.c $(CORE)/p25/p25Voice.c $(MBE) -lm
 
 # The fixed-point kernels the signal code shares (core/dsp/fxp.h)
@@ -269,7 +267,6 @@ run: $(TESTS)
 	./zoneShareSvcTest
 	./ipGatewayTest
 	./ipGatewayTest16
-	./ipGatewayTest31
 	./ipGatewayTestShared
 	./ipGatewayTestAir440
 	./sfrTest
@@ -277,7 +274,7 @@ run: $(TESTS)
 	$(PYTHON) satelliteTleTest.py
 ifneq ($(TSHARK),)
 	@# Independent check of the frames the gateway sent: no malformed packets or bad checksums
-	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
+	@for f in ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap; do "$(TSHARK)" -r $$f -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q; done > ipGatewayTest.expert
 	@# The fragmentation needed replies are ICMP errors by type (tshark's note "Type indicates an error"): expected
 	@if grep -v -E "ICMP +Type indicates an error" ipGatewayTest.expert | grep -q -i -E "malformed|bad|incorrect|error"; then echo "# tshark found problems"; cat ipGatewayTest.expert; exit 1; else echo "# tshark: no malformed packets or bad checksums"; fi
 endif
@@ -286,7 +283,7 @@ clean:
 	rm -f mdnsTest.pcap tftpTest.pcap netTest.expert hrc7000_test_slot.bin codec_desc_test.bin codec_desc_md380.bin \
 		codec_desc_md9600.bin codec_desc_md9600own.bin
 	rm -rf gen
-	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTest31.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
+	rm -f $(TESTS) dmrDataTest.out ipGatewayTest.pcap ipGatewayTest16.pcap ipGatewayTestShared.pcap ipGatewayTestAir440.pcap \
 		ipGatewayTest.expert
 	rm -rf *.dSYM out
 	rm -f *.gcda *.gcno
@@ -359,14 +356,15 @@ radioCoreTestNxdn: $(RCNXDN) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dm
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
 		-DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCNXDN) -lm
 
-# P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself
+# P25 and NXDN together, no lending vocoder: one engine at a time, NXDN in the memory P25 keeps for itself. With the
+# detour (CONFIG_RADIO_DETOUR, docs/spec/debuglink.md 7.4), whose return covers the P25 and NXDN settings too
 RCP25NX := $(RCNXDN) $(CORE)/radio/radio_p25.c $(CORE)/p25/p25_engine.c $(P25) $(CORE)/p25/p25Voice.c $(MBE) \
            $(CORE)/debuglink/debuglink_view_p25.c
 radioCoreTestP25Nxdn: $(RCP25NX) $(wildcard $(CORE)/radio/*.h) $(wildcard $(CORE)/dmr/call/*.h) $(CORE)/dmr/dmrDataService.h \
                       $(CORE)/ui/ui_svc.h $(wildcard $(CORE)/nxdn/*.h) $(wildcard $(CORE)/p25/*.h) $(wildcard $(CORE)/air/*.h) \
                       $(wildcard $(CORE)/dmr/ambe/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -I. -DDMR_RX_TRACE=0 -DCONFIG_DMR_IP_GATEWAY=0 -DCONFIG_SFR=1 -DCONFIG_APRS=0 \
-		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -o $@ $(RCP25NX) -lm
+		-DCONFIG_P25=1 -DCONFIG_NXDN=1 -DCONFIG_NXDN_SCRAMBLER=1 -DCONFIG_AIR_RAW=1 -DCONFIG_RADIO_DETOUR=1 -o $@ $(RCP25NX) -lm
 
 # The same with APRS: what the data service hears goes into the station list (a DMR APRS position, docs/spec/aprs.md 8.2)
 TESTS   += radioCoreTestAprs
@@ -479,6 +477,10 @@ miclevelTest: miclevelTest.c $(ROOT)/drivers/audio/miclevel/miclevel.h
 TESTS   += resampleTest
 resampleTest: resampleTest.c $(ROOT)/drivers/audio/resample/resample.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ resampleTest.c -lm
+# The mic gain and peak limiter before a vocoder's encoder (core/dsp/miclimit.h): DMR's
+TESTS   += miclimitTest
+miclimitTest: miclimitTest.c $(CORE)/dsp/miclimit.h
+	$(CC) $(CFLAGS) -Wshadow -o $@ miclimitTest.c -lm
 
 # The battery average and charge estimate the radios share (drivers/power/battery)
 TESTS   += batteryTest
@@ -813,10 +815,11 @@ run: run-aes
 run-aes: dmrAesTest
 	./dmrAesTest
 
-# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's sample scaling, never both
+# The mic gain setting (core/radio/mic_gain.c): to the board's hook or to DMR's and P25's sample scaling, never both
 TESTS   += micGainTest
-micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
+micGainTest: micGainTest.c $(CORE)/radio/mic_gain.c $(CORE)/radio/mic_gain.h $(ROOT)/hal/hal_radio.h \
+             $(CORE)/dsp/miclimit.h $(CORE)/p25/p25Voice.h
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DCONFIG_P25=1 -DCONFIG_IMBE=1 -o $@ micGainTest.c $(CORE)/radio/mic_gain.c
 
 # The debug link's Tier III view sections (core/debuglink/debuglink_t3.c): each fits a reply at its widest
 TESTS   += t3ViewTest
@@ -900,12 +903,13 @@ paKeyrunTest: paKeyrunTest.c $(CORE)/radio/pa_keyrun.c $(CORE)/radio/pa_keyrun.h
 	$(CC) $(CFLAGS) -Wshadow -o $@ paKeyrunTest.c $(CORE)/radio/pa_keyrun.c
 
 run: run-ambe
-run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
+run-ambe: ambeFecTest ambeVoiceTest ambeVoiceCaptureTest sigToneTest micGainTest miclimitTest refTrimTest paKeyupTest paSweepTest paKeyrunTest
 	./ambeFecTest
 	./ambeVoiceTest
 	./ambeVoiceCaptureTest
 	./sigToneTest
 	./micGainTest
+	./miclimitTest
 	./refTrimTest
 	./paKeyupTest
 	./paSweepTest
@@ -1069,9 +1073,18 @@ debuglinkTest: $(DLINK) $(wildcard $(CORE)/debuglink/*.h) $(ROOT)/platform/stm32
 	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -DDLOG_NO_RTOS -o $@ $(DLINK)
 
 run: run-debuglink
-run-debuglink: debuglinkTest
+run-debuglink: debuglinkTest dlDmripTest
 	./debuglinkTest
+	./dlDmripTest
 .PHONY: run-debuglink
+
+# The debug link over the air, its pure parts: SipHash, the datagram and addressing, replay, the air policy, the
+# detour's items and runner (core/debuglink/dl_dmrip.c), GET_VIEW's page (dl_fmt.c)
+TESTS   += dlDmripTest
+dlDmripTest: dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_dmrip.h $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -Wshadow -o $@ dlDmripTest.c $(CORE)/debuglink/dl_dmrip.c $(CORE)/debuglink/dl_frame.c \
+		$(CORE)/debuglink/dl_fmt.c
 
 # The runtime RAM-monitor loader's portable state machine (core/stubentry/stub_load.c, CONFIG_STUB_ENTRY)
 TESTS   += stubEntryTest
@@ -1429,8 +1442,9 @@ run-net: mdnsTest tftpTest
 ifneq ($(TSHARK),)
 	@"$(TSHARK)" -r mdnsTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q > netTest.expert
 	@"$(TSHARK)" -r tftpTest.pcap -o ip.check_checksum:TRUE -o udp.check_checksum:TRUE -z expert,note -q >> netTest.expert
-	@# the TFTP ERROR packets the tests ask for are expected; anything else malformed or bad is not
-	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|^Errors" | grep -q .; then \
+	@# the TFTP ERROR packets and the gateway's ICMP port unreachables the tests ask for are expected; anything else
+	@# malformed or bad is not
+	@if grep -i -E "malformed|bad|incorrect|error" netTest.expert | grep -v -E "TFTP ERROR packet|ICMP +Type indicates an error|^Errors" | grep -q .; then \
 		echo "# tshark found problems"; cat netTest.expert; exit 1; else echo "# tshark: mDNS and TFTP frames well formed"; fi
 endif
 .PHONY: run-net
@@ -1440,7 +1454,7 @@ STORE   := $(CORE)/storage/storage.c $(CORE)/settings/settings.c sim/sim_flash.c
 TESTS   += settingsTest
 
 settingsTest: settingsTest.c $(STORE) $(wildcard $(CORE)/storage/*.h $(CORE)/settings/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ settingsTest.c $(STORE)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ settingsTest.c $(STORE)
 
 run: run-settings
 run-settings: settingsTest spiNorTest spiNandTest nandSectorsTest
@@ -1587,7 +1601,7 @@ ZEDIT   := $(CORE)/codeplug/zone_edit.c $(CORE)/codeplug/zone_shift.c $(CORE)/co
 TESTS   += zoneEditTest
 
 zoneEditTest: zoneEditTest.c $(ZEDIT) $(wildcard $(CORE)/codeplug/*.h $(CORE)/storage/*.h sim/sim_flash.h)
-	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -o $@ zoneEditTest.c $(ZEDIT)
+	$(CC) $(CFLAGS) -I$(ROOT)/hal -I. -Wshadow -DCONFIG_RADIO_DETOUR=1 -o $@ zoneEditTest.c $(ZEDIT)
 
 run: run-zedit
 run-zedit: zoneEditTest

@@ -75,10 +75,15 @@ Text is shortened with a middle ellipsis only as a last resort (P5 allows it for
   hint row. Banners give the title and the text two lines each ("Call alert from" / "Jodi Ruiz"), and a message
   banner shows two lines of the message from the inbox.
 - Home's talk target line (DMR target or FM frequency) drops to the small font as a whole, then takes the target's
-  short form; a frequency is never shortened. Large-text Home picks the largest font each line fits in, and takes the
-  short form before it would go below the medium font. The short form of a talkgroup is its number ("TG 91 World"
-  becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234" becomes "Joe Smith"). A contact's ID alone
-  says nothing at a glance, so it is what goes. An ID without a contact is shown as the ID.
+  short form; a frequency is never shortened. An FM channel's line is its RX frequency and a repeater's offset
+  ("147.060 MHz +600k", no arrow), which drops " MHz", then the offset. While PTT is held (transmitting or refused),
+  and in the VFO, the line is the arrow and the TX frequency. A trunked P25 channel's line is the follower's state
+  ([p25-trunking.md](p25-trunking.md) 7); idle on the control channel of a system that can't transmit (listen only,
+  or blocked) it is `WORD_RX_ONLY` in the warning color, as an RX-only channel's is. Large-text Home picks the
+  largest font each line fits in, and takes the short form before it would go below the medium font. The short form
+  of a talkgroup is its number ("TG 91 World" becomes "TG 91"); of a private contact, its name ("Joe Smith 9991234"
+  becomes "Joe Smith"). A contact's ID alone says nothing at a glance, so it is what goes. An ID without a contact is
+  shown as the ID.
 - While a VFO frequency is being typed in dual watch, its selected pane shows the digits and blanks for the remaining
   places in place of the old frequency, including on Large text Home. The other pane keeps its frequency. Back removes
   a digit; OK or # tunes the selected pane.
@@ -498,8 +503,9 @@ position in the list is its role. Each role has a press and a long press, and ea
 | Tone burst (18) | TONE_BURST raw edges: FM repeater access, at least 1 s; offered with `CONFIG_FM_TX_TONES` | yes | no |
 | TG name / number (19) | TALK_LABEL: Home's talk line puts the talkgroup's name first, or back to its number first; the same as Settings > Display > Talkgroup name first, and saved. Toast "Talkgroup name first" / "Talkgroup number first". Offered in builds with DMR | yes | yes |
 | Scan skip (20) | SCAN_SKIP: what the scan action's "Skip channel for now" does, without the menu: the nuisance delete of the channel that stopped the scan, until the scan stops. Toast "Skipped until the scan stops", "Nothing to skip yet" when the radio has no channel to skip, "Not scanning" (and nothing else) when no scan is running. Allowed on a home key like Scan: it is a plain press or long press function | yes | yes |
+| Monitor toggle (21) | MONITOR_TOGGLE: what quick tile 5 does, on one key: on an FM channel it latches the squelch open (status line MON) or closes it again; on a DMR channel it turns digital monitor on or off (toast "Digital monitor on" / "Digital monitor off"). It is not the Monitor key: that one still opens the squelch only while held, and the retired values 9 and 10 stay retired. Allowed on a home key like Scan: it is a plain press or long press function, and works in the VFO too | yes | yes |
 
-POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
+POWER, ZONE_UP, ZONE_DOWN, SCAN, SCAN_SKIP, MONITOR_TOGGLE, CALL_BACK, HOME_ZONE, COPY_VFO, VFO_TOGGLE and TALK_LABEL do the same on a press and a long
 press and work on any screen. LOCK also gets through while the keys are locked, to unlock them. TALK_TARGET opens the picker on
 a long press too. A monitor key given a press of its own loses its hold: its long press is nothing until set. A Monitor press with a hold
 function: the input engine sends DOWN, the LONG (value 1) at the threshold and UP (value 1 when the LONG ran); the
@@ -556,7 +562,7 @@ link time. `ui_svc_features()` ORs the bits each package reports.
 | `ui_svc_roam` (`UI_FEAT_ROAMING`); roaming state from `radio_view_t.roam` (the Home chip, `ROAM` in the strip, Tools > Roaming, the "Moved to" toast) | radio core (CONFIG_DMR_ROAMING) | `ui_svc_radio.c`: `radio_req_roam` |
 | `hostlink_network_mode`, `board.netif->up`: the strip's USB word (`ui_state_t.usb_net`, polled in `ui_app_tick` so a change without a key press redraws): `IP` while USB is a network adapter, and right after it an up and a down arrow standing close (as U+21C5, a phone's data link mark) once the computer has brought the adapter up (the debug link's `usb.net_up`, [usb-network.md](usb-network.md) 1); after SCAN / ROAM / MON, which win while they last; not on screens that merge their title into the strip | host link and the board's netif (CONFIG_USB_NETWORK, CONFIG_HOSTLINK) | direct calls; Tools > USB network uses the first too |
 | `ui_svc_beep` | radio-features | `ui_svc_radio.c`: `radio_req_beep(BEEP_KEY)` on every press and long press |
-| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
+| `ui_svc_apply` (key tones, tone volume, TX timeout, backlight time, battery saver, talk permit tone, mic gain, reference trim, mic AGC, mic noise reduction) | radio-features | `ui_svc_radio.c`: `radio_set_settings`, at start-up and on each change; the reference trim goes to `radio_set_ref_trim` (radio-features.md 6.1); mic gain goes to `radio_set_mic_gain` (2 dB a step, 5 = the board's levels: the board's FM and DMR mic gain where it has `hal_radio_t.mic_gain`, else DMR scales the samples before the vocoder, with a peak limiter; radio-features.md 3.6); mic AGC and mic noise reduction to `ambeVoiceSetEncodeOptions` (tone frames always, plus each option that is on; `dmr-voice.md` 6), and with AGC on the mic gain is step 5 |
 | `ui_svc_beep` kinds (key, error, message, battery low) | radio-features | `ui_svc_radio.c`: a table from `UI_BEEP_*` to `BEEP_*` (`BEEP_MESSAGE` is the new-message tone) |
 | `UI_FEAT_VOLUME`, `UI_SET_VOLUME` | radio-features | `ui_svc_radio.c`: the feature bit when `radio_volume_soft()` (no knob, a board volume hook); `ui_svc_storage.c`: the step in `settings_t.volume`, and `radio_req_volume` so it is in force at once. The UI side is the volume screen (`SCR_VOLUME`, opened by `ACT_VOLUME`) and Settings > Sound > Volume, both only with the feature (`radio-features.md` 4.2) |
 | `UI_SET_DMR_ID` | storage-cps | `ui_svc_storage.c`: the codeplug's own DMR ID (`codeplug_dmr_id`); a set (1..`CODEPLUG_DMR_ID_MAX`) posts a storage job that calls `codeplug_set_dmr_id`, and the radio core takes the new ID when `codeplug_serial()` changes. A CPS read shows it |
@@ -709,7 +715,7 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   "AGC", is dimmed, OK says "Mic AGC sets the level"
   and the gain is step 5, the board's levels (FM too on a radio whose board sets the gain).
 - Mic gain acts on FM and DMR where the board sets it in its audio path (`hal_radio_t.mic_gain`), else on DMR only,
-  in software before the vocoder (radio-features.md 3.6). The
+  in software before the vocoder with a peak limiter (radio-features.md 3.6). The
   GPS options are stored but act on nothing (no GPS owner); they are dimmed on boards without `CAP_GPS`.
 - Freq trim (Advanced, the last row: Up from the top) is shown only on a radio whose board has `hal_radio_t.ref_trim`
   (`UI_FEAT_REF_TRIM`). The row shows the trim in ppm and opens the Freq Trim page (`freq-trim`, section 2).
@@ -738,8 +744,9 @@ HIL: `tests/hil/test_ui.py` (`tests/hil/README.md`) replays the main sequences o
   text reads on them (at least 7.5:1 after RGB565 rounding); the red is lighter and pinker than TX's red, and there is
   no green, which would hide the RX pill. Gallery: `home_dmr*`, `home_plain`, `channels*` (section 7).
 - The VFO has a mode of its own (`dmr-voice.md` 2.1). The Mode tile (tile 4 in the VFO only) switches it FM / DMR ("VFO: DMR", no "for now": it is kept), and in a build with only one VFO kind the tile is dimmed ("VFO: one mode in this build"). On a channel tile 4 is "To VFO" (`dmr-voice.md` 2.2): it copies what is in effect on the channel to the VFO and opens it on Home ("Copied to VFO"); a channel the VFO can't hold is refused with a toast. A channel has no temporary mode change any more. In DMR the quick menu is the DMR one: Timeslot, Color and Talk to change the VFO's own settings, with no dot on Home. The talk target picker lists the VFO's current target first ("Current"); both OK and hold OK keep the target for the VFO.
-- The privacy key is typed in decimal (Anytone 0..65535). Number rows take typed digits; a value outside the range or
-  between steps is refused with the range. Only key slot 1 is reachable from the menu.
+- The privacy key types are named by key size with the key's range, "8-bit (1-255)" and "16-bit (0-65535)". The key
+  is typed in decimal. Number rows take typed digits; a value outside the range or between steps is refused with the
+  range. Only key slot 1 is reachable from the menu.
 - Switching USB to network has no confirmation (P7: reversible); the info page says what stops and how to get back.
 - A failed message isn't kept for a retry: the banner says "Not delivered: send it again".
 - Compose offers canned texts only ("OK", "On my way", "Call me", "Can't talk now"), sent in the language in use (2.5); free text is dimmed.

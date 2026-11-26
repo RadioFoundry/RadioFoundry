@@ -23,11 +23,15 @@
 
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
+#if CONFIG_RX_EXT
+static bool rx_ext_on;
+#endif
+
 static const band_t bands[] = {
 	{ 136000000, 174000000, true },
 	{ 400000000, 480000000, true },
-#if CONFIG_RX_TBAND
-	{ 500000000, 503000000, false }, // experimental receive only; never a transmit band
+#if CONFIG_RX_EXT
+	{ 500000000, 503000000, false }, // receive only, enabled by Settings > Advanced; keep last
 #endif
 };
 
@@ -122,6 +126,10 @@ const board_t board = {
 	.caps = CAP_ENCODER | CAP_NO_BATTERY | (CONFIG_GPS ? CAP_GPS : 0) | (CONFIG_DMR ? CAP_DMR : 0),
 	.bands = bands,
 	.band_count = sizeof(bands) / sizeof(bands[0]),
+#if CONFIG_RX_EXT
+	.rx_ext_count = 1,
+	.rx_ext_on = &rx_ext_on,
+#endif
 	.power_count = sizeof(power_names) / sizeof(power_names[0]),
 	.power_names = power_names,
 	.power_bands = power_bands,

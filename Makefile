@@ -335,6 +335,11 @@ BIN_SECTIONS ?= .isr_vector .text .rodata .ARM.extab .ARM .preinit_array .init_a
 APP_OBJ := $(APP_SRC:%.c=$(BUILD)/%.o) $(APP_ASM:%.S=$(BUILD)/%.o)
 TP_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(filter %.c,$(PLATFORM_3P_SRC))) $(patsubst %.s,$(BUILD)/%.o,$(filter %.s,$(PLATFORM_3P_SRC)))
 OBJ := $(APP_OBJ) $(TP_OBJ)
+# The text keys each source compiles in this configuration (tools/i18n.py --used): the language tables hold only those
+# keys' strings, so a switch that is off leaves its text out. i18n.c includes the tables, so it is not scanned
+# (tools/i18n.py keeps marks out of it). A build without a language has no tables to fill
+TR_USED := $(if $(strip $(foreach f,$(filter LANG_%,$(FEATURES)),$(call feature_on,$(f)))),\
+	$(patsubst %.c,$(BUILD)/%.tr,$(filter-out core/ui/i18n.c,$(APP_SRC))))
 
 # No built-in suffix rules (the .S -> .s rule deletes sources on case-insensitive file systems, gotchas 13.3)
 .SUFFIXES:
@@ -365,16 +370,19 @@ $(if $(filter $(RFOUNDRY_PRESET),full custom $(basename $(notdir $(wildcard conf
 # are removed outright, because make's 1 s timestamps can't order a stamp written in the same second as an object
 # (and a file removed by a recipe would still be in make's cache)
 VERSION_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -lE 'RFOUNDRY_(GIT|RELEASE)' $(APP_SRC) 2>/dev/null))
+# Their text-key scans (TR_USED) take the same extra defines: a mark under #ifdef RFOUNDRY_RELEASE counts
+VERSION_TR := $(filter $(VERSION_OBJ:.o=.tr),$(TR_USED))
+BUILD_INFO_TR := $(filter $(BUILD)/core/hostlink/build_info.tr,$(TR_USED))
 ifeq ($(filter clean test print-config print-cc print-unsupported print-not-written print-required print-maximal-skip print-maximal-vars \
 	print-vars,$(MAKECMDGOALS)),)
 $(shell mkdir -p $(BUILD); echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' | cmp -s - $(BUILD)/flags || \
 	{ echo '$(CFLAGS_APP) $(CFLAGS_3P) $(LDFLAGS)' > $(BUILD)/flags; \
-	rm -f $(OBJ); })
+	rm -f $(OBJ) $(TR_USED); })
 VERSION_STAMP := $(RFOUNDRY_VERSION) $(RFOUNDRY_RELEASE) $(RFOUNDRY_GIT_TIME) $(RFOUNDRY_GIT_SOURCE) $(RFOUNDRY_GIT_REPO)
 $(shell echo '$(VERSION_STAMP)' | cmp -s - $(BUILD)/version || { echo '$(VERSION_STAMP)' > $(BUILD)/version; \
-	rm -f $(VERSION_OBJ); })
+	rm -f $(VERSION_OBJ) $(VERSION_TR); })
 $(shell echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' | cmp -s - $(BUILD)/build_info || { echo '$(RFOUNDRY_PRESET) $(RFOUNDRY_OFF)' > $(BUILD)/build_info; \
-	rm -f $(BUILD)/core/hostlink/build_info.o; })
+	rm -f $(BUILD)/core/hostlink/build_info.o $(BUILD_INFO_TR); })
 # The About page's authors and third-party list (tools/gen_about.py), and the objects that include it when it changed
 ABOUT_OBJ := $(patsubst %.c,$(BUILD)/%.o,$(shell grep -l rfoundry_about.h $(APP_SRC) 2>/dev/null))
 # A feature built from third-party code adds its own list
@@ -384,15 +392,11 @@ ABOUT_MORE += core/mbe/THIRD_PARTY
 endif
 $(shell python3 tools/gen_about.py AUTHORS platform/$(PLATFORM)/THIRD_PARTY $(BUILD)/gen/rfoundry_about.h $(ABOUT_MORE) | grep -q changed \
 	&& rm -f $(ABOUT_OBJ))
-# The language tables (tools/i18n.py, core/ui/lang/*.po) and the text keys every file that includes i18n.h needs
-# (tr_keys.h, rewritten only when a key changed: the dependency files rebuild those); i18n.o is rebuilt when the tables
-# changed. A failure stops the build: the old tables would link without a word
-I18N_GEN := $(shell python3 tools/i18n.py --gen $(BUILD)/gen/lang_tables.h || echo i18n-failed)
-ifneq ($(filter i18n-failed,$(I18N_GEN)),)
-$(error tools/i18n.py --gen failed (above))
-endif
-ifneq ($(filter changed,$(I18N_GEN)),)
-$(shell rm -f $(BUILD)/core/ui/i18n.o)
+# The text keys every file that includes i18n.h needs (tools/i18n.py, tr_keys.h, rewritten only when a key changed:
+# the dependency files rebuild those). A failure stops the build: the old keys would compile without a word. The
+# language tables come after the compile (below)
+ifneq ($(filter i18n-failed,$(shell python3 tools/i18n.py --keys $(BUILD)/gen || echo i18n-failed)),)
+$(error tools/i18n.py --keys failed (above))
 endif
 # The HTTP status server's static files (core/net/http_assets/*, tools/gen_http_assets.py): a table in the gen
 # directory, gzip compressed with CONFIG_NET_HTTP_GZIP; http.o is rebuilt when it changed
@@ -408,10 +412,10 @@ $(shell python3 tools/gen_http_assets.py $(if $(filter y,$(CONFIG_NET_HTTP_GZIP)
 	$(HTTP_ASSETS) | grep -q changed && rm -f $(BUILD)/core/net/http.o)
 endif
 endif
-$(APP_OBJ) $(TP_OBJ): $(BUILD)/flags
-$(BUILD)/core/hostlink/build_info.o: CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
-$(VERSION_OBJ): $(BUILD)/version
-$(VERSION_OBJ): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
+$(APP_OBJ) $(TP_OBJ) $(TR_USED): $(BUILD)/flags
+$(BUILD)/core/hostlink/build_info.o $(BUILD_INFO_TR): CFLAGS_APP += -DRFOUNDRY_FEATURES_OFF=\"$(RFOUNDRY_OFF)\" -DRFOUNDRY_PRESET=\"$(RFOUNDRY_PRESET)\"
+$(VERSION_OBJ) $(VERSION_TR): $(BUILD)/version
+$(VERSION_OBJ) $(VERSION_TR): CFLAGS_APP += -DRFOUNDRY_GIT=\"$(RFOUNDRY_VERSION)\" -DRFOUNDRY_GIT_ID=$(RFOUNDRY_GIT_ID) -DRFOUNDRY_GIT_DIRTY=$(RFOUNDRY_GIT_DIRTY) \
 	-DRFOUNDRY_RELEASE=\"$(RFOUNDRY_RELEASE)\" -DRFOUNDRY_GIT_TIME=$(or $(RFOUNDRY_GIT_TIME),0)u \
 	-DRFOUNDRY_GIT_DATE=\"$(RFOUNDRY_GIT_DATE)\" -DRFOUNDRY_GIT_SOURCE=\"$(RFOUNDRY_GIT_SOURCE)\" \
 	-DRFOUNDRY_GIT_REPO=\"$(RFOUNDRY_GIT_REPO)\"
@@ -440,6 +444,21 @@ $(filter $(HOT_SRC:%.c=$(BUILD)/%.o),$(APP_OBJ)): CFLAGS_APP += $(OPT_HOT)
 $(filter %.o,$(APP_SRC:%.c=$(BUILD)/%.o)): $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_APP) -c $< -o $@
+# The TR_<KEY> names a source holds once preprocessed with the build's flags, one a line: the marks its switches keep.
+# -g0 leaves the macro definitions out of the output (only what the code expands counts), and the lines from
+# tr_keys.h, which names every key, are skipped. Piped, not written to a file: the output is large. A failed
+# preprocess leaves no file
+$(TR_USED): $(BUILD)/%.tr: %.c
+	@mkdir -p $(dir $@)
+	@{ $(CC) $(CFLAGS_APP) -g0 -E -MF $(@:.tr=.tr.d) -MT $@ $< || echo '#failed'; } | \
+		awk '$$0 == "#failed" { exit 1 } /^# [0-9]+ "/ { gen = ($$3 ~ /tr_keys\.h"$$/); next } \
+		!gen { while (match($$0, /TR_[A-Za-z0-9_]+/)) { seen[substr($$0, RSTART, RLENGTH)] = 1; $$0 = substr($$0, RSTART + RLENGTH) } } \
+		END { for (k in seen) print k }' > $@.tmp && mv $@.tmp $@ || { rm -f $@.tmp; exit 1; }
+# The language tables (core/ui/lang/*.po) with the strings of the keys this build compiles. Written every time a source
+# changed, so i18n.o, which includes them, follows. A failure stops the build
+$(BUILD)/gen/lang_tables.h: $(TR_USED) $(wildcard core/ui/lang/*.po) tools/i18n.py
+	@python3 tools/i18n.py --gen $@ --used $(TR_USED) > /dev/null && touch $@
+$(BUILD)/core/ui/i18n.o: $(BUILD)/gen/lang_tables.h
 # A third-party source missing here comes from RFOUNDRY_THIRD_PARTY through vpath (platform/third_party.mk)
 $(BUILD)/third_party/%.o: third_party/%.c
 	@mkdir -p $(dir $@)
@@ -503,5 +522,5 @@ print-vars:
 clean:
 	rm -rf $(BUILD)
 
--include $(OBJ:.o=.d)
+-include $(OBJ:.o=.d) $(TR_USED:.tr=.tr.d)
 endif

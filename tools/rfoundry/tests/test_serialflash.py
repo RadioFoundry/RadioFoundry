@@ -60,6 +60,17 @@ class Tools(unittest.TestCase):
         self.assertTrue(hasattr(sf.tool("hrc7000_codec"), "merge"))
         self.assertIn("dm1801pro", sf.tool("serial_loader").MODELS)
 
+    def test_rt_systems_cable_is_a_known_programming_cable(self):
+        # #371: an FTDI chip under RT Systems' own vendor id, listed by the web chooser and by these tools alike
+        self.assertIn((0x2100, 0x9E5D), [(v, p) for v, p, _ in sf.tool("serial_loader").USB_SERIAL])
+        tools = os.path.abspath(os.path.join(HERE, "..", ".."))
+        sys.path.insert(0, tools)
+        try:
+            import rfoundry_debug
+        finally:
+            sys.path.remove(tools)
+        self.assertIn(0x2100, rfoundry_debug.CABLE_VIDS)
+
     def test_slot_magic_matches_the_tools(self):
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("hrc7000_codec").SLOT_MAGIC)
         self.assertEqual(sf.SLOT_MAGIC, sf.tool("serial_loader").SLOT_MAGIC)

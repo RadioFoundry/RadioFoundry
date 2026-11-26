@@ -22,7 +22,6 @@ bringup = "docs/testing/md380-bringup.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-unconfirmed = { RX_TBAND = "Experimental receive extension has not been qualified for PLL lock or sensitivity" }
 bands = "400-480 MHz or 136-174 MHz (one band per radio)"
 power = "1 / 5 W"
 display = "color, 160 × 128"

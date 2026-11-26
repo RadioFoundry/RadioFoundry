@@ -453,7 +453,7 @@ uint16_t p25_isp_unit(uint8_t *unit, uint16_t nac, const uint8_t blk[P25_TSBK_BY
 	return n;
 }
 
-// ── Multi-block trunking: the header block (octet places unverified) ──
+// ── Multi-block trunking: the header block ──
 bool p25_mbt_parse(const uint8_t hdr[P25_TSBK_BYTES], p25_mbt_t *h)
 {
 	h->format = hdr[0] & 0x1F;
@@ -547,6 +547,51 @@ uint32_t p25_chan_hz(uint16_t ch, uint32_t base_hz, uint16_t spacing5, uint8_t s
 	if (!base_hz || step > UINT32_MAX - base_hz)
 		return 0;
 	return base_hz + step;
+}
+
+// Explicit status broadcasts: Aeroflex Advanced P25 Control Channel Functions, figures 5 and 6.
+bool p25_mbt_status(const p25_rx_unit_t *u, uint8_t normalized[P25_TSBK_BYTES])
+{
+	uint8_t hdr[P25_TSBK_BYTES], data[P25_TSBK_BYTES];
+	p25_mbt_t h;
+	if (u->duid != P25_DUID_PDU || u->nsyms < p25_blocks_syms(2) ||
+	    p25_block_get(u->air, 0, hdr) < 0 || !p25_mbt_parse(hdr, &h) ||
+	    h.format != P25_PDU_FMT_AMBTC || h.blocks != 1 || (h.mfid != 0 && h.mfid != 1) ||
+	    !(hdr[0] & 0x20) || (h.opcode != P25_OP_NET_STS_BCST && h.opcode != P25_OP_RFSS_STS_BCST))
+		return false;
+	if (p25_block_decode(u->air, 1, data) < 0)
+		return false;
+	// The data block carries a packet CRC-32, not the header's CRC-16.
+	uint32_t crc = 0;
+	for (unsigned i = 0; i < 8; i++) {
+		crc ^= (uint32_t)data[i] << 24;
+		for (unsigned b = 0; b < 8; b++)
+			crc = (crc & 0x80000000u) ? (crc << 1) ^ 0x04C11DB7u : crc << 1;
+	}
+	uint32_t want = (uint32_t)data[8] << 24 | (uint32_t)data[9] << 16 | (uint32_t)data[10] << 8 | data[11];
+	if (~crc != want)
+		return false;
+	p25_tsbk_t m = { .opcode = h.opcode };
+	uint16_t sysid = (uint16_t)((hdr[4] & 15u) << 8 | hdr[5]);
+	if (h.opcode == P25_OP_NET_STS_BCST) {
+		m.kind = P25_TSBK_NET;
+		m.u.net.lra = hdr[3];
+		m.u.net.sysid = sysid;
+		m.u.net.wacn = (uint32_t)data[0] << 12 | (uint32_t)data[1] << 4 | data[2] >> 4;
+		m.u.net.ch = (uint16_t)(data[3] << 8 | data[4]);
+		m.u.net.ssc = data[7];
+	} else {
+		m.kind = P25_TSBK_RFSS;
+		m.u.site.lra = hdr[3];
+		m.u.site.flags = (hdr[4] >> 4) & 1u;
+		m.u.site.sysid = sysid;
+		m.u.site.rfss = data[0];
+		m.u.site.site = data[1];
+		m.u.site.ch = (uint16_t)(data[2] << 8 | data[3]);
+		m.u.site.ssc = data[6];
+	}
+	p25_tsbk_make(&m, normalized);
+	return true;
 }
 
 #endif

@@ -2,12 +2,6 @@
 
 # Radio Reference
 
-An experimental MD-9600 build with `CONFIG_RX_TBAND=y` allows reception at
-500–503 MHz. That window is always transmit-inhibited, including when a channel
-is mistakenly marked for transmit. One HW V2 has decoded live control signaling
-within this window; reliable reception throughout the window is not guaranteed;
-see [the hardware record](../spec/hardware-md9600.md#experimental-500503-mhz-reception).
-
 The rest of this manual describes what RadioFoundry does on every radio. This chapter lists what differs from radio to radio:
 which physical key does each job, the power levels, the battery, the power switch, the display, what a radio lacks,
 and what has been checked on it.
@@ -483,7 +477,11 @@ A 240 x 320 color screen. RadioFoundry uses its full resolution, with smooth (an
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
 - No VOX yet: the board code that reads the microphone level isn't written.
-- Audio linking (USRP) carries DMR only: the FM transmit path from the processor isn't written.
+- The microphone reaches the digital voice codec quieter than on other radios (measured 13 dB under another
+  maker's handheld), so DMR adds 12 dB at **Mic gain** 5 and holds a loud voice back rather than letting it distort.
+  **Mic gain** moves it 2 dB a step either way. Not yet checked on air.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 - No beeps while transmitting: the radio's beep path would put them on the air. A beep still playing when the
   transmission ends is heard from then on. The DMR talk permit tone is a single short beep played just before the
   radio transmits, while the screen shows ADMITTED ([DMR](09-dmr.md#the-talk-permit-tone)).
@@ -689,6 +687,8 @@ The radio vibrates for messages, call alerts and emergencies (**Settings > Sound
 - Air band and FM broadcast receive
   ([Air band and FM broadcast](07-channels-zones-vfo.md#air-band-and-fm-broadcast)) are built in but not checked on
   the radio yet. Broadcast covers 65 to 108 MHz.
+- No audio linking (USRP): its received audio needs about 17.6 KB/s, more than the programming cable's PPP link
+  carries (about 11.5 KB/s).
 
 ## Retevis RT10
 
@@ -822,3 +822,9 @@ models it covers.
 | BTECH DMR-6X2 PRO | Planned. Built on the AT-D878UVII Plus, so it should follow the Anytone port. |
 | BridgeCom Maverick | Planned. Sold as an upgraded AT-D878UV, so it likely follows the Anytone port. |
 <!-- end generated -->
+
+### MD-9600 extended reception
+
+Settings > Advanced > RX past bands enables 500–503 MHz for reception only, off
+by default. Transmission remains blocked. Sensitivity in this window is unmeasured;
+see [the hardware record](../spec/hardware-md9600.md#experimental-500503-mhz-reception).

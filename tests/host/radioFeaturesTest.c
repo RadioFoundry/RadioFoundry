@@ -970,6 +970,13 @@ static void test_beep_module(void)
 		CHECK(beep_mix(blk));
 	}
 	CHECK(!beep_mix(blk));
+	// The mic hears it: from the block after the first until BEEP_ECHO_BLOCKS after the last (the eighth was the first
+	// of them)
+	for (int i = 1; i < BEEP_ECHO_BLOCKS; i++) {
+		CHECK(beep_mic_echo());
+		CHECK(!beep_mix(blk));
+	}
+	CHECK(!beep_mic_echo());
 	// Saturation
 	beep_play(BEEP_ERROR, 100, true);
 	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -3727,13 +3734,37 @@ static void test_dmr_beeps(void)
 	beep_get_stats(&b0);
 	CHECK(b0.played >= 1);
 	int starts = aud.starts;
-	// PTT: talk permit once on air
+	// PTT: talk permit once on air. The mic hears the speaker (issue 532): the blocks the permit plays in and its
+	// echo after it go to the encoder as silence, the voice around them as it is
+	for (int i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
+		mic[i] = (int16_t)(i & 1 ? 1000 : -1000);
+	}
+	v_enc_blocks = v_enc_tone = v_enc_first = v_enc_last = 0;
 	req(RREQ_PTT, 1);
 	run(600);
 	beep_get_stats(&b1);
 	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && aud.starts == starts);
+	ambe_voice_stats_t vs;
+	ambeVoiceGetStats(&vs);
+	// The permit is 7 blocks (BEEP_TX_PERMIT, 140 ms): muted from the block after the first to BEEP_ECHO_BLOCKS
+	// after the last
+	CHECK(vs.tx_mic_muted == 6 + BEEP_ECHO_BLOCKS);
+	CHECK(v_enc_blocks - v_enc_tone == vs.tx_mic_muted && v_enc_blocks > vs.tx_mic_muted + 10);
+	CHECK(v_enc_first == 1 && v_enc_last == v_enc_blocks);
 	req(RREQ_PTT, 0);
 	run(1000);
+	// A host audio session's samples in place of the mic never hear the speaker: nothing is muted
+	audio_mux_host_tx(true, true);
+	beep_get_stats(&b0);
+	req(RREQ_PTT, 1);
+	run(600);
+	beep_get_stats(&b1);
+	ambeVoiceGetStats(&vs);
+	CHECK(sm.view.dmr.state == RDMR_TX && b1.played == b0.played + 1 && vs.tx_mic_muted == 0);
+	req(RREQ_PTT, 0);
+	run(1000);
+	audio_mux_host_tx(false, false);
+	memset(mic, 0, sizeof mic);
 	// No-beep channel
 	chans[6].no_beep = true;
 	req(RREQ_ZONE_POS, 0);

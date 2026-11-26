@@ -100,6 +100,7 @@ typedef enum
 	DMR_DATA_EV_ZONE_SENT,					// id: the destination; our zone went out whole
 	DMR_DATA_EV_ZONE_FAILED,				// id: the destination; it couldn't be sent
 	DMR_DATA_EV_ZONE_REFUSED,				// id: the directory service; it answered our request with a refusal
+	DMR_DATA_EV_SMS_BLOCKED,				// id: the destination; not sent: the channel's privacy has no data form
 } dmrDataEventKind_t;
 
 typedef struct
@@ -273,10 +274,12 @@ int dmrDataServiceSendShortData(bool group, uint32_t dst, uint32_t src, const ui
 // individual destination), else unconfirmed; rate 1/2, 2 preamble CSBKs. l4 is not copied: it must stay unchanged
 // until dmrDataServiceIpBusy() is false. False when one is still going or it can't be sent now.
 // The IPv4 addresses (host byte order, dmrData.h): srcIp DMR_DATA_IP_OURS is ours, the CAI address of the channel's
-// own ID; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
+// own ID, DMR_DATA_IP_OUR_PERIPHERAL its peripheral network address (13.<the ID>, the host behind the radio), both
+// resolved when the packet goes; dstIp DMR_DATA_IP_OURS is the destination ID's (dmrDataIdAddress). Another dstIp (an off-net host behind the
 // radio dst) or srcIp goes in the full header (SAP 4) whatever the compression setting. ttl: the IPv4 TTL,
 // DMR_IP_TTL_DEFAULT for the radio's own (64); a talkgroup always gets 1
 #define DMR_DATA_IP_OURS			0u
+#define DMR_DATA_IP_OUR_PERIPHERAL	1u
 bool dmrDataServiceSendIP(bool group, uint32_t dst, uint32_t srcIp, uint32_t dstIp, uint8_t ttl, uint8_t protocol,
 							const uint8_t *l4, int length);
 // The same from us, with the IDs' own addresses and our TTL (DMR_DATA_IP_OURS, DMR_IP_TTL_DEFAULT), and the delivery

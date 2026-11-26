@@ -21,7 +21,6 @@ install = "docs/user/02-installing.md"
 
 # One-line summaries for the site and the generated tables; the facts are in docs.hardware
 [hardware]
-unconfirmed = { RX_TBAND = "Experimental receive extension has not been qualified for PLL lock or sensitivity" }
 bands = "136-174 / 400-480 MHz"
 power = "1 / 2 / 5 W"
 display = "1.77\" color, 160 × 128"
@@ -41,6 +40,7 @@ release = "stable"
 extra = [
 	{ name = "audio-probe", make = ["CONFIG_AUDIO_PROBE=y", "CONFIG_APRS_RX=n", "LTO=1"] },
 	{ name = "chinese", make = ["CONFIG_LANG_ZH=y", "CONFIG_LANG_DEFAULT_ZH=y", "CONFIG_SATELLITE_TLE=n"] },
+	{ name = "debuglink-dmrip", make = ["CONFIG_DEBUGLINK_DMRIP=y"] },
 ]
 
 [flash]

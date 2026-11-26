@@ -11,6 +11,7 @@
 #include "rfseq_md9600.h"
 #include "md9600.h"
 #include "config.h"
+#include "board.h"
 
 #ifndef CONFIG_MD9600_TX
 #define CONFIG_MD9600_TX	0
@@ -355,7 +356,9 @@ static void check_rx_order(md9600_rev_t r, uint32_t hz, bool wide)
 		uint16_t w[MD9600_IF_WORDS];
 		uint8_t n = md9600_if_words(wide, w);
 		int i0 = find(0, EV_IF, p.band, w[0]);
-		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 0);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) > tune);
+		CHECK(find(0, EV_IF, 1 - p.band, 0x08AAu) < i0);
+		CHECK(i0 > tune && i0 < af && count(EV_IF, p.band) == n && count(EV_IF, 1 - p.band) == 1);
 		CHECK(find(i0, EV_IF, p.band, w[1]) == i0 + 1);
 		CHECK(count(EV_LINE, MD9600_LN_V5_BW_V) == 0);
 	} else {
@@ -378,7 +381,7 @@ static void test_rx(void)
 		}
 		check_rx_order((md9600_rev_t)r, 145500000u, true);
 		check_rx_order((md9600_rev_t)r, 446006250u, false);
-#if CONFIG_RX_TBAND
+#if CONFIG_RX_EXT
 		check_rx_order((md9600_rev_t)r, 500437500u, false);
 		fresh((md9600_rev_t)r, true);
 		CHECK(md9600_rf_tx_check(&rf, 500437500u, 0) != MD9600_RF_OK);
@@ -1226,6 +1229,7 @@ static void test_hwopt(void)
 
 int main(void)
 {
+	board_rx_ext_set(true);
 	test_init();
 	test_power_up();
 	test_rx();

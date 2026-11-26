@@ -2221,6 +2221,74 @@ static void testAirLoss(void)
 	rig_end();
 }
 
+static void testExplicitStatus(void)
+{
+	static const p25_follow_cc_t cc[] = { { .hz = HZ_CC1 } };
+	static p25_follow_t f;
+	p25_follow_cfg_t cfg = { .wacn = 0xABCDE, .sysid = 0x234, .nac = 0x123, .ncc = 1, .cc = cc, .unit_id = 0 };
+	uint8_t unit[512], norm[12];
+	uint8_t hdr[12] = { 0x37, 0x3D, 0, 7, 0x02, 0x34, 0x81, 0x3B, 0, 0, 0, 0 };
+	// Synthetic payloads with precomputed, complemented MSB-first CRC-32 (seed zero).
+	uint8_t data[12] = { 0xAB, 0xCD, 0xE0, 0x12, 0x34, 0x56, 0x78, 0x90, 0x81, 0x14, 0x04, 0xEB };
+	uint8_t site[12] = { 0x02, 0x09, 0x12, 0x34, 0x56, 0x78, 0x90, 0, 0x7E, 0xC4, 0x8E, 0xB2 };
+	p25_tsbk_t m;
+	p25_rx_unit_t u = { .duid = P25_DUID_PDU, .nac = 0x123, .nsyms = p25_blocks_syms(2), .air = unit };
+
+	p25_tsbk_seal(hdr);
+	p25_unit_begin(unit, u.nsyms, u.nac, u.duid, P25_SS_UNKNOWN);
+	p25_block_put(unit, 0, hdr);
+	p25_block_put(unit, 1, data);
+	CHECK(p25_mbt_status(&u, norm) && p25_tsbk_parse(norm, &m), "explicit network status");
+	CHECK(m.kind == P25_TSBK_NET && m.u.net.wacn == 0xABCDE && m.u.net.sysid == 0x234 &&
+	      m.u.net.ch == 0x1234 && m.u.net.ssc == 0x90, "explicit network fields");
+	now_ms = 1000;
+	ntunes = nsends = 0;
+	p25_follow_begin(&f, &cfg, &fhooks, NULL, now_ms);
+	retune(&f);
+	p25_follow_unit(&f, &u, now_ms);
+	CHECK(view(&f).state == P25_FOLLOW_CONTROL && view(&f).wacn == 0xABCDE && view(&f).sysid == 0x234,
+	      "explicit identity acquires control with configured WACN");
+	CHECK(nsends == 0 && view(&f).reg_tx == 0 && view(&f).aff_tx == 0,
+	      "explicit identity remains receive only with ID zero");
+
+	u.nsyms--;
+	CHECK(!p25_mbt_status(&u, norm), "truncated explicit packet");
+	u.nsyms++;
+	data[0] ^= 1;
+	p25_block_put(unit, 1, data);
+	CHECK(!p25_mbt_status(&u, norm), "bad packet CRC rejected");
+	data[0] ^= 1;
+	p25_block_put(unit, 1, data);
+	hdr[10] ^= 1;
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "bad header CRC rejected");
+
+	hdr[7] = 0x3A;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	p25_block_put(unit, 1, site);
+	CHECK(p25_mbt_status(&u, norm) && p25_tsbk_parse(norm, &m), "explicit RFSS status");
+	CHECK(m.kind == P25_TSBK_RFSS && m.u.site.rfss == 2 && m.u.site.site == 9 && m.u.site.sysid == 0x234 &&
+	      m.u.site.ch == 0x1234 && m.u.site.ssc == 0x90, "explicit site fields");
+	p25_follow_unit(&f, &u, now_ms);
+	CHECK(view(&f).rfss == 2 && view(&f).site == 9, "explicit site reaches follower");
+
+	hdr[2] = 0x90;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "vendor packet not interpreted as standard");
+	hdr[2] = 0;
+	hdr[6] = 0x82;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "unsupported block count rejected");
+	hdr[6] = 0x81;
+	hdr[0] &= (uint8_t)~0x20;
+	p25_tsbk_seal(hdr);
+	p25_block_put(unit, 0, hdr);
+	CHECK(!p25_mbt_status(&u, norm), "inbound packet rejected");
+}
+
 // System ID $00A is blocked as the WACNs $BEE00..$BEEFF are, under any WACN: named by the network status broadcast in
 // either form, by the RFSS status broadcast of the control channel held, by voice channel link control (LCO 35, 36,
 // 41) or by the programming. An adjacent site's status naming it blocks nothing here
@@ -2341,6 +2409,7 @@ static void testSysidBlocked(void)
 int main(void)
 {
 	pulse_init();
+	testExplicitStatus();
 	testLayouts();
 	testInbound();
 	testBlocks();
