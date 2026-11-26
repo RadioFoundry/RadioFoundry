@@ -1041,68 +1041,70 @@ bool ui_home_encrypted(const radio_view_t *v)
 #endif
 }
 
-// The padlock, hand drawn at three sizes ('#' set): a round-topped shackle, a body with rounded corners and a keyhole
-// (a round hole over a slot). The largest that fits the height asked for is used
-static const char *const lock_s[] = {	// 7 x 8
-	"..###..",
-	".#...#.",
-	".#...#.",
-	"#######",
-	"###.###",
-	"###.###",
-	"#######",
-	".#####.",
+// The padlock, hand drawn at three sizes (a row a word, the leftmost pixel in bit w - 1): a round-topped shackle, a
+// body with rounded corners and a keyhole (a round hole over a slot). The largest that fits the height asked for is
+// used
+static const uint16_t lock_s[] = {	// 7 x 8
+	0b0011100,
+	0b0100010,
+	0b0100010,
+	0b1111111,
+	0b1110111,
+	0b1110111,
+	0b1111111,
+	0b0111110,
 };
-static const char *const lock_m[] = {	// 9 x 12
-	"...###...",
-	"..#...#..",
-	".#.....#.",
-	".#.....#.",
-	".#.....#.",
-	"#########",
-	"#########",
-	"####.####",
-	"###...###",
-	"####.####",
-	"####.####",
-	".#######.",
+static const uint16_t lock_m[] = {	// 9 x 12
+	0b000111000,
+	0b001000100,
+	0b010000010,
+	0b010000010,
+	0b010000010,
+	0b111111111,
+	0b111111111,
+	0b111101111,
+	0b111000111,
+	0b111101111,
+	0b111101111,
+	0b011111110,
 };
-static const char *const lock_l[] = {	// 12 x 16
-	"....####....",
-	"...######...",
-	"..##....##..",
-	"..##....##..",
-	"..##....##..",
-	"..##....##..",
-	".##########.",
-	"############",
-	"############",
-	"#####..#####",
-	"####....####",
-	"####....####",
-	"#####..#####",
-	"#####..#####",
-	"############",
-	".##########.",
+static const uint16_t lock_l[] = {	// 12 x 16
+	0b000011110000,
+	0b000111111000,
+	0b001100001100,
+	0b001100001100,
+	0b001100001100,
+	0b001100001100,
+	0b011111111110,
+	0b111111111111,
+	0b111111111111,
+	0b111110011111,
+	0b111100001111,
+	0b111100001111,
+	0b111110011111,
+	0b111110011111,
+	0b111111111111,
+	0b011111111110,
 };
 
 // The padlock in a box h pixels high whose bottom is at top + h, at x. Returns its width
 static int draw_padlock(int x, int top, int h, color_t c)
 {
-	const char *const *rows = lock_s;
-	int n = (int)(sizeof lock_s / sizeof lock_s[0]);
+	const uint16_t *rows = lock_s;
+	int w = 7, n = 8;
 	if (h >= 16) {
 		rows = lock_l;
-		n = (int)(sizeof lock_l / sizeof lock_l[0]);
+		w = 12;
+		n = 16;
 	} else if (h >= 12) {
 		rows = lock_m;
-		n = (int)(sizeof lock_m / sizeof lock_m[0]);
+		w = 9;
+		n = 12;
 	}
-	int w = (int)strlen(rows[0]);
 	int y0 = top + h - n;			// on the text's baseline
 	for (int r = 0; r < n; r++)
 		for (int k = 0; k < w; k++)
-			if (rows[r][k] == '#')
+			if (rows[r] & (1u << (w - 1 - k)))
 				gfx_pixel(x + k, y0 + r, c);
 	return w;
 }
