@@ -5,6 +5,7 @@
 #include <string.h>
 #include "codeplug/zone_edit.h"
 #include "codeplug/codeplug_tag.h"
+#include "settings/settings.h"
 #include "storage/storage.h"
 
 int zone_list_find(const zone_t *z, uint16_t channel)
@@ -89,9 +90,13 @@ static zone_edit_result_t load(uint16_t zone)
 }
 
 // Room for one more zone. Without stored zones the radio shows one virtual zone ("All channels"): it is stored first,
-// so the user keeps the zone they saw and the new one comes after it
+// so the user keeps the zone they saw and the new one comes after it. Refused while a detour holds the settings (before
+// anything is written): the saved indexes couldn't move with the zones
 static zone_edit_result_t make_room(void)
 {
+	if (settings_held()) {
+		return ZONE_EDIT_FAILED;
+	}
 	if (!codeplug_zones_stored()) {
 		if (load(0) != ZONE_EDIT_OK || work.count == 0) {
 			return ZONE_EDIT_OK;	// nothing to keep (no channels): the new zone is the first
@@ -294,6 +299,9 @@ zone_edit_result_t zone_edit_delete(uint16_t zone)
 	storage_lock();
 	zone_shift_busy(true);
 	zone_edit_result_t r = zone < codeplug_zone_count() && codeplug_zones_stored() ? ZONE_EDIT_OK : ZONE_EDIT_NO_ZONE;
+	if (r == ZONE_EDIT_OK && settings_held()) {
+		r = ZONE_EDIT_FAILED;	// a detour holds the settings: the saved indexes couldn't move with the zones
+	}
 	if (r == ZONE_EDIT_OK) {
 		zone_settle_begin(true, zone);
 		if (!codeplug_delete_zone(zone)) {

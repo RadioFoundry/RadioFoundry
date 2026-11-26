@@ -42,15 +42,17 @@ The computer gets its address from the radio by DHCP:
 
 | Who | Address |
 |---|---|
-| Your computer | 12.x.y.z, from your DMR ID (for example ID 9991234 is 12.152.116.66) |
-| The radio | Your computer's address with the last bit flipped (12.152.116.67) |
+| The radio | 12.x.y.z, from your DMR ID (for example ID 9991234 is 12.152.116.66) |
+| Your computer | 13.x.y.z, from the same DMR ID (13.152.116.66) |
 | Another radio | 12.x.y.z from its DMR ID |
+| A computer on another radio | 13.x.y.z from that radio's DMR ID |
 | A talkgroup | 225.x.y.z from the talkgroup number |
 
 Packets to another radio's or a talkgroup's address go out over the air on the current DMR channel. Packets from other
 radios arrive on the network adapter. DMR packet data is much slower than any wired network. A packet that can't
-go out within 2 s is dropped. The fixed addresses of [control station mode](#control-station-for-dispatch-software)
-replace the first two rows.
+go out within 2 s is dropped. Every address in 12.x.y.z other than your radio's own is another radio, so a packet to
+12.152.116.67 goes over the air. The fixed addresses of
+[control station mode](#control-station-for-dispatch-software) replace the first two rows.
 
 ## Serial tools in network mode
 
@@ -58,7 +60,7 @@ The debug link, the MMDVM hotspot protocol and the CPS protocol stay reachable o
 address:
 
 ```
-tools/rfoundry_debug.py --port udp:12.152.116.67 version
+tools/rfoundry_debug.py --port udp:12.152.116.66 version
 ```
 
 MMDVMHost connects the same way (`Protocol=udp`, `ModemAddress=<radio address>`, `ModemPort=3334`). qdmr finds radios
@@ -117,22 +119,22 @@ traffic on to the Internet:
 ```
 # macOS (en0: your Internet connection)
 sudo sysctl -w net.inet.ip.forwarding=1
-echo "nat on en0 from 12.152.116.67 to any -> (en0)" | sudo pfctl -ef -
+echo "nat on en0 from 12.152.116.66 to any -> (en0)" | sudo pfctl -ef -
 # Linux (eth0: your Internet connection, usb0: the radio)
 sudo sysctl -w net.ipv4.ip_forward=1
-sudo iptables -t nat -A POSTROUTING -s 12.152.116.67/32 -o eth0 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -s 12.152.116.66/32 -o eth0 -j MASQUERADE
 sudo iptables -A FORWARD -i usb0 -o eth0 -j ACCEPT
 sudo iptables -A FORWARD -i eth0 -o usb0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 ```
 
-Use your radio's address instead of 12.152.116.67. Then give the radio a server's IP address. The radio can't look up
+Use your radio's address instead of 12.152.116.66. Then give the radio a server's IP address. The radio can't look up
 names. `dig +short rotate.aprs2.net` gives some addresses. You can also give a range in km for the messages and packets it
 receives:
 
 ```
-curl "http://12.152.116.67/api/aprsis?server=44.31.12.34:14580&range=50"
-curl "http://12.152.116.67/api/aprsis"              # the state
-curl "http://12.152.116.67/api/aprsis?server=off"   # stop
+curl "http://12.152.116.66/api/aprsis?server=44.31.12.34:14580&range=50"
+curl "http://12.152.116.66/api/aprsis"              # the state
+curl "http://12.152.116.66/api/aprsis?server=off"   # stop
 ```
 
 The radio logs in with its APRS callsign and the passcode computed from it. Your beacons go to APRS-IS when **KISS on
@@ -140,32 +142,46 @@ USB** and "to APRS-IS" are on (`tools/rfoundry_debug.py aprs set to_is 1`).
 
 ## Selecting zones and channels from a program
 
-A device or program on your computer, such as takRF, can choose the radio's zone and channel as a knob would. It
-sends short text messages over UDP to port 4191 at the radio's address. This works without the radio's web page, so
-it is also on firmware built without it. Zones and channels are counted from 0, in the order the radio shows them.
+A program on your computer or a page in its browser, such as takRF, can choose the radio's zone and channel as a
+knob would. It opens the connection the radio's web page uses, `ws://<radio address>/ws` (a WebSocket), and sends
+short text messages on it. Zones and channels are counted from 0, in the order the radio shows them.
 
 | Message | Does |
 |---|---|
-| `select` | Says where the radio is and what it is on: zone, channel, name, frequency, and on DMR the color code, timeslot and talkgroup |
 | `select?zone=2&pos=5` | The third zone, its sixth channel (without `pos`, its first) |
 | `step?channel=1` | One channel on; `-1` one back; it wraps at the zone's ends. From the VFO, the first step goes back to the channel you came from |
-| `step?zone=1` | One zone on, to its first channel; `-1` one back |
-| `select?notify=0` | Stop the change messages (below) |
+| `step?zone=1` | One zone on, to its first channel; `-1` one back; it wraps from the last zone to the first and back |
+| `status?changes` | Send the status only when the zone or channel changes, not every second; `status` goes back to every change |
 
-The radio answers each message with where it is now. After any message it also sends a short update to the same
-program whenever the zone, channel or talkgroup changes, and every 30 seconds, for two minutes. Send `select` every
-minute to keep the updates coming. `codeplug` in the answer goes up whenever the channels or zones change (on the
-radio, or a codeplug written to it).
+The radio sends its status on the same connection: zone, position, zone name, channel, frequency, and on DMR the
+color code, timeslot and talkgroup. `codeplug` in it goes up whenever the channels or zones change (on the radio, or a
+codeplug written to it). The radio answers a message only when it refuses it, with `{"err":...}`.
 
-Nothing changes while the radio transmits or is a hotspot. Details: [tcp-services.md](../spec/tcp-services.md) 8.
+Zones and channels change only from the computer the radio is plugged into, and not while the radio transmits or is a
+hotspot. The radio takes one such connection at a time: while a program has it, the radio's web page shows the status
+only. `tools/rfoundry_ws.py --radio <radio address> "select?zone=1"` tries it from a terminal. Details:
+[tcp-services.md](../spec/tcp-services.md) 5.1 and 8.
 
-For a quick try on Linux or macOS: `echo select | nc -u -w1 <radio address> 4191`.
+### The radio's GPS on your computer
 
-> **Warning: send only to the radio's own address.** The radio passes anything else on your network link to the air
-> as DMR data. A message to another address in the radio's range, or to a port the radio doesn't serve, makes the
-> radio transmit, and so does port 4191 on firmware without this feature (check its build options first,
-> [build options](../build-config.md)). Whenever the radio is in network mode, keep an antenna or a dummy load on it
-> and leave it on a channel you may transmit on.
+On a radio with a GPS, a program on the computer the radio is plugged into can have its position once a second, with
+altitude, speed, course, satellites and the time: it sends `gps` over the web page's connection (`gps?off` stops it).
+`tools/rfoundry_gps.py` does this for you. It prints the positions, or turns them into NMEA sentences for gpsd or a
+mapping program:
+
+```
+python3 tools/rfoundry_gps.py                            # the positions, one line each
+python3 tools/rfoundry_gps.py --nmea-udp 127.0.0.1:4349  # NMEA for gpsd: gpsd -N udp://127.0.0.1:4349
+```
+
+While the tool runs, takRF can't connect and the radio's web page shows the status only. The position is the radio's own GPS, never one your computer or phone gave the radio, and it is
+exact, whatever the position ambiguity setting. Nothing comes while Settings > Location > GPS is off or without a fix.
+
+> **Warning: send only to the radio's own address.** The radio passes messages for other addresses in its range to
+> the air as DMR data, so a message to another address makes the radio transmit. Messages to the radio's own address
+> never go on the air: to a port the radio doesn't serve, your program gets a "port unreachable" error back. Whenever
+> the radio is in network mode, keep an antenna or a dummy load on the radio and leave the radio on a channel you may
+> transmit on.
 
 ## Linking audio: AllStarLink and DVSwitch
 
@@ -226,8 +242,8 @@ The radio answers SNMP version 2c requests at its address, port 161 (not in buil
 small one:
 
 ```
-tools/rfoundry_snmp.py walk 12.152.116.67               # everything the radio reports
-tools/rfoundry_snmp.py get 12.152.116.67 rfoundryBatteryVoltage.0 rfoundryChannelName.0
+tools/rfoundry_snmp.py walk 12.152.116.66               # everything the radio reports
+tools/rfoundry_snmp.py get 12.152.116.66 rfoundryBatteryVoltage.0 rfoundryChannelName.0
 tools/rfoundry_snmp.py traps                            # events as they happen (needs port 162: root on Linux)
 ```
 
@@ -242,7 +258,7 @@ The read community is `public`. Changing settings needs a write community, which
 
 ```
 tools/rfoundry_debug.py snmp write MySecret             # over the serial port, before switching to network mode
-tools/rfoundry_snmp.py -c MySecret set 12.152.116.67 sysName.0 s:Q0TST
+tools/rfoundry_snmp.py -c MySecret set 12.152.116.66 sysName.0 s:Q0TST
 tools/rfoundry_debug.py snmp status                     # the agent's settings and counters
 ```
 
@@ -282,8 +298,9 @@ In the dispatch software, set:
 
 | Item | Value |
 |---|---|
-| Control station address | The radio's address: 192.168.10.1, or 12.x.y.z from your DMR ID with the last bit flipped |
+| Control station address | The radio's address: 192.168.10.1, or 12.x.y.z from your DMR ID |
 | Radio network | 12.0.0.0/8 |
+| Peripheral network (computers on other radios) | 13.0.0.0/8 |
 | Talkgroup network | 225.0.0.0/8 |
 | DMR ID | Your radio's DMR ID |
 
@@ -343,7 +360,7 @@ Then add a route on the computer for that network through the radio's address. F
 as `usb0`:
 
 ```
-sudo ip route add 10.20.0.0/16 via 12.152.116.67 dev usb0   # the radio's address (Addresses, above)
+sudo ip route add 10.20.0.0/16 via 12.152.116.66 dev usb0   # the radio's address (Addresses, above)
 ```
 
 Packets to that network go over the air to the gateway radio, with the real destination address in the packet. They

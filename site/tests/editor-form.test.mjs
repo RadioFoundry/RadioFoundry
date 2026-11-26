@@ -132,3 +132,123 @@ test("channel form: the AES key list follows a change of system and keeps a key 
 	assert.equal(saved.system, b);
 	assert.equal(saved.params.id, 2);
 });
+
+// ---- The system form (modesview.js), opened as the Systems tab's Edit button opens it
+
+const { systemsTab } = await import("../static/js/editor/modesview.js");
+const { h, button } = await import("../static/js/flasher/dom.js");
+
+// every element below el for which pick() holds
+function all(el, pick, out = []) {
+	for (const c of el.children) {
+		if (!(c instanceof El)) continue;
+		if (pick(c)) out.push(c);
+		all(c, pick, out);
+	}
+	return out;
+}
+
+function openSystem(m, s) {
+	let edit = null;
+	const api = { model: m, t, h, change: (name, fn) => fn(), confirmDialog() {},
+		button: (text, fn, opts) => {
+			if (text === t("editor.modes.edit")) edit = fn;
+			return button(text, fn, opts);
+		} };
+	systemsTab(api, null);
+	assert.ok(edit, "the system's Edit button");
+	edit();
+	const dlg = document.body.children.at(-1);
+	const body = dlg.find((e) => e.tagName === "DIV" && String(e.className).startsWith("form-grid"));
+	const input = (key) => dlg.find((e) => e.id === `f-${key}`);
+	const type = (key, text) => {
+		input(key).value = text;
+		body.dispatch("input");
+	};
+	const row = (key) => dlg.find((e) => String(e.className).startsWith("form-row") && e.find((x) => x.id === `f-${key}`));
+	// the column headings of every entry table, and the cell of a row by its column's label
+	const heads = () => all(dlg, (e) => e.tagName === "TH").map((e) => e.textContent);
+	const cellOf = (name) => dlg.find((e) => e.tagName === "INPUT" && e.getAttribute("aria-label") === name);
+	const typeCell = (name, text) => {
+		const el = cellOf(name);
+		el.value = text;
+		el.dispatch("input");
+		body.dispatch("input");
+	};
+	const note = () => all(dlg, (e) => String(e.className).startsWith("form-note") && !e.hidden).map((e) => e.textContent);
+	const save = () => dlg.find((e) => e.tagName === "BUTTON" && e.textContent === t("editor.save_record")).click();
+	return { dlg, input, type, row, heads, typeCell, note, save, choices: (key) => input(key).children.map((o) => o.textContent) };
+}
+
+function trunked() {
+	const m = empty();
+	const s = newSystem(m, 3, "County");
+	Object.assign(s, { tx: true, ownId: 1234567 });
+	s.fields.wacn = 0x12345;
+	s.entries.push({ cls: 0, group: 0, control: true, flags: 0, iden: 0, chanNo: 0, chan: 0, rxHz: 851012500, txHz: 806012500 });
+	s.entries.push({ cls: 2, group: 1, control: false, flags: 0, baseHz: 851006250, spacingHz: 6250, txOffsetHz: -45000000, bwHz: 12500, tdma: false, slots: 2 });
+	m.systems.push(s);
+	numberAll(m);
+	return { m, s };
+}
+
+test("system form: a blocked network ID, as it is typed, locks Transmit and hides what only a transmitter reads (#1062)", () => {
+	const { m, s } = trunked();
+	const form = openSystem(m, s);
+	const open = ["editor.modes.tx0", "editor.modes.tx1", "editor.modes.tx2"];
+	assert.deepEqual(form.choices("transmit"), open);
+	assert.equal(form.row("ownId").hidden, false);
+	assert.ok(form.heads().includes("editor.col.tx") && form.heads().includes("editor.p25.tx_offset"));
+	assert.ok(!form.note().some((x) => x.includes("editor.p25.no_tx_")));
+
+	form.type("sys.wacn", "bee5a");
+	assert.deepEqual(form.choices("transmit"), ["editor.modes.tx0"], "one choice, listen only");
+	assert.equal(form.input("transmit").disabled, true);
+	assert.equal(form.row("ownId").hidden, true);
+	assert.ok(form.note().includes('editor.p25.no_tx_wacn {"id":"BEE5A"}'), "one notice, naming the WACN as typed");
+	assert.ok(!form.note().some((x) => x.includes("editor.p25.no_tx_sysid")));
+	assert.ok(form.dlg.find((e) => e.className === "form-note notice bad" && !e.hidden), "drawn as a callout");
+	// right under the identity fields that trigger it: after the NAC, before the control channel table and Transmit
+	const order = all(form.dlg, (e) => e.id === "f-sys.ccNac" || e.className === "form-note notice bad" || e.tagName === "TABLE" || e.id === "f-transmit")
+		.map((e) => (e.tagName === "TABLE" ? "table" : e.id || "notice"));
+	assert.deepEqual(order.slice(0, 3), ["f-sys.ccNac", "notice", "table"], "the notice sits between the identity and the control channels");
+	assert.ok(order.indexOf("f-transmit") > order.indexOf("notice"));
+	assert.ok(!form.heads().includes("editor.col.tx") && !form.heads().includes("editor.p25.tx_offset"), "the TX columns are left out");
+	assert.ok(form.heads().includes("editor.col.rx"), "receiving is all still there");
+
+	// the identity changed back: what was chosen and entered returns
+	form.type("sys.wacn", "12345");
+	assert.deepEqual(form.choices("transmit"), open);
+	assert.equal(form.input("transmit").selectedIndex, 1, "transmit, after registering, as before");
+	assert.equal(form.input("transmit").disabled, false);
+	assert.equal(form.row("ownId").hidden, false);
+	assert.equal(form.input("ownId").value, "1234567");
+	assert.ok(form.heads().includes("editor.col.tx") && form.heads().includes("editor.p25.tx_offset"));
+
+	// the system ID alone blocks too
+	form.type("sys.sysid", "00a");
+	assert.deepEqual(form.choices("transmit"), ["editor.modes.tx0"]);
+	assert.ok(form.note().includes('editor.p25.no_tx_sysid {"id":"00A"}'), "the notice names the system ID");
+
+	// both match: the WACN is named
+	form.type("sys.wacn", "beeff");
+	assert.ok(form.note().includes('editor.p25.no_tx_wacn {"id":"BEEFF"}'));
+});
+
+test("system form: a blocked system saves as listen only, its transmit values kept; a TX cell left out can't refuse the save", () => {
+	const { m, s } = trunked();
+	const form = openSystem(m, s);
+	form.typeCell("editor.col.tx", "not a frequency");
+	form.save();
+	assert.equal(form.dlg.open, true, "shown, the bad TX frequency refuses the save");
+
+	form.type("sys.wacn", "bee5a");
+	form.save();
+	assert.equal(form.dlg.open, false, "saved");
+	assert.equal(s.fields.wacn, 0xBEE5A);
+	const back = decode(encode(m)).systems[0];
+	assert.equal(back.tx, false, "written listen only");
+	assert.equal(back.ownId, 1234567);
+	assert.equal(back.entries.find((e) => e.cls === 0).txHz, 806012500, "the stored TX frequency, not the text that didn't parse");
+	assert.equal(back.entries.find((e) => e.cls === 2).txOffsetHz, -45000000);
+});

@@ -18,8 +18,12 @@
 #include "dmr/ipGateway.h"
 #include "debuglink/dl_fmt.h"
 #include "ui/gfx.h"
+#include "codeplug/codeplug.h"
 #if CONFIG_NET_PPP
 #include "net/ppp.h"
+#endif
+#if CONFIG_GPS
+#include "position/position.h"
 #endif
 
 #define JSON_MAX	640	// the status (http.c's, about 450 bytes on a DMR channel), the hello and a screen frame
@@ -32,6 +36,9 @@ static struct {
 	bool screen;		// the client asked for the screen
 	bool screen_all;	// and has none of it yet: every row next time
 	bool closing;		// a close frame went out: the rest is ignored
+	bool changes;		// "status?changes": the status only when the zone or channel changes
+	bool gps;		// "gps": the board GPS's fixes
+	uint8_t gps_sec;	// the GPS second (utc_hms % 100) of the last fix sent, 0xFF none
 	uint8_t hn;		// header bytes collected
 	uint8_t hb[WS_HDR_MAX];
 	bool in_payload;
@@ -173,6 +180,15 @@ static bool audio_ok(void)
 	return CONFIG_NET_USRP != 0;
 }
 
+static bool gps_ok(void)
+{
+#if CONFIG_GPS
+	return board_has_gps();
+#else
+	return false;
+#endif
+}
+
 // ---- the screen ----
 
 // A screen frame (binary, docs/spec/tcp-services.md 5.1): 'S', the palette's size n (0 at bpp 16), n RGB565 colors,
@@ -311,13 +327,51 @@ static void screen_poll(void)
 
 // ---- commands ----
 
+// A request in words (radio_ctl.c): "select?zone=Z[&pos=P]", "step?channel=N", "step?zone=N";
+// "gps" / "gps?off" the board GPS's fixes; "status?changes" / "status" the status only on a zone or channel change, or
+// whenever it changes. Zone, channel and GPS only from the host. Only an error is answered: the status shows the rest
+static void request(const char *r, uint32_t now)
+{
+	int err = 0;
+
+	if (strncmp(r, "status", 6) == 0) {
+		w.changes = strcmp(r + 6, "?changes") == 0;
+		err = ((r[6] == '\0') || w.changes) ? 0 : 400;
+	} else if (!w.control) {
+		err = 403;
+	} else if (strncmp(r, "gps", 3) == 0) {
+		bool on = r[3] == '\0';
+
+		err = (on && !gps_ok()) ? 409 : (on || (strcmp(r + 3, "?off") == 0)) ? 0 : 400;
+		if (err == 0) {
+			w.gps = on;
+			w.gps_sec = 0xFFu;
+		}
+	} else {
+		err = radio_ctl_request(r, now, net_radio_view());
+	}
+	if (err != 0) {
+		dl_text_t t;
+
+		st.refused++;
+		dl_text_init(&t, json, sizeof(json));
+		dl_text(&t, "{\"err\":%d}", err);
+		send_frame(WS_OP_TEXT, json, (uint32_t)t.len);
+	}
+}
+
 // One text frame: d<bit> key down, u<bit> key up, e<n> encoder detents, a1 / a0 receive audio on / off, s1 / s0 the
-// screen on / off
+// screen on / off, or a request in words
 static void command(const uint8_t *p, uint8_t n, uint32_t now)
 {
 	int32_t v;
 
 	st.commands++;
+	if ((n >= 2) && (p[1] >= 'a') && (p[1] <= 'z') && (n < PAYLOAD_MAX)) {
+		w.pay[n] = 0;	// p is w.pay: room for the NUL
+		request((const char *)p, now);
+		return;
+	}
 	if ((n < 2) || !number(p + 1, (uint8_t)(n - 1), &v)) {
 		st.errors++;
 		return;
@@ -433,8 +487,9 @@ static void hello(void)
 	dl_text_t t;
 
 	dl_text_init(&t, json, sizeof(json));
-	dl_text(&t, "{\"hello\":1,\"control\":%s,\"audio\":%s,\"keys\":[", w.control ? "true" : "false",
-		audio_ok() ? "true" : "false");
+	// proto and caps: what this radio takes, so a client checks instead of guessing from the version
+	dl_text(&t, "{\"hello\":1,\"proto\":1,\"caps\":[\"select\",\"step\",\"status\"%s],\"control\":%s,\"audio\":%s,"
+		"\"keys\":[", gps_ok() ? ",\"gps\"" : "", w.control ? "true" : "false", audio_ok() ? "true" : "false");
 	for (uint8_t i = 0; i < board.keymap_len; i++) {
 		dl_text(&t, "%s%u", (i > 0) ? "," : "", board.keymap[i].bit);
 		if (board.keymap[i].short_action == ACT_PTT) {
@@ -492,12 +547,75 @@ void webctl_closed(int c)
 	gone(c);
 }
 
-static uint32_t fnv(const char *s, size_t n)
+#if CONFIG_GPS
+// The board GPS's fix, once per GPS second. Never a host-fed or fixed position (position_gps is the board GPS alone),
+// and exact: the ambiguity setting is for reports on the air
+static void fix_poll(uint32_t now)
 {
+	position_gps_t g;
+	char la[DL_DEG_LEN], lo[DL_DEG_LEN];
+	dl_text_t t;
+
+	if (!w.gps || !position_gps(&g, now) || !g.fix || (g.utc_hms == 0xFFFFFFFFu) ||
+	    ((uint8_t)(g.utc_hms % 100u) == w.gps_sec)) {
+		return;
+	}
+	dl_text_init(&t, json, sizeof(json));
+	dl_text(&t, "{\"gps\":1,\"lat\":%s,\"lon\":%s", dl_deg(la, g.lat), dl_deg(lo, g.lon));
+	// the optional fields each in their own piece, then the ones every fix has in one
+	if (g.alt_m != POSITION_ALT_NONE) {
+		dl_text(&t, ",\"alt_m\":%d", (int)g.alt_m);
+	}
+	if (g.speed_kmh != 0xFFFFu) {
+		dl_text(&t, ",\"kmh\":%u", g.speed_kmh);
+	}
+	if (g.course != 0xFFFFu) {
+		dl_text(&t, ",\"course\":%u", g.course);
+	}
+	if (g.hdop10 != 0xFFFFu) {
+		dl_text(&t, ",\"hdop\":%u.%u", g.hdop10 / 10u, g.hdop10 % 10u);
+	}
+	dl_text(&t, ",\"sats\":%u,\"utc\":%u}", g.sats, (unsigned)g.utc_hms);
+	if (send_frame(WS_OP_TEXT, json, (uint32_t)t.len)) {
+		w.gps_sec = (uint8_t)(g.utc_hms % 100u);	// else again at the next poll, while this second lasts
+	}
+}
+#endif
+
+// What the status is sent on with "status?changes": where the radio is and what it is on. rx_hz and mode: the VFO
+// tuned, which no index shows
+typedef struct {
+	uint16_t zone, pos, number;
+	bool vfo, priv;
+	uint8_t ts, mode;
+	uint32_t codeplug, tg, rx_hz;
+} change_key_t;
+
+static void change_key(const radio_view_t *v, change_key_t *k)
+{
+	memset(k, 0, sizeof(*k));	// padding too: the key is hashed whole
+	k->zone = v->zone_index;
+	k->pos = v->zone_pos;
+	k->number = v->channel_number;
+	k->vfo = v->vfo;
+	k->codeplug = codeplug_serial();
+	k->rx_hz = v->ch.rx_hz;
+	k->mode = v->ch.mode;
+#if CONFIG_DMR
+	k->ts = v->ch.timeslot;
+	k->tg = v->dmr.target_id;
+	k->priv = v->dmr.target_private;
+#endif
+}
+
+static uint32_t fnv(const void *p, size_t n)
+{
+	const uint8_t *s = p;
+
 	uint32_t h = 2166136261u;
 
 	for (size_t i = 0; i < n; i++) {
-		h = (h ^ (uint8_t)s[i]) * 16777619u;
+		h = (h ^ s[i]) * 16777619u;
 	}
 	return h;
 }
@@ -528,15 +646,30 @@ void webctl_poll(uint32_t now_ms)
 		w.ping_ms = now_ms;
 		send_frame(WS_OP_PING, NULL, 0);
 	}
+#if CONFIG_GPS
+	fix_poll(now_ms);
+#endif
 	if ((now_ms - w.status_ms) >= WEBCTL_STATUS_MS) {
 		dl_text_t t;
+		uint32_t h = 0;
 
-		dl_text_init(&t, json, sizeof(json));
-		http_status_json(&t);
-		uint32_t h = fnv(json, t.len);
+		// With "status?changes" only a zone or channel change sends it (the link is for the user's data): the
+		// change key is checked first, and the status rendered only when it moved
+		if (w.changes) {
+			change_key_t k;
 
-		if (!t.full && (h != w.status_hash) && send_frame(WS_OP_TEXT, json, (uint32_t)t.len)) {
-			w.status_hash = h;
+			change_key(net_radio_view(), &k);
+			h = fnv(&k, sizeof(k));
+		}
+		if (!w.changes || (h != w.status_hash)) {
+			dl_text_init(&t, json, sizeof(json));
+			http_status_json(&t);
+			if (!w.changes) {
+				h = fnv(json, t.len);
+			}
+			if (!t.full && (h != w.status_hash) && send_frame(WS_OP_TEXT, json, (uint32_t)t.len)) {
+				w.status_hash = h;
+			}
 		}
 		w.status_ms = now_ms;
 	}
@@ -565,10 +698,11 @@ void webctl_view(dl_text_t *t)
 {
 	dl_text(t, "webctl.client=%u\nwebctl.control=%u\nwebctl.conns=%u\nwebctl.commands=%u\nwebctl.refused=%u\n"
 		"webctl.busy=%u\nwebctl.errors=%u\nwebctl.frames_out=%u\nwebctl.audio_out=%u\nwebctl.audio_dropped=%u\n"
-		"webctl.screen=%u\nwebctl.screen_out=%u\nwebctl.ptt=%u\nwebctl.ptt_downs=%u\n", w.c >= 0, w.control,
+		"webctl.screen=%u\nwebctl.screen_out=%u\nwebctl.ptt=%u\nwebctl.ptt_downs=%u\nwebctl.gps=%u\n"
+		"webctl.changes=%u\n", w.c >= 0, w.control,
 		(unsigned)st.conns, (unsigned)st.commands, (unsigned)st.refused, (unsigned)st.busy, (unsigned)st.errors,
 		(unsigned)st.frames_out, (unsigned)st.audio_out, (unsigned)st.audio_dropped, w.screen,
-		(unsigned)st.screen_out, w.ptt, (unsigned)st.ptt_downs);
+		(unsigned)st.screen_out, w.ptt, (unsigned)st.ptt_downs, w.gps, w.changes);
 }
 
 #endif	// CONFIG_NET_WEBCTL

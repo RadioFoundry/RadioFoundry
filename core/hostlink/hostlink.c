@@ -512,6 +512,9 @@ static void hostlink_task(void *arg)
 #if CONFIG_SNMP
 	snmp_agent_init();	// binds UDP 161 in the gateway (docs/spec/snmp.md)
 #endif
+#if CONFIG_DEBUGLINK_DMRIP
+	debuglink_dmrip_init();	// the key, the detour, UDP 3335 from the air in the gateway (debuglink.md 7)
+#endif
 	if ((port == NULL) || !port->start()) {
 		vTaskDelete(NULL);
 		return;
@@ -561,6 +564,9 @@ static void hostlink_task(void *arg)
 #endif
 #if CONFIG_SNMP
 		snmp_agent_poll(now);		// requests over RF, notifications (in either USB personality)
+#endif
+#if CONFIG_DEBUGLINK_DMRIP
+		debuglink_dmrip_poll(now);	// the debug link over the air, and a detour's items and deadline
 #endif
 #if CONFIG_CPS_FAST
 		cps_fast_tick(now);		// the fast codeplug protocol: session time-out, a commit's next sector

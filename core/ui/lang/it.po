@@ -163,6 +163,11 @@ msgid "Delivered to "
 msgstr "Consegnato a "
 
 #: core/ui/ui_app.c
+msgctxt "SHARE_BANNER_NOT_SENT_TO"
+msgid "Not sent to "
+msgstr "Non inviato a "
+
+#: core/ui/ui_app.c
 msgctxt "BANNER_NO_ANSWER_FROM"
 msgid "No answer from "
 msgstr "Nessuna risposta da "
@@ -242,12 +247,7 @@ msgctxt "SHARE_BANNER_ZONE_FROM"
 msgid "⤓ Zone from "
 msgstr "⤓ Zona da "
 
-#: core/ui/ui_app.c
-msgctxt "SHARE_BANNER_NOT_SENT_TO"
-msgid "Not sent to "
-msgstr "Non inviato a "
-
-#: core/ui/ui_app.c
+#: core/ui/ui_app.c core/ui/ui_screens.c
 msgctxt "SHARE_BANNER_TRY_ON_DMR"
 msgid "Try again on a DMR channel"
 msgstr "Riprova su un canale DMR"
@@ -1633,24 +1633,29 @@ msgid "Messages: not in this build"
 msgstr "Messaggi: non in questa build"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CHECKING"
-msgid "Checking "
-msgstr "Controllo di "
-
-#: core/ui/ui_menus.c
 msgctxt "WHY_RADIO_CHECK_NOT_IN_BUILD"
 msgid "Radio check: not in this build"
 msgstr "Controllo radio: non in questa build"
 
 #: core/ui/ui_menus.c
-msgctxt "ACT_TOAST_CALL_ALERT_TO"
-msgid "Call alert to "
-msgstr "Avviso chiamata a "
+msgctxt "ACT_TOAST_CHECKING"
+msgid "Checking "
+msgstr "Controllo di "
+
+#: core/ui/ui_menus.c
+msgctxt "MSG_TOAST_SEND_FAILED"
+msgid "Couldn't send: try again"
+msgstr "Invio non riuscito: riprova"
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_CALL_ALERT_NOT_IN_BUILD"
 msgid "Call alert: not in this build"
 msgstr "Avviso chiamata: non in questa build"
+
+#: core/ui/ui_menus.c
+msgctxt "ACT_TOAST_CALL_ALERT_TO"
+msgid "Call alert to "
+msgstr "Avviso chiamata a "
 
 #: core/ui/ui_menus.c
 msgctxt "WHY_POS_REQUESTS_NOT_IN_BUILD"
@@ -1721,11 +1726,6 @@ msgstr "Richiedi conferma"
 msgctxt "MSG_LABEL_INCLUDE_POSITION"
 msgid "Include position"
 msgstr "Includi posizione"
-
-#: core/ui/ui_menus.c
-msgctxt "MSG_TOAST_SEND_FAILED"
-msgid "Couldn't send: try again"
-msgstr "Invio non riuscito: riprova"
 
 #: core/ui/ui_menus.c
 msgctxt "TOAST_SENDING_TO"
@@ -3808,6 +3808,16 @@ msgid "Dual-path RX"
 msgstr "RX doppia via"
 
 #: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_8_BIT"
+msgid "8-bit (1-255)"
+msgstr "8 bit (1-255)"
+
+#: core/ui/ui_menus.c
+msgctxt "SET_VALUE_KEY_TYPE_16_BIT"
+msgid "16-bit (0-65535)"
+msgstr "16 bit (0-65535)"
+
+#: core/ui/ui_menus.c
 msgctxt "SIG_VALUE_SPEAKER"
 msgid "Speaker"
 msgstr "Altoparlante"
@@ -4868,11 +4878,6 @@ msgid "Finding system"
 msgstr "Ricerca sistema"
 
 #: core/ui/ui_screens.c
-msgctxt "HOME_STATE_P25T_BLOCKED"
-msgid "Blocked system"
-msgstr "Sistema bloccato"
-
-#: core/ui/ui_screens.c
 msgctxt "HOME_STATE_P25T_WAIT"
 msgid "Wait"
 msgstr "Attendere"
@@ -5033,6 +5038,11 @@ msgid "This mode: receive only"
 msgstr "Questo modo: solo RX"
 
 #: core/ui/ui_screens.c
+msgctxt "DENY_WHY_DATA_ENCRYPTED"
+msgid "Encrypted channels can't send text"
+msgstr "Niente testo su canali cifrati"
+
+#: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_NO_CC"
 msgid "No control channel"
 msgstr "Nessun canale controllo"
@@ -5059,8 +5069,8 @@ msgstr "Canale voce inutilizzabile"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_P25T_WACN_BLOCKED"
-msgid "Blocked system: no TX"
-msgstr "Sistema bloccato: no TX"
+msgid "RX-only system: no TX"
+msgstr "Sistema solo RX: no TX"
 
 #: core/ui/ui_screens.c
 msgctxt "DENY_WHY_TRUNK_OTHER_SYS"

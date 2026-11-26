@@ -657,6 +657,12 @@ static void handle_event(const ui_event_t *ev)
 				TR(MSG_BANNER_DELIVERED_TO, "Delivered to "));
 			station(&b, ev);
 			banner(UI_BANNER_RESULT, false, ev->id, title, NULL);
+		} else if (ev->index == 2) {
+			char why[UI_BANNER_TEXT];
+			sb_str(&b, TR(SHARE_BANNER_NOT_SENT_TO, "Not sent to "));
+			station(&b, ev);
+			banner(UI_BANNER_RESULT, true, ev->id, title,
+				ui_deny_text(view, TXDENY_DATA_ENCRYPTED, why, sizeof why));
 		} else {
 			sb_str(&b, TR(BANNER_NO_ANSWER_FROM, "No answer from "));
 			station(&b, ev);
