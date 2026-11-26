@@ -128,4 +128,3 @@ __attribute__((noinline)) void golden_p25_trunk(dl_text_t *t)
 	dl_text(t, "p25t.built=0\n");
 #endif
 }
-
