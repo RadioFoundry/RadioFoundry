@@ -744,7 +744,7 @@ uiSim: uiSim.c $(UIDEPS) $(CJK)
 
 TESTS += uiSimEnvelope
 uiSimEnvelope: uiSim.c $(UIDEPS) $(CJK)
-	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
+	$(CC) $(UIFLAGS) $(UI_LANG_FLAG) -DCONFIG_SATELLITE_TLE=1 -DCONFIG_AM_ENVELOPE=1 -o $@ uiSim.c $(UIAPP) $(CJK) -lz
 
 run: run-envelope-ui
 .PHONY: run-envelope-ui
@@ -1759,26 +1759,30 @@ usrpTest: $(UAUDIO) $(wildcard $(CORE)/usbaudio/*.h)
 UNET    := usrpNetTest.c $(CORE)/usbaudio/usrp_net.c $(CORE)/hostlink/hostlink_view.c $(CORE)/usbaudio/usrp.c $(CORE)/usbaudio/pcm_slip.c \
            $(CORE)/usbaudio/audio_mux.c $(CORE)/debuglink/dl_fmt.c
 TESTS   += usrpNetTest
-TESTS   += envelopeMonitorTest
+TESTS   += envelopeMonitorTest envelopeMonitorTestStandalone
 TESTS   += envelopeLabelTest envelopeLabelTestOff
 
 envelopeLabelTest: envelopeLabelTest.c $(CORE)/radio/radio_am.c
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ $^
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -o $@ $^
 
 envelopeLabelTestOff: envelopeLabelTest.c $(CORE)/radio/radio_am.c
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=0 -o $@ $^
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=0 -o $@ $^
+
+envelopeMonitorTestStandalone: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(wildcard $(CORE)/usbaudio/*.h)
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=0 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c -lm
 
 envelopeMonitorTest: envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c $(wildcard $(CORE)/usbaudio/*.h)
-	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c -lm
+	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_NET_USRP=1 -o $@ envelopeMonitorTest.c $(CORE)/usbaudio/audio_mux.c $(CORE)/usbaudio/pcm_slip.c -lm
 
 usrpNetTest: $(UNET) $(wildcard $(CORE)/usbaudio/*.h)
 	$(CC) $(CFLAGS) $(CORE_HAL) -DCONFIG_NET_USRP=1 -o $@ $(UNET) -lm
 
 run: run-usbaudio
-run-usbaudio: usrpTest usrpNetTest envelopeMonitorTest envelopeLabelTest envelopeLabelTestOff
+run-usbaudio: usrpTest usrpNetTest envelopeMonitorTest envelopeMonitorTestStandalone envelopeLabelTest envelopeLabelTestOff
 	./usrpTest
 	./usrpNetTest
 	./envelopeMonitorTest
+	./envelopeMonitorTestStandalone
 	./envelopeLabelTest
 	./envelopeLabelTestOff
 .PHONY: run-usbaudio

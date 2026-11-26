@@ -5,7 +5,7 @@
 #include "usbaudio/audio_mux.h"
 
 #include <string.h>
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 #include "usbaudio/envelope_filter.h"
 #endif
 
@@ -17,16 +17,23 @@ static hal_audio_t wrapped;
 static audio_block_cb_t volatile prim_cb;	// the radio's user that started the stream (DMR voice or a beep)
 static void *volatile prim_ctx;
 static bool running;				// the board's stream runs (radio task)
+#if CONFIG_NET_USRP
 static volatile audio_mux_rx_t host_rx;
 static volatile bool host_tx_dmr;
 #define host_rx_on	(host_rx != AUDIO_MUX_RX_OFF)
+#else
+#define host_rx_on false
+#define host_tx_dmr false
+#endif
 static uint32_t retry_ms;
 static bool retry_armed;
 
+#if CONFIG_NET_USRP
 static int16_t rx_ring[AUDIO_MUX_RX_CAP];
 static volatile uint32_t rx_wr, rx_rd;		// free-running: the audio task writes, the host task reads
 static pcm_slip_t slip;
 static int16_t host_mic[AUDIO_BLOCK_SAMPLES];
+#endif
 #if CONFIG_APRS_RX
 static volatile bool aprs_on;
 static int16_t aprs_ring[AUDIO_MUX_APRS_CAP];
@@ -35,7 +42,7 @@ static volatile uint32_t aprs_wr, aprs_rd;	// the audio task writes, the radio t
 #else
 #define external_wanted	host_rx_on
 #endif
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 static volatile bool envelope_on, primary_speaker;
 static bool monitor_active;
 static envelope_filter_t monitor_filter;
@@ -45,6 +52,7 @@ static envelope_filter_t monitor_filter;
 #endif
 static audio_mux_stats_t st;
 
+#if CONFIG_NET_USRP
 static void rx_put(const int16_t *pcm, uint32_t n)
 {
 	uint32_t room = AUDIO_MUX_RX_CAP - (rx_wr - rx_rd);
@@ -61,23 +69,27 @@ static void rx_put(const int16_t *pcm, uint32_t n)
 	st.rx_samples += n;
 }
 
+#endif
+
 static void block(const int16_t *mic, int16_t *spk, void *ctx)
 {
 	(void)ctx;
 	st.blocks++;
 	const int16_t *in = mic;
+#if CONFIG_NET_USRP
 	if (host_tx_dmr) {
 		pcm_slip_pull(&slip, host_mic, AUDIO_BLOCK_SAMPLES);
 		in = host_mic;
 		st.tx_blocks++;
 	}
+#endif
 	audio_block_cb_t cb = prim_cb;
 	if (cb != NULL) {
 		cb(in, spk, prim_ctx);
 	} else {
 		memset(spk, 0, AUDIO_BLOCK_SAMPLES * sizeof *spk);
 	}
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	if (envelope_on && !host_tx_dmr) {
 		if (!monitor_active) {
 			memset(&monitor_filter, 0, sizeof monitor_filter);
@@ -106,6 +118,7 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 		}
 	}
 #endif
+#if CONFIG_NET_USRP
 	audio_mux_rx_t src = host_rx;
 	if (src == AUDIO_MUX_RX_SILENT) {
 		static const int16_t silence[AUDIO_BLOCK_SAMPLES];
@@ -113,6 +126,7 @@ static void block(const int16_t *mic, int16_t *spk, void *ctx)
 	} else if (src != AUDIO_MUX_RX_OFF) {
 		rx_put(src == AUDIO_MUX_RX_OUTPUT ? spk : mic, AUDIO_BLOCK_SAMPLES);
 	}
+#endif
 }
 
 static bool hw_start(void)
@@ -149,7 +163,7 @@ static void w_stop(void)
 
 static void w_speaker_pcm(bool on)
 {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	primary_speaker = on;
 	on = on || envelope_on;
 #endif
@@ -160,7 +174,7 @@ static void w_speaker_pcm(bool on)
 
 void audio_mux_envelope_monitor(bool on)
 {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	if (envelope_on == on) {
 		return;
 	}
@@ -185,11 +199,14 @@ const hal_audio_t *audio_mux_wrap(const hal_audio_t *board_audio)
 	wrapped.speaker_lead_ms = board_audio->speaker_lead_ms;	// the beep player reads these through the wrapper
 	wrapped.speaker_warm = board_audio->speaker_warm;
 	wrapped.speaker_hang_s = board_audio->speaker_hang_s;
+#if CONFIG_NET_USRP
 	pcm_slip_init(&slip, AUDIO_MUX_TX_TARGET, AUDIO_BLOCK_SAMPLES);
+#endif
 	return &wrapped;
 }
 
 // --- host side ---
+#if CONFIG_NET_USRP
 
 void audio_mux_host_rx(audio_mux_rx_t src)
 {
@@ -254,6 +271,8 @@ uint32_t audio_mux_host_tx_fill(void)
 	return pcm_slip_fill(&slip);
 }
 
+#endif
+
 #if CONFIG_APRS_RX
 // --- APRS (radio task) ---
 
@@ -308,21 +327,27 @@ void audio_mux_service(uint32_t now_ms)
 
 // --- the board's FM transmit path ---
 
+#if CONFIG_NET_USRP
 void audio_mux_fm_pull(int16_t *pcm, uint16_t n)
 {
 	pcm_slip_pull(&slip, pcm, n);
 	st.fm_pulls += n;
 }
 
+#endif
+
 void audio_mux_stats(audio_mux_stats_t *out)
 {
 	*out = st;
 }
 
+#if CONFIG_NET_USRP
 void audio_mux_slip_stats(pcm_slip_stats_t *out)
 {
 	*out = slip.stats;
 }
+
+#endif
 
 void audio_mux_reset(void)
 {
@@ -331,14 +356,18 @@ void audio_mux_reset(void)
 	prim_cb = NULL;
 	prim_ctx = NULL;
 	running = false;
+#if CONFIG_NET_USRP
 	host_rx = AUDIO_MUX_RX_OFF;
 	host_tx_dmr = false;
-#if CONFIG_RX_ENVELOPE_DIAG
+#endif
+#if CONFIG_AM_ENVELOPE
 	envelope_on = primary_speaker = monitor_active = false;
 	memset(&monitor_filter, 0, sizeof monitor_filter);
 #endif
 	retry_armed = false;
+#if CONFIG_NET_USRP
 	rx_wr = rx_rd = 0;
+#endif
 #if CONFIG_APRS_RX
 	aprs_on = false;
 	aprs_wr = aprs_rd = 0;

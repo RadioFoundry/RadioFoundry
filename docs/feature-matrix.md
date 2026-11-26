@@ -27,9 +27,9 @@ Every feature, the build switch it sits behind (`CONFIG_<switch>` in `config/fea
   at the end.
 
 
-The opt-in `RX_ENVELOPE_DIAG` experiment is off by default and is excluded from maximal release builds.
-It provides RSSI-envelope AM audio on supporting boards without advertising native `AM_RX`; see the
-[receive-envelope specification](spec/receive-envelope-diagnostic.md) and the board hardware record.
+The opt-in `AM_ENVELOPE` feature provides local RSSI-envelope AM audio on supporting boards. It is off by
+default and does not require network or debug tools. See the [AM envelope specification](spec/am-envelope.md)
+and the board hardware record.
 
 ## Checked on each radio
 
@@ -172,7 +172,7 @@ is `tools/bringup.py list --radio <id>`.
 | `air_raw` | off | off | off | off | off | off | off | off |
 | `debuglink_dmrip` | off | off | off | off | off | off | off | off |
 | `audio_probe` | not written | off | not written | not written | not written | off | off | not written |
-| `rx_envelope_diag` | off | off | off | off | off | off | off | off |
+| `am_envelope` | off | off | off | off | off | off | off | off |
 <!-- end generated -->
 
 What the records don't hold yet: limits and known problems from the bring-up pages.
@@ -279,7 +279,7 @@ clock`; ? = not known yet). No driver reads the clock yet ([radio-features.md](s
 | `FM_TX_TONES` | ● | ● | ● | ● | … | ● | ● | ● |
 | `DTMF` | ● | ● | ● | ● | … | ● | ● | ✕ |
 | `RX_EXT` | ● | ● | ● | ● | … | ● | … | ● |
-| `RX_ENVELOPE_DIAG` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
+| `AM_ENVELOPE` | ○ | ○ | ○ | ○ | ○ | ○ | ○ | ○ |
 | `VOX` | … | ● | ● | … | ● | ● | ● | … |
 | `REF_TRIM` | ● | ● | ● | ● | ● | ● | ● | ● |
 | `BATTERY_SAVE` | ● | ● | ● | ● | ● | ● | ● | ● |

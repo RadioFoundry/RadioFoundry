@@ -27,7 +27,7 @@ bool radio_am_band(uint32_t hz);
 bool radio_am_capable(void);
 // The channel (or the VFO's settings) is received in AM here: an FM channel in the air band on a radio that can
 bool radio_am_channel(const channel_t *ch);
-// Display classification also recognizes experimental envelope reception. It must not select the native rx_am HAL.
+// Display classification also recognizes envelope reception. It must not select the native rx_am HAL.
 bool radio_am_display_channel(const channel_t *ch);
 // Transmitting on hz is refused because it is in the air band of a radio that receives AM there
 bool radio_am_tx_refused(uint32_t hz);

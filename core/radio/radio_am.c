@@ -22,7 +22,7 @@ bool radio_am_channel(const channel_t *ch)
 
 bool radio_am_display_channel(const channel_t *ch)
 {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	if (ch->mode == RADIO_MODE_FM && ch->rx_hz >= 118000000u && ch->rx_hz < 136000000u && board.audio_tap != NULL &&
 	    (board.audio_tap->caps & AUDIO_TAP_RX_ENVELOPE) != 0) {
 		return true;

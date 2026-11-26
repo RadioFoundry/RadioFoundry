@@ -17,7 +17,7 @@ TESTS   += md9600RfTest md9600RfTestV5
 TESTS   += md9600RfTestEnvelope md9600RfSeqTestEnvelope md9600RfSeqTestEnvelopeNoTx
 
 md9600RfTestEnvelope: $(MD9600_RF) $(MD9600_RF_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -o $@ $(MD9600_RF)
+	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow $(MD9600_ALL) -DCONFIG_AM_ENVELOPE=1 -o $@ $(MD9600_RF)
 
 md9600RfTest: $(MD9600_RF) $(MD9600_RF_H)
 	$(CC) $(CFLAGS) -I$(MD9600) -Wshadow $(MD9600_ALL) -o $@ $(MD9600_RF)
@@ -30,10 +30,10 @@ MD9600_SEQ := $(MD9600_T)/md9600RfSeqTest.c $(MD9600)/rfseq_md9600.c $(MD9600)/c
 	$(MD9600)/hwopt_md9600.c $(ROOT)/drivers/cal/calblock/calblock.c $(filter-out $(MD9600_T)/md9600RfTest.c,$(MD9600_RF))
 MD9600_SEQ_H := $(MD9600_RF_H) $(MD9600)/rfseq_md9600.h $(MD9600)/md9600.h
 md9600RfSeqTestEnvelope: $(MD9600_SEQ) $(MD9600_SEQ_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_MD9600_TX=1 -o $@ $(MD9600_SEQ)
 
 md9600RfSeqTestEnvelopeNoTx: $(MD9600_SEQ) $(MD9600_SEQ_H)
-	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_RX_ENVELOPE_DIAG=1 -DCONFIG_MD9600_TX=0 -o $@ $(MD9600_SEQ)
+	$(CC) $(CFLAGS) -I$(MD9600) -I$(ROOT)/hal -Wshadow $(MD9600_ALL) -DCONFIG_AM_ENVELOPE=1 -DCONFIG_MD9600_TX=0 -o $@ $(MD9600_SEQ)
 TESTS   += md9600RfSeqTest md9600RfSeqTestNoTx md9600RfSeqTestV5
 
 md9600RfSeqTest: $(MD9600_SEQ) $(MD9600_SEQ_H)

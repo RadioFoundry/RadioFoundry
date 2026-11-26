@@ -1221,7 +1221,7 @@ static void test_hwopt(void)
 
 int main(void)
 {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	// Every built revision: receive below 136 MHz, but neither a normal TX request nor a direct PA request keys.
 	const uint32_t air[] = { 118000000u, 118800000u, 119500000u, 124100000u, 124800000u, 134950000u, 135999999u };
 	for (int r = MD9600_REV_V1V3; r < MD9600_REV_COUNT; r++) {

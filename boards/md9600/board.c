@@ -24,7 +24,7 @@
 // Both bands on every revision (hardware-md9600.md 5.1, unverified). Transmit stays refused in radio_md9600.c until
 // the revision is confirmed and the PA calibration is read
 static const band_t bands[] = {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	{ 118000000, 135999999, false }, // experimental: tuning and sensitivity unverified
 #endif
 	{ 136000000, 174000000, CONFIG_MD9600_TX != 0 },

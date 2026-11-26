@@ -682,7 +682,7 @@ const hal_audio_tap_t md9600_audio_tap = {
 	.caps = AUDIO_TAP_DMR
 #if MD9600_FM_RX_TAP
 		| AUDIO_TAP_FM_RX
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 		| AUDIO_TAP_RX_ENVELOPE
 #endif
 #endif

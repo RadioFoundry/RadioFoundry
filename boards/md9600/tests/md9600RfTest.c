@@ -161,13 +161,13 @@ static void test_bands(void)
 	CHECK(md9600_band_of(480000000u, &b) && b == MD9600_UHF);
 	CHECK(!md9600_band_of(135999999u, &b));
 	CHECK(!md9600_rx_band_of(117999999u, &b));
-	CHECK(md9600_rx_band_of(118000000u, &b) == (CONFIG_RX_ENVELOPE_DIAG != 0));
-	CHECK(md9600_rx_band_of(135999999u, &b) == (CONFIG_RX_ENVELOPE_DIAG != 0));
+	CHECK(md9600_rx_band_of(118000000u, &b) == (CONFIG_AM_ENVELOPE != 0));
+	CHECK(md9600_rx_band_of(135999999u, &b) == (CONFIG_AM_ENVELOPE != 0));
 	const uint32_t air[] = { 118250000u, 118800000u, 119500000u, 124100000u, 124775000u, 124800000u,
 				133475000u, 134950000u };
 	for (unsigned i = 0; i < sizeof(air) / sizeof(air[0]); i++) {
 		CHECK(!md9600_band_of(air[i], &b));
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 		// Receive audio/status must select VHF even when a prior UHF channel left this default.
 		b = MD9600_UHF;
 		CHECK(md9600_rx_band_of(air[i], &b) && b == MD9600_VHF);
@@ -178,8 +178,8 @@ static void test_bands(void)
 			}
 			md9600_pll_plan_t p;
 			CHECK(!md9600_pll_plan((md9600_rev_t)r, air[i], true, &p));
-			CHECK(md9600_pll_plan((md9600_rev_t)r, air[i], false, &p) == (CONFIG_RX_ENVELOPE_DIAG != 0));
-#if CONFIG_RX_ENVELOPE_DIAG
+			CHECK(md9600_pll_plan((md9600_rev_t)r, air[i], false, &p) == (CONFIG_AM_ENVELOPE != 0));
+#if CONFIG_AM_ENVELOPE
 			CHECK(p.band == MD9600_VHF && p.lo_hz == air[i] + MD9600_IF_HZ && p.count != 0);
 #endif
 		}

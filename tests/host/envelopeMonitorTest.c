@@ -2,6 +2,7 @@
 // Copyright (c) 2026 The RadioFoundry Authors
 // Local envelope playback without a host; prompt priority, raw host audio and lifecycle.
 #include <stdio.h>
+#include "config.h"
 #include <string.h>
 #include <math.h>
 #include "usbaudio/audio_mux.h"
@@ -54,7 +55,9 @@ int main(void)
 	CHECK(output[AUDIO_BLOCK_SAMPLES - 1] < 20 && output[AUDIO_BLOCK_SAMPLES - 1] > -20);
 	static const int16_t tone[] = { 0, 7071, 10000, 7071, 0, -7071, -10000, -7071 };
 	for (unsigned i = 0; i < AUDIO_BLOCK_SAMPLES; i++) { input[i] = tone[i % 8]; }
+#if CONFIG_NET_USRP
 	audio_mux_host_rx(AUDIO_MUX_RX_INPUT);
+#endif
 	callback(input, output, NULL);
 	int peak = 0;
 	for (unsigned i = 0; i < AUDIO_BLOCK_SAMPLES; i++) {
@@ -62,9 +65,11 @@ int main(void)
 		if (v > peak) { peak = v; }
 	}
 	CHECK(peak > 5000 && peak < 32767);
+#if CONFIG_NET_USRP
 	int16_t raw[AUDIO_BLOCK_SAMPLES];
 	CHECK(audio_mux_host_read(raw, AUDIO_BLOCK_SAMPLES) == AUDIO_BLOCK_SAMPLES);
 	CHECK(memcmp(raw, input, sizeof raw) == 0); // local filtering does not alter the host recording
+#endif
 	CHECK(audio->start(prompt, NULL));
 	audio->speaker_pcm(true);
 	callback(input, output, NULL);
@@ -74,7 +79,9 @@ int main(void)
 	CHECK(speaker && stops == 0); // envelope playback survives the prompt ending
 	callback(input, output, NULL);
 	CHECK(output[1] != 777);
+#if CONFIG_NET_USRP
 	audio_mux_host_rx(AUDIO_MUX_RX_OFF);
+#endif
 	audio_mux_service(20);
 	CHECK(callback != NULL && speaker); // disconnecting the host must not stop local listening
 	audio_mux_envelope_monitor(false);

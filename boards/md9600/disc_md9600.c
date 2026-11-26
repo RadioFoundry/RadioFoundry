@@ -118,7 +118,7 @@ static void capture_stop(void)
 
 void md9600_disc_envelope(bool on)
 {
-	on = CONFIG_RX_ENVELOPE_DIAG && on;
+	on = CONFIG_AM_ENVELOPE && on;
 	if (envelope_input == on) {
 		return;
 	}

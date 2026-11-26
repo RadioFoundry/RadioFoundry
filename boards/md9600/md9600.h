@@ -111,7 +111,7 @@ uint16_t md9600_adc3_qt(void);
 extern const hal_afsk_t md9600_afsk;
 
 // FM receive audio on the PCM stream's input (c6000_md9600.c): a host audio session hears the receiver (NET_USRP)
-#define MD9600_FM_RX_TAP	(CONFIG_DMR && CONFIG_NET_USRP)
+#define MD9600_FM_RX_TAP	(CONFIG_DMR && (CONFIG_NET_USRP || CONFIG_AM_ENVELOPE))
 // The discriminator capture (disc_md9600.c): PC3 on ADC3 at MD9600_DISC_RATE_HZ into a ring each reader keeps its own
 // tail on, running while a reader wants it; ADC3 is the capture's meanwhile. Radio task
 #define MD9600_DISC		(MD9600_FM_RX_TAP || (CONFIG_APRS_AFSK && CONFIG_APRS_RX))

@@ -235,6 +235,7 @@ NET_SRC-$(CONFIG_TFTP_IDDB) += core/net/tftp_iddb.c
 NET_SRC-$(CONFIG_NET_USRP) += core/net/net.c core/usbaudio/usrp_net.c core/usbaudio/usrp.c
 APP_SRC += $(sort $(NET_SRC-y))
 # The PCM stream shared between the radio's users, a host audio session (USRP) and APRS receive
+MUX_SRC-$(CONFIG_AM_ENVELOPE) += core/usbaudio/audio_mux.c
 MUX_SRC-$(CONFIG_NET_USRP) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 MUX_SRC-$(CONFIG_APRS_RX) += core/usbaudio/audio_mux.c core/usbaudio/pcm_slip.c
 APP_SRC += $(sort $(MUX_SRC-y))

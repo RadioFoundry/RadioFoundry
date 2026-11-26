@@ -39,7 +39,7 @@ bool md9600_band_of(uint32_t hz, uint8_t *band)
 
 bool md9600_rx_band_of(uint32_t hz, uint8_t *band)
 {
-#if CONFIG_RX_ENVELOPE_DIAG
+#if CONFIG_AM_ENVELOPE
 	if (hz >= 118000000u && hz < VHF_LO_HZ) {
 		*band = MD9600_VHF;
 		return true;
