@@ -773,6 +773,18 @@ static void test_fm_tx(void)
 	fd6818_fm_tx_cal(&dev, 0x90);
 	CHECK(chip.regs[0x40] == 0x3510);		// 0x3480 + 0x90: a sum, the carry reaches bit 8
 	CHECK(fd6818_variant_b_dmr6943.r40_tx == fd6818_variant_b.r40_tx);
+	// A second key-up before any receive keeps the receive word; the RX state puts it back, once
+	fd6818_set_state(&dev, FD6818_STATE_TX);
+	fd6818_fm_tx_prepare(&dev);
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	CHECK(chip.regs[0x24] == 0x8C7E);
+	int n = chip.n;
+	fd6818_set_state(&dev, FD6818_STATE_RX);
+	bool rewritten = false;
+	for (int i = n; i < chip.n; i++) {
+		rewritten |= chip.log[i].reg == 0x24;
+	}
+	CHECK(!rewritten);
 	CHECK(chip.protocol_errors == 0);
 }
 

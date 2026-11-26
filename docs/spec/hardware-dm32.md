@@ -739,7 +739,7 @@ like an AGC/gain table).
 | Order | mute (0x30 = 0000), band select (0x1A and 0x40), 0x38, 0x39, bandwidth (0x43), state (0x30) |
 | State register 0x30 | 0x0000 idle; 0xBFF1 RX on; 0xC1FE TX on. Always go through idle between RX and TX |
 | Bandwidth 0x43 | 0x3028 = 25 kHz FM; 0x4008 = 12.5 kHz FM; **0x4048 = DMR** (12.5 kHz with bit 6 set) |
-| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only); then 0x24 = 0000 and, with a valid calibration, 0x40 = 0x3400 \| the band's TX deviation byte (calibration +0x1C UHF / +0xAB VHF, the `BF_ROW_REG40` row). 0x50 = 3B18 after the switch to TX, BB18 when the transmission ends |
+| FM TX extra writes | 0x3F = 0000, 0x40 = 34EA, 0x37 = 1D0F before switching to TX (analog only); then 0x24 = 0000 (its receive value back at the next switch to RX) and, with a valid calibration, 0x40 = 0x3400 \| the band's TX deviation byte (calibration +0x1C UHF / +0xAB VHF, the `BF_ROW_REG40` row). 0x50 = 3B18 after the switch to TX, BB18 when the transmission ends |
 
 Band select by frequency (f in 10 Hz units; first matching row wins):
 
@@ -1170,7 +1170,7 @@ and 0x0C read back by hand, and air band AM.
 | DMR 0x47 / 0x48 | 0x0140 / 0xBBBF | 0x6943 / 0xB2FD; the DM-1801 Pro's 0x0140 / 0xB2F5 gave no DMR sync (user); 0x6943 / 0xB2FD works both ways (user, 2) |
 | 0x50 around TX | 0x3B18 after each switch to TX (FM, and each DMR burst), 0xBB18 when the transmission ends (b15 = TX audio mute, b9:0 the limit) | same |
 | 0x40 on FM transmit | 0x3400 \| the calibration byte | 0x3480 + the calibration byte |
-| 0x24 (tone decoder input selects) | 0 on FM transmit | same |
+| 0x24 (tone decoder input selects) | 0 on FM transmit, the value before it back at the next switch to RX | same |
 | 0x7D | 0xE35E (receive digital gain b12:8 = 3; the low byte the analog mic step) | 0xE92C (receive digital gain 9; the same mic step, from a 1F 22 26 29 2C table where set-up A's is 16 18 1A 1C 1E) |
 | FD6818 GPIO 5 | not set | function 1: 0x33 b9 and b1 clear, 0x34 b7:4 = 1 |
 | 0x28 | not written | 0x0A40, 0x0B40 while the FM squelch is open (b8 is documented read-only) |

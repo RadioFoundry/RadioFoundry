@@ -761,7 +761,9 @@ uint8_t dm32_amp_users(void)
 static void audio(bool on)
 {
 	rx_audio = on;
-	if (rf_b && mode == RADIO_MODE_FM && !transmitting) {
+	// Closed during a transmission too: a speaker closed while transmitting would leave 0x28 open through the receive
+	// that follows, until the squelch opens and closes again
+	if (rf_b && mode == RADIO_MODE_FM && (!on || !transmitting)) {
 		fd6818_write(&fd, FD_REG_RX_GATE, on ? FD_RX_GATE_OPEN : FD_RX_GATE_CLOSED);
 	}
 	if (!on) {

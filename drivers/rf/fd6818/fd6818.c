@@ -128,6 +128,8 @@ void fd6818_attach_variant(fd6818_t *dev, rfbus_t *bus, const fd6818_variant_t *
 	dev->freq_10hz = 0;
 	dev->bw_reg = 0;
 	dev->state = 0;
+	dev->r24 = 0;
+	dev->r24_held = false;
 #if CONFIG_AM_RX
 	dev->am = false;
 	dev->am_noise_off = 0;
@@ -269,6 +271,10 @@ void fd6818_set_state(fd6818_t *dev, uint16_t state)
 		fd6818_write(dev, FD6818_REG_STATE, FD6818_STATE_IDLE);	// never RX <-> TX directly
 	}
 	if (state == FD6818_STATE_RX) {
+		if (dev->r24_held) {
+			fd6818_write(dev, FD6818_REG_DEC_IN, dev->r24);	// the tone detector's input, cleared for FM transmit
+			dev->r24_held = false;
+		}
 		write_table(dev, v->rx, v->rx_n);
 	} else if (state == FD6818_STATE_TX) {
 		write_table(dev, v->tx, v->tx_n);
@@ -280,6 +286,10 @@ void fd6818_set_state(fd6818_t *dev, uint16_t state)
 void fd6818_fm_tx_prepare(fd6818_t *dev)
 {
 	write_table(dev, dev->variant->fm_tx_prepare, dev->variant->fm_tx_prepare_n);
+	if (!dev->r24_held) {	// a second key-up before any receive would save the 0 written here
+		dev->r24 = fd6818_read(dev, FD6818_REG_DEC_IN);
+		dev->r24_held = true;
+	}
 	fd6818_write(dev, FD6818_REG_DEC_IN, 0x0000);
 }
 
